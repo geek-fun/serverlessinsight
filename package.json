@@ -5,6 +5,7 @@
   "main": "index.js",
   "scripts": {
     "test": "DEBUG=hostsless jest --runInBand --detectOpenHandles --coverage --coverageReporters json-summary text html lcov",
+    "test:ci": "jest --runInBand --ci --coverage --coverageReporters json-summary text html lcov",
     "build": "tsc --build",
     "lint:fix": "eslint --fix ./",
     "lint:check": "eslint ./"
