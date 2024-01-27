@@ -1,8 +1,6 @@
 name: Node.js CI
 
 on:
-  push:
-    branches:  [master]
   pull_request:
     branches:  [master]
 
@@ -35,15 +33,3 @@ jobs:
         env:
           CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
       - run: npm run build
-      - name: Compare Versions
-        run: |
-          TAG_VERSION=$(echo ${{env.TAG}} | tr -dc '0-9')
-          PACKAGE_VERSION=$(echo ${{env.PACKAGE}} | tr -dc '0-9')
-
-          if (( $((10#$PACKAGE_VERSION + 1)) > $((10#$TAG_VERSION + 1)) )); then
-              echo "new version start release"
-              echo "RELEASE=true" >> "$GITHUB_ENV"
-          else
-              echo "no new version to release"
-              echo "RELEASE=false" >> "$GITHUB_ENV"
-          fi
