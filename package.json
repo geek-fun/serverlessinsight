@@ -27,7 +27,7 @@
   "dependencies": {
     "commander": "^11.1.0",
     "i18n": "^0.15.1",
-    "pino": "^8.17.2"
+    "pino": "^8.19.0"
   },
   "devDependencies": {
     "@types/i18n": "^0.13.10",
