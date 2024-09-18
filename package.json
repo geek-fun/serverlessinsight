@@ -1,12 +1,12 @@
 {
-  "name": "@geek-fun/hostsless",
+  "name": "@geek-fun/serverlessinsight",
   "version": "0.0.0",
   "description": "Full life cycle cross providers serverless application management for your fast-growing business.",
-  "homepage": "https://hostsless.geekfun.club",
+  "homepage": "https://serverlessinsight.geekfun.club",
   "main": "dist/src/index.js",
   "types": "dist/src/index.d.ts",
   "bin": {
-    "hls": "dist/src/commands/index.js"
+    "si": "dist/src/commands/index.js"
   },
   "scripts": {
     "test": "DEBUG=hostsless jest --runInBand --detectOpenHandles --coverage --coverageReporters json-summary text html lcov",
@@ -17,12 +17,12 @@
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/geek-fun/hostsless.git"
+    "url": "git+https://github.com/geek-fun/serverlessinsight.git"
   },
   "author": "geekfun <support@geekfun.club>",
   "license": "Apache-2.0",
   "bugs": {
-    "url": "https://github.com/geek-fun/hostsless/issues"
+    "url": "https://github.com/geek-fun/serverlessinsight/issues"
   },
   "dependencies": {
     "commander": "^11.1.0",

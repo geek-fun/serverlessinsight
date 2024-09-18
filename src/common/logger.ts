@@ -1,7 +1,7 @@
 import pino from 'pino';
 
 const logger = pino({
-  name: 'hostsless',
+  name: 'ServerlessInsight',
 });
 
 export { logger };

@@ -6,7 +6,7 @@ import { logger } from '../common/logger';
 import { getVersion } from '../common/getVersion';
 const program = new Command();
 
-program.name('hls').description('CLI for hostsless').version(getVersion());
+program.name('si').description('CLI for ServerlessInsight').version(getVersion());
 
 program
   .command('show')
