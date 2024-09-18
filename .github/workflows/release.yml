@@ -39,23 +39,23 @@ jobs:
           CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
       - name: build 🔧
         run: npm run build
-      #      - name: Generate changelog
-      #        uses: jaywcjlove/changelog-generator@main
-      #        id: changelog
-      #        with:
-      #          token: ${{ secrets.GITHUB_TOKEN }}
-      #      - name: Build Release
-      #        uses: jaywcjlove/create-tag-action@main
-      #        id: tag_release
-      #        with:
-      #          release: true
-      #          token: ${{ secrets.GITHUB_TOKEN }}
-      #          body: |
-      #            ${{ steps.changelog.outputs.compareurl }}
-      #
-      #            ${{ steps.changelog.outputs.changelog }}
+      - name: Generate changelog
+        uses: jaywcjlove/changelog-generator@main
+        id: changelog
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+      - name: Build Release
+        uses: jaywcjlove/create-tag-action@main
+        id: tag_release
+        with:
+          release: true
+          token: ${{ secrets.GITHUB_TOKEN }}
+          body: |
+            ${{ steps.changelog.outputs.compareurl }}
+
+            ${{ steps.changelog.outputs.changelog }}
       - name: Publish package on NPM 📦
-        #        if: steps.tag_release.outputs.successful
+        if: steps.tag_release.outputs.successful
         run: npm publish --provenance --access public
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
