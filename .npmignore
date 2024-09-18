@@ -1,0 +1,15 @@
+.eslintrc.js
+.prettierrc
+jest.config.js
+tsconfig.json
+
+.idea/
+.github/
+coverage/
+src/
+tests/
+docs/
+# Ignore all .d.ts files except index.d.ts
+*.d.ts
+!index.d.ts
+.DS_Store

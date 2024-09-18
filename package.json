@@ -9,7 +9,7 @@
     "si": "dist/src/commands/index.js"
   },
   "scripts": {
-    "test": "DEBUG=hostsless jest --runInBand --detectOpenHandles --coverage --coverageReporters json-summary text html lcov",
+    "test": "DEBUG=ServerlessInsight jest --runInBand --detectOpenHandles --coverage --coverageReporters json-summary text html lcov",
     "test:ci": "jest --runInBand --ci --coverage --coverageReporters json-summary text html lcov",
     "build": "tsc --build",
     "lint:fix": "eslint --fix ./",
@@ -24,6 +24,29 @@
   "bugs": {
     "url": "https://github.com/geek-fun/serverlessinsight/issues"
   },
+  "keywords": [
+    "serverless",
+    "serverless-insight",
+    "lambda",
+    "aws-lambda",
+    "azure-functions",
+    "google-cloud-functions",
+    "tencent-cloud-functions",
+    "alibaba-cloud-functions",
+    "huawei-cloud-functions",
+    "serverless-framework",
+    "serverless-management",
+    "serverless-automation",
+    "serverless-observability",
+    "serverless-tracing",
+    "serverless-offline",
+    "alibaba",
+    "tencent",
+    "azure",
+    "huawei",
+    "google",
+    "function"
+  ],
   "dependencies": {
     "commander": "^11.1.0",
     "i18n": "^0.15.1",

@@ -11,3 +11,7 @@ Link ServerlessInsight globally to use the CLI tool.
 npm run build
 npm link
 ```
+run the command then:
+```bash
+si -h
+```
