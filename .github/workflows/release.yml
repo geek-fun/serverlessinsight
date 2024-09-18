@@ -55,7 +55,7 @@ jobs:
 
             ${{ steps.changelog.outputs.changelog }}
       - name: Publish package on NPM 📦
-        if: steps.tag_release.outputs.successful
+        if: steps.tag_release.outputs.successful == 'true'
         run: npm publish --provenance --access public
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
