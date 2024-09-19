@@ -14,8 +14,8 @@ type FunctionEnvironment = {
   NODE_ENV: string;
 };
 
-type IacFunction = {
-  fc_name: string;
+export type IacFunction = {
+  name: string;
   runtime: string;
   handler: string;
   code: string;
@@ -28,7 +28,7 @@ type Functions = {
   [key: string]: IacFunction;
 };
 
-type Event = {
+export type Event = {
   type: string;
   source: string;
   function: string;

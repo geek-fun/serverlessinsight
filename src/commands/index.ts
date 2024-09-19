@@ -2,8 +2,8 @@
 
 import { Command } from 'commander';
 import { lang } from '../lang';
-import { logger } from '../common/logger';
-import { getVersion } from '../common/getVersion';
+import { logger, getVersion } from '../common';
+import { validate } from './validate';
 
 const program = new Command();
 
@@ -22,11 +22,11 @@ program
   });
 
 program
-  .command('validate')
+  .command('validate [location]')
   .description('validate serverless Iac yaml')
-  .action((str) => {
+  .action((location) => {
     logger.debug('log command info');
-    console.log(`${str} ${lang.__('hello')}`);
+    validate(location);
   });
 
 program.parse();

@@ -1,4 +1,4 @@
-import { validateYaml } from '../src/iac/iacSchema';
+import { validateYaml } from '../src/iac';
 import { readFileSync } from 'node:fs';
 import * as path from 'node:path';
 import { parse } from 'yaml';
@@ -90,7 +90,7 @@ describe('unit test for validate', () => {
           },
         },
       },
-    };
+    } as unknown as RawServerlessIac;
     expect(() => validateYaml(invalidYaml)).toThrow('Invalid yaml');
   });
 
