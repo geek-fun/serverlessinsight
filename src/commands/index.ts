@@ -4,6 +4,7 @@ import { Command } from 'commander';
 import { lang } from '../lang';
 import { logger, getVersion } from '../common';
 import { validate } from './validate';
+import { deploy } from './deploy';
 
 const program = new Command();
 
@@ -27,6 +28,14 @@ program
   .action((location) => {
     logger.debug('log command info');
     validate(location);
+  });
+
+program
+  .command('deploy [location]')
+  .description('deploy serverless Iac yaml')
+  .action((location) => {
+    logger.debug('log command info');
+    deploy(location);
   });
 
 program.parse();

@@ -21,7 +21,7 @@ functions:
     runtime: nodejs14
     handler: index.handler
     code: artifact.zip
-    memory: 128
+    memory: 512
     timeout: 10
     environment:
       NODE_ENV: production

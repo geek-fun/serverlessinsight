@@ -120,6 +120,10 @@ class IacSchemaErrors extends Error {
       type: error.keyword,
     }));
   }
+
+  public get errors() {
+    return this.schemaErrors;
+  }
 }
 
 export const validateYaml = (iacJson: RawServerlessIac) => {

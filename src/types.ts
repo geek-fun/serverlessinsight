@@ -10,18 +10,16 @@ type Stages = {
   [key: string]: Stage;
 };
 
-type FunctionEnvironment = {
-  NODE_ENV: string;
-};
-
 export type IacFunction = {
   name: string;
   runtime: string;
   handler: string;
-  code: string;
+  zip: string;
   memory: number;
   timeout: number;
-  environment: FunctionEnvironment;
+  environment: {
+    [key: string]: string;
+  };
 };
 
 type Functions = {
