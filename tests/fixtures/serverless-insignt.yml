@@ -1,0 +1,36 @@
+version: 0.0.1
+provider: aliyun
+
+vars:
+  region: cn-hangzhou
+  account_id: 1234567890
+
+stages:
+  dev:
+    region: ${vars:region}
+    account_id: ${vars:account_id}
+
+service: insight-poc
+
+tags:
+  owner: geek-fun
+
+functions:
+  insight_poc_fn:
+    name: insight-poc-fn
+    runtime: nodejs14
+    handler: index.handler
+    code: artifact.zip
+    memory: 128
+    timeout: 10
+    environment:
+      NODE_ENV: production
+
+
+events:
+  gateway_event:
+    type: API_GATEWAY
+    triggers:
+      - method: GET
+        path: /api/hello
+        backend: insight-poc-fn

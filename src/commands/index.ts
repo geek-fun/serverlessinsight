@@ -4,6 +4,7 @@ import { Command } from 'commander';
 import { lang } from '../lang';
 import { logger } from '../common/logger';
 import { getVersion } from '../common/getVersion';
+
 const program = new Command();
 
 program.name('si').description('CLI for ServerlessInsight').version(getVersion());
@@ -18,6 +19,14 @@ program
     const limit = options.first ? 1 : undefined;
     logger.debug({ limit, first: options.first, separator: options.separator }, 'log command info');
     console.log(`${str} ${options.first} ${options.separator} ${lang.__('hello')}`);
+  });
+
+program
+  .command('validate')
+  .description('validate serverless Iac yaml')
+  .action((str) => {
+    logger.debug('log command info');
+    console.log(`${str} ${lang.__('hello')}`);
   });
 
 program.parse();
