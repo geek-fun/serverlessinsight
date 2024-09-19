@@ -28,18 +28,6 @@ type Functions = {
   [key: string]: IacFunction;
 };
 
-type Gateway = {
-  type: string;
-  name: string;
-  description: string;
-  protocol: string;
-  method: string;
-};
-
-type Gateways = {
-  [key: string]: Gateway;
-};
-
 type Event = {
   type: string;
   source: string;
