@@ -2,13 +2,17 @@
 .prettierrc
 jest.config.js
 tsconfig.json
+Dockerfile
 
 .idea/
 .github/
+.husky/
 coverage/
 src/
 tests/
 docs/
+artifacts/
+scripts/
 # Ignore all .d.ts files except index.d.ts
 *.d.ts
 !index.d.ts

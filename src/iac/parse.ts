@@ -5,7 +5,7 @@ import { validateYaml } from './iacSchema';
 
 const mapToArr = (obj: Record<string, Record<string, unknown> | string>) => {
   return Object.entries(obj).map(([key, value]) =>
-    typeof value === 'string' ? { [key]: value } : { id: key, ...value },
+    typeof value === 'string' ? { [key]: value } : { key, ...value },
   );
 };
 

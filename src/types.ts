@@ -12,18 +12,15 @@ type Stages = {
 
 export type IacFunction = {
   name: string;
+  key: string;
   runtime: string;
   handler: string;
-  zip: string;
+  code: string;
   memory: number;
   timeout: number;
   environment: {
     [key: string]: string;
   };
-};
-
-type Functions = {
-  [key: string]: IacFunction;
 };
 
 export type Event = {
@@ -50,7 +47,7 @@ export type RawServerlessIac = {
   stages: Stages;
   service: string;
   tags: Tags;
-  functions: Functions;
+  functions: { [key: string]: IacFunction };
   events: Events;
 };
 
