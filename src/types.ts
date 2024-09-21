@@ -64,3 +64,13 @@ export type ServerlessIac = {
   functions: Array<IacFunction>;
   events: Array<Event>;
 };
+
+export type ActionContext = {
+  region: string;
+  accessKeyId: string;
+  accessKeySecret: string;
+  securityToken?: string;
+  iacLocation: string;
+  parameters?: Array<{ key: string; value: string }>;
+  tags?: Array<{ key: string; value: string }>;
+};

@@ -1,8 +1,7 @@
 import { parse } from 'yaml';
 import { existsSync, readFileSync } from 'node:fs';
-import { IacFunction, RawServerlessIac, ServerlessIac, Event } from '../types';
+import { Event, IacFunction, RawServerlessIac, ServerlessIac } from '../types';
 import { validateYaml } from './iacSchema';
-import path from 'node:path';
 
 const mapToArr = (obj: Record<string, Record<string, unknown> | string>) => {
   return Object.entries(obj).map(([key, value]) =>
@@ -29,12 +28,7 @@ const transformYaml = (iacJson: RawServerlessIac): ServerlessIac => {
   };
 };
 
-export const parseYaml = (location?: string): ServerlessIac => {
-  const projectRoot = path.resolve(process.cwd());
-  const yamlPath = location
-    ? path.resolve(projectRoot, location)
-    : path.resolve(projectRoot, 'serverless-insight.yml');
-
+export const parseYaml = (yamlPath: string): ServerlessIac => {
   validateExistence(yamlPath);
 
   const yamlContent = readFileSync(yamlPath, 'utf8');

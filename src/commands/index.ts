@@ -23,19 +23,21 @@ program
   });
 
 program
-  .command('validate [location]')
+  .command('validate [stackName]')
   .description('validate serverless Iac yaml')
-  .action((location) => {
+  .option('-f, --file <path>', 'specify the yaml file')
+  .action((stackName, options) => {
     logger.debug('log command info');
-    validate(location);
+    validate(options.file);
   });
 
 program
-  .command('deploy [location]')
+  .command('deploy <stackName>')
   .description('deploy serverless Iac yaml')
-  .action((location) => {
+  .option('-f, --file <path>', 'specify the yaml file')
+  .action(async (stackName, options) => {
     logger.debug('log command info');
-    deploy(location);
+    await deploy(stackName, { location: options.file });
   });
 
 program.parse();
