@@ -106,6 +106,6 @@ describe('unit test for validate', () => {
         },
       },
     };
-    expect(() => validateYaml(invalidYaml)).toThrow('Invalid yaml');
+    expect(() => validateYaml(invalidYaml as unknown as RawServerlessIac)).toThrow('Invalid yaml');
   });
 });
