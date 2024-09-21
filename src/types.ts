@@ -10,6 +10,10 @@ type Stages = {
   [key: string]: Stage;
 };
 
+export enum EventTypes {
+  API_GATEWAY = 'API_GATEWAY',
+}
+
 export type IacFunction = {
   name: string;
   key: string;
@@ -24,12 +28,14 @@ export type IacFunction = {
 };
 
 export type Event = {
-  type: string;
-  source: string;
-  function: string;
-  batch_size?: number;
-  enabled?: boolean;
-  target: string;
+  key: string;
+  name: string;
+  type: EventTypes;
+  triggers: Array<{
+    method: string;
+    path: string;
+    backend: string;
+  }>;
 };
 
 type Events = {

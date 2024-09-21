@@ -18,7 +18,7 @@ tags:
 functions:
   insight_poc_fn:
     name: insight-poc-fn
-    runtime: nodejs14
+    runtime: nodejs18
     handler: index.handler
     code: artifacts/artifact.zip
     memory: 512
@@ -30,6 +30,7 @@ functions:
 events:
   gateway_event:
     type: API_GATEWAY
+    name: insight-poc-gateway
     triggers:
       - method: GET
         path: /api/hello

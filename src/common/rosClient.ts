@@ -4,6 +4,7 @@ import ROS20190910, {
   CreateStackRequestParameters,
   CreateStackRequestTags,
   ListStacksRequest,
+  UpdateStackRequest,
 } from '@alicloud/ros20190910';
 import { Config } from '@alicloud/openapi-client';
 import { ActionContext } from '../types';
@@ -42,7 +43,7 @@ const createStack = async (stackName: string, templateBody: unknown, context: Ac
   return response.body?.stackId;
 };
 
-const updateStack = async (stackName: string, templateBody: unknown, context: ActionContext) => {
+const updateStack = async (stackId: string, templateBody: unknown, context: ActionContext) => {
   const parameters = context.parameters?.map(
     (parameter) =>
       new CreateStackRequestParameters({
@@ -51,10 +52,12 @@ const updateStack = async (stackName: string, templateBody: unknown, context: Ac
       }),
   );
 
-  const createStackRequest = new CreateStackRequest({
-    stackName,
-    templateBody,
+  const createStackRequest = new UpdateStackRequest({
+    regionId: context.region,
+    stackId,
+    templateBody: JSON.stringify(templateBody),
     parameters,
+    tags: context.tags?.map((tag) => new CreateStackRequestTags(tag)),
   });
 
   const response = await client.updateStack(createStackRequest);
@@ -93,7 +96,7 @@ export const rosStackDeploy = async (
     }
 
     printer.info(`Update stack: ${stackName} deploying... `);
-    return await updateStack(stackName, templateBody, context);
+    return await updateStack(stackInfo.stackId as string, templateBody, context);
   } else {
     // create stack
     printer.info(`Create stack: ${stackName} deploying... `);

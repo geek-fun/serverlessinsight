@@ -50,8 +50,10 @@
   ],
   "dependencies": {
     "@alicloud/openapi-client": "^0.4.11",
+    "@alicloud/ros-cdk-apigateway": "^1.2.0",
     "@alicloud/ros-cdk-core": "^1.2.0",
     "@alicloud/ros-cdk-fc": "^1.2.0",
+    "@alicloud/ros-cdk-ram": "^1.2.0",
     "@alicloud/ros20190910": "^3.4.3",
     "ajv": "^8.17.1",
     "chalk": "^4.1.2",

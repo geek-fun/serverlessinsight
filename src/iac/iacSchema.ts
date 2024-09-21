@@ -79,6 +79,7 @@ const schema = {
         '.*': {
           type: 'object',
           properties: {
+            name: { type: 'string' },
             type: { type: 'string', enum: ['API_GATEWAY'] },
             triggers: {
               type: 'array',
@@ -90,7 +91,7 @@ const schema = {
               },
             },
           },
-          required: ['type', 'triggers'],
+          required: ['name', 'type', 'triggers'],
         },
       },
     },
