@@ -8,6 +8,7 @@ export const constructActionContext = (config?: {
   accessKeySecret?: string;
   securityToken?: string;
   location?: string;
+  parameters?: { [key: string]: string };
 }): ActionContext => {
   return {
     region:
@@ -21,5 +22,6 @@ export const constructActionContext = (config?: {
         ? path.resolve(projectRoot, config?.location)
         : path.resolve(projectRoot, 'serverless-insight.yml');
     })(),
+    parameters: Object.entries(config?.parameters ?? {}).map(([key, value]) => ({ key, value })),
   };
 };

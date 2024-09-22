@@ -3,12 +3,11 @@ provider: aliyun
 
 vars:
   region: cn-hangzhou
-  account_id: 1234567890
+  testv: testVarValue
 
 stages:
   dev:
-    region: ${vars:region}
-    account_id: ${vars:account_id}
+    region: ${vars.region}
 
 service: insight-poc
 
@@ -25,6 +24,7 @@ functions:
     timeout: 10
     environment:
       NODE_ENV: production
+      TEST_VAR: ${vars.testv}
 
 
 events:

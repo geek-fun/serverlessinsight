@@ -35,9 +35,19 @@ program
   .command('deploy <stackName>')
   .description('deploy serverless Iac yaml')
   .option('-f, --file <path>', 'specify the yaml file')
+  .option(
+    '-p, --parameter <key=value>',
+    'override parameters',
+    (value, previous: { [key: string]: string }) => {
+      const [key, val] = value.split('=');
+      previous[key] = val;
+      return previous;
+    },
+    {},
+  )
   .action(async (stackName, options) => {
     logger.debug('log command info');
-    await deploy(stackName, { location: options.file });
+    await deploy(stackName, { location: options.file, parameters: options.parameter });
   });
 
 program.parse();

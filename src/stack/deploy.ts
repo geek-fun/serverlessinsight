@@ -1,4 +1,5 @@
 import * as ros from '@alicloud/ros-cdk-core';
+import { RosParameterType } from '@alicloud/ros-cdk-core';
 import * as fc from '@alicloud/ros-cdk-fc';
 import * as agw from '@alicloud/ros-cdk-apigateway';
 import * as ram from '@alicloud/ros-cdk-ram';
@@ -23,7 +24,15 @@ export class IacStack extends ros.Stack {
         return acc;
       }, {}),
     });
-    console.log('tags', iac.tags);
+
+    Object.entries(iac.vars).map(
+      ([key, value]) =>
+        new ros.RosParameter(this, key, {
+          type: RosParameterType.STRING,
+          defaultValue: value,
+        }),
+    );
+
     new ros.RosInfo(this, ros.RosInfo.description, `${iac.service} stack`);
 
     const service = new fc.RosService(
@@ -153,12 +162,8 @@ const generateStackTemplate = (stackName: string, iac: ServerlessIac, context: A
 
   const assembly = app.synth();
   const stackArtifact = assembly.getStackByName(stackName);
-  const parameters = Object.entries(stackArtifact.parameters).map(([key, value]) => ({
-    key,
-    value,
-  }));
 
-  return { template: stackArtifact.template, parameters };
+  return { template: stackArtifact.template };
 };
 
 export const deployStack = async (
@@ -166,10 +171,8 @@ export const deployStack = async (
   iac: ServerlessIac,
   context: ActionContext,
 ) => {
-  printer.info(`Deploying stack... ${JSON.stringify(iac)}`);
-
-  const { template, parameters } = generateStackTemplate(stackName, iac, context);
-  console.log('Generated ROS YAML:', JSON.stringify({ template, parameters }));
-  await rosStackDeploy(stackName, template, { ...context, parameters });
+  const { template } = generateStackTemplate(stackName, iac, context);
+  console.log('Generated ROS YAML:', JSON.stringify({ template }));
+  await rosStackDeploy(stackName, template, context);
   printer.info(`Stack deployed! 🎉`);
 };

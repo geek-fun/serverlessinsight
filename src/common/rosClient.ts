@@ -5,6 +5,7 @@ import ROS20190910, {
   CreateStackRequestTags,
   ListStacksRequest,
   UpdateStackRequest,
+  UpdateStackRequestParameters,
 } from '@alicloud/ros20190910';
 import { Config } from '@alicloud/openapi-client';
 import { ActionContext } from '../types';
@@ -46,12 +47,18 @@ const createStack = async (stackName: string, templateBody: unknown, context: Ac
 const updateStack = async (stackId: string, templateBody: unknown, context: ActionContext) => {
   const parameters = context.parameters?.map(
     (parameter) =>
-      new CreateStackRequestParameters({
+      new UpdateStackRequestParameters({
         parameterKey: Util.assertAsString(parameter.key),
-        parameterValue: Util.assertAsString(parameter.value),
+        parameterValue: Util.assertAsString(parameter.key),
       }),
   );
-
+  console.log(
+    'parameters:',
+    JSON.stringify({
+      parameters,
+      contextParam: context.parameters,
+    }),
+  );
   const createStackRequest = new UpdateStackRequest({
     regionId: context.region,
     stackId,
