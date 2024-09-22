@@ -9,6 +9,10 @@ const mapToArr = (obj: Record<string, Record<string, unknown> | string>) => {
   );
 };
 
+const mapToKvArr = (obj: Record<string, string>) => {
+  return Object.entries(obj).map(([key, value]) => ({ key, value }));
+};
+
 const validateExistence = (path: string) => {
   if (!existsSync(path)) {
     throw new Error(`File does not exist at path: ${path}`);
@@ -24,7 +28,10 @@ const transformYaml = (iacJson: RawServerlessIac): ServerlessIac => {
     stages: iacJson.stages,
     functions: mapToArr(iacJson.functions) as unknown as Array<IacFunction>,
     events: mapToArr(iacJson.events) as unknown as Array<Event>,
-    tags: mapToArr(iacJson.tags) as unknown as Array<string>,
+    tags: [
+      { key: 'iac-provider', value: 'ServerlessInsight' },
+      ...mapToKvArr(iacJson.tags),
+    ] as unknown as Array<{ key: string; value: string }>,
   };
 };
 

@@ -63,7 +63,7 @@ export type ServerlessIac = {
   vars: Vars;
   stages: Stages;
   service: string;
-  tags: Array<string>;
+  tags: Array<{ key: string; value: string }>;
   functions: Array<IacFunction>;
   events: Array<Event>;
 };

@@ -17,7 +17,13 @@ const resolveCode = (location: string): string => {
 
 export class IacStack extends ros.Stack {
   constructor(scope: ros.Construct, iac: ServerlessIac, context: ActionContext) {
-    super(scope, iac.service);
+    super(scope, iac.service, {
+      tags: iac.tags.reduce((acc: { [key: string]: string }, tag) => {
+        acc[tag.key] = tag.value;
+        return acc;
+      }, {}),
+    });
+    console.log('tags', iac.tags);
     new ros.RosInfo(this, ros.RosInfo.description, `${iac.service} stack`);
 
     const service = new fc.RosService(
@@ -25,6 +31,7 @@ export class IacStack extends ros.Stack {
       `${iac.service}-service`,
       {
         serviceName: `${iac.service}-service`,
+        tags: iac.tags,
       },
       true,
     );
@@ -95,6 +102,7 @@ export class IacStack extends ros.Stack {
         `${iac.service}_apigroup`,
         {
           groupName: `${iac.service}_apigroup`,
+          tags: iac.tags,
         },
         true,
       );
@@ -128,6 +136,7 @@ export class IacStack extends ros.Stack {
                 },
                 resultSample: 'ServerlessInsight resultSample',
                 resultType: 'JSON',
+                tags: iac.tags,
               },
               true,
             );
