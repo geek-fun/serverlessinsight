@@ -26,6 +26,7 @@ functions:
     environment:
       NODE_ENV: production
       TEST_VAR: ${vars.testv}
+      TEST_VAR_EXTRA: abcds-${vars.testv}-andyou
 
 
 events:
