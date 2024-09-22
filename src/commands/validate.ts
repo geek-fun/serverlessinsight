@@ -1,6 +1,5 @@
-import { parseYaml } from '../iac';
-import { printer } from '../common';
-import { constructActionContext } from '../common/actionContext';
+import { printer, constructActionContext } from '../common';
+import { parseYaml } from '../stack';
 
 export const validate = (location?: string) => {
   const context = constructActionContext({ location });

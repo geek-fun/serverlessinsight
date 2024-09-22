@@ -4,6 +4,7 @@ provider: aliyun
 vars:
   region: cn-hangzhou
   testv: testVarValue
+  handler: index.handler
 
 stages:
   dev:
@@ -18,7 +19,7 @@ functions:
   insight_poc_fn:
     name: insight-poc-fn
     runtime: nodejs18
-    handler: index.handler
+    handler: ${vars.handler}
     code: artifacts/artifact.zip
     memory: 512
     timeout: 10

@@ -1,6 +1,5 @@
-import { deployStack } from '../stack';
+import { deployStack, parseYaml } from '../stack';
 import { printer, constructActionContext } from '../common';
-import { parseYaml } from '../iac';
 
 export const deploy = async (
   stackName: string,
