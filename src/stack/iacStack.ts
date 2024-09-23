@@ -1,61 +1,15 @@
 import * as ros from '@alicloud/ros-cdk-core';
-import { ActionContext, EventTypes, ServerlessIac } from '../types';
 import { RosParameterType } from '@alicloud/ros-cdk-core';
+import { ActionContext, EventTypes, ServerlessIac } from '../types';
 import * as fc from '@alicloud/ros-cdk-fc';
 import * as ram from '@alicloud/ros-cdk-ram';
 import * as agw from '@alicloud/ros-cdk-apigateway';
-import path from 'node:path';
-import fs from 'node:fs';
-
-const resolveCode = (location: string): string => {
-  const filePath = path.resolve(process.cwd(), location);
-  const fileContent = fs.readFileSync(filePath);
-
-  return fileContent.toString('base64');
-};
-
-const replaceVars = <T>(value: T, stage: string): T => {
-  if (typeof value === 'string') {
-    const matchVar = value.match(/^\$\{vars\.(\w+)}$/);
-    const containsVar = value.match(/\$\{vars\.(\w+)}/);
-    const matchMap = value.match(/^\$\{stages\.(\w+)}$/);
-    const containsMap = value.match(/\$\{stages\.(\w+)}/);
-    if (matchVar?.length) {
-      return ros.Fn.ref(matchVar[1]) as T;
-    }
-    if (matchMap?.length) {
-      return ros.Fn.findInMap('stages', '', matchMap[1]) as T;
-    }
-    if (containsMap?.length && containsVar?.length) {
-      return ros.Fn.sub(
-        value.replace(/\$\{stages\.(\w+)}/g, '${$1}').replace(/\$\{vars\.(\w+)}/g, '${$1}'),
-      ) as T;
-    }
-    if (containsVar?.length) {
-      return ros.Fn.sub(value.replace(/\$\{vars\.(\w+)}/g, '${$1}')) as T;
-    }
-    if (containsMap?.length) {
-      return ros.Fn.sub(value.replace(/\$\{stages\.(\w+)}/g, '${$1}')) as T;
-    }
-    return value;
-  }
-
-  if (Array.isArray(value)) {
-    return value.map((item) => replaceVars(item, stage)) as T;
-  }
-
-  if (typeof value === 'object' && value !== null) {
-    return Object.fromEntries(
-      Object.entries(value).map(([key, val]) => [key, replaceVars(val, stage)]),
-    ) as T;
-  }
-
-  return value;
-};
+import { replaceVars, resolveCode } from '../common';
 
 export class IacStack extends ros.Stack {
   constructor(scope: ros.Construct, iac: ServerlessIac, context: ActionContext) {
     super(scope, iac.service, {
+      stackName: context.stackName,
       tags: iac.tags.reduce((acc: { [key: string]: string }, tag) => {
         acc[tag.key] = replaceVars(tag.value, context.stage);
         return acc;
@@ -70,7 +24,7 @@ export class IacStack extends ros.Stack {
           defaultValue: value,
         }),
     );
-    console.log('stages:', iac.stages);
+
     // Define Mappings
     new ros.RosMapping(this, 'stages', { mapping: replaceVars(iac.stages, context.stage) });
 
@@ -111,8 +65,8 @@ export class IacStack extends ros.Stack {
       func.addDependsOn(service);
     });
 
-    const apiGateway = iac.events.find((event) => event.type === EventTypes.API_GATEWAY);
-    if (apiGateway) {
+    const apiGateway = iac.events?.filter((event) => event.type === EventTypes.API_GATEWAY);
+    if (apiGateway?.length) {
       const gatewayAccessRole = new ram.RosRole(
         this,
         replaceVars(`${iac.service}_role`, context.stage),
@@ -161,43 +115,41 @@ export class IacStack extends ros.Stack {
         true,
       );
 
-      iac.events
-        .filter((event) => event.type === EventTypes.API_GATEWAY)
-        .forEach((event) => {
-          event.triggers.forEach((trigger) => {
-            const key = `${trigger.method}_${trigger.path}`.toLowerCase().replace(/\//g, '_');
+      apiGateway.forEach((event) => {
+        event.triggers.forEach((trigger) => {
+          const key = `${trigger.method}_${trigger.path}`.toLowerCase().replace(/\//g, '_');
 
-            const api = new agw.RosApi(
-              this,
-              replaceVars(`${event.key}_api_${key}`, context.stage),
-              {
-                apiName: replaceVars(`${event.name}_api_${key}`, context.stage),
-                groupId: apiGatewayGroup.attrGroupId,
-                visibility: 'PRIVATE',
-                requestConfig: {
-                  requestProtocol: 'HTTP',
-                  requestHttpMethod: replaceVars(trigger.method, context.stage),
-                  requestPath: replaceVars(trigger.path, context.stage),
-                  requestMode: 'PASSTHROUGH',
-                },
-                serviceConfig: {
-                  serviceProtocol: 'FunctionCompute',
-                  functionComputeConfig: {
-                    fcRegionId: context.region,
-                    serviceName: service.serviceName,
-                    functionName: trigger.backend,
-                    roleArn: gatewayAccessRole.attrArn,
-                  },
-                },
-                resultSample: 'ServerlessInsight resultSample',
-                resultType: 'JSON',
-                tags: replaceVars(iac.tags, context.stage),
+          const api = new agw.RosApi(
+            this,
+            replaceVars(`${event.key}_api_${key}`, context.stage),
+            {
+              apiName: replaceVars(`${event.name}_api_${key}`, context.stage),
+              groupId: apiGatewayGroup.attrGroupId,
+              visibility: 'PRIVATE',
+              requestConfig: {
+                requestProtocol: 'HTTP',
+                requestHttpMethod: replaceVars(trigger.method, context.stage),
+                requestPath: replaceVars(trigger.path, context.stage),
+                requestMode: 'PASSTHROUGH',
               },
-              true,
-            );
-            api.addDependsOn(apiGatewayGroup);
-          });
+              serviceConfig: {
+                serviceProtocol: 'FunctionCompute',
+                functionComputeConfig: {
+                  fcRegionId: context.region,
+                  serviceName: service.serviceName,
+                  functionName: trigger.backend,
+                  roleArn: gatewayAccessRole.attrArn,
+                },
+              },
+              resultSample: 'ServerlessInsight resultSample',
+              resultType: 'JSON',
+              tags: replaceVars(iac.tags, context.stage),
+            },
+            true,
+          );
+          api.addDependsOn(apiGatewayGroup);
         });
+      });
     }
   }
 }

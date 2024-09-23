@@ -65,11 +65,12 @@ export type ServerlessIac = {
   service: string;
   tags: Array<{ key: string; value: string }>;
   functions: Array<IacFunction>;
-  events: Array<Event>;
+  events?: Array<Event>;
 };
 
 export type ActionContext = {
   stage: string;
+  stackName: string;
   region: string;
   accessKeyId: string;
   accessKeySecret: string;

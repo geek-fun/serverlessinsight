@@ -52,13 +52,7 @@ const updateStack = async (stackId: string, templateBody: unknown, context: Acti
         parameterValue: Util.assertAsString(parameter.key),
       }),
   );
-  console.log(
-    'parameters:',
-    JSON.stringify({
-      parameters,
-      contextParam: context.parameters,
-    }),
-  );
+
   const createStackRequest = new UpdateStackRequest({
     regionId: context.region,
     stackId,
