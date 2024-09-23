@@ -96,20 +96,49 @@ const getStackByName = async (stackName: string, region: string) => {
   }
 };
 
-const getStackActionResult = async (stackId: string, region: string) => {
+const getStackActionResult = async (
+  stackId: string,
+  region: string,
+): Promise<{ stackName: string; stackId: string } | undefined> => {
   return new Promise((resolve, reject) => {
+    const startTime = Date.now();
     const interval = setInterval(async () => {
       try {
-        const result = await client.getStack(
-          new GetStackRequest({
-            regionId: region,
-            stackId,
-          }),
-        );
-        logger.info(`stack status: ${result.body?.stackStatus}`);
-        if (result.body?.stackStatus?.indexOf('IN_PROGRESS') < 0) {
+        const result = await client.getStack(new GetStackRequest({ regionId: region, stackId }));
+        const status = result.body?.status ?? '';
+
+        logger.info(`stack status: ${status}`);
+
+        if (
+          [
+            'CREATE_COMPLETE',
+            'UPDATE_COMPLETE',
+            'DELETE_COMPLETE',
+            'CHECK_COMPLETE',
+            'IMPORT_CREATE_COMPLETE',
+            'IMPORT_UPDATE_COMPLETE',
+          ].includes(status)
+        ) {
           clearInterval(interval);
-          resolve(result.body);
+          resolve(result.body as { stackName: string; stackId: string });
+        } else if (
+          [
+            'CREATE_ROLLBACK_FAILED',
+            'CREATE_ROLLBACK_COMPLETE',
+            'ROLLBACK_FAILED',
+            'ROLLBACK_COMPLETE',
+            'IMPORT_CREATE_ROLLBACK_FAILED',
+            'IMPORT_CREATE_ROLLBACK_COMPLETE',
+            'IMPORT_UPDATE_ROLLBACK_FAILED',
+            'IMPORT_UPDATE_ROLLBACK_COMPLETE',
+          ].includes(status)
+        ) {
+          clearInterval(interval);
+          reject(new Error(`Stack operation failed with status: ${status}`));
+        } else if (Date.now() - startTime > 3600000) {
+          // 1 hour in milliseconds
+          clearInterval(interval);
+          reject(new Error('Stack operation did not finish within 1 hour'));
         }
       } catch (error) {
         clearInterval(interval);
@@ -128,19 +157,18 @@ export const rosStackDeploy = async (
   if (stackInfo) {
     const { Status: stackStatus } = stackInfo;
     if (stackStatus?.indexOf('IN_PROGRESS') >= 0) {
-      logger.error(`fail to update stack, because stack status is ${stackStatus}`);
       throw new Error(`fail to update stack, because stack status is ${stackStatus}`);
     }
 
     logger.info(`Update stack: ${stackName} deploying... `);
     const stack = await updateStack(stackInfo.stackId as string, templateBody, context);
 
-    logger.info(`updateStack: ${JSON.stringify(stack)}`);
+    logger.info(`stackUpdate success! stackName:${stack?.stackName}, stackId:${stack?.stackId}`);
   } else {
     // create stack
     logger.info(`Create stack: ${stackName} deploying... `);
     const stack = await createStack(stackName, templateBody, context);
 
-    logger.info(`createStack: ${JSON.stringify(stack)}`);
+    logger.info(`createStack success! stackName:${stack?.stackName}, stackId:${stack?.stackId}`);
   }
 };
