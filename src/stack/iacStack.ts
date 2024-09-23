@@ -14,26 +14,39 @@ const resolveCode = (location: string): string => {
   return fileContent.toString('base64');
 };
 
-const replaceVars = <T>(value: T): T => {
+const replaceVars = <T>(value: T, stage: string): T => {
   if (typeof value === 'string') {
     const matchVar = value.match(/^\$\{vars\.(\w+)}$/);
     const containsVar = value.match(/\$\{vars\.(\w+)}/);
+    const matchMap = value.match(/^\$\{stages\.(\w+)}$/);
+    const containsMap = value.match(/\$\{stages\.(\w+)}/);
     if (matchVar?.length) {
       return ros.Fn.ref(matchVar[1]) as T;
     }
+    if (matchMap?.length) {
+      return ros.Fn.findInMap('stages', '', matchMap[1]) as T;
+    }
+    if (containsMap?.length && containsVar?.length) {
+      return ros.Fn.sub(
+        value.replace(/\$\{stages\.(\w+)}/g, '${$1}').replace(/\$\{vars\.(\w+)}/g, '${$1}'),
+      ) as T;
+    }
     if (containsVar?.length) {
       return ros.Fn.sub(value.replace(/\$\{vars\.(\w+)}/g, '${$1}')) as T;
+    }
+    if (containsMap?.length) {
+      return ros.Fn.sub(value.replace(/\$\{stages\.(\w+)}/g, '${$1}')) as T;
     }
     return value;
   }
 
   if (Array.isArray(value)) {
-    return value.map(replaceVars) as T;
+    return value.map((item) => replaceVars(item, stage)) as T;
   }
 
   if (typeof value === 'object' && value !== null) {
     return Object.fromEntries(
-      Object.entries(value).map(([key, val]) => [key, replaceVars(val)]),
+      Object.entries(value).map(([key, val]) => [key, replaceVars(val, stage)]),
     ) as T;
   }
 
@@ -44,11 +57,12 @@ export class IacStack extends ros.Stack {
   constructor(scope: ros.Construct, iac: ServerlessIac, context: ActionContext) {
     super(scope, iac.service, {
       tags: iac.tags.reduce((acc: { [key: string]: string }, tag) => {
-        acc[tag.key] = replaceVars(tag.value);
+        acc[tag.key] = replaceVars(tag.value, context.stage);
         return acc;
       }, {}),
     });
 
+    // Define Parameters
     Object.entries(iac.vars).map(
       ([key, value]) =>
         new ros.RosParameter(this, key, {
@@ -56,15 +70,22 @@ export class IacStack extends ros.Stack {
           defaultValue: value,
         }),
     );
+    console.log('stages:', iac.stages);
+    // Define Mappings
+    new ros.RosMapping(this, 'stages', { mapping: replaceVars(iac.stages, context.stage) });
 
-    new ros.RosInfo(this, ros.RosInfo.description, replaceVars(`${iac.service} stack`));
+    new ros.RosInfo(
+      this,
+      ros.RosInfo.description,
+      replaceVars(`${iac.service} stack`, context.stage),
+    );
 
     const service = new fc.RosService(
       this,
-      replaceVars(`${iac.service}-service`),
+      replaceVars(`${iac.service}-service`, context.stage),
       {
-        serviceName: replaceVars(`${iac.service}-service`),
-        tags: replaceVars(iac.tags),
+        serviceName: replaceVars(`${iac.service}-service`, context.stage),
+        tags: replaceVars(iac.tags, context.stage),
       },
       true,
     );
@@ -74,13 +95,13 @@ export class IacStack extends ros.Stack {
         this,
         fnc.key,
         {
-          functionName: replaceVars(fnc.name),
-          serviceName: replaceVars(service.serviceName),
-          handler: replaceVars(fnc.handler),
-          runtime: replaceVars(fnc.runtime),
-          memorySize: replaceVars(fnc.memory),
-          timeout: replaceVars(fnc.timeout),
-          environmentVariables: replaceVars(fnc.environment),
+          functionName: replaceVars(fnc.name, context.stage),
+          serviceName: replaceVars(service.serviceName, context.stage),
+          handler: replaceVars(fnc.handler, context.stage),
+          runtime: replaceVars(fnc.runtime, context.stage),
+          memorySize: replaceVars(fnc.memory, context.stage),
+          timeout: replaceVars(fnc.timeout, context.stage),
+          environmentVariables: replaceVars(fnc.environment, context.stage),
           code: {
             zipFile: resolveCode(fnc.code),
           },
@@ -94,10 +115,10 @@ export class IacStack extends ros.Stack {
     if (apiGateway) {
       const gatewayAccessRole = new ram.RosRole(
         this,
-        replaceVars(`${iac.service}_role`),
+        replaceVars(`${iac.service}_role`, context.stage),
         {
-          roleName: replaceVars(`${iac.service}-gateway-access-role`),
-          description: replaceVars(`${iac.service} role`),
+          roleName: replaceVars(`${iac.service}-gateway-access-role`, context.stage),
+          description: replaceVars(`${iac.service} role`, context.stage),
           assumeRolePolicyDocument: {
             version: '1',
             statement: [
@@ -112,7 +133,7 @@ export class IacStack extends ros.Stack {
           },
           policies: [
             {
-              policyName: replaceVars(`${iac.service}-policy`),
+              policyName: replaceVars(`${iac.service}-policy`, context.stage),
               policyDocument: {
                 version: '1',
                 statement: [
@@ -132,10 +153,10 @@ export class IacStack extends ros.Stack {
 
       const apiGatewayGroup = new agw.RosGroup(
         this,
-        replaceVars(`${iac.service}_apigroup`),
+        replaceVars(`${iac.service}_apigroup`, context.stage),
         {
-          groupName: replaceVars(`${iac.service}_apigroup`),
-          tags: replaceVars(iac.tags),
+          groupName: replaceVars(`${iac.service}_apigroup`, context.stage),
+          tags: replaceVars(iac.tags, context.stage),
         },
         true,
       );
@@ -148,15 +169,15 @@ export class IacStack extends ros.Stack {
 
             const api = new agw.RosApi(
               this,
-              replaceVars(`${event.key}_api_${key}`),
+              replaceVars(`${event.key}_api_${key}`, context.stage),
               {
-                apiName: replaceVars(`${event.name}_api_${key}`),
+                apiName: replaceVars(`${event.name}_api_${key}`, context.stage),
                 groupId: apiGatewayGroup.attrGroupId,
                 visibility: 'PRIVATE',
                 requestConfig: {
                   requestProtocol: 'HTTP',
-                  requestHttpMethod: replaceVars(trigger.method),
-                  requestPath: replaceVars(trigger.path),
+                  requestHttpMethod: replaceVars(trigger.method, context.stage),
+                  requestPath: replaceVars(trigger.path, context.stage),
                   requestMode: 'PASSTHROUGH',
                 },
                 serviceConfig: {
@@ -170,7 +191,7 @@ export class IacStack extends ros.Stack {
                 },
                 resultSample: 'ServerlessInsight resultSample',
                 resultType: 'JSON',
-                tags: replaceVars(iac.tags),
+                tags: replaceVars(iac.tags, context.stage),
               },
               true,
             );

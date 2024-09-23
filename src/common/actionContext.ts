@@ -9,8 +9,10 @@ export const constructActionContext = (config?: {
   securityToken?: string;
   location?: string;
   parameters?: { [key: string]: string };
+  stage?: string;
 }): ActionContext => {
   return {
+    stage: config?.stage ?? 'default',
     region:
       config?.region ?? process.env.ROS_REGION_ID ?? process.env.ALIYUN_REGION ?? 'cn-hangzhou',
     accessKeyId: config?.accessKeyId ?? (process.env.ALIYUN_ACCESS_KEY_ID as string),

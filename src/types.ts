@@ -69,6 +69,7 @@ export type ServerlessIac = {
 };
 
 export type ActionContext = {
+  stage: string;
   region: string;
   accessKeyId: string;
   accessKeySecret: string;
