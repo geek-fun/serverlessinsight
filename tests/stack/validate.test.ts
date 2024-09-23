@@ -106,7 +106,15 @@ describe('unit test for validate', () => {
           target: 'hello',
         },
       },
-    };
-    expect(() => validateYaml(invalidYaml as unknown as RawServerlessIac)).toThrow('Invalid yaml');
+    } as unknown as RawServerlessIac;
+    expect(() => validateYaml(invalidYaml)).toThrow('Invalid yaml');
+  });
+
+  it('should throw error when functions are not specified', () => {
+    const invalidYaml = {
+      ...jsonIac,
+      functions: null,
+    } as unknown as RawServerlessIac;
+    expect(() => validateYaml(invalidYaml)).toThrow('Invalid yaml');
   });
 });
