@@ -3,6 +3,7 @@ import ROS20190910, {
   CreateStackRequest,
   CreateStackRequestParameters,
   CreateStackRequestTags,
+  GetStackRequest,
   ListStacksRequest,
   UpdateStackRequest,
   UpdateStackRequestParameters,
@@ -10,6 +11,7 @@ import ROS20190910, {
 import { Config } from '@alicloud/openapi-client';
 import { ActionContext } from '../types';
 import { logger } from './logger';
+import { lang } from '../lang';
 
 const client = new ROS20190910(
   new Config({
@@ -31,17 +33,17 @@ const createStack = async (stackName: string, templateBody: unknown, context: Ac
 
   const createStackRequest = new CreateStackRequest({
     regionId: context.region,
+    sync: true,
     stackName,
     templateBody: JSON.stringify(templateBody),
     parameters,
     tags: context.tags?.map((tag) => new CreateStackRequestTags(tag)),
   });
 
-  console.log('createStackRequest:', createStackRequest);
-
   const response = await client.createStack(createStackRequest);
-  console.log(`创建中，资源栈ID:${response.body?.stackId}`);
-  return response.body?.stackId;
+  logger.info(`创建中，资源栈ID:${response.body?.stackId}`);
+  // wait for stack create complete
+  return await getStackActionResult(response.body?.stackId || '', context.region);
 };
 
 const updateStack = async (stackId: string, templateBody: unknown, context: ActionContext) => {
@@ -53,17 +55,28 @@ const updateStack = async (stackId: string, templateBody: unknown, context: Acti
       }),
   );
 
-  const createStackRequest = new UpdateStackRequest({
+  const updateStackRequest = new UpdateStackRequest({
     regionId: context.region,
     stackId,
     templateBody: JSON.stringify(templateBody),
     parameters,
     tags: context.tags?.map((tag) => new CreateStackRequestTags(tag)),
   });
-
-  const response = await client.updateStack(createStackRequest);
-  console.log(`更新中，资源栈ID:${response.body?.stackId}`);
-  return response.body?.stackId;
+  try {
+    const response = await client.updateStack(updateStackRequest);
+    logger.info(`更新中，资源栈ID:${response.body?.stackId}`);
+    // wait for stack update complete
+    return await getStackActionResult(response.body?.stackId || '', context.region);
+  } catch (err) {
+    const { Message: message, statusCode } =
+      (err as { data: { Message: string; statusCode: number } })?.data || {};
+    if (statusCode === 400 && message.includes('Update the completely same stack')) {
+      logger.warn(`${lang.__('UPDATE_COMPLETELY_SAME_STACK')}`);
+      return null;
+    } else {
+      throw err;
+    }
+  }
 };
 
 const getStackByName = async (stackName: string, region: string) => {
@@ -83,6 +96,29 @@ const getStackByName = async (stackName: string, region: string) => {
   }
 };
 
+const getStackActionResult = async (stackId: string, region: string) => {
+  return new Promise((resolve, reject) => {
+    const interval = setInterval(async () => {
+      try {
+        const result = await client.getStack(
+          new GetStackRequest({
+            regionId: region,
+            stackId,
+          }),
+        );
+        logger.info(`stack status: ${result.body?.stackStatus}`);
+        if (result.body?.stackStatus?.indexOf('IN_PROGRESS') < 0) {
+          clearInterval(interval);
+          resolve(result.body);
+        }
+      } catch (error) {
+        clearInterval(interval);
+        reject(error);
+      }
+    }, 5000); // 5 seconds interval
+  });
+};
+
 export const rosStackDeploy = async (
   stackName: string,
   templateBody: unknown,
@@ -97,10 +133,14 @@ export const rosStackDeploy = async (
     }
 
     logger.info(`Update stack: ${stackName} deploying... `);
-    return await updateStack(stackInfo.stackId as string, templateBody, context);
+    const stack = await updateStack(stackInfo.stackId as string, templateBody, context);
+
+    logger.info(`updateStack: ${JSON.stringify(stack)}`);
   } else {
     // create stack
     logger.info(`Create stack: ${stackName} deploying... `);
-    return await createStack(stackName, templateBody, context);
+    const stack = await createStack(stackName, templateBody, context);
+
+    logger.info(`createStack: ${JSON.stringify(stack)}`);
   }
 };
