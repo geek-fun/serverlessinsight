@@ -1,5 +1,6 @@
 import { RawServerlessIac } from '../types';
 import Ajv, { ErrorObject } from 'ajv';
+import { logger } from '../common';
 
 const ajv = new Ajv({ allowUnionTypes: true, strict: false, allErrors: true });
 
@@ -130,7 +131,10 @@ class IacSchemaErrors extends Error {
 export const validateYaml = (iacJson: RawServerlessIac) => {
   const validate = ajv.compile(schema);
   const valid = validate(iacJson);
-  if (!valid) throw new IacSchemaErrors(validate.errors as Array<ErrorObject>);
+  if (!valid) {
+    logger.debug(`Invalid yaml: ${JSON.stringify(validate.errors)}`);
+    throw new IacSchemaErrors(validate.errors as Array<ErrorObject>);
+  }
 
   return true;
 };

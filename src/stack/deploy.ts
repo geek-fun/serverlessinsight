@@ -1,6 +1,6 @@
 import * as ros from '@alicloud/ros-cdk-core';
 import { ActionContext, ServerlessIac } from '../types';
-import { printer, rosStackDeploy } from '../common';
+import { logger, rosStackDeploy } from '../common';
 import { IacStack } from './iacStack';
 
 const generateStackTemplate = (stackName: string, iac: ServerlessIac, context: ActionContext) => {
@@ -19,7 +19,7 @@ export const deployStack = async (
   context: ActionContext,
 ) => {
   const { template } = generateStackTemplate(stackName, iac, context);
-  console.log('Generated ROS YAML:', JSON.stringify({ template }));
+
   await rosStackDeploy(stackName, template, context);
-  printer.info(`Stack deployed! 🎉`);
+  logger.info(`Stack deployed! 🎉`);
 };

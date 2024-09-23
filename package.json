@@ -60,6 +60,7 @@
     "commander": "^11.1.0",
     "i18n": "^0.15.1",
     "pino": "^8.17.2",
+    "pino-pretty": "^11.2.2",
     "yaml": "^2.5.1"
   },
   "devDependencies": {

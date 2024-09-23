@@ -9,7 +9,7 @@ import ROS20190910, {
 } from '@alicloud/ros20190910';
 import { Config } from '@alicloud/openapi-client';
 import { ActionContext } from '../types';
-import { printer } from './printer';
+import { logger } from './logger';
 
 const client = new ROS20190910(
   new Config({
@@ -98,15 +98,15 @@ export const rosStackDeploy = async (
   if (stackInfo) {
     const { Status: stackStatus } = stackInfo;
     if (stackStatus?.indexOf('IN_PROGRESS') >= 0) {
-      printer.error(`fail to update stack, because stack status is ${stackStatus}`);
+      logger.error(`fail to update stack, because stack status is ${stackStatus}`);
       throw new Error(`fail to update stack, because stack status is ${stackStatus}`);
     }
 
-    printer.info(`Update stack: ${stackName} deploying... `);
+    logger.info(`Update stack: ${stackName} deploying... `);
     return await updateStack(stackInfo.stackId as string, templateBody, context);
   } else {
     // create stack
-    printer.info(`Create stack: ${stackName} deploying... `);
+    logger.info(`Create stack: ${stackName} deploying... `);
     return await createStack(stackName, templateBody, context);
   }
 };

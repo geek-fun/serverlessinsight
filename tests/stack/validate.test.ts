@@ -1,8 +1,8 @@
 import { readFileSync } from 'node:fs';
 import * as path from 'node:path';
 import { parse } from 'yaml';
-import { RawServerlessIac } from '../src/types';
-import { validateYaml } from '../src/stack';
+import { validateYaml } from '../../src/stack';
+import { RawServerlessIac } from '../../src/types';
 
 const jsonIac = parse(
   readFileSync(path.resolve(__dirname, './fixtures/serverless-insignt.yml'), 'utf8'),

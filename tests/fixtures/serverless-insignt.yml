@@ -9,6 +9,8 @@ vars:
 stages:
   dev:
     region: ${vars.region}
+  prod:
+    region: cn-shanghai
 
 service: insight-poc
 
