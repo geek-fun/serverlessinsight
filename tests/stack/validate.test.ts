@@ -5,7 +5,7 @@ import { validateYaml } from '../../src/stack';
 import { RawServerlessIac } from '../../src/types';
 
 const jsonIac = parse(
-  readFileSync(path.resolve(__dirname, '../fixtures/serverless-insignt.yml'), 'utf8'),
+  readFileSync(path.resolve(__dirname, '../fixtures/serverless-insight.yml'), 'utf8'),
 ) as RawServerlessIac;
 
 describe('unit test for validate', () => {
