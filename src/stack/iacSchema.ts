@@ -91,6 +91,21 @@ const schema = {
                 required: ['method', 'path', 'backend'],
               },
             },
+            custom_domain: {
+              type: 'object',
+              properties: {
+                domain_name: { type: 'string' },
+                certificate_name: { type: 'string' },
+                certificate_body: { type: 'string' },
+                certificate_private_key: { type: 'string' },
+              },
+              required: [
+                'domain_name',
+                'certificate_name',
+                'certificate_body',
+                'certificate_private_key',
+              ],
+            },
           },
           required: ['name', 'type', 'triggers'],
         },

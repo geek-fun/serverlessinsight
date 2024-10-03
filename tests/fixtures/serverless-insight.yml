@@ -30,6 +30,16 @@ functions:
       TEST_VAR: ${vars.testv}
       TEST_VAR_EXTRA: abcds-${vars.testv}-andyou
 
+databases:
+  insight_poc_db:
+    name: insight-poc-db
+    type: RDS
+    region: ${vars.region}
+    instance_class: rds.mysql.t5.xlarge
+    storage_size: 20
+    username: root
+    password: 123456
+    database: insight_poc_db
 
 events:
   gateway_event:
@@ -39,3 +49,8 @@ events:
       - method: GET
         path: /api/hello
         backend: insight-poc-fn
+    custom_domain:
+      domain_name: test.com
+      certificate_name: test
+      certificate_private_key: test
+      certificate_body: test

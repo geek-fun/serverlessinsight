@@ -1,7 +1,7 @@
 import * as ros from '@alicloud/ros-cdk-core';
 import { RosParameterType } from '@alicloud/ros-cdk-core';
 import { ActionContext, EventTypes, ServerlessIac } from '../types';
-import * as fc from '@alicloud/ros-cdk-fc';
+import * as fc from '@alicloud/ros-cdk-fc3';
 import * as ram from '@alicloud/ros-cdk-ram';
 import * as agw from '@alicloud/ros-cdk-apigateway';
 import { replaceVars, resolveCode } from '../common';
@@ -34,23 +34,12 @@ export class IacStack extends ros.Stack {
       replaceVars(`${iac.service} stack`, context.stage),
     );
 
-    const service = new fc.RosService(
-      this,
-      replaceVars(`${iac.service}-service`, context.stage),
-      {
-        serviceName: replaceVars(`${iac.service}-service`, context.stage),
-        tags: replaceVars(iac.tags, context.stage),
-      },
-      true,
-    );
-
     iac.functions.forEach((fnc) => {
-      const func = new fc.RosFunction(
+      new fc.RosFunction(
         this,
         fnc.key,
         {
           functionName: replaceVars(fnc.name, context.stage),
-          serviceName: replaceVars(service.serviceName, context.stage),
           handler: replaceVars(fnc.handler, context.stage),
           runtime: replaceVars(fnc.runtime, context.stage),
           memorySize: replaceVars(fnc.memory, context.stage),
@@ -62,7 +51,6 @@ export class IacStack extends ros.Stack {
         },
         true,
       );
-      func.addDependsOn(service);
     });
 
     const apiGateway = iac.events?.filter((event) => event.type === EventTypes.API_GATEWAY);
@@ -115,6 +103,19 @@ export class IacStack extends ros.Stack {
         true,
       );
 
+      // new agw.RosCustomDomain(
+      //   this,
+      //   'customDomain',
+      //   {
+      //     domainName: 'example.com',
+      //     certificateName: 'example.com',
+      //     certificateBody: 'example.com',
+      //     certificatePrivateKey: 'example.com',
+      //     groupId: apiGatewayGroup.attrGroupId,
+      //   },
+      //   true,
+      // );
+
       apiGateway.forEach((event) => {
         event.triggers.forEach((trigger) => {
           const key = `${trigger.method}_${trigger.path}`.toLowerCase().replace(/\//g, '_');
@@ -136,9 +137,9 @@ export class IacStack extends ros.Stack {
                 serviceProtocol: 'FunctionCompute',
                 functionComputeConfig: {
                   fcRegionId: context.region,
-                  serviceName: service.serviceName,
                   functionName: trigger.backend,
                   roleArn: gatewayAccessRole.attrArn,
+                  // fcVersion: '3.0',
                 },
               },
               resultSample: 'ServerlessInsight resultSample',

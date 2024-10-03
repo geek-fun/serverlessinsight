@@ -3,14 +3,20 @@ import { existsSync, readFileSync } from 'node:fs';
 import { Event, IacFunction, RawServerlessIac, ServerlessIac } from '../types';
 import { validateYaml } from './iacSchema';
 
-const mapToArr = (obj: Record<string, Record<string, unknown> | string>) => {
-  return Object.entries(obj).map(([key, value]) =>
+const mapToArr = (obj: Record<string, Record<string, unknown> | string | null | undefined>) => {
+  if (!obj) {
+    return [];
+  }
+  return Object.entries(obj)?.map(([key, value]) =>
     typeof value === 'string' ? { [key]: value } : { key, ...value },
   );
 };
 
-const mapToKvArr = (obj: Record<string, string>) => {
-  return Object.entries(obj).map(([key, value]) => ({ key, value }));
+const mapToKvArr = (obj: Record<string, string> | null | undefined) => {
+  if (!obj) {
+    return [];
+  }
+  return Object.entries(obj)?.map(([key, value]) => ({ key, value }));
 };
 
 const validateExistence = (path: string) => {
