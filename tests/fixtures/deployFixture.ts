@@ -208,6 +208,82 @@ export const oneFcRos = {
   },
 };
 
+export const oneFcIacWithStage = {
+  service: 'my-demo-service',
+  version: '0.0.1',
+  provider: 'aliyun',
+  vars: {
+    region: 'cn-hangzhou',
+    account_id: 1234567890,
+  },
+  stages: {
+    default: {
+      node_env: 'default',
+    },
+    dev: {
+      region: '${vars.region}',
+      account_id: '${vars.account_id}',
+      node_env: 'develop',
+    },
+  },
+  functions: [
+    {
+      key: 'hello_fn',
+      name: 'hello_fn',
+      runtime: 'nodejs18',
+      handler: 'index.handler',
+      code: 'artifact.zip',
+      memory: 128,
+      timeout: 10,
+      environment: {
+        NODE_ENV: '${stages.node_env}',
+      },
+    },
+  ],
+  tags: [
+    {
+      key: 'owner',
+      value: 'geek-fun',
+    },
+  ],
+} as ServerlessIac;
+
+export const oneFcWithStageRos = {
+  Description: 'my-demo-service stack',
+  Mappings: {
+    stages: {
+      default: {
+        node_env: 'default',
+      },
+      dev: {
+        account_id: { Ref: 'account_id' },
+        region: { Ref: 'region' },
+        node_env: 'develop',
+      },
+    },
+  },
+  Metadata: { 'ALIYUN::ROS::Interface': { TemplateTags: ['Create by ROS CDK'] } },
+  Parameters: {
+    account_id: { Default: 1234567890, Type: 'String' },
+    region: { Default: 'cn-hangzhou', Type: 'String' },
+  },
+  ROSTemplateFormatVersion: '2015-09-01',
+  Resources: {
+    hello_fn: {
+      Properties: {
+        Code: { ZipFile: 'resolved-code' },
+        EnvironmentVariables: { NODE_ENV: { 'Fn::FindInMap': ['stages', 'default', 'node_env'] } },
+        FunctionName: 'hello_fn',
+        Handler: 'index.handler',
+        MemorySize: 128,
+        Runtime: 'nodejs18',
+        Timeout: 10,
+      },
+      Type: 'ALIYUN::FC3::Function',
+    },
+  },
+};
+
 export const defaultContext = {
   accessKeyId: 'access key id',
   accessKeySecret: 'access key secret',

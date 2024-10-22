@@ -26,15 +26,17 @@ program
   .command('validate [stackName]')
   .description('validate serverless Iac yaml')
   .option('-f, --file <path>', 'specify the yaml file')
-  .action((stackName, options) => {
+  .option('-s, --stage <stage>', 'specify the stage')
+  .action((stackName, { file, stage }) => {
     logger.debug('log command info');
-    validate(options.file);
+    validate(file, stage);
   });
 
 program
   .command('deploy <stackName>')
   .description('deploy serverless Iac yaml')
   .option('-f, --file <path>', 'specify the yaml file')
+  .option('-s, --stage <stage>', 'specify the stage')
   .option(
     '-p, --parameter <key=value>',
     'override parameters',
@@ -45,9 +47,9 @@ program
     },
     {},
   )
-  .action(async (stackName, options) => {
+  .action(async (stackName, { file, parameter, stage }) => {
     logger.debug('log command info');
-    await deploy(stackName, { location: options.file, parameters: options.parameter });
+    await deploy(stackName, { location: file, parameters: parameter, stage });
   });
 
 program.parse();

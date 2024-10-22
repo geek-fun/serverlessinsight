@@ -2,10 +2,13 @@ import { deployStack } from '../../src/stack';
 import { ActionContext } from '../../src/types';
 import {
   oneFcIac,
+  oneFcIacWithStage,
   oneFcOneGatewayIac,
   oneFcOneGatewayRos,
   oneFcRos,
+  oneFcWithStageRos,
 } from '../fixtures/deployFixture';
+import { cloneDeep, set } from 'lodash';
 
 const mockedRosStackDeploy = jest.fn();
 const mockedResolveCode = jest.fn();
@@ -39,5 +42,37 @@ describe('Unit tests for stack deployment', () => {
 
     expect(mockedRosStackDeploy).toHaveBeenCalledTimes(1);
     expect(mockedRosStackDeploy).toHaveBeenCalledWith(stackName, oneFcRos, { stackName });
+  });
+
+  it('should reference to default stage mappings when --stage not provided', async () => {
+    const options = { stackName: 'my-demo-stack-fc-with-stage-1', stage: 'default' };
+    mockedRosStackDeploy.mockResolvedValueOnce(options.stackName);
+
+    await deployStack(options.stackName, oneFcIacWithStage, options as ActionContext);
+
+    expect(mockedRosStackDeploy).toHaveBeenCalledTimes(1);
+    expect(mockedRosStackDeploy).toHaveBeenCalledWith(
+      options.stackName,
+      oneFcWithStageRos,
+      options,
+    );
+  });
+
+  it('should reference to specified stage mappings when --stage is provided', async () => {
+    const options = { stackName: 'my-demo-stack-fc-with-stage-1', stage: 'dev' };
+    mockedRosStackDeploy.mockResolvedValueOnce(options.stackName);
+
+    await deployStack(options.stackName, oneFcIacWithStage, options as ActionContext);
+
+    expect(mockedRosStackDeploy).toHaveBeenCalledTimes(1);
+    expect(mockedRosStackDeploy).toHaveBeenCalledWith(
+      options.stackName,
+      set(
+        cloneDeep(oneFcWithStageRos),
+        'Resources.hello_fn.Properties.EnvironmentVariables.NODE_ENV.Fn::FindInMap',
+        ['stages', 'dev', 'node_env'],
+      ),
+      options,
+    );
   });
 });

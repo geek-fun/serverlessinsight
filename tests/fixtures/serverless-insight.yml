@@ -7,8 +7,12 @@ vars:
   handler: index.handler
 
 stages:
+  default:
+    region: ${vars.region}
+    node_env: default
   dev:
     region: ${vars.region}
+    node_env: development
   prod:
     region: cn-shanghai
 
@@ -26,7 +30,7 @@ functions:
     memory: 512
     timeout: 10
     environment:
-      NODE_ENV: production
+      NODE_ENV: ${stages.node_env}
       TEST_VAR: ${vars.testv}
       TEST_VAR_EXTRA: abcds-${vars.testv}-andyou
 

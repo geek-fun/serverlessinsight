@@ -21,7 +21,7 @@ export const replaceReference = <T>(value: T, stage: string): T => {
       return ros.Fn.ref(matchVar[1]) as T;
     }
     if (matchMap?.length) {
-      return ros.Fn.findInMap('stages', '', matchMap[1]) as T;
+      return ros.Fn.findInMap('stages', stage, matchMap[1]) as T;
     }
 
     if (matchFn?.length) {

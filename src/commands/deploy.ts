@@ -3,7 +3,7 @@ import { constructActionContext, logger } from '../common';
 
 export const deploy = async (
   stackName: string,
-  options: { location: string; parameters: { [key: string]: string } },
+  options: { location: string; parameters: { [key: string]: string }; stage: string | undefined },
 ) => {
   const context = constructActionContext({ ...options, stackName });
   logger.info('Validating yaml...');
