@@ -10,8 +10,8 @@ export const oneFcOneGatewayIac = {
   },
   stages: {
     dev: {
-      region: '${vars:region}',
-      account_id: '${vars:account_id}',
+      region: '${vars.region}',
+      account_id: '${vars.account_id}',
     },
   },
   functions: [
@@ -37,7 +37,7 @@ export const oneFcOneGatewayIac = {
         {
           method: 'GET',
           path: '/api/hello',
-          backend: 'demo_fn_gateway',
+          backend: '${functions.hello_fn}',
         },
       ],
     },
@@ -53,7 +53,12 @@ export const oneFcOneGatewayIac = {
 export const oneFcOneGatewayRos = {
   Description: 'my-demo-service stack',
   Mappings: {
-    stages: { dev: { account_id: '${vars:account_id}', region: '${vars:region}' } },
+    stages: {
+      dev: {
+        account_id: { Ref: 'account_id' },
+        region: { Ref: 'region' },
+      },
+    },
   },
   Metadata: { 'ALIYUN::ROS::Interface': { TemplateTags: ['Create by ROS CDK'] } },
   Parameters: {
@@ -76,7 +81,7 @@ export const oneFcOneGatewayRos = {
         ResultType: 'JSON',
         ServiceConfig: {
           FunctionComputeConfig: {
-            FunctionName: 'demo_fn_gateway',
+            FunctionName: { 'Fn::GetAtt': ['hello_fn', 'FunctionName'] },
             RoleArn: { 'Fn::GetAtt': ['my-demo-service_role', 'Arn'] },
             FcVersion: '3.0',
           },
@@ -145,8 +150,8 @@ export const oneFcIac = {
   },
   stages: {
     dev: {
-      region: '${vars:region}',
-      account_id: '${vars:account_id}',
+      region: '${vars.region}',
+      account_id: '${vars.account_id}',
     },
   },
   functions: [
@@ -174,7 +179,12 @@ export const oneFcIac = {
 export const oneFcRos = {
   Description: 'my-demo-service stack',
   Mappings: {
-    stages: { dev: { account_id: '${vars:account_id}', region: '${vars:region}' } },
+    stages: {
+      dev: {
+        account_id: { Ref: 'account_id' },
+        region: { Ref: 'region' },
+      },
+    },
   },
   Metadata: { 'ALIYUN::ROS::Interface': { TemplateTags: ['Create by ROS CDK'] } },
   Parameters: {

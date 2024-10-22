@@ -4,14 +4,14 @@ import { ActionContext, EventTypes, ServerlessIac } from '../types';
 import * as fc from '@alicloud/ros-cdk-fc3';
 import * as ram from '@alicloud/ros-cdk-ram';
 import * as agw from '@alicloud/ros-cdk-apigateway';
-import { replaceVars, resolveCode } from '../common';
+import { replaceReference, resolveCode } from '../common';
 
 export class IacStack extends ros.Stack {
   constructor(scope: ros.Construct, iac: ServerlessIac, context: ActionContext) {
     super(scope, iac.service, {
       stackName: context.stackName,
       tags: iac.tags.reduce((acc: { [key: string]: string }, tag) => {
-        acc[tag.key] = replaceVars(tag.value, context.stage);
+        acc[tag.key] = replaceReference(tag.value, context.stage);
         return acc;
       }, {}),
     });
@@ -26,12 +26,12 @@ export class IacStack extends ros.Stack {
     );
 
     // Define Mappings
-    new ros.RosMapping(this, 'stages', { mapping: replaceVars(iac.stages, context.stage) });
+    new ros.RosMapping(this, 'stages', { mapping: replaceReference(iac.stages, context.stage) });
 
     new ros.RosInfo(
       this,
       ros.RosInfo.description,
-      replaceVars(`${iac.service} stack`, context.stage),
+      replaceReference(`${iac.service} stack`, context.stage),
     );
 
     iac.functions.forEach((fnc) => {
@@ -39,12 +39,12 @@ export class IacStack extends ros.Stack {
         this,
         fnc.key,
         {
-          functionName: replaceVars(fnc.name, context.stage),
-          handler: replaceVars(fnc.handler, context.stage),
-          runtime: replaceVars(fnc.runtime, context.stage),
-          memorySize: replaceVars(fnc.memory, context.stage),
-          timeout: replaceVars(fnc.timeout, context.stage),
-          environmentVariables: replaceVars(fnc.environment, context.stage),
+          functionName: replaceReference(fnc.name, context.stage),
+          handler: replaceReference(fnc.handler, context.stage),
+          runtime: replaceReference(fnc.runtime, context.stage),
+          memorySize: replaceReference(fnc.memory, context.stage),
+          timeout: replaceReference(fnc.timeout, context.stage),
+          environmentVariables: replaceReference(fnc.environment, context.stage),
           code: {
             zipFile: resolveCode(fnc.code),
           },
@@ -57,10 +57,10 @@ export class IacStack extends ros.Stack {
     if (apiGateway?.length) {
       const gatewayAccessRole = new ram.RosRole(
         this,
-        replaceVars(`${iac.service}_role`, context.stage),
+        replaceReference(`${iac.service}_role`, context.stage),
         {
-          roleName: replaceVars(`${iac.service}-gateway-access-role`, context.stage),
-          description: replaceVars(`${iac.service} role`, context.stage),
+          roleName: replaceReference(`${iac.service}-gateway-access-role`, context.stage),
+          description: replaceReference(`${iac.service} role`, context.stage),
           assumeRolePolicyDocument: {
             version: '1',
             statement: [
@@ -75,7 +75,7 @@ export class IacStack extends ros.Stack {
           },
           policies: [
             {
-              policyName: replaceVars(`${iac.service}-policy`, context.stage),
+              policyName: replaceReference(`${iac.service}-policy`, context.stage),
               policyDocument: {
                 version: '1',
                 statement: [
@@ -95,10 +95,10 @@ export class IacStack extends ros.Stack {
 
       const apiGatewayGroup = new agw.RosGroup(
         this,
-        replaceVars(`${iac.service}_apigroup`, context.stage),
+        replaceReference(`${iac.service}_apigroup`, context.stage),
         {
-          groupName: replaceVars(`${iac.service}_apigroup`, context.stage),
-          tags: replaceVars(iac.tags, context.stage),
+          groupName: replaceReference(`${iac.service}_apigroup`, context.stage),
+          tags: replaceReference(iac.tags, context.stage),
         },
         true,
       );
@@ -122,29 +122,29 @@ export class IacStack extends ros.Stack {
 
           const api = new agw.RosApi(
             this,
-            replaceVars(`${event.key}_api_${key}`, context.stage),
+            replaceReference(`${event.key}_api_${key}`, context.stage),
             {
-              apiName: replaceVars(`${event.name}_api_${key}`, context.stage),
+              apiName: replaceReference(`${event.name}_api_${key}`, context.stage),
               groupId: apiGatewayGroup.attrGroupId,
               visibility: 'PRIVATE',
               requestConfig: {
                 requestProtocol: 'HTTP',
-                requestHttpMethod: replaceVars(trigger.method, context.stage),
-                requestPath: replaceVars(trigger.path, context.stage),
+                requestHttpMethod: replaceReference(trigger.method, context.stage),
+                requestPath: replaceReference(trigger.path, context.stage),
                 requestMode: 'PASSTHROUGH',
               },
               serviceConfig: {
                 serviceProtocol: 'FunctionCompute',
                 functionComputeConfig: {
                   fcRegionId: context.region,
-                  functionName: trigger.backend,
+                  functionName: replaceReference(trigger.backend, trigger.backend),
                   roleArn: gatewayAccessRole.attrArn,
                   fcVersion: '3.0',
                 },
               },
               resultSample: 'ServerlessInsight resultSample',
               resultType: 'JSON',
-              tags: replaceVars(iac.tags, context.stage),
+              tags: replaceReference(iac.tags, context.stage),
             },
             true,
           );

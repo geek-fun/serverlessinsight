@@ -48,7 +48,7 @@ events:
     triggers:
       - method: GET
         path: /api/hello
-        backend: insight-poc-fn
+        backend: ${functions.insight_poc_fn}
 #    custom_domain:
 #      domain_name: test.com
 #      certificate_name: test

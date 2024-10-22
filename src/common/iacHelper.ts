@@ -9,17 +9,23 @@ export const resolveCode = (location: string): string => {
   return fileContent.toString('base64');
 };
 
-export const replaceVars = <T>(value: T, stage: string): T => {
+export const replaceReference = <T>(value: T, stage: string): T => {
   if (typeof value === 'string') {
     const matchVar = value.match(/^\$\{vars\.(\w+)}$/);
     const containsVar = value.match(/\$\{vars\.(\w+)}/);
     const matchMap = value.match(/^\$\{stages\.(\w+)}$/);
     const containsMap = value.match(/\$\{stages\.(\w+)}/);
+    const matchFn = value.match(/^\$\{functions\.(\w+(\.\w+)?)}$/);
+
     if (matchVar?.length) {
       return ros.Fn.ref(matchVar[1]) as T;
     }
     if (matchMap?.length) {
       return ros.Fn.findInMap('stages', '', matchMap[1]) as T;
+    }
+
+    if (matchFn?.length) {
+      return ros.Fn.getAtt(matchFn[1], 'FunctionName') as T;
     }
     if (containsMap?.length && containsVar?.length) {
       return ros.Fn.sub(
@@ -36,12 +42,12 @@ export const replaceVars = <T>(value: T, stage: string): T => {
   }
 
   if (Array.isArray(value)) {
-    return value.map((item) => replaceVars(item, stage)) as T;
+    return value.map((item) => replaceReference(item, stage)) as T;
   }
 
   if (typeof value === 'object' && value !== null) {
     return Object.fromEntries(
-      Object.entries(value).map(([key, val]) => [key, replaceVars(val, stage)]),
+      Object.entries(value).map(([key, val]) => [key, replaceReference(val, stage)]),
     ) as T;
   }
 
