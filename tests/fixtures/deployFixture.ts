@@ -78,7 +78,7 @@ export const oneFcOneGatewayRos = {
           FunctionComputeConfig: {
             FunctionName: 'demo_fn_gateway',
             RoleArn: { 'Fn::GetAtt': ['my-demo-service_role', 'Arn'] },
-            ServiceName: 'my-demo-service-service',
+            FcVersion: '3.0',
           },
           ServiceProtocol: 'FunctionCompute',
         },
@@ -95,17 +95,9 @@ export const oneFcOneGatewayRos = {
         Handler: 'index.handler',
         MemorySize: 128,
         Runtime: 'nodejs18',
-        ServiceName: 'my-demo-service-service',
         Timeout: 10,
       },
-      Type: 'ALIYUN::FC::Function',
-    },
-    'my-demo-service-service': {
-      Properties: {
-        ServiceName: 'my-demo-service-service',
-        Tags: [{ Key: 'owner', Value: 'geek-fun' }],
-      },
-      Type: 'ALIYUN::FC::Service',
+      Type: 'ALIYUN::FC3::Function',
     },
     'my-demo-service_apigroup': {
       Properties: {
@@ -199,17 +191,9 @@ export const oneFcRos = {
         Handler: 'index.handler',
         MemorySize: 128,
         Runtime: 'nodejs18',
-        ServiceName: 'my-demo-service-service',
         Timeout: 10,
       },
-      Type: 'ALIYUN::FC::Function',
-    },
-    'my-demo-service-service': {
-      Properties: {
-        ServiceName: 'my-demo-service-service',
-        Tags: [{ Key: 'owner', Value: 'geek-fun' }],
-      },
-      Type: 'ALIYUN::FC::Service',
+      Type: 'ALIYUN::FC3::Function',
     },
   },
 };

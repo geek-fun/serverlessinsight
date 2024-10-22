@@ -139,7 +139,7 @@ export class IacStack extends ros.Stack {
                   fcRegionId: context.region,
                   functionName: trigger.backend,
                   roleArn: gatewayAccessRole.attrArn,
-                  // fcVersion: '3.0',
+                  fcVersion: '3.0',
                 },
               },
               resultSample: 'ServerlessInsight resultSample',
