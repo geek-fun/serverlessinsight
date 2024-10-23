@@ -1,12 +1,16 @@
 import { deployStack } from '../../src/stack';
 import { ActionContext } from '../../src/types';
 import {
+  minimumIac,
+  minimumRos,
   oneFcIac,
   oneFcIacWithStage,
   oneFcOneGatewayIac,
   oneFcOneGatewayRos,
   oneFcRos,
   oneFcWithStageRos,
+  referredServiceIac,
+  referredServiceRos,
 } from '../fixtures/deployFixture';
 import { cloneDeep, set } from 'lodash';
 
@@ -32,6 +36,16 @@ describe('Unit tests for stack deployment', () => {
 
     expect(mockedRosStackDeploy).toHaveBeenCalledTimes(1);
     expect(mockedRosStackDeploy).toHaveBeenCalledWith(stackName, oneFcOneGatewayRos, { stackName });
+  });
+
+  it('should deploy generated stack when minimum fields provided', async () => {
+    const stackName = 'my-demo-minimum-stack';
+    mockedRosStackDeploy.mockResolvedValueOnce(stackName);
+
+    await deployStack(stackName, minimumIac, { stackName } as ActionContext);
+
+    expect(mockedRosStackDeploy).toHaveBeenCalledTimes(1);
+    expect(mockedRosStackDeploy).toHaveBeenCalledWith(stackName, minimumRos, { stackName });
   });
 
   it('should deploy generated stack when only one FC specified', async () => {
@@ -72,6 +86,19 @@ describe('Unit tests for stack deployment', () => {
         'Resources.hello_fn.Properties.EnvironmentVariables.NODE_ENV.Fn::FindInMap',
         ['stages', 'dev', 'node_env'],
       ),
+      options,
+    );
+  });
+  it('should evaluate service name as pure string when it reference ${stage}', async () => {
+    const options = { stackName: 'my-demo-stack-fc-with-stage-1', stage: 'dev' };
+    mockedRosStackDeploy.mockResolvedValueOnce(options.stackName);
+
+    await deployStack(options.stackName, referredServiceIac, options as ActionContext);
+
+    expect(mockedRosStackDeploy).toHaveBeenCalledTimes(1);
+    expect(mockedRosStackDeploy).toHaveBeenCalledWith(
+      options.stackName,
+      referredServiceRos,
       options,
     );
   });

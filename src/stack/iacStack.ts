@@ -4,34 +4,41 @@ import { ActionContext, EventTypes, ServerlessIac } from '../types';
 import * as fc from '@alicloud/ros-cdk-fc3';
 import * as ram from '@alicloud/ros-cdk-ram';
 import * as agw from '@alicloud/ros-cdk-apigateway';
-import { replaceReference, resolveCode } from '../common';
+import { evalRefValue, replaceReference, resolveCode } from '../common';
 
 export class IacStack extends ros.Stack {
+  private service: string;
+
   constructor(scope: ros.Construct, iac: ServerlessIac, context: ActionContext) {
-    super(scope, iac.service, {
+    super(scope, evalRefValue(iac.service, iac, context.stage), {
       stackName: context.stackName,
-      tags: iac.tags.reduce((acc: { [key: string]: string }, tag) => {
+      tags: iac.tags?.reduce((acc: { [key: string]: string }, tag) => {
         acc[tag.key] = replaceReference(tag.value, context.stage);
         return acc;
       }, {}),
     });
+    this.service = evalRefValue(iac.service, iac, context.stage);
 
     // Define Parameters
-    Object.entries(iac.vars).map(
-      ([key, value]) =>
-        new ros.RosParameter(this, key, {
-          type: RosParameterType.STRING,
-          defaultValue: value,
-        }),
-    );
+    if (iac.vars) {
+      Object.entries(iac.vars).map(
+        ([key, value]) =>
+          new ros.RosParameter(this, key, {
+            type: RosParameterType.STRING,
+            defaultValue: value,
+          }),
+      );
+    }
 
     // Define Mappings
-    new ros.RosMapping(this, 'stages', { mapping: replaceReference(iac.stages, context.stage) });
+    if (iac.stages) {
+      new ros.RosMapping(this, 'stages', { mapping: replaceReference(iac.stages, context.stage) });
+    }
 
     new ros.RosInfo(
       this,
       ros.RosInfo.description,
-      replaceReference(`${iac.service} stack`, context.stage),
+      replaceReference(`${this.service} stack`, context.stage),
     );
 
     iac.functions.forEach((fnc) => {
@@ -57,10 +64,10 @@ export class IacStack extends ros.Stack {
     if (apiGateway?.length) {
       const gatewayAccessRole = new ram.RosRole(
         this,
-        replaceReference(`${iac.service}_role`, context.stage),
+        replaceReference(`${this.service}_role`, context.stage),
         {
-          roleName: replaceReference(`${iac.service}-gateway-access-role`, context.stage),
-          description: replaceReference(`${iac.service} role`, context.stage),
+          roleName: replaceReference(`${this.service}-gateway-access-role`, context.stage),
+          description: replaceReference(`${this.service} role`, context.stage),
           assumeRolePolicyDocument: {
             version: '1',
             statement: [
@@ -75,7 +82,7 @@ export class IacStack extends ros.Stack {
           },
           policies: [
             {
-              policyName: replaceReference(`${iac.service}-policy`, context.stage),
+              policyName: replaceReference(`${this.service}-policy`, context.stage),
               policyDocument: {
                 version: '1',
                 statement: [
@@ -95,9 +102,9 @@ export class IacStack extends ros.Stack {
 
       const apiGatewayGroup = new agw.RosGroup(
         this,
-        replaceReference(`${iac.service}_apigroup`, context.stage),
+        replaceReference(`${this.service}_apigroup`, context.stage),
         {
-          groupName: replaceReference(`${iac.service}_apigroup`, context.stage),
+          groupName: replaceReference(`${this.service}_apigroup`, context.stage),
           tags: replaceReference(iac.tags, context.stage),
         },
         true,
@@ -137,7 +144,7 @@ export class IacStack extends ros.Stack {
                 serviceProtocol: 'FunctionCompute',
                 functionComputeConfig: {
                   fcRegionId: context.region,
-                  functionName: replaceReference(trigger.backend, trigger.backend),
+                  functionName: replaceReference(trigger.backend, context.stage),
                   roleArn: gatewayAccessRole.attrArn,
                   fcVersion: '3.0',
                 },

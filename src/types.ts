@@ -60,10 +60,10 @@ export type RawServerlessIac = {
 export type ServerlessIac = {
   version: string;
   provider: string;
-  vars: Vars;
-  stages: Stages;
   service: string;
-  tags: Array<{ key: string; value: string }>;
+  vars?: Vars;
+  stages?: Stages;
+  tags?: Array<{ key: string; value: string }>;
   functions: Array<IacFunction>;
   events?: Array<Event>;
 };

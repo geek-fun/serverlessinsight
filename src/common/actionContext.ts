@@ -24,7 +24,10 @@ export const constructActionContext = (config?: {
       const projectRoot = path.resolve(process.cwd());
       return config?.location
         ? path.resolve(projectRoot, config?.location)
-        : path.resolve(projectRoot, 'serverless-insight.yml');
+        : path.resolve(projectRoot, 'serverlessinsight.yml') ||
+            path.resolve(projectRoot, 'serverlessInsight.yml') ||
+            path.resolve(projectRoot, 'ServerlessInsight.yml') ||
+            path.resolve(projectRoot, 'serverless-insight.yml');
     })(),
     parameters: Object.entries(config?.parameters ?? {}).map(([key, value]) => ({ key, value })),
   };

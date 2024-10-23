@@ -1,6 +1,7 @@
 import path from 'node:path';
 import fs from 'node:fs';
 import * as ros from '@alicloud/ros-cdk-core';
+import { ServerlessIac } from '../types';
 
 export const resolveCode = (location: string): string => {
   const filePath = path.resolve(process.cwd(), location);
@@ -52,4 +53,10 @@ export const replaceReference = <T>(value: T, stage: string): T => {
   }
 
   return value;
+};
+
+export const evalRefValue = (value: string, iac: ServerlessIac, stage: string): string => {
+  const containsStage = value.match(/\$\{stage}/);
+
+  return containsStage ? value.replace(/\$\{stage}/g, stage) : value;
 };

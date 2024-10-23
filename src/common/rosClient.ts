@@ -64,7 +64,7 @@ const updateStack = async (stackId: string, templateBody: unknown, context: Acti
   });
   try {
     const response = await client.updateStack(updateStackRequest);
-    logger.info(`更新中，资源栈ID:${response.body?.stackId}`);
+    logger.info(`更新中，资源栈ID: ${response.body?.stackId}`);
     // wait for stack update complete
     return await getStackActionResult(response.body?.stackId || '', context.region);
   } catch (err) {
