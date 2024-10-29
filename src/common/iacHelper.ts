@@ -1,7 +1,7 @@
 import path from 'node:path';
 import fs from 'node:fs';
 import * as ros from '@alicloud/ros-cdk-core';
-import { ServerlessIac } from '../types';
+import { ActionContext } from '../types';
 
 export const resolveCode = (location: string): string => {
   const filePath = path.resolve(process.cwd(), location);
@@ -10,19 +10,28 @@ export const resolveCode = (location: string): string => {
   return fileContent.toString('base64');
 };
 
-export const replaceReference = <T>(value: T, stage: string): T => {
+const evalCtx = (value: string, ctx: ActionContext): string => {
+  const containsStage = value.match(/\$\{ctx.\w+}/);
+
+  return containsStage ? value.replace(/\$\{ctx.stage}/g, ctx.stage) : value;
+};
+
+export const replaceReference = <T>(value: T, ctx: ActionContext): T => {
   if (typeof value === 'string') {
     const matchVar = value.match(/^\$\{vars\.(\w+)}$/);
     const containsVar = value.match(/\$\{vars\.(\w+)}/);
     const matchMap = value.match(/^\$\{stages\.(\w+)}$/);
     const containsMap = value.match(/\$\{stages\.(\w+)}/);
     const matchFn = value.match(/^\$\{functions\.(\w+(\.\w+)?)}$/);
+    if (value.match(/\$\{ctx.\w+}/)) {
+      return evalCtx(value, ctx) as T;
+    }
 
     if (matchVar?.length) {
       return ros.Fn.ref(matchVar[1]) as T;
     }
     if (matchMap?.length) {
-      return ros.Fn.findInMap('stages', stage, matchMap[1]) as T;
+      return ros.Fn.findInMap('stages', ctx.stage, matchMap[1]) as T;
     }
 
     if (matchFn?.length) {
@@ -43,20 +52,14 @@ export const replaceReference = <T>(value: T, stage: string): T => {
   }
 
   if (Array.isArray(value)) {
-    return value.map((item) => replaceReference(item, stage)) as T;
+    return value.map((item) => replaceReference(item, ctx)) as T;
   }
 
   if (typeof value === 'object' && value !== null) {
     return Object.fromEntries(
-      Object.entries(value).map(([key, val]) => [key, replaceReference(val, stage)]),
+      Object.entries(value).map(([key, val]) => [key, replaceReference(val, ctx)]),
     ) as T;
   }
 
   return value;
-};
-
-export const evalRefValue = (value: string, iac: ServerlessIac, stage: string): string => {
-  const containsStage = value.match(/\$\{stage}/);
-
-  return containsStage ? value.replace(/\$\{stage}/g, stage) : value;
 };

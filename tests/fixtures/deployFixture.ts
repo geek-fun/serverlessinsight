@@ -143,7 +143,7 @@ export const oneFcOneGatewayRos = {
 export const referredServiceIac = set(
   cloneDeep(oneFcOneGatewayIac),
   'service',
-  'my-demo-service-${stage}',
+  'my-demo-service-${ctx.stage}',
 );
 
 export const referredServiceRos = {

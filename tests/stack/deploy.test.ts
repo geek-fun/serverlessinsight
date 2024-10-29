@@ -89,7 +89,7 @@ describe('Unit tests for stack deployment', () => {
       options,
     );
   });
-  it('should evaluate service name as pure string when it reference ${stage}', async () => {
+  it('should evaluate service name as pure string when it reference ${ctx.stage}', async () => {
     const options = { stackName: 'my-demo-stack-fc-with-stage-1', stage: 'dev' };
     mockedRosStackDeploy.mockResolvedValueOnce(options.stackName);
 
