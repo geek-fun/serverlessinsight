@@ -62,7 +62,7 @@
     "lodash": "^4.17.21",
     "pino": "^9.4.0",
     "pino-pretty": "^11.2.2",
-    "yaml": "^2.5.1"
+    "yaml": "^2.6.0"
   },
   "devDependencies": {
     "@types/i18n": "^0.13.12",
