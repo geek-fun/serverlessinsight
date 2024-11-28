@@ -9,6 +9,11 @@ export const resolveCode = (location: string): string => {
 
   return fileContent.toString('base64');
 };
+export const readCodeSize = (location: string): number => {
+  const filePath = path.resolve(process.cwd(), location);
+  const stats = fs.statSync(filePath);
+  return stats.size;
+};
 
 const evalCtx = (value: string, ctx: ActionContext): string => {
   const containsStage = value.match(/\$\{ctx.\w+}/);

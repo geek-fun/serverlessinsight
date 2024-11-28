@@ -4,7 +4,8 @@ import { ActionContext, EventTypes, ServerlessIac } from '../types';
 import * as fc from '@alicloud/ros-cdk-fc3';
 import * as ram from '@alicloud/ros-cdk-ram';
 import * as agw from '@alicloud/ros-cdk-apigateway';
-import { replaceReference, resolveCode } from '../common';
+import * as oss from '@alicloud/ros-cdk-oss';
+import { readCodeSize, replaceReference, resolveCode } from '../common';
 
 export class IacStack extends ros.Stack {
   private readonly service: string;
@@ -41,7 +42,29 @@ export class IacStack extends ros.Stack {
       replaceReference(`${this.service} stack`, context),
     );
 
+    const codeSize = iac.functions.find(({ code }) => readCodeSize(code) > 15 * 1024 * 1024);
+    if (codeSize) {
+      // creat oss to store code
+      new oss.Bucket(this, replaceReference(`${this.service}_code_object_store`, context), {
+        bucketName: replaceReference(`${this.service}-code-object-store`, context),
+        serverSideEncryptionConfiguration: { sseAlgorithm: 'KMS' },
+      });
+    }
+
     iac.functions.forEach((fnc) => {
+      if (codeSize && readCodeSize(fnc.code) > 15 * 1024 * 1024) {
+        // upload code to oss
+        new oss.RosBucketObject(
+          this,
+          replaceReference(`${this.service}_code_object`, context),
+          {
+            bucket: replaceReference(`${this.service}-code-object-store`, context),
+            objectName: replaceReference(fnc.code, context),
+            source: resolveCode(fnc.code),
+          },
+          true,
+        );
+      }
       new fc.RosFunction(
         this,
         fnc.key,
