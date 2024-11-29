@@ -52,4 +52,13 @@ program
     await deploy(stackName, { location: file, parameters: parameter, stage });
   });
 
+// localStack commands
+program
+  .command('local [command]')
+  .description('localstack commands')
+  .action(() => {
+    logger.debug('log command info');
+    console.log('localstack commands');
+  });
+
 program.parse();
