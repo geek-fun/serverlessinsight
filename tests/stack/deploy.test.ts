@@ -1,6 +1,7 @@
 import { deployStack } from '../../src/stack';
 import { ActionContext } from '../../src/types';
 import {
+  largeCodeRos,
   minimumIac,
   minimumRos,
   oneFcIac,
@@ -24,8 +25,11 @@ jest.mock('../../src/common', () => ({
 
 describe('Unit tests for stack deployment', () => {
   beforeEach(() => {
-    mockedRosStackDeploy.mockRestore();
     mockedResolveCode.mockReturnValueOnce('resolved-code');
+  });
+  afterEach(() => {
+    mockedRosStackDeploy.mockRestore();
+    mockedResolveCode.mockRestore();
   });
 
   it('should deploy generated stack when iac is valid', async () => {
@@ -101,5 +105,23 @@ describe('Unit tests for stack deployment', () => {
       referredServiceRos,
       options,
     );
+  });
+
+  it('should create bucket and store code artifact to bucket when code size > 15MB', () => {
+    const stackName = 'my-large-code-stack';
+    mockedRosStackDeploy.mockResolvedValueOnce(stackName);
+
+    deployStack(
+      stackName,
+      set(
+        cloneDeep(oneFcOneGatewayIac),
+        'functions[0].code',
+        'tests/fixtures/artifacts/large-artifact.zip',
+      ),
+      { stackName } as ActionContext,
+    );
+
+    expect(mockedResolveCode).toHaveBeenCalledTimes(1);
+    expect(mockedRosStackDeploy).toHaveBeenCalledWith(stackName, largeCodeRos, { stackName });
   });
 });
