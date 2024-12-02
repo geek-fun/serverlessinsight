@@ -53,6 +53,8 @@
     "@alicloud/ros-cdk-apigateway": "^1.4.0",
     "@alicloud/ros-cdk-core": "^1.4.0",
     "@alicloud/ros-cdk-fc3": "^1.4.0",
+    "@alicloud/ros-cdk-oss": "^1.4.0",
+    "@alicloud/ros-cdk-ossdeployment": "^1.4.0",
     "@alicloud/ros-cdk-ram": "^1.4.0",
     "@alicloud/ros20190910": "^3.5.0",
     "ajv": "^8.17.1",
@@ -67,8 +69,8 @@
   "devDependencies": {
     "@types/i18n": "^0.13.12",
     "@types/jest": "^29.5.13",
-    "@types/node": "^22.7.4",
     "@types/lodash": "^4.17.12",
+    "@types/node": "^22.7.4",
     "@typescript-eslint/eslint-plugin": "^8.8.0",
     "@typescript-eslint/parser": "^8.8.0",
     "eslint": "^8.57.1",

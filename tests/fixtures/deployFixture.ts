@@ -21,7 +21,7 @@ export const oneFcOneGatewayIac = {
       name: 'hello_fn',
       runtime: 'nodejs18',
       handler: 'index.handler',
-      code: 'artifact.zip',
+      code: 'tests/fixtures/artifacts/artifact.zip',
       memory: 128,
       timeout: 10,
       environment: {
@@ -247,7 +247,7 @@ export const minimumIac = {
       name: 'hello_fn',
       runtime: 'nodejs18',
       handler: 'index.handler',
-      code: 'artifact.zip',
+      code: 'tests/fixtures/artifacts/artifact.zip',
     },
   ],
 } as ServerlessIac;
@@ -289,7 +289,7 @@ export const oneFcIac = {
       name: 'hello_fn',
       runtime: 'nodejs18',
       handler: 'index.handler',
-      code: 'artifact.zip',
+      code: 'tests/fixtures/artifacts/artifact.zip',
       memory: 128,
       timeout: 10,
       environment: {
@@ -361,7 +361,7 @@ export const oneFcIacWithStage = {
       name: 'hello_fn',
       runtime: 'nodejs18',
       handler: 'index.handler',
-      code: 'artifact.zip',
+      code: 'tests/fixtures/artifacts/artifact.zip',
       memory: 128,
       timeout: 10,
       environment: {
@@ -412,7 +412,331 @@ export const oneFcWithStageRos = {
     },
   },
 };
-
+export const largeCodeRos = {
+  Description: 'my-demo-service stack',
+  Mappings: {
+    stages: {
+      dev: {
+        account_id: {
+          Ref: 'account_id',
+        },
+        region: {
+          Ref: 'region',
+        },
+      },
+    },
+  },
+  Metadata: {
+    'ALIYUN::ROS::Interface': {
+      TemplateTags: ['Create by ROS CDK'],
+    },
+  },
+  Parameters: {
+    account_id: {
+      Default: 1234567890,
+      Type: 'String',
+    },
+    region: {
+      Default: 'cn-hangzhou',
+      Type: 'String',
+    },
+  },
+  ROSTemplateFormatVersion: '2015-09-01',
+  Resources: {
+    'FCFunctionFormy-demo-service_artifacts_code_deployment': {
+      Properties: {
+        CAPort: 9000,
+        Code: {
+          OssBucketName: {
+            'Fn::Sub': expect.stringContaining('assets-${ALIYUN::Region}'),
+          },
+          OssObjectName: 'c6a72ed7e7e83f01a000b75885758088fa050298a31a1e95d37ac88f08e42315.zip',
+        },
+        FunctionName: {
+          'Fn::Join': [
+            '-',
+            [
+              'ros-cdk',
+              {
+                'Fn::Select': [
+                  0,
+                  {
+                    'Fn::Split': [
+                      '-',
+                      {
+                        Ref: 'ALIYUN::StackId',
+                      },
+                    ],
+                  },
+                ],
+              },
+            ],
+          ],
+        },
+        Handler: 'index.handler',
+        MemorySize: 128,
+        Runtime: 'python3.10',
+        ServiceName: {
+          'Fn::GetAtt': ['FCServiceFormy-demo-service_artifacts_code_deployment', 'ServiceName'],
+        },
+        Timeout: 300,
+      },
+      Type: 'ALIYUN::FC::Function',
+    },
+    'FCRoleFormy-demo-service_artifacts_code_deployment': {
+      Properties: {
+        AssumeRolePolicyDocument: {
+          Statement: [
+            {
+              Action: 'sts:AssumeRole',
+              Effect: 'Allow',
+              Principal: {
+                Service: ['fc.aliyuncs.com'],
+              },
+            },
+          ],
+          Version: '1',
+        },
+        DeletionForce: false,
+        IgnoreExisting: false,
+        Policies: [
+          {
+            PolicyDocument: {
+              Statement: [
+                {
+                  Action: ['oss:*'],
+                  Effect: 'Allow',
+                  Resource: ['*'],
+                },
+              ],
+              Version: '1',
+            },
+            PolicyName: 'AliyunOSSFullAccess',
+          },
+          {
+            PolicyDocument: {
+              Statement: [
+                {
+                  Action: ['log:*'],
+                  Effect: 'Allow',
+                  Resource: ['*'],
+                },
+                {
+                  Action: ['ram:CreateServiceLinkedRole'],
+                  Condition: {
+                    StringEquals: {
+                      'ram:ServiceName': [
+                        'audit.log.aliyuncs.com',
+                        'alert.log.aliyuncs.com',
+                        'middlewarelens.log.aliyuncs.com',
+                        'storagelens.log.aliyuncs.com',
+                        'ai-lens.log.aliyuncs.com',
+                        'securitylens.log.aliyuncs.com',
+                      ],
+                    },
+                  },
+                  Effect: 'Allow',
+                  Resource: ['*'],
+                },
+              ],
+              Version: '1',
+            },
+            PolicyName: 'AliyunLogFullAccess',
+          },
+        ],
+        RoleName: {
+          'Fn::Join': [
+            '-',
+            [
+              'ros-cdk',
+              {
+                'Fn::Select': [
+                  0,
+                  {
+                    'Fn::Split': [
+                      '-',
+                      {
+                        Ref: 'ALIYUN::StackId',
+                      },
+                    ],
+                  },
+                ],
+              },
+            ],
+          ],
+        },
+      },
+      Type: 'ALIYUN::RAM::Role',
+    },
+    'FCServiceFormy-demo-service_artifacts_code_deployment': {
+      Properties: {
+        DeletionForce: false,
+        Description: 'FC service for oss deployment by CDK',
+        Role: {
+          'Fn::GetAtt': ['FCRoleFormy-demo-service_artifacts_code_deployment', 'Arn'],
+        },
+        ServiceName: {
+          'Fn::Join': [
+            '-',
+            [
+              'ros-cdk',
+              {
+                'Fn::Select': [
+                  0,
+                  {
+                    'Fn::Split': [
+                      '-',
+                      {
+                        Ref: 'ALIYUN::StackId',
+                      },
+                    ],
+                  },
+                ],
+              },
+            ],
+          ],
+        },
+      },
+      Type: 'ALIYUN::FC::Service',
+    },
+    gateway_event_api_get__api_hello: {
+      Properties: {
+        ApiName: 'gateway_event_api_get__api_hello',
+        GroupId: {
+          'Fn::GetAtt': ['my-demo-service_apigroup', 'GroupId'],
+        },
+        RequestConfig: {
+          RequestHttpMethod: 'GET',
+          RequestMode: 'PASSTHROUGH',
+          RequestPath: '/api/hello',
+          RequestProtocol: 'HTTP',
+        },
+        ResultSample: 'ServerlessInsight resultSample',
+        ResultType: 'JSON',
+        ServiceConfig: {
+          FunctionComputeConfig: {
+            FcVersion: '3.0',
+            FunctionName: {
+              'Fn::GetAtt': ['hello_fn', 'FunctionName'],
+            },
+            RoleArn: {
+              'Fn::GetAtt': ['my-demo-service_role', 'Arn'],
+            },
+          },
+          ServiceProtocol: 'FunctionCompute',
+        },
+        Tags: [
+          {
+            Key: 'owner',
+            Value: 'geek-fun',
+          },
+        ],
+        Visibility: 'PRIVATE',
+      },
+      Type: 'ALIYUN::ApiGateway::Api',
+    },
+    hello_fn: {
+      Properties: {
+        Code: {
+          OssBucketName: {
+            'Fn::GetAtt': ['my-demo-service_artifacts_bucket', 'Name'],
+          },
+          OssObjectName: 'hello_fn/43cb4c356149762dbe507fc1baede172.zip',
+        },
+        EnvironmentVariables: {
+          NODE_ENV: 'production',
+        },
+        FunctionName: 'hello_fn',
+        Handler: 'index.handler',
+        MemorySize: 128,
+        Runtime: 'nodejs18',
+        Timeout: 10,
+      },
+      Type: 'ALIYUN::FC3::Function',
+    },
+    'my-demo-service_apigroup': {
+      Properties: {
+        GroupName: 'my-demo-service_apigroup',
+        Tags: [
+          {
+            Key: 'owner',
+            Value: 'geek-fun',
+          },
+        ],
+      },
+      Type: 'ALIYUN::ApiGateway::Group',
+    },
+    'my-demo-service_artifacts_bucket': {
+      Properties: {
+        AccessControl: 'private',
+        BucketName: 'my-demo-service-artifacts-bucket',
+        DeletionForce: false,
+        EnableOssHdfsService: false,
+        RedundancyType: 'LRS',
+        ServerSideEncryptionConfiguration: {
+          SSEAlgorithm: 'KMS',
+        },
+      },
+      Type: 'ALIYUN::OSS::Bucket',
+    },
+    'my-demo-service_artifacts_code_deployment': {
+      Properties: {
+        Parameters: {
+          destinationBucket: {
+            'Fn::GetAtt': ['my-demo-service_artifacts_bucket', 'Name'],
+          },
+          retainOnCreate: false,
+          sources: [
+            {
+              bucket: { 'Fn::Sub': expect.stringContaining('assets-${ALIYUN::Region}') },
+              fileName: 'hello_fn/43cb4c356149762dbe507fc1baede172.ziplarge-artifact.zip',
+              objectKey: '2bfeafed8d3df0d44c235271cdf2aa7d908a3c2757af14a67d33d102847f46fd.zip',
+            },
+          ],
+        },
+        ServiceToken: {
+          'Fn::GetAtt': ['FCFunctionFormy-demo-service_artifacts_code_deployment', 'ARN'],
+        },
+        Timeout: 300,
+      },
+      Type: 'ALIYUN::ROS::CustomResource',
+    },
+    'my-demo-service_role': {
+      Properties: {
+        AssumeRolePolicyDocument: {
+          Statement: [
+            {
+              Action: 'sts:AssumeRole',
+              Effect: 'Allow',
+              Principal: {
+                Service: ['apigateway.aliyuncs.com'],
+              },
+            },
+          ],
+          Version: '1',
+        },
+        Description: 'my-demo-service role',
+        Policies: [
+          {
+            PolicyDocument: {
+              Statement: [
+                {
+                  Action: ['fc:InvokeFunction'],
+                  Effect: 'Allow',
+                  Resource: ['*'],
+                },
+              ],
+              Version: '1',
+            },
+            PolicyName: 'my-demo-service-policy',
+          },
+        ],
+        RoleName: 'my-demo-service-gateway-access-role',
+      },
+      Type: 'ALIYUN::RAM::Role',
+    },
+  },
+};
 export const defaultContext = {
   accessKeyId: 'access key id',
   accessKeySecret: 'access key secret',
