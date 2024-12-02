@@ -2,10 +2,18 @@ import * as ros from '@alicloud/ros-cdk-core';
 import { RosParameterType } from '@alicloud/ros-cdk-core';
 import { ActionContext, EventTypes, ServerlessIac } from '../types';
 import * as fc from '@alicloud/ros-cdk-fc3';
+import { RosFunction } from '@alicloud/ros-cdk-fc3/lib/fc3.generated';
 import * as ram from '@alicloud/ros-cdk-ram';
 import * as agw from '@alicloud/ros-cdk-apigateway';
 import * as oss from '@alicloud/ros-cdk-oss';
-import { readCodeSize, replaceReference, resolveCode } from '../common';
+import * as ossDeployment from '@alicloud/ros-cdk-ossdeployment';
+import {
+  CODE_ZIP_SIZE_LIMIT,
+  getFileSource,
+  readCodeSize,
+  replaceReference,
+  resolveCode,
+} from '../common';
 
 export class IacStack extends ros.Stack {
   private readonly service: string;
@@ -42,28 +50,44 @@ export class IacStack extends ros.Stack {
       replaceReference(`${this.service} stack`, context),
     );
 
-    const codeSize = iac.functions.find(({ code }) => readCodeSize(code) > 15 * 1024 * 1024);
-    if (codeSize) {
+    const fileSources = iac.functions
+      .filter(({ code }) => readCodeSize(code) > CODE_ZIP_SIZE_LIMIT)
+      .map(({ code, name }) => ({ fcName: name, ...getFileSource(name, code) }));
+
+    let destinationBucket: oss.Bucket;
+    if (fileSources.length > 0) {
       // creat oss to store code
-      new oss.Bucket(this, replaceReference(`${this.service}_code_object_store`, context), {
-        bucketName: replaceReference(`${this.service}-code-object-store`, context),
-        serverSideEncryptionConfiguration: { sseAlgorithm: 'KMS' },
-      });
+      destinationBucket = new oss.Bucket(
+        this,
+        replaceReference(`${this.service}_artifacts_bucket`, context),
+        {
+          bucketName: replaceReference(`${this.service}-artifacts-bucket`, context),
+          serverSideEncryptionConfiguration: { sseAlgorithm: 'KMS' },
+        },
+        true,
+      );
+      new ossDeployment.BucketDeployment(
+        this,
+        `${this.service}_artifacts_code_deployment`,
+        {
+          sources: fileSources.map(({ source }) => source),
+          destinationBucket,
+          timeout: 300,
+          logMonitoring: false, // 是否开启日志监控，设为false则不开启
+        },
+        true,
+      );
     }
 
     iac.functions.forEach((fnc) => {
-      if (codeSize && readCodeSize(fnc.code) > 15 * 1024 * 1024) {
-        // upload code to oss
-        new oss.RosBucketObject(
-          this,
-          replaceReference(`${this.service}_code_object`, context),
-          {
-            bucket: replaceReference(`${this.service}-code-object-store`, context),
-            objectName: replaceReference(fnc.code, context),
-            source: resolveCode(fnc.code),
-          },
-          true,
-        );
+      let code: RosFunction.CodeProperty = {
+        zipFile: resolveCode(fnc.code),
+      };
+      if (readCodeSize(fnc.code) > CODE_ZIP_SIZE_LIMIT) {
+        code = {
+          ossBucketName: destinationBucket.attrName,
+          ossObjectName: fileSources.find(({ fcName }) => fcName === fnc.name)?.objectKey,
+        };
       }
       new fc.RosFunction(
         this,
@@ -75,9 +99,7 @@ export class IacStack extends ros.Stack {
           memorySize: replaceReference(fnc.memory, context),
           timeout: replaceReference(fnc.timeout, context),
           environmentVariables: replaceReference(fnc.environment, context),
-          code: {
-            zipFile: resolveCode(fnc.code),
-          },
+          code,
         },
         true,
       );

@@ -2,6 +2,8 @@ import path from 'node:path';
 import fs from 'node:fs';
 import * as ros from '@alicloud/ros-cdk-core';
 import { ActionContext } from '../types';
+import * as ossDeployment from '@alicloud/ros-cdk-ossdeployment';
+import crypto from 'node:crypto';
 
 export const resolveCode = (location: string): string => {
   const filePath = path.resolve(process.cwd(), location);
@@ -13,6 +15,23 @@ export const readCodeSize = (location: string): number => {
   const filePath = path.resolve(process.cwd(), location);
   const stats = fs.statSync(filePath);
   return stats.size;
+};
+
+export const getFileSource = (
+  fcName: string,
+  location: string,
+): { source: ossDeployment.ISource; objectKey: string } => {
+  const filePath = path.resolve(process.cwd(), location);
+  if (fs.lstatSync(filePath).isDirectory()) {
+    throw new Error('The provided path is a directory, not a file.');
+  }
+
+  const hash = crypto.createHash('md5').update(fs.readFileSync(filePath)).digest('hex');
+
+  const objectKey = `${fcName}/${hash}.${filePath.split('.').pop()}`;
+  const source = ossDeployment.Source.asset(filePath, {}, objectKey);
+
+  return { source, objectKey };
 };
 
 const evalCtx = (value: string, ctx: ActionContext): string => {

@@ -21,7 +21,7 @@ export const oneFcOneGatewayIac = {
       name: 'hello_fn',
       runtime: 'nodejs18',
       handler: 'index.handler',
-      code: 'artifact.zip',
+      code: 'tests/fixtures/artifacts/artifact.zip',
       memory: 128,
       timeout: 10,
       environment: {
@@ -247,7 +247,7 @@ export const minimumIac = {
       name: 'hello_fn',
       runtime: 'nodejs18',
       handler: 'index.handler',
-      code: 'artifact.zip',
+      code: 'tests/fixtures/artifacts/artifact.zip',
     },
   ],
 } as ServerlessIac;
@@ -289,7 +289,7 @@ export const oneFcIac = {
       name: 'hello_fn',
       runtime: 'nodejs18',
       handler: 'index.handler',
-      code: 'artifact.zip',
+      code: 'tests/fixtures/artifacts/artifact.zip',
       memory: 128,
       timeout: 10,
       environment: {
@@ -361,7 +361,7 @@ export const oneFcIacWithStage = {
       name: 'hello_fn',
       runtime: 'nodejs18',
       handler: 'index.handler',
-      code: 'artifact.zip',
+      code: 'tests/fixtures/artifacts/artifact.zip',
       memory: 128,
       timeout: 10,
       environment: {
