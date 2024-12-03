@@ -23,7 +23,7 @@ export const constructActionContext = (config?: {
     iacLocation: (() => {
       const projectRoot = path.resolve(process.cwd());
       return config?.location
-        ? path.resolve(projectRoot, config?.location)
+        ? path.resolve(projectRoot, config.location)
         : path.resolve(projectRoot, 'serverlessinsight.yml') ||
             path.resolve(projectRoot, 'serverlessInsight.yml') ||
             path.resolve(projectRoot, 'ServerlessInsight.yml') ||

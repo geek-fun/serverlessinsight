@@ -3,7 +3,11 @@ import { ActionContext, ServerlessIac } from '../types';
 import { logger, rosStackDeploy } from '../common';
 import { IacStack } from './iacStack';
 
-const generateStackTemplate = (stackName: string, iac: ServerlessIac, context: ActionContext) => {
+export const generateStackTemplate = (
+  stackName: string,
+  iac: ServerlessIac,
+  context: ActionContext,
+) => {
   const app = new ros.App();
   new IacStack(app, iac, context);
 

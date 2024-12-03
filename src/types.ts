@@ -79,3 +79,8 @@ export type ActionContext = {
   parameters?: Array<{ key: string; value: string }>;
   tags?: Array<{ key: string; value: string }>;
 };
+
+export enum TemplateFormat {
+  YAML = 'YAML',
+  JSON = 'JSON',
+}

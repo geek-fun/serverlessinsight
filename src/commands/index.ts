@@ -5,6 +5,7 @@ import { lang } from '../lang';
 import { logger, getVersion } from '../common';
 import { validate } from './validate';
 import { deploy } from './deploy';
+import { template } from './template';
 
 const program = new Command();
 
@@ -48,8 +49,17 @@ program
     {},
   )
   .action(async (stackName, { file, parameter, stage }) => {
-    logger.debug('log command info');
     await deploy(stackName, { location: file, parameters: parameter, stage });
+  });
+
+program
+  .command('template <stackName>')
+  .description('print ROS template')
+  .option('-f, --file <path>', 'specify the yaml file')
+  .option('-s, --stage <stage>', 'specify the stage')
+  .option('-t, --format <type>', 'output content type (JSON or YAML)', 'JSON')
+  .action((stackName, { format, file, stage }) => {
+    template(stackName, { format, location: file, stage });
   });
 
 program.parse();
