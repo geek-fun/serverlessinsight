@@ -44,15 +44,15 @@ export class IacStack extends ros.Stack {
       new ros.RosMapping(this, 'stages', { mapping: replaceReference(iac.stages, context) });
     }
 
-    new ros.RosInfo(
-      this,
-      ros.RosInfo.description,
-      replaceReference(`${this.service} stack`, context),
-    );
+    new ros.RosInfo(this, ros.RosInfo.description, `${this.service} stack`);
 
     const fileSources = iac.functions
       .filter(({ code }) => readCodeSize(code) > CODE_ZIP_SIZE_LIMIT)
-      .map(({ code, name }) => ({ fcName: name, ...getFileSource(name, code) }));
+      .map(({ code, name }) => {
+        const fcName = replaceReference(name, context);
+
+        return { fcName, ...getFileSource(fcName, code) };
+      });
 
     let destinationBucket: oss.Bucket;
     if (fileSources.length > 0) {
@@ -61,7 +61,7 @@ export class IacStack extends ros.Stack {
         this,
         replaceReference(`${this.service}_artifacts_bucket`, context),
         {
-          bucketName: replaceReference(`${this.service}-artifacts-bucket`, context),
+          bucketName: `${this.service}-artifacts-bucket`,
           serverSideEncryptionConfiguration: { sseAlgorithm: 'KMS' },
         },
         true,
