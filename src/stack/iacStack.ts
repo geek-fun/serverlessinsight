@@ -1,12 +1,19 @@
 import * as ros from '@alicloud/ros-cdk-core';
 import { RosParameterType } from '@alicloud/ros-cdk-core';
-import { ActionContext, EventTypes, ServerlessIac } from '../types';
+import {
+  ActionContext,
+  DatabaseEngineMode,
+  DatabaseEnum,
+  EventTypes,
+  ServerlessIac,
+} from '../types';
 import * as fc from '@alicloud/ros-cdk-fc3';
 import { RosFunction } from '@alicloud/ros-cdk-fc3/lib/fc3.generated';
 import * as ram from '@alicloud/ros-cdk-ram';
 import * as agw from '@alicloud/ros-cdk-apigateway';
 import * as oss from '@alicloud/ros-cdk-oss';
 import * as ossDeployment from '@alicloud/ros-cdk-ossdeployment';
+import * as esServerless from '@alicloud/ros-cdk-elasticsearchserverless';
 import {
   CODE_ZIP_SIZE_LIMIT,
   getFileSource,
@@ -14,6 +21,7 @@ import {
   replaceReference,
   resolveCode,
 } from '../common';
+import { isEmpty } from 'lodash';
 
 export class IacStack extends ros.Stack {
   private readonly service: string;
@@ -47,7 +55,7 @@ export class IacStack extends ros.Stack {
     new ros.RosInfo(this, ros.RosInfo.description, `${this.service} stack`);
 
     const fileSources = iac.functions
-      .filter(({ code }) => readCodeSize(code) > CODE_ZIP_SIZE_LIMIT)
+      ?.filter(({ code }) => readCodeSize(code) > CODE_ZIP_SIZE_LIMIT)
       .map(({ code, name }) => {
         const fcName = replaceReference(name, context);
 
@@ -55,7 +63,7 @@ export class IacStack extends ros.Stack {
       });
 
     let destinationBucket: oss.Bucket;
-    if (fileSources.length > 0) {
+    if (!isEmpty(fileSources)) {
       // creat oss to store code
       destinationBucket = new oss.Bucket(
         this,
@@ -70,7 +78,7 @@ export class IacStack extends ros.Stack {
         this,
         `${this.service}_artifacts_code_deployment`,
         {
-          sources: fileSources.map(({ source }) => source),
+          sources: fileSources!.map(({ source }) => source),
           destinationBucket,
           timeout: 300,
           logMonitoring: false, // 是否开启日志监控，设为false则不开启
@@ -79,14 +87,14 @@ export class IacStack extends ros.Stack {
       );
     }
 
-    iac.functions.forEach((fnc) => {
+    iac.functions?.forEach((fnc) => {
       let code: RosFunction.CodeProperty = {
         zipFile: resolveCode(fnc.code),
       };
       if (readCodeSize(fnc.code) > CODE_ZIP_SIZE_LIMIT) {
         code = {
           ossBucketName: destinationBucket.attrName,
-          ossObjectName: fileSources.find(({ fcName }) => fcName === fnc.name)?.objectKey,
+          ossObjectName: fileSources?.find(({ fcName }) => fcName === fnc.name)?.objectKey,
         };
       }
       new fc.RosFunction(
@@ -204,5 +212,30 @@ export class IacStack extends ros.Stack {
         });
       });
     }
+    iac.databases?.forEach((db) => {
+      if ([DatabaseEnum.ELASTICSEARCH_SERVERLESS].includes(db.type)) {
+        new esServerless.App(
+          this,
+          replaceReference(db.key, context),
+          {
+            appName: replaceReference(db.name, context),
+            appVersion: db.version,
+            authentication: {
+              basicAuth: [
+                {
+                  password: replaceReference(db.security.basicAuth.password, context),
+                },
+              ],
+            },
+            quotaInfo: {
+              cu: db.cu,
+              storage: db.storageSize,
+              appType: db.engineMode === DatabaseEngineMode.TIMESERIES ? 'TRIAL' : 'STANDARD',
+            },
+          },
+          true,
+        );
+      }
+    });
   }
 }

@@ -1,6 +1,6 @@
 import { parse } from 'yaml';
 import { existsSync, readFileSync } from 'node:fs';
-import { Event, IacFunction, RawServerlessIac, ServerlessIac } from '../types';
+import { Event, IacDatabase, IacFunction, RawServerlessIac, ServerlessIac } from '../types';
 import { validateYaml } from './iacSchema';
 
 const mapToArr = (obj: Record<string, Record<string, unknown> | string | null | undefined>) => {
@@ -38,6 +38,7 @@ const transformYaml = (iacJson: RawServerlessIac): ServerlessIac => {
       { key: 'iac-provider', value: 'ServerlessInsight' },
       ...mapToKvArr(iacJson.tags),
     ] as unknown as Array<{ key: string; value: string }>,
+    databases: mapToArr(iacJson.databases) as unknown as Array<IacDatabase>,
   };
 };
 
