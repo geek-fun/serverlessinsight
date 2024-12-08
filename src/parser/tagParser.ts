@@ -1,12 +1,8 @@
-import { ActionContext, TagDomain, Tags } from '../types';
-import { replaceReference } from '../common';
+import { TagDomain, Tags } from '../types';
 
-export const parseTag = (tags: Tags | undefined, context: ActionContext): Array<TagDomain> => {
+export const parseTag = (tags: Tags | undefined): Array<TagDomain> => {
   return [
     { key: 'iac-provider', value: 'ServerlessInsight' },
-    ...Object.entries(tags ?? {}).map(([key, value]) => ({
-      key: replaceReference(key, context),
-      value: replaceReference(value, context),
-    })),
+    ...Object.entries(tags ?? {}).map(([key, value]) => ({ key, value })),
   ];
 };

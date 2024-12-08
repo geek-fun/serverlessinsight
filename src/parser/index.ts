@@ -13,7 +13,7 @@ const validateExistence = (path: string) => {
   }
 };
 
-const transformYaml = (iacJson: ServerlessIacRaw, context: ActionContext): ServerlessIac => {
+const transformYaml = (iacJson: ServerlessIacRaw): ServerlessIac => {
   return {
     service: iacJson.service,
     version: iacJson.version,
@@ -23,7 +23,7 @@ const transformYaml = (iacJson: ServerlessIacRaw, context: ActionContext): Serve
     functions: parseFunction(iacJson.functions),
     events: parseEvent(iacJson.events),
     databases: parseDatabase(iacJson.databases),
-    tags: parseTag(iacJson.tags, context),
+    tags: parseTag(iacJson.tags),
   };
 };
 
@@ -35,5 +35,5 @@ export const parseYaml = (context: ActionContext): ServerlessIac => {
 
   validateYaml(iacJson);
 
-  return transformYaml(iacJson, context);
+  return transformYaml(iacJson);
 };
