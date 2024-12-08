@@ -9,8 +9,8 @@ import {
   ServerlessIac,
   ServerlessIacRaw,
 } from '../types';
-import { validateYaml } from './iacSchema';
 import { get, isEmpty } from 'lodash';
+import { validateYaml } from '../validations';
 
 const mapToArr = (obj: Record<string, Record<string, unknown> | string | null | undefined>) => {
   if (!obj) {

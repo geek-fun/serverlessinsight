@@ -1,8 +1,8 @@
-import { Stages, Vars } from './vars';
-import { Tags } from './tag';
-import { EventDomain, EventRaw } from './event';
-import { DatabaseDomain, DatabaseRaw } from './database';
-import { FunctionDomain, FunctionRaw } from './function';
+import { Stages, Vars } from './domains/vars';
+import { Tags } from './domains/tag';
+import { EventDomain, EventRaw } from './domains/event';
+import { DatabaseDomain, DatabaseRaw } from './domains/database';
+import { FunctionDomain, FunctionRaw } from './domains/function';
 
 export type ServerlessIacRaw = {
   version: string;
@@ -28,9 +28,9 @@ export type ServerlessIac = {
   databases?: Array<DatabaseDomain>;
 };
 
-export * from './database';
-export * from './event';
-export * from './function';
-export * from './tag';
-export * from './vars';
-export * from './context';
+export * from './domains/database';
+export * from './domains/event';
+export * from './domains/function';
+export * from './domains/tag';
+export * from './domains/vars';
+export * from './domains/context';
