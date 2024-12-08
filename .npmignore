@@ -1,7 +1,7 @@
-.eslintrc.js
 .prettierrc
 jest.config.js
 tsconfig.json
+eslint.config.mjs
 Dockerfile
 
 .idea/
