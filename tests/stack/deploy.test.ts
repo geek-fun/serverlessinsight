@@ -1,6 +1,8 @@
 import { deployStack } from '../../src/stack';
 import { ActionContext } from '../../src/types';
 import {
+  esServerlessMinimumIac,
+  esServerlessMinimumRos,
   largeCodeRos,
   minimumIac,
   minimumRos,
@@ -123,5 +125,19 @@ describe('Unit tests for stack deployment', () => {
 
     expect(mockedResolveCode).toHaveBeenCalledTimes(1);
     expect(mockedRosStackDeploy).toHaveBeenCalledWith(stackName, largeCodeRos, { stackName });
+  });
+
+  describe('unit test for deploy of databases', () => {
+    it('should deploy elasticsearch serverless when database minimum fields provided', () => {
+      const stackName = 'my-demo-es-serverless-stack';
+      mockedRosStackDeploy.mockResolvedValueOnce(stackName);
+
+      deployStack(stackName, esServerlessMinimumIac, { stackName } as ActionContext);
+
+      expect(mockedRosStackDeploy).toHaveBeenCalledTimes(1);
+      expect(mockedRosStackDeploy).toHaveBeenCalledWith(stackName, esServerlessMinimumRos, {
+        stackName,
+      });
+    });
   });
 });

@@ -1,7 +1,16 @@
 import { parse } from 'yaml';
 import { existsSync, readFileSync } from 'node:fs';
-import { Event, IacFunction, RawServerlessIac, ServerlessIac } from '../types';
+import {
+  DatabaseEnum,
+  Event,
+  IacDatabase,
+  IacFunction,
+  RawIacDatabase,
+  RawServerlessIac,
+  ServerlessIac,
+} from '../types';
 import { validateYaml } from './iacSchema';
+import { get, isEmpty } from 'lodash';
 
 const mapToArr = (obj: Record<string, Record<string, unknown> | string | null | undefined>) => {
   if (!obj) {
@@ -24,7 +33,30 @@ const validateExistence = (path: string) => {
     throw new Error(`File does not exist at path: ${path}`);
   }
 };
-
+const transformDatabase = (databases?: {
+  [key: string]: RawIacDatabase;
+}): Array<IacDatabase> | undefined => {
+  if (isEmpty(databases)) {
+    return undefined;
+  }
+  return Object.entries(databases)?.map(([key, database]) => ({
+    key: key,
+    name: database.name,
+    type: database.type as DatabaseEnum,
+    version: database.version,
+    engineMode: database.engine_mode,
+    security: {
+      basicAuth: {
+        password: get(database, 'security.basic_auth.password'),
+      },
+    },
+    cu: database.cu,
+    storageSize: database.storage_size,
+    network: database.network && {
+      public: database.network?.public as boolean,
+    },
+  }));
+};
 const transformYaml = (iacJson: RawServerlessIac): ServerlessIac => {
   return {
     service: iacJson.service,
@@ -38,6 +70,7 @@ const transformYaml = (iacJson: RawServerlessIac): ServerlessIac => {
       { key: 'iac-provider', value: 'ServerlessInsight' },
       ...mapToKvArr(iacJson.tags),
     ] as unknown as Array<{ key: string; value: string }>,
+    databases: transformDatabase(iacJson.databases),
   };
 };
 
