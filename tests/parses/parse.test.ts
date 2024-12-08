@@ -1,5 +1,5 @@
-import { parseYaml } from '../../src/stack';
 import path from 'node:path';
+import { parseYaml } from '../../src/parses';
 
 describe('unit test for parse', () => {
   describe('domain - databases', () => {
@@ -15,8 +15,6 @@ describe('unit test for parse', () => {
           { key: 'iac-provider', value: 'ServerlessInsight' },
           { key: 'owner', value: 'geek-fun' },
         ],
-        events: [],
-        functions: [],
         databases: [
           {
             key: 'insight_es_db',

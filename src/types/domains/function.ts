@@ -1,6 +1,5 @@
 export type FunctionRaw = {
   name: string;
-  key: string;
   runtime: string;
   handler: string;
   code: string;
@@ -11,4 +10,6 @@ export type FunctionRaw = {
   };
 };
 
-export type FunctionDomain = FunctionRaw;
+export type FunctionDomain = FunctionRaw & {
+  key: string;
+};
