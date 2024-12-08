@@ -94,7 +94,9 @@ export class IacStack extends ros.Stack {
       if (readCodeSize(fnc.code) > CODE_ZIP_SIZE_LIMIT) {
         code = {
           ossBucketName: destinationBucket.attrName,
-          ossObjectName: fileSources?.find(({ fcName }) => fcName === fnc.name)?.objectKey,
+          ossObjectName: fileSources?.find(
+            ({ fcName }) => fcName === replaceReference(fnc.name, context),
+          )?.objectKey,
         };
       }
       new fc.RosFunction(
