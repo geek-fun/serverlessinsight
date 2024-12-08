@@ -9,7 +9,7 @@ export const template = (
   options: { format: TemplateFormat; location: string; stage: string | undefined },
 ) => {
   const context = constructActionContext({ ...options, stackName });
-  const iac = parseYaml(context.iacLocation);
+  const iac = parseYaml(context);
   const { template } = generateStackTemplate(stackName, iac, context);
 
   const output =

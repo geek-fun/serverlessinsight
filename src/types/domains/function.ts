@@ -5,7 +5,7 @@ export type FunctionRaw = {
   code: string;
   memory: number;
   timeout: number;
-  environment: {
+  environment?: {
     [key: string]: string;
   };
 };
