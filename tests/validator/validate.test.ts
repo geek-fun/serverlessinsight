@@ -1,12 +1,12 @@
 import { readFileSync } from 'node:fs';
 import * as path from 'node:path';
 import { parse } from 'yaml';
-import { validateYaml } from '../../src/stack';
-import { RawServerlessIac } from '../../src/types';
+import { ServerlessIacRaw } from '../../src/types';
+import { validateYaml } from '../../src/validator';
 
 const jsonIac = parse(
   readFileSync(path.resolve(__dirname, '../fixtures/serverless-insight.yml'), 'utf8'),
-) as RawServerlessIac;
+) as ServerlessIacRaw;
 
 describe('unit test for validate', () => {
   it('should pass the yaml validation when given yaml config is valid', () => {
@@ -27,7 +27,7 @@ describe('unit test for validate', () => {
         name: 'aws',
         region: 'us-west-2',
       },
-    } as unknown as RawServerlessIac;
+    } as unknown as ServerlessIacRaw;
     expect(() => validateYaml(invalidYaml)).toThrow('Invalid yaml');
   });
 
@@ -35,7 +35,7 @@ describe('unit test for validate', () => {
     const invalidYaml = {
       ...jsonIac,
       service: null,
-    } as unknown as RawServerlessIac;
+    } as unknown as ServerlessIacRaw;
     expect(() => validateYaml(invalidYaml)).toThrow('Invalid yaml');
   });
 
@@ -61,7 +61,7 @@ describe('unit test for validate', () => {
           },
         },
       },
-    } as unknown as RawServerlessIac;
+    } as unknown as ServerlessIacRaw;
     expect(() => validateYaml(invalidYaml)).toThrow('Invalid yaml');
   });
 
@@ -71,7 +71,7 @@ describe('unit test for validate', () => {
       tags: {
         stage: null,
       },
-    } as unknown as RawServerlessIac;
+    } as unknown as ServerlessIacRaw;
     expect(() => validateYaml(invalidYaml)).toThrow('Invalid yaml');
   });
 
@@ -91,7 +91,7 @@ describe('unit test for validate', () => {
           },
         },
       },
-    } as unknown as RawServerlessIac;
+    } as unknown as ServerlessIacRaw;
     expect(() => validateYaml(invalidYaml)).toThrow('Invalid yaml');
   });
 
@@ -106,7 +106,7 @@ describe('unit test for validate', () => {
           target: 'hello',
         },
       },
-    } as unknown as RawServerlessIac;
+    } as unknown as ServerlessIacRaw;
     expect(() => validateYaml(invalidYaml)).toThrow('Invalid yaml');
   });
 
@@ -114,7 +114,7 @@ describe('unit test for validate', () => {
     const invalidYaml = {
       ...jsonIac,
       functions: null,
-    } as unknown as RawServerlessIac;
+    } as unknown as ServerlessIacRaw;
     expect(() => validateYaml(invalidYaml)).toThrow('Invalid yaml');
   });
 });

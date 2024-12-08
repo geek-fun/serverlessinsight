@@ -1,5 +1,6 @@
-import { deployStack, parseYaml } from '../stack';
+import { deployStack } from '../stack';
 import { constructActionContext, logger } from '../common';
+import { parseYaml } from '../parser';
 
 export const deploy = async (
   stackName: string,
