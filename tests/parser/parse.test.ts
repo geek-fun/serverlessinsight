@@ -1,5 +1,5 @@
 import path from 'node:path';
-import { parseYaml } from '../../src/parses';
+import { parseYaml } from '../../src/parser';
 
 describe('unit test for parse', () => {
   describe('domain - databases', () => {

@@ -1,5 +1,5 @@
 import { constructActionContext, logger } from '../common';
-import { parseYaml } from '../parses';
+import { parseYaml } from '../parser';
 
 export const validate = (location: string | undefined, stage: string | undefined) => {
   const context = constructActionContext({ location, stage });

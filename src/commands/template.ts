@@ -2,7 +2,7 @@ import { TemplateFormat } from '../types';
 import yaml from 'yaml';
 import { generateStackTemplate } from '../stack/deploy';
 import { constructActionContext, logger } from '../common';
-import { parseYaml } from '../parses';
+import { parseYaml } from '../parser';
 
 export const template = (
   stackName: string,

@@ -5,7 +5,7 @@ import { parseEvent } from './eventParser';
 import { parseDatabase } from './databaseParser';
 import { parseTag } from './tagParser';
 import { parse } from 'yaml';
-import { validateYaml } from '../validations';
+import { validateYaml } from '../validator';
 
 const validateExistence = (path: string) => {
   if (!existsSync(path)) {

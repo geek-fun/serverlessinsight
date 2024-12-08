@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs';
 import * as path from 'node:path';
 import { parse } from 'yaml';
 import { ServerlessIacRaw } from '../../src/types';
-import { validateYaml } from '../../src/validations';
+import { validateYaml } from '../../src/validator';
 
 const jsonIac = parse(
   readFileSync(path.resolve(__dirname, '../fixtures/serverless-insight.yml'), 'utf8'),
