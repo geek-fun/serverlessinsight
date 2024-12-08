@@ -121,6 +121,8 @@ const schema = {
             type: { type: 'string', enum: ['ELASTICSEARCH_SERVERLESS'] },
             version: { type: 'string' },
             engine_mode: { type: 'string', enum: ['SEARCH', 'TIMESERIES'] },
+            cu: { type: 'number' },
+            storage_size: { type: 'number' },
             security: {
               type: 'object',
               properties: {
@@ -134,8 +136,12 @@ const schema = {
               },
               required: ['basic_auth'],
             },
-            cu: { type: 'number' },
-            storage_size: { type: 'number' },
+            network: {
+              type: 'object',
+              properties: {
+                public: { type: 'boolean' },
+              },
+            },
           },
           required: ['name', 'type', 'version', 'security', 'cu', 'storage_size'],
           additionalProperties: false,

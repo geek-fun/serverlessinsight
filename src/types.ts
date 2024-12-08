@@ -45,6 +45,22 @@ type Events = {
 type Tags = {
   [key: string]: string;
 };
+export type RawIacDatabase = {
+  name: string;
+  type: DatabaseEnum;
+  version: string;
+  engine_mode: DatabaseEngineMode;
+  security: {
+    basic_auth: {
+      password: string;
+    };
+  };
+  network?: {
+    public: boolean;
+  };
+  cu: number;
+  storage_size: number;
+};
 
 export type RawServerlessIac = {
   version: string;
@@ -55,7 +71,7 @@ export type RawServerlessIac = {
   tags: Tags;
   functions: { [key: string]: IacFunction };
   events: Events;
-  databases: { [key: string]: IacDatabase };
+  databases: { [key: string]: RawIacDatabase };
 };
 
 export enum DatabaseEnum {
@@ -77,6 +93,9 @@ export type IacDatabase = {
     basicAuth: {
       password: string;
     };
+  };
+  network?: {
+    public: boolean;
   };
   cu: number;
   storageSize: number;

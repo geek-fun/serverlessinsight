@@ -232,6 +232,18 @@ export class IacStack extends ros.Stack {
               storage: db.storageSize,
               appType: db.engineMode === DatabaseEngineMode.TIMESERIES ? 'TRIAL' : 'STANDARD',
             },
+            // network: [
+            //   {
+            //     type: 'PUBLIC_KIBANA',
+            //     enabled: true,
+            //     whiteIpGroup: [{ groupName: 'default', ips: ['0.0.0.0/24'] }],
+            //   },
+            //   {
+            //     type: 'PUBLIC_ES',
+            //     enabled: true,
+            //     whiteIpGroup: [{ groupName: 'default', ips: ['0.0.0.0/24'] }],
+            //   },
+            // ],
           },
           true,
         );

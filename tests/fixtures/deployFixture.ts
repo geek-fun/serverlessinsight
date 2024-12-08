@@ -791,6 +791,16 @@ export const esServerlessMinimumRos = {
           Cu: 1,
           Storage: 20,
         },
+        // Network: [
+        //   {
+        //     Enabled: true,
+        //     Type: 'PUBLIC_KIBANA',
+        //   },
+        //   {
+        //     Enabled: true,
+        //     Type: 'PUBLIC_ES',
+        //   },
+        // ],
       },
       Type: 'ALIYUN::ElasticSearchServerless::App',
     },
