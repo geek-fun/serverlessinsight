@@ -3,10 +3,16 @@ import { parseYaml } from '../../src/parser';
 
 describe('unit test for parse', () => {
   describe('domain - databases', () => {
-    const yamlPath = path.resolve(__dirname, '../fixtures/serverless-insight-es.yml');
-
+    const defaultContext = {
+      iacLocation: path.resolve(__dirname, '../fixtures/serverless-insight-es.yml'),
+      accessKeyId: 'xxx',
+      accessKeySecret: 'xxx',
+      region: 'cn-chengdu',
+      stackName: 'insight-es-poc-test',
+      stage: 'test',
+    };
     it('should pass databases from yaml to domain instance when the yaml is valid', () => {
-      const databaseDomain = parseYaml(yamlPath);
+      const databaseDomain = parseYaml(defaultContext);
       expect(databaseDomain).toEqual({
         service: 'insight-es-poc',
         version: '0.0.1',

@@ -30,7 +30,7 @@ export class IacStack extends ros.Stack {
     super(scope, replaceReference(iac.service, context), {
       stackName: context.stackName,
       tags: iac.tags?.reduce((acc: { [key: string]: string }, tag) => {
-        acc[tag.key] = replaceReference(tag.value, context);
+        acc[tag.key] = tag.value;
         return acc;
       }, {}),
     });
