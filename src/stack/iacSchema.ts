@@ -1,6 +1,6 @@
-import { RawServerlessIac } from '../types';
 import Ajv, { ErrorObject } from 'ajv';
 import { logger } from '../common';
+import { ServerlessIacRaw } from '../types';
 
 const ajv = new Ajv({ allowUnionTypes: true, strict: false, allErrors: true });
 
@@ -180,7 +180,7 @@ class IacSchemaErrors extends Error {
   }
 }
 
-export const validateYaml = (iacJson: RawServerlessIac) => {
+export const validateYaml = (iacJson: ServerlessIacRaw) => {
   const validate = ajv.compile(schema);
   const valid = validate(iacJson);
   if (!valid) {

@@ -1,13 +1,13 @@
 import { parse } from 'yaml';
 import { existsSync, readFileSync } from 'node:fs';
 import {
+  DatabaseDomain,
   DatabaseEnum,
-  Event,
-  IacDatabase,
-  IacFunction,
-  RawIacDatabase,
-  RawServerlessIac,
+  DatabaseRaw,
+  EventDomain,
+  FunctionDomain,
   ServerlessIac,
+  ServerlessIacRaw,
 } from '../types';
 import { validateYaml } from './iacSchema';
 import { get, isEmpty } from 'lodash';
@@ -34,8 +34,8 @@ const validateExistence = (path: string) => {
   }
 };
 const transformDatabase = (databases?: {
-  [key: string]: RawIacDatabase;
-}): Array<IacDatabase> | undefined => {
+  [key: string]: DatabaseRaw;
+}): Array<DatabaseDomain> | undefined => {
   if (isEmpty(databases)) {
     return undefined;
   }
@@ -57,15 +57,15 @@ const transformDatabase = (databases?: {
     },
   }));
 };
-const transformYaml = (iacJson: RawServerlessIac): ServerlessIac => {
+const transformYaml = (iacJson: ServerlessIacRaw): ServerlessIac => {
   return {
     service: iacJson.service,
     version: iacJson.version,
     provider: iacJson.provider,
     vars: iacJson.vars,
     stages: iacJson.stages,
-    functions: mapToArr(iacJson.functions) as unknown as Array<IacFunction>,
-    events: mapToArr(iacJson.events) as unknown as Array<Event>,
+    functions: mapToArr(iacJson.functions) as unknown as Array<FunctionDomain>,
+    events: mapToArr(iacJson.events) as unknown as Array<EventDomain>,
     tags: [
       { key: 'iac-provider', value: 'ServerlessInsight' },
       ...mapToKvArr(iacJson.tags),
@@ -78,7 +78,7 @@ export const parseYaml = (yamlPath: string): ServerlessIac => {
   validateExistence(yamlPath);
 
   const yamlContent = readFileSync(yamlPath, 'utf8');
-  const iacJson = parse(yamlContent) as RawServerlessIac;
+  const iacJson = parse(yamlContent) as ServerlessIacRaw;
 
   validateYaml(iacJson);
 
