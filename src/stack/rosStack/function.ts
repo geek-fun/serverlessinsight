@@ -24,7 +24,11 @@ export const resolveFunctions = (
   }
   const fileSources = functions
     ?.filter(({ code }) => readCodeSize(code) > CODE_ZIP_SIZE_LIMIT)
-    .map(({ code, name }) => ({ fcName: name, ...getFileSource(name, code) }));
+    .map(({ code, name }) => {
+      const fcName = replaceReference(name, context);
+
+      return { fcName, ...getFileSource(fcName, code) };
+    });
 
   let destinationBucket: oss.Bucket;
   if (!isEmpty(fileSources)) {
