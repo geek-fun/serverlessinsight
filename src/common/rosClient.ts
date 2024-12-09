@@ -180,7 +180,7 @@ export const rosStackDelete = async ({
 }: Pick<ActionContext, 'stackName' | 'region'>) => {
   const stackInfo = await getStackByName(stackName, region);
   if (!stackInfo) {
-    logger.warn(`Stack: ${stackName} not found, skip delete.`);
+    logger.warn(`Stack: ${stackName} not exists, skipped! 🚫`);
     return;
   }
   try {
@@ -189,9 +189,10 @@ export const rosStackDelete = async ({
       stackId: stackInfo.stackId,
     });
     await client.deleteStack(deleteStackRequest);
-    logger.info(`Delete stack: ${stackName} success!`);
+    await getStackActionResult(stackInfo.stackId as string, region);
+    logger.info(`Stack: ${stackName} deleted! ♻️`);
   } catch (err) {
-    logger.error(`Delete stack: ${stackName} failed!, error: ${err}`);
-    throw err;
+    logger.error(`Stack: ${stackName} delete failed! ❌, error: ${JSON.stringify(err)}`);
+    throw new Error(JSON.stringify(err));
   }
 };
