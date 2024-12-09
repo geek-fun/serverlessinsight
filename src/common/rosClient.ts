@@ -3,6 +3,7 @@ import ROS20190910, {
   CreateStackRequest,
   CreateStackRequestParameters,
   CreateStackRequestTags,
+  DeleteStackRequest,
   GetStackRequest,
   ListStacksRequest,
   UpdateStackRequest,
@@ -170,5 +171,28 @@ export const rosStackDeploy = async (
     const stack = await createStack(stackName, templateBody, context);
 
     logger.info(`createStack success! stackName:${stack?.stackName}, stackId:${stack?.stackId}`);
+  }
+};
+
+export const rosStackDelete = async ({
+  stackName,
+  region,
+}: Pick<ActionContext, 'stackName' | 'region'>) => {
+  const stackInfo = await getStackByName(stackName, region);
+  if (!stackInfo) {
+    logger.warn(`Stack: ${stackName} not exists, skipped! 🚫`);
+    return;
+  }
+  try {
+    const deleteStackRequest = new DeleteStackRequest({
+      regionId: region,
+      stackId: stackInfo.stackId,
+    });
+    await client.deleteStack(deleteStackRequest);
+    await getStackActionResult(stackInfo.stackId as string, region);
+    logger.info(`Stack: ${stackName} deleted! ♻️`);
+  } catch (err) {
+    logger.error(`Stack: ${stackName} delete failed! ❌, error: ${JSON.stringify(err)}`);
+    throw new Error(JSON.stringify(err));
   }
 };

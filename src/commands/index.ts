@@ -6,6 +6,7 @@ import { logger, getVersion } from '../common';
 import { validate } from './validate';
 import { deploy } from './deploy';
 import { template } from './template';
+import { destroyStack } from './destroy';
 
 const program = new Command();
 
@@ -60,6 +61,13 @@ program
   .option('-t, --format <type>', 'output content type (JSON or YAML)', 'JSON')
   .action((stackName, { format, file, stage }) => {
     template(stackName, { format, location: file, stage });
+  });
+
+program
+  .command('destroy <stackName>')
+  .description('destroy serverless stack')
+  .action(async (stackName) => {
+    await destroyStack(stackName);
   });
 
 program.parse();
