@@ -1,0 +1,3 @@
+# `data_huaweicloud_apig_instance_supported_features`
+
+Refer to the Terraform Registry for docs: [`data_huaweicloud_apig_instance_supported_features`](https://registry.terraform.io/providers/huaweicloud/huaweicloud/1.71.1/docs/data-sources/apig_instance_supported_features).

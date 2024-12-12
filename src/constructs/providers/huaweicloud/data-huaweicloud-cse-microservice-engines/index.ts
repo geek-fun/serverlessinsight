@@ -1,0 +1,470 @@
+// https://registry.terraform.io/providers/huaweicloud/huaweicloud/1.71.1/docs/data-sources/cse_microservice_engines
+// generated from terraform resource schema
+
+import { Construct } from 'constructs';
+import * as cdktf from 'cdktf';
+
+// Configuration
+
+export interface DataHuaweicloudCseMicroserviceEnginesConfig extends cdktf.TerraformMetaArguments {
+  /**
+  * Docs at Terraform Registry: {@link https://registry.terraform.io/providers/huaweicloud/huaweicloud/1.71.1/docs/data-sources/cse_microservice_engines#id DataHuaweicloudCseMicroserviceEngines#id}
+  *
+  * Please be aware that the id field is automatically added to all resources in Terraform providers using a Terraform provider SDK version below 2.
+  * If you experience problems setting this value it might not be settable. Please take a look at the provider documentation to ensure it should be settable.
+  */
+  readonly id?: string;
+  /**
+  * The region where dedicated microservice engines are located.
+  *
+  * Docs at Terraform Registry: {@link https://registry.terraform.io/providers/huaweicloud/huaweicloud/1.71.1/docs/data-sources/cse_microservice_engines#region DataHuaweicloudCseMicroserviceEngines#region}
+  */
+  readonly region?: string;
+}
+export interface DataHuaweicloudCseMicroserviceEnginesEnginesConfigCenterAddresses {
+}
+
+export function dataHuaweicloudCseMicroserviceEnginesEnginesConfigCenterAddressesToTerraform(struct?: DataHuaweicloudCseMicroserviceEnginesEnginesConfigCenterAddresses): any {
+  if (!cdktf.canInspect(struct) || cdktf.Tokenization.isResolvable(struct)) { return struct; }
+  if (cdktf.isComplexElement(struct)) {
+    throw new Error("A complex element was used as configuration, this is not supported: https://cdk.tf/complex-object-as-configuration");
+  }
+  return {
+  }
+}
+
+
+export function dataHuaweicloudCseMicroserviceEnginesEnginesConfigCenterAddressesToHclTerraform(struct?: DataHuaweicloudCseMicroserviceEnginesEnginesConfigCenterAddresses): any {
+  if (!cdktf.canInspect(struct) || cdktf.Tokenization.isResolvable(struct)) { return struct; }
+  if (cdktf.isComplexElement(struct)) {
+    throw new Error("A complex element was used as configuration, this is not supported: https://cdk.tf/complex-object-as-configuration");
+  }
+  const attrs = {
+  };
+  return attrs;
+}
+
+export class DataHuaweicloudCseMicroserviceEnginesEnginesConfigCenterAddressesOutputReference extends cdktf.ComplexObject {
+  private isEmptyObject = false;
+
+  /**
+  * @param terraformResource The parent resource
+  * @param terraformAttribute The attribute on the parent resource this class is referencing
+  * @param complexObjectIndex the index of this item in the list
+  * @param complexObjectIsFromSet whether the list is wrapping a set (will add tolist() to be able to access an item via an index)
+  */
+  public constructor(terraformResource: cdktf.IInterpolatingParent, terraformAttribute: string, complexObjectIndex: number, complexObjectIsFromSet: boolean) {
+    super(terraformResource, terraformAttribute, complexObjectIsFromSet, complexObjectIndex);
+  }
+
+  public get internalValue(): DataHuaweicloudCseMicroserviceEnginesEnginesConfigCenterAddresses | undefined {
+    let hasAnyValues = this.isEmptyObject;
+    const internalValueResult: any = {};
+    return hasAnyValues ? internalValueResult : undefined;
+  }
+
+  public set internalValue(value: DataHuaweicloudCseMicroserviceEnginesEnginesConfigCenterAddresses | undefined) {
+    if (value === undefined) {
+      this.isEmptyObject = false;
+    }
+    else {
+      this.isEmptyObject = Object.keys(value).length === 0;
+    }
+  }
+
+  // private - computed: true, optional: false, required: false
+  public get private() {
+    return this.getStringAttribute('private');
+  }
+
+  // public - computed: true, optional: false, required: false
+  public get public() {
+    return this.getStringAttribute('public');
+  }
+}
+
+export class DataHuaweicloudCseMicroserviceEnginesEnginesConfigCenterAddressesList extends cdktf.ComplexList {
+
+  /**
+  * @param terraformResource The parent resource
+  * @param terraformAttribute The attribute on the parent resource this class is referencing
+  * @param wrapsSet whether the list is wrapping a set (will add tolist() to be able to access an item via an index)
+  */
+  constructor(protected terraformResource: cdktf.IInterpolatingParent, protected terraformAttribute: string, protected wrapsSet: boolean) {
+    super(terraformResource, terraformAttribute, wrapsSet)
+  }
+
+  /**
+  * @param index the index of the item to return
+  */
+  public get(index: number): DataHuaweicloudCseMicroserviceEnginesEnginesConfigCenterAddressesOutputReference {
+    return new DataHuaweicloudCseMicroserviceEnginesEnginesConfigCenterAddressesOutputReference(this.terraformResource, this.terraformAttribute, index, this.wrapsSet);
+  }
+}
+export interface DataHuaweicloudCseMicroserviceEnginesEnginesServiceRegistryAddresses {
+}
+
+export function dataHuaweicloudCseMicroserviceEnginesEnginesServiceRegistryAddressesToTerraform(struct?: DataHuaweicloudCseMicroserviceEnginesEnginesServiceRegistryAddresses): any {
+  if (!cdktf.canInspect(struct) || cdktf.Tokenization.isResolvable(struct)) { return struct; }
+  if (cdktf.isComplexElement(struct)) {
+    throw new Error("A complex element was used as configuration, this is not supported: https://cdk.tf/complex-object-as-configuration");
+  }
+  return {
+  }
+}
+
+
+export function dataHuaweicloudCseMicroserviceEnginesEnginesServiceRegistryAddressesToHclTerraform(struct?: DataHuaweicloudCseMicroserviceEnginesEnginesServiceRegistryAddresses): any {
+  if (!cdktf.canInspect(struct) || cdktf.Tokenization.isResolvable(struct)) { return struct; }
+  if (cdktf.isComplexElement(struct)) {
+    throw new Error("A complex element was used as configuration, this is not supported: https://cdk.tf/complex-object-as-configuration");
+  }
+  const attrs = {
+  };
+  return attrs;
+}
+
+export class DataHuaweicloudCseMicroserviceEnginesEnginesServiceRegistryAddressesOutputReference extends cdktf.ComplexObject {
+  private isEmptyObject = false;
+
+  /**
+  * @param terraformResource The parent resource
+  * @param terraformAttribute The attribute on the parent resource this class is referencing
+  * @param complexObjectIndex the index of this item in the list
+  * @param complexObjectIsFromSet whether the list is wrapping a set (will add tolist() to be able to access an item via an index)
+  */
+  public constructor(terraformResource: cdktf.IInterpolatingParent, terraformAttribute: string, complexObjectIndex: number, complexObjectIsFromSet: boolean) {
+    super(terraformResource, terraformAttribute, complexObjectIsFromSet, complexObjectIndex);
+  }
+
+  public get internalValue(): DataHuaweicloudCseMicroserviceEnginesEnginesServiceRegistryAddresses | undefined {
+    let hasAnyValues = this.isEmptyObject;
+    const internalValueResult: any = {};
+    return hasAnyValues ? internalValueResult : undefined;
+  }
+
+  public set internalValue(value: DataHuaweicloudCseMicroserviceEnginesEnginesServiceRegistryAddresses | undefined) {
+    if (value === undefined) {
+      this.isEmptyObject = false;
+    }
+    else {
+      this.isEmptyObject = Object.keys(value).length === 0;
+    }
+  }
+
+  // private - computed: true, optional: false, required: false
+  public get private() {
+    return this.getStringAttribute('private');
+  }
+
+  // public - computed: true, optional: false, required: false
+  public get public() {
+    return this.getStringAttribute('public');
+  }
+}
+
+export class DataHuaweicloudCseMicroserviceEnginesEnginesServiceRegistryAddressesList extends cdktf.ComplexList {
+
+  /**
+  * @param terraformResource The parent resource
+  * @param terraformAttribute The attribute on the parent resource this class is referencing
+  * @param wrapsSet whether the list is wrapping a set (will add tolist() to be able to access an item via an index)
+  */
+  constructor(protected terraformResource: cdktf.IInterpolatingParent, protected terraformAttribute: string, protected wrapsSet: boolean) {
+    super(terraformResource, terraformAttribute, wrapsSet)
+  }
+
+  /**
+  * @param index the index of the item to return
+  */
+  public get(index: number): DataHuaweicloudCseMicroserviceEnginesEnginesServiceRegistryAddressesOutputReference {
+    return new DataHuaweicloudCseMicroserviceEnginesEnginesServiceRegistryAddressesOutputReference(this.terraformResource, this.terraformAttribute, index, this.wrapsSet);
+  }
+}
+export interface DataHuaweicloudCseMicroserviceEnginesEngines {
+}
+
+export function dataHuaweicloudCseMicroserviceEnginesEnginesToTerraform(struct?: DataHuaweicloudCseMicroserviceEnginesEngines): any {
+  if (!cdktf.canInspect(struct) || cdktf.Tokenization.isResolvable(struct)) { return struct; }
+  if (cdktf.isComplexElement(struct)) {
+    throw new Error("A complex element was used as configuration, this is not supported: https://cdk.tf/complex-object-as-configuration");
+  }
+  return {
+  }
+}
+
+
+export function dataHuaweicloudCseMicroserviceEnginesEnginesToHclTerraform(struct?: DataHuaweicloudCseMicroserviceEnginesEngines): any {
+  if (!cdktf.canInspect(struct) || cdktf.Tokenization.isResolvable(struct)) { return struct; }
+  if (cdktf.isComplexElement(struct)) {
+    throw new Error("A complex element was used as configuration, this is not supported: https://cdk.tf/complex-object-as-configuration");
+  }
+  const attrs = {
+  };
+  return attrs;
+}
+
+export class DataHuaweicloudCseMicroserviceEnginesEnginesOutputReference extends cdktf.ComplexObject {
+  private isEmptyObject = false;
+
+  /**
+  * @param terraformResource The parent resource
+  * @param terraformAttribute The attribute on the parent resource this class is referencing
+  * @param complexObjectIndex the index of this item in the list
+  * @param complexObjectIsFromSet whether the list is wrapping a set (will add tolist() to be able to access an item via an index)
+  */
+  public constructor(terraformResource: cdktf.IInterpolatingParent, terraformAttribute: string, complexObjectIndex: number, complexObjectIsFromSet: boolean) {
+    super(terraformResource, terraformAttribute, complexObjectIsFromSet, complexObjectIndex);
+  }
+
+  public get internalValue(): DataHuaweicloudCseMicroserviceEnginesEngines | undefined {
+    let hasAnyValues = this.isEmptyObject;
+    const internalValueResult: any = {};
+    return hasAnyValues ? internalValueResult : undefined;
+  }
+
+  public set internalValue(value: DataHuaweicloudCseMicroserviceEnginesEngines | undefined) {
+    if (value === undefined) {
+      this.isEmptyObject = false;
+    }
+    else {
+      this.isEmptyObject = Object.keys(value).length === 0;
+    }
+  }
+
+  // auth_type - computed: true, optional: false, required: false
+  public get authType() {
+    return this.getStringAttribute('auth_type');
+  }
+
+  // availability_zones - computed: true, optional: false, required: false
+  public get availabilityZones() {
+    return this.getListAttribute('availability_zones');
+  }
+
+  // config_center_addresses - computed: true, optional: false, required: false
+  private _configCenterAddresses = new DataHuaweicloudCseMicroserviceEnginesEnginesConfigCenterAddressesList(this, "config_center_addresses", false);
+  public get configCenterAddresses() {
+    return this._configCenterAddresses;
+  }
+
+  // created_at - computed: true, optional: false, required: false
+  public get createdAt() {
+    return this.getStringAttribute('created_at');
+  }
+
+  // description - computed: true, optional: false, required: false
+  public get description() {
+    return this.getStringAttribute('description');
+  }
+
+  // eip_id - computed: true, optional: false, required: false
+  public get eipId() {
+    return this.getStringAttribute('eip_id');
+  }
+
+  // enterprise_project_id - computed: true, optional: false, required: false
+  public get enterpriseProjectId() {
+    return this.getStringAttribute('enterprise_project_id');
+  }
+
+  // extend_params - computed: true, optional: false, required: false
+  private _extendParams = new cdktf.StringMap(this, "extend_params");
+  public get extendParams() {
+    return this._extendParams;
+  }
+
+  // flavor - computed: true, optional: false, required: false
+  public get flavor() {
+    return this.getStringAttribute('flavor');
+  }
+
+  // id - computed: true, optional: false, required: false
+  public get id() {
+    return this.getStringAttribute('id');
+  }
+
+  // instance_limit - computed: true, optional: false, required: false
+  public get instanceLimit() {
+    return this.getNumberAttribute('instance_limit');
+  }
+
+  // name - computed: true, optional: false, required: false
+  public get name() {
+    return this.getStringAttribute('name');
+  }
+
+  // network_id - computed: true, optional: false, required: false
+  public get networkId() {
+    return this.getStringAttribute('network_id');
+  }
+
+  // service_limit - computed: true, optional: false, required: false
+  public get serviceLimit() {
+    return this.getNumberAttribute('service_limit');
+  }
+
+  // service_registry_addresses - computed: true, optional: false, required: false
+  private _serviceRegistryAddresses = new DataHuaweicloudCseMicroserviceEnginesEnginesServiceRegistryAddressesList(this, "service_registry_addresses", false);
+  public get serviceRegistryAddresses() {
+    return this._serviceRegistryAddresses;
+  }
+
+  // status - computed: true, optional: false, required: false
+  public get status() {
+    return this.getStringAttribute('status');
+  }
+
+  // version - computed: true, optional: false, required: false
+  public get version() {
+    return this.getStringAttribute('version');
+  }
+}
+
+export class DataHuaweicloudCseMicroserviceEnginesEnginesList extends cdktf.ComplexList {
+
+  /**
+  * @param terraformResource The parent resource
+  * @param terraformAttribute The attribute on the parent resource this class is referencing
+  * @param wrapsSet whether the list is wrapping a set (will add tolist() to be able to access an item via an index)
+  */
+  constructor(protected terraformResource: cdktf.IInterpolatingParent, protected terraformAttribute: string, protected wrapsSet: boolean) {
+    super(terraformResource, terraformAttribute, wrapsSet)
+  }
+
+  /**
+  * @param index the index of the item to return
+  */
+  public get(index: number): DataHuaweicloudCseMicroserviceEnginesEnginesOutputReference {
+    return new DataHuaweicloudCseMicroserviceEnginesEnginesOutputReference(this.terraformResource, this.terraformAttribute, index, this.wrapsSet);
+  }
+}
+
+/**
+* Represents a {@link https://registry.terraform.io/providers/huaweicloud/huaweicloud/1.71.1/docs/data-sources/cse_microservice_engines huaweicloud_cse_microservice_engines}
+*/
+export class DataHuaweicloudCseMicroserviceEngines extends cdktf.TerraformDataSource {
+
+  // =================
+  // STATIC PROPERTIES
+  // =================
+  public static readonly tfResourceType = "huaweicloud_cse_microservice_engines";
+
+  // ==============
+  // STATIC Methods
+  // ==============
+  /**
+  * Generates CDKTF code for importing a DataHuaweicloudCseMicroserviceEngines resource upon running "cdktf plan <stack-name>"
+  * @param scope The scope in which to define this construct
+  * @param importToId The construct id used in the generated config for the DataHuaweicloudCseMicroserviceEngines to import
+  * @param importFromId The id of the existing DataHuaweicloudCseMicroserviceEngines that should be imported. Refer to the {@link https://registry.terraform.io/providers/huaweicloud/huaweicloud/1.71.1/docs/data-sources/cse_microservice_engines#import import section} in the documentation of this resource for the id to use
+  * @param provider? Optional instance of the provider where the DataHuaweicloudCseMicroserviceEngines to import is found
+  */
+  public static generateConfigForImport(scope: Construct, importToId: string, importFromId: string, provider?: cdktf.TerraformProvider) {
+        return new cdktf.ImportableResource(scope, importToId, { terraformResourceType: "huaweicloud_cse_microservice_engines", importId: importFromId, provider });
+      }
+
+  // ===========
+  // INITIALIZER
+  // ===========
+
+  /**
+  * Create a new {@link https://registry.terraform.io/providers/huaweicloud/huaweicloud/1.71.1/docs/data-sources/cse_microservice_engines huaweicloud_cse_microservice_engines} Data Source
+  *
+  * @param scope The scope in which to define this construct
+  * @param id The scoped construct ID. Must be unique amongst siblings in the same scope
+  * @param options DataHuaweicloudCseMicroserviceEnginesConfig = {}
+  */
+  public constructor(scope: Construct, id: string, config: DataHuaweicloudCseMicroserviceEnginesConfig = {}) {
+    super(scope, id, {
+      terraformResourceType: 'huaweicloud_cse_microservice_engines',
+      terraformGeneratorMetadata: {
+        providerName: 'huaweicloud',
+        providerVersion: '1.71.1',
+        providerVersionConstraint: '~> 1.71'
+      },
+      provider: config.provider,
+      dependsOn: config.dependsOn,
+      count: config.count,
+      lifecycle: config.lifecycle,
+      provisioners: config.provisioners,
+      connection: config.connection,
+      forEach: config.forEach
+    });
+    this._id = config.id;
+    this._region = config.region;
+  }
+
+  // ==========
+  // ATTRIBUTES
+  // ==========
+
+  // engines - computed: true, optional: false, required: false
+  private _engines = new DataHuaweicloudCseMicroserviceEnginesEnginesList(this, "engines", false);
+  public get engines() {
+    return this._engines;
+  }
+
+  // id - computed: true, optional: true, required: false
+  private _id?: string; 
+  public get id() {
+    return this.getStringAttribute('id');
+  }
+  public set id(value: string) {
+    this._id = value;
+  }
+  public resetId() {
+    this._id = undefined;
+  }
+  // Temporarily expose input value. Use with caution.
+  public get idInput() {
+    return this._id;
+  }
+
+  // region - computed: true, optional: true, required: false
+  private _region?: string; 
+  public get region() {
+    return this.getStringAttribute('region');
+  }
+  public set region(value: string) {
+    this._region = value;
+  }
+  public resetRegion() {
+    this._region = undefined;
+  }
+  // Temporarily expose input value. Use with caution.
+  public get regionInput() {
+    return this._region;
+  }
+
+  // =========
+  // SYNTHESIS
+  // =========
+
+  protected synthesizeAttributes(): { [name: string]: any } {
+    return {
+      id: cdktf.stringToTerraform(this._id),
+      region: cdktf.stringToTerraform(this._region),
+    };
+  }
+
+  protected synthesizeHclAttributes(): { [name: string]: any } {
+    const attrs = {
+      id: {
+        value: cdktf.stringToHclTerraform(this._id),
+        isBlock: false,
+        type: "simple",
+        storageClassType: "string",
+      },
+      region: {
+        value: cdktf.stringToHclTerraform(this._region),
+        isBlock: false,
+        type: "simple",
+        storageClassType: "string",
+      },
+    };
+
+    // remove undefined attributes
+    return Object.fromEntries(Object.entries(attrs).filter(([_, value]) => value !== undefined && value.value !== undefined ))
+  }
+}

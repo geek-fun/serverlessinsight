@@ -1,7 +1,7 @@
 import * as ros from '@alicloud/ros-cdk-core';
 import { ActionContext, ServerlessIac } from '../types';
 import { logger, rosStackDeploy } from '../common';
-import { RosStack } from './rosStack/rosStack';
+import { RosStack } from './rosStack';
 
 export const generateStackTemplate = (
   stackName: string,

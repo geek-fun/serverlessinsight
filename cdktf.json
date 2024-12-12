@@ -1,0 +1,9 @@
+{
+  "language": "typescript",
+  "app": "npx ts-node main.ts",
+  "terraformProviders": [
+    "huaweicloud/huaweicloud@~> 1.71"
+  ],
+  "codeMakerOutput": "src/constructs",
+  "projectId": "9534d8ed-8057-4a51-9742-0915bf94a60b"
+}
