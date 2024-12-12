@@ -641,7 +641,7 @@ export const largeCodeRos = {
           OssBucketName: {
             'Fn::GetAtt': ['my-demo-service_artifacts_bucket', 'Name'],
           },
-          OssObjectName: 'hello_fn/43cb4c356149762dbe507fc1baede172.zip',
+          OssObjectName: 'hello_fn/43cb4c356149762dbe507fc1baede172-large-artifact.zip',
         },
         EnvironmentVariables: {
           NODE_ENV: 'production',
@@ -689,7 +689,7 @@ export const largeCodeRos = {
           sources: [
             {
               bucket: { 'Fn::Sub': expect.stringContaining('assets-${ALIYUN::Region}') },
-              fileName: 'hello_fn/43cb4c356149762dbe507fc1baede172.ziplarge-artifact.zip',
+              fileName: 'hello_fn/43cb4c356149762dbe507fc1baede172-large-artifact.zip',
               objectKey: '2bfeafed8d3df0d44c235271cdf2aa7d908a3c2757af14a67d33d102847f46fd.zip',
             },
           ],

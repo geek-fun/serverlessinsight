@@ -31,6 +31,7 @@ export const resolveFunctions = (
     });
 
   let destinationBucket: oss.Bucket;
+  let artifactsDeployment: ossDeployment.BucketDeployment;
   if (!isEmpty(fileSources)) {
     // creat oss to store code
     destinationBucket = new oss.Bucket(
@@ -42,7 +43,7 @@ export const resolveFunctions = (
       },
       true,
     );
-    new ossDeployment.BucketDeployment(
+    artifactsDeployment = new ossDeployment.BucketDeployment(
       scope,
       `${service}_artifacts_code_deployment`,
       {
@@ -55,10 +56,11 @@ export const resolveFunctions = (
     );
   }
   functions?.forEach((fnc) => {
+    const storeInBucket = readCodeSize(fnc.code) > CODE_ZIP_SIZE_LIMIT;
     let code: RosFunction.CodeProperty = {
       zipFile: resolveCode(fnc.code),
     };
-    if (readCodeSize(fnc.code) > CODE_ZIP_SIZE_LIMIT) {
+    if (storeInBucket) {
       code = {
         ossBucketName: destinationBucket.attrName,
         ossObjectName: fileSources?.find(
@@ -66,7 +68,7 @@ export const resolveFunctions = (
         )?.objectKey,
       };
     }
-    new fc.RosFunction(
+    const fcn = new fc.RosFunction(
       scope,
       fnc.key,
       {
@@ -80,5 +82,9 @@ export const resolveFunctions = (
       },
       true,
     );
+    if (storeInBucket) {
+      fcn.addDependsOn(destinationBucket as unknown as ros.RosResource);
+      fcn.addDependsOn(artifactsDeployment as unknown as ros.RosResource);
+    }
   });
 };

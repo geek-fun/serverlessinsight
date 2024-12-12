@@ -28,8 +28,8 @@ export const getFileSource = (
 
   const hash = crypto.createHash('md5').update(fs.readFileSync(filePath)).digest('hex');
 
-  const objectKey = `${fcName}/${hash}.${filePath.split('.').pop()}`;
-  const source = ossDeployment.Source.asset(filePath, {}, objectKey);
+  const objectKey = `${fcName}/${hash}-${filePath.split('/').pop()}`;
+  const source = ossDeployment.Source.asset(filePath, {}, `${fcName}/${hash}-`);
 
   return { source, objectKey };
 };
