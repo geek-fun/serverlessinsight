@@ -1,8 +1,16 @@
 import { ActionContext, ServerlessIac } from '../../types';
 
 const provider = (context: ActionContext) => `
+terraform {
+  required_providers {
+    huaweicloud = {
+      source  = "huaweicloud/huaweicloud"
+      version = ">= 1.71.2"
+    }
+  }
+}
+
 provider "huaweicloud" {
-  version    = ">= 1.36.0"
   region     = "${context.region}"
   access_key = "${context.accessKeyId}"
   secret_key = "${context.accessKeySecret}"
