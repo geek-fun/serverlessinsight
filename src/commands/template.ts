@@ -12,11 +12,13 @@ export const template = (
   const iac = parseYaml(context);
 
   const { template } = generateStackTemplate(stackName, iac, context);
-
-  const output =
-    options.format === TemplateFormat.JSON
-      ? JSON.stringify(template, null, 2)
-      : yaml.stringify(template);
-
-  logger.info(`\n${output}`);
+  if (typeof template === 'string') {
+    logger.info(`\n${template}`);
+  } else {
+    const output =
+      options.format === TemplateFormat.JSON
+        ? JSON.stringify(template, null, 2)
+        : yaml.stringify(template);
+    logger.info(`\n${output}`);
+  }
 };
