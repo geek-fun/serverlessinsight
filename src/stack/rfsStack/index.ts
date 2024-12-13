@@ -1,15 +1,24 @@
-import { TerraformStack } from 'cdktf';
-import { Construct } from 'constructs';
 import { ActionContext, ServerlessIac } from '../../types';
-import { HuaweicloudProvider } from '../../constructs/providers/huaweicloud/provider';
 
-export class RfsStack extends TerraformStack {
-  constructor(scope: Construct, iac: ServerlessIac, context: ActionContext) {
-    super(scope, context.stackName);
-    new HuaweicloudProvider(scope, 'huaweicloud', {
-      region: context.region,
-      accessKey: context.accessKeyId,
-      secretKey: context.accessKeySecret,
-    });
+const provider = (context: ActionContext) => `
+provider "huaweicloud" {
+  version    = ">= 1.36.0"
+  region     = "${context.region}"
+  access_key = "${context.accessKeyId}"
+  secret_key = "${context.accessKeySecret}"
+}
+`;
+
+export class RfsStack {
+  private hcl: string = '';
+
+  constructor(
+    private readonly iac: ServerlessIac,
+    private readonly context: ActionContext,
+  ) {
+    this.hcl = provider(context);
+  }
+  public toHclTerraform() {
+    return this.hcl;
   }
 }

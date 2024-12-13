@@ -1,3 +1,0 @@
-# `huaweicloud_ddm_schema`
-
-Refer to the Terraform Registry for docs: [`huaweicloud_ddm_schema`](https://registry.terraform.io/providers/huaweicloud/huaweicloud/1.71.1/docs/resources/ddm_schema).

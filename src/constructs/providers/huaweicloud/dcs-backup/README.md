@@ -1,3 +1,0 @@
-# `huaweicloud_dcs_backup`
-
-Refer to the Terraform Registry for docs: [`huaweicloud_dcs_backup`](https://registry.terraform.io/providers/huaweicloud/huaweicloud/1.71.1/docs/resources/dcs_backup).

@@ -1,5 +1,5 @@
 import { existsSync, readFileSync } from 'node:fs';
-import { ActionContext, ServerlessIac, ServerlessIacRaw } from '../types';
+import { ActionContext, Provider, ServerlessIac, ServerlessIacRaw } from '../types';
 import { parseFunction } from './functionParser';
 import { parseEvent } from './eventParser';
 import { parseDatabase } from './databaseParser';
@@ -17,7 +17,7 @@ const transformYaml = (iacJson: ServerlessIacRaw): ServerlessIac => {
   return {
     service: iacJson.service,
     version: iacJson.version,
-    provider: iacJson.provider,
+    provider: iacJson.provider as Provider,
     vars: iacJson.vars,
     stages: iacJson.stages,
     functions: parseFunction(iacJson.functions),

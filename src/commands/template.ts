@@ -10,6 +10,7 @@ export const template = (
 ) => {
   const context = constructActionContext({ ...options, stackName });
   const iac = parseYaml(context);
+
   const { template } = generateStackTemplate(stackName, iac, context);
 
   const output =

@@ -1,9 +1,11 @@
 import * as ros from '@alicloud/ros-cdk-core';
-import { ActionContext, ServerlessIac } from '../types';
+
+import { ActionContext, Provider, ServerlessIac } from '../types';
 import { logger, rosStackDeploy } from '../common';
 import { RosStack } from './rosStack';
+import { RfsStack } from './rfsStack';
 
-export const generateStackTemplate = (
+export const generateRosStackTemplate = (
   stackName: string,
   iac: ServerlessIac,
   context: ActionContext,
@@ -17,13 +19,39 @@ export const generateStackTemplate = (
   return { template: stackArtifact.template };
 };
 
+export const generateRfsStackTemplate = (
+  stackName: string,
+  iac: ServerlessIac,
+  context: ActionContext,
+) => {
+  const stack = new RfsStack(iac, context);
+
+  const hcl = stack.toHclTerraform();
+  console.log('HCL:', hcl);
+
+  return { template: hcl };
+};
+
 export const deployStack = async (
   stackName: string,
   iac: ServerlessIac,
   context: ActionContext,
 ) => {
-  const { template } = generateStackTemplate(stackName, iac, context);
+  const { template } = generateRosStackTemplate(stackName, iac, context);
 
   await rosStackDeploy(stackName, template, context);
   logger.info(`Stack deployed! 🎉`);
+};
+
+export const generateStackTemplate = (
+  stackName: string,
+  iac: ServerlessIac,
+  context: ActionContext,
+): { template: unknown } => {
+  if (iac.provider === Provider.ALIYUN) {
+    return generateRosStackTemplate(stackName, iac, context);
+  } else if (iac.provider === Provider.HUAWEI) {
+    return generateRfsStackTemplate(stackName, iac, context);
+  }
+  return { template: '' };
 };

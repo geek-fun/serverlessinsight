@@ -1,3 +1,0 @@
-# `data_huaweicloud_dataarts_studio_workspaces`
-
-Refer to the Terraform Registry for docs: [`data_huaweicloud_dataarts_studio_workspaces`](https://registry.terraform.io/providers/huaweicloud/huaweicloud/1.71.1/docs/data-sources/dataarts_studio_workspaces).

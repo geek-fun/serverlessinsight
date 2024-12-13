@@ -1,6 +1,0 @@
-{
-  "cdktf": "0.20.10",
-  "providers": {
-    "huaweicloud": "~> 1.71"
-  }
-}

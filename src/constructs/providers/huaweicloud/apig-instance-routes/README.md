@@ -1,3 +1,0 @@
-# `huaweicloud_apig_instance_routes`
-
-Refer to the Terraform Registry for docs: [`huaweicloud_apig_instance_routes`](https://registry.terraform.io/providers/huaweicloud/huaweicloud/1.71.1/docs/resources/apig_instance_routes).
