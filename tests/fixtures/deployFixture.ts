@@ -1,10 +1,11 @@
 import { DatabaseEnum, ServerlessIac } from '../../src/types';
 import { cloneDeep, set } from 'lodash';
+import { Provider } from '../../src/common';
 
 export const oneFcOneGatewayIac = {
   service: 'my-demo-service',
   version: '0.0.1',
-  provider: 'aliyun',
+  provider: 'aliyun' as Provider,
   vars: {
     region: 'cn-hangzhou',
     account_id: 1234567890,
@@ -239,7 +240,7 @@ export const referredServiceRos = {
 export const minimumIac = {
   service: 'my-demo-minimum-service',
   version: '0.0.1',
-  provider: 'aliyun',
+  provider: 'aliyun' as Provider,
 
   functions: [
     {
@@ -272,7 +273,7 @@ export const minimumRos = {
 export const oneFcIac = {
   service: 'my-demo-service',
   version: '0.0.1',
-  provider: 'aliyun',
+  provider: 'aliyun' as Provider,
   vars: {
     region: 'cn-hangzhou',
     account_id: 1234567890,
@@ -340,7 +341,7 @@ export const oneFcRos = {
 export const oneFcIacWithStage = {
   service: 'my-demo-service',
   version: '0.0.1',
-  provider: 'aliyun',
+  provider: 'aliyun' as Provider,
   vars: {
     region: 'cn-hangzhou',
     account_id: 1234567890,
@@ -751,7 +752,7 @@ export const defaultContext = {
 export const esServerlessMinimumIac: ServerlessIac = {
   service: 'my-demo-es-serverless-service',
   version: '0.0.1',
-  provider: 'aliyun',
+  provider: 'aliyun' as Provider as Provider,
   databases: [
     {
       key: 'insight_es_db_test',

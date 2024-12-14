@@ -6,6 +6,7 @@ import { parseDatabase } from './databaseParser';
 import { parseTag } from './tagParser';
 import { parse } from 'yaml';
 import { validateYaml } from '../validator';
+import { Provider } from '../common';
 
 const validateExistence = (path: string) => {
   if (!existsSync(path)) {
@@ -17,7 +18,7 @@ const transformYaml = (iacJson: ServerlessIacRaw): ServerlessIac => {
   return {
     service: iacJson.service,
     version: iacJson.version,
-    provider: iacJson.provider,
+    provider: iacJson.provider as Provider,
     vars: iacJson.vars,
     stages: iacJson.stages,
     functions: parseFunction(iacJson.functions),

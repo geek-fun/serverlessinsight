@@ -3,10 +3,18 @@ import { Tags } from './domains/tag';
 import { EventDomain, EventRaw } from './domains/event';
 import { DatabaseDomain, DatabaseRaw } from './domains/database';
 import { FunctionDomain, FunctionRaw } from './domains/function';
+import { Provider } from '../common';
+
+export * from './domains/database';
+export * from './domains/event';
+export * from './domains/function';
+export * from './domains/tag';
+export * from './domains/vars';
+export * from './domains/context';
 
 export type ServerlessIacRaw = {
   version: string;
-  provider: string;
+  provider: Provider;
   vars: Vars;
   stages: Stages;
   service: string;
@@ -18,7 +26,7 @@ export type ServerlessIacRaw = {
 
 export type ServerlessIac = {
   version: string;
-  provider: string;
+  provider: Provider;
   service: string;
   vars?: Vars;
   stages?: Stages;
@@ -27,10 +35,3 @@ export type ServerlessIac = {
   events?: Array<EventDomain>;
   databases?: Array<DatabaseDomain>;
 };
-
-export * from './domains/database';
-export * from './domains/event';
-export * from './domains/function';
-export * from './domains/tag';
-export * from './domains/vars';
-export * from './domains/context';
