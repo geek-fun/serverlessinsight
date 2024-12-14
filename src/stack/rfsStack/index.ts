@@ -1,11 +1,13 @@
 import { ActionContext, ServerlessIac } from '../../types';
+import { resolveFunction } from './function';
 
-const provider = (context: ActionContext) => `
+const provider = (stack: RfsStack, context: ActionContext) => {
+  const hcl = `
 terraform {
   required_providers {
     huaweicloud = {
       source  = "huaweicloud/huaweicloud"
-      version = ">= 1.71.2"
+      version = ">= 1.67.1"
     }
   }
 }
@@ -15,7 +17,9 @@ provider "huaweicloud" {
   access_key = "${context.accessKeyId}"
   secret_key = "${context.accessKeySecret}"
 }
-`;
+  `;
+  stack.appendHcl(hcl);
+};
 
 export class RfsStack {
   private hcl: string = '';
@@ -24,9 +28,15 @@ export class RfsStack {
     private readonly iac: ServerlessIac,
     private readonly context: ActionContext,
   ) {
-    this.hcl = provider(context);
+    provider(this, context);
+    resolveFunction(this, iac.functions, context, iac.service);
   }
+
   public toHclTerraform() {
     return this.hcl;
+  }
+
+  public appendHcl(hcl: string) {
+    this.hcl += hcl;
   }
 }
