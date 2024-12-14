@@ -1,5 +1,6 @@
-import { DatabaseEnum, Provider, ServerlessIac } from '../../src/types';
+import { DatabaseEnum, ServerlessIac } from '../../src/types';
 import { cloneDeep, set } from 'lodash';
+import { Provider } from '../../src/common';
 
 export const oneFcOneGatewayIac = {
   service: 'my-demo-service',

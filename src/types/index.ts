@@ -3,6 +3,7 @@ import { Tags } from './domains/tag';
 import { EventDomain, EventRaw } from './domains/event';
 import { DatabaseDomain, DatabaseRaw } from './domains/database';
 import { FunctionDomain, FunctionRaw } from './domains/function';
+import { Provider } from '../common';
 
 export * from './domains/database';
 export * from './domains/event';
@@ -10,11 +11,6 @@ export * from './domains/function';
 export * from './domains/tag';
 export * from './domains/vars';
 export * from './domains/context';
-
-export const enum Provider {
-  ALIYUN = 'aliyun',
-  HUAWEI = 'huawei',
-}
 
 export type ServerlessIacRaw = {
   version: string;

@@ -1,11 +1,12 @@
 import { existsSync, readFileSync } from 'node:fs';
-import { ActionContext, Provider, ServerlessIac, ServerlessIacRaw } from '../types';
+import { ActionContext, ServerlessIac, ServerlessIacRaw } from '../types';
 import { parseFunction } from './functionParser';
 import { parseEvent } from './eventParser';
 import { parseDatabase } from './databaseParser';
 import { parseTag } from './tagParser';
 import { parse } from 'yaml';
 import { validateYaml } from '../validator';
+import { Provider } from '../common';
 
 const validateExistence = (path: string) => {
   if (!existsSync(path)) {

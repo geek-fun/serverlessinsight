@@ -1,7 +1,7 @@
 import * as ros from '@alicloud/ros-cdk-core';
 
-import { ActionContext, Provider, ServerlessIac } from '../types';
-import { logger, rosStackDeploy } from '../common';
+import { ActionContext, ServerlessIac } from '../types';
+import { logger, Provider, rosStackDeploy } from '../common';
 import { RosStack } from './rosStack';
 import { RfsStack } from './rfsStack';
 
