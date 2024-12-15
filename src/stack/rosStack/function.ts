@@ -6,7 +6,6 @@ import {
   replaceReference,
   resolveCode,
 } from '../../common';
-import { RosFunction } from '@alicloud/ros-cdk-fc3/lib/fc3.generated';
 import * as fc from '@alicloud/ros-cdk-fc3';
 import * as oss from '@alicloud/ros-cdk-oss';
 import { isEmpty } from 'lodash';
@@ -54,19 +53,21 @@ export const resolveFunctions = (
       },
       true,
     );
+    artifactsDeployment.addDependency(destinationBucket);
   }
   functions?.forEach((fnc) => {
     const storeInBucket = readCodeSize(fnc.code) > CODE_ZIP_SIZE_LIMIT;
-    let code: RosFunction.CodeProperty = {
-      zipFile: resolveCode(fnc.code),
+    const zipcode: fc.RosFunction.CodeProperty = {
+      zipFile: resolveCode('artifacts/artifact.zip'),
     };
     if (storeInBucket) {
-      code = {
-        ossBucketName: destinationBucket.attrName,
-        ossObjectName: fileSources?.find(
-          ({ fcName }) => fcName === replaceReference(fnc.name, context),
-        )?.objectKey,
-      };
+      // const code = {
+      //   ossBucketName: destinationBucket.attrName,
+      //   ossObjectName: fileSources?.find(
+      //     ({ fcName }) => fcName === replaceReference(fnc.name, context),
+      //   )?.objectKey,
+      // };
+      // console.log('code', code);
     }
     const fcn = new fc.RosFunction(
       scope,
@@ -78,7 +79,7 @@ export const resolveFunctions = (
         memorySize: replaceReference(fnc.memory, context),
         timeout: replaceReference(fnc.timeout, context),
         environmentVariables: replaceReference(fnc.environment, context),
-        code,
+        code: zipcode,
       },
       true,
     );
