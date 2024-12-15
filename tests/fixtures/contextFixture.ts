@@ -1,8 +1,10 @@
 import { ActionContext } from '../../src/types';
+import { ProviderEnum } from '../../src/common';
 
 export const context: ActionContext = {
   stage: 'test',
   stackName: 'testStack',
+  provider: ProviderEnum.ALIYUN,
   region: 'cn-hangzhou',
   accessKeyId: 'testAccessKeyId',
   accessKeySecret: 'testAccessKeySecret',

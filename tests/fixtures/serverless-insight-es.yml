@@ -1,5 +1,8 @@
 version: 0.0.1
-provider: aliyun
+
+provider:
+  name: aliyun
+  region: cn-chengdu
 
 
 service: insight-es-poc

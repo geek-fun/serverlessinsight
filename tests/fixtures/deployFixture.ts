@@ -1,13 +1,15 @@
 import { DatabaseEnum, ServerlessIac } from '../../src/types';
 import { cloneDeep, set } from 'lodash';
-import { Provider } from '../../src/common';
+import { ProviderEnum } from '../../src/common';
 
 export const oneFcOneGatewayIac = {
   service: 'my-demo-service',
   version: '0.0.1',
-  provider: 'aliyun' as Provider,
+  provider: {
+    name: 'aliyun' as ProviderEnum,
+    region: "cn-hangzhou'",
+  },
   vars: {
-    region: 'cn-hangzhou',
     account_id: 1234567890,
   },
   stages: {
@@ -65,7 +67,6 @@ export const oneFcOneGatewayRos = {
   Metadata: { 'ALIYUN::ROS::Interface': { TemplateTags: ['Create by ROS CDK'] } },
   Parameters: {
     account_id: { Default: 1234567890, Type: 'String' },
-    region: { Default: 'cn-hangzhou', Type: 'String' },
   },
   ROSTemplateFormatVersion: '2015-09-01',
   Resources: {
@@ -160,7 +161,6 @@ export const referredServiceRos = {
   Metadata: { 'ALIYUN::ROS::Interface': { TemplateTags: ['Create by ROS CDK'] } },
   Parameters: {
     account_id: { Default: 1234567890, Type: 'String' },
-    region: { Default: 'cn-hangzhou', Type: 'String' },
   },
   ROSTemplateFormatVersion: '2015-09-01',
   Resources: {
@@ -240,7 +240,10 @@ export const referredServiceRos = {
 export const minimumIac = {
   service: 'my-demo-minimum-service',
   version: '0.0.1',
-  provider: 'aliyun' as Provider,
+  provider: {
+    name: 'aliyun' as ProviderEnum,
+    region: 'cn-hangzhou',
+  },
 
   functions: [
     {
@@ -273,9 +276,11 @@ export const minimumRos = {
 export const oneFcIac = {
   service: 'my-demo-service',
   version: '0.0.1',
-  provider: 'aliyun' as Provider,
-  vars: {
+  provider: {
+    name: 'aliyun' as ProviderEnum,
     region: 'cn-hangzhou',
+  },
+  vars: {
     account_id: 1234567890,
   },
   stages: {
@@ -319,7 +324,6 @@ export const oneFcRos = {
   Metadata: { 'ALIYUN::ROS::Interface': { TemplateTags: ['Create by ROS CDK'] } },
   Parameters: {
     account_id: { Default: 1234567890, Type: 'String' },
-    region: { Default: 'cn-hangzhou', Type: 'String' },
   },
   ROSTemplateFormatVersion: '2015-09-01',
   Resources: {
@@ -341,9 +345,11 @@ export const oneFcRos = {
 export const oneFcIacWithStage = {
   service: 'my-demo-service',
   version: '0.0.1',
-  provider: 'aliyun' as Provider,
-  vars: {
+  provider: {
+    name: 'aliyun',
     region: 'cn-hangzhou',
+  },
+  vars: {
     account_id: 1234567890,
   },
   stages: {
@@ -395,7 +401,6 @@ export const oneFcWithStageRos = {
   Metadata: { 'ALIYUN::ROS::Interface': { TemplateTags: ['Create by ROS CDK'] } },
   Parameters: {
     account_id: { Default: 1234567890, Type: 'String' },
-    region: { Default: 'cn-hangzhou', Type: 'String' },
   },
   ROSTemplateFormatVersion: '2015-09-01',
   Resources: {
@@ -435,10 +440,6 @@ export const largeCodeRos = {
   Parameters: {
     account_id: {
       Default: 1234567890,
-      Type: 'String',
-    },
-    region: {
-      Default: 'cn-hangzhou',
       Type: 'String',
     },
   },
@@ -752,7 +753,10 @@ export const defaultContext = {
 export const esServerlessMinimumIac: ServerlessIac = {
   service: 'my-demo-es-serverless-service',
   version: '0.0.1',
-  provider: 'aliyun' as Provider as Provider,
+  provider: {
+    name: 'aliyun' as ProviderEnum,
+    region: 'cn-hangzhou',
+  },
   databases: [
     {
       key: 'insight_es_db_test',

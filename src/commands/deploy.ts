@@ -8,7 +8,7 @@ export const deploy = async (
 ) => {
   const context = constructActionContext({ ...options, stackName });
   logger.info('Validating yaml...');
-  const iac = parseYaml(context);
+  const iac = parseYaml(context.iacLocation);
   logger.info('Yaml is valid! 🎉');
 
   logger.info('Deploying stack...');
