@@ -1,4 +1,4 @@
-export * from './provider';
+export * from './providerEnum';
 export * from './logger';
 export * from './getVersion';
 export * from './rosClient';

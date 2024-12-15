@@ -3,7 +3,7 @@ import { Tags } from './domains/tag';
 import { EventDomain, EventRaw } from './domains/event';
 import { DatabaseDomain, DatabaseRaw } from './domains/database';
 import { FunctionDomain, FunctionRaw } from './domains/function';
-import { Provider } from '../common';
+import { Provider } from './domains/provider';
 
 export * from './domains/database';
 export * from './domains/event';

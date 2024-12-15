@@ -1,4 +1,4 @@
-export enum Provider {
+export enum ProviderEnum {
   HUAWEI = 'huawei',
   ALIYUN = 'aliyun',
   // TENCENT = 'TENCENT',

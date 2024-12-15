@@ -1,21 +1,20 @@
 version: 0.0.1
-provider: huawei
+provider:
+  name: huawei
+  region: cn-north-4
 
 vars:
-  region: cn-hangzhou
   testv: testVarValue
   handler: index.handler
 
 stages:
   default:
-    region: ${vars.region}
     node_env: default
   dev:
     region: ${vars.region}
     node_env: development
   prod:
-    region: cn-shanghai
-
+    node_env: prod
 service: insight-poc
 
 tags:
