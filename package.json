@@ -58,6 +58,8 @@
     "@alicloud/ros-cdk-ossdeployment": "^1.4.0",
     "@alicloud/ros-cdk-ram": "^1.4.0",
     "@alicloud/ros20190910": "^3.5.2",
+    "@huaweicloud/huaweicloud-sdk-aos": "^3.1.128",
+    "@huaweicloud/huaweicloud-sdk-core": "^3.1.128",
     "ajv": "^8.17.1",
     "chalk": "^5.3.0",
     "commander": "^12.1.0",

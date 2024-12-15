@@ -1,7 +1,7 @@
 import * as ros from '@alicloud/ros-cdk-core';
 
 import { ActionContext, ServerlessIac } from '../types';
-import { logger, Provider, rosStackDeploy } from '../common';
+import { logger, Provider, rfsStackDeploy, rosStackDeploy } from '../common';
 import { RosStack } from './rosStack';
 import { RfsStack } from './rfsStack';
 
@@ -38,8 +38,12 @@ export const deployStack = async (
   context: ActionContext,
 ) => {
   const { template } = generateRosStackTemplate(stackName, iac, context);
+  if (iac.provider === Provider.ALIYUN) {
+    await rosStackDeploy(stackName, template, context);
+  } else if (iac.provider === Provider.HUAWEI) {
+    await rfsStackDeploy(stackName, template);
+  }
 
-  await rosStackDeploy(stackName, template, context);
   logger.info(`Stack deployed! 🎉`);
 };
 
