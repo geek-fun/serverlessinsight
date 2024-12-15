@@ -3,7 +3,7 @@ import { RosParameterType } from '@alicloud/ros-cdk-core';
 import { Vars } from '../../types';
 import { isEmpty } from 'lodash';
 
-export const resloveVars = (scope: ros.Construct, vars: Vars | undefined) => {
+export const resolveVars = (scope: ros.Construct, vars: Vars | undefined) => {
   if (isEmpty(vars)) {
     return undefined;
   }

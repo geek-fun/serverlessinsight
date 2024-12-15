@@ -1,5 +1,6 @@
 import { ActionContext, ServerlessIac } from '../../types';
 import { resolveFunction } from './function';
+import { resolveVars } from './vars';
 
 const provider = (stack: RfsStack, context: ActionContext) => {
   const hcl = `
@@ -14,8 +15,6 @@ terraform {
 
 provider "huaweicloud" {
   region     = "${context.region}"
-  access_key = "${context.accessKeyId}"
-  secret_key = "${context.accessKeySecret}"
 }
   `;
   stack.appendHcl(hcl);
@@ -28,6 +27,7 @@ export class RfsStack {
     private readonly iac: ServerlessIac,
     private readonly context: ActionContext,
   ) {
+    resolveVars(this, iac.vars, iac.stages);
     provider(this, context);
     resolveFunction(this, iac.functions, context, iac.service);
   }

@@ -4,7 +4,7 @@ import { replaceReference } from '../../common';
 import { resolveTags } from './tag';
 import { resolveFunctions } from './function';
 import { resolveStages } from './stage';
-import { resloveVars } from './vars';
+import { resolveVars } from './vars';
 import { resolveDatabases } from './database';
 import { resolveEvents } from './event';
 
@@ -21,7 +21,7 @@ export class RosStack extends ros.Stack {
     new ros.RosInfo(this, ros.RosInfo.description, `${this.service} stack`);
 
     // Define Parameters
-    resloveVars(this, iac.vars);
+    resolveVars(this, iac.vars);
     // Define Mappings
     resolveStages(this, iac.stages, context);
     // Define functions
