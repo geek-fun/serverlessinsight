@@ -1,12 +1,11 @@
 import { existsSync, readFileSync } from 'node:fs';
-import { ActionContext, ServerlessIac, ServerlessIacRaw } from '../types';
+import { ServerlessIac, ServerlessIacRaw } from '../types';
 import { parseFunction } from './functionParser';
 import { parseEvent } from './eventParser';
 import { parseDatabase } from './databaseParser';
 import { parseTag } from './tagParser';
 import { parse } from 'yaml';
 import { validateYaml } from '../validator';
-import { Provider } from '../common';
 
 const validateExistence = (path: string) => {
   if (!existsSync(path)) {
@@ -18,7 +17,7 @@ const transformYaml = (iacJson: ServerlessIacRaw): ServerlessIac => {
   return {
     service: iacJson.service,
     version: iacJson.version,
-    provider: iacJson.provider as Provider,
+    provider: iacJson.provider,
     vars: iacJson.vars,
     stages: iacJson.stages,
     functions: parseFunction(iacJson.functions),
@@ -28,10 +27,10 @@ const transformYaml = (iacJson: ServerlessIacRaw): ServerlessIac => {
   };
 };
 
-export const parseYaml = (context: ActionContext): ServerlessIac => {
-  validateExistence(context.iacLocation);
+export const parseYaml = (iacLocation: string): ServerlessIac => {
+  validateExistence(iacLocation);
 
-  const yamlContent = readFileSync(context.iacLocation, 'utf8');
+  const yamlContent = readFileSync(iacLocation, 'utf8');
   const iacJson = parse(yamlContent) as ServerlessIacRaw;
 
   validateYaml(iacJson);

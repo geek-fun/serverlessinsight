@@ -3,7 +3,13 @@ export const rootSchema = {
   type: 'object',
   properties: {
     version: { type: 'string', enum: ['0.0.0', '0.0.1'] },
-    provider: { type: 'string', enum: ['aliyun', 'huawei'] },
+    provider: {
+      type: 'object',
+      properties: {
+        name: { type: 'string', enum: ['huawei', 'aliyun'] },
+        region: { type: 'string' },
+      },
+    },
     service: { type: 'string' },
     vars: {
       type: 'object',
