@@ -35,9 +35,9 @@ export const resolveFunctions = (
     // creat oss to store code
     destinationBucket = new oss.Bucket(
       scope,
-      replaceReference(`${service}_artifacts_bucket`, context),
+      replaceReference(`${service}_artifacts_bucket_testb`, context),
       {
-        bucketName: `${service}-artifacts-bucket`,
+        bucketName: `${service}-artifacts-bucket-testb`,
         serverSideEncryptionConfiguration: { sseAlgorithm: 'KMS' },
       },
       true,
@@ -48,7 +48,7 @@ export const resolveFunctions = (
       {
         sources: fileSources!.map(({ source }) => source),
         destinationBucket,
-        timeout: 300,
+        timeout: 3000,
         logMonitoring: false, // 是否开启日志监控，设为false则不开启
       },
       true,
@@ -69,7 +69,7 @@ export const resolveFunctions = (
       // };
       // console.log('code', code);
     }
-    const fcn = new fc.RosFunction(
+    new fc.RosFunction(
       scope,
       fnc.key,
       {
@@ -83,9 +83,5 @@ export const resolveFunctions = (
       },
       true,
     );
-    if (storeInBucket) {
-      fcn.addDependsOn(destinationBucket as unknown as ros.RosResource);
-      fcn.addDependsOn(artifactsDeployment as unknown as ros.RosResource);
-    }
   });
 };

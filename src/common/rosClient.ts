@@ -10,9 +10,11 @@ import ROS20190910, {
   UpdateStackRequestParameters,
 } from '@alicloud/ros20190910';
 import { Config } from '@alicloud/openapi-client';
-import { ActionContext } from '../types';
+import OSS from 'ali-oss';
+import { ActionContext, CdkAssets } from '../types';
 import { logger } from './logger';
 import { lang } from '../lang';
+import path from 'node:path';
 
 const client = new ROS20190910(
   new Config({
@@ -195,4 +197,73 @@ export const rosStackDelete = async ({
     logger.error(`Stack: ${stackName} delete failed! ❌, error: ${JSON.stringify(err)}`);
     throw new Error(JSON.stringify(err));
   }
+};
+
+export const publishAssets = async (assetsJson: CdkAssets, context: ActionContext) => {
+  const files = assetsJson.files;
+  const client_params = {
+    region: `oss-${context.region}`,
+    accessKeyId: context.accessKeyId,
+    accessKeySecret: context.accessKeySecret,
+  };
+  const client = new OSS(client_params);
+  let bucketName;
+  let bucketExists = false;
+
+  const options = {
+    storageClass: 'Standard',
+    acl: 'private',
+    dataRedundancyType: 'LRS',
+  } as OSS.PutBucketOptions;
+
+  const needPublishAssets = Object.entries(files).some(([, fileItem]) =>
+    fileItem.source.path.endsWith('zip'),
+  );
+  if (!needPublishAssets) {
+    logger.info('No assets to publish, skipped! 🚫');
+    return;
+  }
+
+  for (const key of Object.keys(files)) {
+    const source = files[key]['source'];
+    const destination = files[key]['destinations'];
+    const assetPath = `${assetsJson.rootPath}/${source['path']}`;
+    const objectKey = destination['current_account-current_region']['objectKey'];
+    if (!assetPath.endsWith('zip')) {
+      logger.warn(`Only zip file is supported, skip file: ${assetPath}`);
+      continue;
+    }
+
+    if (!bucketExists) {
+      bucketName = destination['current_account-current_region']['bucketName'].replace(
+        '${ALIYUN::Region}',
+        context.region,
+      );
+      try {
+        await client.putBucket(bucketName, options);
+        bucketExists = true;
+        console.log(`Create bucket(${bucketName}) successfully!`);
+      } catch (e) {
+        logger.error(`Error create bucket(${bucketName}):\n ${e}`);
+        throw e;
+      }
+    }
+
+    const store = new OSS({ bucket: bucketName, ...client_params });
+
+    const headers = {
+      'x-oss-storage-class': 'Standard',
+      'x-oss-object-acl': 'private',
+      'x-oss-forbid-overwrite': 'false',
+    } as OSS.PutObjectOptions;
+
+    try {
+      await store.put(objectKey, path.normalize(assetPath), headers);
+      console.log(`Upload file(${assetPath}) to bucket(${bucketName}) successfully!`);
+    } catch (e) {
+      logger.error(`Error upload file(${assetPath}) to bucket(${bucketName}):\n${e}`);
+      throw e;
+    }
+  }
+  return bucketName;
 };
