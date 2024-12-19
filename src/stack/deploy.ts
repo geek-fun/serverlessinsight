@@ -1,9 +1,11 @@
 import * as ros from '@alicloud/ros-cdk-core';
+import fs from 'node:fs';
 
 import { ActionContext, ServerlessIac } from '../types';
-import { logger, ProviderEnum, rosStackDeploy } from '../common';
+import { logger, ProviderEnum, publishAssets, rosStackDeploy } from '../common';
 import { RosStack } from './rosStack';
 import { RfsStack } from './rfsStack';
+import { get } from 'lodash';
 
 export const generateRosStackTemplate = (
   stackName: string,
@@ -14,9 +16,17 @@ export const generateRosStackTemplate = (
   new RosStack(app, iac, context);
 
   const assembly = app.synth();
-  const stackArtifact = assembly.getStackByName(stackName);
 
-  return { template: stackArtifact.template };
+  const { template } = assembly.getStackByName(stackName);
+
+  const assetFolderPath = get(assembly.tryGetArtifact(`${stackName}.assets`), 'file', '');
+  const assetsFileBody = fs.readFileSync(assetFolderPath);
+  const assets = {
+    rootPath: assembly.directory,
+    ...JSON.parse(assetsFileBody.toString('utf-8').trim()),
+  };
+
+  return { template, assets };
 };
 
 export const generateRfsStackTemplate = (
@@ -37,8 +47,10 @@ export const deployStack = async (
   iac: ServerlessIac,
   context: ActionContext,
 ) => {
-  const { template } = generateRosStackTemplate(stackName, iac, context);
-
+  const { template, assets } = generateRosStackTemplate(stackName, iac, context);
+  logger.info(`Deploying stack, publishing assets...`);
+  await publishAssets(assets, context);
+  logger.info(`Assets published! 🎉`);
   await rosStackDeploy(stackName, template, context);
   logger.info(`Stack deployed! 🎉`);
 };

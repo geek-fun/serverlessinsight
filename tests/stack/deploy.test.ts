@@ -19,19 +19,24 @@ import { cloneDeep, set } from 'lodash';
 
 const mockedRosStackDeploy = jest.fn();
 const mockedResolveCode = jest.fn();
+const mockedPublishAssets = jest.fn();
+
 jest.mock('../../src/common', () => ({
   ...jest.requireActual('../../src/common'),
   rosStackDeploy: (...args: unknown[]) => mockedRosStackDeploy(...args),
+  publishAssets: (...args: unknown[]) => mockedPublishAssets(...args),
   resolveCode: (path: string) => mockedResolveCode(path),
 }));
 
 describe('Unit tests for stack deployment', () => {
   beforeEach(() => {
     mockedResolveCode.mockReturnValueOnce('resolved-code');
+    mockedPublishAssets.mockResolvedValueOnce('published-assets-bucket');
   });
   afterEach(() => {
     mockedRosStackDeploy.mockRestore();
     mockedResolveCode.mockRestore();
+    mockedPublishAssets.mockRestore();
   });
 
   it('should deploy generated stack when iac is valid', async () => {
@@ -95,6 +100,7 @@ describe('Unit tests for stack deployment', () => {
       options,
     );
   });
+
   it('should evaluate service name as pure string when it reference ${ctx.stage}', async () => {
     const options = { stackName: 'my-demo-stack-fc-with-stage-1', stage: 'dev' };
     mockedRosStackDeploy.mockResolvedValueOnce(options.stackName);
@@ -109,11 +115,11 @@ describe('Unit tests for stack deployment', () => {
     );
   });
 
-  it('should create bucket and store code artifact to bucket when code size > 15MB', () => {
+  it('should create bucket and store code artifact to bucket when code size > 15MB', async () => {
     const stackName = 'my-large-code-stack';
     mockedRosStackDeploy.mockResolvedValueOnce(stackName);
 
-    deployStack(
+    await deployStack(
       stackName,
       set(
         cloneDeep(oneFcOneGatewayIac),
@@ -123,16 +129,27 @@ describe('Unit tests for stack deployment', () => {
       { stackName } as ActionContext,
     );
 
-    expect(mockedResolveCode).toHaveBeenCalledTimes(1);
+    expect(mockedPublishAssets).toHaveBeenCalledTimes(1);
+    expect(mockedRosStackDeploy).toHaveBeenCalledTimes(1);
+    expect(mockedPublishAssets).toHaveBeenCalledWith(
+      expect.objectContaining({
+        dockerImages: {},
+        files: expect.any(Object),
+        rootPath: expect.any(String),
+        version: '7.0.0',
+      }),
+
+      { stackName },
+    );
     expect(mockedRosStackDeploy).toHaveBeenCalledWith(stackName, largeCodeRos, { stackName });
   });
 
   describe('unit test for deploy of databases', () => {
-    it('should deploy elasticsearch serverless when database minimum fields provided', () => {
+    it('should deploy elasticsearch serverless when database minimum fields provided', async () => {
       const stackName = 'my-demo-es-serverless-stack';
       mockedRosStackDeploy.mockResolvedValueOnce(stackName);
 
-      deployStack(stackName, esServerlessMinimumIac, { stackName } as ActionContext);
+      await deployStack(stackName, esServerlessMinimumIac, { stackName } as ActionContext);
 
       expect(mockedRosStackDeploy).toHaveBeenCalledTimes(1);
       expect(mockedRosStackDeploy).toHaveBeenCalledWith(stackName, esServerlessMinimumRos, {

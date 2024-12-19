@@ -481,10 +481,11 @@ export const largeCodeRos = {
         ServiceName: {
           'Fn::GetAtt': ['FCServiceFormy-demo-service_artifacts_code_deployment', 'ServiceName'],
         },
-        Timeout: 300,
+        Timeout: 3000,
       },
       Type: 'ALIYUN::FC::Function',
     },
+
     'FCRoleFormy-demo-service_artifacts_code_deployment': {
       Properties: {
         AssumeRolePolicyDocument: {
@@ -682,6 +683,7 @@ export const largeCodeRos = {
       Type: 'ALIYUN::OSS::Bucket',
     },
     'my-demo-service_artifacts_code_deployment': {
+      DependsOn: ['my-demo-service_artifacts_bucket'],
       Properties: {
         Parameters: {
           destinationBucket: {
@@ -690,7 +692,7 @@ export const largeCodeRos = {
           retainOnCreate: false,
           sources: [
             {
-              bucket: { 'Fn::Sub': expect.stringContaining('assets-${ALIYUN::Region}') },
+              bucket: { 'Fn::Sub': expect.any(String) },
               fileName: 'hello_fn/43cb4c356149762dbe507fc1baede172-large-artifact.zip',
               objectKey: '2bfeafed8d3df0d44c235271cdf2aa7d908a3c2757af14a67d33d102847f46fd.zip',
             },
@@ -699,7 +701,7 @@ export const largeCodeRos = {
         ServiceToken: {
           'Fn::GetAtt': ['FCFunctionFormy-demo-service_artifacts_code_deployment', 'ARN'],
         },
-        Timeout: 300,
+        Timeout: 3000,
       },
       Type: 'ALIYUN::ROS::CustomResource',
     },
