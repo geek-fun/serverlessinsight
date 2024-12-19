@@ -15,6 +15,7 @@ import { ActionContext, CdkAssets } from '../types';
 import { logger } from './logger';
 import { lang } from '../lang';
 import path from 'node:path';
+import { get, isEmpty } from 'lodash';
 
 const client = new ROS20190910(
   new Config({
@@ -199,73 +200,67 @@ export const rosStackDelete = async ({
   }
 };
 
-export const publishAssets = async (assetsJson: CdkAssets, context: ActionContext) => {
-  const files = assetsJson.files;
-  const client_params = {
-    region: `oss-${context.region}`,
-    accessKeyId: context.accessKeyId,
-    accessKeySecret: context.accessKeySecret,
-  };
-  const client = new OSS(client_params);
-  let bucketName;
-  let bucketExists = false;
+const ensureBucketExits = async (bucketName: string, ossClient: OSS) =>
+  await ossClient.getBucketInfo(bucketName).catch((err) => {
+    if (err.code === 'NoSuchBucket') {
+      logger.info(`Bucket: ${bucketName} not exists, creating...`);
+      return ossClient.putBucket(bucketName, {
+        storageClass: 'Standard',
+        acl: 'private',
+        dataRedundancyType: 'LRS',
+      } as OSS.PutBucketOptions);
+    } else {
+      throw err;
+    }
+  });
 
-  const options = {
-    storageClass: 'Standard',
-    acl: 'private',
-    dataRedundancyType: 'LRS',
-  } as OSS.PutBucketOptions;
+const getZipAssets = ({ files, rootPath }: CdkAssets, region: string) => {
+  const zipAssets = Object.entries(files)
+    .filter(([, fileItem]) => fileItem.source.path.endsWith('zip'))
+    .map(([, fileItem]) => ({
+      bucketName: get(
+        fileItem,
+        'destinations.current_account-current_region.bucketName',
+        '',
+      ).replace('${ALIYUN::Region}', region),
+      source: `${rootPath}/${fileItem.source.path}`,
+      objectKey: get(fileItem, 'destinations.current_account-current_region.objectKey'),
+    }));
 
-  const needPublishAssets = Object.entries(files).some(([, fileItem]) =>
-    fileItem.source.path.endsWith('zip'),
-  );
-  if (!needPublishAssets) {
+  return !isEmpty(zipAssets) ? zipAssets : undefined;
+};
+
+export const publishAssets = async (assets: CdkAssets, context: ActionContext) => {
+  const zipAssets = getZipAssets(assets, context.region);
+
+  if (!zipAssets) {
     logger.info('No assets to publish, skipped!');
     return;
   }
 
-  for (const key of Object.keys(files)) {
-    const source = files[key]['source'];
-    const destination = files[key]['destinations'];
-    const assetPath = `${assetsJson.rootPath}/${source['path']}`;
-    const objectKey = destination['current_account-current_region']['objectKey'];
-    if (!assetPath.endsWith('zip')) {
-      logger.warn(`Only zip file is supported, skip file: ${assetPath}`);
-      continue;
-    }
+  const bucketName = zipAssets[0].bucketName;
 
-    if (!bucketExists) {
-      bucketName = destination['current_account-current_region']['bucketName'].replace(
-        '${ALIYUN::Region}',
-        context.region,
-      );
-      try {
-        await client.putBucket(bucketName, options);
-        bucketExists = true;
-        logger.info(`Artifacts Bucket create success: ${bucketName}`);
-      } catch (e) {
-        logger.error(`Artifacts Bucket create failed: ${bucketName}, error: ${JSON.stringify(e)}`);
-        throw e;
-      }
-    }
+  const client = new OSS({
+    region: `oss-${context.region}`,
+    accessKeyId: context.accessKeyId,
+    accessKeySecret: context.accessKeySecret,
+    bucket: bucketName,
+  });
 
-    const store = new OSS({ bucket: bucketName, ...client_params });
+  await ensureBucketExits(bucketName, client);
 
-    const headers = {
-      'x-oss-storage-class': 'Standard',
-      'x-oss-object-acl': 'private',
-      'x-oss-forbid-overwrite': 'false',
-    } as OSS.PutObjectOptions;
+  const headers = {
+    'x-oss-storage-class': 'Standard',
+    'x-oss-object-acl': 'private',
+    'x-oss-forbid-overwrite': 'false',
+  } as OSS.PutObjectOptions;
 
-    try {
-      await store.put(objectKey, path.normalize(assetPath), headers);
-      logger.info(`Upload file: ${assetPath}) to bucket: ${bucketName} successfully!`);
-    } catch (e) {
-      logger.error(
-        `Failed to upload file: ${assetPath} to bucket: ${bucketName}, error: ${JSON.stringify(e)}`,
-      );
-      throw e;
-    }
-  }
+  await Promise.all(
+    zipAssets.map(async ({ source, objectKey }) => {
+      await client.put(objectKey, path.normalize(source), { headers });
+      logger.info(`Upload file: ${source}) to bucket: ${bucketName} successfully!`);
+    }),
+  );
+
   return bucketName;
 };
