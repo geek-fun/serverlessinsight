@@ -35,9 +35,9 @@ export const resolveFunctions = (
     // creat oss to store code
     destinationBucket = new oss.Bucket(
       scope,
-      replaceReference(`${service}_artifacts_bucket_testb`, context),
+      replaceReference(`${service}_artifacts_bucket`, context),
       {
-        bucketName: `${service}-artifacts-bucket-testb`,
+        bucketName: `${service}-artifacts-bucket`,
         serverSideEncryptionConfiguration: { sseAlgorithm: 'KMS' },
       },
       true,
@@ -49,7 +49,7 @@ export const resolveFunctions = (
         sources: fileSources!.map(({ source }) => source),
         destinationBucket,
         timeout: 3000,
-        logMonitoring: false, // 是否开启日志监控，设为false则不开启
+        logMonitoring: false,
       },
       true,
     );
@@ -57,17 +57,16 @@ export const resolveFunctions = (
   }
   functions?.forEach((fnc) => {
     const storeInBucket = readCodeSize(fnc.code) > CODE_ZIP_SIZE_LIMIT;
-    const zipcode: fc.RosFunction.CodeProperty = {
-      zipFile: resolveCode('artifacts/artifact.zip'),
+    let code: fc.RosFunction.CodeProperty = {
+      zipFile: resolveCode(fnc.code),
     };
     if (storeInBucket) {
-      // const code = {
-      //   ossBucketName: destinationBucket.attrName,
-      //   ossObjectName: fileSources?.find(
-      //     ({ fcName }) => fcName === replaceReference(fnc.name, context),
-      //   )?.objectKey,
-      // };
-      // console.log('code', code);
+      code = {
+        ossBucketName: destinationBucket.attrName,
+        ossObjectName: fileSources?.find(
+          ({ fcName }) => fcName === replaceReference(fnc.name, context),
+        )?.objectKey,
+      };
     }
     new fc.RosFunction(
       scope,
@@ -79,7 +78,7 @@ export const resolveFunctions = (
         memorySize: replaceReference(fnc.memory, context),
         timeout: replaceReference(fnc.timeout, context),
         environmentVariables: replaceReference(fnc.environment, context),
-        code: zipcode,
+        code,
       },
       true,
     );

@@ -25,10 +25,7 @@ export const generateRosStackTemplate = (
     rootPath: assembly.directory,
     ...JSON.parse(assetsFileBody.toString('utf-8').trim()),
   };
-  console.log('Assets:', {
-    assembly: assembly,
-    assetFolderPath,
-  });
+
   return { template, assets };
 };
 
