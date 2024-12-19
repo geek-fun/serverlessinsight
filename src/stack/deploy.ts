@@ -3,10 +3,9 @@ import fs from 'node:fs';
 
 import { ActionContext, ServerlessIac } from '../types';
 import { logger, ProviderEnum, publishAssets, rosStackDeploy } from '../common';
-import { RosStack } from './rosStack';
+import { prepareBootstrapStack, RosStack } from './rosStack';
 import { RfsStack } from './rfsStack';
 import { get } from 'lodash';
-import { prepareBootstrapStack } from './rosStack/bootstrap';
 
 export const generateRosStackTemplate = (
   stackName: string,
