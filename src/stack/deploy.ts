@@ -3,7 +3,7 @@ import fs from 'node:fs';
 
 import { ActionContext, ServerlessIac } from '../types';
 import { logger, ProviderEnum, publishAssets, rosStackDeploy } from '../common';
-import { RosStack } from './rosStack';
+import { prepareBootstrapStack, RosStack } from './rosStack';
 import { RfsStack } from './rfsStack';
 import { get } from 'lodash';
 
@@ -48,6 +48,7 @@ export const deployStack = async (
   context: ActionContext,
 ) => {
   const { template, assets } = generateRosStackTemplate(stackName, iac, context);
+  await prepareBootstrapStack(context);
   logger.info(`Deploying stack, publishing assets...`);
   await publishAssets(assets, context);
   logger.info(`Assets published! 🎉`);

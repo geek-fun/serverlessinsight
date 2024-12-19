@@ -8,6 +8,8 @@ import { resloveVars } from './vars';
 import { resolveDatabases } from './database';
 import { resolveEvents } from './event';
 
+export * from './bootstrap';
+
 export class RosStack extends ros.Stack {
   private readonly service: string;
 
