@@ -1,12 +1,12 @@
 #! /usr/bin/env node
 
 import { Command } from 'commander';
-import { lang } from '../lang';
-import { logger, getVersion } from '../common';
+import { constructActionContext, getVersion, logger } from '../common';
 import { validate } from './validate';
 import { deploy } from './deploy';
 import { template } from './template';
 import { destroyStack } from './destroy';
+import { getIamInfo } from '../common';
 
 const program = new Command();
 
@@ -15,13 +15,10 @@ program.name('si').description('CLI for ServerlessInsight').version(getVersion()
 program
   .command('show')
   .description('show string')
-  .argument('<string>', 'string to split')
-  .option('--first', 'display just the first substring')
-  .option('-s, --separator <char>', 'separator character', ',')
-  .action((str, options) => {
-    const limit = options.first ? 1 : undefined;
-    logger.debug({ limit, first: options.first, separator: options.separator }, 'log command info');
-    console.log(`${str} ${options.first} ${options.separator} ${lang.__('hello')}`);
+  .action(async (options) => {
+    const context = constructActionContext({ ...options });
+    const result = await getIamInfo(context);
+    console.log('result:', JSON.stringify(result));
   });
 
 program
