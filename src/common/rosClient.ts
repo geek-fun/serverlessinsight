@@ -220,7 +220,7 @@ export const publishAssets = async (assetsJson: CdkAssets, context: ActionContex
     fileItem.source.path.endsWith('zip'),
   );
   if (!needPublishAssets) {
-    logger.info('No assets to publish, skipped! 🚫');
+    logger.info('No assets to publish, skipped!');
     return;
   }
 
@@ -242,9 +242,9 @@ export const publishAssets = async (assetsJson: CdkAssets, context: ActionContex
       try {
         await client.putBucket(bucketName, options);
         bucketExists = true;
-        console.log(`Create bucket(${bucketName}) successfully!`);
+        logger.info(`Artifacts Bucket create success: ${bucketName}`);
       } catch (e) {
-        logger.error(`Error create bucket(${bucketName}):\n ${e}`);
+        logger.error(`Artifacts Bucket create failed: ${bucketName}, error: ${JSON.stringify(e)}`);
         throw e;
       }
     }
@@ -259,9 +259,11 @@ export const publishAssets = async (assetsJson: CdkAssets, context: ActionContex
 
     try {
       await store.put(objectKey, path.normalize(assetPath), headers);
-      console.log(`Upload file(${assetPath}) to bucket(${bucketName}) successfully!`);
+      logger.info(`Upload file: ${assetPath}) to bucket: ${bucketName} successfully!`);
     } catch (e) {
-      logger.error(`Error upload file(${assetPath}) to bucket(${bucketName}):\n${e}`);
+      logger.error(
+        `Failed to upload file: ${assetPath} to bucket: ${bucketName}, error: ${JSON.stringify(e)}`,
+      );
       throw e;
     }
   }

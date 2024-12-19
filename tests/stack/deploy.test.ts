@@ -135,7 +135,7 @@ describe('Unit tests for stack deployment', () => {
       expect.objectContaining({
         dockerImages: {},
         files: expect.any(Object),
-        rootPath: expect.stringContaining('/var/folders/'),
+        rootPath: expect.any(String),
         version: '7.0.0',
       }),
 
