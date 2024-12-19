@@ -6,7 +6,6 @@ import {
   replaceReference,
   resolveCode,
 } from '../../common';
-import { RosFunction } from '@alicloud/ros-cdk-fc3/lib/fc3.generated';
 import * as fc from '@alicloud/ros-cdk-fc3';
 import * as oss from '@alicloud/ros-cdk-oss';
 import { isEmpty } from 'lodash';
@@ -49,15 +48,16 @@ export const resolveFunctions = (
       {
         sources: fileSources!.map(({ source }) => source),
         destinationBucket,
-        timeout: 300,
-        logMonitoring: false, // 是否开启日志监控，设为false则不开启
+        timeout: 3000,
+        logMonitoring: false,
       },
       true,
     );
+    artifactsDeployment.addDependency(destinationBucket);
   }
   functions?.forEach((fnc) => {
     const storeInBucket = readCodeSize(fnc.code) > CODE_ZIP_SIZE_LIMIT;
-    let code: RosFunction.CodeProperty = {
+    let code: fc.RosFunction.CodeProperty = {
       zipFile: resolveCode(fnc.code),
     };
     if (storeInBucket) {
@@ -68,7 +68,7 @@ export const resolveFunctions = (
         )?.objectKey,
       };
     }
-    const fcn = new fc.RosFunction(
+    new fc.RosFunction(
       scope,
       fnc.key,
       {
@@ -82,9 +82,5 @@ export const resolveFunctions = (
       },
       true,
     );
-    if (storeInBucket) {
-      fcn.addDependsOn(destinationBucket as unknown as ros.RosResource);
-      fcn.addDependsOn(artifactsDeployment as unknown as ros.RosResource);
-    }
   });
 };
