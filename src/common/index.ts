@@ -6,3 +6,4 @@ export * from './actionContext';
 export * from './iacHelper';
 export * from './constants';
 export * from './imsClient';
+export * from './base64';

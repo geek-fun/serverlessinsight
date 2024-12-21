@@ -58,6 +58,7 @@
     "@alicloud/ros-cdk-oss": "^1.4.0",
     "@alicloud/ros-cdk-ossdeployment": "^1.4.0",
     "@alicloud/ros-cdk-ram": "^1.4.0",
+    "@alicloud/ros-cdk-sls": "^1.5.0",
     "@alicloud/ros20190910": "^3.5.2",
     "ajv": "^8.17.1",
     "ali-oss": "^6.22.0",
