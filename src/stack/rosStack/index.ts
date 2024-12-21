@@ -27,7 +27,7 @@ export class RosStack extends ros.Stack {
     // Define Mappings
     resolveStages(this, iac.stages, context);
     // Define functions
-    resolveFunctions(this, iac.functions, context, this.service);
+    resolveFunctions(this, iac.functions, iac.tags, context, this.service);
     // Define Events
     resolveEvents(this, iac.events, iac.tags, context, this.service);
     // Define Databases

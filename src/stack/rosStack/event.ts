@@ -1,7 +1,7 @@
 import * as ros from '@alicloud/ros-cdk-core';
 import { ActionContext, EventDomain, EventTypes, ServerlessIac } from '../../types';
 import * as ram from '@alicloud/ros-cdk-ram';
-import { replaceReference } from '../../common';
+import { encodeBase64, replaceReference } from '../../common';
 import * as agw from '@alicloud/ros-cdk-apigateway';
 import { isEmpty } from 'lodash';
 
@@ -80,15 +80,18 @@ export const resolveEvents = (
 
     apiGateway.forEach((event) => {
       event.triggers.forEach((trigger) => {
-        const key = `${trigger.method}_${trigger.path}`.toLowerCase().replace(/\//g, '_');
+        const key = encodeBase64(
+          replaceReference(`${trigger.method}_${trigger.path}`, context),
+        ).replace(/=+$/, '');
 
         const api = new agw.RosApi(
           scope,
-          replaceReference(`${event.key}_api_${key}`, context),
+          `${event.key}_api_${key}`,
           {
             apiName: replaceReference(`${event.name}_api_${key}`, context),
             groupId: apiGatewayGroup.attrGroupId,
             visibility: 'PRIVATE',
+            authType: 'ANONYMOUS',
             requestConfig: {
               requestProtocol: 'HTTP',
               requestHttpMethod: replaceReference(trigger.method, context),
@@ -111,6 +114,13 @@ export const resolveEvents = (
           true,
         );
         api.addDependsOn(apiGatewayGroup);
+
+        new agw.Deployment(scope, `${service}_deployment`, {
+          apiId: api.attrApiId,
+          groupId: apiGatewayGroup.attrGroupId,
+          stageName: 'RELEASE',
+          description: `${service} Api Gateway deployment`,
+        });
       });
     });
   }
