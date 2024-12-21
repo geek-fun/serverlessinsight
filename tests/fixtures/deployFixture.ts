@@ -642,7 +642,7 @@ export const largeCodeRos = {
       Properties: {
         Code: {
           OssBucketName: {
-            'Fn::GetAtt': ['my-demo-service_artifacts_bucket', 'Name'],
+            'Fn::Sub': 'si-bootstrap-artifacts-${ALIYUN::AccountId}-${ALIYUN::Region}',
           },
           OssObjectName: 'hello_fn/43cb4c356149762dbe507fc1baede172-large-artifact.zip',
         },
@@ -656,6 +656,7 @@ export const largeCodeRos = {
         Timeout: 10,
       },
       Type: 'ALIYUN::FC3::Function',
+      DependsOn: ['my-demo-service_artifacts_code_deployment'],
     },
     'my-demo-service_apigroup': {
       Properties: {
@@ -669,25 +670,11 @@ export const largeCodeRos = {
       },
       Type: 'ALIYUN::ApiGateway::Group',
     },
-    'my-demo-service_artifacts_bucket': {
-      Properties: {
-        AccessControl: 'private',
-        BucketName: 'my-demo-service-artifacts-bucket',
-        DeletionForce: false,
-        EnableOssHdfsService: false,
-        RedundancyType: 'LRS',
-        ServerSideEncryptionConfiguration: {
-          SSEAlgorithm: 'KMS',
-        },
-      },
-      Type: 'ALIYUN::OSS::Bucket',
-    },
     'my-demo-service_artifacts_code_deployment': {
-      DependsOn: ['my-demo-service_artifacts_bucket'],
       Properties: {
         Parameters: {
           destinationBucket: {
-            'Fn::GetAtt': ['my-demo-service_artifacts_bucket', 'Name'],
+            'Fn::Sub': 'si-bootstrap-artifacts-${ALIYUN::AccountId}-${ALIYUN::Region}',
           },
           retainOnCreate: false,
           sources: [

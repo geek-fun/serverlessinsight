@@ -7,7 +7,6 @@ import {
   resolveCode,
 } from '../../common';
 import * as fc from '@alicloud/ros-cdk-fc3';
-import * as oss from '@alicloud/ros-cdk-oss';
 import { isEmpty } from 'lodash';
 import * as ossDeployment from '@alicloud/ros-cdk-ossdeployment';
 import * as ros from '@alicloud/ros-cdk-core';
@@ -29,31 +28,24 @@ export const resolveFunctions = (
       return { fcName, ...getFileSource(fcName, code) };
     });
 
-  let destinationBucket: oss.Bucket;
-  let artifactsDeployment: ossDeployment.BucketDeployment;
+  const destinationBucketName = ros.Fn.sub(
+    'si-bootstrap-artifacts-${ALIYUN::AccountId}-${ALIYUN::Region}',
+  );
+  const ossDeploymentId = `${service}_artifacts_code_deployment`;
+
   if (!isEmpty(fileSources)) {
-    // creat oss to store code
-    destinationBucket = new oss.Bucket(
+    new ossDeployment.BucketDeployment(
       scope,
-      replaceReference(`${service}_artifacts_bucket`, context),
-      {
-        bucketName: `${service}-artifacts-bucket`,
-        serverSideEncryptionConfiguration: { sseAlgorithm: 'KMS' },
-      },
-      true,
-    );
-    artifactsDeployment = new ossDeployment.BucketDeployment(
-      scope,
-      `${service}_artifacts_code_deployment`,
+      ossDeploymentId,
       {
         sources: fileSources!.map(({ source }) => source),
-        destinationBucket,
+        destinationBucket: destinationBucketName,
         timeout: 3000,
         logMonitoring: false,
+        retainOnCreate: false,
       },
       true,
     );
-    artifactsDeployment.addDependency(destinationBucket);
   }
   functions?.forEach((fnc) => {
     const storeInBucket = readCodeSize(fnc.code) > CODE_ZIP_SIZE_LIMIT;
@@ -62,13 +54,13 @@ export const resolveFunctions = (
     };
     if (storeInBucket) {
       code = {
-        ossBucketName: destinationBucket.attrName,
+        ossBucketName: destinationBucketName,
         ossObjectName: fileSources?.find(
           ({ fcName }) => fcName === replaceReference(fnc.name, context),
         )?.objectKey,
       };
     }
-    new fc.RosFunction(
+    const fcn = new fc.RosFunction(
       scope,
       fnc.key,
       {
@@ -82,5 +74,8 @@ export const resolveFunctions = (
       },
       true,
     );
+    if (storeInBucket) {
+      fcn.addRosDependency(`${service}_artifacts_code_deployment`);
+    }
   });
 };
