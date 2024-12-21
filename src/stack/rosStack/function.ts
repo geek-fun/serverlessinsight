@@ -31,15 +31,18 @@ export const resolveFunctions = (
   const destinationBucketName = ros.Fn.sub(
     'si-bootstrap-artifacts-${ALIYUN::AccountId}-${ALIYUN::Region}',
   );
+  const ossDeploymentId = `${service}_artifacts_code_deployment`;
+
   if (!isEmpty(fileSources)) {
     new ossDeployment.BucketDeployment(
       scope,
-      `${service}_artifacts_code_deployment`,
+      ossDeploymentId,
       {
         sources: fileSources!.map(({ source }) => source),
         destinationBucket: destinationBucketName,
         timeout: 3000,
         logMonitoring: false,
+        retainOnCreate: false,
       },
       true,
     );
@@ -57,7 +60,7 @@ export const resolveFunctions = (
         )?.objectKey,
       };
     }
-    new fc.RosFunction(
+    const fcn = new fc.RosFunction(
       scope,
       fnc.key,
       {
@@ -71,5 +74,8 @@ export const resolveFunctions = (
       },
       true,
     );
+    if (storeInBucket) {
+      fcn.addRosDependency(`${service}_artifacts_code_deployment`);
+    }
   });
 };
