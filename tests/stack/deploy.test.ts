@@ -20,23 +20,27 @@ import { cloneDeep, set } from 'lodash';
 const mockedRosStackDeploy = jest.fn();
 const mockedResolveCode = jest.fn();
 const mockedPublishAssets = jest.fn();
+const mockedGetIamInfo = jest.fn();
 
 jest.mock('../../src/common', () => ({
   ...jest.requireActual('../../src/common'),
   rosStackDeploy: (...args: unknown[]) => mockedRosStackDeploy(...args),
   publishAssets: (...args: unknown[]) => mockedPublishAssets(...args),
   resolveCode: (path: string) => mockedResolveCode(path),
+  getIamInfo: (...args: unknown[]) => mockedGetIamInfo(...args),
 }));
 
 describe('Unit tests for stack deployment', () => {
   beforeEach(() => {
     mockedResolveCode.mockReturnValueOnce('resolved-code');
     mockedPublishAssets.mockResolvedValueOnce('published-assets-bucket');
+    mockedGetIamInfo.mockResolvedValueOnce({ accountId: '123456789012', region: 'cn-hangzhou' });
   });
   afterEach(() => {
     mockedRosStackDeploy.mockRestore();
     mockedResolveCode.mockRestore();
     mockedPublishAssets.mockRestore();
+    mockedGetIamInfo.mockRestore();
   });
 
   it('should deploy generated stack when iac is valid', async () => {
@@ -45,7 +49,7 @@ describe('Unit tests for stack deployment', () => {
 
     await deployStack(stackName, oneFcOneGatewayIac, { stackName } as ActionContext);
 
-    expect(mockedRosStackDeploy).toHaveBeenCalledTimes(1);
+    expect(mockedRosStackDeploy).toHaveBeenCalledTimes(2);
     expect(mockedRosStackDeploy).toHaveBeenCalledWith(stackName, oneFcOneGatewayRos, { stackName });
   });
 
@@ -55,7 +59,7 @@ describe('Unit tests for stack deployment', () => {
 
     await deployStack(stackName, minimumIac, { stackName } as ActionContext);
 
-    expect(mockedRosStackDeploy).toHaveBeenCalledTimes(1);
+    expect(mockedRosStackDeploy).toHaveBeenCalledTimes(2);
     expect(mockedRosStackDeploy).toHaveBeenCalledWith(stackName, minimumRos, { stackName });
   });
 
@@ -65,7 +69,7 @@ describe('Unit tests for stack deployment', () => {
 
     await deployStack(stackName, oneFcIac, { stackName } as ActionContext);
 
-    expect(mockedRosStackDeploy).toHaveBeenCalledTimes(1);
+    expect(mockedRosStackDeploy).toHaveBeenCalledTimes(2);
     expect(mockedRosStackDeploy).toHaveBeenCalledWith(stackName, oneFcRos, { stackName });
   });
 
@@ -75,7 +79,7 @@ describe('Unit tests for stack deployment', () => {
 
     await deployStack(options.stackName, oneFcIacWithStage, options as ActionContext);
 
-    expect(mockedRosStackDeploy).toHaveBeenCalledTimes(1);
+    expect(mockedRosStackDeploy).toHaveBeenCalledTimes(2);
     expect(mockedRosStackDeploy).toHaveBeenCalledWith(
       options.stackName,
       oneFcWithStageRos,
@@ -89,7 +93,7 @@ describe('Unit tests for stack deployment', () => {
 
     await deployStack(options.stackName, oneFcIacWithStage, options as ActionContext);
 
-    expect(mockedRosStackDeploy).toHaveBeenCalledTimes(1);
+    expect(mockedRosStackDeploy).toHaveBeenCalledTimes(2);
     expect(mockedRosStackDeploy).toHaveBeenCalledWith(
       options.stackName,
       set(
@@ -107,7 +111,7 @@ describe('Unit tests for stack deployment', () => {
 
     await deployStack(options.stackName, referredServiceIac, options as ActionContext);
 
-    expect(mockedRosStackDeploy).toHaveBeenCalledTimes(1);
+    expect(mockedRosStackDeploy).toHaveBeenCalledTimes(2);
     expect(mockedRosStackDeploy).toHaveBeenCalledWith(
       options.stackName,
       referredServiceRos,
@@ -130,7 +134,7 @@ describe('Unit tests for stack deployment', () => {
     );
 
     expect(mockedPublishAssets).toHaveBeenCalledTimes(1);
-    expect(mockedRosStackDeploy).toHaveBeenCalledTimes(1);
+    expect(mockedRosStackDeploy).toHaveBeenCalledTimes(2);
     expect(mockedPublishAssets).toHaveBeenCalledWith(
       expect.objectContaining({
         dockerImages: {},
@@ -141,20 +145,30 @@ describe('Unit tests for stack deployment', () => {
 
       { stackName },
     );
-    expect(mockedRosStackDeploy).toHaveBeenCalledWith(stackName, largeCodeRos, { stackName });
+    expect(mockedRosStackDeploy.mock.calls[1]).toEqual([
+      stackName,
+      largeCodeRos,
+      {
+        stackName,
+      },
+    ]);
   });
 
   describe('unit test for deploy of databases', () => {
     it('should deploy elasticsearch serverless when database minimum fields provided', async () => {
       const stackName = 'my-demo-es-serverless-stack';
-      mockedRosStackDeploy.mockResolvedValueOnce(stackName);
+      mockedRosStackDeploy.mockResolvedValue(stackName);
 
       await deployStack(stackName, esServerlessMinimumIac, { stackName } as ActionContext);
 
-      expect(mockedRosStackDeploy).toHaveBeenCalledTimes(1);
-      expect(mockedRosStackDeploy).toHaveBeenCalledWith(stackName, esServerlessMinimumRos, {
+      expect(mockedRosStackDeploy).toHaveBeenCalledTimes(2);
+      expect(mockedRosStackDeploy.mock.calls[1]).toEqual([
         stackName,
-      });
+        esServerlessMinimumRos,
+        {
+          stackName,
+        },
+      ]);
     });
   });
 });
