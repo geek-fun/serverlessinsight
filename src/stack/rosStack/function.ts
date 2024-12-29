@@ -39,15 +39,14 @@ export const resolveFunctions = (
     },
     true,
   );
+
   new sls.Index(
     scope,
     `${service}_sls_index`,
     {
       projectName: slsService.attrName,
       logstoreName: slsLogstore.attrLogstoreName,
-      fullTextIndex: {
-        enable: true,
-      },
+      fullTextIndex: { enable: true },
     },
     true,
   );
@@ -104,7 +103,7 @@ export const resolveFunctions = (
         environmentVariables: replaceReference(fnc.environment, context),
         code,
         logConfig: {
-          project: slsService.ref,
+          project: slsLogstore.attrProjectName,
           logstore: slsLogstore.attrLogstoreName,
           enableRequestMetrics: true,
         },
@@ -112,6 +111,9 @@ export const resolveFunctions = (
       true,
     );
     fcn.addRosDependency(`${service}_sls`);
+    fcn.addRosDependency(`${service}_sls_logstore`);
+    fcn.addRosDependency(`${service}_sls_index`);
+
     if (storeInBucket) {
       fcn.addRosDependency(`${service}_artifacts_code_deployment`);
     }

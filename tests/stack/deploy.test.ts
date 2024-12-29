@@ -50,7 +50,13 @@ describe('Unit tests for stack deployment', () => {
     await deployStack(stackName, oneFcOneGatewayIac, { stackName } as ActionContext);
 
     expect(mockedRosStackDeploy).toHaveBeenCalledTimes(2);
-    expect(mockedRosStackDeploy).toHaveBeenCalledWith(stackName, oneFcOneGatewayRos, { stackName });
+    expect(mockedRosStackDeploy.mock.calls[1]).toEqual([
+      stackName,
+      oneFcOneGatewayRos,
+      {
+        stackName,
+      },
+    ]);
   });
 
   it('should deploy generated stack when minimum fields provided', async () => {
@@ -60,7 +66,7 @@ describe('Unit tests for stack deployment', () => {
     await deployStack(stackName, minimumIac, { stackName } as ActionContext);
 
     expect(mockedRosStackDeploy).toHaveBeenCalledTimes(2);
-    expect(mockedRosStackDeploy).toHaveBeenCalledWith(stackName, minimumRos, { stackName });
+    expect(mockedRosStackDeploy.mock.calls[1]).toEqual([stackName, minimumRos, { stackName }]);
   });
 
   it('should deploy generated stack when only one FC specified', async () => {
@@ -70,7 +76,7 @@ describe('Unit tests for stack deployment', () => {
     await deployStack(stackName, oneFcIac, { stackName } as ActionContext);
 
     expect(mockedRosStackDeploy).toHaveBeenCalledTimes(2);
-    expect(mockedRosStackDeploy).toHaveBeenCalledWith(stackName, oneFcRos, { stackName });
+    expect(mockedRosStackDeploy.mock.calls[1]).toEqual([stackName, oneFcRos, { stackName }]);
   });
 
   it('should reference to default stage mappings when --stage not provided', async () => {
@@ -80,11 +86,11 @@ describe('Unit tests for stack deployment', () => {
     await deployStack(options.stackName, oneFcIacWithStage, options as ActionContext);
 
     expect(mockedRosStackDeploy).toHaveBeenCalledTimes(2);
-    expect(mockedRosStackDeploy).toHaveBeenCalledWith(
+    expect(mockedRosStackDeploy.mock.calls[1]).toEqual([
       options.stackName,
       oneFcWithStageRos,
       options,
-    );
+    ]);
   });
 
   it('should reference to specified stage mappings when --stage is provided', async () => {
@@ -94,7 +100,7 @@ describe('Unit tests for stack deployment', () => {
     await deployStack(options.stackName, oneFcIacWithStage, options as ActionContext);
 
     expect(mockedRosStackDeploy).toHaveBeenCalledTimes(2);
-    expect(mockedRosStackDeploy).toHaveBeenCalledWith(
+    expect(mockedRosStackDeploy.mock.calls[1]).toEqual([
       options.stackName,
       set(
         cloneDeep(oneFcWithStageRos),
@@ -102,7 +108,7 @@ describe('Unit tests for stack deployment', () => {
         ['stages', 'dev', 'node_env'],
       ),
       options,
-    );
+    ]);
   });
 
   it('should evaluate service name as pure string when it reference ${ctx.stage}', async () => {
@@ -112,11 +118,11 @@ describe('Unit tests for stack deployment', () => {
     await deployStack(options.stackName, referredServiceIac, options as ActionContext);
 
     expect(mockedRosStackDeploy).toHaveBeenCalledTimes(2);
-    expect(mockedRosStackDeploy).toHaveBeenCalledWith(
+    expect(mockedRosStackDeploy.mock.calls[1]).toEqual([
       options.stackName,
       referredServiceRos,
       options,
-    );
+    ]);
   });
 
   it('should create bucket and store code artifact to bucket when code size > 15MB', async () => {

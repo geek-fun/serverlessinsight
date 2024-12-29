@@ -61,6 +61,7 @@ export const resolveEvents = (
       {
         groupName: replaceReference(`${service}_apigroup`, context),
         tags: replaceReference(tags, context),
+        passthroughHeaders: 'host',
       },
       true,
     );
@@ -105,10 +106,11 @@ export const resolveEvents = (
                 functionName: replaceReference(trigger.backend, context),
                 roleArn: gatewayAccessRole.attrArn,
                 fcVersion: '3.0',
+                method: replaceReference(trigger.method, context),
               },
             },
             resultSample: 'ServerlessInsight resultSample',
-            resultType: 'JSON',
+            resultType: 'PASSTHROUGH',
             tags: replaceReference(tags, context),
           },
           true,
