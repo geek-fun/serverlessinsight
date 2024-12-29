@@ -1,4 +1,4 @@
-import { ActionContext, FunctionDomain } from '../../types';
+import { ActionContext, FunctionDomain, ServerlessIac } from '../../types';
 import {
   CODE_ZIP_SIZE_LIMIT,
   getFileSource,
@@ -10,16 +10,47 @@ import * as fc from '@alicloud/ros-cdk-fc3';
 import { isEmpty } from 'lodash';
 import * as ossDeployment from '@alicloud/ros-cdk-ossdeployment';
 import * as ros from '@alicloud/ros-cdk-core';
+import * as sls from '@alicloud/ros-cdk-sls';
 
 export const resolveFunctions = (
   scope: ros.Construct,
   functions: Array<FunctionDomain> | undefined,
+  tags: ServerlessIac['tags'] | undefined,
   context: ActionContext,
   service: string,
 ) => {
   if (isEmpty(functions)) {
     return undefined;
   }
+  const slsService = new sls.Project(
+    scope,
+    `${service}_sls`,
+    { name: `${service}-sls`, tags: replaceReference(tags, context) },
+    true,
+  );
+
+  const slsLogstore = new sls.Logstore(
+    scope,
+    `${service}_sls_logstore`,
+    {
+      logstoreName: `${service}-sls-logstore`,
+      projectName: slsService.attrName,
+      ttl: 7,
+    },
+    true,
+  );
+
+  new sls.Index(
+    scope,
+    `${service}_sls_index`,
+    {
+      projectName: slsService.attrName,
+      logstoreName: slsLogstore.attrLogstoreName,
+      fullTextIndex: { enable: true },
+    },
+    true,
+  );
+
   const fileSources = functions
     ?.filter(({ code }) => readCodeSize(code) > CODE_ZIP_SIZE_LIMIT)
     .map(({ code, name }) => {
@@ -71,9 +102,18 @@ export const resolveFunctions = (
         timeout: replaceReference(fnc.timeout, context),
         environmentVariables: replaceReference(fnc.environment, context),
         code,
+        logConfig: {
+          project: slsLogstore.attrProjectName,
+          logstore: slsLogstore.attrLogstoreName,
+          enableRequestMetrics: true,
+        },
       },
       true,
     );
+    fcn.addRosDependency(`${service}_sls`);
+    fcn.addRosDependency(`${service}_sls_logstore`);
+    fcn.addRosDependency(`${service}_sls_index`);
+
     if (storeInBucket) {
       fcn.addRosDependency(`${service}_artifacts_code_deployment`);
     }

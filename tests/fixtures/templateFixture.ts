@@ -40,6 +40,52 @@ export const jsonTemplate = {
     },
   },
   Resources: {
+    'insight-poc_sls': {
+      Type: 'ALIYUN::SLS::Project',
+      Properties: {
+        Name: 'insight-poc-sls',
+        Tags: [
+          {
+            Value: 'ServerlessInsight',
+            Key: 'iac-provider',
+          },
+          {
+            Value: 'geek-fun',
+            Key: 'owner',
+          },
+        ],
+      },
+    },
+    'insight-poc_sls_logstore': {
+      Type: 'ALIYUN::SLS::Logstore',
+      Properties: {
+        LogstoreName: 'insight-poc-sls-logstore',
+        ProjectName: {
+          'Fn::GetAtt': ['insight-poc_sls', 'Name'],
+        },
+        AppendMeta: false,
+        AutoSplit: false,
+        EnableTracking: false,
+        PreserveStorage: false,
+        ShardCount: 2,
+        TTL: 7,
+      },
+    },
+    'insight-poc_sls_index': {
+      Type: 'ALIYUN::SLS::Index',
+      Properties: {
+        FullTextIndex: {
+          Enable: true,
+        },
+        LogstoreName: {
+          'Fn::GetAtt': ['insight-poc_sls_logstore', 'LogstoreName'],
+        },
+        ProjectName: {
+          'Fn::GetAtt': ['insight-poc_sls', 'Name'],
+        },
+        LogReduce: false,
+      },
+    },
     insight_poc_fn: {
       Type: 'ALIYUN::FC3::Function',
       Properties: {
@@ -63,9 +109,19 @@ export const jsonTemplate = {
             'Fn::Sub': 'abcds-${testv}-andyou',
           },
         },
+        LogConfig: {
+          Project: {
+            'Fn::GetAtt': ['insight-poc_sls_logstore', 'ProjectName'],
+          },
+          Logstore: {
+            'Fn::GetAtt': ['insight-poc_sls_logstore', 'LogstoreName'],
+          },
+          EnableRequestMetrics: true,
+        },
         MemorySize: 512,
         Timeout: 10,
       },
+      DependsOn: ['insight-poc_sls', 'insight-poc_sls_logstore', 'insight-poc_sls_index'],
     },
     'insight-poc_role': {
       Type: 'ALIYUN::RAM::Role',
@@ -105,6 +161,7 @@ export const jsonTemplate = {
       Type: 'ALIYUN::ApiGateway::Group',
       Properties: {
         GroupName: 'insight-poc_apigroup',
+        PassthroughHeaders: 'host',
         Tags: [
           {
             Value: 'ServerlessInsight',
@@ -117,10 +174,10 @@ export const jsonTemplate = {
         ],
       },
     },
-    gateway_event_api_get__api_hello: {
+    gateway_event_api_R0VUXy9hcGkvaGVsbG8: {
       Type: 'ALIYUN::ApiGateway::Api',
       Properties: {
-        ApiName: 'insight-poc-gateway_api_get__api_hello',
+        ApiName: 'insight-poc-gateway_api_R0VUXy9hcGkvaGVsbG8',
         GroupId: {
           'Fn::GetAtt': ['insight-poc_apigroup', 'GroupId'],
         },
@@ -133,6 +190,7 @@ export const jsonTemplate = {
         ServiceConfig: {
           FunctionComputeConfig: {
             FcVersion: '3.0',
+            Method: 'GET',
             FcRegionId: 'cn-hangzhou',
             RoleArn: {
               'Fn::GetAtt': ['insight-poc_role', 'Arn'],
@@ -144,8 +202,9 @@ export const jsonTemplate = {
           ServiceProtocol: 'FunctionCompute',
         },
         Visibility: 'PRIVATE',
+        AuthType: 'ANONYMOUS',
         ResultSample: 'ServerlessInsight resultSample',
-        ResultType: 'JSON',
+        ResultType: 'PASSTHROUGH',
         Tags: [
           {
             Value: 'ServerlessInsight',
@@ -156,6 +215,19 @@ export const jsonTemplate = {
             Key: 'owner',
           },
         ],
+      },
+    },
+    'insight-poc_deployment': {
+      Type: 'ALIYUN::ApiGateway::Deployment',
+      Properties: {
+        ApiId: {
+          'Fn::GetAtt': ['gateway_event_api_R0VUXy9hcGkvaGVsbG8', 'ApiId'],
+        },
+        GroupId: {
+          'Fn::GetAtt': ['insight-poc_apigroup', 'GroupId'],
+        },
+        StageName: 'RELEASE',
+        Description: 'insight-poc Api Gateway deployment',
       },
     },
   },
@@ -191,6 +263,43 @@ Mappings:
     prod:
       region: cn-shanghai
 Resources:
+  insight-poc_sls:
+    Type: ALIYUN::SLS::Project
+    Properties:
+      Name: insight-poc-sls
+      Tags:
+        - Value: ServerlessInsight
+          Key: iac-provider
+        - Value: geek-fun
+          Key: owner
+  insight-poc_sls_logstore:
+    Type: ALIYUN::SLS::Logstore
+    Properties:
+      LogstoreName: insight-poc-sls-logstore
+      ProjectName:
+        Fn::GetAtt:
+          - insight-poc_sls
+          - Name
+      AppendMeta: false
+      AutoSplit: false
+      EnableTracking: false
+      PreserveStorage: false
+      ShardCount: 2
+      TTL: 7
+  insight-poc_sls_index:
+    Type: ALIYUN::SLS::Index
+    Properties:
+      FullTextIndex:
+        Enable: true
+      LogstoreName:
+        Fn::GetAtt:
+          - insight-poc_sls_logstore
+          - LogstoreName
+      ProjectName:
+        Fn::GetAtt:
+          - insight-poc_sls
+          - Name
+      LogReduce: false
   insight_poc_fn:
     Type: ALIYUN::FC3::Function
     Properties:
@@ -210,8 +319,22 @@ Resources:
           Ref: testv
         TEST_VAR_EXTRA:
           Fn::Sub: abcds-\${testv}-andyou
+      LogConfig:
+        Project:
+          Fn::GetAtt:
+            - insight-poc_sls_logstore
+            - ProjectName
+        Logstore:
+          Fn::GetAtt:
+            - insight-poc_sls_logstore
+            - LogstoreName
+        EnableRequestMetrics: true
       MemorySize: 512
       Timeout: 10
+    DependsOn:
+      - insight-poc_sls
+      - insight-poc_sls_logstore
+      - insight-poc_sls_index
   insight-poc_role:
     Type: ALIYUN::RAM::Role
     Properties:
@@ -239,15 +362,16 @@ Resources:
     Type: ALIYUN::ApiGateway::Group
     Properties:
       GroupName: insight-poc_apigroup
+      PassthroughHeaders: host
       Tags:
         - Value: ServerlessInsight
           Key: iac-provider
         - Value: geek-fun
           Key: owner
-  gateway_event_api_get__api_hello:
+  gateway_event_api_R0VUXy9hcGkvaGVsbG8:
     Type: ALIYUN::ApiGateway::Api
     Properties:
-      ApiName: insight-poc-gateway_api_get__api_hello
+      ApiName: insight-poc-gateway_api_R0VUXy9hcGkvaGVsbG8
       GroupId:
         Fn::GetAtt:
           - insight-poc_apigroup
@@ -260,6 +384,7 @@ Resources:
       ServiceConfig:
         FunctionComputeConfig:
           FcVersion: "3.0"
+          Method: GET
           FcRegionId: cn-hangzhou
           RoleArn:
             Fn::GetAtt:
@@ -271,11 +396,25 @@ Resources:
               - FunctionName
         ServiceProtocol: FunctionCompute
       Visibility: PRIVATE
+      AuthType: ANONYMOUS
       ResultSample: ServerlessInsight resultSample
-      ResultType: JSON
+      ResultType: PASSTHROUGH
       Tags:
         - Value: ServerlessInsight
           Key: iac-provider
         - Value: geek-fun
           Key: owner
+  insight-poc_deployment:
+    Type: ALIYUN::ApiGateway::Deployment
+    Properties:
+      ApiId:
+        Fn::GetAtt:
+          - gateway_event_api_R0VUXy9hcGkvaGVsbG8
+          - ApiId
+      GroupId:
+        Fn::GetAtt:
+          - insight-poc_apigroup
+          - GroupId
+      StageName: RELEASE
+      Description: insight-poc Api Gateway deployment
 `;
