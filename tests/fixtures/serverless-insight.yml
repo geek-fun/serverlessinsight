@@ -36,7 +36,11 @@ functions:
       TEST_VAR: ${vars.testv}
       TEST_VAR_EXTRA: abcds-${vars.testv}-andyou
 
-#databases:
+databases:
+  insight_poc_db:
+    name: insight-poc-db
+    type: RDS_POSTGRESQL_SERVERLESS
+    version: 17
 #  insight_es_db:
 #    name: insight-poc-es
 #    type: ELASTICSEARCH_SERVERLESS

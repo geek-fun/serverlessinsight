@@ -18,8 +18,13 @@ export const parseDatabase = (databases?: {
         password: get(database, 'security.basic_auth.password'),
       },
     },
-    cu: database.cu,
-    storageSize: database.storage_size,
+    cu: {
+      min: database.cu?.min ?? 0,
+      max: database.cu?.max ?? 12,
+    },
+    storage: {
+      min: database.storage?.min ?? 20,
+    },
     network: database.network && {
       public: database.network?.public as boolean,
     },

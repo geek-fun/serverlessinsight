@@ -4,6 +4,9 @@ export enum DatabaseEngineMode {
 }
 export enum DatabaseEnum {
   ELASTICSEARCH_SERVERLESS = 'ELASTICSEARCH_SERVERLESS',
+  RDS_MYSQL_SERVERLESS = 'RDS_MYSQL_SERVERLESS',
+  RDS_POSTGRESQL_SERVERLESS = 'RDS_POSTGRESQL_SERVERLESS',
+  RDS_SQLSERVER_SERVERLESS = 'RDS_SQLSERVER_SERVERLESS',
 }
 
 export type DatabaseRaw = {
@@ -19,8 +22,13 @@ export type DatabaseRaw = {
   network?: {
     public: boolean;
   };
-  cu: number;
-  storage_size: number;
+  cu?: {
+    min?: number;
+    max?: number;
+  };
+  storage?: {
+    min: number;
+  };
 };
 
 export type DatabaseDomain = {
@@ -37,6 +45,11 @@ export type DatabaseDomain = {
   network?: {
     public: boolean;
   };
-  cu: number;
-  storageSize: number;
+  cu: {
+    min: number;
+    max: number;
+  };
+  storage: {
+    min: number;
+  };
 };
