@@ -72,6 +72,8 @@ export const resolveDatabases = (
           dbInstanceClass: 'pg.n1e.1c.1m',
           dbInstanceStorage: replaceReference(db.storage.min, context),
           securityIpList: '0.0.0.0/0',
+          dbInstanceStorageType: 'cloud_essd',
+          payType: 'Postpaid',
           serverlessConfig: {
             minCapacity: replaceReference(db.cu.min, context),
             maxCapacity: replaceReference(db.cu.max, context),

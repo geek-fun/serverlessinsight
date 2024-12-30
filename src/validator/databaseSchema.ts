@@ -6,11 +6,19 @@ export const databaseSchema = {
       type: 'object',
       properties: {
         name: { type: 'string' },
-        type: { type: 'string', enum: ['ELASTICSEARCH_SERVERLESS'] },
+        type: {
+          type: 'string',
+          enum: [
+            'ELASTICSEARCH_SERVERLESS',
+            'RDS_MYSQL_SERVERLESS',
+            'RDS_POSTGRESQL_SERVERLESS',
+            'RDS_SQLSERVER_SERVERLESS',
+          ],
+        },
         version: { type: 'string' },
         engine_mode: { type: 'string', enum: ['SEARCH', 'TIMESERIES'] },
-        cu: { type: 'number' },
-        storage_size: { type: 'number' },
+        cu: { type: 'object', properties: { min: { type: 'number' }, max: { type: 'number' } } },
+        storage: { type: 'object', properties: { min: { type: 'number' } }, required: ['min'] },
         security: {
           type: 'object',
           properties: {
@@ -31,7 +39,7 @@ export const databaseSchema = {
           },
         },
       },
-      required: ['name', 'type', 'version', 'security', 'cu', 'storage_size'],
+      required: ['name', 'type', 'version', 'security'],
       additionalProperties: false,
     },
   },

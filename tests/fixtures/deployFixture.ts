@@ -1211,8 +1211,8 @@ export const esServerlessMinimumIac: ServerlessIac = {
           password: 'test-password',
         },
       },
-      cu: 1,
-      storageSize: 20,
+      cu: { min: 1, max: 8 },
+      storage: { min: 20 },
     },
   ],
 };

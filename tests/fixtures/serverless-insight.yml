@@ -40,7 +40,10 @@ databases:
   insight_poc_db:
     name: insight-poc-db
     type: RDS_POSTGRESQL_SERVERLESS
-    version: 17
+    version: '17.0'
+    security:
+      basic_auth:
+        password: 'U34I6InQ8elseTgqTWT2t2oFXpoqFg'
 #  insight_es_db:
 #    name: insight-poc-es
 #    type: ELASTICSEARCH_SERVERLESS
