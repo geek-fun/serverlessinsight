@@ -38,13 +38,13 @@ export const databaseSchema = {
         cu: {
           type: 'object',
           properties: {
-            min: { type: 'number', minimum: 0, maximum: 32 },
-            max: { type: 'number', minimum: 0.5, maximum: 32 },
+            min: { type: 'integer', minimum: 0, maximum: 32 },
+            max: { type: 'integer', minimum: 1, maximum: 32 },
           },
         },
         storage: {
           type: 'object',
-          properties: { min: { type: 'number', minimum: 20 } },
+          properties: { min: { type: 'integer', minimum: 20 } },
           required: ['min'],
         },
         security: {
@@ -53,6 +53,7 @@ export const databaseSchema = {
             basic_auth: {
               type: 'object',
               properties: {
+                master_user: { type: 'string' },
                 password: { type: 'string' },
               },
               required: ['password'],

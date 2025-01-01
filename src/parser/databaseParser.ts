@@ -14,6 +14,7 @@ export const parseDatabase = (databases?: {
     version: database.version as DatabaseVersionEnum,
     security: {
       basicAuth: {
+        username: get(database, 'security.basic_auth.master_user'),
         password: get(database, 'security.basic_auth.password'),
       },
     },

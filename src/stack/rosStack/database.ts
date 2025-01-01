@@ -7,7 +7,24 @@ import * as esServerless from '@alicloud/ros-cdk-elasticsearchserverless';
 
 const rdsEngineMap = new Map<
   string,
-  { engine: string; version: string; category: string; dbInstanceClass: string }
+  {
+    engine: string;
+    version: string;
+    category: string;
+    dbInstanceClass: string;
+    quota: { minCapacity: number; maxCapacity: number; ha: boolean };
+    storage: {
+      type: 'general_essd' | 'cloud_essd';
+      // io 突发
+      bursting: boolean;
+      // io加速 -serverless暂不支持配置
+      ioAcceleration?: '1' | '0';
+      // OptimizedWrites 写优化 - cdk暂无配置项
+      optimizedWrites?: boolean;
+      // 云盘加密
+      encryption?: boolean;
+    };
+  }
 >([
   [
     `${DatabaseEnum.RDS_MYSQL_SERVERLESS}-${DatabaseVersionEnum['MYSQL_5.7']}`,
@@ -16,6 +33,8 @@ const rdsEngineMap = new Map<
       version: '5.7',
       category: 'serverless_basic',
       dbInstanceClass: 'mysql.n2.serverless.1c',
+      quota: { minCapacity: 0.5, maxCapacity: 32, ha: false },
+      storage: { type: 'general_essd', bursting: true, optimizedWrites: true, encryption: false },
     },
   ],
   [
@@ -25,6 +44,8 @@ const rdsEngineMap = new Map<
       version: '8.0',
       category: 'serverless_basic',
       dbInstanceClass: 'mysql.n2.serverless.1c',
+      quota: { minCapacity: 0.5, maxCapacity: 32, ha: false },
+      storage: { type: 'general_essd', bursting: true, optimizedWrites: true, encryption: false },
     },
   ],
   [
@@ -34,6 +55,8 @@ const rdsEngineMap = new Map<
       version: '5.7',
       category: 'serverless_standard',
       dbInstanceClass: 'mysql.n2.serverless.2c',
+      quota: { minCapacity: 0.5, maxCapacity: 32, ha: true },
+      storage: { type: 'general_essd', bursting: true, optimizedWrites: true, encryption: true },
     },
   ],
   [
@@ -43,6 +66,8 @@ const rdsEngineMap = new Map<
       version: '8.0',
       category: 'serverless_standard',
       dbInstanceClass: 'mysql.n2.serverless.2c',
+      quota: { minCapacity: 0.5, maxCapacity: 32, ha: true },
+      storage: { type: 'general_essd', bursting: true, optimizedWrites: true, encryption: true },
     },
   ],
   [
@@ -52,6 +77,8 @@ const rdsEngineMap = new Map<
       version: '14.0',
       category: 'serverless_basic',
       dbInstanceClass: 'pg.n2.serverless.1c',
+      quota: { minCapacity: 0.5, maxCapacity: 14, ha: false },
+      storage: { type: 'general_essd', bursting: true, optimizedWrites: false, encryption: false },
     },
   ],
   [
@@ -61,6 +88,8 @@ const rdsEngineMap = new Map<
       version: '15.0',
       category: 'serverless_basic',
       dbInstanceClass: 'pg.n2.serverless.1c',
+      quota: { minCapacity: 0.5, maxCapacity: 14, ha: false },
+      storage: { type: 'general_essd', bursting: true, optimizedWrites: false, encryption: false },
     },
   ],
   [
@@ -70,6 +99,8 @@ const rdsEngineMap = new Map<
       version: '16.0',
       category: 'serverless_basic',
       dbInstanceClass: 'pg.n2.serverless.1c',
+      quota: { minCapacity: 0.5, maxCapacity: 14, ha: false },
+      storage: { type: 'general_essd', bursting: true, optimizedWrites: false, encryption: false },
     },
   ],
   [
@@ -79,6 +110,8 @@ const rdsEngineMap = new Map<
       version: '14.0',
       category: 'serverless_standard',
       dbInstanceClass: 'pg.n2.serverless.2c',
+      quota: { minCapacity: 0.5, maxCapacity: 14, ha: true },
+      storage: { type: 'general_essd', bursting: true, optimizedWrites: false, encryption: false },
     },
   ],
   [
@@ -88,6 +121,8 @@ const rdsEngineMap = new Map<
       version: '15.0',
       category: 'serverless_standard',
       dbInstanceClass: 'pg.n2.serverless.2c',
+      quota: { minCapacity: 0.5, maxCapacity: 14, ha: true },
+      storage: { type: 'general_essd', bursting: true, optimizedWrites: false, encryption: false },
     },
   ],
   [
@@ -97,6 +132,8 @@ const rdsEngineMap = new Map<
       version: '16.0',
       category: 'serverless_standard',
       dbInstanceClass: 'pg.n2.serverless.2c',
+      quota: { minCapacity: 0.5, maxCapacity: 14, ha: true },
+      storage: { type: 'general_essd', bursting: true, optimizedWrites: false, encryption: false },
     },
   ],
   [
@@ -106,6 +143,8 @@ const rdsEngineMap = new Map<
       version: '2016_std_sl',
       category: 'serverless_ha',
       dbInstanceClass: 'mssql.mem2.serverless.s2',
+      quota: { minCapacity: 2, maxCapacity: 8, ha: true },
+      storage: { type: 'cloud_essd', bursting: false, optimizedWrites: false, encryption: false },
     },
   ],
   [
@@ -115,6 +154,8 @@ const rdsEngineMap = new Map<
       version: '2017_std_sl',
       category: 'serverless_ha',
       dbInstanceClass: 'mssql.mem2.serverless.s2',
+      quota: { minCapacity: 2, maxCapacity: 8, ha: true },
+      storage: { type: 'cloud_essd', bursting: false, optimizedWrites: false, encryption: false },
     },
   ],
   [
@@ -124,6 +165,8 @@ const rdsEngineMap = new Map<
       version: '2019_std_sl',
       category: 'serverless_ha',
       dbInstanceClass: 'mssql.mem2.serverless.s2',
+      quota: { minCapacity: 2, maxCapacity: 8, ha: true },
+      storage: { type: 'cloud_essd', bursting: false, optimizedWrites: false, encryption: false },
     },
   ],
   [
@@ -133,6 +176,8 @@ const rdsEngineMap = new Map<
       version: '7.10',
       category: 'STANDARD',
       dbInstanceClass: '',
+      quota: { minCapacity: 2, maxCapacity: 8, ha: false },
+      storage: { type: 'cloud_essd', bursting: false, optimizedWrites: false, encryption: false },
     },
   ],
   [
@@ -142,6 +187,8 @@ const rdsEngineMap = new Map<
       version: '7.10',
       category: 'TRIAL',
       dbInstanceClass: '',
+      quota: { minCapacity: 2, maxCapacity: 8, ha: false },
+      storage: { type: 'cloud_essd', bursting: false, optimizedWrites: false, encryption: false },
     },
   ],
 ]);
@@ -155,7 +202,7 @@ export const resolveDatabases = (
     return undefined;
   }
   databases!.forEach((db) => {
-    const { engine, version, category, dbInstanceClass } =
+    const { engine, version, category, dbInstanceClass, quota, storage } =
       rdsEngineMap.get(`${db.type}-${db.version}`) ?? {};
 
     if ([DatabaseEnum.ELASTICSEARCH_SERVERLESS].includes(db.type)) {
@@ -236,9 +283,8 @@ export const resolveDatabases = (
            *  cloud_essd：ESSD PL1 云盘。
            *  general_essd：通用云盘（推荐）。
            */
-          dbInstanceStorageType: 'general_essd',
-          burstingEnabled: true,
-          ioAccelerationEnabled: '1',
+          dbInstanceStorageType: storage!.type,
+          burstingEnabled: storage!.bursting,
           payType: 'Serverless',
           /**
            * MaxCapacity:
@@ -251,11 +297,24 @@ export const resolveDatabases = (
            *    PostgreSQL：0.5~14
            */
           serverlessConfig: {
-            minCapacity: replaceReference(db.cu.min, context),
-            maxCapacity: replaceReference(db.cu.max, context),
-            autoPause: true,
+            // @TODO db.cu.min should get parameter value when it refer to a parameter
+            minCapacity: replaceReference(
+              db.cu.min === 0 ? quota!.minCapacity : db.cu.min + quota!.minCapacity,
+              context,
+            ),
+            maxCapacity: replaceReference(
+              db.cu.max + quota!.minCapacity <= quota!.maxCapacity
+                ? db.cu.max + quota!.minCapacity
+                : quota!.maxCapacity,
+              context,
+            ),
+            autoPause: db.cu.min === 0,
             switchForce: false,
           },
+          // masterUsername: replaceReference(db.security.basicAuth.username, context),
+          // masterUserPassword: replaceReference(db.security.basicAuth.password, context),
+          // masterUserType: 'Super',
+          multiAz: quota!.ha,
         },
         true,
       );

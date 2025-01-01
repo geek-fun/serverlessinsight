@@ -28,4 +28,3 @@ databases:
     security:
       basic_auth:
         password: 'U34I6InQ8elseTgqTWT2t2oFXpoqFg'
-

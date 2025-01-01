@@ -29,6 +29,7 @@ export type DatabaseRaw = {
   version: string;
   security: {
     basic_auth: {
+      master_user: string;
       password: string;
     };
   };
@@ -51,6 +52,7 @@ export type DatabaseDomain = {
   version: DatabaseVersionEnum;
   security: {
     basicAuth: {
+      username: string;
       password: string;
     };
   };
