@@ -1,4 +1,4 @@
-import { DatabaseDomain, DatabaseEnum, DatabaseRaw } from '../types';
+import { DatabaseDomain, DatabaseEnum, DatabaseRaw, DatabaseVersionEnum } from '../types';
 import { get, isEmpty } from 'lodash';
 
 export const parseDatabase = (databases?: {
@@ -11,7 +11,7 @@ export const parseDatabase = (databases?: {
     key: key,
     name: database.name,
     type: database.type as DatabaseEnum,
-    version: database.version,
+    version: database.version as DatabaseVersionEnum,
     engineMode: database.engine_mode,
     security: {
       basicAuth: {
@@ -19,7 +19,7 @@ export const parseDatabase = (databases?: {
       },
     },
     cu: {
-      min: database.cu?.min ?? 0.5,
+      min: database.cu?.min ?? 0,
       max: database.cu?.max ?? 6,
     },
     storage: {

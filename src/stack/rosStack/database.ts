@@ -1,14 +1,137 @@
 import * as ros from '@alicloud/ros-cdk-core';
 import * as rds from '@alicloud/ros-cdk-rds';
 import { replaceReference } from '../../common';
-import { ActionContext, DatabaseDomain, DatabaseEngineMode, DatabaseEnum } from '../../types';
+import {
+  ActionContext,
+  DatabaseDomain,
+  DatabaseEngineMode,
+  DatabaseEnum,
+  DatabaseVersionEnum,
+} from '../../types';
 import { isEmpty } from 'lodash';
 import * as esServerless from '@alicloud/ros-cdk-elasticsearchserverless';
 
-const rdsEngineMap = new Map([
-  [DatabaseEnum.RDS_MYSQL_SERVERLESS, 'MySQL'],
-  [DatabaseEnum.RDS_POSTGRESQL_SERVERLESS, 'PostgreSQL'],
-  [DatabaseEnum.RDS_SQLSERVER_SERVERLESS, 'SQLServer'],
+const rdsEngineMap = new Map<
+  string,
+  { engine: string; version: string; category: string; dbInstanceClass: string }
+>([
+  [
+    `${DatabaseEnum.RDS_MYSQL_SERVERLESS}-${DatabaseVersionEnum['MYSQL_5.7']}`,
+    {
+      engine: 'MySQL',
+      version: '5.7',
+      category: 'serverless_basic',
+      dbInstanceClass: 'mysql.n2.serverless.1c',
+    },
+  ],
+  [
+    `${DatabaseEnum.RDS_MYSQL_SERVERLESS}-${DatabaseVersionEnum['MYSQL_8.0']}`,
+    {
+      engine: 'MySQL',
+      version: '8.0',
+      category: 'serverless_basic',
+      dbInstanceClass: 'mysql.n2.serverless.1c',
+    },
+  ],
+  [
+    `${DatabaseEnum.RDS_MYSQL_SERVERLESS}-${DatabaseVersionEnum['MYSQL_HA_5.7']}`,
+    {
+      engine: 'MySQL',
+      version: '5.7',
+      category: 'serverless_standard',
+      dbInstanceClass: 'mysql.n2.serverless.2c',
+    },
+  ],
+  [
+    `${DatabaseEnum.RDS_MYSQL_SERVERLESS}-${DatabaseVersionEnum['MYSQL_HA_8.0']}`,
+    {
+      engine: 'MySQL',
+      version: '8.0',
+      category: 'serverless_standard',
+      dbInstanceClass: 'mysql.n2.serverless.2c',
+    },
+  ],
+  [
+    `${DatabaseEnum.RDS_PGSQL_SERVERLESS}-${DatabaseVersionEnum['PGSQL_14']}`,
+    {
+      engine: 'PostgreSQL',
+      version: '14.0',
+      category: 'serverless_basic',
+      dbInstanceClass: 'pg.n2.serverless.1c',
+    },
+  ],
+  [
+    `${DatabaseEnum.RDS_PGSQL_SERVERLESS}-${DatabaseVersionEnum['PGSQL_15']}`,
+    {
+      engine: 'PostgreSQL',
+      version: '15.0',
+      category: 'serverless_basic',
+      dbInstanceClass: 'pg.n2.serverless.1c',
+    },
+  ],
+  [
+    `${DatabaseEnum.RDS_PGSQL_SERVERLESS}-${DatabaseVersionEnum['PGSQL_16']}`,
+    {
+      engine: 'PostgreSQL',
+      version: '16.0',
+      category: 'serverless_basic',
+      dbInstanceClass: 'pg.n2.serverless.1c',
+    },
+  ],
+  [
+    `${DatabaseEnum.RDS_PGSQL_SERVERLESS}-${DatabaseVersionEnum['PGSQL_HA_14']}`,
+    {
+      engine: 'PostgreSQL',
+      version: '14.0',
+      category: 'serverless_standard',
+      dbInstanceClass: 'pg.n2.serverless.2c',
+    },
+  ],
+  [
+    `${DatabaseEnum.RDS_PGSQL_SERVERLESS}-${DatabaseVersionEnum['PGSQL_HA_15']}`,
+    {
+      engine: 'PostgreSQL',
+      version: '15.0',
+      category: 'serverless_standard',
+      dbInstanceClass: 'pg.n2.serverless.2c',
+    },
+  ],
+  [
+    `${DatabaseEnum.RDS_PGSQL_SERVERLESS}-${DatabaseVersionEnum['PGSQL_HA_16']}`,
+    {
+      engine: 'PostgreSQL',
+      version: '16.0',
+      category: 'serverless_standard',
+      dbInstanceClass: 'pg.n2.serverless.2c',
+    },
+  ],
+  [
+    `${DatabaseEnum.RDS_MSSQL_SERVERLESS}-${DatabaseVersionEnum['MSSQL_HA_2016']}`,
+    {
+      engine: 'SQLServer',
+      version: '2016_std_sl',
+      category: 'serverless_ha',
+      dbInstanceClass: 'mssql.mem2.serverless.s2',
+    },
+  ],
+  [
+    `${DatabaseEnum.RDS_MSSQL_SERVERLESS}-${DatabaseVersionEnum['MSSQL_HA_2017']}`,
+    {
+      engine: 'SQLServer',
+      version: '2017_std_sl',
+      category: 'serverless_ha',
+      dbInstanceClass: 'mssql.mem2.serverless.s2',
+    },
+  ],
+  [
+    `${DatabaseEnum.RDS_MSSQL_SERVERLESS}-${DatabaseVersionEnum['MSSQL_HA_2019']}`,
+    {
+      engine: 'SQLServer',
+      version: '2019_std_sl',
+      category: 'serverless_ha',
+      dbInstanceClass: 'mssql.mem2.serverless.s2',
+    },
+  ],
 ]);
 
 export const resolveDatabases = (
@@ -58,22 +181,24 @@ export const resolveDatabases = (
     if (
       [
         DatabaseEnum.RDS_MYSQL_SERVERLESS,
-        DatabaseEnum.RDS_POSTGRESQL_SERVERLESS,
-        DatabaseEnum.RDS_SQLSERVER_SERVERLESS,
+        DatabaseEnum.RDS_PGSQL_SERVERLESS,
+        DatabaseEnum.RDS_MSSQL_SERVERLESS,
       ].includes(db.type)
     ) {
+      const { engine, version, category, dbInstanceClass } =
+        rdsEngineMap.get(`${db.type}-${db.version}`) ?? {};
       new rds.DBInstance(
         scope,
         replaceReference(db.key, context),
         {
-          engine: rdsEngineMap.get(db.type) as string,
+          engine: engine as string,
           /**
            * Serverless 实例
-           * MySQL：5.7、8.0
-           * SQL Server：2016_std_sl、2017_std_sl、2019_std_sl
-           * PostgreSQL：14.0、15.0、16.0
+           *    MySQL：5.7、8.0  - MYSQL_HA_5.7, MYSQL_5.7, MYSQL_HA_8.0, MYSQL_8.0
+           *    SQL Server：2016_std_sl、2017_std_sl、2019_std_sl  - MSSQL_HA_2016, MSSQL_HA_2017, MSSQL_HA_2019
+           *    PostgreSQL：14.0、15.0、16.0 - PGSQL_HA_14, PGSQL_14 PGSQL_HA_15, PGSQL_15, PGSQL_HA_16,PGSQL_16
            */
-          engineVersion: replaceReference(db.version, context),
+          engineVersion: version as string,
           dbInstanceStorage: replaceReference(db.storage.min, context),
           securityIpList: '0.0.0.0/0',
           /** Serverless 实例
@@ -81,9 +206,26 @@ export const resolveDatabases = (
            *     serverless_standard：Serverless 高可用系列。（仅适用 MySQL 和 PostgreSQL）
            *     serverless_ha：SQL Server Serverless 高可用系列。
            */
-          category: 'serverless_basic',
-          dbInstanceClass: 'pg.n2.serverless.1c',
-          dbInstanceStorageType: 'cloud_essd',
+          category,
+          /**
+           * MySQL:
+           *    MySQL 基础系列：mysql.n2.serverless.1c
+           *    MySQL 高可用系列：mysql.n2.serverless.2c
+           * SQL Server：
+           *    mssql.mem2.serverless.s2
+           * PostgreSQL
+           *    基础系列：pg.n2.serverless.1c
+           *    高可用系列：pg.n2.serverless.2c
+           */
+          dbInstanceClass: dbInstanceClass as string,
+          /**
+           * 实例存储类型，取值：
+           *  cloud_essd：ESSD PL1 云盘。
+           *  general_essd：通用云盘（推荐）。
+           */
+          dbInstanceStorageType: 'general_essd',
+          burstingEnabled: true,
+          ioAccelerationEnabled: '1',
           payType: 'Serverless',
           /**
            * MaxCapacity:
