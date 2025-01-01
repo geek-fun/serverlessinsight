@@ -67,17 +67,39 @@ export const resolveDatabases = (
         replaceReference(db.key, context),
         {
           engine: rdsEngineMap.get(db.type) as string,
+          /**
+           * Serverless 实例
+           * MySQL：5.7、8.0
+           * SQL Server：2016_std_sl、2017_std_sl、2019_std_sl
+           * PostgreSQL：14.0、15.0、16.0
+           */
           engineVersion: replaceReference(db.version, context),
-          category: 'Basic',
-          dbInstanceClass: 'pg.n1e.1c.1m',
           dbInstanceStorage: replaceReference(db.storage.min, context),
           securityIpList: '0.0.0.0/0',
+          /** Serverless 实例
+           *     serverless_basic：Serverless 基础系列。（仅适用 MySQL 和 PostgreSQL）
+           *     serverless_standard：Serverless 高可用系列。（仅适用 MySQL 和 PostgreSQL）
+           *     serverless_ha：SQL Server Serverless 高可用系列。
+           */
+          category: 'serverless_basic',
+          dbInstanceClass: 'pg.n2.serverless.1c',
           dbInstanceStorageType: 'cloud_essd',
-          payType: 'Postpaid',
+          payType: 'Serverless',
+          /**
+           * MaxCapacity:
+           *    MySQL：1~32
+           *    SQL Server：2~8
+           *    PostgreSQL：1~14
+           * MinCapacity:
+           *    MySQL：0.5~32
+           *    SQL Server：2~8（仅支持整数）
+           *    PostgreSQL：0.5~14
+           */
           serverlessConfig: {
             minCapacity: replaceReference(db.cu.min, context),
             maxCapacity: replaceReference(db.cu.max, context),
             autoPause: true,
+            switchForce: false,
           },
         },
         true,
