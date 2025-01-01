@@ -12,7 +12,6 @@ export const parseDatabase = (databases?: {
     name: database.name,
     type: database.type as DatabaseEnum,
     version: database.version as DatabaseVersionEnum,
-    engineMode: database.engine_mode,
     security: {
       basicAuth: {
         password: get(database, 'security.basic_auth.password'),

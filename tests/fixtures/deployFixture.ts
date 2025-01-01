@@ -1,4 +1,4 @@
-import { DatabaseEnum, ServerlessIac } from '../../src/types';
+import { DatabaseEnum, DatabaseVersionEnum, ServerlessIac } from '../../src/types';
 import { cloneDeep, set } from 'lodash';
 import { ProviderEnum } from '../../src/common';
 
@@ -1204,8 +1204,7 @@ export const esServerlessMinimumIac: ServerlessIac = {
       key: 'insight_es_db_test',
       name: 'insight-poc-es-test',
       type: DatabaseEnum.ELASTICSEARCH_SERVERLESS,
-      version: '7.10',
-      engineMode: 'SEARCH',
+      version: DatabaseVersionEnum['ES_SEARCH_7.10'],
       security: {
         basicAuth: {
           password: 'test-password',

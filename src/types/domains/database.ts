@@ -1,8 +1,3 @@
-export enum DatabaseEngineMode {
-  SEARCH = 'SEARCH',
-  TIMESERIES = 'TIMESERIES',
-}
-
 export const enum DatabaseEnum {
   ELASTICSEARCH_SERVERLESS = 'ELASTICSEARCH_SERVERLESS',
   RDS_MYSQL_SERVERLESS = 'RDS_MYSQL_SERVERLESS',
@@ -24,13 +19,14 @@ export const enum DatabaseVersionEnum {
   MSSQL_HA_2016 = 'MSSQL_HA_2016',
   MSSQL_HA_2017 = 'MSSQL_HA_2017',
   MSSQL_HA_2019 = 'MSSQL_HA_2019',
+  'ES_SEARCH_7.10' = 'ES_SEARCH_7.10',
+  'ES_TIME_SERIES_7.10' = 'ES_TIME_SERIES_7.10',
 }
 
 export type DatabaseRaw = {
   name: string;
   type: DatabaseEnum;
   version: string;
-  engine_mode: DatabaseEngineMode;
   security: {
     basic_auth: {
       password: string;
@@ -53,7 +49,6 @@ export type DatabaseDomain = {
   name: string;
   type: DatabaseEnum;
   version: DatabaseVersionEnum;
-  engineMode: string;
   security: {
     basicAuth: {
       password: string;

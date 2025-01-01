@@ -1,13 +1,7 @@
 import * as ros from '@alicloud/ros-cdk-core';
 import * as rds from '@alicloud/ros-cdk-rds';
 import { replaceReference } from '../../common';
-import {
-  ActionContext,
-  DatabaseDomain,
-  DatabaseEngineMode,
-  DatabaseEnum,
-  DatabaseVersionEnum,
-} from '../../types';
+import { ActionContext, DatabaseDomain, DatabaseEnum, DatabaseVersionEnum } from '../../types';
 import { isEmpty } from 'lodash';
 import * as esServerless from '@alicloud/ros-cdk-elasticsearchserverless';
 
@@ -132,6 +126,24 @@ const rdsEngineMap = new Map<
       dbInstanceClass: 'mssql.mem2.serverless.s2',
     },
   ],
+  [
+    `${DatabaseEnum.ELASTICSEARCH_SERVERLESS}-${DatabaseVersionEnum['ES_SEARCH_7.10']}`,
+    {
+      engine: 'Elasticsearch',
+      version: '7.10',
+      category: 'STANDARD',
+      dbInstanceClass: '',
+    },
+  ],
+  [
+    `${DatabaseEnum.ELASTICSEARCH_SERVERLESS}-${DatabaseVersionEnum['ES_TIME_SERIES_7.10']}`,
+    {
+      engine: 'Elasticsearch',
+      version: '7.10',
+      category: 'TRIAL',
+      dbInstanceClass: '',
+    },
+  ],
 ]);
 
 export const resolveDatabases = (
@@ -143,13 +155,16 @@ export const resolveDatabases = (
     return undefined;
   }
   databases!.forEach((db) => {
+    const { engine, version, category, dbInstanceClass } =
+      rdsEngineMap.get(`${db.type}-${db.version}`) ?? {};
+
     if ([DatabaseEnum.ELASTICSEARCH_SERVERLESS].includes(db.type)) {
       new esServerless.App(
         scope,
         replaceReference(db.key, context),
         {
           appName: replaceReference(db.name, context),
-          appVersion: db.version,
+          appVersion: version,
           authentication: {
             basicAuth: [
               {
@@ -160,7 +175,7 @@ export const resolveDatabases = (
           quotaInfo: {
             cu: db.cu.min,
             storage: db.storage.min,
-            appType: db.engineMode === DatabaseEngineMode.TIMESERIES ? 'TRIAL' : 'STANDARD',
+            appType: category as string,
           },
           // network: [
           //   {
@@ -185,8 +200,6 @@ export const resolveDatabases = (
         DatabaseEnum.RDS_MSSQL_SERVERLESS,
       ].includes(db.type)
     ) {
-      const { engine, version, category, dbInstanceClass } =
-        rdsEngineMap.get(`${db.type}-${db.version}`) ?? {};
       new rds.DBInstance(
         scope,
         replaceReference(db.key, context),

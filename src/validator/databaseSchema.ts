@@ -31,9 +31,10 @@ export const databaseSchema = {
             'MSSQL_HA_2016',
             'MSSQL_HA_2017',
             'MSSQL_HA_2019',
+            'ES_SEARCH_7.10',
+            'ES_TIME_SERIES_7.10',
           ],
         },
-        engine_mode: { type: 'string', enum: ['SEARCH', 'TIMESERIES'] },
         cu: {
           type: 'object',
           properties: {

@@ -1,23 +1,20 @@
 version: 0.0.1
 provider:
-  name: aliyun
-  region: cn-chengdu
+  name: huawei
+  region: cn-north-4
 
 vars:
-  region: cn-hangzhou
   testv: testVarValue
   handler: index.handler
 
 stages:
   default:
-    region: ${vars.region}
     node_env: default
   dev:
     region: ${vars.region}
     node_env: development
   prod:
-    region: cn-shanghai
-
+    node_env: prod
 service: insight-poc
 
 tags:
@@ -35,6 +32,18 @@ functions:
       NODE_ENV: ${stages.node_env}
       TEST_VAR: ${vars.testv}
       TEST_VAR_EXTRA: abcds-${vars.testv}-andyou
+
+#databases:
+#  insight_es_db:
+#    name: insight-poc-es
+#    type: ELASTICSEARCH_SERVERLESS
+#    version: 7.10
+#    engine_mode: SEARCH
+#    security:
+#      basic_auth:
+#        password: 123456
+#    cu: 1
+#    storage_size: 20
 
 events:
   gateway_event:

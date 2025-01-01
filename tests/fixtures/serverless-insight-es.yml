@@ -5,27 +5,21 @@ provider:
   region: cn-chengdu
 
 
-service: insight-db-poc
+service: insight-es-poc
 
 tags:
   owner: geek-fun
 
 databases:
-  #  insight_es_db:
-  #    name: insight-poc-es
-  #    type: ELASTICSEARCH_SERVERLESS
-  #    version: '7.10'
-  #    engine_mode: SEARCH
-  #    cu: 1
-  #    storage_size: 20
-  #    security:
-  #      basic_auth:
-  #        password: 'U34I6InQ8elseTgqTWT2t2oFXpoqFg'
-  insight_poc_db:
-    name: insight-poc-rds
-    type: RDS_PGSQL_SERVERLESS
-    version: PGSQL_16
+  insight_es_db:
+    name: insight-poc-es
+    type: ELASTICSEARCH_SERVERLESS
+    version: ES_SEARCH_7.10
+    cu:
+      min: 1
+      max: 6
+    storage:
+      min: 20
     security:
       basic_auth:
         password: 'U34I6InQ8elseTgqTWT2t2oFXpoqFg'
-
