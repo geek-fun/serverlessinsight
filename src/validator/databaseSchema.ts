@@ -56,7 +56,7 @@ export const databaseSchema = {
                 master_user: { type: 'string' },
                 password: { type: 'string' },
               },
-              required: ['password'],
+              required: ['master_user', 'password'],
             },
           },
           required: ['basic_auth'],
@@ -64,6 +64,11 @@ export const databaseSchema = {
         network: {
           type: 'object',
           properties: {
+            type: { type: 'string', enum: ['PUBLIC', 'PRIVATE'] },
+            ingress_rules: {
+              type: 'array',
+              items: { type: 'string' },
+            },
             public: { type: 'boolean' },
           },
         },

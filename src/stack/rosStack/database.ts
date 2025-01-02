@@ -260,7 +260,6 @@ export const resolveDatabases = (
            */
           engineVersion: version as string,
           dbInstanceStorage: replaceReference(db.storage.min, context),
-          securityIpList: '0.0.0.0/0',
           /** Serverless 实例
            *     serverless_basic：Serverless 基础系列。（仅适用 MySQL 和 PostgreSQL）
            *     serverless_standard：Serverless 高可用系列。（仅适用 MySQL 和 PostgreSQL）
@@ -311,10 +310,13 @@ export const resolveDatabases = (
             autoPause: db.cu.min === 0,
             switchForce: false,
           },
-          // masterUsername: replaceReference(db.security.basicAuth.username, context),
-          // masterUserPassword: replaceReference(db.security.basicAuth.password, context),
-          // masterUserType: 'Super',
+          masterUsername: replaceReference(db.security.basicAuth.username, context),
+          masterUserPassword: replaceReference(db.security.basicAuth.password, context),
+          masterUserType: 'Super',
           multiAz: quota!.ha,
+          securityIpList: replaceReference(db.network.ingressRules.join(','), context),
+          connectionStringType: db.network.type === 'PRIVATE' ? 'Inner' : 'Public',
+          dbInstanceNetType: db.network.type === 'PRIVATE' ? 'Intranet' : 'Internet',
         },
         true,
       );

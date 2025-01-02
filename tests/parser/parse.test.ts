@@ -26,8 +26,13 @@ describe('unit test for parse', () => {
             version: 'ES_SEARCH_7.10',
             security: {
               basicAuth: {
+                username: 'test-username',
                 password: 'U34I6InQ8elseTgqTWT2t2oFXpoqFg',
               },
+            },
+            network: {
+              ingressRules: ['0.0.0.0/0'],
+              type: 'PRIVATE',
             },
             cu: {
               min: 1,

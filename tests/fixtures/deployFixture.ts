@@ -1192,7 +1192,7 @@ export const defaultContext = {
   stage: 'default',
 };
 
-export const esServerlessMinimumIac: ServerlessIac = {
+export const esServerlessMinimumIac = {
   service: 'my-demo-es-serverless-service',
   version: '0.0.1',
   provider: {
@@ -1207,6 +1207,7 @@ export const esServerlessMinimumIac: ServerlessIac = {
       version: DatabaseVersionEnum['ES_SEARCH_7.10'],
       security: {
         basicAuth: {
+          username: 'test-username',
           password: 'test-password',
         },
       },
@@ -1214,7 +1215,7 @@ export const esServerlessMinimumIac: ServerlessIac = {
       storage: { min: 20 },
     },
   ],
-};
+} as unknown as ServerlessIac;
 
 export const esServerlessMinimumRos = {
   Description: 'my-demo-es-serverless-service stack',

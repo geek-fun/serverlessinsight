@@ -34,7 +34,8 @@ export type DatabaseRaw = {
     };
   };
   network?: {
-    public: boolean;
+    type: 'PUBLIC' | 'PRIVATE';
+    ingress_rules?: Array<string>;
   };
   cu?: {
     min?: number;
@@ -56,8 +57,9 @@ export type DatabaseDomain = {
       password: string;
     };
   };
-  network?: {
-    public: boolean;
+  network: {
+    type: 'PUBLIC' | 'PRIVATE';
+    ingressRules: Array<string>;
   };
   cu: {
     min: number;

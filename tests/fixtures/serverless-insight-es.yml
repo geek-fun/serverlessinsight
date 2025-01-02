@@ -22,4 +22,5 @@ databases:
       min: 20
     security:
       basic_auth:
+        master_user: 'test-username'
         password: 'U34I6InQ8elseTgqTWT2t2oFXpoqFg'

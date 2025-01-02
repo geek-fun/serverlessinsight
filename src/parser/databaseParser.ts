@@ -25,8 +25,9 @@ export const parseDatabase = (databases?: {
     storage: {
       min: database.storage?.min ?? 20,
     },
-    network: database.network && {
-      public: database.network?.public as boolean,
+    network: {
+      type: database.network?.type ?? 'PRIVATE',
+      ingressRules: database.network?.ingress_rules ?? ['0.0.0.0/0'],
     },
   }));
 };
