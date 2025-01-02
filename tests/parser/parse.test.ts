@@ -23,15 +23,24 @@ describe('unit test for parse', () => {
             key: 'insight_es_db',
             type: 'ELASTICSEARCH_SERVERLESS',
             name: 'insight-poc-es',
-            engineMode: 'SEARCH',
-            version: '7.10',
+            version: 'ES_SEARCH_7.10',
             security: {
               basicAuth: {
+                username: 'test-username',
                 password: 'U34I6InQ8elseTgqTWT2t2oFXpoqFg',
               },
             },
-            cu: 1,
-            storageSize: 20,
+            network: {
+              ingressRules: ['0.0.0.0/0'],
+              type: 'PRIVATE',
+            },
+            cu: {
+              min: 1,
+              max: 6,
+            },
+            storage: {
+              min: 20,
+            },
           },
         ],
       });

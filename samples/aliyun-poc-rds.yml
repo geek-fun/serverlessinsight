@@ -1,0 +1,24 @@
+version: 0.0.1
+
+provider:
+  name: aliyun
+  region: cn-chengdu
+
+
+service: insight-rds-poc
+
+tags:
+  owner: geek-fun
+
+databases:
+  insight_poc_db:
+    name: insight-poc-rds
+    type: RDS_PGSQL_SERVERLESS
+    version: PGSQL_16
+    security:
+      basic_auth:
+        master_user: 'db_root'
+        password: 'U34I6InQ8elseTgqTWT2t2oFXpoqFg'
+    network:
+      type: 'PRIVATE'
+

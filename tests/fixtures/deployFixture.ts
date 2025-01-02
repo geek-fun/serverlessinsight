@@ -1,4 +1,4 @@
-import { DatabaseEnum, ServerlessIac } from '../../src/types';
+import { DatabaseEnum, DatabaseVersionEnum, ServerlessIac } from '../../src/types';
 import { cloneDeep, set } from 'lodash';
 import { ProviderEnum } from '../../src/common';
 
@@ -1192,7 +1192,7 @@ export const defaultContext = {
   stage: 'default',
 };
 
-export const esServerlessMinimumIac: ServerlessIac = {
+export const esServerlessMinimumIac = {
   service: 'my-demo-es-serverless-service',
   version: '0.0.1',
   provider: {
@@ -1204,18 +1204,18 @@ export const esServerlessMinimumIac: ServerlessIac = {
       key: 'insight_es_db_test',
       name: 'insight-poc-es-test',
       type: DatabaseEnum.ELASTICSEARCH_SERVERLESS,
-      version: '7.10',
-      engineMode: 'SEARCH',
+      version: DatabaseVersionEnum['ES_SEARCH_7.10'],
       security: {
         basicAuth: {
+          username: 'test-username',
           password: 'test-password',
         },
       },
-      cu: 1,
-      storageSize: 20,
+      cu: { min: 1, max: 8 },
+      storage: { min: 20 },
     },
   ],
-};
+} as unknown as ServerlessIac;
 
 export const esServerlessMinimumRos = {
   Description: 'my-demo-es-serverless-service stack',

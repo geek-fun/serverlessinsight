@@ -14,11 +14,13 @@ databases:
   insight_es_db:
     name: insight-poc-es
     type: ELASTICSEARCH_SERVERLESS
-    version: '7.10'
-    engine_mode: SEARCH
-    cu: 1
-    storage_size: 20
+    version: ES_SEARCH_7.10
+    cu:
+      min: 1
+      max: 6
+    storage:
+      min: 20
     security:
       basic_auth:
+        master_user: 'test-username'
         password: 'U34I6InQ8elseTgqTWT2t2oFXpoqFg'
-
