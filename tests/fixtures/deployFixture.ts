@@ -27,6 +27,7 @@ export const oneFcOneGatewayIac = {
       code: 'tests/fixtures/artifacts/artifact.zip',
       memory: 128,
       timeout: 10,
+      log: true,
       environment: {
         NODE_ENV: 'production',
       },
@@ -473,65 +474,15 @@ export const minimumRos = {
   ROSTemplateFormatVersion: '2015-09-01',
   Resources: {
     hello_fn: {
-      DependsOn: [
-        'my-demo-minimum-service_sls',
-        'my-demo-minimum-service_sls_logstore',
-        'my-demo-minimum-service_sls_index',
-      ],
       Properties: {
         Code: {
           ZipFile: 'resolved-code',
         },
         FunctionName: 'hello_fn',
         Handler: 'index.handler',
-        LogConfig: {
-          EnableRequestMetrics: true,
-          Logstore: {
-            'Fn::GetAtt': ['my-demo-minimum-service_sls_logstore', 'LogstoreName'],
-          },
-          Project: {
-            'Fn::GetAtt': ['my-demo-minimum-service_sls_logstore', 'ProjectName'],
-          },
-        },
         Runtime: 'nodejs18',
       },
       Type: 'ALIYUN::FC3::Function',
-    },
-    'my-demo-minimum-service_sls': {
-      Properties: {
-        Name: 'my-demo-minimum-service-sls',
-      },
-      Type: 'ALIYUN::SLS::Project',
-    },
-    'my-demo-minimum-service_sls_index': {
-      Properties: {
-        FullTextIndex: {
-          Enable: true,
-        },
-        LogReduce: false,
-        LogstoreName: {
-          'Fn::GetAtt': ['my-demo-minimum-service_sls_logstore', 'LogstoreName'],
-        },
-        ProjectName: {
-          'Fn::GetAtt': ['my-demo-minimum-service_sls', 'Name'],
-        },
-      },
-      Type: 'ALIYUN::SLS::Index',
-    },
-    'my-demo-minimum-service_sls_logstore': {
-      Properties: {
-        AppendMeta: false,
-        AutoSplit: false,
-        EnableTracking: false,
-        LogstoreName: 'my-demo-minimum-service-sls-logstore',
-        PreserveStorage: false,
-        ProjectName: {
-          'Fn::GetAtt': ['my-demo-minimum-service_sls', 'Name'],
-        },
-        ShardCount: 2,
-        TTL: 7,
-      },
-      Type: 'ALIYUN::SLS::Logstore',
     },
   },
 };
@@ -561,6 +512,7 @@ export const oneFcIac = {
       code: 'tests/fixtures/artifacts/artifact.zip',
       memory: 128,
       timeout: 10,
+      log: true,
       environment: {
         NODE_ENV: 'production',
       },
@@ -697,6 +649,7 @@ export const oneFcIacWithStage = {
       code: 'tests/fixtures/artifacts/artifact.zip',
       memory: 128,
       timeout: 10,
+      log: true,
       environment: {
         NODE_ENV: '${stages.node_env}',
       },

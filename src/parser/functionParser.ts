@@ -16,5 +16,6 @@ export const parseFunction = (functions?: {
     timeout: func.timeout,
     environment: func.environment,
     code: func.code,
+    log: func.log,
   }));
 };

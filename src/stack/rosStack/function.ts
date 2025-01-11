@@ -11,6 +11,7 @@ import { isEmpty } from 'lodash';
 import * as ossDeployment from '@alicloud/ros-cdk-ossdeployment';
 import * as ros from '@alicloud/ros-cdk-core';
 import * as sls from '@alicloud/ros-cdk-sls';
+import { RosFunction } from '@alicloud/ros-cdk-fc3/lib/fc3.generated';
 
 export const resolveFunctions = (
   scope: ros.Construct,
@@ -22,34 +23,44 @@ export const resolveFunctions = (
   if (isEmpty(functions)) {
     return undefined;
   }
-  const slsService = new sls.Project(
-    scope,
-    `${service}_sls`,
-    { name: `${service}-sls`, tags: replaceReference(tags, context) },
-    true,
-  );
+  let logConfig: RosFunction.LogConfigProperty | undefined = undefined;
 
-  const slsLogstore = new sls.Logstore(
-    scope,
-    `${service}_sls_logstore`,
-    {
-      logstoreName: `${service}-sls-logstore`,
-      projectName: slsService.attrName,
-      ttl: 7,
-    },
-    true,
-  );
+  const enableLog = functions?.some(({ log }) => log);
+  if (enableLog) {
+    const slsService = new sls.Project(
+      scope,
+      `${service}_sls`,
+      { name: `${service}-sls`, tags: replaceReference(tags, context) },
+      true,
+    );
 
-  new sls.Index(
-    scope,
-    `${service}_sls_index`,
-    {
-      projectName: slsService.attrName,
-      logstoreName: slsLogstore.attrLogstoreName,
-      fullTextIndex: { enable: true },
-    },
-    true,
-  );
+    const slsLogstore = new sls.Logstore(
+      scope,
+      `${service}_sls_logstore`,
+      {
+        logstoreName: `${service}-sls-logstore`,
+        projectName: slsService.attrName,
+        ttl: 7,
+      },
+      true,
+    );
+
+    new sls.Index(
+      scope,
+      `${service}_sls_index`,
+      {
+        projectName: slsService.attrName,
+        logstoreName: slsLogstore.attrLogstoreName,
+        fullTextIndex: { enable: true },
+      },
+      true,
+    );
+    logConfig = {
+      project: slsLogstore.attrProjectName,
+      logstore: slsLogstore.attrLogstoreName,
+      enableRequestMetrics: true,
+    };
+  }
 
   const fileSources = functions
     ?.filter(({ code }) => readCodeSize(code) > CODE_ZIP_SIZE_LIMIT)
@@ -102,17 +113,15 @@ export const resolveFunctions = (
         timeout: replaceReference(fnc.timeout, context),
         environmentVariables: replaceReference(fnc.environment, context),
         code,
-        logConfig: {
-          project: slsLogstore.attrProjectName,
-          logstore: slsLogstore.attrLogstoreName,
-          enableRequestMetrics: true,
-        },
+        logConfig,
       },
       true,
     );
-    fcn.addRosDependency(`${service}_sls`);
-    fcn.addRosDependency(`${service}_sls_logstore`);
-    fcn.addRosDependency(`${service}_sls_index`);
+    if (enableLog) {
+      fcn.addRosDependency(`${service}_sls`);
+      fcn.addRosDependency(`${service}_sls_logstore`);
+      fcn.addRosDependency(`${service}_sls_index`);
+    }
 
     if (storeInBucket) {
       fcn.addRosDependency(`${service}_artifacts_code_deployment`);
