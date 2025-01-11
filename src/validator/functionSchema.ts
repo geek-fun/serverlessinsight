@@ -4,6 +4,7 @@ export const functionSchema = {
   patternProperties: {
     '.*': {
       type: 'object',
+      required: ['name', 'runtime', 'handler', 'code'],
       properties: {
         name: { type: 'string' },
         runtime: {
@@ -29,6 +30,7 @@ export const functionSchema = {
         code: { type: 'string' },
         memory: { type: 'number' },
         timeout: { type: 'number' },
+        log: { type: 'boolean' },
         environment: {
           type: 'object',
           additionalProperties: {
