@@ -26,35 +26,35 @@ export const resolveFunctions = (
   let logConfig: RosFunction.LogConfigProperty | undefined = undefined;
 
   const enableLog = functions?.some(({ log }) => log);
+  const slsService = new sls.Project(
+    scope,
+    `${service}_sls`,
+    { name: `${service}-sls`, tags: replaceReference(tags, context) },
+    true,
+  );
+
+  const slsLogstore = new sls.Logstore(
+    scope,
+    `${service}_sls_logstore`,
+    {
+      logstoreName: `${service}-sls-logstore`,
+      projectName: slsService.attrName,
+      ttl: 7,
+    },
+    true,
+  );
+
+  new sls.Index(
+    scope,
+    `${service}_sls_index`,
+    {
+      projectName: slsService.attrName,
+      logstoreName: slsLogstore.attrLogstoreName,
+      fullTextIndex: { enable: true },
+    },
+    true,
+  );
   if (enableLog) {
-    const slsService = new sls.Project(
-      scope,
-      `${service}_sls`,
-      { name: `${service}-sls`, tags: replaceReference(tags, context) },
-      true,
-    );
-
-    const slsLogstore = new sls.Logstore(
-      scope,
-      `${service}_sls_logstore`,
-      {
-        logstoreName: `${service}-sls-logstore`,
-        projectName: slsService.attrName,
-        ttl: 7,
-      },
-      true,
-    );
-
-    new sls.Index(
-      scope,
-      `${service}_sls_index`,
-      {
-        projectName: slsService.attrName,
-        logstoreName: slsLogstore.attrLogstoreName,
-        fullTextIndex: { enable: true },
-      },
-      true,
-    );
     logConfig = {
       project: slsLogstore.attrProjectName,
       logstore: slsLogstore.attrLogstoreName,
