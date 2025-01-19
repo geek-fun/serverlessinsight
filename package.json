@@ -52,7 +52,7 @@
     "@alicloud/ims20190815": "^2.1.4",
     "@alicloud/openapi-client": "^0.4.12",
     "@alicloud/ros-cdk-apigateway": "^1.4.0",
-    "@alicloud/ros-cdk-core": "^1.4.0",
+    "@alicloud/ros-cdk-core": "^1.5.0",
     "@alicloud/ros-cdk-elasticsearchserverless": "^1.4.0",
     "@alicloud/ros-cdk-fc3": "^1.4.0",
     "@alicloud/ros-cdk-oss": "^1.4.0",
