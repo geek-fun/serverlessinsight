@@ -1288,6 +1288,7 @@ export const bucketWithWebsiteIac = {
       key: 'my_bucket',
       name: 'my-bucket',
       website: {
+        code: 'tests/fixtures/artifacts/large-artifact.zip',
         index: 'index.html',
         error_page: '404.html',
         error_code: 404,
@@ -1298,17 +1299,176 @@ export const bucketWithWebsiteIac = {
 
 export const bucketWithWebsiteRos = {
   Description: 'my-bucket-service stack',
-  Metadata: { 'ALIYUN::ROS::Interface': { TemplateTags: ['Create by ROS CDK'] } },
+  Metadata: {
+    'ALIYUN::ROS::Interface': {
+      TemplateTags: ['Create by ROS CDK'],
+    },
+  },
   ROSTemplateFormatVersion: '2015-09-01',
   Resources: {
+    FCFunctionFormy_bucket_bucket_code_deployment: {
+      Properties: {
+        CAPort: 9000,
+        Code: {
+          OssBucketName: {
+            'Fn::Sub': expect.any(String),
+          },
+          OssObjectName: 'c6a72ed7e7e83f01a000b75885758088fa050298a31a1e95d37ac88f08e42315.zip',
+        },
+        FunctionName: {
+          'Fn::Join': [
+            '-',
+            [
+              'ros-cdk',
+              {
+                'Fn::Select': [
+                  0,
+                  {
+                    'Fn::Split': [
+                      '-',
+                      {
+                        Ref: 'ALIYUN::StackId',
+                      },
+                    ],
+                  },
+                ],
+              },
+            ],
+          ],
+        },
+        Handler: 'index.handler',
+        MemorySize: 128,
+        Runtime: 'python3.10',
+        ServiceName: {
+          'Fn::GetAtt': ['FCServiceFormy_bucket_bucket_code_deployment', 'ServiceName'],
+        },
+        Timeout: 3000,
+      },
+      Type: 'ALIYUN::FC::Function',
+    },
+    FCRoleFormy_bucket_bucket_code_deployment: {
+      Properties: {
+        AssumeRolePolicyDocument: {
+          Statement: [
+            {
+              Action: 'sts:AssumeRole',
+              Effect: 'Allow',
+              Principal: {
+                Service: ['fc.aliyuncs.com'],
+              },
+            },
+          ],
+          Version: '1',
+        },
+        DeletionForce: false,
+        IgnoreExisting: false,
+        Policies: [
+          {
+            PolicyDocument: {
+              Statement: [
+                {
+                  Action: ['oss:*'],
+                  Effect: 'Allow',
+                  Resource: ['*'],
+                },
+              ],
+              Version: '1',
+            },
+            PolicyName: 'AliyunOSSFullAccess',
+          },
+          {
+            PolicyDocument: {
+              Statement: [
+                {
+                  Action: ['log:*'],
+                  Effect: 'Allow',
+                  Resource: ['*'],
+                },
+                {
+                  Action: ['ram:CreateServiceLinkedRole'],
+                  Condition: {
+                    StringEquals: {
+                      'ram:ServiceName': [
+                        'audit.log.aliyuncs.com',
+                        'alert.log.aliyuncs.com',
+                        'middlewarelens.log.aliyuncs.com',
+                        'storagelens.log.aliyuncs.com',
+                        'ai-lens.log.aliyuncs.com',
+                        'securitylens.log.aliyuncs.com',
+                      ],
+                    },
+                  },
+                  Effect: 'Allow',
+                  Resource: ['*'],
+                },
+              ],
+              Version: '1',
+            },
+            PolicyName: 'AliyunLogFullAccess',
+          },
+        ],
+        RoleName: {
+          'Fn::Join': [
+            '-',
+            [
+              'ros-cdk',
+              {
+                'Fn::Select': [
+                  0,
+                  {
+                    'Fn::Split': [
+                      '-',
+                      {
+                        Ref: 'ALIYUN::StackId',
+                      },
+                    ],
+                  },
+                ],
+              },
+            ],
+          ],
+        },
+      },
+      Type: 'ALIYUN::RAM::Role',
+    },
+    FCServiceFormy_bucket_bucket_code_deployment: {
+      Properties: {
+        DeletionForce: false,
+        Description: 'FC service for oss deployment by CDK',
+        Role: {
+          'Fn::GetAtt': ['FCRoleFormy_bucket_bucket_code_deployment', 'Arn'],
+        },
+        ServiceName: {
+          'Fn::Join': [
+            '-',
+            [
+              'ros-cdk',
+              {
+                'Fn::Select': [
+                  0,
+                  {
+                    'Fn::Split': [
+                      '-',
+                      {
+                        Ref: 'ALIYUN::StackId',
+                      },
+                    ],
+                  },
+                ],
+              },
+            ],
+          ],
+        },
+      },
+      Type: 'ALIYUN::FC::Service',
+    },
     my_bucket: {
       Properties: {
-        BucketName: 'my-bucket',
         AccessControl: 'private',
+        BucketName: 'my-bucket',
         DeletionForce: false,
         EnableOssHdfsService: false,
         RedundancyType: 'LRS',
-
         WebsiteConfigurationV2: {
           ErrorDocument: {
             HttpStatus: '404',
@@ -1322,6 +1482,30 @@ export const bucketWithWebsiteRos = {
         },
       },
       Type: 'ALIYUN::OSS::Bucket',
+    },
+    my_bucket_bucket_code_deployment: {
+      Properties: {
+        Parameters: {
+          destinationBucket: {
+            'Fn::GetAtt': ['my_bucket', 'Name'],
+          },
+          retainOnCreate: false,
+          sources: [
+            {
+              bucket: {
+                'Fn::Sub': expect.any(String),
+              },
+              fileName: 'large-artifact.zip',
+              objectKey: '2bfeafed8d3df0d44c235271cdf2aa7d908a3c2757af14a67d33d102847f46fd.zip',
+            },
+          ],
+        },
+        ServiceToken: {
+          'Fn::GetAtt': ['FCFunctionFormy_bucket_bucket_code_deployment', 'ARN'],
+        },
+        Timeout: 3000,
+      },
+      Type: 'ALIYUN::ROS::CustomResource',
     },
   },
 };

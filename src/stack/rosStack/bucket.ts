@@ -2,6 +2,8 @@ import { ActionContext, BucketDomain } from '../../types';
 import * as oss from '@alicloud/ros-cdk-oss';
 import * as ros from '@alicloud/ros-cdk-core';
 import { replaceReference } from '../../common';
+import * as ossDeployment from '@alicloud/ros-cdk-ossdeployment';
+import path from 'node:path';
 
 export const resolveBuckets = (
   scope: ros.Construct,
@@ -12,7 +14,7 @@ export const resolveBuckets = (
     return undefined;
   }
   buckets.forEach((bucket) => {
-    new oss.Bucket(scope, replaceReference(bucket.key, context), {
+    const ossBucket = new oss.Bucket(scope, replaceReference(bucket.key, context), {
       bucketName: replaceReference(bucket.name, context),
       websiteConfigurationV2: bucket.website
         ? {
@@ -28,5 +30,20 @@ export const resolveBuckets = (
           }
         : undefined,
     });
+    if (bucket.website?.code) {
+      const filePath = path.resolve(process.cwd(), replaceReference(bucket.website.code, context));
+      new ossDeployment.BucketDeployment(
+        scope,
+        `${replaceReference(bucket.key, context)}_bucket_code_deployment`,
+        {
+          sources: [ossDeployment.Source.asset(filePath)],
+          destinationBucket: ossBucket.attrName,
+          timeout: 3000,
+          logMonitoring: false,
+          retainOnCreate: false,
+        },
+        true,
+      );
+    }
   });
 };

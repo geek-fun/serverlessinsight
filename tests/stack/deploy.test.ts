@@ -204,6 +204,7 @@ describe('Unit tests for stack deployment', () => {
       await deployStack(stackName, bucketWithWebsiteIac, { stackName } as ActionContext);
 
       expect(mockedRosStackDeploy).toHaveBeenCalledTimes(2);
+      expect(mockedPublishAssets).toHaveBeenCalledTimes(1);
       expect(mockedRosStackDeploy.mock.calls[1]).toEqual([
         stackName,
         bucketWithWebsiteRos,

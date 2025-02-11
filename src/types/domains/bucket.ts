@@ -36,6 +36,7 @@ export type BucketDomain = {
   };
   website?: {
     index: string;
+    code: string;
     error_page: string;
     error_code: number;
   };
