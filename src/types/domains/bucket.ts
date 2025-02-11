@@ -13,6 +13,7 @@ export type BucketRaw = {
     sse_kms_master_key_id?: string;
   };
   website?: {
+    code: string;
     index?: string;
     error_page?: string;
     error_code?: number;

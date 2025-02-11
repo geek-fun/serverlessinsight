@@ -21,6 +21,7 @@ export const parseBucket = (buckets: {
 
     website: bucket.website
       ? {
+          code: bucket.website.code,
           index: bucket.website.index ?? 'index.html',
           error_page: bucket.website.error_page ?? '404.html',
           error_code: bucket.website.error_code ?? 404,

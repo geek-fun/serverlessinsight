@@ -6,6 +6,7 @@ import { parseDatabase } from './databaseParser';
 import { parseTag } from './tagParser';
 import { parse } from 'yaml';
 import { validateYaml } from '../validator';
+import { parseBucket } from './bucketParser';
 
 const validateExistence = (path: string) => {
   if (!existsSync(path)) {
@@ -24,6 +25,7 @@ const transformYaml = (iacJson: ServerlessIacRaw): ServerlessIac => {
     events: parseEvent(iacJson.events),
     databases: parseDatabase(iacJson.databases),
     tags: parseTag(iacJson.tags),
+    buckets: parseBucket(iacJson.buckets),
   };
 };
 
