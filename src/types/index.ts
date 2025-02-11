@@ -4,6 +4,7 @@ import { EventDomain, EventRaw } from './domains/event';
 import { DatabaseDomain, DatabaseRaw } from './domains/database';
 import { FunctionDomain, FunctionRaw } from './domains/function';
 import { Provider } from './domains/provider';
+import { BucketDomain, BucketRaw } from './domains/bucket';
 
 export * from './domains/database';
 export * from './domains/event';
@@ -24,6 +25,7 @@ export type ServerlessIacRaw = {
   functions: { [key: string]: FunctionRaw };
   events: { [key: string]: EventRaw };
   databases: { [key: string]: DatabaseRaw };
+  buckets: { [key: string]: BucketRaw };
 };
 
 export type ServerlessIac = {
@@ -36,4 +38,5 @@ export type ServerlessIac = {
   functions?: Array<FunctionDomain>;
   events?: Array<EventDomain>;
   databases?: Array<DatabaseDomain>;
+  buckets?: Array<BucketDomain>;
 };
