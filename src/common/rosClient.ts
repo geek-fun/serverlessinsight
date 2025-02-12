@@ -250,7 +250,6 @@ const zipAssets = async (assetsPath: string) => {
 };
 
 const constructAssets = async ({ files, rootPath }: CdkAssets, region: string) => {
-  console.log('rootpath', rootPath);
   const assets = await Promise.all(
     Object.entries(files)
       .filter(([, fileItem]) => !fileItem.source.path.endsWith('.template.json'))

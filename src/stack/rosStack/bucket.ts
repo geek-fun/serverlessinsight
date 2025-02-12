@@ -1,7 +1,7 @@
 import { ActionContext, BucketDomain } from '../../types';
 import * as oss from '@alicloud/ros-cdk-oss';
 import * as ros from '@alicloud/ros-cdk-core';
-import { replaceReference } from '../../common';
+import { getAssets, replaceReference } from '../../common';
 import * as ossDeployment from '@alicloud/ros-cdk-ossdeployment';
 import path from 'node:path';
 
@@ -36,7 +36,7 @@ export const resolveBuckets = (
         scope,
         `${replaceReference(bucket.key, context)}_bucket_code_deployment`,
         {
-          sources: [ossDeployment.Source.asset(filePath)],
+          sources: getAssets(filePath),
           destinationBucket: ossBucket.attrName,
           timeout: 3000,
           logMonitoring: false,
