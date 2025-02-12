@@ -16,6 +16,8 @@ import { logger } from './logger';
 import { lang } from '../lang';
 import path from 'node:path';
 import { get, isEmpty } from 'lodash';
+import fs from 'node:fs';
+import JSZip from 'jszip';
 
 const client = new ROS20190910(
   new Config({
@@ -214,31 +216,73 @@ const ensureBucketExits = async (bucketName: string, ossClient: OSS) =>
     }
   });
 
-const getZipAssets = ({ files, rootPath }: CdkAssets, region: string) => {
-  const zipAssets = Object.entries(files)
-    .filter(([, fileItem]) => fileItem.source.path.endsWith('zip'))
-    .map(([, fileItem]) => ({
-      bucketName: get(
-        fileItem,
-        'destinations.current_account-current_region.bucketName',
-        '',
-      ).replace('${ALIYUN::Region}', region),
-      source: `${rootPath}/${fileItem.source.path}`,
-      objectKey: get(fileItem, 'destinations.current_account-current_region.objectKey'),
-    }));
+const assembleFiles = (folder: string, zip: JSZip) => {
+  const files = fs.readdirSync(folder);
+  files.forEach((file) => {
+    const filePath = path.join(folder, file);
+    if (fs.statSync(filePath).isDirectory()) {
+      const subZip = zip.folder(file);
+      if (subZip) {
+        assembleFiles(filePath, subZip);
+      }
+    } else {
+      const content = fs.readFileSync(filePath);
+      zip.file(file, content);
+    }
+  });
+};
 
-  return !isEmpty(zipAssets) ? zipAssets : undefined;
+const zipAssets = async (assetsPath: string) => {
+  const zip = new JSZip();
+  assembleFiles(assetsPath, zip);
+  const zipPath = `${assetsPath.replace(/\/$/, '').trim()}.zip`;
+  await zip
+    .generateAsync({ type: 'nodebuffer' })
+    .then((content) => {
+      fs.writeFileSync(zipPath, content);
+      logger.info(`Folder compressed to: ${zipPath}`);
+    })
+    .catch((e) => {
+      logger.error(`Failed to compress folder: ${e}`);
+      throw e;
+    });
+  return zipPath;
+};
+
+const constructAssets = async ({ files, rootPath }: CdkAssets, region: string) => {
+  console.log('rootpath', rootPath);
+  const assets = await Promise.all(
+    Object.entries(files)
+      .filter(([, fileItem]) => !fileItem.source.path.endsWith('.template.json'))
+      .map(async ([, fileItem]) => {
+        let sourcePath = `${rootPath}/${fileItem.source.path}`;
+        if (fileItem.source.packaging === 'zip') {
+          sourcePath = await zipAssets(`${rootPath}/${fileItem.source.path}`);
+        }
+        return {
+          bucketName: get(
+            fileItem,
+            'destinations.current_account-current_region.bucketName',
+            '',
+          ).replace('${ALIYUN::Region}', region),
+          source: sourcePath,
+          objectKey: get(fileItem, 'destinations.current_account-current_region.objectKey'),
+        };
+      }),
+  );
+
+  return !isEmpty(assets) ? assets : undefined;
 };
 
 export const publishAssets = async (assets: CdkAssets, context: ActionContext) => {
-  const zipAssets = getZipAssets(assets, context.region);
+  const constructedAssets = await constructAssets(assets, context.region);
 
-  if (!zipAssets) {
+  if (!constructedAssets?.length) {
     logger.info('No assets to publish, skipped!');
     return;
   }
 
-  const bucketName = zipAssets[0].bucketName;
+  const bucketName = constructedAssets[0].bucketName;
 
   const client = new OSS({
     region: `oss-${context.region}`,
@@ -256,7 +300,7 @@ export const publishAssets = async (assets: CdkAssets, context: ActionContext) =
   } as OSS.PutObjectOptions;
 
   await Promise.all(
-    zipAssets.map(async ({ source, objectKey }) => {
+    constructedAssets.map(async ({ source, objectKey }) => {
       await client.put(objectKey, path.normalize(source), { headers });
       logger.info(`Upload file: ${source}) to bucket: ${bucketName} successfully!`);
     }),
