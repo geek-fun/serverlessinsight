@@ -10,12 +10,9 @@ import ROS20190910, {
   UpdateStackRequestParameters,
 } from '@alicloud/ros20190910';
 import { Config } from '@alicloud/openapi-client';
-import OSS from 'ali-oss';
-import { ActionContext, CdkAssets } from '../types';
+import { ActionContext } from '../types';
 import { logger } from './logger';
 import { lang } from '../lang';
-import path from 'node:path';
-import { get, isEmpty } from 'lodash';
 
 const client = new ROS20190910(
   new Config({
@@ -198,69 +195,4 @@ export const rosStackDelete = async ({
     logger.error(`Stack: ${stackName} delete failed! ❌, error: ${JSON.stringify(err)}`);
     throw new Error(JSON.stringify(err));
   }
-};
-
-const ensureBucketExits = async (bucketName: string, ossClient: OSS) =>
-  await ossClient.getBucketInfo(bucketName).catch((err) => {
-    if (err.code === 'NoSuchBucket') {
-      logger.info(`Bucket: ${bucketName} not exists, creating...`);
-      return ossClient.putBucket(bucketName, {
-        storageClass: 'Standard',
-        acl: 'private',
-        dataRedundancyType: 'LRS',
-      } as OSS.PutBucketOptions);
-    } else {
-      throw err;
-    }
-  });
-
-const getZipAssets = ({ files, rootPath }: CdkAssets, region: string) => {
-  const zipAssets = Object.entries(files)
-    .filter(([, fileItem]) => fileItem.source.path.endsWith('zip'))
-    .map(([, fileItem]) => ({
-      bucketName: get(
-        fileItem,
-        'destinations.current_account-current_region.bucketName',
-        '',
-      ).replace('${ALIYUN::Region}', region),
-      source: `${rootPath}/${fileItem.source.path}`,
-      objectKey: get(fileItem, 'destinations.current_account-current_region.objectKey'),
-    }));
-
-  return !isEmpty(zipAssets) ? zipAssets : undefined;
-};
-
-export const publishAssets = async (assets: CdkAssets, context: ActionContext) => {
-  const zipAssets = getZipAssets(assets, context.region);
-
-  if (!zipAssets) {
-    logger.info('No assets to publish, skipped!');
-    return;
-  }
-
-  const bucketName = zipAssets[0].bucketName;
-
-  const client = new OSS({
-    region: `oss-${context.region}`,
-    accessKeyId: context.accessKeyId,
-    accessKeySecret: context.accessKeySecret,
-    bucket: bucketName,
-  });
-
-  await ensureBucketExits(bucketName, client);
-
-  const headers = {
-    'x-oss-storage-class': 'Standard',
-    'x-oss-object-acl': 'private',
-    'x-oss-forbid-overwrite': 'false',
-  } as OSS.PutObjectOptions;
-
-  await Promise.all(
-    zipAssets.map(async ({ source, objectKey }) => {
-      await client.put(objectKey, path.normalize(source), { headers });
-      logger.info(`Upload file: ${source}) to bucket: ${bucketName} successfully!`);
-    }),
-  );
-
-  return bucketName;
 };

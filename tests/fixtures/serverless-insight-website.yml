@@ -1,0 +1,20 @@
+version: 0.0.1
+
+provider:
+  name: aliyun
+  region: cn-chengdu
+
+
+service: insight-bucket-poc
+
+tags:
+  owner: geek-fun
+
+buckets:
+  insight_poc_bucket:
+    name: insight-poc-bucket
+    website:
+      code: dist
+      index: index.html
+      error_page: 404.html
+      error_code: 404

@@ -1,6 +1,10 @@
 import { deployStack } from '../../src/stack';
 import { ActionContext } from '../../src/types';
 import {
+  bucketMinimumIac,
+  bucketMinimumRos,
+  bucketWithWebsiteIac,
+  bucketWithWebsiteRos,
   esServerlessMinimumIac,
   esServerlessMinimumRos,
   largeCodeRos,
@@ -174,6 +178,37 @@ describe('Unit tests for stack deployment', () => {
         {
           stackName,
         },
+      ]);
+    });
+  });
+
+  describe('unit test for deploy of buckets', () => {
+    it('should deploy bucket when minimum fields provided', async () => {
+      const stackName = 'my-demo-bucket-stack';
+      mockedRosStackDeploy.mockResolvedValue(stackName);
+
+      await deployStack(stackName, bucketMinimumIac, { stackName } as ActionContext);
+
+      expect(mockedRosStackDeploy).toHaveBeenCalledTimes(2);
+      expect(mockedRosStackDeploy.mock.calls[1]).toEqual([
+        stackName,
+        bucketMinimumRos,
+        { stackName },
+      ]);
+    });
+
+    it('should deploy bucket as a website when website  field is provided', async () => {
+      const stackName = 'my-website-bucket-stack';
+      mockedRosStackDeploy.mockResolvedValue(stackName);
+
+      await deployStack(stackName, bucketWithWebsiteIac, { stackName } as ActionContext);
+
+      expect(mockedRosStackDeploy).toHaveBeenCalledTimes(2);
+      expect(mockedPublishAssets).toHaveBeenCalledTimes(1);
+      expect(mockedRosStackDeploy.mock.calls[1]).toEqual([
+        stackName,
+        bucketWithWebsiteRos,
+        { stackName },
       ]);
     });
   });

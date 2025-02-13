@@ -5,6 +5,7 @@ import { rootSchema } from './rootSchema';
 import { databaseSchema } from './databaseSchema';
 import { eventSchema } from './eventSchema';
 import { functionSchema } from './functionSchema';
+import { bucketSchema } from './bucketSchema';
 
 type IacSchemaError = {
   instancePath: string;
@@ -38,6 +39,7 @@ const validate = ajv
   .addSchema(functionSchema)
   .addSchema(eventSchema)
   .addSchema(databaseSchema)
+  .addSchema(bucketSchema)
   .compile(rootSchema);
 
 export const validateYaml = (iacJson: ServerlessIacRaw) => {
