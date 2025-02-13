@@ -10,14 +10,9 @@ import ROS20190910, {
   UpdateStackRequestParameters,
 } from '@alicloud/ros20190910';
 import { Config } from '@alicloud/openapi-client';
-import OSS from 'ali-oss';
-import { ActionContext, CdkAssets } from '../types';
+import { ActionContext } from '../types';
 import { logger } from './logger';
 import { lang } from '../lang';
-import path from 'node:path';
-import { get, isEmpty } from 'lodash';
-import fs from 'node:fs';
-import JSZip from 'jszip';
 
 const client = new ROS20190910(
   new Config({
@@ -200,110 +195,4 @@ export const rosStackDelete = async ({
     logger.error(`Stack: ${stackName} delete failed! ❌, error: ${JSON.stringify(err)}`);
     throw new Error(JSON.stringify(err));
   }
-};
-
-const ensureBucketExits = async (bucketName: string, ossClient: OSS) =>
-  await ossClient.getBucketInfo(bucketName).catch((err) => {
-    if (err.code === 'NoSuchBucket') {
-      logger.info(`Bucket: ${bucketName} not exists, creating...`);
-      return ossClient.putBucket(bucketName, {
-        storageClass: 'Standard',
-        acl: 'private',
-        dataRedundancyType: 'LRS',
-      } as OSS.PutBucketOptions);
-    } else {
-      throw err;
-    }
-  });
-
-const assembleFiles = (folder: string, zip: JSZip) => {
-  const files = fs.readdirSync(folder);
-  files.forEach((file) => {
-    const filePath = path.join(folder, file);
-    if (fs.statSync(filePath).isDirectory()) {
-      const subZip = zip.folder(file);
-      if (subZip) {
-        assembleFiles(filePath, subZip);
-      }
-    } else {
-      const content = fs.readFileSync(filePath);
-      zip.file(file, content);
-    }
-  });
-};
-
-const zipAssets = async (assetsPath: string) => {
-  const zip = new JSZip();
-  assembleFiles(assetsPath, zip);
-  const zipPath = `${assetsPath.replace(/\/$/, '').trim()}.zip`;
-  await zip
-    .generateAsync({ type: 'nodebuffer' })
-    .then((content) => {
-      fs.writeFileSync(zipPath, content);
-      logger.info(`Folder compressed to: ${zipPath}`);
-    })
-    .catch((e) => {
-      logger.error(`Failed to compress folder: ${e}`);
-      throw e;
-    });
-  return zipPath;
-};
-
-const constructAssets = async ({ files, rootPath }: CdkAssets, region: string) => {
-  const assets = await Promise.all(
-    Object.entries(files)
-      .filter(([, fileItem]) => !fileItem.source.path.endsWith('.template.json'))
-      .map(async ([, fileItem]) => {
-        let sourcePath = `${rootPath}/${fileItem.source.path}`;
-        if (fileItem.source.packaging === 'zip') {
-          sourcePath = await zipAssets(`${rootPath}/${fileItem.source.path}`);
-        }
-        return {
-          bucketName: get(
-            fileItem,
-            'destinations.current_account-current_region.bucketName',
-            '',
-          ).replace('${ALIYUN::Region}', region),
-          source: sourcePath,
-          objectKey: get(fileItem, 'destinations.current_account-current_region.objectKey'),
-        };
-      }),
-  );
-
-  return !isEmpty(assets) ? assets : undefined;
-};
-
-export const publishAssets = async (assets: CdkAssets, context: ActionContext) => {
-  const constructedAssets = await constructAssets(assets, context.region);
-
-  if (!constructedAssets?.length) {
-    logger.info('No assets to publish, skipped!');
-    return;
-  }
-
-  const bucketName = constructedAssets[0].bucketName;
-
-  const client = new OSS({
-    region: `oss-${context.region}`,
-    accessKeyId: context.accessKeyId,
-    accessKeySecret: context.accessKeySecret,
-    bucket: bucketName,
-  });
-
-  await ensureBucketExits(bucketName, client);
-
-  const headers = {
-    'x-oss-storage-class': 'Standard',
-    'x-oss-object-acl': 'private',
-    'x-oss-forbid-overwrite': 'false',
-  } as OSS.PutObjectOptions;
-
-  await Promise.all(
-    constructedAssets.map(async ({ source, objectKey }) => {
-      await client.put(objectKey, path.normalize(source), { headers });
-      logger.info(`Upload file: ${source}) to bucket: ${bucketName} successfully!`);
-    }),
-  );
-
-  return bucketName;
 };
