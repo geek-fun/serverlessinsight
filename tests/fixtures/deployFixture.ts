@@ -1306,7 +1306,7 @@ export const bucketWithWebsiteRos = {
   },
   ROSTemplateFormatVersion: '2015-09-01',
   Resources: {
-    FCFunctionFormy_bucket_bucket_code_deployment: {
+    FCFunctionForsi_auto_my_bucket_bucket_code_deployment: {
       Properties: {
         CAPort: 9000,
         Code: {
@@ -1340,103 +1340,18 @@ export const bucketWithWebsiteRos = {
         MemorySize: 128,
         Runtime: 'python3.10',
         ServiceName: {
-          'Fn::GetAtt': ['FCServiceFormy_bucket_bucket_code_deployment', 'ServiceName'],
+          'Fn::GetAtt': ['FCServiceForsi_auto_my_bucket_bucket_code_deployment', 'ServiceName'],
         },
         Timeout: 3000,
       },
       Type: 'ALIYUN::FC::Function',
     },
-    FCRoleFormy_bucket_bucket_code_deployment: {
-      Properties: {
-        AssumeRolePolicyDocument: {
-          Statement: [
-            {
-              Action: 'sts:AssumeRole',
-              Effect: 'Allow',
-              Principal: {
-                Service: ['fc.aliyuncs.com'],
-              },
-            },
-          ],
-          Version: '1',
-        },
-        DeletionForce: false,
-        IgnoreExisting: false,
-        Policies: [
-          {
-            PolicyDocument: {
-              Statement: [
-                {
-                  Action: ['oss:*'],
-                  Effect: 'Allow',
-                  Resource: ['*'],
-                },
-              ],
-              Version: '1',
-            },
-            PolicyName: 'AliyunOSSFullAccess',
-          },
-          {
-            PolicyDocument: {
-              Statement: [
-                {
-                  Action: ['log:*'],
-                  Effect: 'Allow',
-                  Resource: ['*'],
-                },
-                {
-                  Action: ['ram:CreateServiceLinkedRole'],
-                  Condition: {
-                    StringEquals: {
-                      'ram:ServiceName': [
-                        'audit.log.aliyuncs.com',
-                        'alert.log.aliyuncs.com',
-                        'middlewarelens.log.aliyuncs.com',
-                        'storagelens.log.aliyuncs.com',
-                        'ai-lens.log.aliyuncs.com',
-                        'securitylens.log.aliyuncs.com',
-                      ],
-                    },
-                  },
-                  Effect: 'Allow',
-                  Resource: ['*'],
-                },
-              ],
-              Version: '1',
-            },
-            PolicyName: 'AliyunLogFullAccess',
-          },
-        ],
-        RoleName: {
-          'Fn::Join': [
-            '-',
-            [
-              'ros-cdk',
-              {
-                'Fn::Select': [
-                  0,
-                  {
-                    'Fn::Split': [
-                      '-',
-                      {
-                        Ref: 'ALIYUN::StackId',
-                      },
-                    ],
-                  },
-                ],
-              },
-            ],
-          ],
-        },
-      },
-      Type: 'ALIYUN::RAM::Role',
-    },
-    FCServiceFormy_bucket_bucket_code_deployment: {
+    FCServiceForsi_auto_my_bucket_bucket_code_deployment: {
       Properties: {
         DeletionForce: false,
         Description: 'FC service for oss deployment by CDK',
         Role: {
-          'Fn::GetAtt': ['FCRoleFormy_bucket_bucket_code_deployment', 'Arn'],
+          'Fn::GetAtt': ['si_auto_od_bucket_role', 'Arn'],
         },
         ServiceName: {
           'Fn::Join': [
@@ -1483,7 +1398,7 @@ export const bucketWithWebsiteRos = {
       },
       Type: 'ALIYUN::OSS::Bucket',
     },
-    my_bucket_bucket_code_deployment: {
+    si_auto_my_bucket_bucket_code_deployment: {
       Properties: {
         Parameters: {
           destinationBucket: {
@@ -1501,11 +1416,38 @@ export const bucketWithWebsiteRos = {
           ],
         },
         ServiceToken: {
-          'Fn::GetAtt': ['FCFunctionFormy_bucket_bucket_code_deployment', 'ARN'],
+          'Fn::GetAtt': ['FCFunctionForsi_auto_my_bucket_bucket_code_deployment', 'ARN'],
         },
         Timeout: 3000,
       },
       Type: 'ALIYUN::ROS::CustomResource',
+    },
+    si_auto_od_bucket_role: {
+      Properties: {
+        AssumeRolePolicyDocument: {
+          Statement: [
+            {
+              Action: 'sts:AssumeRole',
+              Effect: 'Allow',
+              Principal: {
+                Service: ['fc.aliyuncs.com'],
+              },
+            },
+          ],
+          Version: '1',
+        },
+        DeletionForce: false,
+        Description:
+          'roles created by ServerlessInsight for oss deployment to put files to oss bucket during deployment',
+        IgnoreExisting: false,
+        PolicyAttachments: {
+          System: ['AliyunOSSFullAccess', 'AliyunLogFullAccess'],
+        },
+        RoleName: {
+          'Fn::Sub': 'si-auto-od-bucket-role-${ALIYUN::StackId}',
+        },
+      },
+      Type: 'ALIYUN::RAM::Role',
     },
   },
 };
