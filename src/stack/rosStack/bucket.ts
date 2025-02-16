@@ -1,10 +1,16 @@
-import { ActionContext, BucketDomain } from '../../types';
+import { ActionContext, BucketAccessEnum, BucketDomain } from '../../types';
 import * as oss from '@alicloud/ros-cdk-oss';
 import * as ros from '@alicloud/ros-cdk-core';
 import { getAssets, replaceReference } from '../../common';
 import * as ossDeployment from '@alicloud/ros-cdk-ossdeployment';
 import path from 'node:path';
 import { RosRole } from '@alicloud/ros-cdk-ram';
+
+const aclMap = new Map([
+  [BucketAccessEnum.PRIVATE, 'private'],
+  [BucketAccessEnum.PUBLIC_READ, 'public-read'],
+  [BucketAccessEnum.PUBLIC_READ_WRITE, 'public-read-write'],
+]);
 
 export const resolveBuckets = (
   scope: ros.Construct,
@@ -47,6 +53,9 @@ export const resolveBuckets = (
   buckets.forEach((bucket) => {
     const ossBucket = new oss.Bucket(scope, replaceReference(bucket.key, context), {
       bucketName: replaceReference(bucket.name, context),
+      accessControl: aclMap.get(
+        replaceReference(bucket.security?.acl, context) ?? ('' as BucketAccessEnum),
+      ),
       websiteConfigurationV2: bucket.website
         ? {
             indexDocument: {

@@ -29,6 +29,10 @@ export const bucketSchema = {
         security: {
           type: 'object',
           properties: {
+            access: {
+              type: 'string',
+              enum: ['PRIVATE', 'PUBLIC_READ', 'PUBLIC_READ_WRITE'],
+            },
             force_delete: {
               type: 'boolean',
             },
@@ -39,7 +43,6 @@ export const bucketSchema = {
               type: 'string',
             },
           },
-          required: ['force_delete'],
         },
         website: {
           type: 'object',

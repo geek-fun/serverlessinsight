@@ -8,6 +8,7 @@ export type BucketRaw = {
   };
 
   security?: {
+    acl?: string;
     force_delete?: boolean;
     sse_algorithm?: string;
     sse_kms_master_key_id?: string;
@@ -20,6 +21,12 @@ export type BucketRaw = {
   };
 };
 
+export enum BucketAccessEnum {
+  PRIVATE = 'PRIVATE',
+  PUBLIC_READ = 'PUBLIC_READ',
+  PUBLIC_READ_WRITE = 'PUBLIC_READ_WRITE',
+}
+
 export type BucketDomain = {
   key: string;
   name: string;
@@ -31,6 +38,7 @@ export type BucketDomain = {
   };
 
   security?: {
+    acl: BucketAccessEnum;
     force_delete: boolean;
     sse_algorithm?: string;
     sse_kms_master_key_id?: string;

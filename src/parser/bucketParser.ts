@@ -1,4 +1,4 @@
-import { BucketDomain, BucketRaw } from '../types';
+import { BucketAccessEnum, BucketDomain, BucketRaw } from '../types';
 
 export const parseBucket = (buckets: {
   [key: string]: BucketRaw;
@@ -13,6 +13,9 @@ export const parseBucket = (buckets: {
     versioning: bucket.versioning,
     security: bucket.security
       ? {
+          acl: bucket.security.acl
+            ? (bucket.security.acl as BucketAccessEnum)
+            : BucketAccessEnum.PRIVATE,
           force_delete: bucket.security.force_delete ?? false,
           sse_algorithm: bucket.security.sse_algorithm,
           sse_kms_master_key_id: bucket.security.sse_kms_master_key_id,
