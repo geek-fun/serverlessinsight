@@ -124,7 +124,7 @@ export const publishAssets = async (assets: CdkAssets, context: ActionContext) =
 
   const headers = {
     'x-oss-storage-class': 'Standard',
-    'x-oss-object-acl': 'private',
+    'x-oss-object-acl': 'default',
     'x-oss-forbid-overwrite': 'false',
   } as OSS.PutObjectOptions;
 
