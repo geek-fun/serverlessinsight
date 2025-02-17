@@ -15,6 +15,7 @@ export type BucketRaw = {
   };
   website?: {
     code: string;
+    domain?: string;
     index?: string;
     error_page?: string;
     error_code?: number;
@@ -45,6 +46,7 @@ export type BucketDomain = {
   };
   website?: {
     index: string;
+    domain?: string;
     code: string;
     error_page: string;
     error_code: number;

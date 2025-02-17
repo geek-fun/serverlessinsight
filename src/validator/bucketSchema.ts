@@ -50,6 +50,9 @@ export const bucketSchema = {
             code: {
               type: 'string',
             },
+            domain: {
+              type: 'string',
+            },
             index: {
               type: 'string',
             },

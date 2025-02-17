@@ -197,7 +197,7 @@ describe('Unit tests for stack deployment', () => {
       ]);
     });
 
-    it('should deploy bucket as a website when website  field is provided', async () => {
+    it('should deploy bucket as a website when website field is provided', async () => {
       const stackName = 'my-website-bucket-stack';
       mockedRosStackDeploy.mockResolvedValue(stackName);
 
