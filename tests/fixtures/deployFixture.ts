@@ -1289,6 +1289,7 @@ export const bucketWithWebsiteIac = {
       name: 'my-bucket',
       website: {
         code: 'tests/fixtures/artifacts/large-artifact.zip',
+        domain: 'my-bucket.com',
         index: 'index.html',
         error_page: '404.html',
         error_code: 404,
@@ -1397,6 +1398,15 @@ export const bucketWithWebsiteRos = {
         },
       },
       Type: 'ALIYUN::OSS::Bucket',
+    },
+    my_bucket_custom_domain_bXktYnVja2V0LmNvbQ: {
+      Properties: {
+        BucketName: {
+          'Fn::GetAtt': ['my_bucket', 'Name'],
+        },
+        DomainName: 'my-bucket.com',
+      },
+      Type: 'ALIYUN::OSS::Domain',
     },
     si_auto_my_bucket_bucket_code_deployment: {
       Properties: {

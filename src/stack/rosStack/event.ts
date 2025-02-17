@@ -1,7 +1,7 @@
 import * as ros from '@alicloud/ros-cdk-core';
 import { ActionContext, EventDomain, EventTypes, ServerlessIac } from '../../types';
 import * as ram from '@alicloud/ros-cdk-ram';
-import { encodeBase64, replaceReference } from '../../common';
+import { encodeBase64ForRosId, replaceReference } from '../../common';
 import * as agw from '@alicloud/ros-cdk-apigateway';
 import { isEmpty } from 'lodash';
 
@@ -81,9 +81,9 @@ export const resolveEvents = (
 
     apiGateway.forEach((event) => {
       event.triggers.forEach((trigger) => {
-        const key = encodeBase64(
+        const key = encodeBase64ForRosId(
           replaceReference(`${trigger.method}_${trigger.path}`, context),
-        ).replace(/=+$/, '');
+        );
 
         const api = new agw.RosApi(
           scope,

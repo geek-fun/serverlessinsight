@@ -1,7 +1,7 @@
 import { ActionContext, BucketAccessEnum, BucketDomain } from '../../types';
 import * as oss from '@alicloud/ros-cdk-oss';
 import * as ros from '@alicloud/ros-cdk-core';
-import { getAssets, replaceReference } from '../../common';
+import { encodeBase64ForRosId, getAssets, replaceReference } from '../../common';
 import * as ossDeployment from '@alicloud/ros-cdk-ossdeployment';
 import path from 'node:path';
 import { RosRole } from '@alicloud/ros-cdk-ram';
@@ -84,6 +84,16 @@ export const resolveBuckets = (
           retainOnCreate: false,
         },
         true,
+      );
+    }
+    if (bucket.website?.domain) {
+      new oss.Domain(
+        scope,
+        `${bucket.key}_custom_domain_${encodeBase64ForRosId(bucket.website.domain)}`,
+        {
+          bucketName: ossBucket.attrName,
+          domainName: replaceReference(bucket.website.domain, context),
+        },
       );
     }
   });
