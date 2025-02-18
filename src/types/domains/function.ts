@@ -12,8 +12,10 @@ export type FunctionRaw = {
   storage?: {
     disk?: number;
     nas?: Array<{
-      mount_path?: string;
-      storage_class?: string;
+      mount_path: string;
+      storage_class: string;
+      vpc_id: string;
+      subnet_id: string;
     }>;
   };
 };
@@ -30,11 +32,13 @@ export type FunctionDomain = {
   environment?: {
     [key: string]: string;
   };
-  storage?: {
+  storage: {
     disk?: number;
     nas?: Array<{
-      mount_path?: string;
+      mount_path: string;
       storage_class: NasStorageClassEnum;
+      vpc_id: string;
+      subnet_id: string;
     }>;
   };
 };

@@ -1,4 +1,4 @@
-import { FunctionDomain, FunctionRaw } from '../types';
+import { FunctionDomain, FunctionRaw, NasStorageClassEnum } from '../types';
 import { isEmpty } from 'lodash';
 
 export const parseFunction = (functions?: {
@@ -17,5 +17,14 @@ export const parseFunction = (functions?: {
     environment: func.environment,
     code: func.code,
     log: func.log,
+    storage: {
+      disk: func.storage?.disk,
+      nas: func.storage?.nas?.map((nasItem) => ({
+        mount_path: nasItem.mount_path,
+        storage_class: nasItem.storage_class as NasStorageClassEnum,
+        vpc_id: nasItem.vpc_id,
+        subnet_id: nasItem.subnet_id,
+      })),
+    },
   }));
 };

@@ -1,6 +1,7 @@
 import { ActionContext, FunctionDomain, NasStorageClassEnum, ServerlessIac } from '../../types';
 import {
   CODE_ZIP_SIZE_LIMIT,
+  encodeBase64ForRosId,
   getFileSource,
   readCodeSize,
   replaceReference,
@@ -113,23 +114,46 @@ export const resolveFunctions = (
         )?.objectKey,
       };
     }
-    let fcNas: Array<{ nas: nas.FileSystem; mountDir: string }> | undefined;
+    let fcNas:
+      | Array<{ nas: nas.FileSystem; nasMount: nas.MountTarget; mountDir: string }>
+      | undefined;
     if (fnc.storage?.nas) {
       fcNas = fnc.storage.nas.map((nasItem) => {
         const { fileSystemType, storageType } = storageClassMap[nasItem.storage_class];
-        const nasResource = new nas.FileSystem(
+        const accessGroup = new nas.AccessGroup(
           scope,
-          `${fnc.key}_nas`,
+          `${fnc.key}_nas_access_${encodeBase64ForRosId(nasItem.mount_path)}`,
           {
-            fileSystemType,
-            storageType,
-            protocolType: 'NFS',
-            description: `NAS for function ${fnc.name}`,
+            accessGroupName: `${fnc.name}-nas-access-${encodeBase64ForRosId(nasItem.mount_path)}`,
+            accessGroupType: 'Vpc',
           },
           true,
         );
 
-        return { nas: nasResource, mountDir: nasItem.mount_path ?? '/' };
+        const nasResource = new nas.FileSystem(
+          scope,
+          `${fnc.key}_nas_${encodeBase64ForRosId(nasItem.mount_path)}`,
+          {
+            fileSystemType,
+            storageType,
+            protocolType: 'NFS',
+          },
+          true,
+        );
+        const nasMountTarget = new nas.MountTarget(
+          scope,
+          `${fnc.key}_nas_mount_${encodeBase64ForRosId(nasItem.mount_path)}`,
+          {
+            fileSystemId: nasResource.attrFileSystemId,
+            networkType: 'Vpc',
+            accessGroupName: accessGroup.attrAccessGroupName,
+            vpcId: nasItem.vpc_id,
+            vSwitchId: nasItem.subnet_id,
+          },
+          true,
+        );
+
+        return { nas: nasResource, nasMount: nasMountTarget, mountDir: nasItem.mount_path };
       });
     }
 
@@ -146,12 +170,14 @@ export const resolveFunctions = (
         environmentVariables: replaceReference(fnc.environment, context),
         code,
         logConfig,
-        nasConfig: {
-          mountPoints: fcNas?.map(({ nas, mountDir }) => ({
-            mountDir,
-            serverAddr: nas.getAtt('serverAddr'),
-          })),
-        },
+        nasConfig: fcNas?.length
+          ? {
+              mountPoints: fcNas?.map(({ nasMount, mountDir }) => ({
+                mountDir,
+                serverAddr: `${nasMount.attrMountTargetDomain}:/`,
+              })),
+            }
+          : undefined,
       },
       true,
     );
@@ -163,6 +189,11 @@ export const resolveFunctions = (
 
     if (storeInBucket) {
       fcn.addRosDependency(`${service}_artifacts_code_deployment`);
+    }
+    if (fcNas?.length) {
+      fcNas.forEach((nasItem) => {
+        fcn.addRosDependency(`${fnc.key}_nas_mount_${encodeBase64ForRosId(nasItem.mountDir)}`);
+      });
     }
   });
 };

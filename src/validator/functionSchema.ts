@@ -37,6 +37,34 @@ export const functionSchema = {
             type: ['string', 'number', 'boolean'],
           },
         },
+        storage: {
+          type: 'object',
+          properties: {
+            disk: { type: 'number' },
+            nas: {
+              type: 'array',
+              items: {
+                type: 'object',
+                properties: {
+                  mount_path: { type: 'string' },
+                  storage_class: {
+                    type: 'string',
+                    enum: [
+                      'STANDARD_PERFORMANCE',
+                      'STANDARD_CAPACITY',
+                      'EXTREME_STANDARD',
+                      'EXTREME_ADVANCE',
+                    ],
+                    vpc_id: { type: 'string' },
+                    subnet_id: { type: 'string' },
+                  },
+                  additionalProperties: false,
+                },
+                required: ['mount_path', 'storage_class', 'vpc_id', 'subnet_id'],
+              },
+            },
+          },
+        },
       },
       additionalProperties: false,
     },
