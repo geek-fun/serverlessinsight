@@ -28,12 +28,16 @@ functions:
     code: tests/fixtures/artifacts/artifact.zip
     memory: 512
     timeout: 10
+    network:
+      vpc_id: vpc-2vc8v9btc8470laqui9bk
+      subnet_ids:
+        - vsw-2vceshdo0xjp9q9t0oyt0
+        - vsw-2vceshdo0xjp9q9t0oyt1
+        - vsw-2vceshdo0xjp9q9t0oyt2
     storage:
       nas:
         - mount_path: /mnt/nas
           storage_class: STANDARD_CAPACITY
-          vpc_id: vpc-2vc8v9btc8470laqui9bk
-          subnet_id: vsw-2vceshdo0xjp9q9t0oyt0
     environment:
       NODE_ENV: ${stages.node_env}
       TEST_VAR: ${vars.testv}

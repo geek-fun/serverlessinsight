@@ -31,6 +31,7 @@ export const oneFcOneGatewayIac = {
       environment: {
         NODE_ENV: 'production',
       },
+      storage: {},
     },
   ],
   events: [
@@ -552,6 +553,7 @@ export const oneFcIac = {
       environment: {
         NODE_ENV: 'production',
       },
+      storage: {},
     },
   ],
   tags: [
@@ -689,6 +691,7 @@ export const oneFcIacWithStage = {
       environment: {
         NODE_ENV: '${stages.node_env}',
       },
+      storage: {},
     },
   ],
   tags: [
