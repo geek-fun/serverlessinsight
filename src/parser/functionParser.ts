@@ -17,6 +17,7 @@ export const parseFunction = (functions?: {
     environment: func.environment,
     code: func.code,
     log: func.log,
+    network: func.network,
     storage: {
       disk: func.storage?.disk,
       nas: func.storage?.nas?.map((nasItem) => ({

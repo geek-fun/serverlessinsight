@@ -9,6 +9,15 @@ export type FunctionRaw = {
   environment?: {
     [key: string]: string;
   };
+  network?: {
+    vpc_id: string;
+    subnet_ids: Array<string>;
+    security_group: {
+      name: string;
+      ingress: Array<string>;
+      egress: Array<string>;
+    };
+  };
   storage?: {
     disk?: number;
     nas?: Array<{
@@ -31,6 +40,15 @@ export type FunctionDomain = {
   log?: boolean;
   environment?: {
     [key: string]: string;
+  };
+  network?: {
+    vpc_id: string;
+    subnet_ids: Array<string>;
+    security_group: {
+      name: string;
+      ingress: Array<string>;
+      egress: Array<string>;
+    };
   };
   storage: {
     disk?: number;

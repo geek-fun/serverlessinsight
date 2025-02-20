@@ -13,6 +13,7 @@ import * as ossDeployment from '@alicloud/ros-cdk-ossdeployment';
 import * as ros from '@alicloud/ros-cdk-core';
 import * as sls from '@alicloud/ros-cdk-sls';
 import * as nas from '@alicloud/ros-cdk-nas';
+import * as ecs from '@alicloud/ros-cdk-ecs';
 import { RosFunction } from '@alicloud/ros-cdk-fc3/lib/fc3.generated';
 
 const storageClassMap = {
@@ -23,6 +24,29 @@ const storageClassMap = {
   },
   [NasStorageClassEnum.EXTREME_STANDARD]: { fileSystemType: 'extreme', storageType: 'standard' },
   [NasStorageClassEnum.EXTREME_ADVANCE]: { fileSystemType: 'extreme', storageType: 'advance' },
+};
+const securityGroupRangeMap: { [key: string]: string } = {
+  TCP: '1/65535',
+  UDP: '1/65535',
+  ICMP: '-1/-1',
+  GRE: '-1/-1',
+  ALL: '-1/-1',
+};
+const transformSecurityRules = (rules: Array<string>, ruleType: 'INGRESS' | 'EGRESS') => {
+  return rules.map((rule) => {
+    const [protocol, cidrIp, portRange] = rule.split(':');
+
+    return {
+      ipProtocol: protocol.toLowerCase(),
+      portRange:
+        portRange.toUpperCase() === 'ALL'
+          ? securityGroupRangeMap[protocol.toUpperCase()]
+          : portRange.includes('/')
+            ? portRange
+            : `${portRange}/${portRange}`,
+      [ruleType === 'INGRESS' ? 'sourceCidrIp' : 'destCidrIp']: cidrIp,
+    };
+  });
 };
 
 export const resolveFunctions = (
@@ -156,6 +180,30 @@ export const resolveFunctions = (
         return { nas: nasResource, nasMount: nasMountTarget, mountDir: nasItem.mount_path };
       });
     }
+    let vpcConfig: fc.RosFunction.VpcConfigProperty | undefined = undefined;
+    if (fnc.network) {
+      const securityGroup = new ecs.SecurityGroup(
+        scope,
+        `${fnc.key}_security_group`,
+        {
+          securityGroupName: fnc.network.security_group.name,
+          vpcId: replaceReference(fnc.network.vpc_id, context),
+          tags: replaceReference(tags, context),
+          securityGroupIngress: transformSecurityRules(
+            fnc.network.security_group.ingress,
+            'INGRESS',
+          ),
+          securityGroupEgress: transformSecurityRules(fnc.network.security_group.egress, 'EGRESS'),
+        },
+        true,
+      );
+
+      vpcConfig = {
+        vpcId: replaceReference(fnc.network.vpc_id, context),
+        vSwitchIds: replaceReference(fnc.network.subnet_ids, context),
+        securityGroupId: securityGroup.attrSecurityGroupId,
+      };
+    }
 
     const fcn = new fc.RosFunction(
       scope,
@@ -170,6 +218,7 @@ export const resolveFunctions = (
         environmentVariables: replaceReference(fnc.environment, context),
         code,
         logConfig,
+        vpcConfig,
         nasConfig: fcNas?.length
           ? {
               mountPoints: fcNas?.map(({ nasMount, mountDir }) => ({

@@ -37,6 +37,24 @@ export const functionSchema = {
             type: ['string', 'number', 'boolean'],
           },
         },
+        network: {
+          type: 'object',
+          properties: {
+            vpc_id: { type: 'string' },
+            subnet_ids: { type: 'array', items: { type: 'string' } },
+            security_group: {
+              type: 'object',
+              properties: {
+                name: { type: 'string' },
+                ingress: { type: 'array', items: { type: 'string' } },
+                egress: { type: 'array', items: { type: 'string' } },
+              },
+              required: ['name', 'ingress'],
+              additionalProperties: false,
+            },
+          },
+          required: ['vpc_id', 'subnet_ids', 'security_group'],
+        },
         storage: {
           type: 'object',
           properties: {
