@@ -23,8 +23,6 @@ export const parseFunction = (functions?: {
       nas: func.storage?.nas?.map((nasItem) => ({
         mount_path: nasItem.mount_path,
         storage_class: nasItem.storage_class as NasStorageClassEnum,
-        vpc_id: nasItem.vpc_id,
-        subnet_id: nasItem.subnet_id,
       })),
     },
   }));

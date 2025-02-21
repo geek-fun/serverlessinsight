@@ -11,6 +11,8 @@ import {
   minimumIac,
   minimumRos,
   oneFcIac,
+  oneFcIacWithNas,
+  oneFcIacWithNasRos,
   oneFcIacWithStage,
   oneFcOneGatewayIac,
   oneFcOneGatewayRos,
@@ -208,6 +210,22 @@ describe('Unit tests for stack deployment', () => {
       expect(mockedRosStackDeploy.mock.calls[1]).toEqual([
         stackName,
         bucketWithWebsiteRos,
+        { stackName },
+      ]);
+    });
+  });
+
+  describe('unit test for function nas attachment', () => {
+    it('should deploy function with nas when nas field is provided', async () => {
+      const stackName = 'my-demo-stack-with-nas';
+      mockedRosStackDeploy.mockResolvedValue(stackName);
+
+      await deployStack(stackName, oneFcIacWithNas, { stackName } as ActionContext);
+
+      expect(mockedRosStackDeploy).toHaveBeenCalledTimes(2);
+      expect(mockedRosStackDeploy.mock.calls[1]).toEqual([
+        stackName,
+        oneFcIacWithNasRos,
         { stackName },
       ]);
     });

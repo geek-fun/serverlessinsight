@@ -23,8 +23,6 @@ export type FunctionRaw = {
     nas?: Array<{
       mount_path: string;
       storage_class: string;
-      vpc_id: string;
-      subnet_id: string;
     }>;
   };
 };
@@ -55,8 +53,6 @@ export type FunctionDomain = {
     nas?: Array<{
       mount_path: string;
       storage_class: NasStorageClassEnum;
-      vpc_id: string;
-      subnet_id: string;
     }>;
   };
 };

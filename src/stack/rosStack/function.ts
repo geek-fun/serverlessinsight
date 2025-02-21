@@ -138,48 +138,7 @@ export const resolveFunctions = (
         )?.objectKey,
       };
     }
-    let fcNas:
-      | Array<{ nas: nas.FileSystem; nasMount: nas.MountTarget; mountDir: string }>
-      | undefined;
-    if (fnc.storage?.nas) {
-      fcNas = fnc.storage.nas.map((nasItem) => {
-        const { fileSystemType, storageType } = storageClassMap[nasItem.storage_class];
-        const accessGroup = new nas.AccessGroup(
-          scope,
-          `${fnc.key}_nas_access_${encodeBase64ForRosId(nasItem.mount_path)}`,
-          {
-            accessGroupName: `${fnc.name}-nas-access-${encodeBase64ForRosId(nasItem.mount_path)}`,
-            accessGroupType: 'Vpc',
-          },
-          true,
-        );
 
-        const nasResource = new nas.FileSystem(
-          scope,
-          `${fnc.key}_nas_${encodeBase64ForRosId(nasItem.mount_path)}`,
-          {
-            fileSystemType,
-            storageType,
-            protocolType: 'NFS',
-          },
-          true,
-        );
-        const nasMountTarget = new nas.MountTarget(
-          scope,
-          `${fnc.key}_nas_mount_${encodeBase64ForRosId(nasItem.mount_path)}`,
-          {
-            fileSystemId: nasResource.attrFileSystemId,
-            networkType: 'Vpc',
-            accessGroupName: accessGroup.attrAccessGroupName,
-            vpcId: nasItem.vpc_id,
-            vSwitchId: nasItem.subnet_id,
-          },
-          true,
-        );
-
-        return { nas: nasResource, nasMount: nasMountTarget, mountDir: nasItem.mount_path };
-      });
-    }
     let vpcConfig: fc.RosFunction.VpcConfigProperty | undefined = undefined;
     if (fnc.network) {
       const securityGroup = new ecs.SecurityGroup(
@@ -203,6 +162,53 @@ export const resolveFunctions = (
         vSwitchIds: replaceReference(fnc.network.subnet_ids, context),
         securityGroupId: securityGroup.attrSecurityGroupId,
       };
+    }
+
+    let fcNas:
+      | Array<{ nas: nas.FileSystem; nasMount: nas.MountTarget; mountDir: string }>
+      | undefined;
+    if (fnc.storage?.nas) {
+      fcNas = fnc.storage.nas.map((nasItem) => {
+        const { fileSystemType, storageType } = storageClassMap[nasItem.storage_class];
+        const accessGroup = new nas.AccessGroup(
+          scope,
+          `${fnc.key}_nas_access_${encodeBase64ForRosId(nasItem.mount_path)}`,
+          {
+            accessGroupName: `${fnc.name}-nas-access-${encodeBase64ForRosId(nasItem.mount_path)}`,
+            accessGroupType: 'Vpc',
+          },
+          true,
+        );
+
+        const nasResource = new nas.FileSystem(
+          scope,
+          `${fnc.key}_nas_${encodeBase64ForRosId(nasItem.mount_path)}`,
+          {
+            fileSystemType,
+            storageType,
+            protocolType: 'NFS',
+            tags: [
+              ...(replaceReference(tags, context) ?? []),
+              { key: 'function-name', value: fnc.name },
+            ],
+          },
+          true,
+        );
+        const nasMountTarget = new nas.MountTarget(
+          scope,
+          `${fnc.key}_nas_mount_${encodeBase64ForRosId(nasItem.mount_path)}`,
+          {
+            fileSystemId: nasResource.attrFileSystemId,
+            networkType: 'Vpc',
+            accessGroupName: accessGroup.attrAccessGroupName,
+            vpcId: fnc.network!.vpc_id,
+            vSwitchId: fnc.network!.subnet_ids[0],
+          },
+          true,
+        );
+
+        return { nas: nasResource, nasMount: nasMountTarget, mountDir: nasItem.mount_path };
+      });
     }
 
     const fcn = new fc.RosFunction(
