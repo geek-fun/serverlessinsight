@@ -144,7 +144,7 @@ export const resolveFunctions = (
     if (fnc.container) {
       runtimeConfig = {
         runtime: 'custom-container',
-        handler: '',
+        handler: 'index.handler',
         customContainerConfig: {
           image: fnc.container.image,
           command: fnc.container.command,
