@@ -7,7 +7,7 @@ export const oneFcOneGatewayIac = {
   version: '0.0.1',
   provider: {
     name: 'aliyun' as ProviderEnum,
-    region: "cn-hangzhou'",
+    region: 'cn-hangzhou',
   },
   vars: {
     account_id: 1234567890,
@@ -22,9 +22,11 @@ export const oneFcOneGatewayIac = {
     {
       key: 'hello_fn',
       name: 'hello_fn',
-      runtime: 'nodejs18',
-      handler: 'index.handler',
-      code: 'tests/fixtures/artifacts/artifact.zip',
+      code: {
+        runtime: 'nodejs18',
+        handler: 'index.handler',
+        path: 'tests/fixtures/artifacts/artifact.zip',
+      },
       memory: 128,
       timeout: 10,
       log: true,
@@ -255,6 +257,7 @@ export const oneFcOneGatewayRos = {
     },
   },
 };
+
 export const referredServiceIac = set(
   cloneDeep(oneFcOneGatewayIac),
   'service',
@@ -462,9 +465,11 @@ export const minimumIac = {
     {
       key: 'hello_fn',
       name: 'hello_fn',
-      runtime: 'nodejs18',
-      handler: 'index.handler',
-      code: 'tests/fixtures/artifacts/artifact.zip',
+      code: {
+        runtime: 'nodejs18',
+        handler: 'index.handler',
+        path: 'tests/fixtures/artifacts/artifact.zip',
+      },
     },
   ],
 } as ServerlessIac;
@@ -544,9 +549,11 @@ export const oneFcIac = {
     {
       key: 'hello_fn',
       name: 'hello_fn',
-      runtime: 'nodejs18',
-      handler: 'index.handler',
-      code: 'tests/fixtures/artifacts/artifact.zip',
+      code: {
+        runtime: 'nodejs18',
+        handler: 'index.handler',
+        path: 'tests/fixtures/artifacts/artifact.zip',
+      },
       memory: 128,
       timeout: 10,
       log: true,
@@ -688,6 +695,7 @@ export const oneFcIacWithNas = {
     },
   ],
 } as ServerlessIac;
+
 export const oneFcIacWithNasRos = {
   ...oneFcRos,
   Resources: {
@@ -838,9 +846,11 @@ export const oneFcIacWithStage = {
     {
       key: 'hello_fn',
       name: 'hello_fn',
-      runtime: 'nodejs18',
-      handler: 'index.handler',
-      code: 'tests/fixtures/artifacts/artifact.zip',
+      code: {
+        runtime: 'nodejs18',
+        handler: 'index.handler',
+        path: 'tests/fixtures/artifacts/artifact.zip',
+      },
       memory: 128,
       timeout: 10,
       log: true,

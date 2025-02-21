@@ -23,9 +23,10 @@ tags:
 functions:
   insight_poc_fn:
     name: insight-poc-fn
-    runtime: nodejs18
-    handler: ${vars.handler}
-    code: tests/fixtures/artifacts/artifact.zip
+    code:
+      runtime: nodejs18
+      handler: ${vars.handler}
+      path: tests/fixtures/artifacts/artifact.zip
     memory: 512
     timeout: 10
     environment:

@@ -13,13 +13,13 @@ resource "huaweicloud_fgs_application" "${service}_app" {
 const fgsFunction = (fn: FunctionDomain, context: ActionContext, service: string) => `
 resource "huaweicloud_fgs_function" "${fn.key}" {
   name = "${fn.name}"
-  handler = "${fn.handler}"
-  runtime = "${fn.runtime}"
+  handler = "${fn.code!.handler}"
+  runtime = "${fn.code!.runtime}"
   memory_size = ${fn.memory}
   timeout = ${fn.timeout}
   environment = ${JSON.stringify(fn.environment)}
   code_type = "inline"
-  func_code = "${resolveCode(fn.code)}"
+  func_code = "${resolveCode(fn.code!.path)}"
   app = "huaweicloud_fgs_application.${service}_app.id"
 }
 `;

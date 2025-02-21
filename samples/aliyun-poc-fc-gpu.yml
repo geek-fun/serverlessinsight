@@ -23,10 +23,6 @@ tags:
 functions:
   insight_poc_fn:
     name: insight-poc-gpu-fns
-    code:
-      runtime: nodejs18
-      handler: ${vars.handler}
-      path: tests/fixtures/artifacts/artifact.zip
     container:
       image: registry.cn-hangzhou.aliyuncs.com/aliyunfc/runtime/nodejs18:1.8.0
       command: [node, index.handler]

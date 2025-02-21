@@ -139,7 +139,7 @@ describe('Unit tests for stack deployment', () => {
       stackName,
       set(
         cloneDeep(oneFcOneGatewayIac),
-        'functions[0].code',
+        'functions[0].code.path',
         'tests/fixtures/artifacts/large-artifact.zip',
       ),
       { stackName } as ActionContext,
