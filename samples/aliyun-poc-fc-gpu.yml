@@ -1,0 +1,58 @@
+version: 0.0.1
+provider:
+  name: aliyun
+  region: cn-chengdu
+
+vars:
+  testv: testVarValue
+  handler: index.handler
+
+stages:
+  default:
+    node_env: default
+  dev:
+    node_env: development
+  prod:
+    region: cn-shanghai
+
+service: insight-poc-gpu
+
+tags:
+  owner: geek-fun
+
+functions:
+  insight_poc_fn:
+    name: insight-poc-gpu-fns
+    code:
+      runtime: nodejs18
+      handler: ${vars.handler}
+      path: tests/fixtures/artifacts/artifact.zip
+    container:
+      image: registry.cn-hangzhou.aliyuncs.com/aliyunfc/runtime/nodejs18:1.8.0
+      command: [node, index.handler]
+      entrypoint: [node]
+      port: 9000
+    memory: 512
+    timeout: 10
+    network:
+      vpc_id: vpc-2vc8v9btc8470laqui9bk
+      subnet_ids:
+        - vsw-2vc9zrs5mojkxd14yo3zw
+        - vsw-2vceshdo0xjp9q9t0oyt0
+      security_group:
+        name: insight-poc-gpu-fn-sg
+        ingress:
+          - TCP:0.0.0.0/0:80
+          - TCP:0.0.0.0/0:443
+          - TCP:0.0.0.0/0:22/22
+          - ICMP:0.0.0.0/0:ALL
+        egress:
+          - ALL:0.0.0.0/0:ALL
+    storage:
+      nas:
+        - mount_path: /mnt/nas
+          storage_class: STANDARD_CAPACITY
+    environment:
+      NODE_ENV: ${stages.node_env}
+      TEST_VAR: ${vars.testv}
+      TEST_VAR_EXTRA: abcds-${vars.testv}-andyou

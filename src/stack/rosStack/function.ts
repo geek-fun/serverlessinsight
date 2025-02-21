@@ -1,6 +1,7 @@
-import { ActionContext, FunctionDomain, ServerlessIac } from '../../types';
+import { ActionContext, FunctionDomain, NasStorageClassEnum, ServerlessIac } from '../../types';
 import {
   CODE_ZIP_SIZE_LIMIT,
+  encodeBase64ForRosId,
   getFileSource,
   readCodeSize,
   replaceReference,
@@ -11,7 +12,42 @@ import { isEmpty } from 'lodash';
 import * as ossDeployment from '@alicloud/ros-cdk-ossdeployment';
 import * as ros from '@alicloud/ros-cdk-core';
 import * as sls from '@alicloud/ros-cdk-sls';
+import * as nas from '@alicloud/ros-cdk-nas';
+import * as ecs from '@alicloud/ros-cdk-ecs';
 import { RosFunction } from '@alicloud/ros-cdk-fc3/lib/fc3.generated';
+
+const storageClassMap = {
+  [NasStorageClassEnum.STANDARD_CAPACITY]: { fileSystemType: 'standard', storageType: 'Capacity' },
+  [NasStorageClassEnum.STANDARD_PERFORMANCE]: {
+    fileSystemType: 'standard',
+    storageType: 'Performance',
+  },
+  [NasStorageClassEnum.EXTREME_STANDARD]: { fileSystemType: 'extreme', storageType: 'standard' },
+  [NasStorageClassEnum.EXTREME_ADVANCE]: { fileSystemType: 'extreme', storageType: 'advance' },
+};
+const securityGroupRangeMap: { [key: string]: string } = {
+  TCP: '1/65535',
+  UDP: '1/65535',
+  ICMP: '-1/-1',
+  GRE: '-1/-1',
+  ALL: '-1/-1',
+};
+const transformSecurityRules = (rules: Array<string>, ruleType: 'INGRESS' | 'EGRESS') => {
+  return rules.map((rule) => {
+    const [protocol, cidrIp, portRange] = rule.split(':');
+
+    return {
+      ipProtocol: protocol.toLowerCase(),
+      portRange:
+        portRange.toUpperCase() === 'ALL'
+          ? securityGroupRangeMap[protocol.toUpperCase()]
+          : portRange.includes('/')
+            ? portRange
+            : `${portRange}/${portRange}`,
+      [ruleType === 'INGRESS' ? 'sourceCidrIp' : 'destCidrIp']: cidrIp,
+    };
+  });
+};
 
 export const resolveFunctions = (
   scope: ros.Construct,
@@ -102,6 +138,79 @@ export const resolveFunctions = (
         )?.objectKey,
       };
     }
+
+    let vpcConfig: fc.RosFunction.VpcConfigProperty | undefined = undefined;
+    if (fnc.network) {
+      const securityGroup = new ecs.SecurityGroup(
+        scope,
+        `${fnc.key}_security_group`,
+        {
+          securityGroupName: fnc.network.security_group.name,
+          vpcId: replaceReference(fnc.network.vpc_id, context),
+          tags: replaceReference(tags, context),
+          securityGroupIngress: transformSecurityRules(
+            fnc.network.security_group.ingress,
+            'INGRESS',
+          ),
+          securityGroupEgress: transformSecurityRules(fnc.network.security_group.egress, 'EGRESS'),
+        },
+        true,
+      );
+
+      vpcConfig = {
+        vpcId: replaceReference(fnc.network.vpc_id, context),
+        vSwitchIds: replaceReference(fnc.network.subnet_ids, context),
+        securityGroupId: securityGroup.attrSecurityGroupId,
+      };
+    }
+
+    let fcNas:
+      | Array<{ nas: nas.FileSystem; nasMount: nas.MountTarget; mountDir: string }>
+      | undefined;
+    if (fnc.storage?.nas) {
+      fcNas = fnc.storage.nas.map((nasItem) => {
+        const { fileSystemType, storageType } = storageClassMap[nasItem.storage_class];
+        const accessGroup = new nas.AccessGroup(
+          scope,
+          `${fnc.key}_nas_access_${encodeBase64ForRosId(nasItem.mount_path)}`,
+          {
+            accessGroupName: `${fnc.name}-nas-access-${encodeBase64ForRosId(nasItem.mount_path)}`,
+            accessGroupType: 'Vpc',
+          },
+          true,
+        );
+
+        const nasResource = new nas.FileSystem(
+          scope,
+          `${fnc.key}_nas_${encodeBase64ForRosId(nasItem.mount_path)}`,
+          {
+            fileSystemType,
+            storageType,
+            protocolType: 'NFS',
+            tags: [
+              ...(replaceReference(tags, context) ?? []),
+              { key: 'function-name', value: fnc.name },
+            ],
+          },
+          true,
+        );
+        const nasMountTarget = new nas.MountTarget(
+          scope,
+          `${fnc.key}_nas_mount_${encodeBase64ForRosId(nasItem.mount_path)}`,
+          {
+            fileSystemId: nasResource.attrFileSystemId,
+            networkType: 'Vpc',
+            accessGroupName: accessGroup.attrAccessGroupName,
+            vpcId: fnc.network!.vpc_id,
+            vSwitchId: fnc.network!.subnet_ids[0],
+          },
+          true,
+        );
+
+        return { nas: nasResource, nasMount: nasMountTarget, mountDir: nasItem.mount_path };
+      });
+    }
+
     const fcn = new fc.RosFunction(
       scope,
       fnc.key,
@@ -111,9 +220,19 @@ export const resolveFunctions = (
         runtime: replaceReference(fnc.runtime, context),
         memorySize: replaceReference(fnc.memory, context),
         timeout: replaceReference(fnc.timeout, context),
+        diskSize: fnc.storage?.disk,
         environmentVariables: replaceReference(fnc.environment, context),
         code,
         logConfig,
+        vpcConfig,
+        nasConfig: fcNas?.length
+          ? {
+              mountPoints: fcNas?.map(({ nasMount, mountDir }) => ({
+                mountDir,
+                serverAddr: `${nasMount.attrMountTargetDomain}:/`,
+              })),
+            }
+          : undefined,
       },
       true,
     );
@@ -125,6 +244,11 @@ export const resolveFunctions = (
 
     if (storeInBucket) {
       fcn.addRosDependency(`${service}_artifacts_code_deployment`);
+    }
+    if (fcNas?.length) {
+      fcNas.forEach((nasItem) => {
+        fcn.addRosDependency(`${fnc.key}_nas_mount_${encodeBase64ForRosId(nasItem.mountDir)}`);
+      });
     }
   });
 };
