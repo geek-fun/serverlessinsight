@@ -28,7 +28,7 @@ program
   .option('-s, --stage <stage>', 'specify the stage')
   .action((stackName, { file, stage }) => {
     logger.debug('log command info');
-    validate(file, stage);
+    validate(stackName, { stage, location: file });
   });
 
 program
@@ -36,6 +36,11 @@ program
   .description('deploy serverless Iac yaml')
   .option('-f, --file <path>', 'specify the yaml file')
   .option('-s, --stage <stage>', 'specify the stage')
+  .option('-r, --region <region>', 'specify the region')
+  .option('-pr, --provider <provider>', 'specify the provider')
+  .option('-ak, --accessKeyId <accessKeyId>', 'specify the AccessKeyId')
+  .option('-as, --accessKeySecret <accessKeySecret>', 'specify the AccessKeySecret')
+  .option('-at, --securityToken <securityToken>', 'specify the SecurityToken')
   .option(
     '-p, --parameter <key=value>',
     'override parameters',
@@ -46,9 +51,23 @@ program
     },
     {},
   )
-  .action(async (stackName, { file, parameter, stage }) => {
-    await deploy(stackName, { location: file, parameters: parameter, stage });
-  });
+  .action(
+    async (
+      stackName,
+      { stage, parameter, file, region, provider, accessKeyId, accessKeySecret, securityToken },
+    ) => {
+      await deploy(stackName, {
+        stage,
+        parameters: parameter,
+        location: file,
+        region,
+        provider,
+        accessKeyId,
+        accessKeySecret,
+        securityToken,
+      });
+    },
+  );
 
 program
   .command('template <stackName>')

@@ -1,4 +1,4 @@
-import { ActionContext } from '../types';
+import { ActionContext, ServerlessIac } from '../types';
 import path from 'node:path';
 import { ProviderEnum } from './providerEnum';
 
@@ -12,28 +12,32 @@ export const getIacLocation = (location?: string): string => {
         path.resolve(projectRoot, 'serverless-insight.yml');
 };
 
-export const constructActionContext = (config?: {
+export const constructActionContext = (config: {
+  stage?: string;
+  stackName?: string;
   region?: string;
   provider?: string;
-  account?: string;
   accessKeyId?: string;
   accessKeySecret?: string;
   securityToken?: string;
   location?: string;
   parameters?: { [key: string]: string };
-  stage?: string;
-  stackName?: string;
+  iacProvider?: ServerlessIac['provider'];
 }): ActionContext => {
   return {
-    stage: config?.stage ?? 'default',
-    stackName: config?.stackName ?? '',
+    stage: config.stage ?? 'default',
+    stackName: config.stackName ?? '',
+    provider: (config.provider ?? config.iacProvider?.name ?? ProviderEnum.ALIYUN) as ProviderEnum,
     region:
-      config?.region ?? process.env.ROS_REGION_ID ?? process.env.ALIYUN_REGION ?? 'cn-hangzhou',
-    accessKeyId: config?.accessKeyId ?? (process.env.ALIYUN_ACCESS_KEY_ID as string),
-    accessKeySecret: config?.accessKeySecret ?? (process.env.ALIYUN_ACCESS_KEY_SECRET as string),
-    securityToken: config?.securityToken ?? process.env.ALIYUN_SECURITY_TOKEN,
-    iacLocation: getIacLocation(config?.location),
-    parameters: Object.entries(config?.parameters ?? {}).map(([key, value]) => ({ key, value })),
-    provider: config?.provider as ProviderEnum,
+      config.region ??
+      config.iacProvider?.region ??
+      process.env.ROS_REGION_ID ??
+      process.env.ALIYUN_REGION ??
+      'cn-hangzhou',
+    accessKeyId: config.accessKeyId ?? (process.env.ALIYUN_ACCESS_KEY_ID as string),
+    accessKeySecret: config.accessKeySecret ?? (process.env.ALIYUN_ACCESS_KEY_SECRET as string),
+    securityToken: config.securityToken ?? process.env.ALIYUN_SECURITY_TOKEN,
+    iacLocation: getIacLocation(config.location),
+    parameters: Object.entries(config.parameters ?? {}).map(([key, value]) => ({ key, value })),
   };
 };
