@@ -1407,6 +1407,7 @@ export const defaultContext = {
   iacLocation: expect.stringContaining('tests/fixtures/serverless-insight.yml'),
   parameters: [],
   region: 'cn-hangzhou',
+  provider: 'aliyun',
   securityToken: 'account id',
   stackName: 'my-demo-stack',
   stage: 'default',

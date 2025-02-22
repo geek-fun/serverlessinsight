@@ -18,6 +18,9 @@ describe('unit test for deploy command', () => {
     });
 
     expect(mockedDeployStack).toHaveBeenCalledTimes(1);
-    expect(mockedDeployStack).toHaveBeenCalledWith(stackName, expect.any(Object), defaultContext);
+    expect(mockedDeployStack).toHaveBeenCalledWith(stackName, expect.any(Object), {
+      ...defaultContext,
+      region: 'cn-chengdu',
+    });
   });
 });

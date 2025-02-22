@@ -13,7 +13,7 @@ stages:
   dev:
     node_env: development
   prod:
-    region: cn-shanghai
+    region: cn-hangzhou
 
 service: insight-poc-gpu
 
