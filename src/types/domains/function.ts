@@ -7,8 +7,7 @@ export type FunctionRaw = {
   };
   container?: {
     image: string;
-    command: Array<string>;
-    entrypoint: Array<string>;
+    cmd?: string;
     port: number;
   };
   memory: number;
@@ -45,8 +44,7 @@ export type FunctionDomain = {
   };
   container?: {
     image: string;
-    command: Array<string>;
-    entrypoint: Array<string>;
+    cmd?: string;
     port: number;
   };
   memory: number;

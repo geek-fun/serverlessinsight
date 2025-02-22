@@ -147,8 +147,7 @@ export const resolveFunctions = (
         handler: 'index.handler',
         customContainerConfig: {
           image: fnc.container.image,
-          command: fnc.container.command,
-          entrypoint: fnc.container.entrypoint,
+          command: fnc.container.cmd?.split(' '),
           port: fnc.container.port,
         },
       };

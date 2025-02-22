@@ -25,8 +25,7 @@ functions:
     name: insight-poc-gpu-fn
     container:
       image: registry.cn-chengdu.aliyuncs.com/geek-fun/meke-api:latest
-      command: [ npm, start ]
-      entrypoint: [ node ]
+      cmd: "npm start"
       port: 9000
     memory: 512
     timeout: 10

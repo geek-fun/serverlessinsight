@@ -37,12 +37,11 @@ export const functionSchema = {
         },
         container: {
           type: 'object',
-          required: ['image', 'command', 'entrypoint', 'port'],
+          required: ['image', 'port'],
           additionalProperties: false,
           properties: {
             image: { type: 'string' },
-            command: { type: 'array', items: { type: 'string' } },
-            entrypoint: { type: 'array', items: { type: 'string' } },
+            cmd: { type: 'string' },
             port: { type: 'number' },
           },
         },
