@@ -1,4 +1,4 @@
-import { FunctionDomain, FunctionRaw, NasStorageClassEnum } from '../types';
+import { FunctionDomain, FunctionGpuEnum, FunctionRaw, NasStorageClassEnum } from '../types';
 import { isEmpty } from 'lodash';
 
 export const parseFunction = (functions?: {
@@ -13,6 +13,7 @@ export const parseFunction = (functions?: {
     code: func.code,
     container: func.container,
     memory: func.memory,
+    gpu: func.gpu as FunctionGpuEnum,
     timeout: func.timeout,
     environment: func.environment,
     log: func.log,

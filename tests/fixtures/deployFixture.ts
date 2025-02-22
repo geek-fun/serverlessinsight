@@ -994,6 +994,32 @@ export const oneFcWithContainerRos = {
   },
 };
 
+export const oneFcWithGpuIac = {
+  ...oneFcIac,
+  functions: [
+    {
+      ...((oneFcIac.functions && oneFcIac.functions[0]) ?? {}),
+      gpu: 'TESLA_8',
+    },
+  ],
+} as ServerlessIac;
+export const oneFcWithGpuRos = {
+  ...oneFcRos,
+  Resources: {
+    ...oneFcRos.Resources,
+    hello_fn: {
+      ...oneFcRos.Resources.hello_fn,
+      Properties: {
+        ...oneFcRos.Resources.hello_fn.Properties,
+        GpuConfig: {
+          GpuMemorySize: 8192,
+          GpuType: 'fc.gpu.tesla.1',
+        },
+      },
+    },
+  },
+};
+
 export const largeCodeRos = {
   Description: 'my-demo-service stack',
   Mappings: {

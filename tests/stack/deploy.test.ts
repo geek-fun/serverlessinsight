@@ -19,6 +19,8 @@ import {
   oneFcRos,
   oneFcWithContainerIac,
   oneFcWithContainerRos,
+  oneFcWithGpuIac,
+  oneFcWithGpuRos,
   oneFcWithStageRos,
   referredServiceIac,
   referredServiceRos,
@@ -217,7 +219,7 @@ describe('Unit tests for stack deployment', () => {
     });
   });
 
-  describe('unit test for function nas attachment', () => {
+  describe('unit test for serverless Gpu', () => {
     it('should deploy function with nas when nas field is provided', async () => {
       const stackName = 'my-demo-stack-with-nas';
       mockedRosStackDeploy.mockResolvedValue(stackName);
@@ -231,9 +233,7 @@ describe('Unit tests for stack deployment', () => {
         { stackName },
       ]);
     });
-  });
 
-  describe('unit test for function with container', () => {
     it('should deploy function with container when container field is provided', async () => {
       const stackName = 'my-demo-stack-with-container';
       mockedRosStackDeploy.mockResolvedValue(stackName);
@@ -244,6 +244,20 @@ describe('Unit tests for stack deployment', () => {
       expect(mockedRosStackDeploy.mock.calls[1]).toEqual([
         stackName,
         oneFcWithContainerRos,
+        { stackName },
+      ]);
+    });
+
+    it('should deploy function with gpu configured', async () => {
+      const stackName = 'my-demo-stack-with-gpu';
+      mockedRosStackDeploy.mockResolvedValue(stackName);
+
+      await deployStack(stackName, oneFcWithGpuIac, { stackName } as ActionContext);
+
+      expect(mockedRosStackDeploy).toHaveBeenCalledTimes(2);
+      expect(mockedRosStackDeploy.mock.calls[1]).toEqual([
+        stackName,
+        oneFcWithGpuRos,
         { stackName },
       ]);
     });

@@ -28,6 +28,7 @@ functions:
       cmd: "npm start"
       port: 9000
     memory: 512
+    gpu: TESLA_8
     timeout: 10
     network:
       vpc_id: vpc-2vc8v9btc8470laqui9bk

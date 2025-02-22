@@ -11,6 +11,7 @@ export type FunctionRaw = {
     port: number;
   };
   memory: number;
+  gpu: string;
   timeout: number;
   log?: boolean;
   environment?: {
@@ -48,6 +49,7 @@ export type FunctionDomain = {
     port: number;
   };
   memory: number;
+  gpu?: FunctionGpuEnum;
   timeout: number;
   log?: boolean;
   environment?: {
@@ -76,4 +78,15 @@ export enum NasStorageClassEnum {
   STANDARD_CAPACITY = 'STANDARD_CAPACITY',
   EXTREME_STANDARD = 'EXTREME_STANDARD',
   EXTREME_ADVANCE = 'EXTREME_ADVANCE',
+}
+
+export enum FunctionGpuEnum {
+  TESLA_8 = 'TESLA_8',
+  TESLA_12 = 'TESLA_12',
+  TESLA_16 = 'TESLA_16',
+  AMPERE_8 = 'AMPERE_8',
+  AMPERE_12 = 'AMPERE_12',
+  AMPERE_16 = 'AMPERE_16',
+  AMPERE_24 = 'AMPERE_24',
+  ADA_48 = 'ADA_48',
 }

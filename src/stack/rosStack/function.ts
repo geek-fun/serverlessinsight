@@ -1,4 +1,10 @@
-import { ActionContext, FunctionDomain, NasStorageClassEnum, ServerlessIac } from '../../types';
+import {
+  ActionContext,
+  FunctionDomain,
+  FunctionGpuEnum,
+  NasStorageClassEnum,
+  ServerlessIac,
+} from '../../types';
 import {
   CODE_ZIP_SIZE_LIMIT,
   encodeBase64ForRosId,
@@ -25,6 +31,7 @@ const storageClassMap = {
   [NasStorageClassEnum.EXTREME_STANDARD]: { fileSystemType: 'extreme', storageType: 'standard' },
   [NasStorageClassEnum.EXTREME_ADVANCE]: { fileSystemType: 'extreme', storageType: 'advance' },
 };
+
 const securityGroupRangeMap: { [key: string]: string } = {
   TCP: '1/65535',
   UDP: '1/65535',
@@ -32,6 +39,17 @@ const securityGroupRangeMap: { [key: string]: string } = {
   GRE: '-1/-1',
   ALL: '-1/-1',
 };
+const gpuConfigMap = {
+  [FunctionGpuEnum.TESLA_8]: { gpuMemorySize: 8192, gpuType: 'fc.gpu.tesla.1' },
+  [FunctionGpuEnum.TESLA_12]: { gpuMemorySize: 12288, gpuType: 'fc.gpu.tesla.1' },
+  [FunctionGpuEnum.TESLA_16]: { gpuMemorySize: 16384, gpuType: 'fc.gpu.tesla.1' },
+  [FunctionGpuEnum.AMPERE_8]: { gpuMemorySize: 8192, gpuType: 'fc.gpu.ampere.1' },
+  [FunctionGpuEnum.AMPERE_12]: { gpuMemorySize: 12288, gpuType: 'fc.gpu.ampere.1' },
+  [FunctionGpuEnum.AMPERE_16]: { gpuMemorySize: 16384, gpuType: 'fc.gpu.ampere.1' },
+  [FunctionGpuEnum.AMPERE_24]: { gpuMemorySize: 24576, gpuType: 'fc.gpu.ampere.1' },
+  [FunctionGpuEnum.ADA_48]: { gpuMemorySize: 49152, gpuType: 'fc.gpu.ada.1' },
+};
+
 const transformSecurityRules = (rules: Array<string>, ruleType: 'INGRESS' | 'EGRESS') => {
   return rules.map((rule) => {
     const [protocol, cidrIp, portRange] = rule.split(':');
@@ -49,6 +67,13 @@ const transformSecurityRules = (rules: Array<string>, ruleType: 'INGRESS' | 'EGR
   });
 };
 
+const transformGpuConfig = (gpu: FunctionDomain['gpu']) => {
+  if (!gpu) {
+    return undefined;
+  }
+
+  return gpuConfigMap[gpu];
+};
 export const resolveFunctions = (
   scope: ros.Construct,
   functions: Array<FunctionDomain> | undefined,
@@ -248,8 +273,9 @@ export const resolveFunctions = (
       {
         functionName: replaceReference(fnc.name, context),
         memorySize: replaceReference(fnc.memory, context),
-        timeout: replaceReference(fnc.timeout, context),
         diskSize: fnc.storage?.disk,
+        gpuConfig: transformGpuConfig(fnc.gpu),
+        timeout: replaceReference(fnc.timeout, context),
         environmentVariables: replaceReference(fnc.environment, context),
         logConfig,
         vpcConfig,
