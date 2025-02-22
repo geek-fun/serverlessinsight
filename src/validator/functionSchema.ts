@@ -46,6 +46,19 @@ export const functionSchema = {
           },
         },
         memory: { type: 'number' },
+        gpu: {
+          type: 'string',
+          enum: [
+            'TESLA_8',
+            'TESLA_12',
+            'TESLA_16',
+            'AMPERE_8',
+            'AMPERE_12',
+            'AMPERE_16',
+            'AMPERE_24',
+            'ADA_48',
+          ],
+        },
         timeout: { type: 'number' },
         log: { type: 'boolean' },
         environment: {
