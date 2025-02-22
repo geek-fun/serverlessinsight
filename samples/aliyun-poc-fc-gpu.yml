@@ -22,15 +22,10 @@ tags:
 
 functions:
   insight_poc_fn:
-    name: insight-poc-gpu-fns
-    code:
-      runtime: nodejs18
-      handler: ${vars.handler}
-      path: tests/fixtures/artifacts/artifact.zip
+    name: insight-poc-gpu-fn
     container:
-      image: registry.cn-hangzhou.aliyuncs.com/aliyunfc/runtime/nodejs18:1.8.0
-      command: [node, index.handler]
-      entrypoint: [node]
+      image: registry.cn-chengdu.aliyuncs.com/geek-fun/meke-api:latest
+      cmd: "npm start"
       port: 9000
     memory: 512
     timeout: 10

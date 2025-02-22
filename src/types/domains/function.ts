@@ -1,8 +1,15 @@
 export type FunctionRaw = {
   name: string;
-  runtime: string;
-  handler: string;
-  code: string;
+  code?: {
+    runtime: string;
+    handler: string;
+    path: string;
+  };
+  container?: {
+    image: string;
+    cmd?: string;
+    port: number;
+  };
   memory: number;
   timeout: number;
   log?: boolean;
@@ -30,9 +37,16 @@ export type FunctionRaw = {
 export type FunctionDomain = {
   key: string;
   name: string;
-  runtime: string;
-  handler: string;
-  code: string;
+  code?: {
+    runtime: string;
+    handler: string;
+    path: string;
+  };
+  container?: {
+    image: string;
+    cmd?: string;
+    port: number;
+  };
   memory: number;
   timeout: number;
   log?: boolean;

@@ -17,6 +17,8 @@ import {
   oneFcOneGatewayIac,
   oneFcOneGatewayRos,
   oneFcRos,
+  oneFcWithContainerIac,
+  oneFcWithContainerRos,
   oneFcWithStageRos,
   referredServiceIac,
   referredServiceRos,
@@ -139,7 +141,7 @@ describe('Unit tests for stack deployment', () => {
       stackName,
       set(
         cloneDeep(oneFcOneGatewayIac),
-        'functions[0].code',
+        'functions[0].code.path',
         'tests/fixtures/artifacts/large-artifact.zip',
       ),
       { stackName } as ActionContext,
@@ -226,6 +228,22 @@ describe('Unit tests for stack deployment', () => {
       expect(mockedRosStackDeploy.mock.calls[1]).toEqual([
         stackName,
         oneFcIacWithNasRos,
+        { stackName },
+      ]);
+    });
+  });
+
+  describe('unit test for function with container', () => {
+    it('should deploy function with container when container field is provided', async () => {
+      const stackName = 'my-demo-stack-with-container';
+      mockedRosStackDeploy.mockResolvedValue(stackName);
+
+      await deployStack(stackName, oneFcWithContainerIac, { stackName } as ActionContext);
+
+      expect(mockedRosStackDeploy).toHaveBeenCalledTimes(2);
+      expect(mockedRosStackDeploy.mock.calls[1]).toEqual([
+        stackName,
+        oneFcWithContainerRos,
         { stackName },
       ]);
     });

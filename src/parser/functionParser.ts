@@ -10,12 +10,11 @@ export const parseFunction = (functions?: {
   return Object.entries(functions).map(([key, func]) => ({
     key,
     name: func.name,
-    runtime: func.runtime,
-    handler: func.handler,
+    code: func.code,
+    container: func.container,
     memory: func.memory,
     timeout: func.timeout,
     environment: func.environment,
-    code: func.code,
     log: func.log,
     network: func.network,
     storage: {

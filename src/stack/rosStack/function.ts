@@ -14,7 +14,7 @@ import * as ros from '@alicloud/ros-cdk-core';
 import * as sls from '@alicloud/ros-cdk-sls';
 import * as nas from '@alicloud/ros-cdk-nas';
 import * as ecs from '@alicloud/ros-cdk-ecs';
-import { RosFunction } from '@alicloud/ros-cdk-fc3/lib/fc3.generated';
+import { RosFunction, RosFunctionProps } from '@alicloud/ros-cdk-fc3/lib/fc3.generated';
 
 const storageClassMap = {
   [NasStorageClassEnum.STANDARD_CAPACITY]: { fileSystemType: 'standard', storageType: 'Capacity' },
@@ -99,11 +99,11 @@ export const resolveFunctions = (
   }
 
   const fileSources = functions
-    ?.filter(({ code }) => readCodeSize(code) > CODE_ZIP_SIZE_LIMIT)
+    ?.filter(({ code }) => code?.path && readCodeSize(code.path) > CODE_ZIP_SIZE_LIMIT)
     .map(({ code, name }) => {
       const fcName = replaceReference(name, context);
 
-      return { fcName, ...getFileSource(fcName, code) };
+      return { fcName, ...getFileSource(fcName, code!.path) };
     });
 
   const destinationBucketName = ros.Fn.sub(
@@ -125,17 +125,48 @@ export const resolveFunctions = (
       true,
     );
   }
+
   functions?.forEach((fnc) => {
-    const storeInBucket = readCodeSize(fnc.code) > CODE_ZIP_SIZE_LIMIT;
-    let code: fc.RosFunction.CodeProperty = {
-      zipFile: resolveCode(fnc.code),
-    };
-    if (storeInBucket) {
-      code = {
-        ossBucketName: destinationBucketName,
-        ossObjectName: fileSources?.find(
-          ({ fcName }) => fcName === replaceReference(fnc.name, context),
-        )?.objectKey,
+    let runtimeConfig:
+      | {
+          customContainerConfig: RosFunctionProps['customContainerConfig'];
+          runtime: RosFunctionProps['runtime'];
+          handler: RosFunctionProps['handler'];
+        }
+      | {
+          code: RosFunctionProps['code'];
+          runtime: RosFunctionProps['runtime'];
+          handler: RosFunctionProps['handler'];
+        };
+
+    const storeInBucket = !!fnc.code?.path && readCodeSize(fnc.code.path) > CODE_ZIP_SIZE_LIMIT;
+
+    if (fnc.container) {
+      runtimeConfig = {
+        runtime: 'custom-container',
+        handler: 'index.handler',
+        customContainerConfig: {
+          image: fnc.container.image,
+          command: fnc.container.cmd?.split(' '),
+          port: fnc.container.port,
+        },
+      };
+    } else {
+      let code: fc.RosFunction.CodeProperty = {
+        zipFile: resolveCode(fnc.code!.path),
+      };
+      if (storeInBucket) {
+        code = {
+          ossBucketName: destinationBucketName,
+          ossObjectName: fileSources?.find(
+            ({ fcName }) => fcName === replaceReference(fnc.name, context),
+          )?.objectKey,
+        };
+      }
+      runtimeConfig = {
+        code,
+        handler: replaceReference(fnc.code!.handler, context),
+        runtime: replaceReference(fnc.code!.runtime, context),
       };
     }
 
@@ -216,15 +247,13 @@ export const resolveFunctions = (
       fnc.key,
       {
         functionName: replaceReference(fnc.name, context),
-        handler: replaceReference(fnc.handler, context),
-        runtime: replaceReference(fnc.runtime, context),
         memorySize: replaceReference(fnc.memory, context),
         timeout: replaceReference(fnc.timeout, context),
         diskSize: fnc.storage?.disk,
         environmentVariables: replaceReference(fnc.environment, context),
-        code,
         logConfig,
         vpcConfig,
+        ...runtimeConfig,
         nasConfig: fcNas?.length
           ? {
               mountPoints: fcNas?.map(({ nasMount, mountDir }) => ({
