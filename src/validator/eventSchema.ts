@@ -16,20 +16,16 @@ export const eventSchema = {
             required: ['method', 'path', 'backend'],
           },
         },
-        custom_domain: {
+        domain: {
           type: 'object',
+          additionalProperties: false,
+          required: ['domain_name'],
           properties: {
             domain_name: { type: 'string' },
             certificate_name: { type: 'string' },
             certificate_body: { type: 'string' },
             certificate_private_key: { type: 'string' },
           },
-          required: [
-            'domain_name',
-            'certificate_name',
-            'certificate_body',
-            'certificate_private_key',
-          ],
         },
       },
       required: ['name', 'type', 'triggers'],
