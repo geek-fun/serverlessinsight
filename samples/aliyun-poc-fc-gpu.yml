@@ -1,7 +1,7 @@
 version: 0.0.1
 provider:
   name: aliyun
-  region: cn-chengdu
+  region: cn-hangzhou
 
 vars:
   testv: testVarValue
