@@ -81,9 +81,10 @@ program
 
 program
   .command('destroy <stackName>')
+  .option('-f, --file <path>', 'specify the yaml file')
   .description('destroy serverless stack')
-  .action(async (stackName) => {
-    await destroyStack(stackName);
+  .action(async (stackName, { file }) => {
+    await destroyStack(stackName, { location: file });
   });
 
 program.parse();
