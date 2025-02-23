@@ -13,6 +13,8 @@ tags:
 buckets:
   insight_poc_bucket:
     name: insight-poc-domain
+    security:
+      acl: PUBLIC_READ
     website:
       code: dist
       domain: meke-ui.serverlessinsight.com

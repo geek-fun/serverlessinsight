@@ -1,8 +1,9 @@
 import { ActionContext, BucketAccessEnum, BucketDomain } from '../../types';
 import * as oss from '@alicloud/ros-cdk-oss';
 import * as ros from '@alicloud/ros-cdk-core';
-import { encodeBase64ForRosId, getAssets, replaceReference } from '../../common';
+import { encodeBase64ForRosId, getAssets, replaceReference, splitDomain } from '../../common';
 import * as ossDeployment from '@alicloud/ros-cdk-ossdeployment';
+import * as dns from '@alicloud/ros-cdk-dns';
 import path from 'node:path';
 import { RosRole } from '@alicloud/ros-cdk-ram';
 
@@ -87,12 +88,28 @@ export const resolveBuckets = (
       );
     }
     if (bucket.website?.domain) {
+      const { rr, domainName } = splitDomain(bucket.website.domain);
       new oss.Domain(
         scope,
         `${bucket.key}_custom_domain_${encodeBase64ForRosId(bucket.website.domain)}`,
         {
           bucketName: ossBucket.attrName,
           domainName: replaceReference(bucket.website.domain, context),
+        },
+      );
+
+      new dns.DomainRecord(
+        scope,
+        `${bucket.key}_custom_domain_record_${encodeBase64ForRosId(bucket.website.domain)}`,
+        {
+          domainName: domainName,
+          rr,
+          type: 'CNAME',
+          value: [BucketAccessEnum.PUBLIC_READ, BucketAccessEnum.PUBLIC_READ_WRITE].includes(
+            bucket.security?.acl ?? ('' as BucketAccessEnum),
+          )
+            ? ossBucket.attrDomainName
+            : ossBucket.attrInternalDomainName,
         },
       );
     }

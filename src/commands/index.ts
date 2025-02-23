@@ -82,9 +82,23 @@ program
 program
   .command('destroy <stackName>')
   .option('-f, --file <path>', 'specify the yaml file')
+  .option('-r, --region <region>', 'specify the region')
+  .option('-pr, --provider <provider>', 'specify the provider')
+  .option('-ak, --accessKeyId <accessKeyId>', 'specify the AccessKeyId')
+  .option('-as, --accessKeySecret <accessKeySecret>', 'specify the AccessKeySecret')
+  .option('-at, --securityToken <securityToken>', 'specify the SecurityToken')
   .description('destroy serverless stack')
-  .action(async (stackName, { file }) => {
-    await destroyStack(stackName, { location: file });
-  });
+  .action(
+    async (stackName, { file, region, provider, accessKeyId, accessKeySecret, securityToken }) => {
+      await destroyStack(stackName, {
+        location: file,
+        region,
+        provider,
+        accessKeyId,
+        accessKeySecret,
+        securityToken,
+      });
+    },
+  );
 
 program.parse();

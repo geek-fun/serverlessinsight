@@ -177,7 +177,7 @@ export const rosStackDeploy = async (
 export const rosStackDelete = async ({
   stackName,
   region,
-}: Pick<ActionContext, 'stackName' | 'region'>) => {
+}: Pick<ActionContext, 'stackName' | 'region' | 'provider'>) => {
   const stackInfo = await getStackByName(stackName, region);
   if (!stackInfo) {
     logger.warn(`Stack: ${stackName} not exists, skipped! 🚫`);
