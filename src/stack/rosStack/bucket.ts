@@ -1,7 +1,13 @@
 import { ActionContext, BucketAccessEnum, BucketDomain } from '../../types';
 import * as oss from '@alicloud/ros-cdk-oss';
 import * as ros from '@alicloud/ros-cdk-core';
-import { encodeBase64ForRosId, getAssets, replaceReference, splitDomain } from '../../common';
+import {
+  encodeBase64ForRosId,
+  getAssets,
+  OSS_DEPLOYMENT_TIMEOUT,
+  replaceReference,
+  splitDomain,
+} from '../../common';
 import * as ossDeployment from '@alicloud/ros-cdk-ossdeployment';
 import * as dns from '@alicloud/ros-cdk-dns';
 import path from 'node:path';
@@ -80,8 +86,8 @@ export const resolveBuckets = (
           sources: getAssets(filePath),
           destinationBucket: ossBucket.attrName,
           roleArn: siAutoOssDeploymentBucketRole!.attrArn,
-          timeout: 3000,
-          logMonitoring: false,
+          timeout: OSS_DEPLOYMENT_TIMEOUT,
+          logMonitoring: true,
           retainOnCreate: false,
         },
         true,

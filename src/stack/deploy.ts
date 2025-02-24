@@ -2,7 +2,14 @@ import * as ros from '@alicloud/ros-cdk-core';
 import fs from 'node:fs';
 
 import { ActionContext, ServerlessIac } from '../types';
-import { logger, ProviderEnum, publishAssets, rosStackDeploy } from '../common';
+import {
+  cleanupAssets,
+  constructAssets,
+  logger,
+  ProviderEnum,
+  publishAssets,
+  rosStackDeploy,
+} from '../common';
 import { prepareBootstrapStack, RosStack } from './rosStack';
 import { RfsStack } from './rfsStack';
 import { get } from 'lodash';
@@ -50,10 +57,25 @@ export const deployStack = async (
   const { template, assets } = generateRosStackTemplate(stackName, iac, context);
   await prepareBootstrapStack(context);
   logger.info(`Deploying stack, publishing assets...`);
-  await publishAssets(assets, context);
-  logger.info(`Assets published! 🎉`);
-  await rosStackDeploy(stackName, template, context);
-  logger.info(`Stack deployed! 🎉`);
+  const constructedAssets = await constructAssets(assets, context.region);
+  try {
+    await publishAssets(constructedAssets, context);
+    logger.info(`Assets published! 🎉`);
+    await rosStackDeploy(stackName, template, context);
+  } catch (e) {
+    logger.error(`Failed to deploy stack: ${e}`);
+    throw e;
+  } finally {
+    try {
+      logger.info(`Cleaning up temporary Assets...`);
+      await cleanupAssets(constructedAssets, context);
+      logger.info(`Assets cleaned up!♻️`);
+    } catch (e) {
+      logger.error(
+        `Failed to cleanup assets, it wont affect the deployment result, but to avoid potential cost, you can delete the temporary bucket : ${constructedAssets?.[0].bucketName}, error details:${e}`,
+      );
+    }
+  }
 };
 
 export const generateStackTemplate = (

@@ -65,7 +65,16 @@ const zipAssets = async (assetsPath: string) => {
   return zipPath;
 };
 
-const constructAssets = async ({ files, rootPath }: CdkAssets, region: string) => {
+type ConstructedAsset = {
+  bucketName: string;
+  source: string;
+  objectKey: string;
+};
+
+export const constructAssets = async (
+  { files, rootPath }: CdkAssets,
+  region: string,
+): Promise<Array<ConstructedAsset> | undefined> => {
   const assets = await Promise.all(
     Object.entries(files)
       .filter(([, fileItem]) => !fileItem.source.path.endsWith('.template.json'))
@@ -103,15 +112,16 @@ const ensureBucketExits = async (bucketName: string, ossClient: OSS) =>
     }
   });
 
-export const publishAssets = async (assets: CdkAssets, context: ActionContext) => {
-  const constructedAssets = await constructAssets(assets, context.region);
-
-  if (!constructedAssets?.length) {
+export const publishAssets = async (
+  assets: Array<ConstructedAsset> | undefined,
+  context: ActionContext,
+) => {
+  if (!assets?.length) {
     logger.info('No assets to publish, skipped!');
     return;
   }
 
-  const bucketName = constructedAssets[0].bucketName;
+  const bucketName = assets[0].bucketName;
 
   const client = new OSS({
     region: `oss-${context.region}`,
@@ -129,11 +139,40 @@ export const publishAssets = async (assets: CdkAssets, context: ActionContext) =
   } as OSS.PutObjectOptions;
 
   await Promise.all(
-    constructedAssets.map(async ({ source, objectKey }) => {
+    assets.map(async ({ source, objectKey }) => {
       await client.put(objectKey, path.normalize(source), { headers });
-      logger.info(`Upload file: ${source}) to bucket: ${bucketName} successfully!`);
+      logger.debug(`Upload file: ${source} to bucket: ${bucketName} successfully!`);
     }),
   );
 
   return bucketName;
+};
+
+export const cleanupAssets = async (
+  assets: Array<ConstructedAsset> | undefined,
+  context: ActionContext,
+) => {
+  if (!assets?.length) {
+    logger.info('No assets to cleanup, skipped!');
+    return;
+  }
+
+  const bucketName = assets[0].bucketName;
+
+  const client = new OSS({
+    region: `oss-${context.region}`,
+    accessKeyId: context.accessKeyId,
+    accessKeySecret: context.accessKeySecret,
+    bucket: bucketName,
+  });
+
+  await Promise.all(
+    assets.map(async ({ objectKey }) => {
+      await client.delete(objectKey);
+      logger.debug(`Cleanup file: ${objectKey} from bucket: ${bucketName} successfully!`);
+    }),
+  );
+  // delete the bucket
+  await client.deleteBucket(bucketName);
+  logger.debug(`Cleanup bucket: ${bucketName} successfully!`);
 };
