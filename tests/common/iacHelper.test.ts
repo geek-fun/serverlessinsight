@@ -18,7 +18,7 @@ describe('Unit test for iacHelper', () => {
       getFileSource(fcName, location);
       expect(ossDeployment.Source.asset).toHaveBeenCalledWith(
         `${process.cwd()}/${location}`,
-        {},
+        { deployTime: true },
         `${fcName}/50861cd99a3a678356030f5f189300af-`,
       );
     });
