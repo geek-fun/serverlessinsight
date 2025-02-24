@@ -41,6 +41,9 @@ export const oneFcOneGatewayIac = {
       type: 'API_GATEWAY',
       key: 'gateway_event',
       name: 'gateway_event',
+      domain: {
+        domain_name: 'api.my-demo-service.com',
+      },
       triggers: [
         {
           method: 'GET',
@@ -122,6 +125,28 @@ export const oneFcOneGatewayRos = {
         Visibility: 'PRIVATE',
       },
       Type: 'ALIYUN::ApiGateway::Api',
+    },
+    gateway_event_custom_domain_YXBpLm15LWRlbW8tc2VydmljZS5jb20: {
+      DependsOn: ['gateway_event_custom_domain_record_YXBpLm15LWRlbW8tc2VydmljZS5jb20'],
+      Properties: {
+        DomainName: 'api.my-demo-service.com',
+        GroupId: {
+          'Fn::GetAtt': ['my-demo-service_apigroup', 'GroupId'],
+        },
+      },
+      Type: 'ALIYUN::ApiGateway::CustomDomain',
+    },
+    gateway_event_custom_domain_record_YXBpLm15LWRlbW8tc2VydmljZS5jb20: {
+      Properties: {
+        DomainName: 'my-demo-service.com',
+        RR: 'api',
+        TTL: 600,
+        Type: 'CNAME',
+        Value: {
+          'Fn::GetAtt': ['my-demo-service_apigroup', 'SubDomain'],
+        },
+      },
+      Type: 'ALIYUN::DNS::DomainRecord',
     },
     gateway_event_role: {
       Properties: {
@@ -317,6 +342,28 @@ export const referredServiceRos = {
         Visibility: 'PRIVATE',
       },
       Type: 'ALIYUN::ApiGateway::Api',
+    },
+    gateway_event_custom_domain_YXBpLm15LWRlbW8tc2VydmljZS5jb20: {
+      DependsOn: ['gateway_event_custom_domain_record_YXBpLm15LWRlbW8tc2VydmljZS5jb20'],
+      Properties: {
+        DomainName: 'api.my-demo-service.com',
+        GroupId: {
+          'Fn::GetAtt': ['my-demo-service-dev_apigroup', 'GroupId'],
+        },
+      },
+      Type: 'ALIYUN::ApiGateway::CustomDomain',
+    },
+    gateway_event_custom_domain_record_YXBpLm15LWRlbW8tc2VydmljZS5jb20: {
+      Properties: {
+        DomainName: 'my-demo-service.com',
+        RR: 'api',
+        TTL: 600,
+        Type: 'CNAME',
+        Value: {
+          'Fn::GetAtt': ['my-demo-service-dev_apigroup', 'SubDomain'],
+        },
+      },
+      Type: 'ALIYUN::DNS::DomainRecord',
     },
     gateway_event_role: {
       Properties: {
@@ -1322,6 +1369,28 @@ export const largeCodeRos = {
         StageName: 'RELEASE',
       },
       Type: 'ALIYUN::ApiGateway::Deployment',
+    },
+    gateway_event_custom_domain_YXBpLm15LWRlbW8tc2VydmljZS5jb20: {
+      DependsOn: ['gateway_event_custom_domain_record_YXBpLm15LWRlbW8tc2VydmljZS5jb20'],
+      Properties: {
+        DomainName: 'api.my-demo-service.com',
+        GroupId: {
+          'Fn::GetAtt': ['my-demo-service_apigroup', 'GroupId'],
+        },
+      },
+      Type: 'ALIYUN::ApiGateway::CustomDomain',
+    },
+    gateway_event_custom_domain_record_YXBpLm15LWRlbW8tc2VydmljZS5jb20: {
+      Properties: {
+        DomainName: 'my-demo-service.com',
+        RR: 'api',
+        TTL: 600,
+        Type: 'CNAME',
+        Value: {
+          'Fn::GetAtt': ['my-demo-service_apigroup', 'SubDomain'],
+        },
+      },
+      Type: 'ALIYUN::DNS::DomainRecord',
     },
     gateway_event_role: {
       Properties: {

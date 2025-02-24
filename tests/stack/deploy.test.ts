@@ -53,22 +53,6 @@ describe('Unit tests for stack deployment', () => {
     mockedGetIamInfo.mockRestore();
   });
 
-  it('should deploy generated stack when iac is valid', async () => {
-    const stackName = 'my-demo-stack';
-    mockedRosStackDeploy.mockResolvedValueOnce(stackName);
-
-    await deployStack(stackName, oneFcOneGatewayIac, { stackName } as ActionContext);
-
-    expect(mockedRosStackDeploy).toHaveBeenCalledTimes(2);
-    expect(mockedRosStackDeploy.mock.calls[1]).toEqual([
-      stackName,
-      oneFcOneGatewayRos,
-      {
-        stackName,
-      },
-    ]);
-  });
-
   it('should deploy generated stack when minimum fields provided', async () => {
     const stackName = 'my-demo-minimum-stack';
     mockedRosStackDeploy.mockResolvedValueOnce(stackName);
@@ -168,6 +152,22 @@ describe('Unit tests for stack deployment', () => {
         stackName,
       },
     ]);
+  });
+
+  describe('unit test for deploy of events', () => {
+    it('should deploy event with custom domain specified when domain is provided', async () => {
+      const stackName = 'my-event-stack-with-custom-domain';
+      mockedRosStackDeploy.mockResolvedValue(stackName);
+
+      await deployStack(stackName, oneFcOneGatewayIac, { stackName } as ActionContext);
+
+      expect(mockedRosStackDeploy).toHaveBeenCalledTimes(2);
+      expect(mockedRosStackDeploy.mock.calls[1]).toEqual([
+        stackName,
+        oneFcOneGatewayRos,
+        { stackName },
+      ]);
+    });
   });
 
   describe('unit test for deploy of databases', () => {
