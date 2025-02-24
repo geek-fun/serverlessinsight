@@ -63,7 +63,7 @@
     "@alicloud/ros-cdk-ram": "^1.6.0",
     "@alicloud/ros-cdk-rds": "^1.6.0",
     "@alicloud/ros-cdk-sls": "^1.6.0",
-    "@alicloud/ros20190910": "^3.5.2",
+    "@alicloud/ros20190910": "^3.5.3",
     "ajv": "^8.17.1",
     "ali-oss": "^6.22.0",
     "chalk": "^5.4.1",
