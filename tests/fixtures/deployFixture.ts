@@ -41,6 +41,9 @@ export const oneFcOneGatewayIac = {
       type: 'API_GATEWAY',
       key: 'gateway_event',
       name: 'gateway_event',
+      domain: {
+        domain_name: 'api.my-demo-service.com',
+      },
       triggers: [
         {
           method: 'GET',
@@ -108,7 +111,7 @@ export const oneFcOneGatewayRos = {
             },
             Method: 'GET',
             RoleArn: {
-              'Fn::GetAtt': ['my-demo-service_role', 'Arn'],
+              'Fn::GetAtt': ['gateway_event_role', 'Arn'],
             },
           },
           ServiceProtocol: 'FunctionCompute',
@@ -122,6 +125,62 @@ export const oneFcOneGatewayRos = {
         Visibility: 'PRIVATE',
       },
       Type: 'ALIYUN::ApiGateway::Api',
+    },
+    gateway_event_custom_domain_YXBpLm15LWRlbW8tc2VydmljZS5jb20: {
+      DependsOn: ['gateway_event_custom_domain_record_YXBpLm15LWRlbW8tc2VydmljZS5jb20'],
+      Properties: {
+        DomainName: 'api.my-demo-service.com',
+        GroupId: {
+          'Fn::GetAtt': ['my-demo-service_apigroup', 'GroupId'],
+        },
+      },
+      Type: 'ALIYUN::ApiGateway::CustomDomain',
+    },
+    gateway_event_custom_domain_record_YXBpLm15LWRlbW8tc2VydmljZS5jb20: {
+      Properties: {
+        DomainName: 'my-demo-service.com',
+        RR: 'api',
+        TTL: 600,
+        Type: 'CNAME',
+        Value: {
+          'Fn::GetAtt': ['my-demo-service_apigroup', 'SubDomain'],
+        },
+      },
+      Type: 'ALIYUN::DNS::DomainRecord',
+    },
+    gateway_event_role: {
+      Properties: {
+        AssumeRolePolicyDocument: {
+          Statement: [
+            {
+              Action: 'sts:AssumeRole',
+              Effect: 'Allow',
+              Principal: {
+                Service: ['apigateway.aliyuncs.com'],
+              },
+            },
+          ],
+          Version: '1',
+        },
+        Description: 'my-demo-service role',
+        Policies: [
+          {
+            PolicyDocument: {
+              Statement: [
+                {
+                  Action: ['fc:InvokeFunction'],
+                  Effect: 'Allow',
+                  Resource: ['*'],
+                },
+              ],
+              Version: '1',
+            },
+            PolicyName: 'my-demo-service-gateway_event-policy',
+          },
+        ],
+        RoleName: 'my-demo-service-gateway_event-agw-access-role',
+      },
+      Type: 'ALIYUN::RAM::Role',
     },
     hello_fn: {
       DependsOn: [
@@ -178,40 +237,6 @@ export const oneFcOneGatewayRos = {
         StageName: 'RELEASE',
       },
       Type: 'ALIYUN::ApiGateway::Deployment',
-    },
-    'my-demo-service_role': {
-      Properties: {
-        AssumeRolePolicyDocument: {
-          Statement: [
-            {
-              Action: 'sts:AssumeRole',
-              Effect: 'Allow',
-              Principal: {
-                Service: ['apigateway.aliyuncs.com'],
-              },
-            },
-          ],
-          Version: '1',
-        },
-        Description: 'my-demo-service role',
-        Policies: [
-          {
-            PolicyDocument: {
-              Statement: [
-                {
-                  Action: ['fc:InvokeFunction'],
-                  Effect: 'Allow',
-                  Resource: ['*'],
-                },
-              ],
-              Version: '1',
-            },
-            PolicyName: 'my-demo-service-policy',
-          },
-        ],
-        RoleName: 'my-demo-service-gateway-access-role',
-      },
-      Type: 'ALIYUN::RAM::Role',
     },
     'my-demo-service_sls': {
       Properties: {
@@ -303,7 +328,7 @@ export const referredServiceRos = {
             },
             Method: 'GET',
             RoleArn: {
-              'Fn::GetAtt': ['my-demo-service-dev_role', 'Arn'],
+              'Fn::GetAtt': ['gateway_event_role', 'Arn'],
             },
           },
           ServiceProtocol: 'FunctionCompute',
@@ -317,6 +342,62 @@ export const referredServiceRos = {
         Visibility: 'PRIVATE',
       },
       Type: 'ALIYUN::ApiGateway::Api',
+    },
+    gateway_event_custom_domain_YXBpLm15LWRlbW8tc2VydmljZS5jb20: {
+      DependsOn: ['gateway_event_custom_domain_record_YXBpLm15LWRlbW8tc2VydmljZS5jb20'],
+      Properties: {
+        DomainName: 'api.my-demo-service.com',
+        GroupId: {
+          'Fn::GetAtt': ['my-demo-service-dev_apigroup', 'GroupId'],
+        },
+      },
+      Type: 'ALIYUN::ApiGateway::CustomDomain',
+    },
+    gateway_event_custom_domain_record_YXBpLm15LWRlbW8tc2VydmljZS5jb20: {
+      Properties: {
+        DomainName: 'my-demo-service.com',
+        RR: 'api',
+        TTL: 600,
+        Type: 'CNAME',
+        Value: {
+          'Fn::GetAtt': ['my-demo-service-dev_apigroup', 'SubDomain'],
+        },
+      },
+      Type: 'ALIYUN::DNS::DomainRecord',
+    },
+    gateway_event_role: {
+      Properties: {
+        AssumeRolePolicyDocument: {
+          Statement: [
+            {
+              Action: 'sts:AssumeRole',
+              Effect: 'Allow',
+              Principal: {
+                Service: ['apigateway.aliyuncs.com'],
+              },
+            },
+          ],
+          Version: '1',
+        },
+        Description: 'my-demo-service-dev role',
+        Policies: [
+          {
+            PolicyDocument: {
+              Statement: [
+                {
+                  Action: ['fc:InvokeFunction'],
+                  Effect: 'Allow',
+                  Resource: ['*'],
+                },
+              ],
+              Version: '1',
+            },
+            PolicyName: 'my-demo-service-dev-gateway_event-policy',
+          },
+        ],
+        RoleName: 'my-demo-service-dev-gateway_event-agw-access-role',
+      },
+      Type: 'ALIYUN::RAM::Role',
     },
     hello_fn: {
       DependsOn: [
@@ -373,40 +454,6 @@ export const referredServiceRos = {
         StageName: 'RELEASE',
       },
       Type: 'ALIYUN::ApiGateway::Deployment',
-    },
-    'my-demo-service-dev_role': {
-      Properties: {
-        AssumeRolePolicyDocument: {
-          Statement: [
-            {
-              Action: 'sts:AssumeRole',
-              Effect: 'Allow',
-              Principal: {
-                Service: ['apigateway.aliyuncs.com'],
-              },
-            },
-          ],
-          Version: '1',
-        },
-        Description: 'my-demo-service-dev role',
-        Policies: [
-          {
-            PolicyDocument: {
-              Statement: [
-                {
-                  Action: ['fc:InvokeFunction'],
-                  Effect: 'Allow',
-                  Resource: ['*'],
-                },
-              ],
-              Version: '1',
-            },
-            PolicyName: 'my-demo-service-dev-policy',
-          },
-        ],
-        RoleName: 'my-demo-service-dev-gateway-access-role',
-      },
-      Type: 'ALIYUN::RAM::Role',
     },
     'my-demo-service-dev_sls': {
       Properties: {
@@ -1226,7 +1273,7 @@ export const largeCodeRos = {
             },
             Method: 'GET',
             RoleArn: {
-              'Fn::GetAtt': ['my-demo-service_role', 'Arn'],
+              'Fn::GetAtt': ['gateway_event_role', 'Arn'],
             },
           },
           ServiceProtocol: 'FunctionCompute',
@@ -1323,7 +1370,29 @@ export const largeCodeRos = {
       },
       Type: 'ALIYUN::ApiGateway::Deployment',
     },
-    'my-demo-service_role': {
+    gateway_event_custom_domain_YXBpLm15LWRlbW8tc2VydmljZS5jb20: {
+      DependsOn: ['gateway_event_custom_domain_record_YXBpLm15LWRlbW8tc2VydmljZS5jb20'],
+      Properties: {
+        DomainName: 'api.my-demo-service.com',
+        GroupId: {
+          'Fn::GetAtt': ['my-demo-service_apigroup', 'GroupId'],
+        },
+      },
+      Type: 'ALIYUN::ApiGateway::CustomDomain',
+    },
+    gateway_event_custom_domain_record_YXBpLm15LWRlbW8tc2VydmljZS5jb20: {
+      Properties: {
+        DomainName: 'my-demo-service.com',
+        RR: 'api',
+        TTL: 600,
+        Type: 'CNAME',
+        Value: {
+          'Fn::GetAtt': ['my-demo-service_apigroup', 'SubDomain'],
+        },
+      },
+      Type: 'ALIYUN::DNS::DomainRecord',
+    },
+    gateway_event_role: {
       Properties: {
         AssumeRolePolicyDocument: {
           Statement: [
@@ -1350,10 +1419,10 @@ export const largeCodeRos = {
               ],
               Version: '1',
             },
-            PolicyName: 'my-demo-service-policy',
+            PolicyName: 'my-demo-service-gateway_event-policy',
           },
         ],
-        RoleName: 'my-demo-service-gateway-access-role',
+        RoleName: 'my-demo-service-gateway_event-agw-access-role',
       },
       Type: 'ALIYUN::RAM::Role',
     },
@@ -1639,6 +1708,18 @@ export const bucketWithWebsiteRos = {
         DomainName: 'my-bucket.com',
       },
       Type: 'ALIYUN::OSS::Domain',
+    },
+    my_bucket_custom_domain_record_bXktYnVja2V0LmNvbQ: {
+      Properties: {
+        DomainName: 'my-bucket.com',
+        RR: '@',
+        TTL: 600,
+        Type: 'CNAME',
+        Value: {
+          'Fn::GetAtt': ['my_bucket', 'InternalDomainName'],
+        },
+      },
+      Type: 'ALIYUN::DNS::DomainRecord',
     },
     si_auto_my_bucket_bucket_code_deployment: {
       Properties: {

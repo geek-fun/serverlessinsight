@@ -9,5 +9,6 @@ export const parseEvent = (events: { [key: string]: EventRaw }): Array<EventDoma
     name: event.name,
     type: event.type,
     triggers: event.triggers,
+    domain: event.domain,
   }));
 };

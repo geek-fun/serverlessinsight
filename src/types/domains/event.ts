@@ -10,6 +10,12 @@ export type EventRaw = {
     path: string;
     backend: string;
   }>;
+  domain?: {
+    domain_name: string;
+    certificate_name?: string;
+    certificate_body?: string;
+    certificate_private_key?: string;
+  };
 };
 
 export type EventDomain = {

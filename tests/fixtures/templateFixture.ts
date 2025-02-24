@@ -123,7 +123,7 @@ export const jsonTemplate = {
       },
       DependsOn: ['insight-poc_sls', 'insight-poc_sls_logstore', 'insight-poc_sls_index'],
     },
-    'insight-poc_role': {
+    gateway_event_role: {
       Type: 'ALIYUN::RAM::Role',
       Properties: {
         AssumeRolePolicyDocument: {
@@ -138,11 +138,11 @@ export const jsonTemplate = {
             },
           ],
         },
-        RoleName: 'insight-poc-gateway-access-role',
+        RoleName: 'insight-poc-insight-poc-gateway-agw-access-role',
         Description: 'insight-poc role',
         Policies: [
           {
-            PolicyName: 'insight-poc-policy',
+            PolicyName: 'insight-poc-insight-poc-gateway-policy',
             PolicyDocument: {
               Version: '1',
               Statement: [
@@ -193,7 +193,7 @@ export const jsonTemplate = {
             Method: 'GET',
             FcRegionId: 'cn-hangzhou',
             RoleArn: {
-              'Fn::GetAtt': ['insight-poc_role', 'Arn'],
+              'Fn::GetAtt': ['gateway_event_role', 'Arn'],
             },
             FunctionName: {
               'Fn::GetAtt': ['insight_poc_fn', 'FunctionName'],
@@ -335,7 +335,7 @@ Resources:
       - insight-poc_sls
       - insight-poc_sls_logstore
       - insight-poc_sls_index
-  insight-poc_role:
+  gateway_event_role:
     Type: ALIYUN::RAM::Role
     Properties:
       AssumeRolePolicyDocument:
@@ -346,10 +346,10 @@ Resources:
             Principal:
               Service:
                 - apigateway.aliyuncs.com
-      RoleName: insight-poc-gateway-access-role
+      RoleName: insight-poc-insight-poc-gateway-agw-access-role
       Description: insight-poc role
       Policies:
-        - PolicyName: insight-poc-policy
+        - PolicyName: insight-poc-insight-poc-gateway-policy
           PolicyDocument:
             Version: "1"
             Statement:
@@ -388,7 +388,7 @@ Resources:
           FcRegionId: cn-hangzhou
           RoleArn:
             Fn::GetAtt:
-              - insight-poc_role
+              - gateway_event_role
               - Arn
           FunctionName:
             Fn::GetAtt:

@@ -1,7 +1,7 @@
 version: 0.0.1
 provider:
   name: aliyun
-  region: cn-chengdu
+  region: cn-hongkong
 
 vars:
   region: cn-hangzhou
@@ -18,32 +18,24 @@ stages:
   prod:
     region: cn-shanghai
 
-service: insight-poc
+service: insight-poc-api
 
 tags:
   owner: geek-fun
 
 functions:
   insight_poc_fn:
-    name: insight-poc-fn
-    runtime: nodejs18
-    handler: ${vars.handler}
-    code: tests/fixtures/artifacts/artifact.zip
+    name: insight-poc-api-fn
+    code:
+      runtime: nodejs18
+      handler: ${vars.handler}
+      path: tests/fixtures/artifacts/artifact.zip
     memory: 512
     timeout: 10
     environment:
       NODE_ENV: ${stages.node_env}
       TEST_VAR: ${vars.testv}
       TEST_VAR_EXTRA: abcds-${vars.testv}-andyou
-
-databases:
-  insight_poc_db:
-    name: insight-poc-db
-    type: RDS_POSTGRESQL_SERVERLESS
-    version: '17.0'
-    security:
-      basic_auth:
-        password: 'U34I6InQ8elseTgqTWT2t2oFXpoqFg'
 
 events:
   gateway_event:
@@ -53,8 +45,5 @@ events:
       - method: GET
         path: /api/hello
         backend: ${functions.insight_poc_fn}
-#    custom_domain:
-#      domain_name: test.com
-#      certificate_name: test
-#      certificate_private_key: test
-#      certificate_body: test
+    domain:
+      domain_name: insight-api.serverlessinsight.com
