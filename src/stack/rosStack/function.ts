@@ -9,6 +9,7 @@ import {
   CODE_ZIP_SIZE_LIMIT,
   encodeBase64ForRosId,
   getFileSource,
+  OSS_DEPLOYMENT_TIMEOUT,
   readCodeSize,
   replaceReference,
   resolveCode,
@@ -143,7 +144,7 @@ export const resolveFunctions = (
       {
         sources: fileSources!.map(({ source }) => source),
         destinationBucket: destinationBucketName,
-        timeout: 3000,
+        timeout: OSS_DEPLOYMENT_TIMEOUT,
         logMonitoring: false,
         retainOnCreate: false,
       },

@@ -190,7 +190,7 @@ export const rosStackDelete = async ({
     });
     await client.deleteStack(deleteStackRequest);
     await getStackActionResult(stackInfo.stackId as string, region);
-    logger.info(`Stack: ${stackName} deleted! ♻️`);
+    logger.info(`Stack: ${stackName} deleted!🗑 `);
   } catch (err) {
     logger.error(`Stack: ${stackName} delete failed! ❌, error: ${JSON.stringify(err)}`);
     throw new Error(JSON.stringify(err));
