@@ -145,7 +145,7 @@ export const resolveFunctions = (
         sources: fileSources!.map(({ source }) => source),
         destinationBucket: destinationBucketName,
         timeout: OSS_DEPLOYMENT_TIMEOUT,
-        logMonitoring: true,
+        logMonitoring: false,
         retainOnCreate: false,
       },
       true,

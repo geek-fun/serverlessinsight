@@ -87,7 +87,7 @@ export const resolveBuckets = (
           destinationBucket: ossBucket.attrName,
           roleArn: siAutoOssDeploymentBucketRole!.attrArn,
           timeout: OSS_DEPLOYMENT_TIMEOUT,
-          logMonitoring: true,
+          logMonitoring: false,
           retainOnCreate: false,
         },
         true,

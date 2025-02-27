@@ -102,7 +102,7 @@ describe('Unit test for rosClient', () => {
       await rosStackDelete(context);
 
       expect(logger.info).toHaveBeenCalledWith('stack status: DELETE_COMPLETE');
-      expect(logger.info).toHaveBeenCalledWith('Stack: testStack deleted! ♻️');
+      expect(logger.info).toHaveBeenCalledWith('Stack: testStack deleted!🗑 ');
     });
 
     it('should throw an error when the stack does not exist', async () => {

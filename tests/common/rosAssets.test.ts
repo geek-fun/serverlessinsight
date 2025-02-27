@@ -1,7 +1,7 @@
-import { getAssets, publishAssets } from '../../src/common';
+import { constructAssets, getAssets, publishAssets } from '../../src/common';
 import { Stats } from 'node:fs';
 import { assetsFixture } from '../fixtures/assetsFixture';
-import { ActionContext, CdkAssets } from '../../src/types';
+import { ActionContext } from '../../src/types';
 
 const mockedBucketPut = jest.fn();
 const mockedReaddirSync = jest.fn();
@@ -43,6 +43,7 @@ jest.mock('jszip', () =>
 jest.mock('../../src/common/logger', () => ({
   logger: {
     info: (...args: unknown[]) => mockedInfoLogger(...args),
+    debug: jest.fn(),
   },
 }));
 
@@ -93,7 +94,10 @@ describe('Unit test for rosAssets', () => {
         .mockReturnValueOnce({ isFile: () => true } as Stats);
       mockedGenerateAsync.mockResolvedValue(Buffer.from('mock-zip-content'));
 
-      const bucketName = await publishAssets(assetsFixture, mockContext);
+      const bucketName = await publishAssets(
+        await constructAssets(assetsFixture, 'mock-region'),
+        mockContext,
+      );
 
       expect(bucketName).toBe('cdk-ajmywduza-assets-mock-region');
       expect(mockedBucketPut.mock.calls).toEqual([
@@ -112,19 +116,11 @@ describe('Unit test for rosAssets', () => {
         [
           'Folder compressed to: path/to/asset.55d1d2dd5d6c1b083a04c15431f70da1f2840b9de06383411cbf7eda2a512efe.zip',
         ],
-        [
-          'Upload file: path/to/asset.55d1d2dd5d6c1b083a04c15431f70da1f2840b9de06383411cbf7eda2a512efe.zip) to bucket: cdk-ajmywduza-assets-mock-region successfully!',
-        ],
-        [
-          'Upload file: path/to/asset.c6a72ed7e7e83f01a000b75885758088fa050298a31a1e95d37ac88f08e42315.zip) to bucket: cdk-ajmywduza-assets-mock-region successfully!',
-        ],
       ]);
     });
 
     it('should log and skip if no assets to publish', async () => {
-      const emptyAssets = { files: {} } as unknown as CdkAssets;
-
-      await publishAssets(emptyAssets, mockContext);
+      await publishAssets([], mockContext);
 
       expect(mockedInfoLogger).toHaveBeenCalledWith('No assets to publish, skipped!');
     });

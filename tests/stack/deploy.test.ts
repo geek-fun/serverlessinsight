@@ -30,14 +30,17 @@ import { cloneDeep, set } from 'lodash';
 const mockedRosStackDeploy = jest.fn();
 const mockedResolveCode = jest.fn();
 const mockedPublishAssets = jest.fn();
+const mockedCleanupAssets = jest.fn();
 const mockedGetIamInfo = jest.fn();
 
 jest.mock('../../src/common', () => ({
   ...jest.requireActual('../../src/common'),
   rosStackDeploy: (...args: unknown[]) => mockedRosStackDeploy(...args),
   publishAssets: (...args: unknown[]) => mockedPublishAssets(...args),
+  cleanupAssets: (...args: unknown[]) => mockedCleanupAssets(...args),
   resolveCode: (path: string) => mockedResolveCode(path),
   getIamInfo: (...args: unknown[]) => mockedGetIamInfo(...args),
+  logger: { info: jest.fn(), debug: jest.fn() },
 }));
 
 describe('Unit tests for stack deployment', () => {
@@ -51,6 +54,7 @@ describe('Unit tests for stack deployment', () => {
     mockedResolveCode.mockRestore();
     mockedPublishAssets.mockRestore();
     mockedGetIamInfo.mockRestore();
+    mockedCleanupAssets.mockRestore();
   });
 
   it('should deploy generated stack when minimum fields provided', async () => {
@@ -133,18 +137,14 @@ describe('Unit tests for stack deployment', () => {
       { stackName } as ActionContext,
     );
 
+    const expectedAssets = Array(2).fill({
+      bucketName: expect.any(String),
+      objectKey: expect.stringContaining('.zip'),
+      source: expect.stringContaining('.zip'),
+    });
     expect(mockedPublishAssets).toHaveBeenCalledTimes(1);
     expect(mockedRosStackDeploy).toHaveBeenCalledTimes(2);
-    expect(mockedPublishAssets).toHaveBeenCalledWith(
-      expect.objectContaining({
-        dockerImages: {},
-        files: expect.any(Object),
-        rootPath: expect.any(String),
-        version: '7.0.0',
-      }),
-
-      { stackName },
-    );
+    expect(mockedPublishAssets).toHaveBeenCalledWith(expectedAssets, { stackName });
     expect(mockedRosStackDeploy.mock.calls[1]).toEqual([
       stackName,
       largeCodeRos,
@@ -152,6 +152,8 @@ describe('Unit tests for stack deployment', () => {
         stackName,
       },
     ]);
+    expect(mockedCleanupAssets).toHaveBeenCalledTimes(1);
+    expect(mockedCleanupAssets).toHaveBeenCalledWith(expectedAssets, { stackName });
   });
 
   describe('unit test for deploy of events', () => {
@@ -211,6 +213,7 @@ describe('Unit tests for stack deployment', () => {
 
       expect(mockedRosStackDeploy).toHaveBeenCalledTimes(2);
       expect(mockedPublishAssets).toHaveBeenCalledTimes(1);
+      expect(mockedCleanupAssets).toHaveBeenCalledTimes(1);
       expect(mockedRosStackDeploy.mock.calls[1]).toEqual([
         stackName,
         bucketWithWebsiteRos,
