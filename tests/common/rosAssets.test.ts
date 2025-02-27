@@ -1,19 +1,25 @@
-import { constructAssets, getAssets, publishAssets } from '../../src/common';
+import { cleanupAssets, constructAssets, getAssets, publishAssets } from '../../src/common';
 import { Stats } from 'node:fs';
 import { assetsFixture } from '../fixtures/assetsFixture';
 import { ActionContext } from '../../src/types';
+import { defaultContext } from '../fixtures/deployFixture';
 
 const mockedBucketPut = jest.fn();
+const mockedDeleteBucket = jest.fn();
+const mockedDelete = jest.fn();
 const mockedReaddirSync = jest.fn();
 const mockedLstatSync = jest.fn();
 const mockedExistsSync = jest.fn();
 const mockedGenerateAsync = jest.fn();
 const mockedInfoLogger = jest.fn();
+const mockedDebugLogger = jest.fn();
 
 jest.mock('ali-oss', () =>
   jest.fn().mockImplementation(() => ({
     getBucketInfo: jest.fn().mockResolvedValue({}),
     put: (...args: unknown[]) => mockedBucketPut(...args),
+    delete: (...args: unknown[]) => mockedDelete(...args),
+    deleteBucket: (...args: unknown[]) => mockedDeleteBucket(...args),
   })),
 );
 
@@ -43,7 +49,7 @@ jest.mock('jszip', () =>
 jest.mock('../../src/common/logger', () => ({
   logger: {
     info: (...args: unknown[]) => mockedInfoLogger(...args),
-    debug: jest.fn(),
+    debug: (...args: unknown[]) => mockedDebugLogger(...args),
   },
 }));
 
@@ -51,7 +57,7 @@ describe('Unit test for rosAssets', () => {
   beforeEach(() => {
     jest.clearAllMocks();
   });
-  describe('Unite test for getAssets', () => {
+  describe('Unit test for getAssets', () => {
     it('should return assets from the specified location', () => {
       const mockLocation = 'mock/location';
       mockedExistsSync.mockReturnValue(true);
@@ -79,7 +85,7 @@ describe('Unit test for rosAssets', () => {
     });
   });
 
-  describe('publishAssets', () => {
+  describe('Unit test for publishAssets', () => {
     const mockContext = {
       region: 'mock-region',
       accessKeyId: 'mock-access-key-id',
@@ -123,6 +129,33 @@ describe('Unit test for rosAssets', () => {
       await publishAssets([], mockContext);
 
       expect(mockedInfoLogger).toHaveBeenCalledWith('No assets to publish, skipped!');
+    });
+  });
+
+  describe('Unit test for cleanupAssets', () => {
+    it('should cleanup and delete the bucket when given assets is valid', async () => {
+      mockedExistsSync.mockReturnValue(true);
+      mockedReaddirSync.mockReturnValueOnce(['file1', 'file2']);
+      mockedLstatSync
+        .mockReturnValueOnce({ isFile: () => true } as Stats)
+        .mockReturnValueOnce({ isFile: () => true } as Stats);
+      mockedGenerateAsync.mockResolvedValue(Buffer.from('mock-zip-content'));
+
+      await cleanupAssets(await constructAssets(assetsFixture, 'mock-region'), defaultContext);
+
+      expect(mockedDelete).toHaveBeenCalledTimes(2);
+      expect(mockedDelete.mock.calls).toEqual([
+        ['55d1d2dd5d6c1b083a04c15431f70da1f2840b9de06383411cbf7eda2a512efe.zip'],
+        ['c6a72ed7e7e83f01a000b75885758088fa050298a31a1e95d37ac88f08e42315.zip'],
+      ]);
+      expect(mockedDeleteBucket).toHaveBeenCalledTimes(1);
+      expect(mockedDeleteBucket).toHaveBeenCalledWith('cdk-ajmywduza-assets-mock-region');
+    });
+
+    it('should skip the cleanupAssets when there is no assets', async () => {
+      await cleanupAssets([], defaultContext);
+
+      expect(mockedInfoLogger).toHaveBeenCalledWith('No assets to cleanup, skipped!');
     });
   });
 });
