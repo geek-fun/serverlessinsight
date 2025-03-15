@@ -1,6 +1,6 @@
 import * as ros from '@alicloud/ros-cdk-core';
-import { ServerlessIac } from '../../types';
-import { getContext, replaceReference } from '../../common';
+import { Context, ServerlessIac } from '../../types';
+import { replaceReference } from '../../common';
 import { resolveTags } from './tag';
 import { resolveFunctions } from './function';
 import { resolveStages } from './stage';
@@ -14,7 +14,7 @@ export * from './bootstrap';
 export class RosStack extends ros.Stack {
   private readonly service: string;
 
-  constructor(scope: ros.Construct, iac: ServerlessIac, context = getContext()) {
+  constructor(scope: ros.Construct, iac: ServerlessIac, context: Context) {
     super(scope, replaceReference(iac.service, context), {
       stackName: context.stackName,
       tags: resolveTags(iac.tags, context),

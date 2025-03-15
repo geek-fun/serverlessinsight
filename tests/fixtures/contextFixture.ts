@@ -1,7 +1,7 @@
-import { ActionContext } from '../../src/types';
+import { Context } from '../../src/types';
 import { ProviderEnum } from '../../src/common';
 
-export const context: ActionContext = {
+export const context: Context = {
   stage: 'test',
   stackName: 'testStack',
   provider: ProviderEnum.ALIYUN,

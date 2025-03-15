@@ -5,6 +5,7 @@ import { ServerlessIac } from '../types';
 import {
   cleanupAssets,
   constructAssets,
+  getContext,
   logger,
   ProviderEnum,
   publishAssets,
@@ -15,8 +16,9 @@ import { RfsStack } from './rfsStack';
 import { get } from 'lodash';
 
 export const generateRosStackTemplate = (stackName: string, iac: ServerlessIac) => {
+  const context = getContext();
   const app = new ros.App();
-  new RosStack(app, iac);
+  new RosStack(app, iac, context);
 
   const assembly = app.synth();
 
