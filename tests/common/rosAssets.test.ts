@@ -1,9 +1,8 @@
 import { cleanupAssets, constructAssets, getAssets, publishAssets } from '../../src/common';
 import { Stats } from 'node:fs';
 import { assetsFixture } from '../fixtures/assetsFixture';
-import { ActionContext } from '../../src/types';
-import { defaultContext } from '../fixtures/deployFixture';
 
+const mockedGetStore = jest.fn();
 const mockedBucketPut = jest.fn();
 const mockedDeleteBucket = jest.fn();
 const mockedDelete = jest.fn();
@@ -13,6 +12,13 @@ const mockedExistsSync = jest.fn();
 const mockedGenerateAsync = jest.fn();
 const mockedInfoLogger = jest.fn();
 const mockedDebugLogger = jest.fn();
+
+jest.mock('node:async_hooks', () => ({
+  AsyncLocalStorage: jest.fn().mockImplementation(() => ({
+    enterWith: jest.fn(),
+    getStore: (...args: unknown[]) => mockedGetStore(...args),
+  })),
+}));
 
 jest.mock('ali-oss', () =>
   jest.fn().mockImplementation(() => ({
@@ -52,9 +58,15 @@ jest.mock('../../src/common/logger', () => ({
     debug: (...args: unknown[]) => mockedDebugLogger(...args),
   },
 }));
-
 describe('Unit test for rosAssets', () => {
   beforeEach(() => {
+    mockedGetStore.mockReturnValue({
+      region: 'mock-region',
+      accessKeyId: 'mock-access-key-id',
+      accessKeySecret: 'mock-access-key-secret',
+    });
+  });
+  afterEach(() => {
     jest.clearAllMocks();
   });
   describe('Unit test for getAssets', () => {
@@ -86,12 +98,6 @@ describe('Unit test for rosAssets', () => {
   });
 
   describe('Unit test for publishAssets', () => {
-    const mockContext = {
-      region: 'mock-region',
-      accessKeyId: 'mock-access-key-id',
-      accessKeySecret: 'mock-access-key-secret',
-    } as ActionContext;
-
     it('should publish assets to the specified bucket', async () => {
       mockedExistsSync.mockReturnValue(true);
       mockedReaddirSync.mockReturnValueOnce(['file1', 'file2']);
@@ -100,10 +106,7 @@ describe('Unit test for rosAssets', () => {
         .mockReturnValueOnce({ isFile: () => true } as Stats);
       mockedGenerateAsync.mockResolvedValue(Buffer.from('mock-zip-content'));
 
-      const bucketName = await publishAssets(
-        await constructAssets(assetsFixture, 'mock-region'),
-        mockContext,
-      );
+      const bucketName = await publishAssets(await constructAssets(assetsFixture));
 
       expect(bucketName).toBe('cdk-ajmywduza-assets-mock-region');
       expect(mockedBucketPut.mock.calls).toEqual([
@@ -126,7 +129,7 @@ describe('Unit test for rosAssets', () => {
     });
 
     it('should log and skip if no assets to publish', async () => {
-      await publishAssets([], mockContext);
+      await publishAssets([]);
 
       expect(mockedInfoLogger).toHaveBeenCalledWith('No assets to publish, skipped!');
     });
@@ -141,7 +144,7 @@ describe('Unit test for rosAssets', () => {
         .mockReturnValueOnce({ isFile: () => true } as Stats);
       mockedGenerateAsync.mockResolvedValue(Buffer.from('mock-zip-content'));
 
-      await cleanupAssets(await constructAssets(assetsFixture, 'mock-region'), defaultContext);
+      await cleanupAssets(await constructAssets(assetsFixture));
 
       expect(mockedDelete).toHaveBeenCalledTimes(2);
       expect(mockedDelete.mock.calls).toEqual([
@@ -153,7 +156,7 @@ describe('Unit test for rosAssets', () => {
     });
 
     it('should skip the cleanupAssets when there is no assets', async () => {
-      await cleanupAssets([], defaultContext);
+      await cleanupAssets([]);
 
       expect(mockedInfoLogger).toHaveBeenCalledWith('No assets to cleanup, skipped!');
     });
