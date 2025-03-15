@@ -35,21 +35,17 @@ export const getFileSource = (
   return { source, objectKey };
 };
 
-const evalCtx = (value: string, ctx: Context): string => {
-  const containsStage = value.match(/\$\{ctx.\w+}/);
-
-  return containsStage ? value.replace(/\$\{ctx.stage}/g, ctx.stage) : value;
-};
-
-export const calcRefers = <T>(value: T, ctx: Context): T => {
-  if (typeof value === 'string') {
-    const matchVar = value.match(/^\$\{vars\.(\w+)}$/);
-    const containsVar = value.match(/\$\{vars\.(\w+)}/);
-    const matchMap = value.match(/^\$\{stages\.(\w+)}$/);
-    const containsMap = value.match(/\$\{stages\.(\w+)}/);
-    const matchFn = value.match(/^\$\{functions\.(\w+(\.\w+)?)}$/);
-    if (value.match(/\$\{ctx.\w+}/)) {
-      return evalCtx(value, ctx) as T;
+export const calcRefers = <T>(rawValue: T, ctx: Context): T => {
+  if (typeof rawValue === 'string') {
+    const containsStage = rawValue.match(/\$\{ctx.\w+}/);
+    const matchVar = rawValue.match(/^\$\{vars\.(\w+)}$/);
+    const containsVar = rawValue.match(/\$\{vars\.(\w+)}/);
+    const matchMap = rawValue.match(/^\$\{stages\.(\w+)}$/);
+    const containsMap = rawValue.match(/\$\{stages\.(\w+)}/);
+    const matchFn = rawValue.match(/^\$\{functions\.(\w+(\.\w+)?)}$/);
+    let value = rawValue as string;
+    if (containsStage) {
+      value = value.replace(/\$\{ctx.stage}/g, ctx.stage);
     }
 
     if (matchVar?.length) {
@@ -58,35 +54,30 @@ export const calcRefers = <T>(value: T, ctx: Context): T => {
     if (matchMap?.length) {
       return ros.Fn.findInMap('stages', ctx.stage, matchMap[1]) as T;
     }
-
     if (matchFn?.length) {
       return ros.Fn.getAtt(matchFn[1], 'FunctionName') as T;
     }
-    if (containsMap?.length && containsVar?.length) {
-      return ros.Fn.sub(
-        value.replace(/\$\{stages\.(\w+)}/g, '${$1}').replace(/\$\{vars\.(\w+)}/g, '${$1}'),
-      ) as T;
+
+    if (containsMap?.length || containsVar?.length) {
+      value = ros.Fn.sub(
+        rawValue.replace(/\$\{stages\.(\w+)}/g, '${$1}').replace(/\$\{vars\.(\w+)}/g, '${$1}'),
+      );
     }
-    if (containsVar?.length) {
-      return ros.Fn.sub(value.replace(/\$\{vars\.(\w+)}/g, '${$1}')) as T;
-    }
-    if (containsMap?.length) {
-      return ros.Fn.sub(value.replace(/\$\{stages\.(\w+)}/g, '${$1}')) as T;
-    }
-    return value;
+
+    return value as T;
   }
 
-  if (Array.isArray(value)) {
-    return value.map((item) => calcRefers(item, ctx)) as T;
+  if (Array.isArray(rawValue)) {
+    return rawValue.map((item) => calcRefers(item, ctx)) as T;
   }
 
-  if (typeof value === 'object' && value !== null) {
+  if (typeof rawValue === 'object' && rawValue !== null) {
     return Object.fromEntries(
-      Object.entries(value).map(([key, val]) => [key, calcRefers(val, ctx)]),
+      Object.entries(rawValue).map(([key, val]) => [key, calcRefers(val, ctx)]),
     ) as T;
   }
 
-  return value;
+  return rawValue;
 };
 
 const getParam = (key: string, records?: Array<{ key: string; value: string }>) => {
