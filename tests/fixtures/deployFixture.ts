@@ -784,6 +784,28 @@ export const oneFcIacWithNasRos = {
         'hello_fn_nas_mount_L21udC9uYXM',
       ],
     },
+    hello_fn_datasource_subnet_c3VibmV0LTEyMzQ1Ng: {
+      Properties: {
+        RefreshOptions: 'Always',
+        VSwitchId: 'subnet-123456',
+      },
+      Type: 'DATASOURCE::VPC::VSwitch',
+    },
+    hello_fn_datasource_subnet_c3VibmV0LTY3ODkw: {
+      Properties: {
+        RefreshOptions: 'Always',
+        VSwitchId: 'subnet-67890',
+      },
+      Type: 'DATASOURCE::VPC::VSwitch',
+    },
+    hello_fn_datasource_subnet_c3VibmV0LTk4NzY1: {
+      Properties: {
+        RefreshOptions: 'Always',
+        VSwitchId: 'subnet-98765',
+      },
+      Type: 'DATASOURCE::VPC::VSwitch',
+    },
+
     hello_fn_nas_L21udC9uYXM: {
       Properties: {
         DeletionForce: false,
@@ -824,6 +846,51 @@ export const oneFcIacWithNasRos = {
         VpcId: 'vpc-123456',
       },
       Type: 'ALIYUN::NAS::MountTarget',
+    },
+    hello_fn_nas_rule_c3VibmV0LTEyMzQ1Ng: {
+      Properties: {
+        AccessGroupName: {
+          'Fn::GetAtt': ['hello_fn_nas_access_L21udC9uYXM', 'AccessGroupName'],
+        },
+        FileSystemType: 'standard',
+        Priority: 1,
+        RWAccessType: 'RDWR',
+        SourceCidrIp: {
+          'Fn::GetAtt': ['hello_fn_datasource_subnet_c3VibmV0LTEyMzQ1Ng', 'CidrBlock'],
+        },
+        UserAccessType: 'no_squash',
+      },
+      Type: 'ALIYUN::NAS::AccessRule',
+    },
+    hello_fn_nas_rule_c3VibmV0LTY3ODkw: {
+      Properties: {
+        AccessGroupName: {
+          'Fn::GetAtt': ['hello_fn_nas_access_L21udC9uYXM', 'AccessGroupName'],
+        },
+        FileSystemType: 'standard',
+        Priority: 1,
+        RWAccessType: 'RDWR',
+        SourceCidrIp: {
+          'Fn::GetAtt': ['hello_fn_datasource_subnet_c3VibmV0LTY3ODkw', 'CidrBlock'],
+        },
+        UserAccessType: 'no_squash',
+      },
+      Type: 'ALIYUN::NAS::AccessRule',
+    },
+    hello_fn_nas_rule_c3VibmV0LTk4NzY1: {
+      Properties: {
+        AccessGroupName: {
+          'Fn::GetAtt': ['hello_fn_nas_access_L21udC9uYXM', 'AccessGroupName'],
+        },
+        FileSystemType: 'standard',
+        Priority: 1,
+        RWAccessType: 'RDWR',
+        SourceCidrIp: {
+          'Fn::GetAtt': ['hello_fn_datasource_subnet_c3VibmV0LTk4NzY1', 'CidrBlock'],
+        },
+        UserAccessType: 'no_squash',
+      },
+      Type: 'ALIYUN::NAS::AccessRule',
     },
     hello_fn_security_group: {
       Properties: {

@@ -1,7 +1,7 @@
 #! /usr/bin/env node
 
 import { Command } from 'commander';
-import { constructActionContext, getVersion, logger } from '../common';
+import { getContext, getVersion, logger, setContext } from '../common';
 import { validate } from './validate';
 import { deploy } from './deploy';
 import { template } from './template';
@@ -16,7 +16,8 @@ program
   .command('show')
   .description('show string')
   .action(async (options) => {
-    const context = constructActionContext({ ...options });
+    setContext({ ...options });
+    const context = getContext();
     const result = await getIamInfo(context);
     console.log('result:', JSON.stringify(result));
   });

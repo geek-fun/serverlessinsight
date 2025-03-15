@@ -4,9 +4,10 @@ import * as ossDeployment from '@alicloud/ros-cdk-ossdeployment';
 import path from 'node:path';
 import JSZip from 'jszip';
 import { logger } from './logger';
-import { ActionContext, CdkAssets } from '../types';
+import { CdkAssets } from '../types';
 import { get, isEmpty } from 'lodash';
 import OSS from 'ali-oss';
+import { getContext } from './context';
 
 const buildAssets = (rootPath: string, relativePath: string): Array<ISource> => {
   const location = path.resolve(rootPath, relativePath);
@@ -71,10 +72,11 @@ type ConstructedAsset = {
   objectKey: string;
 };
 
-export const constructAssets = async (
-  { files, rootPath }: CdkAssets,
-  region: string,
-): Promise<Array<ConstructedAsset> | undefined> => {
+export const constructAssets = async ({
+  files,
+  rootPath,
+}: CdkAssets): Promise<Array<ConstructedAsset> | undefined> => {
+  const { region } = getContext();
   const assets = await Promise.all(
     Object.entries(files)
       .filter(([, fileItem]) => !fileItem.source.path.endsWith('.template.json'))
@@ -112,15 +114,13 @@ const ensureBucketExits = async (bucketName: string, ossClient: OSS) =>
     }
   });
 
-export const publishAssets = async (
-  assets: Array<ConstructedAsset> | undefined,
-  context: ActionContext,
-) => {
+export const publishAssets = async (assets: Array<ConstructedAsset> | undefined) => {
   if (!assets?.length) {
     logger.info('No assets to publish, skipped!');
     return;
   }
 
+  const context = getContext();
   const bucketName = assets[0].bucketName;
 
   const client = new OSS({
@@ -148,15 +148,12 @@ export const publishAssets = async (
   return bucketName;
 };
 
-export const cleanupAssets = async (
-  assets: Array<ConstructedAsset> | undefined,
-  context: ActionContext,
-) => {
+export const cleanupAssets = async (assets: Array<ConstructedAsset> | undefined) => {
   if (!assets?.length) {
     logger.info('No assets to cleanup, skipped!');
     return;
   }
-
+  const context = getContext();
   const bucketName = assets[0].bucketName;
 
   const client = new OSS({

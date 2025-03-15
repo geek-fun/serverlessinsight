@@ -10,9 +10,10 @@ import ROS20190910, {
   UpdateStackRequestParameters,
 } from '@alicloud/ros20190910';
 import { Config } from '@alicloud/openapi-client';
-import { ActionContext } from '../types';
+import { Context } from '../types';
 import { logger } from './logger';
 import { lang } from '../lang';
+import { getContext } from './context';
 
 const client = new ROS20190910(
   new Config({
@@ -23,7 +24,7 @@ const client = new ROS20190910(
   }),
 );
 
-const createStack = async (stackName: string, templateBody: unknown, context: ActionContext) => {
+const createStack = async (stackName: string, templateBody: unknown, context: Context) => {
   const parameters = context.parameters?.map(
     (parameter) =>
       new CreateStackRequestParameters({
@@ -47,7 +48,7 @@ const createStack = async (stackName: string, templateBody: unknown, context: Ac
   return await getStackActionResult(response.body?.stackId || '', context.region);
 };
 
-const updateStack = async (stackId: string, templateBody: unknown, context: ActionContext) => {
+const updateStack = async (stackId: string, templateBody: unknown, context: Context) => {
   const parameters = context.parameters?.map(
     (parameter) =>
       new UpdateStackRequestParameters({
@@ -156,11 +157,8 @@ const getStackActionResult = async (
   });
 };
 
-export const rosStackDeploy = async (
-  stackName: string,
-  templateBody: unknown,
-  context: ActionContext,
-) => {
+export const rosStackDeploy = async (stackName: string, templateBody: unknown) => {
+  const context = getContext();
   const stackInfo = await getStackByName(stackName, context.region);
   if (stackInfo) {
     const { Status: stackStatus } = stackInfo;
@@ -184,8 +182,9 @@ export const rosStackDeploy = async (
 export const rosStackDelete = async ({
   stackName,
   region,
-}: Pick<ActionContext, 'stackName' | 'region' | 'provider'>) => {
+}: Pick<Context, 'stackName' | 'region' | 'provider'>) => {
   const stackInfo = await getStackByName(stackName, region);
+
   if (!stackInfo) {
     logger.warn(`Stack: ${stackName} not exists, skipped! 🚫`);
     return;

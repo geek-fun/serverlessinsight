@@ -1,8 +1,8 @@
-import { ActionContext, FunctionDomain } from '../../types';
+import { Context, FunctionDomain } from '../../types';
 import { resolveCode } from '../../common';
 import { RfsStack } from './index';
 
-const fgsApplication = (context: ActionContext, service: string) => `
+const fgsApplication = (context: Context, service: string) => `
 resource "huaweicloud_fgs_application" "${service}_app" {
   name = "${service}-app"
   description = "${service} application"
@@ -10,7 +10,7 @@ resource "huaweicloud_fgs_application" "${service}_app" {
 }
 `;
 
-const fgsFunction = (fn: FunctionDomain, context: ActionContext, service: string) => `
+const fgsFunction = (fn: FunctionDomain, context: Context, service: string) => `
 resource "huaweicloud_fgs_function" "${fn.key}" {
   name = "${fn.name}"
   handler = "${fn.code!.handler}"
@@ -27,7 +27,7 @@ resource "huaweicloud_fgs_function" "${fn.key}" {
 export const resolveFunction = (
   stack: RfsStack,
   functions: Array<FunctionDomain> | undefined,
-  context: ActionContext,
+  context: Context,
   service: string,
 ) => {
   if (!functions) {

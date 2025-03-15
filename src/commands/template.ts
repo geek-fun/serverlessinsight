@@ -1,7 +1,7 @@
 import { TemplateFormat } from '../types';
 import yaml from 'yaml';
 import { generateStackTemplate } from '../stack/deploy';
-import { constructActionContext, getIacLocation, logger } from '../common';
+import { getIacLocation, logger, setContext } from '../common';
 import { parseYaml } from '../parser';
 
 export const template = (
@@ -10,9 +10,9 @@ export const template = (
 ) => {
   const iac = parseYaml(getIacLocation(options.location));
 
-  const context = constructActionContext({ ...options, stackName, provider: iac.provider.name });
+  setContext({ ...options, stackName, provider: iac.provider.name });
 
-  const { template } = generateStackTemplate(stackName, iac, context);
+  const { template } = generateStackTemplate(stackName, iac);
   if (typeof template === 'string') {
     logger.info(`\n${template}`);
   } else {

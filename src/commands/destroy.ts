@@ -1,4 +1,4 @@
-import { constructActionContext, getIacLocation, logger, rosStackDelete } from '../common';
+import { getContext, getIacLocation, logger, rosStackDelete, setContext } from '../common';
 import { parseYaml } from '../parser';
 
 export const destroyStack = async (
@@ -13,7 +13,8 @@ export const destroyStack = async (
   },
 ) => {
   const iac = parseYaml(getIacLocation(options.location));
-  const context = constructActionContext({ stackName, ...options, iacProvider: iac.provider });
+  setContext({ stackName, ...options, iacProvider: iac.provider });
+  const context = getContext();
   logger.info(
     `Destroying stack: ${stackName}, provider: ${context.provider}, region: ${context.region}...`,
   );

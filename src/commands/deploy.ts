@@ -1,5 +1,5 @@
 import { deployStack } from '../stack';
-import { constructActionContext, getIacLocation, logger } from '../common';
+import { getIacLocation, logger, setContext } from '../common';
 import { parseYaml } from '../parser';
 
 export const deploy = async (
@@ -19,10 +19,10 @@ export const deploy = async (
   const iac = parseYaml(getIacLocation(options.location));
   logger.info('Yaml is valid! 🎉');
 
-  const context = constructActionContext({ ...options, stackName, iacProvider: iac.provider });
+  setContext({ ...options, stackName, iacProvider: iac.provider });
 
   logger.info('Deploying stack...');
-  await deployStack(stackName, iac, context);
+  await deployStack(stackName, iac);
 
   logger.info('Stack deployed! 🎉');
 };

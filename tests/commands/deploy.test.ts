@@ -1,5 +1,4 @@
 import { deploy } from '../../src/commands/deploy';
-import { defaultContext } from '../fixtures/deployFixture';
 
 const mockedDeployStack = jest.fn();
 jest.mock('../../src/stack', () => ({
@@ -18,9 +17,6 @@ describe('unit test for deploy command', () => {
     });
 
     expect(mockedDeployStack).toHaveBeenCalledTimes(1);
-    expect(mockedDeployStack).toHaveBeenCalledWith(stackName, expect.any(Object), {
-      ...defaultContext,
-      region: 'cn-chengdu',
-    });
+    expect(mockedDeployStack).toHaveBeenCalledWith(stackName, expect.any(Object));
   });
 });
