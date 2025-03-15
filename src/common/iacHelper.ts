@@ -1,7 +1,7 @@
 import path from 'node:path';
 import fs from 'node:fs';
 import * as ros from '@alicloud/ros-cdk-core';
-import { ActionContext } from '../types';
+import { Context } from '../types';
 import * as ossDeployment from '@alicloud/ros-cdk-ossdeployment';
 import crypto from 'node:crypto';
 
@@ -34,13 +34,13 @@ export const getFileSource = (
   return { source, objectKey };
 };
 
-const evalCtx = (value: string, ctx: ActionContext): string => {
+const evalCtx = (value: string, ctx: Context): string => {
   const containsStage = value.match(/\$\{ctx.\w+}/);
 
   return containsStage ? value.replace(/\$\{ctx.stage}/g, ctx.stage) : value;
 };
 
-export const replaceReference = <T>(value: T, ctx: ActionContext): T => {
+export const replaceReference = <T>(value: T, ctx: Context): T => {
   if (typeof value === 'string') {
     const matchVar = value.match(/^\$\{vars\.(\w+)}$/);
     const containsVar = value.match(/\$\{vars\.(\w+)}/);

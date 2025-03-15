@@ -1,4 +1,4 @@
-import { ActionContext, BucketAccessEnum, BucketDomain } from '../../types';
+import { BucketAccessEnum, BucketDomain, Context } from '../../types';
 import * as oss from '@alicloud/ros-cdk-oss';
 import * as ros from '@alicloud/ros-cdk-core';
 import {
@@ -22,7 +22,7 @@ const aclMap = new Map([
 export const resolveBuckets = (
   scope: ros.Construct,
   buckets: Array<BucketDomain> | undefined,
-  context: ActionContext,
+  context: Context,
 ) => {
   if (!buckets) {
     return undefined;

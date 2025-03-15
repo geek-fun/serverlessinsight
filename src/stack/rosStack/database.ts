@@ -1,7 +1,7 @@
 import * as ros from '@alicloud/ros-cdk-core';
 import * as rds from '@alicloud/ros-cdk-rds';
 import { replaceReference } from '../../common';
-import { ActionContext, DatabaseDomain, DatabaseEnum, DatabaseVersionEnum } from '../../types';
+import { Context, DatabaseDomain, DatabaseEnum, DatabaseVersionEnum } from '../../types';
 import { isEmpty } from 'lodash';
 import * as esServerless from '@alicloud/ros-cdk-elasticsearchserverless';
 
@@ -196,7 +196,7 @@ const rdsEngineMap = new Map<
 export const resolveDatabases = (
   scope: ros.Construct,
   databases: Array<DatabaseDomain> | undefined,
-  context: ActionContext,
+  context: Context,
 ) => {
   if (isEmpty(databases)) {
     return undefined;

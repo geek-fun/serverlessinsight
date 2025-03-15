@@ -1,7 +1,8 @@
-import { ActionContext, ServerlessIac } from '../../types';
+import { Context, ServerlessIac } from '../../types';
 import { resolveFunction } from './function';
+import { getContext } from '../../common';
 
-const provider = (stack: RfsStack, context: ActionContext) => {
+const provider = (stack: RfsStack, context: Context) => {
   const hcl = `
 terraform {
   required_providers {
@@ -26,7 +27,7 @@ export class RfsStack {
 
   constructor(
     private readonly iac: ServerlessIac,
-    private readonly context: ActionContext,
+    private readonly context = getContext(),
   ) {
     provider(this, context);
     resolveFunction(this, iac.functions, context, iac.service);

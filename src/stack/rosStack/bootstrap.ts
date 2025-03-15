@@ -1,7 +1,7 @@
-import { getIamInfo, rosStackDeploy } from '../../common';
-import { ActionContext } from '../../types';
+import { getContext, getIamInfo, rosStackDeploy } from '../../common';
+import { Context } from '../../types';
 
-const getBootstrapTemplate = async (context: ActionContext) => {
+const getBootstrapTemplate = async (context: Context) => {
   const iamInfo = await getIamInfo(context);
   const stackName = `serverlessInsight-bootstrap-${iamInfo?.accountId}-${context.region}`;
 
@@ -34,7 +34,8 @@ const getBootstrapTemplate = async (context: ActionContext) => {
   return { stackName, template };
 };
 
-export const prepareBootstrapStack = async (context: ActionContext) => {
+export const prepareBootstrapStack = async () => {
+  const context = getContext();
   const { stackName, template } = await getBootstrapTemplate(context);
-  await rosStackDeploy(stackName, template, context);
+  await rosStackDeploy(stackName, template);
 };

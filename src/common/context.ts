@@ -1,6 +1,9 @@
-import { ActionContext, ServerlessIac } from '../types';
+import { Context, ServerlessIac } from '../types';
 import path from 'node:path';
 import { ProviderEnum } from './providerEnum';
+import { AsyncLocalStorage } from 'node:async_hooks';
+
+const asyncLocalStorage = new AsyncLocalStorage<Context>();
 
 export const getIacLocation = (location?: string): string => {
   const projectRoot = path.resolve(process.cwd());
@@ -12,7 +15,7 @@ export const getIacLocation = (location?: string): string => {
         path.resolve(projectRoot, 'serverless-insight.yml');
 };
 
-export const constructActionContext = (config: {
+export const setContext = (config: {
   stage?: string;
   stackName?: string;
   region?: string;
@@ -23,8 +26,8 @@ export const constructActionContext = (config: {
   location?: string;
   parameters?: { [key: string]: string };
   iacProvider?: ServerlessIac['provider'];
-}): ActionContext => {
-  return {
+}): void => {
+  const context = {
     stage: config.stage ?? 'default',
     stackName: config.stackName ?? '',
     provider: (config.provider ?? config.iacProvider?.name ?? ProviderEnum.ALIYUN) as ProviderEnum,
@@ -40,4 +43,14 @@ export const constructActionContext = (config: {
     iacLocation: getIacLocation(config.location),
     parameters: Object.entries(config.parameters ?? {}).map(([key, value]) => ({ key, value })),
   };
+
+  asyncLocalStorage.enterWith(context);
+};
+
+export const getContext = (): Context => {
+  const context = asyncLocalStorage.getStore();
+  if (!context) {
+    throw new Error('No context found');
+  }
+  return context;
 };

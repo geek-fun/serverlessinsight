@@ -2,7 +2,7 @@ export * from './providerEnum';
 export * from './logger';
 export * from './getVersion';
 export * from './rosClient';
-export * from './actionContext';
+export * from './context';
 export * from './iacHelper';
 export * from './constants';
 export * from './imsClient';

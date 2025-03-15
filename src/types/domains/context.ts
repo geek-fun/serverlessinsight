@@ -1,6 +1,6 @@
 import { ProviderEnum } from '../../common';
 
-export type ActionContext = {
+export type Context = {
   region: string;
   provider: ProviderEnum;
   stackName: string;

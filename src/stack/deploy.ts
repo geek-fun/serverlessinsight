@@ -1,7 +1,7 @@
 import * as ros from '@alicloud/ros-cdk-core';
 import fs from 'node:fs';
 
-import { ActionContext, ServerlessIac } from '../types';
+import { ServerlessIac } from '../types';
 import {
   cleanupAssets,
   constructAssets,
@@ -14,13 +14,9 @@ import { prepareBootstrapStack, RosStack } from './rosStack';
 import { RfsStack } from './rfsStack';
 import { get } from 'lodash';
 
-export const generateRosStackTemplate = (
-  stackName: string,
-  iac: ServerlessIac,
-  context: ActionContext,
-) => {
+export const generateRosStackTemplate = (stackName: string, iac: ServerlessIac) => {
   const app = new ros.App();
-  new RosStack(app, iac, context);
+  new RosStack(app, iac);
 
   const assembly = app.synth();
 
@@ -36,12 +32,8 @@ export const generateRosStackTemplate = (
   return { template, assets };
 };
 
-export const generateRfsStackTemplate = (
-  stackName: string,
-  iac: ServerlessIac,
-  context: ActionContext,
-) => {
-  const stack = new RfsStack(iac, context);
+export const generateRfsStackTemplate = (stackName: string, iac: ServerlessIac) => {
+  const stack = new RfsStack(iac);
 
   const hcl = stack.toHclTerraform();
   console.log('HCL:', hcl);
@@ -49,26 +41,22 @@ export const generateRfsStackTemplate = (
   return { template: hcl };
 };
 
-export const deployStack = async (
-  stackName: string,
-  iac: ServerlessIac,
-  context: ActionContext,
-) => {
-  const { template, assets } = generateRosStackTemplate(stackName, iac, context);
-  await prepareBootstrapStack(context);
+export const deployStack = async (stackName: string, iac: ServerlessIac) => {
+  const { template, assets } = generateRosStackTemplate(stackName, iac);
+  await prepareBootstrapStack();
   logger.info(`Deploying stack, publishing assets...`);
-  const constructedAssets = await constructAssets(assets, context.region);
+  const constructedAssets = await constructAssets(assets);
   try {
-    await publishAssets(constructedAssets, context);
+    await publishAssets(constructedAssets);
     logger.info(`Assets published! 🎉`);
-    await rosStackDeploy(stackName, template, context);
+    await rosStackDeploy(stackName, template);
   } catch (e) {
     logger.error(`Failed to deploy stack: ${e}`);
     throw e;
   } finally {
     try {
       logger.info(`Cleaning up temporary Assets...`);
-      await cleanupAssets(constructedAssets, context);
+      await cleanupAssets(constructedAssets);
       logger.info(`Assets cleaned up!♻️`);
     } catch (e) {
       logger.error(
@@ -81,12 +69,11 @@ export const deployStack = async (
 export const generateStackTemplate = (
   stackName: string,
   iac: ServerlessIac,
-  context: ActionContext,
 ): { template: unknown } => {
   if (iac.provider.name === ProviderEnum.ALIYUN) {
-    return generateRosStackTemplate(stackName, iac, context);
+    return generateRosStackTemplate(stackName, iac);
   } else if (iac.provider.name === ProviderEnum.HUAWEI) {
-    return generateRfsStackTemplate(stackName, iac, context);
+    return generateRfsStackTemplate(stackName, iac);
   }
   return { template: '' };
 };

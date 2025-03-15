@@ -1,5 +1,5 @@
 import {
-  ActionContext,
+  Context,
   FunctionDomain,
   FunctionGpuEnum,
   NasStorageClassEnum,
@@ -80,7 +80,7 @@ export const resolveFunctions = (
   scope: ros.Construct,
   functions: Array<FunctionDomain> | undefined,
   tags: ServerlessIac['tags'] | undefined,
-  context: ActionContext,
+  context: Context,
   service: string,
 ) => {
   if (isEmpty(functions)) {

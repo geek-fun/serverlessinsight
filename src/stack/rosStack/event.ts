@@ -1,5 +1,5 @@
 import * as ros from '@alicloud/ros-cdk-core';
-import { ActionContext, EventDomain, EventTypes, ServerlessIac } from '../../types';
+import { Context, EventDomain, EventTypes, ServerlessIac } from '../../types';
 import * as ram from '@alicloud/ros-cdk-ram';
 import { encodeBase64ForRosId, replaceReference, splitDomain } from '../../common';
 import * as agw from '@alicloud/ros-cdk-apigateway';
@@ -10,7 +10,7 @@ export const resolveEvents = (
   scope: ros.Construct,
   events: Array<EventDomain> | undefined,
   tags: ServerlessIac['tags'] | undefined,
-  context: ActionContext,
+  context: Context,
   service: string,
 ) => {
   if (isEmpty(events)) {

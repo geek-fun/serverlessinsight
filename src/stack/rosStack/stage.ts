@@ -1,12 +1,12 @@
 import * as ros from '@alicloud/ros-cdk-core';
 import { replaceReference } from '../../common';
-import { ActionContext, Stages } from '../../types';
+import { Context, Stages } from '../../types';
 import { isEmpty } from 'lodash';
 
 export const resolveStages = (
   scope: ros.Construct,
   stages: Stages | undefined,
-  context: ActionContext,
+  context: Context,
 ) => {
   if (isEmpty(stages)) {
     return undefined;

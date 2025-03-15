@@ -1,8 +1,8 @@
 import Ims20190815, * as ims20190815 from '@alicloud/ims20190815';
 import * as openApi from '@alicloud/openapi-client';
-import { ActionContext } from '../types';
+import { Context } from '../types';
 
-export const getIamInfo = async (context: ActionContext) => {
+export const getIamInfo = async (context: Context) => {
   const imsClient = new Ims20190815(
     new openApi.Config({
       accessKeyId: context.accessKeyId,
