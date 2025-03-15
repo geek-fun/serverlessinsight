@@ -1,6 +1,6 @@
 import * as ros from '@alicloud/ros-cdk-core';
 import * as ossDeployment from '@alicloud/ros-cdk-ossdeployment';
-import { getFileSource, calcRefers, realValue } from '../../src/common';
+import { getFileSource, calcRefs, realValue } from '../../src/common';
 import fs from 'node:fs';
 import { context } from '../fixtures/contextFixture';
 
@@ -36,42 +36,42 @@ describe('Unit test for iacHelper', () => {
   describe('Unit test for calcRefers', () => {
     it('should return the value if it does not contain any reference', () => {
       const value = 'testValue';
-      expect(calcRefers(value, context)).toEqual(value);
+      expect(calcRefs(value, context)).toEqual(value);
       expect(ros.Fn.ref).not.toHaveBeenCalled();
     });
 
     it('should return the value if it contains a stage reference', () => {
       const value = 'testValue-${ctx.stage}';
-      expect(calcRefers(value, context)).toEqual('testValue-test');
+      expect(calcRefs(value, context)).toEqual('testValue-test');
 
       expect(ros.Fn.ref).not.toHaveBeenCalled();
     });
 
     it('should return the value if it match a vars reference', () => {
-      calcRefers('${vars.testVar}', context);
+      calcRefs('${vars.testVar}', context);
 
       expect(ros.Fn.ref).toHaveBeenCalledWith('testVar');
     });
 
     it('should return the value if it match a stages reference', () => {
-      calcRefers('${stages.testStage}', context);
+      calcRefs('${stages.testStage}', context);
       expect(ros.Fn.findInMap).toHaveBeenCalledWith('stages', 'test', 'testStage');
     });
 
     it('should return the value if it contains a stages reference', () => {
-      calcRefers('abcd-${stages.testVar}-efg', context);
+      calcRefs('abcd-${stages.testVar}-efg', context);
 
       expect(ros.Fn.sub).toHaveBeenCalledWith('abcd-${testVar}-efg');
     });
 
     it('should return the value if it contains both stages reference and vars references', () => {
-      calcRefers('abcd-${stages.testVar}-efg-${vars.newTestVar}-hij', context);
+      calcRefs('abcd-${stages.testVar}-efg-${vars.newTestVar}-hij', context);
 
       expect(ros.Fn.sub).toHaveBeenCalledWith('abcd-${testVar}-efg-${newTestVar}-hij');
     });
 
     it('should return the value if it contains a functions reference', () => {
-      calcRefers('${functions.testFunction}', context);
+      calcRefs('${functions.testFunction}', context);
 
       expect(ros.Fn.getAtt).toHaveBeenCalledWith('testFunction', 'FunctionName');
     });

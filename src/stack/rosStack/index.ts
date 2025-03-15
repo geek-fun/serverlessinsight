@@ -1,6 +1,6 @@
 import * as ros from '@alicloud/ros-cdk-core';
 import { Context, ServerlessIac } from '../../types';
-import { calcRefers } from '../../common';
+import { calcRefs } from '../../common';
 import { resolveTags } from './tag';
 import { resolveFunctions } from './function';
 import { resolveStages } from './stage';
@@ -15,12 +15,12 @@ export class RosStack extends ros.Stack {
   private readonly service: string;
 
   constructor(scope: ros.Construct, iac: ServerlessIac, context: Context) {
-    super(scope, calcRefers(iac.service, context), {
+    super(scope, calcRefs(iac.service, context), {
       stackName: context.stackName,
       tags: resolveTags(iac.tags, context),
     });
 
-    this.service = calcRefers(iac.service, context);
+    this.service = calcRefs(iac.service, context);
     new ros.RosInfo(this, ros.RosInfo.description, `${this.service} stack`);
 
     // Define Parameters

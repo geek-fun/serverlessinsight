@@ -1,5 +1,5 @@
 import * as ros from '@alicloud/ros-cdk-core';
-import { calcRefers } from '../../common';
+import { calcRefs } from '../../common';
 import { Context, Stages } from '../../types';
 import { isEmpty } from 'lodash';
 
@@ -11,5 +11,5 @@ export const resolveStages = (
   if (isEmpty(stages)) {
     return undefined;
   }
-  new ros.RosMapping(scope, 'stages', { mapping: calcRefers(stages, context) });
+  new ros.RosMapping(scope, 'stages', { mapping: calcRefs(stages, context) });
 };

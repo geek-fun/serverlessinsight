@@ -1,6 +1,6 @@
 import * as ros from '@alicloud/ros-cdk-core';
 import * as rds from '@alicloud/ros-cdk-rds';
-import { calcRefers } from '../../common';
+import { calcRefs } from '../../common';
 import { Context, DatabaseDomain, DatabaseEnum, DatabaseVersionEnum } from '../../types';
 import { isEmpty } from 'lodash';
 import * as esServerless from '@alicloud/ros-cdk-elasticsearchserverless';
@@ -208,14 +208,14 @@ export const resolveDatabases = (
     if ([DatabaseEnum.ELASTICSEARCH_SERVERLESS].includes(db.type)) {
       new esServerless.App(
         scope,
-        calcRefers(db.key, context),
+        calcRefs(db.key, context),
         {
-          appName: calcRefers(db.name, context),
+          appName: calcRefs(db.name, context),
           appVersion: version,
           authentication: {
             basicAuth: [
               {
-                password: calcRefers(db.security.basicAuth.password, context),
+                password: calcRefs(db.security.basicAuth.password, context),
               },
             ],
           },
@@ -249,7 +249,7 @@ export const resolveDatabases = (
     ) {
       new rds.DBInstance(
         scope,
-        calcRefers(db.key, context),
+        calcRefs(db.key, context),
         {
           engine: engine as string,
           /**
@@ -259,7 +259,7 @@ export const resolveDatabases = (
            *    PostgreSQL：14.0、15.0、16.0 - PGSQL_HA_14, PGSQL_14 PGSQL_HA_15, PGSQL_15, PGSQL_HA_16,PGSQL_16
            */
           engineVersion: version as string,
-          dbInstanceStorage: calcRefers(db.storage.min, context),
+          dbInstanceStorage: calcRefs(db.storage.min, context),
           /** Serverless 实例
            *     serverless_basic：Serverless 基础系列。（仅适用 MySQL 和 PostgreSQL）
            *     serverless_standard：Serverless 高可用系列。（仅适用 MySQL 和 PostgreSQL）
@@ -297,11 +297,11 @@ export const resolveDatabases = (
            */
           serverlessConfig: {
             // @TODO db.cu.min should get parameter value when it refer to a parameter
-            minCapacity: calcRefers(
+            minCapacity: calcRefs(
               db.cu.min === 0 ? quota!.minCapacity : db.cu.min + quota!.minCapacity,
               context,
             ),
-            maxCapacity: calcRefers(
+            maxCapacity: calcRefs(
               db.cu.max + quota!.minCapacity <= quota!.maxCapacity
                 ? db.cu.max + quota!.minCapacity
                 : quota!.maxCapacity,
@@ -310,11 +310,11 @@ export const resolveDatabases = (
             autoPause: db.cu.min === 0,
             switchForce: false,
           },
-          masterUsername: calcRefers(db.security.basicAuth.username, context),
-          masterUserPassword: calcRefers(db.security.basicAuth.password, context),
+          masterUsername: calcRefs(db.security.basicAuth.username, context),
+          masterUserPassword: calcRefs(db.security.basicAuth.password, context),
           masterUserType: 'Super',
           multiAz: quota!.ha,
-          securityIpList: calcRefers(db.network.ingressRules.join(','), context),
+          securityIpList: calcRefs(db.network.ingressRules.join(','), context),
           connectionStringType: db.network.type === 'PRIVATE' ? 'Inner' : 'Public',
           dbInstanceNetType: db.network.type === 'PRIVATE' ? 'Intranet' : 'Internet',
         },

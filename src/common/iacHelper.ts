@@ -35,7 +35,7 @@ export const getFileSource = (
   return { source, objectKey };
 };
 
-export const calcRefers = <T>(rawValue: T, ctx: Context): T => {
+export const calcRefs = <T>(rawValue: T, ctx: Context): T => {
   if (typeof rawValue === 'string') {
     const containsStage = rawValue.match(/\$\{ctx.\w+}/);
     const matchVar = rawValue.match(/^\$\{vars\.(\w+)}$/);
@@ -68,12 +68,12 @@ export const calcRefers = <T>(rawValue: T, ctx: Context): T => {
   }
 
   if (Array.isArray(rawValue)) {
-    return rawValue.map((item) => calcRefers(item, ctx)) as T;
+    return rawValue.map((item) => calcRefs(item, ctx)) as T;
   }
 
   if (typeof rawValue === 'object' && rawValue !== null) {
     return Object.fromEntries(
-      Object.entries(rawValue).map(([key, val]) => [key, calcRefers(val, ctx)]),
+      Object.entries(rawValue).map(([key, val]) => [key, calcRefs(val, ctx)]),
     ) as T;
   }
 

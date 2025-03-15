@@ -5,7 +5,7 @@ import {
   encodeBase64ForRosId,
   getAssets,
   OSS_DEPLOYMENT_TIMEOUT,
-  calcRefers,
+  calcRefs,
   splitDomain,
 } from '../../common';
 import * as ossDeployment from '@alicloud/ros-cdk-ossdeployment';
@@ -58,27 +58,27 @@ export const resolveBuckets = (
   }
 
   buckets.forEach((bucket) => {
-    const ossBucket = new oss.Bucket(scope, calcRefers(bucket.key, context), {
-      bucketName: calcRefers(bucket.name, context),
+    const ossBucket = new oss.Bucket(scope, calcRefs(bucket.key, context), {
+      bucketName: calcRefs(bucket.name, context),
       accessControl: aclMap.get(
-        calcRefers(bucket.security?.acl, context) ?? ('' as BucketAccessEnum),
+        calcRefs(bucket.security?.acl, context) ?? ('' as BucketAccessEnum),
       ),
       websiteConfigurationV2: bucket.website
         ? {
             indexDocument: {
               type: '0',
-              suffix: calcRefers(bucket.website.index, context),
+              suffix: calcRefs(bucket.website.index, context),
               supportSubDir: 'true',
             },
             errorDocument: {
-              httpStatus: `${calcRefers(bucket.website.error_code, context)}`,
-              key: calcRefers(bucket.website.error_page, context),
+              httpStatus: `${calcRefs(bucket.website.error_code, context)}`,
+              key: calcRefs(bucket.website.error_page, context),
             },
           }
         : undefined,
     });
     if (bucket.website?.code) {
-      const filePath = path.resolve(process.cwd(), calcRefers(bucket.website.code, context));
+      const filePath = path.resolve(process.cwd(), calcRefs(bucket.website.code, context));
       new ossDeployment.BucketDeployment(
         scope,
         `si_auto_${bucket.key}_bucket_code_deployment`,
@@ -100,7 +100,7 @@ export const resolveBuckets = (
         `${bucket.key}_custom_domain_${encodeBase64ForRosId(bucket.website.domain)}`,
         {
           bucketName: ossBucket.attrName,
-          domainName: calcRefers(bucket.website.domain, context),
+          domainName: calcRefs(bucket.website.domain, context),
         },
       );
 
