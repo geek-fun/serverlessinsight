@@ -4,6 +4,7 @@ import * as ros from '@alicloud/ros-cdk-core';
 import { Context } from '../types';
 import * as ossDeployment from '@alicloud/ros-cdk-ossdeployment';
 import crypto from 'node:crypto';
+import { get } from 'lodash';
 
 export const resolveCode = (location: string): string => {
   const filePath = path.resolve(process.cwd(), location);
@@ -40,7 +41,7 @@ const evalCtx = (value: string, ctx: Context): string => {
   return containsStage ? value.replace(/\$\{ctx.stage}/g, ctx.stage) : value;
 };
 
-export const replaceReference = <T>(value: T, ctx: Context): T => {
+export const calcRefers = <T>(value: T, ctx: Context): T => {
   if (typeof value === 'string') {
     const matchVar = value.match(/^\$\{vars\.(\w+)}$/);
     const containsVar = value.match(/\$\{vars\.(\w+)}/);
@@ -76,14 +77,42 @@ export const replaceReference = <T>(value: T, ctx: Context): T => {
   }
 
   if (Array.isArray(value)) {
-    return value.map((item) => replaceReference(item, ctx)) as T;
+    return value.map((item) => calcRefers(item, ctx)) as T;
   }
 
   if (typeof value === 'object' && value !== null) {
     return Object.fromEntries(
-      Object.entries(value).map(([key, val]) => [key, replaceReference(val, ctx)]),
+      Object.entries(value).map(([key, val]) => [key, calcRefers(val, ctx)]),
     ) as T;
   }
 
   return value;
+};
+
+const getParam = (key: string, records?: Array<{ key: string; value: string }>) => {
+  return records?.find((param) => param.key === key)?.value as string;
+};
+
+export const realValue = <T>(rawValue: string, ctx: Context): T => {
+  const containsStage = rawValue.match(/\$\{ctx.stage}/);
+  const containsVar = rawValue.match(/\$\{vars.\w+}/);
+  const containsMap = rawValue.match(/\$\{stages\.(\w+)}/);
+
+  let value = rawValue;
+
+  if (containsStage?.length) {
+    value = rawValue.replace(/\$\{ctx.stage}/g, ctx.stage);
+  }
+
+  if (containsVar?.length) {
+    value = value.replace(/\$\{vars\.(\w+)}/g, (_, key) => getParam(key, ctx.parameters));
+  }
+
+  if (containsMap?.length) {
+    value = value.replace(/\$\{stages\.(\w+)}/g, (_, key) =>
+      getParam(key, get(ctx.stages, `${ctx.stage}`)),
+    );
+  }
+
+  return value as T;
 };

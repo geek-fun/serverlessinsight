@@ -10,6 +10,9 @@ export type Context = {
   securityToken?: string;
   iacLocation: string;
   parameters?: Array<{ key: string; value: string }>;
+  stages?: {
+    [stage: string]: Array<{ key: string; value: string }>;
+  };
   tags?: Array<{ key: string; value: string }>;
 };
 

@@ -1,7 +1,7 @@
 import * as ros from '@alicloud/ros-cdk-core';
 import { Context, EventDomain, EventTypes, ServerlessIac } from '../../types';
 import * as ram from '@alicloud/ros-cdk-ram';
-import { encodeBase64ForRosId, replaceReference, splitDomain } from '../../common';
+import { encodeBase64ForRosId, calcRefers, splitDomain } from '../../common';
 import * as agw from '@alicloud/ros-cdk-apigateway';
 import { isEmpty } from 'lodash';
 import * as dns from '@alicloud/ros-cdk-dns';
@@ -22,10 +22,10 @@ export const resolveEvents = (
   apiGateway.forEach((event) => {
     const gatewayAccessRole = new ram.RosRole(
       scope,
-      replaceReference(`${event.key}_role`, context),
+      calcRefers(`${event.key}_role`, context),
       {
-        roleName: replaceReference(`${service}-${event.name}-agw-access-role`, context),
-        description: replaceReference(`${service} role`, context),
+        roleName: calcRefers(`${service}-${event.name}-agw-access-role`, context),
+        description: calcRefers(`${service} role`, context),
         assumeRolePolicyDocument: {
           version: '1',
           statement: [
@@ -40,7 +40,7 @@ export const resolveEvents = (
         },
         policies: [
           {
-            policyName: replaceReference(`${service}-${event.name}-policy`, context),
+            policyName: calcRefers(`${service}-${event.name}-policy`, context),
             policyDocument: {
               version: '1',
               statement: [
@@ -60,10 +60,10 @@ export const resolveEvents = (
 
     const apiGatewayGroup = new agw.RosGroup(
       scope,
-      replaceReference(`${service}_apigroup`, context),
+      calcRefers(`${service}_apigroup`, context),
       {
-        groupName: replaceReference(`${service}_apigroup`, context),
-        tags: replaceReference(tags, context),
+        groupName: calcRefers(`${service}_apigroup`, context),
+        tags: calcRefers(tags, context),
         passthroughHeaders: 'host',
       },
       true,
@@ -96,37 +96,35 @@ export const resolveEvents = (
     }
 
     event.triggers.forEach((trigger) => {
-      const key = encodeBase64ForRosId(
-        replaceReference(`${trigger.method}_${trigger.path}`, context),
-      );
+      const key = encodeBase64ForRosId(calcRefers(`${trigger.method}_${trigger.path}`, context));
 
       const api = new agw.RosApi(
         scope,
         `${event.key}_api_${key}`,
         {
-          apiName: replaceReference(`${event.name}_api_${key}`, context),
+          apiName: calcRefers(`${event.name}_api_${key}`, context),
           groupId: apiGatewayGroup.attrGroupId,
           visibility: 'PRIVATE',
           authType: 'ANONYMOUS',
           requestConfig: {
             requestProtocol: 'HTTP',
-            requestHttpMethod: replaceReference(trigger.method, context),
-            requestPath: replaceReference(trigger.path, context),
+            requestHttpMethod: calcRefers(trigger.method, context),
+            requestPath: calcRefers(trigger.path, context),
             requestMode: 'PASSTHROUGH',
           },
           serviceConfig: {
             serviceProtocol: 'FunctionCompute',
             functionComputeConfig: {
               fcRegionId: context.region,
-              functionName: replaceReference(trigger.backend, context),
+              functionName: calcRefers(trigger.backend, context),
               roleArn: gatewayAccessRole.attrArn,
               fcVersion: '3.0',
-              method: replaceReference(trigger.method, context),
+              method: calcRefers(trigger.method, context),
             },
           },
           resultSample: 'ServerlessInsight resultSample',
           resultType: 'PASSTHROUGH',
-          tags: replaceReference(tags, context),
+          tags: calcRefers(tags, context),
         },
         true,
       );

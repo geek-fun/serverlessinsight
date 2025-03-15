@@ -12,6 +12,14 @@ export const context: Context = {
   parameters: [
     { key: 'testVar', value: 'testVarValue' },
     { key: 'newTestVar', value: 'newTestVarValue' },
+    { key: 'handler', value: 'index.handler' },
   ],
+  stages: {
+    default: [{ key: 'testVar', value: 'testVarValue' }],
+    test: [
+      { key: 'testVar', value: 'testVarValue' },
+      { key: 'testStage', value: 'testStageValue' },
+    ],
+  },
   tags: [{ key: 'owner', value: 'geekfun' }],
 };
