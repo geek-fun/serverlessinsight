@@ -26,8 +26,9 @@ export const setContext = (config: {
   location?: string;
   parameters?: { [key: string]: string };
   iacProvider?: ServerlessIac['provider'];
+  stages?: ServerlessIac['stages'];
 }): void => {
-  const context = {
+  const context: Context = {
     stage: config.stage ?? 'default',
     stackName: config.stackName ?? '',
     provider: (config.provider ?? config.iacProvider?.name ?? ProviderEnum.ALIYUN) as ProviderEnum,
@@ -42,6 +43,13 @@ export const setContext = (config: {
     securityToken: config.securityToken ?? process.env.ALIYUN_SECURITY_TOKEN,
     iacLocation: getIacLocation(config.location),
     parameters: Object.entries(config.parameters ?? {}).map(([key, value]) => ({ key, value })),
+    stages: Object.entries(config.stages ?? {}).reduce(
+      (acc, [stage, parameters]) => ({
+        ...acc,
+        [stage]: Object.entries(parameters).map(([key, value]) => ({ key, value })),
+      }),
+      {},
+    ),
   };
 
   asyncLocalStorage.enterWith(context);
