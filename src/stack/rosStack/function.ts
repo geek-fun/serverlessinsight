@@ -11,7 +11,7 @@ import {
   getFileSource,
   OSS_DEPLOYMENT_TIMEOUT,
   readCodeSize,
-  replaceReference,
+  calcRefs,
   resolveCode,
 } from '../../common';
 import * as fc from '@alicloud/ros-cdk-fc3';
@@ -92,7 +92,7 @@ export const resolveFunctions = (
   const slsService = new sls.Project(
     scope,
     `${service}_sls`,
-    { name: `${service}-sls`, tags: replaceReference(tags, context) },
+    { name: `${service}-sls`, tags: calcRefs(tags, context) },
     true,
   );
 
@@ -128,7 +128,7 @@ export const resolveFunctions = (
   const fileSources = functions
     ?.filter(({ code }) => code?.path && readCodeSize(code.path) > CODE_ZIP_SIZE_LIMIT)
     .map(({ code, name }) => {
-      const fcName = replaceReference(name, context);
+      const fcName = calcRefs(name, context);
 
       return { fcName, ...getFileSource(fcName, code!.path) };
     });
@@ -185,15 +185,14 @@ export const resolveFunctions = (
       if (storeInBucket) {
         code = {
           ossBucketName: destinationBucketName,
-          ossObjectName: fileSources?.find(
-            ({ fcName }) => fcName === replaceReference(fnc.name, context),
-          )?.objectKey,
+          ossObjectName: fileSources?.find(({ fcName }) => fcName === calcRefs(fnc.name, context))
+            ?.objectKey,
         };
       }
       runtimeConfig = {
         code,
-        handler: replaceReference(fnc.code!.handler, context),
-        runtime: replaceReference(fnc.code!.runtime, context),
+        handler: calcRefs(fnc.code!.handler, context),
+        runtime: calcRefs(fnc.code!.runtime, context),
       };
     }
 
@@ -204,8 +203,8 @@ export const resolveFunctions = (
         `${fnc.key}_security_group`,
         {
           securityGroupName: fnc.network.security_group.name,
-          vpcId: replaceReference(fnc.network.vpc_id, context),
-          tags: replaceReference(tags, context),
+          vpcId: calcRefs(fnc.network.vpc_id, context),
+          tags: calcRefs(tags, context),
           securityGroupIngress: transformSecurityRules(
             fnc.network.security_group.ingress,
             'INGRESS',
@@ -216,8 +215,8 @@ export const resolveFunctions = (
       );
 
       vpcConfig = {
-        vpcId: replaceReference(fnc.network.vpc_id, context),
-        vSwitchIds: replaceReference(fnc.network.subnet_ids, context),
+        vpcId: calcRefs(fnc.network.vpc_id, context),
+        vSwitchIds: calcRefs(fnc.network.subnet_ids, context),
         securityGroupId: securityGroup.attrSecurityGroupId,
       };
     }
@@ -269,10 +268,7 @@ export const resolveFunctions = (
             fileSystemType,
             storageType,
             protocolType: 'NFS',
-            tags: [
-              ...(replaceReference(tags, context) ?? []),
-              { key: 'function-name', value: fnc.name },
-            ],
+            tags: [...(calcRefs(tags, context) ?? []), { key: 'function-name', value: fnc.name }],
           },
           true,
         );
@@ -297,12 +293,12 @@ export const resolveFunctions = (
       scope,
       fnc.key,
       {
-        functionName: replaceReference(fnc.name, context),
-        memorySize: replaceReference(fnc.memory, context),
+        functionName: calcRefs(fnc.name, context),
+        memorySize: calcRefs(fnc.memory, context),
         diskSize: fnc.storage?.disk,
         gpuConfig: transformGpuConfig(fnc.gpu),
-        timeout: replaceReference(fnc.timeout, context),
-        environmentVariables: replaceReference(fnc.environment, context),
+        timeout: calcRefs(fnc.timeout, context),
+        environmentVariables: calcRefs(fnc.environment, context),
         logConfig,
         vpcConfig,
         ...runtimeConfig,

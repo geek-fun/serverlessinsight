@@ -1,9 +1,9 @@
 import { Context, ServerlessIac } from '../../types';
-import { replaceReference } from '../../common';
+import { calcRefs } from '../../common';
 
 export const resolveTags = (tags: ServerlessIac['tags'], context: Context) => {
   return tags?.reduce((acc: { [key: string]: string }, tag) => {
-    acc[tag.key] = replaceReference(tag.value, context);
+    acc[tag.key] = calcRefs(tag.value, context);
     return acc;
   }, {});
 };

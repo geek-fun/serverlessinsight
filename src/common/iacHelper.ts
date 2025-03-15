@@ -4,6 +4,7 @@ import * as ros from '@alicloud/ros-cdk-core';
 import { Context } from '../types';
 import * as ossDeployment from '@alicloud/ros-cdk-ossdeployment';
 import crypto from 'node:crypto';
+import { get } from 'lodash';
 
 export const resolveCode = (location: string): string => {
   const filePath = path.resolve(process.cwd(), location);
@@ -34,21 +35,17 @@ export const getFileSource = (
   return { source, objectKey };
 };
 
-const evalCtx = (value: string, ctx: Context): string => {
-  const containsStage = value.match(/\$\{ctx.\w+}/);
-
-  return containsStage ? value.replace(/\$\{ctx.stage}/g, ctx.stage) : value;
-};
-
-export const replaceReference = <T>(value: T, ctx: Context): T => {
-  if (typeof value === 'string') {
-    const matchVar = value.match(/^\$\{vars\.(\w+)}$/);
-    const containsVar = value.match(/\$\{vars\.(\w+)}/);
-    const matchMap = value.match(/^\$\{stages\.(\w+)}$/);
-    const containsMap = value.match(/\$\{stages\.(\w+)}/);
-    const matchFn = value.match(/^\$\{functions\.(\w+(\.\w+)?)}$/);
-    if (value.match(/\$\{ctx.\w+}/)) {
-      return evalCtx(value, ctx) as T;
+export const calcRefs = <T>(rawValue: T, ctx: Context): T => {
+  if (typeof rawValue === 'string') {
+    const containsStage = rawValue.match(/\$\{ctx.\w+}/);
+    const matchVar = rawValue.match(/^\$\{vars\.(\w+)}$/);
+    const containsVar = rawValue.match(/\$\{vars\.(\w+)}/);
+    const matchMap = rawValue.match(/^\$\{stages\.(\w+)}$/);
+    const containsMap = rawValue.match(/\$\{stages\.(\w+)}/);
+    const matchFn = rawValue.match(/^\$\{functions\.(\w+(\.\w+)?)}$/);
+    let value = rawValue as string;
+    if (containsStage) {
+      value = value.replace(/\$\{ctx.stage}/g, ctx.stage);
     }
 
     if (matchVar?.length) {
@@ -57,33 +54,56 @@ export const replaceReference = <T>(value: T, ctx: Context): T => {
     if (matchMap?.length) {
       return ros.Fn.findInMap('stages', ctx.stage, matchMap[1]) as T;
     }
-
     if (matchFn?.length) {
       return ros.Fn.getAtt(matchFn[1], 'FunctionName') as T;
     }
-    if (containsMap?.length && containsVar?.length) {
-      return ros.Fn.sub(
-        value.replace(/\$\{stages\.(\w+)}/g, '${$1}').replace(/\$\{vars\.(\w+)}/g, '${$1}'),
-      ) as T;
+
+    if (containsMap?.length || containsVar?.length) {
+      value = ros.Fn.sub(
+        rawValue.replace(/\$\{stages\.(\w+)}/g, '${$1}').replace(/\$\{vars\.(\w+)}/g, '${$1}'),
+      );
     }
-    if (containsVar?.length) {
-      return ros.Fn.sub(value.replace(/\$\{vars\.(\w+)}/g, '${$1}')) as T;
-    }
-    if (containsMap?.length) {
-      return ros.Fn.sub(value.replace(/\$\{stages\.(\w+)}/g, '${$1}')) as T;
-    }
-    return value;
+
+    return value as T;
   }
 
-  if (Array.isArray(value)) {
-    return value.map((item) => replaceReference(item, ctx)) as T;
+  if (Array.isArray(rawValue)) {
+    return rawValue.map((item) => calcRefs(item, ctx)) as T;
   }
 
-  if (typeof value === 'object' && value !== null) {
+  if (typeof rawValue === 'object' && rawValue !== null) {
     return Object.fromEntries(
-      Object.entries(value).map(([key, val]) => [key, replaceReference(val, ctx)]),
+      Object.entries(rawValue).map(([key, val]) => [key, calcRefs(val, ctx)]),
     ) as T;
   }
 
-  return value;
+  return rawValue;
+};
+
+const getParam = (key: string, records?: Array<{ key: string; value: string }>) => {
+  return records?.find((param) => param.key === key)?.value as string;
+};
+
+export const realValue = <T>(rawValue: string, ctx: Context): T => {
+  const containsStage = rawValue.match(/\$\{ctx.stage}/);
+  const containsVar = rawValue.match(/\$\{vars.\w+}/);
+  const containsMap = rawValue.match(/\$\{stages\.(\w+)}/);
+
+  let value = rawValue;
+
+  if (containsStage?.length) {
+    value = rawValue.replace(/\$\{ctx.stage}/g, ctx.stage);
+  }
+
+  if (containsVar?.length) {
+    value = value.replace(/\$\{vars\.(\w+)}/g, (_, key) => getParam(key, ctx.parameters));
+  }
+
+  if (containsMap?.length) {
+    value = value.replace(/\$\{stages\.(\w+)}/g, (_, key) =>
+      getParam(key, get(ctx.stages, `${ctx.stage}`)),
+    );
+  }
+
+  return value as T;
 };
