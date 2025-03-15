@@ -98,8 +98,8 @@ export const functionSchema = {
                   storage_class: {
                     type: 'string',
                     enum: [
-                      'STANDARD_PERFORMANCE',
                       'STANDARD_CAPACITY',
+                      'STANDARD_PERFORMANCE',
                       'EXTREME_STANDARD',
                       'EXTREME_ADVANCE',
                     ],

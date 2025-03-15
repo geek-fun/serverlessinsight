@@ -69,8 +69,15 @@ const updateStack = async (stackId: string, templateBody: unknown, context: Acti
     // wait for stack update complete
     return await getStackActionResult(response.body?.stackId || '', context.region);
   } catch (err) {
-    const { Message: message, statusCode } =
-      (err as { data: { Message: string; statusCode: number } })?.data || {};
+    const { message, statusCode } =
+      (err as {
+        message: string;
+        code: string;
+        statusCode: number;
+        description: string;
+        requestId: string;
+        accessDeniedDetail: unknown;
+      }) || {};
     if (statusCode === 400 && message.includes('Update the completely same stack')) {
       logger.warn(`${lang.__('UPDATE_COMPLETELY_SAME_STACK')}`);
       return null;

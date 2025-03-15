@@ -21,6 +21,7 @@ import * as ros from '@alicloud/ros-cdk-core';
 import * as sls from '@alicloud/ros-cdk-sls';
 import * as nas from '@alicloud/ros-cdk-nas';
 import * as ecs from '@alicloud/ros-cdk-ecs';
+import * as vpc from '@alicloud/ros-cdk-vpc';
 import { RosFunction, RosFunctionProps } from '@alicloud/ros-cdk-fc3/lib/fc3.generated';
 
 const storageClassMap = {
@@ -236,6 +237,30 @@ export const resolveFunctions = (
           },
           true,
         );
+
+        const fcVpcSubnets = fnc.network?.subnet_ids.map(
+          (subnet) =>
+            new vpc.datasource.VSwitch(
+              scope,
+              `${fnc.key}_datasource_subnet_${encodeBase64ForRosId(subnet)}`,
+              {
+                vSwitchId: subnet,
+                refreshOptions: 'Always',
+              },
+            ),
+        );
+
+        fcVpcSubnets?.forEach((subnetDatasource, index) => {
+          new nas.AccessRule(
+            scope,
+            `${fnc.key}_nas_rule_${encodeBase64ForRosId(fnc.network!.subnet_ids[index])}`,
+            {
+              accessGroupName: accessGroup.attrAccessGroupName,
+              sourceCidrIp: subnetDatasource.attrCidrBlock,
+            },
+            true,
+          );
+        });
 
         const nasResource = new nas.FileSystem(
           scope,
