@@ -3,7 +3,7 @@ import { Context } from '../../types';
 
 const getBootstrapTemplate = async (context: Context) => {
   const iamInfo = await getIamInfo(context);
-  const stackName = `serverlessInsight-bootstrap-${iamInfo?.accountId}-${context.region}`;
+  const stackName = `si-bootstrap-${iamInfo?.accountId}-${context.region}`;
 
   const template = {
     Description: 'ServerlessInsight Bootstrap Stack',
@@ -14,7 +14,7 @@ const getBootstrapTemplate = async (context: Context) => {
     },
     ROSTemplateFormatVersion: '2015-09-01',
     Resources: {
-      ServerlessInsight_artifacts_bucket: {
+      si_artifacts_bucket: {
         Type: 'ALIYUN::OSS::Bucket',
         Properties: {
           BucketName: {

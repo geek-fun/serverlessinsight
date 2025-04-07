@@ -84,7 +84,7 @@ const getParam = (key: string, records?: Array<{ key: string; value: string }>) 
   return records?.find((param) => param.key === key)?.value as string;
 };
 
-export const realValue = <T>(rawValue: string, ctx: Context): T => {
+export const calcValue = <T>(rawValue: string, ctx: Context): T => {
   const containsStage = rawValue.match(/\$\{ctx.stage}/);
   const containsVar = rawValue.match(/\$\{vars.\w+}/);
   const containsMap = rawValue.match(/\$\{stages\.(\w+)}/);
@@ -106,4 +106,19 @@ export const realValue = <T>(rawValue: string, ctx: Context): T => {
   }
 
   return value as T;
+};
+export const formatRosId = (id: string): string => {
+  // Insert underscore before uppercase letters, but only when they follow a lowercase letter
+  let result = id.replace(/([a-z])([A-Z])/g, '$1_$2');
+
+  // Convert to lowercase
+  result = result.toLowerCase();
+
+  // Remove leading underscore if it exists
+  if (result.startsWith('_')) {
+    result = result.substring(1);
+  }
+
+  // Replace special characters with underscores
+  return result.replace(/[/#,-]/g, '_');
 };

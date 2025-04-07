@@ -38,10 +38,10 @@ program
   .option('-f, --file <path>', 'specify the yaml file')
   .option('-s, --stage <stage>', 'specify the stage')
   .option('-r, --region <region>', 'specify the region')
-  .option('-pr, --provider <provider>', 'specify the provider')
-  .option('-ak, --accessKeyId <accessKeyId>', 'specify the AccessKeyId')
-  .option('-as, --accessKeySecret <accessKeySecret>', 'specify the AccessKeySecret')
-  .option('-at, --securityToken <securityToken>', 'specify the SecurityToken')
+  .option('-v, --provider <provider>', 'specify the provider')
+  .option('-k, --accessKeyId <accessKeyId>', 'specify the AccessKeyId')
+  .option('-x, --accessKeySecret <accessKeySecret>', 'specify the AccessKeySecret')
+  .option('-n, --securityToken <securityToken>', 'specify the SecurityToken')
   .option(
     '-p, --parameter <key=value>',
     'override parameters',
@@ -72,7 +72,7 @@ program
 
 program
   .command('template <stackName>')
-  .description('print ROS template')
+  .description('print platform specific infrastructure as code template')
   .option('-f, --file <path>', 'specify the yaml file')
   .option('-s, --stage <stage>', 'specify the stage')
   .option('-t, --format <type>', 'output content type (JSON or YAML)', 'JSON')
@@ -84,10 +84,10 @@ program
   .command('destroy <stackName>')
   .option('-f, --file <path>', 'specify the yaml file')
   .option('-r, --region <region>', 'specify the region')
-  .option('-pr, --provider <provider>', 'specify the provider')
-  .option('-ak, --accessKeyId <accessKeyId>', 'specify the AccessKeyId')
-  .option('-as, --accessKeySecret <accessKeySecret>', 'specify the AccessKeySecret')
-  .option('-at, --securityToken <securityToken>', 'specify the SecurityToken')
+  .option('-v, --provider <provider>', 'specify the provider')
+  .option('-k, --accessKeyId <accessKeyId>', 'specify the AccessKeyId')
+  .option('-x, --accessKeySecret <accessKeySecret>', 'specify the AccessKeySecret')
+  .option('-n, --securityToken <securityToken>', 'specify the SecurityToken')
   .description('destroy serverless stack')
   .action(
     async (stackName, { file, region, provider, accessKeyId, accessKeySecret, securityToken }) => {

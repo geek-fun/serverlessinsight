@@ -2,10 +2,11 @@ import { BucketAccessEnum, BucketDomain, Context } from '../../types';
 import * as oss from '@alicloud/ros-cdk-oss';
 import * as ros from '@alicloud/ros-cdk-core';
 import {
-  encodeBase64ForRosId,
+  calcRefs,
+  calcValue,
+  formatRosId,
   getAssets,
   OSS_DEPLOYMENT_TIMEOUT,
-  calcRefs,
   splitDomain,
 } from '../../common';
 import * as ossDeployment from '@alicloud/ros-cdk-ossdeployment';
@@ -58,7 +59,7 @@ export const resolveBuckets = (
   }
 
   buckets.forEach((bucket) => {
-    const ossBucket = new oss.Bucket(scope, calcRefs(bucket.key, context), {
+    const ossBucket = new oss.Bucket(scope, bucket.key, {
       bucketName: calcRefs(bucket.name, context),
       accessControl: aclMap.get(
         calcRefs(bucket.security?.acl, context) ?? ('' as BucketAccessEnum),
@@ -78,10 +79,10 @@ export const resolveBuckets = (
         : undefined,
     });
     if (bucket.website?.code) {
-      const filePath = path.resolve(process.cwd(), calcRefs(bucket.website.code, context));
+      const filePath = path.resolve(process.cwd(), calcValue(bucket.website.code, context));
       new ossDeployment.BucketDeployment(
         scope,
-        `si_auto_${bucket.key}_bucket_code_deployment`,
+        formatRosId(`si_auto_${bucket.key}_bucket_code_deployment`),
         {
           sources: getAssets(filePath),
           destinationBucket: ossBucket.attrName,
@@ -95,29 +96,21 @@ export const resolveBuckets = (
     }
     if (bucket.website?.domain) {
       const { rr, domainName } = splitDomain(bucket.website.domain);
-      new oss.Domain(
-        scope,
-        `${bucket.key}_custom_domain_${encodeBase64ForRosId(bucket.website.domain)}`,
-        {
-          bucketName: ossBucket.attrName,
-          domainName: calcRefs(bucket.website.domain, context),
-        },
-      );
+      new oss.Domain(scope, formatRosId(`${bucket.key}_custom_domain`), {
+        bucketName: ossBucket.attrName,
+        domainName: calcRefs(bucket.website.domain, context),
+      });
 
-      new dns.DomainRecord(
-        scope,
-        `${bucket.key}_custom_domain_record_${encodeBase64ForRosId(bucket.website.domain)}`,
-        {
-          domainName: domainName,
-          rr,
-          type: 'CNAME',
-          value: [BucketAccessEnum.PUBLIC_READ, BucketAccessEnum.PUBLIC_READ_WRITE].includes(
-            bucket.security?.acl ?? ('' as BucketAccessEnum),
-          )
-            ? ossBucket.attrDomainName
-            : ossBucket.attrInternalDomainName,
-        },
-      );
+      new dns.DomainRecord(scope, formatRosId(`${bucket.key}_custom_domain_record`), {
+        domainName: domainName,
+        rr,
+        type: 'CNAME',
+        value: [BucketAccessEnum.PUBLIC_READ, BucketAccessEnum.PUBLIC_READ_WRITE].includes(
+          bucket.security?.acl ?? ('' as BucketAccessEnum),
+        )
+          ? ossBucket.attrDomainName
+          : ossBucket.attrInternalDomainName,
+      });
     }
   });
 };
