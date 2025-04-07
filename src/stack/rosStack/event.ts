@@ -24,7 +24,7 @@ export const resolveEvents = (
       scope,
       formatRosId(`${event.key}_agw_role`),
       {
-        roleName: calcRefs(`${context}-${event.name}-agw-access-role`, context),
+        roleName: calcRefs(`${event.name}-agw-access-role`, context),
         description: calcRefs(`${service} role`, context),
         assumeRolePolicyDocument: {
           version: '1',
@@ -101,7 +101,7 @@ export const resolveEvents = (
         scope,
         formatRosId(`${event.key}_agw_api_${key}`),
         {
-          apiName: calcRefs(`${event.name}-agw-api-${key.replace('_', '-')}`, context),
+          apiName: calcRefs(`${event.name}-agw-api-${key.replace(/_/g, '-')}`, context),
           groupId: apiGatewayGroup.attrGroupId,
           visibility: 'PRIVATE',
           authType: 'ANONYMOUS',
@@ -133,7 +133,10 @@ export const resolveEvents = (
         apiId: api.attrApiId,
         groupId: apiGatewayGroup.attrGroupId,
         stageName: 'RELEASE',
-        description: `${service} Api Gateway deployment for ${key}`,
+        description: calcRefs(
+          `${service} Api Gateway deployment for api: ${trigger.method} ${trigger.path}`,
+          context,
+        ),
       });
     });
   });

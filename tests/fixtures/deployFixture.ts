@@ -88,12 +88,12 @@ export const oneFcOneGatewayRos = {
   },
   ROSTemplateFormatVersion: '2015-09-01',
   Resources: {
-    gateway_event_api_R0VUXy9hcGkvaGVsbG8: {
+    gateway_event_agw_api_deployment_get_api_hello: {
       Properties: {
-        ApiName: 'gateway_event_api_R0VUXy9hcGkvaGVsbG8',
+        ApiName: 'gateway_event_agw_api_deployment_get_api_hello',
         AuthType: 'ANONYMOUS',
         GroupId: {
-          'Fn::GetAtt': ['my-demo-service_apigroup', 'GroupId'],
+          'Fn::GetAtt': ['gateway_event_agw_group', 'GroupId'],
         },
         RequestConfig: {
           RequestHttpMethod: 'GET',
@@ -111,7 +111,7 @@ export const oneFcOneGatewayRos = {
             },
             Method: 'GET',
             RoleArn: {
-              'Fn::GetAtt': ['gateway_event_role', 'Arn'],
+              'Fn::GetAtt': ['gateway_event_agw_role', 'Arn'],
             },
           },
           ServiceProtocol: 'FunctionCompute',
@@ -126,29 +126,29 @@ export const oneFcOneGatewayRos = {
       },
       Type: 'ALIYUN::ApiGateway::Api',
     },
-    gateway_event_custom_domain_YXBpLm15LWRlbW8tc2VydmljZS5jb20: {
-      DependsOn: ['gateway_event_custom_domain_record_YXBpLm15LWRlbW8tc2VydmljZS5jb20'],
+    gateway_event_agw_custom_domain: {
+      DependsOn: ['gateway_event_agw_custom_domain_record'],
       Properties: {
         DomainName: 'api.my-demo-service.com',
         GroupId: {
-          'Fn::GetAtt': ['my-demo-service_apigroup', 'GroupId'],
+          'Fn::GetAtt': ['gateway_event_agw_group', 'GroupId'],
         },
       },
       Type: 'ALIYUN::ApiGateway::CustomDomain',
     },
-    gateway_event_custom_domain_record_YXBpLm15LWRlbW8tc2VydmljZS5jb20: {
+    gateway_event_agw_custom_domain_record: {
       Properties: {
         DomainName: 'my-demo-service.com',
         RR: 'api',
         TTL: 600,
         Type: 'CNAME',
         Value: {
-          'Fn::GetAtt': ['my-demo-service_apigroup', 'SubDomain'],
+          'Fn::GetAtt': ['gateway_event_agw_group', 'SubDomain'],
         },
       },
       Type: 'ALIYUN::DNS::DomainRecord',
     },
-    gateway_event_role: {
+    gateway_event_agw_role: {
       Properties: {
         AssumeRolePolicyDocument: {
           Statement: [
@@ -184,9 +184,9 @@ export const oneFcOneGatewayRos = {
     },
     hello_fn: {
       DependsOn: [
-        'my-demo-service_sls',
-        'my-demo-service_sls_logstore',
-        'my-demo-service_sls_index',
+        'my_demo_service_sls',
+        'my_demo_service_sls_logstore',
+        'my_demo_service_sls_index',
       ],
       Properties: {
         Code: {
@@ -200,10 +200,10 @@ export const oneFcOneGatewayRos = {
         LogConfig: {
           EnableRequestMetrics: true,
           Logstore: {
-            'Fn::GetAtt': ['my-demo-service_sls_logstore', 'LogstoreName'],
+            'Fn::GetAtt': ['my_demo_service_sls_logstore', 'LogstoreName'],
           },
           Project: {
-            'Fn::GetAtt': ['my-demo-service_sls_logstore', 'ProjectName'],
+            'Fn::GetAtt': ['my_demo_service_sls_logstore', 'ProjectName'],
           },
         },
         MemorySize: 128,
@@ -212,9 +212,9 @@ export const oneFcOneGatewayRos = {
       },
       Type: 'ALIYUN::FC3::Function',
     },
-    'my-demo-service_apigroup': {
+    gateway_event_agw_group: {
       Properties: {
-        GroupName: 'my-demo-service_apigroup',
+        GroupName: 'my-demo-service-dev-agw-group',
         PassthroughHeaders: 'host',
         Tags: [
           {
@@ -228,17 +228,17 @@ export const oneFcOneGatewayRos = {
     'my-demo-service_deployment': {
       Properties: {
         ApiId: {
-          'Fn::GetAtt': ['gateway_event_api_R0VUXy9hcGkvaGVsbG8', 'ApiId'],
+          'Fn::GetAtt': ['gateway_event_agw_api_deployment_get_api_hello', 'ApiId'],
         },
         Description: 'my-demo-service Api Gateway deployment',
         GroupId: {
-          'Fn::GetAtt': ['my-demo-service_apigroup', 'GroupId'],
+          'Fn::GetAtt': ['gateway_event_agw_group', 'GroupId'],
         },
         StageName: 'RELEASE',
       },
       Type: 'ALIYUN::ApiGateway::Deployment',
     },
-    'my-demo-service_sls': {
+    my_demo_service_sls: {
       Properties: {
         Name: 'my-demo-service-sls',
         Tags: [
@@ -250,22 +250,22 @@ export const oneFcOneGatewayRos = {
       },
       Type: 'ALIYUN::SLS::Project',
     },
-    'my-demo-service_sls_index': {
+    my_demo_service_sls_index: {
       Properties: {
         FullTextIndex: {
           Enable: true,
         },
         LogReduce: false,
         LogstoreName: {
-          'Fn::GetAtt': ['my-demo-service_sls_logstore', 'LogstoreName'],
+          'Fn::GetAtt': ['my_demo_service_sls_logstore', 'LogstoreName'],
         },
         ProjectName: {
-          'Fn::GetAtt': ['my-demo-service_sls', 'Name'],
+          'Fn::GetAtt': ['my_demo_service_sls', 'Name'],
         },
       },
       Type: 'ALIYUN::SLS::Index',
     },
-    'my-demo-service_sls_logstore': {
+    my_demo_service_sls_logstore: {
       Properties: {
         AppendMeta: false,
         AutoSplit: false,
@@ -273,7 +273,7 @@ export const oneFcOneGatewayRos = {
         LogstoreName: 'my-demo-service-sls-logstore',
         PreserveStorage: false,
         ProjectName: {
-          'Fn::GetAtt': ['my-demo-service_sls', 'Name'],
+          'Fn::GetAtt': ['my_demo_service_sls', 'Name'],
         },
         ShardCount: 2,
         TTL: 7,
@@ -305,12 +305,12 @@ export const referredServiceRos = {
   },
   ROSTemplateFormatVersion: '2015-09-01',
   Resources: {
-    gateway_event_api_R0VUXy9hcGkvaGVsbG8: {
+    gateway_event_agw_api_deployment_get_api_hello: {
       Properties: {
-        ApiName: 'gateway_event_api_R0VUXy9hcGkvaGVsbG8',
+        ApiName: 'gateway_event_agw_api_deployment_get_api_hello',
         AuthType: 'ANONYMOUS',
         GroupId: {
-          'Fn::GetAtt': ['my-demo-service-dev_apigroup', 'GroupId'],
+          'Fn::GetAtt': ['gateway_event_agw_group', 'GroupId'],
         },
         RequestConfig: {
           RequestHttpMethod: 'GET',
@@ -328,7 +328,7 @@ export const referredServiceRos = {
             },
             Method: 'GET',
             RoleArn: {
-              'Fn::GetAtt': ['gateway_event_role', 'Arn'],
+              'Fn::GetAtt': ['gateway_event_agw_role', 'Arn'],
             },
           },
           ServiceProtocol: 'FunctionCompute',
@@ -343,29 +343,29 @@ export const referredServiceRos = {
       },
       Type: 'ALIYUN::ApiGateway::Api',
     },
-    gateway_event_custom_domain_YXBpLm15LWRlbW8tc2VydmljZS5jb20: {
-      DependsOn: ['gateway_event_custom_domain_record_YXBpLm15LWRlbW8tc2VydmljZS5jb20'],
+    gateway_event_agw_custom_domain: {
+      DependsOn: ['gateway_event_agw_custom_domain_record'],
       Properties: {
         DomainName: 'api.my-demo-service.com',
         GroupId: {
-          'Fn::GetAtt': ['my-demo-service-dev_apigroup', 'GroupId'],
+          'Fn::GetAtt': ['gateway_event_agw_group', 'GroupId'],
         },
       },
       Type: 'ALIYUN::ApiGateway::CustomDomain',
     },
-    gateway_event_custom_domain_record_YXBpLm15LWRlbW8tc2VydmljZS5jb20: {
+    gateway_event_agw_custom_domain_record: {
       Properties: {
         DomainName: 'my-demo-service.com',
         RR: 'api',
         TTL: 600,
         Type: 'CNAME',
         Value: {
-          'Fn::GetAtt': ['my-demo-service-dev_apigroup', 'SubDomain'],
+          'Fn::GetAtt': ['gateway_event_agw_group', 'SubDomain'],
         },
       },
       Type: 'ALIYUN::DNS::DomainRecord',
     },
-    gateway_event_role: {
+    gateway_event_agw_role: {
       Properties: {
         AssumeRolePolicyDocument: {
           Statement: [
@@ -395,15 +395,15 @@ export const referredServiceRos = {
             PolicyName: 'my-demo-service-dev-gateway_event-policy',
           },
         ],
-        RoleName: 'my-demo-service-dev-gateway_event-agw-access-role',
+        RoleName: 'gateway-event-agw-access-role',
       },
       Type: 'ALIYUN::RAM::Role',
     },
     hello_fn: {
       DependsOn: [
-        'my-demo-service-dev_sls',
-        'my-demo-service-dev_sls_logstore',
-        'my-demo-service-dev_sls_index',
+        'my_demo_service_dev_sls',
+        'my_demo_service_dev_sls_logstore',
+        'my_demo_service_dev_sls_index',
       ],
       Properties: {
         Code: {
@@ -417,10 +417,10 @@ export const referredServiceRos = {
         LogConfig: {
           EnableRequestMetrics: true,
           Logstore: {
-            'Fn::GetAtt': ['my-demo-service-dev_sls_logstore', 'LogstoreName'],
+            'Fn::GetAtt': ['my_demo_service_dev_sls_logstore', 'LogstoreName'],
           },
           Project: {
-            'Fn::GetAtt': ['my-demo-service-dev_sls_logstore', 'ProjectName'],
+            'Fn::GetAtt': ['my_demo_service_dev_sls_logstore', 'ProjectName'],
           },
         },
         MemorySize: 128,
@@ -429,9 +429,9 @@ export const referredServiceRos = {
       },
       Type: 'ALIYUN::FC3::Function',
     },
-    'my-demo-service-dev_apigroup': {
+    gateway_event_agw_group: {
       Properties: {
-        GroupName: 'my-demo-service-dev_apigroup',
+        GroupName: 'my-demo-service-dev-agw-group',
         PassthroughHeaders: 'host',
         Tags: [
           {
@@ -445,11 +445,11 @@ export const referredServiceRos = {
     'my-demo-service-dev_deployment': {
       Properties: {
         ApiId: {
-          'Fn::GetAtt': ['gateway_event_api_R0VUXy9hcGkvaGVsbG8', 'ApiId'],
+          'Fn::GetAtt': ['gateway_event_agw_api_deployment_get_api_hello', 'ApiId'],
         },
         Description: 'my-demo-service-dev Api Gateway deployment',
         GroupId: {
-          'Fn::GetAtt': ['my-demo-service-dev_apigroup', 'GroupId'],
+          'Fn::GetAtt': ['gateway_event_agw_group', 'GroupId'],
         },
         StageName: 'RELEASE',
       },
@@ -474,7 +474,7 @@ export const referredServiceRos = {
         },
         LogReduce: false,
         LogstoreName: {
-          'Fn::GetAtt': ['my-demo-service-dev_sls_logstore', 'LogstoreName'],
+          'Fn::GetAtt': ['my_demo_service_dev_sls_logstore', 'LogstoreName'],
         },
         ProjectName: {
           'Fn::GetAtt': ['my-demo-service-dev_sls', 'Name'],
@@ -482,7 +482,7 @@ export const referredServiceRos = {
       },
       Type: 'ALIYUN::SLS::Index',
     },
-    'my-demo-service-dev_sls_logstore': {
+    my_demo_service_dev_sls_logstore: {
       Properties: {
         AppendMeta: false,
         AutoSplit: false,
@@ -526,28 +526,28 @@ export const minimumRos = {
   Metadata: { 'ALIYUN::ROS::Interface': { TemplateTags: ['Create by ROS CDK'] } },
   ROSTemplateFormatVersion: '2015-09-01',
   Resources: {
-    'my-demo-minimum-service_sls': {
+    my_demo_minimum_service_sls: {
       Properties: {
         Name: 'my-demo-minimum-service-sls',
       },
       Type: 'ALIYUN::SLS::Project',
     },
-    'my-demo-minimum-service_sls_index': {
+    my_demo_minimum_service_sls_index: {
       Properties: {
         FullTextIndex: {
           Enable: true,
         },
         LogReduce: false,
         LogstoreName: {
-          'Fn::GetAtt': ['my-demo-minimum-service_sls_logstore', 'LogstoreName'],
+          'Fn::GetAtt': ['my_demo_minimum_service_sls_logstore', 'LogstoreName'],
         },
         ProjectName: {
-          'Fn::GetAtt': ['my-demo-minimum-service_sls', 'Name'],
+          'Fn::GetAtt': ['my_demo_minimum_service_sls', 'Name'],
         },
       },
       Type: 'ALIYUN::SLS::Index',
     },
-    'my-demo-minimum-service_sls_logstore': {
+    my_demo_minimum_service_sls_logstore: {
       Properties: {
         AppendMeta: false,
         AutoSplit: false,
@@ -555,7 +555,7 @@ export const minimumRos = {
         LogstoreName: 'my-demo-minimum-service-sls-logstore',
         PreserveStorage: false,
         ProjectName: {
-          'Fn::GetAtt': ['my-demo-minimum-service_sls', 'Name'],
+          'Fn::GetAtt': ['my_demo_minimum_service_sls', 'Name'],
         },
         ShardCount: 2,
         TTL: 7,
@@ -639,9 +639,9 @@ export const oneFcRos = {
   Resources: {
     hello_fn: {
       DependsOn: [
-        'my-demo-service_sls',
-        'my-demo-service_sls_logstore',
-        'my-demo-service_sls_index',
+        'my_demo_service_sls',
+        'my_demo_service_sls_logstore',
+        'my_demo_service_sls_index',
       ],
       Properties: {
         Code: {
@@ -655,10 +655,10 @@ export const oneFcRos = {
         LogConfig: {
           EnableRequestMetrics: true,
           Logstore: {
-            'Fn::GetAtt': ['my-demo-service_sls_logstore', 'LogstoreName'],
+            'Fn::GetAtt': ['my_demo_service_sls_logstore', 'LogstoreName'],
           },
           Project: {
-            'Fn::GetAtt': ['my-demo-service_sls_logstore', 'ProjectName'],
+            'Fn::GetAtt': ['my_demo_service_sls_logstore', 'ProjectName'],
           },
         },
         MemorySize: 128,
@@ -667,7 +667,7 @@ export const oneFcRos = {
       },
       Type: 'ALIYUN::FC3::Function',
     },
-    'my-demo-service_sls': {
+    my_demo_service_sls: {
       Properties: {
         Name: 'my-demo-service-sls',
         Tags: [
@@ -679,22 +679,22 @@ export const oneFcRos = {
       },
       Type: 'ALIYUN::SLS::Project',
     },
-    'my-demo-service_sls_index': {
+    my_demo_service_sls_index: {
       Properties: {
         FullTextIndex: {
           Enable: true,
         },
         LogReduce: false,
         LogstoreName: {
-          'Fn::GetAtt': ['my-demo-service_sls_logstore', 'LogstoreName'],
+          'Fn::GetAtt': ['my_demo_service_sls_logstore', 'LogstoreName'],
         },
         ProjectName: {
-          'Fn::GetAtt': ['my-demo-service_sls', 'Name'],
+          'Fn::GetAtt': ['my_demo_service_sls', 'Name'],
         },
       },
       Type: 'ALIYUN::SLS::Index',
     },
-    'my-demo-service_sls_logstore': {
+    my_demo_service_sls_logstore: {
       Properties: {
         AppendMeta: false,
         AutoSplit: false,
@@ -702,7 +702,7 @@ export const oneFcRos = {
         LogstoreName: 'my-demo-service-sls-logstore',
         PreserveStorage: false,
         ProjectName: {
-          'Fn::GetAtt': ['my-demo-service_sls', 'Name'],
+          'Fn::GetAtt': ['my_demo_service_sls', 'Name'],
         },
         ShardCount: 2,
         TTL: 7,
@@ -778,9 +778,9 @@ export const oneFcIacWithNasRos = {
         },
       },
       DependsOn: [
-        'my-demo-service_sls',
-        'my-demo-service_sls_logstore',
-        'my-demo-service_sls_index',
+        'my_demo_service_sls',
+        'my_demo_service_sls_logstore',
+        'my_demo_service_sls_index',
         'hello_fn_nas_mount_L21udC9uYXM',
       ],
     },
@@ -1004,9 +1004,9 @@ export const oneFcWithStageRos = {
   Resources: {
     hello_fn: {
       DependsOn: [
-        'my-demo-service_sls',
-        'my-demo-service_sls_logstore',
-        'my-demo-service_sls_index',
+        'my_demo_service_sls',
+        'my_demo_service_sls_logstore',
+        'my_demo_service_sls_index',
       ],
       Properties: {
         Code: { ZipFile: 'resolved-code' },
@@ -1016,10 +1016,10 @@ export const oneFcWithStageRos = {
         LogConfig: {
           EnableRequestMetrics: true,
           Logstore: {
-            'Fn::GetAtt': ['my-demo-service_sls_logstore', 'LogstoreName'],
+            'Fn::GetAtt': ['my_demo_service_sls_logstore', 'LogstoreName'],
           },
           Project: {
-            'Fn::GetAtt': ['my-demo-service_sls_logstore', 'ProjectName'],
+            'Fn::GetAtt': ['my_demo_service_sls_logstore', 'ProjectName'],
           },
         },
         MemorySize: 128,
@@ -1028,7 +1028,7 @@ export const oneFcWithStageRos = {
       },
       Type: 'ALIYUN::FC3::Function',
     },
-    'my-demo-service_sls': {
+    my_demo_service_sls: {
       Properties: {
         Name: 'my-demo-service-sls',
         Tags: [
@@ -1040,22 +1040,22 @@ export const oneFcWithStageRos = {
       },
       Type: 'ALIYUN::SLS::Project',
     },
-    'my-demo-service_sls_index': {
+    my_demo_service_sls_index: {
       Properties: {
         FullTextIndex: {
           Enable: true,
         },
         LogReduce: false,
         LogstoreName: {
-          'Fn::GetAtt': ['my-demo-service_sls_logstore', 'LogstoreName'],
+          'Fn::GetAtt': ['my_demo_service_sls_logstore', 'LogstoreName'],
         },
         ProjectName: {
-          'Fn::GetAtt': ['my-demo-service_sls', 'Name'],
+          'Fn::GetAtt': ['my_demo_service_sls', 'Name'],
         },
       },
       Type: 'ALIYUN::SLS::Index',
     },
-    'my-demo-service_sls_logstore': {
+    my_demo_service_sls_logstore: {
       Properties: {
         AppendMeta: false,
         AutoSplit: false,
@@ -1063,7 +1063,7 @@ export const oneFcWithStageRos = {
         LogstoreName: 'my-demo-service-sls-logstore',
         PreserveStorage: false,
         ProjectName: {
-          'Fn::GetAtt': ['my-demo-service_sls', 'Name'],
+          'Fn::GetAtt': ['my_demo_service_sls', 'Name'],
         },
         ShardCount: 2,
         TTL: 7,
@@ -1317,12 +1317,12 @@ export const largeCodeRos = {
       },
       Type: 'ALIYUN::FC::Service',
     },
-    gateway_event_api_R0VUXy9hcGkvaGVsbG8: {
+    gateway_event_agw_api_deployment_get_api_hello: {
       Properties: {
-        ApiName: 'gateway_event_api_R0VUXy9hcGkvaGVsbG8',
+        ApiName: 'gateway_event_agw_api_deployment_get_api_hello',
         AuthType: 'ANONYMOUS',
         GroupId: {
-          'Fn::GetAtt': ['my-demo-service_apigroup', 'GroupId'],
+          'Fn::GetAtt': ['gateway_event_agw_group', 'GroupId'],
         },
         RequestConfig: {
           RequestHttpMethod: 'GET',
@@ -1340,7 +1340,7 @@ export const largeCodeRos = {
             },
             Method: 'GET',
             RoleArn: {
-              'Fn::GetAtt': ['gateway_event_role', 'Arn'],
+              'Fn::GetAtt': ['gateway_event_agw_role', 'Arn'],
             },
           },
           ServiceProtocol: 'FunctionCompute',
@@ -1357,9 +1357,9 @@ export const largeCodeRos = {
     },
     hello_fn: {
       DependsOn: [
-        'my-demo-service_sls',
-        'my-demo-service_sls_logstore',
-        'my-demo-service_sls_index',
+        'my_demo_service_sls',
+        'my_demo_service_sls_logstore',
+        'my_demo_service_sls_index',
         'my-demo-service_artifacts_code_deployment',
       ],
       Properties: {
@@ -1377,10 +1377,10 @@ export const largeCodeRos = {
         LogConfig: {
           EnableRequestMetrics: true,
           Logstore: {
-            'Fn::GetAtt': ['my-demo-service_sls_logstore', 'LogstoreName'],
+            'Fn::GetAtt': ['my_demo_service_sls_logstore', 'LogstoreName'],
           },
           Project: {
-            'Fn::GetAtt': ['my-demo-service_sls_logstore', 'ProjectName'],
+            'Fn::GetAtt': ['my_demo_service_sls_logstore', 'ProjectName'],
           },
         },
         MemorySize: 128,
@@ -1389,9 +1389,9 @@ export const largeCodeRos = {
       },
       Type: 'ALIYUN::FC3::Function',
     },
-    'my-demo-service_apigroup': {
+    gateway_event_agw_group: {
       Properties: {
-        GroupName: 'my-demo-service_apigroup',
+        GroupName: 'my-demo-service-dev-agw-group',
         PassthroughHeaders: 'host',
         Tags: [
           {
@@ -1427,39 +1427,39 @@ export const largeCodeRos = {
     'my-demo-service_deployment': {
       Properties: {
         ApiId: {
-          'Fn::GetAtt': ['gateway_event_api_R0VUXy9hcGkvaGVsbG8', 'ApiId'],
+          'Fn::GetAtt': ['gateway_event_agw_api_deployment_get_api_hello', 'ApiId'],
         },
         Description: 'my-demo-service Api Gateway deployment',
         GroupId: {
-          'Fn::GetAtt': ['my-demo-service_apigroup', 'GroupId'],
+          'Fn::GetAtt': ['gateway_event_agw_group', 'GroupId'],
         },
         StageName: 'RELEASE',
       },
       Type: 'ALIYUN::ApiGateway::Deployment',
     },
-    gateway_event_custom_domain_YXBpLm15LWRlbW8tc2VydmljZS5jb20: {
-      DependsOn: ['gateway_event_custom_domain_record_YXBpLm15LWRlbW8tc2VydmljZS5jb20'],
+    gateway_event_agw_custom_domain: {
+      DependsOn: ['gateway_event_agw_custom_domain_record'],
       Properties: {
         DomainName: 'api.my-demo-service.com',
         GroupId: {
-          'Fn::GetAtt': ['my-demo-service_apigroup', 'GroupId'],
+          'Fn::GetAtt': ['gateway_event_agw_group', 'GroupId'],
         },
       },
       Type: 'ALIYUN::ApiGateway::CustomDomain',
     },
-    gateway_event_custom_domain_record_YXBpLm15LWRlbW8tc2VydmljZS5jb20: {
+    gateway_event_agw_custom_domain_record: {
       Properties: {
         DomainName: 'my-demo-service.com',
         RR: 'api',
         TTL: 600,
         Type: 'CNAME',
         Value: {
-          'Fn::GetAtt': ['my-demo-service_apigroup', 'SubDomain'],
+          'Fn::GetAtt': ['gateway_event_agw_group', 'SubDomain'],
         },
       },
       Type: 'ALIYUN::DNS::DomainRecord',
     },
-    gateway_event_role: {
+    gateway_event_agw_role: {
       Properties: {
         AssumeRolePolicyDocument: {
           Statement: [
@@ -1493,7 +1493,7 @@ export const largeCodeRos = {
       },
       Type: 'ALIYUN::RAM::Role',
     },
-    'my-demo-service_sls': {
+    my_demo_service_sls: {
       Properties: {
         Name: 'my-demo-service-sls',
         Tags: [
@@ -1505,22 +1505,22 @@ export const largeCodeRos = {
       },
       Type: 'ALIYUN::SLS::Project',
     },
-    'my-demo-service_sls_index': {
+    my_demo_service_sls_index: {
       Properties: {
         FullTextIndex: {
           Enable: true,
         },
         LogReduce: false,
         LogstoreName: {
-          'Fn::GetAtt': ['my-demo-service_sls_logstore', 'LogstoreName'],
+          'Fn::GetAtt': ['my_demo_service_sls_logstore', 'LogstoreName'],
         },
         ProjectName: {
-          'Fn::GetAtt': ['my-demo-service_sls', 'Name'],
+          'Fn::GetAtt': ['my_demo_service_sls', 'Name'],
         },
       },
       Type: 'ALIYUN::SLS::Index',
     },
-    'my-demo-service_sls_logstore': {
+    my_demo_service_sls_logstore: {
       Properties: {
         AppendMeta: false,
         AutoSplit: false,
@@ -1528,7 +1528,7 @@ export const largeCodeRos = {
         LogstoreName: 'my-demo-service-sls-logstore',
         PreserveStorage: false,
         ProjectName: {
-          'Fn::GetAtt': ['my-demo-service_sls', 'Name'],
+          'Fn::GetAtt': ['my_demo_service_sls', 'Name'],
         },
         ShardCount: 2,
         TTL: 7,

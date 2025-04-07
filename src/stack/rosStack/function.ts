@@ -248,7 +248,7 @@ export const resolveFunctions = (
           formatRosId(`${fnc.key}_nas_access_${mountPathValue}`),
           {
             accessGroupName: calcRefs(
-              `${fnc.name}-nas-access-${mountPathValue.replace('_', '-')}`,
+              `${fnc.name}-nas-access-${mountPathValue.replace(/_/g, '-')}`,
               context,
             ),
             accessGroupType: 'Vpc',
