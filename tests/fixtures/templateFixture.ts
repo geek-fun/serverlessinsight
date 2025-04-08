@@ -40,7 +40,7 @@ export const jsonTemplate = {
     },
   },
   Resources: {
-    insight_poc_sls: {
+    sls_project: {
       Type: 'ALIYUN::SLS::Project',
       Properties: {
         Name: 'insight-poc-sls',
@@ -56,12 +56,12 @@ export const jsonTemplate = {
         ],
       },
     },
-    insight_poc_sls_logstore: {
+    sls_logstore: {
       Type: 'ALIYUN::SLS::Logstore',
       Properties: {
         LogstoreName: 'insight-poc-sls-logstore',
         ProjectName: {
-          'Fn::GetAtt': ['insight_poc_sls', 'Name'],
+          'Fn::GetAtt': ['sls_project', 'Name'],
         },
         AppendMeta: false,
         AutoSplit: false,
@@ -71,17 +71,17 @@ export const jsonTemplate = {
         TTL: 7,
       },
     },
-    insight_poc_sls_index: {
+    sls_index: {
       Type: 'ALIYUN::SLS::Index',
       Properties: {
         FullTextIndex: {
           Enable: true,
         },
         LogstoreName: {
-          'Fn::GetAtt': ['insight_poc_sls_logstore', 'LogstoreName'],
+          'Fn::GetAtt': ['sls_logstore', 'LogstoreName'],
         },
         ProjectName: {
-          'Fn::GetAtt': ['insight_poc_sls', 'Name'],
+          'Fn::GetAtt': ['sls_project', 'Name'],
         },
         LogReduce: false,
       },
@@ -111,17 +111,17 @@ export const jsonTemplate = {
         },
         LogConfig: {
           Project: {
-            'Fn::GetAtt': ['insight_poc_sls_logstore', 'ProjectName'],
+            'Fn::GetAtt': ['sls_logstore', 'ProjectName'],
           },
           Logstore: {
-            'Fn::GetAtt': ['insight_poc_sls_logstore', 'LogstoreName'],
+            'Fn::GetAtt': ['sls_logstore', 'LogstoreName'],
           },
           EnableRequestMetrics: true,
         },
         MemorySize: 512,
         Timeout: 10,
       },
-      DependsOn: ['insight_poc_sls', 'insight_poc_sls_logstore', 'insight_poc_sls_index'],
+      DependsOn: ['sls_project', 'sls_logstore', 'sls_index'],
     },
     gateway_event_agw_role: {
       Type: 'ALIYUN::RAM::Role',
@@ -263,7 +263,7 @@ Mappings:
     prod:
       region: cn-shanghai
 Resources:
-  insight_poc_sls:
+  sls_project:
     Type: ALIYUN::SLS::Project
     Properties:
       Name: insight-poc-sls
@@ -272,13 +272,13 @@ Resources:
           Key: iac-provider
         - Value: geek-fun
           Key: owner
-  insight_poc_sls_logstore:
+  sls_logstore:
     Type: ALIYUN::SLS::Logstore
     Properties:
       LogstoreName: insight-poc-sls-logstore
       ProjectName:
         Fn::GetAtt:
-          - insight_poc_sls
+          - sls_project
           - Name
       AppendMeta: false
       AutoSplit: false
@@ -286,18 +286,18 @@ Resources:
       PreserveStorage: false
       ShardCount: 2
       TTL: 7
-  insight_poc_sls_index:
+  sls_index:
     Type: ALIYUN::SLS::Index
     Properties:
       FullTextIndex:
         Enable: true
       LogstoreName:
         Fn::GetAtt:
-          - insight_poc_sls_logstore
+          - sls_logstore
           - LogstoreName
       ProjectName:
         Fn::GetAtt:
-          - insight_poc_sls
+          - sls_project
           - Name
       LogReduce: false
   insight_poc_fn:
@@ -322,19 +322,19 @@ Resources:
       LogConfig:
         Project:
           Fn::GetAtt:
-            - insight_poc_sls_logstore
+            - sls_logstore
             - ProjectName
         Logstore:
           Fn::GetAtt:
-            - insight_poc_sls_logstore
+            - sls_logstore
             - LogstoreName
         EnableRequestMetrics: true
       MemorySize: 512
       Timeout: 10
     DependsOn:
-      - insight_poc_sls
-      - insight_poc_sls_logstore
-      - insight_poc_sls_index
+      - sls_project
+      - sls_logstore
+      - sls_index
   gateway_event_agw_role:
     Type: ALIYUN::RAM::Role
     Properties:

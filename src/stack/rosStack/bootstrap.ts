@@ -14,7 +14,7 @@ const getBootstrapTemplate = async (context: Context) => {
     },
     ROSTemplateFormatVersion: '2015-09-01',
     Resources: {
-      si_artifacts_bucket: {
+      si_auto_artifacts_bucket: {
         Type: 'ALIYUN::OSS::Bucket',
         Properties: {
           BucketName: {

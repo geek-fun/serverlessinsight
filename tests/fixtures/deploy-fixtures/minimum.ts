@@ -27,28 +27,28 @@ export const minimumRos = {
   Metadata: { 'ALIYUN::ROS::Interface': { TemplateTags: ['Create by ROS CDK'] } },
   ROSTemplateFormatVersion: '2015-09-01',
   Resources: {
-    my_demo_minimum_service_sls: {
+    sls_project: {
       Properties: {
         Name: 'my-demo-minimum-service-sls',
       },
       Type: 'ALIYUN::SLS::Project',
     },
-    my_demo_minimum_service_sls_index: {
+    sls_index: {
       Properties: {
         FullTextIndex: {
           Enable: true,
         },
         LogReduce: false,
         LogstoreName: {
-          'Fn::GetAtt': ['my_demo_minimum_service_sls_logstore', 'LogstoreName'],
+          'Fn::GetAtt': ['sls_logstore', 'LogstoreName'],
         },
         ProjectName: {
-          'Fn::GetAtt': ['my_demo_minimum_service_sls', 'Name'],
+          'Fn::GetAtt': ['sls_project', 'Name'],
         },
       },
       Type: 'ALIYUN::SLS::Index',
     },
-    my_demo_minimum_service_sls_logstore: {
+    sls_logstore: {
       Properties: {
         AppendMeta: false,
         AutoSplit: false,
@@ -56,7 +56,7 @@ export const minimumRos = {
         LogstoreName: 'my-demo-minimum-service-sls-logstore',
         PreserveStorage: false,
         ProjectName: {
-          'Fn::GetAtt': ['my_demo_minimum_service_sls', 'Name'],
+          'Fn::GetAtt': ['sls_project', 'Name'],
         },
         ShardCount: 2,
         TTL: 7,

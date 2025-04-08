@@ -91,13 +91,13 @@ export const resolveFunctions = (
   let logConfig: RosFunction.LogConfigProperty | undefined = undefined;
 
   const enableLog = functions?.some(({ log }) => log);
-  const slsServiceId = formatRosId(calcValue(`${service}_sls`, context));
-  const slsLogstoreId = formatRosId(calcValue(`${service}_sls_logstore`, context));
-  const slsIndexId = formatRosId(calcValue(`${service}_sls_index`, context));
+  const slsProjectId = 'sls_project';
+  const slsLogstoreId = 'sls_logstore';
+  const slsIndexId = 'sls_index';
 
-  const slsService = new sls.Project(
+  const slsProject = new sls.Project(
     scope,
-    slsServiceId,
+    slsProjectId,
     { name: calcRefs(`${service}-sls`, context), tags: calcRefs(tags, context) },
     true,
   );
@@ -107,7 +107,7 @@ export const resolveFunctions = (
     slsLogstoreId,
     {
       logstoreName: calcRefs(`${service}-sls-logstore`, context),
-      projectName: slsService.attrName,
+      projectName: slsProject.attrName,
       ttl: 7,
     },
     true,
@@ -117,7 +117,7 @@ export const resolveFunctions = (
     scope,
     slsIndexId,
     {
-      projectName: slsService.attrName,
+      projectName: slsProject.attrName,
       logstoreName: slsLogstore.attrLogstoreName,
       fullTextIndex: { enable: true },
     },
@@ -142,7 +142,7 @@ export const resolveFunctions = (
   const destinationBucketName = ros.Fn.sub(
     'si-bootstrap-artifacts-${ALIYUN::AccountId}-${ALIYUN::Region}',
   );
-  const ossDeploymentId = formatRosId(calcValue(`${service}_artifacts_code_deployment`, context));
+  const ossDeploymentId = 'si_auto_artifacts_code_deployment';
 
   if (!isEmpty(fileSources)) {
     new ossDeployment.BucketDeployment(
@@ -343,7 +343,7 @@ export const resolveFunctions = (
       true,
     );
     if (enableLog) {
-      fcn.addRosDependency(slsServiceId);
+      fcn.addRosDependency(slsProjectId);
       fcn.addRosDependency(slsLogstoreId);
       fcn.addRosDependency(slsIndexId);
     }

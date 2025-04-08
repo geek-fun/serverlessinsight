@@ -66,12 +66,7 @@ export const oneFcIacWithNasRos = {
           VpcId: 'vpc-123456',
         },
       },
-      DependsOn: [
-        'my_demo_service_sls',
-        'my_demo_service_sls_logstore',
-        'my_demo_service_sls_index',
-        'hello_fn_nas_mount_mnt_nas',
-      ],
+      DependsOn: ['sls_project', 'sls_logstore', 'sls_index', 'hello_fn_nas_mount_mnt_nas'],
     },
     hello_fn_datasource_subnet_subnet_123456: {
       Properties: {

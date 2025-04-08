@@ -25,7 +25,7 @@ export const largeCodeRos = {
   },
   ROSTemplateFormatVersion: '2015-09-01',
   Resources: {
-    FCFunctionFormy_demo_service_artifacts_code_deployment: {
+    FCFunctionForsi_auto_artifacts_code_deployment: {
       Properties: {
         CAPort: 9000,
         Code: {
@@ -57,13 +57,13 @@ export const largeCodeRos = {
         MemorySize: 128,
         Runtime: 'python3.10',
         ServiceName: {
-          'Fn::GetAtt': ['FCServiceFormy_demo_service_artifacts_code_deployment', 'ServiceName'],
+          'Fn::GetAtt': ['FCServiceForsi_auto_artifacts_code_deployment', 'ServiceName'],
         },
         Timeout: 3000,
       },
       Type: 'ALIYUN::FC::Function',
     },
-    FCRoleFormy_demo_service_artifacts_code_deployment: {
+    FCRoleForsi_auto_artifacts_code_deployment: {
       Properties: {
         AssumeRolePolicyDocument: {
           Statement: [
@@ -148,12 +148,12 @@ export const largeCodeRos = {
       },
       Type: 'ALIYUN::RAM::Role',
     },
-    FCServiceFormy_demo_service_artifacts_code_deployment: {
+    FCServiceForsi_auto_artifacts_code_deployment: {
       Properties: {
         DeletionForce: false,
         Description: 'FC service for oss deployment by CDK',
         Role: {
-          'Fn::GetAtt': ['FCRoleFormy_demo_service_artifacts_code_deployment', 'Arn'],
+          'Fn::GetAtt': ['FCRoleForsi_auto_artifacts_code_deployment', 'Arn'],
         },
         ServiceName: {
           'Fn::Join': [
@@ -231,12 +231,7 @@ export const largeCodeRos = {
       Type: 'ALIYUN::ApiGateway::Api',
     },
     hello_fn: {
-      DependsOn: [
-        'my_demo_service_sls',
-        'my_demo_service_sls_logstore',
-        'my_demo_service_sls_index',
-        'my_demo_service_artifacts_code_deployment',
-      ],
+      DependsOn: ['sls_project', 'sls_logstore', 'sls_index', 'si_auto_artifacts_code_deployment'],
       Properties: {
         Code: {
           OssBucketName: {
@@ -252,10 +247,10 @@ export const largeCodeRos = {
         LogConfig: {
           EnableRequestMetrics: true,
           Logstore: {
-            'Fn::GetAtt': ['my_demo_service_sls_logstore', 'LogstoreName'],
+            'Fn::GetAtt': ['sls_logstore', 'LogstoreName'],
           },
           Project: {
-            'Fn::GetAtt': ['my_demo_service_sls_logstore', 'ProjectName'],
+            'Fn::GetAtt': ['sls_logstore', 'ProjectName'],
           },
         },
         MemorySize: 128,
@@ -264,7 +259,7 @@ export const largeCodeRos = {
       },
       Type: 'ALIYUN::FC3::Function',
     },
-    my_demo_service_artifacts_code_deployment: {
+    si_auto_artifacts_code_deployment: {
       Properties: {
         Parameters: {
           destinationBucket: {
@@ -280,7 +275,7 @@ export const largeCodeRos = {
           ],
         },
         ServiceToken: {
-          'Fn::GetAtt': ['FCFunctionFormy_demo_service_artifacts_code_deployment', 'ARN'],
+          'Fn::GetAtt': ['FCFunctionForsi_auto_artifacts_code_deployment', 'ARN'],
         },
         Timeout: 3000,
       },
@@ -355,7 +350,7 @@ export const largeCodeRos = {
       },
       Type: 'ALIYUN::RAM::Role',
     },
-    my_demo_service_sls: {
+    sls_project: {
       Properties: {
         Name: 'my-demo-service-sls',
         Tags: [
@@ -367,22 +362,22 @@ export const largeCodeRos = {
       },
       Type: 'ALIYUN::SLS::Project',
     },
-    my_demo_service_sls_index: {
+    sls_index: {
       Properties: {
         FullTextIndex: {
           Enable: true,
         },
         LogReduce: false,
         LogstoreName: {
-          'Fn::GetAtt': ['my_demo_service_sls_logstore', 'LogstoreName'],
+          'Fn::GetAtt': ['sls_logstore', 'LogstoreName'],
         },
         ProjectName: {
-          'Fn::GetAtt': ['my_demo_service_sls', 'Name'],
+          'Fn::GetAtt': ['sls_project', 'Name'],
         },
       },
       Type: 'ALIYUN::SLS::Index',
     },
-    my_demo_service_sls_logstore: {
+    sls_logstore: {
       Properties: {
         AppendMeta: false,
         AutoSplit: false,
@@ -390,7 +385,7 @@ export const largeCodeRos = {
         LogstoreName: 'my-demo-service-sls-logstore',
         PreserveStorage: false,
         ProjectName: {
-          'Fn::GetAtt': ['my_demo_service_sls', 'Name'],
+          'Fn::GetAtt': ['sls_project', 'Name'],
         },
         ShardCount: 2,
         TTL: 7,
