@@ -21,7 +21,7 @@ export const oneFcOneGatewayIac = {
   functions: [
     {
       key: 'hello_fn',
-      name: 'hello_fn',
+      name: 'hello-fn',
       code: {
         runtime: 'nodejs18',
         handler: 'index.handler',
@@ -40,7 +40,7 @@ export const oneFcOneGatewayIac = {
     {
       type: 'API_GATEWAY',
       key: 'gateway_event',
-      name: 'gateway_event',
+      name: 'gateway-event',
       domain: {
         domain_name: 'api.my-demo-service.com',
       },
@@ -90,7 +90,20 @@ export const oneFcOneGatewayRos = {
   Resources: {
     gateway_event_agw_api_deployment_get_api_hello: {
       Properties: {
-        ApiName: 'gateway_event_agw_api_deployment_get_api_hello',
+        ApiId: {
+          'Fn::GetAtt': ['gateway_event_agw_api_get_api_hello', 'ApiId'],
+        },
+        Description: 'my-demo-service Api Gateway deployment for api: GET /api/hello',
+        GroupId: {
+          'Fn::GetAtt': ['gateway_event_agw_group', 'GroupId'],
+        },
+        StageName: 'RELEASE',
+      },
+      Type: 'ALIYUN::ApiGateway::Deployment',
+    },
+    gateway_event_agw_api_get_api_hello: {
+      Properties: {
+        ApiName: 'gateway-event-agw-api-get-api-hello',
         AuthType: 'ANONYMOUS',
         GroupId: {
           'Fn::GetAtt': ['gateway_event_agw_group', 'GroupId'],
@@ -148,6 +161,19 @@ export const oneFcOneGatewayRos = {
       },
       Type: 'ALIYUN::DNS::DomainRecord',
     },
+    gateway_event_agw_group: {
+      Properties: {
+        GroupName: 'my-demo-service-agw-group',
+        PassthroughHeaders: 'host',
+        Tags: [
+          {
+            Key: 'owner',
+            Value: 'geek-fun',
+          },
+        ],
+      },
+      Type: 'ALIYUN::ApiGateway::Group',
+    },
     gateway_event_agw_role: {
       Properties: {
         AssumeRolePolicyDocument: {
@@ -175,10 +201,10 @@ export const oneFcOneGatewayRos = {
               ],
               Version: '1',
             },
-            PolicyName: 'my-demo-service-gateway_event-policy',
+            PolicyName: 'my-demo-service-gateway-event-policy',
           },
         ],
-        RoleName: 'my-demo-service-gateway_event-agw-access-role',
+        RoleName: 'gateway-event-agw-access-role',
       },
       Type: 'ALIYUN::RAM::Role',
     },
@@ -195,7 +221,7 @@ export const oneFcOneGatewayRos = {
         EnvironmentVariables: {
           NODE_ENV: 'production',
         },
-        FunctionName: 'hello_fn',
+        FunctionName: 'hello-fn',
         Handler: 'index.handler',
         LogConfig: {
           EnableRequestMetrics: true,
@@ -211,32 +237,6 @@ export const oneFcOneGatewayRos = {
         Timeout: 10,
       },
       Type: 'ALIYUN::FC3::Function',
-    },
-    gateway_event_agw_group: {
-      Properties: {
-        GroupName: 'my-demo-service-dev-agw-group',
-        PassthroughHeaders: 'host',
-        Tags: [
-          {
-            Key: 'owner',
-            Value: 'geek-fun',
-          },
-        ],
-      },
-      Type: 'ALIYUN::ApiGateway::Group',
-    },
-    'my-demo-service_deployment': {
-      Properties: {
-        ApiId: {
-          'Fn::GetAtt': ['gateway_event_agw_api_deployment_get_api_hello', 'ApiId'],
-        },
-        Description: 'my-demo-service Api Gateway deployment',
-        GroupId: {
-          'Fn::GetAtt': ['gateway_event_agw_group', 'GroupId'],
-        },
-        StageName: 'RELEASE',
-      },
-      Type: 'ALIYUN::ApiGateway::Deployment',
     },
     my_demo_service_sls: {
       Properties: {
@@ -294,20 +294,44 @@ export const referredServiceRos = {
   Mappings: {
     stages: {
       dev: {
-        account_id: { Ref: 'account_id' },
-        region: { Ref: 'region' },
+        account_id: {
+          Ref: 'account_id',
+        },
+        region: {
+          Ref: 'region',
+        },
       },
     },
   },
-  Metadata: { 'ALIYUN::ROS::Interface': { TemplateTags: ['Create by ROS CDK'] } },
+  Metadata: {
+    'ALIYUN::ROS::Interface': {
+      TemplateTags: ['Create by ROS CDK'],
+    },
+  },
   Parameters: {
-    account_id: { Default: 1234567890, Type: 'String' },
+    account_id: {
+      Default: 1234567890,
+      Type: 'String',
+    },
   },
   ROSTemplateFormatVersion: '2015-09-01',
   Resources: {
     gateway_event_agw_api_deployment_get_api_hello: {
       Properties: {
-        ApiName: 'gateway_event_agw_api_deployment_get_api_hello',
+        ApiId: {
+          'Fn::GetAtt': ['gateway_event_agw_api_get_api_hello', 'ApiId'],
+        },
+        Description: 'my-demo-service-dev Api Gateway deployment for api: GET /api/hello',
+        GroupId: {
+          'Fn::GetAtt': ['gateway_event_agw_group', 'GroupId'],
+        },
+        StageName: 'RELEASE',
+      },
+      Type: 'ALIYUN::ApiGateway::Deployment',
+    },
+    gateway_event_agw_api_get_api_hello: {
+      Properties: {
+        ApiName: 'gateway-event-agw-api-get-api-hello',
         AuthType: 'ANONYMOUS',
         GroupId: {
           'Fn::GetAtt': ['gateway_event_agw_group', 'GroupId'],
@@ -365,6 +389,19 @@ export const referredServiceRos = {
       },
       Type: 'ALIYUN::DNS::DomainRecord',
     },
+    gateway_event_agw_group: {
+      Properties: {
+        GroupName: 'my-demo-service-dev-agw-group',
+        PassthroughHeaders: 'host',
+        Tags: [
+          {
+            Key: 'owner',
+            Value: 'geek-fun',
+          },
+        ],
+      },
+      Type: 'ALIYUN::ApiGateway::Group',
+    },
     gateway_event_agw_role: {
       Properties: {
         AssumeRolePolicyDocument: {
@@ -392,7 +429,7 @@ export const referredServiceRos = {
               ],
               Version: '1',
             },
-            PolicyName: 'my-demo-service-dev-gateway_event-policy',
+            PolicyName: 'my-demo-service-dev-gateway-event-policy',
           },
         ],
         RoleName: 'gateway-event-agw-access-role',
@@ -412,7 +449,7 @@ export const referredServiceRos = {
         EnvironmentVariables: {
           NODE_ENV: 'production',
         },
-        FunctionName: 'hello_fn',
+        FunctionName: 'hello-fn',
         Handler: 'index.handler',
         LogConfig: {
           EnableRequestMetrics: true,
@@ -429,33 +466,7 @@ export const referredServiceRos = {
       },
       Type: 'ALIYUN::FC3::Function',
     },
-    gateway_event_agw_group: {
-      Properties: {
-        GroupName: 'my-demo-service-dev-agw-group',
-        PassthroughHeaders: 'host',
-        Tags: [
-          {
-            Key: 'owner',
-            Value: 'geek-fun',
-          },
-        ],
-      },
-      Type: 'ALIYUN::ApiGateway::Group',
-    },
-    'my-demo-service-dev_deployment': {
-      Properties: {
-        ApiId: {
-          'Fn::GetAtt': ['gateway_event_agw_api_deployment_get_api_hello', 'ApiId'],
-        },
-        Description: 'my-demo-service-dev Api Gateway deployment',
-        GroupId: {
-          'Fn::GetAtt': ['gateway_event_agw_group', 'GroupId'],
-        },
-        StageName: 'RELEASE',
-      },
-      Type: 'ALIYUN::ApiGateway::Deployment',
-    },
-    'my-demo-service-dev_sls': {
+    my_demo_service_dev_sls: {
       Properties: {
         Name: 'my-demo-service-dev-sls',
         Tags: [
@@ -467,7 +478,7 @@ export const referredServiceRos = {
       },
       Type: 'ALIYUN::SLS::Project',
     },
-    'my-demo-service-dev_sls_index': {
+    my_demo_service_dev_sls_index: {
       Properties: {
         FullTextIndex: {
           Enable: true,
@@ -477,7 +488,7 @@ export const referredServiceRos = {
           'Fn::GetAtt': ['my_demo_service_dev_sls_logstore', 'LogstoreName'],
         },
         ProjectName: {
-          'Fn::GetAtt': ['my-demo-service-dev_sls', 'Name'],
+          'Fn::GetAtt': ['my_demo_service_dev_sls', 'Name'],
         },
       },
       Type: 'ALIYUN::SLS::Index',
@@ -490,7 +501,7 @@ export const referredServiceRos = {
         LogstoreName: 'my-demo-service-dev-sls-logstore',
         PreserveStorage: false,
         ProjectName: {
-          'Fn::GetAtt': ['my-demo-service-dev_sls', 'Name'],
+          'Fn::GetAtt': ['my_demo_service_dev_sls', 'Name'],
         },
         ShardCount: 2,
         TTL: 7,
@@ -511,7 +522,7 @@ export const minimumIac = {
   functions: [
     {
       key: 'hello_fn',
-      name: 'hello_fn',
+      name: 'hello-fn',
       code: {
         runtime: 'nodejs18',
         handler: 'index.handler',
@@ -567,7 +578,7 @@ export const minimumRos = {
         Code: {
           ZipFile: 'resolved-code',
         },
-        FunctionName: 'hello_fn',
+        FunctionName: 'hello-fn',
         Handler: 'index.handler',
         Runtime: 'nodejs18',
       },
@@ -595,7 +606,7 @@ export const oneFcIac = {
   functions: [
     {
       key: 'hello_fn',
-      name: 'hello_fn',
+      name: 'hello-fn',
       code: {
         runtime: 'nodejs18',
         handler: 'index.handler',
@@ -650,7 +661,7 @@ export const oneFcRos = {
         EnvironmentVariables: {
           NODE_ENV: 'production',
         },
-        FunctionName: 'hello_fn',
+        FunctionName: 'hello-fn',
         Handler: 'index.handler',
         LogConfig: {
           EnableRequestMetrics: true,
@@ -760,7 +771,7 @@ export const oneFcIacWithNasRos = {
                   '',
                   [
                     {
-                      'Fn::GetAtt': ['hello_fn_nas_mount_L21udC9uYXM', 'MountTargetDomain'],
+                      'Fn::GetAtt': ['hello_fn_nas_mount_mnt_nas', 'MountTargetDomain'],
                     },
                     ':/',
                   ],
@@ -781,24 +792,24 @@ export const oneFcIacWithNasRos = {
         'my_demo_service_sls',
         'my_demo_service_sls_logstore',
         'my_demo_service_sls_index',
-        'hello_fn_nas_mount_L21udC9uYXM',
+        'hello_fn_nas_mount_mnt_nas',
       ],
     },
-    hello_fn_datasource_subnet_c3VibmV0LTEyMzQ1Ng: {
+    hello_fn_datasource_subnet_subnet_123456: {
       Properties: {
         RefreshOptions: 'Always',
         VSwitchId: 'subnet-123456',
       },
       Type: 'DATASOURCE::VPC::VSwitch',
     },
-    hello_fn_datasource_subnet_c3VibmV0LTY3ODkw: {
+    hello_fn_datasource_subnet_subnet_67890: {
       Properties: {
         RefreshOptions: 'Always',
         VSwitchId: 'subnet-67890',
       },
       Type: 'DATASOURCE::VPC::VSwitch',
     },
-    hello_fn_datasource_subnet_c3VibmV0LTk4NzY1: {
+    hello_fn_datasource_subnet_subnet_98765: {
       Properties: {
         RefreshOptions: 'Always',
         VSwitchId: 'subnet-98765',
@@ -806,7 +817,7 @@ export const oneFcIacWithNasRos = {
       Type: 'DATASOURCE::VPC::VSwitch',
     },
 
-    hello_fn_nas_L21udC9uYXM: {
+    hello_fn_nas_mnt_nas: {
       Properties: {
         DeletionForce: false,
         FileSystemType: 'standard',
@@ -819,27 +830,27 @@ export const oneFcIacWithNasRos = {
           },
           {
             Key: 'function-name',
-            Value: 'hello_fn',
+            Value: 'hello-fn',
           },
         ],
       },
       Type: 'ALIYUN::NAS::FileSystem',
     },
-    hello_fn_nas_access_L21udC9uYXM: {
+    hello_fn_nas_access_mnt_nas: {
       Properties: {
-        AccessGroupName: 'hello_fn-nas-access-L21udC9uYXM',
+        AccessGroupName: 'hello-fn-nas-access-mnt-nas',
         AccessGroupType: 'Vpc',
         FileSystemType: 'standard',
       },
       Type: 'ALIYUN::NAS::AccessGroup',
     },
-    hello_fn_nas_mount_L21udC9uYXM: {
+    hello_fn_nas_mount_mnt_nas: {
       Properties: {
         AccessGroupName: {
-          'Fn::GetAtt': ['hello_fn_nas_access_L21udC9uYXM', 'AccessGroupName'],
+          'Fn::GetAtt': ['hello_fn_nas_access_mnt_nas', 'AccessGroupName'],
         },
         FileSystemId: {
-          'Fn::GetAtt': ['hello_fn_nas_L21udC9uYXM', 'FileSystemId'],
+          'Fn::GetAtt': ['hello_fn_nas_mnt_nas', 'FileSystemId'],
         },
         NetworkType: 'Vpc',
         VSwitchId: 'subnet-123456',
@@ -847,46 +858,46 @@ export const oneFcIacWithNasRos = {
       },
       Type: 'ALIYUN::NAS::MountTarget',
     },
-    hello_fn_nas_rule_c3VibmV0LTEyMzQ1Ng: {
+    hello_fn_nas_rule_subnet_123456: {
       Properties: {
         AccessGroupName: {
-          'Fn::GetAtt': ['hello_fn_nas_access_L21udC9uYXM', 'AccessGroupName'],
+          'Fn::GetAtt': ['hello_fn_nas_access_mnt_nas', 'AccessGroupName'],
         },
         FileSystemType: 'standard',
         Priority: 1,
         RWAccessType: 'RDWR',
         SourceCidrIp: {
-          'Fn::GetAtt': ['hello_fn_datasource_subnet_c3VibmV0LTEyMzQ1Ng', 'CidrBlock'],
+          'Fn::GetAtt': ['hello_fn_datasource_subnet_subnet_123456', 'CidrBlock'],
         },
         UserAccessType: 'no_squash',
       },
       Type: 'ALIYUN::NAS::AccessRule',
     },
-    hello_fn_nas_rule_c3VibmV0LTY3ODkw: {
+    hello_fn_nas_rule_subnet_67890: {
       Properties: {
         AccessGroupName: {
-          'Fn::GetAtt': ['hello_fn_nas_access_L21udC9uYXM', 'AccessGroupName'],
+          'Fn::GetAtt': ['hello_fn_nas_access_mnt_nas', 'AccessGroupName'],
         },
         FileSystemType: 'standard',
         Priority: 1,
         RWAccessType: 'RDWR',
         SourceCidrIp: {
-          'Fn::GetAtt': ['hello_fn_datasource_subnet_c3VibmV0LTY3ODkw', 'CidrBlock'],
+          'Fn::GetAtt': ['hello_fn_datasource_subnet_subnet_67890', 'CidrBlock'],
         },
         UserAccessType: 'no_squash',
       },
       Type: 'ALIYUN::NAS::AccessRule',
     },
-    hello_fn_nas_rule_c3VibmV0LTk4NzY1: {
+    hello_fn_nas_rule_subnet_98765: {
       Properties: {
         AccessGroupName: {
-          'Fn::GetAtt': ['hello_fn_nas_access_L21udC9uYXM', 'AccessGroupName'],
+          'Fn::GetAtt': ['hello_fn_nas_access_mnt_nas', 'AccessGroupName'],
         },
         FileSystemType: 'standard',
         Priority: 1,
         RWAccessType: 'RDWR',
         SourceCidrIp: {
-          'Fn::GetAtt': ['hello_fn_datasource_subnet_c3VibmV0LTk4NzY1', 'CidrBlock'],
+          'Fn::GetAtt': ['hello_fn_datasource_subnet_subnet_98765', 'CidrBlock'],
         },
         UserAccessType: 'no_squash',
       },
@@ -959,7 +970,7 @@ export const oneFcIacWithStage = {
   functions: [
     {
       key: 'hello_fn',
-      name: 'hello_fn',
+      name: 'hello-fn',
       code: {
         runtime: 'nodejs18',
         handler: 'index.handler',
@@ -1011,7 +1022,7 @@ export const oneFcWithStageRos = {
       Properties: {
         Code: { ZipFile: 'resolved-code' },
         EnvironmentVariables: { NODE_ENV: { 'Fn::FindInMap': ['stages', 'default', 'node_env'] } },
-        FunctionName: 'hello_fn',
+        FunctionName: 'hello-fn',
         Handler: 'index.handler',
         LogConfig: {
           EnableRequestMetrics: true,
@@ -1161,13 +1172,11 @@ export const largeCodeRos = {
   },
   ROSTemplateFormatVersion: '2015-09-01',
   Resources: {
-    'FCFunctionFormy-demo-service_artifacts_code_deployment': {
+    FCFunctionFormy_demo_service_artifacts_code_deployment: {
       Properties: {
         CAPort: 9000,
         Code: {
-          OssBucketName: {
-            'Fn::Sub': expect.stringContaining('assets-${ALIYUN::Region}'),
-          },
+          OssBucketName: { 'Fn::Sub': expect.stringContaining('assets-${ALIYUN::Region}') },
           OssObjectName: 'c6a72ed7e7e83f01a000b75885758088fa050298a31a1e95d37ac88f08e42315.zip',
         },
         FunctionName: {
@@ -1195,13 +1204,13 @@ export const largeCodeRos = {
         MemorySize: 128,
         Runtime: 'python3.10',
         ServiceName: {
-          'Fn::GetAtt': ['FCServiceFormy-demo-service_artifacts_code_deployment', 'ServiceName'],
+          'Fn::GetAtt': ['FCServiceFormy_demo_service_artifacts_code_deployment', 'ServiceName'],
         },
         Timeout: 3000,
       },
       Type: 'ALIYUN::FC::Function',
     },
-    'FCRoleFormy-demo-service_artifacts_code_deployment': {
+    FCRoleFormy_demo_service_artifacts_code_deployment: {
       Properties: {
         AssumeRolePolicyDocument: {
           Statement: [
@@ -1286,12 +1295,12 @@ export const largeCodeRos = {
       },
       Type: 'ALIYUN::RAM::Role',
     },
-    'FCServiceFormy-demo-service_artifacts_code_deployment': {
+    FCServiceFormy_demo_service_artifacts_code_deployment: {
       Properties: {
         DeletionForce: false,
         Description: 'FC service for oss deployment by CDK',
         Role: {
-          'Fn::GetAtt': ['FCRoleFormy-demo-service_artifacts_code_deployment', 'Arn'],
+          'Fn::GetAtt': ['FCRoleFormy_demo_service_artifacts_code_deployment', 'Arn'],
         },
         ServiceName: {
           'Fn::Join': [
@@ -1319,7 +1328,20 @@ export const largeCodeRos = {
     },
     gateway_event_agw_api_deployment_get_api_hello: {
       Properties: {
-        ApiName: 'gateway_event_agw_api_deployment_get_api_hello',
+        ApiId: {
+          'Fn::GetAtt': ['gateway_event_agw_api_get_api_hello', 'ApiId'],
+        },
+        Description: 'my-demo-service Api Gateway deployment for api: GET /api/hello',
+        GroupId: {
+          'Fn::GetAtt': ['gateway_event_agw_group', 'GroupId'],
+        },
+        StageName: 'RELEASE',
+      },
+      Type: 'ALIYUN::ApiGateway::Deployment',
+    },
+    gateway_event_agw_api_get_api_hello: {
+      Properties: {
+        ApiName: 'gateway-event-agw-api-get-api-hello',
         AuthType: 'ANONYMOUS',
         GroupId: {
           'Fn::GetAtt': ['gateway_event_agw_group', 'GroupId'],
@@ -1360,19 +1382,19 @@ export const largeCodeRos = {
         'my_demo_service_sls',
         'my_demo_service_sls_logstore',
         'my_demo_service_sls_index',
-        'my-demo-service_artifacts_code_deployment',
+        'my_demo_service_artifacts_code_deployment',
       ],
       Properties: {
         Code: {
           OssBucketName: {
             'Fn::Sub': 'si-bootstrap-artifacts-${ALIYUN::AccountId}-${ALIYUN::Region}',
           },
-          OssObjectName: 'hello_fn/43cb4c356149762dbe507fc1baede172-large-artifact.zip',
+          OssObjectName: 'hello-fn/43cb4c356149762dbe507fc1baede172-large-artifact.zip',
         },
         EnvironmentVariables: {
           NODE_ENV: 'production',
         },
-        FunctionName: 'hello_fn',
+        FunctionName: 'hello-fn',
         Handler: 'index.handler',
         LogConfig: {
           EnableRequestMetrics: true,
@@ -1389,20 +1411,7 @@ export const largeCodeRos = {
       },
       Type: 'ALIYUN::FC3::Function',
     },
-    gateway_event_agw_group: {
-      Properties: {
-        GroupName: 'my-demo-service-dev-agw-group',
-        PassthroughHeaders: 'host',
-        Tags: [
-          {
-            Key: 'owner',
-            Value: 'geek-fun',
-          },
-        ],
-      },
-      Type: 'ALIYUN::ApiGateway::Group',
-    },
-    'my-demo-service_artifacts_code_deployment': {
+    my_demo_service_artifacts_code_deployment: {
       Properties: {
         Parameters: {
           destinationBucket: {
@@ -1412,30 +1421,17 @@ export const largeCodeRos = {
           sources: [
             {
               bucket: { 'Fn::Sub': expect.any(String) },
-              fileName: 'hello_fn/43cb4c356149762dbe507fc1baede172-large-artifact.zip',
+              fileName: 'hello-fn/43cb4c356149762dbe507fc1baede172-large-artifact.zip',
               objectKey: '2bfeafed8d3df0d44c235271cdf2aa7d908a3c2757af14a67d33d102847f46fd.zip',
             },
           ],
         },
         ServiceToken: {
-          'Fn::GetAtt': ['FCFunctionFormy-demo-service_artifacts_code_deployment', 'ARN'],
+          'Fn::GetAtt': ['FCFunctionFormy_demo_service_artifacts_code_deployment', 'ARN'],
         },
         Timeout: 3000,
       },
       Type: 'ALIYUN::ROS::CustomResource',
-    },
-    'my-demo-service_deployment': {
-      Properties: {
-        ApiId: {
-          'Fn::GetAtt': ['gateway_event_agw_api_deployment_get_api_hello', 'ApiId'],
-        },
-        Description: 'my-demo-service Api Gateway deployment',
-        GroupId: {
-          'Fn::GetAtt': ['gateway_event_agw_group', 'GroupId'],
-        },
-        StageName: 'RELEASE',
-      },
-      Type: 'ALIYUN::ApiGateway::Deployment',
     },
     gateway_event_agw_custom_domain: {
       DependsOn: ['gateway_event_agw_custom_domain_record'],
@@ -1458,6 +1454,19 @@ export const largeCodeRos = {
         },
       },
       Type: 'ALIYUN::DNS::DomainRecord',
+    },
+    gateway_event_agw_group: {
+      Properties: {
+        GroupName: 'my-demo-service-agw-group',
+        PassthroughHeaders: 'host',
+        Tags: [
+          {
+            Key: 'owner',
+            Value: 'geek-fun',
+          },
+        ],
+      },
+      Type: 'ALIYUN::ApiGateway::Group',
     },
     gateway_event_agw_role: {
       Properties: {
@@ -1486,10 +1495,10 @@ export const largeCodeRos = {
               ],
               Version: '1',
             },
-            PolicyName: 'my-demo-service-gateway_event-policy',
+            PolicyName: 'my-demo-service-gateway-event-policy',
           },
         ],
-        RoleName: 'my-demo-service-gateway_event-agw-access-role',
+        RoleName: 'gateway-event-agw-access-role',
       },
       Type: 'ALIYUN::RAM::Role',
     },
@@ -1537,6 +1546,7 @@ export const largeCodeRos = {
     },
   },
 };
+
 export const defaultContext = {
   accessKeyId: 'access key id',
   accessKeySecret: 'access key secret',
@@ -1767,7 +1777,7 @@ export const bucketWithWebsiteRos = {
       },
       Type: 'ALIYUN::OSS::Bucket',
     },
-    my_bucket_custom_domain_bXktYnVja2V0LmNvbQ: {
+    my_bucket_custom_domain: {
       Properties: {
         BucketName: {
           'Fn::GetAtt': ['my_bucket', 'Name'],
@@ -1776,7 +1786,7 @@ export const bucketWithWebsiteRos = {
       },
       Type: 'ALIYUN::OSS::Domain',
     },
-    my_bucket_custom_domain_record_bXktYnVja2V0LmNvbQ: {
+    my_bucket_custom_domain_record: {
       Properties: {
         DomainName: 'my-bucket.com',
         RR: '@',

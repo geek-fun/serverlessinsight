@@ -142,7 +142,7 @@ export const resolveFunctions = (
   const destinationBucketName = ros.Fn.sub(
     'si-bootstrap-artifacts-${ALIYUN::AccountId}-${ALIYUN::Region}',
   );
-  const ossDeploymentId = calcValue(`${service}_artifacts_code_deployment`, context) as string;
+  const ossDeploymentId = formatRosId(calcValue(`${service}_artifacts_code_deployment`, context));
 
   if (!isEmpty(fileSources)) {
     new ossDeployment.BucketDeployment(
