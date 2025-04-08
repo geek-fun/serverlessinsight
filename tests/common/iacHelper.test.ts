@@ -1,6 +1,6 @@
 import * as ros from '@alicloud/ros-cdk-core';
 import * as ossDeployment from '@alicloud/ros-cdk-ossdeployment';
-import { getFileSource, calcRefs, realValue } from '../../src/common';
+import { getFileSource, calcRefs, calcValue, formatRosId } from '../../src/common';
 import fs from 'node:fs';
 import { context } from '../fixtures/contextFixture';
 
@@ -79,43 +79,43 @@ describe('Unit test for iacHelper', () => {
 
   describe('Unit test for calcValue', () => {
     it('should return the value when raw string match vars', () => {
-      const value = realValue('${vars.handler}', context);
+      const value = calcValue('${vars.handler}', context);
 
       expect(value).toEqual('index.handler');
     });
 
     it('should return the value when raw string contains vars', () => {
-      const value = realValue('test-${vars.testVar}-value', context);
+      const value = calcValue('test-${vars.testVar}-value', context);
 
       expect(value).toEqual('test-testVarValue-value');
     });
 
     it('should return the value when raw string match stage', () => {
-      const value = realValue('${ctx.stage}', context);
+      const value = calcValue('${ctx.stage}', context);
 
       expect(value).toEqual('test');
     });
 
     it('should return the value when raw string contains stage', () => {
-      const value = realValue('test${ctx.stage}-value', context);
+      const value = calcValue('test${ctx.stage}-value', context);
 
       expect(value).toEqual('testtest-value');
     });
 
     it('should return the value when raw string match stages', () => {
-      const value = realValue('${stages.testStage}', context);
+      const value = calcValue('${stages.testStage}', context);
 
       expect(value).toEqual('testStageValue');
     });
 
     it('should return the value when raw string contains stages', () => {
-      const value = realValue('test-${stages.testStage}-value', context);
+      const value = calcValue('test-${stages.testStage}-value', context);
 
       expect(value).toEqual('test-testStageValue-value');
     });
 
     it('should return the value when raw string contains stage, vars and stages', () => {
-      const value = realValue(
+      const value = calcValue(
         `wearedongyiIASJ#test$\{stages.testStage}SUPERE$\{ctx.stage}ROR-AHID_#YOUD$\{vars.testVar}-value`,
         context,
       );
@@ -123,6 +123,33 @@ describe('Unit test for iacHelper', () => {
       expect(value).toEqual(
         'wearedongyiIASJ#testtestStageValueSUPEREtestROR-AHID_#YOUDtestVarValue-value',
       );
+    });
+  });
+
+  describe('Unit test for formatRosId', () => {
+    it('should convert camelCase to snake_case', () => {
+      const result = formatRosId('helloWorld');
+      expect(result).toEqual('hello_world');
+    });
+
+    it('should remove leading underscore when first letter is capitalized', () => {
+      const result = formatRosId('HElloWORld');
+      expect(result).toEqual('hello_world');
+    });
+
+    it('should replace special characters with underscores', () => {
+      const result = formatRosId('hello/world#test,example-case');
+      expect(result).toEqual('hello_world_test_example_case');
+    });
+
+    it('should convert camelCase and replace special characters', () => {
+      const result = formatRosId('helloWorld/withSpecial#Chars');
+      expect(result).toEqual('hello_world_with_special_chars');
+    });
+
+    it('should not modify already snake_case strings without special chars', () => {
+      const result = formatRosId('hello_world');
+      expect(result).toEqual('hello_world');
     });
   });
 });

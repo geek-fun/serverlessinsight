@@ -23,7 +23,7 @@ import {
   oneFcWithStageRos,
   referredServiceIac,
   referredServiceRos,
-} from '../fixtures/deployFixture';
+} from '../fixtures/deploy-fixtures';
 import { cloneDeep, set } from 'lodash';
 
 const mockedEnterWith = jest.fn();

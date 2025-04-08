@@ -208,7 +208,7 @@ export const resolveDatabases = (
     if ([DatabaseEnum.ELASTICSEARCH_SERVERLESS].includes(db.type)) {
       new esServerless.App(
         scope,
-        calcRefs(db.key, context),
+        db.key,
         {
           appName: calcRefs(db.name, context),
           appVersion: version,
@@ -249,7 +249,7 @@ export const resolveDatabases = (
     ) {
       new rds.DBInstance(
         scope,
-        calcRefs(db.key, context),
+        db.key,
         {
           engine: engine as string,
           /**

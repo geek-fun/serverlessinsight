@@ -6,12 +6,13 @@ import {
   ServerlessIac,
 } from '../../types';
 import {
+  calcRefs,
+  calcValue,
   CODE_ZIP_SIZE_LIMIT,
-  encodeBase64ForRosId,
+  formatRosId,
   getFileSource,
   OSS_DEPLOYMENT_TIMEOUT,
   readCodeSize,
-  calcRefs,
   resolveCode,
 } from '../../common';
 import * as fc from '@alicloud/ros-cdk-fc3';
@@ -76,6 +77,7 @@ const transformGpuConfig = (gpu: FunctionDomain['gpu']) => {
 
   return gpuConfigMap[gpu];
 };
+
 export const resolveFunctions = (
   scope: ros.Construct,
   functions: Array<FunctionDomain> | undefined,
@@ -89,19 +91,23 @@ export const resolveFunctions = (
   let logConfig: RosFunction.LogConfigProperty | undefined = undefined;
 
   const enableLog = functions?.some(({ log }) => log);
-  const slsService = new sls.Project(
+  const slsProjectId = 'sls_project';
+  const slsLogstoreId = 'sls_logstore';
+  const slsIndexId = 'sls_index';
+
+  const slsProject = new sls.Project(
     scope,
-    `${service}_sls`,
-    { name: `${service}-sls`, tags: calcRefs(tags, context) },
+    slsProjectId,
+    { name: calcRefs(`${service}-sls`, context), tags: calcRefs(tags, context) },
     true,
   );
 
   const slsLogstore = new sls.Logstore(
     scope,
-    `${service}_sls_logstore`,
+    slsLogstoreId,
     {
-      logstoreName: `${service}-sls-logstore`,
-      projectName: slsService.attrName,
+      logstoreName: calcRefs(`${service}-sls-logstore`, context),
+      projectName: slsProject.attrName,
       ttl: 7,
     },
     true,
@@ -109,9 +115,9 @@ export const resolveFunctions = (
 
   new sls.Index(
     scope,
-    `${service}_sls_index`,
+    slsIndexId,
     {
-      projectName: slsService.attrName,
+      projectName: slsProject.attrName,
       logstoreName: slsLogstore.attrLogstoreName,
       fullTextIndex: { enable: true },
     },
@@ -136,7 +142,7 @@ export const resolveFunctions = (
   const destinationBucketName = ros.Fn.sub(
     'si-bootstrap-artifacts-${ALIYUN::AccountId}-${ALIYUN::Region}',
   );
-  const ossDeploymentId = `${service}_artifacts_code_deployment`;
+  const ossDeploymentId = 'si_auto_artifacts_code_deployment';
 
   if (!isEmpty(fileSources)) {
     new ossDeployment.BucketDeployment(
@@ -166,21 +172,22 @@ export const resolveFunctions = (
           handler: RosFunctionProps['handler'];
         };
 
-    const storeInBucket = !!fnc.code?.path && readCodeSize(fnc.code.path) > CODE_ZIP_SIZE_LIMIT;
+    const storeInBucket =
+      !!fnc.code?.path && readCodeSize(calcValue(fnc.code.path, context)) > CODE_ZIP_SIZE_LIMIT;
 
     if (fnc.container) {
       runtimeConfig = {
         runtime: 'custom-container',
         handler: 'index.handler',
         customContainerConfig: {
-          image: fnc.container.image,
-          command: fnc.container.cmd?.split(' '),
-          port: fnc.container.port,
+          image: calcRefs(fnc.container.image, context),
+          command: calcRefs(fnc.container.cmd, context)?.split(' '),
+          port: calcRefs(fnc.container.port, context),
         },
       };
     } else {
       let code: fc.RosFunction.CodeProperty = {
-        zipFile: resolveCode(fnc.code!.path),
+        zipFile: resolveCode(calcValue(fnc.code!.path, context)),
       };
       if (storeInBucket) {
         code = {
@@ -200,7 +207,7 @@ export const resolveFunctions = (
     if (fnc.network) {
       const securityGroup = new ecs.SecurityGroup(
         scope,
-        `${fnc.key}_security_group`,
+        formatRosId(`${fnc.key}_security_group`),
         {
           securityGroupName: fnc.network.security_group.name,
           vpcId: calcRefs(fnc.network.vpc_id, context),
@@ -222,16 +229,28 @@ export const resolveFunctions = (
     }
 
     let fcNas:
-      | Array<{ nas: nas.FileSystem; nasMount: nas.MountTarget; mountDir: string }>
+      | Array<{
+          nas: nas.FileSystem;
+          nasMount: nas.MountTarget;
+          mountDir: string;
+          nasMountTargetId: string;
+        }>
       | undefined;
     if (fnc.storage?.nas) {
       fcNas = fnc.storage.nas.map((nasItem) => {
-        const { fileSystemType, storageType } = storageClassMap[nasItem.storage_class];
+        const storageClass = calcValue(nasItem.storage_class, context) as NasStorageClassEnum;
+        const { fileSystemType, storageType } = storageClassMap[storageClass];
+        const mountPathValue = formatRosId(calcValue(nasItem.mount_path, context));
+        const nasMountTargetId = formatRosId(`${fnc.key}_nas_mount_${mountPathValue}`);
+
         const accessGroup = new nas.AccessGroup(
           scope,
-          `${fnc.key}_nas_access_${encodeBase64ForRosId(nasItem.mount_path)}`,
+          formatRosId(`${fnc.key}_nas_access_${mountPathValue}`),
           {
-            accessGroupName: `${fnc.name}-nas-access-${encodeBase64ForRosId(nasItem.mount_path)}`,
+            accessGroupName: calcRefs(
+              `${fnc.name}-nas-access-${mountPathValue.replace(/_/g, '-')}`,
+              context,
+            ),
             accessGroupType: 'Vpc',
           },
           true,
@@ -241,7 +260,7 @@ export const resolveFunctions = (
           (subnet) =>
             new vpc.datasource.VSwitch(
               scope,
-              `${fnc.key}_datasource_subnet_${encodeBase64ForRosId(subnet)}`,
+              formatRosId(calcValue(`${fnc.key}_datasource_subnet_${subnet}`, context)),
               {
                 vSwitchId: subnet,
                 refreshOptions: 'Always',
@@ -252,7 +271,9 @@ export const resolveFunctions = (
         fcVpcSubnets?.forEach((subnetDatasource, index) => {
           new nas.AccessRule(
             scope,
-            `${fnc.key}_nas_rule_${encodeBase64ForRosId(fnc.network!.subnet_ids[index])}`,
+            formatRosId(
+              calcValue(`${fnc.key}_nas_rule_${fnc.network!.subnet_ids[index]}`, context),
+            ),
             {
               accessGroupName: accessGroup.attrAccessGroupName,
               sourceCidrIp: subnetDatasource.attrCidrBlock,
@@ -263,29 +284,37 @@ export const resolveFunctions = (
 
         const nasResource = new nas.FileSystem(
           scope,
-          `${fnc.key}_nas_${encodeBase64ForRosId(nasItem.mount_path)}`,
+          formatRosId(`${fnc.key}_nas_${mountPathValue}`),
           {
             fileSystemType,
             storageType,
             protocolType: 'NFS',
-            tags: [...(calcRefs(tags, context) ?? []), { key: 'function-name', value: fnc.name }],
+            tags: [
+              ...(calcRefs(tags, context) ?? []),
+              { key: 'function-name', value: calcRefs(fnc.name, context) },
+            ],
           },
           true,
         );
         const nasMountTarget = new nas.MountTarget(
           scope,
-          `${fnc.key}_nas_mount_${encodeBase64ForRosId(nasItem.mount_path)}`,
+          nasMountTargetId,
           {
             fileSystemId: nasResource.attrFileSystemId,
             networkType: 'Vpc',
             accessGroupName: accessGroup.attrAccessGroupName,
-            vpcId: fnc.network!.vpc_id,
-            vSwitchId: fnc.network!.subnet_ids[0],
+            vpcId: calcRefs(fnc.network!.vpc_id, context),
+            vSwitchId: calcRefs(fnc.network!.subnet_ids[0], context),
           },
           true,
         );
 
-        return { nas: nasResource, nasMount: nasMountTarget, mountDir: nasItem.mount_path };
+        return {
+          nas: nasResource,
+          nasMount: nasMountTarget,
+          mountDir: calcRefs(nasItem.mount_path, context),
+          nasMountTargetId,
+        };
       });
     }
 
@@ -295,7 +324,7 @@ export const resolveFunctions = (
       {
         functionName: calcRefs(fnc.name, context),
         memorySize: calcRefs(fnc.memory, context),
-        diskSize: fnc.storage?.disk,
+        diskSize: calcRefs(fnc.storage?.disk, context),
         gpuConfig: transformGpuConfig(fnc.gpu),
         timeout: calcRefs(fnc.timeout, context),
         environmentVariables: calcRefs(fnc.environment, context),
@@ -314,18 +343,16 @@ export const resolveFunctions = (
       true,
     );
     if (enableLog) {
-      fcn.addRosDependency(`${service}_sls`);
-      fcn.addRosDependency(`${service}_sls_logstore`);
-      fcn.addRosDependency(`${service}_sls_index`);
+      fcn.addRosDependency(slsProjectId);
+      fcn.addRosDependency(slsLogstoreId);
+      fcn.addRosDependency(slsIndexId);
     }
 
     if (storeInBucket) {
-      fcn.addRosDependency(`${service}_artifacts_code_deployment`);
+      fcn.addRosDependency(ossDeploymentId);
     }
     if (fcNas?.length) {
-      fcNas.forEach((nasItem) => {
-        fcn.addRosDependency(`${fnc.key}_nas_mount_${encodeBase64ForRosId(nasItem.mountDir)}`);
-      });
+      fcNas.forEach(({ nasMountTargetId }) => fcn.addRosDependency(nasMountTargetId));
     }
   });
 };

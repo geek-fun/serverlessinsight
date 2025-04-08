@@ -1,7 +1,7 @@
 import * as ros from '@alicloud/ros-cdk-core';
 import { Context, EventDomain, EventTypes, ServerlessIac } from '../../types';
 import * as ram from '@alicloud/ros-cdk-ram';
-import { encodeBase64ForRosId, calcRefs, splitDomain } from '../../common';
+import { calcRefs, calcValue, formatRosId, splitDomain } from '../../common';
 import * as agw from '@alicloud/ros-cdk-apigateway';
 import { isEmpty } from 'lodash';
 import * as dns from '@alicloud/ros-cdk-dns';
@@ -22,9 +22,9 @@ export const resolveEvents = (
   apiGateway.forEach((event) => {
     const gatewayAccessRole = new ram.RosRole(
       scope,
-      calcRefs(`${event.key}_role`, context),
+      formatRosId(`${event.key}_agw_role`),
       {
-        roleName: calcRefs(`${service}-${event.name}-agw-access-role`, context),
+        roleName: calcRefs(`${event.name}-agw-access-role`, context),
         description: calcRefs(`${service} role`, context),
         assumeRolePolicyDocument: {
           version: '1',
@@ -60,9 +60,9 @@ export const resolveEvents = (
 
     const apiGatewayGroup = new agw.RosGroup(
       scope,
-      calcRefs(`${service}_apigroup`, context),
+      formatRosId(`${event.key}_agw_group`),
       {
-        groupName: calcRefs(`${service}_apigroup`, context),
+        groupName: calcRefs(`${service}-agw-group`, context),
         tags: calcRefs(tags, context),
         passthroughHeaders: 'host',
       },
@@ -70,10 +70,10 @@ export const resolveEvents = (
     );
 
     if (event.domain) {
-      const dnsRecordRosId = `${event.key}_custom_domain_record_${encodeBase64ForRosId(event.domain.domain_name)}`;
+      const dnsRecordId = formatRosId(`${event.key}_agw_custom_domain_record`);
       const { domainName, rr } = splitDomain(event.domain?.domain_name);
 
-      new dns.DomainRecord(scope, dnsRecordRosId, {
+      new dns.DomainRecord(scope, dnsRecordId, {
         domainName,
         rr,
         type: 'CNAME',
@@ -82,7 +82,7 @@ export const resolveEvents = (
 
       const agwCustomDomain = new agw.RosCustomDomain(
         scope,
-        `${event.key}_custom_domain_${encodeBase64ForRosId(event.domain.domain_name)}`,
+        formatRosId(`${event.key}_agw_custom_domain`),
         {
           groupId: apiGatewayGroup.attrGroupId,
           domainName: event.domain.domain_name,
@@ -92,17 +92,16 @@ export const resolveEvents = (
         },
         true,
       );
-      agwCustomDomain.addRosDependency(dnsRecordRosId);
+      agwCustomDomain.addRosDependency(dnsRecordId);
     }
 
     event.triggers.forEach((trigger) => {
-      const key = encodeBase64ForRosId(calcRefs(`${trigger.method}_${trigger.path}`, context));
-
+      const key = formatRosId(calcValue(`${trigger.method}_${trigger.path}`, context));
       const api = new agw.RosApi(
         scope,
-        `${event.key}_api_${key}`,
+        formatRosId(`${event.key}_agw_api_${key}`),
         {
-          apiName: calcRefs(`${event.name}_api_${key}`, context),
+          apiName: calcRefs(`${event.name}-agw-api-${key.replace(/_/g, '-')}`, context),
           groupId: apiGatewayGroup.attrGroupId,
           visibility: 'PRIVATE',
           authType: 'ANONYMOUS',
@@ -130,11 +129,14 @@ export const resolveEvents = (
       );
       api.addDependsOn(apiGatewayGroup);
 
-      new agw.Deployment(scope, `${service}_deployment`, {
+      new agw.Deployment(scope, formatRosId(`${event.key}_agw_api_deployment_${key}`), {
         apiId: api.attrApiId,
         groupId: apiGatewayGroup.attrGroupId,
         stageName: 'RELEASE',
-        description: `${service} Api Gateway deployment`,
+        description: calcRefs(
+          `${service} Api Gateway deployment for api: ${trigger.method} ${trigger.path}`,
+          context,
+        ),
       });
     });
   });

@@ -40,7 +40,7 @@ export const jsonTemplate = {
     },
   },
   Resources: {
-    'insight-poc_sls': {
+    sls_project: {
       Type: 'ALIYUN::SLS::Project',
       Properties: {
         Name: 'insight-poc-sls',
@@ -56,12 +56,12 @@ export const jsonTemplate = {
         ],
       },
     },
-    'insight-poc_sls_logstore': {
+    sls_logstore: {
       Type: 'ALIYUN::SLS::Logstore',
       Properties: {
         LogstoreName: 'insight-poc-sls-logstore',
         ProjectName: {
-          'Fn::GetAtt': ['insight-poc_sls', 'Name'],
+          'Fn::GetAtt': ['sls_project', 'Name'],
         },
         AppendMeta: false,
         AutoSplit: false,
@@ -71,17 +71,17 @@ export const jsonTemplate = {
         TTL: 7,
       },
     },
-    'insight-poc_sls_index': {
+    sls_index: {
       Type: 'ALIYUN::SLS::Index',
       Properties: {
         FullTextIndex: {
           Enable: true,
         },
         LogstoreName: {
-          'Fn::GetAtt': ['insight-poc_sls_logstore', 'LogstoreName'],
+          'Fn::GetAtt': ['sls_logstore', 'LogstoreName'],
         },
         ProjectName: {
-          'Fn::GetAtt': ['insight-poc_sls', 'Name'],
+          'Fn::GetAtt': ['sls_project', 'Name'],
         },
         LogReduce: false,
       },
@@ -111,19 +111,19 @@ export const jsonTemplate = {
         },
         LogConfig: {
           Project: {
-            'Fn::GetAtt': ['insight-poc_sls_logstore', 'ProjectName'],
+            'Fn::GetAtt': ['sls_logstore', 'ProjectName'],
           },
           Logstore: {
-            'Fn::GetAtt': ['insight-poc_sls_logstore', 'LogstoreName'],
+            'Fn::GetAtt': ['sls_logstore', 'LogstoreName'],
           },
           EnableRequestMetrics: true,
         },
         MemorySize: 512,
         Timeout: 10,
       },
-      DependsOn: ['insight-poc_sls', 'insight-poc_sls_logstore', 'insight-poc_sls_index'],
+      DependsOn: ['sls_project', 'sls_logstore', 'sls_index'],
     },
-    gateway_event_role: {
+    gateway_event_agw_role: {
       Type: 'ALIYUN::RAM::Role',
       Properties: {
         AssumeRolePolicyDocument: {
@@ -138,7 +138,7 @@ export const jsonTemplate = {
             },
           ],
         },
-        RoleName: 'insight-poc-insight-poc-gateway-agw-access-role',
+        RoleName: 'insight-poc-gateway-agw-access-role',
         Description: 'insight-poc role',
         Policies: [
           {
@@ -157,10 +157,10 @@ export const jsonTemplate = {
         ],
       },
     },
-    'insight-poc_apigroup': {
+    gateway_event_agw_group: {
       Type: 'ALIYUN::ApiGateway::Group',
       Properties: {
-        GroupName: 'insight-poc_apigroup',
+        GroupName: 'insight-poc-agw-group',
         PassthroughHeaders: 'host',
         Tags: [
           {
@@ -174,12 +174,12 @@ export const jsonTemplate = {
         ],
       },
     },
-    gateway_event_api_R0VUXy9hcGkvaGVsbG8: {
+    gateway_event_agw_api_get_api_hello: {
       Type: 'ALIYUN::ApiGateway::Api',
       Properties: {
-        ApiName: 'insight-poc-gateway_api_R0VUXy9hcGkvaGVsbG8',
+        ApiName: 'insight-poc-gateway-agw-api-get-api-hello',
         GroupId: {
-          'Fn::GetAtt': ['insight-poc_apigroup', 'GroupId'],
+          'Fn::GetAtt': ['gateway_event_agw_group', 'GroupId'],
         },
         RequestConfig: {
           RequestPath: '/api/hello',
@@ -193,7 +193,7 @@ export const jsonTemplate = {
             Method: 'GET',
             FcRegionId: 'cn-hangzhou',
             RoleArn: {
-              'Fn::GetAtt': ['gateway_event_role', 'Arn'],
+              'Fn::GetAtt': ['gateway_event_agw_role', 'Arn'],
             },
             FunctionName: {
               'Fn::GetAtt': ['insight_poc_fn', 'FunctionName'],
@@ -217,17 +217,17 @@ export const jsonTemplate = {
         ],
       },
     },
-    'insight-poc_deployment': {
+    gateway_event_agw_api_deployment_get_api_hello: {
       Type: 'ALIYUN::ApiGateway::Deployment',
       Properties: {
         ApiId: {
-          'Fn::GetAtt': ['gateway_event_api_R0VUXy9hcGkvaGVsbG8', 'ApiId'],
+          'Fn::GetAtt': ['gateway_event_agw_api_get_api_hello', 'ApiId'],
         },
         GroupId: {
-          'Fn::GetAtt': ['insight-poc_apigroup', 'GroupId'],
+          'Fn::GetAtt': ['gateway_event_agw_group', 'GroupId'],
         },
         StageName: 'RELEASE',
-        Description: 'insight-poc Api Gateway deployment',
+        Description: 'insight-poc Api Gateway deployment for api: GET /api/hello',
       },
     },
   },
@@ -263,7 +263,7 @@ Mappings:
     prod:
       region: cn-shanghai
 Resources:
-  insight-poc_sls:
+  sls_project:
     Type: ALIYUN::SLS::Project
     Properties:
       Name: insight-poc-sls
@@ -272,13 +272,13 @@ Resources:
           Key: iac-provider
         - Value: geek-fun
           Key: owner
-  insight-poc_sls_logstore:
+  sls_logstore:
     Type: ALIYUN::SLS::Logstore
     Properties:
       LogstoreName: insight-poc-sls-logstore
       ProjectName:
         Fn::GetAtt:
-          - insight-poc_sls
+          - sls_project
           - Name
       AppendMeta: false
       AutoSplit: false
@@ -286,18 +286,18 @@ Resources:
       PreserveStorage: false
       ShardCount: 2
       TTL: 7
-  insight-poc_sls_index:
+  sls_index:
     Type: ALIYUN::SLS::Index
     Properties:
       FullTextIndex:
         Enable: true
       LogstoreName:
         Fn::GetAtt:
-          - insight-poc_sls_logstore
+          - sls_logstore
           - LogstoreName
       ProjectName:
         Fn::GetAtt:
-          - insight-poc_sls
+          - sls_project
           - Name
       LogReduce: false
   insight_poc_fn:
@@ -322,20 +322,20 @@ Resources:
       LogConfig:
         Project:
           Fn::GetAtt:
-            - insight-poc_sls_logstore
+            - sls_logstore
             - ProjectName
         Logstore:
           Fn::GetAtt:
-            - insight-poc_sls_logstore
+            - sls_logstore
             - LogstoreName
         EnableRequestMetrics: true
       MemorySize: 512
       Timeout: 10
     DependsOn:
-      - insight-poc_sls
-      - insight-poc_sls_logstore
-      - insight-poc_sls_index
-  gateway_event_role:
+      - sls_project
+      - sls_logstore
+      - sls_index
+  gateway_event_agw_role:
     Type: ALIYUN::RAM::Role
     Properties:
       AssumeRolePolicyDocument:
@@ -346,7 +346,7 @@ Resources:
             Principal:
               Service:
                 - apigateway.aliyuncs.com
-      RoleName: insight-poc-insight-poc-gateway-agw-access-role
+      RoleName: insight-poc-gateway-agw-access-role
       Description: insight-poc role
       Policies:
         - PolicyName: insight-poc-insight-poc-gateway-policy
@@ -358,23 +358,23 @@ Resources:
                 Resource:
                   - "*"
                 Effect: Allow
-  insight-poc_apigroup:
+  gateway_event_agw_group:
     Type: ALIYUN::ApiGateway::Group
     Properties:
-      GroupName: insight-poc_apigroup
+      GroupName: insight-poc-agw-group
       PassthroughHeaders: host
       Tags:
         - Value: ServerlessInsight
           Key: iac-provider
         - Value: geek-fun
           Key: owner
-  gateway_event_api_R0VUXy9hcGkvaGVsbG8:
+  gateway_event_agw_api_get_api_hello:
     Type: ALIYUN::ApiGateway::Api
     Properties:
-      ApiName: insight-poc-gateway_api_R0VUXy9hcGkvaGVsbG8
+      ApiName: insight-poc-gateway-agw-api-get-api-hello
       GroupId:
         Fn::GetAtt:
-          - insight-poc_apigroup
+          - gateway_event_agw_group
           - GroupId
       RequestConfig:
         RequestPath: /api/hello
@@ -388,7 +388,7 @@ Resources:
           FcRegionId: cn-hangzhou
           RoleArn:
             Fn::GetAtt:
-              - gateway_event_role
+              - gateway_event_agw_role
               - Arn
           FunctionName:
             Fn::GetAtt:
@@ -404,17 +404,17 @@ Resources:
           Key: iac-provider
         - Value: geek-fun
           Key: owner
-  insight-poc_deployment:
+  gateway_event_agw_api_deployment_get_api_hello:
     Type: ALIYUN::ApiGateway::Deployment
     Properties:
       ApiId:
         Fn::GetAtt:
-          - gateway_event_api_R0VUXy9hcGkvaGVsbG8
+          - gateway_event_agw_api_get_api_hello
           - ApiId
       GroupId:
         Fn::GetAtt:
-          - insight-poc_apigroup
+          - gateway_event_agw_group
           - GroupId
       StageName: RELEASE
-      Description: insight-poc Api Gateway deployment
+      Description: "insight-poc Api Gateway deployment for api: GET /api/hello"
 `;
