@@ -208,11 +208,7 @@ export const oneFcOneGatewayRos = {
       Type: 'ALIYUN::RAM::Role',
     },
     hello_fn: {
-      DependsOn: [
-        'my_demo_service_sls',
-        'my_demo_service_sls_logstore',
-        'my_demo_service_sls_index',
-      ],
+      DependsOn: ['sls_project', 'sls_logstore', 'sls_index'],
       Properties: {
         Code: {
           ZipFile: 'resolved-code',
@@ -225,10 +221,10 @@ export const oneFcOneGatewayRos = {
         LogConfig: {
           EnableRequestMetrics: true,
           Logstore: {
-            'Fn::GetAtt': ['my_demo_service_sls_logstore', 'LogstoreName'],
+            'Fn::GetAtt': ['sls_logstore', 'LogstoreName'],
           },
           Project: {
-            'Fn::GetAtt': ['my_demo_service_sls_logstore', 'ProjectName'],
+            'Fn::GetAtt': ['sls_logstore', 'ProjectName'],
           },
         },
         MemorySize: 128,
@@ -237,7 +233,7 @@ export const oneFcOneGatewayRos = {
       },
       Type: 'ALIYUN::FC3::Function',
     },
-    my_demo_service_sls: {
+    sls_project: {
       Properties: {
         Name: 'my-demo-service-sls',
         Tags: [
@@ -249,22 +245,22 @@ export const oneFcOneGatewayRos = {
       },
       Type: 'ALIYUN::SLS::Project',
     },
-    my_demo_service_sls_index: {
+    sls_index: {
       Properties: {
         FullTextIndex: {
           Enable: true,
         },
         LogReduce: false,
         LogstoreName: {
-          'Fn::GetAtt': ['my_demo_service_sls_logstore', 'LogstoreName'],
+          'Fn::GetAtt': ['sls_logstore', 'LogstoreName'],
         },
         ProjectName: {
-          'Fn::GetAtt': ['my_demo_service_sls', 'Name'],
+          'Fn::GetAtt': ['sls_project', 'Name'],
         },
       },
       Type: 'ALIYUN::SLS::Index',
     },
-    my_demo_service_sls_logstore: {
+    sls_logstore: {
       Properties: {
         AppendMeta: false,
         AutoSplit: false,
@@ -272,7 +268,7 @@ export const oneFcOneGatewayRos = {
         LogstoreName: 'my-demo-service-sls-logstore',
         PreserveStorage: false,
         ProjectName: {
-          'Fn::GetAtt': ['my_demo_service_sls', 'Name'],
+          'Fn::GetAtt': ['sls_project', 'Name'],
         },
         ShardCount: 2,
         TTL: 7,
