@@ -23,3 +23,15 @@ export const context: Context = {
   },
   tags: [{ key: 'owner', value: 'geekfun' }],
 };
+
+export const defaultContext = {
+  accessKeyId: 'access key id',
+  accessKeySecret: 'access key secret',
+  iacLocation: expect.stringContaining('tests/fixtures/serverless-insight.yml'),
+  parameters: [],
+  region: 'cn-hangzhou',
+  provider: ProviderEnum.ALIYUN,
+  securityToken: 'account id',
+  stackName: 'my-demo-stack',
+  stage: 'default',
+};
