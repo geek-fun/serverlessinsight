@@ -1,6 +1,6 @@
 {
   "name": "@geek-fun/serverlessinsight",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "description": "Full life cycle cross providers serverless application management for your fast-growing business.",
   "homepage": "https://serverlessinsight.geekfun.club",
   "main": "dist/src/index.js",
