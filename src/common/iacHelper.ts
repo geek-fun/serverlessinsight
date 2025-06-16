@@ -115,7 +115,7 @@ export const formatRosId = (id: string): string => {
   result = result.toLowerCase();
 
   // Replace special characters with underscores
-  result = result.replace(/[/#,-]/g, '_');
+  result = result.replace(/[/*,/#,-]/g, '_');
 
   // Remove any number of underscores to single one
   result = result.replace(/_+/g, '_');

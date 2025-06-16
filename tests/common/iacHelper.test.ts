@@ -143,8 +143,8 @@ describe('Unit test for iacHelper', () => {
     });
 
     it('should convert camelCase and replace special characters', () => {
-      const result = formatRosId('helloWorld/withSpecial#Chars');
-      expect(result).toEqual('hello_world_with_special_chars');
+      const result = formatRosId('helloWorld/withSpecial#Chars*And');
+      expect(result).toEqual('hello_world_with_special_chars_and');
     });
 
     it('should not modify already snake_case strings without special chars', () => {

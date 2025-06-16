@@ -128,6 +128,7 @@ export const publishAssets = async (assets: Array<ConstructedAsset> | undefined)
     accessKeyId: context.accessKeyId,
     accessKeySecret: context.accessKeySecret,
     bucket: bucketName,
+    timeout: 600000, // 10 minutes
   });
 
   await ensureBucketExits(bucketName, client);
