@@ -46,4 +46,66 @@ describe('unit test for parse', () => {
       });
     });
   });
+
+  describe('domain - tables', () => {
+    const iacLocation = path.resolve(__dirname, '../fixtures/serverless-insight-table.yml');
+
+    it('should parse tables from yaml to domain instance when the yaml is valid', () => {
+      const domain = parseYaml(iacLocation);
+      expect(domain.tables).toEqual([
+        {
+          key: 'insight_poc_table',
+          collection: 'store_or_instance_name',
+          desc: 'This is a test table for serverless insight',
+          name: 'insight-poc-table',
+          type: 'TABLE_STORE_C',
+          network: {
+            type: 'PRIVATE',
+            ingressRules: ['TCP:0.0.0.0/0:80', 'TCP:0.0.0.0/0:443'],
+          },
+          throughput: {
+            reserved: {
+              read: 2,
+              write: 10,
+            },
+            onDemand: {
+              read: 100,
+              write: 100,
+            },
+          },
+          keySchema: [{ name: 'id', type: 'HASH' }],
+          attributes: [{ name: 'id', type: 'STRING' }],
+        },
+      ]);
+    });
+
+    it('should set the default value when not provided by client', () => {
+      const iacLocation = path.resolve(__dirname, '../fixtures/serverless-insight-table-mini.yml');
+      const domain = parseYaml(iacLocation);
+      expect(domain.tables).toEqual([
+        {
+          key: 'insight_poc_table',
+          collection: 'store_or_instance_id',
+          name: 'insight-poc-table',
+          type: 'TABLE_STORE_H',
+          network: {
+            type: 'PRIVATE',
+            ingressRules: [],
+          },
+          attributes: [
+            {
+              name: 'id',
+              type: 'STRING',
+            },
+          ],
+          keySchema: [
+            {
+              name: 'id',
+              type: 'HASH',
+            },
+          ],
+        },
+      ]);
+    });
+  });
 });

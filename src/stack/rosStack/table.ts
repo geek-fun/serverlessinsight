@@ -3,23 +3,23 @@ import * as ots from '@alicloud/ros-cdk-ots';
 
 import { Context, ServerlessIac } from '../../types';
 import { isEmpty } from 'lodash';
-import { TableDomain, TableEnum } from '../../types/domains/table';
+import { TableDomain } from '../../types/domains/table';
 import { calcRefs } from '../../common';
 
-const tableEngineMap = new Map<TableEnum, { clusterType: string }>([
-  [
-    TableEnum.TABLE_STORE,
-    {
-      clusterType: 'HYBRID',
-    },
-  ],
-  [
-    TableEnum.TABLE_STORE_H,
-    {
-      clusterType: 'SSD',
-    },
-  ],
-]);
+// const tableEngineMap = new Map<TableEnum, { clusterType: string }>([
+//   [
+//     TableEnum.TABLE_STORE_C,
+//     {
+//       clusterType: 'HYBRID',
+//     },
+//   ],
+//   [
+//     TableEnum.TABLE_STORE_H,
+//     {
+//       clusterType: 'SSD',
+//     },
+//   ],
+// ]);
 
 export const resolveTables = (
   scope: ros.Construct,
@@ -30,40 +30,80 @@ export const resolveTables = (
   if (isEmpty(tables)) {
     return undefined;
   }
+  // const collections = Array.from(
+  //   new Map(
+  //     tables!
+  //       .filter((tableDomain) => tableDomain.collection)
+  //       .map((tableDomain) => [tableDomain.collection.id, tableDomain]),
+  //   ).values(),
+  // )
+  //   .filter((tableDomain) => tableDomain.collection)
+  //   .map((collection) => {
+  //     const ds = new ots.datasource.Instances(scope, collection.key + 'Collection', {
+  //       instanceName: calcRefs(collection.collection.name, context),
+  //     }).attrInstances.toString();
+  //     if (!ds) {
+  //       const instance = new ots.Instance(
+  //         scope,
+  //         tableDomain.key,
+  //         {
+  //           instanceName: calcRefs(collection.name, context),
+  //           clusterType: clusterType,
+  //           description: tableDomain.desc,
+  //           network: tableDomain.network.type === 'PRIVATE' ? 'VPC' : 'PUBLIC',
+  //           tags: calcRefs(tags, context),
+  //         },
+  //         true,
+  //       );
+  //     }
+  //     return ds;
+  //   });
 
   tables!.forEach((tableDomain) => {
-    const { clusterType } = tableEngineMap.get(tableDomain.type) || {};
+    const { collection, throughput, attributes, keySchema } = tableDomain;
+    // const { clusterType } = tableEngineMap.get(tableDomain.type) || {};
 
-    const tableInstance = new ots.Instance(
-      scope,
-      tableDomain.key,
-      {
-        instanceName: calcRefs(tableDomain.name, context),
-        clusterType: clusterType,
-        description: tableDomain.desc,
-        network: tableDomain.network.type === 'PRIVATE' ? 'VPC' : 'PUBLIC',
-        tags: calcRefs(tags, context),
-      },
-      true,
-    );
+    // let tableInstance: ots.Instance | ros.IResolvable | undefined;
+
+    // if (collection.name) {
+    //   tableInstance = new ots.Instance(
+    //     scope,
+    //     tableDomain.key,
+    //     {
+    //       instanceName: calcRefs(collection.name, context),
+    //       clusterType: clusterType,
+    //       description: tableDomain.desc,
+    //       network: tableDomain.network.type === 'PRIVATE' ? 'VPC' : 'PUBLIC',
+    //       tags: calcRefs(tags, context),
+    //     },
+    //     true,
+    //   );
+    // } else {
+    //   tableInstance = new ots.datasource.Instances(scope, tableDomain.key + 'Instance', {
+    //     instanceName: calcRefs(collection.id, context),
+    //   }).attrInstances as ros.IResolvable;
+    // }
+
+    const columns =
+      attributes?.map((attribute) => ({
+        name: attribute.name,
+        type: attribute.type,
+      })) || [];
+
+    const primaryKey = keySchema.map((key) => ({
+      name: key.name,
+      type: columns.find(({ name }) => name === key.name)?.type || 'string',
+    }));
 
     new ots.Table(
       scope,
-      tableDomain.key + 'Table',
+      tableDomain.key,
       {
-        instanceName: tableInstance.attrInstanceName,
+        instanceName: collection,
         tableName: calcRefs(tableDomain.name, context),
-        primaryKey: [
-          {
-            name: 'pk',
-            type: 'STRING',
-          },
-        ],
-        columns: [],
-        reservedThroughput: {
-          read: tableDomain.cu.min,
-          write: tableDomain.cu.min,
-        },
+        primaryKey,
+        columns,
+        reservedThroughput: throughput?.reserved,
         timeToLive: -1,
         maxVersions: 1,
       },

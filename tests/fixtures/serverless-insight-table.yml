@@ -12,9 +12,10 @@ tags:
 
 tables:
   insight_poc_table:
-    collection: t01wdidewc0h
+    collection: store_or_instance_name
     name: insight-poc-table
-    type: TABLE_STORE_H
+    desc: 'This is a test table for serverless insight'
+    type: TABLE_STORE_C
     network:
       type: 'PRIVATE'
       ingress_rules:
@@ -33,14 +34,3 @@ tables:
     attributes:
       - name: id
         type: STRING
-      - name: name
-        type: STRING
-      - name: birthday
-        type: STRING
-      - name: weight
-        type: INTEGER
-      - name: height
-        type: DOUBLE
-      - name: is_active
-        type: BOOLEAN
-

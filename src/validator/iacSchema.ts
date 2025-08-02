@@ -6,6 +6,7 @@ import { databaseSchema } from './databaseSchema';
 import { eventSchema } from './eventSchema';
 import { functionSchema } from './functionSchema';
 import { bucketSchema } from './bucketSchema';
+import { tableSchema } from './tableschema';
 
 type IacSchemaError = {
   instancePath: string;
@@ -39,6 +40,7 @@ const validate = ajv
   .addSchema(functionSchema)
   .addSchema(eventSchema)
   .addSchema(databaseSchema)
+  .addSchema(tableSchema)
   .addSchema(bucketSchema)
   .compile(rootSchema);
 
