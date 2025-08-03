@@ -29,6 +29,44 @@ const getBootstrapTemplate = async (context: Context) => {
           },
         },
       },
+      si_auto_bootstrap_api_lambda: {
+        Type: 'ALIYUN::FC3::Function',
+        Properties: {
+          FunctionName: {
+            'Fn::Sub': 'si-bootstrap-api-${ALIYUN::AccountId}-${ALIYUN::Region}',
+          },
+          Description: 'ServerlessInsight Bootstrap API',
+          Handler: 'index.handler',
+          Runtime: 'nodejs20',
+          Layers: ['acs:fc:cn-hangzhou:1990893136649406:layers/si-bootstrap-sdk/versions/3'],
+          Code: {
+            SourceCode: `
+const { helloSiBootstrapSdk } = require('@geek-fun/si-bootstrap-sdk');
+
+module.exports.handler = async (event, context) => {
+  console.log('Event:', event);
+  console.log('Context:', context);
+
+  try {
+    const result = helloSiBootstrapSdk();
+    return {
+      statusCode: 200,
+      body: JSON.stringify({ message: result }),
+    };
+  } catch (error) {
+    console.error('Error:', error);
+    return {
+      statusCode: 500,
+      body: JSON.stringify({ error: 'Internal Server Error' }),
+    };
+  }
+};
+            `,
+          },
+          MemorySize: 512,
+          Timeout: 900, // 15 minutes
+        },
+      },
     },
   };
   return { stackName, template };

@@ -1,0 +1,24 @@
+{
+  "name": "@geek-fun/si-bootstrap-sdk",
+  "version": "1.0.0",
+  "main": "src/index.js",
+  "types": "src/index.d.ts",
+  "description": "Bootstrap SDK for Serverless Insight",
+  "homepage": "https://serverlessinsight.geekfun.club",
+  "scripts": {
+    "build": "tsc --build",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/geek-fun/serverlessinsight.git"
+  },
+  "author": "geekfun <support@geekfun.club>",
+  "license": "Apache-2.0",
+  "bugs": {
+    "url": "https://github.com/geek-fun/serverlessinsight/issues"
+  },
+  "devDependencies": {
+    "typescript": "^5.9.2"
+  }
+}

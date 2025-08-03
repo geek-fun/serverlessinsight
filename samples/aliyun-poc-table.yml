@@ -2,7 +2,7 @@ version: 0.0.1
 
 provider:
   name: aliyun
-  region: cn-chengdu
+  region: cn-hangzhou
 
 
 service: insight-table-poc
@@ -13,7 +13,7 @@ tags:
 tables:
   insight_poc_table:
     collection: t01wdidewc0h
-    name: insight-poc-table
+    name: insightPocTable
     type: TABLE_STORE_H
     network:
       type: 'PRIVATE'
@@ -22,8 +22,8 @@ tables:
         - TCP:0.0.0.0/0:443
     throughput:
       reserved:
-        read: 2
-        write: 10
+        read: 0
+        write: 0
       on_demand:
         read: 100
         write: 100
