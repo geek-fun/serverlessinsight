@@ -1,25 +1,25 @@
 import * as ros from '@alicloud/ros-cdk-core';
-import * as ots from '@alicloud/ros-cdk-ots';
+import * as rosRos from '@alicloud/ros-cdk-ros';
 
 import { Context, ServerlessIac } from '../../types';
 import { isEmpty } from 'lodash';
-import { TableDomain } from '../../types/domains/table';
-import { calcRefs } from '../../common';
+import { TableDomain, TableEnum } from '../../types/domains/table';
+import { calcRefs, SI_BOOTSTRAP_FC_PREFIX } from '../../common';
 
-// const tableEngineMap = new Map<TableEnum, { clusterType: string }>([
-//   [
-//     TableEnum.TABLE_STORE_C,
-//     {
-//       clusterType: 'HYBRID',
-//     },
-//   ],
-//   [
-//     TableEnum.TABLE_STORE_H,
-//     {
-//       clusterType: 'SSD',
-//     },
-//   ],
-// ]);
+const tableEngineMap = new Map<TableEnum, { clusterType: string }>([
+  [
+    TableEnum.TABLE_STORE_C,
+    {
+      clusterType: 'HYBRID',
+    },
+  ],
+  [
+    TableEnum.TABLE_STORE_H,
+    {
+      clusterType: 'SSD',
+    },
+  ],
+]);
 
 export const resolveTables = (
   scope: ros.Construct,
@@ -30,82 +30,37 @@ export const resolveTables = (
   if (isEmpty(tables)) {
     return undefined;
   }
-  // const collections = Array.from(
-  //   new Map(
-  //     tables!
-  //       .filter((tableDomain) => tableDomain.collection)
-  //       .map((tableDomain) => [tableDomain.collection.id, tableDomain]),
-  //   ).values(),
-  // )
-  //   .filter((tableDomain) => tableDomain.collection)
-  //   .map((collection) => {
-  //     const ds = new ots.datasource.Instances(scope, collection.key + 'Collection', {
-  //       instanceName: calcRefs(collection.collection.name, context),
-  //     }).attrInstances.toString();
-  //     if (!ds) {
-  //       const instance = new ots.Instance(
-  //         scope,
-  //         tableDomain.key,
-  //         {
-  //           instanceName: calcRefs(collection.name, context),
-  //           clusterType: clusterType,
-  //           description: tableDomain.desc,
-  //           network: tableDomain.network.type === 'PRIVATE' ? 'VPC' : 'PUBLIC',
-  //           tags: calcRefs(tags, context),
-  //         },
-  //         true,
-  //       );
-  //     }
-  //     return ds;
-  //   });
 
   tables!.forEach((tableDomain) => {
     const { collection, throughput, attributes, keySchema } = tableDomain;
-    // const { clusterType } = tableEngineMap.get(tableDomain.type) || {};
-
-    // let tableInstance: ots.Instance | ros.IResolvable | undefined;
-
-    // if (collection.name) {
-    //   tableInstance = new ots.Instance(
-    //     scope,
-    //     tableDomain.key,
-    //     {
-    //       instanceName: calcRefs(collection.name, context),
-    //       clusterType: clusterType,
-    //       description: tableDomain.desc,
-    //       network: tableDomain.network.type === 'PRIVATE' ? 'VPC' : 'PUBLIC',
-    //       tags: calcRefs(tags, context),
-    //     },
-    //     true,
-    //   );
-    // } else {
-    //   tableInstance = new ots.datasource.Instances(scope, tableDomain.key + 'Instance', {
-    //     instanceName: calcRefs(collection.id, context),
-    //   }).attrInstances as ros.IResolvable;
-    // }
 
     const columns =
       attributes?.map((attribute) => ({
-        name: attribute.name,
-        type: attribute.type,
+        name: calcRefs(attribute.name, context),
+        type: calcRefs(attribute.type, context),
       })) || [];
 
     const primaryKey = keySchema.map((key) => ({
-      name: key.name,
-      type: columns.find(({ name }) => name === key.name)?.type || 'string',
+      name: calcRefs(key.name, context),
+      type: columns.find(({ name }) => calcRefs(name, context) === key.name)?.type || 'string',
     }));
+    const clusterType = tableEngineMap.get(calcRefs(tableDomain.type, context))?.clusterType;
 
-    new ots.Table(
+    new rosRos.RosCustomResource(
       scope,
       tableDomain.key,
       {
-        instanceName: collection,
-        tableName: calcRefs(tableDomain.name, context),
-        primaryKey,
-        columns,
-        reservedThroughput: throughput?.reserved,
-        timeToLive: -1,
-        maxVersions: 1,
+        serviceToken: `acs:fc:${context.region}:${context.accountId}:functions/${SI_BOOTSTRAP_FC_PREFIX}-${context.region}-${context.accountId}`,
+        timeout: 600,
+        parameters: {
+          instanceName: calcRefs(collection, context),
+          tableName: calcRefs(tableDomain.name, context),
+          primaryKey,
+          columns,
+          clusterType,
+          reservedThroughput: calcRefs(throughput?.reserved, context),
+          tags,
+        },
       },
       true,
     );

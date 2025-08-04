@@ -20,5 +20,10 @@
   },
   "devDependencies": {
     "typescript": "^5.9.2"
+  },
+  "dependencies": {
+    "@alicloud/credentials": "^2.4.4",
+    "@alicloud/openapi-client": "^0.4.15",
+    "@alicloud/tablestore20201209": "^1.2.0"
   }
 }

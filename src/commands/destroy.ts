@@ -13,7 +13,7 @@ export const destroyStack = async (
   },
 ) => {
   const iac = parseYaml(getIacLocation(options.location));
-  setContext({ stackName, ...options, iacProvider: iac.provider });
+  await setContext({ stackName, ...options, iacProvider: iac.provider }, true);
   const context = getContext();
   logger.info(
     `Destroying stack: ${stackName}, provider: ${context.provider}, region: ${context.region}...`,

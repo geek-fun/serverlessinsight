@@ -1,9 +1,8 @@
-import { getContext, getIamInfo, rosStackDeploy } from '../../common';
+import { getContext, rosStackDeploy, SI_BOOTSTRAP_FC_PREFIX } from '../../common';
 import { Context } from '../../types';
 
 const getBootstrapTemplate = async (context: Context) => {
-  const iamInfo = await getIamInfo(context);
-  const stackName = `si-bootstrap-${iamInfo?.accountId}-${context.region}`;
+  const stackName = `si-bootstrap-${context.accountId}-${context.region}`;
 
   const template = {
     Description: 'ServerlessInsight Bootstrap Stack',
@@ -33,22 +32,22 @@ const getBootstrapTemplate = async (context: Context) => {
         Type: 'ALIYUN::FC3::Function',
         Properties: {
           FunctionName: {
-            'Fn::Sub': 'si-bootstrap-api-${ALIYUN::AccountId}-${ALIYUN::Region}',
+            'Fn::Sub': `${SI_BOOTSTRAP_FC_PREFIX}-$\{ALIYUN::AccountId}-$\{ALIYUN::Region}`,
           },
           Description: 'ServerlessInsight Bootstrap API',
           Handler: 'index.handler',
           Runtime: 'nodejs20',
-          Layers: ['acs:fc:cn-hangzhou:1990893136649406:layers/si-bootstrap-sdk/versions/3'],
+          Layers: ['acs:fc:cn-hangzhou:1990893136649406:layers/si-bootstrap-sdk/versions/7'],
           Code: {
             SourceCode: `
-const { helloSiBootstrapSdk } = require('@geek-fun/si-bootstrap-sdk');
+const { bootstrapHandler } = require('@geek-fun/si-bootstrap-sdk');
 
 module.exports.handler = async (event, context) => {
   console.log('Event:', event);
   console.log('Context:', context);
 
   try {
-    const result = helloSiBootstrapSdk();
+    const result = bootstrapHandler({event, context});
     return {
       statusCode: 200,
       body: JSON.stringify({ message: result }),
