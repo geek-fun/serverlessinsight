@@ -50,9 +50,10 @@ export const resolveTables = (
       scope,
       tableDomain.key,
       {
-        serviceToken: `acs:fc:${context.region}:${context.accountId}:functions/${SI_BOOTSTRAP_FC_PREFIX}-${context.region}-${context.accountId}`,
+        serviceToken: `acs:fc:${context.region}:${context.accountId}:functions/${SI_BOOTSTRAP_FC_PREFIX}-${context.accountId}-${context.region}`,
         timeout: 600,
         parameters: {
+          resource: calcRefs(tableDomain.type, context),
           instanceName: calcRefs(collection, context),
           tableName: calcRefs(tableDomain.name, context),
           primaryKey,
