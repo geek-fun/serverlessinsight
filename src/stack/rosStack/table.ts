@@ -32,7 +32,7 @@ export const resolveTables = (
   }
 
   tables!.forEach((tableDomain) => {
-    const { collection, throughput, attributes, keySchema } = tableDomain;
+    const { collection, throughput, attributes, keySchema, network } = tableDomain;
 
     const columns =
       attributes?.map((attribute) => ({
@@ -42,7 +42,7 @@ export const resolveTables = (
 
     const primaryKey = keySchema.map((key) => ({
       name: calcRefs(key.name, context),
-      type: columns.find(({ name }) => calcRefs(name, context) === key.name)?.type || 'string',
+      type: columns.find(({ name }) => calcRefs(name, context) === key.name)?.type || 'STRING',
     }));
     const clusterType = tableEngineMap.get(calcRefs(tableDomain.type, context))?.clusterType;
 
@@ -59,6 +59,7 @@ export const resolveTables = (
           primaryKey,
           columns,
           clusterType,
+          network,
           reservedThroughput: calcRefs(throughput?.reserved, context),
           tags,
         },

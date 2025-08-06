@@ -17,6 +17,7 @@ tables:
     type: TABLE_STORE_H
     network:
       type: 'PRIVATE'
+      vpc_id: "vpc-12345678"
       ingress_rules:
         - TCP:0.0.0.0/0:80
         - TCP:0.0.0.0/0:443

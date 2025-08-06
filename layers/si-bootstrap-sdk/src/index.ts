@@ -1,46 +1,41 @@
-type CustomResourceRequest = {
-  requestType: 'Create' | 'Update' | 'Delete';
-  stackId: string;
-  stackName: string;
-  resourceOwnerId: string;
-  callerId: string;
-  resourceProperties: {
-    [key: string]: unknown;
-  };
-  resourceType: string;
-  logicalResourceId: string;
-
-  regionId: string;
-  requestId: string;
-};
+import { CustomResourceRequest, ResourceProperties, TableStoreResourceProperties } from './tyes';
+import { resources } from './resources';
 
 export const bootstrapHandler = async (event: CustomResourceRequest) => {
   console.log('Received event:', JSON.stringify(event, null, 2));
 
-  if (event.requestType === 'Create' || event.requestType === 'Update') {
-    const responseData = {
-      message: 'Custom resource created or updated successfully.',
-    };
-    console.log('Response data:', responseData);
+  const { resourceType, requestType } = event;
 
-    return {
-      status: 'SUCCESS',
-      reason: 'Custom resource created successfully.',
-      logicalResourceId: event.logicalResourceId,
-      stackId: event.stackId,
-      physicalResourceId: 'xxx',
-      data: responseData,
-    };
-  } else if (event.requestType === 'Delete') {
-    console.log('Custom resource deleted.');
-    return {
-      status: 'SUCCESS',
-      reason: 'Custom resource deleted successfully.',
-      stackId: event.stackId,
-      physicalResourceId: 'xxx',
-      logicalResourceId: event.logicalResourceId,
-    };
+  const action = resources[resourceType][requestType];
+  if (!action) {
+    throw new Error(
+      `Unsupported resource type or request type: ${event.resourceType} - ${event.requestType}`,
+    );
   }
 
-  throw new Error(`Unsupported request type: ${event.requestType}`);
+  try {
+    const resourceProps =
+      event.resourceProperties as ResourceProperties<TableStoreResourceProperties>;
+
+    const result = await action(resourceProps, event.credentials, event.regionId);
+    console.log('Action result:', result);
+
+    return {
+      status: 'SUCCESS',
+      reason: 'Custom resource processed successfully.',
+      logicalResourceId: event?.logicalResourceId,
+      stackId: event.stackId,
+      physicalResourceId: result?.physicalResourceId || 'xxx',
+      data: result?.data || {},
+    };
+  } catch (error) {
+    console.error('Error processing request:', error);
+    return {
+      status: 'FAILED',
+      reason: error instanceof Error ? error.message : 'Internal Server Error',
+      logicalResourceId: event.logicalResourceId,
+      stackId: event.stackId,
+      physicalResourceId: 'xxx',
+    };
+  }
 };

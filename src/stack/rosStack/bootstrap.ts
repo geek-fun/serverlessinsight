@@ -58,7 +58,7 @@ module.exports.handler = async (rawEvent, context) => {
 
   try {
     // 处理业务逻辑
-    const result = await bootstrapHandler(event);
+    const result = await bootstrapHandler({...event, credentials: context.credentials });
 
     // 构建符合 ROS 要求的响应结构
     const rosResponse = {
@@ -131,7 +131,8 @@ async function sendResponse(responseUrl, responseBody) {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'Content-Length': Buffer.byteLength(body).toString()
+        'Content-Length': Buffer.byteLength(body).toString(),
+        'Date': new Date().toUTCString()
       },
       body: body
     });
@@ -166,10 +167,11 @@ const parseEvent = (rawEvent) => {
     resourceOwnerId: event.ResourceOwnerId,
     callerId: event.CallerId,
     resourceProperties: event.ResourceProperties,
-    resourceType: event.ResourceType,
+    eventType: event.ResourceType,
+    requestType: event.RequestType?.toUpperCase(),
+    resourceType: event.ResourceProperties?.resource,
     regionId: event.RegionId,
     stackName: event.StackName,
-    requestType: event.RequestType,
     requestId: event.RequestId,
     intranetResponseURL: event.IntranetResponseURL,
     logicalResourceId: event.LogicalResourceId
