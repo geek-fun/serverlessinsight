@@ -1,16 +1,26 @@
 import { CustomResourceRequest, ResourceProperties, TableStoreResourceProperties } from './tyes';
 import { resources } from './resources';
+import { logger } from './common';
 
 export const bootstrapHandler = async (event: CustomResourceRequest) => {
-  console.log('Received event:', JSON.stringify(event, null, 2));
+  logger.info(event, 'bootstrapHandler received event');
 
   const { resourceType, requestType } = event;
 
   const action = resources[resourceType][requestType];
   if (!action) {
-    throw new Error(
-      `Unsupported resource type or request type: ${event.resourceType} - ${event.requestType}`,
+    logger.error(
+      { resourceType, requestType },
+      'Unsupported resource type or request type provided',
     );
+
+    return {
+      status: 'FAILED',
+      reason: `Unsupported resource type or request type: ${resourceType} - ${requestType}`,
+      stackId: event.stackId,
+      logicalResourceId: event?.logicalResourceId,
+      physicalResourceId: event?.physicalResourceId,
+    };
   }
 
   try {
@@ -18,7 +28,8 @@ export const bootstrapHandler = async (event: CustomResourceRequest) => {
       event.resourceProperties as ResourceProperties<TableStoreResourceProperties>;
 
     const result = await action(resourceProps, event.credentials, event.regionId);
-    console.log('Action result:', result);
+
+    logger.info(result, 'Action completed successfully');
 
     return {
       status: 'SUCCESS',
@@ -29,7 +40,8 @@ export const bootstrapHandler = async (event: CustomResourceRequest) => {
       data: result?.data || {},
     };
   } catch (error) {
-    console.error('Error processing request:', error);
+    logger.error(error, 'Error processing request');
+
     return {
       status: 'FAILED',
       reason: error instanceof Error ? error.message : 'Internal Server Error',

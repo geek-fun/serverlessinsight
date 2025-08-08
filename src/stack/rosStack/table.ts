@@ -34,16 +34,23 @@ export const resolveTables = (
   tables!.forEach((tableDomain) => {
     const { collection, throughput, attributes, keySchema, network } = tableDomain;
 
-    const columns =
-      attributes?.map((attribute) => ({
-        name: calcRefs(attribute.name, context),
-        type: calcRefs(attribute.type, context),
-      })) || [];
+    const primaryKey = keySchema.map((key) => {
+      const name = calcRefs(key.name, context);
+      const type =
+        attributes.find((attribute) => calcRefs(attribute.name, context) === name)?.type ||
+        'STRING';
 
-    const primaryKey = keySchema.map((key) => ({
-      name: calcRefs(key.name, context),
-      type: columns.find(({ name }) => calcRefs(name, context) === key.name)?.type || 'STRING',
-    }));
+      return { name, type: calcRefs(type, context) };
+    });
+
+    const columns =
+      attributes
+        ?.filter(({ name }) => !primaryKey.find((pk) => pk.name === calcRefs(name, context)))
+        .map((attribute) => ({
+          name: calcRefs(attribute.name, context),
+          type: calcRefs(attribute.type, context),
+        })) || [];
+
     const clusterType = tableEngineMap.get(calcRefs(tableDomain.type, context))?.clusterType;
 
     new rosRos.RosCustomResource(
@@ -62,6 +69,11 @@ export const resolveTables = (
           network,
           reservedThroughput: calcRefs(throughput?.reserved, context),
           tags,
+          credentials: {
+            accessKeyId: context.accessKeyId,
+            accessKeySecret: context.accessKeySecret,
+            securityToken: context.securityToken,
+          },
         },
       },
       true,

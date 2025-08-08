@@ -28,6 +28,7 @@ export type CustomResourceRequest = {
   requestType: RequestTypeEnum;
   resourceType: ResourceEnum;
   logicalResourceId: string;
+  physicalResourceId?: string;
   regionId: string;
   requestId: string;
   credentials: Credentials;

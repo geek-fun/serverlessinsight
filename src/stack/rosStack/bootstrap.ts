@@ -38,7 +38,7 @@ const getBootstrapTemplate = async (context: Context) => {
           Description: 'ServerlessInsight Bootstrap API',
           Handler: 'index.handler',
           Runtime: 'nodejs20',
-          Layers: ['acs:fc:cn-hangzhou:1990893136649406:layers/si-bootstrap-sdk/versions/8'],
+          Layers: ['acs:fc:cn-hangzhou:1990893136649406:layers/si-bootstrap-sdk/versions/9'],
           Code: {
             SourceCode: `
 const { bootstrapHandler } = require('@geek-fun/si-bootstrap-sdk');
@@ -58,12 +58,13 @@ module.exports.handler = async (rawEvent, context) => {
 
   try {
     // 处理业务逻辑
-    const result = await bootstrapHandler({...event, credentials: context.credentials });
+    const result = await bootstrapHandler(event);
 
     // 构建符合 ROS 要求的响应结构
     const rosResponse = {
       ...commonResponse,
       Status: result.status,
+      Reason: result.reason,
       PhysicalResourceId: result.physicalResourceId,
       Data: result.data || {}       // 业务数据
     };
@@ -161,20 +162,23 @@ const parseEvent = (rawEvent) => {
     event = rawEvent;
   }
 
+  const { credentials, ...resourceProperties } = event.ResourceProperties
   return {
     stackId: event.StackId,
     responseURL: event.ResponseURL,
     resourceOwnerId: event.ResourceOwnerId,
     callerId: event.CallerId,
-    resourceProperties: event.ResourceProperties,
+    resourceProperties,
     eventType: event.ResourceType,
     requestType: event.RequestType?.toUpperCase(),
-    resourceType: event.ResourceProperties?.resource,
+    resourceType: resourceProperties.resource,
     regionId: event.RegionId,
     stackName: event.StackName,
     requestId: event.RequestId,
     intranetResponseURL: event.IntranetResponseURL,
-    logicalResourceId: event.LogicalResourceId
+    logicalResourceId: event.LogicalResourceId,
+    physicalResourceId: event.PhysicalResourceId,
+    credentials
   };
 };`,
           },

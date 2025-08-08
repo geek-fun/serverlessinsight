@@ -1,8 +1,9 @@
 import Tablestore20201209, * as ots from '@alicloud/tablestore20201209';
 import { Config } from '@alicloud/credentials';
-import TableStore, { DefinedColumnType } from 'tablestore';
+import TableStore from 'tablestore';
 import * as teaUtil from '@alicloud/tea-util';
 import { Credentials } from '../tyes';
+import { formatOtsTableParam, logger } from '../common';
 
 const loadAlicloudTableStoreClient = (
   region: string,
@@ -21,7 +22,7 @@ const loadTableStore = (
 ): TableStore.Client =>
   new TableStore.Client({
     ...credentials,
-    endpoint: `tablestore.${regionId}.aliyuncs.com`,
+    endpoint: `https://${instanceName}.${regionId}.ots.aliyuncs.com`,
     instancename: instanceName,
   });
 
@@ -54,7 +55,7 @@ export const loadTableStoreClient = (regionId: string, credentials: Credentials)
         instanceName: instanceName,
         clusterType: clusterType,
         networkTypeACL,
-        networkSourceACL: ['TRUST_PROXY', ...(network?.ingressRules ?? [])],
+        networkSourceACL: ['TRUST_PROXY', ...(network?.ingressRules ?? [])].filter(Boolean),
         policy: '',
         tags,
       });
@@ -68,12 +69,14 @@ export const loadTableStoreClient = (regionId: string, credentials: Credentials)
           headers,
           runtime,
         );
+        logger.info({ response, instanceName }, `Instance ${instanceName} created successfully`);
+
         if (!response?.body?.instanceName) {
           throw new Error('Failed to create instance, response body is empty');
         }
 
         return {
-          instanceName: response.body.instanceName,
+          instanceName: instanceName,
           clusterType: response.body.clusterType,
           instanceStatus: response.body.instanceStatus,
           networkTypeACL: response.body.networkTypeACL,
@@ -81,7 +84,7 @@ export const loadTableStoreClient = (regionId: string, credentials: Credentials)
           policy: response.body.policy,
         };
       } catch (error) {
-        console.log(error);
+        logger.error(error, 'Failed to create instance');
         throw error;
       }
     },
@@ -110,10 +113,7 @@ export const loadTableStoreClient = (regionId: string, credentials: Credentials)
 
     createTable: async ({
       instanceName,
-      tableName,
-      primaryKey,
-      columns,
-      reservedThroughput,
+      ...params
     }: {
       instanceName: string;
       tableName: string;
@@ -128,28 +128,19 @@ export const loadTableStoreClient = (regionId: string, credentials: Credentials)
       };
     }) => {
       const client = loadTableStore(instanceName, regionId, credentials);
-      const result = await client.createTable({
-        tableOptions: {
-          timeToLive: -1, // 永不过期
-          maxVersions: 1, // 只保留最新版本
-        },
-        tableMeta: {
-          tableName: tableName,
-          primaryKey: primaryKey,
-          definedColumn: columns.map((col) => ({
-            name: col.name,
-            type: `DCT_${col.type}` as keyof typeof DefinedColumnType,
-          })),
-        },
-        reservedThroughput: {
-          capacityUnit: reservedThroughput,
-        },
-      });
+      const tableParam = formatOtsTableParam(params);
 
-      console.log('create table result:', result);
+      await client.createTable(tableParam);
 
-      return result;
+      return {
+        instanceName,
+        tableName: tableParam.tableMeta.tableName,
+        primaryKey: tableParam.tableMeta.primaryKey,
+        columns: tableParam.tableMeta.definedColumn,
+        reservedThroughput: tableParam.reservedThroughput,
+      };
     },
+
     updateTable: async ({
       instanceName,
       tableName,
@@ -157,31 +148,29 @@ export const loadTableStoreClient = (regionId: string, credentials: Credentials)
     }: {
       instanceName: string;
       tableName: string;
-      primaryKey: Array<{ name: string; type: 'STRING' | 'INTEGER' | 'BINARY' }>;
-      columns: Array<{
-        name: string;
-        type: 'STRING' | 'INTEGER' | 'DOUBLE' | 'BOOLEAN' | 'BINARY';
-      }>;
       reservedThroughput: {
         read: number;
         write: number;
       };
     }) => {
       const client = loadTableStore(instanceName, regionId, credentials);
+
       const result = await client.updateTable({
         tableName: tableName,
         tableOptions: {
           timeToLive: -1, // 永不过期
           maxVersions: 1, // 只保留最新版本
         },
-        reservedThroughput: {
-          capacityUnit: reservedThroughput,
-        },
+        reservedThroughput: { capacityUnit: reservedThroughput },
       });
 
-      console.log('update table result:', result);
+      logger.info(result, `Table updated successfully`);
 
-      return result;
+      return {
+        instanceName: instanceName,
+        tableName: tableName,
+        reservedThroughput: reservedThroughput,
+      };
     },
 
     deleteTable: async ({
@@ -192,19 +181,9 @@ export const loadTableStoreClient = (regionId: string, credentials: Credentials)
       tableName: string;
     }) => {
       const client = loadTableStore(instanceName, regionId, credentials);
-      const result = await client.deleteTable({
-        tableName: tableName,
-      });
+      const result = (await client.deleteTable({ tableName })) as { RequestId: string };
 
-      console.log('delete table result:', result);
-
-      return {
-        physicalResourceId: tableName,
-        data: {
-          instanceName: instanceName,
-          tableName: tableName,
-        },
-      };
+      return { instanceName, tableName, requestId: result?.RequestId };
     },
   };
 };

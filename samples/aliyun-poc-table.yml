@@ -42,6 +42,6 @@ tables:
         type: INTEGER
       - name: height
         type: DOUBLE
-      - name: is_active
+      - name: active
         type: BOOLEAN
 

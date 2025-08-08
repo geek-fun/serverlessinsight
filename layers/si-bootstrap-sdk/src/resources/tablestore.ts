@@ -1,5 +1,6 @@
 import { Credentials, ResourceProperties, TableStoreResourceProperties } from '../tyes';
 import { loadTableStoreClient } from '../clients';
+import { logger } from '../common';
 
 const createTableStore = async (
   {
@@ -20,7 +21,7 @@ const createTableStore = async (
   let instance = await tableStoreClient.getInstance(instanceName);
 
   if (!instance) {
-    console.log('Instance does not exist, creating a new instance...');
+    logger.info({ instanceName }, 'Instance does not exist, creating a new instance');
 
     try {
       instance = await tableStoreClient.createInstance({
@@ -34,7 +35,7 @@ const createTableStore = async (
         tags,
       });
     } catch (error) {
-      console.log(error);
+      logger.error(error, 'Failed to create instance');
       throw error;
     }
   }
@@ -45,19 +46,13 @@ const createTableStore = async (
     );
   }
   try {
-    const tableStore = (await tableStoreClient.createTable({
+    const tableStore = await tableStoreClient.createTable({
       instanceName,
       tableName,
       primaryKey,
       columns,
       reservedThroughput,
-    })) as {
-      tableName: string;
-      primaryKey: Array<{ name: string; type: string }>;
-      columns: Array<{ name: string; type: string }>;
-      reservedThroughput: { read: number; write: number };
-    };
-    console.log(`Table ${tableName} created successfully in instance ${instanceName}.`);
+    });
     return {
       physicalResourceId: tableStore?.tableName,
       data: {
@@ -69,7 +64,7 @@ const createTableStore = async (
       },
     };
   } catch (error) {
-    console.error(`Failed to create table ${tableName} in instance ${instanceName}:`, error);
+    logger.error({ instanceName, tableName, error }, 'Failed to create table');
     throw error;
   }
 };
@@ -81,41 +76,30 @@ const updateTableStore = async (
 ) => {
   const tableStoreClient = loadTableStoreClient(regionId, credentials);
 
-  const { instanceName, tableName, primaryKey, columns, reservedThroughput } = properties;
+  const { instanceName, tableName, reservedThroughput } = properties;
 
-  // Check if the instance exists
   const instance = await tableStoreClient.getInstance(instanceName);
   if (!instance) {
     throw new Error(`Instance ${instanceName} does not exist.`);
   }
 
-  // Update the table
   try {
-    const updatedTable = (await tableStoreClient.updateTable({
+    const updatedTable = await tableStoreClient.updateTable({
       instanceName,
       tableName,
-      primaryKey,
-      columns,
       reservedThroughput,
-    })) as {
-      tableName: string;
-      primaryKey: Array<{ name: string; type: string }>;
-      columns: Array<{ name: string; type: string }>;
-      reservedThroughput: { read: number; write: number };
-    };
-    console.log(`Table ${tableName} updated successfully in instance ${instanceName}.`);
+    });
+
     return {
       physicalResourceId: updatedTable.tableName,
       data: {
         instanceName: instance.instanceName,
         tableName: updatedTable.tableName,
-        primaryKey: updatedTable.primaryKey,
-        columns: updatedTable.columns,
         reservedThroughput: updatedTable.reservedThroughput,
       },
     };
   } catch (error) {
-    console.error(`Failed to update table ${tableName} in instance ${instanceName}:`, error);
+    logger.error({ instanceName, tableName, error }, 'Failed to update table');
     throw error;
   }
 };
@@ -129,25 +113,20 @@ const deleteTableStore = async (
 
   const { instanceName, tableName } = properties;
 
-  // Check if the instance exists
   const instance = await tableStoreClient.getInstance(instanceName);
   if (!instance) {
     throw new Error(`Instance ${instanceName} does not exist.`);
   }
 
-  // Delete the table
   try {
-    await tableStoreClient.deleteTable({
+    const result = await tableStoreClient.deleteTable({
       instanceName,
       tableName,
     });
-    console.log(`Table ${tableName} deleted successfully from instance ${instanceName}.`);
-    return {
-      physicalResourceId: tableName,
-      data: {},
-    };
+
+    return { physicalResourceId: tableName, data: result };
   } catch (error) {
-    console.error(`Failed to delete table ${tableName} from instance ${instanceName}:`, error);
+    logger.error({ instanceName, tableName, error }, 'Failed to delete table');
     throw error;
   }
 };
