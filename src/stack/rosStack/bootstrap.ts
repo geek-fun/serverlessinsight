@@ -47,9 +47,6 @@ module.exports.handler = async (rawEvent, context) => {
   // 处理 Buffer 类型的事件
   const event = parseEvent(rawEvent);
 
-  console.log('Parsed Event:', JSON.stringify(event, null, 2));
-  console.log('Context:', JSON.stringify(context, null, 2));
-
   const commonResponse = {
     RequestId: event.requestId,
     LogicalResourceId: event.logicalResourceId,
@@ -73,8 +70,6 @@ module.exports.handler = async (rawEvent, context) => {
     if (event.requestType === 'Delete') {
       delete rosResponse.Data;
     }
-
-    console.log('Constructed ROS Response:', JSON.stringify(rosResponse, null, 2));
 
     // 发送响应到 ROS 服务（如果提供了 ResponseURL）
     if (event.responseURL) {
@@ -123,7 +118,6 @@ module.exports.handler = async (rawEvent, context) => {
 
 // 使用原生 fetch API 发送响应
 async function sendResponse(responseUrl, responseBody) {
-  console.log(\`Sending response to: \${responseUrl}\`);
 
   try {
     const body = JSON.stringify(responseBody);

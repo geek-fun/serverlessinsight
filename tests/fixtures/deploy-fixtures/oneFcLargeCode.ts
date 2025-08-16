@@ -210,6 +210,7 @@ export const largeCodeRos = {
         ServiceConfig: {
           FunctionComputeConfig: {
             FcVersion: '3.0',
+            FcRegionId: 'cn-hangzhou',
             FunctionName: {
               'Fn::GetAtt': ['hello_fn', 'FunctionName'],
             },
@@ -234,9 +235,7 @@ export const largeCodeRos = {
       DependsOn: ['sls_project', 'sls_logstore', 'sls_index', 'si_auto_artifacts_code_deployment'],
       Properties: {
         Code: {
-          OssBucketName: {
-            'Fn::Sub': 'si-bootstrap-artifacts-${ALIYUN::AccountId}-${ALIYUN::Region}',
-          },
+          OssBucketName: 'si-bootstrap-artifacts-123456789012-cn-hangzhou',
           OssObjectName: 'hello-fn/43cb4c356149762dbe507fc1baede172-large-artifact.zip',
         },
         EnvironmentVariables: {
@@ -262,9 +261,7 @@ export const largeCodeRos = {
     si_auto_artifacts_code_deployment: {
       Properties: {
         Parameters: {
-          destinationBucket: {
-            'Fn::Sub': 'si-bootstrap-artifacts-${ALIYUN::AccountId}-${ALIYUN::Region}',
-          },
+          destinationBucket: 'si-bootstrap-artifacts-123456789012-cn-hangzhou',
           retainOnCreate: false,
           sources: [
             {

@@ -132,7 +132,7 @@ describe('Unit tests for stack deployment', () => {
 
   it('should create bucket and store code artifact to bucket when code size > 15MB', async () => {
     const stackName = 'my-large-code-stack';
-    mockedGetStore.mockReturnValue({ stackName });
+    mockedGetStore.mockReturnValue({ stackName, accountId: '123456789012', region: 'cn-hangzhou' });
     mockedRosStackDeploy.mockResolvedValueOnce(stackName);
 
     await deployStack(

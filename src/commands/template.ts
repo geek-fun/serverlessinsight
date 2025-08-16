@@ -11,7 +11,6 @@ export const template = async (
   const iac = parseYaml(getIacLocation(options.location));
 
   await setContext({ ...options, stackName, provider: iac.provider.name }, true);
-
   const { template } = generateStackTemplate(stackName, iac);
   if (typeof template === 'string') {
     logger.info(`\n${template}`);
