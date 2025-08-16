@@ -14,6 +14,7 @@ import {
   OSS_DEPLOYMENT_TIMEOUT,
   readCodeSize,
   resolveCode,
+  SI_BOOTSTRAP_BUCKET_PREFIX,
 } from '../../common';
 import * as fc from '@alicloud/ros-cdk-fc3';
 import { isEmpty } from 'lodash';
@@ -139,9 +140,7 @@ export const resolveFunctions = (
       return { fcName, ...getFileSource(fcName, code!.path) };
     });
 
-  const destinationBucketName = ros.Fn.sub(
-    'si-bootstrap-artifacts-${ALIYUN::AccountId}-${ALIYUN::Region}',
-  );
+  const destinationBucketName = `${SI_BOOTSTRAP_BUCKET_PREFIX}-${context.accountId}-${context.region}`;
   const ossDeploymentId = 'si_auto_artifacts_code_deployment';
 
   if (!isEmpty(fileSources)) {

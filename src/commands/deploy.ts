@@ -19,7 +19,7 @@ export const deploy = async (
   const iac = parseYaml(getIacLocation(options.location));
   logger.info('Yaml is valid! 🎉');
 
-  setContext({ ...options, stackName, iacProvider: iac.provider });
+  await setContext({ ...options, stackName, iacProvider: iac.provider }, true);
 
   logger.info('Deploying stack...');
   await deployStack(stackName, iac);

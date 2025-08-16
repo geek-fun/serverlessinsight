@@ -2,6 +2,7 @@ import { Context, ServerlessIac } from '../types';
 import path from 'node:path';
 import { ProviderEnum } from './providerEnum';
 import { AsyncLocalStorage } from 'node:async_hooks';
+import { getIamInfo } from './imsClient';
 
 const asyncLocalStorage = new AsyncLocalStorage<Context>();
 
@@ -15,29 +16,34 @@ export const getIacLocation = (location?: string): string => {
         path.resolve(projectRoot, 'serverless-insight.yml');
 };
 
-export const setContext = (config: {
-  stage?: string;
-  stackName?: string;
-  region?: string;
-  provider?: string;
-  accessKeyId?: string;
-  accessKeySecret?: string;
-  securityToken?: string;
-  location?: string;
-  parameters?: { [key: string]: string };
-  iacProvider?: ServerlessIac['provider'];
-  stages?: ServerlessIac['stages'];
-}): void => {
+export const setContext = async (
+  config: {
+    stage?: string;
+    stackName?: string;
+    region?: string;
+    provider?: string;
+    accessKeyId?: string;
+    accessKeySecret?: string;
+    securityToken?: string;
+    location?: string;
+    parameters?: { [key: string]: string };
+    iacProvider?: ServerlessIac['provider'];
+    stages?: ServerlessIac['stages'];
+  },
+  reaValToken = false,
+): Promise<void> => {
+  const region =
+    config.region ??
+    config.iacProvider?.region ??
+    process.env.ROS_REGION_ID ??
+    process.env.ALIYUN_REGION ??
+    'cn-hangzhou';
+
   const context: Context = {
     stage: config.stage ?? 'default',
     stackName: config.stackName ?? '',
     provider: (config.provider ?? config.iacProvider?.name ?? ProviderEnum.ALIYUN) as ProviderEnum,
-    region:
-      config.region ??
-      config.iacProvider?.region ??
-      process.env.ROS_REGION_ID ??
-      process.env.ALIYUN_REGION ??
-      'cn-hangzhou',
+    region,
     accessKeyId: config.accessKeyId ?? (process.env.ALIYUN_ACCESS_KEY_ID as string),
     accessKeySecret: config.accessKeySecret ?? (process.env.ALIYUN_ACCESS_KEY_SECRET as string),
     securityToken: config.securityToken ?? process.env.ALIYUN_SECURITY_TOKEN,
@@ -51,6 +57,11 @@ export const setContext = (config: {
       {},
     ),
   };
+
+  if (reaValToken) {
+    const iamInfo = await getIamInfo(context);
+    context.accountId = iamInfo?.accountId;
+  }
 
   asyncLocalStorage.enterWith(context);
 };

@@ -4,14 +4,13 @@ import { generateStackTemplate } from '../stack/deploy';
 import { getIacLocation, logger, setContext } from '../common';
 import { parseYaml } from '../parser';
 
-export const template = (
+export const template = async (
   stackName: string,
   options: { format: TemplateFormat; location: string; stage: string | undefined },
 ) => {
   const iac = parseYaml(getIacLocation(options.location));
 
-  setContext({ ...options, stackName, provider: iac.provider.name });
-
+  await setContext({ ...options, stackName, provider: iac.provider.name }, true);
   const { template } = generateStackTemplate(stackName, iac);
   if (typeof template === 'string') {
     logger.info(`\n${template}`);

@@ -12,6 +12,7 @@ export const getIamInfo = async (context: Context) => {
   const { body } = await imsClient.getUser(
     new ims20190815.GetUserRequest({ userAccessKeyId: context.accessKeyId }),
   );
+
   return body?.user
     ? {
         ...body.user,

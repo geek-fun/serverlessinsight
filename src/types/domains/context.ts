@@ -2,6 +2,7 @@ import { ProviderEnum } from '../../common';
 
 export type Context = {
   region: string;
+  accountId?: string;
   provider: ProviderEnum;
   stackName: string;
   stage: string;

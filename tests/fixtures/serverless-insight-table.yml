@@ -1,0 +1,36 @@
+version: 0.0.1
+
+provider:
+  name: aliyun
+  region: cn-chengdu
+
+
+service: insight-table-poc
+
+tags:
+  owner: geek-fun
+
+tables:
+  insight_poc_table:
+    collection: store_or_instance_name
+    name: insight-poc-table
+    desc: 'This is a test table for serverless insight'
+    type: TABLE_STORE_C
+    network:
+      type: 'PRIVATE'
+      ingress_rules:
+        - TCP:0.0.0.0/0:80
+        - TCP:0.0.0.0/0:443
+    throughput:
+      reserved:
+        read: 2
+        write: 10
+      on_demand:
+        read: 100
+        write: 100
+    key_schema:
+      - name: id
+        type: HASH
+    attributes:
+      - name: id
+        type: STRING

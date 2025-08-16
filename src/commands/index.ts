@@ -1,12 +1,11 @@
 #! /usr/bin/env node
 
 import { Command } from 'commander';
-import { getContext, getVersion, logger, setContext } from '../common';
+import { getContext, getIamInfo, getVersion, logger, setContext } from '../common';
 import { validate } from './validate';
 import { deploy } from './deploy';
 import { template } from './template';
 import { destroyStack } from './destroy';
-import { getIamInfo } from '../common';
 
 const program = new Command();
 
@@ -16,7 +15,7 @@ program
   .command('show')
   .description('show string')
   .action(async (options) => {
-    setContext({ ...options });
+    await setContext({ ...options });
     const context = getContext();
     const result = await getIamInfo(context);
     console.log('result:', JSON.stringify(result));
@@ -27,9 +26,9 @@ program
   .description('validate serverless Iac yaml')
   .option('-f, --file <path>', 'specify the yaml file')
   .option('-s, --stage <stage>', 'specify the stage')
-  .action((stackName, { file, stage }) => {
+  .action(async (stackName, { file, stage }) => {
     logger.debug('log command info');
-    validate(stackName, { stage, location: file });
+    await validate(stackName, { stage, location: file });
   });
 
 program
@@ -76,8 +75,8 @@ program
   .option('-f, --file <path>', 'specify the yaml file')
   .option('-s, --stage <stage>', 'specify the stage')
   .option('-t, --format <type>', 'output content type (JSON or YAML)', 'JSON')
-  .action((stackName, { format, file, stage }) => {
-    template(stackName, { format, location: file, stage });
+  .action(async (stackName, { format, file, stage }) => {
+    await template(stackName, { format, location: file, stage });
   });
 
 program

@@ -8,6 +8,7 @@ import { resolveVars } from './vars';
 import { resolveDatabases } from './database';
 import { resolveEvents } from './event';
 import { resolveBuckets } from './bucket';
+import { resolveTables } from './table';
 
 export * from './bootstrap';
 
@@ -33,6 +34,8 @@ export class RosStack extends ros.Stack {
     resolveEvents(this, iac.events, iac.tags, context, this.service);
     // Define Databases
     resolveDatabases(this, iac.databases, context);
+    // Define Tables
+    resolveTables(this, iac.tables, iac.tags, context);
     // Define Buckets
     resolveBuckets(this, iac.buckets, context);
   }

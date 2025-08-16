@@ -46,6 +46,9 @@ export const rootSchema = {
     buckets: {
       $ref: 'https://serverlessinsight.geekfun.club/schemas/bucketschema.json',
     },
+    tables: {
+      $ref: 'https://serverlessinsight.geekfun.club/schemas/tableschema.json',
+    },
   },
   required: ['version', 'provider', 'service'],
   additionalProperties: false,
