@@ -143,26 +143,83 @@ export const loadTableStoreClient = (regionId: string, credentials: Credentials)
 
     updateTable: async ({
       instanceName,
-      tableName,
-      reservedThroughput,
+      ...params
     }: {
       instanceName: string;
       tableName: string;
+      primaryKey: Array<{ name: string; type: 'STRING' | 'INTEGER' | 'BINARY' }>;
+      columns: Array<{
+        name: string;
+        type: 'STRING' | 'INTEGER' | 'DOUBLE' | 'BOOLEAN' | 'BINARY';
+      }>;
       reservedThroughput: {
         read: number;
         write: number;
       };
     }) => {
       const client = loadTableStore(instanceName, regionId, credentials);
+      const {
+        tableMeta: { tableName, primaryKey, definedColumn: columns },
+        reservedThroughput,
+      } = formatOtsTableParam(params);
 
-      const result = await client.updateTable({
-        tableName: tableName,
-        tableOptions: {
-          timeToLive: -1, // 永不过期
-          maxVersions: 1, // 只保留最新版本
+      const table = await client.describeTable({ tableName });
+      if (!table?.tableMeta?.tableName) {
+        throw new Error(`Table ${tableName} does not exist in instance ${instanceName}`);
+      }
+      if (table?.tableMeta?.tableName !== tableName) {
+        throw new Error(
+          `Table name mismatch: expected ${tableName}, but got ${table?.tableMeta?.tableName}`,
+        );
+      }
+
+      const tableDiff = table.tableMeta.primaryKey.filter((pk) =>
+        primaryKey.find(({ name, type }) => name === pk.name && type === pk.type),
+      );
+
+      if (tableDiff.length !== table.tableMeta.primaryKey.length) {
+        throw new Error(
+          `Primary update not support: expected ${JSON.stringify(table.tableMeta.primaryKey)}, but got ${JSON.stringify(
+            primaryKey,
+          )}`,
+        );
+      }
+
+      const columnsDiff = (table.tableMeta.definedColumn || []).reduce(
+        (acc, existingCol) => {
+          const matchingCol = columns.find((col) => col.name === existingCol.name);
+
+          if (!matchingCol) {
+            // Column exists in table but not in new columns - delete
+            acc.deletedColumns.push(existingCol);
+          } else if (matchingCol.type !== existingCol.type) {
+            // Column exists in both but type is different
+            acc.typeChangedColumns.push(matchingCol);
+          }
+
+          return acc;
         },
-        reservedThroughput: { capacityUnit: reservedThroughput },
-      });
+        {
+          newColumns: columns.filter(
+            (col) =>
+              !(table.tableMeta.definedColumn || []).find((existing) => existing.name === col.name),
+          ),
+          deletedColumns: [] as typeof table.tableMeta.definedColumn,
+          modifiedColumns: [] as typeof columns,
+        },
+      );
+
+      if (columnsDiff.modifiedColumns.length) {
+        throw new Error(
+          `Column update not supported, please revert the changes for   ${JSON.stringify(
+            columnsDiff.modifiedColumns.map(({ name }) => name),
+          )}`,
+        );
+      }
+
+      // @TODO: Handle column deletion and addition if needed
+
+      const result = await client.updateTable(tableParam);
 
       logger.info(result, `Table updated successfully`);
 
