@@ -64,6 +64,7 @@ export const resolveBuckets = (
       accessControl: aclMap.get(
         calcRefs(bucket.security?.acl, context) ?? ('' as BucketAccessEnum),
       ),
+      blockPublicAccess: calcRefs(bucket.security?.acl, context) === BucketAccessEnum.PRIVATE,
       websiteConfigurationV2: bucket.website
         ? {
             indexDocument: {
