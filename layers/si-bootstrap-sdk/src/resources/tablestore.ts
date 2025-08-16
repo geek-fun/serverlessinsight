@@ -76,7 +76,7 @@ const updateTableStore = async (
 ) => {
   const tableStoreClient = loadTableStoreClient(regionId, credentials);
 
-  const { instanceName, tableName, reservedThroughput } = properties;
+  const { instanceName, tableName } = properties;
 
   const instance = await tableStoreClient.getInstance(instanceName);
   if (!instance) {
@@ -84,11 +84,7 @@ const updateTableStore = async (
   }
 
   try {
-    const updatedTable = await tableStoreClient.updateTable({
-      instanceName,
-      tableName,
-      reservedThroughput,
-    });
+    const updatedTable = await tableStoreClient.updateTable(properties);
 
     return {
       physicalResourceId: updatedTable.tableName,
@@ -123,6 +119,8 @@ const deleteTableStore = async (
       instanceName,
       tableName,
     });
+
+    await tableStoreClient.deleteInstance(instanceName);
 
     return { physicalResourceId: tableName, data: result };
   } catch (error) {

@@ -1,18 +1,20 @@
-import Tablestore20201209, * as ots from '@alicloud/tablestore20201209';
+import Client, {
+  DeleteInstanceRequest,
+  CreateInstanceRequestTags,
+  CreateInstanceRequest,
+  GetInstanceRequest,
+} from '@alicloud/tablestore20201209';
 import { Config } from '@alicloud/credentials';
 import TableStore from 'tablestore';
 import * as teaUtil from '@alicloud/tea-util';
 import { Credentials } from '../tyes';
 import { formatOtsTableParam, logger } from '../common';
 
-const loadAlicloudTableStoreClient = (
-  region: string,
-  credentials: Credentials,
-): Tablestore20201209 => {
+const loadAlicloudTableStoreClient = (region: string, credentials: Credentials): Client => {
   const credentialsConfig = new Config({ ...credentials, type: 'access_key' });
   credentialsConfig.endpoint = `tablestore.${region}.aliyuncs.com`;
 
-  return new Tablestore20201209(credentialsConfig);
+  return new Client(credentialsConfig);
 };
 
 const loadTableStore = (
@@ -46,12 +48,12 @@ export const loadTableStoreClient = (regionId: string, credentials: Credentials)
       tags?: Array<{ key: string; value: string }>;
     }) => {
       const tags = rawTags?.map(
-        (tag) => new ots.CreateInstanceRequestTags({ key: tag.key, value: tag.value }),
+        (tag) => new CreateInstanceRequestTags({ key: tag.key, value: tag.value }),
       );
       const networkTypeACL =
         network.type === 'PRIVATE' ? ['VPC'] : network.type === 'PUBLIC' ? ['PUBLIC'] : [];
 
-      const createInstanceRequest = new ots.CreateInstanceRequest({
+      const createInstanceRequest = new CreateInstanceRequest({
         instanceName: instanceName,
         clusterType: clusterType,
         networkTypeACL,
@@ -93,7 +95,7 @@ export const loadTableStoreClient = (regionId: string, credentials: Credentials)
       const runtime = new teaUtil.RuntimeOptions({});
       const headers: { [key: string]: string } = {};
       const response = await alicloudTableStoreClient.getInstanceWithOptions(
-        new ots.GetInstanceRequest({ instanceName }),
+        new GetInstanceRequest({ instanceName }),
         headers,
         runtime,
       );
@@ -161,6 +163,7 @@ export const loadTableStoreClient = (regionId: string, credentials: Credentials)
       const {
         tableMeta: { tableName, primaryKey, definedColumn: columns },
         reservedThroughput,
+        tableOptions,
       } = formatOtsTableParam(params);
 
       const table = await client.describeTable({ tableName });
@@ -191,10 +194,10 @@ export const loadTableStoreClient = (regionId: string, credentials: Credentials)
 
           if (!matchingCol) {
             // Column exists in table but not in new columns - delete
-            acc.deletedColumns.push(existingCol);
+            acc.deletedColumns!.push(existingCol);
           } else if (matchingCol.type !== existingCol.type) {
             // Column exists in both but type is different
-            acc.typeChangedColumns.push(matchingCol);
+            acc.modifiedColumns!.push(matchingCol);
           }
 
           return acc;
@@ -219,7 +222,7 @@ export const loadTableStoreClient = (regionId: string, credentials: Credentials)
 
       // @TODO: Handle column deletion and addition if needed
 
-      const result = await client.updateTable(tableParam);
+      const result = await client.updateTable({ tableName, tableOptions, reservedThroughput });
 
       logger.info(result, `Table updated successfully`);
 
@@ -238,9 +241,40 @@ export const loadTableStoreClient = (regionId: string, credentials: Credentials)
       tableName: string;
     }) => {
       const client = loadTableStore(instanceName, regionId, credentials);
-      const result = (await client.deleteTable({ tableName })) as { RequestId: string };
+      try {
+        const result = (await client.deleteTable({ tableName })) as { RequestId: string };
+        return { instanceName, tableName, requestId: result?.RequestId };
+      } catch (error) {
+        logger.error({ instanceName, tableName, error }, `Failed to delete table`);
+        if ((error as { code: number }).code === 404) {
+          return { instanceName, tableName };
+        }
+        throw error;
+      }
+    },
 
-      return { instanceName, tableName, requestId: result?.RequestId };
+    deleteInstance: async (instanceName: string) => {
+      const client = loadTableStore(instanceName, regionId, credentials);
+
+      const tables = await client.listTable({ instanceName });
+      if (tables.tableNames.length != 0) {
+        return;
+      }
+      try {
+        await alicloudTableStoreClient.deleteInstance(new DeleteInstanceRequest({ instanceName }));
+      } catch (error) {
+        logger.error({ instanceName, error }, `Failed to delete instance`);
+        const { statusCode, code } = error as { statusCode: number; code: string };
+        if ((statusCode === 400 && code === 'IllegalOp') || statusCode === 404) {
+          return { instanceName };
+        }
+
+        throw error;
+      }
+
+      logger.info({ instanceName }, `Instance deleted successfully`);
+
+      return { instanceName };
     },
   };
 };
