@@ -13,6 +13,16 @@ const mockedGenerateAsync = jest.fn();
 const mockedInfoLogger = jest.fn();
 const mockedDebugLogger = jest.fn();
 
+jest.mock('../../src/common/rosClient', () => ({}));
+jest.mock('../../src/common/imsClient', () => ({}));
+jest.mock('@alicloud/ros-cdk-core', () => ({}));
+
+jest.mock('@alicloud/ros-cdk-ossdeployment', () => ({
+  Source: {
+    asset: jest.fn().mockImplementation(() => ({ bind: jest.fn() })),
+  },
+}));
+
 jest.mock('node:async_hooks', () => ({
   AsyncLocalStorage: jest.fn().mockImplementation(() => ({
     enterWith: jest.fn(),
