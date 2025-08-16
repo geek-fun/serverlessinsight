@@ -1,5 +1,4 @@
-import Util from '@alicloud/tea-util';
-import ROS20190910, {
+import Client, {
   CreateStackRequest,
   CreateStackRequestParameters,
   CreateStackRequestTags,
@@ -10,12 +9,13 @@ import ROS20190910, {
   UpdateStackRequestParameters,
 } from '@alicloud/ros20190910';
 import { Config } from '@alicloud/openapi-client';
+import Util from '@alicloud/tea-util';
 import { Context } from '../types';
 import { logger } from './logger';
 import { lang } from '../lang';
 import { getContext } from './context';
 
-const client = new ROS20190910(
+const client = new Client(
   new Config({
     accessKeyId: process.env.ALIYUN_ACCESS_KEY_ID,
     accessKeySecret: process.env.ALIYUN_ACCESS_KEY_SECRET,

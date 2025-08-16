@@ -105,6 +105,7 @@ export const bucketWithWebsiteRos = {
     my_bucket: {
       Properties: {
         AccessControl: 'private',
+        BlockPublicAccess: false,
         BucketName: 'my-bucket',
         DeletionForce: false,
         EnableOssHdfsService: false,

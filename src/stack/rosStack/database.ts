@@ -220,8 +220,7 @@ export const resolveDatabases = (
             ],
           },
           quotaInfo: {
-            cu: db.cu.min,
-            storage: db.storage.min,
+            minCu: db.cu.min,
             appType: category as string,
           },
           // network: [

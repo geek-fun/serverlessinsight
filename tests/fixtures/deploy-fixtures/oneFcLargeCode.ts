@@ -79,51 +79,9 @@ export const largeCodeRos = {
         },
         DeletionForce: false,
         IgnoreExisting: false,
-        Policies: [
-          {
-            PolicyDocument: {
-              Statement: [
-                {
-                  Action: ['oss:*'],
-                  Effect: 'Allow',
-                  Resource: ['*'],
-                },
-              ],
-              Version: '1',
-            },
-            PolicyName: 'AliyunOSSFullAccess',
-          },
-          {
-            PolicyDocument: {
-              Statement: [
-                {
-                  Action: ['log:*'],
-                  Effect: 'Allow',
-                  Resource: ['*'],
-                },
-                {
-                  Action: ['ram:CreateServiceLinkedRole'],
-                  Condition: {
-                    StringEquals: {
-                      'ram:ServiceName': [
-                        'audit.log.aliyuncs.com',
-                        'alert.log.aliyuncs.com',
-                        'middlewarelens.log.aliyuncs.com',
-                        'storagelens.log.aliyuncs.com',
-                        'ai-lens.log.aliyuncs.com',
-                        'securitylens.log.aliyuncs.com',
-                      ],
-                    },
-                  },
-                  Effect: 'Allow',
-                  Resource: ['*'],
-                },
-              ],
-              Version: '1',
-            },
-            PolicyName: 'AliyunLogFullAccess',
-          },
-        ],
+        PolicyAttachments: {
+          System: ['AliyunOSSFullAccess', 'AliyunLogFullAccess'],
+        },
         RoleName: {
           'Fn::Join': [
             '-',

@@ -44,9 +44,9 @@ export const esServerlessMinimumRos = {
         },
         QuotaInfo: {
           AppType: 'STANDARD',
-          Cu: 1,
-          Storage: 20,
+          MinCu: 1,
         },
+        Scenario: 'SEARCH',
         // Network: [
         //   {
         //     Enabled: true,

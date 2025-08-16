@@ -24,6 +24,7 @@ export const bucketMinimumRos = {
       Properties: {
         BucketName: 'my-bucket',
         AccessControl: 'private',
+        BlockPublicAccess: false,
         DeletionForce: false,
         EnableOssHdfsService: false,
         RedundancyType: 'LRS',
