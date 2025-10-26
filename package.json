@@ -53,7 +53,7 @@
     "@alicloud/openapi-client": "^0.4.15",
     "@alicloud/ros-cdk-apigateway": "^1.9.0",
     "@alicloud/ros-cdk-core": "^1.9.0",
-    "@alicloud/ros-cdk-dns": "^1.9.0",
+    "@alicloud/ros-cdk-dns": "^1.10.0",
     "@alicloud/ros-cdk-ecs": "^1.9.0",
     "@alicloud/ros-cdk-elasticsearchserverless": "^1.9.0",
     "@alicloud/ros-cdk-fc3": "^1.9.0",
