@@ -1,7 +1,7 @@
-/.idea/
-/node_modules/
-/dist/
-/coverage/
-/.vscode/
+.idea/
+node_modules/
+dist/
+coverage/
+.vscode/
 .DS_Store
-/artifacts/
+artifacts/

@@ -2,7 +2,9 @@
 module.exports = {
   preset: 'ts-jest',
   testEnvironment: 'node',
+  testTimeout: 30000,
   testPathIgnorePatterns: ['/node_modules/', '/dist/'],
+  modulePathIgnorePatterns: ['/dist/'],
 };
 
 process.env.ROS_REGION_ID = 'cn-hangzhou';

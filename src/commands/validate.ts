@@ -1,9 +1,12 @@
-import { constructActionContext, logger } from '../common';
-import { parseYaml } from '../stack';
+import { getContext, logger, setContext } from '../common';
+import { parseYaml } from '../parser';
 
-export const validate = (location: string | undefined, stage: string | undefined) => {
-  const context = constructActionContext({ location, stage });
+export const validate = async (
+  stackName: string,
+  options: { location: string | undefined; stage: string | undefined },
+) => {
+  await setContext({ stackName, ...options });
+  const context = getContext();
   parseYaml(context.iacLocation);
   logger.info('Yaml is valid! 🎉');
-  logger.debug('Yaml is valid! debug🎉');
 };

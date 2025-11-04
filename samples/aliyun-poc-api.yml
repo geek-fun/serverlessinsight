@@ -1,0 +1,49 @@
+version: 0.0.1
+provider:
+  name: aliyun
+  region: cn-hongkong
+
+vars:
+  region: cn-hangzhou
+  testv: testVarValue
+  handler: index.handler
+
+stages:
+  default:
+    region: ${vars.region}
+    node_env: default
+  dev:
+    region: ${vars.region}
+    node_env: development
+  prod:
+    region: cn-shanghai
+
+service: insight-poc-api
+
+tags:
+  owner: geek-fun
+
+functions:
+  insight_poc_fn:
+    name: insight-poc-api-fn
+    code:
+      runtime: nodejs18
+      handler: ${vars.handler}
+      path: tests/fixtures/artifacts/artifact.zip
+    memory: 512
+    timeout: 10
+    environment:
+      NODE_ENV: ${stages.node_env}
+      TEST_VAR: ${vars.testv}
+      TEST_VAR_EXTRA: abcds-${vars.testv}-andyou
+
+events:
+  gateway_event:
+    type: API_GATEWAY
+    name: insight-poc-gateway
+    triggers:
+      - method: GET
+        path: /api/hello
+        backend: ${functions.insight_poc_fn}
+    domain:
+      domain_name: insight-api.serverlessinsight.com

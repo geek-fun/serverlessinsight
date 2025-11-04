@@ -1,19 +1,21 @@
-import Util from '@alicloud/tea-util';
-import ROS20190910, {
+import Client, {
   CreateStackRequest,
   CreateStackRequestParameters,
   CreateStackRequestTags,
+  DeleteStackRequest,
   GetStackRequest,
   ListStacksRequest,
   UpdateStackRequest,
   UpdateStackRequestParameters,
 } from '@alicloud/ros20190910';
 import { Config } from '@alicloud/openapi-client';
-import { ActionContext } from '../types';
+import Util from '@alicloud/tea-util';
+import { Context } from '../types';
 import { logger } from './logger';
 import { lang } from '../lang';
+import { getContext } from './context';
 
-const client = new ROS20190910(
+const client = new Client(
   new Config({
     accessKeyId: process.env.ALIYUN_ACCESS_KEY_ID,
     accessKeySecret: process.env.ALIYUN_ACCESS_KEY_SECRET,
@@ -22,7 +24,7 @@ const client = new ROS20190910(
   }),
 );
 
-const createStack = async (stackName: string, templateBody: unknown, context: ActionContext) => {
+const createStack = async (stackName: string, templateBody: unknown, context: Context) => {
   const parameters = context.parameters?.map(
     (parameter) =>
       new CreateStackRequestParameters({
@@ -46,7 +48,7 @@ const createStack = async (stackName: string, templateBody: unknown, context: Ac
   return await getStackActionResult(response.body?.stackId || '', context.region);
 };
 
-const updateStack = async (stackId: string, templateBody: unknown, context: ActionContext) => {
+const updateStack = async (stackId: string, templateBody: unknown, context: Context) => {
   const parameters = context.parameters?.map(
     (parameter) =>
       new UpdateStackRequestParameters({
@@ -68,8 +70,15 @@ const updateStack = async (stackId: string, templateBody: unknown, context: Acti
     // wait for stack update complete
     return await getStackActionResult(response.body?.stackId || '', context.region);
   } catch (err) {
-    const { Message: message, statusCode } =
-      (err as { data: { Message: string; statusCode: number } })?.data || {};
+    const { message, statusCode } =
+      (err as {
+        message: string;
+        code: string;
+        statusCode: number;
+        description: string;
+        requestId: string;
+        accessDeniedDetail: unknown;
+      }) || {};
     if (statusCode === 400 && message.includes('Update the completely same stack')) {
       logger.warn(`${lang.__('UPDATE_COMPLETELY_SAME_STACK')}`);
       return null;
@@ -148,11 +157,8 @@ const getStackActionResult = async (
   });
 };
 
-export const rosStackDeploy = async (
-  stackName: string,
-  templateBody: unknown,
-  context: ActionContext,
-) => {
+export const rosStackDeploy = async (stackName: string, templateBody: unknown) => {
+  const context = getContext();
   const stackInfo = await getStackByName(stackName, context.region);
   if (stackInfo) {
     const { Status: stackStatus } = stackInfo;
@@ -170,5 +176,29 @@ export const rosStackDeploy = async (
     const stack = await createStack(stackName, templateBody, context);
 
     logger.info(`createStack success! stackName:${stack?.stackName}, stackId:${stack?.stackId}`);
+  }
+};
+
+export const rosStackDelete = async ({
+  stackName,
+  region,
+}: Pick<Context, 'stackName' | 'region' | 'provider'>) => {
+  const stackInfo = await getStackByName(stackName, region);
+
+  if (!stackInfo) {
+    logger.warn(`Stack: ${stackName} not exists, skipped! 🚫`);
+    return;
+  }
+  try {
+    const deleteStackRequest = new DeleteStackRequest({
+      regionId: region,
+      stackId: stackInfo.stackId,
+    });
+    await client.deleteStack(deleteStackRequest);
+    await getStackActionResult(stackInfo.stackId as string, region);
+    logger.info(`Stack: ${stackName} deleted!🗑 `);
+  } catch (err) {
+    logger.error(`Stack: ${stackName} delete failed! ❌, error: ${JSON.stringify(err)}`);
+    throw new Error(JSON.stringify(err));
   }
 };

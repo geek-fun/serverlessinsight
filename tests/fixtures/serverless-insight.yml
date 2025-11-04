@@ -1,5 +1,7 @@
 version: 0.0.1
-provider: aliyun
+provider:
+  name: aliyun
+  region: cn-chengdu
 
 vars:
   region: cn-hangzhou
@@ -24,27 +26,18 @@ tags:
 functions:
   insight_poc_fn:
     name: insight-poc-fn
-    runtime: nodejs18
-    handler: ${vars.handler}
-    code: artifacts/artifact.zip
+    code:
+      runtime: nodejs18
+      handler: ${vars.handler}
+      path: tests/fixtures/artifacts/artifact.zip
     memory: 512
     timeout: 10
+    log: true
     environment:
       NODE_ENV: ${stages.node_env}
       TEST_VAR: ${vars.testv}
       TEST_VAR_EXTRA: abcds-${vars.testv}-andyou
 
-#databases:
-#  insight_poc_db:
-#    name: insight-poc-db
-#    type: RDS
-#    region: ${vars.region}
-#    instance_class: rds.mysql.t5.xlarge
-#    storage_size: 20
-#    username: root
-#    password: 123456
-#    database: insight_poc_db
-#
 events:
   gateway_event:
     type: API_GATEWAY

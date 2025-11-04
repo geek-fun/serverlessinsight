@@ -1,0 +1,48 @@
+version: 0.0.1
+
+provider:
+  name: aliyun
+  region: cn-hangzhou
+
+
+service: insight-table-poc
+
+tags:
+  owner: geek-fun
+
+tables:
+  insight_poc_table:
+    collection: insight-poc-collection
+    description: Insight POC Table for testing purposes
+    name: insightPocTable
+    type: TABLE_STORE_H
+    network:
+      type: 'PRIVATE'
+      vpc_id: "vpc-12345678"
+      ingress_rules:
+        - TCP:0.0.0.0/0:80
+        - TCP:0.0.0.0/0:443
+    throughput:
+      reserved:
+        read: 0
+        write: 0
+      on_demand:
+        read: 100
+        write: 100
+    key_schema:
+      - name: id
+        type: HASH
+    attributes:
+      - name: id
+        type: STRING
+      - name: name
+        type: STRING
+      - name: birthday
+        type: STRING
+      - name: weight
+        type: INTEGER
+      - name: height
+        type: DOUBLE
+      - name: active
+        type: BOOLEAN
+
