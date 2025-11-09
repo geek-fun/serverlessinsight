@@ -61,7 +61,7 @@
     "@alicloud/ros-cdk-oss": "^1.9.0",
     "@alicloud/ros-cdk-ossdeployment": "^1.9.0",
     "@alicloud/ros-cdk-ots": "^1.9.0",
-    "@alicloud/ros-cdk-ram": "^1.9.0",
+    "@alicloud/ros-cdk-ram": "^1.10.0",
     "@alicloud/ros-cdk-rds": "^1.9.0",
     "@alicloud/ros-cdk-ros": "^1.9.0",
     "@alicloud/ros-cdk-sls": "^1.9.0",
