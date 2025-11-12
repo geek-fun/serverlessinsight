@@ -6,6 +6,7 @@ import { validate } from './validate';
 import { deploy } from './deploy';
 import { template } from './template';
 import { destroyStack } from './destroy';
+import { runLocal } from './local';
 
 const program = new Command();
 
@@ -100,5 +101,21 @@ program
       });
     },
   );
+
+program
+  .command('local <stackName>')
+  .description('run Serverless application locally for debugging')
+  .option('-s, --stage <stage>', 'specify the stage', 'default')
+  .option('-p, --port <port>', 'specify the port', '3000')
+  .option('-d, --debug', 'enable debug mode')
+  .option('-w, --watch', 'enable file watch', true)
+  .action(async (stackName, { stage, port, debug, watch }) => {
+    await runLocal(stackName, {
+      stage,
+      port: Number(port) || 3000,
+      debug: !!debug,
+      watch: typeof watch === 'boolean' ? watch : true,
+    });
+  });
 
 program.parse();
