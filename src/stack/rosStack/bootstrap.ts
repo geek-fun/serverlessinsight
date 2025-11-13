@@ -38,9 +38,7 @@ const getBootstrapTemplate = async (context: Context) => {
           Description: 'ServerlessInsight Bootstrap API',
           Handler: 'index.handler',
           Runtime: 'nodejs20',
-          Layers: [
-            `acs:fc:${context.region}:${context.accountId}:layers/si-bootstrap-sdk/versions/18`,
-          ],
+          Layers: [`acs:fc:${context.region}:1990893136649406:layers/si-bootstrap-sdk/versions/18`],
           Code: {
             SourceCode: `
 const { bootstrapHandler } = require('@geek-fun/si-bootstrap-sdk');
