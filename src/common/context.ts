@@ -1,5 +1,6 @@
 import { Context, ServerlessIac } from '../types';
 import path from 'node:path';
+import fs from 'node:fs';
 import { ProviderEnum } from './providerEnum';
 import { AsyncLocalStorage } from 'node:async_hooks';
 import { getIamInfo } from './imsClient';
@@ -8,12 +9,31 @@ const asyncLocalStorage = new AsyncLocalStorage<Context>();
 
 export const getIacLocation = (location?: string): string => {
   const projectRoot = path.resolve(process.cwd());
-  return location
-    ? path.resolve(projectRoot, location)
-    : path.resolve(projectRoot, 'serverlessinsight.yml') ||
-        path.resolve(projectRoot, 'serverlessInsight.yml') ||
-        path.resolve(projectRoot, 'ServerlessInsight.yml') ||
-        path.resolve(projectRoot, 'serverless-insight.yml');
+  if (location) {
+    const candidate = path.isAbsolute(location) ? location : path.resolve(projectRoot, location);
+    if (fs.existsSync(candidate)) {
+      return candidate;
+    }
+    throw new Error(`IaC file not found at '${candidate}'`);
+  }
+
+  const candidates = [
+    'serverlessinsight.yml',
+    'serverlessInsight.yml',
+    'ServerlessInsight.yml',
+    'serverless-insight.yml',
+  ];
+
+  for (const name of candidates) {
+    const candidate = path.resolve(projectRoot, name);
+    if (fs.existsSync(candidate)) {
+      return candidate;
+    }
+  }
+
+  throw new Error(
+    `No IaC file found. Tried: ${candidates.map((n) => `'${path.resolve(projectRoot, n)}'`).join(', ')}`,
+  );
 };
 
 export const setContext = async (
