@@ -1,4 +1,4 @@
-import { logger, rosStackDelete, rosStackDeploy } from '../../src/common';
+import { rosStackDelete, rosStackDeploy } from '../../src/common';
 import { context } from '../fixtures/contextFixture';
 import { lang } from '../../src/lang';
 
@@ -8,6 +8,9 @@ const mockedUpdateStack = jest.fn();
 const mockedListStacks = jest.fn();
 const mockedGetStack = jest.fn();
 const mockedDeleteStack = jest.fn();
+const mockedLoggerInfo = jest.fn();
+const mockedLoggerWarn = jest.fn();
+const mockedLoggerError = jest.fn();
 
 jest.mock('node:async_hooks', () => ({
   AsyncLocalStorage: jest.fn().mockImplementation(() => ({
@@ -28,7 +31,13 @@ jest.mock('@alicloud/ros20190910', () => ({
   })),
 }));
 
-jest.mock('../../src/common/logger');
+jest.mock('../../src/common/logger', () => ({
+  logger: {
+    info: (...args: unknown[]) => mockedLoggerInfo(...args),
+    warn: (...args: unknown[]) => mockedLoggerWarn(...args),
+    error: (...args: unknown[]) => mockedLoggerError(...args),
+  },
+}));
 
 describe('Unit test for rosClient', () => {
   beforeEach(() => {
@@ -46,7 +55,7 @@ describe('Unit test for rosClient', () => {
       await rosStackDeploy(stackName, {});
 
       expect(mockedCreateStack).toHaveBeenCalled();
-      expect(logger.info).toHaveBeenCalledWith(expect.stringContaining('createStack success'));
+      expect(mockedLoggerInfo).toHaveBeenCalledWith(expect.stringContaining('createStack success'));
     });
 
     it('should update an existing stack if it exists', async () => {
@@ -62,7 +71,7 @@ describe('Unit test for rosClient', () => {
       await rosStackDeploy(stackName, {});
 
       expect(mockedUpdateStack).toHaveBeenCalled();
-      expect(logger.info).toHaveBeenCalledWith(expect.stringContaining('stackUpdate success'));
+      expect(mockedLoggerInfo).toHaveBeenCalledWith(expect.stringContaining('stackUpdate success'));
     });
 
     it('should throw an error if the stack is in progress', async () => {
@@ -93,7 +102,7 @@ describe('Unit test for rosClient', () => {
 
       await rosStackDeploy(stackName, {});
 
-      expect(logger.warn).toHaveBeenCalledWith(`${lang.__('UPDATE_COMPLETELY_SAME_STACK')}`);
+      expect(mockedLoggerWarn).toHaveBeenCalledWith(`${lang.__('UPDATE_COMPLETELY_SAME_STACK')}`);
     });
 
     it('should throw error when deploy stack failed', async () => {
@@ -121,15 +130,15 @@ describe('Unit test for rosClient', () => {
 
       await rosStackDelete(context);
 
-      expect(logger.info).toHaveBeenCalledWith('stack status: DELETE_COMPLETE');
-      expect(logger.info).toHaveBeenCalledWith('Stack: testStack deleted!🗑 ');
+      expect(mockedLoggerInfo).toHaveBeenCalledWith('stack status: DELETE_COMPLETE');
+      expect(mockedLoggerInfo).toHaveBeenCalledWith('Stack: testStack deleted!🗑 ');
     });
 
     it('should throw an error when the stack does not exist', async () => {
       mockedListStacks.mockResolvedValue({ statusCode: 404, body: { stacks: [] } });
       await rosStackDelete(context);
 
-      expect(logger.warn).toHaveBeenCalledWith('Stack: testStack not exists, skipped! 🚫');
+      expect(mockedLoggerWarn).toHaveBeenCalledWith('Stack: testStack not exists, skipped! 🚫');
     });
 
     it('should throw error when delete stack failed', async () => {
@@ -142,7 +151,7 @@ describe('Unit test for rosClient', () => {
       await expect(rosStackDelete(context)).rejects.toThrow(
         JSON.stringify({ statusCode: 400, Message: 'DELETE_FAILED' }),
       );
-      expect(logger.error).toHaveBeenCalledWith(
+      expect(mockedLoggerError).toHaveBeenCalledWith(
         expect.stringContaining('Stack: testStack delete failed! ❌'),
       );
     });
