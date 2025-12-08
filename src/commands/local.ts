@@ -1,17 +1,18 @@
 import { logger, setContext } from '../common';
 import { startLocalStack } from '../stack/localStack';
 
-export interface RunLocalOptions {
+export type RunLocalOptions = {
   stage: string;
   port: number;
   debug: boolean;
   watch: boolean;
-}
+  location: string | undefined;
+};
 
 export const runLocal = async (stackName: string, opts: RunLocalOptions) => {
-  const { stage, port, debug, watch } = opts;
+  const { stage, port, debug, watch, location } = opts;
 
-  await setContext({ stage });
+  await setContext({ stage, location });
 
   logger.info(
     `run-local starting: stack=${stackName} stage=${stage} port=${port} debug=${debug} watch=${watch}`,

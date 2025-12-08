@@ -6,34 +6,55 @@ import { AsyncLocalStorage } from 'node:async_hooks';
 import { getIamInfo } from './imsClient';
 
 const asyncLocalStorage = new AsyncLocalStorage<Context>();
+const DEFAULT_IAC_FILES = [
+  'serverlessinsight.yml',
+  'serverlessInsight.yml',
+  'ServerlessInsight.yml',
+  'serverless-insight.yml',
+];
 
 export const getIacLocation = (location?: string): string => {
   const projectRoot = path.resolve(process.cwd());
-  if (location) {
-    const candidate = path.isAbsolute(location) ? location : path.resolve(projectRoot, location);
-    if (fs.existsSync(candidate)) {
-      return candidate;
+  const searchTargets = location ? [location] : DEFAULT_IAC_FILES;
+  const attempted = new Set<string>();
+
+  const toAbsolutePath = (target: string) =>
+    path.isAbsolute(target) ? target : path.resolve(projectRoot, target);
+
+  const tryResolveCandidate = (target: string): string | undefined => {
+    const resolved = toAbsolutePath(target);
+    attempted.add(resolved);
+
+    if (!fs.existsSync(resolved)) {
+      return undefined;
     }
-    throw new Error(`IaC file not found at '${candidate}'`);
+
+    const stats = fs.statSync(resolved);
+    if (stats.isDirectory()) {
+      for (const fileName of DEFAULT_IAC_FILES) {
+        const nested = path.join(resolved, fileName);
+        attempted.add(nested);
+        if (fs.existsSync(nested) && fs.statSync(nested).isFile()) {
+          return nested;
+        }
+      }
+      return undefined;
+    }
+
+    return resolved;
+  };
+
+  for (const candidate of searchTargets) {
+    const match = tryResolveCandidate(candidate);
+    if (match) {
+      return match;
+    }
   }
 
-  const candidates = [
-    'serverlessinsight.yml',
-    'serverlessInsight.yml',
-    'ServerlessInsight.yml',
-    'serverless-insight.yml',
-  ];
-
-  for (const name of candidates) {
-    const candidate = path.resolve(projectRoot, name);
-    if (fs.existsSync(candidate)) {
-      return candidate;
-    }
-  }
-
-  throw new Error(
-    `No IaC file found. Tried: ${candidates.map((n) => `'${path.resolve(projectRoot, n)}'`).join(', ')}`,
-  );
+  const attemptedList = Array.from(attempted)
+    .map((n) => `'${n}'`)
+    .join(', ');
+  throw new Error(`No IaC file found. Tried: ${attemptedList}`);
 };
 
 export const setContext = async (

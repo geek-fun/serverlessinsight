@@ -105,16 +105,18 @@ program
 program
   .command('local <stackName>')
   .description('run Serverless application locally for debugging')
+  .option('-f, --file <path>', 'specify the yaml file')
   .option('-s, --stage <stage>', 'specify the stage', 'default')
   .option('-p, --port <port>', 'specify the port', '3000')
   .option('-d, --debug', 'enable debug mode')
   .option('-w, --watch', 'enable file watch', true)
-  .action(async (stackName, { stage, port, debug, watch }) => {
+  .action(async (stackName, { stage, port, debug, watch, file }) => {
     await runLocal(stackName, {
       stage,
       port: Number(port) || 3000,
       debug: !!debug,
       watch: typeof watch === 'boolean' ? watch : true,
+      location: file,
     });
   });
 
