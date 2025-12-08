@@ -16,10 +16,13 @@ const createApiGatewayHandler = (): RouteHandler => {
       const iac = parseYaml(context.iacLocation);
 
       // Find the event by matching identifier name with event name
-      // The identifier name may include region prefix (e.g., "insight-poc-gateway-cn")
+      // The identifier name may include region code (e.g., "insight-poc-gateway-cn")
       // while the actual event name is "insight-poc-gateway"
+      // Match by checking if identifier name starts with event name followed by a hyphen or exact match
       const event = iac.events?.find(
-        (e) => e.type === EventTypes.API_GATEWAY && parsed.identifier.name.startsWith(e.name),
+        (e) =>
+          e.type === EventTypes.API_GATEWAY &&
+          (parsed.identifier.name === e.name || parsed.identifier.name.startsWith(`${e.name}-`)),
       );
 
       if (!event) {
