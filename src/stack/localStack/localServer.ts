@@ -1,12 +1,6 @@
-import { ParsedRequest, RouteHandler, RouteKind } from '../../types/localStack';
+import { ParsedRequest, RouteHandler, RouteKind, ResourceIdentifier } from '../../types/localStack';
 import { logger, SI_LOCALSTACK_GATEWAY_PORT } from '../../common';
 import http, { IncomingMessage, ServerResponse } from 'node:http';
-
-type ResourceIdentifier = {
-  id: string;
-  name: string;
-  region: string;
-};
 
 let localServer: http.Server | undefined;
 

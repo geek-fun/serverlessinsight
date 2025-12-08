@@ -6,8 +6,8 @@ export * from './event';
 
 const handlers = [
   {
-    kind: 'function',
-    handler: async (req: IncomingMessage, res: ServerResponse, parsed: ParsedRequest) => {
+    kind: 'si_functions',
+    handler: (req: IncomingMessage, res: ServerResponse, parsed: ParsedRequest) => {
       res.writeHead(200, { 'Content-Type': 'application/json' });
       res.end(
         JSON.stringify({
