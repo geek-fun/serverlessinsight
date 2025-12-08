@@ -1,6 +1,6 @@
-import { startGateway } from './gateway';
 import { IncomingMessage, ServerResponse } from 'node:http';
 import { ParsedRequest, RouteHandler, RouteKind } from '../../types/localStack';
+import { servLocal } from './localServer';
 
 export * from './event';
 
@@ -41,5 +41,5 @@ const handlers = [
 ];
 
 export const startLocalStack = async () => {
-  await startGateway(handlers as Array<{ kind: RouteKind; handler: RouteHandler }>);
+  await servLocal(handlers as Array<{ kind: RouteKind; handler: RouteHandler }>);
 };
