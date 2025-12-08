@@ -114,3 +114,22 @@ export const servLocal = async (
     });
   });
 };
+
+export const stopLocal = async (): Promise<void> => {
+  if (!localServer) {
+    return;
+  }
+
+  await new Promise<void>((resolve, reject) => {
+    localServer!.close((err) => {
+      if (err) {
+        logger.error({ err }, 'Error stopping local server');
+        reject(err);
+      } else {
+        logger.info('Local server stopped');
+        localServer = undefined;
+        resolve();
+      }
+    });
+  });
+};
