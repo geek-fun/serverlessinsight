@@ -16,6 +16,9 @@ export type EventRaw = {
     certificate_body?: string;
     certificate_private_key?: string;
   };
+  local?: {
+    port: number;
+  };
 };
 
 export type EventDomain = {

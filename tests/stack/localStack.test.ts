@@ -1,11 +1,11 @@
 import path from 'node:path';
-import { setContext, SI_LOCALSTACK_GATEWAY_PORT } from '../../src/common';
+import { setContext, SI_LOCALSTACK_SERVER_PORT } from '../../src/common';
 import http from 'node:http';
 import { startLocalStack, stopLocal } from '../../src/stack/localStack';
 
 describe('localStack API Gateway handler', () => {
   const iacLocation = path.resolve(__dirname, '../fixtures/serverless-insight.yml');
-  const port = SI_LOCALSTACK_GATEWAY_PORT;
+  const port = SI_LOCALSTACK_SERVER_PORT;
 
   // Helper function to make HTTP requests
   const makeRequest = (

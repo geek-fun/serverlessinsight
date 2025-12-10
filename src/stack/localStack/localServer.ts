@@ -1,5 +1,5 @@
 import { ParsedRequest, RouteHandler, RouteKind, ResourceIdentifier } from '../../types/localStack';
-import { logger, SI_LOCALSTACK_GATEWAY_PORT } from '../../common';
+import { logger, SI_LOCALSTACK_SERVER_PORT } from '../../common';
 import http, { IncomingMessage, ServerResponse } from 'node:http';
 
 let localServer: http.Server | undefined;
@@ -66,7 +66,7 @@ export const servLocal = async (
   handlers: Array<{ kind: RouteKind; handler: RouteHandler }>,
 ): Promise<void> => {
   if (localServer) {
-    logger.info(`Local gateway already running on http://localhost:${SI_LOCALSTACK_GATEWAY_PORT}`);
+    logger.info(`localServer already running on http://localhost:${SI_LOCALSTACK_SERVER_PORT}`);
     return;
   }
 
@@ -103,8 +103,8 @@ export const servLocal = async (
   });
 
   await new Promise<void>((resolve, reject) => {
-    localServer!.listen(SI_LOCALSTACK_GATEWAY_PORT, '0.0.0.0', () => {
-      logger.info(`Local Server listening on http://localhost:${SI_LOCALSTACK_GATEWAY_PORT}`);
+    localServer!.listen(SI_LOCALSTACK_SERVER_PORT, '0.0.0.0', () => {
+      logger.info(`Local Server listening on http://localhost:${SI_LOCALSTACK_SERVER_PORT}`);
       resolve();
     });
 
