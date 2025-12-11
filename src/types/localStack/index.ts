@@ -1,6 +1,12 @@
-import { IncomingMessage, ServerResponse } from 'node:http';
+import { IncomingMessage } from 'node:http';
+import { ServerlessIac } from '../index';
 
-export type RouteKind = 'si_functions' | 'si_buckets' | 'si_website_buckets' | 'si_events';
+export enum RouteKind {
+  SI_FUNCTIONS = 'SI_FUNCTIONS',
+  SI_BUCKETS = 'SI_BUCKETS',
+  SI_WEBSITE_BUCKETS = 'SI_WEBSITE_BUCKETS',
+  SI_EVENTS = 'SI_EVENTS',
+}
 
 export type ResourceIdentifier = {
   id: string;
@@ -10,15 +16,15 @@ export type ResourceIdentifier = {
 
 export type ParsedRequest = {
   kind: RouteKind;
-  identifier: ResourceIdentifier;
-  subPath: string;
+  identifier: string;
+  url: string;
   method: string;
   query: Record<string, string>;
-  rawPath: string;
+  rawUrl: string;
 };
 
 export type RouteHandler = (
   req: IncomingMessage,
-  res: ServerResponse,
   parsed: ParsedRequest,
-) => void;
+  iac: ServerlessIac,
+) => unknown;

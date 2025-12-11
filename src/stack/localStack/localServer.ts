@@ -1,24 +1,9 @@
-import { ParsedRequest, RouteHandler, RouteKind, ResourceIdentifier } from '../../types/localStack';
+import { ParsedRequest, RouteHandler, RouteKind } from '../../types/localStack';
 import { logger, SI_LOCALSTACK_SERVER_PORT } from '../../common';
 import http, { IncomingMessage, ServerResponse } from 'node:http';
+import { ServerlessIac } from '../../types';
 
 let localServer: http.Server | undefined;
-
-const parseIdentifier = (segment: string): ResourceIdentifier | undefined => {
-  const parts = segment.split('-');
-  if (parts.length < 3) {
-    return undefined;
-  }
-
-  const id = parts.shift()!;
-  const region = parts.pop()!;
-  const name = parts.join('-');
-  if (!id || !name || !region) {
-    return undefined;
-  }
-
-  return { id, name, region };
-};
 
 const cleanPathSegments = (pathname: string): Array<string> =>
   pathname
@@ -33,19 +18,11 @@ const respondText = (res: ServerResponse, status: number, text: string) => {
 
 const parseRequest = (req: IncomingMessage): ParsedRequest | undefined => {
   const url = new URL(req.url ?? '/', 'http://localhost');
-  const [routeSegment, descriptorSegment, ...rest] = cleanPathSegments(url.pathname);
+  const [routeSegment, identifierSegment, ...rest] = cleanPathSegments(url.pathname);
 
-  const kind = routeSegment as RouteKind;
-  if (!kind || !['si_functions', 'si_buckets', 'si_website_buckets', 'si_events'].includes(kind)) {
-    return undefined;
-  }
+  const kind = routeSegment.toUpperCase() as RouteKind;
 
-  if (!descriptorSegment) {
-    return undefined;
-  }
-
-  const identifier = parseIdentifier(descriptorSegment);
-  if (!identifier) {
+  if (RouteKind[kind] === undefined || !identifierSegment) {
     return undefined;
   }
 
@@ -54,16 +31,17 @@ const parseRequest = (req: IncomingMessage): ParsedRequest | undefined => {
 
   return {
     kind,
-    identifier,
-    subPath,
+    identifier: identifierSegment,
+    url: subPath,
     query,
     method: req.method ?? 'GET',
-    rawPath: url.pathname,
+    rawUrl: url.pathname,
   };
 };
 
 export const servLocal = async (
   handlers: Array<{ kind: RouteKind; handler: RouteHandler }>,
+  iac: ServerlessIac,
 ): Promise<void> => {
   if (localServer) {
     logger.info(`localServer already running on http://localhost:${SI_LOCALSTACK_SERVER_PORT}`);
@@ -89,10 +67,10 @@ export const servLocal = async (
         );
         return;
       }
-      requestHandler.handler(req, res, parsed);
-      logger.info(
-        `Local gateway handled ${parsed.kind}: ${parsed.identifier.name} (${parsed.identifier.region}) ${parsed.subPath}`,
-      );
+      const result = requestHandler.handler(req, parsed, iac);
+      logger.info(`LocalServer handled ${parsed.kind}: ${parsed.identifier} ${parsed.url}`);
+
+      respondText(res, 200, JSON.stringify(result));
     } catch (error) {
       respondText(res, 500, 'Internal server error');
       logger.error(

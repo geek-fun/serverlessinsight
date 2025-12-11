@@ -8,7 +8,7 @@ export const parseEvent = (events: { [key: string]: EventRaw }): Array<EventDoma
     key,
     name: event.name,
     type: event.type,
-    triggers: event.triggers,
+    triggers: event.triggers?.map((trigger) => ({ ...trigger, method: trigger.method ?? 'GET' })),
     domain: event.domain,
   }));
 };

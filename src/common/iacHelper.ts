@@ -1,7 +1,7 @@
 import path from 'node:path';
 import fs from 'node:fs';
 import * as ros from '@alicloud/ros-cdk-core';
-import { Context } from '../types';
+import { Context, FunctionDomain, ServerlessIac } from '../types';
 import * as ossDeployment from '@alicloud/ros-cdk-ossdeployment';
 import crypto from 'node:crypto';
 import { get } from 'lodash';
@@ -107,6 +107,17 @@ export const calcValue = <T>(rawValue: string, ctx: Context): T => {
 
   return value as T;
 };
+
+export const getIacDefinition = (
+  iac: ServerlessIac,
+  rawValue: string,
+): FunctionDomain | undefined => {
+  const matchFn = rawValue.match(/^\$\{functions\.(\w+(\.\w+)?)}$/);
+  if (matchFn?.length) {
+    return iac.functions?.find((fc) => fc.key === matchFn[1]);
+  }
+};
+
 export const formatRosId = (id: string): string => {
   // Insert underscore before uppercase letters, but only when they follow a lowercase letter
   let result = id.replace(/([a-z])([A-Z])/g, '$1_$2');

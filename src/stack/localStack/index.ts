@@ -1,14 +1,15 @@
 import { IncomingMessage, ServerResponse } from 'node:http';
 import { ParsedRequest, RouteHandler, RouteKind } from '../../types/localStack';
 import { servLocal, stopLocal } from './localServer';
-import { createEventHandler } from './event';
+import { eventsHandler } from './event';
+import { ServerlessIac } from '../../types';
 
 export * from './event';
 export { stopLocal };
 
 const handlers = [
   {
-    kind: 'si_functions',
+    kind: 'SI_FUNCTIONS',
     handler: (req: IncomingMessage, res: ServerResponse, parsed: ParsedRequest) => {
       res.writeHead(200, { 'Content-Type': 'application/json' });
       res.end(
@@ -18,10 +19,7 @@ const handlers = [
       );
     },
   },
-  {
-    kind: 'si_events',
-    handler: createEventHandler(),
-  },
+  { kind: 'SI_EVENTS', handler: eventsHandler },
   // {
   //   kind: 'bucket',
   //   handler: async (req: IncomingMessage, res: ServerResponse, parsed: ParsedRequest) => {
@@ -35,6 +33,6 @@ const handlers = [
   // },
 ];
 
-export const startLocalStack = async () => {
-  await servLocal(handlers as Array<{ kind: RouteKind; handler: RouteHandler }>);
+export const startLocalStack = async (iac: ServerlessIac) => {
+  await servLocal(handlers as Array<{ kind: RouteKind; handler: RouteHandler }>, iac);
 };
