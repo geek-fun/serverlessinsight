@@ -11,30 +11,45 @@ const cleanPathSegments = (pathname: string): Array<string> =>
     .map((segment) => segment.trim())
     .filter((segment) => segment.length > 0);
 
-const respondText = (res: ServerResponse, status: number, text: string) => {
-  res.writeHead(status, { 'Content-Type': 'text/plain; charset=utf-8' });
-  res.end(`${text}\n`);
+const respondJson = (
+  res: ServerResponse,
+  status: number,
+  payload: unknown,
+  headers: Record<string, string> = {},
+) => {
+  res.writeHead(status, { 'Content-Type': 'application/json', ...headers });
+  res.end(JSON.stringify(payload));
+};
+
+const parseIdentifier = (segment: string) => {
+  const [idPart, namePart, regionPart] = segment.split('-');
+  if (!idPart || !namePart || !regionPart) {
+    return undefined;
+  }
+  return { id: idPart, name: namePart, region: regionPart };
 };
 
 const parseRequest = (req: IncomingMessage): ParsedRequest | undefined => {
   const url = new URL(req.url ?? '/', 'http://localhost');
   const [routeSegment, identifierSegment, ...rest] = cleanPathSegments(url.pathname);
-
-  const kind = routeSegment.toUpperCase() as RouteKind;
-
-  if (RouteKind[kind] === undefined || !identifierSegment) {
+  if (!routeSegment || !identifierSegment) {
+    return undefined;
+  }
+  const kindKey = routeSegment.toUpperCase();
+  const kind = (RouteKind as Record<string, RouteKind>)[kindKey];
+  if (!kind) {
     return undefined;
   }
 
+  const resource = parseIdentifier(identifierSegment);
   const subPath = rest.length > 0 ? `/${rest.join('/')}` : '/';
-  const query = Object.fromEntries(url.searchParams.entries());
-
   return {
     kind,
     identifier: identifierSegment,
+    resource,
     url: subPath,
-    query,
     method: req.method ?? 'GET',
+    query: Object.fromEntries(url.searchParams.entries()),
     rawUrl: url.pathname,
   };
 };
@@ -48,35 +63,30 @@ export const servLocal = async (
     return;
   }
 
-  localServer = http.createServer((req, res) => {
+  localServer = http.createServer(async (req, res) => {
     try {
       const parsed = parseRequest(req);
 
       if (!parsed) {
-        respondText(res, 404, 'Route not found');
-        logger.warn(`Local gateway 404 -> ${req.method ?? 'GET'} ${req.url ?? '/'} `);
+        respondJson(res, 404, { error: 'Route not found' });
         return;
       }
-      const requestHandler = handlers.find((h) => h.kind === parsed.kind);
-      if (!requestHandler) {
-        respondText(res, 501, `No handler for route kind: ${parsed.kind}`);
-        logger.warn(
-          `Local gateway 501 -> No handler for ${parsed.kind} ${req.method ?? 'GET'} ${
-            req.url ?? '/'
-          }`,
-        );
-        return;
-      }
-      const result = requestHandler.handler(req, parsed, iac);
-      logger.info(`LocalServer handled ${parsed.kind}: ${parsed.identifier} ${parsed.url}`);
 
-      respondText(res, 200, JSON.stringify(result));
-    } catch (error) {
-      respondText(res, 500, 'Internal server error');
-      logger.error(
-        { err: error },
-        `Local gateway error -> ${req.method ?? 'GET'} ${req.url ?? '/'}`,
-      );
+      const route = handlers.find((h) => h.kind === parsed.kind);
+      if (!route) {
+        respondJson(res, 404, { error: `Handler for ${parsed.kind} not registered` });
+        return;
+      }
+
+      const outcome = await route.handler(req, parsed, iac);
+      if (!outcome) {
+        respondJson(res, 204, {});
+        return;
+      }
+      respondJson(res, outcome.statusCode, outcome.body ?? {}, outcome.headers);
+    } catch (err) {
+      logger.error({ err }, 'Local gateway error');
+      respondJson(res, 500, { error: 'Local gateway failure' });
     }
   });
 
@@ -85,11 +95,7 @@ export const servLocal = async (
       logger.info(`Local Server listening on http://localhost:${SI_LOCALSTACK_SERVER_PORT}`);
       resolve();
     });
-
-    localServer!.once('error', (err) => {
-      logger.error({ err }, 'Failed to start local server');
-      reject(err);
-    });
+    localServer!.once('error', reject);
   });
 };
 
@@ -101,10 +107,8 @@ export const stopLocal = async (): Promise<void> => {
   await new Promise<void>((resolve, reject) => {
     localServer!.close((err) => {
       if (err) {
-        logger.error({ err }, 'Error stopping local server');
         reject(err);
       } else {
-        logger.info('Local server stopped');
         localServer = undefined;
         resolve();
       }

@@ -17,14 +17,21 @@ export type ResourceIdentifier = {
 export type ParsedRequest = {
   kind: RouteKind;
   identifier: string;
+  resource?: ResourceIdentifier;
   url: string;
   method: string;
   query: Record<string, string>;
   rawUrl: string;
 };
 
+export type RouteResponse = {
+  statusCode: number;
+  headers?: Record<string, string>;
+  body?: unknown;
+};
+
 export type RouteHandler = (
   req: IncomingMessage,
   parsed: ParsedRequest,
   iac: ServerlessIac,
-) => unknown;
+) => Promise<RouteResponse | void> | RouteResponse | void;
