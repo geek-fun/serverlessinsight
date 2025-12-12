@@ -20,12 +20,19 @@ describe('localServer routing', () => {
     provider: { name: undefined, region: 'xx' },
   } as unknown as ServerlessIac;
 
-  beforeEach(async () => {
+  beforeAll(async () => {
     await servLocal(handlers, iac);
   });
 
-  afterEach(async () => {
+  afterAll(async () => {
     await stopLocal();
+  });
+
+  it('returns 200 when handler registered', async () => {
+    const res = await makeRequest(`http://localhost:${SI_LOCALSTACK_SERVER_PORT}/si_functions/`);
+
+    expect(res.statusCode).toBe(200);
+    expect(res.data).toContain('ok');
   });
 
   it('returns 404 for unknown route', async () => {
@@ -34,14 +41,5 @@ describe('localServer routing', () => {
     );
 
     expect(res.statusCode).toBe(404);
-  });
-
-  it('returns 200 when handler registered', async () => {
-    const res = await makeRequest(
-      `http://localhost:${SI_LOCALSTACK_SERVER_PORT}/si_functions/any_function/`,
-    );
-
-    expect(res.statusCode).toBe(200);
-    expect(res.data).toContain('ok');
   });
 });

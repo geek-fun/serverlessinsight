@@ -14,17 +14,17 @@ const cleanPathSegments = (pathname: string): Array<string> =>
 const respondJson = (
   res: ServerResponse,
   status: number,
-  payload: unknown,
+  body: unknown,
   headers: Record<string, string> = {},
 ) => {
   res.writeHead(status, { 'Content-Type': 'application/json', ...headers });
-  res.end(JSON.stringify(payload));
+  res.end(JSON.stringify(body));
 };
 
 const parseRequest = (req: IncomingMessage): ParsedRequest | undefined => {
   const url = new URL(req.url ?? '/', 'http://localhost');
   const [routeSegment, identifierSegment, ...rest] = cleanPathSegments(url.pathname);
-  if (!routeSegment || !identifierSegment) {
+  if (!routeSegment) {
     return undefined;
   }
   const kindKey = routeSegment.toUpperCase();
