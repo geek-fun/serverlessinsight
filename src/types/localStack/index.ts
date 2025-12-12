@@ -8,16 +8,9 @@ export enum RouteKind {
   SI_EVENTS = 'SI_EVENTS',
 }
 
-export type ResourceIdentifier = {
-  id: string;
-  name: string;
-  region: string;
-};
-
 export type ParsedRequest = {
   kind: RouteKind;
   identifier: string;
-  resource?: ResourceIdentifier;
   url: string;
   method: string;
   query: Record<string, string>;

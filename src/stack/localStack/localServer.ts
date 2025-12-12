@@ -21,14 +21,6 @@ const respondJson = (
   res.end(JSON.stringify(payload));
 };
 
-const parseIdentifier = (segment: string) => {
-  const [idPart, namePart, regionPart] = segment.split('-');
-  if (!idPart || !namePart || !regionPart) {
-    return undefined;
-  }
-  return { id: idPart, name: namePart, region: regionPart };
-};
-
 const parseRequest = (req: IncomingMessage): ParsedRequest | undefined => {
   const url = new URL(req.url ?? '/', 'http://localhost');
   const [routeSegment, identifierSegment, ...rest] = cleanPathSegments(url.pathname);
@@ -41,12 +33,10 @@ const parseRequest = (req: IncomingMessage): ParsedRequest | undefined => {
     return undefined;
   }
 
-  const resource = parseIdentifier(identifierSegment);
   const subPath = rest.length > 0 ? `/${rest.join('/')}` : '/';
   return {
     kind,
     identifier: identifierSegment,
-    resource,
     url: subPath,
     method: req.method ?? 'GET',
     query: Object.fromEntries(url.searchParams.entries()),
