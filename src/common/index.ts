@@ -8,4 +8,4 @@ export * from './constants';
 export * from './imsClient';
 export * from './base64';
 export * from './rosAssets';
-export * from './domainHelper';
+export * from './requestHelper';

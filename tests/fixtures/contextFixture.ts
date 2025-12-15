@@ -8,7 +8,7 @@ export const context: Context = {
   region: 'cn-hangzhou',
   accessKeyId: 'testAccessKeyId',
   accessKeySecret: 'testAccessKeySecret',
-  iacLocation: 'path/to/iac/location',
+  iacLocation: 'tests/fixtures/serverless-insight.yml',
   parameters: [
     { key: 'testVar', value: 'testVarValue' },
     { key: 'newTestVar', value: 'newTestVarValue' },
