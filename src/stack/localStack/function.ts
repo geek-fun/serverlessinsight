@@ -8,15 +8,12 @@ import fs from 'node:fs';
 import JSZip from 'jszip';
 import os from 'node:os';
 
-// Helper to extract zip file to a temporary directory
 const extractZipFile = async (zipPath: string): Promise<string> => {
   const zipData = fs.readFileSync(zipPath);
   const zip = await JSZip.loadAsync(zipData);
 
-  // Create a temporary directory
   const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'si-function-'));
 
-  // Extract all files
   for (const [relativePath, file] of Object.entries(zip.files)) {
     if (file.dir) {
       fs.mkdirSync(path.join(tempDir, relativePath), { recursive: true });
@@ -80,16 +77,12 @@ export const functionsHandler = async (
 
     let codeDir: string;
 
-    // Check if the code path is a zip file
     if (codePath.endsWith('.zip') && fs.existsSync(codePath)) {
-      // Extract zip file to temporary directory
       tempDir = await extractZipFile(codePath);
       codeDir = tempDir;
     } else if (fs.existsSync(codePath) && fs.statSync(codePath).isDirectory()) {
-      // Use directory directly
       codeDir = codePath;
     } else {
-      // Assume it's a directory path (without .zip extension)
       codeDir = path.dirname(codePath);
     }
     const functionName = calcValue<string>(fcDef.name, ctx);
