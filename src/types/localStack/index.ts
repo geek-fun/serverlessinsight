@@ -28,3 +28,11 @@ export type RouteHandler = (
   parsed: ParsedRequest,
   iac: ServerlessIac,
 ) => Promise<RouteResponse | void> | RouteResponse | void;
+
+export type FunctionOptions = {
+  codeDir: string;
+  functionKey: string;
+  handler: string;
+  servicePath: string;
+  timeout: number;
+};

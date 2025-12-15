@@ -12,6 +12,7 @@ describe('localStack Server', () => {
     await setContext({
       stage: 'default',
       location: iacLocation,
+      stages: iac.stages,
     });
 
     await startLocalStack(iac);
@@ -27,10 +28,7 @@ describe('localStack Server', () => {
     );
 
     expect(response.statusCode).toBe(200);
-    const json = JSON.parse(response.data);
-    expect(json.message).toBe('Function insight-poc-fn invoked successfully');
-    expect(json.method).toBe('GET');
-    expect(json.path).toBe('/api/hello');
+    expect(response.data).toBe('"ServerlessInsight Hello World"');
   });
 
   it('should return 404 for non-matching path', async () => {

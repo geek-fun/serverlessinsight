@@ -5,6 +5,7 @@ import { Context, FunctionDomain, ServerlessIac } from '../types';
 import * as ossDeployment from '@alicloud/ros-cdk-ossdeployment';
 import crypto from 'node:crypto';
 import { get } from 'lodash';
+import { parseYaml } from '../parser';
 
 export const resolveCode = (location: string): string => {
   const filePath = path.resolve(process.cwd(), location);
@@ -96,7 +97,29 @@ export const calcValue = <T>(rawValue: string, ctx: Context): T => {
   }
 
   if (containsVar?.length) {
-    value = value.replace(/\$\{vars\.(\w+)}/g, (_, key) => getParam(key, ctx.parameters));
+    const { vars: iacVars } = parseYaml(ctx.iacLocation);
+
+    const mergedParams = Object.entries(iacVars ?? {}).reduce(
+      (map, [key, value]) => map.set(key, String(value)),
+      new Map<string, string>(),
+    );
+
+    (ctx.parameters ?? []).forEach(({ key, value }) => mergedParams.set(key, value));
+  }
+
+  if (containsVar?.length) {
+    const { vars: iacVars } = parseYaml(ctx.iacLocation);
+
+    const mergedParams = Array.from(
+      new Map<string, string>(
+        [
+          ...Object.entries(iacVars ?? {}).map(([key, value]) => [key, value]),
+          ...(ctx.parameters ?? []).map(({ key, value }) => [key, value]),
+        ].filter(([, v]) => v !== undefined) as Array<[string, string]>,
+      ).entries(),
+    ).map(([key, value]) => ({ key, value }));
+
+    value = value.replace(/\$\{vars\.(\w+)}/g, (_, key) => getParam(key, mergedParams));
   }
 
   if (containsMap?.length) {
@@ -135,4 +158,12 @@ export const formatRosId = (id: string): string => {
   result = result.replace(/^_/, '');
 
   return result;
+};
+
+export const splitDomain = (domain: string) => {
+  const parts = domain.split('.');
+  const rr = parts.length > 2 ? parts[0] : '@';
+  const domainName = parts.length > 2 ? parts.slice(1).join('.') : domain;
+
+  return { rr, domainName };
 };

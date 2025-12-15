@@ -1,14 +1,33 @@
 import { eventsHandler } from '../../../src/stack/localStack';
-import { oneFcOneGatewayIac } from '../../fixtures/deploy-fixtures';
 import { ParsedRequest } from '../../../src/types/localStack';
 import http from 'node:http';
+import { Readable } from 'node:stream';
+import { setContext } from '../../../src/common';
+import path from 'node:path';
+import { parseYaml } from '../../../src/parser';
 
 describe('eventsHandler', () => {
-  const mockRequest = (method = 'GET'): http.IncomingMessage =>
-    ({
+  const iacLocation = path.resolve(__dirname, '../../fixtures/serverless-insight.yml');
+  const iac = parseYaml(iacLocation);
+
+  beforeAll(async () => {
+    await setContext({
+      stage: 'default',
+      location: iacLocation,
+      stages: iac.stages,
+    });
+  });
+
+  const mockRequest = (method = 'GET', body = ''): http.IncomingMessage => {
+    const readable = new Readable();
+    readable.push(body);
+    readable.push(null);
+    return Object.assign(readable, {
       method,
       url: '/api/hello',
+      headers: {},
     }) as http.IncomingMessage;
+  };
 
   const parsedBase: ParsedRequest = {
     kind: undefined as unknown as ParsedRequest['kind'],
@@ -20,35 +39,28 @@ describe('eventsHandler', () => {
   };
 
   it('returns 404 when event missing', async () => {
-    const res = await eventsHandler(
-      mockRequest(),
-      { ...parsedBase, identifier: 'missing' },
-      oneFcOneGatewayIac,
-    );
+    const res = await eventsHandler(mockRequest(), { ...parsedBase, identifier: 'missing' }, iac);
 
     expect(res?.statusCode).toBe(404);
     expect(res?.body).toEqual({ error: 'API Gateway event not found', event: 'missing' });
   });
 
   it('returns 404 when trigger not matched', async () => {
-    const res = await eventsHandler(
-      mockRequest(),
-      { ...parsedBase, url: '/api/unknown' },
-      oneFcOneGatewayIac,
-    );
+    const res = await eventsHandler(mockRequest(), { ...parsedBase, url: '/api/unknown' }, iac);
 
     expect(res?.statusCode).toBe(404);
     expect(res?.body).toEqual({ error: 'No matching trigger found' });
   });
 
   it('delegates to backend function when trigger matched', async () => {
-    const res = await eventsHandler(mockRequest('POST'), parsedBase, oneFcOneGatewayIac);
+    await setContext({
+      stage: 'default',
+      location: iacLocation,
+    });
+
+    const res = await eventsHandler(mockRequest('POST'), parsedBase, iac);
 
     expect(res?.statusCode).toBe(200);
-    expect(res?.body).toMatchObject({
-      message: 'Function hello-fn invoked successfully',
-      functionKey: 'hello_fn',
-      method: 'POST',
-    });
+    expect(res?.body).toBe('ServerlessInsight Hello World');
   });
 });

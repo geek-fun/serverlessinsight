@@ -37,11 +37,11 @@ const matchTrigger = (
   });
 };
 
-const servEvent = (
+const servEvent = async (
   req: IncomingMessage,
   parsed: ParsedRequest,
   iac: ServerlessIac,
-): RouteResponse | void => {
+): Promise<RouteResponse | void> => {
   const event = iac.events?.find(
     (event) => event.type === EventTypes.API_GATEWAY && event.key === parsed.identifier,
   );
@@ -71,7 +71,7 @@ const servEvent = (
         body: { error: 'Backend definition missing', backend: matchedTrigger.backend },
       };
     }
-    return functionsHandler(req, { ...parsed, identifier: backendDef?.key as string }, iac);
+    return await functionsHandler(req, { ...parsed, identifier: backendDef?.key as string }, iac);
   }
 
   return {
@@ -80,6 +80,6 @@ const servEvent = (
   };
 };
 
-export const eventsHandler: RouteHandler = (req, parsed, iac) => {
-  return servEvent(req, parsed, iac);
+export const eventsHandler: RouteHandler = async (req, parsed, iac) => {
+  return await servEvent(req, parsed, iac);
 };
