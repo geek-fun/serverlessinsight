@@ -68,11 +68,9 @@ export const functionsHandler = async (
     const rawBody = await readRequestBody(req);
     const event = rawBody ? JSON.parse(rawBody) : {};
 
-    // Get context for service path
     const ctx = getContext();
     logger.debug(`Context parameters: ${JSON.stringify(ctx.parameters)}`);
 
-    // Resolve the code path from project root
     const codePath = path.resolve(process.cwd(), calcValue(fcDef.code.path, ctx));
 
     let codeDir: string;

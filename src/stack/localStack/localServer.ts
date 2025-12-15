@@ -91,15 +91,18 @@ export const servLocal = async (
 
 export const stopLocal = async (): Promise<void> => {
   if (!localServer) {
+    logger.info('localServer is not running');
     return;
   }
 
   await new Promise<void>((resolve, reject) => {
     localServer!.close((err) => {
       if (err) {
+        logger.error({ err }, 'Error stopping localServer');
         reject(err);
       } else {
         localServer = undefined;
+        logger.info('localServer stopped');
         resolve();
       }
     });

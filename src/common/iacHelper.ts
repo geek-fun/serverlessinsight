@@ -99,17 +99,6 @@ export const calcValue = <T>(rawValue: string, ctx: Context): T => {
   if (containsVar?.length) {
     const { vars: iacVars } = parseYaml(ctx.iacLocation);
 
-    const mergedParams = Object.entries(iacVars ?? {}).reduce(
-      (map, [key, value]) => map.set(key, String(value)),
-      new Map<string, string>(),
-    );
-
-    (ctx.parameters ?? []).forEach(({ key, value }) => mergedParams.set(key, value));
-  }
-
-  if (containsVar?.length) {
-    const { vars: iacVars } = parseYaml(ctx.iacLocation);
-
     const mergedParams = Array.from(
       new Map<string, string>(
         [
