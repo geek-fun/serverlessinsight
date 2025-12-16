@@ -19,15 +19,14 @@
 
 ## 📖 目录
 
-- [关于](#关于)
 - [特性](#特性)
+- [支持的云服务商](#支持的云服务商)
 - [快速开始](#快速开始)
   - [前置要求](#前置要求)
   - [安装](#安装)
 - [使用方法](#使用方法)
   - [基础命令](#基础命令)
   - [命令参考](#命令参考)
-- [支持的云服务商](#支持的云服务商)
 - [示例](#示例)
 - [本地开发](#本地开发)
   - [本地运行](#本地运行)
@@ -40,9 +39,7 @@
 
 ---
 
-## 🎯 关于
-
-ServerlessInsight 是一个强大的 CLI 工具，用于跨多个云服务商管理 Serverless 应用。它提供了统一的接口来部署、管理和调试 Serverless 函数和资源，使用基础设施即代码（IaC）原则。
+ServerlessInsight 是一个强大的 Serverless 框架，用于跨多个云服务商管理 Serverless 应用。它提供了统一的接口来部署、管理和调试 Serverless 函数和资源，使用基础设施即代码（IaC）原则。
 
 无论您是在 AWS、阿里云、华为云还是其他服务商上构建应用，ServerlessInsight 都能简化您的开发工作流程：
 
@@ -65,6 +62,21 @@ ServerlessInsight 是一个强大的 CLI 工具，用于跨多个云服务商管
 - 💾 **资源管理** - 管理存储、数据库和其他云资源
 - 🔐 **安全优先** - 内置验证和安全最佳实践
 - 📊 **全面的日志记录** - 调试和监控您的应用
+
+---
+
+## ☁️ 支持的云服务商
+
+ServerlessInsight 支持以下云服务商：
+
+| 云服务商 | 函数 | API 网关 | 存储 | 数据库 | 状态 |
+|----------|------|----------|------|--------|------|
+| **阿里云** | ✅ FC3 | ✅ API 网关 | ✅ OSS | ✅ RDS, OTS, ESS | 稳定 |
+| **华为云** | ✅ FunctionGraph | 🚧 即将推出 | 🚧 即将推出 | 🚧 即将推出 | 测试版 |
+| **AWS** | 🔜 计划中 | 🔜 计划中 | 🔜 计划中 | 🔜 计划中 | 计划中 |
+| **Azure** | 🔜 计划中 | 🔜 计划中 | 🔜 计划中 | 🔜 计划中 | 计划中 |
+| **Google Cloud** | 🔜 计划中 | 🔜 计划中 | 🔜 计划中 | 🔜 计划中 | 计划中 |
+| **腾讯云** | 🔜 计划中 | 🔜 计划中 | 🔜 计划中 | 🔜 计划中 | 计划中 |
 
 ---
 
@@ -193,21 +205,6 @@ si destroy <stackName> [选项]
 
 ---
 
-## ☁️ 支持的云服务商
-
-ServerlessInsight 支持以下云服务商：
-
-| 云服务商 | 函数 | API 网关 | 存储 | 数据库 | 状态 |
-|----------|------|----------|------|--------|------|
-| **阿里云** | ✅ FC3 | ✅ API 网关 | ✅ OSS | ✅ RDS, OTS, ESS | 稳定 |
-| **华为云** | ✅ FunctionGraph | 🚧 即将推出 | 🚧 即将推出 | 🚧 即将推出 | 测试版 |
-| **AWS** | 🔜 计划中 | 🔜 计划中 | 🔜 计划中 | 🔜 计划中 | 计划中 |
-| **Azure** | 🔜 计划中 | 🔜 计划中 | 🔜 计划中 | 🔜 计划中 | 计划中 |
-| **Google Cloud** | 🔜 计划中 | 🔜 计划中 | 🔜 计划中 | 🔜 计划中 | 计划中 |
-| **腾讯云** | 🔜 计划中 | 🔜 计划中 | 🔜 计划中 | 🔜 计划中 | 计划中 |
-
----
-
 ## 💡 示例
 
 ServerlessInsight 使用简单的 YAML 格式来定义您的 Serverless 基础设施：
@@ -263,7 +260,7 @@ events:
 
 ```bash
 # 启动本地开发服务器
-si local my-stack -f serverless.yml -p 3000
+si local my-stack -f serverless.yml --stage local
 
 # 您的函数将可通过以下地址访问：
 # http://localhost:3000/si_<event-type>/<id>-<name>-<region>/<path>
@@ -353,7 +350,6 @@ npm run lint:fix
 加入我们的社区以获取帮助、分享想法和贡献：
 
 - **GitHub Issues** - [报告错误或请求功能](https://github.com/geek-fun/serverlessinsight/issues)
-- **GitHub Discussions** - [提问和讨论想法](https://github.com/geek-fun/serverlessinsight/discussions)
 - **官方网站** - [serverlessinsight.geekfun.club](https://serverlessinsight.geekfun.club)
 
 ---

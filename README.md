@@ -19,15 +19,14 @@
 
 ## 📖 Table of Contents
 
-- [About](#about)
 - [Features](#features)
+- [Supported Providers](#supported-providers)
 - [Getting Started](#getting-started)
   - [Prerequisites](#prerequisites)
   - [Installation](#installation)
 - [Usage](#usage)
   - [Basic Commands](#basic-commands)
   - [Command Reference](#command-reference)
-- [Supported Providers](#supported-providers)
 - [Examples](#examples)
 - [Local Development](#local-development)
   - [Running Locally](#running-locally)
@@ -40,9 +39,7 @@
 
 ---
 
-## 🎯 About
-
-ServerlessInsight is a powerful CLI tool for managing serverless applications across multiple cloud providers. It provides a unified interface to deploy, manage, and debug serverless functions and resources using Infrastructure as Code (IaC) principles.
+ServerlessInsight is a powerful serverless framework for managing serverless applications across multiple cloud providers. It provides a unified interface to deploy, manage, and debug serverless functions and resources using Infrastructure as Code (IaC) principles.
 
 Whether you're building on AWS, Alibaba Cloud, Huawei Cloud, or other providers, ServerlessInsight simplifies your development workflow with:
 
@@ -65,6 +62,21 @@ Whether you're building on AWS, Alibaba Cloud, Huawei Cloud, or other providers,
 - 💾 **Resource Management** - Manage storage, databases, and other cloud resources
 - 🔐 **Security First** - Built-in validation and security best practices
 - 📊 **Comprehensive Logging** - Debug and monitor your applications
+
+---
+
+## ☁️ Supported Providers
+
+ServerlessInsight supports the following cloud providers:
+
+| Provider | Functions | API Gateway | Storage | Databases | Status |
+|----------|-----------|-------------|---------|-----------|--------|
+| **Alibaba Cloud** | ✅ FC3 | ✅ API Gateway | ✅ OSS | ✅ RDS, OTS, ESS | Stable |
+| **Huawei Cloud** | ✅ FunctionGraph | 🚧 Coming Soon | 🚧 Coming Soon | 🚧 Coming Soon | Beta |
+| **AWS** | 🔜 Planned | 🔜 Planned | 🔜 Planned | 🔜 Planned | Planned |
+| **Azure** | 🔜 Planned | 🔜 Planned | 🔜 Planned | 🔜 Planned | Planned |
+| **Google Cloud** | 🔜 Planned | 🔜 Planned | 🔜 Planned | 🔜 Planned | Planned |
+| **Tencent Cloud** | 🔜 Planned | 🔜 Planned | 🔜 Planned | 🔜 Planned | Planned |
 
 ---
 
@@ -193,21 +205,6 @@ Options:
 
 ---
 
-## ☁️ Supported Providers
-
-ServerlessInsight supports the following cloud providers:
-
-| Provider | Functions | API Gateway | Storage | Databases | Status |
-|----------|-----------|-------------|---------|-----------|--------|
-| **Alibaba Cloud** | ✅ FC3 | ✅ API Gateway | ✅ OSS | ✅ RDS, OTS, ESS | Stable |
-| **Huawei Cloud** | ✅ FunctionGraph | 🚧 Coming Soon | 🚧 Coming Soon | 🚧 Coming Soon | Beta |
-| **AWS** | 🔜 Planned | 🔜 Planned | 🔜 Planned | 🔜 Planned | Planned |
-| **Azure** | 🔜 Planned | 🔜 Planned | 🔜 Planned | 🔜 Planned | Planned |
-| **Google Cloud** | 🔜 Planned | 🔜 Planned | 🔜 Planned | 🔜 Planned | Planned |
-| **Tencent Cloud** | 🔜 Planned | 🔜 Planned | 🔜 Planned | 🔜 Planned | Planned |
-
----
-
 ## 💡 Examples
 
 ServerlessInsight uses a simple YAML format to define your serverless infrastructure:
@@ -263,7 +260,7 @@ Test your serverless functions locally without deploying:
 
 ```bash
 # Start local development server
-si local my-stack -f serverless.yml -p 3000
+si local my-stack -f serverless.yml --stage local
 
 # Your functions will be available at:
 # http://localhost:3000/si_<event-type>/<id>-<name>-<region>/<path>
@@ -353,7 +350,6 @@ We welcome contributions from the community! Here's how you can help:
 Join our community to get help, share ideas, and contribute:
 
 - **GitHub Issues** - [Report bugs or request features](https://github.com/geek-fun/serverlessinsight/issues)
-- **GitHub Discussions** - [Ask questions and discuss ideas](https://github.com/geek-fun/serverlessinsight/discussions)
 - **Website** - [serverlessinsight.geekfun.club](https://serverlessinsight.geekfun.club)
 
 ---
