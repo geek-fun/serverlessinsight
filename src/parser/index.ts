@@ -9,6 +9,7 @@ import { validateYaml } from '../validator';
 import { parseBucket } from './bucketParser';
 import { parseTable } from './tableParser';
 import { get } from 'lodash';
+import { logger } from '../common';
 
 const validateExistence = (path: string) => {
   if (!existsSync(path)) {
@@ -70,15 +71,26 @@ const evaluateValue = (
       ).entries(),
     ).map(([key, value]) => ({ key, value }));
 
-    value = value.replace(/\$\{vars\.(\w+)\}/g, (_, key) => getParam(key, mergedParams) || '');
+    value = value.replace(/\$\{vars\.(\w+)\}/g, (_, key) => {
+      const paramValue = getParam(key, mergedParams);
+      if (!paramValue) {
+        logger.warn(`Variable '${key}' not found in vars or parameters, using empty string`);
+      }
+      return paramValue || '';
+    });
   }
 
   // Replace ${stages.xxx}
   if (value.includes('${stages.')) {
-    value = value.replace(
-      /\$\{stages\.(\w+)\}/g,
-      (_, key) => getParam(key, get(ctx.stages, `${ctx.stage}`)) || '',
-    );
+    value = value.replace(/\$\{stages\.(\w+)\}/g, (_, key) => {
+      const stageValue = getParam(key, get(ctx.stages, `${ctx.stage}`));
+      if (!stageValue) {
+        logger.warn(
+          `Stage variable '${key}' not found in stage '${ctx.stage}', using empty string`,
+        );
+      }
+      return stageValue || '';
+    });
   }
 
   // Replace ${functions.xxx} with just the function key

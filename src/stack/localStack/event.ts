@@ -64,7 +64,7 @@ const servEvent = async (
   }
 
   if (matchedTrigger.backend) {
-    // Backend is now directly the function key (already evaluated from ${functions.xxx})
+    // Backend has been pre-evaluated from ${functions.xxx} to the actual function key
     const backendDef = iac.functions?.find((fc) => fc.key === matchedTrigger.backend);
     if (!backendDef) {
       return {
