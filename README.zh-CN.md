@@ -247,8 +247,11 @@ events:
 - [API 网关示例](./samples/aliyun-poc-api.yml) - 部署带 HTTP 端点的函数
 - [存储示例](./samples/aliyun-poc-bucket.yml) - 配置 OSS 存储桶
 - [数据库示例](./samples/aliyun-poc-rds.yml) - 设置 RDS 数据库
+- [表格存储示例](./samples/aliyun-poc-table.yml) - 配置 OTS 表格存储
 - [Elasticsearch 示例](./samples/aliyun-poc-es.yml) - 部署 Elasticsearch Serverless
 - [自定义域名示例](./samples/aliyun-poc-domain.yml) - 配置自定义域名
+- [GPU 函数示例](./samples/aliyun-poc-fc-gpu.yml) - 部署支持 GPU 的函数
+- [华为云示例](./samples/huawei-poc-fc.yml) - 部署到华为云 FunctionGraph
 
 ---
 

@@ -247,8 +247,11 @@ For more examples, check out the [samples](./samples) directory:
 - [API Gateway Example](./samples/aliyun-poc-api.yml) - Deploy functions with HTTP endpoints
 - [Storage Example](./samples/aliyun-poc-bucket.yml) - Configure OSS buckets
 - [Database Example](./samples/aliyun-poc-rds.yml) - Set up RDS databases
+- [Table Store Example](./samples/aliyun-poc-table.yml) - Configure OTS table storage
 - [Elasticsearch Example](./samples/aliyun-poc-es.yml) - Deploy Elasticsearch Serverless
 - [Custom Domain Example](./samples/aliyun-poc-domain.yml) - Configure custom domains
+- [GPU Functions Example](./samples/aliyun-poc-fc-gpu.yml) - Deploy GPU-enabled functions
+- [Huawei Cloud Example](./samples/huawei-poc-fc.yml) - Deploy to Huawei Cloud FunctionGraph
 
 ---
 
