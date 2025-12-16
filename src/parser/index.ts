@@ -43,26 +43,9 @@ export const parseYaml = (iacLocation: string): ServerlessIac => {
   return transformYaml(iacJson);
 };
 
-const evaluateValue = (
-  rawValue: string,
-  ctx: Context,
-  iacVars?: Record<string, unknown>,
-): string => {
-  // Use calcValue for common template variable evaluation
-  let value = calcValue<string>(rawValue, ctx, iacVars);
-
-  // Handle function references specifically for localStack
-  // Replace ${functions.xxx} with just the function key
-  if (value.includes('${functions.')) {
-    value = value.replace(/\$\{functions\.(\w+(?:\.\w+)?)\}/g, '$1');
-  }
-
-  return value;
-};
-
 const evaluateObject = <T>(obj: T, ctx: Context, iacVars?: Record<string, unknown>): T => {
   if (typeof obj === 'string') {
-    return evaluateValue(obj, ctx, iacVars) as T;
+    return calcValue<string>(obj, ctx, iacVars) as T;
   }
 
   if (Array.isArray(obj)) {

@@ -171,15 +171,14 @@ describe('unit test for parse', () => {
       expect(result.functions![0].environment?.NODE_ENV).toBe('default');
     });
 
-    it('should evaluate ${functions.xxx} references by converting to function key', () => {
+    it('should keep ${functions.xxx} references unchanged', () => {
       const result = revalYaml(iacLocation, testContext);
 
-      // Check that function references in events are resolved to keys
+      // Check that function references in events are kept as-is
       if (result.events && result.events[0].triggers) {
         const backend = result.events[0].triggers[0].backend;
-        // Should be the function key, not ${functions.xxx}
-        expect(backend).toBe('insight_poc_fn');
-        expect(backend).not.toContain('${functions');
+        // Should still contain ${functions.xxx} pattern
+        expect(backend).toContain('${functions.');
       }
     });
 
