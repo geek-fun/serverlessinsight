@@ -1,7 +1,7 @@
 import { IncomingMessage } from 'http';
 import { ServerlessIac } from '../../types';
 import { FunctionOptions, ParsedRequest, RouteResponse } from '../../types/localStack';
-import { logger, getContext, calcValue, readRequestBody } from '../../common';
+import { logger, readRequestBody } from '../../common';
 import { invokeFunction } from './functionRunner';
 import path from 'node:path';
 import fs from 'node:fs';
@@ -68,10 +68,7 @@ export const functionsHandler = async (
     const rawBody = await readRequestBody(req);
     const event = rawBody ? JSON.parse(rawBody) : {};
 
-    const ctx = getContext();
-    logger.debug(`Context parameters: ${JSON.stringify(ctx.parameters)}`);
-
-    const codePath = path.resolve(process.cwd(), calcValue(fcDef.code.path, ctx));
+    const codePath = path.resolve(process.cwd(), fcDef.code.path);
 
     let codeDir: string;
 
@@ -83,31 +80,30 @@ export const functionsHandler = async (
     } else {
       codeDir = path.dirname(codePath);
     }
-    const functionName = calcValue<string>(fcDef.name, ctx);
 
     const funOptions: FunctionOptions = {
       codeDir,
       functionKey: fcDef.key,
-      handler: calcValue(fcDef.code.handler, ctx),
+      handler: fcDef.code.handler,
       servicePath: '',
-      timeout: (fcDef.timeout || 3) * 1000,
+      timeout: fcDef.timeout * 1000,
     };
 
     const env = {
       ...fcDef.environment,
       AWS_REGION: iac.provider.region || 'us-east-1',
-      FUNCTION_NAME: functionName,
-      FUNCTION_MEMORY_SIZE: String(fcDef.memory || 128),
-      FUNCTION_TIMEOUT: String(fcDef.timeout || 3),
+      FUNCTION_NAME: fcDef.name,
+      FUNCTION_MEMORY_SIZE: String(fcDef.memory),
+      FUNCTION_TIMEOUT: String(fcDef.timeout),
     };
 
     const fcContext = {
-      functionName,
+      functionName: fcDef.name,
       functionVersion: '$LATEST',
-      memoryLimitInMB: fcDef.memory || 128,
-      logGroupName: `/aws/lambda/${functionName}`,
+      memoryLimitInMB: fcDef.memory,
+      logGroupName: `/aws/lambda/${fcDef.name}`,
       logStreamName: `${new Date().toISOString().split('T')[0]}/[$LATEST]${Math.random().toString(36).substring(7)}`,
-      invokedFunctionArn: `arn:aws:lambda:${iac.provider.region}:000000000000:function:${functionName}`,
+      invokedFunctionArn: `arn:aws:lambda:${iac.provider.region}:000000000000:function:${fcDef.name}`,
       awsRequestId: Math.random().toString(36).substring(2, 15),
     };
 

@@ -1,11 +1,12 @@
 import path from 'node:path';
 import fs from 'node:fs';
 import * as ros from '@alicloud/ros-cdk-core';
-import { Context, FunctionDomain, ServerlessIac } from '../types';
+import { Context, FunctionDomain, ServerlessIac, Vars } from '../types';
 import * as ossDeployment from '@alicloud/ros-cdk-ossdeployment';
 import crypto from 'node:crypto';
 import { get } from 'lodash';
 import { parseYaml } from '../parser';
+import { logger } from './logger';
 
 export const resolveCode = (location: string): string => {
   const filePath = path.resolve(process.cwd(), location);
@@ -85,7 +86,7 @@ const getParam = (key: string, records?: Array<{ key: string; value: string }>) 
   return records?.find((param) => param.key === key)?.value as string;
 };
 
-export const calcValue = <T>(rawValue: string, ctx: Context): T => {
+export const calcValue = <T>(rawValue: string, ctx: Context, iacVars?: Vars): T => {
   const containsStage = rawValue.match(/\$\{ctx.stage}/);
   const containsVar = rawValue.match(/\$\{vars.\w+}/);
   const containsMap = rawValue.match(/\$\{stages\.(\w+)}/);
@@ -97,24 +98,37 @@ export const calcValue = <T>(rawValue: string, ctx: Context): T => {
   }
 
   if (containsVar?.length) {
-    const { vars: iacVars } = parseYaml(ctx.iacLocation);
+    // Use provided iacVars or parse from file
+    const vars = iacVars ?? parseYaml(ctx.iacLocation).vars;
 
     const mergedParams = Array.from(
       new Map<string, string>(
         [
-          ...Object.entries(iacVars ?? {}).map(([key, value]) => [key, value]),
+          ...Object.entries(vars ?? {}).map(([key, value]) => [key, String(value)]),
           ...(ctx.parameters ?? []).map(({ key, value }) => [key, value]),
         ].filter(([, v]) => v !== undefined) as Array<[string, string]>,
       ).entries(),
     ).map(([key, value]) => ({ key, value }));
 
-    value = value.replace(/\$\{vars\.(\w+)}/g, (_, key) => getParam(key, mergedParams));
+    value = value.replace(/\$\{vars\.(\w+)}/g, (_, key) => {
+      const paramValue = getParam(key, mergedParams);
+      if (!paramValue) {
+        logger.warn(`Variable '${key}' not found in vars or parameters, using empty string`);
+      }
+      return paramValue || '';
+    });
   }
 
   if (containsMap?.length) {
-    value = value.replace(/\$\{stages\.(\w+)}/g, (_, key) =>
-      getParam(key, get(ctx.stages, `${ctx.stage}`)),
-    );
+    value = value.replace(/\$\{stages\.(\w+)}/g, (_, key) => {
+      const stageValue = getParam(key, get(ctx.stages, `${ctx.stage}`));
+      if (!stageValue) {
+        logger.warn(
+          `Stage variable '${key}' not found in stage '${ctx.stage}', using empty string`,
+        );
+      }
+      return stageValue || '';
+    });
   }
 
   return value as T;

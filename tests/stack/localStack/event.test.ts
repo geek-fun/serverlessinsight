@@ -2,20 +2,22 @@ import { eventsHandler } from '../../../src/stack/localStack';
 import { ParsedRequest } from '../../../src/types/localStack';
 import http from 'node:http';
 import { Readable } from 'node:stream';
-import { setContext } from '../../../src/common';
+import { setContext, getContext } from '../../../src/common';
 import path from 'node:path';
-import { parseYaml } from '../../../src/parser';
+import { revalYaml } from '../../../src/parser';
 
 describe('eventsHandler', () => {
   const iacLocation = path.resolve(__dirname, '../../fixtures/serverless-insight.yml');
-  const iac = parseYaml(iacLocation);
+  let iac: ReturnType<typeof revalYaml>;
 
   beforeAll(async () => {
     await setContext({
       stage: 'default',
       location: iacLocation,
-      stages: iac.stages,
     });
+
+    const ctx = getContext();
+    iac = revalYaml(iacLocation, ctx);
   });
 
   const mockRequest = (method = 'GET', body = ''): http.IncomingMessage => {
@@ -53,11 +55,6 @@ describe('eventsHandler', () => {
   });
 
   it('delegates to backend function when trigger matched', async () => {
-    await setContext({
-      stage: 'default',
-      location: iacLocation,
-    });
-
     const res = await eventsHandler(mockRequest('POST'), parsedBase, iac);
 
     expect(res?.statusCode).toBe(200);

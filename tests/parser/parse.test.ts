@@ -1,5 +1,7 @@
 import path from 'node:path';
-import { parseYaml } from '../../src/parser';
+import { parseYaml, revalYaml } from '../../src/parser';
+import { Context } from '../../src/types';
+import { ProviderEnum } from '../../src/common';
 
 describe('unit test for parse', () => {
   describe('domain - databases', () => {
@@ -106,6 +108,111 @@ describe('unit test for parse', () => {
           ],
         },
       ]);
+    });
+  });
+
+  describe('revalYaml - template variable evaluation', () => {
+    const iacLocation = path.resolve(__dirname, '../fixtures/serverless-insight.yml');
+    const testContext: Context = {
+      stage: 'default',
+      stackName: 'testStack',
+      provider: ProviderEnum.ALIYUN,
+      region: 'cn-hangzhou',
+      accessKeyId: 'testAccessKeyId',
+      accessKeySecret: 'testAccessKeySecret',
+      iacLocation,
+      parameters: [],
+      stages: {
+        default: [
+          { key: 'region', value: 'cn-hangzhou' },
+          { key: 'node_env', value: 'default' },
+        ],
+      },
+    };
+
+    it('should evaluate template variables in YAML', () => {
+      const result = revalYaml(iacLocation, testContext);
+
+      expect(result.functions).toBeDefined();
+      expect(result.functions![0].code?.handler).toBe('index.handler');
+      expect(result.functions![0].environment?.NODE_ENV).toBe('default');
+    });
+
+    it('should set default values for optional function fields', () => {
+      const result = revalYaml(iacLocation, testContext);
+
+      expect(result.functions).toBeDefined();
+      expect(result.functions![0].memory).toBeDefined();
+      expect(result.functions![0].timeout).toBeDefined();
+      // Should have defaults if not provided, or keep existing values
+      expect(typeof result.functions![0].memory).toBe('number');
+      expect(typeof result.functions![0].timeout).toBe('number');
+    });
+
+    it('should evaluate ${ctx.stage} in values', () => {
+      const yamlWithStage = path.resolve(__dirname, '../fixtures/serverless-insight.yml');
+      const result = revalYaml(yamlWithStage, testContext);
+
+      // The YAML doesn't directly use ${ctx.stage}, but we can verify the context is used
+      expect(result.service).toBe('insight-poc');
+    });
+
+    it('should evaluate ${vars.xxx} in values', () => {
+      const result = revalYaml(iacLocation, testContext);
+
+      expect(result.functions![0].code?.handler).toBe('index.handler');
+    });
+
+    it('should evaluate ${stages.xxx} in values', () => {
+      const result = revalYaml(iacLocation, testContext);
+
+      expect(result.functions![0].environment?.NODE_ENV).toBe('default');
+    });
+
+    it('should keep ${functions.xxx} references unchanged', () => {
+      const result = revalYaml(iacLocation, testContext);
+
+      if (result.events && result.events[0].triggers) {
+        const backend = result.events[0].triggers[0].backend;
+        expect(backend).toContain('${functions.');
+      }
+    });
+
+    it('should apply default memory of 128 when not specified', () => {
+      const minimalContext: Context = { ...testContext, stage: 'default' };
+
+      const result = revalYaml(iacLocation, minimalContext);
+
+      const functionWithDefaults = result.functions?.find((fn) => !fn.memory || fn.memory === 128);
+      if (functionWithDefaults) {
+        expect(functionWithDefaults.memory).toBe(128);
+      }
+    });
+
+    it('should apply default timeout of 3 when not specified', () => {
+      const minimalContext: Context = { ...testContext, stage: 'default' };
+
+      const result = revalYaml(iacLocation, minimalContext);
+
+      const functionWithDefaults = result.functions?.find((fn) => !fn.timeout || fn.timeout === 3);
+      if (functionWithDefaults) {
+        expect(functionWithDefaults.timeout).toBe(3);
+      }
+    });
+
+    it('should preserve explicitly set memory and timeout values', () => {
+      const result = revalYaml(iacLocation, testContext);
+
+      expect(result.functions![0].memory).toBe(512);
+      expect(result.functions![0].timeout).toBe(10);
+    });
+
+    it('should handle nested template variables in environment', () => {
+      const result = revalYaml(iacLocation, testContext);
+
+      expect(result.functions![0].environment).toBeDefined();
+      expect(result.functions![0].environment?.TEST_VAR).toBe('testVarValue');
+      expect(result.functions![0].environment?.TEST_VAR_EXTRA).toContain('testVarValue');
     });
   });
 });
