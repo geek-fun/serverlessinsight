@@ -1,6 +1,6 @@
 import * as ros from '@alicloud/ros-cdk-core';
 import * as ossDeployment from '@alicloud/ros-cdk-ossdeployment';
-import { getFileSource, calcRefs, calcValue, formatRosId } from '../../src/common';
+import { getFileSource, calcRefs, calcValue, formatRosId, logger } from '../../src/common';
 import fs from 'node:fs';
 import { context } from '../fixtures/contextFixture';
 
@@ -123,6 +123,70 @@ describe('Unit test for iacHelper', () => {
       expect(value).toEqual(
         'wearedongyiIASJ#testtestStageValueSUPEREtestROR-AHID_#YOUDtestVarValue-value',
       );
+    });
+
+    it('should accept optional iacVars parameter to avoid re-parsing', () => {
+      const iacVars = { customVar: 'customValue', handler: 'custom.handler' };
+      const value = calcValue('${vars.customVar}', context, iacVars);
+
+      expect(value).toEqual('customValue');
+    });
+
+    it('should use provided iacVars instead of parsing from file', () => {
+      const contextWithoutHandler = {
+        ...context,
+        parameters: [], // Empty parameters to test iacVars priority
+      };
+      const iacVars = { handler: 'override.handler' };
+      const value = calcValue('${vars.handler}', contextWithoutHandler, iacVars);
+
+      // Should use the provided iacVars value, not parse from file
+      expect(value).toEqual('override.handler');
+    });
+
+    it('should log warning when variable is not found', () => {
+      const warnSpy = jest.spyOn(logger, 'warn').mockImplementation();
+      const value = calcValue('${vars.nonExistentVar}', context, { someVar: 'value' });
+
+      expect(value).toEqual('');
+      expect(warnSpy).toHaveBeenCalledWith(
+        "Variable 'nonExistentVar' not found in vars or parameters, using empty string",
+      );
+      warnSpy.mockRestore();
+    });
+
+    it('should log warning when stage variable is not found', () => {
+      const warnSpy = jest.spyOn(logger, 'warn').mockImplementation();
+      const value = calcValue('${stages.nonExistentStage}', context);
+
+      expect(value).toEqual('');
+      expect(warnSpy).toHaveBeenCalledWith(
+        "Stage variable 'nonExistentStage' not found in stage 'test', using empty string",
+      );
+      warnSpy.mockRestore();
+    });
+
+    it('should handle multiple missing variables and log warnings for each', () => {
+      const warnSpy = jest.spyOn(logger, 'warn').mockImplementation();
+      const contextWithoutParams = {
+        ...context,
+        parameters: [{ key: 'testVar', value: 'exists' }],
+      };
+      const value = calcValue(
+        '${vars.missing1}-${vars.missing2}-${vars.testVar}',
+        contextWithoutParams,
+        {},
+      );
+
+      expect(value).toEqual('--exists');
+      expect(warnSpy).toHaveBeenCalledTimes(2);
+      expect(warnSpy).toHaveBeenCalledWith(
+        "Variable 'missing1' not found in vars or parameters, using empty string",
+      );
+      expect(warnSpy).toHaveBeenCalledWith(
+        "Variable 'missing2' not found in vars or parameters, using empty string",
+      );
+      warnSpy.mockRestore();
     });
   });
 
