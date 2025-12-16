@@ -17,28 +17,6 @@
 
 ---
 
-## 📖 目录
-
-- [特性](#特性)
-- [支持的云服务商](#支持的云服务商)
-- [快速开始](#快速开始)
-  - [前置要求](#前置要求)
-  - [安装](#安装)
-- [使用方法](#使用方法)
-  - [基础命令](#基础命令)
-  - [命令参考](#命令参考)
-- [示例](#示例)
-- [本地开发](#本地开发)
-  - [本地运行](#本地运行)
-  - [从源码构建](#从源码构建)
-  - [运行测试](#运行测试)
-- [文档](#文档)
-- [贡献](#贡献)
-- [社区](#社区)
-- [许可证](#许可证)
-
----
-
 ServerlessInsight 是一个强大的 Serverless 框架，用于跨多个云服务商管理 Serverless 应用。它提供了统一的接口来部署、管理和调试 Serverless 函数和资源，使用基础设施即代码（IaC）原则。
 
 无论您是在 AWS、阿里云、华为云还是其他服务商上构建应用，ServerlessInsight 都能简化您的开发工作流程：
@@ -105,102 +83,21 @@ si --version
 
 ## 📚 使用方法
 
-### 基础命令
-
 ```bash
-# 显示帮助信息
-si --help
-
 # 验证您的 Serverless 配置
 si validate <stackName> -f serverless.yml
 
 # 部署您的 Serverless 应用
 si deploy <stackName> -f serverless.yml -s dev
 
+# 本地运行您的应用进行调试
+si local <stackName> -f serverless.yml --stage local
+
 # 生成特定云服务商的模板
 si template <stackName> -f serverless.yml -t JSON
 
-# 本地运行您的应用进行调试
-si local <stackName> -f serverless.yml -p 3000
-
 # 销毁已部署的堆栈
 si destroy <stackName> -f serverless.yml
-```
-
-### 命令参考
-
-#### `validate`
-
-验证您的 Serverless IaC 配置：
-
-```bash
-si validate <stackName> [选项]
-
-选项：
-  -f, --file <path>     指定 YAML 文件路径
-  -s, --stage <stage>   指定部署阶段
-```
-
-#### `deploy`
-
-部署您的 Serverless 应用：
-
-```bash
-si deploy <stackName> [选项]
-
-选项：
-  -f, --file <path>              指定 YAML 文件路径
-  -s, --stage <stage>            指定部署阶段
-  -r, --region <region>          指定云区域
-  -v, --provider <provider>      指定云服务商
-  -k, --accessKeyId <key>        指定 AccessKeyId
-  -x, --accessKeySecret <secret> 指定 AccessKeySecret
-  -n, --securityToken <token>    指定 SecurityToken
-  -p, --parameter <key=value>    覆盖参数（可重复）
-```
-
-#### `template`
-
-生成特定平台的 IaC 模板：
-
-```bash
-si template <stackName> [选项]
-
-选项：
-  -f, --file <path>     指定 YAML 文件路径
-  -s, --stage <stage>   指定部署阶段
-  -t, --format <type>   输出格式（JSON 或 YAML），默认：JSON
-```
-
-#### `local`
-
-本地运行您的 Serverless 应用：
-
-```bash
-si local <stackName> [选项]
-
-选项：
-  -f, --file <path>     指定 YAML 文件路径
-  -s, --stage <stage>   指定部署阶段（默认："default"）
-  -p, --port <port>     指定端口（默认：3000）
-  -d, --debug           启用调试模式
-  -w, --watch           启用文件监视（默认：true）
-```
-
-#### `destroy`
-
-删除已部署的 Serverless 堆栈：
-
-```bash
-si destroy <stackName> [选项]
-
-选项：
-  -f, --file <path>              指定 YAML 文件路径
-  -r, --region <region>          指定云区域
-  -v, --provider <provider>      指定云服务商
-  -k, --accessKeyId <key>        指定 AccessKeyId
-  -x, --accessKeySecret <secret> 指定 AccessKeySecret
-  -n, --securityToken <token>    指定 SecurityToken
 ```
 
 ---
@@ -254,60 +151,24 @@ events:
 
 ## 🔧 本地开发
 
-### 本地运行
-
-在不部署的情况下本地测试您的 Serverless 函数：
-
 ```bash
-# 启动本地开发服务器
-si local my-stack -f serverless.yml --stage local
-
-# 您的函数将可通过以下地址访问：
-# http://localhost:3000/si_<event-type>/<id>-<name>-<region>/<path>
-```
-
-本地服务器支持：
-- 文件更改时热重载
-- 详细日志的调试模式
-- 模拟云服务商环境
-- HTTP 触发器测试
-
-### 从源码构建
-
-克隆仓库并在本地构建：
-
-```bash
-# 克隆仓库
+# 克隆和设置
 git clone https://github.com/geek-fun/serverlessinsight.git
 cd serverlessinsight
-
-# 安装依赖
 npm install
 
-# 构建项目
+# 构建并链接用于开发
 npm run build
-
-# 全局链接用于开发
 npm link
 
-# 验证安装
-si --version
-```
+# 运行本地开发服务器
+si local my-stack -f serverless.yml --stage local
 
-### 运行测试
-
-```bash
-# 运行所有测试并生成覆盖率报告
+# 运行测试
 npm test
-
-# 以 CI 模式运行测试
-npm run test:ci
 
 # 检查代码规范
 npm run lint:check
-
-# 修复代码规范问题
-npm run lint:fix
 ```
 
 ---
@@ -333,15 +194,6 @@ npm run lint:fix
 3. **提交您的更改** (`git commit -m 'Add amazing feature'`)
 4. **推送到分支** (`git push origin feature/amazing-feature`)
 5. **打开 Pull Request**
-
-### 开发设置
-
-1. Fork 并克隆仓库
-2. 安装依赖：`npm install`
-3. 为您的更改创建分支
-4. 进行更改并添加测试
-5. 运行测试：`npm test`
-6. 提交 pull request
 
 ---
 

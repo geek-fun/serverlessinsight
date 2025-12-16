@@ -17,28 +17,6 @@
 
 ---
 
-## 📖 Table of Contents
-
-- [Features](#features)
-- [Supported Providers](#supported-providers)
-- [Getting Started](#getting-started)
-  - [Prerequisites](#prerequisites)
-  - [Installation](#installation)
-- [Usage](#usage)
-  - [Basic Commands](#basic-commands)
-  - [Command Reference](#command-reference)
-- [Examples](#examples)
-- [Local Development](#local-development)
-  - [Running Locally](#running-locally)
-  - [Building from Source](#building-from-source)
-  - [Running Tests](#running-tests)
-- [Documentation](#documentation)
-- [Contributing](#contributing)
-- [Community](#community)
-- [License](#license)
-
----
-
 ServerlessInsight is a powerful serverless framework for managing serverless applications across multiple cloud providers. It provides a unified interface to deploy, manage, and debug serverless functions and resources using Infrastructure as Code (IaC) principles.
 
 Whether you're building on AWS, Alibaba Cloud, Huawei Cloud, or other providers, ServerlessInsight simplifies your development workflow with:
@@ -105,102 +83,21 @@ si --version
 
 ## 📚 Usage
 
-### Basic Commands
-
 ```bash
-# Display help information
-si --help
-
 # Validate your serverless configuration
 si validate <stackName> -f serverless.yml
 
 # Deploy your serverless application
 si deploy <stackName> -f serverless.yml -s dev
 
+# Run your application locally for debugging
+si local <stackName> -f serverless.yml --stage local
+
 # Generate provider-specific template
 si template <stackName> -f serverless.yml -t JSON
 
-# Run your application locally for debugging
-si local <stackName> -f serverless.yml -p 3000
-
 # Destroy the deployed stack
 si destroy <stackName> -f serverless.yml
-```
-
-### Command Reference
-
-#### `validate`
-
-Validate your serverless IaC configuration:
-
-```bash
-si validate <stackName> [options]
-
-Options:
-  -f, --file <path>     Specify the YAML file path
-  -s, --stage <stage>   Specify the deployment stage
-```
-
-#### `deploy`
-
-Deploy your serverless application:
-
-```bash
-si deploy <stackName> [options]
-
-Options:
-  -f, --file <path>              Specify the YAML file path
-  -s, --stage <stage>            Specify the deployment stage
-  -r, --region <region>          Specify the cloud region
-  -v, --provider <provider>      Specify the cloud provider
-  -k, --accessKeyId <key>        Specify the AccessKeyId
-  -x, --accessKeySecret <secret> Specify the AccessKeySecret
-  -n, --securityToken <token>    Specify the SecurityToken
-  -p, --parameter <key=value>    Override parameters (repeatable)
-```
-
-#### `template`
-
-Generate platform-specific IaC template:
-
-```bash
-si template <stackName> [options]
-
-Options:
-  -f, --file <path>     Specify the YAML file path
-  -s, --stage <stage>   Specify the deployment stage
-  -t, --format <type>   Output format (JSON or YAML), default: JSON
-```
-
-#### `local`
-
-Run your serverless application locally:
-
-```bash
-si local <stackName> [options]
-
-Options:
-  -f, --file <path>     Specify the YAML file path
-  -s, --stage <stage>   Specify the deployment stage (default: "default")
-  -p, --port <port>     Specify the port (default: 3000)
-  -d, --debug           Enable debug mode
-  -w, --watch           Enable file watch (default: true)
-```
-
-#### `destroy`
-
-Remove deployed serverless stack:
-
-```bash
-si destroy <stackName> [options]
-
-Options:
-  -f, --file <path>              Specify the YAML file path
-  -r, --region <region>          Specify the cloud region
-  -v, --provider <provider>      Specify the cloud provider
-  -k, --accessKeyId <key>        Specify the AccessKeyId
-  -x, --accessKeySecret <secret> Specify the AccessKeySecret
-  -n, --securityToken <token>    Specify the SecurityToken
 ```
 
 ---
@@ -254,60 +151,24 @@ For more examples, check out the [samples](./samples) directory:
 
 ## 🔧 Local Development
 
-### Running Locally
-
-Test your serverless functions locally without deploying:
-
 ```bash
-# Start local development server
-si local my-stack -f serverless.yml --stage local
-
-# Your functions will be available at:
-# http://localhost:3000/si_<event-type>/<id>-<name>-<region>/<path>
-```
-
-The local server supports:
-- Hot reload on file changes
-- Debug mode for detailed logging
-- Simulated cloud provider environment
-- HTTP trigger testing
-
-### Building from Source
-
-Clone the repository and build locally:
-
-```bash
-# Clone the repository
+# Clone and setup
 git clone https://github.com/geek-fun/serverlessinsight.git
 cd serverlessinsight
-
-# Install dependencies
 npm install
 
-# Build the project
+# Build and link for development
 npm run build
-
-# Link globally for development
 npm link
 
-# Verify the installation
-si --version
-```
+# Run local development server
+si local my-stack -f serverless.yml --stage local
 
-### Running Tests
-
-```bash
-# Run all tests with coverage
+# Run tests
 npm test
 
-# Run tests in CI mode
-npm run test:ci
-
-# Lint the codebase
+# Lint code
 npm run lint:check
-
-# Fix linting issues
-npm run lint:fix
 ```
 
 ---
@@ -333,15 +194,6 @@ We welcome contributions from the community! Here's how you can help:
 3. **Commit your changes** (`git commit -m 'Add amazing feature'`)
 4. **Push to the branch** (`git push origin feature/amazing-feature`)
 5. **Open a Pull Request**
-
-### Development Setup
-
-1. Fork and clone the repository
-2. Install dependencies: `npm install`
-3. Create a branch for your changes
-4. Make your changes and add tests
-5. Run tests: `npm test`
-6. Submit a pull request
 
 ---
 
