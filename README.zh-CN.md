@@ -91,7 +91,7 @@ si validate <stackName> -f serverless.yml
 si deploy <stackName> -f serverless.yml -s dev
 
 # 本地运行您的应用进行调试
-si local <stackName> -f serverless.yml --stage local
+si local <stackName> -f serverless.yml -s local
 
 # 生成特定云服务商的模板
 si template <stackName> -f serverless.yml -t JSON
@@ -162,7 +162,7 @@ npm run build
 npm link
 
 # 运行本地开发服务器
-si local my-stack -f serverless.yml --stage local
+si local my-stack -f serverless.yml -s local
 
 # 运行测试
 npm test

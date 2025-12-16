@@ -91,7 +91,7 @@ si validate <stackName> -f serverless.yml
 si deploy <stackName> -f serverless.yml -s dev
 
 # Run your application locally for debugging
-si local <stackName> -f serverless.yml --stage local
+si local <stackName> -f serverless.yml -s local
 
 # Generate provider-specific template
 si template <stackName> -f serverless.yml -t JSON
@@ -162,7 +162,7 @@ npm run build
 npm link
 
 # Run local development server
-si local my-stack -f serverless.yml --stage local
+si local my-stack -f serverless.yml -s local
 
 # Run tests
 npm test
