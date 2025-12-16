@@ -8,8 +8,7 @@ import { parse } from 'yaml';
 import { validateYaml } from '../validator';
 import { parseBucket } from './bucketParser';
 import { parseTable } from './tableParser';
-import { get } from 'lodash';
-import { logger } from '../common';
+import { calcValue } from '../common';
 
 const validateExistence = (path: string) => {
   if (!existsSync(path)) {
@@ -44,57 +43,16 @@ export const parseYaml = (iacLocation: string): ServerlessIac => {
   return transformYaml(iacJson);
 };
 
-const getParam = (key: string, records?: Array<{ key: string; value: string }>) => {
-  return records?.find((param) => param.key === key)?.value as string;
-};
-
 const evaluateValue = (
   rawValue: string,
   ctx: Context,
   iacVars?: Record<string, unknown>,
 ): string => {
-  let value = rawValue;
+  // Use calcValue for common template variable evaluation
+  let value = calcValue<string>(rawValue, ctx, iacVars, true);
 
-  // Replace ${ctx.stage}
-  if (value.includes('${ctx.stage}')) {
-    value = value.replace(/\$\{ctx\.stage\}/g, ctx.stage);
-  }
-
-  // Replace ${vars.xxx}
-  if (value.includes('${vars.')) {
-    const mergedParams = Array.from(
-      new Map<string, string>(
-        [
-          ...Object.entries(iacVars ?? {}).map(([key, value]) => [key, String(value)]),
-          ...(ctx.parameters ?? []).map(({ key, value }) => [key, value]),
-        ].filter(([, v]) => v !== undefined) as Array<[string, string]>,
-      ).entries(),
-    ).map(([key, value]) => ({ key, value }));
-
-    value = value.replace(/\$\{vars\.(\w+)\}/g, (_, key) => {
-      const paramValue = getParam(key, mergedParams);
-      if (!paramValue) {
-        logger.warn(`Variable '${key}' not found in vars or parameters, using empty string`);
-      }
-      return paramValue || '';
-    });
-  }
-
-  // Replace ${stages.xxx}
-  if (value.includes('${stages.')) {
-    value = value.replace(/\$\{stages\.(\w+)\}/g, (_, key) => {
-      const stageValue = getParam(key, get(ctx.stages, `${ctx.stage}`));
-      if (!stageValue) {
-        logger.warn(
-          `Stage variable '${key}' not found in stage '${ctx.stage}', using empty string`,
-        );
-      }
-      return stageValue || '';
-    });
-  }
-
+  // Handle function references specifically for localStack
   // Replace ${functions.xxx} with just the function key
-  // This is used in events to reference functions
   if (value.includes('${functions.')) {
     value = value.replace(/\$\{functions\.(\w+(?:\.\w+)?)\}/g, '$1');
   }
