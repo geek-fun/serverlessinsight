@@ -334,8 +334,6 @@ npm run lint:fix
 4. **推送到分支** (`git push origin feature/amazing-feature`)
 5. **打开 Pull Request**
 
-更多详情请阅读我们的[贡献指南](CONTRIBUTING.md)。
-
 ### 开发设置
 
 1. Fork 并克隆仓库

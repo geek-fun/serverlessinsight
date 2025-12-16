@@ -334,8 +334,6 @@ We welcome contributions from the community! Here's how you can help:
 4. **Push to the branch** (`git push origin feature/amazing-feature`)
 5. **Open a Pull Request**
 
-Please read our [Contributing Guidelines](CONTRIBUTING.md) for more details.
-
 ### Development Setup
 
 1. Fork and clone the repository
