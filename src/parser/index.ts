@@ -49,7 +49,7 @@ const evaluateValue = (
   iacVars?: Record<string, unknown>,
 ): string => {
   // Use calcValue for common template variable evaluation
-  let value = calcValue<string>(rawValue, ctx, iacVars, true);
+  let value = calcValue<string>(rawValue, ctx, iacVars);
 
   // Handle function references specifically for localStack
   // Replace ${functions.xxx} with just the function key

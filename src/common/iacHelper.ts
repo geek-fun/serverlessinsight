@@ -86,12 +86,7 @@ const getParam = (key: string, records?: Array<{ key: string; value: string }>) 
   return records?.find((param) => param.key === key)?.value as string;
 };
 
-export const calcValue = <T>(
-  rawValue: string,
-  ctx: Context,
-  iacVars?: Vars,
-  warnOnMissing = false,
-): T => {
+export const calcValue = <T>(rawValue: string, ctx: Context, iacVars?: Vars): T => {
   const containsStage = rawValue.match(/\$\{ctx.stage}/);
   const containsVar = rawValue.match(/\$\{vars.\w+}/);
   const containsMap = rawValue.match(/\$\{stages\.(\w+)}/);
@@ -117,7 +112,7 @@ export const calcValue = <T>(
 
     value = value.replace(/\$\{vars\.(\w+)}/g, (_, key) => {
       const paramValue = getParam(key, mergedParams);
-      if (!paramValue && warnOnMissing) {
+      if (!paramValue) {
         logger.warn(`Variable '${key}' not found in vars or parameters, using empty string`);
       }
       return paramValue || '';
@@ -127,7 +122,7 @@ export const calcValue = <T>(
   if (containsMap?.length) {
     value = value.replace(/\$\{stages\.(\w+)}/g, (_, key) => {
       const stageValue = getParam(key, get(ctx.stages, `${ctx.stage}`));
-      if (!stageValue && warnOnMissing) {
+      if (!stageValue) {
         logger.warn(
           `Stage variable '${key}' not found in stage '${ctx.stage}', using empty string`,
         );
