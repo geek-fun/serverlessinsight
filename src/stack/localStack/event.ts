@@ -2,7 +2,7 @@ import { EventTypes, ServerlessIac } from '../../types';
 import { isEmpty } from 'lodash';
 import { ParsedRequest, RouteHandler, RouteResponse } from '../../types/localStack';
 import { IncomingMessage } from 'http';
-import { getIacDefinition, logger } from '../../common';
+import { logger } from '../../common';
 import { functionsHandler } from './function';
 
 const matchTrigger = (
@@ -64,14 +64,15 @@ const servEvent = async (
   }
 
   if (matchedTrigger.backend) {
-    const backendDef = getIacDefinition(iac, matchedTrigger.backend);
+    // Backend is now directly the function key (already evaluated from ${functions.xxx})
+    const backendDef = iac.functions?.find((fc) => fc.key === matchedTrigger.backend);
     if (!backendDef) {
       return {
         statusCode: 500,
         body: { error: 'Backend definition missing', backend: matchedTrigger.backend },
       };
     }
-    return await functionsHandler(req, { ...parsed, identifier: backendDef?.key as string }, iac);
+    return await functionsHandler(req, { ...parsed, identifier: backendDef.key }, iac);
   }
 
   return {

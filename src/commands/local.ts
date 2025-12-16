@@ -1,6 +1,6 @@
-import { getIacLocation, logger, setContext } from '../common';
+import { getIacLocation, logger, setContext, getContext } from '../common';
 import { startLocalStack } from '../stack/localStack';
-import { parseYaml } from '../parser';
+import { parseYaml, revalYaml } from '../parser';
 
 export type RunLocalOptions = {
   stage: string;
@@ -13,8 +13,13 @@ export type RunLocalOptions = {
 export const runLocal = async (stackName: string, opts: RunLocalOptions) => {
   const { stage, port, debug, watch, location } = opts;
 
-  await setContext({ stage, location });
-  const iac = parseYaml(getIacLocation(location));
+  const iacLocation = getIacLocation(location);
+  const parsedIac = parseYaml(iacLocation);
+
+  await setContext({ stage, location, stages: parsedIac.stages });
+  const ctx = getContext();
+
+  const iac = revalYaml(iacLocation, ctx);
 
   logger.info(
     `run-local starting: stack=${stackName} stage=${stage} port=${port} debug=${debug} watch=${watch}`,

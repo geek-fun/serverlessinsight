@@ -1,20 +1,22 @@
 import path from 'node:path';
 import { startLocalStack, stopLocal } from '../../../src/stack/localStack';
-import { setContext, SI_LOCALSTACK_SERVER_PORT } from '../../../src/common';
-import { parseYaml } from '../../../src/parser';
+import { setContext, SI_LOCALSTACK_SERVER_PORT, getContext } from '../../../src/common';
+import { parseYaml, revalYaml } from '../../../src/parser';
 import { makeRequest } from '../../autils';
 
 describe('localStack Server', () => {
   const iacLocation = path.resolve(__dirname, '../../fixtures/serverless-insight.yml');
-  const iac = parseYaml(iacLocation);
+  const parsedIac = parseYaml(iacLocation);
 
   beforeAll(async () => {
     await setContext({
       stage: 'default',
       location: iacLocation,
-      stages: iac.stages,
+      stages: parsedIac.stages,
     });
 
+    const ctx = getContext();
+    const iac = revalYaml(iacLocation, ctx);
     await startLocalStack(iac);
   });
 
