@@ -1,12 +1,18 @@
 import { IncomingMessage } from 'http';
 import { ServerlessIac } from '../../types';
 import { FunctionOptions, ParsedRequest, RouteResponse } from '../../types/localStack';
-import { logger, readRequestBody } from '../../common';
+import { logger, readRequestBody, ProviderEnum } from '../../common';
 import { invokeFunction } from './functionRunner';
 import path from 'node:path';
 import fs from 'node:fs';
 import JSZip from 'jszip';
 import os from 'node:os';
+import {
+  transformToAliyunEvent,
+  createAliyunContextSerializable,
+  transformFCResponse,
+  generateRequestId,
+} from './aliyunFc';
 
 const extractZipFile = async (zipPath: string): Promise<string> => {
   const zipData = fs.readFileSync(zipPath);
@@ -65,9 +71,6 @@ export const functionsHandler = async (
   let tempDir: string | null = null;
 
   try {
-    const rawBody = await readRequestBody(req);
-    const event = rawBody ? JSON.parse(rawBody) : {};
-
     const codePath = path.resolve(process.cwd(), fcDef.code.path);
 
     let codeDir: string;
@@ -89,32 +92,72 @@ export const functionsHandler = async (
       timeout: fcDef.timeout * 1000,
     };
 
-    const env = {
-      ...fcDef.environment,
-      AWS_REGION: iac.provider.region || 'us-east-1',
-      FUNCTION_NAME: fcDef.name,
-      FUNCTION_MEMORY_SIZE: String(fcDef.memory),
-      FUNCTION_TIMEOUT: String(fcDef.timeout),
-    };
+    // Check if provider is Aliyun to use Aliyun FC format
+    const isAliyun = iac.provider.name === ProviderEnum.ALIYUN;
 
-    const fcContext = {
-      functionName: fcDef.name,
-      functionVersion: '$LATEST',
-      memoryLimitInMB: fcDef.memory,
-      logGroupName: `/aws/lambda/${fcDef.name}`,
-      logStreamName: `${new Date().toISOString().split('T')[0]}/[$LATEST]${Math.random().toString(36).substring(7)}`,
-      invokedFunctionArn: `arn:aws:lambda:${iac.provider.region}:000000000000:function:${fcDef.name}`,
-      awsRequestId: Math.random().toString(36).substring(2, 15),
-    };
+    let event: unknown;
+    let fcContext: unknown;
+    let env: Record<string, string>;
 
-    logger.debug(
-      `Invoking worker with event: ${JSON.stringify(event)} and context: ${JSON.stringify(fcContext)}`,
-    );
+    if (isAliyun) {
+      // Aliyun FC format: event is a Buffer containing JSON
+      const requestId = generateRequestId();
+      const { event: aliyunEvent } = await transformToAliyunEvent(req, parsed.url, parsed.query);
+
+      event = aliyunEvent;
+      // Use serializable context for worker thread (logger will be added inside worker)
+      fcContext = createAliyunContextSerializable(
+        iac,
+        fcDef.name,
+        fcDef.code.handler,
+        fcDef.memory,
+        fcDef.timeout,
+        requestId,
+      );
+
+      env = {
+        ...fcDef.environment,
+      };
+    } else {
+      // AWS Lambda format (default)
+      const rawBody = await readRequestBody(req);
+      event = rawBody ? JSON.parse(rawBody) : {};
+
+      env = {
+        ...fcDef.environment,
+        AWS_REGION: iac.provider.region || 'us-east-1',
+        FUNCTION_NAME: fcDef.name,
+        FUNCTION_MEMORY_SIZE: String(fcDef.memory),
+        FUNCTION_TIMEOUT: String(fcDef.timeout),
+      };
+
+      fcContext = {
+        functionName: fcDef.name,
+        functionVersion: '$LATEST',
+        memoryLimitInMB: fcDef.memory,
+        logGroupName: `/aws/lambda/${fcDef.name}`,
+        logStreamName: `${new Date().toISOString().split('T')[0]}/[$LATEST]${Math.random().toString(36).substring(7)}`,
+        invokedFunctionArn: `arn:aws:lambda:${iac.provider.region}:000000000000:function:${fcDef.name}`,
+        awsRequestId: Math.random().toString(36).substring(2, 15),
+      };
+    }
+
+    logger.debug(`Invoking worker with event type: ${isAliyun ? 'Buffer' : 'Object'} and context`);
     logger.debug(`Worker codeDir: ${codeDir}, handler: ${funOptions.handler}`);
 
     const result = await invokeFunction(funOptions, env, event, fcContext);
 
     logger.info(`Function execution result: ${JSON.stringify(result)}`);
+
+    // For Aliyun, transform FC response to HTTP response if needed
+    if (isAliyun && result) {
+      const transformed = transformFCResponse(result);
+      return {
+        statusCode: transformed.statusCode,
+        headers: transformed.headers,
+        body: transformed.body,
+      };
+    }
 
     return {
       statusCode: 200,

@@ -96,11 +96,42 @@ const executeHandler = async ({ event, context, port }: WorkerMessage): Promise<
   const { clearTimer } = createTimeoutHandler(port, timeout);
 
   try {
+    // If context has requestId but no logger, reconstruct logger and tracing function for Aliyun FC
+    let actualContext = context;
+    if (
+      context &&
+      typeof context === 'object' &&
+      'requestId' in context &&
+      !('logger' in context)
+    ) {
+      const requestId = (context as { requestId: string }).requestId;
+      const formatLog = (level: string, message: string) => {
+        const timestamp = new Date().toISOString();
+        console.log(`${timestamp} ${requestId} [${level}] ${message}`);
+      };
+
+      const baseContext = context as Record<string, unknown>;
+      actualContext = {
+        ...baseContext,
+        tracing: {
+          ...(baseContext.tracing as Record<string, unknown>),
+          parseOpenTracingBaggages: () => ({}),
+        },
+        logger: {
+          debug: (message: string) => formatLog('DEBUG', message),
+          info: (message: string) => formatLog('INFO', message),
+          warn: (message: string) => formatLog('WARNING', message),
+          error: (message: string) => formatLog('ERROR', message),
+          log: (message: string) => formatLog('INFO', message),
+        },
+      };
+    }
+
     const [handlerFile, handlerMethod] = parseHandler(handler);
     const handlerPath = resolveHandlerPath(codeDir, servicePath, handlerFile);
     const handlerModule = await loadHandlerModule(handlerPath);
     const handlerFn = getHandlerFunction(handlerModule, handlerMethod, handlerPath);
-    const result = await invokeHandler(handlerFn, event, context);
+    const result = await invokeHandler(handlerFn, event, actualContext);
 
     clearTimer();
     port.postMessage(result);
