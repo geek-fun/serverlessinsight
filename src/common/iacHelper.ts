@@ -142,6 +142,8 @@ export const getIacDefinition = (
   if (matchFn?.length) {
     return iac.functions?.find((fc) => fc.key === matchFn[1]);
   }
+  // Also try direct key match for programmatic IAC creation
+  return iac.functions?.find((fc) => fc.key === rawValue);
 };
 
 export const formatRosId = (id: string): string => {

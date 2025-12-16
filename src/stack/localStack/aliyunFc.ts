@@ -199,7 +199,7 @@ export const addFCHeaders = (
 // Transform FC response to HTTP response
 export const transformFCResponse = (
   result: unknown,
-): { statusCode: number; headers: Record<string, string>; body: string } => {
+): { statusCode: number; headers: Record<string, string>; body: unknown } => {
   // Check if result is an Aliyun FC response format
   if (result && typeof result === 'object' && 'statusCode' in result && 'body' in result) {
     const fcResponse = result as AliyunFCResponse;
@@ -215,15 +215,19 @@ export const transformFCResponse = (
       body = Buffer.from(body, 'base64').toString('utf-8');
     }
 
-    // Ensure body is a string
-    if (typeof body !== 'string') {
-      body = JSON.stringify(body);
+    // Parse JSON string body back to object for proper serialization by respondJson
+    if (typeof body === 'string') {
+      try {
+        body = JSON.parse(body);
+      } catch {
+        // If parsing fails, keep as string
+      }
     }
 
     return {
       statusCode: statusCode || 200,
       headers: fcResponse.headers || {},
-      body: body as string,
+      body,
     };
   }
 
@@ -231,7 +235,7 @@ export const transformFCResponse = (
   return {
     statusCode: 200,
     headers: { 'Content-Type': 'application/json' },
-    body: typeof result === 'string' ? result : JSON.stringify(result),
+    body: result,
   };
 };
 
