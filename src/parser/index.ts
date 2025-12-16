@@ -128,23 +128,7 @@ export const revalYaml = (iacLocation: string, ctx: Context): ServerlessIac => {
 
   validateYaml(iacJson);
 
-  // Create an enhanced context with stages from the YAML if not already present
-  const enhancedCtx: Context = {
-    ...ctx,
-    stages:
-      ctx.stages && Object.keys(ctx.stages).length > 0
-        ? ctx.stages
-        : Object.entries(iacJson.stages ?? {}).reduce(
-            (acc, [stage, parameters]) => ({
-              ...acc,
-              [stage]: Object.entries(parameters).map(([key, value]) => ({ key, value })),
-            }),
-            {},
-          ),
-  };
-
-  // Evaluate all template variables in the raw JSON before transformation
-  const evaluatedIacJson = evaluateObject(iacJson, enhancedCtx, iacJson.vars);
+  const evaluatedIacJson = evaluateObject(iacJson, ctx, iacJson.vars);
 
   const iac = transformYaml(evaluatedIacJson);
 
