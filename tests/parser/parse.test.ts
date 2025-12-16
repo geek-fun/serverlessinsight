@@ -160,38 +160,29 @@ describe('unit test for parse', () => {
     it('should evaluate ${vars.xxx} in values', () => {
       const result = revalYaml(iacLocation, testContext);
 
-      // Check that vars were evaluated
       expect(result.functions![0].code?.handler).toBe('index.handler');
     });
 
     it('should evaluate ${stages.xxx} in values', () => {
       const result = revalYaml(iacLocation, testContext);
 
-      // Check that stage variables were evaluated
       expect(result.functions![0].environment?.NODE_ENV).toBe('default');
     });
 
     it('should keep ${functions.xxx} references unchanged', () => {
       const result = revalYaml(iacLocation, testContext);
 
-      // Check that function references in events are kept as-is
       if (result.events && result.events[0].triggers) {
         const backend = result.events[0].triggers[0].backend;
-        // Should still contain ${functions.xxx} pattern
         expect(backend).toContain('${functions.');
       }
     });
 
     it('should apply default memory of 128 when not specified', () => {
-      // Create a minimal YAML context
-      const minimalContext: Context = {
-        ...testContext,
-        stage: 'default',
-      };
+      const minimalContext: Context = { ...testContext, stage: 'default' };
 
       const result = revalYaml(iacLocation, minimalContext);
 
-      // Functions without explicit memory should get default 128
       const functionWithDefaults = result.functions?.find((fn) => !fn.memory || fn.memory === 128);
       if (functionWithDefaults) {
         expect(functionWithDefaults.memory).toBe(128);
@@ -199,14 +190,10 @@ describe('unit test for parse', () => {
     });
 
     it('should apply default timeout of 3 when not specified', () => {
-      const minimalContext: Context = {
-        ...testContext,
-        stage: 'default',
-      };
+      const minimalContext: Context = { ...testContext, stage: 'default' };
 
       const result = revalYaml(iacLocation, minimalContext);
 
-      // Functions without explicit timeout should get default 3
       const functionWithDefaults = result.functions?.find((fn) => !fn.timeout || fn.timeout === 3);
       if (functionWithDefaults) {
         expect(functionWithDefaults.timeout).toBe(3);
@@ -216,7 +203,6 @@ describe('unit test for parse', () => {
     it('should preserve explicitly set memory and timeout values', () => {
       const result = revalYaml(iacLocation, testContext);
 
-      // The test fixture has memory: 512 and timeout: 10
       expect(result.functions![0].memory).toBe(512);
       expect(result.functions![0].timeout).toBe(10);
     });
@@ -224,7 +210,6 @@ describe('unit test for parse', () => {
     it('should handle nested template variables in environment', () => {
       const result = revalYaml(iacLocation, testContext);
 
-      // Check nested variable evaluation
       expect(result.functions![0].environment).toBeDefined();
       expect(result.functions![0].environment?.TEST_VAR).toBe('testVarValue');
       expect(result.functions![0].environment?.TEST_VAR_EXTRA).toContain('testVarValue');
