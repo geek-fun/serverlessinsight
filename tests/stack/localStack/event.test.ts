@@ -4,18 +4,16 @@ import http from 'node:http';
 import { Readable } from 'node:stream';
 import { setContext, getContext } from '../../../src/common';
 import path from 'node:path';
-import { parseYaml, revalYaml } from '../../../src/parser';
+import { revalYaml } from '../../../src/parser';
 
 describe('eventsHandler', () => {
   const iacLocation = path.resolve(__dirname, '../../fixtures/serverless-insight.yml');
-  const parsedIac = parseYaml(iacLocation);
   let iac: ReturnType<typeof revalYaml>;
 
   beforeAll(async () => {
     await setContext({
       stage: 'default',
       location: iacLocation,
-      stages: parsedIac.stages,
     });
 
     const ctx = getContext();
