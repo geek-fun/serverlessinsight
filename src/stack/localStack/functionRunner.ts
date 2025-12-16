@@ -96,13 +96,15 @@ const executeHandler = async ({ event, context, port }: WorkerMessage): Promise<
   const { clearTimer } = createTimeoutHandler(port, timeout);
 
   try {
-    // If context has requestId but no logger, reconstruct logger and tracing function for Aliyun FC
+    // Reconstruct logger and tracing function for Aliyun FC contexts
     let actualContext = context;
     if (
       context &&
       typeof context === 'object' &&
       'requestId' in context &&
-      !('logger' in context)
+      !('logger' in context) &&
+      'function' in context &&
+      'service' in context
     ) {
       const requestId = (context as { requestId: string }).requestId;
       const formatLog = (level: string, message: string) => {
