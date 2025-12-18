@@ -5,7 +5,7 @@ import { revalYaml } from '../../../src/parser';
 import { makeRequest } from '../../autils';
 
 describe('localStack Server', () => {
-  const iacLocation = path.resolve(__dirname, '../../fixtures/serverless-insight.yml');
+  const iacLocation = path.resolve(__dirname, '../../fixtures/serverless-insight-with-bucket.yml');
 
   beforeAll(async () => {
     await setContext({

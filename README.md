@@ -171,6 +171,23 @@ npm test
 npm run lint:check
 ```
 
+### Local Testing with Buckets
+
+When running the local development server, you can test bucket operations by accessing files through the LocalStack server:
+
+```bash
+# List all files in a bucket
+curl http://localhost:4567/si_buckets/<bucket_key>/
+
+# Access a specific file from a bucket
+curl http://localhost:4567/si_buckets/<bucket_key>/path/to/file.html
+
+# List files in a subdirectory
+curl http://localhost:4567/si_buckets/<bucket_key>/subdir/
+```
+
+The bucket handler serves files from the directory specified in your bucket's `website.code` configuration.
+
 ---
 
 ## 📘 Documentation
