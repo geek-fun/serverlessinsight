@@ -68,9 +68,13 @@ const invokeHandler = (
   new Promise<unknown>((resolve, reject) => {
     // Callback-style handler (3+ parameters)
     if (handlerFn.length >= 3) {
-      handlerFn(event, context, (error: Error | null, result?: unknown) => {
-        return error ? reject(error) : resolve(result);
-      });
+      try {
+        handlerFn(event, context, (error: Error | null, result?: unknown) => {
+          return error ? reject(error) : resolve(result);
+        });
+      } catch (error) {
+        reject(error);
+      }
     } else {
       return Promise.resolve(handlerFn(event, context)).then(resolve).catch(reject);
     }
@@ -92,21 +96,65 @@ const createTimeoutHandler = (
 };
 
 const executeHandler = async ({ event, context, port }: WorkerMessage): Promise<void> => {
-  const { codeDir, handler, servicePath, timeout } = workerData as WorkerData;
-  const { clearTimer } = createTimeoutHandler(port, timeout);
+  let clearTimer: (() => void) | undefined;
 
   try {
+    const wd = workerData as WorkerData;
+    const { codeDir, handler, servicePath, timeout } = wd;
+
+    const timer = createTimeoutHandler(port, timeout);
+    clearTimer = timer.clearTimer;
+
+    // Convert Uint8Array back to Buffer if needed (worker thread serialization converts Buffers to Uint8Arrays)
+    let actualEvent = event;
+    if (event instanceof Uint8Array && !Buffer.isBuffer(event)) {
+      actualEvent = Buffer.from(event);
+    }
+
+    // Reconstruct logger and tracing function for Aliyun FC contexts
+    let actualContext = context;
+    if (
+      context &&
+      typeof context === 'object' &&
+      'requestId' in context &&
+      !('logger' in context) &&
+      'function' in context &&
+      'service' in context
+    ) {
+      const requestId = (context as { requestId: string }).requestId;
+      const formatLog = (level: string, message: string) => {
+        const timestamp = new Date().toISOString();
+        console.log(`${timestamp} ${requestId} [${level}] ${message}`);
+      };
+
+      const baseContext = context as Record<string, unknown>;
+      actualContext = {
+        ...baseContext,
+        tracing: {
+          ...(baseContext.tracing as Record<string, unknown>),
+          parseOpenTracingBaggages: () => ({}),
+        },
+        logger: {
+          debug: (message: string) => formatLog('DEBUG', message),
+          info: (message: string) => formatLog('INFO', message),
+          warn: (message: string) => formatLog('WARNING', message),
+          error: (message: string) => formatLog('ERROR', message),
+          log: (message: string) => formatLog('INFO', message),
+        },
+      };
+    }
+
     const [handlerFile, handlerMethod] = parseHandler(handler);
     const handlerPath = resolveHandlerPath(codeDir, servicePath, handlerFile);
     const handlerModule = await loadHandlerModule(handlerPath);
     const handlerFn = getHandlerFunction(handlerModule, handlerMethod, handlerPath);
-    const result = await invokeHandler(handlerFn, event, context);
+    const result = await invokeHandler(handlerFn, actualEvent, actualContext);
 
     clearTimer();
     port.postMessage(result);
     port.close();
   } catch (error) {
-    clearTimer();
+    if (clearTimer) clearTimer();
     port.postMessage(error instanceof Error ? error : new Error(String(error)));
     port.close();
   }

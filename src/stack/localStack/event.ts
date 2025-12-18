@@ -2,8 +2,20 @@ import { EventTypes, ServerlessIac } from '../../types';
 import { isEmpty } from 'lodash';
 import { ParsedRequest, RouteHandler, RouteResponse } from '../../types/localStack';
 import { IncomingMessage } from 'http';
-import { getIacDefinition, logger } from '../../common';
+import { getIacDefinition, logger, ProviderEnum } from '../../common';
 import { functionsHandler } from './function';
+import {
+  generateRequestId,
+  logApiGatewayRequest,
+  transformToAliyunEvent,
+  transformFCResponse,
+  createAliyunContextSerializable,
+} from './aliyunFc';
+import { invokeFunction } from './functionRunner';
+import path from 'node:path';
+import fs from 'node:fs';
+import { FunctionOptions } from '../../types/localStack';
+import { extractZipFile } from './utils';
 
 const matchTrigger = (
   req: { method: string; path: string },
@@ -42,6 +54,11 @@ const servEvent = async (
   parsed: ParsedRequest,
   iac: ServerlessIac,
 ): Promise<RouteResponse | void> => {
+  const startTime = new Date();
+  const requestId = generateRequestId();
+  const sourceIp = req.socket?.remoteAddress || '127.0.0.1';
+  const isAliyun = iac.provider.name === ProviderEnum.ALIYUN;
+
   const event = iac.events?.find(
     (event) => event.type === EventTypes.API_GATEWAY && event.key === parsed.identifier,
   );
@@ -60,18 +77,117 @@ const servEvent = async (
   );
 
   if (!matchedTrigger) {
+    const endTime = new Date();
+    if (isAliyun) {
+      logApiGatewayRequest(requestId, parsed.url, 404, startTime, endTime, sourceIp);
+    }
     return { statusCode: 404, body: { error: 'No matching trigger found' } };
   }
 
   if (matchedTrigger.backend) {
     const backendDef = getIacDefinition(iac, matchedTrigger.backend);
     if (!backendDef) {
+      const endTime = new Date();
+      if (isAliyun) {
+        logApiGatewayRequest(requestId, parsed.url, 500, startTime, endTime, sourceIp);
+      }
       return {
         statusCode: 500,
         body: { error: 'Backend definition missing', backend: matchedTrigger.backend },
       };
     }
-    return await functionsHandler(req, { ...parsed, identifier: backendDef?.key as string }, iac);
+
+    // For Aliyun, handle the function execution with proper event transformation
+    if (isAliyun && backendDef.code) {
+      let tempDir: string | null = null;
+      try {
+        const { event: aliyunEvent } = await transformToAliyunEvent(req, parsed.url, parsed.query);
+
+        const codePath = path.resolve(process.cwd(), backendDef.code.path);
+        let codeDir: string;
+
+        if (codePath.endsWith('.zip') && fs.existsSync(codePath)) {
+          tempDir = await extractZipFile(codePath);
+          codeDir = tempDir;
+        } else if (fs.existsSync(codePath) && fs.statSync(codePath).isDirectory()) {
+          codeDir = codePath;
+        } else {
+          codeDir = path.dirname(codePath);
+        }
+
+        const funOptions: FunctionOptions = {
+          codeDir,
+          functionKey: backendDef.key as string,
+          handler: backendDef.code.handler,
+          servicePath: '',
+          timeout: backendDef.timeout * 1000,
+        };
+
+        const aliyunContext = createAliyunContextSerializable(
+          iac,
+          backendDef.name,
+          backendDef.code.handler,
+          backendDef.memory,
+          backendDef.timeout,
+          requestId,
+        );
+
+        const env = {
+          ...backendDef.environment,
+        };
+
+        logger.debug(`Invoking FC function with Aliyun event format`);
+        const result = await invokeFunction(funOptions, env, aliyunEvent, aliyunContext);
+
+        const endTime = new Date();
+        const transformed = transformFCResponse(result);
+
+        // Log API Gateway request
+        logApiGatewayRequest(
+          requestId,
+          parsed.url,
+          transformed.statusCode,
+          startTime,
+          endTime,
+          sourceIp,
+        );
+
+        return {
+          statusCode: transformed.statusCode,
+          headers: transformed.headers,
+          body: transformed.body,
+        };
+      } catch (error) {
+        const endTime = new Date();
+        logApiGatewayRequest(requestId, parsed.url, 500, startTime, endTime, sourceIp);
+        logger.error(`Function execution error: ${error}`);
+        return {
+          statusCode: 500,
+          body: {
+            error: 'Function execution failed',
+            message: error instanceof Error ? error.message : String(error),
+          },
+        };
+      } finally {
+        if (tempDir && fs.existsSync(tempDir)) {
+          fs.rmSync(tempDir, { recursive: true, force: true });
+        }
+      }
+    }
+
+    // For non-Aliyun or when using functionsHandler
+    const result = await functionsHandler(
+      req,
+      { ...parsed, identifier: backendDef?.key as string },
+      iac,
+    );
+
+    const endTime = new Date();
+    if (isAliyun) {
+      logApiGatewayRequest(requestId, parsed.url, result.statusCode, startTime, endTime, sourceIp);
+    }
+
+    return result;
   }
 
   return {
