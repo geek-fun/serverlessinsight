@@ -51,3 +51,12 @@ events:
 #      certificate_name: test
 #      certificate_private_key: test
 #      certificate_body: test
+
+buckets:
+  test_bucket:
+    name: test-bucket
+    website:
+      code: tests/fixtures/test-bucket
+      index: index.html
+      error_page: 404.html
+      error_code: 404
