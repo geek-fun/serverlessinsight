@@ -5,6 +5,25 @@ import { logger } from '../../common';
 import path from 'node:path';
 import fs from 'node:fs';
 
+type FileEntry = {
+  name: string;
+  type: string;
+  size: number;
+  path: string;
+};
+
+const TEXT_MIME_TYPES = new Set([
+  'text/plain',
+  'text/html',
+  'text/css',
+  'text/javascript',
+  'text/markdown',
+  'text/xml',
+  'application/json',
+  'application/javascript',
+  'application/xml',
+]);
+
 const getMimeType = (filename: string): string => {
   const ext = path.extname(filename).toLowerCase();
   const mimeTypes: Record<string, string> = {
@@ -30,10 +49,7 @@ const getMimeType = (filename: string): string => {
   return mimeTypes[ext] || 'application/octet-stream';
 };
 
-const listDirectory = (
-  dirPath: string,
-  bucketPath: string,
-): Array<{ name: string; type: string; size: number; path: string }> => {
+const listDirectory = (dirPath: string, bucketPath: string): Array<FileEntry> => {
   try {
     const entries = fs.readdirSync(dirPath, { withFileTypes: true });
     return entries.map((entry) => {
@@ -57,8 +73,8 @@ const listDirectory = (
 const getAllFiles = (
   dirPath: string,
   bucketPath: string,
-  fileList: Array<{ name: string; type: string; size: number; path: string }> = [],
-): Array<{ name: string; type: string; size: number; path: string }> => {
+  fileList: Array<FileEntry> = [],
+): Array<FileEntry> => {
   try {
     const entries = fs.readdirSync(dirPath, { withFileTypes: true });
 
@@ -215,11 +231,7 @@ export const bucketsHandler = async (
     const mimeType = getMimeType(filePath);
 
     // For text files, return as string; for binary files, return as base64
-    const isTextFile =
-      mimeType.startsWith('text/') ||
-      mimeType === 'application/json' ||
-      mimeType === 'application/javascript' ||
-      mimeType === 'application/xml';
+    const isTextFile = TEXT_MIME_TYPES.has(mimeType);
 
     return {
       statusCode: 200,

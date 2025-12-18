@@ -84,7 +84,8 @@ export const servLocal = async (
         return;
       }
 
-      // Check if body is a string and headers contain Content-Type (indicating raw content from buckets)
+      // Raw responses (e.g., from bucket handler) include both Content-Type and Content-Length headers
+      // and the body is already formatted as a string (not a JSON object)
       const isRawResponse =
         typeof outcome.body === 'string' &&
         outcome.headers?.['Content-Type'] &&
