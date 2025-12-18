@@ -36,3 +36,58 @@ export type FunctionOptions = {
   servicePath: string;
   timeout: number;
 };
+
+export type AliyunApiGatewayContext = {
+  requestId: string;
+  region: string;
+  accountId: string;
+  credentials: {
+    accessKeyId: string;
+    accessKeySecret: string;
+    securityToken: string;
+  };
+  function: {
+    name: string;
+    handler: string;
+    memory: number;
+    timeout: number;
+    initializer: string;
+  };
+  service: {
+    name: string;
+    logProject: string;
+    logStore: string;
+    qualifier: string;
+    versionId: string;
+  };
+  tracing: {
+    spanContext: string;
+    jaegerEndpoint: string;
+    spanBaggages: Record<string, string>;
+    parseOpenTracingBaggages: () => Record<string, string>;
+  };
+  logger: {
+    debug: (message: string) => void;
+    info: (message: string) => void;
+    warn: (message: string) => void;
+    error: (message: string) => void;
+    log: (message: string) => void;
+  };
+};
+
+export type AliyunServerlessEvent = {
+  path: string;
+  httpMethod: string;
+  headers: Record<string, string>;
+  queryParameters: Record<string, string>;
+  pathParameters: Record<string, string>;
+  body: string | undefined;
+  isBase64Encoded: boolean;
+};
+
+export type AliyunFCResponse = {
+  isBase64Encoded: boolean;
+  statusCode: string | number;
+  headers?: Record<string, string>;
+  body: string | unknown;
+};

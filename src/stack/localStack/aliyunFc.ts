@@ -1,65 +1,13 @@
-import { IncomingMessage } from 'http';
 import { randomUUID } from 'crypto';
-import { ServerlessIac } from '../../types';
+import { IncomingMessage } from 'http';
 import { readRequestBody } from '../../common';
+import { ServerlessIac } from '../../types';
+import {
+  AliyunApiGatewayContext,
+  AliyunFCResponse,
+  AliyunServerlessEvent,
+} from '../../types/localStack';
 
-// Aliyun FC Types based on the issue requirements
-export type AliyunApiGatewayContext = {
-  requestId: string;
-  region: string;
-  accountId: string;
-  credentials: {
-    accessKeyId: string;
-    accessKeySecret: string;
-    securityToken: string;
-  };
-  function: {
-    name: string;
-    handler: string;
-    memory: number;
-    timeout: number;
-    initializer: string;
-  };
-  service: {
-    name: string;
-    logProject: string;
-    logStore: string;
-    qualifier: string;
-    versionId: string;
-  };
-  tracing: {
-    spanContext: string;
-    jaegerEndpoint: string;
-    spanBaggages: Record<string, string>;
-    parseOpenTracingBaggages: () => Record<string, string>;
-  };
-  logger: {
-    debug: (message: string) => void;
-    info: (message: string) => void;
-    warn: (message: string) => void;
-    error: (message: string) => void;
-    log: (message: string) => void;
-  };
-};
-
-export type AliyunServerlessEvent = {
-  path: string;
-  httpMethod: string;
-  headers: Record<string, string>;
-  queryParameters: Record<string, string>;
-  pathParameters: Record<string, string>;
-  body: string | undefined;
-  isBase64Encoded: boolean;
-};
-
-export type AliyunFCResponse = {
-  isBase64Encoded: boolean;
-  statusCode: string | number;
-  headers?: Record<string, string>;
-  body: string | unknown;
-};
-
-// Logger implementation with FC log format
 const createFCLogger = (requestId: string) => {
   const formatLog = (level: string, message: string) => {
     const timestamp = new Date().toISOString();
@@ -75,7 +23,6 @@ const createFCLogger = (requestId: string) => {
   };
 };
 
-// Transform HTTP request to Aliyun FC event format
 export const transformToAliyunEvent = async (
   req: IncomingMessage,
   url: string,
@@ -83,7 +30,6 @@ export const transformToAliyunEvent = async (
 ): Promise<{ event: Buffer; headers: Record<string, string> }> => {
   const rawBody = await readRequestBody(req);
 
-  // Extract path parameters from URL patterns like /api/[id]/items
   const pathParameters: Record<string, string> = {};
 
   const event: AliyunServerlessEvent = {
@@ -96,13 +42,11 @@ export const transformToAliyunEvent = async (
     isBase64Encoded: false,
   };
 
-  // Convert event to Buffer as required by Aliyun FC
   const eventBuffer = Buffer.from(JSON.stringify(event));
 
   return { event: eventBuffer, headers: req.headers as Record<string, string> };
 };
 
-// Create Aliyun FC context (serializable version for worker threads)
 export const createAliyunContextSerializable = (
   iac: ServerlessIac,
   functionName: string,
@@ -145,7 +89,6 @@ export const createAliyunContextSerializable = (
   };
 };
 
-// Create Aliyun FC context with logger (for use in same thread)
 export const createAliyunContext = (
   iac: ServerlessIac,
   functionName: string,
@@ -172,7 +115,6 @@ export const createAliyunContext = (
   };
 };
 
-// Add x-fc-* headers to request
 export const addFCHeaders = (
   context: AliyunApiGatewayContext,
   headers: Record<string, string>,
@@ -196,26 +138,25 @@ export const addFCHeaders = (
   };
 };
 
-// Transform FC response to HTTP response
 export const transformFCResponse = (
   result: unknown,
 ): { statusCode: number; headers: Record<string, string>; body: unknown } => {
-  // Check if result is an Aliyun FC response format
   if (result && typeof result === 'object' && 'statusCode' in result && 'body' in result) {
-    const fcResponse = result as AliyunFCResponse;
-    const statusCode =
-      typeof fcResponse.statusCode === 'string'
-        ? parseInt(fcResponse.statusCode, 10)
-        : fcResponse.statusCode;
+    const {
+      statusCode: rawStatus = 200,
+      body: rawBody,
+      isBase64Encoded,
+      headers = {},
+    } = result as AliyunFCResponse;
 
-    let body = fcResponse.body;
+    const statusCode = typeof rawStatus === 'string' ? parseInt(rawStatus, 10) : rawStatus;
 
-    // Handle Base64 encoded body
-    if (fcResponse.isBase64Encoded && typeof body === 'string') {
+    let body = rawBody;
+
+    if (isBase64Encoded && typeof body === 'string') {
       body = Buffer.from(body, 'base64').toString('utf-8');
     }
 
-    // Parse JSON string body back to object for proper serialization by respondJson
     if (typeof body === 'string') {
       try {
         body = JSON.parse(body);
@@ -224,14 +165,9 @@ export const transformFCResponse = (
       }
     }
 
-    return {
-      statusCode: statusCode || 200,
-      headers: fcResponse.headers || {},
-      body,
-    };
+    return { statusCode, headers, body };
   }
 
-  // If result is not in FC response format, wrap it
   return {
     statusCode: 200,
     headers: { 'Content-Type': 'application/json' },
@@ -239,7 +175,6 @@ export const transformFCResponse = (
   };
 };
 
-// Log API Gateway request
 export const logApiGatewayRequest = (
   requestId: string,
   apiPath: string,
@@ -268,7 +203,6 @@ const formatDateTime = (date: Date): string => {
   return `${year}-${month}-${day} ${hours}:${minutes}:${seconds}`;
 };
 
-// Generate unique request ID
 export const generateRequestId = (): string => {
   return randomUUID().replace(/-/g, '');
 };
