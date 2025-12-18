@@ -149,7 +149,8 @@ export const transformFCResponse = (
       headers = {},
     } = result as AliyunFCResponse;
 
-    const statusCode = typeof rawStatus === 'string' ? parseInt(rawStatus, 10) : rawStatus;
+    const parsedStatus = typeof rawStatus === 'string' ? parseInt(rawStatus, 10) : rawStatus;
+    const statusCode = isNaN(parsedStatus) ? 200 : parsedStatus;
 
     let body = rawBody;
 
