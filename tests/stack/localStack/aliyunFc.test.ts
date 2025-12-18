@@ -1,8 +1,7 @@
 import { startLocalStack, stopLocal } from '../../../src/stack/localStack';
 import { ServerlessIac, EventTypes } from '../../../src/types';
-import { ProviderEnum } from '../../../src/common';
-import http from 'node:http';
-import { SI_LOCALSTACK_SERVER_PORT } from '../../../src/common';
+import { ProviderEnum, SI_LOCALSTACK_SERVER_PORT } from '../../../src/common';
+import { makeRequest } from '../../autils';
 
 describe('Aliyun FC LocalStack', () => {
   const iac: ServerlessIac = {
@@ -58,48 +57,10 @@ describe('Aliyun FC LocalStack', () => {
     await stopLocal();
   });
 
-  const makeRequest = (
-    path: string,
-    method = 'GET',
-    body?: string,
-  ): Promise<{
-    statusCode: number | undefined;
-    headers: http.IncomingHttpHeaders;
-    data: string;
-  }> => {
-    return new Promise((resolve, reject) => {
-      const options = {
-        hostname: 'localhost',
-        port: SI_LOCALSTACK_SERVER_PORT,
-        path,
-        method,
-        headers: {
-          'Content-Type': 'application/json',
-        },
-      };
-
-      const req = http.request(options, (res) => {
-        let data = '';
-        res.on('data', (chunk) => {
-          data += chunk;
-        });
-        res.on('end', () => {
-          resolve({ statusCode: res.statusCode, headers: res.headers, data });
-        });
-      });
-
-      req.on('error', reject);
-
-      if (body) {
-        req.write(body);
-      }
-
-      req.end();
-    });
-  };
-
   it('should handle GET request with Aliyun FC event format', async () => {
-    const res = await makeRequest('/si_events/aliyun_gateway/api/v1/hello?name=test&id=123');
+    const res = await makeRequest(
+      `http://localhost:${SI_LOCALSTACK_SERVER_PORT}/si_events/aliyun_gateway/api/v1/hello?name=test&id=123`,
+    );
 
     expect(res.statusCode).toBe(200);
     expect(res.headers['x-custom-header']).toBe('header value');
@@ -114,7 +75,11 @@ describe('Aliyun FC LocalStack', () => {
 
   it('should handle POST request with body', async () => {
     const requestBody = JSON.stringify({ username: 'john', age: 30 });
-    const res = await makeRequest('/si_events/aliyun_gateway/api/v1/hello', 'POST', requestBody);
+    const res = await makeRequest(
+      `http://localhost:${SI_LOCALSTACK_SERVER_PORT}/si_events/aliyun_gateway/api/v1/hello`,
+      'POST',
+      requestBody,
+    );
 
     expect(res.statusCode).toBe(200);
 
@@ -126,7 +91,9 @@ describe('Aliyun FC LocalStack', () => {
   });
 
   it('should pass headers to FC function', async () => {
-    const res = await makeRequest('/si_events/aliyun_gateway/api/v1/hello');
+    const res = await makeRequest(
+      `http://localhost:${SI_LOCALSTACK_SERVER_PORT}/si_events/aliyun_gateway/api/v1/hello`,
+    );
 
     expect(res.statusCode).toBe(200);
 
@@ -136,7 +103,10 @@ describe('Aliyun FC LocalStack', () => {
   });
 
   it('should handle direct function invocation with Aliyun format', async () => {
-    const res = await makeRequest('/si_functions/aliyun_fc_fn/test-path?param=value', 'GET');
+    const res = await makeRequest(
+      `http://localhost:${SI_LOCALSTACK_SERVER_PORT}/si_functions/aliyun_fc_fn/test-path?param=value`,
+      'GET',
+    );
 
     expect(res.statusCode).toBe(200);
 
