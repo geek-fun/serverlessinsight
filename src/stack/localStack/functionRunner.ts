@@ -214,20 +214,30 @@ const createMessageHandler = (
   const handleMessage = (value: unknown) => {
     if (resolved) return;
     resolved = true;
+    port.close();
     return value instanceof Error ? reject(value) : resolve(value);
   };
 
   const handleError = (err: Error) => {
     if (resolved) return;
     resolved = true;
+    port.close();
     reject(err);
   };
 
-  port.on('message', handleMessage).on('error', handleError);
+  const handleClose = () => {
+    if (resolved) return;
+    resolved = true;
+    reject(new Error('Port closed before receiving response'));
+  };
+
+  port.on('message', handleMessage).on('error', handleError).on('close', handleClose);
 
   return () => {
     port.off('message', handleMessage);
     port.off('error', handleError);
+    port.off('close', handleClose);
+    port.close();
   };
 };
 
@@ -255,9 +265,27 @@ export const runFunction = (funOptions: FunctionOptions, env: Record<string, str
       const { port1, port2 } = new MessageChannel();
       const cleanup = createMessageHandler(port1, resolve, reject);
 
+      // Handle worker errors/exit
+      const handleWorkerError = (err: Error) => {
+        cleanup();
+        reject(err);
+      };
+
+      const handleWorkerExit = (code: number) => {
+        if (code !== 0) {
+          cleanup();
+          reject(new Error(`Worker stopped with exit code ${code}`));
+        }
+      };
+
+      worker.once('error', handleWorkerError);
+      worker.once('exit', handleWorkerExit);
+
       try {
         sendMessage(worker, event, context, port2);
       } catch (error) {
+        worker.off('error', handleWorkerError);
+        worker.off('exit', handleWorkerExit);
         cleanup();
         reject(error instanceof Error ? error : new Error(String(error)));
       }
