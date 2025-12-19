@@ -61,4 +61,7 @@ jobs:
         if: steps.tag_release.outputs.successful == 'true'
         run: npm publish --provenance --access public
         env:
+          # Use an NPM Automation token to bypass 2FA/OTP requirements
+          # Create at: https://www.npmjs.com/settings/<username>/tokens
+          # Token type: "Automation" (not "Publish")
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
