@@ -11,8 +11,8 @@ module.exports.handler = function (event, context, callback) {
     path: eventData.path,
     method: eventData.httpMethod,
     headers: eventData.headers,
-    queryParameters: eventData.queryParameters,
-    pathParameters: eventData.pathParameters,
+    queryParameters: eventData.queryParameters || {}, // Ensure it's always an object
+    pathParameters: eventData.pathParameters || {}, // Ensure it's always an object
     body: eventData.body,
     message: 'Hello from Aliyun FC',
   };

@@ -21,6 +21,16 @@ const respondJson = (
   res.end(JSON.stringify(body));
 };
 
+const respondRaw = (
+  res: ServerResponse,
+  status: number,
+  body: string | Buffer,
+  headers: Record<string, string> = {},
+) => {
+  res.writeHead(status, headers);
+  res.end(body);
+};
+
 const parseRequest = (req: IncomingMessage): ParsedRequest | undefined => {
   const url = new URL(req.url ?? '/', 'http://localhost');
   const [routeSegment, identifierSegment, ...rest] = cleanPathSegments(url.pathname);
@@ -73,7 +83,19 @@ export const servLocal = async (
         respondJson(res, 204, {});
         return;
       }
-      respondJson(res, outcome.statusCode, outcome.body ?? {}, outcome.headers);
+
+      // Raw responses (e.g., from bucket handler) include both Content-Type and Content-Length headers
+      // and the body is already formatted as a string (not a JSON object)
+      const isRawResponse =
+        typeof outcome.body === 'string' &&
+        outcome.headers?.['Content-Type'] &&
+        outcome.headers?.['Content-Length'];
+
+      if (isRawResponse) {
+        respondRaw(res, outcome.statusCode, outcome.body as string, outcome.headers);
+      } else {
+        respondJson(res, outcome.statusCode, outcome.body ?? {}, outcome.headers);
+      }
     } catch (err) {
       logger.error({ err }, 'Local gateway error');
       respondJson(res, 500, { error: 'Local gateway failure' });

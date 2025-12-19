@@ -51,6 +51,7 @@ describe('Aliyun FC LocalStack', () => {
 
   beforeAll(async () => {
     await startLocalStack(iac);
+    await new Promise((resolve) => setTimeout(resolve, 1500));
   });
 
   afterAll(async () => {
