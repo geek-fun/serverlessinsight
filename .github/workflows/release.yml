@@ -59,4 +59,4 @@ jobs:
             ${{ steps.changelog.outputs.changelog }}
       - name: Publish package on NPM 📦
         if: steps.tag_release.outputs.successful == 'true'
-        run: npm publish --access public
+        run: npm publish
