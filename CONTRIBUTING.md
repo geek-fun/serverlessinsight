@@ -49,7 +49,7 @@ The release workflow automatically publishes to npm when a new version is tagged
 #### Setting up NPM Automation Token
 
 1. Log in to [npmjs.com](https://www.npmjs.com)
-2. Go to **Access Tokens** in your account settings: `https://www.npmjs.com/settings/<your-username>/tokens`
+2. Go to **Access Tokens** in your account settings: `https://www.npmjs.com/settings/YOUR-USERNAME/tokens`
 3. Click **Generate New Token**
 4. Select **Automation** token type (this bypasses 2FA/OTP requirements)
 5. Set appropriate permissions (publish access required)
@@ -66,7 +66,7 @@ The release workflow automatically publishes to npm when a new version is tagged
 **Important Notes:**
 - **Automation tokens** do NOT require OTP for publishing (they bypass 2FA)
 - **Publish tokens** will fail in CI/CD because they require OTP
-- The token should have publish permissions for the `@geek-fun/serverlessinsight` package
+- The token should have publish permissions for the package
 - Keep your tokens secure and rotate them periodically
 
 ### Troubleshooting NPM Publishing
