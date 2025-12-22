@@ -150,7 +150,7 @@ describe('Unit test for rosAssets', () => {
 
       const bucketName = await publishAssets(await constructAssets(assetsFixture));
 
-      expect(bucketName).toBe('cdk-ajmywduza-assets-mock-region');
+      expect(bucketName).toBe('cdk-ajmywduza-assets-cn-hangzhou');
       expect(mockedBucketPut.mock.calls).toEqual([
         [
           '55d1d2dd5d6c1b083a04c15431f70da1f2840b9de06383411cbf7eda2a512efe.zip',
@@ -194,7 +194,7 @@ describe('Unit test for rosAssets', () => {
         ['c6a72ed7e7e83f01a000b75885758088fa050298a31a1e95d37ac88f08e42315.zip'],
       ]);
       expect(mockedDeleteBucket).toHaveBeenCalledTimes(1);
-      expect(mockedDeleteBucket).toHaveBeenCalledWith('cdk-ajmywduza-assets-mock-region');
+      expect(mockedDeleteBucket).toHaveBeenCalledWith('cdk-ajmywduza-assets-cn-hangzhou');
     });
 
     it('should skip the cleanupAssets when there is no assets', async () => {

@@ -155,7 +155,22 @@ describe('Unit tests for stack deployment', () => {
 
   it('should create bucket and store code artifact to bucket when code size > 15MB', async () => {
     const stackName = 'my-large-code-stack';
-    await updateContextForTest(stackName);
+    const { setContext } = jest.requireActual('../../src/common');
+    const iacLocation = path.resolve(__dirname, '../fixtures/serverless-insight.yml');
+    await setContext({
+      stage: 'default',
+      stackName,
+      region: 'cn-hangzhou',
+      accessKeyId: 'test-access-key-id',
+      accessKeySecret: 'test-access-key-secret',
+      location: iacLocation,
+      iacProvider: { name: 'aliyun', region: 'cn-hangzhou' },
+    });
+    // Manually set accountId on context after initialization
+    const { getContext } = jest.requireActual('../../src/common');
+    const context = getContext();
+    context.accountId = '123456789012';
+
     mockedGetStore.mockReturnValue({ stackName, accountId: '123456789012', region: 'cn-hangzhou' });
     mockedRosStackDeploy.mockResolvedValueOnce(stackName);
 
