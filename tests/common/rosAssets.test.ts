@@ -7,6 +7,7 @@ import {
 } from '../../src/common';
 import { Stats } from 'node:fs';
 import { assetsFixture } from '../fixtures/assetsFixture';
+import path from 'node:path';
 
 const mockedGetStore = jest.fn();
 const mockedBucketPut = jest.fn();
@@ -79,8 +80,7 @@ jest.mock('../../src/common/logger', () => ({
 describe('Unit test for rosAssets', () => {
   beforeAll(async () => {
     // Mock existsSync to return true for the specific iac location file
-    const iacLocation =
-      '/home/runner/work/serverlessinsight/serverlessinsight/tests/common/../fixtures/serverless-insight.yml';
+    const iacLocation = path.resolve(__dirname, '../fixtures/serverless-insight.yml');
     mockedExistsSync.mockImplementation((filePath: string) => {
       return filePath === iacLocation;
     });
