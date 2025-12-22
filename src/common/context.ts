@@ -4,6 +4,7 @@ import fs from 'node:fs';
 import { ProviderEnum } from './providerEnum';
 import { AsyncLocalStorage } from 'node:async_hooks';
 import { getIamInfo } from './imsClient';
+import { getCredentials } from './credentials';
 
 const asyncLocalStorage = new AsyncLocalStorage<Context>();
 const DEFAULT_IAC_FILES = [
@@ -80,14 +81,20 @@ export const setContext = async (
     process.env.ALIYUN_REGION ??
     'cn-hangzhou';
 
+  const credentials = getCredentials({
+    accessKeyId: config.accessKeyId,
+    accessKeySecret: config.accessKeySecret,
+    securityToken: config.securityToken,
+  });
+
   const context: Context = {
     stage: config.stage ?? 'default',
     stackName: config.stackName ?? '',
     provider: (config.provider ?? config.iacProvider?.name ?? ProviderEnum.ALIYUN) as ProviderEnum,
     region,
-    accessKeyId: config.accessKeyId ?? (process.env.ALIYUN_ACCESS_KEY_ID as string),
-    accessKeySecret: config.accessKeySecret ?? (process.env.ALIYUN_ACCESS_KEY_SECRET as string),
-    securityToken: config.securityToken ?? process.env.ALIYUN_SECURITY_TOKEN,
+    accessKeyId: credentials.accessKeyId as string,
+    accessKeySecret: credentials.accessKeySecret as string,
+    securityToken: credentials.securityToken,
     iacLocation: getIacLocation(config.location),
     parameters: Object.entries(config.parameters ?? {}).map(([key, value]) => ({ key, value })),
     stages: Object.entries(config.stages ?? {}).reduce(

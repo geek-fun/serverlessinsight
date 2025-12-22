@@ -15,7 +15,7 @@ const handleCommandError = (
 ): never => {
   // Log error message as string to preserve newlines
   logger.error(
-    `\n❌ Command '${commandName}' failed with error:\n${error?.message || 'Unknown error occurred'}`,
+    `Command '${commandName}' failed with error:\n${error?.message || 'Unknown error occurred'}`,
   );
 
   if (error?.stack && process.env.DEBUG) {

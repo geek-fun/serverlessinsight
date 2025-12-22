@@ -1,7 +1,7 @@
 import { TemplateFormat } from '../types';
 import yaml from 'yaml';
 import { generateStackTemplate } from '../stack/deploy';
-import { getIacLocation, logger, setContext } from '../common';
+import { getIacLocation, logger, setContext, getCredentials, hasCredentials } from '../common';
 import { parseYaml } from '../parser';
 
 export const template = async (
@@ -10,7 +10,10 @@ export const template = async (
 ) => {
   const iac = parseYaml(getIacLocation(options.location));
 
-  await setContext({ ...options, stackName, provider: iac.provider.name }, true);
+  const credentials = getCredentials();
+  const shouldFetchIamInfo = hasCredentials(credentials);
+
+  await setContext({ ...options, stackName, provider: iac.provider.name }, shouldFetchIamInfo);
   const { template } = generateStackTemplate(stackName, iac);
   if (typeof template === 'string') {
     logger.info(`\n${template}`);
