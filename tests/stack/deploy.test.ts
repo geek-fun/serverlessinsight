@@ -25,6 +25,7 @@ import {
   referredServiceRos,
 } from '../fixtures/deploy-fixtures';
 import { cloneDeep, set } from 'lodash';
+import path from 'node:path';
 
 const mockedEnterWith = jest.fn();
 const mockedGetStore = jest.fn();
@@ -53,6 +54,19 @@ jest.mock('../../src/common', () => ({
 }));
 
 describe('Unit tests for stack deployment', () => {
+  beforeAll(async () => {
+    const { setContext } = jest.requireActual('../../src/common');
+    const iacLocation = path.resolve(__dirname, '../fixtures/serverless-insight.yml');
+    await setContext({
+      stage: 'default',
+      stackName: 'test-stack',
+      region: 'cn-hangzhou',
+      accessKeyId: 'test-access-key-id',
+      accessKeySecret: 'test-access-key-secret',
+      location: iacLocation,
+    });
+  });
+
   beforeEach(() => {
     mockedResolveCode.mockReturnValueOnce('resolved-code');
     mockedPublishAssets.mockResolvedValueOnce('published-assets-bucket');

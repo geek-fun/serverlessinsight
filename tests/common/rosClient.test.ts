@@ -1,4 +1,4 @@
-import { rosStackDelete, rosStackDeploy } from '../../src/common';
+import { rosStackDelete, rosStackDeploy, setContext } from '../../src/common';
 import { context } from '../fixtures/contextFixture';
 import { lang } from '../../src/lang';
 
@@ -40,6 +40,17 @@ jest.mock('../../src/common/logger', () => ({
 }));
 
 describe('Unit test for rosClient', () => {
+  beforeAll(async () => {
+    await setContext({
+      stage: context.stage,
+      stackName: context.stackName,
+      region: context.region,
+      accessKeyId: context.accessKeyId,
+      accessKeySecret: context.accessKeySecret,
+      location: context.iacLocation,
+    });
+  });
+
   beforeEach(() => {
     jest.clearAllMocks();
   });

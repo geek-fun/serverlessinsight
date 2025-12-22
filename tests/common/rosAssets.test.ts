@@ -1,4 +1,10 @@
-import { cleanupAssets, constructAssets, getAssets, publishAssets } from '../../src/common';
+import {
+  cleanupAssets,
+  constructAssets,
+  getAssets,
+  publishAssets,
+  setContext,
+} from '../../src/common';
 import { Stats } from 'node:fs';
 import { assetsFixture } from '../fixtures/assetsFixture';
 
@@ -44,6 +50,7 @@ jest.mock('node:fs', () => {
     readdirSync: (...args: unknown[]) => mockedReaddirSync(...args),
     lstatSync: (...args: unknown[]) => mockedLstatSync(...args),
     existsSync: (...args: unknown[]) => mockedExistsSync(...args),
+    statSync: (...args: unknown[]) => mockedLstatSync(...args),
     writeFileSync: jest.fn().mockImplementation(() => {}),
     readFileSync: jest.fn().mockImplementation(() => {}),
   };
@@ -52,6 +59,7 @@ jest.mock('node:path', () => ({
   resolve: (...args: string[]) => args.join('/'),
   normalize: (p: string) => p,
   join: (...args: string[]) => args.join('/'),
+  isAbsolute: (p: string) => p.startsWith('/'),
 }));
 
 jest.mock('jszip', () =>
@@ -69,6 +77,30 @@ jest.mock('../../src/common/logger', () => ({
   },
 }));
 describe('Unit test for rosAssets', () => {
+  beforeAll(async () => {
+    // Mock existsSync to return true for the specific iac location file
+    const iacLocation =
+      '/home/runner/work/serverlessinsight/serverlessinsight/tests/common/../fixtures/serverless-insight.yml';
+    mockedExistsSync.mockImplementation((filePath: string) => {
+      return filePath === iacLocation;
+    });
+    // Also need to mock lstatSync and statSync for the file
+    const mockFileStats = {
+      isFile: () => true,
+      isDirectory: () => false,
+    } as Stats;
+    mockedLstatSync.mockImplementation(() => mockFileStats);
+
+    await setContext({
+      stage: 'default',
+      stackName: 'test-stack',
+      region: 'cn-hangzhou',
+      accessKeyId: 'test-access-key-id',
+      accessKeySecret: 'test-access-key-secret',
+      location: iacLocation,
+    });
+  });
+
   beforeEach(() => {
     mockedGetStore.mockReturnValue({
       region: 'mock-region',
