@@ -20,14 +20,31 @@ class IacSchemaErrors extends Error {
   private schemaErrors: Array<IacSchemaError>;
 
   constructor(errors: Array<ErrorObject>) {
-    super(`Invalid yaml`);
-    this.schemaErrors = errors.map((error) => ({
+    const schemaErrors = errors.map((error) => ({
       instancePath: error.instancePath,
       schemaPath: error.schemaPath,
       message: error.message as string,
       allowedValues: error.params?.allowedValues,
       type: error.keyword,
     }));
+
+    const formattedMessage = schemaErrors
+      .map((error, index) => {
+        const parts = [
+          `Error ${index + 1}:`,
+          `  Path: ${error.instancePath || '/'}`,
+          `  Type: ${error.type}`,
+          `  Message: ${error.message}`,
+        ];
+        if (error.allowedValues) {
+          parts.push(`  Allowed values: ${error.allowedValues.join(', ')}`);
+        }
+        return parts.join('\n');
+      })
+      .join('\n\n');
+
+    super(`Invalid yaml:\n\n${formattedMessage}`);
+    this.schemaErrors = schemaErrors;
   }
 
   public get errors() {

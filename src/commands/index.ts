@@ -8,6 +8,52 @@ import { template } from './template';
 import { destroyStack } from './destroy';
 import { runLocal } from './local';
 
+// Global error handler
+const handleCommandError = (
+  error: { message?: string; stack?: string; code?: number },
+  commandName: string,
+): never => {
+  // Log error message as string to preserve newlines
+  logger.error(
+    `\n❌ Command '${commandName}' failed with error:\n${error?.message || 'Unknown error occurred'}`,
+  );
+
+  if (error?.stack && process.env.DEBUG) {
+    logger.debug(`Stack trace:\n${error.stack}`);
+  }
+
+  let exitCode = 1;
+
+  if (error?.code) {
+    if (typeof error.code === 'number') {
+      exitCode = error.code;
+    } else if (typeof error.code === 'string') {
+      const errorCodeMap: Record<string, number> = {
+        ENOENT: 2,
+        EACCES: 3,
+        VALIDATION: 4,
+        NETWORK: 5,
+      };
+      exitCode = errorCodeMap[error.code] || 1;
+    }
+  }
+
+  process.exit(exitCode);
+};
+
+const actionWrapper = <T extends unknown[]>(
+  commandName: string,
+  handler: (...args: T) => Promise<void>,
+) => {
+  return async (...args: T) => {
+    try {
+      await handler(...args);
+    } catch (error) {
+      handleCommandError(error as { message?: string; stack?: string; code?: number }, commandName);
+    }
+  };
+};
+
 const program = new Command();
 
 program.name('si').description('CLI for ServerlessInsight').version(getVersion());
@@ -15,22 +61,26 @@ program.name('si').description('CLI for ServerlessInsight').version(getVersion()
 program
   .command('show')
   .description('show string')
-  .action(async (options) => {
-    await setContext({ ...options });
-    const context = getContext();
-    const result = await getIamInfo(context);
-    console.log('result:', JSON.stringify(result));
-  });
+  .action(
+    actionWrapper('show', async (options) => {
+      await setContext({ ...options });
+      const context = getContext();
+      const result = await getIamInfo(context);
+      console.log('result:', JSON.stringify(result));
+    }),
+  );
 
 program
   .command('validate [stackName]')
   .description('validate serverless Iac yaml')
   .option('-f, --file <path>', 'specify the yaml file')
   .option('-s, --stage <stage>', 'specify the stage')
-  .action(async (stackName, { file, stage }) => {
-    logger.debug('log command info');
-    await validate(stackName, { stage, location: file });
-  });
+  .action(
+    actionWrapper('validate', async (stackName, { file, stage }) => {
+      logger.debug('log command info');
+      await validate(stackName, { stage, location: file });
+    }),
+  );
 
 program
   .command('deploy <stackName>')
@@ -53,21 +103,24 @@ program
     {},
   )
   .action(
-    async (
-      stackName,
-      { stage, parameter, file, region, provider, accessKeyId, accessKeySecret, securityToken },
-    ) => {
-      await deploy(stackName, {
-        stage,
-        parameters: parameter,
-        location: file,
-        region,
-        provider,
-        accessKeyId,
-        accessKeySecret,
-        securityToken,
-      });
-    },
+    actionWrapper(
+      'deploy',
+      async (
+        stackName,
+        { stage, parameter, file, region, provider, accessKeyId, accessKeySecret, securityToken },
+      ) => {
+        await deploy(stackName, {
+          stage,
+          parameters: parameter,
+          location: file,
+          region,
+          provider,
+          accessKeyId,
+          accessKeySecret,
+          securityToken,
+        });
+      },
+    ),
   );
 
 program
@@ -76,9 +129,11 @@ program
   .option('-f, --file <path>', 'specify the yaml file')
   .option('-s, --stage <stage>', 'specify the stage')
   .option('-t, --format <type>', 'output content type (JSON or YAML)', 'JSON')
-  .action(async (stackName, { format, file, stage }) => {
-    await template(stackName, { format, location: file, stage });
-  });
+  .action(
+    actionWrapper('template', async (stackName, { format, file, stage }) => {
+      await template(stackName, { format, location: file, stage });
+    }),
+  );
 
 program
   .command('destroy <stackName>')
@@ -90,16 +145,22 @@ program
   .option('-n, --securityToken <securityToken>', 'specify the SecurityToken')
   .description('destroy serverless stack')
   .action(
-    async (stackName, { file, region, provider, accessKeyId, accessKeySecret, securityToken }) => {
-      await destroyStack(stackName, {
-        location: file,
-        region,
-        provider,
-        accessKeyId,
-        accessKeySecret,
-        securityToken,
-      });
-    },
+    actionWrapper(
+      'destroy',
+      async (
+        stackName,
+        { file, region, provider, accessKeyId, accessKeySecret, securityToken },
+      ) => {
+        await destroyStack(stackName, {
+          location: file,
+          region,
+          provider,
+          accessKeyId,
+          accessKeySecret,
+          securityToken,
+        });
+      },
+    ),
   );
 
 program
@@ -110,14 +171,16 @@ program
   .option('-p, --port <port>', 'specify the port', '3000')
   .option('-d, --debug', 'enable debug mode')
   .option('-w, --watch', 'enable file watch', true)
-  .action(async (stackName, { stage, port, debug, watch, file }) => {
-    await runLocal(stackName, {
-      stage,
-      port: Number(port) || 3000,
-      debug: !!debug,
-      watch: typeof watch === 'boolean' ? watch : true,
-      location: file,
-    });
-  });
+  .action(
+    actionWrapper('local', async (stackName, { stage, port, debug, watch, file }) => {
+      await runLocal(stackName, {
+        stage,
+        port: Number(port) || 3000,
+        debug: !!debug,
+        watch: typeof watch === 'boolean' ? watch : true,
+        location: file,
+      });
+    }),
+  );
 
 program.parse();
