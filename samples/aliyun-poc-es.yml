@@ -11,7 +11,7 @@ tags:
   owner: geek-fun
 
 databases:
-  insight_es_db:
+  insight_poc_es:
     name: insight-poc-es
     type: ELASTICSEARCH_SERVERLESS
     version: ES_SEARCH_7.10
@@ -20,6 +20,14 @@ databases:
       max: 2
     storage:
       min: 20
+    security:
+      basic_auth:
+        master_user: admin
+        password: 'U34I6InQ8elseTgqTWT2t2oFXpoqFg'
+  insight_poc_rds:
+    name: insight-poc-rds
+    type: RDS_PGSQL_SERVERLESS
+    version: PGSQL_16
     security:
       basic_auth:
         master_user: admin
