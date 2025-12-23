@@ -1,0 +1,115 @@
+name: Release si-bootstrap-sdk Layer
+
+on:
+  workflow_dispatch:
+    inputs:
+      layer_version:
+        description: 'Layer version to release (leave empty for auto)'
+        required: false
+        type: string
+  push:
+    paths:
+      - 'layers/si-bootstrap-sdk/**'
+    branches:
+      - master
+
+permissions:
+  contents: write
+  id-token: write
+
+jobs:
+  release-layer:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Package layer
+        working-directory: ./layers/si-bootstrap-sdk
+        run: |
+          chmod +x ./scripts/package.sh
+          ./scripts/package.sh
+
+      - name: Verify package created
+        run: |
+          if [ ! -f "./layers/si-bootstrap-sdk/artifacts/si-bootstrap-sdk.zip" ]; then
+            echo "Error: Layer package not found"
+            exit 1
+          fi
+          PKG_SIZE=$(du -h ./layers/si-bootstrap-sdk/artifacts/si-bootstrap-sdk.zip | cut -f1)
+          echo "Package size: $PKG_SIZE"
+
+      - name: Publish to Aliyun regions
+        working-directory: ./layers/si-bootstrap-sdk
+        env:
+          ALIYUN_ACCESS_KEY_ID: ${{ secrets.ALIYUN_ACCESS_KEY_ID }}
+          ALIYUN_ACCESS_KEY_SECRET: ${{ secrets.ALIYUN_ACCESS_KEY_SECRET }}
+        run: |
+          chmod +x ./scripts/publish-to-regions.sh
+          chmod +x ./scripts/aliyuncli.sh
+          ./scripts/publish-to-regions.sh
+
+      - name: Get layer version
+        id: layer_info
+        working-directory: ./layers/si-bootstrap-sdk
+        env:
+          ALIYUN_ACCESS_KEY_ID: ${{ secrets.ALIYUN_ACCESS_KEY_ID }}
+          ALIYUN_ACCESS_KEY_SECRET: ${{ secrets.ALIYUN_ACCESS_KEY_SECRET }}
+        run: |
+          chmod +x ./scripts/aliyuncli.sh
+          REGION="cn-hangzhou"
+          LAYER_PATH="/2023-03-30/layers/si-bootstrap-sdk/versions"
+          VERSION=$(ALIYUN_REGION="$REGION" ./scripts/aliyuncli.sh fc GET \
+            "$LAYER_PATH" --header "Content-Type=application/json" | \
+            jq -r '.versions[0].version')
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "Layer version: $VERSION"
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v1
+        with:
+          tag_name: si-bootstrap-sdk-v${{ steps.layer_info.outputs.version }}
+          name: si-bootstrap-sdk Layer v${{ steps.layer_info.outputs.version }}
+          body: |
+            ## si-bootstrap-sdk Layer Release v${{ steps.layer_info.outputs.version }}
+
+            ### Layer Information
+            - **Layer Name**: si-bootstrap-sdk
+            - **Version**: ${{ steps.layer_info.outputs.version }}
+            - **Compatible Runtimes**: nodejs20, nodejs18, nodejs16
+            - **License**: Apache-2.0
+
+            ### Available Regions
+            This layer has been published to the following Aliyun regions
+            with version **${{ steps.layer_info.outputs.version }}**:
+
+            - **cn-beijing** (Beijing)
+              - ARN: `acs:fc:cn-beijing:official:layers/si-bootstrap-sdk/versions/${{ steps.layer_info.outputs.version }}`
+
+            - **cn-hangzhou** (Hangzhou)
+              - ARN: `acs:fc:cn-hangzhou:official:layers/si-bootstrap-sdk/versions/${{ steps.layer_info.outputs.version }}`
+
+            - **cn-chengdu** (Chengdu)
+              - ARN: `acs:fc:cn-chengdu:official:layers/si-bootstrap-sdk/versions/${{ steps.layer_info.outputs.version }}`
+
+            - **ap-southeast-1** (Singapore)
+              - ARN: `acs:fc:ap-southeast-1:official:layers/si-bootstrap-sdk/versions/${{ steps.layer_info.outputs.version }}`
+
+            ### Usage
+            To use this layer in your Function Compute functions,
+            reference it by ARN in your function configuration.
+
+            ### Changes
+            See the [commit history](https://github.com/${{ github.repository }}/commits/master/layers/si-bootstrap-sdk)
+            for details on changes in this release.
+          draft: false
+          prerelease: false
+          files: |
+            ./layers/si-bootstrap-sdk/artifacts/si-bootstrap-sdk.zip
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
