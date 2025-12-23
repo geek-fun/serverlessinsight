@@ -1,0 +1,105 @@
+name: Release si-bootstrap-sdk Layer
+
+on:
+  push:
+    paths:
+      - 'layers/si-bootstrap-sdk/**'
+      - '!layers/si-bootstrap-sdk/README.md'
+    branches:
+      - master
+
+permissions:
+  contents: write
+  id-token: write
+
+jobs:
+  release-layer:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Check for version change
+        uses: jaywcjlove/create-tag-action@main
+        id: create_tag
+        with:
+          package-path: ./layers/si-bootstrap-sdk/package.json
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Set up Docker Buildx
+        if: steps.create_tag.outputs.successful == 'true'
+        uses: docker/setup-buildx-action@v3
+
+      - name: Package layer
+        if: steps.create_tag.outputs.successful == 'true'
+        working-directory: ./layers/si-bootstrap-sdk
+        run: ./scripts/package.sh
+
+      - name: Verify package created
+        if: steps.create_tag.outputs.successful == 'true'
+        run: |
+          if [ ! -f "./layers/si-bootstrap-sdk/artifacts/si-bootstrap-sdk.zip" ]; then
+            echo "Error: Layer package not found"
+            exit 1
+          fi
+          PKG_SIZE=$(du -h ./layers/si-bootstrap-sdk/artifacts/si-bootstrap-sdk.zip | cut -f1)
+          echo "Package size: $PKG_SIZE"
+
+      - name: Publish to Aliyun regions
+        if: steps.create_tag.outputs.successful == 'true'
+        id: publish
+        working-directory: ./layers/si-bootstrap-sdk
+        env:
+          ALIYUN_ACCESS_KEY_ID: ${{ secrets.ALIYUN_ACCESS_KEY_ID }}
+          ALIYUN_ACCESS_KEY_SECRET: ${{ secrets.ALIYUN_ACCESS_KEY_SECRET }}
+          ALIYUN_REGIONS: "cn-beijing,cn-hangzhou,cn-chengdu,ap-southeast-1"
+          ALIYUN_COMPATIBLE_RUNTIMES: "nodejs20,nodejs18,nodejs16"
+        run: ./scripts/publish-to-regions.sh
+
+      - name: Create GitHub Release
+        if: steps.create_tag.outputs.successful == 'true'
+        uses: softprops/action-gh-release@v1
+        with:
+          tag_name: ${{ steps.create_tag.outputs.version }}
+          name: si-bootstrap-sdk Layer ${{ steps.create_tag.outputs.version }}
+          body: |
+            ## si-bootstrap-sdk Layer Release ${{ steps.create_tag.outputs.version }}
+
+            ### Layer Information
+            - **Layer Name**: si-bootstrap-sdk
+            - **Package Version**: ${{ steps.create_tag.outputs.version }}
+            - **Layer Version**: ${{ steps.publish.outputs.LAYER_VERSION }}
+            - **Compatible Runtimes**: nodejs20, nodejs18, nodejs16
+            - **License**: Apache-2.0
+
+            ### Available Regions
+            This layer has been published to the following Aliyun regions
+            with layer version **${{ steps.publish.outputs.LAYER_VERSION }}**:
+
+            - **cn-beijing** (Beijing)
+              - ARN: `acs:fc:cn-beijing:1990893136649406:layers/si-bootstrap-sdk/versions/${{ steps.publish.outputs.LAYER_VERSION }}`
+
+            - **cn-hangzhou** (Hangzhou)
+              - ARN: `acs:fc:cn-hangzhou:1990893136649406:layers/si-bootstrap-sdk/versions/${{ steps.publish.outputs.LAYER_VERSION }}`
+
+            - **cn-chengdu** (Chengdu)
+              - ARN: `acs:fc:cn-chengdu:1990893136649406:layers/si-bootstrap-sdk/versions/${{ steps.publish.outputs.LAYER_VERSION }}`
+
+            - **ap-southeast-1** (Singapore)
+              - ARN: `acs:fc:ap-southeast-1:1990893136649406:layers/si-bootstrap-sdk/versions/${{ steps.publish.outputs.LAYER_VERSION }}`
+
+            ### Usage
+            To use this layer in your Function Compute functions,
+            reference it by ARN in your function configuration.
+
+            ### Changes
+            See the [commit history](https://github.com/${{ github.repository }}/commits/master/layers/si-bootstrap-sdk)
+            for details on changes in this release.
+          draft: false
+          prerelease: false
+          files: |
+            ./layers/si-bootstrap-sdk/artifacts/si-bootstrap-sdk.zip
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
