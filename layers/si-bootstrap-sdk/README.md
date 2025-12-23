@@ -50,10 +50,13 @@ cd layers/si-bootstrap-sdk
 export ALIYUN_ACCESS_KEY_ID="your-access-key-id"
 export ALIYUN_ACCESS_KEY_SECRET="your-access-key-secret"
 export ALIYUN_REGIONS="cn-beijing,cn-hangzhou,cn-chengdu,ap-southeast-1"  # Optional, defaults shown
+export ALIYUN_COMPATIBLE_RUNTIMES="nodejs20,nodejs18,nodejs16"  # Optional, defaults shown
 ./scripts/publish-to-regions.sh
 ```
 
 You can customize the target regions by setting the `ALIYUN_REGIONS` environment variable with a comma-separated list of region names.
+
+You can customize the compatible runtimes by setting the `ALIYUN_COMPATIBLE_RUNTIMES` environment variable with a comma-separated list of runtime identifiers.
 
 ## Layer Information
 

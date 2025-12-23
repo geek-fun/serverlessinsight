@@ -7,6 +7,8 @@ cd "$(dirname "$0")/.." || exit
 
 # Read regions from environment variable or use defaults
 IFS=',' read -ra REGIONS <<< "${ALIYUN_REGIONS:-cn-beijing,cn-hangzhou,cn-chengdu,ap-southeast-1}"
+# Read compatible runtimes from environment variable or use defaults
+IFS=',' read -ra COMPATIBLE_RUNTIMES <<< "${ALIYUN_COMPATIBLE_RUNTIMES:-nodejs20,nodejs18,nodejs16}"
 LAYER_NAME="si-bootstrap-sdk"
 ARTIFACT_PATH="./artifacts/${LAYER_NAME}.zip"
 API_DELAY=${API_DELAY:-2}  # Configurable delay between API calls (default 2 seconds)
@@ -31,9 +33,13 @@ publish_layer() {
   local region=$1
   echo "Publishing layer to region: $region"
   
+  # Convert bash array to JSON array format
+  local runtime_json=$(printf ',"%s"' "${COMPATIBLE_RUNTIMES[@]}")
+  runtime_json="[${runtime_json:1}]"
+  
   ALIYUN_REGION="$region" ./scripts/aliyuncli.sh fc POST /2023-03-30/layers/${LAYER_NAME}/versions \
     --header "Content-Type=application/json" \
-    --body "{\"compatibleRuntime\":[\"nodejs20\",\"nodejs18\",\"nodejs16\"],\"code\":{\"zipFile\":\"${SOURCE_CODE_BASE64}\"},\"license\":\"Apache-2.0\",\"description\":\"Bootstrap SDK for ServerlessInsight\"}"
+    --body "{\"compatibleRuntime\":${runtime_json},\"code\":{\"zipFile\":\"${SOURCE_CODE_BASE64}\"},\"license\":\"Apache-2.0\",\"description\":\"Bootstrap SDK for ServerlessInsight\"}"
   
   echo "Published layer to region: $region"
 }
