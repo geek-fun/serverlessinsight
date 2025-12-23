@@ -49,6 +49,11 @@ jobs:
           PKG_SIZE=$(du -h ./artifacts/si-bootstrap-sdk.zip | cut -f1)
           echo "Package size: $PKG_SIZE"
 
+      - name: Install publish script dependencies
+        if: steps.create_tag.outputs.successful == 'true'
+        working-directory: ./layers/si-bootstrap-sdk/support/operation-collection
+        run: npm ci
+
       - name: Publish to Aliyun regions
         if: steps.create_tag.outputs.successful == 'true'
         id: publish
