@@ -64,6 +64,7 @@ export const referredServiceRos = {
         ResultType: 'PASSTHROUGH',
         ServiceConfig: {
           FunctionComputeConfig: {
+            FcRegionId: 'cn-hangzhou',
             FcVersion: '3.0',
             FunctionName: {
               'Fn::GetAtt': ['hello_fn', 'FunctionName'],

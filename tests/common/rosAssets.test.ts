@@ -1,4 +1,10 @@
-import { cleanupAssets, constructAssets, getAssets, publishAssets } from '../../src/common';
+import {
+  cleanupAssets,
+  constructAssets,
+  getAssets,
+  publishAssets,
+  ProviderEnum,
+} from '../../src/common';
 import { Stats } from 'node:fs';
 import { assetsFixture } from '../fixtures/assetsFixture';
 
@@ -12,6 +18,7 @@ const mockedExistsSync = jest.fn();
 const mockedGenerateAsync = jest.fn();
 const mockedInfoLogger = jest.fn();
 const mockedDebugLogger = jest.fn();
+const mockedGetContext = jest.fn();
 
 jest.mock('../../src/common/rosClient', () => ({}));
 jest.mock('../../src/common/imsClient', () => ({}));
@@ -44,6 +51,7 @@ jest.mock('node:fs', () => {
     readdirSync: (...args: unknown[]) => mockedReaddirSync(...args),
     lstatSync: (...args: unknown[]) => mockedLstatSync(...args),
     existsSync: (...args: unknown[]) => mockedExistsSync(...args),
+    statSync: (...args: unknown[]) => mockedLstatSync(...args),
     writeFileSync: jest.fn().mockImplementation(() => {}),
     readFileSync: jest.fn().mockImplementation(() => {}),
   };
@@ -52,6 +60,7 @@ jest.mock('node:path', () => ({
   resolve: (...args: string[]) => args.join('/'),
   normalize: (p: string) => p,
   join: (...args: string[]) => args.join('/'),
+  isAbsolute: (p: string) => p.startsWith('/'),
 }));
 
 jest.mock('jszip', () =>
@@ -68,12 +77,29 @@ jest.mock('../../src/common/logger', () => ({
     debug: (...args: unknown[]) => mockedDebugLogger(...args),
   },
 }));
+
+jest.mock('../../src/common/context', () => ({
+  ...jest.requireActual('../../src/common/context'),
+  getContext: () => mockedGetContext(),
+}));
+
 describe('Unit test for rosAssets', () => {
   beforeEach(() => {
     mockedGetStore.mockReturnValue({
       region: 'mock-region',
       accessKeyId: 'mock-access-key-id',
       accessKeySecret: 'mock-access-key-secret',
+    });
+    mockedGetContext.mockReturnValue({
+      stage: 'default',
+      stackName: 'test-stack',
+      provider: ProviderEnum.ALIYUN,
+      region: 'cn-hangzhou',
+      accessKeyId: 'test-access-key-id',
+      accessKeySecret: 'test-access-key-secret',
+      iacLocation: 'tests/fixtures/serverless-insight.yml',
+      parameters: [],
+      stages: {},
     });
   });
   afterEach(() => {
@@ -118,7 +144,7 @@ describe('Unit test for rosAssets', () => {
 
       const bucketName = await publishAssets(await constructAssets(assetsFixture));
 
-      expect(bucketName).toBe('cdk-ajmywduza-assets-mock-region');
+      expect(bucketName).toBe('cdk-ajmywduza-assets-cn-hangzhou');
       expect(mockedBucketPut.mock.calls).toEqual([
         [
           '55d1d2dd5d6c1b083a04c15431f70da1f2840b9de06383411cbf7eda2a512efe.zip',
@@ -162,7 +188,7 @@ describe('Unit test for rosAssets', () => {
         ['c6a72ed7e7e83f01a000b75885758088fa050298a31a1e95d37ac88f08e42315.zip'],
       ]);
       expect(mockedDeleteBucket).toHaveBeenCalledTimes(1);
-      expect(mockedDeleteBucket).toHaveBeenCalledWith('cdk-ajmywduza-assets-mock-region');
+      expect(mockedDeleteBucket).toHaveBeenCalledWith('cdk-ajmywduza-assets-cn-hangzhou');
     });
 
     it('should skip the cleanupAssets when there is no assets', async () => {

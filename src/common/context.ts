@@ -1,12 +1,12 @@
-import { Context, ServerlessIac } from '../types';
-import path from 'node:path';
 import fs from 'node:fs';
-import { ProviderEnum } from './providerEnum';
-import { AsyncLocalStorage } from 'node:async_hooks';
-import { getIamInfo } from './imsClient';
+import path from 'node:path';
+import { Context, ServerlessIac } from '../types';
 import { getCredentials } from './credentials';
+import { getIamInfo } from './imsClient';
+import { ProviderEnum } from './providerEnum';
 
-const asyncLocalStorage = new AsyncLocalStorage<Context>();
+let context: Context | undefined;
+
 const DEFAULT_IAC_FILES = [
   'serverlessinsight.yml',
   'serverlessInsight.yml',
@@ -87,7 +87,7 @@ export const setContext = async (
     securityToken: config.securityToken,
   });
 
-  const context: Context = {
+  const newContext: Context = {
     stage: config.stage ?? 'default',
     stackName: config.stackName ?? '',
     provider: (config.provider ?? config.iacProvider?.name ?? ProviderEnum.ALIYUN) as ProviderEnum,
@@ -107,17 +107,19 @@ export const setContext = async (
   };
 
   if (reaValToken) {
-    const iamInfo = await getIamInfo(context);
-    context.accountId = iamInfo?.accountId;
+    const iamInfo = await getIamInfo(context as Context);
+    newContext.accountId = iamInfo?.accountId;
   }
-
-  asyncLocalStorage.enterWith(context);
+  context = newContext;
 };
 
 export const getContext = (): Context => {
-  const context = asyncLocalStorage.getStore();
   if (!context) {
     throw new Error('No context found');
   }
   return context;
+};
+
+export const clearContext = (): void => {
+  context = undefined;
 };

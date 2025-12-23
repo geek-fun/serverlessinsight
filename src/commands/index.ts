@@ -1,7 +1,7 @@
 #! /usr/bin/env node
 
 import { Command } from 'commander';
-import { getContext, getIamInfo, getVersion, logger, setContext } from '../common';
+import { clearContext, getContext, getIamInfo, getVersion, logger, setContext } from '../common';
 import { validate } from './validate';
 import { deploy } from './deploy';
 import { template } from './template';
@@ -45,6 +45,8 @@ const actionWrapper = <T extends unknown[]>(
   commandName: string,
   handler: (...args: T) => Promise<void>,
 ) => {
+  // Reset context before each command execution
+  clearContext();
   return async (...args: T) => {
     try {
       await handler(...args);
