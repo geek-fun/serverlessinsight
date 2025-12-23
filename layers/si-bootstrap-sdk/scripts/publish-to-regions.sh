@@ -8,6 +8,7 @@ cd "$(dirname "$0")/.." || exit
 REGIONS=("cn-beijing" "cn-hangzhou" "cn-chengdu" "ap-southeast-1")
 LAYER_NAME="si-bootstrap-sdk"
 ARTIFACT_PATH="./artifacts/${LAYER_NAME}.zip"
+API_DELAY=${API_DELAY:-2}  # Configurable delay between API calls (default 2 seconds)
 
 if [ ! -f "$ARTIFACT_PATH" ]; then
   echo "Error: Artifact not found at $ARTIFACT_PATH"
@@ -67,7 +68,7 @@ for region in "${REGIONS[@]}"; do
   for ((i=1; i<=versions_to_add; i++)); do
     echo "Publishing version $((current_version + i)) to $region (attempt $i/$versions_to_add)"
     publish_layer "$region"
-    sleep 2  # Small delay between API calls
+    sleep "$API_DELAY"  # Configurable delay between API calls
   done
 done
 
@@ -88,4 +89,8 @@ done
 echo "All regions published and aligned to version: $final_version"
 
 # Output for GitHub Actions
-echo "LAYER_VERSION=$final_version" >> "${GITHUB_OUTPUT:-/dev/stdout}"
+if [ -n "${GITHUB_OUTPUT:-}" ]; then
+  echo "LAYER_VERSION=$final_version" >> "$GITHUB_OUTPUT"
+else
+  echo "LAYER_VERSION=$final_version"
+fi

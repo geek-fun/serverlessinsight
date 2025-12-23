@@ -46,6 +46,7 @@ jobs:
           echo "Package size: $PKG_SIZE"
 
       - name: Publish to Aliyun regions
+        id: publish
         working-directory: ./layers/si-bootstrap-sdk
         env:
           ALIYUN_ACCESS_KEY_ID: ${{ secrets.ALIYUN_ACCESS_KEY_ID }}
@@ -55,51 +56,35 @@ jobs:
           chmod +x ./scripts/aliyuncli.sh
           ./scripts/publish-to-regions.sh
 
-      - name: Get layer version
-        id: layer_info
-        working-directory: ./layers/si-bootstrap-sdk
-        env:
-          ALIYUN_ACCESS_KEY_ID: ${{ secrets.ALIYUN_ACCESS_KEY_ID }}
-          ALIYUN_ACCESS_KEY_SECRET: ${{ secrets.ALIYUN_ACCESS_KEY_SECRET }}
-        run: |
-          chmod +x ./scripts/aliyuncli.sh
-          REGION="cn-hangzhou"
-          LAYER_PATH="/2023-03-30/layers/si-bootstrap-sdk/versions"
-          VERSION=$(ALIYUN_REGION="$REGION" ./scripts/aliyuncli.sh fc GET \
-            "$LAYER_PATH" --header "Content-Type=application/json" | \
-            jq -r '.versions[0].version')
-          echo "version=$VERSION" >> $GITHUB_OUTPUT
-          echo "Layer version: $VERSION"
-
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v1
         with:
-          tag_name: si-bootstrap-sdk-v${{ steps.layer_info.outputs.version }}
-          name: si-bootstrap-sdk Layer v${{ steps.layer_info.outputs.version }}
+          tag_name: si-bootstrap-sdk-v${{ steps.publish.outputs.LAYER_VERSION }}
+          name: si-bootstrap-sdk Layer v${{ steps.publish.outputs.LAYER_VERSION }}
           body: |
-            ## si-bootstrap-sdk Layer Release v${{ steps.layer_info.outputs.version }}
+            ## si-bootstrap-sdk Layer Release v${{ steps.publish.outputs.LAYER_VERSION }}
 
             ### Layer Information
             - **Layer Name**: si-bootstrap-sdk
-            - **Version**: ${{ steps.layer_info.outputs.version }}
+            - **Version**: ${{ steps.publish.outputs.LAYER_VERSION }}
             - **Compatible Runtimes**: nodejs20, nodejs18, nodejs16
             - **License**: Apache-2.0
 
             ### Available Regions
             This layer has been published to the following Aliyun regions
-            with version **${{ steps.layer_info.outputs.version }}**:
+            with version **${{ steps.publish.outputs.LAYER_VERSION }}**:
 
             - **cn-beijing** (Beijing)
-              - ARN: `acs:fc:cn-beijing:official:layers/si-bootstrap-sdk/versions/${{ steps.layer_info.outputs.version }}`
+              - ARN: `acs:fc:cn-beijing:official:layers/si-bootstrap-sdk/versions/${{ steps.publish.outputs.LAYER_VERSION }}`
 
             - **cn-hangzhou** (Hangzhou)
-              - ARN: `acs:fc:cn-hangzhou:official:layers/si-bootstrap-sdk/versions/${{ steps.layer_info.outputs.version }}`
+              - ARN: `acs:fc:cn-hangzhou:official:layers/si-bootstrap-sdk/versions/${{ steps.publish.outputs.LAYER_VERSION }}`
 
             - **cn-chengdu** (Chengdu)
-              - ARN: `acs:fc:cn-chengdu:official:layers/si-bootstrap-sdk/versions/${{ steps.layer_info.outputs.version }}`
+              - ARN: `acs:fc:cn-chengdu:official:layers/si-bootstrap-sdk/versions/${{ steps.publish.outputs.LAYER_VERSION }}`
 
             - **ap-southeast-1** (Singapore)
-              - ARN: `acs:fc:ap-southeast-1:official:layers/si-bootstrap-sdk/versions/${{ steps.layer_info.outputs.version }}`
+              - ARN: `acs:fc:ap-southeast-1:official:layers/si-bootstrap-sdk/versions/${{ steps.publish.outputs.LAYER_VERSION }}`
 
             ### Usage
             To use this layer in your Function Compute functions,
