@@ -10,6 +10,7 @@ on:
   push:
     paths:
       - 'layers/si-bootstrap-sdk/**'
+      - '!layers/si-bootstrap-sdk/README.md'
     branches:
       - master
 
