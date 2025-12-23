@@ -39,3 +39,24 @@ jobs:
           fail_ci_if_error: true
 
       - run: npm run build
+
+  si-bootstrap-sdk:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    defaults:
+      run:
+        working-directory: layers/si-bootstrap-sdk
+
+    steps:
+      - name: Github checkout
+        uses: actions/checkout@v4
+      - name: Use Node.js 24.x
+        uses: actions/setup-node@v3
+        with:
+          node-version: 24.x
+          cache: 'npm'
+          cache-dependency-path: layers/si-bootstrap-sdk/package-lock.json
+      - run: npm ci
+      - run: npm audit --audit-level=critical
+      - run: npm run build
