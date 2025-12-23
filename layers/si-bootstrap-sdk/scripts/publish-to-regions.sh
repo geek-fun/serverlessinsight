@@ -1,11 +1,12 @@
-#!/bin/bash -eux
+#!/bin/bash -eu
 set -o pipefail
 
 cd "$(dirname "$0")/.." || exit
 
 # This script publishes the layer to multiple Aliyun regions and aligns versions
 
-REGIONS=("cn-beijing" "cn-hangzhou" "cn-chengdu" "ap-southeast-1")
+# Read regions from environment variable or use defaults
+IFS=',' read -ra REGIONS <<< "${ALIYUN_REGIONS:-cn-beijing,cn-hangzhou,cn-chengdu,ap-southeast-1}"
 LAYER_NAME="si-bootstrap-sdk"
 ARTIFACT_PATH="./artifacts/${LAYER_NAME}.zip"
 API_DELAY=${API_DELAY:-2}  # Configurable delay between API calls (default 2 seconds)
