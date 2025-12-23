@@ -25,7 +25,8 @@ import {
   referredServiceRos,
 } from '../fixtures/deploy-fixtures';
 import { cloneDeep, set } from 'lodash';
-import path from 'node:path';
+import { Context } from '../../src/types';
+import { ProviderEnum } from '../../src/common';
 
 const mockedEnterWith = jest.fn();
 const mockedGetStore = jest.fn();
@@ -35,12 +36,18 @@ const mockedResolveCode = jest.fn();
 const mockedPublishAssets = jest.fn();
 const mockedCleanupAssets = jest.fn();
 const mockedGetIamInfo = jest.fn();
+const mockedGetContext = jest.fn();
 
 jest.mock('node:async_hooks', () => ({
   AsyncLocalStorage: jest.fn().mockImplementation(() => ({
     enterWith: (...args: unknown[]) => mockedEnterWith(...args),
     getStore: (...args: unknown[]) => mockedGetStore(...args),
   })),
+}));
+
+jest.mock('../../src/common/context', () => ({
+  ...jest.requireActual('../../src/common/context'),
+  getContext: () => mockedGetContext(),
 }));
 
 jest.mock('../../src/common', () => ({
@@ -50,34 +57,29 @@ jest.mock('../../src/common', () => ({
   cleanupAssets: (...args: unknown[]) => mockedCleanupAssets(...args),
   resolveCode: (path: string) => mockedResolveCode(path),
   getIamInfo: (...args: unknown[]) => mockedGetIamInfo(...args),
+  getContext: () => mockedGetContext(),
   logger: { info: jest.fn(), debug: jest.fn() },
 }));
 
-const updateContextForTest = async (stackName: string, stage = 'default', accountId?: string) => {
-  const { setContext, getContext } = jest.requireActual('../../src/common');
-  const iacLocation = path.resolve(__dirname, '../fixtures/serverless-insight.yml');
-  await setContext({
-    stage,
-    stackName,
-    region: 'cn-hangzhou',
-    accessKeyId: 'test-access-key-id',
-    accessKeySecret: 'test-access-key-secret',
-    location: iacLocation,
-  });
-
-  // Set accountId if provided
-  if (accountId) {
-    const context = getContext();
-    context.accountId = accountId;
-  }
-};
+const createMockContext = (
+  stackName: string,
+  stage = 'default',
+  additionalFields?: Partial<Context>,
+): Context => ({
+  stage,
+  stackName,
+  provider: ProviderEnum.ALIYUN,
+  region: 'cn-hangzhou',
+  accessKeyId: 'test-access-key-id',
+  accessKeySecret: 'test-access-key-secret',
+  iacLocation: 'tests/fixtures/serverless-insight.yml',
+  parameters: [],
+  stages: {},
+  ...additionalFields,
+});
 
 describe('Unit tests for stack deployment', () => {
-  beforeAll(async () => {
-    await updateContextForTest('test-stack');
-  });
-
-  beforeEach(async () => {
+  beforeEach(() => {
     mockedResolveCode.mockReturnValueOnce('resolved-code');
     mockedPublishAssets.mockResolvedValueOnce('published-assets-bucket');
     mockedGetIamInfo.mockResolvedValueOnce({ accountId: '123456789012', region: 'cn-hangzhou' });
@@ -93,7 +95,7 @@ describe('Unit tests for stack deployment', () => {
 
   it('should deploy generated stack when minimum fields provided', async () => {
     const stackName = 'my-demo-minimum-stack';
-    await updateContextForTest(stackName);
+    mockedGetContext.mockReturnValue(createMockContext(stackName));
     mockedGetStore.mockReturnValue({ stackName });
     mockedRosStackDeploy.mockResolvedValueOnce(stackName);
 
@@ -105,7 +107,7 @@ describe('Unit tests for stack deployment', () => {
 
   it('should deploy generated stack when only one FC specified', async () => {
     const stackName = 'my-demo-stack-fc-only';
-    await updateContextForTest(stackName);
+    mockedGetContext.mockReturnValue(createMockContext(stackName));
     mockedGetStore.mockReturnValue({ stackName });
 
     mockedRosStackDeploy.mockResolvedValueOnce(stackName);
@@ -118,7 +120,7 @@ describe('Unit tests for stack deployment', () => {
 
   it('should reference to default stage mappings when --stage not provided', async () => {
     const options = { stackName: 'my-demo-stack-fc-with-stage-1', stage: 'default' };
-    await updateContextForTest(options.stackName, options.stage);
+    mockedGetContext.mockReturnValue(createMockContext(options.stackName, options.stage));
     mockedGetStore.mockReturnValue(options);
     mockedRosStackDeploy.mockResolvedValueOnce(options.stackName);
 
@@ -130,7 +132,7 @@ describe('Unit tests for stack deployment', () => {
 
   it('should reference to specified stage mappings when --stage is provided', async () => {
     const options = { stackName: 'my-demo-stack-fc-with-stage-1', stage: 'dev' };
-    await updateContextForTest(options.stackName, options.stage);
+    mockedGetContext.mockReturnValue(createMockContext(options.stackName, options.stage));
     mockedGetStore.mockReturnValue(options);
     mockedRosStackDeploy.mockResolvedValueOnce(options.stackName);
 
@@ -149,7 +151,7 @@ describe('Unit tests for stack deployment', () => {
 
   it('should evaluate service name as pure string when it reference ${ctx.stage}', async () => {
     const options = { stackName: 'my-demo-stack-fc-with-stage-1', stage: 'dev' };
-    await updateContextForTest(options.stackName, options.stage);
+    mockedGetContext.mockReturnValue(createMockContext(options.stackName, options.stage));
     mockedGetStore.mockReturnValue(options);
     mockedRosStackDeploy.mockResolvedValueOnce(options.stackName);
 
@@ -161,7 +163,9 @@ describe('Unit tests for stack deployment', () => {
 
   it('should create bucket and store code artifact to bucket when code size > 15MB', async () => {
     const stackName = 'my-large-code-stack';
-    await updateContextForTest(stackName, 'default', '123456789012');
+    mockedGetContext.mockReturnValue(
+      createMockContext(stackName, 'default', { accountId: '123456789012' }),
+    );
 
     mockedGetStore.mockReturnValue({ stackName, accountId: '123456789012', region: 'cn-hangzhou' });
     mockedRosStackDeploy.mockResolvedValueOnce(stackName);
@@ -191,7 +195,7 @@ describe('Unit tests for stack deployment', () => {
   describe('unit test for deploy of events', () => {
     it('should deploy event with custom domain specified when domain is provided', async () => {
       const stackName = 'my-event-stack-with-custom-domain';
-      await updateContextForTest(stackName);
+      mockedGetContext.mockReturnValue(createMockContext(stackName));
       mockedGetStore.mockReturnValue({ stackName });
       mockedRosStackDeploy.mockResolvedValue(stackName);
 
@@ -205,7 +209,7 @@ describe('Unit tests for stack deployment', () => {
   describe('unit test for deploy of databases', () => {
     it('should deploy elasticsearch serverless when database minimum fields provided', async () => {
       const stackName = 'my-demo-es-serverless-stack';
-      await updateContextForTest(stackName);
+      mockedGetContext.mockReturnValue(createMockContext(stackName));
       mockedGetStore.mockReturnValue({ stackName });
       mockedRosStackDeploy.mockResolvedValue(stackName);
 
@@ -219,7 +223,7 @@ describe('Unit tests for stack deployment', () => {
   describe('unit test for deploy of buckets', () => {
     it('should deploy bucket when minimum fields provided', async () => {
       const stackName = 'my-demo-bucket-stack';
-      await updateContextForTest(stackName);
+      mockedGetContext.mockReturnValue(createMockContext(stackName));
       mockedGetStore.mockReturnValue({ stackName });
       mockedRosStackDeploy.mockResolvedValue(stackName);
 
@@ -231,7 +235,7 @@ describe('Unit tests for stack deployment', () => {
 
     it('should deploy bucket as a website when website field is provided', async () => {
       const stackName = 'my-website-bucket-stack';
-      await updateContextForTest(stackName);
+      mockedGetContext.mockReturnValue(createMockContext(stackName));
       mockedGetStore.mockReturnValue({ stackName });
       mockedRosStackDeploy.mockResolvedValue(stackName);
 
@@ -247,7 +251,7 @@ describe('Unit tests for stack deployment', () => {
   describe('unit test for serverless Gpu', () => {
     it('should deploy function with nas when nas field is provided', async () => {
       const stackName = 'my-demo-stack-with-nas';
-      await updateContextForTest(stackName);
+      mockedGetContext.mockReturnValue(createMockContext(stackName));
       mockedGetStore.mockReturnValue({ stackName });
       mockedRosStackDeploy.mockResolvedValue(stackName);
 
@@ -259,7 +263,7 @@ describe('Unit tests for stack deployment', () => {
 
     it('should deploy function with container when container field is provided', async () => {
       const stackName = 'my-demo-stack-with-container';
-      await updateContextForTest(stackName);
+      mockedGetContext.mockReturnValue(createMockContext(stackName));
       mockedGetStore.mockReturnValue({ stackName });
       mockedRosStackDeploy.mockResolvedValue(stackName);
 
@@ -271,7 +275,7 @@ describe('Unit tests for stack deployment', () => {
 
     it('should deploy function with gpu configured', async () => {
       const stackName = 'my-demo-stack-with-gpu';
-      await updateContextForTest(stackName);
+      mockedGetContext.mockReturnValue(createMockContext(stackName));
       mockedGetStore.mockReturnValue({ stackName });
       mockedRosStackDeploy.mockResolvedValue(stackName);
 

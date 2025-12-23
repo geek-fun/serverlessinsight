@@ -1,4 +1,4 @@
-import { rosStackDelete, rosStackDeploy, setContext } from '../../src/common';
+import { rosStackDelete, rosStackDeploy } from '../../src/common';
 import { context } from '../fixtures/contextFixture';
 import { lang } from '../../src/lang';
 
@@ -11,6 +11,7 @@ const mockedDeleteStack = jest.fn();
 const mockedLoggerInfo = jest.fn();
 const mockedLoggerWarn = jest.fn();
 const mockedLoggerError = jest.fn();
+const mockedGetContext = jest.fn();
 
 jest.mock('node:async_hooks', () => ({
   AsyncLocalStorage: jest.fn().mockImplementation(() => ({
@@ -39,20 +40,15 @@ jest.mock('../../src/common/logger', () => ({
   },
 }));
 
-describe('Unit test for rosClient', () => {
-  beforeAll(async () => {
-    await setContext({
-      stage: context.stage,
-      stackName: context.stackName,
-      region: context.region,
-      accessKeyId: context.accessKeyId,
-      accessKeySecret: context.accessKeySecret,
-      location: context.iacLocation,
-    });
-  });
+jest.mock('../../src/common/context', () => ({
+  ...jest.requireActual('../../src/common/context'),
+  getContext: () => mockedGetContext(),
+}));
 
+describe('Unit test for rosClient', () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    mockedGetContext.mockReturnValue(context);
   });
 
   describe('Unit tes for rosStackDeploy', () => {

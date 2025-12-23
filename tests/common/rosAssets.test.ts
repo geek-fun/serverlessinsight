@@ -3,11 +3,10 @@ import {
   constructAssets,
   getAssets,
   publishAssets,
-  setContext,
+  ProviderEnum,
 } from '../../src/common';
 import { Stats } from 'node:fs';
 import { assetsFixture } from '../fixtures/assetsFixture';
-import path from 'node:path';
 
 const mockedGetStore = jest.fn();
 const mockedBucketPut = jest.fn();
@@ -19,6 +18,7 @@ const mockedExistsSync = jest.fn();
 const mockedGenerateAsync = jest.fn();
 const mockedInfoLogger = jest.fn();
 const mockedDebugLogger = jest.fn();
+const mockedGetContext = jest.fn();
 
 jest.mock('../../src/common/rosClient', () => ({}));
 jest.mock('../../src/common/imsClient', () => ({}));
@@ -77,35 +77,29 @@ jest.mock('../../src/common/logger', () => ({
     debug: (...args: unknown[]) => mockedDebugLogger(...args),
   },
 }));
+
+jest.mock('../../src/common/context', () => ({
+  ...jest.requireActual('../../src/common/context'),
+  getContext: () => mockedGetContext(),
+}));
+
 describe('Unit test for rosAssets', () => {
-  beforeAll(async () => {
-    // Mock existsSync to return true for the specific iac location file
-    const iacLocation = path.resolve(__dirname, '../fixtures/serverless-insight.yml');
-    mockedExistsSync.mockImplementation((filePath: string) => {
-      return filePath === iacLocation;
-    });
-    // Also need to mock lstatSync and statSync for the file
-    const mockFileStats = {
-      isFile: () => true,
-      isDirectory: () => false,
-    } as Stats;
-    mockedLstatSync.mockImplementation(() => mockFileStats);
-
-    await setContext({
-      stage: 'default',
-      stackName: 'test-stack',
-      region: 'cn-hangzhou',
-      accessKeyId: 'test-access-key-id',
-      accessKeySecret: 'test-access-key-secret',
-      location: iacLocation,
-    });
-  });
-
   beforeEach(() => {
     mockedGetStore.mockReturnValue({
       region: 'mock-region',
       accessKeyId: 'mock-access-key-id',
       accessKeySecret: 'mock-access-key-secret',
+    });
+    mockedGetContext.mockReturnValue({
+      stage: 'default',
+      stackName: 'test-stack',
+      provider: ProviderEnum.ALIYUN,
+      region: 'cn-hangzhou',
+      accessKeyId: 'test-access-key-id',
+      accessKeySecret: 'test-access-key-secret',
+      iacLocation: 'tests/fixtures/serverless-insight.yml',
+      parameters: [],
+      stages: {},
     });
   });
   afterEach(() => {
