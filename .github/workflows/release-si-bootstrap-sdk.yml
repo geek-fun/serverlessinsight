@@ -35,9 +35,7 @@ jobs:
       - name: Package layer
         if: steps.create_tag.outputs.successful == 'true'
         working-directory: ./layers/si-bootstrap-sdk
-        run: |
-          chmod +x ./scripts/package.sh
-          ./scripts/package.sh
+        run: ./scripts/package.sh
 
       - name: Verify package created
         if: steps.create_tag.outputs.successful == 'true'
@@ -57,10 +55,7 @@ jobs:
           ALIYUN_ACCESS_KEY_ID: ${{ secrets.ALIYUN_ACCESS_KEY_ID }}
           ALIYUN_ACCESS_KEY_SECRET: ${{ secrets.ALIYUN_ACCESS_KEY_SECRET }}
           ALIYUN_REGIONS: "cn-beijing,cn-hangzhou,cn-chengdu,ap-southeast-1"
-        run: |
-          chmod +x ./scripts/publish-to-regions.sh
-          chmod +x ./scripts/aliyuncli.sh
-          ./scripts/publish-to-regions.sh
+        run: ./scripts/publish-to-regions.sh
 
       - name: Create GitHub Release
         if: steps.create_tag.outputs.successful == 'true'
@@ -83,16 +78,16 @@ jobs:
             with layer version **${{ steps.publish.outputs.LAYER_VERSION }}**:
 
             - **cn-beijing** (Beijing)
-              - ARN: `acs:fc:cn-beijing:official:layers/si-bootstrap-sdk/versions/${{ steps.publish.outputs.LAYER_VERSION }}`
+              - ARN: `acs:fc:cn-beijing:1990893136649406:layers/si-bootstrap-sdk/versions/${{ steps.publish.outputs.LAYER_VERSION }}`
 
             - **cn-hangzhou** (Hangzhou)
-              - ARN: `acs:fc:cn-hangzhou:official:layers/si-bootstrap-sdk/versions/${{ steps.publish.outputs.LAYER_VERSION }}`
+              - ARN: `acs:fc:cn-hangzhou:1990893136649406:layers/si-bootstrap-sdk/versions/${{ steps.publish.outputs.LAYER_VERSION }}`
 
             - **cn-chengdu** (Chengdu)
-              - ARN: `acs:fc:cn-chengdu:official:layers/si-bootstrap-sdk/versions/${{ steps.publish.outputs.LAYER_VERSION }}`
+              - ARN: `acs:fc:cn-chengdu:1990893136649406:layers/si-bootstrap-sdk/versions/${{ steps.publish.outputs.LAYER_VERSION }}`
 
             - **ap-southeast-1** (Singapore)
-              - ARN: `acs:fc:ap-southeast-1:official:layers/si-bootstrap-sdk/versions/${{ steps.publish.outputs.LAYER_VERSION }}`
+              - ARN: `acs:fc:ap-southeast-1:1990893136649406:layers/si-bootstrap-sdk/versions/${{ steps.publish.outputs.LAYER_VERSION }}`
 
             ### Usage
             To use this layer in your Function Compute functions,
