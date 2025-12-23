@@ -39,12 +39,14 @@ jobs:
 
       - name: Verify package created
         if: steps.create_tag.outputs.successful == 'true'
+        working-directory: ./layers/si-bootstrap-sdk
         run: |
-          if [ ! -f "./layers/si-bootstrap-sdk/artifacts/si-bootstrap-sdk.zip" ]; then
+          if [ ! -f "./artifacts/si-bootstrap-sdk.zip" ]; then
             echo "Error: Layer package not found"
+            echo "Contents of ./artifacts:" && ls -la ./artifacts || true
             exit 1
           fi
-          PKG_SIZE=$(du -h ./layers/si-bootstrap-sdk/artifacts/si-bootstrap-sdk.zip | cut -f1)
+          PKG_SIZE=$(du -h ./artifacts/si-bootstrap-sdk.zip | cut -f1)
           echo "Package size: $PKG_SIZE"
 
       - name: Publish to Aliyun regions
