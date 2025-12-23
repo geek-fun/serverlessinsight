@@ -107,7 +107,7 @@ export const setContext = async (
   };
 
   if (reaValToken) {
-    const iamInfo = await getIamInfo(context as Context);
+    const iamInfo = await getIamInfo(newContext);
     newContext.accountId = iamInfo?.accountId;
   }
   context = newContext;

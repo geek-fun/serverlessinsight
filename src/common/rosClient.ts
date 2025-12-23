@@ -14,6 +14,7 @@ import { Context } from '../types';
 import { logger } from './logger';
 import { lang } from '../lang';
 import { getContext } from './context';
+import { ROS_STACK_OPERATION_TIMEOUT } from './constants';
 
 const client = new Client(
   new Config({
@@ -21,6 +22,8 @@ const client = new Client(
     accessKeySecret: process.env.ALIYUN_ACCESS_KEY_SECRET,
     regionId: process.env.ALIYUN_REGION,
     disableRollback: false,
+    readTimeout: ROS_STACK_OPERATION_TIMEOUT,
+    connectTimeout: ROS_STACK_OPERATION_TIMEOUT,
   }),
 );
 
