@@ -31,6 +31,39 @@ describe('unit test for validate', () => {
     expect(() => validateYaml(invalidYaml)).toThrow('Invalid yaml');
   });
 
+  it('should throw error when provider region is missing', () => {
+    const invalidYaml = {
+      ...jsonIac,
+      provider: {
+        name: 'aliyun',
+      },
+    } as unknown as ServerlessIacRaw;
+    expect(() => validateYaml(invalidYaml)).toThrow('Invalid yaml');
+  });
+
+  it('should throw error when aliyun region is not a valid region id', () => {
+    const invalidYaml = {
+      ...jsonIac,
+      provider: {
+        name: 'aliyun',
+        region: 'singapore',
+      },
+    } as unknown as ServerlessIacRaw;
+    expect(() => validateYaml(invalidYaml)).toThrow('Invalid yaml');
+  });
+
+  it('should pass validation for huawei with a valid-looking region id', () => {
+    const huaweiYaml = {
+      version: '0.0.1',
+      provider: {
+        name: 'huawei',
+        region: 'cn-north-4',
+      },
+      service: 'demo',
+    } as unknown as ServerlessIacRaw;
+    expect(validateYaml(huaweiYaml)).toBe(true);
+  });
+
   it('should throw error when given service in yaml config is invalid', () => {
     const invalidYaml = {
       ...jsonIac,
