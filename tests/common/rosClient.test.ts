@@ -11,6 +11,7 @@ const mockedDeleteStack = jest.fn();
 const mockedLoggerInfo = jest.fn();
 const mockedLoggerWarn = jest.fn();
 const mockedLoggerError = jest.fn();
+const mockedGetContext = jest.fn();
 
 jest.mock('node:async_hooks', () => ({
   AsyncLocalStorage: jest.fn().mockImplementation(() => ({
@@ -39,9 +40,15 @@ jest.mock('../../src/common/logger', () => ({
   },
 }));
 
+jest.mock('../../src/common/context', () => ({
+  ...jest.requireActual('../../src/common/context'),
+  getContext: () => mockedGetContext(),
+}));
+
 describe('Unit test for rosClient', () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    mockedGetContext.mockReturnValue(context);
   });
 
   describe('Unit tes for rosStackDeploy', () => {
