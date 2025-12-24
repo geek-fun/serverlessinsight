@@ -64,15 +64,6 @@ jobs:
           ALIYUN_COMPATIBLE_RUNTIMES: "nodejs20,nodejs18,nodejs16"
         run: ./scripts/publish-to-regions.sh
 
-
-      # - name: Create release tag
-      #   if: steps.version_check.outputs.should_release == 'true'
-      #   uses: jaywcjlove/create-tag-action@main
-      #   with:
-      #     package-path: ./layers/si-bootstrap-sdk/package.json
-      #     version: ${{ steps.version_check.outputs.tag_name }}
-      #     token: ${{ secrets.GITHUB_TOKEN }}
-
       - name: Create GitHub Release
         if: steps.version_check.outputs.should_release == 'true'
         uses: softprops/action-gh-release@v1
