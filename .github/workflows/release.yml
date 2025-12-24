@@ -2,10 +2,10 @@ name: release
 
 on:
   push:
-    branches: [ master ]
+    branches: [master]
 
 permissions:
-  id-token: write  # Required for OIDC
+  id-token: write # Required for OIDC
   contents: write
 
 jobs:
@@ -13,8 +13,8 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ ubuntu-latest ]
-        node-version: [ 24.x ]
+        os: [ubuntu-latest]
+        node-version: [24.x]
 
     runs-on: ${{ matrix.os }}
     timeout-minutes: 20
@@ -27,7 +27,7 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: ${{ matrix.node-version }}
-          registry-url: 'https://registry.npmjs.org'
+          registry-url: "https://registry.npmjs.org"
       - name: Install dependencies
         run: npm ci
       - run: npm run lint:check
@@ -47,16 +47,21 @@ jobs:
         id: changelog
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
-      - name: Build Release
-        uses: jaywcjlove/create-tag-action@main
-        id: tag_release
+      - name: Check for version change
+        id: version_check
+        run: ./scripts/check-version.sh . v
+
+      - name: Publish package on NPM 📦
+        if: steps.version_check.outputs.should_release == 'true'
+        run: npm publish
+
+      - name: Create GitHub Release
+        if: steps.version_check.outputs.should_release == 'true'
+        uses: softprops/action-gh-release@v1
         with:
-          release: true
-          token: ${{ secrets.GITHUB_TOKEN }}
+          tag_name: ${{ steps.version_check.outputs.tag_name }}
+          name: ServerlessInsight ${{ steps.version_check.outputs.version }}
           body: |
             ${{ steps.changelog.outputs.compareurl }}
 
             ${{ steps.changelog.outputs.changelog }}
-      - name: Publish package on NPM 📦
-        if: steps.tag_release.outputs.successful == 'true'
-        run: npm publish

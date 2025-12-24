@@ -25,8 +25,7 @@ jobs:
 
       - name: Get package version and check for changes
         id: version_check
-        working-directory: ./layers/si-bootstrap-sdk
-        run: ./scripts/check-version.sh
+        run: ./scripts/check-version.sh ./layers/si-bootstrap-sdk si-bootstrap-sdk-v
       - name: Set up Docker Buildx
         if: steps.version_check.outputs.should_release == 'true'
         uses: docker/setup-buildx-action@v3

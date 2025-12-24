@@ -1,11 +1,20 @@
 #!/bin/bash -eu
 set -o pipefail
 
-cd "$(dirname "$0")/.." || exit
+# Usage: check-version.sh [package-path] [tag-prefix]
+# Example: check-version.sh ./layers/si-bootstrap-sdk si-bootstrap-sdk-v
+# Example: check-version.sh . v
+
+PACKAGE_PATH="${1:-./layers/si-bootstrap-sdk}"
+TAG_PREFIX="${2:-si-bootstrap-sdk-v}"
+
+# Navigate to repository root
+REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+cd "$REPO_ROOT" || exit
 
 # Read package version
-PACKAGE_VERSION=$(node -p "require('./package.json').version")
-TAG_NAME="si-bootstrap-sdk-v${PACKAGE_VERSION}"
+PACKAGE_VERSION=$(node -p "require('${PACKAGE_PATH}/package.json').version")
+TAG_NAME="${TAG_PREFIX}${PACKAGE_VERSION}"
 
 echo "version=${PACKAGE_VERSION}"
 echo "tag_name=${TAG_NAME}"
