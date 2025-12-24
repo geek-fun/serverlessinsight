@@ -23,6 +23,8 @@ jobs:
       - name: Github checkout
         uses: actions/checkout@v4
         if: matrix.os == 'ubuntu-latest'
+        with:
+          fetch-depth: 0  # Fetch all history including tags for version checking
       - name: Use Node.js ${{ matrix.node-version }}
         uses: actions/setup-node@v4
         with:
