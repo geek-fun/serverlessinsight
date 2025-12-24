@@ -20,25 +20,24 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
-
-      - name: Check for version change
-        uses: jaywcjlove/create-tag-action@main
-        id: create_tag
         with:
-          package-path: ./layers/si-bootstrap-sdk/package.json
-          token: ${{ secrets.GITHUB_TOKEN }}
+          fetch-depth: 0  # Fetch all history to check tags
 
+      - name: Get package version and check for changes
+        id: version_check
+        working-directory: ./layers/si-bootstrap-sdk
+        run: ./scripts/check-version.sh
       - name: Set up Docker Buildx
-        if: steps.create_tag.outputs.successful == 'true'
+        if: steps.version_check.outputs.should_release == 'true'
         uses: docker/setup-buildx-action@v3
 
       - name: Package layer
-        if: steps.create_tag.outputs.successful == 'true'
+        if: steps.version_check.outputs.should_release == 'true'
         working-directory: ./layers/si-bootstrap-sdk
         run: ./scripts/package.sh
 
       - name: Verify package created
-        if: steps.create_tag.outputs.successful == 'true'
+        if: steps.version_check.outputs.should_release == 'true'
         working-directory: ./layers/si-bootstrap-sdk
         run: |
           if [ ! -f "./artifacts/si-bootstrap-sdk.zip" ]; then
@@ -50,12 +49,12 @@ jobs:
           echo "Package size: $PKG_SIZE"
 
       - name: Install publish script dependencies
-        if: steps.create_tag.outputs.successful == 'true'
+        if: steps.version_check.outputs.should_release == 'true'
         working-directory: ./layers/si-bootstrap-sdk/support/operation-collection
         run: npm ci
 
       - name: Publish to Aliyun regions
-        if: steps.create_tag.outputs.successful == 'true'
+        if: steps.version_check.outputs.should_release == 'true'
         id: publish
         working-directory: ./layers/si-bootstrap-sdk
         env:
@@ -65,18 +64,27 @@ jobs:
           ALIYUN_COMPATIBLE_RUNTIMES: "nodejs20,nodejs18,nodejs16"
         run: ./scripts/publish-to-regions.sh
 
+
+      # - name: Create release tag
+      #   if: steps.version_check.outputs.should_release == 'true'
+      #   uses: jaywcjlove/create-tag-action@main
+      #   with:
+      #     package-path: ./layers/si-bootstrap-sdk/package.json
+      #     version: ${{ steps.version_check.outputs.tag_name }}
+      #     token: ${{ secrets.GITHUB_TOKEN }}
+
       - name: Create GitHub Release
-        if: steps.create_tag.outputs.successful == 'true'
+        if: steps.version_check.outputs.should_release == 'true'
         uses: softprops/action-gh-release@v1
         with:
-          tag_name: ${{ steps.create_tag.outputs.version }}
-          name: si-bootstrap-sdk Layer ${{ steps.create_tag.outputs.version }}
+          tag_name: ${{ steps.version_check.outputs.tag_name }}
+          name: si-bootstrap-sdk Layer ${{ steps.version_check.outputs.version }}
           body: |
-            ## si-bootstrap-sdk Layer Release ${{ steps.create_tag.outputs.version }}
+            ## si-bootstrap-sdk Layer Release ${{ steps.version_check.outputs.version }}
 
             ### Layer Information
             - **Layer Name**: si-bootstrap-sdk
-            - **Package Version**: ${{ steps.create_tag.outputs.version }}
+            - **Package Version**: ${{ steps.version_check.outputs.version }}
             - **Layer Version**: ${{ steps.publish.outputs.LAYER_VERSION }}
             - **Compatible Runtimes**: nodejs20, nodejs18, nodejs16
             - **License**: Apache-2.0
