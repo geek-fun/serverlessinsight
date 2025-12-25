@@ -25,7 +25,7 @@ describe('unit test for parse', () => {
             key: 'insight_es_db',
             type: 'ELASTICSEARCH_SERVERLESS',
             name: 'insight-poc-es',
-            version: 'ES_SEARCH_7.10',
+            version: 'ES_SEARCH_8.17',
             security: {
               basicAuth: {
                 username: 'test-username',
