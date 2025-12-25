@@ -13,7 +13,7 @@ export const esServerlessMinimumIac = {
       key: 'insight_es_db_test',
       name: 'insight-poc-es-test',
       type: DatabaseEnum.ELASTICSEARCH_SERVERLESS,
-      version: DatabaseVersionEnum['ES_SEARCH_7.10'],
+      version: DatabaseVersionEnum['ES_SEARCH_8.17'],
       security: {
         basicAuth: {
           username: 'test-username',
@@ -34,7 +34,7 @@ export const esServerlessMinimumRos = {
     insight_es_db_test: {
       Properties: {
         AppName: 'insight-poc-es-test',
-        AppVersion: '7.10',
+        AppVersion: '8.17',
         Authentication: {
           BasicAuth: [
             {

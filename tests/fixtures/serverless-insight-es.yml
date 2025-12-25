@@ -14,7 +14,7 @@ databases:
   insight_es_db:
     name: insight-poc-es
     type: ELASTICSEARCH_SERVERLESS
-    version: ES_SEARCH_7.10
+    version: ES_SEARCH_8.17
     cu:
       min: 1
       max: 6
