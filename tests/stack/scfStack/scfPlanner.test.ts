@@ -1,8 +1,9 @@
 import { ScfPlanner } from '../../../src/stack/scfStack/scfPlanner';
 import { StateManager } from '../../../src/common/stateManager';
-import { Context, FunctionDomain, ProviderEnum } from '../../../src/types';
+import { Context, FunctionDomain } from '../../../src/types';
 import { ScfProvider } from '../../../src/stack/scfStack/scfProvider';
 import fs from 'node:fs';
+import { ProviderEnum } from '../../../src/common';
 
 // Mock the ScfProvider
 jest.mock('../../../src/stack/scfStack/scfProvider');
