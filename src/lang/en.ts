@@ -14,7 +14,7 @@ export const en = {
   CLEANING_UP_TEMPORARY_ASSETS: 'Cleaning up temporary Assets...',
   ASSETS_CLEANED_UP: 'Assets cleaned up!♻️',
   FAILED_TO_CLEANUP_ASSETS:
-    'Failed to cleanup assets, it wont affect the deployment result, but to avoid potential cost, you can delete the temporary bucket : {{bucketName}}, error details:{{error}}',
+    "Failed to cleanup assets, it won't affect the deployment result, but to avoid potential cost, you can delete the temporary bucket : {{bucketName}}, error details:{{error}}",
 
   // Stack operations
   CREATING_STACK_ID: 'Creating, Stack ID: {{stackId}}',

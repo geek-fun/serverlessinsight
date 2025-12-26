@@ -63,7 +63,7 @@ export const zhCN = {
   INVOKING_FC_FUNCTION_WITH_ALIYUN_EVENT: '使用阿里云事件格式调用 FC 函数',
 
   // Event trigger
-  EVENT_TRIGGER: '事件触发器 {{triggers}}, 请求方法: {{method}}, 请求 url{{url}}',
+  EVENT_TRIGGER: '事件触发器 {{triggers}}, 请求方法: {{method}}, 请求 url: {{url}}',
 
   // Bucket operations
   BUCKET_REQUEST_RECEIVED: '本地服务器收到存储桶请求 -> {{method}} {{identifier}} {{url}}',

@@ -56,7 +56,7 @@ const updateStack = async (stackId: string, templateBody: unknown, context: Cont
     (parameter) =>
       new UpdateStackRequestParameters({
         parameterKey: Util.assertAsString(parameter.key),
-        parameterValue: Util.assertAsString(parameter.key),
+        parameterValue: Util.assertAsString(parameter.value),
       }),
   );
 
