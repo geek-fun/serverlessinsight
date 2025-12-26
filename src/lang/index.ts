@@ -38,7 +38,10 @@ const defaultLocale = detectSystemLanguage();
 const lang = new I18n({
   locales: ['en', 'zh-CN'],
   defaultLocale,
-  register: [en, zhCN],
+  staticCatalog: {
+    en,
+    'zh-CN': zhCN,
+  },
 });
 
 export { lang };
