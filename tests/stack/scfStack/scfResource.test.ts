@@ -1,0 +1,254 @@
+import {
+  createResource,
+  readResource,
+  updateResource,
+  deleteResource,
+} from '../../../src/stack/scfStack/scfResource';
+import * as scfProvider from '../../../src/stack/scfStack/scfProvider';
+import * as scfTypes from '../../../src/stack/scfStack/scfTypes';
+import * as stateManager from '../../../src/common/stateManager';
+import { ProviderEnum } from '../../../src/common';
+import { Context, StateFile } from '../../../src/types';
+
+// Mock dependencies
+jest.mock('../../../src/stack/scfStack/scfProvider');
+jest.mock('../../../src/stack/scfStack/scfTypes');
+jest.mock('../../../src/common/stateManager');
+
+describe('ScfResource', () => {
+  const mockContext: Context = {
+    stage: 'default',
+    stackName: 'test-stack',
+    provider: ProviderEnum.TENCENT,
+    region: 'ap-guangzhou',
+    accessKeyId: 'test-key',
+    accessKeySecret: 'test-secret',
+    iacLocation: 'test.yml',
+    parameters: [],
+    stages: {},
+  };
+
+  const initialState: StateFile = {
+    version: '0.1',
+    provider: 'tencent',
+    resources: {},
+  };
+
+  const testFunction = {
+    key: 'test_fn',
+    name: 'test-function',
+    code: {
+      runtime: 'nodejs18',
+      handler: 'index.handler',
+      path: 'test.zip',
+    },
+    memory: 512,
+    timeout: 10,
+    environment: {
+      NODE_ENV: 'production',
+    },
+    storage: {},
+  };
+
+  const mockConfig = {
+    FunctionName: 'test-function',
+    Runtime: 'nodejs18',
+    Handler: 'index.handler',
+    MemorySize: 512,
+    Timeout: 10,
+    Environment: {
+      Variables: [{ Key: 'NODE_ENV', Value: 'production' }],
+    },
+  };
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    (scfTypes.functionToScfConfig as jest.Mock).mockReturnValue(mockConfig);
+    (scfTypes.computeConfigHash as jest.Mock).mockReturnValue('abc123');
+  });
+
+  describe('createResource', () => {
+    it('should create a resource and update state', async () => {
+      const newState = {
+        ...initialState,
+        resources: {
+          'functions.test_fn': {
+            type: 'SCF',
+            physicalId: 'test-function',
+            region: 'ap-guangzhou',
+            configHash: 'abc123',
+            lastUpdated: expect.any(String),
+          },
+        },
+      };
+
+      (scfProvider.createScfFunction as jest.Mock).mockResolvedValue(undefined);
+      (stateManager.setResource as jest.Mock).mockReturnValue(newState);
+
+      const result = await createResource(mockContext, testFunction, initialState);
+
+      expect(scfTypes.functionToScfConfig).toHaveBeenCalledWith(testFunction);
+      expect(scfProvider.createScfFunction).toHaveBeenCalledWith(
+        mockContext,
+        mockConfig,
+        'test.zip',
+      );
+      expect(scfTypes.computeConfigHash).toHaveBeenCalledWith(mockConfig);
+      expect(stateManager.setResource).toHaveBeenCalledWith(
+        initialState,
+        'functions.test_fn',
+        expect.objectContaining({
+          type: 'SCF',
+          physicalId: 'test-function',
+          region: 'ap-guangzhou',
+          configHash: 'abc123',
+        }),
+      );
+      expect(result).toEqual(newState);
+    });
+
+    it('should propagate errors from createScfFunction', async () => {
+      const error = new Error('Create failed');
+      (scfProvider.createScfFunction as jest.Mock).mockRejectedValue(error);
+
+      await expect(createResource(mockContext, testFunction, initialState)).rejects.toThrow(
+        'Create failed',
+      );
+    });
+  });
+
+  describe('readResource', () => {
+    it('should read resource from provider', async () => {
+      const mockFunctionInfo = {
+        FunctionName: 'test-function',
+        Runtime: 'nodejs18',
+        Handler: 'index.handler',
+        MemorySize: 512,
+        Timeout: 10,
+      };
+
+      (scfProvider.getScfFunction as jest.Mock).mockResolvedValue(mockFunctionInfo);
+
+      const result = await readResource(mockContext, 'test-function');
+
+      expect(scfProvider.getScfFunction).toHaveBeenCalledWith(mockContext, 'test-function');
+      expect(result).toEqual(mockFunctionInfo);
+    });
+
+    it('should return null if function not found', async () => {
+      (scfProvider.getScfFunction as jest.Mock).mockResolvedValue(null);
+
+      const result = await readResource(mockContext, 'nonexistent');
+
+      expect(result).toBeNull();
+    });
+  });
+
+  describe('updateResource', () => {
+    it('should update resource configuration and code', async () => {
+      const newState = {
+        ...initialState,
+        resources: {
+          'functions.test_fn': {
+            type: 'SCF',
+            physicalId: 'test-function',
+            region: 'ap-guangzhou',
+            configHash: 'abc123',
+            lastUpdated: expect.any(String),
+          },
+        },
+      };
+
+      (scfProvider.updateScfFunctionConfiguration as jest.Mock).mockResolvedValue(undefined);
+      (scfProvider.updateScfFunctionCode as jest.Mock).mockResolvedValue(undefined);
+      (stateManager.setResource as jest.Mock).mockReturnValue(newState);
+
+      const result = await updateResource(mockContext, testFunction, initialState);
+
+      expect(scfTypes.functionToScfConfig).toHaveBeenCalledWith(testFunction);
+      expect(scfProvider.updateScfFunctionConfiguration).toHaveBeenCalledWith(
+        mockContext,
+        mockConfig,
+      );
+      expect(scfProvider.updateScfFunctionCode).toHaveBeenCalledWith(
+        mockContext,
+        'test-function',
+        'test.zip',
+      );
+      expect(scfTypes.computeConfigHash).toHaveBeenCalledWith(mockConfig);
+      expect(stateManager.setResource).toHaveBeenCalledWith(
+        initialState,
+        'functions.test_fn',
+        expect.objectContaining({
+          type: 'SCF',
+          physicalId: 'test-function',
+          region: 'ap-guangzhou',
+          configHash: 'abc123',
+        }),
+      );
+      expect(result).toEqual(newState);
+    });
+
+    it('should propagate errors from updateScfFunctionConfiguration', async () => {
+      const error = new Error('Update config failed');
+      (scfProvider.updateScfFunctionConfiguration as jest.Mock).mockRejectedValue(error);
+
+      await expect(updateResource(mockContext, testFunction, initialState)).rejects.toThrow(
+        'Update config failed',
+      );
+    });
+
+    it('should propagate errors from updateScfFunctionCode', async () => {
+      const error = new Error('Update code failed');
+      (scfProvider.updateScfFunctionConfiguration as jest.Mock).mockResolvedValue(undefined);
+      (scfProvider.updateScfFunctionCode as jest.Mock).mockRejectedValue(error);
+
+      await expect(updateResource(mockContext, testFunction, initialState)).rejects.toThrow(
+        'Update code failed',
+      );
+    });
+  });
+
+  describe('deleteResource', () => {
+    it('should delete resource and remove from state', async () => {
+      const stateWithFunction: StateFile = {
+        ...initialState,
+        resources: {
+          'functions.test_fn': {
+            type: 'SCF',
+            physicalId: 'test-function',
+            region: 'ap-guangzhou',
+            configHash: 'abc123',
+            lastUpdated: '2025-01-01T00:00:00Z',
+          },
+        },
+      };
+
+      (scfProvider.deleteScfFunction as jest.Mock).mockResolvedValue(undefined);
+      (stateManager.removeResource as jest.Mock).mockReturnValue(initialState);
+
+      const result = await deleteResource(
+        mockContext,
+        'test-function',
+        'functions.test_fn',
+        stateWithFunction,
+      );
+
+      expect(scfProvider.deleteScfFunction).toHaveBeenCalledWith(mockContext, 'test-function');
+      expect(stateManager.removeResource).toHaveBeenCalledWith(
+        stateWithFunction,
+        'functions.test_fn',
+      );
+      expect(result).toEqual(initialState);
+    });
+
+    it('should propagate errors from deleteScfFunction', async () => {
+      const error = new Error('Delete failed');
+      (scfProvider.deleteScfFunction as jest.Mock).mockRejectedValue(error);
+
+      await expect(
+        deleteResource(mockContext, 'test-function', 'functions.test_fn', initialState),
+      ).rejects.toThrow('Delete failed');
+    });
+  });
+});
