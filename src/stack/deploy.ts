@@ -47,7 +47,7 @@ export const generateRfsStackTemplate = (stackName: string, iac: ServerlessIac) 
   return { template: hcl };
 };
 
-export const deployTencent = async (iac: ServerlessIac): Promise<void> => {
+const deployTencent = async (iac: ServerlessIac): Promise<void> => {
   const context = getContext();
   logger.info(lang.__('DEPLOYING_STACK_PUBLISHING_ASSETS'));
 
@@ -74,7 +74,7 @@ export const deployTencent = async (iac: ServerlessIac): Promise<void> => {
   logger.info(lang.__('STACK_DEPLOYED'));
 };
 
-export const deployAliyun = async (stackName: string, iac: ServerlessIac): Promise<void> => {
+const deployAliyun = async (stackName: string, iac: ServerlessIac): Promise<void> => {
   const { template, assets } = generateRosStackTemplate(stackName, iac);
   await prepareBootstrapStack();
   logger.info(lang.__('DEPLOYING_STACK_PUBLISHING_ASSETS'));
@@ -102,7 +102,7 @@ export const deployAliyun = async (stackName: string, iac: ServerlessIac): Promi
   }
 };
 
-export const deployHuawei = async (stackName: string, iac: ServerlessIac): Promise<void> => {
+const deployHuawei = async (stackName: string, iac: ServerlessIac): Promise<void> => {
   // For now, Huawei uses the same approach as Aliyun but with different stack
   const { template } = generateRfsStackTemplate(stackName, iac);
   logger.info(lang.__('DEPLOYING_STACK_PUBLISHING_ASSETS'));

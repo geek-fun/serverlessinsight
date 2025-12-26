@@ -1,6 +1,7 @@
 import { generatePlan } from '../../../src/stack/scfStack/scfPlanner';
 import { loadState, setResource } from '../../../src/common/stateManager';
-import { Context, FunctionDomain, ProviderEnum } from '../../../src/types';
+import { Context, FunctionDomain } from '../../../src/types';
+import { ProviderEnum } from '../../../src/common';
 import * as scfProvider from '../../../src/stack/scfStack/scfProvider';
 import fs from 'node:fs';
 
@@ -26,7 +27,7 @@ describe('SCF Planner', () => {
     key: 'test_fn',
     name: 'test-function',
     code: {
-      runtime: 'Nodejs18.15',
+      runtime: 'nodejs18',
       handler: 'index.handler',
       path: 'test.zip',
     },
@@ -87,7 +88,7 @@ describe('SCF Planner', () => {
       // Mock getScfFunction to return matching function
       jest.spyOn(scfProvider, 'getScfFunction').mockResolvedValue({
         FunctionName: 'test-function',
-        Runtime: 'Nodejs18.15',
+        Runtime: 'nodejs18',
         Handler: 'index.handler',
         MemorySize: 512,
         Timeout: 10,

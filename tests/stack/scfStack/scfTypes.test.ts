@@ -8,7 +8,7 @@ describe('SCF Types', () => {
         key: 'test_fn',
         name: 'test-function',
         code: {
-          runtime: 'Nodejs18.15',
+          runtime: 'nodejs18',
           handler: 'index.handler',
           path: 'test.zip',
         },
@@ -24,7 +24,7 @@ describe('SCF Types', () => {
       const config = functionToScfConfig(fn);
 
       expect(config.FunctionName).toBe('test-function');
-      expect(config.Runtime).toBe('Nodejs18.15');
+      expect(config.Runtime).toBe('nodejs18');
       expect(config.Handler).toBe('index.handler');
       expect(config.MemorySize).toBe(512);
       expect(config.Timeout).toBe(10);
@@ -43,7 +43,7 @@ describe('SCF Types', () => {
         key: 'test_fn',
         name: 'test-function',
         code: {
-          runtime: 'Nodejs18.15',
+          runtime: 'nodejs18',
           handler: 'index.handler',
           path: 'test.zip',
         },
@@ -56,7 +56,7 @@ describe('SCF Types', () => {
 
       expect(config).toEqual({
         FunctionName: 'test-function',
-        Runtime: 'Nodejs18.15',
+        Runtime: 'nodejs18',
         Handler: 'index.handler',
         MemorySize: 256,
         Timeout: 5,
@@ -68,7 +68,7 @@ describe('SCF Types', () => {
         key: 'test_fn',
         name: 'test-function',
         code: {
-          runtime: 'Nodejs18.15',
+          runtime: 'nodejs18',
           handler: 'index.handler',
           path: 'test.zip',
         },
@@ -82,7 +82,7 @@ describe('SCF Types', () => {
 
       expect(config).toEqual({
         FunctionName: 'test-function',
-        Runtime: 'Nodejs18.15',
+        Runtime: 'nodejs18',
         Handler: 'index.handler',
         MemorySize: 256,
         Timeout: 5,
@@ -94,7 +94,7 @@ describe('SCF Types', () => {
     it('should generate consistent hash for same config', () => {
       const config = {
         FunctionName: 'test-function',
-        Runtime: 'Nodejs18.15',
+        Runtime: 'nodejs18',
         Handler: 'index.handler',
         MemorySize: 512,
         Timeout: 10,
@@ -113,7 +113,7 @@ describe('SCF Types', () => {
     it('should generate different hash for different configs', () => {
       const config1 = {
         FunctionName: 'test-function',
-        Runtime: 'Nodejs18.15',
+        Runtime: 'nodejs18',
         Handler: 'index.handler',
         MemorySize: 512,
         Timeout: 10,
@@ -121,7 +121,7 @@ describe('SCF Types', () => {
 
       const config2 = {
         FunctionName: 'test-function',
-        Runtime: 'Nodejs18.15',
+        Runtime: 'nodejs18',
         Handler: 'index.handler',
         MemorySize: 1024, // Different memory size
         Timeout: 10,
@@ -136,7 +136,7 @@ describe('SCF Types', () => {
     it('should ignore FunctionName in hash computation', () => {
       const config1 = {
         FunctionName: 'test-function-1',
-        Runtime: 'Nodejs18.15',
+        Runtime: 'nodejs18',
         Handler: 'index.handler',
         MemorySize: 512,
         Timeout: 10,
@@ -144,7 +144,7 @@ describe('SCF Types', () => {
 
       const config2 = {
         FunctionName: 'test-function-2', // Different name
-        Runtime: 'Nodejs18.15',
+        Runtime: 'nodejs18',
         Handler: 'index.handler',
         MemorySize: 512,
         Timeout: 10,
@@ -159,7 +159,7 @@ describe('SCF Types', () => {
     it('should consider environment variables in hash', () => {
       const config1 = {
         FunctionName: 'test-function',
-        Runtime: 'Nodejs18.15',
+        Runtime: 'nodejs18',
         Handler: 'index.handler',
         MemorySize: 512,
         Timeout: 10,
@@ -170,7 +170,7 @@ describe('SCF Types', () => {
 
       const config2 = {
         FunctionName: 'test-function',
-        Runtime: 'Nodejs18.15',
+        Runtime: 'nodejs18',
         Handler: 'index.handler',
         MemorySize: 512,
         Timeout: 10,

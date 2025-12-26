@@ -1,34 +1,14 @@
-import * as tencentcloud from 'tencentcloud-sdk-nodejs-scf';
 import { Context } from '../../types';
 import { ScfFunctionConfig, ScfFunctionInfo } from './scfTypes';
+import { createScfClient } from '../../common/scfClient';
 import fs from 'node:fs';
-
-const ScfClient = tencentcloud.scf.v20180416.Client;
-
-type TencentCloudClient = InstanceType<typeof ScfClient>;
-
-const createClient = (context: Context): TencentCloudClient => {
-  const clientConfig = {
-    credential: {
-      secretId: context.accessKeyId,
-      secretKey: context.accessKeySecret,
-    },
-    region: context.region,
-    profile: {
-      httpProfile: {
-        endpoint: 'scf.tencentcloudapi.com',
-      },
-    },
-  };
-  return new ScfClient(clientConfig);
-};
 
 export const createScfFunction = async (
   context: Context,
   config: ScfFunctionConfig,
   codePath: string,
 ): Promise<void> => {
-  const client = createClient(context);
+  const client = createScfClient(context);
   const codeBuffer = fs.readFileSync(codePath);
   const codeBase64 = codeBuffer.toString('base64');
 
@@ -51,7 +31,7 @@ export const getScfFunction = async (
   context: Context,
   functionName: string,
 ): Promise<ScfFunctionInfo | null> => {
-  const client = createClient(context);
+  const client = createScfClient(context);
   try {
     const params = {
       FunctionName: functionName,
@@ -98,7 +78,7 @@ export const updateScfFunctionConfiguration = async (
   context: Context,
   config: ScfFunctionConfig,
 ): Promise<void> => {
-  const client = createClient(context);
+  const client = createScfClient(context);
   const params = {
     FunctionName: config.FunctionName,
     Handler: config.Handler,
@@ -116,7 +96,7 @@ export const updateScfFunctionCode = async (
   functionName: string,
   codePath: string,
 ): Promise<void> => {
-  const client = createClient(context);
+  const client = createScfClient(context);
   const codeBuffer = fs.readFileSync(codePath);
   const codeBase64 = codeBuffer.toString('base64');
 
@@ -129,7 +109,7 @@ export const updateScfFunctionCode = async (
 };
 
 export const deleteScfFunction = async (context: Context, functionName: string): Promise<void> => {
-  const client = createClient(context);
+  const client = createScfClient(context);
   const params = {
     FunctionName: functionName,
   };

@@ -26,7 +26,7 @@ functions:
     code:
       # Supported runtimes: nodejs20, nodejs18, nodejs16, nodejs14, nodejs12, nodejs10, nodejs8,
       # python3.10, python3.9, python3, PHP7.2, Java11, .NETCore3.1, Go1.x
-      runtime: Nodejs18.15
+      runtime: nodejs18
       handler: index.handler
       path: tests/fixtures/artifacts/artifact.zip
     memory: 512
