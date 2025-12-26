@@ -2,7 +2,7 @@ version: 0.0.1
 
 provider:
   name: aliyun
-  region: cn-chengdu
+  region: cn-hangzhou
 
 
 service: insight-db-poc
@@ -16,10 +16,8 @@ databases:
     type: ELASTICSEARCH_SERVERLESS
     version: ES_SEARCH_7.10
     cu:
-      min: 0
-      max: 2
-    storage:
-      min: 20
+      min: 3
+      max: 4
     security:
       basic_auth:
         master_user: admin

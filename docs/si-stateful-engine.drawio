@@ -1,0 +1,92 @@
+<mxfile host="Electron" agent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) draw.io/29.0.3 Chrome/140.0.7339.249 Electron/38.7.0 Safari/537.36" version="29.0.3">
+  <diagram name="Terraform-like Engine Architecture" id="0">
+    <mxGraphModel dx="4355" dy="1625" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1600" pageHeight="1000" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+        <mxCell id="user" value="User / CI" style="rounded=1;whiteSpace=wrap;fillColor=#dae8fc;strokeColor=#6c8ebf;" parent="1" vertex="1">
+          <mxGeometry x="-90" y="270" width="160" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="cli" value="ServerlessInsight CLI (si)" style="rounded=1;whiteSpace=wrap;fillColor=#e1d5e7;strokeColor=#9673a6;" parent="1" vertex="1">
+          <mxGeometry x="130" y="270" width="220" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="core" value="" style="rounded=1;whiteSpace=wrap;fillColor=#fff2cc;strokeColor=#d6b656;" parent="1" vertex="1">
+          <mxGeometry x="390" y="170" width="860" height="360" as="geometry" />
+        </mxCell>
+        <mxCell id="parser" value="Config Loader- parser&#xa;(YAML Parser)" style="rounded=1;whiteSpace=wrap;fillColor=#ffffff;" parent="core" vertex="1">
+          <mxGeometry x="60" y="60" width="310" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="planner" value="Planner&#xa;(si plan)" style="rounded=1;whiteSpace=wrap;fillColor=#ffffff;" parent="core" vertex="1">
+          <mxGeometry x="60" y="160" width="310" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="graph" value="Dependency Graph&#xa;(DAG)" style="rounded=1;whiteSpace=wrap;fillColor=#ffffff;" parent="core" vertex="1">
+          <mxGeometry x="560" y="130" width="230" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="executor" value="Executor&#xa;(si deploy)" style="rounded=1;whiteSpace=wrap;fillColor=#ffffff;" parent="core" vertex="1">
+          <mxGeometry x="60" y="250" width="310" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="state" value="State Manager&#xa;(local JSON / future backend)" style="rounded=1;whiteSpace=wrap;fillColor=#ffffff;dashed=1;" parent="core" vertex="1">
+          <mxGeometry x="560" y="220" width="230" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="ekZdW9D79wHZXiYTy-5j-1" value="Stateful Engine (ServerlessInsight Core)" style="text;html=1;whiteSpace=wrap;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;rounded=0;" vertex="1" parent="core">
+          <mxGeometry x="20" y="10" width="270" height="30" as="geometry" />
+        </mxCell>
+        <mxCell id="providers" value="" style="rounded=1;whiteSpace=wrap;fillColor=#d5e8d4;strokeColor=#82b366;" parent="1" vertex="1">
+          <mxGeometry x="390" y="580" width="860" height="260" as="geometry" />
+        </mxCell>
+        <mxCell id="tencent" value="Tencent Cloud Provider&#xa;- SCF&#xa;- API Gateway&#xa;- COS" style="rounded=1;whiteSpace=wrap;fillColor=#ffffff;" parent="providers" vertex="1">
+          <mxGeometry x="440" y="50" width="300" height="120" as="geometry" />
+        </mxCell>
+        <mxCell id="aliyun" value="Aliyun Provider&#xa;(ROS-based)" style="rounded=1;whiteSpace=wrap;fillColor=#ffffff;" parent="providers" vertex="1">
+          <mxGeometry x="40" y="50" width="300" height="120" as="geometry" />
+        </mxCell>
+        <mxCell id="ekZdW9D79wHZXiYTy-5j-2" value="Resource Providers" style="text;html=1;whiteSpace=wrap;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;rounded=0;" vertex="1" parent="providers">
+          <mxGeometry x="10" y="10" width="130" height="30" as="geometry" />
+        </mxCell>
+        <mxCell id="cloud" value="tencentcloud-sdk-nodejs" style="rounded=1;whiteSpace=wrap;fillColor=#dae8fc;strokeColor=#6c8ebf;" parent="1" vertex="1">
+          <mxGeometry x="1360" y="650" width="220" height="80" as="geometry" />
+        </mxCell>
+        <mxCell id="e1" style="endArrow=block;" parent="1" source="user" target="cli" edge="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e2" style="endArrow=block;entryX=-0.004;entryY=0.356;entryDx=0;entryDy=0;entryPerimeter=0;" parent="1" source="cli" target="core" edge="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e3" style="endArrow=block;" parent="1" source="parser" target="planner" edge="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e4" style="endArrow=block;" parent="1" source="planner" target="graph" edge="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e5" style="endArrow=block;" parent="1" source="planner" target="executor" edge="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e6" style="endArrow=block;" parent="1" source="planner" target="state" edge="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e7" style="endArrow=block;" parent="1" source="executor" target="state" edge="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e8" style="endArrow=block;" parent="1" source="executor" target="tencent" edge="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e9" style="endArrow=block;" parent="1" source="executor" target="aliyun" edge="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e10" style="endArrow=block;" parent="1" source="tencent" target="cloud" edge="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="ekZdW9D79wHZXiYTy-5j-3" value="@alicloud/ros-cdk" style="rounded=1;whiteSpace=wrap;fillColor=#fff2cc;strokeColor=#d6b656;" vertex="1" parent="1">
+          <mxGeometry x="1360" y="810" width="220" height="80" as="geometry" />
+        </mxCell>
+        <mxCell id="ekZdW9D79wHZXiYTy-5j-4" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;entryX=-0.004;entryY=0.607;entryDx=0;entryDy=0;entryPerimeter=0;" edge="1" parent="1" source="aliyun" target="ekZdW9D79wHZXiYTy-5j-3">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="580" y="859" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>
