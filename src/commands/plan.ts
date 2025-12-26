@@ -1,13 +1,6 @@
-import {
-  getIacLocation,
-  logger,
-  setContext,
-  StateManager,
-  ProviderEnum,
-  getContext,
-} from '../common';
+import { getIacLocation, logger, setContext, loadState, ProviderEnum, getContext } from '../common';
 import { parseYaml } from '../parser';
-import { ScfPlanner } from '../stack/scfStack';
+import { generatePlan } from '../stack/scfStack';
 import { lang } from '../lang';
 
 export const plan = async (
@@ -31,24 +24,22 @@ export const plan = async (
   const context = getContext();
 
   if (iac.provider.name !== ProviderEnum.TENCENT) {
-    logger.error('Plan command is currently only supported for Tencent provider');
-    throw new Error('Plan command is currently only supported for Tencent provider');
+    logger.error(lang.__('PLAN_COMMAND_TENCENT_ONLY'));
+    throw new Error(lang.__('PLAN_COMMAND_TENCENT_ONLY'));
   }
 
-  logger.info('Generating plan for Tencent SCF resources...');
+  logger.info(lang.__('GENERATING_PLAN_FOR_SCF'));
 
-  const stateManager = new StateManager(iac.provider.name, process.cwd());
-  const planner = new ScfPlanner(context, stateManager);
-
-  const planResult = await planner.generatePlan(iac.functions);
+  const state = loadState(iac.provider.name, process.cwd());
+  const planResult = await generatePlan(context, state, iac.functions);
 
   // Display plan
   logger.info('========================================');
-  logger.info('DEPLOYMENT PLAN');
+  logger.info(lang.__('DEPLOYMENT_PLAN'));
   logger.info('========================================');
 
   if (planResult.items.length === 0) {
-    logger.info('No changes. Infrastructure is up-to-date.');
+    logger.info(lang.__('NO_CHANGES_INFRASTRUCTURE_UP_TO_DATE'));
     return;
   }
 
@@ -58,7 +49,7 @@ export const plan = async (
   const noopActions = planResult.items.filter((item) => item.action === 'noop');
 
   if (createActions.length > 0) {
-    logger.info('\n[CREATE] Resources to be created:');
+    logger.info(`\n[${lang.__('CREATE')}] ${lang.__('RESOURCES_TO_BE_CREATED')}:`);
     for (const item of createActions) {
       logger.info(`  + ${item.logicalId} (${item.resourceType})`);
       if (item.changes?.after) {
@@ -70,22 +61,22 @@ export const plan = async (
   }
 
   if (updateActions.length > 0) {
-    logger.info('\n[UPDATE] Resources to be updated:');
+    logger.info(`\n[${lang.__('UPDATE')}] ${lang.__('RESOURCES_TO_BE_UPDATED')}:`);
     for (const item of updateActions) {
       logger.info(`  ~ ${item.logicalId} (${item.resourceType})`);
       if (item.drifted) {
-        logger.info('    [DRIFTED] Remote configuration differs from state');
+        logger.info(`    [${lang.__('DRIFTED')}] ${lang.__('REMOTE_CONFIG_DIFFERS')}`);
       }
       if (item.changes) {
         logger.info(
-          `    Changes: ${JSON.stringify(item.changes, null, 2).split('\n').join('\n    ')}`,
+          `    ${lang.__('CHANGES')}: ${JSON.stringify(item.changes, null, 2).split('\n').join('\n    ')}`,
         );
       }
     }
   }
 
   if (deleteActions.length > 0) {
-    logger.info('\n[DELETE] Resources to be deleted:');
+    logger.info(`\n[${lang.__('DELETE')}] ${lang.__('RESOURCES_TO_BE_DELETED')}:`);
     for (const item of deleteActions) {
       logger.info(`  - ${item.logicalId} (${item.resourceType})`);
       if (item.changes?.before) {
@@ -97,7 +88,7 @@ export const plan = async (
   }
 
   if (noopActions.length > 0) {
-    logger.info('\n[NO CHANGE] Resources unchanged:');
+    logger.info(`\n[${lang.__('NO_CHANGE')}] ${lang.__('RESOURCES_UNCHANGED')}:`);
     for (const item of noopActions) {
       logger.info(`  = ${item.logicalId} (${item.resourceType})`);
     }
@@ -105,7 +96,7 @@ export const plan = async (
 
   logger.info('\n========================================');
   logger.info(
-    `Plan: ${createActions.length} to create, ${updateActions.length} to update, ${deleteActions.length} to delete, ${noopActions.length} unchanged`,
+    `${lang.__('PLAN')}: ${createActions.length} ${lang.__('TO_CREATE')}, ${updateActions.length} ${lang.__('TO_UPDATE')}, ${deleteActions.length} ${lang.__('TO_DELETE')}, ${noopActions.length} ${lang.__('UNCHANGED')}`,
   );
   logger.info('========================================');
 };

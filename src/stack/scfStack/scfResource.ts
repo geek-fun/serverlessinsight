@@ -1,88 +1,74 @@
-import { Context, FunctionDomain, ResourceState } from '../../types';
-import { ScfProvider } from './scfProvider';
+import { Context, FunctionDomain, ResourceState, StateFile } from '../../types';
+import {
+  createScfFunction,
+  deleteScfFunction,
+  getScfFunction,
+  updateScfFunctionCode,
+  updateScfFunctionConfiguration,
+} from './scfProvider';
 import { computeConfigHash, functionToScfConfig } from './scfTypes';
-import { StateManager } from '../../common/stateManager';
+import { setResource, removeResource } from '../../common/stateManager';
 
-export class ScfResource {
-  private provider: ScfProvider;
-  private stateManager: StateManager;
+export const createResource = async (
+  context: Context,
+  fn: FunctionDomain,
+  state: StateFile,
+): Promise<StateFile> => {
+  const config = functionToScfConfig(fn);
+  const codePath = fn.code!.path;
 
-  constructor(
-    private readonly context: Context,
-    stateManager: StateManager,
-  ) {
-    this.provider = new ScfProvider(context);
-    this.stateManager = stateManager;
-  }
+  await createScfFunction(context, config, codePath);
 
-  async create(fn: FunctionDomain): Promise<void> {
-    const config = functionToScfConfig(fn);
-    const codePath = fn.code!.path;
+  const configHash = computeConfigHash(config);
+  const resourceState: ResourceState = {
+    type: 'SCF',
+    physicalId: fn.name,
+    region: context.region,
+    configHash,
+    lastUpdated: new Date().toISOString(),
+  };
 
-    await this.provider.createFunction(config, codePath);
+  const logicalId = `functions.${fn.key}`;
+  return setResource(state, logicalId, resourceState);
+};
 
-    const configHash = computeConfigHash(config);
-    const resourceState: ResourceState = {
-      type: 'SCF',
-      physicalId: fn.name,
-      region: this.context.region,
-      configHash,
-      lastUpdated: new Date().toISOString(),
-    };
+export const readResource = async (context: Context, functionName: string) => {
+  return await getScfFunction(context, functionName);
+};
 
-    const logicalId = `functions.${fn.key}`;
-    this.stateManager.set(logicalId, resourceState);
-  }
+export const updateResource = async (
+  context: Context,
+  fn: FunctionDomain,
+  state: StateFile,
+): Promise<StateFile> => {
+  const config = functionToScfConfig(fn);
+  const codePath = fn.code!.path;
 
-  async read(functionName: string) {
-    return await this.provider.getFunction(functionName);
-  }
+  // Update configuration
+  await updateScfFunctionConfiguration(context, config);
 
-  async refresh(fn: FunctionDomain): Promise<boolean> {
-    const remoteFunction = await this.provider.getFunction(fn.name);
-    if (!remoteFunction) {
-      return false;
-    }
+  // Update code
+  await updateScfFunctionCode(context, fn.name, codePath);
 
-    const config = functionToScfConfig(fn);
-    const localConfigHash = computeConfigHash(config);
+  const configHash = computeConfigHash(config);
+  const resourceState: ResourceState = {
+    type: 'SCF',
+    physicalId: fn.name,
+    region: context.region,
+    configHash,
+    lastUpdated: new Date().toISOString(),
+  };
 
-    const logicalId = `functions.${fn.key}`;
-    const currentState = this.stateManager.get(logicalId);
+  const logicalId = `functions.${fn.key}`;
+  return setResource(state, logicalId, resourceState);
+};
 
-    // Check if there's drift
-    if (currentState && currentState.configHash !== localConfigHash) {
-      return true; // Drifted
-    }
-
-    return false; // No drift
-  }
-
-  async update(fn: FunctionDomain): Promise<void> {
-    const config = functionToScfConfig(fn);
-    const codePath = fn.code!.path;
-
-    // Update configuration
-    await this.provider.updateFunctionConfiguration(config);
-
-    // Update code
-    await this.provider.updateFunctionCode(fn.name, codePath);
-
-    const configHash = computeConfigHash(config);
-    const resourceState: ResourceState = {
-      type: 'SCF',
-      physicalId: fn.name,
-      region: this.context.region,
-      configHash,
-      lastUpdated: new Date().toISOString(),
-    };
-
-    const logicalId = `functions.${fn.key}`;
-    this.stateManager.set(logicalId, resourceState);
-  }
-
-  async delete(functionName: string, logicalId: string): Promise<void> {
-    await this.provider.deleteFunction(functionName);
-    this.stateManager.remove(logicalId);
-  }
-}
+export const deleteResource = async (
+  context: Context,
+  functionName: string,
+  logicalId: string,
+  state: StateFile,
+): Promise<StateFile> => {
+  await deleteScfFunction(context, functionName);
+  return removeResource(state, logicalId);
+};

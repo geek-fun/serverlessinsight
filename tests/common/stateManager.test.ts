@@ -1,4 +1,13 @@
-import { StateManager, ensureStateDir, getStatePath } from '../../src/common/stateManager';
+import {
+  ensureStateDir,
+  getStatePath,
+  loadState,
+  saveState,
+  getResource,
+  setResource,
+  removeResource,
+  getAllResources,
+} from '../../src/common/stateManager';
 import { ResourceState } from '../../src/types';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -42,10 +51,9 @@ describe('StateManager', () => {
     });
   });
 
-  describe('StateManager', () => {
+  describe('loadState', () => {
     it('should initialize with empty state if no file exists', () => {
-      const manager = new StateManager('tencent', testDir);
-      const state = manager.getState();
+      const state = loadState('tencent', testDir);
 
       expect(state.version).toBe('0.1');
       expect(state.provider).toBe('tencent');
@@ -71,14 +79,14 @@ describe('StateManager', () => {
       ensureStateDir(testDir);
       fs.writeFileSync(statePath, JSON.stringify(existingState, null, 2));
 
-      const manager = new StateManager('tencent', testDir);
-      const state = manager.getState();
+      const state = loadState('tencent', testDir);
 
       expect(state).toEqual(existingState);
     });
+  });
 
+  describe('getResource', () => {
     it('should get resource state by id', () => {
-      const manager = new StateManager('tencent', testDir);
       const resourceState: ResourceState = {
         type: 'SCF',
         physicalId: 'test-fn',
@@ -87,20 +95,22 @@ describe('StateManager', () => {
         lastUpdated: '2025-01-01T00:00:00Z',
       };
 
-      manager.set('functions.test', resourceState);
+      let state = loadState('tencent', testDir);
+      state = setResource(state, 'functions.test', resourceState);
 
-      const retrieved = manager.get('functions.test');
+      const retrieved = getResource(state, 'functions.test');
       expect(retrieved).toEqual(resourceState);
     });
 
     it('should return undefined for non-existent resource', () => {
-      const manager = new StateManager('tencent', testDir);
-      const retrieved = manager.get('functions.nonexistent');
+      const state = loadState('tencent', testDir);
+      const retrieved = getResource(state, 'functions.nonexistent');
       expect(retrieved).toBeUndefined();
     });
+  });
 
+  describe('setResource', () => {
     it('should set resource state', () => {
-      const manager = new StateManager('tencent', testDir);
       const resourceState: ResourceState = {
         type: 'SCF',
         physicalId: 'test-fn',
@@ -109,14 +119,15 @@ describe('StateManager', () => {
         lastUpdated: '2025-01-01T00:00:00Z',
       };
 
-      manager.set('functions.test', resourceState);
+      let state = loadState('tencent', testDir);
+      state = setResource(state, 'functions.test', resourceState);
 
-      const state = manager.getState();
       expect(state.resources['functions.test']).toEqual(resourceState);
     });
+  });
 
+  describe('removeResource', () => {
     it('should remove resource state', () => {
-      const manager = new StateManager('tencent', testDir);
       const resourceState: ResourceState = {
         type: 'SCF',
         physicalId: 'test-fn',
@@ -125,15 +136,17 @@ describe('StateManager', () => {
         lastUpdated: '2025-01-01T00:00:00Z',
       };
 
-      manager.set('functions.test', resourceState);
-      expect(manager.get('functions.test')).toEqual(resourceState);
+      let state = loadState('tencent', testDir);
+      state = setResource(state, 'functions.test', resourceState);
+      expect(getResource(state, 'functions.test')).toEqual(resourceState);
 
-      manager.remove('functions.test');
-      expect(manager.get('functions.test')).toBeUndefined();
+      state = removeResource(state, 'functions.test');
+      expect(getResource(state, 'functions.test')).toBeUndefined();
     });
+  });
 
+  describe('saveState', () => {
     it('should save state to file', () => {
-      const manager = new StateManager('tencent', testDir);
       const resourceState: ResourceState = {
         type: 'SCF',
         physicalId: 'test-fn',
@@ -142,18 +155,20 @@ describe('StateManager', () => {
         lastUpdated: '2025-01-01T00:00:00Z',
       };
 
-      manager.set('functions.test', resourceState);
-      manager.save();
+      let state = loadState('tencent', testDir);
+      state = setResource(state, 'functions.test', resourceState);
+      saveState(state, testDir);
 
       expect(fs.existsSync(statePath)).toBe(true);
 
-      // Load state in a new manager
-      const manager2 = new StateManager('tencent', testDir);
-      expect(manager2.get('functions.test')).toEqual(resourceState);
+      // Load state in a new call
+      const state2 = loadState('tencent', testDir);
+      expect(getResource(state2, 'functions.test')).toEqual(resourceState);
     });
+  });
 
+  describe('getAllResources', () => {
     it('should get all resources', () => {
-      const manager = new StateManager('tencent', testDir);
       const resource1: ResourceState = {
         type: 'SCF',
         physicalId: 'test-fn-1',
@@ -169,31 +184,15 @@ describe('StateManager', () => {
         lastUpdated: '2025-01-02T00:00:00Z',
       };
 
-      manager.set('functions.test1', resource1);
-      manager.set('functions.test2', resource2);
+      let state = loadState('tencent', testDir);
+      state = setResource(state, 'functions.test1', resource1);
+      state = setResource(state, 'functions.test2', resource2);
 
-      const allResources = manager.getAll();
+      const allResources = getAllResources(state);
       expect(allResources).toEqual({
         'functions.test1': resource1,
         'functions.test2': resource2,
       });
-    });
-
-    it('should clear all resources', () => {
-      const manager = new StateManager('tencent', testDir);
-      const resourceState: ResourceState = {
-        type: 'SCF',
-        physicalId: 'test-fn',
-        region: 'ap-guangzhou',
-        configHash: 'abc123',
-        lastUpdated: '2025-01-01T00:00:00Z',
-      };
-
-      manager.set('functions.test', resourceState);
-      expect(manager.getAll()).not.toEqual({});
-
-      manager.clear();
-      expect(manager.getAll()).toEqual({});
     });
   });
 });
