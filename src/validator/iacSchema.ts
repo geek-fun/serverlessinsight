@@ -7,6 +7,7 @@ import { eventSchema } from './eventSchema';
 import { functionSchema } from './functionSchema';
 import { bucketSchema } from './bucketSchema';
 import { tableSchema } from './tableschema';
+import { lang } from '../lang';
 
 type IacSchemaError = {
   instancePath: string;
@@ -64,7 +65,7 @@ const validate = ajv
 export const validateYaml = (iacJson: ServerlessIacRaw) => {
   const valid = validate(iacJson);
   if (!valid) {
-    logger.debug(`Invalid yaml: ${JSON.stringify(validate.errors)}`);
+    logger.debug(lang.__('INVALID_YAML', { errors: JSON.stringify(validate.errors) }));
     throw new IacSchemaErrors(validate.errors as Array<ErrorObject>);
   }
 

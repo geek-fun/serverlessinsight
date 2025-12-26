@@ -12,6 +12,7 @@ import {
   generateRequestId,
 } from './aliyunFc';
 import { extractZipFile } from './utils';
+import { lang } from '../../lang';
 
 export const functionsHandler = async (
   req: IncomingMessage,
@@ -19,7 +20,10 @@ export const functionsHandler = async (
   iac: ServerlessIac,
 ): Promise<RouteResponse> => {
   logger.info(
-    `Function request received by local server -> ${req.method} ${parsed.identifier ?? '/'} `,
+    lang.__('FUNCTION_REQUEST_RECEIVED', {
+      method: req.method || '',
+      identifier: parsed.identifier ?? '/',
+    }),
   );
 
   const fcDef = iac.functions?.find((fn) => fn.key === parsed.identifier);
@@ -111,12 +115,16 @@ export const functionsHandler = async (
       };
     }
 
-    logger.debug(`Invoking worker with event type: ${isAliyun ? 'Buffer' : 'Object'} and context`);
-    logger.debug(`Worker codeDir: ${codeDir}, handler: ${funOptions.handler}`);
+    logger.debug(
+      lang.__('INVOKING_WORKER_WITH_EVENT_TYPE', {
+        eventType: isAliyun ? 'Buffer' : 'Object',
+      }),
+    );
+    logger.debug(lang.__('WORKER_CODE_DIR', { codeDir, handler: funOptions.handler }));
 
     const result = await invokeFunction(funOptions, env, event, fcContext);
 
-    logger.info(`Function execution result: ${JSON.stringify(result)}`);
+    logger.info(lang.__('FUNCTION_EXECUTION_RESULT', { result: JSON.stringify(result) }));
 
     // For Aliyun, transform FC response to HTTP response if needed
     if (isAliyun && result) {
@@ -133,7 +141,7 @@ export const functionsHandler = async (
       body: result,
     };
   } catch (error) {
-    logger.error(`Function execution error: ${error}`);
+    logger.error(lang.__('FUNCTION_EXECUTION_ERROR', { error: String(error) }));
     return {
       statusCode: 500,
       body: {

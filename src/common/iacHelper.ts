@@ -7,6 +7,7 @@ import crypto from 'node:crypto';
 import { get } from 'lodash';
 import { parseYaml } from '../parser';
 import { logger } from './logger';
+import { lang } from '../lang';
 
 export const resolveCode = (location: string): string => {
   const filePath = path.resolve(process.cwd(), location);
@@ -113,7 +114,7 @@ export const calcValue = <T>(rawValue: string, ctx: Context, iacVars?: Vars): T 
     value = value.replace(/\$\{vars\.(\w+)}/g, (_, key) => {
       const paramValue = getParam(key, mergedParams);
       if (!paramValue) {
-        logger.warn(`Variable '${key}' not found in vars or parameters, using empty string`);
+        logger.warn(lang.__('VARIABLE_NOT_FOUND', { key }));
       }
       return paramValue || '';
     });
@@ -124,7 +125,10 @@ export const calcValue = <T>(rawValue: string, ctx: Context, iacVars?: Vars): T 
       const stageValue = getParam(key, get(ctx.stages, `${ctx.stage}`));
       if (!stageValue) {
         logger.warn(
-          `Stage variable '${key}' not found in stage '${ctx.stage}', using empty string`,
+          lang.__('STAGE_VARIABLE_NOT_FOUND', {
+            key,
+            stage: ctx.stage,
+          }),
         );
       }
       return stageValue || '';

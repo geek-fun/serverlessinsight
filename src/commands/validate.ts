@@ -1,5 +1,6 @@
 import { getContext, logger, setContext } from '../common';
 import { parseYaml } from '../parser';
+import { lang } from '../lang';
 
 export const validate = async (
   stackName: string,
@@ -8,5 +9,5 @@ export const validate = async (
   await setContext({ stackName, ...options });
   const context = getContext();
   parseYaml(context.iacLocation);
-  logger.info('Yaml is valid! 🎉');
+  logger.info(lang.__('YAML_VALID'));
 };

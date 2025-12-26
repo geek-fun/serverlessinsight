@@ -8,6 +8,7 @@ import { CdkAssets } from '../types';
 import { get, isEmpty } from 'lodash';
 import OSS from 'ali-oss';
 import { getContext } from './context';
+import { lang } from '../lang';
 
 const buildAssets = (rootPath: string, relativePath: string): Array<ISource> => {
   const location = path.resolve(rootPath, relativePath);
@@ -57,10 +58,10 @@ const zipAssets = async (assetsPath: string) => {
     .generateAsync({ type: 'nodebuffer' })
     .then((content) => {
       fs.writeFileSync(zipPath, content);
-      logger.info(`Folder compressed to: ${zipPath}`);
+      logger.info(lang.__('FOLDER_COMPRESSED_TO', { zipPath }));
     })
     .catch((e) => {
-      logger.error(`Failed to compress folder: ${e}`);
+      logger.error(lang.__('FAILED_TO_COMPRESS_FOLDER', { error: e }));
       throw e;
     });
   return zipPath;
@@ -103,7 +104,7 @@ export const constructAssets = async ({
 const ensureBucketExits = async (bucketName: string, ossClient: OSS) =>
   await ossClient.getBucketInfo(bucketName).catch((err) => {
     if (err.code === 'NoSuchBucket') {
-      logger.info(`Bucket: ${bucketName} not exists, creating...`);
+      logger.info(lang.__('BUCKET_NOT_EXISTS_CREATING', { bucketName }));
       return ossClient.putBucket(bucketName, {
         storageClass: 'Standard',
         acl: 'private',
@@ -116,7 +117,7 @@ const ensureBucketExits = async (bucketName: string, ossClient: OSS) =>
 
 export const publishAssets = async (assets: Array<ConstructedAsset> | undefined) => {
   if (!assets?.length) {
-    logger.info('No assets to publish, skipped!');
+    logger.info(lang.__('NO_ASSETS_TO_PUBLISH'));
     return;
   }
 
@@ -142,7 +143,7 @@ export const publishAssets = async (assets: Array<ConstructedAsset> | undefined)
   await Promise.all(
     assets.map(async ({ source, objectKey }) => {
       await client.put(objectKey, path.normalize(source), { headers });
-      logger.debug(`Upload file: ${source} to bucket: ${bucketName} successfully!`);
+      logger.debug(lang.__('UPLOAD_FILE_SUCCESS', { source, bucketName }));
     }),
   );
 
@@ -151,7 +152,7 @@ export const publishAssets = async (assets: Array<ConstructedAsset> | undefined)
 
 export const cleanupAssets = async (assets: Array<ConstructedAsset> | undefined) => {
   if (!assets?.length) {
-    logger.info('No assets to cleanup, skipped!');
+    logger.info(lang.__('NO_ASSETS_TO_CLEANUP'));
     return;
   }
   const context = getContext();
@@ -167,10 +168,10 @@ export const cleanupAssets = async (assets: Array<ConstructedAsset> | undefined)
   await Promise.all(
     assets.map(async ({ objectKey }) => {
       await client.delete(objectKey);
-      logger.debug(`Cleanup file: ${objectKey} from bucket: ${bucketName} successfully!`);
+      logger.debug(lang.__('CLEANUP_FILE_SUCCESS', { objectKey, bucketName }));
     }),
   );
   // delete the bucket
   await client.deleteBucket(bucketName);
-  logger.debug(`Cleanup bucket: ${bucketName} successfully!`);
+  logger.debug(lang.__('CLEANUP_BUCKET_SUCCESS', { bucketName }));
 };

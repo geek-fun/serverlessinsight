@@ -85,7 +85,7 @@ module.exports.handler = async (rawEvent, context) => {
       })
     };
   } catch (error) {
-    console.error('Error:', error);
+    console.error(lang.__('ERROR_GENERAL', { error }));
 
     // 构建错误响应
     const errorResponse = {
@@ -100,7 +100,7 @@ module.exports.handler = async (rawEvent, context) => {
       try {
         await sendResponse(event.responseURL, errorResponse);
       } catch (err) {
-        console.error('Failed to send error response:', err);
+        console.error(lang.__('FAILED_TO_SEND_ERROR_RESPONSE', { error: err }));
       }
     }
 
@@ -137,9 +137,9 @@ async function sendResponse(responseUrl, responseBody) {
       throw new Error(\`Failed to send response. Status: \${response.status}, Body: \${errorText}\`);
     }
 
-    console.log('Response sent successfully');
+    console.log(lang.__('RESPONSE_SENT_SUCCESSFULLY'));
   } catch (error) {
-    console.error('Error sending response:', error);
+    console.error(lang.__('ERROR_SENDING_RESPONSE', { error }));
     throw error;
   }
 }

@@ -2,6 +2,7 @@ import { ParsedRequest, RouteHandler, RouteKind } from '../../types/localStack';
 import { logger, SI_LOCALSTACK_SERVER_PORT } from '../../common';
 import http, { IncomingMessage, ServerResponse } from 'node:http';
 import { ServerlessIac } from '../../types';
+import { lang } from '../../lang';
 
 let localServer: http.Server | undefined;
 
@@ -59,7 +60,9 @@ export const servLocal = async (
   iac: ServerlessIac,
 ): Promise<void> => {
   if (localServer) {
-    logger.info(`localServer already running on http://localhost:${SI_LOCALSTACK_SERVER_PORT}`);
+    logger.info(
+      lang.__('LOCAL_SERVER_ALREADY_RUNNING', { port: String(SI_LOCALSTACK_SERVER_PORT) }),
+    );
     return;
   }
 
@@ -97,14 +100,14 @@ export const servLocal = async (
         respondJson(res, outcome.statusCode, outcome.body ?? {}, outcome.headers);
       }
     } catch (err) {
-      logger.error({ err }, 'Local gateway error');
+      logger.error({ err }, lang.__('LOCAL_GATEWAY_ERROR'));
       respondJson(res, 500, { error: 'Local gateway failure' });
     }
   });
 
   await new Promise<void>((resolve, reject) => {
     localServer!.listen(SI_LOCALSTACK_SERVER_PORT, '0.0.0.0', () => {
-      logger.info(`Local Server listening on http://localhost:${SI_LOCALSTACK_SERVER_PORT}`);
+      logger.info(lang.__('LOCAL_SERVER_LISTENING', { port: String(SI_LOCALSTACK_SERVER_PORT) }));
       resolve();
     });
     localServer!.once('error', reject);
@@ -113,18 +116,18 @@ export const servLocal = async (
 
 export const stopLocal = async (): Promise<void> => {
   if (!localServer) {
-    logger.info('localServer is not running');
+    logger.info(lang.__('LOCAL_SERVER_NOT_RUNNING'));
     return;
   }
 
   await new Promise<void>((resolve, reject) => {
     localServer!.close((err) => {
       if (err) {
-        logger.error({ err }, 'Error stopping localServer');
+        logger.error({ err }, lang.__('ERROR_STOPPING_LOCAL_SERVER'));
         reject(err);
       } else {
         localServer = undefined;
-        logger.info('localServer stopped');
+        logger.info(lang.__('LOCAL_SERVER_STOPPED'));
         resolve();
       }
     });
