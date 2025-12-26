@@ -5,6 +5,7 @@ import {
   publishAssets,
   ProviderEnum,
 } from '../../src/common';
+import { lang } from '../../src/lang';
 import { Stats } from 'node:fs';
 import { assetsFixture } from '../fixtures/assetsFixture';
 
@@ -84,6 +85,11 @@ jest.mock('../../src/common/context', () => ({
 }));
 
 describe('Unit test for rosAssets', () => {
+  beforeAll(() => {
+    // Set locale to English for consistent test messages
+    lang.setLocale('en');
+  });
+
   beforeEach(() => {
     mockedGetStore.mockReturnValue({
       region: 'mock-region',
@@ -159,7 +165,7 @@ describe('Unit test for rosAssets', () => {
       ]);
       expect(mockedInfoLogger.mock.calls).toEqual([
         [
-          'Folder compressed to: path/to/asset.55d1d2dd5d6c1b083a04c15431f70da1f2840b9de06383411cbf7eda2a512efe.zip',
+          'Folder compressed to: path&#x2F;to&#x2F;asset.55d1d2dd5d6c1b083a04c15431f70da1f2840b9de06383411cbf7eda2a512efe.zip',
         ],
       ]);
     });

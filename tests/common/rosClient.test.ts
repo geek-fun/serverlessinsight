@@ -46,6 +46,11 @@ jest.mock('../../src/common/context', () => ({
 }));
 
 describe('Unit test for rosClient', () => {
+  beforeAll(() => {
+    // Set locale to English for consistent test messages
+    lang.setLocale('en');
+  });
+
   beforeEach(() => {
     jest.clearAllMocks();
     mockedGetContext.mockReturnValue(context);

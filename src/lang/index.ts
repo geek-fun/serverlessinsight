@@ -4,7 +4,7 @@ import { zhCN } from './zh-CN';
 
 /**
  * Detects the system language and returns the appropriate locale.
- * Defaults to 'en' if the system language is not supported.
+ * Defaults to 'zh-CN' if the system language is not supported.
  */
 const detectSystemLanguage = (): string => {
   // Try to get locale from environment variables
@@ -29,8 +29,8 @@ const detectSystemLanguage = (): string => {
     // Intl API not available, use default
   }
 
-  // Default to English
-  return 'en';
+  // Default to Chinese Simplified
+  return 'zh-CN';
 };
 
 const defaultLocale = detectSystemLanguage();
@@ -42,6 +42,7 @@ const lang = new I18n({
     en,
     'zh-CN': zhCN,
   },
+  objectNotation: true,
 });
 
 export { lang };
