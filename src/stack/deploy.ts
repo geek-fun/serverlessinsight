@@ -10,9 +10,11 @@ import {
   ProviderEnum,
   publishAssets,
   rosStackDeploy,
+  StateManager,
 } from '../common';
 import { prepareBootstrapStack, RosStack } from './rosStack';
 import { RfsStack } from './rfsStack';
+import { ScfPlanner, ScfExecutor } from './scfStack';
 import { get } from 'lodash';
 import { lang } from '../lang';
 
@@ -45,6 +47,35 @@ export const generateRfsStackTemplate = (stackName: string, iac: ServerlessIac) 
 };
 
 export const deployStack = async (stackName: string, iac: ServerlessIac) => {
+  const context = getContext();
+
+  // Handle Tencent provider with stateful deployment
+  if (iac.provider.name === ProviderEnum.TENCENT) {
+    logger.info('Deploying Tencent SCF functions with state management...');
+
+    const stateManager = new StateManager(iac.provider.name, process.cwd());
+    const planner = new ScfPlanner(context, stateManager);
+    const executor = new ScfExecutor(context, stateManager);
+
+    // Generate plan
+    logger.info('Generating deployment plan...');
+    const plan = await planner.generatePlan(iac.functions);
+
+    // Log plan
+    logger.info(`Plan generated with ${plan.items.length} action(s):`);
+    for (const item of plan.items) {
+      logger.info(`  - ${item.action.toUpperCase()}: ${item.logicalId} (${item.resourceType})`);
+    }
+
+    // Execute plan
+    logger.info('Executing deployment plan...');
+    await executor.executePlan(plan, iac.functions);
+
+    logger.info('Deployment completed successfully');
+    return;
+  }
+
+  // Original implementation for Aliyun
   const { template, assets } = generateRosStackTemplate(stackName, iac);
   await prepareBootstrapStack();
   logger.info(lang.__('DEPLOYING_STACK_PUBLISHING_ASSETS'));
@@ -80,6 +111,9 @@ export const generateStackTemplate = (
     return generateRosStackTemplate(stackName, iac);
   } else if (iac.provider.name === ProviderEnum.HUAWEI) {
     return generateRfsStackTemplate(stackName, iac);
+  } else if (iac.provider.name === ProviderEnum.TENCENT) {
+    // Tencent uses state-based deployment, no template generation needed
+    return { template: {} };
   }
   return { template: '' };
 };

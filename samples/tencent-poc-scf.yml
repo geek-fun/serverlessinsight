@@ -1,0 +1,34 @@
+version: 0.0.1
+provider:
+  name: tencent
+  region: ap-guangzhou
+
+vars:
+  testv: testVarValue
+  handler: index.handler
+
+stages:
+  default:
+    node_env: default
+  dev:
+    node_env: development
+  prod:
+    node_env: production
+
+service: insight-poc-scf
+
+tags:
+  owner: geek-fun
+
+functions:
+  insight_poc_fn:
+    name: insight-poc-api-fn
+    code:
+      runtime: Nodejs18.15
+      handler: index.handler
+      path: tests/fixtures/artifacts/artifact.zip
+    memory: 512
+    timeout: 10
+    environment:
+      NODE_ENV: ${stages.node_env}
+      TEST_VAR: ${vars.testv}

@@ -10,3 +10,4 @@ export * from './base64';
 export * from './rosAssets';
 export * from './requestHelper';
 export * from './credentials';
+export * from './stateManager';
