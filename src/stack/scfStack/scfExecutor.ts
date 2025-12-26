@@ -1,0 +1,78 @@
+import { Context, FunctionDomain, Plan, StateFile } from '../../types';
+import { createResource, deleteResource, updateResource } from './scfResource';
+import { logger } from '../../common';
+import { getResource } from '../../common/stateManager';
+
+export const executePlan = async (
+  context: Context,
+  plan: Plan,
+  functions: Array<FunctionDomain> | undefined,
+  initialState: StateFile,
+): Promise<StateFile> => {
+  const functionsMap = new Map<string, FunctionDomain>();
+  let currentState = initialState;
+
+  if (functions) {
+    for (const fn of functions) {
+      functionsMap.set(`functions.${fn.key}`, fn);
+    }
+  }
+
+  for (const item of plan.items) {
+    if (item.action === 'noop') {
+      logger.info(`No changes for ${item.logicalId}`);
+      continue;
+    }
+
+    try {
+      switch (item.action) {
+        case 'create': {
+          const fn = functionsMap.get(item.logicalId);
+          if (!fn) {
+            throw new Error(`Function not found for logical ID: ${item.logicalId}`);
+          }
+          logger.info(`Creating function: ${fn.name}`);
+          currentState = await createResource(context, fn, currentState);
+          logger.info(`Successfully created function: ${fn.name}`);
+          break;
+        }
+
+        case 'update': {
+          const fn = functionsMap.get(item.logicalId);
+          if (!fn) {
+            throw new Error(`Function not found for logical ID: ${item.logicalId}`);
+          }
+          logger.info(`Updating function: ${fn.name}`);
+          currentState = await updateResource(context, fn, currentState);
+          logger.info(`Successfully updated function: ${fn.name}`);
+          break;
+        }
+
+        case 'delete': {
+          const state = getResource(currentState, item.logicalId);
+          if (!state) {
+            logger.warn(`State not found for ${item.logicalId}, skipping deletion`);
+            continue;
+          }
+          logger.info(`Deleting function: ${state.physicalId}`);
+          currentState = await deleteResource(
+            context,
+            state.physicalId,
+            item.logicalId,
+            currentState,
+          );
+          logger.info(`Successfully deleted function: ${state.physicalId}`);
+          break;
+        }
+
+        default:
+          logger.warn(`Unknown action: ${item.action} for ${item.logicalId}`);
+      }
+    } catch (error) {
+      logger.error(`Failed to execute ${item.action} for ${item.logicalId}: ${error}`);
+      throw error;
+    }
+  }
+
+  return currentState;
+};

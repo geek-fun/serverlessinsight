@@ -1,7 +1,7 @@
 export enum ProviderEnum {
   HUAWEI = 'huawei',
   ALIYUN = 'aliyun',
-  // TENCENT = 'TENCENT',
+  TENCENT = 'tencent',
   // AWS = 'AZURE',
   // AZURE = 'AZURE',
 }

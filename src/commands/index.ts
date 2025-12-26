@@ -7,6 +7,7 @@ import { deploy } from './deploy';
 import { template } from './template';
 import { destroyStack } from './destroy';
 import { runLocal } from './local';
+import { plan } from './plan';
 import { lang } from '../lang';
 
 // Global error handler
@@ -86,6 +87,36 @@ program
       logger.debug(lang.__('LOG_COMMAND_INFO'));
       await validate(stackName, { stage, location: file });
     }),
+  );
+
+program
+  .command('plan <stackName>')
+  .description('generate and show deployment plan (Tencent provider only)')
+  .option('-f, --file <path>', 'specify the yaml file')
+  .option('-s, --stage <stage>', 'specify the stage')
+  .option('-r, --region <region>', 'specify the region')
+  .option('-v, --provider <provider>', 'specify the provider')
+  .option('-k, --accessKeyId <accessKeyId>', 'specify the AccessKeyId')
+  .option('-x, --accessKeySecret <accessKeySecret>', 'specify the AccessKeySecret')
+  .option('-n, --securityToken <securityToken>', 'specify the SecurityToken')
+  .action(
+    actionWrapper(
+      'plan',
+      async (
+        stackName,
+        { stage, file, region, provider, accessKeyId, accessKeySecret, securityToken },
+      ) => {
+        await plan(stackName, {
+          stage,
+          location: file,
+          region,
+          provider,
+          accessKeyId,
+          accessKeySecret,
+          securityToken,
+        });
+      },
+    ),
   );
 
 program

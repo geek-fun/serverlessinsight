@@ -91,4 +91,30 @@ export const en = {
 
   // Function runner
   FUNCTION_LOG_FORMAT: '{{timestamp}} {{requestId}} [{{level}}] {{message}}',
+
+  // Plan command messages
+  PLAN_COMMAND_TENCENT_ONLY: 'Plan command is currently only supported for Tencent provider',
+  GENERATING_PLAN_FOR_SCF: 'Generating plan for Tencent SCF resources...',
+  DEPLOYMENT_PLAN: 'DEPLOYMENT PLAN',
+  NO_CHANGES_INFRASTRUCTURE_UP_TO_DATE: 'No changes. Infrastructure is up-to-date.',
+  CREATE: 'CREATE',
+  UPDATE: 'UPDATE',
+  DELETE: 'DELETE',
+  NO_CHANGE: 'NO CHANGE',
+  RESOURCES_TO_BE_CREATED: 'Resources to be created',
+  RESOURCES_TO_BE_UPDATED: 'Resources to be updated',
+  RESOURCES_TO_BE_DELETED: 'Resources to be deleted',
+  RESOURCES_UNCHANGED: 'Resources unchanged',
+  DRIFTED: 'DRIFTED',
+  REMOTE_CONFIG_DIFFERS: 'Remote configuration differs from state',
+  CHANGES: 'Changes',
+  PLAN: 'Plan',
+  TO_CREATE: 'to create',
+  TO_UPDATE: 'to update',
+  TO_DELETE: 'to delete',
+  UNCHANGED: 'unchanged',
+  ACTIONS: 'action(s)',
+  GENERATING_PLAN: 'Generating deployment plan...',
+  PLAN_GENERATED: 'Plan generated with',
+  EXECUTING_PLAN: 'Executing deployment plan...',
 };
