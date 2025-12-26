@@ -1,5 +1,6 @@
 import { getContext, getIacLocation, logger, rosStackDelete, setContext } from '../common';
 import { parseYaml } from '../parser';
+import { lang } from '../lang';
 
 export const destroyStack = async (
   stackName: string,
@@ -16,7 +17,11 @@ export const destroyStack = async (
   await setContext({ stackName, ...options, iacProvider: iac.provider }, true);
   const context = getContext();
   logger.info(
-    `Destroying stack: ${stackName}, provider: ${context.provider}, region: ${context.region}...`,
+    lang.__('DESTROYING_STACK', {
+      stackName,
+      provider: context.provider,
+      region: context.region,
+    }),
   );
   await rosStackDelete(context);
 };

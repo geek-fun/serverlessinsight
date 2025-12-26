@@ -46,7 +46,7 @@ const createStack = async (stackName: string, templateBody: unknown, context: Co
   });
 
   const response = await client.createStack(createStackRequest);
-  logger.info(`创建中，资源栈ID:${response.body?.stackId}`);
+  logger.info(lang.__('CREATING_STACK_ID', { stackId: String(response.body?.stackId) }));
   // wait for stack create complete
   return await getStackActionResult(response.body?.stackId || '', context.region);
 };
@@ -56,7 +56,7 @@ const updateStack = async (stackId: string, templateBody: unknown, context: Cont
     (parameter) =>
       new UpdateStackRequestParameters({
         parameterKey: Util.assertAsString(parameter.key),
-        parameterValue: Util.assertAsString(parameter.key),
+        parameterValue: Util.assertAsString(parameter.value),
       }),
   );
 
@@ -69,7 +69,7 @@ const updateStack = async (stackId: string, templateBody: unknown, context: Cont
   });
   try {
     const response = await client.updateStack(updateStackRequest);
-    logger.info(`更新中，资源栈ID: ${response.body?.stackId}`);
+    logger.info(lang.__('UPDATING_STACK_ID', { stackId: String(response.body?.stackId) }));
     // wait for stack update complete
     return await getStackActionResult(response.body?.stackId || '', context.region);
   } catch (err) {
@@ -119,7 +119,7 @@ const getStackActionResult = async (
         const result = await client.getStack(new GetStackRequest({ regionId: region, stackId }));
         const status = result.body?.status ?? '';
 
-        logger.info(`stack status: ${status}`);
+        logger.info(lang.__('STACK_STATUS', { status }));
 
         if (
           [
@@ -169,16 +169,26 @@ export const rosStackDeploy = async (stackName: string, templateBody: unknown) =
       throw new Error(`fail to update stack, because stack status is ${stackStatus}`);
     }
 
-    logger.info(`Update stack: ${stackName} deploying... `);
+    logger.info(lang.__('UPDATE_STACK_DEPLOYING', { stackName }));
     const stack = await updateStack(stackInfo.stackId as string, templateBody, context);
 
-    logger.info(`stackUpdate success! stackName:${stack?.stackName}, stackId:${stack?.stackId}`);
+    logger.info(
+      lang.__('STACK_UPDATE_SUCCESS', {
+        stackName: String(stack?.stackName),
+        stackId: String(stack?.stackId),
+      }),
+    );
   } else {
     // create stack
-    logger.info(`Create stack: ${stackName} deploying... `);
+    logger.info(lang.__('CREATE_STACK_DEPLOYING', { stackName }));
     const stack = await createStack(stackName, templateBody, context);
 
-    logger.info(`createStack success! stackName:${stack?.stackName}, stackId:${stack?.stackId}`);
+    logger.info(
+      lang.__('CREATE_STACK_SUCCESS', {
+        stackName: String(stack?.stackName),
+        stackId: String(stack?.stackId),
+      }),
+    );
   }
 };
 
@@ -189,7 +199,7 @@ export const rosStackDelete = async ({
   const stackInfo = await getStackByName(stackName, region);
 
   if (!stackInfo) {
-    logger.warn(`Stack: ${stackName} not exists, skipped! 🚫`);
+    logger.warn(lang.__('STACK_NOT_EXISTS_SKIPPED', { stackName }));
     return;
   }
   try {
@@ -199,9 +209,9 @@ export const rosStackDelete = async ({
     });
     await client.deleteStack(deleteStackRequest);
     await getStackActionResult(stackInfo.stackId as string, region);
-    logger.info(`Stack: ${stackName} deleted!🗑 `);
+    logger.info(lang.__('STACK_DELETED', { stackName }));
   } catch (err) {
-    logger.error(`Stack: ${stackName} delete failed! ❌, error: ${JSON.stringify(err)}`);
+    logger.error(lang.__('STACK_DELETE_FAILED', { stackName, error: JSON.stringify(err) }));
     throw new Error(JSON.stringify(err));
   }
 };

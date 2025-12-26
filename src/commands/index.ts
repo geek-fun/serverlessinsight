@@ -7,6 +7,7 @@ import { deploy } from './deploy';
 import { template } from './template';
 import { destroyStack } from './destroy';
 import { runLocal } from './local';
+import { lang } from '../lang';
 
 // Global error handler
 const handleCommandError = (
@@ -15,11 +16,14 @@ const handleCommandError = (
 ): never => {
   // Log error message as string to preserve newlines
   logger.error(
-    `Command '${commandName}' failed with error:\n${error?.message || 'Unknown error occurred'}`,
+    lang.__('COMMAND_FAILED', {
+      commandName,
+      error: error?.message || 'Unknown error occurred',
+    }),
   );
 
   if (error?.stack && process.env.DEBUG) {
-    logger.debug(`Stack trace:\n${error.stack}`);
+    logger.debug(lang.__('STACK_TRACE', { stack: error.stack }));
   }
 
   let exitCode = 1;
@@ -68,7 +72,7 @@ program
       await setContext({ ...options });
       const context = getContext();
       const result = await getIamInfo(context);
-      console.log('result:', JSON.stringify(result));
+      console.log(lang.__('RESULT', { result: JSON.stringify(result) }));
     }),
   );
 
@@ -79,7 +83,7 @@ program
   .option('-s, --stage <stage>', 'specify the stage')
   .action(
     actionWrapper('validate', async (stackName, { file, stage }) => {
-      logger.debug('log command info');
+      logger.debug(lang.__('LOG_COMMAND_INFO'));
       await validate(stackName, { stage, location: file });
     }),
   );

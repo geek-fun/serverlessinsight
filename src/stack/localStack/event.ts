@@ -16,6 +16,7 @@ import path from 'node:path';
 import fs from 'node:fs';
 import { FunctionOptions } from '../../types/localStack';
 import { extractZipFile } from './utils';
+import { lang } from '../../lang';
 
 const matchTrigger = (
   req: { method: string; path: string },
@@ -70,7 +71,11 @@ const servEvent = async (
     };
   }
   logger.info(
-    `Event trigger ${JSON.stringify(event.triggers)}, req method: ${req.method}, req url${req.url}`,
+    lang.__('EVENT_TRIGGER', {
+      triggers: JSON.stringify(event.triggers),
+      method: req.method || '',
+      url: req.url || '',
+    }),
   );
   const matchedTrigger = event.triggers.find((trigger) =>
     matchTrigger({ method: parsed.method, path: parsed.url }, trigger),
@@ -136,7 +141,7 @@ const servEvent = async (
           ...backendDef.environment,
         };
 
-        logger.debug(`Invoking FC function with Aliyun event format`);
+        logger.debug(lang.__('INVOKING_FC_FUNCTION_WITH_ALIYUN_EVENT'));
         const result = await invokeFunction(funOptions, env, aliyunEvent, aliyunContext);
 
         const endTime = new Date();
@@ -160,7 +165,7 @@ const servEvent = async (
       } catch (error) {
         const endTime = new Date();
         logApiGatewayRequest(requestId, parsed.url, 500, startTime, endTime, sourceIp);
-        logger.error(`Function execution error: ${error}`);
+        logger.error(lang.__('FUNCTION_EXECUTION_ERROR', { error: String(error) }));
         return {
           statusCode: 500,
           body: {

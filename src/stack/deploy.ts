@@ -14,6 +14,7 @@ import {
 import { prepareBootstrapStack, RosStack } from './rosStack';
 import { RfsStack } from './rfsStack';
 import { get } from 'lodash';
+import { lang } from '../lang';
 
 export const generateRosStackTemplate = (stackName: string, iac: ServerlessIac) => {
   const context = getContext();
@@ -46,23 +47,26 @@ export const generateRfsStackTemplate = (stackName: string, iac: ServerlessIac) 
 export const deployStack = async (stackName: string, iac: ServerlessIac) => {
   const { template, assets } = generateRosStackTemplate(stackName, iac);
   await prepareBootstrapStack();
-  logger.info(`Deploying stack, publishing assets...`);
+  logger.info(lang.__('DEPLOYING_STACK_PUBLISHING_ASSETS'));
   const constructedAssets = await constructAssets(assets);
   try {
     await publishAssets(constructedAssets);
-    logger.info(`Assets published! 🎉`);
+    logger.info(lang.__('ASSETS_PUBLISHED'));
     await rosStackDeploy(stackName, template);
   } catch (e) {
-    logger.error(`Failed to deploy stack: ${e}`);
+    logger.error(lang.__('FAILED_TO_DEPLOY_STACK', { error: String(e) }));
     throw e;
   } finally {
     try {
-      logger.info(`Cleaning up temporary Assets...`);
+      logger.info(lang.__('CLEANING_UP_TEMPORARY_ASSETS'));
       await cleanupAssets(constructedAssets);
-      logger.info(`Assets cleaned up!♻️`);
+      logger.info(lang.__('ASSETS_CLEANED_UP'));
     } catch (e) {
       logger.error(
-        `Failed to cleanup assets, it wont affect the deployment result, but to avoid potential cost, you can delete the temporary bucket : ${constructedAssets?.[0].bucketName}, error details:${e}`,
+        lang.__('FAILED_TO_CLEANUP_ASSETS', {
+          bucketName: String(constructedAssets?.[0].bucketName),
+          error: String(e),
+        }),
       );
     }
   }

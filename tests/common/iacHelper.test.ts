@@ -1,6 +1,7 @@
 import * as ros from '@alicloud/ros-cdk-core';
 import * as ossDeployment from '@alicloud/ros-cdk-ossdeployment';
 import { getFileSource, calcRefs, calcValue, formatRosId, logger } from '../../src/common';
+import { lang } from '../../src/lang';
 import fs from 'node:fs';
 import { context } from '../fixtures/contextFixture';
 
@@ -10,6 +11,11 @@ const fcName = 'testFunction';
 const location = 'tests/fixtures/artifacts/artifact.zip';
 
 describe('Unit test for iacHelper', () => {
+  beforeAll(() => {
+    // Set locale to English for consistent test messages
+    lang.setLocale('en');
+  });
+
   beforeEach(() => {
     jest.restoreAllMocks();
   });

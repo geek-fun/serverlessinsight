@@ -4,6 +4,7 @@ import { ParsedRequest, RouteResponse } from '../../types/localStack';
 import { logger } from '../../common';
 import path from 'node:path';
 import fs from 'node:fs';
+import { lang } from '../../lang';
 
 type FileEntry = {
   name: string;
@@ -65,7 +66,7 @@ const listDirectory = (dirPath: string, bucketPath: string): Array<FileEntry> =>
       };
     });
   } catch (error) {
-    logger.error(`Error listing directory: ${error}`);
+    logger.error(lang.__('ERROR_LISTING_DIRECTORY', { error: String(error) }));
     return [];
   }
 };
@@ -98,7 +99,7 @@ const getAllFiles = (
 
     return fileList;
   } catch (error) {
-    logger.error(`Error getting all files: ${error}`);
+    logger.error(lang.__('ERROR_GETTING_ALL_FILES', { error: String(error) }));
     return fileList;
   }
 };
@@ -109,7 +110,11 @@ export const bucketsHandler = async (
   iac: ServerlessIac,
 ): Promise<RouteResponse> => {
   logger.info(
-    `Bucket request received by local server -> ${req.method} ${parsed.identifier ?? '/'} ${parsed.url}`,
+    lang.__('BUCKET_REQUEST_RECEIVED', {
+      method: req.method || '',
+      identifier: parsed.identifier ?? '/',
+      url: parsed.url || '',
+    }),
   );
 
   // Find the bucket definition
@@ -159,7 +164,7 @@ export const bucketsHandler = async (
         },
       };
     } catch (error) {
-      logger.error(`Error listing bucket files: ${error}`);
+      logger.error(lang.__('ERROR_LISTING_BUCKET_FILES', { error: String(error) }));
       return {
         statusCode: 500,
         body: {
@@ -214,7 +219,7 @@ export const bucketsHandler = async (
         },
       };
     } catch (error) {
-      logger.error(`Error listing directory: ${error}`);
+      logger.error(lang.__('ERROR_LISTING_DIRECTORY', { error: String(error) }));
       return {
         statusCode: 500,
         body: {
@@ -242,7 +247,7 @@ export const bucketsHandler = async (
       body: isTextFile ? fileContent.toString('utf-8') : fileContent.toString('base64'),
     };
   } catch (error) {
-    logger.error(`Error reading file: ${error}`);
+    logger.error(lang.__('ERROR_READING_FILE', { error: String(error) }));
     return {
       statusCode: 500,
       body: {

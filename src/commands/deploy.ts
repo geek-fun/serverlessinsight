@@ -1,6 +1,7 @@
 import { deployStack } from '../stack';
 import { getIacLocation, logger, setContext } from '../common';
 import { parseYaml } from '../parser';
+import { lang } from '../lang';
 
 export const deploy = async (
   stackName: string,
@@ -15,14 +16,14 @@ export const deploy = async (
     securityToken?: string;
   },
 ) => {
-  logger.info('Validating yaml...');
+  logger.info(lang.__('VALIDATING_YAML'));
   const iac = parseYaml(getIacLocation(options.location));
-  logger.info('Yaml is valid! 🎉');
+  logger.info(lang.__('YAML_VALID'));
 
   await setContext({ ...options, stackName, iacProvider: iac.provider }, true);
 
-  logger.info('Deploying stack...');
+  logger.info(lang.__('DEPLOYING_STACK'));
   await deployStack(stackName, iac);
 
-  logger.info('Stack deployed! 🎉');
+  logger.info(lang.__('STACK_DEPLOYED'));
 };
