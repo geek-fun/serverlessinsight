@@ -1,4 +1,4 @@
-import * as COS from 'cos-nodejs-sdk-v5';
+import COS from 'cos-nodejs-sdk-v5';
 import { Context } from '../types';
 
 export type TencentCosClient = COS;

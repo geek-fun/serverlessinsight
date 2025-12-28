@@ -1,7 +1,7 @@
 import { Context } from '../../types';
 import { CosBucketConfig, CosBucketInfo } from './cosTypes';
 import { createCosClient } from '../../common/cosClient';
-import * as COS from 'cos-nodejs-sdk-v5';
+import type COS from 'cos-nodejs-sdk-v5';
 
 export const createCosBucket = async (context: Context, config: CosBucketConfig): Promise<void> => {
   const client = createCosClient(context);
@@ -45,12 +45,13 @@ export const createCosBucket = async (context: Context, config: CosBucketConfig)
 
   // Set website configuration if specified
   if (config.WebsiteConfiguration) {
+    const websiteConfig = config.WebsiteConfiguration;
     await new Promise<void>((resolve, reject) => {
       client.putBucketWebsite(
         {
           Bucket: config.Bucket,
           Region: config.Region,
-          WebsiteConfiguration: config.WebsiteConfiguration,
+          WebsiteConfiguration: websiteConfig,
         },
         (err) => {
           if (err) {
@@ -131,10 +132,13 @@ export const getCosBucket = async (
         );
       });
 
-      if (websiteResult.IndexDocument || websiteResult.ErrorDocument) {
+      if (
+        websiteResult.WebsiteConfiguration?.IndexDocument ||
+        websiteResult.WebsiteConfiguration?.ErrorDocument
+      ) {
         websiteConfig = {
-          IndexDocument: websiteResult.IndexDocument,
-          ErrorDocument: websiteResult.ErrorDocument,
+          IndexDocument: websiteResult.WebsiteConfiguration.IndexDocument,
+          ErrorDocument: websiteResult.WebsiteConfiguration.ErrorDocument,
         };
       }
     } catch {
@@ -189,7 +193,7 @@ export const updateCosBucketWebsite = async (
   bucketName: string,
   region: string,
   websiteConfig: {
-    IndexDocument?: {
+    IndexDocument: {
       Suffix: string;
     };
     ErrorDocument?: {

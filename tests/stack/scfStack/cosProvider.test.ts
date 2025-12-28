@@ -59,8 +59,10 @@ describe('CosProvider', () => {
       getBucketAcl: jest.fn((params, callback) => callback(null, { ACL: 'public-read' })),
       getBucketWebsite: jest.fn((params, callback) =>
         callback(null, {
-          IndexDocument: { Suffix: 'index.html' },
-          ErrorDocument: { Key: '404.html' },
+          WebsiteConfiguration: {
+            IndexDocument: { Suffix: 'index.html' },
+            ErrorDocument: { Key: '404.html' },
+          },
         }),
       ),
       deleteBucket: jest.fn((params, callback) => callback(null)),

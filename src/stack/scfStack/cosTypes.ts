@@ -6,7 +6,7 @@ export type CosBucketConfig = {
   Region: string;
   ACL?: 'private' | 'public-read' | 'public-read-write';
   WebsiteConfiguration?: {
-    IndexDocument?: {
+    IndexDocument: {
       Suffix: string;
     };
     ErrorDocument?: {
