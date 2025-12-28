@@ -5,12 +5,12 @@ import {
   updateCosBucketWebsite,
   deleteCosBucket,
 } from '../../../src/stack/scfStack/cosProvider';
-import { createCosClient } from '../../../src/common/cosClient';
+import { createCosClient } from '../../../src/common/scfClient';
 import { ProviderEnum } from '../../../src/common';
 import { Context } from '../../../src/types';
 
 // Mock dependencies
-jest.mock('../../../src/common/cosClient');
+jest.mock('../../../src/common/scfClient');
 
 describe('CosProvider', () => {
   const mockContext: Context = {

@@ -1,6 +1,6 @@
 import { Context } from '../../types';
 import { CosBucketConfig, CosBucketInfo } from './cosTypes';
-import { createCosClient } from '../../common/cosClient';
+import { createCosClient } from '../../common/scfClient';
 import type COS from 'cos-nodejs-sdk-v5';
 
 export const createCosBucket = async (context: Context, config: CosBucketConfig): Promise<void> => {

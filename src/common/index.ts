@@ -12,4 +12,3 @@ export * from './requestHelper';
 export * from './credentials';
 export * from './stateManager';
 export * from './scfClient';
-export * from './cosClient';
