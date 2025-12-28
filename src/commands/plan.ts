@@ -1,6 +1,6 @@
 import { getIacLocation, logger, setContext, loadState, ProviderEnum, getContext } from '../common';
 import { parseYaml } from '../parser';
-import { generatePlan } from '../stack/scfStack';
+import { generatePlan, generateBucketPlan } from '../stack/scfStack';
 import { lang } from '../lang';
 
 export const plan = async (
@@ -31,7 +31,13 @@ export const plan = async (
   logger.info(lang.__('GENERATING_PLAN_FOR_SCF'));
 
   const state = loadState(iac.provider.name, process.cwd());
-  const planResult = await generatePlan(context, state, iac.functions);
+  const functionPlan = await generatePlan(context, state, iac.functions);
+  const bucketPlan = await generateBucketPlan(context, state, iac.buckets);
+
+  // Combine plans
+  const planResult = {
+    items: [...functionPlan.items, ...bucketPlan.items],
+  };
 
   // Display plan
   logger.info('========================================');

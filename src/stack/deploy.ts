@@ -15,7 +15,7 @@ import {
 } from '../common';
 import { prepareBootstrapStack, RosStack } from './rosStack';
 import { RfsStack } from './rfsStack';
-import { generatePlan, executePlan } from './scfStack';
+import { generatePlan, executePlan, generateBucketPlan, executeBucketPlan } from './scfStack';
 import { get } from 'lodash';
 import { lang } from '../lang';
 
@@ -54,19 +54,30 @@ const deployTencent = async (iac: ServerlessIac): Promise<void> => {
   // Load current state
   let state = loadState(iac.provider.name, process.cwd());
 
-  // Generate plan
+  // Generate plan for functions
   logger.info(lang.__('GENERATING_PLAN'));
-  const plan = await generatePlan(context, state, iac.functions);
+  const functionPlan = await generatePlan(context, state, iac.functions);
+
+  // Generate plan for buckets
+  const bucketPlan = await generateBucketPlan(context, state, iac.buckets);
+
+  // Combine plans
+  const combinedPlan = {
+    items: [...functionPlan.items, ...bucketPlan.items],
+  };
 
   // Log plan
-  logger.info(`${lang.__('PLAN_GENERATED')}: ${plan.items.length} ${lang.__('ACTIONS')}`);
-  for (const item of plan.items) {
+  logger.info(`${lang.__('PLAN_GENERATED')}: ${combinedPlan.items.length} ${lang.__('ACTIONS')}`);
+  for (const item of combinedPlan.items) {
     logger.info(`  - ${item.action.toUpperCase()}: ${item.logicalId} (${item.resourceType})`);
   }
 
-  // Execute plan
+  // Execute function plan
   logger.info(lang.__('EXECUTING_PLAN'));
-  state = await executePlan(context, plan, iac.functions, state);
+  state = await executePlan(context, functionPlan, iac.functions, state);
+
+  // Execute bucket plan
+  state = await executeBucketPlan(context, bucketPlan, iac.buckets, state);
 
   // Save state
   saveState(state, process.cwd());
