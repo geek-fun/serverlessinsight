@@ -87,4 +87,30 @@ export const zhCN = {
 
   // Function runner
   FUNCTION_LOG_FORMAT: '{{timestamp}} {{requestId}} [{{level}}] {{message}}',
+
+  // Plan command messages
+  PLAN_COMMAND_TENCENT_ONLY: 'Plan 命令目前仅支持腾讯云提供商',
+  GENERATING_PLAN_FOR_SCF: '正在为腾讯云 SCF 资源生成计划...',
+  DEPLOYMENT_PLAN: '部署计划',
+  NO_CHANGES_INFRASTRUCTURE_UP_TO_DATE: '无变更。基础设施已是最新状态。',
+  CREATE: '创建',
+  UPDATE: '更新',
+  DELETE: '删除',
+  NO_CHANGE: '无变更',
+  RESOURCES_TO_BE_CREATED: '待创建的资源',
+  RESOURCES_TO_BE_UPDATED: '待更新的资源',
+  RESOURCES_TO_BE_DELETED: '待删除的资源',
+  RESOURCES_UNCHANGED: '未变更的资源',
+  DRIFTED: '已漂移',
+  REMOTE_CONFIG_DIFFERS: '远程配置与状态不同',
+  CHANGES: '变更',
+  PLAN: '计划',
+  TO_CREATE: '待创建',
+  TO_UPDATE: '待更新',
+  TO_DELETE: '待删除',
+  UNCHANGED: '未变更',
+  ACTIONS: '个操作',
+  GENERATING_PLAN: '正在生成部署计划...',
+  PLAN_GENERATED: '计划已生成，共有',
+  EXECUTING_PLAN: '正在执行部署计划...',
 };

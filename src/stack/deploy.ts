@@ -10,9 +10,12 @@ import {
   ProviderEnum,
   publishAssets,
   rosStackDeploy,
+  loadState,
+  saveState,
 } from '../common';
 import { prepareBootstrapStack, RosStack } from './rosStack';
 import { RfsStack } from './rfsStack';
+import { generatePlan, executePlan } from './scfStack';
 import { get } from 'lodash';
 import { lang } from '../lang';
 
@@ -44,7 +47,34 @@ export const generateRfsStackTemplate = (stackName: string, iac: ServerlessIac) 
   return { template: hcl };
 };
 
-export const deployStack = async (stackName: string, iac: ServerlessIac) => {
+const deployTencent = async (iac: ServerlessIac): Promise<void> => {
+  const context = getContext();
+  logger.info(lang.__('DEPLOYING_STACK_PUBLISHING_ASSETS'));
+
+  // Load current state
+  let state = loadState(iac.provider.name, process.cwd());
+
+  // Generate plan
+  logger.info(lang.__('GENERATING_PLAN'));
+  const plan = await generatePlan(context, state, iac.functions);
+
+  // Log plan
+  logger.info(`${lang.__('PLAN_GENERATED')}: ${plan.items.length} ${lang.__('ACTIONS')}`);
+  for (const item of plan.items) {
+    logger.info(`  - ${item.action.toUpperCase()}: ${item.logicalId} (${item.resourceType})`);
+  }
+
+  // Execute plan
+  logger.info(lang.__('EXECUTING_PLAN'));
+  state = await executePlan(context, plan, iac.functions, state);
+
+  // Save state
+  saveState(state, process.cwd());
+
+  logger.info(lang.__('STACK_DEPLOYED'));
+};
+
+const deployAliyun = async (stackName: string, iac: ServerlessIac): Promise<void> => {
   const { template, assets } = generateRosStackTemplate(stackName, iac);
   await prepareBootstrapStack();
   logger.info(lang.__('DEPLOYING_STACK_PUBLISHING_ASSETS'));
@@ -72,6 +102,25 @@ export const deployStack = async (stackName: string, iac: ServerlessIac) => {
   }
 };
 
+const deployHuawei = async (stackName: string, iac: ServerlessIac): Promise<void> => {
+  // For now, Huawei uses the same approach as Aliyun but with different stack
+  const { template } = generateRfsStackTemplate(stackName, iac);
+  logger.info(lang.__('DEPLOYING_STACK_PUBLISHING_ASSETS'));
+  // TODO: Implement Huawei-specific deployment logic
+  console.log('HCL:', template);
+  logger.info(lang.__('STACK_DEPLOYED'));
+};
+
+export const deployStack = async (stackName: string, iac: ServerlessIac) => {
+  if (iac.provider.name === ProviderEnum.TENCENT) {
+    await deployTencent(iac);
+  } else if (iac.provider.name === ProviderEnum.ALIYUN) {
+    await deployAliyun(stackName, iac);
+  } else if (iac.provider.name === ProviderEnum.HUAWEI) {
+    await deployHuawei(stackName, iac);
+  }
+};
+
 export const generateStackTemplate = (
   stackName: string,
   iac: ServerlessIac,
@@ -80,6 +129,9 @@ export const generateStackTemplate = (
     return generateRosStackTemplate(stackName, iac);
   } else if (iac.provider.name === ProviderEnum.HUAWEI) {
     return generateRfsStackTemplate(stackName, iac);
+  } else if (iac.provider.name === ProviderEnum.TENCENT) {
+    // Tencent uses state-based deployment, no template generation needed
+    return { template: {} };
   }
   return { template: '' };
 };
