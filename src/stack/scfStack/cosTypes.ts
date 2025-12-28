@@ -50,10 +50,14 @@ export const bucketToCosBucketConfig = (bucket: BucketDomain, region: string): C
       IndexDocument: {
         Suffix: bucket.website.index,
       },
-      ErrorDocument: {
-        Key: bucket.website.error_page,
-      },
     };
+
+    // Only add ErrorDocument if error_page is defined
+    if (bucket.website.error_page) {
+      config.WebsiteConfiguration.ErrorDocument = {
+        Key: bucket.website.error_page,
+      };
+    }
   }
 
   return config;

@@ -110,7 +110,9 @@ export const getCosBucket = async (
       });
       acl = aclResult.ACL;
     } catch {
-      // ACL might not be accessible
+      // ACL might not be accessible due to insufficient permissions
+      // This is expected behavior for some bucket configurations
+      // Continue without ACL information
     }
 
     // Get website configuration
@@ -142,7 +144,9 @@ export const getCosBucket = async (
         };
       }
     } catch {
-      // Website configuration might not be set
+      // Website configuration might not be set (buckets without static website hosting)
+      // or user may not have permission to read it
+      // This is expected behavior - continue without website configuration
     }
 
     return {
