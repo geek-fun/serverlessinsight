@@ -108,6 +108,12 @@ describe('TdsqlcProvider', () => {
         'Failed to create TDSQL-C cluster: No cluster ID returned',
       );
     });
+
+    it('should handle API errors during creation', async () => {
+      mockCynosdbClient.CreateClusters.mockRejectedValue(new Error('API Error'));
+
+      await expect(createTdsqlcCluster(mockContext, mockConfig)).rejects.toThrow('API Error');
+    });
   });
 
   describe('getTdsqlcCluster', () => {
@@ -156,6 +162,14 @@ describe('TdsqlcProvider', () => {
 
       expect(result).toBeNull();
     });
+
+    it('should handle API errors gracefully', async () => {
+      mockCynosdbClient.DescribeClusters.mockRejectedValue(new Error('API Error'));
+
+      const result = await getTdsqlcCluster(mockContext, 'test-cluster');
+
+      expect(result).toBeNull();
+    });
   });
 
   describe('updateTdsqlcCluster', () => {
@@ -186,6 +200,16 @@ describe('TdsqlcProvider', () => {
           AutoPause: 'no',
           AutoPauseDelay: 600,
         }),
+      );
+    });
+
+    it('should handle API errors during update', async () => {
+      const clusterId = 'cynosdbmysql-test123';
+
+      mockCynosdbClient.ModifyServerlessStrategy.mockRejectedValue(new Error('Update failed'));
+
+      await expect(updateTdsqlcCluster(mockContext, clusterId, mockConfig)).rejects.toThrow(
+        'Update failed',
       );
     });
   });
@@ -219,6 +243,14 @@ describe('TdsqlcProvider', () => {
           ClusterId: clusterId,
         }),
       );
+    });
+
+    it('should handle API errors during deletion', async () => {
+      const clusterId = 'cynosdbmysql-test123';
+
+      mockCynosdbClient.OfflineCluster.mockRejectedValue(new Error('Delete failed'));
+
+      await expect(deleteTdsqlcCluster(mockContext, clusterId)).rejects.toThrow('Delete failed');
     });
   });
 });
