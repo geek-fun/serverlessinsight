@@ -5,7 +5,7 @@ import {
   updateCosBucketWebsite,
   deleteCosBucket,
 } from '../../../src/stack/scfStack/cosProvider';
-import { createCosClient } from '../../../src/common/scfClient';
+import { createTencentCloudClient } from '../../../src/common/scfClient';
 import { ProviderEnum } from '../../../src/common';
 import { Context } from '../../../src/types';
 
@@ -39,7 +39,7 @@ describe('CosProvider', () => {
     },
   };
 
-  let mockClient: {
+  let mockCosClient: {
     putBucket: jest.Mock;
     putBucketAcl: jest.Mock;
     putBucketWebsite: jest.Mock;
@@ -51,7 +51,7 @@ describe('CosProvider', () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
-    mockClient = {
+    mockCosClient = {
       putBucket: jest.fn((params, callback) => callback(null)),
       putBucketAcl: jest.fn((params, callback) => callback(null)),
       putBucketWebsite: jest.fn((params, callback) => callback(null)),
@@ -67,22 +67,22 @@ describe('CosProvider', () => {
       ),
       deleteBucket: jest.fn((params, callback) => callback(null)),
     };
-    (createCosClient as jest.Mock).mockReturnValue(mockClient);
+    (createTencentCloudClient as jest.Mock).mockReturnValue({ cos: mockCosClient, scf: {} });
   });
 
   describe('createCosBucket', () => {
     it('should create bucket with all parameters', async () => {
       await createCosBucket(mockContext, mockConfig);
 
-      expect(createCosClient).toHaveBeenCalledWith(mockContext);
-      expect(mockClient.putBucket).toHaveBeenCalledWith(
+      expect(createTencentCloudClient).toHaveBeenCalledWith(mockContext);
+      expect(mockCosClient.putBucket).toHaveBeenCalledWith(
         {
           Bucket: 'test-bucket',
           Region: 'ap-guangzhou',
         },
         expect.any(Function),
       );
-      expect(mockClient.putBucketAcl).toHaveBeenCalledWith(
+      expect(mockCosClient.putBucketAcl).toHaveBeenCalledWith(
         {
           Bucket: 'test-bucket',
           Region: 'ap-guangzhou',
@@ -90,7 +90,7 @@ describe('CosProvider', () => {
         },
         expect.any(Function),
       );
-      expect(mockClient.putBucketWebsite).toHaveBeenCalledWith(
+      expect(mockCosClient.putBucketWebsite).toHaveBeenCalledWith(
         {
           Bucket: 'test-bucket',
           Region: 'ap-guangzhou',
@@ -108,8 +108,8 @@ describe('CosProvider', () => {
 
       await createCosBucket(mockContext, configWithoutAcl);
 
-      expect(mockClient.putBucket).toHaveBeenCalled();
-      expect(mockClient.putBucketAcl).not.toHaveBeenCalled();
+      expect(mockCosClient.putBucket).toHaveBeenCalled();
+      expect(mockCosClient.putBucketAcl).not.toHaveBeenCalled();
     });
 
     it('should create bucket without website configuration', async () => {
@@ -120,13 +120,13 @@ describe('CosProvider', () => {
 
       await createCosBucket(mockContext, configWithoutWebsite);
 
-      expect(mockClient.putBucket).toHaveBeenCalled();
-      expect(mockClient.putBucketWebsite).not.toHaveBeenCalled();
+      expect(mockCosClient.putBucket).toHaveBeenCalled();
+      expect(mockCosClient.putBucketWebsite).not.toHaveBeenCalled();
     });
 
     it('should propagate errors from client', async () => {
       const error = new Error('Create failed');
-      mockClient.putBucket = jest.fn((params, callback) => callback(error));
+      mockCosClient.putBucket = jest.fn((params, callback) => callback(error));
 
       await expect(createCosBucket(mockContext, mockConfig)).rejects.toThrow('Create failed');
     });
@@ -136,8 +136,8 @@ describe('CosProvider', () => {
     it('should get bucket successfully', async () => {
       const result = await getCosBucket(mockContext, 'test-bucket', 'ap-guangzhou');
 
-      expect(createCosClient).toHaveBeenCalledWith(mockContext);
-      expect(mockClient.headBucket).toHaveBeenCalledWith(
+      expect(createTencentCloudClient).toHaveBeenCalledWith(mockContext);
+      expect(mockCosClient.headBucket).toHaveBeenCalledWith(
         {
           Bucket: 'test-bucket',
           Region: 'ap-guangzhou',
@@ -156,7 +156,7 @@ describe('CosProvider', () => {
     });
 
     it('should return null for non-existent bucket', async () => {
-      mockClient.headBucket = jest.fn((params, callback) =>
+      mockCosClient.headBucket = jest.fn((params, callback) =>
         callback({ statusCode: 404, message: 'Not Found' }),
       );
 
@@ -166,7 +166,7 @@ describe('CosProvider', () => {
     });
 
     it('should handle bucket without ACL', async () => {
-      mockClient.getBucketAcl = jest.fn((params, callback) =>
+      mockCosClient.getBucketAcl = jest.fn((params, callback) =>
         callback(new Error('ACL not accessible')),
       );
 
@@ -184,7 +184,7 @@ describe('CosProvider', () => {
     });
 
     it('should handle bucket without website configuration', async () => {
-      mockClient.getBucketWebsite = jest.fn((params, callback) =>
+      mockCosClient.getBucketWebsite = jest.fn((params, callback) =>
         callback(new Error('Website not configured')),
       );
 
@@ -200,7 +200,7 @@ describe('CosProvider', () => {
 
     it('should propagate non-404 errors', async () => {
       const error = new Error('Some other error');
-      mockClient.headBucket = jest.fn((params, callback) => callback(error));
+      mockCosClient.headBucket = jest.fn((params, callback) => callback(error));
 
       await expect(getCosBucket(mockContext, 'test-bucket', 'ap-guangzhou')).rejects.toThrow(
         'Some other error',
@@ -212,8 +212,8 @@ describe('CosProvider', () => {
     it('should update bucket ACL', async () => {
       await updateCosBucketAcl(mockContext, 'test-bucket', 'ap-guangzhou', 'private');
 
-      expect(createCosClient).toHaveBeenCalledWith(mockContext);
-      expect(mockClient.putBucketAcl).toHaveBeenCalledWith(
+      expect(createTencentCloudClient).toHaveBeenCalledWith(mockContext);
+      expect(mockCosClient.putBucketAcl).toHaveBeenCalledWith(
         {
           Bucket: 'test-bucket',
           Region: 'ap-guangzhou',
@@ -225,7 +225,7 @@ describe('CosProvider', () => {
 
     it('should propagate errors from client', async () => {
       const error = new Error('Update ACL failed');
-      mockClient.putBucketAcl = jest.fn((params, callback) => callback(error));
+      mockCosClient.putBucketAcl = jest.fn((params, callback) => callback(error));
 
       await expect(
         updateCosBucketAcl(mockContext, 'test-bucket', 'ap-guangzhou', 'private'),
@@ -242,8 +242,8 @@ describe('CosProvider', () => {
 
       await updateCosBucketWebsite(mockContext, 'test-bucket', 'ap-guangzhou', websiteConfig);
 
-      expect(createCosClient).toHaveBeenCalledWith(mockContext);
-      expect(mockClient.putBucketWebsite).toHaveBeenCalledWith(
+      expect(createTencentCloudClient).toHaveBeenCalledWith(mockContext);
+      expect(mockCosClient.putBucketWebsite).toHaveBeenCalledWith(
         {
           Bucket: 'test-bucket',
           Region: 'ap-guangzhou',
@@ -255,7 +255,7 @@ describe('CosProvider', () => {
 
     it('should propagate errors from client', async () => {
       const error = new Error('Update website failed');
-      mockClient.putBucketWebsite = jest.fn((params, callback) => callback(error));
+      mockCosClient.putBucketWebsite = jest.fn((params, callback) => callback(error));
 
       await expect(
         updateCosBucketWebsite(mockContext, 'test-bucket', 'ap-guangzhou', {
@@ -269,8 +269,8 @@ describe('CosProvider', () => {
     it('should delete bucket', async () => {
       await deleteCosBucket(mockContext, 'test-bucket', 'ap-guangzhou');
 
-      expect(createCosClient).toHaveBeenCalledWith(mockContext);
-      expect(mockClient.deleteBucket).toHaveBeenCalledWith(
+      expect(createTencentCloudClient).toHaveBeenCalledWith(mockContext);
+      expect(mockCosClient.deleteBucket).toHaveBeenCalledWith(
         {
           Bucket: 'test-bucket',
           Region: 'ap-guangzhou',
@@ -281,7 +281,7 @@ describe('CosProvider', () => {
 
     it('should propagate errors from client', async () => {
       const error = new Error('Delete failed');
-      mockClient.deleteBucket = jest.fn((params, callback) => callback(error));
+      mockCosClient.deleteBucket = jest.fn((params, callback) => callback(error));
 
       await expect(deleteCosBucket(mockContext, 'test-bucket', 'ap-guangzhou')).rejects.toThrow(
         'Delete failed',

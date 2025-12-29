@@ -1,14 +1,14 @@
 import { Context } from '../../types';
 import { CosBucketConfig, CosBucketInfo } from './cosTypes';
-import { createCosClient } from '../../common/scfClient';
+import { createTencentCloudClient } from '../../common/scfClient';
 import type COS from 'cos-nodejs-sdk-v5';
 
 export const createCosBucket = async (context: Context, config: CosBucketConfig): Promise<void> => {
-  const client = createCosClient(context);
+  const client = createTencentCloudClient(context);
 
   // Create bucket
   await new Promise<void>((resolve, reject) => {
-    client.putBucket(
+    client.cos.putBucket(
       {
         Bucket: config.Bucket,
         Region: config.Region,
@@ -26,7 +26,7 @@ export const createCosBucket = async (context: Context, config: CosBucketConfig)
   // Set ACL if specified
   if (config.ACL) {
     await new Promise<void>((resolve, reject) => {
-      client.putBucketAcl(
+      client.cos.putBucketAcl(
         {
           Bucket: config.Bucket,
           Region: config.Region,
@@ -47,7 +47,7 @@ export const createCosBucket = async (context: Context, config: CosBucketConfig)
   if (config.WebsiteConfiguration) {
     const websiteConfig = config.WebsiteConfiguration;
     await new Promise<void>((resolve, reject) => {
-      client.putBucketWebsite(
+      client.cos.putBucketWebsite(
         {
           Bucket: config.Bucket,
           Region: config.Region,
@@ -70,12 +70,12 @@ export const getCosBucket = async (
   bucketName: string,
   region: string,
 ): Promise<CosBucketInfo | null> => {
-  const client = createCosClient(context);
+  const client = createTencentCloudClient(context);
 
   try {
     // Check if bucket exists
     await new Promise<COS.HeadBucketResult>((resolve, reject) => {
-      client.headBucket(
+      client.cos.headBucket(
         {
           Bucket: bucketName,
           Region: region,
@@ -94,7 +94,7 @@ export const getCosBucket = async (
     let acl: string | undefined;
     try {
       const aclResult = await new Promise<COS.GetBucketAclResult>((resolve, reject) => {
-        client.getBucketAcl(
+        client.cos.getBucketAcl(
           {
             Bucket: bucketName,
             Region: region,
@@ -119,7 +119,7 @@ export const getCosBucket = async (
     let websiteConfig: CosBucketInfo['WebsiteConfiguration'];
     try {
       const websiteResult = await new Promise<COS.GetBucketWebsiteResult>((resolve, reject) => {
-        client.getBucketWebsite(
+        client.cos.getBucketWebsite(
           {
             Bucket: bucketName,
             Region: region,
@@ -172,10 +172,10 @@ export const updateCosBucketAcl = async (
   region: string,
   acl: 'private' | 'public-read' | 'public-read-write',
 ): Promise<void> => {
-  const client = createCosClient(context);
+  const client = createTencentCloudClient(context);
 
   await new Promise<void>((resolve, reject) => {
-    client.putBucketAcl(
+    client.cos.putBucketAcl(
       {
         Bucket: bucketName,
         Region: region,
@@ -205,10 +205,10 @@ export const updateCosBucketWebsite = async (
     };
   },
 ): Promise<void> => {
-  const client = createCosClient(context);
+  const client = createTencentCloudClient(context);
 
   await new Promise<void>((resolve, reject) => {
-    client.putBucketWebsite(
+    client.cos.putBucketWebsite(
       {
         Bucket: bucketName,
         Region: region,
@@ -230,10 +230,10 @@ export const deleteCosBucket = async (
   bucketName: string,
   region: string,
 ): Promise<void> => {
-  const client = createCosClient(context);
+  const client = createTencentCloudClient(context);
 
   await new Promise<void>((resolve, reject) => {
-    client.deleteBucket(
+    client.cos.deleteBucket(
       {
         Bucket: bucketName,
         Region: region,

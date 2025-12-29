@@ -4,11 +4,16 @@ import { Context } from '../types';
 
 const ScfClient = tencentcloud.scf.v20180416.Client;
 
-export type TencentCloudClient = InstanceType<typeof ScfClient>;
-export type TencentCosClient = COS;
+type TencentCloudScfClient = InstanceType<typeof ScfClient>;
+type TencentCosClient = COS;
 
-export const createScfClient = (context: Context): TencentCloudClient => {
-  const clientConfig = {
+export interface TencentCloudClient {
+  scf: TencentCloudScfClient;
+  cos: TencentCosClient;
+}
+
+export const createTencentCloudClient = (context: Context): TencentCloudClient => {
+  const scfClientConfig = {
     credential: {
       secretId: context.accessKeyId,
       secretKey: context.accessKeySecret,
@@ -20,14 +25,16 @@ export const createScfClient = (context: Context): TencentCloudClient => {
       },
     },
   };
-  return new ScfClient(clientConfig);
-};
 
-export const createCosClient = (context: Context): TencentCosClient => {
+  const scfClient = new ScfClient(scfClientConfig);
+
   const cosClient = new COS({
     SecretId: context.accessKeyId,
     SecretKey: context.accessKeySecret,
   });
 
-  return cosClient;
+  return {
+    scf: scfClient,
+    cos: cosClient,
+  };
 };
