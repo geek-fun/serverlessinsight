@@ -13,6 +13,7 @@ export const databaseSchema = {
             'RDS_MYSQL_SERVERLESS',
             'RDS_PGSQL_SERVERLESS',
             'RDS_MSSQL_SERVERLESS',
+            'TDSQL_C_SERVERLESS',
           ],
         },
         version: {
@@ -38,14 +39,16 @@ export const databaseSchema = {
         cu: {
           type: 'object',
           properties: {
-            min: { type: 'integer', minimum: 0, maximum: 32 },
-            max: { type: 'integer', minimum: 1, maximum: 32 },
+            min: { type: 'number', minimum: 0, maximum: 32 },
+            max: { type: 'number', minimum: 1, maximum: 32 },
           },
         },
         storage: {
           type: 'object',
-          properties: { min: { type: 'integer', minimum: 20 } },
-          required: ['min'],
+          properties: {
+            min: { type: 'integer', minimum: 10 },
+            max: { type: 'integer', minimum: 10 },
+          },
         },
         security: {
           type: 'object',
@@ -56,7 +59,7 @@ export const databaseSchema = {
                 master_user: { type: 'string' },
                 password: { type: 'string' },
               },
-              required: ['master_user', 'password'],
+              required: ['password'],
             },
           },
           required: ['basic_auth'],
@@ -69,6 +72,8 @@ export const databaseSchema = {
               type: 'array',
               items: { type: 'string' },
             },
+            vpc_id: { type: 'string' },
+            subnet_id: { type: 'string' },
             public: { type: 'boolean' },
           },
         },

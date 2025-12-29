@@ -8,3 +8,8 @@ export * from './cosProvider';
 export * from './cosResource';
 export * from './cosPlanner';
 export * from './cosExecutor';
+export * from './tdsqlcTypes';
+export * from './tdsqlcProvider';
+export * from './tdsqlcResource';
+export * from './tdsqlcPlanner';
+export * from './tdsqlcExecutor';
