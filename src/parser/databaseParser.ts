@@ -23,7 +23,7 @@ export const parseDatabase = (databases?: {
       max: database.cu?.max ?? 6,
     },
     storage: {
-      min: database.storage?.min ?? 20,
+      min: database.storage?.min ?? 10,
       max: database.storage?.max,
     },
     network: {

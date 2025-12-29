@@ -30,6 +30,8 @@ export const createTdsqlcCluster = async (
 ): Promise<string> => {
   const client = createTdsqlcClient(context);
 
+  // Note: Zone is hardcoded to use the first availability zone in the region.
+  // For production use, this should be made configurable or use proper zone lookup.
   const params = {
     Zone: `${context.region}-1`, // Default zone
     VpcId: config.VpcId || '',
@@ -95,6 +97,9 @@ export const getTdsqlcCluster = async (
 
     const cluster = response.ClusterSet[0];
 
+    // Note: MinCpu, MaxCpu, MinStorageSize, MaxStorageSize are not available
+    // in the DescribeClusters response. These fields cannot be used for drift detection.
+    // For complete drift detection, a separate API call would be needed.
     return {
       ClusterId: cluster.ClusterId || '',
       ClusterName: cluster.ClusterName || '',
