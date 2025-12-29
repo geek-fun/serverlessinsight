@@ -13,6 +13,7 @@ const rdsEngineMap = new Map<
     category: string;
     dbInstanceClass: string;
     quota: { minCapacity: number; maxCapacity: number; ha: boolean };
+    scenario?: string;
     storage: {
       type: 'general_essd' | 'cloud_essd';
       // io 突发
@@ -170,13 +171,14 @@ const rdsEngineMap = new Map<
     },
   ],
   [
-    `${DatabaseEnum.ELASTICSEARCH_SERVERLESS}-${DatabaseVersionEnum['ES_SEARCH_7.10']}`,
+    `${DatabaseEnum.ELASTICSEARCH_SERVERLESS}-${DatabaseVersionEnum['ES_SEARCH_8.17']}`,
     {
       engine: 'Elasticsearch',
-      version: '7.10',
+      version: '8.17',
       category: 'STANDARD',
       dbInstanceClass: '',
       quota: { minCapacity: 2, maxCapacity: 8, ha: false },
+      scenario: 'SEARCH',
       storage: { type: 'cloud_essd', bursting: false, optimizedWrites: false, encryption: false },
     },
   ],
@@ -188,6 +190,7 @@ const rdsEngineMap = new Map<
       category: 'TRIAL',
       dbInstanceClass: '',
       quota: { minCapacity: 2, maxCapacity: 8, ha: false },
+      scenario: 'LOG',
       storage: { type: 'cloud_essd', bursting: false, optimizedWrites: false, encryption: false },
     },
   ],
@@ -202,7 +205,7 @@ export const resolveDatabases = (
     return undefined;
   }
   databases!.forEach((db) => {
-    const { engine, version, category, dbInstanceClass, quota, storage } =
+    const { engine, version, category, dbInstanceClass, quota, storage, scenario } =
       rdsEngineMap.get(`${db.type}-${db.version}`) ?? {};
 
     if ([DatabaseEnum.ELASTICSEARCH_SERVERLESS].includes(db.type)) {
@@ -223,6 +226,7 @@ export const resolveDatabases = (
             minCu: db.cu.min,
             appType: category as string,
           },
+          scenario: scenario,
           // network: [
           //   {
           //     type: 'PUBLIC_KIBANA',
