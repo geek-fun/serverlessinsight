@@ -3,3 +3,8 @@ export * from './scfProvider';
 export * from './scfResource';
 export * from './scfPlanner';
 export * from './scfExecutor';
+export * from './cosTypes';
+export * from './cosProvider';
+export * from './cosResource';
+export * from './cosPlanner';
+export * from './cosExecutor';

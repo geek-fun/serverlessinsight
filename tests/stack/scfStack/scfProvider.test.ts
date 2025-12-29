@@ -5,7 +5,7 @@ import {
   updateScfFunctionCode,
   deleteScfFunction,
 } from '../../../src/stack/scfStack/scfProvider';
-import { createScfClient } from '../../../src/common/scfClient';
+import { createTencentCloudClient } from '../../../src/common/scfClient';
 import { ProviderEnum } from '../../../src/common';
 import { Context } from '../../../src/types';
 import fs from 'node:fs';
@@ -38,7 +38,7 @@ describe('ScfProvider', () => {
     },
   };
 
-  let mockClient: {
+  let mockScfClient: {
     CreateFunction: jest.Mock;
     GetFunction: jest.Mock;
     UpdateFunctionConfiguration: jest.Mock;
@@ -48,14 +48,14 @@ describe('ScfProvider', () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
-    mockClient = {
+    mockScfClient = {
       CreateFunction: jest.fn().mockResolvedValue({}),
       GetFunction: jest.fn().mockResolvedValue({}),
       UpdateFunctionConfiguration: jest.fn().mockResolvedValue({}),
       UpdateFunctionCode: jest.fn().mockResolvedValue({}),
       DeleteFunction: jest.fn().mockResolvedValue({}),
     };
-    (createScfClient as jest.Mock).mockReturnValue(mockClient);
+    (createTencentCloudClient as jest.Mock).mockReturnValue({ scf: mockScfClient, cos: {} });
     (fs.readFileSync as jest.Mock).mockReturnValue(Buffer.from('test-code'));
   });
 
@@ -63,9 +63,9 @@ describe('ScfProvider', () => {
     it('should create function with all parameters', async () => {
       await createScfFunction(mockContext, mockConfig, 'test.zip');
 
-      expect(createScfClient).toHaveBeenCalledWith(mockContext);
+      expect(createTencentCloudClient).toHaveBeenCalledWith(mockContext);
       expect(fs.readFileSync).toHaveBeenCalledWith('test.zip');
-      expect(mockClient.CreateFunction).toHaveBeenCalledWith(
+      expect(mockScfClient.CreateFunction).toHaveBeenCalledWith(
         expect.objectContaining({
           FunctionName: 'test-function',
           Runtime: 'nodejs18',
@@ -91,7 +91,7 @@ describe('ScfProvider', () => {
 
       await createScfFunction(mockContext, configWithoutEnv, 'test.zip');
 
-      const callArgs = mockClient.CreateFunction.mock.calls[0][0];
+      const callArgs = mockScfClient.CreateFunction.mock.calls[0][0];
       expect(callArgs).not.toHaveProperty('Environment');
       expect(callArgs).toMatchObject({
         FunctionName: 'test-function',
@@ -105,13 +105,13 @@ describe('ScfProvider', () => {
     it('should encode code to base64', async () => {
       await createScfFunction(mockContext, mockConfig, 'test.zip');
 
-      const callArgs = mockClient.CreateFunction.mock.calls[0][0];
+      const callArgs = mockScfClient.CreateFunction.mock.calls[0][0];
       expect(callArgs.Code.ZipFile).toBe(Buffer.from('test-code').toString('base64'));
     });
 
     it('should propagate errors from client', async () => {
       const error = new Error('Create failed');
-      mockClient.CreateFunction.mockRejectedValue(error);
+      mockScfClient.CreateFunction.mockRejectedValue(error);
 
       await expect(createScfFunction(mockContext, mockConfig, 'test.zip')).rejects.toThrow(
         'Create failed',
@@ -121,7 +121,7 @@ describe('ScfProvider', () => {
 
   describe('getScfFunction', () => {
     it('should get function successfully', async () => {
-      mockClient.GetFunction.mockResolvedValue({
+      mockScfClient.GetFunction.mockResolvedValue({
         FunctionName: 'test-function',
         Runtime: 'nodejs18',
         Handler: 'index.handler',
@@ -135,8 +135,8 @@ describe('ScfProvider', () => {
 
       const result = await getScfFunction(mockContext, 'test-function');
 
-      expect(createScfClient).toHaveBeenCalledWith(mockContext);
-      expect(mockClient.GetFunction).toHaveBeenCalledWith({
+      expect(createTencentCloudClient).toHaveBeenCalledWith(mockContext);
+      expect(mockScfClient.GetFunction).toHaveBeenCalledWith({
         FunctionName: 'test-function',
       });
       expect(result).toEqual({
@@ -153,7 +153,7 @@ describe('ScfProvider', () => {
     });
 
     it('should return null if response is empty', async () => {
-      mockClient.GetFunction.mockResolvedValue({});
+      mockScfClient.GetFunction.mockResolvedValue({});
 
       const result = await getScfFunction(mockContext, 'test-function');
 
@@ -161,7 +161,7 @@ describe('ScfProvider', () => {
     });
 
     it('should return null if FunctionName is missing', async () => {
-      mockClient.GetFunction.mockResolvedValue({
+      mockScfClient.GetFunction.mockResolvedValue({
         Runtime: 'nodejs18',
       });
 
@@ -171,7 +171,7 @@ describe('ScfProvider', () => {
     });
 
     it('should handle function without environment variables', async () => {
-      mockClient.GetFunction.mockResolvedValue({
+      mockScfClient.GetFunction.mockResolvedValue({
         FunctionName: 'test-function',
         Runtime: 'nodejs18',
         Handler: 'index.handler',
@@ -194,7 +194,7 @@ describe('ScfProvider', () => {
 
     it('should return null for ResourceNotFound error', async () => {
       const error = { code: 'ResourceNotFound.FunctionName' };
-      mockClient.GetFunction.mockRejectedValue(error);
+      mockScfClient.GetFunction.mockRejectedValue(error);
 
       const result = await getScfFunction(mockContext, 'nonexistent');
 
@@ -203,7 +203,7 @@ describe('ScfProvider', () => {
 
     it('should propagate other errors', async () => {
       const error = new Error('Some other error');
-      mockClient.GetFunction.mockRejectedValue(error);
+      mockScfClient.GetFunction.mockRejectedValue(error);
 
       await expect(getScfFunction(mockContext, 'test-function')).rejects.toThrow(
         'Some other error',
@@ -211,7 +211,7 @@ describe('ScfProvider', () => {
     });
 
     it('should use default values for missing fields', async () => {
-      mockClient.GetFunction.mockResolvedValue({
+      mockScfClient.GetFunction.mockResolvedValue({
         FunctionName: 'test-function',
       });
 
@@ -229,7 +229,7 @@ describe('ScfProvider', () => {
     });
 
     it('should handle environment variables with missing keys', async () => {
-      mockClient.GetFunction.mockResolvedValue({
+      mockScfClient.GetFunction.mockResolvedValue({
         FunctionName: 'test-function',
         Runtime: 'nodejs18',
         Handler: 'index.handler',
@@ -254,8 +254,8 @@ describe('ScfProvider', () => {
     it('should update function configuration with all parameters', async () => {
       await updateScfFunctionConfiguration(mockContext, mockConfig);
 
-      expect(createScfClient).toHaveBeenCalledWith(mockContext);
-      expect(mockClient.UpdateFunctionConfiguration).toHaveBeenCalledWith(
+      expect(createTencentCloudClient).toHaveBeenCalledWith(mockContext);
+      expect(mockScfClient.UpdateFunctionConfiguration).toHaveBeenCalledWith(
         expect.objectContaining({
           FunctionName: 'test-function',
           Runtime: 'nodejs18',
@@ -278,13 +278,13 @@ describe('ScfProvider', () => {
 
       await updateScfFunctionConfiguration(mockContext, configWithoutEnv);
 
-      const callArgs = mockClient.UpdateFunctionConfiguration.mock.calls[0][0];
+      const callArgs = mockScfClient.UpdateFunctionConfiguration.mock.calls[0][0];
       expect(callArgs).not.toHaveProperty('Environment');
     });
 
     it('should propagate errors from client', async () => {
       const error = new Error('Update config failed');
-      mockClient.UpdateFunctionConfiguration.mockRejectedValue(error);
+      mockScfClient.UpdateFunctionConfiguration.mockRejectedValue(error);
 
       await expect(updateScfFunctionConfiguration(mockContext, mockConfig)).rejects.toThrow(
         'Update config failed',
@@ -296,9 +296,9 @@ describe('ScfProvider', () => {
     it('should update function code', async () => {
       await updateScfFunctionCode(mockContext, 'test-function', 'test.zip');
 
-      expect(createScfClient).toHaveBeenCalledWith(mockContext);
+      expect(createTencentCloudClient).toHaveBeenCalledWith(mockContext);
       expect(fs.readFileSync).toHaveBeenCalledWith('test.zip');
-      expect(mockClient.UpdateFunctionCode).toHaveBeenCalledWith({
+      expect(mockScfClient.UpdateFunctionCode).toHaveBeenCalledWith({
         FunctionName: 'test-function',
         ZipFile: Buffer.from('test-code').toString('base64'),
       });
@@ -307,13 +307,13 @@ describe('ScfProvider', () => {
     it('should encode code to base64', async () => {
       await updateScfFunctionCode(mockContext, 'test-function', 'test.zip');
 
-      const callArgs = mockClient.UpdateFunctionCode.mock.calls[0][0];
+      const callArgs = mockScfClient.UpdateFunctionCode.mock.calls[0][0];
       expect(callArgs.ZipFile).toBe(Buffer.from('test-code').toString('base64'));
     });
 
     it('should propagate errors from client', async () => {
       const error = new Error('Update code failed');
-      mockClient.UpdateFunctionCode.mockRejectedValue(error);
+      mockScfClient.UpdateFunctionCode.mockRejectedValue(error);
 
       await expect(updateScfFunctionCode(mockContext, 'test-function', 'test.zip')).rejects.toThrow(
         'Update code failed',
@@ -325,15 +325,15 @@ describe('ScfProvider', () => {
     it('should delete function', async () => {
       await deleteScfFunction(mockContext, 'test-function');
 
-      expect(createScfClient).toHaveBeenCalledWith(mockContext);
-      expect(mockClient.DeleteFunction).toHaveBeenCalledWith({
+      expect(createTencentCloudClient).toHaveBeenCalledWith(mockContext);
+      expect(mockScfClient.DeleteFunction).toHaveBeenCalledWith({
         FunctionName: 'test-function',
       });
     });
 
     it('should propagate errors from client', async () => {
       const error = new Error('Delete failed');
-      mockClient.DeleteFunction.mockRejectedValue(error);
+      mockScfClient.DeleteFunction.mockRejectedValue(error);
 
       await expect(deleteScfFunction(mockContext, 'test-function')).rejects.toThrow(
         'Delete failed',

@@ -1,12 +1,19 @@
 import * as tencentcloud from 'tencentcloud-sdk-nodejs-scf';
+import COS from 'cos-nodejs-sdk-v5';
 import { Context } from '../types';
 
 const ScfClient = tencentcloud.scf.v20180416.Client;
 
-export type TencentCloudClient = InstanceType<typeof ScfClient>;
+type TencentCloudScfClient = InstanceType<typeof ScfClient>;
+type TencentCosClient = COS;
 
-export const createScfClient = (context: Context): TencentCloudClient => {
-  const clientConfig = {
+export interface TencentCloudClient {
+  scf: TencentCloudScfClient;
+  cos: TencentCosClient;
+}
+
+export const createTencentCloudClient = (context: Context): TencentCloudClient => {
+  const scfClientConfig = {
     credential: {
       secretId: context.accessKeyId,
       secretKey: context.accessKeySecret,
@@ -18,5 +25,16 @@ export const createScfClient = (context: Context): TencentCloudClient => {
       },
     },
   };
-  return new ScfClient(clientConfig);
+
+  const scfClient = new ScfClient(scfClientConfig);
+
+  const cosClient = new COS({
+    SecretId: context.accessKeyId,
+    SecretKey: context.accessKeySecret,
+  });
+
+  return {
+    scf: scfClient,
+    cos: cosClient,
+  };
 };

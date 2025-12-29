@@ -1,6 +1,6 @@
 import { Context } from '../../types';
 import { ScfFunctionConfig, ScfFunctionInfo } from './scfTypes';
-import { createScfClient } from '../../common/scfClient';
+import { createTencentCloudClient } from '../../common/scfClient';
 import fs from 'node:fs';
 
 export const createScfFunction = async (
@@ -8,7 +8,7 @@ export const createScfFunction = async (
   config: ScfFunctionConfig,
   codePath: string,
 ): Promise<void> => {
-  const client = createScfClient(context);
+  const client = createTencentCloudClient(context);
   const codeBuffer = fs.readFileSync(codePath);
   const codeBase64 = codeBuffer.toString('base64');
 
@@ -24,20 +24,20 @@ export const createScfFunction = async (
     ...(config.Environment && { Environment: config.Environment }),
   };
 
-  await client.CreateFunction(params);
+  await client.scf.CreateFunction(params);
 };
 
 export const getScfFunction = async (
   context: Context,
   functionName: string,
 ): Promise<ScfFunctionInfo | null> => {
-  const client = createScfClient(context);
+  const client = createTencentCloudClient(context);
   try {
     const params = {
       FunctionName: functionName,
     };
 
-    const response = await client.GetFunction(params);
+    const response = await client.scf.GetFunction(params);
 
     if (!response || !response.FunctionName) {
       return null;
@@ -78,7 +78,7 @@ export const updateScfFunctionConfiguration = async (
   context: Context,
   config: ScfFunctionConfig,
 ): Promise<void> => {
-  const client = createScfClient(context);
+  const client = createTencentCloudClient(context);
   const params = {
     FunctionName: config.FunctionName,
     Handler: config.Handler,
@@ -88,7 +88,7 @@ export const updateScfFunctionConfiguration = async (
     ...(config.Environment && { Environment: config.Environment }),
   };
 
-  await client.UpdateFunctionConfiguration(params);
+  await client.scf.UpdateFunctionConfiguration(params);
 };
 
 export const updateScfFunctionCode = async (
@@ -96,7 +96,7 @@ export const updateScfFunctionCode = async (
   functionName: string,
   codePath: string,
 ): Promise<void> => {
-  const client = createScfClient(context);
+  const client = createTencentCloudClient(context);
   const codeBuffer = fs.readFileSync(codePath);
   const codeBase64 = codeBuffer.toString('base64');
 
@@ -105,14 +105,14 @@ export const updateScfFunctionCode = async (
     ZipFile: codeBase64,
   };
 
-  await client.UpdateFunctionCode(params);
+  await client.scf.UpdateFunctionCode(params);
 };
 
 export const deleteScfFunction = async (context: Context, functionName: string): Promise<void> => {
-  const client = createScfClient(context);
+  const client = createTencentCloudClient(context);
   const params = {
     FunctionName: functionName,
   };
 
-  await client.DeleteFunction(params);
+  await client.scf.DeleteFunction(params);
 };

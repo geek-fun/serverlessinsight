@@ -1,0 +1,20 @@
+version: 0.0.1
+provider:
+  name: tencent
+  region: ap-guangzhou
+
+service: insight-poc-cos
+
+tags:
+  owner: geek-fun
+
+buckets:
+  insight_poc_cos_bucket:
+    name: insight-poc-cos-bucket-1234567890  # Must be globally unique
+    security:
+      acl: PUBLIC_READ  # PRIVATE, PUBLIC_READ, or PUBLIC_READ_WRITE
+    website:
+      code: dist
+      index: index.html
+      error_page: 404.html
+      error_code: 404
