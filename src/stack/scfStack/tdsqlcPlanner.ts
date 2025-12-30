@@ -1,4 +1,12 @@
-import { Context, DatabaseDomain, DatabaseEnum, Plan, PlanItem, StateFile } from '../../types';
+import {
+  Context,
+  DatabaseDomain,
+  DatabaseEnum,
+  Plan,
+  PlanItem,
+  StateFile,
+  ResourceTypeEnum,
+} from '../../types';
 import { getTdsqlcCluster } from './tdsqlcProvider';
 import { computeDatabaseConfigHash, databaseToTdsqlcConfig } from './tdsqlcTypes';
 import { getAllResources, getResource } from '../../common/stateManager';
@@ -17,11 +25,11 @@ export const generateDatabasePlan = async (
     // Handle deletions for databases removed from YAML
     const allStates = getAllResources(state);
     for (const [logicalId, resourceState] of Object.entries(allStates)) {
-      if (resourceState.type === 'TDSQL_C_SERVERLESS') {
+      if (resourceState.type === ResourceTypeEnum.TDSQL_C_SERVERLESS) {
         items.push({
           logicalId,
           action: 'delete',
-          resourceType: 'TDSQL_C_SERVERLESS',
+          resourceType: ResourceTypeEnum.TDSQL_C_SERVERLESS,
           changes: {
             before: { physicalId: resourceState.physicalId },
           },
@@ -47,7 +55,7 @@ export const generateDatabasePlan = async (
       items.push({
         logicalId,
         action: 'create',
-        resourceType: 'TDSQL_C_SERVERLESS',
+        resourceType: ResourceTypeEnum.TDSQL_C_SERVERLESS,
         changes: {
           after: {
             name: database.name,
@@ -71,7 +79,7 @@ export const generateDatabasePlan = async (
           items.push({
             logicalId,
             action: 'create',
-            resourceType: 'TDSQL_C_SERVERLESS',
+            resourceType: ResourceTypeEnum.TDSQL_C_SERVERLESS,
             changes: {
               after: {
                 name: database.name,
@@ -90,7 +98,7 @@ export const generateDatabasePlan = async (
           items.push({
             logicalId,
             action: 'update',
-            resourceType: 'TDSQL_C_SERVERLESS',
+            resourceType: ResourceTypeEnum.TDSQL_C_SERVERLESS,
             changes: {
               before: {
                 configHash: currentState.configHash,
@@ -113,7 +121,7 @@ export const generateDatabasePlan = async (
           items.push({
             logicalId,
             action: 'noop',
-            resourceType: 'TDSQL_C_SERVERLESS',
+            resourceType: ResourceTypeEnum.TDSQL_C_SERVERLESS,
           });
         }
       } catch {
@@ -121,7 +129,7 @@ export const generateDatabasePlan = async (
         items.push({
           logicalId,
           action: 'create',
-          resourceType: 'TDSQL_C_SERVERLESS',
+          resourceType: ResourceTypeEnum.TDSQL_C_SERVERLESS,
           changes: {
             after: {
               name: database.name,
@@ -142,11 +150,14 @@ export const generateDatabasePlan = async (
   // Check for resources in state that are not in desired state (need deletion)
   const allStates = getAllResources(state);
   for (const [logicalId, resourceState] of Object.entries(allStates)) {
-    if (resourceState.type === 'TDSQL_C_SERVERLESS' && !desiredLogicalIds.has(logicalId)) {
+    if (
+      resourceState.type === ResourceTypeEnum.TDSQL_C_SERVERLESS &&
+      !desiredLogicalIds.has(logicalId)
+    ) {
       items.push({
         logicalId,
         action: 'delete',
-        resourceType: 'TDSQL_C_SERVERLESS',
+        resourceType: ResourceTypeEnum.TDSQL_C_SERVERLESS,
         changes: {
           before: { physicalId: resourceState.physicalId },
         },

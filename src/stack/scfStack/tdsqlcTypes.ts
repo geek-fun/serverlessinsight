@@ -14,7 +14,7 @@ export type TdsqlcClusterConfig = {
   MaxCpu: number;
   MinStorageSize?: number;
   MaxStorageSize?: number;
-  AutoPause?: 'yes' | 'no';
+  AutoPause?: boolean;
   AutoPauseDelay?: number;
   StoragePayMode?: number;
   AdminPassword: string;
@@ -56,7 +56,7 @@ export const databaseToTdsqlcConfig = (database: DatabaseDomain): TdsqlcClusterC
     DbMode: 'SERVERLESS',
     MinCpu: database.cu.min,
     MaxCpu: database.cu.max,
-    AutoPause: database.cu.min === 0 ? 'yes' : 'no',
+    AutoPause: database.cu.min === 0,
     AutoPauseDelay: 600, // Default 10 minutes
     StoragePayMode: 0, // Pay-per-use
     AdminPassword: database.security.basicAuth.password,

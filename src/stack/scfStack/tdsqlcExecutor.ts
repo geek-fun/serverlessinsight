@@ -1,4 +1,4 @@
-import { Context, DatabaseDomain, Plan, StateFile } from '../../types';
+import { Context, DatabaseDomain, Plan, StateFile, ResourceTypeEnum } from '../../types';
 import {
   createDatabaseResource,
   deleteDatabaseResource,
@@ -23,7 +23,7 @@ export const executeDatabasePlan = async (
   }
 
   for (const item of plan.items) {
-    if (item.resourceType !== 'TDSQL_C_SERVERLESS') {
+    if (item.resourceType !== ResourceTypeEnum.TDSQL_C_SERVERLESS) {
       continue;
     }
 

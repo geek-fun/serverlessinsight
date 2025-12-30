@@ -1,28 +1,8 @@
-import * as tencentcloud from 'tencentcloud-sdk-nodejs-cynosdb';
 import { Context } from '../../types';
 import { TdsqlcClusterConfig, TdsqlcClusterInfo } from './tdsqlcTypes';
 import { logger } from '../../common';
-
-const CynosdbClient = tencentcloud.cynosdb.v20190107.Client;
-
-type CynosdbClientInstance = InstanceType<typeof CynosdbClient>;
-
-const createTdsqlcClient = (context: Context): CynosdbClientInstance => {
-  const clientConfig = {
-    credential: {
-      secretId: context.accessKeyId,
-      secretKey: context.accessKeySecret,
-    },
-    region: context.region,
-    profile: {
-      httpProfile: {
-        endpoint: 'cynosdb.tencentcloudapi.com',
-      },
-    },
-  };
-
-  return new CynosdbClient(clientConfig);
-};
+import { createTdsqlcClient } from '../../common/scfClient';
+import { lang } from '../../lang';
 
 export const createTdsqlcCluster = async (
   context: Context,
@@ -46,7 +26,7 @@ export const createTdsqlcCluster = async (
     PayMode: 0, // Pay-per-use
     MinCpu: config.MinCpu,
     MaxCpu: config.MaxCpu,
-    AutoPause: config.AutoPause,
+    AutoPause: config.AutoPause ? 'yes' : 'no',
     AutoPauseDelay: config.AutoPauseDelay,
     StoragePayMode: config.StoragePayMode,
     StorageLimit: config.MaxStorageSize,
@@ -54,10 +34,10 @@ export const createTdsqlcCluster = async (
 
   try {
     const response = await client.CreateClusters(params);
-    logger.info(`TDSQL-C cluster creation initiated: ${JSON.stringify(response)}`);
+    logger.info(lang.__('TDSQL_CLUSTER_CREATION_INITIATED'));
 
     if (!response.ClusterIds || response.ClusterIds.length === 0) {
-      throw new Error('Failed to create TDSQL-C cluster: No cluster ID returned');
+      throw new Error(lang.__('TDSQL_CLUSTER_NO_ID_RETURNED'));
     }
 
     const clusterId = response.ClusterIds[0];
@@ -67,7 +47,7 @@ export const createTdsqlcCluster = async (
 
     return clusterId;
   } catch (error) {
-    logger.error(`Failed to create TDSQL-C cluster: ${error}`);
+    logger.error(`${lang.__('TDSQL_CLUSTER_CREATION_FAILED')}: ${error}`);
     throw error;
   }
 };
@@ -120,7 +100,7 @@ export const getTdsqlcCluster = async (
       UpdateTime: cluster.UpdateTime,
     };
   } catch (error) {
-    logger.error(`Failed to get TDSQL-C cluster: ${error}`);
+    logger.error(`${lang.__('TDSQL_CLUSTER_GET_FAILED')}: ${error}`);
     return null;
   }
 };
@@ -137,18 +117,18 @@ export const updateTdsqlcCluster = async (
     ClusterId: clusterId,
     MinCpu: config.MinCpu,
     MaxCpu: config.MaxCpu,
-    AutoPause: config.AutoPause,
+    AutoPause: config.AutoPause ? 'yes' : 'no',
     AutoPauseDelay: config.AutoPauseDelay,
   };
 
   try {
     await client.ModifyServerlessStrategy(params);
-    logger.info(`TDSQL-C cluster updated: ${clusterId}`);
+    logger.info(lang.__('TDSQL_CLUSTER_UPDATED', { clusterId }));
 
     // Wait for update to complete
     await waitForClusterReady(context, clusterId);
   } catch (error) {
-    logger.error(`Failed to update TDSQL-C cluster: ${error}`);
+    logger.error(`${lang.__('TDSQL_CLUSTER_UPDATE_FAILED')}: ${error}`);
     throw error;
   }
 };
@@ -162,12 +142,12 @@ export const deleteTdsqlcCluster = async (context: Context, clusterId: string): 
 
   try {
     await client.OfflineCluster(params);
-    logger.info(`TDSQL-C cluster deletion initiated: ${clusterId}`);
+    logger.info(lang.__('TDSQL_CLUSTER_DELETION_INITIATED', { clusterId }));
 
     // Wait for cluster to be deleted
     await waitForClusterDeleted(context, clusterId);
   } catch (error) {
-    logger.error(`Failed to delete TDSQL-C cluster: ${error}`);
+    logger.error(`${lang.__('TDSQL_CLUSTER_DELETE_FAILED')}: ${error}`);
     throw error;
   }
 };
@@ -180,26 +160,24 @@ const waitForClusterReady = async (context: Context, clusterId: string): Promise
     const cluster = await getTdsqlcCluster(context, clusterId);
 
     if (!cluster) {
-      throw new Error(`TDSQL-C cluster not found: ${clusterId}`);
+      throw new Error(lang.__('TDSQL_CLUSTER_NOT_FOUND', { clusterId }));
     }
 
     if (cluster.Status === 'running') {
-      logger.info(`TDSQL-C cluster is ready: ${clusterId}`);
+      logger.info(lang.__('TDSQL_CLUSTER_READY', { clusterId }));
       return;
     }
 
     if (cluster.Status === 'isolated' || cluster.Status === 'offline') {
-      throw new Error(`TDSQL-C cluster is in error state: ${cluster.Status}`);
+      throw new Error(lang.__('TDSQL_CLUSTER_ERROR_STATE', { status: cluster.Status }));
     }
 
-    logger.info(
-      `Waiting for TDSQL-C cluster to be ready: ${clusterId} (status: ${cluster.Status})`,
-    );
+    logger.info(lang.__('TDSQL_CLUSTER_WAITING', { clusterId, status: cluster.Status }));
     await new Promise((resolve) => setTimeout(resolve, 10000)); // Wait 10 seconds
     attempts++;
   }
 
-  throw new Error(`Timeout waiting for TDSQL-C cluster to be ready: ${clusterId}`);
+  throw new Error(lang.__('TDSQL_CLUSTER_TIMEOUT_READY', { clusterId }));
 };
 
 const waitForClusterDeleted = async (context: Context, clusterId: string): Promise<void> => {
@@ -210,23 +188,21 @@ const waitForClusterDeleted = async (context: Context, clusterId: string): Promi
     const cluster = await getTdsqlcCluster(context, clusterId);
 
     if (!cluster) {
-      logger.info(`TDSQL-C cluster deleted: ${clusterId}`);
+      logger.info(lang.__('TDSQL_CLUSTER_DELETED', { clusterId }));
       return;
     }
 
     if (cluster.Status === 'isolated' || cluster.Status === 'offline') {
-      logger.info(`TDSQL-C cluster is being deleted: ${clusterId}`);
+      logger.info(lang.__('TDSQL_CLUSTER_BEING_DELETED', { clusterId }));
       await new Promise((resolve) => setTimeout(resolve, 10000));
       attempts++;
       continue;
     }
 
-    logger.info(
-      `Waiting for TDSQL-C cluster to be deleted: ${clusterId} (status: ${cluster.Status})`,
-    );
+    logger.info(lang.__('TDSQL_CLUSTER_WAITING_DELETE', { clusterId, status: cluster.Status }));
     await new Promise((resolve) => setTimeout(resolve, 10000));
     attempts++;
   }
 
-  throw new Error(`Timeout waiting for TDSQL-C cluster to be deleted: ${clusterId}`);
+  throw new Error(lang.__('TDSQL_CLUSTER_TIMEOUT_DELETE', { clusterId }));
 };

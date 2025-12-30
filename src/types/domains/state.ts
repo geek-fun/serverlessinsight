@@ -1,3 +1,9 @@
+export enum ResourceTypeEnum {
+  SCF_FUNCTION = 'SCF_FUNCTION',
+  COS_BUCKET = 'COS_BUCKET',
+  TDSQL_C_SERVERLESS = 'TDSQL_C_SERVERLESS',
+}
+
 export type ResourceState = {
   type: string;
   physicalId: string;

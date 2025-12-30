@@ -104,7 +104,7 @@ describe('TdsqlcPlanner', () => {
         ClusterName: 'test-tdsqlc',
         Status: 'running',
         Region: 'ap-guangzhou',
-        DbType: 'MYSQL',
+        DbType: 'MYSQL' as const,
         DbVersion: '8.0',
       });
 
@@ -127,7 +127,7 @@ describe('TdsqlcPlanner', () => {
         DbMode: 'SERVERLESS' as const,
         MinCpu: 1,
         MaxCpu: 8,
-        AutoPause: 'no' as const,
+        AutoPause: false,
         AutoPauseDelay: 600,
         StoragePayMode: 0,
         AdminPassword: 'TestPass123!',
@@ -171,7 +171,7 @@ describe('TdsqlcPlanner', () => {
         ClusterName: 'test-tdsqlc',
         Status: 'running',
         Region: 'ap-guangzhou',
-        DbType: 'MYSQL',
+        DbType: 'MYSQL' as const,
         DbVersion: '8.0',
       });
 

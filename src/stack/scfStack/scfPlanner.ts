@@ -3,7 +3,7 @@ import { getScfFunction } from './scfProvider';
 import { computeConfigHash, functionToScfConfig } from './scfTypes';
 import { getAllResources, getResource } from '../../common/stateManager';
 
-export const generatePlan = async (
+export const generateFunctionPlan = async (
   context: Context,
   state: StateFile,
   functions: Array<FunctionDomain> | undefined,

@@ -1,4 +1,4 @@
-import { generatePlan } from '../../../src/stack/scfStack/scfPlanner';
+import { generateFunctionPlan } from '../../../src/stack/scfStack/scfPlanner';
 import { loadState, setResource } from '../../../src/common/stateManager';
 import { Context, FunctionDomain } from '../../../src/types';
 import { ProviderEnum } from '../../../src/common';
@@ -56,13 +56,13 @@ describe('SCF Planner', () => {
     }
   });
 
-  describe('generatePlan', () => {
+  describe('generateFunctionPlan', () => {
     it('should plan to create a new function when state is empty', async () => {
       // Mock getScfFunction to return null (function doesn't exist)
       jest.spyOn(scfProvider, 'getScfFunction').mockResolvedValue(null);
 
       const state = loadState('tencent', testDir);
-      const plan = await generatePlan(mockContext, state, [testFunction]);
+      const plan = await generateFunctionPlan(mockContext, state, [testFunction]);
 
       expect(plan.items).toHaveLength(1);
       expect(plan.items[0]).toMatchObject({
@@ -97,7 +97,7 @@ describe('SCF Planner', () => {
         },
       });
 
-      const plan = await generatePlan(mockContext, state, [testFunction]);
+      const plan = await generateFunctionPlan(mockContext, state, [testFunction]);
 
       // Should detect that config has changed (hash mismatch)
       // In real scenario, we'd need to ensure hash matches
@@ -119,7 +119,7 @@ describe('SCF Planner', () => {
       jest.spyOn(scfProvider, 'getScfFunction').mockResolvedValue(null);
 
       // Pass empty array (no functions)
-      const plan = await generatePlan(mockContext, state, []);
+      const plan = await generateFunctionPlan(mockContext, state, []);
 
       expect(plan.items).toHaveLength(1);
       expect(plan.items[0]).toMatchObject({
@@ -143,7 +143,7 @@ describe('SCF Planner', () => {
       // Mock getScfFunction to return null (function doesn't exist remotely)
       jest.spyOn(scfProvider, 'getScfFunction').mockResolvedValue(null);
 
-      const plan = await generatePlan(mockContext, state, [testFunction]);
+      const plan = await generateFunctionPlan(mockContext, state, [testFunction]);
 
       expect(plan.items).toHaveLength(1);
       expect(plan.items[0]).toMatchObject({

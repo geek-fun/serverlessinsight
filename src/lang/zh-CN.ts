@@ -113,4 +113,23 @@ export const zhCN = {
   GENERATING_PLAN: '正在生成部署计划...',
   PLAN_GENERATED: '计划已生成，共有',
   EXECUTING_PLAN: '正在执行部署计划...',
+
+  // TDSQL-C 数据库消息
+  TDSQL_CLUSTER_CREATION_INITIATED: 'TDSQL-C 集群创建已启动',
+  TDSQL_CLUSTER_CREATION_FAILED: '创建 TDSQL-C 集群失败',
+  TDSQL_CLUSTER_NO_ID_RETURNED: '创建 TDSQL-C 集群失败：未返回集群 ID',
+  TDSQL_CLUSTER_READY: 'TDSQL-C 集群已就绪: {{clusterId}}',
+  TDSQL_CLUSTER_ERROR_STATE: 'TDSQL-C 集群处于错误状态: {{status}}',
+  TDSQL_CLUSTER_WAITING: '等待 TDSQL-C 集群就绪: {{clusterId}} (状态: {{status}})',
+  TDSQL_CLUSTER_TIMEOUT_READY: '等待 TDSQL-C 集群就绪超时: {{clusterId}}',
+  TDSQL_CLUSTER_NOT_FOUND: '未找到 TDSQL-C 集群: {{clusterId}}',
+  TDSQL_CLUSTER_GET_FAILED: '获取 TDSQL-C 集群失败',
+  TDSQL_CLUSTER_UPDATED: 'TDSQL-C 集群已更新: {{clusterId}}',
+  TDSQL_CLUSTER_UPDATE_FAILED: '更新 TDSQL-C 集群失败',
+  TDSQL_CLUSTER_DELETION_INITIATED: 'TDSQL-C 集群删除已启动: {{clusterId}}',
+  TDSQL_CLUSTER_DELETED: 'TDSQL-C 集群已删除: {{clusterId}}',
+  TDSQL_CLUSTER_DELETE_FAILED: '删除 TDSQL-C 集群失败',
+  TDSQL_CLUSTER_BEING_DELETED: 'TDSQL-C 集群正在删除: {{clusterId}}',
+  TDSQL_CLUSTER_WAITING_DELETE: '等待 TDSQL-C 集群删除: {{clusterId}} (状态: {{status}})',
+  TDSQL_CLUSTER_TIMEOUT_DELETE: '等待 TDSQL-C 集群删除超时: {{clusterId}}',
 };

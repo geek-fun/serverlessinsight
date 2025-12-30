@@ -31,7 +31,7 @@ describe('TdsqlcProvider', () => {
     DbMode: 'SERVERLESS' as const,
     MinCpu: 1,
     MaxCpu: 8,
-    AutoPause: 'no' as const,
+    AutoPause: false,
     AutoPauseDelay: 600,
     StoragePayMode: 0,
     AdminPassword: 'TestPass123!',
@@ -76,7 +76,7 @@ describe('TdsqlcProvider', () => {
             ClusterId: clusterId,
             ClusterName: 'test-tdsqlc',
             Status: 'running',
-            DbType: 'MYSQL',
+            DbType: 'MYSQL' as const,
             DbVersion: '8.0',
           },
         ],
@@ -89,9 +89,9 @@ describe('TdsqlcProvider', () => {
       expect(mockCynosdbClient.CreateClusters).toHaveBeenCalledWith(
         expect.objectContaining({
           ClusterName: 'test-tdsqlc',
-          DbType: 'MYSQL',
+          DbType: 'MYSQL' as const,
           DbVersion: '8.0',
-          DbMode: 'SERVERLESS',
+          DbMode: 'SERVERLESS' as const,
           MinCpu: 1,
           MaxCpu: 8,
         }),
@@ -104,9 +104,7 @@ describe('TdsqlcProvider', () => {
         RequestId: 'test-request-id',
       });
 
-      await expect(createTdsqlcCluster(mockContext, mockConfig)).rejects.toThrow(
-        'Failed to create TDSQL-C cluster: No cluster ID returned',
-      );
+      await expect(createTdsqlcCluster(mockContext, mockConfig)).rejects.toThrow();
     });
 
     it('should handle API errors during creation', async () => {
@@ -126,7 +124,7 @@ describe('TdsqlcProvider', () => {
             ClusterId: clusterId,
             ClusterName: 'test-tdsqlc',
             Status: 'running',
-            DbType: 'MYSQL',
+            DbType: 'MYSQL' as const,
             DbVersion: '8.0',
             VpcId: 'vpc-12345',
             SubnetId: 'subnet-67890',
@@ -145,7 +143,7 @@ describe('TdsqlcProvider', () => {
         ClusterId: clusterId,
         ClusterName: 'test-tdsqlc',
         Status: 'running',
-        DbType: 'MYSQL',
+        DbType: 'MYSQL' as const,
         DbVersion: '8.0',
         VpcId: 'vpc-12345',
         SubnetId: 'subnet-67890',

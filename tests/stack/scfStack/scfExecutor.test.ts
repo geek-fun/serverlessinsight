@@ -1,4 +1,4 @@
-import { executePlan } from '../../../src/stack/scfStack/scfExecutor';
+import { executeFunctionPlan } from '../../../src/stack/scfStack/scfExecutor';
 import * as scfResource from '../../../src/stack/scfStack/scfResource';
 import { ProviderEnum } from '../../../src/common';
 import { getResource } from '../../../src/common/stateManager';
@@ -52,7 +52,7 @@ describe('ScfExecutor', () => {
     jest.clearAllMocks();
   });
 
-  describe('executePlan', () => {
+  describe('executeFunctionPlan', () => {
     it('should handle noop action', async () => {
       const plan: Plan = {
         items: [
@@ -64,7 +64,7 @@ describe('ScfExecutor', () => {
         ],
       };
 
-      const result = await executePlan(mockContext, plan, [testFunction], initialState);
+      const result = await executeFunctionPlan(mockContext, plan, [testFunction], initialState);
 
       expect(result).toEqual(initialState);
       expect(logger.info).toHaveBeenCalledWith('No changes for functions.test_fn');
@@ -88,7 +88,7 @@ describe('ScfExecutor', () => {
 
       (scfResource.createResource as jest.Mock).mockResolvedValue(newState);
 
-      const result = await executePlan(mockContext, plan, [testFunction], initialState);
+      const result = await executeFunctionPlan(mockContext, plan, [testFunction], initialState);
 
       expect(scfResource.createResource).toHaveBeenCalledWith(
         mockContext,
@@ -111,9 +111,9 @@ describe('ScfExecutor', () => {
         ],
       };
 
-      await expect(executePlan(mockContext, plan, [testFunction], initialState)).rejects.toThrow(
-        'Function not found for logical ID: functions.nonexistent',
-      );
+      await expect(
+        executeFunctionPlan(mockContext, plan, [testFunction], initialState),
+      ).rejects.toThrow('Function not found for logical ID: functions.nonexistent');
 
       expect(logger.error).toHaveBeenCalled();
     });
@@ -136,7 +136,7 @@ describe('ScfExecutor', () => {
 
       (scfResource.updateResource as jest.Mock).mockResolvedValue(newState);
 
-      const result = await executePlan(mockContext, plan, [testFunction], initialState);
+      const result = await executeFunctionPlan(mockContext, plan, [testFunction], initialState);
 
       expect(scfResource.updateResource).toHaveBeenCalledWith(
         mockContext,
@@ -159,9 +159,9 @@ describe('ScfExecutor', () => {
         ],
       };
 
-      await expect(executePlan(mockContext, plan, [testFunction], initialState)).rejects.toThrow(
-        'Function not found for logical ID: functions.nonexistent',
-      );
+      await expect(
+        executeFunctionPlan(mockContext, plan, [testFunction], initialState),
+      ).rejects.toThrow('Function not found for logical ID: functions.nonexistent');
 
       expect(logger.error).toHaveBeenCalled();
     });
@@ -193,7 +193,7 @@ describe('ScfExecutor', () => {
       (getResource as jest.Mock).mockReturnValue(stateWithFunction.resources['functions.test_fn']);
       (scfResource.deleteResource as jest.Mock).mockResolvedValue(initialState);
 
-      const result = await executePlan(mockContext, plan, [], stateWithFunction);
+      const result = await executeFunctionPlan(mockContext, plan, [], stateWithFunction);
 
       expect(getResource).toHaveBeenCalledWith(stateWithFunction, 'functions.test_fn');
       expect(scfResource.deleteResource).toHaveBeenCalledWith(
@@ -220,7 +220,7 @@ describe('ScfExecutor', () => {
 
       (getResource as jest.Mock).mockReturnValue(undefined);
 
-      const result = await executePlan(mockContext, plan, [], initialState);
+      const result = await executeFunctionPlan(mockContext, plan, [], initialState);
 
       expect(logger.warn).toHaveBeenCalledWith(
         'State not found for functions.test_fn, skipping deletion',
@@ -241,7 +241,7 @@ describe('ScfExecutor', () => {
         ],
       };
 
-      const result = await executePlan(mockContext, plan, [testFunction], initialState);
+      const result = await executeFunctionPlan(mockContext, plan, [testFunction], initialState);
 
       expect(logger.warn).toHaveBeenCalledWith('Unknown action: unknown for functions.test_fn');
       expect(result).toEqual(initialState);
@@ -273,7 +273,7 @@ describe('ScfExecutor', () => {
 
       (scfResource.createResource as jest.Mock).mockResolvedValue(newState);
 
-      const result = await executePlan(
+      const result = await executeFunctionPlan(
         mockContext,
         plan,
         [testFunction1, testFunction2],
@@ -288,7 +288,7 @@ describe('ScfExecutor', () => {
     it('should handle empty plan', async () => {
       const plan: Plan = { items: [] };
 
-      const result = await executePlan(mockContext, plan, [testFunction], initialState);
+      const result = await executeFunctionPlan(mockContext, plan, [testFunction], initialState);
 
       expect(result).toEqual(initialState);
     });
@@ -307,9 +307,9 @@ describe('ScfExecutor', () => {
       const error = new Error('Test error');
       (scfResource.createResource as jest.Mock).mockRejectedValue(error);
 
-      await expect(executePlan(mockContext, plan, [testFunction], initialState)).rejects.toThrow(
-        'Test error',
-      );
+      await expect(
+        executeFunctionPlan(mockContext, plan, [testFunction], initialState),
+      ).rejects.toThrow('Test error');
 
       expect(logger.error).toHaveBeenCalledWith(
         expect.stringContaining('Failed to execute create for functions.test_fn'),

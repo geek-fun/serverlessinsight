@@ -1,4 +1,4 @@
-import { Context, DatabaseDomain, ResourceState, StateFile } from '../../types';
+import { Context, DatabaseDomain, ResourceState, StateFile, ResourceTypeEnum } from '../../types';
 import {
   createTdsqlcCluster,
   deleteTdsqlcCluster,
@@ -49,7 +49,7 @@ export const updateDatabaseResource = async (
 
   const configHash = computeDatabaseConfigHash(config);
   const resourceState: ResourceState = {
-    type: 'TDSQL_C_SERVERLESS',
+    type: ResourceTypeEnum.TDSQL_C_SERVERLESS,
     physicalId: clusterId,
     region: context.region,
     configHash,

@@ -34,12 +34,12 @@ describe('TdsqlcTypes', () => {
 
       expect(result).toEqual({
         ClusterName: 'test-tdsqlc',
-        DbType: 'MYSQL',
+        DbType: 'MYSQL' as const,
         DbVersion: '8.0',
-        DbMode: 'SERVERLESS',
+        DbMode: 'SERVERLESS' as const,
         MinCpu: 1,
         MaxCpu: 8,
-        AutoPause: 'no',
+        AutoPause: false,
         AutoPauseDelay: 600,
         StoragePayMode: 0,
         AdminPassword: 'TestPass123!',
@@ -74,7 +74,7 @@ describe('TdsqlcTypes', () => {
       const result = databaseToTdsqlcConfig(database);
 
       expect(result.DbVersion).toBe('5.7');
-      expect(result.AutoPause).toBe('yes'); // min cu is 0, so auto-pause enabled
+      expect(result.AutoPause).toBe(true); // min cu is 0, so auto-pause enabled
     });
 
     it('should include VPC configuration when provided', () => {
@@ -166,7 +166,7 @@ describe('TdsqlcTypes', () => {
 
       const result = databaseToTdsqlcConfig(database);
 
-      expect(result.AutoPause).toBe('yes');
+      expect(result.AutoPause).toBe(true);
     });
   });
 
@@ -179,7 +179,7 @@ describe('TdsqlcTypes', () => {
         DbMode: 'SERVERLESS' as const,
         MinCpu: 1,
         MaxCpu: 8,
-        AutoPause: 'no' as const,
+        AutoPause: false,
         AutoPauseDelay: 600,
         StoragePayMode: 0,
         AdminPassword: 'TestPass123!',
@@ -200,7 +200,7 @@ describe('TdsqlcTypes', () => {
         DbMode: 'SERVERLESS' as const,
         MinCpu: 1,
         MaxCpu: 8,
-        AutoPause: 'no' as const,
+        AutoPause: false,
         AutoPauseDelay: 600,
         StoragePayMode: 0,
         AdminPassword: 'TestPass123!',
@@ -213,7 +213,7 @@ describe('TdsqlcTypes', () => {
         DbMode: 'SERVERLESS' as const,
         MinCpu: 2,
         MaxCpu: 16,
-        AutoPause: 'yes' as const,
+        AutoPause: true,
         AutoPauseDelay: 600,
         StoragePayMode: 0,
         AdminPassword: 'TestPass123!',
@@ -233,7 +233,7 @@ describe('TdsqlcTypes', () => {
         DbMode: 'SERVERLESS' as const,
         MinCpu: 1,
         MaxCpu: 8,
-        AutoPause: 'no' as const,
+        AutoPause: false,
         AutoPauseDelay: 600,
         StoragePayMode: 0,
         AdminPassword: 'TestPass123!',
@@ -246,7 +246,7 @@ describe('TdsqlcTypes', () => {
         DbMode: 'SERVERLESS' as const,
         MinCpu: 1,
         MaxCpu: 8,
-        AutoPause: 'no' as const,
+        AutoPause: false,
         AutoPauseDelay: 600,
         StoragePayMode: 0,
         AdminPassword: 'TestPass123!',

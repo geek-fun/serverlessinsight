@@ -16,8 +16,8 @@ import {
 import { prepareBootstrapStack, RosStack } from './rosStack';
 import { RfsStack } from './rfsStack';
 import {
-  generatePlan,
-  executePlan,
+  generateFunctionPlan,
+  executeFunctionPlan,
   generateBucketPlan,
   executeBucketPlan,
   generateDatabasePlan,
@@ -63,7 +63,7 @@ const deployTencent = async (iac: ServerlessIac): Promise<void> => {
 
   // Generate plan for functions
   logger.info(lang.__('GENERATING_PLAN'));
-  const functionPlan = await generatePlan(context, state, iac.functions);
+  const functionPlan = await generateFunctionPlan(context, state, iac.functions);
 
   // Generate plan for buckets
   const bucketPlan = await generateBucketPlan(context, state, iac.buckets);
@@ -84,7 +84,7 @@ const deployTencent = async (iac: ServerlessIac): Promise<void> => {
 
   // Execute function plan
   logger.info(lang.__('EXECUTING_PLAN'));
-  state = await executePlan(context, functionPlan, iac.functions, state);
+  state = await executeFunctionPlan(context, functionPlan, iac.functions, state);
 
   // Execute bucket plan
   state = await executeBucketPlan(context, bucketPlan, iac.buckets, state);
