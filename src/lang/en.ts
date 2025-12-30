@@ -117,4 +117,25 @@ export const en = {
   GENERATING_PLAN: 'Generating deployment plan...',
   PLAN_GENERATED: 'Plan generated with',
   EXECUTING_PLAN: 'Executing deployment plan...',
+
+  // TDSQL-C database messages
+  TDSQL_CLUSTER_CREATION_INITIATED: 'TDSQL-C cluster creation initiated',
+  TDSQL_CLUSTER_CREATION_FAILED: 'Failed to create TDSQL-C cluster',
+  TDSQL_CLUSTER_NO_ID_RETURNED: 'Failed to create TDSQL-C cluster: No cluster ID returned',
+  TDSQL_CLUSTER_READY: 'TDSQL-C cluster is ready: {{clusterId}}',
+  TDSQL_CLUSTER_ERROR_STATE: 'TDSQL-C cluster is in error state: {{status}}',
+  TDSQL_CLUSTER_WAITING:
+    'Waiting for TDSQL-C cluster to be ready: {{clusterId}} (status: {{status}})',
+  TDSQL_CLUSTER_TIMEOUT_READY: 'Timeout waiting for TDSQL-C cluster to be ready: {{clusterId}}',
+  TDSQL_CLUSTER_NOT_FOUND: 'TDSQL-C cluster not found: {{clusterId}}',
+  TDSQL_CLUSTER_GET_FAILED: 'Failed to get TDSQL-C cluster',
+  TDSQL_CLUSTER_UPDATED: 'TDSQL-C cluster updated: {{clusterId}}',
+  TDSQL_CLUSTER_UPDATE_FAILED: 'Failed to update TDSQL-C cluster',
+  TDSQL_CLUSTER_DELETION_INITIATED: 'TDSQL-C cluster deletion initiated: {{clusterId}}',
+  TDSQL_CLUSTER_DELETED: 'TDSQL-C cluster deleted: {{clusterId}}',
+  TDSQL_CLUSTER_DELETE_FAILED: 'Failed to delete TDSQL-C cluster',
+  TDSQL_CLUSTER_BEING_DELETED: 'TDSQL-C cluster is being deleted: {{clusterId}}',
+  TDSQL_CLUSTER_WAITING_DELETE:
+    'Waiting for TDSQL-C cluster to be deleted: {{clusterId}} (status: {{status}})',
+  TDSQL_CLUSTER_TIMEOUT_DELETE: 'Timeout waiting for TDSQL-C cluster to be deleted: {{clusterId}}',
 };

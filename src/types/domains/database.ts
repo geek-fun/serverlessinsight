@@ -3,6 +3,7 @@ export const enum DatabaseEnum {
   RDS_MYSQL_SERVERLESS = 'RDS_MYSQL_SERVERLESS',
   RDS_PGSQL_SERVERLESS = 'RDS_PGSQL_SERVERLESS',
   RDS_MSSQL_SERVERLESS = 'RDS_MSSQL_SERVERLESS',
+  TDSQL_C_SERVERLESS = 'TDSQL_C_SERVERLESS',
 }
 
 export const enum DatabaseVersionEnum {
@@ -29,20 +30,23 @@ export type DatabaseRaw = {
   version: string;
   security: {
     basic_auth: {
-      master_user: string;
+      master_user?: string;
       password: string;
     };
   };
   network?: {
     type: 'PUBLIC' | 'PRIVATE';
     ingress_rules?: Array<string>;
+    vpc_id?: string;
+    subnet_id?: string;
   };
   cu?: {
     min?: number;
     max?: number;
   };
   storage?: {
-    min: number;
+    min?: number;
+    max?: number;
   };
 };
 
@@ -53,13 +57,15 @@ export type DatabaseDomain = {
   version: DatabaseVersionEnum;
   security: {
     basicAuth: {
-      username: string;
+      username?: string;
       password: string;
     };
   };
   network: {
     type: 'PUBLIC' | 'PRIVATE';
     ingressRules: Array<string>;
+    vpcId?: string;
+    subnetId?: string;
   };
   cu: {
     min: number;
@@ -67,5 +73,6 @@ export type DatabaseDomain = {
   };
   storage: {
     min: number;
+    max?: number;
   };
 };

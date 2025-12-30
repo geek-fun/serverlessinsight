@@ -3,7 +3,7 @@ import { createResource, deleteResource, updateResource } from './scfResource';
 import { logger } from '../../common';
 import { getResource } from '../../common/stateManager';
 
-export const executePlan = async (
+export const executeFunctionPlan = async (
   context: Context,
   plan: Plan,
   functions: Array<FunctionDomain> | undefined,
