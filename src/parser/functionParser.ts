@@ -1,6 +1,20 @@
 import { FunctionDomain, FunctionGpuEnum, FunctionRaw, NasStorageClassEnum } from '../types';
 import { isEmpty } from 'lodash';
 
+// Helper function to convert a Resolvable<boolean> to boolean | undefined
+const parseBoolean = (value: boolean | string | undefined): boolean | undefined => {
+  if (typeof value === 'boolean') {
+    return value;
+  }
+  if (value === 'true') {
+    return true;
+  }
+  if (value === 'false') {
+    return false;
+  }
+  return undefined;
+};
+
 export const parseFunction = (functions?: {
   [key: string]: FunctionRaw;
 }): Array<FunctionDomain> | undefined => {
@@ -37,7 +51,7 @@ export const parseFunction = (functions?: {
           ? Number(func.timeout)
           : undefined,
     environment: func.environment,
-    log: typeof func.log === 'boolean' ? func.log : func.log === 'true',
+    log: parseBoolean(func.log),
     network: func.network,
     storage: {
       disk:

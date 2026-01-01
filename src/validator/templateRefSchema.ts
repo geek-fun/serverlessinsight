@@ -1,4 +1,6 @@
 // Template reference pattern that matches ${vars.xxx}, ${stages.xxx}, ${ctx.xxx}, ${functions.xxx}
+// Note: ${functions.xxx} references are kept as strings and resolved by infrastructure stack (ROS/Terraform)
+// Only ${vars.xxx}, ${stages.xxx}, and ${ctx.xxx} are resolved at parse time
 export const templateRefPattern = '^\\$\\{(vars|stages|ctx|functions)\\.[\\w.]+\\}$';
 
 // Schema definition for a template reference string
