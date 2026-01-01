@@ -125,15 +125,15 @@ const servEvent = async (
           functionKey: backendDef.key as string,
           handler: backendDef.code.handler,
           servicePath: '',
-          timeout: backendDef.timeout * 1000,
+          timeout: (backendDef.timeout ?? 3) * 1000,
         };
 
         const aliyunContext = createAliyunContextSerializable(
           iac,
           backendDef.name,
           backendDef.code.handler,
-          backendDef.memory,
-          backendDef.timeout,
+          backendDef.memory ?? 128,
+          backendDef.timeout ?? 3,
           requestId,
         );
 

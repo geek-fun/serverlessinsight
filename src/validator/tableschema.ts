@@ -1,3 +1,5 @@
+import { resolvableInteger, resolvableEnum } from './templateRefSchema';
+
 export const tableSchema = {
   $id: 'https://serverlessinsight.geekfun.club/schemas/tableschema.json',
   type: 'object',
@@ -7,12 +9,12 @@ export const tableSchema = {
       properties: {
         collection: { type: 'string' },
         name: { type: 'string' },
-        type: { type: 'string', enum: ['TABLE_STORE_C', 'TABLE_STORE_H'] },
+        type: resolvableEnum(['TABLE_STORE_C', 'TABLE_STORE_H']),
         desc: { type: 'string', maxLength: 256 },
         network: {
           type: 'object',
           properties: {
-            type: { type: 'string', enum: ['PUBLIC', 'PRIVATE'] },
+            type: resolvableEnum(['PUBLIC', 'PRIVATE']),
             ingress_rules: {
               type: 'array',
               items: { type: 'string' },
@@ -26,15 +28,15 @@ export const tableSchema = {
             reserved: {
               type: 'object',
               properties: {
-                read: { type: 'integer' },
-                write: { type: 'integer' },
+                read: resolvableInteger,
+                write: resolvableInteger,
               },
             },
             on_demand: {
               type: 'object',
               properties: {
-                read: { type: 'integer' },
-                write: { type: 'integer' },
+                read: resolvableInteger,
+                write: resolvableInteger,
               },
             },
           },
@@ -45,7 +47,7 @@ export const tableSchema = {
             type: 'object',
             properties: {
               name: { type: 'string' },
-              type: { type: 'string', enum: ['HASH', 'RANGE'] },
+              type: resolvableEnum(['HASH', 'RANGE']),
             },
             required: ['name', 'type'],
           },
@@ -56,7 +58,7 @@ export const tableSchema = {
             type: 'object',
             properties: {
               name: { type: 'string' },
-              type: { type: 'string', enum: ['STRING', 'INTEGER', 'DOUBLE', 'BOOLEAN', 'BINARY'] },
+              type: resolvableEnum(['STRING', 'INTEGER', 'DOUBLE', 'BOOLEAN', 'BINARY']),
             },
             required: ['name', 'type'],
           },

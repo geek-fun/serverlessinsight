@@ -1,0 +1,38 @@
+version: 0.0.1
+provider:
+  name: aliyun
+  region: cn-chengdu
+
+vars:
+  testv: testVarValue
+  handler: index.handler
+
+stages:
+  default:
+    node_env: default
+    enable_log: false
+  dev:
+    node_env: development
+    enable_log: true
+  prod:
+    node_env: production
+    enable_log: true
+
+service: insight-poc-bool-refs
+
+tags:
+  owner: geek-fun
+
+functions:
+  insight_poc_fn:
+    name: insight-poc-fn
+    code:
+      runtime: nodejs18
+      handler: index.handler
+      path: tests/fixtures/artifacts/artifact.zip
+    memory: 512
+    timeout: 10
+    log: ${stages.enable_log}
+    environment:
+      NODE_ENV: ${stages.node_env}
+      TEST_VAR: ${vars.testv}

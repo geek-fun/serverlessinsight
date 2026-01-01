@@ -150,4 +150,133 @@ describe('unit test for validate', () => {
     } as unknown as ServerlessIacRaw;
     expect(() => validateYaml(invalidYaml)).toThrow('Invalid yaml');
   });
+
+  describe('template references validation', () => {
+    it('should pass validation when memory is a template reference', () => {
+      const yamlWithTemplateRef = {
+        ...jsonIac,
+        functions: {
+          test_fn: {
+            name: 'test-fn',
+            code: {
+              runtime: 'nodejs18',
+              handler: 'index.handler',
+              path: 'tests/fixtures/artifacts/artifact.zip',
+            },
+            memory: '${stages.memory}',
+            timeout: 10,
+          },
+        },
+      };
+      expect(validateYaml(yamlWithTemplateRef)).toBe(true);
+    });
+
+    it('should pass validation when timeout is a template reference', () => {
+      const yamlWithTemplateRef = {
+        ...jsonIac,
+        functions: {
+          test_fn: {
+            name: 'test-fn',
+            code: {
+              runtime: 'nodejs18',
+              handler: 'index.handler',
+              path: 'tests/fixtures/artifacts/artifact.zip',
+            },
+            memory: 128,
+            timeout: '${vars.timeout}',
+          },
+        },
+      };
+      expect(validateYaml(yamlWithTemplateRef)).toBe(true);
+    });
+
+    it('should pass validation when log is a template reference', () => {
+      const yamlWithTemplateRef = {
+        ...jsonIac,
+        functions: {
+          test_fn: {
+            name: 'test-fn',
+            code: {
+              runtime: 'nodejs18',
+              handler: 'index.handler',
+              path: 'tests/fixtures/artifacts/artifact.zip',
+            },
+            log: '${vars.enable_log}',
+          },
+        },
+      };
+      expect(validateYaml(yamlWithTemplateRef)).toBe(true);
+    });
+
+    it('should pass validation when gpu is a template reference', () => {
+      const yamlWithTemplateRef = {
+        ...jsonIac,
+        functions: {
+          test_fn: {
+            name: 'test-fn',
+            code: {
+              runtime: 'nodejs18',
+              handler: 'index.handler',
+              path: 'tests/fixtures/artifacts/artifact.zip',
+            },
+            gpu: '${stages.gpu_type}',
+          },
+        },
+      };
+      expect(validateYaml(yamlWithTemplateRef)).toBe(true);
+    });
+
+    it('should pass validation when runtime is a template reference', () => {
+      const yamlWithTemplateRef = {
+        ...jsonIac,
+        functions: {
+          test_fn: {
+            name: 'test-fn',
+            code: {
+              runtime: '${vars.runtime}',
+              handler: 'index.handler',
+              path: 'tests/fixtures/artifacts/artifact.zip',
+            },
+          },
+        },
+      };
+      expect(validateYaml(yamlWithTemplateRef)).toBe(true);
+    });
+
+    it('should reject invalid template reference patterns', () => {
+      const yamlWithInvalidRef = {
+        ...jsonIac,
+        functions: {
+          test_fn: {
+            name: 'test-fn',
+            code: {
+              runtime: 'nodejs18',
+              handler: 'index.handler',
+              path: 'tests/fixtures/artifacts/artifact.zip',
+            },
+            memory: '${invalid.memory}', // invalid prefix
+          },
+        },
+      };
+      expect(() => validateYaml(yamlWithInvalidRef)).toThrow('Invalid yaml');
+    });
+
+    it('should reject non-template-ref strings for numeric fields', () => {
+      const yamlWithInvalidRef = {
+        ...jsonIac,
+        functions: {
+          test_fn: {
+            name: 'test-fn',
+            code: {
+              runtime: 'nodejs18',
+              handler: 'index.handler',
+              path: 'tests/fixtures/artifacts/artifact.zip',
+            },
+            memory: 'not-a-ref-or-number',
+          },
+        },
+      };
+      expect(() => validateYaml(yamlWithInvalidRef)).toThrow('Invalid yaml');
+    });
+  });
 });

@@ -62,7 +62,7 @@ export const functionsHandler = async (
       functionKey: fcDef.key,
       handler: fcDef.code.handler,
       servicePath: '',
-      timeout: fcDef.timeout * 1000,
+      timeout: (fcDef.timeout ?? 3) * 1000,
     };
 
     // Check if provider is Aliyun to use Aliyun FC format
@@ -83,8 +83,8 @@ export const functionsHandler = async (
         iac,
         fcDef.name,
         fcDef.code.handler,
-        fcDef.memory,
-        fcDef.timeout,
+        fcDef.memory ?? 128,
+        fcDef.timeout ?? 3,
         requestId,
       );
 

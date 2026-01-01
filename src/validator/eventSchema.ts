@@ -1,3 +1,5 @@
+import { resolvableEnum } from './templateRefSchema';
+
 export const eventSchema = {
   $id: 'https://serverlessinsight.geekfun.club/schemas/eventschema.json',
   type: 'object',
@@ -6,11 +8,11 @@ export const eventSchema = {
       type: 'object',
       properties: {
         name: { type: 'string' },
-        type: { type: 'string', enum: ['API_GATEWAY'] },
+        type: resolvableEnum(['API_GATEWAY']),
         triggers: {
           type: 'array',
           items: {
-            method: { type: 'string', enum: ['GET', 'POST', 'PUT', 'DELETE', 'ANY'] },
+            method: resolvableEnum(['GET', 'POST', 'PUT', 'DELETE', 'ANY']),
             path: { type: 'string' },
             backend: { type: 'string' },
             required: ['method', 'path', 'backend'],

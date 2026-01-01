@@ -1,0 +1,40 @@
+version: 0.0.1
+provider:
+  name: aliyun
+  region: cn-chengdu
+
+vars:
+  testv: testVarValue
+  handler: index.handler
+
+stages:
+  default:
+    node_env: default
+    memory: 256
+    timeout: 10
+  dev:
+    node_env: development
+    memory: 512
+    timeout: 30
+  prod:
+    node_env: production
+    memory: 1024
+    timeout: 60
+
+service: insight-poc-numeric-refs
+
+tags:
+  owner: geek-fun
+
+functions:
+  insight_poc_fn:
+    name: insight-poc-fn
+    code:
+      runtime: nodejs18
+      handler: index.handler
+      path: tests/fixtures/artifacts/artifact.zip
+    memory: ${stages.memory}
+    timeout: ${stages.timeout}
+    environment:
+      NODE_ENV: ${stages.node_env}
+      TEST_VAR: ${vars.testv}

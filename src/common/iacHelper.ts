@@ -87,10 +87,35 @@ const getParam = (key: string, records?: Array<{ key: string; value: string }>) 
   return records?.find((param) => param.key === key)?.value as string;
 };
 
+// Attempt to infer the type of the value if it was a template reference
+const inferType = <T>(value: string, wasTemplateRef: boolean): T => {
+  if (!wasTemplateRef) {
+    return value as T;
+  }
+
+  // Try to parse as number
+  if (/^-?\d+(\.\d+)?$/.test(value)) {
+    return Number(value) as T;
+  }
+
+  // Try to parse as boolean
+  if (value === 'true') {
+    return true as T;
+  }
+  if (value === 'false') {
+    return false as T;
+  }
+
+  return value as T;
+};
+
 export const calcValue = <T>(rawValue: string, ctx: Context, iacVars?: Vars): T => {
   const containsStage = rawValue.match(/\$\{ctx.stage}/);
   const containsVar = rawValue.match(/\$\{vars.\w+}/);
   const containsMap = rawValue.match(/\$\{stages\.(\w+)}/);
+
+  // Check if the entire value is a single template reference (for type inference)
+  const isExactTemplateRef = /^\$\{(vars|stages|ctx)\.[^}]+\}$/.test(rawValue);
 
   let value = rawValue;
 
@@ -135,7 +160,7 @@ export const calcValue = <T>(rawValue: string, ctx: Context, iacVars?: Vars): T 
     });
   }
 
-  return value as T;
+  return inferType<T>(value, isExactTemplateRef);
 };
 
 export const getIacDefinition = (

@@ -1,19 +1,22 @@
+// Type for values that can be template references (e.g., ${stages.memory})
+export type Resolvable<T> = T | string;
+
 export type FunctionRaw = {
   name: string;
   code?: {
-    runtime: string;
+    runtime: Resolvable<string>;
     handler: string;
     path: string;
   };
   container?: {
     image: string;
     cmd?: string;
-    port: number;
+    port: Resolvable<number>;
   };
-  memory: number;
-  gpu: string;
-  timeout: number;
-  log?: boolean;
+  memory?: Resolvable<number>;
+  gpu?: Resolvable<string>;
+  timeout?: Resolvable<number>;
+  log?: Resolvable<boolean>;
   environment?: {
     [key: string]: string;
   };
@@ -27,10 +30,10 @@ export type FunctionRaw = {
     };
   };
   storage?: {
-    disk?: number;
+    disk?: Resolvable<number>;
     nas?: Array<{
       mount_path: string;
-      storage_class: string;
+      storage_class: Resolvable<string>;
     }>;
   };
 };
@@ -48,9 +51,9 @@ export type FunctionDomain = {
     cmd?: string;
     port: number;
   };
-  memory: number;
+  memory?: number;
   gpu?: FunctionGpuEnum;
-  timeout: number;
+  timeout?: number;
   log?: boolean;
   environment?: {
     [key: string]: string;

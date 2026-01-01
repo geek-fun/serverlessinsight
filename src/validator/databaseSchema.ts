@@ -1,3 +1,10 @@
+import {
+  resolvableNumber,
+  resolvableInteger,
+  resolvableBoolean,
+  resolvableEnum,
+} from './templateRefSchema';
+
 export const databaseSchema = {
   $id: 'https://serverlessinsight.geekfun.club/schemas/databaseschema.json',
   type: 'object',
@@ -6,48 +13,42 @@ export const databaseSchema = {
       type: 'object',
       properties: {
         name: { type: 'string' },
-        type: {
-          type: 'string',
-          enum: [
-            'ELASTICSEARCH_SERVERLESS',
-            'RDS_MYSQL_SERVERLESS',
-            'RDS_PGSQL_SERVERLESS',
-            'RDS_MSSQL_SERVERLESS',
-            'TDSQL_C_SERVERLESS',
-          ],
-        },
-        version: {
-          type: 'string',
-          enum: [
-            'MYSQL_5.7',
-            'MYSQL_8.0',
-            'MYSQL_HA_5.7',
-            'MYSQL_HA_8.0',
-            'PGSQL_14',
-            'PGSQL_15',
-            'PGSQL_16',
-            'PGSQL_HA_14',
-            'PGSQL_HA_15',
-            'PGSQL_HA_16',
-            'MSSQL_HA_2016',
-            'MSSQL_HA_2017',
-            'MSSQL_HA_2019',
-            'ES_SEARCH_7.10',
-            'ES_TIME_SERIES_7.10',
-          ],
-        },
+        type: resolvableEnum([
+          'ELASTICSEARCH_SERVERLESS',
+          'RDS_MYSQL_SERVERLESS',
+          'RDS_PGSQL_SERVERLESS',
+          'RDS_MSSQL_SERVERLESS',
+          'TDSQL_C_SERVERLESS',
+        ]),
+        version: resolvableEnum([
+          'MYSQL_5.7',
+          'MYSQL_8.0',
+          'MYSQL_HA_5.7',
+          'MYSQL_HA_8.0',
+          'PGSQL_14',
+          'PGSQL_15',
+          'PGSQL_16',
+          'PGSQL_HA_14',
+          'PGSQL_HA_15',
+          'PGSQL_HA_16',
+          'MSSQL_HA_2016',
+          'MSSQL_HA_2017',
+          'MSSQL_HA_2019',
+          'ES_SEARCH_7.10',
+          'ES_TIME_SERIES_7.10',
+        ]),
         cu: {
           type: 'object',
           properties: {
-            min: { type: 'number', minimum: 0, maximum: 32 },
-            max: { type: 'number', minimum: 1, maximum: 32 },
+            min: resolvableNumber,
+            max: resolvableNumber,
           },
         },
         storage: {
           type: 'object',
           properties: {
-            min: { type: 'integer', minimum: 10 },
-            max: { type: 'integer', minimum: 10 },
+            min: resolvableInteger,
+            max: resolvableInteger,
           },
         },
         security: {
@@ -67,14 +68,14 @@ export const databaseSchema = {
         network: {
           type: 'object',
           properties: {
-            type: { type: 'string', enum: ['PUBLIC', 'PRIVATE'] },
+            type: resolvableEnum(['PUBLIC', 'PRIVATE']),
             ingress_rules: {
               type: 'array',
               items: { type: 'string' },
             },
             vpc_id: { type: 'string' },
             subnet_id: { type: 'string' },
-            public: { type: 'boolean' },
+            public: resolvableBoolean,
           },
         },
       },
