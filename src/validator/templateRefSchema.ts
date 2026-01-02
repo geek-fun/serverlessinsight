@@ -1,16 +1,16 @@
 // Template reference pattern that matches ${vars.xxx}, ${stages.xxx}, ${ctx.xxx}, ${functions.xxx}
 // Note: ${functions.xxx} references are kept as strings and resolved by infrastructure stack (ROS/Terraform)
 // Only ${vars.xxx}, ${stages.xxx}, and ${ctx.xxx} are resolved at parse time
-export const templateRefPattern = '^\\$\\{(vars|stages|ctx|functions)\\.[\\w.]+\\}$';
+const templateRefPattern = '^\\$\\{(vars|stages|ctx|functions)\\.[\\w.]+\\}$';
 
 // Schema definition for a template reference string
-export const templateRefSchema = {
+const templateRefSchema = {
   type: 'string',
   pattern: templateRefPattern,
 };
 
 // Helper function to create a oneOf schema for a type that can also be a template reference
-export const withTemplateRef = (schema: Record<string, unknown>) => ({
+const withTemplateRef = (schema: Record<string, unknown>) => ({
   oneOf: [schema, templateRefSchema],
 });
 
@@ -18,7 +18,6 @@ export const withTemplateRef = (schema: Record<string, unknown>) => ({
 export const resolvableNumber = withTemplateRef({ type: 'number' });
 export const resolvableInteger = withTemplateRef({ type: 'integer' });
 export const resolvableBoolean = withTemplateRef({ type: 'boolean' });
-export const resolvableString = { type: 'string' }; // strings already accept template refs
 
 // Helper for enum types that can also be template refs
 export const resolvableEnum = (enumValues: string[]) =>

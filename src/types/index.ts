@@ -7,6 +7,7 @@ import { Provider } from './domains/provider';
 import { BucketDomain, BucketRaw } from './domains/bucket';
 import { TableDomain, TableRaw } from './domains/table';
 
+export * from './domains/resolvable';
 export * from './domains/database';
 export * from './domains/event';
 export * from './domains/function';

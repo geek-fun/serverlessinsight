@@ -1,20 +1,22 @@
+import { Resolvable } from './resolvable';
+
 export enum EventTypes {
   API_GATEWAY = 'API_GATEWAY',
 }
 
 export type EventRaw = {
-  name: string;
-  type: EventTypes;
+  name: Resolvable<string>;
+  type: Resolvable<EventTypes | string>;
   triggers: Array<{
-    method: string;
-    path: string;
-    backend: string;
+    method: Resolvable<string>;
+    path: Resolvable<string>;
+    backend: Resolvable<string>;
   }>;
   domain?: {
-    domain_name: string;
-    certificate_name?: string;
-    certificate_body?: string;
-    certificate_private_key?: string;
+    domain_name: Resolvable<string>;
+    certificate_name?: Resolvable<string>;
+    certificate_body?: Resolvable<string>;
+    certificate_private_key?: Resolvable<string>;
   };
 };
 
