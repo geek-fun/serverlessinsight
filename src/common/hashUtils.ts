@@ -13,6 +13,77 @@ export const computeFileHash = (filePath: string): string => {
 };
 
 /**
+ * Deep equality comparison for two values.
+ * Handles primitives, objects, arrays, null, and undefined.
+ * @param a - First value
+ * @param b - Second value
+ * @returns True if values are deeply equal, false otherwise
+ */
+const deepEqual = (a: unknown, b: unknown): boolean => {
+  // Handle primitives and null/undefined
+  if (a === b) {
+    return true;
+  }
+
+  // Handle type mismatches
+  if (typeof a !== typeof b) {
+    return false;
+  }
+
+  // Handle null (typeof null === 'object')
+  if (a === null || b === null) {
+    return false; // One is null, other is not (would have matched above if both null)
+  }
+
+  // Handle non-objects (primitives that didn't match above)
+  if (typeof a !== 'object') {
+    return false;
+  }
+
+  // Both are objects/arrays at this point
+  const objA = a as Record<string, unknown>;
+  const objB = b as Record<string, unknown>;
+
+  // Handle arrays
+  if (Array.isArray(objA) && Array.isArray(objB)) {
+    if (objA.length !== objB.length) {
+      return false;
+    }
+    for (let i = 0; i < objA.length; i++) {
+      if (!deepEqual(objA[i], objB[i])) {
+        return false;
+      }
+    }
+    return true;
+  }
+
+  // If one is array and other is not, they're not equal
+  if (Array.isArray(objA) || Array.isArray(objB)) {
+    return false;
+  }
+
+  // Compare object keys
+  const keysA = Object.keys(objA);
+  const keysB = Object.keys(objB);
+
+  if (keysA.length !== keysB.length) {
+    return false;
+  }
+
+  // Check all keys exist in both and have equal values
+  for (const key of keysA) {
+    if (!Object.prototype.hasOwnProperty.call(objB, key)) {
+      return false;
+    }
+    if (!deepEqual(objA[key], objB[key])) {
+      return false;
+    }
+  }
+
+  return true;
+};
+
+/**
  * Compare two ResourceAttributes objects for equality.
  * Returns true if all keys and values match.
  * @param a - First attributes object
@@ -23,34 +94,7 @@ export const attributesEqual = (
   a: Record<string, unknown>,
   b: Record<string, unknown>,
 ): boolean => {
-  const aKeys = Object.keys(a).sort();
-  const bKeys = Object.keys(b).sort();
-
-  if (aKeys.length !== bKeys.length) {
-    return false;
-  }
-
-  for (let i = 0; i < aKeys.length; i++) {
-    if (aKeys[i] !== bKeys[i]) {
-      return false;
-    }
-    const key = aKeys[i];
-    const aVal = a[key];
-    const bVal = b[key];
-
-    // Deep comparison for nested objects/arrays
-    if (typeof aVal === 'object' && aVal !== null && typeof bVal === 'object' && bVal !== null) {
-      const aStr = JSON.stringify(aVal);
-      const bStr = JSON.stringify(bVal);
-      if (aStr !== bStr) {
-        return false;
-      }
-    } else if (aVal !== bVal) {
-      return false;
-    }
-  }
-
-  return true;
+  return deepEqual(a, b);
 };
 
 /**
@@ -83,10 +127,8 @@ export const diffAttributes = (
     } else if (!(key in after)) {
       removed[key] = beforeVal;
     } else {
-      // Both exist - check if they're different
-      const beforeStr = JSON.stringify(beforeVal);
-      const afterStr = JSON.stringify(afterVal);
-      if (beforeStr !== afterStr) {
+      // Both exist - check if they're different using deep equality
+      if (!deepEqual(beforeVal, afterVal)) {
         changed[key] = { before: beforeVal, after: afterVal };
       }
     }

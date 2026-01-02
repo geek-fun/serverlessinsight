@@ -28,11 +28,13 @@ const migrateStateV1ToV2 = (state: StateFile): StateFile => {
     if (resource.attributes) {
       migratedResources[resourceId] = resource;
     } else {
-      // Migrate from v0.1: create attributes from metadata if available
-      // Keep configHash for backward compatibility but mark as deprecated
+      // Migrate from v0.1: create empty attributes object
+      // We can't reliably reconstruct attributes from metadata,
+      // so we start with empty attributes. The next plan/apply
+      // will detect drift and update the state accordingly.
       migratedResources[resourceId] = {
         ...resource,
-        attributes: resource.metadata || {},
+        attributes: {},
         // Keep old configHash for reference during transition
         configHash: (resource as { configHash?: string }).configHash,
       };

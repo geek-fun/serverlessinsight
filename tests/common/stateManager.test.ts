@@ -116,10 +116,8 @@ describe('StateManager', () => {
 
       // Should be migrated to v0.2
       expect(state.version).toBe(CURRENT_STATE_VERSION);
-      // Should have attributes from metadata
-      expect(state.resources['functions.test'].attributes).toEqual({
-        functionName: 'test-fn',
-      });
+      // Should have empty attributes (migration doesn't use metadata)
+      expect(state.resources['functions.test'].attributes).toEqual({});
       // Should keep configHash for backward compatibility
       expect(state.resources['functions.test'].configHash).toBe('abc123');
     });
