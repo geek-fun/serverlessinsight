@@ -1,5 +1,6 @@
 import { FunctionDomain } from '../../types';
 import crypto from 'node:crypto';
+import { mapRuntime, ProviderEnum } from '../../common';
 
 export type ScfFunctionConfig = {
   FunctionName: string;
@@ -31,7 +32,7 @@ export type ScfFunctionInfo = {
 export const functionToScfConfig = (fn: FunctionDomain): ScfFunctionConfig => {
   const config: ScfFunctionConfig = {
     FunctionName: fn.name,
-    Runtime: fn.code!.runtime,
+    Runtime: mapRuntime(fn.code!.runtime, ProviderEnum.TENCENT),
     Handler: fn.code!.handler,
     MemorySize: fn.memory ?? 128,
     Timeout: fn.timeout ?? 3,

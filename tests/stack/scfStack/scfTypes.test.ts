@@ -24,7 +24,7 @@ describe('SCF Types', () => {
       const config = functionToScfConfig(fn);
 
       expect(config.FunctionName).toBe('test-function');
-      expect(config.Runtime).toBe('nodejs18');
+      expect(config.Runtime).toBe('Nodejs18.15');
       expect(config.Handler).toBe('index.handler');
       expect(config.MemorySize).toBe(512);
       expect(config.Timeout).toBe(10);
@@ -56,7 +56,7 @@ describe('SCF Types', () => {
 
       expect(config).toEqual({
         FunctionName: 'test-function',
-        Runtime: 'nodejs18',
+        Runtime: 'Nodejs18.15',
         Handler: 'index.handler',
         MemorySize: 256,
         Timeout: 5,
@@ -82,7 +82,7 @@ describe('SCF Types', () => {
 
       expect(config).toEqual({
         FunctionName: 'test-function',
-        Runtime: 'nodejs18',
+        Runtime: 'Nodejs18.15',
         Handler: 'index.handler',
         MemorySize: 256,
         Timeout: 5,
