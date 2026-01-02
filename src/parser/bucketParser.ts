@@ -1,38 +1,5 @@
-import { BucketAccessEnum, BucketDomain, BucketRaw, Resolvable } from '../types';
-
-// Helper to convert Resolvable<boolean> to boolean
-const parseBoolean = (value: Resolvable<boolean> | undefined, defaultValue: boolean): boolean => {
-  if (typeof value === 'boolean') {
-    return value;
-  }
-  if (value === 'true') {
-    return true;
-  }
-  if (value === 'false') {
-    return false;
-  }
-  return defaultValue;
-};
-
-// Helper to convert Resolvable<number> to number
-const parseNumber = (value: Resolvable<number> | undefined, defaultValue: number): number => {
-  if (typeof value === 'number') {
-    return value;
-  }
-  if (typeof value === 'string') {
-    const parsed = Number(value);
-    return isNaN(parsed) ? defaultValue : parsed;
-  }
-  return defaultValue;
-};
-
-// Helper to convert Resolvable<string> to string with default
-const parseStringWithDefault = (
-  value: Resolvable<string> | undefined,
-  defaultValue: string,
-): string => {
-  return value ? String(value) : defaultValue;
-};
+import { BucketAccessEnum, BucketDomain, BucketRaw } from '../types';
+import { parseBoolean, parseNumber, parseStringWithDefault } from './parseUtils';
 
 export const parseBucket = (buckets: {
   [key: string]: BucketRaw;

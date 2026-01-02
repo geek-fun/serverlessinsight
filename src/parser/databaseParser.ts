@@ -1,22 +1,6 @@
 import { DatabaseDomain, DatabaseEnum, DatabaseRaw, DatabaseVersionEnum } from '../types';
 import { get, isEmpty } from 'lodash';
-
-// Helper to convert Resolvable<number> to number
-const parseNumber = (value: number | string | undefined, defaultValue: number): number => {
-  if (typeof value === 'number') {
-    return value;
-  }
-  if (typeof value === 'string') {
-    const parsed = Number(value);
-    return isNaN(parsed) ? defaultValue : parsed;
-  }
-  return defaultValue;
-};
-
-// Helper to safely convert Resolvable<string> to string | undefined
-const parseOptionalString = (value: string | undefined): string | undefined => {
-  return value ? String(value) : undefined;
-};
+import { parseNumber, parseOptionalString } from './parseUtils';
 
 export const parseDatabase = (databases?: {
   [key: string]: DatabaseRaw;

@@ -6,18 +6,7 @@ import {
   TableRaw,
 } from '../types/domains/table';
 import { isEmpty, omitBy, isNil } from 'lodash';
-
-// Helper to convert Resolvable<number> or string to number
-const parseNumber = (value: number | string | undefined): number | undefined => {
-  if (value === undefined) {
-    return undefined;
-  }
-  if (typeof value === 'number') {
-    return value;
-  }
-  const parsed = Number(value);
-  return isNaN(parsed) ? undefined : parsed;
-};
+import { parseNumber } from './parseUtils';
 
 export function parseTable(tablesRaw?: {
   [key: string]: TableRaw;
