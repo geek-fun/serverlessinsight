@@ -6,7 +6,7 @@ export const rootSchema = {
     provider: {
       type: 'object',
       properties: {
-        name: { type: 'string', enum: ['huawei', 'aliyun', 'tencent'] },
+        name: { type: 'string', enum: ['huawei', 'aliyun', 'tencent', 'aws'] },
         region: { type: 'string' },
       },
       required: ['name', 'region'],

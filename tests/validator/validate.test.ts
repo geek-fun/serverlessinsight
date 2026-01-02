@@ -3,6 +3,7 @@ import * as path from 'node:path';
 import { parse } from 'yaml';
 import { ServerlessIacRaw } from '../../src/types';
 import { validateYaml } from '../../src/validator';
+import { ProviderEnum } from '../../src/common';
 
 const jsonIac = parse(
   readFileSync(path.resolve(__dirname, '../fixtures/serverless-insight.yml'), 'utf8'),
@@ -277,6 +278,206 @@ describe('unit test for validate', () => {
         },
       };
       expect(() => validateYaml(yamlWithInvalidRef)).toThrow('Invalid yaml');
+    });
+  });
+
+  describe('provider-based runtime validation', () => {
+    it('should pass validation when runtime is supported by provider', () => {
+      const validYaml = {
+        ...jsonIac,
+        functions: {
+          test_fn: {
+            name: 'test-fn',
+            code: {
+              runtime: 'nodejs18',
+              handler: 'index.handler',
+              path: 'tests/fixtures/artifacts/artifact.zip',
+            },
+          },
+        },
+      };
+      expect(validateYaml(validYaml)).toBe(true);
+    });
+
+    it('should throw error when runtime is not supported by Aliyun provider', () => {
+      const invalidYaml = {
+        ...jsonIac,
+        provider: {
+          name: ProviderEnum.ALIYUN,
+          region: 'cn-hangzhou',
+        },
+        functions: {
+          test_fn: {
+            name: 'test-fn',
+            code: {
+              runtime: 'nodejs24',
+              handler: 'index.handler',
+              path: 'tests/fixtures/artifacts/artifact.zip',
+            },
+          },
+        },
+      };
+      expect(() => validateYaml(invalidYaml)).toThrow('Invalid yaml');
+      expect(() => validateYaml(invalidYaml)).toThrow(
+        "runtime 'nodejs24' is not supported by provider 'aliyun'",
+      );
+    });
+
+    it('should throw error when runtime is not supported by Tencent provider', () => {
+      const invalidYaml = {
+        ...jsonIac,
+        provider: {
+          name: ProviderEnum.TENCENT,
+          region: 'ap-guangzhou',
+        },
+        functions: {
+          test_fn: {
+            name: 'test-fn',
+            code: {
+              runtime: 'nodejs20',
+              handler: 'index.handler',
+              path: 'tests/fixtures/artifacts/artifact.zip',
+            },
+          },
+        },
+      };
+      expect(() => validateYaml(invalidYaml)).toThrow('Invalid yaml');
+      expect(() => validateYaml(invalidYaml)).toThrow(
+        "runtime 'nodejs20' is not supported by provider 'tencent'",
+      );
+    });
+
+    it('should throw error when runtime is not supported by AWS provider', () => {
+      const invalidYaml = {
+        ...jsonIac,
+        provider: {
+          name: ProviderEnum.AWS,
+          region: 'us-east-1',
+        },
+        functions: {
+          test_fn: {
+            name: 'test-fn',
+            code: {
+              runtime: 'nodejs18',
+              handler: 'index.handler',
+              path: 'tests/fixtures/artifacts/artifact.zip',
+            },
+          },
+        },
+      };
+      expect(() => validateYaml(invalidYaml)).toThrow('Invalid yaml');
+      expect(() => validateYaml(invalidYaml)).toThrow(
+        "runtime 'nodejs18' is not supported by provider 'aws'",
+      );
+    });
+
+    it('should pass validation when runtime is template reference', () => {
+      const validYaml = {
+        ...jsonIac,
+        functions: {
+          test_fn: {
+            name: 'test-fn',
+            code: {
+              runtime: '${vars.runtime}',
+              handler: 'index.handler',
+              path: 'tests/fixtures/artifacts/artifact.zip',
+            },
+          },
+        },
+      };
+      expect(validateYaml(validYaml)).toBe(true);
+    });
+
+    it('should validate all functions when multiple functions defined', () => {
+      const invalidYaml = {
+        ...jsonIac,
+        provider: {
+          name: ProviderEnum.ALIYUN,
+          region: 'cn-hangzhou',
+        },
+        functions: {
+          test_fn1: {
+            name: 'test-fn1',
+            code: {
+              runtime: 'nodejs18',
+              handler: 'index.handler',
+              path: 'tests/fixtures/artifacts/artifact.zip',
+            },
+          },
+          test_fn2: {
+            name: 'test-fn2',
+            code: {
+              runtime: 'nodejs24',
+              handler: 'index.handler',
+              path: 'tests/fixtures/artifacts/artifact.zip',
+            },
+          },
+        },
+      };
+      expect(() => validateYaml(invalidYaml)).toThrow('Invalid yaml');
+      expect(() => validateYaml(invalidYaml)).toThrow(
+        "runtime 'nodejs24' is not supported by provider 'aliyun'",
+      );
+    });
+
+    it('should pass validation when provider supports Python 3.10', () => {
+      const validYaml = {
+        ...jsonIac,
+        provider: {
+          name: ProviderEnum.ALIYUN,
+          region: 'cn-hangzhou',
+        },
+        functions: {
+          test_fn: {
+            name: 'test-fn',
+            code: {
+              runtime: 'python3.10',
+              handler: 'index.handler',
+              path: 'tests/fixtures/artifacts/artifact.zip',
+            },
+          },
+        },
+      };
+      expect(validateYaml(validYaml)).toBe(true);
+    });
+
+    it('should validate cross-provider runtime compatibility', () => {
+      const aliyunYaml = {
+        ...jsonIac,
+        provider: {
+          name: ProviderEnum.ALIYUN,
+          region: 'cn-hangzhou',
+        },
+        functions: {
+          test_fn: {
+            name: 'test-fn',
+            code: {
+              runtime: 'java8',
+              handler: 'index.handler',
+              path: 'tests/fixtures/artifacts/artifact.zip',
+            },
+          },
+        },
+      };
+      expect(validateYaml(aliyunYaml)).toBe(true);
+
+      const tencentYaml = {
+        ...aliyunYaml,
+        provider: {
+          name: ProviderEnum.TENCENT,
+          region: 'ap-guangzhou',
+        },
+      };
+      expect(validateYaml(tencentYaml)).toBe(true);
+
+      const awsYaml = {
+        ...aliyunYaml,
+        provider: {
+          name: ProviderEnum.AWS,
+          region: 'us-east-1',
+        },
+      };
+      expect(validateYaml(awsYaml)).toBe(true);
     });
   });
 });

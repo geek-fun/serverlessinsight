@@ -15,6 +15,8 @@ import {
   readCodeSize,
   resolveCode,
   SI_BOOTSTRAP_BUCKET_PREFIX,
+  mapRuntime,
+  ProviderEnum,
 } from '../../common';
 import * as fc from '@alicloud/ros-cdk-fc3';
 import { isEmpty } from 'lodash';
@@ -198,7 +200,7 @@ export const resolveFunctions = (
       runtimeConfig = {
         code,
         handler: calcRefs(fnc.code!.handler, context),
-        runtime: calcRefs(fnc.code!.runtime, context),
+        runtime: mapRuntime(calcRefs(fnc.code!.runtime, context), ProviderEnum.ALIYUN),
       };
     }
 
