@@ -12,8 +12,10 @@ stages:
     node_env: default
   dev:
     node_env: development
+    memory: 512
   prod:
     node_env: production
+    memory: 1024
 
 service: insight-poc-scf
 
@@ -29,7 +31,7 @@ functions:
       runtime: nodejs18
       handler: index.handler
       path: tests/fixtures/artifacts/artifact.zip
-    memory: 512
+    memory: ${stages.memory}
     timeout: 10
     environment:
       NODE_ENV: ${stages.node_env}
