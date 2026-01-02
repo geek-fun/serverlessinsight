@@ -13,6 +13,11 @@ const parseNumber = (value: number | string | undefined, defaultValue: number): 
   return defaultValue;
 };
 
+// Helper to safely convert Resolvable<string> to string | undefined
+const parseOptionalString = (value: string | undefined): string | undefined => {
+  return value ? String(value) : undefined;
+};
+
 export const parseDatabase = (databases?: {
   [key: string]: DatabaseRaw;
 }): Array<DatabaseDomain> | undefined => {
@@ -26,7 +31,7 @@ export const parseDatabase = (databases?: {
     version: String(database.version) as DatabaseVersionEnum,
     security: {
       basicAuth: {
-        username: get(database, 'security.basic_auth.master_user'),
+        username: parseOptionalString(get(database, 'security.basic_auth.master_user')),
         password: String(get(database, 'security.basic_auth.password') ?? ''),
       },
     },

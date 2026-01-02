@@ -1,7 +1,7 @@
-import { BucketAccessEnum, BucketDomain, BucketRaw } from '../types';
+import { BucketAccessEnum, BucketDomain, BucketRaw, Resolvable } from '../types';
 
 // Helper to convert Resolvable<boolean> to boolean
-const parseBoolean = (value: boolean | string | undefined, defaultValue: boolean): boolean => {
+const parseBoolean = (value: Resolvable<boolean> | undefined, defaultValue: boolean): boolean => {
   if (typeof value === 'boolean') {
     return value;
   }
@@ -15,7 +15,7 @@ const parseBoolean = (value: boolean | string | undefined, defaultValue: boolean
 };
 
 // Helper to convert Resolvable<number> to number
-const parseNumber = (value: number | string | undefined, defaultValue: number): number => {
+const parseNumber = (value: Resolvable<number> | undefined, defaultValue: number): number => {
   if (typeof value === 'number') {
     return value;
   }
@@ -26,9 +26,12 @@ const parseNumber = (value: number | string | undefined, defaultValue: number): 
   return defaultValue;
 };
 
-// Helper to convert Resolvable<string> to string
-const parseString = <T extends string>(value: string | undefined, defaultValue: T): T => {
-  return (value ?? defaultValue) as T;
+// Helper to convert Resolvable<string> to string with default
+const parseStringWithDefault = (
+  value: Resolvable<string> | undefined,
+  defaultValue: string,
+): string => {
+  return value ? String(value) : defaultValue;
 };
 
 export const parseBucket = (buckets: {
@@ -69,8 +72,8 @@ export const parseBucket = (buckets: {
       ? {
           code: String(bucket.website.code),
           domain: bucket.website.domain ? String(bucket.website.domain) : undefined,
-          index: parseString(bucket.website.index as string | undefined, 'index.html'),
-          error_page: parseString(bucket.website.error_page as string | undefined, '404.html'),
+          index: parseStringWithDefault(bucket.website.index, 'index.html'),
+          error_page: parseStringWithDefault(bucket.website.error_page, '404.html'),
           error_code: parseNumber(bucket.website.error_code, 404),
         }
       : undefined,
