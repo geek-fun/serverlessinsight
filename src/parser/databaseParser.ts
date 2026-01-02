@@ -1,6 +1,6 @@
 import { DatabaseDomain, DatabaseEnum, DatabaseRaw, DatabaseVersionEnum } from '../types';
 import { get, isEmpty } from 'lodash';
-import { parseNumber, parseOptionalString } from './parseUtils';
+import { parseNumber, parseNumberWithDefault, parseOptionalString } from './parseUtils';
 
 export const parseDatabase = (databases?: {
   [key: string]: DatabaseRaw;
@@ -20,11 +20,11 @@ export const parseDatabase = (databases?: {
       },
     },
     cu: {
-      min: parseNumber(database.cu?.min, 0),
-      max: parseNumber(database.cu?.max, 6),
+      min: parseNumberWithDefault(database.cu?.min, 0),
+      max: parseNumberWithDefault(database.cu?.max, 6),
     },
     storage: {
-      min: parseNumber(database.storage?.min, 10),
+      min: parseNumberWithDefault(database.storage?.min, 10),
       max: database.storage?.max ? parseNumber(database.storage.max, 0) : undefined,
     },
     network: {

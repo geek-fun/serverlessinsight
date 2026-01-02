@@ -5,18 +5,10 @@ import { Resolvable } from '../types';
  * @param value - The value that may be a boolean, string 'true'/'false', or undefined
  * @param defaultValue - The default value to return if value is undefined or not parseable
  */
-export function parseBoolean(
-  value: Resolvable<boolean> | undefined,
-  defaultValue: boolean,
-): boolean;
-export function parseBoolean(
-  value: Resolvable<boolean> | undefined,
-  defaultValue?: undefined,
-): boolean | undefined;
-export function parseBoolean(
+export const parseBoolean = (
   value: Resolvable<boolean> | undefined,
   defaultValue?: boolean,
-): boolean | undefined {
+): boolean | undefined => {
   if (typeof value === 'boolean') {
     return value;
   }
@@ -27,22 +19,30 @@ export function parseBoolean(
     return false;
   }
   return defaultValue;
-}
+};
+
+/**
+ * Helper to convert Resolvable<boolean> to boolean with a required default
+ * @param value - The value that may be a boolean, string 'true'/'false', or undefined
+ * @param defaultValue - The default value to return if value is undefined or not parseable
+ */
+export const parseBooleanWithDefault = (
+  value: Resolvable<boolean> | undefined,
+  defaultValue: boolean,
+): boolean => {
+  const result = parseBoolean(value, defaultValue);
+  return result ?? defaultValue;
+};
 
 /**
  * Helper to convert Resolvable<number> to number
  * @param value - The value that may be a number, string number, or undefined
  * @param defaultValue - The default value to return if value is undefined or not parseable
  */
-export function parseNumber(value: Resolvable<number> | undefined, defaultValue: number): number;
-export function parseNumber(
-  value: Resolvable<number> | undefined,
-  defaultValue?: undefined,
-): number | undefined;
-export function parseNumber(
+export const parseNumber = (
   value: Resolvable<number> | undefined,
   defaultValue?: number,
-): number | undefined {
+): number | undefined => {
   if (typeof value === 'number') {
     return value;
   }
@@ -51,7 +51,20 @@ export function parseNumber(
     return isNaN(parsed) ? defaultValue : parsed;
   }
   return defaultValue;
-}
+};
+
+/**
+ * Helper to convert Resolvable<number> to number with a required default
+ * @param value - The value that may be a number, string number, or undefined
+ * @param defaultValue - The default value to return if value is undefined or not parseable
+ */
+export const parseNumberWithDefault = (
+  value: Resolvable<number> | undefined,
+  defaultValue: number,
+): number => {
+  const result = parseNumber(value, defaultValue);
+  return result ?? defaultValue;
+};
 
 /**
  * Helper to convert Resolvable<string> to string with a default value

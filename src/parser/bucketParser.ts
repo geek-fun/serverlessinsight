@@ -1,5 +1,9 @@
 import { BucketAccessEnum, BucketDomain, BucketRaw } from '../types';
-import { parseBoolean, parseNumber, parseStringWithDefault } from './parseUtils';
+import {
+  parseBooleanWithDefault,
+  parseNumberWithDefault,
+  parseStringWithDefault,
+} from './parseUtils';
 
 export const parseBucket = (buckets: {
   [key: string]: BucketRaw;
@@ -25,7 +29,7 @@ export const parseBucket = (buckets: {
           acl: bucket.security.acl
             ? (String(bucket.security.acl) as BucketAccessEnum)
             : BucketAccessEnum.PRIVATE,
-          force_delete: parseBoolean(bucket.security.force_delete, false),
+          force_delete: parseBooleanWithDefault(bucket.security.force_delete, false),
           sse_algorithm: bucket.security.sse_algorithm
             ? String(bucket.security.sse_algorithm)
             : undefined,
@@ -41,7 +45,7 @@ export const parseBucket = (buckets: {
           domain: bucket.website.domain ? String(bucket.website.domain) : undefined,
           index: parseStringWithDefault(bucket.website.index, 'index.html'),
           error_page: parseStringWithDefault(bucket.website.error_page, '404.html'),
-          error_code: parseNumber(bucket.website.error_code, 404),
+          error_code: parseNumberWithDefault(bucket.website.error_code, 404),
         }
       : undefined,
   }));

@@ -1,6 +1,6 @@
 import { FunctionDomain, FunctionGpuEnum, FunctionRaw, NasStorageClassEnum } from '../types';
 import { isEmpty } from 'lodash';
-import { parseBoolean, parseNumber } from './parseUtils';
+import { parseBoolean, parseNumber, parseNumberWithDefault } from './parseUtils';
 
 export const parseFunction = (functions?: {
   [key: string]: FunctionRaw;
@@ -22,7 +22,7 @@ export const parseFunction = (functions?: {
       ? {
           image: func.container.image,
           cmd: func.container.cmd,
-          port: parseNumber(func.container.port, 0) ?? 0,
+          port: parseNumberWithDefault(func.container.port, 0),
         }
       : undefined,
     memory: parseNumber(func.memory),

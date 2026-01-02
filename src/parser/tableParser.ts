@@ -8,9 +8,9 @@ import {
 import { isEmpty, omitBy, isNil } from 'lodash';
 import { parseNumber } from './parseUtils';
 
-export function parseTable(tablesRaw?: {
+export const parseTable = (tablesRaw?: {
   [key: string]: TableRaw;
-}): Array<TableDomain> | undefined {
+}): Array<TableDomain> | undefined => {
   if (isEmpty(tablesRaw)) {
     return undefined;
   }
@@ -59,4 +59,4 @@ export function parseTable(tablesRaw?: {
         })) ?? [],
     };
   });
-}
+};
