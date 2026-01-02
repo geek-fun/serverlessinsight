@@ -6,8 +6,9 @@ import {
   updateScfFunctionCode,
   updateScfFunctionConfiguration,
 } from './scfProvider';
-import { computeConfigHash, functionToScfConfig } from './scfTypes';
+import { functionToScfConfig, extractScfAttributes } from './scfTypes';
 import { setResource, removeResource } from '../../common/stateManager';
+import { computeFileHash } from '../../common/hashUtils';
 
 export const createResource = async (
   context: Context,
@@ -19,12 +20,14 @@ export const createResource = async (
 
   await createScfFunction(context, config, codePath);
 
-  const configHash = computeConfigHash(config);
+  const attributes = extractScfAttributes(config);
+  const codeHash = computeFileHash(codePath);
   const resourceState: ResourceState = {
     type: 'SCF',
     physicalId: fn.name,
     region: context.region,
-    configHash,
+    attributes,
+    codeHash,
     lastUpdated: new Date().toISOString(),
   };
 
@@ -50,12 +53,14 @@ export const updateResource = async (
   // Update code
   await updateScfFunctionCode(context, fn.name, codePath);
 
-  const configHash = computeConfigHash(config);
+  const attributes = extractScfAttributes(config);
+  const codeHash = computeFileHash(codePath);
   const resourceState: ResourceState = {
     type: 'SCF',
     physicalId: fn.name,
     region: context.region,
-    configHash,
+    attributes,
+    codeHash,
     lastUpdated: new Date().toISOString(),
   };
 

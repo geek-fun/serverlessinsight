@@ -13,3 +13,4 @@ export * from './credentials';
 export * from './stateManager';
 export * from './scfClient';
 export * from './runtimeMapper';
+export * from './hashUtils';

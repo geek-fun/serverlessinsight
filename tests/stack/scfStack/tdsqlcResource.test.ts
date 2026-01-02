@@ -13,6 +13,7 @@ import {
   DatabaseVersionEnum,
   StateFile,
   ResourceState,
+  CURRENT_STATE_VERSION,
 } from '../../../src/types';
 import { ProviderEnum } from '../../../src/common';
 
@@ -59,7 +60,7 @@ describe('TdsqlcResource', () => {
   };
 
   const mockState: StateFile = {
-    version: '1.0',
+    version: CURRENT_STATE_VERSION,
     provider: 'tencent',
     resources: {},
   };
@@ -75,7 +76,11 @@ describe('TdsqlcResource', () => {
         type: 'TDSQL_C_SERVERLESS',
         physicalId: clusterId,
         region: 'ap-guangzhou',
-        configHash: 'hash',
+        attributes: {
+          clusterName: 'test-tdsqlc',
+          dbType: 'MYSQL',
+          dbVersion: '8.0',
+        },
         lastUpdated: new Date().toISOString(),
       };
       const updatedState: StateFile = {
@@ -144,7 +149,11 @@ describe('TdsqlcResource', () => {
         type: 'TDSQL_C_SERVERLESS',
         physicalId: clusterId,
         region: 'ap-guangzhou',
-        configHash: 'new-hash',
+        attributes: {
+          clusterName: 'test-tdsqlc',
+          dbType: 'MYSQL',
+          dbVersion: '8.0',
+        },
         lastUpdated: new Date().toISOString(),
       };
       const updatedState: StateFile = {

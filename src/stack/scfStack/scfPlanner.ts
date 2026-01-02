@@ -1,7 +1,8 @@
 import { Context, FunctionDomain, Plan, PlanItem, StateFile } from '../../types';
 import { getScfFunction } from './scfProvider';
-import { computeConfigHash, functionToScfConfig } from './scfTypes';
+import { functionToScfConfig, extractScfAttributes } from './scfTypes';
 import { getAllResources, getResource } from '../../common/stateManager';
+import { attributesEqual, computeFileHash } from '../../common/hashUtils';
 
 export const generateFunctionPlan = async (
   context: Context,
@@ -20,7 +21,7 @@ export const generateFunctionPlan = async (
           action: 'delete',
           resourceType: 'SCF',
           changes: {
-            before: { physicalId: resourceState.physicalId },
+            before: { physicalId: resourceState.physicalId, ...resourceState.attributes },
           },
         });
       }
@@ -37,7 +38,9 @@ export const generateFunctionPlan = async (
 
     const currentState = getResource(state, logicalId);
     const config = functionToScfConfig(fn);
-    const desiredConfigHash = computeConfigHash(config);
+    const desiredAttributes = extractScfAttributes(config);
+    const codePath = fn.code!.path;
+    const desiredCodeHash = computeFileHash(codePath);
 
     if (!currentState) {
       // Resource doesn't exist in state - needs to be created
@@ -47,11 +50,8 @@ export const generateFunctionPlan = async (
         resourceType: 'SCF',
         changes: {
           after: {
-            name: fn.name,
-            runtime: fn.code!.runtime,
-            handler: fn.code!.handler,
-            memory: fn.memory,
-            timeout: fn.timeout,
+            ...desiredAttributes,
+            codeHash: desiredCodeHash,
           },
         },
       });
@@ -67,42 +67,47 @@ export const generateFunctionPlan = async (
             action: 'create',
             resourceType: 'SCF',
             changes: {
+              before: currentState.attributes,
               after: {
-                name: fn.name,
-                runtime: fn.code!.runtime,
-                handler: fn.code!.handler,
-                memory: fn.memory,
-                timeout: fn.timeout,
+                ...desiredAttributes,
+                codeHash: desiredCodeHash,
               },
             },
-          });
-        } else if (currentState.configHash !== desiredConfigHash) {
-          // Configuration has changed
-          items.push({
-            logicalId,
-            action: 'update',
-            resourceType: 'SCF',
-            changes: {
-              before: {
-                configHash: currentState.configHash,
-              },
-              after: {
-                name: fn.name,
-                runtime: fn.code!.runtime,
-                handler: fn.code!.handler,
-                memory: fn.memory,
-                timeout: fn.timeout,
-                configHash: desiredConfigHash,
-              },
-            },
+            drifted: true,
           });
         } else {
-          // No changes needed
-          items.push({
-            logicalId,
-            action: 'noop',
-            resourceType: 'SCF',
-          });
+          // Compare all attributes and code hash for drift detection
+          const currentAttributes = currentState.attributes || {};
+          const currentCodeHash = currentState.codeHash;
+          const attributesChanged = !attributesEqual(currentAttributes, desiredAttributes);
+          const codeChanged = currentCodeHash !== desiredCodeHash;
+
+          if (attributesChanged || codeChanged) {
+            // Configuration or code has changed
+            items.push({
+              logicalId,
+              action: 'update',
+              resourceType: 'SCF',
+              changes: {
+                before: {
+                  ...currentAttributes,
+                  codeHash: currentCodeHash,
+                },
+                after: {
+                  ...desiredAttributes,
+                  codeHash: desiredCodeHash,
+                },
+              },
+              drifted: attributesChanged || codeChanged,
+            });
+          } else {
+            // No changes needed
+            items.push({
+              logicalId,
+              action: 'noop',
+              resourceType: 'SCF',
+            });
+          }
         }
       } catch {
         // If we can't read the remote resource, plan for recreation
@@ -111,12 +116,10 @@ export const generateFunctionPlan = async (
           action: 'create',
           resourceType: 'SCF',
           changes: {
+            before: currentState.attributes,
             after: {
-              name: fn.name,
-              runtime: fn.code!.runtime,
-              handler: fn.code!.handler,
-              memory: fn.memory,
-              timeout: fn.timeout,
+              ...desiredAttributes,
+              codeHash: desiredCodeHash,
             },
           },
         });
@@ -133,7 +136,7 @@ export const generateFunctionPlan = async (
         action: 'delete',
         resourceType: 'SCF',
         changes: {
-          before: { physicalId: resourceState.physicalId },
+          before: { physicalId: resourceState.physicalId, ...resourceState.attributes },
         },
       });
     }

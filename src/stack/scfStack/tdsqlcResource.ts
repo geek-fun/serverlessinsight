@@ -5,7 +5,7 @@ import {
   getTdsqlcCluster,
   updateTdsqlcCluster,
 } from './tdsqlcProvider';
-import { computeDatabaseConfigHash, databaseToTdsqlcConfig } from './tdsqlcTypes';
+import { databaseToTdsqlcConfig, extractTdsqlcAttributes } from './tdsqlcTypes';
 import { setResource, removeResource } from '../../common/stateManager';
 
 export const createDatabaseResource = async (
@@ -17,12 +17,12 @@ export const createDatabaseResource = async (
 
   const clusterId = await createTdsqlcCluster(context, config);
 
-  const configHash = computeDatabaseConfigHash(config);
+  const attributes = extractTdsqlcAttributes(config);
   const resourceState: ResourceState = {
     type: 'TDSQL_C_SERVERLESS',
     physicalId: clusterId,
     region: context.region,
-    configHash,
+    attributes,
     lastUpdated: new Date().toISOString(),
     metadata: {
       clusterName: database.name,
@@ -47,12 +47,12 @@ export const updateDatabaseResource = async (
 
   await updateTdsqlcCluster(context, clusterId, config);
 
-  const configHash = computeDatabaseConfigHash(config);
+  const attributes = extractTdsqlcAttributes(config);
   const resourceState: ResourceState = {
     type: ResourceTypeEnum.TDSQL_C_SERVERLESS,
     physicalId: clusterId,
     region: context.region,
-    configHash,
+    attributes,
     lastUpdated: new Date().toISOString(),
     metadata: {
       clusterName: database.name,

@@ -7,6 +7,11 @@ import fs from 'node:fs';
 
 // Mock the ScfProvider module
 jest.mock('../../../src/stack/scfStack/scfProvider');
+// Mock hashUtils to avoid file system dependencies
+jest.mock('../../../src/common/hashUtils', () => ({
+  ...jest.requireActual('../../../src/common/hashUtils'),
+  computeFileHash: jest.fn().mockReturnValue('mock-code-hash'),
+}));
 
 describe('SCF Planner', () => {
   const testDir = '/tmp/test-scf-planner';
@@ -74,21 +79,28 @@ describe('SCF Planner', () => {
     });
 
     it('should plan no changes when function exists and matches state', async () => {
-      // Add function to state
+      // Add function to state with matching attributes
       let state = loadState('tencent', testDir);
-      const configHash = 'abc123';
       state = setResource(state, 'functions.test_fn', {
         type: 'SCF',
         physicalId: 'test-function',
         region: 'ap-guangzhou',
-        configHash,
+        attributes: {
+          functionName: 'test-function',
+          runtime: 'Nodejs18.15',
+          handler: 'index.handler',
+          memorySize: 512,
+          timeout: 10,
+          environment: { NODE_ENV: 'production' },
+        },
+        codeHash: 'mock-code-hash',
         lastUpdated: new Date().toISOString(),
       });
 
       // Mock getScfFunction to return matching function
       jest.spyOn(scfProvider, 'getScfFunction').mockResolvedValue({
         FunctionName: 'test-function',
-        Runtime: 'nodejs18',
+        Runtime: 'Nodejs18.15',
         Handler: 'index.handler',
         MemorySize: 512,
         Timeout: 10,
@@ -99,9 +111,53 @@ describe('SCF Planner', () => {
 
       const plan = await generateFunctionPlan(mockContext, state, [testFunction]);
 
-      // Should detect that config has changed (hash mismatch)
-      // In real scenario, we'd need to ensure hash matches
-      expect(plan.items.length).toBeGreaterThan(0);
+      expect(plan.items).toHaveLength(1);
+      expect(plan.items[0]).toMatchObject({
+        logicalId: 'functions.test_fn',
+        action: 'noop',
+        resourceType: 'SCF',
+      });
+    });
+
+    it('should plan to update when attributes change', async () => {
+      // Add function to state with different attributes
+      let state = loadState('tencent', testDir);
+      state = setResource(state, 'functions.test_fn', {
+        type: 'SCF',
+        physicalId: 'test-function',
+        region: 'ap-guangzhou',
+        attributes: {
+          functionName: 'test-function',
+          runtime: 'Nodejs18.15',
+          handler: 'index.handler',
+          memorySize: 256, // Different from testFunction
+          timeout: 10,
+          environment: { NODE_ENV: 'production' },
+        },
+        codeHash: 'mock-code-hash',
+        lastUpdated: new Date().toISOString(),
+      });
+
+      // Mock getScfFunction to return existing function
+      jest.spyOn(scfProvider, 'getScfFunction').mockResolvedValue({
+        FunctionName: 'test-function',
+        Runtime: 'Nodejs18.15',
+        Handler: 'index.handler',
+        MemorySize: 256,
+        Timeout: 10,
+        Environment: {
+          Variables: [{ Key: 'NODE_ENV', Value: 'production' }],
+        },
+      });
+
+      const plan = await generateFunctionPlan(mockContext, state, [testFunction]);
+
+      expect(plan.items).toHaveLength(1);
+      expect(plan.items[0]).toMatchObject({
+        logicalId: 'functions.test_fn',
+        action: 'update',
+        resourceType: 'SCF',
+      });
     });
 
     it('should plan to delete function when removed from config', async () => {
@@ -111,7 +167,13 @@ describe('SCF Planner', () => {
         type: 'SCF',
         physicalId: 'old-function',
         region: 'ap-guangzhou',
-        configHash: 'xyz789',
+        attributes: {
+          functionName: 'old-function',
+          runtime: 'Nodejs18.15',
+          handler: 'index.handler',
+          memorySize: 128,
+          timeout: 3,
+        },
         lastUpdated: new Date().toISOString(),
       });
 
@@ -136,7 +198,14 @@ describe('SCF Planner', () => {
         type: 'SCF',
         physicalId: 'test-function',
         region: 'ap-guangzhou',
-        configHash: 'old_hash',
+        attributes: {
+          functionName: 'test-function',
+          runtime: 'Nodejs18.15',
+          handler: 'index.handler',
+          memorySize: 512,
+          timeout: 10,
+        },
+        codeHash: 'old-code-hash',
         lastUpdated: new Date().toISOString(),
       });
 
@@ -150,8 +219,50 @@ describe('SCF Planner', () => {
         logicalId: 'functions.test_fn',
         action: 'create',
         resourceType: 'SCF',
+        drifted: true,
       });
       expect(plan.items[0].changes?.after).toBeDefined();
+    });
+
+    it('should detect code hash changes', async () => {
+      // Add function to state with different code hash
+      let state = loadState('tencent', testDir);
+      state = setResource(state, 'functions.test_fn', {
+        type: 'SCF',
+        physicalId: 'test-function',
+        region: 'ap-guangzhou',
+        attributes: {
+          functionName: 'test-function',
+          runtime: 'Nodejs18.15',
+          handler: 'index.handler',
+          memorySize: 512,
+          timeout: 10,
+          environment: { NODE_ENV: 'production' },
+        },
+        codeHash: 'old-code-hash', // Different from mock return value
+        lastUpdated: new Date().toISOString(),
+      });
+
+      // Mock getScfFunction to return existing function
+      jest.spyOn(scfProvider, 'getScfFunction').mockResolvedValue({
+        FunctionName: 'test-function',
+        Runtime: 'Nodejs18.15',
+        Handler: 'index.handler',
+        MemorySize: 512,
+        Timeout: 10,
+        Environment: {
+          Variables: [{ Key: 'NODE_ENV', Value: 'production' }],
+        },
+      });
+
+      const plan = await generateFunctionPlan(mockContext, state, [testFunction]);
+
+      expect(plan.items).toHaveLength(1);
+      expect(plan.items[0]).toMatchObject({
+        logicalId: 'functions.test_fn',
+        action: 'update',
+        resourceType: 'SCF',
+      });
     });
   });
 });

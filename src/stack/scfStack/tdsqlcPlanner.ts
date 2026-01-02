@@ -8,8 +8,9 @@ import {
   ResourceTypeEnum,
 } from '../../types';
 import { getTdsqlcCluster } from './tdsqlcProvider';
-import { computeDatabaseConfigHash, databaseToTdsqlcConfig } from './tdsqlcTypes';
+import { databaseToTdsqlcConfig, extractTdsqlcAttributes } from './tdsqlcTypes';
 import { getAllResources, getResource } from '../../common/stateManager';
+import { attributesEqual } from '../../common/hashUtils';
 
 export const generateDatabasePlan = async (
   context: Context,
@@ -31,7 +32,7 @@ export const generateDatabasePlan = async (
           action: 'delete',
           resourceType: ResourceTypeEnum.TDSQL_C_SERVERLESS,
           changes: {
-            before: { physicalId: resourceState.physicalId },
+            before: { physicalId: resourceState.physicalId, ...resourceState.attributes },
           },
         });
       }
@@ -48,7 +49,7 @@ export const generateDatabasePlan = async (
 
     const currentState = getResource(state, logicalId);
     const config = databaseToTdsqlcConfig(database);
-    const desiredConfigHash = computeDatabaseConfigHash(config);
+    const desiredAttributes = extractTdsqlcAttributes(config);
 
     if (!currentState) {
       // Resource doesn't exist in state - needs to be created
@@ -57,16 +58,7 @@ export const generateDatabasePlan = async (
         action: 'create',
         resourceType: ResourceTypeEnum.TDSQL_C_SERVERLESS,
         changes: {
-          after: {
-            name: database.name,
-            version: database.version,
-            minCpu: database.cu.min,
-            maxCpu: database.cu.max,
-            minStorage: database.storage.min,
-            maxStorage: database.storage.max,
-            vpcId: database.network.vpcId,
-            subnetId: database.network.subnetId,
-          },
+          after: desiredAttributes,
         },
       });
     } else {
@@ -81,48 +73,36 @@ export const generateDatabasePlan = async (
             action: 'create',
             resourceType: ResourceTypeEnum.TDSQL_C_SERVERLESS,
             changes: {
-              after: {
-                name: database.name,
-                version: database.version,
-                minCpu: database.cu.min,
-                maxCpu: database.cu.max,
-                minStorage: database.storage.min,
-                maxStorage: database.storage.max,
-                vpcId: database.network.vpcId,
-                subnetId: database.network.subnetId,
-              },
+              before: currentState.attributes,
+              after: desiredAttributes,
             },
-          });
-        } else if (currentState.configHash !== desiredConfigHash) {
-          // Configuration has changed
-          items.push({
-            logicalId,
-            action: 'update',
-            resourceType: ResourceTypeEnum.TDSQL_C_SERVERLESS,
-            changes: {
-              before: {
-                configHash: currentState.configHash,
-              },
-              after: {
-                name: database.name,
-                version: database.version,
-                minCpu: database.cu.min,
-                maxCpu: database.cu.max,
-                minStorage: database.storage.min,
-                maxStorage: database.storage.max,
-                vpcId: database.network.vpcId,
-                subnetId: database.network.subnetId,
-                configHash: desiredConfigHash,
-              },
-            },
+            drifted: true,
           });
         } else {
-          // No changes needed
-          items.push({
-            logicalId,
-            action: 'noop',
-            resourceType: ResourceTypeEnum.TDSQL_C_SERVERLESS,
-          });
+          // Compare all attributes for drift detection
+          const currentAttributes = currentState.attributes || {};
+          const attributesChanged = !attributesEqual(currentAttributes, desiredAttributes);
+
+          if (attributesChanged) {
+            // Configuration has changed
+            items.push({
+              logicalId,
+              action: 'update',
+              resourceType: ResourceTypeEnum.TDSQL_C_SERVERLESS,
+              changes: {
+                before: currentAttributes,
+                after: desiredAttributes,
+              },
+              drifted: true,
+            });
+          } else {
+            // No changes needed
+            items.push({
+              logicalId,
+              action: 'noop',
+              resourceType: ResourceTypeEnum.TDSQL_C_SERVERLESS,
+            });
+          }
         }
       } catch {
         // If we can't read the remote resource, plan for recreation
@@ -131,16 +111,8 @@ export const generateDatabasePlan = async (
           action: 'create',
           resourceType: ResourceTypeEnum.TDSQL_C_SERVERLESS,
           changes: {
-            after: {
-              name: database.name,
-              version: database.version,
-              minCpu: database.cu.min,
-              maxCpu: database.cu.max,
-              minStorage: database.storage.min,
-              maxStorage: database.storage.max,
-              vpcId: database.network.vpcId,
-              subnetId: database.network.subnetId,
-            },
+            before: currentState.attributes,
+            after: desiredAttributes,
           },
         });
       }
@@ -159,7 +131,7 @@ export const generateDatabasePlan = async (
         action: 'delete',
         resourceType: ResourceTypeEnum.TDSQL_C_SERVERLESS,
         changes: {
-          before: { physicalId: resourceState.physicalId },
+          before: { physicalId: resourceState.physicalId, ...resourceState.attributes },
         },
       });
     }

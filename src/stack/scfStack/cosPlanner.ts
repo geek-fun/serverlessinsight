@@ -1,7 +1,8 @@
 import { Context, BucketDomain, Plan, PlanItem, StateFile } from '../../types';
 import { getCosBucket } from './cosProvider';
-import { computeBucketConfigHash, bucketToCosBucketConfig } from './cosTypes';
+import { bucketToCosBucketConfig, extractCosBucketAttributes } from './cosTypes';
 import { getAllResources, getResource } from '../../common/stateManager';
+import { attributesEqual } from '../../common/hashUtils';
 
 export const generateBucketPlan = async (
   context: Context,
@@ -20,7 +21,7 @@ export const generateBucketPlan = async (
           action: 'delete',
           resourceType: 'COS_BUCKET',
           changes: {
-            before: { physicalId: resourceState.physicalId },
+            before: { physicalId: resourceState.physicalId, ...resourceState.attributes },
           },
         });
       }
@@ -37,7 +38,7 @@ export const generateBucketPlan = async (
 
     const currentState = getResource(state, logicalId);
     const config = bucketToCosBucketConfig(bucket, context.region);
-    const desiredConfigHash = computeBucketConfigHash(config);
+    const desiredAttributes = extractCosBucketAttributes(config);
 
     if (!currentState) {
       // Resource doesn't exist in state - needs to be created
@@ -46,11 +47,7 @@ export const generateBucketPlan = async (
         action: 'create',
         resourceType: 'COS_BUCKET',
         changes: {
-          after: {
-            name: bucket.name,
-            acl: bucket.security?.acl,
-            website: bucket.website,
-          },
+          after: desiredAttributes,
         },
       });
     } else {
@@ -65,38 +62,36 @@ export const generateBucketPlan = async (
             action: 'create',
             resourceType: 'COS_BUCKET',
             changes: {
-              after: {
-                name: bucket.name,
-                acl: bucket.security?.acl,
-                website: bucket.website,
-              },
+              before: currentState.attributes,
+              after: desiredAttributes,
             },
-          });
-        } else if (currentState.configHash !== desiredConfigHash) {
-          // Configuration has changed
-          items.push({
-            logicalId,
-            action: 'update',
-            resourceType: 'COS_BUCKET',
-            changes: {
-              before: {
-                configHash: currentState.configHash,
-              },
-              after: {
-                name: bucket.name,
-                acl: bucket.security?.acl,
-                website: bucket.website,
-                configHash: desiredConfigHash,
-              },
-            },
+            drifted: true,
           });
         } else {
-          // No changes needed
-          items.push({
-            logicalId,
-            action: 'noop',
-            resourceType: 'COS_BUCKET',
-          });
+          // Compare all attributes for drift detection
+          const currentAttributes = currentState.attributes || {};
+          const attributesChanged = !attributesEqual(currentAttributes, desiredAttributes);
+
+          if (attributesChanged) {
+            // Configuration has changed
+            items.push({
+              logicalId,
+              action: 'update',
+              resourceType: 'COS_BUCKET',
+              changes: {
+                before: currentAttributes,
+                after: desiredAttributes,
+              },
+              drifted: true,
+            });
+          } else {
+            // No changes needed
+            items.push({
+              logicalId,
+              action: 'noop',
+              resourceType: 'COS_BUCKET',
+            });
+          }
         }
       } catch {
         // If we can't read the remote resource, plan for recreation
@@ -105,11 +100,8 @@ export const generateBucketPlan = async (
           action: 'create',
           resourceType: 'COS_BUCKET',
           changes: {
-            after: {
-              name: bucket.name,
-              acl: bucket.security?.acl,
-              website: bucket.website,
-            },
+            before: currentState.attributes,
+            after: desiredAttributes,
           },
         });
       }
@@ -125,7 +117,7 @@ export const generateBucketPlan = async (
         action: 'delete',
         resourceType: 'COS_BUCKET',
         changes: {
-          before: { physicalId: resourceState.physicalId },
+          before: { physicalId: resourceState.physicalId, ...resourceState.attributes },
         },
       });
     }

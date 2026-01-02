@@ -1,4 +1,4 @@
-import { BucketDomain } from '../../types';
+import { BucketDomain, ResourceAttributes } from '../../types';
 import crypto from 'node:crypto';
 
 export type CosBucketConfig = {
@@ -63,6 +63,9 @@ export const bucketToCosBucketConfig = (bucket: BucketDomain, region: string): C
   return config;
 };
 
+/**
+ * @deprecated Use extractCosBucketAttributes instead. Kept for backward compatibility.
+ */
 export const computeBucketConfigHash = (config: CosBucketConfig): string => {
   const hashContent = JSON.stringify({
     Bucket: config.Bucket,
@@ -71,4 +74,28 @@ export const computeBucketConfigHash = (config: CosBucketConfig): string => {
     WebsiteConfiguration: config.WebsiteConfiguration,
   });
   return crypto.createHash('sha256').update(hashContent).digest('hex').substring(0, 16);
+};
+
+/**
+ * Extract all attributes from a COS bucket config for state storage.
+ * Following Terraform's approach of storing complete resource attributes.
+ */
+export const extractCosBucketAttributes = (config: CosBucketConfig): ResourceAttributes => {
+  const attributes: ResourceAttributes = {
+    bucket: config.Bucket,
+    region: config.Region,
+  };
+
+  if (config.ACL) {
+    attributes.acl = config.ACL;
+  }
+
+  if (config.WebsiteConfiguration) {
+    attributes.websiteConfiguration = {
+      indexDocument: config.WebsiteConfiguration.IndexDocument.Suffix,
+      errorDocument: config.WebsiteConfiguration.ErrorDocument?.Key,
+    };
+  }
+
+  return attributes;
 };

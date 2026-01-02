@@ -7,13 +7,15 @@ import {
 import * as scfProvider from '../../../src/stack/scfStack/scfProvider';
 import * as scfTypes from '../../../src/stack/scfStack/scfTypes';
 import * as stateManager from '../../../src/common/stateManager';
+import * as hashUtils from '../../../src/common/hashUtils';
 import { ProviderEnum } from '../../../src/common';
-import { Context, StateFile } from '../../../src/types';
+import { Context, StateFile, CURRENT_STATE_VERSION } from '../../../src/types';
 
 // Mock dependencies
 jest.mock('../../../src/stack/scfStack/scfProvider');
 jest.mock('../../../src/stack/scfStack/scfTypes');
 jest.mock('../../../src/common/stateManager');
+jest.mock('../../../src/common/hashUtils');
 
 describe('ScfResource', () => {
   const mockContext: Context = {
@@ -29,7 +31,7 @@ describe('ScfResource', () => {
   };
 
   const initialState: StateFile = {
-    version: '0.1',
+    version: CURRENT_STATE_VERSION,
     provider: 'tencent',
     resources: {},
   };
@@ -61,10 +63,20 @@ describe('ScfResource', () => {
     },
   };
 
+  const mockAttributes = {
+    functionName: 'test-function',
+    runtime: 'nodejs18',
+    handler: 'index.handler',
+    memorySize: 512,
+    timeout: 10,
+    environment: { NODE_ENV: 'production' },
+  };
+
   beforeEach(() => {
     jest.clearAllMocks();
     (scfTypes.functionToScfConfig as jest.Mock).mockReturnValue(mockConfig);
-    (scfTypes.computeConfigHash as jest.Mock).mockReturnValue('abc123');
+    (scfTypes.extractScfAttributes as jest.Mock).mockReturnValue(mockAttributes);
+    (hashUtils.computeFileHash as jest.Mock).mockReturnValue('mock-code-hash');
   });
 
   describe('createResource', () => {
@@ -76,7 +88,8 @@ describe('ScfResource', () => {
             type: 'SCF',
             physicalId: 'test-function',
             region: 'ap-guangzhou',
-            configHash: 'abc123',
+            attributes: mockAttributes,
+            codeHash: 'mock-code-hash',
             lastUpdated: expect.any(String),
           },
         },
@@ -93,7 +106,8 @@ describe('ScfResource', () => {
         mockConfig,
         'test.zip',
       );
-      expect(scfTypes.computeConfigHash).toHaveBeenCalledWith(mockConfig);
+      expect(scfTypes.extractScfAttributes).toHaveBeenCalledWith(mockConfig);
+      expect(hashUtils.computeFileHash).toHaveBeenCalledWith('test.zip');
       expect(stateManager.setResource).toHaveBeenCalledWith(
         initialState,
         'functions.test_fn',
@@ -101,7 +115,8 @@ describe('ScfResource', () => {
           type: 'SCF',
           physicalId: 'test-function',
           region: 'ap-guangzhou',
-          configHash: 'abc123',
+          attributes: mockAttributes,
+          codeHash: 'mock-code-hash',
         }),
       );
       expect(result).toEqual(newState);
@@ -153,7 +168,8 @@ describe('ScfResource', () => {
             type: 'SCF',
             physicalId: 'test-function',
             region: 'ap-guangzhou',
-            configHash: 'abc123',
+            attributes: mockAttributes,
+            codeHash: 'mock-code-hash',
             lastUpdated: expect.any(String),
           },
         },
@@ -175,7 +191,8 @@ describe('ScfResource', () => {
         'test-function',
         'test.zip',
       );
-      expect(scfTypes.computeConfigHash).toHaveBeenCalledWith(mockConfig);
+      expect(scfTypes.extractScfAttributes).toHaveBeenCalledWith(mockConfig);
+      expect(hashUtils.computeFileHash).toHaveBeenCalledWith('test.zip');
       expect(stateManager.setResource).toHaveBeenCalledWith(
         initialState,
         'functions.test_fn',
@@ -183,7 +200,8 @@ describe('ScfResource', () => {
           type: 'SCF',
           physicalId: 'test-function',
           region: 'ap-guangzhou',
-          configHash: 'abc123',
+          attributes: mockAttributes,
+          codeHash: 'mock-code-hash',
         }),
       );
       expect(result).toEqual(newState);
@@ -218,7 +236,8 @@ describe('ScfResource', () => {
             type: 'SCF',
             physicalId: 'test-function',
             region: 'ap-guangzhou',
-            configHash: 'abc123',
+            attributes: mockAttributes,
+            codeHash: 'mock-code-hash',
             lastUpdated: '2025-01-01T00:00:00Z',
           },
         },

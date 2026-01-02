@@ -1,4 +1,4 @@
-import { FunctionDomain } from '../../types';
+import { FunctionDomain, ResourceAttributes } from '../../types';
 import crypto from 'node:crypto';
 import { mapRuntime, ProviderEnum } from '../../common';
 
@@ -50,6 +50,9 @@ export const functionToScfConfig = (fn: FunctionDomain): ScfFunctionConfig => {
   return config;
 };
 
+/**
+ * @deprecated Use extractScfAttributes instead. Kept for backward compatibility.
+ */
 export const computeConfigHash = (config: ScfFunctionConfig): string => {
   const hashContent = JSON.stringify({
     Runtime: config.Runtime,
@@ -59,4 +62,38 @@ export const computeConfigHash = (config: ScfFunctionConfig): string => {
     Environment: config.Environment,
   });
   return crypto.createHash('sha256').update(hashContent).digest('hex').substring(0, 16);
+};
+
+/**
+ * Extract all attributes from an SCF function config for state storage.
+ * Following Terraform's approach of storing complete resource attributes.
+ */
+export const extractScfAttributes = (config: ScfFunctionConfig): ResourceAttributes => {
+  const attributes: ResourceAttributes = {
+    functionName: config.FunctionName,
+    runtime: config.Runtime,
+    handler: config.Handler,
+    memorySize: config.MemorySize,
+    timeout: config.Timeout,
+  };
+
+  if (config.Environment?.Variables) {
+    // Store environment as a map for easier comparison
+    const envMap: Record<string, string> = {};
+    for (const v of config.Environment.Variables) {
+      envMap[v.Key] = v.Value;
+    }
+    attributes.environment = envMap;
+  }
+
+  return attributes;
+};
+
+/**
+ * Extract attributes from FunctionDomain for comparison during planning.
+ * This extracts the desired state from the user's configuration.
+ */
+export const extractFunctionDomainAttributes = (fn: FunctionDomain): ResourceAttributes => {
+  const config = functionToScfConfig(fn);
+  return extractScfAttributes(config);
 };

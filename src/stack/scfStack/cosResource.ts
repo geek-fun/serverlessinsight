@@ -6,7 +6,7 @@ import {
   updateCosBucketAcl,
   updateCosBucketWebsite,
 } from './cosProvider';
-import { computeBucketConfigHash, bucketToCosBucketConfig } from './cosTypes';
+import { bucketToCosBucketConfig, extractCosBucketAttributes } from './cosTypes';
 import { setResource, removeResource } from '../../common/stateManager';
 
 export const createBucketResource = async (
@@ -18,12 +18,12 @@ export const createBucketResource = async (
 
   await createCosBucket(context, config);
 
-  const configHash = computeBucketConfigHash(config);
+  const attributes = extractCosBucketAttributes(config);
   const resourceState: ResourceState = {
     type: 'COS_BUCKET',
     physicalId: bucket.name,
     region: context.region,
-    configHash,
+    attributes,
     lastUpdated: new Date().toISOString(),
   };
 
@@ -52,12 +52,12 @@ export const updateBucketResource = async (
     await updateCosBucketWebsite(context, bucket.name, context.region, config.WebsiteConfiguration);
   }
 
-  const configHash = computeBucketConfigHash(config);
+  const attributes = extractCosBucketAttributes(config);
   const resourceState: ResourceState = {
     type: 'COS_BUCKET',
     physicalId: bucket.name,
     region: context.region,
-    configHash,
+    attributes,
     lastUpdated: new Date().toISOString(),
   };
 

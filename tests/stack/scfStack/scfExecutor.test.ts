@@ -3,7 +3,7 @@ import * as scfResource from '../../../src/stack/scfStack/scfResource';
 import { ProviderEnum } from '../../../src/common';
 import { getResource } from '../../../src/common/stateManager';
 import { logger } from '../../../src/common/logger';
-import { Context, Plan, StateFile } from '../../../src/types';
+import { Context, Plan, StateFile, CURRENT_STATE_VERSION } from '../../../src/types';
 
 // Mock dependencies
 jest.mock('../../../src/stack/scfStack/scfResource');
@@ -30,7 +30,7 @@ describe('ScfExecutor', () => {
   };
 
   const initialState: StateFile = {
-    version: '0.1',
+    version: CURRENT_STATE_VERSION,
     provider: 'tencent',
     resources: {},
   };
@@ -174,7 +174,13 @@ describe('ScfExecutor', () => {
             type: 'SCF',
             physicalId: 'test-function',
             region: 'ap-guangzhou',
-            configHash: 'abc123',
+            attributes: {
+              functionName: 'test-function',
+              runtime: 'Nodejs18.15',
+              handler: 'index.handler',
+              memorySize: 512,
+              timeout: 10,
+            },
             lastUpdated: '2025-01-01T00:00:00Z',
           },
         },

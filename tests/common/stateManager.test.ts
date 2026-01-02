@@ -8,7 +8,7 @@ import {
   removeResource,
   getAllResources,
 } from '../../src/common/stateManager';
-import { ResourceState } from '../../src/types';
+import { ResourceState, CURRENT_STATE_VERSION } from '../../src/types';
 import fs from 'node:fs';
 import path from 'node:path';
 
@@ -55,22 +55,28 @@ describe('StateManager', () => {
     it('should initialize with empty state if no file exists', () => {
       const state = loadState('tencent', testDir);
 
-      expect(state.version).toBe('0.1');
+      expect(state.version).toBe(CURRENT_STATE_VERSION);
       expect(state.provider).toBe('tencent');
       expect(state.resources).toEqual({});
     });
 
-    it('should load existing state from file', () => {
-      // Create a state file
+    it('should load existing v0.2 state from file', () => {
+      // Create a v0.2 state file with attributes
       const existingState = {
-        version: '0.1',
+        version: '0.2',
         provider: 'tencent',
         resources: {
           'functions.test': {
             type: 'SCF',
             physicalId: 'test-fn',
             region: 'ap-guangzhou',
-            configHash: 'abc123',
+            attributes: {
+              functionName: 'test-fn',
+              runtime: 'nodejs18',
+              handler: 'index.handler',
+              memorySize: 128,
+              timeout: 3,
+            },
             lastUpdated: '2025-01-01T00:00:00Z',
           },
         },
@@ -83,6 +89,40 @@ describe('StateManager', () => {
 
       expect(state).toEqual(existingState);
     });
+
+    it('should migrate v0.1 state to v0.2 format', () => {
+      // Create a v0.1 state file with configHash
+      const v1State = {
+        version: '0.1',
+        provider: 'tencent',
+        resources: {
+          'functions.test': {
+            type: 'SCF',
+            physicalId: 'test-fn',
+            region: 'ap-guangzhou',
+            configHash: 'abc123',
+            lastUpdated: '2025-01-01T00:00:00Z',
+            metadata: {
+              functionName: 'test-fn',
+            },
+          },
+        },
+      };
+
+      ensureStateDir(testDir);
+      fs.writeFileSync(statePath, JSON.stringify(v1State, null, 2));
+
+      const state = loadState('tencent', testDir);
+
+      // Should be migrated to v0.2
+      expect(state.version).toBe(CURRENT_STATE_VERSION);
+      // Should have attributes from metadata
+      expect(state.resources['functions.test'].attributes).toEqual({
+        functionName: 'test-fn',
+      });
+      // Should keep configHash for backward compatibility
+      expect(state.resources['functions.test'].configHash).toBe('abc123');
+    });
   });
 
   describe('getResource', () => {
@@ -91,7 +131,13 @@ describe('StateManager', () => {
         type: 'SCF',
         physicalId: 'test-fn',
         region: 'ap-guangzhou',
-        configHash: 'abc123',
+        attributes: {
+          functionName: 'test-fn',
+          runtime: 'nodejs18',
+          handler: 'index.handler',
+          memorySize: 128,
+          timeout: 3,
+        },
         lastUpdated: '2025-01-01T00:00:00Z',
       };
 
@@ -115,7 +161,13 @@ describe('StateManager', () => {
         type: 'SCF',
         physicalId: 'test-fn',
         region: 'ap-guangzhou',
-        configHash: 'abc123',
+        attributes: {
+          functionName: 'test-fn',
+          runtime: 'nodejs18',
+          handler: 'index.handler',
+          memorySize: 128,
+          timeout: 3,
+        },
         lastUpdated: '2025-01-01T00:00:00Z',
       };
 
@@ -132,7 +184,13 @@ describe('StateManager', () => {
         type: 'SCF',
         physicalId: 'test-fn',
         region: 'ap-guangzhou',
-        configHash: 'abc123',
+        attributes: {
+          functionName: 'test-fn',
+          runtime: 'nodejs18',
+          handler: 'index.handler',
+          memorySize: 128,
+          timeout: 3,
+        },
         lastUpdated: '2025-01-01T00:00:00Z',
       };
 
@@ -146,12 +204,18 @@ describe('StateManager', () => {
   });
 
   describe('saveState', () => {
-    it('should save state to file', () => {
+    it('should save state to file with current version', () => {
       const resourceState: ResourceState = {
         type: 'SCF',
         physicalId: 'test-fn',
         region: 'ap-guangzhou',
-        configHash: 'abc123',
+        attributes: {
+          functionName: 'test-fn',
+          runtime: 'nodejs18',
+          handler: 'index.handler',
+          memorySize: 128,
+          timeout: 3,
+        },
         lastUpdated: '2025-01-01T00:00:00Z',
       };
 
@@ -163,6 +227,7 @@ describe('StateManager', () => {
 
       // Load state in a new call
       const state2 = loadState('tencent', testDir);
+      expect(state2.version).toBe(CURRENT_STATE_VERSION);
       expect(getResource(state2, 'functions.test')).toEqual(resourceState);
     });
   });
@@ -173,14 +238,26 @@ describe('StateManager', () => {
         type: 'SCF',
         physicalId: 'test-fn-1',
         region: 'ap-guangzhou',
-        configHash: 'abc123',
+        attributes: {
+          functionName: 'test-fn-1',
+          runtime: 'nodejs18',
+          handler: 'index.handler',
+          memorySize: 128,
+          timeout: 3,
+        },
         lastUpdated: '2025-01-01T00:00:00Z',
       };
       const resource2: ResourceState = {
         type: 'SCF',
         physicalId: 'test-fn-2',
         region: 'ap-guangzhou',
-        configHash: 'def456',
+        attributes: {
+          functionName: 'test-fn-2',
+          runtime: 'nodejs18',
+          handler: 'index.handler',
+          memorySize: 256,
+          timeout: 5,
+        },
         lastUpdated: '2025-01-02T00:00:00Z',
       };
 

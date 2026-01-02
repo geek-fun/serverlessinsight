@@ -10,6 +10,7 @@ import {
   Plan,
   ResourceState,
   PlanAction,
+  CURRENT_STATE_VERSION,
 } from '../../../src/types';
 import { ProviderEnum } from '../../../src/common';
 
@@ -56,7 +57,7 @@ describe('TdsqlcExecutor', () => {
   };
 
   const mockState: StateFile = {
-    version: '1.0',
+    version: CURRENT_STATE_VERSION,
     provider: 'tencent',
     resources: {},
   };
@@ -84,7 +85,11 @@ describe('TdsqlcExecutor', () => {
         type: 'TDSQL_C_SERVERLESS',
         physicalId: 'cynosdbmysql-test123',
         region: 'ap-guangzhou',
-        configHash: 'hash',
+        attributes: {
+          clusterName: 'test-tdsqlc',
+          dbType: 'MYSQL',
+          dbVersion: '8.0',
+        },
         lastUpdated: new Date().toISOString(),
       };
       const updatedState: StateFile = {
@@ -108,7 +113,11 @@ describe('TdsqlcExecutor', () => {
         type: 'TDSQL_C_SERVERLESS',
         physicalId: 'cynosdbmysql-test123',
         region: 'ap-guangzhou',
-        configHash: 'some-hash',
+        attributes: {
+          clusterName: 'test-tdsqlc',
+          dbType: 'MYSQL',
+          dbVersion: '8.0',
+        },
         lastUpdated: '2024-01-01T00:00:00Z',
       };
 
@@ -119,8 +128,8 @@ describe('TdsqlcExecutor', () => {
             action: 'update',
             resourceType: 'TDSQL_C_SERVERLESS',
             changes: {
-              before: { configHash: 'old-hash' },
-              after: { configHash: 'new-hash' },
+              before: { minCpu: 1 },
+              after: { minCpu: 2 },
             },
           },
         ],
@@ -130,7 +139,12 @@ describe('TdsqlcExecutor', () => {
         type: 'TDSQL_C_SERVERLESS',
         physicalId: 'cynosdbmysql-test123',
         region: 'ap-guangzhou',
-        configHash: 'new-hash',
+        attributes: {
+          clusterName: 'test-tdsqlc',
+          dbType: 'MYSQL',
+          dbVersion: '8.0',
+          minCpu: 2,
+        },
         lastUpdated: new Date().toISOString(),
       };
       const updatedState: StateFile = {
@@ -156,7 +170,9 @@ describe('TdsqlcExecutor', () => {
         type: 'TDSQL_C_SERVERLESS',
         physicalId: 'cynosdbmysql-test123',
         region: 'ap-guangzhou',
-        configHash: 'some-hash',
+        attributes: {
+          clusterName: 'test-tdsqlc',
+        },
         lastUpdated: '2024-01-01T00:00:00Z',
       };
 
@@ -256,8 +272,8 @@ describe('TdsqlcExecutor', () => {
             action: 'update',
             resourceType: 'TDSQL_C_SERVERLESS',
             changes: {
-              before: { configHash: 'old' },
-              after: { configHash: 'new' },
+              before: { minCpu: 1 },
+              after: { minCpu: 2 },
             },
           },
         ],
@@ -276,8 +292,8 @@ describe('TdsqlcExecutor', () => {
             action: 'update',
             resourceType: 'TDSQL_C_SERVERLESS',
             changes: {
-              before: { configHash: 'old' },
-              after: { configHash: 'new' },
+              before: { minCpu: 1 },
+              after: { minCpu: 2 },
             },
           },
         ],
@@ -379,14 +395,14 @@ describe('TdsqlcExecutor', () => {
         type: 'TDSQL_C_SERVERLESS',
         physicalId: 'cynosdbmysql-test1',
         region: 'ap-guangzhou',
-        configHash: 'hash1',
+        attributes: { clusterName: 'test-tdsqlc' },
         lastUpdated: new Date().toISOString(),
       };
       const mockResourceState2: ResourceState = {
         type: 'TDSQL_C_SERVERLESS',
         physicalId: 'cynosdbmysql-test2',
         region: 'ap-guangzhou',
-        configHash: 'hash2',
+        attributes: { clusterName: 'test-tdsqlc-2' },
         lastUpdated: new Date().toISOString(),
       };
       const state1: StateFile = {

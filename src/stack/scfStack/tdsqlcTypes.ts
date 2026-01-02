@@ -1,4 +1,4 @@
-import { DatabaseDomain } from '../../types';
+import { DatabaseDomain, ResourceAttributes } from '../../types';
 import crypto from 'node:crypto';
 
 export type TdsqlcClusterConfig = {
@@ -83,6 +83,9 @@ export const databaseToTdsqlcConfig = (database: DatabaseDomain): TdsqlcClusterC
   return config;
 };
 
+/**
+ * @deprecated Use extractTdsqlcAttributes instead. Kept for backward compatibility.
+ */
 export const computeDatabaseConfigHash = (config: TdsqlcClusterConfig): string => {
   const hashContent = JSON.stringify({
     ClusterName: config.ClusterName,
@@ -96,4 +99,49 @@ export const computeDatabaseConfigHash = (config: TdsqlcClusterConfig): string =
     SubnetId: config.SubnetId,
   });
   return crypto.createHash('sha256').update(hashContent).digest('hex').substring(0, 16);
+};
+
+/**
+ * Extract all attributes from a TDSQL-C cluster config for state storage.
+ * Following Terraform's approach of storing complete resource attributes.
+ * Note: AdminPassword is intentionally excluded for security reasons.
+ */
+export const extractTdsqlcAttributes = (config: TdsqlcClusterConfig): ResourceAttributes => {
+  const attributes: ResourceAttributes = {
+    clusterName: config.ClusterName,
+    dbType: config.DbType,
+    dbVersion: config.DbVersion,
+    dbMode: config.DbMode,
+    minCpu: config.MinCpu,
+    maxCpu: config.MaxCpu,
+    autoPause: config.AutoPause,
+    autoPauseDelay: config.AutoPauseDelay,
+    storagePayMode: config.StoragePayMode,
+  };
+
+  if (config.VpcId !== undefined) {
+    attributes.vpcId = config.VpcId;
+  }
+
+  if (config.SubnetId !== undefined) {
+    attributes.subnetId = config.SubnetId;
+  }
+
+  if (config.Port !== undefined) {
+    attributes.port = config.Port;
+  }
+
+  if (config.ProjectId !== undefined) {
+    attributes.projectId = config.ProjectId;
+  }
+
+  if (config.MinStorageSize !== undefined) {
+    attributes.minStorageSize = config.MinStorageSize;
+  }
+
+  if (config.MaxStorageSize !== undefined) {
+    attributes.maxStorageSize = config.MaxStorageSize;
+  }
+
+  return attributes;
 };
