@@ -1,36 +1,38 @@
+import { Resolvable } from './resolvable';
+
 export type FunctionRaw = {
-  name: string;
+  name: Resolvable<string>;
   code?: {
-    runtime: string;
-    handler: string;
-    path: string;
+    runtime: Resolvable<string>;
+    handler: Resolvable<string>;
+    path: Resolvable<string>;
   };
   container?: {
-    image: string;
-    cmd?: string;
-    port: number;
+    image: Resolvable<string>;
+    cmd?: Resolvable<string>;
+    port: Resolvable<number>;
   };
-  memory: number;
-  gpu: string;
-  timeout: number;
-  log?: boolean;
+  memory?: Resolvable<number>;
+  gpu?: Resolvable<string>;
+  timeout?: Resolvable<number>;
+  log?: Resolvable<boolean>;
   environment?: {
-    [key: string]: string;
+    [key: string]: Resolvable<string>;
   };
   network?: {
-    vpc_id: string;
-    subnet_ids: Array<string>;
+    vpc_id: Resolvable<string>;
+    subnet_ids: Array<Resolvable<string>>;
     security_group: {
-      name: string;
-      ingress: Array<string>;
-      egress: Array<string>;
+      name: Resolvable<string>;
+      ingress: Array<Resolvable<string>>;
+      egress: Array<Resolvable<string>>;
     };
   };
   storage?: {
-    disk?: number;
+    disk?: Resolvable<number>;
     nas?: Array<{
-      mount_path: string;
-      storage_class: string;
+      mount_path: Resolvable<string>;
+      storage_class: Resolvable<string>;
     }>;
   };
 };
@@ -48,9 +50,9 @@ export type FunctionDomain = {
     cmd?: string;
     port: number;
   };
-  memory: number;
+  memory?: number;
   gpu?: FunctionGpuEnum;
-  timeout: number;
+  timeout?: number;
   log?: boolean;
   environment?: {
     [key: string]: string;

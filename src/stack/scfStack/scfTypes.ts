@@ -33,8 +33,8 @@ export const functionToScfConfig = (fn: FunctionDomain): ScfFunctionConfig => {
     FunctionName: fn.name,
     Runtime: fn.code!.runtime,
     Handler: fn.code!.handler,
-    MemorySize: fn.memory,
-    Timeout: fn.timeout,
+    MemorySize: fn.memory ?? 128,
+    Timeout: fn.timeout ?? 3,
   };
 
   if (fn.environment && Object.keys(fn.environment).length > 0) {

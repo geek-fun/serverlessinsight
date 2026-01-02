@@ -1,3 +1,5 @@
+import { resolvableNumber, resolvableBoolean, resolvableEnum } from './templateRefSchema';
+
 export const bucketSchema = {
   $id: 'https://serverlessinsight.geekfun.club/schemas/bucketschema.json',
   type: 'object',
@@ -29,13 +31,8 @@ export const bucketSchema = {
         security: {
           type: 'object',
           properties: {
-            access: {
-              type: 'string',
-              enum: ['PRIVATE', 'PUBLIC_READ', 'PUBLIC_READ_WRITE'],
-            },
-            force_delete: {
-              type: 'boolean',
-            },
+            access: resolvableEnum(['PRIVATE', 'PUBLIC_READ', 'PUBLIC_READ_WRITE']),
+            force_delete: resolvableBoolean,
             sse_algorithm: {
               type: 'string',
             },
@@ -59,9 +56,7 @@ export const bucketSchema = {
             error_page: {
               type: 'string',
             },
-            error_code: {
-              type: 'number',
-            },
+            error_code: resolvableNumber,
           },
           required: ['code'],
         },

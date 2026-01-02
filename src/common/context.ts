@@ -81,16 +81,23 @@ export const setContext = async (
     process.env.ALIYUN_REGION ??
     'cn-hangzhou';
 
-  const credentials = getCredentials({
-    accessKeyId: config.accessKeyId,
-    accessKeySecret: config.accessKeySecret,
-    securityToken: config.securityToken,
-  });
+  const provider = (config.provider ??
+    config.iacProvider?.name ??
+    ProviderEnum.ALIYUN) as ProviderEnum;
+
+  const credentials = getCredentials(
+    {
+      accessKeyId: config.accessKeyId,
+      accessKeySecret: config.accessKeySecret,
+      securityToken: config.securityToken,
+    },
+    provider,
+  );
 
   const newContext: Context = {
     stage: config.stage ?? 'default',
     stackName: config.stackName ?? '',
-    provider: (config.provider ?? config.iacProvider?.name ?? ProviderEnum.ALIYUN) as ProviderEnum,
+    provider,
     region,
     accessKeyId: credentials.accessKeyId as string,
     accessKeySecret: credentials.accessKeySecret as string,

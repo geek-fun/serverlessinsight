@@ -1,3 +1,5 @@
+import { resolvableNumber, resolvableBoolean, resolvableEnum } from './templateRefSchema';
+
 export const functionSchema = {
   $id: 'https://serverlessinsight.geekfun.club/schemas/functionschema.json',
   type: 'object',
@@ -12,25 +14,22 @@ export const functionSchema = {
           required: ['runtime', 'handler', 'path'],
           additionalProperties: false,
           properties: {
-            runtime: {
-              type: 'string',
-              enum: [
-                'nodejs20',
-                'nodejs18',
-                'nodejs16',
-                'nodejs14',
-                'nodejs12',
-                'nodejs10',
-                'nodejs8',
-                'python3.10',
-                'python3.9',
-                'python3',
-                'PHP 7.2',
-                'Java 11',
-                '.NET Core 3.1',
-                'Go 1.x',
-              ],
-            },
+            runtime: resolvableEnum([
+              'nodejs20',
+              'nodejs18',
+              'nodejs16',
+              'nodejs14',
+              'nodejs12',
+              'nodejs10',
+              'nodejs8',
+              'python3.10',
+              'python3.9',
+              'python3',
+              'PHP 7.2',
+              'Java 11',
+              '.NET Core 3.1',
+              'Go 1.x',
+            ]),
             handler: { type: 'string' },
             path: { type: 'string' },
           },
@@ -42,25 +41,22 @@ export const functionSchema = {
           properties: {
             image: { type: 'string' },
             cmd: { type: 'string' },
-            port: { type: 'number' },
+            port: resolvableNumber,
           },
         },
-        memory: { type: 'number' },
-        gpu: {
-          type: 'string',
-          enum: [
-            'TESLA_8',
-            'TESLA_12',
-            'TESLA_16',
-            'AMPERE_8',
-            'AMPERE_12',
-            'AMPERE_16',
-            'AMPERE_24',
-            'ADA_48',
-          ],
-        },
-        timeout: { type: 'number' },
-        log: { type: 'boolean' },
+        memory: resolvableNumber,
+        gpu: resolvableEnum([
+          'TESLA_8',
+          'TESLA_12',
+          'TESLA_16',
+          'AMPERE_8',
+          'AMPERE_12',
+          'AMPERE_16',
+          'AMPERE_24',
+          'ADA_48',
+        ]),
+        timeout: resolvableNumber,
+        log: resolvableBoolean,
         environment: {
           type: 'object',
           additionalProperties: {
@@ -88,22 +84,19 @@ export const functionSchema = {
         storage: {
           type: 'object',
           properties: {
-            disk: { type: 'number' },
+            disk: resolvableNumber,
             nas: {
               type: 'array',
               items: {
                 type: 'object',
                 properties: {
                   mount_path: { type: 'string' },
-                  storage_class: {
-                    type: 'string',
-                    enum: [
-                      'STANDARD_CAPACITY',
-                      'STANDARD_PERFORMANCE',
-                      'EXTREME_STANDARD',
-                      'EXTREME_ADVANCE',
-                    ],
-                  },
+                  storage_class: resolvableEnum([
+                    'STANDARD_CAPACITY',
+                    'STANDARD_PERFORMANCE',
+                    'EXTREME_STANDARD',
+                    'EXTREME_ADVANCE',
+                  ]),
                   additionalProperties: false,
                 },
                 required: ['mount_path', 'storage_class'],

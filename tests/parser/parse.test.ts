@@ -214,5 +214,77 @@ describe('unit test for parse', () => {
       expect(result.functions![0].environment?.TEST_VAR).toBe('testVarValue');
       expect(result.functions![0].environment?.TEST_VAR_EXTRA).toContain('testVarValue');
     });
+
+    it('should evaluate numeric template references to numbers', () => {
+      const numericRefLocation = path.resolve(
+        __dirname,
+        '../fixtures/serverless-insight-numeric-refs.yml',
+      );
+      const ctxWithNumericStages: Context = {
+        ...testContext,
+        stage: 'dev',
+        stages: {
+          dev: [
+            { key: 'memory', value: '512' },
+            { key: 'timeout', value: '30' },
+            { key: 'node_env', value: 'development' },
+          ],
+        },
+      };
+
+      const result = revalYaml(numericRefLocation, ctxWithNumericStages);
+
+      expect(result.functions).toBeDefined();
+      expect(result.functions![0].memory).toBe(512);
+      expect(typeof result.functions![0].memory).toBe('number');
+      expect(result.functions![0].timeout).toBe(30);
+      expect(typeof result.functions![0].timeout).toBe('number');
+    });
+
+    it('should evaluate boolean template references to booleans', () => {
+      const boolRefLocation = path.resolve(
+        __dirname,
+        '../fixtures/serverless-insight-bool-refs.yml',
+      );
+      const ctxWithBoolStages: Context = {
+        ...testContext,
+        stage: 'dev',
+        stages: {
+          dev: [
+            { key: 'enable_log', value: 'true' },
+            { key: 'node_env', value: 'development' },
+          ],
+        },
+      };
+
+      const result = revalYaml(boolRefLocation, ctxWithBoolStages);
+
+      expect(result.functions).toBeDefined();
+      expect(result.functions![0].log).toBe(true);
+      expect(typeof result.functions![0].log).toBe('boolean');
+    });
+
+    it('should evaluate boolean false template references correctly', () => {
+      const boolRefLocation = path.resolve(
+        __dirname,
+        '../fixtures/serverless-insight-bool-refs.yml',
+      );
+      const ctxWithBoolFalseStages: Context = {
+        ...testContext,
+        stage: 'default',
+        stages: {
+          default: [
+            { key: 'enable_log', value: 'false' },
+            { key: 'node_env', value: 'default' },
+          ],
+        },
+      };
+
+      const result = revalYaml(boolRefLocation, ctxWithBoolFalseStages);
+
+      expect(result.functions).toBeDefined();
+      expect(result.functions![0].log).toBe(false);
+      expect(typeof result.functions![0].log).toBe('boolean');
+    });
   });
 });

@@ -1,3 +1,5 @@
+import { Resolvable } from './resolvable';
+
 export const enum DatabaseEnum {
   ELASTICSEARCH_SERVERLESS = 'ELASTICSEARCH_SERVERLESS',
   RDS_MYSQL_SERVERLESS = 'RDS_MYSQL_SERVERLESS',
@@ -25,28 +27,28 @@ export const enum DatabaseVersionEnum {
 }
 
 export type DatabaseRaw = {
-  name: string;
-  type: DatabaseEnum;
-  version: string;
+  name: Resolvable<string>;
+  type: Resolvable<DatabaseEnum | string>;
+  version: Resolvable<string>;
   security: {
     basic_auth: {
-      master_user?: string;
-      password: string;
+      master_user?: Resolvable<string>;
+      password: Resolvable<string>;
     };
   };
   network?: {
-    type: 'PUBLIC' | 'PRIVATE';
-    ingress_rules?: Array<string>;
-    vpc_id?: string;
-    subnet_id?: string;
+    type: Resolvable<'PUBLIC' | 'PRIVATE' | string>;
+    ingress_rules?: Array<Resolvable<string>>;
+    vpc_id?: Resolvable<string>;
+    subnet_id?: Resolvable<string>;
   };
   cu?: {
-    min?: number;
-    max?: number;
+    min?: Resolvable<number>;
+    max?: Resolvable<number>;
   };
   storage?: {
-    min?: number;
-    max?: number;
+    min?: Resolvable<number>;
+    max?: Resolvable<number>;
   };
 };
 

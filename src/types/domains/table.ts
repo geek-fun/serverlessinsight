@@ -1,34 +1,36 @@
+import { Resolvable } from './resolvable';
+
 export const enum TableEnum {
   TABLE_STORE_C = 'TABLE_STORE_C',
   TABLE_STORE_H = 'TABLE_STORE_H',
 }
 
 export type TableRaw = {
-  collection: string;
-  name: string;
-  type: TableEnum;
-  desc?: string;
+  collection: Resolvable<string>;
+  name: Resolvable<string>;
+  type: Resolvable<TableEnum | string>;
+  desc?: Resolvable<string>;
   network?: {
-    type: 'PUBLIC' | 'PRIVATE';
-    ingress_rules?: Array<string>;
+    type: Resolvable<'PUBLIC' | 'PRIVATE' | string>;
+    ingress_rules?: Array<Resolvable<string>>;
   };
   throughput?: {
     reserved?: {
-      read?: string;
-      write?: string;
+      read?: Resolvable<string>;
+      write?: Resolvable<string>;
     };
     on_demand?: {
-      read?: string;
-      write?: string;
+      read?: Resolvable<string>;
+      write?: Resolvable<string>;
     };
   };
   key_schema: Array<{
-    name: string;
-    type: string;
+    name: Resolvable<string>;
+    type: Resolvable<string>;
   }>;
   attributes: Array<{
-    name: string;
-    type: string;
+    name: Resolvable<string>;
+    type: Resolvable<string>;
   }>;
 };
 

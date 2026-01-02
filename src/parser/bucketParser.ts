@@ -1,4 +1,9 @@
 import { BucketAccessEnum, BucketDomain, BucketRaw } from '../types';
+import {
+  parseBooleanWithDefault,
+  parseNumberWithDefault,
+  parseStringWithDefault,
+} from './parseUtils';
 
 export const parseBucket = (buckets: {
   [key: string]: BucketRaw;
@@ -8,27 +13,39 @@ export const parseBucket = (buckets: {
   }
   return Object.entries(buckets).map(([key, bucket]) => ({
     key,
-    name: bucket.name,
-    storage: bucket.storage,
-    versioning: bucket.versioning,
+    name: String(bucket.name),
+    storage: bucket.storage
+      ? {
+          class: String(bucket.storage.class),
+        }
+      : undefined,
+    versioning: bucket.versioning
+      ? {
+          status: String(bucket.versioning.status),
+        }
+      : undefined,
     security: bucket.security
       ? {
           acl: bucket.security.acl
-            ? (bucket.security.acl as BucketAccessEnum)
+            ? (String(bucket.security.acl) as BucketAccessEnum)
             : BucketAccessEnum.PRIVATE,
-          force_delete: bucket.security.force_delete ?? false,
-          sse_algorithm: bucket.security.sse_algorithm,
-          sse_kms_master_key_id: bucket.security.sse_kms_master_key_id,
+          force_delete: parseBooleanWithDefault(bucket.security.force_delete, false),
+          sse_algorithm: bucket.security.sse_algorithm
+            ? String(bucket.security.sse_algorithm)
+            : undefined,
+          sse_kms_master_key_id: bucket.security.sse_kms_master_key_id
+            ? String(bucket.security.sse_kms_master_key_id)
+            : undefined,
         }
       : undefined,
 
     website: bucket.website
       ? {
-          code: bucket.website.code,
-          domain: bucket.website.domain,
-          index: bucket.website.index ?? 'index.html',
-          error_page: bucket.website.error_page ?? '404.html',
-          error_code: bucket.website.error_code ?? 404,
+          code: String(bucket.website.code),
+          domain: bucket.website.domain ? String(bucket.website.domain) : undefined,
+          index: parseStringWithDefault(bucket.website.index, 'index.html'),
+          error_page: parseStringWithDefault(bucket.website.error_page, '404.html'),
+          error_code: parseNumberWithDefault(bucket.website.error_code, 404),
         }
       : undefined,
   }));

@@ -1,7 +1,7 @@
 version: 0.0.1
 provider:
-  name: tencent
-  region: ap-guangzhou
+  name: aliyun
+  region: cn-chengdu
 
 vars:
   testv: testVarValue
@@ -10,29 +10,31 @@ vars:
 stages:
   default:
     node_env: default
+    memory: 256
+    timeout: 10
   dev:
     node_env: development
     memory: 512
+    timeout: 30
   prod:
     node_env: production
     memory: 1024
+    timeout: 60
 
-service: insight-poc-scf
+service: insight-poc-numeric-refs
 
 tags:
   owner: geek-fun
 
 functions:
   insight_poc_fn:
-    name: insight-poc-api-fn
+    name: insight-poc-fn
     code:
-      # Supported runtimes: nodejs20, nodejs18, nodejs16, nodejs14, nodejs12, nodejs10, nodejs8,
-      # python3.10, python3.9, python3, PHP7.2, Java11, .NETCore3.1, Go1.x
       runtime: nodejs18
       handler: index.handler
       path: tests/fixtures/artifacts/artifact.zip
     memory: ${stages.memory}
-    timeout: 10
+    timeout: ${stages.timeout}
     environment:
       NODE_ENV: ${stages.node_env}
       TEST_VAR: ${vars.testv}

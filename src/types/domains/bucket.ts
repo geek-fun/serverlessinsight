@@ -1,24 +1,26 @@
+import { Resolvable } from './resolvable';
+
 export type BucketRaw = {
-  name: string;
+  name: Resolvable<string>;
   storage?: {
-    class: string;
+    class: Resolvable<string>;
   };
   versioning?: {
-    status: string;
+    status: Resolvable<string>;
   };
 
   security?: {
-    acl?: string;
-    force_delete?: boolean;
-    sse_algorithm?: string;
-    sse_kms_master_key_id?: string;
+    acl?: Resolvable<string>;
+    force_delete?: Resolvable<boolean>;
+    sse_algorithm?: Resolvable<string>;
+    sse_kms_master_key_id?: Resolvable<string>;
   };
   website?: {
-    code: string;
-    domain?: string;
-    index?: string;
-    error_page?: string;
-    error_code?: number;
+    code: Resolvable<string>;
+    domain?: Resolvable<string>;
+    index?: Resolvable<string>;
+    error_page?: Resolvable<string>;
+    error_code?: Resolvable<number>;
   };
 };
 

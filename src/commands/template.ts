@@ -10,7 +10,7 @@ export const template = async (
 ) => {
   const iac = parseYaml(getIacLocation(options.location));
 
-  const credentials = getCredentials();
+  const credentials = getCredentials(undefined, iac.provider.name);
   const shouldFetchIamInfo = hasCredentials(credentials);
 
   await setContext({ ...options, stackName, provider: iac.provider.name }, shouldFetchIamInfo);

@@ -1,5 +1,6 @@
 import { DatabaseDomain, DatabaseEnum, DatabaseRaw, DatabaseVersionEnum } from '../types';
 import { get, isEmpty } from 'lodash';
+import { parseNumber, parseNumberWithDefault, parseOptionalString } from './parseUtils';
 
 export const parseDatabase = (databases?: {
   [key: string]: DatabaseRaw;
@@ -9,28 +10,28 @@ export const parseDatabase = (databases?: {
   }
   return Object.entries(databases)?.map(([key, database]) => ({
     key: key,
-    name: database.name,
-    type: database.type as DatabaseEnum,
-    version: database.version as DatabaseVersionEnum,
+    name: String(database.name),
+    type: String(database.type) as DatabaseEnum,
+    version: String(database.version) as DatabaseVersionEnum,
     security: {
       basicAuth: {
-        username: get(database, 'security.basic_auth.master_user'),
-        password: get(database, 'security.basic_auth.password'),
+        username: parseOptionalString(get(database, 'security.basic_auth.master_user')),
+        password: String(get(database, 'security.basic_auth.password') ?? ''),
       },
     },
     cu: {
-      min: database.cu?.min ?? 0,
-      max: database.cu?.max ?? 6,
+      min: parseNumberWithDefault(database.cu?.min, 0),
+      max: parseNumberWithDefault(database.cu?.max, 6),
     },
     storage: {
-      min: database.storage?.min ?? 10,
-      max: database.storage?.max,
+      min: parseNumberWithDefault(database.storage?.min, 10),
+      max: database.storage?.max ? parseNumber(database.storage.max, 0) : undefined,
     },
     network: {
-      type: database.network?.type ?? 'PRIVATE',
-      ingressRules: database.network?.ingress_rules ?? ['0.0.0.0/0'],
-      vpcId: database.network?.vpc_id,
-      subnetId: database.network?.subnet_id,
+      type: String(database.network?.type ?? 'PRIVATE') as 'PUBLIC' | 'PRIVATE',
+      ingressRules: database.network?.ingress_rules?.map((rule) => String(rule)) ?? ['0.0.0.0/0'],
+      vpcId: database.network?.vpc_id ? String(database.network.vpc_id) : undefined,
+      subnetId: database.network?.subnet_id ? String(database.network.subnet_id) : undefined,
     },
   }));
 };
