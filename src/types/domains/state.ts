@@ -2,6 +2,7 @@ export enum ResourceTypeEnum {
   SCF_FUNCTION = 'SCF_FUNCTION',
   COS_BUCKET = 'COS_BUCKET',
   TDSQL_C_SERVERLESS = 'TDSQL_C_SERVERLESS',
+  ALIYUN_FC3_FUNCTION = 'ALIYUN_FC3_FUNCTION',
 }
 
 export type ResourceAttributes = Record<string, unknown>;

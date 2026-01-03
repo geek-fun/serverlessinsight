@@ -49,6 +49,7 @@
     "function"
   ],
   "dependencies": {
+    "@alicloud/fc20230330": "^4.6.6",
     "@alicloud/ims20190815": "^2.3.2",
     "@alicloud/openapi-client": "^0.4.15",
     "@alicloud/ros-cdk-apigateway": "^1.11.0",
