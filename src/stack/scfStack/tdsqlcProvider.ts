@@ -77,27 +77,66 @@ export const getTdsqlcCluster = async (
 
     const cluster = response.ClusterSet[0];
 
-    // Note: MinCpu, MaxCpu, MinStorageSize, MaxStorageSize are not available
-    // in the DescribeClusters response. These fields cannot be used for drift detection.
-    // For complete drift detection, a separate API call would be needed.
     return {
       ClusterId: cluster.ClusterId || '',
       ClusterName: cluster.ClusterName || '',
-      Region: context.region,
+      Region: cluster.Region || context.region,
+      Zone: cluster.Zone,
+      PhysicalZone: cluster.PhysicalZone,
       DbType: cluster.DbType || '',
       DbVersion: cluster.DbVersion || '',
+      DbMode: cluster.DbMode,
       Status: cluster.Status || '',
+      StatusDesc: cluster.StatusDesc,
+      ServerlessStatus: cluster.ServerlessStatus,
       VpcId: cluster.VpcId,
+      VpcName: undefined, // Not available in DescribeClusters response
       SubnetId: cluster.SubnetId,
+      SubnetName: undefined, // Not available in DescribeClusters response
+      Charset: undefined, // Not available in DescribeClusters response
       Vip: cluster.Vip,
       Vport: cluster.Vport,
+      WanDomain: undefined, // Not available in DescribeClusters response
+      WanIP: undefined, // Not available in DescribeClusters response
+      WanPort: undefined, // Not available in DescribeClusters response
+      WanStatus: undefined, // Not available in DescribeClusters response
       MinCpu: undefined, // Not available in DescribeClusters response
       MaxCpu: undefined, // Not available in DescribeClusters response
-      MinStorageSize: undefined,
-      MaxStorageSize: undefined,
+      MinStorageSize: cluster.MinStorageSize,
+      MaxStorageSize: cluster.MaxStorageSize,
+      StorageId: cluster.StorageId,
+      Storage: cluster.Storage,
+      StorageLimit: cluster.StorageLimit,
+      StoragePayMode: cluster.StoragePayMode,
       AutoPause: cluster.ServerlessStatus,
+      AutoPauseDelay: undefined, // Not available in DescribeClusters response
       CreateTime: cluster.CreateTime,
       UpdateTime: cluster.UpdateTime,
+      ProjectId: cluster.ProjectID,
+      PayMode: cluster.PayMode,
+      PeriodEndTime: cluster.PeriodEndTime,
+      AutoRenewFlag: cluster.RenewFlag,
+      InstanceCount: cluster.InstanceNum,
+      ProcessingTask: cluster.ProcessingTask,
+      SupportedFeatures: undefined, // Not available in DescribeClusters response
+      RollbackSupport: undefined, // Not available in DescribeClusters response
+      NetworkType: undefined, // Not available in DescribeClusters response
+      ResourcePackageId: undefined, // Not available in DescribeClusters response
+      ResourcePackageType: undefined, // Not available in DescribeClusters response
+      ResourcePackageState: undefined, // Not available in DescribeClusters response
+      PhysicalRegion: undefined, // Not available in DescribeClusters response
+      ProxyStatus: undefined, // Not available in DescribeClusters response
+      RwGroupId: undefined, // Not available in DescribeClusters response
+      MasterZone: cluster.MasterZone,
+      SlaveZones: cluster.SlaveZones,
+      BusinessType: cluster.BusinessType,
+      IsFreeze: cluster.IsFreeze,
+      OrderSource: cluster.OrderSource,
+      Ability: cluster.Ability,
+      ResourceTags: cluster.ResourceTags,
+      CynosVersion: cluster.CynosVersion,
+      CynosVersionStatus: undefined, // Not available in DescribeClusters response
+      IsLatestVersion: undefined, // Not available in DescribeClusters response
     };
   } catch (error) {
     logger.error(`${lang.__('TDSQL_CLUSTER_GET_FAILED')}: ${error}`);

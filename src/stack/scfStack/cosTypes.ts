@@ -14,6 +14,37 @@ export type CosBucketConfig = {
   };
 };
 
+export type CosGrantee = {
+  type?: string;
+  uri?: string;
+  id?: string;
+  displayName?: string;
+};
+
+export type CosGrant = {
+  grantee?: CosGrantee;
+  permission?: string;
+};
+
+export type CosOwner = {
+  id?: string;
+  displayName?: string;
+};
+
+export type CosAccessControlPolicy = {
+  owner?: CosOwner;
+  grants?: CosGrant[];
+};
+
+export type CosCorsRule = {
+  id?: string;
+  allowedOrigins?: string[];
+  allowedMethods?: string[];
+  allowedHeaders?: string[];
+  exposeHeaders?: string[];
+  maxAgeSeconds?: number;
+};
+
 export type CosBucketInfo = {
   Name: string;
   Location: string;
@@ -26,6 +57,50 @@ export type CosBucketInfo = {
     ErrorDocument?: {
       Key: string;
     };
+  };
+  AccessControlPolicy?: CosAccessControlPolicy;
+  CorsConfiguration?: CosCorsRule[];
+  VersioningConfiguration?: {
+    status?: string;
+  };
+  LifecycleConfiguration?: {
+    rules?: Array<{
+      id?: string;
+      status?: string;
+      prefix?: string;
+      expiration?: {
+        days?: number;
+        date?: string;
+        expiredObjectDeleteMarker?: boolean;
+      };
+      transition?: {
+        days?: number;
+        date?: string;
+        storageClass?: string;
+      };
+    }>;
+  };
+  LoggingConfiguration?: {
+    targetBucket?: string;
+    targetPrefix?: string;
+  };
+  TaggingConfiguration?: {
+    tags?: Array<{
+      key?: string;
+      value?: string;
+    }>;
+  };
+  ReplicationConfiguration?: {
+    role?: string;
+    rules?: Array<{
+      id?: string;
+      status?: string;
+      prefix?: string;
+      destination?: {
+        bucket?: string;
+        storageClass?: string;
+      };
+    }>;
   };
 };
 

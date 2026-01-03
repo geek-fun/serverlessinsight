@@ -15,6 +15,27 @@ export type ScfFunctionConfig = {
   };
 };
 
+export type ScfTrigger = {
+  ModTime: string;
+  Type: string;
+  TriggerDesc: string;
+  TriggerName: string;
+  AddTime: string;
+  Enable: number;
+  CustomArgument?: string;
+  AvailableStatus?: string;
+  ResourceId?: string;
+  BindStatus?: string;
+  TriggerAttribute?: string;
+  Qualifier?: string;
+  Description?: string;
+};
+
+export type ScfVpcConfig = {
+  VpcId?: string;
+  SubnetId?: string;
+};
+
 export type ScfFunctionInfo = {
   FunctionName: string;
   Runtime: string;
@@ -26,6 +47,90 @@ export type ScfFunctionInfo = {
   };
   ModTime?: string;
   CodeSha256?: string;
+  CodeInfo?: string;
+  Description?: string;
+  Triggers?: ScfTrigger[];
+  CodeSize?: number;
+  FunctionVersion?: string;
+  VpcConfig?: ScfVpcConfig;
+  UseGpu?: string;
+  CodeResult?: string;
+  CodeError?: string;
+  ErrNo?: number;
+  Namespace?: string;
+  Role?: string;
+  InstallDependency?: string;
+  Status?: string;
+  StatusDesc?: string;
+  ClsLogsetId?: string;
+  ClsTopicId?: string;
+  FunctionId?: string;
+  Tags?: Array<{ Key: string; Value: string }>;
+  EipConfig?: {
+    EipFixed?: string;
+    Eips?: string[];
+  };
+  AccessInfo?: {
+    Host?: string;
+    Vip?: string;
+  };
+  Type?: string;
+  L5Enable?: string;
+  Layers?: Array<{
+    LayerName?: string;
+    LayerVersion?: number;
+    CompatibleRuntimes?: string[];
+  }>;
+  DeadLetterConfig?: {
+    Type?: string;
+    Name?: string;
+    FilterType?: string;
+  };
+  AddTime?: string;
+  PublicNetConfig?: {
+    PublicNetStatus?: string;
+    EipConfig?: {
+      EipStatus?: string;
+      EipAddress?: string[];
+    };
+  };
+  OnsEnable?: string;
+  CfsConfig?: {
+    CfsInsList?: Array<{
+      UserId?: string;
+      UserGroupId?: string;
+      CfsId?: string;
+      MountInsId?: string;
+      LocalMountDir?: string;
+      RemoteMountDir?: string;
+      IpAddress?: string;
+      MountVpcId?: string;
+      MountSubnetId?: string;
+    }>;
+  };
+  AvailableStatus?: string;
+  Qualifier?: string;
+  InitTimeout?: number;
+  StatusReasons?: Array<{
+    ErrorCode?: string;
+    ErrorMessage?: string;
+  }>;
+  AsyncRunEnable?: string;
+  TraceEnable?: string;
+  ImageConfig?: {
+    ImageType?: string;
+    ImageUri?: string;
+  };
+  ProtocolType?: string;
+  ProtocolParams?: {
+    WSParams?: {
+      IdleTimeOut?: number;
+    };
+  };
+  DnsCache?: string;
+  IntranetConfig?: {
+    IpFixed?: string;
+  };
 };
 
 export const functionToScfConfig = (fn: FunctionDomain): ScfFunctionConfig => {

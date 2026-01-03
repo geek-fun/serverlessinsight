@@ -23,6 +23,51 @@ const buildCosInstanceFromProvider = (info: CosBucketInfo, arn: string) => {
           errorDocument: info.WebsiteConfiguration.ErrorDocument?.Key ?? null,
         }
       : {},
+    accessControlPolicy: info.AccessControlPolicy
+      ? {
+          owner: info.AccessControlPolicy.owner
+            ? {
+                id: info.AccessControlPolicy.owner.id ?? null,
+                displayName: info.AccessControlPolicy.owner.displayName ?? null,
+              }
+            : {},
+          grants:
+            info.AccessControlPolicy.grants?.map((g) => ({
+              grantee: g.grantee
+                ? {
+                    type: g.grantee.type ?? null,
+                    uri: g.grantee.uri ?? null,
+                    id: g.grantee.id ?? null,
+                    displayName: g.grantee.displayName ?? null,
+                  }
+                : {},
+              permission: g.permission ?? null,
+            })) ?? [],
+        }
+      : {},
+    corsConfiguration:
+      info.CorsConfiguration?.map((r) => ({
+        id: r.id ?? null,
+        allowedOrigins: r.allowedOrigins ?? [],
+        allowedMethods: r.allowedMethods ?? [],
+        allowedHeaders: r.allowedHeaders ?? [],
+        exposeHeaders: r.exposeHeaders ?? [],
+        maxAgeSeconds: r.maxAgeSeconds ?? null,
+      })) ?? [],
+    versioningConfiguration: info.VersioningConfiguration
+      ? {
+          status: info.VersioningConfiguration.status ?? null,
+        }
+      : {},
+    taggingConfiguration: info.TaggingConfiguration
+      ? {
+          tags:
+            info.TaggingConfiguration.tags?.map((t) => ({
+              key: t.key ?? null,
+              value: t.value ?? null,
+            })) ?? [],
+        }
+      : {},
   };
 };
 
