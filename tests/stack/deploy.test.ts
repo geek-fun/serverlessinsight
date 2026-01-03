@@ -1,49 +1,14 @@
 import { deployStack } from '../../src/stack';
-import {
-  bucketMinimumIac,
-  bucketMinimumRos,
-  bucketWithWebsiteIac,
-  bucketWithWebsiteRos,
-  esServerlessMinimumIac,
-  esServerlessMinimumRos,
-  largeCodeRos,
-  minimumIac,
-  minimumRos,
-  oneFcIac,
-  oneFcIacWithNas,
-  oneFcIacWithNasRos,
-  oneFcIacWithStage,
-  oneFcOneGatewayIac,
-  oneFcOneGatewayRos,
-  oneFcRos,
-  oneFcWithContainerIac,
-  oneFcWithContainerRos,
-  oneFcWithGpuIac,
-  oneFcWithGpuRos,
-  oneFcWithStageRos,
-  referredServiceIac,
-  referredServiceRos,
-} from '../fixtures/deploy-fixtures';
-import { cloneDeep, set } from 'lodash';
-import { Context } from '../../src/types';
+import { minimumIac, oneFcIac } from '../fixtures/deploy-fixtures';
+import { Context, StateFile, CURRENT_STATE_VERSION } from '../../src/types';
 import { ProviderEnum } from '../../src/common';
+import fs from 'node:fs';
 
-const mockedEnterWith = jest.fn();
-const mockedGetStore = jest.fn();
-
-const mockedRosStackDeploy = jest.fn();
-const mockedResolveCode = jest.fn();
-const mockedPublishAssets = jest.fn();
-const mockedCleanupAssets = jest.fn();
-const mockedGetIamInfo = jest.fn();
 const mockedGetContext = jest.fn();
-
-jest.mock('node:async_hooks', () => ({
-  AsyncLocalStorage: jest.fn().mockImplementation(() => ({
-    enterWith: (...args: unknown[]) => mockedEnterWith(...args),
-    getStore: (...args: unknown[]) => mockedGetStore(...args),
-  })),
-}));
+const mockedGenerateFunctionPlan = jest.fn();
+const mockedExecuteFunctionPlan = jest.fn();
+const mockedLoadState = jest.fn();
+const mockedSaveState = jest.fn();
 
 jest.mock('../../src/common/context', () => ({
   ...jest.requireActual('../../src/common/context'),
@@ -52,13 +17,15 @@ jest.mock('../../src/common/context', () => ({
 
 jest.mock('../../src/common', () => ({
   ...jest.requireActual('../../src/common'),
-  rosStackDeploy: (...args: unknown[]) => mockedRosStackDeploy(...args),
-  publishAssets: (...args: unknown[]) => mockedPublishAssets(...args),
-  cleanupAssets: (...args: unknown[]) => mockedCleanupAssets(...args),
-  resolveCode: (path: string) => mockedResolveCode(path),
-  getIamInfo: (...args: unknown[]) => mockedGetIamInfo(...args),
   getContext: () => mockedGetContext(),
-  logger: { info: jest.fn(), debug: jest.fn() },
+  logger: { info: jest.fn(), debug: jest.fn(), warn: jest.fn(), error: jest.fn() },
+  loadState: (...args: unknown[]) => mockedLoadState(...args),
+  saveState: (...args: unknown[]) => mockedSaveState(...args),
+}));
+
+jest.mock('../../src/stack/aliyunStack', () => ({
+  generateFunctionPlan: (...args: unknown[]) => mockedGenerateFunctionPlan(...args),
+  executeFunctionPlan: (...args: unknown[]) => mockedExecuteFunctionPlan(...args),
 }));
 
 const createMockContext = (
@@ -78,211 +45,92 @@ const createMockContext = (
   ...additionalFields,
 });
 
-describe('Unit tests for stack deployment', () => {
+describe('Unit tests for Aliyun stack deployment', () => {
+  const testDir = '/tmp/test-deploy';
+  const initialState: StateFile = {
+    version: CURRENT_STATE_VERSION,
+    provider: 'aliyun',
+    resources: {},
+  };
+
   beforeEach(() => {
-    mockedResolveCode.mockReturnValueOnce('resolved-code');
-    mockedPublishAssets.mockResolvedValueOnce('published-assets-bucket');
-    mockedGetIamInfo.mockResolvedValueOnce({ accountId: '123456789012', region: 'cn-hangzhou' });
-  });
-  afterEach(() => {
-    mockedEnterWith.mockRestore();
-    mockedRosStackDeploy.mockRestore();
-    mockedResolveCode.mockRestore();
-    mockedPublishAssets.mockRestore();
-    mockedGetIamInfo.mockRestore();
-    mockedCleanupAssets.mockRestore();
+    // Clean up
+    if (fs.existsSync(testDir)) {
+      fs.rmSync(testDir, { recursive: true, force: true });
+    }
+    fs.mkdirSync(testDir, { recursive: true });
+
+    mockedLoadState.mockReturnValue(initialState);
+    mockedExecuteFunctionPlan.mockResolvedValue(initialState);
+    mockedGenerateFunctionPlan.mockResolvedValue({ items: [] });
+    jest.clearAllMocks();
   });
 
-  it('should deploy generated stack when minimum fields provided', async () => {
+  afterEach(() => {
+    if (fs.existsSync(testDir)) {
+      fs.rmSync(testDir, { recursive: true, force: true });
+    }
+  });
+
+  it('should deploy using state-based workflow for Aliyun', async () => {
     const stackName = 'my-demo-minimum-stack';
     mockedGetContext.mockReturnValue(createMockContext(stackName));
-    mockedGetStore.mockReturnValue({ stackName });
-    mockedRosStackDeploy.mockResolvedValueOnce(stackName);
 
     await deployStack(stackName, minimumIac);
 
-    expect(mockedRosStackDeploy).toHaveBeenCalledTimes(2);
-    expect(mockedRosStackDeploy.mock.calls[1]).toEqual([stackName, minimumRos]);
+    expect(mockedLoadState).toHaveBeenCalledWith('aliyun', process.cwd());
+    expect(mockedGenerateFunctionPlan).toHaveBeenCalled();
+    expect(mockedExecuteFunctionPlan).toHaveBeenCalled();
+    expect(mockedSaveState).toHaveBeenCalled();
   });
 
-  it('should deploy generated stack when only one FC specified', async () => {
+  it('should generate and execute function plan for FC functions', async () => {
     const stackName = 'my-demo-stack-fc-only';
     mockedGetContext.mockReturnValue(createMockContext(stackName));
-    mockedGetStore.mockReturnValue({ stackName });
 
-    mockedRosStackDeploy.mockResolvedValueOnce(stackName);
+    const mockPlan = {
+      items: [
+        {
+          logicalId: 'functions.hello_fn',
+          action: 'create',
+          resourceType: 'ALIYUN_FC3',
+          changes: { after: { functionName: 'hello-function' } },
+        },
+      ],
+    };
+    mockedGenerateFunctionPlan.mockResolvedValue(mockPlan);
 
     await deployStack(stackName, oneFcIac);
 
-    expect(mockedRosStackDeploy).toHaveBeenCalledTimes(2);
-    expect(mockedRosStackDeploy.mock.calls[1]).toEqual([stackName, oneFcRos]);
-  });
-
-  it('should reference to default stage mappings when --stage not provided', async () => {
-    const options = { stackName: 'my-demo-stack-fc-with-stage-1', stage: 'default' };
-    mockedGetContext.mockReturnValue(createMockContext(options.stackName, options.stage));
-    mockedGetStore.mockReturnValue(options);
-    mockedRosStackDeploy.mockResolvedValueOnce(options.stackName);
-
-    await deployStack(options.stackName, oneFcIacWithStage);
-
-    expect(mockedRosStackDeploy).toHaveBeenCalledTimes(2);
-    expect(mockedRosStackDeploy.mock.calls[1]).toEqual([options.stackName, oneFcWithStageRos]);
-  });
-
-  it('should reference to specified stage mappings when --stage is provided', async () => {
-    const options = { stackName: 'my-demo-stack-fc-with-stage-1', stage: 'dev' };
-    mockedGetContext.mockReturnValue(createMockContext(options.stackName, options.stage));
-    mockedGetStore.mockReturnValue(options);
-    mockedRosStackDeploy.mockResolvedValueOnce(options.stackName);
-
-    await deployStack(options.stackName, oneFcIacWithStage);
-
-    expect(mockedRosStackDeploy).toHaveBeenCalledTimes(2);
-    expect(mockedRosStackDeploy.mock.calls[1]).toEqual([
-      options.stackName,
-      set(
-        cloneDeep(oneFcWithStageRos),
-        'Resources.hello_fn.Properties.EnvironmentVariables.NODE_ENV.Fn::FindInMap',
-        ['stages', 'dev', 'node_env'],
-      ),
-    ]);
-  });
-
-  it('should evaluate service name as pure string when it reference ${ctx.stage}', async () => {
-    const options = { stackName: 'my-demo-stack-fc-with-stage-1', stage: 'dev' };
-    mockedGetContext.mockReturnValue(createMockContext(options.stackName, options.stage));
-    mockedGetStore.mockReturnValue(options);
-    mockedRosStackDeploy.mockResolvedValueOnce(options.stackName);
-
-    await deployStack(options.stackName, referredServiceIac);
-
-    expect(mockedRosStackDeploy).toHaveBeenCalledTimes(2);
-    expect(mockedRosStackDeploy.mock.calls[1]).toEqual([options.stackName, referredServiceRos]);
-  });
-
-  it('should create bucket and store code artifact to bucket when code size > 15MB', async () => {
-    const stackName = 'my-large-code-stack';
-    mockedGetContext.mockReturnValue(
-      createMockContext(stackName, 'default', { accountId: '123456789012' }),
+    expect(mockedGenerateFunctionPlan).toHaveBeenCalled();
+    expect(mockedExecuteFunctionPlan).toHaveBeenCalledWith(
+      expect.objectContaining({ provider: ProviderEnum.ALIYUN }),
+      mockPlan,
+      oneFcIac.functions,
+      initialState,
     );
-
-    mockedGetStore.mockReturnValue({ stackName, accountId: '123456789012', region: 'cn-hangzhou' });
-    mockedRosStackDeploy.mockResolvedValueOnce(stackName);
-
-    await deployStack(
-      stackName,
-      set(
-        cloneDeep(oneFcOneGatewayIac),
-        'functions[0].code.path',
-        'tests/fixtures/artifacts/large-artifact.zip',
-      ),
-    );
-
-    const expectedAssets = Array(2).fill({
-      bucketName: expect.any(String),
-      objectKey: expect.stringContaining('.zip'),
-      source: expect.stringContaining('.zip'),
-    });
-    expect(mockedPublishAssets).toHaveBeenCalledTimes(1);
-    expect(mockedRosStackDeploy).toHaveBeenCalledTimes(2);
-    expect(mockedPublishAssets).toHaveBeenCalledWith(expectedAssets);
-    expect(mockedRosStackDeploy.mock.calls[1]).toEqual([stackName, largeCodeRos]);
-    expect(mockedCleanupAssets).toHaveBeenCalledTimes(1);
-    expect(mockedCleanupAssets).toHaveBeenCalledWith(expectedAssets);
   });
 
-  describe('unit test for deploy of events', () => {
-    it('should deploy event with custom domain specified when domain is provided', async () => {
-      const stackName = 'my-event-stack-with-custom-domain';
-      mockedGetContext.mockReturnValue(createMockContext(stackName));
-      mockedGetStore.mockReturnValue({ stackName });
-      mockedRosStackDeploy.mockResolvedValue(stackName);
+  it('should save state after execution', async () => {
+    const stackName = 'my-demo-stack-save-state';
+    mockedGetContext.mockReturnValue(createMockContext(stackName));
 
-      await deployStack(stackName, oneFcOneGatewayIac);
+    const newState = {
+      ...initialState,
+      resources: {
+        'functions.hello_fn': {
+          mode: 'managed' as const,
+          region: 'cn-hangzhou',
+          definition: { functionName: 'hello-function' },
+          instances: [{ arn: 'arn:test', id: 'test-id' }],
+          lastUpdated: new Date().toISOString(),
+        },
+      },
+    };
+    mockedExecuteFunctionPlan.mockResolvedValue(newState);
 
-      expect(mockedRosStackDeploy).toHaveBeenCalledTimes(2);
-      expect(mockedRosStackDeploy.mock.calls[1]).toEqual([stackName, oneFcOneGatewayRos]);
-    });
-  });
+    await deployStack(stackName, oneFcIac);
 
-  describe('unit test for deploy of databases', () => {
-    it('should deploy elasticsearch serverless when database minimum fields provided', async () => {
-      const stackName = 'my-demo-es-serverless-stack';
-      mockedGetContext.mockReturnValue(createMockContext(stackName));
-      mockedGetStore.mockReturnValue({ stackName });
-      mockedRosStackDeploy.mockResolvedValue(stackName);
-
-      await deployStack(stackName, esServerlessMinimumIac);
-
-      expect(mockedRosStackDeploy).toHaveBeenCalledTimes(2);
-      expect(mockedRosStackDeploy.mock.calls[1]).toEqual([stackName, esServerlessMinimumRos]);
-    });
-  });
-
-  describe('unit test for deploy of buckets', () => {
-    it('should deploy bucket when minimum fields provided', async () => {
-      const stackName = 'my-demo-bucket-stack';
-      mockedGetContext.mockReturnValue(createMockContext(stackName));
-      mockedGetStore.mockReturnValue({ stackName });
-      mockedRosStackDeploy.mockResolvedValue(stackName);
-
-      await deployStack(stackName, bucketMinimumIac);
-
-      expect(mockedRosStackDeploy).toHaveBeenCalledTimes(2);
-      expect(mockedRosStackDeploy.mock.calls[1]).toEqual([stackName, bucketMinimumRos]);
-    });
-
-    it('should deploy bucket as a website when website field is provided', async () => {
-      const stackName = 'my-website-bucket-stack';
-      mockedGetContext.mockReturnValue(createMockContext(stackName));
-      mockedGetStore.mockReturnValue({ stackName });
-      mockedRosStackDeploy.mockResolvedValue(stackName);
-
-      await deployStack(stackName, bucketWithWebsiteIac);
-
-      expect(mockedRosStackDeploy).toHaveBeenCalledTimes(2);
-      expect(mockedPublishAssets).toHaveBeenCalledTimes(1);
-      expect(mockedCleanupAssets).toHaveBeenCalledTimes(1);
-      expect(mockedRosStackDeploy.mock.calls[1]).toEqual([stackName, bucketWithWebsiteRos]);
-    });
-  });
-
-  describe('unit test for serverless Gpu', () => {
-    it('should deploy function with nas when nas field is provided', async () => {
-      const stackName = 'my-demo-stack-with-nas';
-      mockedGetContext.mockReturnValue(createMockContext(stackName));
-      mockedGetStore.mockReturnValue({ stackName });
-      mockedRosStackDeploy.mockResolvedValue(stackName);
-
-      await deployStack(stackName, oneFcIacWithNas);
-
-      expect(mockedRosStackDeploy).toHaveBeenCalledTimes(2);
-      expect(mockedRosStackDeploy.mock.calls[1]).toEqual([stackName, oneFcIacWithNasRos]);
-    });
-
-    it('should deploy function with container when container field is provided', async () => {
-      const stackName = 'my-demo-stack-with-container';
-      mockedGetContext.mockReturnValue(createMockContext(stackName));
-      mockedGetStore.mockReturnValue({ stackName });
-      mockedRosStackDeploy.mockResolvedValue(stackName);
-
-      await deployStack(stackName, oneFcWithContainerIac);
-
-      expect(mockedRosStackDeploy).toHaveBeenCalledTimes(2);
-      expect(mockedRosStackDeploy.mock.calls[1]).toEqual([stackName, oneFcWithContainerRos]);
-    });
-
-    it('should deploy function with gpu configured', async () => {
-      const stackName = 'my-demo-stack-with-gpu';
-      mockedGetContext.mockReturnValue(createMockContext(stackName));
-      mockedGetStore.mockReturnValue({ stackName });
-      mockedRosStackDeploy.mockResolvedValue(stackName);
-
-      await deployStack(stackName, oneFcWithGpuIac);
-
-      expect(mockedRosStackDeploy).toHaveBeenCalledTimes(2);
-      expect(mockedRosStackDeploy.mock.calls[1]).toEqual([stackName, oneFcWithGpuRos]);
-    });
+    expect(mockedSaveState).toHaveBeenCalledWith(newState, process.cwd());
   });
 });

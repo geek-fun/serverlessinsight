@@ -1,6 +1,5 @@
 import { template } from '../../src/commands/template';
 import { TemplateFormat } from '../../src/types';
-import { jsonTemplate, yamlTemplate } from '../fixtures/templateFixture';
 
 const mockedLogger = jest.fn();
 const mockedGetContext = jest.fn();
@@ -37,7 +36,7 @@ describe('Unit test for template command', () => {
     mockedGetContext.mockRestore();
   });
 
-  it('should print the template in JSON format by default', async () => {
+  it('should print empty template for Aliyun (state-based deployment)', async () => {
     const options = {
       format: TemplateFormat.JSON,
       location,
@@ -46,14 +45,16 @@ describe('Unit test for template command', () => {
 
     await template(stackName, options);
 
-    expect(mockedLogger).toHaveBeenCalledWith(`\n${JSON.stringify(jsonTemplate, null, 2)}`);
+    // Aliyun uses state-based deployment, so template generation returns empty object
+    expect(mockedLogger).toHaveBeenCalledWith(`\n${JSON.stringify({}, null, 2)}`);
   });
 
-  it('should print the template in YAML format when specified', async () => {
+  it('should print empty template in YAML format for Aliyun', async () => {
     const options = { format: TemplateFormat.YAML, location, stage: undefined };
 
     await template(stackName, options);
 
-    expect(mockedLogger).toHaveBeenCalledWith(yamlTemplate);
+    // Aliyun uses state-based deployment, so template generation returns empty object
+    expect(mockedLogger).toHaveBeenCalledWith('\n{}\n');
   });
 });
