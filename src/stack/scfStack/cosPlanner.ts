@@ -15,13 +15,13 @@ export const generateBucketPlan = async (
     // Handle deletions for buckets removed from YAML
     const allStates = getAllResources(state);
     for (const [logicalId, resourceState] of Object.entries(allStates)) {
-      if (resourceState.type === 'COS_BUCKET') {
+      if (logicalId.startsWith('buckets.')) {
         items.push({
           logicalId,
           action: 'delete',
           resourceType: 'COS_BUCKET',
           changes: {
-            before: { physicalId: resourceState.physicalId, ...resourceState.attributes },
+            before: { arn: resourceState.arn, ...resourceState.attributes },
           },
         });
       }
@@ -111,13 +111,13 @@ export const generateBucketPlan = async (
   // Check for resources in state that are not in desired state (need deletion)
   const allStates = getAllResources(state);
   for (const [logicalId, resourceState] of Object.entries(allStates)) {
-    if (resourceState.type === 'COS_BUCKET' && !desiredLogicalIds.has(logicalId)) {
+    if (logicalId.startsWith('buckets.') && !desiredLogicalIds.has(logicalId)) {
       items.push({
         logicalId,
         action: 'delete',
         resourceType: 'COS_BUCKET',
         changes: {
-          before: { physicalId: resourceState.physicalId, ...resourceState.attributes },
+          before: { arn: resourceState.arn, ...resourceState.attributes },
         },
       });
     }

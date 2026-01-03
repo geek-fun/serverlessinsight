@@ -1,5 +1,4 @@
 import { DatabaseDomain, ResourceAttributes } from '../../types';
-import crypto from 'node:crypto';
 
 export type TdsqlcClusterConfig = {
   ClusterName: string;
@@ -84,64 +83,27 @@ export const databaseToTdsqlcConfig = (database: DatabaseDomain): TdsqlcClusterC
 };
 
 /**
- * @deprecated Use extractTdsqlcAttributes instead. Kept for backward compatibility.
- */
-export const computeDatabaseConfigHash = (config: TdsqlcClusterConfig): string => {
-  const hashContent = JSON.stringify({
-    ClusterName: config.ClusterName,
-    DbVersion: config.DbVersion,
-    MinCpu: config.MinCpu,
-    MaxCpu: config.MaxCpu,
-    MinStorageSize: config.MinStorageSize,
-    MaxStorageSize: config.MaxStorageSize,
-    AutoPause: config.AutoPause,
-    VpcId: config.VpcId,
-    SubnetId: config.SubnetId,
-  });
-  return crypto.createHash('sha256').update(hashContent).digest('hex').substring(0, 16);
-};
-
-/**
  * Extract all attributes from a TDSQL-C cluster config for state storage.
  * Following Terraform's approach of storing complete resource attributes.
  * Note: AdminPassword is intentionally excluded for security reasons.
+ * All optional fields are included with null values if undefined.
  */
 export const extractTdsqlcAttributes = (config: TdsqlcClusterConfig): ResourceAttributes => {
-  const attributes: ResourceAttributes = {
+  return {
     clusterName: config.ClusterName,
     dbType: config.DbType,
     dbVersion: config.DbVersion,
     dbMode: config.DbMode,
     minCpu: config.MinCpu,
     maxCpu: config.MaxCpu,
-    autoPause: config.AutoPause,
-    autoPauseDelay: config.AutoPauseDelay,
-    storagePayMode: config.StoragePayMode,
+    autoPause: config.AutoPause ?? null,
+    autoPauseDelay: config.AutoPauseDelay ?? null,
+    storagePayMode: config.StoragePayMode ?? null,
+    vpcId: config.VpcId ?? null,
+    subnetId: config.SubnetId ?? null,
+    port: config.Port ?? null,
+    projectId: config.ProjectId ?? null,
+    minStorageSize: config.MinStorageSize ?? null,
+    maxStorageSize: config.MaxStorageSize ?? null,
   };
-
-  if (config.VpcId !== undefined) {
-    attributes.vpcId = config.VpcId;
-  }
-
-  if (config.SubnetId !== undefined) {
-    attributes.subnetId = config.SubnetId;
-  }
-
-  if (config.Port !== undefined) {
-    attributes.port = config.Port;
-  }
-
-  if (config.ProjectId !== undefined) {
-    attributes.projectId = config.ProjectId;
-  }
-
-  if (config.MinStorageSize !== undefined) {
-    attributes.minStorageSize = config.MinStorageSize;
-  }
-
-  if (config.MaxStorageSize !== undefined) {
-    attributes.maxStorageSize = config.MaxStorageSize;
-  }
-
-  return attributes;
 };

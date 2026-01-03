@@ -171,8 +171,8 @@ describe('ScfExecutor', () => {
         ...initialState,
         resources: {
           'functions.test_fn': {
-            type: 'SCF',
-            physicalId: 'test-function',
+            mode: 'managed',
+            arn: 'arn:tencent:scf:ap-guangzhou::function:test-function',
             region: 'ap-guangzhou',
             attributes: {
               functionName: 'test-function',
@@ -180,6 +180,7 @@ describe('ScfExecutor', () => {
               handler: 'index.handler',
               memorySize: 512,
               timeout: 10,
+              environment: null,
             },
             lastUpdated: '2025-01-01T00:00:00Z',
           },

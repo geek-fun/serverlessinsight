@@ -82,8 +82,8 @@ describe('SCF Planner', () => {
       // Add function to state with matching attributes
       let state = loadState('tencent', testDir);
       state = setResource(state, 'functions.test_fn', {
-        type: 'SCF',
-        physicalId: 'test-function',
+        mode: 'managed',
+        arn: 'arn:tencent:scf:ap-guangzhou::function:test-function',
         region: 'ap-guangzhou',
         attributes: {
           functionName: 'test-function',
@@ -123,8 +123,8 @@ describe('SCF Planner', () => {
       // Add function to state with different attributes
       let state = loadState('tencent', testDir);
       state = setResource(state, 'functions.test_fn', {
-        type: 'SCF',
-        physicalId: 'test-function',
+        mode: 'managed',
+        arn: 'arn:tencent:scf:ap-guangzhou::function:test-function',
         region: 'ap-guangzhou',
         attributes: {
           functionName: 'test-function',
@@ -164,8 +164,8 @@ describe('SCF Planner', () => {
       // Add function to state
       let state = loadState('tencent', testDir);
       state = setResource(state, 'functions.old_fn', {
-        type: 'SCF',
-        physicalId: 'old-function',
+        mode: 'managed',
+        arn: 'arn:tencent:scf:ap-guangzhou::function:old-function',
         region: 'ap-guangzhou',
         attributes: {
           functionName: 'old-function',
@@ -173,6 +173,7 @@ describe('SCF Planner', () => {
           handler: 'index.handler',
           memorySize: 128,
           timeout: 3,
+          environment: null,
         },
         lastUpdated: new Date().toISOString(),
       });
@@ -195,8 +196,8 @@ describe('SCF Planner', () => {
       // Add function to state
       let state = loadState('tencent', testDir);
       state = setResource(state, 'functions.test_fn', {
-        type: 'SCF',
-        physicalId: 'test-function',
+        mode: 'managed',
+        arn: 'arn:tencent:scf:ap-guangzhou::function:test-function',
         region: 'ap-guangzhou',
         attributes: {
           functionName: 'test-function',
@@ -204,6 +205,7 @@ describe('SCF Planner', () => {
           handler: 'index.handler',
           memorySize: 512,
           timeout: 10,
+          environment: null,
         },
         codeHash: 'old-code-hash',
         lastUpdated: new Date().toISOString(),
@@ -228,8 +230,8 @@ describe('SCF Planner', () => {
       // Add function to state with different code hash
       let state = loadState('tencent', testDir);
       state = setResource(state, 'functions.test_fn', {
-        type: 'SCF',
-        physicalId: 'test-function',
+        mode: 'managed',
+        arn: 'arn:tencent:scf:ap-guangzhou::function:test-function',
         region: 'ap-guangzhou',
         attributes: {
           functionName: 'test-function',

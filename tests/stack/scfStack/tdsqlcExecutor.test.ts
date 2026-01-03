@@ -82,8 +82,8 @@ describe('TdsqlcExecutor', () => {
       };
 
       const mockResourceState: ResourceState = {
-        type: 'TDSQL_C_SERVERLESS',
-        physicalId: 'cynosdbmysql-test123',
+        mode: 'managed',
+        arn: 'arn:tencent:cynosdb:ap-guangzhou::cluster:cynosdbmysql-test123',
         region: 'ap-guangzhou',
         attributes: {
           clusterName: 'test-tdsqlc',
@@ -110,8 +110,8 @@ describe('TdsqlcExecutor', () => {
 
     it('should execute update action', async () => {
       const resourceState: ResourceState = {
-        type: 'TDSQL_C_SERVERLESS',
-        physicalId: 'cynosdbmysql-test123',
+        mode: 'managed',
+        arn: 'arn:tencent:cynosdb:ap-guangzhou::cluster:cynosdbmysql-test123',
         region: 'ap-guangzhou',
         attributes: {
           clusterName: 'test-tdsqlc',
@@ -119,6 +119,7 @@ describe('TdsqlcExecutor', () => {
           dbVersion: '8.0',
         },
         lastUpdated: '2024-01-01T00:00:00Z',
+        metadata: { clusterId: 'cynosdbmysql-test123' },
       };
 
       const plan: Plan = {
@@ -136,8 +137,8 @@ describe('TdsqlcExecutor', () => {
       };
 
       const mockResourceState: ResourceState = {
-        type: 'TDSQL_C_SERVERLESS',
-        physicalId: 'cynosdbmysql-test123',
+        mode: 'managed',
+        arn: 'arn:tencent:cynosdb:ap-guangzhou::cluster:cynosdbmysql-test123',
         region: 'ap-guangzhou',
         attributes: {
           clusterName: 'test-tdsqlc',
@@ -167,13 +168,14 @@ describe('TdsqlcExecutor', () => {
 
     it('should execute delete action', async () => {
       const resourceState: ResourceState = {
-        type: 'TDSQL_C_SERVERLESS',
-        physicalId: 'cynosdbmysql-test123',
+        mode: 'managed',
+        arn: 'arn:tencent:cynosdb:ap-guangzhou::cluster:cynosdbmysql-test123',
         region: 'ap-guangzhou',
         attributes: {
           clusterName: 'test-tdsqlc',
         },
         lastUpdated: '2024-01-01T00:00:00Z',
+        metadata: { clusterId: 'cynosdbmysql-test123' },
       };
 
       const plan: Plan = {
@@ -392,15 +394,15 @@ describe('TdsqlcExecutor', () => {
       };
 
       const mockResourceState1: ResourceState = {
-        type: 'TDSQL_C_SERVERLESS',
-        physicalId: 'cynosdbmysql-test1',
+        mode: 'managed',
+        arn: 'arn:tencent:cynosdb:ap-guangzhou::cluster:cynosdbmysql-test1',
         region: 'ap-guangzhou',
         attributes: { clusterName: 'test-tdsqlc' },
         lastUpdated: new Date().toISOString(),
       };
       const mockResourceState2: ResourceState = {
-        type: 'TDSQL_C_SERVERLESS',
-        physicalId: 'cynosdbmysql-test2',
+        mode: 'managed',
+        arn: 'arn:tencent:cynosdb:ap-guangzhou::cluster:cynosdbmysql-test2',
         region: 'ap-guangzhou',
         attributes: { clusterName: 'test-tdsqlc-2' },
         lastUpdated: new Date().toISOString(),

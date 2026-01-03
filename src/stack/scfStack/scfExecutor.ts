@@ -54,14 +54,11 @@ export const executeFunctionPlan = async (
             logger.warn(`State not found for ${item.logicalId}, skipping deletion`);
             continue;
           }
-          logger.info(`Deleting function: ${state.physicalId}`);
-          currentState = await deleteResource(
-            context,
-            state.physicalId,
-            item.logicalId,
-            currentState,
-          );
-          logger.info(`Successfully deleted function: ${state.physicalId}`);
+          // Extract function name from attributes
+          const functionName = state.attributes.functionName as string;
+          logger.info(`Deleting function: ${functionName}`);
+          currentState = await deleteResource(context, functionName, item.logicalId, currentState);
+          logger.info(`Successfully deleted function: ${functionName}`);
           break;
         }
 

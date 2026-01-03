@@ -1,4 +1,4 @@
-import { Context, DatabaseDomain, ResourceState, StateFile, ResourceTypeEnum } from '../../types';
+import { Context, DatabaseDomain, ResourceState, StateFile } from '../../types';
 import {
   createTdsqlcCluster,
   deleteTdsqlcCluster,
@@ -19,13 +19,14 @@ export const createDatabaseResource = async (
 
   const attributes = extractTdsqlcAttributes(config);
   const resourceState: ResourceState = {
-    type: 'TDSQL_C_SERVERLESS',
-    physicalId: clusterId,
+    mode: 'managed',
+    arn: `arn:tencent:cynosdb:${context.region}::cluster:${clusterId}`,
     region: context.region,
     attributes,
     lastUpdated: new Date().toISOString(),
     metadata: {
       clusterName: database.name,
+      clusterId,
     },
   };
 
@@ -49,13 +50,14 @@ export const updateDatabaseResource = async (
 
   const attributes = extractTdsqlcAttributes(config);
   const resourceState: ResourceState = {
-    type: ResourceTypeEnum.TDSQL_C_SERVERLESS,
-    physicalId: clusterId,
+    mode: 'managed',
+    arn: `arn:tencent:cynosdb:${context.region}::cluster:${clusterId}`,
     region: context.region,
     attributes,
     lastUpdated: new Date().toISOString(),
     metadata: {
       clusterName: database.name,
+      clusterId,
     },
   };
 

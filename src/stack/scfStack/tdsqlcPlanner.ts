@@ -1,12 +1,4 @@
-import {
-  Context,
-  DatabaseDomain,
-  DatabaseEnum,
-  Plan,
-  PlanItem,
-  StateFile,
-  ResourceTypeEnum,
-} from '../../types';
+import { Context, DatabaseDomain, DatabaseEnum, Plan, PlanItem, StateFile } from '../../types';
 import { getTdsqlcCluster } from './tdsqlcProvider';
 import { databaseToTdsqlcConfig, extractTdsqlcAttributes } from './tdsqlcTypes';
 import { getAllResources, getResource } from '../../common/stateManager';
@@ -26,13 +18,13 @@ export const generateDatabasePlan = async (
     // Handle deletions for databases removed from YAML
     const allStates = getAllResources(state);
     for (const [logicalId, resourceState] of Object.entries(allStates)) {
-      if (resourceState.type === ResourceTypeEnum.TDSQL_C_SERVERLESS) {
+      if (logicalId.startsWith('databases.')) {
         items.push({
           logicalId,
           action: 'delete',
-          resourceType: ResourceTypeEnum.TDSQL_C_SERVERLESS,
+          resourceType: 'TDSQL_C_SERVERLESS',
           changes: {
-            before: { physicalId: resourceState.physicalId, ...resourceState.attributes },
+            before: { arn: resourceState.arn, ...resourceState.attributes },
           },
         });
       }
@@ -56,22 +48,24 @@ export const generateDatabasePlan = async (
       items.push({
         logicalId,
         action: 'create',
-        resourceType: ResourceTypeEnum.TDSQL_C_SERVERLESS,
+        resourceType: 'TDSQL_C_SERVERLESS',
         changes: {
           after: desiredAttributes,
         },
       });
     } else {
       // Resource exists - check if it needs updating
+      // Extract clusterId from ARN
+      const clusterId = currentState.metadata?.clusterId as string | undefined;
       try {
-        const remoteCluster = await getTdsqlcCluster(context, currentState.physicalId);
+        const remoteCluster = clusterId ? await getTdsqlcCluster(context, clusterId) : null;
 
         if (!remoteCluster) {
           // Resource in state but not in cloud - needs recreation
           items.push({
             logicalId,
             action: 'create',
-            resourceType: ResourceTypeEnum.TDSQL_C_SERVERLESS,
+            resourceType: 'TDSQL_C_SERVERLESS',
             changes: {
               before: currentState.attributes,
               after: desiredAttributes,
@@ -88,7 +82,7 @@ export const generateDatabasePlan = async (
             items.push({
               logicalId,
               action: 'update',
-              resourceType: ResourceTypeEnum.TDSQL_C_SERVERLESS,
+              resourceType: 'TDSQL_C_SERVERLESS',
               changes: {
                 before: currentAttributes,
                 after: desiredAttributes,
@@ -100,7 +94,7 @@ export const generateDatabasePlan = async (
             items.push({
               logicalId,
               action: 'noop',
-              resourceType: ResourceTypeEnum.TDSQL_C_SERVERLESS,
+              resourceType: 'TDSQL_C_SERVERLESS',
             });
           }
         }
@@ -109,7 +103,7 @@ export const generateDatabasePlan = async (
         items.push({
           logicalId,
           action: 'create',
-          resourceType: ResourceTypeEnum.TDSQL_C_SERVERLESS,
+          resourceType: 'TDSQL_C_SERVERLESS',
           changes: {
             before: currentState.attributes,
             after: desiredAttributes,
@@ -122,16 +116,13 @@ export const generateDatabasePlan = async (
   // Check for resources in state that are not in desired state (need deletion)
   const allStates = getAllResources(state);
   for (const [logicalId, resourceState] of Object.entries(allStates)) {
-    if (
-      resourceState.type === ResourceTypeEnum.TDSQL_C_SERVERLESS &&
-      !desiredLogicalIds.has(logicalId)
-    ) {
+    if (logicalId.startsWith('databases.') && !desiredLogicalIds.has(logicalId)) {
       items.push({
         logicalId,
         action: 'delete',
-        resourceType: ResourceTypeEnum.TDSQL_C_SERVERLESS,
+        resourceType: 'TDSQL_C_SERVERLESS',
         changes: {
-          before: { physicalId: resourceState.physicalId, ...resourceState.attributes },
+          before: { arn: resourceState.arn, ...resourceState.attributes },
         },
       });
     }

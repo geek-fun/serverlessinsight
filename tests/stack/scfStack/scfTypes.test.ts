@@ -1,4 +1,4 @@
-import { computeConfigHash, functionToScfConfig } from '../../../src/stack/scfStack/scfTypes';
+import { functionToScfConfig, extractScfAttributes } from '../../../src/stack/scfStack/scfTypes';
 import { FunctionDomain } from '../../../src/types';
 
 describe('SCF Types', () => {
@@ -90,8 +90,8 @@ describe('SCF Types', () => {
     });
   });
 
-  describe('computeConfigHash', () => {
-    it('should generate consistent hash for same config', () => {
+  describe('extractScfAttributes', () => {
+    it('should extract all attributes from config', () => {
       const config = {
         FunctionName: 'test-function',
         Runtime: 'nodejs18',
@@ -103,15 +103,20 @@ describe('SCF Types', () => {
         },
       };
 
-      const hash1 = computeConfigHash(config);
-      const hash2 = computeConfigHash(config);
+      const attributes = extractScfAttributes(config);
 
-      expect(hash1).toBe(hash2);
-      expect(hash1).toHaveLength(16);
+      expect(attributes).toEqual({
+        functionName: 'test-function',
+        runtime: 'nodejs18',
+        handler: 'index.handler',
+        memorySize: 512,
+        timeout: 10,
+        environment: { NODE_ENV: 'production' },
+      });
     });
 
-    it('should generate different hash for different configs', () => {
-      const config1 = {
+    it('should set environment to null when not provided', () => {
+      const config = {
         FunctionName: 'test-function',
         Runtime: 'nodejs18',
         Handler: 'index.handler',
@@ -119,70 +124,39 @@ describe('SCF Types', () => {
         Timeout: 10,
       };
 
-      const config2 = {
-        FunctionName: 'test-function',
-        Runtime: 'nodejs18',
-        Handler: 'index.handler',
-        MemorySize: 1024, // Different memory size
-        Timeout: 10,
-      };
+      const attributes = extractScfAttributes(config);
 
-      const hash1 = computeConfigHash(config1);
-      const hash2 = computeConfigHash(config2);
-
-      expect(hash1).not.toBe(hash2);
+      expect(attributes).toEqual({
+        functionName: 'test-function',
+        runtime: 'nodejs18',
+        handler: 'index.handler',
+        memorySize: 512,
+        timeout: 10,
+        environment: null,
+      });
     });
 
-    it('should ignore FunctionName in hash computation', () => {
-      const config1 = {
-        FunctionName: 'test-function-1',
-        Runtime: 'nodejs18',
-        Handler: 'index.handler',
-        MemorySize: 512,
-        Timeout: 10,
-      };
-
-      const config2 = {
-        FunctionName: 'test-function-2', // Different name
-        Runtime: 'nodejs18',
-        Handler: 'index.handler',
-        MemorySize: 512,
-        Timeout: 10,
-      };
-
-      const hash1 = computeConfigHash(config1);
-      const hash2 = computeConfigHash(config2);
-
-      expect(hash1).toBe(hash2);
-    });
-
-    it('should consider environment variables in hash', () => {
-      const config1 = {
+    it('should convert environment variables array to map', () => {
+      const config = {
         FunctionName: 'test-function',
         Runtime: 'nodejs18',
         Handler: 'index.handler',
         MemorySize: 512,
         Timeout: 10,
         Environment: {
-          Variables: [{ Key: 'NODE_ENV', Value: 'production' }],
+          Variables: [
+            { Key: 'NODE_ENV', Value: 'production' },
+            { Key: 'API_KEY', Value: 'test123' },
+          ],
         },
       };
 
-      const config2 = {
-        FunctionName: 'test-function',
-        Runtime: 'nodejs18',
-        Handler: 'index.handler',
-        MemorySize: 512,
-        Timeout: 10,
-        Environment: {
-          Variables: [{ Key: 'NODE_ENV', Value: 'development' }], // Different value
-        },
-      };
+      const attributes = extractScfAttributes(config);
 
-      const hash1 = computeConfigHash(config1);
-      const hash2 = computeConfigHash(config2);
-
-      expect(hash1).not.toBe(hash2);
+      expect(attributes.environment).toEqual({
+        NODE_ENV: 'production',
+        API_KEY: 'test123',
+      });
     });
   });
 });

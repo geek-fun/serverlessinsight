@@ -112,8 +112,8 @@ describe('ScfResource', () => {
         initialState,
         'functions.test_fn',
         expect.objectContaining({
-          type: 'SCF',
-          physicalId: 'test-function',
+          mode: 'managed',
+          arn: expect.stringContaining('arn:tencent:scf'),
           region: 'ap-guangzhou',
           attributes: mockAttributes,
           codeHash: 'mock-code-hash',
@@ -197,8 +197,8 @@ describe('ScfResource', () => {
         initialState,
         'functions.test_fn',
         expect.objectContaining({
-          type: 'SCF',
-          physicalId: 'test-function',
+          mode: 'managed',
+          arn: expect.stringContaining('arn:tencent:scf'),
           region: 'ap-guangzhou',
           attributes: mockAttributes,
           codeHash: 'mock-code-hash',
@@ -233,8 +233,8 @@ describe('ScfResource', () => {
         ...initialState,
         resources: {
           'functions.test_fn': {
-            type: 'SCF',
-            physicalId: 'test-function',
+            mode: 'managed',
+            arn: 'arn:tencent:scf:ap-guangzhou::function:test-function',
             region: 'ap-guangzhou',
             attributes: mockAttributes,
             codeHash: 'mock-code-hash',

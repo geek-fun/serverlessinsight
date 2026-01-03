@@ -1,5 +1,4 @@
 import { BucketDomain, ResourceAttributes } from '../../types';
-import crypto from 'node:crypto';
 
 export type CosBucketConfig = {
   Bucket: string;
@@ -64,38 +63,20 @@ export const bucketToCosBucketConfig = (bucket: BucketDomain, region: string): C
 };
 
 /**
- * @deprecated Use extractCosBucketAttributes instead. Kept for backward compatibility.
- */
-export const computeBucketConfigHash = (config: CosBucketConfig): string => {
-  const hashContent = JSON.stringify({
-    Bucket: config.Bucket,
-    Region: config.Region,
-    ACL: config.ACL,
-    WebsiteConfiguration: config.WebsiteConfiguration,
-  });
-  return crypto.createHash('sha256').update(hashContent).digest('hex').substring(0, 16);
-};
-
-/**
  * Extract all attributes from a COS bucket config for state storage.
  * Following Terraform's approach of storing complete resource attributes.
+ * All optional fields are included with null values if undefined.
  */
 export const extractCosBucketAttributes = (config: CosBucketConfig): ResourceAttributes => {
-  const attributes: ResourceAttributes = {
+  return {
     bucket: config.Bucket,
     region: config.Region,
+    acl: config.ACL ?? null,
+    websiteConfiguration: config.WebsiteConfiguration
+      ? {
+          indexDocument: config.WebsiteConfiguration.IndexDocument.Suffix,
+          errorDocument: config.WebsiteConfiguration.ErrorDocument?.Key ?? null,
+        }
+      : null,
   };
-
-  if (config.ACL) {
-    attributes.acl = config.ACL;
-  }
-
-  if (config.WebsiteConfiguration) {
-    attributes.websiteConfiguration = {
-      indexDocument: config.WebsiteConfiguration.IndexDocument.Suffix,
-      errorDocument: config.WebsiteConfiguration.ErrorDocument?.Key,
-    };
-  }
-
-  return attributes;
 };

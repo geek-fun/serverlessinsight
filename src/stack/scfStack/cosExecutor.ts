@@ -54,15 +54,17 @@ export const executeBucketPlan = async (
             logger.warn(`State not found for ${item.logicalId}, skipping deletion`);
             continue;
           }
-          logger.info(`Deleting bucket: ${state.physicalId}`);
+          // Extract bucket name from attributes
+          const bucketName = state.attributes.bucket as string;
+          logger.info(`Deleting bucket: ${bucketName}`);
           currentState = await deleteBucketResource(
             context,
-            state.physicalId,
+            bucketName,
             state.region,
             item.logicalId,
             currentState,
           );
-          logger.info(`Successfully deleted bucket: ${state.physicalId}`);
+          logger.info(`Successfully deleted bucket: ${bucketName}`);
           break;
         }
 

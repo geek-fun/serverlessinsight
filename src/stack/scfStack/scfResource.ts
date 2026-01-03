@@ -23,8 +23,8 @@ export const createResource = async (
   const attributes = extractScfAttributes(config);
   const codeHash = computeFileHash(codePath);
   const resourceState: ResourceState = {
-    type: 'SCF',
-    physicalId: fn.name,
+    mode: 'managed',
+    arn: `arn:tencent:scf:${context.region}::function:${fn.name}`,
     region: context.region,
     attributes,
     codeHash,
@@ -56,8 +56,8 @@ export const updateResource = async (
   const attributes = extractScfAttributes(config);
   const codeHash = computeFileHash(codePath);
   const resourceState: ResourceState = {
-    type: 'SCF',
-    physicalId: fn.name,
+    mode: 'managed',
+    arn: `arn:tencent:scf:${context.region}::function:${fn.name}`,
     region: context.region,
     attributes,
     codeHash,

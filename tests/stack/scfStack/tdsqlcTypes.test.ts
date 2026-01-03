@@ -1,6 +1,6 @@
 import {
   databaseToTdsqlcConfig,
-  computeDatabaseConfigHash,
+  extractTdsqlcAttributes,
 } from '../../../src/stack/scfStack/tdsqlcTypes';
 import { DatabaseDomain, DatabaseEnum, DatabaseVersionEnum } from '../../../src/types';
 
@@ -170,8 +170,8 @@ describe('TdsqlcTypes', () => {
     });
   });
 
-  describe('computeDatabaseConfigHash', () => {
-    it('should compute consistent hash for same config', () => {
+  describe('extractTdsqlcAttributes', () => {
+    it('should extract all attributes including null values', () => {
       const config = {
         ClusterName: 'test-tdsqlc',
         DbType: 'MYSQL' as const,
@@ -185,48 +185,29 @@ describe('TdsqlcTypes', () => {
         AdminPassword: 'TestPass123!',
       };
 
-      const hash1 = computeDatabaseConfigHash(config);
-      const hash2 = computeDatabaseConfigHash(config);
+      const attributes = extractTdsqlcAttributes(config);
 
-      expect(hash1).toBe(hash2);
-      expect(hash1).toHaveLength(16);
+      expect(attributes).toEqual({
+        clusterName: 'test-tdsqlc',
+        dbType: 'MYSQL',
+        dbVersion: '8.0',
+        dbMode: 'SERVERLESS',
+        minCpu: 1,
+        maxCpu: 8,
+        autoPause: false,
+        autoPauseDelay: 600,
+        storagePayMode: 0,
+        vpcId: null,
+        subnetId: null,
+        port: null,
+        projectId: null,
+        minStorageSize: null,
+        maxStorageSize: null,
+      });
     });
 
-    it('should compute different hash for different configs', () => {
-      const config1 = {
-        ClusterName: 'test-tdsqlc-1',
-        DbType: 'MYSQL' as const,
-        DbVersion: '8.0',
-        DbMode: 'SERVERLESS' as const,
-        MinCpu: 1,
-        MaxCpu: 8,
-        AutoPause: false,
-        AutoPauseDelay: 600,
-        StoragePayMode: 0,
-        AdminPassword: 'TestPass123!',
-      };
-
-      const config2 = {
-        ClusterName: 'test-tdsqlc-2',
-        DbType: 'MYSQL' as const,
-        DbVersion: '8.0',
-        DbMode: 'SERVERLESS' as const,
-        MinCpu: 2,
-        MaxCpu: 16,
-        AutoPause: true,
-        AutoPauseDelay: 600,
-        StoragePayMode: 0,
-        AdminPassword: 'TestPass123!',
-      };
-
-      const hash1 = computeDatabaseConfigHash(config1);
-      const hash2 = computeDatabaseConfigHash(config2);
-
-      expect(hash1).not.toBe(hash2);
-    });
-
-    it('should include VPC configuration in hash', () => {
-      const config1 = {
+    it('should exclude AdminPassword from attributes', () => {
+      const config = {
         ClusterName: 'test-tdsqlc',
         DbType: 'MYSQL' as const,
         DbVersion: '8.0',
@@ -239,7 +220,14 @@ describe('TdsqlcTypes', () => {
         AdminPassword: 'TestPass123!',
       };
 
-      const config2 = {
+      const attributes = extractTdsqlcAttributes(config);
+
+      expect(attributes).not.toHaveProperty('adminPassword');
+      expect(attributes).not.toHaveProperty('AdminPassword');
+    });
+
+    it('should include VPC configuration when provided', () => {
+      const config = {
         ClusterName: 'test-tdsqlc',
         DbType: 'MYSQL' as const,
         DbVersion: '8.0',
@@ -254,10 +242,32 @@ describe('TdsqlcTypes', () => {
         SubnetId: 'subnet-67890',
       };
 
-      const hash1 = computeDatabaseConfigHash(config1);
-      const hash2 = computeDatabaseConfigHash(config2);
+      const attributes = extractTdsqlcAttributes(config);
 
-      expect(hash1).not.toBe(hash2);
+      expect(attributes.vpcId).toBe('vpc-12345');
+      expect(attributes.subnetId).toBe('subnet-67890');
+    });
+
+    it('should include storage limits when provided', () => {
+      const config = {
+        ClusterName: 'test-tdsqlc',
+        DbType: 'MYSQL' as const,
+        DbVersion: '8.0',
+        DbMode: 'SERVERLESS' as const,
+        MinCpu: 1,
+        MaxCpu: 8,
+        AutoPause: false,
+        AutoPauseDelay: 600,
+        StoragePayMode: 0,
+        AdminPassword: 'TestPass123!',
+        MinStorageSize: 10,
+        MaxStorageSize: 1000,
+      };
+
+      const attributes = extractTdsqlcAttributes(config);
+
+      expect(attributes.minStorageSize).toBe(10);
+      expect(attributes.maxStorageSize).toBe(1000);
     });
   });
 });

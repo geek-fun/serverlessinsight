@@ -60,15 +60,15 @@ describe('StateManager', () => {
       expect(state.resources).toEqual({});
     });
 
-    it('should load existing v0.2 state from file', () => {
-      // Create a v0.2 state file with attributes
+    it('should load existing state from file', () => {
+      // Create state file
       const existingState = {
-        version: '0.2',
+        version: CURRENT_STATE_VERSION,
         provider: 'tencent',
         resources: {
           'functions.test': {
-            type: 'SCF',
-            physicalId: 'test-fn',
+            mode: 'managed',
+            arn: 'arn:tencent:scf:ap-guangzhou::function:test-fn',
             region: 'ap-guangzhou',
             attributes: {
               functionName: 'test-fn',
@@ -76,6 +76,7 @@ describe('StateManager', () => {
               handler: 'index.handler',
               memorySize: 128,
               timeout: 3,
+              environment: null,
             },
             lastUpdated: '2025-01-01T00:00:00Z',
           },
@@ -89,45 +90,13 @@ describe('StateManager', () => {
 
       expect(state).toEqual(existingState);
     });
-
-    it('should migrate v0.1 state to v0.2 format', () => {
-      // Create a v0.1 state file with configHash
-      const v1State = {
-        version: '0.1',
-        provider: 'tencent',
-        resources: {
-          'functions.test': {
-            type: 'SCF',
-            physicalId: 'test-fn',
-            region: 'ap-guangzhou',
-            configHash: 'abc123',
-            lastUpdated: '2025-01-01T00:00:00Z',
-            metadata: {
-              functionName: 'test-fn',
-            },
-          },
-        },
-      };
-
-      ensureStateDir(testDir);
-      fs.writeFileSync(statePath, JSON.stringify(v1State, null, 2));
-
-      const state = loadState('tencent', testDir);
-
-      // Should be migrated to v0.2
-      expect(state.version).toBe(CURRENT_STATE_VERSION);
-      // Should have empty attributes (migration doesn't use metadata)
-      expect(state.resources['functions.test'].attributes).toEqual({});
-      // Should keep configHash for backward compatibility
-      expect(state.resources['functions.test'].configHash).toBe('abc123');
-    });
   });
 
   describe('getResource', () => {
     it('should get resource state by id', () => {
       const resourceState: ResourceState = {
-        type: 'SCF',
-        physicalId: 'test-fn',
+        mode: 'managed',
+        arn: 'arn:tencent:scf:ap-guangzhou::function:test-fn',
         region: 'ap-guangzhou',
         attributes: {
           functionName: 'test-fn',
@@ -135,6 +104,7 @@ describe('StateManager', () => {
           handler: 'index.handler',
           memorySize: 128,
           timeout: 3,
+          environment: null,
         },
         lastUpdated: '2025-01-01T00:00:00Z',
       };
@@ -156,8 +126,8 @@ describe('StateManager', () => {
   describe('setResource', () => {
     it('should set resource state', () => {
       const resourceState: ResourceState = {
-        type: 'SCF',
-        physicalId: 'test-fn',
+        mode: 'managed',
+        arn: 'arn:tencent:scf:ap-guangzhou::function:test-fn',
         region: 'ap-guangzhou',
         attributes: {
           functionName: 'test-fn',
@@ -165,6 +135,7 @@ describe('StateManager', () => {
           handler: 'index.handler',
           memorySize: 128,
           timeout: 3,
+          environment: null,
         },
         lastUpdated: '2025-01-01T00:00:00Z',
       };
@@ -179,8 +150,8 @@ describe('StateManager', () => {
   describe('removeResource', () => {
     it('should remove resource state', () => {
       const resourceState: ResourceState = {
-        type: 'SCF',
-        physicalId: 'test-fn',
+        mode: 'managed',
+        arn: 'arn:tencent:scf:ap-guangzhou::function:test-fn',
         region: 'ap-guangzhou',
         attributes: {
           functionName: 'test-fn',
@@ -188,6 +159,7 @@ describe('StateManager', () => {
           handler: 'index.handler',
           memorySize: 128,
           timeout: 3,
+          environment: null,
         },
         lastUpdated: '2025-01-01T00:00:00Z',
       };
@@ -204,8 +176,8 @@ describe('StateManager', () => {
   describe('saveState', () => {
     it('should save state to file with current version', () => {
       const resourceState: ResourceState = {
-        type: 'SCF',
-        physicalId: 'test-fn',
+        mode: 'managed',
+        arn: 'arn:tencent:scf:ap-guangzhou::function:test-fn',
         region: 'ap-guangzhou',
         attributes: {
           functionName: 'test-fn',
@@ -213,6 +185,7 @@ describe('StateManager', () => {
           handler: 'index.handler',
           memorySize: 128,
           timeout: 3,
+          environment: null,
         },
         lastUpdated: '2025-01-01T00:00:00Z',
       };
@@ -233,8 +206,8 @@ describe('StateManager', () => {
   describe('getAllResources', () => {
     it('should get all resources', () => {
       const resource1: ResourceState = {
-        type: 'SCF',
-        physicalId: 'test-fn-1',
+        mode: 'managed',
+        arn: 'arn:tencent:scf:ap-guangzhou::function:test-fn-1',
         region: 'ap-guangzhou',
         attributes: {
           functionName: 'test-fn-1',
@@ -242,12 +215,13 @@ describe('StateManager', () => {
           handler: 'index.handler',
           memorySize: 128,
           timeout: 3,
+          environment: null,
         },
         lastUpdated: '2025-01-01T00:00:00Z',
       };
       const resource2: ResourceState = {
-        type: 'SCF',
-        physicalId: 'test-fn-2',
+        mode: 'managed',
+        arn: 'arn:tencent:scf:ap-guangzhou::function:test-fn-2',
         region: 'ap-guangzhou',
         attributes: {
           functionName: 'test-fn-2',
@@ -255,6 +229,7 @@ describe('StateManager', () => {
           handler: 'index.handler',
           memorySize: 256,
           timeout: 5,
+          environment: null,
         },
         lastUpdated: '2025-01-02T00:00:00Z',
       };

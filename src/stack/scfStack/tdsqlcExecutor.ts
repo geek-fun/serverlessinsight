@@ -1,4 +1,4 @@
-import { Context, DatabaseDomain, Plan, StateFile, ResourceTypeEnum } from '../../types';
+import { Context, DatabaseDomain, Plan, StateFile } from '../../types';
 import {
   createDatabaseResource,
   deleteDatabaseResource,
@@ -23,7 +23,7 @@ export const executeDatabasePlan = async (
   }
 
   for (const item of plan.items) {
-    if (item.resourceType !== ResourceTypeEnum.TDSQL_C_SERVERLESS) {
+    if (item.resourceType !== 'TDSQL_C_SERVERLESS') {
       continue;
     }
 
@@ -54,13 +54,10 @@ export const executeDatabasePlan = async (
           if (!state) {
             throw new Error(`State not found for ${item.logicalId}`);
           }
+          // Extract clusterId from metadata
+          const clusterId = state.metadata?.clusterId as string;
           logger.info(`Updating TDSQL-C database: ${database.name}`);
-          currentState = await updateDatabaseResource(
-            context,
-            database,
-            state.physicalId,
-            currentState,
-          );
+          currentState = await updateDatabaseResource(context, database, clusterId, currentState);
           logger.info(`Successfully updated TDSQL-C database: ${database.name}`);
           break;
         }
@@ -71,14 +68,16 @@ export const executeDatabasePlan = async (
             logger.warn(`State not found for ${item.logicalId}, skipping deletion`);
             continue;
           }
-          logger.info(`Deleting TDSQL-C database: ${state.physicalId}`);
+          // Extract clusterId from metadata
+          const clusterId = state.metadata?.clusterId as string;
+          logger.info(`Deleting TDSQL-C database: ${clusterId}`);
           currentState = await deleteDatabaseResource(
             context,
-            state.physicalId,
+            clusterId,
             item.logicalId,
             currentState,
           );
-          logger.info(`Successfully deleted TDSQL-C database: ${state.physicalId}`);
+          logger.info(`Successfully deleted TDSQL-C database: ${clusterId}`);
           break;
         }
 

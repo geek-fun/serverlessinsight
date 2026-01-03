@@ -20,8 +20,8 @@ export const createBucketResource = async (
 
   const attributes = extractCosBucketAttributes(config);
   const resourceState: ResourceState = {
-    type: 'COS_BUCKET',
-    physicalId: bucket.name,
+    mode: 'managed',
+    arn: `arn:tencent:cos:${context.region}::bucket:${bucket.name}`,
     region: context.region,
     attributes,
     lastUpdated: new Date().toISOString(),
@@ -54,8 +54,8 @@ export const updateBucketResource = async (
 
   const attributes = extractCosBucketAttributes(config);
   const resourceState: ResourceState = {
-    type: 'COS_BUCKET',
-    physicalId: bucket.name,
+    mode: 'managed',
+    arn: `arn:tencent:cos:${context.region}::bucket:${bucket.name}`,
     region: context.region,
     attributes,
     lastUpdated: new Date().toISOString(),

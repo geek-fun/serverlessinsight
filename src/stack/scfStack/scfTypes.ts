@@ -1,5 +1,4 @@
 import { FunctionDomain, ResourceAttributes } from '../../types';
-import crypto from 'node:crypto';
 import { mapRuntime, ProviderEnum } from '../../common';
 
 export type ScfFunctionConfig = {
@@ -51,42 +50,28 @@ export const functionToScfConfig = (fn: FunctionDomain): ScfFunctionConfig => {
 };
 
 /**
- * @deprecated Use extractScfAttributes instead. Kept for backward compatibility.
- */
-export const computeConfigHash = (config: ScfFunctionConfig): string => {
-  const hashContent = JSON.stringify({
-    Runtime: config.Runtime,
-    Handler: config.Handler,
-    MemorySize: config.MemorySize,
-    Timeout: config.Timeout,
-    Environment: config.Environment,
-  });
-  return crypto.createHash('sha256').update(hashContent).digest('hex').substring(0, 16);
-};
-
-/**
  * Extract all attributes from an SCF function config for state storage.
  * Following Terraform's approach of storing complete resource attributes.
+ * All optional fields are included with null values if undefined.
  */
 export const extractScfAttributes = (config: ScfFunctionConfig): ResourceAttributes => {
-  const attributes: ResourceAttributes = {
+  // Store environment as a map for easier comparison
+  let envMap: Record<string, string> | null = null;
+  if (config.Environment?.Variables) {
+    envMap = {};
+    for (const v of config.Environment.Variables) {
+      envMap[v.Key] = v.Value;
+    }
+  }
+
+  return {
     functionName: config.FunctionName,
     runtime: config.Runtime,
     handler: config.Handler,
     memorySize: config.MemorySize,
     timeout: config.Timeout,
+    environment: envMap,
   };
-
-  if (config.Environment?.Variables) {
-    // Store environment as a map for easier comparison
-    const envMap: Record<string, string> = {};
-    for (const v of config.Environment.Variables) {
-      envMap[v.Key] = v.Value;
-    }
-    attributes.environment = envMap;
-  }
-
-  return attributes;
 };
 
 /**

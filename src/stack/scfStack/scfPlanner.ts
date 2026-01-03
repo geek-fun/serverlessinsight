@@ -15,13 +15,13 @@ export const generateFunctionPlan = async (
     // Handle deletions for functions removed from YAML
     const allStates = getAllResources(state);
     for (const [logicalId, resourceState] of Object.entries(allStates)) {
-      if (resourceState.type === 'SCF') {
+      if (logicalId.startsWith('functions.')) {
         items.push({
           logicalId,
           action: 'delete',
           resourceType: 'SCF',
           changes: {
-            before: { physicalId: resourceState.physicalId, ...resourceState.attributes },
+            before: { arn: resourceState.arn, ...resourceState.attributes },
           },
         });
       }
@@ -130,13 +130,13 @@ export const generateFunctionPlan = async (
   // Check for resources in state that are not in desired state (need deletion)
   const allStates = getAllResources(state);
   for (const [logicalId, resourceState] of Object.entries(allStates)) {
-    if (resourceState.type === 'SCF' && !desiredLogicalIds.has(logicalId)) {
+    if (logicalId.startsWith('functions.') && !desiredLogicalIds.has(logicalId)) {
       items.push({
         logicalId,
         action: 'delete',
         resourceType: 'SCF',
         changes: {
-          before: { physicalId: resourceState.physicalId, ...resourceState.attributes },
+          before: { arn: resourceState.arn, ...resourceState.attributes },
         },
       });
     }

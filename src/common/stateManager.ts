@@ -1,6 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { ResourceState, StateFile, STATE_VERSION_V1, CURRENT_STATE_VERSION } from '../types';
+import { ResourceState, StateFile, CURRENT_STATE_VERSION } from '../types';
 
 const STATE_DIR = '.serverlessinsight';
 const STATE_FILE = 'state.json';
@@ -17,39 +17,7 @@ export const ensureStateDir = (baseDir: string = process.cwd()): void => {
 };
 
 /**
- * Migrate a v0.1 state file to v0.2 format.
- * v0.1 used configHash, v0.2 uses attributes.
- */
-const migrateStateV1ToV2 = (state: StateFile): StateFile => {
-  const migratedResources: Record<string, ResourceState> = {};
-
-  for (const [resourceId, resource] of Object.entries(state.resources)) {
-    // If resource already has attributes, keep them
-    if (resource.attributes) {
-      migratedResources[resourceId] = resource;
-    } else {
-      // Migrate from v0.1: create empty attributes object
-      // We can't reliably reconstruct attributes from metadata,
-      // so we start with empty attributes. The next plan/apply
-      // will detect drift and update the state accordingly.
-      migratedResources[resourceId] = {
-        ...resource,
-        attributes: {},
-        // Keep old configHash for reference during transition
-        configHash: (resource as { configHash?: string }).configHash,
-      };
-    }
-  }
-
-  return {
-    ...state,
-    version: CURRENT_STATE_VERSION,
-    resources: migratedResources,
-  };
-};
-
-/**
- * Load and optionally migrate state file to current version.
+ * Load state file.
  */
 export const loadState = (provider: string, baseDir: string = process.cwd()): StateFile => {
   const statePath = getStatePath(baseDir);
@@ -57,12 +25,6 @@ export const loadState = (provider: string, baseDir: string = process.cwd()): St
     if (fs.existsSync(statePath)) {
       const content = fs.readFileSync(statePath, 'utf-8');
       const state = JSON.parse(content) as StateFile;
-
-      // Migrate older state files to current format
-      if (state.version === STATE_VERSION_V1) {
-        return migrateStateV1ToV2(state);
-      }
-
       return state;
     }
     // If file doesn't exist or is invalid, return empty state

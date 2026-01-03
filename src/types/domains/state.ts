@@ -11,16 +11,22 @@ export enum ResourceTypeEnum {
 export type ResourceAttributes = Record<string, unknown>;
 
 /**
+ * Resource mode - whether the resource is managed by ServerlessInsight or imported.
+ * Similar to Terraform's resource mode.
+ */
+export type ResourceMode = 'managed' | 'data';
+
+/**
  * ResourceState represents the state of a single resource.
  * Following Terraform's design, we store all attributes individually
  * for precise drift detection and auditing.
  */
 export type ResourceState = {
-  type: string;
-  physicalId: string;
+  /** Resource mode - 'managed' for resources managed by ServerlessInsight, 'data' for imported/referenced resources */
+  mode: ResourceMode;
+  /** ARN or unique identifier of the resource in the cloud provider */
+  arn: string;
   region: string;
-  /** @deprecated Use attributes instead. Kept for backward compatibility with v0.1 state files. */
-  configHash?: string;
   /** All known attributes for this resource */
   attributes: ResourceAttributes;
   /** Hash of external artifacts (e.g., function code zip). Used for code drift detection. */
@@ -29,9 +35,7 @@ export type ResourceState = {
   metadata?: Record<string, unknown>;
 };
 
-export const STATE_VERSION_V1 = '0.1';
-export const STATE_VERSION_V2 = '0.2';
-export const CURRENT_STATE_VERSION = STATE_VERSION_V2;
+export const CURRENT_STATE_VERSION = '1.0';
 
 export type StateFile = {
   version: string;

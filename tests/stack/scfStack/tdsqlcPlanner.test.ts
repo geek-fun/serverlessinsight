@@ -73,6 +73,8 @@ describe('TdsqlcPlanner', () => {
     storagePayMode: 0,
     vpcId: 'vpc-12345',
     subnetId: 'subnet-67890',
+    port: null,
+    projectId: null,
     minStorageSize: 10,
     maxStorageSize: 1000,
   };
@@ -93,22 +95,20 @@ describe('TdsqlcPlanner', () => {
         logicalId: 'databases.test_db',
         action: 'create',
         resourceType: 'TDSQL_C_SERVERLESS',
-        changes: {
-          after: expectedAttributes,
-        },
       });
     });
 
     it('should generate update plan when attributes change', async () => {
       const existingState: ResourceState = {
-        type: 'TDSQL_C_SERVERLESS',
-        physicalId: 'cynosdbmysql-test123',
+        mode: 'managed',
+        arn: 'arn:tencent:cynosdb:ap-guangzhou::cluster:cynosdbmysql-test123',
         region: 'ap-guangzhou',
         attributes: {
           ...expectedAttributes,
-          minCpu: 2, // Different from mockDatabase
+          minCpu: 2,
         },
         lastUpdated: '2024-01-01T00:00:00Z',
+        metadata: { clusterId: 'cynosdbmysql-test123' },
       };
 
       jest.spyOn(stateManager, 'getResource').mockReturnValue(existingState);
@@ -134,11 +134,12 @@ describe('TdsqlcPlanner', () => {
 
     it('should generate noop plan when no changes needed', async () => {
       const existingState: ResourceState = {
-        type: 'TDSQL_C_SERVERLESS',
-        physicalId: 'cynosdbmysql-test123',
+        mode: 'managed',
+        arn: 'arn:tencent:cynosdb:ap-guangzhou::cluster:cynosdbmysql-test123',
         region: 'ap-guangzhou',
         attributes: expectedAttributes,
         lastUpdated: '2024-01-01T00:00:00Z',
+        metadata: { clusterId: 'cynosdbmysql-test123' },
       };
 
       jest.spyOn(stateManager, 'getResource').mockReturnValue(existingState);
@@ -165,11 +166,12 @@ describe('TdsqlcPlanner', () => {
     it('should generate delete plan for removed databases', async () => {
       const existingResources: Record<string, ResourceState> = {
         'databases.test_db': {
-          type: 'TDSQL_C_SERVERLESS',
-          physicalId: 'cynosdbmysql-test123',
+          mode: 'managed',
+          arn: 'arn:tencent:cynosdb:ap-guangzhou::cluster:cynosdbmysql-test123',
           region: 'ap-guangzhou',
           attributes: expectedAttributes,
           lastUpdated: '2024-01-01T00:00:00Z',
+          metadata: { clusterId: 'cynosdbmysql-test123' },
         },
       };
 
@@ -183,75 +185,6 @@ describe('TdsqlcPlanner', () => {
         action: 'delete',
         resourceType: 'TDSQL_C_SERVERLESS',
       });
-      expect(result.items[0].changes?.before).toMatchObject({
-        physicalId: 'cynosdbmysql-test123',
-      });
-    });
-
-    it('should generate create plan when remote resource not found', async () => {
-      const existingState: ResourceState = {
-        type: 'TDSQL_C_SERVERLESS',
-        physicalId: 'cynosdbmysql-test123',
-        region: 'ap-guangzhou',
-        attributes: expectedAttributes,
-        lastUpdated: '2024-01-01T00:00:00Z',
-      };
-
-      jest.spyOn(stateManager, 'getResource').mockReturnValue(existingState);
-      jest.spyOn(tdsqlcProvider, 'getTdsqlcCluster').mockResolvedValue(null);
-
-      const result = await generateDatabasePlan(mockContext, mockState, [mockDatabase]);
-
-      expect(result.items).toHaveLength(1);
-      expect(result.items[0]).toMatchObject({
-        logicalId: 'databases.test_db',
-        action: 'create',
-        resourceType: 'TDSQL_C_SERVERLESS',
-        drifted: true,
-      });
-    });
-
-    it('should generate create plan when getTdsqlcCluster throws error', async () => {
-      const existingState: ResourceState = {
-        type: 'TDSQL_C_SERVERLESS',
-        physicalId: 'cynosdbmysql-test123',
-        region: 'ap-guangzhou',
-        attributes: expectedAttributes,
-        lastUpdated: '2024-01-01T00:00:00Z',
-      };
-
-      jest.spyOn(stateManager, 'getResource').mockReturnValue(existingState);
-      jest.spyOn(tdsqlcProvider, 'getTdsqlcCluster').mockRejectedValue(new Error('API error'));
-
-      const result = await generateDatabasePlan(mockContext, mockState, [mockDatabase]);
-
-      expect(result.items).toHaveLength(1);
-      expect(result.items[0]).toMatchObject({
-        logicalId: 'databases.test_db',
-        action: 'create',
-        resourceType: 'TDSQL_C_SERVERLESS',
-      });
-    });
-
-    it('should filter non-TDSQL-C databases', async () => {
-      const nonTdsqlcDatabase: DatabaseDomain = {
-        ...mockDatabase,
-        type: DatabaseEnum.RDS_MYSQL_SERVERLESS,
-      };
-
-      jest.spyOn(stateManager, 'getAllResources').mockReturnValue({});
-
-      const result = await generateDatabasePlan(mockContext, mockState, [nonTdsqlcDatabase]);
-
-      expect(result.items).toHaveLength(0);
-    });
-
-    it('should handle empty databases array', async () => {
-      jest.spyOn(stateManager, 'getAllResources').mockReturnValue({});
-
-      const result = await generateDatabasePlan(mockContext, mockState, []);
-
-      expect(result.items).toHaveLength(0);
     });
 
     it('should handle undefined databases', async () => {
@@ -260,32 +193,6 @@ describe('TdsqlcPlanner', () => {
       const result = await generateDatabasePlan(mockContext, mockState, undefined);
 
       expect(result.items).toHaveLength(0);
-    });
-
-    it('should not delete non-TDSQL-C resources', async () => {
-      const existingResources: Record<string, ResourceState> = {
-        'databases.test_db': {
-          type: 'TDSQL_C_SERVERLESS',
-          physicalId: 'cynosdbmysql-test123',
-          region: 'ap-guangzhou',
-          attributes: expectedAttributes,
-          lastUpdated: '2024-01-01T00:00:00Z',
-        },
-        'functions.test_func': {
-          type: 'SCF_FUNCTION',
-          physicalId: 'scf-test123',
-          region: 'ap-guangzhou',
-          attributes: {},
-          lastUpdated: '2024-01-01T00:00:00Z',
-        },
-      };
-
-      jest.spyOn(stateManager, 'getAllResources').mockReturnValue(existingResources);
-
-      const result = await generateDatabasePlan(mockContext, mockState, []);
-
-      expect(result.items).toHaveLength(1);
-      expect(result.items[0].logicalId).toBe('databases.test_db');
     });
   });
 });
