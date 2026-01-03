@@ -91,7 +91,7 @@ describe('SCF Types', () => {
   });
 
   describe('extractScfDefinition', () => {
-    it('should extract all attributes from config with codeHash', () => {
+    it('should extract definition from config with codeHash', () => {
       const config = {
         FunctionName: 'test-function',
         Runtime: 'nodejs18',

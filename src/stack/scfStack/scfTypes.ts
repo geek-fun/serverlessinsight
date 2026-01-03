@@ -50,9 +50,9 @@ export const functionToScfConfig = (fn: FunctionDomain): ScfFunctionConfig => {
 };
 
 /**
- * Extract definition attributes from an SCF function config for state storage.
+ * Extract definition from an SCF function config for state storage.
  * This represents the IaC template definition for the function.
- * Following Terraform's approach of storing complete resource attributes.
+ * Following Terraform's approach of storing complete resource definition.
  * All optional fields are included with null values if undefined.
  * @param config - The SCF function configuration
  * @param codeHash - Hash of the function code artifact for drift detection
