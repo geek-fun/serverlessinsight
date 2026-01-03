@@ -158,12 +158,11 @@ export const extractScfDefinition = (
   config: ScfFunctionConfig,
   codeHash: string,
 ): ResourceAttributes => {
-  const envMap: Record<string, string> = {};
-  if (config.Environment?.Variables) {
-    for (const v of config.Environment.Variables) {
-      envMap[v.Key] = v.Value;
-    }
-  }
+  const envMap: Record<string, string> =
+    config.Environment?.Variables?.reduce(
+      (acc, v) => ({ ...acc, [v.Key]: v.Value }),
+      {} as Record<string, string>,
+    ) ?? {};
 
   return {
     functionName: config.FunctionName,

@@ -9,14 +9,10 @@ export const executeBucketPlan = async (
   buckets: Array<BucketDomain> | undefined,
   initialState: StateFile,
 ): Promise<StateFile> => {
-  const bucketsMap = new Map<string, BucketDomain>();
+  const bucketsMap = new Map<string, BucketDomain>(
+    buckets?.map((bucket) => [`buckets.${bucket.key}`, bucket]) ?? [],
+  );
   let currentState = initialState;
-
-  if (buckets) {
-    for (const bucket of buckets) {
-      bucketsMap.set(`buckets.${bucket.key}`, bucket);
-    }
-  }
 
   for (const item of plan.items) {
     if (item.action === 'noop') {

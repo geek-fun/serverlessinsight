@@ -11,12 +11,11 @@ import { setResource, removeResource } from '../../common/stateManager';
 import { computeFileHash } from '../../common/hashUtils';
 
 const buildScfInstanceFromProvider = (info: ScfFunctionInfo, arn: string) => {
-  const envMap: Record<string, string> = {};
-  if (info.Environment?.Variables) {
-    for (const v of info.Environment.Variables) {
-      envMap[v.Key] = v.Value;
-    }
-  }
+  const envMap: Record<string, string> =
+    info.Environment?.Variables?.reduce(
+      (acc, v) => ({ ...acc, [v.Key]: v.Value }),
+      {} as Record<string, string>,
+    ) ?? {};
 
   const triggersArray = info.Triggers?.map((t) => ({
     modTime: t.ModTime,

@@ -13,14 +13,10 @@ export const executeDatabasePlan = async (
   databases: Array<DatabaseDomain> | undefined,
   initialState: StateFile,
 ): Promise<StateFile> => {
-  const databasesMap = new Map<string, DatabaseDomain>();
+  const databasesMap = new Map<string, DatabaseDomain>(
+    databases?.map((database) => [`databases.${database.key}`, database]) ?? [],
+  );
   let currentState = initialState;
-
-  if (databases) {
-    for (const database of databases) {
-      databasesMap.set(`databases.${database.key}`, database);
-    }
-  }
 
   for (const item of plan.items) {
     if (item.resourceType !== 'TDSQL_C_SERVERLESS') {

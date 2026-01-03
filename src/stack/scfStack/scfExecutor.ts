@@ -9,14 +9,10 @@ export const executeFunctionPlan = async (
   functions: Array<FunctionDomain> | undefined,
   initialState: StateFile,
 ): Promise<StateFile> => {
-  const functionsMap = new Map<string, FunctionDomain>();
+  const functionsMap = new Map<string, FunctionDomain>(
+    functions?.map((fn) => [`functions.${fn.key}`, fn]) ?? [],
+  );
   let currentState = initialState;
-
-  if (functions) {
-    for (const fn of functions) {
-      functionsMap.set(`functions.${fn.key}`, fn);
-    }
-  }
 
   for (const item of plan.items) {
     if (item.action === 'noop') {
