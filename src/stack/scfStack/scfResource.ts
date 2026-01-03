@@ -6,9 +6,30 @@ import {
   updateScfFunctionCode,
   updateScfFunctionConfiguration,
 } from './scfProvider';
-import { functionToScfConfig, extractScfDefinition } from './scfTypes';
+import { functionToScfConfig, extractScfDefinition, ScfFunctionInfo } from './scfTypes';
 import { setResource, removeResource } from '../../common/stateManager';
 import { computeFileHash } from '../../common/hashUtils';
+
+const buildScfInstanceFromProvider = (info: ScfFunctionInfo, arn: string) => {
+  const envMap: Record<string, string> = {};
+  if (info.Environment?.Variables) {
+    for (const v of info.Environment.Variables) {
+      envMap[v.Key] = v.Value;
+    }
+  }
+  return {
+    arn,
+    id: info.FunctionName,
+    functionName: info.FunctionName,
+    runtime: info.Runtime,
+    handler: info.Handler,
+    memorySize: info.MemorySize,
+    timeout: info.Timeout,
+    environment: envMap,
+    modTime: info.ModTime ?? null,
+    codeSha256: info.CodeSha256 ?? null,
+  };
+};
 
 export const createResource = async (
   context: Context,
@@ -20,6 +41,12 @@ export const createResource = async (
 
   await createScfFunction(context, config, codePath);
 
+  // Refresh state from provider to get all attributes
+  const functionInfo = await getScfFunction(context, fn.name);
+  if (!functionInfo) {
+    throw new Error(`Failed to refresh state for function: ${fn.name}`);
+  }
+
   const codeHash = computeFileHash(codePath);
   const definition = extractScfDefinition(config, codeHash);
   const arn = `arn:tencent:scf:${context.region}::function:${fn.name}`;
@@ -27,17 +54,7 @@ export const createResource = async (
     mode: 'managed',
     region: context.region,
     definition,
-    instances: [
-      {
-        arn,
-        id: fn.name,
-        functionName: fn.name,
-        runtime: config.Runtime,
-        handler: config.Handler,
-        memorySize: config.MemorySize,
-        timeout: config.Timeout,
-      },
-    ],
+    instances: [buildScfInstanceFromProvider(functionInfo, arn)],
     lastUpdated: new Date().toISOString(),
   };
 
@@ -63,6 +80,12 @@ export const updateResource = async (
   // Update code
   await updateScfFunctionCode(context, fn.name, codePath);
 
+  // Refresh state from provider to get all attributes
+  const functionInfo = await getScfFunction(context, fn.name);
+  if (!functionInfo) {
+    throw new Error(`Failed to refresh state for function: ${fn.name}`);
+  }
+
   const codeHash = computeFileHash(codePath);
   const definition = extractScfDefinition(config, codeHash);
   const arn = `arn:tencent:scf:${context.region}::function:${fn.name}`;
@@ -70,17 +93,7 @@ export const updateResource = async (
     mode: 'managed',
     region: context.region,
     definition,
-    instances: [
-      {
-        arn,
-        id: fn.name,
-        functionName: fn.name,
-        runtime: config.Runtime,
-        handler: config.Handler,
-        memorySize: config.MemorySize,
-        timeout: config.Timeout,
-      },
-    ],
+    instances: [buildScfInstanceFromProvider(functionInfo, arn)],
     lastUpdated: new Date().toISOString(),
   };
 

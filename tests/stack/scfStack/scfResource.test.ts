@@ -73,15 +73,29 @@ describe('ScfResource', () => {
     codeHash: 'mock-code-hash',
   };
 
+  const mockFunctionInfo = {
+    FunctionName: 'test-function',
+    Runtime: 'nodejs18',
+    Handler: 'index.handler',
+    MemorySize: 512,
+    Timeout: 10,
+    Environment: {
+      Variables: [{ Key: 'NODE_ENV', Value: 'production' }],
+    },
+    ModTime: '2025-01-01T00:00:00Z',
+    CodeSha256: 'provider-code-sha256',
+  };
+
   beforeEach(() => {
     jest.clearAllMocks();
     (scfTypes.functionToScfConfig as jest.Mock).mockReturnValue(mockConfig);
     (scfTypes.extractScfDefinition as jest.Mock).mockReturnValue(mockDefinition);
     (hashUtils.computeFileHash as jest.Mock).mockReturnValue('mock-code-hash');
+    (scfProvider.getScfFunction as jest.Mock).mockResolvedValue(mockFunctionInfo);
   });
 
   describe('createResource', () => {
-    it('should create a resource and update state', async () => {
+    it('should create a resource and refresh state from provider', async () => {
       const newState = {
         ...initialState,
         resources: {
@@ -106,6 +120,7 @@ describe('ScfResource', () => {
         mockConfig,
         'test.zip',
       );
+      expect(scfProvider.getScfFunction).toHaveBeenCalledWith(mockContext, 'test-function');
       expect(hashUtils.computeFileHash).toHaveBeenCalledWith('test.zip');
       expect(scfTypes.extractScfDefinition).toHaveBeenCalledWith(mockConfig, 'mock-code-hash');
       expect(stateManager.setResource).toHaveBeenCalledWith(
@@ -119,6 +134,13 @@ describe('ScfResource', () => {
             expect.objectContaining({
               arn: expect.stringContaining('arn:tencent:scf'),
               id: 'test-function',
+              functionName: 'test-function',
+              runtime: 'nodejs18',
+              handler: 'index.handler',
+              memorySize: 512,
+              timeout: 10,
+              modTime: '2025-01-01T00:00:00Z',
+              codeSha256: 'provider-code-sha256',
             }),
           ]),
         }),
@@ -132,6 +154,15 @@ describe('ScfResource', () => {
 
       await expect(createResource(mockContext, testFunction, initialState)).rejects.toThrow(
         'Create failed',
+      );
+    });
+
+    it('should throw error when refresh state fails', async () => {
+      (scfProvider.createScfFunction as jest.Mock).mockResolvedValue(undefined);
+      (scfProvider.getScfFunction as jest.Mock).mockResolvedValue(null);
+
+      await expect(createResource(mockContext, testFunction, initialState)).rejects.toThrow(
+        'Failed to refresh state for function: test-function',
       );
     });
   });
@@ -164,7 +195,7 @@ describe('ScfResource', () => {
   });
 
   describe('updateResource', () => {
-    it('should update resource configuration and code', async () => {
+    it('should update resource and refresh state from provider', async () => {
       const newState = {
         ...initialState,
         resources: {
@@ -194,6 +225,7 @@ describe('ScfResource', () => {
         'test-function',
         'test.zip',
       );
+      expect(scfProvider.getScfFunction).toHaveBeenCalledWith(mockContext, 'test-function');
       expect(hashUtils.computeFileHash).toHaveBeenCalledWith('test.zip');
       expect(scfTypes.extractScfDefinition).toHaveBeenCalledWith(mockConfig, 'mock-code-hash');
       expect(stateManager.setResource).toHaveBeenCalledWith(
@@ -207,6 +239,8 @@ describe('ScfResource', () => {
             expect.objectContaining({
               arn: expect.stringContaining('arn:tencent:scf'),
               id: 'test-function',
+              functionName: 'test-function',
+              runtime: 'nodejs18',
             }),
           ]),
         }),
@@ -230,6 +264,16 @@ describe('ScfResource', () => {
 
       await expect(updateResource(mockContext, testFunction, initialState)).rejects.toThrow(
         'Update code failed',
+      );
+    });
+
+    it('should throw error when refresh state fails', async () => {
+      (scfProvider.updateScfFunctionConfiguration as jest.Mock).mockResolvedValue(undefined);
+      (scfProvider.updateScfFunctionCode as jest.Mock).mockResolvedValue(undefined);
+      (scfProvider.getScfFunction as jest.Mock).mockResolvedValue(null);
+
+      await expect(updateResource(mockContext, testFunction, initialState)).rejects.toThrow(
+        'Failed to refresh state for function: test-function',
       );
     });
   });

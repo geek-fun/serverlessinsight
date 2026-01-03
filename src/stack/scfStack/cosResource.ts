@@ -6,8 +6,25 @@ import {
   updateCosBucketAcl,
   updateCosBucketWebsite,
 } from './cosProvider';
-import { bucketToCosBucketConfig, extractCosBucketDefinition } from './cosTypes';
+import { bucketToCosBucketConfig, extractCosBucketDefinition, CosBucketInfo } from './cosTypes';
 import { setResource, removeResource } from '../../common/stateManager';
+
+const buildCosInstanceFromProvider = (info: CosBucketInfo, arn: string) => {
+  return {
+    arn,
+    id: info.Name,
+    bucket: info.Name,
+    location: info.Location,
+    creationDate: info.CreationDate ?? null,
+    acl: info.ACL ?? null,
+    websiteConfiguration: info.WebsiteConfiguration
+      ? {
+          indexDocument: info.WebsiteConfiguration.IndexDocument?.Suffix ?? null,
+          errorDocument: info.WebsiteConfiguration.ErrorDocument?.Key ?? null,
+        }
+      : {},
+  };
+};
 
 export const createBucketResource = async (
   context: Context,
@@ -18,20 +35,19 @@ export const createBucketResource = async (
 
   await createCosBucket(context, config);
 
+  // Refresh state from provider to get all attributes
+  const bucketInfo = await getCosBucket(context, bucket.name, context.region);
+  if (!bucketInfo) {
+    throw new Error(`Failed to refresh state for bucket: ${bucket.name}`);
+  }
+
   const definition = extractCosBucketDefinition(config);
   const arn = `arn:tencent:cos:${context.region}::bucket:${bucket.name}`;
   const resourceState: ResourceState = {
     mode: 'managed',
     region: context.region,
     definition,
-    instances: [
-      {
-        arn,
-        id: bucket.name,
-        bucket: config.Bucket,
-        bucketRegion: config.Region,
-      },
-    ],
+    instances: [buildCosInstanceFromProvider(bucketInfo, arn)],
     lastUpdated: new Date().toISOString(),
   };
 
@@ -60,20 +76,19 @@ export const updateBucketResource = async (
     await updateCosBucketWebsite(context, bucket.name, context.region, config.WebsiteConfiguration);
   }
 
+  // Refresh state from provider to get all attributes
+  const bucketInfo = await getCosBucket(context, bucket.name, context.region);
+  if (!bucketInfo) {
+    throw new Error(`Failed to refresh state for bucket: ${bucket.name}`);
+  }
+
   const definition = extractCosBucketDefinition(config);
   const arn = `arn:tencent:cos:${context.region}::bucket:${bucket.name}`;
   const resourceState: ResourceState = {
     mode: 'managed',
     region: context.region,
     definition,
-    instances: [
-      {
-        arn,
-        id: bucket.name,
-        bucket: config.Bucket,
-        bucketRegion: config.Region,
-      },
-    ],
+    instances: [buildCosInstanceFromProvider(bucketInfo, arn)],
     lastUpdated: new Date().toISOString(),
   };
 
