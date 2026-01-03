@@ -97,7 +97,7 @@ describe('SCF Planner', () => {
           {
             arn: 'arn:tencent:scf:ap-guangzhou::function:test-function',
             id: 'test-function',
-            attributes: { functionName: 'test-function' },
+            functionName: 'test-function',
           },
         ],
         lastUpdated: new Date().toISOString(),
@@ -144,7 +144,7 @@ describe('SCF Planner', () => {
           {
             arn: 'arn:tencent:scf:ap-guangzhou::function:test-function',
             id: 'test-function',
-            attributes: { functionName: 'test-function' },
+            functionName: 'test-function',
           },
         ],
         lastUpdated: new Date().toISOString(),
@@ -184,14 +184,14 @@ describe('SCF Planner', () => {
           handler: 'index.handler',
           memorySize: 128,
           timeout: 3,
-          environment: null,
+          environment: {},
           codeHash: 'old-hash',
         },
         instances: [
           {
             arn: 'arn:tencent:scf:ap-guangzhou::function:old-function',
             id: 'old-function',
-            attributes: { functionName: 'old-function' },
+            functionName: 'old-function',
           },
         ],
         lastUpdated: new Date().toISOString(),
@@ -223,14 +223,14 @@ describe('SCF Planner', () => {
           handler: 'index.handler',
           memorySize: 512,
           timeout: 10,
-          environment: null,
+          environment: {},
           codeHash: 'old-code-hash',
         },
         instances: [
           {
             arn: 'arn:tencent:scf:ap-guangzhou::function:test-function',
             id: 'test-function',
-            attributes: { functionName: 'test-function' },
+            functionName: 'test-function',
           },
         ],
         lastUpdated: new Date().toISOString(),
@@ -270,7 +270,7 @@ describe('SCF Planner', () => {
           {
             arn: 'arn:tencent:scf:ap-guangzhou::function:test-function',
             id: 'test-function',
-            attributes: { functionName: 'test-function' },
+            functionName: 'test-function',
           },
         ],
         lastUpdated: new Date().toISOString(),

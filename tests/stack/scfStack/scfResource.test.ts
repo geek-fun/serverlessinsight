@@ -247,7 +247,7 @@ describe('ScfResource', () => {
               {
                 arn: 'arn:tencent:scf:ap-guangzhou::function:test-function',
                 id: 'test-function',
-                attributes: { functionName: 'test-function' },
+                functionName: 'test-function',
               },
             ],
             lastUpdated: '2025-01-01T00:00:00Z',

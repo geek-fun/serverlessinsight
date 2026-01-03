@@ -116,7 +116,7 @@ describe('SCF Types', () => {
       });
     });
 
-    it('should set environment to null when not provided', () => {
+    it('should set environment to empty object when not provided', () => {
       const config = {
         FunctionName: 'test-function',
         Runtime: 'nodejs18',
@@ -133,7 +133,7 @@ describe('SCF Types', () => {
         handler: 'index.handler',
         memorySize: 512,
         timeout: 10,
-        environment: null,
+        environment: {},
         codeHash: 'abc123',
       });
     });

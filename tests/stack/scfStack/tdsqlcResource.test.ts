@@ -81,7 +81,7 @@ describe('TdsqlcResource', () => {
           {
             arn: 'arn:tencent:cynosdb:ap-guangzhou::cluster:cynosdbmysql-test123',
             id: clusterId,
-            attributes: { clusterName: 'test-tdsqlc' },
+            clusterName: 'test-tdsqlc',
           },
         ],
         lastUpdated: new Date().toISOString(),
@@ -166,7 +166,7 @@ describe('TdsqlcResource', () => {
           {
             arn: 'arn:tencent:cynosdb:ap-guangzhou::cluster:cynosdbmysql-test123',
             id: clusterId,
-            attributes: { clusterName: 'test-tdsqlc' },
+            clusterName: 'test-tdsqlc',
           },
         ],
         lastUpdated: new Date().toISOString(),

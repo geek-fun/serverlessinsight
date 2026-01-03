@@ -27,12 +27,10 @@ export const createDatabaseResource = async (
       {
         arn,
         id: clusterId,
-        attributes: {
-          clusterName: database.name,
-          clusterId,
-          dbType: config.DbType,
-          dbVersion: config.DbVersion,
-        },
+        clusterName: database.name,
+        clusterId,
+        dbType: config.DbType,
+        dbVersion: config.DbVersion,
       },
     ],
     lastUpdated: new Date().toISOString(),
@@ -70,12 +68,10 @@ export const updateDatabaseResource = async (
       {
         arn,
         id: clusterId,
-        attributes: {
-          clusterName: database.name,
-          clusterId,
-          dbType: config.DbType,
-          dbVersion: config.DbVersion,
-        },
+        clusterName: database.name,
+        clusterId,
+        dbType: config.DbType,
+        dbVersion: config.DbVersion,
       },
     ],
     lastUpdated: new Date().toISOString(),

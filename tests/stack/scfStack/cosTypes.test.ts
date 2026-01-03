@@ -122,7 +122,7 @@ describe('CosTypes', () => {
   });
 
   describe('extractCosBucketDefinition', () => {
-    it('should extract all attributes including null values', () => {
+    it('should extract all attributes with empty object for undefined non-primitive fields', () => {
       const config = {
         Bucket: 'test-bucket',
         Region: 'ap-guangzhou',
@@ -134,7 +134,7 @@ describe('CosTypes', () => {
         bucket: 'test-bucket',
         region: 'ap-guangzhou',
         acl: null,
-        websiteConfiguration: null,
+        websiteConfiguration: {},
       });
     });
 

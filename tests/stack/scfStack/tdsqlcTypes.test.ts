@@ -171,7 +171,7 @@ describe('TdsqlcTypes', () => {
   });
 
   describe('extractTdsqlcDefinition', () => {
-    it('should extract all attributes including null values', () => {
+    it('should extract all attributes with null for undefined primitive fields', () => {
       const config = {
         ClusterName: 'test-tdsqlc',
         DbType: 'MYSQL' as const,

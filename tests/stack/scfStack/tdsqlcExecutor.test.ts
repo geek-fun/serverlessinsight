@@ -93,7 +93,7 @@ describe('TdsqlcExecutor', () => {
           {
             arn: 'arn:tencent:cynosdb:ap-guangzhou::cluster:cynosdbmysql-test123',
             id: 'cynosdbmysql-test123',
-            attributes: { clusterName: 'test-tdsqlc' },
+            clusterName: 'test-tdsqlc',
           },
         ],
         lastUpdated: new Date().toISOString(),
@@ -127,7 +127,7 @@ describe('TdsqlcExecutor', () => {
           {
             arn: 'arn:tencent:cynosdb:ap-guangzhou::cluster:cynosdbmysql-test123',
             id: 'cynosdbmysql-test123',
-            attributes: { clusterName: 'test-tdsqlc' },
+            clusterName: 'test-tdsqlc',
           },
         ],
         lastUpdated: '2024-01-01T00:00:00Z',
@@ -161,7 +161,7 @@ describe('TdsqlcExecutor', () => {
           {
             arn: 'arn:tencent:cynosdb:ap-guangzhou::cluster:cynosdbmysql-test123',
             id: 'cynosdbmysql-test123',
-            attributes: { clusterName: 'test-tdsqlc' },
+            clusterName: 'test-tdsqlc',
           },
         ],
         lastUpdated: new Date().toISOString(),
@@ -195,7 +195,7 @@ describe('TdsqlcExecutor', () => {
           {
             arn: 'arn:tencent:cynosdb:ap-guangzhou::cluster:cynosdbmysql-test123',
             id: 'cynosdbmysql-test123',
-            attributes: { clusterName: 'test-tdsqlc' },
+            clusterName: 'test-tdsqlc',
           },
         ],
         lastUpdated: '2024-01-01T00:00:00Z',
@@ -425,7 +425,7 @@ describe('TdsqlcExecutor', () => {
           {
             arn: 'arn:tencent:cynosdb:ap-guangzhou::cluster:cynosdbmysql-test1',
             id: 'cynosdbmysql-test1',
-            attributes: { clusterName: 'test-tdsqlc' },
+            clusterName: 'test-tdsqlc',
           },
         ],
         lastUpdated: new Date().toISOString(),
@@ -438,7 +438,7 @@ describe('TdsqlcExecutor', () => {
           {
             arn: 'arn:tencent:cynosdb:ap-guangzhou::cluster:cynosdbmysql-test2',
             id: 'cynosdbmysql-test2',
-            attributes: { clusterName: 'test-tdsqlc-2' },
+            clusterName: 'test-tdsqlc-2',
           },
         ],
         lastUpdated: new Date().toISOString(),

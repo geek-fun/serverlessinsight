@@ -28,10 +28,8 @@ export const createBucketResource = async (
       {
         arn,
         id: bucket.name,
-        attributes: {
-          bucket: config.Bucket,
-          region: config.Region,
-        },
+        bucket: config.Bucket,
+        bucketRegion: config.Region,
       },
     ],
     lastUpdated: new Date().toISOString(),
@@ -72,10 +70,8 @@ export const updateBucketResource = async (
       {
         arn,
         id: bucket.name,
-        attributes: {
-          bucket: config.Bucket,
-          region: config.Region,
-        },
+        bucket: config.Bucket,
+        bucketRegion: config.Region,
       },
     ],
     lastUpdated: new Date().toISOString(),
