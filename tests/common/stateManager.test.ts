@@ -61,23 +61,36 @@ describe('StateManager', () => {
     });
 
     it('should load existing state from file', () => {
-      // Create state file
+      // Create state file with new structure
       const existingState = {
         version: CURRENT_STATE_VERSION,
         provider: 'tencent',
         resources: {
           'functions.test': {
             mode: 'managed',
-            arn: 'arn:tencent:scf:ap-guangzhou::function:test-fn',
             region: 'ap-guangzhou',
-            attributes: {
+            definition: {
               functionName: 'test-fn',
               runtime: 'nodejs18',
               handler: 'index.handler',
               memorySize: 128,
               timeout: 3,
               environment: null,
+              codeHash: 'abc123',
             },
+            instances: [
+              {
+                arn: 'arn:tencent:scf:ap-guangzhou::function:test-fn',
+                id: 'test-fn',
+                attributes: {
+                  functionName: 'test-fn',
+                  runtime: 'nodejs18',
+                  handler: 'index.handler',
+                  memorySize: 128,
+                  timeout: 3,
+                },
+              },
+            ],
             lastUpdated: '2025-01-01T00:00:00Z',
           },
         },
@@ -96,16 +109,29 @@ describe('StateManager', () => {
     it('should get resource state by id', () => {
       const resourceState: ResourceState = {
         mode: 'managed',
-        arn: 'arn:tencent:scf:ap-guangzhou::function:test-fn',
         region: 'ap-guangzhou',
-        attributes: {
+        definition: {
           functionName: 'test-fn',
           runtime: 'nodejs18',
           handler: 'index.handler',
           memorySize: 128,
           timeout: 3,
           environment: null,
+          codeHash: 'abc123',
         },
+        instances: [
+          {
+            arn: 'arn:tencent:scf:ap-guangzhou::function:test-fn',
+            id: 'test-fn',
+            attributes: {
+              functionName: 'test-fn',
+              runtime: 'nodejs18',
+              handler: 'index.handler',
+              memorySize: 128,
+              timeout: 3,
+            },
+          },
+        ],
         lastUpdated: '2025-01-01T00:00:00Z',
       };
 
@@ -127,16 +153,29 @@ describe('StateManager', () => {
     it('should set resource state', () => {
       const resourceState: ResourceState = {
         mode: 'managed',
-        arn: 'arn:tencent:scf:ap-guangzhou::function:test-fn',
         region: 'ap-guangzhou',
-        attributes: {
+        definition: {
           functionName: 'test-fn',
           runtime: 'nodejs18',
           handler: 'index.handler',
           memorySize: 128,
           timeout: 3,
           environment: null,
+          codeHash: 'abc123',
         },
+        instances: [
+          {
+            arn: 'arn:tencent:scf:ap-guangzhou::function:test-fn',
+            id: 'test-fn',
+            attributes: {
+              functionName: 'test-fn',
+              runtime: 'nodejs18',
+              handler: 'index.handler',
+              memorySize: 128,
+              timeout: 3,
+            },
+          },
+        ],
         lastUpdated: '2025-01-01T00:00:00Z',
       };
 
@@ -151,16 +190,29 @@ describe('StateManager', () => {
     it('should remove resource state', () => {
       const resourceState: ResourceState = {
         mode: 'managed',
-        arn: 'arn:tencent:scf:ap-guangzhou::function:test-fn',
         region: 'ap-guangzhou',
-        attributes: {
+        definition: {
           functionName: 'test-fn',
           runtime: 'nodejs18',
           handler: 'index.handler',
           memorySize: 128,
           timeout: 3,
           environment: null,
+          codeHash: 'abc123',
         },
+        instances: [
+          {
+            arn: 'arn:tencent:scf:ap-guangzhou::function:test-fn',
+            id: 'test-fn',
+            attributes: {
+              functionName: 'test-fn',
+              runtime: 'nodejs18',
+              handler: 'index.handler',
+              memorySize: 128,
+              timeout: 3,
+            },
+          },
+        ],
         lastUpdated: '2025-01-01T00:00:00Z',
       };
 
@@ -177,16 +229,29 @@ describe('StateManager', () => {
     it('should save state to file with current version', () => {
       const resourceState: ResourceState = {
         mode: 'managed',
-        arn: 'arn:tencent:scf:ap-guangzhou::function:test-fn',
         region: 'ap-guangzhou',
-        attributes: {
+        definition: {
           functionName: 'test-fn',
           runtime: 'nodejs18',
           handler: 'index.handler',
           memorySize: 128,
           timeout: 3,
           environment: null,
+          codeHash: 'abc123',
         },
+        instances: [
+          {
+            arn: 'arn:tencent:scf:ap-guangzhou::function:test-fn',
+            id: 'test-fn',
+            attributes: {
+              functionName: 'test-fn',
+              runtime: 'nodejs18',
+              handler: 'index.handler',
+              memorySize: 128,
+              timeout: 3,
+            },
+          },
+        ],
         lastUpdated: '2025-01-01T00:00:00Z',
       };
 
@@ -207,30 +272,56 @@ describe('StateManager', () => {
     it('should get all resources', () => {
       const resource1: ResourceState = {
         mode: 'managed',
-        arn: 'arn:tencent:scf:ap-guangzhou::function:test-fn-1',
         region: 'ap-guangzhou',
-        attributes: {
+        definition: {
           functionName: 'test-fn-1',
           runtime: 'nodejs18',
           handler: 'index.handler',
           memorySize: 128,
           timeout: 3,
           environment: null,
+          codeHash: 'abc123',
         },
+        instances: [
+          {
+            arn: 'arn:tencent:scf:ap-guangzhou::function:test-fn-1',
+            id: 'test-fn-1',
+            attributes: {
+              functionName: 'test-fn-1',
+              runtime: 'nodejs18',
+              handler: 'index.handler',
+              memorySize: 128,
+              timeout: 3,
+            },
+          },
+        ],
         lastUpdated: '2025-01-01T00:00:00Z',
       };
       const resource2: ResourceState = {
         mode: 'managed',
-        arn: 'arn:tencent:scf:ap-guangzhou::function:test-fn-2',
         region: 'ap-guangzhou',
-        attributes: {
+        definition: {
           functionName: 'test-fn-2',
           runtime: 'nodejs18',
           handler: 'index.handler',
           memorySize: 256,
           timeout: 5,
           environment: null,
+          codeHash: 'def456',
         },
+        instances: [
+          {
+            arn: 'arn:tencent:scf:ap-guangzhou::function:test-fn-2',
+            id: 'test-fn-2',
+            attributes: {
+              functionName: 'test-fn-2',
+              runtime: 'nodejs18',
+              handler: 'index.handler',
+              memorySize: 256,
+              timeout: 5,
+            },
+          },
+        ],
         lastUpdated: '2025-01-02T00:00:00Z',
       };
 

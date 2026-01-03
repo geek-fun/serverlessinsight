@@ -50,11 +50,17 @@ export const functionToScfConfig = (fn: FunctionDomain): ScfFunctionConfig => {
 };
 
 /**
- * Extract all attributes from an SCF function config for state storage.
+ * Extract definition attributes from an SCF function config for state storage.
+ * This represents the IaC template definition for the function.
  * Following Terraform's approach of storing complete resource attributes.
  * All optional fields are included with null values if undefined.
+ * @param config - The SCF function configuration
+ * @param codeHash - Hash of the function code artifact for drift detection
  */
-export const extractScfAttributes = (config: ScfFunctionConfig): ResourceAttributes => {
+export const extractScfDefinition = (
+  config: ScfFunctionConfig,
+  codeHash: string,
+): ResourceAttributes => {
   // Store environment as a map for easier comparison
   let envMap: Record<string, string> | null = null;
   if (config.Environment?.Variables) {
@@ -71,14 +77,20 @@ export const extractScfAttributes = (config: ScfFunctionConfig): ResourceAttribu
     memorySize: config.MemorySize,
     timeout: config.Timeout,
     environment: envMap,
+    codeHash,
   };
 };
 
 /**
- * Extract attributes from FunctionDomain for comparison during planning.
+ * Extract definition from FunctionDomain for comparison during planning.
  * This extracts the desired state from the user's configuration.
+ * @param fn - The function domain from IaC template
+ * @param codeHash - Hash of the function code artifact
  */
-export const extractFunctionDomainAttributes = (fn: FunctionDomain): ResourceAttributes => {
+export const extractFunctionDomainDefinition = (
+  fn: FunctionDomain,
+  codeHash: string,
+): ResourceAttributes => {
   const config = functionToScfConfig(fn);
-  return extractScfAttributes(config);
+  return extractScfDefinition(config, codeHash);
 };

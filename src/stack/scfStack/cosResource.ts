@@ -6,7 +6,7 @@ import {
   updateCosBucketAcl,
   updateCosBucketWebsite,
 } from './cosProvider';
-import { bucketToCosBucketConfig, extractCosBucketAttributes } from './cosTypes';
+import { bucketToCosBucketConfig, extractCosBucketDefinition } from './cosTypes';
 import { setResource, removeResource } from '../../common/stateManager';
 
 export const createBucketResource = async (
@@ -18,12 +18,22 @@ export const createBucketResource = async (
 
   await createCosBucket(context, config);
 
-  const attributes = extractCosBucketAttributes(config);
+  const definition = extractCosBucketDefinition(config);
+  const arn = `arn:tencent:cos:${context.region}::bucket:${bucket.name}`;
   const resourceState: ResourceState = {
     mode: 'managed',
-    arn: `arn:tencent:cos:${context.region}::bucket:${bucket.name}`,
     region: context.region,
-    attributes,
+    definition,
+    instances: [
+      {
+        arn,
+        id: bucket.name,
+        attributes: {
+          bucket: config.Bucket,
+          region: config.Region,
+        },
+      },
+    ],
     lastUpdated: new Date().toISOString(),
   };
 
@@ -52,12 +62,22 @@ export const updateBucketResource = async (
     await updateCosBucketWebsite(context, bucket.name, context.region, config.WebsiteConfiguration);
   }
 
-  const attributes = extractCosBucketAttributes(config);
+  const definition = extractCosBucketDefinition(config);
+  const arn = `arn:tencent:cos:${context.region}::bucket:${bucket.name}`;
   const resourceState: ResourceState = {
     mode: 'managed',
-    arn: `arn:tencent:cos:${context.region}::bucket:${bucket.name}`,
     region: context.region,
-    attributes,
+    definition,
+    instances: [
+      {
+        arn,
+        id: bucket.name,
+        attributes: {
+          bucket: config.Bucket,
+          region: config.Region,
+        },
+      },
+    ],
     lastUpdated: new Date().toISOString(),
   };
 

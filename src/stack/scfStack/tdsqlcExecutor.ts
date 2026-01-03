@@ -54,10 +54,11 @@ export const executeDatabasePlan = async (
           if (!state) {
             throw new Error(`State not found for ${item.logicalId}`);
           }
-          // Extract clusterId from metadata
-          const clusterId = state.metadata?.clusterId as string | undefined;
+          // Extract clusterId from metadata or instances
+          const clusterId =
+            (state.metadata?.clusterId as string | undefined) || state.instances?.[0]?.id;
           if (!clusterId) {
-            throw new Error(`Cluster ID not found in state metadata for ${item.logicalId}`);
+            throw new Error(`Cluster ID not found in state for ${item.logicalId}`);
           }
           logger.info(`Updating TDSQL-C database: ${database.name}`);
           currentState = await updateDatabaseResource(context, database, clusterId, currentState);
@@ -71,10 +72,11 @@ export const executeDatabasePlan = async (
             logger.warn(`State not found for ${item.logicalId}, skipping deletion`);
             continue;
           }
-          // Extract clusterId from metadata
-          const clusterId = state.metadata?.clusterId as string | undefined;
+          // Extract clusterId from metadata or instances
+          const clusterId =
+            (state.metadata?.clusterId as string | undefined) || state.instances?.[0]?.id;
           if (!clusterId) {
-            throw new Error(`Cluster ID not found in state metadata for ${item.logicalId}`);
+            throw new Error(`Cluster ID not found in state for ${item.logicalId}`);
           }
           logger.info(`Deleting TDSQL-C database: ${clusterId}`);
           currentState = await deleteDatabaseResource(

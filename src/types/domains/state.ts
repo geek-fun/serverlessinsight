@@ -17,21 +17,45 @@ export type ResourceAttributes = Record<string, unknown>;
 export type ResourceMode = 'managed' | 'data';
 
 /**
- * ResourceState represents the state of a single resource.
+ * ResourceInstance represents a single cloud resource instance created for a resource definition.
+ * A single resource definition in the IaC template may create multiple cloud resources.
+ * For example, a function definition may create: SCF function, triggers, log services, etc.
+ */
+export type ResourceInstance = {
+  /** ARN of the resource instance in the cloud provider */
+  arn: string;
+  /** Provider-specific ID of the resource instance */
+  id: string;
+  /** All known attributes of this resource instance from the provider */
+  attributes: ResourceAttributes;
+};
+
+/**
+ * ResourceState represents the state of a single resource definition.
  * Following Terraform's design, we store all attributes individually
  * for precise drift detection and auditing.
  */
 export type ResourceState = {
   /** Resource mode - 'managed' for resources managed by ServerlessInsight, 'data' for imported/referenced resources */
   mode: ResourceMode;
-  /** ARN or unique identifier of the resource in the cloud provider */
-  arn: string;
+  /** Region where the resource is deployed */
   region: string;
-  /** All known attributes for this resource */
-  attributes: ResourceAttributes;
-  /** Hash of external artifacts (e.g., function code zip). Used for code drift detection. */
-  codeHash?: string;
+  /**
+   * Definition of the resource as specified in the IaC template.
+   * This should match the IaC template used to deploy the resource.
+   * The plan should print out the definition difference if any.
+   */
+  definition: ResourceAttributes;
+  /**
+   * List of resource instances created for this resource definition.
+   * A single resource definition may create multiple cloud resources.
+   * For example, a function may also create buckets, triggers, log services behind the scene.
+   * Each instance is recorded to exactly match provider's real resources.
+   */
+  instances: Array<ResourceInstance>;
+  /** Timestamp of the last update to this resource state */
   lastUpdated: string;
+  /** Optional provider-specific metadata */
   metadata?: Record<string, unknown>;
 };
 

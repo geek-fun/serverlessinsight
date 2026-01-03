@@ -83,12 +83,13 @@ export const databaseToTdsqlcConfig = (database: DatabaseDomain): TdsqlcClusterC
 };
 
 /**
- * Extract all attributes from a TDSQL-C cluster config for state storage.
+ * Extract definition from a TDSQL-C cluster config for state storage.
+ * This represents the IaC template definition for the cluster.
  * Following Terraform's approach of storing complete resource attributes.
  * Note: AdminPassword is intentionally excluded for security reasons.
  * All optional fields are included with null values if undefined.
  */
-export const extractTdsqlcAttributes = (config: TdsqlcClusterConfig): ResourceAttributes => {
+export const extractTdsqlcDefinition = (config: TdsqlcClusterConfig): ResourceAttributes => {
   return {
     clusterName: config.ClusterName,
     dbType: config.DbType,

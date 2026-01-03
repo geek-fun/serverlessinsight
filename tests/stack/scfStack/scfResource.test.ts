@@ -63,19 +63,20 @@ describe('ScfResource', () => {
     },
   };
 
-  const mockAttributes = {
+  const mockDefinition = {
     functionName: 'test-function',
     runtime: 'nodejs18',
     handler: 'index.handler',
     memorySize: 512,
     timeout: 10,
     environment: { NODE_ENV: 'production' },
+    codeHash: 'mock-code-hash',
   };
 
   beforeEach(() => {
     jest.clearAllMocks();
     (scfTypes.functionToScfConfig as jest.Mock).mockReturnValue(mockConfig);
-    (scfTypes.extractScfAttributes as jest.Mock).mockReturnValue(mockAttributes);
+    (scfTypes.extractScfDefinition as jest.Mock).mockReturnValue(mockDefinition);
     (hashUtils.computeFileHash as jest.Mock).mockReturnValue('mock-code-hash');
   });
 
@@ -85,11 +86,10 @@ describe('ScfResource', () => {
         ...initialState,
         resources: {
           'functions.test_fn': {
-            type: 'SCF',
-            physicalId: 'test-function',
+            mode: 'managed',
             region: 'ap-guangzhou',
-            attributes: mockAttributes,
-            codeHash: 'mock-code-hash',
+            definition: mockDefinition,
+            instances: expect.any(Array),
             lastUpdated: expect.any(String),
           },
         },
@@ -106,17 +106,21 @@ describe('ScfResource', () => {
         mockConfig,
         'test.zip',
       );
-      expect(scfTypes.extractScfAttributes).toHaveBeenCalledWith(mockConfig);
       expect(hashUtils.computeFileHash).toHaveBeenCalledWith('test.zip');
+      expect(scfTypes.extractScfDefinition).toHaveBeenCalledWith(mockConfig, 'mock-code-hash');
       expect(stateManager.setResource).toHaveBeenCalledWith(
         initialState,
         'functions.test_fn',
         expect.objectContaining({
           mode: 'managed',
-          arn: expect.stringContaining('arn:tencent:scf'),
           region: 'ap-guangzhou',
-          attributes: mockAttributes,
-          codeHash: 'mock-code-hash',
+          definition: mockDefinition,
+          instances: expect.arrayContaining([
+            expect.objectContaining({
+              arn: expect.stringContaining('arn:tencent:scf'),
+              id: 'test-function',
+            }),
+          ]),
         }),
       );
       expect(result).toEqual(newState);
@@ -165,11 +169,10 @@ describe('ScfResource', () => {
         ...initialState,
         resources: {
           'functions.test_fn': {
-            type: 'SCF',
-            physicalId: 'test-function',
+            mode: 'managed',
             region: 'ap-guangzhou',
-            attributes: mockAttributes,
-            codeHash: 'mock-code-hash',
+            definition: mockDefinition,
+            instances: expect.any(Array),
             lastUpdated: expect.any(String),
           },
         },
@@ -191,17 +194,21 @@ describe('ScfResource', () => {
         'test-function',
         'test.zip',
       );
-      expect(scfTypes.extractScfAttributes).toHaveBeenCalledWith(mockConfig);
       expect(hashUtils.computeFileHash).toHaveBeenCalledWith('test.zip');
+      expect(scfTypes.extractScfDefinition).toHaveBeenCalledWith(mockConfig, 'mock-code-hash');
       expect(stateManager.setResource).toHaveBeenCalledWith(
         initialState,
         'functions.test_fn',
         expect.objectContaining({
           mode: 'managed',
-          arn: expect.stringContaining('arn:tencent:scf'),
           region: 'ap-guangzhou',
-          attributes: mockAttributes,
-          codeHash: 'mock-code-hash',
+          definition: mockDefinition,
+          instances: expect.arrayContaining([
+            expect.objectContaining({
+              arn: expect.stringContaining('arn:tencent:scf'),
+              id: 'test-function',
+            }),
+          ]),
         }),
       );
       expect(result).toEqual(newState);
@@ -234,10 +241,15 @@ describe('ScfResource', () => {
         resources: {
           'functions.test_fn': {
             mode: 'managed',
-            arn: 'arn:tencent:scf:ap-guangzhou::function:test-function',
             region: 'ap-guangzhou',
-            attributes: mockAttributes,
-            codeHash: 'mock-code-hash',
+            definition: mockDefinition,
+            instances: [
+              {
+                arn: 'arn:tencent:scf:ap-guangzhou::function:test-function',
+                id: 'test-function',
+                attributes: { functionName: 'test-function' },
+              },
+            ],
             lastUpdated: '2025-01-01T00:00:00Z',
           },
         },

@@ -1,6 +1,6 @@
 import {
   databaseToTdsqlcConfig,
-  extractTdsqlcAttributes,
+  extractTdsqlcDefinition,
 } from '../../../src/stack/scfStack/tdsqlcTypes';
 import { DatabaseDomain, DatabaseEnum, DatabaseVersionEnum } from '../../../src/types';
 
@@ -170,7 +170,7 @@ describe('TdsqlcTypes', () => {
     });
   });
 
-  describe('extractTdsqlcAttributes', () => {
+  describe('extractTdsqlcDefinition', () => {
     it('should extract all attributes including null values', () => {
       const config = {
         ClusterName: 'test-tdsqlc',
@@ -185,9 +185,9 @@ describe('TdsqlcTypes', () => {
         AdminPassword: 'TestPass123!',
       };
 
-      const attributes = extractTdsqlcAttributes(config);
+      const definition = extractTdsqlcDefinition(config);
 
-      expect(attributes).toEqual({
+      expect(definition).toEqual({
         clusterName: 'test-tdsqlc',
         dbType: 'MYSQL',
         dbVersion: '8.0',
@@ -206,7 +206,7 @@ describe('TdsqlcTypes', () => {
       });
     });
 
-    it('should exclude AdminPassword from attributes', () => {
+    it('should exclude AdminPassword from definition', () => {
       const config = {
         ClusterName: 'test-tdsqlc',
         DbType: 'MYSQL' as const,
@@ -220,10 +220,10 @@ describe('TdsqlcTypes', () => {
         AdminPassword: 'TestPass123!',
       };
 
-      const attributes = extractTdsqlcAttributes(config);
+      const definition = extractTdsqlcDefinition(config);
 
-      expect(attributes).not.toHaveProperty('adminPassword');
-      expect(attributes).not.toHaveProperty('AdminPassword');
+      expect(definition).not.toHaveProperty('adminPassword');
+      expect(definition).not.toHaveProperty('AdminPassword');
     });
 
     it('should include VPC configuration when provided', () => {
@@ -242,10 +242,10 @@ describe('TdsqlcTypes', () => {
         SubnetId: 'subnet-67890',
       };
 
-      const attributes = extractTdsqlcAttributes(config);
+      const definition = extractTdsqlcDefinition(config);
 
-      expect(attributes.vpcId).toBe('vpc-12345');
-      expect(attributes.subnetId).toBe('subnet-67890');
+      expect(definition.vpcId).toBe('vpc-12345');
+      expect(definition.subnetId).toBe('subnet-67890');
     });
 
     it('should include storage limits when provided', () => {
@@ -264,10 +264,10 @@ describe('TdsqlcTypes', () => {
         MaxStorageSize: 1000,
       };
 
-      const attributes = extractTdsqlcAttributes(config);
+      const definition = extractTdsqlcDefinition(config);
 
-      expect(attributes.minStorageSize).toBe(10);
-      expect(attributes.maxStorageSize).toBe(1000);
+      expect(definition.minStorageSize).toBe(10);
+      expect(definition.maxStorageSize).toBe(1000);
     });
   });
 });

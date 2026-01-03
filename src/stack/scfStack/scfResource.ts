@@ -6,7 +6,7 @@ import {
   updateScfFunctionCode,
   updateScfFunctionConfiguration,
 } from './scfProvider';
-import { functionToScfConfig, extractScfAttributes } from './scfTypes';
+import { functionToScfConfig, extractScfDefinition } from './scfTypes';
 import { setResource, removeResource } from '../../common/stateManager';
 import { computeFileHash } from '../../common/hashUtils';
 
@@ -20,14 +20,26 @@ export const createResource = async (
 
   await createScfFunction(context, config, codePath);
 
-  const attributes = extractScfAttributes(config);
   const codeHash = computeFileHash(codePath);
+  const definition = extractScfDefinition(config, codeHash);
+  const arn = `arn:tencent:scf:${context.region}::function:${fn.name}`;
   const resourceState: ResourceState = {
     mode: 'managed',
-    arn: `arn:tencent:scf:${context.region}::function:${fn.name}`,
     region: context.region,
-    attributes,
-    codeHash,
+    definition,
+    instances: [
+      {
+        arn,
+        id: fn.name,
+        attributes: {
+          functionName: fn.name,
+          runtime: config.Runtime,
+          handler: config.Handler,
+          memorySize: config.MemorySize,
+          timeout: config.Timeout,
+        },
+      },
+    ],
     lastUpdated: new Date().toISOString(),
   };
 
@@ -53,14 +65,26 @@ export const updateResource = async (
   // Update code
   await updateScfFunctionCode(context, fn.name, codePath);
 
-  const attributes = extractScfAttributes(config);
   const codeHash = computeFileHash(codePath);
+  const definition = extractScfDefinition(config, codeHash);
+  const arn = `arn:tencent:scf:${context.region}::function:${fn.name}`;
   const resourceState: ResourceState = {
     mode: 'managed',
-    arn: `arn:tencent:scf:${context.region}::function:${fn.name}`,
     region: context.region,
-    attributes,
-    codeHash,
+    definition,
+    instances: [
+      {
+        arn,
+        id: fn.name,
+        attributes: {
+          functionName: fn.name,
+          runtime: config.Runtime,
+          handler: config.Handler,
+          memorySize: config.MemorySize,
+          timeout: config.Timeout,
+        },
+      },
+    ],
     lastUpdated: new Date().toISOString(),
   };
 

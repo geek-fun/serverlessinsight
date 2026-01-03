@@ -1,4 +1,4 @@
-import { functionToScfConfig, extractScfAttributes } from '../../../src/stack/scfStack/scfTypes';
+import { functionToScfConfig, extractScfDefinition } from '../../../src/stack/scfStack/scfTypes';
 import { FunctionDomain } from '../../../src/types';
 
 describe('SCF Types', () => {
@@ -90,8 +90,8 @@ describe('SCF Types', () => {
     });
   });
 
-  describe('extractScfAttributes', () => {
-    it('should extract all attributes from config', () => {
+  describe('extractScfDefinition', () => {
+    it('should extract all attributes from config with codeHash', () => {
       const config = {
         FunctionName: 'test-function',
         Runtime: 'nodejs18',
@@ -103,15 +103,16 @@ describe('SCF Types', () => {
         },
       };
 
-      const attributes = extractScfAttributes(config);
+      const definition = extractScfDefinition(config, 'abc123');
 
-      expect(attributes).toEqual({
+      expect(definition).toEqual({
         functionName: 'test-function',
         runtime: 'nodejs18',
         handler: 'index.handler',
         memorySize: 512,
         timeout: 10,
         environment: { NODE_ENV: 'production' },
+        codeHash: 'abc123',
       });
     });
 
@@ -124,15 +125,16 @@ describe('SCF Types', () => {
         Timeout: 10,
       };
 
-      const attributes = extractScfAttributes(config);
+      const definition = extractScfDefinition(config, 'abc123');
 
-      expect(attributes).toEqual({
+      expect(definition).toEqual({
         functionName: 'test-function',
         runtime: 'nodejs18',
         handler: 'index.handler',
         memorySize: 512,
         timeout: 10,
         environment: null,
+        codeHash: 'abc123',
       });
     });
 
@@ -151,9 +153,9 @@ describe('SCF Types', () => {
         },
       };
 
-      const attributes = extractScfAttributes(config);
+      const definition = extractScfDefinition(config, 'abc123');
 
-      expect(attributes.environment).toEqual({
+      expect(definition.environment).toEqual({
         NODE_ENV: 'production',
         API_KEY: 'test123',
       });

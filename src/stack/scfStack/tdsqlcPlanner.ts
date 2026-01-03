@@ -1,6 +1,6 @@
 import { Context, DatabaseDomain, DatabaseEnum, Plan, PlanItem, StateFile } from '../../types';
 import { getTdsqlcCluster } from './tdsqlcProvider';
-import { databaseToTdsqlcConfig, extractTdsqlcAttributes } from './tdsqlcTypes';
+import { databaseToTdsqlcConfig, extractTdsqlcDefinition } from './tdsqlcTypes';
 import { getAllResources, getResource } from '../../common/stateManager';
 import { attributesEqual } from '../../common/hashUtils';
 
@@ -24,7 +24,7 @@ export const generateDatabasePlan = async (
           action: 'delete',
           resourceType: 'TDSQL_C_SERVERLESS',
           changes: {
-            before: { arn: resourceState.arn, ...resourceState.attributes },
+            before: resourceState.definition,
           },
         });
       }
@@ -41,7 +41,7 @@ export const generateDatabasePlan = async (
 
     const currentState = getResource(state, logicalId);
     const config = databaseToTdsqlcConfig(database);
-    const desiredAttributes = extractTdsqlcAttributes(config);
+    const desiredDefinition = extractTdsqlcDefinition(config);
 
     if (!currentState) {
       // Resource doesn't exist in state - needs to be created
@@ -50,13 +50,14 @@ export const generateDatabasePlan = async (
         action: 'create',
         resourceType: 'TDSQL_C_SERVERLESS',
         changes: {
-          after: desiredAttributes,
+          after: desiredDefinition,
         },
       });
     } else {
       // Resource exists - check if it needs updating
-      // Extract clusterId from ARN
-      const clusterId = currentState.metadata?.clusterId as string | undefined;
+      // Extract clusterId from metadata or instances
+      const clusterId =
+        (currentState.metadata?.clusterId as string | undefined) || currentState.instances?.[0]?.id;
       try {
         const remoteCluster = clusterId ? await getTdsqlcCluster(context, clusterId) : null;
 
@@ -67,25 +68,25 @@ export const generateDatabasePlan = async (
             action: 'create',
             resourceType: 'TDSQL_C_SERVERLESS',
             changes: {
-              before: currentState.attributes,
-              after: desiredAttributes,
+              before: currentState.definition,
+              after: desiredDefinition,
             },
             drifted: true,
           });
         } else {
-          // Compare all attributes for drift detection
-          const currentAttributes = currentState.attributes || {};
-          const attributesChanged = !attributesEqual(currentAttributes, desiredAttributes);
+          // Compare definition for drift detection
+          const currentDefinition = currentState.definition || {};
+          const definitionChanged = !attributesEqual(currentDefinition, desiredDefinition);
 
-          if (attributesChanged) {
+          if (definitionChanged) {
             // Configuration has changed
             items.push({
               logicalId,
               action: 'update',
               resourceType: 'TDSQL_C_SERVERLESS',
               changes: {
-                before: currentAttributes,
-                after: desiredAttributes,
+                before: currentDefinition,
+                after: desiredDefinition,
               },
               drifted: true,
             });
@@ -105,8 +106,8 @@ export const generateDatabasePlan = async (
           action: 'create',
           resourceType: 'TDSQL_C_SERVERLESS',
           changes: {
-            before: currentState.attributes,
-            after: desiredAttributes,
+            before: currentState.definition,
+            after: desiredDefinition,
           },
         });
       }
@@ -122,7 +123,7 @@ export const generateDatabasePlan = async (
         action: 'delete',
         resourceType: 'TDSQL_C_SERVERLESS',
         changes: {
-          before: { arn: resourceState.arn, ...resourceState.attributes },
+          before: resourceState.definition,
         },
       });
     }

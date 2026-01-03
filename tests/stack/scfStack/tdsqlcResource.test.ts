@@ -71,13 +71,19 @@ describe('TdsqlcResource', () => {
       const clusterId = 'cynosdbmysql-test123';
       const mockResourceState: ResourceState = {
         mode: 'managed',
-        arn: 'arn:tencent:cynosdb:ap-guangzhou::cluster:cynosdbmysql-test123',
         region: 'ap-guangzhou',
-        attributes: {
+        definition: {
           clusterName: 'test-tdsqlc',
           dbType: 'MYSQL',
           dbVersion: '8.0',
         },
+        instances: [
+          {
+            arn: 'arn:tencent:cynosdb:ap-guangzhou::cluster:cynosdbmysql-test123',
+            id: clusterId,
+            attributes: { clusterName: 'test-tdsqlc' },
+          },
+        ],
         lastUpdated: new Date().toISOString(),
       };
       const updatedState: StateFile = {
@@ -107,11 +113,16 @@ describe('TdsqlcResource', () => {
         'databases.test_db',
         expect.objectContaining({
           mode: 'managed',
-          arn: expect.stringContaining('arn:tencent:cynosdb'),
           region: 'ap-guangzhou',
-          attributes: expect.objectContaining({
+          definition: expect.objectContaining({
             clusterName: 'test-tdsqlc',
           }),
+          instances: expect.arrayContaining([
+            expect.objectContaining({
+              arn: expect.stringContaining('arn:tencent:cynosdb'),
+              id: clusterId,
+            }),
+          ]),
         }),
       );
 
@@ -145,13 +156,19 @@ describe('TdsqlcResource', () => {
       const clusterId = 'cynosdbmysql-test123';
       const mockResourceState: ResourceState = {
         mode: 'managed',
-        arn: 'arn:tencent:cynosdb:ap-guangzhou::cluster:cynosdbmysql-test123',
         region: 'ap-guangzhou',
-        attributes: {
+        definition: {
           clusterName: 'test-tdsqlc',
           dbType: 'MYSQL',
           dbVersion: '8.0',
         },
+        instances: [
+          {
+            arn: 'arn:tencent:cynosdb:ap-guangzhou::cluster:cynosdbmysql-test123',
+            id: clusterId,
+            attributes: { clusterName: 'test-tdsqlc' },
+          },
+        ],
         lastUpdated: new Date().toISOString(),
       };
       const updatedState: StateFile = {
@@ -187,9 +204,9 @@ describe('TdsqlcResource', () => {
         resources: {
           [logicalId]: {
             mode: 'managed',
-            arn: 'arn:tencent:cynosdb:ap-guangzhou::cluster:cynosdbmysql-test123',
             region: 'ap-guangzhou',
-            attributes: {},
+            definition: {},
+            instances: [],
             lastUpdated: new Date().toISOString(),
           },
         },

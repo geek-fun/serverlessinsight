@@ -63,11 +63,12 @@ export const bucketToCosBucketConfig = (bucket: BucketDomain, region: string): C
 };
 
 /**
- * Extract all attributes from a COS bucket config for state storage.
+ * Extract definition from a COS bucket config for state storage.
+ * This represents the IaC template definition for the bucket.
  * Following Terraform's approach of storing complete resource attributes.
  * All optional fields are included with null values if undefined.
  */
-export const extractCosBucketAttributes = (config: CosBucketConfig): ResourceAttributes => {
+export const extractCosBucketDefinition = (config: CosBucketConfig): ResourceAttributes => {
   return {
     bucket: config.Bucket,
     region: config.Region,

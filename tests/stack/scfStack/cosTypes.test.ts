@@ -1,6 +1,6 @@
 import {
   bucketToCosBucketConfig,
-  extractCosBucketAttributes,
+  extractCosBucketDefinition,
 } from '../../../src/stack/scfStack/cosTypes';
 import { BucketDomain, BucketAccessEnum } from '../../../src/types';
 
@@ -121,16 +121,16 @@ describe('CosTypes', () => {
     });
   });
 
-  describe('extractCosBucketAttributes', () => {
+  describe('extractCosBucketDefinition', () => {
     it('should extract all attributes including null values', () => {
       const config = {
         Bucket: 'test-bucket',
         Region: 'ap-guangzhou',
       };
 
-      const attributes = extractCosBucketAttributes(config);
+      const definition = extractCosBucketDefinition(config);
 
-      expect(attributes).toEqual({
+      expect(definition).toEqual({
         bucket: 'test-bucket',
         region: 'ap-guangzhou',
         acl: null,
@@ -145,9 +145,9 @@ describe('CosTypes', () => {
         ACL: 'public-read' as const,
       };
 
-      const attributes = extractCosBucketAttributes(config);
+      const definition = extractCosBucketDefinition(config);
 
-      expect(attributes.acl).toBe('public-read');
+      expect(definition.acl).toBe('public-read');
     });
 
     it('should extract website configuration', () => {
@@ -160,9 +160,9 @@ describe('CosTypes', () => {
         },
       };
 
-      const attributes = extractCosBucketAttributes(config);
+      const definition = extractCosBucketDefinition(config);
 
-      expect(attributes.websiteConfiguration).toEqual({
+      expect(definition.websiteConfiguration).toEqual({
         indexDocument: 'index.html',
         errorDocument: '404.html',
       });
@@ -177,9 +177,9 @@ describe('CosTypes', () => {
         },
       };
 
-      const attributes = extractCosBucketAttributes(config);
+      const definition = extractCosBucketDefinition(config);
 
-      expect(attributes.websiteConfiguration).toEqual({
+      expect(definition.websiteConfiguration).toEqual({
         indexDocument: 'index.html',
         errorDocument: null,
       });

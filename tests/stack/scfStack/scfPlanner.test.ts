@@ -79,21 +79,27 @@ describe('SCF Planner', () => {
     });
 
     it('should plan no changes when function exists and matches state', async () => {
-      // Add function to state with matching attributes
+      // Add function to state with matching definition
       let state = loadState('tencent', testDir);
       state = setResource(state, 'functions.test_fn', {
         mode: 'managed',
-        arn: 'arn:tencent:scf:ap-guangzhou::function:test-function',
         region: 'ap-guangzhou',
-        attributes: {
+        definition: {
           functionName: 'test-function',
           runtime: 'Nodejs18.15',
           handler: 'index.handler',
           memorySize: 512,
           timeout: 10,
           environment: { NODE_ENV: 'production' },
+          codeHash: 'mock-code-hash',
         },
-        codeHash: 'mock-code-hash',
+        instances: [
+          {
+            arn: 'arn:tencent:scf:ap-guangzhou::function:test-function',
+            id: 'test-function',
+            attributes: { functionName: 'test-function' },
+          },
+        ],
         lastUpdated: new Date().toISOString(),
       });
 
@@ -119,22 +125,28 @@ describe('SCF Planner', () => {
       });
     });
 
-    it('should plan to update when attributes change', async () => {
-      // Add function to state with different attributes
+    it('should plan to update when definition changes', async () => {
+      // Add function to state with different definition
       let state = loadState('tencent', testDir);
       state = setResource(state, 'functions.test_fn', {
         mode: 'managed',
-        arn: 'arn:tencent:scf:ap-guangzhou::function:test-function',
         region: 'ap-guangzhou',
-        attributes: {
+        definition: {
           functionName: 'test-function',
           runtime: 'Nodejs18.15',
           handler: 'index.handler',
           memorySize: 256, // Different from testFunction
           timeout: 10,
           environment: { NODE_ENV: 'production' },
+          codeHash: 'mock-code-hash',
         },
-        codeHash: 'mock-code-hash',
+        instances: [
+          {
+            arn: 'arn:tencent:scf:ap-guangzhou::function:test-function',
+            id: 'test-function',
+            attributes: { functionName: 'test-function' },
+          },
+        ],
         lastUpdated: new Date().toISOString(),
       });
 
@@ -165,16 +177,23 @@ describe('SCF Planner', () => {
       let state = loadState('tencent', testDir);
       state = setResource(state, 'functions.old_fn', {
         mode: 'managed',
-        arn: 'arn:tencent:scf:ap-guangzhou::function:old-function',
         region: 'ap-guangzhou',
-        attributes: {
+        definition: {
           functionName: 'old-function',
           runtime: 'Nodejs18.15',
           handler: 'index.handler',
           memorySize: 128,
           timeout: 3,
           environment: null,
+          codeHash: 'old-hash',
         },
+        instances: [
+          {
+            arn: 'arn:tencent:scf:ap-guangzhou::function:old-function',
+            id: 'old-function',
+            attributes: { functionName: 'old-function' },
+          },
+        ],
         lastUpdated: new Date().toISOString(),
       });
 
@@ -197,17 +216,23 @@ describe('SCF Planner', () => {
       let state = loadState('tencent', testDir);
       state = setResource(state, 'functions.test_fn', {
         mode: 'managed',
-        arn: 'arn:tencent:scf:ap-guangzhou::function:test-function',
         region: 'ap-guangzhou',
-        attributes: {
+        definition: {
           functionName: 'test-function',
           runtime: 'Nodejs18.15',
           handler: 'index.handler',
           memorySize: 512,
           timeout: 10,
           environment: null,
+          codeHash: 'old-code-hash',
         },
-        codeHash: 'old-code-hash',
+        instances: [
+          {
+            arn: 'arn:tencent:scf:ap-guangzhou::function:test-function',
+            id: 'test-function',
+            attributes: { functionName: 'test-function' },
+          },
+        ],
         lastUpdated: new Date().toISOString(),
       });
 
@@ -231,17 +256,23 @@ describe('SCF Planner', () => {
       let state = loadState('tencent', testDir);
       state = setResource(state, 'functions.test_fn', {
         mode: 'managed',
-        arn: 'arn:tencent:scf:ap-guangzhou::function:test-function',
         region: 'ap-guangzhou',
-        attributes: {
+        definition: {
           functionName: 'test-function',
           runtime: 'Nodejs18.15',
           handler: 'index.handler',
           memorySize: 512,
           timeout: 10,
           environment: { NODE_ENV: 'production' },
+          codeHash: 'old-code-hash', // Different from mock return value
         },
-        codeHash: 'old-code-hash', // Different from mock return value
+        instances: [
+          {
+            arn: 'arn:tencent:scf:ap-guangzhou::function:test-function',
+            id: 'test-function',
+            attributes: { functionName: 'test-function' },
+          },
+        ],
         lastUpdated: new Date().toISOString(),
       });
 

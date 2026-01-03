@@ -1,6 +1,6 @@
 import { Context, BucketDomain, Plan, PlanItem, StateFile } from '../../types';
 import { getCosBucket } from './cosProvider';
-import { bucketToCosBucketConfig, extractCosBucketAttributes } from './cosTypes';
+import { bucketToCosBucketConfig, extractCosBucketDefinition } from './cosTypes';
 import { getAllResources, getResource } from '../../common/stateManager';
 import { attributesEqual } from '../../common/hashUtils';
 
@@ -21,7 +21,7 @@ export const generateBucketPlan = async (
           action: 'delete',
           resourceType: 'COS_BUCKET',
           changes: {
-            before: { arn: resourceState.arn, ...resourceState.attributes },
+            before: resourceState.definition,
           },
         });
       }
@@ -38,7 +38,7 @@ export const generateBucketPlan = async (
 
     const currentState = getResource(state, logicalId);
     const config = bucketToCosBucketConfig(bucket, context.region);
-    const desiredAttributes = extractCosBucketAttributes(config);
+    const desiredDefinition = extractCosBucketDefinition(config);
 
     if (!currentState) {
       // Resource doesn't exist in state - needs to be created
@@ -47,7 +47,7 @@ export const generateBucketPlan = async (
         action: 'create',
         resourceType: 'COS_BUCKET',
         changes: {
-          after: desiredAttributes,
+          after: desiredDefinition,
         },
       });
     } else {
@@ -62,25 +62,25 @@ export const generateBucketPlan = async (
             action: 'create',
             resourceType: 'COS_BUCKET',
             changes: {
-              before: currentState.attributes,
-              after: desiredAttributes,
+              before: currentState.definition,
+              after: desiredDefinition,
             },
             drifted: true,
           });
         } else {
-          // Compare all attributes for drift detection
-          const currentAttributes = currentState.attributes || {};
-          const attributesChanged = !attributesEqual(currentAttributes, desiredAttributes);
+          // Compare definition for drift detection
+          const currentDefinition = currentState.definition || {};
+          const definitionChanged = !attributesEqual(currentDefinition, desiredDefinition);
 
-          if (attributesChanged) {
+          if (definitionChanged) {
             // Configuration has changed
             items.push({
               logicalId,
               action: 'update',
               resourceType: 'COS_BUCKET',
               changes: {
-                before: currentAttributes,
-                after: desiredAttributes,
+                before: currentDefinition,
+                after: desiredDefinition,
               },
               drifted: true,
             });
@@ -100,8 +100,8 @@ export const generateBucketPlan = async (
           action: 'create',
           resourceType: 'COS_BUCKET',
           changes: {
-            before: currentState.attributes,
-            after: desiredAttributes,
+            before: currentState.definition,
+            after: desiredDefinition,
           },
         });
       }
@@ -117,7 +117,7 @@ export const generateBucketPlan = async (
         action: 'delete',
         resourceType: 'COS_BUCKET',
         changes: {
-          before: { arn: resourceState.arn, ...resourceState.attributes },
+          before: resourceState.definition,
         },
       });
     }

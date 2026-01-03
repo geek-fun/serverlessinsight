@@ -1,6 +1,6 @@
 import { Context, FunctionDomain, Plan, PlanItem, StateFile } from '../../types';
 import { getScfFunction } from './scfProvider';
-import { functionToScfConfig, extractScfAttributes } from './scfTypes';
+import { functionToScfConfig, extractScfDefinition } from './scfTypes';
 import { getAllResources, getResource } from '../../common/stateManager';
 import { attributesEqual, computeFileHash } from '../../common/hashUtils';
 
@@ -21,7 +21,7 @@ export const generateFunctionPlan = async (
           action: 'delete',
           resourceType: 'SCF',
           changes: {
-            before: { arn: resourceState.arn, ...resourceState.attributes },
+            before: resourceState.definition,
           },
         });
       }
@@ -38,9 +38,9 @@ export const generateFunctionPlan = async (
 
     const currentState = getResource(state, logicalId);
     const config = functionToScfConfig(fn);
-    const desiredAttributes = extractScfAttributes(config);
     const codePath = fn.code!.path;
     const desiredCodeHash = computeFileHash(codePath);
+    const desiredDefinition = extractScfDefinition(config, desiredCodeHash);
 
     if (!currentState) {
       // Resource doesn't exist in state - needs to be created
@@ -49,10 +49,7 @@ export const generateFunctionPlan = async (
         action: 'create',
         resourceType: 'SCF',
         changes: {
-          after: {
-            ...desiredAttributes,
-            codeHash: desiredCodeHash,
-          },
+          after: desiredDefinition,
         },
       });
     } else {
@@ -67,38 +64,27 @@ export const generateFunctionPlan = async (
             action: 'create',
             resourceType: 'SCF',
             changes: {
-              before: currentState.attributes,
-              after: {
-                ...desiredAttributes,
-                codeHash: desiredCodeHash,
-              },
+              before: currentState.definition,
+              after: desiredDefinition,
             },
             drifted: true,
           });
         } else {
-          // Compare all attributes and code hash for drift detection
-          const currentAttributes = currentState.attributes || {};
-          const currentCodeHash = currentState.codeHash;
-          const attributesChanged = !attributesEqual(currentAttributes, desiredAttributes);
-          const codeChanged = currentCodeHash !== desiredCodeHash;
+          // Compare definition for drift detection (includes codeHash)
+          const currentDefinition = currentState.definition || {};
+          const definitionChanged = !attributesEqual(currentDefinition, desiredDefinition);
 
-          if (attributesChanged || codeChanged) {
+          if (definitionChanged) {
             // Configuration or code has changed
             items.push({
               logicalId,
               action: 'update',
               resourceType: 'SCF',
               changes: {
-                before: {
-                  ...currentAttributes,
-                  codeHash: currentCodeHash,
-                },
-                after: {
-                  ...desiredAttributes,
-                  codeHash: desiredCodeHash,
-                },
+                before: currentDefinition,
+                after: desiredDefinition,
               },
-              drifted: attributesChanged || codeChanged,
+              drifted: true,
             });
           } else {
             // No changes needed
@@ -116,11 +102,8 @@ export const generateFunctionPlan = async (
           action: 'create',
           resourceType: 'SCF',
           changes: {
-            before: currentState.attributes,
-            after: {
-              ...desiredAttributes,
-              codeHash: desiredCodeHash,
-            },
+            before: currentState.definition,
+            after: desiredDefinition,
           },
         });
       }
@@ -136,7 +119,7 @@ export const generateFunctionPlan = async (
         action: 'delete',
         resourceType: 'SCF',
         changes: {
-          before: { arn: resourceState.arn, ...resourceState.attributes },
+          before: resourceState.definition,
         },
       });
     }

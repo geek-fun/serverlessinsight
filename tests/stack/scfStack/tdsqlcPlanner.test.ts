@@ -60,8 +60,8 @@ describe('TdsqlcPlanner', () => {
     resources: {},
   };
 
-  // Expected attributes for the mock database config
-  const expectedAttributes = {
+  // Expected definition for the mock database config
+  const expectedDefinition = {
     clusterName: 'test-tdsqlc',
     dbType: 'MYSQL',
     dbVersion: '8.0',
@@ -98,15 +98,21 @@ describe('TdsqlcPlanner', () => {
       });
     });
 
-    it('should generate update plan when attributes change', async () => {
+    it('should generate update plan when definition changes', async () => {
       const existingState: ResourceState = {
         mode: 'managed',
-        arn: 'arn:tencent:cynosdb:ap-guangzhou::cluster:cynosdbmysql-test123',
         region: 'ap-guangzhou',
-        attributes: {
-          ...expectedAttributes,
+        definition: {
+          ...expectedDefinition,
           minCpu: 2,
         },
+        instances: [
+          {
+            arn: 'arn:tencent:cynosdb:ap-guangzhou::cluster:cynosdbmysql-test123',
+            id: 'cynosdbmysql-test123',
+            attributes: { clusterName: 'test-tdsqlc' },
+          },
+        ],
         lastUpdated: '2024-01-01T00:00:00Z',
         metadata: { clusterId: 'cynosdbmysql-test123' },
       };
@@ -135,9 +141,15 @@ describe('TdsqlcPlanner', () => {
     it('should generate noop plan when no changes needed', async () => {
       const existingState: ResourceState = {
         mode: 'managed',
-        arn: 'arn:tencent:cynosdb:ap-guangzhou::cluster:cynosdbmysql-test123',
         region: 'ap-guangzhou',
-        attributes: expectedAttributes,
+        definition: expectedDefinition,
+        instances: [
+          {
+            arn: 'arn:tencent:cynosdb:ap-guangzhou::cluster:cynosdbmysql-test123',
+            id: 'cynosdbmysql-test123',
+            attributes: { clusterName: 'test-tdsqlc' },
+          },
+        ],
         lastUpdated: '2024-01-01T00:00:00Z',
         metadata: { clusterId: 'cynosdbmysql-test123' },
       };
@@ -167,9 +179,15 @@ describe('TdsqlcPlanner', () => {
       const existingResources: Record<string, ResourceState> = {
         'databases.test_db': {
           mode: 'managed',
-          arn: 'arn:tencent:cynosdb:ap-guangzhou::cluster:cynosdbmysql-test123',
           region: 'ap-guangzhou',
-          attributes: expectedAttributes,
+          definition: expectedDefinition,
+          instances: [
+            {
+              arn: 'arn:tencent:cynosdb:ap-guangzhou::cluster:cynosdbmysql-test123',
+              id: 'cynosdbmysql-test123',
+              attributes: { clusterName: 'test-tdsqlc' },
+            },
+          ],
           lastUpdated: '2024-01-01T00:00:00Z',
           metadata: { clusterId: 'cynosdbmysql-test123' },
         },

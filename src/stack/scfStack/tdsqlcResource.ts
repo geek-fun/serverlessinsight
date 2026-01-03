@@ -5,7 +5,7 @@ import {
   getTdsqlcCluster,
   updateTdsqlcCluster,
 } from './tdsqlcProvider';
-import { databaseToTdsqlcConfig, extractTdsqlcAttributes } from './tdsqlcTypes';
+import { databaseToTdsqlcConfig, extractTdsqlcDefinition } from './tdsqlcTypes';
 import { setResource, removeResource } from '../../common/stateManager';
 
 export const createDatabaseResource = async (
@@ -17,12 +17,24 @@ export const createDatabaseResource = async (
 
   const clusterId = await createTdsqlcCluster(context, config);
 
-  const attributes = extractTdsqlcAttributes(config);
+  const definition = extractTdsqlcDefinition(config);
+  const arn = `arn:tencent:cynosdb:${context.region}::cluster:${clusterId}`;
   const resourceState: ResourceState = {
     mode: 'managed',
-    arn: `arn:tencent:cynosdb:${context.region}::cluster:${clusterId}`,
     region: context.region,
-    attributes,
+    definition,
+    instances: [
+      {
+        arn,
+        id: clusterId,
+        attributes: {
+          clusterName: database.name,
+          clusterId,
+          dbType: config.DbType,
+          dbVersion: config.DbVersion,
+        },
+      },
+    ],
     lastUpdated: new Date().toISOString(),
     metadata: {
       clusterName: database.name,
@@ -48,12 +60,24 @@ export const updateDatabaseResource = async (
 
   await updateTdsqlcCluster(context, clusterId, config);
 
-  const attributes = extractTdsqlcAttributes(config);
+  const definition = extractTdsqlcDefinition(config);
+  const arn = `arn:tencent:cynosdb:${context.region}::cluster:${clusterId}`;
   const resourceState: ResourceState = {
     mode: 'managed',
-    arn: `arn:tencent:cynosdb:${context.region}::cluster:${clusterId}`,
     region: context.region,
-    attributes,
+    definition,
+    instances: [
+      {
+        arn,
+        id: clusterId,
+        attributes: {
+          clusterName: database.name,
+          clusterId,
+          dbType: config.DbType,
+          dbVersion: config.DbVersion,
+        },
+      },
+    ],
     lastUpdated: new Date().toISOString(),
     metadata: {
       clusterName: database.name,

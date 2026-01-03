@@ -83,13 +83,19 @@ describe('TdsqlcExecutor', () => {
 
       const mockResourceState: ResourceState = {
         mode: 'managed',
-        arn: 'arn:tencent:cynosdb:ap-guangzhou::cluster:cynosdbmysql-test123',
         region: 'ap-guangzhou',
-        attributes: {
+        definition: {
           clusterName: 'test-tdsqlc',
           dbType: 'MYSQL',
           dbVersion: '8.0',
         },
+        instances: [
+          {
+            arn: 'arn:tencent:cynosdb:ap-guangzhou::cluster:cynosdbmysql-test123',
+            id: 'cynosdbmysql-test123',
+            attributes: { clusterName: 'test-tdsqlc' },
+          },
+        ],
         lastUpdated: new Date().toISOString(),
       };
       const updatedState: StateFile = {
@@ -111,13 +117,19 @@ describe('TdsqlcExecutor', () => {
     it('should execute update action', async () => {
       const resourceState: ResourceState = {
         mode: 'managed',
-        arn: 'arn:tencent:cynosdb:ap-guangzhou::cluster:cynosdbmysql-test123',
         region: 'ap-guangzhou',
-        attributes: {
+        definition: {
           clusterName: 'test-tdsqlc',
           dbType: 'MYSQL',
           dbVersion: '8.0',
         },
+        instances: [
+          {
+            arn: 'arn:tencent:cynosdb:ap-guangzhou::cluster:cynosdbmysql-test123',
+            id: 'cynosdbmysql-test123',
+            attributes: { clusterName: 'test-tdsqlc' },
+          },
+        ],
         lastUpdated: '2024-01-01T00:00:00Z',
         metadata: { clusterId: 'cynosdbmysql-test123' },
       };
@@ -138,14 +150,20 @@ describe('TdsqlcExecutor', () => {
 
       const mockResourceState: ResourceState = {
         mode: 'managed',
-        arn: 'arn:tencent:cynosdb:ap-guangzhou::cluster:cynosdbmysql-test123',
         region: 'ap-guangzhou',
-        attributes: {
+        definition: {
           clusterName: 'test-tdsqlc',
           dbType: 'MYSQL',
           dbVersion: '8.0',
           minCpu: 2,
         },
+        instances: [
+          {
+            arn: 'arn:tencent:cynosdb:ap-guangzhou::cluster:cynosdbmysql-test123',
+            id: 'cynosdbmysql-test123',
+            attributes: { clusterName: 'test-tdsqlc' },
+          },
+        ],
         lastUpdated: new Date().toISOString(),
       };
       const updatedState: StateFile = {
@@ -169,11 +187,17 @@ describe('TdsqlcExecutor', () => {
     it('should execute delete action', async () => {
       const resourceState: ResourceState = {
         mode: 'managed',
-        arn: 'arn:tencent:cynosdb:ap-guangzhou::cluster:cynosdbmysql-test123',
         region: 'ap-guangzhou',
-        attributes: {
+        definition: {
           clusterName: 'test-tdsqlc',
         },
+        instances: [
+          {
+            arn: 'arn:tencent:cynosdb:ap-guangzhou::cluster:cynosdbmysql-test123',
+            id: 'cynosdbmysql-test123',
+            attributes: { clusterName: 'test-tdsqlc' },
+          },
+        ],
         lastUpdated: '2024-01-01T00:00:00Z',
         metadata: { clusterId: 'cynosdbmysql-test123' },
       };
@@ -395,16 +419,28 @@ describe('TdsqlcExecutor', () => {
 
       const mockResourceState1: ResourceState = {
         mode: 'managed',
-        arn: 'arn:tencent:cynosdb:ap-guangzhou::cluster:cynosdbmysql-test1',
         region: 'ap-guangzhou',
-        attributes: { clusterName: 'test-tdsqlc' },
+        definition: { clusterName: 'test-tdsqlc' },
+        instances: [
+          {
+            arn: 'arn:tencent:cynosdb:ap-guangzhou::cluster:cynosdbmysql-test1',
+            id: 'cynosdbmysql-test1',
+            attributes: { clusterName: 'test-tdsqlc' },
+          },
+        ],
         lastUpdated: new Date().toISOString(),
       };
       const mockResourceState2: ResourceState = {
         mode: 'managed',
-        arn: 'arn:tencent:cynosdb:ap-guangzhou::cluster:cynosdbmysql-test2',
         region: 'ap-guangzhou',
-        attributes: { clusterName: 'test-tdsqlc-2' },
+        definition: { clusterName: 'test-tdsqlc-2' },
+        instances: [
+          {
+            arn: 'arn:tencent:cynosdb:ap-guangzhou::cluster:cynosdbmysql-test2',
+            id: 'cynosdbmysql-test2',
+            attributes: { clusterName: 'test-tdsqlc-2' },
+          },
+        ],
         lastUpdated: new Date().toISOString(),
       };
       const state1: StateFile = {
