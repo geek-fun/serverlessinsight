@@ -55,7 +55,10 @@ export const executeDatabasePlan = async (
             throw new Error(`State not found for ${item.logicalId}`);
           }
           // Extract clusterId from metadata
-          const clusterId = state.metadata?.clusterId as string;
+          const clusterId = state.metadata?.clusterId as string | undefined;
+          if (!clusterId) {
+            throw new Error(`Cluster ID not found in state metadata for ${item.logicalId}`);
+          }
           logger.info(`Updating TDSQL-C database: ${database.name}`);
           currentState = await updateDatabaseResource(context, database, clusterId, currentState);
           logger.info(`Successfully updated TDSQL-C database: ${database.name}`);
@@ -69,7 +72,10 @@ export const executeDatabasePlan = async (
             continue;
           }
           // Extract clusterId from metadata
-          const clusterId = state.metadata?.clusterId as string;
+          const clusterId = state.metadata?.clusterId as string | undefined;
+          if (!clusterId) {
+            throw new Error(`Cluster ID not found in state metadata for ${item.logicalId}`);
+          }
           logger.info(`Deleting TDSQL-C database: ${clusterId}`);
           currentState = await deleteDatabaseResource(
             context,
