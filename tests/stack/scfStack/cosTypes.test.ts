@@ -1,6 +1,6 @@
 import {
   bucketToCosBucketConfig,
-  computeBucketConfigHash,
+  extractCosBucketDefinition,
 } from '../../../src/stack/scfStack/cosTypes';
 import { BucketDomain, BucketAccessEnum } from '../../../src/types';
 
@@ -121,45 +121,37 @@ describe('CosTypes', () => {
     });
   });
 
-  describe('computeBucketConfigHash', () => {
-    it('should compute consistent hash for same config', () => {
+  describe('extractCosBucketDefinition', () => {
+    it('should extract all attributes with empty object for undefined non-primitive fields', () => {
+      const config = {
+        Bucket: 'test-bucket',
+        Region: 'ap-guangzhou',
+      };
+
+      const definition = extractCosBucketDefinition(config);
+
+      expect(definition).toEqual({
+        bucket: 'test-bucket',
+        region: 'ap-guangzhou',
+        acl: null,
+        websiteConfiguration: {},
+      });
+    });
+
+    it('should extract ACL when defined', () => {
       const config = {
         Bucket: 'test-bucket',
         Region: 'ap-guangzhou',
         ACL: 'public-read' as const,
       };
 
-      const hash1 = computeBucketConfigHash(config);
-      const hash2 = computeBucketConfigHash(config);
+      const definition = extractCosBucketDefinition(config);
 
-      expect(hash1).toBe(hash2);
-      expect(hash1).toHaveLength(16);
+      expect(definition.acl).toBe('public-read');
     });
 
-    it('should compute different hash for different configs', () => {
-      const config1 = {
-        Bucket: 'test-bucket-1',
-        Region: 'ap-guangzhou',
-      };
-
-      const config2 = {
-        Bucket: 'test-bucket-2',
-        Region: 'ap-guangzhou',
-      };
-
-      const hash1 = computeBucketConfigHash(config1);
-      const hash2 = computeBucketConfigHash(config2);
-
-      expect(hash1).not.toBe(hash2);
-    });
-
-    it('should include website configuration in hash', () => {
-      const config1 = {
-        Bucket: 'test-bucket',
-        Region: 'ap-guangzhou',
-      };
-
-      const config2 = {
+    it('should extract website configuration', () => {
+      const config = {
         Bucket: 'test-bucket',
         Region: 'ap-guangzhou',
         WebsiteConfiguration: {
@@ -168,10 +160,29 @@ describe('CosTypes', () => {
         },
       };
 
-      const hash1 = computeBucketConfigHash(config1);
-      const hash2 = computeBucketConfigHash(config2);
+      const definition = extractCosBucketDefinition(config);
 
-      expect(hash1).not.toBe(hash2);
+      expect(definition.websiteConfiguration).toEqual({
+        indexDocument: 'index.html',
+        errorDocument: '404.html',
+      });
+    });
+
+    it('should set errorDocument to null when not provided', () => {
+      const config = {
+        Bucket: 'test-bucket',
+        Region: 'ap-guangzhou',
+        WebsiteConfiguration: {
+          IndexDocument: { Suffix: 'index.html' },
+        },
+      };
+
+      const definition = extractCosBucketDefinition(config);
+
+      expect(definition.websiteConfiguration).toEqual({
+        indexDocument: 'index.html',
+        errorDocument: null,
+      });
     });
   });
 });

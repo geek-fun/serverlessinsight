@@ -76,23 +76,18 @@ const deployTencent = async (iac: ServerlessIac): Promise<void> => {
     items: [...functionPlan.items, ...bucketPlan.items, ...databasePlan.items],
   };
 
-  // Log plan
   logger.info(`${lang.__('PLAN_GENERATED')}: ${combinedPlan.items.length} ${lang.__('ACTIONS')}`);
-  for (const item of combinedPlan.items) {
+  combinedPlan.items.forEach((item) => {
     logger.info(`  - ${item.action.toUpperCase()}: ${item.logicalId} (${item.resourceType})`);
-  }
+  });
 
-  // Execute function plan
   logger.info(lang.__('EXECUTING_PLAN'));
   state = await executeFunctionPlan(context, functionPlan, iac.functions, state);
 
-  // Execute bucket plan
   state = await executeBucketPlan(context, bucketPlan, iac.buckets, state);
 
-  // Execute database plan
   state = await executeDatabasePlan(context, databasePlan, iac.databases, state);
 
-  // Save state
   saveState(state, process.cwd());
 
   logger.info(lang.__('STACK_DEPLOYED'));

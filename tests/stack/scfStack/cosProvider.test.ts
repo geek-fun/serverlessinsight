@@ -46,6 +46,9 @@ describe('CosProvider', () => {
     headBucket: jest.Mock;
     getBucketAcl: jest.Mock;
     getBucketWebsite: jest.Mock;
+    getBucketCors: jest.Mock;
+    getBucketVersioning: jest.Mock;
+    getBucketTagging: jest.Mock;
     deleteBucket: jest.Mock;
   };
 
@@ -64,6 +67,13 @@ describe('CosProvider', () => {
             ErrorDocument: { Key: '404.html' },
           },
         }),
+      ),
+      getBucketCors: jest.fn((params, callback) => callback(new Error('CORS not configured'))),
+      getBucketVersioning: jest.fn((params, callback) =>
+        callback(new Error('Versioning not accessible')),
+      ),
+      getBucketTagging: jest.fn((params, callback) =>
+        callback(new Error('Tagging not configured')),
       ),
       deleteBucket: jest.fn((params, callback) => callback(null)),
     };
@@ -152,6 +162,13 @@ describe('CosProvider', () => {
           IndexDocument: { Suffix: 'index.html' },
           ErrorDocument: { Key: '404.html' },
         },
+        AccessControlPolicy: {
+          owner: undefined,
+          grants: undefined,
+        },
+        CorsConfiguration: undefined,
+        VersioningConfiguration: undefined,
+        TaggingConfiguration: undefined,
       });
     });
 
@@ -180,6 +197,10 @@ describe('CosProvider', () => {
           IndexDocument: { Suffix: 'index.html' },
           ErrorDocument: { Key: '404.html' },
         },
+        AccessControlPolicy: undefined,
+        CorsConfiguration: undefined,
+        VersioningConfiguration: undefined,
+        TaggingConfiguration: undefined,
       });
     });
 
@@ -195,6 +216,13 @@ describe('CosProvider', () => {
         Location: 'ap-guangzhou',
         ACL: 'public-read',
         WebsiteConfiguration: undefined,
+        AccessControlPolicy: {
+          owner: undefined,
+          grants: undefined,
+        },
+        CorsConfiguration: undefined,
+        VersioningConfiguration: undefined,
+        TaggingConfiguration: undefined,
       });
     });
 

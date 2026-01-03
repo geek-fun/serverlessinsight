@@ -1,5 +1,4 @@
-import { FunctionDomain } from '../../types';
-import crypto from 'node:crypto';
+import { FunctionDomain, ResourceAttributes } from '../../types';
 import { mapRuntime, ProviderEnum } from '../../common';
 
 export type ScfFunctionConfig = {
@@ -16,6 +15,27 @@ export type ScfFunctionConfig = {
   };
 };
 
+export type ScfTrigger = {
+  ModTime: string;
+  Type: string;
+  TriggerDesc: string;
+  TriggerName: string;
+  AddTime: string;
+  Enable: number;
+  CustomArgument?: string;
+  AvailableStatus?: string;
+  ResourceId?: string;
+  BindStatus?: string;
+  TriggerAttribute?: string;
+  Qualifier?: string;
+  Description?: string;
+};
+
+export type ScfVpcConfig = {
+  VpcId?: string;
+  SubnetId?: string;
+};
+
 export type ScfFunctionInfo = {
   FunctionName: string;
   Runtime: string;
@@ -27,6 +47,90 @@ export type ScfFunctionInfo = {
   };
   ModTime?: string;
   CodeSha256?: string;
+  CodeInfo?: string;
+  Description?: string;
+  Triggers?: ScfTrigger[];
+  CodeSize?: number;
+  FunctionVersion?: string;
+  VpcConfig?: ScfVpcConfig;
+  UseGpu?: string;
+  CodeResult?: string;
+  CodeError?: string;
+  ErrNo?: number;
+  Namespace?: string;
+  Role?: string;
+  InstallDependency?: string;
+  Status?: string;
+  StatusDesc?: string;
+  ClsLogsetId?: string;
+  ClsTopicId?: string;
+  FunctionId?: string;
+  Tags?: Array<{ Key: string; Value: string }>;
+  EipConfig?: {
+    EipFixed?: string;
+    Eips?: string[];
+  };
+  AccessInfo?: {
+    Host?: string;
+    Vip?: string;
+  };
+  Type?: string;
+  L5Enable?: string;
+  Layers?: Array<{
+    LayerName?: string;
+    LayerVersion?: number;
+    CompatibleRuntimes?: string[];
+  }>;
+  DeadLetterConfig?: {
+    Type?: string;
+    Name?: string;
+    FilterType?: string;
+  };
+  AddTime?: string;
+  PublicNetConfig?: {
+    PublicNetStatus?: string;
+    EipConfig?: {
+      EipStatus?: string;
+      EipAddress?: string[];
+    };
+  };
+  OnsEnable?: string;
+  CfsConfig?: {
+    CfsInsList?: Array<{
+      UserId?: string;
+      UserGroupId?: string;
+      CfsId?: string;
+      MountInsId?: string;
+      LocalMountDir?: string;
+      RemoteMountDir?: string;
+      IpAddress?: string;
+      MountVpcId?: string;
+      MountSubnetId?: string;
+    }>;
+  };
+  AvailableStatus?: string;
+  Qualifier?: string;
+  InitTimeout?: number;
+  StatusReasons?: Array<{
+    ErrorCode?: string;
+    ErrorMessage?: string;
+  }>;
+  AsyncRunEnable?: string;
+  TraceEnable?: string;
+  ImageConfig?: {
+    ImageType?: string;
+    ImageUri?: string;
+  };
+  ProtocolType?: string;
+  ProtocolParams?: {
+    WSParams?: {
+      IdleTimeOut?: number;
+    };
+  };
+  DnsCache?: string;
+  IntranetConfig?: {
+    IpFixed?: string;
+  };
 };
 
 export const functionToScfConfig = (fn: FunctionDomain): ScfFunctionConfig => {
@@ -50,13 +154,31 @@ export const functionToScfConfig = (fn: FunctionDomain): ScfFunctionConfig => {
   return config;
 };
 
-export const computeConfigHash = (config: ScfFunctionConfig): string => {
-  const hashContent = JSON.stringify({
-    Runtime: config.Runtime,
-    Handler: config.Handler,
-    MemorySize: config.MemorySize,
-    Timeout: config.Timeout,
-    Environment: config.Environment,
-  });
-  return crypto.createHash('sha256').update(hashContent).digest('hex').substring(0, 16);
+export const extractScfDefinition = (
+  config: ScfFunctionConfig,
+  codeHash: string,
+): ResourceAttributes => {
+  const envMap: Record<string, string> =
+    config.Environment?.Variables?.reduce(
+      (acc, v) => ({ ...acc, [v.Key]: v.Value }),
+      {} as Record<string, string>,
+    ) ?? {};
+
+  return {
+    functionName: config.FunctionName,
+    runtime: config.Runtime,
+    handler: config.Handler,
+    memorySize: config.MemorySize,
+    timeout: config.Timeout,
+    environment: envMap,
+    codeHash,
+  };
+};
+
+export const extractFunctionDomainDefinition = (
+  fn: FunctionDomain,
+  codeHash: string,
+): ResourceAttributes => {
+  const config = functionToScfConfig(fn);
+  return extractScfDefinition(config, codeHash);
 };

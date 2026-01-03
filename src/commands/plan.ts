@@ -1,5 +1,5 @@
 import { getIacLocation, logger, setContext, loadState, ProviderEnum, getContext } from '../common';
-import { parseYaml } from '../parser';
+import { parseYaml, revalYaml } from '../parser';
 import { generateFunctionPlan, generateBucketPlan, generateDatabasePlan } from '../stack/scfStack';
 import { lang } from '../lang';
 
@@ -17,11 +17,16 @@ export const plan = async (
   },
 ) => {
   logger.info(lang.__('VALIDATING_YAML'));
-  const iac = parseYaml(getIacLocation(options.location));
+  const iacLocation = getIacLocation(options.location);
+  const rawIac = parseYaml(iacLocation);
   logger.info(lang.__('YAML_VALID'));
 
-  await setContext({ ...options, stackName, iacProvider: iac.provider }, true);
+  await setContext(
+    { ...options, stackName, iacProvider: rawIac.provider, stages: rawIac.stages },
+    true,
+  );
   const context = getContext();
+  const iac = revalYaml(iacLocation, context);
 
   if (iac.provider.name !== ProviderEnum.TENCENT) {
     logger.error(lang.__('PLAN_COMMAND_TENCENT_ONLY'));

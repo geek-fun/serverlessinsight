@@ -9,14 +9,10 @@ export const executeBucketPlan = async (
   buckets: Array<BucketDomain> | undefined,
   initialState: StateFile,
 ): Promise<StateFile> => {
-  const bucketsMap = new Map<string, BucketDomain>();
+  const bucketsMap = new Map<string, BucketDomain>(
+    buckets?.map((bucket) => [`buckets.${bucket.key}`, bucket]) ?? [],
+  );
   let currentState = initialState;
-
-  if (buckets) {
-    for (const bucket of buckets) {
-      bucketsMap.set(`buckets.${bucket.key}`, bucket);
-    }
-  }
 
   for (const item of plan.items) {
     if (item.action === 'noop') {
@@ -54,15 +50,17 @@ export const executeBucketPlan = async (
             logger.warn(`State not found for ${item.logicalId}, skipping deletion`);
             continue;
           }
-          logger.info(`Deleting bucket: ${state.physicalId}`);
+          // Extract bucket name from definition
+          const bucketName = state.definition.bucket as string;
+          logger.info(`Deleting bucket: ${bucketName}`);
           currentState = await deleteBucketResource(
             context,
-            state.physicalId,
+            bucketName,
             state.region,
             item.logicalId,
             currentState,
           );
-          logger.info(`Successfully deleted bucket: ${state.physicalId}`);
+          logger.info(`Successfully deleted bucket: ${bucketName}`);
           break;
         }
 

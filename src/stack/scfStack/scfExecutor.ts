@@ -9,14 +9,10 @@ export const executeFunctionPlan = async (
   functions: Array<FunctionDomain> | undefined,
   initialState: StateFile,
 ): Promise<StateFile> => {
-  const functionsMap = new Map<string, FunctionDomain>();
+  const functionsMap = new Map<string, FunctionDomain>(
+    functions?.map((fn) => [`functions.${fn.key}`, fn]) ?? [],
+  );
   let currentState = initialState;
-
-  if (functions) {
-    for (const fn of functions) {
-      functionsMap.set(`functions.${fn.key}`, fn);
-    }
-  }
 
   for (const item of plan.items) {
     if (item.action === 'noop') {
@@ -54,14 +50,11 @@ export const executeFunctionPlan = async (
             logger.warn(`State not found for ${item.logicalId}, skipping deletion`);
             continue;
           }
-          logger.info(`Deleting function: ${state.physicalId}`);
-          currentState = await deleteResource(
-            context,
-            state.physicalId,
-            item.logicalId,
-            currentState,
-          );
-          logger.info(`Successfully deleted function: ${state.physicalId}`);
+          // Extract function name from definition
+          const functionName = state.definition.functionName as string;
+          logger.info(`Deleting function: ${functionName}`);
+          currentState = await deleteResource(context, functionName, item.logicalId, currentState);
+          logger.info(`Successfully deleted function: ${functionName}`);
           break;
         }
 

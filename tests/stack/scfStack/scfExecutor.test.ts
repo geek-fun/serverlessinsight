@@ -3,7 +3,7 @@ import * as scfResource from '../../../src/stack/scfStack/scfResource';
 import { ProviderEnum } from '../../../src/common';
 import { getResource } from '../../../src/common/stateManager';
 import { logger } from '../../../src/common/logger';
-import { Context, Plan, StateFile } from '../../../src/types';
+import { Context, Plan, StateFile, CURRENT_STATE_VERSION } from '../../../src/types';
 
 // Mock dependencies
 jest.mock('../../../src/stack/scfStack/scfResource');
@@ -30,7 +30,7 @@ describe('ScfExecutor', () => {
   };
 
   const initialState: StateFile = {
-    version: '0.1',
+    version: CURRENT_STATE_VERSION,
     provider: 'tencent',
     resources: {},
   };
@@ -83,7 +83,15 @@ describe('ScfExecutor', () => {
 
       const newState = {
         ...initialState,
-        resources: { 'functions.test_fn': { type: 'SCF', physicalId: 'test-function' } },
+        resources: {
+          'functions.test_fn': {
+            mode: 'managed',
+            region: 'ap-guangzhou',
+            definition: { functionName: 'test-function' },
+            instances: [{ arn: 'arn:test', id: 'test-function' }],
+            lastUpdated: new Date().toISOString(),
+          },
+        },
       };
 
       (scfResource.createResource as jest.Mock).mockResolvedValue(newState);
@@ -131,7 +139,15 @@ describe('ScfExecutor', () => {
 
       const newState = {
         ...initialState,
-        resources: { 'functions.test_fn': { type: 'SCF', physicalId: 'test-function' } },
+        resources: {
+          'functions.test_fn': {
+            mode: 'managed',
+            region: 'ap-guangzhou',
+            definition: { functionName: 'test-function' },
+            instances: [{ arn: 'arn:test', id: 'test-function' }],
+            lastUpdated: new Date().toISOString(),
+          },
+        },
       };
 
       (scfResource.updateResource as jest.Mock).mockResolvedValue(newState);
@@ -171,10 +187,24 @@ describe('ScfExecutor', () => {
         ...initialState,
         resources: {
           'functions.test_fn': {
-            type: 'SCF',
-            physicalId: 'test-function',
+            mode: 'managed',
             region: 'ap-guangzhou',
-            configHash: 'abc123',
+            definition: {
+              functionName: 'test-function',
+              runtime: 'Nodejs18.15',
+              handler: 'index.handler',
+              memorySize: 512,
+              timeout: 10,
+              environment: {},
+              codeHash: 'abc123',
+            },
+            instances: [
+              {
+                arn: 'arn:tencent:scf:ap-guangzhou::function:test-function',
+                id: 'test-function',
+                functionName: 'test-function',
+              },
+            ],
             lastUpdated: '2025-01-01T00:00:00Z',
           },
         },
@@ -268,7 +298,15 @@ describe('ScfExecutor', () => {
 
       const newState = {
         ...initialState,
-        resources: { 'functions.test_fn1': { type: 'SCF', physicalId: 'test-function-1' } },
+        resources: {
+          'functions.test_fn1': {
+            mode: 'managed',
+            region: 'ap-guangzhou',
+            definition: { functionName: 'test-function-1' },
+            instances: [{ arn: 'arn:test', id: 'test-function-1' }],
+            lastUpdated: new Date().toISOString(),
+          },
+        },
       };
 
       (scfResource.createResource as jest.Mock).mockResolvedValue(newState);

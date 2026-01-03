@@ -1,4 +1,4 @@
-import { computeConfigHash, functionToScfConfig } from '../../../src/stack/scfStack/scfTypes';
+import { functionToScfConfig, extractScfDefinition } from '../../../src/stack/scfStack/scfTypes';
 import { FunctionDomain } from '../../../src/types';
 
 describe('SCF Types', () => {
@@ -90,8 +90,8 @@ describe('SCF Types', () => {
     });
   });
 
-  describe('computeConfigHash', () => {
-    it('should generate consistent hash for same config', () => {
+  describe('extractScfDefinition', () => {
+    it('should extract definition from config with codeHash', () => {
       const config = {
         FunctionName: 'test-function',
         Runtime: 'nodejs18',
@@ -103,15 +103,21 @@ describe('SCF Types', () => {
         },
       };
 
-      const hash1 = computeConfigHash(config);
-      const hash2 = computeConfigHash(config);
+      const definition = extractScfDefinition(config, 'abc123');
 
-      expect(hash1).toBe(hash2);
-      expect(hash1).toHaveLength(16);
+      expect(definition).toEqual({
+        functionName: 'test-function',
+        runtime: 'nodejs18',
+        handler: 'index.handler',
+        memorySize: 512,
+        timeout: 10,
+        environment: { NODE_ENV: 'production' },
+        codeHash: 'abc123',
+      });
     });
 
-    it('should generate different hash for different configs', () => {
-      const config1 = {
+    it('should set environment to empty object when not provided', () => {
+      const config = {
         FunctionName: 'test-function',
         Runtime: 'nodejs18',
         Handler: 'index.handler',
@@ -119,70 +125,40 @@ describe('SCF Types', () => {
         Timeout: 10,
       };
 
-      const config2 = {
-        FunctionName: 'test-function',
-        Runtime: 'nodejs18',
-        Handler: 'index.handler',
-        MemorySize: 1024, // Different memory size
-        Timeout: 10,
-      };
+      const definition = extractScfDefinition(config, 'abc123');
 
-      const hash1 = computeConfigHash(config1);
-      const hash2 = computeConfigHash(config2);
-
-      expect(hash1).not.toBe(hash2);
+      expect(definition).toEqual({
+        functionName: 'test-function',
+        runtime: 'nodejs18',
+        handler: 'index.handler',
+        memorySize: 512,
+        timeout: 10,
+        environment: {},
+        codeHash: 'abc123',
+      });
     });
 
-    it('should ignore FunctionName in hash computation', () => {
-      const config1 = {
-        FunctionName: 'test-function-1',
-        Runtime: 'nodejs18',
-        Handler: 'index.handler',
-        MemorySize: 512,
-        Timeout: 10,
-      };
-
-      const config2 = {
-        FunctionName: 'test-function-2', // Different name
-        Runtime: 'nodejs18',
-        Handler: 'index.handler',
-        MemorySize: 512,
-        Timeout: 10,
-      };
-
-      const hash1 = computeConfigHash(config1);
-      const hash2 = computeConfigHash(config2);
-
-      expect(hash1).toBe(hash2);
-    });
-
-    it('should consider environment variables in hash', () => {
-      const config1 = {
+    it('should convert environment variables array to map', () => {
+      const config = {
         FunctionName: 'test-function',
         Runtime: 'nodejs18',
         Handler: 'index.handler',
         MemorySize: 512,
         Timeout: 10,
         Environment: {
-          Variables: [{ Key: 'NODE_ENV', Value: 'production' }],
+          Variables: [
+            { Key: 'NODE_ENV', Value: 'production' },
+            { Key: 'API_KEY', Value: 'test123' },
+          ],
         },
       };
 
-      const config2 = {
-        FunctionName: 'test-function',
-        Runtime: 'nodejs18',
-        Handler: 'index.handler',
-        MemorySize: 512,
-        Timeout: 10,
-        Environment: {
-          Variables: [{ Key: 'NODE_ENV', Value: 'development' }], // Different value
-        },
-      };
+      const definition = extractScfDefinition(config, 'abc123');
 
-      const hash1 = computeConfigHash(config1);
-      const hash2 = computeConfigHash(config2);
-
-      expect(hash1).not.toBe(hash2);
+      expect(definition.environment).toEqual({
+        NODE_ENV: 'production',
+        API_KEY: 'test123',
+      });
     });
   });
 });

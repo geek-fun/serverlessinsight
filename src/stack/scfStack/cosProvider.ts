@@ -92,6 +92,7 @@ export const getCosBucket = async (
 
     // Get ACL
     let acl: string | undefined;
+    let accessControlPolicy: CosBucketInfo['AccessControlPolicy'];
     try {
       const aclResult = await new Promise<COS.GetBucketAclResult>((resolve, reject) => {
         client.cos.getBucketAcl(
@@ -109,10 +110,59 @@ export const getCosBucket = async (
         );
       });
       acl = aclResult.ACL;
+      accessControlPolicy = {
+        owner: aclResult.Owner
+          ? {
+              id: aclResult.Owner.ID,
+              displayName: undefined, // Not available in COS SDK
+            }
+          : undefined,
+        grants: aclResult.Grants?.map((g) => ({
+          grantee: g.Grantee
+            ? {
+                type: 'ID' in g.Grantee ? 'CanonicalUser' : 'Group',
+                uri: 'URI' in g.Grantee ? g.Grantee.URI : undefined,
+                id: 'ID' in g.Grantee ? g.Grantee.ID : undefined,
+                displayName: undefined,
+              }
+            : undefined,
+          permission: g.Permission,
+        })),
+      };
     } catch {
       // ACL might not be accessible due to insufficient permissions
-      // This is expected behavior for some bucket configurations
-      // Continue without ACL information
+    }
+
+    // Get CORS configuration
+    let corsConfiguration: CosBucketInfo['CorsConfiguration'];
+    try {
+      const corsResult = await new Promise<COS.GetBucketCorsResult>((resolve, reject) => {
+        client.cos.getBucketCors(
+          {
+            Bucket: bucketName,
+            Region: region,
+          },
+          (err, data) => {
+            if (err) {
+              reject(err);
+            } else {
+              resolve(data);
+            }
+          },
+        );
+      });
+      // CORSRules is Record<string, any> in the SDK type
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      corsConfiguration = corsResult.CORSRules?.map((r: any) => ({
+        id: r.ID,
+        allowedOrigins: r.AllowedOrigin,
+        allowedMethods: r.AllowedMethod,
+        allowedHeaders: r.AllowedHeader,
+        exposeHeaders: r.ExposeHeader,
+        maxAgeSeconds: r.MaxAgeSeconds,
+      }));
+    } catch {
+      // CORS might not be configured
     }
 
     // Get website configuration
@@ -144,9 +194,62 @@ export const getCosBucket = async (
         };
       }
     } catch {
-      // Website configuration might not be set (buckets without static website hosting)
-      // or user may not have permission to read it
-      // This is expected behavior - continue without website configuration
+      // Website configuration might not be set
+    }
+
+    // Get versioning configuration
+    let versioningConfig: CosBucketInfo['VersioningConfiguration'];
+    try {
+      const versioningResult = await new Promise<COS.GetBucketVersioningResult>(
+        (resolve, reject) => {
+          client.cos.getBucketVersioning(
+            {
+              Bucket: bucketName,
+              Region: region,
+            },
+            (err, data) => {
+              if (err) {
+                reject(err);
+              } else {
+                resolve(data);
+              }
+            },
+          );
+        },
+      );
+      versioningConfig = {
+        status: versioningResult.VersioningConfiguration?.Status,
+      };
+    } catch {
+      // Versioning might not be accessible
+    }
+
+    // Get tagging configuration
+    let taggingConfig: CosBucketInfo['TaggingConfiguration'];
+    try {
+      const taggingResult = await new Promise<COS.GetBucketTaggingResult>((resolve, reject) => {
+        client.cos.getBucketTagging(
+          {
+            Bucket: bucketName,
+            Region: region,
+          },
+          (err, data) => {
+            if (err) {
+              reject(err);
+            } else {
+              resolve(data);
+            }
+          },
+        );
+      });
+      taggingConfig = {
+        tags: taggingResult.Tags?.map((t) => ({
+          key: t.Key,
+          value: t.Value,
+        })),
+      };
+    } catch {
+      // Tagging might not be configured
     }
 
     return {
@@ -154,6 +257,10 @@ export const getCosBucket = async (
       Location: region,
       ACL: acl,
       WebsiteConfiguration: websiteConfig,
+      AccessControlPolicy: accessControlPolicy,
+      CorsConfiguration: corsConfiguration,
+      VersioningConfiguration: versioningConfig,
+      TaggingConfiguration: taggingConfig,
     };
   } catch (error: unknown) {
     if (error && typeof error === 'object' && 'statusCode' in error) {

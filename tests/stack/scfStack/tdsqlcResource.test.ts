@@ -13,6 +13,7 @@ import {
   DatabaseVersionEnum,
   StateFile,
   ResourceState,
+  CURRENT_STATE_VERSION,
 } from '../../../src/types';
 import { ProviderEnum } from '../../../src/common';
 
@@ -45,8 +46,6 @@ describe('TdsqlcResource', () => {
     network: {
       type: 'PRIVATE',
       ingressRules: ['0.0.0.0/0'],
-      vpcId: 'vpc-12345',
-      subnetId: 'subnet-67890',
     },
     cu: {
       min: 1,
@@ -54,12 +53,11 @@ describe('TdsqlcResource', () => {
     },
     storage: {
       min: 10,
-      max: 1000,
     },
   };
 
   const mockState: StateFile = {
-    version: '1.0',
+    version: CURRENT_STATE_VERSION,
     provider: 'tencent',
     resources: {},
   };
@@ -68,14 +66,44 @@ describe('TdsqlcResource', () => {
     jest.clearAllMocks();
   });
 
+  const mockClusterInfo = {
+    ClusterId: 'cynosdbmysql-test123',
+    ClusterName: 'test-tdsqlc',
+    Region: 'ap-guangzhou',
+    DbType: 'MYSQL',
+    DbVersion: '8.0',
+    Status: 'running',
+    VpcId: undefined,
+    SubnetId: undefined,
+    Vip: '10.0.0.1',
+    Vport: 3306,
+    MinCpu: undefined,
+    MaxCpu: undefined,
+    MinStorageSize: undefined,
+    MaxStorageSize: undefined,
+    AutoPause: 'yes',
+    CreateTime: '2025-01-01T00:00:00Z',
+    UpdateTime: '2025-01-01T00:00:00Z',
+  };
+
   describe('createDatabaseResource', () => {
-    it('should create database resource and update state', async () => {
+    it('should create database resource and refresh state from provider', async () => {
       const clusterId = 'cynosdbmysql-test123';
       const mockResourceState: ResourceState = {
-        type: 'TDSQL_C_SERVERLESS',
-        physicalId: clusterId,
+        mode: 'managed',
         region: 'ap-guangzhou',
-        configHash: 'hash',
+        definition: {
+          clusterName: 'test-tdsqlc',
+          dbType: 'MYSQL',
+          dbVersion: '8.0',
+        },
+        instances: [
+          {
+            arn: 'arn:tencent:cynosdb:ap-guangzhou::cluster:cynosdbmysql-test123',
+            id: clusterId,
+            clusterName: 'test-tdsqlc',
+          },
+        ],
         lastUpdated: new Date().toISOString(),
       };
       const updatedState: StateFile = {
@@ -84,6 +112,7 @@ describe('TdsqlcResource', () => {
       };
 
       jest.spyOn(tdsqlcProvider, 'createTdsqlcCluster').mockResolvedValue(clusterId);
+      jest.spyOn(tdsqlcProvider, 'getTdsqlcCluster').mockResolvedValue(mockClusterInfo);
       jest.spyOn(stateManager, 'setResource').mockReturnValue(updatedState);
 
       const result = await createDatabaseResource(mockContext, mockDatabase, mockState);
@@ -94,37 +123,58 @@ describe('TdsqlcResource', () => {
           ClusterName: 'test-tdsqlc',
           DbType: 'MYSQL',
           DbVersion: '8.0',
+          DbMode: 'SERVERLESS',
           MinCpu: 1,
           MaxCpu: 8,
         }),
       );
 
+      expect(tdsqlcProvider.getTdsqlcCluster).toHaveBeenCalledWith(mockContext, clusterId);
+
       expect(stateManager.setResource).toHaveBeenCalledWith(
         mockState,
         'databases.test_db',
         expect.objectContaining({
-          type: 'TDSQL_C_SERVERLESS',
-          physicalId: clusterId,
+          mode: 'managed',
           region: 'ap-guangzhou',
-          metadata: {
+          definition: expect.objectContaining({
             clusterName: 'test-tdsqlc',
-          },
+          }),
+          instances: expect.arrayContaining([
+            expect.objectContaining({
+              arn: expect.stringContaining('arn:tencent:cynosdb'),
+              id: clusterId,
+              status: 'running',
+              vip: '10.0.0.1',
+              vport: 3306,
+            }),
+          ]),
         }),
       );
 
-      expect(result).toBe(updatedState);
+      expect(result).toEqual(updatedState);
+    });
+
+    it('should throw error when refresh state fails', async () => {
+      const clusterId = 'cynosdbmysql-test123';
+      jest.spyOn(tdsqlcProvider, 'createTdsqlcCluster').mockResolvedValue(clusterId);
+      jest.spyOn(tdsqlcProvider, 'getTdsqlcCluster').mockResolvedValue(null);
+
+      await expect(createDatabaseResource(mockContext, mockDatabase, mockState)).rejects.toThrow(
+        `Failed to refresh state for cluster: ${clusterId}`,
+      );
     });
   });
 
   describe('readDatabaseResource', () => {
-    it('should read database resource information', async () => {
+    it('should read database resource from provider', async () => {
       const clusterId = 'cynosdbmysql-test123';
       const clusterInfo = {
         ClusterId: clusterId,
         ClusterName: 'test-tdsqlc',
         Status: 'running',
         Region: 'ap-guangzhou',
-        DbType: 'MYSQL',
+        DbType: 'MYSQL' as const,
         DbVersion: '8.0',
       };
 
@@ -138,13 +188,23 @@ describe('TdsqlcResource', () => {
   });
 
   describe('updateDatabaseResource', () => {
-    it('should update database resource and state', async () => {
+    it('should update database resource and refresh state from provider', async () => {
       const clusterId = 'cynosdbmysql-test123';
       const mockResourceState: ResourceState = {
-        type: 'TDSQL_C_SERVERLESS',
-        physicalId: clusterId,
+        mode: 'managed',
         region: 'ap-guangzhou',
-        configHash: 'new-hash',
+        definition: {
+          clusterName: 'test-tdsqlc',
+          dbType: 'MYSQL',
+          dbVersion: '8.0',
+        },
+        instances: [
+          {
+            arn: 'arn:tencent:cynosdb:ap-guangzhou::cluster:cynosdbmysql-test123',
+            id: clusterId,
+            clusterName: 'test-tdsqlc',
+          },
+        ],
         lastUpdated: new Date().toISOString(),
       };
       const updatedState: StateFile = {
@@ -153,6 +213,7 @@ describe('TdsqlcResource', () => {
       };
 
       jest.spyOn(tdsqlcProvider, 'updateTdsqlcCluster').mockResolvedValue();
+      jest.spyOn(tdsqlcProvider, 'getTdsqlcCluster').mockResolvedValue(mockClusterInfo);
       jest.spyOn(stateManager, 'setResource').mockReturnValue(updatedState);
 
       const result = await updateDatabaseResource(mockContext, mockDatabase, clusterId, mockState);
@@ -167,33 +228,47 @@ describe('TdsqlcResource', () => {
         }),
       );
 
-      expect(stateManager.setResource).toHaveBeenCalledWith(
-        mockState,
-        'databases.test_db',
-        expect.objectContaining({
-          type: 'TDSQL_C_SERVERLESS',
-          physicalId: clusterId,
-        }),
-      );
+      expect(tdsqlcProvider.getTdsqlcCluster).toHaveBeenCalledWith(mockContext, clusterId);
 
-      expect(result).toBe(updatedState);
+      expect(result).toEqual(updatedState);
+    });
+
+    it('should throw error when refresh state fails', async () => {
+      const clusterId = 'cynosdbmysql-test123';
+      jest.spyOn(tdsqlcProvider, 'updateTdsqlcCluster').mockResolvedValue();
+      jest.spyOn(tdsqlcProvider, 'getTdsqlcCluster').mockResolvedValue(null);
+
+      await expect(
+        updateDatabaseResource(mockContext, mockDatabase, clusterId, mockState),
+      ).rejects.toThrow(`Failed to refresh state for cluster: ${clusterId}`);
     });
   });
 
   describe('deleteDatabaseResource', () => {
-    it('should delete database resource and remove from state', async () => {
+    it('should delete database resource and update state', async () => {
       const clusterId = 'cynosdbmysql-test123';
       const logicalId = 'databases.test_db';
-      const updatedState = { ...mockState, resources: {} };
+      const stateWithDb: StateFile = {
+        ...mockState,
+        resources: {
+          [logicalId]: {
+            mode: 'managed',
+            region: 'ap-guangzhou',
+            definition: {},
+            instances: [],
+            lastUpdated: new Date().toISOString(),
+          },
+        },
+      };
 
       jest.spyOn(tdsqlcProvider, 'deleteTdsqlcCluster').mockResolvedValue();
-      jest.spyOn(stateManager, 'removeResource').mockReturnValue(updatedState as StateFile);
+      jest.spyOn(stateManager, 'removeResource').mockReturnValue(mockState);
 
-      const result = await deleteDatabaseResource(mockContext, clusterId, logicalId, mockState);
+      const result = await deleteDatabaseResource(mockContext, clusterId, logicalId, stateWithDb);
 
       expect(tdsqlcProvider.deleteTdsqlcCluster).toHaveBeenCalledWith(mockContext, clusterId);
-      expect(stateManager.removeResource).toHaveBeenCalledWith(mockState, logicalId);
-      expect(result).toBe(updatedState);
+      expect(stateManager.removeResource).toHaveBeenCalledWith(stateWithDb, logicalId);
+      expect(result).toEqual(mockState);
     });
   });
 });

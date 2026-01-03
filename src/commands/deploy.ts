@@ -1,6 +1,6 @@
 import { deployStack } from '../stack';
-import { getIacLocation, logger, setContext } from '../common';
-import { parseYaml } from '../parser';
+import { getContext, getIacLocation, logger, setContext } from '../common';
+import { parseYaml, revalYaml } from '../parser';
 import { lang } from '../lang';
 
 export const deploy = async (
@@ -17,10 +17,17 @@ export const deploy = async (
   },
 ) => {
   logger.info(lang.__('VALIDATING_YAML'));
-  const iac = parseYaml(getIacLocation(options.location));
+  const iacLocation = getIacLocation(options.location);
+  const rawIac = parseYaml(iacLocation);
   logger.info(lang.__('YAML_VALID'));
 
-  await setContext({ ...options, stackName, iacProvider: iac.provider }, true);
+  await setContext(
+    { ...options, stackName, iacProvider: rawIac.provider, stages: rawIac.stages },
+    true,
+  );
+
+  const context = getContext();
+  const iac = revalYaml(iacLocation, context);
 
   logger.info(lang.__('DEPLOYING_STACK'));
   await deployStack(stackName, iac);

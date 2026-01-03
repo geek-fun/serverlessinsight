@@ -7,13 +7,15 @@ import {
 import * as scfProvider from '../../../src/stack/scfStack/scfProvider';
 import * as scfTypes from '../../../src/stack/scfStack/scfTypes';
 import * as stateManager from '../../../src/common/stateManager';
+import * as hashUtils from '../../../src/common/hashUtils';
 import { ProviderEnum } from '../../../src/common';
-import { Context, StateFile } from '../../../src/types';
+import { Context, StateFile, CURRENT_STATE_VERSION } from '../../../src/types';
 
 // Mock dependencies
 jest.mock('../../../src/stack/scfStack/scfProvider');
 jest.mock('../../../src/stack/scfStack/scfTypes');
 jest.mock('../../../src/common/stateManager');
+jest.mock('../../../src/common/hashUtils');
 
 describe('ScfResource', () => {
   const mockContext: Context = {
@@ -29,7 +31,7 @@ describe('ScfResource', () => {
   };
 
   const initialState: StateFile = {
-    version: '0.1',
+    version: CURRENT_STATE_VERSION,
     provider: 'tencent',
     resources: {},
   };
@@ -61,22 +63,47 @@ describe('ScfResource', () => {
     },
   };
 
+  const mockDefinition = {
+    functionName: 'test-function',
+    runtime: 'nodejs18',
+    handler: 'index.handler',
+    memorySize: 512,
+    timeout: 10,
+    environment: { NODE_ENV: 'production' },
+    codeHash: 'mock-code-hash',
+  };
+
+  const mockFunctionInfo = {
+    FunctionName: 'test-function',
+    Runtime: 'nodejs18',
+    Handler: 'index.handler',
+    MemorySize: 512,
+    Timeout: 10,
+    Environment: {
+      Variables: [{ Key: 'NODE_ENV', Value: 'production' }],
+    },
+    ModTime: '2025-01-01T00:00:00Z',
+    CodeSha256: 'provider-code-sha256',
+  };
+
   beforeEach(() => {
     jest.clearAllMocks();
     (scfTypes.functionToScfConfig as jest.Mock).mockReturnValue(mockConfig);
-    (scfTypes.computeConfigHash as jest.Mock).mockReturnValue('abc123');
+    (scfTypes.extractScfDefinition as jest.Mock).mockReturnValue(mockDefinition);
+    (hashUtils.computeFileHash as jest.Mock).mockReturnValue('mock-code-hash');
+    (scfProvider.getScfFunction as jest.Mock).mockResolvedValue(mockFunctionInfo);
   });
 
   describe('createResource', () => {
-    it('should create a resource and update state', async () => {
+    it('should create a resource and refresh state from provider', async () => {
       const newState = {
         ...initialState,
         resources: {
           'functions.test_fn': {
-            type: 'SCF',
-            physicalId: 'test-function',
+            mode: 'managed',
             region: 'ap-guangzhou',
-            configHash: 'abc123',
+            definition: mockDefinition,
+            instances: expect.any(Array),
             lastUpdated: expect.any(String),
           },
         },
@@ -93,15 +120,29 @@ describe('ScfResource', () => {
         mockConfig,
         'test.zip',
       );
-      expect(scfTypes.computeConfigHash).toHaveBeenCalledWith(mockConfig);
+      expect(scfProvider.getScfFunction).toHaveBeenCalledWith(mockContext, 'test-function');
+      expect(hashUtils.computeFileHash).toHaveBeenCalledWith('test.zip');
+      expect(scfTypes.extractScfDefinition).toHaveBeenCalledWith(mockConfig, 'mock-code-hash');
       expect(stateManager.setResource).toHaveBeenCalledWith(
         initialState,
         'functions.test_fn',
         expect.objectContaining({
-          type: 'SCF',
-          physicalId: 'test-function',
+          mode: 'managed',
           region: 'ap-guangzhou',
-          configHash: 'abc123',
+          definition: mockDefinition,
+          instances: expect.arrayContaining([
+            expect.objectContaining({
+              arn: expect.stringContaining('arn:tencent:scf'),
+              id: 'test-function',
+              functionName: 'test-function',
+              runtime: 'nodejs18',
+              handler: 'index.handler',
+              memorySize: 512,
+              timeout: 10,
+              modTime: '2025-01-01T00:00:00Z',
+              codeSha256: 'provider-code-sha256',
+            }),
+          ]),
         }),
       );
       expect(result).toEqual(newState);
@@ -113,6 +154,15 @@ describe('ScfResource', () => {
 
       await expect(createResource(mockContext, testFunction, initialState)).rejects.toThrow(
         'Create failed',
+      );
+    });
+
+    it('should throw error when refresh state fails', async () => {
+      (scfProvider.createScfFunction as jest.Mock).mockResolvedValue(undefined);
+      (scfProvider.getScfFunction as jest.Mock).mockResolvedValue(null);
+
+      await expect(createResource(mockContext, testFunction, initialState)).rejects.toThrow(
+        'Failed to refresh state for function: test-function',
       );
     });
   });
@@ -145,15 +195,15 @@ describe('ScfResource', () => {
   });
 
   describe('updateResource', () => {
-    it('should update resource configuration and code', async () => {
+    it('should update resource and refresh state from provider', async () => {
       const newState = {
         ...initialState,
         resources: {
           'functions.test_fn': {
-            type: 'SCF',
-            physicalId: 'test-function',
+            mode: 'managed',
             region: 'ap-guangzhou',
-            configHash: 'abc123',
+            definition: mockDefinition,
+            instances: expect.any(Array),
             lastUpdated: expect.any(String),
           },
         },
@@ -175,15 +225,24 @@ describe('ScfResource', () => {
         'test-function',
         'test.zip',
       );
-      expect(scfTypes.computeConfigHash).toHaveBeenCalledWith(mockConfig);
+      expect(scfProvider.getScfFunction).toHaveBeenCalledWith(mockContext, 'test-function');
+      expect(hashUtils.computeFileHash).toHaveBeenCalledWith('test.zip');
+      expect(scfTypes.extractScfDefinition).toHaveBeenCalledWith(mockConfig, 'mock-code-hash');
       expect(stateManager.setResource).toHaveBeenCalledWith(
         initialState,
         'functions.test_fn',
         expect.objectContaining({
-          type: 'SCF',
-          physicalId: 'test-function',
+          mode: 'managed',
           region: 'ap-guangzhou',
-          configHash: 'abc123',
+          definition: mockDefinition,
+          instances: expect.arrayContaining([
+            expect.objectContaining({
+              arn: expect.stringContaining('arn:tencent:scf'),
+              id: 'test-function',
+              functionName: 'test-function',
+              runtime: 'nodejs18',
+            }),
+          ]),
         }),
       );
       expect(result).toEqual(newState);
@@ -207,6 +266,16 @@ describe('ScfResource', () => {
         'Update code failed',
       );
     });
+
+    it('should throw error when refresh state fails', async () => {
+      (scfProvider.updateScfFunctionConfiguration as jest.Mock).mockResolvedValue(undefined);
+      (scfProvider.updateScfFunctionCode as jest.Mock).mockResolvedValue(undefined);
+      (scfProvider.getScfFunction as jest.Mock).mockResolvedValue(null);
+
+      await expect(updateResource(mockContext, testFunction, initialState)).rejects.toThrow(
+        'Failed to refresh state for function: test-function',
+      );
+    });
   });
 
   describe('deleteResource', () => {
@@ -215,10 +284,16 @@ describe('ScfResource', () => {
         ...initialState,
         resources: {
           'functions.test_fn': {
-            type: 'SCF',
-            physicalId: 'test-function',
+            mode: 'managed',
             region: 'ap-guangzhou',
-            configHash: 'abc123',
+            definition: mockDefinition,
+            instances: [
+              {
+                arn: 'arn:tencent:scf:ap-guangzhou::function:test-function',
+                id: 'test-function',
+                functionName: 'test-function',
+              },
+            ],
             lastUpdated: '2025-01-01T00:00:00Z',
           },
         },

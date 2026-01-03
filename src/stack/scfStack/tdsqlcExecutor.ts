@@ -1,4 +1,4 @@
-import { Context, DatabaseDomain, Plan, StateFile, ResourceTypeEnum } from '../../types';
+import { Context, DatabaseDomain, Plan, StateFile } from '../../types';
 import {
   createDatabaseResource,
   deleteDatabaseResource,
@@ -13,17 +13,13 @@ export const executeDatabasePlan = async (
   databases: Array<DatabaseDomain> | undefined,
   initialState: StateFile,
 ): Promise<StateFile> => {
-  const databasesMap = new Map<string, DatabaseDomain>();
+  const databasesMap = new Map<string, DatabaseDomain>(
+    databases?.map((database) => [`databases.${database.key}`, database]) ?? [],
+  );
   let currentState = initialState;
 
-  if (databases) {
-    for (const database of databases) {
-      databasesMap.set(`databases.${database.key}`, database);
-    }
-  }
-
   for (const item of plan.items) {
-    if (item.resourceType !== ResourceTypeEnum.TDSQL_C_SERVERLESS) {
+    if (item.resourceType !== 'TDSQL_C_SERVERLESS') {
       continue;
     }
 
@@ -54,13 +50,14 @@ export const executeDatabasePlan = async (
           if (!state) {
             throw new Error(`State not found for ${item.logicalId}`);
           }
+          // Extract clusterId from metadata or instances
+          const clusterId =
+            (state.metadata?.clusterId as string | undefined) || state.instances?.[0]?.id;
+          if (!clusterId) {
+            throw new Error(`Cluster ID not found in state for ${item.logicalId}`);
+          }
           logger.info(`Updating TDSQL-C database: ${database.name}`);
-          currentState = await updateDatabaseResource(
-            context,
-            database,
-            state.physicalId,
-            currentState,
-          );
+          currentState = await updateDatabaseResource(context, database, clusterId, currentState);
           logger.info(`Successfully updated TDSQL-C database: ${database.name}`);
           break;
         }
@@ -71,14 +68,20 @@ export const executeDatabasePlan = async (
             logger.warn(`State not found for ${item.logicalId}, skipping deletion`);
             continue;
           }
-          logger.info(`Deleting TDSQL-C database: ${state.physicalId}`);
+          // Extract clusterId from metadata or instances
+          const clusterId =
+            (state.metadata?.clusterId as string | undefined) || state.instances?.[0]?.id;
+          if (!clusterId) {
+            throw new Error(`Cluster ID not found in state for ${item.logicalId}`);
+          }
+          logger.info(`Deleting TDSQL-C database: ${clusterId}`);
           currentState = await deleteDatabaseResource(
             context,
-            state.physicalId,
+            clusterId,
             item.logicalId,
             currentState,
           );
-          logger.info(`Successfully deleted TDSQL-C database: ${state.physicalId}`);
+          logger.info(`Successfully deleted TDSQL-C database: ${clusterId}`);
           break;
         }
 

@@ -1,5 +1,4 @@
-import { DatabaseDomain } from '../../types';
-import crypto from 'node:crypto';
+import { DatabaseDomain, ResourceAttributes } from '../../types';
 
 export type TdsqlcClusterConfig = {
   ClusterName: string;
@@ -24,20 +23,70 @@ export type TdsqlcClusterInfo = {
   ClusterId: string;
   ClusterName: string;
   Region: string;
+  Zone?: string;
+  PhysicalZone?: string;
   DbType: string;
   DbVersion: string;
+  DbMode?: string;
   Status: string;
+  StatusDesc?: string;
+  ServerlessStatus?: string;
   VpcId?: string;
+  VpcName?: string;
   SubnetId?: string;
+  SubnetName?: string;
+  Charset?: string;
   Vip?: string;
   Vport?: number;
+  WanDomain?: string;
+  WanIP?: string;
+  WanPort?: string;
+  WanStatus?: string;
   MinCpu?: number;
   MaxCpu?: number;
   MinStorageSize?: number;
   MaxStorageSize?: number;
+  StorageId?: string;
+  Storage?: number;
+  StorageLimit?: number;
+  StoragePayMode?: number;
   AutoPause?: string;
+  AutoPauseDelay?: number;
   CreateTime?: string;
   UpdateTime?: string;
+  ProjectId?: number;
+  PayMode?: number;
+  PeriodEndTime?: string;
+  AutoRenewFlag?: number;
+  InstanceCount?: number;
+  ProcessingTask?: string;
+  SupportedFeatures?: string[];
+  RollbackSupport?: number;
+  NetworkType?: string;
+  ResourcePackageId?: string;
+  ResourcePackageType?: string;
+  ResourcePackageState?: string;
+  PhysicalRegion?: string;
+  ProxyStatus?: string;
+  RwGroupId?: string;
+  MasterZone?: string;
+  SlaveZones?: string[];
+  BusinessType?: string;
+  IsFreeze?: string;
+  OrderSource?: string;
+  Ability?: {
+    IsSupportSlaveZone?: string;
+    NonsupportSlaveZoneReason?: string;
+    IsSupportRo?: string;
+    NonsupportRoReason?: string;
+  };
+  ResourceTags?: Array<{
+    TagKey?: string;
+    TagValue?: string;
+  }>;
+  CynosVersion?: string;
+  CynosVersionStatus?: string;
+  IsLatestVersion?: string;
 };
 
 export const databaseToTdsqlcConfig = (database: DatabaseDomain): TdsqlcClusterConfig => {
@@ -83,17 +132,22 @@ export const databaseToTdsqlcConfig = (database: DatabaseDomain): TdsqlcClusterC
   return config;
 };
 
-export const computeDatabaseConfigHash = (config: TdsqlcClusterConfig): string => {
-  const hashContent = JSON.stringify({
-    ClusterName: config.ClusterName,
-    DbVersion: config.DbVersion,
-    MinCpu: config.MinCpu,
-    MaxCpu: config.MaxCpu,
-    MinStorageSize: config.MinStorageSize,
-    MaxStorageSize: config.MaxStorageSize,
-    AutoPause: config.AutoPause,
-    VpcId: config.VpcId,
-    SubnetId: config.SubnetId,
-  });
-  return crypto.createHash('sha256').update(hashContent).digest('hex').substring(0, 16);
+export const extractTdsqlcDefinition = (config: TdsqlcClusterConfig): ResourceAttributes => {
+  return {
+    clusterName: config.ClusterName,
+    dbType: config.DbType,
+    dbVersion: config.DbVersion,
+    dbMode: config.DbMode,
+    minCpu: config.MinCpu,
+    maxCpu: config.MaxCpu,
+    autoPause: config.AutoPause ?? null,
+    autoPauseDelay: config.AutoPauseDelay ?? null,
+    storagePayMode: config.StoragePayMode ?? null,
+    vpcId: config.VpcId ?? null,
+    subnetId: config.SubnetId ?? null,
+    port: config.Port ?? null,
+    projectId: config.ProjectId ?? null,
+    minStorageSize: config.MinStorageSize ?? null,
+    maxStorageSize: config.MaxStorageSize ?? null,
+  };
 };

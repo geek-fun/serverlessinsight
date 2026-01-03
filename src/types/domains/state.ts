@@ -4,14 +4,26 @@ export enum ResourceTypeEnum {
   TDSQL_C_SERVERLESS = 'TDSQL_C_SERVERLESS',
 }
 
+export type ResourceAttributes = Record<string, unknown>;
+
+export type ResourceMode = 'managed' | 'data';
+
+export type ResourceInstance = {
+  arn: string;
+  id: string;
+  [key: string]: unknown;
+};
+
 export type ResourceState = {
-  type: string;
-  physicalId: string;
+  mode: ResourceMode;
   region: string;
-  configHash: string;
+  definition: ResourceAttributes;
+  instances: Array<ResourceInstance>;
   lastUpdated: string;
   metadata?: Record<string, unknown>;
 };
+
+export const CURRENT_STATE_VERSION = '1.0';
 
 export type StateFile = {
   version: string;
