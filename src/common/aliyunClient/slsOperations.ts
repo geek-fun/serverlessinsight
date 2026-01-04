@@ -4,7 +4,6 @@ import { SlsProjectInfo, SlsLogstoreInfo, SlsIndexInfo } from './types';
 
 type SlsSdkClient = SlsClient;
 
-// Helper for SLS operations
 const waitForSlsProject = async (
   getProject: (projectName: string) => Promise<SlsProjectInfo | null>,
   projectName: string,
@@ -47,7 +46,6 @@ const waitForSlsLogstore = async (
   return { logstoreName, projectName, ttl };
 };
 
-// SLS operations
 const createSlsOperations = (slsClient: SlsSdkClient) => {
   const operations = {
     createProject: async (projectName: string, description?: string): Promise<SlsProjectInfo> => {

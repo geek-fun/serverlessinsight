@@ -1,6 +1,6 @@
 import { Context, NasStorageClassEnum } from '../../types';
 
-// FC3 Operation Types
+
 export type Fc3FunctionConfig = {
   functionName: string;
   runtime: string;
@@ -104,7 +104,7 @@ export type Fc3FunctionInfo = {
   lastUpdateStatusReasonCode?: string;
 };
 
-// SLS Operation Types
+
 export type SlsProjectInfo = {
   projectName: string;
   description?: string;
@@ -129,7 +129,7 @@ export type SlsIndexInfo = {
   lastModifyTime?: number;
 };
 
-// RAM Operation Types
+
 export type RamRoleInfo = {
   roleName: string;
   roleId?: string;
@@ -138,7 +138,7 @@ export type RamRoleInfo = {
   createDate?: string;
 };
 
-// ECS Operation Types
+
 export type SecurityGroupInfo = {
   securityGroupId: string;
   securityGroupName?: string;
@@ -147,7 +147,7 @@ export type SecurityGroupInfo = {
   createTime?: string;
 };
 
-// NAS Operation Types
+
 export type NasFileSystemInfo = {
   fileSystemId: string;
   fileSystemType?: string;

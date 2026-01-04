@@ -1,6 +1,11 @@
 import { Context } from '../../types';
 
-// SCF Operation Types
+export enum TdsqlcClusterStatus {
+  RUNNING = 'running',
+  ISOLATED = 'isolated',
+  OFFLINE = 'offline',
+}
+
 export type ScfFunctionConfig = {
   FunctionName: string;
   Handler: string;
@@ -88,7 +93,7 @@ export type ScfFunctionInfo = {
   IntranetConfig?: unknown;
 };
 
-// COS Operation Types
+
 export type CosBucketConfig = {
   Bucket: string;
   Region: string;
@@ -149,7 +154,7 @@ export type CosBucketInfo = {
   };
 };
 
-// TDSQL-C Operation Types
+
 export type TdsqlcClusterConfig = {
   ClusterName: string;
   DbType: string;

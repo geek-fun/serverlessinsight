@@ -13,11 +13,10 @@ import { createRamOperations } from './ramOperations';
 import { createEcsOperations } from './ecsOperations';
 import { createNasOperations } from './nasOperations';
 
-// Re-export all types
 export * from './types';
 
-// Initialize SDK clients (internal)
 const initializeSdkClients = (context: Context) => {
+
   const baseConfig = {
     accessKeyId: context.accessKeyId,
     accessKeySecret: context.accessKeySecret,

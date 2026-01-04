@@ -5,8 +5,20 @@ import { NasFileSystemInfo, NasMountTargetInfo, NasAccessGroupInfo } from './typ
 
 type NasSdkClient = NasClient;
 
-// NAS operations
-const createNasOperations = (nasClient: NasSdkClient) => {
+const storageClassMap: Record<
+  NasStorageClassEnum,
+  { fileSystemType: string; storageType: string }
+> = {
+  [NasStorageClassEnum.STANDARD_CAPACITY]: { fileSystemType: 'standard', storageType: 'Capacity' },
+  [NasStorageClassEnum.STANDARD_PERFORMANCE]: {
+    fileSystemType: 'standard',
+    storageType: 'Performance',
+  },
+  [NasStorageClassEnum.EXTREME_STANDARD]: { fileSystemType: 'extreme', storageType: 'standard' },
+  [NasStorageClassEnum.EXTREME_ADVANCE]: { fileSystemType: 'extreme', storageType: 'advance' },
+};
+
+export const createNasOperations = (nasClient: NasSdkClient) => {
   const operations = {
     createAccessGroup: async (
       accessGroupName: string,

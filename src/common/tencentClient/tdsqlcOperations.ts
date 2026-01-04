@@ -1,6 +1,6 @@
 import * as cynosdb from 'tencentcloud-sdk-nodejs-cynosdb';
 import { Context } from '../../types';
-import { TdsqlcClusterConfig, TdsqlcClusterInfo } from './types';
+import { TdsqlcClusterConfig, TdsqlcClusterInfo, TdsqlcClusterStatus } from './types';
 import { logger } from '../logger';
 import { lang } from '../lang';
 
@@ -22,12 +22,12 @@ const waitForClusterReady = async (
       throw new Error(lang.__('TDSQL_CLUSTER_NOT_FOUND', { clusterId }));
     }
 
-    if (cluster.Status === 'running') {
+    if (cluster.Status === TdsqlcClusterStatus.RUNNING) {
       logger.info(lang.__('TDSQL_CLUSTER_READY', { clusterId }));
       return;
     }
 
-    if (cluster.Status === 'isolated' || cluster.Status === 'offline') {
+    if (cluster.Status === TdsqlcClusterStatus.ISOLATED || cluster.Status === TdsqlcClusterStatus.OFFLINE) {
       throw new Error(lang.__('TDSQL_CLUSTER_ERROR_STATE', { status: cluster.Status }));
     }
 
@@ -54,7 +54,7 @@ const waitForClusterDeleted = async (
       return;
     }
 
-    if (cluster.Status === 'isolated' || cluster.Status === 'offline') {
+    if (cluster.Status === TdsqlcClusterStatus.ISOLATED || cluster.Status === TdsqlcClusterStatus.OFFLINE) {
       logger.info(lang.__('TDSQL_CLUSTER_BEING_DELETED', { clusterId }));
       await new Promise((resolve) => setTimeout(resolve, 10000));
       attempts++;

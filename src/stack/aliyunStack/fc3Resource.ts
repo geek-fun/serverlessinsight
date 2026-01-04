@@ -1,6 +1,5 @@
 import { Context, FunctionDomain, ResourceState, StateFile } from '../../types';
 import { createAliyunClient } from '../../common/aliyunClient';
-import { readFileAsBase64 } from '../../common/fileUtils';
 import { createDependentResources, deleteDependentResources } from './dependentResourceProvider';
 import { functionToFc3Config, extractFc3Definition, Fc3FunctionInfo } from './fc3Types';
 import { setResource, removeResource, getResource } from '../../common/stateManager';
@@ -139,9 +138,8 @@ export const createResource = async (
   }
 
   const codePath = fn.code!.path;
-  const codeBase64 = readFileAsBase64(codePath);
   const client = createAliyunClient(context);
-  await client.fc3.createFunction(config, codeBase64);
+  await client.fc3.createFunction(config, codePath);
 
   // Refresh state from provider to get all attributes
   const functionInfo = await client.fc3.getFunction(fn.name);

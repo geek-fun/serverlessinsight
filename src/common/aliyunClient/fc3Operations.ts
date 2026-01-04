@@ -1,12 +1,14 @@
 import Fc3Client from '@alicloud/fc20230330';
 import * as fc from '@alicloud/fc20230330';
+import fs from 'node:fs';
 import { Fc3FunctionConfig, Fc3FunctionInfo } from './types';
 
 type Fc3SdkClient = Fc3Client;
 
-export // FC3 operations
-const createFc3Operations = (fc3Client: Fc3SdkClient) => ({
-  createFunction: async (config: Fc3FunctionConfig, codeBase64: string): Promise<void> => {
+export const createFc3Operations = (fc3Client: Fc3SdkClient) => ({
+  createFunction: async (config: Fc3FunctionConfig, codePath: string): Promise<void> => {
+    const codeBuffer = fs.readFileSync(codePath);
+    const codeBase64 = codeBuffer.toString('base64');
     const createFunctionInput = new fc.CreateFunctionInput({
       functionName: config.functionName,
       runtime: config.runtime,
@@ -231,7 +233,9 @@ const createFc3Operations = (fc3Client: Fc3SdkClient) => ({
     await fc3Client.updateFunction(config.functionName, request);
   },
 
-  updateFunctionCode: async (functionName: string, codeBase64: string): Promise<void> => {
+  updateFunctionCode: async (functionName: string, codePath: string): Promise<void> => {
+    const codeBuffer = fs.readFileSync(codePath);
+    const codeBase64 = codeBuffer.toString('base64');
     const updateFunctionInput = new fc.UpdateFunctionInput({
       code: new fc.InputCodeLocation({
         zipFile: codeBase64,

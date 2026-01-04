@@ -6,7 +6,6 @@ import { createScfOperations } from './scfOperations';
 import { createCosOperations } from './cosOperations';
 import { createTdsqlcOperations } from './tdsqlcOperations';
 
-// Re-export all types
 export * from './types';
 
 const ScfClient = tencentcloud.scf.v20180416.Client;

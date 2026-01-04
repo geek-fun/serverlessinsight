@@ -4,7 +4,6 @@ import { RamRoleInfo } from './types';
 
 type RamSdkClient = RamClient;
 
-// RAM policy constants
 const FC_ASSUME_ROLE_POLICY = JSON.stringify({
   Version: '1',
   Statement: [
@@ -57,8 +56,7 @@ const FC_EXECUTION_POLICY = JSON.stringify({
   ],
 });
 
-// RAM operations
-const createRamOperations = (ramClient: RamSdkClient) => {
+export const createRamOperations = (ramClient: RamSdkClient) => {
   const attachRolePolicyForFc = async (roleName: string): Promise<void> => {
     const policyName = `${roleName}-policy`;
 
