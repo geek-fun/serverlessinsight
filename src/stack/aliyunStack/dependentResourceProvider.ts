@@ -1046,9 +1046,10 @@ export const createDependentResources = async (
         attributes: { ...accessGroup },
       });
 
-      // Add access rule for VPC CIDR
+      // Add access rule for private network CIDR (10.0.0.0/8 covers typical Aliyun VPC ranges)
+      // Note: For production use, this should be restricted to the specific VPC CIDR
       logger.info(`Creating NAS access rule for: ${accessGroupName}`);
-      await createNasAccessRule(context, accessGroupName, '0.0.0.0/0');
+      await createNasAccessRule(context, accessGroupName, '10.0.0.0/8');
 
       logger.info(`Creating NAS file system for: ${fn.name}`);
       const fileSystem = await createNasFileSystem(context, nasItem.storage_class, fn.name);
