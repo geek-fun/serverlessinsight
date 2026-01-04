@@ -5,6 +5,7 @@ import { functionToFc3Config, extractFc3Definition, Fc3FunctionInfo } from './fc
 import { setResource, removeResource, getResource } from '../../common/stateManager';
 import { computeFileHash } from '../../common/hashUtils';
 import { getContext } from '../../common/context';
+import fs from 'node:fs';
 
 const buildFc3InstanceFromProvider = (info: Fc3FunctionInfo, arn: string) => {
   return {
@@ -345,7 +346,8 @@ export const updateResource = async (
   await client.fc3.updateFunctionConfiguration(config);
 
   // Update code
-  const codeBase64 = readFileAsBase64(codePath);
+  const codeBuffer = fs.readFileSync(codePath);
+  const codeBase64 = codeBuffer.toString('base64');
   await client.fc3.updateFunctionCode(fn.name, codeBase64);
 
   // Refresh state from provider to get all attributes

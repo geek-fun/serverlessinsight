@@ -2,9 +2,9 @@ import * as cynosdb from 'tencentcloud-sdk-nodejs-cynosdb';
 import { Context } from '../../types';
 import { TdsqlcClusterConfig, TdsqlcClusterInfo, TdsqlcClusterStatus } from './types';
 import { logger } from '../logger';
-import { lang } from '../lang';
+import { lang } from '../../lang';
 
-type CynosdbClient = cynosdb.cynosdb.v20190107.Client;
+type CynosdbClient = InstanceType<typeof cynosdb.cynosdb.v20190107.Client>;
 type CynosdbSdkClient = CynosdbClient;
 
 // TDSQL-C helper functions
