@@ -6,7 +6,6 @@ import { functionToFc3Config, extractFc3Definition, Fc3FunctionInfo } from './fc
 import { setResource, removeResource, getResource } from '../../common/stateManager';
 import { computeFileHash } from '../../common/hashUtils';
 import { getContext } from '../../common/context';
-import { getContext } from '../../common/context';
 
 const buildFc3InstanceFromProvider = (info: Fc3FunctionInfo, arn: string) => {
   return {

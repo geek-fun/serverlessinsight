@@ -6,7 +6,7 @@ import {
   StateFile,
   ResourceAttributes,
 } from '../../types';
-import { getScfFunction } from './scfProvider';
+import { createTencentClient } from '../../common/tencentClient';
 import { functionToScfConfig, extractScfDefinition } from './scfTypes';
 import { getAllResources, getResource } from '../../common/stateManager';
 import { attributesEqual, computeFileHash } from '../../common/hashUtils';
@@ -54,7 +54,8 @@ export const generateFunctionPlan = async (
       }
 
       try {
-        const remoteFunction = await getScfFunction(context, fn.name);
+        const client = createTencentClient(context);
+        const remoteFunction = await client.scf.getFunction(fn.name);
 
         if (!remoteFunction) {
           return {

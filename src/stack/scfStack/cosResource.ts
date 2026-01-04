@@ -1,11 +1,5 @@
 import { Context, BucketDomain, ResourceState, StateFile } from '../../types';
-import {
-  createCosBucket,
-  deleteCosBucket,
-  getCosBucket,
-  updateCosBucketAcl,
-  updateCosBucketWebsite,
-} from './cosProvider';
+import { createTencentClient } from '../../common/tencentClient';
 import { bucketToCosBucketConfig, extractCosBucketDefinition, CosBucketInfo } from './cosTypes';
 import { setResource, removeResource } from '../../common/stateManager';
 
@@ -78,10 +72,11 @@ export const createBucketResource = async (
 ): Promise<StateFile> => {
   const config = bucketToCosBucketConfig(bucket, context.region);
 
-  await createCosBucket(context, config);
+  const client = createTencentClient(context);
+  await client.cos.createBucket(config);
 
   // Refresh state from provider to get all attributes
-  const bucketInfo = await getCosBucket(context, bucket.name, context.region);
+  const bucketInfo = await client.cos.getBucket(bucket.name, context.region);
   if (!bucketInfo) {
     throw new Error(`Failed to refresh state for bucket: ${bucket.name}`);
   }
@@ -92,7 +87,7 @@ export const createBucketResource = async (
     mode: 'managed',
     region: context.region,
     definition,
-    instances: [buildCosInstanceFromProvider(bucketInfo, arn)],
+    instances: [buildCosInstanceFromProvider(bucketInfo as CosBucketInfo, arn)],
     lastUpdated: new Date().toISOString(),
   };
 
@@ -101,7 +96,8 @@ export const createBucketResource = async (
 };
 
 export const readBucketResource = async (context: Context, bucketName: string, region: string) => {
-  return await getCosBucket(context, bucketName, region);
+  const client = createTencentClient(context);
+  return await client.cos.getBucket(bucketName, region);
 };
 
 export const updateBucketResource = async (
@@ -110,19 +106,20 @@ export const updateBucketResource = async (
   state: StateFile,
 ): Promise<StateFile> => {
   const config = bucketToCosBucketConfig(bucket, context.region);
+  const client = createTencentClient(context);
 
   // Update ACL if specified
   if (config.ACL) {
-    await updateCosBucketAcl(context, bucket.name, context.region, config.ACL);
+    await client.cos.updateBucketAcl(bucket.name, context.region, config.ACL);
   }
 
   // Update website configuration if specified
   if (config.WebsiteConfiguration) {
-    await updateCosBucketWebsite(context, bucket.name, context.region, config.WebsiteConfiguration);
+    await client.cos.updateBucketWebsite(bucket.name, context.region, config.WebsiteConfiguration);
   }
 
   // Refresh state from provider to get all attributes
-  const bucketInfo = await getCosBucket(context, bucket.name, context.region);
+  const bucketInfo = await client.cos.getBucket(bucket.name, context.region);
   if (!bucketInfo) {
     throw new Error(`Failed to refresh state for bucket: ${bucket.name}`);
   }
@@ -133,7 +130,7 @@ export const updateBucketResource = async (
     mode: 'managed',
     region: context.region,
     definition,
-    instances: [buildCosInstanceFromProvider(bucketInfo, arn)],
+    instances: [buildCosInstanceFromProvider(bucketInfo as CosBucketInfo, arn)],
     lastUpdated: new Date().toISOString(),
   };
 
@@ -148,6 +145,7 @@ export const deleteBucketResource = async (
   logicalId: string,
   state: StateFile,
 ): Promise<StateFile> => {
-  await deleteCosBucket(context, bucketName, region);
+  const client = createTencentClient(context);
+  await client.cos.deleteBucket(bucketName, region);
   return removeResource(state, logicalId);
 };

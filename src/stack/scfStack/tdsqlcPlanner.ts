@@ -7,7 +7,7 @@ import {
   StateFile,
   ResourceAttributes,
 } from '../../types';
-import { getTdsqlcCluster } from './tdsqlcProvider';
+import { createTencentClient } from '../../common/tencentClient';
 import { databaseToTdsqlcConfig, extractTdsqlcDefinition } from './tdsqlcTypes';
 import { getAllResources, getResource } from '../../common/stateManager';
 import { attributesEqual } from '../../common/hashUtils';
@@ -58,7 +58,8 @@ export const generateDatabasePlan = async (
         (currentState.metadata?.clusterId as string | undefined) || currentState.instances?.[0]?.id;
 
       try {
-        const remoteCluster = clusterId ? await getTdsqlcCluster(context, clusterId) : null;
+        const client = createTencentClient(context);
+        const remoteCluster = clusterId ? await client.tdsqlc.getCluster(clusterId) : null;
 
         if (!remoteCluster) {
           return {

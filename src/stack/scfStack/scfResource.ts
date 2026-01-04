@@ -1,11 +1,6 @@
 import { Context, FunctionDomain, ResourceState, StateFile } from '../../types';
-import {
-  createScfFunction,
-  deleteScfFunction,
-  getScfFunction,
-  updateScfFunctionCode,
-  updateScfFunctionConfiguration,
-} from './scfProvider';
+import { createTencentClient } from '../../common/tencentClient';
+import { readFileAsBase64 } from '../../common/fileUtils';
 import { functionToScfConfig, extractScfDefinition, ScfFunctionInfo } from './scfTypes';
 import { setResource, removeResource } from '../../common/stateManager';
 import { computeFileHash } from '../../common/hashUtils';
@@ -172,11 +167,12 @@ export const createResource = async (
 ): Promise<StateFile> => {
   const config = functionToScfConfig(fn);
   const codePath = fn.code!.path;
-
-  await createScfFunction(context, config, codePath);
+  const codeBase64 = readFileAsBase64(codePath);
+  const client = createTencentClient(context);
+  await client.scf.createFunction(config, codeBase64);
 
   // Refresh state from provider to get all attributes
-  const functionInfo = await getScfFunction(context, fn.name);
+  const functionInfo = await client.scf.getFunction(fn.name);
   if (!functionInfo) {
     throw new Error(`Failed to refresh state for function: ${fn.name}`);
   }
@@ -188,7 +184,7 @@ export const createResource = async (
     mode: 'managed',
     region: context.region,
     definition,
-    instances: [buildScfInstanceFromProvider(functionInfo, arn)],
+    instances: [buildScfInstanceFromProvider(functionInfo as ScfFunctionInfo, arn)],
     lastUpdated: new Date().toISOString(),
   };
 
@@ -197,7 +193,8 @@ export const createResource = async (
 };
 
 export const readResource = async (context: Context, functionName: string) => {
-  return await getScfFunction(context, functionName);
+  const client = createTencentClient(context);
+  return await client.scf.getFunction(functionName);
 };
 
 export const updateResource = async (
@@ -207,15 +204,17 @@ export const updateResource = async (
 ): Promise<StateFile> => {
   const config = functionToScfConfig(fn);
   const codePath = fn.code!.path;
+  const client = createTencentClient(context);
 
   // Update configuration
-  await updateScfFunctionConfiguration(context, config);
+  await client.scf.updateFunctionConfiguration(config);
 
   // Update code
-  await updateScfFunctionCode(context, fn.name, codePath);
+  const codeBase64 = readFileAsBase64(codePath);
+  await client.scf.updateFunctionCode(fn.name, codeBase64);
 
   // Refresh state from provider to get all attributes
-  const functionInfo = await getScfFunction(context, fn.name);
+  const functionInfo = await client.scf.getFunction(fn.name);
   if (!functionInfo) {
     throw new Error(`Failed to refresh state for function: ${fn.name}`);
   }
@@ -227,7 +226,7 @@ export const updateResource = async (
     mode: 'managed',
     region: context.region,
     definition,
-    instances: [buildScfInstanceFromProvider(functionInfo, arn)],
+    instances: [buildScfInstanceFromProvider(functionInfo as ScfFunctionInfo, arn)],
     lastUpdated: new Date().toISOString(),
   };
 
@@ -241,6 +240,7 @@ export const deleteResource = async (
   logicalId: string,
   state: StateFile,
 ): Promise<StateFile> => {
-  await deleteScfFunction(context, functionName);
+  const client = createTencentClient(context);
+  await client.scf.deleteFunction(functionName);
   return removeResource(state, logicalId);
 };
