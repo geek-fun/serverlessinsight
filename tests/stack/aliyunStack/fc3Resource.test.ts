@@ -243,14 +243,12 @@ describe('Fc3Resource', () => {
 
       expect(fc3Types.functionToFc3Config).toHaveBeenCalledWith(testFunction);
       expect(mockFc3Operations.updateFunctionConfiguration).toHaveBeenCalledWith(
-        mockContext,
         expect.objectContaining({
           ...mockConfig,
           role: 'acs:ram::123456789012:role/test-role',
         }),
       );
       expect(mockFc3Operations.updateFunctionCode).toHaveBeenCalledWith(
-        mockContext,
         'test-function',
         'test.zip',
       );
