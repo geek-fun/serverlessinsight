@@ -2,18 +2,8 @@ import * as ros from '@alicloud/ros-cdk-core';
 import fs from 'node:fs';
 
 import { ServerlessIac } from '../types';
-import {
-  cleanupAssets,
-  constructAssets,
-  getContext,
-  logger,
-  ProviderEnum,
-  publishAssets,
-  rosStackDeploy,
-  loadState,
-  saveState,
-} from '../common';
-import { prepareBootstrapStack, RosStack } from './rosStack';
+import { getContext, logger, ProviderEnum, loadState, saveState } from '../common';
+import { RosStack } from './rosStack';
 import { RfsStack } from './rfsStack';
 import {
   generateFunctionPlan,
@@ -23,6 +13,10 @@ import {
   generateDatabasePlan,
   executeDatabasePlan,
 } from './scfStack';
+import {
+  generateFunctionPlan as generateAliyunFunctionPlan,
+  executeFunctionPlan as executeAliyunFunctionPlan,
+} from './aliyunStack';
 import { get } from 'lodash';
 import { lang } from '../lang';
 
@@ -93,32 +87,26 @@ const deployTencent = async (iac: ServerlessIac): Promise<void> => {
   logger.info(lang.__('STACK_DEPLOYED'));
 };
 
-const deployAliyun = async (stackName: string, iac: ServerlessIac): Promise<void> => {
-  const { template, assets } = generateRosStackTemplate(stackName, iac);
-  await prepareBootstrapStack();
+const deployAliyun = async (iac: ServerlessIac): Promise<void> => {
+  const context = getContext();
   logger.info(lang.__('DEPLOYING_STACK_PUBLISHING_ASSETS'));
-  const constructedAssets = await constructAssets(assets);
-  try {
-    await publishAssets(constructedAssets);
-    logger.info(lang.__('ASSETS_PUBLISHED'));
-    await rosStackDeploy(stackName, template);
-  } catch (e) {
-    logger.error(lang.__('FAILED_TO_DEPLOY_STACK', { error: String(e) }));
-    throw e;
-  } finally {
-    try {
-      logger.info(lang.__('CLEANING_UP_TEMPORARY_ASSETS'));
-      await cleanupAssets(constructedAssets);
-      logger.info(lang.__('ASSETS_CLEANED_UP'));
-    } catch (e) {
-      logger.error(
-        lang.__('FAILED_TO_CLEANUP_ASSETS', {
-          bucketName: String(constructedAssets?.[0].bucketName),
-          error: String(e),
-        }),
-      );
-    }
-  }
+
+  let state = loadState(iac.provider.name, process.cwd());
+
+  logger.info(lang.__('GENERATING_PLAN'));
+  const functionPlan = await generateAliyunFunctionPlan(context, state, iac.functions);
+
+  logger.info(`${lang.__('PLAN_GENERATED')}: ${functionPlan.items.length} ${lang.__('ACTIONS')}`);
+  functionPlan.items.forEach((item) => {
+    logger.info(`  - ${item.action.toUpperCase()}: ${item.logicalId} (${item.resourceType})`);
+  });
+
+  logger.info(lang.__('EXECUTING_PLAN'));
+  state = await executeAliyunFunctionPlan(context, functionPlan, iac.functions, state);
+
+  saveState(state, process.cwd());
+
+  logger.info(lang.__('STACK_DEPLOYED'));
 };
 
 const deployHuawei = async (stackName: string, iac: ServerlessIac): Promise<void> => {
@@ -134,7 +122,7 @@ export const deployStack = async (stackName: string, iac: ServerlessIac) => {
   if (iac.provider.name === ProviderEnum.TENCENT) {
     await deployTencent(iac);
   } else if (iac.provider.name === ProviderEnum.ALIYUN) {
-    await deployAliyun(stackName, iac);
+    await deployAliyun(iac);
   } else if (iac.provider.name === ProviderEnum.HUAWEI) {
     await deployHuawei(stackName, iac);
   }
@@ -145,7 +133,8 @@ export const generateStackTemplate = (
   iac: ServerlessIac,
 ): { template: unknown } => {
   if (iac.provider.name === ProviderEnum.ALIYUN) {
-    return generateRosStackTemplate(stackName, iac);
+    // Aliyun now uses state-based deployment, no template generation needed
+    return { template: {} };
   } else if (iac.provider.name === ProviderEnum.HUAWEI) {
     return generateRfsStackTemplate(stackName, iac);
   } else if (iac.provider.name === ProviderEnum.TENCENT) {
