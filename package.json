@@ -49,9 +49,12 @@
     "function"
   ],
   "dependencies": {
+    "@alicloud/ecs20140526": "^7.4.2",
     "@alicloud/fc20230330": "^4.6.6",
     "@alicloud/ims20190815": "^2.3.2",
+    "@alicloud/nas20170626": "^3.1.4",
     "@alicloud/openapi-client": "^0.4.15",
+    "@alicloud/ram20150501": "^1.2.0",
     "@alicloud/ros-cdk-apigateway": "^1.11.0",
     "@alicloud/ros-cdk-core": "^1.11.0",
     "@alicloud/ros-cdk-dns": "^1.11.0",
@@ -68,6 +71,7 @@
     "@alicloud/ros-cdk-sls": "^1.11.0",
     "@alicloud/ros-cdk-vpc": "^1.11.0",
     "@alicloud/ros20190910": "^3.6.0",
+    "@alicloud/sls20201230": "^5.9.0",
     "ajv": "^8.17.1",
     "ali-oss": "^6.23.0",
     "chalk": "^5.6.2",

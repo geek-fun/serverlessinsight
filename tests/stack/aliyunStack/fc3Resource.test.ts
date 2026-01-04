@@ -14,8 +14,13 @@ import { Context, StateFile, CURRENT_STATE_VERSION } from '../../../src/types';
 // Mock dependencies
 jest.mock('../../../src/stack/aliyunStack/fc3Provider');
 jest.mock('../../../src/stack/aliyunStack/fc3Types');
+jest.mock('../../../src/stack/aliyunStack/dependentResourceProvider');
 jest.mock('../../../src/common/stateManager');
 jest.mock('../../../src/common/hashUtils');
+jest.mock('../../../src/common/context');
+
+import * as context from '../../../src/common/context';
+import * as dependentResourceProvider from '../../../src/stack/aliyunStack/dependentResourceProvider';
 
 describe('Fc3Resource', () => {
   const mockContext: Context = {
@@ -91,6 +96,16 @@ describe('Fc3Resource', () => {
     (fc3Types.extractFc3Definition as jest.Mock).mockReturnValue(mockDefinition);
     (hashUtils.computeFileHash as jest.Mock).mockReturnValue('mock-code-hash');
     (fc3Provider.getFc3Function as jest.Mock).mockResolvedValue(mockFunctionInfo);
+    (context.getContext as jest.Mock).mockReturnValue(mockContext);
+    (dependentResourceProvider.createDependentResources as jest.Mock).mockResolvedValue({
+      logConfig: undefined,
+      role: { roleName: 'test-role', arn: 'acs:ram::123456789012:role/test-role' },
+      securityGroup: undefined,
+      nasConfig: undefined,
+      instances: [],
+    });
+    (dependentResourceProvider.deleteDependentResources as jest.Mock).mockResolvedValue(undefined);
+    (stateManager.getResource as jest.Mock).mockReturnValue(undefined);
   });
 
   describe('createResource', () => {
@@ -116,12 +131,21 @@ describe('Fc3Resource', () => {
       expect(fc3Types.functionToFc3Config).toHaveBeenCalledWith(testFunction);
       expect(fc3Provider.createFc3Function).toHaveBeenCalledWith(
         mockContext,
-        mockConfig,
+        expect.objectContaining({
+          ...mockConfig,
+          role: 'acs:ram::123456789012:role/test-role',
+        }),
         'test.zip',
       );
       expect(fc3Provider.getFc3Function).toHaveBeenCalledWith(mockContext, 'test-function');
       expect(hashUtils.computeFileHash).toHaveBeenCalledWith('test.zip');
-      expect(fc3Types.extractFc3Definition).toHaveBeenCalledWith(mockConfig, 'mock-code-hash');
+      expect(fc3Types.extractFc3Definition).toHaveBeenCalledWith(
+        expect.objectContaining({
+          ...mockConfig,
+          role: 'acs:ram::123456789012:role/test-role',
+        }),
+        'mock-code-hash',
+      );
       expect(stateManager.setResource).toHaveBeenCalledWith(
         initialState,
         'functions.test_fn',
@@ -207,7 +231,10 @@ describe('Fc3Resource', () => {
       expect(fc3Types.functionToFc3Config).toHaveBeenCalledWith(testFunction);
       expect(fc3Provider.updateFc3FunctionConfiguration).toHaveBeenCalledWith(
         mockContext,
-        mockConfig,
+        expect.objectContaining({
+          ...mockConfig,
+          role: 'acs:ram::123456789012:role/test-role',
+        }),
       );
       expect(fc3Provider.updateFc3FunctionCode).toHaveBeenCalledWith(
         mockContext,
@@ -216,7 +243,13 @@ describe('Fc3Resource', () => {
       );
       expect(fc3Provider.getFc3Function).toHaveBeenCalledWith(mockContext, 'test-function');
       expect(hashUtils.computeFileHash).toHaveBeenCalledWith('test.zip');
-      expect(fc3Types.extractFc3Definition).toHaveBeenCalledWith(mockConfig, 'mock-code-hash');
+      expect(fc3Types.extractFc3Definition).toHaveBeenCalledWith(
+        expect.objectContaining({
+          ...mockConfig,
+          role: 'acs:ram::123456789012:role/test-role',
+        }),
+        'mock-code-hash',
+      );
       expect(result).toEqual(newState);
     });
 
