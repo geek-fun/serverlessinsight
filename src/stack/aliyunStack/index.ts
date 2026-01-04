@@ -4,3 +4,8 @@ export * from './fc3Resource';
 export * from './fc3Planner';
 export * from './fc3Executor';
 export * from './dependentResourceProvider';
+export * from './apigwTypes';
+export * from './apigwProvider';
+export * from './apigwResource';
+export * from './apigwPlanner';
+export * from './apigwExecutor';

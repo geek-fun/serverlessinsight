@@ -3,6 +3,7 @@ import SlsClient from '@alicloud/sls20201230';
 import RamClient from '@alicloud/ram20150501';
 import EcsClient from '@alicloud/ecs20140526';
 import NasClient from '@alicloud/nas20170626';
+import CloudApiClient from '@alicloud/cloudapi20160714';
 import * as $OpenApi from '@alicloud/openapi-client';
 import OSS from 'ali-oss';
 import { Context } from '../types';
@@ -13,6 +14,7 @@ type AliyunRamClient = RamClient;
 type AliyunEcsClient = EcsClient;
 type AliyunNasClient = NasClient;
 type AliyunOssClient = OSS;
+type AliyunCloudApiClient = CloudApiClient;
 
 export interface AliyunClient {
   fc3: AliyunFc3Client;
@@ -21,6 +23,7 @@ export interface AliyunClient {
   ecs: AliyunEcsClient;
   nas: AliyunNasClient;
   oss: AliyunOssClient;
+  apigw: AliyunCloudApiClient;
 }
 
 export const createAliyunClient = (context: Context): AliyunClient => {
@@ -58,6 +61,10 @@ export const createAliyunClient = (context: Context): AliyunClient => {
     stsToken: context.securityToken,
   });
 
+  const apigwConfig = new $OpenApi.Config(baseConfig);
+  apigwConfig.endpoint = `apigateway.${context.region}.aliyuncs.com`;
+  const apigwClient = new CloudApiClient(apigwConfig);
+
   return {
     fc3: fc3Client,
     sls: slsClient,
@@ -65,5 +72,6 @@ export const createAliyunClient = (context: Context): AliyunClient => {
     ecs: ecsClient,
     nas: nasClient,
     oss: ossClient,
+    apigw: apigwClient,
   };
 };
