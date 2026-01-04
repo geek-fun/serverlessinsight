@@ -57,7 +57,7 @@ describe('Apigw Types', () => {
       );
 
       expect(config.groupId).toBe('group-123');
-      expect(config.apiName).toBe('Test API Gateway-agw-api-GET--users');
+      expect(config.apiName).toBe('Test API Gateway-agw-api-GET-users');
       expect(config.visibility).toBe('PRIVATE');
       expect(config.authType).toBe('ANONYMOUS');
       expect(config.requestConfig.requestHttpMethod).toBe('GET');

@@ -141,6 +141,21 @@ export const eventToApigwGroupConfig = (
 };
 
 /**
+ * Generate a unique API key from method and path
+ * Uses URL encoding to preserve path structure and avoid collisions
+ */
+export const generateApiKey = (method: string, path: string): string => {
+  // Replace slashes with double underscores to preserve path structure
+  // Replace other non-alphanumeric chars with single underscore
+  const sanitizedPath = path
+    .replace(/\//g, '__')
+    .replace(/[^a-zA-Z0-9_]/g, '_')
+    .replace(/^__/, '') // Remove leading double underscore
+    .replace(/__$/, ''); // Remove trailing double underscore
+  return `${method}_${sanitizedPath}`;
+};
+
+/**
  * Convert EventDomain trigger to API Gateway API config
  */
 export const triggerToApigwApiConfig = (
@@ -154,7 +169,7 @@ export const triggerToApigwApiConfig = (
   const method = trigger.method as string;
   const path = trigger.path as string;
   const backend = trigger.backend as string;
-  const apiKey = `${method}_${path}`.replace(/[^a-zA-Z0-9_]/g, '_');
+  const apiKey = generateApiKey(method, path);
 
   return {
     groupId,

@@ -19,6 +19,7 @@ import {
   eventToApigwGroupConfig,
   triggerToApigwApiConfig,
   extractApigwGroupDefinition,
+  generateApiKey,
 } from './apigwTypes';
 import { setResource, removeResource, getResource } from '../../common/stateManager';
 
@@ -253,7 +254,7 @@ export const updateApigwResource = async (
       roleArn,
     );
 
-    const apiKey = `${trigger.method}_${trigger.path}`.replace(/[^a-zA-Z0-9_]/g, '_');
+    const apiKey = generateApiKey(trigger.method as string, trigger.path as string);
     neededApiKeys.add(apiKey);
 
     // Check if API exists - match by API name

@@ -56,7 +56,7 @@ describe('Apigw Planner', () => {
 
   describe('generateApigwPlan', () => {
     it('should plan to create a new event when state is empty', async () => {
-      // Mock findApiGroupByName to return null (group doesn\'t exist)
+      // Mock findApiGroupByName to return null (group does not exist)
       jest.spyOn(apigwProvider, 'findApiGroupByName').mockResolvedValue(null);
 
       const state = loadState('aliyun', testDir);
@@ -229,7 +229,7 @@ describe('Apigw Planner', () => {
         lastUpdated: new Date().toISOString(),
       });
 
-      // Mock getApiGroup to return null (group doesn\'t exist remotely)
+      // Mock getApiGroup to return null (group does not exist remotely)
       jest.spyOn(apigwProvider, 'getApiGroup').mockResolvedValue(null);
 
       const plan = await generateApigwPlan(mockContext, state, [testEvent], 'test-service');

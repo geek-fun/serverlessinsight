@@ -11,6 +11,14 @@ import { createAliyunClient } from '../../common/aliyunClient';
 import * as cloudapi from '@alicloud/cloudapi20160714';
 
 /**
+ * Remove undefined values from an object
+ * This helps avoid issues with API calls that may not handle undefined correctly
+ */
+const removeUndefined = <T extends Record<string, unknown>>(obj: T): T => {
+  return Object.fromEntries(Object.entries(obj).filter(([, value]) => value !== undefined)) as T;
+};
+
+/**
  * Create an API Gateway group
  */
 export const createApiGroup = async (
@@ -171,38 +179,44 @@ export const deleteApiGroup = async (context: Context, groupId: string): Promise
 export const createApi = async (context: Context, config: ApigwApiConfig): Promise<string> => {
   const client = createAliyunClient(context);
 
-  const requestConfig = JSON.stringify({
-    RequestProtocol: config.requestConfig.requestProtocol,
-    RequestHttpMethod: config.requestConfig.requestHttpMethod,
-    RequestPath: config.requestConfig.requestPath,
-    RequestMode: config.requestConfig.requestMode,
-    BodyFormat: config.requestConfig.bodyFormat,
-  });
+  const requestConfig = JSON.stringify(
+    removeUndefined({
+      RequestProtocol: config.requestConfig.requestProtocol,
+      RequestHttpMethod: config.requestConfig.requestHttpMethod,
+      RequestPath: config.requestConfig.requestPath,
+      RequestMode: config.requestConfig.requestMode,
+      BodyFormat: config.requestConfig.bodyFormat,
+    }),
+  );
 
-  const serviceConfig = JSON.stringify({
+  const serviceConfigObj: Record<string, unknown> = {
     ServiceProtocol: config.serviceConfig.serviceProtocol,
     ServiceAddress: config.serviceConfig.serviceAddress,
     ServiceHttpMethod: config.serviceConfig.serviceHttpMethod,
     ServicePath: config.serviceConfig.servicePath,
     ServiceTimeout: config.serviceConfig.serviceTimeout || 10000,
-    FunctionComputeConfig: config.serviceConfig.functionComputeConfig
-      ? {
-          FcRegionId: config.serviceConfig.functionComputeConfig.fcRegionId,
-          FunctionName: config.serviceConfig.functionComputeConfig.functionName,
-          RoleArn: config.serviceConfig.functionComputeConfig.roleArn,
-          FcVersion: config.serviceConfig.functionComputeConfig.fcVersion || '3.0',
-          Method: config.serviceConfig.functionComputeConfig.method,
-        }
-      : undefined,
     MockResult: config.serviceConfig.mockResult,
-    VpcConfig: config.serviceConfig.vpcConfig
-      ? {
-          VpcId: config.serviceConfig.vpcConfig.vpcId,
-          InstanceId: config.serviceConfig.vpcConfig.instanceId,
-          Port: config.serviceConfig.vpcConfig.port,
-        }
-      : undefined,
-  });
+  };
+
+  if (config.serviceConfig.functionComputeConfig) {
+    serviceConfigObj.FunctionComputeConfig = removeUndefined({
+      FcRegionId: config.serviceConfig.functionComputeConfig.fcRegionId,
+      FunctionName: config.serviceConfig.functionComputeConfig.functionName,
+      RoleArn: config.serviceConfig.functionComputeConfig.roleArn,
+      FcVersion: config.serviceConfig.functionComputeConfig.fcVersion || '3.0',
+      Method: config.serviceConfig.functionComputeConfig.method,
+    });
+  }
+
+  if (config.serviceConfig.vpcConfig) {
+    serviceConfigObj.VpcConfig = {
+      VpcId: config.serviceConfig.vpcConfig.vpcId,
+      InstanceId: config.serviceConfig.vpcConfig.instanceId,
+      Port: config.serviceConfig.vpcConfig.port,
+    };
+  }
+
+  const serviceConfig = JSON.stringify(removeUndefined(serviceConfigObj));
 
   const request = new cloudapi.CreateApiRequest({
     groupId: config.groupId,
@@ -320,31 +334,36 @@ export const updateApi = async (
 ): Promise<void> => {
   const client = createAliyunClient(context);
 
-  const requestConfig = JSON.stringify({
-    RequestProtocol: config.requestConfig.requestProtocol,
-    RequestHttpMethod: config.requestConfig.requestHttpMethod,
-    RequestPath: config.requestConfig.requestPath,
-    RequestMode: config.requestConfig.requestMode,
-    BodyFormat: config.requestConfig.bodyFormat,
-  });
+  const requestConfig = JSON.stringify(
+    removeUndefined({
+      RequestProtocol: config.requestConfig.requestProtocol,
+      RequestHttpMethod: config.requestConfig.requestHttpMethod,
+      RequestPath: config.requestConfig.requestPath,
+      RequestMode: config.requestConfig.requestMode,
+      BodyFormat: config.requestConfig.bodyFormat,
+    }),
+  );
 
-  const serviceConfig = JSON.stringify({
+  const serviceConfigObj: Record<string, unknown> = {
     ServiceProtocol: config.serviceConfig.serviceProtocol,
     ServiceAddress: config.serviceConfig.serviceAddress,
     ServiceHttpMethod: config.serviceConfig.serviceHttpMethod,
     ServicePath: config.serviceConfig.servicePath,
     ServiceTimeout: config.serviceConfig.serviceTimeout || 10000,
-    FunctionComputeConfig: config.serviceConfig.functionComputeConfig
-      ? {
-          FcRegionId: config.serviceConfig.functionComputeConfig.fcRegionId,
-          FunctionName: config.serviceConfig.functionComputeConfig.functionName,
-          RoleArn: config.serviceConfig.functionComputeConfig.roleArn,
-          FcVersion: config.serviceConfig.functionComputeConfig.fcVersion || '3.0',
-          Method: config.serviceConfig.functionComputeConfig.method,
-        }
-      : undefined,
     MockResult: config.serviceConfig.mockResult,
-  });
+  };
+
+  if (config.serviceConfig.functionComputeConfig) {
+    serviceConfigObj.FunctionComputeConfig = removeUndefined({
+      FcRegionId: config.serviceConfig.functionComputeConfig.fcRegionId,
+      FunctionName: config.serviceConfig.functionComputeConfig.functionName,
+      RoleArn: config.serviceConfig.functionComputeConfig.roleArn,
+      FcVersion: config.serviceConfig.functionComputeConfig.fcVersion || '3.0',
+      Method: config.serviceConfig.functionComputeConfig.method,
+    });
+  }
+
+  const serviceConfig = JSON.stringify(removeUndefined(serviceConfigObj));
 
   const request = new cloudapi.ModifyApiRequest({
     groupId: config.groupId,
