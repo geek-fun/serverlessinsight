@@ -10,7 +10,6 @@ import {
   CURRENT_STATE_VERSION,
 } from '../../../src/types';
 import { ProviderEnum } from '../../../src/common';
-import { createTencentClient } from '../../../src/common/tencentClient';
 
 const mockTdsqlcOperations = {
   createCluster: jest.fn(),
@@ -20,15 +19,14 @@ const mockTdsqlcOperations = {
 };
 
 jest.mock('../../../src/common/tencentClient', () => ({
-  createTencentClient: jest.fn(() => ({
+  createTencentClient: () => ({
     scf: {},
     cos: {},
     tdsqlc: mockTdsqlcOperations,
-  })),
+  }),
 }));
 
 describe('TdsqlcPlanner', () => {
-
   const mockContext: Context = {
     stage: 'default',
     stackName: 'test-stack',

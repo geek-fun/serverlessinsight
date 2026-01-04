@@ -9,7 +9,6 @@ import * as stateManager from '../../../src/common/stateManager';
 import * as hashUtils from '../../../src/common/hashUtils';
 import { ProviderEnum } from '../../../src/common';
 import { Context, StateFile, CURRENT_STATE_VERSION } from '../../../src/types';
-import { createTencentClient } from '../../../src/common/tencentClient';
 
 const mockScfOperations = {
   createFunction: jest.fn(),
@@ -20,11 +19,11 @@ const mockScfOperations = {
 };
 
 jest.mock('../../../src/common/tencentClient', () => ({
-  createTencentClient: jest.fn(() => ({
+  createTencentClient: () => ({
     scf: mockScfOperations,
     cos: {},
     tdsqlc: {},
-  })),
+  }),
 }));
 
 jest.mock('../../../src/stack/scfStack/scfTypes');
@@ -35,7 +34,6 @@ jest.mock('../../../src/common/fileUtils', () => ({
 }));
 
 describe('ScfResource', () => {
-
   const mockContext: Context = {
     stage: 'default',
     stackName: 'test-stack',

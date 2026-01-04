@@ -3,7 +3,6 @@ import { loadState, setResource } from '../../../src/common/stateManager';
 import { Context, FunctionDomain } from '../../../src/types';
 import { ProviderEnum } from '../../../src/common';
 import fs from 'node:fs';
-import { createTencentClient } from '../../../src/common/tencentClient';
 
 const mockScfOperations = {
   createFunction: jest.fn(),
@@ -14,11 +13,11 @@ const mockScfOperations = {
 };
 
 jest.mock('../../../src/common/tencentClient', () => ({
-  createTencentClient: jest.fn(() => ({
+  createTencentClient: () => ({
     scf: mockScfOperations,
     cos: {},
     tdsqlc: {},
-  })),
+  }),
 }));
 
 jest.mock('../../../src/common/hashUtils', () => ({
@@ -26,7 +25,6 @@ jest.mock('../../../src/common/hashUtils', () => ({
 }));
 
 describe('SCF Planner', () => {
-
   const testDir = '/tmp/test-scf-planner';
 
   const mockContext: Context = {

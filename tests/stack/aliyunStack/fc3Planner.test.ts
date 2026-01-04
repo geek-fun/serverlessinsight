@@ -3,7 +3,6 @@ import { loadState, setResource } from '../../../src/common/stateManager';
 import { Context, FunctionDomain } from '../../../src/types';
 import { ProviderEnum } from '../../../src/common';
 import fs from 'node:fs';
-import { createAliyunClient } from '../../../src/common/aliyunClient';
 
 const mockFc3Operations = {
   createFunction: jest.fn(),
@@ -14,9 +13,7 @@ const mockFc3Operations = {
 };
 
 jest.mock('../../../src/common/aliyunClient', () => ({
-  createAliyunClient: jest.fn(() => ({
-    fc3: mockFc3Operations,
-  })),
+  createAliyunClient: () => ({ fc3: mockFc3Operations }),
 }));
 
 jest.mock('../../../src/common/hashUtils', () => ({
@@ -24,7 +21,6 @@ jest.mock('../../../src/common/hashUtils', () => ({
 }));
 
 describe('FC3 Planner', () => {
-
   const testDir = '/tmp/test-fc3-planner';
 
   const mockContext: Context = {
