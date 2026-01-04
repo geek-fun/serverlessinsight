@@ -1,11 +1,9 @@
 import * as tencentcloud from 'tencentcloud-sdk-nodejs-scf';
 import { ScfFunctionConfig, ScfFunctionInfo } from './types';
 
-const ScfClient = tencentcloud.scf.v20180416.Client;
-type ScfSdkClient = InstanceType<typeof ScfClient>;
+type ScfSdkClient = tencentcloud.scf.v20180416.Client;
 
-export // SCF operations
-const createScfOperations = (scfClient: ScfSdkClient) => ({
+export const createScfOperations = (scfClient: ScfSdkClient) => ({
   createFunction: async (config: ScfFunctionConfig, codeBase64: string): Promise<void> => {
     const params = {
       FunctionName: config.FunctionName,

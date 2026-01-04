@@ -1,6 +1,6 @@
 import NasClient from '@alicloud/nas20170626';
 import * as nas from '@alicloud/nas20170626';
-import { Context, NasStorageClassEnum } from '../../types';
+import { NasStorageClassEnum } from '../../types';
 import { NasFileSystemInfo, NasMountTargetInfo, NasAccessGroupInfo } from './types';
 
 type NasSdkClient = NasClient;
@@ -251,4 +251,3 @@ export const createNasOperations = (nasClient: NasSdkClient) => {
 
   return operations;
 };
-

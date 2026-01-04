@@ -252,5 +252,4 @@ export const createFc3Operations = (fc3Client: Fc3SdkClient) => ({
   deleteFunction: async (functionName: string): Promise<void> => {
     await fc3Client.deleteFunction(functionName);
   },
-
 });

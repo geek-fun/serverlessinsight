@@ -46,7 +46,7 @@ const waitForSlsLogstore = async (
   return { logstoreName, projectName, ttl };
 };
 
-const createSlsOperations = (slsClient: SlsSdkClient) => {
+export const createSlsOperations = (slsClient: SlsSdkClient) => {
   const operations = {
     createProject: async (projectName: string, description?: string): Promise<SlsProjectInfo> => {
       const request = new sls.CreateProjectRequest({
@@ -216,5 +216,4 @@ const createSlsOperations = (slsClient: SlsSdkClient) => {
   };
 
   return operations;
-
 };

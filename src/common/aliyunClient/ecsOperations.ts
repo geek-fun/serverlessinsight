@@ -22,7 +22,7 @@ const transformPortRange = (protocol: string, portRange: string): string => {
   return portRange.includes('/') ? portRange : `${portRange}/${portRange}`;
 };
 
-const createEcsOperations = (ecsClient: EcsSdkClient, context: Context) => ({
+export const createEcsOperations = (ecsClient: EcsSdkClient, context: Context) => ({
   createSecurityGroup: async (
     securityGroupName: string,
     vpcId: string,
@@ -125,5 +125,4 @@ const createEcsOperations = (ecsClient: EcsSdkClient, context: Context) => ({
 
     await ecsClient.deleteSecurityGroup(request);
   },
-
 });

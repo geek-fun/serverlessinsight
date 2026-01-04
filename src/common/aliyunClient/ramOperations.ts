@@ -190,5 +190,4 @@ export const createRamOperations = (ramClient: RamSdkClient) => {
       await ramClient.deleteRole(request);
     },
   };
-
 };

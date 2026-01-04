@@ -4,8 +4,8 @@ import { TdsqlcClusterConfig, TdsqlcClusterInfo, TdsqlcClusterStatus } from './t
 import { logger } from '../logger';
 import { lang } from '../lang';
 
-const CynosdbClient = cynosdb.cynosdb.v20190107.Client;
-type CynosdbSdkClient = InstanceType<typeof CynosdbClient>;
+type CynosdbClient = cynosdb.cynosdb.v20190107.Client;
+type CynosdbSdkClient = CynosdbClient;
 
 // TDSQL-C helper functions
 const waitForClusterReady = async (
@@ -27,7 +27,10 @@ const waitForClusterReady = async (
       return;
     }
 
-    if (cluster.Status === TdsqlcClusterStatus.ISOLATED || cluster.Status === TdsqlcClusterStatus.OFFLINE) {
+    if (
+      cluster.Status === TdsqlcClusterStatus.ISOLATED ||
+      cluster.Status === TdsqlcClusterStatus.OFFLINE
+    ) {
       throw new Error(lang.__('TDSQL_CLUSTER_ERROR_STATE', { status: cluster.Status }));
     }
 
@@ -54,7 +57,10 @@ const waitForClusterDeleted = async (
       return;
     }
 
-    if (cluster.Status === TdsqlcClusterStatus.ISOLATED || cluster.Status === TdsqlcClusterStatus.OFFLINE) {
+    if (
+      cluster.Status === TdsqlcClusterStatus.ISOLATED ||
+      cluster.Status === TdsqlcClusterStatus.OFFLINE
+    ) {
       logger.info(lang.__('TDSQL_CLUSTER_BEING_DELETED', { clusterId }));
       await new Promise((resolve) => setTimeout(resolve, 10000));
       attempts++;
@@ -70,7 +76,7 @@ const waitForClusterDeleted = async (
 };
 
 // TDSQL-C operations
-const createTdsqlcOperations = (cynosdbClient: CynosdbSdkClient, context: Context) => {
+export const createTdsqlcOperations = (cynosdbClient: CynosdbSdkClient, context: Context) => {
   const operations = {
     createCluster: async (config: TdsqlcClusterConfig): Promise<string> => {
       const params = {
@@ -241,4 +247,3 @@ const createTdsqlcOperations = (cynosdbClient: CynosdbSdkClient, context: Contex
 
   return operations;
 };
-

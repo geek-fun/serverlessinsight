@@ -1,5 +1,3 @@
-import { Context } from '../../types';
-
 export enum TdsqlcClusterStatus {
   RUNNING = 'running',
   ISOLATED = 'isolated',
@@ -93,7 +91,6 @@ export type ScfFunctionInfo = {
   IntranetConfig?: unknown;
 };
 
-
 export type CosBucketConfig = {
   Bucket: string;
   Region: string;
@@ -153,7 +150,6 @@ export type CosBucketInfo = {
     }>;
   };
 };
-
 
 export type TdsqlcClusterConfig = {
   ClusterName: string;
@@ -234,4 +230,3 @@ export type TdsqlcClusterInfo = {
   CynosVersionStatus?: string;
   IsLatestVersion?: boolean;
 };
-

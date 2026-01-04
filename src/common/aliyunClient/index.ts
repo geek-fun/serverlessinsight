@@ -16,7 +16,6 @@ import { createNasOperations } from './nasOperations';
 export * from './types';
 
 const initializeSdkClients = (context: Context) => {
-
   const baseConfig = {
     accessKeyId: context.accessKeyId,
     accessKeySecret: context.accessKeySecret,
