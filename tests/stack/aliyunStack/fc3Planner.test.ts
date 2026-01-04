@@ -4,7 +4,6 @@ import { Context, FunctionDomain } from '../../../src/types';
 import { ProviderEnum } from '../../../src/common';
 import fs from 'node:fs';
 
-// Create mock operations
 const mockFc3Operations = {
   createFunction: jest.fn(),
   getFunction: jest.fn(),
@@ -13,17 +12,12 @@ const mockFc3Operations = {
   deleteFunction: jest.fn(),
 };
 
-// Mock the aliyunClient module
-jest.mock('../../../src/common/aliyunClient');
+jest.mock('../../../src/common/aliyunClient', () => ({
+  createAliyunClient: jest.fn().mockReturnValue({
+    fc3: mockFc3Operations,
+  }),
+}));
 
-// Import the mocked module
-import { createAliyunClient } from '../../../src/common/aliyunClient';
-
-// Configure the mock
-(createAliyunClient as jest.Mock).mockReturnValue({
-  fc3: mockFc3Operations,
-});
-// Mock hashUtils to avoid file system dependencies
 jest.mock('../../../src/common/hashUtils', () => ({
   computeFileHash: jest.fn().mockReturnValue('mock-code-hash'),
 }));
@@ -79,7 +73,6 @@ describe('FC3 Planner', () => {
 
   describe('generateFunctionPlan', () => {
     it('should plan to create a new function when state is empty', async () => {
-      // Mock getFc3Function to return null (function doesn\'t exist)
       jest.spyOn(mockFc3Operations, 'getFunction').mockResolvedValue(null);
 
       const state = loadState('aliyun', testDir);
@@ -95,7 +88,6 @@ describe('FC3 Planner', () => {
     });
 
     it('should plan no changes when function exists and matches state', async () => {
-      // Add function to state with matching definition
       let state = loadState('aliyun', testDir);
       state = setResource(state, 'functions.test_fn', {
         mode: 'managed',
@@ -123,7 +115,6 @@ describe('FC3 Planner', () => {
         lastUpdated: new Date().toISOString(),
       });
 
-      // Mock getFc3Function to return matching function
       jest.spyOn(mockFc3Operations, 'getFunction').mockResolvedValue({
         functionName: 'test-function',
         runtime: 'nodejs20',
@@ -144,7 +135,6 @@ describe('FC3 Planner', () => {
     });
 
     it('should plan to update when definition changes', async () => {
-      // Add function to state with different definition
       let state = loadState('aliyun', testDir);
       state = setResource(state, 'functions.test_fn', {
         mode: 'managed',
@@ -153,7 +143,7 @@ describe('FC3 Planner', () => {
           functionName: 'test-function',
           runtime: 'nodejs20',
           handler: 'index.handler',
-          memorySize: 256, // Different from testFunction
+          memorySize: 256,
           timeout: 10,
           diskSize: null,
           environment: { NODE_ENV: 'production' },
@@ -172,7 +162,6 @@ describe('FC3 Planner', () => {
         lastUpdated: new Date().toISOString(),
       });
 
-      // Mock getFc3Function to return existing function
       jest.spyOn(mockFc3Operations, 'getFunction').mockResolvedValue({
         functionName: 'test-function',
         runtime: 'nodejs20',
@@ -193,7 +182,6 @@ describe('FC3 Planner', () => {
     });
 
     it('should plan to delete function when removed from config', async () => {
-      // Add function to state
       let state = loadState('aliyun', testDir);
       state = setResource(state, 'functions.old_fn', {
         mode: 'managed',
@@ -221,10 +209,8 @@ describe('FC3 Planner', () => {
         lastUpdated: new Date().toISOString(),
       });
 
-      // Mock getFc3Function
       jest.spyOn(mockFc3Operations, 'getFunction').mockResolvedValue(null);
 
-      // Pass empty array (no functions)
       const plan = await generateFunctionPlan(mockContext, state, []);
 
       expect(plan.items).toHaveLength(1);
@@ -236,7 +222,6 @@ describe('FC3 Planner', () => {
     });
 
     it('should plan to recreate function when state exists but remote is missing', async () => {
-      // Add function to state
       let state = loadState('aliyun', testDir);
       state = setResource(state, 'functions.test_fn', {
         mode: 'managed',
@@ -264,7 +249,6 @@ describe('FC3 Planner', () => {
         lastUpdated: new Date().toISOString(),
       });
 
-      // Mock getFc3Function to return null (function doesn\'t exist remotely)
       jest.spyOn(mockFc3Operations, 'getFunction').mockResolvedValue(null);
 
       const plan = await generateFunctionPlan(mockContext, state, [testFunction]);

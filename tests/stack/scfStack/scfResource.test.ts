@@ -4,22 +4,12 @@ import {
   updateResource,
   deleteResource,
 } from '../../../src/stack/scfStack/scfResource';
-import { createTencentClient } from '../../../src/common/tencentClient';
 import * as scfTypes from '../../../src/stack/scfStack/scfTypes';
 import * as stateManager from '../../../src/common/stateManager';
 import * as hashUtils from '../../../src/common/hashUtils';
-import * as fileUtils from '../../../src/common/fileUtils';
 import { ProviderEnum } from '../../../src/common';
 import { Context, StateFile, CURRENT_STATE_VERSION } from '../../../src/types';
 
-// Mock dependencies
-jest.mock('../../../src/common/tencentClient');
-jest.mock('../../../src/stack/scfStack/scfTypes');
-jest.mock('../../../src/common/stateManager');
-jest.mock('../../../src/common/hashUtils');
-jest.mock('../../../src/common/fileUtils');
-
-// Create mock operations
 const mockScfOperations = {
   createFunction: jest.fn(),
   getFunction: jest.fn(),
@@ -28,15 +18,20 @@ const mockScfOperations = {
   deleteFunction: jest.fn(),
 };
 
-// Setup client mock
-(createTencentClient as jest.Mock).mockReturnValue({
-  scf: mockScfOperations,
-  cos: {},
-  tdsqlc: {},
-});
+jest.mock('../../../src/common/tencentClient', () => ({
+  createTencentClient: jest.fn().mockReturnValue({
+    scf: mockScfOperations,
+    cos: {},
+    tdsqlc: {},
+  }),
+}));
 
-// Setup fileUtils mock
-(fileUtils.readFileAsBase64 as jest.Mock).mockReturnValue('base64encodedcontent');
+jest.mock('../../../src/stack/scfStack/scfTypes');
+jest.mock('../../../src/common/stateManager');
+jest.mock('../../../src/common/hashUtils');
+jest.mock('../../../src/common/fileUtils', () => ({
+  readFileAsBase64: jest.fn().mockReturnValue('base64encodedcontent'),
+}));
 
 describe('ScfResource', () => {
   const mockContext: Context = {
