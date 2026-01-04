@@ -2,14 +2,26 @@ import { generateFunctionPlan } from '../../../src/stack/scfStack/scfPlanner';
 import { loadState, setResource } from '../../../src/common/stateManager';
 import { Context, FunctionDomain } from '../../../src/types';
 import { ProviderEnum } from '../../../src/common';
-import * as scfProvider from '../../../src/stack/scfStack/scfProvider';
 import fs from 'node:fs';
 
-// Mock the ScfProvider module
-jest.mock('../../../src/stack/scfStack/scfProvider');
+// Mock the tencentClient module
+const mockScfOperations = {
+  createFunction: jest.fn(),
+  getFunction: jest.fn(),
+  updateFunctionConfiguration: jest.fn(),
+  updateFunctionCode: jest.fn(),
+  deleteFunction: jest.fn(),
+};
+
+jest.mock('../../../src/common/tencentClient', () => ({
+  createTencentClient: jest.fn().mockReturnValue({
+    scf: mockScfOperations,
+    cos: {},
+    tdsqlc: {},
+  }),
+}));
 // Mock hashUtils to avoid file system dependencies
 jest.mock('../../../src/common/hashUtils', () => ({
-  ...jest.requireActual('../../../src/common/hashUtils'),
   computeFileHash: jest.fn().mockReturnValue('mock-code-hash'),
 }));
 
@@ -64,7 +76,7 @@ describe('SCF Planner', () => {
   describe('generateFunctionPlan', () => {
     it('should plan to create a new function when state is empty', async () => {
       // Mock getScfFunction to return null (function doesn't exist)
-      jest.spyOn(scfProvider, 'getScfFunction').mockResolvedValue(null);
+      jest.spyOn(mockScfOperations, 'getFunction').mockResolvedValue(null);
 
       const state = loadState('tencent', testDir);
       const plan = await generateFunctionPlan(mockContext, state, [testFunction]);
@@ -104,7 +116,7 @@ describe('SCF Planner', () => {
       });
 
       // Mock getScfFunction to return matching function
-      jest.spyOn(scfProvider, 'getScfFunction').mockResolvedValue({
+      jest.spyOn(mockScfOperations, 'getFunction').mockResolvedValue({
         FunctionName: 'test-function',
         Runtime: 'Nodejs18.15',
         Handler: 'index.handler',
@@ -151,7 +163,7 @@ describe('SCF Planner', () => {
       });
 
       // Mock getScfFunction to return existing function
-      jest.spyOn(scfProvider, 'getScfFunction').mockResolvedValue({
+      jest.spyOn(mockScfOperations, 'getFunction').mockResolvedValue({
         FunctionName: 'test-function',
         Runtime: 'Nodejs18.15',
         Handler: 'index.handler',
@@ -198,7 +210,7 @@ describe('SCF Planner', () => {
       });
 
       // Mock getScfFunction
-      jest.spyOn(scfProvider, 'getScfFunction').mockResolvedValue(null);
+      jest.spyOn(mockScfOperations, 'getFunction').mockResolvedValue(null);
 
       // Pass empty array (no functions)
       const plan = await generateFunctionPlan(mockContext, state, []);
@@ -237,7 +249,7 @@ describe('SCF Planner', () => {
       });
 
       // Mock getScfFunction to return null (function doesn't exist remotely)
-      jest.spyOn(scfProvider, 'getScfFunction').mockResolvedValue(null);
+      jest.spyOn(mockScfOperations, 'getFunction').mockResolvedValue(null);
 
       const plan = await generateFunctionPlan(mockContext, state, [testFunction]);
 
@@ -277,7 +289,7 @@ describe('SCF Planner', () => {
       });
 
       // Mock getScfFunction to return existing function
-      jest.spyOn(scfProvider, 'getScfFunction').mockResolvedValue({
+      jest.spyOn(mockScfOperations, 'getFunction').mockResolvedValue({
         FunctionName: 'test-function',
         Runtime: 'Nodejs18.15',
         Handler: 'index.handler',

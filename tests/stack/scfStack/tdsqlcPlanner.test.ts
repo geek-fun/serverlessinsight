@@ -1,5 +1,4 @@
 import { generateDatabasePlan } from '../../../src/stack/scfStack/tdsqlcPlanner';
-import * as tdsqlcProvider from '../../../src/stack/scfStack/tdsqlcProvider';
 import * as stateManager from '../../../src/common/stateManager';
 import {
   Context,
@@ -12,8 +11,21 @@ import {
 } from '../../../src/types';
 import { ProviderEnum } from '../../../src/common';
 
-jest.mock('../../../src/stack/scfStack/tdsqlcProvider');
-jest.mock('../../../src/common/stateManager');
+// Create mock operations
+const mockTdsqlcOperations = {
+  createCluster: jest.fn(),
+  getCluster: jest.fn(),
+  updateCluster: jest.fn(),
+  deleteCluster: jest.fn(),
+};
+
+jest.mock('../../../src/common/tencentClient', () => ({
+  createTencentClient: jest.fn().mockReturnValue({
+    scf: {},
+    cos: {},
+    tdsqlc: mockTdsqlcOperations,
+  }),
+}));
 
 describe('TdsqlcPlanner', () => {
   const mockContext: Context = {
@@ -119,7 +131,7 @@ describe('TdsqlcPlanner', () => {
 
       jest.spyOn(stateManager, 'getResource').mockReturnValue(existingState);
       jest.spyOn(stateManager, 'getAllResources').mockReturnValue({});
-      jest.spyOn(tdsqlcProvider, 'getTdsqlcCluster').mockResolvedValue({
+      jest.spyOn(mockTdsqlcOperations, 'getCluster').mockResolvedValue({
         ClusterId: 'cynosdbmysql-test123',
         ClusterName: 'test-tdsqlc',
         Status: 'running',
@@ -156,7 +168,7 @@ describe('TdsqlcPlanner', () => {
 
       jest.spyOn(stateManager, 'getResource').mockReturnValue(existingState);
       jest.spyOn(stateManager, 'getAllResources').mockReturnValue({});
-      jest.spyOn(tdsqlcProvider, 'getTdsqlcCluster').mockResolvedValue({
+      jest.spyOn(mockTdsqlcOperations, 'getCluster').mockResolvedValue({
         ClusterId: 'cynosdbmysql-test123',
         ClusterName: 'test-tdsqlc',
         Status: 'running',
