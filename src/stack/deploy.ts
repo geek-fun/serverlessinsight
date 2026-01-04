@@ -91,24 +91,19 @@ const deployAliyun = async (iac: ServerlessIac): Promise<void> => {
   const context = getContext();
   logger.info(lang.__('DEPLOYING_STACK_PUBLISHING_ASSETS'));
 
-  // Load current state
   let state = loadState(iac.provider.name, process.cwd());
 
-  // Generate plan for functions
   logger.info(lang.__('GENERATING_PLAN'));
   const functionPlan = await generateAliyunFunctionPlan(context, state, iac.functions);
 
-  // Log the plan
   logger.info(`${lang.__('PLAN_GENERATED')}: ${functionPlan.items.length} ${lang.__('ACTIONS')}`);
   functionPlan.items.forEach((item) => {
     logger.info(`  - ${item.action.toUpperCase()}: ${item.logicalId} (${item.resourceType})`);
   });
 
-  // Execute the plan
   logger.info(lang.__('EXECUTING_PLAN'));
   state = await executeAliyunFunctionPlan(context, functionPlan, iac.functions, state);
 
-  // Save state
   saveState(state, process.cwd());
 
   logger.info(lang.__('STACK_DEPLOYED'));

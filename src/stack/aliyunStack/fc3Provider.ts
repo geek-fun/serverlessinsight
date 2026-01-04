@@ -1,6 +1,6 @@
 import { Context } from '../../types';
 import { Fc3FunctionConfig, Fc3FunctionInfo } from './fc3Types';
-import { createAliyunFc3Client } from '../../common/fc3Client';
+import { createAliyunClient } from '../../common/aliyunClient';
 import * as fc from '@alicloud/fc20230330';
 import fs from 'node:fs';
 
@@ -9,7 +9,7 @@ export const createFc3Function = async (
   config: Fc3FunctionConfig,
   codePath: string,
 ): Promise<void> => {
-  const client = createAliyunFc3Client(context);
+  const client = createAliyunClient(context);
   const codeBuffer = fs.readFileSync(codePath);
   const codeBase64 = codeBuffer.toString('base64');
 
@@ -78,18 +78,18 @@ export const createFc3Function = async (
     body: createFunctionInput,
   });
 
-  await client.createFunction(request);
+  await client.fc3.createFunction(request);
 };
 
 export const getFc3Function = async (
   context: Context,
   functionName: string,
 ): Promise<Fc3FunctionInfo | null> => {
-  const client = createAliyunFc3Client(context);
+  const client = createAliyunClient(context);
   try {
     const request = new fc.GetFunctionRequest({});
 
-    const response = await client.getFunction(functionName, request);
+    const response = await client.fc3.getFunction(functionName, request);
 
     if (!response || !response.body) {
       return null;
@@ -181,7 +181,7 @@ export const updateFc3FunctionConfiguration = async (
   context: Context,
   config: Fc3FunctionConfig,
 ): Promise<void> => {
-  const client = createAliyunFc3Client(context);
+  const client = createAliyunClient(context);
 
   const updateFunctionInput = new fc.UpdateFunctionInput({
     runtime: config.runtime,
@@ -244,7 +244,7 @@ export const updateFc3FunctionConfiguration = async (
     body: updateFunctionInput,
   });
 
-  await client.updateFunction(config.functionName, request);
+  await client.fc3.updateFunction(config.functionName, request);
 };
 
 export const updateFc3FunctionCode = async (
@@ -252,7 +252,7 @@ export const updateFc3FunctionCode = async (
   functionName: string,
   codePath: string,
 ): Promise<void> => {
-  const client = createAliyunFc3Client(context);
+  const client = createAliyunClient(context);
   const codeBuffer = fs.readFileSync(codePath);
   const codeBase64 = codeBuffer.toString('base64');
 
@@ -266,11 +266,11 @@ export const updateFc3FunctionCode = async (
     body: updateFunctionInput,
   });
 
-  await client.updateFunction(functionName, request);
+  await client.fc3.updateFunction(functionName, request);
 };
 
 export const deleteFc3Function = async (context: Context, functionName: string): Promise<void> => {
-  const client = createAliyunFc3Client(context);
+  const client = createAliyunClient(context);
 
-  await client.deleteFunction(functionName);
+  await client.fc3.deleteFunction(functionName);
 };

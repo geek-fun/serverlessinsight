@@ -5,13 +5,13 @@ import {
   updateFc3FunctionCode,
   deleteFc3Function,
 } from '../../../src/stack/aliyunStack/fc3Provider';
-import { createAliyunFc3Client } from '../../../src/common/fc3Client';
+import { createAliyunClient } from '../../../src/common/aliyunClient';
 import { ProviderEnum } from '../../../src/common';
 import { Context } from '../../../src/types';
 import fs from 'node:fs';
 
 // Mock dependencies
-jest.mock('../../../src/common/fc3Client');
+jest.mock('../../../src/common/aliyunClient');
 jest.mock('node:fs');
 
 describe('Fc3Provider', () => {
@@ -52,7 +52,7 @@ describe('Fc3Provider', () => {
       updateFunction: jest.fn().mockResolvedValue({}),
       deleteFunction: jest.fn().mockResolvedValue({}),
     };
-    (createAliyunFc3Client as jest.Mock).mockReturnValue(mockFc3Client);
+    (createAliyunClient as jest.Mock).mockReturnValue({ fc3: mockFc3Client, oss: {} });
     (fs.readFileSync as jest.Mock).mockReturnValue(Buffer.from('test-code'));
   });
 
@@ -60,7 +60,7 @@ describe('Fc3Provider', () => {
     it('should create function with all parameters', async () => {
       await createFc3Function(mockContext, mockConfig, 'test.zip');
 
-      expect(createAliyunFc3Client).toHaveBeenCalledWith(mockContext);
+      expect(createAliyunClient).toHaveBeenCalledWith(mockContext);
       expect(fs.readFileSync).toHaveBeenCalledWith('test.zip');
       expect(mockFc3Client.createFunction).toHaveBeenCalledWith(
         expect.objectContaining({
@@ -115,7 +115,7 @@ describe('Fc3Provider', () => {
 
       const result = await getFc3Function(mockContext, 'test-function');
 
-      expect(createAliyunFc3Client).toHaveBeenCalledWith(mockContext);
+      expect(createAliyunClient).toHaveBeenCalledWith(mockContext);
       expect(mockFc3Client.getFunction).toHaveBeenCalledWith('test-function', expect.any(Object));
       expect(result).toMatchObject({
         functionName: 'test-function',
@@ -159,7 +159,7 @@ describe('Fc3Provider', () => {
     it('should update function configuration with all parameters', async () => {
       await updateFc3FunctionConfiguration(mockContext, mockConfig);
 
-      expect(createAliyunFc3Client).toHaveBeenCalledWith(mockContext);
+      expect(createAliyunClient).toHaveBeenCalledWith(mockContext);
       expect(mockFc3Client.updateFunction).toHaveBeenCalledWith(
         'test-function',
         expect.objectContaining({
@@ -187,7 +187,7 @@ describe('Fc3Provider', () => {
     it('should update function code', async () => {
       await updateFc3FunctionCode(mockContext, 'test-function', 'test.zip');
 
-      expect(createAliyunFc3Client).toHaveBeenCalledWith(mockContext);
+      expect(createAliyunClient).toHaveBeenCalledWith(mockContext);
       expect(fs.readFileSync).toHaveBeenCalledWith('test.zip');
       expect(mockFc3Client.updateFunction).toHaveBeenCalledWith(
         'test-function',
@@ -213,7 +213,7 @@ describe('Fc3Provider', () => {
     it('should delete function', async () => {
       await deleteFc3Function(mockContext, 'test-function');
 
-      expect(createAliyunFc3Client).toHaveBeenCalledWith(mockContext);
+      expect(createAliyunClient).toHaveBeenCalledWith(mockContext);
       expect(mockFc3Client.deleteFunction).toHaveBeenCalledWith('test-function');
     });
 
