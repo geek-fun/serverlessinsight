@@ -17,24 +17,24 @@ import {
 import { ProviderEnum } from '../../../src/common';
 import { createTencentClient } from '../../../src/common/tencentClient';
 
+const mockTdsqlcOperations = {
+  createCluster: jest.fn(),
+  getCluster: jest.fn(),
+  updateCluster: jest.fn(),
+  deleteCluster: jest.fn(),
+};
+
 jest.mock('../../../src/common/tencentClient', () => ({
-  createTencentClient: jest.fn().mockReturnValue({
+  createTencentClient: jest.fn(() => ({
     scf: {},
     cos: {},
-    tdsqlc: {
-      createCluster: jest.fn(),
-      getCluster: jest.fn(),
-      updateCluster: jest.fn(),
-      deleteCluster: jest.fn(),
-    },
-  }),
+    tdsqlc: mockTdsqlcOperations,
+  })),
 }));
 
 jest.mock('../../../src/common/stateManager');
 
 describe('TdsqlcResource', () => {
-  const mockTencentClient = (createTencentClient as jest.Mock).mock.results[0]?.value;
-  const mockTdsqlcOperations = mockTencentClient?.tdsqlc;
 
   const mockContext: Context = {
     stage: 'default',

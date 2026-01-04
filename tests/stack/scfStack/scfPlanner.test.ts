@@ -5,18 +5,20 @@ import { ProviderEnum } from '../../../src/common';
 import fs from 'node:fs';
 import { createTencentClient } from '../../../src/common/tencentClient';
 
+const mockScfOperations = {
+  createFunction: jest.fn(),
+  getFunction: jest.fn(),
+  updateFunctionConfiguration: jest.fn(),
+  updateFunctionCode: jest.fn(),
+  deleteFunction: jest.fn(),
+};
+
 jest.mock('../../../src/common/tencentClient', () => ({
-  createTencentClient: jest.fn().mockReturnValue({
-    scf: {
-      createFunction: jest.fn(),
-      getFunction: jest.fn(),
-      updateFunctionConfiguration: jest.fn(),
-      updateFunctionCode: jest.fn(),
-      deleteFunction: jest.fn(),
-    },
+  createTencentClient: jest.fn(() => ({
+    scf: mockScfOperations,
     cos: {},
     tdsqlc: {},
-  }),
+  })),
 }));
 
 jest.mock('../../../src/common/hashUtils', () => ({
@@ -24,8 +26,6 @@ jest.mock('../../../src/common/hashUtils', () => ({
 }));
 
 describe('SCF Planner', () => {
-  const mockTencentClient = (createTencentClient as jest.Mock).mock.results[0]?.value;
-  const mockScfOperations = mockTencentClient?.scf;
 
   const testDir = '/tmp/test-scf-planner';
 

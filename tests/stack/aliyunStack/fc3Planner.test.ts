@@ -5,16 +5,18 @@ import { ProviderEnum } from '../../../src/common';
 import fs from 'node:fs';
 import { createAliyunClient } from '../../../src/common/aliyunClient';
 
+const mockFc3Operations = {
+  createFunction: jest.fn(),
+  getFunction: jest.fn(),
+  updateFunctionConfiguration: jest.fn(),
+  updateFunctionCode: jest.fn(),
+  deleteFunction: jest.fn(),
+};
+
 jest.mock('../../../src/common/aliyunClient', () => ({
-  createAliyunClient: jest.fn().mockReturnValue({
-    fc3: {
-      createFunction: jest.fn(),
-      getFunction: jest.fn(),
-      updateFunctionConfiguration: jest.fn(),
-      updateFunctionCode: jest.fn(),
-      deleteFunction: jest.fn(),
-    },
-  }),
+  createAliyunClient: jest.fn(() => ({
+    fc3: mockFc3Operations,
+  })),
 }));
 
 jest.mock('../../../src/common/hashUtils', () => ({
@@ -22,8 +24,6 @@ jest.mock('../../../src/common/hashUtils', () => ({
 }));
 
 describe('FC3 Planner', () => {
-  const mockAliyunClient = (createAliyunClient as jest.Mock).mock.results[0]?.value;
-  const mockFc3Operations = mockAliyunClient?.fc3;
 
   const testDir = '/tmp/test-fc3-planner';
 
