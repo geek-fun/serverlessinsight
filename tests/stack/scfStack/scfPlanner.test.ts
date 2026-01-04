@@ -4,7 +4,7 @@ import { Context, FunctionDomain } from '../../../src/types';
 import { ProviderEnum } from '../../../src/common';
 import fs from 'node:fs';
 
-// Mock the tencentClient module
+// Create mock operations
 const mockScfOperations = {
   createFunction: jest.fn(),
   getFunction: jest.fn(),
@@ -13,13 +13,18 @@ const mockScfOperations = {
   deleteFunction: jest.fn(),
 };
 
-jest.mock('../../../src/common/tencentClient', () => ({
-  createTencentClient: jest.fn().mockReturnValue({
-    scf: mockScfOperations,
-    cos: {},
-    tdsqlc: {},
-  }),
-}));
+// Mock the tencentClient module
+jest.mock('../../../src/common/tencentClient');
+
+// Import the mocked module
+import { createTencentClient } from '../../../src/common/tencentClient';
+
+// Configure the mock
+(createTencentClient as jest.Mock).mockReturnValue({
+  scf: mockScfOperations,
+  cos: {},
+  tdsqlc: {},
+});
 // Mock hashUtils to avoid file system dependencies
 jest.mock('../../../src/common/hashUtils', () => ({
   computeFileHash: jest.fn().mockReturnValue('mock-code-hash'),

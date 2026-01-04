@@ -8,6 +8,7 @@ import { createTencentClient } from '../../../src/common/tencentClient';
 import * as scfTypes from '../../../src/stack/scfStack/scfTypes';
 import * as stateManager from '../../../src/common/stateManager';
 import * as hashUtils from '../../../src/common/hashUtils';
+import * as fileUtils from '../../../src/common/fileUtils';
 import { ProviderEnum } from '../../../src/common';
 import { Context, StateFile, CURRENT_STATE_VERSION } from '../../../src/types';
 
@@ -16,6 +17,7 @@ jest.mock('../../../src/common/tencentClient');
 jest.mock('../../../src/stack/scfStack/scfTypes');
 jest.mock('../../../src/common/stateManager');
 jest.mock('../../../src/common/hashUtils');
+jest.mock('../../../src/common/fileUtils');
 
 // Create mock operations
 const mockScfOperations = {
@@ -32,6 +34,9 @@ const mockScfOperations = {
   cos: {},
   tdsqlc: {},
 });
+
+// Setup fileUtils mock
+(fileUtils.readFileAsBase64 as jest.Mock).mockReturnValue('base64encodedcontent');
 
 describe('ScfResource', () => {
   const mockContext: Context = {
@@ -197,7 +202,7 @@ describe('ScfResource', () => {
 
       const result = await readResource(mockContext, 'test-function');
 
-      expect(mockScfOperations.getFunction).toHaveBeenCalledWith(mockContext, 'test-function');
+      expect(mockScfOperations.getFunction).toHaveBeenCalledWith('test-function');
       expect(result).toEqual(mockFunctionInfo);
     });
 
@@ -232,16 +237,12 @@ describe('ScfResource', () => {
       const result = await updateResource(mockContext, testFunction, initialState);
 
       expect(scfTypes.functionToScfConfig).toHaveBeenCalledWith(testFunction);
-      expect(mockScfOperations.updateFunctionConfiguration).toHaveBeenCalledWith(
-        mockContext,
-        mockConfig,
-      );
+      expect(mockScfOperations.updateFunctionConfiguration).toHaveBeenCalledWith(mockConfig);
       expect(mockScfOperations.updateFunctionCode).toHaveBeenCalledWith(
-        mockContext,
         'test-function',
-        'test.zip',
+        'base64encodedcontent',
       );
-      expect(mockScfOperations.getFunction).toHaveBeenCalledWith(mockContext, 'test-function');
+      expect(mockScfOperations.getFunction).toHaveBeenCalledWith('test-function');
       expect(hashUtils.computeFileHash).toHaveBeenCalledWith('test.zip');
       expect(scfTypes.extractScfDefinition).toHaveBeenCalledWith(mockConfig, 'mock-code-hash');
       expect(stateManager.setResource).toHaveBeenCalledWith(
@@ -325,7 +326,7 @@ describe('ScfResource', () => {
         stateWithFunction,
       );
 
-      expect(mockScfOperations.deleteFunction).toHaveBeenCalledWith(mockContext, 'test-function');
+      expect(mockScfOperations.deleteFunction).toHaveBeenCalledWith('test-function');
       expect(stateManager.removeResource).toHaveBeenCalledWith(
         stateWithFunction,
         'functions.test_fn',

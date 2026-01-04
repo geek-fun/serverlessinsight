@@ -19,13 +19,18 @@ const mockTdsqlcOperations = {
   deleteCluster: jest.fn(),
 };
 
-jest.mock('../../../src/common/tencentClient', () => ({
-  createTencentClient: jest.fn().mockReturnValue({
-    scf: {},
-    cos: {},
-    tdsqlc: mockTdsqlcOperations,
-  }),
-}));
+// Mock the tencentClient module
+jest.mock('../../../src/common/tencentClient');
+
+// Import the mocked module
+import { createTencentClient } from '../../../src/common/tencentClient';
+
+// Configure the mock
+(createTencentClient as jest.Mock).mockReturnValue({
+  scf: {},
+  cos: {},
+  tdsqlc: mockTdsqlcOperations,
+});
 
 describe('TdsqlcPlanner', () => {
   const mockContext: Context = {

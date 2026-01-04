@@ -4,7 +4,7 @@ import { Context, FunctionDomain } from '../../../src/types';
 import { ProviderEnum } from '../../../src/common';
 import fs from 'node:fs';
 
-// Mock the aliyunClient module
+// Create mock operations
 const mockFc3Operations = {
   createFunction: jest.fn(),
   getFunction: jest.fn(),
@@ -13,11 +13,16 @@ const mockFc3Operations = {
   deleteFunction: jest.fn(),
 };
 
-jest.mock('../../../src/common/aliyunClient', () => ({
-  createAliyunClient: jest.fn().mockReturnValue({
-    fc3: mockFc3Operations,
-  }),
-}));
+// Mock the aliyunClient module
+jest.mock('../../../src/common/aliyunClient');
+
+// Import the mocked module
+import { createAliyunClient } from '../../../src/common/aliyunClient';
+
+// Configure the mock
+(createAliyunClient as jest.Mock).mockReturnValue({
+  fc3: mockFc3Operations,
+});
 // Mock hashUtils to avoid file system dependencies
 jest.mock('../../../src/common/hashUtils', () => ({
   computeFileHash: jest.fn().mockReturnValue('mock-code-hash'),
