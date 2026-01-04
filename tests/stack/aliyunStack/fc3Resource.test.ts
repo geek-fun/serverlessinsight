@@ -144,14 +144,13 @@ describe('Fc3Resource', () => {
 
       expect(fc3Types.functionToFc3Config).toHaveBeenCalledWith(testFunction);
       expect(mockFc3Operations.createFunction).toHaveBeenCalledWith(
-        mockContext,
         expect.objectContaining({
           ...mockConfig,
           role: 'acs:ram::123456789012:role/test-role',
         }),
         'test.zip',
       );
-      expect(mockFc3Operations.getFunction).toHaveBeenCalledWith(mockContext, 'test-function');
+      expect(mockFc3Operations.getFunction).toHaveBeenCalledWith('test-function');
       expect(hashUtils.computeFileHash).toHaveBeenCalledWith('test.zip');
       expect(fc3Types.extractFc3Definition).toHaveBeenCalledWith(
         expect.objectContaining({
@@ -208,7 +207,7 @@ describe('Fc3Resource', () => {
 
       const result = await readResource(mockContext, 'test-function');
 
-      expect(mockFc3Operations.getFunction).toHaveBeenCalledWith(mockContext, 'test-function');
+      expect(mockFc3Operations.getFunction).toHaveBeenCalledWith('test-function');
       expect(result).toEqual(mockFunctionInfo);
     });
 
@@ -328,7 +327,7 @@ describe('Fc3Resource', () => {
         stateWithFunction,
       );
 
-      expect(mockFc3Operations.deleteFunction).toHaveBeenCalledWith(mockContext, 'test-function');
+      expect(mockFc3Operations.deleteFunction).toHaveBeenCalledWith('test-function');
       expect(stateManager.removeResource).toHaveBeenCalledWith(
         stateWithFunction,
         'functions.test_fn',

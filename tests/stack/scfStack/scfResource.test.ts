@@ -9,18 +9,17 @@ import * as stateManager from '../../../src/common/stateManager';
 import * as hashUtils from '../../../src/common/hashUtils';
 import { ProviderEnum } from '../../../src/common';
 import { Context, StateFile, CURRENT_STATE_VERSION } from '../../../src/types';
-
-const mockScfOperations = {
-  createFunction: jest.fn(),
-  getFunction: jest.fn(),
-  updateFunctionConfiguration: jest.fn(),
-  updateFunctionCode: jest.fn(),
-  deleteFunction: jest.fn(),
-};
+import { createTencentClient } from '../../../src/common/tencentClient';
 
 jest.mock('../../../src/common/tencentClient', () => ({
   createTencentClient: jest.fn().mockReturnValue({
-    scf: mockScfOperations,
+    scf: {
+      createFunction: jest.fn(),
+      getFunction: jest.fn(),
+      updateFunctionConfiguration: jest.fn(),
+      updateFunctionCode: jest.fn(),
+      deleteFunction: jest.fn(),
+    },
     cos: {},
     tdsqlc: {},
   }),
@@ -34,6 +33,9 @@ jest.mock('../../../src/common/fileUtils', () => ({
 }));
 
 describe('ScfResource', () => {
+  const mockTencentClient = (createTencentClient as jest.Mock).mock.results[0]?.value;
+  const mockScfOperations = mockTencentClient?.scf;
+
   const mockContext: Context = {
     stage: 'default',
     stackName: 'test-stack',

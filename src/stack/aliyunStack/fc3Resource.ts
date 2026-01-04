@@ -5,7 +5,6 @@ import { functionToFc3Config, extractFc3Definition, Fc3FunctionInfo } from './fc
 import { setResource, removeResource, getResource } from '../../common/stateManager';
 import { computeFileHash } from '../../common/hashUtils';
 import { getContext } from '../../common/context';
-import fs from 'node:fs';
 
 const buildFc3InstanceFromProvider = (info: Fc3FunctionInfo, arn: string) => {
   return {
@@ -342,15 +341,9 @@ export const updateResource = async (
   const codePath = fn.code!.path;
   const client = createAliyunClient(context);
 
-  // Update configuration
   await client.fc3.updateFunctionConfiguration(config);
+  await client.fc3.updateFunctionCode(fn.name, codePath);
 
-  // Update code
-  const codeBuffer = fs.readFileSync(codePath);
-  const codeBase64 = codeBuffer.toString('base64');
-  await client.fc3.updateFunctionCode(fn.name, codeBase64);
-
-  // Refresh state from provider to get all attributes
   const functionInfo = await client.fc3.getFunction(fn.name);
   if (!functionInfo) {
     throw new Error(`Failed to refresh state for function: ${fn.name}`);
