@@ -6,7 +6,7 @@ import {
   StateFile,
   ResourceAttributes,
 } from '../../types';
-import { getFc3Function } from './fc3Provider';
+import { createAliyunClient } from '../../common/aliyunClient';
 import { functionToFc3Config, extractFc3Definition } from './fc3Types';
 import { getAllResources, getResource } from '../../common/stateManager';
 import { attributesEqual, computeFileHash } from '../../common/hashUtils';
@@ -54,7 +54,8 @@ export const generateFunctionPlan = async (
       }
 
       try {
-        const remoteFunction = await getFc3Function(context, fn.name);
+        const client = createAliyunClient(context);
+        const remoteFunction = await client.fc3.getFunction(fn.name);
 
         if (!remoteFunction) {
           return {
