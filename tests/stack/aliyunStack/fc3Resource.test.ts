@@ -1,17 +1,14 @@
 import { ProviderEnum } from '../../../src/common';
-import * as hashUtils from '../../../src/common/hashUtils';
-import * as stateManager from '../../../src/common/stateManager';
 import {
   createResource,
   deleteResource,
   readResource,
   updateResource,
 } from '../../../src/stack/aliyunStack/fc3Resource';
-import * as fc3Types from '../../../src/stack/aliyunStack/fc3Types';
 import { Context, CURRENT_STATE_VERSION, StateFile } from '../../../src/types';
 
 // Create mock operations
-const mockFc3Operations = {
+const mockedFc3Operations = {
   createFunction: jest.fn(),
   getFunction: jest.fn(),
   updateFunctionConfiguration: jest.fn(),
@@ -29,11 +26,15 @@ const mockedStateManager = {
 const mockedHashUtils = {
   computeFileHash: jest.fn(),
 };
+const mockedDependentResourceProvider = {
+  createDependentResources: jest.fn(),
+  deleteDependentResources: jest.fn(),
+};
 
 jest.mock('../../../src/common/aliyunClient', () => ({
   createAliyunClient: () => ({
     oss: {},
-    fc3: mockFc3Operations,
+    fc3: mockedFc3Operations,
   }),
 }));
 
@@ -55,8 +56,14 @@ jest.mock('../../../src/common/hashUtils', () => ({
 
 jest.mock('../../../src/common/context');
 
+jest.mock('../../../src/stack/aliyunStack/dependentResourceProvider', () => ({
+  createDependentResources: (...args: unknown[]) =>
+    mockedDependentResourceProvider.createDependentResources(...args),
+  deleteDependentResources: (...args: unknown[]) =>
+    mockedDependentResourceProvider.deleteDependentResources(...args),
+}));
+
 import * as context from '../../../src/common/context';
-import * as dependentResourceProvider from '../../../src/stack/aliyunStack/dependentResourceProvider';
 
 const initialState: StateFile = {
   version: CURRENT_STATE_VERSION,
@@ -130,16 +137,23 @@ describe('Fc3Resource', () => {
     mockedFc3Types.functionToFc3Config.mockReturnValue(mockConfig);
     mockedFc3Types.extractFc3Definition.mockReturnValue(mockDefinition);
     mockedHashUtils.computeFileHash.mockReturnValue('mock-code-hash');
-    mockFc3Operations.getFunction.mockResolvedValue(mockFunctionInfo);
+    mockedFc3Operations.getFunction.mockResolvedValue(mockFunctionInfo);
     (context.getContext as jest.Mock).mockReturnValue(mockContext);
-    (dependentResourceProvider.createDependentResources as jest.Mock).mockResolvedValue({
+    mockedDependentResourceProvider.createDependentResources.mockResolvedValueOnce({
       logConfig: undefined,
       role: { roleName: 'test-role', arn: 'acs:ram::123456789012:role/test-role' },
       securityGroup: undefined,
       nasConfig: undefined,
       instances: [],
     });
-    (dependentResourceProvider.deleteDependentResources as jest.Mock).mockResolvedValue(undefined);
+    mockedDependentResourceProvider.createDependentResources.mockResolvedValueOnce({
+      logConfig: undefined,
+      role: { roleName: 'test-role', arn: 'acs:ram::123456789012:role/test-role' },
+      securityGroup: undefined,
+      nasConfig: undefined,
+      instances: [],
+    });
+    mockedDependentResourceProvider.deleteDependentResources.mockResolvedValueOnce(undefined);
     mockedStateManager.setResource.mockReturnValue(undefined);
     mockedStateManager.removeResource.mockReturnValue(undefined);
   });
@@ -162,30 +176,29 @@ describe('Fc3Resource', () => {
           },
         },
       };
-
-      (mockFc3Operations.createFunction as jest.Mock).mockResolvedValue(undefined);
-      (stateManager.setResource as jest.Mock).mockReturnValue(newState);
+      mockedFc3Operations.createFunction.mockResolvedValue(undefined);
+      mockedStateManager.setResource.mockReturnValue(newState);
 
       const result = await createResource(mockContext, testFunction, initialState);
 
-      expect(fc3Types.functionToFc3Config).toHaveBeenCalledWith(testFunction);
-      expect(mockFc3Operations.createFunction).toHaveBeenCalledWith(
+      expect(mockedFc3Types.functionToFc3Config).toHaveBeenCalledWith(testFunction);
+      expect(mockedFc3Operations.createFunction).toHaveBeenCalledWith(
         expect.objectContaining({
           ...mockConfig,
           role: 'acs:ram::123456789012:role/test-role',
         }),
         'test.zip',
       );
-      expect(mockFc3Operations.getFunction).toHaveBeenCalledWith('test-function');
-      expect(hashUtils.computeFileHash).toHaveBeenCalledWith('test.zip');
-      expect(fc3Types.extractFc3Definition).toHaveBeenCalledWith(
+      expect(mockedFc3Operations.getFunction).toHaveBeenCalledWith('test-function');
+      expect(mockedHashUtils.computeFileHash).toHaveBeenCalledWith('test.zip');
+      expect(mockedFc3Types.extractFc3Definition).toHaveBeenCalledWith(
         expect.objectContaining({
           ...mockConfig,
           role: 'acs:ram::123456789012:role/test-role',
         }),
         'mock-code-hash',
       );
-      expect(stateManager.setResource).toHaveBeenCalledWith(
+      expect(mockedStateManager.setResource).toHaveBeenCalledWith(
         initialState,
         'functions.test_fn',
         expect.objectContaining({
@@ -210,7 +223,7 @@ describe('Fc3Resource', () => {
 
     it('should propagate errors from createFc3Function', async () => {
       const error = new Error('Create failed');
-      (mockFc3Operations.createFunction as jest.Mock).mockRejectedValue(error);
+      mockedFc3Operations.createFunction.mockRejectedValue(error);
 
       await expect(createResource(mockContext, testFunction, initialState)).rejects.toThrow(
         'Create failed',
@@ -218,8 +231,8 @@ describe('Fc3Resource', () => {
     });
 
     it('should throw error when refresh state fails', async () => {
-      (mockFc3Operations.createFunction as jest.Mock).mockResolvedValue(undefined);
-      (mockFc3Operations.getFunction as jest.Mock).mockResolvedValue(null);
+      mockedFc3Operations.createFunction.mockResolvedValue(undefined);
+      mockedFc3Operations.getFunction.mockResolvedValue(null);
 
       await expect(createResource(mockContext, testFunction, initialState)).rejects.toThrow(
         'Failed to refresh state for function: test-function',
@@ -229,16 +242,16 @@ describe('Fc3Resource', () => {
 
   describe('readResource', () => {
     it('should read resource from provider', async () => {
-      (mockFc3Operations.getFunction as jest.Mock).mockResolvedValue(mockFunctionInfo);
+      mockedFc3Operations.getFunction.mockResolvedValue(mockFunctionInfo);
 
       const result = await readResource(mockContext, 'test-function');
 
-      expect(mockFc3Operations.getFunction).toHaveBeenCalledWith('test-function');
+      expect(mockedFc3Operations.getFunction).toHaveBeenCalledWith('test-function');
       expect(result).toEqual(mockFunctionInfo);
     });
 
     it('should return null if function not found', async () => {
-      (mockFc3Operations.getFunction as jest.Mock).mockResolvedValue(null);
+      mockedFc3Operations.getFunction.mockResolvedValue(null);
 
       const result = await readResource(mockContext, 'nonexistent');
 
@@ -261,26 +274,26 @@ describe('Fc3Resource', () => {
         },
       };
 
-      (mockFc3Operations.updateFunctionConfiguration as jest.Mock).mockResolvedValue(undefined);
-      (mockFc3Operations.updateFunctionCode as jest.Mock).mockResolvedValue(undefined);
-      (stateManager.setResource as jest.Mock).mockReturnValue(newState);
+      mockedFc3Operations.updateFunctionConfiguration.mockResolvedValue(undefined);
+      mockedFc3Operations.updateFunctionCode.mockResolvedValue(undefined);
+      mockedStateManager.setResource.mockReturnValue(newState);
 
       const result = await updateResource(mockContext, testFunction, initialState);
 
-      expect(fc3Types.functionToFc3Config).toHaveBeenCalledWith(testFunction);
-      expect(mockFc3Operations.updateFunctionConfiguration).toHaveBeenCalledWith(
+      expect(mockedFc3Types.functionToFc3Config).toHaveBeenCalledWith(testFunction);
+      expect(mockedFc3Operations.updateFunctionConfiguration).toHaveBeenCalledWith(
         expect.objectContaining({
           ...mockConfig,
           role: 'acs:ram::123456789012:role/test-role',
         }),
       );
-      expect(mockFc3Operations.updateFunctionCode).toHaveBeenCalledWith(
+      expect(mockedFc3Operations.updateFunctionCode).toHaveBeenCalledWith(
         'test-function',
         'test.zip',
       );
-      expect(mockFc3Operations.getFunction).toHaveBeenCalledWith(mockContext, 'test-function');
-      expect(hashUtils.computeFileHash).toHaveBeenCalledWith('test.zip');
-      expect(fc3Types.extractFc3Definition).toHaveBeenCalledWith(
+      expect(mockedFc3Operations.getFunction).toHaveBeenCalledWith('test-function');
+      expect(mockedHashUtils.computeFileHash).toHaveBeenCalledWith('test.zip');
+      expect(mockedFc3Types.extractFc3Definition).toHaveBeenCalledWith(
         expect.objectContaining({
           ...mockConfig,
           role: 'acs:ram::123456789012:role/test-role',
@@ -292,7 +305,7 @@ describe('Fc3Resource', () => {
 
     it('should propagate errors from updateFc3FunctionConfiguration', async () => {
       const error = new Error('Update config failed');
-      (mockFc3Operations.updateFunctionConfiguration as jest.Mock).mockRejectedValue(error);
+      mockedFc3Operations.updateFunctionConfiguration.mockRejectedValue(error);
 
       await expect(updateResource(mockContext, testFunction, initialState)).rejects.toThrow(
         'Update config failed',
@@ -301,8 +314,8 @@ describe('Fc3Resource', () => {
 
     it('should propagate errors from updateFc3FunctionCode', async () => {
       const error = new Error('Update code failed');
-      (mockFc3Operations.updateFunctionConfiguration as jest.Mock).mockResolvedValue(undefined);
-      (mockFc3Operations.updateFunctionCode as jest.Mock).mockRejectedValue(error);
+      mockedFc3Operations.updateFunctionConfiguration.mockResolvedValue(undefined);
+      mockedFc3Operations.updateFunctionCode.mockRejectedValue(error);
 
       await expect(updateResource(mockContext, testFunction, initialState)).rejects.toThrow(
         'Update code failed',
@@ -310,9 +323,9 @@ describe('Fc3Resource', () => {
     });
 
     it('should throw error when refresh state fails', async () => {
-      (mockFc3Operations.updateFunctionConfiguration as jest.Mock).mockResolvedValue(undefined);
-      (mockFc3Operations.updateFunctionCode as jest.Mock).mockResolvedValue(undefined);
-      (mockFc3Operations.getFunction as jest.Mock).mockResolvedValue(null);
+      mockedFc3Operations.updateFunctionConfiguration.mockResolvedValue(undefined);
+      mockedFc3Operations.updateFunctionCode.mockResolvedValue(undefined);
+      mockedFc3Operations.getFunction.mockResolvedValue(null);
 
       await expect(updateResource(mockContext, testFunction, initialState)).rejects.toThrow(
         'Failed to refresh state for function: test-function',
@@ -334,6 +347,7 @@ describe('Fc3Resource', () => {
                 arn: 'arn:acs:fc:cn-hangzhou:123456789012:function/test-function',
                 id: 'test-function',
                 functionName: 'test-function',
+                type: 'ALIYUN_FC3_FUNCTION',
               },
             ],
             lastUpdated: '2025-01-01T00:00:00Z',
@@ -341,8 +355,8 @@ describe('Fc3Resource', () => {
         },
       };
 
-      (mockFc3Operations.deleteFunction as jest.Mock).mockResolvedValue(undefined);
-      (stateManager.removeResource as jest.Mock).mockReturnValue(initialState);
+      mockedFc3Operations.deleteFunction.mockResolvedValue(undefined);
+      mockedStateManager.removeResource.mockReturnValue(initialState);
 
       const result = await deleteResource(
         mockContext,
@@ -351,8 +365,8 @@ describe('Fc3Resource', () => {
         stateWithFunction,
       );
 
-      expect(mockFc3Operations.deleteFunction).toHaveBeenCalledWith('test-function');
-      expect(stateManager.removeResource).toHaveBeenCalledWith(
+      expect(mockedFc3Operations.deleteFunction).toHaveBeenCalledWith('test-function');
+      expect(mockedStateManager.removeResource).toHaveBeenCalledWith(
         stateWithFunction,
         'functions.test_fn',
       );
@@ -361,7 +375,7 @@ describe('Fc3Resource', () => {
 
     it('should propagate errors from deleteFc3Function', async () => {
       const error = new Error('Delete failed');
-      (mockFc3Operations.deleteFunction as jest.Mock).mockRejectedValue(error);
+      mockedFc3Operations.deleteFunction.mockRejectedValue(error);
 
       await expect(
         deleteResource(mockContext, 'test-function', 'functions.test_fn', initialState),

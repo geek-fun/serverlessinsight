@@ -1,10 +1,15 @@
-import { Context, FunctionDomain, ResourceState, StateFile } from '../../types';
 import { createAliyunClient } from '../../common/aliyunClient';
+
+import {
+  getResource,
+  removeResource,
+  setResource,
+  computeFileHash,
+  getContext,
+} from '../../common';
+import { Context, FunctionDomain, ResourceState, StateFile } from '../../types';
 import { createDependentResources, deleteDependentResources } from './dependentResourceProvider';
-import { functionToFc3Config, extractFc3Definition, Fc3FunctionInfo } from './fc3Types';
-import { setResource, removeResource, getResource } from '../../common/stateManager';
-import { computeFileHash } from '../../common/hashUtils';
-import { getContext } from '../../common/context';
+import { extractFc3Definition, Fc3FunctionInfo, functionToFc3Config } from './fc3Types';
 
 const buildFc3InstanceFromProvider = (info: Fc3FunctionInfo, arn: string) => {
   return {
