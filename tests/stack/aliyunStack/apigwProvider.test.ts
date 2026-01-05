@@ -63,56 +63,47 @@ describe('ApigwProvider', () => {
 
   let mockApigwClient: {
     createApiGroup: jest.Mock;
-    describeApiGroup: jest.Mock;
-    describeApiGroups: jest.Mock;
-    modifyApiGroup: jest.Mock;
+    getApiGroup: jest.Mock;
+    findApiGroupByName: jest.Mock;
+    updateApiGroup: jest.Mock;
     deleteApiGroup: jest.Mock;
     createApi: jest.Mock;
-    describeApi: jest.Mock;
-    modifyApi: jest.Mock;
+    getApi: jest.Mock;
+    updateApi: jest.Mock;
     deleteApi: jest.Mock;
     deployApi: jest.Mock;
     abolishApi: jest.Mock;
-    setDomain: jest.Mock;
-    setDomainCertificate: jest.Mock;
-    deleteDomain: jest.Mock;
+    bindCustomDomain: jest.Mock;
+    unbindCustomDomain: jest.Mock;
   };
 
   beforeEach(() => {
     jest.clearAllMocks();
     mockApigwClient = {
-      createApiGroup: jest.fn().mockResolvedValue({ body: { groupId: 'group-123' } }),
-      describeApiGroup: jest.fn().mockResolvedValue({
-        body: {
-          groupId: 'group-123',
-          groupName: 'test-api-group',
-          subDomain: 'test.alicloudapi.com',
-        },
+      createApiGroup: jest.fn().mockResolvedValue('group-123'),
+      getApiGroup: jest.fn().mockResolvedValue({
+        groupId: 'group-123',
+        groupName: 'test-api-group',
+        subDomain: 'test.alicloudapi.com',
       }),
-      describeApiGroups: jest.fn().mockResolvedValue({
-        body: {
-          apiGroupAttributes: {
-            apiGroupAttribute: [{ groupId: 'group-123', groupName: 'test-api-group' }],
-          },
-        },
+      findApiGroupByName: jest.fn().mockResolvedValue({
+        groupId: 'group-123',
+        groupName: 'test-api-group',
       }),
-      modifyApiGroup: jest.fn().mockResolvedValue({}),
-      deleteApiGroup: jest.fn().mockResolvedValue({}),
-      createApi: jest.fn().mockResolvedValue({ body: { apiId: 'api-456' } }),
-      describeApi: jest.fn().mockResolvedValue({
-        body: {
-          apiId: 'api-456',
-          apiName: 'test-api',
-          groupId: 'group-123',
-        },
+      updateApiGroup: jest.fn().mockResolvedValue(undefined),
+      deleteApiGroup: jest.fn().mockResolvedValue(undefined),
+      createApi: jest.fn().mockResolvedValue('api-456'),
+      getApi: jest.fn().mockResolvedValue({
+        apiId: 'api-456',
+        apiName: 'test-api',
+        groupId: 'group-123',
       }),
-      modifyApi: jest.fn().mockResolvedValue({}),
-      deleteApi: jest.fn().mockResolvedValue({}),
-      deployApi: jest.fn().mockResolvedValue({}),
-      abolishApi: jest.fn().mockResolvedValue({}),
-      setDomain: jest.fn().mockResolvedValue({}),
-      setDomainCertificate: jest.fn().mockResolvedValue({}),
-      deleteDomain: jest.fn().mockResolvedValue({}),
+      updateApi: jest.fn().mockResolvedValue(undefined),
+      deleteApi: jest.fn().mockResolvedValue(undefined),
+      deployApi: jest.fn().mockResolvedValue(undefined),
+      abolishApi: jest.fn().mockResolvedValue(undefined),
+      bindCustomDomain: jest.fn().mockResolvedValue(undefined),
+      unbindCustomDomain: jest.fn().mockResolvedValue(undefined),
     };
     (createAliyunClient as jest.Mock).mockReturnValue({ apigw: mockApigwClient });
   });
@@ -132,7 +123,9 @@ describe('ApigwProvider', () => {
     });
 
     it('should throw error if no groupId returned', async () => {
-      mockApigwClient.createApiGroup.mockResolvedValue({ body: {} });
+      mockApigwClient.createApiGroup.mockRejectedValue(
+        new Error('Failed to create API Gateway group: no groupId returned'),
+      );
 
       await expect(createApiGroup(mockContext, mockGroupConfig)).rejects.toThrow(
         'Failed to create API Gateway group: no groupId returned',
@@ -144,9 +137,7 @@ describe('ApigwProvider', () => {
     it('should get API group by ID', async () => {
       const result = await getApiGroup(mockContext, 'group-123');
 
-      expect(mockApigwClient.describeApiGroup).toHaveBeenCalledWith(
-        expect.objectContaining({ groupId: 'group-123' }),
-      );
+      expect(mockApigwClient.getApiGroup).toHaveBeenCalledWith('group-123');
       expect(result).toMatchObject({
         groupId: 'group-123',
         groupName: 'test-api-group',
@@ -154,7 +145,7 @@ describe('ApigwProvider', () => {
     });
 
     it('should return null for NotFoundApiGroup error', async () => {
-      mockApigwClient.describeApiGroup.mockRejectedValue({ code: 'NotFoundApiGroup' });
+      mockApigwClient.getApiGroup.mockResolvedValue(null);
 
       const result = await getApiGroup(mockContext, 'nonexistent');
 
@@ -162,7 +153,7 @@ describe('ApigwProvider', () => {
     });
 
     it('should return null for InvalidGroupId.NotFound error', async () => {
-      mockApigwClient.describeApiGroup.mockRejectedValue({ code: 'InvalidGroupId.NotFound' });
+      mockApigwClient.getApiGroup.mockResolvedValue(null);
 
       const result = await getApiGroup(mockContext, 'nonexistent');
 
@@ -171,7 +162,7 @@ describe('ApigwProvider', () => {
 
     it('should propagate other errors', async () => {
       const error = new Error('Network error');
-      mockApigwClient.describeApiGroup.mockRejectedValue(error);
+      mockApigwClient.getApiGroup.mockRejectedValue(error);
 
       await expect(getApiGroup(mockContext, 'group-123')).rejects.toThrow('Network error');
     });
@@ -181,16 +172,12 @@ describe('ApigwProvider', () => {
     it('should find API group by name', async () => {
       const result = await findApiGroupByName(mockContext, 'test-api-group');
 
-      expect(mockApigwClient.describeApiGroups).toHaveBeenCalledWith(
-        expect.objectContaining({ groupName: 'test-api-group' }),
-      );
+      expect(mockApigwClient.findApiGroupByName).toHaveBeenCalledWith('test-api-group');
       expect(result?.groupId).toBe('group-123');
     });
 
     it('should return null if group not found', async () => {
-      mockApigwClient.describeApiGroups.mockResolvedValue({
-        body: { apiGroupAttributes: { apiGroupAttribute: [] } },
-      });
+      mockApigwClient.findApiGroupByName.mockResolvedValue(null);
 
       const result = await findApiGroupByName(mockContext, 'nonexistent');
 
@@ -202,12 +189,9 @@ describe('ApigwProvider', () => {
     it('should update API group', async () => {
       await updateApiGroup(mockContext, 'group-123', { description: 'Updated description' });
 
-      expect(mockApigwClient.modifyApiGroup).toHaveBeenCalledWith(
-        expect.objectContaining({
-          groupId: 'group-123',
-          description: 'Updated description',
-        }),
-      );
+      expect(mockApigwClient.updateApiGroup).toHaveBeenCalledWith('group-123', {
+        description: 'Updated description',
+      });
     });
   });
 
@@ -215,9 +199,7 @@ describe('ApigwProvider', () => {
     it('should delete API group', async () => {
       await deleteApiGroup(mockContext, 'group-123');
 
-      expect(mockApigwClient.deleteApiGroup).toHaveBeenCalledWith(
-        expect.objectContaining({ groupId: 'group-123' }),
-      );
+      expect(mockApigwClient.deleteApiGroup).toHaveBeenCalledWith('group-123');
     });
   });
 
@@ -230,7 +212,9 @@ describe('ApigwProvider', () => {
     });
 
     it('should throw error if no apiId returned', async () => {
-      mockApigwClient.createApi.mockResolvedValue({ body: {} });
+      mockApigwClient.createApi.mockRejectedValue(
+        new Error('Failed to create API: no apiId returned'),
+      );
 
       await expect(createApi(mockContext, mockApiConfig)).rejects.toThrow(
         'Failed to create API: no apiId returned',
@@ -242,17 +226,12 @@ describe('ApigwProvider', () => {
     it('should get API by ID', async () => {
       const result = await getApi(mockContext, 'group-123', 'api-456');
 
-      expect(mockApigwClient.describeApi).toHaveBeenCalledWith(
-        expect.objectContaining({
-          groupId: 'group-123',
-          apiId: 'api-456',
-        }),
-      );
+      expect(mockApigwClient.getApi).toHaveBeenCalledWith('group-123', 'api-456');
       expect(result?.apiId).toBe('api-456');
     });
 
     it('should return null for NotFoundApi error', async () => {
-      mockApigwClient.describeApi.mockRejectedValue({ code: 'NotFoundApi' });
+      mockApigwClient.getApi.mockResolvedValue(null);
 
       const result = await getApi(mockContext, 'group-123', 'nonexistent');
 
@@ -264,12 +243,7 @@ describe('ApigwProvider', () => {
     it('should update API', async () => {
       await updateApi(mockContext, 'api-456', mockApiConfig);
 
-      expect(mockApigwClient.modifyApi).toHaveBeenCalledWith(
-        expect.objectContaining({
-          apiId: 'api-456',
-          groupId: 'group-123',
-        }),
-      );
+      expect(mockApigwClient.updateApi).toHaveBeenCalledWith('api-456', mockApiConfig);
     });
   });
 
@@ -277,32 +251,21 @@ describe('ApigwProvider', () => {
     it('should delete API', async () => {
       await deleteApi(mockContext, 'group-123', 'api-456');
 
-      expect(mockApigwClient.deleteApi).toHaveBeenCalledWith(
-        expect.objectContaining({
-          groupId: 'group-123',
-          apiId: 'api-456',
-        }),
-      );
+      expect(mockApigwClient.deleteApi).toHaveBeenCalledWith('group-123', 'api-456');
     });
   });
 
   describe('deployApi', () => {
     it('should deploy API to stage', async () => {
-      await deployApi(mockContext, {
+      const deployConfig = {
         groupId: 'group-123',
         apiId: 'api-456',
-        stageName: 'RELEASE',
+        stageName: 'RELEASE' as const,
         description: 'Deploy to production',
-      });
+      };
+      await deployApi(mockContext, deployConfig);
 
-      expect(mockApigwClient.deployApi).toHaveBeenCalledWith(
-        expect.objectContaining({
-          groupId: 'group-123',
-          apiId: 'api-456',
-          stageName: 'RELEASE',
-          description: 'Deploy to production',
-        }),
-      );
+      expect(mockApigwClient.deployApi).toHaveBeenCalledWith(deployConfig);
     });
   });
 
@@ -310,48 +273,32 @@ describe('ApigwProvider', () => {
     it('should abolish API from stage', async () => {
       await abolishApi(mockContext, 'group-123', 'api-456', 'RELEASE');
 
-      expect(mockApigwClient.abolishApi).toHaveBeenCalledWith(
-        expect.objectContaining({
-          groupId: 'group-123',
-          apiId: 'api-456',
-          stageName: 'RELEASE',
-        }),
-      );
+      expect(mockApigwClient.abolishApi).toHaveBeenCalledWith('group-123', 'api-456', 'RELEASE');
     });
   });
 
   describe('bindCustomDomain', () => {
     it('should bind custom domain', async () => {
-      await bindCustomDomain(mockContext, {
+      const domainConfig = {
         groupId: 'group-123',
         domainName: 'api.example.com',
-      });
+      };
+      await bindCustomDomain(mockContext, domainConfig);
 
-      expect(mockApigwClient.setDomain).toHaveBeenCalledWith(
-        expect.objectContaining({
-          groupId: 'group-123',
-          domainName: 'api.example.com',
-        }),
-      );
+      expect(mockApigwClient.bindCustomDomain).toHaveBeenCalledWith(domainConfig);
     });
 
     it('should set certificate if provided', async () => {
-      await bindCustomDomain(mockContext, {
+      const domainConfig = {
         groupId: 'group-123',
         domainName: 'api.example.com',
         certificateName: 'test-cert',
         certificateBody: '-----BEGIN CERTIFICATE-----',
         certificatePrivateKey: '-----BEGIN PRIVATE KEY-----',
-      });
+      };
+      await bindCustomDomain(mockContext, domainConfig);
 
-      expect(mockApigwClient.setDomain).toHaveBeenCalled();
-      expect(mockApigwClient.setDomainCertificate).toHaveBeenCalledWith(
-        expect.objectContaining({
-          groupId: 'group-123',
-          domainName: 'api.example.com',
-          certificateName: 'test-cert',
-        }),
-      );
+      expect(mockApigwClient.bindCustomDomain).toHaveBeenCalledWith(domainConfig);
     });
   });
 
@@ -359,11 +306,9 @@ describe('ApigwProvider', () => {
     it('should unbind custom domain', async () => {
       await unbindCustomDomain(mockContext, 'group-123', 'api.example.com');
 
-      expect(mockApigwClient.deleteDomain).toHaveBeenCalledWith(
-        expect.objectContaining({
-          groupId: 'group-123',
-          domainName: 'api.example.com',
-        }),
+      expect(mockApigwClient.unbindCustomDomain).toHaveBeenCalledWith(
+        'group-123',
+        'api.example.com',
       );
     });
   });
