@@ -166,7 +166,7 @@ describe('Fc3Resource', () => {
     mockedHashUtils.computeFileHash.mockReturnValue('mock-code-hash');
     mockedFc3Operations.getFunction.mockResolvedValue(mockFunctionInfo);
     (context.getContext as jest.Mock).mockReturnValue(mockContext);
-    
+
     // Mock dependent resource operations
     mockedRamOperations.createRole.mockResolvedValue({
       roleName: 'test-role',
@@ -190,7 +190,7 @@ describe('Fc3Resource', () => {
     mockedNasOperations.deleteAccessGroup.mockResolvedValue(undefined);
     mockedNasOperations.deleteFileSystem.mockResolvedValue(undefined);
     mockedNasOperations.deleteMountTarget.mockResolvedValue(undefined);
-    
+
     mockedStateManager.setResource.mockReturnValue(undefined);
     mockedStateManager.removeResource.mockReturnValue(undefined);
   });
