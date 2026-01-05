@@ -9,7 +9,7 @@
     "si": "dist/src/commands/index.js"
   },
   "scripts": {
-    "test": "DEBUG=ServerlessInsight jest --runInBand --detectOpenHandles --coverage --coverageReporters json-summary text html lcov",
+    "test": "cross-env DEBUG=ServerlessInsight jest --runInBand --detectOpenHandles --coverage --coverageReporters json-summary text html lcov",
     "test:ci": "jest --runInBand --ci --coverage --coverageReporters json-summary text html lcov",
     "build": "tsc --build",
     "lint:fix": "eslint --fix ./",
@@ -97,6 +97,7 @@
     "@types/node": "^25.0.3",
     "@typescript-eslint/eslint-plugin": "^8.50.0",
     "@typescript-eslint/parser": "^8.50.0",
+    "cross-env": "^7.0.3",
     "eslint": "^9.39.2",
     "eslint-config-prettier": "^10.1.8",
     "eslint-plugin-prettier": "^5.5.4",
