@@ -89,7 +89,7 @@ export const extractEsDefinition = (config: EsConfig): ResourceAttributes => {
     appVersion: config.AppVersion,
     authentication: config.Authentication
       ? {
-          basicAuth: config.Authentication.BasicAuth?.map((auth) => ({
+          basicAuth: config.Authentication.BasicAuth?.map(() => ({
             password: '***',
           })),
         }

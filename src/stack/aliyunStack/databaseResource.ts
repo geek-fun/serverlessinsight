@@ -129,6 +129,7 @@ export const createDatabaseResource = async (
     mode: 'managed',
     region: context.region,
     definition,
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     instances: [instance as any],
     lastUpdated: new Date().toISOString(),
     metadata: {
@@ -205,6 +206,7 @@ export const updateDatabaseResource = async (
     mode: 'managed',
     region: context.region,
     definition,
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     instances: [instance as any],
     lastUpdated: new Date().toISOString(),
     metadata: {

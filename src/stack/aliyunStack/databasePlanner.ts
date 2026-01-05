@@ -111,9 +111,11 @@ export const generateDatabasePlan = async (
       }
 
       const instanceId =
-        (currentState.metadata?.instanceId as string | undefined) || currentState.instances?.[0]?.id;
+        (currentState.metadata?.instanceId as string | undefined) ||
+        currentState.instances?.[0]?.id;
 
       try {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         let remoteInstance: any = null;
 
         if (resourceType === 'ALIYUN_ES_SERVERLESS') {

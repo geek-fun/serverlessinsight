@@ -19,7 +19,10 @@ export const executeDatabasePlan = async (
   let currentState = initialState;
 
   for (const item of plan.items) {
-    if (item.resourceType !== 'ALIYUN_RDS_SERVERLESS' && item.resourceType !== 'ALIYUN_ES_SERVERLESS') {
+    if (
+      item.resourceType !== 'ALIYUN_RDS_SERVERLESS' &&
+      item.resourceType !== 'ALIYUN_ES_SERVERLESS'
+    ) {
       continue;
     }
 
@@ -36,7 +39,9 @@ export const executeDatabasePlan = async (
             throw new Error(`Database not found for logical ID: ${item.logicalId}`);
           }
           const resourceTypeName =
-            item.resourceType === 'ALIYUN_ES_SERVERLESS' ? 'Elasticsearch Serverless' : 'RDS Serverless';
+            item.resourceType === 'ALIYUN_ES_SERVERLESS'
+              ? 'Elasticsearch Serverless'
+              : 'RDS Serverless';
           logger.info(`Creating ${resourceTypeName} database: ${database.name}`);
           currentState = await createDatabaseResource(context, database, currentState);
           logger.info(`Successfully created ${resourceTypeName} database: ${database.name}`);

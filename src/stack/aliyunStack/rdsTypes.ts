@@ -180,8 +180,7 @@ export const databaseToRdsConfig = (database: DatabaseDomain): RdsConfig => {
     DBInstanceStorageType: storage.type,
     BurstingEnabled: storage.bursting,
     ServerlessConfig: {
-      MinCapacity:
-        database.cu.min === 0 ? quota.minCapacity : database.cu.min + quota.minCapacity,
+      MinCapacity: database.cu.min === 0 ? quota.minCapacity : database.cu.min + quota.minCapacity,
       MaxCapacity:
         database.cu.max + quota.minCapacity <= quota.maxCapacity
           ? database.cu.max + quota.minCapacity

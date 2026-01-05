@@ -120,6 +120,7 @@ export const createRdsOperations = (rdsClient: RdsClient, context: Context) => {
       };
 
       try {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const response = await rdsClient.createDBInstance(params as any);
         logger.info('RDS instance creation initiated');
 
@@ -145,9 +146,13 @@ export const createRdsOperations = (rdsClient: RdsClient, context: Context) => {
       };
 
       try {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const response = await rdsClient.describeDBInstanceAttribute(params as any);
 
-        if (!response.body?.Items?.DBInstanceAttribute || response.body.Items.DBInstanceAttribute.length === 0) {
+        if (
+          !response.body?.Items?.DBInstanceAttribute ||
+          response.body.Items.DBInstanceAttribute.length === 0
+        ) {
           return null;
         }
 
@@ -201,6 +206,7 @@ export const createRdsOperations = (rdsClient: RdsClient, context: Context) => {
               SwitchForce: config.ServerlessConfig.SwitchForce,
             },
           };
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
           await rdsClient.modifyDBInstanceSpec(serverlessParams as any);
         }
 
@@ -210,6 +216,7 @@ export const createRdsOperations = (rdsClient: RdsClient, context: Context) => {
             DBInstanceId: instanceId,
             SecurityIPList: config.SecurityIPList,
           };
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
           await rdsClient.modifySecurityIps(securityParams as any);
         }
 
@@ -229,6 +236,7 @@ export const createRdsOperations = (rdsClient: RdsClient, context: Context) => {
       };
 
       try {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         await rdsClient.deleteDBInstance(params as any);
         logger.info(`RDS instance deletion initiated: ${instanceId}`);
 
@@ -252,7 +260,12 @@ export const createRdsOperations = (rdsClient: RdsClient, context: Context) => {
         throw new Error(`Timeout waiting for RDS instance deletion: ${instanceId}`);
       } catch (error) {
         // If instance is not found, consider it deleted
-        if (error && typeof error === 'object' && 'code' in error && error.code === 'InvalidDBInstanceId.NotFound') {
+        if (
+          error &&
+          typeof error === 'object' &&
+          'code' in error &&
+          error.code === 'InvalidDBInstanceId.NotFound'
+        ) {
           logger.info(`RDS instance already deleted: ${instanceId}`);
           return;
         }
