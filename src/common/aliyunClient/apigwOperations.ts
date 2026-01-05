@@ -131,7 +131,7 @@ export type ApigwCustomDomainConfig = {
   groupId: string;
   domainName: string;
   bindStageName?: string;
-  customDomainType?: string;
+  customDomainType?: 'INTERNET' | 'INTRANET';
   isHttpRedirectToHttps?: boolean;
   certificateName?: string;
   certificateBody?: string;
