@@ -6,3 +6,7 @@ export * from './apigwTypes';
 export * from './apigwResource';
 export * from './apigwPlanner';
 export * from './apigwExecutor';
+export * from './ossTypes';
+export * from './ossResource';
+export * from './ossPlanner';
+export * from './ossExecutor';
