@@ -10,3 +10,8 @@ export * from './ossTypes';
 export * from './ossResource';
 export * from './ossPlanner';
 export * from './ossExecutor';
+export * from './rdsTypes';
+export * from './esServerlessTypes';
+export * from './databaseResource';
+export * from './databasePlanner';
+export * from './databaseExecutor';
