@@ -197,9 +197,7 @@ describe('RdsTypes', () => {
         },
       };
 
-      expect(() => databaseToRdsConfig(database)).toThrow(
-        'Unsupported RDS database type/version',
-      );
+      expect(() => databaseToRdsConfig(database)).toThrow('Unsupported RDS database type/version');
     });
   });
 
