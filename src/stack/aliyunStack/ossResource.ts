@@ -1,7 +1,8 @@
 import { createAliyunClient } from '../../common/aliyunClient';
+import { OssBucketInfo } from '../../common/aliyunClient/ossOperations';
 import { setResource, removeResource } from '../../common';
 import { Context, BucketDomain, ResourceState, StateFile } from '../../types';
-import { bucketToOssBucketConfig, extractOssBucketDefinition, OssBucketInfo } from './ossTypes';
+import { bucketToOssBucketConfig, extractOssBucketDefinition } from './ossTypes';
 import path from 'node:path';
 
 const buildOssInstanceFromProvider = (info: OssBucketInfo, arn: string) => {
@@ -61,7 +62,7 @@ export const createBucketResource = async (
     mode: 'managed',
     region: context.region,
     definition,
-    instances: [buildOssInstanceFromProvider(bucketInfo as OssBucketInfo, arn)],
+    instances: [buildOssInstanceFromProvider(bucketInfo, arn)],
     lastUpdated: new Date().toISOString(),
   };
 
@@ -113,7 +114,7 @@ export const updateBucketResource = async (
     mode: 'managed',
     region: context.region,
     definition,
-    instances: [buildOssInstanceFromProvider(bucketInfo as OssBucketInfo, arn)],
+    instances: [buildOssInstanceFromProvider(bucketInfo, arn)],
     lastUpdated: new Date().toISOString(),
   };
 

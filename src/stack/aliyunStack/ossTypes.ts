@@ -11,18 +11,6 @@ export type OssBucketConfig = {
   Domain?: string;
 };
 
-export type OssBucketInfo = {
-  name: string;
-  location?: string;
-  creationDate?: string;
-  acl?: string;
-  websiteConfig?: {
-    indexDocument?: string;
-    errorDocument?: string;
-  };
-  storageClass?: string;
-};
-
 const aclMap: Record<BucketAccessEnum, 'private' | 'public-read' | 'public-read-write'> = {
   [BucketAccessEnum.PRIVATE]: 'private',
   [BucketAccessEnum.PUBLIC_READ]: 'public-read',
