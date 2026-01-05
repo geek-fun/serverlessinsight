@@ -1,4 +1,5 @@
 export * from './providerEnum';
+export * from './encoding';
 export * from './logger';
 export * from './getVersion';
 export * from './rosClient';
