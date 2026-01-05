@@ -3,6 +3,7 @@ import * as ossDeployment from '@alicloud/ros-cdk-ossdeployment';
 import { getFileSource, calcRefs, calcValue, formatRosId, logger } from '../../src/common';
 import { lang } from '../../src/lang';
 import fs from 'node:fs';
+import path from 'node:path';
 import { context } from '../fixtures/contextFixture';
 
 jest.mock('@alicloud/ros-cdk-ossdeployment');
@@ -24,7 +25,7 @@ describe('Unit test for iacHelper', () => {
     it('should return the correct ossDeployment source', () => {
       getFileSource(fcName, location);
       expect(ossDeployment.Source.asset).toHaveBeenCalledWith(
-        `${process.cwd()}/${location}`,
+        path.resolve(process.cwd(), location),
         { deployTime: true },
         `${fcName}/db8b704aa697d0cbab4671e99d750f25-`,
       );
