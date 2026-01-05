@@ -6,27 +6,16 @@ import NasClient from '@alicloud/nas20170626';
 import CloudApiClient from '@alicloud/cloudapi20160714';
 import * as $OpenApi from '@alicloud/openapi-client';
 import OSS from 'ali-oss';
-import { Context } from '../types';
+import { Context } from '../../types';
+import { createFc3Operations } from './fc3Operations';
+import { createSlsOperations } from './slsOperations';
+import { createRamOperations } from './ramOperations';
+import { createEcsOperations } from './ecsOperations';
+import { createNasOperations } from './nasOperations';
 
-type AliyunFc3Client = Fc3Client;
-type AliyunSlsClient = SlsClient;
-type AliyunRamClient = RamClient;
-type AliyunEcsClient = EcsClient;
-type AliyunNasClient = NasClient;
-type AliyunOssClient = OSS;
-type AliyunCloudApiClient = CloudApiClient;
+export * from './types';
 
-export interface AliyunClient {
-  fc3: AliyunFc3Client;
-  sls: AliyunSlsClient;
-  ram: AliyunRamClient;
-  ecs: AliyunEcsClient;
-  nas: AliyunNasClient;
-  oss: AliyunOssClient;
-  apigw: AliyunCloudApiClient;
-}
-
-export const createAliyunClient = (context: Context): AliyunClient => {
+const initializeSdkClients = (context: Context) => {
   const baseConfig = {
     accessKeyId: context.accessKeyId,
     accessKeySecret: context.accessKeySecret,
@@ -73,5 +62,19 @@ export const createAliyunClient = (context: Context): AliyunClient => {
     nas: nasClient,
     oss: ossClient,
     apigw: apigwClient,
+  };
+};
+
+export const createAliyunClient = (context: Context) => {
+  const sdkClients = initializeSdkClients(context);
+
+  return {
+    fc3: createFc3Operations(sdkClients.fc3),
+    sls: createSlsOperations(sdkClients.sls),
+    ram: createRamOperations(sdkClients.ram),
+    ecs: createEcsOperations(sdkClients.ecs, context),
+    nas: createNasOperations(sdkClients.nas),
+    oss: sdkClients.oss,
+    apigw: sdkClients.apigw,
   };
 };

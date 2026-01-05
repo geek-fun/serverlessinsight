@@ -1,16 +1,15 @@
-import { Context, FunctionDomain, ResourceState, StateFile } from '../../types';
+import { createAliyunClient } from '../../common/aliyunClient';
+
 import {
-  createFc3Function,
-  deleteFc3Function,
-  getFc3Function,
-  updateFc3FunctionCode,
-  updateFc3FunctionConfiguration,
-} from './fc3Provider';
+  getResource,
+  removeResource,
+  setResource,
+  computeFileHash,
+  getContext,
+} from '../../common';
+import { Context, FunctionDomain, ResourceState, StateFile } from '../../types';
 import { createDependentResources, deleteDependentResources } from './dependentResourceProvider';
-import { functionToFc3Config, extractFc3Definition, Fc3FunctionInfo } from './fc3Types';
-import { setResource, removeResource, getResource } from '../../common/stateManager';
-import { computeFileHash } from '../../common/hashUtils';
-import { getContext } from '../../common/context';
+import { extractFc3Definition, Fc3FunctionInfo, functionToFc3Config } from './fc3Types';
 
 const buildFc3InstanceFromProvider = (info: Fc3FunctionInfo, arn: string) => {
   return {
@@ -144,10 +143,11 @@ export const createResource = async (
   }
 
   const codePath = fn.code!.path;
-  await createFc3Function(context, config, codePath);
+  const client = createAliyunClient(context);
+  await client.fc3.createFunction(config, codePath);
 
   // Refresh state from provider to get all attributes
-  const functionInfo = await getFc3Function(context, fn.name);
+  const functionInfo = await client.fc3.getFunction(fn.name);
   if (!functionInfo) {
     throw new Error(`Failed to refresh state for function: ${fn.name}`);
   }
@@ -182,7 +182,8 @@ export const createResource = async (
 };
 
 export const readResource = async (context: Context, functionName: string) => {
-  return await getFc3Function(context, functionName);
+  const client = createAliyunClient(context);
+  return await client.fc3.getFunction(functionName);
 };
 
 export const updateResource = async (
@@ -343,15 +344,12 @@ export const updateResource = async (
   }
 
   const codePath = fn.code!.path;
+  const client = createAliyunClient(context);
 
-  // Update configuration
-  await updateFc3FunctionConfiguration(context, config);
+  await client.fc3.updateFunctionConfiguration(config);
+  await client.fc3.updateFunctionCode(fn.name, codePath);
 
-  // Update code
-  await updateFc3FunctionCode(context, fn.name, codePath);
-
-  // Refresh state from provider to get all attributes
-  const functionInfo = await getFc3Function(context, fn.name);
+  const functionInfo = await client.fc3.getFunction(fn.name);
   if (!functionInfo) {
     throw new Error(`Failed to refresh state for function: ${fn.name}`);
   }
@@ -412,7 +410,8 @@ export const deleteResource = async (
   }>;
 
   // Delete FC function first
-  await deleteFc3Function(context, functionName);
+  const client = createAliyunClient(context);
+  await client.fc3.deleteFunction(functionName);
 
   // Delete dependent resources
   const dependentInstances = existingInstances.filter(

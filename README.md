@@ -188,6 +188,65 @@ curl http://localhost:4567/si_buckets/<bucket_key>/subdir/
 
 The bucket handler serves files from the directory specified in your bucket's `website.code` configuration.
 
+
+### Architecture
+
+ServerlessInsight follows a **functional client architecture** that cleanly separates cloud provider SDKs from business logic:
+
+#### Layered Design
+
+```
+┌─────────────────────────────────────────┐
+│   Resource / Planner / Executor Layer   │  ← Provider-agnostic business logic
+│   (Pure functions, no SDK imports)       │
+└─────────────────────────────────────────┘
+                    ↓
+┌─────────────────────────────────────────┐
+│         Functional Client Layer          │  ← Encapsulated SDK operations
+│   (aliyunClient.ts, tencentClient.ts)   │
+└─────────────────────────────────────────┘
+                    ↓
+┌─────────────────────────────────────────┐
+│      Cloud Provider SDKs                 │  ← @alicloud/*, tencentcloud-*
+└─────────────────────────────────────────┘
+```
+
+#### Key Principles
+
+- **Functional & Pure**: All business logic uses pure functions with immutable data
+- **SDK Encapsulation**: Provider SDKs are accessed ONLY through client modules
+- **Operation Functions**: Clients expose high-level operation functions (e.g., `createFunction`, `getFunction`)
+- **No Classes**: Prefer `type` over `interface`, and functional patterns over classes
+- **Minimal Side Effects**: File I/O and other side effects are isolated at boundaries
+
+#### Client Pattern Example
+
+```typescript
+// ✅ Client exposes operation functions, not raw SDKs
+export type AliyunClient = {
+  fc3: {
+    createFunction: (config: Fc3FunctionConfig, codeBase64: string) => Promise<void>;
+    getFunction: (functionName: string) => Promise<Fc3FunctionInfo | null>;
+    // ... other operations
+  };
+  // ... other services
+};
+
+// ✅ Resource layer uses clean client API
+const client = createAliyunClient(context);
+const codeBase64 = readFileAsBase64(codePath);
+await client.fc3.createFunction(config, codeBase64);
+```
+
+This architecture enables:
+- **Better Testing**: Mock client operations instead of SDKs
+- **Maintainability**: Provider changes isolated to client layer
+- **Type Safety**: Strong typing throughout the stack
+- **Code Reuse**: Shared client operations across resources
+
+
+
+
 ---
 
 ## 📘 Documentation

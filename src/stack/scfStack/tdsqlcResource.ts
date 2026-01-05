@@ -1,10 +1,5 @@
 import { Context, DatabaseDomain, ResourceState, StateFile } from '../../types';
-import {
-  createTdsqlcCluster,
-  deleteTdsqlcCluster,
-  getTdsqlcCluster,
-  updateTdsqlcCluster,
-} from './tdsqlcProvider';
+import { createTencentClient } from '../../common/tencentClient';
 import { databaseToTdsqlcConfig, extractTdsqlcDefinition, TdsqlcClusterInfo } from './tdsqlcTypes';
 import { setResource, removeResource } from '../../common/stateManager';
 
@@ -92,10 +87,11 @@ export const createDatabaseResource = async (
 ): Promise<StateFile> => {
   const config = databaseToTdsqlcConfig(database);
 
-  const clusterId = await createTdsqlcCluster(context, config);
+  const client = createTencentClient(context);
+  const clusterId = await client.tdsqlc.createCluster(config);
 
   // Refresh state from provider to get all attributes
-  const clusterInfo = await getTdsqlcCluster(context, clusterId);
+  const clusterInfo = await client.tdsqlc.getCluster(clusterId);
   if (!clusterInfo) {
     throw new Error(`Failed to refresh state for cluster: ${clusterId}`);
   }
@@ -106,7 +102,7 @@ export const createDatabaseResource = async (
     mode: 'managed',
     region: context.region,
     definition,
-    instances: [buildTdsqlcInstanceFromProvider(clusterInfo, arn)],
+    instances: [buildTdsqlcInstanceFromProvider(clusterInfo as TdsqlcClusterInfo, arn)],
     lastUpdated: new Date().toISOString(),
     metadata: {
       clusterName: database.name,
@@ -119,7 +115,8 @@ export const createDatabaseResource = async (
 };
 
 export const readDatabaseResource = async (context: Context, clusterId: string) => {
-  return await getTdsqlcCluster(context, clusterId);
+  const client = createTencentClient(context);
+  return await client.tdsqlc.getCluster(clusterId);
 };
 
 export const updateDatabaseResource = async (
@@ -130,10 +127,11 @@ export const updateDatabaseResource = async (
 ): Promise<StateFile> => {
   const config = databaseToTdsqlcConfig(database);
 
-  await updateTdsqlcCluster(context, clusterId, config);
+  const client = createTencentClient(context);
+  await client.tdsqlc.updateCluster(clusterId, config);
 
   // Refresh state from provider to get all attributes
-  const clusterInfo = await getTdsqlcCluster(context, clusterId);
+  const clusterInfo = await client.tdsqlc.getCluster(clusterId);
   if (!clusterInfo) {
     throw new Error(`Failed to refresh state for cluster: ${clusterId}`);
   }
@@ -144,7 +142,7 @@ export const updateDatabaseResource = async (
     mode: 'managed',
     region: context.region,
     definition,
-    instances: [buildTdsqlcInstanceFromProvider(clusterInfo, arn)],
+    instances: [buildTdsqlcInstanceFromProvider(clusterInfo as TdsqlcClusterInfo, arn)],
     lastUpdated: new Date().toISOString(),
     metadata: {
       clusterName: database.name,
@@ -162,6 +160,7 @@ export const deleteDatabaseResource = async (
   logicalId: string,
   state: StateFile,
 ): Promise<StateFile> => {
-  await deleteTdsqlcCluster(context, clusterId);
+  const client = createTencentClient(context);
+  await client.tdsqlc.deleteCluster(clusterId);
   return removeResource(state, logicalId);
 };

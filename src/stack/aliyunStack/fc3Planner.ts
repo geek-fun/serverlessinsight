@@ -1,15 +1,14 @@
+import { attributesEqual, computeFileHash, getAllResources, getResource } from '../../common';
+import { createAliyunClient } from '../../common/aliyunClient';
 import {
   Context,
   FunctionDomain,
   Plan,
   PlanItem,
-  StateFile,
   ResourceAttributes,
+  StateFile,
 } from '../../types';
-import { getFc3Function } from './fc3Provider';
-import { functionToFc3Config, extractFc3Definition } from './fc3Types';
-import { getAllResources, getResource } from '../../common/stateManager';
-import { attributesEqual, computeFileHash } from '../../common/hashUtils';
+import { extractFc3Definition, functionToFc3Config } from './fc3Types';
 
 const planFunctionDeletion = (logicalId: string, definition: ResourceAttributes): PlanItem => ({
   logicalId,
@@ -54,7 +53,8 @@ export const generateFunctionPlan = async (
       }
 
       try {
-        const remoteFunction = await getFc3Function(context, fn.name);
+        const client = createAliyunClient(context);
+        const remoteFunction = await client.fc3.getFunction(fn.name);
 
         if (!remoteFunction) {
           return {

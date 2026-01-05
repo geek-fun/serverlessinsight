@@ -1,5 +1,5 @@
 import { Context, BucketDomain, Plan, PlanItem, StateFile, ResourceAttributes } from '../../types';
-import { getCosBucket } from './cosProvider';
+import { createTencentClient } from '../../common/tencentClient';
 import { bucketToCosBucketConfig, extractCosBucketDefinition } from './cosTypes';
 import { getAllResources, getResource } from '../../common/stateManager';
 import { attributesEqual } from '../../common/hashUtils';
@@ -43,7 +43,8 @@ export const generateBucketPlan = async (
       }
 
       try {
-        const remoteBucket = await getCosBucket(context, bucket.name, context.region);
+        const client = createTencentClient(context);
+        const remoteBucket = await client.cos.getBucket(bucket.name, context.region);
 
         if (!remoteBucket) {
           return {

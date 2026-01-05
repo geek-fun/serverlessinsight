@@ -1,21 +1,31 @@
+import { ProviderEnum, setResource } from '../../../src/common';
 import { generateFunctionPlan } from '../../../src/stack/scfStack/scfPlanner';
-import { loadState, setResource } from '../../../src/common/stateManager';
 import { Context, FunctionDomain } from '../../../src/types';
-import { ProviderEnum } from '../../../src/common';
-import * as scfProvider from '../../../src/stack/scfStack/scfProvider';
-import fs from 'node:fs';
 
-// Mock the ScfProvider module
-jest.mock('../../../src/stack/scfStack/scfProvider');
-// Mock hashUtils to avoid file system dependencies
+const initalState = { version: '1.0.0', provider: 'tencent', resources: {} };
+
+const mockScfOperations = {
+  createFunction: jest.fn(),
+  getFunction: jest.fn(),
+  updateFunctionConfiguration: jest.fn(),
+  updateFunctionCode: jest.fn(),
+  deleteFunction: jest.fn(),
+};
+
+jest.mock('../../../src/common/tencentClient', () => ({
+  createTencentClient: () => ({
+    scf: mockScfOperations,
+    cos: {},
+    tdsqlc: {},
+  }),
+}));
+
 jest.mock('../../../src/common/hashUtils', () => ({
   ...jest.requireActual('../../../src/common/hashUtils'),
   computeFileHash: jest.fn().mockReturnValue('mock-code-hash'),
 }));
 
 describe('SCF Planner', () => {
-  const testDir = '/tmp/test-scf-planner';
-
   const mockContext: Context = {
     stage: 'default',
     stackName: 'test-stack',
@@ -45,28 +55,14 @@ describe('SCF Planner', () => {
   };
 
   beforeEach(() => {
-    // Clean up
-    if (fs.existsSync(testDir)) {
-      fs.rmSync(testDir, { recursive: true, force: true });
-    }
-    fs.mkdirSync(testDir, { recursive: true });
-
-    // Reset mocks
     jest.clearAllMocks();
-  });
-
-  afterEach(() => {
-    if (fs.existsSync(testDir)) {
-      fs.rmSync(testDir, { recursive: true, force: true });
-    }
   });
 
   describe('generateFunctionPlan', () => {
     it('should plan to create a new function when state is empty', async () => {
-      // Mock getScfFunction to return null (function doesn't exist)
-      jest.spyOn(scfProvider, 'getScfFunction').mockResolvedValue(null);
+      mockScfOperations.getFunction.mockResolvedValue(null);
 
-      const state = loadState('tencent', testDir);
+      const state = initalState;
       const plan = await generateFunctionPlan(mockContext, state, [testFunction]);
 
       expect(plan.items).toHaveLength(1);
@@ -79,9 +75,18 @@ describe('SCF Planner', () => {
     });
 
     it('should plan no changes when function exists and matches state', async () => {
-      // Add function to state with matching definition
-      let state = loadState('tencent', testDir);
-      state = setResource(state, 'functions.test_fn', {
+      mockScfOperations.getFunction.mockResolvedValue({
+        FunctionName: 'test-function',
+        Runtime: 'Nodejs18.15',
+        Handler: 'index.handler',
+        MemorySize: 512,
+        Timeout: 10,
+        Environment: {
+          Variables: [{ Key: 'NODE_ENV', Value: 'production' }],
+        },
+      });
+
+      const state = setResource(initalState, 'functions.test_fn', {
         mode: 'managed',
         region: 'ap-guangzhou',
         definition: {
@@ -103,18 +108,6 @@ describe('SCF Planner', () => {
         lastUpdated: new Date().toISOString(),
       });
 
-      // Mock getScfFunction to return matching function
-      jest.spyOn(scfProvider, 'getScfFunction').mockResolvedValue({
-        FunctionName: 'test-function',
-        Runtime: 'Nodejs18.15',
-        Handler: 'index.handler',
-        MemorySize: 512,
-        Timeout: 10,
-        Environment: {
-          Variables: [{ Key: 'NODE_ENV', Value: 'production' }],
-        },
-      });
-
       const plan = await generateFunctionPlan(mockContext, state, [testFunction]);
 
       expect(plan.items).toHaveLength(1);
@@ -126,16 +119,25 @@ describe('SCF Planner', () => {
     });
 
     it('should plan to update when definition changes', async () => {
-      // Add function to state with different definition
-      let state = loadState('tencent', testDir);
-      state = setResource(state, 'functions.test_fn', {
+      mockScfOperations.getFunction.mockResolvedValue({
+        FunctionName: 'test-function',
+        Runtime: 'Nodejs18.15',
+        Handler: 'index.handler',
+        MemorySize: 256,
+        Timeout: 10,
+        Environment: {
+          Variables: [{ Key: 'NODE_ENV', Value: 'production' }],
+        },
+      });
+
+      const state = setResource(initalState, 'functions.test_fn', {
         mode: 'managed',
         region: 'ap-guangzhou',
         definition: {
           functionName: 'test-function',
           runtime: 'Nodejs18.15',
           handler: 'index.handler',
-          memorySize: 256, // Different from testFunction
+          memorySize: 256,
           timeout: 10,
           environment: { NODE_ENV: 'production' },
           codeHash: 'mock-code-hash',
@@ -150,18 +152,6 @@ describe('SCF Planner', () => {
         lastUpdated: new Date().toISOString(),
       });
 
-      // Mock getScfFunction to return existing function
-      jest.spyOn(scfProvider, 'getScfFunction').mockResolvedValue({
-        FunctionName: 'test-function',
-        Runtime: 'Nodejs18.15',
-        Handler: 'index.handler',
-        MemorySize: 256,
-        Timeout: 10,
-        Environment: {
-          Variables: [{ Key: 'NODE_ENV', Value: 'production' }],
-        },
-      });
-
       const plan = await generateFunctionPlan(mockContext, state, [testFunction]);
 
       expect(plan.items).toHaveLength(1);
@@ -173,9 +163,9 @@ describe('SCF Planner', () => {
     });
 
     it('should plan to delete function when removed from config', async () => {
-      // Add function to state
-      let state = loadState('tencent', testDir);
-      state = setResource(state, 'functions.old_fn', {
+      mockScfOperations.getFunction.mockResolvedValue(null);
+
+      const state = setResource(initalState, 'functions.old_fn', {
         mode: 'managed',
         region: 'ap-guangzhou',
         definition: {
@@ -197,10 +187,6 @@ describe('SCF Planner', () => {
         lastUpdated: new Date().toISOString(),
       });
 
-      // Mock getScfFunction
-      jest.spyOn(scfProvider, 'getScfFunction').mockResolvedValue(null);
-
-      // Pass empty array (no functions)
       const plan = await generateFunctionPlan(mockContext, state, []);
 
       expect(plan.items).toHaveLength(1);
@@ -212,9 +198,9 @@ describe('SCF Planner', () => {
     });
 
     it('should plan to recreate function when state exists but remote is missing', async () => {
-      // Add function to state
-      let state = loadState('tencent', testDir);
-      state = setResource(state, 'functions.test_fn', {
+      mockScfOperations.getFunction.mockResolvedValue(null);
+
+      const state = setResource(initalState, 'functions.test_fn', {
         mode: 'managed',
         region: 'ap-guangzhou',
         definition: {
@@ -236,9 +222,6 @@ describe('SCF Planner', () => {
         lastUpdated: new Date().toISOString(),
       });
 
-      // Mock getScfFunction to return null (function doesn't exist remotely)
-      jest.spyOn(scfProvider, 'getScfFunction').mockResolvedValue(null);
-
       const plan = await generateFunctionPlan(mockContext, state, [testFunction]);
 
       expect(plan.items).toHaveLength(1);
@@ -252,9 +235,18 @@ describe('SCF Planner', () => {
     });
 
     it('should detect code hash changes', async () => {
-      // Add function to state with different code hash
-      let state = loadState('tencent', testDir);
-      state = setResource(state, 'functions.test_fn', {
+      mockScfOperations.getFunction.mockResolvedValue({
+        FunctionName: 'test-function',
+        Runtime: 'Nodejs18.15',
+        Handler: 'index.handler',
+        MemorySize: 512,
+        Timeout: 10,
+        Environment: {
+          Variables: [{ Key: 'NODE_ENV', Value: 'production' }],
+        },
+      });
+
+      const state = setResource(initalState, 'functions.test_fn', {
         mode: 'managed',
         region: 'ap-guangzhou',
         definition: {
@@ -264,7 +256,7 @@ describe('SCF Planner', () => {
           memorySize: 512,
           timeout: 10,
           environment: { NODE_ENV: 'production' },
-          codeHash: 'old-code-hash', // Different from mock return value
+          codeHash: 'old-code-hash',
         },
         instances: [
           {
@@ -274,18 +266,6 @@ describe('SCF Planner', () => {
           },
         ],
         lastUpdated: new Date().toISOString(),
-      });
-
-      // Mock getScfFunction to return existing function
-      jest.spyOn(scfProvider, 'getScfFunction').mockResolvedValue({
-        FunctionName: 'test-function',
-        Runtime: 'Nodejs18.15',
-        Handler: 'index.handler',
-        MemorySize: 512,
-        Timeout: 10,
-        Environment: {
-          Variables: [{ Key: 'NODE_ENV', Value: 'production' }],
-        },
       });
 
       const plan = await generateFunctionPlan(mockContext, state, [testFunction]);
