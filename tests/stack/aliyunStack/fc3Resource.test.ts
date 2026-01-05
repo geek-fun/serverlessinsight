@@ -26,16 +26,54 @@ const mockedStateManager = {
 const mockedHashUtils = {
   computeFileHash: jest.fn(),
 };
-const mockedDependentResourceProvider = {
-  createDependentResources: jest.fn(),
-  deleteDependentResources: jest.fn(),
+const mockedSlsOperations = {
+  createProject: jest.fn(),
+  createLogstore: jest.fn(),
+  createIndex: jest.fn(),
+  deleteProject: jest.fn(),
+  deleteLogstore: jest.fn(),
+  deleteIndex: jest.fn(),
+};
+const mockedRamOperations = {
+  createRole: jest.fn(),
+  deleteRole: jest.fn(),
+};
+const mockedEcsOperations = {
+  createSecurityGroup: jest.fn(),
+  deleteSecurityGroup: jest.fn(),
+};
+const mockedNasOperations = {
+  createAccessGroup: jest.fn(),
+  createAccessRule: jest.fn(),
+  createFileSystem: jest.fn(),
+  createMountTarget: jest.fn(),
+  deleteAccessGroup: jest.fn(),
+  deleteFileSystem: jest.fn(),
+  deleteMountTarget: jest.fn(),
+};
+const mockedLogger = {
+  info: jest.fn(),
+  error: jest.fn(),
+  warn: jest.fn(),
 };
 
 jest.mock('../../../src/common/aliyunClient', () => ({
   createAliyunClient: () => ({
     oss: {},
     fc3: mockedFc3Operations,
+    sls: mockedSlsOperations,
+    ram: mockedRamOperations,
+    ecs: mockedEcsOperations,
+    nas: mockedNasOperations,
   }),
+}));
+
+jest.mock('../../../src/common/logger', () => ({
+  logger: {
+    info: (...args: unknown[]) => mockedLogger.info(...args),
+    error: (...args: unknown[]) => mockedLogger.error(...args),
+    warn: (...args: unknown[]) => mockedLogger.warn(...args),
+  },
 }));
 
 jest.mock('../../../src/stack/aliyunStack/fc3Types', () => ({
@@ -55,13 +93,6 @@ jest.mock('../../../src/common/hashUtils', () => ({
 }));
 
 jest.mock('../../../src/common/context');
-
-jest.mock('../../../src/stack/aliyunStack/dependentResourceProvider', () => ({
-  createDependentResources: (...args: unknown[]) =>
-    mockedDependentResourceProvider.createDependentResources(...args),
-  deleteDependentResources: (...args: unknown[]) =>
-    mockedDependentResourceProvider.deleteDependentResources(...args),
-}));
 
 import * as context from '../../../src/common/context';
 
@@ -139,21 +170,31 @@ describe('Fc3Resource', () => {
     mockedHashUtils.computeFileHash.mockReturnValue('mock-code-hash');
     mockedFc3Operations.getFunction.mockResolvedValue(mockFunctionInfo);
     (context.getContext as jest.Mock).mockReturnValue(mockContext);
-    mockedDependentResourceProvider.createDependentResources.mockResolvedValueOnce({
-      logConfig: undefined,
-      role: { roleName: 'test-role', arn: 'acs:ram::123456789012:role/test-role' },
-      securityGroup: undefined,
-      nasConfig: undefined,
-      instances: [],
+
+    // Mock dependent resource operations
+    mockedRamOperations.createRole.mockResolvedValue({
+      roleName: 'test-role',
+      arn: 'acs:ram::123456789012:role/test-role',
     });
-    mockedDependentResourceProvider.createDependentResources.mockResolvedValueOnce({
-      logConfig: undefined,
-      role: { roleName: 'test-role', arn: 'acs:ram::123456789012:role/test-role' },
-      securityGroup: undefined,
-      nasConfig: undefined,
-      instances: [],
+    mockedRamOperations.deleteRole.mockResolvedValue(undefined);
+    mockedSlsOperations.createProject.mockResolvedValue({ projectName: 'test-sls' });
+    mockedSlsOperations.createLogstore.mockResolvedValue({ logstoreName: 'test-logstore' });
+    mockedSlsOperations.createIndex.mockResolvedValue({});
+    mockedSlsOperations.deleteProject.mockResolvedValue(undefined);
+    mockedSlsOperations.deleteLogstore.mockResolvedValue(undefined);
+    mockedSlsOperations.deleteIndex.mockResolvedValue(undefined);
+    mockedEcsOperations.createSecurityGroup.mockResolvedValue({ securityGroupId: 'sg-123' });
+    mockedEcsOperations.deleteSecurityGroup.mockResolvedValue(undefined);
+    mockedNasOperations.createAccessGroup.mockResolvedValue({ accessGroupName: 'nas-access' });
+    mockedNasOperations.createAccessRule.mockResolvedValue(undefined);
+    mockedNasOperations.createFileSystem.mockResolvedValue({ fileSystemId: 'fs-123' });
+    mockedNasOperations.createMountTarget.mockResolvedValue({
+      mountTargetDomain: 'fs-123.nas.cn-hangzhou.com',
     });
-    mockedDependentResourceProvider.deleteDependentResources.mockResolvedValueOnce(undefined);
+    mockedNasOperations.deleteAccessGroup.mockResolvedValue(undefined);
+    mockedNasOperations.deleteFileSystem.mockResolvedValue(undefined);
+    mockedNasOperations.deleteMountTarget.mockResolvedValue(undefined);
+
     mockedStateManager.setResource.mockReturnValue(undefined);
     mockedStateManager.removeResource.mockReturnValue(undefined);
   });

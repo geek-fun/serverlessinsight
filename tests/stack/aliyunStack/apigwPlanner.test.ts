@@ -2,11 +2,31 @@ import { generateApigwPlan } from '../../../src/stack/aliyunStack/apigwPlanner';
 import { loadState, setResource } from '../../../src/common/stateManager';
 import { Context, EventDomain, EventTypes } from '../../../src/types';
 import { ProviderEnum } from '../../../src/common';
-import * as apigwProvider from '../../../src/stack/aliyunStack/apigwProvider';
 import fs from 'node:fs';
 
-// Mock the ApigwProvider module
-jest.mock('../../../src/stack/aliyunStack/apigwProvider');
+// Create mock apigw operations
+const mockApigwOperations = {
+  findApiGroupByName: jest.fn(),
+  getApiGroup: jest.fn(),
+  createApiGroup: jest.fn(),
+  updateApiGroup: jest.fn(),
+  deleteApiGroup: jest.fn(),
+  createApi: jest.fn(),
+  getApi: jest.fn(),
+  updateApi: jest.fn(),
+  deleteApi: jest.fn(),
+  deployApi: jest.fn(),
+  abolishApi: jest.fn(),
+  bindCustomDomain: jest.fn(),
+  unbindCustomDomain: jest.fn(),
+};
+
+// Mock the AliyunClient module
+jest.mock('../../../src/common/aliyunClient', () => ({
+  createAliyunClient: () => ({
+    apigw: mockApigwOperations,
+  }),
+}));
 
 describe('Apigw Planner', () => {
   const testDir = '/tmp/test-apigw-planner';
@@ -57,7 +77,7 @@ describe('Apigw Planner', () => {
   describe('generateApigwPlan', () => {
     it('should plan to create a new event when state is empty', async () => {
       // Mock findApiGroupByName to return null (group does not exist)
-      jest.spyOn(apigwProvider, 'findApiGroupByName').mockResolvedValue(null);
+      mockApigwOperations.findApiGroupByName.mockResolvedValue(null);
 
       const state = loadState('aliyun', testDir);
       const plan = await generateApigwPlan(mockContext, state, [testEvent], 'test-service');
@@ -102,7 +122,7 @@ describe('Apigw Planner', () => {
       });
 
       // Mock getApiGroup to return matching group
-      jest.spyOn(apigwProvider, 'getApiGroup').mockResolvedValue({
+      mockApigwOperations.getApiGroup.mockResolvedValue({
         groupId: 'group-123',
         groupName: 'test-service-agw-group',
         description: 'API Gateway group for test-service',
@@ -149,7 +169,7 @@ describe('Apigw Planner', () => {
       });
 
       // Mock getApiGroup to return existing group
-      jest.spyOn(apigwProvider, 'getApiGroup').mockResolvedValue({
+      mockApigwOperations.getApiGroup.mockResolvedValue({
         groupId: 'group-123',
         groupName: 'test-service-agw-group',
       });
@@ -230,7 +250,7 @@ describe('Apigw Planner', () => {
       });
 
       // Mock getApiGroup to return null (group does not exist remotely)
-      jest.spyOn(apigwProvider, 'getApiGroup').mockResolvedValue(null);
+      mockApigwOperations.getApiGroup.mockResolvedValue(null);
 
       const plan = await generateApigwPlan(mockContext, state, [testEvent], 'test-service');
 

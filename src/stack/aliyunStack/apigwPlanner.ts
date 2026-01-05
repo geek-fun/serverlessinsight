@@ -1,5 +1,5 @@
 import { Context, EventDomain, Plan, PlanItem, StateFile } from '../../types';
-import { findApiGroupByName, getApiGroup } from './apigwProvider';
+import { createAliyunClient } from '../../common/aliyunClient';
 import { eventToApigwGroupConfig, extractApigwGroupDefinition } from './apigwTypes';
 import { getAllResources, getResource } from '../../common/stateManager';
 import { attributesEqual } from '../../common/hashUtils';
@@ -37,6 +37,7 @@ export const generateApigwPlan = async (
       const currentState = getResource(state, logicalId);
       const groupConfig = eventToApigwGroupConfig(event, serviceName);
       const groupDefinition = extractApigwGroupDefinition(groupConfig);
+      const client = createAliyunClient(context);
 
       // Build desired definition including triggers
       const desiredDefinition = {
@@ -57,7 +58,7 @@ export const generateApigwPlan = async (
       if (!currentState) {
         // No state exists, check if resource exists remotely
         try {
-          const remoteGroup = await findApiGroupByName(context, groupConfig.groupName);
+          const remoteGroup = await client.apigw.findApiGroupByName(groupConfig.groupName);
           if (remoteGroup) {
             // Resource exists remotely but not in state - needs import or recreate
             return {
@@ -85,7 +86,7 @@ export const generateApigwPlan = async (
         const groupInstance = currentState.instances.find((i) => i.type === 'ALIYUN_APIGW_GROUP');
 
         if (groupInstance) {
-          const remoteGroup = await getApiGroup(context, groupInstance.id);
+          const remoteGroup = await client.apigw.getApiGroup(groupInstance.id);
 
           if (!remoteGroup) {
             // Resource in state but not remotely - needs recreate
