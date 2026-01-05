@@ -47,14 +47,14 @@ Whether you're building on AWS, Alibaba Cloud, Huawei Cloud, or other providers,
 
 ServerlessInsight supports the following cloud providers:
 
-| Provider | Functions | API Gateway | Storage | Databases | Status |
-|----------|-----------|-------------|---------|-----------|--------|
-| **Alibaba Cloud** | ✅ FC3 | ✅ API Gateway | ✅ OSS | ✅ RDS, OTS, ESS | Stable |
-| **Huawei Cloud** | ✅ FunctionGraph | 🚧 Coming Soon | 🚧 Coming Soon | 🚧 Coming Soon | Beta |
-| **AWS** | 🔜 Planned | 🔜 Planned | 🔜 Planned | 🔜 Planned | Planned |
-| **Azure** | 🔜 Planned | 🔜 Planned | 🔜 Planned | 🔜 Planned | Planned |
-| **Google Cloud** | 🔜 Planned | 🔜 Planned | 🔜 Planned | 🔜 Planned | Planned |
-| **Tencent Cloud** | 🔜 Planned | 🔜 Planned | 🔜 Planned | 🔜 Planned | Planned |
+| Provider          | Functions        | API Gateway    | Storage        | Databases        | Status  |
+| ----------------- | ---------------- | -------------- | -------------- | ---------------- | ------- |
+| **Alibaba Cloud** | ✅ FC3           | ✅ API Gateway | ✅ OSS         | ✅ RDS, OTS, ESS | Stable  |
+| **Huawei Cloud**  | ✅ FunctionGraph | 🚧 Coming Soon | 🚧 Coming Soon | 🚧 Coming Soon   | Beta    |
+| **AWS**           | 🔜 Planned       | 🔜 Planned     | 🔜 Planned     | 🔜 Planned       | Planned |
+| **Azure**         | 🔜 Planned       | 🔜 Planned     | 🔜 Planned     | 🔜 Planned       | Planned |
+| **Google Cloud**  | 🔜 Planned       | 🔜 Planned     | 🔜 Planned     | 🔜 Planned       | Planned |
+| **Tencent Cloud** | 🔜 Planned       | 🔜 Planned     | 🔜 Planned     | 🔜 Planned       | Planned |
 
 ---
 
@@ -188,7 +188,6 @@ curl http://localhost:4567/si_buckets/<bucket_key>/subdir/
 
 The bucket handler serves files from the directory specified in your bucket's `website.code` configuration.
 
-
 ### Architecture
 
 ServerlessInsight follows a **functional client architecture** that cleanly separates cloud provider SDKs from business logic:
@@ -239,13 +238,11 @@ await client.fc3.createFunction(config, codeBase64);
 ```
 
 This architecture enables:
+
 - **Better Testing**: Mock client operations instead of SDKs
 - **Maintainability**: Provider changes isolated to client layer
 - **Type Safety**: Strong typing throughout the stack
 - **Code Reuse**: Shared client operations across resources
-
-
-
 
 ---
 
@@ -254,6 +251,7 @@ This architecture enables:
 For comprehensive documentation, visit [serverlessinsight.geekfun.club](https://serverlessinsight.geekfun.club)
 
 Additional resources:
+
 - [Quick Start Guide](https://serverlessinsight.geekfun.club)
 - [Configuration Reference](https://serverlessinsight.geekfun.club)
 - [API Documentation](https://serverlessinsight.geekfun.club)

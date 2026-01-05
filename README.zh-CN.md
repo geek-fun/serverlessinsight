@@ -47,14 +47,14 @@ ServerlessInsight 是一个强大的 Serverless 框架，用于跨多个云服�
 
 ServerlessInsight 支持以下云服务商：
 
-| 云服务商 | 函数 | API 网关 | 存储 | 数据库 | 状态 |
-|----------|------|----------|------|--------|------|
-| **阿里云** | ✅ FC3 | ✅ API 网关 | ✅ OSS | ✅ RDS, OTS, ESS | 稳定 |
-| **华为云** | ✅ FunctionGraph | 🚧 即将推出 | 🚧 即将推出 | 🚧 即将推出 | 测试版 |
-| **AWS** | 🔜 计划中 | 🔜 计划中 | 🔜 计划中 | 🔜 计划中 | 计划中 |
-| **Azure** | 🔜 计划中 | 🔜 计划中 | 🔜 计划中 | 🔜 计划中 | 计划中 |
-| **Google Cloud** | 🔜 计划中 | 🔜 计划中 | 🔜 计划中 | 🔜 计划中 | 计划中 |
-| **腾讯云** | 🔜 计划中 | 🔜 计划中 | 🔜 计划中 | 🔜 计划中 | 计划中 |
+| 云服务商         | 函数             | API 网关    | 存储        | 数据库           | 状态   |
+| ---------------- | ---------------- | ----------- | ----------- | ---------------- | ------ |
+| **阿里云**       | ✅ FC3           | ✅ API 网关 | ✅ OSS      | ✅ RDS, OTS, ESS | 稳定   |
+| **华为云**       | ✅ FunctionGraph | 🚧 即将推出 | 🚧 即将推出 | 🚧 即将推出      | 测试版 |
+| **AWS**          | 🔜 计划中        | 🔜 计划中   | 🔜 计划中   | 🔜 计划中        | 计划中 |
+| **Azure**        | 🔜 计划中        | 🔜 计划中   | 🔜 计划中   | 🔜 计划中        | 计划中 |
+| **Google Cloud** | 🔜 计划中        | 🔜 计划中   | 🔜 计划中   | 🔜 计划中        | 计划中 |
+| **腾讯云**       | 🔜 计划中        | 🔜 计划中   | 🔜 计划中   | 🔜 计划中        | 计划中 |
 
 ---
 
@@ -178,6 +178,7 @@ npm run lint:check
 完整文档请访问 [serverlessinsight.geekfun.club](https://serverlessinsight.geekfun.club)
 
 其他资源：
+
 - [快速开始指南](https://serverlessinsight.geekfun.club)
 - [配置参考](https://serverlessinsight.geekfun.club)
 - [API 文档](https://serverlessinsight.geekfun.club)

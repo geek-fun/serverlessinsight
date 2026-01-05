@@ -4,7 +4,6 @@ provider:
   name: aliyun
   region: cn-chengdu
 
-
 service: insight-rds-poc
 
 tags:
@@ -21,4 +20,3 @@ databases:
         password: 'U34I6InQ8elseTgqTWT2t2oFXpoqFg'
     network:
       type: 'PRIVATE'
-

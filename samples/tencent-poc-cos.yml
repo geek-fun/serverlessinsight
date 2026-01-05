@@ -10,9 +10,9 @@ tags:
 
 buckets:
   insight_poc_cos_bucket:
-    name: insight-poc-cos-bucket-1234567890  # Must be globally unique
+    name: insight-poc-cos-bucket-1234567890 # Must be globally unique
     security:
-      acl: PUBLIC_READ  # PRIVATE, PUBLIC_READ, or PUBLIC_READ_WRITE
+      acl: PUBLIC_READ # PRIVATE, PUBLIC_READ, or PUBLIC_READ_WRITE
     website:
       code: dist
       index: index.html
