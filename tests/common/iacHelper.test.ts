@@ -24,9 +24,9 @@ describe('Unit test for iacHelper', () => {
   describe('Unit test for getFileSource', () => {
     it('should return the correct ossDeployment source', () => {
       getFileSource(fcName, location);
+      // Compacitiy path
       expect(ossDeployment.Source.asset).toHaveBeenCalledWith(
-        path.resolve(process.cwd(), location),
-
+        path.resolve(process.cwd(), location).replace(/\\/g, '/'),
         { deployTime: true },
         `${fcName}/db8b704aa697d0cbab4671e99d750f25-`,
       );
