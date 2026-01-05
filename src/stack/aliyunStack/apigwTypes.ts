@@ -112,7 +112,7 @@ export type ApigwDeploymentConfig = {
   groupId: string;
   apiId: string;
   stageName: 'RELEASE' | 'PRE' | 'TEST';
-  description: string;
+  description?: string;
 };
 
 // Custom domain types
