@@ -69,7 +69,11 @@ jest.mock('../../../src/common/aliyunClient', () => ({
 }));
 
 jest.mock('../../../src/common/logger', () => ({
-  logger: mockedLogger,
+  logger: {
+    info: (...args: unknown[]) => mockedLogger.info(...args),
+    error: (...args: unknown[]) => mockedLogger.error(...args),
+    warn: (...args: unknown[]) => mockedLogger.warn(...args),
+  },
 }));
 
 jest.mock('../../../src/stack/aliyunStack/fc3Types', () => ({
