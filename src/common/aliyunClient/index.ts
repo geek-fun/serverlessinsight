@@ -12,8 +12,10 @@ import { createSlsOperations } from './slsOperations';
 import { createRamOperations } from './ramOperations';
 import { createEcsOperations } from './ecsOperations';
 import { createNasOperations } from './nasOperations';
+import { createApigwOperations } from './apigwOperations';
 
 export * from './types';
+export * from './apigwOperations';
 
 const initializeSdkClients = (context: Context) => {
   const baseConfig = {
@@ -75,6 +77,6 @@ export const createAliyunClient = (context: Context) => {
     ecs: createEcsOperations(sdkClients.ecs, context),
     nas: createNasOperations(sdkClients.nas),
     oss: sdkClients.oss,
-    apigw: sdkClients.apigw,
+    apigw: createApigwOperations(sdkClients.apigw),
   };
 };
