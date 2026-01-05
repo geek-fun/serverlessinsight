@@ -18,6 +18,10 @@ const mockScfOperations = {
   deleteFunction: jest.fn(),
 };
 
+jest.mock('../../../src/stack/scfStack/scfTypes');
+jest.mock('../../../src/common/stateManager');
+jest.mock('../../../src/common/hashUtils');
+
 jest.mock('../../../src/common/tencentClient', () => ({
   createTencentClient: () => ({
     scf: mockScfOperations,
@@ -26,12 +30,15 @@ jest.mock('../../../src/common/tencentClient', () => ({
   }),
 }));
 
-jest.mock('../../../src/stack/scfStack/scfTypes');
-jest.mock('../../../src/common/stateManager');
-jest.mock('../../../src/common/hashUtils');
 jest.mock('../../../src/common/fileUtils', () => ({
   readFileAsBase64: jest.fn().mockReturnValue('base64encodedcontent'),
 }));
+
+const initialState: StateFile = {
+  version: CURRENT_STATE_VERSION,
+  provider: 'tencent',
+  resources: {},
+};
 
 describe('ScfResource', () => {
   const mockContext: Context = {
@@ -44,12 +51,6 @@ describe('ScfResource', () => {
     iacLocation: 'test.yml',
     parameters: [],
     stages: {},
-  };
-
-  const initialState: StateFile = {
-    version: CURRENT_STATE_VERSION,
-    provider: 'tencent',
-    resources: {},
   };
 
   const testFunction = {
@@ -132,11 +133,10 @@ describe('ScfResource', () => {
 
       expect(scfTypes.functionToScfConfig).toHaveBeenCalledWith(testFunction);
       expect(mockScfOperations.createFunction).toHaveBeenCalledWith(
-        mockContext,
         mockConfig,
-        'test.zip',
+        'base64encodedcontent',
       );
-      expect(mockScfOperations.getFunction).toHaveBeenCalledWith(mockContext, 'test-function');
+      expect(mockScfOperations.getFunction).toHaveBeenCalledWith('test-function');
       expect(hashUtils.computeFileHash).toHaveBeenCalledWith('test.zip');
       expect(scfTypes.extractScfDefinition).toHaveBeenCalledWith(mockConfig, 'mock-code-hash');
       expect(stateManager.setResource).toHaveBeenCalledWith(

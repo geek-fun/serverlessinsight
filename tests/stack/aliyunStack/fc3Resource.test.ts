@@ -1,26 +1,14 @@
+import { ProviderEnum } from '../../../src/common';
+import * as hashUtils from '../../../src/common/hashUtils';
+import * as stateManager from '../../../src/common/stateManager';
 import {
   createResource,
+  deleteResource,
   readResource,
   updateResource,
-  deleteResource,
 } from '../../../src/stack/aliyunStack/fc3Resource';
-import { createAliyunClient } from '../../../src/common/aliyunClient';
 import * as fc3Types from '../../../src/stack/aliyunStack/fc3Types';
-import * as stateManager from '../../../src/common/stateManager';
-import * as hashUtils from '../../../src/common/hashUtils';
-import { ProviderEnum } from '../../../src/common';
-import { Context, StateFile, CURRENT_STATE_VERSION } from '../../../src/types';
-
-// Mock dependencies
-jest.mock('../../../src/common/aliyunClient');
-jest.mock('../../../src/stack/aliyunStack/fc3Types');
-jest.mock('../../../src/stack/aliyunStack/dependentResourceProvider');
-jest.mock('../../../src/common/stateManager');
-jest.mock('../../../src/common/hashUtils');
-jest.mock('../../../src/common/context');
-
-import * as context from '../../../src/common/context';
-import * as dependentResourceProvider from '../../../src/stack/aliyunStack/dependentResourceProvider';
+import { Context, CURRENT_STATE_VERSION, StateFile } from '../../../src/types';
 
 // Create mock operations
 const mockFc3Operations = {
@@ -30,11 +18,51 @@ const mockFc3Operations = {
   updateFunctionCode: jest.fn(),
   deleteFunction: jest.fn(),
 };
+const mockedFc3Types = {
+  functionToFc3Config: jest.fn(),
+  extractFc3Definition: jest.fn(),
+};
+const mockedStateManager = {
+  setResource: jest.fn(),
+  removeResource: jest.fn(),
+};
+const mockedHashUtils = {
+  computeFileHash: jest.fn(),
+};
 
-// Setup client mock
-(createAliyunClient as jest.Mock).mockReturnValue({
-  fc3: mockFc3Operations,
-});
+jest.mock('../../../src/common/aliyunClient', () => ({
+  createAliyunClient: () => ({
+    oss: {},
+    fc3: mockFc3Operations,
+  }),
+}));
+
+jest.mock('../../../src/stack/aliyunStack/fc3Types', () => ({
+  functionToFc3Config: (...args: unknown[]) => mockedFc3Types.functionToFc3Config(...args),
+  extractFc3Definition: (...args: unknown[]) => mockedFc3Types.extractFc3Definition(...args),
+}));
+
+jest.mock('../../../src/common/stateManager', () => ({
+  ...jest.requireActual('../../../src/common/stateManager'),
+  setResource: (...args: unknown[]) => mockedStateManager.setResource(...args),
+  removeResource: (...args: unknown[]) => mockedStateManager.removeResource(...args),
+}));
+
+jest.mock('../../../src/common/hashUtils', () => ({
+  ...jest.requireActual('../../../src/common/hashUtils'),
+  computeFileHash: (...args: unknown[]) => mockedHashUtils.computeFileHash(...args),
+}));
+
+jest.mock('../../../src/common/context');
+
+import * as context from '../../../src/common/context';
+import * as dependentResourceProvider from '../../../src/stack/aliyunStack/dependentResourceProvider';
+
+const initialState: StateFile = {
+  version: CURRENT_STATE_VERSION,
+  provider: 'aliyun',
+  resources: {},
+};
 
 describe('Fc3Resource', () => {
   const mockContext: Context = {
@@ -48,12 +76,6 @@ describe('Fc3Resource', () => {
     iacLocation: 'test.yml',
     parameters: [],
     stages: {},
-  };
-
-  const initialState: StateFile = {
-    version: CURRENT_STATE_VERSION,
-    provider: 'aliyun',
-    resources: {},
   };
 
   const testFunction = {
@@ -105,11 +127,10 @@ describe('Fc3Resource', () => {
   };
 
   beforeEach(() => {
-    jest.clearAllMocks();
-    (fc3Types.functionToFc3Config as jest.Mock).mockReturnValue(mockConfig);
-    (fc3Types.extractFc3Definition as jest.Mock).mockReturnValue(mockDefinition);
-    (hashUtils.computeFileHash as jest.Mock).mockReturnValue('mock-code-hash');
-    (mockFc3Operations.getFunction as jest.Mock).mockResolvedValue(mockFunctionInfo);
+    mockedFc3Types.functionToFc3Config.mockReturnValue(mockConfig);
+    mockedFc3Types.extractFc3Definition.mockReturnValue(mockDefinition);
+    mockedHashUtils.computeFileHash.mockReturnValue('mock-code-hash');
+    mockFc3Operations.getFunction.mockResolvedValue(mockFunctionInfo);
     (context.getContext as jest.Mock).mockReturnValue(mockContext);
     (dependentResourceProvider.createDependentResources as jest.Mock).mockResolvedValue({
       logConfig: undefined,
@@ -119,7 +140,12 @@ describe('Fc3Resource', () => {
       instances: [],
     });
     (dependentResourceProvider.deleteDependentResources as jest.Mock).mockResolvedValue(undefined);
-    (stateManager.getResource as jest.Mock).mockReturnValue(undefined);
+    mockedStateManager.setResource.mockReturnValue(undefined);
+    mockedStateManager.removeResource.mockReturnValue(undefined);
+  });
+
+  afterEach(() => {
+    jest.clearAllMocks();
   });
 
   describe('createResource', () => {

@@ -31,11 +31,8 @@ export const loadState = (provider: string, baseDir: string = process.cwd()): St
   } catch {
     // Ignore error
   }
-  return {
-    version: CURRENT_STATE_VERSION,
-    provider,
-    resources: {},
-  };
+
+  return { version: CURRENT_STATE_VERSION, provider, resources: {} };
 };
 
 export const saveState = (state: StateFile, baseDir: string = process.cwd()): void => {
