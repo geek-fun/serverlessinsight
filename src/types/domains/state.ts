@@ -6,6 +6,7 @@ export enum ResourceTypeEnum {
   ALIYUN_APIGW_GROUP = 'ALIYUN_APIGW_GROUP',
   ALIYUN_APIGW_API = 'ALIYUN_APIGW_API',
   ALIYUN_APIGW_DEPLOYMENT = 'ALIYUN_APIGW_DEPLOYMENT',
+  ALIYUN_OSS_BUCKET = 'ALIYUN_OSS_BUCKET',
 }
 
 export type ResourceAttributes = Record<string, unknown>;
