@@ -1,28 +1,24 @@
 import OSS from 'ali-oss';
 import fs from 'node:fs';
 import path from 'node:path';
+import {
+  BucketACL,
+  CommonBucketInfo,
+  BucketWebsiteConfig,
+  BucketLoggingConfig,
+  BucketCorsRule,
+  BucketLifecycleRule,
+  BucketOwner,
+} from '../../stack/bucketTypes';
 
 export type OssBucketConfig = {
   bucketName: string;
-  acl?: 'private' | 'public-read' | 'public-read-write';
-  websiteConfig?: {
-    indexDocument: string;
-    errorDocument?: string;
-  };
+  acl?: BucketACL;
+  websiteConfig?: BucketWebsiteConfig;
   storageClass?: string;
 };
 
-export type OssBucketInfo = {
-  name: string;
-  location?: string;
-  creationDate?: string;
-  acl?: string;
-  websiteConfig?: {
-    indexDocument?: string;
-    errorDocument?: string;
-  };
-  storageClass?: string;
-};
+export type OssBucketInfo = CommonBucketInfo;
 
 type OssSdkClient = OSS;
 
@@ -71,6 +67,7 @@ export const createOssOperations = (ossClient: OssSdkClient, region: string) => 
 
         // Get bucket info
         const infoResult = await ossClient.getBucketInfo(bucketName);
+        const bucket = infoResult.bucket;
 
         // Get ACL
         let acl: string | undefined;
@@ -82,7 +79,7 @@ export const createOssOperations = (ossClient: OssSdkClient, region: string) => 
         }
 
         // Get website config
-        let websiteConfig: { indexDocument?: string; errorDocument?: string } | undefined;
+        let websiteConfig: BucketWebsiteConfig | undefined;
         try {
           const websiteResult = await ossClient.getBucketWebsite(bucketName);
           if (websiteResult.index) {
@@ -95,13 +92,97 @@ export const createOssOperations = (ossClient: OssSdkClient, region: string) => 
           // Website config might not exist
         }
 
+        // Get logging config
+        let loggingConfig: BucketLoggingConfig | undefined;
+        try {
+          const loggingResult = await ossClient.getBucketLogging(bucketName);
+          if (loggingResult.enable && loggingResult.prefix) {
+            loggingConfig = {
+              targetPrefix: loggingResult.prefix,
+            };
+          }
+        } catch {
+          // Logging config might not exist
+        }
+
+        // Get CORS rules
+        let corsRules: BucketCorsRule[] | undefined;
+        try {
+          const corsResult = await ossClient.getBucketCORS(bucketName);
+          if (corsResult.rules && corsResult.rules.length > 0) {
+            corsRules = corsResult.rules.map((rule) => ({
+              allowedOrigins: Array.isArray(rule.allowedOrigin)
+                ? rule.allowedOrigin
+                : [rule.allowedOrigin],
+              allowedMethods: Array.isArray(rule.allowedMethod)
+                ? rule.allowedMethod
+                : [rule.allowedMethod],
+              allowedHeaders: rule.allowedHeader
+                ? Array.isArray(rule.allowedHeader)
+                  ? rule.allowedHeader
+                  : [rule.allowedHeader]
+                : undefined,
+              exposeHeaders: rule.exposeHeader
+                ? Array.isArray(rule.exposeHeader)
+                  ? rule.exposeHeader
+                  : [rule.exposeHeader]
+                : undefined,
+              maxAgeSeconds:
+                typeof rule.maxAgeSeconds === 'number' ? rule.maxAgeSeconds : undefined,
+            }));
+          }
+        } catch {
+          // CORS config might not exist
+        }
+
+        // Get lifecycle rules
+        let lifecycleRules: BucketLifecycleRule[] | undefined;
+        try {
+          const lifecycleResult = await ossClient.getBucketLifecycle(bucketName);
+          if (lifecycleResult.rules && lifecycleResult.rules.length > 0) {
+            lifecycleRules = lifecycleResult.rules.map((rule) => ({
+              id: rule.id,
+              status: rule.status,
+              prefix: rule.prefix,
+              expiration: rule.days
+                ? {
+                    days: typeof rule.days === 'number' ? rule.days : parseInt(rule.days, 10),
+                  }
+                : rule.date
+                  ? {
+                      date: rule.date,
+                    }
+                  : undefined,
+            }));
+          }
+        } catch {
+          // Lifecycle config might not exist
+        }
+
+        // Build owner info
+        const owner: BucketOwner | undefined = bucket?.Owner
+          ? {
+              id: bucket.Owner.ID,
+              displayName: bucket.Owner.DisplayName,
+            }
+          : undefined;
+
         return {
           name: bucketName,
-          location: infoResult.bucket?.Location,
-          creationDate: infoResult.bucket?.CreationDate,
+          location: bucket?.Location,
+          creationDate: bucket?.CreationDate,
+          storageClass: bucket?.StorageClass,
+          dataRedundancyType: bucket?.DataRedundancyType as 'LRS' | 'ZRS' | undefined,
+          resourceGroupId: bucket?.ResourceGroupId,
+          comment: bucket?.Comment,
+          owner,
+          blockPublicAccess: bucket?.BlockPublicAccess,
+          accessMonitorStatus: bucket?.AccessMonitor as 'Enabled' | 'Disabled' | undefined,
           acl,
           websiteConfig,
-          storageClass: infoResult.bucket?.StorageClass,
+          loggingConfig,
+          corsRules,
+          lifecycleRules,
         };
       } catch (error: unknown) {
         if (
@@ -116,17 +197,14 @@ export const createOssOperations = (ossClient: OssSdkClient, region: string) => 
       }
     },
 
-    updateBucketAcl: async (
-      bucketName: string,
-      acl: 'private' | 'public-read' | 'public-read-write',
-    ): Promise<void> => {
+    updateBucketAcl: async (bucketName: string, acl: BucketACL): Promise<void> => {
       useBucket(bucketName);
       await ossClient.putBucketACL(bucketName, acl);
     },
 
     updateBucketWebsite: async (
       bucketName: string,
-      websiteConfig: { indexDocument: string; errorDocument?: string },
+      websiteConfig: BucketWebsiteConfig,
     ): Promise<void> => {
       useBucket(bucketName);
       await ossClient.putBucketWebsite(bucketName, {

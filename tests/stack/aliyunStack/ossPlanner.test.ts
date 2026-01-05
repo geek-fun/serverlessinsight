@@ -47,7 +47,7 @@ describe('OSS Planner', () => {
     },
   };
 
-  beforeEach(() => {
+  afterEach(() => {
     jest.clearAllMocks();
   });
 

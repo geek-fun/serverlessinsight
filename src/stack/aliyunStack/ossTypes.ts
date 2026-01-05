@@ -1,47 +1,40 @@
 import { BucketAccessEnum, BucketDomain, ResourceAttributes } from '../../types';
+import { BucketACL, CommonBucketConfig } from '../bucketTypes';
 
-export type OssBucketConfig = {
-  BucketName: string;
-  ACL?: 'private' | 'public-read' | 'public-read-write';
-  WebsiteConfiguration?: {
-    IndexDocument: string;
-    ErrorDocument?: string;
-  };
-  StorageClass?: string;
-  Domain?: string;
-};
+export type OssBucketConfig = CommonBucketConfig;
 
-const aclMap: Record<BucketAccessEnum, 'private' | 'public-read' | 'public-read-write'> = {
-  [BucketAccessEnum.PRIVATE]: 'private',
-  [BucketAccessEnum.PUBLIC_READ]: 'public-read',
-  [BucketAccessEnum.PUBLIC_READ_WRITE]: 'public-read-write',
+// Map from domain enum to provider ACL type
+const aclMap: Record<BucketAccessEnum, BucketACL> = {
+  [BucketAccessEnum.PRIVATE]: BucketACL.PRIVATE,
+  [BucketAccessEnum.PUBLIC_READ]: BucketACL.PUBLIC_READ,
+  [BucketAccessEnum.PUBLIC_READ_WRITE]: BucketACL.PUBLIC_READ_WRITE,
 };
 
 export const bucketToOssBucketConfig = (bucket: BucketDomain): OssBucketConfig => {
   const config: OssBucketConfig = {
-    BucketName: bucket.name,
+    bucketName: bucket.name,
   };
 
   if (bucket.security?.acl) {
-    config.ACL = aclMap[bucket.security.acl];
+    config.acl = aclMap[bucket.security.acl];
   }
 
   if (bucket.website) {
-    config.WebsiteConfiguration = {
-      IndexDocument: bucket.website.index,
+    config.websiteConfig = {
+      indexDocument: bucket.website.index,
     };
 
     if (bucket.website.error_page) {
-      config.WebsiteConfiguration.ErrorDocument = bucket.website.error_page;
+      config.websiteConfig.errorDocument = bucket.website.error_page;
     }
   }
 
   if (bucket.storage?.class) {
-    config.StorageClass = bucket.storage.class;
+    config.storageClass = bucket.storage.class;
   }
 
   if (bucket.website?.domain) {
-    config.Domain = bucket.website.domain;
+    config.domain = bucket.website.domain;
   }
 
   return config;
@@ -49,15 +42,15 @@ export const bucketToOssBucketConfig = (bucket: BucketDomain): OssBucketConfig =
 
 export const extractOssBucketDefinition = (config: OssBucketConfig): ResourceAttributes => {
   return {
-    bucketName: config.BucketName,
-    acl: config.ACL ?? null,
-    websiteConfiguration: config.WebsiteConfiguration
+    bucketName: config.bucketName,
+    acl: config.acl ?? null,
+    websiteConfiguration: config.websiteConfig
       ? {
-          indexDocument: config.WebsiteConfiguration.IndexDocument,
-          errorDocument: config.WebsiteConfiguration.ErrorDocument ?? null,
+          indexDocument: config.websiteConfig.indexDocument,
+          errorDocument: config.websiteConfig.errorDocument ?? null,
         }
       : {},
-    storageClass: config.StorageClass ?? null,
-    domain: config.Domain ?? null,
+    storageClass: config.storageClass ?? null,
+    domain: config.domain ?? null,
   };
 };
