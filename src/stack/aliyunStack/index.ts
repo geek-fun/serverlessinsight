@@ -15,3 +15,7 @@ export * from './esServerlessTypes';
 export * from './databaseResource';
 export * from './databasePlanner';
 export * from './databaseExecutor';
+export * from './tablestoreTypes';
+export * from './tablestoreResource';
+export * from './tablestorePlanner';
+export * from './tablestoreExecutor';

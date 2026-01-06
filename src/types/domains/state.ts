@@ -9,6 +9,7 @@ export enum ResourceTypeEnum {
   ALIYUN_OSS_BUCKET = 'ALIYUN_OSS_BUCKET',
   ALIYUN_RDS_SERVERLESS = 'ALIYUN_RDS_SERVERLESS',
   ALIYUN_ES_SERVERLESS = 'ALIYUN_ES_SERVERLESS',
+  ALIYUN_TABLESTORE_TABLE = 'ALIYUN_TABLESTORE_TABLE',
 }
 
 export type ResourceAttributes = Record<string, unknown>;

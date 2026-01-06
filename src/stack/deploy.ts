@@ -16,6 +16,12 @@ import {
 import {
   generateFunctionPlan as generateAliyunFunctionPlan,
   executeFunctionPlan as executeAliyunFunctionPlan,
+  generateBucketPlan as generateAliyunBucketPlan,
+  executeBucketPlan as executeAliyunBucketPlan,
+  generateDatabasePlan as generateAliyunDatabasePlan,
+  executeDatabasePlan as executeAliyunDatabasePlan,
+  generateTablePlan,
+  executeTablePlan,
 } from './aliyunStack';
 import { get } from 'lodash';
 import { lang } from '../lang';
@@ -95,14 +101,25 @@ const deployAliyun = async (iac: ServerlessIac): Promise<void> => {
 
   logger.info(lang.__('GENERATING_PLAN'));
   const functionPlan = await generateAliyunFunctionPlan(context, state, iac.functions);
+  const bucketPlan = await generateAliyunBucketPlan(context, state, iac.buckets);
+  const databasePlan = await generateAliyunDatabasePlan(context, state, iac.databases);
+  const tablePlan = await generateTablePlan(context, state, iac.tables);
 
-  logger.info(`${lang.__('PLAN_GENERATED')}: ${functionPlan.items.length} ${lang.__('ACTIONS')}`);
-  functionPlan.items.forEach((item) => {
+  // Combine plans
+  const combinedPlan = {
+    items: [...functionPlan.items, ...bucketPlan.items, ...databasePlan.items, ...tablePlan.items],
+  };
+
+  logger.info(`${lang.__('PLAN_GENERATED')}: ${combinedPlan.items.length} ${lang.__('ACTIONS')}`);
+  combinedPlan.items.forEach((item) => {
     logger.info(`  - ${item.action.toUpperCase()}: ${item.logicalId} (${item.resourceType})`);
   });
 
   logger.info(lang.__('EXECUTING_PLAN'));
   state = await executeAliyunFunctionPlan(context, functionPlan, iac.functions, state);
+  state = await executeAliyunBucketPlan(context, bucketPlan, iac.buckets, state);
+  state = await executeAliyunDatabasePlan(context, databasePlan, iac.databases, state);
+  state = await executeTablePlan(context, tablePlan, iac.tables, state);
 
   saveState(state, process.cwd());
 

@@ -18,12 +18,14 @@ import { createApigwOperations } from './apigwOperations';
 import { createOssOperations } from './ossOperations';
 import { createRdsOperations } from './rdsOperations';
 import { createEsOperations } from './esOperations';
+import { createTablestoreOperations } from './tablestoreOperations';
 
 export * from './types';
 export * from './apigwOperations';
 export * from './ossOperations';
 export * from './rdsOperations';
 export * from './esOperations';
+export * from './tablestoreOperations';
 
 const initializeSdkClients = (context: Context) => {
   const baseConfig = {
@@ -98,5 +100,11 @@ export const createAliyunClient = (context: Context) => {
     apigw: createApigwOperations(sdkClients.apigw),
     rds: createRdsOperations(sdkClients.rds, context),
     es: createEsOperations(sdkClients.es, context),
+    tablestore: (instanceName: string) =>
+      createTablestoreOperations(
+        `https://${instanceName}.${context.region}.ots.aliyuncs.com`,
+        instanceName,
+        context,
+      ),
   };
 };

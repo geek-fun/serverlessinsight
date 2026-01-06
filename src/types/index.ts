@@ -15,6 +15,7 @@ export * from './domains/tag';
 export * from './domains/vars';
 export * from './domains/context';
 export * from './domains/bucket';
+export * from './domains/table';
 export * from './domains/state';
 export * from './assets';
 
