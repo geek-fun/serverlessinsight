@@ -32,14 +32,14 @@ describe('EsServerlessTypes', () => {
 
       const result = databaseToEsConfig(database);
 
-      expect(result.AppName).toBe('test-es-search');
-      expect(result.AppVersion).toBe('7.10');
-      expect(result.Authentication?.BasicAuth?.[0].Password).toBe('TestPass123!');
-      expect(result.QuotaInfo?.AppType).toBe('STANDARD');
-      expect(result.QuotaInfo?.Cu).toBe(2);
-      expect(result.QuotaInfo?.Storage).toBe(20);
-      expect(result.Description).toBe('Elasticsearch serverless app: test-es-search');
-      expect(result.ChargeType).toBe('POSTPAY');
+      expect(result.appName).toBe('test-es-search');
+      expect(result.appVersion).toBe('7.10');
+      expect(result.authentication?.basicAuth?.[0].password).toBe('TestPass123!');
+      expect(result.quotaInfo?.appType).toBe('STANDARD');
+      expect(result.quotaInfo?.cu).toBe(2);
+      expect(result.quotaInfo?.storage).toBe(20);
+      expect(result.description).toBe('Elasticsearch serverless app: test-es-search');
+      expect(result.chargeType).toBe('POSTPAY');
     });
 
     it('should configure network for PUBLIC access', () => {
@@ -68,11 +68,11 @@ describe('EsServerlessTypes', () => {
 
       const result = databaseToEsConfig(database);
 
-      expect(result.Network).toBeDefined();
-      expect(result.Network).toHaveLength(1);
-      expect(result.Network?.[0].Type).toBe('PUBLIC_ES');
-      expect(result.Network?.[0].Enabled).toBe(true);
-      expect(result.Network?.[0].WhiteIpGroup?.[0].Ips).toEqual(['10.0.0.0/8']);
+      expect(result.network).toBeDefined();
+      expect(result.network).toHaveLength(1);
+      expect(result.network?.[0].type).toBe('PUBLIC_ES');
+      expect(result.network?.[0].enabled).toBe(true);
+      expect(result.network?.[0].whiteIpGroup?.[0].ips).toEqual(['10.0.0.0/8']);
     });
 
     it('should configure private network for PRIVATE access with VPC', () => {
@@ -102,13 +102,13 @@ describe('EsServerlessTypes', () => {
 
       const result = databaseToEsConfig(database);
 
-      expect(result.Network).toBeUndefined();
-      expect(result.PrivateNetwork).toBeDefined();
-      expect(result.PrivateNetwork).toHaveLength(1);
-      expect(result.PrivateNetwork?.[0].Type).toBe('PRIVATE_ES');
-      expect(result.PrivateNetwork?.[0].Enabled).toBe(true);
-      expect(result.PrivateNetwork?.[0].VpcId).toBe('vpc-12345');
-      expect(result.PrivateNetwork?.[0].WhiteIpGroup?.[0].Ips).toEqual(['10.0.0.0/8']);
+      expect(result.network).toBeUndefined();
+      expect(result.privateNetwork).toBeDefined();
+      expect(result.privateNetwork).toHaveLength(1);
+      expect(result.privateNetwork?.[0].type).toBe('PRIVATE_ES');
+      expect(result.privateNetwork?.[0].enabled).toBe(true);
+      expect(result.privateNetwork?.[0].vpcId).toBe('vpc-12345');
+      expect(result.privateNetwork?.[0].whiteIpGroup?.[0].ips).toEqual(['10.0.0.0/8']);
     });
 
     it('should not configure network for PRIVATE access without VPC', () => {
@@ -137,8 +137,8 @@ describe('EsServerlessTypes', () => {
 
       const result = databaseToEsConfig(database);
 
-      expect(result.Network).toBeUndefined();
-      expect(result.PrivateNetwork).toBeUndefined();
+      expect(result.network).toBeUndefined();
+      expect(result.privateNetwork).toBeUndefined();
     });
 
     it('should map Time Series 7.10 correctly', () => {
@@ -167,8 +167,8 @@ describe('EsServerlessTypes', () => {
 
       const result = databaseToEsConfig(database);
 
-      expect(result.AppVersion).toBe('7.10');
-      expect(result.QuotaInfo?.AppType).toBe('TRIAL');
+      expect(result.appVersion).toBe('7.10');
+      expect(result.quotaInfo?.appType).toBe('TRIAL');
     });
 
     it('should throw error for unsupported database type', () => {
@@ -205,7 +205,7 @@ describe('EsServerlessTypes', () => {
         AppName: 'test-es',
         AppVersion: '7.10',
         Authentication: {
-          BasicAuth: [
+          basicAuth: [
             {
               Username: 'elastic',
               Password: 'TestPass123!',
@@ -213,7 +213,7 @@ describe('EsServerlessTypes', () => {
           ],
         },
         QuotaInfo: {
-          AppType: 'STANDARD',
+          appType: 'STANDARD',
           Cu: 2,
           Storage: 100,
         },
@@ -225,9 +225,9 @@ describe('EsServerlessTypes', () => {
             Enabled: true,
             Domain: 'test.es.aliyuncs.com',
             Port: 9200,
-            WhiteIpGroup: [
+            whiteIpGroup: [
               {
-                GroupName: 'default',
+                groupName: 'default',
                 Ips: ['10.0.0.0/8'],
               },
             ],
@@ -239,9 +239,9 @@ describe('EsServerlessTypes', () => {
             Enabled: true,
             VpcId: 'vpc-123',
             PvlEndpointId: 'ep-456',
-            WhiteIpGroup: [
+            whiteIpGroup: [
               {
-                GroupName: 'private',
+                groupName: 'private',
                 Ips: ['192.168.0.0/16'],
               },
             ],
@@ -312,7 +312,7 @@ describe('EsServerlessTypes', () => {
         AppName: 'test-es',
         AppVersion: '7.10',
         Authentication: {
-          BasicAuth: [
+          basicAuth: [
             {
               Username: 'admin',
               Password: 'SuperSecret123!',
@@ -320,7 +320,7 @@ describe('EsServerlessTypes', () => {
           ],
         },
         QuotaInfo: {
-          AppType: 'STANDARD',
+          appType: 'STANDARD',
           Cu: 2,
         },
       };
@@ -337,7 +337,7 @@ describe('EsServerlessTypes', () => {
         AppName: 'test-es',
         AppVersion: '7.10',
         QuotaInfo: {
-          AppType: 'STANDARD',
+          appType: 'STANDARD',
           Cu: 2,
         },
       };

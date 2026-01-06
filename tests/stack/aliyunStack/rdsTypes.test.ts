@@ -30,16 +30,16 @@ describe('RdsTypes', () => {
 
       const result = databaseToRdsConfig(database);
 
-      expect(result.Engine).toBe('MySQL');
-      expect(result.EngineVersion).toBe('8.0');
-      expect(result.Category).toBe('serverless_basic');
-      expect(result.DBInstanceClass).toBe('mysql.n2.serverless.1c');
-      expect(result.DBInstanceStorage).toBe(20);
-      expect(result.DBInstanceStorageType).toBe('general_essd');
-      expect(result.BurstingEnabled).toBe(true);
-      expect(result.ServerlessConfig?.AutoPause).toBe(true); // min cu is 0
-      expect(result.SecurityIPList).toBe('10.0.0.0/8');
-      expect(result.DBInstanceNetType).toBe('Intranet');
+      expect(result.engine).toBe('MySQL');
+      expect(result.engineversion).toBe('8.0');
+      expect(result.category).toBe('serverless_basic');
+      expect(result.dbinstanceClass).toBe('mysql.n2.serverless.1c');
+      expect(result.dbinstanceStorage).toBe(20);
+      expect(result.dbinstanceStorageType).toBe('general_essd');
+      expect(result.burstingenabled).toBe(true);
+      expect(result.serverlessconfig?.autoPause).toBe(true); // min cu is 0
+      expect(result.securityiPList).toBe('10.0.0.0/8');
+      expect(result.dbinstanceNetType).toBe('Intranet');
     });
 
     it('should map MYSQL HA 8.0 correctly', () => {
@@ -68,11 +68,11 @@ describe('RdsTypes', () => {
 
       const result = databaseToRdsConfig(database);
 
-      expect(result.Category).toBe('serverless_standard');
-      expect(result.DBInstanceClass).toBe('mysql.n2.serverless.2c');
-      expect(result.MultiAZ).toBe(true);
-      expect(result.ServerlessConfig?.AutoPause).toBe(false);
-      expect(result.DBInstanceNetType).toBe('Internet');
+      expect(result.category).toBe('serverless_standard');
+      expect(result.dbinstanceClass).toBe('mysql.n2.serverless.2c');
+      expect(result.multiaZ).toBe(true);
+      expect(result.serverlessconfig?.autoPause).toBe(false);
+      expect(result.dbinstanceNetType).toBe('Internet');
     });
 
     it('should map PostgreSQL 14 correctly', () => {
@@ -101,10 +101,10 @@ describe('RdsTypes', () => {
 
       const result = databaseToRdsConfig(database);
 
-      expect(result.Engine).toBe('PostgreSQL');
-      expect(result.EngineVersion).toBe('14.0');
-      expect(result.Category).toBe('serverless_basic');
-      expect(result.DBInstanceClass).toBe('pg.n2.serverless.1c');
+      expect(result.engine).toBe('PostgreSQL');
+      expect(result.engineversion).toBe('14.0');
+      expect(result.category).toBe('serverless_basic');
+      expect(result.dbinstanceClass).toBe('pg.n2.serverless.1c');
     });
 
     it('should map SQL Server 2019 correctly', () => {
@@ -133,12 +133,12 @@ describe('RdsTypes', () => {
 
       const result = databaseToRdsConfig(database);
 
-      expect(result.Engine).toBe('SQLServer');
-      expect(result.EngineVersion).toBe('2019_std_sl');
-      expect(result.Category).toBe('serverless_ha');
-      expect(result.DBInstanceClass).toBe('mssql.mem2.serverless.s2');
-      expect(result.DBInstanceStorageType).toBe('cloud_essd');
-      expect(result.BurstingEnabled).toBe(false);
+      expect(result.engine).toBe('SQLServer');
+      expect(result.engineversion).toBe('2019_std_sl');
+      expect(result.category).toBe('serverless_ha');
+      expect(result.dbinstanceClass).toBe('mssql.mem2.serverless.s2');
+      expect(result.dbinstanceStorageType).toBe('cloud_essd');
+      expect(result.burstingenabled).toBe(false);
     });
 
     it('should include VPC configuration when provided', () => {
@@ -169,8 +169,8 @@ describe('RdsTypes', () => {
 
       const result = databaseToRdsConfig(database);
 
-      expect(result.VpcId).toBe('vpc-12345');
-      expect(result.VSwitchId).toBe('subnet-67890');
+      expect(result.vpcid).toBe('vpc-12345');
+      expect(result.vswitchId).toBe('subnet-67890');
     });
 
     it('should throw error for unsupported database type', () => {
@@ -213,10 +213,10 @@ describe('RdsTypes', () => {
         DBInstanceStorageType: 'general_essd' as const,
         BurstingEnabled: true,
         ServerlessConfig: {
-          MinCapacity: 0.5,
-          MaxCapacity: 16.5,
-          AutoPause: true,
-          SwitchForce: false,
+          minCapacity: 0.5,
+          maxCapacity: 16.5,
+          autoPause: true,
+          switchForce: false,
         },
         MasterUsername: 'admin',
         MasterUserPassword: 'TestPass123!',
@@ -262,10 +262,10 @@ describe('RdsTypes', () => {
         Category: 'serverless_basic',
         DBInstanceStorageType: 'general_essd' as const,
         ServerlessConfig: {
-          MinCapacity: 0.5,
-          MaxCapacity: 16.5,
-          AutoPause: true,
-          SwitchForce: false,
+          minCapacity: 0.5,
+          maxCapacity: 16.5,
+          autoPause: true,
+          switchForce: false,
         },
         MasterUserPassword: 'SecretPass123!',
       };
