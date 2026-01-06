@@ -3,6 +3,7 @@ import * as ossDeployment from '@alicloud/ros-cdk-ossdeployment';
 import { getFileSource, calcRefs, calcValue, formatRosId, logger } from '../../src/common';
 import { lang } from '../../src/lang';
 import fs from 'node:fs';
+import path from 'node:path';
 import { context } from '../fixtures/contextFixture';
 
 jest.mock('@alicloud/ros-cdk-ossdeployment');
@@ -13,7 +14,7 @@ const location = 'tests/fixtures/artifacts/artifact.zip';
 describe('Unit test for iacHelper', () => {
   beforeAll(() => {
     // Set locale to English for consistent test messages
-    lang.setLocale('en');
+    lang.setLocale('en-US');
   });
 
   beforeEach(() => {
@@ -23,8 +24,9 @@ describe('Unit test for iacHelper', () => {
   describe('Unit test for getFileSource', () => {
     it('should return the correct ossDeployment source', () => {
       getFileSource(fcName, location);
+      // Compacitiy path
       expect(ossDeployment.Source.asset).toHaveBeenCalledWith(
-        `${process.cwd()}/${location}`,
+        path.resolve(process.cwd(), location).replace(/\\/g, '/'),
         { deployTime: true },
         `${fcName}/db8b704aa697d0cbab4671e99d750f25-`,
       );
@@ -156,7 +158,7 @@ describe('Unit test for iacHelper', () => {
 
       expect(value).toEqual('');
       expect(warnSpy).toHaveBeenCalledWith(
-        "Variable 'nonExistentVar' not found in vars or parameters, using empty string",
+        lang.__('VARIABLE_NOT_FOUND', { key: 'nonExistentVar' }),
       );
       warnSpy.mockRestore();
     });
@@ -167,7 +169,7 @@ describe('Unit test for iacHelper', () => {
 
       expect(value).toEqual('');
       expect(warnSpy).toHaveBeenCalledWith(
-        "Stage variable 'nonExistentStage' not found in stage 'test', using empty string",
+        lang.__('STAGE_VARIABLE_NOT_FOUND', { key: 'nonExistentStage', stage: 'test' }),
       );
       warnSpy.mockRestore();
     });
@@ -186,12 +188,8 @@ describe('Unit test for iacHelper', () => {
 
       expect(value).toEqual('--exists');
       expect(warnSpy).toHaveBeenCalledTimes(2);
-      expect(warnSpy).toHaveBeenCalledWith(
-        "Variable 'missing1' not found in vars or parameters, using empty string",
-      );
-      expect(warnSpy).toHaveBeenCalledWith(
-        "Variable 'missing2' not found in vars or parameters, using empty string",
-      );
+      expect(warnSpy).toHaveBeenCalledWith(lang.__('VARIABLE_NOT_FOUND', { key: 'missing1' }));
+      expect(warnSpy).toHaveBeenCalledWith(lang.__('VARIABLE_NOT_FOUND', { key: 'missing2' }));
       warnSpy.mockRestore();
     });
   });

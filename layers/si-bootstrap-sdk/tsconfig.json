@@ -11,8 +11,7 @@
     "rootDir": "./",
     "resolveJsonModule": true,
     "incremental": false,
-    "composite": false,
+    "composite": false
   },
   "include": ["src/**/*"]
 }
-

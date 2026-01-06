@@ -4,7 +4,6 @@ provider:
   name: aliyun
   region: cn-chengdu
 
-
 service: insight-table-poc-mini
 
 tags:

@@ -9,6 +9,7 @@ The layer is automatically published to Aliyun Function Compute using GitHub Act
 ### Supported Regions
 
 The layer is published to the following Aliyun regions:
+
 - `cn-beijing` (Beijing)
 - `cn-hangzhou` (Hangzhou)
 - `cn-chengdu` (Chengdu)
@@ -25,6 +26,7 @@ You can manually trigger the publishing workflow from the GitHub Actions tab usi
 ### Prerequisites
 
 The following secrets must be configured in the repository:
+
 - `ALIYUN_ACCESS_KEY_ID`: Aliyun access key ID
 - `ALIYUN_ACCESS_KEY_SECRET`: Aliyun access key secret
 

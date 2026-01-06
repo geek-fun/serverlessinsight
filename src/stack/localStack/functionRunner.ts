@@ -184,7 +184,11 @@ const resolveWorkerPath = (): string => {
   }
 
   // Fallback to dist directory
-  const distPath = __dirname.replace(/src\/stack\/localStack$/, 'dist/src/stack/localStack');
+  const distPath = __dirname.replace(
+    join('src', 'stack', 'localStack'),
+    join('dist', 'src', 'stack', 'localStack'),
+  );
+
   return join(distPath, 'functionRunner.js');
 };
 

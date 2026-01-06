@@ -77,6 +77,7 @@ si plan my-stack \
 ```
 
 Output shows:
+
 - Resources to be **created** (green `+`)
 - Resources to be **updated** (yellow `~`)
 - Resources to be **deleted** (red `-`)
@@ -95,6 +96,7 @@ si deploy my-stack \
 ```
 
 The deploy command will:
+
 1. Generate a plan
 2. Execute the plan (create/update/delete functions)
 3. Save the state to `.serverlessinsight/state.json`
@@ -150,6 +152,7 @@ si plan my-stack -f serverless-insight.yml
 ```
 
 Output will show:
+
 ```
 [UPDATE] Resources to be updated:
   ~ functions.my_function (SCF)
@@ -198,7 +201,7 @@ Set function memory (in MB):
 ```yaml
 functions:
   my_function:
-    memory: 512  # 128-3072 MB
+    memory: 512 # 128-3072 MB
 ```
 
 ### Timeout
@@ -208,7 +211,7 @@ Set function timeout (in seconds):
 ```yaml
 functions:
   my_function:
-    timeout: 10  # 1-900 seconds
+    timeout: 10 # 1-900 seconds
 ```
 
 ### Handler
@@ -219,7 +222,7 @@ Specify the entry point:
 functions:
   my_function:
     code:
-      handler: index.handler  # <file>.<function>
+      handler: index.handler # <file>.<function>
 ```
 
 ## Examples
@@ -246,12 +249,14 @@ If you see "ResourceNotFound.FunctionName", the function doesn't exist yet. Run 
 ### State File Conflicts
 
 If you encounter state conflicts, you can:
+
 1. Delete `.serverlessinsight/state.json` and re-deploy (will recreate resources)
 2. Manually edit the state file (advanced users only)
 
 ## Limitations
 
 Current limitations:
+
 - No support for VPC configuration
 - No support for triggers (API Gateway, COS, etc.)
 - No support for layers

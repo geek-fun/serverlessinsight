@@ -1,45 +1,35 @@
+import { execSync } from 'child_process';
 import { I18n } from 'i18n';
 import { en } from './en';
 import { zhCN } from './zh-CN';
 
-/**
- * Detects the system language and returns the appropriate locale.
- * Defaults to 'zh-CN' if the system language is not supported.
- */
-const detectSystemLanguage = (): string => {
-  // Try to get locale from environment variables
-  const envLang =
-    process.env.LANG || process.env.LANGUAGE || process.env.LC_ALL || process.env.LC_MESSAGES;
-
-  if (envLang) {
-    const locale = envLang.split('.')[0].toLowerCase();
-    // Check for Chinese variants
-    if (locale.includes('zh') || locale.includes('cn')) {
-      return 'zh-CN';
-    }
+const getSystemLanguage = (defaultLang: 'zh-CN' | 'en-US'): string => {
+  const langMatch = (process.env.LANG || process.env.LC_ALL || '').match(
+    /([a-z]{2})[-_]?([A-Z]{2})?/,
+  );
+  if (langMatch) {
+    return langMatch[0].replace('_', '-');
   }
 
-  // Try to use Intl API for browser/Node.js environment
   try {
-    const locale = Intl.DateTimeFormat().resolvedOptions().locale;
-    if (locale.startsWith('zh')) {
-      return 'zh-CN';
+    const codePageOutput = execSync('chcp').toString();
+    const codePageMatch = codePageOutput.match(/(\d+)\s*$/m);
+    if (codePageMatch) {
+      const codePage = parseInt(codePageMatch[1]);
+      return codePage === 936 ? 'zh-CN' : 'en-US';
     }
   } catch {
-    // Intl API not available, use default
+    // ignore
   }
 
-  // Default to Chinese Simplified
-  return 'zh-CN';
+  return defaultLang;
 };
 
-const defaultLocale = detectSystemLanguage();
-
 const lang = new I18n({
-  locales: ['en', 'zh-CN'],
-  defaultLocale,
+  locales: ['en-US', 'zh-CN'],
+  defaultLocale: getSystemLanguage('zh-CN'),
   staticCatalog: {
-    en,
+    'en-US': en,
     'zh-CN': zhCN,
   },
   objectNotation: true,

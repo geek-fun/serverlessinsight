@@ -24,12 +24,12 @@ jobs:
         uses: actions/checkout@v4
         if: matrix.os == 'ubuntu-latest'
         with:
-          fetch-depth: 0  # Fetch all history including tags for version checking
+          fetch-depth: 0 # Fetch all history including tags for version checking
       - name: Use Node.js ${{ matrix.node-version }}
         uses: actions/setup-node@v4
         with:
           node-version: ${{ matrix.node-version }}
-          registry-url: "https://registry.npmjs.org"
+          registry-url: 'https://registry.npmjs.org'
       - name: Install dependencies
         run: npm ci
       - run: npm run lint:check
