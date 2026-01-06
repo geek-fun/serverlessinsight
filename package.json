@@ -51,11 +51,13 @@
   "dependencies": {
     "@alicloud/cloudapi20160714": "^4.7.8",
     "@alicloud/ecs20140526": "^7.4.2",
+    "@alicloud/es-serverless20230627": "^2.2.0",
     "@alicloud/fc20230330": "^4.6.6",
     "@alicloud/ims20190815": "^2.3.2",
     "@alicloud/nas20170626": "^3.1.4",
     "@alicloud/openapi-client": "^0.4.15",
     "@alicloud/ram20150501": "^1.2.0",
+    "@alicloud/rds20140815": "^13.1.0",
     "@alicloud/ros-cdk-apigateway": "^1.11.0",
     "@alicloud/ros-cdk-core": "^1.11.0",
     "@alicloud/ros-cdk-dns": "^1.11.0",

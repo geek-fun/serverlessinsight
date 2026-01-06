@@ -65,7 +65,6 @@ export const setResource = (
 };
 
 export const removeResource = (state: StateFile, resourceId: string): StateFile => {
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const { [resourceId]: _, ...remainingResources } = state.resources;
   return {
     ...state,

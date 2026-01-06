@@ -4,6 +4,8 @@ import RamClient from '@alicloud/ram20150501';
 import EcsClient from '@alicloud/ecs20140526';
 import NasClient from '@alicloud/nas20170626';
 import CloudApiClient from '@alicloud/cloudapi20160714';
+import RdsClient from '@alicloud/rds20140815';
+import EsServerlessClient from '@alicloud/es-serverless20230627';
 import * as $OpenApi from '@alicloud/openapi-client';
 import OSS from 'ali-oss';
 import { Context } from '../../types';
@@ -14,10 +16,14 @@ import { createEcsOperations } from './ecsOperations';
 import { createNasOperations } from './nasOperations';
 import { createApigwOperations } from './apigwOperations';
 import { createOssOperations } from './ossOperations';
+import { createRdsOperations } from './rdsOperations';
+import { createEsOperations } from './esOperations';
 
 export * from './types';
 export * from './apigwOperations';
 export * from './ossOperations';
+export * from './rdsOperations';
+export * from './esOperations';
 
 const initializeSdkClients = (context: Context) => {
   const baseConfig = {
@@ -58,6 +64,14 @@ const initializeSdkClients = (context: Context) => {
   apigwConfig.endpoint = `apigateway.${context.region}.aliyuncs.com`;
   const apigwClient = new CloudApiClient(apigwConfig);
 
+  const rdsConfig = new $OpenApi.Config(baseConfig);
+  rdsConfig.endpoint = `rds.aliyuncs.com`;
+  const rdsClient = new RdsClient(rdsConfig);
+
+  const esConfig = new $OpenApi.Config(baseConfig);
+  esConfig.endpoint = `elasticsearch-serverless.${context.region}.aliyuncs.com`;
+  const esClient = new EsServerlessClient(esConfig);
+
   return {
     fc3: fc3Client,
     sls: slsClient,
@@ -66,6 +80,8 @@ const initializeSdkClients = (context: Context) => {
     nas: nasClient,
     oss: ossClient,
     apigw: apigwClient,
+    rds: rdsClient,
+    es: esClient,
   };
 };
 
@@ -80,5 +96,7 @@ export const createAliyunClient = (context: Context) => {
     nas: createNasOperations(sdkClients.nas),
     oss: createOssOperations(sdkClients.oss, context.region),
     apigw: createApigwOperations(sdkClients.apigw),
+    rds: createRdsOperations(sdkClients.rds, context),
+    es: createEsOperations(sdkClients.es, context),
   };
 };
