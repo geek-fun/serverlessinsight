@@ -3,14 +3,13 @@ a CI/CD service considerations:
 - Zero downtime
 
 - health check
+  - **Startup probes**
 
-    - **Startup probes**
+  - **Readiness probes**
 
-    - **Readiness probes**
+  - **Liveness probes**
 
-    - **Liveness probes**
-
-      > https://www.fairwinds.com/blog/a-guide-to-understanding-kubernetes-liveness-probes-best-practices
+    > https://www.fairwinds.com/blog/a-guide-to-understanding-kubernetes-liveness-probes-best-practices
 
 - Blue/green deployment
 

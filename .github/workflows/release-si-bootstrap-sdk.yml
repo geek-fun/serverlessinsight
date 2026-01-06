@@ -21,7 +21,7 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
-          fetch-depth: 0  # Fetch all history to check tags
+          fetch-depth: 0 # Fetch all history to check tags
 
       - name: Get package version and check for changes
         id: version_check
@@ -59,8 +59,8 @@ jobs:
         env:
           ALIYUN_ACCESS_KEY_ID: ${{ secrets.ALIYUN_ACCESS_KEY_ID }}
           ALIYUN_ACCESS_KEY_SECRET: ${{ secrets.ALIYUN_ACCESS_KEY_SECRET }}
-          ALIYUN_REGIONS: "cn-beijing,cn-hangzhou,cn-chengdu,ap-southeast-1"
-          ALIYUN_COMPATIBLE_RUNTIMES: "nodejs20,nodejs18,nodejs16"
+          ALIYUN_REGIONS: 'cn-beijing,cn-hangzhou,cn-chengdu,ap-southeast-1'
+          ALIYUN_COMPATIBLE_RUNTIMES: 'nodejs20,nodejs18,nodejs16'
         run: ./scripts/publish-to-regions.sh
 
       - name: Create GitHub Release

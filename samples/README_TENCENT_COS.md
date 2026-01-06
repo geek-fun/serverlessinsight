@@ -33,11 +33,11 @@ service: my-service
 
 buckets:
   my_bucket:
-    name: my-unique-bucket-name-123456  # Must be globally unique
+    name: my-unique-bucket-name-123456 # Must be globally unique
     security:
-      acl: PUBLIC_READ  # Optional: PRIVATE, PUBLIC_READ, or PUBLIC_READ_WRITE
-    website:  # Optional: Enable static website hosting
-      code: dist  # Local directory to deploy (not implemented yet)
+      acl: PUBLIC_READ # Optional: PRIVATE, PUBLIC_READ, or PUBLIC_READ_WRITE
+    website: # Optional: Enable static website hosting
+      code: dist # Local directory to deploy (not implemented yet)
       index: index.html
       error_page: 404.html
       error_code: 404
@@ -46,12 +46,14 @@ buckets:
 ## Bucket Naming Requirements
 
 Bucket names in Tencent COS must:
+
 - Be globally unique across all Tencent Cloud users
 - Be 1-50 characters long
 - Contain only lowercase letters, numbers, and hyphens (-)
 - Start and end with a lowercase letter or number
 
 Example valid names:
+
 - `my-app-bucket-20250101`
 - `company-static-assets`
 - `user123-data-bucket`
@@ -59,6 +61,7 @@ Example valid names:
 ## Supported Regions
 
 Common Tencent Cloud regions:
+
 - `ap-guangzhou` - Guangzhou
 - `ap-shanghai` - Shanghai
 - `ap-beijing` - Beijing
@@ -83,6 +86,7 @@ si plan my-stack \
 ```
 
 Output shows:
+
 - Buckets to be **created** (green `+`)
 - Buckets to be **updated** (yellow `~`)
 - Buckets to be **deleted** (red `-`)
@@ -101,6 +105,7 @@ si deploy my-stack \
 ```
 
 The deploy command will:
+
 1. Generate a plan for all resources (functions + buckets)
 2. Execute the plan (create/update/delete buckets)
 3. Save the state to `.serverlessinsight/state.json`
@@ -140,30 +145,33 @@ State is stored locally in `.serverlessinsight/state.json`:
 Configure bucket permissions using the `security.acl` field:
 
 ### Private Bucket
+
 ```yaml
 buckets:
   my_bucket:
     name: my-private-bucket
     security:
-      acl: PRIVATE  # Only bucket owner has access
+      acl: PRIVATE # Only bucket owner has access
 ```
 
 ### Public Read Bucket
+
 ```yaml
 buckets:
   my_bucket:
     name: my-public-bucket
     security:
-      acl: PUBLIC_READ  # Anyone can read, only owner can write
+      acl: PUBLIC_READ # Anyone can read, only owner can write
 ```
 
 ### Public Read-Write Bucket (Not Recommended)
+
 ```yaml
 buckets:
   my_bucket:
     name: my-open-bucket
     security:
-      acl: PUBLIC_READ_WRITE  # Anyone can read and write
+      acl: PUBLIC_READ_WRITE # Anyone can read and write
 ```
 
 **Security Note**: `PUBLIC_READ_WRITE` allows anyone to upload files to your bucket, which may incur unexpected costs. Use with caution.
@@ -177,14 +185,15 @@ buckets:
   my_website_bucket:
     name: my-website-bucket
     security:
-      acl: PUBLIC_READ  # Website content must be publicly readable
+      acl: PUBLIC_READ # Website content must be publicly readable
     website:
-      index: index.html  # Default page
-      error_page: 404.html  # Error page
-      error_code: 404  # HTTP error code
+      index: index.html # Default page
+      error_page: 404.html # Error page
+      error_code: 404 # HTTP error code
 ```
 
 After deployment, your website will be accessible at:
+
 ```
 http://my-website-bucket.cos-website.ap-guangzhou.myqcloud.com
 ```
@@ -245,6 +254,7 @@ si plan my-stack -f serverless-insight.yml
 ```
 
 Output will show:
+
 ```
 [UPDATE] Resources to be updated:
   ~ buckets.my_bucket (COS_BUCKET)
@@ -262,7 +272,7 @@ buckets:
   my_bucket:
     name: my-bucket
     security:
-      acl: PRIVATE  # Changed from PUBLIC_READ to PRIVATE
+      acl: PRIVATE # Changed from PUBLIC_READ to PRIVATE
 ```
 
 Run `si deploy` to apply the change.
@@ -277,7 +287,7 @@ buckets:
     name: my-bucket
     security:
       acl: PUBLIC_READ
-    website:  # Added website configuration
+    website: # Added website configuration
       index: index.html
       error_page: 404.html
       error_code: 404
@@ -358,12 +368,12 @@ buckets:
     name: public-assets-20250101
     security:
       acl: PUBLIC_READ
-  
+
   private_data:
     name: private-data-20250101
     security:
       acl: PRIVATE
-  
+
   website:
     name: website-20250101
     security:
@@ -381,6 +391,7 @@ buckets:
 Error: `BucketAlreadyExists` or `BucketAlreadyOwnedByYou`
 
 **Solution**: Bucket names must be globally unique. Try a different name with random suffix:
+
 ```yaml
 name: my-bucket-a1b2c3d4e5
 ```
@@ -403,6 +414,7 @@ si deploy my-stack -f serverless-insight.yml
 Error: `BucketNotEmpty` when deleting
 
 **Solution**: Empty the bucket before deletion using Tencent Cloud Console or CLI:
+
 ```bash
 # Using Tencent Cloud CLI (coscmd)
 coscmd delete -r -f /
@@ -422,12 +434,14 @@ If your website is not accessible after deployment:
 ### State File Conflicts
 
 If you encounter state conflicts, you can:
+
 1. Delete `.serverlessinsight/state.json` and re-deploy (will recreate resources)
 2. Manually edit the state file (advanced users only)
 
 ## Limitations
 
 Current limitations:
+
 - No automatic file upload from `website.code` directory (planned)
 - No support for bucket lifecycle policies
 - No support for bucket replication
@@ -441,6 +455,7 @@ These features will be added in future releases.
 ## Cost Considerations
 
 Tencent COS charges for:
+
 - **Storage**: Amount of data stored (GB/month)
 - **Requests**: Number of API requests (read/write)
 - **Traffic**: Data transfer out (GB)

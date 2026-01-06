@@ -1,5 +1,4 @@
 #! /usr/bin/env node
-
 import { Command } from 'commander';
 import { clearContext, getContext, getIamInfo, getVersion, logger, setContext } from '../common';
 import { validate } from './validate';

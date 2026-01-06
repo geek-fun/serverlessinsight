@@ -3,8 +3,7 @@
   "version": "1.0.0",
   "description": "Operation collection for SI bootstrap SDK management",
   "main": "publish.js",
-  "scripts": {
-  },
+  "scripts": {},
   "dependencies": {
     "@alicloud/credentials": "^2.4.4",
     "@alicloud/fc-open20210406": "^2.0.13",
