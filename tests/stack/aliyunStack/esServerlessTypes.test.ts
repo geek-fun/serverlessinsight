@@ -202,55 +202,55 @@ describe('EsServerlessTypes', () => {
   describe('extractEsDefinition', () => {
     it('should extract all attributes with null for undefined fields', () => {
       const config = {
-        AppName: 'test-es',
-        AppVersion: '7.10',
-        Authentication: {
+        appName: 'test-es',
+        appVersion: '7.10',
+        authentication: {
           basicAuth: [
             {
-              Username: 'elastic',
-              Password: 'TestPass123!',
+              username: 'elastic',
+              password: 'TestPass123!',
             },
           ],
         },
-        QuotaInfo: {
+        quotaInfo: {
           appType: 'STANDARD',
-          Cu: 2,
-          Storage: 100,
+          cu: 2,
+          storage: 100,
         },
-        Description: 'Test ES app',
-        ChargeType: 'POSTPAY',
-        Network: [
+        description: 'Test ES app',
+        chargeType: 'POSTPAY',
+        network: [
           {
-            Type: 'PUBLIC_ES',
-            Enabled: true,
-            Domain: 'test.es.aliyuncs.com',
-            Port: 9200,
+            type: 'PUBLIC_ES',
+            enabled: true,
+            domain: 'test.es.aliyuncs.com',
+            port: 9200,
             whiteIpGroup: [
               {
                 groupName: 'default',
-                Ips: ['10.0.0.0/8'],
+                ips: ['10.0.0.0/8'],
               },
             ],
           },
         ],
-        PrivateNetwork: [
+        privateNetwork: [
           {
-            Type: 'PRIVATE_ES',
-            Enabled: true,
-            VpcId: 'vpc-123',
-            PvlEndpointId: 'ep-456',
+            type: 'PRIVATE_ES',
+            enabled: true,
+            vpcId: 'vpc-123',
+            pvlEndpointId: 'ep-456',
             whiteIpGroup: [
               {
                 groupName: 'private',
-                Ips: ['192.168.0.0/16'],
+                ips: ['192.168.0.0/16'],
               },
             ],
           },
         ],
-        Tags: [
+        tags: [
           {
-            Key: 'env',
-            Value: 'test',
+            key: 'env',
+            value: 'test',
           },
         ],
       };
@@ -309,19 +309,19 @@ describe('EsServerlessTypes', () => {
 
     it('should mask passwords in definition', () => {
       const config = {
-        AppName: 'test-es',
-        AppVersion: '7.10',
-        Authentication: {
+        appName: 'test-es',
+        appVersion: '7.10',
+        authentication: {
           basicAuth: [
             {
-              Username: 'admin',
-              Password: 'SuperSecret123!',
+              username: 'admin',
+              password: 'SuperSecret123!',
             },
           ],
         },
-        QuotaInfo: {
+        quotaInfo: {
           appType: 'STANDARD',
-          Cu: 2,
+          cu: 2,
         },
       };
 
@@ -334,11 +334,11 @@ describe('EsServerlessTypes', () => {
 
     it('should handle undefined authentication', () => {
       const config = {
-        AppName: 'test-es',
-        AppVersion: '7.10',
-        QuotaInfo: {
+        appName: 'test-es',
+        appVersion: '7.10',
+        quotaInfo: {
           appType: 'STANDARD',
-          Cu: 2,
+          cu: 2,
         },
       };
 

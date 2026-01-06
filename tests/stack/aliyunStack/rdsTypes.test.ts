@@ -31,15 +31,15 @@ describe('RdsTypes', () => {
       const result = databaseToRdsConfig(database);
 
       expect(result.engine).toBe('MySQL');
-      expect(result.engineversion).toBe('8.0');
+      expect(result.engineVersion).toBe('8.0');
       expect(result.category).toBe('serverless_basic');
-      expect(result.dbinstanceClass).toBe('mysql.n2.serverless.1c');
-      expect(result.dbinstanceStorage).toBe(20);
-      expect(result.dbinstanceStorageType).toBe('general_essd');
-      expect(result.burstingenabled).toBe(true);
-      expect(result.serverlessconfig?.autoPause).toBe(true); // min cu is 0
-      expect(result.securityiPList).toBe('10.0.0.0/8');
-      expect(result.dbinstanceNetType).toBe('Intranet');
+      expect(result.dbInstanceClass).toBe('mysql.n2.serverless.1c');
+      expect(result.dbInstanceStorage).toBe(20);
+      expect(result.dbInstanceStorageType).toBe('general_essd');
+      expect(result.burstingEnabled).toBe(true);
+      expect(result.serverlessConfig?.autoPause).toBe(true); // min cu is 0
+      expect(result.securityIPList).toBe('10.0.0.0/8');
+      expect(result.dbInstanceNetType).toBe('Intranet');
     });
 
     it('should map MYSQL HA 8.0 correctly', () => {
@@ -69,10 +69,10 @@ describe('RdsTypes', () => {
       const result = databaseToRdsConfig(database);
 
       expect(result.category).toBe('serverless_standard');
-      expect(result.dbinstanceClass).toBe('mysql.n2.serverless.2c');
-      expect(result.multiaZ).toBe(true);
-      expect(result.serverlessconfig?.autoPause).toBe(false);
-      expect(result.dbinstanceNetType).toBe('Internet');
+      expect(result.dbInstanceClass).toBe('mysql.n2.serverless.2c');
+      expect(result.multiAZ).toBe(true);
+      expect(result.serverlessConfig?.autoPause).toBe(false);
+      expect(result.dbInstanceNetType).toBe('Internet');
     });
 
     it('should map PostgreSQL 14 correctly', () => {
@@ -102,9 +102,9 @@ describe('RdsTypes', () => {
       const result = databaseToRdsConfig(database);
 
       expect(result.engine).toBe('PostgreSQL');
-      expect(result.engineversion).toBe('14.0');
+      expect(result.engineVersion).toBe('14.0');
       expect(result.category).toBe('serverless_basic');
-      expect(result.dbinstanceClass).toBe('pg.n2.serverless.1c');
+      expect(result.dbInstanceClass).toBe('pg.n2.serverless.1c');
     });
 
     it('should map SQL Server 2019 correctly', () => {
@@ -134,11 +134,11 @@ describe('RdsTypes', () => {
       const result = databaseToRdsConfig(database);
 
       expect(result.engine).toBe('SQLServer');
-      expect(result.engineversion).toBe('2019_std_sl');
+      expect(result.engineVersion).toBe('2019_std_sl');
       expect(result.category).toBe('serverless_ha');
-      expect(result.dbinstanceClass).toBe('mssql.mem2.serverless.s2');
-      expect(result.dbinstanceStorageType).toBe('cloud_essd');
-      expect(result.burstingenabled).toBe(false);
+      expect(result.dbInstanceClass).toBe('mssql.mem2.serverless.s2');
+      expect(result.dbInstanceStorageType).toBe('cloud_essd');
+      expect(result.burstingEnabled).toBe(false);
     });
 
     it('should include VPC configuration when provided', () => {
@@ -169,8 +169,8 @@ describe('RdsTypes', () => {
 
       const result = databaseToRdsConfig(database);
 
-      expect(result.vpcid).toBe('vpc-12345');
-      expect(result.vswitchId).toBe('subnet-67890');
+      expect(result.vpcId).toBe('vpc-12345');
+      expect(result.vSwitchId).toBe('subnet-67890');
     });
 
     it('should throw error for unsupported database type', () => {
@@ -204,26 +204,26 @@ describe('RdsTypes', () => {
   describe('extractRdsDefinition', () => {
     it('should extract all attributes with null for undefined fields', () => {
       const config = {
-        DBInstanceDescription: 'test-rds',
-        Engine: 'MySQL',
-        EngineVersion: '8.0',
-        DBInstanceClass: 'mysql.n2.serverless.1c',
-        DBInstanceStorage: 20,
-        Category: 'serverless_basic',
-        DBInstanceStorageType: 'general_essd' as const,
-        BurstingEnabled: true,
-        ServerlessConfig: {
+        dbInstanceDescription: 'test-rds',
+        engine: 'MySQL',
+        engineVersion: '8.0',
+        dbInstanceClass: 'mysql.n2.serverless.1c',
+        dbInstanceStorage: 20,
+        category: 'serverless_basic',
+        dbInstanceStorageType: 'general_essd',
+        burstingEnabled: true,
+        serverlessConfig: {
           minCapacity: 0.5,
           maxCapacity: 16.5,
           autoPause: true,
           switchForce: false,
         },
-        MasterUsername: 'admin',
-        MasterUserPassword: 'TestPass123!',
-        MultiAZ: false,
-        SecurityIPList: '10.0.0.0/8',
-        ConnectionStringType: 'Inner',
-        DBInstanceNetType: 'Intranet',
+        masterUsername: 'admin',
+        masterUserPassword: 'TestPass123!',
+        multiAZ: false,
+        securityIPList: '10.0.0.0/8',
+        connectionStringType: 'Inner',
+        dbInstanceNetType: 'Intranet',
       };
 
       const definition = extractRdsDefinition(config);
@@ -254,20 +254,20 @@ describe('RdsTypes', () => {
 
     it('should exclude passwords from definition', () => {
       const config = {
-        DBInstanceDescription: 'test-rds',
-        Engine: 'MySQL',
-        EngineVersion: '8.0',
-        DBInstanceClass: 'mysql.n2.serverless.1c',
-        DBInstanceStorage: 20,
-        Category: 'serverless_basic',
-        DBInstanceStorageType: 'general_essd' as const,
-        ServerlessConfig: {
+        dbInstanceDescription: 'test-rds',
+        engine: 'MySQL',
+        engineVersion: '8.0',
+        dbInstanceClass: 'mysql.n2.serverless.1c',
+        dbInstanceStorage: 20,
+        category: 'serverless_basic',
+        dbInstanceStorageType: 'general_essd',
+        serverlessConfig: {
           minCapacity: 0.5,
           maxCapacity: 16.5,
           autoPause: true,
           switchForce: false,
         },
-        MasterUserPassword: 'SecretPass123!',
+        masterUserPassword: 'SecretPass123!',
       };
 
       const definition = extractRdsDefinition(config);
