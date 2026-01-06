@@ -171,39 +171,39 @@ export const databaseToRdsConfig = (database: DatabaseDomain): RdsConfig => {
   const { engine, version, category, dbInstanceClass, quota, storage } = engineConfig;
 
   const config: RdsConfig = {
-    DBInstanceDescription: database.name,
-    Engine: engine,
-    EngineVersion: version,
-    DBInstanceClass: dbInstanceClass,
-    DBInstanceStorage: database.storage.min,
-    Category: category,
-    DBInstanceStorageType: storage.type,
-    BurstingEnabled: storage.bursting,
-    ServerlessConfig: {
-      MinCapacity: database.cu.min === 0 ? quota.minCapacity : database.cu.min + quota.minCapacity,
-      MaxCapacity:
+    dbInstanceDescription: database.name,
+    engine: engine,
+    engineVersion: version,
+    dbInstanceClass: dbInstanceClass,
+    dbInstanceStorage: database.storage.min,
+    category: category,
+    dbInstanceStorageType: storage.type,
+    burstingEnabled: storage.bursting,
+    serverlessConfig: {
+      minCapacity: database.cu.min === 0 ? quota.minCapacity : database.cu.min + quota.minCapacity,
+      maxCapacity:
         database.cu.max + quota.minCapacity <= quota.maxCapacity
           ? database.cu.max + quota.minCapacity
           : quota.maxCapacity,
-      AutoPause: database.cu.min === 0,
-      SwitchForce: false,
+      autoPause: database.cu.min === 0,
+      switchForce: false,
     },
-    MasterUsername: database.security.basicAuth.username,
-    MasterUserPassword: database.security.basicAuth.password,
-    MasterUserType: 'Super',
-    MultiAZ: quota.ha,
-    SecurityIPList: database.network.ingressRules.join(','),
-    ConnectionStringType: database.network.type === 'PRIVATE' ? 'Inner' : 'Public',
-    DBInstanceNetType: database.network.type === 'PRIVATE' ? 'Intranet' : 'Internet',
+    masterUsername: database.security.basicAuth.username,
+    masterUserPassword: database.security.basicAuth.password,
+    masterUserType: 'Super',
+    multiAZ: quota.ha,
+    securityIPList: database.network.ingressRules.join(','),
+    connectionStringType: database.network.type === 'PRIVATE' ? 'Inner' : 'Public',
+    dbInstanceNetType: database.network.type === 'PRIVATE' ? 'Intranet' : 'Internet',
   };
 
   // Add VPC configuration if provided
   if (database.network.vpcId) {
-    config.VpcId = database.network.vpcId;
+    config.vpcId = database.network.vpcId;
   }
 
   if (database.network.subnetId) {
-    config.VSwitchId = database.network.subnetId;
+    config.vSwitchId = database.network.subnetId;
   }
 
   return config;
@@ -211,28 +211,28 @@ export const databaseToRdsConfig = (database: DatabaseDomain): RdsConfig => {
 
 export const extractRdsDefinition = (config: RdsConfig): ResourceAttributes => {
   return {
-    dbInstanceDescription: config.DBInstanceDescription,
-    engine: config.Engine,
-    engineVersion: config.EngineVersion,
-    dbInstanceClass: config.DBInstanceClass,
-    dbInstanceStorage: config.DBInstanceStorage,
-    category: config.Category,
-    dbInstanceStorageType: config.DBInstanceStorageType,
-    burstingEnabled: config.BurstingEnabled ?? null,
-    serverlessConfig: config.ServerlessConfig
+    dbInstanceDescription: config.dbInstanceDescription,
+    engine: config.engine,
+    engineVersion: config.engineVersion,
+    dbInstanceClass: config.dbInstanceClass,
+    dbInstanceStorage: config.dbInstanceStorage,
+    category: config.category,
+    dbInstanceStorageType: config.dbInstanceStorageType,
+    burstingEnabled: config.burstingEnabled ?? null,
+    serverlessConfig: config.serverlessConfig
       ? {
-          minCapacity: config.ServerlessConfig.MinCapacity,
-          maxCapacity: config.ServerlessConfig.MaxCapacity,
-          autoPause: config.ServerlessConfig.AutoPause,
-          switchForce: config.ServerlessConfig.SwitchForce,
+          minCapacity: config.serverlessConfig.minCapacity,
+          maxCapacity: config.serverlessConfig.maxCapacity,
+          autoPause: config.serverlessConfig.autoPause,
+          switchForce: config.serverlessConfig.switchForce,
         }
       : null,
-    multiAZ: config.MultiAZ ?? null,
-    securityIPList: config.SecurityIPList ?? null,
-    connectionStringType: config.ConnectionStringType ?? null,
-    dbInstanceNetType: config.DBInstanceNetType ?? null,
-    vpcId: config.VpcId ?? null,
-    vSwitchId: config.VSwitchId ?? null,
+    multiAZ: config.multiAZ ?? null,
+    securityIPList: config.securityIPList ?? null,
+    connectionStringType: config.connectionStringType ?? null,
+    dbInstanceNetType: config.dbInstanceNetType ?? null,
+    vpcId: config.vpcId ?? null,
+    vSwitchId: config.vSwitchId ?? null,
   };
 };
 

@@ -138,4 +138,42 @@ export const en = {
   TDSQL_CLUSTER_WAITING_DELETE:
     'Waiting for TDSQL-C cluster to be deleted: {{clusterId}} (status: {{status}})',
   TDSQL_CLUSTER_TIMEOUT_DELETE: 'Timeout waiting for TDSQL-C cluster to be deleted: {{clusterId}}',
+
+  // RDS database messages
+  RDS_INSTANCE_CREATION_INITIATED: 'RDS instance creation initiated',
+  RDS_INSTANCE_CREATION_FAILED: 'Failed to create RDS instance: {{error}}',
+  RDS_INSTANCE_NO_ID_RETURNED: 'Failed to create RDS instance: No instance ID returned',
+  RDS_INSTANCE_READY: 'RDS instance is ready: {{instanceId}}',
+  RDS_INSTANCE_ERROR_STATE: 'RDS instance is in error state: {{status}}',
+  RDS_INSTANCE_WAITING: 'Waiting for RDS instance to be ready: {{instanceId}} (status: {{status}})',
+  RDS_INSTANCE_TIMEOUT_READY: 'Timeout waiting for RDS instance to be ready: {{instanceId}}',
+  RDS_INSTANCE_NOT_FOUND: 'RDS instance not found: {{instanceId}}',
+  RDS_INSTANCE_GET_FAILED: 'Failed to get RDS instance: {{error}}',
+  RDS_INSTANCE_UPDATED: 'RDS instance updated: {{instanceId}}',
+  RDS_INSTANCE_UPDATE_FAILED: 'Failed to update RDS instance: {{error}}',
+  RDS_INSTANCE_DELETION_INITIATED: 'RDS instance deletion initiated: {{instanceId}}',
+  RDS_INSTANCE_DELETED: 'RDS instance deleted: {{instanceId}}',
+  RDS_INSTANCE_DELETE_FAILED: 'Failed to delete RDS instance: {{error}}',
+  RDS_INSTANCE_WAITING_DELETE: 'Waiting for RDS instance to be deleted: {{instanceId}}',
+  RDS_INSTANCE_TIMEOUT_DELETE: 'Timeout waiting for RDS instance to be deleted: {{instanceId}}',
+
+  // Elasticsearch Serverless messages
+  ES_APP_CREATION_INITIATED: 'Elasticsearch serverless app creation initiated',
+  ES_APP_CREATION_FAILED: 'Failed to create Elasticsearch serverless app: {{error}}',
+  ES_APP_NO_ID_RETURNED: 'Failed to create Elasticsearch serverless app: No app ID returned',
+  ES_APP_READY: 'Elasticsearch serverless app is ready: {{appId}}',
+  ES_APP_ERROR_STATE: 'Elasticsearch serverless app is in error state: {{status}}',
+  ES_APP_WAITING:
+    'Waiting for Elasticsearch serverless app to be ready: {{appId}} (status: {{status}})',
+  ES_APP_TIMEOUT_READY: 'Timeout waiting for Elasticsearch serverless app to be ready: {{appId}}',
+  ES_APP_NOT_FOUND: 'Elasticsearch serverless app not found: {{appId}}',
+  ES_APP_GET_FAILED: 'Failed to get Elasticsearch serverless app: {{error}}',
+  ES_APP_UPDATED: 'Elasticsearch serverless app updated: {{appName}}',
+  ES_APP_UPDATE_FAILED: 'Failed to update Elasticsearch serverless app: {{error}}',
+  ES_APP_DELETION_INITIATED: 'Elasticsearch serverless app deletion initiated: {{appName}}',
+  ES_APP_DELETED: 'Elasticsearch serverless app deleted: {{appName}}',
+  ES_APP_DELETE_FAILED: 'Failed to delete Elasticsearch serverless app: {{error}}',
+  ES_APP_WAITING_DELETE: 'Waiting for Elasticsearch serverless app to be deleted: {{appName}}',
+  ES_APP_TIMEOUT_DELETE:
+    'Timeout waiting for Elasticsearch serverless app to be deleted: {{appName}}',
 };

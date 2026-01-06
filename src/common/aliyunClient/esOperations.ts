@@ -1,90 +1,99 @@
 import EsServerlessClient, * as EsModels from '@alicloud/es-serverless20230627';
 import { Context } from '../../types';
 import { logger } from '../logger';
+import { lang } from '../../lang';
+
+export enum EsAppStatus {
+  ACTIVE = 'ACTIVE',
+  CREATING = 'CREATING',
+  DELETING = 'DELETING',
+  DELETED = 'DELETED',
+  FAILED = 'FAILED',
+}
 
 export type EsConfig = {
-  AppName: string;
-  AppVersion: string;
-  Authentication?: {
-    BasicAuth?: Array<{
-      Username?: string;
-      Password: string;
+  appName: string;
+  appVersion: string;
+  authentication?: {
+    basicAuth?: Array<{
+      username?: string;
+      password: string;
     }>;
   };
-  QuotaInfo?: {
-    AppType?: string;
-    Cu?: number;
-    Storage?: number;
+  quotaInfo?: {
+    appType?: string;
+    cu?: number;
+    storage?: number;
   };
-  Description?: string;
-  Network?: Array<{
-    Type?: string;
-    Enabled?: boolean;
-    Domain?: string;
-    Port?: number;
-    WhiteIpGroup?: Array<{
-      GroupName?: string;
-      Ips?: string[];
+  description?: string;
+  network?: Array<{
+    type?: string;
+    enabled?: boolean;
+    domain?: string;
+    port?: number;
+    whiteIpGroup?: Array<{
+      groupName?: string;
+      ips?: string[];
     }>;
   }>;
-  PrivateNetwork?: Array<{
-    Type?: string;
-    Enabled?: boolean;
-    VpcId?: string;
-    PvlEndpointId?: string;
-    WhiteIpGroup?: Array<{
-      GroupName?: string;
-      Ips?: string[];
+  privateNetwork?: Array<{
+    type?: string;
+    enabled?: boolean;
+    vpcId?: string;
+    pvlEndpointId?: string;
+    whiteIpGroup?: Array<{
+      groupName?: string;
+      ips?: string[];
     }>;
   }>;
-  ChargeType?: string;
-  RegionId?: string;
-  Scenario?: string;
-  Tags?: Array<{
-    Key?: string;
-    Value?: string;
+  chargeType?: string;
+  regionId?: string;
+  scenario?: string;
+  tags?: Array<{
+    key?: string;
+    value?: string;
   }>;
 };
 
 export type EsInfo = {
-  AppId?: string;
-  AppName?: string;
-  AppType?: string;
-  Status?: string;
-  Description?: string;
-  CreateTime?: string;
-  ModifiedTime?: string;
-  RegionId?: string;
-  Version?: string;
-  OwnerId?: string;
-  InstanceId?: string;
-  ChargeType?: string;
-  Scenario?: string;
-  Network?: Array<{
-    Type?: string;
-    Enabled?: boolean;
-    Domain?: string;
-    Port?: number;
-    WhiteIpGroup?: Array<{
-      GroupName?: string;
-      Ips?: string[];
+  appId?: string;
+  appName?: string;
+  appType?: string;
+  status?: string;
+  description?: string;
+  createTime?: string;
+  modifiedTime?: string;
+  regionId?: string;
+  version?: string;
+  ownerId?: string;
+  instanceId?: string;
+  chargeType?: string;
+  scenario?: string;
+  network?: Array<{
+    type?: string;
+    enabled?: boolean;
+    domain?: string;
+    port?: number;
+    whiteIpGroup?: Array<{
+      groupName?: string;
+      ips?: string[];
     }>;
   }>;
-  PrivateNetwork?: Array<{
-    Type?: string;
-    Enabled?: boolean;
-    Domain?: string;
-    Port?: number;
-    VpcId?: string;
-    PvlEndpointId?: string;
-    WhiteIpGroup?: Array<{
-      GroupName?: string;
-      Ips?: string[];
+  privateNetwork?: Array<{
+    type?: string;
+    enabled?: boolean;
+    domain?: string;
+    port?: number;
+    vpcId?: string;
+    pvlEndpointId?: string;
+    whiteIpGroup?: Array<{
+      groupName?: string;
+      ips?: string[];
     }>;
   }>;
-  Tags?: Array<{
-    Key?: string;
-    Value?: string;
+  tags?: Array<{
+    key?: string;
+    value?: string;
   }>;
 };
 
@@ -99,49 +108,49 @@ const waitForEsAppReady = async (
     const app = await getApp(appId);
 
     if (!app) {
-      throw new Error(`Elasticsearch serverless app not found: ${appId}`);
+      throw new Error(lang.__('ES_APP_NOT_FOUND', { appId }));
     }
 
-    if (app.Status === 'ACTIVE') {
-      logger.info(`Elasticsearch serverless app ready: ${appId}`);
+    if (app.status === EsAppStatus.ACTIVE) {
+      logger.info(lang.__('ES_APP_READY', { appId }));
       return;
     }
 
-    if (app.Status === 'DELETED' || app.Status === 'FAILED') {
-      throw new Error(`Elasticsearch serverless app in error state: ${app.Status}`);
+    if (app.status === EsAppStatus.DELETED || app.status === EsAppStatus.FAILED) {
+      throw new Error(lang.__('ES_APP_ERROR_STATE', { status: app.status }));
     }
 
-    logger.info(`Waiting for ES app ${appId}, status: ${app.Status}`);
+    logger.info(lang.__('ES_APP_WAITING', { appId, status: app.status ?? 'unknown' }));
     await new Promise((resolve) => setTimeout(resolve, 10000));
     attempts++;
   }
 
-  throw new Error(`Timeout waiting for ES app to be ready: ${appId}`);
+  throw new Error(lang.__('ES_APP_TIMEOUT_READY', { appId }));
 };
 
 export const createEsOperations = (esClient: EsServerlessClient, context: Context) => {
   const operations = {
     createApp: async (config: EsConfig): Promise<string> => {
       const params = new EsModels.CreateAppRequest({
-        appName: config.AppName,
-        version: config.AppVersion,
-        authentication: config.Authentication,
-        quotaInfo: config.QuotaInfo,
-        description: config.Description,
-        network: config.Network,
-        privateNetwork: config.PrivateNetwork,
-        chargeType: config.ChargeType || 'POSTPAY',
-        regionId: config.RegionId || context.region,
-        scenario: config.Scenario,
-        tags: config.Tags,
+        appName: config.appName,
+        version: config.appVersion,
+        authentication: config.authentication,
+        quotaInfo: config.quotaInfo,
+        description: config.description,
+        network: config.network,
+        privateNetwork: config.privateNetwork,
+        chargeType: config.chargeType || 'POSTPAY',
+        regionId: config.regionId || context.region,
+        scenario: config.scenario,
+        tags: config.tags,
       });
 
       try {
         const response = await esClient.createApp(params);
-        logger.info('Elasticsearch serverless app creation initiated');
+        logger.info(lang.__('ES_APP_CREATION_INITIATED'));
 
         if (!response.body?.result?.appId) {
-          throw new Error('No ES app ID returned');
+          throw new Error(lang.__('ES_APP_NO_ID_RETURNED'));
         }
 
         const appId = response.body.result.appId;
@@ -151,7 +160,7 @@ export const createEsOperations = (esClient: EsServerlessClient, context: Contex
 
         return appId;
       } catch (error) {
-        logger.error(`ES app creation failed: ${error}`);
+        logger.error(lang.__('ES_APP_CREATION_FAILED', { error: String(error) }));
         throw error;
       }
     },
@@ -171,76 +180,76 @@ export const createEsOperations = (esClient: EsServerlessClient, context: Contex
         const app = response.body.result;
 
         return {
-          AppId: app.appId,
-          AppName: app.appName,
-          AppType: app.appType,
-          Status: app.status,
-          Description: app.description,
-          CreateTime: app.createTime,
-          ModifiedTime: app.modifiedTime,
-          RegionId: app.regionId,
-          Version: app.version,
-          OwnerId: app.ownerId,
-          InstanceId: app.instanceId,
-          ChargeType: app.chargeType,
-          Scenario: app.scenario,
-          Network: app.network
+          appId: app.appId,
+          appName: app.appName,
+          appType: app.appType,
+          status: app.status,
+          description: app.description,
+          createTime: app.createTime,
+          modifiedTime: app.modifiedTime,
+          regionId: app.regionId,
+          version: app.version,
+          ownerId: app.ownerId,
+          instanceId: app.instanceId,
+          chargeType: app.chargeType,
+          scenario: app.scenario,
+          network: app.network
             ? app.network.map((n) => ({
-                Type: n.type,
-                Enabled: n.enabled,
-                Domain: n.domain,
-                Port: n.port,
-                WhiteIpGroup: n.whiteIpGroup
+                type: n.type,
+                enabled: n.enabled,
+                domain: n.domain,
+                port: n.port,
+                whiteIpGroup: n.whiteIpGroup
                   ? n.whiteIpGroup.map((w) => ({
-                      GroupName: w.groupName,
-                      Ips: w.ips,
+                      groupName: w.groupName,
+                      ips: w.ips,
                     }))
                   : undefined,
               }))
             : undefined,
-          PrivateNetwork: app.privateNetwork
+          privateNetwork: app.privateNetwork
             ? app.privateNetwork.map((n) => ({
-                Type: n.type,
-                Enabled: n.enabled,
-                Domain: n.domain,
-                Port: n.port,
-                VpcId: n.vpcId,
-                PvlEndpointId: n.pvlEndpointId,
-                WhiteIpGroup: n.whiteIpGroup
+                type: n.type,
+                enabled: n.enabled,
+                domain: n.domain,
+                port: n.port,
+                vpcId: n.vpcId,
+                pvlEndpointId: n.pvlEndpointId,
+                whiteIpGroup: n.whiteIpGroup
                   ? n.whiteIpGroup.map((w) => ({
-                      GroupName: w.groupName,
-                      Ips: w.ips,
+                      groupName: w.groupName,
+                      ips: w.ips,
                     }))
                   : undefined,
               }))
             : undefined,
-          Tags: app.tags
+          tags: app.tags
             ? app.tags.map((t) => ({
-                Key: t.key,
-                Value: t.value,
+                key: t.key,
+                value: t.value,
               }))
             : undefined,
         };
       } catch (error) {
-        logger.error(`Failed to get ES app: ${error}`);
+        logger.error(lang.__('ES_APP_GET_FAILED', { error: String(error) }));
         return null;
       }
     },
 
     updateApp: async (appName: string, config: EsConfig): Promise<void> => {
       const params = new EsModels.UpdateAppRequest({
-        description: config.Description,
-        authentication: config.Authentication,
+        description: config.description,
+        authentication: config.authentication,
       });
 
       try {
         await esClient.updateApp(appName, params);
-        logger.info(`ES app updated: ${appName}`);
+        logger.info(lang.__('ES_APP_UPDATED', { appName }));
 
         // Wait for app to be ready
         await waitForEsAppReady(operations.getApp, appName);
       } catch (error) {
-        logger.error(`ES app update failed: ${error}`);
+        logger.error(lang.__('ES_APP_UPDATE_FAILED', { error: String(error) }));
         throw error;
       }
     },
@@ -248,7 +257,7 @@ export const createEsOperations = (esClient: EsServerlessClient, context: Contex
     deleteApp: async (appName: string): Promise<void> => {
       try {
         await esClient.deleteApp(appName);
-        logger.info(`ES app deletion initiated: ${appName}`);
+        logger.info(lang.__('ES_APP_DELETION_INITIATED', { appName }));
 
         // Wait for app to be deleted
         const maxAttempts = 60;
@@ -258,16 +267,16 @@ export const createEsOperations = (esClient: EsServerlessClient, context: Contex
           const app = await operations.getApp(appName);
 
           if (!app) {
-            logger.info(`ES app deleted: ${appName}`);
+            logger.info(lang.__('ES_APP_DELETED', { appName }));
             return;
           }
 
-          logger.info(`Waiting for ES app deletion: ${appName}`);
+          logger.info(lang.__('ES_APP_WAITING_DELETE', { appName }));
           await new Promise((resolve) => setTimeout(resolve, 10000));
           attempts++;
         }
 
-        throw new Error(`Timeout waiting for ES app deletion: ${appName}`);
+        throw new Error(lang.__('ES_APP_TIMEOUT_DELETE', { appName }));
       } catch (error) {
         // If app is not found, consider it deleted
         if (
@@ -276,10 +285,10 @@ export const createEsOperations = (esClient: EsServerlessClient, context: Contex
           'code' in error &&
           (error.code === 'AppNotFound' || error.code === 'NotFound')
         ) {
-          logger.info(`ES app already deleted: ${appName}`);
+          logger.info(lang.__('ES_APP_DELETED', { appName }));
           return;
         }
-        logger.error(`ES app deletion failed: ${error}`);
+        logger.error(lang.__('ES_APP_DELETE_FAILED', { error: String(error) }));
         throw error;
       }
     },

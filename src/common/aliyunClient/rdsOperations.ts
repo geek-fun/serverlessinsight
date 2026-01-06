@@ -1,60 +1,69 @@
 import RdsClient from '@alicloud/rds20140815';
 import { Context } from '../../types';
 import { logger } from '../logger';
+import { lang } from '../../lang';
+
+export enum RdsInstanceStatus {
+  RUNNING = 'Running',
+  CREATING = 'Creating',
+  DELETED = 'Deleted',
+  DELETE_FAILED = 'DeleteFailed',
+  RESTARTING = 'Restarting',
+}
 
 export type RdsConfig = {
-  DBInstanceDescription: string;
-  Engine: string;
-  EngineVersion: string;
-  DBInstanceClass: string;
-  DBInstanceStorage: number;
-  Category: string;
-  DBInstanceStorageType: string;
-  BurstingEnabled?: boolean;
-  ServerlessConfig?: {
-    MinCapacity: number;
-    MaxCapacity: number;
-    AutoPause: boolean;
-    SwitchForce: boolean;
+  dbInstanceDescription: string;
+  engine: string;
+  engineVersion: string;
+  dbInstanceClass: string;
+  dbInstanceStorage: number;
+  category: string;
+  dbInstanceStorageType: string;
+  burstingEnabled?: boolean;
+  serverlessConfig?: {
+    minCapacity: number;
+    maxCapacity: number;
+    autoPause: boolean;
+    switchForce: boolean;
   };
-  MasterUsername?: string;
-  MasterUserPassword?: string;
-  MasterUserType?: string;
-  MultiAZ?: boolean;
-  SecurityIPList?: string;
-  ConnectionStringType?: string;
-  DBInstanceNetType?: string;
-  VpcId?: string;
-  VSwitchId?: string;
-  ZoneId?: string;
+  masterUsername?: string;
+  masterUserPassword?: string;
+  masterUserType?: string;
+  multiAZ?: boolean;
+  securityIPList?: string;
+  connectionStringType?: string;
+  dbInstanceNetType?: string;
+  vpcId?: string;
+  vSwitchId?: string;
+  zoneId?: string;
 };
 
 export type RdsInfo = {
-  DBInstanceId?: string;
-  DBInstanceDescription?: string;
-  Engine?: string;
-  EngineVersion?: string;
-  DBInstanceClass?: string;
-  DBInstanceStorage?: number;
-  Category?: string;
-  DBInstanceStorageType?: string;
-  ServerlessConfig?: {
-    MinCapacity?: number;
-    MaxCapacity?: number;
-    AutoPause?: boolean;
-    SwitchForce?: boolean;
+  dbInstanceId?: string;
+  dbInstanceDescription?: string;
+  engine?: string;
+  engineVersion?: string;
+  dbInstanceClass?: string;
+  dbInstanceStorage?: number;
+  category?: string;
+  dbInstanceStorageType?: string;
+  serverlessConfig?: {
+    minCapacity?: number;
+    maxCapacity?: number;
+    autoPause?: boolean;
+    switchForce?: boolean;
   };
-  MasterUsername?: string;
-  VpcId?: string;
-  VSwitchId?: string;
-  ZoneId?: string;
-  ConnectionString?: string;
-  Port?: string;
-  DBInstanceStatus?: string;
-  CreateTime?: string;
-  RegionId?: string;
-  SecurityIPList?: string;
-  MultiAZ?: boolean;
+  masterUsername?: string;
+  vpcId?: string;
+  vSwitchId?: string;
+  zoneId?: string;
+  connectionString?: string;
+  port?: string;
+  dbInstanceStatus?: string;
+  createTime?: string;
+  regionId?: string;
+  securityIPList?: string;
+  multiAZ?: boolean;
 };
 
 const waitForRdsInstanceReady = async (
@@ -68,24 +77,32 @@ const waitForRdsInstanceReady = async (
     const instance = await getInstance(instanceId);
 
     if (!instance) {
-      throw new Error(`RDS instance not found: ${instanceId}`);
+      throw new Error(lang.__('RDS_INSTANCE_NOT_FOUND', { instanceId }));
     }
 
-    if (instance.DBInstanceStatus === 'Running') {
-      logger.info(`RDS instance ready: ${instanceId}`);
+    if (instance.dbInstanceStatus === RdsInstanceStatus.RUNNING) {
+      logger.info(lang.__('RDS_INSTANCE_READY', { instanceId }));
       return;
     }
 
-    if (instance.DBInstanceStatus === 'Deleted' || instance.DBInstanceStatus === 'DeleteFailed') {
-      throw new Error(`RDS instance in error state: ${instance.DBInstanceStatus}`);
+    if (
+      instance.dbInstanceStatus === RdsInstanceStatus.DELETED ||
+      instance.dbInstanceStatus === RdsInstanceStatus.DELETE_FAILED
+    ) {
+      throw new Error(lang.__('RDS_INSTANCE_ERROR_STATE', { status: instance.dbInstanceStatus }));
     }
 
-    logger.info(`Waiting for RDS instance ${instanceId}, status: ${instance.DBInstanceStatus}`);
+    logger.info(
+      lang.__('RDS_INSTANCE_WAITING', {
+        instanceId,
+        status: instance.dbInstanceStatus ?? 'unknown',
+      }),
+    );
     await new Promise((resolve) => setTimeout(resolve, 10000));
     attempts++;
   }
 
-  throw new Error(`Timeout waiting for RDS instance to be ready: ${instanceId}`);
+  throw new Error(lang.__('RDS_INSTANCE_TIMEOUT_READY', { instanceId }));
 };
 
 export const createRdsOperations = (rdsClient: RdsClient, context: Context) => {
@@ -93,39 +110,39 @@ export const createRdsOperations = (rdsClient: RdsClient, context: Context) => {
     createInstance: async (config: RdsConfig): Promise<string> => {
       const params = {
         RegionId: context.region,
-        Engine: config.Engine,
-        EngineVersion: config.EngineVersion,
-        DBInstanceClass: config.DBInstanceClass,
-        DBInstanceStorage: config.DBInstanceStorage,
-        Category: config.Category,
-        DBInstanceStorageType: config.DBInstanceStorageType,
-        DBInstanceDescription: config.DBInstanceDescription,
+        Engine: config.engine,
+        EngineVersion: config.engineVersion,
+        DBInstanceClass: config.dbInstanceClass,
+        DBInstanceStorage: config.dbInstanceStorage,
+        Category: config.category,
+        DBInstanceStorageType: config.dbInstanceStorageType,
+        DBInstanceDescription: config.dbInstanceDescription,
         PayType: 'Serverless',
-        SecurityIPList: config.SecurityIPList || '0.0.0.0/0',
-        VpcId: config.VpcId,
-        VSwitchId: config.VSwitchId,
-        ZoneId: config.ZoneId,
-        MasterUsername: config.MasterUsername,
-        MasterUserPassword: config.MasterUserPassword,
-        MasterUserType: config.MasterUserType || 'Super',
-        ServerlessConfig: config.ServerlessConfig
+        SecurityIPList: config.securityIPList || '0.0.0.0/0',
+        VpcId: config.vpcId,
+        VSwitchId: config.vSwitchId,
+        ZoneId: config.zoneId,
+        MasterUsername: config.masterUsername,
+        MasterUserPassword: config.masterUserPassword,
+        MasterUserType: config.masterUserType || 'Super',
+        ServerlessConfig: config.serverlessConfig
           ? {
-              MinCapacity: config.ServerlessConfig.MinCapacity,
-              MaxCapacity: config.ServerlessConfig.MaxCapacity,
-              AutoPause: config.ServerlessConfig.AutoPause,
-              SwitchForce: config.ServerlessConfig.SwitchForce,
+              MinCapacity: config.serverlessConfig.minCapacity,
+              MaxCapacity: config.serverlessConfig.maxCapacity,
+              AutoPause: config.serverlessConfig.autoPause,
+              SwitchForce: config.serverlessConfig.switchForce,
             }
           : undefined,
-        BurstingEnabled: config.BurstingEnabled,
+        BurstingEnabled: config.burstingEnabled,
       };
 
       try {
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const response = await rdsClient.createDBInstance(params as any);
-        logger.info('RDS instance creation initiated');
+        logger.info(lang.__('RDS_INSTANCE_CREATION_INITIATED'));
 
         if (!response.body?.DBInstanceId) {
-          throw new Error('No RDS instance ID returned');
+          throw new Error(lang.__('RDS_INSTANCE_NO_ID_RETURNED'));
         }
 
         const instanceId = response.body.DBInstanceId;
@@ -135,7 +152,7 @@ export const createRdsOperations = (rdsClient: RdsClient, context: Context) => {
 
         return instanceId;
       } catch (error) {
-        logger.error(`RDS instance creation failed: ${error}`);
+        logger.error(lang.__('RDS_INSTANCE_CREATION_FAILED', { error: String(error) }));
         throw error;
       }
     },
@@ -159,36 +176,36 @@ export const createRdsOperations = (rdsClient: RdsClient, context: Context) => {
         const instance = response.body.Items.DBInstanceAttribute[0];
 
         return {
-          DBInstanceId: instance.DBInstanceId,
-          DBInstanceDescription: instance.DBInstanceDescription,
-          Engine: instance.Engine,
-          EngineVersion: instance.EngineVersion,
-          DBInstanceClass: instance.DBInstanceClass,
-          DBInstanceStorage: instance.DBInstanceStorage,
-          Category: instance.Category,
-          DBInstanceStorageType: instance.DBInstanceStorageType,
-          ServerlessConfig: instance.ServerlessConfig
+          dbInstanceId: instance.DBInstanceId,
+          dbInstanceDescription: instance.DBInstanceDescription,
+          engine: instance.Engine,
+          engineVersion: instance.EngineVersion,
+          dbInstanceClass: instance.DBInstanceClass,
+          dbInstanceStorage: instance.DBInstanceStorage,
+          category: instance.Category,
+          dbInstanceStorageType: instance.DBInstanceStorageType,
+          serverlessConfig: instance.ServerlessConfig
             ? {
-                MinCapacity: instance.ServerlessConfig.MinCapacity,
-                MaxCapacity: instance.ServerlessConfig.MaxCapacity,
-                AutoPause: instance.ServerlessConfig.AutoPause,
-                SwitchForce: instance.ServerlessConfig.SwitchForce,
+                minCapacity: instance.ServerlessConfig.MinCapacity,
+                maxCapacity: instance.ServerlessConfig.MaxCapacity,
+                autoPause: instance.ServerlessConfig.AutoPause,
+                switchForce: instance.ServerlessConfig.SwitchForce,
               }
             : undefined,
-          MasterUsername: instance.MasterUsername,
-          VpcId: instance.VpcId,
-          VSwitchId: instance.VSwitchId,
-          ZoneId: instance.ZoneId,
-          ConnectionString: instance.ConnectionString,
-          Port: instance.Port,
-          DBInstanceStatus: instance.DBInstanceStatus,
-          CreateTime: instance.CreateTime,
-          RegionId: instance.RegionId,
-          SecurityIPList: instance.SecurityIPList,
-          MultiAZ: instance.MultiAZ === 'true',
+          masterUsername: instance.MasterUsername,
+          vpcId: instance.VpcId,
+          vSwitchId: instance.VSwitchId,
+          zoneId: instance.ZoneId,
+          connectionString: instance.ConnectionString,
+          port: instance.Port,
+          dbInstanceStatus: instance.DBInstanceStatus,
+          createTime: instance.CreateTime,
+          regionId: instance.RegionId,
+          securityIPList: instance.SecurityIPList,
+          multiAZ: instance.MultiAZ === 'true',
         };
       } catch (error) {
-        logger.error(`Failed to get RDS instance: ${error}`);
+        logger.error(lang.__('RDS_INSTANCE_GET_FAILED', { error: String(error) }));
         return null;
       }
     },
@@ -196,14 +213,14 @@ export const createRdsOperations = (rdsClient: RdsClient, context: Context) => {
     updateInstance: async (instanceId: string, config: RdsConfig): Promise<void> => {
       try {
         // Update serverless configuration
-        if (config.ServerlessConfig) {
+        if (config.serverlessConfig) {
           const serverlessParams = {
             DBInstanceId: instanceId,
             ServerlessConfig: {
-              MinCapacity: config.ServerlessConfig.MinCapacity,
-              MaxCapacity: config.ServerlessConfig.MaxCapacity,
-              AutoPause: config.ServerlessConfig.AutoPause,
-              SwitchForce: config.ServerlessConfig.SwitchForce,
+              MinCapacity: config.serverlessConfig.minCapacity,
+              MaxCapacity: config.serverlessConfig.maxCapacity,
+              AutoPause: config.serverlessConfig.autoPause,
+              SwitchForce: config.serverlessConfig.switchForce,
             },
           };
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -211,21 +228,21 @@ export const createRdsOperations = (rdsClient: RdsClient, context: Context) => {
         }
 
         // Update security IP list if provided
-        if (config.SecurityIPList) {
+        if (config.securityIPList) {
           const securityParams = {
             DBInstanceId: instanceId,
-            SecurityIPList: config.SecurityIPList,
+            SecurityIPList: config.securityIPList,
           };
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
           await rdsClient.modifySecurityIps(securityParams as any);
         }
 
-        logger.info(`RDS instance updated: ${instanceId}`);
+        logger.info(lang.__('RDS_INSTANCE_UPDATED', { instanceId }));
 
         // Wait for instance to be ready
         await waitForRdsInstanceReady(operations.getInstance, instanceId);
       } catch (error) {
-        logger.error(`RDS instance update failed: ${error}`);
+        logger.error(lang.__('RDS_INSTANCE_UPDATE_FAILED', { error: String(error) }));
         throw error;
       }
     },
@@ -238,7 +255,7 @@ export const createRdsOperations = (rdsClient: RdsClient, context: Context) => {
       try {
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         await rdsClient.deleteDBInstance(params as any);
-        logger.info(`RDS instance deletion initiated: ${instanceId}`);
+        logger.info(lang.__('RDS_INSTANCE_DELETION_INITIATED', { instanceId }));
 
         // Wait for instance to be deleted
         const maxAttempts = 60;
@@ -248,16 +265,16 @@ export const createRdsOperations = (rdsClient: RdsClient, context: Context) => {
           const instance = await operations.getInstance(instanceId);
 
           if (!instance) {
-            logger.info(`RDS instance deleted: ${instanceId}`);
+            logger.info(lang.__('RDS_INSTANCE_DELETED', { instanceId }));
             return;
           }
 
-          logger.info(`Waiting for RDS instance deletion: ${instanceId}`);
+          logger.info(lang.__('RDS_INSTANCE_WAITING_DELETE', { instanceId }));
           await new Promise((resolve) => setTimeout(resolve, 10000));
           attempts++;
         }
 
-        throw new Error(`Timeout waiting for RDS instance deletion: ${instanceId}`);
+        throw new Error(lang.__('RDS_INSTANCE_TIMEOUT_DELETE', { instanceId }));
       } catch (error) {
         // If instance is not found, consider it deleted
         if (
@@ -266,10 +283,10 @@ export const createRdsOperations = (rdsClient: RdsClient, context: Context) => {
           'code' in error &&
           error.code === 'InvalidDBInstanceId.NotFound'
         ) {
-          logger.info(`RDS instance already deleted: ${instanceId}`);
+          logger.info(lang.__('RDS_INSTANCE_DELETED', { instanceId }));
           return;
         }
-        logger.error(`RDS instance deletion failed: ${error}`);
+        logger.error(lang.__('RDS_INSTANCE_DELETE_FAILED', { error: String(error) }));
         throw error;
       }
     },

@@ -38,35 +38,35 @@ export const databaseToEsConfig = (database: DatabaseDomain): EsConfig => {
   const { version, category } = engineConfig;
 
   const config: EsConfig = {
-    AppName: database.name,
-    AppVersion: version,
-    Authentication: {
-      BasicAuth: [
+    appName: database.name,
+    appVersion: version,
+    authentication: {
+      basicAuth: [
         {
-          Password: database.security.basicAuth.password,
-          Username: database.security.basicAuth.username || 'elastic',
+          password: database.security.basicAuth.password,
+          username: database.security.basicAuth.username || 'elastic',
         },
       ],
     },
-    QuotaInfo: {
-      AppType: category,
-      Cu: database.cu.min,
-      Storage: database.storage.min,
+    quotaInfo: {
+      appType: category,
+      cu: database.cu.min,
+      storage: database.storage.min,
     },
-    Description: `Elasticsearch serverless app: ${database.name}`,
-    ChargeType: 'POSTPAY',
+    description: `Elasticsearch serverless app: ${database.name}`,
+    chargeType: 'POSTPAY',
   };
 
   // Add network configuration for public access
   if (database.network.type === 'PUBLIC' && database.network.ingressRules.length > 0) {
-    config.Network = [
+    config.network = [
       {
-        Type: 'PUBLIC_ES',
-        Enabled: true,
-        WhiteIpGroup: [
+        type: 'PUBLIC_ES',
+        enabled: true,
+        whiteIpGroup: [
           {
-            GroupName: 'default',
-            Ips: database.network.ingressRules,
+            groupName: 'default',
+            ips: database.network.ingressRules,
           },
         ],
       },
@@ -75,17 +75,17 @@ export const databaseToEsConfig = (database: DatabaseDomain): EsConfig => {
 
   // Add private network configuration
   if (database.network.type === 'PRIVATE' && database.network.vpcId) {
-    config.PrivateNetwork = [
+    config.privateNetwork = [
       {
-        Type: 'PRIVATE_ES',
-        Enabled: true,
-        VpcId: database.network.vpcId,
-        WhiteIpGroup:
+        type: 'PRIVATE_ES',
+        enabled: true,
+        vpcId: database.network.vpcId,
+        whiteIpGroup:
           database.network.ingressRules.length > 0
             ? [
                 {
-                  GroupName: 'default',
-                  Ips: database.network.ingressRules,
+                  groupName: 'default',
+                  ips: database.network.ingressRules,
                 },
               ]
             : undefined,
@@ -98,57 +98,57 @@ export const databaseToEsConfig = (database: DatabaseDomain): EsConfig => {
 
 export const extractEsDefinition = (config: EsConfig): ResourceAttributes => {
   return {
-    appName: config.AppName,
-    appVersion: config.AppVersion,
-    authentication: config.Authentication
+    appName: config.appName,
+    appVersion: config.appVersion,
+    authentication: config.authentication
       ? {
-          basicAuth: config.Authentication.BasicAuth?.map(() => ({
+          basicAuth: config.authentication.basicAuth?.map(() => ({
             password: '***',
             username: '***',
           })),
         }
       : null,
-    quotaInfo: config.QuotaInfo
+    quotaInfo: config.quotaInfo
       ? {
-          appType: config.QuotaInfo.AppType ?? null,
-          cu: config.QuotaInfo.Cu ?? null,
-          storage: config.QuotaInfo.Storage ?? null,
+          appType: config.quotaInfo.appType ?? null,
+          cu: config.quotaInfo.cu ?? null,
+          storage: config.quotaInfo.storage ?? null,
         }
       : null,
-    description: config.Description ?? null,
-    chargeType: config.ChargeType ?? null,
-    network: config.Network
-      ? config.Network.map((n) => ({
-          type: n.Type ?? null,
-          enabled: n.Enabled ?? null,
-          domain: n.Domain ?? null,
-          port: n.Port ?? null,
-          whiteIpGroup: n.WhiteIpGroup
-            ? n.WhiteIpGroup.map((w) => ({
-                groupName: w.GroupName ?? null,
-                ips: w.Ips ?? [],
+    description: config.description ?? null,
+    chargeType: config.chargeType ?? null,
+    network: config.network
+      ? config.network.map((n) => ({
+          type: n.type ?? null,
+          enabled: n.enabled ?? null,
+          domain: n.domain ?? null,
+          port: n.port ?? null,
+          whiteIpGroup: n.whiteIpGroup
+            ? n.whiteIpGroup.map((w) => ({
+                groupName: w.groupName ?? null,
+                ips: w.ips ?? [],
               }))
             : null,
         }))
       : null,
-    privateNetwork: config.PrivateNetwork
-      ? config.PrivateNetwork.map((n) => ({
-          type: n.Type ?? null,
-          enabled: n.Enabled ?? null,
-          vpcId: n.VpcId ?? null,
-          pvlEndpointId: n.PvlEndpointId ?? null,
-          whiteIpGroup: n.WhiteIpGroup
-            ? n.WhiteIpGroup.map((w) => ({
-                groupName: w.GroupName ?? null,
-                ips: w.Ips ?? [],
+    privateNetwork: config.privateNetwork
+      ? config.privateNetwork.map((n) => ({
+          type: n.type ?? null,
+          enabled: n.enabled ?? null,
+          vpcId: n.vpcId ?? null,
+          pvlEndpointId: n.pvlEndpointId ?? null,
+          whiteIpGroup: n.whiteIpGroup
+            ? n.whiteIpGroup.map((w) => ({
+                groupName: w.groupName ?? null,
+                ips: w.ips ?? [],
               }))
             : null,
         }))
       : null,
-    tags: config.Tags
-      ? config.Tags.map((t) => ({
-          key: t.Key ?? null,
-          value: t.Value ?? null,
+    tags: config.tags
+      ? config.tags.map((t) => ({
+          key: t.key ?? null,
+          value: t.value ?? null,
         }))
       : null,
   };

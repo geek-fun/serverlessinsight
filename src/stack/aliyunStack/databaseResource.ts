@@ -7,88 +7,88 @@ import { setResource, removeResource } from '../../common/stateManager';
 const buildRdsInstanceFromProvider = (info: RdsInfo, arn: string) => {
   return {
     arn,
-    id: info.DBInstanceId ?? '',
-    dbInstanceId: info.DBInstanceId ?? null,
-    dbInstanceDescription: info.DBInstanceDescription ?? null,
-    engine: info.Engine ?? null,
-    engineVersion: info.EngineVersion ?? null,
-    dbInstanceClass: info.DBInstanceClass ?? null,
-    dbInstanceStorage: info.DBInstanceStorage ?? null,
-    category: info.Category ?? null,
-    dbInstanceStorageType: info.DBInstanceStorageType ?? null,
-    serverlessConfig: info.ServerlessConfig
+    id: info.dbInstanceId ?? '',
+    dbInstanceId: info.dbInstanceId ?? null,
+    dbInstanceDescription: info.dbInstanceDescription ?? null,
+    engine: info.engine ?? null,
+    engineVersion: info.engineVersion ?? null,
+    dbInstanceClass: info.dbInstanceClass ?? null,
+    dbInstanceStorage: info.dbInstanceStorage ?? null,
+    category: info.category ?? null,
+    dbInstanceStorageType: info.dbInstanceStorageType ?? null,
+    serverlessConfig: info.serverlessConfig
       ? {
-          minCapacity: info.ServerlessConfig.MinCapacity ?? null,
-          maxCapacity: info.ServerlessConfig.MaxCapacity ?? null,
-          autoPause: info.ServerlessConfig.AutoPause ?? null,
-          switchForce: info.ServerlessConfig.SwitchForce ?? null,
+          minCapacity: info.serverlessConfig.minCapacity ?? null,
+          maxCapacity: info.serverlessConfig.maxCapacity ?? null,
+          autoPause: info.serverlessConfig.autoPause ?? null,
+          switchForce: info.serverlessConfig.switchForce ?? null,
         }
       : {},
-    masterUsername: info.MasterUsername ?? null,
-    vpcId: info.VpcId ?? null,
-    vSwitchId: info.VSwitchId ?? null,
-    zoneId: info.ZoneId ?? null,
-    connectionString: info.ConnectionString ?? null,
-    port: info.Port ?? null,
-    dbInstanceStatus: info.DBInstanceStatus ?? null,
-    createTime: info.CreateTime ?? null,
-    regionId: info.RegionId ?? null,
-    securityIPList: info.SecurityIPList ?? null,
-    multiAZ: info.MultiAZ ?? null,
+    masterUsername: info.masterUsername ?? null,
+    vpcId: info.vpcId ?? null,
+    vSwitchId: info.vSwitchId ?? null,
+    zoneId: info.zoneId ?? null,
+    connectionString: info.connectionString ?? null,
+    port: info.port ?? null,
+    dbInstanceStatus: info.dbInstanceStatus ?? null,
+    createTime: info.createTime ?? null,
+    regionId: info.regionId ?? null,
+    securityIPList: info.securityIPList ?? null,
+    multiAZ: info.multiAZ ?? null,
   };
 };
 
 const buildEsInstanceFromProvider = (info: EsInfo, arn: string) => {
   return {
     arn,
-    id: info.AppId ?? '',
-    appId: info.AppId ?? null,
-    appName: info.AppName ?? null,
-    appType: info.AppType ?? null,
-    status: info.Status ?? null,
-    description: info.Description ?? null,
-    createTime: info.CreateTime ?? null,
-    modifiedTime: info.ModifiedTime ?? null,
-    regionId: info.RegionId ?? null,
-    version: info.Version ?? null,
-    ownerId: info.OwnerId ?? null,
-    instanceId: info.InstanceId ?? null,
-    chargeType: info.ChargeType ?? null,
-    scenario: info.Scenario ?? null,
-    network: info.Network
-      ? info.Network.map((n) => ({
-          type: n.Type ?? null,
-          enabled: n.Enabled ?? null,
-          domain: n.Domain ?? null,
-          port: n.Port ?? null,
-          whiteIpGroup: n.WhiteIpGroup
-            ? n.WhiteIpGroup.map((w) => ({
-                groupName: w.GroupName ?? null,
-                ips: w.Ips ?? [],
+    id: info.appId ?? '',
+    appId: info.appId ?? null,
+    appName: info.appName ?? null,
+    appType: info.appType ?? null,
+    status: info.status ?? null,
+    description: info.description ?? null,
+    createTime: info.createTime ?? null,
+    modifiedTime: info.modifiedTime ?? null,
+    regionId: info.regionId ?? null,
+    version: info.version ?? null,
+    ownerId: info.ownerId ?? null,
+    instanceId: info.instanceId ?? null,
+    chargeType: info.chargeType ?? null,
+    scenario: info.scenario ?? null,
+    network: info.network
+      ? info.network.map((n) => ({
+          type: n.type ?? null,
+          enabled: n.enabled ?? null,
+          domain: n.domain ?? null,
+          port: n.port ?? null,
+          whiteIpGroup: n.whiteIpGroup
+            ? n.whiteIpGroup.map((w) => ({
+                groupName: w.groupName ?? null,
+                ips: w.ips ?? [],
               }))
             : [],
         }))
       : [],
-    privateNetwork: info.PrivateNetwork
-      ? info.PrivateNetwork.map((n) => ({
-          type: n.Type ?? null,
-          enabled: n.Enabled ?? null,
-          domain: n.Domain ?? null,
-          port: n.Port ?? null,
-          vpcId: n.VpcId ?? null,
-          pvlEndpointId: n.PvlEndpointId ?? null,
-          whiteIpGroup: n.WhiteIpGroup
-            ? n.WhiteIpGroup.map((w) => ({
-                groupName: w.GroupName ?? null,
-                ips: w.Ips ?? [],
+    privateNetwork: info.privateNetwork
+      ? info.privateNetwork.map((n) => ({
+          type: n.type ?? null,
+          enabled: n.enabled ?? null,
+          domain: n.domain ?? null,
+          port: n.port ?? null,
+          vpcId: n.vpcId ?? null,
+          pvlEndpointId: n.pvlEndpointId ?? null,
+          whiteIpGroup: n.whiteIpGroup
+            ? n.whiteIpGroup.map((w) => ({
+                groupName: w.groupName ?? null,
+                ips: w.ips ?? [],
               }))
             : [],
         }))
       : [],
-    tags: info.Tags
-      ? info.Tags.map((t) => ({
-          key: t.Key ?? null,
-          value: t.Value ?? null,
+    tags: info.tags
+      ? info.tags.map((t) => ({
+          key: t.key ?? null,
+          value: t.value ?? null,
         }))
       : [],
   };
