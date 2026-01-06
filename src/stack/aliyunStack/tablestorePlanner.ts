@@ -61,12 +61,14 @@ export const generateTablePlan = async (
         const definitionChanged = !attributesEqual(currentDefinition, desiredDefinition);
 
         if (definitionChanged) {
-          // Check if primary keys changed (not allowed in TableStore)
+          // Check if primary keys changed (not updatable in TableStore)
           const currentPrimaryKey = JSON.stringify(currentDefinition.primaryKey || []);
           const desiredPrimaryKey = JSON.stringify(desiredDefinition.primaryKey || []);
 
           if (currentPrimaryKey !== desiredPrimaryKey) {
-            // Primary key change requires recreation
+            // Primary key changes require table recreation (delete + create)
+            // For now, we plan it as an update action with drift detection
+            // The user should manually recreate the table if primary keys need to change
             return {
               logicalId,
               action: 'update',
@@ -76,6 +78,7 @@ export const generateTablePlan = async (
             };
           }
 
+          // Only throughput and table options changes can be applied via update
           return {
             logicalId,
             action: 'update',

@@ -139,9 +139,10 @@ export const updateTableResource = async (
   const tablestoreClient = client.tablestore(config.instanceName);
 
   // Update table (only reserved throughput and table options can be updated)
+  // Note: Primary keys cannot be changed in TableStore
   await tablestoreClient.updateTable({
     tableName: config.tableName,
-    primaryKey: config.primaryKey,
+    primaryKey: config.primaryKey, // Required by SDK but not used for updates
     reservedThroughput: config.reservedThroughput,
     tableOptions: config.tableOptions,
   });

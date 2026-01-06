@@ -68,13 +68,14 @@ describe('TableStoreTypes', () => {
       expect(result.primaryKey).toEqual([{ name: 'id', type: 'STRING' }]);
     });
 
-    it('should map attribute types correctly', () => {
+    it('should map attribute types correctly for primary keys', () => {
       const testCases = [
         { attributeType: AttributeTypeEnum.INTEGER, expected: 'INTEGER' },
         { attributeType: AttributeTypeEnum.STRING, expected: 'STRING' },
         { attributeType: AttributeTypeEnum.BINARY, expected: 'BINARY' },
-        { attributeType: AttributeTypeEnum.DOUBLE, expected: 'STRING' }, // Not supported as primary key
-        { attributeType: AttributeTypeEnum.BOOLEAN, expected: 'STRING' }, // Not supported as primary key
+        // DOUBLE and BOOLEAN are not supported as primary keys, fallback to STRING
+        { attributeType: AttributeTypeEnum.DOUBLE, expected: 'STRING' },
+        { attributeType: AttributeTypeEnum.BOOLEAN, expected: 'STRING' },
       ];
 
       testCases.forEach(({ attributeType, expected }) => {
