@@ -51,7 +51,7 @@
   "dependencies": {
     "@alicloud/cloudapi20160714": "^4.7.8",
     "@alicloud/ecs20140526": "^7.4.2",
-    "@alicloud/elasticsearch20170613": "^3.1.0",
+    "@alicloud/es-serverless20230627": "^2.2.0",
     "@alicloud/fc20230330": "^4.6.6",
     "@alicloud/ims20190815": "^2.3.2",
     "@alicloud/nas20170626": "^3.1.4",

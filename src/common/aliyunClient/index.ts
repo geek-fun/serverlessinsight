@@ -5,7 +5,7 @@ import EcsClient from '@alicloud/ecs20140526';
 import NasClient from '@alicloud/nas20170626';
 import CloudApiClient from '@alicloud/cloudapi20160714';
 import RdsClient from '@alicloud/rds20140815';
-import EsClient from '@alicloud/elasticsearch20170613';
+import EsServerlessClient from '@alicloud/es-serverless20230627';
 import * as $OpenApi from '@alicloud/openapi-client';
 import OSS from 'ali-oss';
 import { Context } from '../../types';
@@ -69,8 +69,8 @@ const initializeSdkClients = (context: Context) => {
   const rdsClient = new RdsClient(rdsConfig);
 
   const esConfig = new $OpenApi.Config(baseConfig);
-  esConfig.endpoint = `elasticsearch.${context.region}.aliyuncs.com`;
-  const esClient = new EsClient(esConfig);
+  esConfig.endpoint = `elasticsearch-serverless.${context.region}.aliyuncs.com`;
+  const esClient = new EsServerlessClient(esConfig);
 
   return {
     fc3: fc3Client,

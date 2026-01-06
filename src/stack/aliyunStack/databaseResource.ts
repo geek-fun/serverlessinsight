@@ -44,29 +44,51 @@ const buildEsInstanceFromProvider = (info: EsInfo, arn: string) => {
     id: info.AppId ?? '',
     appId: info.AppId ?? null,
     appName: info.AppName ?? null,
-    appVersion: info.AppVersion ?? null,
+    appType: info.AppType ?? null,
     status: info.Status ?? null,
     description: info.Description ?? null,
     createTime: info.CreateTime ?? null,
     modifiedTime: info.ModifiedTime ?? null,
     regionId: info.RegionId ?? null,
-    quotaInfo: info.QuotaInfo
-      ? {
-          appType: info.QuotaInfo.AppType ?? null,
-          minCu: info.QuotaInfo.MinCu ?? null,
-        }
-      : {},
+    version: info.Version ?? null,
+    ownerId: info.OwnerId ?? null,
+    instanceId: info.InstanceId ?? null,
+    chargeType: info.ChargeType ?? null,
+    scenario: info.Scenario ?? null,
     network: info.Network
       ? info.Network.map((n) => ({
           type: n.Type ?? null,
           enabled: n.Enabled ?? null,
+          domain: n.Domain ?? null,
+          port: n.Port ?? null,
           whiteIpGroup: n.WhiteIpGroup
             ? n.WhiteIpGroup.map((w) => ({
                 groupName: w.GroupName ?? null,
                 ips: w.Ips ?? [],
               }))
             : [],
-          endpoint: n.Endpoint ?? null,
+        }))
+      : [],
+    privateNetwork: info.PrivateNetwork
+      ? info.PrivateNetwork.map((n) => ({
+          type: n.Type ?? null,
+          enabled: n.Enabled ?? null,
+          domain: n.Domain ?? null,
+          port: n.Port ?? null,
+          vpcId: n.VpcId ?? null,
+          pvlEndpointId: n.PvlEndpointId ?? null,
+          whiteIpGroup: n.WhiteIpGroup
+            ? n.WhiteIpGroup.map((w) => ({
+                groupName: w.GroupName ?? null,
+                ips: w.Ips ?? [],
+              }))
+            : [],
+        }))
+      : [],
+    tags: info.Tags
+      ? info.Tags.map((t) => ({
+          key: t.Key ?? null,
+          value: t.Value ?? null,
         }))
       : [],
   };

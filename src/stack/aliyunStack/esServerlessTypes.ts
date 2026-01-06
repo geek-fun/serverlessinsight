@@ -44,29 +44,22 @@ export const databaseToEsConfig = (database: DatabaseDomain): EsConfig => {
       BasicAuth: [
         {
           Password: database.security.basicAuth.password,
+          Username: database.security.basicAuth.username || 'elastic',
         },
       ],
     },
     QuotaInfo: {
       AppType: category,
-      MinCu: database.cu.min,
+      Cu: database.cu.min,
+      Storage: database.storage.min,
     },
     Description: `Elasticsearch serverless app: ${database.name}`,
+    ChargeType: 'POSTPAY',
   };
 
-  // Add network configuration if public access is configured
+  // Add network configuration for public access
   if (database.network.type === 'PUBLIC' && database.network.ingressRules.length > 0) {
     config.Network = [
-      {
-        Type: 'PUBLIC_KIBANA',
-        Enabled: true,
-        WhiteIpGroup: [
-          {
-            GroupName: 'default',
-            Ips: database.network.ingressRules,
-          },
-        ],
-      },
       {
         Type: 'PUBLIC_ES',
         Enabled: true,
@@ -76,6 +69,26 @@ export const databaseToEsConfig = (database: DatabaseDomain): EsConfig => {
             Ips: database.network.ingressRules,
           },
         ],
+      },
+    ];
+  }
+
+  // Add private network configuration
+  if (database.network.type === 'PRIVATE' && database.network.vpcId) {
+    config.PrivateNetwork = [
+      {
+        Type: 'PRIVATE_ES',
+        Enabled: true,
+        VpcId: database.network.vpcId,
+        WhiteIpGroup:
+          database.network.ingressRules.length > 0
+            ? [
+                {
+                  GroupName: 'default',
+                  Ips: database.network.ingressRules,
+                },
+              ]
+            : undefined,
       },
     ];
   }
@@ -91,26 +104,51 @@ export const extractEsDefinition = (config: EsConfig): ResourceAttributes => {
       ? {
           basicAuth: config.Authentication.BasicAuth?.map(() => ({
             password: '***',
+            username: '***',
           })),
         }
       : null,
     quotaInfo: config.QuotaInfo
       ? {
-          appType: config.QuotaInfo.AppType,
-          minCu: config.QuotaInfo.MinCu,
+          appType: config.QuotaInfo.AppType ?? null,
+          cu: config.QuotaInfo.Cu ?? null,
+          storage: config.QuotaInfo.Storage ?? null,
         }
       : null,
     description: config.Description ?? null,
+    chargeType: config.ChargeType ?? null,
     network: config.Network
       ? config.Network.map((n) => ({
-          type: n.Type,
-          enabled: n.Enabled,
+          type: n.Type ?? null,
+          enabled: n.Enabled ?? null,
+          domain: n.Domain ?? null,
+          port: n.Port ?? null,
           whiteIpGroup: n.WhiteIpGroup
             ? n.WhiteIpGroup.map((w) => ({
-                groupName: w.GroupName,
-                ips: w.Ips,
+                groupName: w.GroupName ?? null,
+                ips: w.Ips ?? [],
               }))
             : null,
+        }))
+      : null,
+    privateNetwork: config.PrivateNetwork
+      ? config.PrivateNetwork.map((n) => ({
+          type: n.Type ?? null,
+          enabled: n.Enabled ?? null,
+          vpcId: n.VpcId ?? null,
+          pvlEndpointId: n.PvlEndpointId ?? null,
+          whiteIpGroup: n.WhiteIpGroup
+            ? n.WhiteIpGroup.map((w) => ({
+                groupName: w.GroupName ?? null,
+                ips: w.Ips ?? [],
+              }))
+            : null,
+        }))
+      : null,
+    tags: config.Tags
+      ? config.Tags.map((t) => ({
+          key: t.Key ?? null,
+          value: t.Value ?? null,
         }))
       : null,
   };
