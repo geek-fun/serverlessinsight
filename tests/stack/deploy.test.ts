@@ -7,6 +7,12 @@ import fs from 'node:fs';
 const mockedGetContext = jest.fn();
 const mockedGenerateFunctionPlan = jest.fn();
 const mockedExecuteFunctionPlan = jest.fn();
+const mockedGenerateBucketPlan = jest.fn();
+const mockedExecuteBucketPlan = jest.fn();
+const mockedGenerateDatabasePlan = jest.fn();
+const mockedExecuteDatabasePlan = jest.fn();
+const mockedGenerateTablePlan = jest.fn();
+const mockedExecuteTablePlan = jest.fn();
 const mockedLoadState = jest.fn();
 const mockedSaveState = jest.fn();
 
@@ -26,6 +32,12 @@ jest.mock('../../src/common', () => ({
 jest.mock('../../src/stack/aliyunStack', () => ({
   generateFunctionPlan: (...args: unknown[]) => mockedGenerateFunctionPlan(...args),
   executeFunctionPlan: (...args: unknown[]) => mockedExecuteFunctionPlan(...args),
+  generateBucketPlan: (...args: unknown[]) => mockedGenerateBucketPlan(...args),
+  executeBucketPlan: (...args: unknown[]) => mockedExecuteBucketPlan(...args),
+  generateDatabasePlan: (...args: unknown[]) => mockedGenerateDatabasePlan(...args),
+  executeDatabasePlan: (...args: unknown[]) => mockedExecuteDatabasePlan(...args),
+  generateTablePlan: (...args: unknown[]) => mockedGenerateTablePlan(...args),
+  executeTablePlan: (...args: unknown[]) => mockedExecuteTablePlan(...args),
 }));
 
 const createMockContext = (
@@ -63,6 +75,12 @@ describe('Unit tests for Aliyun stack deployment', () => {
     mockedLoadState.mockReturnValue(initialState);
     mockedExecuteFunctionPlan.mockResolvedValue(initialState);
     mockedGenerateFunctionPlan.mockResolvedValue({ items: [] });
+    mockedGenerateBucketPlan.mockResolvedValue({ items: [] });
+    mockedExecuteBucketPlan.mockResolvedValue(initialState);
+    mockedGenerateDatabasePlan.mockResolvedValue({ items: [] });
+    mockedExecuteDatabasePlan.mockResolvedValue(initialState);
+    mockedGenerateTablePlan.mockResolvedValue({ items: [] });
+    mockedExecuteTablePlan.mockResolvedValue(initialState);
     jest.clearAllMocks();
   });
 
@@ -128,6 +146,9 @@ describe('Unit tests for Aliyun stack deployment', () => {
       },
     };
     mockedExecuteFunctionPlan.mockResolvedValue(newState);
+    mockedExecuteBucketPlan.mockResolvedValue(newState);
+    mockedExecuteDatabasePlan.mockResolvedValue(newState);
+    mockedExecuteTablePlan.mockResolvedValue(newState);
 
     await deployStack(stackName, oneFcIac);
 
