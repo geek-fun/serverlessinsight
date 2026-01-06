@@ -48,7 +48,7 @@ jest.mock('../../src/common/context', () => ({
 describe('Unit test for rosClient', () => {
   beforeAll(() => {
     // Set locale to English for consistent test messages
-    lang.setLocale('en');
+    lang.setLocale('en-US');
   });
 
   beforeEach(() => {
@@ -62,12 +62,16 @@ describe('Unit test for rosClient', () => {
       mockedGetStore.mockReturnValue({ stackName });
       mockedListStacks.mockResolvedValue({ statusCode: 200, body: { stacks: [] } });
       mockedCreateStack.mockResolvedValue({ body: { stackId: 'newStackId' } });
-      mockedGetStack.mockResolvedValue({ body: { status: 'CREATE_COMPLETE' } });
+      mockedGetStack.mockResolvedValue({
+        body: { status: 'CREATE_COMPLETE', stackName: 'newStack', stackId: 'newStackId' },
+      });
 
       await rosStackDeploy(stackName, {});
 
       expect(mockedCreateStack).toHaveBeenCalled();
-      expect(mockedLoggerInfo).toHaveBeenCalledWith(expect.stringContaining('createStack success'));
+      expect(mockedLoggerInfo).toHaveBeenCalledWith(
+        lang.__('CREATE_STACK_SUCCESS', { stackName: 'newStack', stackId: 'newStackId' }),
+      );
     });
 
     it('should update an existing stack if it exists', async () => {
@@ -78,12 +82,16 @@ describe('Unit test for rosClient', () => {
         body: { stacks: [{ stackId: 'existingStackId', Status: 'CREATE_COMPLETE' }] },
       });
       mockedUpdateStack.mockResolvedValue({ body: { stackId: 'existingStackId' } });
-      mockedGetStack.mockResolvedValue({ body: { status: 'UPDATE_COMPLETE' } });
+      mockedGetStack.mockResolvedValue({
+        body: { status: 'UPDATE_COMPLETE', stackName: 'existingStack', stackId: 'existingStackId' },
+      });
 
       await rosStackDeploy(stackName, {});
 
       expect(mockedUpdateStack).toHaveBeenCalled();
-      expect(mockedLoggerInfo).toHaveBeenCalledWith(expect.stringContaining('stackUpdate success'));
+      expect(mockedLoggerInfo).toHaveBeenCalledWith(
+        lang.__('STACK_UPDATE_SUCCESS', { stackName: 'existingStack', stackId: 'existingStackId' }),
+      );
     });
 
     it('should throw an error if the stack is in progress', async () => {
@@ -142,15 +150,21 @@ describe('Unit test for rosClient', () => {
 
       await rosStackDelete(context);
 
-      expect(mockedLoggerInfo).toHaveBeenCalledWith('stack status: DELETE_COMPLETE');
-      expect(mockedLoggerInfo).toHaveBeenCalledWith('Stack: testStack deleted!🗑 ');
+      expect(mockedLoggerInfo).toHaveBeenCalledWith(
+        lang.__('STACK_STATUS', { status: 'DELETE_COMPLETE' }),
+      );
+      expect(mockedLoggerInfo).toHaveBeenCalledWith(
+        lang.__('STACK_DELETED', { stackName: 'testStack' }),
+      );
     });
 
     it('should throw an error when the stack does not exist', async () => {
       mockedListStacks.mockResolvedValue({ statusCode: 404, body: { stacks: [] } });
       await rosStackDelete(context);
 
-      expect(mockedLoggerWarn).toHaveBeenCalledWith('Stack: testStack not exists, skipped! 🚫');
+      expect(mockedLoggerWarn).toHaveBeenCalledWith(
+        lang.__('STACK_NOT_EXISTS_SKIPPED', { stackName: 'testStack' }),
+      );
     });
 
     it('should throw error when delete stack failed', async () => {
@@ -164,7 +178,10 @@ describe('Unit test for rosClient', () => {
         JSON.stringify({ statusCode: 400, Message: 'DELETE_FAILED' }),
       );
       expect(mockedLoggerError).toHaveBeenCalledWith(
-        expect.stringContaining('Stack: testStack delete failed! ❌'),
+        lang.__('STACK_DELETE_FAILED', {
+          stackName: 'testStack',
+          error: JSON.stringify({ data: { statusCode: 400, Message: 'DELETE_FAILED' } }),
+        }),
       );
     });
   });

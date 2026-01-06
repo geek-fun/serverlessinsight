@@ -14,7 +14,7 @@ const location = 'tests/fixtures/artifacts/artifact.zip';
 describe('Unit test for iacHelper', () => {
   beforeAll(() => {
     // Set locale to English for consistent test messages
-    lang.setLocale('en');
+    lang.setLocale('en-US');
   });
 
   beforeEach(() => {
@@ -158,7 +158,7 @@ describe('Unit test for iacHelper', () => {
 
       expect(value).toEqual('');
       expect(warnSpy).toHaveBeenCalledWith(
-        "Variable 'nonExistentVar' not found in vars or parameters, using empty string",
+        lang.__('VARIABLE_NOT_FOUND', { key: 'nonExistentVar' }),
       );
       warnSpy.mockRestore();
     });
@@ -169,7 +169,7 @@ describe('Unit test for iacHelper', () => {
 
       expect(value).toEqual('');
       expect(warnSpy).toHaveBeenCalledWith(
-        "Stage variable 'nonExistentStage' not found in stage 'test', using empty string",
+        lang.__('STAGE_VARIABLE_NOT_FOUND', { key: 'nonExistentStage', stage: 'test' }),
       );
       warnSpy.mockRestore();
     });
@@ -188,12 +188,8 @@ describe('Unit test for iacHelper', () => {
 
       expect(value).toEqual('--exists');
       expect(warnSpy).toHaveBeenCalledTimes(2);
-      expect(warnSpy).toHaveBeenCalledWith(
-        "Variable 'missing1' not found in vars or parameters, using empty string",
-      );
-      expect(warnSpy).toHaveBeenCalledWith(
-        "Variable 'missing2' not found in vars or parameters, using empty string",
-      );
+      expect(warnSpy).toHaveBeenCalledWith(lang.__('VARIABLE_NOT_FOUND', { key: 'missing1' }));
+      expect(warnSpy).toHaveBeenCalledWith(lang.__('VARIABLE_NOT_FOUND', { key: 'missing2' }));
       warnSpy.mockRestore();
     });
   });

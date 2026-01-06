@@ -3,7 +3,7 @@ import { lang } from '../../src/lang';
 describe('i18n Language Support', () => {
   describe('Translation Keys', () => {
     it('should have English translations', () => {
-      lang.setLocale('en');
+      lang.setLocale('en-US');
       expect(lang.__('YAML_VALID')).toBe('Yaml is valid! 🎉');
       expect(lang.__('VALIDATING_YAML')).toBe('Validating yaml...');
       expect(lang.__('DEPLOYING_STACK')).toBe('Deploying stack...');
@@ -19,7 +19,7 @@ describe('i18n Language Support', () => {
     });
 
     it('should support parameterized translations in English', () => {
-      lang.setLocale('en');
+      lang.setLocale('en-US');
       const result = lang.__('CREATING_STACK_ID', { stackId: 'stack-123' });
       expect(result).toBe('Creating, Stack ID: stack-123');
     });
@@ -31,7 +31,7 @@ describe('i18n Language Support', () => {
     });
 
     it('should translate error messages in English', () => {
-      lang.setLocale('en');
+      lang.setLocale('en-US');
       const result = lang.__('FUNCTION_EXECUTION_ERROR', { error: 'Test error' });
       expect(result).toBe('Function execution error: Test error');
     });
@@ -43,7 +43,7 @@ describe('i18n Language Support', () => {
     });
 
     it('should translate complex parameterized messages in English', () => {
-      lang.setLocale('en');
+      lang.setLocale('en-US');
       const result = lang.__('DESTROYING_STACK', {
         stackName: 'my-stack',
         provider: 'aliyun',
@@ -65,8 +65,8 @@ describe('i18n Language Support', () => {
 
   describe('Locale Support', () => {
     it('should support English locale', () => {
-      lang.setLocale('en');
-      expect(lang.getLocale()).toBe('en');
+      lang.setLocale('en-US');
+      expect(lang.getLocale()).toBe('en-US');
     });
 
     it('should support Chinese Simplified locale', () => {
@@ -76,7 +76,7 @@ describe('i18n Language Support', () => {
 
     it('should have both locales available', () => {
       const locales = lang.getLocales();
-      expect(locales).toContain('en');
+      expect(locales).toContain('en-US');
       expect(locales).toContain('zh-CN');
     });
   });
@@ -106,7 +106,7 @@ describe('i18n Language Support', () => {
     ];
 
     it('should have all critical keys in English', () => {
-      lang.setLocale('en');
+      lang.setLocale('en-US');
       criticalKeys.forEach((key) => {
         const translation = lang.__(key);
         expect(translation).toBeTruthy();

@@ -87,7 +87,7 @@ jest.mock('../../src/common/context', () => ({
 describe('Unit test for rosAssets', () => {
   beforeAll(() => {
     // Set locale to English for consistent test messages
-    lang.setLocale('en');
+    lang.setLocale('en-US');
   });
 
   beforeEach(() => {
@@ -165,7 +165,10 @@ describe('Unit test for rosAssets', () => {
       ]);
       expect(mockedInfoLogger.mock.calls).toEqual([
         [
-          'Folder compressed to: path&#x2F;to&#x2F;asset.55d1d2dd5d6c1b083a04c15431f70da1f2840b9de06383411cbf7eda2a512efe.zip',
+          lang.__('FOLDER_COMPRESSED_TO', {
+            zipPath:
+              'path/to/asset.55d1d2dd5d6c1b083a04c15431f70da1f2840b9de06383411cbf7eda2a512efe.zip',
+          }),
         ],
       ]);
     });
@@ -173,7 +176,7 @@ describe('Unit test for rosAssets', () => {
     it('should log and skip if no assets to publish', async () => {
       await publishAssets([]);
 
-      expect(mockedInfoLogger).toHaveBeenCalledWith('No assets to publish, skipped!');
+      expect(mockedInfoLogger).toHaveBeenCalledWith(lang.__('NO_ASSETS_TO_PUBLISH'));
     });
   });
 
@@ -200,7 +203,7 @@ describe('Unit test for rosAssets', () => {
     it('should skip the cleanupAssets when there is no assets', async () => {
       await cleanupAssets([]);
 
-      expect(mockedInfoLogger).toHaveBeenCalledWith('No assets to cleanup, skipped!');
+      expect(mockedInfoLogger).toHaveBeenCalledWith(lang.__('NO_ASSETS_TO_CLEANUP'));
     });
   });
 });
