@@ -1,9 +1,4 @@
 #! /usr/bin/env node
-
-// Apply terminal encoding before any other imports to ensure proper output
-import { applyTerminalEncoding } from '../common/encoding';
-applyTerminalEncoding();
-
 import { Command } from 'commander';
 import { clearContext, getContext, getIamInfo, getVersion, logger, setContext } from '../common';
 import { validate } from './validate';
