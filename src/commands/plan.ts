@@ -1,6 +1,12 @@
 import { getIacLocation, logger, setContext, loadState, ProviderEnum, getContext } from '../common';
 import { parseYaml, revalYaml } from '../parser';
 import { generateFunctionPlan, generateBucketPlan, generateDatabasePlan } from '../stack/scfStack';
+import {
+  generateFunctionPlan as generateAliyunFunctionPlan,
+  generateBucketPlan as generateAliyunBucketPlan,
+  generateDatabasePlan as generateAliyunDatabasePlan,
+  generateTablePlan,
+} from '../stack/aliyunStack';
 import { lang } from '../lang';
 
 export const plan = async (
@@ -28,22 +34,38 @@ export const plan = async (
   const context = getContext();
   const iac = revalYaml(iacLocation, context);
 
-  if (iac.provider.name !== ProviderEnum.TENCENT) {
-    logger.error(lang.__('PLAN_COMMAND_TENCENT_ONLY'));
-    throw new Error(lang.__('PLAN_COMMAND_TENCENT_ONLY'));
-  }
-
   logger.info(lang.__('GENERATING_PLAN_FOR_SCF'));
 
   const state = loadState(iac.provider.name, process.cwd());
-  const functionPlan = await generateFunctionPlan(context, state, iac.functions);
-  const bucketPlan = await generateBucketPlan(context, state, iac.buckets);
-  const databasePlan = await generateDatabasePlan(context, state, iac.databases);
 
-  // Combine plans
-  const planResult = {
-    items: [...functionPlan.items, ...bucketPlan.items, ...databasePlan.items],
-  };
+  let planResult;
+
+  if (iac.provider.name === ProviderEnum.TENCENT) {
+    const functionPlan = await generateFunctionPlan(context, state, iac.functions);
+    const bucketPlan = await generateBucketPlan(context, state, iac.buckets);
+    const databasePlan = await generateDatabasePlan(context, state, iac.databases);
+
+    planResult = {
+      items: [...functionPlan.items, ...bucketPlan.items, ...databasePlan.items],
+    };
+  } else if (iac.provider.name === ProviderEnum.ALIYUN) {
+    const functionPlan = await generateAliyunFunctionPlan(context, state, iac.functions);
+    const bucketPlan = await generateAliyunBucketPlan(context, state, iac.buckets);
+    const databasePlan = await generateAliyunDatabasePlan(context, state, iac.databases);
+    const tablePlan = await generateTablePlan(context, state, iac.tables);
+
+    planResult = {
+      items: [
+        ...functionPlan.items,
+        ...bucketPlan.items,
+        ...databasePlan.items,
+        ...tablePlan.items,
+      ],
+    };
+  } else {
+    logger.error(lang.__('PLAN_COMMAND_NOT_SUPPORTED'));
+    throw new Error(lang.__('PLAN_COMMAND_NOT_SUPPORTED'));
+  }
 
   // Display plan
   logger.info('========================================');

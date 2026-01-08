@@ -1,9 +1,5 @@
-import * as ros from '@alicloud/ros-cdk-core';
-import fs from 'node:fs';
-
 import { ServerlessIac } from '../types';
 import { getContext, logger, ProviderEnum, loadState, saveState } from '../common';
-import { RosStack } from './rosStack';
 import { RfsStack } from './rfsStack';
 import {
   generateFunctionPlan,
@@ -23,27 +19,7 @@ import {
   generateTablePlan,
   executeTablePlan,
 } from './aliyunStack';
-import { get } from 'lodash';
 import { lang } from '../lang';
-
-export const generateRosStackTemplate = (stackName: string, iac: ServerlessIac) => {
-  const context = getContext();
-  const app = new ros.App();
-  new RosStack(app, iac, context);
-
-  const assembly = app.synth();
-
-  const { template } = assembly.getStackByName(stackName);
-
-  const assetFolderPath = get(assembly.tryGetArtifact(`${stackName}.assets`), 'file', '');
-  const assetsFileBody = fs.readFileSync(assetFolderPath);
-  const assets = {
-    rootPath: assembly.directory,
-    ...JSON.parse(assetsFileBody.toString('utf-8').trim()),
-  };
-
-  return { template, assets };
-};
 
 export const generateRfsStackTemplate = (stackName: string, iac: ServerlessIac) => {
   const stack = new RfsStack(iac);

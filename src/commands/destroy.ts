@@ -2,7 +2,6 @@ import {
   getContext,
   getIacLocation,
   logger,
-  rosStackDelete,
   setContext,
   loadState,
   saveState,
@@ -18,6 +17,16 @@ import {
   generateDatabasePlan,
   executeDatabasePlan,
 } from '../stack/scfStack';
+import {
+  generateFunctionPlan as generateAliyunFunctionPlan,
+  executeFunctionPlan as executeAliyunFunctionPlan,
+  generateBucketPlan as generateAliyunBucketPlan,
+  executeBucketPlan as executeAliyunBucketPlan,
+  generateDatabasePlan as generateAliyunDatabasePlan,
+  executeDatabasePlan as executeAliyunDatabasePlan,
+  generateTablePlan,
+  executeTablePlan,
+} from '../stack/aliyunStack';
 
 const destroyTencent = async (): Promise<void> => {
   const context = getContext();
@@ -40,6 +49,33 @@ const destroyTencent = async (): Promise<void> => {
   state = await executeFunctionPlan(context, functionPlan, undefined, state);
   state = await executeBucketPlan(context, bucketPlan, undefined, state);
   state = await executeDatabasePlan(context, databasePlan, undefined, state);
+
+  saveState(state, process.cwd());
+};
+
+const destroyAliyun = async (): Promise<void> => {
+  const context = getContext();
+  const providerName = ProviderEnum.ALIYUN;
+  let state = loadState(providerName, process.cwd());
+
+  const functionPlan = await generateAliyunFunctionPlan(context, state, undefined);
+  const bucketPlan = await generateAliyunBucketPlan(context, state, undefined);
+  const databasePlan = await generateAliyunDatabasePlan(context, state, undefined);
+  const tablePlan = await generateTablePlan(context, state, undefined);
+
+  const combinedPlan = {
+    items: [...functionPlan.items, ...bucketPlan.items, ...databasePlan.items, ...tablePlan.items],
+  };
+
+  logger.info(`${lang.__('PLAN_GENERATED')}: ${combinedPlan.items.length} ${lang.__('ACTIONS')}`);
+  combinedPlan.items.forEach((item) => {
+    logger.info(`  - ${item.action.toUpperCase()}: ${item.logicalId} (${item.resourceType})`);
+  });
+
+  state = await executeAliyunFunctionPlan(context, functionPlan, undefined, state);
+  state = await executeAliyunBucketPlan(context, bucketPlan, undefined, state);
+  state = await executeAliyunDatabasePlan(context, databasePlan, undefined, state);
+  state = await executeTablePlan(context, tablePlan, undefined, state);
 
   saveState(state, process.cwd());
 };
@@ -75,7 +111,9 @@ export const destroyStack = async (
 
   if (iac.provider.name === ProviderEnum.TENCENT) {
     await destroyTencent();
+  } else if (iac.provider.name === ProviderEnum.ALIYUN) {
+    await destroyAliyun();
   } else {
-    await rosStackDelete(context);
+    throw new Error(`Unsupported provider: ${iac.provider.name}`);
   }
 };
