@@ -19,3 +19,6 @@ export * from './tablestoreTypes';
 export * from './tablestoreResource';
 export * from './tablestorePlanner';
 export * from './tablestoreExecutor';
+export * from './deployer';
+export * from './destroyer';
+export * from './planner';
