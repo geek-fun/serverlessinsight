@@ -10,3 +10,6 @@ export * from './tdsqlcTypes';
 export * from './tdsqlcResource';
 export * from './tdsqlcPlanner';
 export * from './tdsqlcExecutor';
+export * from './deployer';
+export * from './destroyer';
+export * from './planner';

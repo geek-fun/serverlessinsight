@@ -1,20 +1,11 @@
 import { deployStack } from '../../src/stack';
 import { minimumIac, oneFcIac } from '../fixtures/deploy-fixtures';
-import { Context, StateFile, CURRENT_STATE_VERSION } from '../../src/types';
+import { Context } from '../../src/types';
 import { ProviderEnum } from '../../src/common';
 import fs from 'node:fs';
 
 const mockedGetContext = jest.fn();
-const mockedGenerateFunctionPlan = jest.fn();
-const mockedExecuteFunctionPlan = jest.fn();
-const mockedGenerateBucketPlan = jest.fn();
-const mockedExecuteBucketPlan = jest.fn();
-const mockedGenerateDatabasePlan = jest.fn();
-const mockedExecuteDatabasePlan = jest.fn();
-const mockedGenerateTablePlan = jest.fn();
-const mockedExecuteTablePlan = jest.fn();
-const mockedLoadState = jest.fn();
-const mockedSaveState = jest.fn();
+const mockedDeployAliyunStack = jest.fn();
 
 jest.mock('../../src/common/context', () => ({
   ...jest.requireActual('../../src/common/context'),
@@ -25,19 +16,10 @@ jest.mock('../../src/common', () => ({
   ...jest.requireActual('../../src/common'),
   getContext: () => mockedGetContext(),
   logger: { info: jest.fn(), debug: jest.fn(), warn: jest.fn(), error: jest.fn() },
-  loadState: (...args: unknown[]) => mockedLoadState(...args),
-  saveState: (...args: unknown[]) => mockedSaveState(...args),
 }));
 
 jest.mock('../../src/stack/aliyunStack', () => ({
-  generateFunctionPlan: (...args: unknown[]) => mockedGenerateFunctionPlan(...args),
-  executeFunctionPlan: (...args: unknown[]) => mockedExecuteFunctionPlan(...args),
-  generateBucketPlan: (...args: unknown[]) => mockedGenerateBucketPlan(...args),
-  executeBucketPlan: (...args: unknown[]) => mockedExecuteBucketPlan(...args),
-  generateDatabasePlan: (...args: unknown[]) => mockedGenerateDatabasePlan(...args),
-  executeDatabasePlan: (...args: unknown[]) => mockedExecuteDatabasePlan(...args),
-  generateTablePlan: (...args: unknown[]) => mockedGenerateTablePlan(...args),
-  executeTablePlan: (...args: unknown[]) => mockedExecuteTablePlan(...args),
+  deployAliyunStack: (...args: unknown[]) => mockedDeployAliyunStack(...args),
 }));
 
 const createMockContext = (
@@ -59,11 +41,6 @@ const createMockContext = (
 
 describe('Unit tests for Aliyun stack deployment', () => {
   const testDir = '/tmp/test-deploy';
-  const initialState: StateFile = {
-    version: CURRENT_STATE_VERSION,
-    provider: 'aliyun',
-    resources: {},
-  };
 
   beforeEach(() => {
     // Clean up
@@ -72,15 +49,7 @@ describe('Unit tests for Aliyun stack deployment', () => {
     }
     fs.mkdirSync(testDir, { recursive: true });
 
-    mockedLoadState.mockReturnValue(initialState);
-    mockedExecuteFunctionPlan.mockResolvedValue(initialState);
-    mockedGenerateFunctionPlan.mockResolvedValue({ items: [] });
-    mockedGenerateBucketPlan.mockResolvedValue({ items: [] });
-    mockedExecuteBucketPlan.mockResolvedValue(initialState);
-    mockedGenerateDatabasePlan.mockResolvedValue({ items: [] });
-    mockedExecuteDatabasePlan.mockResolvedValue(initialState);
-    mockedGenerateTablePlan.mockResolvedValue({ items: [] });
-    mockedExecuteTablePlan.mockResolvedValue(initialState);
+    mockedDeployAliyunStack.mockResolvedValue(undefined);
     jest.clearAllMocks();
   });
 
@@ -96,62 +65,24 @@ describe('Unit tests for Aliyun stack deployment', () => {
 
     await deployStack(stackName, minimumIac);
 
-    expect(mockedLoadState).toHaveBeenCalledWith('aliyun', process.cwd());
-    expect(mockedGenerateFunctionPlan).toHaveBeenCalled();
-    expect(mockedExecuteFunctionPlan).toHaveBeenCalled();
-    expect(mockedSaveState).toHaveBeenCalled();
+    expect(mockedDeployAliyunStack).toHaveBeenCalledWith(minimumIac);
   });
 
   it('should generate and execute function plan for FC functions', async () => {
     const stackName = 'my-demo-stack-fc-only';
     mockedGetContext.mockReturnValue(createMockContext(stackName));
 
-    const mockPlan = {
-      items: [
-        {
-          logicalId: 'functions.hello_fn',
-          action: 'create',
-          resourceType: 'ALIYUN_FC3',
-          changes: { after: { functionName: 'hello-function' } },
-        },
-      ],
-    };
-    mockedGenerateFunctionPlan.mockResolvedValue(mockPlan);
-
     await deployStack(stackName, oneFcIac);
 
-    expect(mockedGenerateFunctionPlan).toHaveBeenCalled();
-    expect(mockedExecuteFunctionPlan).toHaveBeenCalledWith(
-      expect.objectContaining({ provider: ProviderEnum.ALIYUN }),
-      mockPlan,
-      oneFcIac.functions,
-      initialState,
-    );
+    expect(mockedDeployAliyunStack).toHaveBeenCalledWith(oneFcIac);
   });
 
   it('should save state after execution', async () => {
     const stackName = 'my-demo-stack-save-state';
     mockedGetContext.mockReturnValue(createMockContext(stackName));
 
-    const newState = {
-      ...initialState,
-      resources: {
-        'functions.hello_fn': {
-          mode: 'managed' as const,
-          region: 'cn-hangzhou',
-          definition: { functionName: 'hello-function' },
-          instances: [{ arn: 'arn:test', id: 'test-id' }],
-          lastUpdated: new Date().toISOString(),
-        },
-      },
-    };
-    mockedExecuteFunctionPlan.mockResolvedValue(newState);
-    mockedExecuteBucketPlan.mockResolvedValue(newState);
-    mockedExecuteDatabasePlan.mockResolvedValue(newState);
-    mockedExecuteTablePlan.mockResolvedValue(newState);
-
     await deployStack(stackName, oneFcIac);
 
-    expect(mockedSaveState).toHaveBeenCalledWith(newState, process.cwd());
+    expect(mockedDeployAliyunStack).toHaveBeenCalledWith(oneFcIac);
   });
 });
