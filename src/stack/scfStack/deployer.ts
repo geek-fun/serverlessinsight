@@ -1,4 +1,10 @@
-import { ServerlessIac } from '../../types';
+import {
+  ServerlessIac,
+  ExecutionResult,
+  PartialFailureError,
+  PlanItem,
+  StateFile,
+} from '../../types';
 import { getContext, logger, loadState, saveState } from '../../common';
 import { lang } from '../../lang';
 import { generateFunctionPlan } from './scfPlanner';
@@ -8,24 +14,38 @@ import { executeBucketPlan } from './cosExecutor';
 import { generateDatabasePlan } from './tdsqlcPlanner';
 import { executeDatabasePlan } from './tdsqlcExecutor';
 
+const createSaveStateFn = (baseDir: string) => (state: StateFile) => {
+  saveState(state, baseDir);
+};
+
+const handlePartialFailure = (failure: PartialFailureError): never => {
+  logger.error(
+    lang.__('PARTIAL_DEPLOYMENT_FAILURE', {
+      successCount: String(failure.successfulItems.length),
+      failedResource: failure.failedItem.logicalId,
+    }),
+  );
+  logger.info(lang.__('PARTIAL_FAILURE_STATE_SAVED'));
+  logger.info(lang.__('PARTIAL_FAILURE_NEXT_STEPS'));
+  throw failure.error;
+};
+
+const collectSuccessfulItems = (results: Array<ExecutionResult>): Array<PlanItem> =>
+  results.flatMap((result) => result.partialFailure?.successfulItems ?? []);
+
 export const deployTencentStack = async (iac: ServerlessIac): Promise<void> => {
   const context = getContext();
+  const baseDir = process.cwd();
   logger.info(lang.__('DEPLOYING_STACK_PUBLISHING_ASSETS'));
 
-  // Load current state
-  let state = loadState(iac.provider.name, process.cwd());
+  let state = loadState(iac.provider.name, baseDir);
+  const onStateChange = createSaveStateFn(baseDir);
 
-  // Generate plan for functions
   logger.info(lang.__('GENERATING_PLAN'));
   const functionPlan = await generateFunctionPlan(context, state, iac.functions);
-
-  // Generate plan for buckets
   const bucketPlan = await generateBucketPlan(context, state, iac.buckets);
-
-  // Generate plan for databases
   const databasePlan = await generateDatabasePlan(context, state, iac.databases);
 
-  // Combine plans
   const combinedPlan = {
     items: [...functionPlan.items, ...bucketPlan.items, ...databasePlan.items],
   };
@@ -36,13 +56,56 @@ export const deployTencentStack = async (iac: ServerlessIac): Promise<void> => {
   });
 
   logger.info(lang.__('EXECUTING_PLAN'));
-  state = await executeFunctionPlan(context, functionPlan, iac.functions, state);
 
-  state = await executeBucketPlan(context, bucketPlan, iac.buckets, state);
+  const functionResult = await executeFunctionPlan(
+    context,
+    functionPlan,
+    iac.functions,
+    state,
+    onStateChange,
+  );
+  state = functionResult.state;
+  if (functionResult.partialFailure) {
+    handlePartialFailure(functionResult.partialFailure);
+  }
 
-  state = await executeDatabasePlan(context, databasePlan, iac.databases, state);
+  const bucketResult = await executeBucketPlan(
+    context,
+    bucketPlan,
+    iac.buckets,
+    state,
+    onStateChange,
+  );
+  state = bucketResult.state;
+  if (bucketResult.partialFailure) {
+    handlePartialFailure({
+      ...bucketResult.partialFailure,
+      successfulItems: [
+        ...collectSuccessfulItems([functionResult]),
+        ...bucketResult.partialFailure.successfulItems,
+      ],
+    });
+  }
 
-  saveState(state, process.cwd());
+  const databaseResult = await executeDatabasePlan(
+    context,
+    databasePlan,
+    iac.databases,
+    state,
+    onStateChange,
+  );
+  state = databaseResult.state;
+  if (databaseResult.partialFailure) {
+    handlePartialFailure({
+      ...databaseResult.partialFailure,
+      successfulItems: [
+        ...collectSuccessfulItems([functionResult, bucketResult]),
+        ...databaseResult.partialFailure.successfulItems,
+      ],
+    });
+  }
+
+  saveState(state, baseDir);
 
   logger.info(lang.__('STACK_DEPLOYED'));
 };
