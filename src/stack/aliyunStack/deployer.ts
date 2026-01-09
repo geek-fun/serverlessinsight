@@ -1,4 +1,10 @@
-import { ServerlessIac, ExecutionResult, PartialFailureError, PlanItem } from '../../types';
+import {
+  ServerlessIac,
+  ExecutionResult,
+  PartialFailureError,
+  PlanItem,
+  StateFile,
+} from '../../types';
 import { getContext, logger, loadState, saveState } from '../../common';
 import { lang } from '../../lang';
 import { generateFunctionPlan } from './fc3Planner';
@@ -10,11 +16,9 @@ import { executeDatabasePlan } from './databaseExecutor';
 import { generateTablePlan } from './tablestorePlanner';
 import { executeTablePlan } from './tablestoreExecutor';
 
-const createSaveStateFn =
-  (baseDir: string) =>
-  (state: typeof loadState extends (...args: never[]) => infer R ? R : never) => {
-    saveState(state, baseDir);
-  };
+const createSaveStateFn = (baseDir: string) => (state: StateFile) => {
+  saveState(state, baseDir);
+};
 
 const handlePartialFailure = (failure: PartialFailureError): never => {
   logger.error(

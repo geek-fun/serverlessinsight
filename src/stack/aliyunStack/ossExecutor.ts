@@ -127,7 +127,6 @@ export const executeBucketPlan = async (
           failedItem: item,
           error: error instanceof Error ? error : new Error(String(error)),
           successfulItems,
-          currentState,
         },
       };
     }

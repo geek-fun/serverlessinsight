@@ -8,13 +8,11 @@ import { generateDatabasePlan } from './databasePlanner';
 import { executeDatabasePlan } from './databaseExecutor';
 import { generateTablePlan } from './tablestorePlanner';
 import { executeTablePlan } from './tablestoreExecutor';
-import { ExecutionResult, PartialFailureError, PlanItem } from '../../types';
+import { ExecutionResult, PartialFailureError, PlanItem, StateFile } from '../../types';
 
-const createSaveStateFn =
-  (baseDir: string) =>
-  (state: typeof loadState extends (...args: never[]) => infer R ? R : never) => {
-    saveState(state, baseDir);
-  };
+const createSaveStateFn = (baseDir: string) => (state: StateFile) => {
+  saveState(state, baseDir);
+};
 
 const handlePartialFailure = (failure: PartialFailureError): never => {
   logger.error(

@@ -62,7 +62,6 @@ export type PartialFailureError = {
   failedItem: PlanItem;
   error: Error;
   successfulItems: Array<PlanItem>;
-  currentState: StateFile;
 };
 
 export type ExecutionResult = {

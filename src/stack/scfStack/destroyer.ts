@@ -6,13 +6,11 @@ import { generateBucketPlan } from './cosPlanner';
 import { executeBucketPlan } from './cosExecutor';
 import { generateDatabasePlan } from './tdsqlcPlanner';
 import { executeDatabasePlan } from './tdsqlcExecutor';
-import { ExecutionResult, PartialFailureError, PlanItem } from '../../types';
+import { ExecutionResult, PartialFailureError, PlanItem, StateFile } from '../../types';
 
-const createSaveStateFn =
-  (baseDir: string) =>
-  (state: typeof loadState extends (...args: never[]) => infer R ? R : never) => {
-    saveState(state, baseDir);
-  };
+const createSaveStateFn = (baseDir: string) => (state: StateFile) => {
+  saveState(state, baseDir);
+};
 
 const handlePartialFailure = (failure: PartialFailureError): never => {
   logger.error(
