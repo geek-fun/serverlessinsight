@@ -176,4 +176,13 @@ export const en = {
   ES_APP_WAITING_DELETE: 'Waiting for Elasticsearch serverless app to be deleted: {{appName}}',
   ES_APP_TIMEOUT_DELETE:
     'Timeout waiting for Elasticsearch serverless app to be deleted: {{appName}}',
+
+  // Partial failure messages
+  PARTIAL_DEPLOYMENT_FAILURE:
+    '⚠️  PARTIAL DEPLOYMENT FAILURE: {{successCount}} resource(s) succeeded, but {{failedResource}} failed.',
+  PARTIAL_FAILURE_STATE_SAVED:
+    'State has been saved for successfully deployed resources. Run deploy again to retry failed resources.',
+  PARTIAL_FAILURE_NEXT_STEPS:
+    'Next steps: 1) Review the error above, 2) Fix any configuration issues, 3) Run deploy again to continue.',
+  STATE_PERSISTED_AFTER_OPERATION: 'State persisted after {{action}} of {{resourceId}}',
 };
