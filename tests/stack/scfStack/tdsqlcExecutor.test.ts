@@ -16,6 +16,14 @@ import { ProviderEnum } from '../../../src/common';
 
 jest.mock('../../../src/stack/scfStack/tdsqlcResource');
 jest.mock('../../../src/common/stateManager');
+jest.mock('../../../src/common/logger', () => ({
+  logger: {
+    info: jest.fn(),
+    warn: jest.fn(),
+    error: jest.fn(),
+    debug: jest.fn(),
+  },
+}));
 
 describe('TdsqlcExecutor', () => {
   const mockContext: Context = {
@@ -111,7 +119,8 @@ describe('TdsqlcExecutor', () => {
         mockDatabase,
         mockState,
       );
-      expect(result).toBe(updatedState);
+      expect(result.state).toBe(updatedState);
+      expect(result.partialFailure).toBeUndefined();
     });
 
     it('should execute update action', async () => {
@@ -181,7 +190,8 @@ describe('TdsqlcExecutor', () => {
         'cynosdbmysql-test123',
         mockState,
       );
-      expect(result).toBe(updatedState);
+      expect(result.state).toBe(updatedState);
+      expect(result.partialFailure).toBeUndefined();
     });
 
     it('should execute delete action', async () => {
@@ -229,7 +239,8 @@ describe('TdsqlcExecutor', () => {
         'databases.test_db',
         mockState,
       );
-      expect(result).toBe(updatedState);
+      expect(result.state).toBe(updatedState);
+      expect(result.partialFailure).toBeUndefined();
     });
 
     it('should skip noop actions', async () => {
@@ -248,7 +259,8 @@ describe('TdsqlcExecutor', () => {
       expect(tdsqlcResource.createDatabaseResource).not.toHaveBeenCalled();
       expect(tdsqlcResource.updateDatabaseResource).not.toHaveBeenCalled();
       expect(tdsqlcResource.deleteDatabaseResource).not.toHaveBeenCalled();
-      expect(result).toBe(mockState);
+      expect(result.state).toBe(mockState);
+      expect(result.partialFailure).toBeUndefined();
     });
 
     it('should skip non-TDSQL-C resource types', async () => {
@@ -268,10 +280,11 @@ describe('TdsqlcExecutor', () => {
       const result = await executeDatabasePlan(mockContext, plan, [mockDatabase], mockState);
 
       expect(tdsqlcResource.createDatabaseResource).not.toHaveBeenCalled();
-      expect(result).toBe(mockState);
+      expect(result.state).toBe(mockState);
+      expect(result.partialFailure).toBeUndefined();
     });
 
-    it('should throw error if database not found for create action', async () => {
+    it('should return partial failure if database not found for create action', async () => {
       const plan: Plan = {
         items: [
           {
@@ -285,12 +298,15 @@ describe('TdsqlcExecutor', () => {
         ],
       };
 
-      await expect(
-        executeDatabasePlan(mockContext, plan, [mockDatabase], mockState),
-      ).rejects.toThrow('Database not found for logical ID: databases.non_existent');
+      const result = await executeDatabasePlan(mockContext, plan, [mockDatabase], mockState);
+
+      expect(result.partialFailure).toBeDefined();
+      expect(result.partialFailure?.error.message).toBe(
+        'Database not found for logical ID: databases.non_existent',
+      );
     });
 
-    it('should throw error if database not found for update action', async () => {
+    it('should return partial failure if database not found for update action', async () => {
       const plan: Plan = {
         items: [
           {
@@ -305,12 +321,15 @@ describe('TdsqlcExecutor', () => {
         ],
       };
 
-      await expect(
-        executeDatabasePlan(mockContext, plan, [mockDatabase], mockState),
-      ).rejects.toThrow('Database not found for logical ID: databases.non_existent');
+      const result = await executeDatabasePlan(mockContext, plan, [mockDatabase], mockState);
+
+      expect(result.partialFailure).toBeDefined();
+      expect(result.partialFailure?.error.message).toBe(
+        'Database not found for logical ID: databases.non_existent',
+      );
     });
 
-    it('should throw error if state not found for update action', async () => {
+    it('should return partial failure if state not found for update action', async () => {
       const plan: Plan = {
         items: [
           {
@@ -327,9 +346,10 @@ describe('TdsqlcExecutor', () => {
 
       jest.spyOn(stateManager, 'getResource').mockReturnValue(undefined);
 
-      await expect(
-        executeDatabasePlan(mockContext, plan, [mockDatabase], mockState),
-      ).rejects.toThrow('State not found for databases.test_db');
+      const result = await executeDatabasePlan(mockContext, plan, [mockDatabase], mockState);
+
+      expect(result.partialFailure).toBeDefined();
+      expect(result.partialFailure?.error.message).toBe('State not found for databases.test_db');
     });
 
     it('should skip delete if state not found', async () => {
@@ -351,7 +371,8 @@ describe('TdsqlcExecutor', () => {
       const result = await executeDatabasePlan(mockContext, plan, [], mockState);
 
       expect(tdsqlcResource.deleteDatabaseResource).not.toHaveBeenCalled();
-      expect(result).toBe(mockState);
+      expect(result.state).toBe(mockState);
+      expect(result.partialFailure).toBeUndefined();
     });
 
     it('should handle unknown actions', async () => {
@@ -367,10 +388,11 @@ describe('TdsqlcExecutor', () => {
 
       const result = await executeDatabasePlan(mockContext, plan, [mockDatabase], mockState);
 
-      expect(result).toBe(mockState);
+      expect(result.state).toBe(mockState);
+      expect(result.partialFailure).toBeUndefined();
     });
 
-    it('should propagate errors from resource operations', async () => {
+    it('should return partial failure from resource operations', async () => {
       const plan: Plan = {
         items: [
           {
@@ -388,9 +410,10 @@ describe('TdsqlcExecutor', () => {
         .spyOn(tdsqlcResource, 'createDatabaseResource')
         .mockRejectedValue(new Error('API error'));
 
-      await expect(
-        executeDatabasePlan(mockContext, plan, [mockDatabase], mockState),
-      ).rejects.toThrow('API error');
+      const result = await executeDatabasePlan(mockContext, plan, [mockDatabase], mockState);
+
+      expect(result.partialFailure).toBeDefined();
+      expect(result.partialFailure?.error.message).toBe('API error');
     });
 
     it('should execute multiple actions in sequence', async () => {
@@ -465,7 +488,94 @@ describe('TdsqlcExecutor', () => {
       );
 
       expect(tdsqlcResource.createDatabaseResource).toHaveBeenCalledTimes(2);
-      expect(result).toBe(state2);
+      expect(result.state).toBe(state2);
+      expect(result.partialFailure).toBeUndefined();
+    });
+
+    it('should call onStateChange callback after successful operation', async () => {
+      const plan: Plan = {
+        items: [
+          {
+            logicalId: 'databases.test_db',
+            action: 'create',
+            resourceType: 'TDSQL_C_SERVERLESS',
+            changes: { after: { name: 'test-tdsqlc' } },
+          },
+        ],
+      };
+
+      const mockResourceState: ResourceState = {
+        mode: 'managed',
+        region: 'ap-guangzhou',
+        definition: { clusterName: 'test-tdsqlc' },
+        instances: [{ arn: 'arn:test', id: 'cynosdbmysql-test123', clusterName: 'test-tdsqlc' }],
+        lastUpdated: new Date().toISOString(),
+      };
+      const updatedState: StateFile = {
+        ...mockState,
+        resources: { 'databases.test_db': mockResourceState },
+      };
+      jest.spyOn(tdsqlcResource, 'createDatabaseResource').mockResolvedValue(updatedState);
+      const onStateChange = jest.fn();
+
+      await executeDatabasePlan(mockContext, plan, [mockDatabase], mockState, onStateChange);
+
+      expect(onStateChange).toHaveBeenCalledWith(updatedState);
+    });
+
+    it('should track successful items on partial failure', async () => {
+      const database2: DatabaseDomain = {
+        ...mockDatabase,
+        key: 'test_db2',
+        name: 'test-tdsqlc-2',
+      };
+
+      const plan: Plan = {
+        items: [
+          {
+            logicalId: 'databases.test_db',
+            action: 'create',
+            resourceType: 'TDSQL_C_SERVERLESS',
+            changes: { after: { name: 'test-tdsqlc' } },
+          },
+          {
+            logicalId: 'databases.test_db2',
+            action: 'create',
+            resourceType: 'TDSQL_C_SERVERLESS',
+            changes: { after: { name: 'test-tdsqlc-2' } },
+          },
+        ],
+      };
+
+      const mockResourceState1: ResourceState = {
+        mode: 'managed',
+        region: 'ap-guangzhou',
+        definition: { clusterName: 'test-tdsqlc' },
+        instances: [{ arn: 'arn:test', id: 'cynosdbmysql-test1', clusterName: 'test-tdsqlc' }],
+        lastUpdated: new Date().toISOString(),
+      };
+      const state1: StateFile = {
+        ...mockState,
+        resources: { 'databases.test_db': mockResourceState1 },
+      };
+
+      jest
+        .spyOn(tdsqlcResource, 'createDatabaseResource')
+        .mockResolvedValueOnce(state1)
+        .mockRejectedValueOnce(new Error('Second database failed'));
+
+      const result = await executeDatabasePlan(
+        mockContext,
+        plan,
+        [mockDatabase, database2],
+        mockState,
+      );
+
+      expect(result.partialFailure).toBeDefined();
+      expect(result.partialFailure?.successfulItems).toHaveLength(1);
+      expect(result.partialFailure?.successfulItems[0].logicalId).toBe('databases.test_db');
+      expect(result.partialFailure?.failedItem.logicalId).toBe('databases.test_db2');
+      expect(result.state).toEqual(state1);
     });
   });
 });

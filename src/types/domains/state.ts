@@ -55,3 +55,16 @@ export type PlanItem = {
 export type Plan = {
   items: Array<PlanItem>;
 };
+
+export type SaveStateFn = (state: StateFile) => void;
+
+export type PartialFailureError = {
+  failedItem: PlanItem;
+  error: Error;
+  successfulItems: Array<PlanItem>;
+};
+
+export type ExecutionResult = {
+  state: StateFile;
+  partialFailure?: PartialFailureError;
+};

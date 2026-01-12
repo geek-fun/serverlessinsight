@@ -13,6 +13,7 @@ jest.mock('../../../src/common/logger', () => ({
     info: jest.fn(),
     warn: jest.fn(),
     error: jest.fn(),
+    debug: jest.fn(),
   },
 }));
 
@@ -67,7 +68,8 @@ describe('Fc3Executor', () => {
 
       const result = await executeFunctionPlan(mockContext, plan, [testFunction], initialState);
 
-      expect(result).toEqual(initialState);
+      expect(result.state).toEqual(initialState);
+      expect(result.partialFailure).toBeUndefined();
       expect(logger.info).toHaveBeenCalledWith('No changes for functions.test_fn');
     });
 
@@ -106,10 +108,11 @@ describe('Fc3Executor', () => {
       );
       expect(logger.info).toHaveBeenCalledWith('Creating function: test-function');
       expect(logger.info).toHaveBeenCalledWith('Successfully created function: test-function');
-      expect(result).toEqual(newState);
+      expect(result.state).toEqual(newState);
+      expect(result.partialFailure).toBeUndefined();
     });
 
-    it('should throw error if function not found for create action', async () => {
+    it('should return partial failure if function not found for create action', async () => {
       const plan: Plan = {
         items: [
           {
@@ -120,10 +123,14 @@ describe('Fc3Executor', () => {
         ],
       };
 
-      await expect(
-        executeFunctionPlan(mockContext, plan, [testFunction], initialState),
-      ).rejects.toThrow('Function not found for logical ID: functions.nonexistent');
+      const result = await executeFunctionPlan(mockContext, plan, [testFunction], initialState);
 
+      expect(result.partialFailure).toBeDefined();
+      expect(result.partialFailure?.error.message).toBe(
+        'Function not found for logical ID: functions.nonexistent',
+      );
+      expect(result.partialFailure?.failedItem.logicalId).toBe('functions.nonexistent');
+      expect(result.partialFailure?.successfulItems).toEqual([]);
       expect(logger.error).toHaveBeenCalled();
     });
 
@@ -162,7 +169,8 @@ describe('Fc3Executor', () => {
       );
       expect(logger.info).toHaveBeenCalledWith('Updating function: test-function');
       expect(logger.info).toHaveBeenCalledWith('Successfully updated function: test-function');
-      expect(result).toEqual(newState);
+      expect(result.state).toEqual(newState);
+      expect(result.partialFailure).toBeUndefined();
     });
 
     it('should execute delete action successfully', async () => {
@@ -217,7 +225,8 @@ describe('Fc3Executor', () => {
       );
       expect(logger.info).toHaveBeenCalledWith('Deleting function: test-function');
       expect(logger.info).toHaveBeenCalledWith('Successfully deleted function: test-function');
-      expect(result).toEqual(initialState);
+      expect(result.state).toEqual(initialState);
+      expect(result.partialFailure).toBeUndefined();
     });
 
     it('should skip delete if state not found', async () => {
@@ -239,7 +248,8 @@ describe('Fc3Executor', () => {
         'State not found for functions.test_fn, skipping deletion',
       );
       expect(fc3Resource.deleteResource).not.toHaveBeenCalled();
-      expect(result).toEqual(initialState);
+      expect(result.state).toEqual(initialState);
+      expect(result.partialFailure).toBeUndefined();
     });
 
     it('should handle unknown action', async () => {
@@ -257,7 +267,8 @@ describe('Fc3Executor', () => {
       const result = await executeFunctionPlan(mockContext, plan, [testFunction], initialState);
 
       expect(logger.warn).toHaveBeenCalledWith('Unknown action: unknown for functions.test_fn');
-      expect(result).toEqual(initialState);
+      expect(result.state).toEqual(initialState);
+      expect(result.partialFailure).toBeUndefined();
     });
 
     it('should handle empty plan', async () => {
@@ -265,10 +276,11 @@ describe('Fc3Executor', () => {
 
       const result = await executeFunctionPlan(mockContext, plan, [testFunction], initialState);
 
-      expect(result).toEqual(initialState);
+      expect(result.state).toEqual(initialState);
+      expect(result.partialFailure).toBeUndefined();
     });
 
-    it('should propagate errors from resource operations', async () => {
+    it('should return partial failure from resource operations', async () => {
       const plan: Plan = {
         items: [
           {
@@ -282,13 +294,97 @@ describe('Fc3Executor', () => {
       const error = new Error('Test error');
       (fc3Resource.createResource as jest.Mock).mockRejectedValue(error);
 
-      await expect(
-        executeFunctionPlan(mockContext, plan, [testFunction], initialState),
-      ).rejects.toThrow('Test error');
+      const result = await executeFunctionPlan(mockContext, plan, [testFunction], initialState);
 
+      expect(result.partialFailure).toBeDefined();
+      expect(result.partialFailure?.error.message).toBe('Test error');
+      expect(result.partialFailure?.failedItem.logicalId).toBe('functions.test_fn');
+      expect(result.partialFailure?.successfulItems).toEqual([]);
       expect(logger.error).toHaveBeenCalledWith(
         expect.stringContaining('Failed to execute create for functions.test_fn'),
       );
+    });
+
+    it('should call onStateChange callback after successful operation', async () => {
+      const plan: Plan = {
+        items: [
+          {
+            logicalId: 'functions.test_fn',
+            action: 'create',
+            resourceType: 'ALIYUN_FC3',
+          },
+        ],
+      };
+
+      const newState = {
+        ...initialState,
+        resources: {
+          'functions.test_fn': {
+            mode: 'managed',
+            region: 'cn-hangzhou',
+            definition: { functionName: 'test-function' },
+            instances: [{ arn: 'arn:test', id: 'test-function' }],
+            lastUpdated: new Date().toISOString(),
+          },
+        },
+      };
+
+      (fc3Resource.createResource as jest.Mock).mockResolvedValue(newState);
+      const onStateChange = jest.fn();
+
+      await executeFunctionPlan(mockContext, plan, [testFunction], initialState, onStateChange);
+
+      expect(onStateChange).toHaveBeenCalledWith(newState);
+    });
+
+    it('should track successful items on partial failure', async () => {
+      const plan: Plan = {
+        items: [
+          {
+            logicalId: 'functions.test_fn1',
+            action: 'create',
+            resourceType: 'ALIYUN_FC3',
+          },
+          {
+            logicalId: 'functions.test_fn2',
+            action: 'create',
+            resourceType: 'ALIYUN_FC3',
+          },
+        ],
+      };
+
+      const testFunction1 = { ...testFunction, key: 'test_fn1', name: 'test-function-1' };
+      const testFunction2 = { ...testFunction, key: 'test_fn2', name: 'test-function-2' };
+
+      const stateAfterFirst = {
+        ...initialState,
+        resources: {
+          'functions.test_fn1': {
+            mode: 'managed',
+            region: 'cn-hangzhou',
+            definition: { functionName: 'test-function-1' },
+            instances: [{ arn: 'arn:test', id: 'test-function-1' }],
+            lastUpdated: new Date().toISOString(),
+          },
+        },
+      };
+
+      (fc3Resource.createResource as jest.Mock)
+        .mockResolvedValueOnce(stateAfterFirst)
+        .mockRejectedValueOnce(new Error('Second function failed'));
+
+      const result = await executeFunctionPlan(
+        mockContext,
+        plan,
+        [testFunction1, testFunction2],
+        initialState,
+      );
+
+      expect(result.partialFailure).toBeDefined();
+      expect(result.partialFailure?.successfulItems).toHaveLength(1);
+      expect(result.partialFailure?.successfulItems[0].logicalId).toBe('functions.test_fn1');
+      expect(result.partialFailure?.failedItem.logicalId).toBe('functions.test_fn2');
+      expect(result.state).toEqual(stateAfterFirst);
     });
   });
 });

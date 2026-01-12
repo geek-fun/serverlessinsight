@@ -246,6 +246,49 @@ This architecture enables:
 
 ---
 
+## 🗄️ State Management
+
+ServerlessInsight uses a state-based deployment model that tracks all deployed resources in a local state file (`.serverlessinsight/state.json`). This enables:
+
+- **Incremental deployments** - Only changed resources are updated
+- **Drift detection** - Identifies differences between local state and cloud resources
+- **Safe destruction** - Knows which resources to clean up
+
+### Partial Failure Recovery
+
+When deploying multiple resources, if one fails, ServerlessInsight ensures that:
+
+1. **Successfully deployed resources are always saved to state** - Even if subsequent resources fail, your state file will contain all resources that were successfully created/updated/deleted
+2. **Clear error reporting** - You'll see which resources succeeded and which failed
+3. **Easy retry** - Simply run `deploy` again to continue from where you left off
+
+Example partial failure output:
+
+```
+⚠️  PARTIAL DEPLOYMENT FAILURE: 2 resource(s) succeeded, but functions.api_handler failed.
+State has been saved for successfully deployed resources. Run deploy again to retry failed resources.
+Next steps: 1) Review the error above, 2) Fix any configuration issues, 3) Run deploy again to continue.
+```
+
+### State File Location
+
+The state file is stored in `.serverlessinsight/state.json` in your project directory. This file:
+
+- Should be committed to version control for team collaboration
+- Contains resource metadata and identifiers
+- Is automatically updated after each successful operation
+
+### State Recovery
+
+If you encounter state drift (cloud resources exist that aren't in your state file):
+
+1. **Manual import** - Currently, resources must be manually added to the state file
+2. **Clean start** - Delete the state file and resources in the cloud, then redeploy
+
+> 💡 **Tip**: Always backup your state file before making manual modifications.
+
+---
+
 ## 📘 Documentation
 
 For comprehensive documentation, visit [serverlessinsight.geekfun.club](https://serverlessinsight.geekfun.club)

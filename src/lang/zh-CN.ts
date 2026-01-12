@@ -168,4 +168,12 @@ export const zhCN = {
   ES_APP_DELETE_FAILED: '删除 Elasticsearch Serverless 应用失败: {{error}}',
   ES_APP_WAITING_DELETE: '等待 Elasticsearch Serverless 应用删除: {{appName}}',
   ES_APP_TIMEOUT_DELETE: '等待 Elasticsearch Serverless 应用删除超时: {{appName}}',
+
+  // Partial failure messages
+  PARTIAL_DEPLOYMENT_FAILURE:
+    '⚠️  部署部分失败: {{successCount}} 个资源成功，但 {{failedResource}} 失败。',
+  PARTIAL_FAILURE_STATE_SAVED: '已成功部署的资源状态已保存。再次运行 deploy 以重试失败的资源。',
+  PARTIAL_FAILURE_NEXT_STEPS:
+    '后续步骤: 1) 查看上面的错误, 2) 修复配置问题, 3) 再次运行 deploy 继续。',
+  STATE_PERSISTED_AFTER_OPERATION: '{{action}} {{resourceId}} 后状态已持久化',
 };
