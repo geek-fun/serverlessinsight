@@ -4,13 +4,15 @@ import os from 'node:os';
 import crypto from 'node:crypto';
 import { execSync } from 'node:child_process';
 import { LockMetadata, LockOptions } from '../types';
+import {
+  LOCK_FILE_SUFFIX,
+  DEFAULT_LOCK_TIMEOUT,
+  DEFAULT_LOCK_RETRY_DELAY,
+  STALE_LOCK_THRESHOLD,
+} from './constants';
+import { lang } from '../lang';
 
 export { LockOptions }; // Re-export for convenience
-
-const LOCK_FILE_SUFFIX = '.si-lock';
-const DEFAULT_TIMEOUT = 10 * 60 * 1000; // 10 minutes
-const DEFAULT_RETRY_DELAY = 2000; // 2 seconds
-const STALE_LOCK_THRESHOLD = 60 * 60 * 1000; // 1 hour
 
 export class LockError extends Error {
   constructor(
@@ -48,7 +50,7 @@ const getUserEmail = (): string => {
   return `${username}@${hostname}`;
 };
 
-export const createLockMetadata = (statePath: string, operation: string): LockMetadata => {
+const createLockMetadata = (statePath: string, operation: string): LockMetadata => {
   return {
     id: generateLockId(),
     user: getUserEmail(),
@@ -60,7 +62,7 @@ export const createLockMetadata = (statePath: string, operation: string): LockMe
   };
 };
 
-export const readLockFile = (lockPath: string): LockMetadata | null => {
+const readLockFile = (lockPath: string): LockMetadata | null => {
   try {
     if (fs.existsSync(lockPath)) {
       const content = fs.readFileSync(lockPath, 'utf-8');
@@ -72,7 +74,7 @@ export const readLockFile = (lockPath: string): LockMetadata | null => {
   return null;
 };
 
-export const writeLockFile = (lockPath: string, metadata: LockMetadata): void => {
+const writeLockFile = (lockPath: string, metadata: LockMetadata): void => {
   const lockDir = path.dirname(lockPath);
   if (!fs.existsSync(lockDir)) {
     fs.mkdirSync(lockDir, { recursive: true });
@@ -80,43 +82,50 @@ export const writeLockFile = (lockPath: string, metadata: LockMetadata): void =>
   fs.writeFileSync(lockPath, JSON.stringify(metadata, null, 2), 'utf-8');
 };
 
-export const removeLockFile = (lockPath: string): void => {
+const removeLockFile = (lockPath: string): void => {
   if (fs.existsSync(lockPath)) {
     fs.unlinkSync(lockPath);
   }
 };
 
-export const isLockStale = (lock: LockMetadata): boolean => {
+const isLockStale = (lock: LockMetadata): boolean => {
   const acquiredAt = new Date(lock.acquiredAt).getTime();
   const now = Date.now();
   return now - acquiredAt > STALE_LOCK_THRESHOLD;
 };
 
-export const formatLockInfo = (lock: LockMetadata): string => {
-  const acquiredAt = new Date(lock.acquiredAt);
+const getTimeAgo = (acquiredAt: Date): string => {
   const now = new Date();
   const minutesAgo = Math.floor((now.getTime() - acquiredAt.getTime()) / 60000);
 
-  let timeAgo: string;
   if (minutesAgo < 1) {
-    timeAgo = 'less than a minute ago';
+    return lang.__('LOCK_TIME_AGO_LESS_THAN_MINUTE');
   } else if (minutesAgo === 1) {
-    timeAgo = '1 minute ago';
+    return lang.__('LOCK_TIME_AGO_ONE_MINUTE');
   } else if (minutesAgo < 60) {
-    timeAgo = `${minutesAgo} minutes ago`;
+    return lang.__('LOCK_TIME_AGO_MINUTES', { minutes: String(minutesAgo) });
   } else {
     const hoursAgo = Math.floor(minutesAgo / 60);
-    timeAgo = hoursAgo === 1 ? '1 hour ago' : `${hoursAgo} hours ago`;
+    if (hoursAgo === 1) {
+      return lang.__('LOCK_TIME_AGO_ONE_HOUR');
+    } else {
+      return lang.__('LOCK_TIME_AGO_HOURS', { hours: String(hoursAgo) });
+    }
   }
+};
+
+export const formatLockInfo = (lock: LockMetadata): string => {
+  const acquiredAt = new Date(lock.acquiredAt);
+  const timeAgo = getTimeAgo(acquiredAt);
 
   return `
-Lock Info:
-  ID:        ${lock.id}
-  Held by:   ${lock.user}
-  Process:   si ${lock.operation} (PID ${lock.processId})
-  Host:      ${lock.hostname}
-  Acquired:  ${acquiredAt.toISOString()} (${timeAgo})
-  Operation: ${lock.operation}
+${lang.__('LOCK_INFO_HEADER')}
+${lang.__('LOCK_INFO_ID', { id: lock.id })}
+${lang.__('LOCK_INFO_HELD_BY', { user: lock.user })}
+${lang.__('LOCK_INFO_PROCESS', { operation: lock.operation, processId: String(lock.processId) })}
+${lang.__('LOCK_INFO_HOST', { hostname: lock.hostname })}
+${lang.__('LOCK_INFO_ACQUIRED', { acquiredAt: acquiredAt.toISOString(), timeAgo })}
+${lang.__('LOCK_INFO_OPERATION', { operation: lock.operation })}
 `;
 };
 
@@ -124,13 +133,13 @@ const sleep = (ms: number): Promise<void> => {
   return new Promise((resolve) => setTimeout(resolve, ms));
 };
 
-export const acquireLock = async (
+const acquireLockInternal = async (
   statePath: string,
   operation: string,
   options: LockOptions = {},
 ): Promise<LockMetadata> => {
-  const timeout = options.timeout ?? DEFAULT_TIMEOUT;
-  const retryDelay = options.retryDelay ?? DEFAULT_RETRY_DELAY;
+  const timeout = options.timeout ?? DEFAULT_LOCK_TIMEOUT;
+  const retryDelay = options.retryDelay ?? DEFAULT_LOCK_RETRY_DELAY;
   const maxRetries = options.maxRetries ?? Math.ceil(timeout / retryDelay);
 
   const lockPath = getLockPath(statePath);
@@ -189,7 +198,7 @@ export const acquireLock = async (
   );
 };
 
-export const releaseLock = (statePath: string, lockId: string): void => {
+const releaseLockInternal = (statePath: string, lockId: string): void => {
   const lockPath = getLockPath(statePath);
   const existingLock = readLockFile(lockPath);
 
@@ -225,11 +234,17 @@ export const withLock = async <T>(
 ): Promise<T> => {
   let lock: LockMetadata | null = null;
   try {
-    lock = await acquireLock(statePath, operation, options);
+    lock = await acquireLockInternal(statePath, operation, options);
     return await fn();
   } finally {
     if (lock) {
-      releaseLock(statePath, lock.id);
+      releaseLockInternal(statePath, lock.id);
     }
   }
+};
+
+// Export only for forceUnlock command which needs to read lock info
+export const readLockFileForCommand = (statePath: string): LockMetadata | null => {
+  const lockPath = getLockPath(statePath);
+  return readLockFile(lockPath);
 };

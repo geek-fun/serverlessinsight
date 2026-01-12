@@ -2,8 +2,7 @@ import readline from 'node:readline';
 import {
   getStatePath,
   forceUnlock,
-  readLockFile,
-  getLockPath,
+  readLockFileForCommand,
   formatLockInfo,
   logger,
 } from '../common';
@@ -25,10 +24,9 @@ const askConfirmation = (question: string): Promise<boolean> => {
 
 export const forceUnlockCommand = async (lockId: string): Promise<void> => {
   const statePath = getStatePath();
-  const lockPath = getLockPath(statePath);
 
   // Check if lock exists
-  const existingLock = readLockFile(lockPath);
+  const existingLock = readLockFileForCommand(statePath);
   if (!existingLock) {
     logger.error(lang.__('NO_LOCK_FOUND'));
     throw new Error(lang.__('NO_LOCK_FOUND'));

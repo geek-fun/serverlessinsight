@@ -200,4 +200,18 @@ export const en = {
   FORCE_UNLOCK_CONFIRM: 'Are you absolutely sure? (yes/no): ',
   FORCE_UNLOCK_CANCELLED: 'Force unlock cancelled',
   PLAN_COMMAND_NOT_SUPPORTED: 'Plan command is not supported for this provider',
+
+  // Lock info formatting
+  LOCK_INFO_HEADER: 'Lock Info:',
+  LOCK_INFO_ID: '  ID:        {{id}}',
+  LOCK_INFO_HELD_BY: '  Held by:   {{user}}',
+  LOCK_INFO_PROCESS: '  Process:   si {{operation}} (PID {{processId}})',
+  LOCK_INFO_HOST: '  Host:      {{hostname}}',
+  LOCK_INFO_ACQUIRED: '  Acquired:  {{acquiredAt}} ({{timeAgo}})',
+  LOCK_INFO_OPERATION: '  Operation: {{operation}}',
+  LOCK_TIME_AGO_LESS_THAN_MINUTE: 'less than a minute ago',
+  LOCK_TIME_AGO_ONE_MINUTE: '1 minute ago',
+  LOCK_TIME_AGO_MINUTES: '{{minutes}} minutes ago',
+  LOCK_TIME_AGO_ONE_HOUR: '1 hour ago',
+  LOCK_TIME_AGO_HOURS: '{{hours}} hours ago',
 };
