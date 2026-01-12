@@ -2,6 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
 import crypto from 'node:crypto';
+import { execSync } from 'node:child_process';
 import { LockMetadata, LockOptions } from '../types';
 
 export { LockOptions }; // Re-export for convenience
@@ -32,8 +33,6 @@ export const generateLockId = (): string => {
 const getUserEmail = (): string => {
   // Try to get git user email first
   try {
-    // eslint-disable-next-line @typescript-eslint/no-require-imports
-    const { execSync } = require('child_process');
     const email = execSync('git config user.email', {
       encoding: 'utf-8',
       stdio: ['pipe', 'pipe', 'ignore'],

@@ -83,7 +83,7 @@ describe('LockManager', () => {
 
       try {
         await acquireLock(statePath, 'destroy', { timeout: 1000, retryDelay: 200 });
-        fail('Should have thrown LockError');
+        throw new Error('Should have thrown LockError');
       } catch (error) {
         expect(error).toBeInstanceOf(LockError);
         expect((error as LockError).lockInfo).toBeDefined();
