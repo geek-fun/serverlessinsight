@@ -1,4 +1,12 @@
-import { getContext, getIacLocation, logger, setContext, ProviderEnum } from '../common';
+import {
+  getContext,
+  getIacLocation,
+  logger,
+  setContext,
+  ProviderEnum,
+  withLock,
+  getStatePath,
+} from '../common';
 import { parseYaml, revalYaml } from '../parser';
 import { lang } from '../lang';
 import { destroyTencentStack } from '../stack/scfStack';
@@ -33,11 +41,15 @@ export const destroyStack = async (
     }),
   );
 
-  if (iac.provider.name === ProviderEnum.TENCENT) {
-    await destroyTencentStack();
-  } else if (iac.provider.name === ProviderEnum.ALIYUN) {
-    await destroyAliyunStack();
-  } else {
-    throw new Error(`Unsupported provider: ${iac.provider.name}`);
-  }
+  // Acquire lock for the destroy operation
+  const statePath = getStatePath();
+  await withLock(statePath, 'destroy', async () => {
+    if (iac.provider.name === ProviderEnum.TENCENT) {
+      await destroyTencentStack();
+    } else if (iac.provider.name === ProviderEnum.ALIYUN) {
+      await destroyAliyunStack();
+    } else {
+      throw new Error(`Unsupported provider: ${iac.provider.name}`);
+    }
+  });
 };

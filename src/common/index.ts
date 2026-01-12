@@ -9,6 +9,7 @@ export * from './base64';
 export * from './requestHelper';
 export * from './credentials';
 export * from './stateManager';
+export * from './lockManager';
 export * from './scfClient';
 export * from './runtimeMapper';
 export * from './hashUtils';

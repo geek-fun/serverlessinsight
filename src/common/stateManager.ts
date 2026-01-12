@@ -1,6 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { ResourceState, StateFile, CURRENT_STATE_VERSION } from '../types';
+import { withLock, LockOptions } from './lockManager';
 
 const STATE_DIR = '.serverlessinsight';
 const STATE_FILE = 'state.json';
@@ -44,6 +45,27 @@ export const saveState = (state: StateFile, baseDir: string = process.cwd()): vo
     version: CURRENT_STATE_VERSION,
   };
   fs.writeFileSync(statePath, JSON.stringify(stateToSave, null, 2), 'utf-8');
+};
+
+/**
+ * Save state with automatic locking.
+ * This should be used by high-level operations like deploy/destroy.
+ */
+export const saveStateWithLock = async (
+  state: StateFile,
+  operation: string,
+  baseDir: string = process.cwd(),
+  options?: LockOptions,
+): Promise<void> => {
+  const statePath = getStatePath(baseDir);
+  await withLock(
+    statePath,
+    operation,
+    async () => {
+      saveState(state, baseDir);
+    },
+    options,
+  );
 };
 
 export const getResource = (state: StateFile, resourceId: string): ResourceState | undefined => {

@@ -185,4 +185,33 @@ export const en = {
   PARTIAL_FAILURE_NEXT_STEPS:
     'Next steps: 1) Review the error above, 2) Fix any configuration issues, 3) Run deploy again to continue.',
   STATE_PERSISTED_AFTER_OPERATION: 'State persisted after {{action}} of {{resourceId}}',
+
+  // Lock messages
+  ACQUIRING_LOCK: 'Acquiring state lock...',
+  LOCK_ACQUIRED: 'Lock acquired',
+  LOCK_RELEASED: '✓ Lock released',
+  FAILED_TO_RELEASE_LOCK: 'Failed to release lock',
+  NO_LOCK_FOUND: 'No lock found',
+  LOCK_ID_MISMATCH:
+    'Lock ID mismatch. Current lock ID is {{actualId}}, but you provided {{providedId}}',
+  CURRENT_LOCK_INFO: 'Current lock information:',
+  FORCE_UNLOCK_WARNING:
+    '\n⚠️  WARNING: Force unlocking can cause state corruption if another\noperation is still running!',
+  FORCE_UNLOCK_CONFIRM: 'Are you absolutely sure? (yes/no): ',
+  FORCE_UNLOCK_CANCELLED: 'Force unlock cancelled',
+  PLAN_COMMAND_NOT_SUPPORTED: 'Plan command is not supported for this provider',
+
+  // Lock info formatting
+  LOCK_INFO_HEADER: 'Lock Info:',
+  LOCK_INFO_ID: '  ID:        {{id}}',
+  LOCK_INFO_HELD_BY: '  Held by:   {{user}}',
+  LOCK_INFO_PROCESS: '  Process:   si {{operation}} (PID {{processId}})',
+  LOCK_INFO_HOST: '  Host:      {{hostname}}',
+  LOCK_INFO_ACQUIRED: '  Acquired:  {{acquiredAt}} ({{timeAgo}})',
+  LOCK_INFO_OPERATION: '  Operation: {{operation}}',
+  LOCK_TIME_AGO_LESS_THAN_MINUTE: 'less than a minute ago',
+  LOCK_TIME_AGO_ONE_MINUTE: '1 minute ago',
+  LOCK_TIME_AGO_MINUTES: '{{minutes}} minutes ago',
+  LOCK_TIME_AGO_ONE_HOUR: '1 hour ago',
+  LOCK_TIME_AGO_HOURS: '{{hours}} hours ago',
 };

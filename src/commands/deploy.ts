@@ -1,5 +1,5 @@
 import { deployStack } from '../stack';
-import { getContext, getIacLocation, logger, setContext } from '../common';
+import { getContext, getIacLocation, logger, setContext, withLock, getStatePath } from '../common';
 import { parseYaml, revalYaml } from '../parser';
 import { lang } from '../lang';
 
@@ -30,7 +30,12 @@ export const deploy = async (
   const iac = revalYaml(iacLocation, context);
 
   logger.info(lang.__('DEPLOYING_STACK'));
-  await deployStack(stackName, iac);
+
+  // Acquire lock for the deployment operation
+  const statePath = getStatePath();
+  await withLock(statePath, 'deploy', async () => {
+    await deployStack(stackName, iac);
+  });
 
   logger.info(lang.__('STACK_DEPLOYED'));
 };

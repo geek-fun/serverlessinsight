@@ -7,6 +7,7 @@ import { template } from './template';
 import { destroyStack } from './destroy';
 import { runLocal } from './local';
 import { plan } from './plan';
+import { forceUnlockCommand } from './forceUnlock';
 import { lang } from '../lang';
 
 // Global error handler
@@ -216,6 +217,15 @@ program
         watch: typeof watch === 'boolean' ? watch : true,
         location: file,
       });
+    }),
+  );
+
+program
+  .command('force-unlock <lockId>')
+  .description('manually remove a stuck lock (use with caution)')
+  .action(
+    actionWrapper('force-unlock', async (lockId) => {
+      await forceUnlockCommand(lockId);
     }),
   );
 

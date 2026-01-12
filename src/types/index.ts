@@ -17,6 +17,7 @@ export * from './domains/context';
 export * from './domains/bucket';
 export * from './domains/table';
 export * from './domains/state';
+export * from './domains/lock';
 export * from './assets';
 
 export type ServerlessIacRaw = {
