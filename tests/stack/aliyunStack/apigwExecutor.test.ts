@@ -78,7 +78,8 @@ describe('ApigwExecutor', () => {
         initialState,
       );
 
-      expect(result).toEqual(initialState);
+      expect(result.state).toEqual(initialState);
+      expect(result.partialFailure).toBeUndefined();
       expect(logger.info).toHaveBeenCalledWith('No changes for events.test_api');
     });
 
@@ -117,7 +118,8 @@ describe('ApigwExecutor', () => {
         initialState,
       );
 
-      expect(result).toEqual(newState);
+      expect(result.state).toEqual(newState);
+      expect(result.partialFailure).toBeUndefined();
       expect(apigwResource.createApigwResource).toHaveBeenCalledWith(
         mockContext,
         testEvent,
@@ -168,7 +170,8 @@ describe('ApigwExecutor', () => {
         initialState,
       );
 
-      expect(result).toEqual(newState);
+      expect(result.state).toEqual(newState);
+      expect(result.partialFailure).toBeUndefined();
       expect(apigwResource.updateApigwResource).toHaveBeenCalledWith(
         mockContext,
         testEvent,
@@ -222,7 +225,8 @@ describe('ApigwExecutor', () => {
         stateWithResource,
       );
 
-      expect(result).toEqual(newState);
+      expect(result.state).toEqual(newState);
+      expect(result.partialFailure).toBeUndefined();
       expect(apigwResource.deleteApigwResource).toHaveBeenCalledWith(
         mockContext,
         'events.test_api',
@@ -258,14 +262,15 @@ describe('ApigwExecutor', () => {
         initialState,
       );
 
-      expect(result).toEqual(initialState);
+      expect(result.state).toEqual(initialState);
+      expect(result.partialFailure).toBeUndefined();
       expect(apigwResource.deleteApigwResource).not.toHaveBeenCalled();
       expect(logger.warn).toHaveBeenCalledWith(
         'State not found for events.test_api, skipping deletion',
       );
     });
 
-    it('should throw error if event not found for create', async () => {
+    it('should return partial failure if event not found for create', async () => {
       const plan: Plan = {
         items: [
           {
@@ -276,12 +281,23 @@ describe('ApigwExecutor', () => {
         ],
       };
 
-      await expect(
-        executeApigwPlan(mockContext, plan, [testEvent], serviceName, roleArn, initialState),
-      ).rejects.toThrow('Event not found for logical ID: events.nonexistent');
+      const result = await executeApigwPlan(
+        mockContext,
+        plan,
+        [testEvent],
+        serviceName,
+        roleArn,
+        initialState,
+      );
+
+      expect(result.state).toEqual(initialState);
+      expect(result.partialFailure).toBeDefined();
+      expect(result.partialFailure?.error.message).toBe(
+        'Event not found for logical ID: events.nonexistent',
+      );
     });
 
-    it('should throw error if event not found for update', async () => {
+    it('should return partial failure if event not found for update', async () => {
       const plan: Plan = {
         items: [
           {
@@ -292,9 +308,94 @@ describe('ApigwExecutor', () => {
         ],
       };
 
-      await expect(
-        executeApigwPlan(mockContext, plan, [testEvent], serviceName, roleArn, initialState),
-      ).rejects.toThrow('Event not found for logical ID: events.nonexistent');
+      const result = await executeApigwPlan(
+        mockContext,
+        plan,
+        [testEvent],
+        serviceName,
+        roleArn,
+        initialState,
+      );
+
+      expect(result.state).toEqual(initialState);
+      expect(result.partialFailure).toBeDefined();
+      expect(result.partialFailure?.error.message).toBe(
+        'Event not found for logical ID: events.nonexistent',
+      );
+    });
+
+    it('should return partial failure on error', async () => {
+      const plan: Plan = {
+        items: [
+          {
+            logicalId: 'events.test_api',
+            action: 'create',
+            resourceType: 'ALIYUN_APIGW',
+          },
+        ],
+      };
+
+      const error = new Error('API Gateway creation failed');
+      (apigwResource.createApigwResource as jest.Mock).mockRejectedValue(error);
+
+      const result = await executeApigwPlan(
+        mockContext,
+        plan,
+        [testEvent],
+        serviceName,
+        roleArn,
+        initialState,
+      );
+
+      expect(result.state).toEqual(initialState);
+      expect(result.partialFailure).toBeDefined();
+      expect(result.partialFailure?.failedItem.logicalId).toBe('events.test_api');
+      expect(result.partialFailure?.error).toBe(error);
+      expect(result.partialFailure?.successfulItems).toEqual([]);
+      expect(logger.error).toHaveBeenCalledWith(
+        expect.stringContaining('Failed to execute create for events.test_api'),
+      );
+    });
+
+    it('should save state after each successful operation', async () => {
+      const plan: Plan = {
+        items: [
+          {
+            logicalId: 'events.test_api',
+            action: 'create',
+            resourceType: 'ALIYUN_APIGW',
+          },
+        ],
+      };
+
+      const newState = {
+        ...initialState,
+        resources: {
+          'events.test_api': {
+            mode: 'managed' as const,
+            region: 'cn-hangzhou',
+            definition: { groupName: 'test-service-agw-group' },
+            instances: [{ arn: 'arn:test', id: 'test-group' }],
+            lastUpdated: new Date().toISOString(),
+          },
+        },
+      };
+
+      const onStateChange = jest.fn();
+      (apigwResource.createApigwResource as jest.Mock).mockResolvedValue(newState);
+
+      const result = await executeApigwPlan(
+        mockContext,
+        plan,
+        [testEvent],
+        serviceName,
+        roleArn,
+        initialState,
+        onStateChange,
+      );
+
+      expect(result.state).toEqual(newState);
+      expect(onStateChange).toHaveBeenCalledWith(newState);
     });
 
     it('should handle multiple actions in sequence', async () => {
@@ -338,7 +439,8 @@ describe('ApigwExecutor', () => {
         initialState,
       );
 
-      expect(result).toEqual(newState);
+      expect(result.state).toEqual(newState);
+      expect(result.partialFailure).toBeUndefined();
       expect(apigwResource.createApigwResource).toHaveBeenCalledTimes(1);
       expect(logger.info).toHaveBeenCalledWith('No changes for events.test_api2');
     });

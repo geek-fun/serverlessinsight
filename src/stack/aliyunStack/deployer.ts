@@ -138,9 +138,18 @@ export const deployAliyunStack = async (iac: ServerlessIac): Promise<void> => {
     iac.service,
     roleArn,
     state,
+    onStateChange,
   );
-  state = eventResult;
-  // Note: executeApigwPlan doesn't return ExecutionResult yet, so no partial failure handling
+  state = eventResult.state;
+  if (eventResult.partialFailure) {
+    handlePartialFailure({
+      ...eventResult.partialFailure,
+      successfulItems: [
+        ...collectSuccessfulItems([functionResult, bucketResult, databaseResult, tableResult]),
+        ...eventResult.partialFailure.successfulItems,
+      ],
+    });
+  }
 
   saveState(state, baseDir);
 

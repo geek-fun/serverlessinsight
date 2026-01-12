@@ -76,9 +76,12 @@ export const destroyAliyunStack = async (): Promise<void> => {
     '', // service name not needed for deletion
     roleArn,
     state,
+    onStateChange,
   );
-  state = eventResult;
-  // Note: executeApigwPlan doesn't return ExecutionResult yet, so no partial failure handling
+  state = eventResult.state;
+  if (eventResult.partialFailure) {
+    handlePartialFailure(eventResult.partialFailure);
+  }
 
   const functionResult = await executeFunctionPlan(
     context,
@@ -89,7 +92,13 @@ export const destroyAliyunStack = async (): Promise<void> => {
   );
   state = functionResult.state;
   if (functionResult.partialFailure) {
-    handlePartialFailure(functionResult.partialFailure);
+    handlePartialFailure({
+      ...functionResult.partialFailure,
+      successfulItems: [
+        ...collectSuccessfulItems([eventResult]),
+        ...functionResult.partialFailure.successfulItems,
+      ],
+    });
   }
 
   const bucketResult = await executeBucketPlan(
