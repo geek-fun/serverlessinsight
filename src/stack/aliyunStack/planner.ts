@@ -4,6 +4,7 @@ import { generateFunctionPlan } from './fc3Planner';
 import { generateBucketPlan } from './ossPlanner';
 import { generateDatabasePlan } from './databasePlanner';
 import { generateTablePlan } from './tablestorePlanner';
+import { generateApigwPlan } from './apigwPlanner';
 
 export const generateAliyunPlan = async (iac: ServerlessIac) => {
   const context = getContext();
@@ -13,8 +14,15 @@ export const generateAliyunPlan = async (iac: ServerlessIac) => {
   const bucketPlan = await generateBucketPlan(context, state, iac.buckets);
   const databasePlan = await generateDatabasePlan(context, state, iac.databases);
   const tablePlan = await generateTablePlan(context, state, iac.tables);
+  const eventPlan = await generateApigwPlan(context, state, iac.events, iac.service);
 
   return {
-    items: [...functionPlan.items, ...bucketPlan.items, ...databasePlan.items, ...tablePlan.items],
+    items: [
+      ...functionPlan.items,
+      ...bucketPlan.items,
+      ...databasePlan.items,
+      ...tablePlan.items,
+      ...eventPlan.items,
+    ],
   };
 };

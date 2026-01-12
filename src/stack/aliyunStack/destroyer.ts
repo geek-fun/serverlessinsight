@@ -1,4 +1,11 @@
-import { getContext, logger, loadState, saveState, ProviderEnum } from '../../common';
+import {
+  getContext,
+  logger,
+  loadState,
+  saveState,
+  ProviderEnum,
+  getAllResources,
+} from '../../common';
 import { lang } from '../../lang';
 import { generateFunctionPlan } from './fc3Planner';
 import { executeFunctionPlan } from './fc3Executor';
@@ -8,6 +15,8 @@ import { generateDatabasePlan } from './databasePlanner';
 import { executeDatabasePlan } from './databaseExecutor';
 import { generateTablePlan } from './tablestorePlanner';
 import { executeTablePlan } from './tablestoreExecutor';
+import { generateApigwPlan } from './apigwPlanner';
+import { executeApigwPlan } from './apigwExecutor';
 import { ExecutionResult, PartialFailureError, PlanItem, StateFile } from '../../types';
 
 const createSaveStateFn = (baseDir: string) => (state: StateFile) => {
@@ -29,6 +38,22 @@ const handlePartialFailure = (failure: PartialFailureError): never => {
 const collectSuccessfulItems = (results: Array<ExecutionResult>): Array<PlanItem> =>
   results.flatMap((result) => result.partialFailure?.successfulItems ?? []);
 
+/**
+ * Extract role ARN from function state for event resources
+ */
+const getRoleArnFromState = (state: StateFile): string | undefined => {
+  const allResources = getAllResources(state);
+  for (const [logicalId, resourceState] of Object.entries(allResources)) {
+    if (logicalId.startsWith('functions.')) {
+      const ramRoleInstance = resourceState.instances.find((i) => i.type === 'ALIYUN_RAM_ROLE');
+      if (ramRoleInstance?.arn) {
+        return ramRoleInstance.arn as string;
+      }
+    }
+  }
+  return undefined;
+};
+
 export const destroyAliyunStack = async (): Promise<void> => {
   const context = getContext();
   const baseDir = process.cwd();
@@ -40,15 +65,36 @@ export const destroyAliyunStack = async (): Promise<void> => {
   const bucketPlan = await generateBucketPlan(context, state, undefined);
   const databasePlan = await generateDatabasePlan(context, state, undefined);
   const tablePlan = await generateTablePlan(context, state, undefined);
+  // For destroy, service name is not used (deletion uses state only)
+  const eventPlan = await generateApigwPlan(context, state, undefined, '');
 
   const combinedPlan = {
-    items: [...functionPlan.items, ...bucketPlan.items, ...databasePlan.items, ...tablePlan.items],
+    items: [
+      ...functionPlan.items,
+      ...bucketPlan.items,
+      ...databasePlan.items,
+      ...tablePlan.items,
+      ...eventPlan.items,
+    ],
   };
 
   logger.info(`${lang.__('PLAN_GENERATED')}: ${combinedPlan.items.length} ${lang.__('ACTIONS')}`);
   combinedPlan.items.forEach((item) => {
     logger.info(`  - ${item.action.toUpperCase()}: ${item.logicalId} (${item.resourceType})`);
   });
+
+  // Delete events before functions (events depend on functions)
+  const roleArn = getRoleArnFromState(state);
+  const eventResult = await executeApigwPlan(
+    context,
+    eventPlan,
+    undefined,
+    '', // service name not needed for deletion
+    roleArn,
+    state,
+  );
+  state = eventResult;
+  // Note: executeApigwPlan doesn't return ExecutionResult yet, so no partial failure handling
 
   const functionResult = await executeFunctionPlan(
     context,

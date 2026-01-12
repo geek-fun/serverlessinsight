@@ -5,7 +5,7 @@ import {
   PlanItem,
   StateFile,
 } from '../../types';
-import { getContext, logger, loadState, saveState } from '../../common';
+import { getContext, logger, loadState, saveState, getAllResources } from '../../common';
 import { lang } from '../../lang';
 import { generateFunctionPlan } from './fc3Planner';
 import { executeFunctionPlan } from './fc3Executor';
@@ -15,6 +15,8 @@ import { generateDatabasePlan } from './databasePlanner';
 import { executeDatabasePlan } from './databaseExecutor';
 import { generateTablePlan } from './tablestorePlanner';
 import { executeTablePlan } from './tablestoreExecutor';
+import { generateApigwPlan } from './apigwPlanner';
+import { executeApigwPlan } from './apigwExecutor';
 
 const createSaveStateFn = (baseDir: string) => (state: StateFile) => {
   saveState(state, baseDir);
@@ -35,6 +37,22 @@ const handlePartialFailure = (failure: PartialFailureError): never => {
 const collectSuccessfulItems = (results: Array<ExecutionResult>): Array<PlanItem> =>
   results.flatMap((result) => result.partialFailure?.successfulItems ?? []);
 
+/**
+ * Extract role ARN from function state for event resources
+ */
+const getRoleArnFromState = (state: StateFile): string | undefined => {
+  const allResources = getAllResources(state);
+  for (const [logicalId, resourceState] of Object.entries(allResources)) {
+    if (logicalId.startsWith('functions.')) {
+      const ramRoleInstance = resourceState.instances.find((i) => i.type === 'ALIYUN_RAM_ROLE');
+      if (ramRoleInstance?.arn) {
+        return ramRoleInstance.arn as string;
+      }
+    }
+  }
+  return undefined;
+};
+
 export const deployAliyunStack = async (iac: ServerlessIac): Promise<void> => {
   const context = getContext();
   const baseDir = process.cwd();
@@ -48,9 +66,16 @@ export const deployAliyunStack = async (iac: ServerlessIac): Promise<void> => {
   const bucketPlan = await generateBucketPlan(context, state, iac.buckets);
   const databasePlan = await generateDatabasePlan(context, state, iac.databases);
   const tablePlan = await generateTablePlan(context, state, iac.tables);
+  const eventPlan = await generateApigwPlan(context, state, iac.events, iac.service);
 
   const combinedPlan = {
-    items: [...functionPlan.items, ...bucketPlan.items, ...databasePlan.items, ...tablePlan.items],
+    items: [
+      ...functionPlan.items,
+      ...bucketPlan.items,
+      ...databasePlan.items,
+      ...tablePlan.items,
+      ...eventPlan.items,
+    ],
   };
 
   logger.info(`${lang.__('PLAN_GENERATED')}: ${combinedPlan.items.length} ${lang.__('ACTIONS')}`);
@@ -119,6 +144,19 @@ export const deployAliyunStack = async (iac: ServerlessIac): Promise<void> => {
       ],
     });
   }
+
+  // Execute event plan after functions are created (events depend on functions)
+  const roleArn = getRoleArnFromState(state);
+  const eventResult = await executeApigwPlan(
+    context,
+    eventPlan,
+    iac.events,
+    iac.service,
+    roleArn,
+    state,
+  );
+  state = eventResult;
+  // Note: executeApigwPlan doesn't return ExecutionResult yet, so no partial failure handling
 
   saveState(state, baseDir);
 
