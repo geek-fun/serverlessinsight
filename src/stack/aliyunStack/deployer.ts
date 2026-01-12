@@ -5,7 +5,7 @@ import {
   PlanItem,
   StateFile,
 } from '../../types';
-import { getContext, logger, loadState, saveState, getAllResources } from '../../common';
+import { getContext, logger, loadState, saveState, getRoleArnFromState } from '../../common';
 import { lang } from '../../lang';
 import { generateFunctionPlan } from './fc3Planner';
 import { executeFunctionPlan } from './fc3Executor';
@@ -36,22 +36,6 @@ const handlePartialFailure = (failure: PartialFailureError): never => {
 
 const collectSuccessfulItems = (results: Array<ExecutionResult>): Array<PlanItem> =>
   results.flatMap((result) => result.partialFailure?.successfulItems ?? []);
-
-/**
- * Extract role ARN from function state for event resources
- */
-const getRoleArnFromState = (state: StateFile): string | undefined => {
-  const allResources = getAllResources(state);
-  for (const [logicalId, resourceState] of Object.entries(allResources)) {
-    if (logicalId.startsWith('functions.')) {
-      const ramRoleInstance = resourceState.instances.find((i) => i.type === 'ALIYUN_RAM_ROLE');
-      if (ramRoleInstance?.arn) {
-        return ramRoleInstance.arn as string;
-      }
-    }
-  }
-  return undefined;
-};
 
 export const deployAliyunStack = async (iac: ServerlessIac): Promise<void> => {
   const context = getContext();
