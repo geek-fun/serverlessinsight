@@ -239,8 +239,11 @@ describe('Fc3Resource', () => {
         }),
         'mock-code-hash',
       );
-      expect(mockedStateManager.setResource).toHaveBeenCalledWith(
-        initialState,
+      // Check that setResource was called twice (once for dependent resources, once for final state)
+      expect(mockedStateManager.setResource).toHaveBeenCalledTimes(2);
+      // Check the LAST call has the function instance
+      expect(mockedStateManager.setResource).toHaveBeenLastCalledWith(
+        expect.any(Object), // State is updated between calls
         'functions.test_fn',
         expect.objectContaining({
           mode: 'managed',
@@ -262,13 +265,42 @@ describe('Fc3Resource', () => {
       expect(result).toEqual(newState);
     });
 
-    it('should propagate errors from createFc3Function', async () => {
+    it('should save dependent resources and return state even if createFc3Function fails', async () => {
       const error = new Error('Create failed');
       mockedFc3Operations.createFunction.mockRejectedValue(error);
 
-      await expect(createResource(mockContext, testFunction, initialState)).rejects.toThrow(
-        'Create failed',
+      // Mock setResource to return state with dependent resources
+      const stateWithDependents = {
+        ...initialState,
+        resources: {
+          'functions.test_fn': {
+            mode: 'managed',
+            region: 'cn-hangzhou',
+            definition: mockDefinition,
+            instances: [
+              {
+                arn: 'acs:ram::123456789012:role/test-role',
+                id: 'test-stack-fc-role',
+                type: 'ALIYUN_RAM_ROLE',
+                roleName: 'test-role',
+              },
+            ],
+            lastUpdated: expect.any(String),
+          },
+        },
+      };
+      mockedStateManager.setResource.mockReturnValue(stateWithDependents);
+
+      const result = await createResource(mockContext, testFunction, initialState);
+
+      // Should save state with dependent resources before attempting function creation
+      expect(mockedStateManager.setResource).toHaveBeenCalled();
+      // Should log error
+      expect(mockedLogger.error).toHaveBeenCalledWith(
+        expect.stringContaining('Failed to create function'),
       );
+      // Should return state with dependent resources
+      expect(result).toEqual(stateWithDependents);
     });
 
     it('should throw error when refresh state fails', async () => {
