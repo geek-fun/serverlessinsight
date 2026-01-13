@@ -23,15 +23,19 @@ const createSaveStateFn = (baseDir: string) => (state: StateFile) => {
 };
 
 const handlePartialFailure = (failure: PartialFailureError): never => {
+  const error = failure.error as Error & { isPartialFailure?: boolean };
+  error.isPartialFailure = true;
   logger.error(
-    lang.__('PARTIAL_DEPLOYMENT_FAILURE', {
+    `${lang.__('FAILED_TO_EXECUTE_ACTION', {
+      action: failure.failedItem.action,
+      logicalId: failure.failedItem.logicalId,
+      error: error.message,
+    })}\n\n${lang.__('PARTIAL_DEPLOYMENT_FAILURE', {
       successCount: String(failure.successfulItems.length),
       failedResource: failure.failedItem.logicalId,
-    }),
+    })}\n${lang.__('PARTIAL_FAILURE_STATE_SAVED')}\n${lang.__('PARTIAL_FAILURE_NEXT_STEPS')}`,
   );
-  logger.info(lang.__('PARTIAL_FAILURE_STATE_SAVED'));
-  logger.info(lang.__('PARTIAL_FAILURE_NEXT_STEPS'));
-  throw failure.error;
+  throw error;
 };
 
 const collectSuccessfulItems = (results: Array<ExecutionResult>): Array<PlanItem> =>

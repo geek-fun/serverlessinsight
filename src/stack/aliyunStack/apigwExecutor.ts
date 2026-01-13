@@ -118,7 +118,6 @@ export const executeApigwPlan = async (
         }
       }
     } catch (error) {
-      logger.error(`Failed to execute ${item.action} for ${item.logicalId}: ${error}`);
       return {
         state: currentState,
         partialFailure: {

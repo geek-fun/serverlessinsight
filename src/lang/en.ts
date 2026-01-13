@@ -184,6 +184,7 @@ export const en = {
     'State has been saved for successfully deployed resources. Run deploy again to retry failed resources.',
   PARTIAL_FAILURE_NEXT_STEPS:
     'Next steps: 1) Review the error above, 2) Fix any configuration issues, 3) Run deploy again to continue.',
+  FAILED_TO_EXECUTE_ACTION: 'Failed to execute {{action}} for {{logicalId}}: {{error}}',
   STATE_PERSISTED_AFTER_OPERATION: 'State persisted after {{action}} of {{resourceId}}',
 
   // Lock messages

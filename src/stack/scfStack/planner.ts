@@ -27,12 +27,12 @@ export const displayPlan = (planResult: {
     drifted?: boolean;
   }>;
 }) => {
-  logger.info('========================================');
-  logger.info(lang.__('DEPLOYMENT_PLAN'));
-  logger.info('========================================');
+  const separator = '========================================';
 
   if (planResult.items.length === 0) {
-    logger.info(lang.__('NO_CHANGES_INFRASTRUCTURE_UP_TO_DATE'));
+    logger.info(
+      `${separator}\n${lang.__('DEPLOYMENT_PLAN')}\n${separator}\n${lang.__('NO_CHANGES_INFRASTRUCTURE_UP_TO_DATE')}`,
+    );
     return;
   }
 
@@ -41,59 +41,56 @@ export const displayPlan = (planResult: {
   const deleteActions = planResult.items.filter((item) => item.action === 'delete');
   const noopActions = planResult.items.filter((item) => item.action === 'noop');
 
+  const sections: string[] = [];
+
   if (createActions.length > 0) {
-    logger.info(`\n[${lang.__('CREATE')}] ${lang.__('RESOURCES_TO_BE_CREATED')}:`);
+    const createLines = [`[${lang.__('CREATE')}]:`];
     for (const item of createActions) {
-      logger.info(`  + ${item.logicalId} (${item.resourceType})`);
+      createLines.push(`  + ${item.logicalId} (${item.resourceType})`);
       if ((item.changes as { after?: unknown })?.after) {
-        logger.info(
-          `    ${JSON.stringify((item.changes as { after?: unknown }).after, null, 2)
-            .split('\n')
-            .join('\n    ')}`,
-        );
+        const jsonStr = JSON.stringify((item.changes as { after?: unknown }).after, null, 2);
+        createLines.push(`    ${jsonStr.split('\n').join('\n    ')}`);
       }
     }
+    sections.push(createLines.join('\n'));
   }
 
   if (updateActions.length > 0) {
-    logger.info(`\n[${lang.__('UPDATE')}] ${lang.__('RESOURCES_TO_BE_UPDATED')}:`);
+    const updateLines = [`[${lang.__('UPDATE')}]:`];
     for (const item of updateActions) {
-      logger.info(`  ~ ${item.logicalId} (${item.resourceType})`);
+      updateLines.push(`  ~ ${item.logicalId} (${item.resourceType})`);
       if (item.drifted) {
-        logger.info(`    [${lang.__('DRIFTED')}] ${lang.__('REMOTE_CONFIG_DIFFERS')}`);
+        updateLines.push(`    [${lang.__('DRIFTED')}] ${lang.__('REMOTE_CONFIG_DIFFERS')}`);
       }
       if (item.changes) {
-        logger.info(
-          `    ${lang.__('CHANGES')}: ${JSON.stringify(item.changes, null, 2).split('\n').join('\n    ')}`,
-        );
+        const jsonStr = JSON.stringify(item.changes, null, 2);
+        updateLines.push(`    ${lang.__('CHANGES')}: ${jsonStr.split('\n').join('\n    ')}`);
       }
     }
+    sections.push(updateLines.join('\n'));
   }
 
   if (deleteActions.length > 0) {
-    logger.info(`\n[${lang.__('DELETE')}] ${lang.__('RESOURCES_TO_BE_DELETED')}:`);
+    const deleteLines = [`[${lang.__('DELETE')}]:`];
     for (const item of deleteActions) {
-      logger.info(`  - ${item.logicalId} (${item.resourceType})`);
+      deleteLines.push(`  - ${item.logicalId} (${item.resourceType})`);
       if ((item.changes as { before?: unknown })?.before) {
-        logger.info(
-          `    ${JSON.stringify((item.changes as { before?: unknown }).before, null, 2)
-            .split('\n')
-            .join('\n    ')}`,
-        );
+        const jsonStr = JSON.stringify((item.changes as { before?: unknown }).before, null, 2);
+        deleteLines.push(`    ${jsonStr.split('\n').join('\n    ')}`);
       }
     }
+    sections.push(deleteLines.join('\n'));
   }
 
   if (noopActions.length > 0) {
-    logger.info(`\n[${lang.__('NO_CHANGE')}] ${lang.__('RESOURCES_UNCHANGED')}:`);
+    const noopLines = [`[${lang.__('NO_CHANGE')}]:`];
     for (const item of noopActions) {
-      logger.info(`  = ${item.logicalId} (${item.resourceType})`);
+      noopLines.push(`  = ${item.logicalId} (${item.resourceType})`);
     }
+    sections.push(noopLines.join('\n'));
   }
 
-  logger.info('\n========================================');
   logger.info(
-    `${lang.__('PLAN')}: ${createActions.length} ${lang.__('TO_CREATE')}, ${updateActions.length} ${lang.__('TO_UPDATE')}, ${deleteActions.length} ${lang.__('TO_DELETE')}, ${noopActions.length} ${lang.__('UNCHANGED')}`,
+    `\n${separator}\n${lang.__('DEPLOYMENT_PLAN')}\n${separator}\n${sections.join('\n\n')}\n\n${separator}\n${lang.__('PLAN')}: ${createActions.length} ${lang.__('TO_CREATE')}, ${updateActions.length} ${lang.__('TO_UPDATE')}, ${deleteActions.length} ${lang.__('TO_DELETE')}, ${noopActions.length} ${lang.__('UNCHANGED')}\n${separator}`,
   );
-  logger.info('========================================');
 };

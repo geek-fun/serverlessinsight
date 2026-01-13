@@ -377,23 +377,13 @@ export const createApigwOperations = (
     verificationToken: string,
     groupSubdomain: string,
   ): void => {
-    logger.error(`\n${'='.repeat(80)}`);
-    logger.error(lang.__('APIGW_VERIFICATION_HEADER'));
-    logger.error(`${'='.repeat(80)}`);
-    logger.error(`\n${lang.__('APIGW_VERIFICATION_DOMAIN', { domain: domainName })}`);
-    logger.error(`\n${lang.__('APIGW_VERIFICATION_INSTRUCTIONS')}\n`);
-    logger.error(lang.__('APIGW_VERIFICATION_RECORD_NAME', { name: domainName }));
-    logger.error(lang.__('APIGW_VERIFICATION_RECORD_TYPE', { type: 'CNAME' }));
+    const separator = '='.repeat(80);
     logger.error(
-      lang.__('APIGW_VERIFICATION_RECORD_VALUE', {
-        value: groupSubdomain,
-      }),
+      `\n${separator}\n${lang.__('APIGW_VERIFICATION_HEADER')}\n${separator}\n${lang.__('APIGW_VERIFICATION_DOMAIN', { domain: domainName })}\n\n${lang.__('APIGW_VERIFICATION_INSTRUCTIONS')}\n\n${lang.__('APIGW_VERIFICATION_RECORD_NAME', { name: domainName })}\n${lang.__('APIGW_VERIFICATION_RECORD_TYPE', { type: 'CNAME' })}\n${lang.__('APIGW_VERIFICATION_RECORD_VALUE', { value: groupSubdomain })}`,
     );
-    logger.error(`\n${'='.repeat(80)}`);
-    logger.error(lang.__('APIGW_VERIFICATION_NEXT_STEPS'));
-    logger.error(lang.__('APIGW_VERIFICATION_STEP1'));
-    logger.error(lang.__('APIGW_VERIFICATION_STEP2'));
-    logger.error(`${'='.repeat(80)}\n`);
+    logger.error(
+      `\n${separator}\n${lang.__('APIGW_VERIFICATION_NEXT_STEPS')}\n${lang.__('APIGW_VERIFICATION_STEP1')}\n${lang.__('APIGW_VERIFICATION_STEP2')}\n${separator}\n`,
+    );
   };
 
   return {

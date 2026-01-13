@@ -175,6 +175,7 @@ export const zhCN = {
   PARTIAL_FAILURE_STATE_SAVED: '已成功部署的资源状态已保存。再次运行 deploy 以重试失败的资源。',
   PARTIAL_FAILURE_NEXT_STEPS:
     '后续步骤: 1) 查看上面的错误, 2) 修复配置问题, 3) 再次运行 deploy 继续。',
+  FAILED_TO_EXECUTE_ACTION: '执行 {{action}} 失败: {{logicalId}}: {{error}}',
   STATE_PERSISTED_AFTER_OPERATION: '{{action}} {{resourceId}} 后状态已持久化',
 
   // API Gateway messages

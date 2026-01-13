@@ -12,16 +12,19 @@ import { lang } from '../lang';
 
 // Global error handler
 const handleCommandError = (
-  error: { message?: string; stack?: string; code?: number },
+  error: { message?: string; stack?: string; code?: number; isPartialFailure?: boolean },
   commandName: string,
 ): never => {
-  // Log error message as string to preserve newlines
-  logger.error(
-    lang.__('COMMAND_FAILED', {
-      commandName,
-      error: error?.message || 'Unknown error occurred',
-    }),
-  );
+  // Skip logging if already logged by handlePartialFailure
+  if (!error?.isPartialFailure) {
+    // Log error message as string to preserve newlines
+    logger.error(
+      lang.__('COMMAND_FAILED', {
+        commandName,
+        error: error?.message || 'Unknown error occurred',
+      }),
+    );
+  }
 
   if (error?.stack && process.env.DEBUG) {
     logger.debug(lang.__('STACK_TRACE', { stack: error.stack }));
