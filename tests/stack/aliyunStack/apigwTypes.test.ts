@@ -71,6 +71,7 @@ describe('Apigw Types', () => {
     await setContext({
       region: 'cn-hangzhou',
       provider: ProviderEnum.ALIYUN,
+      location: 'tests/fixtures/serverless-insight.yml', // Use fixture file
     });
     setIac(mockIac);
   });
