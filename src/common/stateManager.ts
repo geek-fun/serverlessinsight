@@ -97,3 +97,20 @@ export const removeResource = (state: StateFile, resourceId: string): StateFile 
 export const getAllResources = (state: StateFile): Record<string, ResourceState> => {
   return state.resources;
 };
+
+/**
+ * Extract role ARN from function state for event resources.
+ * Looks through all function resources to find a RAM role instance and returns its ARN.
+ */
+export const getRoleArnFromState = (state: StateFile): string | undefined => {
+  const allResources = getAllResources(state);
+  for (const [logicalId, resourceState] of Object.entries(allResources)) {
+    if (logicalId.startsWith('functions.')) {
+      const ramRoleInstance = resourceState.instances?.find((i) => i.type === 'ALIYUN_RAM_ROLE');
+      if (ramRoleInstance?.arn) {
+        return ramRoleInstance.arn as string;
+      }
+    }
+  }
+  return undefined;
+};

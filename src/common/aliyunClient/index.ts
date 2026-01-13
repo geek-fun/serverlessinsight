@@ -6,6 +6,7 @@ import NasClient from '@alicloud/nas20170626';
 import CloudApiClient from '@alicloud/cloudapi20160714';
 import RdsClient from '@alicloud/rds20140815';
 import EsServerlessClient from '@alicloud/es-serverless20230627';
+import DnsClient from '@alicloud/alidns20150109';
 import * as $OpenApi from '@alicloud/openapi-client';
 import OSS from 'ali-oss';
 import { Context } from '../../types';
@@ -19,6 +20,7 @@ import { createOssOperations } from './ossOperations';
 import { createRdsOperations } from './rdsOperations';
 import { createEsOperations } from './esOperations';
 import { createTablestoreOperations } from './tablestoreOperations';
+import { createDnsOperations } from './dnsOperations';
 
 export * from './types';
 export * from './apigwOperations';
@@ -26,6 +28,7 @@ export * from './ossOperations';
 export * from './rdsOperations';
 export * from './esOperations';
 export * from './tablestoreOperations';
+export * from './dnsOperations';
 
 const initializeSdkClients = (context: Context) => {
   const baseConfig = {
@@ -74,6 +77,10 @@ const initializeSdkClients = (context: Context) => {
   esConfig.endpoint = `elasticsearch-serverless.${context.region}.aliyuncs.com`;
   const esClient = new EsServerlessClient(esConfig);
 
+  const dnsConfig = new $OpenApi.Config(baseConfig);
+  dnsConfig.endpoint = `alidns.aliyuncs.com`;
+  const dnsClient = new DnsClient(dnsConfig);
+
   return {
     fc3: fc3Client,
     sls: slsClient,
@@ -84,6 +91,7 @@ const initializeSdkClients = (context: Context) => {
     apigw: apigwClient,
     rds: rdsClient,
     es: esClient,
+    dns: dnsClient,
   };
 };
 
@@ -97,9 +105,10 @@ export const createAliyunClient = (context: Context) => {
     ecs: createEcsOperations(sdkClients.ecs, context),
     nas: createNasOperations(sdkClients.nas),
     oss: createOssOperations(sdkClients.oss, context.region),
-    apigw: createApigwOperations(sdkClients.apigw),
+    apigw: createApigwOperations(sdkClients.apigw, sdkClients.dns, context),
     rds: createRdsOperations(sdkClients.rds, context),
     es: createEsOperations(sdkClients.es, context),
+    dns: createDnsOperations(sdkClients.dns),
     tablestore: (instanceName: string) =>
       createTablestoreOperations(
         `https://${instanceName}.${context.region}.ots.aliyuncs.com`,

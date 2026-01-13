@@ -176,4 +176,17 @@ export const zhCN = {
   PARTIAL_FAILURE_NEXT_STEPS:
     '后续步骤: 1) 查看上面的错误, 2) 修复配置问题, 3) 再次运行 deploy 继续。',
   STATE_PERSISTED_AFTER_OPERATION: '{{action}} {{resourceId}} 后状态已持久化',
+
+  // API Gateway messages
+  APIGW_GROUP_FOUND_REUSING: '找到现有 API 分组: {{groupName}}，将复用它',
+  APIGW_DOMAIN_BINDING_FAILED: '绑定自定义域名失败: {{error}}',
+  APIGW_GROUP_APIS_CREATED_DOMAIN_FAILED: 'API 网关分组和 API 创建成功，但域名绑定失败',
+  APIGW_STATE_SAVED_RETRY: '状态已保存。您可以重试或修复域名配置',
+
+  // Function resource messages
+  FC3_DEPENDENT_RESOURCES_TRACKED: '依赖资源（SLS、RAM、安全组、NAS）已在状态中跟踪',
+  FC3_CAN_RETRY_DEPLOYMENT: '您可以重试部署 - 系统将复用现有的依赖资源',
+
+  // Bucket resource messages
+  OSS_BUCKET_TRACKED_CAN_RETRY: '存储桶已在状态中跟踪，您可以重试部署以上传文件',
 };

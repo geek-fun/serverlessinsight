@@ -10,6 +10,7 @@ import {
 import { Context, FunctionDomain, ResourceState, StateFile } from '../../types';
 import { extractFc3Definition, Fc3FunctionInfo, functionToFc3Config } from './fc3Types';
 import { logger } from '../../common/logger';
+import { lang } from '../../lang';
 
 const buildFc3InstanceFromProvider = (info: Fc3FunctionInfo, arn: string) => {
   return {
@@ -380,23 +381,11 @@ export const createResource = async (
   }
 
   const codePath = fn.code!.path;
-  const client = createAliyunClient(context);
-  await client.fc3.createFunction(config, codePath);
-
-  // Refresh state from provider to get all attributes
-  const functionInfo = await client.fc3.getFunction(fn.name);
-  if (!functionInfo) {
-    throw new Error(`Failed to refresh state for function: ${fn.name}`);
-  }
-
   const codeHash = computeFileHash(codePath);
   const definition = extractFc3Definition(config, codeHash);
-  const arn =
-    functionInfo.functionArn ??
-    `arn:acs:fc:${context.region}:${context.accountId}:function/${fn.name}`;
+  const logicalId = `functions.${fn.key}`;
 
-  // Build instances array with FC function as first item, followed by dependent resources
-  const fcInstance = buildFc3InstanceFromProvider(functionInfo, arn);
+  // Save state with dependent resources BEFORE attempting function creation
   const dependentInstances = dependentResources.instances.map((dep) => ({
     arn:
       dep.arn ??
@@ -406,6 +395,43 @@ export const createResource = async (
     ...dep.attributes,
   }));
 
+  // Create partial state with just dependent resources
+  const partialResourceState: ResourceState = {
+    mode: 'managed',
+    region: context.region,
+    definition,
+    instances: dependentInstances,
+    lastUpdated: new Date().toISOString(),
+  };
+
+  state = setResource(state, logicalId, partialResourceState);
+
+  // Now attempt to create the function
+  const client = createAliyunClient(context);
+  try {
+    await client.fc3.createFunction(config, codePath);
+  } catch (error) {
+    logger.error(
+      `Failed to create function, but dependent resources were created and saved to state: ${error}`,
+    );
+    logger.info(lang.__('FC3_DEPENDENT_RESOURCES_TRACKED'));
+    logger.info(lang.__('FC3_CAN_RETRY_DEPLOYMENT'));
+    return state;
+  }
+
+  // Refresh state from provider to get all attributes
+  const functionInfo = await client.fc3.getFunction(fn.name);
+  if (!functionInfo) {
+    throw new Error(`Failed to refresh state for function: ${fn.name}`);
+  }
+
+  const arn =
+    functionInfo.functionArn ??
+    `arn:acs:fc:${context.region}:${context.accountId}:function/${fn.name}`;
+
+  // Build instances array with FC function as first item, followed by dependent resources
+  const fcInstance = buildFc3InstanceFromProvider(functionInfo, arn);
+
   const resourceState: ResourceState = {
     mode: 'managed',
     region: context.region,
@@ -414,7 +440,6 @@ export const createResource = async (
     lastUpdated: new Date().toISOString(),
   };
 
-  const logicalId = `functions.${fn.key}`;
   return setResource(state, logicalId, resourceState);
 };
 

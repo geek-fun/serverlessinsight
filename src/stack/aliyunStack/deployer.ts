@@ -5,7 +5,7 @@ import {
   PlanItem,
   StateFile,
 } from '../../types';
-import { getContext, logger, loadState, saveState } from '../../common';
+import { getContext, logger, loadState, saveState, getRoleArnFromState } from '../../common';
 import { lang } from '../../lang';
 import { generateFunctionPlan } from './fc3Planner';
 import { executeFunctionPlan } from './fc3Executor';
@@ -15,6 +15,8 @@ import { generateDatabasePlan } from './databasePlanner';
 import { executeDatabasePlan } from './databaseExecutor';
 import { generateTablePlan } from './tablestorePlanner';
 import { executeTablePlan } from './tablestoreExecutor';
+import { generateApigwPlan } from './apigwPlanner';
+import { executeApigwPlan } from './apigwExecutor';
 
 const createSaveStateFn = (baseDir: string) => (state: StateFile) => {
   saveState(state, baseDir);
@@ -48,9 +50,16 @@ export const deployAliyunStack = async (iac: ServerlessIac): Promise<void> => {
   const bucketPlan = await generateBucketPlan(context, state, iac.buckets);
   const databasePlan = await generateDatabasePlan(context, state, iac.databases);
   const tablePlan = await generateTablePlan(context, state, iac.tables);
+  const eventPlan = await generateApigwPlan(context, state, iac.events, iac.service);
 
   const combinedPlan = {
-    items: [...functionPlan.items, ...bucketPlan.items, ...databasePlan.items, ...tablePlan.items],
+    items: [
+      ...functionPlan.items,
+      ...bucketPlan.items,
+      ...databasePlan.items,
+      ...tablePlan.items,
+      ...eventPlan.items,
+    ],
   };
 
   logger.info(`${lang.__('PLAN_GENERATED')}: ${combinedPlan.items.length} ${lang.__('ACTIONS')}`);
@@ -116,6 +125,28 @@ export const deployAliyunStack = async (iac: ServerlessIac): Promise<void> => {
       successfulItems: [
         ...collectSuccessfulItems([functionResult, bucketResult, databaseResult]),
         ...tableResult.partialFailure.successfulItems,
+      ],
+    });
+  }
+
+  // Execute event plan after functions are created (events depend on functions)
+  const roleArn = getRoleArnFromState(state);
+  const eventResult = await executeApigwPlan(
+    context,
+    eventPlan,
+    iac.events,
+    iac.service,
+    roleArn,
+    state,
+    onStateChange,
+  );
+  state = eventResult.state;
+  if (eventResult.partialFailure) {
+    handlePartialFailure({
+      ...eventResult.partialFailure,
+      successfulItems: [
+        ...collectSuccessfulItems([functionResult, bucketResult, databaseResult, tableResult]),
+        ...eventResult.partialFailure.successfulItems,
       ],
     });
   }

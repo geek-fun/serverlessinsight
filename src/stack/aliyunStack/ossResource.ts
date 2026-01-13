@@ -4,6 +4,8 @@ import { setResource, removeResource } from '../../common';
 import { Context, BucketDomain, ResourceState, StateFile } from '../../types';
 import { bucketToOssBucketConfig, extractOssBucketDefinition } from './ossTypes';
 import { CommonBucketInstance } from '../bucketTypes';
+import { logger } from '../../common/logger';
+import { lang } from '../../lang';
 import path from 'node:path';
 
 const buildOssInstanceFromProvider = (info: OssBucketInfo, arn: string): CommonBucketInstance => {
@@ -108,21 +110,18 @@ export const createBucketResource = async (
     storageClass: config.storageClass,
   });
 
-  // Upload static files if code path is specified
-  if (bucket.website?.code) {
-    const codePath = path.resolve(process.cwd(), bucket.website.code);
-    await client.oss.uploadFiles(config.bucketName, codePath);
-  }
-
-  // Refresh state from provider to get all attributes
-  const bucketInfo = await client.oss.getBucket(config.bucketName);
+  // Refresh state from provider to get bucket info
+  let bucketInfo = await client.oss.getBucket(config.bucketName);
   if (!bucketInfo) {
     throw new Error(`Failed to refresh state for bucket: ${config.bucketName}`);
   }
 
   const definition = extractOssBucketDefinition(config);
   const arn = `arn:acs:oss:${context.region}:${context.accountId}:${config.bucketName}`;
-  const resourceState: ResourceState = {
+  const logicalId = `buckets.${bucket.key}`;
+
+  // Save state immediately after bucket creation, before file upload
+  const partialResourceState: ResourceState = {
     mode: 'managed',
     region: context.region,
     definition,
@@ -130,8 +129,36 @@ export const createBucketResource = async (
     lastUpdated: new Date().toISOString(),
   };
 
-  const logicalId = `buckets.${bucket.key}`;
-  return setResource(state, logicalId, resourceState);
+  state = setResource(state, logicalId, partialResourceState);
+
+  // Upload static files if code path is specified
+  if (bucket.website?.code) {
+    try {
+      const codePath = path.resolve(process.cwd(), bucket.website.code);
+      await client.oss.uploadFiles(config.bucketName, codePath);
+
+      // Refresh state after upload to get updated info
+      bucketInfo = await client.oss.getBucket(config.bucketName);
+      if (bucketInfo) {
+        const updatedResourceState: ResourceState = {
+          mode: 'managed',
+          region: context.region,
+          definition,
+          instances: [buildOssInstanceFromProvider(bucketInfo, arn)],
+          lastUpdated: new Date().toISOString(),
+        };
+        return setResource(state, logicalId, updatedResourceState);
+      }
+    } catch (error) {
+      logger.error(
+        `Failed to upload files to bucket, but bucket was created and saved to state: ${error}`,
+      );
+      logger.info(lang.__('OSS_BUCKET_TRACKED_CAN_RETRY'));
+      return state;
+    }
+  }
+
+  return state;
 };
 
 export const readBucketResource = async (context: Context, bucketName: string) => {

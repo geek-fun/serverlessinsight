@@ -60,10 +60,11 @@ export const generateApigwPlan = async (
         try {
           const remoteGroup = await client.apigw.findApiGroupByName(groupConfig.groupName);
           if (remoteGroup) {
-            // Resource exists remotely but not in state - needs import or recreate
+            // Resource exists remotely but not in state - this is drift
+            // We should update (import) it rather than try to create again
             return {
               logicalId,
-              action: 'create',
+              action: 'update',
               resourceType: 'ALIYUN_APIGW',
               changes: { after: desiredDefinition },
               drifted: true,
