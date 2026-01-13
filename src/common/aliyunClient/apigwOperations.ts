@@ -1,7 +1,12 @@
 import CloudApiClient from '@alicloud/cloudapi20160714';
 import * as cloudapi from '@alicloud/cloudapi20160714';
+import DnsClient from '@alicloud/alidns20150109';
+import { Context } from '../../types';
+import { createDnsOperations } from './dnsOperations';
+import { logger } from '../logger';
 
 type ApigwSdkClient = CloudApiClient;
+type DnsSdkClient = DnsClient;
 
 /**
  * API Group types
@@ -146,7 +151,93 @@ const removeUndefined = <T extends Record<string, unknown>>(obj: T): T => {
   return Object.fromEntries(Object.entries(obj).filter(([, value]) => value !== undefined)) as T;
 };
 
-export const createApigwOperations = (apigwClient: ApigwSdkClient) => {
+/**
+ * Sleep utility for waiting
+ */
+const sleep = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));
+
+/**
+ * Extract main domain from subdomain
+ * e.g., "api.example.com" -> "example.com"
+ */
+const extractMainDomain = (domainName: string): string => {
+  const parts = domainName.split('.');
+  if (parts.length <= 2) {
+    return domainName;
+  }
+  return parts.slice(-2).join('.');
+};
+
+export const createApigwOperations = (
+  apigwClient: ApigwSdkClient,
+  dnsClient: DnsSdkClient,
+  _context: Context,
+) => {
+  const dnsOps = createDnsOperations(dnsClient);
+
+  /**
+   * Check if domain is verified for API Gateway
+   */
+  const checkDomainVerification = async (domainName: string): Promise<boolean> => {
+    try {
+      const request = new cloudapi.DescribeDomainRequest({
+        domainName,
+        groupId: '', // Can be empty for domain check
+      });
+      const response = await apigwClient.describeDomain(request);
+      // If domain exists and can be described, consider it verified
+      return response.body?.domainName === domainName;
+    } catch (error: unknown) {
+      const err = error as { code?: string };
+      if (err.code === 'NotFoundDomain' || err.code === 'DomainNotExists') {
+        return false;
+      }
+      // For other errors, log and return false
+      logger.warn(`Unable to check domain verification for ${domainName}: ${error}`);
+      return false;
+    }
+  };
+
+  /**
+   * Add DNS verification record for domain
+   */
+  const addDomainVerificationRecord = async (domainName: string): Promise<void> => {
+    logger.info(`Adding DNS verification record for domain: ${domainName}`);
+
+    const mainDomain = extractMainDomain(domainName);
+    const verificationHost = `_aliyundomainverify`;
+    const verificationValue = `apigateway_${domainName.replace(/\./g, '_')}`;
+
+    try {
+      // Check if record already exists
+      const existingRecords = await dnsOps.describeDomainRecords(mainDomain, verificationHost);
+      const recordExists = existingRecords.some(
+        (record) => record.rr === verificationHost && record.value === verificationValue,
+      );
+
+      if (recordExists) {
+        logger.info(`DNS verification record already exists for ${domainName}`);
+        return;
+      }
+
+      // Add the verification record
+      await dnsOps.addDomainRecord({
+        domainName: mainDomain,
+        rr: verificationHost,
+        type: 'TXT',
+        value: verificationValue,
+        ttl: 600,
+      });
+
+      logger.info(`DNS verification record added for ${domainName}`);
+      logger.info('Waiting for DNS propagation (60 seconds)...');
+      await sleep(60000); // Wait 1 minute for DNS propagation
+    } catch (error) {
+      logger.error(`Failed to add DNS verification record for ${domainName}: ${error}`);
+      throw error;
+    }
+  };
+
   return {
     /**
      * Create an API Gateway group
@@ -517,9 +608,24 @@ export const createApigwOperations = (apigwClient: ApigwSdkClient) => {
     },
 
     /**
-     * Bind custom domain to API group
+     * Bind custom domain to API group with automatic verification
      */
     bindCustomDomain: async (config: ApigwCustomDomainConfig): Promise<void> => {
+      logger.info(`Binding custom domain: ${config.domainName}`);
+
+      // Check if domain needs verification
+      const isVerified = await checkDomainVerification(config.domainName);
+
+      if (!isVerified) {
+        logger.info(`Domain ${config.domainName} requires verification`);
+        try {
+          await addDomainVerificationRecord(config.domainName);
+        } catch (error) {
+          logger.warn(`DNS verification setup failed, attempting to bind domain anyway: ${error}`);
+        }
+      }
+
+      // Proceed with domain binding
       const request = new cloudapi.SetDomainRequest({
         groupId: config.groupId,
         domainName: config.domainName,

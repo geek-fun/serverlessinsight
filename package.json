@@ -49,6 +49,7 @@
     "function"
   ],
   "dependencies": {
+    "@alicloud/alidns20150109": "^4.1.0",
     "@alicloud/cloudapi20160714": "^4.7.8",
     "@alicloud/ecs20140526": "^7.4.2",
     "@alicloud/es-serverless20230627": "^2.2.0",
