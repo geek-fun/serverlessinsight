@@ -9,6 +9,7 @@ import {
   generateApiKey,
 } from './apigwTypes';
 import { setResource, removeResource, getResource } from '../../common/stateManager';
+import { logger } from '../../common/logger';
 
 const buildApigwGroupInstanceFromProvider = (
   info: ApigwGroupInfo,
@@ -87,9 +88,25 @@ export const createApigwResource = async (
   const logicalId = `events.${event.key}`;
   const client = createAliyunClient(context);
 
-  // Create API group
+  // Create or find existing API group
   const groupConfig = eventToApigwGroupConfig(event, serviceName);
-  const groupId = await client.apigw.createApiGroup(groupConfig);
+  let groupId: string;
+
+  try {
+    // Try to find existing group first
+    const existingGroup = await client.apigw.findApiGroupByName(groupConfig.groupName);
+    if (existingGroup?.groupId) {
+      logger.info(`Found existing API Group: ${groupConfig.groupName}, will reuse it`);
+      groupId = existingGroup.groupId;
+    } else {
+      // Create new group if not found
+      groupId = await client.apigw.createApiGroup(groupConfig);
+    }
+  } catch (error) {
+    // If find fails, try to create
+    logger.debug(`Could not find existing group, creating new: ${error}`);
+    groupId = await client.apigw.createApiGroup(groupConfig);
+  }
 
   // Get group info for state
   const groupInfo = await client.apigw.getApiGroup(groupId);
