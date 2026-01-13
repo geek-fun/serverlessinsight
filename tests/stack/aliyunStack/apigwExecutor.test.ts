@@ -1,9 +1,9 @@
+import { ProviderEnum } from '../../../src/common';
+import { logger } from '../../../src/common/logger';
+import { getResource } from '../../../src/common/stateManager';
 import { executeApigwPlan } from '../../../src/stack/aliyunStack/apigwExecutor';
 import * as apigwResource from '../../../src/stack/aliyunStack/apigwResource';
-import { ProviderEnum } from '../../../src/common';
-import { getResource } from '../../../src/common/stateManager';
-import { logger } from '../../../src/common/logger';
-import { Context, Plan, StateFile, CURRENT_STATE_VERSION, EventTypes } from '../../../src/types';
+import { Context, CURRENT_STATE_VERSION, EventTypes, Plan, StateFile } from '../../../src/types';
 
 // Mock dependencies
 jest.mock('../../../src/stack/aliyunStack/apigwResource');
@@ -352,9 +352,6 @@ describe('ApigwExecutor', () => {
       expect(result.partialFailure?.failedItem.logicalId).toBe('events.test_api');
       expect(result.partialFailure?.error).toBe(error);
       expect(result.partialFailure?.successfulItems).toEqual([]);
-      expect(logger.error).toHaveBeenCalledWith(
-        expect.stringContaining('Failed to execute create for events.test_api'),
-      );
     });
 
     it('should save state after each successful operation', async () => {

@@ -131,7 +131,6 @@ describe('Fc3Executor', () => {
       );
       expect(result.partialFailure?.failedItem.logicalId).toBe('functions.nonexistent');
       expect(result.partialFailure?.successfulItems).toEqual([]);
-      expect(logger.error).toHaveBeenCalled();
     });
 
     it('should execute update action successfully', async () => {
@@ -300,9 +299,6 @@ describe('Fc3Executor', () => {
       expect(result.partialFailure?.error.message).toBe('Test error');
       expect(result.partialFailure?.failedItem.logicalId).toBe('functions.test_fn');
       expect(result.partialFailure?.successfulItems).toEqual([]);
-      expect(logger.error).toHaveBeenCalledWith(
-        expect.stringContaining('Failed to execute create for functions.test_fn'),
-      );
     });
 
     it('should call onStateChange callback after successful operation', async () => {

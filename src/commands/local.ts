@@ -1,4 +1,4 @@
-import { getIacLocation, logger, setContext, getContext } from '../common';
+import { getIacLocation, logger, setContext, setIac, getContext } from '../common';
 import { startLocalStack } from '../stack/localStack';
 import { revalYaml } from '../parser';
 import { lang } from '../lang';
@@ -18,6 +18,9 @@ export const runLocal = async (stackName: string, opts: RunLocalOptions) => {
   const ctx = getContext();
 
   const iac = revalYaml(getIacLocation(location), ctx);
+
+  // Store IAC in context for access by all functions
+  setIac(iac);
 
   logger.info(
     lang.__('RUN_LOCAL_STARTING', {

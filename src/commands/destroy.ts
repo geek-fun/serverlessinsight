@@ -3,6 +3,7 @@ import {
   getIacLocation,
   logger,
   setContext,
+  setIac,
   ProviderEnum,
   withLock,
   getStatePath,
@@ -32,6 +33,9 @@ export const destroyStack = async (
   );
   const context = getContext();
   const iac = revalYaml(iacLocation, context);
+
+  // Store IAC in context for access by all functions
+  setIac(iac);
 
   logger.info(
     lang.__('DESTROYING_STACK', {

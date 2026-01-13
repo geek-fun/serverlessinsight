@@ -5,6 +5,7 @@ import {
   saveState,
   ProviderEnum,
   getRoleArnFromState,
+  setIac,
 } from '../../common';
 import { lang } from '../../lang';
 import { generateFunctionPlan } from './fc3Planner';
@@ -48,6 +49,8 @@ export const destroyAliyunStack = async (): Promise<void> => {
   const providerName = ProviderEnum.ALIYUN;
   let state = loadState(providerName, baseDir);
   const onStateChange = createSaveStateFn(baseDir);
+  // Set minimal IAC for destruction (function resolution not needed)
+  setIac({ version: '1.0', service: '', provider: { name: providerName, region: context.region } });
 
   const functionPlan = await generateFunctionPlan(context, state, undefined);
   const bucketPlan = await generateBucketPlan(context, state, undefined);
