@@ -28,62 +28,63 @@ export type DnsOperations = {
   checkDomainRecordExists: (domainName: string, rr: string) => Promise<boolean>;
 };
 
-const addDomainRecord = (dnsClient: DnsSdkClient) => async (
-  config: DnsRecordConfig,
-): Promise<string> => {
-  const request = new dns.AddDomainRecordRequest({
-    domainName: config.domainName,
-    RR: config.rr,
-    type: config.type,
-    value: config.value,
-    TTL: config.ttl || 600,
-  });
+const addDomainRecord =
+  (dnsClient: DnsSdkClient) =>
+  async (config: DnsRecordConfig): Promise<string> => {
+    const request = new dns.AddDomainRecordRequest({
+      domainName: config.domainName,
+      RR: config.rr,
+      type: config.type,
+      value: config.value,
+      TTL: config.ttl || 600,
+    });
 
-  const response = await dnsClient.addDomainRecord(request);
-  return response.body?.recordId || '';
-};
+    const response = await dnsClient.addDomainRecord(request);
+    return response.body?.recordId || '';
+  };
 
-const deleteDomainRecord = (dnsClient: DnsSdkClient) => async (recordId: string): Promise<void> => {
-  const request = new dns.DeleteDomainRecordRequest({
-    recordId,
-  });
+const deleteDomainRecord =
+  (dnsClient: DnsSdkClient) =>
+  async (recordId: string): Promise<void> => {
+    const request = new dns.DeleteDomainRecordRequest({
+      recordId,
+    });
 
-  await dnsClient.deleteDomainRecord(request);
-};
+    await dnsClient.deleteDomainRecord(request);
+  };
 
-const describeDomainRecords = (dnsClient: DnsSdkClient) => async (
-  domainName: string,
-  rrKeyWord?: string,
-): Promise<Array<DnsRecordInfo>> => {
-  const request = new dns.DescribeDomainRecordsRequest({
-    domainName,
-    RRKeyWord: rrKeyWord,
-  });
+const describeDomainRecords =
+  (dnsClient: DnsSdkClient) =>
+  async (domainName: string, rrKeyWord?: string): Promise<Array<DnsRecordInfo>> => {
+    const request = new dns.DescribeDomainRecordsRequest({
+      domainName,
+      RRKeyWord: rrKeyWord,
+    });
 
-  const response = await dnsClient.describeDomainRecords(request);
-  const records = response.body?.domainRecords?.record || [];
+    const response = await dnsClient.describeDomainRecords(request);
+    const records = response.body?.domainRecords?.record || [];
 
-  return records.map((record: dns.DescribeDomainRecordsResponseBodyDomainRecordsRecord) => ({
-    recordId: record.recordId,
-    domainName: record.domainName,
-    rr: record.RR,
-    type: record.type,
-    value: record.value,
-    ttl: record.TTL,
-    status: record.status,
-  }));
-};
+    return records.map((record: dns.DescribeDomainRecordsResponseBodyDomainRecordsRecord) => ({
+      recordId: record.recordId,
+      domainName: record.domainName,
+      rr: record.RR,
+      type: record.type,
+      value: record.value,
+      ttl: record.TTL,
+      status: record.status,
+    }));
+  };
 
-const checkDomainRecordExists = (
-  describeFn: (domainName: string, rrKeyWord?: string) => Promise<Array<DnsRecordInfo>>,
-) => async (domainName: string, rr: string): Promise<boolean> => {
-  try {
-    const records = await describeFn(domainName, rr);
-    return records.some((record) => record.rr === rr);
-  } catch {
-    return false;
-  }
-};
+const checkDomainRecordExists =
+  (describeFn: (domainName: string, rrKeyWord?: string) => Promise<Array<DnsRecordInfo>>) =>
+  async (domainName: string, rr: string): Promise<boolean> => {
+    try {
+      const records = await describeFn(domainName, rr);
+      return records.some((record) => record.rr === rr);
+    } catch {
+      return false;
+    }
+  };
 
 export const createDnsOperations = (dnsClient: DnsSdkClient): DnsOperations => {
   const describe = describeDomainRecords(dnsClient);
