@@ -10,6 +10,7 @@ import {
 } from './apigwTypes';
 import { setResource, removeResource, getResource } from '../../common/stateManager';
 import { logger } from '../../common/logger';
+import { lang } from '../../lang';
 
 const buildApigwGroupInstanceFromProvider = (
   info: ApigwGroupInfo,
@@ -75,9 +76,6 @@ const buildApigwDeploymentInstance = (
   };
 };
 
-/**
- * Create API Gateway resources for an event
- */
 export const createApigwResource = async (
   context: Context,
   event: EventDomain,
@@ -88,22 +86,18 @@ export const createApigwResource = async (
   const logicalId = `events.${event.key}`;
   const client = createAliyunClient(context);
 
-  // Create or find existing API group
   const groupConfig = eventToApigwGroupConfig(event, serviceName);
   let groupId: string;
 
   try {
-    // Try to find existing group first
     const existingGroup = await client.apigw.findApiGroupByName(groupConfig.groupName);
     if (existingGroup?.groupId) {
-      logger.info(`Found existing API Group: ${groupConfig.groupName}, will reuse it`);
+      logger.info(lang.__('APIGW_GROUP_FOUND_REUSING', { groupName: groupConfig.groupName }));
       groupId = existingGroup.groupId;
     } else {
-      // Create new group if not found
       groupId = await client.apigw.createApiGroup(groupConfig);
     }
   } catch (error) {
-    // If find fails, try to create
     logger.debug(`Could not find existing group, creating new: ${error}`);
     groupId = await client.apigw.createApiGroup(groupConfig);
   }
@@ -118,7 +112,6 @@ export const createApigwResource = async (
     buildApigwGroupInstanceFromProvider(groupInfo, context.region),
   ];
 
-  // Save state immediately after API Group creation, before attempting other operations
   const groupDefinition = extractApigwGroupDefinition(groupConfig);
   const partialResourceState: ResourceState = {
     mode: 'managed',
@@ -141,7 +134,6 @@ export const createApigwResource = async (
     lastUpdated: new Date().toISOString(),
   };
 
-  // Save partial state with just the API Group
   state = setResource(state, logicalId, partialResourceState);
 
   // Create APIs and deployments for each trigger
@@ -174,7 +166,6 @@ export const createApigwResource = async (
     await client.apigw.deployApi(deploymentConfig);
     instances.push(buildApigwDeploymentInstance(groupId, apiId, 'RELEASE', context.region));
 
-    // Update state after each API is created
     const updatedResourceState: ResourceState = {
       mode: 'managed',
       region: context.region,
@@ -198,7 +189,6 @@ export const createApigwResource = async (
     state = setResource(state, logicalId, updatedResourceState);
   }
 
-  // Handle custom domain if specified
   if (event.domain) {
     try {
       await client.apigw.bindCustomDomain({
@@ -209,10 +199,9 @@ export const createApigwResource = async (
         certificatePrivateKey: event.domain.certificate_private_key as string | undefined,
       });
     } catch (error) {
-      logger.error(`Failed to bind custom domain: ${error}`);
-      logger.info('API Gateway group and APIs created successfully, but domain binding failed');
-      logger.info('State has been saved. You can retry or fix domain configuration');
-      // Return current state even if domain binding fails
+      logger.error(lang.__('APIGW_DOMAIN_BINDING_FAILED', { error: String(error) }));
+      logger.info(lang.__('APIGW_GROUP_APIS_CREATED_DOMAIN_FAILED'));
+      logger.info(lang.__('APIGW_STATE_SAVED_RETRY'));
       return state;
     }
   }
@@ -242,25 +231,16 @@ export const createApigwResource = async (
   return setResource(state, logicalId, finalResourceState);
 };
 
-/**
- * Read API Gateway resource
- */
 export const readApigwResource = async (context: Context, groupId: string) => {
   const client = createAliyunClient(context);
   return await client.apigw.getApiGroup(groupId);
 };
 
-/**
- * Read API Gateway resource by name
- */
 export const readApigwResourceByName = async (context: Context, groupName: string) => {
   const client = createAliyunClient(context);
   return await client.apigw.findApiGroupByName(groupName);
 };
 
-/**
- * Update API Gateway resources for an event
- */
 export const updateApigwResource = async (
   context: Context,
   event: EventDomain,
@@ -273,26 +253,21 @@ export const updateApigwResource = async (
   const client = createAliyunClient(context);
 
   if (!existingState) {
-    // If no existing state, create new
     return createApigwResource(context, event, serviceName, roleArn, state);
   }
 
   const existingInstances = existingState.instances;
 
-  // Find existing group
   const groupInstance = existingInstances.find((i) => i.type === 'ALIYUN_APIGW_GROUP');
   if (!groupInstance) {
-    // No existing group, create new
     return createApigwResource(context, event, serviceName, roleArn, state);
   }
 
   const groupId = groupInstance.id;
 
-  // Update group config
   const groupConfig = eventToApigwGroupConfig(event, serviceName);
   await client.apigw.updateApiGroup(groupId, groupConfig);
 
-  // Get updated group info
   const groupInfo = await client.apigw.getApiGroup(groupId);
   if (!groupInfo) {
     throw new Error(`Failed to get API group info after update: ${groupId}`);
@@ -302,13 +277,10 @@ export const updateApigwResource = async (
     buildApigwGroupInstanceFromProvider(groupInfo, context.region),
   ];
 
-  // Get existing APIs
   const existingApis = existingInstances.filter((i) => i.type === 'ALIYUN_APIGW_API');
 
-  // Track which APIs we need
   const neededApiKeys = new Set<string>();
 
-  // Update or create APIs for each trigger
   for (const trigger of event.triggers) {
     const apiConfig = triggerToApigwApiConfig(
       event,
@@ -322,7 +294,6 @@ export const updateApigwResource = async (
     const apiKey = generateApiKey(trigger.method as string, trigger.path as string);
     neededApiKeys.add(apiKey);
 
-    // Check if API exists - match by API name
     const existingApi = existingApis.find((a) => {
       return a.id && a.apiName === apiConfig.apiName;
     });
@@ -330,21 +301,17 @@ export const updateApigwResource = async (
     let apiId: string;
 
     if (existingApi) {
-      // Update existing API
       apiId = existingApi.id;
       await client.apigw.updateApi(apiId, apiConfig);
     } else {
-      // Create new API
       apiId = await client.apigw.createApi(apiConfig);
     }
 
-    // Get API info for state
     const apiInfo = await client.apigw.getApi(groupId, apiId);
     if (apiInfo) {
       instances.push(buildApigwApiInstanceFromProvider(apiInfo, context.region, groupId));
     }
 
-    // Deploy API
     const deploymentConfig = {
       groupId,
       apiId,
@@ -356,11 +323,9 @@ export const updateApigwResource = async (
     instances.push(buildApigwDeploymentInstance(groupId, apiId, 'RELEASE', context.region));
   }
 
-  // Delete APIs that are no longer needed
   for (const existingApi of existingApis) {
     const apiInfo = await client.apigw.getApi(groupId, existingApi.id);
     if (apiInfo) {
-      // Check if this API is still needed
       const isNeeded = event.triggers.some((t) => {
         const expectedName = triggerToApigwApiConfig(
           event,
@@ -374,7 +339,6 @@ export const updateApigwResource = async (
       });
 
       if (!isNeeded) {
-        // Abolish and delete
         try {
           await client.apigw.abolishApi(groupId, existingApi.id, 'RELEASE');
         } catch {
@@ -385,7 +349,6 @@ export const updateApigwResource = async (
     }
   }
 
-  // Handle custom domain
   if (event.domain) {
     await client.apigw.bindCustomDomain({
       groupId,
@@ -421,9 +384,6 @@ export const updateApigwResource = async (
   return setResource(state, logicalId, resourceState);
 };
 
-/**
- * Delete API Gateway resources
- */
 export const deleteApigwResource = async (
   context: Context,
   logicalId: string,
@@ -438,7 +398,6 @@ export const deleteApigwResource = async (
 
   const existingInstances = existingState.instances;
 
-  // Find group
   const groupInstance = existingInstances.find((i) => i.type === 'ALIYUN_APIGW_GROUP');
   if (!groupInstance) {
     return removeResource(state, logicalId);
@@ -446,7 +405,6 @@ export const deleteApigwResource = async (
 
   const groupId = groupInstance.id;
 
-  // Abolish all deployments first
   const deployments = existingInstances.filter((i) => i.type === 'ALIYUN_APIGW_DEPLOYMENT');
   for (const deployment of deployments) {
     try {
@@ -460,7 +418,6 @@ export const deleteApigwResource = async (
     }
   }
 
-  // Delete all APIs
   const apis = existingInstances.filter((i) => i.type === 'ALIYUN_APIGW_API');
   for (const api of apis) {
     try {
@@ -470,7 +427,6 @@ export const deleteApigwResource = async (
     }
   }
 
-  // Delete group
   try {
     await client.apigw.deleteApiGroup(groupId);
   } catch {

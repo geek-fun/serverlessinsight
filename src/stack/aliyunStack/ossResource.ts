@@ -5,6 +5,7 @@ import { Context, BucketDomain, ResourceState, StateFile } from '../../types';
 import { bucketToOssBucketConfig, extractOssBucketDefinition } from './ossTypes';
 import { CommonBucketInstance } from '../bucketTypes';
 import { logger } from '../../common/logger';
+import { lang } from '../../lang';
 import path from 'node:path';
 
 const buildOssInstanceFromProvider = (info: OssBucketInfo, arn: string): CommonBucketInstance => {
@@ -152,8 +153,7 @@ export const createBucketResource = async (
       logger.error(
         `Failed to upload files to bucket, but bucket was created and saved to state: ${error}`,
       );
-      logger.info('Bucket is tracked in state, you can retry deployment to upload files');
-      // Return current state with bucket (without uploaded files)
+      logger.info(lang.__('OSS_BUCKET_TRACKED_CAN_RETRY'));
       return state;
     }
   }

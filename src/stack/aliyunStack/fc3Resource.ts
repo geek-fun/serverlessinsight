@@ -10,6 +10,7 @@ import {
 import { Context, FunctionDomain, ResourceState, StateFile } from '../../types';
 import { extractFc3Definition, Fc3FunctionInfo, functionToFc3Config } from './fc3Types';
 import { logger } from '../../common/logger';
+import { lang } from '../../lang';
 
 const buildFc3InstanceFromProvider = (info: Fc3FunctionInfo, arn: string) => {
   return {
@@ -413,9 +414,8 @@ export const createResource = async (
     logger.error(
       `Failed to create function, but dependent resources were created and saved to state: ${error}`,
     );
-    logger.info('Dependent resources (SLS, RAM, Security Group, NAS) are tracked in state');
-    logger.info('You can retry deployment - the system will reuse existing dependent resources');
-    // Return current state with dependent resources
+    logger.info(lang.__('FC3_DEPENDENT_RESOURCES_TRACKED'));
+    logger.info(lang.__('FC3_CAN_RETRY_DEPLOYMENT'));
     return state;
   }
 

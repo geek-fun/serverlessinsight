@@ -214,4 +214,20 @@ export const en = {
   LOCK_TIME_AGO_MINUTES: '{{minutes}} minutes ago',
   LOCK_TIME_AGO_ONE_HOUR: '1 hour ago',
   LOCK_TIME_AGO_HOURS: '{{hours}} hours ago',
+
+  // API Gateway messages
+  APIGW_GROUP_FOUND_REUSING: 'Found existing API Group: {{groupName}}, will reuse it',
+  APIGW_DOMAIN_BINDING_FAILED: 'Failed to bind custom domain: {{error}}',
+  APIGW_GROUP_APIS_CREATED_DOMAIN_FAILED:
+    'API Gateway group and APIs created successfully, but domain binding failed',
+  APIGW_STATE_SAVED_RETRY: 'State has been saved. You can retry or fix domain configuration',
+
+  // Function resource messages
+  FC3_DEPENDENT_RESOURCES_TRACKED:
+    'Dependent resources (SLS, RAM, Security Group, NAS) are tracked in state',
+  FC3_CAN_RETRY_DEPLOYMENT:
+    'You can retry deployment - the system will reuse existing dependent resources',
+
+  // Bucket resource messages
+  OSS_BUCKET_TRACKED_CAN_RETRY: 'Bucket is tracked in state, you can retry deployment to upload files',
 };
