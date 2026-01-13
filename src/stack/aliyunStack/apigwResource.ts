@@ -118,6 +118,32 @@ export const createApigwResource = async (
     buildApigwGroupInstanceFromProvider(groupInfo, context.region),
   ];
 
+  // Save state immediately after API Group creation, before attempting other operations
+  const groupDefinition = extractApigwGroupDefinition(groupConfig);
+  const partialResourceState: ResourceState = {
+    mode: 'managed',
+    region: context.region,
+    definition: {
+      ...groupDefinition,
+      triggers: event.triggers.map((t) => ({
+        method: t.method,
+        path: t.path,
+        backend: t.backend,
+      })),
+      domain: event.domain
+        ? {
+            domainName: event.domain.domain_name,
+            certificateName: event.domain.certificate_name,
+          }
+        : null,
+    },
+    instances,
+    lastUpdated: new Date().toISOString(),
+  };
+
+  // Save partial state with just the API Group
+  state = setResource(state, logicalId, partialResourceState);
+
   // Create APIs and deployments for each trigger
   for (const trigger of event.triggers) {
     const apiConfig = triggerToApigwApiConfig(
@@ -147,21 +173,52 @@ export const createApigwResource = async (
 
     await client.apigw.deployApi(deploymentConfig);
     instances.push(buildApigwDeploymentInstance(groupId, apiId, 'RELEASE', context.region));
+
+    // Update state after each API is created
+    const updatedResourceState: ResourceState = {
+      mode: 'managed',
+      region: context.region,
+      definition: {
+        ...groupDefinition,
+        triggers: event.triggers.map((t) => ({
+          method: t.method,
+          path: t.path,
+          backend: t.backend,
+        })),
+        domain: event.domain
+          ? {
+              domainName: event.domain.domain_name,
+              certificateName: event.domain.certificate_name,
+            }
+          : null,
+      },
+      instances,
+      lastUpdated: new Date().toISOString(),
+    };
+    state = setResource(state, logicalId, updatedResourceState);
   }
 
   // Handle custom domain if specified
   if (event.domain) {
-    await client.apigw.bindCustomDomain({
-      groupId,
-      domainName: event.domain.domain_name as string,
-      certificateName: event.domain.certificate_name as string | undefined,
-      certificateBody: event.domain.certificate_body as string | undefined,
-      certificatePrivateKey: event.domain.certificate_private_key as string | undefined,
-    });
+    try {
+      await client.apigw.bindCustomDomain({
+        groupId,
+        domainName: event.domain.domain_name as string,
+        certificateName: event.domain.certificate_name as string | undefined,
+        certificateBody: event.domain.certificate_body as string | undefined,
+        certificatePrivateKey: event.domain.certificate_private_key as string | undefined,
+      });
+    } catch (error) {
+      logger.error(`Failed to bind custom domain: ${error}`);
+      logger.info('API Gateway group and APIs created successfully, but domain binding failed');
+      logger.info('State has been saved. You can retry or fix domain configuration');
+      // Return current state even if domain binding fails
+      return state;
+    }
   }
 
-  const groupDefinition = extractApigwGroupDefinition(groupConfig);
-  const resourceState: ResourceState = {
+  // Update final state with all instances (group + APIs + deployments)
+  const finalResourceState: ResourceState = {
     mode: 'managed',
     region: context.region,
     definition: {
@@ -182,7 +239,7 @@ export const createApigwResource = async (
     lastUpdated: new Date().toISOString(),
   };
 
-  return setResource(state, logicalId, resourceState);
+  return setResource(state, logicalId, finalResourceState);
 };
 
 /**
