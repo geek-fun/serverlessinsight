@@ -191,13 +191,17 @@ export const createApigwResource = async (
 
   if (event.domain) {
     try {
-      await client.apigw.bindCustomDomain({
-        groupId,
-        domainName: event.domain.domain_name as string,
-        certificateName: event.domain.certificate_name as string | undefined,
-        certificateBody: event.domain.certificate_body as string | undefined,
-        certificatePrivateKey: event.domain.certificate_private_key as string | undefined,
-      });
+      state = await client.apigw.bindCustomDomain(
+        {
+          groupId,
+          domainName: event.domain.domain_name as string,
+          certificateName: event.domain.certificate_name as string | undefined,
+          certificateBody: event.domain.certificate_body as string | undefined,
+          certificatePrivateKey: event.domain.certificate_private_key as string | undefined,
+        },
+        state,
+        logicalId,
+      );
     } catch (error) {
       logger.error(lang.__('APIGW_DOMAIN_BINDING_FAILED', { error: String(error) }));
       logger.info(lang.__('APIGW_GROUP_APIS_CREATED_DOMAIN_FAILED'));
@@ -350,13 +354,17 @@ export const updateApigwResource = async (
   }
 
   if (event.domain) {
-    await client.apigw.bindCustomDomain({
-      groupId,
-      domainName: event.domain.domain_name as string,
-      certificateName: event.domain.certificate_name as string | undefined,
-      certificateBody: event.domain.certificate_body as string | undefined,
-      certificatePrivateKey: event.domain.certificate_private_key as string | undefined,
-    });
+    state = await client.apigw.bindCustomDomain(
+      {
+        groupId,
+        domainName: event.domain.domain_name as string,
+        certificateName: event.domain.certificate_name as string | undefined,
+        certificateBody: event.domain.certificate_body as string | undefined,
+        certificatePrivateKey: event.domain.certificate_private_key as string | undefined,
+      },
+      state,
+      logicalId,
+    );
   }
 
   const groupDefinition = extractApigwGroupDefinition(groupConfig);

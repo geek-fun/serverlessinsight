@@ -46,4 +46,4 @@ events:
         path: /api/hello
         backend: ${functions.insight_poc_fn}
     domain:
-      domain_name: insight-api.serverlessinsight.com
+      domain_name: insight-api.serverlessinsights.com

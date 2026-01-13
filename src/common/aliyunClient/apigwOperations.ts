@@ -1,16 +1,15 @@
 import CloudApiClient from '@alicloud/cloudapi20160714';
 import * as cloudapi from '@alicloud/cloudapi20160714';
 import DnsClient from '@alicloud/alidns20150109';
-import { Context } from '../../types';
+import { Context, StateFile, ResourceState } from '../../types';
 import { createDnsOperations } from './dnsOperations';
 import { logger } from '../logger';
+import { lang } from '../../lang';
+import { getResource, setResource } from '../stateManager';
 
 type ApigwSdkClient = CloudApiClient;
 type DnsSdkClient = DnsClient;
 
-/**
- * API Group types
- */
 export type ApigwGroupConfig = {
   groupName: string;
   description?: string;
@@ -36,9 +35,6 @@ export type ApigwGroupInfo = {
   trafficLimit?: number;
 };
 
-/**
- * API types
- */
 export type ApigwApiConfig = {
   groupId: string;
   apiName: string;
@@ -119,9 +115,6 @@ export type ApigwApiInfo = {
   }>;
 };
 
-/**
- * Deployment types
- */
 export type ApigwDeploymentConfig = {
   groupId: string;
   apiId: string;
@@ -129,9 +122,6 @@ export type ApigwDeploymentConfig = {
   description?: string;
 };
 
-/**
- * Custom domain types
- */
 export type ApigwCustomDomainConfig = {
   groupId: string;
   domainName: string;
@@ -143,23 +133,12 @@ export type ApigwCustomDomainConfig = {
   certificatePrivateKey?: string;
 };
 
-/**
- * Remove undefined values from an object
- * This helps avoid issues with API calls that may not handle undefined correctly
- */
 const removeUndefined = <T extends Record<string, unknown>>(obj: T): T => {
   return Object.fromEntries(Object.entries(obj).filter(([, value]) => value !== undefined)) as T;
 };
 
-/**
- * Sleep utility for waiting
- */
 const sleep = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));
 
-/**
- * Extract main domain from subdomain
- * e.g., "api.example.com" -> "example.com"
- */
 const extractMainDomain = (domainName: string): string => {
   const parts = domainName.split('.');
   if (parts.length <= 2) {
@@ -175,67 +154,246 @@ export const createApigwOperations = (
 ) => {
   const dnsOps = createDnsOperations(dnsClient);
 
-  /**
-   * Check if domain is verified for API Gateway
-   */
-  const checkDomainVerification = async (domainName: string): Promise<boolean> => {
+  const extractVerificationToken = (error: unknown, groupInfo?: ApigwGroupInfo): string | null => {
     try {
-      const request = new cloudapi.DescribeDomainRequest({
-        domainName,
-        groupId: '', // Can be empty for domain check
-      });
-      const response = await apigwClient.describeDomain(request);
-      // If domain exists and can be described, consider it verified
-      return response.body?.domainName === domainName;
-    } catch (error: unknown) {
-      const err = error as { code?: string };
-      if (err.code === 'NotFoundDomain' || err.code === 'DomainNotExists') {
+      if (groupInfo?.subDomain) {
+        const match = groupInfo.subDomain.match(/^([a-f0-9]+)-[^.]+\.alicloudapi\.com$/);
+        if (match) {
+          return match[1];
+        }
+      }
+
+      const errorStr = String(error);
+      const cnameMatch = errorStr.match(/([a-f0-9]{32})-[^.]+\.alicloudapi\.com/);
+      if (cnameMatch) {
+        return cnameMatch[1];
+      }
+    } catch {
+      // Ignore extraction errors
+    }
+    return null;
+  };
+
+  const pollDnsPropagation = async (
+    mainDomain: string,
+    verificationHost: string,
+    verificationValue: string,
+    shouldLoop: boolean = true,
+  ): Promise<boolean> => {
+    const checkPropagation = async (): Promise<boolean> => {
+      try {
+        const currentRecords = await dnsOps.describeDomainRecords(mainDomain, verificationHost);
+        return currentRecords.some(
+          (record) =>
+            record.rr === verificationHost &&
+            record.type === 'CNAME' &&
+            record.value === verificationValue &&
+            record.status === 'ENABLE',
+        );
+      } catch (checkError) {
+        logger.warn(lang.__('APIGW_DNS_CHECK_FAILED', { attempt: '1', error: String(checkError) }));
         return false;
       }
-      // For other errors, log and return false
-      logger.warn(`Unable to check domain verification for ${domainName}: ${error}`);
-      return false;
+    };
+
+    if (!shouldLoop) {
+      logger.info('Checking DNS record status...');
+      return await checkPropagation();
+    }
+
+    logger.info(lang.__('APIGW_DNS_PROPAGATION_WAITING'));
+    const maxAttempts = 10;
+    const delayMs = 60000; // 1 minute
+
+    for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+      logger.info(
+        lang.__('APIGW_DNS_PROPAGATION_CHECK', {
+          attempt: String(attempt),
+          max: String(maxAttempts),
+        }),
+      );
+      await sleep(delayMs);
+
+      const propagated = await checkPropagation();
+      if (propagated) {
+        logger.info(lang.__('APIGW_DNS_VERIFIED', { minutes: String(attempt) }));
+        return true;
+      }
+    }
+
+    logger.warn(lang.__('APIGW_DNS_PROPAGATION_TIMEOUT'));
+    return false;
+  };
+
+  const addDomainVerificationRecord = async (
+    domainName: string,
+    verificationToken: string,
+    groupSubdomain: string,
+    region: string,
+    state: StateFile,
+    eventLogicalId: string,
+  ): Promise<StateFile> => {
+    logger.info(lang.__('APIGW_DNS_ADDING_RECORD', { domain: domainName }));
+
+    const mainDomain = extractMainDomain(domainName);
+    // For CNAME verification: point the domain directly to the group subdomain
+    const verificationHost = domainName;
+    const verificationValue = groupSubdomain;
+    const dnsResourceId = `${eventLogicalId}.dns_verification`;
+
+    try {
+      // Check if DNS record is tracked in state
+      const existingDnsResource = getResource(state, dnsResourceId);
+      const now = new Date();
+      const thirtyMinutesMs = 30 * 60 * 1000;
+
+      if (existingDnsResource) {
+        const createdAt = new Date(existingDnsResource.lastUpdated);
+        const ageMs = now.getTime() - createdAt.getTime();
+
+        if (ageMs < thirtyMinutesMs) {
+          // Created within 30 minutes - poll for propagation
+          logger.info(
+            lang.__('APIGW_DNS_RECORD_EXISTS_POLLING', {
+              minutes: String(Math.floor(ageMs / 60000)),
+            }),
+          );
+          await pollDnsPropagation(mainDomain, verificationHost, verificationValue, true);
+          return state;
+        } else {
+          // Created more than 30 minutes ago - just check once
+          logger.info(
+            lang.__('APIGW_DNS_RECORD_EXISTS_CHECKING', {
+              minutes: String(Math.floor(ageMs / 60000)),
+            }),
+          );
+          const propagated = await pollDnsPropagation(
+            mainDomain,
+            verificationHost,
+            verificationValue,
+            false,
+          );
+          if (propagated) {
+            logger.info(lang.__('APIGW_DNS_RECORD_ACTIVE'));
+          } else {
+            logger.warn(lang.__('APIGW_DNS_RECORD_MAY_NOT_PROPAGATED'));
+          }
+          return state;
+        }
+      }
+
+      // Check if record already exists in DNS (but not tracked in state)
+      const existingRecords = await dnsOps.describeDomainRecords(mainDomain, verificationHost);
+      const recordExists = existingRecords.some(
+        (record) =>
+          record.rr === verificationHost &&
+          record.type === 'CNAME' &&
+          record.value === verificationValue,
+      );
+
+      if (!recordExists) {
+        // Add the verification record
+        const recordId = await dnsOps.addDomainRecord({
+          domainName: mainDomain,
+          rr: verificationHost,
+          type: 'CNAME',
+          value: verificationValue,
+          ttl: 600,
+        });
+
+        logger.info(
+          lang.__('APIGW_DNS_RECORD_ADDED', {
+            record: verificationHost,
+            type: 'CNAME',
+            value: verificationValue,
+          }),
+        );
+
+        // Track DNS record in state
+        const dnsResourceState: ResourceState = {
+          mode: 'managed',
+          region,
+          definition: {
+            domainName,
+            mainDomain,
+            verificationHost,
+            verificationValue,
+            verificationToken,
+            groupSubdomain,
+          },
+          instances: [
+            {
+              arn: `arn:acs:alidns:${region}:dns-record/${recordId}`,
+              id: recordId,
+              type: 'CNAME',
+              status: 'PENDING',
+            },
+          ],
+          lastUpdated: now.toISOString(),
+        };
+        state = setResource(state, dnsResourceId, dnsResourceState);
+      } else {
+        logger.info(lang.__('APIGW_DNS_RECORD_ALREADY_EXISTS', { domain: domainName }));
+
+        // Track existing record in state
+        const dnsResourceState: ResourceState = {
+          mode: 'managed',
+          region,
+          definition: {
+            domainName,
+            mainDomain,
+            verificationHost,
+            verificationValue,
+            verificationToken,
+            groupSubdomain,
+          },
+          instances: [
+            {
+              arn: `arn:acs:alidns:${region}:dns-record/existing`,
+              id: 'existing',
+              type: 'CNAME',
+              status: 'EXISTING',
+            },
+          ],
+          lastUpdated: now.toISOString(),
+        };
+        state = setResource(state, dnsResourceId, dnsResourceState);
+      }
+
+      // Poll for DNS propagation
+      await pollDnsPropagation(mainDomain, verificationHost, verificationValue, true);
+
+      return state;
+    } catch (error) {
+      logger.error(
+        lang.__('APIGW_DNS_VERIFICATION_FAILED', { domain: domainName, error: String(error) }),
+      );
+      throw error;
     }
   };
 
-  /**
-   * Add DNS verification record for domain
-   */
-  const addDomainVerificationRecord = async (domainName: string): Promise<void> => {
-    logger.info(`Adding DNS verification record for domain: ${domainName}`);
-
-    const mainDomain = extractMainDomain(domainName);
-    const verificationHost = `_aliyundomainverify`;
-    const verificationValue = `apigateway_${domainName.replace(/\./g, '_')}`;
-
-    try {
-      // Check if record already exists
-      const existingRecords = await dnsOps.describeDomainRecords(mainDomain, verificationHost);
-      const recordExists = existingRecords.some(
-        (record) => record.rr === verificationHost && record.value === verificationValue,
-      );
-
-      if (recordExists) {
-        logger.info(`DNS verification record already exists for ${domainName}`);
-        return;
-      }
-
-      // Add the verification record
-      await dnsOps.addDomainRecord({
-        domainName: mainDomain,
-        rr: verificationHost,
-        type: 'TXT',
-        value: verificationValue,
-        ttl: 600,
-      });
-
-      logger.info(`DNS verification record added for ${domainName}`);
-      logger.info('Waiting for DNS propagation (60 seconds)...');
-      await sleep(60000); // Wait 1 minute for DNS propagation
-    } catch (error) {
-      logger.error(`Failed to add DNS verification record for ${domainName}: ${error}`);
-      throw error;
-    }
+  const logVerificationInstructions = (
+    domainName: string,
+    verificationToken: string,
+    groupSubdomain: string,
+  ): void => {
+    logger.error(`\n${'='.repeat(80)}`);
+    logger.error(lang.__('APIGW_VERIFICATION_HEADER'));
+    logger.error(`${'='.repeat(80)}`);
+    logger.error(`\n${lang.__('APIGW_VERIFICATION_DOMAIN', { domain: domainName })}`);
+    logger.error(`\n${lang.__('APIGW_VERIFICATION_INSTRUCTIONS')}\n`);
+    logger.error(lang.__('APIGW_VERIFICATION_RECORD_NAME', { name: domainName }));
+    logger.error(lang.__('APIGW_VERIFICATION_RECORD_TYPE', { type: 'CNAME' }));
+    logger.error(
+      lang.__('APIGW_VERIFICATION_RECORD_VALUE', {
+        value: groupSubdomain,
+      }),
+    );
+    logger.error(`\n${'='.repeat(80)}`);
+    logger.error(lang.__('APIGW_VERIFICATION_NEXT_STEPS'));
+    logger.error(lang.__('APIGW_VERIFICATION_STEP1'));
+    logger.error(lang.__('APIGW_VERIFICATION_STEP2'));
+    logger.error(`${'='.repeat(80)}\n`);
   };
 
   return {
@@ -610,43 +768,127 @@ export const createApigwOperations = (
     /**
      * Bind custom domain to API group with automatic verification
      */
-    bindCustomDomain: async (config: ApigwCustomDomainConfig): Promise<void> => {
-      logger.info(`Binding custom domain: ${config.domainName}`);
+    bindCustomDomain: async (
+      config: ApigwCustomDomainConfig,
+      state: StateFile,
+      eventLogicalId: string,
+    ): Promise<StateFile> => {
+      logger.info(lang.__('APIGW_BINDING_DOMAIN', { domain: config.domainName }));
 
-      // Check if domain needs verification
-      const isVerified = await checkDomainVerification(config.domainName);
+      // Get the API group info to extract verification token from subDomain
+      const groupInfo = await apigwClient.describeApiGroup(
+        new cloudapi.DescribeApiGroupRequest({ groupId: config.groupId }),
+      );
+      const region = groupInfo.body?.regionId || _context.region;
 
-      if (!isVerified) {
-        logger.info(`Domain ${config.domainName} requires verification`);
-        try {
-          await addDomainVerificationRecord(config.domainName);
-        } catch (error) {
-          logger.warn(`DNS verification setup failed, attempting to bind domain anyway: ${error}`);
-        }
-      }
-
-      // Proceed with domain binding
-      const request = new cloudapi.SetDomainRequest({
-        groupId: config.groupId,
-        domainName: config.domainName,
-        bindStageName: config.bindStageName,
-        customDomainType: config.customDomainType,
-        isHttpRedirectToHttps: config.isHttpRedirectToHttps,
-      });
-
-      await apigwClient.setDomain(request);
-
-      // Set certificate if provided
-      if (config.certificateName && config.certificateBody && config.certificatePrivateKey) {
-        const certRequest = new cloudapi.SetDomainCertificateRequest({
+      // Try to bind the domain first
+      try {
+        const request = new cloudapi.SetDomainRequest({
           groupId: config.groupId,
           domainName: config.domainName,
-          certificateName: config.certificateName,
-          certificateBody: config.certificateBody,
-          certificatePrivateKey: config.certificatePrivateKey,
+          bindStageName: config.bindStageName || 'RELEASE',
+          customDomainType: config.customDomainType,
+          isHttpRedirectToHttps: config.isHttpRedirectToHttps,
         });
 
-        await apigwClient.setDomainCertificate(certRequest);
+        await apigwClient.setDomain(request);
+
+        // Set certificate if provided
+        if (config.certificateName && config.certificateBody && config.certificatePrivateKey) {
+          const certRequest = new cloudapi.SetDomainCertificateRequest({
+            groupId: config.groupId,
+            domainName: config.domainName,
+            certificateName: config.certificateName,
+            certificateBody: config.certificateBody,
+            certificatePrivateKey: config.certificatePrivateKey,
+          });
+
+          await apigwClient.setDomainCertificate(certRequest);
+        }
+
+        logger.info(lang.__('APIGW_DOMAIN_BOUND_SUCCESS', { domain: config.domainName }));
+        return state;
+      } catch (error: unknown) {
+        const err = error as { code?: string; message?: string };
+
+        // Check if it's a domain ownership verification error
+        if (err.code === 'SingleDomainOwnershipCheckFail' || err.message?.includes('ownership')) {
+          logger.error(lang.__('APIGW_DOMAIN_OWNERSHIP_FAILED', { domain: config.domainName }));
+
+          const verificationToken = extractVerificationToken(error, groupInfo.body);
+
+          if (verificationToken && groupInfo.body?.subDomain) {
+            logger.info(
+              lang.__('APIGW_ATTEMPTING_AUTO_VERIFICATION', { token: verificationToken }),
+            );
+
+            try {
+              // Try to add DNS verification record automatically and update state
+              state = await addDomainVerificationRecord(
+                config.domainName,
+                verificationToken,
+                groupInfo.body.subDomain,
+                region,
+                state,
+                eventLogicalId,
+              );
+
+              // Retry domain binding after DNS verification
+              logger.info(lang.__('APIGW_RETRYING_DOMAIN_BINDING'));
+              const retryRequest = new cloudapi.SetDomainRequest({
+                groupId: config.groupId,
+                domainName: config.domainName,
+                bindStageName: config.bindStageName || 'RELEASE',
+                customDomainType: config.customDomainType,
+                isHttpRedirectToHttps: config.isHttpRedirectToHttps,
+              });
+
+              await apigwClient.setDomain(retryRequest);
+
+              // Set certificate if provided
+              if (
+                config.certificateName &&
+                config.certificateBody &&
+                config.certificatePrivateKey
+              ) {
+                const certRequest = new cloudapi.SetDomainCertificateRequest({
+                  groupId: config.groupId,
+                  domainName: config.domainName,
+                  certificateName: config.certificateName,
+                  certificateBody: config.certificateBody,
+                  certificatePrivateKey: config.certificatePrivateKey,
+                });
+
+                await apigwClient.setDomainCertificate(certRequest);
+              }
+
+              logger.info(
+                lang.__('APIGW_DOMAIN_BOUND_AFTER_VERIFICATION', { domain: config.domainName }),
+              );
+              return state;
+            } catch (retryError) {
+              logger.error(
+                lang.__('APIGW_AUTO_VERIFICATION_FAILED', { error: String(retryError) }),
+              );
+              // Fall through to show manual instructions
+            }
+          }
+
+          // Show manual verification instructions
+          if (verificationToken && groupInfo.body?.subDomain) {
+            logVerificationInstructions(
+              config.domainName,
+              verificationToken,
+              groupInfo.body.subDomain,
+            );
+          } else {
+            logger.error(lang.__('APIGW_NO_VERIFICATION_TOKEN'));
+            logger.error(lang.__('APIGW_MANUAL_VERIFICATION_REQUIRED'));
+          }
+        }
+
+        // Re-throw the error to be handled by caller
+        throw error;
       }
     },
 

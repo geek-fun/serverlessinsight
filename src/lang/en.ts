@@ -220,7 +220,50 @@ export const en = {
   APIGW_DOMAIN_BINDING_FAILED: 'Failed to bind custom domain: {{error}}',
   APIGW_GROUP_APIS_CREATED_DOMAIN_FAILED:
     'API Gateway group and APIs created successfully, but domain binding failed',
-  APIGW_STATE_SAVED_RETRY: 'State has been saved. You can retry or fix domain configuration',
+  APIGW_STATE_SAVED_RETRY:
+    'State has been saved. You can fix domain verification and retry deployment',
+  APIGW_DOMAIN_VERIFICATION_REQUIRED:
+    'Domain {{domainName}} requires ownership verification. Add DNS records as instructed above.',
+  APIGW_DNS_RECORD_ADDED:
+    'DNS verification record added successfully: Record={{record}}, Type={{type}}, Value={{value}}',
+  APIGW_DNS_PROPAGATION_WAITING: 'Waiting for DNS propagation...',
+  APIGW_DNS_PROPAGATION_CHECK:
+    'Checking DNS propagation (attempt {{attempt}}/{{max}}, waiting 1 minute)...',
+  APIGW_DNS_VERIFIED: 'DNS record verified successfully after {{minutes}} minute(s)',
+  APIGW_DNS_CHECK_FAILED: 'DNS check attempt {{attempt}} failed: {{error}}',
+  APIGW_DNS_PROPAGATION_TIMEOUT:
+    'DNS record added but propagation could not be verified after 10 minutes. Proceeding anyway...',
+  APIGW_DNS_VERIFICATION_FAILED: 'Failed to add DNS verification record for {{domain}}: {{error}}',
+  APIGW_DNS_CHECKING_STATUS: 'Checking DNS record status...',
+  APIGW_DNS_RECORD_EXISTS_POLLING:
+    'DNS verification record exists (created {{minutes}} minutes ago), waiting for propagation...',
+  APIGW_DNS_RECORD_EXISTS_CHECKING:
+    'DNS verification record exists (created {{minutes}} minutes ago), checking status...',
+  APIGW_DNS_RECORD_ACTIVE: 'DNS record is active and verified',
+  APIGW_DNS_RECORD_MAY_NOT_PROPAGATED: 'DNS record exists but may not be fully propagated yet',
+  APIGW_DNS_ADDING_RECORD: 'Adding DNS verification record for domain: {{domain}}',
+  APIGW_DNS_RECORD_ALREADY_EXISTS: 'DNS verification record already exists for {{domain}}',
+  APIGW_BINDING_DOMAIN: 'Binding custom domain: {{domain}}',
+  APIGW_DOMAIN_BOUND_SUCCESS: 'Successfully bound domain: {{domain}}',
+  APIGW_DOMAIN_OWNERSHIP_FAILED: 'Domain ownership verification failed for: {{domain}}',
+  APIGW_ATTEMPTING_AUTO_VERIFICATION: 'Attempting automatic DNS verification with token: {{token}}',
+  APIGW_RETRYING_DOMAIN_BINDING: 'Retrying domain binding after DNS verification...',
+  APIGW_DOMAIN_BOUND_AFTER_VERIFICATION: 'Successfully bound domain after verification: {{domain}}',
+  APIGW_AUTO_VERIFICATION_FAILED: 'Automatic verification failed: {{error}}',
+  APIGW_NO_VERIFICATION_TOKEN: 'Could not extract verification token from error response',
+  APIGW_MANUAL_VERIFICATION_REQUIRED: 'Please manually verify domain ownership in Aliyun console',
+  APIGW_VERIFICATION_HEADER: 'Domain Ownership Verification Required',
+  APIGW_VERIFICATION_DOMAIN: 'Domain: {{domain}}',
+  APIGW_VERIFICATION_INSTRUCTIONS:
+    'To verify domain ownership, add ONE of the following DNS records:',
+  APIGW_VERIFICATION_OPTION1: 'Option 1: CNAME Verification',
+  APIGW_VERIFICATION_OPTION2: 'Option 2: TXT Verification (Recommended)',
+  APIGW_VERIFICATION_RECORD_NAME: '  Record Name: {{name}}',
+  APIGW_VERIFICATION_RECORD_TYPE: '  Record Type: {{type}}',
+  APIGW_VERIFICATION_RECORD_VALUE: '  Record Value: {{value}}',
+  APIGW_VERIFICATION_NEXT_STEPS: 'After adding the DNS record:',
+  APIGW_VERIFICATION_STEP1: '1. Wait 5-10 minutes for DNS propagation',
+  APIGW_VERIFICATION_STEP2: '2. Run the deploy command again',
 
   // Function resource messages
   FC3_DEPENDENT_RESOURCES_TRACKED:
