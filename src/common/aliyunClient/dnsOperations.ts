@@ -88,7 +88,7 @@ const checkDomainRecordExists =
 
 export const createDnsOperations = (dnsClient: DnsSdkClient): DnsOperations => {
   const describe = describeDomainRecords(dnsClient);
-  
+
   return {
     addDomainRecord: addDomainRecord(dnsClient),
     deleteDomainRecord: deleteDomainRecord(dnsClient),
@@ -96,4 +96,3 @@ export const createDnsOperations = (dnsClient: DnsSdkClient): DnsOperations => {
     checkDomainRecordExists: checkDomainRecordExists(describe),
   };
 };
-

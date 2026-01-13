@@ -229,5 +229,6 @@ export const en = {
     'You can retry deployment - the system will reuse existing dependent resources',
 
   // Bucket resource messages
-  OSS_BUCKET_TRACKED_CAN_RETRY: 'Bucket is tracked in state, you can retry deployment to upload files',
+  OSS_BUCKET_TRACKED_CAN_RETRY:
+    'Bucket is tracked in state, you can retry deployment to upload files',
 };
