@@ -1,5 +1,5 @@
 import { ServerlessIac } from '../../types';
-import { getContext, loadState } from '../../common';
+import { getContext, loadState, getDependencyInfo, toDotFormat } from '../../common';
 import { generateFunctionPlan } from './fc3Planner';
 import { generateBucketPlan } from './ossPlanner';
 import { generateDatabasePlan } from './databasePlanner';
@@ -16,13 +16,24 @@ export const generateAliyunPlan = async (iac: ServerlessIac) => {
   const tablePlan = await generateTablePlan(context, state, iac.tables);
   const eventPlan = await generateApigwPlan(context, state, iac.events, iac.service);
 
+  const allItems = [
+    ...functionPlan.items,
+    ...bucketPlan.items,
+    ...databasePlan.items,
+    ...tablePlan.items,
+    ...eventPlan.items,
+  ];
+
+  const dependencyInfo = getDependencyInfo(allItems);
+
+  if (dependencyInfo.cycleError) {
+    throw new Error(dependencyInfo.cycleError.message);
+  }
+
   return {
-    items: [
-      ...functionPlan.items,
-      ...bucketPlan.items,
-      ...databasePlan.items,
-      ...tablePlan.items,
-      ...eventPlan.items,
-    ],
+    items: dependencyInfo.order,
+    levels: dependencyInfo.levels,
+    graph: dependencyInfo.graph,
+    dotGraph: toDotFormat(dependencyInfo.graph),
   };
 };

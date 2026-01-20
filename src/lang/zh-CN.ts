@@ -227,4 +227,10 @@ export const zhCN = {
 
   // Bucket resource messages
   OSS_BUCKET_TRACKED_CAN_RETRY: '存储桶已在状态中跟踪，您可以重试部署以上传文件',
+
+  // Dependency graph messages
+  DEPENDENCY_GRAPH_GENERATED: '依赖图已生成',
+  EXECUTION_ORDER: '执行顺序',
+  DOT_GRAPH_OUTPUT: 'DOT 图形输出',
+  CYCLE_DETECTED: '检测到循环依赖',
 };

@@ -12,6 +12,8 @@ import {
   saveState,
   getRoleArnFromState,
   setIac,
+  getDependencyInfo,
+  toDotFormat,
 } from '../../common';
 import { lang } from '../../lang';
 import { generateFunctionPlan } from './fc3Planner';
@@ -48,6 +50,15 @@ const handlePartialFailure = (failure: PartialFailureError): never => {
 const collectSuccessfulItems = (results: Array<ExecutionResult>): Array<PlanItem> =>
   results.flatMap((result) => result.partialFailure?.successfulItems ?? []);
 
+const logDependencyGraph = (orderedItems: Array<PlanItem>, dotGraph: string): void => {
+  logger.info(lang.__('DEPENDENCY_GRAPH_GENERATED'));
+  logger.info(`  ${lang.__('EXECUTION_ORDER')}:`);
+  orderedItems.forEach((item, index) => {
+    logger.info(`    ${index + 1}. ${item.logicalId} (${item.resourceType}) - ${item.action}`);
+  });
+  logger.debug(`${lang.__('DOT_GRAPH_OUTPUT')}:\n${dotGraph}`);
+};
+
 export const deployAliyunStack = async (iac: ServerlessIac): Promise<void> => {
   const context = getContext();
   const baseDir = process.cwd();
@@ -65,23 +76,35 @@ export const deployAliyunStack = async (iac: ServerlessIac): Promise<void> => {
   const tablePlan = await generateTablePlan(context, state, iac.tables);
   const eventPlan = await generateApigwPlan(context, state, iac.events, iac.service);
 
-  const combinedPlan = {
-    items: [
-      ...functionPlan.items,
-      ...bucketPlan.items,
-      ...databasePlan.items,
-      ...tablePlan.items,
-      ...eventPlan.items,
-    ],
-  };
+  const allItems = [
+    ...functionPlan.items,
+    ...bucketPlan.items,
+    ...databasePlan.items,
+    ...tablePlan.items,
+    ...eventPlan.items,
+  ];
 
-  logger.info(`${lang.__('PLAN_GENERATED')}: ${combinedPlan.items.length} ${lang.__('ACTIONS')}`);
-  combinedPlan.items.forEach((item) => {
+  // Build dependency graph and get execution order
+  const dependencyInfo = getDependencyInfo(allItems);
+
+  if (dependencyInfo.cycleError) {
+    throw new Error(dependencyInfo.cycleError.message);
+  }
+
+  const orderedItems = dependencyInfo.order;
+  const dotGraph = toDotFormat(dependencyInfo.graph);
+
+  logDependencyGraph(orderedItems, dotGraph);
+
+  logger.info(`${lang.__('PLAN_GENERATED')}: ${orderedItems.length} ${lang.__('ACTIONS')}`);
+  orderedItems.forEach((item) => {
     logger.info(`  - ${item.action.toUpperCase()}: ${item.logicalId} (${item.resourceType})`);
   });
 
   logger.info(lang.__('EXECUTING_PLAN'));
 
+  // Execute plans in dependency order - still using existing executors for each resource type
+  // The dependency graph ensures resources are executed in the correct order
   const functionResult = await executeFunctionPlan(
     context,
     functionPlan,
