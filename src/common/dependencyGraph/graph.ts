@@ -45,10 +45,16 @@ const extractReferencedResources = (changes?: {
 }): Array<string> => {
   if (!changes) return [];
 
+  const isValidResourceReference = (ref: string): boolean => {
+    const validPrefixes = ['functions', 'events', 'databases', 'buckets', 'tables'];
+    const prefix = ref.split('.')[0];
+    return validPrefixes.includes(prefix);
+  };
+
   const findReferences = (obj: unknown): Array<string> => {
     if (typeof obj === 'string') {
       const matches = obj.match(/\$\{([^}]+)\}/g) || [];
-      return matches.map((m) => m.replace(/\$\{|\}/g, ''));
+      return matches.map((m) => m.replace(/\$\{|\}/g, '')).filter(isValidResourceReference);
     }
     if (Array.isArray(obj)) {
       return obj.flatMap(findReferences);
@@ -299,11 +305,16 @@ export const getDependencyInfo = (
   };
 };
 
+const escapeDotString = (str: string): string =>
+  str.replace(/\\/g, '\\\\').replace(/"/g, '\\"').replace(/\n/g, '\\n');
+
 export const toDotFormat = (graph: DependencyGraph): string => {
   const lines = ['digraph DependencyGraph {', '  rankdir=TB;', '  node [shape=box];', ''];
 
   graph.nodes.forEach((node) => {
-    const label = `${node.planItem.logicalId}\\n[${node.planItem.action}]`;
+    const escapedId = escapeDotString(node.id);
+    const escapedLogicalId = escapeDotString(node.planItem.logicalId);
+    const label = `${escapedLogicalId}\\n[${node.planItem.action}]`;
     const color =
       node.planItem.action === 'create'
         ? 'green'
@@ -312,13 +323,15 @@ export const toDotFormat = (graph: DependencyGraph): string => {
           : node.planItem.action === 'update'
             ? 'orange'
             : 'gray';
-    lines.push(`  "${node.id}" [label="${label}", color="${color}"];`);
+    lines.push(`  "${escapedId}" [label="${label}", color="${color}"];`);
   });
 
   lines.push('');
 
   graph.edges.forEach((edge) => {
-    lines.push(`  "${edge.from}" -> "${edge.to}";`);
+    const escapedFrom = escapeDotString(edge.from);
+    const escapedTo = escapeDotString(edge.to);
+    lines.push(`  "${escapedFrom}" -> "${escapedTo}";`);
   });
 
   lines.push('}');
