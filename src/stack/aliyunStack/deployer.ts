@@ -5,7 +5,14 @@ import {
   PlanItem,
   StateFile,
 } from '../../types';
-import { getContext, logger, loadState, saveState, getRoleArnFromState } from '../../common';
+import {
+  getContext,
+  logger,
+  loadState,
+  saveState,
+  getRoleArnFromState,
+  setIac,
+} from '../../common';
 import { lang } from '../../lang';
 import { generateFunctionPlan } from './fc3Planner';
 import { executeFunctionPlan } from './fc3Executor';
@@ -44,6 +51,8 @@ const collectSuccessfulItems = (results: Array<ExecutionResult>): Array<PlanItem
 export const deployAliyunStack = async (iac: ServerlessIac): Promise<void> => {
   const context = getContext();
   const baseDir = process.cwd();
+  // Cache IAC for access throughout the deployment
+  setIac(iac);
   logger.info(lang.__('DEPLOYING_STACK_PUBLISHING_ASSETS'));
 
   let state = loadState(iac.provider.name, baseDir);

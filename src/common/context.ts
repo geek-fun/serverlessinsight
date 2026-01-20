@@ -127,6 +127,13 @@ export const getContext = (): Context => {
   return context;
 };
 
+export const setIac = (iac: ServerlessIac): void => {
+  if (!context) {
+    throw new Error('Context must be set before setting IAC');
+  }
+  context.iac = iac;
+};
+
 export const clearContext = (): void => {
   context = undefined;
 };

@@ -5,7 +5,8 @@ import {
   extractApigwApiDefinition,
   extractApigwDeploymentDefinition,
 } from '../../../src/stack/aliyunStack/apigwTypes';
-import { EventDomain, EventTypes } from '../../../src/types';
+import { EventDomain, EventTypes, ServerlessIac } from '../../../src/types';
+import { ProviderEnum, setContext, setIac } from '../../../src/common';
 
 describe('Apigw Types', () => {
   const testEvent: EventDomain = {
@@ -29,6 +30,51 @@ describe('Apigw Types', () => {
       certificate_name: 'test-cert',
     },
   };
+
+  const mockIac: ServerlessIac = {
+    version: '1.0',
+    service: 'test-service',
+    provider: {
+      name: ProviderEnum.ALIYUN,
+      region: 'cn-hangzhou',
+    },
+    functions: [
+      {
+        key: 'userFunc',
+        name: 'userFunction',
+        code: {
+          runtime: 'nodejs20',
+          handler: 'index.handler',
+          path: 'test.zip',
+        },
+        memory: 512,
+        timeout: 10,
+        storage: {},
+      },
+      {
+        key: 'createUserFunc',
+        name: 'createUserFunction',
+        code: {
+          runtime: 'nodejs20',
+          handler: 'index.handler',
+          path: 'test.zip',
+        },
+        memory: 512,
+        timeout: 10,
+        storage: {},
+      },
+    ],
+  };
+
+  beforeEach(async () => {
+    // Set up context and IAC before each test
+    await setContext({
+      region: 'cn-hangzhou',
+      provider: ProviderEnum.ALIYUN,
+      location: 'tests/fixtures/serverless-insight.yml', // Use fixture file
+    });
+    setIac(mockIac);
+  });
 
   describe('eventToApigwGroupConfig', () => {
     it('should convert EventDomain to ApigwGroupConfig', () => {

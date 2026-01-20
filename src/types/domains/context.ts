@@ -1,4 +1,5 @@
 import { ProviderEnum } from '../../common';
+import { ServerlessIac } from '../index';
 
 export type Context = {
   region: string;
@@ -15,6 +16,7 @@ export type Context = {
     [stage: string]: Array<{ key: string; value: string }>;
   };
   tags?: Array<{ key: string; value: string }>;
+  iac?: ServerlessIac;
 };
 
 export enum TemplateFormat {

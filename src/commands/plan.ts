@@ -1,4 +1,4 @@
-import { getIacLocation, logger, setContext, ProviderEnum, getContext } from '../common';
+import { getIacLocation, logger, setContext, setIac, ProviderEnum, getContext } from '../common';
 import { parseYaml, revalYaml } from '../parser';
 import { generateTencentPlan, displayPlan } from '../stack/scfStack';
 import { generateAliyunPlan } from '../stack/aliyunStack';
@@ -28,6 +28,9 @@ export const plan = async (
   );
   const context = getContext();
   const iac = revalYaml(iacLocation, context);
+
+  // Store IAC in context for access by all functions
+  setIac(iac);
 
   logger.info(lang.__('GENERATING_PLAN_FOR_SCF'));
 

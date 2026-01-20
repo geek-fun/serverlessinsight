@@ -1,5 +1,13 @@
 import { deployStack } from '../stack';
-import { getContext, getIacLocation, logger, setContext, withLock, getStatePath } from '../common';
+import {
+  getContext,
+  getIacLocation,
+  logger,
+  setContext,
+  setIac,
+  withLock,
+  getStatePath,
+} from '../common';
 import { parseYaml, revalYaml } from '../parser';
 import { lang } from '../lang';
 
@@ -28,6 +36,9 @@ export const deploy = async (
 
   const context = getContext();
   const iac = revalYaml(iacLocation, context);
+
+  // Store IAC in context for access by all functions
+  setIac(iac);
 
   logger.info(lang.__('DEPLOYING_STACK'));
 

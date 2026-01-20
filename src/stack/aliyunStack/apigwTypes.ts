@@ -1,4 +1,5 @@
 import { EventDomain, ResourceAttributes } from '../../types';
+import { getIacDefinition, getContext, logger } from '../../common';
 
 // API Group types
 export type ApigwGroupConfig = {
@@ -156,6 +157,31 @@ export const generateApiKey = (method: string, path: string): string => {
 };
 
 /**
+ * Resolves a function reference like ${functions.xxx} to the actual function name
+ */
+const resolveFunctionReference = (backendRef: string): string => {
+  // Get IAC from context
+  const context = getContext();
+  if (!context.iac) {
+    logger.warn(`Cannot resolve function reference ${backendRef}: IAC not available in context`);
+    return backendRef;
+  }
+
+  // Use getIacDefinition to resolve function references
+  const functionDef = getIacDefinition(context.iac, backendRef);
+
+  if (!functionDef) {
+    // Not a function reference or function not found, return as is
+    logger.warn(`Function reference ${backendRef} could not be resolved from IAC`);
+    return backendRef;
+  }
+
+  const functionName = functionDef.name;
+  logger.info(`Resolved function reference ${backendRef} to function name: ${functionName}`);
+  return functionName;
+};
+
+/**
  * Convert EventDomain trigger to API Gateway API config
  */
 export const triggerToApigwApiConfig = (
@@ -169,6 +195,7 @@ export const triggerToApigwApiConfig = (
   const method = trigger.method as string;
   const path = trigger.path as string;
   const backend = trigger.backend as string;
+  const resolvedFunctionName = resolveFunctionReference(backend);
   const apiKey = generateApiKey(method, path);
 
   return {
@@ -186,7 +213,7 @@ export const triggerToApigwApiConfig = (
       serviceProtocol: 'FunctionCompute',
       functionComputeConfig: {
         fcRegionId: region,
-        functionName: backend,
+        functionName: resolvedFunctionName,
         roleArn,
         fcVersion: '3.0',
         method,

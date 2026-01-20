@@ -147,6 +147,17 @@ const extractMainDomain = (domainName: string): string => {
   return parts.slice(-2).join('.');
 };
 
+const extractHostRecord = (fullDomain: string, mainDomain: string): string => {
+  if (fullDomain === mainDomain) {
+    return '@'; // @ represents the root domain
+  }
+  const suffix = `.${mainDomain}`;
+  if (fullDomain.endsWith(suffix)) {
+    return fullDomain.slice(0, -suffix.length);
+  }
+  return fullDomain;
+};
+
 export const createApigwOperations = (
   apigwClient: ApigwSdkClient,
   dnsClient: DnsSdkClient,
@@ -236,6 +247,7 @@ export const createApigwOperations = (
     logger.info(lang.__('APIGW_DNS_ADDING_RECORD', { domain: domainName }));
 
     const mainDomain = extractMainDomain(domainName);
+    const hostRecord = extractHostRecord(domainName, mainDomain);
     // For CNAME verification: point the domain directly to the group subdomain
     const verificationHost = domainName;
     const verificationValue = groupSubdomain;
@@ -258,7 +270,7 @@ export const createApigwOperations = (
               minutes: String(Math.floor(ageMs / 60000)),
             }),
           );
-          await pollDnsPropagation(mainDomain, verificationHost, verificationValue, true);
+          await pollDnsPropagation(mainDomain, hostRecord, verificationValue, true);
           return state;
         } else {
           // Created more than 30 minutes ago - just check once
@@ -269,7 +281,7 @@ export const createApigwOperations = (
           );
           const propagated = await pollDnsPropagation(
             mainDomain,
-            verificationHost,
+            hostRecord,
             verificationValue,
             false,
           );
@@ -283,19 +295,17 @@ export const createApigwOperations = (
       }
 
       // Check if record already exists in DNS (but not tracked in state)
-      const existingRecords = await dnsOps.describeDomainRecords(mainDomain, verificationHost);
+      const existingRecords = await dnsOps.describeDomainRecords(mainDomain, hostRecord);
       const recordExists = existingRecords.some(
         (record) =>
-          record.rr === verificationHost &&
-          record.type === 'CNAME' &&
-          record.value === verificationValue,
+          record.rr === hostRecord && record.type === 'CNAME' && record.value === verificationValue,
       );
 
       if (!recordExists) {
         // Add the verification record
         const recordId = await dnsOps.addDomainRecord({
           domainName: mainDomain,
-          rr: verificationHost,
+          rr: hostRecord,
           type: 'CNAME',
           value: verificationValue,
           ttl: 600,
@@ -361,7 +371,7 @@ export const createApigwOperations = (
       }
 
       // Poll for DNS propagation
-      await pollDnsPropagation(mainDomain, verificationHost, verificationValue, true);
+      await pollDnsPropagation(mainDomain, hostRecord, verificationValue, true);
 
       return state;
     } catch (error) {
