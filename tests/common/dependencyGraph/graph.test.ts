@@ -22,7 +22,7 @@ describe('DependencyGraph', () => {
 
     it('should build graph with single item', () => {
       const items: Array<PlanItem> = [
-        { logicalId: 'functions.fn1', action: 'create', resourceType: 'ALIYUN_FC3_FUNCTION' },
+        { logicalId: 'functions.fn1', action: 'create', resourceType: 'ALIYUN_FC3' },
       ];
       const graph = buildDependencyGraph(items);
 
@@ -33,7 +33,7 @@ describe('DependencyGraph', () => {
 
     it('should infer dependencies based on resource type order', () => {
       const items: Array<PlanItem> = [
-        { logicalId: 'functions.fn1', action: 'create', resourceType: 'ALIYUN_FC3_FUNCTION' },
+        { logicalId: 'functions.fn1', action: 'create', resourceType: 'ALIYUN_FC3' },
         {
           logicalId: 'events.event1',
           action: 'create',
@@ -50,7 +50,7 @@ describe('DependencyGraph', () => {
 
     it('should detect explicit references in changes', () => {
       const items: Array<PlanItem> = [
-        { logicalId: 'functions.fn1', action: 'create', resourceType: 'ALIYUN_FC3_FUNCTION' },
+        { logicalId: 'functions.fn1', action: 'create', resourceType: 'ALIYUN_FC3' },
         {
           logicalId: 'events.event1',
           action: 'create',
@@ -70,7 +70,7 @@ describe('DependencyGraph', () => {
 
     it('should handle delete action dependencies (reverse order)', () => {
       const items: Array<PlanItem> = [
-        { logicalId: 'functions.fn1', action: 'delete', resourceType: 'ALIYUN_FC3_FUNCTION' },
+        { logicalId: 'functions.fn1', action: 'delete', resourceType: 'ALIYUN_FC3' },
         { logicalId: 'events.event1', action: 'delete', resourceType: 'ALIYUN_APIGW' },
       ];
       const graph = buildDependencyGraph(items);
@@ -83,7 +83,7 @@ describe('DependencyGraph', () => {
   describe('detectCycle', () => {
     it('should return null for acyclic graph', () => {
       const items: Array<PlanItem> = [
-        { logicalId: 'functions.fn1', action: 'create', resourceType: 'ALIYUN_FC3_FUNCTION' },
+        { logicalId: 'functions.fn1', action: 'create', resourceType: 'ALIYUN_FC3' },
         { logicalId: 'events.event1', action: 'create', resourceType: 'ALIYUN_APIGW' },
       ];
       const graph = buildDependencyGraph(items);
@@ -103,7 +103,7 @@ describe('DependencyGraph', () => {
   describe('validateGraph', () => {
     it('should return null for valid graph', () => {
       const items: Array<PlanItem> = [
-        { logicalId: 'functions.fn1', action: 'create', resourceType: 'ALIYUN_FC3_FUNCTION' },
+        { logicalId: 'functions.fn1', action: 'create', resourceType: 'ALIYUN_FC3' },
         { logicalId: 'buckets.bucket1', action: 'create', resourceType: 'ALIYUN_OSS_BUCKET' },
       ];
       const graph = buildDependencyGraph(items);
@@ -124,7 +124,7 @@ describe('DependencyGraph', () => {
     it('should sort items in dependency order', () => {
       const items: Array<PlanItem> = [
         { logicalId: 'events.event1', action: 'create', resourceType: 'ALIYUN_APIGW' },
-        { logicalId: 'functions.fn1', action: 'create', resourceType: 'ALIYUN_FC3_FUNCTION' },
+        { logicalId: 'functions.fn1', action: 'create', resourceType: 'ALIYUN_FC3' },
       ];
       const graph = buildDependencyGraph(items);
       const levels = topologicalSort(graph);
@@ -138,8 +138,8 @@ describe('DependencyGraph', () => {
 
     it('should group independent items in same level', () => {
       const items: Array<PlanItem> = [
-        { logicalId: 'functions.fn1', action: 'create', resourceType: 'ALIYUN_FC3_FUNCTION' },
-        { logicalId: 'functions.fn2', action: 'create', resourceType: 'ALIYUN_FC3_FUNCTION' },
+        { logicalId: 'functions.fn1', action: 'create', resourceType: 'ALIYUN_FC3' },
+        { logicalId: 'functions.fn2', action: 'create', resourceType: 'ALIYUN_FC3' },
       ];
       const graph = buildDependencyGraph(items);
       const levels = topologicalSort(graph);
@@ -158,7 +158,7 @@ describe('DependencyGraph', () => {
     it('should return items in dependency order', () => {
       const items: Array<PlanItem> = [
         { logicalId: 'events.event1', action: 'create', resourceType: 'ALIYUN_APIGW' },
-        { logicalId: 'functions.fn1', action: 'create', resourceType: 'ALIYUN_FC3_FUNCTION' },
+        { logicalId: 'functions.fn1', action: 'create', resourceType: 'ALIYUN_FC3' },
         { logicalId: 'databases.db1', action: 'create', resourceType: 'ALIYUN_RDS_SERVERLESS' },
       ];
       const order = getExecutionOrder(items);
@@ -173,7 +173,7 @@ describe('DependencyGraph', () => {
 
     it('should handle mixed create and noop actions', () => {
       const items: Array<PlanItem> = [
-        { logicalId: 'functions.fn1', action: 'noop', resourceType: 'ALIYUN_FC3_FUNCTION' },
+        { logicalId: 'functions.fn1', action: 'noop', resourceType: 'ALIYUN_FC3' },
         { logicalId: 'events.event1', action: 'create', resourceType: 'ALIYUN_APIGW' },
       ];
       const order = getExecutionOrder(items);
@@ -183,7 +183,7 @@ describe('DependencyGraph', () => {
 
     it('should handle delete actions in reverse order', () => {
       const items: Array<PlanItem> = [
-        { logicalId: 'functions.fn1', action: 'delete', resourceType: 'ALIYUN_FC3_FUNCTION' },
+        { logicalId: 'functions.fn1', action: 'delete', resourceType: 'ALIYUN_FC3' },
         { logicalId: 'events.event1', action: 'delete', resourceType: 'ALIYUN_APIGW' },
       ];
       const order = getExecutionOrder(items);
@@ -205,7 +205,7 @@ describe('DependencyGraph', () => {
       const items: Array<PlanItem> = [
         { logicalId: 'databases.db1', action: 'create', resourceType: 'ALIYUN_RDS_SERVERLESS' },
         { logicalId: 'buckets.bucket1', action: 'create', resourceType: 'ALIYUN_OSS_BUCKET' },
-        { logicalId: 'functions.fn1', action: 'create', resourceType: 'ALIYUN_FC3_FUNCTION' },
+        { logicalId: 'functions.fn1', action: 'create', resourceType: 'ALIYUN_FC3' },
         { logicalId: 'events.event1', action: 'create', resourceType: 'ALIYUN_APIGW' },
       ];
       const plan = getParallelExecutionPlan(items);
@@ -230,7 +230,7 @@ describe('DependencyGraph', () => {
   describe('getDependencyInfo', () => {
     it('should return complete dependency information', () => {
       const items: Array<PlanItem> = [
-        { logicalId: 'functions.fn1', action: 'create', resourceType: 'ALIYUN_FC3_FUNCTION' },
+        { logicalId: 'functions.fn1', action: 'create', resourceType: 'ALIYUN_FC3' },
         { logicalId: 'events.event1', action: 'create', resourceType: 'ALIYUN_APIGW' },
       ];
       const info = getDependencyInfo(items);
@@ -254,7 +254,7 @@ describe('DependencyGraph', () => {
   describe('toDotFormat', () => {
     it('should generate valid DOT format', () => {
       const items: Array<PlanItem> = [
-        { logicalId: 'functions.fn1', action: 'create', resourceType: 'ALIYUN_FC3_FUNCTION' },
+        { logicalId: 'functions.fn1', action: 'create', resourceType: 'ALIYUN_FC3' },
         { logicalId: 'events.event1', action: 'update', resourceType: 'ALIYUN_APIGW' },
       ];
       const graph = buildDependencyGraph(items);
@@ -269,7 +269,7 @@ describe('DependencyGraph', () => {
 
     it('should include edges in DOT output', () => {
       const items: Array<PlanItem> = [
-        { logicalId: 'functions.fn1', action: 'create', resourceType: 'ALIYUN_FC3_FUNCTION' },
+        { logicalId: 'functions.fn1', action: 'create', resourceType: 'ALIYUN_FC3' },
         {
           logicalId: 'events.event1',
           action: 'create',
@@ -285,7 +285,7 @@ describe('DependencyGraph', () => {
 
     it('should use correct colors for different actions', () => {
       const items: Array<PlanItem> = [
-        { logicalId: 'res1', action: 'create', resourceType: 'ALIYUN_FC3_FUNCTION' },
+        { logicalId: 'res1', action: 'create', resourceType: 'ALIYUN_FC3' },
         { logicalId: 'res2', action: 'delete', resourceType: 'ALIYUN_OSS_BUCKET' },
         { logicalId: 'res3', action: 'update', resourceType: 'ALIYUN_APIGW' },
         { logicalId: 'res4', action: 'noop', resourceType: 'ALIYUN_RDS_SERVERLESS' },
@@ -303,7 +303,7 @@ describe('DependencyGraph', () => {
   describe('resource type ordering', () => {
     it('should order databases before functions', () => {
       const items: Array<PlanItem> = [
-        { logicalId: 'functions.fn1', action: 'create', resourceType: 'ALIYUN_FC3_FUNCTION' },
+        { logicalId: 'functions.fn1', action: 'create', resourceType: 'ALIYUN_FC3' },
         { logicalId: 'databases.db1', action: 'create', resourceType: 'ALIYUN_RDS_SERVERLESS' },
       ];
       const order = getExecutionOrder(items);
@@ -316,7 +316,7 @@ describe('DependencyGraph', () => {
 
     it('should order buckets before functions', () => {
       const items: Array<PlanItem> = [
-        { logicalId: 'functions.fn1', action: 'create', resourceType: 'ALIYUN_FC3_FUNCTION' },
+        { logicalId: 'functions.fn1', action: 'create', resourceType: 'ALIYUN_FC3' },
         { logicalId: 'buckets.bucket1', action: 'create', resourceType: 'ALIYUN_OSS_BUCKET' },
       ];
       const order = getExecutionOrder(items);
@@ -330,7 +330,7 @@ describe('DependencyGraph', () => {
     it('should order functions before events', () => {
       const items: Array<PlanItem> = [
         { logicalId: 'events.event1', action: 'create', resourceType: 'ALIYUN_APIGW' },
-        { logicalId: 'functions.fn1', action: 'create', resourceType: 'ALIYUN_FC3_FUNCTION' },
+        { logicalId: 'functions.fn1', action: 'create', resourceType: 'ALIYUN_FC3' },
       ];
       const order = getExecutionOrder(items);
 
@@ -343,7 +343,7 @@ describe('DependencyGraph', () => {
     it('should order tables after functions', () => {
       const items: Array<PlanItem> = [
         { logicalId: 'tables.table1', action: 'create', resourceType: 'ALIYUN_TABLESTORE_TABLE' },
-        { logicalId: 'functions.fn1', action: 'create', resourceType: 'ALIYUN_FC3_FUNCTION' },
+        { logicalId: 'functions.fn1', action: 'create', resourceType: 'ALIYUN_FC3' },
       ];
       const order = getExecutionOrder(items);
 
@@ -358,7 +358,7 @@ describe('DependencyGraph', () => {
     it('should order SCF functions before events', () => {
       const items: Array<PlanItem> = [
         { logicalId: 'events.event1', action: 'create', resourceType: 'ALIYUN_APIGW' },
-        { logicalId: 'functions.fn1', action: 'create', resourceType: 'SCF_FUNCTION' },
+        { logicalId: 'functions.fn1', action: 'create', resourceType: 'SCF' },
       ];
       const order = getExecutionOrder(items);
 
@@ -370,7 +370,7 @@ describe('DependencyGraph', () => {
 
     it('should order COS buckets before functions', () => {
       const items: Array<PlanItem> = [
-        { logicalId: 'functions.fn1', action: 'create', resourceType: 'SCF_FUNCTION' },
+        { logicalId: 'functions.fn1', action: 'create', resourceType: 'SCF' },
         { logicalId: 'buckets.bucket1', action: 'create', resourceType: 'COS_BUCKET' },
       ];
       const order = getExecutionOrder(items);
@@ -383,7 +383,7 @@ describe('DependencyGraph', () => {
 
     it('should order TDSQL-C databases before functions', () => {
       const items: Array<PlanItem> = [
-        { logicalId: 'functions.fn1', action: 'create', resourceType: 'SCF_FUNCTION' },
+        { logicalId: 'functions.fn1', action: 'create', resourceType: 'SCF' },
         { logicalId: 'databases.db1', action: 'create', resourceType: 'TDSQL_C_SERVERLESS' },
       ];
       const order = getExecutionOrder(items);
@@ -399,7 +399,7 @@ describe('DependencyGraph', () => {
     it('should handle full stack deployment order', () => {
       const items: Array<PlanItem> = [
         { logicalId: 'events.api', action: 'create', resourceType: 'ALIYUN_APIGW' },
-        { logicalId: 'functions.handler', action: 'create', resourceType: 'ALIYUN_FC3_FUNCTION' },
+        { logicalId: 'functions.handler', action: 'create', resourceType: 'ALIYUN_FC3' },
         { logicalId: 'databases.mysql', action: 'create', resourceType: 'ALIYUN_RDS_SERVERLESS' },
         { logicalId: 'buckets.assets', action: 'create', resourceType: 'ALIYUN_OSS_BUCKET' },
         { logicalId: 'tables.users', action: 'create', resourceType: 'ALIYUN_TABLESTORE_TABLE' },
@@ -421,7 +421,7 @@ describe('DependencyGraph', () => {
     it('should handle full stack destroy order (reverse)', () => {
       const items: Array<PlanItem> = [
         { logicalId: 'events.api', action: 'delete', resourceType: 'ALIYUN_APIGW' },
-        { logicalId: 'functions.handler', action: 'delete', resourceType: 'ALIYUN_FC3_FUNCTION' },
+        { logicalId: 'functions.handler', action: 'delete', resourceType: 'ALIYUN_FC3' },
         { logicalId: 'databases.mysql', action: 'delete', resourceType: 'ALIYUN_RDS_SERVERLESS' },
         { logicalId: 'buckets.assets', action: 'delete', resourceType: 'ALIYUN_OSS_BUCKET' },
         { logicalId: 'tables.users', action: 'delete', resourceType: 'ALIYUN_TABLESTORE_TABLE' },
@@ -442,8 +442,8 @@ describe('DependencyGraph', () => {
 
     it('should handle mixed create/update/delete actions', () => {
       const items: Array<PlanItem> = [
-        { logicalId: 'functions.fn1', action: 'update', resourceType: 'ALIYUN_FC3_FUNCTION' },
-        { logicalId: 'functions.fn2', action: 'delete', resourceType: 'ALIYUN_FC3_FUNCTION' },
+        { logicalId: 'functions.fn1', action: 'update', resourceType: 'ALIYUN_FC3' },
+        { logicalId: 'functions.fn2', action: 'delete', resourceType: 'ALIYUN_FC3' },
         { logicalId: 'buckets.bucket1', action: 'create', resourceType: 'ALIYUN_OSS_BUCKET' },
         { logicalId: 'events.event1', action: 'noop', resourceType: 'ALIYUN_APIGW' },
       ];

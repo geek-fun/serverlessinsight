@@ -8,18 +8,20 @@ import {
 } from './types';
 
 const RESOURCE_TYPE_PREFIX_MAP: Record<string, string> = {
-  ALIYUN_FC3_FUNCTION: 'functions',
-  SCF_FUNCTION: 'functions',
+  // Aliyun resource types (as emitted by planners)
+  ALIYUN_FC3: 'functions',
   ALIYUN_OSS_BUCKET: 'buckets',
-  COS_BUCKET: 'buckets',
   ALIYUN_APIGW: 'events',
   ALIYUN_APIGW_GROUP: 'events',
   ALIYUN_APIGW_API: 'events',
   ALIYUN_APIGW_DEPLOYMENT: 'events',
   ALIYUN_RDS_SERVERLESS: 'databases',
   ALIYUN_ES_SERVERLESS: 'databases',
-  TDSQL_C_SERVERLESS: 'databases',
   ALIYUN_TABLESTORE_TABLE: 'tables',
+  // Tencent resource types (as emitted by planners)
+  SCF: 'functions',
+  COS_BUCKET: 'buckets',
+  TDSQL_C_SERVERLESS: 'databases',
 };
 
 const RESOURCE_DEPENDENCY_ORDER: Record<string, number> = {

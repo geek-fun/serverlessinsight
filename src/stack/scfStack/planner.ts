@@ -18,7 +18,9 @@ export const generateTencentPlan = async (iac: ServerlessIac) => {
   const dependencyInfo = getDependencyInfo(allItems);
 
   if (dependencyInfo.cycleError) {
-    throw new Error(dependencyInfo.cycleError.message);
+    throw new Error(
+      `${lang.__('CYCLE_DETECTED')}: ${dependencyInfo.cycleError.cycle.join(' -> ')}`,
+    );
   }
 
   return {

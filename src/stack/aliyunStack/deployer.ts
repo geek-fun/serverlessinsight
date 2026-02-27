@@ -84,11 +84,13 @@ export const deployAliyunStack = async (iac: ServerlessIac): Promise<void> => {
     ...eventPlan.items,
   ];
 
-  // Build dependency graph and get execution order
+  // Build dependency graph for validation (e.g. cycle detection) and logging
   const dependencyInfo = getDependencyInfo(allItems);
 
   if (dependencyInfo.cycleError) {
-    throw new Error(dependencyInfo.cycleError.message);
+    throw new Error(
+      `${lang.__('CYCLE_DETECTED')}: ${dependencyInfo.cycleError.cycle.join(' -> ')}`,
+    );
   }
 
   const orderedItems = dependencyInfo.order;
@@ -96,15 +98,17 @@ export const deployAliyunStack = async (iac: ServerlessIac): Promise<void> => {
 
   logDependencyGraph(orderedItems, dotGraph);
 
-  logger.info(`${lang.__('PLAN_GENERATED')}: ${orderedItems.length} ${lang.__('ACTIONS')}`);
-  orderedItems.forEach((item) => {
+  // NOTE: The dependency graph is currently used only for validation (e.g. cycle detection).
+  // Plan execution below still follows the fixed per-resource ordering.
+  logger.info(`${lang.__('PLAN_GENERATED')}: ${allItems.length} ${lang.__('ACTIONS')}`);
+  allItems.forEach((item) => {
     logger.info(`  - ${item.action.toUpperCase()}: ${item.logicalId} (${item.resourceType})`);
   });
 
   logger.info(lang.__('EXECUTING_PLAN'));
 
-  // Execute plans in dependency order - still using existing executors for each resource type
-  // The dependency graph ensures resources are executed in the correct order
+  // Execute plans per resource type in a fixed order.
+  // The dependency graph above does not yet drive the execution sequence.
   const functionResult = await executeFunctionPlan(
     context,
     functionPlan,

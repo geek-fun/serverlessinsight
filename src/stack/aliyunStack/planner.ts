@@ -1,5 +1,6 @@
 import { ServerlessIac } from '../../types';
 import { getContext, loadState, getDependencyInfo, toDotFormat } from '../../common';
+import { lang } from '../../lang';
 import { generateFunctionPlan } from './fc3Planner';
 import { generateBucketPlan } from './ossPlanner';
 import { generateDatabasePlan } from './databasePlanner';
@@ -27,7 +28,9 @@ export const generateAliyunPlan = async (iac: ServerlessIac) => {
   const dependencyInfo = getDependencyInfo(allItems);
 
   if (dependencyInfo.cycleError) {
-    throw new Error(dependencyInfo.cycleError.message);
+    throw new Error(
+      `${lang.__('CYCLE_DETECTED')}: ${dependencyInfo.cycleError.cycle.join(' -> ')}`,
+    );
   }
 
   return {
