@@ -1,5 +1,5 @@
 import { ServerlessIac } from '../../types';
-import { getContext, logger, loadState } from '../../common';
+import { getContext, logger, loadState, getDependencyInfo, toDotFormat } from '../../common';
 import { lang } from '../../lang';
 import { generateFunctionPlan } from './scfPlanner';
 import { generateBucketPlan } from './cosPlanner';
@@ -13,8 +13,21 @@ export const generateTencentPlan = async (iac: ServerlessIac) => {
   const bucketPlan = await generateBucketPlan(context, state, iac.buckets);
   const databasePlan = await generateDatabasePlan(context, state, iac.databases);
 
+  const allItems = [...functionPlan.items, ...bucketPlan.items, ...databasePlan.items];
+
+  const dependencyInfo = getDependencyInfo(allItems);
+
+  if (dependencyInfo.cycleError) {
+    throw new Error(
+      `${lang.__('CYCLE_DETECTED')}: ${dependencyInfo.cycleError.cycle.join(' -> ')}`,
+    );
+  }
+
   return {
-    items: [...functionPlan.items, ...bucketPlan.items, ...databasePlan.items],
+    items: dependencyInfo.order,
+    levels: dependencyInfo.levels,
+    graph: dependencyInfo.graph,
+    dotGraph: toDotFormat(dependencyInfo.graph),
   };
 };
 

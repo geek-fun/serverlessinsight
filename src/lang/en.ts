@@ -275,4 +275,10 @@ export const en = {
   // Bucket resource messages
   OSS_BUCKET_TRACKED_CAN_RETRY:
     'Bucket is tracked in state, you can retry deployment to upload files',
+
+  // Dependency graph messages
+  DEPENDENCY_GRAPH_GENERATED: 'Dependency graph generated',
+  EXECUTION_ORDER: 'Execution order',
+  DOT_GRAPH_OUTPUT: 'DOT graph output',
+  CYCLE_DETECTED: 'Circular dependency detected',
 };
