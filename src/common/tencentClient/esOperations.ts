@@ -158,7 +158,9 @@ export const createTencentEsOperations = (esClient: EsClient, _context: Context)
 
     deleteSpace: async (spaceId: string): Promise<void> => {
       try {
-        // Delete all instances in the space first
+        // Delete all instances in the space first.
+        // Note: The Tencent Cloud ES SDK does not provide a DeleteServerlessSpace API.
+        // Deleting all instances within the space effectively decommissions it.
         const instancesResponse = await esClient.DescribeServerlessInstances({
           SpaceIds: [spaceId],
         });
