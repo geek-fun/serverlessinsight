@@ -169,6 +169,24 @@ export const zhCN = {
   ES_APP_WAITING_DELETE: '等待 Elasticsearch Serverless 应用删除: {{appName}}',
   ES_APP_TIMEOUT_DELETE: '等待 Elasticsearch Serverless 应用删除超时: {{appName}}',
 
+  // 腾讯云 Elasticsearch Serverless 消息
+  TENCENT_ES_SPACE_CREATION_INITIATED: '腾讯云 ES Serverless 空间创建已启动',
+  TENCENT_ES_SPACE_CREATION_FAILED: '创建腾讯云 ES Serverless 空间失败: {{error}}',
+  TENCENT_ES_SPACE_NO_ID_RETURNED: '创建腾讯云 ES Serverless 空间失败：未返回空间 ID',
+  TENCENT_ES_SPACE_READY: '腾讯云 ES Serverless 空间已就绪: {{spaceId}}',
+  TENCENT_ES_SPACE_ERROR_STATE: '腾讯云 ES Serverless 空间处于错误状态: {{status}}',
+  TENCENT_ES_SPACE_WAITING: '等待腾讯云 ES Serverless 空间就绪: {{spaceId}} (状态: {{status}})',
+  TENCENT_ES_SPACE_TIMEOUT_READY: '等待腾讯云 ES Serverless 空间就绪超时: {{spaceId}}',
+  TENCENT_ES_SPACE_NOT_FOUND: '未找到腾讯云 ES Serverless 空间: {{spaceId}}',
+  TENCENT_ES_SPACE_GET_FAILED: '获取腾讯云 ES Serverless 空间失败: {{error}}',
+  TENCENT_ES_SPACE_UPDATED: '腾讯云 ES Serverless 空间已更新: {{spaceId}}',
+  TENCENT_ES_SPACE_UPDATE_FAILED: '更新腾讯云 ES Serverless 空间失败: {{error}}',
+  TENCENT_ES_SPACE_DELETION_INITIATED: '腾讯云 ES Serverless 空间删除已启动: {{spaceId}}',
+  TENCENT_ES_SPACE_DELETED: '腾讯云 ES Serverless 空间已删除: {{spaceId}}',
+  TENCENT_ES_SPACE_DELETE_FAILED: '删除腾讯云 ES Serverless 空间失败: {{error}}',
+  TENCENT_ES_SPACE_WAITING_DELETE: '等待腾讯云 ES Serverless 空间删除: {{spaceId}}',
+  TENCENT_ES_SPACE_TIMEOUT_DELETE: '等待腾讯云 ES Serverless 空间删除超时: {{spaceId}}',
+
   // Partial failure messages
   PARTIAL_DEPLOYMENT_FAILURE:
     '⚠️  部署部分失败: {{successCount}} 个资源成功，但 {{failedResource}} 失败。',

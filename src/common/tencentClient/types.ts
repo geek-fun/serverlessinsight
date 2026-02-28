@@ -230,3 +230,31 @@ export type TdsqlcClusterInfo = {
   CynosVersionStatus?: string;
   IsLatestVersion?: boolean;
 };
+
+// Tencent ES Serverless types
+export enum TencentEsSpaceStatus {
+  CREATING = 0,
+  NORMAL = 1,
+  DELETING = 2,
+  DELETED = 3,
+}
+
+export type TencentEsSpaceConfig = {
+  SpaceName: string;
+  VpcInfo?: Array<{
+    VpcId: string;
+    SubnetId: string;
+  }>;
+  Zone?: string;
+  KibanaWhiteIpList?: string[];
+};
+
+export type TencentEsSpaceInfo = {
+  SpaceId: string;
+  SpaceName: string;
+  Status: number;
+  CreateTime?: string;
+  IndexCount?: number;
+  KibanaUrl?: string;
+  KibanaPrivateUrl?: string;
+};

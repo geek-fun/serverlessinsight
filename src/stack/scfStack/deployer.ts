@@ -13,6 +13,8 @@ import { generateBucketPlan } from './cosPlanner';
 import { executeBucketPlan } from './cosExecutor';
 import { generateDatabasePlan } from './tdsqlcPlanner';
 import { executeDatabasePlan } from './tdsqlcExecutor';
+import { generateEsPlan } from './esServerlessPlanner';
+import { executeEsPlan } from './esServerlessExecutor';
 
 const createSaveStateFn = (baseDir: string) => (state: StateFile) => {
   saveState(state, baseDir);
@@ -49,9 +51,10 @@ export const deployTencentStack = async (iac: ServerlessIac): Promise<void> => {
   const functionPlan = await generateFunctionPlan(context, state, iac.functions);
   const bucketPlan = await generateBucketPlan(context, state, iac.buckets);
   const databasePlan = await generateDatabasePlan(context, state, iac.databases);
+  const esPlan = await generateEsPlan(context, state, iac.databases);
 
   const combinedPlan = {
-    items: [...functionPlan.items, ...bucketPlan.items, ...databasePlan.items],
+    items: [...functionPlan.items, ...bucketPlan.items, ...databasePlan.items, ...esPlan.items],
   };
 
   logger.info(`${lang.__('PLAN_GENERATED')}: ${combinedPlan.items.length} ${lang.__('ACTIONS')}`);
@@ -105,6 +108,18 @@ export const deployTencentStack = async (iac: ServerlessIac): Promise<void> => {
       successfulItems: [
         ...collectSuccessfulItems([functionResult, bucketResult]),
         ...databaseResult.partialFailure.successfulItems,
+      ],
+    });
+  }
+
+  const esResult = await executeEsPlan(context, esPlan, iac.databases, state, onStateChange);
+  state = esResult.state;
+  if (esResult.partialFailure) {
+    handlePartialFailure({
+      ...esResult.partialFailure,
+      successfulItems: [
+        ...collectSuccessfulItems([functionResult, bucketResult, databaseResult]),
+        ...esResult.partialFailure.successfulItems,
       ],
     });
   }
