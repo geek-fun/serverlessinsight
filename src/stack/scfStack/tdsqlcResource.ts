@@ -107,6 +107,7 @@ export const createDatabaseResource = async (
     metadata: {
       clusterName: database.name,
       clusterId,
+      resourceType: 'TDSQL_C_SERVERLESS',
     },
   };
 
@@ -147,6 +148,7 @@ export const updateDatabaseResource = async (
     metadata: {
       clusterName: database.name,
       clusterId,
+      resourceType: 'TDSQL_C_SERVERLESS',
     },
   };
 

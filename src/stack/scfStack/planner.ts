@@ -4,6 +4,7 @@ import { lang } from '../../lang';
 import { generateFunctionPlan } from './scfPlanner';
 import { generateBucketPlan } from './cosPlanner';
 import { generateDatabasePlan } from './tdsqlcPlanner';
+import { generateEsPlan } from './esServerlessPlanner';
 
 export const generateTencentPlan = async (iac: ServerlessIac) => {
   const context = getContext();
@@ -12,8 +13,14 @@ export const generateTencentPlan = async (iac: ServerlessIac) => {
   const functionPlan = await generateFunctionPlan(context, state, iac.functions);
   const bucketPlan = await generateBucketPlan(context, state, iac.buckets);
   const databasePlan = await generateDatabasePlan(context, state, iac.databases);
+  const esPlan = await generateEsPlan(context, state, iac.databases);
 
-  const allItems = [...functionPlan.items, ...bucketPlan.items, ...databasePlan.items];
+  const allItems = [
+    ...functionPlan.items,
+    ...bucketPlan.items,
+    ...databasePlan.items,
+    ...esPlan.items,
+  ];
 
   const dependencyInfo = getDependencyInfo(allItems);
 

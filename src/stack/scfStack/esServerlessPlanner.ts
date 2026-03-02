@@ -8,70 +8,65 @@ import {
   ResourceAttributes,
 } from '../../types';
 import { createTencentClient } from '../../common/tencentClient';
-import { databaseToTdsqlcConfig, extractTdsqlcDefinition } from './tdsqlcTypes';
+import { databaseToTencentEsConfig, extractTencentEsDefinition } from './esServerlessTypes';
 import { getAllResources, getResource } from '../../common/stateManager';
 import { attributesEqual } from '../../common/hashUtils';
 
-const planDatabaseDeletion = (logicalId: string, definition: ResourceAttributes): PlanItem => ({
+const planEsDeletion = (logicalId: string, definition: ResourceAttributes): PlanItem => ({
   logicalId,
   action: 'delete',
-  resourceType: 'TDSQL_C_SERVERLESS',
+  resourceType: 'TENCENT_ES_SERVERLESS',
   changes: { before: definition },
 });
 
-export const generateDatabasePlan = async (
+export const generateEsPlan = async (
   context: Context,
   state: StateFile,
   databases: Array<DatabaseDomain> | undefined,
 ): Promise<Plan> => {
-  const tdsqlcDatabases = databases?.filter((db) => db.type === DatabaseEnum.TDSQL_C_SERVERLESS);
+  const esDatabases = databases?.filter((db) => db.type === DatabaseEnum.ELASTICSEARCH_SERVERLESS);
 
-  if (!tdsqlcDatabases || tdsqlcDatabases.length === 0) {
+  if (!esDatabases || esDatabases.length === 0) {
     const allStates = getAllResources(state);
     const items = Object.entries(allStates)
       .filter(([logicalId, resourceState]) => {
-        if (!logicalId.startsWith('databases.')) return false;
         const resourceType = resourceState.metadata?.resourceType as string | undefined;
-        // Only plan deletion for TDSQL-C resources (or legacy resources without resourceType
-        // that have clusterId metadata, indicating they are TDSQL-C)
-        return !resourceType || resourceType === 'TDSQL_C_SERVERLESS';
+        return logicalId.startsWith('databases.') && resourceType === 'TENCENT_ES_SERVERLESS';
       })
-      .map(([logicalId, resourceState]) =>
-        planDatabaseDeletion(logicalId, resourceState.definition),
-      );
+      .map(([logicalId, resourceState]) => planEsDeletion(logicalId, resourceState.definition));
     return { items };
   }
 
-  const desiredLogicalIds = new Set(tdsqlcDatabases.map((db) => `databases.${db.key}`));
+  const desiredLogicalIds = new Set(esDatabases.map((db) => `databases.${db.key}`));
 
   const databaseItems = await Promise.all(
-    tdsqlcDatabases.map(async (database): Promise<PlanItem> => {
+    esDatabases.map(async (database): Promise<PlanItem> => {
       const logicalId = `databases.${database.key}`;
       const currentState = getResource(state, logicalId);
-      const config = databaseToTdsqlcConfig(database);
-      const desiredDefinition = extractTdsqlcDefinition(config);
+      const config = databaseToTencentEsConfig(database);
+      const desiredDefinition = extractTencentEsDefinition(config);
 
       if (!currentState) {
         return {
           logicalId,
           action: 'create',
-          resourceType: 'TDSQL_C_SERVERLESS',
+          resourceType: 'TENCENT_ES_SERVERLESS',
           changes: { after: desiredDefinition },
         };
       }
 
-      const clusterId =
-        (currentState.metadata?.clusterId as string | undefined) || currentState.instances?.[0]?.id;
+      const spaceId =
+        (currentState.metadata?.spaceId as string | undefined) || currentState.instances?.[0]?.id;
 
       try {
         const client = createTencentClient(context);
-        const remoteCluster = clusterId ? await client.tdsqlc.getCluster(clusterId) : null;
+        const remoteSpace = spaceId ? await client.es.getSpace(spaceId) : null;
 
-        if (!remoteCluster) {
+        if (!remoteSpace) {
           return {
             logicalId,
             action: 'create',
-            resourceType: 'TDSQL_C_SERVERLESS',
+            resourceType: 'TENCENT_ES_SERVERLESS',
             changes: { before: currentState.definition, after: desiredDefinition },
             drifted: true,
           };
@@ -84,18 +79,18 @@ export const generateDatabasePlan = async (
           return {
             logicalId,
             action: 'update',
-            resourceType: 'TDSQL_C_SERVERLESS',
+            resourceType: 'TENCENT_ES_SERVERLESS',
             changes: { before: currentDefinition, after: desiredDefinition },
             drifted: true,
           };
         }
 
-        return { logicalId, action: 'noop', resourceType: 'TDSQL_C_SERVERLESS' };
+        return { logicalId, action: 'noop', resourceType: 'TENCENT_ES_SERVERLESS' };
       } catch {
         return {
           logicalId,
           action: 'create',
-          resourceType: 'TDSQL_C_SERVERLESS',
+          resourceType: 'TENCENT_ES_SERVERLESS',
           changes: { before: currentState.definition, after: desiredDefinition },
         };
       }
@@ -105,11 +100,14 @@ export const generateDatabasePlan = async (
   const allStates = getAllResources(state);
   const deletionItems = Object.entries(allStates)
     .filter(([logicalId, resourceState]) => {
-      if (!logicalId.startsWith('databases.') || desiredLogicalIds.has(logicalId)) return false;
       const resourceType = resourceState.metadata?.resourceType as string | undefined;
-      return !resourceType || resourceType === 'TDSQL_C_SERVERLESS';
+      return (
+        logicalId.startsWith('databases.') &&
+        !desiredLogicalIds.has(logicalId) &&
+        resourceType === 'TENCENT_ES_SERVERLESS'
+      );
     })
-    .map(([logicalId, resourceState]) => planDatabaseDeletion(logicalId, resourceState.definition));
+    .map(([logicalId, resourceState]) => planEsDeletion(logicalId, resourceState.definition));
 
   return { items: [...databaseItems, ...deletionItems] };
 };

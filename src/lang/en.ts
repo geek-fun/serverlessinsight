@@ -177,6 +177,30 @@ export const en = {
   ES_APP_TIMEOUT_DELETE:
     'Timeout waiting for Elasticsearch serverless app to be deleted: {{appName}}',
 
+  // Tencent Elasticsearch Serverless messages
+  TENCENT_ES_SPACE_CREATION_INITIATED: 'Tencent ES serverless space creation initiated',
+  TENCENT_ES_SPACE_CREATION_FAILED: 'Failed to create Tencent ES serverless space: {{error}}',
+  TENCENT_ES_SPACE_NO_ID_RETURNED:
+    'Failed to create Tencent ES serverless space: No space ID returned',
+  TENCENT_ES_SPACE_READY: 'Tencent ES serverless space is ready: {{spaceId}}',
+  TENCENT_ES_SPACE_ERROR_STATE: 'Tencent ES serverless space is in error state: {{status}}',
+  TENCENT_ES_SPACE_WAITING:
+    'Waiting for Tencent ES serverless space to be ready: {{spaceId}} (status: {{status}})',
+  TENCENT_ES_SPACE_TIMEOUT_READY:
+    'Timeout waiting for Tencent ES serverless space to be ready: {{spaceId}}',
+  TENCENT_ES_SPACE_NOT_FOUND: 'Tencent ES serverless space not found: {{spaceId}}',
+  TENCENT_ES_SPACE_GET_FAILED: 'Failed to get Tencent ES serverless space: {{error}}',
+  TENCENT_ES_SPACE_UPDATED: 'Tencent ES serverless space updated: {{spaceId}}',
+  TENCENT_ES_SPACE_UPDATE_FAILED: 'Failed to update Tencent ES serverless space: {{error}}',
+  TENCENT_ES_SPACE_DELETION_INITIATED:
+    'Tencent ES serverless space deletion initiated: {{spaceId}}',
+  TENCENT_ES_SPACE_DELETED: 'Tencent ES serverless space deleted: {{spaceId}}',
+  TENCENT_ES_SPACE_DELETE_FAILED: 'Failed to delete Tencent ES serverless space: {{error}}',
+  TENCENT_ES_SPACE_WAITING_DELETE:
+    'Waiting for Tencent ES serverless space to be deleted: {{spaceId}}',
+  TENCENT_ES_SPACE_TIMEOUT_DELETE:
+    'Timeout waiting for Tencent ES serverless space to be deleted: {{spaceId}}',
+
   // Partial failure messages
   PARTIAL_DEPLOYMENT_FAILURE:
     '⚠️  PARTIAL DEPLOYMENT FAILURE: {{successCount}} resource(s) succeeded, but {{failedResource}} failed.',
