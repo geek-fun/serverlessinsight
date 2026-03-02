@@ -29,7 +29,13 @@ export const generateDatabasePlan = async (
   if (!tdsqlcDatabases || tdsqlcDatabases.length === 0) {
     const allStates = getAllResources(state);
     const items = Object.entries(allStates)
-      .filter(([logicalId]) => logicalId.startsWith('databases.'))
+      .filter(([logicalId, resourceState]) => {
+        if (!logicalId.startsWith('databases.')) return false;
+        const resourceType = resourceState.metadata?.resourceType as string | undefined;
+        // Only plan deletion for TDSQL-C resources (or legacy resources without resourceType
+        // that have clusterId metadata, indicating they are TDSQL-C)
+        return !resourceType || resourceType === 'TDSQL_C_SERVERLESS';
+      })
       .map(([logicalId, resourceState]) =>
         planDatabaseDeletion(logicalId, resourceState.definition),
       );
@@ -98,9 +104,11 @@ export const generateDatabasePlan = async (
 
   const allStates = getAllResources(state);
   const deletionItems = Object.entries(allStates)
-    .filter(
-      ([logicalId]) => logicalId.startsWith('databases.') && !desiredLogicalIds.has(logicalId),
-    )
+    .filter(([logicalId, resourceState]) => {
+      if (!logicalId.startsWith('databases.') || desiredLogicalIds.has(logicalId)) return false;
+      const resourceType = resourceState.metadata?.resourceType as string | undefined;
+      return !resourceType || resourceType === 'TDSQL_C_SERVERLESS';
+    })
     .map(([logicalId, resourceState]) => planDatabaseDeletion(logicalId, resourceState.definition));
 
   return { items: [...databaseItems, ...deletionItems] };

@@ -56,6 +56,7 @@ export const createEsResource = async (
     metadata: {
       spaceName: database.name,
       spaceId,
+      resourceType: 'TENCENT_ES_SERVERLESS',
     },
   };
 
@@ -99,6 +100,7 @@ export const updateEsResource = async (
     metadata: {
       spaceName: database.name,
       spaceId,
+      resourceType: 'TENCENT_ES_SERVERLESS',
     },
   };
 
