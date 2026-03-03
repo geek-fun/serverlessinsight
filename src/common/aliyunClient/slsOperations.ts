@@ -9,16 +9,16 @@ const waitForSlsProject = async (
   projectName: string,
 ): Promise<SlsProjectInfo> => {
   let retries = 0;
-  while (retries < 10) {
+  while (retries < 30) {
     try {
       const project = await getProject(projectName);
-      if (project) {
+      if (project && project.status === 'Normal') {
         return project;
       }
     } catch {
       // Project not ready yet
     }
-    await new Promise((resolve) => setTimeout(resolve, 2000));
+    await new Promise((resolve) => setTimeout(resolve, 3000));
     retries++;
   }
   return { projectName };
@@ -31,7 +31,7 @@ const waitForSlsLogstore = async (
   ttl: number,
 ): Promise<SlsLogstoreInfo> => {
   let retries = 0;
-  while (retries < 10) {
+  while (retries < 30) {
     try {
       const logstore = await getLogstore(projectName, logstoreName);
       if (logstore) {
@@ -40,7 +40,7 @@ const waitForSlsLogstore = async (
     } catch {
       // Logstore not ready yet
     }
-    await new Promise((resolve) => setTimeout(resolve, 2000));
+    await new Promise((resolve) => setTimeout(resolve, 3000));
     retries++;
   }
   return { logstoreName, projectName, ttl };
@@ -212,6 +212,18 @@ export const createSlsOperations = (slsClient: SlsSdkClient) => {
 
     deleteIndex: async (projectName: string, logstoreName: string): Promise<void> => {
       await slsClient.deleteIndex(projectName, logstoreName);
+    },
+
+    waitForProject: async (projectName: string): Promise<SlsProjectInfo> => {
+      return waitForSlsProject(operations.getProject, projectName);
+    },
+
+    waitForLogstore: async (
+      projectName: string,
+      logstoreName: string,
+      ttl: number = 7,
+    ): Promise<SlsLogstoreInfo> => {
+      return waitForSlsLogstore(operations.getLogstore, projectName, logstoreName, ttl);
     },
   };
 

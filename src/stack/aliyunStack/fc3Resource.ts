@@ -160,6 +160,10 @@ const createDependentResources = async (
       attributes: { ...index },
     });
 
+    logger.info(`Waiting for SLS project and logstore to be ready: ${projectName}/${logstoreName}`);
+    await client.sls.waitForProject(projectName);
+    await client.sls.waitForLogstore(projectName, logstoreName);
+
     logConfig = { project: projectName, logstore: logstoreName };
   }
 
