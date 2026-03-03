@@ -185,8 +185,14 @@ describe('Fc3Resource', () => {
     mockedSlsOperations.deleteProject.mockResolvedValue(undefined);
     mockedSlsOperations.deleteLogstore.mockResolvedValue(undefined);
     mockedSlsOperations.deleteIndex.mockResolvedValue(undefined);
-    mockedSlsOperations.waitForProject.mockResolvedValue({ projectName: 'test-sls', status: 'Normal' });
-    mockedSlsOperations.waitForLogstore.mockResolvedValue({ logstoreName: 'test-logstore', projectName: 'test-sls' });
+    mockedSlsOperations.waitForProject.mockResolvedValue({
+      projectName: 'test-sls',
+      status: 'Normal',
+    });
+    mockedSlsOperations.waitForLogstore.mockResolvedValue({
+      logstoreName: 'test-logstore',
+      projectName: 'test-sls',
+    });
     mockedEcsOperations.createSecurityGroup.mockResolvedValue({ securityGroupId: 'sg-123' });
     mockedEcsOperations.deleteSecurityGroup.mockResolvedValue(undefined);
     mockedNasOperations.createAccessGroup.mockResolvedValue({ accessGroupName: 'nas-access' });
