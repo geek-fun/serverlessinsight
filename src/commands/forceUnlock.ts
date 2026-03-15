@@ -1,12 +1,9 @@
 import readline from 'node:readline';
-import {
-  getStatePath,
-  forceUnlock,
-  readLockFileForCommand,
-  formatLockInfo,
-  logger,
-} from '../common';
+import { getIacLocation, formatLockInfo, logger, setContext, getContext } from '../common';
+import { createStateBackend } from '../common/stateBackend';
+import { createLocalStateBackend } from '../common/stateBackend/localStateBackend';
 import { lang } from '../lang';
+import { parseYaml, revalYaml } from '../parser';
 
 const askConfirmation = (question: string): Promise<boolean> => {
   const rl = readline.createInterface({
@@ -22,11 +19,33 @@ const askConfirmation = (question: string): Promise<boolean> => {
   });
 };
 
-export const forceUnlockCommand = async (lockId: string): Promise<void> => {
-  const statePath = getStatePath();
+export const forceUnlockCommand = async (
+  lockId: string,
+  options: {
+    location?: string;
+    stage?: string;
+    region?: string;
+    provider?: string;
+    accessKeyId?: string;
+    accessKeySecret?: string;
+    securityToken?: string;
+  } = {},
+): Promise<void> => {
+  let backend;
+
+  if (options.location) {
+    const iacLocation = getIacLocation(options.location);
+    const rawIac = parseYaml(iacLocation);
+    await setContext({ ...options, iacProvider: rawIac.provider, stages: rawIac.stages }, false);
+    const context = getContext();
+    const iac = revalYaml(iacLocation, context);
+    backend = createStateBackend(iac.backend, context);
+  } else {
+    backend = createLocalStateBackend();
+  }
 
   // Check if lock exists
-  const existingLock = readLockFileForCommand(statePath);
+  const existingLock = await backend.readLock();
   if (!existingLock) {
     logger.error(lang.__('NO_LOCK_FOUND'));
     throw new Error(lang.__('NO_LOCK_FOUND'));
@@ -62,7 +81,7 @@ export const forceUnlockCommand = async (lockId: string): Promise<void> => {
   }
 
   // Force unlock
-  const success = forceUnlock(statePath, lockId);
+  const success = await backend.forceUnlock(lockId);
   if (success) {
     logger.info(lang.__('LOCK_RELEASED'));
   } else {

@@ -1,14 +1,15 @@
 import { ServerlessIac } from '../../types';
-import { getContext, logger, loadState, getDependencyInfo, toDotFormat } from '../../common';
+import { getContext, logger, getDependencyInfo, toDotFormat } from '../../common';
+import { StateBackend } from '../../common/stateBackend';
 import { lang } from '../../lang';
 import { generateFunctionPlan } from './scfPlanner';
 import { generateBucketPlan } from './cosPlanner';
 import { generateDatabasePlan } from './tdsqlcPlanner';
 import { generateEsPlan } from './esServerlessPlanner';
 
-export const generateTencentPlan = async (iac: ServerlessIac) => {
+export const generateTencentPlan = async (iac: ServerlessIac, backend: StateBackend) => {
   const context = getContext();
-  const state = loadState(iac.provider.name, process.cwd());
+  const state = await backend.loadState(iac.provider.name);
 
   const functionPlan = await generateFunctionPlan(context, state, iac.functions);
   const bucketPlan = await generateBucketPlan(context, state, iac.buckets);

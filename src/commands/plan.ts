@@ -1,4 +1,5 @@
 import { getIacLocation, logger, setContext, setIac, ProviderEnum, getContext } from '../common';
+import { createStateBackend } from '../common/stateBackend';
 import { parseYaml, revalYaml } from '../parser';
 import { generateTencentPlan, displayPlan } from '../stack/scfStack';
 import { generateAliyunPlan } from '../stack/aliyunStack';
@@ -34,12 +35,13 @@ export const plan = async (
 
   logger.info(lang.__('GENERATING_PLAN_FOR_SCF'));
 
+  const backend = createStateBackend(iac.backend, context);
   let planResult;
 
   if (iac.provider.name === ProviderEnum.TENCENT) {
-    planResult = await generateTencentPlan(iac);
+    planResult = await generateTencentPlan(iac, backend);
   } else if (iac.provider.name === ProviderEnum.ALIYUN) {
-    planResult = await generateAliyunPlan(iac);
+    planResult = await generateAliyunPlan(iac, backend);
   } else {
     logger.error(lang.__('PLAN_COMMAND_NOT_SUPPORTED'));
     throw new Error(lang.__('PLAN_COMMAND_NOT_SUPPORTED'));

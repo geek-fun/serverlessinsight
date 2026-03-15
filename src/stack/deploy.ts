@@ -1,5 +1,6 @@
 import { ServerlessIac } from '../types';
 import { logger, ProviderEnum } from '../common';
+import { StateBackend } from '../common/stateBackend';
 import { RfsStack } from './rfsStack';
 import { deployTencentStack } from './scfStack';
 import { deployAliyunStack } from './aliyunStack';
@@ -23,11 +24,11 @@ const deployHuawei = async (stackName: string, iac: ServerlessIac): Promise<void
   logger.info(lang.__('STACK_DEPLOYED'));
 };
 
-export const deployStack = async (stackName: string, iac: ServerlessIac) => {
+export const deployStack = async (stackName: string, iac: ServerlessIac, backend: StateBackend) => {
   if (iac.provider.name === ProviderEnum.TENCENT) {
-    await deployTencentStack(iac);
+    await deployTencentStack(iac, backend);
   } else if (iac.provider.name === ProviderEnum.ALIYUN) {
-    await deployAliyunStack(iac);
+    await deployAliyunStack(iac, backend);
   } else if (iac.provider.name === ProviderEnum.HUAWEI) {
     await deployHuawei(stackName, iac);
   }

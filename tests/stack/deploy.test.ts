@@ -2,6 +2,7 @@ import { deployStack } from '../../src/stack';
 import { minimumIac, oneFcIac } from '../fixtures/deploy-fixtures';
 import { Context } from '../../src/types';
 import { ProviderEnum } from '../../src/common';
+import { StateBackend } from '../../src/common/stateBackend/types';
 import fs from 'node:fs';
 
 const mockedGetContext = jest.fn();
@@ -42,6 +43,16 @@ const createMockContext = (
 describe('Unit tests for Aliyun stack deployment', () => {
   const testDir = '/tmp/test-deploy';
 
+  const mockBackend: StateBackend = {
+    loadState: jest.fn(),
+    saveState: jest.fn(),
+    acquireLock: jest.fn(),
+    releaseLock: jest.fn(),
+    forceUnlock: jest.fn(),
+    readLock: jest.fn(),
+    withLock: jest.fn(),
+  };
+
   beforeEach(() => {
     // Clean up
     if (fs.existsSync(testDir)) {
@@ -63,26 +74,26 @@ describe('Unit tests for Aliyun stack deployment', () => {
     const stackName = 'my-demo-minimum-stack';
     mockedGetContext.mockReturnValue(createMockContext(stackName));
 
-    await deployStack(stackName, minimumIac);
+    await deployStack(stackName, minimumIac, mockBackend);
 
-    expect(mockedDeployAliyunStack).toHaveBeenCalledWith(minimumIac);
+    expect(mockedDeployAliyunStack).toHaveBeenCalledWith(minimumIac, mockBackend);
   });
 
   it('should generate and execute function plan for FC functions', async () => {
     const stackName = 'my-demo-stack-fc-only';
     mockedGetContext.mockReturnValue(createMockContext(stackName));
 
-    await deployStack(stackName, oneFcIac);
+    await deployStack(stackName, oneFcIac, mockBackend);
 
-    expect(mockedDeployAliyunStack).toHaveBeenCalledWith(oneFcIac);
+    expect(mockedDeployAliyunStack).toHaveBeenCalledWith(oneFcIac, mockBackend);
   });
 
   it('should save state after execution', async () => {
     const stackName = 'my-demo-stack-save-state';
     mockedGetContext.mockReturnValue(createMockContext(stackName));
 
-    await deployStack(stackName, oneFcIac);
+    await deployStack(stackName, oneFcIac, mockBackend);
 
-    expect(mockedDeployAliyunStack).toHaveBeenCalledWith(oneFcIac);
+    expect(mockedDeployAliyunStack).toHaveBeenCalledWith(oneFcIac, mockBackend);
   });
 });

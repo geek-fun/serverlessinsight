@@ -1,5 +1,12 @@
 import { existsSync, readFileSync } from 'node:fs';
-import { ServerlessIac, ServerlessIacRaw, Context } from '../types';
+import {
+  ServerlessIac,
+  ServerlessIacRaw,
+  Context,
+  BackendConfig,
+  BackendConfigRaw,
+  StateBackendType,
+} from '../types';
 import { parseFunction } from './functionParser';
 import { parseEvent } from './eventParser';
 import { parseDatabase } from './databaseParser';
@@ -16,6 +23,29 @@ const validateExistence = (path: string) => {
   }
 };
 
+const parseBackend = (raw: BackendConfigRaw | undefined): BackendConfig | undefined => {
+  if (!raw) return undefined;
+
+  const type = raw.type?.toUpperCase();
+
+  if (type === StateBackendType.BUCKET_STORE) {
+    if (!raw.bucket || !raw.key) {
+      throw new Error('Backend type BUCKET_STORE requires both "bucket" and "key" fields');
+    }
+    return {
+      type: StateBackendType.BUCKET_STORE,
+      bucket: raw.bucket,
+      key: raw.key,
+      region: raw.region,
+      accessKeyId: raw.accessKeyId,
+      accessKeySecret: raw.accessKeySecret,
+      securityToken: raw.securityToken,
+    };
+  }
+
+  return { type: StateBackendType.LOCAL };
+};
+
 const transformYaml = (iacJson: ServerlessIacRaw): ServerlessIac => {
   return {
     service: iacJson.service,
@@ -23,6 +53,7 @@ const transformYaml = (iacJson: ServerlessIacRaw): ServerlessIac => {
     provider: iacJson.provider,
     vars: iacJson.vars,
     stages: iacJson.stages,
+    backend: parseBackend(iacJson.backend),
     functions: parseFunction(iacJson.functions),
     events: parseEvent(iacJson.events),
     databases: parseDatabase(iacJson.databases),

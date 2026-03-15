@@ -133,7 +133,7 @@ const sleep = (ms: number): Promise<void> => {
   return new Promise((resolve) => setTimeout(resolve, ms));
 };
 
-const acquireLockInternal = async (
+export const acquireLockInternal = async (
   statePath: string,
   operation: string,
   options: LockOptions = {},
@@ -198,7 +198,7 @@ const acquireLockInternal = async (
   );
 };
 
-const releaseLockInternal = (statePath: string, lockId: string): void => {
+export const releaseLockInternal = (statePath: string, lockId: string): void => {
   const lockPath = getLockPath(statePath);
   const existingLock = readLockFile(lockPath);
 

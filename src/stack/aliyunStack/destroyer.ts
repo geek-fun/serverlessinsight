@@ -1,12 +1,5 @@
-import {
-  getContext,
-  logger,
-  loadState,
-  saveState,
-  ProviderEnum,
-  getRoleArnFromState,
-  setIac,
-} from '../../common';
+import { getContext, logger, ProviderEnum, getRoleArnFromState, setIac } from '../../common';
+import { StateBackend } from '../../common/stateBackend';
 import { lang } from '../../lang';
 import { generateFunctionPlan } from './fc3Planner';
 import { executeFunctionPlan } from './fc3Executor';
@@ -20,8 +13,8 @@ import { generateApigwPlan } from './apigwPlanner';
 import { executeApigwPlan } from './apigwExecutor';
 import { ExecutionResult, PartialFailureError, PlanItem, StateFile } from '../../types';
 
-const createSaveStateFn = (baseDir: string) => (state: StateFile) => {
-  saveState(state, baseDir);
+const createSaveStateFn = (backend: StateBackend) => (state: StateFile) => {
+  backend.saveState(state);
 };
 
 const handlePartialFailure = (failure: PartialFailureError): never => {
@@ -43,12 +36,11 @@ const handlePartialFailure = (failure: PartialFailureError): never => {
 const collectSuccessfulItems = (results: Array<ExecutionResult>): Array<PlanItem> =>
   results.flatMap((result) => result.partialFailure?.successfulItems ?? []);
 
-export const destroyAliyunStack = async (): Promise<void> => {
+export const destroyAliyunStack = async (backend: StateBackend): Promise<void> => {
   const context = getContext();
-  const baseDir = process.cwd();
   const providerName = ProviderEnum.ALIYUN;
-  let state = loadState(providerName, baseDir);
-  const onStateChange = createSaveStateFn(baseDir);
+  let state = await backend.loadState(providerName);
+  const onStateChange = createSaveStateFn(backend);
   // Set minimal IAC for destruction (function resolution not needed)
   setIac({ version: '1.0', service: '', provider: { name: providerName, region: context.region } });
 
@@ -156,5 +148,5 @@ export const destroyAliyunStack = async (): Promise<void> => {
     });
   }
 
-  saveState(state, baseDir);
+  await backend.saveState(state);
 };

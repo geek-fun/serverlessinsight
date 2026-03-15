@@ -8,13 +8,12 @@ import {
 import {
   getContext,
   logger,
-  loadState,
-  saveState,
   getRoleArnFromState,
   setIac,
   getDependencyInfo,
   toDotFormat,
 } from '../../common';
+import { StateBackend } from '../../common/stateBackend';
 import { lang } from '../../lang';
 import { generateFunctionPlan } from './fc3Planner';
 import { executeFunctionPlan } from './fc3Executor';
@@ -27,8 +26,8 @@ import { executeTablePlan } from './tablestoreExecutor';
 import { generateApigwPlan } from './apigwPlanner';
 import { executeApigwPlan } from './apigwExecutor';
 
-const createSaveStateFn = (baseDir: string) => (state: StateFile) => {
-  saveState(state, baseDir);
+const createSaveStateFn = (backend: StateBackend) => (state: StateFile) => {
+  backend.saveState(state);
 };
 
 const handlePartialFailure = (failure: PartialFailureError): never => {
@@ -59,15 +58,17 @@ const logDependencyGraph = (orderedItems: Array<PlanItem>, dotGraph: string): vo
   logger.debug(`${lang.__('DOT_GRAPH_OUTPUT')}:\n${dotGraph}`);
 };
 
-export const deployAliyunStack = async (iac: ServerlessIac): Promise<void> => {
+export const deployAliyunStack = async (
+  iac: ServerlessIac,
+  backend: StateBackend,
+): Promise<void> => {
   const context = getContext();
-  const baseDir = process.cwd();
   // Cache IAC for access throughout the deployment
   setIac(iac);
   logger.info(lang.__('DEPLOYING_STACK_PUBLISHING_ASSETS'));
 
-  let state = loadState(iac.provider.name, baseDir);
-  const onStateChange = createSaveStateFn(baseDir);
+  let state = await backend.loadState(iac.provider.name);
+  const onStateChange = createSaveStateFn(backend);
 
   logger.info(lang.__('GENERATING_PLAN'));
   const functionPlan = await generateFunctionPlan(context, state, iac.functions);
@@ -191,7 +192,7 @@ export const deployAliyunStack = async (iac: ServerlessIac): Promise<void> => {
     });
   }
 
-  saveState(state, baseDir);
+  await backend.saveState(state);
 
   logger.info(lang.__('STACK_DEPLOYED'));
 };

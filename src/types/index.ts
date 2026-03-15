@@ -6,6 +6,7 @@ import { FunctionDomain, FunctionRaw } from './domains/function';
 import { Provider } from './domains/provider';
 import { BucketDomain, BucketRaw } from './domains/bucket';
 import { TableDomain, TableRaw } from './domains/table';
+import { BackendConfig, BackendConfigRaw } from './domains/backend';
 
 export * from './domains/resolvable';
 export * from './domains/database';
@@ -18,6 +19,7 @@ export * from './domains/bucket';
 export * from './domains/table';
 export * from './domains/state';
 export * from './domains/lock';
+export * from './domains/backend';
 export * from './assets';
 
 export type ServerlessIacRaw = {
@@ -27,6 +29,7 @@ export type ServerlessIacRaw = {
   stages: Stages;
   service: string;
   tags: Tags;
+  backend?: BackendConfigRaw;
   functions: { [key: string]: FunctionRaw };
   events: { [key: string]: EventRaw };
   databases: { [key: string]: DatabaseRaw };
@@ -41,6 +44,7 @@ export type ServerlessIac = {
   vars?: Vars;
   stages?: Stages;
   tags?: Array<{ key: string; value: string }>;
+  backend?: BackendConfig;
   functions?: Array<FunctionDomain>;
   events?: Array<EventDomain>;
   databases?: Array<DatabaseDomain>;
