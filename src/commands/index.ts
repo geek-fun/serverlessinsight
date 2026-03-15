@@ -178,6 +178,7 @@ program
 program
   .command('destroy <stackName>')
   .option('-f, --file <path>', 'specify the yaml file')
+  .option('-s, --stage <stage>', 'specify the stage')
   .option('-r, --region <region>', 'specify the region')
   .option('-v, --provider <provider>', 'specify the provider')
   .option('-k, --accessKeyId <accessKeyId>', 'specify the AccessKeyId')
@@ -189,10 +190,11 @@ program
       'destroy',
       async (
         stackName,
-        { file, region, provider, accessKeyId, accessKeySecret, securityToken },
+        { file, stage, region, provider, accessKeyId, accessKeySecret, securityToken },
       ) => {
         await destroyStack(stackName, {
           location: file,
+          stage,
           region,
           provider,
           accessKeyId,
