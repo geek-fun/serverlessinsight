@@ -1,4 +1,5 @@
-import { getContext, logger, loadState, saveState, ProviderEnum } from '../../common';
+import { getContext, logger, ProviderEnum } from '../../common';
+import { StateBackend } from '../../common/stateBackend';
 import { lang } from '../../lang';
 import { generateFunctionPlan } from './scfPlanner';
 import { executeFunctionPlan } from './scfExecutor';
@@ -10,8 +11,8 @@ import { generateEsPlan } from './esServerlessPlanner';
 import { executeEsPlan } from './esServerlessExecutor';
 import { ExecutionResult, PartialFailureError, PlanItem, StateFile } from '../../types';
 
-const createSaveStateFn = (baseDir: string) => (state: StateFile) => {
-  saveState(state, baseDir);
+const createSaveStateFn = (backend: StateBackend) => (state: StateFile) => {
+  backend.saveState(state);
 };
 
 const handlePartialFailure = (failure: PartialFailureError): never => {
@@ -33,12 +34,11 @@ const handlePartialFailure = (failure: PartialFailureError): never => {
 const collectSuccessfulItems = (results: Array<ExecutionResult>): Array<PlanItem> =>
   results.flatMap((result) => result.partialFailure?.successfulItems ?? []);
 
-export const destroyTencentStack = async (): Promise<void> => {
+export const destroyTencentStack = async (backend: StateBackend): Promise<void> => {
   const context = getContext();
-  const baseDir = process.cwd();
   const providerName = ProviderEnum.TENCENT;
-  let state = loadState(providerName, baseDir);
-  const onStateChange = createSaveStateFn(baseDir);
+  let state = await backend.loadState(providerName);
+  const onStateChange = createSaveStateFn(backend);
 
   const functionPlan = await generateFunctionPlan(context, state, undefined);
   const bucketPlan = await generateBucketPlan(context, state, undefined);
@@ -114,5 +114,5 @@ export const destroyTencentStack = async (): Promise<void> => {
     });
   }
 
-  saveState(state, baseDir);
+  await backend.saveState(state);
 };

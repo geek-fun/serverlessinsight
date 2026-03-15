@@ -5,7 +5,8 @@ import {
   PlanItem,
   StateFile,
 } from '../../types';
-import { getContext, logger, loadState, saveState } from '../../common';
+import { getContext, logger } from '../../common';
+import { StateBackend } from '../../common/stateBackend';
 import { lang } from '../../lang';
 import { generateFunctionPlan } from './scfPlanner';
 import { executeFunctionPlan } from './scfExecutor';
@@ -16,8 +17,8 @@ import { executeDatabasePlan } from './tdsqlcExecutor';
 import { generateEsPlan } from './esServerlessPlanner';
 import { executeEsPlan } from './esServerlessExecutor';
 
-const createSaveStateFn = (baseDir: string) => (state: StateFile) => {
-  saveState(state, baseDir);
+const createSaveStateFn = (backend: StateBackend) => (state: StateFile) => {
+  backend.saveState(state);
 };
 
 const handlePartialFailure = (failure: PartialFailureError): never => {
@@ -39,13 +40,15 @@ const handlePartialFailure = (failure: PartialFailureError): never => {
 const collectSuccessfulItems = (results: Array<ExecutionResult>): Array<PlanItem> =>
   results.flatMap((result) => result.partialFailure?.successfulItems ?? []);
 
-export const deployTencentStack = async (iac: ServerlessIac): Promise<void> => {
+export const deployTencentStack = async (
+  iac: ServerlessIac,
+  backend: StateBackend,
+): Promise<void> => {
   const context = getContext();
-  const baseDir = process.cwd();
   logger.info(lang.__('DEPLOYING_STACK_PUBLISHING_ASSETS'));
 
-  let state = loadState(iac.provider.name, baseDir);
-  const onStateChange = createSaveStateFn(baseDir);
+  let state = await backend.loadState(iac.provider.name);
+  const onStateChange = createSaveStateFn(backend);
 
   logger.info(lang.__('GENERATING_PLAN'));
   const functionPlan = await generateFunctionPlan(context, state, iac.functions);
@@ -124,7 +127,7 @@ export const deployTencentStack = async (iac: ServerlessIac): Promise<void> => {
     });
   }
 
-  saveState(state, baseDir);
+  await backend.saveState(state);
 
   logger.info(lang.__('STACK_DEPLOYED'));
 };

@@ -26,6 +26,10 @@ describe('unit test for deploy command', () => {
     });
 
     expect(mockedDeployStack).toHaveBeenCalledTimes(1);
-    expect(mockedDeployStack).toHaveBeenCalledWith(stackName, expect.any(Object));
+    expect(mockedDeployStack).toHaveBeenCalledWith(
+      stackName,
+      expect.any(Object),
+      expect.any(Object),
+    );
   });
 });

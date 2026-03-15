@@ -1,5 +1,6 @@
 import { ServerlessIac } from '../../types';
-import { getContext, loadState, getDependencyInfo, toDotFormat } from '../../common';
+import { getContext, getDependencyInfo, toDotFormat } from '../../common';
+import { StateBackend } from '../../common/stateBackend';
 import { lang } from '../../lang';
 import { generateFunctionPlan } from './fc3Planner';
 import { generateBucketPlan } from './ossPlanner';
@@ -7,9 +8,9 @@ import { generateDatabasePlan } from './databasePlanner';
 import { generateTablePlan } from './tablestorePlanner';
 import { generateApigwPlan } from './apigwPlanner';
 
-export const generateAliyunPlan = async (iac: ServerlessIac) => {
+export const generateAliyunPlan = async (iac: ServerlessIac, backend: StateBackend) => {
   const context = getContext();
-  const state = loadState(iac.provider.name, process.cwd());
+  const state = await backend.loadState(iac.provider.name);
 
   const functionPlan = await generateFunctionPlan(context, state, iac.functions);
   const bucketPlan = await generateBucketPlan(context, state, iac.buckets);

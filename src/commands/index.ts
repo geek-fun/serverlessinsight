@@ -228,10 +228,31 @@ program
 program
   .command('force-unlock <lockId>')
   .description('manually remove a stuck lock (use with caution)')
+  .option('-f, --file <path>', 'specify the yaml file (required for remote backends)')
+  .option('-s, --stage <stage>', 'specify the stage')
+  .option('-r, --region <region>', 'specify the region')
+  .option('-v, --provider <provider>', 'specify the provider')
+  .option('-k, --accessKeyId <accessKeyId>', 'specify the AccessKeyId')
+  .option('-x, --accessKeySecret <accessKeySecret>', 'specify the AccessKeySecret')
+  .option('-n, --securityToken <securityToken>', 'specify the SecurityToken')
   .action(
-    actionWrapper('force-unlock', async (lockId) => {
-      await forceUnlockCommand(lockId);
-    }),
+    actionWrapper(
+      'force-unlock',
+      async (
+        lockId,
+        { file, stage, region, provider, accessKeyId, accessKeySecret, securityToken },
+      ) => {
+        await forceUnlockCommand(lockId, {
+          location: file,
+          stage,
+          region,
+          provider,
+          accessKeyId,
+          accessKeySecret,
+          securityToken,
+        });
+      },
+    ),
   );
 
 program.parse();
