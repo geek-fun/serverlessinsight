@@ -6,7 +6,7 @@
 
 ## Summary
 
-Remove the redundant `stackName` CLI argument and introduce a two-level organizational model: **App** (project) > **Service** (deployable unit). Both `app` and `service` are defined in the YAML configuration. This simplifies the CLI, clarifies domain semantics, and sets the foundation for multi-service projects.
+Remove the redundant `stackName` CLI argument and introduce a two-level organizational model: **App** (project) > **Service** (deployable unit). Both `app` and `service` are defined in the YAML configuration as static, literal identifiers — no variable interpolation allowed. This simplifies the CLI, clarifies domain semantics, and sets the foundation for multi-service projects.
 
 ## Motivation
 
@@ -17,6 +17,8 @@ The current `stackName` is a required positional CLI argument passed to every co
 - **Huawei** (WIP): passed to HCL template generation
 
 Meanwhile, the YAML `service` field already serves as the real identity of the deployable unit. `stackName` duplicates this purpose and creates confusion about which is the "real" name.
+
+Additionally, `service` currently allows interpolation (e.g. `service: geekfun-api-${ctx.stage}`). With the three-level App > Service > Stage model, the stage dimension is already captured structurally — embedding it in the service name defeats the purpose of the hierarchy and makes state file paths unstable. `app` and `service` must be static identifiers.
 
 ## Design
 
@@ -62,20 +64,88 @@ functions: { ... }
 
 ```yaml
 version: 0.1.0
-app: my-project # NEW required field
+app: my-project
 provider:
   name: aliyun
   region: cn-hongkong
-service: backend # scoped under app
+service: backend
 functions: { ... }
 ```
 
 Rules:
 
 - `app` is a new **required** string field at the YAML root
+- `app` and `service` are **static literal identifiers** — no interpolation (`${...}`) is allowed in either field
 - `service` remains required, semantically scoped under `app`
 - `version` bumps to `0.1.0` to signal the schema change
 - One YAML file = one service. Multi-service = multiple YAML files in the same repo.
+
+### Static Fields: No Interpolation
+
+`app`, `service`, and `version` must be literal strings. They are identity fields used to derive state file paths and cloud resource names before any context is available. Allowing interpolation in these fields would make state file paths dynamic and unstable across invocations.
+
+| Field                       | Interpolation | Reason                                                    |
+| --------------------------- | ------------- | --------------------------------------------------------- |
+| `app`                       | **Forbidden** | Primary identity, used in state path and resource naming  |
+| `service`                   | **Forbidden** | Primary identity, used in state path and resource naming  |
+| `version`                   | **Forbidden** | Schema version marker, must be a literal enum value       |
+| `provider.name`             | **Forbidden** | Provider selection, must be known before context is built |
+| `provider.region`           | Allowed       | Resolves at deploy-time from `vars` / `stages`            |
+| `vars`                      | Allowed       | Source of values for interpolation elsewhere              |
+| `stages`                    | Allowed       | Stage-scoped overrides, resolved at deploy-time           |
+| `tags`                      | Allowed       | Values resolved at deploy-time                            |
+| `functions`, `events`, etc. | Allowed       | All resource fields resolved at deploy-time               |
+
+`${ctx.stage}` remains a valid interpolation token inside resource fields (e.g. function environment variables, resource names). The restriction is scoped to identity fields only — not to the interpolation system as a whole.
+
+```yaml
+# Valid: ctx.stage in resource field values
+functions:
+  my_fn:
+    environment:
+      NODE_ENV: ${ctx.stage} # allowed
+      API_URL: https://api-${ctx.stage}.example.com # allowed
+
+# Invalid: ctx.stage in identity fields
+app: my-project-${ctx.stage} # rejected by schema validation
+service: backend-${ctx.stage} # rejected by schema validation
+```
+
+#### Parser Implementation
+
+`revalYaml` currently calls `evaluateObject` over the entire raw YAML object, which means `service`, `app`, `version`, and `provider.name` are passed through `calcValue` today. This must be changed: read `app`, `service`, `version`, and `provider.name` directly from the raw (pre-evaluation) YAML, and only run `evaluateObject` over the remainder.
+
+```typescript
+export const revalYaml = (iacLocation: string, ctx: Context): ServerlessIac => {
+  validateExistence(iacLocation);
+  const yamlContent = readFileSync(iacLocation, 'utf8');
+  const iacJson = parse(yamlContent) as ServerlessIacRaw;
+  validateYaml(iacJson);
+
+  // Static fields: read from raw YAML, never interpolated
+  const staticFields = {
+    app: iacJson.app,
+    service: iacJson.service,
+    version: iacJson.version,
+    provider: { ...iacJson.provider, name: iacJson.provider.name },
+  };
+
+  // Dynamic fields: interpolation applied at deploy-time
+  const evaluatedIacJson = evaluateObject({ ...iacJson, ...staticFields }, ctx, iacJson.vars);
+
+  const iac = transformYaml({ ...evaluatedIacJson, ...staticFields });
+
+  if (iac.functions) {
+    iac.functions = iac.functions.map((fn) => ({
+      ...fn,
+      memory: fn.memory || 128,
+      timeout: fn.timeout || 3,
+    }));
+  }
+
+  return iac;
+};
+```
 
 ### CLI Changes
 
@@ -215,6 +285,7 @@ This approach:
 - **Human-readable filenames** — `state-my-project-backend.json` is immediately identifiable
 - **Stage isolation inside the file** — deploying to `dev` and `prod` tracks separate resource sets, preventing cross-stage interference
 - Works naturally with multiple service YAMLs in the same repo directory
+- **Stable paths** — because `app` and `service` are static literals, the state file path never changes across deployments
 
 #### State File Structure
 
@@ -305,13 +376,13 @@ Replace all `stackName`-based naming with `{app}-{service}`:
 
 | Resource        | Before (using stackName)  | After                            |
 | --------------- | ------------------------- | -------------------------------- |
-| SLS Log Project | `{stackName}-log-project` | `{app}-{service}-log-project`    |
-| SLS Log Store   | `{stackName}-log-store`   | `{app}-{service}-log-store`      |
-| RAM Role        | `{stackName}-role`        | `{app}-{service}-role`           |
+| SLS Log Project | `{stackName}-log-project` | `{app}-{service}-{stage}-log-project`    |
+| SLS Log Store   | `{stackName}-log-store`   | `{app}-{service}-{stage}-log-store`      |
+| RAM Role        | `{stackName}-role`        | `{app}-{service}-{stage}-role`           |
 | NAS resources   | `{stackName}-*`           | `{app}-{service}-*`              |
 | APIGW group     | `iac.service`             | unchanged (already uses service) |
-| Local stack     | `iac.service`             | `{app}-{service}`                |
-| HCL template    | `stackName`               | `{app}-{service}`                |
+| Local stack     | `iac.service`             | `${iac.app}-${iac.service}`      |
+| HCL template    | `stackName`               | `${iac.app}-${iac.service}`      |
 
 ### Schema Validation Changes
 
@@ -321,18 +392,23 @@ Update `src/validator/rootSchema.ts`:
 // version enum: add '0.1.0'
 version: { type: 'string', enum: ['0.0.0', '0.0.1', '0.1.0'] },
 
-// add `app` property
+// add `app` property with static identifier pattern
 app: { type: 'string', pattern: '^[a-z][a-z0-9-]*$' },
+
+// service: tighten to same static identifier pattern (no interpolation syntax)
+service: { type: 'string', pattern: '^[a-z][a-z0-9-]*$' },
 
 // add `app` to required
 required: ['version', 'provider', 'app', 'service'],
 ```
 
-The `app` field enforces lowercase alphanumeric with hyphens (DNS-safe naming, consistent with cloud resource constraints).
+Both `app` and `service` enforce lowercase alphanumeric-with-hyphens (DNS-safe naming). The pattern `^[a-z][a-z0-9-]*$` explicitly rejects `${...}` interpolation syntax at schema validation time — a validation error is surfaced immediately if a user tries `service: my-api-${ctx.stage}`.
 
 ### Parser Changes
 
-Update `src/parser/index.ts` `transformYaml`:
+Update `src/parser/index.ts`:
+
+1. **`transformYaml`**: pass `app` field through
 
 ```typescript
 const transformYaml = (iacJson: ServerlessIacRaw): ServerlessIac => {
@@ -346,27 +422,151 @@ const transformYaml = (iacJson: ServerlessIacRaw): ServerlessIac => {
 };
 ```
 
-### Context Initialization Changes
+2. **`revalYaml`**: extract static fields before `evaluateObject`, then restore them after (see [Static Fields: No Interpolation](#static-fields-no-interpolation) above)
 
-Update `src/common/context.ts` `setContext`:
+### Automatic Tag Injection
+
+All taggable cloud resources automatically receive `app`, `service`, and `stage` as tags in addition to the existing `iac-provider` tag. This provides consistent resource attribution across the entire deployment, making it possible to filter, cost-allocate, and audit resources by app, service, and environment without relying on naming conventions alone.
+
+#### How Tags Flow
+
+Tags flow from the YAML `tags` block through `tagParser.ts` to every resource that accepts a tags array. The injection point is `parseTag` in `src/parser/tagParser.ts`, which is called when building each resource's config before SDK calls.
+
+**Before:**
 
 ```typescript
-// Remove stackName from config parameter
-// Add app and service from IAC (parsed YAML)
+// src/parser/tagParser.ts
+export const parseTag = (tags: Tags | undefined): Array<TagDomain> => {
+  return [
+    { key: 'iac-provider', value: 'ServerlessInsight' },
+    ...Object.entries(tags ?? {}).map(([key, value]) => ({ key, value })),
+  ];
+};
+```
+
+**After:**
+
+```typescript
+// src/parser/tagParser.ts
+export const parseTag = (
+  tags: Tags | undefined,
+  app: string,
+  service: string,
+  stage: string,
+): Array<TagDomain> => {
+  return [
+    { key: 'iac-provider', value: 'ServerlessInsight' },
+    { key: 'app', value: app },
+    { key: 'service', value: service },
+    { key: 'stage', value: stage },
+    ...Object.entries(tags ?? {}).map(([key, value]) => ({ key, value })),
+  ];
+};
+```
+
+`app` and `service` come from `iac.app` and `iac.service` (both static literals). `stage` comes from `ctx.stage`. All three are available at the parser layer before any resource config is assembled.
+
+The system tags (`iac-provider`, `app`, `service`, `stage`) are prepended before user-defined tags so that user tags take precedence in case of a key collision.
+
+#### Which Resources Receive Auto-Tags
+
+Not all resource types support tags. The following table captures the current state per provider:
+
+**Aliyun:**
+
+| Resource      | Supports Tags | Notes                                               |
+| ------------- | ------------- | --------------------------------------------------- |
+| FC3 Functions | No            | FC3 does not expose a tags field in create/update   |
+| API Gateway   | Yes           | Tags passed in group/API config                     |
+| OSS Buckets   | Yes           | Tags applied as bucket tag set                      |
+| RDS Databases | Yes           | Tags passed in create/update DB instance            |
+| ES Serverless | Yes           | Tags passed to `createApp` SDK call (already wired) |
+| TableStore    | No            | No tags field in TableStore SDK                     |
+
+**Tencent:**
+
+| Resource      | Supports Tags | Notes                                          |
+| ------------- | ------------- | ---------------------------------------------- |
+| SCF Functions | Yes           | Tags field available in create/update function |
+| COS Buckets   | Yes           | Tags applied via separate tag-set operation    |
+| TDSQL-C       | Yes           | `ResourceTags` field in create cluster request |
+
+#### Call Site Changes
+
+Every call site that currently calls `parseTag(iac.tags)` must be updated to pass the three additional arguments:
+
+```typescript
+// BEFORE
+const tags = parseTag(iac.tags);
+
+// AFTER
+const tags = parseTag(iac.tags, iac.app, iac.service, ctx.stage);
+```
+
+Call sites exist wherever resource configs are assembled before SDK calls — primarily inside `*Resource.ts` and `*Types.ts` files in `src/stack/`.
+
+### Context Initialization Changes
+
+Update `src/common/context.ts`. Two things change in `setContext`:
+
+**1. The config parameter type** — remove `stackName`, add `app` and `service`:
+
+```typescript
+// BEFORE
+export const setContext = async (
+  config: {
+    stage?: string;
+    stackName?: string;   // REMOVE
+    region?: string;
+    provider?: string;
+    accessKeyId?: string;
+    accessKeySecret?: string;
+    securityToken?: string;
+    location?: string;
+    parameters?: { [key: string]: string };
+    iacProvider?: ServerlessIac['provider'];
+    stages?: ServerlessIac['stages'];
+  },
+  reaValToken = false,
+): Promise<void>
+
+// AFTER
+export const setContext = async (
+  config: {
+    stage?: string;
+    app: string;          // NEW - required, from parsed YAML
+    service: string;      // NEW - required, from parsed YAML
+    region?: string;
+    provider?: string;
+    accessKeyId?: string;
+    accessKeySecret?: string;
+    securityToken?: string;
+    location?: string;
+    parameters?: { [key: string]: string };
+    iacProvider?: ServerlessIac['provider'];
+    stages?: ServerlessIac['stages'];
+  },
+  reaValToken = false,
+): Promise<void>
+```
+
+**2. The `newContext` construction** — remove `stackName`, add `app` and `service`:
+
+```typescript
 const newContext: Context = {
   stage: config.stage ?? 'default',
-  app: config.app, // NEW - from parsed YAML
-  service: config.service, // NEW - from parsed YAML
+  app: config.app, // NEW
+  service: config.service, // NEW
   provider,
   region,
   // ... rest unchanged
 };
 ```
 
-The `setContext` call sites in commands change from:
+**3. All command call sites** change from passing `stackName` to passing `app` + `service` from the parsed YAML:
 
 ```typescript
-// BEFORE
+// BEFORE (e.g. src/commands/deploy.ts)
 await setContext(
   { ...options, stackName, iacProvider: rawIac.provider, stages: rawIac.stages },
   true,
@@ -385,51 +585,55 @@ await setContext(
 );
 ```
 
+Note: `rawIac` here is the output of `parseYaml` (first pass, no interpolation) — `app` and `service` are always literal at this point, so it is safe to read them before the full `revalYaml` evaluation.
+
 ## File-by-File Change List
 
-| #   | File                                   | Change                                                                                                                                                                                         | Size |
-| --- | -------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---- |
-| 1   | `src/types/domains/context.ts`         | Remove `stackName`, add `app` + `service`                                                                                                                                                      | S    |
-| 2   | `src/types/index.ts`                   | Add `app` to `ServerlessIacRaw` and `ServerlessIac`                                                                                                                                            | S    |
-| 3   | `src/types/domains/state.ts`           | Restructure `StateFile`: add `app`, `service`, replace flat `resources` with `stages` map containing per-stage `resources`; bump `CURRENT_STATE_VERSION` to `'2.0'`; add `StageState` type     | M    |
-| 4   | `src/validator/rootSchema.ts`          | Add `app` property, add `'0.1.0'` to version enum, update `required`                                                                                                                           | S    |
-| 5   | `src/parser/index.ts`                  | Parse `app` field in `transformYaml`                                                                                                                                                           | S    |
-| 6   | `src/common/context.ts`                | Remove `stackName` from config, add `app`/`service` from IAC                                                                                                                                   | M    |
-| 7   | `src/common/stateManager.ts`           | State path becomes `state-{app}-{service}.json`; `loadState`/`saveState` accept `app`, `service`, `stage`; stage scoping at load/save boundaries; in-memory ops (`getResource` etc.) unchanged | M    |
-| 8   | `src/common/lockManager.ts`            | Lock path follows new state path                                                                                                                                                               | S    |
-| 9   | `src/commands/index.ts`                | Remove `<stackName>` from all commands                                                                                                                                                         | M    |
-| 10  | `src/commands/deploy.ts`               | Remove `stackName` param, pass `app`/`service` from parsed YAML                                                                                                                                | S    |
-| 11  | `src/commands/destroy.ts`              | Same as deploy                                                                                                                                                                                 | S    |
-| 12  | `src/commands/validate.ts`             | Remove `stackName` param                                                                                                                                                                       | S    |
-| 13  | `src/commands/plan.ts`                 | Remove `stackName` param                                                                                                                                                                       | S    |
-| 14  | `src/commands/template.ts`             | Remove `stackName` param                                                                                                                                                                       | S    |
-| 15  | `src/commands/local.ts`                | Remove `stackName` param                                                                                                                                                                       | S    |
-| 16  | `src/commands/forceUnlock.ts`          | No change (uses lockId, not stackName)                                                                                                                                                         | -    |
-| 17  | `src/stack/deploy.ts`                  | Replace `stackName` params with `iac.app`/`iac.service`                                                                                                                                        | S    |
-| 18  | `src/stack/aliyunStack/fc3Resource.ts` | Replace `ctx.stackName` with `${ctx.app}-${ctx.service}` (L335, L461)                                                                                                                          | S    |
-| 19  | `src/stack/aliyunStack/deployer.ts`    | Update `loadState`/`saveState` calls to pass `app`, `service`, `stage`                                                                                                                         | M    |
-| 20  | `src/stack/aliyunStack/planner.ts`     | Update `loadState` call to pass `app`, `service`, `stage`                                                                                                                                      | S    |
-| 21  | `src/stack/aliyunStack/destroyer.ts`   | Update `loadState`/`saveState` calls to pass `app`, `service`, `stage`                                                                                                                         | M    |
-| 22  | `src/stack/scfStack/deployer.ts`       | Update `loadState`/`saveState` calls to pass `app`, `service`, `stage`                                                                                                                         | M    |
-| 23  | `src/stack/scfStack/planner.ts`        | Update `loadState` call to pass `app`, `service`, `stage`                                                                                                                                      | S    |
-| 24  | `src/stack/scfStack/destroyer.ts`      | Update `loadState`/`saveState` calls to pass `app`, `service`, `stage`                                                                                                                         | M    |
-| 25  | `src/stack/localStack/aliyunFc.ts`     | Replace `iac.service` with `${iac.app}-${iac.service}`                                                                                                                                         | S    |
-| 26  | `src/stack/rfsStack/index.ts`          | Replace stackName with `iac.app`-`iac.service`                                                                                                                                                 | S    |
-| 27  | `src/lang/*.json`                      | Update log messages referencing stackName                                                                                                                                                      | S    |
-| 28  | `samples/*.yml`                        | Add `app` field, bump version to `0.1.0`                                                                                                                                                       | S    |
-| 29  | `tests/`                               | Update all fixtures and tests                                                                                                                                                                  | M    |
-| 30  | `README.md`                            | Update CLI usage examples and YAML examples                                                                                                                                                    | M    |
-| 31  | `docs/state-locking.md`                | Update references from `si deploy <stackName>`                                                                                                                                                 | S    |
+| #   | File                                     | Change                                                                                                                                                                                         | Size |
+| --- | ---------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---- |
+| 1   | `src/types/domains/context.ts`           | Remove `stackName`, add `app` + `service`                                                                                                                                                      | S    |
+| 2   | `src/types/index.ts`                     | Add `app` to `ServerlessIacRaw` and `ServerlessIac`                                                                                                                                            | S    |
+| 3   | `src/types/domains/state.ts`             | Restructure `StateFile`: add `app`, `service`, replace flat `resources` with `stages` map containing per-stage `resources`; bump `CURRENT_STATE_VERSION` to `'2.0'`; add `StageState` type     | M    |
+| 4   | `src/validator/rootSchema.ts`            | Add `app` with static pattern, tighten `service` to same static pattern, add `'0.1.0'` to version enum, update `required`                                                                      | S    |
+| 5   | `src/parser/index.ts`                    | Pass `app` in `transformYaml`; protect static fields in `revalYaml` from `evaluateObject`                                                                                                      | S    |
+| 6   | `src/common/context.ts`                  | Remove `stackName` from config, add `app`/`service` from IAC                                                                                                                                   | M    |
+| 7   | `src/common/stateManager.ts`             | State path becomes `state-{app}-{service}.json`; `loadState`/`saveState` accept `app`, `service`, `stage`; stage scoping at load/save boundaries; in-memory ops (`getResource` etc.) unchanged | M    |
+| 8   | `src/common/lockManager.ts`              | Lock path follows new state path                                                                                                                                                               | S    |
+| 9   | `src/commands/index.ts`                  | Remove `<stackName>` from all commands                                                                                                                                                         | M    |
+| 10  | `src/commands/deploy.ts`                 | Remove `stackName` param, pass `app`/`service` from parsed YAML                                                                                                                                | S    |
+| 11  | `src/commands/destroy.ts`                | Same as deploy                                                                                                                                                                                 | S    |
+| 12  | `src/commands/validate.ts`               | Remove `stackName` param                                                                                                                                                                       | S    |
+| 13  | `src/commands/plan.ts`                   | Remove `stackName` param                                                                                                                                                                       | S    |
+| 14  | `src/commands/template.ts`               | Remove `stackName` param                                                                                                                                                                       | S    |
+| 15  | `src/commands/local.ts`                  | Remove `stackName` param                                                                                                                                                                       | S    |
+| 16  | `src/commands/forceUnlock.ts`            | No change (uses lockId, not stackName)                                                                                                                                                         | -    |
+| 17  | `src/stack/deploy.ts`                    | Replace `stackName` params with `iac.app`/`iac.service`                                                                                                                                        | S    |
+| 18  | `src/stack/aliyunStack/fc3Resource.ts`   | Replace `ctx.stackName` with `${ctx.app}-${ctx.service}` (L335, L461)                                                                                                                          | S    |
+| 19  | `src/stack/aliyunStack/deployer.ts`      | Update `loadState`/`saveState` calls to pass `app`, `service`, `stage`                                                                                                                         | M    |
+| 20  | `src/stack/aliyunStack/planner.ts`       | Update `loadState` call to pass `app`, `service`, `stage`                                                                                                                                      | S    |
+| 21  | `src/stack/aliyunStack/destroyer.ts`     | Update `loadState`/`saveState` calls to pass `app`, `service`, `stage`                                                                                                                         | M    |
+| 22  | `src/stack/scfStack/deployer.ts`         | Update `loadState`/`saveState` calls to pass `app`, `service`, `stage`                                                                                                                         | M    |
+| 23  | `src/stack/scfStack/planner.ts`          | Update `loadState` call to pass `app`, `service`, `stage`                                                                                                                                      | S    |
+| 24  | `src/stack/scfStack/destroyer.ts`        | Update `loadState`/`saveState` calls to pass `app`, `service`, `stage`                                                                                                                         | M    |
+| 25  | `src/stack/localStack/aliyunFc.ts`       | Replace `iac.service` with `${iac.app}-${iac.service}`                                                                                                                                         | S    |
+| 26  | `src/stack/rfsStack/index.ts`            | Replace stackName with `${iac.app}-${iac.service}`                                                                                                                                             | S    |
+| 27  | `src/lang/*.json`                        | Update log messages referencing stackName                                                                                                                                                      | S    |
+| 28  | `src/parser/tagParser.ts`                | Add `app`, `service`, `stage` params to `parseTag`; prepend system tags before user tags                                                                                                       | S    |
+| 29  | `src/stack/**/*Resource.ts`, `*Types.ts` | Update all `parseTag(iac.tags)` call sites to `parseTag(iac.tags, iac.app, iac.service, ctx.stage)`                                                                                            | S    |
+| 30  | `samples/*.yml`                          | Add `app` field, bump version to `0.1.0`                                                                                                                                                       | S    |
+| 31  | `tests/`                                 | Update all fixtures and tests                                                                                                                                                                  | M    |
+| 32  | `README.md`                              | Update CLI usage examples and YAML examples                                                                                                                                                    | M    |
+| 33  | `docs/state-locking.md`                  | Update references from `si deploy <stackName>`                                                                                                                                                 | S    |
 
 ## Execution Order
 
 1. **Types first** (#1-3) — establish the new type contracts
-2. **Schema + Parser** (#4-5) — YAML can now be parsed with `app`
+2. **Schema + Parser** (#4-5) — YAML can now be parsed with `app`; static fields protected from interpolation
 3. **Context + State** (#6-8) — runtime understands new model
 4. **Commands** (#9-16) — CLI surface updated
-5. **Stack implementations** (#17-26) — deployment logic uses new naming and state signatures
-6. **Fixtures + Tests** (#27-29) — everything validates
-7. **Docs** (#30-31) — update references
+5. **Stack implementations** (#17-29) — deployment logic uses new naming, state signatures, and auto-tag injection
+6. **Fixtures + Tests** (#31) — everything validates
+7. **Docs** (#32-33) — update references
 
 ## Future Work (Out of Scope)
 
@@ -439,4 +643,3 @@ These are explicitly deferred and not part of this refactor:
 - **Cross-service state references**: Service A referencing outputs from Service B (e.g., bucket URL)
 - **CLI overrides**: `--app` and `--service` flags to override YAML values (useful for CI/CD)
 - **App-level config**: A `.serverlessinsight/config.yml` at repo root defining shared app-level settings
-- **State migration tooling**: Auto-migration from old flat state format to new file-isolated format
