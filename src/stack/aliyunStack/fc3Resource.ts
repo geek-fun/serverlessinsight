@@ -1,4 +1,7 @@
 import { createAliyunClient } from '../../common/aliyunClient';
+import { OssCodeLocation } from '../../common/aliyunClient/fc3Operations';
+import fs from 'node:fs';
+import path from 'node:path';
 
 import {
   getResource,
@@ -8,6 +11,11 @@ import {
   getContext,
   buildSid,
 } from '../../common';
+import {
+  FC3_CODE_INLINE_SIZE_LIMIT,
+  RAM_ROLE_PROPAGATION_DELAY_MS,
+  SI_BOOTSTRAP_BUCKET_PREFIX,
+} from '../../common/constants';
 import {
   Context,
   FunctionDomain,
@@ -24,6 +32,68 @@ type DependentInstance = {
   sid?: string;
   roleArn?: string;
   attributes: Record<string, unknown>;
+};
+
+const RECOVERY_GET_FUNCTION_DELAY_MS = 1500;
+
+const delay = async (ms: number): Promise<void> => {
+  await new Promise((resolve) => {
+    setTimeout(resolve, ms);
+  });
+};
+
+const isRecoverableCreateError = (error: unknown): boolean => {
+  const code =
+    error && typeof error === 'object' && 'code' in error && typeof error.code === 'string'
+      ? error.code.toLowerCase()
+      : '';
+
+  const message =
+    error instanceof Error ? error.message.toLowerCase() : String(error).toLowerCase();
+
+  return (
+    code === 'readtimeout' ||
+    code === 'timeout' ||
+    code === 'requesttimeout' ||
+    code === 'econnreset' ||
+    code === 'etimedout' ||
+    message.includes('readtimeout') ||
+    message.includes('timeout') ||
+    message.includes('socket hang up') ||
+    message.includes('econnreset') ||
+    message.includes('etimedout')
+  );
+};
+
+const ensureOssCodeUpload = async (
+  client: ReturnType<typeof createAliyunClient>,
+  codePath: string,
+  region: string,
+  functionName: string,
+): Promise<OssCodeLocation | undefined> => {
+  const fileSize = fs.statSync(codePath).size;
+  if (fileSize <= FC3_CODE_INLINE_SIZE_LIMIT) {
+    return undefined;
+  }
+
+  const bucketName = `${SI_BOOTSTRAP_BUCKET_PREFIX}-${region}`;
+  logger.info(
+    `Code package ${path.basename(codePath)} is ${(fileSize / (1024 * 1024)).toFixed(1)}MB, uploading to OSS bucket ${bucketName}`,
+  );
+
+  const existingBucket = await client.oss.getBucket(bucketName);
+  if (!existingBucket) {
+    logger.info(`Creating bootstrap OSS bucket: ${bucketName}`);
+    await client.oss.createBucket({ bucketName });
+  }
+
+  const codeHash = computeFileHash(codePath);
+  const ossObjectName = `fc3-code/${functionName}/${codeHash}.zip`;
+
+  await client.oss.putFile(bucketName, ossObjectName, codePath);
+  logger.info(`Uploaded code to oss://${bucketName}/${ossObjectName}`);
+
+  return { ossBucketName: bucketName, ossObjectName };
 };
 
 const buildFc3InstanceFromProvider = (info: Fc3FunctionInfo, sid: string) => {
@@ -150,8 +220,8 @@ const createDependentResources = async (
         instances.push(...existingInstances.filter((i) => i.type.startsWith('ALIYUN_SLS_')));
       }
     } else {
-      const projectName = `${serviceName}-sls`;
-      const logstoreName = `${serviceName}-sls-logstore`;
+      const projectName = `${serviceName}-${context.stage}-sls`;
+      const logstoreName = `${serviceName}-${context.stage}-sls-logstore`;
 
       logger.info(`Creating SLS project: ${projectName}`);
       const project = await client.sls.createProject(projectName);
@@ -183,21 +253,28 @@ const createDependentResources = async (
     }
   }
 
-  const roleName = `${serviceName}-fc-role`;
+  const roleName = `${serviceName}-${context.stage}-fc-role`;
   if (hasRamRole) {
     const ramRoleInstance = existingInstances.find((i) => i.type === 'ALIYUN_RAM_ROLE');
     if (ramRoleInstance) {
       instances.push(ramRoleInstance);
     }
   } else {
+    const fnHasApiGateway = context.iac?.events?.some((event) =>
+      event.triggers?.some((trigger) => String(trigger.backend) === fn.name),
+    );
+    const trustedServices = fnHasApiGateway
+      ? ['fc.aliyuncs.com', 'apigateway.aliyuncs.com']
+      : ['fc.aliyuncs.com'];
     logger.info(`Creating RAM role: ${roleName}`);
-    const ramRole = await client.ram.createRole(roleName);
+    const ramRole = await client.ram.createRole(roleName, trustedServices);
     instances.push({
       type: 'ALIYUN_RAM_ROLE',
       id: roleName,
       roleArn: ramRole.arn,
       attributes: { ...ramRole },
     });
+    await delay(RAM_ROLE_PROPAGATION_DELAY_MS);
   }
 
   const ramRoleInstance = instances.find((i) => i.type === 'ALIYUN_RAM_ROLE');
@@ -262,7 +339,7 @@ const createDependentResources = async (
 
       for (const nasItem of fn.storage.nas) {
         const mountPath = nasItem.mount_path.replace(/\//g, '-').replace(/^-/, '');
-        const accessGroupName = `${fn.name}-nas-access-${mountPath}`;
+        const accessGroupName = `${fn.name}-${context.stage}-nas-access-${mountPath}`;
 
         logger.info(`Creating NAS access group: ${accessGroupName}`);
         const accessGroup = await client.nas.createAccessGroup(accessGroupName);
@@ -470,13 +547,51 @@ export const createResource = async (
   const stateAfterDependents = setResource(state, logicalId, taintedResourceState);
 
   const client = createAliyunClient(context);
-  try {
-    await client.fc3.createFunction(config, codePath);
-  } catch (error) {
-    throw new PartialResourceError(
-      stateAfterDependents,
-      error instanceof Error ? error : new Error(String(error)),
+
+  const isTainted = existingResourceState?.status === 'tainted';
+  const existingFunctionOnRetry = isTainted ? await client.fc3.getFunction(fn.name) : null;
+  if (existingFunctionOnRetry) {
+    logger.info(
+      `Function ${fn.name} already exists in provider (tainted recovery), skipping create and refreshing state`,
     );
+  }
+
+  try {
+    if (!existingFunctionOnRetry) {
+      const ossCode = await ensureOssCodeUpload(client, codePath, context.region, fn.name);
+      await client.fc3.createFunction(config, codePath, ossCode);
+    }
+  } catch (error) {
+    if (isRecoverableCreateError(error)) {
+      logger.warn(
+        `Create function returned recoverable error for ${fn.name}, reconciling with provider state: ${String(error)}`,
+      );
+
+      const functionAfterError = await client.fc3.getFunction(fn.name);
+      if (functionAfterError) {
+        logger.info(
+          `Function ${fn.name} found after create error reconciliation, continuing deployment flow`,
+        );
+      } else {
+        await delay(RECOVERY_GET_FUNCTION_DELAY_MS);
+        const functionAfterDelay = await client.fc3.getFunction(fn.name);
+        if (functionAfterDelay) {
+          logger.info(
+            `Function ${fn.name} found after delayed reconciliation, continuing deployment flow`,
+          );
+        } else {
+          throw new PartialResourceError(
+            stateAfterDependents,
+            error instanceof Error ? error : new Error(String(error)),
+          );
+        }
+      }
+    } else {
+      throw new PartialResourceError(
+        stateAfterDependents,
+        error instanceof Error ? error : new Error(String(error)),
+      );
+    }
   }
 
   const functionInfo = await client.fc3.getFunction(fn.name);
@@ -652,7 +767,8 @@ export const updateResource = async (
   const client = createAliyunClient(context);
 
   await client.fc3.updateFunctionConfiguration(config);
-  await client.fc3.updateFunctionCode(fn.name, codePath);
+  const ossCode = await ensureOssCodeUpload(client, codePath, context.region, fn.name);
+  await client.fc3.updateFunctionCode(fn.name, codePath, ossCode);
 
   const functionInfo = await client.fc3.getFunction(fn.name);
   if (!functionInfo) {

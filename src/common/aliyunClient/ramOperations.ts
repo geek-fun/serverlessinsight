@@ -4,18 +4,19 @@ import { RamRoleInfo } from './types';
 
 type RamSdkClient = RamClient;
 
-const FC_ASSUME_ROLE_POLICY = JSON.stringify({
-  Version: '1',
-  Statement: [
-    {
-      Action: 'sts:AssumeRole',
-      Effect: 'Allow',
-      Principal: {
-        Service: ['fc.aliyuncs.com'],
+const buildAssumeRolePolicy = (trustedServices: string[]): string =>
+  JSON.stringify({
+    Version: '1',
+    Statement: [
+      {
+        Action: 'sts:AssumeRole',
+        Effect: 'Allow',
+        Principal: {
+          Service: trustedServices,
+        },
       },
-    },
-  ],
-});
+    ],
+  });
 
 const FC_EXECUTION_POLICY = JSON.stringify({
   Version: '1',
@@ -106,25 +107,61 @@ export const createRamOperations = (ramClient: RamSdkClient) => {
   };
 
   return {
-    createRole: async (roleName: string, description?: string): Promise<RamRoleInfo> => {
-      const request = new ram.CreateRoleRequest({
-        roleName,
-        assumeRolePolicyDocument: FC_ASSUME_ROLE_POLICY,
-        description: description ?? `ServerlessInsight FC execution role for ${roleName}`,
-      });
+    createRole: async (
+      roleName: string,
+      trustedServices: string[],
+      description?: string,
+    ): Promise<RamRoleInfo> => {
+      let roleInfo: RamRoleInfo;
+      const assumeRolePolicy = buildAssumeRolePolicy(trustedServices);
 
-      const response = await ramClient.createRole(request);
+      try {
+        const request = new ram.CreateRoleRequest({
+          roleName,
+          assumeRolePolicyDocument: assumeRolePolicy,
+          description: description ?? `ServerlessInsight FC execution role for ${roleName}`,
+        });
 
-      // Attach policy to role
+        const response = await ramClient.createRole(request);
+
+        roleInfo = {
+          roleName,
+          roleId: response.body?.role?.roleId,
+          arn: response.body?.role?.arn,
+          description: response.body?.role?.description,
+          createDate: response.body?.role?.createDate,
+        };
+      } catch (error: unknown) {
+        if (
+          error &&
+          typeof error === 'object' &&
+          'code' in error &&
+          error.code === 'EntityAlreadyExists.Role'
+        ) {
+          const getRequest = new ram.GetRoleRequest({ roleName });
+          const getResponse = await ramClient.getRole(getRequest);
+
+          roleInfo = {
+            roleName,
+            roleId: getResponse.body?.role?.roleId,
+            arn: getResponse.body?.role?.arn,
+            description: getResponse.body?.role?.description,
+            createDate: getResponse.body?.role?.createDate,
+          };
+
+          const updateRequest = new ram.UpdateRoleRequest({
+            roleName,
+            newAssumeRolePolicyDocument: assumeRolePolicy,
+          });
+          await ramClient.updateRole(updateRequest);
+        } else {
+          throw error;
+        }
+      }
+
       await attachRolePolicyForFc(roleName);
 
-      return {
-        roleName,
-        roleId: response.body?.role?.roleId,
-        arn: response.body?.role?.arn,
-        description: response.body?.role?.description,
-        createDate: response.body?.role?.createDate,
-      };
+      return roleInfo;
     },
 
     getRole: async (roleName: string): Promise<RamRoleInfo | null> => {

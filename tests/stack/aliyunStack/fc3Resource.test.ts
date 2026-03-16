@@ -58,6 +58,11 @@ const mockedNasOperations = {
   deleteFileSystem: jest.fn(),
   deleteMountTarget: jest.fn(),
 };
+const mockedOssOperations = {
+  getBucket: jest.fn(),
+  createBucket: jest.fn(),
+  putFile: jest.fn(),
+};
 const mockedLogger = {
   info: jest.fn(),
   error: jest.fn(),
@@ -66,7 +71,7 @@ const mockedLogger = {
 
 jest.mock('../../../src/common/aliyunClient', () => ({
   createAliyunClient: () => ({
-    oss: {},
+    oss: mockedOssOperations,
     fc3: mockedFc3Operations,
     sls: mockedSlsOperations,
     ram: mockedRamOperations,
@@ -97,6 +102,16 @@ jest.mock('../../../src/common/stateManager', () => ({
 jest.mock('../../../src/common/hashUtils', () => ({
   ...jest.requireActual('../../../src/common/hashUtils'),
   computeFileHash: (...args: unknown[]) => mockedHashUtils.computeFileHash(...args),
+}));
+
+const mockedStatSync = jest.fn();
+jest.mock('node:fs', () => ({
+  ...jest.requireActual('node:fs'),
+  default: {
+    ...jest.requireActual('node:fs'),
+    statSync: (...args: unknown[]) => mockedStatSync(...args),
+  },
+  statSync: (...args: unknown[]) => mockedStatSync(...args),
 }));
 
 jest.mock('../../../src/common/context');
@@ -214,6 +229,12 @@ describe('Fc3Resource', () => {
     mockedNasOperations.deleteFileSystem.mockResolvedValue(undefined);
     mockedNasOperations.deleteMountTarget.mockResolvedValue(undefined);
 
+    mockedOssOperations.getBucket.mockResolvedValue(null);
+    mockedOssOperations.createBucket.mockResolvedValue({});
+    mockedOssOperations.putFile.mockResolvedValue(undefined);
+
+    mockedStatSync.mockReturnValue({ size: 1024 });
+
     mockedStateManager.setResource.mockReturnValue(undefined);
     mockedStateManager.removeResource.mockReturnValue(undefined);
   });
@@ -236,6 +257,8 @@ describe('Fc3Resource', () => {
           },
         },
       };
+      // Fresh deploy (no tainted state): no pre-check getFunction, only post-create refresh
+      mockedFc3Operations.getFunction.mockResolvedValueOnce(mockFunctionInfo);
       mockedFc3Operations.createFunction.mockResolvedValue(undefined);
       mockedStateManager.setResource.mockReturnValue(newState);
 
@@ -248,6 +271,7 @@ describe('Fc3Resource', () => {
           role: 'acs:ram::123456789012:role/test-role',
         }),
         'test.zip',
+        undefined,
       );
       expect(mockedFc3Operations.getFunction).toHaveBeenCalledWith('test-function');
       expect(mockedHashUtils.computeFileHash).toHaveBeenCalledWith('test.zip');
@@ -283,6 +307,8 @@ describe('Fc3Resource', () => {
     });
 
     it('should write state twice on success: tainted after dependents, ready after function', async () => {
+      // Fresh deploy: no pre-check getFunction, only post-create refresh
+      mockedFc3Operations.getFunction.mockResolvedValueOnce(mockFunctionInfo);
       mockedFc3Operations.createFunction.mockResolvedValue(undefined);
       const taintedState = { ...initialState, _tainted: true };
       const readyState = { ...initialState, _ready: true };
@@ -313,9 +339,9 @@ describe('Fc3Resource', () => {
             definition: mockDefinition,
             instances: [
               {
-                sid: 'si:aliyun:ram:default:test-app-test-service-fc-role',
+                sid: 'si:aliyun:ram:default:test-app-test-service-default-fc-role',
                 roleArn: 'acs:ram::123456789012:role/test-role',
-                id: 'test-app-test-service-fc-role',
+                id: 'test-app-test-service-default-fc-role',
                 type: 'ALIYUN_RAM_ROLE',
                 roleName: 'test-role',
               },
@@ -343,7 +369,6 @@ describe('Fc3Resource', () => {
       expect(mockedStateManager.setResource).toHaveBeenCalled();
       const firstCall = mockedStateManager.setResource.mock.calls[0];
       expect(firstCall[2]).toMatchObject({ status: 'tainted' });
-      expect(mockedFc3Operations.getFunction).not.toHaveBeenCalled();
     });
 
     it('should skip dependent resource creation for tainted resource on retry', async () => {
@@ -356,11 +381,11 @@ describe('Fc3Resource', () => {
             definition: mockDefinition,
             instances: [
               {
-                sid: 'si:aliyun:ram:default:test-app-test-service-fc-role',
-                roleArn: 'acs:ram::123456789012:role/test-app-test-service-fc-role',
-                id: 'test-app-test-service-fc-role',
+                sid: 'si:aliyun:ram:default:test-app-test-service-default-fc-role',
+                roleArn: 'acs:ram::123456789012:role/test-app-test-service-default-fc-role',
+                id: 'test-app-test-service-default-fc-role',
                 type: 'ALIYUN_RAM_ROLE',
-                roleName: 'test-app-test-service-fc-role',
+                roleName: 'test-app-test-service-default-fc-role',
               },
             ],
             lastUpdated: '2025-01-01T00:00:00Z',
@@ -379,12 +404,181 @@ describe('Fc3Resource', () => {
     });
 
     it('should throw error when refresh state fails', async () => {
-      mockedFc3Operations.createFunction.mockResolvedValue(undefined);
       mockedFc3Operations.getFunction.mockResolvedValue(null);
+      mockedFc3Operations.createFunction.mockResolvedValue(undefined);
 
       await expect(createResource(mockContext, testFunction, initialState)).rejects.toThrow(
         'Failed to refresh state for function: test-function',
       );
+    });
+
+    it('should skip createFunction when function exists in provider during tainted recovery', async () => {
+      const taintedState: StateFile = {
+        ...initialState,
+        resources: {
+          'functions.test_fn': {
+            mode: 'managed',
+            region: 'cn-hangzhou',
+            definition: mockDefinition,
+            instances: [
+              {
+                sid: 'si:aliyun:ram:default:test-app-test-service-default-fc-role',
+                roleArn: 'acs:ram::123456789012:role/test-app-test-service-default-fc-role',
+                id: 'test-app-test-service-default-fc-role',
+                type: 'ALIYUN_RAM_ROLE',
+                roleName: 'test-app-test-service-default-fc-role',
+              },
+            ],
+            lastUpdated: '2025-01-01T00:00:00Z',
+            status: 'tainted',
+          },
+        },
+      };
+
+      mockedFc3Operations.getFunction.mockResolvedValue(mockFunctionInfo);
+      const readyState = { ...taintedState, _ready: true };
+      mockedStateManager.setResource.mockReturnValue(readyState);
+
+      await createResource(mockContext, testFunction, taintedState);
+
+      expect(mockedFc3Operations.createFunction).not.toHaveBeenCalled();
+      expect(mockedFc3Operations.getFunction).toHaveBeenCalledWith('test-function');
+    });
+
+    it('should recover when createFunction times out and immediate getFunction finds the function', async () => {
+      const timeoutError = Object.assign(new Error('ReadTimeout(60000)'), { code: 'ReadTimeout' });
+      mockedFc3Operations.createFunction.mockRejectedValue(timeoutError);
+      mockedFc3Operations.getFunction
+        .mockResolvedValueOnce(mockFunctionInfo)
+        .mockResolvedValueOnce(mockFunctionInfo);
+
+      const readyState = { ...initialState, _ready: true };
+      mockedStateManager.setResource.mockReturnValue(readyState);
+
+      const result = await createResource(mockContext, testFunction, initialState);
+
+      expect(mockedFc3Operations.createFunction).toHaveBeenCalled();
+      expect(mockedLogger.warn).toHaveBeenCalledWith(
+        expect.stringContaining('reconciling with provider state'),
+      );
+      expect(mockedLogger.info).toHaveBeenCalledWith(
+        expect.stringContaining('found after create error reconciliation'),
+      );
+      expect(result).toEqual(readyState);
+    });
+
+    it('should recover when createFunction times out and delayed getFunction finds the function', async () => {
+      const timeoutError = Object.assign(new Error('socket hang up'), { code: 'ECONNRESET' });
+      mockedFc3Operations.createFunction.mockRejectedValue(timeoutError);
+      mockedFc3Operations.getFunction
+        .mockResolvedValueOnce(null)
+        .mockResolvedValueOnce(mockFunctionInfo)
+        .mockResolvedValueOnce(mockFunctionInfo);
+
+      const readyState = { ...initialState, _ready: true };
+      mockedStateManager.setResource.mockReturnValue(readyState);
+
+      const result = await createResource(mockContext, testFunction, initialState);
+
+      expect(mockedFc3Operations.createFunction).toHaveBeenCalled();
+      expect(mockedLogger.info).toHaveBeenCalledWith(
+        expect.stringContaining('found after delayed reconciliation'),
+      );
+      expect(result).toEqual(readyState);
+    });
+
+    it('should throw PartialResourceError when timeout recovery fails on both getFunction attempts', async () => {
+      const timeoutError = Object.assign(new Error('ReadTimeout(60000)'), { code: 'ReadTimeout' });
+      mockedFc3Operations.createFunction.mockRejectedValue(timeoutError);
+      mockedFc3Operations.getFunction.mockResolvedValue(null);
+
+      const taintedState = { ...initialState, _tainted: true };
+      mockedStateManager.setResource.mockReturnValue(taintedState);
+
+      await expect(createResource(mockContext, testFunction, initialState)).rejects.toThrow(
+        PartialResourceError,
+      );
+    });
+
+    it('should throw PartialResourceError immediately for non-recoverable errors', async () => {
+      const apiError = Object.assign(new Error('InternalServerError'), { code: 'InternalError' });
+      mockedFc3Operations.createFunction.mockRejectedValue(apiError);
+
+      const taintedState = { ...initialState, _tainted: true };
+      mockedStateManager.setResource.mockReturnValue(taintedState);
+
+      await expect(createResource(mockContext, testFunction, initialState)).rejects.toThrow(
+        PartialResourceError,
+      );
+
+      expect(mockedFc3Operations.getFunction).not.toHaveBeenCalled();
+    });
+
+    it('should upload code to OSS and pass ossCode when package exceeds size limit', async () => {
+      const largeSize = 80 * 1024 * 1024;
+      mockedStatSync.mockReturnValue({ size: largeSize });
+      mockedOssOperations.getBucket.mockResolvedValue(null);
+      mockedFc3Operations.getFunction.mockResolvedValueOnce(mockFunctionInfo);
+      mockedFc3Operations.createFunction.mockResolvedValue(undefined);
+      const readyState = { ...initialState, _ready: true };
+      mockedStateManager.setResource.mockReturnValue(readyState);
+
+      await createResource(mockContext, testFunction, initialState);
+
+      expect(mockedOssOperations.getBucket).toHaveBeenCalledWith(
+        'si-bootstrap-artifacts-cn-hangzhou',
+      );
+      expect(mockedOssOperations.createBucket).toHaveBeenCalledWith({
+        bucketName: 'si-bootstrap-artifacts-cn-hangzhou',
+      });
+      expect(mockedOssOperations.putFile).toHaveBeenCalledWith(
+        'si-bootstrap-artifacts-cn-hangzhou',
+        expect.stringMatching(/^fc3-code\/test-function\/.*\.zip$/),
+        'test.zip',
+      );
+      expect(mockedFc3Operations.createFunction).toHaveBeenCalledWith(
+        expect.any(Object),
+        'test.zip',
+        expect.objectContaining({
+          ossBucketName: 'si-bootstrap-artifacts-cn-hangzhou',
+          ossObjectName: expect.stringMatching(/^fc3-code\/test-function\/.*\.zip$/),
+        }),
+      );
+    });
+
+    it('should skip OSS upload when package is within inline size limit', async () => {
+      mockedStatSync.mockReturnValue({ size: 50 * 1024 * 1024 });
+      mockedFc3Operations.getFunction.mockResolvedValueOnce(mockFunctionInfo);
+      mockedFc3Operations.createFunction.mockResolvedValue(undefined);
+      const readyState = { ...initialState, _ready: true };
+      mockedStateManager.setResource.mockReturnValue(readyState);
+
+      await createResource(mockContext, testFunction, initialState);
+
+      expect(mockedOssOperations.putFile).not.toHaveBeenCalled();
+      expect(mockedFc3Operations.createFunction).toHaveBeenCalledWith(
+        expect.any(Object),
+        'test.zip',
+        undefined,
+      );
+    });
+
+    it('should reuse existing OSS bucket when it already exists', async () => {
+      const largeSize = 80 * 1024 * 1024;
+      mockedStatSync.mockReturnValue({ size: largeSize });
+      mockedOssOperations.getBucket.mockResolvedValue({
+        name: 'si-bootstrap-artifacts-cn-hangzhou',
+      });
+      mockedFc3Operations.getFunction.mockResolvedValueOnce(mockFunctionInfo);
+      mockedFc3Operations.createFunction.mockResolvedValue(undefined);
+      const readyState = { ...initialState, _ready: true };
+      mockedStateManager.setResource.mockReturnValue(readyState);
+
+      await createResource(mockContext, testFunction, initialState);
+
+      expect(mockedOssOperations.getBucket).toHaveBeenCalled();
+      expect(mockedOssOperations.createBucket).not.toHaveBeenCalled();
+      expect(mockedOssOperations.putFile).toHaveBeenCalled();
     });
   });
 
@@ -438,6 +632,7 @@ describe('Fc3Resource', () => {
       expect(mockedFc3Operations.updateFunctionCode).toHaveBeenCalledWith(
         'test-function',
         'test.zip',
+        undefined,
       );
       expect(mockedFc3Operations.getFunction).toHaveBeenCalledWith('test-function');
       expect(mockedHashUtils.computeFileHash).toHaveBeenCalledWith('test.zip');
@@ -477,6 +672,49 @@ describe('Fc3Resource', () => {
 
       await expect(updateResource(mockContext, testFunction, initialState)).rejects.toThrow(
         'Failed to refresh state for function: test-function',
+      );
+    });
+
+    it('should upload code to OSS during update when package exceeds size limit', async () => {
+      const largeSize = 80 * 1024 * 1024;
+      mockedStatSync.mockReturnValue({ size: largeSize });
+      mockedOssOperations.getBucket.mockResolvedValue(null);
+      mockedFc3Operations.updateFunctionConfiguration.mockResolvedValue(undefined);
+      mockedFc3Operations.updateFunctionCode.mockResolvedValue(undefined);
+      const newState = { ...initialState, _updated: true };
+      mockedStateManager.setResource.mockReturnValue(newState);
+
+      await updateResource(mockContext, testFunction, initialState);
+
+      expect(mockedOssOperations.putFile).toHaveBeenCalledWith(
+        'si-bootstrap-artifacts-cn-hangzhou',
+        expect.stringMatching(/^fc3-code\/test-function\/.*\.zip$/),
+        'test.zip',
+      );
+      expect(mockedFc3Operations.updateFunctionCode).toHaveBeenCalledWith(
+        'test-function',
+        'test.zip',
+        expect.objectContaining({
+          ossBucketName: 'si-bootstrap-artifacts-cn-hangzhou',
+          ossObjectName: expect.stringMatching(/^fc3-code\/test-function\/.*\.zip$/),
+        }),
+      );
+    });
+
+    it('should skip OSS upload during update when package is within inline size limit', async () => {
+      mockedStatSync.mockReturnValue({ size: 50 * 1024 * 1024 });
+      mockedFc3Operations.updateFunctionConfiguration.mockResolvedValue(undefined);
+      mockedFc3Operations.updateFunctionCode.mockResolvedValue(undefined);
+      const newState = { ...initialState, _updated: true };
+      mockedStateManager.setResource.mockReturnValue(newState);
+
+      await updateResource(mockContext, testFunction, initialState);
+
+      expect(mockedOssOperations.putFile).not.toHaveBeenCalled();
+      expect(mockedFc3Operations.updateFunctionCode).toHaveBeenCalledWith(
+        'test-function',
+        'test.zip',
+        undefined,
       );
     });
   });
@@ -560,9 +798,9 @@ describe('Fc3Resource', () => {
             definition: mockDefinition,
             instances: [
               {
-                sid: 'si:aliyun:ram:default:test-app-test-service-fc-role',
-                roleArn: 'acs:ram::123456789012:role/test-app-test-service-fc-role',
-                id: 'test-app-test-service-fc-role',
+                sid: 'si:aliyun:ram:default:test-app-test-service-default-fc-role',
+                roleArn: 'acs:ram::123456789012:role/test-app-test-service-default-fc-role',
+                id: 'test-app-test-service-default-fc-role',
                 type: 'ALIYUN_RAM_ROLE',
               },
             ],
@@ -582,7 +820,9 @@ describe('Fc3Resource', () => {
       );
 
       expect(mockedFc3Operations.deleteFunction).not.toHaveBeenCalled();
-      expect(mockedRamOperations.deleteRole).toHaveBeenCalledWith('test-app-test-service-fc-role');
+      expect(mockedRamOperations.deleteRole).toHaveBeenCalledWith(
+        'test-app-test-service-default-fc-role',
+      );
       expect(result).toEqual(initialState);
     });
 
@@ -602,9 +842,9 @@ describe('Fc3Resource', () => {
                 type: 'ALIYUN_FC3_FUNCTION',
               },
               {
-                sid: 'si:aliyun:ram:default:test-app-test-service-fc-role',
-                roleArn: 'acs:ram::123456789012:role/test-app-test-service-fc-role',
-                id: 'test-app-test-service-fc-role',
+                sid: 'si:aliyun:ram:default:test-app-test-service-default-fc-role',
+                roleArn: 'acs:ram::123456789012:role/test-app-test-service-default-fc-role',
+                id: 'test-app-test-service-default-fc-role',
                 type: 'ALIYUN_RAM_ROLE',
               },
             ],
