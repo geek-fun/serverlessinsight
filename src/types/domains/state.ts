@@ -17,6 +17,8 @@ export type ResourceAttributes = Record<string, unknown>;
 
 export type ResourceMode = 'managed' | 'data';
 
+export type ResourceStatus = 'ready' | 'tainted';
+
 export type ResourceInstance = {
   arn: string;
   id: string;
@@ -29,6 +31,7 @@ export type ResourceState = {
   definition: ResourceAttributes;
   instances: Array<ResourceInstance>;
   lastUpdated: string;
+  status?: ResourceStatus;
   metadata?: Record<string, unknown>;
 };
 
@@ -76,3 +79,15 @@ export type ExecutionResult = {
   state: StateFile;
   partialFailure?: PartialFailureError;
 };
+
+export class PartialResourceError extends Error {
+  readonly updatedState: StateFile;
+  readonly cause: Error;
+
+  constructor(updatedState: StateFile, cause: Error) {
+    super(`Partial resource creation failed: ${cause.message}`);
+    this.name = 'PartialResourceError';
+    this.updatedState = updatedState;
+    this.cause = cause;
+  }
+}
