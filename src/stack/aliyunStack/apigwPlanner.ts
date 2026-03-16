@@ -35,7 +35,7 @@ export const generateApigwPlan = async (
     events.map(async (event): Promise<PlanItem> => {
       const logicalId = `events.${event.key}`;
       const currentState = getResource(state, logicalId);
-      const groupConfig = eventToApigwGroupConfig(event, serviceName);
+      const groupConfig = eventToApigwGroupConfig(event, serviceName, context.stage);
       const groupDefinition = extractApigwGroupDefinition(groupConfig);
       const client = createAliyunClient(context);
 

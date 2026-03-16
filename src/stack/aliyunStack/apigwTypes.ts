@@ -134,9 +134,10 @@ export type ApigwCustomDomainConfig = {
 export const eventToApigwGroupConfig = (
   event: EventDomain,
   serviceName: string,
+  stage: string,
 ): ApigwGroupConfig => {
   return {
-    groupName: `${serviceName}-agw-group`.replace(/_/g, '-'),
+    groupName: `${serviceName}-${stage}-agw-group`.replace(/_/g, '-'),
     description: `API Gateway group for ${serviceName}`,
   };
 };
@@ -190,6 +191,7 @@ export const triggerToApigwApiConfig = (
   groupId: string,
   serviceName: string,
   region: string,
+  stage: string,
   roleArn?: string,
 ): ApigwApiConfig => {
   const method = trigger.method as string;
@@ -200,7 +202,7 @@ export const triggerToApigwApiConfig = (
 
   return {
     groupId,
-    apiName: `${event.name as string}-agw-api-${apiKey}`.replace(/_/g, '-'),
+    apiName: `${event.name as string}-${stage}-agw-api-${apiKey}`.replace(/_/g, '-'),
     visibility: 'PRIVATE',
     authType: 'ANONYMOUS',
     requestConfig: {

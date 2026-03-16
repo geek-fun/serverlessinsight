@@ -81,16 +81,16 @@ describe('Apigw Types', () => {
 
   describe('eventToApigwGroupConfig', () => {
     it('should convert EventDomain to ApigwGroupConfig', () => {
-      const config = eventToApigwGroupConfig(testEvent, 'my-service');
+      const config = eventToApigwGroupConfig(testEvent, 'my-service', 'default');
 
-      expect(config.groupName).toBe('my-service-agw-group');
+      expect(config.groupName).toBe('my-service-default-agw-group');
       expect(config.description).toBe('API Gateway group for my-service');
     });
 
     it('should handle service names with underscores', () => {
-      const config = eventToApigwGroupConfig(testEvent, 'my_test_service');
+      const config = eventToApigwGroupConfig(testEvent, 'my_test_service', 'default');
 
-      expect(config.groupName).toBe('my-test-service-agw-group');
+      expect(config.groupName).toBe('my-test-service-default-agw-group');
     });
   });
 
@@ -102,11 +102,12 @@ describe('Apigw Types', () => {
         'group-123',
         'my-service',
         'cn-hangzhou',
+        'default',
         'acs:ram::123456:role/fc-access-role',
       );
 
       expect(config.groupId).toBe('group-123');
-      expect(config.apiName).toBe('Test API Gateway-agw-api-GET-users');
+      expect(config.apiName).toBe('Test API Gateway-default-agw-api-GET-users');
       expect(config.visibility).toBe('PRIVATE');
       expect(config.authType).toBe('ANONYMOUS');
       expect(config.requestConfig.requestHttpMethod).toBe('GET');
@@ -127,7 +128,7 @@ describe('Apigw Types', () => {
         'group-123',
         'my-service',
         'cn-hangzhou',
-        undefined,
+        'default',
       );
 
       expect(config.requestConfig.requestHttpMethod).toBe('POST');

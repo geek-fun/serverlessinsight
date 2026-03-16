@@ -214,6 +214,10 @@ export const en = {
   ACQUIRING_LOCK: 'Acquiring state lock...',
   LOCK_ACQUIRED: 'Lock acquired',
   LOCK_RELEASED: '✓ Lock released',
+  LOCK_WAITING:
+    'State is locked by {{user}} ({{timeAgo}}). Waiting to acquire lock... (attempt {{attempt}})',
+  LOCK_AUTO_RELEASED_DEAD_PROCESS:
+    'Auto-releasing stale lock held by dead process (PID {{processId}} on {{hostname}}). Lock was held by {{user}} since {{acquiredAt}}.',
   FAILED_TO_RELEASE_LOCK: 'Failed to release lock',
   NO_LOCK_FOUND: 'No lock found',
   LOCK_ID_MISMATCH:
@@ -270,12 +274,21 @@ export const en = {
   APIGW_BINDING_DOMAIN: 'Binding custom domain: {{domain}}',
   APIGW_DOMAIN_BOUND_SUCCESS: 'Successfully bound domain: {{domain}}',
   APIGW_DOMAIN_OWNERSHIP_FAILED: 'Domain ownership verification failed for: {{domain}}',
-  APIGW_ATTEMPTING_AUTO_VERIFICATION: 'Attempting automatic DNS verification with token: {{token}}',
-  APIGW_RETRYING_DOMAIN_BINDING: 'Retrying domain binding after DNS verification...',
+  APIGW_ENSURING_CNAME: 'Ensuring CNAME record exists for domain: {{domain}}',
+  APIGW_PUBLIC_DNS_CHECKING: 'Checking public DNS resolution for: {{domain}}',
+  APIGW_PUBLIC_DNS_CHECK_ATTEMPT: 'Public DNS resolution check (attempt {{attempt}}/{{max}})...',
+  APIGW_PUBLIC_DNS_RESOLVED: 'Public DNS resolution confirmed for: {{domain}}',
+  APIGW_PUBLIC_DNS_TIMEOUT:
+    'Public DNS resolution could not be verified for {{domain}}. Proceeding anyway...',
+  APIGW_TXT_FALLBACK:
+    'CNAME verification insufficient for {{domain}}, adding TXT verification record as fallback...',
+  APIGW_TXT_ADDING_RECORD: 'Adding TXT verification record: RR={{rr}}, Value={{value}}',
+  APIGW_TXT_RECORD_ALREADY_EXISTS: 'TXT verification record already exists: {{rr}}',
+  APIGW_TXT_ADD_FAILED: 'Failed to add TXT verification record: {{error}}',
+  APIGW_DOMAIN_BIND_RETRY:
+    'Retrying domain binding (attempt {{attempt}}/{{max}}, waiting for DNS propagation)...',
+  APIGW_DOMAIN_BIND_RETRY_FAILED: 'Domain binding retry {{attempt}} failed: {{error}}',
   APIGW_DOMAIN_BOUND_AFTER_VERIFICATION: 'Successfully bound domain after verification: {{domain}}',
-  APIGW_AUTO_VERIFICATION_FAILED: 'Automatic verification failed: {{error}}',
-  APIGW_NO_VERIFICATION_TOKEN: 'Could not extract verification token from error response',
-  APIGW_MANUAL_VERIFICATION_REQUIRED: 'Please manually verify domain ownership in Aliyun console',
   APIGW_VERIFICATION_HEADER: 'Domain Ownership Verification Required',
   APIGW_VERIFICATION_DOMAIN: 'Domain: {{domain}}',
   APIGW_VERIFICATION_INSTRUCTIONS:

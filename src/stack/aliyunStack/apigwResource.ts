@@ -87,7 +87,7 @@ export const createApigwResource = async (
   const logicalId = `events.${event.key}`;
   const client = createAliyunClient(context);
 
-  const groupConfig = eventToApigwGroupConfig(event, serviceName);
+  const groupConfig = eventToApigwGroupConfig(event, serviceName, context.stage);
   let groupId: string;
 
   try {
@@ -145,6 +145,7 @@ export const createApigwResource = async (
       groupId,
       serviceName,
       context.region,
+      context.stage,
       roleArn,
     );
 
@@ -270,7 +271,7 @@ export const updateApigwResource = async (
 
   const groupId = groupInstance.id;
 
-  const groupConfig = eventToApigwGroupConfig(event, serviceName);
+  const groupConfig = eventToApigwGroupConfig(event, serviceName, context.stage);
   await client.apigw.updateApiGroup(groupId, groupConfig);
 
   const groupInfo = await client.apigw.getApiGroup(groupId);
@@ -293,6 +294,7 @@ export const updateApigwResource = async (
       groupId,
       serviceName,
       context.region,
+      context.stage,
       roleArn,
     );
 
@@ -338,6 +340,7 @@ export const updateApigwResource = async (
           groupId,
           serviceName,
           context.region,
+          context.stage,
           roleArn,
         ).apiName;
         return apiInfo.apiName === expectedName;
