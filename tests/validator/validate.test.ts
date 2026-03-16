@@ -158,6 +158,92 @@ describe('unit test for validate', () => {
     expect(() => validateYaml(invalidYaml)).toThrow('Invalid yaml');
   });
 
+  it('should throw error when security group rule uses protocol:port:cidr format', () => {
+    const invalidYaml = {
+      ...jsonIac,
+      functions: {
+        test_fn: {
+          name: 'test-fn',
+          code: {
+            runtime: 'nodejs18',
+            handler: 'index.handler',
+            path: 'tests/fixtures/artifacts/artifact.zip',
+          },
+          network: {
+            vpc_id: 'vpc-123',
+            subnet_ids: ['vsw-123'],
+            security_group: {
+              name: 'test-sg',
+              ingress: ['TCP:5432/5432:10.0.0.0/8'],
+              egress: ['TCP:443:0.0.0.0/0'],
+            },
+          },
+        },
+      },
+    } as unknown as ServerlessIacRaw;
+
+    expect(() => validateYaml(invalidYaml)).toThrow('Invalid yaml');
+  });
+
+  it('should pass when security group rules use protocol:cidr:port format', () => {
+    const validYaml = {
+      ...jsonIac,
+      functions: {
+        test_fn: {
+          name: 'test-fn',
+          code: {
+            runtime: 'nodejs18',
+            handler: 'index.handler',
+            path: 'tests/fixtures/artifacts/artifact.zip',
+          },
+          network: {
+            vpc_id: 'vpc-123',
+            subnet_ids: ['vsw-123'],
+            security_group: {
+              name: 'test-sg',
+              ingress: ['TCP:10.0.0.0/8:5432/5432'],
+              egress: ['TCP:0.0.0.0/0:443'],
+            },
+          },
+        },
+      },
+    } as unknown as ServerlessIacRaw;
+
+    expect(validateYaml(validYaml)).toBe(true);
+  });
+
+  it('should pass for ingress rules using TCP and ICMP with ALL', () => {
+    const validYaml = {
+      ...jsonIac,
+      functions: {
+        test_fn: {
+          name: 'test-fn',
+          code: {
+            runtime: 'nodejs18',
+            handler: 'index.handler',
+            path: 'tests/fixtures/artifacts/artifact.zip',
+          },
+          network: {
+            vpc_id: 'vpc-123',
+            subnet_ids: ['vsw-123'],
+            security_group: {
+              name: 'test-sg',
+              ingress: [
+                'TCP:0.0.0.0/0:80',
+                'TCP:0.0.0.0/0:443',
+                'TCP:0.0.0.0/0:22/22',
+                'ICMP:0.0.0.0/0:ALL',
+              ],
+              egress: ['ALL:0.0.0.0/0:ALL'],
+            },
+          },
+        },
+      },
+    } as unknown as ServerlessIacRaw;
+
+    expect(validateYaml(validYaml)).toBe(true);
+  });
+
   it('should throw error when given events in yaml config is invalid', () => {
     const invalidYaml = {
       ...jsonIac,

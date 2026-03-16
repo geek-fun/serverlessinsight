@@ -22,6 +22,46 @@ const transformPortRange = (protocol: string, portRange: string): string => {
   return portRange.includes('/') ? portRange : `${portRange}/${portRange}`;
 };
 
+const normalizeProtocol = (protocol: string): string => protocol.trim().toUpperCase();
+
+export const parseSecurityGroupRule = (
+  rule: string,
+): { protocol: string; cidr: string; portRange: string } => {
+  const [rawProtocol, second, third, ...rest] = rule.split(':');
+
+  if (rest.length > 0 || !rawProtocol || !second || !third) {
+    throw new Error(`Invalid security group rule format: ${rule}`);
+  }
+
+  const protocol = normalizeProtocol(rawProtocol);
+  const secondTrimmed = second.trim();
+  const thirdTrimmed = third.trim();
+
+  if (!secondTrimmed || !thirdTrimmed) {
+    throw new Error(`Invalid security group rule format: ${rule}`);
+  }
+
+  return { protocol, cidr: secondTrimmed, portRange: thirdTrimmed };
+};
+
+const isDuplicateSecurityGroupRuleError = (error: unknown): boolean => {
+  if (!error || typeof error !== 'object') {
+    return false;
+  }
+
+  if (!('code' in error) || typeof error.code !== 'string') {
+    return false;
+  }
+
+  const duplicateCodes = new Set([
+    'InvalidPermission.Duplicate',
+    'InvalidSecurityGroupRule.Duplicate',
+    'SecurityRuleDuplicate',
+  ]);
+
+  return duplicateCodes.has(error.code);
+};
+
 export const createEcsOperations = (ecsClient: EcsSdkClient, context: Context) => ({
   createSecurityGroup: async (
     securityGroupName: string,
@@ -46,35 +86,57 @@ export const createEcsOperations = (ecsClient: EcsSdkClient, context: Context) =
 
     // Add ingress rules
     for (const rule of ingressRules) {
-      const [protocol, cidrIp, portRange] = rule.split(':');
+      let parsedRule: { protocol: string; cidr: string; portRange: string };
+      try {
+        parsedRule = parseSecurityGroupRule(rule);
+      } catch (error) {
+        logger.warn(`Skipping invalid ingress rule: ${rule}. ${String(error)}`);
+        continue;
+      }
+
       const ingressRequest = new ecs.AuthorizeSecurityGroupRequest({
         regionId: context.region,
         securityGroupId,
-        ipProtocol: protocol.toLowerCase(),
-        sourceCidrIp: cidrIp,
-        portRange: transformPortRange(protocol, portRange),
+        ipProtocol: parsedRule.protocol.toLowerCase(),
+        sourceCidrIp: parsedRule.cidr,
+        portRange: transformPortRange(parsedRule.protocol, parsedRule.portRange),
       });
       try {
         await ecsClient.authorizeSecurityGroup(ingressRequest);
-      } catch {
-        logger.warn(`Failed to add ingress rule: ${rule}`);
+      } catch (error) {
+        if (isDuplicateSecurityGroupRuleError(error)) {
+          logger.debug(`Ingress rule already exists, skipping: ${rule}`);
+          continue;
+        }
+        logger.warn(`Failed to add ingress rule: ${rule}. ${String(error)}`);
       }
     }
 
     // Add egress rules
     for (const rule of egressRules) {
-      const [protocol, cidrIp, portRange] = rule.split(':');
+      let parsedRule: { protocol: string; cidr: string; portRange: string };
+      try {
+        parsedRule = parseSecurityGroupRule(rule);
+      } catch (error) {
+        logger.warn(`Skipping invalid egress rule: ${rule}. ${String(error)}`);
+        continue;
+      }
+
       const egressRequest = new ecs.AuthorizeSecurityGroupEgressRequest({
         regionId: context.region,
         securityGroupId,
-        ipProtocol: protocol.toLowerCase(),
-        destCidrIp: cidrIp,
-        portRange: transformPortRange(protocol, portRange),
+        ipProtocol: parsedRule.protocol.toLowerCase(),
+        destCidrIp: parsedRule.cidr,
+        portRange: transformPortRange(parsedRule.protocol, parsedRule.portRange),
       });
       try {
         await ecsClient.authorizeSecurityGroupEgress(egressRequest);
-      } catch {
-        logger.warn(`Failed to add egress rule: ${rule}`);
+      } catch (error) {
+        if (isDuplicateSecurityGroupRuleError(error)) {
+          logger.debug(`Egress rule already exists, skipping: ${rule}`);
+          continue;
+        }
+        logger.warn(`Failed to add egress rule: ${rule}. ${String(error)}`);
       }
     }
 

@@ -1,5 +1,8 @@
 import { resolvableNumber, resolvableBoolean, resolvableEnum } from './templateRefSchema';
 
+const securityGroupRulePattern =
+  '^[A-Za-z]+:\\d{1,3}(?:\\.\\d{1,3}){3}\\/\\d{1,2}:(?:ALL|\\d{1,5}(?:\\/\\d{1,5})?)$';
+
 export const functionSchema = {
   $id: 'https://serverlessinsight.geekfun.club/schemas/functionschema.json',
   type: 'object',
@@ -85,8 +88,14 @@ export const functionSchema = {
               type: 'object',
               properties: {
                 name: { type: 'string' },
-                ingress: { type: 'array', items: { type: 'string' } },
-                egress: { type: 'array', items: { type: 'string' } },
+                ingress: {
+                  type: 'array',
+                  items: { type: 'string', pattern: securityGroupRulePattern },
+                },
+                egress: {
+                  type: 'array',
+                  items: { type: 'string', pattern: securityGroupRulePattern },
+                },
               },
               required: ['name', 'ingress'],
               additionalProperties: false,
