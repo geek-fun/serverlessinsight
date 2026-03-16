@@ -3,6 +3,7 @@ import { TableStoreTableInfo } from '../../common/aliyunClient/tablestoreOperati
 import { setResource, removeResource } from '../../common';
 import { Context, TableDomain, ResourceState, StateFile } from '../../types';
 import { tableToTableStoreConfig, extractTableStoreDefinition } from './tablestoreTypes';
+import { logger } from '../../common/logger';
 
 export type TableStoreTableInstance = {
   type: 'ALIYUN_TABLESTORE_TABLE';
@@ -181,6 +182,17 @@ export const deleteTableResource = async (
 ): Promise<StateFile> => {
   const client = createAliyunClient(context);
   const tablestoreClient = client.tablestore(instanceName);
-  await tablestoreClient.deleteTable(tableName);
+  try {
+    await tablestoreClient.deleteTable(tableName);
+  } catch (err) {
+    const errorMessage = (err as { message?: string })?.message ?? '';
+    if (errorMessage.includes('OTSObjectNotExist') || errorMessage.includes('does not exist')) {
+      logger.warn(
+        `Table ${tableName} in instance ${instanceName} not found in provider, skipping deletion`,
+      );
+    } else {
+      throw err;
+    }
+  }
   return removeResource(state, logicalId);
 };

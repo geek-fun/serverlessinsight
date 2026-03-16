@@ -217,6 +217,15 @@ export const deleteBucketResource = async (
   state: StateFile,
 ): Promise<StateFile> => {
   const client = createAliyunClient(context);
-  await client.oss.deleteBucket(bucketName);
+  try {
+    await client.oss.deleteBucket(bucketName);
+  } catch (err) {
+    const errorCode = (err as { code?: string })?.code;
+    if (errorCode === 'NoSuchBucket') {
+      logger.warn(`Bucket ${bucketName} not found in provider, skipping deletion`);
+    } else {
+      throw err;
+    }
+  }
   return removeResource(state, logicalId);
 };

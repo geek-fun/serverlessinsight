@@ -6,6 +6,7 @@ import {
   TencentEsSpaceInfo,
 } from './esServerlessTypes';
 import { setResource, removeResource } from '../../common/stateManager';
+import { logger } from '../../common/logger';
 
 const buildEsSpaceFromProvider = (info: TencentEsSpaceInfo, arn: string) => {
   return {
@@ -115,6 +116,15 @@ export const deleteEsResource = async (
   state: StateFile,
 ): Promise<StateFile> => {
   const client = createTencentClient(context);
-  await client.es.deleteSpace(spaceId);
+  try {
+    await client.es.deleteSpace(spaceId);
+  } catch (err) {
+    const errorCode = (err as { code?: string })?.code;
+    if (errorCode === 'ResourceNotFound' || errorCode === 'InvalidParameterValue') {
+      logger.warn(`ES space ${spaceId} not found in provider, skipping deletion`);
+    } else {
+      throw err;
+    }
+  }
   return removeResource(state, logicalId);
 };

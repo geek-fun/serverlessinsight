@@ -3,6 +3,7 @@ import { createAliyunClient } from '../../common/aliyunClient';
 import { databaseToRdsConfig, extractRdsDefinition, RdsInfo } from './rdsTypes';
 import { databaseToEsConfig, extractEsDefinition, EsInfo } from './esServerlessTypes';
 import { setResource, removeResource } from '../../common/stateManager';
+import { logger } from '../../common/logger';
 
 const buildRdsInstanceFromProvider = (info: RdsInfo, arn: string) => {
   return {
@@ -251,12 +252,28 @@ export const deleteDatabaseResource = async (
 ): Promise<StateFile> => {
   const client = createAliyunClient(context);
 
-  if (resourceType === 'ALIYUN_ES_SERVERLESS') {
-    await client.es.deleteApp(instanceId);
-  } else if (resourceType === 'ALIYUN_RDS_SERVERLESS') {
-    await client.rds.deleteInstance(instanceId);
-  } else {
-    throw new Error(`Unsupported resource type: ${resourceType}`);
+  try {
+    if (resourceType === 'ALIYUN_ES_SERVERLESS') {
+      await client.es.deleteApp(instanceId);
+    } else if (resourceType === 'ALIYUN_RDS_SERVERLESS') {
+      await client.rds.deleteInstance(instanceId);
+    } else {
+      throw new Error(`Unsupported resource type: ${resourceType}`);
+    }
+  } catch (err) {
+    const errorCode = (err as { code?: string })?.code;
+    const errorMessage = (err as { message?: string })?.message ?? '';
+    if (
+      errorCode === 'InvalidDBInstanceId.NotFound' ||
+      errorCode === 'AppNotFound' ||
+      errorCode === 'NotFound' ||
+      errorMessage.includes('not found') ||
+      errorMessage.includes('NotFound')
+    ) {
+      logger.warn(`Database resource ${instanceId} not found in provider, skipping deletion`);
+    } else {
+      throw err;
+    }
   }
 
   return removeResource(state, logicalId);

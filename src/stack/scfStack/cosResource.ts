@@ -2,6 +2,7 @@ import { Context, BucketDomain, ResourceState, StateFile } from '../../types';
 import { createTencentClient } from '../../common/tencentClient';
 import { bucketToCosBucketConfig, extractCosBucketDefinition, CosBucketInfo } from './cosTypes';
 import { setResource, removeResource } from '../../common/stateManager';
+import { logger } from '../../common/logger';
 
 const buildCosInstanceFromProvider = (info: CosBucketInfo, arn: string) => {
   return {
@@ -146,6 +147,16 @@ export const deleteBucketResource = async (
   state: StateFile,
 ): Promise<StateFile> => {
   const client = createTencentClient(context);
-  await client.cos.deleteBucket(bucketName, region);
+  try {
+    await client.cos.deleteBucket(bucketName, region);
+  } catch (err) {
+    const errorCode = (err as { code?: string })?.code;
+    const statusCode = (err as { statusCode?: number })?.statusCode;
+    if (errorCode === 'NoSuchBucket' || statusCode === 404) {
+      logger.warn(`Bucket ${bucketName} not found in provider, skipping deletion`);
+    } else {
+      throw err;
+    }
+  }
   return removeResource(state, logicalId);
 };

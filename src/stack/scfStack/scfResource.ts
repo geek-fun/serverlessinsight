@@ -4,6 +4,7 @@ import { readFileAsBase64 } from '../../common/fileUtils';
 import { functionToScfConfig, extractScfDefinition, ScfFunctionInfo } from './scfTypes';
 import { setResource, removeResource } from '../../common/stateManager';
 import { computeFileHash } from '../../common/hashUtils';
+import { logger } from '../../common/logger';
 
 const buildScfInstanceFromProvider = (info: ScfFunctionInfo, arn: string) => {
   const envMap: Record<string, string> =
@@ -241,6 +242,15 @@ export const deleteResource = async (
   state: StateFile,
 ): Promise<StateFile> => {
   const client = createTencentClient(context);
-  await client.scf.deleteFunction(functionName);
+  try {
+    await client.scf.deleteFunction(functionName);
+  } catch (err) {
+    const errorCode = (err as { code?: string })?.code;
+    if (errorCode === 'ResourceNotFound.FunctionName') {
+      logger.warn(`Function ${functionName} not found in provider, skipping deletion`);
+    } else {
+      throw err;
+    }
+  }
   return removeResource(state, logicalId);
 };

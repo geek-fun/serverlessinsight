@@ -2,6 +2,7 @@ import { Context, DatabaseDomain, ResourceState, StateFile } from '../../types';
 import { createTencentClient } from '../../common/tencentClient';
 import { databaseToTdsqlcConfig, extractTdsqlcDefinition, TdsqlcClusterInfo } from './tdsqlcTypes';
 import { setResource, removeResource } from '../../common/stateManager';
+import { logger } from '../../common/logger';
 
 const buildTdsqlcInstanceFromProvider = (info: TdsqlcClusterInfo, arn: string) => {
   return {
@@ -163,6 +164,21 @@ export const deleteDatabaseResource = async (
   state: StateFile,
 ): Promise<StateFile> => {
   const client = createTencentClient(context);
-  await client.tdsqlc.deleteCluster(clusterId);
+  try {
+    await client.tdsqlc.deleteCluster(clusterId);
+  } catch (err) {
+    const errorCode = (err as { code?: string })?.code;
+    const errorMessage = (err as { message?: string })?.message ?? '';
+    if (
+      errorCode === 'ResourceNotFound.ClusterNotFound' ||
+      errorCode === 'ResourceNotFound' ||
+      errorMessage.includes('not found') ||
+      errorMessage.includes('NotFound')
+    ) {
+      logger.warn(`TDSQL-C cluster ${clusterId} not found in provider, skipping deletion`);
+    } else {
+      throw err;
+    }
+  }
   return removeResource(state, logicalId);
 };

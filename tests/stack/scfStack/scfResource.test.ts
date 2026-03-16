@@ -333,7 +333,48 @@ describe('ScfResource', () => {
       expect(result).toEqual(initialState);
     });
 
-    it('should propagate errors from deleteScfFunction', async () => {
+    it('should handle ResourceNotFound.FunctionName gracefully and remove state', async () => {
+      const stateWithFunction: StateFile = {
+        ...initialState,
+        resources: {
+          'functions.test_fn': {
+            mode: 'managed',
+            region: 'ap-guangzhou',
+            definition: mockDefinition,
+            instances: [
+              {
+                arn: 'arn:tencent:scf:ap-guangzhou::function:test-function',
+                id: 'test-function',
+                functionName: 'test-function',
+              },
+            ],
+            lastUpdated: '2025-01-01T00:00:00Z',
+          },
+        },
+      };
+
+      const notFoundError = Object.assign(new Error('not found'), {
+        code: 'ResourceNotFound.FunctionName',
+      });
+      (mockScfOperations.deleteFunction as jest.Mock).mockRejectedValue(notFoundError);
+      (stateManager.removeResource as jest.Mock).mockReturnValue(initialState);
+
+      const result = await deleteResource(
+        mockContext,
+        'test-function',
+        'functions.test_fn',
+        stateWithFunction,
+      );
+
+      expect(mockScfOperations.deleteFunction).toHaveBeenCalledWith('test-function');
+      expect(stateManager.removeResource).toHaveBeenCalledWith(
+        stateWithFunction,
+        'functions.test_fn',
+      );
+      expect(result).toEqual(initialState);
+    });
+
+    it('should rethrow unexpected errors from deleteFunction', async () => {
       const error = new Error('Delete failed');
       (mockScfOperations.deleteFunction as jest.Mock).mockRejectedValue(error);
 
