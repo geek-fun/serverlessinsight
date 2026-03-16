@@ -3,7 +3,13 @@ import * as fc3Resource from '../../../src/stack/aliyunStack/fc3Resource';
 import { ProviderEnum } from '../../../src/common';
 import { getResource } from '../../../src/common/stateManager';
 import { logger } from '../../../src/common/logger';
-import { Context, Plan, StateFile, CURRENT_STATE_VERSION } from '../../../src/types';
+import {
+  Context,
+  CURRENT_STATE_VERSION,
+  PartialResourceError,
+  Plan,
+  StateFile,
+} from '../../../src/types';
 
 // Mock dependencies
 jest.mock('../../../src/stack/aliyunStack/fc3Resource');
@@ -385,6 +391,86 @@ describe('Fc3Executor', () => {
       expect(result.partialFailure?.successfulItems[0].logicalId).toBe('functions.test_fn1');
       expect(result.partialFailure?.failedItem.logicalId).toBe('functions.test_fn2');
       expect(result.state).toEqual(stateAfterFirst);
+    });
+
+    it('should use PartialResourceError.updatedState and call onStateChange when createResource throws PartialResourceError', async () => {
+      const plan: Plan = {
+        items: [
+          {
+            logicalId: 'functions.test_fn',
+            action: 'create',
+            resourceType: 'ALIYUN_FC3',
+          },
+        ],
+      };
+
+      const taintedState = {
+        ...initialState,
+        resources: {
+          'functions.test_fn': {
+            mode: 'managed' as const,
+            region: 'cn-hangzhou',
+            definition: { functionName: 'test-function' },
+            instances: [
+              {
+                arn: 'acs:ram::123456789012:role/test-role',
+                id: 'test-role',
+                type: 'ALIYUN_RAM_ROLE',
+              },
+            ],
+            lastUpdated: new Date().toISOString(),
+            status: 'tainted' as const,
+          },
+        },
+      };
+
+      const causeError = new Error('FC function creation failed');
+      const partialError = new PartialResourceError(taintedState, causeError);
+      (fc3Resource.createResource as jest.Mock).mockRejectedValue(partialError);
+
+      const onStateChange = jest.fn();
+      const result = await executeFunctionPlan(
+        mockContext,
+        plan,
+        [testFunction],
+        initialState,
+        onStateChange,
+      );
+
+      expect(onStateChange).toHaveBeenCalledWith(taintedState);
+      expect(result.state).toEqual(taintedState);
+      expect(result.partialFailure).toBeDefined();
+      expect(result.partialFailure?.error).toBe(causeError);
+      expect(result.partialFailure?.failedItem.logicalId).toBe('functions.test_fn');
+    });
+
+    it('should NOT call onStateChange and use currentState when a plain error is thrown', async () => {
+      const plan: Plan = {
+        items: [
+          {
+            logicalId: 'functions.test_fn',
+            action: 'create',
+            resourceType: 'ALIYUN_FC3',
+          },
+        ],
+      };
+
+      const plainError = new Error('Plain error');
+      (fc3Resource.createResource as jest.Mock).mockRejectedValue(plainError);
+
+      const onStateChange = jest.fn();
+      const result = await executeFunctionPlan(
+        mockContext,
+        plan,
+        [testFunction],
+        initialState,
+        onStateChange,
+      );
+
+      expect(onStateChange).not.toHaveBeenCalled();
+      expect(result.state).toEqual(initialState);
+      expect(result.partialFailure).toBeDefined();
+      expect(result.partialFailure?.error).toBe(plainError);
     });
   });
 });
