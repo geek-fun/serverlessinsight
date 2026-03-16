@@ -5,19 +5,36 @@ import { Fc3FunctionConfig, Fc3FunctionInfo } from './types';
 
 type Fc3SdkClient = Fc3Client;
 
+export type OssCodeLocation = {
+  ossBucketName: string;
+  ossObjectName: string;
+};
+
+const buildCodeLocation = (codePath: string, ossCode?: OssCodeLocation): fc.InputCodeLocation => {
+  if (ossCode) {
+    return new fc.InputCodeLocation({
+      ossBucketName: ossCode.ossBucketName,
+      ossObjectName: ossCode.ossObjectName,
+    });
+  }
+  const codeBuffer = fs.readFileSync(codePath);
+  const codeBase64 = codeBuffer.toString('base64');
+  return new fc.InputCodeLocation({ zipFile: codeBase64 });
+};
+
 export const createFc3Operations = (fc3Client: Fc3SdkClient) => ({
-  createFunction: async (config: Fc3FunctionConfig, codePath: string): Promise<void> => {
-    const codeBuffer = fs.readFileSync(codePath);
-    const codeBase64 = codeBuffer.toString('base64');
+  createFunction: async (
+    config: Fc3FunctionConfig,
+    codePath: string,
+    ossCode?: OssCodeLocation,
+  ): Promise<void> => {
     const createFunctionInput = new fc.CreateFunctionInput({
       functionName: config.functionName,
       runtime: config.runtime,
       handler: config.handler,
       memorySize: config.memorySize,
       timeout: config.timeout,
-      code: new fc.InputCodeLocation({
-        zipFile: codeBase64,
-      }),
+      code: buildCodeLocation(codePath, ossCode),
       ...(config.diskSize && { diskSize: config.diskSize }),
       ...(config.environmentVariables && { environmentVariables: config.environmentVariables }),
       ...(config.gpuConfig && {
@@ -233,13 +250,13 @@ export const createFc3Operations = (fc3Client: Fc3SdkClient) => ({
     await fc3Client.updateFunction(config.functionName, request);
   },
 
-  updateFunctionCode: async (functionName: string, codePath: string): Promise<void> => {
-    const codeBuffer = fs.readFileSync(codePath);
-    const codeBase64 = codeBuffer.toString('base64');
+  updateFunctionCode: async (
+    functionName: string,
+    codePath: string,
+    ossCode?: OssCodeLocation,
+  ): Promise<void> => {
     const updateFunctionInput = new fc.UpdateFunctionInput({
-      code: new fc.InputCodeLocation({
-        zipFile: codeBase64,
-      }),
+      code: buildCodeLocation(codePath, ossCode),
     });
 
     const request = new fc.UpdateFunctionRequest({

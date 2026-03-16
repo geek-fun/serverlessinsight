@@ -273,5 +273,10 @@ export const createOssOperations = (ossClient: OssSdkClient, region: string) => 
         await ossClient.put(fileName, sourcePath);
       }
     },
+
+    putFile: async (bucketName: string, objectKey: string, filePath: string): Promise<void> => {
+      useBucket(bucketName);
+      await ossClient.put(objectKey, filePath);
+    },
   };
 };
