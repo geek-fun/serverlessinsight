@@ -1,9 +1,13 @@
 import readline from 'node:readline';
+import fs from 'node:fs';
+import path from 'node:path';
 import { getIacLocation, formatLockInfo, logger, setContext, getContext } from '../common';
 import { createStateBackend } from '../common/stateBackend';
-import { createLocalStateBackend } from '../common/stateBackend/localStateBackend';
+import { LOCK_FILE_SUFFIX } from '../common/constants';
+import { readLockFileForCommand, forceUnlock as fsForceUnlock } from '../common/lockManager';
 import { lang } from '../lang';
 import { parseYaml, revalYaml } from '../parser';
+import { LockMetadata } from '../types';
 
 const askConfirmation = (question: string): Promise<boolean> => {
   const rl = readline.createInterface({
@@ -36,12 +40,57 @@ export const forceUnlockCommand = async (
   if (options.location) {
     const iacLocation = getIacLocation(options.location);
     const rawIac = parseYaml(iacLocation);
-    await setContext({ ...options, iacProvider: rawIac.provider, stages: rawIac.stages }, false);
+    await setContext(
+      {
+        ...options,
+        app: rawIac.app,
+        service: rawIac.service,
+        iacProvider: rawIac.provider,
+        stages: rawIac.stages,
+      },
+      false,
+    );
     const context = getContext();
     const iac = revalYaml(iacLocation, context);
     backend = createStateBackend(iac.backend, context);
   } else {
-    backend = createLocalStateBackend();
+    const stateDir = path.join(process.cwd(), '.serverlessinsight');
+    let foundStatePath: string | undefined;
+
+    if (fs.existsSync(stateDir)) {
+      const lockFiles = fs.readdirSync(stateDir).filter((f) => f.endsWith(LOCK_FILE_SUFFIX));
+      if (lockFiles.length > 0) {
+        const lockContent = fs.readFileSync(path.join(stateDir, lockFiles[0]), 'utf-8');
+        const lockMeta = JSON.parse(lockContent) as LockMetadata;
+        foundStatePath = lockMeta.path;
+      }
+    }
+
+    if (!foundStatePath) {
+      logger.error(lang.__('NO_LOCK_FOUND'));
+      throw new Error(lang.__('NO_LOCK_FOUND'));
+    }
+
+    const statePath = foundStatePath;
+    backend = {
+      readLock: async () => readLockFileForCommand(statePath),
+      forceUnlock: async (id: string) => fsForceUnlock(statePath, id),
+      loadState: async () => {
+        throw new Error('Not supported in no-location mode');
+      },
+      saveState: async () => {
+        throw new Error('Not supported in no-location mode');
+      },
+      acquireLock: async () => {
+        throw new Error('Not supported in no-location mode');
+      },
+      releaseLock: async () => {
+        throw new Error('Not supported in no-location mode');
+      },
+      withLock: async () => {
+        throw new Error('Not supported in no-location mode');
+      },
+    };
   }
 
   // Check if lock exists
