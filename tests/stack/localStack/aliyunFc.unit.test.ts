@@ -14,6 +14,7 @@ import { ServerlessIac } from '../../../src/types';
 
 describe('Aliyun FC Utilities', () => {
   const mockIac: ServerlessIac = {
+    app: 'test-app',
     version: '0.0.1',
     service: 'test-service',
     provider: {
@@ -160,6 +161,7 @@ describe('Aliyun FC Utilities', () => {
 
     it('should set default service name when not provided', () => {
       const iacWithoutService: ServerlessIac = {
+        app: 'test-app',
         version: '0.0.1',
         service: '', // service is required but can be empty
         provider: {
@@ -252,8 +254,8 @@ describe('Aliyun FC Utilities', () => {
       expect(result['x-fc-region']).toBe('cn-shanghai');
       expect(result['x-fc-qualifier']).toBe('LATEST');
       expect(result['x-fc-control-path']).toBe('/http-invoke');
-      expect(result['x-fc-service-logproject']).toBe('test-service-log-project');
-      expect(result['x-fc-service-logstore']).toBe('test-service-log-store');
+      expect(result['x-fc-service-logproject']).toBe('test-app-test-service-log-project');
+      expect(result['x-fc-service-logstore']).toBe('test-app-test-service-log-store');
     });
 
     it('should work with empty headers', () => {

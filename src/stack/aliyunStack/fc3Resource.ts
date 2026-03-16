@@ -332,7 +332,7 @@ export const createResource = async (
   state: StateFile,
 ): Promise<StateFile> => {
   const ctx = getContext();
-  const serviceName = ctx.stackName ?? fn.name;
+  const serviceName = `${ctx.app}-${ctx.service}`;
 
   // Create dependent resources (SLS, RAM, ECS SecurityGroup, NAS)
   const dependentResources = await createDependentResources(context, fn, serviceName);
@@ -458,7 +458,7 @@ export const updateResource = async (
   state: StateFile,
 ): Promise<StateFile> => {
   const ctx = getContext();
-  const serviceName = ctx.stackName ?? fn.name;
+  const serviceName = `${ctx.app}-${ctx.service}`;
   const logicalId = `functions.${fn.key}`;
 
   // Get existing resource state to check if dependent resources exist

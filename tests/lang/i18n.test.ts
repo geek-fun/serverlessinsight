@@ -45,21 +45,19 @@ describe('i18n Language Support', () => {
     it('should translate complex parameterized messages in English', () => {
       lang.setLocale('en-US');
       const result = lang.__('DESTROYING_STACK', {
-        stackName: 'my-stack',
         provider: 'aliyun',
         region: 'cn-hangzhou',
       });
-      expect(result).toBe('Destroying stack: my-stack, provider: aliyun, region: cn-hangzhou...');
+      expect(result).toBe('Destroying stack: provider: aliyun, region: cn-hangzhou...');
     });
 
     it('should translate complex parameterized messages in Chinese', () => {
       lang.setLocale('zh-CN');
       const result = lang.__('DESTROYING_STACK', {
-        stackName: 'my-stack',
         provider: 'aliyun',
         region: 'cn-hangzhou',
       });
-      expect(result).toBe('正在销毁资源栈: my-stack, 供应商: aliyun, 地区: cn-hangzhou...');
+      expect(result).toBe('正在销毁资源栈: 供应商: aliyun, 地区: cn-hangzhou...');
     });
   });
 

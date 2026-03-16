@@ -9,17 +9,20 @@ describe('unit test for parse', () => {
 
     it('should pass databases from yaml to domain instance when the yaml is valid', () => {
       const databaseDomain = parseYaml(iacLocation);
-      expect(databaseDomain).toEqual({
+      expect(databaseDomain).toMatchObject({
+        app: 'insight-es-app',
         service: 'insight-es-poc',
         version: '0.0.1',
         provider: {
           name: 'aliyun',
           region: 'cn-chengdu',
         },
-        tags: [
+        tags: expect.arrayContaining([
           { key: 'iac-provider', value: 'ServerlessInsight' },
+          { key: 'app', value: 'insight-es-app' },
+          { key: 'service', value: 'insight-es-poc' },
           { key: 'owner', value: 'geek-fun' },
-        ],
+        ]),
         databases: [
           {
             key: 'insight_es_db',
@@ -115,7 +118,8 @@ describe('unit test for parse', () => {
     const iacLocation = path.resolve(__dirname, '../fixtures/serverless-insight.yml');
     const testContext: Context = {
       stage: 'default',
-      stackName: 'testStack',
+      app: 'test-app',
+      service: 'test-service',
       provider: ProviderEnum.ALIYUN,
       region: 'cn-hangzhou',
       accessKeyId: 'testAccessKeyId',

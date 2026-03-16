@@ -23,13 +23,10 @@ jest.mock('../../src/stack/aliyunStack', () => ({
   deployAliyunStack: (...args: unknown[]) => mockedDeployAliyunStack(...args),
 }));
 
-const createMockContext = (
-  stackName: string,
-  stage = 'default',
-  additionalFields?: Partial<Context>,
-): Context => ({
+const createMockContext = (stage = 'default', additionalFields?: Partial<Context>): Context => ({
   stage,
-  stackName,
+  app: 'test-app',
+  service: 'test-service',
   provider: ProviderEnum.ALIYUN,
   region: 'cn-hangzhou',
   accessKeyId: 'test-access-key-id',
@@ -71,28 +68,25 @@ describe('Unit tests for Aliyun stack deployment', () => {
   });
 
   it('should deploy using state-based workflow for Aliyun', async () => {
-    const stackName = 'my-demo-minimum-stack';
-    mockedGetContext.mockReturnValue(createMockContext(stackName));
+    mockedGetContext.mockReturnValue(createMockContext());
 
-    await deployStack(stackName, minimumIac, mockBackend);
+    await deployStack(minimumIac, mockBackend);
 
     expect(mockedDeployAliyunStack).toHaveBeenCalledWith(minimumIac, mockBackend);
   });
 
   it('should generate and execute function plan for FC functions', async () => {
-    const stackName = 'my-demo-stack-fc-only';
-    mockedGetContext.mockReturnValue(createMockContext(stackName));
+    mockedGetContext.mockReturnValue(createMockContext());
 
-    await deployStack(stackName, oneFcIac, mockBackend);
+    await deployStack(oneFcIac, mockBackend);
 
     expect(mockedDeployAliyunStack).toHaveBeenCalledWith(oneFcIac, mockBackend);
   });
 
   it('should save state after execution', async () => {
-    const stackName = 'my-demo-stack-save-state';
-    mockedGetContext.mockReturnValue(createMockContext(stackName));
+    mockedGetContext.mockReturnValue(createMockContext());
 
-    await deployStack(stackName, oneFcIac, mockBackend);
+    await deployStack(oneFcIac, mockBackend);
 
     expect(mockedDeployAliyunStack).toHaveBeenCalledWith(oneFcIac, mockBackend);
   });

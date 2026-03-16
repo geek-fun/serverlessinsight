@@ -13,9 +13,10 @@ import { generateApigwPlan } from './apigwPlanner';
 import { executeApigwPlan } from './apigwExecutor';
 import { ExecutionResult, PartialFailureError, PlanItem, StateFile } from '../../types';
 
-const createSaveStateFn = (backend: StateBackend) => (state: StateFile) => {
-  backend.saveState(state);
-};
+const createSaveStateFn =
+  (backend: StateBackend, app: string, service: string, stage: string) => (state: StateFile) => {
+    backend.saveState(state, app, service, stage);
+  };
 
 const handlePartialFailure = (failure: PartialFailureError): never => {
   const error = failure.error as Error & { isPartialFailure?: boolean };
@@ -39,10 +40,15 @@ const collectSuccessfulItems = (results: Array<ExecutionResult>): Array<PlanItem
 export const destroyAliyunStack = async (backend: StateBackend): Promise<void> => {
   const context = getContext();
   const providerName = ProviderEnum.ALIYUN;
-  let state = await backend.loadState(providerName);
-  const onStateChange = createSaveStateFn(backend);
+  let state = await backend.loadState(providerName, context.app, context.service, context.stage);
+  const onStateChange = createSaveStateFn(backend, context.app, context.service, context.stage);
   // Set minimal IAC for destruction (function resolution not needed)
-  setIac({ version: '1.0', service: '', provider: { name: providerName, region: context.region } });
+  setIac({
+    version: '1.0',
+    app: '',
+    service: '',
+    provider: { name: providerName, region: context.region },
+  });
 
   const functionPlan = await generateFunctionPlan(context, state, undefined);
   const bucketPlan = await generateBucketPlan(context, state, undefined);
@@ -148,5 +154,5 @@ export const destroyAliyunStack = async (backend: StateBackend): Promise<void> =
     });
   }
 
-  await backend.saveState(state);
+  await backend.saveState(state, context.app, context.service, context.stage);
 };

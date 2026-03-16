@@ -3,7 +3,8 @@ import { ProviderEnum } from '../../src/common';
 
 export const context: Context = {
   stage: 'test',
-  stackName: 'testStack',
+  app: 'test-app',
+  service: 'test-service',
   provider: ProviderEnum.ALIYUN,
   region: 'cn-hangzhou',
   accessKeyId: 'testAccessKeyId',
@@ -32,6 +33,7 @@ export const defaultContext = {
   region: 'cn-hangzhou',
   provider: ProviderEnum.ALIYUN,
   securityToken: 'account id',
-  stackName: 'my-demo-stack',
+  app: 'my-demo-app',
+  service: 'my-demo-service',
   stage: 'default',
 };

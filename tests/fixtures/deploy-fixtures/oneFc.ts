@@ -2,6 +2,7 @@ import { ServerlessIac } from '../../../src/types';
 import { ProviderEnum } from '../../../src/common';
 
 export const oneFcIac = {
+  app: 'my-demo-app',
   service: 'my-demo-service',
   version: '0.0.1',
   provider: {

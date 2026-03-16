@@ -11,6 +11,8 @@ describe('functionsHandler', () => {
 
   beforeAll(async () => {
     await setContext({
+      app: 'insight-poc-app',
+      service: 'insight-poc',
       stage: 'default',
       location: iacLocation,
     });

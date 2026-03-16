@@ -28,8 +28,7 @@ export const en = {
   STACK_NOT_EXISTS_SKIPPED: 'Stack: {{stackName}} not exists, skipped! 🚫',
   STACK_DELETED: 'Stack: {{stackName}} deleted!🗑 ',
   STACK_DELETE_FAILED: 'Stack: {{stackName}} delete failed! ❌, error: {{error}}',
-  DESTROYING_STACK:
-    'Destroying stack: {{stackName}}, provider: {{provider}}, region: {{region}}...',
+  DESTROYING_STACK: 'Destroying stack: provider: {{provider}}, region: {{region}}...',
 
   // Asset messages
   FOLDER_COMPRESSED_TO: 'Folder compressed to: {{zipPath}}',
@@ -54,7 +53,7 @@ export const en = {
   LOCAL_GATEWAY_ERROR: 'Local gateway error',
   ERROR_STOPPING_LOCAL_SERVER: 'Error stopping localServer',
   RUN_LOCAL_STARTING:
-    'run-local starting: stack={{stackName}} stage={{stage}} port={{port}} debug={{debug}} watch={{watch}}',
+    'run-local starting: stage={{stage}} port={{port}} debug={{debug}} watch={{watch}}',
 
   // Function execution
   FUNCTION_REQUEST_RECEIVED:

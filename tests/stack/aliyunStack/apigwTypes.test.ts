@@ -33,6 +33,7 @@ describe('Apigw Types', () => {
 
   const mockIac: ServerlessIac = {
     version: '1.0',
+    app: 'test-app',
     service: 'test-service',
     provider: {
       name: ProviderEnum.ALIYUN,
@@ -69,6 +70,8 @@ describe('Apigw Types', () => {
   beforeEach(async () => {
     // Set up context and IAC before each test
     await setContext({
+      app: 'test-app',
+      service: 'test-service',
       region: 'cn-hangzhou',
       provider: ProviderEnum.ALIYUN,
       location: 'tests/fixtures/serverless-insight.yml', // Use fixture file

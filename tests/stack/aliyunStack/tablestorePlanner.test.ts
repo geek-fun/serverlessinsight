@@ -9,7 +9,14 @@ import {
   CURRENT_STATE_VERSION,
 } from '../../../src/types';
 
-const initialState = { version: CURRENT_STATE_VERSION, provider: 'aliyun', resources: {} };
+const initialState = {
+  version: CURRENT_STATE_VERSION,
+  provider: 'aliyun',
+  app: 'test-app',
+  service: 'test-service',
+  stages: {},
+  resources: {},
+};
 
 const mockTablestoreOperations = {
   createTable: jest.fn(),
@@ -28,7 +35,8 @@ jest.mock('../../../src/common/aliyunClient', () => ({
 describe('TableStore Planner', () => {
   const mockContext: Context = {
     stage: 'default',
-    stackName: 'test-stack',
+    app: 'test-app',
+    service: 'test-service',
     provider: ProviderEnum.ALIYUN,
     region: 'cn-hangzhou',
     accountId: '123456789012',

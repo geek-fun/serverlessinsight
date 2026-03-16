@@ -4,10 +4,13 @@ import { ResourceState, StateFile, CURRENT_STATE_VERSION } from '../types';
 import { withLock, LockOptions } from './lockManager';
 
 const STATE_DIR = '.serverlessinsight';
-const STATE_FILE = 'state.json';
 
-export const getStatePath = (baseDir: string = process.cwd()): string => {
-  return path.join(baseDir, STATE_DIR, STATE_FILE);
+export const getStatePath = (
+  app: string,
+  service: string,
+  baseDir: string = process.cwd(),
+): string => {
+  return path.join(baseDir, STATE_DIR, `state-${app}-${service}.json`);
 };
 
 export const ensureStateDir = (baseDir: string = process.cwd()): void => {
@@ -18,32 +21,74 @@ export const ensureStateDir = (baseDir: string = process.cwd()): void => {
 };
 
 /**
- * Load state file.
+ * Load state file, scoped to the given stage.
+ * The returned StateFile has `resources` populated from `stages[stage].resources`.
  */
-export const loadState = (provider: string, baseDir: string = process.cwd()): StateFile => {
-  const statePath = getStatePath(baseDir);
+export const loadState = (
+  provider: string,
+  app: string,
+  service: string,
+  stage: string,
+  baseDir: string = process.cwd(),
+): StateFile => {
+  const statePath = getStatePath(app, service, baseDir);
   try {
     if (fs.existsSync(statePath)) {
       const content = fs.readFileSync(statePath, 'utf-8');
-      const state = JSON.parse(content) as StateFile;
-      return state;
+      const raw = JSON.parse(content) as StateFile;
+      // Populate in-memory resources from the stage slice
+      const stageResources = raw.stages?.[stage]?.resources ?? {};
+      return { ...raw, resources: stageResources };
     }
-    // If file doesn't exist or is invalid, return empty state
   } catch {
-    // Ignore error
+    // Ignore error, fall through to empty state
   }
 
-  return { version: CURRENT_STATE_VERSION, provider, resources: {} };
+  return { version: CURRENT_STATE_VERSION, provider, app, service, stages: {}, resources: {} };
 };
 
-export const saveState = (state: StateFile, baseDir: string = process.cwd()): void => {
+export const saveState = (
+  state: StateFile,
+  app: string,
+  service: string,
+  stage: string,
+  baseDir: string = process.cwd(),
+): void => {
   ensureStateDir(baseDir);
-  const statePath = getStatePath(baseDir);
-  // Ensure we always save with current version
-  const stateToSave: StateFile = {
-    ...state,
+  const statePath = getStatePath(app, service, baseDir);
+
+  // Read the existing file to preserve other stages
+  let existing: StateFile = {
     version: CURRENT_STATE_VERSION,
+    provider: state.provider,
+    app,
+    service,
+    stages: {},
+    resources: {},
   };
+  try {
+    if (fs.existsSync(statePath)) {
+      const content = fs.readFileSync(statePath, 'utf-8');
+      existing = JSON.parse(content) as StateFile;
+    }
+  } catch {
+    // use default
+  }
+
+  // Write updated stage resources, preserve all other stages
+  const stateToSave: StateFile = {
+    ...existing,
+    version: CURRENT_STATE_VERSION,
+    app,
+    service,
+    provider: state.provider,
+    stages: {
+      ...existing.stages,
+      [stage]: { resources: state.resources },
+    },
+    resources: state.resources,
+  };
+
   fs.writeFileSync(statePath, JSON.stringify(stateToSave, null, 2), 'utf-8');
 };
 
@@ -53,16 +98,19 @@ export const saveState = (state: StateFile, baseDir: string = process.cwd()): vo
  */
 export const saveStateWithLock = async (
   state: StateFile,
+  app: string,
+  service: string,
+  stage: string,
   operation: string,
   baseDir: string = process.cwd(),
   options?: LockOptions,
 ): Promise<void> => {
-  const statePath = getStatePath(baseDir);
+  const statePath = getStatePath(app, service, baseDir);
   await withLock(
     statePath,
     operation,
     async () => {
-      saveState(state, baseDir);
+      saveState(state, app, service, stage, baseDir);
     },
     options,
   );

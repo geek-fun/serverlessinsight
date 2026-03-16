@@ -9,16 +9,30 @@ import {
 } from '../lockManager';
 import { StateBackend, LockMetadata } from './types';
 
-export const createLocalStateBackend = (baseDir: string = process.cwd()): StateBackend => {
-  const statePath = getStatePath(baseDir);
+export const createLocalStateBackend = (
+  app: string,
+  service: string,
+  baseDir: string = process.cwd(),
+): StateBackend => {
+  const statePath = getStatePath(app, service, baseDir);
 
   return {
-    loadState: async (provider: string): Promise<StateFile> => {
-      return fsLoadState(provider, baseDir);
+    loadState: async (
+      provider: string,
+      loadApp: string,
+      loadService: string,
+      stage: string,
+    ): Promise<StateFile> => {
+      return fsLoadState(provider, loadApp, loadService, stage, baseDir);
     },
 
-    saveState: async (state: StateFile): Promise<void> => {
-      fsSaveState(state, baseDir);
+    saveState: async (
+      state: StateFile,
+      saveApp: string,
+      saveService: string,
+      stage: string,
+    ): Promise<void> => {
+      fsSaveState(state, saveApp, saveService, stage, baseDir);
     },
 
     acquireLock: async (operation: string, options?: LockOptions): Promise<string> => {

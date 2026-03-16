@@ -20,7 +20,8 @@ jest.mock('../../../src/common/logger', () => ({
 describe('ApigwExecutor', () => {
   const mockContext: Context = {
     stage: 'default',
-    stackName: 'test-stack',
+    app: 'test-app',
+    service: 'test-service',
     provider: ProviderEnum.ALIYUN,
     region: 'cn-hangzhou',
     accountId: '123456789012',
@@ -34,6 +35,9 @@ describe('ApigwExecutor', () => {
   const initialState: StateFile = {
     version: CURRENT_STATE_VERSION,
     provider: 'aliyun',
+    app: 'test-app',
+    service: 'test-service',
+    stages: {},
     resources: {},
   };
 

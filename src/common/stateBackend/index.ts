@@ -17,6 +17,8 @@ type BackendContext = {
   accessKeySecret: string;
   securityToken?: string;
   baseDir?: string;
+  app: string;
+  service: string;
 };
 
 export const createStateBackend = (
@@ -24,7 +26,7 @@ export const createStateBackend = (
   context: BackendContext,
 ): StateBackend => {
   if (!backendConfig || backendConfig.type === StateBackendType.LOCAL) {
-    return createLocalStateBackend(context.baseDir);
+    return createLocalStateBackend(context.app, context.service, context.baseDir);
   }
 
   const bucketConfig = backendConfig as BucketStoreBackendConfig;

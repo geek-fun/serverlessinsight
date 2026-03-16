@@ -11,9 +11,10 @@ import { generateEsPlan } from './esServerlessPlanner';
 import { executeEsPlan } from './esServerlessExecutor';
 import { ExecutionResult, PartialFailureError, PlanItem, StateFile } from '../../types';
 
-const createSaveStateFn = (backend: StateBackend) => (state: StateFile) => {
-  backend.saveState(state);
-};
+const createSaveStateFn =
+  (backend: StateBackend, app: string, service: string, stage: string) => (state: StateFile) => {
+    backend.saveState(state, app, service, stage);
+  };
 
 const handlePartialFailure = (failure: PartialFailureError): never => {
   const error = failure.error as Error & { isPartialFailure?: boolean };
@@ -37,8 +38,8 @@ const collectSuccessfulItems = (results: Array<ExecutionResult>): Array<PlanItem
 export const destroyTencentStack = async (backend: StateBackend): Promise<void> => {
   const context = getContext();
   const providerName = ProviderEnum.TENCENT;
-  let state = await backend.loadState(providerName);
-  const onStateChange = createSaveStateFn(backend);
+  let state = await backend.loadState(providerName, context.app, context.service, context.stage);
+  const onStateChange = createSaveStateFn(backend, context.app, context.service, context.stage);
 
   const functionPlan = await generateFunctionPlan(context, state, undefined);
   const bucketPlan = await generateBucketPlan(context, state, undefined);
@@ -114,5 +115,5 @@ export const destroyTencentStack = async (backend: StateBackend): Promise<void> 
     });
   }
 
-  await backend.saveState(state);
+  await backend.saveState(state, context.app, context.service, context.stage);
 };

@@ -2,7 +2,8 @@ export const rootSchema = {
   $id: 'https://serverlessinsight.geekfun.club/schemas/schema.json',
   type: 'object',
   properties: {
-    version: { type: 'string', enum: ['0.0.0', '0.0.1'] },
+    version: { type: 'string', enum: ['0.0.0', '0.0.1', '0.1.0'] },
+    app: { type: 'string', pattern: '^[a-z][a-z0-9-]*$' },
     provider: {
       type: 'object',
       properties: {
@@ -56,7 +57,7 @@ export const rootSchema = {
         },
       ],
     },
-    service: { type: 'string' },
+    service: { type: 'string', pattern: '^[a-z][a-z0-9-]*$' },
     vars: {
       type: 'object',
       additionalProperties: {
@@ -96,6 +97,6 @@ export const rootSchema = {
       $ref: 'https://serverlessinsight.geekfun.club/schemas/tableschema.json',
     },
   },
-  required: ['version', 'provider', 'service'],
+  required: ['version', 'provider', 'app', 'service'],
   additionalProperties: false,
 };

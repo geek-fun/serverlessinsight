@@ -5,7 +5,8 @@ export type Context = {
   region: string;
   accountId?: string;
   provider: ProviderEnum;
-  stackName: string;
+  app: string;
+  service: string;
   stage: string;
   accessKeyId: string;
   accessKeySecret: string;

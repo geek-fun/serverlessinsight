@@ -1,6 +1,7 @@
 import { ServerlessIac } from '../../../src/types';
 
 export const oneFcIacWithStage = {
+  app: 'my-demo-app',
   service: 'my-demo-service',
   version: '0.0.1',
   provider: {

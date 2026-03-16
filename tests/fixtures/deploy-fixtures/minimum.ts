@@ -2,6 +2,7 @@ import { ProviderEnum } from '../../../src/common';
 import { ServerlessIac } from '../../../src/types';
 
 export const minimumIac = {
+  app: 'my-demo-minimum-app',
   service: 'my-demo-minimum-service',
   version: '0.0.1',
   provider: {

@@ -5,22 +5,25 @@ import { lang } from '../lang';
 import { destroyTencentStack } from '../stack/scfStack';
 import { destroyAliyunStack } from '../stack/aliyunStack';
 
-export const destroyStack = async (
-  stackName: string,
-  options: {
-    location: string;
-    region?: string;
-    provider?: string;
-    accessKeyId?: string;
-    accessKeySecret?: string;
-    securityToken?: string;
-    stage?: string;
-  },
-) => {
+export const destroyStack = async (options: {
+  location: string;
+  region?: string;
+  provider?: string;
+  accessKeyId?: string;
+  accessKeySecret?: string;
+  securityToken?: string;
+  stage?: string;
+}) => {
   const iacLocation = getIacLocation(options.location);
   const rawIac = parseYaml(iacLocation);
   await setContext(
-    { stackName, ...options, iacProvider: rawIac.provider, stages: rawIac.stages },
+    {
+      ...options,
+      app: rawIac.app,
+      service: rawIac.service,
+      iacProvider: rawIac.provider,
+      stages: rawIac.stages,
+    },
     true,
   );
   const context = getContext();
@@ -31,7 +34,6 @@ export const destroyStack = async (
 
   logger.info(
     lang.__('DESTROYING_STACK', {
-      stackName,
       provider: context.provider,
       region: context.region,
     }),

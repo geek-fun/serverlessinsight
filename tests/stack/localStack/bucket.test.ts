@@ -11,6 +11,8 @@ describe('bucketsHandler', () => {
 
   beforeAll(async () => {
     await setContext({
+      app: 'insight-poc-app',
+      service: 'insight-poc',
       stage: 'default',
       location: iacLocation,
     });
@@ -48,6 +50,7 @@ describe('bucketsHandler', () => {
 
   const mockIac: ServerlessIac = {
     version: '0.0.1',
+    app: 'test-app',
     provider: {
       name: ProviderEnum.ALIYUN,
       region: 'cn-hangzhou',

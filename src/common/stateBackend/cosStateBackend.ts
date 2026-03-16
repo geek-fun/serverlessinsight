@@ -175,14 +175,52 @@ export const createCosStateBackend = (config: CosBackendConfig): StateBackend =>
   };
 
   return {
-    loadState: async (provider: string): Promise<StateFile> => {
+    loadState: async (
+      provider: string,
+      app: string,
+      service: string,
+      stage: string,
+    ): Promise<StateFile> => {
       const state = await readObject<StateFile>(config.key);
-      if (state) return state;
-      return { version: CURRENT_STATE_VERSION, provider, resources: {} };
+      if (state) {
+        const stageResources = state.stages?.[stage]?.resources ?? {};
+        return { ...state, resources: stageResources };
+      }
+      return { version: CURRENT_STATE_VERSION, provider, app, service, stages: {}, resources: {} };
     },
 
-    saveState: async (state: StateFile): Promise<void> => {
-      const stateToSave: StateFile = { ...state, version: CURRENT_STATE_VERSION };
+    saveState: async (
+      state: StateFile,
+      app: string,
+      service: string,
+      stage: string,
+    ): Promise<void> => {
+      let existing: StateFile = {
+        version: CURRENT_STATE_VERSION,
+        provider: state.provider,
+        app,
+        service,
+        stages: {},
+        resources: {},
+      };
+      try {
+        const raw = await readObject<StateFile>(config.key);
+        if (raw) existing = raw;
+      } catch {
+        // noop
+      }
+      const stateToSave: StateFile = {
+        ...existing,
+        version: CURRENT_STATE_VERSION,
+        app,
+        service,
+        provider: state.provider,
+        stages: {
+          ...existing.stages,
+          [stage]: { resources: state.resources },
+        },
+        resources: state.resources,
+      };
       await writeObject(config.key, stateToSave);
     },
 
