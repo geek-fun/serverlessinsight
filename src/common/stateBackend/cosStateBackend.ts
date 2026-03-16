@@ -3,9 +3,16 @@ import crypto from 'node:crypto';
 import os from 'node:os';
 import { execSync } from 'node:child_process';
 import { StateFile, LockOptions, LockMetadata, CURRENT_STATE_VERSION } from '../../types';
-import { DEFAULT_LOCK_TIMEOUT, DEFAULT_LOCK_RETRY_DELAY, STALE_LOCK_THRESHOLD } from '../constants';
+import {
+  DEFAULT_LOCK_TIMEOUT,
+  DEFAULT_LOCK_RETRY_DELAY,
+  STALE_LOCK_THRESHOLD,
+  OSS_STATE_REQUEST_TIMEOUT_MS,
+} from '../constants';
 import { LockError, formatLockInfo } from '../lockManager';
 import { StateBackend } from './types';
+import { logger } from '../logger';
+import { lang } from '../../lang';
 
 type CosBackendConfig = {
   bucket: string;
@@ -38,6 +45,15 @@ const sleep = (ms: number): Promise<void> => new Promise((resolve) => setTimeout
 const isLockStale = (lock: LockMetadata): boolean => {
   const acquiredAt = new Date(lock.acquiredAt).getTime();
   return Date.now() - acquiredAt > STALE_LOCK_THRESHOLD;
+};
+
+const isProcessAlive = (pid: number): boolean => {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch {
+    return false;
+  }
 };
 
 const promisifyGet = (
@@ -95,6 +111,7 @@ export const createCosStateBackend = (config: CosBackendConfig): StateBackend =>
     SecretId: config.accessKeyId,
     SecretKey: config.accessKeySecret,
     SecurityToken: config.securityToken,
+    Timeout: OSS_STATE_REQUEST_TIMEOUT_MS,
   });
 
   const lockKey = `${config.key}${LOCK_KEY_SUFFIX}`;
@@ -148,6 +165,20 @@ export const createCosStateBackend = (config: CosBackendConfig): StateBackend =>
           return metadata;
         }
       } else {
+        if (existingLock.hostname === os.hostname() && !isProcessAlive(existingLock.processId)) {
+          logger.info(
+            lang.__('LOCK_AUTO_RELEASED_DEAD_PROCESS', {
+              processId: String(existingLock.processId),
+              hostname: existingLock.hostname,
+              user: existingLock.user,
+              acquiredAt: existingLock.acquiredAt,
+            }),
+          );
+          await deleteObject(lockKey);
+          attempt++;
+          continue;
+        }
+
         if (isLockStale(existingLock)) {
           throw new LockError(
             `State is currently locked (stale lock detected).\n${formatLockInfo(existingLock)}\nThis lock appears to be stale. If you are certain no other operation is running, use:\n  si force-unlock ${existingLock.id}`,
@@ -160,6 +191,17 @@ export const createCosStateBackend = (config: CosBackendConfig): StateBackend =>
             existingLock,
           );
         }
+        const acquiredAt = new Date(existingLock.acquiredAt);
+        const minutesAgo = Math.floor((Date.now() - acquiredAt.getTime()) / 60000);
+        const timeAgo =
+          minutesAgo < 1 ? lang.__('LOCK_TIME_AGO_LESS_THAN_MINUTE') : `${minutesAgo}m`;
+        logger.info(
+          lang.__('LOCK_WAITING', {
+            user: existingLock.user,
+            timeAgo,
+            attempt: String(attempt + 1),
+          }),
+        );
       }
 
       const delay = Math.min(retryDelay * Math.pow(2, attempt), 30000);
