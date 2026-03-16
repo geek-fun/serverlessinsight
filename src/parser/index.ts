@@ -46,8 +46,9 @@ const parseBackend = (raw: BackendConfigRaw | undefined): BackendConfig | undefi
   return { type: StateBackendType.LOCAL };
 };
 
-const transformYaml = (iacJson: ServerlessIacRaw): ServerlessIac => {
+const transformYaml = (iacJson: ServerlessIacRaw, stage?: string): ServerlessIac => {
   return {
+    app: iacJson.app,
     service: iacJson.service,
     version: iacJson.version,
     provider: iacJson.provider,
@@ -58,7 +59,7 @@ const transformYaml = (iacJson: ServerlessIacRaw): ServerlessIac => {
     events: parseEvent(iacJson.events),
     databases: parseDatabase(iacJson.databases),
     tables: parseTable(iacJson.tables),
-    tags: parseTag(iacJson.tags),
+    tags: parseTag(iacJson.tags, iacJson.app, iacJson.service, stage),
     buckets: parseBucket(iacJson.buckets),
   };
 };
@@ -100,11 +101,19 @@ export const revalYaml = (iacLocation: string, ctx: Context): ServerlessIac => {
 
   validateYaml(iacJson);
 
-  const evaluatedIacJson = evaluateObject(iacJson, ctx, iacJson.vars);
+  const staticFields = {
+    app: iacJson.app,
+    service: iacJson.service,
+    version: iacJson.version,
+    provider: { ...iacJson.provider, name: iacJson.provider.name },
+  };
 
-  const iac = transformYaml(evaluatedIacJson);
+  // staticFields are spread in before evaluation (identity fields are not template strings,
+  // so this is a no-op) and again after to ensure evaluateObject never mangles them.
+  const evaluatedIacJson = evaluateObject({ ...iacJson, ...staticFields }, ctx, iacJson.vars);
 
-  // Set default values for optional fields in functions
+  const iac = transformYaml({ ...evaluatedIacJson, ...staticFields }, ctx.stage);
+
   if (iac.functions) {
     iac.functions = iac.functions.map((fn) => ({
       ...fn,
