@@ -10,6 +10,8 @@ describe('localStack Server', () => {
   beforeAll(async () => {
     await setContext({
       stage: 'default',
+      app: 'test-app',
+      service: 'test-service',
       location: iacLocation,
     });
 

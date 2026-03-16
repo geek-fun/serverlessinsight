@@ -1,6 +1,7 @@
 import { ServerlessIac } from '../../../src/types';
 
 export const bucketWithWebsiteIac = {
+  app: 'my-bucket-app',
   version: '0.0.1',
   provider: {
     name: 'aliyun',

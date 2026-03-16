@@ -5,6 +5,7 @@ import { makeRequest } from '../../autils';
 
 describe('Aliyun FC LocalStack', () => {
   const iac: ServerlessIac = {
+    app: 'aliyun-fc-app',
     version: '0.0.1',
     service: 'aliyun-fc-test',
     provider: {

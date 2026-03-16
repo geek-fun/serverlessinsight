@@ -2,7 +2,14 @@ import { ProviderEnum, setResource } from '../../../src/common';
 import { generateBucketPlan } from '../../../src/stack/aliyunStack/ossPlanner';
 import { BucketAccessEnum, BucketDomain, Context, CURRENT_STATE_VERSION } from '../../../src/types';
 
-const initialState = { version: CURRENT_STATE_VERSION, provider: 'aliyun', resources: {} };
+const initialState = {
+  version: CURRENT_STATE_VERSION,
+  provider: 'aliyun',
+  app: 'test-app',
+  service: 'test-service',
+  stages: {},
+  resources: {},
+};
 
 const mockOssOperations = {
   createBucket: jest.fn(),
@@ -21,7 +28,8 @@ jest.mock('../../../src/common/aliyunClient', () => ({
 describe('OSS Planner', () => {
   const mockContext: Context = {
     stage: 'default',
-    stackName: 'test-stack',
+    app: 'test-app',
+    service: 'test-service',
     provider: ProviderEnum.ALIYUN,
     region: 'cn-hangzhou',
     accountId: '123456789012',

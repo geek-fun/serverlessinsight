@@ -4,26 +4,29 @@ import { createStateBackend } from '../common/stateBackend';
 import { parseYaml, revalYaml } from '../parser';
 import { lang } from '../lang';
 
-export const deploy = async (
-  stackName: string,
-  options: {
-    location: string;
-    parameters?: { [key: string]: string };
-    stage?: string;
-    region?: string;
-    provider?: string;
-    accessKeyId?: string;
-    accessKeySecret?: string;
-    securityToken?: string;
-  },
-) => {
+export const deploy = async (options: {
+  location: string;
+  parameters?: { [key: string]: string };
+  stage?: string;
+  region?: string;
+  provider?: string;
+  accessKeyId?: string;
+  accessKeySecret?: string;
+  securityToken?: string;
+}) => {
   logger.info(lang.__('VALIDATING_YAML'));
   const iacLocation = getIacLocation(options.location);
   const rawIac = parseYaml(iacLocation);
   logger.info(lang.__('YAML_VALID'));
 
   await setContext(
-    { ...options, stackName, iacProvider: rawIac.provider, stages: rawIac.stages },
+    {
+      ...options,
+      app: rawIac.app,
+      service: rawIac.service,
+      iacProvider: rawIac.provider,
+      stages: rawIac.stages,
+    },
     true,
   );
 
@@ -37,7 +40,7 @@ export const deploy = async (
 
   const backend = createStateBackend(iac.backend, context);
   await backend.withLock('deploy', async () => {
-    await deployStack(stackName, iac, backend);
+    await deployStack(iac, backend);
   });
 
   logger.info(lang.__('STACK_DEPLOYED'));

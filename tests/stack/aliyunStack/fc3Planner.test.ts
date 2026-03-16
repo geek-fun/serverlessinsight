@@ -2,7 +2,14 @@ import { ProviderEnum, setResource } from '../../../src/common';
 import { generateFunctionPlan } from '../../../src/stack/aliyunStack/fc3Planner';
 import { Context, CURRENT_STATE_VERSION, FunctionDomain } from '../../../src/types';
 
-const initalState = { version: CURRENT_STATE_VERSION, provider: 'aliyun', resources: {} };
+const initalState = {
+  version: CURRENT_STATE_VERSION,
+  provider: 'aliyun',
+  app: 'test-app',
+  service: 'test-service',
+  stages: {},
+  resources: {},
+};
 
 const mockFc3Operations = {
   createFunction: jest.fn(),
@@ -23,7 +30,8 @@ jest.mock('../../../src/common/hashUtils', () => ({
 describe('FC3 Planner', () => {
   const mockContext: Context = {
     stage: 'default',
-    stackName: 'test-stack',
+    app: 'test-app',
+    service: 'test-service',
     provider: ProviderEnum.ALIYUN,
     region: 'cn-hangzhou',
     accountId: '123456789012',

@@ -36,7 +36,7 @@ describe('forceUnlockCommand', () => {
   });
 
   it('should successfully force unlock with correct lock ID', async () => {
-    const statePath = getStatePath(testDir);
+    const statePath = getStatePath('', '', testDir);
     const lockPath = `${statePath}${LOCK_FILE_SUFFIX}`;
 
     let lockId: string | undefined;
@@ -77,7 +77,7 @@ describe('forceUnlockCommand', () => {
   });
 
   it('should throw error when lock ID does not match', async () => {
-    const statePath = getStatePath(testDir);
+    const statePath = getStatePath('', '', testDir);
     const lockPath = `${statePath}${LOCK_FILE_SUFFIX}`;
 
     // Acquire a lock

@@ -30,7 +30,7 @@ export class RfsStack {
     private readonly context = getContext(),
   ) {
     provider(this, context);
-    resolveFunction(this, iac.functions, context, iac.service);
+    resolveFunction(this, iac.functions, context, `${iac.app}-${iac.service}`);
   }
 
   public toHclTerraform() {

@@ -1,4 +1,4 @@
-version: 0.0.1
+version: 0.1.0
 provider:
   name: tencent
   region: ap-guangzhou
@@ -17,6 +17,7 @@ stages:
     node_env: production
     memory: 1024
 
+app: insight-poc
 service: insight-poc-scf
 
 tags:

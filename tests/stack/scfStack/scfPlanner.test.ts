@@ -2,7 +2,14 @@ import { ProviderEnum, setResource } from '../../../src/common';
 import { generateFunctionPlan } from '../../../src/stack/scfStack/scfPlanner';
 import { Context, FunctionDomain } from '../../../src/types';
 
-const initalState = { version: '1.0.0', provider: 'tencent', resources: {} };
+const initalState = {
+  version: '1.0.0',
+  provider: 'tencent',
+  app: 'test-app',
+  service: 'test-service',
+  stages: {},
+  resources: {},
+};
 
 const mockScfOperations = {
   createFunction: jest.fn(),
@@ -28,7 +35,8 @@ jest.mock('../../../src/common/hashUtils', () => ({
 describe('SCF Planner', () => {
   const mockContext: Context = {
     stage: 'default',
-    stackName: 'test-stack',
+    app: 'test-app',
+    service: 'test-service',
     provider: ProviderEnum.TENCENT,
     region: 'ap-guangzhou',
     accessKeyId: 'test-key',

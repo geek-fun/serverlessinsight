@@ -2,6 +2,7 @@ import { ProviderEnum } from '../../../src/common';
 import { ServerlessIac } from '../../../src/types';
 
 export const oneFcOneGatewayIac = {
+  app: 'my-demo-app',
   service: 'my-demo-service',
   version: '0.0.1',
   provider: {

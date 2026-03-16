@@ -33,7 +33,8 @@ describe('Apigw Planner', () => {
 
   const mockContext: Context = {
     stage: 'default',
-    stackName: 'test-stack',
+    app: 'test-app',
+    service: 'test-service',
     provider: ProviderEnum.ALIYUN,
     region: 'cn-hangzhou',
     accountId: '123456789012',
@@ -79,7 +80,7 @@ describe('Apigw Planner', () => {
       // Mock findApiGroupByName to return null (group does not exist)
       mockApigwOperations.findApiGroupByName.mockResolvedValue(null);
 
-      const state = loadState('aliyun', testDir);
+      const state = loadState('aliyun', 'test-app', 'test-service', 'default', testDir);
       const plan = await generateApigwPlan(mockContext, state, [testEvent], 'test-service');
 
       expect(plan.items).toHaveLength(1);
@@ -93,7 +94,7 @@ describe('Apigw Planner', () => {
 
     it('should plan no changes when event exists and matches state', async () => {
       // Add event to state with matching definition
-      let state = loadState('aliyun', testDir);
+      let state = loadState('aliyun', 'test-app', 'test-service', 'default', testDir);
       state = setResource(state, 'events.test_api', {
         mode: 'managed',
         region: 'cn-hangzhou',
@@ -140,7 +141,7 @@ describe('Apigw Planner', () => {
 
     it('should plan to update when definition changes', async () => {
       // Add event to state with different definition
-      let state = loadState('aliyun', testDir);
+      let state = loadState('aliyun', 'test-app', 'test-service', 'default', testDir);
       state = setResource(state, 'events.test_api', {
         mode: 'managed',
         region: 'cn-hangzhou',
@@ -186,7 +187,7 @@ describe('Apigw Planner', () => {
 
     it('should plan to delete event when removed from config', async () => {
       // Add event to state
-      let state = loadState('aliyun', testDir);
+      let state = loadState('aliyun', 'test-app', 'test-service', 'default', testDir);
       state = setResource(state, 'events.old_api', {
         mode: 'managed',
         region: 'cn-hangzhou',
@@ -221,7 +222,7 @@ describe('Apigw Planner', () => {
 
     it('should plan to recreate event when state exists but remote is missing', async () => {
       // Add event to state
-      let state = loadState('aliyun', testDir);
+      let state = loadState('aliyun', 'test-app', 'test-service', 'default', testDir);
       state = setResource(state, 'events.test_api', {
         mode: 'managed',
         region: 'cn-hangzhou',

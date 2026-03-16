@@ -61,7 +61,8 @@ export const getIacLocation = (location?: string): string => {
 export const setContext = async (
   config: {
     stage?: string;
-    stackName?: string;
+    app: string;
+    service: string;
     region?: string;
     provider?: string;
     accessKeyId?: string;
@@ -96,7 +97,8 @@ export const setContext = async (
 
   const newContext: Context = {
     stage: config.stage ?? 'default',
-    stackName: config.stackName ?? '',
+    app: config.app,
+    service: config.service,
     provider,
     region,
     accessKeyId: credentials.accessKeyId as string,

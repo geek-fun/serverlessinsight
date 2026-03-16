@@ -5,26 +5,29 @@ import { generateTencentPlan, displayPlan } from '../stack/scfStack';
 import { generateAliyunPlan } from '../stack/aliyunStack';
 import { lang } from '../lang';
 
-export const plan = async (
-  stackName: string,
-  options: {
-    location: string;
-    parameters?: { [key: string]: string };
-    stage?: string;
-    region?: string;
-    provider?: string;
-    accessKeyId?: string;
-    accessKeySecret?: string;
-    securityToken?: string;
-  },
-) => {
+export const plan = async (options: {
+  location: string;
+  parameters?: { [key: string]: string };
+  stage?: string;
+  region?: string;
+  provider?: string;
+  accessKeyId?: string;
+  accessKeySecret?: string;
+  securityToken?: string;
+}) => {
   logger.info(lang.__('VALIDATING_YAML'));
   const iacLocation = getIacLocation(options.location);
   const rawIac = parseYaml(iacLocation);
   logger.info(lang.__('YAML_VALID'));
 
   await setContext(
-    { ...options, stackName, iacProvider: rawIac.provider, stages: rawIac.stages },
+    {
+      ...options,
+      app: rawIac.app,
+      service: rawIac.service,
+      iacProvider: rawIac.provider,
+      stages: rawIac.stages,
+    },
     true,
   );
   const context = getContext();

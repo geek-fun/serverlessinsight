@@ -1,6 +1,7 @@
 import { ServerlessIac } from '../../../src/types';
 
 export const bucketMinimumIac = {
+  app: 'my-bucket-app',
   version: '0.0.1',
   provider: {
     name: 'aliyun',

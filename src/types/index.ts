@@ -24,6 +24,7 @@ export * from './assets';
 
 export type ServerlessIacRaw = {
   version: string;
+  app: string;
   provider: Provider;
   vars: Vars;
   stages: Stages;
@@ -39,6 +40,7 @@ export type ServerlessIacRaw = {
 
 export type ServerlessIac = {
   version: string;
+  app: string;
   provider: Provider;
   service: string;
   vars?: Vars;

@@ -32,11 +32,18 @@ export type ResourceState = {
   metadata?: Record<string, unknown>;
 };
 
-export const CURRENT_STATE_VERSION = '1.0';
+export const CURRENT_STATE_VERSION = '2.0';
+
+export type StageState = {
+  resources: Record<string, ResourceState>;
+};
 
 export type StateFile = {
   version: string;
   provider: string;
+  app: string;
+  service: string;
+  stages: Record<string, StageState>;
   resources: Record<string, ResourceState>;
 };
 

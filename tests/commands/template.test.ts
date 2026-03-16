@@ -15,9 +15,9 @@ jest.mock('../../src/common/imsClient', () => ({
 jest.mock('../../src/common/context', () => ({
   ...jest.requireActual('../../src/common/context'),
   getContext: (...args: unknown[]) => mockedGetContext(...args),
+  setContext: jest.fn().mockResolvedValue(undefined),
 }));
 
-const stackName = 'printTemplateStack';
 const location = 'tests/fixtures/serverless-insight.yml';
 
 describe('Unit test for template command', () => {
@@ -26,7 +26,8 @@ describe('Unit test for template command', () => {
       accountId: '123456789012',
       region: 'cn-hangzhou',
       stage: 'default',
-      stackName,
+      app: 'insight-poc-app',
+      service: 'insight-poc',
       provider: 'aliyun',
     });
   });
@@ -43,7 +44,7 @@ describe('Unit test for template command', () => {
       stage: undefined,
     };
 
-    await template(stackName, options);
+    await template(options);
 
     // Aliyun uses state-based deployment, so template generation returns empty object
     expect(mockedLogger).toHaveBeenCalledWith(`\n${JSON.stringify({}, null, 2)}`);
@@ -52,7 +53,7 @@ describe('Unit test for template command', () => {
   it('should print empty template in YAML format for Aliyun', async () => {
     const options = { format: TemplateFormat.YAML, location, stage: undefined };
 
-    await template(stackName, options);
+    await template(options);
 
     // Aliyun uses state-based deployment, so template generation returns empty object
     expect(mockedLogger).toHaveBeenCalledWith('\n{}\n');

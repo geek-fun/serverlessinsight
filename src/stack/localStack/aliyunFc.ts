@@ -76,8 +76,8 @@ export const createAliyunContextSerializable = (
     },
     service: {
       name: iac.service || 'default-service',
-      logProject: `${iac.service}-log-project`,
-      logStore: `${iac.service}-log-store`,
+      logProject: `${iac.app}-${iac.service}-log-project`,
+      logStore: `${iac.app}-${iac.service}-log-store`,
       qualifier: 'LATEST',
       versionId: '1',
     },

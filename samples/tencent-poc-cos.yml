@@ -1,8 +1,9 @@
-version: 0.0.1
+version: 0.1.0
 provider:
   name: tencent
   region: ap-guangzhou
 
+app: insight-poc
 service: insight-poc-cos
 
 tags:

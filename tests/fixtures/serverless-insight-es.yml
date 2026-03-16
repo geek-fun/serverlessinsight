@@ -1,4 +1,5 @@
 version: 0.0.1
+app: insight-es-app
 
 provider:
   name: aliyun

@@ -1,4 +1,5 @@
 version: 0.0.1
+app: insight-bucket-app
 
 provider:
   name: aliyun

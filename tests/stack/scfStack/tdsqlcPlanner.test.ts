@@ -29,7 +29,8 @@ jest.mock('../../../src/common/tencentClient', () => ({
 describe('TdsqlcPlanner', () => {
   const mockContext: Context = {
     stage: 'default',
-    stackName: 'test-stack',
+    app: 'test-app',
+    service: 'test-service',
     provider: ProviderEnum.TENCENT,
     region: 'ap-guangzhou',
     accessKeyId: 'test-key',
@@ -68,6 +69,9 @@ describe('TdsqlcPlanner', () => {
   const mockState: StateFile = {
     version: CURRENT_STATE_VERSION,
     provider: 'tencent',
+    app: 'test-app',
+    service: 'test-service',
+    stages: {},
     resources: {},
   };
 

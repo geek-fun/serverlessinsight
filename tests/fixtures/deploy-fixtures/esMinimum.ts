@@ -2,6 +2,7 @@ import { ProviderEnum } from '../../../src/common';
 import { DatabaseEnum, DatabaseVersionEnum, ServerlessIac } from '../../../src/types';
 
 export const esServerlessMinimumIac = {
+  app: 'my-demo-es-app',
   service: 'my-demo-es-serverless-service',
   version: '0.0.1',
   provider: {

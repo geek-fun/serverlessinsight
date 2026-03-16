@@ -14,7 +14,7 @@ import path from 'node:path';
 
 describe('StateManager', () => {
   const testDir = '/tmp/test-state-manager';
-  const statePath = path.join(testDir, '.serverlessinsight', 'state.json');
+  const statePath = path.join(testDir, '.serverlessinsight', 'state-test-app-test-service.json');
 
   beforeEach(() => {
     // Clean up test directory
@@ -33,7 +33,7 @@ describe('StateManager', () => {
 
   describe('getStatePath', () => {
     it('should return correct state path', () => {
-      const result = getStatePath(testDir);
+      const result = getStatePath('test-app', 'test-service', testDir);
       expect(result).toBe(statePath);
     });
   });
@@ -53,7 +53,7 @@ describe('StateManager', () => {
 
   describe('loadState', () => {
     it('should initialize with empty state if no file exists', () => {
-      const state = loadState('tencent', testDir);
+      const state = loadState('tencent', 'test-app', 'test-service', 'default', testDir);
 
       expect(state.version).toBe(CURRENT_STATE_VERSION);
       expect(state.provider).toBe('tencent');
@@ -61,45 +61,55 @@ describe('StateManager', () => {
     });
 
     it('should load existing state from file', () => {
-      // Create state file with new structure
-      const existingState = {
+      const resourceData: ResourceState = {
+        mode: 'managed',
+        region: 'ap-guangzhou',
+        definition: {
+          functionName: 'test-fn',
+          runtime: 'nodejs18',
+          handler: 'index.handler',
+          memorySize: 128,
+          timeout: 3,
+          environment: {},
+          codeHash: 'abc123',
+        },
+        instances: [
+          {
+            arn: 'arn:tencent:scf:ap-guangzhou::function:test-fn',
+            id: 'test-fn',
+            functionName: 'test-fn',
+            runtime: 'nodejs18',
+            handler: 'index.handler',
+            memorySize: 128,
+            timeout: 3,
+          },
+        ],
+        lastUpdated: '2025-01-01T00:00:00Z',
+      };
+
+      const stateOnDisk = {
         version: CURRENT_STATE_VERSION,
         provider: 'tencent',
-        resources: {
-          'functions.test': {
-            mode: 'managed',
-            region: 'ap-guangzhou',
-            definition: {
-              functionName: 'test-fn',
-              runtime: 'nodejs18',
-              handler: 'index.handler',
-              memorySize: 128,
-              timeout: 3,
-              environment: {},
-              codeHash: 'abc123',
+        app: 'test-app',
+        service: 'test-service',
+        stages: {
+          default: {
+            resources: {
+              'functions.test': resourceData,
             },
-            instances: [
-              {
-                arn: 'arn:tencent:scf:ap-guangzhou::function:test-fn',
-                id: 'test-fn',
-                functionName: 'test-fn',
-                runtime: 'nodejs18',
-                handler: 'index.handler',
-                memorySize: 128,
-                timeout: 3,
-              },
-            ],
-            lastUpdated: '2025-01-01T00:00:00Z',
           },
         },
       };
 
       ensureStateDir(testDir);
-      fs.writeFileSync(statePath, JSON.stringify(existingState, null, 2));
+      fs.writeFileSync(statePath, JSON.stringify(stateOnDisk, null, 2));
 
-      const state = loadState('tencent', testDir);
+      const state = loadState('tencent', 'test-app', 'test-service', 'default', testDir);
 
-      expect(state).toEqual(existingState);
+      expect(state).toEqual({
+        ...stateOnDisk,
+        resources: { 'functions.test': resourceData },
+      });
     });
   });
 
@@ -131,7 +141,7 @@ describe('StateManager', () => {
         lastUpdated: '2025-01-01T00:00:00Z',
       };
 
-      let state = loadState('tencent', testDir);
+      let state = loadState('tencent', 'test-app', 'test-service', 'default', testDir);
       state = setResource(state, 'functions.test', resourceState);
 
       const retrieved = getResource(state, 'functions.test');
@@ -139,7 +149,7 @@ describe('StateManager', () => {
     });
 
     it('should return undefined for non-existent resource', () => {
-      const state = loadState('tencent', testDir);
+      const state = loadState('tencent', 'test-app', 'test-service', 'default', testDir);
       const retrieved = getResource(state, 'functions.nonexistent');
       expect(retrieved).toBeUndefined();
     });
@@ -173,7 +183,7 @@ describe('StateManager', () => {
         lastUpdated: '2025-01-01T00:00:00Z',
       };
 
-      let state = loadState('tencent', testDir);
+      let state = loadState('tencent', 'test-app', 'test-service', 'default', testDir);
       state = setResource(state, 'functions.test', resourceState);
 
       expect(state.resources['functions.test']).toEqual(resourceState);
@@ -208,7 +218,7 @@ describe('StateManager', () => {
         lastUpdated: '2025-01-01T00:00:00Z',
       };
 
-      let state = loadState('tencent', testDir);
+      let state = loadState('tencent', 'test-app', 'test-service', 'default', testDir);
       state = setResource(state, 'functions.test', resourceState);
       expect(getResource(state, 'functions.test')).toEqual(resourceState);
 
@@ -245,14 +255,14 @@ describe('StateManager', () => {
         lastUpdated: '2025-01-01T00:00:00Z',
       };
 
-      let state = loadState('tencent', testDir);
+      let state = loadState('tencent', 'test-app', 'test-service', 'default', testDir);
       state = setResource(state, 'functions.test', resourceState);
-      saveState(state, testDir);
+      saveState(state, 'test-app', 'test-service', 'default', testDir);
 
       expect(fs.existsSync(statePath)).toBe(true);
 
       // Load state in a new call
-      const state2 = loadState('tencent', testDir);
+      const state2 = loadState('tencent', 'test-app', 'test-service', 'default', testDir);
       expect(state2.version).toBe(CURRENT_STATE_VERSION);
       expect(getResource(state2, 'functions.test')).toEqual(resourceState);
     });
@@ -311,7 +321,7 @@ describe('StateManager', () => {
         lastUpdated: '2025-01-02T00:00:00Z',
       };
 
-      let state = loadState('tencent', testDir);
+      let state = loadState('tencent', 'test-app', 'test-service', 'default', testDir);
       state = setResource(state, 'functions.test1', resource1);
       state = setResource(state, 'functions.test2', resource2);
 

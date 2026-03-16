@@ -56,6 +56,7 @@ describe('unit test for validate', () => {
   it('should pass validation for huawei with a valid-looking region id', () => {
     const huaweiYaml = {
       version: '0.0.1',
+      app: 'demo-app',
       provider: {
         name: 'huawei',
         region: 'cn-north-4',
