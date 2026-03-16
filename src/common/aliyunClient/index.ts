@@ -10,6 +10,7 @@ import DnsClient from '@alicloud/alidns20150109';
 import * as $OpenApi from '@alicloud/openapi-client';
 import OSS from 'ali-oss';
 import { Context } from '../../types';
+import { ALIYUN_FC3_CONNECT_TIMEOUT_MS, ALIYUN_FC3_READ_TIMEOUT_MS } from '../constants';
 import { createFc3Operations } from './fc3Operations';
 import { createSlsOperations } from './slsOperations';
 import { createRamOperations } from './ramOperations';
@@ -40,6 +41,8 @@ const initializeSdkClients = (context: Context) => {
 
   const fc3Config = new $OpenApi.Config(baseConfig);
   fc3Config.endpoint = `${context.accountId}.${context.region}.fc.aliyuncs.com`;
+  fc3Config.connectTimeout = ALIYUN_FC3_CONNECT_TIMEOUT_MS;
+  fc3Config.readTimeout = ALIYUN_FC3_READ_TIMEOUT_MS;
   const fc3Client = new Fc3Client(fc3Config);
 
   const slsConfig = new $OpenApi.Config(baseConfig);
