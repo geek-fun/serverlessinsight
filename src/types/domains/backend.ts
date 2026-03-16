@@ -11,20 +11,16 @@ export type BucketStoreBackendConfig = {
   type: StateBackendType.BUCKET_STORE;
   bucket: string;
   key: string;
-  region?: string;
-  accessKeyId?: string;
-  accessKeySecret?: string;
-  securityToken?: string;
 };
 
 export type BackendConfig = LocalBackendConfig | BucketStoreBackendConfig;
 
-export type BackendConfigRaw = {
+export type StateManagerConfigRaw = {
   type: string;
   bucket?: string;
   key?: string;
-  region?: string;
-  accessKeyId?: string;
-  accessKeySecret?: string;
-  securityToken?: string;
+};
+
+export type BackendConfigRaw = {
+  state_manager?: StateManagerConfigRaw;
 };

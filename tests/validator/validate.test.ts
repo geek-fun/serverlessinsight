@@ -21,6 +21,34 @@ describe('unit test for validate', () => {
     expect(() => validateYaml(invalidYaml)).toThrow('Invalid yaml');
   });
 
+  it('should throw error when backend.region is passed', () => {
+    const invalidYaml = {
+      ...jsonIac,
+      backend: {
+        state_manager: {
+          type: 'BUCKET_STORE',
+          bucket: 'my-bucket',
+          key: 'state.json',
+          region: 'cn-hangzhou',
+        },
+      },
+    } as unknown as ServerlessIacRaw;
+    expect(() => validateYaml(invalidYaml)).toThrow('Invalid yaml');
+  });
+  it('should pass validation when backend is configured without region', () => {
+    const validYaml = {
+      ...jsonIac,
+      backend: {
+        state_manager: {
+          type: 'BUCKET_STORE',
+          bucket: 'my-bucket',
+          key: 'state.json',
+        },
+      },
+    } as unknown as ServerlessIacRaw;
+    expect(validateYaml(validYaml)).toBe(true);
+  });
+
   it('should throw error when given provider in yaml config is invalid', () => {
     const invalidYaml = {
       ...jsonIac,

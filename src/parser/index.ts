@@ -26,20 +26,19 @@ const validateExistence = (path: string) => {
 const parseBackend = (raw: BackendConfigRaw | undefined): BackendConfig | undefined => {
   if (!raw) return undefined;
 
-  const type = raw.type?.toUpperCase();
+  const stateManager = raw.state_manager;
+  if (!stateManager) return undefined;
+
+  const type = stateManager.type?.toUpperCase();
 
   if (type === StateBackendType.BUCKET_STORE) {
-    if (!raw.bucket || !raw.key) {
+    if (!stateManager.bucket || !stateManager.key) {
       throw new Error('Backend type BUCKET_STORE requires both "bucket" and "key" fields');
     }
     return {
       type: StateBackendType.BUCKET_STORE,
-      bucket: raw.bucket,
-      key: raw.key,
-      region: raw.region,
-      accessKeyId: raw.accessKeyId,
-      accessKeySecret: raw.accessKeySecret,
-      securityToken: raw.securityToken,
+      bucket: stateManager.bucket,
+      key: stateManager.key,
     };
   }
 

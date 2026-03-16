@@ -96,6 +96,22 @@ export const rootSchema = {
     tables: {
       $ref: 'https://serverlessinsight.geekfun.club/schemas/tableschema.json',
     },
+    backend: {
+      type: 'object',
+      properties: {
+        state_manager: {
+          type: 'object',
+          properties: {
+            type: { type: 'string', enum: ['LOCAL', 'BUCKET_STORE'] },
+            bucket: { type: 'string' },
+            key: { type: 'string' },
+          },
+          required: ['type'],
+          additionalProperties: false,
+        },
+      },
+      additionalProperties: false,
+    },
   },
   required: ['version', 'provider', 'app', 'service'],
   additionalProperties: false,

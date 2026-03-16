@@ -30,10 +30,10 @@ export const createStateBackend = (
   }
 
   const bucketConfig = backendConfig as BucketStoreBackendConfig;
-  const region = bucketConfig.region ?? context.region;
-  const accessKeyId = bucketConfig.accessKeyId ?? context.accessKeyId;
-  const accessKeySecret = bucketConfig.accessKeySecret ?? context.accessKeySecret;
-  const securityToken = bucketConfig.securityToken ?? context.securityToken;
+  const region = context.region;
+  const accessKeyId = context.accessKeyId;
+  const accessKeySecret = context.accessKeySecret;
+  const securityToken = context.securityToken;
 
   if (context.provider === ProviderEnum.TENCENT) {
     return createCosStateBackend({
