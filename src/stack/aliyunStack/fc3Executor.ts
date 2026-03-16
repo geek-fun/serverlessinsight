@@ -1,6 +1,7 @@
 import {
   Context,
   FunctionDomain,
+  PartialResourceError,
   Plan,
   PlanItem,
   StateFile,
@@ -10,7 +11,6 @@ import {
 import { createResource, deleteResource, updateResource } from './fc3Resource';
 import { logger } from '../../common';
 import { getResource } from '../../common/stateManager';
-import { lang } from '../../lang';
 
 const executeCreateAction = async (
   context: Context,
@@ -111,15 +111,23 @@ export const executeFunctionPlan = async (
         successfulItems.push(item);
         if (onStateChange) {
           onStateChange(currentState);
-          logger.debug(
-            lang.__('STATE_PERSISTED_AFTER_OPERATION', {
-              action: item.action,
-              resourceId: item.logicalId,
-            }),
-          );
         }
       }
     } catch (error) {
+      if (error instanceof PartialResourceError) {
+        const updatedState = error.updatedState;
+        if (onStateChange) {
+          onStateChange(updatedState);
+        }
+        return {
+          state: updatedState,
+          partialFailure: {
+            failedItem: item,
+            error: error.cause,
+            successfulItems,
+          },
+        };
+      }
       return {
         state: currentState,
         partialFailure: {

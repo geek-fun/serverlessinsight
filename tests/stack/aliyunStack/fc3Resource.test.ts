@@ -5,7 +5,12 @@ import {
   readResource,
   updateResource,
 } from '../../../src/stack/aliyunStack/fc3Resource';
-import { Context, CURRENT_STATE_VERSION, StateFile } from '../../../src/types';
+import {
+  Context,
+  CURRENT_STATE_VERSION,
+  PartialResourceError,
+  StateFile,
+} from '../../../src/types';
 
 // Create mock operations
 const mockedFc3Operations = {
@@ -253,11 +258,9 @@ describe('Fc3Resource', () => {
         }),
         'mock-code-hash',
       );
-      // Check that setResource was called twice (once for dependent resources, once for final state)
       expect(mockedStateManager.setResource).toHaveBeenCalledTimes(2);
-      // Check the LAST call has the function instance
       expect(mockedStateManager.setResource).toHaveBeenLastCalledWith(
-        expect.any(Object), // State is updated between calls
+        expect.any(Object),
         'functions.test_fn',
         expect.objectContaining({
           mode: 'managed',
@@ -265,7 +268,7 @@ describe('Fc3Resource', () => {
           definition: mockDefinition,
           instances: expect.arrayContaining([
             expect.objectContaining({
-              arn: expect.stringContaining('arn:acs:fc'),
+              sid: expect.stringContaining('si:aliyun:fc3'),
               id: 'test-function',
               functionName: 'test-function',
               runtime: 'nodejs20',
@@ -279,12 +282,29 @@ describe('Fc3Resource', () => {
       expect(result).toEqual(newState);
     });
 
-    it('should save dependent resources and return state even if createFc3Function fails', async () => {
-      const error = new Error('Create failed');
-      mockedFc3Operations.createFunction.mockRejectedValue(error);
+    it('should write state twice on success: tainted after dependents, ready after function', async () => {
+      mockedFc3Operations.createFunction.mockResolvedValue(undefined);
+      const taintedState = { ...initialState, _tainted: true };
+      const readyState = { ...initialState, _ready: true };
+      mockedStateManager.setResource
+        .mockReturnValueOnce(taintedState)
+        .mockReturnValueOnce(readyState);
 
-      // Mock setResource to return state with dependent resources
-      const stateWithDependents = {
+      const result = await createResource(mockContext, testFunction, initialState);
+
+      expect(mockedStateManager.setResource).toHaveBeenCalledTimes(2);
+      const firstCall = mockedStateManager.setResource.mock.calls[0];
+      expect(firstCall[2]).toMatchObject({ status: 'tainted' });
+      const secondCall = mockedStateManager.setResource.mock.calls[1];
+      expect(secondCall[2]).toMatchObject({ status: 'ready' });
+      expect(result).toEqual(readyState);
+    });
+
+    it('should throw PartialResourceError with tainted state when createFunction fails', async () => {
+      const createError = new Error('Create function failed');
+      mockedFc3Operations.createFunction.mockRejectedValue(createError);
+
+      const taintedState = {
         ...initialState,
         resources: {
           'functions.test_fn': {
@@ -293,28 +313,69 @@ describe('Fc3Resource', () => {
             definition: mockDefinition,
             instances: [
               {
-                arn: 'acs:ram::123456789012:role/test-role',
-                id: 'test-stack-fc-role',
+                sid: 'si:aliyun:ram:default:test-app-test-service-fc-role',
+                roleArn: 'acs:ram::123456789012:role/test-role',
+                id: 'test-app-test-service-fc-role',
                 type: 'ALIYUN_RAM_ROLE',
                 roleName: 'test-role',
               },
             ],
             lastUpdated: expect.any(String),
+            status: 'tainted',
           },
         },
       };
-      mockedStateManager.setResource.mockReturnValue(stateWithDependents);
+      mockedStateManager.setResource.mockReturnValue(taintedState);
 
-      const result = await createResource(mockContext, testFunction, initialState);
-
-      // Should save state with dependent resources before attempting function creation
-      expect(mockedStateManager.setResource).toHaveBeenCalled();
-      // Should log error
-      expect(mockedLogger.error).toHaveBeenCalledWith(
-        expect.stringContaining('Failed to create function'),
+      await expect(createResource(mockContext, testFunction, initialState)).rejects.toThrow(
+        PartialResourceError,
       );
-      // Should return state with dependent resources
-      expect(result).toEqual(stateWithDependents);
+
+      try {
+        await createResource(mockContext, testFunction, initialState);
+      } catch (err) {
+        expect(err).toBeInstanceOf(PartialResourceError);
+        const partialErr = err as PartialResourceError;
+        expect(partialErr.cause).toBe(createError);
+        expect(partialErr.updatedState).toEqual(taintedState);
+      }
+
+      expect(mockedStateManager.setResource).toHaveBeenCalled();
+      const firstCall = mockedStateManager.setResource.mock.calls[0];
+      expect(firstCall[2]).toMatchObject({ status: 'tainted' });
+      expect(mockedFc3Operations.getFunction).not.toHaveBeenCalled();
+    });
+
+    it('should skip dependent resource creation for tainted resource on retry', async () => {
+      const taintedStateWithDependents: StateFile = {
+        ...initialState,
+        resources: {
+          'functions.test_fn': {
+            mode: 'managed',
+            region: 'cn-hangzhou',
+            definition: mockDefinition,
+            instances: [
+              {
+                sid: 'si:aliyun:ram:default:test-app-test-service-fc-role',
+                roleArn: 'acs:ram::123456789012:role/test-app-test-service-fc-role',
+                id: 'test-app-test-service-fc-role',
+                type: 'ALIYUN_RAM_ROLE',
+                roleName: 'test-app-test-service-fc-role',
+              },
+            ],
+            lastUpdated: '2025-01-01T00:00:00Z',
+            status: 'tainted',
+          },
+        },
+      };
+
+      mockedFc3Operations.createFunction.mockResolvedValue(undefined);
+      const readyState = { ...taintedStateWithDependents };
+      mockedStateManager.setResource.mockReturnValue(readyState);
+
+      await createResource(mockContext, testFunction, taintedStateWithDependents);
+
+      expect(mockedRamOperations.createRole).not.toHaveBeenCalled();
     });
 
     it('should throw error when refresh state fails', async () => {
@@ -431,7 +492,7 @@ describe('Fc3Resource', () => {
             definition: mockDefinition,
             instances: [
               {
-                arn: 'arn:acs:fc:cn-hangzhou:123456789012:function/test-function',
+                sid: 'si:aliyun:fc3:default:test-function',
                 id: 'test-function',
                 functionName: 'test-function',
                 type: 'ALIYUN_FC3_FUNCTION',
@@ -460,13 +521,116 @@ describe('Fc3Resource', () => {
       expect(result).toEqual(initialState);
     });
 
-    it('should propagate errors from deleteFc3Function', async () => {
+    it('should propagate unexpected errors from deleteFunction', async () => {
+      const stateWithFunction: StateFile = {
+        ...initialState,
+        resources: {
+          'functions.test_fn': {
+            mode: 'managed',
+            region: 'cn-hangzhou',
+            definition: mockDefinition,
+            instances: [
+              {
+                sid: 'si:aliyun:fc3:default:test-function',
+                id: 'test-function',
+                functionName: 'test-function',
+                type: 'ALIYUN_FC3_FUNCTION',
+              },
+            ],
+            lastUpdated: '2025-01-01T00:00:00Z',
+          },
+        },
+      };
+
       const error = new Error('Delete failed');
       mockedFc3Operations.deleteFunction.mockRejectedValue(error);
 
       await expect(
-        deleteResource(mockContext, 'test-function', 'functions.test_fn', initialState),
+        deleteResource(mockContext, 'test-function', 'functions.test_fn', stateWithFunction),
       ).rejects.toThrow('Delete failed');
+    });
+
+    it('should skip deleteFunction and clean up dependents when no FC function instance exists (tainted)', async () => {
+      const taintedState: StateFile = {
+        ...initialState,
+        resources: {
+          'functions.test_fn': {
+            mode: 'managed',
+            region: 'cn-hangzhou',
+            definition: mockDefinition,
+            instances: [
+              {
+                sid: 'si:aliyun:ram:default:test-app-test-service-fc-role',
+                roleArn: 'acs:ram::123456789012:role/test-app-test-service-fc-role',
+                id: 'test-app-test-service-fc-role',
+                type: 'ALIYUN_RAM_ROLE',
+              },
+            ],
+            lastUpdated: '2025-01-01T00:00:00Z',
+            status: 'tainted',
+          },
+        },
+      };
+
+      mockedStateManager.removeResource.mockReturnValue(initialState);
+
+      const result = await deleteResource(
+        mockContext,
+        'test-function',
+        'functions.test_fn',
+        taintedState,
+      );
+
+      expect(mockedFc3Operations.deleteFunction).not.toHaveBeenCalled();
+      expect(mockedRamOperations.deleteRole).toHaveBeenCalledWith('test-app-test-service-fc-role');
+      expect(result).toEqual(initialState);
+    });
+
+    it('should warn and continue cleanup when deleteFunction returns FunctionNotFound', async () => {
+      const stateWithFunction: StateFile = {
+        ...initialState,
+        resources: {
+          'functions.test_fn': {
+            mode: 'managed',
+            region: 'cn-hangzhou',
+            definition: mockDefinition,
+            instances: [
+              {
+                sid: 'si:aliyun:fc3:default:test-function',
+                id: 'test-function',
+                functionName: 'test-function',
+                type: 'ALIYUN_FC3_FUNCTION',
+              },
+              {
+                sid: 'si:aliyun:ram:default:test-app-test-service-fc-role',
+                roleArn: 'acs:ram::123456789012:role/test-app-test-service-fc-role',
+                id: 'test-app-test-service-fc-role',
+                type: 'ALIYUN_RAM_ROLE',
+              },
+            ],
+            lastUpdated: '2025-01-01T00:00:00Z',
+          },
+        },
+      };
+
+      const notFoundError = Object.assign(new Error('Function not found'), {
+        code: 'FunctionNotFound',
+      });
+      mockedFc3Operations.deleteFunction.mockRejectedValue(notFoundError);
+      mockedStateManager.removeResource.mockReturnValue(initialState);
+
+      const result = await deleteResource(
+        mockContext,
+        'test-function',
+        'functions.test_fn',
+        stateWithFunction,
+      );
+
+      expect(mockedLogger.warn).toHaveBeenCalledWith(
+        expect.stringContaining('not found in provider'),
+      );
+      expect(mockedRamOperations.deleteRole).toHaveBeenCalled();
+      expect(result).toEqual(initialState);
     });
   });
 });

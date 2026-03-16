@@ -2,10 +2,12 @@ import { Context, BucketDomain, ResourceState, StateFile } from '../../types';
 import { createTencentClient } from '../../common/tencentClient';
 import { bucketToCosBucketConfig, extractCosBucketDefinition, CosBucketInfo } from './cosTypes';
 import { setResource, removeResource } from '../../common/stateManager';
+import { buildSid } from '../../common';
+import { logger } from '../../common/logger';
 
-const buildCosInstanceFromProvider = (info: CosBucketInfo, arn: string) => {
+const buildCosInstanceFromProvider = (info: CosBucketInfo, sid: string) => {
   return {
-    arn,
+    sid,
     id: info.Name,
     bucket: info.Name,
     location: info.Location,
@@ -82,12 +84,12 @@ export const createBucketResource = async (
   }
 
   const definition = extractCosBucketDefinition(config);
-  const arn = `arn:tencent:cos:${context.region}::bucket:${bucket.name}`;
+  const sid = buildSid('tencent', 'cos', context.stage, bucket.name);
   const resourceState: ResourceState = {
     mode: 'managed',
     region: context.region,
     definition,
-    instances: [buildCosInstanceFromProvider(bucketInfo as CosBucketInfo, arn)],
+    instances: [buildCosInstanceFromProvider(bucketInfo as CosBucketInfo, sid)],
     lastUpdated: new Date().toISOString(),
   };
 
@@ -125,12 +127,12 @@ export const updateBucketResource = async (
   }
 
   const definition = extractCosBucketDefinition(config);
-  const arn = `arn:tencent:cos:${context.region}::bucket:${bucket.name}`;
+  const sid = buildSid('tencent', 'cos', context.stage, bucket.name);
   const resourceState: ResourceState = {
     mode: 'managed',
     region: context.region,
     definition,
-    instances: [buildCosInstanceFromProvider(bucketInfo as CosBucketInfo, arn)],
+    instances: [buildCosInstanceFromProvider(bucketInfo as CosBucketInfo, sid)],
     lastUpdated: new Date().toISOString(),
   };
 
@@ -146,6 +148,16 @@ export const deleteBucketResource = async (
   state: StateFile,
 ): Promise<StateFile> => {
   const client = createTencentClient(context);
-  await client.cos.deleteBucket(bucketName, region);
+  try {
+    await client.cos.deleteBucket(bucketName, region);
+  } catch (err) {
+    const errorCode = (err as { code?: string })?.code;
+    const statusCode = (err as { statusCode?: number })?.statusCode;
+    if (errorCode === 'NoSuchBucket' || statusCode === 404) {
+      logger.warn(`Bucket ${bucketName} not found in provider, skipping deletion`);
+    } else {
+      throw err;
+    }
+  }
   return removeResource(state, logicalId);
 };

@@ -1,6 +1,6 @@
 import { createAliyunClient } from '../../common/aliyunClient';
 import { OssBucketInfo } from '../../common/aliyunClient/ossOperations';
-import { setResource, removeResource } from '../../common';
+import { setResource, removeResource, buildSid } from '../../common';
 import { Context, BucketDomain, ResourceState, StateFile } from '../../types';
 import { bucketToOssBucketConfig, extractOssBucketDefinition } from './ossTypes';
 import { CommonBucketInstance } from '../bucketTypes';
@@ -8,10 +8,10 @@ import { logger } from '../../common/logger';
 import { lang } from '../../lang';
 import path from 'node:path';
 
-const buildOssInstanceFromProvider = (info: OssBucketInfo, arn: string): CommonBucketInstance => {
+const buildOssInstanceFromProvider = (info: OssBucketInfo, sid: string): CommonBucketInstance => {
   return {
     type: 'ALIYUN_OSS_BUCKET',
-    arn,
+    sid,
     id: info.name,
     bucketName: info.name,
     location: info.location ?? null,
@@ -117,7 +117,7 @@ export const createBucketResource = async (
   }
 
   const definition = extractOssBucketDefinition(config);
-  const arn = `arn:acs:oss:${context.region}:${context.accountId}:${config.bucketName}`;
+  const sid = buildSid('aliyun', 'oss', context.stage, config.bucketName);
   const logicalId = `buckets.${bucket.key}`;
 
   // Save state immediately after bucket creation, before file upload
@@ -125,7 +125,7 @@ export const createBucketResource = async (
     mode: 'managed',
     region: context.region,
     definition,
-    instances: [buildOssInstanceFromProvider(bucketInfo, arn)],
+    instances: [buildOssInstanceFromProvider(bucketInfo, sid)],
     lastUpdated: new Date().toISOString(),
   };
 
@@ -144,7 +144,7 @@ export const createBucketResource = async (
           mode: 'managed',
           region: context.region,
           definition,
-          instances: [buildOssInstanceFromProvider(bucketInfo, arn)],
+          instances: [buildOssInstanceFromProvider(bucketInfo, sid)],
           lastUpdated: new Date().toISOString(),
         };
         return setResource(state, logicalId, updatedResourceState);
@@ -197,12 +197,12 @@ export const updateBucketResource = async (
   }
 
   const definition = extractOssBucketDefinition(config);
-  const arn = `arn:acs:oss:${context.region}:${context.accountId}:${config.bucketName}`;
+  const sid = buildSid('aliyun', 'oss', context.stage, config.bucketName);
   const resourceState: ResourceState = {
     mode: 'managed',
     region: context.region,
     definition,
-    instances: [buildOssInstanceFromProvider(bucketInfo, arn)],
+    instances: [buildOssInstanceFromProvider(bucketInfo, sid)],
     lastUpdated: new Date().toISOString(),
   };
 
@@ -217,6 +217,15 @@ export const deleteBucketResource = async (
   state: StateFile,
 ): Promise<StateFile> => {
   const client = createAliyunClient(context);
-  await client.oss.deleteBucket(bucketName);
+  try {
+    await client.oss.deleteBucket(bucketName);
+  } catch (err) {
+    const errorCode = (err as { code?: string })?.code;
+    if (errorCode === 'NoSuchBucket') {
+      logger.warn(`Bucket ${bucketName} not found in provider, skipping deletion`);
+    } else {
+      throw err;
+    }
+  }
   return removeResource(state, logicalId);
 };

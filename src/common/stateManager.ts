@@ -155,8 +155,8 @@ export const getRoleArnFromState = (state: StateFile): string | undefined => {
   for (const [logicalId, resourceState] of Object.entries(allResources)) {
     if (logicalId.startsWith('functions.')) {
       const ramRoleInstance = resourceState.instances?.find((i) => i.type === 'ALIYUN_RAM_ROLE');
-      if (ramRoleInstance?.arn) {
-        return ramRoleInstance.arn as string;
+      if (ramRoleInstance?.roleArn) {
+        return ramRoleInstance.roleArn as string;
       }
     }
   }

@@ -103,7 +103,7 @@ describe('TdsqlcExecutor', () => {
         },
         instances: [
           {
-            arn: 'arn:tencent:cynosdb:ap-guangzhou::cluster:cynosdbmysql-test123',
+            sid: 'si:tencent:cynosdb:default:cynosdbmysql-test123',
             id: 'cynosdbmysql-test123',
             clusterName: 'test-tdsqlc',
           },
@@ -138,7 +138,7 @@ describe('TdsqlcExecutor', () => {
         },
         instances: [
           {
-            arn: 'arn:tencent:cynosdb:ap-guangzhou::cluster:cynosdbmysql-test123',
+            sid: 'si:tencent:cynosdb:default:cynosdbmysql-test123',
             id: 'cynosdbmysql-test123',
             clusterName: 'test-tdsqlc',
           },
@@ -172,7 +172,7 @@ describe('TdsqlcExecutor', () => {
         },
         instances: [
           {
-            arn: 'arn:tencent:cynosdb:ap-guangzhou::cluster:cynosdbmysql-test123',
+            sid: 'si:tencent:cynosdb:default:cynosdbmysql-test123',
             id: 'cynosdbmysql-test123',
             clusterName: 'test-tdsqlc',
           },
@@ -207,7 +207,7 @@ describe('TdsqlcExecutor', () => {
         },
         instances: [
           {
-            arn: 'arn:tencent:cynosdb:ap-guangzhou::cluster:cynosdbmysql-test123',
+            sid: 'si:tencent:cynosdb:default:cynosdbmysql-test123',
             id: 'cynosdbmysql-test123',
             clusterName: 'test-tdsqlc',
           },
@@ -450,7 +450,7 @@ describe('TdsqlcExecutor', () => {
         definition: { clusterName: 'test-tdsqlc' },
         instances: [
           {
-            arn: 'arn:tencent:cynosdb:ap-guangzhou::cluster:cynosdbmysql-test1',
+            sid: 'si:tencent:cynosdb:default:cynosdbmysql-test1',
             id: 'cynosdbmysql-test1',
             clusterName: 'test-tdsqlc',
           },
@@ -463,7 +463,7 @@ describe('TdsqlcExecutor', () => {
         definition: { clusterName: 'test-tdsqlc-2' },
         instances: [
           {
-            arn: 'arn:tencent:cynosdb:ap-guangzhou::cluster:cynosdbmysql-test2',
+            sid: 'si:tencent:cynosdb:default:cynosdbmysql-test2',
             id: 'cynosdbmysql-test2',
             clusterName: 'test-tdsqlc-2',
           },
@@ -512,7 +512,13 @@ describe('TdsqlcExecutor', () => {
         mode: 'managed',
         region: 'ap-guangzhou',
         definition: { clusterName: 'test-tdsqlc' },
-        instances: [{ arn: 'arn:test', id: 'cynosdbmysql-test123', clusterName: 'test-tdsqlc' }],
+        instances: [
+          {
+            sid: 'si:test:test:default:test',
+            id: 'cynosdbmysql-test123',
+            clusterName: 'test-tdsqlc',
+          },
+        ],
         lastUpdated: new Date().toISOString(),
       };
       const updatedState: StateFile = {
@@ -555,7 +561,13 @@ describe('TdsqlcExecutor', () => {
         mode: 'managed',
         region: 'ap-guangzhou',
         definition: { clusterName: 'test-tdsqlc' },
-        instances: [{ arn: 'arn:test', id: 'cynosdbmysql-test1', clusterName: 'test-tdsqlc' }],
+        instances: [
+          {
+            sid: 'si:test:test:default:test',
+            id: 'cynosdbmysql-test1',
+            clusterName: 'test-tdsqlc',
+          },
+        ],
         lastUpdated: new Date().toISOString(),
       };
       const state1: StateFile = {

@@ -43,7 +43,7 @@ export const generateFunctionPlan = async (
       const desiredCodeHash = computeFileHash(codePath);
       const desiredDefinition = extractFc3Definition(config, desiredCodeHash);
 
-      if (!currentState) {
+      if (!currentState || currentState.status === 'tainted') {
         return {
           logicalId,
           action: 'create',

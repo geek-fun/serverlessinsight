@@ -3,9 +3,11 @@ import { createTencentClient } from '../../common/tencentClient';
 import { readFileAsBase64 } from '../../common/fileUtils';
 import { functionToScfConfig, extractScfDefinition, ScfFunctionInfo } from './scfTypes';
 import { setResource, removeResource } from '../../common/stateManager';
+import { buildSid } from '../../common';
 import { computeFileHash } from '../../common/hashUtils';
+import { logger } from '../../common/logger';
 
-const buildScfInstanceFromProvider = (info: ScfFunctionInfo, arn: string) => {
+const buildScfInstanceFromProvider = (info: ScfFunctionInfo, sid: string) => {
   const envMap: Record<string, string> =
     info.Environment?.Variables?.reduce(
       (acc, v) => ({ ...acc, [v.Key]: v.Value }),
@@ -40,7 +42,7 @@ const buildScfInstanceFromProvider = (info: ScfFunctionInfo, arn: string) => {
   }));
 
   return {
-    arn,
+    sid,
     id: info.FunctionName,
     functionName: info.FunctionName,
     runtime: info.Runtime,
@@ -179,12 +181,12 @@ export const createResource = async (
 
   const codeHash = computeFileHash(codePath);
   const definition = extractScfDefinition(config, codeHash);
-  const arn = `arn:tencent:scf:${context.region}::function:${fn.name}`;
+  const sid = buildSid('tencent', 'scf', context.stage, fn.name);
   const resourceState: ResourceState = {
     mode: 'managed',
     region: context.region,
     definition,
-    instances: [buildScfInstanceFromProvider(functionInfo as ScfFunctionInfo, arn)],
+    instances: [buildScfInstanceFromProvider(functionInfo as ScfFunctionInfo, sid)],
     lastUpdated: new Date().toISOString(),
   };
 
@@ -221,12 +223,12 @@ export const updateResource = async (
 
   const codeHash = computeFileHash(codePath);
   const definition = extractScfDefinition(config, codeHash);
-  const arn = `arn:tencent:scf:${context.region}::function:${fn.name}`;
+  const sid = buildSid('tencent', 'scf', context.stage, fn.name);
   const resourceState: ResourceState = {
     mode: 'managed',
     region: context.region,
     definition,
-    instances: [buildScfInstanceFromProvider(functionInfo as ScfFunctionInfo, arn)],
+    instances: [buildScfInstanceFromProvider(functionInfo as ScfFunctionInfo, sid)],
     lastUpdated: new Date().toISOString(),
   };
 
@@ -241,6 +243,15 @@ export const deleteResource = async (
   state: StateFile,
 ): Promise<StateFile> => {
   const client = createTencentClient(context);
-  await client.scf.deleteFunction(functionName);
+  try {
+    await client.scf.deleteFunction(functionName);
+  } catch (err) {
+    const errorCode = (err as { code?: string })?.code;
+    if (errorCode === 'ResourceNotFound.FunctionName') {
+      logger.warn(`Function ${functionName} not found in provider, skipping deletion`);
+    } else {
+      throw err;
+    }
+  }
   return removeResource(state, logicalId);
 };

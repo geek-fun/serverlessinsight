@@ -114,7 +114,7 @@ describe('Apigw Planner', () => {
         instances: [
           {
             type: 'ALIYUN_APIGW_GROUP',
-            arn: 'arn:acs:apigateway:cn-hangzhou:group/group-123',
+            sid: 'si:aliyun:apigateway:default:group-123',
             id: 'group-123',
             groupName: 'test-service-agw-group',
           },
@@ -161,7 +161,7 @@ describe('Apigw Planner', () => {
         instances: [
           {
             type: 'ALIYUN_APIGW_GROUP',
-            arn: 'arn:acs:apigateway:cn-hangzhou:group/group-123',
+            sid: 'si:aliyun:apigateway:default:group-123',
             id: 'group-123',
             groupName: 'test-service-agw-group',
           },
@@ -201,7 +201,7 @@ describe('Apigw Planner', () => {
         instances: [
           {
             type: 'ALIYUN_APIGW_GROUP',
-            arn: 'arn:acs:apigateway:cn-hangzhou:group/old-group',
+            sid: 'si:aliyun:apigateway:default:old-group',
             id: 'old-group',
             groupName: 'old-service-agw-group',
           },
@@ -242,7 +242,7 @@ describe('Apigw Planner', () => {
         instances: [
           {
             type: 'ALIYUN_APIGW_GROUP',
-            arn: 'arn:acs:apigateway:cn-hangzhou:group/group-123',
+            sid: 'si:aliyun:apigateway:default:group-123',
             id: 'group-123',
             groupName: 'test-service-agw-group',
           },

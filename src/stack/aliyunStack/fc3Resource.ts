@@ -6,16 +6,30 @@ import {
   setResource,
   computeFileHash,
   getContext,
+  buildSid,
 } from '../../common';
-import { Context, FunctionDomain, ResourceState, StateFile } from '../../types';
+import {
+  Context,
+  FunctionDomain,
+  PartialResourceError,
+  ResourceState,
+  StateFile,
+} from '../../types';
 import { extractFc3Definition, Fc3FunctionInfo, functionToFc3Config } from './fc3Types';
 import { logger } from '../../common/logger';
-import { lang } from '../../lang';
 
-const buildFc3InstanceFromProvider = (info: Fc3FunctionInfo, arn: string) => {
+type DependentInstance = {
+  type: string;
+  id: string;
+  sid?: string;
+  roleArn?: string;
+  attributes: Record<string, unknown>;
+};
+
+const buildFc3InstanceFromProvider = (info: Fc3FunctionInfo, sid: string) => {
   return {
     type: 'ALIYUN_FC3_FUNCTION',
-    arn,
+    sid,
     id: info.functionName ?? '',
     functionName: info.functionName ?? null,
     functionId: info.functionId ?? null,
@@ -85,11 +99,11 @@ const buildFc3InstanceFromProvider = (info: Fc3FunctionInfo, arn: string) => {
   };
 };
 
-// Helper function to create dependent resources directly using the client
 const createDependentResources = async (
   context: Context,
   fn: FunctionDomain,
   serviceName: string,
+  existingInstances: Array<DependentInstance> = [],
 ): Promise<{
   logConfig?: { project: string; logstore: string };
   role?: { roleName: string; arn: string };
@@ -103,20 +117,10 @@ const createDependentResources = async (
       accessGroupName: string;
     }>;
   };
-  instances: Array<{
-    type: string;
-    id: string;
-    arn?: string;
-    attributes: Record<string, unknown>;
-  }>;
+  instances: Array<DependentInstance>;
 }> => {
   const client = createAliyunClient(context);
-  const instances: Array<{
-    type: string;
-    id: string;
-    arn?: string;
-    attributes: Record<string, unknown>;
-  }> = [];
+  const instances: Array<DependentInstance> = [];
   let logConfig: { project: string; logstore: string } | undefined;
   let securityGroup: { securityGroupId: string } | undefined;
   let nasConfig:
@@ -131,128 +135,178 @@ const createDependentResources = async (
       }
     | undefined;
 
-  // Create SLS resources if logging is enabled
+  const hasSlsProject = existingInstances.some((i) => i.type === 'ALIYUN_SLS_PROJECT');
+  const hasRamRole = existingInstances.some((i) => i.type === 'ALIYUN_RAM_ROLE');
+  const hasSecurityGroup = existingInstances.some((i) => i.type === 'ALIYUN_ECS_SECURITY_GROUP');
+  const hasNasResources = existingInstances.some((i) => i.type === 'ALIYUN_NAS_FILE_SYSTEM');
+
   if (fn.log) {
-    const projectName = `${serviceName}-sls`;
-    const logstoreName = `${serviceName}-sls-logstore`;
+    if (hasSlsProject) {
+      const slsProjectInstance = existingInstances.find((i) => i.type === 'ALIYUN_SLS_PROJECT');
+      const slsLogstoreInstance = existingInstances.find((i) => i.type === 'ALIYUN_SLS_LOGSTORE');
+      if (slsProjectInstance && slsLogstoreInstance) {
+        const [projectName, logstoreName] = slsLogstoreInstance.id.split('/');
+        logConfig = { project: projectName, logstore: logstoreName };
+        instances.push(...existingInstances.filter((i) => i.type.startsWith('ALIYUN_SLS_')));
+      }
+    } else {
+      const projectName = `${serviceName}-sls`;
+      const logstoreName = `${serviceName}-sls-logstore`;
 
-    logger.info(`Creating SLS project: ${projectName}`);
-    const project = await client.sls.createProject(projectName);
-    instances.push({
-      type: 'ALIYUN_SLS_PROJECT',
-      id: projectName,
-      attributes: { ...project },
-    });
+      logger.info(`Creating SLS project: ${projectName}`);
+      const project = await client.sls.createProject(projectName);
+      instances.push({ type: 'ALIYUN_SLS_PROJECT', id: projectName, attributes: { ...project } });
 
-    logger.info(`Creating SLS logstore: ${logstoreName}`);
-    const logstore = await client.sls.createLogstore(projectName, logstoreName);
-    instances.push({
-      type: 'ALIYUN_SLS_LOGSTORE',
-      id: `${projectName}/${logstoreName}`,
-      attributes: { ...logstore },
-    });
+      logger.info(`Creating SLS logstore: ${logstoreName}`);
+      const logstore = await client.sls.createLogstore(projectName, logstoreName);
+      instances.push({
+        type: 'ALIYUN_SLS_LOGSTORE',
+        id: `${projectName}/${logstoreName}`,
+        attributes: { ...logstore },
+      });
 
-    logger.info(`Creating SLS index for: ${logstoreName}`);
-    const index = await client.sls.createIndex(projectName, logstoreName);
-    instances.push({
-      type: 'ALIYUN_SLS_INDEX',
-      id: `${projectName}/${logstoreName}/index`,
-      attributes: { ...index },
-    });
+      logger.info(`Creating SLS index for: ${logstoreName}`);
+      const index = await client.sls.createIndex(projectName, logstoreName);
+      instances.push({
+        type: 'ALIYUN_SLS_INDEX',
+        id: `${projectName}/${logstoreName}/index`,
+        attributes: { ...index },
+      });
 
-    logger.info(`Waiting for SLS project and logstore to be ready: ${projectName}/${logstoreName}`);
-    await client.sls.waitForProject(projectName);
-    await client.sls.waitForLogstore(projectName, logstoreName);
+      logger.info(
+        `Waiting for SLS project and logstore to be ready: ${projectName}/${logstoreName}`,
+      );
+      await client.sls.waitForProject(projectName);
+      await client.sls.waitForLogstore(projectName, logstoreName);
 
-    logConfig = { project: projectName, logstore: logstoreName };
+      logConfig = { project: projectName, logstore: logstoreName };
+    }
   }
 
-  // Create RAM role
   const roleName = `${serviceName}-fc-role`;
-  logger.info(`Creating RAM role: ${roleName}`);
-  const ramRole = await client.ram.createRole(roleName);
-  instances.push({
-    type: 'ALIYUN_RAM_ROLE',
-    id: roleName,
-    arn: ramRole.arn,
-    attributes: { ...ramRole },
-  });
-  const role = { roleName, arn: ramRole.arn ?? `acs:ram::${context.accountId}:role/${roleName}` };
-
-  // Create security group if network is configured
-  if (fn.network) {
-    const sgName = fn.network.security_group.name;
-    logger.info(`Creating security group: ${sgName}`);
-    const sg = await client.ecs.createSecurityGroup(
-      sgName,
-      fn.network.vpc_id,
-      fn.network.security_group.ingress,
-      fn.network.security_group.egress,
-    );
+  if (hasRamRole) {
+    const ramRoleInstance = existingInstances.find((i) => i.type === 'ALIYUN_RAM_ROLE');
+    if (ramRoleInstance) {
+      instances.push(ramRoleInstance);
+    }
+  } else {
+    logger.info(`Creating RAM role: ${roleName}`);
+    const ramRole = await client.ram.createRole(roleName);
     instances.push({
-      type: 'ALIYUN_ECS_SECURITY_GROUP',
-      id: sg.securityGroupId,
-      attributes: { ...sg },
+      type: 'ALIYUN_RAM_ROLE',
+      id: roleName,
+      roleArn: ramRole.arn,
+      attributes: { ...ramRole },
     });
-    securityGroup = { securityGroupId: sg.securityGroupId };
   }
 
-  // Create NAS resources if configured
-  if (fn.storage?.nas && fn.storage.nas.length > 0 && fn.network) {
-    const mountPoints: Array<{
-      serverAddr: string;
-      mountDir: string;
-      fileSystemId: string;
-      mountTargetDomain: string;
-      accessGroupName: string;
-    }> = [];
+  const ramRoleInstance = instances.find((i) => i.type === 'ALIYUN_RAM_ROLE');
+  const role = {
+    roleName,
+    arn: ramRoleInstance?.roleArn ?? `acs:ram::${context.accountId}:role/${roleName}`,
+  };
 
-    for (const nasItem of fn.storage.nas) {
-      const mountPath = nasItem.mount_path.replace(/\//g, '-').replace(/^-/, '');
-      const accessGroupName = `${fn.name}-nas-access-${mountPath}`;
-
-      logger.info(`Creating NAS access group: ${accessGroupName}`);
-      const accessGroup = await client.nas.createAccessGroup(accessGroupName);
-      instances.push({
-        type: 'ALIYUN_NAS_ACCESS_GROUP',
-        id: accessGroupName,
-        attributes: { ...accessGroup },
-      });
-
-      logger.info(`Creating NAS access rule for: ${accessGroupName}`);
-      await client.nas.createAccessRule(accessGroupName, '10.0.0.0/8');
-
-      logger.info(`Creating NAS file system for: ${fn.name}`);
-      const fileSystem = await client.nas.createFileSystem(nasItem.storage_class, fn.name);
-      instances.push({
-        type: 'ALIYUN_NAS_FILE_SYSTEM',
-        id: fileSystem.fileSystemId,
-        attributes: { ...fileSystem },
-      });
-
-      logger.info(`Creating NAS mount target for: ${fileSystem.fileSystemId}`);
-      const mountTarget = await client.nas.createMountTarget(
-        fileSystem.fileSystemId,
-        accessGroupName,
+  if (fn.network) {
+    if (hasSecurityGroup) {
+      const sgInstance = existingInstances.find((i) => i.type === 'ALIYUN_ECS_SECURITY_GROUP');
+      if (sgInstance) {
+        instances.push(sgInstance);
+        securityGroup = { securityGroupId: sgInstance.id };
+      }
+    } else {
+      const sgName = fn.network.security_group.name;
+      logger.info(`Creating security group: ${sgName}`);
+      const sg = await client.ecs.createSecurityGroup(
+        sgName,
         fn.network.vpc_id,
-        fn.network.subnet_ids[0],
+        fn.network.security_group.ingress,
+        fn.network.security_group.egress,
       );
       instances.push({
-        type: 'ALIYUN_NAS_MOUNT_TARGET',
-        id: `${fileSystem.fileSystemId}/${mountTarget.mountTargetDomain}`,
-        attributes: { ...mountTarget },
+        type: 'ALIYUN_ECS_SECURITY_GROUP',
+        id: sg.securityGroupId,
+        attributes: { ...sg },
       });
-
-      mountPoints.push({
-        serverAddr: `${mountTarget.mountTargetDomain}:/`,
-        mountDir: nasItem.mount_path,
-        fileSystemId: fileSystem.fileSystemId,
-        mountTargetDomain: mountTarget.mountTargetDomain,
-        accessGroupName,
-      });
+      securityGroup = { securityGroupId: sg.securityGroupId };
     }
+  }
 
-    nasConfig = { mountPoints };
+  if (fn.storage?.nas && fn.storage.nas.length > 0 && fn.network) {
+    if (hasNasResources) {
+      const nasInstances = existingInstances.filter((i) => i.type.startsWith('ALIYUN_NAS_'));
+      instances.push(...nasInstances);
+      const mountTargetInstances = nasInstances.filter((i) => i.type === 'ALIYUN_NAS_MOUNT_TARGET');
+      const nasStorageItems = fn.storage.nas;
+      if (mountTargetInstances.length > 0) {
+        nasConfig = {
+          mountPoints: mountTargetInstances.map((mt, idx) => {
+            const [fileSystemId, mountTargetDomain] = mt.id.split('/');
+            return {
+              serverAddr: `${mountTargetDomain}:/`,
+              mountDir: nasStorageItems[idx]?.mount_path ?? '/mnt/nas',
+              fileSystemId,
+              mountTargetDomain,
+              accessGroupName: (mt.attributes?.accessGroupName as string) ?? '',
+            };
+          }),
+        };
+      }
+    } else {
+      const mountPoints: Array<{
+        serverAddr: string;
+        mountDir: string;
+        fileSystemId: string;
+        mountTargetDomain: string;
+        accessGroupName: string;
+      }> = [];
+
+      for (const nasItem of fn.storage.nas) {
+        const mountPath = nasItem.mount_path.replace(/\//g, '-').replace(/^-/, '');
+        const accessGroupName = `${fn.name}-nas-access-${mountPath}`;
+
+        logger.info(`Creating NAS access group: ${accessGroupName}`);
+        const accessGroup = await client.nas.createAccessGroup(accessGroupName);
+        instances.push({
+          type: 'ALIYUN_NAS_ACCESS_GROUP',
+          id: accessGroupName,
+          attributes: { ...accessGroup },
+        });
+
+        logger.info(`Creating NAS access rule for: ${accessGroupName}`);
+        await client.nas.createAccessRule(accessGroupName, '10.0.0.0/8');
+
+        logger.info(`Creating NAS file system for: ${fn.name}`);
+        const fileSystem = await client.nas.createFileSystem(nasItem.storage_class, fn.name);
+        instances.push({
+          type: 'ALIYUN_NAS_FILE_SYSTEM',
+          id: fileSystem.fileSystemId,
+          attributes: { ...fileSystem },
+        });
+
+        logger.info(`Creating NAS mount target for: ${fileSystem.fileSystemId}`);
+        const mountTarget = await client.nas.createMountTarget(
+          fileSystem.fileSystemId,
+          accessGroupName,
+          fn.network.vpc_id,
+          fn.network.subnet_ids[0],
+        );
+        instances.push({
+          type: 'ALIYUN_NAS_MOUNT_TARGET',
+          id: `${fileSystem.fileSystemId}/${mountTarget.mountTargetDomain}`,
+          attributes: { ...mountTarget, accessGroupName },
+        });
+
+        mountPoints.push({
+          serverAddr: `${mountTarget.mountTargetDomain}:/`,
+          mountDir: nasItem.mount_path,
+          fileSystemId: fileSystem.fileSystemId,
+          mountTargetDomain: mountTarget.mountTargetDomain,
+          accessGroupName,
+        });
+      }
+
+      nasConfig = { mountPoints };
+    }
   }
 
   return {
@@ -264,7 +318,6 @@ const createDependentResources = async (
   };
 };
 
-// Helper function to delete dependent resources directly using the client
 const deleteDependentResources = async (
   context: Context,
   instances: Array<{
@@ -275,7 +328,6 @@ const deleteDependentResources = async (
 ): Promise<void> => {
   const client = createAliyunClient(context);
 
-  // Delete in reverse order of creation
   for (const instance of [...instances].reverse()) {
     try {
       switch (instance.type) {
@@ -333,14 +385,22 @@ export const createResource = async (
 ): Promise<StateFile> => {
   const ctx = getContext();
   const serviceName = `${ctx.app}-${ctx.service}`;
+  const logicalId = `functions.${fn.key}`;
 
-  // Create dependent resources (SLS, RAM, ECS SecurityGroup, NAS)
-  const dependentResources = await createDependentResources(context, fn, serviceName);
+  const existingResourceState = getResource(state, logicalId);
+  const existingDependentInstances = (existingResourceState?.instances ?? []).filter(
+    (i) => (i as DependentInstance).type !== 'ALIYUN_FC3_FUNCTION',
+  ) as Array<DependentInstance>;
 
-  // Build FC3 config with dependent resources
+  const dependentResources = await createDependentResources(
+    context,
+    fn,
+    serviceName,
+    existingDependentInstances,
+  );
+
   let config = functionToFc3Config(fn);
 
-  // Update config with dependent resources
   if (dependentResources.logConfig) {
     config = {
       ...config,
@@ -387,54 +447,46 @@ export const createResource = async (
   const codePath = fn.code!.path;
   const codeHash = computeFileHash(codePath);
   const definition = extractFc3Definition(config, codeHash);
-  const logicalId = `functions.${fn.key}`;
 
-  // Save state with dependent resources BEFORE attempting function creation
   const dependentInstances = dependentResources.instances.map((dep) => ({
-    arn:
-      dep.arn ??
-      `arn:acs:${dep.type.toLowerCase()}:${context.region}:${context.accountId}:${dep.id}`,
+    sid:
+      dep.sid ??
+      buildSid('aliyun', dep.type.replace('ALIYUN_', '').toLowerCase(), context.stage, dep.id),
     id: dep.id,
     type: dep.type,
+    ...(dep.roleArn ? { roleArn: dep.roleArn } : {}),
     ...dep.attributes,
   }));
 
-  // Create partial state with just dependent resources
-  const partialResourceState: ResourceState = {
+  const taintedResourceState: ResourceState = {
     mode: 'managed',
     region: context.region,
     definition,
     instances: dependentInstances,
     lastUpdated: new Date().toISOString(),
+    status: 'tainted',
   };
 
-  state = setResource(state, logicalId, partialResourceState);
+  const stateAfterDependents = setResource(state, logicalId, taintedResourceState);
 
-  // Now attempt to create the function
   const client = createAliyunClient(context);
   try {
     await client.fc3.createFunction(config, codePath);
   } catch (error) {
-    logger.error(
-      `Failed to create function, but dependent resources were created and saved to state: ${error}`,
+    throw new PartialResourceError(
+      stateAfterDependents,
+      error instanceof Error ? error : new Error(String(error)),
     );
-    logger.info(lang.__('FC3_DEPENDENT_RESOURCES_TRACKED'));
-    logger.info(lang.__('FC3_CAN_RETRY_DEPLOYMENT'));
-    return state;
   }
 
-  // Refresh state from provider to get all attributes
   const functionInfo = await client.fc3.getFunction(fn.name);
   if (!functionInfo) {
     throw new Error(`Failed to refresh state for function: ${fn.name}`);
   }
 
-  const arn =
-    functionInfo.functionArn ??
-    `arn:acs:fc:${context.region}:${context.accountId}:function/${fn.name}`;
+  const sid = buildSid('aliyun', 'fc3', context.stage, fn.name);
 
-  // Build instances array with FC function as first item, followed by dependent resources
-  const fcInstance = buildFc3InstanceFromProvider(functionInfo, arn);
+  const fcInstance = buildFc3InstanceFromProvider(functionInfo, sid);
 
   const resourceState: ResourceState = {
     mode: 'managed',
@@ -442,9 +494,10 @@ export const createResource = async (
     definition,
     instances: [fcInstance, ...dependentInstances],
     lastUpdated: new Date().toISOString(),
+    status: 'ready',
   };
 
-  return setResource(state, logicalId, resourceState);
+  return setResource(stateAfterDependents, logicalId, resourceState);
 };
 
 export const readResource = async (context: Context, functionName: string) => {
@@ -461,27 +514,15 @@ export const updateResource = async (
   const serviceName = `${ctx.app}-${ctx.service}`;
   const logicalId = `functions.${fn.key}`;
 
-  // Get existing resource state to check if dependent resources exist
   const existingState = getResource(state, logicalId);
-  const existingInstances = (existingState?.instances ?? []) as Array<{
-    type: string;
-    id: string;
-    arn?: string;
-    attributes: Record<string, unknown>;
-  }>;
+  const existingInstances = (existingState?.instances ?? []) as Array<DependentInstance>;
 
-  // Check if we need to create new dependent resources
   const hasSlsResources = existingInstances.some((i) => i.type === 'ALIYUN_SLS_PROJECT');
   const hasRamRole = existingInstances.some((i) => i.type === 'ALIYUN_RAM_ROLE');
   const hasSecurityGroup = existingInstances.some((i) => i.type === 'ALIYUN_ECS_SECURITY_GROUP');
   const hasNasResources = existingInstances.some((i) => i.type === 'ALIYUN_NAS_FILE_SYSTEM');
 
-  const newDependentInstances: Array<{
-    type: string;
-    id: string;
-    arn?: string;
-    attributes: Record<string, unknown>;
-  }> = [];
+  const newDependentInstances: Array<DependentInstance> = [];
   let logConfig: { project: string; logstore: string } | undefined;
   let role: { roleName: string; arn: string } | undefined;
   let securityGroup: { securityGroupId: string } | undefined;
@@ -494,7 +535,6 @@ export const updateResource = async (
       }
     | undefined;
 
-  // Create new dependent resources if they don't exist
   if (fn.log && !hasSlsResources) {
     const deps = await createDependentResources(
       context,
@@ -525,7 +565,7 @@ export const updateResource = async (
     if (ramRoleInstance) {
       role = {
         roleName: ramRoleInstance.id,
-        arn: ramRoleInstance.arn ?? `acs:ram::${context.accountId}:role/${ramRoleInstance.id}`,
+        arn: ramRoleInstance.roleArn ?? `acs:ram::${context.accountId}:role/${ramRoleInstance.id}`,
       };
     }
   }
@@ -566,7 +606,6 @@ export const updateResource = async (
     }
   }
 
-  // Build FC3 config with dependent resources
   let config = functionToFc3Config(fn);
 
   if (logConfig) {
@@ -622,30 +661,33 @@ export const updateResource = async (
 
   const codeHash = computeFileHash(codePath);
   const definition = extractFc3Definition(config, codeHash);
-  const arn =
-    functionInfo.functionArn ??
-    `arn:acs:fc:${context.region}:${context.accountId}:function/${fn.name}`;
+  const sid = buildSid('aliyun', 'fc3', context.stage, fn.name);
 
-  // Build instances array: FC function + existing dependent resources + new dependent resources
-  const fcInstance = buildFc3InstanceFromProvider(functionInfo, arn);
+  const fcInstance = buildFc3InstanceFromProvider(functionInfo, sid);
   const existingDependentInstances = existingInstances
     .filter((i) => i.type !== 'ALIYUN_FC3_FUNCTION')
     .map((i) => {
-      const { arn: existingArn, id: existingId, ...rest } = i;
+      const { sid: existingSid, id: existingId, ...rest } = i;
       return {
-        arn:
-          existingArn ??
-          `arn:acs:${i.type?.toString().toLowerCase()}:${context.region}:${context.accountId}:${existingId}`,
+        sid:
+          existingSid ??
+          buildSid(
+            'aliyun',
+            i.type?.toString().replace('ALIYUN_', '').toLowerCase() ?? '',
+            context.stage,
+            existingId?.toString() ?? '',
+          ),
         id: existingId?.toString() ?? '',
         ...rest,
       };
     });
   const newDependentInstancesMapped = newDependentInstances.map((dep) => ({
-    arn:
-      dep.arn ??
-      `arn:acs:${dep.type.toLowerCase()}:${context.region}:${context.accountId}:${dep.id}`,
+    sid:
+      dep.sid ??
+      buildSid('aliyun', dep.type.replace('ALIYUN_', '').toLowerCase(), context.stage, dep.id),
     id: dep.id,
     type: dep.type,
+    ...(dep.roleArn ? { roleArn: dep.roleArn } : {}),
     ...dep.attributes,
   }));
 
@@ -666,20 +708,25 @@ export const deleteResource = async (
   logicalId: string,
   state: StateFile,
 ): Promise<StateFile> => {
-  // Get existing resource state to find dependent resources
   const existingState = getResource(state, logicalId);
-  const existingInstances = (existingState?.instances ?? []) as Array<{
-    type: string;
-    id: string;
-    arn?: string;
-    attributes: Record<string, unknown>;
-  }>;
+  const existingInstances = (existingState?.instances ?? []) as Array<DependentInstance>;
 
-  // Delete FC function first
+  const hasFcFunction = existingInstances.some((i) => i.type === 'ALIYUN_FC3_FUNCTION');
+
   const client = createAliyunClient(context);
-  await client.fc3.deleteFunction(functionName);
+  if (hasFcFunction) {
+    try {
+      await client.fc3.deleteFunction(functionName);
+    } catch (err) {
+      const errorCode = (err as { code?: string })?.code;
+      if (errorCode === 'FunctionNotFound') {
+        logger.warn(`Function ${functionName} not found in provider, skipping deletion`);
+      } else {
+        throw err;
+      }
+    }
+  }
 
-  // Delete dependent resources
   const dependentInstances = existingInstances.filter(
     (i) => i.type !== 'ALIYUN_FC3_FUNCTION' && !i.type.includes('undefined'),
   );
