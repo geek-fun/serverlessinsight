@@ -2,11 +2,12 @@ import { Context, DatabaseDomain, ResourceState, StateFile } from '../../types';
 import { createTencentClient } from '../../common/tencentClient';
 import { databaseToTdsqlcConfig, extractTdsqlcDefinition, TdsqlcClusterInfo } from './tdsqlcTypes';
 import { setResource, removeResource } from '../../common/stateManager';
+import { buildSid } from '../../common';
 import { logger } from '../../common/logger';
 
-const buildTdsqlcInstanceFromProvider = (info: TdsqlcClusterInfo, arn: string) => {
+const buildTdsqlcInstanceFromProvider = (info: TdsqlcClusterInfo, sid: string) => {
   return {
-    arn,
+    sid,
     id: info.ClusterId,
     clusterId: info.ClusterId,
     clusterName: info.ClusterName,
@@ -98,12 +99,12 @@ export const createDatabaseResource = async (
   }
 
   const definition = extractTdsqlcDefinition(config);
-  const arn = `arn:tencent:cynosdb:${context.region}::cluster:${clusterId}`;
+  const sid = buildSid('tencent', 'cynosdb', context.stage, clusterId);
   const resourceState: ResourceState = {
     mode: 'managed',
     region: context.region,
     definition,
-    instances: [buildTdsqlcInstanceFromProvider(clusterInfo as TdsqlcClusterInfo, arn)],
+    instances: [buildTdsqlcInstanceFromProvider(clusterInfo as TdsqlcClusterInfo, sid)],
     lastUpdated: new Date().toISOString(),
     metadata: {
       clusterName: database.name,
@@ -139,12 +140,12 @@ export const updateDatabaseResource = async (
   }
 
   const definition = extractTdsqlcDefinition(config);
-  const arn = `arn:tencent:cynosdb:${context.region}::cluster:${clusterId}`;
+  const sid = buildSid('tencent', 'cynosdb', context.stage, clusterId);
   const resourceState: ResourceState = {
     mode: 'managed',
     region: context.region,
     definition,
-    instances: [buildTdsqlcInstanceFromProvider(clusterInfo as TdsqlcClusterInfo, arn)],
+    instances: [buildTdsqlcInstanceFromProvider(clusterInfo as TdsqlcClusterInfo, sid)],
     lastUpdated: new Date().toISOString(),
     metadata: {
       clusterName: database.name,

@@ -9,16 +9,17 @@ import {
   generateApiKey,
 } from './apigwTypes';
 import { setResource, removeResource, getResource } from '../../common/stateManager';
+import { buildSid } from '../../common';
 import { logger } from '../../common/logger';
 import { lang } from '../../lang';
 
 const buildApigwGroupInstanceFromProvider = (
   info: ApigwGroupInfo,
-  region: string,
+  stage: string,
 ): ResourceInstance => {
   return {
     type: 'ALIYUN_APIGW_GROUP',
-    arn: `arn:acs:apigateway:${region}:group/${info.groupId}`,
+    sid: buildSid('aliyun', 'apigateway', stage, info.groupId ?? ''),
     id: info.groupId ?? '',
     groupId: info.groupId ?? null,
     groupName: info.groupName ?? null,
@@ -38,12 +39,12 @@ const buildApigwGroupInstanceFromProvider = (
 
 const buildApigwApiInstanceFromProvider = (
   info: ApigwApiInfo,
-  region: string,
+  stage: string,
   groupId: string,
 ): ResourceInstance => {
   return {
     type: 'ALIYUN_APIGW_API',
-    arn: `arn:acs:apigateway:${region}:group/${groupId}/api/${info.apiId}`,
+    sid: buildSid('aliyun', 'apigateway', stage, `${groupId}/${info.apiId}`),
     id: info.apiId ?? '',
     apiId: info.apiId ?? null,
     apiName: info.apiName ?? null,
@@ -64,11 +65,11 @@ const buildApigwDeploymentInstance = (
   groupId: string,
   apiId: string,
   stageName: string,
-  region: string,
+  stage: string,
 ): ResourceInstance => {
   return {
     type: 'ALIYUN_APIGW_DEPLOYMENT',
-    arn: `arn:acs:apigateway:${region}:group/${groupId}/api/${apiId}/deployment/${stageName}`,
+    sid: buildSid('aliyun', 'apigateway', stage, `${groupId}/${apiId}/${stageName}`),
     id: `${groupId}/${apiId}/${stageName}`,
     groupId,
     apiId,
@@ -109,7 +110,7 @@ export const createApigwResource = async (
   }
 
   const instances: Array<ResourceInstance> = [
-    buildApigwGroupInstanceFromProvider(groupInfo, context.region),
+    buildApigwGroupInstanceFromProvider(groupInfo, context.stage),
   ];
 
   const groupDefinition = extractApigwGroupDefinition(groupConfig);
@@ -152,7 +153,7 @@ export const createApigwResource = async (
     // Get API info for state
     const apiInfo = await client.apigw.getApi(groupId, apiId);
     if (apiInfo) {
-      instances.push(buildApigwApiInstanceFromProvider(apiInfo, context.region, groupId));
+      instances.push(buildApigwApiInstanceFromProvider(apiInfo, context.stage, groupId));
     }
 
     // Deploy API to RELEASE stage
@@ -164,7 +165,7 @@ export const createApigwResource = async (
     };
 
     await client.apigw.deployApi(deploymentConfig);
-    instances.push(buildApigwDeploymentInstance(groupId, apiId, 'RELEASE', context.region));
+    instances.push(buildApigwDeploymentInstance(groupId, apiId, 'RELEASE', context.stage));
 
     const updatedResourceState: ResourceState = {
       mode: 'managed',
@@ -278,7 +279,7 @@ export const updateApigwResource = async (
   }
 
   const instances: Array<ResourceInstance> = [
-    buildApigwGroupInstanceFromProvider(groupInfo, context.region),
+    buildApigwGroupInstanceFromProvider(groupInfo, context.stage),
   ];
 
   const existingApis = existingInstances.filter((i) => i.type === 'ALIYUN_APIGW_API');
@@ -313,7 +314,7 @@ export const updateApigwResource = async (
 
     const apiInfo = await client.apigw.getApi(groupId, apiId);
     if (apiInfo) {
-      instances.push(buildApigwApiInstanceFromProvider(apiInfo, context.region, groupId));
+      instances.push(buildApigwApiInstanceFromProvider(apiInfo, context.stage, groupId));
     }
 
     const deploymentConfig = {
@@ -324,7 +325,7 @@ export const updateApigwResource = async (
     };
 
     await client.apigw.deployApi(deploymentConfig);
-    instances.push(buildApigwDeploymentInstance(groupId, apiId, 'RELEASE', context.region));
+    instances.push(buildApigwDeploymentInstance(groupId, apiId, 'RELEASE', context.stage));
   }
 
   for (const existingApi of existingApis) {

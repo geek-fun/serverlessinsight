@@ -152,7 +152,7 @@ describe('ScfResource', () => {
           definition: mockDefinition,
           instances: expect.arrayContaining([
             expect.objectContaining({
-              arn: expect.stringContaining('arn:tencent:scf'),
+              sid: expect.stringContaining('si:tencent:scf'),
               id: 'test-function',
               functionName: 'test-function',
               runtime: 'nodejs18',
@@ -253,7 +253,7 @@ describe('ScfResource', () => {
           definition: mockDefinition,
           instances: expect.arrayContaining([
             expect.objectContaining({
-              arn: expect.stringContaining('arn:tencent:scf'),
+              sid: expect.stringContaining('si:tencent:scf'),
               id: 'test-function',
               functionName: 'test-function',
               runtime: 'nodejs18',
@@ -305,7 +305,7 @@ describe('ScfResource', () => {
             definition: mockDefinition,
             instances: [
               {
-                arn: 'arn:tencent:scf:ap-guangzhou::function:test-function',
+                sid: 'si:tencent:scf:default:test-function',
                 id: 'test-function',
                 functionName: 'test-function',
               },
@@ -343,7 +343,7 @@ describe('ScfResource', () => {
             definition: mockDefinition,
             instances: [
               {
-                arn: 'arn:tencent:scf:ap-guangzhou::function:test-function',
+                sid: 'si:tencent:scf:default:test-function',
                 id: 'test-function',
                 functionName: 'test-function',
               },

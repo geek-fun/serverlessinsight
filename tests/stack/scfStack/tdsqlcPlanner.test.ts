@@ -122,7 +122,7 @@ describe('TdsqlcPlanner', () => {
         },
         instances: [
           {
-            arn: 'arn:tencent:cynosdb:ap-guangzhou::cluster:cynosdbmysql-test123',
+            sid: 'si:tencent:cynosdb:default:cynosdbmysql-test123',
             id: 'cynosdbmysql-test123',
             clusterName: 'test-tdsqlc',
           },
@@ -159,7 +159,7 @@ describe('TdsqlcPlanner', () => {
         definition: expectedDefinition,
         instances: [
           {
-            arn: 'arn:tencent:cynosdb:ap-guangzhou::cluster:cynosdbmysql-test123',
+            sid: 'si:tencent:cynosdb:default:cynosdbmysql-test123',
             id: 'cynosdbmysql-test123',
             clusterName: 'test-tdsqlc',
           },
@@ -197,7 +197,7 @@ describe('TdsqlcPlanner', () => {
           definition: expectedDefinition,
           instances: [
             {
-              arn: 'arn:tencent:cynosdb:ap-guangzhou::cluster:cynosdbmysql-test123',
+              sid: 'si:tencent:cynosdb:default:cynosdbmysql-test123',
               id: 'cynosdbmysql-test123',
               clusterName: 'test-tdsqlc',
             },

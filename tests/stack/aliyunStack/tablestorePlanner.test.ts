@@ -137,7 +137,7 @@ describe('TableStore Planner', () => {
         instances: [
           {
             type: 'ALIYUN_TABLESTORE_TABLE',
-            arn: 'arn:acs:ots:cn-hangzhou:123456789012:instance/test-instance/table/test-table',
+            sid: 'si:aliyun:ots:default:test-instance/test-table',
             id: 'test-instance/test-table',
             instanceName: 'test-instance',
             tableName: 'test-table',
@@ -196,7 +196,7 @@ describe('TableStore Planner', () => {
         instances: [
           {
             type: 'ALIYUN_TABLESTORE_TABLE',
-            arn: 'arn:acs:ots:cn-hangzhou:123456789012:instance/test-instance/table/test-table',
+            sid: 'si:aliyun:ots:default:test-instance/test-table',
             id: 'test-instance/test-table',
             instanceName: 'test-instance',
             tableName: 'test-table',
@@ -237,7 +237,7 @@ describe('TableStore Planner', () => {
         instances: [
           {
             type: 'ALIYUN_TABLESTORE_TABLE',
-            arn: 'arn:acs:ots:cn-hangzhou:123456789012:instance/test-instance/table/test-table',
+            sid: 'si:aliyun:ots:default:test-instance/test-table',
             id: 'test-instance/test-table',
             instanceName: 'test-instance',
             tableName: 'test-table',
@@ -275,7 +275,7 @@ describe('TableStore Planner', () => {
         instances: [
           {
             type: 'ALIYUN_TABLESTORE_TABLE',
-            arn: 'arn:acs:ots:cn-hangzhou:123456789012:instance/test-instance/table/old-table',
+            sid: 'si:aliyun:ots:default:test-instance/old-table',
             id: 'test-instance/old-table',
             instanceName: 'test-instance',
             tableName: 'old-table',
@@ -322,7 +322,7 @@ describe('TableStore Planner', () => {
         instances: [
           {
             type: 'ALIYUN_TABLESTORE_TABLE',
-            arn: 'arn:acs:ots:cn-hangzhou:123456789012:instance/test-instance/table/test-table',
+            sid: 'si:aliyun:ots:default:test-instance/test-table',
             id: 'test-instance/test-table',
             instanceName: 'test-instance',
             tableName: 'test-table',

@@ -75,7 +75,7 @@ describe('StateManager', () => {
         },
         instances: [
           {
-            arn: 'arn:tencent:scf:ap-guangzhou::function:test-fn',
+            sid: 'si:tencent:scf:default:test-fn',
             id: 'test-fn',
             functionName: 'test-fn',
             runtime: 'nodejs18',
@@ -129,7 +129,7 @@ describe('StateManager', () => {
         },
         instances: [
           {
-            arn: 'arn:tencent:scf:ap-guangzhou::function:test-fn',
+            sid: 'si:tencent:scf:default:test-fn',
             id: 'test-fn',
             functionName: 'test-fn',
             runtime: 'nodejs18',
@@ -171,7 +171,7 @@ describe('StateManager', () => {
         },
         instances: [
           {
-            arn: 'arn:tencent:scf:ap-guangzhou::function:test-fn',
+            sid: 'si:tencent:scf:default:test-fn',
             id: 'test-fn',
             functionName: 'test-fn',
             runtime: 'nodejs18',
@@ -206,7 +206,7 @@ describe('StateManager', () => {
         },
         instances: [
           {
-            arn: 'arn:tencent:scf:ap-guangzhou::function:test-fn',
+            sid: 'si:tencent:scf:default:test-fn',
             id: 'test-fn',
             functionName: 'test-fn',
             runtime: 'nodejs18',
@@ -243,7 +243,7 @@ describe('StateManager', () => {
         },
         instances: [
           {
-            arn: 'arn:tencent:scf:ap-guangzhou::function:test-fn',
+            sid: 'si:tencent:scf:default:test-fn',
             id: 'test-fn',
             functionName: 'test-fn',
             runtime: 'nodejs18',
@@ -284,7 +284,7 @@ describe('StateManager', () => {
         },
         instances: [
           {
-            arn: 'arn:tencent:scf:ap-guangzhou::function:test-fn-1',
+            sid: 'si:tencent:scf:default:test-fn-1',
             id: 'test-fn-1',
             functionName: 'test-fn-1',
             runtime: 'nodejs18',
@@ -309,7 +309,7 @@ describe('StateManager', () => {
         },
         instances: [
           {
-            arn: 'arn:tencent:scf:ap-guangzhou::function:test-fn-2',
+            sid: 'si:tencent:scf:default:test-fn-2',
             id: 'test-fn-2',
             functionName: 'test-fn-2',
             runtime: 'nodejs18',

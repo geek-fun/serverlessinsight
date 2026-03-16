@@ -268,7 +268,7 @@ describe('Fc3Resource', () => {
           definition: mockDefinition,
           instances: expect.arrayContaining([
             expect.objectContaining({
-              arn: expect.stringContaining('arn:acs:fc'),
+              sid: expect.stringContaining('si:aliyun:fc3'),
               id: 'test-function',
               functionName: 'test-function',
               runtime: 'nodejs20',
@@ -313,7 +313,8 @@ describe('Fc3Resource', () => {
             definition: mockDefinition,
             instances: [
               {
-                arn: 'acs:ram::123456789012:role/test-role',
+                sid: 'si:aliyun:ram:default:test-app-test-service-fc-role',
+                roleArn: 'acs:ram::123456789012:role/test-role',
                 id: 'test-app-test-service-fc-role',
                 type: 'ALIYUN_RAM_ROLE',
                 roleName: 'test-role',
@@ -355,7 +356,8 @@ describe('Fc3Resource', () => {
             definition: mockDefinition,
             instances: [
               {
-                arn: 'acs:ram::123456789012:role/test-app-test-service-fc-role',
+                sid: 'si:aliyun:ram:default:test-app-test-service-fc-role',
+                roleArn: 'acs:ram::123456789012:role/test-app-test-service-fc-role',
                 id: 'test-app-test-service-fc-role',
                 type: 'ALIYUN_RAM_ROLE',
                 roleName: 'test-app-test-service-fc-role',
@@ -490,7 +492,7 @@ describe('Fc3Resource', () => {
             definition: mockDefinition,
             instances: [
               {
-                arn: 'arn:acs:fc:cn-hangzhou:123456789012:function/test-function',
+                sid: 'si:aliyun:fc3:default:test-function',
                 id: 'test-function',
                 functionName: 'test-function',
                 type: 'ALIYUN_FC3_FUNCTION',
@@ -529,7 +531,7 @@ describe('Fc3Resource', () => {
             definition: mockDefinition,
             instances: [
               {
-                arn: 'arn:acs:fc:cn-hangzhou:123456789012:function/test-function',
+                sid: 'si:aliyun:fc3:default:test-function',
                 id: 'test-function',
                 functionName: 'test-function',
                 type: 'ALIYUN_FC3_FUNCTION',
@@ -558,7 +560,8 @@ describe('Fc3Resource', () => {
             definition: mockDefinition,
             instances: [
               {
-                arn: 'acs:ram::123456789012:role/test-app-test-service-fc-role',
+                sid: 'si:aliyun:ram:default:test-app-test-service-fc-role',
+                roleArn: 'acs:ram::123456789012:role/test-app-test-service-fc-role',
                 id: 'test-app-test-service-fc-role',
                 type: 'ALIYUN_RAM_ROLE',
               },
@@ -593,13 +596,14 @@ describe('Fc3Resource', () => {
             definition: mockDefinition,
             instances: [
               {
-                arn: 'arn:acs:fc:cn-hangzhou:123456789012:function/test-function',
+                sid: 'si:aliyun:fc3:default:test-function',
                 id: 'test-function',
                 functionName: 'test-function',
                 type: 'ALIYUN_FC3_FUNCTION',
               },
               {
-                arn: 'acs:ram::123456789012:role/test-app-test-service-fc-role',
+                sid: 'si:aliyun:ram:default:test-app-test-service-fc-role',
+                roleArn: 'acs:ram::123456789012:role/test-app-test-service-fc-role',
                 id: 'test-app-test-service-fc-role',
                 type: 'ALIYUN_RAM_ROLE',
               },

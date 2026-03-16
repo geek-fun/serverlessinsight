@@ -158,7 +158,7 @@ export type CommonBucketInfo = {
  */
 export type CommonBucketInstance = {
   type: string;
-  arn: string;
+  sid: string;
   id: string;
   bucketName: string;
   location?: string | null;

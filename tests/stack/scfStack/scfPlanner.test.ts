@@ -108,7 +108,7 @@ describe('SCF Planner', () => {
         },
         instances: [
           {
-            arn: 'arn:tencent:scf:ap-guangzhou::function:test-function',
+            sid: 'si:tencent:scf:default:test-function',
             id: 'test-function',
             functionName: 'test-function',
           },
@@ -152,7 +152,7 @@ describe('SCF Planner', () => {
         },
         instances: [
           {
-            arn: 'arn:tencent:scf:ap-guangzhou::function:test-function',
+            sid: 'si:tencent:scf:default:test-function',
             id: 'test-function',
             functionName: 'test-function',
           },
@@ -187,7 +187,7 @@ describe('SCF Planner', () => {
         },
         instances: [
           {
-            arn: 'arn:tencent:scf:ap-guangzhou::function:old-function',
+            sid: 'si:tencent:scf:default:old-function',
             id: 'old-function',
             functionName: 'old-function',
           },
@@ -222,7 +222,7 @@ describe('SCF Planner', () => {
         },
         instances: [
           {
-            arn: 'arn:tencent:scf:ap-guangzhou::function:test-function',
+            sid: 'si:tencent:scf:default:test-function',
             id: 'test-function',
             functionName: 'test-function',
           },
@@ -268,7 +268,7 @@ describe('SCF Planner', () => {
         },
         instances: [
           {
-            arn: 'arn:tencent:scf:ap-guangzhou::function:test-function',
+            sid: 'si:tencent:scf:default:test-function',
             id: 'test-function',
             functionName: 'test-function',
           },

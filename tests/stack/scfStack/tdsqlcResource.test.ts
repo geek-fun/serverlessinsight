@@ -123,7 +123,7 @@ describe('TdsqlcResource', () => {
         },
         instances: [
           {
-            arn: 'arn:tencent:cynosdb:ap-guangzhou::cluster:cynosdbmysql-test123',
+            sid: 'si:tencent:cynosdb:default:cynosdbmysql-test123',
             id: clusterId,
             clusterName: 'test-tdsqlc',
           },
@@ -165,7 +165,7 @@ describe('TdsqlcResource', () => {
           }),
           instances: expect.arrayContaining([
             expect.objectContaining({
-              arn: expect.stringContaining('arn:tencent:cynosdb'),
+              sid: expect.stringContaining('si:tencent:cynosdb'),
               id: clusterId,
               status: 'running',
               vip: '10.0.0.1',
@@ -223,7 +223,7 @@ describe('TdsqlcResource', () => {
         },
         instances: [
           {
-            arn: 'arn:tencent:cynosdb:ap-guangzhou::cluster:cynosdbmysql-test123',
+            sid: 'si:tencent:cynosdb:default:cynosdbmysql-test123',
             id: clusterId,
             clusterName: 'test-tdsqlc',
           },

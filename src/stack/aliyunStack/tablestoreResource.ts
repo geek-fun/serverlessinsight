@@ -1,13 +1,13 @@
 import { createAliyunClient } from '../../common/aliyunClient';
 import { TableStoreTableInfo } from '../../common/aliyunClient/tablestoreOperations';
-import { setResource, removeResource } from '../../common';
+import { setResource, removeResource, buildSid } from '../../common';
 import { Context, TableDomain, ResourceState, StateFile } from '../../types';
 import { tableToTableStoreConfig, extractTableStoreDefinition } from './tablestoreTypes';
 import { logger } from '../../common/logger';
 
 export type TableStoreTableInstance = {
   type: 'ALIYUN_TABLESTORE_TABLE';
-  arn: string;
+  sid: string;
   id: string;
   instanceName: string;
   tableName: string;
@@ -40,13 +40,13 @@ export type TableStoreTableInstance = {
 
 const buildTableStoreInstanceFromProvider = (
   info: TableStoreTableInfo,
-  arn: string,
+  sid: string,
   instanceName: string,
   clusterType: string,
 ): TableStoreTableInstance => {
   return {
     type: 'ALIYUN_TABLESTORE_TABLE',
-    arn,
+    sid,
     id: `${instanceName}/${info.tableName}`,
     instanceName,
     tableName: info.tableName,
@@ -105,13 +105,18 @@ export const createTableResource = async (
   }
 
   const definition = extractTableStoreDefinition(config);
-  const arn = `arn:acs:ots:${context.region}:${context.accountId}:instance/${config.instanceName}/table/${config.tableName}`;
+  const sid = buildSid(
+    'aliyun',
+    'ots',
+    context.stage,
+    `${config.instanceName}/${config.tableName}`,
+  );
   const resourceState: ResourceState = {
     mode: 'managed',
     region: context.region,
     definition,
     instances: [
-      buildTableStoreInstanceFromProvider(tableInfo, arn, config.instanceName, config.clusterType),
+      buildTableStoreInstanceFromProvider(tableInfo, sid, config.instanceName, config.clusterType),
     ],
     lastUpdated: new Date().toISOString(),
   };
@@ -158,13 +163,18 @@ export const updateTableResource = async (
   }
 
   const definition = extractTableStoreDefinition(config);
-  const arn = `arn:acs:ots:${context.region}:${context.accountId}:instance/${config.instanceName}/table/${config.tableName}`;
+  const sid = buildSid(
+    'aliyun',
+    'ots',
+    context.stage,
+    `${config.instanceName}/${config.tableName}`,
+  );
   const resourceState: ResourceState = {
     mode: 'managed',
     region: context.region,
     definition,
     instances: [
-      buildTableStoreInstanceFromProvider(tableInfo, arn, config.instanceName, config.clusterType),
+      buildTableStoreInstanceFromProvider(tableInfo, sid, config.instanceName, config.clusterType),
     ],
     lastUpdated: new Date().toISOString(),
   };

@@ -20,7 +20,7 @@ export type ResourceMode = 'managed' | 'data';
 export type ResourceStatus = 'ready' | 'tainted';
 
 export type ResourceInstance = {
-  arn: string;
+  sid: string;
   id: string;
   [key: string]: unknown;
 };
@@ -35,7 +35,7 @@ export type ResourceState = {
   metadata?: Record<string, unknown>;
 };
 
-export const CURRENT_STATE_VERSION = '2.0';
+export const CURRENT_STATE_VERSION = '3.0';
 
 export type StageState = {
   resources: Record<string, ResourceState>;

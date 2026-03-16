@@ -101,7 +101,7 @@ describe('OSS Planner', () => {
         },
         instances: [
           {
-            arn: 'arn:acs:oss:cn-hangzhou:123456789012:test-bucket',
+            sid: 'si:aliyun:oss:default:test-bucket',
             id: 'test-bucket',
             bucketName: 'test-bucket',
           },
@@ -144,7 +144,7 @@ describe('OSS Planner', () => {
         },
         instances: [
           {
-            arn: 'arn:acs:oss:cn-hangzhou:123456789012:test-bucket',
+            sid: 'si:aliyun:oss:default:test-bucket',
             id: 'test-bucket',
             bucketName: 'test-bucket',
           },
@@ -177,7 +177,7 @@ describe('OSS Planner', () => {
         },
         instances: [
           {
-            arn: 'arn:acs:oss:cn-hangzhou:123456789012:old-bucket',
+            sid: 'si:aliyun:oss:default:old-bucket',
             id: 'old-bucket',
             bucketName: 'old-bucket',
           },
@@ -213,7 +213,7 @@ describe('OSS Planner', () => {
         },
         instances: [
           {
-            arn: 'arn:acs:oss:cn-hangzhou:123456789012:test-bucket',
+            sid: 'si:aliyun:oss:default:test-bucket',
             id: 'test-bucket',
             bucketName: 'test-bucket',
           },

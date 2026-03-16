@@ -6,6 +6,7 @@ import { createDnsOperations } from './dnsOperations';
 import { logger } from '../logger';
 import { lang } from '../../lang';
 import { getResource, setResource } from '../stateManager';
+import { buildSid } from '../sidUtils';
 
 type ApigwSdkClient = CloudApiClient;
 type DnsSdkClient = DnsClient;
@@ -333,7 +334,7 @@ export const createApigwOperations = (
           },
           instances: [
             {
-              arn: `arn:acs:alidns:${region}:dns-record/${recordId}`,
+              sid: buildSid('aliyun', 'alidns', _context.stage, recordId),
               id: recordId,
               type: 'CNAME',
               status: 'PENDING',
@@ -359,7 +360,7 @@ export const createApigwOperations = (
           },
           instances: [
             {
-              arn: `arn:acs:alidns:${region}:dns-record/existing`,
+              sid: buildSid('aliyun', 'alidns', _context.stage, 'existing'),
               id: 'existing',
               type: 'CNAME',
               status: 'EXISTING',

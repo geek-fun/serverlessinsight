@@ -3,11 +3,12 @@ import { createAliyunClient } from '../../common/aliyunClient';
 import { databaseToRdsConfig, extractRdsDefinition, RdsInfo } from './rdsTypes';
 import { databaseToEsConfig, extractEsDefinition, EsInfo } from './esServerlessTypes';
 import { setResource, removeResource } from '../../common/stateManager';
+import { buildSid } from '../../common';
 import { logger } from '../../common/logger';
 
-const buildRdsInstanceFromProvider = (info: RdsInfo, arn: string) => {
+const buildRdsInstanceFromProvider = (info: RdsInfo, sid: string) => {
   return {
-    arn,
+    sid,
     id: info.dbInstanceId ?? '',
     dbInstanceId: info.dbInstanceId ?? null,
     dbInstanceDescription: info.dbInstanceDescription ?? null,
@@ -39,9 +40,9 @@ const buildRdsInstanceFromProvider = (info: RdsInfo, arn: string) => {
   };
 };
 
-const buildEsInstanceFromProvider = (info: EsInfo, arn: string) => {
+const buildEsInstanceFromProvider = (info: EsInfo, sid: string) => {
   return {
-    arn,
+    sid,
     id: info.appId ?? '',
     appId: info.appId ?? null,
     appName: info.appName ?? null,
@@ -105,7 +106,6 @@ export const createDatabaseResource = async (
   let instanceId: string;
   let definition: Record<string, unknown>;
   let instance: unknown;
-  let arn: string;
   let resourceType: string;
 
   if (database.type === DatabaseEnum.ELASTICSEARCH_SERVERLESS) {
@@ -120,8 +120,8 @@ export const createDatabaseResource = async (
     }
 
     definition = extractEsDefinition(config);
-    arn = `arn:acs:elasticsearch:${context.region}:${context.accountId}:serverless:${instanceId}`;
-    instance = buildEsInstanceFromProvider(appInfo, arn);
+    const sid = buildSid('aliyun', 'es', context.stage, instanceId);
+    instance = buildEsInstanceFromProvider(appInfo, sid);
     resourceType = 'ALIYUN_ES_SERVERLESS';
   } else if (
     [
@@ -141,8 +141,8 @@ export const createDatabaseResource = async (
     }
 
     definition = extractRdsDefinition(config);
-    arn = `arn:acs:rds:${context.region}:${context.accountId}:dbinstance:${instanceId}`;
-    instance = buildRdsInstanceFromProvider(rdsInfo, arn);
+    const sid = buildSid('aliyun', 'rds', context.stage, instanceId);
+    instance = buildRdsInstanceFromProvider(rdsInfo, sid);
     resourceType = 'ALIYUN_RDS_SERVERLESS';
   } else {
     throw new Error(`Unsupported database type: ${database.type}`);
@@ -193,7 +193,6 @@ export const updateDatabaseResource = async (
 
   let definition: Record<string, unknown>;
   let instance: unknown;
-  let arn: string;
 
   if (resourceType === 'ALIYUN_ES_SERVERLESS') {
     const config = databaseToEsConfig(database);
@@ -206,8 +205,8 @@ export const updateDatabaseResource = async (
     }
 
     definition = extractEsDefinition(config);
-    arn = `arn:acs:elasticsearch:${context.region}:${context.accountId}:serverless:${instanceId}`;
-    instance = buildEsInstanceFromProvider(appInfo, arn);
+    const sid = buildSid('aliyun', 'es', context.stage, instanceId);
+    instance = buildEsInstanceFromProvider(appInfo, sid);
   } else if (resourceType === 'ALIYUN_RDS_SERVERLESS') {
     const config = databaseToRdsConfig(database);
     await client.rds.updateInstance(instanceId, config);
@@ -219,8 +218,8 @@ export const updateDatabaseResource = async (
     }
 
     definition = extractRdsDefinition(config);
-    arn = `arn:acs:rds:${context.region}:${context.accountId}:dbinstance:${instanceId}`;
-    instance = buildRdsInstanceFromProvider(rdsInfo, arn);
+    const sid = buildSid('aliyun', 'rds', context.stage, instanceId);
+    instance = buildRdsInstanceFromProvider(rdsInfo, sid);
   } else {
     throw new Error(`Unsupported resource type: ${resourceType}`);
   }

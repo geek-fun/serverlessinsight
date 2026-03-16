@@ -6,11 +6,12 @@ import {
   TencentEsSpaceInfo,
 } from './esServerlessTypes';
 import { setResource, removeResource } from '../../common/stateManager';
+import { buildSid } from '../../common';
 import { logger } from '../../common/logger';
 
-const buildEsSpaceFromProvider = (info: TencentEsSpaceInfo, arn: string) => {
+const buildEsSpaceFromProvider = (info: TencentEsSpaceInfo, sid: string) => {
   return {
-    arn,
+    sid,
     id: info.SpaceId,
     spaceId: info.SpaceId,
     spaceName: info.SpaceName,
@@ -47,12 +48,12 @@ export const createEsResource = async (
   }
 
   const definition = extractTencentEsDefinition(config);
-  const arn = `arn:tencent:es:${context.region}::space:${spaceId}`;
+  const sid = buildSid('tencent', 'es', context.stage, spaceId);
   const resourceState: ResourceState = {
     mode: 'managed',
     region: context.region,
     definition,
-    instances: [buildEsSpaceFromProvider(spaceInfo as TencentEsSpaceInfo, arn)],
+    instances: [buildEsSpaceFromProvider(spaceInfo as TencentEsSpaceInfo, sid)],
     lastUpdated: new Date().toISOString(),
     metadata: {
       spaceName: database.name,
@@ -91,12 +92,12 @@ export const updateEsResource = async (
   }
 
   const definition = extractTencentEsDefinition(config);
-  const arn = `arn:tencent:es:${context.region}::space:${spaceId}`;
+  const sid = buildSid('tencent', 'es', context.stage, spaceId);
   const resourceState: ResourceState = {
     mode: 'managed',
     region: context.region,
     definition,
-    instances: [buildEsSpaceFromProvider(spaceInfo as TencentEsSpaceInfo, arn)],
+    instances: [buildEsSpaceFromProvider(spaceInfo as TencentEsSpaceInfo, sid)],
     lastUpdated: new Date().toISOString(),
     metadata: {
       spaceName: database.name,

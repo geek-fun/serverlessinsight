@@ -6,6 +6,7 @@ import {
   setResource,
   computeFileHash,
   getContext,
+  buildSid,
 } from '../../common';
 import {
   Context,
@@ -20,14 +21,15 @@ import { logger } from '../../common/logger';
 type DependentInstance = {
   type: string;
   id: string;
-  arn?: string;
+  sid?: string;
+  roleArn?: string;
   attributes: Record<string, unknown>;
 };
 
-const buildFc3InstanceFromProvider = (info: Fc3FunctionInfo, arn: string) => {
+const buildFc3InstanceFromProvider = (info: Fc3FunctionInfo, sid: string) => {
   return {
     type: 'ALIYUN_FC3_FUNCTION',
-    arn,
+    sid,
     id: info.functionName ?? '',
     functionName: info.functionName ?? null,
     functionId: info.functionId ?? null,
@@ -193,7 +195,7 @@ const createDependentResources = async (
     instances.push({
       type: 'ALIYUN_RAM_ROLE',
       id: roleName,
-      arn: ramRole.arn,
+      roleArn: ramRole.arn,
       attributes: { ...ramRole },
     });
   }
@@ -201,7 +203,7 @@ const createDependentResources = async (
   const ramRoleInstance = instances.find((i) => i.type === 'ALIYUN_RAM_ROLE');
   const role = {
     roleName,
-    arn: ramRoleInstance?.arn ?? `acs:ram::${context.accountId}:role/${roleName}`,
+    arn: ramRoleInstance?.roleArn ?? `acs:ram::${context.accountId}:role/${roleName}`,
   };
 
   if (fn.network) {
@@ -447,11 +449,12 @@ export const createResource = async (
   const definition = extractFc3Definition(config, codeHash);
 
   const dependentInstances = dependentResources.instances.map((dep) => ({
-    arn:
-      dep.arn ??
-      `arn:acs:${dep.type.toLowerCase()}:${context.region}:${context.accountId}:${dep.id}`,
+    sid:
+      dep.sid ??
+      buildSid('aliyun', dep.type.replace('ALIYUN_', '').toLowerCase(), context.stage, dep.id),
     id: dep.id,
     type: dep.type,
+    ...(dep.roleArn ? { roleArn: dep.roleArn } : {}),
     ...dep.attributes,
   }));
 
@@ -481,11 +484,9 @@ export const createResource = async (
     throw new Error(`Failed to refresh state for function: ${fn.name}`);
   }
 
-  const arn =
-    functionInfo.functionArn ??
-    `arn:acs:fc:${context.region}:${context.accountId}:function/${fn.name}`;
+  const sid = buildSid('aliyun', 'fc3', context.stage, fn.name);
 
-  const fcInstance = buildFc3InstanceFromProvider(functionInfo, arn);
+  const fcInstance = buildFc3InstanceFromProvider(functionInfo, sid);
 
   const resourceState: ResourceState = {
     mode: 'managed',
@@ -564,7 +565,7 @@ export const updateResource = async (
     if (ramRoleInstance) {
       role = {
         roleName: ramRoleInstance.id,
-        arn: ramRoleInstance.arn ?? `acs:ram::${context.accountId}:role/${ramRoleInstance.id}`,
+        arn: ramRoleInstance.roleArn ?? `acs:ram::${context.accountId}:role/${ramRoleInstance.id}`,
       };
     }
   }
@@ -660,29 +661,33 @@ export const updateResource = async (
 
   const codeHash = computeFileHash(codePath);
   const definition = extractFc3Definition(config, codeHash);
-  const arn =
-    functionInfo.functionArn ??
-    `arn:acs:fc:${context.region}:${context.accountId}:function/${fn.name}`;
+  const sid = buildSid('aliyun', 'fc3', context.stage, fn.name);
 
-  const fcInstance = buildFc3InstanceFromProvider(functionInfo, arn);
+  const fcInstance = buildFc3InstanceFromProvider(functionInfo, sid);
   const existingDependentInstances = existingInstances
     .filter((i) => i.type !== 'ALIYUN_FC3_FUNCTION')
     .map((i) => {
-      const { arn: existingArn, id: existingId, ...rest } = i;
+      const { sid: existingSid, id: existingId, ...rest } = i;
       return {
-        arn:
-          existingArn ??
-          `arn:acs:${i.type?.toString().toLowerCase()}:${context.region}:${context.accountId}:${existingId}`,
+        sid:
+          existingSid ??
+          buildSid(
+            'aliyun',
+            i.type?.toString().replace('ALIYUN_', '').toLowerCase() ?? '',
+            context.stage,
+            existingId?.toString() ?? '',
+          ),
         id: existingId?.toString() ?? '',
         ...rest,
       };
     });
   const newDependentInstancesMapped = newDependentInstances.map((dep) => ({
-    arn:
-      dep.arn ??
-      `arn:acs:${dep.type.toLowerCase()}:${context.region}:${context.accountId}:${dep.id}`,
+    sid:
+      dep.sid ??
+      buildSid('aliyun', dep.type.replace('ALIYUN_', '').toLowerCase(), context.stage, dep.id),
     id: dep.id,
     type: dep.type,
+    ...(dep.roleArn ? { roleArn: dep.roleArn } : {}),
     ...dep.attributes,
   }));
 

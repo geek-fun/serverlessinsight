@@ -106,7 +106,7 @@ describe('FC3 Planner', () => {
         },
         instances: [
           {
-            arn: 'arn:acs:fc:cn-hangzhou:123456789012:function/test-function',
+            sid: 'si:aliyun:fc3:default:test-function',
             id: 'test-function',
             functionName: 'test-function',
           },
@@ -152,7 +152,7 @@ describe('FC3 Planner', () => {
         },
         instances: [
           {
-            arn: 'arn:acs:fc:cn-hangzhou:123456789012:function/test-function',
+            sid: 'si:aliyun:fc3:default:test-function',
             id: 'test-function',
             functionName: 'test-function',
           },
@@ -191,7 +191,7 @@ describe('FC3 Planner', () => {
         },
         instances: [
           {
-            arn: 'arn:acs:fc:cn-hangzhou:123456789012:function/old-function',
+            sid: 'si:aliyun:fc3:default:old-function',
             id: 'old-function',
             functionName: 'old-function',
           },
@@ -230,7 +230,7 @@ describe('FC3 Planner', () => {
         },
         instances: [
           {
-            arn: 'arn:acs:fc:cn-hangzhou:123456789012:function/test-function',
+            sid: 'si:aliyun:fc3:default:test-function',
             id: 'test-function',
             functionName: 'test-function',
           },
