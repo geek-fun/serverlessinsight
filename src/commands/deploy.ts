@@ -39,6 +39,7 @@ export const deploy = async (options: {
   logger.info(lang.__('DEPLOYING_STACK'));
 
   const backend = createStateBackend(iac.backend, context);
+  logger.info(lang.__('ACQUIRING_LOCK'));
   await backend.withLock('deploy', async () => {
     await deployStack(iac, backend);
   });

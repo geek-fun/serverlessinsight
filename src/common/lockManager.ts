@@ -11,6 +11,7 @@ import {
   STALE_LOCK_THRESHOLD,
 } from './constants';
 import { lang } from '../lang';
+import { logger } from './logger';
 
 export { LockOptions }; // Re-export for convenience
 
@@ -94,6 +95,15 @@ const isLockStale = (lock: LockMetadata): boolean => {
   return now - acquiredAt > STALE_LOCK_THRESHOLD;
 };
 
+const isProcessAlive = (pid: number): boolean => {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch {
+    return false;
+  }
+};
+
 const getTimeAgo = (acquiredAt: Date): string => {
   const now = new Date();
   const minutesAgo = Math.floor((now.getTime() - acquiredAt.getTime()) / 60000);
@@ -165,7 +175,20 @@ export const acquireLockInternal = async (
         // Failed to write lock, will retry
       }
     } else {
-      // Lock exists, check if it's stale
+      if (existingLock.hostname === os.hostname() && !isProcessAlive(existingLock.processId)) {
+        logger.info(
+          lang.__('LOCK_AUTO_RELEASED_DEAD_PROCESS', {
+            processId: String(existingLock.processId),
+            hostname: existingLock.hostname,
+            user: existingLock.user,
+            acquiredAt: existingLock.acquiredAt,
+          }),
+        );
+        removeLockFile(lockPath);
+        attempt++;
+        continue;
+      }
+
       if (isLockStale(existingLock)) {
         // Lock is stale, but we don't auto-remove it
         // User must use force-unlock
@@ -182,6 +205,17 @@ export const acquireLockInternal = async (
           existingLock,
         );
       }
+
+      const acquiredAt = new Date(existingLock.acquiredAt);
+      const minutesAgo = Math.floor((Date.now() - acquiredAt.getTime()) / 60000);
+      const timeAgo = minutesAgo < 1 ? lang.__('LOCK_TIME_AGO_LESS_THAN_MINUTE') : `${minutesAgo}m`;
+      logger.info(
+        lang.__('LOCK_WAITING', {
+          user: existingLock.user,
+          timeAgo,
+          attempt: String(attempt + 1),
+        }),
+      );
     }
 
     // Wait before retrying with exponential backoff

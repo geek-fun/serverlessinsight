@@ -3,9 +3,11 @@ import {
   withLock,
   LockError,
   readLockFileForCommand,
+  acquireLockInternal,
 } from '../../src/common/lockManager';
 import { LOCK_FILE_SUFFIX } from '../../src/common/constants';
 import fs from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 
 describe('LockManager', () => {
@@ -261,6 +263,90 @@ describe('LockManager', () => {
     it('should return null for non-existent lock file', () => {
       const lockInfo = readLockFileForCommand(statePath);
       expect(lockInfo).toBeNull();
+    });
+  });
+
+  describe('dead process auto-release', () => {
+    it('should auto-release lock from dead process on same host', async () => {
+      const deadPid = 999999;
+      const staleLock = {
+        id: 'dead-process-lock-id',
+        user: 'test@test.com',
+        processId: deadPid,
+        hostname: os.hostname(),
+        operation: 'deploy',
+        acquiredAt: new Date().toISOString(),
+        path: statePath,
+      };
+
+      const lockDir = path.dirname(lockPath);
+      if (!fs.existsSync(lockDir)) {
+        fs.mkdirSync(lockDir, { recursive: true });
+      }
+      fs.writeFileSync(lockPath, JSON.stringify(staleLock, null, 2), 'utf-8');
+
+      const result = await acquireLockInternal(statePath, 'deploy', {
+        timeout: 5000,
+        retryDelay: 100,
+      });
+
+      expect(result).toBeDefined();
+      expect(result.id).not.toBe('dead-process-lock-id');
+      expect(result.processId).toBe(process.pid);
+
+      fs.unlinkSync(lockPath);
+    });
+
+    it('should NOT auto-release lock from different host', async () => {
+      const staleLock = {
+        id: 'remote-lock-id',
+        user: 'test@test.com',
+        processId: 999999,
+        hostname: 'some-other-host-that-is-not-this-one',
+        operation: 'deploy',
+        acquiredAt: new Date().toISOString(),
+        path: statePath,
+      };
+
+      const lockDir = path.dirname(lockPath);
+      if (!fs.existsSync(lockDir)) {
+        fs.mkdirSync(lockDir, { recursive: true });
+      }
+      fs.writeFileSync(lockPath, JSON.stringify(staleLock, null, 2), 'utf-8');
+
+      await expect(
+        acquireLockInternal(statePath, 'deploy', { timeout: 1000, retryDelay: 200 }),
+      ).rejects.toThrow(LockError);
+
+      if (fs.existsSync(lockPath)) {
+        fs.unlinkSync(lockPath);
+      }
+    });
+
+    it('should NOT auto-release lock from alive process on same host', async () => {
+      const aliveLock = {
+        id: 'alive-process-lock-id',
+        user: 'test@test.com',
+        processId: process.pid,
+        hostname: os.hostname(),
+        operation: 'deploy',
+        acquiredAt: new Date().toISOString(),
+        path: statePath,
+      };
+
+      const lockDir = path.dirname(lockPath);
+      if (!fs.existsSync(lockDir)) {
+        fs.mkdirSync(lockDir, { recursive: true });
+      }
+      fs.writeFileSync(lockPath, JSON.stringify(aliveLock, null, 2), 'utf-8');
+
+      await expect(
+        acquireLockInternal(statePath, 'deploy', { timeout: 1000, retryDelay: 200 }),
+      ).rejects.toThrow(LockError);
+
+      if (fs.existsSync(lockPath)) {
+        fs.unlinkSync(lockPath);
+      }
     });
   });
 });
