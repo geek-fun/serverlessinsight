@@ -31,7 +31,7 @@ export const bucketSchema = {
         security: {
           type: 'object',
           properties: {
-            access: resolvableEnum(['PRIVATE', 'PUBLIC_READ', 'PUBLIC_READ_WRITE']),
+            acl: resolvableEnum(['PRIVATE', 'PUBLIC_READ', 'PUBLIC_READ_WRITE']),
             force_delete: resolvableBoolean,
             sse_algorithm: {
               type: 'string',
