@@ -50,11 +50,11 @@ ServerlessInsight supports the following cloud providers:
 | Provider          | Functions        | API Gateway    | Storage        | Databases        | Status  |
 | ----------------- | ---------------- | -------------- | -------------- | ---------------- | ------- |
 | **Alibaba Cloud** | ✅ FC3           | ✅ API Gateway | ✅ OSS         | ✅ RDS, OTS, ESS | Stable  |
+| **Tencent Cloud** | ✅ SCF           | ✅ API Gateway | ✅ COS         | ✅ TDSQL-C       | Stable  |
 | **Huawei Cloud**  | ✅ FunctionGraph | 🚧 Coming Soon | 🚧 Coming Soon | 🚧 Coming Soon   | Beta    |
 | **AWS**           | 🔜 Planned       | 🔜 Planned     | 🔜 Planned     | 🔜 Planned       | Planned |
 | **Azure**         | 🔜 Planned       | 🔜 Planned     | 🔜 Planned     | 🔜 Planned       | Planned |
 | **Google Cloud**  | 🔜 Planned       | 🔜 Planned     | 🔜 Planned     | 🔜 Planned       | Planned |
-| **Tencent Cloud** | 🔜 Planned       | 🔜 Planned     | 🔜 Planned     | 🔜 Planned       | Planned |
 
 ---
 
@@ -85,19 +85,22 @@ si --version
 
 ```bash
 # Validate your serverless configuration
-si validate <stackName> -f serverless.yml
+si validate -f serverless.yml
+
+# Generate deployment plan (see what will change)
+si plan -f serverless.yml
 
 # Deploy your serverless application
-si deploy <stackName> -f serverless.yml -s dev
+si deploy -f serverless.yml -s dev
 
 # Run your application locally for debugging
-si local <stackName> -f serverless.yml -s local
+si local -f serverless.yml -s local
 
-# Generate provider-specific template
-si template <stackName> -f serverless.yml -t JSON
+# Show deployed resource information
+si show -f serverless.yml
 
 # Destroy the deployed stack
-si destroy <stackName> -f serverless.yml
+si destroy -f serverless.yml
 ```
 
 ---
@@ -248,7 +251,7 @@ This architecture enables:
 
 ## 🗄️ State Management
 
-ServerlessInsight uses a state-based deployment model that tracks all deployed resources in a local state file (`.serverlessinsight/state.json`). This enables:
+ServerlessInsight uses a state-based deployment model that tracks all deployed resources in a local state file (`.serverlessinsight/state-{app}-{service}.json` in the project directory). This enables:
 
 - **Incremental deployments** - Only changed resources are updated
 - **Drift detection** - Identifies differences between local state and cloud resources
@@ -272,7 +275,7 @@ Next steps: 1) Review the error above, 2) Fix any configuration issues, 3) Run d
 
 ### State File Location
 
-The state file is stored in `.serverlessinsight/state.json` in your project directory. This file:
+The state file is stored as `.serverlessinsight/state-{app}-{service}.json` in your project directory (e.g., `.serverlessinsight/state-myapp-myservice.json`). This file:
 
 - Should be committed to version control for team collaboration
 - Contains resource metadata and identifiers
@@ -336,7 +339,6 @@ ServerlessInsight is built with these amazing technologies:
 - [Node.js](https://nodejs.org/) - JavaScript runtime
 - [TypeScript](https://www.typescriptlang.org/) - Type-safe JavaScript
 - [Commander.js](https://github.com/tj/commander.js/) - CLI framework
-- [Alibaba Cloud ROS CDK](https://github.com/aliyun/Resource-Orchestration-Service-Cloud-Development-Kit) - Cloud infrastructure SDK
 
 ---
 

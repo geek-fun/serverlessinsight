@@ -17,8 +17,9 @@ State locking is **automatic and transparent** during normal operations. When yo
 ### Automatic Locking
 
 Locking happens automatically for these commands:
-- `si deploy <stackName>` - Locks during deployment
-- `si destroy <stackName>` - Locks during destruction
+
+- `si deploy` - Locks during deployment
+- `si destroy` - Locks during destruction
 
 No manual lock/unlock commands are needed for normal operations.
 
@@ -26,11 +27,14 @@ No manual lock/unlock commands are needed for normal operations.
 
 - **Timeout**: 10 minutes by default
 - **Retry**: Exponential backoff (2s, 4s, 8s, 16s, 30s max)
-- **Storage**: `.serverlessinsight/state.json.si-lock` file (local file system only)
+- **Storage**:
+  - **Local backend**: `.serverlessinsight/state.json.si-lock` file (local file system)
+  - **Remote backend**: Lock object stored alongside state in the remote backend (e.g., OSS/COS bucket), shared across machines/CI runners
 
 ### Lock Information
 
 Each lock contains:
+
 - **ID**: Unique identifier for the lock
 - **User**: Email or username@hostname
 - **Process**: Operation type and process ID
@@ -116,9 +120,14 @@ Locks held for more than 1 hour are considered potentially stale and will be fla
 ## Performance
 
 State locking adds minimal overhead:
-- Lock acquisition: <50ms
-- Lock release: <10ms
-- No network calls (local file system only)
+
+- **Local state backend (file system)**:
+  - Lock acquisition: <50ms
+  - Lock release: <10ms
+  - No network calls (local file system only)
+- **Remote state backends (e.g., OSS/COS)**:
+  - Lock acquisition/release involves storage API requests over the network
+  - Additional latency is typically small compared to overall deployment time
 
 ## Troubleshooting
 
@@ -127,6 +136,7 @@ State locking adds minimal overhead:
 **Problem**: You receive a lock error when trying to deploy.
 
 **Solution**:
+
 1. Check if another deployment is actually running
 2. Wait for it to complete, or
 3. Use `force-unlock` if you're certain no operation is running
@@ -136,6 +146,7 @@ State locking adds minimal overhead:
 **Problem**: A deployment crashed but the lock file wasn't removed.
 
 **Solution**:
+
 ```bash
 si force-unlock <LOCK_ID>
 ```
@@ -145,14 +156,15 @@ si force-unlock <LOCK_ID>
 **Problem**: Multiple CI pipelines trying to deploy the same stack.
 
 **Solution**:
+
 - Configure your CI/CD to prevent concurrent deployments (e.g., GitLab's `resource_group`, GitHub Actions concurrency groups)
 - Only one deployment will succeed; others will wait or fail with a lock error
 
 ## Limitations
 
-- **Local file system only**: State locking only works with local state files
-- **Same machine**: Locks are only effective on a single machine (not distributed)
-- **No remote backends**: Remote state backends (S3, Azure, GCS) are not supported for state locking
+- **Local file system**: When using local state files, locking is limited to that machine's file system
+- **Same machine (local backend)**: For purely local state, locks are only effective on a single machine (not distributed)
+- **Backend-dependent behavior**: When using remote state backends (e.g., OSS/COS), locking behavior and performance depend on the remote storage API and network conditions
 
 ## Best Practices
 
@@ -165,19 +177,28 @@ si force-unlock <LOCK_ID>
 ## FAQ
 
 ### Q: Do I need to manually lock/unlock?
+
 **A**: No. Locking is automatic for all modification operations.
 
 ### Q: What happens if my process crashes?
+
 **A**: The lock will remain until you use `force-unlock`. This prevents partial deployments from corrupting state.
 
 ### Q: Can multiple people deploy simultaneously?
+
 **A**: No. Only one deployment operation can proceed at a time for a given stack.
 
 ### Q: Does locking work across different machines?
-**A**: No. State locking is local to a single machine. For team collaboration, use a shared CI/CD system.
+
+**A**: It depends on the state backend:
+
+- **Local backend**: Locks are local to a single machine. For team collaboration with a local backend, use a shared CI/CD system so only one runner operates on the stack at a time.
+- **Remote backend**: Yes. The lock object is stored in the shared remote backend, so it is effective across different machines and CI runners that use the same state.
 
 ### Q: How do I know if a lock is stale?
+
 **A**: Locks older than 1 hour are flagged as potentially stale, but you must verify manually.
 
 ### Q: Can I disable locking?
+
 **A**: No. Locking is always enabled to prevent state corruption.

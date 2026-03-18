@@ -116,6 +116,8 @@ export const en = {
   GENERATING_PLAN: 'Generating deployment plan...',
   PLAN_GENERATED: 'Plan generated with',
   EXECUTING_PLAN: 'Executing deployment plan...',
+  DEPLOY_CONFIRMATION: 'Do you want to perform these actions? (yes/no): ',
+  DEPLOY_CANCELLED: 'Deployment cancelled.',
 
   // TDSQL-C database messages
   TDSQL_CLUSTER_CREATION_INITIATED: 'TDSQL-C cluster creation initiated',
@@ -311,6 +313,41 @@ export const en = {
   // Bucket resource messages
   OSS_BUCKET_TRACKED_CAN_RETRY:
     'Bucket is tracked in state, you can retry deployment to upload files',
+  OSS_DNS_CNAME_CREATED: 'Created DNS CNAME record: {{domain}} -> {{cname}}',
+  OSS_DNS_CNAME_EXISTS: 'DNS CNAME record already exists: {{domain}} -> {{cname}}',
+  OSS_DNS_CNAME_DELETED: 'Deleted DNS CNAME record for {{domain}}',
+  OSS_DNS_CNAME_DELETE_FAILED: 'Failed to delete DNS CNAME record for {{domain}}: {{error}}',
+  OSS_DNS_DOMAIN_NOT_MANAGED:
+    'The domain {{domain}} is not managed by this Aliyun account. ' +
+    'Please manually configure CNAME: {{domain}} -> {{cname}}',
+  OSS_DNS_MANUAL_CONFIG_REQUIRED:
+    'DNS operations not available. Please manually configure CNAME: {{domain}} -> {{cname}}',
+  OSS_BUCKET_CNAME_NOT_SUPPORTED:
+    'Bucket-level CNAME registration requires Aliyun console. ' +
+    'After DNS CNAME is configured, register {{domain}} in OSS console: ' +
+    'https://oss.console.aliyun.com/bucket/oss-{{region}}/{{bucket}}/domain/cname',
+  OSS_BUCKET_CNAME_BOUND: 'Bound custom domain to bucket: {{domain}}',
+  OSS_BUCKET_CNAME_EXISTS: 'Custom domain already bound to bucket: {{domain}}',
+  OSS_BUCKET_CNAME_UNBOUND: 'Unbound custom domain from bucket: {{domain}}',
+  OSS_BUCKET_CNAME_BIND_FAILED: 'Failed to bind bucket CNAME: {{error}}',
+  OSS_BUCKET_CNAME_UNBIND_FAILED: 'Failed to unbind bucket CNAME: {{error}}',
+  OSS_BUCKET_CNAME_NEED_VERIFY:
+    'Domain ownership verification required. Please add TXT record in DNS console, then retry.',
+
+  // Tencent COS DNS messages
+  COS_DNS_CNAME_CREATED: 'Created DNS CNAME record: {{domain}} -> {{cname}}',
+  COS_DNS_CNAME_EXISTS: 'DNS CNAME record already exists: {{domain}} -> {{cname}}',
+  COS_DNS_CNAME_DELETED: 'Deleted DNS CNAME record for {{domain}}',
+  COS_DNS_CNAME_DELETE_FAILED: 'Failed to delete DNS CNAME record for {{domain}}: {{error}}',
+  COS_DNS_DOMAIN_NOT_MANAGED:
+    'The domain {{domain}} is not managed by this Tencent Cloud account. ' +
+    'Please manually configure CNAME: {{domain}} -> {{cname}}',
+  COS_DNS_MANUAL_CONFIG_REQUIRED:
+    'DNS operations not available. Please manually configure CNAME: {{domain}} -> {{cname}}',
+  COS_BUCKET_DOMAIN_BOUND: 'Bound custom domain to bucket: {{domain}}',
+  COS_BUCKET_DOMAIN_BIND_FAILED: 'Failed to bind bucket domain: {{error}}',
+  COS_BUCKET_DOMAIN_UNBOUND: 'Unbound custom domain from bucket: {{domain}}',
+  COS_BUCKET_DOMAIN_UNBIND_FAILED: 'Failed to unbind bucket domain: {{error}}',
 
   // Dependency graph messages
   DEPENDENCY_GRAPH_GENERATED: 'Dependency graph generated',

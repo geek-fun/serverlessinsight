@@ -8,6 +8,7 @@ import { logger } from '../logger';
 import { lang } from '../../lang';
 import { getResource, setResource } from '../stateManager';
 import { buildSid } from '../sidUtils';
+import { extractMainDomain, extractHostRecord } from '../domainUtils';
 import {
   APIGW_DOMAIN_BIND_MAX_RETRIES,
   APIGW_DOMAIN_BIND_RETRY_DELAY_MS,
@@ -146,25 +147,6 @@ const removeUndefined = <T extends Record<string, unknown>>(obj: T): T => {
 };
 
 const sleep = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));
-
-const extractMainDomain = (domainName: string): string => {
-  const parts = domainName.split('.');
-  if (parts.length <= 2) {
-    return domainName;
-  }
-  return parts.slice(-2).join('.');
-};
-
-const extractHostRecord = (fullDomain: string, mainDomain: string): string => {
-  if (fullDomain === mainDomain) {
-    return '@'; // @ represents the root domain
-  }
-  const suffix = `.${mainDomain}`;
-  if (fullDomain.endsWith(suffix)) {
-    return fullDomain.slice(0, -suffix.length);
-  }
-  return fullDomain;
-};
 
 export const createApigwOperations = (
   apigwClient: ApigwSdkClient,

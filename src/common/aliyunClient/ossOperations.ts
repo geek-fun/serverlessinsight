@@ -10,21 +10,174 @@ import {
   BucketLifecycleRule,
   BucketOwner,
 } from '../../stack/bucketTypes';
+import { DnsOperations } from './dnsOperations';
+import { logger } from '../logger';
+import { lang } from '../../lang';
+import { extractMainDomain, extractHostRecord } from '../domainUtils';
 
 export type OssBucketConfig = {
   bucketName: string;
   acl?: BucketACL;
   websiteConfig?: BucketWebsiteConfig;
   storageClass?: string;
+  domain?: string;
 };
 
 export type OssBucketInfo = CommonBucketInfo;
 
+export type OssCnameInfo = {
+  domain: string;
+  cname: string;
+  dnsRecordId?: string;
+  bucketCnameBound?: boolean;
+};
+
 type OssSdkClient = OSS;
 
-export const createOssOperations = (ossClient: OssSdkClient, region: string) => {
+export const createOssOperations = (
+  ossClient: OssSdkClient,
+  region: string,
+  dnsOps?: DnsOperations,
+) => {
   const useBucket = (bucketName: string) => {
     ossClient.useBucket(bucketName);
+  };
+
+  const getOssEndpoint = (bucketName: string): string => {
+    return `${bucketName}.oss-${region}.aliyuncs.com`;
+  };
+
+  const putBucketCname = async (bucketName: string, domain: string): Promise<boolean> => {
+    useBucket(bucketName);
+    const xml = `<?xml version="1.0" encoding="UTF-8"?>
+<BucketCnameConfiguration>
+  <Cname>
+    <Domain>${domain}</Domain>
+  </Cname>
+</BucketCnameConfiguration>`;
+
+    try {
+      const params = {
+        method: 'POST',
+        bucket: bucketName,
+        subres: { cname: '', comp: 'add' },
+        headers: {
+          'Content-Type': 'application/xml',
+          'Content-MD5': '',
+        },
+        content: xml,
+        successStatuses: [200],
+      };
+      await (ossClient as unknown as { request: (p: unknown) => Promise<unknown> }).request(params);
+      logger.info(lang.__('OSS_BUCKET_CNAME_BOUND', { domain }));
+      return true;
+    } catch (error) {
+      const err = error as { code?: string; message?: string; status?: number };
+      if (err.code === 'CnameAlreadyExists' || err.status === 409) {
+        logger.info(lang.__('OSS_BUCKET_CNAME_EXISTS', { domain }));
+        return true;
+      }
+      if (err.code === 'NeedVerifyDomainOwnership') {
+        logger.warn(lang.__('OSS_BUCKET_CNAME_NEED_VERIFY', { domain }));
+        return false;
+      }
+      logger.warn(lang.__('OSS_BUCKET_CNAME_BIND_FAILED', { error: String(error) }));
+      return false;
+    }
+  };
+
+  const deleteBucketCname = async (bucketName: string, domain: string): Promise<boolean> => {
+    useBucket(bucketName);
+    const xml = `<?xml version="1.0" encoding="UTF-8"?>
+<BucketCnameConfiguration>
+  <Cname>
+    <Domain>${domain}</Domain>
+  </Cname>
+</BucketCnameConfiguration>`;
+
+    try {
+      const params = {
+        method: 'POST',
+        bucket: bucketName,
+        subres: { cname: '', comp: 'delete' },
+        headers: {
+          'Content-Type': 'application/xml',
+        },
+        content: xml,
+        successStatuses: [200, 204],
+      };
+      await (ossClient as unknown as { request: (p: unknown) => Promise<unknown> }).request(params);
+      logger.info(lang.__('OSS_BUCKET_CNAME_UNBOUND', { domain }));
+      return true;
+    } catch (error) {
+      logger.warn(lang.__('OSS_BUCKET_CNAME_UNBIND_FAILED', { error: String(error) }));
+      return false;
+    }
+  };
+
+  const bindCustomDomain = async (bucketName: string, domain: string): Promise<OssCnameInfo> => {
+    const mainDomain = extractMainDomain(domain);
+    const hostRecord = extractHostRecord(domain, mainDomain);
+    const ossEndpoint = getOssEndpoint(bucketName);
+
+    const bucketCnameBound = await putBucketCname(bucketName, domain);
+
+    if (!dnsOps) {
+      logger.warn(lang.__('OSS_DNS_MANUAL_CONFIG_REQUIRED', { domain, cname: ossEndpoint }));
+      return { domain, cname: ossEndpoint, bucketCnameBound };
+    }
+
+    try {
+      const existingRecords = await dnsOps.describeDomainRecords(mainDomain, hostRecord);
+      const existingRecord = existingRecords.find(
+        (record) =>
+          record.rr === hostRecord && record.type === 'CNAME' && record.value === ossEndpoint,
+      );
+
+      if (existingRecord) {
+        logger.info(lang.__('OSS_DNS_CNAME_EXISTS', { domain, cname: ossEndpoint }));
+        return {
+          domain,
+          cname: ossEndpoint,
+          dnsRecordId: existingRecord.recordId,
+          bucketCnameBound,
+        };
+      }
+
+      const recordId = await dnsOps.addDomainRecord({
+        domainName: mainDomain,
+        rr: hostRecord,
+        type: 'CNAME',
+        value: ossEndpoint,
+        ttl: 600,
+      });
+
+      logger.info(lang.__('OSS_DNS_CNAME_CREATED', { domain, cname: ossEndpoint }));
+      return { domain, cname: ossEndpoint, dnsRecordId: recordId, bucketCnameBound };
+    } catch (error) {
+      logger.warn(lang.__('OSS_DNS_DOMAIN_NOT_MANAGED', { domain, cname: ossEndpoint }));
+      logger.debug(`DNS error: ${error}`);
+      return { domain, cname: ossEndpoint, bucketCnameBound };
+    }
+  };
+
+  const unbindCustomDomain = async (
+    bucketName: string,
+    domain: string,
+    dnsRecordId?: string,
+  ): Promise<void> => {
+    await deleteBucketCname(bucketName, domain);
+
+    if (!dnsOps || !dnsRecordId || dnsRecordId === 'existing') {
+      return;
+    }
+
+    try {
+      await dnsOps.deleteDomainRecord(dnsRecordId);
+      logger.info(lang.__('OSS_DNS_CNAME_DELETED', { domain }));
+    } catch (error) {
+      logger.warn(lang.__('OSS_DNS_CNAME_DELETE_FAILED', { domain, error: String(error) }));
+    }
   };
 
   return {
@@ -278,5 +431,11 @@ export const createOssOperations = (ossClient: OssSdkClient, region: string) => 
       useBucket(bucketName);
       await ossClient.put(objectKey, filePath);
     },
+
+    bindCustomDomain,
+
+    unbindCustomDomain,
+
+    getOssEndpoint,
   };
 };

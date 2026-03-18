@@ -1,5 +1,5 @@
 // Template reference pattern that matches ${vars.xxx}, ${stages.xxx}, ${ctx.xxx}, ${functions.xxx}
-// Note: ${functions.xxx} references are kept as strings and resolved by infrastructure stack (ROS/Terraform)
+// Note: ${functions.xxx} references are kept as strings and resolved by the deployment engine
 // Only ${vars.xxx}, ${stages.xxx}, and ${ctx.xxx} are resolved at parse time
 const templateRefPattern = '^\\$\\{(vars|stages|ctx|functions)\\.[\\w.]+\\}$';
 

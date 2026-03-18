@@ -2,22 +2,22 @@
 import { Command } from 'commander';
 import {
   clearContext,
-  getContext,
   getIacLocation,
-  getIamInfo,
   getVersion,
   logger,
   setContext,
+  setIac,
+  getContext,
 } from '../common';
 import { validate } from './validate';
 import { deploy } from './deploy';
-import { template } from './template';
 import { destroyStack } from './destroy';
 import { runLocal } from './local';
 import { plan } from './plan';
 import { forceUnlockCommand } from './forceUnlock';
+import { show } from './show';
 import { lang } from '../lang';
-import { parseYaml } from '../parser';
+import { parseYaml, revalYaml } from '../parser';
 
 // Global error handler
 const handleCommandError = (
@@ -79,16 +79,24 @@ program.name('si').description('CLI for ServerlessInsight').version(getVersion()
 
 program
   .command('show')
-  .description('show string')
+  .description('show deployed resources from state')
   .option('-f, --file <path>', 'specify the yaml file')
+  .option('-s, --stage <stage>', 'specify the stage')
   .action(
     actionWrapper('show', async (options) => {
       const iacLocation = getIacLocation(options.file);
       const rawIac = parseYaml(iacLocation);
-      await setContext({ ...options, app: rawIac.app, service: rawIac.service });
+      await setContext({
+        ...options,
+        app: rawIac.app,
+        service: rawIac.service,
+        iacProvider: rawIac.provider,
+        stages: rawIac.stages,
+      });
       const context = getContext();
-      const result = await getIamInfo(context);
-      console.log(lang.__('RESULT', { result: JSON.stringify(result) }));
+      const iac = revalYaml(iacLocation, context);
+      setIac(iac);
+      await show({ stage: options.stage, location: options.file, iac });
     }),
   );
 
@@ -106,7 +114,7 @@ program
 
 program
   .command('plan')
-  .description('generate and show deployment plan (Tencent provider only)')
+  .description('generate and show deployment plan')
   .option('-f, --file <path>', 'specify the yaml file')
   .option('-s, --stage <stage>', 'specify the stage')
   .option('-r, --region <region>', 'specify the region')
@@ -141,6 +149,7 @@ program
   .option('-k, --accessKeyId <accessKeyId>', 'specify the AccessKeyId')
   .option('-x, --accessKeySecret <accessKeySecret>', 'specify the AccessKeySecret')
   .option('-n, --securityToken <securityToken>', 'specify the SecurityToken')
+  .option('-y, --auto-approve', 'skip interactive approval of plan before deploying')
   .option(
     '-p, --parameter <key=value>',
     'override parameters',
@@ -163,6 +172,7 @@ program
         accessKeyId,
         accessKeySecret,
         securityToken,
+        autoApprove,
       }) => {
         await deploy({
           stage,
@@ -173,21 +183,10 @@ program
           accessKeyId,
           accessKeySecret,
           securityToken,
+          autoApprove,
         });
       },
     ),
-  );
-
-program
-  .command('template')
-  .description('print platform specific infrastructure as code template')
-  .option('-f, --file <path>', 'specify the yaml file')
-  .option('-s, --stage <stage>', 'specify the stage')
-  .option('-t, --format <type>', 'output content type (JSON or YAML)', 'JSON')
-  .action(
-    actionWrapper('template', async ({ format, file, stage }) => {
-      await template({ format, location: file, stage });
-    }),
   );
 
 program

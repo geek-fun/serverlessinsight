@@ -1,16 +1,30 @@
 import { createAliyunClient } from '../../common/aliyunClient';
-import { OssBucketInfo } from '../../common/aliyunClient/ossOperations';
+import { OssBucketInfo, OssCnameInfo } from '../../common/aliyunClient/ossOperations';
 import { setResource, removeResource, buildSid } from '../../common';
-import { Context, BucketDomain, ResourceState, StateFile } from '../../types';
+import {
+  Context,
+  BucketDomain,
+  ResourceState,
+  StateFile,
+  ResourceInstance,
+  ResourceTypeEnum,
+} from '../../types';
 import { bucketToOssBucketConfig, extractOssBucketDefinition } from './ossTypes';
 import { CommonBucketInstance } from '../bucketTypes';
 import { logger } from '../../common/logger';
 import { lang } from '../../lang';
 import path from 'node:path';
 
+type OssDnsInstance = ResourceInstance & {
+  type: 'ALIYUN_OSS_DNS_CNAME';
+  domain: string;
+  cname: string;
+  dnsRecordId?: string;
+};
+
 const buildOssInstanceFromProvider = (info: OssBucketInfo, sid: string): CommonBucketInstance => {
   return {
-    type: 'ALIYUN_OSS_BUCKET',
+    type: ResourceTypeEnum.ALIYUN_OSS_BUCKET,
     sid,
     id: info.name,
     bucketName: info.name,
@@ -120,16 +134,36 @@ export const createBucketResource = async (
   const sid = buildSid('aliyun', 'oss', context.stage, config.bucketName);
   const logicalId = `buckets.${bucket.key}`;
 
-  // Save state immediately after bucket creation, before file upload
+  const instances: Array<ResourceInstance> = [buildOssInstanceFromProvider(bucketInfo, sid)];
+
   const partialResourceState: ResourceState = {
     mode: 'managed',
     region: context.region,
     definition,
-    instances: [buildOssInstanceFromProvider(bucketInfo, sid)],
+    instances,
     lastUpdated: new Date().toISOString(),
   };
 
   state = setResource(state, logicalId, partialResourceState);
+
+  let cnameInfo: OssCnameInfo | undefined;
+  if (bucket.website?.domain) {
+    logger.info(`Binding custom domain ${bucket.website.domain} to bucket ${config.bucketName}`);
+    cnameInfo = await client.oss.bindCustomDomain(config.bucketName, bucket.website.domain);
+
+    if (cnameInfo) {
+      const instanceId = cnameInfo.dnsRecordId ?? bucket.website.domain;
+      const dnsInstance: OssDnsInstance = {
+        sid: buildSid('aliyun', 'alidns', context.stage, instanceId),
+        id: instanceId,
+        type: ResourceTypeEnum.ALIYUN_OSS_DNS_CNAME,
+        domain: bucket.website.domain,
+        cname: cnameInfo.cname,
+        ...(cnameInfo.dnsRecordId ? { dnsRecordId: cnameInfo.dnsRecordId } : {}),
+      };
+      instances.push(dnsInstance);
+    }
+  }
 
   // Upload static files if code path is specified
   if (bucket.website?.code) {
@@ -140,25 +174,25 @@ export const createBucketResource = async (
       // Refresh state after upload to get updated info
       bucketInfo = await client.oss.getBucket(config.bucketName);
       if (bucketInfo) {
-        const updatedResourceState: ResourceState = {
-          mode: 'managed',
-          region: context.region,
-          definition,
-          instances: [buildOssInstanceFromProvider(bucketInfo, sid)],
-          lastUpdated: new Date().toISOString(),
-        };
-        return setResource(state, logicalId, updatedResourceState);
+        instances[0] = buildOssInstanceFromProvider(bucketInfo, sid);
       }
     } catch (error) {
       logger.error(
         `Failed to upload files to bucket, but bucket was created and saved to state: ${error}`,
       );
       logger.info(lang.__('OSS_BUCKET_TRACKED_CAN_RETRY'));
-      return state;
     }
   }
 
-  return state;
+  const finalResourceState: ResourceState = {
+    mode: 'managed',
+    region: context.region,
+    definition,
+    instances,
+    lastUpdated: new Date().toISOString(),
+  };
+
+  return setResource(state, logicalId, finalResourceState);
 };
 
 export const readBucketResource = async (context: Context, bucketName: string) => {
@@ -174,23 +208,19 @@ export const updateBucketResource = async (
   const config = bucketToOssBucketConfig(bucket);
   const client = createAliyunClient(context);
 
-  // Update ACL if specified
   if (config.acl) {
     await client.oss.updateBucketAcl(config.bucketName, config.acl);
   }
 
-  // Update website configuration if specified
   if (config.websiteConfig) {
     await client.oss.updateBucketWebsite(config.bucketName, config.websiteConfig);
   }
 
-  // Upload static files if code path is specified
   if (bucket.website?.code) {
     const codePath = path.resolve(process.cwd(), bucket.website.code);
     await client.oss.uploadFiles(config.bucketName, codePath);
   }
 
-  // Refresh state from provider to get all attributes
   const bucketInfo = await client.oss.getBucket(config.bucketName);
   if (!bucketInfo) {
     throw new Error(`Failed to refresh state for bucket: ${config.bucketName}`);
@@ -198,15 +228,57 @@ export const updateBucketResource = async (
 
   const definition = extractOssBucketDefinition(config);
   const sid = buildSid('aliyun', 'oss', context.stage, config.bucketName);
+  const logicalId = `buckets.${bucket.key}`;
+
+  const instances: Array<ResourceInstance> = [buildOssInstanceFromProvider(bucketInfo, sid)];
+
+  const existingState = state.resources[logicalId];
+  const existingDnsInstance = existingState?.instances?.find(
+    (i) => i.type === ResourceTypeEnum.ALIYUN_OSS_DNS_CNAME,
+  ) as OssDnsInstance | undefined;
+
+  if (bucket.website?.domain) {
+    const domainChanged = existingDnsInstance?.domain !== bucket.website.domain;
+
+    if (domainChanged && existingDnsInstance) {
+      await client.oss.unbindCustomDomain(
+        config.bucketName,
+        existingDnsInstance.domain,
+        existingDnsInstance.dnsRecordId,
+      );
+    }
+
+    logger.info(`Binding custom domain ${bucket.website.domain} to bucket ${config.bucketName}`);
+    const cnameInfo = await client.oss.bindCustomDomain(config.bucketName, bucket.website.domain);
+
+    if (cnameInfo) {
+      const instanceId = cnameInfo.dnsRecordId ?? bucket.website.domain;
+      const dnsInstance: OssDnsInstance = {
+        sid: buildSid('aliyun', 'alidns', context.stage, instanceId),
+        id: instanceId,
+        type: ResourceTypeEnum.ALIYUN_OSS_DNS_CNAME,
+        domain: bucket.website.domain,
+        cname: cnameInfo.cname,
+        ...(cnameInfo.dnsRecordId ? { dnsRecordId: cnameInfo.dnsRecordId } : {}),
+      };
+      instances.push(dnsInstance);
+    }
+  } else if (existingDnsInstance) {
+    await client.oss.unbindCustomDomain(
+      config.bucketName,
+      existingDnsInstance.domain,
+      existingDnsInstance.dnsRecordId,
+    );
+  }
+
   const resourceState: ResourceState = {
     mode: 'managed',
     region: context.region,
     definition,
-    instances: [buildOssInstanceFromProvider(bucketInfo, sid)],
+    instances,
     lastUpdated: new Date().toISOString(),
   };
 
-  const logicalId = `buckets.${bucket.key}`;
   return setResource(state, logicalId, resourceState);
 };
 
@@ -217,6 +289,16 @@ export const deleteBucketResource = async (
   state: StateFile,
 ): Promise<StateFile> => {
   const client = createAliyunClient(context);
+
+  const existingState = state.resources[logicalId];
+  const dnsInstance = existingState?.instances?.find(
+    (i) => i.type === ResourceTypeEnum.ALIYUN_OSS_DNS_CNAME,
+  ) as OssDnsInstance | undefined;
+
+  if (dnsInstance) {
+    await client.oss.unbindCustomDomain(bucketName, dnsInstance.domain, dnsInstance.dnsRecordId);
+  }
+
   try {
     await client.oss.deleteBucket(bucketName);
   } catch (err) {

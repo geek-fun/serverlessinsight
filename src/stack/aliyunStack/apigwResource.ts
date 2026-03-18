@@ -412,10 +412,14 @@ export const deleteApigwResource = async (
 
   const groupInstance = existingInstances.find((i) => i.type === 'ALIYUN_APIGW_GROUP');
   if (!groupInstance) {
+    // Still clean up DNS resources even if group instance is missing
+    state = await cleanupDnsRecords(context, logicalId, state);
     return removeResource(state, logicalId);
   }
 
   const groupId = groupInstance.id;
+
+  state = await cleanupDnsRecords(context, logicalId, state);
 
   const deployments = existingInstances.filter((i) => i.type === 'ALIYUN_APIGW_DEPLOYMENT');
   for (const deployment of deployments) {
@@ -446,4 +450,45 @@ export const deleteApigwResource = async (
   }
 
   return removeResource(state, logicalId);
+};
+
+/**
+ * Clean up DNS verification records for an API Gateway event
+ */
+const cleanupDnsRecords = async (
+  context: Context,
+  eventLogicalId: string,
+  state: StateFile,
+): Promise<StateFile> => {
+  const client = createAliyunClient(context);
+  const dnsResourceIds = [
+    `${eventLogicalId}.dns_verification`,
+    `${eventLogicalId}.dns_txt_verification`,
+  ];
+
+  for (const dnsResourceId of dnsResourceIds) {
+    const dnsState = getResource(state, dnsResourceId);
+    if (!dnsState) {
+      continue;
+    }
+
+    const dnsInstance = dnsState.instances[0];
+    const recordId = dnsInstance?.id as string;
+
+    // Only delete if recordId is not 'existing' (which means we didn't create it)
+    if (recordId && recordId !== 'existing') {
+      try {
+        logger.info(`Deleting DNS record: ${recordId}`);
+        await client.dns.deleteDomainRecord(recordId);
+        logger.info(`Successfully deleted DNS record: ${recordId}`);
+      } catch (error) {
+        // DNS record might already be deleted or not accessible
+        logger.warn(`Failed to delete DNS record ${recordId}: ${error}`);
+      }
+    }
+
+    state = removeResource(state, dnsResourceId);
+  }
+
+  return state;
 };

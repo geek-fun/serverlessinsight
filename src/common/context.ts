@@ -78,9 +78,15 @@ export const setContext = async (
   const region =
     config.region ??
     config.iacProvider?.region ??
-    process.env.ROS_REGION_ID ??
+    process.env.SI_REGION ??
     process.env.ALIYUN_REGION ??
     'cn-hangzhou';
+
+  if (process.env.ROS_REGION_ID && !process.env.SI_REGION) {
+    console.warn(
+      'Warning: ROS_REGION_ID environment variable is deprecated. Please use SI_REGION instead.',
+    );
+  }
 
   const provider = (config.provider ??
     config.iacProvider?.name ??
