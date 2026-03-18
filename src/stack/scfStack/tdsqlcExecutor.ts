@@ -21,9 +21,13 @@ const executeCreateAction = async (
   database: DatabaseDomain,
   currentState: StateFile,
 ): Promise<StateFile> => {
-  logger.info(`Creating TDSQL-C database: ${database.name}`);
+  logger.info(
+    lang.__('CREATING_RESOURCE', { resourceType: 'TDSQL-C database', name: database.name }),
+  );
   const newState = await createDatabaseResource(context, database, currentState);
-  logger.info(`Successfully created TDSQL-C database: ${database.name}`);
+  logger.info(
+    lang.__('RESOURCE_CREATED', { resourceType: 'TDSQL-C database', name: database.name }),
+  );
   return newState;
 };
 
@@ -33,9 +37,13 @@ const executeUpdateAction = async (
   clusterId: string,
   currentState: StateFile,
 ): Promise<StateFile> => {
-  logger.info(`Updating TDSQL-C database: ${database.name}`);
+  logger.info(
+    lang.__('UPDATING_RESOURCE', { resourceType: 'TDSQL-C database', name: database.name }),
+  );
   const newState = await updateDatabaseResource(context, database, clusterId, currentState);
-  logger.info(`Successfully updated TDSQL-C database: ${database.name}`);
+  logger.info(
+    lang.__('RESOURCE_UPDATED', { resourceType: 'TDSQL-C database', name: database.name }),
+  );
   return newState;
 };
 
@@ -45,9 +53,9 @@ const executeDeleteAction = async (
   logicalId: string,
   currentState: StateFile,
 ): Promise<StateFile> => {
-  logger.info(`Deleting TDSQL-C database: ${clusterId}`);
+  logger.info(lang.__('DELETING_RESOURCE', { resourceType: 'TDSQL-C database', name: clusterId }));
   const newState = await deleteDatabaseResource(context, clusterId, logicalId, currentState);
-  logger.info(`Successfully deleted TDSQL-C database: ${clusterId}`);
+  logger.info(lang.__('RESOURCE_DELETED', { resourceType: 'TDSQL-C database', name: clusterId }));
   return newState;
 };
 
@@ -63,7 +71,7 @@ const executeSingleItem = async (
 
   switch (item.action) {
     case 'noop':
-      logger.info(`No changes for ${item.logicalId}`);
+      logger.info(lang.__('NO_CHANGESForResource', { logicalId: item.logicalId }));
       return null;
 
     case 'create': {
@@ -94,7 +102,7 @@ const executeSingleItem = async (
     case 'delete': {
       const state = getResource(currentState, item.logicalId);
       if (!state) {
-        logger.warn(`State not found for ${item.logicalId}, skipping deletion`);
+        logger.warn(lang.__('STATE_NOT_FOUND_SKIPPING', { logicalId: item.logicalId }));
         return null;
       }
       const clusterId =
@@ -106,7 +114,9 @@ const executeSingleItem = async (
     }
 
     default:
-      logger.warn(`Unknown action: ${item.action} for ${item.logicalId}`);
+      logger.warn(
+        lang.__('UNKNOWN_ACTION_FOR_RESOURCE', { action: item.action, logicalId: item.logicalId }),
+      );
       return null;
   }
 };

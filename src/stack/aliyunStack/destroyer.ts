@@ -69,7 +69,13 @@ export const destroyAliyunStack = async (backend: StateBackend): Promise<void> =
 
   logger.info(`${lang.__('PLAN_GENERATED')}: ${combinedPlan.items.length} ${lang.__('ACTIONS')}`);
   combinedPlan.items.forEach((item) => {
-    logger.info(`  - ${item.action.toUpperCase()}: ${item.logicalId} (${item.resourceType})`);
+    logger.info(
+      lang.__('EXECUTION_PLAN_ITEM', {
+        action: item.action.toUpperCase(),
+        logicalId: item.logicalId,
+        resourceType: item.resourceType,
+      }),
+    );
   });
 
   // Delete events before functions (events depend on functions)

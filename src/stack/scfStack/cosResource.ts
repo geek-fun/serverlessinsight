@@ -12,6 +12,7 @@ import { bucketToCosBucketConfig, extractCosBucketDefinition, CosBucketInfo } fr
 import { setResource, removeResource } from '../../common/stateManager';
 import { buildSid } from '../../common';
 import { logger } from '../../common/logger';
+import { lang } from '../../lang';
 
 type CosDnsInstance = ResourceInstance & {
   type: 'TENCENT_COS_DNS_CNAME';
@@ -107,7 +108,12 @@ export const createBucketResource = async (
 
   let cnameInfo: CosCnameInfo | undefined;
   if (bucket.website?.domain) {
-    logger.info(`Binding custom domain ${bucket.website.domain} to bucket ${bucket.name}`);
+    logger.info(
+      lang.__('BINDING_CUSTOM_DOMAIN_TO_BUCKET', {
+        domain: bucket.website.domain,
+        bucketName: bucket.name,
+      }),
+    );
     cnameInfo = await client.cos.bindCustomDomain(bucket.name, bucket.website.domain);
 
     if (cnameInfo) {
@@ -191,7 +197,12 @@ export const updateBucketResource = async (
       );
     }
 
-    logger.info(`Binding custom domain ${bucket.website.domain} to bucket ${bucket.name}`);
+    logger.info(
+      lang.__('BINDING_CUSTOM_DOMAIN_TO_BUCKET', {
+        domain: bucket.website.domain,
+        bucketName: bucket.name,
+      }),
+    );
     const cnameInfo = await client.cos.bindCustomDomain(bucket.name, bucket.website.domain);
 
     if (cnameInfo) {
@@ -255,7 +266,9 @@ export const deleteBucketResource = async (
     const errorCode = (err as { code?: string })?.code;
     const statusCode = (err as { statusCode?: number })?.statusCode;
     if (errorCode === 'NoSuchBucket' || statusCode === 404) {
-      logger.warn(`Bucket ${bucketName} not found in provider, skipping deletion`);
+      logger.warn(
+        lang.__('RESOURCE_NOT_FOUND_PROVIDER', { resourceType: 'Bucket', name: bucketName }),
+      );
     } else {
       throw err;
     }

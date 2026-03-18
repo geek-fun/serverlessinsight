@@ -17,9 +17,9 @@ const executeCreateAction = async (
   bucket: BucketDomain,
   currentState: StateFile,
 ): Promise<StateFile> => {
-  logger.info(`Creating bucket: ${bucket.name}`);
+  logger.info(lang.__('CREATING_RESOURCE', { resourceType: 'bucket', name: bucket.name }));
   const newState = await createBucketResource(context, bucket, currentState);
-  logger.info(`Successfully created bucket: ${bucket.name}`);
+  logger.info(lang.__('RESOURCE_CREATED', { resourceType: 'bucket', name: bucket.name }));
   return newState;
 };
 
@@ -28,9 +28,9 @@ const executeUpdateAction = async (
   bucket: BucketDomain,
   currentState: StateFile,
 ): Promise<StateFile> => {
-  logger.info(`Updating bucket: ${bucket.name}`);
+  logger.info(lang.__('UPDATING_RESOURCE', { resourceType: 'bucket', name: bucket.name }));
   const newState = await updateBucketResource(context, bucket, currentState);
-  logger.info(`Successfully updated bucket: ${bucket.name}`);
+  logger.info(lang.__('RESOURCE_UPDATED', { resourceType: 'bucket', name: bucket.name }));
   return newState;
 };
 
@@ -40,9 +40,9 @@ const executeDeleteAction = async (
   logicalId: string,
   currentState: StateFile,
 ): Promise<StateFile> => {
-  logger.info(`Deleting bucket: ${bucketName}`);
+  logger.info(lang.__('DELETING_RESOURCE', { resourceType: 'bucket', name: bucketName }));
   const newState = await deleteBucketResource(context, bucketName, logicalId, currentState);
-  logger.info(`Successfully deleted bucket: ${bucketName}`);
+  logger.info(lang.__('RESOURCE_DELETED', { resourceType: 'bucket', name: bucketName }));
   return newState;
 };
 
@@ -54,7 +54,7 @@ const executeSingleItem = async (
 ): Promise<StateFile | null> => {
   switch (item.action) {
     case 'noop':
-      logger.info(`No changes for ${item.logicalId}`);
+      logger.info(lang.__('NO_CHANGESForResource', { logicalId: item.logicalId }));
       return null;
 
     case 'create': {
@@ -76,7 +76,7 @@ const executeSingleItem = async (
     case 'delete': {
       const state = getResource(currentState, item.logicalId);
       if (!state) {
-        logger.warn(`State not found for ${item.logicalId}, skipping deletion`);
+        logger.warn(lang.__('STATE_NOT_FOUND_SKIPPING', { logicalId: item.logicalId }));
         return null;
       }
       const bucketName = state.definition.bucketName as string;
@@ -84,7 +84,9 @@ const executeSingleItem = async (
     }
 
     default:
-      logger.warn(`Unknown action: ${item.action} for ${item.logicalId}`);
+      logger.warn(
+        lang.__('UNKNOWN_ACTION_FOR_RESOURCE', { action: item.action, logicalId: item.logicalId }),
+      );
       return null;
   }
 };

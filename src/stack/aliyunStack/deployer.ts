@@ -54,7 +54,14 @@ const logDependencyGraph = (orderedItems: Array<PlanItem>, dotGraph: string): vo
   logger.info(lang.__('DEPENDENCY_GRAPH_GENERATED'));
   logger.info(`  ${lang.__('EXECUTION_ORDER')}:`);
   orderedItems.forEach((item, index) => {
-    logger.info(`    ${index + 1}. ${item.logicalId} (${item.resourceType}) - ${item.action}`);
+    logger.info(
+      lang.__('EXECUTION_ORDER_ITEM', {
+        index: String(index + 1),
+        logicalId: item.logicalId,
+        resourceType: item.resourceType,
+        action: item.action,
+      }),
+    );
   });
   logger.debug(`${lang.__('DOT_GRAPH_OUTPUT')}:\n${dotGraph}`);
 };
@@ -104,7 +111,13 @@ export const deployAliyunStack = async (
   // Plan execution below still follows the fixed per-resource ordering.
   logger.info(`${lang.__('PLAN_GENERATED')}: ${allItems.length} ${lang.__('ACTIONS')}`);
   allItems.forEach((item) => {
-    logger.info(`  - ${item.action.toUpperCase()}: ${item.logicalId} (${item.resourceType})`);
+    logger.info(
+      lang.__('EXECUTION_PLAN_ITEM', {
+        action: item.action.toUpperCase(),
+        logicalId: item.logicalId,
+        resourceType: item.resourceType,
+      }),
+    );
   });
 
   logger.info(lang.__('EXECUTING_PLAN'));

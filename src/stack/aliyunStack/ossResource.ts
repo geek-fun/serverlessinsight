@@ -148,7 +148,12 @@ export const createBucketResource = async (
 
   let cnameInfo: OssCnameInfo | undefined;
   if (bucket.website?.domain) {
-    logger.info(`Binding custom domain ${bucket.website.domain} to bucket ${config.bucketName}`);
+    logger.info(
+      lang.__('BINDING_CUSTOM_DOMAIN_TO_BUCKET', {
+        domain: bucket.website.domain,
+        bucketName: config.bucketName,
+      }),
+    );
     cnameInfo = await client.oss.bindCustomDomain(config.bucketName, bucket.website.domain);
 
     if (cnameInfo) {
@@ -254,7 +259,12 @@ export const updateBucketResource = async (
       );
     }
 
-    logger.info(`Binding custom domain ${bucket.website.domain} to bucket ${config.bucketName}`);
+    logger.info(
+      lang.__('BINDING_CUSTOM_DOMAIN_TO_BUCKET', {
+        domain: bucket.website.domain,
+        bucketName: config.bucketName,
+      }),
+    );
     const cnameInfo = await client.oss.bindCustomDomain(config.bucketName, bucket.website.domain);
 
     if (cnameInfo) {
@@ -316,7 +326,9 @@ export const deleteBucketResource = async (
   } catch (err) {
     const errorCode = (err as { code?: string })?.code;
     if (errorCode === 'NoSuchBucket') {
-      logger.warn(`Bucket ${bucketName} not found in provider, skipping deletion`);
+      logger.warn(
+        lang.__('RESOURCE_NOT_FOUND_PROVIDER', { resourceType: 'Bucket', name: bucketName }),
+      );
     } else {
       throw err;
     }

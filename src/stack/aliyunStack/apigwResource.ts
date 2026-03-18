@@ -478,12 +478,12 @@ const cleanupDnsRecords = async (
     // Only delete if recordId is not 'existing' (which means we didn't create it)
     if (recordId && recordId !== 'existing') {
       try {
-        logger.info(`Deleting DNS record: ${recordId}`);
+        logger.info(lang.__('DELETING_DNS_RECORD', { recordId }));
         await client.dns.deleteDomainRecord(recordId);
-        logger.info(`Successfully deleted DNS record: ${recordId}`);
+        logger.info(lang.__('DNS_RECORD_DELETED', { recordId }));
       } catch (error) {
         // DNS record might already be deleted or not accessible
-        logger.warn(`Failed to delete DNS record ${recordId}: ${error}`);
+        logger.warn(lang.__('FAILED_TO_DELETE_DNS_RECORD', { recordId, error: String(error) }));
       }
     }
 

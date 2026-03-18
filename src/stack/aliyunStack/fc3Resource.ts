@@ -25,6 +25,7 @@ import {
 } from '../../types';
 import { extractFc3Definition, Fc3FunctionInfo, functionToFc3Config } from './fc3Types';
 import { logger } from '../../common/logger';
+import { lang } from '../../lang';
 
 type DependentInstance = {
   type: string;
@@ -83,7 +84,7 @@ const ensureOssCodeUpload = async (
 
   const existingBucket = await client.oss.getBucket(bucketName);
   if (!existingBucket) {
-    logger.info(`Creating bootstrap OSS bucket: ${bucketName}`);
+    logger.info(lang.__('CREATING_BOOTSTRAP_BUCKET', { bucketName }));
     await client.oss.createBucket({ bucketName });
   }
 
@@ -91,7 +92,7 @@ const ensureOssCodeUpload = async (
   const ossObjectName = `fc3-code/${functionName}/${codeHash}.zip`;
 
   await client.oss.putFile(bucketName, ossObjectName, codePath);
-  logger.info(`Uploaded code to oss://${bucketName}/${ossObjectName}`);
+  logger.info(lang.__('UPLOADED_CODE_TO_OSS', { bucketName, objectName: ossObjectName }));
 
   return { ossBucketName: bucketName, ossObjectName };
 };
@@ -223,11 +224,11 @@ const createDependentResources = async (
       const projectName = `${serviceName}-${context.stage}-sls`;
       const logstoreName = `${serviceName}-${context.stage}-sls-logstore`;
 
-      logger.info(`Creating SLS project: ${projectName}`);
+      logger.info(lang.__('CREATING_SLS_PROJECT', { projectName }));
       const project = await client.sls.createProject(projectName);
       instances.push({ type: 'ALIYUN_SLS_PROJECT', id: projectName, attributes: { ...project } });
 
-      logger.info(`Creating SLS logstore: ${logstoreName}`);
+      logger.info(lang.__('CREATING_SLS_LOGSTORE', { logstoreName }));
       const logstore = await client.sls.createLogstore(projectName, logstoreName);
       instances.push({
         type: 'ALIYUN_SLS_LOGSTORE',
@@ -235,7 +236,7 @@ const createDependentResources = async (
         attributes: { ...logstore },
       });
 
-      logger.info(`Creating SLS index for: ${logstoreName}`);
+      logger.info(lang.__('CREATING_SLS_INDEX', { logstoreName }));
       const index = await client.sls.createIndex(projectName, logstoreName);
       instances.push({
         type: 'ALIYUN_SLS_INDEX',
@@ -266,7 +267,7 @@ const createDependentResources = async (
     const trustedServices = fnHasApiGateway
       ? ['fc.aliyuncs.com', 'apigateway.aliyuncs.com']
       : ['fc.aliyuncs.com'];
-    logger.info(`Creating RAM role: ${roleName}`);
+    logger.info(lang.__('CREATING_RAM_ROLE', { roleName }));
     const ramRole = await client.ram.createRole(roleName, trustedServices);
     instances.push({
       type: 'ALIYUN_RAM_ROLE',
@@ -292,7 +293,7 @@ const createDependentResources = async (
       }
     } else {
       const sgName = fn.network.security_group.name;
-      logger.info(`Creating security group: ${sgName}`);
+      logger.info(lang.__('CREATING_SECURITY_GROUP', { sgName }));
       const sg = await client.ecs.createSecurityGroup(
         sgName,
         fn.network.vpc_id,
@@ -341,7 +342,7 @@ const createDependentResources = async (
         const mountPath = nasItem.mount_path.replace(/\//g, '-').replace(/^-/, '');
         const accessGroupName = `${fn.name}-${context.stage}-nas-access-${mountPath}`;
 
-        logger.info(`Creating NAS access group: ${accessGroupName}`);
+        logger.info(lang.__('CREATING_NAS_ACCESS_GROUP', { accessGroupName }));
         const accessGroup = await client.nas.createAccessGroup(accessGroupName);
         instances.push({
           type: 'ALIYUN_NAS_ACCESS_GROUP',
@@ -349,10 +350,10 @@ const createDependentResources = async (
           attributes: { ...accessGroup },
         });
 
-        logger.info(`Creating NAS access rule for: ${accessGroupName}`);
+        logger.info(lang.__('CREATING_NAS_ACCESS_RULE', { accessGroupName }));
         await client.nas.createAccessRule(accessGroupName, '10.0.0.0/8');
 
-        logger.info(`Creating NAS file system for: ${fn.name}`);
+        logger.info(lang.__('CREATING_NAS_FILE_SYSTEM', { name: fn.name }));
         const fileSystem = await client.nas.createFileSystem(nasItem.storage_class, fn.name);
         instances.push({
           type: 'ALIYUN_NAS_FILE_SYSTEM',
@@ -360,7 +361,9 @@ const createDependentResources = async (
           attributes: { ...fileSystem },
         });
 
-        logger.info(`Creating NAS mount target for: ${fileSystem.fileSystemId}`);
+        logger.info(
+          lang.__('CREATING_NAS_MOUNT_TARGET', { fileSystemId: fileSystem.fileSystemId }),
+        );
         const mountTarget = await client.nas.createMountTarget(
           fileSystem.fileSystemId,
           accessGroupName,
@@ -410,47 +413,53 @@ const deleteDependentResources = async (
       switch (instance.type) {
         case 'ALIYUN_NAS_MOUNT_TARGET': {
           const [fileSystemId, mountTargetDomain] = instance.id.split('/');
-          logger.info(`Deleting NAS mount target: ${instance.id}`);
+          logger.info(lang.__('DELETING_NAS_MOUNT_TARGET', { id: instance.id }));
           await client.nas.deleteMountTarget(fileSystemId, mountTargetDomain);
           break;
         }
         case 'ALIYUN_NAS_FILE_SYSTEM':
-          logger.info(`Deleting NAS file system: ${instance.id}`);
+          logger.info(lang.__('DELETING_NAS_FILE_SYSTEM', { id: instance.id }));
           await client.nas.deleteFileSystem(instance.id);
           break;
         case 'ALIYUN_NAS_ACCESS_GROUP':
-          logger.info(`Deleting NAS access group: ${instance.id}`);
+          logger.info(lang.__('DELETING_NAS_ACCESS_GROUP', { id: instance.id }));
           await client.nas.deleteAccessGroup(instance.id);
           break;
         case 'ALIYUN_ECS_SECURITY_GROUP':
-          logger.info(`Deleting security group: ${instance.id}`);
+          logger.info(lang.__('DELETING_SECURITY_GROUP', { id: instance.id }));
           await client.ecs.deleteSecurityGroup(instance.id);
           break;
         case 'ALIYUN_RAM_ROLE':
-          logger.info(`Deleting RAM role: ${instance.id}`);
+          logger.info(lang.__('DELETING_RAM_ROLE', { id: instance.id }));
           await client.ram.deleteRole(instance.id);
           break;
         case 'ALIYUN_SLS_INDEX': {
           const [projectName, logstoreName] = instance.id.split('/');
-          logger.info(`Deleting SLS index: ${instance.id}`);
+          logger.info(lang.__('DELETING_SLS_INDEX', { id: instance.id }));
           await client.sls.deleteIndex(projectName, logstoreName);
           break;
         }
         case 'ALIYUN_SLS_LOGSTORE': {
           const [projectName, logstoreName] = instance.id.split('/');
-          logger.info(`Deleting SLS logstore: ${instance.id}`);
+          logger.info(lang.__('DELETING_SLS_LOGSTORE', { id: instance.id }));
           await client.sls.deleteLogstore(projectName, logstoreName);
           break;
         }
         case 'ALIYUN_SLS_PROJECT':
-          logger.info(`Deleting SLS project: ${instance.id}`);
+          logger.info(lang.__('DELETING_SLS_PROJECT', { id: instance.id }));
           await client.sls.deleteProject(instance.id);
           break;
         default:
-          logger.warn(`Unknown resource type: ${instance.type}`);
+          logger.warn(lang.__('UNKNOWN_RESOURCE_TYPE', { type: instance.type }));
       }
     } catch (err) {
-      logger.error(`Failed to delete resource ${instance.type}:${instance.id}: ${err}`);
+      logger.error(
+        lang.__('FAILED_TO_DELETE_RESOURCE', {
+          type: instance.type,
+          id: instance.id,
+          error: String(err),
+        }),
+      );
     }
   }
 };
@@ -836,7 +845,9 @@ export const deleteResource = async (
     } catch (err) {
       const errorCode = (err as { code?: string })?.code;
       if (errorCode === 'FunctionNotFound') {
-        logger.warn(`Function ${functionName} not found in provider, skipping deletion`);
+        logger.warn(
+          lang.__('RESOURCE_NOT_FOUND_PROVIDER', { resourceType: 'Function', name: functionName }),
+        );
       } else {
         throw err;
       }

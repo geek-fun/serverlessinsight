@@ -5,6 +5,7 @@ import { databaseToEsConfig, extractEsDefinition, EsInfo } from './esServerlessT
 import { setResource, removeResource } from '../../common/stateManager';
 import { buildSid } from '../../common';
 import { logger } from '../../common/logger';
+import { lang } from '../../lang';
 
 const buildRdsInstanceFromProvider = (info: RdsInfo, sid: string) => {
   return {
@@ -269,7 +270,12 @@ export const deleteDatabaseResource = async (
       errorMessage.includes('not found') ||
       errorMessage.includes('NotFound')
     ) {
-      logger.warn(`Database resource ${instanceId} not found in provider, skipping deletion`);
+      logger.warn(
+        lang.__('RESOURCE_NOT_FOUND_PROVIDER', {
+          resourceType: 'Database resource',
+          name: instanceId,
+        }),
+      );
     } else {
       throw err;
     }

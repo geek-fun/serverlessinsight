@@ -4,6 +4,7 @@ import { databaseToTdsqlcConfig, extractTdsqlcDefinition, TdsqlcClusterInfo } fr
 import { setResource, removeResource } from '../../common/stateManager';
 import { buildSid } from '../../common';
 import { logger } from '../../common/logger';
+import { lang } from '../../lang';
 
 const buildTdsqlcInstanceFromProvider = (info: TdsqlcClusterInfo, sid: string) => {
   return {
@@ -176,7 +177,12 @@ export const deleteDatabaseResource = async (
       errorMessage.includes('not found') ||
       errorMessage.includes('NotFound')
     ) {
-      logger.warn(`TDSQL-C cluster ${clusterId} not found in provider, skipping deletion`);
+      logger.warn(
+        lang.__('RESOURCE_NOT_FOUND_PROVIDER', {
+          resourceType: 'TDSQL-C cluster',
+          name: clusterId,
+        }),
+      );
     } else {
       throw err;
     }

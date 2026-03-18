@@ -21,9 +21,19 @@ const executeCreateAction = async (
   table: TableDomain,
   currentState: StateFile,
 ): Promise<StateFile> => {
-  logger.info(`Creating table: ${table.collection}/${table.name}`);
+  logger.info(
+    lang.__('CREATING_RESOURCE', {
+      resourceType: 'table',
+      name: `${table.collection}/${table.name}`,
+    }),
+  );
   const newState = await createTableResource(context, table, currentState);
-  logger.info(`Successfully created table: ${table.collection}/${table.name}`);
+  logger.info(
+    lang.__('RESOURCE_CREATED', {
+      resourceType: 'table',
+      name: `${table.collection}/${table.name}`,
+    }),
+  );
   return newState;
 };
 
@@ -32,9 +42,19 @@ const executeUpdateAction = async (
   table: TableDomain,
   currentState: StateFile,
 ): Promise<StateFile> => {
-  logger.info(`Updating table: ${table.collection}/${table.name}`);
+  logger.info(
+    lang.__('UPDATING_RESOURCE', {
+      resourceType: 'table',
+      name: `${table.collection}/${table.name}`,
+    }),
+  );
   const newState = await updateTableResource(context, table, currentState);
-  logger.info(`Successfully updated table: ${table.collection}/${table.name}`);
+  logger.info(
+    lang.__('RESOURCE_UPDATED', {
+      resourceType: 'table',
+      name: `${table.collection}/${table.name}`,
+    }),
+  );
   return newState;
 };
 
@@ -45,7 +65,9 @@ const executeDeleteAction = async (
   logicalId: string,
   currentState: StateFile,
 ): Promise<StateFile> => {
-  logger.info(`Deleting table: ${instanceName}/${tableName}`);
+  logger.info(
+    lang.__('DELETING_RESOURCE', { resourceType: 'table', name: `${instanceName}/${tableName}` }),
+  );
   const newState = await deleteTableResource(
     context,
     instanceName,
@@ -53,7 +75,9 @@ const executeDeleteAction = async (
     logicalId,
     currentState,
   );
-  logger.info(`Successfully deleted table: ${instanceName}/${tableName}`);
+  logger.info(
+    lang.__('RESOURCE_DELETED', { resourceType: 'table', name: `${instanceName}/${tableName}` }),
+  );
   return newState;
 };
 
@@ -65,7 +89,7 @@ const executeSingleItem = async (
 ): Promise<StateFile | null> => {
   switch (item.action) {
     case 'noop':
-      logger.info(`No changes for ${item.logicalId}`);
+      logger.info(lang.__('NO_CHANGESForResource', { logicalId: item.logicalId }));
       return null;
 
     case 'create': {
@@ -87,7 +111,7 @@ const executeSingleItem = async (
     case 'delete': {
       const state = getResource(currentState, item.logicalId);
       if (!state) {
-        logger.warn(`State not found for ${item.logicalId}, skipping deletion`);
+        logger.warn(lang.__('STATE_NOT_FOUND_SKIPPING', { logicalId: item.logicalId }));
         return null;
       }
       const instanceName = state.definition.instanceName as string;
@@ -96,7 +120,9 @@ const executeSingleItem = async (
     }
 
     default:
-      logger.warn(`Unknown action: ${item.action} for ${item.logicalId}`);
+      logger.warn(
+        lang.__('UNKNOWN_ACTION_FOR_RESOURCE', { action: item.action, logicalId: item.logicalId }),
+      );
       return null;
   }
 };

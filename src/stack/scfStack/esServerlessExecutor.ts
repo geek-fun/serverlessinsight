@@ -17,9 +17,19 @@ const executeCreateAction = async (
   database: DatabaseDomain,
   currentState: StateFile,
 ): Promise<StateFile> => {
-  logger.info(`Creating Tencent ES serverless space: ${database.name}`);
+  logger.info(
+    lang.__('CREATING_RESOURCE', {
+      resourceType: 'Tencent ES serverless space',
+      name: database.name,
+    }),
+  );
   const newState = await createEsResource(context, database, currentState);
-  logger.info(`Successfully created Tencent ES serverless space: ${database.name}`);
+  logger.info(
+    lang.__('RESOURCE_CREATED', {
+      resourceType: 'Tencent ES serverless space',
+      name: database.name,
+    }),
+  );
   return newState;
 };
 
@@ -29,9 +39,19 @@ const executeUpdateAction = async (
   spaceId: string,
   currentState: StateFile,
 ): Promise<StateFile> => {
-  logger.info(`Updating Tencent ES serverless space: ${database.name}`);
+  logger.info(
+    lang.__('UPDATING_RESOURCE', {
+      resourceType: 'Tencent ES serverless space',
+      name: database.name,
+    }),
+  );
   const newState = await updateEsResource(context, database, spaceId, currentState);
-  logger.info(`Successfully updated Tencent ES serverless space: ${database.name}`);
+  logger.info(
+    lang.__('RESOURCE_UPDATED', {
+      resourceType: 'Tencent ES serverless space',
+      name: database.name,
+    }),
+  );
   return newState;
 };
 
@@ -41,9 +61,13 @@ const executeDeleteAction = async (
   logicalId: string,
   currentState: StateFile,
 ): Promise<StateFile> => {
-  logger.info(`Deleting Tencent ES serverless space: ${spaceId}`);
+  logger.info(
+    lang.__('DELETING_RESOURCE', { resourceType: 'Tencent ES serverless space', name: spaceId }),
+  );
   const newState = await deleteEsResource(context, spaceId, logicalId, currentState);
-  logger.info(`Successfully deleted Tencent ES serverless space: ${spaceId}`);
+  logger.info(
+    lang.__('RESOURCE_DELETED', { resourceType: 'Tencent ES serverless space', name: spaceId }),
+  );
   return newState;
 };
 
@@ -59,7 +83,7 @@ const executeSingleItem = async (
 
   switch (item.action) {
     case 'noop':
-      logger.info(`No changes for ${item.logicalId}`);
+      logger.info(lang.__('NO_CHANGESForResource', { logicalId: item.logicalId }));
       return null;
 
     case 'create': {
@@ -89,7 +113,7 @@ const executeSingleItem = async (
     case 'delete': {
       const state = getResource(currentState, item.logicalId);
       if (!state) {
-        logger.warn(`State not found for ${item.logicalId}, skipping deletion`);
+        logger.warn(lang.__('STATE_NOT_FOUND_SKIPPING', { logicalId: item.logicalId }));
         return null;
       }
       const spaceId = (state.metadata?.spaceId as string | undefined) || state.instances?.[0]?.id;
@@ -100,7 +124,9 @@ const executeSingleItem = async (
     }
 
     default:
-      logger.warn(`Unknown action: ${item.action} for ${item.logicalId}`);
+      logger.warn(
+        lang.__('UNKNOWN_ACTION_FOR_RESOURCE', { action: item.action, logicalId: item.logicalId }),
+      );
       return null;
   }
 };

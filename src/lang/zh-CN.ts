@@ -328,4 +328,131 @@ export const zhCN = {
   EXECUTION_ORDER: '执行顺序',
   DOT_GRAPH_OUTPUT: 'DOT 图形输出',
   CYCLE_DETECTED: '检测到循环依赖',
+
+  // Generic executor messages
+  CREATING_RESOURCE: '正在创建 {{resourceType}}: {{name}}',
+  RESOURCE_CREATED: '成功创建 {{resourceType}}: {{name}}',
+  UPDATING_RESOURCE: '正在更新 {{resourceType}}: {{name}}',
+  RESOURCE_UPDATED: '成功更新 {{resourceType}}: {{name}}',
+  DELETING_RESOURCE: '正在删除 {{resourceType}}: {{name}}',
+  RESOURCE_DELETED: '成功删除 {{resourceType}}: {{name}}',
+  NO_CHANGESForResource: '{{logicalId}} 无变更',
+  STATE_NOT_FOUND_SKIPPING: '未找到 {{logicalId}} 的状态，跳过删除',
+  UNKNOWN_ACTION_FOR_RESOURCE: '{{logicalId}} 的未知操作: {{action}}',
+  RESOURCE_NOT_FOUND_PROVIDER: '提供商中未找到 {{resourceType}} {{name}}，跳过删除',
+
+  // FC3 Resource bootstrap messages
+  CREATING_BOOTSTRAP_BUCKET: '正在创建引导 OSS 存储桶: {{bucketName}}',
+  UPLOADED_CODE_TO_OSS: '代码已上传至 oss://{{bucketName}}/{{objectName}}',
+  CREATING_SLS_PROJECT: '正在创建 SLS 项目: {{projectName}}',
+  CREATING_SLS_LOGSTORE: '正在创建 SLS 日志库: {{logstoreName}}',
+  CREATING_SLS_INDEX: '正在为 SLS 日志库创建索引: {{logstoreName}}',
+  CREATING_RAM_ROLE: '正在创建 RAM 角色: {{roleName}}',
+  CREATING_SECURITY_GROUP: '正在创建安全组: {{sgName}}',
+  CREATING_NAS_ACCESS_GROUP: '正在创建 NAS 权限组: {{accessGroupName}}',
+  CREATING_NAS_ACCESS_RULE: '正在为 NAS 权限组创建访问规则: {{accessGroupName}}',
+  CREATING_NAS_FILE_SYSTEM: '正在为 {{name}} 创建 NAS 文件系统',
+  CREATING_NAS_MOUNT_TARGET: '正在为 NAS 文件系统创建挂载点: {{fileSystemId}}',
+  DELETING_NAS_MOUNT_TARGET: '正在删除 NAS 挂载点: {{id}}',
+  DELETING_NAS_FILE_SYSTEM: '正在删除 NAS 文件系统: {{id}}',
+  DELETING_NAS_ACCESS_GROUP: '正在删除 NAS 权限组: {{id}}',
+  DELETING_SECURITY_GROUP: '正在删除安全组: {{id}}',
+  DELETING_RAM_ROLE: '正在删除 RAM 角色: {{id}}',
+  DELETING_SLS_INDEX: '正在删除 SLS 索引: {{id}}',
+  DELETING_SLS_LOGSTORE: '正在删除 SLS 日志库: {{id}}',
+  DELETING_SLS_PROJECT: '正在删除 SLS 项目: {{id}}',
+  UNKNOWN_RESOURCE_TYPE: '未知资源类型: {{type}}',
+  FAILED_TO_DELETE_RESOURCE: '删除资源 {{type}}:{{id}} 失败: {{error}}',
+
+  // OSS Resource messages
+  BINDING_CUSTOM_DOMAIN_TO_BUCKET: '正在绑定自定义域名 {{domain}} 到存储桶 {{bucketName}}',
+
+  // API Gateway Resource messages
+  COULD_NOT_FIND_GROUP_CREATING: '未找到现有分组，正在创建新分组: {{error}}',
+  DELETING_DNS_RECORD: '正在删除 DNS 记录: {{recordId}}',
+  DNS_RECORD_DELETED: '成功删除 DNS 记录: {{recordId}}',
+  FAILED_TO_DELETE_DNS_RECORD: '删除 DNS 记录 {{recordId}} 失败: {{error}}',
+
+  // API Gateway Types messages
+  CANNOT_RESOLVE_FUNCTION_REF: '无法解析函数引用 {{backendRef}}: 上下文中无 IAC',
+  FUNCTION_REF_NOT_RESOLVED: '无法从 IAC 解析函数引用 {{backendRef}}',
+  RESOLVED_FUNCTION_REF: '已将函数引用 {{backendRef}} 解析为函数名: {{functionName}}',
+
+  // Show command messages
+  LOADING_STATE_FOR: '正在加载应用 {{app}}、服务 {{service}}、阶段 {{stage}} 的状态...',
+  NO_RESOURCES_FOUND: '状态中未找到资源。',
+  STATE_LOCATION: '状态位置: {{location}}',
+  BACKEND_REMOTE: '后端: 远程',
+  DEPLOYED_RESOURCES: '已部署资源',
+  SUMMARY: '摘要',
+  PROVIDER_LABEL: '提供商',
+  APP_LABEL: '应用',
+  SERVICE_LABEL: '服务',
+  STAGE_LABEL: '阶段',
+  RESOURCES_LABEL: '资源',
+  LAST_UPDATED_LABEL: '最后更新',
+  LOCK_STATUS_LOCKED: '锁状态: 被 {{user}} 锁定',
+  LOCK_STATUS_UNLOCKED: '锁状态: 未锁定',
+  TO_DEPLOY_RESOURCES: '要部署资源，请运行: si deploy',
+  REMOTE_BACKEND_FALLBACK: '已配置远程后端但凭证不可用。回退到本地状态。',
+  FAILED_TO_LOAD_REMOTE_STATE: '从远程后端加载状态失败，回退到本地状态: {{error}}',
+
+  // Show command category labels
+  FUNCTIONS_LABEL: '函数',
+  API_GATEWAY_LABEL: 'API 网关',
+  STORAGE_LABEL: '存储',
+  DATABASES_LABEL: '数据库',
+  DNS_RECORDS_LABEL: 'DNS 记录',
+  OTHER_RESOURCES_LABEL: '其他资源',
+
+  // Show command resource output labels
+  RUNTIME_LABEL: '运行时',
+  HANDLER_LABEL: '处理器',
+  MEMORY_TIMEOUT_LABEL: '内存: {{memory}}MB, 超时: {{timeout}}s',
+  INTERNET_ACCESS_LABEL: '公网访问: {{value}}',
+  API_GROUP_LABEL: 'API 分组',
+  SUB_DOMAIN_LABEL: '子域名',
+  BASE_PATH_LABEL: '基础路径',
+  API_LABEL: 'API',
+  GROUP_ID_LABEL: '分组 ID',
+  BUCKET_LABEL: '存储桶',
+  REGION_LABEL: '区域',
+  ENDPOINT_LABEL: '端点',
+  CUSTOM_DOMAIN_LABEL: '自定义域名',
+  CNAME_TARGET_LABEL: 'CNAME 目标',
+  ENGINE_LABEL: '引擎',
+  STATUS_LABEL: '状态',
+  CNAME_LABEL: 'CNAME',
+
+  // Time ago format
+  TIME_DAYS_AGO: '{{count}} 天前',
+  TIME_HOURS_AGO: '{{count}} 小时前',
+  TIME_MINUTES_AGO: '{{count}} 分钟前',
+  TIME_JUST_NOW: '刚刚',
+
+  // Deployer/Destroyer execution plan
+  EXECUTION_PLAN_ITEM: '  - {{action}}: {{logicalId}} ({{resourceType}})',
+  EXECUTION_ORDER_ITEM: '    {{index}}. {{logicalId}} ({{resourceType}}) - {{action}}',
+
+  // Tablestore operations
+  TABLE_IS_READY: '表 {{tableName}} 已就绪',
+  FAILED_TO_CREATE_TABLE: '创建表 {{tableName}} 失败: {{error}}',
+  TABLE_CREATED_SUCCESS: '成功创建表 {{tableName}}',
+  FAILED_TO_DESCRIBE_TABLE: '描述表 {{tableName}} 失败: {{error}}',
+  FAILED_TO_UPDATE_TABLE: '更新表 {{tableName}} 失败: {{error}}',
+  TABLE_UPDATED_SUCCESS: '成功更新表 {{tableName}}',
+  TABLE_ALREADY_DELETED: '表 {{tableName}} 已删除或不存在',
+  FAILED_TO_DELETE_TABLE: '删除表 {{tableName}} 失败: {{error}}',
+  TABLE_DELETED_SUCCESS: '成功删除表 {{tableName}}',
+
+  // ECS operations
+  SKIPPING_INVALID_INGRESS_RULE: '跳过无效的入站规则: {{rule}}。{{error}}',
+  INGRESS_RULE_EXISTS_SKIPPING: '入站规则已存在，跳过: {{rule}}',
+  FAILED_TO_ADD_INGRESS_RULE: '添加入站规则失败: {{rule}}。{{error}}',
+  SKIPPING_INVALID_EGRESS_RULE: '跳过无效的出站规则: {{rule}}。{{error}}',
+  EGRESS_RULE_EXISTS_SKIPPING: '出站规则已存在，跳过: {{rule}}',
+  FAILED_TO_ADD_EGRESS_RULE: '添加出站规则失败: {{rule}}。{{error}}',
+
+  // DNS error
+  DNS_ERROR: 'DNS 错误: {{error}}',
 };

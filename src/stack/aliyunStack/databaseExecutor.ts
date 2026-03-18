@@ -26,9 +26,19 @@ const executeCreateAction = async (
   currentState: StateFile,
 ): Promise<StateFile> => {
   const resourceTypeName = getResourceTypeName(resourceType);
-  logger.info(`Creating ${resourceTypeName} database: ${database.name}`);
+  logger.info(
+    lang.__('CREATING_RESOURCE', {
+      resourceType: `${resourceTypeName} database`,
+      name: database.name,
+    }),
+  );
   const newState = await createDatabaseResource(context, database, currentState);
-  logger.info(`Successfully created ${resourceTypeName} database: ${database.name}`);
+  logger.info(
+    lang.__('RESOURCE_CREATED', {
+      resourceType: `${resourceTypeName} database`,
+      name: database.name,
+    }),
+  );
   return newState;
 };
 
@@ -40,7 +50,12 @@ const executeUpdateAction = async (
   currentState: StateFile,
 ): Promise<StateFile> => {
   const resourceTypeName = getResourceTypeName(resourceType);
-  logger.info(`Updating ${resourceTypeName} database: ${database.name}`);
+  logger.info(
+    lang.__('UPDATING_RESOURCE', {
+      resourceType: `${resourceTypeName} database`,
+      name: database.name,
+    }),
+  );
   const newState = await updateDatabaseResource(
     context,
     database,
@@ -48,7 +63,12 @@ const executeUpdateAction = async (
     resourceType,
     currentState,
   );
-  logger.info(`Successfully updated ${resourceTypeName} database: ${database.name}`);
+  logger.info(
+    lang.__('RESOURCE_UPDATED', {
+      resourceType: `${resourceTypeName} database`,
+      name: database.name,
+    }),
+  );
   return newState;
 };
 
@@ -60,7 +80,12 @@ const executeDeleteAction = async (
   currentState: StateFile,
 ): Promise<StateFile> => {
   const resourceTypeName = getResourceTypeName(resourceType);
-  logger.info(`Deleting ${resourceTypeName} database: ${instanceId}`);
+  logger.info(
+    lang.__('DELETING_RESOURCE', {
+      resourceType: `${resourceTypeName} database`,
+      name: instanceId,
+    }),
+  );
   const newState = await deleteDatabaseResource(
     context,
     instanceId,
@@ -68,7 +93,9 @@ const executeDeleteAction = async (
     logicalId,
     currentState,
   );
-  logger.info(`Successfully deleted ${resourceTypeName} database: ${instanceId}`);
+  logger.info(
+    lang.__('RESOURCE_DELETED', { resourceType: `${resourceTypeName} database`, name: instanceId }),
+  );
   return newState;
 };
 
@@ -87,7 +114,7 @@ const executeSingleItem = async (
 
   switch (item.action) {
     case 'noop':
-      logger.info(`No changes for ${item.logicalId}`);
+      logger.info(lang.__('NO_CHANGESForResource', { logicalId: item.logicalId }));
       return null;
 
     case 'create': {
@@ -119,7 +146,7 @@ const executeSingleItem = async (
     case 'delete': {
       const state = getResource(currentState, item.logicalId);
       if (!state) {
-        logger.warn(`State not found for ${item.logicalId}, skipping deletion`);
+        logger.warn(lang.__('STATE_NOT_FOUND_SKIPPING', { logicalId: item.logicalId }));
         return null;
       }
       const instanceId =
@@ -132,7 +159,9 @@ const executeSingleItem = async (
     }
 
     default:
-      logger.warn(`Unknown action: ${item.action} for ${item.logicalId}`);
+      logger.warn(
+        lang.__('UNKNOWN_ACTION_FOR_RESOURCE', { action: item.action, logicalId: item.logicalId }),
+      );
       return null;
   }
 };

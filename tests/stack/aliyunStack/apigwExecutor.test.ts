@@ -131,11 +131,9 @@ describe('ApigwExecutor', () => {
         roleArn,
         initialState,
       );
+      expect(logger.info).toHaveBeenCalledWith('Creating API Gateway resources: Test API Gateway');
       expect(logger.info).toHaveBeenCalledWith(
-        'Creating API Gateway resources for: Test API Gateway',
-      );
-      expect(logger.info).toHaveBeenCalledWith(
-        'Successfully created API Gateway resources for: Test API Gateway',
+        'Successfully created API Gateway resources: Test API Gateway',
       );
     });
 
@@ -183,11 +181,9 @@ describe('ApigwExecutor', () => {
         roleArn,
         initialState,
       );
+      expect(logger.info).toHaveBeenCalledWith('Updating API Gateway resources: Test API Gateway');
       expect(logger.info).toHaveBeenCalledWith(
-        'Updating API Gateway resources for: Test API Gateway',
-      );
-      expect(logger.info).toHaveBeenCalledWith(
-        'Successfully updated API Gateway resources for: Test API Gateway',
+        'Successfully updated API Gateway resources: Test API Gateway',
       );
     });
 
@@ -236,11 +232,9 @@ describe('ApigwExecutor', () => {
         'events.test_api',
         stateWithResource,
       );
+      expect(logger.info).toHaveBeenCalledWith('Deleting API Gateway resources: events.test_api');
       expect(logger.info).toHaveBeenCalledWith(
-        'Deleting API Gateway resources for: events.test_api',
-      );
-      expect(logger.info).toHaveBeenCalledWith(
-        'Successfully deleted API Gateway resources for: events.test_api',
+        'Successfully deleted API Gateway resources: events.test_api',
       );
     });
 

@@ -63,7 +63,13 @@ export const deployTencentStack = async (
 
   logger.info(`${lang.__('PLAN_GENERATED')}: ${combinedPlan.items.length} ${lang.__('ACTIONS')}`);
   combinedPlan.items.forEach((item) => {
-    logger.info(`  - ${item.action.toUpperCase()}: ${item.logicalId} (${item.resourceType})`);
+    logger.info(
+      lang.__('EXECUTION_PLAN_ITEM', {
+        action: item.action.toUpperCase(),
+        logicalId: item.logicalId,
+        resourceType: item.resourceType,
+      }),
+    );
   });
 
   logger.info(lang.__('EXECUTING_PLAN'));

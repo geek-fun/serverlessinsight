@@ -8,6 +8,7 @@ import {
 import { setResource, removeResource } from '../../common/stateManager';
 import { buildSid } from '../../common';
 import { logger } from '../../common/logger';
+import { lang } from '../../lang';
 
 const buildEsSpaceFromProvider = (info: TencentEsSpaceInfo, sid: string) => {
   return {
@@ -122,7 +123,9 @@ export const deleteEsResource = async (
   } catch (err) {
     const errorCode = (err as { code?: string })?.code;
     if (errorCode === 'ResourceNotFound' || errorCode === 'InvalidParameterValue') {
-      logger.warn(`ES space ${spaceId} not found in provider, skipping deletion`);
+      logger.warn(
+        lang.__('RESOURCE_NOT_FOUND_PROVIDER', { resourceType: 'ES space', name: spaceId }),
+      );
     } else {
       throw err;
     }

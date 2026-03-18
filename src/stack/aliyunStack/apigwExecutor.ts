@@ -22,7 +22,7 @@ const executeSingleItem = async (
 ): Promise<StateFile | null> => {
   switch (item.action) {
     case 'noop':
-      logger.info(`No changes for ${item.logicalId}`);
+      logger.info(lang.__('NO_CHANGESForResource', { logicalId: item.logicalId }));
       return null;
 
     case 'create': {
@@ -30,7 +30,9 @@ const executeSingleItem = async (
       if (!event) {
         throw new Error(`Event not found for logical ID: ${item.logicalId}`);
       }
-      logger.info(`Creating API Gateway resources for: ${event.name}`);
+      logger.info(
+        lang.__('CREATING_RESOURCE', { resourceType: 'API Gateway resources', name: event.name }),
+      );
       const newState = await createApigwResource(
         context,
         event,
@@ -38,7 +40,9 @@ const executeSingleItem = async (
         roleArn,
         currentState,
       );
-      logger.info(`Successfully created API Gateway resources for: ${event.name}`);
+      logger.info(
+        lang.__('RESOURCE_CREATED', { resourceType: 'API Gateway resources', name: event.name }),
+      );
       return newState;
     }
 
@@ -47,7 +51,9 @@ const executeSingleItem = async (
       if (!event) {
         throw new Error(`Event not found for logical ID: ${item.logicalId}`);
       }
-      logger.info(`Updating API Gateway resources for: ${event.name}`);
+      logger.info(
+        lang.__('UPDATING_RESOURCE', { resourceType: 'API Gateway resources', name: event.name }),
+      );
       const newState = await updateApigwResource(
         context,
         event,
@@ -55,24 +61,38 @@ const executeSingleItem = async (
         roleArn,
         currentState,
       );
-      logger.info(`Successfully updated API Gateway resources for: ${event.name}`);
+      logger.info(
+        lang.__('RESOURCE_UPDATED', { resourceType: 'API Gateway resources', name: event.name }),
+      );
       return newState;
     }
 
     case 'delete': {
       const state = getResource(currentState, item.logicalId);
       if (!state) {
-        logger.warn(`State not found for ${item.logicalId}, skipping deletion`);
+        logger.warn(lang.__('STATE_NOT_FOUND_SKIPPING', { logicalId: item.logicalId }));
         return null;
       }
-      logger.info(`Deleting API Gateway resources for: ${item.logicalId}`);
+      logger.info(
+        lang.__('DELETING_RESOURCE', {
+          resourceType: 'API Gateway resources',
+          name: item.logicalId,
+        }),
+      );
       const newState = await deleteApigwResource(context, item.logicalId, currentState);
-      logger.info(`Successfully deleted API Gateway resources for: ${item.logicalId}`);
+      logger.info(
+        lang.__('RESOURCE_DELETED', {
+          resourceType: 'API Gateway resources',
+          name: item.logicalId,
+        }),
+      );
       return newState;
     }
 
     default:
-      logger.warn(`Unknown action: ${item.action} for ${item.logicalId}`);
+      logger.warn(
+        lang.__('UNKNOWN_ACTION_FOR_RESOURCE', { action: item.action, logicalId: item.logicalId }),
+      );
       return null;
   }
 };

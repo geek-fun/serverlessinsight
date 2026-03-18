@@ -364,4 +364,135 @@ export const en = {
   EXECUTION_ORDER: 'Execution order',
   DOT_GRAPH_OUTPUT: 'DOT graph output',
   CYCLE_DETECTED: 'Circular dependency detected',
+
+  // Generic executor messages
+  CREATING_RESOURCE: 'Creating {{resourceType}}: {{name}}',
+  RESOURCE_CREATED: 'Successfully created {{resourceType}}: {{name}}',
+  UPDATING_RESOURCE: 'Updating {{resourceType}}: {{name}}',
+  RESOURCE_UPDATED: 'Successfully updated {{resourceType}}: {{name}}',
+  DELETING_RESOURCE: 'Deleting {{resourceType}}: {{name}}',
+  RESOURCE_DELETED: 'Successfully deleted {{resourceType}}: {{name}}',
+  NO_CHANGESForResource: 'No changes for {{logicalId}}',
+  STATE_NOT_FOUND_SKIPPING: 'State not found for {{logicalId}}, skipping deletion',
+  UNKNOWN_ACTION_FOR_RESOURCE: 'Unknown action: {{action}} for {{logicalId}}',
+  RESOURCE_NOT_FOUND_PROVIDER: '{{resourceType}} {{name}} not found in provider, skipping deletion',
+
+  // FC3 Resource bootstrap messages
+  CREATING_BOOTSTRAP_BUCKET: 'Creating bootstrap OSS bucket: {{bucketName}}',
+  UPLOADED_CODE_TO_OSS: 'Uploaded code to oss://{{bucketName}}/{{objectName}}',
+  CREATING_SLS_PROJECT: 'Creating SLS project: {{projectName}}',
+  CREATING_SLS_LOGSTORE: 'Creating SLS logstore: {{logstoreName}}',
+  CREATING_SLS_INDEX: 'Creating SLS index for: {{logstoreName}}',
+  CREATING_RAM_ROLE: 'Creating RAM role: {{roleName}}',
+  CREATING_SECURITY_GROUP: 'Creating security group: {{sgName}}',
+  CREATING_NAS_ACCESS_GROUP: 'Creating NAS access group: {{accessGroupName}}',
+  CREATING_NAS_ACCESS_RULE: 'Creating NAS access rule for: {{accessGroupName}}',
+  CREATING_NAS_FILE_SYSTEM: 'Creating NAS file system for: {{name}}',
+  CREATING_NAS_MOUNT_TARGET: 'Creating NAS mount target for: {{fileSystemId}}',
+  DELETING_NAS_MOUNT_TARGET: 'Deleting NAS mount target: {{id}}',
+  DELETING_NAS_FILE_SYSTEM: 'Deleting NAS file system: {{id}}',
+  DELETING_NAS_ACCESS_GROUP: 'Deleting NAS access group: {{id}}',
+  DELETING_SECURITY_GROUP: 'Deleting security group: {{id}}',
+  DELETING_RAM_ROLE: 'Deleting RAM role: {{id}}',
+  DELETING_SLS_INDEX: 'Deleting SLS index: {{id}}',
+  DELETING_SLS_LOGSTORE: 'Deleting SLS logstore: {{id}}',
+  DELETING_SLS_PROJECT: 'Deleting SLS project: {{id}}',
+  UNKNOWN_RESOURCE_TYPE: 'Unknown resource type: {{type}}',
+  FAILED_TO_DELETE_RESOURCE: 'Failed to delete resource {{type}}:{{id}}: {{error}}',
+
+  // OSS Resource messages
+  BINDING_CUSTOM_DOMAIN_TO_BUCKET: 'Binding custom domain {{domain}} to bucket {{bucketName}}',
+
+  // API Gateway Resource messages
+  COULD_NOT_FIND_GROUP_CREATING: 'Could not find existing group, creating new: {{error}}',
+  DELETING_DNS_RECORD: 'Deleting DNS record: {{recordId}}',
+  DNS_RECORD_DELETED: 'Successfully deleted DNS record: {{recordId}}',
+  FAILED_TO_DELETE_DNS_RECORD: 'Failed to delete DNS record {{recordId}}: {{error}}',
+
+  // API Gateway Types messages
+  CANNOT_RESOLVE_FUNCTION_REF:
+    'Cannot resolve function reference {{backendRef}}: IAC not available in context',
+  FUNCTION_REF_NOT_RESOLVED: 'Function reference {{backendRef}} could not be resolved from IAC',
+  RESOLVED_FUNCTION_REF:
+    'Resolved function reference {{backendRef}} to function name: {{functionName}}',
+
+  // Show command messages
+  LOADING_STATE_FOR: 'Loading state for app: {{app}}, service: {{service}}, stage: {{stage}}...',
+  NO_RESOURCES_FOUND: 'No resources found in state.',
+  STATE_LOCATION: 'State location: {{location}}',
+  BACKEND_REMOTE: 'Backend: Remote',
+  DEPLOYED_RESOURCES: 'DEPLOYED RESOURCES',
+  SUMMARY: 'SUMMARY',
+  PROVIDER_LABEL: 'Provider',
+  APP_LABEL: 'App',
+  SERVICE_LABEL: 'Service',
+  STAGE_LABEL: 'Stage',
+  RESOURCES_LABEL: 'Resources',
+  LAST_UPDATED_LABEL: 'Last Updated',
+  LOCK_STATUS_LOCKED: 'Lock Status: LOCKED by {{user}}',
+  LOCK_STATUS_UNLOCKED: 'Lock Status: UNLOCKED',
+  TO_DEPLOY_RESOURCES: 'To deploy resources, run: si deploy',
+  REMOTE_BACKEND_FALLBACK:
+    'Remote backend configured but credentials not available. Falling back to local state.',
+  FAILED_TO_LOAD_REMOTE_STATE:
+    'Failed to load state from remote backend, falling back to local state: {{error}}',
+
+  // Show command category labels
+  FUNCTIONS_LABEL: 'Functions',
+  API_GATEWAY_LABEL: 'API Gateway',
+  STORAGE_LABEL: 'Storage',
+  DATABASES_LABEL: 'Databases',
+  DNS_RECORDS_LABEL: 'DNS Records',
+  OTHER_RESOURCES_LABEL: 'Other Resources',
+
+  // Show command resource output labels
+  RUNTIME_LABEL: 'Runtime',
+  HANDLER_LABEL: 'Handler',
+  MEMORY_TIMEOUT_LABEL: 'Memory: {{memory}}MB, Timeout: {{timeout}}s',
+  INTERNET_ACCESS_LABEL: 'Internet Access: {{value}}',
+  API_GROUP_LABEL: 'API Group',
+  SUB_DOMAIN_LABEL: 'Sub-domain',
+  BASE_PATH_LABEL: 'Base Path',
+  API_LABEL: 'API',
+  GROUP_ID_LABEL: 'Group ID',
+  BUCKET_LABEL: 'Bucket',
+  REGION_LABEL: 'Region',
+  ENDPOINT_LABEL: 'Endpoint',
+  CUSTOM_DOMAIN_LABEL: 'Custom Domain',
+  CNAME_TARGET_LABEL: 'CNAME Target',
+  ENGINE_LABEL: 'Engine',
+  STATUS_LABEL: 'Status',
+  CNAME_LABEL: 'CNAME',
+
+  // Time ago format
+  TIME_DAYS_AGO: '{{count}} day(s) ago',
+  TIME_HOURS_AGO: '{{count}} hour(s) ago',
+  TIME_MINUTES_AGO: '{{count}} minute(s) ago',
+  TIME_JUST_NOW: 'just now',
+
+  // Deployer/Destroyer execution plan
+  EXECUTION_PLAN_ITEM: '  - {{action}}: {{logicalId}} ({{resourceType}})',
+  EXECUTION_ORDER_ITEM: '    {{index}}. {{logicalId}} ({{resourceType}}) - {{action}}',
+
+  // Tablestore operations
+  TABLE_IS_READY: 'Table {{tableName}} is ready',
+  FAILED_TO_CREATE_TABLE: 'Failed to create table {{tableName}}: {{error}}',
+  TABLE_CREATED_SUCCESS: 'Successfully created table {{tableName}}',
+  FAILED_TO_DESCRIBE_TABLE: 'Failed to describe table {{tableName}}: {{error}}',
+  FAILED_TO_UPDATE_TABLE: 'Failed to update table {{tableName}}: {{error}}',
+  TABLE_UPDATED_SUCCESS: 'Successfully updated table {{tableName}}',
+  TABLE_ALREADY_DELETED: 'Table {{tableName}} already deleted or does not exist',
+  FAILED_TO_DELETE_TABLE: 'Failed to delete table {{tableName}}: {{error}}',
+  TABLE_DELETED_SUCCESS: 'Successfully deleted table {{tableName}}',
+
+  // ECS operations
+  SKIPPING_INVALID_INGRESS_RULE: 'Skipping invalid ingress rule: {{rule}}. {{error}}',
+  INGRESS_RULE_EXISTS_SKIPPING: 'Ingress rule already exists, skipping: {{rule}}',
+  FAILED_TO_ADD_INGRESS_RULE: 'Failed to add ingress rule: {{rule}}. {{error}}',
+  SKIPPING_INVALID_EGRESS_RULE: 'Skipping invalid egress rule: {{rule}}. {{error}}',
+  EGRESS_RULE_EXISTS_SKIPPING: 'Egress rule already exists, skipping: {{rule}}',
+  FAILED_TO_ADD_EGRESS_RULE: 'Failed to add egress rule: {{rule}}. {{error}}',
+
+  // DNS error
+  DNS_ERROR: 'DNS error: {{error}}',
 };

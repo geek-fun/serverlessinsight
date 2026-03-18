@@ -6,6 +6,7 @@ import { setResource, removeResource } from '../../common/stateManager';
 import { buildSid } from '../../common';
 import { computeFileHash } from '../../common/hashUtils';
 import { logger } from '../../common/logger';
+import { lang } from '../../lang';
 
 const buildScfInstanceFromProvider = (info: ScfFunctionInfo, sid: string) => {
   const envMap: Record<string, string> =
@@ -248,7 +249,9 @@ export const deleteResource = async (
   } catch (err) {
     const errorCode = (err as { code?: string })?.code;
     if (errorCode === 'ResourceNotFound.FunctionName') {
-      logger.warn(`Function ${functionName} not found in provider, skipping deletion`);
+      logger.warn(
+        lang.__('RESOURCE_NOT_FOUND_PROVIDER', { resourceType: 'Function', name: functionName }),
+      );
     } else {
       throw err;
     }

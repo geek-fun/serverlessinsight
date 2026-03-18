@@ -1,5 +1,6 @@
 import { EventDomain, ResourceAttributes } from '../../types';
 import { getIacDefinition, getContext, logger } from '../../common';
+import { lang } from '../../lang';
 
 // API Group types
 export type ApigwGroupConfig = {
@@ -164,7 +165,7 @@ const resolveFunctionReference = (backendRef: string): string => {
   // Get IAC from context
   const context = getContext();
   if (!context.iac) {
-    logger.warn(`Cannot resolve function reference ${backendRef}: IAC not available in context`);
+    logger.warn(lang.__('CANNOT_RESOLVE_FUNCTION_REF', { backendRef }));
     return backendRef;
   }
 
@@ -173,12 +174,12 @@ const resolveFunctionReference = (backendRef: string): string => {
 
   if (!functionDef) {
     // Not a function reference or function not found, return as is
-    logger.warn(`Function reference ${backendRef} could not be resolved from IAC`);
+    logger.warn(lang.__('FUNCTION_REF_NOT_RESOLVED', { backendRef }));
     return backendRef;
   }
 
   const functionName = functionDef.name;
-  logger.info(`Resolved function reference ${backendRef} to function name: ${functionName}`);
+  logger.info(lang.__('RESOLVED_FUNCTION_REF', { backendRef, functionName }));
   return functionName;
 };
 

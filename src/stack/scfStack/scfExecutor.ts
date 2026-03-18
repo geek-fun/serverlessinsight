@@ -17,9 +17,9 @@ const executeCreateAction = async (
   fn: FunctionDomain,
   currentState: StateFile,
 ): Promise<StateFile> => {
-  logger.info(`Creating function: ${fn.name}`);
+  logger.info(lang.__('CREATING_RESOURCE', { resourceType: 'function', name: fn.name }));
   const newState = await createResource(context, fn, currentState);
-  logger.info(`Successfully created function: ${fn.name}`);
+  logger.info(lang.__('RESOURCE_CREATED', { resourceType: 'function', name: fn.name }));
   return newState;
 };
 
@@ -28,9 +28,9 @@ const executeUpdateAction = async (
   fn: FunctionDomain,
   currentState: StateFile,
 ): Promise<StateFile> => {
-  logger.info(`Updating function: ${fn.name}`);
+  logger.info(lang.__('UPDATING_RESOURCE', { resourceType: 'function', name: fn.name }));
   const newState = await updateResource(context, fn, currentState);
-  logger.info(`Successfully updated function: ${fn.name}`);
+  logger.info(lang.__('RESOURCE_UPDATED', { resourceType: 'function', name: fn.name }));
   return newState;
 };
 
@@ -40,9 +40,9 @@ const executeDeleteAction = async (
   logicalId: string,
   currentState: StateFile,
 ): Promise<StateFile> => {
-  logger.info(`Deleting function: ${functionName}`);
+  logger.info(lang.__('DELETING_RESOURCE', { resourceType: 'function', name: functionName }));
   const newState = await deleteResource(context, functionName, logicalId, currentState);
-  logger.info(`Successfully deleted function: ${functionName}`);
+  logger.info(lang.__('RESOURCE_DELETED', { resourceType: 'function', name: functionName }));
   return newState;
 };
 
@@ -54,7 +54,7 @@ const executeSingleItem = async (
 ): Promise<StateFile | null> => {
   switch (item.action) {
     case 'noop':
-      logger.info(`No changes for ${item.logicalId}`);
+      logger.info(lang.__('NO_CHANGESForResource', { logicalId: item.logicalId }));
       return null;
 
     case 'create': {
@@ -76,7 +76,7 @@ const executeSingleItem = async (
     case 'delete': {
       const state = getResource(currentState, item.logicalId);
       if (!state) {
-        logger.warn(`State not found for ${item.logicalId}, skipping deletion`);
+        logger.warn(lang.__('STATE_NOT_FOUND_SKIPPING', { logicalId: item.logicalId }));
         return null;
       }
       const functionName = state.definition.functionName as string;
@@ -84,7 +84,9 @@ const executeSingleItem = async (
     }
 
     default:
-      logger.warn(`Unknown action: ${item.action} for ${item.logicalId}`);
+      logger.warn(
+        lang.__('UNKNOWN_ACTION_FOR_RESOURCE', { action: item.action, logicalId: item.logicalId }),
+      );
       return null;
   }
 };
