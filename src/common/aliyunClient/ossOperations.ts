@@ -115,12 +115,91 @@ export const createOssOperations = (
     }
   };
 
+  type OssCorsRule = {
+    allowedOrigin: string | string[];
+    allowedMethod: string | string[];
+    allowedHeader?: string | string[];
+    exposeHeader?: string | string[];
+    maxAgeSeconds?: string | number;
+  };
+
+  const buildCorsRuleForDomain = (domain: string): OssCorsRule => ({
+    allowedOrigin: [`https://${domain}`, `http://${domain}`],
+    allowedMethod: ['GET', 'HEAD'],
+    allowedHeader: ['*'],
+    exposeHeader: ['ETag', 'Content-Length'],
+    maxAgeSeconds: '3600',
+  });
+
+  const isDomainCorsRule = (rule: OssCorsRule, domain: string): boolean => {
+    const origins = Array.isArray(rule.allowedOrigin) ? rule.allowedOrigin : [rule.allowedOrigin];
+    const expected = new Set([`https://${domain}`, `http://${domain}`]);
+    return origins.length === expected.size && origins.every((o) => expected.has(o));
+  };
+
+  const addCorsRuleForDomain = async (bucketName: string, domain: string): Promise<void> => {
+    try {
+      useBucket(bucketName);
+      let existingRules: OssCorsRule[] = [];
+      try {
+        const corsResult = await ossClient.getBucketCORS(bucketName);
+        if (corsResult.rules && corsResult.rules.length > 0) {
+          existingRules = corsResult.rules as unknown as OssCorsRule[];
+        }
+      } catch {
+        // no existing CORS config
+      }
+
+      if (existingRules.some((rule) => isDomainCorsRule(rule, domain))) {
+        logger.info(lang.__('OSS_CORS_RULE_EXISTS', { domain }));
+        return;
+      }
+
+      const allRules = [...existingRules, buildCorsRuleForDomain(domain)];
+      await ossClient.putBucketCORS(bucketName, allRules as unknown as OSS.CORSRule[]);
+      logger.info(lang.__('OSS_CORS_RULE_ADDED', { domain }));
+    } catch (error) {
+      logger.warn(lang.__('OSS_CORS_RULE_ADD_FAILED', { domain, error: String(error) }));
+    }
+  };
+
+  const removeCorsRuleForDomain = async (bucketName: string, domain: string): Promise<void> => {
+    try {
+      useBucket(bucketName);
+      let existingRules: OssCorsRule[] = [];
+      try {
+        const corsResult = await ossClient.getBucketCORS(bucketName);
+        if (corsResult.rules && corsResult.rules.length > 0) {
+          existingRules = corsResult.rules as unknown as OssCorsRule[];
+        }
+      } catch {
+        return;
+      }
+
+      const remainingRules = existingRules.filter((rule) => !isDomainCorsRule(rule, domain));
+
+      if (remainingRules.length === existingRules.length) {
+        return;
+      }
+
+      if (remainingRules.length > 0) {
+        await ossClient.putBucketCORS(bucketName, remainingRules as unknown as OSS.CORSRule[]);
+      } else {
+        await ossClient.deleteBucketCORS(bucketName);
+      }
+      logger.info(lang.__('OSS_CORS_RULE_REMOVED', { domain }));
+    } catch (error) {
+      logger.warn(lang.__('OSS_CORS_RULE_REMOVE_FAILED', { domain, error: String(error) }));
+    }
+  };
+
   const bindCustomDomain = async (bucketName: string, domain: string): Promise<OssCnameInfo> => {
     const mainDomain = extractMainDomain(domain);
     const hostRecord = extractHostRecord(domain, mainDomain);
     const ossEndpoint = getOssEndpoint(bucketName);
 
     const bucketCnameBound = await putBucketCname(bucketName, domain);
+    await addCorsRuleForDomain(bucketName, domain);
 
     if (!dnsOps) {
       logger.warn(lang.__('OSS_DNS_MANUAL_CONFIG_REQUIRED', { domain, cname: ossEndpoint }));
@@ -166,6 +245,7 @@ export const createOssOperations = (
     domain: string,
     dnsRecordId?: string,
   ): Promise<void> => {
+    await removeCorsRuleForDomain(bucketName, domain);
     await deleteBucketCname(bucketName, domain);
 
     if (!dnsOps || !dnsRecordId || dnsRecordId === 'existing') {

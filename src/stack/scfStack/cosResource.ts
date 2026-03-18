@@ -121,6 +121,12 @@ export const createBucketResource = async (
         ...(cnameInfo.dnsRecordId ? { dnsRecordId: cnameInfo.dnsRecordId } : {}),
       };
       instances.push(dnsInstance);
+
+      // Refresh bucket info to capture auto-added CORS rule
+      const refreshedInfo = await client.cos.getBucket(bucket.name, context.region);
+      if (refreshedInfo) {
+        instances[0] = buildCosInstanceFromProvider(refreshedInfo as CosBucketInfo, sid);
+      }
     }
   }
 
@@ -199,6 +205,12 @@ export const updateBucketResource = async (
         ...(cnameInfo.dnsRecordId ? { dnsRecordId: cnameInfo.dnsRecordId } : {}),
       };
       instances.push(dnsInstance);
+
+      // Refresh bucket info to capture auto-added CORS rule
+      const refreshedInfo = await client.cos.getBucket(bucket.name, context.region);
+      if (refreshedInfo) {
+        instances[0] = buildCosInstanceFromProvider(refreshedInfo as CosBucketInfo, sid);
+      }
     }
   } else if (existingDnsInstance) {
     await client.cos.unbindCustomDomain(

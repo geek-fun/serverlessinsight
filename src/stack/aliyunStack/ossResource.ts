@@ -162,6 +162,12 @@ export const createBucketResource = async (
         ...(cnameInfo.dnsRecordId ? { dnsRecordId: cnameInfo.dnsRecordId } : {}),
       };
       instances.push(dnsInstance);
+
+      // Refresh bucket info to capture auto-added CORS rule
+      bucketInfo = await client.oss.getBucket(config.bucketName);
+      if (bucketInfo) {
+        instances[0] = buildOssInstanceFromProvider(bucketInfo, sid);
+      }
     }
   }
 
@@ -262,6 +268,12 @@ export const updateBucketResource = async (
         ...(cnameInfo.dnsRecordId ? { dnsRecordId: cnameInfo.dnsRecordId } : {}),
       };
       instances.push(dnsInstance);
+
+      // Refresh bucket info to capture auto-added CORS rule
+      const refreshedInfo = await client.oss.getBucket(config.bucketName);
+      if (refreshedInfo) {
+        instances[0] = buildOssInstanceFromProvider(refreshedInfo, sid);
+      }
     }
   } else if (existingDnsInstance) {
     await client.oss.unbindCustomDomain(

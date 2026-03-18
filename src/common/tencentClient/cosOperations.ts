@@ -28,6 +28,136 @@ const createCosOperations = (cosClient: CosSdkClient, region: string, dnsOps?: D
     return `${bucketName}.cos.${region}.myqcloud.com`;
   };
 
+  type CosCorsRule = {
+    AllowedOrigin: string[];
+    AllowedMethod: string[];
+    AllowedHeader?: string[];
+    ExposeHeader?: string[];
+    MaxAgeSeconds?: number;
+    ID?: string;
+  };
+
+  const buildCorsRuleForDomain = (domain: string): CosCorsRule => ({
+    AllowedOrigin: [`https://${domain}`, `http://${domain}`],
+    AllowedMethod: ['GET', 'HEAD'],
+    AllowedHeader: ['*'],
+    ExposeHeader: ['ETag', 'Content-Length'],
+    MaxAgeSeconds: 3600,
+  });
+
+  const isDomainCorsRule = (rule: CosCorsRule, domain: string): boolean => {
+    const origins = rule.AllowedOrigin || [];
+    const expected = new Set([`https://${domain}`, `http://${domain}`]);
+    return origins.length === expected.size && origins.every((o) => expected.has(o));
+  };
+
+  const addCorsRuleForDomain = async (bucketName: string, domain: string): Promise<void> => {
+    try {
+      let existingRules: CosCorsRule[] = [];
+      try {
+        const corsResult = await new Promise<GetBucketCorsResult>((resolve, reject) => {
+          cosClient.getBucketCors({ Bucket: bucketName, Region: region }, (err, data) => {
+            if (err) reject(err);
+            else resolve(data);
+          });
+        });
+        if (corsResult.CORSRules && corsResult.CORSRules.length > 0) {
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          existingRules = corsResult.CORSRules as any as CosCorsRule[];
+        }
+      } catch {
+        // no existing CORS config
+      }
+
+      if (existingRules.some((rule) => isDomainCorsRule(rule, domain))) {
+        logger.info(lang.__('COS_CORS_RULE_EXISTS', { domain }));
+        return;
+      }
+
+      const allRules = [...existingRules, buildCorsRuleForDomain(domain)];
+      await new Promise<void>((resolve, reject) => {
+        cosClient.putBucketCors(
+          {
+            Bucket: bucketName,
+            Region: region,
+            CORSRules: allRules.map((r) => ({
+              AllowedOrigin: r.AllowedOrigin,
+              AllowedMethod: r.AllowedMethod,
+              AllowedHeader: r.AllowedHeader || [],
+              ExposeHeader: r.ExposeHeader || [],
+              MaxAgeSeconds: r.MaxAgeSeconds || 0,
+            })),
+          },
+          (err) => {
+            if (err) reject(err);
+            else resolve();
+          },
+        );
+      });
+      logger.info(lang.__('COS_CORS_RULE_ADDED', { domain }));
+    } catch (error) {
+      logger.warn(lang.__('COS_CORS_RULE_ADD_FAILED', { domain, error: String(error) }));
+    }
+  };
+
+  const removeCorsRuleForDomain = async (bucketName: string, domain: string): Promise<void> => {
+    try {
+      let existingRules: CosCorsRule[] = [];
+      try {
+        const corsResult = await new Promise<GetBucketCorsResult>((resolve, reject) => {
+          cosClient.getBucketCors({ Bucket: bucketName, Region: region }, (err, data) => {
+            if (err) reject(err);
+            else resolve(data);
+          });
+        });
+        if (corsResult.CORSRules && corsResult.CORSRules.length > 0) {
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          existingRules = corsResult.CORSRules as any as CosCorsRule[];
+        }
+      } catch {
+        return;
+      }
+
+      const remainingRules = existingRules.filter((rule) => !isDomainCorsRule(rule, domain));
+
+      if (remainingRules.length === existingRules.length) {
+        return;
+      }
+
+      if (remainingRules.length > 0) {
+        await new Promise<void>((resolve, reject) => {
+          cosClient.putBucketCors(
+            {
+              Bucket: bucketName,
+              Region: region,
+              CORSRules: remainingRules.map((r) => ({
+                AllowedOrigin: r.AllowedOrigin,
+                AllowedMethod: r.AllowedMethod,
+                AllowedHeader: r.AllowedHeader || [],
+                ExposeHeader: r.ExposeHeader || [],
+                MaxAgeSeconds: r.MaxAgeSeconds || 0,
+              })),
+            },
+            (err) => {
+              if (err) reject(err);
+              else resolve();
+            },
+          );
+        });
+      } else {
+        await new Promise<void>((resolve, reject) => {
+          cosClient.deleteBucketCors({ Bucket: bucketName, Region: region }, (err) => {
+            if (err) reject(err);
+            else resolve();
+          });
+        });
+      }
+      logger.info(lang.__('COS_CORS_RULE_REMOVED', { domain }));
+    } catch (error) {
+      logger.warn(lang.__('COS_CORS_RULE_REMOVE_FAILED', { domain, error: String(error) }));
+    }
+  };
+
   const bindCustomDomain = async (bucketName: string, domain: string): Promise<CosCnameInfo> => {
     const mainDomain = extractMainDomain(domain);
     const hostRecord = extractHostRecord(domain, mainDomain);
@@ -62,6 +192,8 @@ const createCosOperations = (cosClient: CosSdkClient, region: string, dnsOps?: D
     } catch (error) {
       logger.warn(lang.__('COS_BUCKET_DOMAIN_BIND_FAILED', { error: String(error) }));
     }
+
+    await addCorsRuleForDomain(bucketName, domain);
 
     if (!dnsOps) {
       logger.warn(lang.__('COS_DNS_MANUAL_CONFIG_REQUIRED', { domain, cname: cosEndpoint }));
@@ -107,6 +239,8 @@ const createCosOperations = (cosClient: CosSdkClient, region: string, dnsOps?: D
     domain: string,
     dnsRecordId?: string,
   ): Promise<void> => {
+    await removeCorsRuleForDomain(bucketName, domain);
+
     try {
       type DomainRule = { Name: string; Status: string; Type: string };
 
