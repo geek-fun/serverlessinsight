@@ -83,11 +83,12 @@ program
   .option('-f, --file <path>', 'specify the yaml file')
   .option('-s, --stage <stage>', 'specify the stage')
   .action(
-    actionWrapper('show', async (options) => {
-      const iacLocation = getIacLocation(options.file);
+    actionWrapper('show', async ({ file, stage }) => {
+      const iacLocation = getIacLocation(file);
       const rawIac = parseYaml(iacLocation);
       await setContext({
-        ...options,
+        location: file,
+        stage,
         app: rawIac.app,
         service: rawIac.service,
         iacProvider: rawIac.provider,
@@ -96,7 +97,7 @@ program
       const context = getContext();
       const iac = revalYaml(iacLocation, context);
       setIac(iac);
-      await show({ stage: options.stage, location: options.file, iac });
+      await show({ stage, location: file, iac });
     }),
   );
 
