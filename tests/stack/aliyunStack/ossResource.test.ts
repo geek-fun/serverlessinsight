@@ -186,6 +186,7 @@ describe('OssResource', () => {
       const result = await deleteBucketResource(mockContext, bucketName, logicalId, stateWithDns);
 
       expect(mockOssOperations.unbindCustomDomain).toHaveBeenCalledWith(
+        bucketName,
         'example.com',
         'dns-record-123',
       );

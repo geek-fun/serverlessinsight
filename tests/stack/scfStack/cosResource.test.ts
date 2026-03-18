@@ -239,6 +239,7 @@ describe('CosResource', () => {
       );
 
       expect(mockCosOperations.unbindCustomDomain).toHaveBeenCalledWith(
+        bucketName,
         'example.com',
         'dns-record-123',
       );

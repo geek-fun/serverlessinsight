@@ -19,6 +19,7 @@ export type CosCnameInfo = {
   domain: string;
   cname: string;
   dnsRecordId?: string;
+  bucketDomainBound?: boolean;
 };
 
 export // COS operations
@@ -32,9 +33,39 @@ const createCosOperations = (cosClient: CosSdkClient, region: string, dnsOps?: D
     const hostRecord = extractHostRecord(domain, mainDomain);
     const cosEndpoint = getCosEndpoint(bucketName);
 
+    let bucketDomainBound = false;
+    try {
+      await new Promise<void>((resolve, reject) => {
+        cosClient.putBucketDomain(
+          {
+            Bucket: bucketName,
+            Region: region,
+            DomainRule: [
+              {
+                Status: 'ENABLED',
+                Name: domain,
+                Type: 'REST',
+              },
+            ],
+          },
+          (err) => {
+            if (err) {
+              reject(err);
+            } else {
+              resolve();
+            }
+          },
+        );
+      });
+      logger.info(lang.__('COS_BUCKET_DOMAIN_BOUND', { domain }));
+      bucketDomainBound = true;
+    } catch (error) {
+      logger.warn(lang.__('COS_BUCKET_DOMAIN_BIND_FAILED', { error: String(error) }));
+    }
+
     if (!dnsOps) {
       logger.warn(lang.__('COS_DNS_MANUAL_CONFIG_REQUIRED', { domain, cname: cosEndpoint }));
-      return { domain, cname: cosEndpoint };
+      return { domain, cname: cosEndpoint, bucketDomainBound };
     }
 
     try {
@@ -50,6 +81,7 @@ const createCosOperations = (cosClient: CosSdkClient, region: string, dnsOps?: D
           domain,
           cname: cosEndpoint,
           dnsRecordId: existingRecord.recordId,
+          bucketDomainBound,
         };
       }
 
@@ -62,15 +94,40 @@ const createCosOperations = (cosClient: CosSdkClient, region: string, dnsOps?: D
       });
 
       logger.info(lang.__('COS_DNS_CNAME_CREATED', { domain, cname: cosEndpoint }));
-      return { domain, cname: cosEndpoint, dnsRecordId: recordId };
+      return { domain, cname: cosEndpoint, dnsRecordId: recordId, bucketDomainBound };
     } catch (error) {
       logger.warn(lang.__('COS_DNS_DOMAIN_NOT_MANAGED', { domain, cname: cosEndpoint }));
       logger.debug(`DNS error: ${error}`);
-      return { domain, cname: cosEndpoint };
+      return { domain, cname: cosEndpoint, bucketDomainBound };
     }
   };
 
-  const unbindCustomDomain = async (domain: string, dnsRecordId?: string): Promise<void> => {
+  const unbindCustomDomain = async (
+    bucketName: string,
+    domain: string,
+    dnsRecordId?: string,
+  ): Promise<void> => {
+    try {
+      await new Promise<void>((resolve, reject) => {
+        cosClient.deleteBucketDomain(
+          {
+            Bucket: bucketName,
+            Region: region,
+          },
+          (err) => {
+            if (err) {
+              reject(err);
+            } else {
+              resolve();
+            }
+          },
+        );
+      });
+      logger.info(lang.__('COS_BUCKET_DOMAIN_UNBOUND', { domain }));
+    } catch (error) {
+      logger.warn(lang.__('COS_BUCKET_DOMAIN_UNBIND_FAILED', { error: String(error) }));
+    }
+
     if (!dnsOps || !dnsRecordId || dnsRecordId === 'existing') {
       return;
     }

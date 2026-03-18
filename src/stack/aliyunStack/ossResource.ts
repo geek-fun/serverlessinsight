@@ -234,6 +234,7 @@ export const updateBucketResource = async (
 
     if (domainChanged && existingDnsInstance?.dnsRecordId) {
       await client.oss.unbindCustomDomain(
+        config.bucketName,
         existingDnsInstance.domain,
         existingDnsInstance.dnsRecordId,
       );
@@ -255,6 +256,7 @@ export const updateBucketResource = async (
     }
   } else if (existingDnsInstance?.dnsRecordId) {
     await client.oss.unbindCustomDomain(
+      config.bucketName,
       existingDnsInstance.domain,
       existingDnsInstance.dnsRecordId,
     );
@@ -285,7 +287,7 @@ export const deleteBucketResource = async (
     | undefined;
 
   if (dnsInstance?.dnsRecordId) {
-    await client.oss.unbindCustomDomain(dnsInstance.domain, dnsInstance.dnsRecordId);
+    await client.oss.unbindCustomDomain(bucketName, dnsInstance.domain, dnsInstance.dnsRecordId);
   }
 
   try {

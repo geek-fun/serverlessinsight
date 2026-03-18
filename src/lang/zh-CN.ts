@@ -287,6 +287,16 @@ export const zhCN = {
   OSS_DNS_DOMAIN_NOT_MANAGED:
     '域名 {{domain}} 不在当前阿里云账号下管理。' + '请手动配置 CNAME: {{domain}} -> {{cname}}',
   OSS_DNS_MANUAL_CONFIG_REQUIRED: 'DNS 操作不可用。请手动配置 CNAME: {{domain}} -> {{cname}}',
+  OSS_BUCKET_CNAME_NOT_SUPPORTED:
+    '存储桶级 CNAME 绑定需要在阿里云控制台完成。' +
+    'DNS CNAME 配置后，请在 OSS 控制台注册 {{domain}}: ' +
+    'https://oss.console.aliyun.com/bucket/oss-{{region}}/{{bucket}}/domain/cname',
+  OSS_BUCKET_CNAME_BOUND: '已绑定自定义域名到存储桶: {{domain}}',
+  OSS_BUCKET_CNAME_EXISTS: '自定义域名已绑定到存储桶: {{domain}}',
+  OSS_BUCKET_CNAME_UNBOUND: '已解绑存储桶自定义域名: {{domain}}',
+  OSS_BUCKET_CNAME_BIND_FAILED: '绑定存储桶 CNAME 失败: {{error}}',
+  OSS_BUCKET_CNAME_UNBIND_FAILED: '解绑存储桶 CNAME 失败: {{error}}',
+  OSS_BUCKET_CNAME_NEED_VERIFY: '需要验证域名所有权。请在 DNS 控制台添加 TXT 记录后重试。',
 
   // Tencent COS DNS messages
   COS_DNS_CNAME_CREATED: '已创建 DNS CNAME 记录: {{domain}} -> {{cname}}',
@@ -296,6 +306,10 @@ export const zhCN = {
   COS_DNS_DOMAIN_NOT_MANAGED:
     '域名 {{domain}} 不在当前腾讯云账号下管理。' + '请手动配置 CNAME: {{domain}} -> {{cname}}',
   COS_DNS_MANUAL_CONFIG_REQUIRED: 'DNS 操作不可用。请手动配置 CNAME: {{domain}} -> {{cname}}',
+  COS_BUCKET_DOMAIN_BOUND: '已绑定自定义域名到存储桶: {{domain}}',
+  COS_BUCKET_DOMAIN_BIND_FAILED: '绑定存储桶域名失败: {{error}}',
+  COS_BUCKET_DOMAIN_UNBOUND: '已解绑存储桶自定义域名: {{domain}}',
+  COS_BUCKET_DOMAIN_UNBIND_FAILED: '解绑存储桶域名失败: {{error}}',
 
   // Dependency graph messages
   DEPENDENCY_GRAPH_GENERATED: '依赖图已生成',
