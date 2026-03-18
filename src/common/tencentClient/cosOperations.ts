@@ -108,22 +108,71 @@ const createCosOperations = (cosClient: CosSdkClient, region: string, dnsOps?: D
     dnsRecordId?: string,
   ): Promise<void> => {
     try {
-      await new Promise<void>((resolve, reject) => {
-        cosClient.deleteBucketDomain(
+      type DomainRule = { Name: string; Status: string; Type: string };
+
+      const existingRules = await new Promise<Array<DomainRule>>((resolve, reject) => {
+        cosClient.getBucketDomain(
           {
             Bucket: bucketName,
             Region: region,
           },
-          (err) => {
+          (err: { statusCode?: number } | null, data: { DomainRule?: Array<DomainRule> }) => {
             if (err) {
-              reject(err);
+              if (err.statusCode === 404) {
+                resolve([]);
+              } else {
+                reject(err);
+              }
             } else {
-              resolve();
+              resolve(data?.DomainRule ?? []);
             }
           },
         );
       });
-      logger.info(lang.__('COS_BUCKET_DOMAIN_UNBOUND', { domain }));
+
+      const remainingRules = existingRules.filter((rule) => rule.Name !== domain);
+
+      if (remainingRules.length < existingRules.length) {
+        if (remainingRules.length > 0) {
+          await new Promise<void>((resolve, reject) => {
+            cosClient.putBucketDomain(
+              {
+                Bucket: bucketName,
+                Region: region,
+                DomainRule: remainingRules.map((rule) => ({
+                  Status: rule.Status as 'ENABLED' | 'DISABLED',
+                  Name: rule.Name,
+                  Type: rule.Type as 'REST' | 'WEBSITE' | 'ACCELERATE',
+                })),
+              },
+              (err) => {
+                if (err) {
+                  reject(err);
+                } else {
+                  resolve();
+                }
+              },
+            );
+          });
+        } else {
+          await new Promise<void>((resolve, reject) => {
+            cosClient.deleteBucketDomain(
+              {
+                Bucket: bucketName,
+                Region: region,
+              },
+              (err) => {
+                if (err) {
+                  reject(err);
+                } else {
+                  resolve();
+                }
+              },
+            );
+          });
+        }
+        logger.info(lang.__('COS_BUCKET_DOMAIN_UNBOUND', { domain }));
+      }
     } catch (error) {
       logger.warn(lang.__('COS_BUCKET_DOMAIN_UNBIND_FAILED', { error: String(error) }));
     }

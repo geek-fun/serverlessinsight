@@ -1,7 +1,14 @@
 import { createAliyunClient } from '../../common/aliyunClient';
 import { OssBucketInfo, OssCnameInfo } from '../../common/aliyunClient/ossOperations';
 import { setResource, removeResource, buildSid } from '../../common';
-import { Context, BucketDomain, ResourceState, StateFile, ResourceInstance } from '../../types';
+import {
+  Context,
+  BucketDomain,
+  ResourceState,
+  StateFile,
+  ResourceInstance,
+  ResourceTypeEnum,
+} from '../../types';
 import { bucketToOssBucketConfig, extractOssBucketDefinition } from './ossTypes';
 import { CommonBucketInstance } from '../bucketTypes';
 import { logger } from '../../common/logger';
@@ -17,7 +24,7 @@ type OssDnsInstance = ResourceInstance & {
 
 const buildOssInstanceFromProvider = (info: OssBucketInfo, sid: string): CommonBucketInstance => {
   return {
-    type: 'ALIYUN_OSS_BUCKET',
+    type: ResourceTypeEnum.ALIYUN_OSS_BUCKET,
     sid,
     id: info.name,
     bucketName: info.name,
@@ -149,7 +156,7 @@ export const createBucketResource = async (
       const dnsInstance: OssDnsInstance = {
         sid: buildSid('aliyun', 'alidns', context.stage, instanceId),
         id: instanceId,
-        type: 'ALIYUN_OSS_DNS_CNAME',
+        type: ResourceTypeEnum.ALIYUN_OSS_DNS_CNAME,
         domain: bucket.website.domain,
         cname: cnameInfo.cname,
         ...(cnameInfo.dnsRecordId ? { dnsRecordId: cnameInfo.dnsRecordId } : {}),
@@ -227,7 +234,7 @@ export const updateBucketResource = async (
 
   const existingState = state.resources[logicalId];
   const existingDnsInstance = existingState?.instances?.find(
-    (i) => i.type === 'ALIYUN_OSS_DNS_CNAME',
+    (i) => i.type === ResourceTypeEnum.ALIYUN_OSS_DNS_CNAME,
   ) as OssDnsInstance | undefined;
 
   if (bucket.website?.domain) {
@@ -249,7 +256,7 @@ export const updateBucketResource = async (
       const dnsInstance: OssDnsInstance = {
         sid: buildSid('aliyun', 'alidns', context.stage, instanceId),
         id: instanceId,
-        type: 'ALIYUN_OSS_DNS_CNAME',
+        type: ResourceTypeEnum.ALIYUN_OSS_DNS_CNAME,
         domain: bucket.website.domain,
         cname: cnameInfo.cname,
         ...(cnameInfo.dnsRecordId ? { dnsRecordId: cnameInfo.dnsRecordId } : {}),
@@ -284,9 +291,9 @@ export const deleteBucketResource = async (
   const client = createAliyunClient(context);
 
   const existingState = state.resources[logicalId];
-  const dnsInstance = existingState?.instances?.find((i) => i.type === 'ALIYUN_OSS_DNS_CNAME') as
-    | OssDnsInstance
-    | undefined;
+  const dnsInstance = existingState?.instances?.find(
+    (i) => i.type === ResourceTypeEnum.ALIYUN_OSS_DNS_CNAME,
+  ) as OssDnsInstance | undefined;
 
   if (dnsInstance) {
     await client.oss.unbindCustomDomain(bucketName, dnsInstance.domain, dnsInstance.dnsRecordId);

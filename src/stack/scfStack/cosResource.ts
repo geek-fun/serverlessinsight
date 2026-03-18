@@ -1,4 +1,11 @@
-import { Context, BucketDomain, ResourceState, StateFile, ResourceInstance } from '../../types';
+import {
+  Context,
+  BucketDomain,
+  ResourceState,
+  StateFile,
+  ResourceInstance,
+  ResourceTypeEnum,
+} from '../../types';
 import { createTencentClient } from '../../common/tencentClient';
 import { CosCnameInfo } from '../../common/tencentClient/cosOperations';
 import { bucketToCosBucketConfig, extractCosBucketDefinition, CosBucketInfo } from './cosTypes';
@@ -108,7 +115,7 @@ export const createBucketResource = async (
       const dnsInstance: CosDnsInstance = {
         sid: buildSid('tencent', 'dnspod', context.stage, instanceId),
         id: instanceId,
-        type: 'TENCENT_COS_DNS_CNAME',
+        type: ResourceTypeEnum.COS_DNS_CNAME,
         domain: bucket.website.domain,
         cname: cnameInfo.cname,
         ...(cnameInfo.dnsRecordId ? { dnsRecordId: cnameInfo.dnsRecordId } : {}),
@@ -164,7 +171,7 @@ export const updateBucketResource = async (
 
   const existingState = state.resources[logicalId];
   const existingDnsInstance = existingState?.instances?.find(
-    (i) => i.type === 'TENCENT_COS_DNS_CNAME',
+    (i) => i.type === ResourceTypeEnum.COS_DNS_CNAME,
   ) as CosDnsInstance | undefined;
 
   if (bucket.website?.domain) {
@@ -186,7 +193,7 @@ export const updateBucketResource = async (
       const dnsInstance: CosDnsInstance = {
         sid: buildSid('tencent', 'dnspod', context.stage, instanceId),
         id: instanceId,
-        type: 'TENCENT_COS_DNS_CNAME',
+        type: ResourceTypeEnum.COS_DNS_CNAME,
         domain: bucket.website.domain,
         cname: cnameInfo.cname,
         ...(cnameInfo.dnsRecordId ? { dnsRecordId: cnameInfo.dnsRecordId } : {}),
@@ -222,9 +229,9 @@ export const deleteBucketResource = async (
   const client = createTencentClient(context);
 
   const existingState = state.resources[logicalId];
-  const dnsInstance = existingState?.instances?.find((i) => i.type === 'TENCENT_COS_DNS_CNAME') as
-    | CosDnsInstance
-    | undefined;
+  const dnsInstance = existingState?.instances?.find(
+    (i) => i.type === ResourceTypeEnum.COS_DNS_CNAME,
+  ) as CosDnsInstance | undefined;
 
   if (dnsInstance) {
     await client.cos.unbindCustomDomain(bucketName, dnsInstance.domain, dnsInstance.dnsRecordId);

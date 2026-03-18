@@ -340,7 +340,11 @@ export const show = async (options: ShowOptions): Promise<void> => {
   logger.info(`  Resources:    ${resourceCount}`);
 
   if (Object.keys(resources).length > 0) {
-    const lastUpdated = Object.values(resources)[0]?.lastUpdated;
+    const lastUpdated = Object.values(resources).reduce<string | undefined>((latest, r) => {
+      if (!r.lastUpdated) return latest;
+      if (!latest) return r.lastUpdated;
+      return r.lastUpdated > latest ? r.lastUpdated : latest;
+    }, undefined);
     if (lastUpdated) {
       logger.info(`  Last Updated: ${formatTimeAgo(lastUpdated)}`);
     }
