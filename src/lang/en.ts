@@ -333,6 +333,10 @@ export const en = {
   OSS_BUCKET_CNAME_UNBIND_FAILED: 'Failed to unbind bucket CNAME: {{error}}',
   OSS_BUCKET_CNAME_NEED_VERIFY:
     'Domain ownership verification required. Please add TXT record in DNS console, then retry.',
+  OSS_CORS_RULE_ADDED: 'Added CORS rule for custom domain: {{domain}}',
+  OSS_CORS_RULE_ADD_FAILED: 'Failed to add CORS rule for {{domain}}: {{error}}',
+  OSS_CORS_RULE_REMOVED: 'Removed CORS rule for custom domain: {{domain}}',
+  OSS_CORS_RULE_REMOVE_FAILED: 'Failed to remove CORS rule for {{domain}}: {{error}}',
 
   // Tencent COS DNS messages
   COS_DNS_CNAME_CREATED: 'Created DNS CNAME record: {{domain}} -> {{cname}}',
@@ -348,6 +352,10 @@ export const en = {
   COS_BUCKET_DOMAIN_BIND_FAILED: 'Failed to bind bucket domain: {{error}}',
   COS_BUCKET_DOMAIN_UNBOUND: 'Unbound custom domain from bucket: {{domain}}',
   COS_BUCKET_DOMAIN_UNBIND_FAILED: 'Failed to unbind bucket domain: {{error}}',
+  COS_CORS_RULE_ADDED: 'Added CORS rule for custom domain: {{domain}}',
+  COS_CORS_RULE_ADD_FAILED: 'Failed to add CORS rule for {{domain}}: {{error}}',
+  COS_CORS_RULE_REMOVED: 'Removed CORS rule for custom domain: {{domain}}',
+  COS_CORS_RULE_REMOVE_FAILED: 'Failed to remove CORS rule for {{domain}}: {{error}}',
 
   // Dependency graph messages
   DEPENDENCY_GRAPH_GENERATED: 'Dependency graph generated',
