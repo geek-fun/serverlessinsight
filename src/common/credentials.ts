@@ -38,9 +38,18 @@ export const getCredentials = (
     case ProviderEnum.ALIYUN:
     default:
       return {
-        accessKeyId: config?.accessKeyId ?? process.env.ALIYUN_ACCESS_KEY_ID,
-        accessKeySecret: config?.accessKeySecret ?? process.env.ALIYUN_ACCESS_KEY_SECRET,
-        securityToken: config?.securityToken ?? process.env.ALIYUN_SECURITY_TOKEN,
+        accessKeyId:
+          config?.accessKeyId ??
+          process.env.ALIYUN_ACCESS_KEY_ID ??
+          process.env.ALIBABA_CLOUD_ACCESS_KEY_ID,
+        accessKeySecret:
+          config?.accessKeySecret ??
+          process.env.ALIYUN_ACCESS_KEY_SECRET ??
+          process.env.ALIBABA_CLOUD_ACCESS_KEY_SECRET,
+        securityToken:
+          config?.securityToken ??
+          process.env.ALIYUN_SECURITY_TOKEN ??
+          process.env.ALIBABA_CLOUD_SECURITY_TOKEN,
       };
   }
 };
