@@ -27,7 +27,9 @@ No manual lock/unlock commands are needed for normal operations.
 
 - **Timeout**: 10 minutes by default
 - **Retry**: Exponential backoff (2s, 4s, 8s, 16s, 30s max)
-- **Storage**: `.serverlessinsight/state.json.si-lock` file (local file system only)
+- **Storage**:
+  - **Local backend**: `.serverlessinsight/state.json.si-lock` file (local file system)
+  - **Remote backend**: Lock object stored alongside state in the remote backend (e.g., OSS/COS bucket), shared across machines/CI runners
 
 ### Lock Information
 
@@ -119,9 +121,13 @@ Locks held for more than 1 hour are considered potentially stale and will be fla
 
 State locking adds minimal overhead:
 
-- Lock acquisition: <50ms
-- Lock release: <10ms
-- No network calls (local file system only)
+- **Local state backend (file system)**:
+  - Lock acquisition: <50ms
+  - Lock release: <10ms
+  - No network calls (local file system only)
+- **Remote state backends (e.g., OSS/COS)**:
+  - Lock acquisition/release involves storage API requests over the network
+  - Additional latency is typically small compared to overall deployment time
 
 ## Troubleshooting
 
@@ -156,9 +162,9 @@ si force-unlock <LOCK_ID>
 
 ## Limitations
 
-- **Local file system only**: State locking only works with local state files
-- **Same machine**: Locks are only effective on a single machine (not distributed)
-- **No remote backends**: Remote state backends (S3, Azure, GCS) are not supported for state locking
+- **Local file system**: When using local state files, locking is limited to that machine's file system
+- **Same machine (local backend)**: For purely local state, locks are only effective on a single machine (not distributed)
+- **Backend-dependent behavior**: When using remote state backends (e.g., OSS/COS), locking behavior and performance depend on the remote storage API and network conditions
 
 ## Best Practices
 
@@ -184,7 +190,10 @@ si force-unlock <LOCK_ID>
 
 ### Q: Does locking work across different machines?
 
-**A**: No. State locking is local to a single machine. For team collaboration, use a shared CI/CD system.
+**A**: It depends on the state backend:
+
+- **Local backend**: Locks are local to a single machine. For team collaboration with a local backend, use a shared CI/CD system so only one runner operates on the stack at a time.
+- **Remote backend**: Yes. The lock object is stored in the shared remote backend, so it is effective across different machines and CI runners that use the same state.
 
 ### Q: How do I know if a lock is stale?
 

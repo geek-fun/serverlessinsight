@@ -103,14 +103,15 @@ export const createBucketResource = async (
     logger.info(`Binding custom domain ${bucket.website.domain} to bucket ${bucket.name}`);
     cnameInfo = await client.cos.bindCustomDomain(bucket.name, bucket.website.domain);
 
-    if (cnameInfo.dnsRecordId) {
+    if (cnameInfo) {
+      const instanceId = cnameInfo.dnsRecordId ?? bucket.website.domain;
       const dnsInstance: CosDnsInstance = {
-        sid: buildSid('tencent', 'dnspod', context.stage, cnameInfo.dnsRecordId),
-        id: cnameInfo.dnsRecordId,
+        sid: buildSid('tencent', 'dnspod', context.stage, instanceId),
+        id: instanceId,
         type: 'TENCENT_COS_DNS_CNAME',
         domain: bucket.website.domain,
         cname: cnameInfo.cname,
-        dnsRecordId: cnameInfo.dnsRecordId,
+        ...(cnameInfo.dnsRecordId ? { dnsRecordId: cnameInfo.dnsRecordId } : {}),
       };
       instances.push(dnsInstance);
     }
@@ -169,7 +170,7 @@ export const updateBucketResource = async (
   if (bucket.website?.domain) {
     const domainChanged = existingDnsInstance?.domain !== bucket.website.domain;
 
-    if (domainChanged && existingDnsInstance?.dnsRecordId) {
+    if (domainChanged && existingDnsInstance) {
       await client.cos.unbindCustomDomain(
         bucket.name,
         existingDnsInstance.domain,
@@ -180,18 +181,19 @@ export const updateBucketResource = async (
     logger.info(`Binding custom domain ${bucket.website.domain} to bucket ${bucket.name}`);
     const cnameInfo = await client.cos.bindCustomDomain(bucket.name, bucket.website.domain);
 
-    if (cnameInfo.dnsRecordId) {
+    if (cnameInfo) {
+      const instanceId = cnameInfo.dnsRecordId ?? bucket.website.domain;
       const dnsInstance: CosDnsInstance = {
-        sid: buildSid('tencent', 'dnspod', context.stage, cnameInfo.dnsRecordId),
-        id: cnameInfo.dnsRecordId,
+        sid: buildSid('tencent', 'dnspod', context.stage, instanceId),
+        id: instanceId,
         type: 'TENCENT_COS_DNS_CNAME',
         domain: bucket.website.domain,
         cname: cnameInfo.cname,
-        dnsRecordId: cnameInfo.dnsRecordId,
+        ...(cnameInfo.dnsRecordId ? { dnsRecordId: cnameInfo.dnsRecordId } : {}),
       };
       instances.push(dnsInstance);
     }
-  } else if (existingDnsInstance?.dnsRecordId) {
+  } else if (existingDnsInstance) {
     await client.cos.unbindCustomDomain(
       bucket.name,
       existingDnsInstance.domain,
@@ -224,7 +226,7 @@ export const deleteBucketResource = async (
     | CosDnsInstance
     | undefined;
 
-  if (dnsInstance?.dnsRecordId) {
+  if (dnsInstance) {
     await client.cos.unbindCustomDomain(bucketName, dnsInstance.domain, dnsInstance.dnsRecordId);
   }
 

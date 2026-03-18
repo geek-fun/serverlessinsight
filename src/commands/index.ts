@@ -1,6 +1,14 @@
 #! /usr/bin/env node
 import { Command } from 'commander';
-import { clearContext, getIacLocation, getVersion, logger, setContext } from '../common';
+import {
+  clearContext,
+  getIacLocation,
+  getVersion,
+  logger,
+  setContext,
+  setIac,
+  getContext,
+} from '../common';
 import { validate } from './validate';
 import { deploy } from './deploy';
 import { destroyStack } from './destroy';
@@ -9,7 +17,7 @@ import { plan } from './plan';
 import { forceUnlockCommand } from './forceUnlock';
 import { show } from './show';
 import { lang } from '../lang';
-import { parseYaml } from '../parser';
+import { parseYaml, revalYaml } from '../parser';
 
 // Global error handler
 const handleCommandError = (
@@ -78,8 +86,17 @@ program
     actionWrapper('show', async (options) => {
       const iacLocation = getIacLocation(options.file);
       const rawIac = parseYaml(iacLocation);
-      await setContext({ ...options, app: rawIac.app, service: rawIac.service });
-      await show({ stage: options.stage, location: options.file });
+      await setContext({
+        ...options,
+        app: rawIac.app,
+        service: rawIac.service,
+        iacProvider: rawIac.provider,
+        stages: rawIac.stages,
+      });
+      const context = getContext();
+      const iac = revalYaml(iacLocation, context);
+      setIac(iac);
+      await show({ stage: options.stage, location: options.file, iac });
     }),
   );
 

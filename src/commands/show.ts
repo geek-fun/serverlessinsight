@@ -1,11 +1,15 @@
-import { ResourceState, ResourceTypeEnum } from '../types';
-import { getStatePath, loadState, getContext } from '../common';
+import { ResourceState, ResourceTypeEnum, ServerlessIac } from '../types';
+import { StateBackendType } from '../types/domains/backend';
+import { getStatePath, loadState, getContext, hasCredentials } from '../common';
 import { readLockFileForCommand } from '../common/lockManager';
+import { createStateBackend } from '../common/stateBackend';
 import { logger } from '../common/logger';
+import { StateBackend, LockMetadata } from '../common/stateBackend/types';
 
 type ShowOptions = {
   stage?: string;
   location?: string;
+  iac?: ServerlessIac;
 };
 
 const formatTimeAgo = (dateStr: string): string => {
@@ -92,9 +96,18 @@ const formatBucketOutput = (logicalId: string, resource: ResourceState): string[
     lines.push(`     Endpoint: https://${bucketName}.cos.${region}.myqcloud.com`);
   }
 
-  const customDomain = instance.customDomain as string;
+  const dnsInstance = resource.instances?.find(
+    (inst) =>
+      inst.type === ResourceTypeEnum.ALIYUN_OSS_DNS_CNAME ||
+      inst.type === ResourceTypeEnum.COS_DNS_CNAME,
+  );
+
+  const customDomain = (dnsInstance?.domain as string) || (instance.customDomain as string);
   if (customDomain) {
     lines.push(`     Custom Domain: ${customDomain}`);
+    if (dnsInstance?.cname) {
+      lines.push(`     CNAME Target: ${dnsInstance.cname as string}`);
+    }
   }
 
   return lines;
@@ -150,11 +163,7 @@ const formatResourceOutput = (logicalId: string, resource: ResourceState): strin
     return formatFunctionOutput(logicalId, resource);
   }
 
-  if (
-    type === ResourceTypeEnum.ALIYUN_APIGW_GROUP ||
-    type === ResourceTypeEnum.ALIYUN_APIGW_API ||
-    type === ResourceTypeEnum.ALIYUN_APIGW_DEPLOYMENT
-  ) {
+  if (type === ResourceTypeEnum.ALIYUN_APIGW_GROUP || type === ResourceTypeEnum.ALIYUN_APIGW_API) {
     return formatApiGatewayOutput(logicalId, resource);
   }
 
@@ -182,16 +191,70 @@ const formatResourceOutput = (logicalId: string, resource: ResourceState): strin
   return [];
 };
 
+const loadLocalState = (
+  provider: string,
+  app: string,
+  service: string,
+  stage: string,
+  baseDir: string,
+) => {
+  return loadState(provider, app, service, stage, baseDir);
+};
+
+const readLocalLock = (app: string, service: string, baseDir: string): LockMetadata | null => {
+  const statePath = getStatePath(app, service, baseDir);
+  return readLockFileForCommand(statePath);
+};
+
+const getBackendLocationString = (backendConfig: ServerlessIac['backend']): string => {
+  if (!backendConfig || backendConfig.type === StateBackendType.LOCAL) {
+    return 'local';
+  }
+  const config = backendConfig as { bucket: string; key: string };
+  return `bucket://${config.bucket}/${config.key}`;
+};
+
 export const show = async (options: ShowOptions): Promise<void> => {
   const context = getContext();
   const stage = options.stage ?? context.stage;
+  const baseDir = options.location ?? process.cwd();
 
   logger.info(
     `Loading state for app: ${context.app}, service: ${context.service}, stage: ${stage}...`,
   );
 
-  const state = loadState(context.provider, context.app, context.service, stage, process.cwd());
-  const statePath = getStatePath(context.app, context.service, process.cwd());
+  let state;
+  let lockInfo: LockMetadata | null;
+  let stateLocation: string;
+  let usingRemoteBackend = false;
+
+  const shouldUseRemoteBackend = options.iac?.backend?.type === StateBackendType.BUCKET_STORE;
+
+  if (shouldUseRemoteBackend && hasCredentials(context)) {
+    try {
+      const backend: StateBackend = createStateBackend(options.iac!.backend, context);
+      state = await backend.loadState(context.provider, context.app, context.service, stage);
+      lockInfo = await backend.readLock();
+      usingRemoteBackend = true;
+      stateLocation = getBackendLocationString(options.iac!.backend);
+    } catch (error) {
+      logger.warn(
+        `Failed to load state from remote backend, falling back to local state: ${error}`,
+      );
+      state = loadLocalState(context.provider, context.app, context.service, stage, baseDir);
+      lockInfo = readLocalLock(context.app, context.service, baseDir);
+      stateLocation = getStatePath(context.app, context.service, baseDir);
+    }
+  } else {
+    if (shouldUseRemoteBackend && !hasCredentials(context)) {
+      logger.warn(
+        'Remote backend configured but credentials not available. Falling back to local state.',
+      );
+    }
+    state = loadLocalState(context.provider, context.app, context.service, stage, baseDir);
+    lockInfo = readLocalLock(context.app, context.service, baseDir);
+    stateLocation = getStatePath(context.app, context.service, baseDir);
+  }
 
   const resources = state.resources;
   const resourceCount = Object.keys(resources).length;
@@ -199,7 +262,10 @@ export const show = async (options: ShowOptions): Promise<void> => {
   if (resourceCount === 0) {
     logger.info('No resources found in state.');
     logger.info('');
-    logger.info('State file location: ' + statePath);
+    logger.info(`State location: ${stateLocation}`);
+    if (usingRemoteBackend) {
+      logger.info('Backend: Remote');
+    }
     logger.info('');
     logger.info('To deploy resources, run: si deploy');
     return;
@@ -281,9 +347,11 @@ export const show = async (options: ShowOptions): Promise<void> => {
   }
 
   logger.info('');
-  logger.info(`State file: ${statePath}`);
+  logger.info(`State location: ${stateLocation}`);
+  if (usingRemoteBackend) {
+    logger.info('Backend: Remote');
+  }
 
-  const lockInfo = readLockFileForCommand(statePath);
   if (lockInfo) {
     logger.info(`Lock Status: LOCKED by ${lockInfo.user || 'unknown'}`);
   } else {

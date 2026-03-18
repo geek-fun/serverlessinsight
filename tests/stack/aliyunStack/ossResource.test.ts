@@ -230,7 +230,11 @@ describe('OssResource', () => {
         stateWithoutDnsRecordId,
       );
 
-      expect(mockOssOperations.unbindCustomDomain).not.toHaveBeenCalled();
+      expect(mockOssOperations.unbindCustomDomain).toHaveBeenCalledWith(
+        bucketName,
+        'example.com',
+        undefined,
+      );
       expect(mockOssOperations.deleteBucket).toHaveBeenCalledWith(bucketName);
       expect(result).toEqual(initialState);
     });

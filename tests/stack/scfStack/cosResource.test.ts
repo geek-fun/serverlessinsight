@@ -285,7 +285,11 @@ describe('CosResource', () => {
         stateWithoutDnsRecordId,
       );
 
-      expect(mockCosOperations.unbindCustomDomain).not.toHaveBeenCalled();
+      expect(mockCosOperations.unbindCustomDomain).toHaveBeenCalledWith(
+        bucketName,
+        'example.com',
+        undefined,
+      );
       expect(mockCosOperations.deleteBucket).toHaveBeenCalledWith(bucketName, region);
       expect(result).toEqual(initialState);
     });
