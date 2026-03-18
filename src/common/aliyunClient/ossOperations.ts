@@ -133,9 +133,8 @@ export const createOssOperations = (
 
   const isDomainCorsRule = (rule: OssCorsRule, domain: string): boolean => {
     const origins = Array.isArray(rule.allowedOrigin) ? rule.allowedOrigin : [rule.allowedOrigin];
-    return origins.some(
-      (origin) => origin === `https://${domain}` || origin === `http://${domain}`,
-    );
+    const expected = new Set([`https://${domain}`, `http://${domain}`]);
+    return origins.length === expected.size && origins.every((o) => expected.has(o));
   };
 
   const addCorsRuleForDomain = async (bucketName: string, domain: string): Promise<void> => {
@@ -152,7 +151,7 @@ export const createOssOperations = (
       }
 
       if (existingRules.some((rule) => isDomainCorsRule(rule, domain))) {
-        logger.info(lang.__('OSS_CORS_RULE_ADDED', { domain }));
+        logger.info(lang.__('OSS_CORS_RULE_EXISTS', { domain }));
         return;
       }
 

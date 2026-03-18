@@ -46,9 +46,9 @@ const createCosOperations = (cosClient: CosSdkClient, region: string, dnsOps?: D
   });
 
   const isDomainCorsRule = (rule: CosCorsRule, domain: string): boolean => {
-    return (rule.AllowedOrigin || []).some(
-      (origin) => origin === `https://${domain}` || origin === `http://${domain}`,
-    );
+    const origins = rule.AllowedOrigin || [];
+    const expected = new Set([`https://${domain}`, `http://${domain}`]);
+    return origins.length === expected.size && origins.every((o) => expected.has(o));
   };
 
   const addCorsRuleForDomain = async (bucketName: string, domain: string): Promise<void> => {
@@ -70,7 +70,7 @@ const createCosOperations = (cosClient: CosSdkClient, region: string, dnsOps?: D
       }
 
       if (existingRules.some((rule) => isDomainCorsRule(rule, domain))) {
-        logger.info(lang.__('COS_CORS_RULE_ADDED', { domain }));
+        logger.info(lang.__('COS_CORS_RULE_EXISTS', { domain }));
         return;
       }
 

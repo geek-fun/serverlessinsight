@@ -334,6 +334,7 @@ export const en = {
   OSS_BUCKET_CNAME_NEED_VERIFY:
     'Domain ownership verification required. Please add TXT record in DNS console, then retry.',
   OSS_CORS_RULE_ADDED: 'Added CORS rule for custom domain: {{domain}}',
+  OSS_CORS_RULE_EXISTS: 'CORS rule already exists for custom domain: {{domain}}',
   OSS_CORS_RULE_ADD_FAILED: 'Failed to add CORS rule for {{domain}}: {{error}}',
   OSS_CORS_RULE_REMOVED: 'Removed CORS rule for custom domain: {{domain}}',
   OSS_CORS_RULE_REMOVE_FAILED: 'Failed to remove CORS rule for {{domain}}: {{error}}',
@@ -353,6 +354,7 @@ export const en = {
   COS_BUCKET_DOMAIN_UNBOUND: 'Unbound custom domain from bucket: {{domain}}',
   COS_BUCKET_DOMAIN_UNBIND_FAILED: 'Failed to unbind bucket domain: {{error}}',
   COS_CORS_RULE_ADDED: 'Added CORS rule for custom domain: {{domain}}',
+  COS_CORS_RULE_EXISTS: 'CORS rule already exists for custom domain: {{domain}}',
   COS_CORS_RULE_ADD_FAILED: 'Failed to add CORS rule for {{domain}}: {{error}}',
   COS_CORS_RULE_REMOVED: 'Removed CORS rule for custom domain: {{domain}}',
   COS_CORS_RULE_REMOVE_FAILED: 'Failed to remove CORS rule for {{domain}}: {{error}}',
