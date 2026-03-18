@@ -18,6 +18,7 @@ export const bucketSchema = {
             },
           },
           required: ['class'],
+          additionalProperties: false,
         },
         versioning: {
           type: 'object',
@@ -27,6 +28,7 @@ export const bucketSchema = {
             },
           },
           required: ['status'],
+          additionalProperties: false,
         },
         security: {
           type: 'object',
@@ -40,6 +42,7 @@ export const bucketSchema = {
               type: 'string',
             },
           },
+          additionalProperties: false,
         },
         website: {
           type: 'object',
@@ -59,6 +62,7 @@ export const bucketSchema = {
             error_code: resolvableNumber,
           },
           required: ['code'],
+          additionalProperties: false,
         },
       },
       required: ['name'],
