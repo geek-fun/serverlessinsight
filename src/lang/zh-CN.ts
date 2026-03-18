@@ -112,6 +112,8 @@ export const zhCN = {
   GENERATING_PLAN: '正在生成部署计划...',
   PLAN_GENERATED: '计划已生成，共有',
   EXECUTING_PLAN: '正在执行部署计划...',
+  DEPLOY_CONFIRMATION: '是否执行这些操作？(yes/no): ',
+  DEPLOY_CANCELLED: '部署已取消。',
 
   // TDSQL-C 数据库消息
   TDSQL_CLUSTER_CREATION_INITIATED: 'TDSQL-C 集群创建已启动',

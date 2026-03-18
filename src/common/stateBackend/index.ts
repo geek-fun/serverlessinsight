@@ -9,6 +9,8 @@ export * from './types';
 export * from './localStateBackend';
 export * from './ossStateBackend';
 export * from './cosStateBackend';
+export * from './remoteStateBackend';
+export * from './lockUtils';
 
 type BackendContext = {
   provider: string;

@@ -116,6 +116,8 @@ export const en = {
   GENERATING_PLAN: 'Generating deployment plan...',
   PLAN_GENERATED: 'Plan generated with',
   EXECUTING_PLAN: 'Executing deployment plan...',
+  DEPLOY_CONFIRMATION: 'Do you want to perform these actions? (yes/no): ',
+  DEPLOY_CANCELLED: 'Deployment cancelled.',
 
   // TDSQL-C database messages
   TDSQL_CLUSTER_CREATION_INITIATED: 'TDSQL-C cluster creation initiated',

@@ -21,6 +21,7 @@ describe('unit test for deploy command', () => {
       location: 'tests/fixtures/serverless-insight.yml',
       parameters: {},
       stage: undefined,
+      autoApprove: true,
     });
 
     expect(mockedDeployStack).toHaveBeenCalledTimes(1);
