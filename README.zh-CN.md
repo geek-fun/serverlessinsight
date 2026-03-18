@@ -50,11 +50,11 @@ ServerlessInsight 支持以下云服务商：
 | 云服务商         | 函数             | API 网关    | 存储        | 数据库           | 状态   |
 | ---------------- | ---------------- | ----------- | ----------- | ---------------- | ------ |
 | **阿里云**       | ✅ FC3           | ✅ API 网关 | ✅ OSS      | ✅ RDS, OTS, ESS | 稳定   |
+| **腾讯云**       | ✅ SCF           | 🚧 即将推出 | ✅ COS      | ✅ TDSQL-C       | 稳定   |
 | **华为云**       | ✅ FunctionGraph | 🚧 即将推出 | 🚧 即将推出 | 🚧 即将推出      | 测试版 |
 | **AWS**          | 🔜 计划中        | 🔜 计划中   | 🔜 计划中   | 🔜 计划中        | 计划中 |
 | **Azure**        | 🔜 计划中        | 🔜 计划中   | 🔜 计划中   | 🔜 计划中        | 计划中 |
 | **Google Cloud** | 🔜 计划中        | 🔜 计划中   | 🔜 计划中   | 🔜 计划中        | 计划中 |
-| **腾讯云**       | 🔜 计划中        | 🔜 计划中   | 🔜 计划中   | 🔜 计划中        | 计划中 |
 
 ---
 
@@ -85,19 +85,22 @@ si --version
 
 ```bash
 # 验证您的 Serverless 配置
-si validate <stackName> -f serverless.yml
+si validate -f serverless.yml
+
+# 生成部署计划（查看将要发生的变更）
+si plan -f serverless.yml
 
 # 部署您的 Serverless 应用
-si deploy <stackName> -f serverless.yml -s dev
+si deploy -f serverless.yml -s dev
 
 # 本地运行您的应用进行调试
-si local <stackName> -f serverless.yml -s local
+si local -f serverless.yml -s local
 
-# 生成特定云服务商的模板
-si template <stackName> -f serverless.yml -t JSON
+# 显示已部署资源信息
+si show -f serverless.yml
 
 # 销毁已部署的堆栈
-si destroy <stackName> -f serverless.yml
+si destroy -f serverless.yml
 ```
 
 ---
@@ -162,7 +165,7 @@ npm run build
 npm link
 
 # 运行本地开发服务器
-si local my-stack -f serverless.yml -s local
+si local -f serverless.yml -s local
 
 # 运行测试
 npm test

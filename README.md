@@ -50,7 +50,7 @@ ServerlessInsight supports the following cloud providers:
 | Provider          | Functions        | API Gateway    | Storage        | Databases        | Status  |
 | ----------------- | ---------------- | -------------- | -------------- | ---------------- | ------- |
 | **Alibaba Cloud** | ✅ FC3           | ✅ API Gateway | ✅ OSS         | ✅ RDS, OTS, ESS | Stable  |
-| **Tencent Cloud** | ✅ SCF           | ✅ API Gateway | ✅ COS         | ✅ TDSQL-C       | Stable  |
+| **Tencent Cloud** | ✅ SCF           | 🚧 Coming Soon | ✅ COS         | ✅ TDSQL-C       | Stable  |
 | **Huawei Cloud**  | ✅ FunctionGraph | 🚧 Coming Soon | 🚧 Coming Soon | 🚧 Coming Soon   | Beta    |
 | **AWS**           | 🔜 Planned       | 🔜 Planned     | 🔜 Planned     | 🔜 Planned       | Planned |
 | **Azure**         | 🔜 Planned       | 🔜 Planned     | 🔜 Planned     | 🔜 Planned       | Planned |
@@ -165,7 +165,7 @@ npm run build
 npm link
 
 # Run local development server
-si local my-stack -f serverless.yml -s local
+si local -f serverless.yml -s local
 
 # Run tests
 npm test
