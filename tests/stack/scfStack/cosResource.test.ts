@@ -9,6 +9,9 @@ const mockCosOperations = {
   uploadFiles: jest.fn(),
   updateBucketAcl: jest.fn(),
   updateBucketWebsite: jest.fn(),
+  bindCustomDomain: jest.fn(),
+  unbindCustomDomain: jest.fn(),
+  getCosEndpoint: jest.fn(),
 };
 
 const mockedStateManager = {
@@ -194,6 +197,96 @@ describe('CosResource', () => {
       await expect(
         deleteBucketResource(mockContext, bucketName, region, logicalId, initialState),
       ).rejects.toThrow('Delete failed');
+    });
+
+    it('should delete DNS CNAME record when bucket has custom domain', async () => {
+      const bucketName = 'test-bucket';
+      const region = 'ap-guangzhou';
+      const logicalId = 'buckets.test_bucket';
+      const stateWithDns: StateFile = {
+        ...initialState,
+        resources: {
+          [logicalId]: {
+            mode: 'managed',
+            region: 'ap-guangzhou',
+            definition: {},
+            instances: [
+              { sid: 'cos-sid', id: bucketName, type: 'COS_BUCKET' },
+              {
+                sid: 'dns-sid',
+                id: 'dns-record-123',
+                type: 'TENCENT_COS_DNS_CNAME',
+                domain: 'example.com',
+                cname: `${bucketName}.cos.${region}.myqcloud.com`,
+                dnsRecordId: 'dns-record-123',
+              },
+            ],
+            lastUpdated: new Date().toISOString(),
+          },
+        },
+      };
+
+      mockCosOperations.unbindCustomDomain.mockResolvedValue(undefined);
+      mockCosOperations.deleteBucket.mockResolvedValue(undefined);
+      mockedStateManager.removeResource.mockReturnValue(initialState);
+
+      const result = await deleteBucketResource(
+        mockContext,
+        bucketName,
+        region,
+        logicalId,
+        stateWithDns,
+      );
+
+      expect(mockCosOperations.unbindCustomDomain).toHaveBeenCalledWith(
+        'example.com',
+        'dns-record-123',
+      );
+      expect(mockCosOperations.deleteBucket).toHaveBeenCalledWith(bucketName, region);
+      expect(mockedStateManager.removeResource).toHaveBeenCalledWith(stateWithDns, logicalId);
+      expect(result).toEqual(initialState);
+    });
+
+    it('should not fail when DNS record ID is missing', async () => {
+      const bucketName = 'test-bucket';
+      const region = 'ap-guangzhou';
+      const logicalId = 'buckets.test_bucket';
+      const stateWithoutDnsRecordId: StateFile = {
+        ...initialState,
+        resources: {
+          [logicalId]: {
+            mode: 'managed',
+            region: 'ap-guangzhou',
+            definition: {},
+            instances: [
+              { sid: 'cos-sid', id: bucketName, type: 'COS_BUCKET' },
+              {
+                sid: 'dns-sid',
+                id: 'existing',
+                type: 'TENCENT_COS_DNS_CNAME',
+                domain: 'example.com',
+                cname: `${bucketName}.cos.${region}.myqcloud.com`,
+              },
+            ],
+            lastUpdated: new Date().toISOString(),
+          },
+        },
+      };
+
+      mockCosOperations.deleteBucket.mockResolvedValue(undefined);
+      mockedStateManager.removeResource.mockReturnValue(initialState);
+
+      const result = await deleteBucketResource(
+        mockContext,
+        bucketName,
+        region,
+        logicalId,
+        stateWithoutDnsRecordId,
+      );
+
+      expect(mockCosOperations.unbindCustomDomain).not.toHaveBeenCalled();
+      expect(mockCosOperations.deleteBucket).toHaveBeenCalledWith(bucketName, region);
+      expect(result).toEqual(initialState);
     });
   });
 });

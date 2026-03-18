@@ -9,6 +9,9 @@ const mockOssOperations = {
   uploadFiles: jest.fn(),
   updateBucketAcl: jest.fn(),
   updateBucketWebsite: jest.fn(),
+  bindCustomDomain: jest.fn(),
+  unbindCustomDomain: jest.fn(),
+  getOssEndpoint: jest.fn(),
 };
 
 const mockedStateManager = {
@@ -148,6 +151,87 @@ describe('OssResource', () => {
       await expect(
         deleteBucketResource(mockContext, bucketName, logicalId, initialState),
       ).rejects.toThrow('Delete failed');
+    });
+
+    it('should delete DNS CNAME record when bucket has custom domain', async () => {
+      const bucketName = 'test-bucket';
+      const logicalId = 'buckets.test_bucket';
+      const stateWithDns: StateFile = {
+        ...initialState,
+        resources: {
+          [logicalId]: {
+            mode: 'managed',
+            region: 'cn-hangzhou',
+            definition: {},
+            instances: [
+              { sid: 'oss-sid', id: bucketName, type: 'ALIYUN_OSS_BUCKET' },
+              {
+                sid: 'dns-sid',
+                id: 'dns-record-123',
+                type: 'ALIYUN_OSS_DNS_CNAME',
+                domain: 'example.com',
+                cname: `${bucketName}.oss-cn-hangzhou.aliyuncs.com`,
+                dnsRecordId: 'dns-record-123',
+              },
+            ],
+            lastUpdated: new Date().toISOString(),
+          },
+        },
+      };
+
+      mockOssOperations.unbindCustomDomain.mockResolvedValue(undefined);
+      mockOssOperations.deleteBucket.mockResolvedValue(undefined);
+      mockedStateManager.removeResource.mockReturnValue(initialState);
+
+      const result = await deleteBucketResource(mockContext, bucketName, logicalId, stateWithDns);
+
+      expect(mockOssOperations.unbindCustomDomain).toHaveBeenCalledWith(
+        'example.com',
+        'dns-record-123',
+      );
+      expect(mockOssOperations.deleteBucket).toHaveBeenCalledWith(bucketName);
+      expect(mockedStateManager.removeResource).toHaveBeenCalledWith(stateWithDns, logicalId);
+      expect(result).toEqual(initialState);
+    });
+
+    it('should not fail when DNS record ID is missing', async () => {
+      const bucketName = 'test-bucket';
+      const logicalId = 'buckets.test_bucket';
+      const stateWithoutDnsRecordId: StateFile = {
+        ...initialState,
+        resources: {
+          [logicalId]: {
+            mode: 'managed',
+            region: 'cn-hangzhou',
+            definition: {},
+            instances: [
+              { sid: 'oss-sid', id: bucketName, type: 'ALIYUN_OSS_BUCKET' },
+              {
+                sid: 'dns-sid',
+                id: 'existing',
+                type: 'ALIYUN_OSS_DNS_CNAME',
+                domain: 'example.com',
+                cname: `${bucketName}.oss-cn-hangzhou.aliyuncs.com`,
+              },
+            ],
+            lastUpdated: new Date().toISOString(),
+          },
+        },
+      };
+
+      mockOssOperations.deleteBucket.mockResolvedValue(undefined);
+      mockedStateManager.removeResource.mockReturnValue(initialState);
+
+      const result = await deleteBucketResource(
+        mockContext,
+        bucketName,
+        logicalId,
+        stateWithoutDnsRecordId,
+      );
+
+      expect(mockOssOperations.unbindCustomDomain).not.toHaveBeenCalled();
+      expect(mockOssOperations.deleteBucket).toHaveBeenCalledWith(bucketName);
+      expect(result).toEqual(initialState);
     });
   });
 });

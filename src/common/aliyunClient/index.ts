@@ -100,6 +100,7 @@ const initializeSdkClients = (context: Context) => {
 
 export const createAliyunClient = (context: Context) => {
   const sdkClients = initializeSdkClients(context);
+  const dnsOps = createDnsOperations(sdkClients.dns);
 
   return {
     fc3: createFc3Operations(sdkClients.fc3),
@@ -107,11 +108,11 @@ export const createAliyunClient = (context: Context) => {
     ram: createRamOperations(sdkClients.ram),
     ecs: createEcsOperations(sdkClients.ecs, context),
     nas: createNasOperations(sdkClients.nas),
-    oss: createOssOperations(sdkClients.oss, context.region),
+    oss: createOssOperations(sdkClients.oss, context.region, dnsOps),
     apigw: createApigwOperations(sdkClients.apigw, sdkClients.dns, context),
     rds: createRdsOperations(sdkClients.rds, context),
     es: createEsOperations(sdkClients.es, context),
-    dns: createDnsOperations(sdkClients.dns),
+    dns: dnsOps,
     tablestore: (instanceName: string) =>
       createTablestoreOperations(
         `https://${instanceName}.${context.region}.ots.aliyuncs.com`,

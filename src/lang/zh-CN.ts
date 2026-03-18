@@ -280,6 +280,22 @@ export const zhCN = {
 
   // Bucket resource messages
   OSS_BUCKET_TRACKED_CAN_RETRY: '存储桶已在状态中跟踪，您可以重试部署以上传文件',
+  OSS_DNS_CNAME_CREATED: '已创建 DNS CNAME 记录: {{domain}} -> {{cname}}',
+  OSS_DNS_CNAME_EXISTS: 'DNS CNAME 记录已存在: {{domain}} -> {{cname}}',
+  OSS_DNS_CNAME_DELETED: '已删除 DNS CNAME 记录: {{domain}}',
+  OSS_DNS_CNAME_DELETE_FAILED: '删除 DNS CNAME 记录失败: {{domain}}: {{error}}',
+  OSS_DNS_DOMAIN_NOT_MANAGED:
+    '域名 {{domain}} 不在当前阿里云账号下管理。' + '请手动配置 CNAME: {{domain}} -> {{cname}}',
+  OSS_DNS_MANUAL_CONFIG_REQUIRED: 'DNS 操作不可用。请手动配置 CNAME: {{domain}} -> {{cname}}',
+
+  // Tencent COS DNS messages
+  COS_DNS_CNAME_CREATED: '已创建 DNS CNAME 记录: {{domain}} -> {{cname}}',
+  COS_DNS_CNAME_EXISTS: 'DNS CNAME 记录已存在: {{domain}} -> {{cname}}',
+  COS_DNS_CNAME_DELETED: '已删除 DNS CNAME 记录: {{domain}}',
+  COS_DNS_CNAME_DELETE_FAILED: '删除 DNS CNAME 记录失败: {{domain}}: {{error}}',
+  COS_DNS_DOMAIN_NOT_MANAGED:
+    '域名 {{domain}} 不在当前腾讯云账号下管理。' + '请手动配置 CNAME: {{domain}} -> {{cname}}',
+  COS_DNS_MANUAL_CONFIG_REQUIRED: 'DNS 操作不可用。请手动配置 CNAME: {{domain}} -> {{cname}}',
 
   // Dependency graph messages
   DEPENDENCY_GRAPH_GENERATED: '依赖图已生成',

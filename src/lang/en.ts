@@ -311,6 +311,26 @@ export const en = {
   // Bucket resource messages
   OSS_BUCKET_TRACKED_CAN_RETRY:
     'Bucket is tracked in state, you can retry deployment to upload files',
+  OSS_DNS_CNAME_CREATED: 'Created DNS CNAME record: {{domain}} -> {{cname}}',
+  OSS_DNS_CNAME_EXISTS: 'DNS CNAME record already exists: {{domain}} -> {{cname}}',
+  OSS_DNS_CNAME_DELETED: 'Deleted DNS CNAME record for {{domain}}',
+  OSS_DNS_CNAME_DELETE_FAILED: 'Failed to delete DNS CNAME record for {{domain}}: {{error}}',
+  OSS_DNS_DOMAIN_NOT_MANAGED:
+    'The domain {{domain}} is not managed by this Aliyun account. ' +
+    'Please manually configure CNAME: {{domain}} -> {{cname}}',
+  OSS_DNS_MANUAL_CONFIG_REQUIRED:
+    'DNS operations not available. Please manually configure CNAME: {{domain}} -> {{cname}}',
+
+  // Tencent COS DNS messages
+  COS_DNS_CNAME_CREATED: 'Created DNS CNAME record: {{domain}} -> {{cname}}',
+  COS_DNS_CNAME_EXISTS: 'DNS CNAME record already exists: {{domain}} -> {{cname}}',
+  COS_DNS_CNAME_DELETED: 'Deleted DNS CNAME record for {{domain}}',
+  COS_DNS_CNAME_DELETE_FAILED: 'Failed to delete DNS CNAME record for {{domain}}: {{error}}',
+  COS_DNS_DOMAIN_NOT_MANAGED:
+    'The domain {{domain}} is not managed by this Tencent Cloud account. ' +
+    'Please manually configure CNAME: {{domain}} -> {{cname}}',
+  COS_DNS_MANUAL_CONFIG_REQUIRED:
+    'DNS operations not available. Please manually configure CNAME: {{domain}} -> {{cname}}',
 
   // Dependency graph messages
   DEPENDENCY_GRAPH_GENERATED: 'Dependency graph generated',

@@ -7,6 +7,7 @@ import { createScfOperations } from './scfOperations';
 import { createCosOperations } from './cosOperations';
 import { createTdsqlcOperations } from './tdsqlcOperations';
 import { createTencentEsOperations } from './esOperations';
+import { createDnsOperations, createDnsClient } from './dnspodOperations';
 
 export * from './types';
 
@@ -71,16 +72,19 @@ const initializeSdkClients = (context: Context) => {
     cos: cosClient,
     cynosdb: cynosdbClient,
     es: esClient,
+    dns: createDnsClient(context),
   };
 };
 
 export const createTencentClient = (context: Context) => {
   const sdkClients = initializeSdkClients(context);
+  const dnsOps = createDnsOperations(sdkClients.dns);
 
   return {
     scf: createScfOperations(sdkClients.scf),
-    cos: createCosOperations(sdkClients.cos),
+    cos: createCosOperations(sdkClients.cos, context.region, dnsOps),
     tdsqlc: createTdsqlcOperations(sdkClients.cynosdb, context),
     es: createTencentEsOperations(sdkClients.es, context),
+    dns: dnsOps,
   };
 };
