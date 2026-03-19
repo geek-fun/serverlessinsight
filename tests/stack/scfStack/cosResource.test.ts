@@ -1,5 +1,9 @@
 import { ProviderEnum } from '../../../src/common';
-import { deleteBucketResource } from '../../../src/stack/scfStack/cosResource';
+import {
+  createBucketResource,
+  updateBucketResource,
+  deleteBucketResource,
+} from '../../../src/stack/scfStack/cosResource';
 import { Context, CURRENT_STATE_VERSION, StateFile } from '../../../src/types';
 
 const mockCosOperations = {
@@ -12,6 +16,13 @@ const mockCosOperations = {
   bindCustomDomain: jest.fn(),
   unbindCustomDomain: jest.fn(),
   getCosEndpoint: jest.fn(),
+};
+
+const mockSslOperations = {
+  uploadCertificate: jest.fn(),
+  getCertificate: jest.fn(),
+  deleteCertificate: jest.fn(),
+  deployCertificateInstance: jest.fn(),
 };
 
 const mockedStateManager = {
@@ -28,6 +39,7 @@ const mockedLogger = {
 jest.mock('../../../src/common/tencentClient', () => ({
   createTencentClient: () => ({
     cos: mockCosOperations,
+    ssl: mockSslOperations,
     scf: {},
     tdsqlc: {},
   }),
@@ -45,6 +57,20 @@ jest.mock('../../../src/common/logger', () => ({
     error: (...args: unknown[]) => mockedLogger.error(...args),
     warn: (...args: unknown[]) => mockedLogger.warn(...args),
   },
+}));
+
+jest.mock('../../../src/common/certificateResolver', () => ({
+  resolveUploadCertificate: jest.fn().mockReturnValue({
+    certificateName: 'my-cert',
+    certificateBody: 'CERT-BODY',
+    certificatePrivateKey: 'CERT-KEY',
+  }),
+  resolveReferenceCertificate: jest.fn(),
+  resolveCertificateDomain: jest.fn().mockResolvedValue({
+    certificateName: 'my-cert',
+    certificateBody: 'CERT-BODY',
+    certificatePrivateKey: 'CERT-KEY',
+  }),
 }));
 
 describe('CosResource', () => {
@@ -70,8 +96,320 @@ describe('CosResource', () => {
     resources: {},
   };
 
+  const mockBucketInfo = {
+    Name: 'test-bucket',
+    Location: 'ap-guangzhou',
+    CreationDate: '2024-01-01',
+    ACL: 'private',
+    WebsiteConfiguration: { IndexDocument: { Suffix: 'index.html' } },
+    AccessControlPolicy: { owner: { id: 'owner-1' }, grants: [] },
+    CorsConfiguration: [],
+    VersioningConfiguration: { status: 'Enabled' },
+    TaggingConfiguration: { tags: [] },
+  };
+
   beforeEach(() => {
     jest.clearAllMocks();
+    mockedStateManager.setResource.mockImplementation(
+      (_state: StateFile, _logicalId: string, resourceState: unknown) => ({
+        ...initialState,
+        resources: { [`buckets.test_bucket`]: resourceState },
+      }),
+    );
+  });
+
+  describe('createBucketResource', () => {
+    it('should create bucket and return state', async () => {
+      mockCosOperations.createBucket.mockResolvedValue(undefined);
+      mockCosOperations.getBucket.mockResolvedValue(mockBucketInfo);
+
+      const bucket = {
+        key: 'test_bucket',
+        name: 'test-bucket',
+        website: {
+          index: 'index.html',
+          code: './dist',
+          error_page: 'error.html',
+          error_code: 404,
+        },
+      };
+
+      await createBucketResource(mockContext, bucket, initialState);
+
+      expect(mockCosOperations.createBucket).toHaveBeenCalled();
+      expect(mockCosOperations.getBucket).toHaveBeenCalledWith('test-bucket', 'ap-guangzhou');
+      expect(mockedStateManager.setResource).toHaveBeenCalled();
+    });
+
+    it('should deploy SSL certificate to COS after domain binding', async () => {
+      mockCosOperations.createBucket.mockResolvedValue(undefined);
+      mockCosOperations.getBucket.mockResolvedValue(mockBucketInfo);
+      mockCosOperations.bindCustomDomain.mockResolvedValue({
+        cname: 'test-bucket.cos.ap-guangzhou.myqcloud.com',
+        dnsRecordId: 'dns-123',
+        bucketDomainBound: true,
+      });
+      mockSslOperations.uploadCertificate.mockResolvedValue({
+        certificateId: 'ssl-cert-001',
+        alias: 'my-cert',
+      });
+      mockSslOperations.deployCertificateInstance.mockResolvedValue({
+        deployRecordId: 42,
+        deployStatus: 1,
+      });
+
+      const contextWithIac: Context = {
+        ...mockContext,
+        iac: {
+          version: '0.0.1',
+          app: 'test-app',
+          provider: { name: ProviderEnum.TENCENT, region: 'ap-guangzhou' },
+          service: 'test-service',
+          certificates: [
+            {
+              key: 'my_cert',
+              certificate_body: 'CERT-BODY',
+              private_key: 'CERT-KEY',
+            },
+          ],
+        },
+      };
+
+      const domainBucket = {
+        key: 'my_bucket',
+        name: 'test-bucket',
+        website: {
+          index: 'index.html',
+          code: './dist',
+          error_page: 'error.html',
+          error_code: 404,
+          domain: 'cdn.example.com',
+          domain_certificate: '${certificates.my_cert}',
+        },
+      };
+
+      await createBucketResource(contextWithIac, domainBucket, initialState);
+
+      expect(mockCosOperations.createBucket).toHaveBeenCalled();
+      expect(mockCosOperations.bindCustomDomain).toHaveBeenCalledWith(
+        'test-bucket',
+        'cdn.example.com',
+      );
+      expect(mockSslOperations.uploadCertificate).toHaveBeenCalledWith(
+        'my-cert',
+        'CERT-BODY',
+        'CERT-KEY',
+      );
+      expect(mockSslOperations.deployCertificateInstance).toHaveBeenCalledWith(
+        'ssl-cert-001',
+        'cos',
+        ['ap-guangzhou|test-bucket|cdn.example.com'],
+      );
+    });
+
+    it('should not deploy certificate when domain_certificate is not specified', async () => {
+      mockCosOperations.createBucket.mockResolvedValue(undefined);
+      mockCosOperations.getBucket.mockResolvedValue(mockBucketInfo);
+      mockCosOperations.bindCustomDomain.mockResolvedValue({
+        cname: 'test-bucket.cos.ap-guangzhou.myqcloud.com',
+      });
+
+      const bucket = {
+        key: 'test_bucket',
+        name: 'test-bucket',
+        website: {
+          index: 'index.html',
+          domain: 'cdn.example.com',
+          code: './dist',
+          error_page: 'error.html',
+          error_code: 404,
+        },
+      };
+
+      await createBucketResource(mockContext, bucket, initialState);
+
+      expect(mockCosOperations.bindCustomDomain).toHaveBeenCalled();
+      expect(mockSslOperations.uploadCertificate).not.toHaveBeenCalled();
+      expect(mockSslOperations.deployCertificateInstance).not.toHaveBeenCalled();
+    });
+
+    it('should not deploy SSL when bucketDomainBound is false', async () => {
+      mockCosOperations.createBucket.mockResolvedValue(undefined);
+      mockCosOperations.getBucket.mockResolvedValue(mockBucketInfo);
+      mockCosOperations.bindCustomDomain.mockResolvedValue({
+        cname: 'test-bucket.cos.ap-guangzhou.myqcloud.com',
+        dnsRecordId: 'dns-123',
+        bucketDomainBound: false,
+      });
+
+      const contextWithIac: Context = {
+        ...mockContext,
+        iac: {
+          version: '0.0.1',
+          app: 'test-app',
+          provider: { name: ProviderEnum.TENCENT, region: 'ap-guangzhou' },
+          service: 'test-service',
+          certificates: [
+            {
+              key: 'my_cert',
+              certificate_body: 'CERT-BODY',
+              private_key: 'CERT-KEY',
+            },
+          ],
+        },
+      };
+
+      const domainBucket = {
+        key: 'my_bucket',
+        name: 'test-bucket',
+        website: {
+          index: 'index.html',
+          code: './dist',
+          error_page: 'error.html',
+          error_code: 404,
+          domain: 'cdn.example.com',
+          domain_certificate: '${certificates.my_cert}',
+        },
+      };
+
+      await createBucketResource(contextWithIac, domainBucket, initialState);
+
+      expect(mockCosOperations.bindCustomDomain).toHaveBeenCalled();
+      expect(mockSslOperations.uploadCertificate).not.toHaveBeenCalled();
+      expect(mockSslOperations.deployCertificateInstance).not.toHaveBeenCalled();
+    });
+
+    it('should reject certificate_id reference with TENCENT_CERT_REFERENCE_NOT_SUPPORTED', async () => {
+      const { resolveUploadCertificate } = jest.requireMock(
+        '../../../src/common/certificateResolver',
+      ) as { resolveUploadCertificate: jest.Mock };
+      resolveUploadCertificate.mockReturnValue({
+        certificateName: 'my-cert',
+        certificateBody: 'CERT-BODY',
+        certificatePrivateKey: 'CERT-KEY',
+      });
+
+      mockCosOperations.createBucket.mockResolvedValue(undefined);
+      mockCosOperations.getBucket.mockResolvedValue(mockBucketInfo);
+
+      const contextWithIac: Context = {
+        ...mockContext,
+        iac: {
+          version: '0.0.1',
+          app: 'test-app',
+          provider: { name: ProviderEnum.TENCENT, region: 'ap-guangzhou' },
+          service: 'test-service',
+          certificates: [
+            {
+              key: 'ref_cert',
+              certificate_id: '12345',
+            },
+          ],
+        },
+      };
+
+      const domainBucket = {
+        key: 'my_bucket',
+        name: 'test-bucket',
+        website: {
+          index: 'index.html',
+          code: './dist',
+          error_page: 'error.html',
+          error_code: 404,
+          domain: 'cdn.example.com',
+          domain_certificate: '${certificates.ref_cert}',
+        },
+      };
+
+      await expect(
+        createBucketResource(contextWithIac, domainBucket, initialState),
+      ).rejects.toThrow('certificate_id reference mode');
+    });
+  });
+
+  describe('updateBucketResource', () => {
+    it('should deploy SSL certificate on update with domain_certificate', async () => {
+      mockCosOperations.getBucket.mockResolvedValue(mockBucketInfo);
+      mockCosOperations.bindCustomDomain.mockResolvedValue({
+        cname: 'test-bucket.cos.ap-guangzhou.myqcloud.com',
+        dnsRecordId: 'dns-456',
+        bucketDomainBound: true,
+      });
+      mockSslOperations.uploadCertificate.mockResolvedValue({
+        certificateId: 'ssl-cert-002',
+        alias: 'my-cert',
+      });
+      mockSslOperations.deployCertificateInstance.mockResolvedValue({
+        deployRecordId: 99,
+      });
+
+      const contextWithIac: Context = {
+        ...mockContext,
+        iac: {
+          version: '0.0.1',
+          app: 'test-app',
+          provider: { name: ProviderEnum.TENCENT, region: 'ap-guangzhou' },
+          service: 'test-service',
+          certificates: [
+            {
+              key: 'my_cert',
+              certificate_body: 'CERT-BODY',
+              private_key: 'CERT-KEY',
+            },
+          ],
+        },
+      };
+
+      const bucket = {
+        key: 'test_bucket',
+        name: 'test-bucket',
+        website: {
+          index: 'index.html',
+          domain: 'cdn.example.com',
+          domain_certificate: '${certificates.my_cert}',
+          code: './dist',
+          error_page: 'error.html',
+          error_code: 404,
+        },
+      };
+
+      await updateBucketResource(contextWithIac, bucket, initialState);
+
+      expect(mockSslOperations.uploadCertificate).toHaveBeenCalledWith(
+        'my-cert',
+        'CERT-BODY',
+        'CERT-KEY',
+      );
+      expect(mockSslOperations.deployCertificateInstance).toHaveBeenCalledWith(
+        'ssl-cert-002',
+        'cos',
+        ['ap-guangzhou|test-bucket|cdn.example.com'],
+      );
+    });
+
+    it('should not deploy certificate on update without domain_certificate', async () => {
+      mockCosOperations.getBucket.mockResolvedValue(mockBucketInfo);
+      mockCosOperations.bindCustomDomain.mockResolvedValue({
+        cname: 'test-bucket.cos.ap-guangzhou.myqcloud.com',
+      });
+
+      const bucket = {
+        key: 'test_bucket',
+        name: 'test-bucket',
+        website: {
+          index: 'index.html',
+          domain: 'cdn.example.com',
+          code: './dist',
+          error_page: 'error.html',
+          error_code: 404,
+        },
+      };
+
+      await updateBucketResource(mockContext, bucket, initialState);
+
+      expect(mockSslOperations.uploadCertificate).not.toHaveBeenCalled();
+      expect(mockSslOperations.deployCertificateInstance).not.toHaveBeenCalled();
+    });
   });
 
   describe('deleteBucketResource', () => {

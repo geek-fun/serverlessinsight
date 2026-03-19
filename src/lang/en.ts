@@ -545,6 +545,32 @@ export const en = {
   CAS_DELETING_CERT: 'Deleting certificate from CAS (certId: {{certId}})',
   CAS_CERT_DELETED: 'Certificate deleted from CAS (certId: {{certId}})',
 
+  // Tencent SSL certificate messages
+  SSL_UPLOADING_CERT: 'Uploading certificate to Tencent SSL (alias: {{alias}})',
+  SSL_CERT_UPLOADED:
+    'Certificate uploaded to Tencent SSL (alias: {{alias}}, certificateId: {{certificateId}})',
+  SSL_UPLOAD_NO_CERT_ID: 'SSL upload succeeded but no certificate ID returned for "{{alias}}"',
+  SSL_DELETING_CERT: 'Deleting certificate from Tencent SSL (certificateId: {{certificateId}})',
+  SSL_CERT_DELETED: 'Certificate deleted from Tencent SSL (certificateId: {{certificateId}})',
+  SSL_CERT_NOT_FOUND: 'Certificate not found in Tencent SSL (certificateId: {{certificateId}})',
+  SSL_DELETE_FAILED:
+    'Failed to delete certificate from Tencent SSL (certificateId: {{certificateId}})',
+  SSL_DEPLOYING_CERT:
+    'Deploying certificate to {{resourceType}} (certificateId: {{certificateId}}, instances: {{instances}})',
+  SSL_CERT_DEPLOY_SUBMITTED:
+    'Certificate deploy task submitted to {{resourceType}} (certificateId: {{certificateId}}, deployRecordId: {{deployRecordId}})',
+  SSL_CERT_DEPLOY_EXISTING_TASK:
+    'Certificate deploy task already in progress for {{resourceType}} (certificateId: {{certificateId}})',
+  SSL_CERT_DEPLOYED:
+    'Certificate deployed to {{resourceType}} (certificateId: {{certificateId}}, deployRecordId: {{deployRecordId}})',
+  SSL_CERT_DEPLOY_FAILED:
+    'Failed to deploy certificate to {{resourceType}} (certificateId: {{certificateId}}): {{error}}',
+  COS_BUCKET_CERT_DEPLOYING:
+    'Deploying SSL certificate to COS bucket domain: {{domain}} (bucket: {{bucketName}})',
+  COS_BUCKET_CERT_DEPLOYED: 'SSL certificate deployed to COS bucket domain: {{domain}}',
+  TENCENT_CERT_REFERENCE_NOT_SUPPORTED:
+    'Certificate "{{name}}" uses certificate_id reference mode which is not yet supported for Tencent Cloud. Use certificate_body and private_key instead.',
+
   // Protocol messages
   PROTOCOL_INFERRED_REDIRECT:
     'Protocol "{{protocol}}" inferred HTTP-to-HTTPS redirect: {{redirect}}',

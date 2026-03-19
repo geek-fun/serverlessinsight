@@ -76,6 +76,7 @@
     "tencentcloud-sdk-nodejs-dnspod": "^4.1.197",
     "tencentcloud-sdk-nodejs-es": "^4.1.183",
     "tencentcloud-sdk-nodejs-scf": "^4.1.168",
+    "tencentcloud-sdk-nodejs-ssl": "^4.1.191",
     "yaml": "^2.8.2"
   },
   "devDependencies": {

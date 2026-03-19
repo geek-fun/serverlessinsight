@@ -497,6 +497,30 @@ export const zhCN = {
   CAS_DELETING_CERT: '正在从 CAS 删除证书（certId: {{certId}}）',
   CAS_CERT_DELETED: '已从 CAS 删除证书（certId: {{certId}}）',
 
+  // 腾讯云 SSL 证书消息
+  SSL_UPLOADING_CERT: '正在上传证书到腾讯云 SSL（别名: {{alias}}）',
+  SSL_CERT_UPLOADED: '证书已上传到腾讯云 SSL（别名: {{alias}}, 证书ID: {{certificateId}}）',
+  SSL_UPLOAD_NO_CERT_ID: 'SSL 上传成功但未返回证书 "{{alias}}" 的 ID',
+  SSL_DELETING_CERT: '正在从腾讯云 SSL 删除证书（证书ID: {{certificateId}}）',
+  SSL_CERT_DELETED: '已从腾讯云 SSL 删除证书（证书ID: {{certificateId}}）',
+  SSL_CERT_NOT_FOUND: '在腾讯云 SSL 中未找到证书（证书ID: {{certificateId}}）',
+  SSL_DELETE_FAILED: '从腾讯云 SSL 删除证书失败（证书ID: {{certificateId}}）',
+  SSL_DEPLOYING_CERT:
+    '正在部署证书到 {{resourceType}}（证书ID: {{certificateId}}, 实例: {{instances}}）',
+  SSL_CERT_DEPLOY_SUBMITTED:
+    '证书部署任务已提交到 {{resourceType}}（证书ID: {{certificateId}}, 部署记录ID: {{deployRecordId}}）',
+  SSL_CERT_DEPLOY_EXISTING_TASK:
+    '证书部署任务已在 {{resourceType}} 上运行中（证书ID: {{certificateId}}）',
+  SSL_CERT_DEPLOYED:
+    '证书已部署到 {{resourceType}}（证书ID: {{certificateId}}, 部署记录ID: {{deployRecordId}}）',
+  SSL_CERT_DEPLOY_FAILED:
+    '部署证书到 {{resourceType}} 失败（证书ID: {{certificateId}}）：{{error}}',
+  COS_BUCKET_CERT_DEPLOYING:
+    '正在为 COS 存储桶域名部署 SSL 证书: {{domain}}（存储桶: {{bucketName}}）',
+  COS_BUCKET_CERT_DEPLOYED: 'SSL 证书已部署到 COS 存储桶域名: {{domain}}',
+  TENCENT_CERT_REFERENCE_NOT_SUPPORTED:
+    '证书 "{{name}}" 使用了 certificate_id 引用模式，腾讯云暂不支持该模式。请改用 certificate_body 和 private_key。',
+
   // 协议消息
   PROTOCOL_INFERRED_REDIRECT: '协议 "{{protocol}}" 推断 HTTP 到 HTTPS 重定向：{{redirect}}',
 };

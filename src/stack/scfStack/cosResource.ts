@@ -9,8 +9,14 @@ import {
 import { createTencentClient } from '../../common/tencentClient';
 import { CosCnameInfo } from '../../common/tencentClient/cosOperations';
 import { bucketToCosBucketConfig, extractCosBucketDefinition, CosBucketInfo } from './cosTypes';
-import { setResource, removeResource } from '../../common/stateManager';
-import { buildSid } from '../../common';
+import {
+  setResource,
+  removeResource,
+  buildSid,
+  getIacDefinition,
+  isCertificateDomain,
+} from '../../common';
+import { resolveUploadCertificate, ResolvedCertificate } from '../../common/certificateResolver';
 import { logger } from '../../common/logger';
 import { lang } from '../../lang';
 
@@ -19,6 +25,45 @@ type CosDnsInstance = ResourceInstance & {
   domain: string;
   cname: string;
   dnsRecordId?: string;
+};
+
+const resolveBucketDomainCertificate = (
+  domainCertificate: string,
+  context: Context,
+): Pick<ResolvedCertificate, 'certificateName' | 'certificateBody' | 'certificatePrivateKey'> => {
+  if (!context.iac) {
+    throw new Error(lang.__('CERT_REFERENCE_NOT_FOUND', { reference: domainCertificate }));
+  }
+  const certDef = getIacDefinition(context.iac, domainCertificate);
+  if (!certDef || !isCertificateDomain(certDef)) {
+    throw new Error(lang.__('CERT_REFERENCE_NOT_FOUND', { reference: domainCertificate }));
+  }
+  if (certDef.certificate_id) {
+    throw new Error(lang.__('TENCENT_CERT_REFERENCE_NOT_SUPPORTED', { name: certDef.key }));
+  }
+  return resolveUploadCertificate(certDef);
+};
+
+const deployCertificateToCosDomain = async (
+  client: ReturnType<typeof createTencentClient>,
+  resolved: Pick<
+    ResolvedCertificate,
+    'certificateName' | 'certificateBody' | 'certificatePrivateKey'
+  >,
+  bucketName: string,
+  domain: string,
+  region: string,
+): Promise<void> => {
+  logger.info(lang.__('COS_BUCKET_CERT_DEPLOYING', { domain, bucketName }));
+
+  const certInfo = await client.ssl.uploadCertificate(
+    resolved.certificateName,
+    resolved.certificateBody,
+    resolved.certificatePrivateKey,
+  );
+
+  const instanceId = `${region}|${bucketName}|${domain}`;
+  await client.ssl.deployCertificateInstance(certInfo.certificateId, 'cos', [instanceId]);
 };
 
 const buildCosInstanceFromProvider = (info: CosBucketInfo, sid: string) => {
@@ -108,6 +153,10 @@ export const createBucketResource = async (
 
   let cnameInfo: CosCnameInfo | undefined;
   if (bucket.website?.domain) {
+    const resolved = bucket.website.domain_certificate
+      ? resolveBucketDomainCertificate(bucket.website.domain_certificate, context)
+      : undefined;
+
     logger.info(
       lang.__('BINDING_CUSTOM_DOMAIN_TO_BUCKET', {
         domain: bucket.website.domain,
@@ -132,6 +181,16 @@ export const createBucketResource = async (
       const refreshedInfo = await client.cos.getBucket(bucket.name, context.region);
       if (refreshedInfo) {
         instances[0] = buildCosInstanceFromProvider(refreshedInfo as CosBucketInfo, sid);
+      }
+
+      if (resolved && cnameInfo.bucketDomainBound) {
+        await deployCertificateToCosDomain(
+          client,
+          resolved,
+          bucket.name,
+          bucket.website.domain,
+          context.region,
+        );
       }
     }
   }
@@ -197,6 +256,10 @@ export const updateBucketResource = async (
       );
     }
 
+    const resolved = bucket.website.domain_certificate
+      ? resolveBucketDomainCertificate(bucket.website.domain_certificate, context)
+      : undefined;
+
     logger.info(
       lang.__('BINDING_CUSTOM_DOMAIN_TO_BUCKET', {
         domain: bucket.website.domain,
@@ -221,6 +284,16 @@ export const updateBucketResource = async (
       const refreshedInfo = await client.cos.getBucket(bucket.name, context.region);
       if (refreshedInfo) {
         instances[0] = buildCosInstanceFromProvider(refreshedInfo as CosBucketInfo, sid);
+      }
+
+      if (resolved && cnameInfo.bucketDomainBound) {
+        await deployCertificateToCosDomain(
+          client,
+          resolved,
+          bucket.name,
+          bucket.website.domain,
+          context.region,
+        );
       }
     }
   } else if (existingDnsInstance) {
