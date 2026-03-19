@@ -50,6 +50,7 @@
   ],
   "dependencies": {
     "@alicloud/alidns20150109": "^4.3.1",
+    "@alicloud/cas20200407": "^3.2.0",
     "@alicloud/cloudapi20160714": "^4.7.9",
     "@alicloud/ecs20140526": "^7.6.0",
     "@alicloud/es-serverless20230627": "^2.3.0",
@@ -75,6 +76,7 @@
     "tencentcloud-sdk-nodejs-dnspod": "^4.1.197",
     "tencentcloud-sdk-nodejs-es": "^4.1.183",
     "tencentcloud-sdk-nodejs-scf": "^4.1.168",
+    "tencentcloud-sdk-nodejs-ssl": "^4.1.191",
     "yaml": "^2.8.2"
   },
   "devDependencies": {

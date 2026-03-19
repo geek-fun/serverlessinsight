@@ -231,6 +231,21 @@ export type TdsqlcClusterInfo = {
   IsLatestVersion?: boolean;
 };
 
+// Tencent SSL Certificate types
+export type SslCertificateInfo = {
+  certificateId: string;
+  alias?: string;
+  domain?: string;
+  status?: number;
+  certBeginTime?: string;
+  certEndTime?: string;
+};
+
+export type SslDeployResult = {
+  deployRecordId?: number;
+  deployStatus?: number;
+};
+
 // Tencent ES Serverless types
 export enum TencentEsSpaceStatus {
   CREATING = 0,

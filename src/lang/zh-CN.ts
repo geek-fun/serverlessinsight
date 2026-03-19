@@ -303,6 +303,8 @@ export const zhCN = {
   OSS_BUCKET_CNAME_BIND_FAILED: '绑定存储桶 CNAME 失败: {{error}}',
   OSS_BUCKET_CNAME_UNBIND_FAILED: '解绑存储桶 CNAME 失败: {{error}}',
   OSS_BUCKET_CNAME_NEED_VERIFY: '需要验证域名所有权。请在 DNS 控制台添加 TXT 记录后重试。',
+  OSS_BUCKET_CERT_BINDING: '正在为存储桶 {{bucketName}} 的自定义域名 {{domain}} 绑定 SSL 证书',
+  OSS_BUCKET_CERT_BOUND: '已为自定义域名绑定 SSL 证书: {{domain}}',
   OSS_CORS_RULE_ADDED: '已为自定义域名添加 CORS 规则: {{domain}}',
   OSS_CORS_RULE_EXISTS: '自定义域名的 CORS 规则已存在: {{domain}}',
   OSS_CORS_RULE_ADD_FAILED: '为 {{domain}} 添加 CORS 规则失败: {{error}}',
@@ -474,4 +476,54 @@ export const zhCN = {
     'RAM 角色 "{{roleName}}" 状态漂移恢复失败：{{error}}。' +
     '角色在云端存在但恢复操作失败。' +
     '修复方法：在云控制台手动确认角色状态，从状态中移除该角色并重新部署。',
+
+  // 证书消息
+  CERT_INVALID_CONFIGURATION:
+    '证书 "{{name}}" 必须具有 (certificate_body + private_key) 或 certificate_id，但不能同时存在',
+  CERT_FILE_NOT_FOUND: '未找到证书文件: {{filePath}}',
+  CERT_READING_FILE: '正在读取证书文件: {{filePath}}',
+  CERT_PARSING_CERTIFICATES: '正在解析证书配置',
+  CERT_RESOLVING_REFERENCE: '正在解析域名 "{{domain}}" 的证书引用 "{{reference}}"',
+  CERT_REFERENCE_NOT_FOUND:
+    '无法解析证书引用 "{{reference}}"。请确保它已在 certificates 块中定义。',
+  CERT_RESOLVED_UPLOAD: '证书 "{{name}}" 解析为上传模式（提供了 PEM 文件）',
+  CERT_RESOLVED_REFERENCE: '证书 "{{name}}" 解析为引用模式（certificate_id: {{certId}}）',
+  CERT_READING_PEM_FILES: '正在读取证书 "{{name}}" 的 PEM 文件',
+
+  // CAS（证书授权服务）消息
+  CAS_UPLOADING_CERT: '正在上传证书 "{{name}}" 到 CAS',
+  CAS_CERT_UPLOADED: '证书 "{{name}}" 已上传到 CAS（certId: {{certId}}）',
+  CAS_UPLOAD_NO_CERT_ID: 'CAS 上传成功但未返回证书 "{{name}}" 的 ID',
+  CAS_FETCHING_CERT: '正在从 CAS 获取证书详情（certId: {{certId}}）',
+  CAS_CERT_NOT_FOUND: '在 CAS 中未找到证书（certId: {{certId}}）',
+  CAS_CERT_FETCH_FAILED: '从 CAS 获取证书失败（certId: {{certId}}）：{{error}}',
+  CAS_DELETING_CERT: '正在从 CAS 删除证书（certId: {{certId}}）',
+  CAS_CERT_DELETED: '已从 CAS 删除证书（certId: {{certId}}）',
+
+  // 腾讯云 SSL 证书消息
+  SSL_UPLOADING_CERT: '正在上传证书到腾讯云 SSL（别名: {{alias}}）',
+  SSL_CERT_UPLOADED: '证书已上传到腾讯云 SSL（别名: {{alias}}, 证书ID: {{certificateId}}）',
+  SSL_UPLOAD_NO_CERT_ID: 'SSL 上传成功但未返回证书 "{{alias}}" 的 ID',
+  SSL_DELETING_CERT: '正在从腾讯云 SSL 删除证书（证书ID: {{certificateId}}）',
+  SSL_CERT_DELETED: '已从腾讯云 SSL 删除证书（证书ID: {{certificateId}}）',
+  SSL_CERT_NOT_FOUND: '在腾讯云 SSL 中未找到证书（证书ID: {{certificateId}}）',
+  SSL_DELETE_FAILED: '从腾讯云 SSL 删除证书失败（证书ID: {{certificateId}}）',
+  SSL_DEPLOYING_CERT:
+    '正在部署证书到 {{resourceType}}（证书ID: {{certificateId}}, 实例: {{instances}}）',
+  SSL_CERT_DEPLOY_SUBMITTED:
+    '证书部署任务已提交到 {{resourceType}}（证书ID: {{certificateId}}, 部署记录ID: {{deployRecordId}}）',
+  SSL_CERT_DEPLOY_EXISTING_TASK:
+    '证书部署任务已在 {{resourceType}} 上运行中（证书ID: {{certificateId}}）',
+  SSL_CERT_DEPLOYED:
+    '证书已部署到 {{resourceType}}（证书ID: {{certificateId}}, 部署记录ID: {{deployRecordId}}）',
+  SSL_CERT_DEPLOY_FAILED:
+    '部署证书到 {{resourceType}} 失败（证书ID: {{certificateId}}）：{{error}}',
+  COS_BUCKET_CERT_DEPLOYING:
+    '正在为 COS 存储桶域名部署 SSL 证书: {{domain}}（存储桶: {{bucketName}}）',
+  COS_BUCKET_CERT_DEPLOYED: 'SSL 证书已部署到 COS 存储桶域名: {{domain}}',
+  TENCENT_CERT_REFERENCE_NOT_SUPPORTED:
+    '证书 "{{name}}" 使用了 certificate_id 引用模式，腾讯云暂不支持该模式。请改用 certificate_body 和 private_key。',
+
+  // 协议消息
+  PROTOCOL_INFERRED_REDIRECT: '协议 "{{protocol}}" 推断 HTTP 到 HTTPS 重定向：{{redirect}}',
 };

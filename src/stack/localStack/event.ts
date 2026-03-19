@@ -2,7 +2,7 @@ import { EventTypes, ServerlessIac } from '../../types';
 import { isEmpty } from 'lodash';
 import { ParsedRequest, RouteHandler, RouteResponse } from '../../types/localStack';
 import { IncomingMessage } from 'http';
-import { getIacDefinition, logger, ProviderEnum } from '../../common';
+import { getIacDefinition, isFunctionDomain, logger, ProviderEnum } from '../../common';
 import { functionsHandler } from './function';
 import {
   generateRequestId,
@@ -91,7 +91,7 @@ const servEvent = async (
 
   if (matchedTrigger.backend) {
     const backendDef = getIacDefinition(iac, matchedTrigger.backend);
-    if (!backendDef) {
+    if (!backendDef || !isFunctionDomain(backendDef)) {
       const endTime = new Date();
       if (isAliyun) {
         logApiGatewayRequest(requestId, parsed.url, 500, startTime, endTime, sourceIp);

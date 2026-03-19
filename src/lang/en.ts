@@ -341,6 +341,9 @@ export const en = {
   OSS_BUCKET_CNAME_UNBIND_FAILED: 'Failed to unbind bucket CNAME: {{error}}',
   OSS_BUCKET_CNAME_NEED_VERIFY:
     'Domain ownership verification required. Please add TXT record in DNS console, then retry.',
+  OSS_BUCKET_CERT_BINDING:
+    'Binding SSL certificate to custom domain {{domain}} on bucket {{bucketName}}',
+  OSS_BUCKET_CERT_BOUND: 'SSL certificate bound to custom domain: {{domain}}',
   OSS_CORS_RULE_ADDED: 'Added CORS rule for custom domain: {{domain}}',
   OSS_CORS_RULE_EXISTS: 'CORS rule already exists for custom domain: {{domain}}',
   OSS_CORS_RULE_ADD_FAILED: 'Failed to add CORS rule for {{domain}}: {{error}}',
@@ -521,4 +524,59 @@ export const en = {
     'Failed to recover from RAM role state drift for "{{roleName}}": {{error}}. ' +
     'The role existed in the cloud but recovery operations failed. ' +
     'To fix: manually verify the role in the cloud console, remove it from state, and redeploy.',
+
+  // Certificate messages
+  CERT_INVALID_CONFIGURATION:
+    'Certificate "{{name}}" must have either (certificate_body + private_key) or certificate_id, but not both',
+  CERT_FILE_NOT_FOUND: 'Certificate file not found: {{filePath}}',
+  CERT_READING_FILE: 'Reading certificate file: {{filePath}}',
+  CERT_PARSING_CERTIFICATES: 'Parsing certificates configuration',
+  CERT_RESOLVING_REFERENCE:
+    'Resolving certificate reference "{{reference}}" for domain "{{domain}}"',
+  CERT_REFERENCE_NOT_FOUND:
+    'Certificate reference "{{reference}}" could not be resolved. Ensure it is defined in the certificates block.',
+  CERT_RESOLVED_UPLOAD: 'Certificate "{{name}}" resolved as upload mode (PEM files provided)',
+  CERT_RESOLVED_REFERENCE:
+    'Certificate "{{name}}" resolved as reference mode (certificate_id: {{certId}})',
+  CERT_READING_PEM_FILES: 'Reading PEM files for certificate "{{name}}"',
+
+  // CAS (Certificate Authority Service) messages
+  CAS_UPLOADING_CERT: 'Uploading certificate "{{name}}" to CAS',
+  CAS_CERT_UPLOADED: 'Certificate "{{name}}" uploaded to CAS (certId: {{certId}})',
+  CAS_UPLOAD_NO_CERT_ID: 'CAS upload succeeded but no certificate ID returned for "{{name}}"',
+  CAS_FETCHING_CERT: 'Fetching certificate details from CAS (certId: {{certId}})',
+  CAS_CERT_NOT_FOUND: 'Certificate not found in CAS (certId: {{certId}})',
+  CAS_CERT_FETCH_FAILED: 'Failed to fetch certificate from CAS (certId: {{certId}}): {{error}}',
+  CAS_DELETING_CERT: 'Deleting certificate from CAS (certId: {{certId}})',
+  CAS_CERT_DELETED: 'Certificate deleted from CAS (certId: {{certId}})',
+
+  // Tencent SSL certificate messages
+  SSL_UPLOADING_CERT: 'Uploading certificate to Tencent SSL (alias: {{alias}})',
+  SSL_CERT_UPLOADED:
+    'Certificate uploaded to Tencent SSL (alias: {{alias}}, certificateId: {{certificateId}})',
+  SSL_UPLOAD_NO_CERT_ID: 'SSL upload succeeded but no certificate ID returned for "{{alias}}"',
+  SSL_DELETING_CERT: 'Deleting certificate from Tencent SSL (certificateId: {{certificateId}})',
+  SSL_CERT_DELETED: 'Certificate deleted from Tencent SSL (certificateId: {{certificateId}})',
+  SSL_CERT_NOT_FOUND: 'Certificate not found in Tencent SSL (certificateId: {{certificateId}})',
+  SSL_DELETE_FAILED:
+    'Failed to delete certificate from Tencent SSL (certificateId: {{certificateId}})',
+  SSL_DEPLOYING_CERT:
+    'Deploying certificate to {{resourceType}} (certificateId: {{certificateId}}, instances: {{instances}})',
+  SSL_CERT_DEPLOY_SUBMITTED:
+    'Certificate deploy task submitted to {{resourceType}} (certificateId: {{certificateId}}, deployRecordId: {{deployRecordId}})',
+  SSL_CERT_DEPLOY_EXISTING_TASK:
+    'Certificate deploy task already in progress for {{resourceType}} (certificateId: {{certificateId}})',
+  SSL_CERT_DEPLOYED:
+    'Certificate deployed to {{resourceType}} (certificateId: {{certificateId}}, deployRecordId: {{deployRecordId}})',
+  SSL_CERT_DEPLOY_FAILED:
+    'Failed to deploy certificate to {{resourceType}} (certificateId: {{certificateId}}): {{error}}',
+  COS_BUCKET_CERT_DEPLOYING:
+    'Deploying SSL certificate to COS bucket domain: {{domain}} (bucket: {{bucketName}})',
+  COS_BUCKET_CERT_DEPLOYED: 'SSL certificate deployed to COS bucket domain: {{domain}}',
+  TENCENT_CERT_REFERENCE_NOT_SUPPORTED:
+    'Certificate "{{name}}" uses certificate_id reference mode which is not yet supported for Tencent Cloud. Use certificate_body and private_key instead.',
+
+  // Protocol messages
+  PROTOCOL_INFERRED_REDIRECT:
+    'Protocol "{{protocol}}" inferred HTTP-to-HTTPS redirect: {{redirect}}',
 };

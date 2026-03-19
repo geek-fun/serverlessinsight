@@ -1,6 +1,7 @@
 import * as tencentcloud from 'tencentcloud-sdk-nodejs-scf';
 import * as cynosdb from 'tencentcloud-sdk-nodejs-cynosdb';
 import * as tencentEs from 'tencentcloud-sdk-nodejs-es';
+import * as tencentSsl from 'tencentcloud-sdk-nodejs-ssl';
 import COS from 'cos-nodejs-sdk-v5';
 import { Context } from '../../types';
 import { createScfOperations } from './scfOperations';
@@ -8,12 +9,14 @@ import { createCosOperations } from './cosOperations';
 import { createTdsqlcOperations } from './tdsqlcOperations';
 import { createTencentEsOperations } from './esOperations';
 import { createDnsOperations, createDnsClient } from './dnspodOperations';
+import { createSslOperations } from './sslOperations';
 
 export * from './types';
 
 const ScfClient = tencentcloud.scf.v20180416.Client;
 const CynosdbClient = cynosdb.cynosdb.v20190107.Client;
 const EsClient = tencentEs.es.v20180416.Client;
+const SslClient = tencentSsl.ssl.v20191205.Client;
 
 // Initialize SDK clients (internal)
 const initializeSdkClients = (context: Context) => {
@@ -67,11 +70,27 @@ const initializeSdkClients = (context: Context) => {
 
   const esClient = new EsClient(esClientConfig);
 
+  const sslClientConfig = {
+    credential: {
+      secretId: context.accessKeyId,
+      secretKey: context.accessKeySecret,
+    },
+    region: context.region,
+    profile: {
+      httpProfile: {
+        endpoint: 'ssl.tencentcloudapi.com',
+      },
+    },
+  };
+
+  const sslClient = new SslClient(sslClientConfig);
+
   return {
     scf: scfClient,
     cos: cosClient,
     cynosdb: cynosdbClient,
     es: esClient,
+    ssl: sslClient,
     dns: createDnsClient(context),
   };
 };
@@ -85,6 +104,7 @@ export const createTencentClient = (context: Context) => {
     cos: createCosOperations(sdkClients.cos, context.region, dnsOps),
     tdsqlc: createTdsqlcOperations(sdkClients.cynosdb, context),
     es: createTencentEsOperations(sdkClients.es, context),
+    ssl: createSslOperations(sdkClients.ssl),
     dns: dnsOps,
   };
 };

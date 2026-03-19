@@ -7,6 +7,7 @@ import { eventSchema } from './eventSchema';
 import { functionSchema } from './functionSchema';
 import { bucketSchema } from './bucketSchema';
 import { tableSchema } from './tableschema';
+import { certificateSchema } from './certificateSchema';
 import { lang } from '../lang';
 
 type IacSchemaError = {
@@ -60,6 +61,7 @@ const validate = ajv
   .addSchema(databaseSchema)
   .addSchema(tableSchema)
   .addSchema(bucketSchema)
+  .addSchema(certificateSchema)
   .compile(rootSchema);
 
 const validateRuntimeCompatibility = (iacJson: ServerlessIacRaw) => {

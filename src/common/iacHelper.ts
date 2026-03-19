@@ -1,6 +1,6 @@
 import path from 'node:path';
 import fs from 'node:fs';
-import { Context, FunctionDomain, ServerlessIac, Vars } from '../types';
+import { Context, FunctionDomain, CertificateDomain, ServerlessIac, Vars } from '../types';
 import { get } from 'lodash';
 import { parseYaml } from '../parser';
 import { logger } from './logger';
@@ -98,13 +98,25 @@ export const calcValue = <T>(rawValue: string, ctx: Context, iacVars?: Vars): T 
   return inferType<T>(value, isExactTemplateRef);
 };
 
+export const isFunctionDomain = (def: FunctionDomain | CertificateDomain): def is FunctionDomain =>
+  'name' in def;
+
+export const isCertificateDomain = (
+  def: FunctionDomain | CertificateDomain,
+): def is CertificateDomain => !('name' in def);
+
 export const getIacDefinition = (
   iac: ServerlessIac,
   rawValue: string,
-): FunctionDomain | undefined => {
+): FunctionDomain | CertificateDomain | undefined => {
   const matchFn = rawValue.match(/^\$\{functions\.(\w+(\.\w+)?)}$/);
   if (matchFn?.length) {
     return iac.functions?.find((fc) => fc.key === matchFn[1]);
+  }
+
+  const matchCert = rawValue.match(/^\$\{certificates\.(\w+)}$/);
+  if (matchCert?.length) {
+    return iac.certificates?.find((cert) => cert.key === matchCert[1]);
   }
 
   return iac.functions?.find((fc) => fc.key === rawValue);
