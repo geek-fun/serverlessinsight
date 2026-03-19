@@ -7,6 +7,7 @@ module.exports = {
   modulePathIgnorePatterns: ['/dist/'],
 };
 
+process.env.LANG = 'en_US.UTF-8';
 process.env.SI_REGION = 'cn-hangzhou';
 process.env.ALIYUN_ACCESS_KEY_ID = 'access key id';
 process.env.ALIYUN_ACCESS_KEY_SECRET = 'access key secret';
