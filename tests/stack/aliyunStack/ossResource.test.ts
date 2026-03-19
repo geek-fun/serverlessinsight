@@ -1,6 +1,16 @@
 import { ProviderEnum } from '../../../src/common';
-import { deleteBucketResource } from '../../../src/stack/aliyunStack/ossResource';
-import { Context, CURRENT_STATE_VERSION, StateFile } from '../../../src/types';
+import {
+  createBucketResource,
+  deleteBucketResource,
+  updateBucketResource,
+} from '../../../src/stack/aliyunStack/ossResource';
+import {
+  BucketDomain,
+  Context,
+  CURRENT_STATE_VERSION,
+  ServerlessIac,
+  StateFile,
+} from '../../../src/types';
 
 const mockOssOperations = {
   createBucket: jest.fn(),
@@ -12,6 +22,12 @@ const mockOssOperations = {
   bindCustomDomain: jest.fn(),
   unbindCustomDomain: jest.fn(),
   getOssEndpoint: jest.fn(),
+};
+
+const mockCasOperations = {
+  getCertificate: jest.fn(),
+  uploadCertificate: jest.fn(),
+  deleteCertificate: jest.fn(),
 };
 
 const mockedStateManager = {
@@ -28,6 +44,7 @@ const mockedLogger = {
 jest.mock('../../../src/common/aliyunClient', () => ({
   createAliyunClient: () => ({
     oss: mockOssOperations,
+    cas: mockCasOperations,
   }),
 }));
 
@@ -237,6 +254,364 @@ describe('OssResource', () => {
       );
       expect(mockOssOperations.deleteBucket).toHaveBeenCalledWith(bucketName);
       expect(result).toEqual(initialState);
+    });
+  });
+
+  describe('createBucketResource', () => {
+    const baseBucketInfo = {
+      name: 'test-bucket',
+      location: 'oss-cn-hangzhou',
+      acl: 'private',
+      storageClass: 'Standard',
+    };
+
+    const baseBucket: BucketDomain = {
+      key: 'test_bucket',
+      name: 'test-bucket',
+      website: {
+        index: 'index.html',
+        code: './dist',
+        error_page: '404.html',
+        error_code: 404,
+      },
+    };
+
+    it('should create bucket with domain and certificate', async () => {
+      const bucket: BucketDomain = {
+        ...baseBucket,
+        website: {
+          ...baseBucket.website!,
+          domain: 'www.example.com',
+          domain_certificate: '${certificates.site_cert}',
+        },
+      };
+
+      const iac: ServerlessIac = {
+        version: '0.0.1',
+        app: 'test-app',
+        provider: { name: ProviderEnum.ALIYUN, region: 'cn-hangzhou' },
+        service: 'test-service',
+        functions: [],
+        events: [],
+        certificates: [
+          {
+            key: 'site_cert',
+            certificate_body: '-----BEGIN CERTIFICATE-----\nMOCK\n-----END CERTIFICATE-----',
+            private_key: '-----BEGIN RSA PRIVATE KEY-----\nMOCK\n-----END RSA PRIVATE KEY-----',
+          },
+        ],
+      };
+
+      const contextWithIac: Context = {
+        ...mockContext,
+        iac,
+      };
+
+      mockOssOperations.createBucket.mockResolvedValue(baseBucketInfo);
+      mockOssOperations.getBucket.mockResolvedValue(baseBucketInfo);
+      mockOssOperations.bindCustomDomain.mockResolvedValue({
+        domain: 'www.example.com',
+        cname: 'test-bucket.oss-cn-hangzhou.aliyuncs.com',
+        bucketCnameBound: true,
+      });
+      mockedStateManager.setResource.mockImplementation(
+        (_state: StateFile, _logicalId: string, resourceState: unknown) => ({
+          ...initialState,
+          resources: { 'buckets.test_bucket': resourceState },
+        }),
+      );
+
+      await createBucketResource(contextWithIac, bucket, initialState);
+
+      expect(mockOssOperations.bindCustomDomain).toHaveBeenCalledWith(
+        'test-bucket',
+        'www.example.com',
+        {
+          certificateBody: '-----BEGIN CERTIFICATE-----\nMOCK\n-----END CERTIFICATE-----',
+          certificatePrivateKey:
+            '-----BEGIN RSA PRIVATE KEY-----\nMOCK\n-----END RSA PRIVATE KEY-----',
+        },
+      );
+    });
+
+    it('should create bucket with domain but no certificate', async () => {
+      const bucket: BucketDomain = {
+        ...baseBucket,
+        website: {
+          ...baseBucket.website!,
+          domain: 'www.example.com',
+        },
+      };
+
+      mockOssOperations.createBucket.mockResolvedValue(baseBucketInfo);
+      mockOssOperations.getBucket.mockResolvedValue(baseBucketInfo);
+      mockOssOperations.bindCustomDomain.mockResolvedValue({
+        domain: 'www.example.com',
+        cname: 'test-bucket.oss-cn-hangzhou.aliyuncs.com',
+        bucketCnameBound: true,
+      });
+      mockedStateManager.setResource.mockImplementation(
+        (_state: StateFile, _logicalId: string, resourceState: unknown) => ({
+          ...initialState,
+          resources: { 'buckets.test_bucket': resourceState },
+        }),
+      );
+
+      await createBucketResource(mockContext, bucket, initialState);
+
+      expect(mockOssOperations.bindCustomDomain).toHaveBeenCalledWith(
+        'test-bucket',
+        'www.example.com',
+        undefined,
+      );
+    });
+
+    it('should throw when certificate reference is invalid', async () => {
+      const bucket: BucketDomain = {
+        ...baseBucket,
+        website: {
+          ...baseBucket.website!,
+          domain: 'www.example.com',
+          domain_certificate: '${certificates.nonexistent}',
+        },
+      };
+
+      const iac: ServerlessIac = {
+        version: '0.0.1',
+        app: 'test-app',
+        provider: { name: ProviderEnum.ALIYUN, region: 'cn-hangzhou' },
+        service: 'test-service',
+        functions: [],
+        events: [],
+        certificates: [],
+      };
+
+      const contextWithIac: Context = {
+        ...mockContext,
+        iac,
+      };
+
+      mockOssOperations.createBucket.mockResolvedValue(baseBucketInfo);
+      mockOssOperations.getBucket.mockResolvedValue(baseBucketInfo);
+      mockedStateManager.setResource.mockImplementation(
+        (_state: StateFile, _logicalId: string, resourceState: unknown) => ({
+          ...initialState,
+          resources: { 'buckets.test_bucket': resourceState },
+        }),
+      );
+
+      await expect(createBucketResource(contextWithIac, bucket, initialState)).rejects.toThrow();
+    });
+
+    it('should create bucket without domain', async () => {
+      mockOssOperations.createBucket.mockResolvedValue(baseBucketInfo);
+      mockOssOperations.getBucket.mockResolvedValue(baseBucketInfo);
+      mockedStateManager.setResource.mockImplementation(
+        (_state: StateFile, _logicalId: string, resourceState: unknown) => ({
+          ...initialState,
+          resources: { 'buckets.test_bucket': resourceState },
+        }),
+      );
+
+      await createBucketResource(mockContext, baseBucket, initialState);
+
+      expect(mockOssOperations.bindCustomDomain).not.toHaveBeenCalled();
+    });
+
+    it('should resolve reference certificate from CAS provider', async () => {
+      const bucket: BucketDomain = {
+        ...baseBucket,
+        website: {
+          ...baseBucket.website!,
+          domain: 'www.example.com',
+          domain_certificate: '${certificates.ref_cert}',
+        },
+      };
+
+      const iac: ServerlessIac = {
+        version: '0.0.1',
+        app: 'test-app',
+        provider: { name: ProviderEnum.ALIYUN, region: 'cn-hangzhou' },
+        service: 'test-service',
+        functions: [],
+        events: [],
+        certificates: [
+          {
+            key: 'ref_cert',
+            certificate_id: '12345',
+          },
+        ],
+      };
+
+      const contextWithIac: Context = {
+        ...mockContext,
+        iac,
+      };
+
+      mockCasOperations.getCertificate.mockResolvedValue({
+        cert: '-----BEGIN CERTIFICATE-----\nCAS_CERT\n-----END CERTIFICATE-----',
+        key: '-----BEGIN RSA PRIVATE KEY-----\nCAS_KEY\n-----END RSA PRIVATE KEY-----',
+      });
+      mockOssOperations.createBucket.mockResolvedValue(baseBucketInfo);
+      mockOssOperations.getBucket.mockResolvedValue(baseBucketInfo);
+      mockOssOperations.bindCustomDomain.mockResolvedValue({
+        domain: 'www.example.com',
+        cname: 'test-bucket.oss-cn-hangzhou.aliyuncs.com',
+        bucketCnameBound: true,
+      });
+      mockedStateManager.setResource.mockImplementation(
+        (_state: StateFile, _logicalId: string, resourceState: unknown) => ({
+          ...initialState,
+          resources: { 'buckets.test_bucket': resourceState },
+        }),
+      );
+
+      await createBucketResource(contextWithIac, bucket, initialState);
+
+      expect(mockCasOperations.getCertificate).toHaveBeenCalledWith(12345);
+      expect(mockOssOperations.bindCustomDomain).toHaveBeenCalledWith(
+        'test-bucket',
+        'www.example.com',
+        {
+          certificateBody: '-----BEGIN CERTIFICATE-----\nCAS_CERT\n-----END CERTIFICATE-----',
+          certificatePrivateKey:
+            '-----BEGIN RSA PRIVATE KEY-----\nCAS_KEY\n-----END RSA PRIVATE KEY-----',
+        },
+      );
+    });
+  });
+
+  describe('updateBucketResource', () => {
+    const baseBucketInfo = {
+      name: 'test-bucket',
+      location: 'oss-cn-hangzhou',
+      acl: 'private',
+      storageClass: 'Standard',
+    };
+
+    const baseBucket: BucketDomain = {
+      key: 'test_bucket',
+      name: 'test-bucket',
+      website: {
+        index: 'index.html',
+        code: './dist',
+        error_page: '404.html',
+        error_code: 404,
+      },
+    };
+
+    const stateWithDomain: StateFile = {
+      ...initialState,
+      resources: {
+        'buckets.test_bucket': {
+          mode: 'managed',
+          region: 'cn-hangzhou',
+          definition: {},
+          instances: [
+            {
+              sid: 'aliyun:oss:default:test-bucket',
+              id: 'test-bucket',
+              type: 'ALIYUN_OSS_BUCKET' as const,
+              bucketName: 'test-bucket',
+            },
+            {
+              sid: 'aliyun:alidns:default:www.example.com',
+              id: 'www.example.com',
+              type: 'ALIYUN_OSS_DNS_CNAME' as const,
+              domain: 'www.example.com',
+              cname: 'test-bucket.oss-cn-hangzhou.aliyuncs.com',
+            },
+          ],
+          lastUpdated: new Date().toISOString(),
+        },
+      },
+    };
+
+    it('should update bucket with certificate on existing domain', async () => {
+      const bucket: BucketDomain = {
+        ...baseBucket,
+        website: {
+          ...baseBucket.website!,
+          domain: 'www.example.com',
+          domain_certificate: '${certificates.site_cert}',
+        },
+      };
+
+      const iac: ServerlessIac = {
+        version: '0.0.1',
+        app: 'test-app',
+        provider: { name: ProviderEnum.ALIYUN, region: 'cn-hangzhou' },
+        service: 'test-service',
+        functions: [],
+        events: [],
+        certificates: [
+          {
+            key: 'site_cert',
+            certificate_body: '-----BEGIN CERTIFICATE-----\nUPDATED\n-----END CERTIFICATE-----',
+            private_key:
+              '-----BEGIN RSA PRIVATE KEY-----\nUPDATED_KEY\n-----END RSA PRIVATE KEY-----',
+          },
+        ],
+      };
+
+      const contextWithIac: Context = { ...mockContext, iac };
+
+      mockOssOperations.getBucket.mockResolvedValue(baseBucketInfo);
+      mockOssOperations.bindCustomDomain.mockResolvedValue({
+        domain: 'www.example.com',
+        cname: 'test-bucket.oss-cn-hangzhou.aliyuncs.com',
+        bucketCnameBound: true,
+      });
+      mockedStateManager.setResource.mockImplementation(
+        (_state: StateFile, _logicalId: string, resourceState: unknown) => ({
+          ...initialState,
+          resources: { 'buckets.test_bucket': resourceState },
+        }),
+      );
+
+      await updateBucketResource(contextWithIac, bucket, stateWithDomain);
+
+      expect(mockOssOperations.unbindCustomDomain).not.toHaveBeenCalled();
+      expect(mockOssOperations.bindCustomDomain).toHaveBeenCalledWith(
+        'test-bucket',
+        'www.example.com',
+        {
+          certificateBody: '-----BEGIN CERTIFICATE-----\nUPDATED\n-----END CERTIFICATE-----',
+          certificatePrivateKey:
+            '-----BEGIN RSA PRIVATE KEY-----\nUPDATED_KEY\n-----END RSA PRIVATE KEY-----',
+        },
+      );
+    });
+
+    it('should update bucket with domain but no certificate (cert removed)', async () => {
+      const bucket: BucketDomain = {
+        ...baseBucket,
+        website: {
+          ...baseBucket.website!,
+          domain: 'www.example.com',
+        },
+      };
+
+      mockOssOperations.getBucket.mockResolvedValue(baseBucketInfo);
+      mockOssOperations.bindCustomDomain.mockResolvedValue({
+        domain: 'www.example.com',
+        cname: 'test-bucket.oss-cn-hangzhou.aliyuncs.com',
+        bucketCnameBound: true,
+      });
+      mockedStateManager.setResource.mockImplementation(
+        (_state: StateFile, _logicalId: string, resourceState: unknown) => ({
+          ...initialState,
+          resources: { 'buckets.test_bucket': resourceState },
+        }),
+      );
+
+      await updateBucketResource(mockContext, bucket, stateWithDomain);
+
+      expect(mockOssOperations.bindCustomDomain).toHaveBeenCalledWith(
+        'test-bucket',
+        'www.example.com',
+        undefined,
+      );
     });
   });
 });

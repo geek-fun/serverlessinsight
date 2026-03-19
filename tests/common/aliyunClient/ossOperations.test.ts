@@ -178,3 +178,147 @@ describe('ossOperations CORS', () => {
     });
   });
 });
+
+describe('ossOperations putBucketCname', () => {
+  let operations: ReturnType<typeof createOssOperations>;
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    operations = createOssOperations(mockOssClient, 'cn-hangzhou');
+  });
+
+  describe('XML body generation', () => {
+    it('should generate XML without certificate when none provided', async () => {
+      mockRequest.mockResolvedValue({});
+      mockGetBucketCORS.mockRejectedValue(new Error('NoSuchCORSConfiguration'));
+
+      await operations.bindCustomDomain('test-bucket', 'cdn.example.com');
+
+      const callArgs = mockRequest.mock.calls[0][0];
+      expect(callArgs.content).toContain('<Domain>cdn.example.com</Domain>');
+      expect(callArgs.content).not.toContain('<CertificateConfiguration>');
+    });
+
+    it('should generate XML with certificate when provided', async () => {
+      mockRequest.mockResolvedValue({});
+      mockGetBucketCORS.mockRejectedValue(new Error('NoSuchCORSConfiguration'));
+
+      const cert = {
+        certificateBody: '-----BEGIN CERTIFICATE-----\nMOCK\n-----END CERTIFICATE-----',
+        certificatePrivateKey:
+          '-----BEGIN RSA PRIVATE KEY-----\nKEY\n-----END RSA PRIVATE KEY-----',
+      };
+
+      await operations.bindCustomDomain('test-bucket', 'cdn.example.com', cert);
+
+      const callArgs = mockRequest.mock.calls[0][0];
+      expect(callArgs.content).toContain('<CertificateConfiguration>');
+      expect(callArgs.content).toContain(
+        '<Certificate>-----BEGIN CERTIFICATE-----\nMOCK\n-----END CERTIFICATE-----</Certificate>',
+      );
+      expect(callArgs.content).toContain(
+        '<PrivateKey>-----BEGIN RSA PRIVATE KEY-----\nKEY\n-----END RSA PRIVATE KEY-----</PrivateKey>',
+      );
+      expect(callArgs.content).toContain('<Force>true</Force>');
+    });
+
+    it('should escape XML special characters in certificate content', async () => {
+      mockRequest.mockResolvedValue({});
+      mockGetBucketCORS.mockRejectedValue(new Error('NoSuchCORSConfiguration'));
+
+      const cert = {
+        certificateBody: 'cert<with>&special',
+        certificatePrivateKey: 'key<with>&special',
+      };
+
+      await operations.bindCustomDomain('test-bucket', 'cdn.example.com', cert);
+
+      const callArgs = mockRequest.mock.calls[0][0];
+      expect(callArgs.content).toContain('<Certificate>cert&lt;with&gt;&amp;special</Certificate>');
+      expect(callArgs.content).toContain('<PrivateKey>key&lt;with&gt;&amp;special</PrivateKey>');
+    });
+
+    it('should escape XML special characters in domain', async () => {
+      mockRequest.mockResolvedValue({});
+      mockGetBucketCORS.mockRejectedValue(new Error('NoSuchCORSConfiguration'));
+
+      await operations.bindCustomDomain('test-bucket', 'cdn<test>.example.com');
+
+      const callArgs = mockRequest.mock.calls[0][0];
+      expect(callArgs.content).toContain('<Domain>cdn&lt;test&gt;.example.com</Domain>');
+    });
+  });
+
+  describe('certificate bind failure handling', () => {
+    it('should throw on unexpected error when certificate is present', async () => {
+      const unexpectedError = Object.assign(new Error('InternalError'), {
+        code: 'InternalError',
+        status: 500,
+      });
+      mockRequest.mockRejectedValue(unexpectedError);
+
+      const cert = {
+        certificateBody: '-----BEGIN CERTIFICATE-----\nMOCK\n-----END CERTIFICATE-----',
+        certificatePrivateKey:
+          '-----BEGIN RSA PRIVATE KEY-----\nKEY\n-----END RSA PRIVATE KEY-----',
+      };
+
+      await expect(
+        operations.bindCustomDomain('test-bucket', 'cdn.example.com', cert),
+      ).rejects.toThrow();
+    });
+
+    it('should not throw on unexpected error when no certificate is present', async () => {
+      const unexpectedError = Object.assign(new Error('InternalError'), {
+        code: 'InternalError',
+        status: 500,
+      });
+      mockRequest.mockRejectedValue(unexpectedError);
+      mockGetBucketCORS.mockRejectedValue(new Error('NoSuchCORSConfiguration'));
+
+      const result = await operations.bindCustomDomain('test-bucket', 'cdn.example.com');
+
+      expect(result).toBeDefined();
+      expect(result.domain).toBe('cdn.example.com');
+    });
+
+    it('should still tolerate CnameAlreadyExists when certificate is present', async () => {
+      const cnameExistsError = Object.assign(new Error('CnameAlreadyExists'), {
+        code: 'CnameAlreadyExists',
+        status: 409,
+      });
+      mockRequest.mockRejectedValue(cnameExistsError);
+      mockGetBucketCORS.mockRejectedValue(new Error('NoSuchCORSConfiguration'));
+
+      const cert = {
+        certificateBody: '-----BEGIN CERTIFICATE-----\nMOCK\n-----END CERTIFICATE-----',
+        certificatePrivateKey:
+          '-----BEGIN RSA PRIVATE KEY-----\nKEY\n-----END RSA PRIVATE KEY-----',
+      };
+
+      const result = await operations.bindCustomDomain('test-bucket', 'cdn.example.com', cert);
+
+      expect(result).toBeDefined();
+      expect(result.domain).toBe('cdn.example.com');
+    });
+
+    it('should tolerate NeedVerifyDomainOwnership when certificate is present', async () => {
+      const verifyError = Object.assign(new Error('NeedVerifyDomainOwnership'), {
+        code: 'NeedVerifyDomainOwnership',
+      });
+      mockRequest.mockRejectedValue(verifyError);
+      mockGetBucketCORS.mockRejectedValue(new Error('NoSuchCORSConfiguration'));
+
+      const cert = {
+        certificateBody: '-----BEGIN CERTIFICATE-----\nMOCK\n-----END CERTIFICATE-----',
+        certificatePrivateKey:
+          '-----BEGIN RSA PRIVATE KEY-----\nKEY\n-----END RSA PRIVATE KEY-----',
+      };
+
+      const result = await operations.bindCustomDomain('test-bucket', 'cdn.example.com', cert);
+
+      expect(result).toBeDefined();
+      expect(result.bucketCnameBound).toBe(false);
+    });
+  });
+});

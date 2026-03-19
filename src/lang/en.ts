@@ -341,6 +341,9 @@ export const en = {
   OSS_BUCKET_CNAME_UNBIND_FAILED: 'Failed to unbind bucket CNAME: {{error}}',
   OSS_BUCKET_CNAME_NEED_VERIFY:
     'Domain ownership verification required. Please add TXT record in DNS console, then retry.',
+  OSS_BUCKET_CERT_BINDING:
+    'Binding SSL certificate to custom domain {{domain}} on bucket {{bucketName}}',
+  OSS_BUCKET_CERT_BOUND: 'SSL certificate bound to custom domain: {{domain}}',
   OSS_CORS_RULE_ADDED: 'Added CORS rule for custom domain: {{domain}}',
   OSS_CORS_RULE_EXISTS: 'CORS rule already exists for custom domain: {{domain}}',
   OSS_CORS_RULE_ADD_FAILED: 'Failed to add CORS rule for {{domain}}: {{error}}',

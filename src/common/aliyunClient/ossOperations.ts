@@ -32,7 +32,17 @@ export type OssCnameInfo = {
   bucketCnameBound?: boolean;
 };
 
+import { ResolvedCertificate } from '../certificateResolver';
+
+export type OssCnameCertificateConfig = Pick<
+  ResolvedCertificate,
+  'certificateBody' | 'certificatePrivateKey'
+>;
+
 type OssSdkClient = OSS;
+
+const escapeXmlText = (text: string): string =>
+  text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 
 export const createOssOperations = (
   ossClient: OssSdkClient,
@@ -47,12 +57,27 @@ export const createOssOperations = (
     return `${bucketName}.oss-${region}.aliyuncs.com`;
   };
 
-  const putBucketCname = async (bucketName: string, domain: string): Promise<boolean> => {
+  const buildCertificateXml = (cert?: OssCnameCertificateConfig): string => {
+    if (!cert) return '';
+    return `
+    <CertificateConfiguration>
+      <Certificate>${escapeXmlText(cert.certificateBody)}</Certificate>
+      <PrivateKey>${escapeXmlText(cert.certificatePrivateKey)}</PrivateKey>
+      <Force>true</Force>
+    </CertificateConfiguration>`;
+  };
+
+  const putBucketCname = async (
+    bucketName: string,
+    domain: string,
+    certificate?: OssCnameCertificateConfig,
+  ): Promise<boolean> => {
     useBucket(bucketName);
+    const certXml = buildCertificateXml(certificate);
     const xml = `<?xml version="1.0" encoding="UTF-8"?>
 <BucketCnameConfiguration>
   <Cname>
-    <Domain>${domain}</Domain>
+    <Domain>${escapeXmlText(domain)}</Domain>${certXml}
   </Cname>
 </BucketCnameConfiguration>`;
 
@@ -80,6 +105,10 @@ export const createOssOperations = (
       if (err.code === 'NeedVerifyDomainOwnership') {
         logger.warn(lang.__('OSS_BUCKET_CNAME_NEED_VERIFY', { domain }));
         return false;
+      }
+      if (certificate) {
+        // eslint-disable-next-line preserve-caught-error
+        throw new Error(lang.__('OSS_BUCKET_CNAME_BIND_FAILED', { error: String(error) }));
       }
       logger.warn(lang.__('OSS_BUCKET_CNAME_BIND_FAILED', { error: String(error) }));
       return false;
@@ -193,12 +222,19 @@ export const createOssOperations = (
     }
   };
 
-  const bindCustomDomain = async (bucketName: string, domain: string): Promise<OssCnameInfo> => {
+  const bindCustomDomain = async (
+    bucketName: string,
+    domain: string,
+    certificate?: OssCnameCertificateConfig,
+  ): Promise<OssCnameInfo> => {
     const mainDomain = extractMainDomain(domain);
     const hostRecord = extractHostRecord(domain, mainDomain);
     const ossEndpoint = getOssEndpoint(bucketName);
 
-    const bucketCnameBound = await putBucketCname(bucketName, domain);
+    const bucketCnameBound = await putBucketCname(bucketName, domain, certificate);
+    if (certificate && bucketCnameBound) {
+      logger.info(lang.__('OSS_BUCKET_CERT_BOUND', { domain }));
+    }
     await addCorsRuleForDomain(bucketName, domain);
 
     if (!dnsOps) {

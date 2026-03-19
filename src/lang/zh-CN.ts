@@ -303,6 +303,8 @@ export const zhCN = {
   OSS_BUCKET_CNAME_BIND_FAILED: '绑定存储桶 CNAME 失败: {{error}}',
   OSS_BUCKET_CNAME_UNBIND_FAILED: '解绑存储桶 CNAME 失败: {{error}}',
   OSS_BUCKET_CNAME_NEED_VERIFY: '需要验证域名所有权。请在 DNS 控制台添加 TXT 记录后重试。',
+  OSS_BUCKET_CERT_BINDING: '正在为存储桶 {{bucketName}} 的自定义域名 {{domain}} 绑定 SSL 证书',
+  OSS_BUCKET_CERT_BOUND: '已为自定义域名绑定 SSL 证书: {{domain}}',
   OSS_CORS_RULE_ADDED: '已为自定义域名添加 CORS 规则: {{domain}}',
   OSS_CORS_RULE_EXISTS: '自定义域名的 CORS 规则已存在: {{domain}}',
   OSS_CORS_RULE_ADD_FAILED: '为 {{domain}} 添加 CORS 规则失败: {{error}}',

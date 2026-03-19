@@ -1,6 +1,17 @@
 import { createAliyunClient } from '../../common/aliyunClient';
-import { OssBucketInfo, OssCnameInfo } from '../../common/aliyunClient/ossOperations';
-import { setResource, removeResource, buildSid } from '../../common';
+import {
+  OssBucketInfo,
+  OssCnameInfo,
+  OssCnameCertificateConfig,
+} from '../../common/aliyunClient/ossOperations';
+import {
+  setResource,
+  removeResource,
+  buildSid,
+  getIacDefinition,
+  isCertificateDomain,
+  resolveCertificateDomain,
+} from '../../common';
 import {
   Context,
   BucketDomain,
@@ -109,6 +120,29 @@ const buildOssInstanceFromProvider = (info: OssBucketInfo, sid: string): CommonB
   };
 };
 
+const resolveBucketDomainCertificate = async (
+  domainCertificate: string,
+  context: Context,
+  client: ReturnType<typeof createAliyunClient>,
+): Promise<OssCnameCertificateConfig | undefined> => {
+  if (!context.iac) {
+    throw new Error(lang.__('CERT_REFERENCE_NOT_FOUND', { reference: domainCertificate }));
+  }
+  const certDef = getIacDefinition(context.iac, domainCertificate);
+  if (!certDef || !isCertificateDomain(certDef)) {
+    throw new Error(lang.__('CERT_REFERENCE_NOT_FOUND', { reference: domainCertificate }));
+  }
+  const resolved = await resolveCertificateDomain(certDef, async (certId: number) => {
+    const detail = await client.cas.getCertificate(certId);
+    if (!detail) return null;
+    return { cert: detail.cert, key: detail.key };
+  });
+  return {
+    certificateBody: resolved.certificateBody,
+    certificatePrivateKey: resolved.certificatePrivateKey,
+  };
+};
+
 export const createBucketResource = async (
   context: Context,
   bucket: BucketDomain,
@@ -148,13 +182,30 @@ export const createBucketResource = async (
 
   let cnameInfo: OssCnameInfo | undefined;
   if (bucket.website?.domain) {
+    const certificate = bucket.website.domain_certificate
+      ? await resolveBucketDomainCertificate(bucket.website.domain_certificate, context, client)
+      : undefined;
+
     logger.info(
       lang.__('BINDING_CUSTOM_DOMAIN_TO_BUCKET', {
         domain: bucket.website.domain,
         bucketName: config.bucketName,
       }),
     );
-    cnameInfo = await client.oss.bindCustomDomain(config.bucketName, bucket.website.domain);
+    if (certificate) {
+      logger.info(
+        lang.__('OSS_BUCKET_CERT_BINDING', {
+          domain: bucket.website.domain,
+          bucketName: config.bucketName,
+        }),
+      );
+    }
+
+    cnameInfo = await client.oss.bindCustomDomain(
+      config.bucketName,
+      bucket.website.domain,
+      certificate,
+    );
 
     if (cnameInfo) {
       const instanceId = cnameInfo.dnsRecordId ?? bucket.website.domain;
@@ -259,13 +310,30 @@ export const updateBucketResource = async (
       );
     }
 
+    const certificate = bucket.website.domain_certificate
+      ? await resolveBucketDomainCertificate(bucket.website.domain_certificate, context, client)
+      : undefined;
+
     logger.info(
       lang.__('BINDING_CUSTOM_DOMAIN_TO_BUCKET', {
         domain: bucket.website.domain,
         bucketName: config.bucketName,
       }),
     );
-    const cnameInfo = await client.oss.bindCustomDomain(config.bucketName, bucket.website.domain);
+    if (certificate) {
+      logger.info(
+        lang.__('OSS_BUCKET_CERT_BINDING', {
+          domain: bucket.website.domain,
+          bucketName: config.bucketName,
+        }),
+      );
+    }
+
+    const cnameInfo = await client.oss.bindCustomDomain(
+      config.bucketName,
+      bucket.website.domain,
+      certificate,
+    );
 
     if (cnameInfo) {
       const instanceId = cnameInfo.dnsRecordId ?? bucket.website.domain;
