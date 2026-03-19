@@ -455,4 +455,16 @@ export const zhCN = {
 
   // DNS error
   DNS_ERROR: 'DNS 错误: {{error}}',
+
+  // RAM operations
+  RAM_ROLE_ALREADY_EXISTS:
+    'RAM 角色 "{{roleName}}" 在云端已存在（检测到状态漂移）。' + '正在更新信任策略并复用现有角色。',
+  RAM_ROLE_NOT_FOUND_IN_CLOUD:
+    '云提供商中不存在 RAM 角色 "{{roleName}}"。' +
+    '该角色可能已被手动删除。' +
+    '修复方法：从状态中移除该角色并重新部署。',
+  RAM_ROLE_DRIFT_RECOVERY_FAILED:
+    'RAM 角色 "{{roleName}}" 状态漂移恢复失败：{{error}}。' +
+    '角色在云端存在但恢复操作失败。' +
+    '修复方法：在云控制台手动确认角色状态，从状态中移除该角色并重新部署。',
 };

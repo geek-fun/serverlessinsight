@@ -43,6 +43,13 @@ const delay = async (ms: number): Promise<void> => {
   });
 };
 
+const getTrustedServicesForFunction = (context: Context, fnKey: string): string[] => {
+  const fnHasApiGateway = context.iac?.events?.some((event) =>
+    event.triggers?.some((trigger) => String(trigger.backend) === `\${functions.${fnKey}}`),
+  );
+  return fnHasApiGateway ? ['fc.aliyuncs.com', 'apigateway.aliyuncs.com'] : ['fc.aliyuncs.com'];
+};
+
 const isRecoverableCreateError = (error: unknown): boolean => {
   const code =
     error && typeof error === 'object' && 'code' in error && typeof error.code === 'string'
@@ -255,18 +262,16 @@ const createDependentResources = async (
   }
 
   const roleName = `${serviceName}-${context.stage}-fc-role`;
+
+  const trustedServices = getTrustedServicesForFunction(context, fn.key);
+
   if (hasRamRole) {
     const ramRoleInstance = existingInstances.find((i) => i.type === 'ALIYUN_RAM_ROLE');
     if (ramRoleInstance) {
       instances.push(ramRoleInstance);
+      await client.ram.updateRoleTrustPolicy(roleName, trustedServices);
     }
   } else {
-    const fnHasApiGateway = context.iac?.events?.some((event) =>
-      event.triggers?.some((trigger) => String(trigger.backend) === fn.name),
-    );
-    const trustedServices = fnHasApiGateway
-      ? ['fc.aliyuncs.com', 'apigateway.aliyuncs.com']
-      : ['fc.aliyuncs.com'];
     logger.info(lang.__('CREATING_RAM_ROLE', { roleName }));
     const ramRole = await client.ram.createRole(roleName, trustedServices);
     instances.push({
@@ -646,6 +651,7 @@ export const updateResource = async (
   const hasSecurityGroup = existingInstances.some((i) => i.type === 'ALIYUN_ECS_SECURITY_GROUP');
   const hasNasResources = existingInstances.some((i) => i.type === 'ALIYUN_NAS_FILE_SYSTEM');
 
+  const client = createAliyunClient(context);
   const newDependentInstances: Array<DependentInstance> = [];
   let logConfig: { project: string; logstore: string } | undefined;
   let role: { roleName: string; arn: string } | undefined;
@@ -691,6 +697,9 @@ export const updateResource = async (
         roleName: ramRoleInstance.id,
         arn: ramRoleInstance.roleArn ?? `acs:ram::${context.accountId}:role/${ramRoleInstance.id}`,
       };
+
+      const trustedServices = getTrustedServicesForFunction(context, fn.key);
+      await client.ram.updateRoleTrustPolicy(ramRoleInstance.id, trustedServices);
     }
   }
 
@@ -773,7 +782,6 @@ export const updateResource = async (
   }
 
   const codePath = fn.code!.path;
-  const client = createAliyunClient(context);
 
   await client.fc3.updateFunctionConfiguration(config);
   const ossCode = await ensureOssCodeUpload(client, codePath, context.region, fn.name);

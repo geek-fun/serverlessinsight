@@ -1,5 +1,7 @@
 import RamClient from '@alicloud/ram20150501';
 import * as ram from '@alicloud/ram20150501';
+import { lang } from '../../lang';
+import { logger } from '../logger';
 import { RamRoleInfo } from './types';
 
 type RamSdkClient = RamClient;
@@ -112,7 +114,6 @@ export const createRamOperations = (ramClient: RamSdkClient) => {
       trustedServices: string[],
       description?: string,
     ): Promise<RamRoleInfo> => {
-      let roleInfo: RamRoleInfo;
       const assumeRolePolicy = buildAssumeRolePolicy(trustedServices);
 
       try {
@@ -124,13 +125,17 @@ export const createRamOperations = (ramClient: RamSdkClient) => {
 
         const response = await ramClient.createRole(request);
 
-        roleInfo = {
+        const roleInfo: RamRoleInfo = {
           roleName,
           roleId: response.body?.role?.roleId,
           arn: response.body?.role?.arn,
           description: response.body?.role?.description,
           createDate: response.body?.role?.createDate,
         };
+
+        await attachRolePolicyForFc(roleName);
+
+        return roleInfo;
       } catch (error: unknown) {
         if (
           error &&
@@ -138,30 +143,79 @@ export const createRamOperations = (ramClient: RamSdkClient) => {
           'code' in error &&
           error.code === 'EntityAlreadyExists.Role'
         ) {
-          const getRequest = new ram.GetRoleRequest({ roleName });
-          const getResponse = await ramClient.getRole(getRequest);
+          logger.warn(lang.__('RAM_ROLE_ALREADY_EXISTS', { roleName }));
 
-          roleInfo = {
-            roleName,
-            roleId: getResponse.body?.role?.roleId,
-            arn: getResponse.body?.role?.arn,
-            description: getResponse.body?.role?.description,
-            createDate: getResponse.body?.role?.createDate,
-          };
+          try {
+            const getRequest = new ram.GetRoleRequest({ roleName });
+            const getResponse = await ramClient.getRole(getRequest);
 
-          const updateRequest = new ram.UpdateRoleRequest({
-            roleName,
-            newAssumeRolePolicyDocument: assumeRolePolicy,
-          });
-          await ramClient.updateRole(updateRequest);
-        } else {
-          throw error;
+            const updateRequest = new ram.UpdateRoleRequest({
+              roleName,
+              newAssumeRolePolicyDocument: assumeRolePolicy,
+            });
+            await ramClient.updateRole(updateRequest);
+
+            await attachRolePolicyForFc(roleName);
+
+            return {
+              roleName,
+              roleId: getResponse.body?.role?.roleId,
+              arn: getResponse.body?.role?.arn,
+              description: getResponse.body?.role?.description,
+              createDate: getResponse.body?.role?.createDate,
+            };
+          } catch (recoveryError: unknown) {
+            // eslint-disable-next-line preserve-caught-error
+            throw new Error(
+              lang.__('RAM_ROLE_DRIFT_RECOVERY_FAILED', {
+                roleName,
+                error:
+                  recoveryError instanceof Error ? recoveryError.message : String(recoveryError),
+              }),
+            );
+          }
         }
+        throw error;
       }
+    },
 
-      await attachRolePolicyForFc(roleName);
+    updateRoleTrustPolicy: async (
+      roleName: string,
+      trustedServices: string[],
+    ): Promise<RamRoleInfo> => {
+      const assumeRolePolicy = buildAssumeRolePolicy(trustedServices);
 
-      return roleInfo;
+      try {
+        const getRequest = new ram.GetRoleRequest({ roleName });
+        const getResponse = await ramClient.getRole(getRequest);
+
+        const roleInfo: RamRoleInfo = {
+          roleName,
+          roleId: getResponse.body?.role?.roleId,
+          arn: getResponse.body?.role?.arn,
+          description: getResponse.body?.role?.description,
+          createDate: getResponse.body?.role?.createDate,
+        };
+
+        const updateRequest = new ram.UpdateRoleRequest({
+          roleName,
+          newAssumeRolePolicyDocument: assumeRolePolicy,
+        });
+        await ramClient.updateRole(updateRequest);
+
+        return roleInfo;
+      } catch (error: unknown) {
+        if (
+          error &&
+          typeof error === 'object' &&
+          'code' in error &&
+          error.code === 'EntityNotExist.Role'
+        ) {
+          // eslint-disable-next-line preserve-caught-error
+          throw new Error(lang.__('RAM_ROLE_NOT_FOUND_IN_CLOUD', { roleName }));
+        }
+        throw error;
+      }
     },
 
     getRole: async (roleName: string): Promise<RamRoleInfo | null> => {

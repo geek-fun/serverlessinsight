@@ -43,6 +43,7 @@ const mockedSlsOperations = {
 };
 const mockedRamOperations = {
   createRole: jest.fn(),
+  updateRoleTrustPolicy: jest.fn(),
   deleteRole: jest.fn(),
 };
 const mockedEcsOperations = {
@@ -199,6 +200,10 @@ describe('Fc3Resource', () => {
 
     // Mock dependent resource operations
     mockedRamOperations.createRole.mockResolvedValue({
+      roleName: 'test-role',
+      arn: 'acs:ram::123456789012:role/test-role',
+    });
+    mockedRamOperations.updateRoleTrustPolicy.mockResolvedValue({
       roleName: 'test-role',
       arn: 'acs:ram::123456789012:role/test-role',
     });
@@ -371,7 +376,7 @@ describe('Fc3Resource', () => {
       expect(firstCall[2]).toMatchObject({ status: 'tainted' });
     });
 
-    it('should skip dependent resource creation for tainted resource on retry', async () => {
+    it('should update trust policy for existing role on tainted resource retry', async () => {
       const taintedStateWithDependents: StateFile = {
         ...initialState,
         resources: {
@@ -400,7 +405,27 @@ describe('Fc3Resource', () => {
 
       await createResource(mockContext, testFunction, taintedStateWithDependents);
 
+      expect(mockedRamOperations.updateRoleTrustPolicy).toHaveBeenCalledWith(
+        'test-app-test-service-default-fc-role',
+        ['fc.aliyuncs.com'],
+      );
       expect(mockedRamOperations.createRole).not.toHaveBeenCalled();
+    });
+
+    it('should propagate drift recovery error when createRole recovery fails', async () => {
+      const driftRecoveryError = new Error(
+        'Failed to recover from RAM role state drift for "test-role": EntityNotExist.Role',
+      );
+      mockedRamOperations.createRole.mockRejectedValue(driftRecoveryError);
+
+      const taintedState = { ...initialState, _tainted: true };
+      mockedStateManager.setResource.mockReturnValue(taintedState);
+
+      await expect(createResource(mockContext, testFunction, initialState)).rejects.toThrow(
+        'Failed to recover from RAM role state drift',
+      );
+
+      expect(mockedRamOperations.createRole).toHaveBeenCalled();
     });
 
     it('should throw error when refresh state fails', async () => {
@@ -715,6 +740,112 @@ describe('Fc3Resource', () => {
         'test-function',
         'test.zip',
         undefined,
+      );
+    });
+
+    it('should update trust policy for existing role when function has API Gateway trigger', async () => {
+      const stateWithRamRole: StateFile = {
+        ...initialState,
+        resources: {
+          'functions.test_fn': {
+            mode: 'managed',
+            region: 'cn-hangzhou',
+            definition: mockDefinition,
+            instances: [
+              {
+                sid: 'si:aliyun:ram:default:test-app-test-service-default-fc-role',
+                roleArn: 'acs:ram::123456789012:role/test-app-test-service-default-fc-role',
+                id: 'test-app-test-service-default-fc-role',
+                type: 'ALIYUN_RAM_ROLE',
+              },
+              {
+                sid: 'si:aliyun:fc3:default:test-function',
+                id: 'test-function',
+                type: 'ALIYUN_FC3_FUNCTION',
+              },
+            ],
+            lastUpdated: '2025-01-01T00:00:00Z',
+          },
+        },
+      };
+
+      const contextWithApigw: Context = {
+        ...mockContext,
+        iac: {
+          version: '0.0.1',
+          app: 'test-app',
+          provider: {
+            name: ProviderEnum.ALIYUN,
+            region: 'cn-hangzhou',
+          },
+          service: 'test-service',
+          events: [
+            {
+              key: 'api_gateway',
+              name: 'test-api',
+              type: 'API_GATEWAY',
+              triggers: [
+                {
+                  method: 'GET',
+                  path: '/api/test',
+                  backend: '${functions.test_fn}',
+                },
+              ],
+            },
+          ],
+        },
+      };
+
+      mockedFc3Operations.updateFunctionConfiguration.mockResolvedValue(undefined);
+      mockedFc3Operations.updateFunctionCode.mockResolvedValue(undefined);
+      const newState = { ...stateWithRamRole, _updated: true };
+      mockedStateManager.setResource.mockReturnValue(newState);
+
+      await updateResource(contextWithApigw, testFunction, stateWithRamRole);
+
+      expect(mockedRamOperations.updateRoleTrustPolicy).toHaveBeenCalledWith(
+        'test-app-test-service-default-fc-role',
+        ['fc.aliyuncs.com', 'apigateway.aliyuncs.com'],
+      );
+      expect(mockedRamOperations.createRole).not.toHaveBeenCalled();
+    });
+
+    it('should update trust policy with FC-only services when function has no API Gateway trigger', async () => {
+      const stateWithRamRole: StateFile = {
+        ...initialState,
+        resources: {
+          'functions.test_fn': {
+            mode: 'managed',
+            region: 'cn-hangzhou',
+            definition: mockDefinition,
+            instances: [
+              {
+                sid: 'si:aliyun:ram:default:test-app-test-service-default-fc-role',
+                roleArn: 'acs:ram::123456789012:role/test-app-test-service-default-fc-role',
+                id: 'test-app-test-service-default-fc-role',
+                type: 'ALIYUN_RAM_ROLE',
+              },
+              {
+                sid: 'si:aliyun:fc3:default:test-function',
+                id: 'test-function',
+                type: 'ALIYUN_FC3_FUNCTION',
+              },
+            ],
+            lastUpdated: '2025-01-01T00:00:00Z',
+          },
+        },
+      };
+
+      mockedFc3Operations.updateFunctionConfiguration.mockResolvedValue(undefined);
+      mockedFc3Operations.updateFunctionCode.mockResolvedValue(undefined);
+      const newState = { ...stateWithRamRole, _updated: true };
+      mockedStateManager.setResource.mockReturnValue(newState);
+
+      await updateResource(mockContext, testFunction, stateWithRamRole);
+
+      expect(mockedRamOperations.updateRoleTrustPolicy).toHaveBeenCalledWith(
+        'test-app-test-service-default-fc-role',
+        ['fc.aliyuncs.com'],
       );
     });
   });

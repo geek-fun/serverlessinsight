@@ -495,4 +495,17 @@ export const en = {
 
   // DNS error
   DNS_ERROR: 'DNS error: {{error}}',
+
+  // RAM operations
+  RAM_ROLE_ALREADY_EXISTS:
+    'RAM role "{{roleName}}" already exists in cloud (state drift detected). ' +
+    'Updating trust policy and reusing existing role.',
+  RAM_ROLE_NOT_FOUND_IN_CLOUD:
+    'RAM role "{{roleName}}" does not exist in the cloud provider. ' +
+    'The role may have been deleted manually. ' +
+    'To fix: remove the role from state and redeploy.',
+  RAM_ROLE_DRIFT_RECOVERY_FAILED:
+    'Failed to recover from RAM role state drift for "{{roleName}}": {{error}}. ' +
+    'The role existed in the cloud but recovery operations failed. ' +
+    'To fix: manually verify the role in the cloud console, remove it from state, and redeploy.',
 };
