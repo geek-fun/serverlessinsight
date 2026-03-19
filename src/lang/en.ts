@@ -523,4 +523,26 @@ export const en = {
   CERT_FILE_NOT_FOUND: 'Certificate file not found: {{filePath}}',
   CERT_READING_FILE: 'Reading certificate file: {{filePath}}',
   CERT_PARSING_CERTIFICATES: 'Parsing certificates configuration',
+  CERT_RESOLVING_REFERENCE:
+    'Resolving certificate reference "{{reference}}" for domain "{{domain}}"',
+  CERT_REFERENCE_NOT_FOUND:
+    'Certificate reference "{{reference}}" could not be resolved. Ensure it is defined in the certificates block.',
+  CERT_RESOLVED_UPLOAD: 'Certificate "{{name}}" resolved as upload mode (PEM files provided)',
+  CERT_RESOLVED_REFERENCE:
+    'Certificate "{{name}}" resolved as reference mode (certificate_id: {{certId}})',
+  CERT_READING_PEM_FILES: 'Reading PEM files for certificate "{{name}}"',
+
+  // CAS (Certificate Authority Service) messages
+  CAS_UPLOADING_CERT: 'Uploading certificate "{{name}}" to CAS',
+  CAS_CERT_UPLOADED: 'Certificate "{{name}}" uploaded to CAS (certId: {{certId}})',
+  CAS_UPLOAD_NO_CERT_ID: 'CAS upload succeeded but no certificate ID returned for "{{name}}"',
+  CAS_FETCHING_CERT: 'Fetching certificate details from CAS (certId: {{certId}})',
+  CAS_CERT_NOT_FOUND: 'Certificate not found in CAS (certId: {{certId}})',
+  CAS_CERT_FETCH_FAILED: 'Failed to fetch certificate from CAS (certId: {{certId}}): {{error}}',
+  CAS_DELETING_CERT: 'Deleting certificate from CAS (certId: {{certId}})',
+  CAS_CERT_DELETED: 'Certificate deleted from CAS (certId: {{certId}})',
+
+  // Protocol messages
+  PROTOCOL_INFERRED_REDIRECT:
+    'Protocol "{{protocol}}" inferred HTTP-to-HTTPS redirect: {{redirect}}',
 };

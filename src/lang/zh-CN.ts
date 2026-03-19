@@ -478,4 +478,23 @@ export const zhCN = {
   CERT_FILE_NOT_FOUND: '未找到证书文件: {{filePath}}',
   CERT_READING_FILE: '正在读取证书文件: {{filePath}}',
   CERT_PARSING_CERTIFICATES: '正在解析证书配置',
+  CERT_RESOLVING_REFERENCE: '正在解析域名 "{{domain}}" 的证书引用 "{{reference}}"',
+  CERT_REFERENCE_NOT_FOUND:
+    '无法解析证书引用 "{{reference}}"。请确保它已在 certificates 块中定义。',
+  CERT_RESOLVED_UPLOAD: '证书 "{{name}}" 解析为上传模式（提供了 PEM 文件）',
+  CERT_RESOLVED_REFERENCE: '证书 "{{name}}" 解析为引用模式（certificate_id: {{certId}}）',
+  CERT_READING_PEM_FILES: '正在读取证书 "{{name}}" 的 PEM 文件',
+
+  // CAS（证书授权服务）消息
+  CAS_UPLOADING_CERT: '正在上传证书 "{{name}}" 到 CAS',
+  CAS_CERT_UPLOADED: '证书 "{{name}}" 已上传到 CAS（certId: {{certId}}）',
+  CAS_UPLOAD_NO_CERT_ID: 'CAS 上传成功但未返回证书 "{{name}}" 的 ID',
+  CAS_FETCHING_CERT: '正在从 CAS 获取证书详情（certId: {{certId}}）',
+  CAS_CERT_NOT_FOUND: '在 CAS 中未找到证书（certId: {{certId}}）',
+  CAS_CERT_FETCH_FAILED: '从 CAS 获取证书失败（certId: {{certId}}）：{{error}}',
+  CAS_DELETING_CERT: '正在从 CAS 删除证书（certId: {{certId}}）',
+  CAS_CERT_DELETED: '已从 CAS 删除证书（certId: {{certId}}）',
+
+  // 协议消息
+  PROTOCOL_INFERRED_REDIRECT: '协议 "{{protocol}}" 推断 HTTP 到 HTTPS 重定向：{{redirect}}',
 };

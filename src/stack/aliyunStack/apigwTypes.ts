@@ -1,5 +1,5 @@
 import { EventDomain, ResourceAttributes } from '../../types';
-import { getIacDefinition, getContext, logger } from '../../common';
+import { getIacDefinition, isFunctionDomain, getContext, logger } from '../../common';
 import { lang } from '../../lang';
 
 // API Group types
@@ -172,7 +172,7 @@ const resolveFunctionReference = (backendRef: string): string => {
   // Use getIacDefinition to resolve function references
   const functionDef = getIacDefinition(context.iac, backendRef);
 
-  if (!functionDef) {
+  if (!functionDef || !isFunctionDomain(functionDef)) {
     // Not a function reference or function not found, return as is
     logger.warn(lang.__('FUNCTION_REF_NOT_RESOLVED', { backendRef }));
     return backendRef;
@@ -267,4 +267,42 @@ export const extractApigwDeploymentDefinition = (
     apiId: config.apiId,
     stageName: config.stageName,
   };
+};
+
+export type ProtocolConfig = {
+  requestProtocol: string;
+  isHttpRedirectToHttps?: boolean;
+};
+
+/**
+ * Infer protocol and HTTP→HTTPS redirect from event domain protocol value.
+ *
+ * | Value               | requestProtocol | isHttpRedirectToHttps |
+ * |---------------------|-----------------|-----------------------|
+ * | "HTTP"              | "HTTP"          | undefined             |
+ * | "HTTPS"             | "HTTPS"         | true                  |
+ * | ["HTTP", "HTTPS"]   | "HTTP,HTTPS"    | false                 |
+ * | undefined (default) | "HTTP"          | undefined             |
+ */
+export const inferProtocolConfig = (protocol?: string | string[]): ProtocolConfig => {
+  if (!protocol) {
+    return { requestProtocol: 'HTTP' };
+  }
+
+  if (Array.isArray(protocol)) {
+    return {
+      requestProtocol: protocol.join(','),
+      isHttpRedirectToHttps: false,
+    };
+  }
+
+  if (protocol === 'HTTPS') {
+    logger.info(lang.__('PROTOCOL_INFERRED_REDIRECT', { protocol: 'HTTPS', redirect: 'true' }));
+    return {
+      requestProtocol: 'HTTPS',
+      isHttpRedirectToHttps: true,
+    };
+  }
+
+  return { requestProtocol: protocol };
 };

@@ -165,3 +165,12 @@ export type NasAccessGroupInfo = {
   ruleCount?: number;
   createTime?: string;
 };
+
+export type CasCertificateInfo = {
+  certificateId: number;
+  name?: string;
+  cert?: string;
+  key?: string;
+  endDate?: string;
+  expired?: boolean;
+};

@@ -15,3 +15,4 @@ export * from './runtimeMapper';
 export * from './hashUtils';
 export * from './dependencyGraph';
 export * from './sidUtils';
+export * from './certificateResolver';

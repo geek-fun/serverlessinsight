@@ -7,6 +7,7 @@ import CloudApiClient from '@alicloud/cloudapi20160714';
 import RdsClient from '@alicloud/rds20140815';
 import EsServerlessClient from '@alicloud/es-serverless20230627';
 import DnsClient from '@alicloud/alidns20150109';
+import CasClient from '@alicloud/cas20200407';
 import * as $OpenApi from '@alicloud/openapi-client';
 import OSS from 'ali-oss';
 import { Context } from '../../types';
@@ -22,6 +23,7 @@ import { createRdsOperations } from './rdsOperations';
 import { createEsOperations } from './esOperations';
 import { createTablestoreOperations } from './tablestoreOperations';
 import { createDnsOperations } from './dnsOperations';
+import { createCasOperations } from './casOperations';
 
 export * from './types';
 export * from './apigwOperations';
@@ -30,6 +32,7 @@ export * from './rdsOperations';
 export * from './esOperations';
 export * from './tablestoreOperations';
 export * from './dnsOperations';
+export * from './casOperations';
 
 const initializeSdkClients = (context: Context) => {
   const baseConfig = {
@@ -84,6 +87,10 @@ const initializeSdkClients = (context: Context) => {
   dnsConfig.endpoint = `alidns.aliyuncs.com`;
   const dnsClient = new DnsClient(dnsConfig);
 
+  const casConfig = new $OpenApi.Config(baseConfig);
+  casConfig.endpoint = `cas.aliyuncs.com`;
+  const casClient = new CasClient(casConfig);
+
   return {
     fc3: fc3Client,
     sls: slsClient,
@@ -95,6 +102,7 @@ const initializeSdkClients = (context: Context) => {
     rds: rdsClient,
     es: esClient,
     dns: dnsClient,
+    cas: casClient,
   };
 };
 
@@ -112,6 +120,7 @@ export const createAliyunClient = (context: Context) => {
     apigw: createApigwOperations(sdkClients.apigw, sdkClients.dns, context),
     rds: createRdsOperations(sdkClients.rds, context),
     es: createEsOperations(sdkClients.es, context),
+    cas: createCasOperations(sdkClients.cas),
     dns: dnsOps,
     tablestore: (instanceName: string) =>
       createTablestoreOperations(
