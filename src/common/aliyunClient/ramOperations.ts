@@ -25,6 +25,11 @@ const FC_EXECUTION_POLICY = JSON.stringify({
   Statement: [
     {
       Effect: 'Allow',
+      Action: ['fc:InvokeFunction'],
+      Resource: '*',
+    },
+    {
+      Effect: 'Allow',
       Action: [
         'log:PostLogStoreLogs',
         'log:CreateLogStore',
