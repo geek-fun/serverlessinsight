@@ -148,6 +148,30 @@ const removeUndefined = <T extends Record<string, unknown>>(obj: T): T => {
 
 const sleep = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));
 
+export const isNetworkTimeoutError = (error: unknown): boolean => {
+  if (!error || typeof error !== 'object') return false;
+  const err = error as { name?: string; message?: string; code?: string };
+  return (
+    err.name === 'RequestTimeoutError' ||
+    err.name === 'ConnectTimeout' ||
+    err.code === 'RequestTimeoutError' ||
+    err.code === 'ConnectTimeout' ||
+    (err.message?.includes('ConnectTimeout') ?? false) ||
+    (err.message?.includes('RequestTimeoutError') ?? false)
+  );
+};
+
+export const isDomainAlreadyBoundError = (error: unknown): boolean => {
+  if (!error || typeof error !== 'object') return false;
+  const err = error as { code?: string; message?: string };
+  return (
+    err.code === 'DomainAlreadyBind' ||
+    err.code === 'RepeatedCommit' ||
+    (err.message?.includes('bindingExists') ?? false) ||
+    (err.message?.toLowerCase().includes('domain bindedbyother') ?? false)
+  );
+};
+
 export const createApigwOperations = (
   apigwClient: ApigwSdkClient,
   dnsClient: DnsSdkClient,
@@ -921,6 +945,58 @@ export const createApigwOperations = (
         return state;
       } catch (error: unknown) {
         const err = error as { code?: string; message?: string };
+
+        // Handle network timeout errors with retry
+        if (isNetworkTimeoutError(error)) {
+          for (let attempt = 1; attempt <= APIGW_DOMAIN_BIND_MAX_RETRIES; attempt++) {
+            logger.warn(
+              lang.__('APIGW_DOMAIN_BIND_TIMEOUT_RETRY', {
+                attempt: String(attempt),
+                max: String(APIGW_DOMAIN_BIND_MAX_RETRIES),
+              }),
+            );
+            await sleep(APIGW_DOMAIN_BIND_RETRY_DELAY_MS);
+
+            try {
+              await apigwClient.setDomain(setDomainRequest);
+              await setCertificate();
+              logger.info(lang.__('APIGW_DOMAIN_BOUND_SUCCESS', { domain: config.domainName }));
+              return state;
+            } catch (retryError: unknown) {
+              if (isDomainAlreadyBoundError(retryError)) {
+                logger.info(
+                  lang.__('APIGW_DOMAIN_BIND_ALREADY_BOUND', { domain: config.domainName }),
+                );
+                await setCertificate();
+                return state;
+              }
+
+              if (!isNetworkTimeoutError(retryError)) {
+                throw retryError;
+              }
+
+              if (attempt === APIGW_DOMAIN_BIND_MAX_RETRIES) {
+                logger.error(
+                  lang.__('APIGW_DOMAIN_BIND_TIMEOUT_ALL_FAILED', {
+                    max: String(APIGW_DOMAIN_BIND_MAX_RETRIES),
+                    error: String(retryError),
+                  }),
+                );
+                throw retryError;
+              }
+
+              logger.warn(
+                lang.__('APIGW_DOMAIN_BIND_TIMEOUT_RETRY_FAILED', {
+                  attempt: String(attempt),
+                  error: String(retryError),
+                }),
+              );
+            }
+          }
+
+          // All timeout retries exhausted (or MAX_RETRIES is 0) — re-throw the original error
+          throw error;
+        }
 
         if (err.code !== 'SingleDomainOwnershipCheckFail' && !err.message?.includes('ownership')) {
           throw error;

@@ -291,6 +291,14 @@ export const en = {
     'Retrying domain binding (attempt {{attempt}}/{{max}}, waiting for DNS propagation)...',
   APIGW_DOMAIN_BIND_RETRY_FAILED: 'Domain binding retry {{attempt}} failed: {{error}}',
   APIGW_DOMAIN_BOUND_AFTER_VERIFICATION: 'Successfully bound domain after verification: {{domain}}',
+  APIGW_DOMAIN_BIND_TIMEOUT_RETRY:
+    'Domain binding request timed out, retrying (attempt {{attempt}}/{{max}})...',
+  APIGW_DOMAIN_BIND_TIMEOUT_RETRY_FAILED:
+    'Domain binding timeout retry {{attempt}} failed: {{error}}',
+  APIGW_DOMAIN_BIND_TIMEOUT_ALL_FAILED:
+    'Domain binding failed after {{max}} timeout retries: {{error}}',
+  APIGW_DOMAIN_BIND_ALREADY_BOUND:
+    'Domain {{domain}} is already bound (previous request likely succeeded), proceeding with certificate setup',
   APIGW_VERIFICATION_HEADER: 'Domain Ownership Verification Required',
   APIGW_VERIFICATION_DOMAIN: 'Domain: {{domain}}',
   APIGW_VERIFICATION_INSTRUCTIONS:
