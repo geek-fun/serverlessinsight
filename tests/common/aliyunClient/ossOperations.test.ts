@@ -1,10 +1,13 @@
 import { createOssOperations } from '../../../src/common/aliyunClient/ossOperations';
+import { BucketACL } from '../../../src/stack/bucketTypes';
 
 const mockRequest = jest.fn();
 const mockPutBucketCORS = jest.fn();
 const mockGetBucketCORS = jest.fn();
 const mockDeleteBucketCORS = jest.fn();
 const mockUseBucket = jest.fn();
+const mockPutBucketACL = jest.fn();
+const mockPutBucket = jest.fn();
 
 const mockOssClient = {
   useBucket: mockUseBucket,
@@ -12,8 +15,8 @@ const mockOssClient = {
   putBucketCORS: mockPutBucketCORS,
   getBucketCORS: mockGetBucketCORS,
   deleteBucketCORS: mockDeleteBucketCORS,
-  putBucket: jest.fn(),
-  putBucketACL: jest.fn(),
+  putBucket: mockPutBucket,
+  putBucketACL: mockPutBucketACL,
   putBucketWebsite: jest.fn(),
   deleteBucketWebsite: jest.fn(),
   deleteBucket: jest.fn(),
@@ -319,6 +322,121 @@ describe('ossOperations putBucketCname', () => {
 
       expect(result).toBeDefined();
       expect(result.bucketCnameBound).toBe(false);
+    });
+  });
+});
+
+describe('ossOperations public access block', () => {
+  let operations: ReturnType<typeof createOssOperations>;
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    mockRequest.mockResolvedValue({});
+    mockPutBucketACL.mockResolvedValue({});
+    mockPutBucket.mockResolvedValue({});
+    operations = createOssOperations(mockOssClient, 'cn-hangzhou');
+  });
+
+  describe('createBucket', () => {
+    it('should disable public access block before setting public-read ACL', async () => {
+      await operations.createBucket({
+        bucketName: 'test-bucket',
+        acl: BucketACL.PUBLIC_READ,
+      });
+
+      expect(mockRequest).toHaveBeenCalledWith(
+        expect.objectContaining({
+          method: 'PUT',
+          subres: { publicAccessBlock: '' },
+          content: expect.stringContaining('<BlockPublicAccess>false</BlockPublicAccess>'),
+        }),
+      );
+      expect(mockPutBucketACL).toHaveBeenCalledWith('test-bucket', BucketACL.PUBLIC_READ);
+    });
+
+    it('should disable public access block before setting public-read-write ACL', async () => {
+      await operations.createBucket({
+        bucketName: 'test-bucket',
+        acl: BucketACL.PUBLIC_READ_WRITE,
+      });
+
+      expect(mockRequest).toHaveBeenCalledWith(
+        expect.objectContaining({
+          method: 'PUT',
+          subres: { publicAccessBlock: '' },
+        }),
+      );
+      expect(mockPutBucketACL).toHaveBeenCalledWith('test-bucket', BucketACL.PUBLIC_READ_WRITE);
+    });
+
+    it('should not disable public access block for private ACL', async () => {
+      await operations.createBucket({
+        bucketName: 'test-bucket',
+        acl: BucketACL.PRIVATE,
+      });
+
+      expect(mockRequest).not.toHaveBeenCalled();
+      expect(mockPutBucketACL).toHaveBeenCalledWith('test-bucket', BucketACL.PRIVATE);
+    });
+
+    it('should not disable public access block when no ACL is specified', async () => {
+      await operations.createBucket({ bucketName: 'test-bucket' });
+
+      expect(mockRequest).not.toHaveBeenCalled();
+      expect(mockPutBucketACL).not.toHaveBeenCalled();
+    });
+
+    it('should still set ACL even if disabling public access block fails', async () => {
+      mockRequest.mockRejectedValue(new Error('AccessDenied'));
+
+      await operations.createBucket({
+        bucketName: 'test-bucket',
+        acl: BucketACL.PUBLIC_READ,
+      });
+
+      expect(mockPutBucketACL).toHaveBeenCalledWith('test-bucket', BucketACL.PUBLIC_READ);
+    });
+  });
+
+  describe('updateBucketAcl', () => {
+    it('should disable public access block before setting public-read ACL', async () => {
+      await operations.updateBucketAcl('test-bucket', BucketACL.PUBLIC_READ);
+
+      expect(mockRequest).toHaveBeenCalledWith(
+        expect.objectContaining({
+          method: 'PUT',
+          subres: { publicAccessBlock: '' },
+          content: expect.stringContaining('<BlockPublicAccess>false</BlockPublicAccess>'),
+        }),
+      );
+      expect(mockPutBucketACL).toHaveBeenCalledWith('test-bucket', BucketACL.PUBLIC_READ);
+    });
+
+    it('should disable public access block before setting public-read-write ACL', async () => {
+      await operations.updateBucketAcl('test-bucket', BucketACL.PUBLIC_READ_WRITE);
+
+      expect(mockRequest).toHaveBeenCalledWith(
+        expect.objectContaining({
+          method: 'PUT',
+          subres: { publicAccessBlock: '' },
+        }),
+      );
+      expect(mockPutBucketACL).toHaveBeenCalledWith('test-bucket', BucketACL.PUBLIC_READ_WRITE);
+    });
+
+    it('should not disable public access block for private ACL', async () => {
+      await operations.updateBucketAcl('test-bucket', BucketACL.PRIVATE);
+
+      expect(mockRequest).not.toHaveBeenCalled();
+      expect(mockPutBucketACL).toHaveBeenCalledWith('test-bucket', BucketACL.PRIVATE);
+    });
+
+    it('should still set ACL even if disabling public access block fails', async () => {
+      mockRequest.mockRejectedValue(new Error('AccessDenied'));
+
+      await operations.updateBucketAcl('test-bucket', BucketACL.PUBLIC_READ);
+
+      expect(mockPutBucketACL).toHaveBeenCalledWith('test-bucket', BucketACL.PUBLIC_READ);
     });
   });
 });

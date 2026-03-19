@@ -310,6 +310,9 @@ export const zhCN = {
   OSS_CORS_RULE_ADD_FAILED: '为 {{domain}} 添加 CORS 规则失败: {{error}}',
   OSS_CORS_RULE_REMOVED: '已移除自定义域名的 CORS 规则: {{domain}}',
   OSS_CORS_RULE_REMOVE_FAILED: '移除 {{domain}} 的 CORS 规则失败: {{error}}',
+  OSS_BUCKET_PUBLIC_ACCESS_BLOCK_DISABLED: '已为存储桶禁用公共访问阻止: {{bucketName}}',
+  OSS_BUCKET_PUBLIC_ACCESS_BLOCK_DISABLE_FAILED:
+    '禁用存储桶 {{bucketName}} 的公共访问阻止失败: {{error}}。您可能需要在阿里云 OSS 控制台手动禁用公共访问阻止。',
 
   // Tencent COS DNS messages
   COS_DNS_CNAME_CREATED: '已创建 DNS CNAME 记录: {{domain}} -> {{cname}}',

@@ -349,6 +349,11 @@ export const en = {
   OSS_CORS_RULE_ADD_FAILED: 'Failed to add CORS rule for {{domain}}: {{error}}',
   OSS_CORS_RULE_REMOVED: 'Removed CORS rule for custom domain: {{domain}}',
   OSS_CORS_RULE_REMOVE_FAILED: 'Failed to remove CORS rule for {{domain}}: {{error}}',
+  OSS_BUCKET_PUBLIC_ACCESS_BLOCK_DISABLED:
+    'Disabled Block Public Access for bucket: {{bucketName}}',
+  OSS_BUCKET_PUBLIC_ACCESS_BLOCK_DISABLE_FAILED:
+    'Failed to disable Block Public Access for bucket {{bucketName}}: {{error}}. ' +
+    'You may need to manually disable Block Public Access in the Alibaba Cloud OSS Console.',
 
   // Tencent COS DNS messages
   COS_DNS_CNAME_CREATED: 'Created DNS CNAME record: {{domain}} -> {{cname}}',
