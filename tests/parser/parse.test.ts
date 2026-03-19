@@ -2,6 +2,7 @@ import path from 'node:path';
 import { parseYaml, revalYaml } from '../../src/parser';
 import { Context } from '../../src/types';
 import { ProviderEnum } from '../../src/common';
+import { isFilePath, parseCertificate } from '../../src/parser/certificateParser';
 
 describe('unit test for parse', () => {
   describe('domain - databases', () => {
@@ -289,6 +290,91 @@ describe('unit test for parse', () => {
       expect(result.functions).toBeDefined();
       expect(result.functions![0].log).toBe(false);
       expect(typeof result.functions![0].log).toBe('boolean');
+    });
+  });
+
+  describe('domain - certificates', () => {
+    describe('isFilePath', () => {
+      it('should return true for relative paths starting with ./', () => {
+        expect(isFilePath('./certs/server.crt')).toBe(true);
+      });
+
+      it('should return true for relative paths starting with ../', () => {
+        expect(isFilePath('../certs/server.key')).toBe(true);
+      });
+
+      it('should return true for .pem extension', () => {
+        expect(isFilePath('server.pem')).toBe(true);
+      });
+
+      it('should return true for .crt extension', () => {
+        expect(isFilePath('server.crt')).toBe(true);
+      });
+
+      it('should return true for .key extension', () => {
+        expect(isFilePath('server.key')).toBe(true);
+      });
+
+      it('should return false for PEM content', () => {
+        expect(isFilePath('-----BEGIN CERTIFICATE-----\nMIIB...')).toBe(false);
+      });
+
+      it('should return false for certificate IDs', () => {
+        expect(isFilePath('cas-abc123')).toBe(false);
+      });
+    });
+
+    describe('parseCertificate', () => {
+      it('should parse upload mode certificate', () => {
+        const result = parseCertificate({
+          my_cert: {
+            certificate_body: '-----BEGIN CERTIFICATE-----\nMIIB...',
+            private_key: '-----BEGIN PRIVATE KEY-----\nMIIE...',
+            chain: '-----BEGIN CERTIFICATE-----\nMIIC...',
+          },
+        });
+        expect(result).toEqual([
+          {
+            key: 'my_cert',
+            certificate_body: '-----BEGIN CERTIFICATE-----\nMIIB...',
+            private_key: '-----BEGIN PRIVATE KEY-----\nMIIE...',
+            chain: '-----BEGIN CERTIFICATE-----\nMIIC...',
+            certificate_id: undefined,
+          },
+        ]);
+      });
+
+      it('should parse reference mode certificate', () => {
+        const result = parseCertificate({
+          my_cert: {
+            certificate_id: 'cas-abc123',
+          },
+        });
+        expect(result).toEqual([
+          {
+            key: 'my_cert',
+            certificate_body: undefined,
+            private_key: undefined,
+            chain: undefined,
+            certificate_id: 'cas-abc123',
+          },
+        ]);
+      });
+
+      it('should return undefined when input is undefined', () => {
+        const result = parseCertificate(undefined as unknown as Record<string, never>);
+        expect(result).toBeUndefined();
+      });
+
+      it('should return undefined when input is null', () => {
+        const result = parseCertificate(null as unknown as Record<string, never>);
+        expect(result).toBeUndefined();
+      });
+
+      it('should parse empty certificates object to empty array', () => {
+        const result = parseCertificate({});
+        expect(result).toEqual([]);
+      });
     });
   });
 });

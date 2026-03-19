@@ -27,6 +27,18 @@ export const eventSchema = {
             certificate_name: { type: 'string' },
             certificate_body: { type: 'string' },
             certificate_private_key: { type: 'string' },
+            certificate: { type: 'string' },
+            protocol: {
+              oneOf: [
+                { type: 'string', enum: ['HTTP', 'HTTPS'] },
+                {
+                  type: 'array',
+                  items: { type: 'string', enum: ['HTTP', 'HTTPS'] },
+                  minItems: 1,
+                  uniqueItems: true,
+                },
+              ],
+            },
           },
         },
       },

@@ -51,7 +51,29 @@ export const bucketSchema = {
               type: 'string',
             },
             domain: {
-              type: 'string',
+              oneOf: [
+                { type: 'string' },
+                {
+                  type: 'object',
+                  properties: {
+                    domain_name: { type: 'string' },
+                    certificate: { type: 'string' },
+                    protocol: {
+                      oneOf: [
+                        { type: 'string', enum: ['HTTP', 'HTTPS'] },
+                        {
+                          type: 'array',
+                          items: { type: 'string', enum: ['HTTP', 'HTTPS'] },
+                          minItems: 1,
+                          uniqueItems: true,
+                        },
+                      ],
+                    },
+                  },
+                  required: ['domain_name'],
+                  additionalProperties: false,
+                },
+              ],
             },
             index: {
               type: 'string',

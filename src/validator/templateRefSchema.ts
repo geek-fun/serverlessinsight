@@ -1,7 +1,7 @@
-// Template reference pattern that matches ${vars.xxx}, ${stages.xxx}, ${ctx.xxx}, ${functions.xxx}
-// Note: ${functions.xxx} references are kept as strings and resolved by the deployment engine
+// Template reference pattern that matches ${vars.xxx}, ${stages.xxx}, ${ctx.xxx}, ${functions.xxx}, ${certificates.xxx}
+// Note: ${functions.xxx} and ${certificates.xxx} references are kept as strings and resolved by the deployment engine
 // Only ${vars.xxx}, ${stages.xxx}, and ${ctx.xxx} are resolved at parse time
-const templateRefPattern = '^\\$\\{(vars|stages|ctx|functions)\\.[\\w.]+\\}$';
+const templateRefPattern = '^\\$\\{(vars|stages|ctx|functions|certificates)\\.[\\w.]+\\}$';
 
 // Schema definition for a template reference string
 const templateRefSchema = {

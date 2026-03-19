@@ -516,4 +516,11 @@ export const en = {
     'Failed to recover from RAM role state drift for "{{roleName}}": {{error}}. ' +
     'The role existed in the cloud but recovery operations failed. ' +
     'To fix: manually verify the role in the cloud console, remove it from state, and redeploy.',
+
+  // Certificate messages
+  CERT_INVALID_CONFIGURATION:
+    'Certificate "{{name}}" must have either (certificate_body + private_key) or certificate_id, but not both',
+  CERT_FILE_NOT_FOUND: 'Certificate file not found: {{filePath}}',
+  CERT_READING_FILE: 'Reading certificate file: {{filePath}}',
+  CERT_PARSING_CERTIFICATES: 'Parsing certificates configuration',
 };

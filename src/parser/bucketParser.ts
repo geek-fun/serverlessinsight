@@ -1,9 +1,37 @@
-import { BucketAccessEnum, BucketDomain, BucketRaw } from '../types';
+import {
+  BucketAccessEnum,
+  BucketDomain,
+  BucketRaw,
+  BucketWebsiteDomainConfig,
+  Resolvable,
+} from '../types';
 import {
   parseBooleanWithDefault,
   parseNumberWithDefault,
   parseStringWithDefault,
 } from './parseUtils';
+
+const isStructuredDomain = (domain: unknown): domain is BucketWebsiteDomainConfig =>
+  typeof domain === 'object' && domain !== null && 'domain_name' in domain;
+
+const parseWebsiteDomain = (domain: Resolvable<string> | BucketWebsiteDomainConfig | undefined) => {
+  if (domain == null) {
+    return { domain: undefined, domain_certificate: undefined, domain_protocol: undefined };
+  }
+  if (!isStructuredDomain(domain)) {
+    return { domain: String(domain), domain_certificate: undefined, domain_protocol: undefined };
+  }
+  return {
+    domain: String(domain.domain_name),
+    domain_certificate: domain.certificate != null ? String(domain.certificate) : undefined,
+    domain_protocol:
+      domain.protocol != null
+        ? Array.isArray(domain.protocol)
+          ? domain.protocol.map(String)
+          : String(domain.protocol)
+        : undefined,
+  };
+};
 
 export const parseBucket = (buckets: {
   [key: string]: BucketRaw;
@@ -42,7 +70,7 @@ export const parseBucket = (buckets: {
     website: bucket.website
       ? {
           code: String(bucket.website.code),
-          domain: bucket.website.domain ? String(bucket.website.domain) : undefined,
+          ...parseWebsiteDomain(bucket.website.domain),
           index: parseStringWithDefault(bucket.website.index, 'index.html'),
           error_page: parseStringWithDefault(bucket.website.error_page, '404.html'),
           error_code: parseNumberWithDefault(bucket.website.error_code, 404),

@@ -1,5 +1,11 @@
 import { Resolvable } from './resolvable';
 
+export type BucketWebsiteDomainConfig = {
+  domain_name: Resolvable<string>;
+  certificate?: Resolvable<string>;
+  protocol?: Resolvable<string | string[]>;
+};
+
 export type BucketRaw = {
   name: Resolvable<string>;
   storage?: {
@@ -17,7 +23,7 @@ export type BucketRaw = {
   };
   website?: {
     code: Resolvable<string>;
-    domain?: Resolvable<string>;
+    domain?: Resolvable<string> | BucketWebsiteDomainConfig;
     index?: Resolvable<string>;
     error_page?: Resolvable<string>;
     error_code?: Resolvable<number>;
@@ -49,6 +55,8 @@ export type BucketDomain = {
   website?: {
     index: string;
     domain?: string;
+    domain_certificate?: string;
+    domain_protocol?: string | string[];
     code: string;
     error_page: string;
     error_code: number;

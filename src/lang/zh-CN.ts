@@ -471,4 +471,11 @@ export const zhCN = {
     'RAM 角色 "{{roleName}}" 状态漂移恢复失败：{{error}}。' +
     '角色在云端存在但恢复操作失败。' +
     '修复方法：在云控制台手动确认角色状态，从状态中移除该角色并重新部署。',
+
+  // 证书消息
+  CERT_INVALID_CONFIGURATION:
+    '证书 "{{name}}" 必须具有 (certificate_body + private_key) 或 certificate_id，但不能同时存在',
+  CERT_FILE_NOT_FOUND: '未找到证书文件: {{filePath}}',
+  CERT_READING_FILE: '正在读取证书文件: {{filePath}}',
+  CERT_PARSING_CERTIFICATES: '正在解析证书配置',
 };
