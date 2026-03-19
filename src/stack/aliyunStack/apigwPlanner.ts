@@ -4,6 +4,11 @@ import { eventToApigwGroupConfig, extractApigwGroupDefinition } from './apigwTyp
 import { getAllResources, getResource } from '../../common/stateManager';
 import { attributesEqual } from '../../common/hashUtils';
 
+const DNS_SUB_RESOURCE_SUFFIXES = ['.dns_verification', '.dns_txt_verification'];
+
+const isDnsSubResource = (logicalId: string): boolean =>
+  DNS_SUB_RESOURCE_SUFFIXES.some((suffix) => logicalId.endsWith(suffix));
+
 const planEventDeletion = (logicalId: string, definition: Record<string, unknown>): PlanItem => ({
   logicalId,
   action: 'delete',
@@ -24,7 +29,7 @@ export const generateApigwPlan = async (
   if (!events || events.length === 0) {
     const allStates = getAllResources(state);
     const items = Object.entries(allStates)
-      .filter(([logicalId]) => logicalId.startsWith('events.'))
+      .filter(([logicalId]) => logicalId.startsWith('events.') && !isDnsSubResource(logicalId))
       .map(([logicalId, resourceState]) => planEventDeletion(logicalId, resourceState.definition));
     return { items };
   }
@@ -128,7 +133,18 @@ export const generateApigwPlan = async (
   // Find resources in state that are no longer in config
   const allStates = getAllResources(state);
   const deletionItems = Object.entries(allStates)
-    .filter(([logicalId]) => logicalId.startsWith('events.') && !desiredLogicalIds.has(logicalId))
+    .filter(([logicalId]) => {
+      if (!logicalId.startsWith('events.')) {
+        return false;
+      }
+      if (desiredLogicalIds.has(logicalId)) {
+        return false;
+      }
+      if (isDnsSubResource(logicalId)) {
+        return false;
+      }
+      return true;
+    })
     .map(([logicalId, resourceState]) => planEventDeletion(logicalId, resourceState.definition));
 
   return { items: [...eventItems, ...deletionItems] };
