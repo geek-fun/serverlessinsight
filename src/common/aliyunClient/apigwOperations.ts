@@ -439,13 +439,41 @@ export const createApigwOperations = (
 
     try {
       const existingRecords = await dnsOps.describeDomainRecords(mainDomain, txtRecord.rr);
-      const recordExists = existingRecords.some(
+      const existingRecord = existingRecords.find(
         (record) =>
           record.rr === txtRecord.rr && record.type === 'TXT' && record.value === txtRecord.value,
       );
 
-      if (recordExists) {
+      const now = new Date();
+
+      if (existingRecord) {
         logger.info(lang.__('APIGW_TXT_RECORD_ALREADY_EXISTS', { rr: txtRecord.rr }));
+
+        // Track existing record in state so it can be cleaned up on destroy
+        const dnsResourceState: ResourceState = {
+          mode: 'managed',
+          region,
+          definition: {
+            domainName,
+            mainDomain,
+            rr: txtRecord.rr,
+            value: txtRecord.value,
+            type: 'TXT',
+            groupId,
+            groupSubdomain,
+          },
+          instances: [
+            {
+              sid: buildSid('aliyun', 'alidns', _context.stage, 'existing'),
+              id: 'existing',
+              type: 'TXT',
+              status: 'EXISTING',
+            },
+          ],
+          lastUpdated: now.toISOString(),
+        };
+        state = setResource(state, txtResourceId, dnsResourceState);
+
         return state;
       }
 
@@ -457,6 +485,15 @@ export const createApigwOperations = (
         ttl: 600,
       });
 
+      logger.info(
+        lang.__('APIGW_DNS_RECORD_ADDED', {
+          record: txtRecord.rr,
+          type: 'TXT',
+          value: txtRecord.value,
+        }),
+      );
+
+      // Track DNS record in state
       const dnsResourceState: ResourceState = {
         mode: 'managed',
         region,
@@ -477,17 +514,9 @@ export const createApigwOperations = (
             status: 'CREATED',
           },
         ],
-        lastUpdated: new Date().toISOString(),
+        lastUpdated: now.toISOString(),
       };
       state = setResource(state, txtResourceId, dnsResourceState);
-
-      logger.info(
-        lang.__('APIGW_DNS_RECORD_ADDED', {
-          record: txtRecord.rr,
-          type: 'TXT',
-          value: txtRecord.value,
-        }),
-      );
 
       return state;
     } catch (error) {
