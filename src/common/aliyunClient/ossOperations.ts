@@ -23,6 +23,10 @@ export type OssBucketConfig = {
   domain?: string;
 };
 
+const ossRequest = (ossClient: OSS, params: unknown): Promise<unknown> => {
+  return (ossClient as unknown as { request: (p: unknown) => Promise<unknown> }).request(params);
+};
+
 export type OssBucketInfo = CommonBucketInfo;
 
 export type OssCnameInfo = {
@@ -261,7 +265,7 @@ export const createOssOperations = (
         content: xml,
         successStatuses: [200],
       };
-      await (ossClient as unknown as { request: (p: unknown) => Promise<unknown> }).request(params);
+      await ossRequest(ossClient, params);
       logger.info(lang.__('OSS_BUCKET_PUBLIC_ACCESS_BLOCK_DISABLED', { bucketName }));
     } catch (error) {
       logger.warn(
