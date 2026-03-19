@@ -104,7 +104,7 @@ const resolveDomainCertificate = async (
         lang.__('CERT_REFERENCE_NOT_FOUND', { reference: String(domain.certificate) }),
       );
     }
-    const resolved = await resolveCertificateDomain(certDef, async (certId: number) => {
+    const resolved = await resolveCertificateDomain(certDef, async (certId: string) => {
       const detail = await client.cas.getCertificate(certId);
       if (!detail) return null;
       return { cert: detail.cert, key: detail.key };

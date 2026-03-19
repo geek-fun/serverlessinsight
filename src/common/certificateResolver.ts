@@ -44,22 +44,19 @@ export const resolveUploadCertificate = (cert: CertificateDomain): ResolvedCerti
 
 export const resolveReferenceCertificate = async (
   cert: CertificateDomain,
-  getCertificateFromProvider: (certId: number) => Promise<{ cert?: string; key?: string } | null>,
+  getCertificateFromProvider: (certId: string) => Promise<{ cert?: string; key?: string } | null>,
 ): Promise<ResolvedCertificate> => {
   if (!cert.certificate_id) {
     throw new Error(lang.__('CERT_INVALID_CONFIGURATION', { name: cert.key }));
   }
 
-  const certId = Number(cert.certificate_id);
-  if (Number.isNaN(certId)) {
-    throw new Error(lang.__('CERT_INVALID_CONFIGURATION', { name: cert.key }));
-  }
-  logger.info(lang.__('CERT_RESOLVED_REFERENCE', { name: cert.key, certId: String(certId) }));
-  logger.info(lang.__('CAS_FETCHING_CERT', { certId: String(certId) }));
+  const certId = cert.certificate_id;
+  logger.info(lang.__('CERT_RESOLVED_REFERENCE', { name: cert.key, certId }));
+  logger.info(lang.__('CAS_FETCHING_CERT', { certId }));
 
   const certDetail = await getCertificateFromProvider(certId);
   if (!certDetail || !certDetail.cert || !certDetail.key) {
-    throw new Error(lang.__('CAS_CERT_NOT_FOUND', { certId: String(certId) }));
+    throw new Error(lang.__('CAS_CERT_NOT_FOUND', { certId }));
   }
 
   return {
@@ -71,7 +68,7 @@ export const resolveReferenceCertificate = async (
 
 export const resolveCertificateDomain = async (
   cert: CertificateDomain,
-  getCertificateFromProvider: (certId: number) => Promise<{ cert?: string; key?: string } | null>,
+  getCertificateFromProvider: (certId: string) => Promise<{ cert?: string; key?: string } | null>,
 ): Promise<ResolvedCertificate> => {
   if (cert.certificate_id) {
     return resolveReferenceCertificate(cert, getCertificateFromProvider);

@@ -37,10 +37,15 @@ export const createCasOperations = (casClient: CasSdkClient) => {
       };
     },
 
-    getCertificate: async (certificateId: number): Promise<CasCertificateInfo | null> => {
+    getCertificate: async (certificateId: string): Promise<CasCertificateInfo | null> => {
+      const numericId = Number(certificateId);
+      if (Number.isNaN(numericId)) {
+        throw new Error(lang.__('CERT_INVALID_CONFIGURATION', { name: certificateId }));
+      }
+
       try {
         const request = new cas.GetUserCertificateDetailRequest({
-          certId: certificateId,
+          certId: numericId,
           certFilter: false,
         });
 
@@ -52,7 +57,7 @@ export const createCasOperations = (casClient: CasSdkClient) => {
         }
 
         return {
-          certificateId: body.id ?? certificateId,
+          certificateId: body.id ?? numericId,
           name: body.name ?? undefined,
           cert: body.cert ?? undefined,
           key: body.key ?? undefined,

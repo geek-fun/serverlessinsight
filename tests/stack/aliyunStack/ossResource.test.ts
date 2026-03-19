@@ -468,7 +468,7 @@ describe('OssResource', () => {
 
       await createBucketResource(contextWithIac, bucket, initialState);
 
-      expect(mockCasOperations.getCertificate).toHaveBeenCalledWith(12345);
+      expect(mockCasOperations.getCertificate).toHaveBeenCalledWith('12345');
       expect(mockOssOperations.bindCustomDomain).toHaveBeenCalledWith(
         'test-bucket',
         'www.example.com',
