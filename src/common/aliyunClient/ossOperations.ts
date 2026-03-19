@@ -240,6 +240,39 @@ export const createOssOperations = (
     }
   };
 
+  const isPublicAcl = (acl: BucketACL): boolean =>
+    acl === BucketACL.PUBLIC_READ || acl === BucketACL.PUBLIC_READ_WRITE;
+
+  const disableBucketPublicAccessBlock = async (bucketName: string): Promise<void> => {
+    useBucket(bucketName);
+    const xml = `<?xml version="1.0" encoding="UTF-8"?>
+<PublicAccessBlockConfiguration>
+  <BlockPublicAccess>false</BlockPublicAccess>
+</PublicAccessBlockConfiguration>`;
+
+    try {
+      const params = {
+        method: 'PUT',
+        bucket: bucketName,
+        subres: { publicAccessBlock: '' },
+        headers: {
+          'Content-Type': 'application/xml',
+        },
+        content: xml,
+        successStatuses: [200],
+      };
+      await (ossClient as unknown as { request: (p: unknown) => Promise<unknown> }).request(params);
+      logger.info(lang.__('OSS_BUCKET_PUBLIC_ACCESS_BLOCK_DISABLED', { bucketName }));
+    } catch (error) {
+      logger.warn(
+        lang.__('OSS_BUCKET_PUBLIC_ACCESS_BLOCK_DISABLE_FAILED', {
+          bucketName,
+          error: String(error),
+        }),
+      );
+    }
+  };
+
   const unbindCustomDomain = async (
     bucketName: string,
     domain: string,
@@ -272,6 +305,9 @@ export const createOssOperations = (
 
       // Set ACL if specified
       if (config.acl) {
+        if (isPublicAcl(config.acl)) {
+          await disableBucketPublicAccessBlock(config.bucketName);
+        }
         useBucket(config.bucketName);
         await ossClient.putBucketACL(config.bucketName, config.acl);
       }
@@ -431,6 +467,9 @@ export const createOssOperations = (
     },
 
     updateBucketAcl: async (bucketName: string, acl: BucketACL): Promise<void> => {
+      if (isPublicAcl(acl)) {
+        await disableBucketPublicAccessBlock(bucketName);
+      }
       useBucket(bucketName);
       await ossClient.putBucketACL(bucketName, acl);
     },
