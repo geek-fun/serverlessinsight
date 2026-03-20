@@ -305,7 +305,7 @@ describe('ossOperations putBucketCname', () => {
       expect(result.domain).toBe('cdn.example.com');
     });
 
-    it('should tolerate NeedVerifyDomainOwnership when certificate is present', async () => {
+    it('should throw when NeedVerifyDomainOwnership and no DNS operations available', async () => {
       const verifyError = Object.assign(new Error('NeedVerifyDomainOwnership'), {
         code: 'NeedVerifyDomainOwnership',
       });
@@ -318,10 +318,9 @@ describe('ossOperations putBucketCname', () => {
           '-----BEGIN RSA PRIVATE KEY-----\nKEY\n-----END RSA PRIVATE KEY-----',
       };
 
-      const result = await operations.bindCustomDomain('test-bucket', 'cdn.example.com', cert);
-
-      expect(result).toBeDefined();
-      expect(result.bucketCnameBound).toBe(false);
+      await expect(
+        operations.bindCustomDomain('test-bucket', 'cdn.example.com', cert),
+      ).rejects.toThrow();
     });
   });
 });

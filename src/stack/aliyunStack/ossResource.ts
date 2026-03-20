@@ -31,6 +31,7 @@ type OssDnsInstance = ResourceInstance & {
   domain: string;
   cname: string;
   dnsRecordId?: string;
+  txtRecordId?: string;
 };
 
 const buildOssInstanceFromProvider = (info: OssBucketInfo, sid: string): CommonBucketInstance => {
@@ -216,6 +217,7 @@ export const createBucketResource = async (
         domain: bucket.website.domain,
         cname: cnameInfo.cname,
         ...(cnameInfo.dnsRecordId ? { dnsRecordId: cnameInfo.dnsRecordId } : {}),
+        ...(cnameInfo.txtRecordId ? { txtRecordId: cnameInfo.txtRecordId } : {}),
       };
       instances.push(dnsInstance);
 
@@ -307,6 +309,7 @@ export const updateBucketResource = async (
         config.bucketName,
         existingDnsInstance.domain,
         existingDnsInstance.dnsRecordId,
+        existingDnsInstance.txtRecordId,
       );
     }
 
@@ -344,6 +347,7 @@ export const updateBucketResource = async (
         domain: bucket.website.domain,
         cname: cnameInfo.cname,
         ...(cnameInfo.dnsRecordId ? { dnsRecordId: cnameInfo.dnsRecordId } : {}),
+        ...(cnameInfo.txtRecordId ? { txtRecordId: cnameInfo.txtRecordId } : {}),
       };
       instances.push(dnsInstance);
 
@@ -358,6 +362,7 @@ export const updateBucketResource = async (
       config.bucketName,
       existingDnsInstance.domain,
       existingDnsInstance.dnsRecordId,
+      existingDnsInstance.txtRecordId,
     );
   }
 
@@ -386,7 +391,12 @@ export const deleteBucketResource = async (
   ) as OssDnsInstance | undefined;
 
   if (dnsInstance) {
-    await client.oss.unbindCustomDomain(bucketName, dnsInstance.domain, dnsInstance.dnsRecordId);
+    await client.oss.unbindCustomDomain(
+      bucketName,
+      dnsInstance.domain,
+      dnsInstance.dnsRecordId,
+      dnsInstance.txtRecordId,
+    );
   }
 
   try {

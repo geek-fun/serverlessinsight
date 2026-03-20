@@ -206,6 +206,7 @@ describe('OssResource', () => {
         bucketName,
         'example.com',
         'dns-record-123',
+        undefined,
       );
       expect(mockOssOperations.deleteBucket).toHaveBeenCalledWith(bucketName);
       expect(mockedStateManager.removeResource).toHaveBeenCalledWith(stateWithDns, logicalId);
@@ -250,6 +251,7 @@ describe('OssResource', () => {
       expect(mockOssOperations.unbindCustomDomain).toHaveBeenCalledWith(
         bucketName,
         'example.com',
+        undefined,
         undefined,
       );
       expect(mockOssOperations.deleteBucket).toHaveBeenCalledWith(bucketName);

@@ -315,6 +315,37 @@ export const zhCN = {
   OSS_BUCKET_CNAME_BIND_FAILED: '绑定存储桶 CNAME 失败: {{error}}',
   OSS_BUCKET_CNAME_UNBIND_FAILED: '解绑存储桶 CNAME 失败: {{error}}',
   OSS_BUCKET_CNAME_NEED_VERIFY: '需要验证域名所有权。请在 DNS 控制台添加 TXT 记录后重试。',
+  OSS_CNAME_TOKEN_CREATE_FAILED: '创建域名所有权验证 CnameToken 失败: {{domain}}',
+  OSS_CNAME_CREATING_VERIFICATION_TOKEN: '正在为域名创建验证令牌: {{domain}}',
+  OSS_CNAME_VERIFICATION_TOKEN_CREATED:
+    '已为域名 {{domain}} 创建验证令牌。TXT 记录: {{txtRecord}}, 令牌: {{token}}',
+  OSS_CNAME_TXT_RECORD_CREATED: '已创建域名所有权验证 TXT 记录: {{txtRecord}}',
+  OSS_CNAME_TXT_RECORD_ALREADY_EXISTS: 'TXT 验证记录已存在: {{txtRecord}}',
+  OSS_CNAME_TXT_RECORD_CREATE_FAILED: '创建 TXT 记录 {{txtRecord}} 失败: {{error}}。请手动添加。',
+  OSS_CNAME_WAITING_FOR_VERIFICATION: '等待域名所有权验证生效: {{domain}}',
+  OSS_CNAME_DNS_PROPAGATION_WAITING: '等待域名 TXT 记录 DNS 生效: {{domain}}',
+  OSS_CNAME_DNS_PROPAGATION_CHECK:
+    '正在检查 TXT 记录 DNS 生效状态（第 {{attempt}}/{{max}} 次，等待 1 分钟）...',
+  OSS_CNAME_DNS_PROPAGATION_VERIFIED: '域名 TXT 记录 DNS 已生效: {{domain}}，耗时 {{minutes}} 分钟',
+  OSS_CNAME_DNS_PROPAGATION_TIMEOUT:
+    'TXT 记录 DNS 在 {{max}} 次尝试后仍未验证生效。继续尝试绑定...',
+  OSS_CNAME_DNS_CHECK_FAILED: 'TXT 记录 DNS 生效检查失败: {{error}}',
+  OSS_CNAME_VERIFICATION_RETRY_FAILED:
+    '域名所有权验证中。请添加 TXT 记录: {{txtRecord}} 后重新部署。',
+  OSS_CNAME_MANUAL_VERIFICATION_REQUIRED:
+    '域名 {{domain}} 需要手动验证所有权。' +
+    '请添加 TXT 记录: {{txtRecord}}，值为: {{token}}，然后重新部署。',
+  OSS_VERIFICATION_HEADER: 'OSS 域名所有权验证',
+  OSS_VERIFICATION_DOMAIN: '域名: {{domain}}',
+  OSS_VERIFICATION_INSTRUCTIONS: '请添加以下 TXT DNS 记录以验证域名所有权:',
+  OSS_VERIFICATION_RECORD_NAME: '  记录名称: {{name}}',
+  OSS_VERIFICATION_RECORD_TYPE: '  记录类型: TXT',
+  OSS_VERIFICATION_RECORD_VALUE: '  记录值: {{value}}',
+  OSS_VERIFICATION_NEXT_STEPS: '添加 TXT 记录后:',
+  OSS_VERIFICATION_STEP1: '1. 等待 5-10 分钟 DNS 生效',
+  OSS_VERIFICATION_STEP2: '2. 重新运行部署命令',
+  OSS_DNS_TXT_RECORD_DELETED: '已删除域名所有权验证 TXT 记录: {{domain}}',
+  OSS_DNS_TXT_RECORD_DELETE_FAILED: '删除域名 TXT 记录失败: {{domain}}: {{error}}',
   OSS_BUCKET_CERT_BINDING: '正在为存储桶 {{bucketName}} 的自定义域名 {{domain}} 绑定 SSL 证书',
   OSS_BUCKET_CERT_BOUND: '已为自定义域名绑定 SSL 证书: {{domain}}',
   OSS_CORS_RULE_ADDED: '已为自定义域名添加 CORS 规则: {{domain}}',
@@ -538,4 +569,10 @@ export const zhCN = {
 
   // 协议消息
   PROTOCOL_INFERRED_REDIRECT: '协议 "{{protocol}}" 推断 HTTP 到 HTTPS 重定向：{{redirect}}',
+
+  // 重试工具消息
+  RETRY_ATTEMPT: '正在重试 {{operation}}（第 {{attempt}}/{{max}} 次）...',
+  RETRY_ATTEMPT_FAILED: '{{operation}} 第 {{attempt}}/{{max}} 次尝试失败：{{error}}。正在重试...',
+  RETRY_ALL_ATTEMPTS_FAILED: '{{operation}} 在 {{max}} 次尝试后失败：{{error}}',
+  RETRY_UNEXPECTED_FAILURE: '{{operation}} 意外失败',
 };
