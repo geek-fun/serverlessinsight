@@ -200,6 +200,9 @@ export const triggerToApigwApiConfig = (
   const backend = trigger.backend as string;
   const resolvedFunctionName = resolveFunctionReference(backend);
   const apiKey = generateApiKey(method, path);
+  const protocolConfig = inferProtocolConfig(
+    event.domain?.protocol as string | string[] | undefined,
+  );
 
   return {
     groupId,
@@ -207,7 +210,7 @@ export const triggerToApigwApiConfig = (
     visibility: 'PRIVATE',
     authType: 'ANONYMOUS',
     requestConfig: {
-      requestProtocol: 'HTTP',
+      requestProtocol: protocolConfig.requestProtocol as 'HTTP' | 'HTTPS' | 'HTTP,HTTPS',
       requestHttpMethod: method,
       requestPath: path,
       requestMode: 'PASSTHROUGH',

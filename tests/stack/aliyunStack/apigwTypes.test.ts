@@ -4,6 +4,7 @@ import {
   extractApigwGroupDefinition,
   extractApigwApiDefinition,
   extractApigwDeploymentDefinition,
+  inferProtocolConfig,
 } from '../../../src/stack/aliyunStack/apigwTypes';
 import { EventDomain, EventTypes, ServerlessIac } from '../../../src/types';
 import { ProviderEnum, setContext, setIac } from '../../../src/common';
@@ -135,6 +136,54 @@ describe('Apigw Types', () => {
       expect(config.requestConfig.requestPath).toBe('/users');
       expect(config.serviceConfig.functionComputeConfig?.functionName).toBe('createUserFunction');
     });
+
+    it('should set requestProtocol to HTTPS when domain protocol is HTTPS', () => {
+      const httpsEvent: EventDomain = {
+        ...testEvent,
+        domain: { domain_name: 'api.example.com', protocol: 'HTTPS' },
+      };
+      const config = triggerToApigwApiConfig(
+        httpsEvent,
+        httpsEvent.triggers[0],
+        'group-123',
+        'my-service',
+        'cn-hangzhou',
+        'default',
+      );
+
+      expect(config.requestConfig.requestProtocol).toBe('HTTPS');
+    });
+
+    it('should set requestProtocol to HTTP,HTTPS when domain protocol is an array', () => {
+      const bothEvent: EventDomain = {
+        ...testEvent,
+        domain: { domain_name: 'api.example.com', protocol: ['HTTP', 'HTTPS'] },
+      };
+      const config = triggerToApigwApiConfig(
+        bothEvent,
+        bothEvent.triggers[0],
+        'group-123',
+        'my-service',
+        'cn-hangzhou',
+        'default',
+      );
+
+      expect(config.requestConfig.requestProtocol).toBe('HTTP,HTTPS');
+    });
+
+    it('should default requestProtocol to HTTP when no domain protocol is set', () => {
+      const noProtocolEvent: EventDomain = { ...testEvent, domain: undefined };
+      const config = triggerToApigwApiConfig(
+        noProtocolEvent,
+        noProtocolEvent.triggers[0],
+        'group-123',
+        'my-service',
+        'cn-hangzhou',
+        'default',
+      );
+
+      expect(config.requestConfig.requestProtocol).toBe('HTTP');
+    });
   });
 
   describe('extractApigwGroupDefinition', () => {
@@ -218,6 +267,32 @@ describe('Apigw Types', () => {
         apiId: 'api-456',
         stageName: 'RELEASE',
       });
+    });
+  });
+
+  describe('inferProtocolConfig', () => {
+    it('should default to HTTP with no redirect when protocol is undefined', () => {
+      const result = inferProtocolConfig(undefined);
+      expect(result.requestProtocol).toBe('HTTP');
+      expect(result.isHttpRedirectToHttps).toBeUndefined();
+    });
+
+    it('should return HTTPS with redirect=true when protocol is "HTTPS"', () => {
+      const result = inferProtocolConfig('HTTPS');
+      expect(result.requestProtocol).toBe('HTTPS');
+      expect(result.isHttpRedirectToHttps).toBe(true);
+    });
+
+    it('should return HTTP,HTTPS with redirect=false when protocol is ["HTTP","HTTPS"]', () => {
+      const result = inferProtocolConfig(['HTTP', 'HTTPS']);
+      expect(result.requestProtocol).toBe('HTTP,HTTPS');
+      expect(result.isHttpRedirectToHttps).toBe(false);
+    });
+
+    it('should return HTTP with no redirect when protocol is "HTTP"', () => {
+      const result = inferProtocolConfig('HTTP');
+      expect(result.requestProtocol).toBe('HTTP');
+      expect(result.isHttpRedirectToHttps).toBeUndefined();
     });
   });
 });
