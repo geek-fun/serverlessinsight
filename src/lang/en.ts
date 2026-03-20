@@ -584,6 +584,8 @@ export const en = {
   CERT_RESOLVING_REFERENCE:
     'Resolving certificate reference "{{reference}}" for domain "{{domain}}"',
   CERT_REFERENCE_NOT_FOUND: 'Certificate reference "{{reference}}" could not be resolved.',
+  CERT_USING_SUBSCRIPTION_ID:
+    'Certificate "{{provided}}" appears to be a Subscription Instance ID (订阅实例ID). Use the numeric Certificate ID (证书ID) instead, e.g., "24019487". Find it in Aliyun CAS console → Certificate Details.',
   CERT_RESOLVED_UPLOAD: 'Certificate "{{name}}" resolved as upload mode (PEM files provided)',
   CERT_RESOLVED_REFERENCE:
     'Certificate "{{name}}" resolved as reference mode (certificate_id: {{certId}})',
@@ -626,8 +628,6 @@ export const en = {
   COS_BUCKET_CERT_DEPLOYING:
     'Deploying SSL certificate to COS bucket domain: {{domain}} (bucket: {{bucketName}})',
   COS_BUCKET_CERT_DEPLOYED: 'SSL certificate deployed to COS bucket domain: {{domain}}',
-  TENCENT_CERT_REFERENCE_NOT_SUPPORTED:
-    'Certificate "{{name}}" uses certificate_id reference mode which is not yet supported for Tencent Cloud. Use certificate_body and certificate_private_key instead.',
   BUCKET_DOMAIN_REQUIRED_FOR_CERT:
     'Bucket "{{name}}" has certificate configuration but no domain is set. A domain is required when providing certificate information.',
 

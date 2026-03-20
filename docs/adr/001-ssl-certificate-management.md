@@ -446,8 +446,8 @@ When `certificate_private_key` contains inline PEM content (detected by `BEGIN` 
 
 #### Provider Constraints
 
-- **Tencent Cloud COS** does not support `certificate_id` for bucket domains. Using `certificate_id` on a Tencent bucket domain throws `TENCENT_CERT_REFERENCE_NOT_SUPPORTED`.
-- **Aliyun API Gateway** and **Aliyun OSS** support both `certificate_id` and upload modes.
+- **Tencent Cloud COS** supports both `certificate_id` reference mode and upload mode. When `certificate_id` is provided, the `DeployCertificateInstance` API is called directly to deploy the existing certificate to the COS bucket domain. When `certificate_body` and `certificate_private_key` are provided, the certificate is uploaded first then deployed.
+- **Aliyun API Gateway** and **Aliyun OSS** support both `certificate_id` and upload modes. For Aliyun, `certificate_id` should be the numeric Certificate ID (证书ID) from the CAS console, not the Subscription Instance ID (订阅实例ID).
 
 ### Files Removed
 

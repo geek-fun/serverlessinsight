@@ -528,6 +528,8 @@ export const zhCN = {
   CERT_PARSING_CERTIFICATES: '正在解析证书配置',
   CERT_RESOLVING_REFERENCE: '正在解析域名 "{{domain}}" 的证书引用 "{{reference}}"',
   CERT_REFERENCE_NOT_FOUND: '无法解析证书引用 "{{reference}}"。',
+  CERT_USING_SUBSCRIPTION_ID:
+    '证书 "{{provided}}" 看起来是订阅实例ID。请使用数字格式的证书ID（如 "24019487"）。可在阿里云 CAS 控制台 → 证书详情 中找到。',
   CERT_RESOLVED_UPLOAD: '证书 "{{name}}" 解析为上传模式（提供了 PEM 文件）',
   CERT_RESOLVED_REFERENCE: '证书 "{{name}}" 解析为引用模式（certificate_id: {{certId}}）',
   CERT_READING_PEM_FILES: '正在读取证书 "{{name}}" 的 PEM 文件',
@@ -566,8 +568,6 @@ export const zhCN = {
   COS_BUCKET_CERT_DEPLOYING:
     '正在为 COS 存储桶域名部署 SSL 证书: {{domain}}（存储桶: {{bucketName}}）',
   COS_BUCKET_CERT_DEPLOYED: 'SSL 证书已部署到 COS 存储桶域名: {{domain}}',
-  TENCENT_CERT_REFERENCE_NOT_SUPPORTED:
-    '证书 "{{name}}" 使用了 certificate_id 引用模式，腾讯云暂不支持该模式。请改用 certificate_body 和 certificate_private_key。',
   BUCKET_DOMAIN_REQUIRED_FOR_CERT:
     '存储桶 "{{name}}" 已配置证书信息，但未设置域名。提供证书信息时必须设置域名。',
 

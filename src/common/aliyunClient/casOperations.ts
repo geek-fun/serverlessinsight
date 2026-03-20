@@ -38,6 +38,10 @@ export const createCasOperations = (casClient: CasSdkClient) => {
     },
 
     getCertificate: async (certificateId: string): Promise<CasCertificateInfo | null> => {
+      if (certificateId.startsWith('cas_') || certificateId.startsWith('cas-')) {
+        throw new Error(lang.__('CERT_USING_SUBSCRIPTION_ID', { provided: certificateId }));
+      }
+
       const numericId = Number(certificateId);
       if (Number.isNaN(numericId)) {
         throw new Error(lang.__('CERT_INVALID_CONFIGURATION', { name: certificateId }));

@@ -233,9 +233,17 @@ describe('CosResource', () => {
       expect(mockSslOperations.deployCertificateInstance).not.toHaveBeenCalled();
     });
 
-    it('should reject certificate_id reference with TENCENT_CERT_REFERENCE_NOT_SUPPORTED', async () => {
+    it('should deploy SSL certificate using certificate_id reference mode', async () => {
       mockCosOperations.createBucket.mockResolvedValue(undefined);
       mockCosOperations.getBucket.mockResolvedValue(mockBucketInfo);
+      mockCosOperations.bindCustomDomain.mockResolvedValue({
+        cname: 'test-bucket.cos.ap-guangzhou.myqcloud.com',
+        dnsRecordId: 'dns-123',
+        bucketDomainBound: true,
+      });
+      mockSslOperations.deployCertificateInstance.mockResolvedValue({
+        deployRecordId: 100,
+      });
 
       const domainBucket = {
         key: 'my_bucket',
@@ -246,12 +254,18 @@ describe('CosResource', () => {
           error_page: 'error.html',
           error_code: 404,
           domain: 'cdn.example.com',
-          domain_certificate_id: '12345',
+          domain_certificate_id: 'existing-cert-12345',
         },
       };
 
-      await expect(createBucketResource(mockContext, domainBucket, initialState)).rejects.toThrow(
-        'certificate_id reference mode',
+      await createBucketResource(mockContext, domainBucket, initialState);
+
+      expect(mockCosOperations.bindCustomDomain).toHaveBeenCalled();
+      expect(mockSslOperations.uploadCertificate).not.toHaveBeenCalled();
+      expect(mockSslOperations.deployCertificateInstance).toHaveBeenCalledWith(
+        'existing-cert-12345',
+        'cos',
+        ['ap-guangzhou|test-bucket|cdn.example.com'],
       );
     });
   });
@@ -295,6 +309,40 @@ describe('CosResource', () => {
       );
       expect(mockSslOperations.deployCertificateInstance).toHaveBeenCalledWith(
         'ssl-cert-002',
+        'cos',
+        ['ap-guangzhou|test-bucket|cdn.example.com'],
+      );
+    });
+
+    it('should deploy SSL certificate on update using certificate_id reference mode', async () => {
+      mockCosOperations.getBucket.mockResolvedValue(mockBucketInfo);
+      mockCosOperations.bindCustomDomain.mockResolvedValue({
+        cname: 'test-bucket.cos.ap-guangzhou.myqcloud.com',
+        dnsRecordId: 'dns-456',
+        bucketDomainBound: true,
+      });
+      mockSslOperations.deployCertificateInstance.mockResolvedValue({
+        deployRecordId: 101,
+      });
+
+      const bucket = {
+        key: 'test_bucket',
+        name: 'test-bucket',
+        website: {
+          index: 'index.html',
+          domain: 'cdn.example.com',
+          domain_certificate_id: 'existing-cert-99999',
+          code: './dist',
+          error_page: 'error.html',
+          error_code: 404,
+        },
+      };
+
+      await updateBucketResource(mockContext, bucket, initialState);
+
+      expect(mockSslOperations.uploadCertificate).not.toHaveBeenCalled();
+      expect(mockSslOperations.deployCertificateInstance).toHaveBeenCalledWith(
+        'existing-cert-99999',
         'cos',
         ['ap-guangzhou|test-bucket|cdn.example.com'],
       );

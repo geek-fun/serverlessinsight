@@ -21,11 +21,19 @@ type CosDnsInstance = ResourceInstance & {
   dnsRecordId?: string;
 };
 
-type CosResolvedCertificate = {
+type CosResolvedCertificateUpload = {
+  mode: 'upload';
   certificateName: string;
   certificateBody: string;
   certificatePrivateKey: string;
 };
+
+type CosResolvedCertificateReference = {
+  mode: 'reference';
+  certificateId: string;
+};
+
+type CosResolvedCertificate = CosResolvedCertificateUpload | CosResolvedCertificateReference;
 
 const resolveBucketDomainCertificate = (
   bucket: BucketDomain,
@@ -34,7 +42,16 @@ const resolveBucketDomainCertificate = (
   if (!website) return undefined;
 
   if (website.domain_certificate_id) {
-    throw new Error(lang.__('TENCENT_CERT_REFERENCE_NOT_SUPPORTED', { name: bucket.key }));
+    logger.info(
+      lang.__('CERT_RESOLVING_REFERENCE', {
+        reference: website.domain_certificate_id,
+        domain: website.domain ?? bucket.key,
+      }),
+    );
+    return {
+      mode: 'reference',
+      certificateId: website.domain_certificate_id,
+    };
   }
 
   if (website.domain_certificate_body && website.domain_certificate_private_key) {
@@ -45,6 +62,7 @@ const resolveBucketDomainCertificate = (
     const key = readPemContent(website.domain_certificate_private_key);
     warnInlinePem(website.domain_certificate_private_key);
     return {
+      mode: 'upload',
       certificateName: website.domain.replace(/\./g, '_'),
       certificateBody: body,
       certificatePrivateKey: key,
@@ -63,14 +81,32 @@ const deployCertificateToCosDomain = async (
 ): Promise<void> => {
   logger.info(lang.__('COS_BUCKET_CERT_DEPLOYING', { domain, bucketName }));
 
-  const certInfo = await client.ssl.uploadCertificate(
-    resolved.certificateName,
-    resolved.certificateBody,
-    resolved.certificatePrivateKey,
-  );
+  let certificateId: string;
+
+  if (resolved.mode === 'reference') {
+    logger.info(
+      lang.__('CERT_RESOLVED_REFERENCE', {
+        name: domain,
+        certId: resolved.certificateId,
+      }),
+    );
+    certificateId = resolved.certificateId;
+  } else {
+    logger.info(
+      lang.__('CERT_RESOLVED_UPLOAD', {
+        name: resolved.certificateName,
+      }),
+    );
+    const certInfo = await client.ssl.uploadCertificate(
+      resolved.certificateName,
+      resolved.certificateBody,
+      resolved.certificatePrivateKey,
+    );
+    certificateId = certInfo.certificateId;
+  }
 
   const instanceId = `${region}|${bucketName}|${domain}`;
-  await client.ssl.deployCertificateInstance(certInfo.certificateId, 'cos', [instanceId]);
+  await client.ssl.deployCertificateInstance(certificateId, 'cos', [instanceId]);
 };
 
 const buildCosInstanceFromProvider = (info: CosBucketInfo, sid: string) => {
