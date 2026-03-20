@@ -82,6 +82,23 @@ export type Plan = {
   items: Array<PlanItem>;
 };
 
+export type AttributeDiff = {
+  key: string;
+  before?: unknown;
+  after?: unknown;
+  action: 'add' | 'change' | 'remove';
+  isComputed?: boolean;
+  children?: AttributeDiff[];
+};
+
+export type PlanDisplayConfig = {
+  colorize: boolean;
+  indentSize: number;
+  keyAlignWidth: number;
+  showUnchangedAttributes: boolean;
+  maxUnchangedHidden: number;
+};
+
 export type SaveStateFn = (state: StateFile) => void;
 
 export type PartialFailureError = {

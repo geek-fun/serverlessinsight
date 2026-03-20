@@ -95,7 +95,7 @@ export const en = {
   PLAN_COMMAND_TENCENT_ONLY: 'Plan command is currently only supported for Tencent provider',
   GENERATING_PLAN_FOR_SCF: 'Generating plan for Tencent SCF resources...',
   DEPLOYMENT_PLAN: 'DEPLOYMENT PLAN',
-  NO_CHANGES_INFRASTRUCTURE_UP_TO_DATE: 'No changes. Infrastructure is up-to-date.',
+  NO_CHANGES_INFRASTRUCTURE_UP_TO_DATE: 'No changes. Infrastructure is up to date.',
   CREATE: 'CREATE',
   UPDATE: 'UPDATE',
   DELETE: 'DELETE',
@@ -118,6 +118,19 @@ export const en = {
   EXECUTING_PLAN: 'Executing deployment plan...',
   DEPLOY_CONFIRMATION: 'Do you want to perform these actions? (yes/no): ',
   DEPLOY_CANCELLED: 'Deployment cancelled.',
+  PLAN_WILL_CREATE: 'will be created',
+  PLAN_WILL_UPDATE: 'will be updated in-place',
+  PLAN_WILL_DESTROY: 'will be destroyed',
+  PLAN_WILL_REFRESH: 'will be refreshed',
+  PLAN_NO_CHANGES: 'no changes',
+  PLAN_HEADER: 'ServerlessInsight will perform the following actions:',
+  PLAN_LEGEND_CREATE: '  + create',
+  PLAN_LEGEND_UPDATE: '  ~ update in-place',
+  PLAN_LEGEND_DESTROY: '  - destroy',
+  PLAN_SUMMARY:
+    'Plan: {{createCount}} to add, {{updateCount}} to change, {{deleteCount}} to destroy.',
+  PLAN_UNCHANGED_ATTRS: '({{count}} unchanged attributes hidden)',
+  PLAN_COMPUTED_VALUE: '(known after deploy)',
 
   // TDSQL-C database messages
   TDSQL_CLUSTER_CREATION_INITIATED: 'TDSQL-C cluster creation initiated',
