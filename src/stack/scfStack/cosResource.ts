@@ -29,7 +29,6 @@ type CosResolvedCertificate = {
 
 const resolveBucketDomainCertificate = (
   bucket: BucketDomain,
-  stage: string,
 ): CosResolvedCertificate | undefined => {
   const website = bucket.website;
   if (!website) return undefined;
@@ -39,11 +38,14 @@ const resolveBucketDomainCertificate = (
   }
 
   if (website.domain_certificate_body && website.domain_certificate_private_key) {
+    if (!website.domain) {
+      throw new Error(lang.__('BUCKET_DOMAIN_REQUIRED_FOR_CERT', { name: bucket.key }));
+    }
     const body = readPemContent(website.domain_certificate_body);
     const key = readPemContent(website.domain_certificate_private_key);
     warnInlinePem(website.domain_certificate_private_key);
     return {
-      certificateName: `${bucket.key}-${stage}-cos`,
+      certificateName: website.domain.replace(/\./g, '_'),
       certificateBody: body,
       certificatePrivateKey: key,
     };
@@ -158,7 +160,7 @@ export const createBucketResource = async (
 
   let cnameInfo: CosCnameInfo | undefined;
   if (bucket.website?.domain) {
-    const resolved = resolveBucketDomainCertificate(bucket, context.stage);
+    const resolved = resolveBucketDomainCertificate(bucket);
 
     logger.info(
       lang.__('BINDING_CUSTOM_DOMAIN_TO_BUCKET', {
@@ -259,7 +261,7 @@ export const updateBucketResource = async (
       );
     }
 
-    const resolved = resolveBucketDomainCertificate(bucket, context.stage);
+    const resolved = resolveBucketDomainCertificate(bucket);
 
     logger.info(
       lang.__('BINDING_CUSTOM_DOMAIN_TO_BUCKET', {

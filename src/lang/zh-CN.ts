@@ -567,7 +567,9 @@ export const zhCN = {
     '正在为 COS 存储桶域名部署 SSL 证书: {{domain}}（存储桶: {{bucketName}}）',
   COS_BUCKET_CERT_DEPLOYED: 'SSL 证书已部署到 COS 存储桶域名: {{domain}}',
   TENCENT_CERT_REFERENCE_NOT_SUPPORTED:
-    '证书 "{{name}}" 使用了 certificate_id 引用模式，腾讯云暂不支持该模式。请改用 certificate_body 和 private_key。',
+    '证书 "{{name}}" 使用了 certificate_id 引用模式，腾讯云暂不支持该模式。请改用 certificate_body 和 certificate_private_key。',
+  BUCKET_DOMAIN_REQUIRED_FOR_CERT:
+    '存储桶 "{{name}}" 已配置证书信息，但未设置域名。提供证书信息时必须设置域名。',
 
   // 协议消息
   PROTOCOL_INFERRED_REDIRECT: '协议 "{{protocol}}" 推断 HTTP 到 HTTPS 重定向：{{redirect}}',

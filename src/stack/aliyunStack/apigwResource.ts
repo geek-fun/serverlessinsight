@@ -93,7 +93,7 @@ const resolveDomainCertificate = async (
   if (domain.certificate_id) {
     const certId = domain.certificate_id as string;
     const detail = await client.cas.getCertificate(certId);
-    if (!detail) {
+    if (!detail || !detail.cert || !detail.key) {
       throw new Error(lang.__('CERT_REFERENCE_NOT_FOUND', { reference: certId }));
     }
     return {
