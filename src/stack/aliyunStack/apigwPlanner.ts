@@ -55,7 +55,7 @@ export const generateApigwPlan = async (
         domain: event.domain
           ? {
               domainName: event.domain.domain_name,
-              certificateName: event.domain.certificate_name,
+              hasCertificate: !!(event.domain.certificate_body || event.domain.certificate_id),
             }
           : null,
       };

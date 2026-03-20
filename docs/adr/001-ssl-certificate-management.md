@@ -1,6 +1,6 @@
 # ADR-001: SSL/HTTPS Certificate Management
 
-- **Status**: Proposed
+- **Status**: Superseded (Updated 2026-03-20)
 - **Date**: 2026-03-19
 - **Authors**: ServerlessInsight Team
 - **Deciders**: @geek-fun/core
@@ -352,6 +352,125 @@ Files: `/etc/letsencrypt/live/example.com/fullchain.pem` → `certificate_body`,
 | Free DV via API  | ✅ Global        | ⚠️ China only | ✅ Global            |
 | Wildcard support | ❌ (free)        | ❌ (free)     | ✅                   |
 | Provider lock-in | Yes              | Yes           | None                 |
+
+## Update (2026-03-20): Remove Top-Level `certificates` Block
+
+### Motivation
+
+The original three-layer architecture (top-level `certificates` block → `${certificates.xxx}` reference → provider adapter) introduced several problems:
+
+1. **Stage collision** — Certificate names are not stage-scoped, causing collisions when deploying the same service to multiple stages (dev, staging, prod)
+2. **Dual-pattern confusion** — Events supported both `${certificates.xxx}` references AND legacy inline fields (`certificate_body`, `certificate_private_key`), creating ambiguity
+3. **Schema inconsistency** — Certificates as a top-level reference namespace (`${certificates.xxx}`) doesn't match how other resources work. Functions, buckets, and events create physical resources from YAML config. Certificates are pre-existing artifacts (requiring manual verification/approval to obtain), making them a reference rather than a managed resource
+4. **Unnecessary indirection** — The `certificates` block adds a layer of indirection that doesn't provide meaningful value given the existing `${vars.xxx}` and `${stages.xxx}` mechanisms for sharing values
+
+### Decision
+
+**Remove the `certificates` top-level block entirely.** Certificate fields are inlined directly on each consumer (event domains and bucket domains).
+
+#### New Schema
+
+```yaml
+# Event domain with certificate (upload mode)
+events:
+  gateway:
+    type: API_GATEWAY
+    name: my-gateway
+    triggers:
+      - method: GET
+        path: /api/hello
+        backend: ${functions.api}
+    domain:
+      domain_name: api.example.com
+      certificate_body: ./certs/cert.pem
+      certificate_private_key: ./certs/key.pem
+      protocol: HTTPS
+
+# Event domain with certificate (reference mode)
+events:
+  gateway:
+    domain:
+      domain_name: api.example.com
+      certificate_id: cas-abc123
+      protocol: HTTPS
+
+# Bucket domain with certificate
+buckets:
+  site:
+    name: my-site
+    website:
+      code: dist
+      domain:
+        domain_name: www.example.com
+        certificate_body: ${vars.cert_body}
+        certificate_private_key: ${vars.cert_key}
+        protocol: ['HTTP', 'HTTPS']
+```
+
+#### Mutual Exclusion
+
+`certificate_id` XOR (`certificate_body` + `certificate_private_key`) — enforced via JSON Schema `oneOf`. Providing both is a validation error.
+
+#### Auto-Generated Certificate Name
+
+Provider-side certificate name is deterministic and stage-scoped: `{service}-{stage}-{resourceType}-{resourceKey}`. This eliminates name collisions across stages.
+
+#### DRY via Existing Mechanisms
+
+Users share certificate values across consumers using `${vars.xxx}` or `${stages.xxx}`:
+
+```yaml
+vars:
+  cert_body: ./certs/cert.pem
+  cert_key: ./certs/key.pem
+
+events:
+  gateway:
+    domain:
+      domain_name: api.example.com
+      certificate_body: ${vars.cert_body}
+      certificate_private_key: ${vars.cert_key}
+
+buckets:
+  site:
+    website:
+      domain:
+        domain_name: www.example.com
+        certificate_body: ${vars.cert_body}
+        certificate_private_key: ${vars.cert_key}
+```
+
+#### Validation Warning
+
+When `certificate_private_key` contains inline PEM content (detected by `BEGIN` or `PRIVATE KEY` keywords), a warning is emitted suggesting file paths instead. This is a warning, not an error — inline PEM is still valid.
+
+#### Provider Constraints
+
+- **Tencent Cloud COS** does not support `certificate_id` for bucket domains. Using `certificate_id` on a Tencent bucket domain throws `TENCENT_CERT_REFERENCE_NOT_SUPPORTED`.
+- **Aliyun API Gateway** and **Aliyun OSS** support both `certificate_id` and upload modes.
+
+### Files Removed
+
+- `src/types/domains/certificate.ts` — `CertificateRaw` and `CertificateDomain` types
+- `src/common/certificateResolver.ts` — `resolveUploadCertificate`, `resolveReferenceCertificate`, `resolveCertificateDomain`
+- `src/parser/certificateParser.ts` — `parseCertificate`, `isFilePath`
+- `src/validator/certificateSchema.ts` — Certificate validation schema
+
+### Files Added
+
+- `src/common/certUtils.ts` — Shared utility with `isFilePath()`, `readPemContent()`, `warnInlinePem()`
+
+### Updated Template Reference Namespaces
+
+| Namespace                 | Source                          | Resolution                   | Available   |
+| ------------------------- | ------------------------------- | ---------------------------- | ----------- |
+| `${vars.xxx}`             | Local `vars:` block             | Parse-time, local            | Yes         |
+| `${stages.xxx}`           | Local `stages:` block           | Parse-time, local            | Yes         |
+| `${functions.xxx}`        | Local `functions:` block        | Parse-time, local            | Yes         |
+| ~~`${certificates.xxx}`~~ | ~~Local `certificates:` block~~ | ~~Parse-time, local~~        | **Removed** |
+| `${secrets.xxx}`          | SI Cloud secret store           | Deploy-time, remote API call | Future      |
+
+---
 
 ## References
 

@@ -9,14 +9,8 @@ import {
 import { createTencentClient } from '../../common/tencentClient';
 import { CosCnameInfo } from '../../common/tencentClient/cosOperations';
 import { bucketToCosBucketConfig, extractCosBucketDefinition, CosBucketInfo } from './cosTypes';
-import {
-  setResource,
-  removeResource,
-  buildSid,
-  getIacDefinition,
-  isCertificateDomain,
-} from '../../common';
-import { resolveUploadCertificate, ResolvedCertificate } from '../../common/certificateResolver';
+import { setResource, removeResource, buildSid } from '../../common';
+import { readPemContent, warnInlinePem } from '../../common/certUtils';
 import { logger } from '../../common/logger';
 import { lang } from '../../lang';
 
@@ -27,29 +21,42 @@ type CosDnsInstance = ResourceInstance & {
   dnsRecordId?: string;
 };
 
+type CosResolvedCertificate = {
+  certificateName: string;
+  certificateBody: string;
+  certificatePrivateKey: string;
+};
+
 const resolveBucketDomainCertificate = (
-  domainCertificate: string,
-  context: Context,
-): Pick<ResolvedCertificate, 'certificateName' | 'certificateBody' | 'certificatePrivateKey'> => {
-  if (!context.iac) {
-    throw new Error(lang.__('CERT_REFERENCE_NOT_FOUND', { reference: domainCertificate }));
+  bucket: BucketDomain,
+): CosResolvedCertificate | undefined => {
+  const website = bucket.website;
+  if (!website) return undefined;
+
+  if (website.domain_certificate_id) {
+    throw new Error(lang.__('TENCENT_CERT_REFERENCE_NOT_SUPPORTED', { name: bucket.key }));
   }
-  const certDef = getIacDefinition(context.iac, domainCertificate);
-  if (!certDef || !isCertificateDomain(certDef)) {
-    throw new Error(lang.__('CERT_REFERENCE_NOT_FOUND', { reference: domainCertificate }));
+
+  if (website.domain_certificate_body && website.domain_certificate_private_key) {
+    if (!website.domain) {
+      throw new Error(lang.__('BUCKET_DOMAIN_REQUIRED_FOR_CERT', { name: bucket.key }));
+    }
+    const body = readPemContent(website.domain_certificate_body);
+    const key = readPemContent(website.domain_certificate_private_key);
+    warnInlinePem(website.domain_certificate_private_key);
+    return {
+      certificateName: website.domain.replace(/\./g, '_'),
+      certificateBody: body,
+      certificatePrivateKey: key,
+    };
   }
-  if (certDef.certificate_id) {
-    throw new Error(lang.__('TENCENT_CERT_REFERENCE_NOT_SUPPORTED', { name: certDef.key }));
-  }
-  return resolveUploadCertificate(certDef);
+
+  return undefined;
 };
 
 const deployCertificateToCosDomain = async (
   client: ReturnType<typeof createTencentClient>,
-  resolved: Pick<
-    ResolvedCertificate,
-    'certificateName' | 'certificateBody' | 'certificatePrivateKey'
-  >,
+  resolved: CosResolvedCertificate,
   bucketName: string,
   domain: string,
   region: string,
@@ -153,9 +160,7 @@ export const createBucketResource = async (
 
   let cnameInfo: CosCnameInfo | undefined;
   if (bucket.website?.domain) {
-    const resolved = bucket.website.domain_certificate
-      ? resolveBucketDomainCertificate(bucket.website.domain_certificate, context)
-      : undefined;
+    const resolved = resolveBucketDomainCertificate(bucket);
 
     logger.info(
       lang.__('BINDING_CUSTOM_DOMAIN_TO_BUCKET', {
@@ -256,9 +261,7 @@ export const updateBucketResource = async (
       );
     }
 
-    const resolved = bucket.website.domain_certificate
-      ? resolveBucketDomainCertificate(bucket.website.domain_certificate, context)
-      : undefined;
+    const resolved = resolveBucketDomainCertificate(bucket);
 
     logger.info(
       lang.__('BINDING_CUSTOM_DOMAIN_TO_BUCKET', {

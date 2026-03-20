@@ -10,12 +10,8 @@ import {
   inferProtocolConfig,
 } from './apigwTypes';
 import { setResource, removeResource, getResource } from '../../common/stateManager';
-import {
-  buildSid,
-  getIacDefinition,
-  isCertificateDomain,
-  resolveCertificateDomain,
-} from '../../common';
+import { buildSid } from '../../common';
+import { readPemContent, warnInlinePem } from '../../common/certUtils';
 import { logger } from '../../common/logger';
 import { lang } from '../../lang';
 
@@ -85,51 +81,51 @@ const buildApigwDeploymentInstance = (
 
 const resolveDomainCertificate = async (
   domain: NonNullable<EventDomain['domain']>,
-  context: Context,
+  serviceName: string,
+  eventKey: string,
+  stage: string,
   client: ReturnType<typeof createAliyunClient>,
 ): Promise<{
   certificateName?: string;
   certificateBody?: string;
   certificatePrivateKey?: string;
 }> => {
-  if (domain.certificate) {
-    if (!context.iac) {
-      throw new Error(
-        lang.__('CERT_REFERENCE_NOT_FOUND', { reference: String(domain.certificate) }),
-      );
+  if (domain.certificate_id) {
+    const certId = domain.certificate_id as string;
+    const detail = await client.cas.getCertificate(certId);
+    if (!detail || !detail.cert || !detail.key) {
+      throw new Error(lang.__('CERT_REFERENCE_NOT_FOUND', { reference: certId }));
     }
-    const certDef = getIacDefinition(context.iac, domain.certificate as string);
-    if (!certDef || !isCertificateDomain(certDef)) {
-      throw new Error(
-        lang.__('CERT_REFERENCE_NOT_FOUND', { reference: String(domain.certificate) }),
-      );
-    }
-    const resolved = await resolveCertificateDomain(certDef, async (certId: string) => {
-      const detail = await client.cas.getCertificate(certId);
-      if (!detail) return null;
-      return { cert: detail.cert, key: detail.key };
-    });
     return {
-      certificateName: resolved.certificateName,
-      certificateBody: resolved.certificateBody,
-      certificatePrivateKey: resolved.certificatePrivateKey,
+      certificateName: `${serviceName}-${stage}-apigw-${eventKey}`,
+      certificateBody: detail.cert,
+      certificatePrivateKey: detail.key,
     };
   }
 
-  return {
-    certificateName: domain.certificate_name as string | undefined,
-    certificateBody: domain.certificate_body as string | undefined,
-    certificatePrivateKey: domain.certificate_private_key as string | undefined,
-  };
+  if (domain.certificate_body && domain.certificate_private_key) {
+    const body = readPemContent(domain.certificate_body as string);
+    const key = readPemContent(domain.certificate_private_key as string);
+    warnInlinePem(domain.certificate_private_key as string);
+    return {
+      certificateName: `${serviceName}-${stage}-apigw-${eventKey}`,
+      certificateBody: body,
+      certificatePrivateKey: key,
+    };
+  }
+
+  return {};
 };
 
 const buildDomainBindingConfig = async (
   domain: NonNullable<EventDomain['domain']>,
   groupId: string,
-  context: Context,
+  serviceName: string,
+  eventKey: string,
+  stage: string,
   client: ReturnType<typeof createAliyunClient>,
 ): Promise<ApigwCustomDomainConfig> => {
-  const certConfig = await resolveDomainCertificate(domain, context, client);
+  const certConfig = await resolveDomainCertificate(domain, serviceName, eventKey, stage, client);
   const protocolConfig = inferProtocolConfig(domain.protocol as string | string[] | undefined);
 
   return {
@@ -190,7 +186,7 @@ export const createApigwResource = async (
       domain: event.domain
         ? {
             domainName: event.domain.domain_name,
-            certificateName: event.domain.certificate_name,
+            hasCertificate: !!(event.domain.certificate_body || event.domain.certificate_id),
           }
         : null,
     },
@@ -244,7 +240,7 @@ export const createApigwResource = async (
         domain: event.domain
           ? {
               domainName: event.domain.domain_name,
-              certificateName: event.domain.certificate_name,
+              hasCertificate: !!(event.domain.certificate_body || event.domain.certificate_id),
             }
           : null,
       },
@@ -256,7 +252,14 @@ export const createApigwResource = async (
 
   if (event.domain) {
     try {
-      const domainConfig = await buildDomainBindingConfig(event.domain, groupId, context, client);
+      const domainConfig = await buildDomainBindingConfig(
+        event.domain,
+        groupId,
+        serviceName,
+        event.key,
+        context.stage,
+        client,
+      );
       state = await client.apigw.bindCustomDomain(domainConfig, state, logicalId);
     } catch (error) {
       logger.error(lang.__('APIGW_DOMAIN_BINDING_FAILED', { error: String(error) }));
@@ -280,7 +283,7 @@ export const createApigwResource = async (
       domain: event.domain
         ? {
             domainName: event.domain.domain_name,
-            certificateName: event.domain.certificate_name,
+            hasCertificate: !!(event.domain.certificate_body || event.domain.certificate_id),
           }
         : null,
     },
@@ -412,7 +415,14 @@ export const updateApigwResource = async (
   }
 
   if (event.domain) {
-    const domainConfig = await buildDomainBindingConfig(event.domain, groupId, context, client);
+    const domainConfig = await buildDomainBindingConfig(
+      event.domain,
+      groupId,
+      serviceName,
+      event.key,
+      context.stage,
+      client,
+    );
     state = await client.apigw.bindCustomDomain(domainConfig, state, logicalId);
   }
 
@@ -430,7 +440,7 @@ export const updateApigwResource = async (
       domain: event.domain
         ? {
             domainName: event.domain.domain_name,
-            certificateName: event.domain.certificate_name,
+            hasCertificate: !!(event.domain.certificate_body || event.domain.certificate_id),
           }
         : null,
     },

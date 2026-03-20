@@ -527,11 +527,13 @@ export const zhCN = {
   CERT_READING_FILE: '正在读取证书文件: {{filePath}}',
   CERT_PARSING_CERTIFICATES: '正在解析证书配置',
   CERT_RESOLVING_REFERENCE: '正在解析域名 "{{domain}}" 的证书引用 "{{reference}}"',
-  CERT_REFERENCE_NOT_FOUND:
-    '无法解析证书引用 "{{reference}}"。请确保它已在 certificates 块中定义。',
+  CERT_REFERENCE_NOT_FOUND: '无法解析证书引用 "{{reference}}"。',
   CERT_RESOLVED_UPLOAD: '证书 "{{name}}" 解析为上传模式（提供了 PEM 文件）',
   CERT_RESOLVED_REFERENCE: '证书 "{{name}}" 解析为引用模式（certificate_id: {{certId}}）',
   CERT_READING_PEM_FILES: '正在读取证书 "{{name}}" 的 PEM 文件',
+
+  CERT_INLINE_PEM_WARNING:
+    '安全警告：certificate_private_key 似乎包含内联 PEM 内容。建议使用文件路径（例如 ./certs/server.key）以提高安全性。',
 
   // CAS（证书授权服务）消息
   CAS_UPLOADING_CERT: '正在上传证书 "{{name}}" 到 CAS',
@@ -565,7 +567,9 @@ export const zhCN = {
     '正在为 COS 存储桶域名部署 SSL 证书: {{domain}}（存储桶: {{bucketName}}）',
   COS_BUCKET_CERT_DEPLOYED: 'SSL 证书已部署到 COS 存储桶域名: {{domain}}',
   TENCENT_CERT_REFERENCE_NOT_SUPPORTED:
-    '证书 "{{name}}" 使用了 certificate_id 引用模式，腾讯云暂不支持该模式。请改用 certificate_body 和 private_key。',
+    '证书 "{{name}}" 使用了 certificate_id 引用模式，腾讯云暂不支持该模式。请改用 certificate_body 和 certificate_private_key。',
+  BUCKET_DOMAIN_REQUIRED_FOR_CERT:
+    '存储桶 "{{name}}" 已配置证书信息，但未设置域名。提供证书信息时必须设置域名。',
 
   // 协议消息
   PROTOCOL_INFERRED_REDIRECT: '协议 "{{protocol}}" 推断 HTTP 到 HTTPS 重定向：{{redirect}}',

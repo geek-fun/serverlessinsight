@@ -7,7 +7,6 @@ import { Provider } from './domains/provider';
 import { BucketDomain, BucketRaw } from './domains/bucket';
 import { TableDomain, TableRaw } from './domains/table';
 import { BackendConfig, BackendConfigRaw } from './domains/backend';
-import { CertificateRaw, CertificateDomain } from './domains/certificate';
 
 export * from './domains/resolvable';
 export * from './domains/database';
@@ -21,7 +20,6 @@ export * from './domains/table';
 export * from './domains/state';
 export * from './domains/lock';
 export * from './domains/backend';
-export * from './domains/certificate';
 export * from './assets';
 
 export type ServerlessIacRaw = {
@@ -38,7 +36,6 @@ export type ServerlessIacRaw = {
   databases: { [key: string]: DatabaseRaw };
   tables: { [key: string]: TableRaw };
   buckets: { [key: string]: BucketRaw };
-  certificates?: { [key: string]: CertificateRaw };
 };
 
 export type ServerlessIac = {
@@ -55,5 +52,4 @@ export type ServerlessIac = {
   databases?: Array<DatabaseDomain>;
   tables?: Array<TableDomain>;
   buckets?: Array<BucketDomain>;
-  certificates?: Array<CertificateDomain>;
 };

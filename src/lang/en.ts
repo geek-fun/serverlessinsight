@@ -583,12 +583,15 @@ export const en = {
   CERT_PARSING_CERTIFICATES: 'Parsing certificates configuration',
   CERT_RESOLVING_REFERENCE:
     'Resolving certificate reference "{{reference}}" for domain "{{domain}}"',
-  CERT_REFERENCE_NOT_FOUND:
-    'Certificate reference "{{reference}}" could not be resolved. Ensure it is defined in the certificates block.',
+  CERT_REFERENCE_NOT_FOUND: 'Certificate reference "{{reference}}" could not be resolved.',
   CERT_RESOLVED_UPLOAD: 'Certificate "{{name}}" resolved as upload mode (PEM files provided)',
   CERT_RESOLVED_REFERENCE:
     'Certificate "{{name}}" resolved as reference mode (certificate_id: {{certId}})',
   CERT_READING_PEM_FILES: 'Reading PEM files for certificate "{{name}}"',
+
+  // Certificate inline PEM warning
+  CERT_INLINE_PEM_WARNING:
+    'Security warning: certificate_private_key appears to contain inline PEM content. Consider using a file path (e.g., ./certs/server.key) instead for better security.',
 
   // CAS (Certificate Authority Service) messages
   CAS_UPLOADING_CERT: 'Uploading certificate "{{name}}" to CAS',
@@ -624,7 +627,9 @@ export const en = {
     'Deploying SSL certificate to COS bucket domain: {{domain}} (bucket: {{bucketName}})',
   COS_BUCKET_CERT_DEPLOYED: 'SSL certificate deployed to COS bucket domain: {{domain}}',
   TENCENT_CERT_REFERENCE_NOT_SUPPORTED:
-    'Certificate "{{name}}" uses certificate_id reference mode which is not yet supported for Tencent Cloud. Use certificate_body and private_key instead.',
+    'Certificate "{{name}}" uses certificate_id reference mode which is not yet supported for Tencent Cloud. Use certificate_body and certificate_private_key instead.',
+  BUCKET_DOMAIN_REQUIRED_FOR_CERT:
+    'Bucket "{{name}}" has certificate configuration but no domain is set. A domain is required when providing certificate information.',
 
   // Protocol messages
   PROTOCOL_INFERRED_REDIRECT:

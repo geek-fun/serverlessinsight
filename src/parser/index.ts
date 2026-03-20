@@ -15,7 +15,6 @@ import { parse } from 'yaml';
 import { validateYaml } from '../validator';
 import { parseBucket } from './bucketParser';
 import { parseTable } from './tableParser';
-import { parseCertificate } from './certificateParser';
 import { calcValue } from '../common';
 
 const validateExistence = (path: string) => {
@@ -61,7 +60,6 @@ const transformYaml = (iacJson: ServerlessIacRaw, stage?: string): ServerlessIac
     tables: parseTable(iacJson.tables),
     tags: parseTag(iacJson.tags, iacJson.app, iacJson.service, stage),
     buckets: parseBucket(iacJson.buckets),
-    certificates: iacJson.certificates ? parseCertificate(iacJson.certificates) : undefined,
   };
 };
 

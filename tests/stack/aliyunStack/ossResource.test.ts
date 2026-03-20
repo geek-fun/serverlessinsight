@@ -4,13 +4,7 @@ import {
   deleteBucketResource,
   updateBucketResource,
 } from '../../../src/stack/aliyunStack/ossResource';
-import {
-  BucketDomain,
-  Context,
-  CURRENT_STATE_VERSION,
-  ServerlessIac,
-  StateFile,
-} from '../../../src/types';
+import { BucketDomain, Context, CURRENT_STATE_VERSION, StateFile } from '../../../src/types';
 
 const mockOssOperations = {
   createBucket: jest.fn(),
@@ -284,29 +278,10 @@ describe('OssResource', () => {
         website: {
           ...baseBucket.website!,
           domain: 'www.example.com',
-          domain_certificate: '${certificates.site_cert}',
+          domain_certificate_body: '-----BEGIN CERTIFICATE-----\nMOCK\n-----END CERTIFICATE-----',
+          domain_certificate_private_key:
+            '-----BEGIN RSA PRIVATE KEY-----\nMOCK\n-----END RSA PRIVATE KEY-----',
         },
-      };
-
-      const iac: ServerlessIac = {
-        version: '0.0.1',
-        app: 'test-app',
-        provider: { name: ProviderEnum.ALIYUN, region: 'cn-hangzhou' },
-        service: 'test-service',
-        functions: [],
-        events: [],
-        certificates: [
-          {
-            key: 'site_cert',
-            certificate_body: '-----BEGIN CERTIFICATE-----\nMOCK\n-----END CERTIFICATE-----',
-            private_key: '-----BEGIN RSA PRIVATE KEY-----\nMOCK\n-----END RSA PRIVATE KEY-----',
-          },
-        ],
-      };
-
-      const contextWithIac: Context = {
-        ...mockContext,
-        iac,
       };
 
       mockOssOperations.createBucket.mockResolvedValue(baseBucketInfo);
@@ -323,7 +298,7 @@ describe('OssResource', () => {
         }),
       );
 
-      await createBucketResource(contextWithIac, bucket, initialState);
+      await createBucketResource(mockContext, bucket, initialState);
 
       expect(mockOssOperations.bindCustomDomain).toHaveBeenCalledWith(
         'test-bucket',
@@ -374,27 +349,13 @@ describe('OssResource', () => {
         website: {
           ...baseBucket.website!,
           domain: 'www.example.com',
-          domain_certificate: '${certificates.nonexistent}',
+          domain_certificate_id: 'nonexistent-cert-id',
         },
-      };
-
-      const iac: ServerlessIac = {
-        version: '0.0.1',
-        app: 'test-app',
-        provider: { name: ProviderEnum.ALIYUN, region: 'cn-hangzhou' },
-        service: 'test-service',
-        functions: [],
-        events: [],
-        certificates: [],
-      };
-
-      const contextWithIac: Context = {
-        ...mockContext,
-        iac,
       };
 
       mockOssOperations.createBucket.mockResolvedValue(baseBucketInfo);
       mockOssOperations.getBucket.mockResolvedValue(baseBucketInfo);
+      mockCasOperations.getCertificate.mockResolvedValue(null);
       mockedStateManager.setResource.mockImplementation(
         (_state: StateFile, _logicalId: string, resourceState: unknown) => ({
           ...initialState,
@@ -402,7 +363,7 @@ describe('OssResource', () => {
         }),
       );
 
-      await expect(createBucketResource(contextWithIac, bucket, initialState)).rejects.toThrow();
+      await expect(createBucketResource(mockContext, bucket, initialState)).rejects.toThrow();
     });
 
     it('should create bucket without domain', async () => {
@@ -426,28 +387,8 @@ describe('OssResource', () => {
         website: {
           ...baseBucket.website!,
           domain: 'www.example.com',
-          domain_certificate: '${certificates.ref_cert}',
+          domain_certificate_id: '12345',
         },
-      };
-
-      const iac: ServerlessIac = {
-        version: '0.0.1',
-        app: 'test-app',
-        provider: { name: ProviderEnum.ALIYUN, region: 'cn-hangzhou' },
-        service: 'test-service',
-        functions: [],
-        events: [],
-        certificates: [
-          {
-            key: 'ref_cert',
-            certificate_id: '12345',
-          },
-        ],
-      };
-
-      const contextWithIac: Context = {
-        ...mockContext,
-        iac,
       };
 
       mockCasOperations.getCertificate.mockResolvedValue({
@@ -468,7 +409,7 @@ describe('OssResource', () => {
         }),
       );
 
-      await createBucketResource(contextWithIac, bucket, initialState);
+      await createBucketResource(mockContext, bucket, initialState);
 
       expect(mockCasOperations.getCertificate).toHaveBeenCalledWith('12345');
       expect(mockOssOperations.bindCustomDomain).toHaveBeenCalledWith(
@@ -535,28 +476,12 @@ describe('OssResource', () => {
         website: {
           ...baseBucket.website!,
           domain: 'www.example.com',
-          domain_certificate: '${certificates.site_cert}',
+          domain_certificate_body:
+            '-----BEGIN CERTIFICATE-----\nUPDATED\n-----END CERTIFICATE-----',
+          domain_certificate_private_key:
+            '-----BEGIN RSA PRIVATE KEY-----\nUPDATED_KEY\n-----END RSA PRIVATE KEY-----',
         },
       };
-
-      const iac: ServerlessIac = {
-        version: '0.0.1',
-        app: 'test-app',
-        provider: { name: ProviderEnum.ALIYUN, region: 'cn-hangzhou' },
-        service: 'test-service',
-        functions: [],
-        events: [],
-        certificates: [
-          {
-            key: 'site_cert',
-            certificate_body: '-----BEGIN CERTIFICATE-----\nUPDATED\n-----END CERTIFICATE-----',
-            private_key:
-              '-----BEGIN RSA PRIVATE KEY-----\nUPDATED_KEY\n-----END RSA PRIVATE KEY-----',
-          },
-        ],
-      };
-
-      const contextWithIac: Context = { ...mockContext, iac };
 
       mockOssOperations.getBucket.mockResolvedValue(baseBucketInfo);
       mockOssOperations.bindCustomDomain.mockResolvedValue({
@@ -571,7 +496,7 @@ describe('OssResource', () => {
         }),
       );
 
-      await updateBucketResource(contextWithIac, bucket, stateWithDomain);
+      await updateBucketResource(mockContext, bucket, stateWithDomain);
 
       expect(mockOssOperations.unbindCustomDomain).not.toHaveBeenCalled();
       expect(mockOssOperations.bindCustomDomain).toHaveBeenCalledWith(

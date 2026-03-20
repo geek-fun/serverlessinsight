@@ -4,14 +4,8 @@ import {
   OssCnameInfo,
   OssCnameCertificateConfig,
 } from '../../common/aliyunClient/ossOperations';
-import {
-  setResource,
-  removeResource,
-  buildSid,
-  getIacDefinition,
-  isCertificateDomain,
-  resolveCertificateDomain,
-} from '../../common';
+import { setResource, removeResource, buildSid } from '../../common';
+import { readPemContent, warnInlinePem } from '../../common/certUtils';
 import {
   Context,
   BucketDomain,
@@ -122,26 +116,29 @@ const buildOssInstanceFromProvider = (info: OssBucketInfo, sid: string): CommonB
 };
 
 const resolveBucketDomainCertificate = async (
-  domainCertificate: string,
-  context: Context,
+  bucket: BucketDomain,
   client: ReturnType<typeof createAliyunClient>,
 ): Promise<OssCnameCertificateConfig | undefined> => {
-  if (!context.iac) {
-    throw new Error(lang.__('CERT_REFERENCE_NOT_FOUND', { reference: domainCertificate }));
-  }
-  const certDef = getIacDefinition(context.iac, domainCertificate);
-  if (!certDef || !isCertificateDomain(certDef)) {
-    throw new Error(lang.__('CERT_REFERENCE_NOT_FOUND', { reference: domainCertificate }));
-  }
-  const resolved = await resolveCertificateDomain(certDef, async (certId: string) => {
+  const website = bucket.website;
+  if (!website) return undefined;
+
+  if (website.domain_certificate_id) {
+    const certId = website.domain_certificate_id;
     const detail = await client.cas.getCertificate(certId);
-    if (!detail) return null;
-    return { cert: detail.cert, key: detail.key };
-  });
-  return {
-    certificateBody: resolved.certificateBody,
-    certificatePrivateKey: resolved.certificatePrivateKey,
-  };
+    if (!detail || !detail.cert || !detail.key) {
+      throw new Error(lang.__('CERT_REFERENCE_NOT_FOUND', { reference: certId }));
+    }
+    return { certificateBody: detail.cert, certificatePrivateKey: detail.key };
+  }
+
+  if (website.domain_certificate_body && website.domain_certificate_private_key) {
+    const body = readPemContent(website.domain_certificate_body);
+    const key = readPemContent(website.domain_certificate_private_key);
+    warnInlinePem(website.domain_certificate_private_key);
+    return { certificateBody: body, certificatePrivateKey: key };
+  }
+
+  return undefined;
 };
 
 export const createBucketResource = async (
@@ -183,9 +180,7 @@ export const createBucketResource = async (
 
   let cnameInfo: OssCnameInfo | undefined;
   if (bucket.website?.domain) {
-    const certificate = bucket.website.domain_certificate
-      ? await resolveBucketDomainCertificate(bucket.website.domain_certificate, context, client)
-      : undefined;
+    const certificate = await resolveBucketDomainCertificate(bucket, client);
 
     logger.info(
       lang.__('BINDING_CUSTOM_DOMAIN_TO_BUCKET', {
@@ -313,9 +308,7 @@ export const updateBucketResource = async (
       );
     }
 
-    const certificate = bucket.website.domain_certificate
-      ? await resolveBucketDomainCertificate(bucket.website.domain_certificate, context, client)
-      : undefined;
+    const certificate = await resolveBucketDomainCertificate(bucket, client);
 
     logger.info(
       lang.__('BINDING_CUSTOM_DOMAIN_TO_BUCKET', {

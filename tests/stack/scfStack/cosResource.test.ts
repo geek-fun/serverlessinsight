@@ -59,20 +59,6 @@ jest.mock('../../../src/common/logger', () => ({
   },
 }));
 
-jest.mock('../../../src/common/certificateResolver', () => ({
-  resolveUploadCertificate: jest.fn().mockReturnValue({
-    certificateName: 'my-cert',
-    certificateBody: 'CERT-BODY',
-    certificatePrivateKey: 'CERT-KEY',
-  }),
-  resolveReferenceCertificate: jest.fn(),
-  resolveCertificateDomain: jest.fn().mockResolvedValue({
-    certificateName: 'my-cert',
-    certificateBody: 'CERT-BODY',
-    certificatePrivateKey: 'CERT-KEY',
-  }),
-}));
-
 describe('CosResource', () => {
   const mockContext: Context = {
     stage: 'default',
@@ -158,23 +144,6 @@ describe('CosResource', () => {
         deployStatus: 1,
       });
 
-      const contextWithIac: Context = {
-        ...mockContext,
-        iac: {
-          version: '0.0.1',
-          app: 'test-app',
-          provider: { name: ProviderEnum.TENCENT, region: 'ap-guangzhou' },
-          service: 'test-service',
-          certificates: [
-            {
-              key: 'my_cert',
-              certificate_body: 'CERT-BODY',
-              private_key: 'CERT-KEY',
-            },
-          ],
-        },
-      };
-
       const domainBucket = {
         key: 'my_bucket',
         name: 'test-bucket',
@@ -184,11 +153,12 @@ describe('CosResource', () => {
           error_page: 'error.html',
           error_code: 404,
           domain: 'cdn.example.com',
-          domain_certificate: '${certificates.my_cert}',
+          domain_certificate_body: 'CERT-BODY',
+          domain_certificate_private_key: 'CERT-KEY',
         },
       };
 
-      await createBucketResource(contextWithIac, domainBucket, initialState);
+      await createBucketResource(mockContext, domainBucket, initialState);
 
       expect(mockCosOperations.createBucket).toHaveBeenCalled();
       expect(mockCosOperations.bindCustomDomain).toHaveBeenCalledWith(
@@ -196,7 +166,7 @@ describe('CosResource', () => {
         'cdn.example.com',
       );
       expect(mockSslOperations.uploadCertificate).toHaveBeenCalledWith(
-        'my-cert',
+        'cdn_example_com',
         'CERT-BODY',
         'CERT-KEY',
       );
@@ -242,23 +212,6 @@ describe('CosResource', () => {
         bucketDomainBound: false,
       });
 
-      const contextWithIac: Context = {
-        ...mockContext,
-        iac: {
-          version: '0.0.1',
-          app: 'test-app',
-          provider: { name: ProviderEnum.TENCENT, region: 'ap-guangzhou' },
-          service: 'test-service',
-          certificates: [
-            {
-              key: 'my_cert',
-              certificate_body: 'CERT-BODY',
-              private_key: 'CERT-KEY',
-            },
-          ],
-        },
-      };
-
       const domainBucket = {
         key: 'my_bucket',
         name: 'test-bucket',
@@ -268,11 +221,12 @@ describe('CosResource', () => {
           error_page: 'error.html',
           error_code: 404,
           domain: 'cdn.example.com',
-          domain_certificate: '${certificates.my_cert}',
+          domain_certificate_body: 'CERT-BODY',
+          domain_certificate_private_key: 'CERT-KEY',
         },
       };
 
-      await createBucketResource(contextWithIac, domainBucket, initialState);
+      await createBucketResource(mockContext, domainBucket, initialState);
 
       expect(mockCosOperations.bindCustomDomain).toHaveBeenCalled();
       expect(mockSslOperations.uploadCertificate).not.toHaveBeenCalled();
@@ -280,33 +234,8 @@ describe('CosResource', () => {
     });
 
     it('should reject certificate_id reference with TENCENT_CERT_REFERENCE_NOT_SUPPORTED', async () => {
-      const { resolveUploadCertificate } = jest.requireMock(
-        '../../../src/common/certificateResolver',
-      ) as { resolveUploadCertificate: jest.Mock };
-      resolveUploadCertificate.mockReturnValue({
-        certificateName: 'my-cert',
-        certificateBody: 'CERT-BODY',
-        certificatePrivateKey: 'CERT-KEY',
-      });
-
       mockCosOperations.createBucket.mockResolvedValue(undefined);
       mockCosOperations.getBucket.mockResolvedValue(mockBucketInfo);
-
-      const contextWithIac: Context = {
-        ...mockContext,
-        iac: {
-          version: '0.0.1',
-          app: 'test-app',
-          provider: { name: ProviderEnum.TENCENT, region: 'ap-guangzhou' },
-          service: 'test-service',
-          certificates: [
-            {
-              key: 'ref_cert',
-              certificate_id: '12345',
-            },
-          ],
-        },
-      };
 
       const domainBucket = {
         key: 'my_bucket',
@@ -317,13 +246,13 @@ describe('CosResource', () => {
           error_page: 'error.html',
           error_code: 404,
           domain: 'cdn.example.com',
-          domain_certificate: '${certificates.ref_cert}',
+          domain_certificate_id: '12345',
         },
       };
 
-      await expect(
-        createBucketResource(contextWithIac, domainBucket, initialState),
-      ).rejects.toThrow('certificate_id reference mode');
+      await expect(createBucketResource(mockContext, domainBucket, initialState)).rejects.toThrow(
+        'certificate_id reference mode',
+      );
     });
   });
 
@@ -343,40 +272,24 @@ describe('CosResource', () => {
         deployRecordId: 99,
       });
 
-      const contextWithIac: Context = {
-        ...mockContext,
-        iac: {
-          version: '0.0.1',
-          app: 'test-app',
-          provider: { name: ProviderEnum.TENCENT, region: 'ap-guangzhou' },
-          service: 'test-service',
-          certificates: [
-            {
-              key: 'my_cert',
-              certificate_body: 'CERT-BODY',
-              private_key: 'CERT-KEY',
-            },
-          ],
-        },
-      };
-
       const bucket = {
         key: 'test_bucket',
         name: 'test-bucket',
         website: {
           index: 'index.html',
           domain: 'cdn.example.com',
-          domain_certificate: '${certificates.my_cert}',
+          domain_certificate_body: 'CERT-BODY',
+          domain_certificate_private_key: 'CERT-KEY',
           code: './dist',
           error_page: 'error.html',
           error_code: 404,
         },
       };
 
-      await updateBucketResource(contextWithIac, bucket, initialState);
+      await updateBucketResource(mockContext, bucket, initialState);
 
       expect(mockSslOperations.uploadCertificate).toHaveBeenCalledWith(
-        'my-cert',
+        'cdn_example_com',
         'CERT-BODY',
         'CERT-KEY',
       );
