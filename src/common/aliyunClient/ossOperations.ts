@@ -65,12 +65,10 @@ type TxtRecordResult = {
   recordId?: string;
 };
 
-import { ResolvedCertificate } from '../certificateResolver';
-
-export type OssCnameCertificateConfig = Pick<
-  ResolvedCertificate,
-  'certificateBody' | 'certificatePrivateKey'
->;
+export type OssCnameCertificateConfig = {
+  certificateBody: string;
+  certificatePrivateKey: string;
+};
 
 type OssSdkClient = OSS;
 

@@ -16,14 +16,31 @@ const isStructuredDomain = (domain: unknown): domain is BucketWebsiteDomainConfi
 
 const parseWebsiteDomain = (domain: Resolvable<string> | BucketWebsiteDomainConfig | undefined) => {
   if (domain == null) {
-    return { domain: undefined, domain_certificate: undefined, domain_protocol: undefined };
+    return {
+      domain: undefined,
+      domain_certificate_id: undefined,
+      domain_certificate_body: undefined,
+      domain_certificate_private_key: undefined,
+      domain_protocol: undefined,
+    };
   }
   if (!isStructuredDomain(domain)) {
-    return { domain: String(domain), domain_certificate: undefined, domain_protocol: undefined };
+    return {
+      domain: String(domain),
+      domain_certificate_id: undefined,
+      domain_certificate_body: undefined,
+      domain_certificate_private_key: undefined,
+      domain_protocol: undefined,
+    };
   }
   return {
     domain: String(domain.domain_name),
-    domain_certificate: domain.certificate != null ? String(domain.certificate) : undefined,
+    domain_certificate_id:
+      domain.certificate_id != null ? String(domain.certificate_id) : undefined,
+    domain_certificate_body:
+      domain.certificate_body != null ? String(domain.certificate_body) : undefined,
+    domain_certificate_private_key:
+      domain.certificate_private_key != null ? String(domain.certificate_private_key) : undefined,
     domain_protocol:
       domain.protocol != null
         ? Array.isArray(domain.protocol)

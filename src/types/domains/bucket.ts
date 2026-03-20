@@ -2,7 +2,9 @@ import { Resolvable } from './resolvable';
 
 export type BucketWebsiteDomainConfig = {
   domain_name: Resolvable<string>;
-  certificate?: Resolvable<string>;
+  certificate_id?: Resolvable<string>;
+  certificate_body?: Resolvable<string>;
+  certificate_private_key?: Resolvable<string>;
   protocol?: Resolvable<string | string[]>;
 };
 
@@ -55,7 +57,9 @@ export type BucketDomain = {
   website?: {
     index: string;
     domain?: string;
-    domain_certificate?: string;
+    domain_certificate_id?: string;
+    domain_certificate_body?: string;
+    domain_certificate_private_key?: string;
     domain_protocol?: string | string[];
     code: string;
     error_page: string;

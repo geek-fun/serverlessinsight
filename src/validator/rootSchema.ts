@@ -96,9 +96,6 @@ export const rootSchema = {
     tables: {
       $ref: 'https://serverlessinsight.geekfun.club/schemas/tableschema.json',
     },
-    certificates: {
-      $ref: 'https://serverlessinsight.geekfun.club/schemas/certificateschema.json',
-    },
     backend: {
       type: 'object',
       properties: {

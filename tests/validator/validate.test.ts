@@ -597,117 +597,9 @@ describe('unit test for validate', () => {
   });
 
   describe('certificate validation', () => {
-    it('should pass validation for upload mode with certificate_body and private_key', () => {
+    it('should pass validation for event domain with certificate_body and certificate_private_key', () => {
       const validYaml = {
         ...jsonIac,
-        certificates: {
-          my_cert: {
-            certificate_body: '-----BEGIN CERTIFICATE-----\nMIIB...',
-            private_key: '-----BEGIN PRIVATE KEY-----\nMIIE...',
-          },
-        },
-      } as unknown as ServerlessIacRaw;
-      expect(validateYaml(validYaml)).toBe(true);
-    });
-
-    it('should pass validation for upload mode with optional chain', () => {
-      const validYaml = {
-        ...jsonIac,
-        certificates: {
-          my_cert: {
-            certificate_body: '-----BEGIN CERTIFICATE-----\nMIIB...',
-            private_key: '-----BEGIN PRIVATE KEY-----\nMIIE...',
-            chain: '-----BEGIN CERTIFICATE-----\nMIIC...',
-          },
-        },
-      } as unknown as ServerlessIacRaw;
-      expect(validateYaml(validYaml)).toBe(true);
-    });
-
-    it('should pass validation for reference mode with certificate_id', () => {
-      const validYaml = {
-        ...jsonIac,
-        certificates: {
-          my_cert: {
-            certificate_id: 'cas-abc123',
-          },
-        },
-      } as unknown as ServerlessIacRaw;
-      expect(validateYaml(validYaml)).toBe(true);
-    });
-
-    it('should fail when both certificate_body and certificate_id are provided', () => {
-      const invalidYaml = {
-        ...jsonIac,
-        certificates: {
-          my_cert: {
-            certificate_body: '-----BEGIN CERTIFICATE-----\nMIIB...',
-            private_key: '-----BEGIN PRIVATE KEY-----\nMIIE...',
-            certificate_id: 'cas-abc123',
-          },
-        },
-      } as unknown as ServerlessIacRaw;
-      expect(() => validateYaml(invalidYaml)).toThrow('Invalid yaml');
-    });
-
-    it('should fail when certificate_body is provided without private_key', () => {
-      const invalidYaml = {
-        ...jsonIac,
-        certificates: {
-          my_cert: {
-            certificate_body: '-----BEGIN CERTIFICATE-----\nMIIB...',
-          },
-        },
-      } as unknown as ServerlessIacRaw;
-      expect(() => validateYaml(invalidYaml)).toThrow('Invalid yaml');
-    });
-
-    it('should fail when private_key is provided without certificate_body', () => {
-      const invalidYaml = {
-        ...jsonIac,
-        certificates: {
-          my_cert: {
-            private_key: '-----BEGIN PRIVATE KEY-----\nMIIE...',
-          },
-        },
-      } as unknown as ServerlessIacRaw;
-      expect(() => validateYaml(invalidYaml)).toThrow('Invalid yaml');
-    });
-
-    it('should fail when unknown properties are provided in certificate', () => {
-      const invalidYaml = {
-        ...jsonIac,
-        certificates: {
-          my_cert: {
-            certificate_body: '-----BEGIN CERTIFICATE-----\nMIIB...',
-            private_key: '-----BEGIN PRIVATE KEY-----\nMIIE...',
-            unknown_field: 'value',
-          },
-        },
-      } as unknown as ServerlessIacRaw;
-      expect(() => validateYaml(invalidYaml)).toThrow('Invalid yaml');
-    });
-
-    it('should pass validation with template references in certificate values', () => {
-      const validYaml = {
-        ...jsonIac,
-        certificates: {
-          my_cert: {
-            certificate_id: '${vars.cert_id}',
-          },
-        },
-      } as unknown as ServerlessIacRaw;
-      expect(validateYaml(validYaml)).toBe(true);
-    });
-
-    it('should pass validation with ${certificates.xxx} template ref in event domain', () => {
-      const validYaml = {
-        ...jsonIac,
-        certificates: {
-          my_cert: {
-            certificate_id: 'cas-abc123',
-          },
-        },
         events: {
           gateway_event: {
             type: 'API_GATEWAY',
@@ -717,7 +609,122 @@ describe('unit test for validate', () => {
             ],
             domain: {
               domain_name: 'example.com',
-              certificate: '${certificates.my_cert}',
+              certificate_body: '-----BEGIN CERTIFICATE-----\nMIIB...',
+              certificate_private_key: '-----BEGIN PRIVATE KEY-----\nMIIE...',
+            },
+          },
+        },
+      } as unknown as ServerlessIacRaw;
+      expect(validateYaml(validYaml)).toBe(true);
+    });
+
+    it('should pass validation for event domain with certificate_id', () => {
+      const validYaml = {
+        ...jsonIac,
+        events: {
+          gateway_event: {
+            type: 'API_GATEWAY',
+            name: 'test-gateway',
+            triggers: [
+              { method: 'GET', path: '/api/hello', backend: '${functions.insight_poc_fn}' },
+            ],
+            domain: {
+              domain_name: 'example.com',
+              certificate_id: 'cas-abc123',
+            },
+          },
+        },
+      } as unknown as ServerlessIacRaw;
+      expect(validateYaml(validYaml)).toBe(true);
+    });
+
+    it('should fail when both certificate_body and certificate_id are provided in event domain', () => {
+      const invalidYaml = {
+        ...jsonIac,
+        events: {
+          gateway_event: {
+            type: 'API_GATEWAY',
+            name: 'test-gateway',
+            triggers: [
+              { method: 'GET', path: '/api/hello', backend: '${functions.insight_poc_fn}' },
+            ],
+            domain: {
+              domain_name: 'example.com',
+              certificate_body: '-----BEGIN CERTIFICATE-----\nMIIB...',
+              certificate_private_key: '-----BEGIN PRIVATE KEY-----\nMIIE...',
+              certificate_id: 'cas-abc123',
+            },
+          },
+        },
+      } as unknown as ServerlessIacRaw;
+      expect(() => validateYaml(invalidYaml)).toThrow('Invalid yaml');
+    });
+
+    it('should fail when certificate_body is provided without certificate_private_key in event domain', () => {
+      const invalidYaml = {
+        ...jsonIac,
+        events: {
+          gateway_event: {
+            type: 'API_GATEWAY',
+            name: 'test-gateway',
+            triggers: [
+              { method: 'GET', path: '/api/hello', backend: '${functions.insight_poc_fn}' },
+            ],
+            domain: {
+              domain_name: 'example.com',
+              certificate_body: '-----BEGIN CERTIFICATE-----\nMIIB...',
+            },
+          },
+        },
+      } as unknown as ServerlessIacRaw;
+      expect(() => validateYaml(invalidYaml)).toThrow('Invalid yaml');
+    });
+
+    it('should fail when certificate_private_key is provided without certificate_body in event domain', () => {
+      const invalidYaml = {
+        ...jsonIac,
+        events: {
+          gateway_event: {
+            type: 'API_GATEWAY',
+            name: 'test-gateway',
+            triggers: [
+              { method: 'GET', path: '/api/hello', backend: '${functions.insight_poc_fn}' },
+            ],
+            domain: {
+              domain_name: 'example.com',
+              certificate_private_key: '-----BEGIN PRIVATE KEY-----\nMIIE...',
+            },
+          },
+        },
+      } as unknown as ServerlessIacRaw;
+      expect(() => validateYaml(invalidYaml)).toThrow('Invalid yaml');
+    });
+
+    it('should fail when top-level certificates block is provided', () => {
+      const invalidYaml = {
+        ...jsonIac,
+        certificates: {
+          my_cert: {
+            certificate_id: 'cas-abc123',
+          },
+        },
+      } as unknown as ServerlessIacRaw;
+      expect(() => validateYaml(invalidYaml)).toThrow('Invalid yaml');
+    });
+
+    it('should pass validation with template references in event domain cert fields', () => {
+      const validYaml = {
+        ...jsonIac,
+        events: {
+          gateway_event: {
+            type: 'API_GATEWAY',
+            name: 'test-gateway',
+            triggers: [
+              { method: 'GET', path: '/api/hello', backend: '${functions.insight_poc_fn}' },
+            ],
+            domain: {
+              domain_name: 'example.com',
+              certificate_id: '${vars.cert_id}',
             },
           },
         },
@@ -745,7 +752,7 @@ describe('unit test for validate', () => {
       expect(validateYaml(validYaml)).toBe(true);
     });
 
-    it('should pass validation with structured domain in bucket website', () => {
+    it('should pass validation with structured domain and cert fields in bucket website', () => {
       const validYaml = {
         ...jsonIac,
         buckets: {
@@ -755,7 +762,8 @@ describe('unit test for validate', () => {
               code: './dist',
               domain: {
                 domain_name: 'static.example.com',
-                certificate: '${certificates.my_cert}',
+                certificate_body: './certs/server.crt',
+                certificate_private_key: './certs/server.key',
                 protocol: 'HTTPS',
               },
             },
@@ -779,6 +787,27 @@ describe('unit test for validate', () => {
         },
       } as unknown as ServerlessIacRaw;
       expect(validateYaml(validYaml)).toBe(true);
+    });
+
+    it('should fail when both certificate_id and certificate_body are provided in bucket domain', () => {
+      const invalidYaml = {
+        ...jsonIac,
+        buckets: {
+          my_bucket: {
+            name: 'test-bucket',
+            website: {
+              code: './dist',
+              domain: {
+                domain_name: 'static.example.com',
+                certificate_id: 'cas-abc123',
+                certificate_body: './certs/server.crt',
+                certificate_private_key: './certs/server.key',
+              },
+            },
+          },
+        },
+      } as unknown as ServerlessIacRaw;
+      expect(() => validateYaml(invalidYaml)).toThrow('Invalid yaml');
     });
   });
 });

@@ -27,7 +27,7 @@ describe('Apigw Types', () => {
     ],
     domain: {
       domain_name: 'api.example.com',
-      certificate_name: 'test-cert',
+      certificate_id: 'test-cert-id',
     },
   };
 

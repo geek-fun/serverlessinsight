@@ -527,11 +527,13 @@ export const zhCN = {
   CERT_READING_FILE: '正在读取证书文件: {{filePath}}',
   CERT_PARSING_CERTIFICATES: '正在解析证书配置',
   CERT_RESOLVING_REFERENCE: '正在解析域名 "{{domain}}" 的证书引用 "{{reference}}"',
-  CERT_REFERENCE_NOT_FOUND:
-    '无法解析证书引用 "{{reference}}"。请确保它已在 certificates 块中定义。',
+  CERT_REFERENCE_NOT_FOUND: '无法解析证书引用 "{{reference}}"。',
   CERT_RESOLVED_UPLOAD: '证书 "{{name}}" 解析为上传模式（提供了 PEM 文件）',
   CERT_RESOLVED_REFERENCE: '证书 "{{name}}" 解析为引用模式（certificate_id: {{certId}}）',
   CERT_READING_PEM_FILES: '正在读取证书 "{{name}}" 的 PEM 文件',
+
+  CERT_INLINE_PEM_WARNING:
+    '安全警告：certificate_private_key 似乎包含内联 PEM 内容。建议使用文件路径（例如 ./certs/server.key）以提高安全性。',
 
   // CAS（证书授权服务）消息
   CAS_UPLOADING_CERT: '正在上传证书 "{{name}}" 到 CAS',

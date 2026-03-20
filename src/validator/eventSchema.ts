@@ -24,10 +24,9 @@ export const eventSchema = {
           required: ['domain_name'],
           properties: {
             domain_name: { type: 'string' },
-            certificate_name: { type: 'string' },
+            certificate_id: { type: 'string' },
             certificate_body: { type: 'string' },
             certificate_private_key: { type: 'string' },
-            certificate: { type: 'string' },
             protocol: {
               oneOf: [
                 { type: 'string', enum: ['HTTP', 'HTTPS'] },
@@ -40,6 +39,30 @@ export const eventSchema = {
               ],
             },
           },
+          oneOf: [
+            {
+              not: {
+                anyOf: [
+                  { required: ['certificate_id'] },
+                  { required: ['certificate_body'] },
+                  { required: ['certificate_private_key'] },
+                ],
+              },
+            },
+            {
+              required: ['certificate_body', 'certificate_private_key'],
+              not: { required: ['certificate_id'] },
+            },
+            {
+              required: ['certificate_id'],
+              not: {
+                anyOf: [
+                  { required: ['certificate_body'] },
+                  { required: ['certificate_private_key'] },
+                ],
+              },
+            },
+          ],
         },
       },
       required: ['name', 'type', 'triggers'],
