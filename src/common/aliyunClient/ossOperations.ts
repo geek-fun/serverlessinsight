@@ -14,6 +14,13 @@ import { DnsOperations } from './dnsOperations';
 import { logger } from '../logger';
 import { lang } from '../../lang';
 import { extractMainDomain, extractHostRecord } from '../domainUtils';
+import { sleep } from '../retryUtils';
+import {
+  DOMAIN_BIND_MAX_RETRIES,
+  DOMAIN_BIND_RETRY_DELAY_MS,
+  DNS_PROPAGATION_MAX_ATTEMPTS,
+  DNS_PROPAGATION_DELAY_MS,
+} from '../constants';
 
 export type OssBucketConfig = {
   bucketName: string;
@@ -33,7 +40,29 @@ export type OssCnameInfo = {
   domain: string;
   cname: string;
   dnsRecordId?: string;
+  txtRecordId?: string;
   bucketCnameBound?: boolean;
+};
+
+export type OssCnameTokenInfo = {
+  bucket: string;
+  cname: string;
+  token: string;
+  expireTime: string;
+};
+
+type PutCnameResult = {
+  success: boolean;
+  needVerification: boolean;
+};
+
+type VerificationResult = PutCnameResult & {
+  txtRecordId?: string;
+};
+
+type TxtRecordResult = {
+  success: boolean;
+  recordId?: string;
 };
 
 import { ResolvedCertificate } from '../certificateResolver';
@@ -47,6 +76,27 @@ type OssSdkClient = OSS;
 
 const escapeXmlText = (text: string): string =>
   text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+
+const toCamelCase = (str: string): string => str.charAt(0).toLowerCase() + str.slice(1);
+
+const parseXmlResponse = <T>(xml: string, tagName: string): T | null => {
+  try {
+    const containerRegex = new RegExp(`<${tagName}>([\\s\\S]*?)<\\/${tagName}>`);
+    const containerMatch = containerRegex.exec(xml);
+    if (!containerMatch) return null;
+
+    const innerXml = containerMatch[1];
+    const result: Record<string, string> = {};
+    const childRegex = /<(\w+)>([^<]*)<\/\1>/g;
+    let match: RegExpExecArray | null;
+    while ((match = childRegex.exec(innerXml)) !== null) {
+      result[toCamelCase(match[1])] = match[2].trim();
+    }
+    return Object.keys(result).length > 0 ? (result as T) : null;
+  } catch {
+    return null;
+  }
+};
 
 export const createOssOperations = (
   ossClient: OssSdkClient,
@@ -71,11 +121,50 @@ export const createOssOperations = (
     </CertificateConfiguration>`;
   };
 
+  const createCnameToken = async (
+    bucketName: string,
+    domain: string,
+  ): Promise<OssCnameTokenInfo> => {
+    useBucket(bucketName);
+    const xml = `<?xml version="1.0" encoding="UTF-8"?>
+<BucketCnameConfiguration>
+  <Cname>
+    <Domain>${escapeXmlText(domain)}</Domain>
+  </Cname>
+</BucketCnameConfiguration>`;
+
+    const params = {
+      method: 'POST',
+      bucket: bucketName,
+      subres: { cname: '', comp: 'token' },
+      headers: {
+        'Content-Type': 'application/xml',
+      },
+      content: xml,
+      successStatuses: [200],
+    };
+
+    const response = await ossRequest(ossClient, params);
+    const responseXml = (response as { data?: string }).data || '';
+    const parsed = parseXmlResponse<OssCnameTokenInfo>(responseXml, 'CnameToken');
+
+    if (!parsed || !parsed.token) {
+      throw new Error(lang.__('OSS_CNAME_TOKEN_CREATE_FAILED', { domain }));
+    }
+
+    return {
+      bucket: bucketName,
+      cname: domain,
+      token: parsed.token,
+      expireTime: parsed.expireTime || '',
+    };
+  };
+
   const putBucketCname = async (
     bucketName: string,
     domain: string,
     certificate?: OssCnameCertificateConfig,
-  ): Promise<boolean> => {
+  ): Promise<PutCnameResult> => {
     useBucket(bucketName);
     const certXml = buildCertificateXml(certificate);
     const xml = `<?xml version="1.0" encoding="UTF-8"?>
@@ -99,23 +188,23 @@ export const createOssOperations = (
       };
       await (ossClient as unknown as { request: (p: unknown) => Promise<unknown> }).request(params);
       logger.info(lang.__('OSS_BUCKET_CNAME_BOUND', { domain }));
-      return true;
+      return { success: true, needVerification: false };
     } catch (error) {
       const err = error as { code?: string; message?: string; status?: number };
       if (err.code === 'CnameAlreadyExists' || err.status === 409) {
         logger.info(lang.__('OSS_BUCKET_CNAME_EXISTS', { domain }));
-        return true;
+        return { success: true, needVerification: false };
       }
       if (err.code === 'NeedVerifyDomainOwnership') {
         logger.warn(lang.__('OSS_BUCKET_CNAME_NEED_VERIFY', { domain }));
-        return false;
+        return { success: false, needVerification: true };
       }
       if (certificate) {
         // eslint-disable-next-line preserve-caught-error
         throw new Error(lang.__('OSS_BUCKET_CNAME_BIND_FAILED', { error: String(error) }));
       }
       logger.warn(lang.__('OSS_BUCKET_CNAME_BIND_FAILED', { error: String(error) }));
-      return false;
+      return { success: false, needVerification: false };
     }
   };
 
@@ -235,7 +324,24 @@ export const createOssOperations = (
     const hostRecord = extractHostRecord(domain, mainDomain);
     const ossEndpoint = getOssEndpoint(bucketName);
 
-    const bucketCnameBound = await putBucketCname(bucketName, domain, certificate);
+    let cnameResult: PutCnameResult | VerificationResult = await putBucketCname(
+      bucketName,
+      domain,
+      certificate,
+    );
+    let txtRecordId: string | undefined;
+
+    if (cnameResult.needVerification) {
+      const verificationResult = await handleDomainOwnershipVerification(
+        bucketName,
+        domain,
+        certificate,
+      );
+      cnameResult = verificationResult;
+      txtRecordId = verificationResult.txtRecordId;
+    }
+
+    const bucketCnameBound = cnameResult.success;
     if (certificate && bucketCnameBound) {
       logger.info(lang.__('OSS_BUCKET_CERT_BOUND', { domain }));
     }
@@ -243,11 +349,244 @@ export const createOssOperations = (
 
     if (!dnsOps) {
       logger.warn(lang.__('OSS_DNS_MANUAL_CONFIG_REQUIRED', { domain, cname: ossEndpoint }));
-      return { domain, cname: ossEndpoint, bucketCnameBound };
+      return { domain, cname: ossEndpoint, bucketCnameBound, txtRecordId };
     }
 
+    const result = await createOrFindDnsCnameRecord(
+      domain,
+      mainDomain,
+      hostRecord,
+      ossEndpoint,
+      bucketCnameBound,
+    );
+    return { ...result, txtRecordId };
+  };
+
+  const logOssVerificationInstructions = (
+    domain: string,
+    fullTxtRecord: string,
+    token: string,
+  ): void => {
+    const mainDomain = extractMainDomain(domain);
+    const separator = '='.repeat(80);
+    logger.error(
+      `\n${separator}\n${lang.__('OSS_VERIFICATION_HEADER')}\n${separator}\n${lang.__('OSS_VERIFICATION_DOMAIN', { domain })}\n\n${lang.__('OSS_VERIFICATION_INSTRUCTIONS')}\n\n${lang.__('OSS_VERIFICATION_RECORD_NAME', { name: `${fullTxtRecord}.${mainDomain}` })}\n${lang.__('OSS_VERIFICATION_RECORD_TYPE')}\n${lang.__('OSS_VERIFICATION_RECORD_VALUE', { value: token })}`,
+    );
+    logger.error(
+      `\n${separator}\n${lang.__('OSS_VERIFICATION_NEXT_STEPS')}\n${lang.__('OSS_VERIFICATION_STEP1')}\n${lang.__('OSS_VERIFICATION_STEP2')}\n${separator}\n`,
+    );
+  };
+
+  const handleDomainOwnershipVerification = async (
+    bucketName: string,
+    domain: string,
+    certificate?: OssCnameCertificateConfig,
+  ): Promise<VerificationResult> => {
+    logger.info(lang.__('OSS_CNAME_CREATING_VERIFICATION_TOKEN', { domain }));
+
+    const tokenInfo = await createCnameToken(bucketName, domain);
+    const txtRecordName = '_dnsauth';
+    const hostRecord = extractHostRecord(domain, extractMainDomain(domain));
+    const fullTxtRecord = hostRecord ? `${txtRecordName}.${hostRecord}` : txtRecordName;
+
+    logger.info(
+      lang.__('OSS_CNAME_VERIFICATION_TOKEN_CREATED', {
+        domain,
+        txtRecord: fullTxtRecord,
+        token: tokenInfo.token,
+      }),
+    );
+
+    const txtResult = await addVerificationTxtRecord(
+      extractMainDomain(domain),
+      fullTxtRecord,
+      tokenInfo.token,
+    );
+
+    if (txtResult.success) {
+      await pollTxtDnsPropagation(extractMainDomain(domain), fullTxtRecord, tokenInfo.token);
+      const retryResult = await retryCnameBindingAfterVerification(bucketName, domain, certificate);
+      return { ...retryResult, txtRecordId: txtResult.recordId };
+    }
+
+    logOssVerificationInstructions(domain, fullTxtRecord, tokenInfo.token);
+    throw new Error(
+      lang.__('OSS_CNAME_MANUAL_VERIFICATION_REQUIRED', {
+        domain,
+        txtRecord: `${fullTxtRecord}.${extractMainDomain(domain)}`,
+        token: tokenInfo.token,
+      }),
+    );
+  };
+
+  const addVerificationTxtRecord = async (
+    mainDomain: string,
+    fullTxtRecord: string,
+    token: string,
+  ): Promise<TxtRecordResult> => {
+    if (!dnsOps) return { success: false };
+
     try {
-      const existingRecords = await dnsOps.describeDomainRecords(mainDomain, hostRecord);
+      const existingRecords = await dnsOps.describeDomainRecords(mainDomain, fullTxtRecord);
+      const existingRecord = existingRecords.find(
+        (record) => record.rr === fullTxtRecord && record.type === 'TXT' && record.value === token,
+      );
+
+      if (existingRecord) {
+        logger.info(
+          lang.__('OSS_CNAME_TXT_RECORD_ALREADY_EXISTS', {
+            txtRecord: `${fullTxtRecord}.${mainDomain}`,
+          }),
+        );
+        return { success: true, recordId: existingRecord.recordId };
+      }
+
+      const recordId = await dnsOps.addDomainRecord({
+        domainName: mainDomain,
+        rr: fullTxtRecord,
+        type: 'TXT',
+        value: token,
+        ttl: 600,
+      });
+      logger.info(
+        lang.__('OSS_CNAME_TXT_RECORD_CREATED', {
+          txtRecord: `${fullTxtRecord}.${mainDomain}`,
+        }),
+      );
+      return { success: true, recordId };
+    } catch (error) {
+      logger.warn(
+        lang.__('OSS_CNAME_TXT_RECORD_CREATE_FAILED', {
+          txtRecord: `${fullTxtRecord}.${mainDomain}`,
+          error: String(error),
+        }),
+      );
+      return { success: false };
+    }
+  };
+
+  const pollTxtDnsPropagation = async (
+    mainDomain: string,
+    fullTxtRecord: string,
+    token: string,
+  ): Promise<boolean> => {
+    if (!dnsOps) return false;
+
+    const checkPropagation = async (): Promise<boolean> => {
+      try {
+        const currentRecords = await dnsOps!.describeDomainRecords(mainDomain, fullTxtRecord);
+        return currentRecords.some(
+          (record) =>
+            record.rr === fullTxtRecord &&
+            record.type === 'TXT' &&
+            record.value === token &&
+            record.status === 'ENABLE',
+        );
+      } catch (checkError) {
+        logger.warn(lang.__('OSS_CNAME_DNS_CHECK_FAILED', { error: String(checkError) }));
+        return false;
+      }
+    };
+
+    logger.info(lang.__('OSS_CNAME_DNS_PROPAGATION_WAITING', { domain: mainDomain }));
+
+    for (let attempt = 1; attempt <= DNS_PROPAGATION_MAX_ATTEMPTS; attempt++) {
+      logger.info(
+        lang.__('OSS_CNAME_DNS_PROPAGATION_CHECK', {
+          attempt: String(attempt),
+          max: String(DNS_PROPAGATION_MAX_ATTEMPTS),
+        }),
+      );
+      await sleep(DNS_PROPAGATION_DELAY_MS);
+
+      const propagated = await checkPropagation();
+      if (propagated) {
+        logger.info(
+          lang.__('OSS_CNAME_DNS_PROPAGATION_VERIFIED', {
+            domain: mainDomain,
+            minutes: String(attempt),
+          }),
+        );
+        return true;
+      }
+    }
+
+    logger.warn(
+      lang.__('OSS_CNAME_DNS_PROPAGATION_TIMEOUT', {
+        max: String(DNS_PROPAGATION_MAX_ATTEMPTS),
+      }),
+    );
+    return false;
+  };
+
+  const retryCnameBindingAfterVerification = async (
+    bucketName: string,
+    domain: string,
+    certificate?: OssCnameCertificateConfig,
+  ): Promise<PutCnameResult> => {
+    logger.info(lang.__('OSS_CNAME_WAITING_FOR_VERIFICATION', { domain }));
+
+    for (let attempt = 1; attempt <= DOMAIN_BIND_MAX_RETRIES; attempt++) {
+      if (attempt > 1) {
+        logger.info(
+          lang.__('RETRY_ATTEMPT', {
+            operation: 'domain binding',
+            attempt: String(attempt),
+            max: String(DOMAIN_BIND_MAX_RETRIES),
+          }),
+        );
+      }
+
+      await sleep(DOMAIN_BIND_RETRY_DELAY_MS);
+
+      try {
+        const cnameResult = await putBucketCname(bucketName, domain, certificate);
+
+        if (cnameResult.success) {
+          return cnameResult;
+        }
+
+        if (!cnameResult.needVerification) {
+          return cnameResult;
+        }
+      } catch (error) {
+        if (attempt === DOMAIN_BIND_MAX_RETRIES) {
+          throw error;
+        }
+        logger.warn(
+          lang.__('RETRY_ATTEMPT_FAILED', {
+            operation: 'domain binding',
+            attempt: String(attempt),
+            max: String(DOMAIN_BIND_MAX_RETRIES),
+            error: String(error),
+          }),
+        );
+      }
+    }
+
+    const hostRecord = extractHostRecord(domain, extractMainDomain(domain));
+    const txtRecordName = '_dnsauth';
+    const fullTxtRecord = hostRecord ? `${txtRecordName}.${hostRecord}` : txtRecordName;
+
+    logger.warn(
+      lang.__('OSS_CNAME_VERIFICATION_RETRY_FAILED', {
+        domain,
+        txtRecord: `${fullTxtRecord}.${extractMainDomain(domain)}`,
+      }),
+    );
+
+    return { success: false, needVerification: true };
+  };
+
+  const createOrFindDnsCnameRecord = async (
+    domain: string,
+    mainDomain: string,
+    hostRecord: string,
+    ossEndpoint: string,
+    bucketCnameBound: boolean,
+  ): Promise<OssCnameInfo> => {
+    try {
+      const existingRecords = await dnsOps!.describeDomainRecords(mainDomain, hostRecord);
       const existingRecord = existingRecords.find(
         (record) =>
           record.rr === hostRecord && record.type === 'CNAME' && record.value === ossEndpoint,
@@ -263,7 +602,7 @@ export const createOssOperations = (
         };
       }
 
-      const recordId = await dnsOps.addDomainRecord({
+      const recordId = await dnsOps!.addDomainRecord({
         domainName: mainDomain,
         rr: hostRecord,
         type: 'CNAME',
@@ -317,19 +656,31 @@ export const createOssOperations = (
     bucketName: string,
     domain: string,
     dnsRecordId?: string,
+    txtRecordId?: string,
   ): Promise<void> => {
     await removeCorsRuleForDomain(bucketName, domain);
     await deleteBucketCname(bucketName, domain);
 
-    if (!dnsOps || !dnsRecordId || dnsRecordId === 'existing') {
-      return;
-    }
+    if (dnsOps) {
+      if (dnsRecordId && dnsRecordId !== 'existing') {
+        try {
+          await dnsOps.deleteDomainRecord(dnsRecordId);
+          logger.info(lang.__('OSS_DNS_CNAME_DELETED', { domain }));
+        } catch (error) {
+          logger.warn(lang.__('OSS_DNS_CNAME_DELETE_FAILED', { domain, error: String(error) }));
+        }
+      }
 
-    try {
-      await dnsOps.deleteDomainRecord(dnsRecordId);
-      logger.info(lang.__('OSS_DNS_CNAME_DELETED', { domain }));
-    } catch (error) {
-      logger.warn(lang.__('OSS_DNS_CNAME_DELETE_FAILED', { domain, error: String(error) }));
+      if (txtRecordId) {
+        try {
+          await dnsOps.deleteDomainRecord(txtRecordId);
+          logger.info(lang.__('OSS_DNS_TXT_RECORD_DELETED', { domain }));
+        } catch (error) {
+          logger.warn(
+            lang.__('OSS_DNS_TXT_RECORD_DELETE_FAILED', { domain, error: String(error) }),
+          );
+        }
+      }
     }
   };
 
@@ -596,5 +947,7 @@ export const createOssOperations = (
     unbindCustomDomain,
 
     getOssEndpoint,
+
+    createCnameToken,
   };
 };

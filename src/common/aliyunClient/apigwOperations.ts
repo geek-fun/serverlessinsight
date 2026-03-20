@@ -15,6 +15,7 @@ import {
   APIGW_DNS_PUBLIC_RESOLUTION_MAX_ATTEMPTS,
   APIGW_DNS_PUBLIC_RESOLUTION_DELAY_MS,
 } from '../constants';
+import { sleep } from '../retryUtils';
 
 type ApigwSdkClient = CloudApiClient;
 type DnsSdkClient = DnsClient;
@@ -145,8 +146,6 @@ export type ApigwCustomDomainConfig = {
 const removeUndefined = <T extends Record<string, unknown>>(obj: T): T => {
   return Object.fromEntries(Object.entries(obj).filter(([, value]) => value !== undefined)) as T;
 };
-
-const sleep = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));
 
 export const isNetworkTimeoutError = (error: unknown): boolean => {
   if (!error || typeof error !== 'object') return false;

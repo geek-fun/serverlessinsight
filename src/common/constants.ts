@@ -17,9 +17,17 @@ export const DEFAULT_LOCK_TIMEOUT = 10 * 60 * 1000; // 10 minutes
 export const DEFAULT_LOCK_RETRY_DELAY = 2000; // 2 seconds
 export const STALE_LOCK_THRESHOLD = 60 * 60 * 1000; // 1 hour
 
-// API Gateway domain binding
-export const APIGW_DOMAIN_BIND_MAX_RETRIES = 5;
-export const APIGW_DOMAIN_BIND_RETRY_DELAY_MS = 30_000; // 30 seconds
+// Shared domain binding retry configuration (used by API Gateway, OSS, and future resources)
+export const DOMAIN_BIND_MAX_RETRIES = 5;
+export const DOMAIN_BIND_RETRY_DELAY_MS = 30_000; // 30 seconds
+
+// Shared DNS propagation polling configuration (used by API Gateway, OSS, and future resources)
+export const DNS_PROPAGATION_MAX_ATTEMPTS = 10;
+export const DNS_PROPAGATION_DELAY_MS = 60_000; // 1 minute
+
+// API Gateway domain binding (aliases for shared constants)
+export const APIGW_DOMAIN_BIND_MAX_RETRIES = DOMAIN_BIND_MAX_RETRIES;
+export const APIGW_DOMAIN_BIND_RETRY_DELAY_MS = DOMAIN_BIND_RETRY_DELAY_MS;
 export const APIGW_DNS_PUBLIC_RESOLUTION_MAX_ATTEMPTS = 10;
 export const APIGW_DNS_PUBLIC_RESOLUTION_DELAY_MS = 30_000; // 30 seconds
 

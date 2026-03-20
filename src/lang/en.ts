@@ -354,6 +354,43 @@ export const en = {
   OSS_BUCKET_CNAME_UNBIND_FAILED: 'Failed to unbind bucket CNAME: {{error}}',
   OSS_BUCKET_CNAME_NEED_VERIFY:
     'Domain ownership verification required. Please add TXT record in DNS console, then retry.',
+  OSS_CNAME_TOKEN_CREATE_FAILED:
+    'Failed to create CnameToken for domain ownership verification: {{domain}}',
+  OSS_CNAME_CREATING_VERIFICATION_TOKEN: 'Creating verification token for domain: {{domain}}',
+  OSS_CNAME_VERIFICATION_TOKEN_CREATED:
+    'Verification token created for domain {{domain}}. TXT record: {{txtRecord}}, Token: {{token}}',
+  OSS_CNAME_TXT_RECORD_CREATED:
+    'Created TXT record for domain ownership verification: {{txtRecord}}',
+  OSS_CNAME_TXT_RECORD_ALREADY_EXISTS: 'TXT verification record already exists: {{txtRecord}}',
+  OSS_CNAME_TXT_RECORD_CREATE_FAILED:
+    'Failed to create TXT record {{txtRecord}}: {{error}}. Please add manually.',
+  OSS_CNAME_WAITING_FOR_VERIFICATION:
+    'Waiting for domain ownership verification to propagate for: {{domain}}',
+  OSS_CNAME_DNS_PROPAGATION_WAITING:
+    'Waiting for TXT record DNS propagation for domain: {{domain}}',
+  OSS_CNAME_DNS_PROPAGATION_CHECK:
+    'Checking TXT record DNS propagation (attempt {{attempt}}/{{max}}, waiting 1 minute)...',
+  OSS_CNAME_DNS_PROPAGATION_VERIFIED:
+    'TXT record DNS propagation verified for domain: {{domain}} after {{minutes}} minute(s)',
+  OSS_CNAME_DNS_PROPAGATION_TIMEOUT:
+    'TXT record DNS propagation could not be verified after {{max}} attempts. Proceeding with binding retry anyway...',
+  OSS_CNAME_DNS_CHECK_FAILED: 'TXT record DNS propagation check failed: {{error}}',
+  OSS_CNAME_VERIFICATION_RETRY_FAILED:
+    'Domain ownership verification pending. Please add TXT record: {{txtRecord}} and retry deployment.',
+  OSS_CNAME_MANUAL_VERIFICATION_REQUIRED:
+    'Manual domain ownership verification required for {{domain}}. ' +
+    'Please add TXT record: {{txtRecord}} with value: {{token}}, then retry deployment.',
+  OSS_VERIFICATION_HEADER: 'OSS Domain Ownership Verification Required',
+  OSS_VERIFICATION_DOMAIN: 'Domain: {{domain}}',
+  OSS_VERIFICATION_INSTRUCTIONS: 'To verify domain ownership, add the following TXT DNS record:',
+  OSS_VERIFICATION_RECORD_NAME: '  Record Name: {{name}}',
+  OSS_VERIFICATION_RECORD_TYPE: '  Record Type: TXT',
+  OSS_VERIFICATION_RECORD_VALUE: '  Record Value: {{value}}',
+  OSS_VERIFICATION_NEXT_STEPS: 'After adding the TXT record:',
+  OSS_VERIFICATION_STEP1: '1. Wait 5-10 minutes for DNS propagation',
+  OSS_VERIFICATION_STEP2: '2. Run the deploy command again',
+  OSS_DNS_TXT_RECORD_DELETED: 'Deleted DNS TXT verification record for domain: {{domain}}',
+  OSS_DNS_TXT_RECORD_DELETE_FAILED: 'Failed to delete DNS TXT record for {{domain}}: {{error}}',
   OSS_BUCKET_CERT_BINDING:
     'Binding SSL certificate to custom domain {{domain}} on bucket {{bucketName}}',
   OSS_BUCKET_CERT_BOUND: 'SSL certificate bound to custom domain: {{domain}}',
@@ -592,4 +629,10 @@ export const en = {
   // Protocol messages
   PROTOCOL_INFERRED_REDIRECT:
     'Protocol "{{protocol}}" inferred HTTP-to-HTTPS redirect: {{redirect}}',
+
+  // Retry utility messages
+  RETRY_ATTEMPT: 'Retrying {{operation}} (attempt {{attempt}}/{{max}})...',
+  RETRY_ATTEMPT_FAILED: '{{operation}} attempt {{attempt}}/{{max}} failed: {{error}}. Retrying...',
+  RETRY_ALL_ATTEMPTS_FAILED: '{{operation}} failed after {{max}} attempts: {{error}}',
+  RETRY_UNEXPECTED_FAILURE: '{{operation}} failed unexpectedly',
 };
