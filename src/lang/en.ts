@@ -627,7 +627,9 @@ export const en = {
     'Deploying SSL certificate to COS bucket domain: {{domain}} (bucket: {{bucketName}})',
   COS_BUCKET_CERT_DEPLOYED: 'SSL certificate deployed to COS bucket domain: {{domain}}',
   TENCENT_CERT_REFERENCE_NOT_SUPPORTED:
-    'Certificate "{{name}}" uses certificate_id reference mode which is not yet supported for Tencent Cloud. Use certificate_body and private_key instead.',
+    'Certificate "{{name}}" uses certificate_id reference mode which is not yet supported for Tencent Cloud. Use certificate_body and certificate_private_key instead.',
+  BUCKET_DOMAIN_REQUIRED_FOR_CERT:
+    'Bucket "{{name}}" has certificate configuration but no domain is set. A domain is required when providing certificate information.',
 
   // Protocol messages
   PROTOCOL_INFERRED_REDIRECT:

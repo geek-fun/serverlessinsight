@@ -166,7 +166,7 @@ describe('CosResource', () => {
         'cdn.example.com',
       );
       expect(mockSslOperations.uploadCertificate).toHaveBeenCalledWith(
-        'my_bucket-default-cos',
+        'cdn_example_com',
         'CERT-BODY',
         'CERT-KEY',
       );
@@ -289,7 +289,7 @@ describe('CosResource', () => {
       await updateBucketResource(mockContext, bucket, initialState);
 
       expect(mockSslOperations.uploadCertificate).toHaveBeenCalledWith(
-        'test_bucket-default-cos',
+        'cdn_example_com',
         'CERT-BODY',
         'CERT-KEY',
       );
