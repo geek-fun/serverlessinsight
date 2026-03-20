@@ -55,6 +55,19 @@ describe('casOperations', () => {
       );
     });
 
+    it('should accept a numeric certificate ID (YAML parses unquoted integers as numbers)', async () => {
+      mockGetUserCertificateDetail.mockResolvedValue({
+        body: { id: 24019487, name: 'my-cert', cert: 'CERT', key: 'KEY' },
+      });
+
+      const result = await operations.getCertificate(24019487 as unknown as string);
+
+      expect(result).not.toBeNull();
+      expect(mockGetUserCertificateDetail).toHaveBeenCalledWith(
+        expect.objectContaining({ certId: 24019487 }),
+      );
+    });
+
     it('should return certificate info for a valid numeric certificate ID', async () => {
       mockGetUserCertificateDetail.mockResolvedValue({
         body: {

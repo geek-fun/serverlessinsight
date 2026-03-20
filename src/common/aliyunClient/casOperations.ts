@@ -37,14 +37,15 @@ export const createCasOperations = (casClient: CasSdkClient) => {
       };
     },
 
-    getCertificate: async (certificateId: string): Promise<CasCertificateInfo | null> => {
-      if (certificateId.startsWith('cas_') || certificateId.startsWith('cas-')) {
-        throw new Error(lang.__('CERT_USING_SUBSCRIPTION_ID', { provided: certificateId }));
+    getCertificate: async (certificateId: string | number): Promise<CasCertificateInfo | null> => {
+      const certIdStr = String(certificateId);
+      if (certIdStr.startsWith('cas_') || certIdStr.startsWith('cas-')) {
+        throw new Error(lang.__('CERT_USING_SUBSCRIPTION_ID', { provided: certIdStr }));
       }
 
-      const numericId = Number(certificateId);
+      const numericId = Number(certIdStr);
       if (Number.isNaN(numericId)) {
-        throw new Error(lang.__('CERT_INVALID_CONFIGURATION', { name: certificateId }));
+        throw new Error(lang.__('CERT_INVALID_CONFIGURATION', { name: certIdStr }));
       }
 
       try {
