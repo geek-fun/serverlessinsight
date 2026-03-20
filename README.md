@@ -37,6 +37,7 @@ Whether you're building on AWS, Alibaba Cloud, Huawei Cloud, or other providers,
 - 🏠 **Local Testing** - Run and debug serverless functions locally
 - 🔄 **Template Generation** - Generate provider-specific IaC templates
 - 🌐 **API Gateway Integration** - Configure HTTP endpoints for your functions
+- 🌐 **Custom Domain Binding** - Automatic domain binding with DNS verification for OSS and API Gateway
 - 💾 **Resource Management** - Manage storage, databases, and other cloud resources
 - 🔐 **Security First** - Built-in validation and security best practices
 - 📊 **Comprehensive Logging** - Debug and monitor your applications
@@ -143,10 +144,10 @@ For more examples, check out the [samples](./samples) directory:
 
 - [API Gateway Example](./samples/aliyun-poc-api.yml) - Deploy functions with HTTP endpoints
 - [Storage Example](./samples/aliyun-poc-bucket.yml) - Configure OSS buckets
+- [Custom Domain Example](./samples/aliyun-poc-domain.yml) - Configure OSS static website with custom domain binding
 - [Database Example](./samples/aliyun-poc-rds.yml) - Set up RDS databases
 - [Table Store Example](./samples/aliyun-poc-table.yml) - Configure OTS table storage
 - [Elasticsearch Example](./samples/aliyun-poc-es.yml) - Deploy Elasticsearch Serverless
-- [Custom Domain Example](./samples/aliyun-poc-domain.yml) - Configure custom domains
 - [GPU Functions Example](./samples/aliyun-poc-fc-gpu.yml) - Deploy GPU-enabled functions
 - [Huawei Cloud Example](./samples/huawei-poc-fc.yml) - Deploy to Huawei Cloud FunctionGraph
 
@@ -246,6 +247,98 @@ This architecture enables:
 - **Maintainability**: Provider changes isolated to client layer
 - **Type Safety**: Strong typing throughout the stack
 - **Code Reuse**: Shared client operations across resources
+
+---
+
+## 🌐 Custom Domain Binding
+
+ServerlessInsight provides automatic custom domain binding for OSS buckets and API Gateway with built-in DNS verification.
+
+### OSS Custom Domain Binding
+
+When you configure a custom domain for an OSS bucket (static website hosting), ServerlessInsight automatically:
+
+1. **Binds the domain** to your OSS bucket
+2. **Creates DNS CNAME records** pointing to the correct OSS endpoint
+3. **Handles domain ownership verification** via DNS TXT records when required by the cloud provider
+4. **Manages retry logic** with DNS propagation polling for reliable binding
+
+```yaml
+buckets:
+  my_website:
+    name: my-website-bucket
+    security:
+      acl: PUBLIC_READ
+    website:
+      code: ./dist
+      domain: www.example.com # Custom domain binding
+      index: index.html
+      error_page: 404.html
+```
+
+### Domain Ownership Verification Flow
+
+When binding a custom domain that requires ownership verification:
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                    OSS Custom Domain Binding                     │
+└─────────────────────────────────────────────────────────────────┘
+                               │
+                               ▼
+                   ┌───────────────────────┐
+                   │   PutCname (Attempt)   │
+                   └───────────────────────┘
+                               │
+           ┌───────────────────┴───────────────────┐
+           │                                       │
+           ▼                                       ▼
+   ┌───────────────┐                    ┌─────────────────┐
+   │   Success     │                    │ NeedVerifyDomain│
+   └───────────────┘                    │    Ownership    │
+                                        └─────────────────┘
+                                                  │
+                                                  ▼
+                                    ┌─────────────────────────┐
+                                    │  CreateCnameToken API   │
+                                    │  (Get TXT record value) │
+                                    └─────────────────────────┘
+                                                  │
+                                                  ▼
+                                    ┌─────────────────────────┐
+                                    │  Check existing TXT     │
+                                    │  records (avoid dupes)  │
+                                    └─────────────────────────┘
+                                                  │
+                                                  ▼
+                                    ┌─────────────────────────┐
+                                    │  Add DNS TXT Record     │
+                                    │  (_dnsauth.domain)      │
+                                    └─────────────────────────┘
+                                                  │
+                                                  ▼
+                                    ┌─────────────────────────┐
+                                    │  Poll DNS Propagation   │
+                                    │  (up to 10 × 1 min)     │
+                                    └─────────────────────────┘
+                                                  │
+                                                  ▼
+                                    ┌─────────────────────────┐
+                                    │  Retry PutCname         │
+                                    │  (up to 5 × 30 sec)     │
+                                    └─────────────────────────┘
+```
+
+### Supported Domain Types
+
+For OSS static website hosting, ServerlessInsight supports:
+
+| Domain Type       | CNAME Target                     | Use Case                                       |
+| ----------------- | -------------------------------- | ---------------------------------------------- |
+| Root domain (`@`) | `bucket.region.taihangcda.cn`    | Bypasses DNS CNAME restriction on root domains |
+| Subdomain (`www`) | `bucket.oss-region.aliyuncs.com` | Standard OSS endpoint                          |
+
+For detailed configuration, see [OSS Custom Domain Binding Guide](./docs/oss-custom-domain-binding.md).
 
 ---
 
