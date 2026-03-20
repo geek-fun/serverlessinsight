@@ -114,6 +114,18 @@ export const zhCN = {
   EXECUTING_PLAN: '正在执行部署计划...',
   DEPLOY_CONFIRMATION: '是否执行这些操作？(yes/no): ',
   DEPLOY_CANCELLED: '部署已取消。',
+  PLAN_WILL_CREATE: '将被创建',
+  PLAN_WILL_UPDATE: '将就地更新',
+  PLAN_WILL_DESTROY: '将被销毁',
+  PLAN_WILL_REFRESH: '将被刷新',
+  PLAN_NO_CHANGES: '无变更',
+  PLAN_HEADER: 'ServerlessInsight 将执行以下操作:',
+  PLAN_LEGEND_CREATE: '  + 创建',
+  PLAN_LEGEND_UPDATE: '  ~ 就地更新',
+  PLAN_LEGEND_DESTROY: '  - 销毁',
+  PLAN_SUMMARY: '计划: 新增 {{createCount}} 个，变更 {{updateCount}} 个，销毁 {{deleteCount}} 个。',
+  PLAN_UNCHANGED_ATTRS: '({{count}} 个未变更属性已隐藏)',
+  PLAN_COMPUTED_VALUE: '(部署后可知)',
 
   // TDSQL-C 数据库消息
   TDSQL_CLUSTER_CREATION_INITIATED: 'TDSQL-C 集群创建已启动',
