@@ -162,7 +162,6 @@ export const createBucketResource = async (
     throw new Error(`Failed to refresh state for bucket: ${config.bucketName}`);
   }
 
-  const definition = extractOssBucketDefinition(config);
   const sid = buildSid('aliyun', 'oss', context.stage, config.bucketName);
   const logicalId = `buckets.${bucket.key}`;
 
@@ -171,7 +170,10 @@ export const createBucketResource = async (
   const partialResourceState: ResourceState = {
     mode: 'managed',
     region: context.region,
-    definition,
+    definition: {
+      ...extractOssBucketDefinition(config),
+      ...(bucket.website?.domain != null ? { domainBound: null } : {}),
+    },
     instances,
     lastUpdated: new Date().toISOString(),
   };
@@ -246,7 +248,12 @@ export const createBucketResource = async (
   const finalResourceState: ResourceState = {
     mode: 'managed',
     region: context.region,
-    definition,
+    definition: {
+      ...extractOssBucketDefinition(config),
+      ...(bucket.website?.domain != null
+        ? { domainBound: cnameInfo?.bucketCnameBound ?? null }
+        : {}),
+    },
     instances,
     lastUpdated: new Date().toISOString(),
   };
@@ -285,7 +292,6 @@ export const updateBucketResource = async (
     throw new Error(`Failed to refresh state for bucket: ${config.bucketName}`);
   }
 
-  const definition = extractOssBucketDefinition(config);
   const sid = buildSid('aliyun', 'oss', context.stage, config.bucketName);
   const logicalId = `buckets.${bucket.key}`;
 
@@ -295,6 +301,8 @@ export const updateBucketResource = async (
   const existingDnsInstance = existingState?.instances?.find(
     (i) => i.type === ResourceTypeEnum.ALIYUN_OSS_DNS_CNAME,
   ) as OssDnsInstance | undefined;
+
+  let cnameInfo: OssCnameInfo | undefined;
 
   if (bucket.website?.domain) {
     const domainChanged = existingDnsInstance?.domain !== bucket.website.domain;
@@ -325,7 +333,7 @@ export const updateBucketResource = async (
       );
     }
 
-    const cnameInfo = await client.oss.bindCustomDomain(
+    cnameInfo = await client.oss.bindCustomDomain(
       config.bucketName,
       bucket.website.domain,
       certificate,
@@ -362,7 +370,12 @@ export const updateBucketResource = async (
   const resourceState: ResourceState = {
     mode: 'managed',
     region: context.region,
-    definition,
+    definition: {
+      ...extractOssBucketDefinition(config),
+      ...(bucket.website?.domain != null
+        ? { domainBound: cnameInfo?.bucketCnameBound ?? null }
+        : {}),
+    },
     instances,
     lastUpdated: new Date().toISOString(),
   };

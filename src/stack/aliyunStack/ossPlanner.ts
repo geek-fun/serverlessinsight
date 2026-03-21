@@ -57,15 +57,20 @@ export const generateBucketPlan = async (
         }
 
         const currentDefinition = currentState.definition || {};
-        const definitionChanged = !attributesEqual(currentDefinition, desiredDefinition);
+        const { domainBound, ...comparableDefinition } = currentDefinition as {
+          domainBound?: boolean | null;
+          [key: string]: unknown;
+        };
+        const definitionChanged = !attributesEqual(comparableDefinition, desiredDefinition);
+        const domainBindingPending = domainBound === false;
 
-        if (definitionChanged) {
+        if (definitionChanged || domainBindingPending) {
           return {
             logicalId,
             action: 'update',
             resourceType: 'ALIYUN_OSS_BUCKET',
             changes: { before: currentDefinition, after: desiredDefinition },
-            drifted: true,
+            ...(definitionChanged ? { drifted: true } : {}),
           };
         }
 

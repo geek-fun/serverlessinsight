@@ -119,6 +119,131 @@ describe('OSS Planner', () => {
       });
     });
 
+    it('should plan to update when domain binding previously failed (domainBound: false)', async () => {
+      mockOssOperations.getBucket.mockResolvedValue({
+        name: 'test-bucket',
+        acl: 'public-read',
+        websiteConfig: { indexDocument: 'index.html', errorDocument: '404.html' },
+      });
+
+      const state = setResource(initialState, 'buckets.test_bucket', {
+        mode: 'managed',
+        region: 'cn-hangzhou',
+        definition: {
+          bucketName: 'test-bucket',
+          acl: 'public-read',
+          websiteConfiguration: { indexDocument: 'index.html', errorDocument: '404.html' },
+          storageClass: null,
+          domain: 'www.example.com',
+          domainBound: false,
+        },
+        instances: [
+          {
+            sid: 'si:aliyun:oss:default:test-bucket',
+            id: 'test-bucket',
+            bucketName: 'test-bucket',
+          },
+        ],
+        lastUpdated: new Date().toISOString(),
+      });
+
+      const bucketWithDomain: BucketDomain = {
+        ...testBucket,
+        website: { ...testBucket.website!, domain: 'www.example.com' },
+      };
+
+      const plan = await generateBucketPlan(mockContext, state, [bucketWithDomain]);
+
+      expect(plan.items).toHaveLength(1);
+      expect(plan.items[0]).toMatchObject({
+        logicalId: 'buckets.test_bucket',
+        action: 'update',
+        resourceType: 'ALIYUN_OSS_BUCKET',
+      });
+      expect(plan.items[0].drifted).toBeUndefined();
+    });
+
+    it('should plan noop when domain binding succeeded (domainBound: true)', async () => {
+      mockOssOperations.getBucket.mockResolvedValue({
+        name: 'test-bucket',
+        acl: 'public-read',
+        websiteConfig: { indexDocument: 'index.html', errorDocument: '404.html' },
+      });
+
+      const state = setResource(initialState, 'buckets.test_bucket', {
+        mode: 'managed',
+        region: 'cn-hangzhou',
+        definition: {
+          bucketName: 'test-bucket',
+          acl: 'public-read',
+          websiteConfiguration: { indexDocument: 'index.html', errorDocument: '404.html' },
+          storageClass: null,
+          domain: 'www.example.com',
+          domainBound: true,
+        },
+        instances: [
+          {
+            sid: 'si:aliyun:oss:default:test-bucket',
+            id: 'test-bucket',
+            bucketName: 'test-bucket',
+          },
+        ],
+        lastUpdated: new Date().toISOString(),
+      });
+
+      const bucketWithDomain: BucketDomain = {
+        ...testBucket,
+        website: { ...testBucket.website!, domain: 'www.example.com' },
+      };
+
+      const plan = await generateBucketPlan(mockContext, state, [bucketWithDomain]);
+
+      expect(plan.items).toHaveLength(1);
+      expect(plan.items[0]).toMatchObject({
+        logicalId: 'buckets.test_bucket',
+        action: 'noop',
+        resourceType: 'ALIYUN_OSS_BUCKET',
+      });
+    });
+
+    it('should plan noop when no domain configured and state has domainBound: null', async () => {
+      mockOssOperations.getBucket.mockResolvedValue({
+        name: 'test-bucket',
+        acl: 'public-read',
+        websiteConfig: { indexDocument: 'index.html', errorDocument: '404.html' },
+      });
+
+      const state = setResource(initialState, 'buckets.test_bucket', {
+        mode: 'managed',
+        region: 'cn-hangzhou',
+        definition: {
+          bucketName: 'test-bucket',
+          acl: 'public-read',
+          websiteConfiguration: { indexDocument: 'index.html', errorDocument: '404.html' },
+          storageClass: null,
+          domain: null,
+          domainBound: null,
+        },
+        instances: [
+          {
+            sid: 'si:aliyun:oss:default:test-bucket',
+            id: 'test-bucket',
+            bucketName: 'test-bucket',
+          },
+        ],
+        lastUpdated: new Date().toISOString(),
+      });
+
+      const plan = await generateBucketPlan(mockContext, state, [testBucket]);
+
+      expect(plan.items).toHaveLength(1);
+      expect(plan.items[0]).toMatchObject({
+        logicalId: 'buckets.test_bucket',
+        action: 'noop',
+        resourceType: 'ALIYUN_OSS_BUCKET',
+      });
+    });
+
     it('should plan to update when definition changes', async () => {
       mockOssOperations.getBucket.mockResolvedValue({
         name: 'test-bucket',
