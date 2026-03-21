@@ -220,6 +220,111 @@ describe('Apigw Planner', () => {
       });
     });
 
+    it('should plan noop when domain protocol is unchanged', async () => {
+      const eventWithHttps: EventDomain = {
+        ...testEvent,
+        domain: {
+          domain_name: 'api.example.com',
+          protocol: 'HTTPS',
+          certificate_id: '12345',
+        },
+      };
+
+      let state = loadState('aliyun', 'test-app', 'test-service', 'default', testDir);
+      state = setResource(state, 'events.test_api', {
+        mode: 'managed',
+        region: 'cn-hangzhou',
+        definition: {
+          groupName: 'test-service-default-agw-group',
+          description: 'API Gateway group for test-service',
+          basePath: null,
+          triggers: [{ method: 'GET', path: '/users', backend: 'userFunction' }],
+          domain: {
+            domainName: 'api.example.com',
+            hasCertificate: true,
+            protocol: 'HTTPS',
+          },
+        },
+        instances: [
+          {
+            type: 'ALIYUN_APIGW_GROUP',
+            sid: 'si:aliyun:apigateway:default:group-123',
+            id: 'group-123',
+            groupName: 'test-service-default-agw-group',
+          },
+        ],
+        lastUpdated: new Date().toISOString(),
+      });
+
+      mockApigwOperations.getApiGroup.mockResolvedValue({
+        groupId: 'group-123',
+        groupName: 'test-service-default-agw-group',
+        description: 'API Gateway group for test-service',
+      });
+
+      const plan = await generateApigwPlan(mockContext, state, [eventWithHttps], 'test-service');
+
+      expect(plan.items).toHaveLength(1);
+      expect(plan.items[0]).toMatchObject({
+        logicalId: 'events.test_api',
+        action: 'noop',
+        resourceType: 'ALIYUN_APIGW',
+      });
+    });
+
+    it('should plan to update when domain protocol changes from HTTP to HTTPS', async () => {
+      const eventWithHttps: EventDomain = {
+        ...testEvent,
+        domain: {
+          domain_name: 'api.example.com',
+          protocol: 'HTTPS',
+          certificate_id: '12345',
+        },
+      };
+
+      let state = loadState('aliyun', 'test-app', 'test-service', 'default', testDir);
+      state = setResource(state, 'events.test_api', {
+        mode: 'managed',
+        region: 'cn-hangzhou',
+        definition: {
+          groupName: 'test-service-default-agw-group',
+          description: 'API Gateway group for test-service',
+          basePath: null,
+          triggers: [{ method: 'GET', path: '/users', backend: 'userFunction' }],
+          domain: {
+            domainName: 'api.example.com',
+            hasCertificate: true,
+            protocol: 'HTTP',
+          },
+        },
+        instances: [
+          {
+            type: 'ALIYUN_APIGW_GROUP',
+            sid: 'si:aliyun:apigateway:default:group-123',
+            id: 'group-123',
+            groupName: 'test-service-default-agw-group',
+          },
+        ],
+        lastUpdated: new Date().toISOString(),
+      });
+
+      mockApigwOperations.getApiGroup.mockResolvedValue({
+        groupId: 'group-123',
+        groupName: 'test-service-default-agw-group',
+      });
+
+      const plan = await generateApigwPlan(mockContext, state, [eventWithHttps], 'test-service');
+
+      expect(plan.items).toHaveLength(1);
+      expect(plan.items[0]).toMatchObject({
+        logicalId: 'events.test_api',
+        action: 'update',
+        resourceType: 'ALIYUN_APIGW',
+      });
+      expect(plan.items[0].changes?.before).toMatchObject({ domain: { protocol: 'HTTP' } });
+      expect(plan.items[0].changes?.after).toMatchObject({ domain: { protocol: 'HTTPS' } });
+    });
+
     it('should plan to recreate event when state exists but remote is missing', async () => {
       // Add event to state
       let state = loadState('aliyun', 'test-app', 'test-service', 'default', testDir);

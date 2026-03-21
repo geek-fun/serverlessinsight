@@ -187,6 +187,7 @@ export const createApigwResource = async (
         ? {
             domainName: event.domain.domain_name,
             hasCertificate: !!(event.domain.certificate_body || event.domain.certificate_id),
+            protocol: event.domain.protocol ?? null,
           }
         : null,
     },
@@ -241,6 +242,7 @@ export const createApigwResource = async (
           ? {
               domainName: event.domain.domain_name,
               hasCertificate: !!(event.domain.certificate_body || event.domain.certificate_id),
+              protocol: event.domain.protocol ?? null,
             }
           : null,
       },
@@ -284,6 +286,7 @@ export const createApigwResource = async (
         ? {
             domainName: event.domain.domain_name,
             hasCertificate: !!(event.domain.certificate_body || event.domain.certificate_id),
+            protocol: event.domain.protocol ?? null,
           }
         : null,
     },
@@ -441,6 +444,7 @@ export const updateApigwResource = async (
         ? {
             domainName: event.domain.domain_name,
             hasCertificate: !!(event.domain.certificate_body || event.domain.certificate_id),
+            protocol: event.domain.protocol ?? null,
           }
         : null,
     },
