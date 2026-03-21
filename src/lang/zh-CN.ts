@@ -90,6 +90,9 @@ export const zhCN = {
   // Plan command messages
   PLAN_COMMAND_TENCENT_ONLY: 'Plan 命令目前仅支持腾讯云提供商',
   GENERATING_PLAN_FOR_SCF: '正在为腾讯云 SCF 资源生成计划...',
+  GENERATING_PLAN_FOR_PROVIDER: '正在为{{provider}}资源生成计划...',
+  PROVIDER_ALIYUN: '阿里云',
+  PROVIDER_TENCENT: '腾讯云',
   DEPLOYMENT_PLAN: '部署计划',
   NO_CHANGES_INFRASTRUCTURE_UP_TO_DATE: '无变更。基础设施已是最新状态。',
   CREATE: '创建',

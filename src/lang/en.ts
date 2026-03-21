@@ -94,6 +94,9 @@ export const en = {
   // Plan command messages
   PLAN_COMMAND_TENCENT_ONLY: 'Plan command is currently only supported for Tencent provider',
   GENERATING_PLAN_FOR_SCF: 'Generating plan for Tencent SCF resources...',
+  GENERATING_PLAN_FOR_PROVIDER: 'Generating plan for {{provider}} resources...',
+  PROVIDER_ALIYUN: 'Alibaba Cloud',
+  PROVIDER_TENCENT: 'Tencent Cloud',
   DEPLOYMENT_PLAN: 'DEPLOYMENT PLAN',
   NO_CHANGES_INFRASTRUCTURE_UP_TO_DATE: 'No changes. Infrastructure is up to date.',
   CREATE: 'CREATE',

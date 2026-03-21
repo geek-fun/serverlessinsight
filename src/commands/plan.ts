@@ -36,7 +36,11 @@ export const plan = async (options: {
   // Store IAC in context for access by all functions
   setIac(iac);
 
-  logger.info(lang.__('GENERATING_PLAN_FOR_SCF'));
+  const providerDisplayName =
+    iac.provider.name === ProviderEnum.ALIYUN
+      ? lang.__('PROVIDER_ALIYUN')
+      : lang.__('PROVIDER_TENCENT');
+  logger.info(lang.__('GENERATING_PLAN_FOR_PROVIDER', { provider: providerDisplayName }));
 
   const backend = createStateBackend(iac.backend, context);
   let planResult;
