@@ -404,6 +404,7 @@ export const zhCN = {
   CREATING_SLS_INDEX: '正在为 SLS 日志库创建索引: {{logstoreName}}',
   CREATING_RAM_ROLE: '正在创建 RAM 角色: {{roleName}}',
   CREATING_SECURITY_GROUP: '正在创建安全组: {{sgName}}',
+  SECURITY_GROUP_NOT_FOUND: '在 VPC "{{vpcId}}" 中未找到安全组 "{{sgName}}"',
   CREATING_NAS_ACCESS_GROUP: '正在创建 NAS 权限组: {{accessGroupName}}',
   CREATING_NAS_ACCESS_RULE: '正在为 NAS 权限组创建访问规则: {{accessGroupName}}',
   CREATING_NAS_FILE_SYSTEM: '正在为 {{name}} 创建 NAS 文件系统',

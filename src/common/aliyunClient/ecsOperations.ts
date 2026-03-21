@@ -179,6 +179,41 @@ export const createEcsOperations = (ecsClient: EcsSdkClient, context: Context) =
     }
   },
 
+  getSecurityGroupByName: async (
+    securityGroupName: string,
+    vpcId?: string,
+  ): Promise<SecurityGroupInfo | null> => {
+    try {
+      const request = new ecs.DescribeSecurityGroupsRequest({
+        regionId: context.region,
+        securityGroupName,
+        vpcId,
+      });
+      const response = await ecsClient.describeSecurityGroups(request);
+
+      if (
+        !response ||
+        !response.body ||
+        !response.body.securityGroups ||
+        !response.body.securityGroups.securityGroup ||
+        response.body.securityGroups.securityGroup.length === 0
+      ) {
+        return null;
+      }
+
+      const sg = response.body.securityGroups.securityGroup[0];
+      return {
+        securityGroupId: sg.securityGroupId!,
+        securityGroupName: sg.securityGroupName,
+        vpcId: sg.vpcId,
+        description: sg.description,
+        createTime: sg.creationTime,
+      };
+    } catch {
+      return null;
+    }
+  },
+
   deleteSecurityGroup: async (securityGroupId: string): Promise<void> => {
     const request = new ecs.DeleteSecurityGroupRequest({
       regionId: context.region,

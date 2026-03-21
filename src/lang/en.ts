@@ -454,6 +454,7 @@ export const en = {
   CREATING_SLS_INDEX: 'Creating SLS index for: {{logstoreName}}',
   CREATING_RAM_ROLE: 'Creating RAM role: {{roleName}}',
   CREATING_SECURITY_GROUP: 'Creating security group: {{sgName}}',
+  SECURITY_GROUP_NOT_FOUND: 'Security group "{{sgName}}" not found in VPC "{{vpcId}}"',
   CREATING_NAS_ACCESS_GROUP: 'Creating NAS access group: {{accessGroupName}}',
   CREATING_NAS_ACCESS_RULE: 'Creating NAS access rule for: {{accessGroupName}}',
   CREATING_NAS_FILE_SYSTEM: 'Creating NAS file system for: {{name}}',

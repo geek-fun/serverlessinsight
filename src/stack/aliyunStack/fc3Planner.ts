@@ -8,7 +8,52 @@ import {
   ResourceAttributes,
   StateFile,
 } from '../../types';
-import { extractFc3Definition, functionToFc3Config } from './fc3Types';
+import { extractFc3Definition, Fc3FunctionConfig, functionToFc3Config } from './fc3Types';
+import { lang } from '../../lang';
+
+const isSecurityGroupId = (value: string): boolean => value.startsWith('sg-');
+
+const resolveSecurityGroupId = async (
+  context: Context,
+  securityGroupName: string,
+  vpcId?: string,
+): Promise<string> => {
+  if (isSecurityGroupId(securityGroupName)) {
+    return securityGroupName;
+  }
+
+  const client = createAliyunClient(context);
+  const sg = await client.ecs.getSecurityGroupByName(securityGroupName, vpcId);
+  if (!sg) {
+    throw new Error(
+      lang.__('SECURITY_GROUP_NOT_FOUND', { sgName: securityGroupName, vpcId: vpcId ?? 'default' }),
+    );
+  }
+  return sg.securityGroupId;
+};
+
+const resolveVpcConfigSecurityGroup = async (
+  context: Context,
+  config: Fc3FunctionConfig,
+): Promise<Fc3FunctionConfig> => {
+  if (!config.vpcConfig?.securityGroupId) {
+    return config;
+  }
+
+  const securityGroupId = await resolveSecurityGroupId(
+    context,
+    config.vpcConfig.securityGroupId,
+    config.vpcConfig.vpcId,
+  );
+
+  return {
+    ...config,
+    vpcConfig: {
+      ...config.vpcConfig,
+      securityGroupId,
+    },
+  };
+};
 
 const planFunctionDeletion = (logicalId: string, definition: ResourceAttributes): PlanItem => ({
   logicalId,
@@ -38,7 +83,8 @@ export const generateFunctionPlan = async (
     functions.map(async (fn): Promise<PlanItem> => {
       const logicalId = `functions.${fn.key}`;
       const currentState = getResource(state, logicalId);
-      const config = functionToFc3Config(fn);
+      const rawConfig = functionToFc3Config(fn);
+      const config = await resolveVpcConfigSecurityGroup(context, rawConfig);
       const codePath = fn.code!.path;
       const desiredCodeHash = computeFileHash(codePath);
       const desiredDefinition = extractFc3Definition(config, desiredCodeHash);
