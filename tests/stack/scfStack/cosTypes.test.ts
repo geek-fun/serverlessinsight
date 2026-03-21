@@ -119,6 +119,55 @@ describe('CosTypes', () => {
         },
       });
     });
+
+    it('should include versioning status when defined', () => {
+      const bucket: BucketDomain = {
+        key: 'test_bucket',
+        name: 'test-bucket',
+        versioning: {
+          status: 'Enabled',
+        },
+      };
+
+      const result = bucketToCosBucketConfig(bucket, 'ap-guangzhou');
+
+      expect(result.VersioningStatus).toBe('Enabled');
+    });
+
+    it('should include SSE algorithm and KMS key when defined', () => {
+      const bucket: BucketDomain = {
+        key: 'test_bucket',
+        name: 'test-bucket',
+        security: {
+          acl: BucketAccessEnum.PRIVATE,
+          force_delete: false,
+          sse_algorithm: 'KMS',
+          sse_kms_master_key_id: 'key-123',
+        },
+      };
+
+      const result = bucketToCosBucketConfig(bucket, 'ap-guangzhou');
+
+      expect(result.SseAlgorithm).toBe('KMS');
+      expect(result.SseKmsMasterKeyId).toBe('key-123');
+    });
+
+    it('should include SSE algorithm without KMS key for AES256', () => {
+      const bucket: BucketDomain = {
+        key: 'test_bucket',
+        name: 'test-bucket',
+        security: {
+          acl: BucketAccessEnum.PRIVATE,
+          force_delete: false,
+          sse_algorithm: 'AES256',
+        },
+      };
+
+      const result = bucketToCosBucketConfig(bucket, 'ap-guangzhou');
+
+      expect(result.SseAlgorithm).toBe('AES256');
+      expect(result.SseKmsMasterKeyId).toBeUndefined();
+    });
   });
 
   describe('extractCosBucketDefinition', () => {
@@ -135,6 +184,14 @@ describe('CosTypes', () => {
         region: 'ap-guangzhou',
         acl: null,
         websiteConfiguration: {},
+        domain: null,
+        domainCertificateId: null,
+        domainCertificateBody: null,
+        domainCertificatePrivateKey: null,
+        domainProtocol: null,
+        versioningStatus: null,
+        sseAlgorithm: null,
+        sseKmsMasterKeyId: null,
       });
     });
 
@@ -183,6 +240,45 @@ describe('CosTypes', () => {
         indexDocument: 'index.html',
         errorDocument: null,
       });
+    });
+
+    it('should extract versioning status when defined', () => {
+      const config = {
+        Bucket: 'test-bucket',
+        Region: 'ap-guangzhou',
+        VersioningStatus: 'Enabled',
+      };
+
+      const definition = extractCosBucketDefinition(config);
+
+      expect(definition.versioningStatus).toBe('Enabled');
+    });
+
+    it('should extract SSE algorithm and KMS key when defined', () => {
+      const config = {
+        Bucket: 'test-bucket',
+        Region: 'ap-guangzhou',
+        SseAlgorithm: 'KMS',
+        SseKmsMasterKeyId: 'key-123',
+      };
+
+      const definition = extractCosBucketDefinition(config);
+
+      expect(definition.sseAlgorithm).toBe('KMS');
+      expect(definition.sseKmsMasterKeyId).toBe('key-123');
+    });
+
+    it('should set versioning and SSE to null when not defined', () => {
+      const config = {
+        Bucket: 'test-bucket',
+        Region: 'ap-guangzhou',
+      };
+
+      const definition = extractCosBucketDefinition(config);
+
+      expect(definition.versioningStatus).toBeNull();
+      expect(definition.sseAlgorithm).toBeNull();
+      expect(definition.sseKmsMasterKeyId).toBeNull();
     });
   });
 });

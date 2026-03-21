@@ -13,6 +13,22 @@ export type ScfFunctionConfig = {
   Code?: {
     ZipFile?: string;
   };
+  VpcConfig?: ScfVpcConfig;
+  DiskSize?: number;
+  CfsConfig?: {
+    CfsInsList?: Array<{
+      UserId?: string;
+      UserGroupId?: string;
+      CfsId?: string;
+      LocalMountDir?: string;
+      RemoteMountDir?: string;
+    }>;
+  };
+  UseGpu?: string;
+  ImageConfig?: {
+    ImageType?: string;
+    ImageUri?: string;
+  };
 };
 
 export type ScfTrigger = {
@@ -151,6 +167,36 @@ export const functionToScfConfig = (fn: FunctionDomain): ScfFunctionConfig => {
     };
   }
 
+  if (fn.network) {
+    config.VpcConfig = {
+      VpcId: fn.network.vpc_id,
+      SubnetId: fn.network.subnet_ids[0],
+    };
+  }
+
+  if (fn.storage?.disk) {
+    config.DiskSize = fn.storage.disk;
+  }
+
+  if (fn.storage?.nas && fn.storage.nas.length > 0) {
+    config.CfsConfig = {
+      CfsInsList: fn.storage.nas.map((nas) => ({
+        LocalMountDir: nas.mount_path,
+        RemoteMountDir: '/',
+      })),
+    };
+  }
+
+  if (fn.gpu) {
+    config.UseGpu = 'TRUE';
+  }
+
+  if (fn.container) {
+    config.ImageConfig = {
+      ImageUri: fn.container.image,
+    };
+  }
+
   return config;
 };
 
@@ -172,6 +218,11 @@ export const extractScfDefinition = (
     timeout: config.Timeout,
     environment: envMap,
     codeHash,
+    vpcConfig: config.VpcConfig ?? null,
+    diskSize: config.DiskSize ?? null,
+    cfsConfig: config.CfsConfig ?? null,
+    useGpu: config.UseGpu ?? null,
+    imageConfig: config.ImageConfig ?? null,
   };
 };
 

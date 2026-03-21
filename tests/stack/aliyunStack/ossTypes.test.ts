@@ -133,6 +133,55 @@ describe('OssTypes', () => {
 
       expect(result.domain).toBe('www.example.com');
     });
+
+    it('should include versioning status when defined', () => {
+      const bucket: BucketDomain = {
+        key: 'test_bucket',
+        name: 'test-bucket',
+        versioning: {
+          status: 'Enabled',
+        },
+      };
+
+      const result = bucketToOssBucketConfig(bucket);
+
+      expect(result.versioningStatus).toBe('Enabled');
+    });
+
+    it('should include SSE algorithm and KMS key when defined', () => {
+      const bucket: BucketDomain = {
+        key: 'test_bucket',
+        name: 'test-bucket',
+        security: {
+          acl: BucketAccessEnum.PRIVATE,
+          force_delete: false,
+          sse_algorithm: 'KMS',
+          sse_kms_master_key_id: 'key-123',
+        },
+      };
+
+      const result = bucketToOssBucketConfig(bucket);
+
+      expect(result.sseAlgorithm).toBe('KMS');
+      expect(result.sseKmsMasterKeyId).toBe('key-123');
+    });
+
+    it('should include SSE algorithm without KMS key for AES256', () => {
+      const bucket: BucketDomain = {
+        key: 'test_bucket',
+        name: 'test-bucket',
+        security: {
+          acl: BucketAccessEnum.PRIVATE,
+          force_delete: false,
+          sse_algorithm: 'AES256',
+        },
+      };
+
+      const result = bucketToOssBucketConfig(bucket);
+
+      expect(result.sseAlgorithm).toBe('AES256');
+      expect(result.sseKmsMasterKeyId).toBeUndefined();
+    });
   });
 
   describe('extractOssBucketDefinition', () => {
@@ -149,6 +198,13 @@ describe('OssTypes', () => {
         websiteConfiguration: {},
         storageClass: null,
         domain: null,
+        domainCertificateId: null,
+        domainCertificateBody: null,
+        domainCertificatePrivateKey: null,
+        domainProtocol: null,
+        versioningStatus: null,
+        sseAlgorithm: null,
+        sseKmsMasterKeyId: null,
       });
     });
 
@@ -216,6 +272,42 @@ describe('OssTypes', () => {
       const definition = extractOssBucketDefinition(config);
 
       expect(definition.domain).toBe('www.example.com');
+    });
+
+    it('should extract versioning status when defined', () => {
+      const config = {
+        bucketName: 'test-bucket',
+        versioningStatus: 'Enabled',
+      };
+
+      const definition = extractOssBucketDefinition(config);
+
+      expect(definition.versioningStatus).toBe('Enabled');
+    });
+
+    it('should extract SSE algorithm and KMS key when defined', () => {
+      const config = {
+        bucketName: 'test-bucket',
+        sseAlgorithm: 'KMS',
+        sseKmsMasterKeyId: 'key-123',
+      };
+
+      const definition = extractOssBucketDefinition(config);
+
+      expect(definition.sseAlgorithm).toBe('KMS');
+      expect(definition.sseKmsMasterKeyId).toBe('key-123');
+    });
+
+    it('should set versioning and SSE to null when not defined', () => {
+      const config = {
+        bucketName: 'test-bucket',
+      };
+
+      const definition = extractOssBucketDefinition(config);
+
+      expect(definition.versioningStatus).toBeNull();
+      expect(definition.sseAlgorithm).toBeNull();
+      expect(definition.sseKmsMasterKeyId).toBeNull();
     });
   });
 });

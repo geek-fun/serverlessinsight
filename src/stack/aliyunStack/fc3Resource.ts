@@ -349,14 +349,15 @@ const createDependentResources = async (
 
         logger.info(lang.__('CREATING_NAS_ACCESS_GROUP', { accessGroupName }));
         const accessGroup = await client.nas.createAccessGroup(accessGroupName);
+
+        logger.info(lang.__('CREATING_NAS_ACCESS_RULE', { accessGroupName }));
+        const accessRule = await client.nas.createAccessRule(accessGroupName, '10.0.0.0/8');
+
         instances.push({
           type: 'ALIYUN_NAS_ACCESS_GROUP',
           id: accessGroupName,
-          attributes: { ...accessGroup },
+          attributes: { ...accessGroup, accessRules: [accessRule] },
         });
-
-        logger.info(lang.__('CREATING_NAS_ACCESS_RULE', { accessGroupName }));
-        await client.nas.createAccessRule(accessGroupName, '10.0.0.0/8');
 
         logger.info(lang.__('CREATING_NAS_FILE_SYSTEM', { name: fn.name }));
         const fileSystem = await client.nas.createFileSystem(nasItem.storage_class, fn.name);

@@ -4,15 +4,24 @@ export type TableStoreConfig = {
   instanceName: string;
   tableName: string;
   clusterType: 'HYBRID' | 'SSD';
+  description?: string;
   primaryKey: Array<{
     name: string;
     type: 'INTEGER' | 'STRING' | 'BINARY';
+  }>;
+  attributes: Array<{
+    name: string;
+    type: 'INTEGER' | 'STRING' | 'BINARY' | 'DOUBLE' | 'BOOLEAN';
   }>;
   reservedThroughput?: {
     capacityUnit: {
       read: number;
       write: number;
     };
+  };
+  onDemandThroughput?: {
+    read: number;
+    write: number;
   };
   tableOptions?: {
     timeToLive?: number;
@@ -72,7 +81,12 @@ export const tableToTableStoreConfig = (table: TableDomain): TableStoreConfig =>
     instanceName: table.collection,
     tableName: table.name,
     clusterType,
+    description: table.desc,
     primaryKey,
+    attributes: table.attributes.map((attr) => ({
+      name: attr.name,
+      type: attr.type,
+    })),
     network: table.network,
   };
 
@@ -83,6 +97,13 @@ export const tableToTableStoreConfig = (table: TableDomain): TableStoreConfig =>
         read: table.throughput.reserved.read,
         write: table.throughput.reserved.write,
       },
+    };
+  }
+
+  if (table.throughput?.onDemand) {
+    config.onDemandThroughput = {
+      read: table.throughput.onDemand.read,
+      write: table.throughput.onDemand.write,
     };
   }
 
@@ -100,8 +121,11 @@ export const extractTableStoreDefinition = (config: TableStoreConfig): ResourceA
     instanceName: config.instanceName,
     tableName: config.tableName,
     clusterType: config.clusterType,
+    description: config.description ?? null,
     primaryKey: config.primaryKey,
+    attributes: config.attributes,
     reservedThroughput: config.reservedThroughput ?? null,
+    onDemandThroughput: config.onDemandThroughput ?? null,
     tableOptions: config.tableOptions ?? null,
     network: config.network ?? null,
   };

@@ -102,6 +102,8 @@ describe('FC3 Planner', () => {
           vpcConfig: null,
           gpuConfig: null,
           customContainerConfig: null,
+          nasConfig: null,
+          logConfig: null,
           codeHash: 'mock-code-hash',
         },
         instances: [
@@ -148,6 +150,8 @@ describe('FC3 Planner', () => {
           vpcConfig: null,
           gpuConfig: null,
           customContainerConfig: null,
+          nasConfig: null,
+          logConfig: null,
           codeHash: 'mock-code-hash',
         },
         instances: [
@@ -187,6 +191,8 @@ describe('FC3 Planner', () => {
           vpcConfig: null,
           gpuConfig: null,
           customContainerConfig: null,
+          nasConfig: null,
+          logConfig: null,
           codeHash: 'old-hash',
         },
         instances: [
@@ -226,6 +232,8 @@ describe('FC3 Planner', () => {
           vpcConfig: null,
           gpuConfig: null,
           customContainerConfig: null,
+          nasConfig: null,
+          logConfig: null,
           codeHash: 'old-code-hash',
         },
         instances: [

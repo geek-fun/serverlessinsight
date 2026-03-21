@@ -113,6 +113,11 @@ describe('SCF Types', () => {
         timeout: 10,
         environment: { NODE_ENV: 'production' },
         codeHash: 'abc123',
+        vpcConfig: null,
+        diskSize: null,
+        cfsConfig: null,
+        useGpu: null,
+        imageConfig: null,
       });
     });
 
@@ -135,6 +140,11 @@ describe('SCF Types', () => {
         timeout: 10,
         environment: {},
         codeHash: 'abc123',
+        vpcConfig: null,
+        diskSize: null,
+        cfsConfig: null,
+        useGpu: null,
+        imageConfig: null,
       });
     });
 

@@ -131,6 +131,22 @@ export type RamRoleInfo = {
   arn?: string;
   description?: string;
   createDate?: string;
+  updateDate?: string;
+  maxSessionDuration?: number;
+  assumeRolePolicyDocument?: string;
+  policyName?: string;
+};
+
+export type SecurityGroupRule = {
+  direction: 'ingress' | 'egress';
+  ipProtocol: string;
+  portRange: string;
+  sourceCidrIp?: string;
+  destCidrIp?: string;
+  priority?: string;
+  policy?: string;
+  description?: string;
+  ruleId?: string;
 };
 
 export type SecurityGroupInfo = {
@@ -139,6 +155,8 @@ export type SecurityGroupInfo = {
   vpcId?: string;
   description?: string;
   createTime?: string;
+  ingressRules?: SecurityGroupRule[];
+  egressRules?: SecurityGroupRule[];
 };
 
 export type NasFileSystemInfo = {
@@ -148,6 +166,11 @@ export type NasFileSystemInfo = {
   protocolType?: string;
   status?: string;
   createTime?: string;
+  description?: string;
+  zoneId?: string;
+  capacity?: number;
+  encrypted?: boolean;
+  mountTargetCount?: number;
 };
 
 export type NasMountTargetInfo = {
@@ -159,11 +182,20 @@ export type NasMountTargetInfo = {
   status?: string;
 };
 
+export type NasAccessRuleInfo = {
+  accessGroupName: string;
+  sourceCidrIp: string;
+  rwAccessType?: string;
+  userAccessType?: string;
+  priority?: number;
+};
+
 export type NasAccessGroupInfo = {
   accessGroupName: string;
   accessGroupType?: string;
   ruleCount?: number;
   createTime?: string;
+  accessRules?: NasAccessRuleInfo[];
 };
 
 export type CasCertificateInfo = {

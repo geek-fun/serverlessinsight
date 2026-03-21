@@ -98,6 +98,13 @@ describe('OSS Planner', () => {
           },
           storageClass: null,
           domain: null,
+          domainCertificateId: null,
+          domainCertificateBody: null,
+          domainCertificatePrivateKey: null,
+          domainProtocol: null,
+          versioningStatus: null,
+          sseAlgorithm: null,
+          sseKmsMasterKeyId: null,
         },
         instances: [
           {
@@ -136,6 +143,13 @@ describe('OSS Planner', () => {
           storageClass: null,
           domain: 'www.example.com',
           domainBound: false,
+          domainCertificateId: null,
+          domainCertificateBody: null,
+          domainCertificatePrivateKey: null,
+          domainProtocol: null,
+          versioningStatus: null,
+          sseAlgorithm: null,
+          sseKmsMasterKeyId: null,
         },
         instances: [
           {
@@ -180,6 +194,13 @@ describe('OSS Planner', () => {
           storageClass: null,
           domain: 'www.example.com',
           domainBound: true,
+          domainCertificateId: null,
+          domainCertificateBody: null,
+          domainCertificatePrivateKey: null,
+          domainProtocol: null,
+          versioningStatus: null,
+          sseAlgorithm: null,
+          sseKmsMasterKeyId: null,
         },
         instances: [
           {
@@ -223,6 +244,13 @@ describe('OSS Planner', () => {
           storageClass: null,
           domain: null,
           domainBound: null,
+          domainCertificateId: null,
+          domainCertificateBody: null,
+          domainCertificatePrivateKey: null,
+          domainProtocol: null,
+          versioningStatus: null,
+          sseAlgorithm: null,
+          sseKmsMasterKeyId: null,
         },
         instances: [
           {
@@ -266,6 +294,13 @@ describe('OSS Planner', () => {
           },
           storageClass: null,
           domain: null,
+          domainCertificateId: null,
+          domainCertificateBody: null,
+          domainCertificatePrivateKey: null,
+          domainProtocol: null,
+          versioningStatus: null,
+          sseAlgorithm: null,
+          sseKmsMasterKeyId: null,
         },
         instances: [
           {
@@ -299,6 +334,13 @@ describe('OSS Planner', () => {
           websiteConfiguration: {},
           storageClass: null,
           domain: null,
+          domainCertificateId: null,
+          domainCertificateBody: null,
+          domainCertificatePrivateKey: null,
+          domainProtocol: null,
+          versioningStatus: null,
+          sseAlgorithm: null,
+          sseKmsMasterKeyId: null,
         },
         instances: [
           {
@@ -335,6 +377,13 @@ describe('OSS Planner', () => {
           },
           storageClass: null,
           domain: null,
+          domainCertificateId: null,
+          domainCertificateBody: null,
+          domainCertificatePrivateKey: null,
+          domainProtocol: null,
+          versioningStatus: null,
+          sseAlgorithm: null,
+          sseKmsMasterKeyId: null,
         },
         instances: [
           {

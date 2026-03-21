@@ -241,7 +241,9 @@ describe('Apigw Planner', () => {
           triggers: [{ method: 'GET', path: '/users', backend: 'userFunction' }],
           domain: {
             domainName: 'api.example.com',
-            hasCertificate: true,
+            certificateId: '12345',
+            certificateBody: null,
+            certificatePrivateKey: null,
             protocol: 'HTTPS',
           },
         },
@@ -293,7 +295,9 @@ describe('Apigw Planner', () => {
           triggers: [{ method: 'GET', path: '/users', backend: 'userFunction' }],
           domain: {
             domainName: 'api.example.com',
-            hasCertificate: true,
+            certificateId: '12345',
+            certificateBody: null,
+            certificatePrivateKey: null,
             protocol: 'HTTP',
           },
         },

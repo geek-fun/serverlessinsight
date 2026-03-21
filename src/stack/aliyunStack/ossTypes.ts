@@ -1,7 +1,15 @@
 import { BucketAccessEnum, BucketDomain, ResourceAttributes } from '../../types';
 import { BucketACL, CommonBucketConfig } from '../bucketTypes';
 
-export type OssBucketConfig = CommonBucketConfig;
+export type OssBucketConfig = CommonBucketConfig & {
+  domainCertificateId?: string;
+  domainCertificateBody?: string;
+  domainCertificatePrivateKey?: string;
+  domainProtocol?: string | string[];
+  versioningStatus?: string;
+  sseAlgorithm?: string;
+  sseKmsMasterKeyId?: string;
+};
 
 // Map from domain enum to provider ACL type
 const aclMap: Record<BucketAccessEnum, BucketACL> = {
@@ -37,6 +45,34 @@ export const bucketToOssBucketConfig = (bucket: BucketDomain): OssBucketConfig =
     config.domain = bucket.website.domain;
   }
 
+  if (bucket.website?.domain_certificate_id) {
+    config.domainCertificateId = bucket.website.domain_certificate_id;
+  }
+
+  if (bucket.website?.domain_certificate_body) {
+    config.domainCertificateBody = bucket.website.domain_certificate_body;
+  }
+
+  if (bucket.website?.domain_certificate_private_key) {
+    config.domainCertificatePrivateKey = bucket.website.domain_certificate_private_key;
+  }
+
+  if (bucket.website?.domain_protocol) {
+    config.domainProtocol = bucket.website.domain_protocol;
+  }
+
+  if (bucket.versioning?.status) {
+    config.versioningStatus = bucket.versioning.status;
+  }
+
+  if (bucket.security?.sse_algorithm) {
+    config.sseAlgorithm = bucket.security.sse_algorithm;
+  }
+
+  if (bucket.security?.sse_kms_master_key_id) {
+    config.sseKmsMasterKeyId = bucket.security.sse_kms_master_key_id;
+  }
+
   return config;
 };
 
@@ -52,5 +88,12 @@ export const extractOssBucketDefinition = (config: OssBucketConfig): ResourceAtt
       : {},
     storageClass: config.storageClass ?? null,
     domain: config.domain ?? null,
+    domainCertificateId: config.domainCertificateId ?? null,
+    domainCertificateBody: config.domainCertificateBody ?? null,
+    domainCertificatePrivateKey: config.domainCertificatePrivateKey ? '(managed)' : null,
+    domainProtocol: config.domainProtocol ?? null,
+    versioningStatus: config.versioningStatus ?? null,
+    sseAlgorithm: config.sseAlgorithm ?? null,
+    sseKmsMasterKeyId: config.sseKmsMasterKeyId ?? null,
   };
 };

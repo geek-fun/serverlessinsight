@@ -144,6 +144,25 @@ export const functionToFc3Config = (fn: FunctionDomain): Fc3FunctionConfig => {
     };
   }
 
+  if (fn.storage?.nas && fn.storage.nas.length > 0) {
+    config.nasConfig = {
+      userId: 10003,
+      groupId: 10003,
+      mountPoints: fn.storage.nas.map((nas) => ({
+        serverAddr: nas.storage_class,
+        mountDir: nas.mount_path,
+        enableTls: false,
+      })),
+    };
+  }
+
+  if (fn.log !== undefined) {
+    config.logConfig = {
+      enableRequestMetrics: fn.log,
+      enableInstanceMetrics: fn.log,
+    };
+  }
+
   return config;
 };
 
@@ -162,6 +181,8 @@ export const extractFc3Definition = (
     vpcConfig: config.vpcConfig ?? null,
     gpuConfig: config.gpuConfig ?? null,
     customContainerConfig: config.customContainerConfig ?? null,
+    nasConfig: config.nasConfig ?? null,
+    logConfig: config.logConfig ?? null,
     codeHash,
   };
 };

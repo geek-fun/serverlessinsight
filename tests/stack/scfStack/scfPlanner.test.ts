@@ -105,6 +105,11 @@ describe('SCF Planner', () => {
           timeout: 10,
           environment: { NODE_ENV: 'production' },
           codeHash: 'mock-code-hash',
+          vpcConfig: null,
+          diskSize: null,
+          cfsConfig: null,
+          useGpu: null,
+          imageConfig: null,
         },
         instances: [
           {
@@ -149,6 +154,11 @@ describe('SCF Planner', () => {
           timeout: 10,
           environment: { NODE_ENV: 'production' },
           codeHash: 'mock-code-hash',
+          vpcConfig: null,
+          diskSize: null,
+          cfsConfig: null,
+          useGpu: null,
+          imageConfig: null,
         },
         instances: [
           {
@@ -184,6 +194,11 @@ describe('SCF Planner', () => {
           timeout: 3,
           environment: {},
           codeHash: 'old-hash',
+          vpcConfig: null,
+          diskSize: null,
+          cfsConfig: null,
+          useGpu: null,
+          imageConfig: null,
         },
         instances: [
           {
@@ -219,6 +234,11 @@ describe('SCF Planner', () => {
           timeout: 10,
           environment: {},
           codeHash: 'old-code-hash',
+          vpcConfig: null,
+          diskSize: null,
+          cfsConfig: null,
+          useGpu: null,
+          imageConfig: null,
         },
         instances: [
           {
@@ -265,6 +285,11 @@ describe('SCF Planner', () => {
           timeout: 10,
           environment: { NODE_ENV: 'production' },
           codeHash: 'old-code-hash',
+          vpcConfig: null,
+          diskSize: null,
+          cfsConfig: null,
+          useGpu: null,
+          imageConfig: null,
         },
         instances: [
           {

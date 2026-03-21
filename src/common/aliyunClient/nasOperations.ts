@@ -1,7 +1,12 @@
 import NasClient from '@alicloud/nas20170626';
 import * as nas from '@alicloud/nas20170626';
 import { NasStorageClassEnum } from '../../types';
-import { NasFileSystemInfo, NasMountTargetInfo, NasAccessGroupInfo } from './types';
+import {
+  NasFileSystemInfo,
+  NasMountTargetInfo,
+  NasAccessGroupInfo,
+  NasAccessRuleInfo,
+} from './types';
 
 type NasSdkClient = NasClient;
 
@@ -73,7 +78,10 @@ export const createNasOperations = (nasClient: NasSdkClient) => {
       await nasClient.deleteAccessGroup(request);
     },
 
-    createAccessRule: async (accessGroupName: string, sourceCidrIp: string): Promise<void> => {
+    createAccessRule: async (
+      accessGroupName: string,
+      sourceCidrIp: string,
+    ): Promise<NasAccessRuleInfo> => {
       const request = new nas.CreateAccessRuleRequest({
         accessGroupName,
         sourceCidrIp,
@@ -83,6 +91,14 @@ export const createNasOperations = (nasClient: NasSdkClient) => {
       });
 
       await nasClient.createAccessRule(request);
+
+      return {
+        accessGroupName,
+        sourceCidrIp,
+        rwAccessType: 'RDWR',
+        userAccessType: 'no_squash',
+        priority: 1,
+      };
     },
 
     createFileSystem: async (
@@ -149,6 +165,11 @@ export const createNasOperations = (nasClient: NasSdkClient) => {
           protocolType: fs.protocolType,
           status: fs.status,
           createTime: fs.createTime,
+          description: fs.description,
+          zoneId: fs.zoneId,
+          capacity: fs.capacity,
+          encrypted: fs.encrypted,
+          mountTargetCount: fs.mountTargetCount,
         };
       } catch {
         return null;

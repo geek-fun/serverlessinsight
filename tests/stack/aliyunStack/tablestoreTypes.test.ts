@@ -255,6 +255,7 @@ describe('TableStoreTypes', () => {
         tableName: 'test-table',
         clusterType: 'HYBRID' as const,
         primaryKey: [{ name: 'id', type: 'INTEGER' as const }],
+        attributes: [{ name: 'id', type: 'INTEGER' as const }],
       };
 
       const definition = extractTableStoreDefinition(config);
@@ -263,8 +264,11 @@ describe('TableStoreTypes', () => {
         instanceName: 'test-instance',
         tableName: 'test-table',
         clusterType: 'HYBRID',
+        description: null,
         primaryKey: [{ name: 'id', type: 'INTEGER' }],
+        attributes: [{ name: 'id', type: 'INTEGER' }],
         reservedThroughput: null,
+        onDemandThroughput: null,
         tableOptions: null,
         network: null,
       });
@@ -276,6 +280,7 @@ describe('TableStoreTypes', () => {
         tableName: 'test-table',
         clusterType: 'HYBRID' as const,
         primaryKey: [{ name: 'id', type: 'INTEGER' as const }],
+        attributes: [{ name: 'id', type: 'INTEGER' as const }],
         reservedThroughput: {
           capacityUnit: {
             read: 10,
@@ -300,6 +305,7 @@ describe('TableStoreTypes', () => {
         tableName: 'test-table',
         clusterType: 'SSD' as const,
         primaryKey: [{ name: 'id', type: 'STRING' as const }],
+        attributes: [{ name: 'id', type: 'STRING' as const }],
         tableOptions: {
           timeToLive: 86400,
           maxVersions: 3,
@@ -320,6 +326,7 @@ describe('TableStoreTypes', () => {
         tableName: 'test-table',
         clusterType: 'HYBRID' as const,
         primaryKey: [{ name: 'id', type: 'INTEGER' as const }],
+        attributes: [{ name: 'id', type: 'INTEGER' as const }],
         network: {
           type: 'PRIVATE' as const,
           ingressRules: ['10.0.0.0/8'],

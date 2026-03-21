@@ -12,6 +12,14 @@ export type CosBucketConfig = {
       Key: string;
     };
   };
+  Domain?: string;
+  DomainCertificateId?: string;
+  DomainCertificateBody?: string;
+  DomainCertificatePrivateKey?: string;
+  DomainProtocol?: string | string[];
+  VersioningStatus?: string;
+  SseAlgorithm?: string;
+  SseKmsMasterKeyId?: string;
 };
 
 export type CosGrantee = {
@@ -132,6 +140,34 @@ export const bucketToCosBucketConfig = (bucket: BucketDomain, region: string): C
         Key: bucket.website.error_page,
       };
     }
+
+    if (bucket.website.domain) {
+      config.Domain = bucket.website.domain;
+    }
+    if (bucket.website.domain_certificate_id) {
+      config.DomainCertificateId = bucket.website.domain_certificate_id;
+    }
+    if (bucket.website.domain_certificate_body) {
+      config.DomainCertificateBody = bucket.website.domain_certificate_body;
+    }
+    if (bucket.website.domain_certificate_private_key) {
+      config.DomainCertificatePrivateKey = bucket.website.domain_certificate_private_key;
+    }
+    if (bucket.website.domain_protocol) {
+      config.DomainProtocol = bucket.website.domain_protocol;
+    }
+  }
+
+  if (bucket.versioning?.status) {
+    config.VersioningStatus = bucket.versioning.status;
+  }
+
+  if (bucket.security?.sse_algorithm) {
+    config.SseAlgorithm = bucket.security.sse_algorithm;
+  }
+
+  if (bucket.security?.sse_kms_master_key_id) {
+    config.SseKmsMasterKeyId = bucket.security.sse_kms_master_key_id;
   }
 
   return config;
@@ -148,5 +184,13 @@ export const extractCosBucketDefinition = (config: CosBucketConfig): ResourceAtt
           errorDocument: config.WebsiteConfiguration.ErrorDocument?.Key ?? null,
         }
       : {},
+    domain: config.Domain ?? null,
+    domainCertificateId: config.DomainCertificateId ?? null,
+    domainCertificateBody: config.DomainCertificateBody ?? null,
+    domainCertificatePrivateKey: config.DomainCertificatePrivateKey ? '(managed)' : null,
+    domainProtocol: config.DomainProtocol ?? null,
+    versioningStatus: config.VersioningStatus ?? null,
+    sseAlgorithm: config.SseAlgorithm ?? null,
+    sseKmsMasterKeyId: config.SseKmsMasterKeyId ?? null,
   };
 };

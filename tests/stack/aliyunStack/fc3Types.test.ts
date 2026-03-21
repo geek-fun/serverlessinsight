@@ -185,6 +185,8 @@ describe('FC3 Types', () => {
         vpcConfig: null,
         gpuConfig: null,
         customContainerConfig: null,
+        nasConfig: null,
+        logConfig: null,
         codeHash: 'abc123',
       });
     });

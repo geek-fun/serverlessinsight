@@ -65,7 +65,7 @@ const FC_EXECUTION_POLICY = JSON.stringify({
 });
 
 export const createRamOperations = (ramClient: RamSdkClient) => {
-  const attachRolePolicyForFc = async (roleName: string): Promise<void> => {
+  const attachRolePolicyForFc = async (roleName: string): Promise<string> => {
     const policyName = `${roleName}-policy`;
 
     // Create policy
@@ -111,6 +111,8 @@ export const createRamOperations = (ramClient: RamSdkClient) => {
         throw error;
       }
     }
+
+    return policyName;
   };
 
   return {
@@ -136,11 +138,14 @@ export const createRamOperations = (ramClient: RamSdkClient) => {
           arn: response.body?.role?.arn,
           description: response.body?.role?.description,
           createDate: response.body?.role?.createDate,
+          updateDate: response.body?.role?.updateDate,
+          maxSessionDuration: response.body?.role?.maxSessionDuration,
+          assumeRolePolicyDocument: assumeRolePolicy,
         };
 
-        await attachRolePolicyForFc(roleName);
+        const policyName = await attachRolePolicyForFc(roleName);
 
-        return roleInfo;
+        return { ...roleInfo, policyName };
       } catch (error: unknown) {
         if (
           error &&
@@ -160,7 +165,7 @@ export const createRamOperations = (ramClient: RamSdkClient) => {
             });
             await ramClient.updateRole(updateRequest);
 
-            await attachRolePolicyForFc(roleName);
+            const policyName = await attachRolePolicyForFc(roleName);
 
             return {
               roleName,
@@ -168,6 +173,10 @@ export const createRamOperations = (ramClient: RamSdkClient) => {
               arn: getResponse.body?.role?.arn,
               description: getResponse.body?.role?.description,
               createDate: getResponse.body?.role?.createDate,
+              updateDate: getResponse.body?.role?.updateDate,
+              maxSessionDuration: getResponse.body?.role?.maxSessionDuration,
+              assumeRolePolicyDocument: assumeRolePolicy,
+              policyName,
             };
           } catch (recoveryError: unknown) {
             // eslint-disable-next-line preserve-caught-error
@@ -200,6 +209,10 @@ export const createRamOperations = (ramClient: RamSdkClient) => {
           arn: getResponse.body?.role?.arn,
           description: getResponse.body?.role?.description,
           createDate: getResponse.body?.role?.createDate,
+          updateDate: getResponse.body?.role?.updateDate,
+          maxSessionDuration: getResponse.body?.role?.maxSessionDuration,
+          assumeRolePolicyDocument: assumeRolePolicy,
+          policyName: `${roleName}-policy`,
         };
 
         const updateRequest = new ram.UpdateRoleRequest({
@@ -240,6 +253,10 @@ export const createRamOperations = (ramClient: RamSdkClient) => {
           arn: response.body.role.arn,
           description: response.body.role.description,
           createDate: response.body.role.createDate,
+          updateDate: response.body.role.updateDate,
+          maxSessionDuration: response.body.role.maxSessionDuration,
+          assumeRolePolicyDocument: response.body.role.assumeRolePolicyDocument,
+          policyName: `${roleName}-policy`,
         };
       } catch (error: unknown) {
         if (
