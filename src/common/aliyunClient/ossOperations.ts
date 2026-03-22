@@ -105,28 +105,19 @@ export const createOssOperations = (
     ossClient.useBucket(bucketName);
   };
 
-  const getBucketExtranetEndpoint = async (bucketName: string): Promise<string> => {
+  const getBucketCnameEndpoint = async (bucketName: string): Promise<string> => {
     const infoResult = await ossClient.getBucketInfo(bucketName);
-    const endpoint = (infoResult.bucket as { ExtranetEndpoint?: string }).ExtranetEndpoint;
-    if (!endpoint) {
-      throw new Error(lang.__('OSS_BUCKET_EXTRANET_ENDPOINT_NOT_FOUND', { bucketName }));
+    const bucket = infoResult.bucket as { Name?: string; Location?: string };
+    const actualBucketName = bucket.Name || bucketName;
+    const location = bucket.Location;
+    if (!location) {
+      throw new Error(lang.__('OSS_BUCKET_LOCATION_NOT_FOUND', { bucketName }));
     }
-    return endpoint;
-  };
-
-  const getCnameEndpointFromExtranet = (extranetEndpoint: string): string => {
-    const suffix = '.aliyuncs.com';
-    if (!extranetEndpoint.endsWith(suffix)) {
-      throw new Error(lang.__('OSS_BUCKET_ENDPOINT_INVALID_FORMAT', { extranetEndpoint }));
-    }
-    const withoutAliyun = extranetEndpoint.slice(0, -suffix.length);
-    const lastDotIndex = withoutAliyun.lastIndexOf('.');
-    if (lastDotIndex <= 0) {
-      throw new Error(lang.__('OSS_BUCKET_ENDPOINT_INVALID_FORMAT', { extranetEndpoint }));
-    }
-    const bucketPart = withoutAliyun.slice(0, lastDotIndex);
-    const regionWithout = withoutAliyun.slice(lastDotIndex + 1).replace(/^oss-/, '');
-    return `${bucketPart}.${regionWithout}.taihangcda.cn`;
+    const derivedRegion = location.replace(/^oss-/, '');
+    const isChinaRegion = derivedRegion.startsWith('cn-');
+    return isChinaRegion
+      ? `${actualBucketName}.${derivedRegion}.taihangcda.cn`
+      : `${actualBucketName}.oss-${derivedRegion}.aliyuncs.com`;
   };
 
   const buildCertificateXml = (cert?: OssCnameCertificateConfig): string => {
@@ -341,8 +332,7 @@ export const createOssOperations = (
     const normalizedDomain = normalizeDomain(domain);
     const mainDomain = extractMainDomain(normalizedDomain);
     const hostRecord = extractHostRecord(normalizedDomain, mainDomain);
-    const extranetEndpoint = await getBucketExtranetEndpoint(bucketName);
-    const ossEndpoint = getCnameEndpointFromExtranet(extranetEndpoint);
+    const ossEndpoint = await getBucketCnameEndpoint(bucketName);
 
     let cnameResult: PutCnameResult | VerificationResult = await putBucketCname(
       bucketName,
@@ -409,7 +399,8 @@ export const createOssOperations = (
     const tokenInfo = await createCnameToken(bucketName, domain);
     const txtRecordName = '_dnsauth';
     const hostRecord = extractHostRecord(domain, extractMainDomain(domain));
-    const fullTxtRecord = hostRecord ? `${txtRecordName}.${hostRecord}` : txtRecordName;
+    const fullTxtRecord =
+      hostRecord && hostRecord !== '@' ? `${txtRecordName}.${hostRecord}` : txtRecordName;
 
     logger.info(
       lang.__('OSS_CNAME_VERIFICATION_TOKEN_CREATED', {
@@ -588,7 +579,8 @@ export const createOssOperations = (
 
     const hostRecord = extractHostRecord(domain, extractMainDomain(domain));
     const txtRecordName = '_dnsauth';
-    const fullTxtRecord = hostRecord ? `${txtRecordName}.${hostRecord}` : txtRecordName;
+    const fullTxtRecord =
+      hostRecord && hostRecord !== '@' ? `${txtRecordName}.${hostRecord}` : txtRecordName;
 
     logger.warn(
       lang.__('OSS_CNAME_VERIFICATION_RETRY_FAILED', {

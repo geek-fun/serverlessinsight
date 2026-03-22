@@ -56,7 +56,11 @@ describe('ossOperations CORS', () => {
     jest.clearAllMocks();
     mockRequest.mockResolvedValue({});
     mockGetBucketInfo.mockResolvedValue({
-      bucket: { ExtranetEndpoint: 'test-bucket.oss-cn-hangzhou.aliyuncs.com' },
+      bucket: {
+        ExtranetEndpoint: 'test-bucket.oss-cn-hangzhou.aliyuncs.com',
+        Name: 'test-bucket',
+        Location: 'oss-cn-hangzhou',
+      },
     });
     operations = createOssOperations(mockOssClient, 'cn-hangzhou');
   });
@@ -192,7 +196,11 @@ describe('ossOperations putBucketCname', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     mockGetBucketInfo.mockResolvedValue({
-      bucket: { ExtranetEndpoint: 'test-bucket.oss-cn-hangzhou.aliyuncs.com' },
+      bucket: {
+        ExtranetEndpoint: 'test-bucket.oss-cn-hangzhou.aliyuncs.com',
+        Name: 'test-bucket',
+        Location: 'oss-cn-hangzhou',
+      },
     });
     operations = createOssOperations(mockOssClient, 'cn-hangzhou');
   });
@@ -455,7 +463,11 @@ describe('ossOperations CNAME endpoint selection', () => {
     mockRequest.mockResolvedValue({});
     mockGetBucketCORS.mockRejectedValue(new Error('NoSuchCORSConfiguration'));
     mockGetBucketInfo.mockResolvedValue({
-      bucket: { ExtranetEndpoint: 'test-bucket.oss-cn-hangzhou.aliyuncs.com' },
+      bucket: {
+        ExtranetEndpoint: 'test-bucket.oss-cn-hangzhou.aliyuncs.com',
+        Name: 'test-bucket',
+        Location: 'oss-cn-hangzhou',
+      },
     });
     operations = createOssOperations(mockOssClient, 'cn-hangzhou');
   });
@@ -486,9 +498,13 @@ describe('ossOperations CNAME endpoint selection', () => {
       expect(result.cname).toBe('test-bucket.cn-hangzhou.taihangcda.cn');
     });
 
-    it('should derive CNAME endpoint from API ExtranetEndpoint, not from region parameter', async () => {
+    it('should derive CNAME endpoint from API Location, not from region parameter', async () => {
       mockGetBucketInfo.mockResolvedValue({
-        bucket: { ExtranetEndpoint: 'my-bucket.oss-cn-beijing.aliyuncs.com' },
+        bucket: {
+          ExtranetEndpoint: 'my-bucket.oss-cn-beijing.aliyuncs.com',
+          Name: 'my-bucket',
+          Location: 'oss-cn-beijing',
+        },
       });
       operations = createOssOperations(mockOssClient, 'cn-hangzhou');
 
@@ -499,12 +515,75 @@ describe('ossOperations CNAME endpoint selection', () => {
 
     it('should handle bucket names with dots correctly', async () => {
       mockGetBucketInfo.mockResolvedValue({
-        bucket: { ExtranetEndpoint: 'my.website.bucket.oss-cn-hangzhou.aliyuncs.com' },
+        bucket: {
+          ExtranetEndpoint: 'my.website.bucket.oss-cn-hangzhou.aliyuncs.com',
+          Name: 'my.website.bucket',
+          Location: 'oss-cn-hangzhou',
+        },
       });
 
       const result = await operations.bindCustomDomain('my.website.bucket', 'example.com');
 
       expect(result.cname).toBe('my.website.bucket.cn-hangzhou.taihangcda.cn');
+    });
+
+    it('should use taihangcda.cn for China regions', async () => {
+      mockGetBucketInfo.mockResolvedValue({
+        bucket: {
+          ExtranetEndpoint: 'oss-cn-hangzhou.aliyuncs.com',
+          Name: 'wentsen-site-prod',
+          Location: 'oss-cn-hangzhou',
+        },
+      });
+
+      const result = await operations.bindCustomDomain('wentsen-site-prod', 'example.com');
+
+      expect(result.cname).toBe('wentsen-site-prod.cn-hangzhou.taihangcda.cn');
+    });
+
+    it('should use standard endpoint for international regions (Singapore)', async () => {
+      mockGetBucketInfo.mockResolvedValue({
+        bucket: {
+          ExtranetEndpoint: 'oss-ap-southeast-1.aliyuncs.com',
+          Name: 'my-bucket',
+          Location: 'oss-ap-southeast-1',
+        },
+      });
+      operations = createOssOperations(mockOssClient, 'ap-southeast-1');
+
+      const result = await operations.bindCustomDomain('my-bucket', 'example.com');
+
+      expect(result.cname).toBe('my-bucket.oss-ap-southeast-1.aliyuncs.com');
+    });
+
+    it('should use standard endpoint for international regions (US)', async () => {
+      mockGetBucketInfo.mockResolvedValue({
+        bucket: {
+          ExtranetEndpoint: 'oss-us-west-1.aliyuncs.com',
+          Name: 'my-bucket',
+          Location: 'oss-us-west-1',
+        },
+      });
+      operations = createOssOperations(mockOssClient, 'us-west-1');
+
+      const result = await operations.bindCustomDomain('my-bucket', 'example.com');
+
+      expect(result.cname).toBe('my-bucket.oss-us-west-1.aliyuncs.com');
+    });
+
+    it('should use standard endpoint for international regions (Europe)', async () => {
+      mockGetBucketInfo.mockResolvedValue({
+        bucket: {
+          ExtranetEndpoint: 'oss-eu-central-1.aliyuncs.com',
+          Name: 'my-bucket',
+          Location: 'oss-eu-central-1',
+        },
+      });
+      operations = createOssOperations(mockOssClient, 'eu-central-1');
+
+      const result = await operations.bindCustomDomain('my-bucket', 'example.com');
+
+      expect(result.cname).toBe('my-bucket.oss-eu-central-1.aliyuncs.com');
     });
   });
 });

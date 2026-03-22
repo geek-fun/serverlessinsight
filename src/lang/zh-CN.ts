@@ -363,8 +363,7 @@ export const zhCN = {
     '禁用存储桶 {{bucketName}} 的公共访问阻止失败：{{error}}。您可能需要在阿里云 OSS 控制台手动禁用公共访问阻止。',
   OSS_BUCKET_EXTRANET_ENDPOINT_NOT_FOUND:
     '存储桶 {{bucketName}} 未找到外网访问端点。该存储桶可能未启用公共访问。',
-  OSS_BUCKET_ENDPOINT_INVALID_FORMAT:
-    'OSS 端点格式无效：{{extranetEndpoint}}。预期格式：{bucket}.oss-{region}.aliyuncs.com',
+  OSS_BUCKET_LOCATION_NOT_FOUND: '存储桶 {{bucketName}} 未找到地域信息',
 
   // Tencent COS DNS messages
   COS_DNS_CNAME_CREATED: '已创建 DNS CNAME 记录: {{domain}} -> {{cname}}',
