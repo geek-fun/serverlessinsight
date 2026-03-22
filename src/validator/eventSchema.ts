@@ -38,6 +38,7 @@ export const eventSchema = {
                 },
               ],
             },
+            www_bind_apex: { type: 'boolean' },
           },
           oneOf: [
             {

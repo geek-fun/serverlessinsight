@@ -1,6 +1,10 @@
 import { Context, EventDomain, Plan, PlanItem, StateFile } from '../../types';
 import { createAliyunClient } from '../../common/aliyunClient';
-import { eventToApigwGroupConfig, extractApigwGroupDefinition } from './apigwTypes';
+import {
+  eventToApigwGroupConfig,
+  extractApigwGroupDefinition,
+  extractEventDomainDefinition,
+} from './apigwTypes';
 import { getAllResources, getResource } from '../../common/stateManager';
 import { attributesEqual } from '../../common/hashUtils';
 
@@ -52,15 +56,7 @@ export const generateApigwPlan = async (
           path: t.path,
           backend: t.backend,
         })),
-        domain: event.domain
-          ? {
-              domainName: event.domain.domain_name,
-              certificateId: (event.domain.certificate_id as string) ?? null,
-              certificateBody: (event.domain.certificate_body as string) ?? null,
-              certificatePrivateKey: event.domain.certificate_private_key ? '(managed)' : null,
-              protocol: event.domain.protocol ?? null,
-            }
-          : null,
+        domain: extractEventDomainDefinition(event.domain),
       };
 
       if (!currentState) {

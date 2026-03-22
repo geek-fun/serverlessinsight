@@ -243,8 +243,10 @@ export const zhCN = {
   LOCK_TIME_AGO_HOURS: '{{hours}} 小时前',
 
   // API Gateway messages
-  APIGW_GROUP_FOUND_REUSING: '找到现有 API 分组: {{groupName}}，将复用它',
-  APIGW_DOMAIN_BINDING_FAILED: '绑定自定义域名失败: {{error}}',
+  APIGW_GROUP_FOUND_REUSING: '找到现有 API 分组：{{groupName}}，将复用它',
+  APIGW_DOMAIN_BINDING_FAILED: '绑定自定义域名失败：{{error}}',
+  APIGW_DOMAIN_UNBIND_FAILED: '解绑域名 {{domain}} 失败：{{error}}',
+  APIGW_WWW_DOMAIN_UNBIND_FAILED: '解绑 www 域名 {{domain}} 失败：{{error}}',
   APIGW_GROUP_APIS_CREATED_DOMAIN_FAILED: 'API 网关分组和 API 创建成功，但域名绑定失败',
   APIGW_STATE_SAVED_RETRY: '状态已保存。您可以修复域名验证问题后重新部署',
   APIGW_DOMAIN_VERIFICATION_REQUIRED:

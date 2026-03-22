@@ -241,6 +241,7 @@ describe('Apigw Planner', () => {
           triggers: [{ method: 'GET', path: '/users', backend: 'userFunction' }],
           domain: {
             domainName: 'api.example.com',
+            wwwBindApex: false,
             certificateId: '12345',
             certificateBody: null,
             certificatePrivateKey: null,

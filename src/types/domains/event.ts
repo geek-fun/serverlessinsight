@@ -14,6 +14,7 @@ export type EventRaw = {
   }>;
   domain?: {
     domain_name: Resolvable<string>;
+    www_bind_apex?: Resolvable<boolean>;
     certificate_id?: Resolvable<string>;
     certificate_body?: Resolvable<string>;
     certificate_private_key?: Resolvable<string>;

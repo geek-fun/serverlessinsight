@@ -14,10 +14,14 @@ import {
 const isStructuredDomain = (domain: unknown): domain is BucketWebsiteDomainConfig =>
   typeof domain === 'object' && domain !== null && 'domain_name' in domain;
 
-const parseWebsiteDomain = (domain: Resolvable<string> | BucketWebsiteDomainConfig | undefined) => {
+const parseWebsiteDomain = (
+  domain: Resolvable<string> | BucketWebsiteDomainConfig | undefined,
+  www_bind_apex?: Resolvable<boolean>,
+) => {
   if (domain == null) {
     return {
       domain: undefined,
+      www_bind_apex: parseBooleanWithDefault(www_bind_apex, false),
       domain_certificate_id: undefined,
       domain_certificate_body: undefined,
       domain_certificate_private_key: undefined,
@@ -27,6 +31,7 @@ const parseWebsiteDomain = (domain: Resolvable<string> | BucketWebsiteDomainConf
   if (!isStructuredDomain(domain)) {
     return {
       domain: String(domain),
+      www_bind_apex: parseBooleanWithDefault(www_bind_apex, false),
       domain_certificate_id: undefined,
       domain_certificate_body: undefined,
       domain_certificate_private_key: undefined,
@@ -35,6 +40,7 @@ const parseWebsiteDomain = (domain: Resolvable<string> | BucketWebsiteDomainConf
   }
   return {
     domain: String(domain.domain_name),
+    www_bind_apex: parseBooleanWithDefault(www_bind_apex, false),
     domain_certificate_id:
       domain.certificate_id != null ? String(domain.certificate_id) : undefined,
     domain_certificate_body:
@@ -87,7 +93,7 @@ export const parseBucket = (buckets: {
     website: bucket.website
       ? {
           code: String(bucket.website.code),
-          ...parseWebsiteDomain(bucket.website.domain),
+          ...parseWebsiteDomain(bucket.website.domain, bucket.website.www_bind_apex),
           index: parseStringWithDefault(bucket.website.index, 'index.html'),
           error_page: parseStringWithDefault(bucket.website.error_page, '404.html'),
           error_code: parseNumberWithDefault(bucket.website.error_code, 404),

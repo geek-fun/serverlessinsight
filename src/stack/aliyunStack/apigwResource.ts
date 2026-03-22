@@ -6,6 +6,7 @@ import {
   eventToApigwGroupConfig,
   triggerToApigwApiConfig,
   extractApigwGroupDefinition,
+  extractEventDomainDefinition,
   generateApiKey,
   inferProtocolConfig,
 } from './apigwTypes';
@@ -14,6 +15,7 @@ import { buildSid } from '../../common';
 import { readPemContent, warnInlinePem } from '../../common/certUtils';
 import { logger } from '../../common/logger';
 import { lang } from '../../lang';
+import { deriveWwwDomain } from '../../common/domainUtils';
 
 const buildApigwGroupInstanceFromProvider = (
   info: ApigwGroupInfo,
@@ -183,15 +185,7 @@ export const createApigwResource = async (
         path: t.path,
         backend: t.backend,
       })),
-      domain: event.domain
-        ? {
-            domainName: event.domain.domain_name,
-            certificateId: (event.domain.certificate_id as string) ?? null,
-            certificateBody: (event.domain.certificate_body as string) ?? null,
-            certificatePrivateKey: event.domain.certificate_private_key ? '(managed)' : null,
-            protocol: event.domain.protocol ?? null,
-          }
-        : null,
+      domain: extractEventDomainDefinition(event.domain),
     },
     instances,
     lastUpdated: new Date().toISOString(),
@@ -240,15 +234,7 @@ export const createApigwResource = async (
           path: t.path,
           backend: t.backend,
         })),
-        domain: event.domain
-          ? {
-              domainName: event.domain.domain_name,
-              certificateId: (event.domain.certificate_id as string) ?? null,
-              certificateBody: (event.domain.certificate_body as string) ?? null,
-              certificatePrivateKey: event.domain.certificate_private_key ? '(managed)' : null,
-              protocol: event.domain.protocol ?? null,
-            }
-          : null,
+        domain: extractEventDomainDefinition(event.domain),
       },
       instances,
       lastUpdated: new Date().toISOString(),
@@ -258,6 +244,9 @@ export const createApigwResource = async (
 
   if (event.domain) {
     try {
+      const primaryDomain = event.domain.domain_name as string;
+      const wwwBindApex = event.domain.www_bind_apex === true;
+
       const domainConfig = await buildDomainBindingConfig(
         event.domain,
         groupId,
@@ -267,6 +256,20 @@ export const createApigwResource = async (
         client,
       );
       state = await client.apigw.bindCustomDomain(domainConfig, state, logicalId);
+
+      const wwwDomain = wwwBindApex ? deriveWwwDomain(primaryDomain) : null;
+      if (wwwDomain) {
+        logger.info(lang.__('APIGW_BINDING_DOMAIN', { domain: wwwDomain }));
+
+        const wwwDomainConfig: ApigwCustomDomainConfig = {
+          ...domainConfig,
+          domainName: wwwDomain,
+          certificateName: domainConfig.certificateName
+            ? `${domainConfig.certificateName}-www`
+            : undefined,
+        };
+        state = await client.apigw.bindCustomDomain(wwwDomainConfig, state, logicalId);
+      }
     } catch (error) {
       logger.error(lang.__('APIGW_DOMAIN_BINDING_FAILED', { error: String(error) }));
       logger.info(lang.__('APIGW_GROUP_APIS_CREATED_DOMAIN_FAILED'));
@@ -286,15 +289,7 @@ export const createApigwResource = async (
         path: t.path,
         backend: t.backend,
       })),
-      domain: event.domain
-        ? {
-            domainName: event.domain.domain_name,
-            certificateId: (event.domain.certificate_id as string) ?? null,
-            certificateBody: (event.domain.certificate_body as string) ?? null,
-            certificatePrivateKey: event.domain.certificate_private_key ? '(managed)' : null,
-            protocol: event.domain.protocol ?? null,
-          }
-        : null,
+      domain: extractEventDomainDefinition(event.domain),
     },
     instances,
     lastUpdated: new Date().toISOString(),
@@ -424,6 +419,15 @@ export const updateApigwResource = async (
   }
 
   if (event.domain) {
+    const primaryDomain = event.domain.domain_name as string;
+    const wwwBindApex = event.domain.www_bind_apex === true;
+    const existingDomain = existingState.definition?.domain as
+      | Record<string, unknown>
+      | null
+      | undefined;
+    const previousWwwBindApex = existingDomain?.wwwBindApex === true;
+    const previousDomainName = existingDomain?.domainName as string | null | undefined;
+
     const domainConfig = await buildDomainBindingConfig(
       event.domain,
       groupId,
@@ -433,6 +437,67 @@ export const updateApigwResource = async (
       client,
     );
     state = await client.apigw.bindCustomDomain(domainConfig, state, logicalId);
+
+    const wwwDomain = wwwBindApex ? deriveWwwDomain(primaryDomain) : null;
+    if (wwwDomain) {
+      logger.info(lang.__('APIGW_BINDING_DOMAIN', { domain: wwwDomain }));
+
+      const wwwDomainConfig: ApigwCustomDomainConfig = {
+        ...domainConfig,
+        domainName: wwwDomain,
+        certificateName: domainConfig.certificateName
+          ? `${domainConfig.certificateName}-www`
+          : undefined,
+      };
+      state = await client.apigw.bindCustomDomain(wwwDomainConfig, state, logicalId);
+    }
+
+    if (previousWwwBindApex && previousDomainName) {
+      const previousWwwDomain = deriveWwwDomain(previousDomainName);
+      if (previousWwwDomain && previousWwwDomain !== wwwDomain) {
+        try {
+          await client.apigw.unbindCustomDomain(groupId, previousWwwDomain);
+        } catch (error) {
+          logger.warn(
+            lang.__('APIGW_WWW_DOMAIN_UNBIND_FAILED', {
+              domain: previousWwwDomain,
+              error: String(error),
+            }),
+          );
+        }
+      }
+    }
+  } else {
+    const existingDomain = existingState.definition?.domain as
+      | Record<string, unknown>
+      | null
+      | undefined;
+    if (existingDomain?.domainName) {
+      const previousDomain = existingDomain.domainName as string;
+      try {
+        await client.apigw.unbindCustomDomain(groupId, previousDomain);
+      } catch (error) {
+        logger.warn(
+          lang.__('APIGW_DOMAIN_UNBIND_FAILED', { domain: previousDomain, error: String(error) }),
+        );
+      }
+
+      if (existingDomain.wwwBindApex === true) {
+        const previousWwwDomain = deriveWwwDomain(previousDomain);
+        if (previousWwwDomain) {
+          try {
+            await client.apigw.unbindCustomDomain(groupId, previousWwwDomain);
+          } catch (error) {
+            logger.warn(
+              lang.__('APIGW_WWW_DOMAIN_UNBIND_FAILED', {
+                domain: previousWwwDomain,
+                error: String(error),
+              }),
+            );
+          }
+        }
+      }
+    }
   }
 
   const groupDefinition = extractApigwGroupDefinition(groupConfig);
@@ -446,15 +511,7 @@ export const updateApigwResource = async (
         path: t.path,
         backend: t.backend,
       })),
-      domain: event.domain
-        ? {
-            domainName: event.domain.domain_name,
-            certificateId: (event.domain.certificate_id as string) ?? null,
-            certificateBody: (event.domain.certificate_body as string) ?? null,
-            certificatePrivateKey: event.domain.certificate_private_key ? '(managed)' : null,
-            protocol: event.domain.protocol ?? null,
-          }
-        : null,
+      domain: extractEventDomainDefinition(event.domain),
     },
     instances,
     lastUpdated: new Date().toISOString(),
@@ -487,6 +544,37 @@ export const deleteApigwResource = async (
   const groupId = groupInstance.id;
 
   state = await cleanupDnsRecords(context, logicalId, state);
+
+  const existingDomain = existingState.definition?.domain as
+    | Record<string, unknown>
+    | null
+    | undefined;
+  if (existingDomain?.domainName) {
+    const primaryDomain = existingDomain.domainName as string;
+    try {
+      await client.apigw.unbindCustomDomain(groupId, primaryDomain);
+    } catch (error) {
+      logger.warn(
+        lang.__('APIGW_DOMAIN_UNBIND_FAILED', { domain: primaryDomain, error: String(error) }),
+      );
+    }
+
+    if (existingDomain.wwwBindApex === true) {
+      const wwwDomain = deriveWwwDomain(primaryDomain);
+      if (wwwDomain) {
+        try {
+          await client.apigw.unbindCustomDomain(groupId, wwwDomain);
+        } catch (error) {
+          logger.warn(
+            lang.__('APIGW_WWW_DOMAIN_UNBIND_FAILED', {
+              domain: wwwDomain,
+              error: String(error),
+            }),
+          );
+        }
+      }
+    }
+  }
 
   const deployments = existingInstances.filter((i) => i.type === 'ALIYUN_APIGW_DEPLOYMENT');
   for (const deployment of deployments) {

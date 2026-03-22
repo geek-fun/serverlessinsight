@@ -1,4 +1,5 @@
 import { EventDomain, EventRaw } from '../types';
+import { parseBooleanWithDefault } from './parseUtils';
 
 export const parseEvent = (events: { [key: string]: EventRaw }): Array<EventDomain> | undefined => {
   if (!events) {
@@ -9,6 +10,11 @@ export const parseEvent = (events: { [key: string]: EventRaw }): Array<EventDoma
     name: event.name,
     type: event.type,
     triggers: event.triggers?.map((trigger) => ({ ...trigger, method: trigger.method ?? 'GET' })),
-    domain: event.domain,
+    domain: event.domain
+      ? {
+          ...event.domain,
+          www_bind_apex: parseBooleanWithDefault(event.domain.www_bind_apex, false),
+        }
+      : undefined,
   }));
 };

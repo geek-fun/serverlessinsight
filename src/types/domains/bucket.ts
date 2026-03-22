@@ -26,6 +26,7 @@ export type BucketRaw = {
   website?: {
     code: Resolvable<string>;
     domain?: Resolvable<string> | BucketWebsiteDomainConfig;
+    www_bind_apex?: Resolvable<boolean>;
     index?: Resolvable<string>;
     error_page?: Resolvable<string>;
     error_code?: Resolvable<number>;
@@ -57,6 +58,7 @@ export type BucketDomain = {
   website?: {
     index: string;
     domain?: string;
+    www_bind_apex?: boolean;
     domain_certificate_id?: string;
     domain_certificate_body?: string;
     domain_certificate_private_key?: string;

@@ -13,6 +13,7 @@ export type CosBucketConfig = {
     };
   };
   Domain?: string;
+  WwwBindApex?: boolean;
   DomainCertificateId?: string;
   DomainCertificateBody?: string;
   DomainCertificatePrivateKey?: string;
@@ -144,6 +145,9 @@ export const bucketToCosBucketConfig = (bucket: BucketDomain, region: string): C
     if (bucket.website.domain) {
       config.Domain = bucket.website.domain;
     }
+    if (bucket.website.www_bind_apex !== undefined) {
+      config.WwwBindApex = bucket.website.www_bind_apex;
+    }
     if (bucket.website.domain_certificate_id) {
       config.DomainCertificateId = bucket.website.domain_certificate_id;
     }
@@ -185,6 +189,7 @@ export const extractCosBucketDefinition = (config: CosBucketConfig): ResourceAtt
         }
       : {},
     domain: config.Domain ?? null,
+    wwwBindApex: config.WwwBindApex ?? false,
     domainCertificateId: config.DomainCertificateId ?? null,
     domainCertificateBody: config.DomainCertificateBody ?? null,
     domainCertificatePrivateKey: config.DomainCertificatePrivateKey ? '(managed)' : null,
