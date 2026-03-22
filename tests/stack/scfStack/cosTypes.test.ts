@@ -185,6 +185,7 @@ describe('CosTypes', () => {
         acl: null,
         websiteConfiguration: {},
         domain: null,
+        wwwBindApex: false,
         domainCertificateId: null,
         domainCertificateBody: null,
         domainCertificatePrivateKey: null,

@@ -119,3 +119,21 @@ export const extractHostRecord = (fullDomain: string, mainDomain: string): strin
   }
   return fullDomain;
 };
+
+/**
+ * Derive the www variant of a domain by prepending "www."
+ *
+ * @example deriveWwwDomain("example.com") // "www.example.com"
+ * @example deriveWwwDomain("www.example.com") // null (already has www prefix)
+ * @example deriveWwwDomain("api.example.com") // "www.api.example.com" (subdomains also get www prepended)
+ *
+ * Note: This function prepends "www." to any domain that doesn't already start with "www.",
+ * including subdomains. For example, "api.example.com" becomes "www.api.example.com".
+ * Users should ensure the domain is appropriate for www binding before calling this function.
+ */
+export const deriveWwwDomain = (domain: string): string | null => {
+  if (domain.startsWith('www.')) {
+    return null;
+  }
+  return `www.${domain}`;
+};

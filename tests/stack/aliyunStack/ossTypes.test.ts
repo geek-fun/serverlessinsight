@@ -198,6 +198,7 @@ describe('OssTypes', () => {
         websiteConfiguration: {},
         storageClass: null,
         domain: null,
+        wwwBindApex: false,
         domainCertificateId: null,
         domainCertificateBody: null,
         domainCertificatePrivateKey: null,

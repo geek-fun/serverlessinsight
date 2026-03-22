@@ -19,6 +19,7 @@ import { CommonBucketInstance } from '../bucketTypes';
 import { logger } from '../../common/logger';
 import { lang } from '../../lang';
 import path from 'node:path';
+import { deriveWwwDomain } from '../../common/domainUtils';
 
 type OssDnsInstance = ResourceInstance & {
   type: 'ALIYUN_OSS_DNS_CNAME';
@@ -26,6 +27,7 @@ type OssDnsInstance = ResourceInstance & {
   cname: string;
   dnsRecordId?: string;
   txtRecordId?: string;
+  isWwwVariant?: boolean;
 };
 
 const buildOssInstanceFromProvider = (info: OssBucketInfo, sid: string): CommonBucketInstance => {
@@ -183,46 +185,75 @@ export const createBucketResource = async (
   let cnameInfo: OssCnameInfo | undefined;
   if (bucket.website?.domain) {
     const certificate = await resolveBucketDomainCertificate(bucket, client);
+    const primaryDomain = bucket.website.domain;
+    const wwwBindApex = bucket.website.www_bind_apex ?? false;
 
     logger.info(
       lang.__('BINDING_CUSTOM_DOMAIN_TO_BUCKET', {
-        domain: bucket.website.domain,
+        domain: primaryDomain,
         bucketName: config.bucketName,
       }),
     );
     if (certificate) {
       logger.info(
         lang.__('OSS_BUCKET_CERT_BINDING', {
-          domain: bucket.website.domain,
+          domain: primaryDomain,
           bucketName: config.bucketName,
         }),
       );
     }
 
-    cnameInfo = await client.oss.bindCustomDomain(
-      config.bucketName,
-      bucket.website.domain,
-      certificate,
-    );
+    cnameInfo = await client.oss.bindCustomDomain(config.bucketName, primaryDomain, certificate);
 
     if (cnameInfo) {
-      const instanceId = cnameInfo.dnsRecordId ?? bucket.website.domain;
+      const instanceId = cnameInfo.dnsRecordId ?? primaryDomain;
       const dnsInstance: OssDnsInstance = {
         sid: buildSid('aliyun', 'alidns', context.stage, instanceId),
         id: instanceId,
         type: ResourceTypeEnum.ALIYUN_OSS_DNS_CNAME,
-        domain: bucket.website.domain,
+        domain: primaryDomain,
         cname: cnameInfo.cname,
         ...(cnameInfo.dnsRecordId ? { dnsRecordId: cnameInfo.dnsRecordId } : {}),
         ...(cnameInfo.txtRecordId ? { txtRecordId: cnameInfo.txtRecordId } : {}),
       };
       instances.push(dnsInstance);
+    }
 
-      // Refresh bucket info to capture auto-added CORS rule
-      bucketInfo = await client.oss.getBucket(config.bucketName);
-      if (bucketInfo) {
-        instances[0] = buildOssInstanceFromProvider(bucketInfo, sid);
+    const wwwDomain = wwwBindApex ? deriveWwwDomain(primaryDomain) : null;
+    if (wwwDomain) {
+      logger.info(
+        lang.__('BINDING_CUSTOM_DOMAIN_TO_BUCKET', {
+          domain: wwwDomain,
+          bucketName: config.bucketName,
+        }),
+      );
+
+      const wwwCnameInfo = await client.oss.bindCustomDomain(
+        config.bucketName,
+        wwwDomain,
+        certificate,
+      );
+
+      if (wwwCnameInfo) {
+        const wwwInstanceId = wwwCnameInfo.dnsRecordId ?? wwwDomain;
+        const wwwDnsInstance: OssDnsInstance = {
+          sid: buildSid('aliyun', 'alidns', context.stage, wwwInstanceId),
+          id: wwwInstanceId,
+          type: ResourceTypeEnum.ALIYUN_OSS_DNS_CNAME,
+          domain: wwwDomain,
+          cname: wwwCnameInfo.cname,
+          isWwwVariant: true,
+          ...(wwwCnameInfo.dnsRecordId ? { dnsRecordId: wwwCnameInfo.dnsRecordId } : {}),
+          ...(wwwCnameInfo.txtRecordId ? { txtRecordId: wwwCnameInfo.txtRecordId } : {}),
+        };
+        instances.push(wwwDnsInstance);
       }
+    }
+
+    // Refresh bucket info to capture auto-added CORS rule
+    bucketInfo = await client.oss.getBucket(config.bucketName);
+    if (bucketInfo) {
+      instances[0] = buildOssInstanceFromProvider(bucketInfo, sid);
     }
   }
 
@@ -298,73 +329,114 @@ export const updateBucketResource = async (
   const instances: Array<ResourceInstance> = [buildOssInstanceFromProvider(bucketInfo, sid)];
 
   const existingState = state.resources[logicalId];
-  const existingDnsInstance = existingState?.instances?.find(
+  const existingDnsInstances = existingState?.instances?.filter(
     (i) => i.type === ResourceTypeEnum.ALIYUN_OSS_DNS_CNAME,
-  ) as OssDnsInstance | undefined;
+  ) as OssDnsInstance[] | undefined;
+  const existingPrimaryDnsInstance = existingDnsInstances?.find((i) => !i.isWwwVariant);
+  const existingWwwDnsInstance = existingDnsInstances?.find((i) => i.isWwwVariant);
 
   let cnameInfo: OssCnameInfo | undefined;
 
   if (bucket.website?.domain) {
-    const domainChanged = existingDnsInstance?.domain !== bucket.website.domain;
+    const primaryDomain = bucket.website.domain;
+    const wwwBindApex = bucket.website.www_bind_apex ?? false;
+    const domainChanged = existingPrimaryDnsInstance?.domain !== primaryDomain;
 
-    if (domainChanged && existingDnsInstance) {
-      await client.oss.unbindCustomDomain(
-        config.bucketName,
-        existingDnsInstance.domain,
-        existingDnsInstance.dnsRecordId,
-        existingDnsInstance.txtRecordId,
-      );
+    if (domainChanged && existingDnsInstances) {
+      for (const instance of existingDnsInstances) {
+        await client.oss.unbindCustomDomain(
+          config.bucketName,
+          instance.domain,
+          instance.dnsRecordId,
+          instance.txtRecordId,
+        );
+      }
     }
 
     const certificate = await resolveBucketDomainCertificate(bucket, client);
 
     logger.info(
       lang.__('BINDING_CUSTOM_DOMAIN_TO_BUCKET', {
-        domain: bucket.website.domain,
+        domain: primaryDomain,
         bucketName: config.bucketName,
       }),
     );
     if (certificate) {
       logger.info(
         lang.__('OSS_BUCKET_CERT_BINDING', {
-          domain: bucket.website.domain,
+          domain: primaryDomain,
           bucketName: config.bucketName,
         }),
       );
     }
 
-    cnameInfo = await client.oss.bindCustomDomain(
-      config.bucketName,
-      bucket.website.domain,
-      certificate,
-    );
+    cnameInfo = await client.oss.bindCustomDomain(config.bucketName, primaryDomain, certificate);
 
     if (cnameInfo) {
-      const instanceId = cnameInfo.dnsRecordId ?? bucket.website.domain;
+      const instanceId = cnameInfo.dnsRecordId ?? primaryDomain;
       const dnsInstance: OssDnsInstance = {
         sid: buildSid('aliyun', 'alidns', context.stage, instanceId),
         id: instanceId,
         type: ResourceTypeEnum.ALIYUN_OSS_DNS_CNAME,
-        domain: bucket.website.domain,
+        domain: primaryDomain,
         cname: cnameInfo.cname,
         ...(cnameInfo.dnsRecordId ? { dnsRecordId: cnameInfo.dnsRecordId } : {}),
         ...(cnameInfo.txtRecordId ? { txtRecordId: cnameInfo.txtRecordId } : {}),
       };
       instances.push(dnsInstance);
-
-      // Refresh bucket info to capture auto-added CORS rule
-      const refreshedInfo = await client.oss.getBucket(config.bucketName);
-      if (refreshedInfo) {
-        instances[0] = buildOssInstanceFromProvider(refreshedInfo, sid);
-      }
     }
-  } else if (existingDnsInstance) {
-    await client.oss.unbindCustomDomain(
-      config.bucketName,
-      existingDnsInstance.domain,
-      existingDnsInstance.dnsRecordId,
-      existingDnsInstance.txtRecordId,
-    );
+
+    const wwwDomain = wwwBindApex ? deriveWwwDomain(primaryDomain) : null;
+    if (wwwDomain) {
+      logger.info(
+        lang.__('BINDING_CUSTOM_DOMAIN_TO_BUCKET', {
+          domain: wwwDomain,
+          bucketName: config.bucketName,
+        }),
+      );
+
+      const wwwCnameInfo = await client.oss.bindCustomDomain(
+        config.bucketName,
+        wwwDomain,
+        certificate,
+      );
+
+      if (wwwCnameInfo) {
+        const wwwInstanceId = wwwCnameInfo.dnsRecordId ?? wwwDomain;
+        const wwwDnsInstance: OssDnsInstance = {
+          sid: buildSid('aliyun', 'alidns', context.stage, wwwInstanceId),
+          id: wwwInstanceId,
+          type: ResourceTypeEnum.ALIYUN_OSS_DNS_CNAME,
+          domain: wwwDomain,
+          cname: wwwCnameInfo.cname,
+          isWwwVariant: true,
+          ...(wwwCnameInfo.dnsRecordId ? { dnsRecordId: wwwCnameInfo.dnsRecordId } : {}),
+          ...(wwwCnameInfo.txtRecordId ? { txtRecordId: wwwCnameInfo.txtRecordId } : {}),
+        };
+        instances.push(wwwDnsInstance);
+      }
+    } else if (existingWwwDnsInstance && !wwwBindApex) {
+      await client.oss.unbindCustomDomain(
+        config.bucketName,
+        existingWwwDnsInstance.domain,
+        existingWwwDnsInstance.dnsRecordId,
+        existingWwwDnsInstance.txtRecordId,
+      );
+    }
+
+    const refreshedInfo = await client.oss.getBucket(config.bucketName);
+    if (refreshedInfo) {
+      instances[0] = buildOssInstanceFromProvider(refreshedInfo, sid);
+    }
+  } else if (existingDnsInstances) {
+    for (const instance of existingDnsInstances) {
+      await client.oss.unbindCustomDomain(
+        config.bucketName,
+        instance.domain,
+        instance.dnsRecordId,
+        instance.txtRecordId,
+      );
+    }
   }
 
   const resourceState: ResourceState = {
@@ -392,17 +464,19 @@ export const deleteBucketResource = async (
   const client = createAliyunClient(context);
 
   const existingState = state.resources[logicalId];
-  const dnsInstance = existingState?.instances?.find(
+  const dnsInstances = existingState?.instances?.filter(
     (i) => i.type === ResourceTypeEnum.ALIYUN_OSS_DNS_CNAME,
-  ) as OssDnsInstance | undefined;
+  ) as OssDnsInstance[] | undefined;
 
-  if (dnsInstance) {
-    await client.oss.unbindCustomDomain(
-      bucketName,
-      dnsInstance.domain,
-      dnsInstance.dnsRecordId,
-      dnsInstance.txtRecordId,
-    );
+  if (dnsInstances) {
+    for (const dnsInstance of dnsInstances) {
+      await client.oss.unbindCustomDomain(
+        bucketName,
+        dnsInstance.domain,
+        dnsInstance.dnsRecordId,
+        dnsInstance.txtRecordId,
+      );
+    }
   }
 
   try {

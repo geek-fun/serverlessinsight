@@ -2,6 +2,7 @@ import { BucketAccessEnum, BucketDomain, ResourceAttributes } from '../../types'
 import { BucketACL, CommonBucketConfig } from '../bucketTypes';
 
 export type OssBucketConfig = CommonBucketConfig & {
+  wwwBindApex?: boolean;
   domainCertificateId?: string;
   domainCertificateBody?: string;
   domainCertificatePrivateKey?: string;
@@ -43,6 +44,10 @@ export const bucketToOssBucketConfig = (bucket: BucketDomain): OssBucketConfig =
 
   if (bucket.website?.domain) {
     config.domain = bucket.website.domain;
+  }
+
+  if (bucket.website?.www_bind_apex !== undefined) {
+    config.wwwBindApex = bucket.website.www_bind_apex;
   }
 
   if (bucket.website?.domain_certificate_id) {
@@ -88,6 +93,7 @@ export const extractOssBucketDefinition = (config: OssBucketConfig): ResourceAtt
       : {},
     storageClass: config.storageClass ?? null,
     domain: config.domain ?? null,
+    wwwBindApex: config.wwwBindApex ?? false,
     domainCertificateId: config.domainCertificateId ?? null,
     domainCertificateBody: config.domainCertificateBody ?? null,
     domainCertificatePrivateKey: config.domainCertificatePrivateKey ? '(managed)' : null,

@@ -309,3 +309,28 @@ export const inferProtocolConfig = (protocol?: string | string[]): ProtocolConfi
 
   return { requestProtocol: protocol };
 };
+
+export type EventDomainDefinition = {
+  domainName: string;
+  wwwBindApex: boolean;
+  certificateId: string | null;
+  certificateBody: string | null;
+  certificatePrivateKey: string | null;
+  protocol: string | string[] | null;
+};
+
+export const extractEventDomainDefinition = (
+  domain: EventDomain['domain'],
+): EventDomainDefinition | null => {
+  if (!domain) {
+    return null;
+  }
+  return {
+    domainName: domain.domain_name as string,
+    wwwBindApex: domain.www_bind_apex === true,
+    certificateId: (domain.certificate_id as string) ?? null,
+    certificateBody: (domain.certificate_body as string) ?? null,
+    certificatePrivateKey: domain.certificate_private_key ? '(managed)' : null,
+    protocol: (domain.protocol as string | string[] | null) ?? null,
+  };
+};

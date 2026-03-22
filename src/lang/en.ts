@@ -264,6 +264,8 @@ export const en = {
   // API Gateway messages
   APIGW_GROUP_FOUND_REUSING: 'Found existing API Group: {{groupName}}, will reuse it',
   APIGW_DOMAIN_BINDING_FAILED: 'Failed to bind custom domain: {{error}}',
+  APIGW_DOMAIN_UNBIND_FAILED: 'Failed to unbind domain {{domain}}: {{error}}',
+  APIGW_WWW_DOMAIN_UNBIND_FAILED: 'Failed to unbind www domain {{domain}}: {{error}}',
   APIGW_GROUP_APIS_CREATED_DOMAIN_FAILED:
     'API Gateway group and APIs created successfully, but domain binding failed',
   APIGW_STATE_SAVED_RETRY:

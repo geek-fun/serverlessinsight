@@ -13,12 +13,14 @@ import { setResource, removeResource, buildSid } from '../../common';
 import { readPemContent, warnInlinePem } from '../../common/certUtils';
 import { logger } from '../../common/logger';
 import { lang } from '../../lang';
+import { deriveWwwDomain } from '../../common/domainUtils';
 
 type CosDnsInstance = ResourceInstance & {
   type: 'TENCENT_COS_DNS_CNAME';
   domain: string;
   cname: string;
   dnsRecordId?: string;
+  isWwwVariant?: boolean;
 };
 
 type CosResolvedCertificateUpload = {
@@ -197,42 +199,79 @@ export const createBucketResource = async (
   let cnameInfo: CosCnameInfo | undefined;
   if (bucket.website?.domain) {
     const resolved = resolveBucketDomainCertificate(bucket);
+    const primaryDomain = bucket.website.domain;
+    const wwwBindApex = bucket.website.www_bind_apex ?? false;
 
     logger.info(
       lang.__('BINDING_CUSTOM_DOMAIN_TO_BUCKET', {
-        domain: bucket.website.domain,
+        domain: primaryDomain,
         bucketName: bucket.name,
       }),
     );
-    cnameInfo = await client.cos.bindCustomDomain(bucket.name, bucket.website.domain);
+    cnameInfo = await client.cos.bindCustomDomain(bucket.name, primaryDomain);
 
     if (cnameInfo) {
-      const instanceId = cnameInfo.dnsRecordId ?? bucket.website.domain;
+      const instanceId = cnameInfo.dnsRecordId ?? primaryDomain;
       const dnsInstance: CosDnsInstance = {
         sid: buildSid('tencent', 'dnspod', context.stage, instanceId),
         id: instanceId,
         type: ResourceTypeEnum.COS_DNS_CNAME,
-        domain: bucket.website.domain,
+        domain: primaryDomain,
         cname: cnameInfo.cname,
         ...(cnameInfo.dnsRecordId ? { dnsRecordId: cnameInfo.dnsRecordId } : {}),
       };
       instances.push(dnsInstance);
-
-      // Refresh bucket info to capture auto-added CORS rule
-      const refreshedInfo = await client.cos.getBucket(bucket.name, context.region);
-      if (refreshedInfo) {
-        instances[0] = buildCosInstanceFromProvider(refreshedInfo as CosBucketInfo, sid);
-      }
 
       if (resolved && cnameInfo.bucketDomainBound) {
         await deployCertificateToCosDomain(
           client,
           resolved,
           bucket.name,
-          bucket.website.domain,
+          primaryDomain,
           context.region,
         );
       }
+    }
+
+    const wwwDomain = wwwBindApex ? deriveWwwDomain(primaryDomain) : null;
+    if (wwwDomain) {
+      logger.info(
+        lang.__('BINDING_CUSTOM_DOMAIN_TO_BUCKET', {
+          domain: wwwDomain,
+          bucketName: bucket.name,
+        }),
+      );
+
+      const wwwCnameInfo = await client.cos.bindCustomDomain(bucket.name, wwwDomain);
+
+      if (wwwCnameInfo) {
+        const wwwInstanceId = wwwCnameInfo.dnsRecordId ?? wwwDomain;
+        const wwwDnsInstance: CosDnsInstance = {
+          sid: buildSid('tencent', 'dnspod', context.stage, wwwInstanceId),
+          id: wwwInstanceId,
+          type: ResourceTypeEnum.COS_DNS_CNAME,
+          domain: wwwDomain,
+          cname: wwwCnameInfo.cname,
+          isWwwVariant: true,
+          ...(wwwCnameInfo.dnsRecordId ? { dnsRecordId: wwwCnameInfo.dnsRecordId } : {}),
+        };
+        instances.push(wwwDnsInstance);
+
+        if (resolved && wwwCnameInfo.bucketDomainBound) {
+          await deployCertificateToCosDomain(
+            client,
+            resolved,
+            bucket.name,
+            wwwDomain,
+            context.region,
+          );
+        }
+      }
+    }
+
+    const refreshedInfo = await client.cos.getBucket(bucket.name, context.region);
+    if (refreshedInfo) {
+      instances[0] = buildCosInstanceFromProvider(refreshedInfo as CosBucketInfo, sid);
     }
   }
 
@@ -282,65 +321,106 @@ export const updateBucketResource = async (
   ];
 
   const existingState = state.resources[logicalId];
-  const existingDnsInstance = existingState?.instances?.find(
+  const existingDnsInstances = existingState?.instances?.filter(
     (i) => i.type === ResourceTypeEnum.COS_DNS_CNAME,
-  ) as CosDnsInstance | undefined;
+  ) as CosDnsInstance[] | undefined;
+  const existingPrimaryDnsInstance = existingDnsInstances?.find((i) => !i.isWwwVariant);
+  const existingWwwDnsInstance = existingDnsInstances?.find((i) => i.isWwwVariant);
 
   if (bucket.website?.domain) {
-    const domainChanged = existingDnsInstance?.domain !== bucket.website.domain;
+    const primaryDomain = bucket.website.domain;
+    const wwwBindApex = bucket.website.www_bind_apex ?? false;
+    const domainChanged = existingPrimaryDnsInstance?.domain !== primaryDomain;
 
-    if (domainChanged && existingDnsInstance) {
-      await client.cos.unbindCustomDomain(
-        bucket.name,
-        existingDnsInstance.domain,
-        existingDnsInstance.dnsRecordId,
-      );
+    if (domainChanged && existingDnsInstances) {
+      for (const instance of existingDnsInstances) {
+        await client.cos.unbindCustomDomain(bucket.name, instance.domain, instance.dnsRecordId);
+      }
     }
 
     const resolved = resolveBucketDomainCertificate(bucket);
 
     logger.info(
       lang.__('BINDING_CUSTOM_DOMAIN_TO_BUCKET', {
-        domain: bucket.website.domain,
+        domain: primaryDomain,
         bucketName: bucket.name,
       }),
     );
-    const cnameInfo = await client.cos.bindCustomDomain(bucket.name, bucket.website.domain);
+    const cnameInfo = await client.cos.bindCustomDomain(bucket.name, primaryDomain);
 
     if (cnameInfo) {
-      const instanceId = cnameInfo.dnsRecordId ?? bucket.website.domain;
+      const instanceId = cnameInfo.dnsRecordId ?? primaryDomain;
       const dnsInstance: CosDnsInstance = {
         sid: buildSid('tencent', 'dnspod', context.stage, instanceId),
         id: instanceId,
         type: ResourceTypeEnum.COS_DNS_CNAME,
-        domain: bucket.website.domain,
+        domain: primaryDomain,
         cname: cnameInfo.cname,
         ...(cnameInfo.dnsRecordId ? { dnsRecordId: cnameInfo.dnsRecordId } : {}),
       };
       instances.push(dnsInstance);
-
-      // Refresh bucket info to capture auto-added CORS rule
-      const refreshedInfo = await client.cos.getBucket(bucket.name, context.region);
-      if (refreshedInfo) {
-        instances[0] = buildCosInstanceFromProvider(refreshedInfo as CosBucketInfo, sid);
-      }
 
       if (resolved && cnameInfo.bucketDomainBound) {
         await deployCertificateToCosDomain(
           client,
           resolved,
           bucket.name,
-          bucket.website.domain,
+          primaryDomain,
           context.region,
         );
       }
     }
-  } else if (existingDnsInstance) {
-    await client.cos.unbindCustomDomain(
-      bucket.name,
-      existingDnsInstance.domain,
-      existingDnsInstance.dnsRecordId,
-    );
+
+    const wwwDomain = wwwBindApex ? deriveWwwDomain(primaryDomain) : null;
+    if (wwwDomain) {
+      logger.info(
+        lang.__('BINDING_CUSTOM_DOMAIN_TO_BUCKET', {
+          domain: wwwDomain,
+          bucketName: bucket.name,
+        }),
+      );
+
+      const wwwCnameInfo = await client.cos.bindCustomDomain(bucket.name, wwwDomain);
+
+      if (wwwCnameInfo) {
+        const wwwInstanceId = wwwCnameInfo.dnsRecordId ?? wwwDomain;
+        const wwwDnsInstance: CosDnsInstance = {
+          sid: buildSid('tencent', 'dnspod', context.stage, wwwInstanceId),
+          id: wwwInstanceId,
+          type: ResourceTypeEnum.COS_DNS_CNAME,
+          domain: wwwDomain,
+          cname: wwwCnameInfo.cname,
+          isWwwVariant: true,
+          ...(wwwCnameInfo.dnsRecordId ? { dnsRecordId: wwwCnameInfo.dnsRecordId } : {}),
+        };
+        instances.push(wwwDnsInstance);
+
+        if (resolved && wwwCnameInfo.bucketDomainBound) {
+          await deployCertificateToCosDomain(
+            client,
+            resolved,
+            bucket.name,
+            wwwDomain,
+            context.region,
+          );
+        }
+      }
+    } else if (existingWwwDnsInstance && !wwwBindApex) {
+      await client.cos.unbindCustomDomain(
+        bucket.name,
+        existingWwwDnsInstance.domain,
+        existingWwwDnsInstance.dnsRecordId,
+      );
+    }
+
+    const refreshedInfo = await client.cos.getBucket(bucket.name, context.region);
+    if (refreshedInfo) {
+      instances[0] = buildCosInstanceFromProvider(refreshedInfo as CosBucketInfo, sid);
+    }
+  } else if (existingDnsInstances) {
+    for (const instance of existingDnsInstances) {
+      await client.cos.unbindCustomDomain(bucket.name, instance.domain, instance.dnsRecordId);
+    }
   }
 
   const resourceState: ResourceState = {
@@ -364,12 +444,14 @@ export const deleteBucketResource = async (
   const client = createTencentClient(context);
 
   const existingState = state.resources[logicalId];
-  const dnsInstance = existingState?.instances?.find(
+  const dnsInstances = existingState?.instances?.filter(
     (i) => i.type === ResourceTypeEnum.COS_DNS_CNAME,
-  ) as CosDnsInstance | undefined;
+  ) as CosDnsInstance[] | undefined;
 
-  if (dnsInstance) {
-    await client.cos.unbindCustomDomain(bucketName, dnsInstance.domain, dnsInstance.dnsRecordId);
+  if (dnsInstances) {
+    for (const dnsInstance of dnsInstances) {
+      await client.cos.unbindCustomDomain(bucketName, dnsInstance.domain, dnsInstance.dnsRecordId);
+    }
   }
 
   try {
