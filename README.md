@@ -333,10 +333,13 @@ When binding a custom domain that requires ownership verification:
 
 For OSS static website hosting, ServerlessInsight supports:
 
-| Domain Type       | CNAME Target                     | Use Case                                       |
-| ----------------- | -------------------------------- | ---------------------------------------------- |
-| Root domain (`@`) | `bucket.region.taihangcda.cn`    | Bypasses DNS CNAME restriction on root domains |
-| Subdomain (`www`) | `bucket.oss-region.aliyuncs.com` | Standard OSS endpoint                          |
+| Domain Type       | CNAME Target                  | Use Case                                       |
+| ----------------- | ----------------------------- | ---------------------------------------------- |
+| Root domain (`@`) | `bucket.region.taihangcda.cn` | Bypasses DNS CNAME restriction on root domains |
+| Subdomain (`www`) | `bucket.region.taihangcda.cn` | Standard CNAME for all subdomains              |
+| Any subdomain     | `bucket.region.taihangcda.cn` | Unified CNAME endpoint for all domain types    |
+
+> 💡 **Note**: All domain types now use the recommended `taihangcda.cn` CNAME endpoint, which is derived automatically from your bucket's actual extranet endpoint via the `GetBucketInfo` API.
 
 For detailed configuration, see [OSS Custom Domain Binding Guide](./docs/oss-custom-domain-binding.md).
 

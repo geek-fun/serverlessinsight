@@ -13,7 +13,7 @@ import {
 import { DnsOperations } from './dnsOperations';
 import { logger } from '../logger';
 import { lang } from '../../lang';
-import { extractMainDomain, extractHostRecord } from '../domainUtils';
+import { extractMainDomain, extractHostRecord, normalizeDomain } from '../domainUtils';
 import { sleep } from '../retryUtils';
 import {
   DOMAIN_BIND_MAX_RETRIES,
@@ -105,8 +105,28 @@ export const createOssOperations = (
     ossClient.useBucket(bucketName);
   };
 
-  const getOssEndpoint = (bucketName: string): string => {
-    return `${bucketName}.oss-${region}.aliyuncs.com`;
+  const getBucketExtranetEndpoint = async (bucketName: string): Promise<string> => {
+    const infoResult = await ossClient.getBucketInfo(bucketName);
+    const endpoint = (infoResult.bucket as { ExtranetEndpoint?: string }).ExtranetEndpoint;
+    if (!endpoint) {
+      throw new Error(lang.__('OSS_BUCKET_EXTRANET_ENDPOINT_NOT_FOUND', { bucketName }));
+    }
+    return endpoint;
+  };
+
+  const getCnameEndpointFromExtranet = (extranetEndpoint: string): string => {
+    const suffix = '.aliyuncs.com';
+    if (!extranetEndpoint.endsWith(suffix)) {
+      throw new Error(lang.__('OSS_BUCKET_ENDPOINT_INVALID_FORMAT', { extranetEndpoint }));
+    }
+    const withoutAliyun = extranetEndpoint.slice(0, -suffix.length);
+    const lastDotIndex = withoutAliyun.lastIndexOf('.');
+    if (lastDotIndex <= 0) {
+      throw new Error(lang.__('OSS_BUCKET_ENDPOINT_INVALID_FORMAT', { extranetEndpoint }));
+    }
+    const bucketPart = withoutAliyun.slice(0, lastDotIndex);
+    const regionWithout = withoutAliyun.slice(lastDotIndex + 1).replace(/^oss-/, '');
+    return `${bucketPart}.${regionWithout}.taihangcda.cn`;
   };
 
   const buildCertificateXml = (cert?: OssCnameCertificateConfig): string => {
@@ -318,13 +338,15 @@ export const createOssOperations = (
     domain: string,
     certificate?: OssCnameCertificateConfig,
   ): Promise<OssCnameInfo> => {
-    const mainDomain = extractMainDomain(domain);
-    const hostRecord = extractHostRecord(domain, mainDomain);
-    const ossEndpoint = getOssEndpoint(bucketName);
+    const normalizedDomain = normalizeDomain(domain);
+    const mainDomain = extractMainDomain(normalizedDomain);
+    const hostRecord = extractHostRecord(normalizedDomain, mainDomain);
+    const extranetEndpoint = await getBucketExtranetEndpoint(bucketName);
+    const ossEndpoint = getCnameEndpointFromExtranet(extranetEndpoint);
 
     let cnameResult: PutCnameResult | VerificationResult = await putBucketCname(
       bucketName,
-      domain,
+      normalizedDomain,
       certificate,
     );
     let txtRecordId: string | undefined;
@@ -332,7 +354,7 @@ export const createOssOperations = (
     if (cnameResult.needVerification) {
       const verificationResult = await handleDomainOwnershipVerification(
         bucketName,
-        domain,
+        normalizedDomain,
         certificate,
       );
       cnameResult = verificationResult;
@@ -341,17 +363,19 @@ export const createOssOperations = (
 
     const bucketCnameBound = cnameResult.success;
     if (certificate && bucketCnameBound) {
-      logger.info(lang.__('OSS_BUCKET_CERT_BOUND', { domain }));
+      logger.info(lang.__('OSS_BUCKET_CERT_BOUND', { domain: normalizedDomain }));
     }
-    await addCorsRuleForDomain(bucketName, domain);
+    await addCorsRuleForDomain(bucketName, normalizedDomain);
 
     if (!dnsOps) {
-      logger.warn(lang.__('OSS_DNS_MANUAL_CONFIG_REQUIRED', { domain, cname: ossEndpoint }));
-      return { domain, cname: ossEndpoint, bucketCnameBound, txtRecordId };
+      logger.warn(
+        lang.__('OSS_DNS_MANUAL_CONFIG_REQUIRED', { domain: normalizedDomain, cname: ossEndpoint }),
+      );
+      return { domain: normalizedDomain, cname: ossEndpoint, bucketCnameBound, txtRecordId };
     }
 
     const result = await createOrFindDnsCnameRecord(
-      domain,
+      normalizedDomain,
       mainDomain,
       hostRecord,
       ossEndpoint,
@@ -943,8 +967,6 @@ export const createOssOperations = (
     bindCustomDomain,
 
     unbindCustomDomain,
-
-    getOssEndpoint,
 
     createCnameToken,
   };

@@ -15,7 +15,6 @@ const mockOssOperations = {
   updateBucketWebsite: jest.fn(),
   bindCustomDomain: jest.fn(),
   unbindCustomDomain: jest.fn(),
-  getOssEndpoint: jest.fn(),
 };
 
 const mockCasOperations = {

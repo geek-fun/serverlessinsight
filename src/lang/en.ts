@@ -409,6 +409,10 @@ export const en = {
   OSS_BUCKET_PUBLIC_ACCESS_BLOCK_DISABLE_FAILED:
     'Failed to disable Block Public Access for bucket {{bucketName}}: {{error}}. ' +
     'You may need to manually disable Block Public Access in the Alibaba Cloud OSS Console.',
+  OSS_BUCKET_EXTRANET_ENDPOINT_NOT_FOUND:
+    'ExtranetEndpoint not found for bucket: {{bucketName}}. The bucket may not have public access enabled.',
+  OSS_BUCKET_ENDPOINT_INVALID_FORMAT:
+    'Invalid OSS endpoint format: {{extranetEndpoint}}. Expected format: {bucket}.oss-{region}.aliyuncs.com',
 
   // Tencent COS DNS messages
   COS_DNS_CNAME_CREATED: 'Created DNS CNAME record: {{domain}} -> {{cname}}',
