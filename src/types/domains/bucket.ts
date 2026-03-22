@@ -2,6 +2,7 @@ import { Resolvable } from './resolvable';
 
 export type BucketWebsiteDomainConfig = {
   domain_name: Resolvable<string>;
+  www_bind_apex?: Resolvable<boolean>;
   certificate_id?: Resolvable<string>;
   certificate_body?: Resolvable<string>;
   certificate_private_key?: Resolvable<string>;
@@ -26,7 +27,6 @@ export type BucketRaw = {
   website?: {
     code: Resolvable<string>;
     domain?: Resolvable<string> | BucketWebsiteDomainConfig;
-    www_bind_apex?: Resolvable<boolean>;
     index?: Resolvable<string>;
     error_page?: Resolvable<string>;
     error_code?: Resolvable<number>;
