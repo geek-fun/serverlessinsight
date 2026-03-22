@@ -91,6 +91,13 @@ const MULTI_LEVEL_TLDS: ReadonlySet<string> = new Set([
   'edu.sg',
 ]);
 
+export const normalizeDomain = (domain: string): string => {
+  if (domain.startsWith('@.')) {
+    return domain.slice(2);
+  }
+  return domain;
+};
+
 export const extractMainDomain = (domainName: string): string => {
   const parts = domainName.split('.');
 

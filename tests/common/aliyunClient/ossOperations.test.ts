@@ -8,6 +8,7 @@ const mockDeleteBucketCORS = jest.fn();
 const mockUseBucket = jest.fn();
 const mockPutBucketACL = jest.fn();
 const mockPutBucket = jest.fn();
+const mockGetBucketInfo = jest.fn();
 
 const mockOssClient = {
   useBucket: mockUseBucket,
@@ -20,7 +21,7 @@ const mockOssClient = {
   putBucketWebsite: jest.fn(),
   deleteBucketWebsite: jest.fn(),
   deleteBucket: jest.fn(),
-  getBucketInfo: jest.fn(),
+  getBucketInfo: mockGetBucketInfo,
   getBucketACL: jest.fn(),
   getBucketWebsite: jest.fn(),
   getBucketLogging: jest.fn(),
@@ -54,6 +55,9 @@ describe('ossOperations CORS', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     mockRequest.mockResolvedValue({});
+    mockGetBucketInfo.mockResolvedValue({
+      bucket: { ExtranetEndpoint: 'test-bucket.oss-cn-hangzhou.aliyuncs.com' },
+    });
     operations = createOssOperations(mockOssClient, 'cn-hangzhou');
   });
 
@@ -187,6 +191,9 @@ describe('ossOperations putBucketCname', () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
+    mockGetBucketInfo.mockResolvedValue({
+      bucket: { ExtranetEndpoint: 'test-bucket.oss-cn-hangzhou.aliyuncs.com' },
+    });
     operations = createOssOperations(mockOssClient, 'cn-hangzhou');
   });
 
@@ -436,6 +443,68 @@ describe('ossOperations public access block', () => {
       await operations.updateBucketAcl('test-bucket', BucketACL.PUBLIC_READ);
 
       expect(mockPutBucketACL).toHaveBeenCalledWith('test-bucket', BucketACL.PUBLIC_READ);
+    });
+  });
+});
+
+describe('ossOperations CNAME endpoint selection', () => {
+  let operations: ReturnType<typeof createOssOperations>;
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    mockRequest.mockResolvedValue({});
+    mockGetBucketCORS.mockRejectedValue(new Error('NoSuchCORSConfiguration'));
+    mockGetBucketInfo.mockResolvedValue({
+      bucket: { ExtranetEndpoint: 'test-bucket.oss-cn-hangzhou.aliyuncs.com' },
+    });
+    operations = createOssOperations(mockOssClient, 'cn-hangzhou');
+  });
+
+  describe('bindCustomDomain CNAME target', () => {
+    it('should use recommended CNAME endpoint (taihangcda.cn) for root/apex domain', async () => {
+      const result = await operations.bindCustomDomain('test-bucket', 'wentsen.com');
+
+      expect(result.cname).toBe('test-bucket.cn-hangzhou.taihangcda.cn');
+    });
+
+    it('should handle @.domain input as apex domain', async () => {
+      const result = await operations.bindCustomDomain('test-bucket', '@.wentsen.com');
+
+      expect(result.domain).toBe('wentsen.com');
+      expect(result.cname).toBe('test-bucket.cn-hangzhou.taihangcda.cn');
+    });
+
+    it('should use recommended CNAME endpoint (taihangcda.cn) for www subdomain', async () => {
+      const result = await operations.bindCustomDomain('test-bucket', 'www.wentsen.com');
+
+      expect(result.cname).toBe('test-bucket.cn-hangzhou.taihangcda.cn');
+    });
+
+    it('should use recommended CNAME endpoint (taihangcda.cn) for non-www subdomain', async () => {
+      const result = await operations.bindCustomDomain('test-bucket', 'cdn.example.com');
+
+      expect(result.cname).toBe('test-bucket.cn-hangzhou.taihangcda.cn');
+    });
+
+    it('should derive CNAME endpoint from API ExtranetEndpoint, not from region parameter', async () => {
+      mockGetBucketInfo.mockResolvedValue({
+        bucket: { ExtranetEndpoint: 'my-bucket.oss-cn-beijing.aliyuncs.com' },
+      });
+      operations = createOssOperations(mockOssClient, 'cn-hangzhou');
+
+      const result = await operations.bindCustomDomain('my-bucket', 'example.com');
+
+      expect(result.cname).toBe('my-bucket.cn-beijing.taihangcda.cn');
+    });
+
+    it('should handle bucket names with dots correctly', async () => {
+      mockGetBucketInfo.mockResolvedValue({
+        bucket: { ExtranetEndpoint: 'my.website.bucket.oss-cn-hangzhou.aliyuncs.com' },
+      });
+
+      const result = await operations.bindCustomDomain('my.website.bucket', 'example.com');
+
+      expect(result.cname).toBe('my.website.bucket.cn-hangzhou.taihangcda.cn');
     });
   });
 });
