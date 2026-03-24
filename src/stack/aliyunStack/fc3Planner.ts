@@ -11,6 +11,41 @@ import {
 import { extractFc3Definition, Fc3FunctionConfig, functionToFc3Config } from './fc3Types';
 import { lang } from '../../lang';
 
+/**
+ * Provider-managed logConfig fields that are set by the system after creation.
+ * These should not be compared when detecting changes.
+ */
+const PROVIDER_MANAGED_LOG_CONFIG_FIELDS = ['project', 'logstore', 'logBeginRule'] as const;
+
+/**
+ * Normalize definition for comparison by excluding provider-managed fields.
+ * This prevents false-positive change detection when the system populates
+ * fields like logConfig.project and logConfig.logstore after creation.
+ */
+const normalizeDefinitionForComparison = (definition: ResourceAttributes): ResourceAttributes => {
+  const { logConfig, ...rest } = definition;
+
+  if (!logConfig || typeof logConfig !== 'object') {
+    return definition;
+  }
+
+  const normalizedLogConfig: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(logConfig)) {
+    if (
+      !PROVIDER_MANAGED_LOG_CONFIG_FIELDS.includes(
+        key as (typeof PROVIDER_MANAGED_LOG_CONFIG_FIELDS)[number],
+      )
+    ) {
+      normalizedLogConfig[key] = value;
+    }
+  }
+
+  return {
+    ...rest,
+    logConfig: Object.keys(normalizedLogConfig).length > 0 ? normalizedLogConfig : null,
+  };
+};
+
 const isSecurityGroupId = (value: string): boolean => value.startsWith('sg-');
 
 const resolveSecurityGroupId = async (
@@ -113,7 +148,10 @@ export const generateFunctionPlan = async (
         }
 
         const currentDefinition = currentState.definition || {};
-        const definitionChanged = !attributesEqual(currentDefinition, desiredDefinition);
+        const definitionChanged = !attributesEqual(
+          normalizeDefinitionForComparison(currentDefinition),
+          normalizeDefinitionForComparison(desiredDefinition),
+        );
 
         if (definitionChanged) {
           return {

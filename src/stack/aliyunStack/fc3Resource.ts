@@ -500,6 +500,7 @@ export const createResource = async (
         project: dependentResources.logConfig.project,
         logstore: dependentResources.logConfig.logstore,
         enableRequestMetrics: true,
+        enableInstanceMetrics: true,
       },
     };
   }
@@ -749,6 +750,7 @@ export const updateResource = async (
         project: logConfig.project,
         logstore: logConfig.logstore,
         enableRequestMetrics: true,
+        enableInstanceMetrics: true,
       },
     };
   }

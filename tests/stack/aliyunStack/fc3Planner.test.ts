@@ -257,5 +257,134 @@ describe('FC3 Planner', () => {
       });
       expect(plan.items[0].changes?.after).toBeDefined();
     });
+
+    it('should plan no changes when logConfig has provider-managed fields in state', async () => {
+      const testFunctionWithLog: FunctionDomain = {
+        ...testFunction,
+        log: true,
+      };
+
+      mockFc3Operations.getFunction.mockResolvedValue({
+        functionName: 'test-function',
+        runtime: 'nodejs20',
+        handler: 'index.handler',
+        memorySize: 512,
+        timeout: 10,
+        environmentVariables: { NODE_ENV: 'production' },
+        logConfig: {
+          project: 'test-project-sls',
+          logstore: 'test-project-sls-logstore',
+          enableRequestMetrics: true,
+          enableInstanceMetrics: true,
+        },
+      });
+
+      const state = setResource(initalState, 'functions.test_fn', {
+        mode: 'managed',
+        region: 'cn-hangzhou',
+        definition: {
+          functionName: 'test-function',
+          runtime: 'nodejs20',
+          handler: 'index.handler',
+          memorySize: 512,
+          timeout: 10,
+          diskSize: null,
+          environment: { NODE_ENV: 'production' },
+          vpcConfig: null,
+          gpuConfig: null,
+          customContainerConfig: null,
+          nasConfig: null,
+          logConfig: {
+            project: 'test-project-sls',
+            logstore: 'test-project-sls-logstore',
+            enableRequestMetrics: true,
+            enableInstanceMetrics: true,
+            logBeginRule: 'None',
+          },
+          codeHash: 'mock-code-hash',
+        },
+        instances: [
+          {
+            sid: 'si:aliyun:fc3:default:test-function',
+            id: 'test-function',
+            functionName: 'test-function',
+          },
+        ],
+        lastUpdated: new Date().toISOString(),
+      });
+
+      const plan = await generateFunctionPlan(mockContext, state, [testFunctionWithLog]);
+
+      expect(plan.items).toHaveLength(1);
+      expect(plan.items[0]).toMatchObject({
+        logicalId: 'functions.test_fn',
+        action: 'noop',
+        resourceType: 'ALIYUN_FC3',
+      });
+    });
+
+    it('should plan to update when logConfig user-configurable fields change', async () => {
+      const testFunctionWithLog: FunctionDomain = {
+        ...testFunction,
+        log: true,
+      };
+
+      mockFc3Operations.getFunction.mockResolvedValue({
+        functionName: 'test-function',
+        runtime: 'nodejs20',
+        handler: 'index.handler',
+        memorySize: 512,
+        timeout: 10,
+        environmentVariables: { NODE_ENV: 'production' },
+        logConfig: {
+          project: 'test-project-sls',
+          logstore: 'test-project-sls-logstore',
+          enableRequestMetrics: false,
+          enableInstanceMetrics: false,
+        },
+      });
+
+      const state = setResource(initalState, 'functions.test_fn', {
+        mode: 'managed',
+        region: 'cn-hangzhou',
+        definition: {
+          functionName: 'test-function',
+          runtime: 'nodejs20',
+          handler: 'index.handler',
+          memorySize: 512,
+          timeout: 10,
+          diskSize: null,
+          environment: { NODE_ENV: 'production' },
+          vpcConfig: null,
+          gpuConfig: null,
+          customContainerConfig: null,
+          nasConfig: null,
+          logConfig: {
+            project: 'test-project-sls',
+            logstore: 'test-project-sls-logstore',
+            enableRequestMetrics: false,
+            enableInstanceMetrics: false,
+          },
+          codeHash: 'mock-code-hash',
+        },
+        instances: [
+          {
+            sid: 'si:aliyun:fc3:default:test-function',
+            id: 'test-function',
+            functionName: 'test-function',
+          },
+        ],
+        lastUpdated: new Date().toISOString(),
+      });
+
+      const plan = await generateFunctionPlan(mockContext, state, [testFunctionWithLog]);
+
+      expect(plan.items).toHaveLength(1);
+      expect(plan.items[0]).toMatchObject({
+        logicalId: 'functions.test_fn',
+        action: 'update',
+        resourceType: 'ALIYUN_FC3',
+      });
+    });
   });
 });
