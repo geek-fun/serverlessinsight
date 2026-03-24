@@ -1,15 +1,39 @@
 import crypto from 'node:crypto';
 import fs from 'node:fs';
+import path from 'node:path';
 
-/**
- * Compute SHA-256 hash of a file.
- * Used for tracking external artifacts like function code zip files.
- * @param filePath - Path to the file to hash
- * @returns Hex-encoded SHA-256 hash of the file contents
- */
 export const computeFileHash = (filePath: string): string => {
   const fileBuffer = fs.readFileSync(filePath);
   return crypto.createHash('sha256').update(fileBuffer).digest('hex');
+};
+
+export const computeDirectoryHash = (dirPath: string): string => {
+  const files: string[] = [];
+
+  const collectFiles = (currentPath: string) => {
+    const entries = fs.readdirSync(currentPath, { withFileTypes: true });
+    for (const entry of entries) {
+      const fullPath = path.join(currentPath, entry.name);
+      if (entry.isDirectory()) {
+        collectFiles(fullPath);
+      } else if (entry.isFile()) {
+        files.push(fullPath);
+      }
+    }
+  };
+
+  collectFiles(dirPath);
+  files.sort();
+
+  const hash = crypto.createHash('sha256');
+  for (const file of files) {
+    const relativePath = path.relative(dirPath, file).split(path.sep).join('/');
+    hash.update(relativePath);
+    const content = fs.readFileSync(file);
+    hash.update(content);
+  }
+
+  return hash.digest('hex');
 };
 
 /**

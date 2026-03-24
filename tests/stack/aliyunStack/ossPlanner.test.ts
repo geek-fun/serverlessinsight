@@ -25,6 +25,11 @@ jest.mock('../../../src/common/aliyunClient', () => ({
   createAliyunClient: () => ({ oss: mockOssOperations }),
 }));
 
+jest.mock('../../../src/common/hashUtils', () => ({
+  ...jest.requireActual('../../../src/common/hashUtils'),
+  computeDirectoryHash: jest.fn().mockReturnValue('mock-website-hash'),
+}));
+
 describe('OSS Planner', () => {
   const mockContext: Context = {
     stage: 'default',
@@ -96,6 +101,7 @@ describe('OSS Planner', () => {
             indexDocument: 'index.html',
             errorDocument: '404.html',
           },
+          websiteCodeHash: 'mock-website-hash',
           storageClass: null,
           domain: null,
           wwwBindApex: false,
@@ -141,6 +147,7 @@ describe('OSS Planner', () => {
           bucketName: 'test-bucket',
           acl: 'public-read',
           websiteConfiguration: { indexDocument: 'index.html', errorDocument: '404.html' },
+          websiteCodeHash: 'mock-website-hash',
           storageClass: null,
           domain: 'www.example.com',
           domainBound: false,
@@ -193,6 +200,7 @@ describe('OSS Planner', () => {
           bucketName: 'test-bucket',
           acl: 'public-read',
           websiteConfiguration: { indexDocument: 'index.html', errorDocument: '404.html' },
+          websiteCodeHash: 'mock-website-hash',
           storageClass: null,
           domain: 'www.example.com',
           domainBound: true,
@@ -244,6 +252,7 @@ describe('OSS Planner', () => {
           bucketName: 'test-bucket',
           acl: 'public-read',
           websiteConfiguration: { indexDocument: 'index.html', errorDocument: '404.html' },
+          websiteCodeHash: 'mock-website-hash',
           storageClass: null,
           domain: null,
           domainBound: null,
@@ -296,6 +305,7 @@ describe('OSS Planner', () => {
             indexDocument: 'index.html',
             errorDocument: '404.html',
           },
+          websiteCodeHash: 'mock-website-hash',
           storageClass: null,
           domain: null,
           wwwBindApex: false,
@@ -337,6 +347,7 @@ describe('OSS Planner', () => {
           bucketName: 'old-bucket',
           acl: 'private',
           websiteConfiguration: {},
+          websiteCodeHash: null,
           storageClass: null,
           domain: null,
           wwwBindApex: false,
@@ -381,6 +392,7 @@ describe('OSS Planner', () => {
             indexDocument: 'index.html',
             errorDocument: '404.html',
           },
+          websiteCodeHash: 'mock-website-hash',
           storageClass: null,
           domain: null,
           wwwBindApex: false,
@@ -412,6 +424,53 @@ describe('OSS Planner', () => {
         drifted: true,
       });
       expect(plan.items[0].changes?.after).toBeDefined();
+    });
+
+    it('should plan to update when website code hash changes', async () => {
+      mockOssOperations.getBucket.mockResolvedValue({
+        name: 'test-bucket',
+        acl: 'public-read',
+        websiteConfig: { indexDocument: 'index.html', errorDocument: '404.html' },
+      });
+
+      const state = setResource(initialState, 'buckets.test_bucket', {
+        mode: 'managed',
+        region: 'cn-hangzhou',
+        definition: {
+          bucketName: 'test-bucket',
+          acl: 'public-read',
+          websiteConfiguration: { indexDocument: 'index.html', errorDocument: '404.html' },
+          websiteCodeHash: 'different-hash',
+          storageClass: null,
+          domain: null,
+          wwwBindApex: false,
+          domainCertificateId: null,
+          domainCertificateBody: null,
+          domainCertificatePrivateKey: null,
+          domainProtocol: null,
+          versioningStatus: null,
+          sseAlgorithm: null,
+          sseKmsMasterKeyId: null,
+        },
+        instances: [
+          {
+            sid: 'si:aliyun:oss:default:test-bucket',
+            id: 'test-bucket',
+            bucketName: 'test-bucket',
+          },
+        ],
+        lastUpdated: new Date().toISOString(),
+      });
+
+      const plan = await generateBucketPlan(mockContext, state, [testBucket]);
+
+      expect(plan.items).toHaveLength(1);
+      expect(plan.items[0]).toMatchObject({
+        logicalId: 'buckets.test_bucket',
+        action: 'update',
+        resourceType: 'ALIYUN_OSS_BUCKET',
+        drifted: true,
+      });
     });
 
     it('should return empty plan when no buckets defined and state is empty', async () => {

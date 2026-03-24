@@ -196,6 +196,7 @@ describe('OssTypes', () => {
         bucketName: 'test-bucket',
         acl: null,
         websiteConfiguration: {},
+        websiteCodeHash: null,
         storageClass: null,
         domain: null,
         wwwBindApex: false,

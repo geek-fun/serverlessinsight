@@ -81,7 +81,10 @@ export const bucketToOssBucketConfig = (bucket: BucketDomain): OssBucketConfig =
   return config;
 };
 
-export const extractOssBucketDefinition = (config: OssBucketConfig): ResourceAttributes => {
+export const extractOssBucketDefinition = (
+  config: OssBucketConfig,
+  websiteCodeHash?: string | null,
+): ResourceAttributes => {
   return {
     bucketName: config.bucketName,
     acl: config.acl ?? null,
@@ -91,6 +94,7 @@ export const extractOssBucketDefinition = (config: OssBucketConfig): ResourceAtt
           errorDocument: config.websiteConfig.errorDocument ?? null,
         }
       : {},
+    websiteCodeHash: websiteCodeHash ?? null,
     storageClass: config.storageClass ?? null,
     domain: config.domain ?? null,
     wwwBindApex: config.wwwBindApex ?? false,

@@ -4,7 +4,7 @@ import {
   OssCnameInfo,
   OssCnameCertificateConfig,
 } from '../../common/aliyunClient/ossOperations';
-import { setResource, removeResource, buildSid } from '../../common';
+import { setResource, removeResource, buildSid, computeDirectoryHash } from '../../common';
 import { readPemContent, warnInlinePem } from '../../common/certUtils';
 import {
   Context,
@@ -169,11 +169,15 @@ export const createBucketResource = async (
 
   const instances: Array<ResourceInstance> = [buildOssInstanceFromProvider(bucketInfo, sid)];
 
+  const websiteCodeHash = bucket.website?.code
+    ? computeDirectoryHash(path.resolve(process.cwd(), bucket.website.code))
+    : undefined;
+
   const partialResourceState: ResourceState = {
     mode: 'managed',
     region: context.region,
     definition: {
-      ...extractOssBucketDefinition(config),
+      ...extractOssBucketDefinition(config, websiteCodeHash),
       ...(bucket.website?.domain != null ? { domainBound: null } : {}),
     },
     instances,
@@ -280,7 +284,7 @@ export const createBucketResource = async (
     mode: 'managed',
     region: context.region,
     definition: {
-      ...extractOssBucketDefinition(config),
+      ...extractOssBucketDefinition(config, websiteCodeHash),
       ...(bucket.website?.domain != null
         ? { domainBound: cnameInfo?.bucketCnameBound ?? null }
         : {}),
@@ -327,6 +331,10 @@ export const updateBucketResource = async (
   const logicalId = `buckets.${bucket.key}`;
 
   const instances: Array<ResourceInstance> = [buildOssInstanceFromProvider(bucketInfo, sid)];
+
+  const websiteCodeHash = bucket.website?.code
+    ? computeDirectoryHash(path.resolve(process.cwd(), bucket.website.code))
+    : undefined;
 
   const existingState = state.resources[logicalId];
   const existingDnsInstances = existingState?.instances?.filter(
@@ -443,7 +451,7 @@ export const updateBucketResource = async (
     mode: 'managed',
     region: context.region,
     definition: {
-      ...extractOssBucketDefinition(config),
+      ...extractOssBucketDefinition(config, websiteCodeHash),
       ...(bucket.website?.domain != null
         ? { domainBound: cnameInfo?.bucketCnameBound ?? null }
         : {}),

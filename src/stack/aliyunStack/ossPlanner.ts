@@ -1,8 +1,9 @@
+import path from 'node:path';
 import { Context, BucketDomain, Plan, PlanItem, StateFile, ResourceAttributes } from '../../types';
 import { createAliyunClient } from '../../common/aliyunClient';
 import { bucketToOssBucketConfig, extractOssBucketDefinition } from './ossTypes';
 import { getAllResources, getResource } from '../../common/stateManager';
-import { attributesEqual } from '../../common/hashUtils';
+import { attributesEqual, computeDirectoryHash } from '../../common/hashUtils';
 
 const planBucketDeletion = (logicalId: string, definition: ResourceAttributes): PlanItem => ({
   logicalId,
@@ -31,7 +32,15 @@ export const generateBucketPlan = async (
       const logicalId = `buckets.${bucket.key}`;
       const currentState = getResource(state, logicalId);
       const config = bucketToOssBucketConfig(bucket);
-      const desiredDefinition = extractOssBucketDefinition(config);
+      const websiteCodeHash = (() => {
+        if (!bucket.website?.code) return undefined;
+        try {
+          return computeDirectoryHash(path.resolve(process.cwd(), bucket.website.code));
+        } catch {
+          return null;
+        }
+      })();
+      const desiredDefinition = extractOssBucketDefinition(config, websiteCodeHash);
 
       if (!currentState) {
         return {
