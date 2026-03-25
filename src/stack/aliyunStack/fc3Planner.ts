@@ -142,23 +142,25 @@ export const generateFunctionPlan = async (
             logicalId,
             action: 'create',
             resourceType: 'ALIYUN_FC3',
-            changes: { before: currentState.definition, after: desiredDefinition },
+            changes: {
+              before: normalizeDefinitionForComparison(currentState.definition),
+              after: desiredDefinition,
+            },
             drifted: true,
           };
         }
 
         const currentDefinition = currentState.definition || {};
-        const definitionChanged = !attributesEqual(
-          normalizeDefinitionForComparison(currentDefinition),
-          normalizeDefinitionForComparison(desiredDefinition),
-        );
+        const normalizedCurrent = normalizeDefinitionForComparison(currentDefinition);
+        const normalizedDesired = normalizeDefinitionForComparison(desiredDefinition);
+        const definitionChanged = !attributesEqual(normalizedCurrent, normalizedDesired);
 
         if (definitionChanged) {
           return {
             logicalId,
             action: 'update',
             resourceType: 'ALIYUN_FC3',
-            changes: { before: currentDefinition, after: desiredDefinition },
+            changes: { before: normalizedCurrent, after: normalizedDesired },
             drifted: true,
           };
         }
@@ -169,7 +171,10 @@ export const generateFunctionPlan = async (
           logicalId,
           action: 'create',
           resourceType: 'ALIYUN_FC3',
-          changes: { before: currentState.definition, after: desiredDefinition },
+          changes: {
+            before: normalizeDefinitionForComparison(currentState.definition),
+            after: desiredDefinition,
+          },
         };
       }
     }),
