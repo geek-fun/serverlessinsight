@@ -9,7 +9,7 @@ const planBucketDeletion = (logicalId: string, definition: ResourceAttributes): 
   logicalId,
   action: 'delete',
   resourceType: 'ALIYUN_OSS_BUCKET',
-  changes: { before: definition },
+  changes: { before: normalizeDefinitionForDisplay(definition) },
 });
 
 const normalizeDefinitionForDisplay = (definition: ResourceAttributes): ResourceAttributes => {
@@ -74,11 +74,10 @@ export const generateBucketPlan = async (
         }
 
         const currentDefinition = currentState.definition || {};
-        const { domainBound, ...comparableDefinition } = currentDefinition as {
-          domainBound?: boolean | null;
-          [key: string]: unknown;
-        };
-        const definitionChanged = !attributesEqual(comparableDefinition, desiredDefinition);
+        const normalizedCurrent = normalizeDefinitionForDisplay(currentDefinition);
+        const normalizedDesired = normalizeDefinitionForDisplay(desiredDefinition);
+        const { domainBound } = currentDefinition as { domainBound?: boolean | null };
+        const definitionChanged = !attributesEqual(normalizedCurrent, normalizedDesired);
         const domainBindingPending = domainBound === false;
 
         if (definitionChanged || domainBindingPending) {
@@ -86,7 +85,7 @@ export const generateBucketPlan = async (
             logicalId,
             action: 'update',
             resourceType: 'ALIYUN_OSS_BUCKET',
-            changes: { before: comparableDefinition, after: desiredDefinition },
+            changes: { before: normalizedCurrent, after: normalizedDesired },
             ...(definitionChanged ? { drifted: true } : {}),
           };
         }

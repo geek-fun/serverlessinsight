@@ -94,7 +94,7 @@ const planFunctionDeletion = (logicalId: string, definition: ResourceAttributes)
   logicalId,
   action: 'delete',
   resourceType: 'ALIYUN_FC3',
-  changes: { before: definition },
+  changes: { before: normalizeDefinitionForComparison(definition) },
 });
 
 export const generateFunctionPlan = async (
@@ -144,7 +144,7 @@ export const generateFunctionPlan = async (
             resourceType: 'ALIYUN_FC3',
             changes: {
               before: normalizeDefinitionForComparison(currentState.definition),
-              after: desiredDefinition,
+              after: normalizeDefinitionForComparison(desiredDefinition),
             },
             drifted: true,
           };
@@ -173,7 +173,7 @@ export const generateFunctionPlan = async (
           resourceType: 'ALIYUN_FC3',
           changes: {
             before: normalizeDefinitionForComparison(currentState.definition),
-            after: desiredDefinition,
+            after: normalizeDefinitionForComparison(desiredDefinition),
           },
         };
       }
