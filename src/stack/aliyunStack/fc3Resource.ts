@@ -10,6 +10,7 @@ import {
   computeFileHash,
   getContext,
   buildSid,
+  attributesEqual,
 } from '../../common';
 import {
   FC3_CODE_INLINE_SIZE_LIMIT,
@@ -20,6 +21,7 @@ import {
   Context,
   FunctionDomain,
   PartialResourceError,
+  ResourceAttributes,
   ResourceState,
   StateFile,
 } from '../../types';
@@ -785,10 +787,31 @@ export const updateResource = async (
   }
 
   const codePath = fn.code!.path;
+  const currentCodeHash = existingState?.definition?.codeHash as string | undefined;
+  const desiredCodeHash = computeFileHash(codePath);
+  const codeChanged = currentCodeHash !== desiredCodeHash;
 
-  await client.fc3.updateFunctionConfiguration(config);
-  const ossCode = await ensureOssCodeUpload(client, codePath, context.region, fn.name);
-  await client.fc3.updateFunctionCode(fn.name, codePath, ossCode);
+  const existingConfig = existingState?.definition as ResourceAttributes | undefined;
+  const desiredDefinition = extractFc3Definition(config, desiredCodeHash);
+
+  const { codeHash: _existingCodeHash, ...existingConfigOnly } = existingConfig || {};
+  const { codeHash: _desiredCodeHash, ...desiredConfigOnly } = desiredDefinition;
+  const configChanged = !attributesEqual(existingConfigOnly, desiredConfigOnly);
+
+  if (configChanged) {
+    await client.fc3.updateFunctionConfiguration(config);
+  }
+
+  if (codeChanged) {
+    const ossCode = await ensureOssCodeUpload(client, codePath, context.region, fn.name);
+    await client.fc3.updateFunctionCode(fn.name, codePath, ossCode);
+  }
+
+  if (!configChanged && !codeChanged) {
+    logger.warn(
+      lang.__('UPDATING_RESOURCE_WITH_NO_CHANGES', { resourceType: 'function', name: fn.name }),
+    );
+  }
 
   const functionInfo = await client.fc3.getFunction(fn.name);
   if (!functionInfo) {
