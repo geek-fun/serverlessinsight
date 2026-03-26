@@ -247,25 +247,119 @@ logger.error(lang.__('FAILED_TO_DEPLOY_STACK', { error }));
 
 ### Testing
 
-- Tests live in `tests/` mirroring the `src/` structure
-- Use Jest with `jest.fn()` for mocks
-- Group mocks at the top of the test file
-- Use `jest.mock()` for module mocking before imports
-- Use `describe/it` blocks for organization
+**Test Folder Structure**:
+
+```
+tests/
+├── fixtures/           # Test fixtures (YAML configs, artifacts)
+├── unit/               # Unit tests (end with .test.ts)
+│   ├── common/
+│   ├── stack/
+│   └── ...
+└── service/            # Service tests (end with .spec.test.ts)
+    └── ...
+```
+
+**Test Commands**:
+
+```bash
+# Run all tests
+npm test
+
+# Run unit tests only
+npm run test:unit
+
+# Run service tests only
+npm run test:service
+
+# Run CI tests
+npm run test:ci
+```
+
+**Unit Tests** (`.test.ts`):
+
+- Test individual functions/modules in complete isolation
+- Mock ALL external dependencies (SDK clients, file system, network)
+- Focus on business logic and edge cases
+- Run fast (< 100ms per test)
+- Located in `tests/unit/`
+
+**Service Tests** (`.spec.test.ts`):
+
+- Test the complete flow from command entry to final result
+- Mock ONLY external cloud SDK clients
+- Test framework internals: parser → planner → executor → state
+- Verify component interaction and state consistency
+- Run slower (1-10s per test)
+- Located in `tests/service/`
+
+**When to Write Which Test**:
+
+| Scenario                            | Unit Test | Service Test |
+| ----------------------------------- | --------- | ------------ |
+| New utility function                | ✅        | ❌           |
+| New SDK operation wrapper           | ✅        | ❌           |
+| New resource planner                | ✅        | ❌           |
+| Deploy command flow                 | ❌        | ✅           |
+| State persistence across operations | ❌        | ✅           |
+| Error handling in full flow         | ❌        | ✅           |
+
+**Mock Strategy**:
+
+```typescript
+// Unit Test: Mock everything external
+jest.mock('../../../../src/common/aliyunClient', () => ({
+  createAliyunClient: jest.fn(() => ({
+    fc3: { createFunction: jest.fn() },
+  })),
+}));
+
+// Service Test: Mock only cloud SDK
+const mockCloudClient = {
+  fc3: { createFunction: jest.fn() },
+  apigw: { createApi: jest.fn() },
+};
+// Use real parser, real planner, real executor
+```
+
+**CRITICAL: Test Coverage Requirements**
+
+- Coverage threshold is set to **85%** for all metrics (branches, functions, lines, statements)
+- **NEVER modify the coverage threshold** in `jest.config.js`
+- If tests fail due to coverage, add more tests - do not lower the threshold
+- This is a mandatory quality gate for the framework
+
+**Unit Test Example**:
 
 ```typescript
 describe('updateResource', () => {
   it('should update resource and refresh state from provider', async () => {
-    // Arrange
-    mockedFc3Operations.updateFunctionConfiguration.mockResolvedValue(undefined);
+    const mockedFc3Operations = {
+      updateFunctionConfiguration: jest.fn(),
+    };
 
-    // Act
-    const result = await updateResource(mockContext, testFunction, initialState);
+    await updateResource(mockContext, testFunction, initialState);
 
-    // Assert
     expect(mockedFc3Operations.updateFunctionConfiguration).toHaveBeenCalledWith(
       expect.objectContaining({ functionName: 'test-function' }),
     );
+  });
+});
+```
+
+**Service Test Example**:
+
+```typescript
+describe('Deploy Flow', () => {
+  it('should parse YAML, generate plan, execute, and save state', async () => {
+    const mockClient = createMockAliyunClient();
+    const config = loadTestConfig('fixtures/deploy-fixtures/oneFc');
+
+    await deployCommand({ config, client: mockClient });
+
+    expect(mockClient.fc3.createFunction).toHaveBeenCalled();
+    const state = await loadState(config.app, config.service);
+    expect(state.resources).toHaveLength(1);
   });
 });
 ```

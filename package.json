@@ -10,6 +10,8 @@
   },
   "scripts": {
     "test": "cross-env DEBUG=ServerlessInsight jest --runInBand --detectOpenHandles --coverage --coverageReporters json-summary text html lcov",
+    "test:unit": "cross-env DEBUG=ServerlessInsight jest --runInBand --detectOpenHandles --testPathPattern=unit",
+    "test:service": "cross-env DEBUG=ServerlessInsight TEST_TYPE=service jest --runInBand --detectOpenHandles --testPathPattern=service",
     "test:ci": "jest --runInBand --ci --coverage --coverageReporters json-summary text html lcov",
     "build": "tsc --build",
     "lint:fix": "eslint --fix ./",
