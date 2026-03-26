@@ -2,8 +2,6 @@ import path from 'node:path';
 import fs from 'node:fs/promises';
 import { destroyStack } from '../../src/commands/destroy';
 import { createMockAliyunClient } from './mockCloudClient';
-import { ProviderEnum } from '../../src/common/providerEnum';
-import type { Context } from '../../src/types';
 
 jest.mock('../../src/common/aliyunClient', () => {
   const originalModule = jest.requireActual('../../src/common/aliyunClient');
@@ -32,20 +30,9 @@ jest.mock('../../src/lang', () => ({
 const mockCreateAliyunClient = require('../../src/common/aliyunClient')
   .createAliyunClient as jest.Mock;
 
-const _createMockContext = (overrides?: Partial<Context>): Context =>
-  ({
-    provider: ProviderEnum.ALIYUN,
-    region: 'cn-hangzhou',
-    accessKeyId: 'test-access-key-id',
-    accessKeySecret: 'test-access-key-secret',
-    stage: 'dev',
-    app: 'test-app',
-    service: 'test-service',
-    ...overrides,
-  }) as Context;
-
 describe('Destroy Flow Service Test', () => {
   const tempStateDir = path.join(__dirname, '../fixtures/temp-state-destroy');
+  const fixturesDir = path.join(__dirname, '../fixtures');
 
   beforeEach(async () => {
     jest.clearAllMocks();
@@ -66,7 +53,7 @@ describe('Destroy Flow Service Test', () => {
       mockCreateAliyunClient.mockReturnValue(mockClient);
 
       await destroyStack({
-        location: path.join(__dirname, '../fixtures/deploy-fixtures'),
+        location: fixturesDir,
         stage: 'dev',
         region: 'cn-hangzhou',
         provider: 'aliyun',
@@ -82,7 +69,7 @@ describe('Destroy Flow Service Test', () => {
       mockCreateAliyunClient.mockReturnValue(mockClient);
 
       await destroyStack({
-        location: path.join(__dirname, '../fixtures/deploy-fixtures'),
+        location: fixturesDir,
         stage: 'dev',
         region: 'cn-hangzhou',
         provider: 'aliyun',
@@ -98,7 +85,7 @@ describe('Destroy Flow Service Test', () => {
 
       await expect(
         destroyStack({
-          location: path.join(__dirname, '../fixtures/deploy-fixtures'),
+          location: fixturesDir,
           stage: 'dev',
           region: 'cn-hangzhou',
           provider: 'aliyun',

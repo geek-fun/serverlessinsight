@@ -20,7 +20,8 @@ const mockSlsClient = {
   createIndex: mockCreateIndex,
   getIndex: mockGetIndex,
   deleteIndex: mockDeleteIndex,
-} as unknown as Context;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+} as any;
 
 jest.mock('../../../../src/common/logger', () => ({
   logger: {

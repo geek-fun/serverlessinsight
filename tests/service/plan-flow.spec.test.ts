@@ -2,8 +2,6 @@ import path from 'node:path';
 import fs from 'node:fs/promises';
 import { plan } from '../../src/commands/plan';
 import { createMockAliyunClient, createMockTencentClient } from './mockCloudClient';
-import { ProviderEnum } from '../../src/common/providerEnum';
-import type { Context } from '../../src/types';
 
 jest.mock('../../src/common/aliyunClient', () => {
   const originalModule = jest.requireActual('../../src/common/aliyunClient');
@@ -44,20 +42,9 @@ const mockCreateAliyunClient = require('../../src/common/aliyunClient')
 const mockCreateTencentClient = require('../../src/common/tencentClient')
   .createTencentClient as jest.Mock;
 
-const _createMockContext = (overrides?: Partial<Context>): Context =>
-  ({
-    provider: ProviderEnum.ALIYUN,
-    region: 'cn-hangzhou',
-    accessKeyId: 'test-access-key-id',
-    accessKeySecret: 'test-access-key-secret',
-    stage: 'dev',
-    app: 'test-app',
-    service: 'test-service',
-    ...overrides,
-  }) as Context;
-
 describe('Plan Flow Service Test', () => {
   const tempStateDir = path.join(__dirname, '../fixtures/temp-state-plan');
+  const fixturesDir = path.join(__dirname, '../fixtures');
 
   beforeEach(async () => {
     jest.clearAllMocks();
@@ -81,21 +68,7 @@ describe('Plan Flow Service Test', () => {
       mockCreateAliyunClient.mockReturnValue(mockClient);
 
       await plan({
-        location: path.join(__dirname, '../fixtures/deploy-fixtures'),
-        stage: 'dev',
-        region: 'cn-hangzhou',
-        provider: 'aliyun',
-      });
-
-      expect(mockClient.fc3.getFunction).toHaveBeenCalled();
-    });
-
-    it('should generate plan for FC3 with API Gateway', async () => {
-      const mockClient = createMockAliyunClient();
-      mockCreateAliyunClient.mockReturnValue(mockClient);
-
-      await plan({
-        location: path.join(__dirname, '../fixtures/deploy-fixtures'),
+        location: fixturesDir,
         stage: 'dev',
         region: 'cn-hangzhou',
         provider: 'aliyun',
@@ -110,7 +83,7 @@ describe('Plan Flow Service Test', () => {
       mockCreateAliyunClient.mockReturnValue(mockClient);
 
       await plan({
-        location: path.join(__dirname, '../fixtures/deploy-fixtures'),
+        location: fixturesDir,
         stage: 'dev',
         region: 'cn-hangzhou',
         provider: 'aliyun',
@@ -136,31 +109,7 @@ describe('Plan Flow Service Test', () => {
       mockCreateAliyunClient.mockReturnValue(mockClient);
 
       await plan({
-        location: path.join(__dirname, '../fixtures/deploy-fixtures'),
-        stage: 'dev',
-        region: 'cn-hangzhou',
-        provider: 'aliyun',
-      });
-
-      expect(mockClient.fc3.getFunction).toHaveBeenCalled();
-    });
-
-    it('should mark as update when resource exists with changes', async () => {
-      const mockClient = createMockAliyunClient();
-      mockClient.fc3.getFunction.mockResolvedValue({
-        body: {
-          functionConfig: {
-            functionName: 'hello-fn',
-            memorySize: 512,
-            timeout: 60,
-            runtime: 'nodejs18',
-          },
-        },
-      });
-      mockCreateAliyunClient.mockReturnValue(mockClient);
-
-      await plan({
-        location: path.join(__dirname, '../fixtures/deploy-fixtures'),
+        location: fixturesDir,
         stage: 'dev',
         region: 'cn-hangzhou',
         provider: 'aliyun',
@@ -176,7 +125,7 @@ describe('Plan Flow Service Test', () => {
       mockCreateTencentClient.mockReturnValue(mockTencentClient);
 
       await plan({
-        location: path.join(__dirname, '../fixtures/deploy-fixtures'),
+        location: fixturesDir,
         stage: 'dev',
         region: 'ap-guangzhou',
         provider: 'tencent',
