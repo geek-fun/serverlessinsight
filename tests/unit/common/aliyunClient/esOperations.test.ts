@@ -178,7 +178,7 @@ describe('esOperations', () => {
         appVersion: '7.10',
       });
 
-      jest.advanceTimersByTime(10000);
+      await jest.advanceTimersByTimeAsync(10000);
 
       const result = await resultPromise;
       expect(result).toBe(appId);
@@ -235,10 +235,12 @@ describe('esOperations', () => {
         appVersion: '7.10',
       });
 
-      // Advance time past all 60 attempts (60 * 10000ms)
-      jest.advanceTimersByTime(610000);
-
-      await expect(resultPromise).rejects.toThrow('ES_APP_TIMEOUT_READY');
+      // Advance time past all 60 attempts (60 * 10000ms), concurrent with rejection assertion
+      // so the rejection is awaited when timers fire (prevents unhandled rejection)
+      await Promise.all([
+        jest.advanceTimersByTimeAsync(610000),
+        expect(resultPromise).rejects.toThrow('ES_APP_TIMEOUT_READY'),
+      ]);
     });
 
     it('should throw error with creation failure details', async () => {
@@ -501,7 +503,7 @@ describe('esOperations', () => {
         },
       });
 
-      const callArgs = mockUpdateApp.mock.calls[0][0];
+      const callArgs = mockUpdateApp.mock.calls[0][1];
       expect(callArgs.authentication).toBeDefined();
     });
 
@@ -532,7 +534,7 @@ describe('esOperations', () => {
         description: 'Updated',
       });
 
-      jest.advanceTimersByTime(10000);
+      await jest.advanceTimersByTimeAsync(10000);
 
       await resultPromise;
 
@@ -566,9 +568,10 @@ describe('esOperations', () => {
         appVersion: '7.10',
       });
 
-      jest.advanceTimersByTime(610000);
-
-      await expect(resultPromise).rejects.toThrow();
+      await Promise.all([
+        jest.advanceTimersByTimeAsync(610000),
+        expect(resultPromise).rejects.toThrow(),
+      ]);
     });
   });
 
@@ -598,7 +601,7 @@ describe('esOperations', () => {
 
       const resultPromise = operations.deleteApp('test-app');
 
-      jest.advanceTimersByTime(10000);
+      await jest.advanceTimersByTimeAsync(10000);
 
       await resultPromise;
 
@@ -640,9 +643,10 @@ describe('esOperations', () => {
 
       const resultPromise = operations.deleteApp('test-app');
 
-      jest.advanceTimersByTime(610000);
-
-      await expect(resultPromise).rejects.toThrow('ES_APP_TIMEOUT_DELETE');
+      await Promise.all([
+        jest.advanceTimersByTimeAsync(610000),
+        expect(resultPromise).rejects.toThrow('ES_APP_TIMEOUT_DELETE'),
+      ]);
     });
   });
 
@@ -682,7 +686,7 @@ describe('esOperations', () => {
 
       const resultPromise = operations.deleteApp('test-app');
 
-      jest.advanceTimersByTime(20000);
+      await jest.advanceTimersByTimeAsync(20000);
 
       await resultPromise;
     });

@@ -34,8 +34,41 @@ jest.mock('../../src/lang', () => ({
 const mockCreateAliyunClient = require('../../src/common/aliyunClient')
   .createAliyunClient as jest.Mock;
 
+const STATE_FILE_PATH = path.join(
+  process.cwd(),
+  '.serverlessinsight',
+  'state-insight-poc-app-insight-poc.json',
+);
+
+const EXISTING_STATE = JSON.stringify({
+  version: '3.0',
+  provider: 'aliyun',
+  app: 'insight-poc-app',
+  service: 'insight-poc',
+  stages: {
+    dev: {
+      resources: {
+        'functions.insight_poc_fn': {
+          mode: 'managed',
+          region: 'cn-hangzhou',
+          definition: {
+            functionName: 'insight-poc-fn',
+            runtime: 'nodejs18',
+            handler: 'index.handler',
+            memorySize: 512,
+            timeout: 10,
+          },
+          instances: [{ sid: 'insight-poc-fn', id: 'insight-poc-fn', type: 'ALIYUN_FC3_FUNCTION' }],
+          lastUpdated: '2024-01-01T00:00:00.000Z',
+          status: 'ready',
+        },
+      },
+    },
+  },
+  resources: {},
+});
+
 describe('Destroy Flow Service Test', () => {
-  const tempStateDir = path.join(__dirname, '../fixtures/temp-state-destroy');
   const fixturesDir = path.join(__dirname, '../fixtures');
   let mockClient: MockAliyunClient;
 
@@ -45,11 +78,12 @@ describe('Destroy Flow Service Test', () => {
     mockClient = createMockAliyunClient();
     mockCreateAliyunClient.mockReturnValue(mockClient);
 
-    await fs.mkdir(tempStateDir, { recursive: true }).catch(() => {});
+    await fs.mkdir(path.dirname(STATE_FILE_PATH), { recursive: true }).catch(() => {});
+    await fs.writeFile(STATE_FILE_PATH, EXISTING_STATE, 'utf-8');
   });
 
   afterEach(async () => {
-    await fs.rm(tempStateDir, { recursive: true, force: true }).catch(() => {});
+    await fs.rm(STATE_FILE_PATH, { force: true }).catch(() => {});
   });
 
   describe('Aliyun Destroy', () => {

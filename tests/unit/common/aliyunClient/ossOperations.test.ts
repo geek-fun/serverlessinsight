@@ -49,6 +49,17 @@ jest.mock('../../../../src/lang', () => ({
   },
 }));
 
+jest.mock('../../../../src/common/retryUtils', () => ({
+  sleep: jest.fn().mockResolvedValue(undefined),
+}));
+
+jest.mock('../../../../src/common/constants', () => ({
+  DOMAIN_BIND_MAX_RETRIES: 2,
+  DOMAIN_BIND_RETRY_DELAY_MS: 0,
+  DNS_PROPAGATION_MAX_ATTEMPTS: 2,
+  DNS_PROPAGATION_DELAY_MS: 0,
+}));
+
 describe('ossOperations CORS', () => {
   let operations: ReturnType<typeof createOssOperations>;
 
@@ -816,6 +827,10 @@ describe('ossOperations bucket operations', () => {
 
   describe('uploadFiles', () => {
     it('should upload single file', async () => {
+      // eslint-disable-next-line @typescript-eslint/no-require-imports
+      const fs = require('node:fs');
+      jest.spyOn(fs, 'statSync').mockReturnValue({ isDirectory: () => false });
+
       const mockOssClient2 = {
         ...mockOssClient,
         put: jest.fn().mockResolvedValue({}),
@@ -832,10 +847,15 @@ describe('ossOperations bucket operations', () => {
       // eslint-disable-next-line @typescript-eslint/no-require-imports
       const fs = require('node:fs');
       jest.spyOn(fs, 'statSync').mockReturnValue({ isDirectory: () => true });
-      jest.spyOn(fs, 'readdirSync').mockReturnValue([
-        { name: 'file1.txt', isDirectory: () => false, isFile: () => true },
-        { name: 'subdir', isDirectory: () => true, isFile: () => false },
-      ]);
+      jest.spyOn(fs, 'readdirSync').mockImplementation((dirPath: unknown) => {
+        if (dirPath === '/path/to/dir') {
+          return [
+            { name: 'file1.txt', isDirectory: () => false, isFile: () => true },
+            { name: 'subdir', isDirectory: () => true, isFile: () => false },
+          ] as unknown as ReturnType<typeof fs.readdirSync>;
+        }
+        return [] as unknown as ReturnType<typeof fs.readdirSync>;
+      });
 
       const mockOssClient2 = {
         ...mockOssClient,
@@ -894,5 +914,795 @@ describe('ossOperations bucket operations', () => {
 
       await expect(operations.createCnameToken('test-bucket', 'example.com')).rejects.toThrow();
     });
+  });
+});
+
+describe('ossOperations with dnsOps', () => {
+  let operations: ReturnType<typeof createOssOperations>;
+  const mockDnsOps = {
+    describeDomainRecords: jest.fn(),
+    addDomainRecord: jest.fn(),
+    deleteDomainRecord: jest.fn(),
+    updateDomainRecord: jest.fn(),
+    checkDomainRecordExists: jest.fn(),
+  };
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    mockRequest.mockResolvedValue({});
+    mockGetBucketInfo.mockResolvedValue({
+      bucket: {
+        Name: 'test-bucket',
+        Location: 'oss-cn-hangzhou',
+      },
+    });
+    mockGetBucketCORS.mockRejectedValue(new Error('NoSuchCORSConfiguration'));
+    operations = createOssOperations(mockOssClient, 'cn-hangzhou', mockDnsOps);
+  });
+
+  describe('bindCustomDomain with DNS operations', () => {
+    it('should create DNS CNAME record when none exists', async () => {
+      mockDnsOps.describeDomainRecords.mockResolvedValue([]);
+      mockDnsOps.addDomainRecord.mockResolvedValue('record-123');
+
+      const result = await operations.bindCustomDomain('test-bucket', 'cdn.example.com');
+
+      expect(result.domain).toBe('cdn.example.com');
+      expect(result.dnsRecordId).toBe('record-123');
+      expect(mockDnsOps.addDomainRecord).toHaveBeenCalledWith(
+        expect.objectContaining({
+          domainName: 'example.com',
+          rr: 'cdn',
+          type: 'CNAME',
+          value: 'test-bucket.cn-hangzhou.taihangcda.cn',
+        }),
+      );
+    });
+
+    it('should reuse existing DNS CNAME record', async () => {
+      mockDnsOps.describeDomainRecords.mockResolvedValue([
+        {
+          rr: 'cdn',
+          type: 'CNAME',
+          value: 'test-bucket.cn-hangzhou.taihangcda.cn',
+          recordId: 'existing-123',
+        },
+      ]);
+
+      const result = await operations.bindCustomDomain('test-bucket', 'cdn.example.com');
+
+      expect(result.dnsRecordId).toBe('existing-123');
+      expect(mockDnsOps.addDomainRecord).not.toHaveBeenCalled();
+    });
+
+    it('should handle DNS error gracefully and return without dnsRecordId', async () => {
+      mockDnsOps.describeDomainRecords.mockRejectedValue(new Error('DNS error'));
+
+      const result = await operations.bindCustomDomain('test-bucket', 'cdn.example.com');
+
+      expect(result.domain).toBe('cdn.example.com');
+      expect(result.dnsRecordId).toBeUndefined();
+    });
+
+    it('should log cert bound message when certificate provided and binding succeeds', async () => {
+      mockDnsOps.describeDomainRecords.mockResolvedValue([]);
+      mockDnsOps.addDomainRecord.mockResolvedValue('record-123');
+
+      const cert = {
+        certificateBody: '-----BEGIN CERTIFICATE-----\nMOCK\n-----END CERTIFICATE-----',
+        certificatePrivateKey:
+          '-----BEGIN RSA PRIVATE KEY-----\nKEY\n-----END RSA PRIVATE KEY-----',
+      };
+
+      const result = await operations.bindCustomDomain('test-bucket', 'cdn.example.com', cert);
+
+      expect(result.domain).toBe('cdn.example.com');
+      expect(result.bucketCnameBound).toBe(true);
+    });
+  });
+
+  describe('bindCustomDomain with domain verification', () => {
+    it('should handle NeedVerifyDomainOwnership and verify via DNS TXT record', async () => {
+      // First putBucketCname returns needVerification
+      const verifyError = Object.assign(new Error('NeedVerifyDomainOwnership'), {
+        code: 'NeedVerifyDomainOwnership',
+      });
+      mockRequest
+        .mockRejectedValueOnce(verifyError)
+        // createCnameToken
+        .mockResolvedValueOnce({
+          data: '<CnameToken><Token>verify-token-123</Token><ExpireTime>2024-01-01</ExpireTime></CnameToken>',
+        })
+        // retry putBucketCname - first attempt still needs verification
+        .mockRejectedValueOnce(verifyError)
+        // retry putBucketCname - second attempt succeeds
+        .mockResolvedValueOnce({});
+
+      // TXT record does not exist, create it
+      mockDnsOps.describeDomainRecords
+        .mockResolvedValueOnce([]) // addVerificationTxtRecord lookup
+        .mockResolvedValueOnce([
+          {
+            rr: '_dnsauth.cdn',
+            type: 'TXT',
+            value: 'verify-token-123',
+            status: 'ENABLE',
+          },
+        ]) // pollTxtDnsPropagation check
+        .mockResolvedValueOnce([]); // createOrFindDnsCnameRecord lookup
+
+      mockDnsOps.addDomainRecord
+        .mockResolvedValueOnce('txt-record-id') // TXT record
+        .mockResolvedValueOnce('cname-record-id'); // CNAME record
+
+      const result = await operations.bindCustomDomain('test-bucket', 'cdn.example.com');
+
+      expect(result.domain).toBe('cdn.example.com');
+      expect(result.txtRecordId).toBe('txt-record-id');
+      expect(result.dnsRecordId).toBe('cname-record-id');
+    });
+
+    it('should reuse existing TXT verification record', async () => {
+      const verifyError = Object.assign(new Error('NeedVerifyDomainOwnership'), {
+        code: 'NeedVerifyDomainOwnership',
+      });
+      mockRequest
+        .mockRejectedValueOnce(verifyError)
+        // createCnameToken
+        .mockResolvedValueOnce({
+          data: '<CnameToken><Token>verify-token-123</Token><ExpireTime>2024-01-01</ExpireTime></CnameToken>',
+        })
+        // retry putBucketCname succeeds
+        .mockResolvedValueOnce({});
+
+      // Existing TXT record found
+      mockDnsOps.describeDomainRecords
+        .mockResolvedValueOnce([
+          {
+            rr: '_dnsauth.cdn',
+            type: 'TXT',
+            value: 'verify-token-123',
+            recordId: 'existing-txt-id',
+          },
+        ]) // addVerificationTxtRecord finds existing
+        .mockResolvedValueOnce([
+          {
+            rr: '_dnsauth.cdn',
+            type: 'TXT',
+            value: 'verify-token-123',
+            status: 'ENABLE',
+          },
+        ]) // pollTxtDnsPropagation check
+        .mockResolvedValueOnce([]); // createOrFindDnsCnameRecord
+
+      mockDnsOps.addDomainRecord.mockResolvedValue('cname-record-id');
+
+      const result = await operations.bindCustomDomain('test-bucket', 'cdn.example.com');
+
+      expect(result.txtRecordId).toBe('existing-txt-id');
+    });
+
+    it('should throw when TXT record creation fails and no DNS ops available for verification', async () => {
+      const verifyError = Object.assign(new Error('NeedVerifyDomainOwnership'), {
+        code: 'NeedVerifyDomainOwnership',
+      });
+      mockRequest
+        .mockRejectedValueOnce(verifyError)
+        // createCnameToken
+        .mockResolvedValueOnce({
+          data: '<CnameToken><Token>verify-token-123</Token><ExpireTime>2024-01-01</ExpireTime></CnameToken>',
+        });
+
+      // TXT creation fails
+      mockDnsOps.describeDomainRecords.mockRejectedValue(new Error('DNS lookup failed'));
+
+      await expect(operations.bindCustomDomain('test-bucket', 'cdn.example.com')).rejects.toThrow();
+    });
+
+    it('should handle DNS propagation timeout and still retry binding', async () => {
+      const verifyError = Object.assign(new Error('NeedVerifyDomainOwnership'), {
+        code: 'NeedVerifyDomainOwnership',
+      });
+      mockRequest
+        .mockRejectedValueOnce(verifyError)
+        // createCnameToken
+        .mockResolvedValueOnce({
+          data: '<CnameToken><Token>verify-token-123</Token><ExpireTime>2024-01-01</ExpireTime></CnameToken>',
+        })
+        // retry putBucketCname - all attempts still need verification
+        .mockRejectedValueOnce(verifyError)
+        .mockRejectedValueOnce(verifyError);
+
+      mockDnsOps.describeDomainRecords
+        .mockResolvedValueOnce([]) // addVerificationTxtRecord lookup
+        .mockResolvedValueOnce([]) // pollTxtDnsPropagation check 1 - not propagated
+        .mockResolvedValueOnce([]); // pollTxtDnsPropagation check 2 - not propagated
+
+      mockDnsOps.addDomainRecord.mockResolvedValue('txt-record-id');
+
+      const result = await operations.bindCustomDomain('test-bucket', 'cdn.example.com');
+
+      // Verification retries exhausted, returns { success: false, needVerification: true }
+      // bindCustomDomain still continues and creates DNS CNAME
+      expect(result.domain).toBe('cdn.example.com');
+      expect(result.bucketCnameBound).toBe(false);
+    });
+
+    it('should handle pollTxtDnsPropagation check error gracefully', async () => {
+      const verifyError = Object.assign(new Error('NeedVerifyDomainOwnership'), {
+        code: 'NeedVerifyDomainOwnership',
+      });
+      mockRequest
+        .mockRejectedValueOnce(verifyError)
+        // createCnameToken
+        .mockResolvedValueOnce({
+          data: '<CnameToken><Token>verify-token-123</Token><ExpireTime>2024-01-01</ExpireTime></CnameToken>',
+        })
+        // retry putBucketCname succeeds after verification
+        .mockResolvedValueOnce({});
+
+      mockDnsOps.describeDomainRecords
+        .mockResolvedValueOnce([]) // addVerificationTxtRecord lookup
+        .mockRejectedValueOnce(new Error('DNS check error')) // pollTxtDnsPropagation check 1 fails
+        .mockResolvedValueOnce([
+          {
+            rr: '_dnsauth.cdn',
+            type: 'TXT',
+            value: 'verify-token-123',
+            status: 'ENABLE',
+          },
+        ]) // pollTxtDnsPropagation check 2 succeeds
+        .mockResolvedValueOnce([]); // createOrFindDnsCnameRecord
+
+      mockDnsOps.addDomainRecord
+        .mockResolvedValueOnce('txt-record-id')
+        .mockResolvedValueOnce('cname-record-id');
+
+      const result = await operations.bindCustomDomain('test-bucket', 'cdn.example.com');
+
+      expect(result.domain).toBe('cdn.example.com');
+    });
+
+    it('should handle retryCnameBindingAfterVerification error on non-last attempt', async () => {
+      const verifyError = Object.assign(new Error('NeedVerifyDomainOwnership'), {
+        code: 'NeedVerifyDomainOwnership',
+      });
+      const unexpectedError = Object.assign(new Error('InternalError'), {
+        code: 'InternalError',
+        status: 500,
+      });
+      const cert = {
+        certificateBody: '-----BEGIN CERTIFICATE-----\nMOCK\n-----END CERTIFICATE-----',
+        certificatePrivateKey:
+          '-----BEGIN RSA PRIVATE KEY-----\nKEY\n-----END RSA PRIVATE KEY-----',
+      };
+      mockRequest
+        .mockRejectedValueOnce(verifyError)
+        .mockResolvedValueOnce({
+          data: '<CnameToken><Token>verify-token-123</Token><ExpireTime>2024-01-01</ExpireTime></CnameToken>',
+        })
+        .mockRejectedValueOnce(unexpectedError)
+        .mockResolvedValueOnce({});
+
+      mockDnsOps.describeDomainRecords
+        .mockResolvedValueOnce([])
+        .mockResolvedValueOnce([
+          {
+            rr: '_dnsauth.cdn',
+            type: 'TXT',
+            value: 'verify-token-123',
+            status: 'ENABLE',
+          },
+        ])
+        .mockResolvedValueOnce([]);
+
+      mockDnsOps.addDomainRecord
+        .mockResolvedValueOnce('txt-record-id')
+        .mockResolvedValueOnce('cname-record-id');
+
+      const result = await operations.bindCustomDomain('test-bucket', 'cdn.example.com', cert);
+
+      expect(result.domain).toBe('cdn.example.com');
+      expect(result.bucketCnameBound).toBe(true);
+    });
+
+    it('should throw when retryCnameBindingAfterVerification error on last attempt with certificate', async () => {
+      const verifyError = Object.assign(new Error('NeedVerifyDomainOwnership'), {
+        code: 'NeedVerifyDomainOwnership',
+      });
+      const fatalError = Object.assign(new Error('InternalError'), {
+        code: 'InternalError',
+        status: 500,
+      });
+      const cert = {
+        certificateBody: '-----BEGIN CERTIFICATE-----\nMOCK\n-----END CERTIFICATE-----',
+        certificatePrivateKey:
+          '-----BEGIN RSA PRIVATE KEY-----\nKEY\n-----END RSA PRIVATE KEY-----',
+      };
+      mockRequest
+        .mockRejectedValueOnce(verifyError)
+        .mockResolvedValueOnce({
+          data: '<CnameToken><Token>verify-token-123</Token><ExpireTime>2024-01-01</ExpireTime></CnameToken>',
+        })
+        .mockRejectedValueOnce(fatalError)
+        .mockRejectedValueOnce(fatalError);
+
+      mockDnsOps.describeDomainRecords
+        .mockResolvedValueOnce([])
+        .mockResolvedValueOnce([
+          {
+            rr: '_dnsauth.cdn',
+            type: 'TXT',
+            value: 'verify-token-123',
+            status: 'ENABLE',
+          },
+        ])
+        .mockResolvedValueOnce([]);
+
+      mockDnsOps.addDomainRecord.mockResolvedValue('txt-record-id');
+
+      await expect(
+        operations.bindCustomDomain('test-bucket', 'cdn.example.com', cert),
+      ).rejects.toThrow();
+    });
+
+    it('should handle root domain verification with @ host record', async () => {
+      const verifyError = Object.assign(new Error('NeedVerifyDomainOwnership'), {
+        code: 'NeedVerifyDomainOwnership',
+      });
+      mockRequest
+        .mockRejectedValueOnce(verifyError)
+        // createCnameToken
+        .mockResolvedValueOnce({
+          data: '<CnameToken><Token>verify-token-123</Token><ExpireTime>2024-01-01</ExpireTime></CnameToken>',
+        })
+        // retry putBucketCname succeeds
+        .mockResolvedValueOnce({});
+
+      mockDnsOps.describeDomainRecords
+        .mockResolvedValueOnce([]) // addVerificationTxtRecord lookup (root domain: fullTxtRecord = _dnsauth)
+        .mockResolvedValueOnce([
+          {
+            rr: '_dnsauth',
+            type: 'TXT',
+            value: 'verify-token-123',
+            status: 'ENABLE',
+          },
+        ]) // pollTxtDnsPropagation check
+        .mockResolvedValueOnce([]); // createOrFindDnsCnameRecord
+
+      mockDnsOps.addDomainRecord
+        .mockResolvedValueOnce('txt-record-id')
+        .mockResolvedValueOnce('cname-record-id');
+
+      const result = await operations.bindCustomDomain('test-bucket', 'example.com');
+
+      expect(result.domain).toBe('example.com');
+      // For root domain, fullTxtRecord should be just '_dnsauth' (not '_dnsauth.@')
+      expect(mockDnsOps.addDomainRecord).toHaveBeenCalledWith(
+        expect.objectContaining({
+          rr: '_dnsauth',
+          type: 'TXT',
+        }),
+      );
+    });
+
+    it('should return not-verified with retry result when putBucketCname returns non-success, non-verification', async () => {
+      const verifyError = Object.assign(new Error('NeedVerifyDomainOwnership'), {
+        code: 'NeedVerifyDomainOwnership',
+      });
+      const otherError = Object.assign(new Error('SomeOtherError'), {
+        code: 'SomeOtherError',
+        status: 400,
+      });
+      mockRequest
+        .mockRejectedValueOnce(verifyError)
+        // createCnameToken
+        .mockResolvedValueOnce({
+          data: '<CnameToken><Token>verify-token-123</Token><ExpireTime>2024-01-01</ExpireTime></CnameToken>',
+        })
+        // retry putBucketCname returns { success: false, needVerification: false } via otherError without cert
+        .mockRejectedValueOnce(otherError);
+
+      mockDnsOps.describeDomainRecords
+        .mockResolvedValueOnce([]) // addVerificationTxtRecord
+        .mockResolvedValueOnce([
+          {
+            rr: '_dnsauth.cdn',
+            type: 'TXT',
+            value: 'verify-token-123',
+            status: 'ENABLE',
+          },
+        ]) // pollTxtDnsPropagation
+        .mockResolvedValueOnce([]); // createOrFindDnsCnameRecord
+
+      mockDnsOps.addDomainRecord
+        .mockResolvedValueOnce('txt-record-id')
+        .mockResolvedValueOnce('cname-record-id');
+
+      const result = await operations.bindCustomDomain('test-bucket', 'cdn.example.com');
+
+      expect(result.bucketCnameBound).toBe(false);
+    });
+  });
+
+  describe('unbindCustomDomain with DNS ops', () => {
+    it('should delete DNS CNAME record when dnsRecordId provided', async () => {
+      mockGetBucketCORS.mockRejectedValue(new Error('NoSuchCORSConfiguration'));
+      mockDnsOps.deleteDomainRecord.mockResolvedValue(undefined);
+
+      await operations.unbindCustomDomain('test-bucket', 'cdn.example.com', 'dns-record-123');
+
+      expect(mockDnsOps.deleteDomainRecord).toHaveBeenCalledWith('dns-record-123');
+    });
+
+    it('should delete TXT record when txtRecordId provided', async () => {
+      mockGetBucketCORS.mockRejectedValue(new Error('NoSuchCORSConfiguration'));
+      mockDnsOps.deleteDomainRecord.mockResolvedValue(undefined);
+
+      await operations.unbindCustomDomain(
+        'test-bucket',
+        'cdn.example.com',
+        'dns-record-123',
+        'txt-record-456',
+      );
+
+      expect(mockDnsOps.deleteDomainRecord).toHaveBeenCalledWith('dns-record-123');
+      expect(mockDnsOps.deleteDomainRecord).toHaveBeenCalledWith('txt-record-456');
+    });
+
+    it('should skip DNS CNAME deletion when dnsRecordId is "existing"', async () => {
+      mockGetBucketCORS.mockRejectedValue(new Error('NoSuchCORSConfiguration'));
+
+      await operations.unbindCustomDomain('test-bucket', 'cdn.example.com', 'existing');
+
+      expect(mockDnsOps.deleteDomainRecord).not.toHaveBeenCalled();
+    });
+
+    it('should handle DNS CNAME deletion error gracefully', async () => {
+      mockGetBucketCORS.mockRejectedValue(new Error('NoSuchCORSConfiguration'));
+      mockDnsOps.deleteDomainRecord.mockRejectedValue(new Error('DNS delete failed'));
+
+      await expect(
+        operations.unbindCustomDomain('test-bucket', 'cdn.example.com', 'dns-record-123'),
+      ).resolves.toBeUndefined();
+    });
+
+    it('should handle TXT record deletion error gracefully', async () => {
+      mockGetBucketCORS.mockRejectedValue(new Error('NoSuchCORSConfiguration'));
+      mockDnsOps.deleteDomainRecord
+        .mockResolvedValueOnce(undefined) // CNAME delete ok
+        .mockRejectedValueOnce(new Error('TXT delete failed')); // TXT delete fails
+
+      await expect(
+        operations.unbindCustomDomain(
+          'test-bucket',
+          'cdn.example.com',
+          'dns-record-123',
+          'txt-record-456',
+        ),
+      ).resolves.toBeUndefined();
+    });
+  });
+
+  describe('deleteBucketCname', () => {
+    it('should delete CNAME binding and return true', async () => {
+      const _result = await operations.unbindCustomDomain('test-bucket', 'cdn.example.com');
+
+      // deleteBucketCname is called internally
+      expect(mockRequest).toHaveBeenCalledWith(
+        expect.objectContaining({
+          method: 'POST',
+          subres: { cname: '', comp: 'delete' },
+        }),
+      );
+    });
+
+    it('should handle deleteBucketCname error gracefully', async () => {
+      mockRequest.mockRejectedValue(new Error('Delete failed'));
+      mockGetBucketCORS.mockRejectedValue(new Error('NoSuchCORSConfiguration'));
+
+      // unbindCustomDomain calls deleteBucketCname which catches errors
+      await expect(
+        operations.unbindCustomDomain('test-bucket', 'cdn.example.com'),
+      ).resolves.toBeUndefined();
+    });
+  });
+});
+
+describe('ossOperations additional createBucket branches', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+    mockPutBucket.mockResolvedValue({});
+    mockPutBucketACL.mockResolvedValue({});
+    mockRequest.mockResolvedValue({});
+  });
+
+  it('should create bucket with storageClass', async () => {
+    const ops = createOssOperations(mockOssClient, 'cn-hangzhou');
+
+    await ops.createBucket({
+      bucketName: 'test-bucket',
+      storageClass: 'IA',
+    });
+
+    expect(mockPutBucket).toHaveBeenCalledWith('test-bucket', { storageClass: 'IA' });
+  });
+
+  it('should create bucket with websiteConfig', async () => {
+    const mockOssClient2 = {
+      ...mockOssClient,
+      putBucketWebsite: jest.fn().mockResolvedValue({}),
+    } as unknown as OSS;
+
+    const ops = createOssOperations(mockOssClient2, 'cn-hangzhou');
+
+    await ops.createBucket({
+      bucketName: 'test-bucket',
+      websiteConfig: {
+        indexDocument: 'index.html',
+        errorDocument: '404.html',
+      },
+    });
+
+    expect(mockOssClient2.putBucketWebsite).toHaveBeenCalledWith('test-bucket', {
+      index: 'index.html',
+      error: '404.html',
+    });
+  });
+});
+
+describe('ossOperations getBucket additional branches', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+  });
+
+  it('should rethrow unknown errors from getBucket', async () => {
+    const mockOssClient2 = {
+      ...mockOssClient,
+      getBucketInfo: jest.fn().mockRejectedValue(new Error('NetworkError')),
+    } as unknown as OSS;
+
+    const ops = createOssOperations(mockOssClient2, 'cn-hangzhou');
+
+    await expect(ops.getBucket('test-bucket')).rejects.toThrow('NetworkError');
+  });
+
+  it('should handle lifecycle rules with date expiration', async () => {
+    const mockOssClient2 = {
+      ...mockOssClient,
+      getBucketInfo: jest.fn().mockResolvedValue({
+        bucket: {
+          Name: 'test-bucket',
+          Location: 'oss-cn-hangzhou',
+        },
+      }),
+      getBucketACL: jest.fn().mockRejectedValue(new Error('No ACL')),
+      getBucketWebsite: jest.fn().mockRejectedValue(new Error('No website')),
+      getBucketLogging: jest.fn().mockResolvedValue({ enable: false }),
+      getBucketCORS: jest.fn().mockRejectedValue(new Error('No CORS')),
+      getBucketLifecycle: jest.fn().mockResolvedValue({
+        rules: [
+          {
+            id: 'date-rule',
+            status: 'Enabled',
+            prefix: 'archive/',
+            date: '2024-12-31T00:00:00.000Z',
+          },
+        ],
+      }),
+    } as unknown as OSS;
+
+    const ops = createOssOperations(mockOssClient2, 'cn-hangzhou');
+    const result = await ops.getBucket('test-bucket');
+
+    expect(result?.lifecycleRules).toEqual([
+      {
+        id: 'date-rule',
+        status: 'Enabled',
+        prefix: 'archive/',
+        expiration: {
+          date: '2024-12-31T00:00:00.000Z',
+        },
+      },
+    ]);
+  });
+
+  it('should handle lifecycle rules with string days', async () => {
+    const mockOssClient2 = {
+      ...mockOssClient,
+      getBucketInfo: jest.fn().mockResolvedValue({
+        bucket: { Name: 'test-bucket', Location: 'oss-cn-hangzhou' },
+      }),
+      getBucketACL: jest.fn().mockRejectedValue(new Error('No ACL')),
+      getBucketWebsite: jest.fn().mockRejectedValue(new Error('No website')),
+      getBucketLogging: jest.fn().mockRejectedValue(new Error('No logging')),
+      getBucketCORS: jest.fn().mockRejectedValue(new Error('No CORS')),
+      getBucketLifecycle: jest.fn().mockResolvedValue({
+        rules: [
+          {
+            id: 'string-days-rule',
+            status: 'Enabled',
+            prefix: 'temp/',
+            days: '60',
+          },
+        ],
+      }),
+    } as unknown as OSS;
+
+    const ops = createOssOperations(mockOssClient2, 'cn-hangzhou');
+    const result = await ops.getBucket('test-bucket');
+
+    expect(result?.lifecycleRules?.[0].expiration?.days).toBe(60);
+  });
+
+  it('should handle lifecycle rules with no expiration (no days or date)', async () => {
+    const mockOssClient2 = {
+      ...mockOssClient,
+      getBucketInfo: jest.fn().mockResolvedValue({
+        bucket: { Name: 'test-bucket', Location: 'oss-cn-hangzhou' },
+      }),
+      getBucketACL: jest.fn().mockRejectedValue(new Error('No ACL')),
+      getBucketWebsite: jest.fn().mockRejectedValue(new Error('No website')),
+      getBucketLogging: jest.fn().mockRejectedValue(new Error('No logging')),
+      getBucketCORS: jest.fn().mockRejectedValue(new Error('No CORS')),
+      getBucketLifecycle: jest.fn().mockResolvedValue({
+        rules: [
+          {
+            id: 'no-expiration',
+            status: 'Enabled',
+            prefix: 'temp/',
+          },
+        ],
+      }),
+    } as unknown as OSS;
+
+    const ops = createOssOperations(mockOssClient2, 'cn-hangzhou');
+    const result = await ops.getBucket('test-bucket');
+
+    expect(result?.lifecycleRules?.[0].expiration).toBeUndefined();
+  });
+
+  it('should handle CORS rules with string allowedOrigin and allowedMethod', async () => {
+    const mockOssClient2 = {
+      ...mockOssClient,
+      getBucketInfo: jest.fn().mockResolvedValue({
+        bucket: { Name: 'test-bucket', Location: 'oss-cn-hangzhou' },
+      }),
+      getBucketACL: jest.fn().mockRejectedValue(new Error('No ACL')),
+      getBucketWebsite: jest.fn().mockRejectedValue(new Error('No website')),
+      getBucketLogging: jest.fn().mockRejectedValue(new Error('No logging')),
+      getBucketCORS: jest.fn().mockResolvedValue({
+        rules: [
+          {
+            allowedOrigin: '*',
+            allowedMethod: 'GET',
+            allowedHeader: 'Content-Type',
+            exposeHeader: 'ETag',
+            maxAgeSeconds: 3600,
+          },
+        ],
+      }),
+      getBucketLifecycle: jest.fn().mockRejectedValue(new Error('No lifecycle')),
+    } as unknown as OSS;
+
+    const ops = createOssOperations(mockOssClient2, 'cn-hangzhou');
+    const result = await ops.getBucket('test-bucket');
+
+    expect(result?.corsRules?.[0]).toEqual({
+      allowedOrigins: ['*'],
+      allowedMethods: ['GET'],
+      allowedHeaders: ['Content-Type'],
+      exposeHeaders: ['ETag'],
+      maxAgeSeconds: 3600,
+    });
+  });
+
+  it('should handle CORS rules with string maxAgeSeconds (non-number)', async () => {
+    const mockOssClient2 = {
+      ...mockOssClient,
+      getBucketInfo: jest.fn().mockResolvedValue({
+        bucket: { Name: 'test-bucket', Location: 'oss-cn-hangzhou' },
+      }),
+      getBucketACL: jest.fn().mockRejectedValue(new Error('No ACL')),
+      getBucketWebsite: jest.fn().mockRejectedValue(new Error('No website')),
+      getBucketLogging: jest.fn().mockRejectedValue(new Error('No logging')),
+      getBucketCORS: jest.fn().mockResolvedValue({
+        rules: [
+          {
+            allowedOrigin: ['*'],
+            allowedMethod: ['GET'],
+            maxAgeSeconds: '3600',
+          },
+        ],
+      }),
+      getBucketLifecycle: jest.fn().mockRejectedValue(new Error('No lifecycle')),
+    } as unknown as OSS;
+
+    const ops = createOssOperations(mockOssClient2, 'cn-hangzhou');
+    const result = await ops.getBucket('test-bucket');
+
+    expect(result?.corsRules?.[0].maxAgeSeconds).toBeUndefined();
+  });
+
+  it('should handle CORS rules with undefined allowedHeader and exposeHeader', async () => {
+    const mockOssClient2 = {
+      ...mockOssClient,
+      getBucketInfo: jest.fn().mockResolvedValue({
+        bucket: { Name: 'test-bucket', Location: 'oss-cn-hangzhou' },
+      }),
+      getBucketACL: jest.fn().mockRejectedValue(new Error('No ACL')),
+      getBucketWebsite: jest.fn().mockRejectedValue(new Error('No website')),
+      getBucketLogging: jest.fn().mockRejectedValue(new Error('No logging')),
+      getBucketCORS: jest.fn().mockResolvedValue({
+        rules: [
+          {
+            allowedOrigin: ['*'],
+            allowedMethod: ['GET'],
+          },
+        ],
+      }),
+      getBucketLifecycle: jest.fn().mockRejectedValue(new Error('No lifecycle')),
+    } as unknown as OSS;
+
+    const ops = createOssOperations(mockOssClient2, 'cn-hangzhou');
+    const result = await ops.getBucket('test-bucket');
+
+    expect(result?.corsRules?.[0].allowedHeaders).toBeUndefined();
+    expect(result?.corsRules?.[0].exposeHeaders).toBeUndefined();
+  });
+
+  it('should handle logging config with enable=true but no prefix', async () => {
+    const mockOssClient2 = {
+      ...mockOssClient,
+      getBucketInfo: jest.fn().mockResolvedValue({
+        bucket: { Name: 'test-bucket', Location: 'oss-cn-hangzhou' },
+      }),
+      getBucketACL: jest.fn().mockRejectedValue(new Error('No ACL')),
+      getBucketWebsite: jest.fn().mockResolvedValue({ index: undefined }),
+      getBucketLogging: jest.fn().mockResolvedValue({ enable: true, prefix: undefined }),
+      getBucketCORS: jest.fn().mockRejectedValue(new Error('No CORS')),
+      getBucketLifecycle: jest.fn().mockRejectedValue(new Error('No lifecycle')),
+    } as unknown as OSS;
+
+    const ops = createOssOperations(mockOssClient2, 'cn-hangzhou');
+    const result = await ops.getBucket('test-bucket');
+
+    expect(result?.loggingConfig).toBeUndefined();
+    expect(result?.websiteConfig).toBeUndefined();
+  });
+
+  it('should handle getBucketCnameEndpoint when location is missing', async () => {
+    const mockOssClient2 = {
+      ...mockOssClient,
+      getBucketInfo: jest.fn().mockResolvedValue({
+        bucket: { Name: 'test-bucket' },
+      }),
+    } as unknown as OSS;
+
+    const ops = createOssOperations(mockOssClient2, 'cn-hangzhou');
+
+    await expect(ops.bindCustomDomain('test-bucket', 'cdn.example.com')).rejects.toThrow();
+  });
+
+  it('should handle removeCorsRuleForDomain outer catch', async () => {
+    const mockOssClient2 = {
+      ...mockOssClient,
+      getBucketCORS: jest.fn().mockResolvedValue({
+        rules: [
+          {
+            allowedOrigin: ['https://cdn.example.com', 'http://cdn.example.com'],
+            allowedMethod: ['GET', 'HEAD'],
+          },
+        ],
+      }),
+      deleteBucketCORS: jest.fn().mockRejectedValue(new Error('Delete failed')),
+      useBucket: jest.fn(),
+    } as unknown as OSS;
+
+    const ops = createOssOperations(mockOssClient2, 'cn-hangzhou');
+
+    // unbindCustomDomain calls removeCorsRuleForDomain which catches deleteBucketCORS error
+    await expect(ops.unbindCustomDomain('test-bucket', 'cdn.example.com')).resolves.toBeUndefined();
   });
 });

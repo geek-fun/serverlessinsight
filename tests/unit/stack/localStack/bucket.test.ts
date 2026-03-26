@@ -4,6 +4,7 @@ import { ServerlessIac, BucketDomain } from '../../../../src/types';
 import http from 'node:http';
 import { setContext, ProviderEnum } from '../../../../src/common';
 import path from 'node:path';
+import fs from 'node:fs';
 import { Readable } from 'node:stream';
 
 describe('bucketsHandler', () => {
@@ -188,5 +189,103 @@ describe('bucketsHandler', () => {
     expect(res.body).toMatchObject({
       error: 'Access denied: Path traversal attempt detected',
     });
+  });
+
+  it('uses bucket name as fallback when website.code is not set', async () => {
+    const bucketWithoutWebsite: BucketDomain = {
+      key: 'plain_bucket',
+      name: 'tests/fixtures/test-bucket',
+    };
+
+    const iacWithPlainBucket: ServerlessIac = {
+      ...mockIac,
+      buckets: [bucketWithoutWebsite],
+    };
+
+    const res = await bucketsHandler(
+      mockRequest(),
+      { ...baseParsed, identifier: 'plain_bucket' },
+      iacWithPlainBucket,
+    );
+
+    expect(res.statusCode).toBe(200);
+    const body = res.body as { bucket: string; files: unknown[] };
+    expect(body.bucket).toBe('tests/fixtures/test-bucket');
+  });
+
+  it('returns 500 when getAllFiles throws during root listing', async () => {
+    const spy = jest.spyOn(fs, 'readdirSync').mockImplementation(() => {
+      throw new Error('Permission denied');
+    });
+
+    const res = await bucketsHandler(mockRequest(), baseParsed, mockIac);
+
+    spy.mockRestore();
+
+    expect(res.statusCode).toBe(200);
+    const body = res.body as { files: unknown[]; count: number };
+    expect(body.count).toBe(0);
+  });
+
+  it('returns 500 when readFileSync throws during file serving', async () => {
+    const spy = jest.spyOn(fs, 'readFileSync').mockImplementation(() => {
+      throw new Error('File read error');
+    });
+
+    const res = await bucketsHandler(mockRequest(), { ...baseParsed, url: '/index.html' }, mockIac);
+
+    spy.mockRestore();
+
+    expect(res.statusCode).toBe(500);
+    expect(res.body).toMatchObject({
+      error: 'Failed to read file',
+      message: 'File read error',
+    });
+  });
+
+  it('returns 500 when readFileSync throws a non-Error value', async () => {
+    const spy = jest.spyOn(fs, 'readFileSync').mockImplementation(() => {
+      throw 'string error';
+    });
+
+    const res = await bucketsHandler(mockRequest(), { ...baseParsed, url: '/index.html' }, mockIac);
+
+    spy.mockRestore();
+
+    expect(res.statusCode).toBe(500);
+    expect(res.body).toMatchObject({
+      error: 'Failed to read file',
+      message: 'string error',
+    });
+  });
+
+  it('serves binary file as base64', async () => {
+    const res = await bucketsHandler(
+      mockRequest(),
+      { ...baseParsed, url: '/subdir/style.css' },
+      mockIac,
+    );
+
+    expect(res.statusCode).toBe(200);
+    expect(res.headers?.['Content-Type']).toBe('text/css');
+  });
+
+  it('returns empty files when subdirectory listing throws', async () => {
+    const originalReaddirSync = fs.readdirSync.bind(fs);
+    const spy = jest.spyOn(fs, 'readdirSync').mockImplementation((...args) => {
+      const dirPath = String(args[0]);
+      if (dirPath.includes('subdir')) {
+        throw new Error('Dir read error');
+      }
+      return originalReaddirSync(...(args as Parameters<typeof fs.readdirSync>));
+    });
+
+    const res = await bucketsHandler(mockRequest(), { ...baseParsed, url: '/subdir' }, mockIac);
+
+    spy.mockRestore();
+
+    expect(res.statusCode).toBe(200);
+    const body = res.body as { files: unknown[] };
+    expect(body.files).toEqual([]);
   });
 });

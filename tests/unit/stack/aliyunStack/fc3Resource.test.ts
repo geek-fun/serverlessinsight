@@ -8,6 +8,7 @@ import {
 import {
   Context,
   CURRENT_STATE_VERSION,
+  NasStorageClassEnum,
   PartialResourceError,
   StateFile,
 } from '../../../../src/types';
@@ -113,6 +114,12 @@ jest.mock('node:fs', () => ({
     statSync: (...args: unknown[]) => mockedStatSync(...args),
   },
   statSync: (...args: unknown[]) => mockedStatSync(...args),
+}));
+
+jest.mock('../../../../src/common/constants', () => ({
+  ...jest.requireActual('../../../../src/common/constants'),
+  RAM_ROLE_PROPAGATION_DELAY_MS: 0,
+  FC3_RECOVERY_GET_FUNCTION_DELAY_MS: 0,
 }));
 
 jest.mock('../../../../src/common/context');
@@ -1002,6 +1009,962 @@ describe('Fc3Resource', () => {
       );
       expect(mockedRamOperations.deleteRole).toHaveBeenCalled();
       expect(result).toEqual(initialState);
+    });
+
+    it('should delete all dependent resource types in reverse order', async () => {
+      const stateWithAllDeps: StateFile = {
+        ...initialState,
+        resources: {
+          'functions.test_fn': {
+            mode: 'managed',
+            region: 'cn-hangzhou',
+            definition: mockDefinition,
+            instances: [
+              {
+                sid: 'si:aliyun:fc3:default:test-function',
+                id: 'test-function',
+                type: 'ALIYUN_FC3_FUNCTION',
+              },
+              {
+                sid: 'si:aliyun:sls_project:default:test-sls',
+                id: 'test-sls',
+                type: 'ALIYUN_SLS_PROJECT',
+              },
+              {
+                sid: 'si:aliyun:sls_logstore:default:test-sls/test-logstore',
+                id: 'test-sls/test-logstore',
+                type: 'ALIYUN_SLS_LOGSTORE',
+              },
+              {
+                sid: 'si:aliyun:sls_index:default:test-sls/test-logstore/index',
+                id: 'test-sls/test-logstore/index',
+                type: 'ALIYUN_SLS_INDEX',
+              },
+              {
+                sid: 'si:aliyun:ram:default:test-role',
+                id: 'test-role',
+                type: 'ALIYUN_RAM_ROLE',
+              },
+              {
+                sid: 'si:aliyun:ecs_sg:default:sg-123',
+                id: 'sg-123',
+                type: 'ALIYUN_ECS_SECURITY_GROUP',
+              },
+              {
+                sid: 'si:aliyun:nas_ag:default:nas-access',
+                id: 'nas-access',
+                type: 'ALIYUN_NAS_ACCESS_GROUP',
+              },
+              {
+                sid: 'si:aliyun:nas_fs:default:fs-123',
+                id: 'fs-123',
+                type: 'ALIYUN_NAS_FILE_SYSTEM',
+              },
+              {
+                sid: 'si:aliyun:nas_mt:default:fs-123/mt-domain.com',
+                id: 'fs-123/mt-domain.com',
+                type: 'ALIYUN_NAS_MOUNT_TARGET',
+              },
+            ],
+            lastUpdated: '2025-01-01T00:00:00Z',
+          },
+        },
+      };
+
+      mockedFc3Operations.deleteFunction.mockResolvedValue(undefined);
+      mockedStateManager.removeResource.mockReturnValue(initialState);
+
+      await deleteResource(mockContext, 'test-function', 'functions.test_fn', stateWithAllDeps);
+
+      expect(mockedNasOperations.deleteMountTarget).toHaveBeenCalledWith('fs-123', 'mt-domain.com');
+      expect(mockedNasOperations.deleteFileSystem).toHaveBeenCalledWith('fs-123');
+      expect(mockedNasOperations.deleteAccessGroup).toHaveBeenCalledWith('nas-access');
+      expect(mockedEcsOperations.deleteSecurityGroup).toHaveBeenCalledWith('sg-123');
+      expect(mockedRamOperations.deleteRole).toHaveBeenCalledWith('test-role');
+      expect(mockedSlsOperations.deleteIndex).toHaveBeenCalledWith('test-sls', 'test-logstore');
+      expect(mockedSlsOperations.deleteLogstore).toHaveBeenCalledWith('test-sls', 'test-logstore');
+      expect(mockedSlsOperations.deleteProject).toHaveBeenCalledWith('test-sls');
+    });
+
+    it('should log error and continue when dependent resource deletion fails', async () => {
+      const stateWithDeps: StateFile = {
+        ...initialState,
+        resources: {
+          'functions.test_fn': {
+            mode: 'managed',
+            region: 'cn-hangzhou',
+            definition: mockDefinition,
+            instances: [
+              {
+                sid: 'si:aliyun:fc3:default:test-function',
+                id: 'test-function',
+                type: 'ALIYUN_FC3_FUNCTION',
+              },
+              {
+                sid: 'si:aliyun:ram:default:test-role',
+                id: 'test-role',
+                type: 'ALIYUN_RAM_ROLE',
+              },
+              {
+                sid: 'si:aliyun:sls:default:test-sls',
+                id: 'test-sls',
+                type: 'ALIYUN_SLS_PROJECT',
+              },
+            ],
+            lastUpdated: '2025-01-01T00:00:00Z',
+          },
+        },
+      };
+
+      mockedFc3Operations.deleteFunction.mockResolvedValue(undefined);
+      mockedRamOperations.deleteRole.mockRejectedValue(new Error('role delete failed'));
+      mockedSlsOperations.deleteProject.mockResolvedValue(undefined);
+      mockedStateManager.removeResource.mockReturnValue(initialState);
+
+      const result = await deleteResource(
+        mockContext,
+        'test-function',
+        'functions.test_fn',
+        stateWithDeps,
+      );
+
+      expect(mockedLogger.error).toHaveBeenCalledWith(expect.stringContaining('ALIYUN_RAM_ROLE'));
+      expect(mockedSlsOperations.deleteProject).toHaveBeenCalled();
+      expect(result).toEqual(initialState);
+    });
+
+    it('should warn for unknown resource type during dependent deletion', async () => {
+      const stateWithUnknown: StateFile = {
+        ...initialState,
+        resources: {
+          'functions.test_fn': {
+            mode: 'managed',
+            region: 'cn-hangzhou',
+            definition: mockDefinition,
+            instances: [
+              {
+                sid: 'si:aliyun:fc3:default:test-function',
+                id: 'test-function',
+                type: 'ALIYUN_FC3_FUNCTION',
+              },
+              {
+                sid: 'si:aliyun:unknown:default:unknown-1',
+                id: 'unknown-1',
+                type: 'ALIYUN_UNKNOWN_RESOURCE',
+              },
+            ],
+            lastUpdated: '2025-01-01T00:00:00Z',
+          },
+        },
+      };
+
+      mockedFc3Operations.deleteFunction.mockResolvedValue(undefined);
+      mockedStateManager.removeResource.mockReturnValue(initialState);
+
+      await deleteResource(mockContext, 'test-function', 'functions.test_fn', stateWithUnknown);
+
+      expect(mockedLogger.warn).toHaveBeenCalledWith(
+        expect.stringContaining('ALIYUN_UNKNOWN_RESOURCE'),
+      );
+    });
+
+    it('should skip deletion of instances with undefined type', async () => {
+      const stateWithUndefined: StateFile = {
+        ...initialState,
+        resources: {
+          'functions.test_fn': {
+            mode: 'managed',
+            region: 'cn-hangzhou',
+            definition: mockDefinition,
+            instances: [
+              {
+                sid: 'si:aliyun:fc3:default:test-function',
+                id: 'test-function',
+                type: 'ALIYUN_FC3_FUNCTION',
+              },
+              {
+                sid: 'si:aliyun:bad:default:bad-1',
+                id: 'bad-1',
+                type: 'includes_undefined_type',
+              },
+            ],
+            lastUpdated: '2025-01-01T00:00:00Z',
+          },
+        },
+      };
+
+      mockedFc3Operations.deleteFunction.mockResolvedValue(undefined);
+      mockedStateManager.removeResource.mockReturnValue(initialState);
+
+      await deleteResource(mockContext, 'test-function', 'functions.test_fn', stateWithUndefined);
+
+      expect(mockedFc3Operations.deleteFunction).toHaveBeenCalled();
+    });
+  });
+
+  describe('createResource with dependent resources', () => {
+    const fnWithLog = {
+      ...testFunction,
+      log: true,
+    };
+
+    const fnWithNetwork = {
+      ...testFunction,
+      network: {
+        vpc_id: 'vpc-123',
+        subnet_ids: ['vsw-123'],
+        security_group: {
+          name: 'test-sg',
+          ingress: ['80/80:tcp:0.0.0.0/0'],
+          egress: [] as string[],
+        },
+      },
+    };
+
+    const fnWithNas = {
+      ...testFunction,
+      network: {
+        vpc_id: 'vpc-123',
+        subnet_ids: ['vsw-123'],
+        security_group: {
+          name: 'test-sg',
+          ingress: [] as string[],
+          egress: [] as string[],
+        },
+      },
+      storage: {
+        nas: [
+          {
+            storage_class: NasStorageClassEnum.STANDARD_CAPACITY,
+            mount_path: '/mnt/data',
+          },
+        ],
+      },
+    };
+
+    it('should create SLS project, logstore, and index when log is true', async () => {
+      mockedFc3Operations.getFunction.mockResolvedValueOnce(mockFunctionInfo);
+      mockedFc3Operations.createFunction.mockResolvedValue(undefined);
+      const readyState = { ...initialState, _ready: true };
+      mockedStateManager.setResource.mockReturnValue(readyState);
+
+      await createResource(mockContext, fnWithLog, initialState);
+
+      expect(mockedSlsOperations.createProject).toHaveBeenCalledWith(
+        'test-app-test-service-default-sls',
+      );
+      expect(mockedSlsOperations.createLogstore).toHaveBeenCalledWith(
+        'test-app-test-service-default-sls',
+        'test-app-test-service-default-sls-logstore',
+      );
+      expect(mockedSlsOperations.createIndex).toHaveBeenCalledWith(
+        'test-app-test-service-default-sls',
+        'test-app-test-service-default-sls-logstore',
+      );
+      expect(mockedSlsOperations.waitForProject).toHaveBeenCalled();
+      expect(mockedSlsOperations.waitForLogstore).toHaveBeenCalled();
+      expect(mockedFc3Types.functionToFc3Config).toHaveBeenCalled();
+    });
+
+    it('should reuse existing SLS resources when they exist in state', async () => {
+      const stateWithSls: StateFile = {
+        ...initialState,
+        resources: {
+          'functions.test_fn': {
+            mode: 'managed',
+            region: 'cn-hangzhou',
+            definition: mockDefinition,
+            instances: [
+              {
+                sid: 'si:aliyun:sls_project:default:existing-project',
+                id: 'existing-project',
+                type: 'ALIYUN_SLS_PROJECT',
+              },
+              {
+                sid: 'si:aliyun:sls_logstore:default:existing-project/existing-logstore',
+                id: 'existing-project/existing-logstore',
+                type: 'ALIYUN_SLS_LOGSTORE',
+              },
+            ],
+            lastUpdated: '2025-01-01T00:00:00Z',
+            status: 'tainted',
+          },
+        },
+      };
+
+      mockedFc3Operations.getFunction.mockResolvedValue(mockFunctionInfo);
+      mockedFc3Operations.createFunction.mockResolvedValue(undefined);
+      const readyState = { ...stateWithSls, _ready: true };
+      mockedStateManager.setResource.mockReturnValue(readyState);
+
+      await createResource(mockContext, fnWithLog, stateWithSls);
+
+      expect(mockedSlsOperations.createProject).not.toHaveBeenCalled();
+      expect(mockedSlsOperations.createLogstore).not.toHaveBeenCalled();
+    });
+
+    it('should create security group when function has network config', async () => {
+      mockedFc3Operations.getFunction.mockResolvedValueOnce(mockFunctionInfo);
+      mockedFc3Operations.createFunction.mockResolvedValue(undefined);
+      const readyState = { ...initialState, _ready: true };
+      mockedStateManager.setResource.mockReturnValue(readyState);
+
+      await createResource(mockContext, fnWithNetwork, initialState);
+
+      expect(mockedEcsOperations.createSecurityGroup).toHaveBeenCalledWith(
+        'test-sg',
+        'vpc-123',
+        fnWithNetwork.network.security_group.ingress,
+        fnWithNetwork.network.security_group.egress,
+      );
+    });
+
+    it('should reuse existing security group when it exists in state', async () => {
+      const stateWithSg: StateFile = {
+        ...initialState,
+        resources: {
+          'functions.test_fn': {
+            mode: 'managed',
+            region: 'cn-hangzhou',
+            definition: mockDefinition,
+            instances: [
+              {
+                sid: 'si:aliyun:ecs_sg:default:sg-existing',
+                id: 'sg-existing',
+                type: 'ALIYUN_ECS_SECURITY_GROUP',
+              },
+            ],
+            lastUpdated: '2025-01-01T00:00:00Z',
+            status: 'tainted',
+          },
+        },
+      };
+
+      mockedFc3Operations.getFunction.mockResolvedValue(mockFunctionInfo);
+      mockedFc3Operations.createFunction.mockResolvedValue(undefined);
+      const readyState = { ...stateWithSg, _ready: true };
+      mockedStateManager.setResource.mockReturnValue(readyState);
+
+      await createResource(mockContext, fnWithNetwork, stateWithSg);
+
+      expect(mockedEcsOperations.createSecurityGroup).not.toHaveBeenCalled();
+    });
+
+    it('should create NAS resources when storage.nas is configured', async () => {
+      mockedFc3Operations.getFunction.mockResolvedValueOnce(mockFunctionInfo);
+      mockedFc3Operations.createFunction.mockResolvedValue(undefined);
+      const readyState = { ...initialState, _ready: true };
+      mockedStateManager.setResource.mockReturnValue(readyState);
+
+      await createResource(mockContext, fnWithNas, initialState);
+
+      expect(mockedNasOperations.createAccessGroup).toHaveBeenCalledWith(
+        expect.stringContaining('nas-access'),
+      );
+      expect(mockedNasOperations.createAccessRule).toHaveBeenCalledWith(
+        expect.stringContaining('nas-access'),
+        '10.0.0.0/8',
+      );
+      expect(mockedNasOperations.createFileSystem).toHaveBeenCalledWith(
+        NasStorageClassEnum.STANDARD_CAPACITY,
+        'test-function',
+      );
+      expect(mockedNasOperations.createMountTarget).toHaveBeenCalledWith(
+        'fs-123',
+        expect.stringContaining('nas-access'),
+        'vpc-123',
+        'vsw-123',
+      );
+    });
+
+    it('should reuse existing NAS resources when they exist in state', async () => {
+      const stateWithNas: StateFile = {
+        ...initialState,
+        resources: {
+          'functions.test_fn': {
+            mode: 'managed',
+            region: 'cn-hangzhou',
+            definition: mockDefinition,
+            instances: [
+              {
+                sid: 'si:aliyun:ecs_sg:default:sg-existing',
+                id: 'sg-existing',
+                type: 'ALIYUN_ECS_SECURITY_GROUP',
+              },
+              {
+                sid: 'si:aliyun:nas_fs:default:fs-existing',
+                id: 'fs-existing',
+                type: 'ALIYUN_NAS_FILE_SYSTEM',
+              },
+              {
+                sid: 'si:aliyun:nas_mt:default:fs-existing/mt-domain.nas.cn-hangzhou.com',
+                id: 'fs-existing/mt-domain.nas.cn-hangzhou.com',
+                type: 'ALIYUN_NAS_MOUNT_TARGET',
+                accessGroupName: 'existing-access-group',
+              },
+            ],
+            lastUpdated: '2025-01-01T00:00:00Z',
+            status: 'tainted',
+          },
+        },
+      };
+
+      mockedFc3Operations.getFunction.mockResolvedValue(mockFunctionInfo);
+      mockedFc3Operations.createFunction.mockResolvedValue(undefined);
+      const readyState = { ...stateWithNas, _ready: true };
+      mockedStateManager.setResource.mockReturnValue(readyState);
+
+      await createResource(mockContext, fnWithNas, stateWithNas);
+
+      expect(mockedNasOperations.createAccessGroup).not.toHaveBeenCalled();
+      expect(mockedNasOperations.createFileSystem).not.toHaveBeenCalled();
+      expect(mockedNasOperations.createMountTarget).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('createResource buildFc3InstanceFromProvider branches', () => {
+    it('should include vpcConfig, gpuConfig, nasConfig, logConfig, customContainerConfig from provider info', async () => {
+      const functionInfoWithAll = {
+        ...mockFunctionInfo,
+        vpcConfig: {
+          vpcId: 'vpc-123',
+          vSwitchIds: ['vsw-1'],
+          securityGroupId: 'sg-1',
+        },
+        gpuConfig: {
+          gpuMemorySize: 16384,
+          gpuType: 'fc.gpu.tesla.1',
+        },
+        nasConfig: {
+          userId: 10003,
+          groupId: 10003,
+          mountPoints: [
+            {
+              serverAddr: 'mt.nas.cn-hangzhou.com:/',
+              mountDir: '/mnt/data',
+              enableTls: false,
+            },
+          ],
+        },
+        logConfig: {
+          project: 'test-project',
+          logstore: 'test-logstore',
+          enableRequestMetrics: true,
+          enableInstanceMetrics: true,
+          logBeginRule: 'DefaultRegex',
+        },
+        customContainerConfig: {
+          image: 'registry.cn-hangzhou.aliyuncs.com/test/image:latest',
+          entrypoint: ['/app/start'],
+          command: ['--port', '9000'],
+          port: 9000,
+          accelerationType: 'Default',
+        },
+        description: 'Test function',
+        internetAccess: true,
+        role: 'acs:ram::123456789012:role/test-role',
+        codeSize: 1024,
+        createdTime: '2025-01-01T00:00:00Z',
+        state: 'Active',
+        stateReason: '',
+        stateReasonCode: '',
+        lastUpdateStatus: 'Successful',
+        lastUpdateStatusReason: '',
+        lastUpdateStatusReasonCode: '',
+      };
+
+      mockedFc3Operations.getFunction.mockResolvedValue(functionInfoWithAll);
+      mockedFc3Operations.createFunction.mockResolvedValue(undefined);
+      const readyState = { ...initialState, _ready: true };
+      mockedStateManager.setResource.mockReturnValue(readyState);
+
+      await createResource(mockContext, testFunction, initialState);
+
+      const lastCall =
+        mockedStateManager.setResource.mock.calls[
+          mockedStateManager.setResource.mock.calls.length - 1
+        ];
+      const resourceState = lastCall[2];
+      const fcInstance = resourceState.instances.find(
+        (i: { type: string }) => i.type === 'ALIYUN_FC3_FUNCTION',
+      );
+
+      expect(fcInstance.vpcConfig).toEqual({
+        vpcId: 'vpc-123',
+        vSwitchIds: ['vsw-1'],
+        securityGroupId: 'sg-1',
+      });
+      expect(fcInstance.gpuConfig).toEqual({
+        gpuMemorySize: 16384,
+        gpuType: 'fc.gpu.tesla.1',
+      });
+      expect(fcInstance.nasConfig).toEqual({
+        userId: 10003,
+        groupId: 10003,
+        mountPoints: [
+          {
+            serverAddr: 'mt.nas.cn-hangzhou.com:/',
+            mountDir: '/mnt/data',
+            enableTls: false,
+          },
+        ],
+      });
+      expect(fcInstance.logConfig).toEqual({
+        project: 'test-project',
+        logstore: 'test-logstore',
+        enableRequestMetrics: true,
+        enableInstanceMetrics: true,
+        logBeginRule: 'DefaultRegex',
+      });
+      expect(fcInstance.customContainerConfig).toEqual({
+        image: 'registry.cn-hangzhou.aliyuncs.com/test/image:latest',
+        entrypoint: ['/app/start'],
+        command: ['--port', '9000'],
+        port: 9000,
+        accelerationType: 'Default',
+      });
+      expect(fcInstance.description).toBe('Test function');
+      expect(fcInstance.internetAccess).toBe(true);
+      expect(fcInstance.role).toBe('acs:ram::123456789012:role/test-role');
+    });
+
+    it('should handle nasConfig with undefined mountPoints', async () => {
+      const functionInfoNasNoMounts = {
+        ...mockFunctionInfo,
+        nasConfig: {
+          userId: 10003,
+          groupId: 10003,
+        },
+      };
+
+      mockedFc3Operations.getFunction.mockResolvedValue(functionInfoNasNoMounts);
+      mockedFc3Operations.createFunction.mockResolvedValue(undefined);
+      const readyState = { ...initialState, _ready: true };
+      mockedStateManager.setResource.mockReturnValue(readyState);
+
+      await createResource(mockContext, testFunction, initialState);
+
+      const lastCall =
+        mockedStateManager.setResource.mock.calls[
+          mockedStateManager.setResource.mock.calls.length - 1
+        ];
+      const resourceState = lastCall[2];
+      const fcInstance = resourceState.instances.find(
+        (i: { type: string }) => i.type === 'ALIYUN_FC3_FUNCTION',
+      );
+
+      expect(fcInstance.nasConfig).toEqual({
+        userId: 10003,
+        groupId: 10003,
+        mountPoints: [],
+      });
+    });
+
+    it('should use null fallbacks for missing provider info fields', async () => {
+      const minimalFunctionInfo = {
+        functionName: undefined,
+        functionId: undefined,
+        runtime: undefined,
+        handler: undefined,
+        memorySize: undefined,
+        timeout: undefined,
+        diskSize: undefined,
+        cpu: undefined,
+        environmentVariables: undefined,
+        vpcConfig: { vpcId: undefined, vSwitchIds: undefined, securityGroupId: undefined },
+        gpuConfig: { gpuMemorySize: undefined, gpuType: undefined },
+        nasConfig: {
+          userId: undefined,
+          groupId: undefined,
+          mountPoints: [{ serverAddr: undefined, mountDir: undefined, enableTls: undefined }],
+        },
+        logConfig: {
+          project: undefined,
+          logstore: undefined,
+          enableRequestMetrics: undefined,
+          enableInstanceMetrics: undefined,
+          logBeginRule: undefined,
+        },
+        customContainerConfig: {
+          image: undefined,
+          entrypoint: undefined,
+          command: undefined,
+          port: undefined,
+          accelerationType: undefined,
+        },
+        description: undefined,
+        internetAccess: undefined,
+        role: undefined,
+        codeChecksum: undefined,
+        codeSize: undefined,
+        createdTime: undefined,
+        lastModifiedTime: undefined,
+        state: undefined,
+        stateReason: undefined,
+        stateReasonCode: undefined,
+        lastUpdateStatus: undefined,
+        lastUpdateStatusReason: undefined,
+        lastUpdateStatusReasonCode: undefined,
+      };
+
+      mockedFc3Operations.getFunction.mockResolvedValue(minimalFunctionInfo);
+      mockedFc3Operations.createFunction.mockResolvedValue(undefined);
+      const readyState = { ...initialState, _ready: true };
+      mockedStateManager.setResource.mockReturnValue(readyState);
+
+      await createResource(mockContext, testFunction, initialState);
+
+      const lastCall =
+        mockedStateManager.setResource.mock.calls[
+          mockedStateManager.setResource.mock.calls.length - 1
+        ];
+      const resourceState = lastCall[2];
+      const fcInstance = resourceState.instances.find(
+        (i: { type: string }) => i.type === 'ALIYUN_FC3_FUNCTION',
+      );
+
+      expect(fcInstance.id).toBe('');
+      expect(fcInstance.functionName).toBeNull();
+      expect(fcInstance.functionId).toBeNull();
+      expect(fcInstance.runtime).toBeNull();
+      expect(fcInstance.handler).toBeNull();
+      expect(fcInstance.memorySize).toBeNull();
+      expect(fcInstance.timeout).toBeNull();
+      expect(fcInstance.diskSize).toBeNull();
+      expect(fcInstance.cpu).toBeNull();
+      expect(fcInstance.environment).toEqual({});
+      expect(fcInstance.vpcConfig).toEqual({
+        vpcId: null,
+        vSwitchIds: [],
+        securityGroupId: null,
+      });
+      expect(fcInstance.gpuConfig).toEqual({
+        gpuMemorySize: null,
+        gpuType: null,
+      });
+      expect(fcInstance.nasConfig.mountPoints).toEqual([
+        { serverAddr: null, mountDir: null, enableTls: null },
+      ]);
+      expect(fcInstance.logConfig).toEqual({
+        project: null,
+        logstore: null,
+        enableRequestMetrics: null,
+        enableInstanceMetrics: null,
+        logBeginRule: null,
+      });
+      expect(fcInstance.customContainerConfig).toEqual({
+        image: null,
+        entrypoint: [],
+        command: [],
+        port: null,
+        accelerationType: null,
+      });
+      expect(fcInstance.description).toBeNull();
+      expect(fcInstance.internetAccess).toBeNull();
+      expect(fcInstance.role).toBeNull();
+      expect(fcInstance.codeChecksum).toBeNull();
+      expect(fcInstance.codeSize).toBeNull();
+      expect(fcInstance.createdTime).toBeNull();
+      expect(fcInstance.lastModifiedTime).toBeNull();
+      expect(fcInstance.state).toBeNull();
+    });
+  });
+
+  describe('updateResource with dependent resources', () => {
+    const fnWithLog = {
+      ...testFunction,
+      log: true,
+    };
+
+    const fnWithNetwork = {
+      ...testFunction,
+      network: {
+        vpc_id: 'vpc-123',
+        subnet_ids: ['vsw-123'],
+        security_group: {
+          name: 'test-sg',
+          ingress: [] as string[],
+          egress: [] as string[],
+        },
+      },
+    };
+
+    const fnWithNas = {
+      ...testFunction,
+      network: {
+        vpc_id: 'vpc-123',
+        subnet_ids: ['vsw-123'],
+        security_group: {
+          name: 'test-sg',
+          ingress: [] as string[],
+          egress: [] as string[],
+        },
+      },
+      storage: {
+        nas: [
+          {
+            storage_class: NasStorageClassEnum.STANDARD_CAPACITY,
+            mount_path: '/mnt/data',
+          },
+        ],
+      },
+    };
+
+    it('should create new SLS resources during update when log=true and no existing SLS', async () => {
+      mockedFc3Operations.updateFunctionConfiguration.mockResolvedValue(undefined);
+      mockedFc3Operations.updateFunctionCode.mockResolvedValue(undefined);
+      const newState = { ...initialState, _updated: true };
+      mockedStateManager.setResource.mockReturnValue(newState);
+
+      await updateResource(mockContext, fnWithLog, initialState);
+
+      expect(mockedSlsOperations.createProject).toHaveBeenCalled();
+      expect(mockedSlsOperations.createLogstore).toHaveBeenCalled();
+      expect(mockedSlsOperations.createIndex).toHaveBeenCalled();
+    });
+
+    it('should reuse existing SLS resources during update', async () => {
+      const stateWithSls: StateFile = {
+        ...initialState,
+        resources: {
+          'functions.test_fn': {
+            mode: 'managed',
+            region: 'cn-hangzhou',
+            definition: mockDefinition,
+            instances: [
+              {
+                sid: 'si:aliyun:sls_project:default:my-project',
+                id: 'my-project',
+                type: 'ALIYUN_SLS_PROJECT',
+              },
+              {
+                sid: 'si:aliyun:sls_logstore:default:my-project/my-logstore',
+                id: 'my-project/my-logstore',
+                type: 'ALIYUN_SLS_LOGSTORE',
+              },
+              {
+                sid: 'si:aliyun:fc3:default:test-function',
+                id: 'test-function',
+                type: 'ALIYUN_FC3_FUNCTION',
+              },
+            ],
+            lastUpdated: '2025-01-01T00:00:00Z',
+          },
+        },
+      };
+
+      mockedFc3Operations.updateFunctionConfiguration.mockResolvedValue(undefined);
+      mockedFc3Operations.updateFunctionCode.mockResolvedValue(undefined);
+      const newState = { ...stateWithSls, _updated: true };
+      mockedStateManager.setResource.mockReturnValue(newState);
+
+      await updateResource(mockContext, fnWithLog, stateWithSls);
+
+      expect(mockedSlsOperations.createProject).not.toHaveBeenCalled();
+    });
+
+    it('should create new security group during update when network exists but no existing SG', async () => {
+      mockedFc3Operations.updateFunctionConfiguration.mockResolvedValue(undefined);
+      mockedFc3Operations.updateFunctionCode.mockResolvedValue(undefined);
+      const newState = { ...initialState, _updated: true };
+      mockedStateManager.setResource.mockReturnValue(newState);
+
+      await updateResource(mockContext, fnWithNetwork, initialState);
+
+      expect(mockedEcsOperations.createSecurityGroup).toHaveBeenCalled();
+    });
+
+    it('should reuse existing security group during update', async () => {
+      const stateWithSg: StateFile = {
+        ...initialState,
+        resources: {
+          'functions.test_fn': {
+            mode: 'managed',
+            region: 'cn-hangzhou',
+            definition: mockDefinition,
+            instances: [
+              {
+                sid: 'si:aliyun:ecs_sg:default:sg-existing',
+                id: 'sg-existing',
+                type: 'ALIYUN_ECS_SECURITY_GROUP',
+              },
+              {
+                sid: 'si:aliyun:fc3:default:test-function',
+                id: 'test-function',
+                type: 'ALIYUN_FC3_FUNCTION',
+              },
+            ],
+            lastUpdated: '2025-01-01T00:00:00Z',
+          },
+        },
+      };
+
+      mockedFc3Operations.updateFunctionConfiguration.mockResolvedValue(undefined);
+      mockedFc3Operations.updateFunctionCode.mockResolvedValue(undefined);
+      const newState = { ...stateWithSg, _updated: true };
+      mockedStateManager.setResource.mockReturnValue(newState);
+
+      await updateResource(mockContext, fnWithNetwork, stateWithSg);
+
+      expect(mockedEcsOperations.createSecurityGroup).not.toHaveBeenCalled();
+    });
+
+    it('should create new NAS resources during update when NAS does not exist', async () => {
+      mockedFc3Operations.updateFunctionConfiguration.mockResolvedValue(undefined);
+      mockedFc3Operations.updateFunctionCode.mockResolvedValue(undefined);
+      const newState = { ...initialState, _updated: true };
+      mockedStateManager.setResource.mockReturnValue(newState);
+
+      await updateResource(mockContext, fnWithNas, initialState);
+
+      expect(mockedNasOperations.createAccessGroup).toHaveBeenCalled();
+      expect(mockedNasOperations.createFileSystem).toHaveBeenCalled();
+      expect(mockedNasOperations.createMountTarget).toHaveBeenCalled();
+    });
+
+    it('should reuse existing NAS mount targets during update', async () => {
+      const stateWithNas: StateFile = {
+        ...initialState,
+        resources: {
+          'functions.test_fn': {
+            mode: 'managed',
+            region: 'cn-hangzhou',
+            definition: mockDefinition,
+            instances: [
+              {
+                sid: 'si:aliyun:nas_fs:default:fs-existing',
+                id: 'fs-existing',
+                type: 'ALIYUN_NAS_FILE_SYSTEM',
+              },
+              {
+                sid: 'si:aliyun:nas_mt:default:fs-existing/mt-domain.nas.cn-hangzhou.com',
+                id: 'fs-existing/mt-domain.nas.cn-hangzhou.com',
+                type: 'ALIYUN_NAS_MOUNT_TARGET',
+              },
+              {
+                sid: 'si:aliyun:ecs_sg:default:sg-existing',
+                id: 'sg-existing',
+                type: 'ALIYUN_ECS_SECURITY_GROUP',
+              },
+              {
+                sid: 'si:aliyun:fc3:default:test-function',
+                id: 'test-function',
+                type: 'ALIYUN_FC3_FUNCTION',
+              },
+            ],
+            lastUpdated: '2025-01-01T00:00:00Z',
+          },
+        },
+      };
+
+      mockedFc3Operations.updateFunctionConfiguration.mockResolvedValue(undefined);
+      mockedFc3Operations.updateFunctionCode.mockResolvedValue(undefined);
+      const newState = { ...stateWithNas, _updated: true };
+      mockedStateManager.setResource.mockReturnValue(newState);
+
+      await updateResource(mockContext, fnWithNas, stateWithNas);
+
+      expect(mockedNasOperations.createAccessGroup).not.toHaveBeenCalled();
+      expect(mockedNasOperations.createFileSystem).not.toHaveBeenCalled();
+      expect(mockedNasOperations.createMountTarget).not.toHaveBeenCalled();
+    });
+
+    it('should skip updateFunctionConfiguration and updateFunctionCode when nothing changed', async () => {
+      const stateWithMatch: StateFile = {
+        ...initialState,
+        resources: {
+          'functions.test_fn': {
+            mode: 'managed',
+            region: 'cn-hangzhou',
+            definition: { ...mockDefinition },
+            instances: [
+              {
+                sid: 'si:aliyun:fc3:default:test-function',
+                id: 'test-function',
+                type: 'ALIYUN_FC3_FUNCTION',
+              },
+            ],
+            lastUpdated: '2025-01-01T00:00:00Z',
+          },
+        },
+      };
+
+      mockedFc3Operations.updateFunctionConfiguration.mockResolvedValue(undefined);
+      mockedFc3Operations.updateFunctionCode.mockResolvedValue(undefined);
+      const newState = { ...stateWithMatch, _updated: true };
+      mockedStateManager.setResource.mockReturnValue(newState);
+
+      await updateResource(mockContext, testFunction, stateWithMatch);
+
+      expect(mockedLogger.warn).toHaveBeenCalledWith(
+        expect.stringContaining('UPDATING_RESOURCE_WITH_NO_CHANGES'),
+      );
+    });
+
+    it('should only update config (not code) when config changed but code did not', async () => {
+      const stateWithSameCode: StateFile = {
+        ...initialState,
+        resources: {
+          'functions.test_fn': {
+            mode: 'managed',
+            region: 'cn-hangzhou',
+            definition: {
+              ...mockDefinition,
+              memorySize: 256,
+            },
+            instances: [
+              {
+                sid: 'si:aliyun:fc3:default:test-function',
+                id: 'test-function',
+                type: 'ALIYUN_FC3_FUNCTION',
+              },
+            ],
+            lastUpdated: '2025-01-01T00:00:00Z',
+          },
+        },
+      };
+
+      mockedFc3Operations.updateFunctionConfiguration.mockResolvedValue(undefined);
+      const newState = { ...stateWithSameCode, _updated: true };
+      mockedStateManager.setResource.mockReturnValue(newState);
+
+      await updateResource(mockContext, testFunction, stateWithSameCode);
+
+      expect(mockedFc3Operations.updateFunctionConfiguration).toHaveBeenCalled();
+      expect(mockedFc3Operations.updateFunctionCode).not.toHaveBeenCalled();
+    });
+
+    it('should only update code (not config) when code changed but config did not', async () => {
+      const stateWithDifferentCode: StateFile = {
+        ...initialState,
+        resources: {
+          'functions.test_fn': {
+            mode: 'managed',
+            region: 'cn-hangzhou',
+            definition: {
+              ...mockDefinition,
+              codeHash: 'old-hash',
+            },
+            instances: [
+              {
+                sid: 'si:aliyun:fc3:default:test-function',
+                id: 'test-function',
+                type: 'ALIYUN_FC3_FUNCTION',
+              },
+            ],
+            lastUpdated: '2025-01-01T00:00:00Z',
+          },
+        },
+      };
+
+      mockedFc3Operations.updateFunctionCode.mockResolvedValue(undefined);
+      const newState = { ...stateWithDifferentCode, _updated: true };
+      mockedStateManager.setResource.mockReturnValue(newState);
+
+      await updateResource(mockContext, testFunction, stateWithDifferentCode);
+
+      expect(mockedFc3Operations.updateFunctionConfiguration).not.toHaveBeenCalled();
+      expect(mockedFc3Operations.updateFunctionCode).toHaveBeenCalled();
     });
   });
 });

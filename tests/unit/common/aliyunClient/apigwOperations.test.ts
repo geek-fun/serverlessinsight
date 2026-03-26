@@ -81,7 +81,17 @@ jest.mock('../../../../src/common/sidUtils', () => ({
   buildSid: jest.fn((_provider, _service, _stage, id) => `sid-${id}`),
 }));
 
-jest.mock('../../../../src/common/aliyunClient/dnsOperations');
+jest.mock('../../../../src/common/aliyunClient/dnsOperations', () => ({
+  createDnsOperations: jest.fn(() => ({
+    describeDomainRecords: mockDescribeDomainRecords,
+    addDomainRecord: mockAddDomainRecord,
+    deleteDomainRecord: mockDeleteDomainRecord,
+  })),
+}));
+
+jest.mock('../../../../src/common/retryUtils', () => ({
+  sleep: jest.fn().mockResolvedValue(undefined),
+}));
 
 jest.mock('node:dns', () => ({
   promises: {
@@ -540,12 +550,9 @@ describe('apigwOperations', () => {
       mockAddDomainRecord.mockResolvedValue('record-123');
       mockSetDomain.mockResolvedValue({});
 
-      jest.doMock('../../../../src/common/aliyunClient/dnsOperations', () => ({
-        createDnsOperations: jest.fn(() => ({
-          describeDomainRecords: mockDescribeDomainRecords,
-          addDomainRecord: mockAddDomainRecord,
-        })),
-      }));
+      // eslint-disable-next-line @typescript-eslint/no-require-imports
+      const dns = require('node:dns');
+      dns.promises.resolveCname.mockResolvedValue(['mygroup.apigateway.cn-hangzhou.aliyuncs.com']);
 
       const state: StateFile = {
         version: '0.0.1',
@@ -597,6 +604,670 @@ describe('apigwOperations', () => {
           'my-api',
         ),
       ).rejects.toThrow();
+    });
+  });
+
+  describe('findApiGroupByName', () => {
+    it('should return null when results exist but no exact name match', async () => {
+      mockDescribeApiGroups.mockResolvedValue({
+        body: {
+          apiGroupAttributes: {
+            apiGroupAttribute: [
+              { groupId: 'group-999', groupName: 'similar-group', subDomain: 'sub.example.com' },
+            ],
+          },
+        },
+      });
+
+      const result = await operations.findApiGroupByName('my-exact-group');
+
+      expect(result).toBeNull();
+    });
+  });
+
+  describe('getApiGroup', () => {
+    it('should return null when response body is empty', async () => {
+      mockDescribeApiGroup.mockResolvedValue({ body: null });
+
+      const result = await operations.getApiGroup('group-123');
+
+      expect(result).toBeNull();
+    });
+  });
+
+  describe('getApi - additional branches', () => {
+    it('should return api with requestConfig and serviceConfig', async () => {
+      mockDescribeApi.mockResolvedValue({
+        body: {
+          apiId: 'api-123',
+          apiName: 'test-api',
+          groupId: 'group-123',
+          requestConfig: {
+            requestProtocol: 'HTTP',
+            requestHttpMethod: 'GET',
+            requestPath: '/test',
+            requestMode: 'MAPPING',
+            bodyFormat: 'STREAM',
+          },
+          serviceConfig: {
+            serviceProtocol: 'FunctionCompute',
+            serviceTimeout: 10000,
+            functionComputeConfig: {
+              fcRegionId: 'cn-hangzhou',
+              functionName: 'test-fn',
+              roleArn: 'acs:ram::123:role/fc-role',
+              fcVersion: '3.0',
+              method: 'GET',
+            },
+            mockResult: undefined,
+          },
+          deployedInfos: {
+            deployedInfo: [
+              { stageName: 'RELEASE', deployedStatus: 'DEPLOYED', effectiveVersion: '1' },
+            ],
+          },
+        },
+      });
+
+      const result = await operations.getApi('group-123', 'api-123');
+
+      expect(result?.requestConfig).toEqual({
+        requestProtocol: 'HTTP',
+        requestHttpMethod: 'GET',
+        requestPath: '/test',
+        requestMode: 'MAPPING',
+        bodyFormat: 'STREAM',
+      });
+      expect(result?.serviceConfig?.functionComputeConfig).toEqual({
+        fcRegionId: 'cn-hangzhou',
+        functionName: 'test-fn',
+        roleArn: 'acs:ram::123:role/fc-role',
+        fcVersion: '3.0',
+        method: 'GET',
+      });
+      expect(result?.deployedInfos).toHaveLength(1);
+    });
+
+    it('should return api with serviceConfig but without functionComputeConfig', async () => {
+      mockDescribeApi.mockResolvedValue({
+        body: {
+          apiId: 'api-123',
+          serviceConfig: {
+            serviceProtocol: 'MOCK',
+            mockResult: '{"ok":true}',
+          },
+        },
+      });
+
+      const result = await operations.getApi('group-123', 'api-123');
+
+      expect(result?.serviceConfig?.functionComputeConfig).toBeUndefined();
+    });
+
+    it('should return null when body is null', async () => {
+      mockDescribeApi.mockResolvedValue({ body: null });
+
+      const result = await operations.getApi('group-123', 'api-123');
+
+      expect(result).toBeNull();
+    });
+
+    it('should rethrow non-NotFound errors', async () => {
+      mockDescribeApi.mockRejectedValue({ code: 'InternalError', message: 'Server error' });
+
+      await expect(operations.getApi('group-123', 'api-123')).rejects.toEqual({
+        code: 'InternalError',
+        message: 'Server error',
+      });
+    });
+  });
+
+  describe('createApi - additional branches', () => {
+    it('should create API with functionComputeConfig', async () => {
+      mockCreateApi.mockResolvedValue({ body: { apiId: 'api-456' } });
+
+      const result = await operations.createApi({
+        groupId: 'group-123',
+        apiName: 'fc-api',
+        visibility: 'PUBLIC',
+        authType: 'ANONYMOUS',
+        requestConfig: {
+          requestProtocol: 'HTTP',
+          requestHttpMethod: 'POST',
+          requestPath: '/fc',
+          requestMode: 'PASSTHROUGH',
+        },
+        serviceConfig: {
+          serviceProtocol: 'FunctionCompute',
+          functionComputeConfig: {
+            fcRegionId: 'cn-hangzhou',
+            functionName: 'my-fn',
+            roleArn: 'acs:ram::123:role/fc-role',
+          },
+        },
+        tags: [{ key: 'env', value: 'prod' }],
+      });
+
+      expect(result).toBe('api-456');
+    });
+
+    it('should create API with vpcConfig', async () => {
+      mockCreateApi.mockResolvedValue({ body: { apiId: 'api-789' } });
+
+      const result = await operations.createApi({
+        groupId: 'group-123',
+        apiName: 'vpc-api',
+        visibility: 'PRIVATE',
+        authType: 'APP',
+        requestConfig: {
+          requestProtocol: 'HTTP',
+          requestHttpMethod: 'GET',
+          requestPath: '/vpc',
+          requestMode: 'MAPPING',
+        },
+        serviceConfig: {
+          serviceProtocol: 'VPC',
+          vpcConfig: { vpcId: 'vpc-123', instanceId: 'i-123', port: 8080 },
+        },
+      });
+
+      expect(result).toBe('api-789');
+    });
+  });
+
+  describe('updateApi - additional branches', () => {
+    it('should update API with functionComputeConfig', async () => {
+      mockModifyApi.mockResolvedValue({});
+
+      await operations.updateApi('api-123', {
+        groupId: 'group-123',
+        apiName: 'updated-api',
+        visibility: 'PUBLIC',
+        authType: 'ANONYMOUS',
+        requestConfig: {
+          requestProtocol: 'HTTP',
+          requestHttpMethod: 'GET',
+          requestPath: '/updated',
+          requestMode: 'MAPPING',
+        },
+        serviceConfig: {
+          serviceProtocol: 'FunctionCompute',
+          functionComputeConfig: {
+            fcRegionId: 'cn-hangzhou',
+            functionName: 'my-fn',
+          },
+        },
+      });
+
+      expect(mockModifyApi).toHaveBeenCalled();
+    });
+  });
+
+  describe('bindCustomDomain - additional branches', () => {
+    const baseState: StateFile = {
+      version: '0.0.1',
+      provider: 'aliyun',
+      app: 'test-app',
+      service: 'test-service',
+      stages: {},
+      resources: {},
+    };
+
+    const setupGroupMock = () => {
+      mockDescribeApiGroup.mockResolvedValue({
+        body: {
+          groupId: 'group-123',
+          subDomain: 'mygroup.apigateway.cn-hangzhou.aliyuncs.com',
+          regionId: 'cn-hangzhou',
+        },
+      });
+    };
+
+    const setupDnsMocks = () => {
+      mockDescribeDomainRecords.mockResolvedValue([]);
+      mockAddDomainRecord.mockResolvedValue('record-123');
+      // eslint-disable-next-line @typescript-eslint/no-require-imports
+      const dns = require('node:dns');
+      dns.promises.resolveCname.mockResolvedValue(['mygroup.apigateway.cn-hangzhou.aliyuncs.com']);
+    };
+
+    it('should set certificate when config has certificate details', async () => {
+      setupGroupMock();
+      setupDnsMocks();
+      mockSetDomain.mockResolvedValue({});
+      mockSetDomainCertificate.mockResolvedValue({});
+
+      await operations.bindCustomDomain(
+        {
+          groupId: 'group-123',
+          domainName: 'api.example.com',
+          certificateName: 'test-cert',
+          certificateBody: '-----BEGIN CERTIFICATE-----',
+          certificatePrivateKey: '-----BEGIN RSA PRIVATE KEY-----',
+        },
+        baseState,
+        'my-api',
+      );
+
+      expect(mockSetDomainCertificate).toHaveBeenCalled();
+    });
+
+    it('should retry on network timeout and succeed', async () => {
+      setupGroupMock();
+      setupDnsMocks();
+      mockSetDomain
+        .mockRejectedValueOnce({ name: 'RequestTimeoutError' })
+        .mockResolvedValueOnce({});
+
+      const result = await operations.bindCustomDomain(
+        { groupId: 'group-123', domainName: 'api.example.com' },
+        baseState,
+        'my-api',
+      );
+
+      expect(result).toBeDefined();
+      expect(mockSetDomain).toHaveBeenCalledTimes(2);
+    });
+
+    it('should handle already-bound error during timeout retry', async () => {
+      setupGroupMock();
+      setupDnsMocks();
+      mockSetDomain
+        .mockRejectedValueOnce({ name: 'RequestTimeoutError' })
+        .mockRejectedValueOnce({ code: 'DomainAlreadyBind' });
+
+      const result = await operations.bindCustomDomain(
+        { groupId: 'group-123', domainName: 'api.example.com' },
+        baseState,
+        'my-api',
+      );
+
+      expect(result).toBeDefined();
+    });
+
+    it('should throw non-timeout error during retry', async () => {
+      setupGroupMock();
+      setupDnsMocks();
+      mockSetDomain
+        .mockRejectedValueOnce({ name: 'RequestTimeoutError' })
+        .mockRejectedValueOnce({ code: 'Forbidden', message: 'Access denied' });
+
+      await expect(
+        operations.bindCustomDomain(
+          { groupId: 'group-123', domainName: 'api.example.com' },
+          baseState,
+          'my-api',
+        ),
+      ).rejects.toEqual({ code: 'Forbidden', message: 'Access denied' });
+    });
+
+    it('should throw after all timeout retries exhausted', async () => {
+      setupGroupMock();
+      setupDnsMocks();
+      mockSetDomain.mockRejectedValue({ name: 'RequestTimeoutError' });
+
+      await expect(
+        operations.bindCustomDomain(
+          { groupId: 'group-123', domainName: 'api.example.com' },
+          baseState,
+          'my-api',
+        ),
+      ).rejects.toEqual({ name: 'RequestTimeoutError' });
+    });
+
+    it('should throw non-ownership non-timeout error directly', async () => {
+      setupGroupMock();
+      setupDnsMocks();
+      mockSetDomain.mockRejectedValue({ code: 'Throttling', message: 'Rate limit exceeded' });
+
+      await expect(
+        operations.bindCustomDomain(
+          { groupId: 'group-123', domainName: 'api.example.com' },
+          baseState,
+          'my-api',
+        ),
+      ).rejects.toEqual({ code: 'Throttling', message: 'Rate limit exceeded' });
+    });
+
+    it('should fall back to TXT verification on ownership check failure and succeed', async () => {
+      setupGroupMock();
+      setupDnsMocks();
+      mockSetDomain
+        .mockRejectedValueOnce({ code: 'SingleDomainOwnershipCheckFail' })
+        .mockResolvedValueOnce({});
+
+      const result = await operations.bindCustomDomain(
+        { groupId: 'group-123', domainName: 'api.example.com' },
+        baseState,
+        'my-api',
+      );
+
+      expect(result).toBeDefined();
+    });
+
+    it('should fall back to TXT on ownership message and succeed', async () => {
+      setupGroupMock();
+      setupDnsMocks();
+      mockSetDomain
+        .mockRejectedValueOnce({ message: 'ownership verification failed' })
+        .mockResolvedValueOnce({});
+
+      const result = await operations.bindCustomDomain(
+        { groupId: 'group-123', domainName: 'api.example.com' },
+        baseState,
+        'my-api',
+      );
+
+      expect(result).toBeDefined();
+    });
+
+    it('should throw after all ownership retries exhausted', async () => {
+      setupGroupMock();
+      setupDnsMocks();
+      mockSetDomain.mockRejectedValue({ code: 'SingleDomainOwnershipCheckFail' });
+
+      await expect(
+        operations.bindCustomDomain(
+          { groupId: 'group-123', domainName: 'api.example.com' },
+          baseState,
+          'my-api',
+        ),
+      ).rejects.toEqual({ code: 'SingleDomainOwnershipCheckFail' });
+    });
+
+    it('should throw original error when TXT record creation fails', async () => {
+      setupGroupMock();
+      // eslint-disable-next-line @typescript-eslint/no-require-imports
+      const dns = require('node:dns');
+      dns.promises.resolveCname.mockResolvedValue(['mygroup.apigateway.cn-hangzhou.aliyuncs.com']);
+      mockDescribeDomainRecords.mockResolvedValue([]);
+      mockAddDomainRecord
+        .mockResolvedValueOnce('record-123')
+        .mockRejectedValueOnce(new Error('DNS service unavailable'));
+      const ownershipError = { code: 'SingleDomainOwnershipCheckFail' };
+      mockSetDomain.mockRejectedValue(ownershipError);
+
+      await expect(
+        operations.bindCustomDomain(
+          { groupId: 'group-123', domainName: 'api.example.com' },
+          baseState,
+          'my-api',
+        ),
+      ).rejects.toBe(ownershipError);
+    });
+
+    it('should throw non-ownership retryError on last attempt', async () => {
+      setupGroupMock();
+      setupDnsMocks();
+      mockSetDomain
+        .mockRejectedValueOnce({ code: 'SingleDomainOwnershipCheckFail' })
+        .mockRejectedValueOnce({ code: 'SingleDomainOwnershipCheckFail' })
+        .mockRejectedValueOnce({ code: 'SingleDomainOwnershipCheckFail' })
+        .mockRejectedValueOnce({ code: 'SingleDomainOwnershipCheckFail' })
+        .mockRejectedValueOnce({ code: 'SingleDomainOwnershipCheckFail' })
+        .mockRejectedValueOnce({ code: 'InternalError', message: 'Server error' });
+
+      await expect(
+        operations.bindCustomDomain(
+          { groupId: 'group-123', domainName: 'api.example.com' },
+          baseState,
+          'my-api',
+        ),
+      ).rejects.toEqual({ code: 'InternalError', message: 'Server error' });
+    });
+
+    it('should set certificate after ownership retry succeeds', async () => {
+      setupGroupMock();
+      setupDnsMocks();
+      mockSetDomain
+        .mockRejectedValueOnce({ code: 'SingleDomainOwnershipCheckFail' })
+        .mockResolvedValueOnce({});
+      mockSetDomainCertificate.mockResolvedValue({});
+
+      await operations.bindCustomDomain(
+        {
+          groupId: 'group-123',
+          domainName: 'api.example.com',
+          certificateName: 'test-cert',
+          certificateBody: '-----BEGIN CERTIFICATE-----',
+          certificatePrivateKey: '-----BEGIN RSA PRIVATE KEY-----',
+        },
+        baseState,
+        'my-api',
+      );
+
+      expect(mockSetDomainCertificate).toHaveBeenCalled();
+    });
+
+    it('should use context region when group regionId is missing', async () => {
+      mockDescribeApiGroup.mockResolvedValue({
+        body: {
+          groupId: 'group-123',
+          subDomain: 'mygroup.apigateway.cn-hangzhou.aliyuncs.com',
+          regionId: undefined,
+        },
+      });
+      setupDnsMocks();
+      mockSetDomain.mockResolvedValue({});
+
+      await operations.bindCustomDomain(
+        { groupId: 'group-123', domainName: 'api.example.com' },
+        baseState,
+        'my-api',
+      );
+
+      expect(mockSetDomain).toHaveBeenCalled();
+    });
+
+    it('should handle existing DNS record (already in DNS but not state)', async () => {
+      setupGroupMock();
+      // eslint-disable-next-line @typescript-eslint/no-require-imports
+      const dns = require('node:dns');
+      dns.promises.resolveCname.mockResolvedValue(['mygroup.apigateway.cn-hangzhou.aliyuncs.com']);
+
+      mockDescribeDomainRecords.mockResolvedValue([
+        {
+          rr: 'api',
+          type: 'CNAME',
+          value: 'mygroup.apigateway.cn-hangzhou.aliyuncs.com',
+          status: 'ENABLE',
+        },
+      ]);
+      mockSetDomain.mockResolvedValue({});
+
+      await operations.bindCustomDomain(
+        { groupId: 'group-123', domainName: 'api.example.com' },
+        baseState,
+        'my-api',
+      );
+
+      expect(mockAddDomainRecord).not.toHaveBeenCalled();
+    });
+
+    it('should handle existing DNS resource in state within 30 minutes', async () => {
+      setupGroupMock();
+      // eslint-disable-next-line @typescript-eslint/no-require-imports
+      const dns = require('node:dns');
+      dns.promises.resolveCname.mockResolvedValue(['mygroup.apigateway.cn-hangzhou.aliyuncs.com']);
+
+      // eslint-disable-next-line @typescript-eslint/no-require-imports
+      const stateManager = require('../../../../src/common/stateManager');
+      stateManager.getResource.mockReturnValueOnce({
+        lastUpdated: new Date().toISOString(),
+        instances: [{ id: 'record-existing' }],
+      });
+      mockDescribeDomainRecords.mockResolvedValue([
+        {
+          rr: 'api',
+          type: 'CNAME',
+          value: 'mygroup.apigateway.cn-hangzhou.aliyuncs.com',
+          status: 'ENABLE',
+        },
+      ]);
+      mockSetDomain.mockResolvedValue({});
+
+      await operations.bindCustomDomain(
+        { groupId: 'group-123', domainName: 'api.example.com' },
+        baseState,
+        'my-api',
+      );
+
+      expect(mockSetDomain).toHaveBeenCalled();
+    });
+
+    it('should handle existing DNS resource in state older than 30 minutes (propagated)', async () => {
+      setupGroupMock();
+      // eslint-disable-next-line @typescript-eslint/no-require-imports
+      const dns = require('node:dns');
+      dns.promises.resolveCname.mockResolvedValue(['mygroup.apigateway.cn-hangzhou.aliyuncs.com']);
+
+      // eslint-disable-next-line @typescript-eslint/no-require-imports
+      const stateManager = require('../../../../src/common/stateManager');
+      const oldDate = new Date(Date.now() - 35 * 60 * 1000).toISOString();
+      stateManager.getResource.mockReturnValueOnce({
+        lastUpdated: oldDate,
+        instances: [{ id: 'record-existing' }],
+      });
+      mockDescribeDomainRecords.mockResolvedValue([
+        {
+          rr: 'api',
+          type: 'CNAME',
+          value: 'mygroup.apigateway.cn-hangzhou.aliyuncs.com',
+          status: 'ENABLE',
+        },
+      ]);
+      mockSetDomain.mockResolvedValue({});
+
+      await operations.bindCustomDomain(
+        { groupId: 'group-123', domainName: 'api.example.com' },
+        baseState,
+        'my-api',
+      );
+
+      expect(mockSetDomain).toHaveBeenCalled();
+    });
+
+    it('should handle existing DNS resource older than 30 min not propagated', async () => {
+      setupGroupMock();
+      // eslint-disable-next-line @typescript-eslint/no-require-imports
+      const dns = require('node:dns');
+      dns.promises.resolveCname.mockResolvedValue(['mygroup.apigateway.cn-hangzhou.aliyuncs.com']);
+
+      // eslint-disable-next-line @typescript-eslint/no-require-imports
+      const stateManager = require('../../../../src/common/stateManager');
+      const oldDate = new Date(Date.now() - 35 * 60 * 1000).toISOString();
+      stateManager.getResource.mockReturnValueOnce({
+        lastUpdated: oldDate,
+        instances: [{ id: 'record-existing' }],
+      });
+      mockDescribeDomainRecords.mockResolvedValue([]);
+      mockSetDomain.mockResolvedValue({});
+
+      await operations.bindCustomDomain(
+        { groupId: 'group-123', domainName: 'api.example.com' },
+        baseState,
+        'my-api',
+      );
+
+      expect(mockSetDomain).toHaveBeenCalled();
+    });
+
+    it('should handle existing TXT record in addTxtVerificationRecord', async () => {
+      setupGroupMock();
+      setupDnsMocks();
+      mockSetDomain.mockRejectedValueOnce({ code: 'SingleDomainOwnershipCheckFail' });
+
+      mockDescribeDomainRecords.mockResolvedValueOnce([]).mockResolvedValueOnce([
+        {
+          rr: 'group-123.api',
+          type: 'TXT',
+          value: 'apigateway-domain-verfication=mygroup.apigateway.cn-hangzhou.aliyuncs.com',
+        },
+      ]);
+
+      mockSetDomain.mockResolvedValueOnce({});
+
+      await operations.bindCustomDomain(
+        { groupId: 'group-123', domainName: 'api.example.com' },
+        baseState,
+        'my-api',
+      );
+
+      expect(mockSetDomain).toHaveBeenCalledTimes(2);
+    });
+
+    it('should handle DNS record error in addDomainVerificationRecord', async () => {
+      setupGroupMock();
+      // eslint-disable-next-line @typescript-eslint/no-require-imports
+      const dns = require('node:dns');
+      dns.promises.resolveCname.mockRejectedValue(new Error('DNS resolution failed'));
+      mockDescribeDomainRecords.mockRejectedValue(new Error('DNS service error'));
+
+      await expect(
+        operations.bindCustomDomain(
+          { groupId: 'group-123', domainName: 'api.example.com' },
+          baseState,
+          'my-api',
+        ),
+      ).rejects.toThrow('DNS service error');
+    });
+
+    it('should handle pollPublicDnsResolution timeout', async () => {
+      setupGroupMock();
+      mockDescribeDomainRecords.mockResolvedValue([]);
+      mockAddDomainRecord.mockResolvedValue('record-123');
+      // eslint-disable-next-line @typescript-eslint/no-require-imports
+      const dns = require('node:dns');
+      dns.promises.resolveCname.mockRejectedValue(new Error('ENOTFOUND'));
+      mockSetDomain.mockResolvedValue({});
+
+      await operations.bindCustomDomain(
+        { groupId: 'group-123', domainName: 'api.example.com' },
+        baseState,
+        'my-api',
+      );
+
+      expect(mockSetDomain).toHaveBeenCalled();
+    });
+
+    it('should handle DNS check error in pollDnsPropagation', async () => {
+      setupGroupMock();
+      // eslint-disable-next-line @typescript-eslint/no-require-imports
+      const dns = require('node:dns');
+      dns.promises.resolveCname.mockResolvedValue(['mygroup.apigateway.cn-hangzhou.aliyuncs.com']);
+      mockDescribeDomainRecords
+        .mockResolvedValueOnce([])
+        .mockRejectedValue(new Error('DNS check failed'));
+      mockAddDomainRecord.mockResolvedValue('record-123');
+      mockSetDomain.mockResolvedValue({});
+
+      await operations.bindCustomDomain(
+        { groupId: 'group-123', domainName: 'api.example.com' },
+        baseState,
+        'my-api',
+      );
+
+      expect(mockSetDomain).toHaveBeenCalled();
+    });
+
+    it('should handle root domain (@ host record) in TXT verification', async () => {
+      setupGroupMock();
+      // eslint-disable-next-line @typescript-eslint/no-require-imports
+      const dns = require('node:dns');
+      dns.promises.resolveCname.mockResolvedValue(['mygroup.apigateway.cn-hangzhou.aliyuncs.com']);
+      mockDescribeDomainRecords.mockResolvedValue([]);
+      mockAddDomainRecord.mockResolvedValue('record-123');
+      mockSetDomain
+        .mockRejectedValueOnce({ code: 'SingleDomainOwnershipCheckFail' })
+        .mockResolvedValueOnce({});
+
+      await operations.bindCustomDomain(
+        { groupId: 'group-123', domainName: 'example.com' },
+        baseState,
+        'my-api',
+      );
+
+      expect(mockSetDomain).toHaveBeenCalledTimes(2);
     });
   });
 

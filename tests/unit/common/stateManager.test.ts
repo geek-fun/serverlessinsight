@@ -3,14 +3,22 @@ import {
   getStatePath,
   loadState,
   saveState,
+  saveStateWithLock,
   getResource,
   setResource,
   removeResource,
   getAllResources,
+  getRoleArnFromState,
 } from '../../../src/common/stateManager';
 import { ResourceState, CURRENT_STATE_VERSION } from '../../../src/types';
 import fs from 'node:fs';
 import path from 'node:path';
+
+jest.mock('../../../src/common/lockManager', () => ({
+  withLock: jest.fn(async (_path, _operation, callback) => {
+    await callback();
+  }),
+}));
 
 describe('StateManager', () => {
   const testDir = '/tmp/test-state-manager';
@@ -330,6 +338,116 @@ describe('StateManager', () => {
         'functions.test1': resource1,
         'functions.test2': resource2,
       });
+    });
+  });
+
+  describe('saveStateWithLock', () => {
+    it('should save state with locking', async () => {
+      const resourceState: ResourceState = {
+        mode: 'managed',
+        region: 'ap-guangzhou',
+        definition: {
+          functionName: 'test-fn',
+          runtime: 'nodejs18',
+          handler: 'index.handler',
+          memorySize: 128,
+          timeout: 3,
+          environment: {},
+          codeHash: 'abc123',
+        },
+        instances: [
+          {
+            sid: 'si:tencent:scf:default:test-fn',
+            id: 'test-fn',
+            functionName: 'test-fn',
+            runtime: 'nodejs18',
+            handler: 'index.handler',
+            memorySize: 128,
+            timeout: 3,
+          },
+        ],
+        lastUpdated: '2025-01-01T00:00:00Z',
+      };
+
+      let state = loadState('tencent', 'test-app', 'test-service', 'default', testDir);
+      state = setResource(state, 'functions.test', resourceState);
+
+      await saveStateWithLock(state, 'test-app', 'test-service', 'default', 'deploy', testDir);
+
+      expect(fs.existsSync(statePath)).toBe(true);
+
+      const loadedState = loadState('tencent', 'test-app', 'test-service', 'default', testDir);
+      expect(getResource(loadedState, 'functions.test')).toEqual(resourceState);
+    });
+  });
+
+  describe('getRoleArnFromState', () => {
+    it('should return role ARN from function state', () => {
+      const state = loadState('aliyun', 'test-app', 'test-service', 'default', testDir);
+      const functionState: ResourceState = {
+        mode: 'managed',
+        region: 'cn-hangzhou',
+        definition: { functionName: 'test-fn' },
+        instances: [
+          {
+            sid: 'si:aliyun:fc3:default:test-fn',
+            id: 'test-fn',
+            type: 'ALIYUN_RAM_ROLE',
+            roleArn: 'acs:ram::123456789012:role/TestRole',
+          },
+        ],
+        lastUpdated: '2025-01-01T00:00:00Z',
+      };
+
+      const updatedState = setResource(state, 'functions.test', functionState);
+      const roleArn = getRoleArnFromState(updatedState);
+
+      expect(roleArn).toBe('acs:ram::123456789012:role/TestRole');
+    });
+
+    it('should return undefined when no role ARN exists', () => {
+      const state = loadState('aliyun', 'test-app', 'test-service', 'default', testDir);
+      const roleArn = getRoleArnFromState(state);
+
+      expect(roleArn).toBeUndefined();
+    });
+
+    it('should return undefined when function has no RAM role instance', () => {
+      const state = loadState('aliyun', 'test-app', 'test-service', 'default', testDir);
+      const functionState: ResourceState = {
+        mode: 'managed',
+        region: 'cn-hangzhou',
+        definition: { functionName: 'test-fn' },
+        instances: [
+          {
+            sid: 'si:aliyun:fc3:default:test-fn',
+            id: 'test-fn',
+            type: 'OTHER_TYPE',
+          },
+        ],
+        lastUpdated: '2025-01-01T00:00:00Z',
+      };
+
+      const updatedState = setResource(state, 'functions.test', functionState);
+      const roleArn = getRoleArnFromState(updatedState);
+
+      expect(roleArn).toBeUndefined();
+    });
+
+    it('should return undefined when function instances array is empty', () => {
+      const state = loadState('aliyun', 'test-app', 'test-service', 'default', testDir);
+      const functionState: ResourceState = {
+        mode: 'managed',
+        region: 'cn-hangzhou',
+        definition: { functionName: 'test-fn' },
+        instances: [],
+        lastUpdated: '2025-01-01T00:00:00Z',
+      };
+
+      const updatedState = setResource(state, 'functions.test', functionState);
+      const roleArn = getRoleArnFromState(updatedState);
+
+      expect(roleArn).toBeUndefined();
     });
   });
 });

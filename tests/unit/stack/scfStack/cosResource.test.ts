@@ -3,8 +3,9 @@ import {
   createBucketResource,
   updateBucketResource,
   deleteBucketResource,
+  readBucketResource,
 } from '../../../../src/stack/scfStack/cosResource';
-import { Context, CURRENT_STATE_VERSION, StateFile } from '../../../../src/types';
+import { Context, CURRENT_STATE_VERSION, StateFile, BucketAccessEnum } from '../../../../src/types';
 
 const mockCosOperations = {
   createBucket: jest.fn(),
@@ -591,6 +592,845 @@ describe('CosResource', () => {
       );
       expect(mockCosOperations.deleteBucket).toHaveBeenCalledWith(bucketName, region);
       expect(result).toEqual(initialState);
+    });
+  });
+
+  describe('buildCosInstanceFromProvider', () => {
+    it('should handle undefined optional fields in grants grantee', async () => {
+      const bucketInfo = {
+        Name: 'test-bucket',
+        Location: 'ap-guangzhou',
+        CreationDate: '2024-01-01',
+        AccessControlPolicy: {
+          owner: { id: 'owner-1', displayName: 'Owner' },
+          grants: [
+            {
+              grantee: {
+                type: undefined,
+                uri: undefined,
+                id: undefined,
+                displayName: undefined,
+              },
+              permission: undefined,
+            },
+          ],
+        },
+      };
+
+      mockCosOperations.getBucket.mockResolvedValue(bucketInfo);
+
+      await updateBucketResource(
+        mockContext,
+        {
+          key: 'test_bucket',
+          name: 'test-bucket',
+        },
+        initialState,
+      );
+
+      const state = mockedStateManager.setResource.mock.calls[0][2] as Record<string, unknown>;
+      const cosInstance = (state.instances as Array<Record<string, unknown>>)[0];
+
+      expect((cosInstance.accessControlPolicy as Record<string, unknown>).grants).toEqual([
+        {
+          grantee: {
+            type: null,
+            uri: null,
+            id: null,
+            displayName: null,
+          },
+          permission: null,
+        },
+      ]);
+    });
+
+    it('should handle undefined optional fields in owner', async () => {
+      const bucketInfo = {
+        Name: 'test-bucket',
+        Location: 'ap-guangzhou',
+        CreationDate: '2024-01-01',
+        AccessControlPolicy: {
+          owner: {
+            id: undefined,
+            displayName: undefined,
+          },
+          grants: [],
+        },
+      };
+
+      mockCosOperations.getBucket.mockResolvedValue(bucketInfo);
+
+      await updateBucketResource(
+        mockContext,
+        {
+          key: 'test_bucket',
+          name: 'test-bucket',
+        },
+        initialState,
+      );
+
+      const state = mockedStateManager.setResource.mock.calls[0][2] as Record<string, unknown>;
+      const cosInstance = (state.instances as Array<Record<string, unknown>>)[0];
+
+      expect((cosInstance.accessControlPolicy as Record<string, unknown>).owner).toEqual({
+        id: null,
+        displayName: null,
+      });
+    });
+
+    it('should handle undefined optional fields in CorsConfiguration', async () => {
+      const bucketInfo = {
+        Name: 'test-bucket',
+        Location: 'ap-guangzhou',
+        CreationDate: '2024-01-01',
+        CorsConfiguration: [
+          {
+            id: undefined,
+            allowedOrigins: undefined,
+            allowedMethods: undefined,
+            allowedHeaders: undefined,
+            exposeHeaders: undefined,
+            maxAgeSeconds: undefined,
+          },
+        ],
+      };
+
+      mockCosOperations.getBucket.mockResolvedValue(bucketInfo);
+
+      await updateBucketResource(
+        mockContext,
+        {
+          key: 'test_bucket',
+          name: 'test-bucket',
+        },
+        initialState,
+      );
+
+      const state = mockedStateManager.setResource.mock.calls[0][2] as Record<string, unknown>;
+      const cosInstance = (state.instances as Array<Record<string, unknown>>)[0];
+
+      expect(cosInstance.corsConfiguration).toEqual([
+        {
+          id: null,
+          allowedOrigins: [],
+          allowedMethods: [],
+          allowedHeaders: [],
+          exposeHeaders: [],
+          maxAgeSeconds: null,
+        },
+      ]);
+    });
+
+    it('should handle undefined optional fields in VersioningConfiguration', async () => {
+      const bucketInfo = {
+        Name: 'test-bucket',
+        Location: 'ap-guangzhou',
+        CreationDate: '2024-01-01',
+        VersioningConfiguration: {
+          status: undefined,
+        },
+      };
+
+      mockCosOperations.getBucket.mockResolvedValue(bucketInfo);
+
+      await updateBucketResource(
+        mockContext,
+        {
+          key: 'test_bucket',
+          name: 'test-bucket',
+        },
+        initialState,
+      );
+
+      const state = mockedStateManager.setResource.mock.calls[0][2] as Record<string, unknown>;
+      const cosInstance = (state.instances as Array<Record<string, unknown>>)[0];
+
+      expect(cosInstance.versioningConfiguration).toEqual({
+        status: null,
+      });
+    });
+
+    it('should handle undefined optional fields in TaggingConfiguration tags', async () => {
+      const bucketInfo = {
+        Name: 'test-bucket',
+        Location: 'ap-guangzhou',
+        CreationDate: '2024-01-01',
+        TaggingConfiguration: {
+          tags: [
+            {
+              key: undefined,
+              value: undefined,
+            },
+          ],
+        },
+      };
+
+      mockCosOperations.getBucket.mockResolvedValue(bucketInfo);
+
+      await updateBucketResource(
+        mockContext,
+        {
+          key: 'test_bucket',
+          name: 'test-bucket',
+        },
+        initialState,
+      );
+
+      const state = mockedStateManager.setResource.mock.calls[0][2] as Record<string, unknown>;
+      const cosInstance = (state.instances as Array<Record<string, unknown>>)[0];
+
+      expect((cosInstance.taggingConfiguration as Record<string, unknown>).tags).toEqual([
+        {
+          key: null,
+          value: null,
+        },
+      ]);
+    });
+  });
+
+  describe('readBucketResource', () => {
+    it('should read bucket from provider', async () => {
+      mockCosOperations.getBucket.mockResolvedValue({ Name: 'test-bucket' });
+
+      const result = await readBucketResource(mockContext, 'test-bucket', 'ap-guangzhou');
+
+      expect(mockCosOperations.getBucket).toHaveBeenCalledWith('test-bucket', 'ap-guangzhou');
+      expect(result).toEqual({ Name: 'test-bucket' });
+    });
+  });
+
+  describe('createBucketResource - domain management', () => {
+    const mockBucketInfoBase = {
+      Name: 'test-bucket',
+      Location: 'ap-guangzhou',
+      CreationDate: '2024-01-01',
+      ACL: 'private',
+    };
+
+    it('should throw when getBucket returns null after create', async () => {
+      mockCosOperations.createBucket.mockResolvedValue(undefined);
+      mockCosOperations.getBucket.mockResolvedValue(null);
+
+      await expect(
+        createBucketResource(
+          mockContext,
+          {
+            key: 'test_bucket',
+            name: 'test-bucket',
+            website: {
+              index: 'index.html',
+              code: './dist',
+              error_page: 'error.html',
+              error_code: 404,
+            },
+          },
+          initialState,
+        ),
+      ).rejects.toThrow('Failed to refresh state for bucket');
+    });
+
+    it('should create bucket with www_bind_apex domain binding', async () => {
+      mockCosOperations.createBucket.mockResolvedValue(undefined);
+      mockCosOperations.getBucket.mockResolvedValue(mockBucketInfoBase);
+      mockCosOperations.bindCustomDomain.mockResolvedValue({
+        cname: 'test-bucket.cos.ap-guangzhou.myqcloud.com',
+        dnsRecordId: 'dns-primary',
+        bucketDomainBound: true,
+      });
+
+      await createBucketResource(
+        mockContext,
+        {
+          key: 'test_bucket',
+          name: 'test-bucket',
+          website: {
+            index: 'index.html',
+            code: './dist',
+            error_page: 'error.html',
+            error_code: 404,
+            domain: 'example.com',
+            www_bind_apex: true,
+          },
+        },
+        initialState,
+      );
+
+      expect(mockCosOperations.bindCustomDomain).toHaveBeenCalledTimes(2);
+      expect(mockCosOperations.bindCustomDomain).toHaveBeenCalledWith('test-bucket', 'example.com');
+      expect(mockCosOperations.bindCustomDomain).toHaveBeenCalledWith(
+        'test-bucket',
+        'www.example.com',
+      );
+    });
+
+    it('should deploy certificate on www domain when www_bind_apex and cert provided', async () => {
+      mockCosOperations.createBucket.mockResolvedValue(undefined);
+      mockCosOperations.getBucket.mockResolvedValue(mockBucketInfoBase);
+      mockCosOperations.bindCustomDomain
+        .mockResolvedValueOnce({
+          cname: 'test-bucket.cos.ap-guangzhou.myqcloud.com',
+          dnsRecordId: 'dns-primary',
+          bucketDomainBound: true,
+        })
+        .mockResolvedValueOnce({
+          cname: 'test-bucket.cos.ap-guangzhou.myqcloud.com',
+          dnsRecordId: 'dns-www',
+          bucketDomainBound: true,
+        });
+      mockSslOperations.uploadCertificate.mockResolvedValue({
+        certificateId: 'ssl-cert-001',
+        alias: 'my-cert',
+      });
+      mockSslOperations.deployCertificateInstance.mockResolvedValue({
+        deployRecordId: 42,
+      });
+
+      await createBucketResource(
+        mockContext,
+        {
+          key: 'test_bucket',
+          name: 'test-bucket',
+          website: {
+            index: 'index.html',
+            code: './dist',
+            error_page: 'error.html',
+            error_code: 404,
+            domain: 'example.com',
+            www_bind_apex: true,
+            domain_certificate_body: 'CERT-BODY',
+            domain_certificate_private_key: 'CERT-KEY',
+          },
+        },
+        initialState,
+      );
+
+      expect(mockSslOperations.deployCertificateInstance).toHaveBeenCalledTimes(2);
+      expect(mockSslOperations.deployCertificateInstance).toHaveBeenCalledWith(
+        'ssl-cert-001',
+        'cos',
+        ['ap-guangzhou|test-bucket|example.com'],
+      );
+      expect(mockSslOperations.deployCertificateInstance).toHaveBeenCalledWith(
+        'ssl-cert-001',
+        'cos',
+        ['ap-guangzhou|test-bucket|www.example.com'],
+      );
+    });
+
+    it('should not deploy cert on www if wwwCnameInfo.bucketDomainBound is false', async () => {
+      mockCosOperations.createBucket.mockResolvedValue(undefined);
+      mockCosOperations.getBucket.mockResolvedValue(mockBucketInfoBase);
+      mockCosOperations.bindCustomDomain
+        .mockResolvedValueOnce({
+          cname: 'test-bucket.cos.ap-guangzhou.myqcloud.com',
+          dnsRecordId: 'dns-primary',
+          bucketDomainBound: true,
+        })
+        .mockResolvedValueOnce({
+          cname: 'test-bucket.cos.ap-guangzhou.myqcloud.com',
+          dnsRecordId: 'dns-www',
+          bucketDomainBound: false,
+        });
+      mockSslOperations.uploadCertificate.mockResolvedValue({
+        certificateId: 'ssl-cert-001',
+        alias: 'my-cert',
+      });
+      mockSslOperations.deployCertificateInstance.mockResolvedValue({
+        deployRecordId: 42,
+      });
+
+      await createBucketResource(
+        mockContext,
+        {
+          key: 'test_bucket',
+          name: 'test-bucket',
+          website: {
+            index: 'index.html',
+            code: './dist',
+            error_page: 'error.html',
+            error_code: 404,
+            domain: 'example.com',
+            www_bind_apex: true,
+            domain_certificate_body: 'CERT-BODY',
+            domain_certificate_private_key: 'CERT-KEY',
+          },
+        },
+        initialState,
+      );
+
+      expect(mockSslOperations.deployCertificateInstance).toHaveBeenCalledTimes(1);
+      expect(mockSslOperations.deployCertificateInstance).toHaveBeenCalledWith(
+        'ssl-cert-001',
+        'cos',
+        ['ap-guangzhou|test-bucket|example.com'],
+      );
+    });
+
+    it('should handle wwwCnameInfo returning null', async () => {
+      mockCosOperations.createBucket.mockResolvedValue(undefined);
+      mockCosOperations.getBucket.mockResolvedValue(mockBucketInfoBase);
+      mockCosOperations.bindCustomDomain
+        .mockResolvedValueOnce({
+          cname: 'test-bucket.cos.ap-guangzhou.myqcloud.com',
+          dnsRecordId: 'dns-primary',
+          bucketDomainBound: true,
+        })
+        .mockResolvedValueOnce(null);
+
+      await createBucketResource(
+        mockContext,
+        {
+          key: 'test_bucket',
+          name: 'test-bucket',
+          website: {
+            index: 'index.html',
+            code: './dist',
+            error_page: 'error.html',
+            error_code: 404,
+            domain: 'example.com',
+            www_bind_apex: true,
+          },
+        },
+        initialState,
+      );
+
+      expect(mockCosOperations.bindCustomDomain).toHaveBeenCalledTimes(2);
+    });
+
+    it('should refresh bucket info after domain binding', async () => {
+      mockCosOperations.createBucket.mockResolvedValue(undefined);
+      mockCosOperations.getBucket
+        .mockResolvedValueOnce(mockBucketInfoBase)
+        .mockResolvedValueOnce({ ...mockBucketInfoBase, ACL: 'public-read' });
+      mockCosOperations.bindCustomDomain.mockResolvedValue({
+        cname: 'test-bucket.cos.ap-guangzhou.myqcloud.com',
+        dnsRecordId: 'dns-123',
+        bucketDomainBound: true,
+      });
+
+      await createBucketResource(
+        mockContext,
+        {
+          key: 'test_bucket',
+          name: 'test-bucket',
+          website: {
+            index: 'index.html',
+            code: './dist',
+            error_page: 'error.html',
+            error_code: 404,
+            domain: 'cdn.example.com',
+          },
+        },
+        initialState,
+      );
+
+      expect(mockCosOperations.getBucket).toHaveBeenCalledTimes(2);
+    });
+
+    it('should handle refreshedInfo returning null in create', async () => {
+      mockCosOperations.createBucket.mockResolvedValue(undefined);
+      mockCosOperations.getBucket
+        .mockResolvedValueOnce(mockBucketInfoBase)
+        .mockResolvedValueOnce(null);
+      mockCosOperations.bindCustomDomain.mockResolvedValue({
+        cname: 'test-bucket.cos.ap-guangzhou.myqcloud.com',
+        dnsRecordId: 'dns-123',
+        bucketDomainBound: true,
+      });
+
+      await createBucketResource(
+        mockContext,
+        {
+          key: 'test_bucket',
+          name: 'test-bucket',
+          website: {
+            index: 'index.html',
+            code: './dist',
+            error_page: 'error.html',
+            error_code: 404,
+            domain: 'cdn.example.com',
+          },
+        },
+        initialState,
+      );
+
+      expect(mockCosOperations.getBucket).toHaveBeenCalledTimes(2);
+      expect(mockedStateManager.setResource).toHaveBeenCalled();
+    });
+
+    it('should handle cnameInfo returning null', async () => {
+      mockCosOperations.createBucket.mockResolvedValue(undefined);
+      mockCosOperations.getBucket.mockResolvedValue(mockBucketInfoBase);
+      mockCosOperations.bindCustomDomain.mockResolvedValue(null);
+
+      await createBucketResource(
+        mockContext,
+        {
+          key: 'test_bucket',
+          name: 'test-bucket',
+          website: {
+            index: 'index.html',
+            code: './dist',
+            error_page: 'error.html',
+            error_code: 404,
+            domain: 'cdn.example.com',
+          },
+        },
+        initialState,
+      );
+
+      expect(mockCosOperations.bindCustomDomain).toHaveBeenCalled();
+      expect(mockSslOperations.deployCertificateInstance).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('updateBucketResource - domain management', () => {
+    const mockBucketInfoBase = {
+      Name: 'test-bucket',
+      Location: 'ap-guangzhou',
+      CreationDate: '2024-01-01',
+      ACL: 'private',
+    };
+
+    const stateWithDomain: StateFile = {
+      ...initialState,
+      resources: {
+        'buckets.test_bucket': {
+          mode: 'managed',
+          region: 'ap-guangzhou',
+          definition: {},
+          instances: [
+            {
+              sid: 'tencent:cos:default:test-bucket',
+              id: 'test-bucket',
+              type: 'COS_BUCKET' as const,
+            },
+            {
+              sid: 'tencent:dnspod:default:old.example.com',
+              id: 'old.example.com',
+              type: 'TENCENT_COS_DNS_CNAME' as const,
+              domain: 'old.example.com',
+              cname: 'test-bucket.cos.ap-guangzhou.myqcloud.com',
+              dnsRecordId: 'dns-old',
+            },
+          ],
+          lastUpdated: new Date().toISOString(),
+        },
+      },
+    };
+
+    it('should throw when getBucket returns null in update', async () => {
+      mockCosOperations.getBucket.mockResolvedValue(null);
+
+      await expect(
+        updateBucketResource(
+          mockContext,
+          {
+            key: 'test_bucket',
+            name: 'test-bucket',
+            website: {
+              index: 'index.html',
+              code: './dist',
+              error_page: 'error.html',
+              error_code: 404,
+            },
+          },
+          initialState,
+        ),
+      ).rejects.toThrow('Failed to refresh state for bucket');
+    });
+
+    it('should unbind old domains when domain changes', async () => {
+      mockCosOperations.getBucket.mockResolvedValue(mockBucketInfoBase);
+      mockCosOperations.unbindCustomDomain.mockResolvedValue(undefined);
+      mockCosOperations.bindCustomDomain.mockResolvedValue({
+        cname: 'test-bucket.cos.ap-guangzhou.myqcloud.com',
+        dnsRecordId: 'dns-new',
+        bucketDomainBound: true,
+      });
+
+      await updateBucketResource(
+        mockContext,
+        {
+          key: 'test_bucket',
+          name: 'test-bucket',
+          website: {
+            index: 'index.html',
+            code: './dist',
+            error_page: 'error.html',
+            error_code: 404,
+            domain: 'new.example.com',
+          },
+        },
+        stateWithDomain,
+      );
+
+      expect(mockCosOperations.unbindCustomDomain).toHaveBeenCalledWith(
+        'test-bucket',
+        'old.example.com',
+        'dns-old',
+      );
+      expect(mockCosOperations.bindCustomDomain).toHaveBeenCalledWith(
+        'test-bucket',
+        'new.example.com',
+      );
+    });
+
+    it('should bind www domain with cert in update when www_bind_apex', async () => {
+      mockCosOperations.getBucket.mockResolvedValue(mockBucketInfoBase);
+      mockCosOperations.bindCustomDomain
+        .mockResolvedValueOnce({
+          cname: 'test-bucket.cos.ap-guangzhou.myqcloud.com',
+          dnsRecordId: 'dns-primary',
+          bucketDomainBound: true,
+        })
+        .mockResolvedValueOnce({
+          cname: 'test-bucket.cos.ap-guangzhou.myqcloud.com',
+          dnsRecordId: 'dns-www',
+          bucketDomainBound: true,
+        });
+      mockSslOperations.deployCertificateInstance.mockResolvedValue({ deployRecordId: 100 });
+
+      await updateBucketResource(
+        mockContext,
+        {
+          key: 'test_bucket',
+          name: 'test-bucket',
+          website: {
+            index: 'index.html',
+            code: './dist',
+            error_page: 'error.html',
+            error_code: 404,
+            domain: 'example.com',
+            www_bind_apex: true,
+            domain_certificate_id: 'cert-ref-123',
+          },
+        },
+        initialState,
+      );
+
+      expect(mockCosOperations.bindCustomDomain).toHaveBeenCalledWith(
+        'test-bucket',
+        'www.example.com',
+      );
+      expect(mockSslOperations.deployCertificateInstance).toHaveBeenCalledTimes(2);
+    });
+
+    it('should unbind existing www domain when www_bind_apex is disabled', async () => {
+      const stateWithWww: StateFile = {
+        ...initialState,
+        resources: {
+          'buckets.test_bucket': {
+            mode: 'managed',
+            region: 'ap-guangzhou',
+            definition: {},
+            instances: [
+              {
+                sid: 'tencent:cos:default:test-bucket',
+                id: 'test-bucket',
+                type: 'COS_BUCKET' as const,
+              },
+              {
+                sid: 'tencent:dnspod:default:example.com',
+                id: 'example.com',
+                type: 'TENCENT_COS_DNS_CNAME' as const,
+                domain: 'example.com',
+                cname: 'test-bucket.cos.ap-guangzhou.myqcloud.com',
+                dnsRecordId: 'dns-primary',
+              },
+              {
+                sid: 'tencent:dnspod:default:www.example.com',
+                id: 'www.example.com',
+                type: 'TENCENT_COS_DNS_CNAME' as const,
+                domain: 'www.example.com',
+                cname: 'test-bucket.cos.ap-guangzhou.myqcloud.com',
+                dnsRecordId: 'dns-www',
+                isWwwVariant: true,
+              },
+            ],
+            lastUpdated: new Date().toISOString(),
+          },
+        },
+      };
+
+      mockCosOperations.getBucket.mockResolvedValue(mockBucketInfoBase);
+      mockCosOperations.unbindCustomDomain.mockResolvedValue(undefined);
+      mockCosOperations.bindCustomDomain.mockResolvedValue({
+        cname: 'test-bucket.cos.ap-guangzhou.myqcloud.com',
+        dnsRecordId: 'dns-primary',
+        bucketDomainBound: true,
+      });
+
+      await updateBucketResource(
+        mockContext,
+        {
+          key: 'test_bucket',
+          name: 'test-bucket',
+          website: {
+            index: 'index.html',
+            code: './dist',
+            error_page: 'error.html',
+            error_code: 404,
+            domain: 'example.com',
+            www_bind_apex: false,
+          },
+        },
+        stateWithWww,
+      );
+
+      expect(mockCosOperations.unbindCustomDomain).toHaveBeenCalledWith(
+        'test-bucket',
+        'www.example.com',
+        'dns-www',
+      );
+    });
+
+    it('should unbind all domains when domain is removed in update', async () => {
+      mockCosOperations.getBucket.mockResolvedValue(mockBucketInfoBase);
+      mockCosOperations.unbindCustomDomain.mockResolvedValue(undefined);
+
+      await updateBucketResource(
+        mockContext,
+        {
+          key: 'test_bucket',
+          name: 'test-bucket',
+          website: {
+            index: 'index.html',
+            code: './dist',
+            error_page: 'error.html',
+            error_code: 404,
+          },
+        },
+        stateWithDomain,
+      );
+
+      expect(mockCosOperations.unbindCustomDomain).toHaveBeenCalledWith(
+        'test-bucket',
+        'old.example.com',
+        'dns-old',
+      );
+    });
+
+    it('should handle refreshedInfo returning null in update', async () => {
+      mockCosOperations.getBucket
+        .mockResolvedValueOnce(mockBucketInfoBase)
+        .mockResolvedValueOnce(null);
+      mockCosOperations.bindCustomDomain.mockResolvedValue({
+        cname: 'test-bucket.cos.ap-guangzhou.myqcloud.com',
+        dnsRecordId: 'dns-123',
+        bucketDomainBound: true,
+      });
+
+      await updateBucketResource(
+        mockContext,
+        {
+          key: 'test_bucket',
+          name: 'test-bucket',
+          website: {
+            index: 'index.html',
+            code: './dist',
+            error_page: 'error.html',
+            error_code: 404,
+            domain: 'cdn.example.com',
+          },
+        },
+        initialState,
+      );
+
+      expect(mockCosOperations.getBucket).toHaveBeenCalledTimes(2);
+      expect(mockedStateManager.setResource).toHaveBeenCalled();
+    });
+
+    it('should handle update with ACL but no websiteConfig', async () => {
+      mockCosOperations.getBucket.mockResolvedValue(mockBucketInfoBase);
+
+      await updateBucketResource(
+        mockContext,
+        {
+          key: 'test_bucket',
+          name: 'test-bucket',
+          security: { acl: BucketAccessEnum.PUBLIC_READ, force_delete: false },
+        },
+        initialState,
+      );
+
+      expect(mockCosOperations.updateBucketAcl).toHaveBeenCalled();
+    });
+  });
+
+  describe('resolveBucketDomainCertificate', () => {
+    it('should not call bindCustomDomain when cert body provided without domain', async () => {
+      mockCosOperations.createBucket.mockResolvedValue(undefined);
+      mockCosOperations.getBucket.mockResolvedValue({
+        Name: 'test-bucket',
+        Location: 'ap-guangzhou',
+        CreationDate: '2024-01-01',
+      });
+
+      await createBucketResource(
+        mockContext,
+        {
+          key: 'test_bucket',
+          name: 'test-bucket',
+          website: {
+            index: 'index.html',
+            code: './dist',
+            error_page: 'error.html',
+            error_code: 404,
+            domain_certificate_body: 'CERT-BODY',
+            domain_certificate_private_key: 'CERT-KEY',
+          },
+        },
+        initialState,
+      );
+
+      expect(mockCosOperations.bindCustomDomain).not.toHaveBeenCalled();
+    });
+
+    it('should resolve certificate_id reference without domain for logging', async () => {
+      mockCosOperations.createBucket.mockResolvedValue(undefined);
+      mockCosOperations.getBucket.mockResolvedValue({
+        Name: 'test-bucket',
+        Location: 'ap-guangzhou',
+        CreationDate: '2024-01-01',
+      });
+
+      await createBucketResource(
+        mockContext,
+        {
+          key: 'test_bucket',
+          name: 'test-bucket',
+          website: {
+            index: 'index.html',
+            code: './dist',
+            error_page: 'error.html',
+            error_code: 404,
+            domain_certificate_id: 'cert-id-999',
+          },
+        },
+        initialState,
+      );
+
+      expect(mockCosOperations.bindCustomDomain).not.toHaveBeenCalled();
+    });
+
+    it('should return undefined when no website defined', async () => {
+      mockCosOperations.createBucket.mockResolvedValue(undefined);
+      mockCosOperations.getBucket.mockResolvedValue({
+        Name: 'test-bucket',
+        Location: 'ap-guangzhou',
+      });
+
+      await createBucketResource(
+        mockContext,
+        {
+          key: 'test_bucket',
+          name: 'test-bucket',
+        },
+        initialState,
+      );
+
+      expect(mockCosOperations.bindCustomDomain).not.toHaveBeenCalled();
     });
   });
 });

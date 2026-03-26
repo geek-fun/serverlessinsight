@@ -127,4 +127,115 @@ describe('casOperations', () => {
       expect(result).toBeNull();
     });
   });
+
+  describe('uploadCertificate', () => {
+    it('should upload certificate with chain', async () => {
+      mockUploadUserCertificate.mockResolvedValue({
+        body: { certId: 12345678 },
+      });
+
+      const result = await operations.uploadCertificate(
+        'my-cert',
+        'CERT-BODY',
+        'CERT-KEY',
+        'CHAIN-BODY',
+      );
+
+      expect(mockUploadUserCertificate).toHaveBeenCalledWith(
+        expect.objectContaining({
+          name: 'my-cert',
+          cert: 'CERT-BODY\nCHAIN-BODY',
+          key: 'CERT-KEY',
+        }),
+      );
+      expect(result).toEqual({
+        certificateId: 12345678,
+        name: 'my-cert',
+      });
+    });
+
+    it('should upload certificate without chain', async () => {
+      mockUploadUserCertificate.mockResolvedValue({
+        body: { certId: 87654321 },
+      });
+
+      const result = await operations.uploadCertificate('test-cert', 'CERT', 'KEY');
+
+      expect(mockUploadUserCertificate).toHaveBeenCalledWith(
+        expect.objectContaining({
+          name: 'test-cert',
+          cert: 'CERT',
+          key: 'KEY',
+        }),
+      );
+      expect(result).toEqual({
+        certificateId: 87654321,
+        name: 'test-cert',
+      });
+    });
+
+    it('should throw when certId is null in response', async () => {
+      mockUploadUserCertificate.mockResolvedValue({
+        body: { certId: null },
+      });
+
+      await expect(operations.uploadCertificate('cert-no-id', 'CERT', 'KEY')).rejects.toThrow(
+        'CAS_UPLOAD_NO_CERT_ID',
+      );
+    });
+
+    it('should throw when certId is undefined in response', async () => {
+      mockUploadUserCertificate.mockResolvedValue({
+        body: {},
+      });
+
+      await expect(operations.uploadCertificate('cert-no-id', 'CERT', 'KEY')).rejects.toThrow(
+        'CAS_UPLOAD_NO_CERT_ID',
+      );
+    });
+
+    it('should throw when body is null', async () => {
+      mockUploadUserCertificate.mockResolvedValue({
+        body: null,
+      });
+
+      await expect(operations.uploadCertificate('cert-no-body', 'CERT', 'KEY')).rejects.toThrow(
+        'CAS_UPLOAD_NO_CERT_ID',
+      );
+    });
+  });
+
+  describe('deleteCertificate', () => {
+    it('should delete certificate successfully', async () => {
+      mockDeleteUserCertificate.mockResolvedValue({});
+
+      await operations.deleteCertificate(12345678);
+
+      expect(mockDeleteUserCertificate).toHaveBeenCalledWith(
+        expect.objectContaining({
+          certId: 12345678,
+        }),
+      );
+    });
+
+    it('should handle CertNotExist gracefully with warning', async () => {
+      const error = Object.assign(new Error('Not found'), { code: 'CertNotExist' });
+      mockDeleteUserCertificate.mockRejectedValue(error);
+
+      await expect(operations.deleteCertificate(99999999)).resolves.toBeUndefined();
+    });
+
+    it('should handle NotFound gracefully with warning', async () => {
+      const error = Object.assign(new Error('Not found'), { code: 'NotFound' });
+      mockDeleteUserCertificate.mockRejectedValue(error);
+
+      await expect(operations.deleteCertificate(88888888)).resolves.toBeUndefined();
+    });
+
+    it('should rethrow unexpected errors', async () => {
+      mockDeleteUserCertificate.mockRejectedValue(new Error('Network timeout'));
+
+      await expect(operations.deleteCertificate(12345678)).rejects.toThrow('Network timeout');
+    });
+  });
 });

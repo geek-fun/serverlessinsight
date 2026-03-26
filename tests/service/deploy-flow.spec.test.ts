@@ -35,8 +35,12 @@ const mockCreateAliyunClient = require('../../src/common/aliyunClient')
   .createAliyunClient as jest.Mock;
 
 describe('Deploy Flow Service Test', () => {
-  const tempStateDir = path.join(__dirname, '../fixtures/temp-state-deploy');
   const fixturesDir = path.join(__dirname, '../fixtures');
+  const stateFilePath = path.join(
+    process.cwd(),
+    '.serverlessinsight',
+    'state-insight-poc-app-insight-poc.json',
+  );
   let mockClient: MockAliyunClient;
 
   beforeEach(async () => {
@@ -45,11 +49,11 @@ describe('Deploy Flow Service Test', () => {
     mockClient = createMockAliyunClient();
     mockCreateAliyunClient.mockReturnValue(mockClient);
 
-    await fs.mkdir(tempStateDir, { recursive: true }).catch(() => {});
+    await fs.rm(stateFilePath, { force: true }).catch(() => {});
   });
 
   afterEach(async () => {
-    await fs.rm(tempStateDir, { recursive: true, force: true }).catch(() => {});
+    await fs.rm(stateFilePath, { force: true }).catch(() => {});
   });
 
   describe('Aliyun FC3 Deploy', () => {
