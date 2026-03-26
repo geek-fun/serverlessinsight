@@ -1,0 +1,24 @@
+version: 0.0.1
+app: insight-poc-app
+provider:
+  name: unsupported
+  region: us-east-1
+
+vars:
+  region: us-east-1
+
+stages:
+  default:
+    region: ${vars.region}
+
+service: insight-poc-unsupported
+
+functions:
+  test_fn:
+    name: test-fn
+    code:
+      runtime: nodejs18
+      handler: index.handler
+      path: tests/fixtures/artifacts/artifact.zip
+    memory: 512
+    timeout: 10
