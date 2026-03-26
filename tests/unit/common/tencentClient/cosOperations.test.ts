@@ -1,8 +1,12 @@
 import { createCosOperations } from '../../../../src/common/tencentClient/cosOperations';
+import type COS from 'cos-nodejs-sdk-v5';
 
 const mockGetBucketCors = jest.fn();
 const mockPutBucketCors = jest.fn();
 const mockDeleteBucketCors = jest.fn();
+const mockPutBucketDomain = jest.fn();
+const mockGetBucketDomain = jest.fn();
+const mockDeleteBucketDomain = jest.fn();
 
 const mockCosClient = {
   headBucket: jest.fn(),
@@ -17,10 +21,10 @@ const mockCosClient = {
   getBucketCors: mockGetBucketCors,
   putBucketCors: mockPutBucketCors,
   deleteBucketCors: mockDeleteBucketCors,
-  putBucketDomain: jest.fn(),
-  getBucketDomain: jest.fn(),
-  deleteBucketDomain: jest.fn(),
-} as unknown as Context;
+  putBucketDomain: mockPutBucketDomain,
+  getBucketDomain: mockGetBucketDomain,
+  deleteBucketDomain: mockDeleteBucketDomain,
+} as unknown as COS;
 
 jest.mock('../../../../src/common/logger', () => ({
   logger: {
@@ -44,9 +48,7 @@ describe('cosOperations CORS', () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
-    mockCosClient.putBucketDomain.mockImplementation((_params: unknown, cb: (err: null) => void) =>
-      cb(null),
-    );
+    mockPutBucketDomain.mockImplementation((_params: unknown, cb: (err: null) => void) => cb(null));
     operations = createCosOperations(mockCosClient, 'ap-guangzhou');
   });
 
@@ -130,12 +132,12 @@ describe('cosOperations CORS', () => {
 
   describe('unbindCustomDomain', () => {
     beforeEach(() => {
-      mockCosClient.getBucketDomain.mockImplementation(
+      mockGetBucketDomain.mockImplementation(
         (_params: unknown, cb: (err: null, data: { DomainRule: unknown[] }) => void) =>
           cb(null, { DomainRule: [{ Name: 'cdn.example.com', Status: 'ENABLED', Type: 'REST' }] }),
       );
-      mockCosClient.deleteBucketDomain.mockImplementation(
-        (_params: unknown, cb: (err: null) => void) => cb(null),
+      mockDeleteBucketDomain.mockImplementation((_params: unknown, cb: (err: null) => void) =>
+        cb(null),
       );
     });
 

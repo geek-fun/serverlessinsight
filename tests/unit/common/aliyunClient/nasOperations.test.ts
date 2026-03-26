@@ -1,5 +1,6 @@
 import { createNasOperations } from '../../../../src/common/aliyunClient/nasOperations';
 import { NasStorageClassEnum } from '../../../../src/types';
+import type NasClient from '@alicloud/nas20170626';
 
 const mockCreateAccessGroup = jest.fn();
 const mockDescribeAccessGroups = jest.fn();
@@ -23,7 +24,7 @@ const mockNasClient = {
   createMountTarget: mockCreateMountTarget,
   describeMountTargets: mockDescribeMountTargets,
   deleteMountTarget: mockDeleteMountTarget,
-} as unknown as Context;
+} as unknown as NasClient;
 
 jest.mock('../../../../src/common/logger', () => ({
   logger: {

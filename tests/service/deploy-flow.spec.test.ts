@@ -1,15 +1,19 @@
 import path from 'node:path';
 import fs from 'node:fs/promises';
 import { deploy } from '../../src/commands/deploy';
-import { createMockAliyunClient } from './mockCloudClient';
+import { createMockAliyunClient, type MockAliyunClient } from './mockCloudClient';
 
-jest.mock('../../src/common/aliyunClient', () => {
-  const originalModule = jest.requireActual('../../src/common/aliyunClient');
-  return {
-    ...originalModule,
-    createAliyunClient: jest.fn(),
-  };
-});
+jest.mock('../../src/common/aliyunClient', () => ({
+  createAliyunClient: jest.fn(),
+}));
+
+jest.mock('../../src/common/imsClient', () => ({
+  getIamInfo: jest.fn().mockResolvedValue({
+    accountId: '123456789012',
+    displayName: 'Test User',
+    userId: 'test-user-id',
+  }),
+}));
 
 jest.mock('../../src/common/logger', () => ({
   logger: {
@@ -33,11 +37,12 @@ const mockCreateAliyunClient = require('../../src/common/aliyunClient')
 describe('Deploy Flow Service Test', () => {
   const tempStateDir = path.join(__dirname, '../fixtures/temp-state-deploy');
   const fixturesDir = path.join(__dirname, '../fixtures');
+  let mockClient: MockAliyunClient;
 
   beforeEach(async () => {
     jest.clearAllMocks();
 
-    const mockClient = createMockAliyunClient();
+    mockClient = createMockAliyunClient();
     mockCreateAliyunClient.mockReturnValue(mockClient);
 
     await fs.mkdir(tempStateDir, { recursive: true }).catch(() => {});
@@ -49,9 +54,6 @@ describe('Deploy Flow Service Test', () => {
 
   describe('Aliyun FC3 Deploy', () => {
     it('should deploy single FC3 function and save state', async () => {
-      const mockClient = createMockAliyunClient();
-      mockCreateAliyunClient.mockReturnValue(mockClient);
-
       await deploy({
         location: fixturesDir,
         stage: 'dev',
@@ -64,9 +66,7 @@ describe('Deploy Flow Service Test', () => {
     });
 
     it('should handle deploy error when cloud SDK fails', async () => {
-      const mockClient = createMockAliyunClient();
       mockClient.fc3.createFunction.mockRejectedValueOnce(new Error('FunctionAlreadyExists'));
-      mockCreateAliyunClient.mockReturnValue(mockClient);
 
       await expect(
         deploy({

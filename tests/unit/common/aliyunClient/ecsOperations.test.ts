@@ -2,8 +2,9 @@ import {
   createEcsOperations,
   parseSecurityGroupRule,
 } from '../../../../src/common/aliyunClient/ecsOperations';
-import { Context } from '../../../../src/types';
+import type { Context } from '../../../../src/types';
 import { ProviderEnum } from '../../../../src/common/providerEnum';
+import type EcsClient from '@alicloud/ecs20140526';
 
 const mockCreateSecurityGroup = jest.fn();
 const mockAuthorizeSecurityGroup = jest.fn();
@@ -19,7 +20,7 @@ const mockEcsClient = {
   describeSecurityGroupAttribute: mockDescribeSecurityGroupAttribute,
   describeSecurityGroups: mockDescribeSecurityGroups,
   deleteSecurityGroup: mockDeleteSecurityGroup,
-} as unknown as Context;
+} as unknown as EcsClient;
 
 jest.mock('../../../../src/common/logger', () => ({
   logger: {

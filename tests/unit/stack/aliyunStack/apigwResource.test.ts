@@ -164,13 +164,7 @@ describe('ApigwResource', () => {
       });
       mockedApigwTypes.extractEventDomainDefinition.mockReturnValue(null);
 
-      const _result = await createApigwResource(
-        mockContext,
-        testEvent,
-        'test-service',
-        undefined,
-        initialState,
-      );
+      await createApigwResource(mockContext, testEvent, 'test-service', undefined, initialState);
 
       expect(mockedApigwOperations.createApiGroup).toHaveBeenCalled();
       expect(mockedApigwOperations.createApi).toHaveBeenCalled();
@@ -272,7 +266,7 @@ describe('ApigwResource', () => {
         groupName: 'test-group',
       });
 
-      const _result = await readApigwResource(mockContext, 'group-123');
+      const result = await readApigwResource(mockContext, 'group-123');
 
       expect(mockedApigwOperations.getApiGroup).toHaveBeenCalledWith('group-123');
       expect(result).toEqual({ groupId: 'group-123', groupName: 'test-group' });
@@ -286,7 +280,7 @@ describe('ApigwResource', () => {
         groupName: 'test-group',
       });
 
-      const _result = await readApigwResourceByName(mockContext, 'test-group');
+      const result = await readApigwResourceByName(mockContext, 'test-group');
 
       expect(mockedApigwOperations.findApiGroupByName).toHaveBeenCalledWith('test-group');
       expect(result).toEqual({ groupId: 'group-123', groupName: 'test-group' });
@@ -433,7 +427,7 @@ describe('ApigwResource', () => {
     it('should handle missing state gracefully', async () => {
       mockedStateManager.getResource.mockReturnValue(null);
 
-      const _result = await deleteApigwResource(mockContext, 'events.api_gateway', initialState);
+      const result = await deleteApigwResource(mockContext, 'events.api_gateway', initialState);
 
       expect(result).toBeDefined();
     });

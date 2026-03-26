@@ -1,5 +1,6 @@
 import { createOssOperations } from '../../../../src/common/aliyunClient/ossOperations';
 import { BucketACL } from '../../../../src/stack/bucketTypes';
+import type OSS from 'ali-oss';
 
 const mockRequest = jest.fn();
 const mockPutBucketCORS = jest.fn();
@@ -29,7 +30,7 @@ const mockOssClient = {
   list: jest.fn(),
   deleteMulti: jest.fn(),
   put: jest.fn(),
-} as unknown as Context;
+} as unknown as OSS;
 
 jest.mock('../../../../src/common/logger', () => ({
   logger: {
@@ -645,7 +646,7 @@ describe('ossOperations bucket operations', () => {
             },
           ],
         }),
-      };
+      } as unknown as OSS;
 
       const ops = createOssOperations(mockOssClient2, 'cn-hangzhou');
       const result = await ops.getBucket('test-bucket');
@@ -664,7 +665,7 @@ describe('ossOperations bucket operations', () => {
       const mockOssClient2 = {
         ...mockOssClient,
         getBucketInfo: jest.fn().mockRejectedValue({ code: 'NoSuchBucket' }),
-      };
+      } as unknown as OSS;
 
       const ops = createOssOperations(mockOssClient2, 'cn-hangzhou');
       const result = await ops.getBucket('nonexistent');
@@ -676,7 +677,7 @@ describe('ossOperations bucket operations', () => {
       const mockOssClient2 = {
         ...mockOssClient,
         getBucketInfo: jest.fn().mockRejectedValue({ code: 'AccessDenied' }),
-      };
+      } as unknown as OSS;
 
       const ops = createOssOperations(mockOssClient2, 'cn-hangzhou');
       const result = await ops.getBucket('restricted');
@@ -698,7 +699,7 @@ describe('ossOperations bucket operations', () => {
         getBucketLogging: jest.fn().mockRejectedValue(new Error('No logging')),
         getBucketCORS: jest.fn().mockRejectedValue(new Error('No CORS')),
         getBucketLifecycle: jest.fn().mockRejectedValue(new Error('No lifecycle')),
-      };
+      } as unknown as OSS;
 
       const ops = createOssOperations(mockOssClient2, 'cn-hangzhou');
       const result = await ops.getBucket('test-bucket');
@@ -716,7 +717,7 @@ describe('ossOperations bucket operations', () => {
         ...mockOssClient,
         putBucketWebsite: jest.fn().mockResolvedValue({}),
         useBucket: jest.fn(),
-      };
+      } as unknown as OSS;
 
       const ops = createOssOperations(mockOssClient2, 'cn-hangzhou');
       await ops.updateBucketWebsite('test-bucket', {
@@ -740,7 +741,7 @@ describe('ossOperations bucket operations', () => {
         ...mockOssClient,
         deleteBucketWebsite: jest.fn().mockResolvedValue({}),
         useBucket: jest.fn(),
-      };
+      } as unknown as OSS;
 
       const ops = createOssOperations(mockOssClient2, 'cn-hangzhou');
       await ops.deleteBucketWebsite('test-bucket');
@@ -760,7 +761,7 @@ describe('ossOperations bucket operations', () => {
         deleteMulti: jest.fn().mockResolvedValue({}),
         deleteBucket: jest.fn().mockResolvedValue({}),
         useBucket: jest.fn(),
-      };
+      } as unknown as OSS;
 
       const ops = createOssOperations(mockOssClient2, 'cn-hangzhou');
       await ops.deleteBucket('test-bucket');
@@ -788,7 +789,7 @@ describe('ossOperations bucket operations', () => {
         deleteMulti: jest.fn().mockResolvedValue({}),
         deleteBucket: jest.fn().mockResolvedValue({}),
         useBucket: jest.fn(),
-      };
+      } as unknown as OSS;
 
       const ops = createOssOperations(mockOssClient2, 'cn-hangzhou');
       await ops.deleteBucket('test-bucket');
@@ -804,7 +805,7 @@ describe('ossOperations bucket operations', () => {
         deleteMulti: jest.fn().mockResolvedValue({}),
         deleteBucket: jest.fn().mockResolvedValue({}),
         useBucket: jest.fn(),
-      };
+      } as unknown as OSS;
 
       const ops = createOssOperations(mockOssClient2, 'cn-hangzhou');
       await ops.deleteBucket('test-bucket');
@@ -819,7 +820,7 @@ describe('ossOperations bucket operations', () => {
         ...mockOssClient,
         put: jest.fn().mockResolvedValue({}),
         useBucket: jest.fn(),
-      };
+      } as unknown as OSS;
 
       const ops = createOssOperations(mockOssClient2, 'cn-hangzhou');
       await ops.uploadFiles('test-bucket', '/path/to/file.txt');
@@ -834,14 +835,13 @@ describe('ossOperations bucket operations', () => {
       jest.spyOn(fs, 'readdirSync').mockReturnValue([
         { name: 'file1.txt', isDirectory: () => false, isFile: () => true },
         { name: 'subdir', isDirectory: () => true, isFile: () => false },
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      ] as any);
+      ]);
 
       const mockOssClient2 = {
         ...mockOssClient,
         put: jest.fn().mockResolvedValue({}),
         useBucket: jest.fn(),
-      };
+      } as unknown as OSS;
 
       const ops = createOssOperations(mockOssClient2, 'cn-hangzhou');
       await ops.uploadFiles('test-bucket', '/path/to/dir');
@@ -856,7 +856,7 @@ describe('ossOperations bucket operations', () => {
         ...mockOssClient,
         put: jest.fn().mockResolvedValue({}),
         useBucket: jest.fn(),
-      };
+      } as unknown as OSS;
 
       const ops = createOssOperations(mockOssClient2, 'cn-hangzhou');
       await ops.putFile('test-bucket', 'objects/file.txt', '/path/to/file.txt');

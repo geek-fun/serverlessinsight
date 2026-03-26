@@ -3,6 +3,7 @@ import {
   OssCodeLocation,
 } from '../../../../src/common/aliyunClient/fc3Operations';
 import { Fc3FunctionConfig } from '../../../../src/common/aliyunClient/types';
+import type Fc3Client from '@alicloud/fc20230330';
 import fs from 'node:fs';
 
 jest.mock('node:fs');
@@ -17,7 +18,7 @@ const mockFc3Client = {
   getFunction: mockGetFunction,
   updateFunction: mockUpdateFunction,
   deleteFunction: mockDeleteFunction,
-} as unknown as Context;
+} as unknown as Fc3Client;
 
 jest.mock('../../../../src/common/logger', () => ({
   logger: {

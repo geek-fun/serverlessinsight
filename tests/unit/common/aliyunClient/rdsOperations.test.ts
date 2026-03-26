@@ -2,8 +2,9 @@ import {
   createRdsOperations,
   RdsInstanceStatus,
 } from '../../../../src/common/aliyunClient/rdsOperations';
-import { Context } from '../../../../src/types';
+import type { Context } from '../../../../src/types';
 import { ProviderEnum } from '../../../../src/common/providerEnum';
+import type RdsClient from '@alicloud/rds20140815';
 
 const mockCreateDBInstance = jest.fn();
 const mockDescribeDBInstanceAttribute = jest.fn();
@@ -17,7 +18,7 @@ const mockRdsClient = {
   modifyDBInstanceSpec: mockModifyDBInstanceSpec,
   modifySecurityIps: mockModifySecurityIps,
   deleteDBInstance: mockDeleteDBInstance,
-} as unknown as Context;
+} as unknown as RdsClient;
 
 jest.mock('../../../../src/common/logger', () => ({
   logger: {

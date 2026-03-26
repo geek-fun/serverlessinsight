@@ -1,15 +1,19 @@
 import path from 'node:path';
 import fs from 'node:fs/promises';
 import { destroyStack } from '../../src/commands/destroy';
-import { createMockAliyunClient } from './mockCloudClient';
+import { createMockAliyunClient, type MockAliyunClient } from './mockCloudClient';
 
-jest.mock('../../src/common/aliyunClient', () => {
-  const originalModule = jest.requireActual('../../src/common/aliyunClient');
-  return {
-    ...originalModule,
-    createAliyunClient: jest.fn(),
-  };
-});
+jest.mock('../../src/common/aliyunClient', () => ({
+  createAliyunClient: jest.fn(),
+}));
+
+jest.mock('../../src/common/imsClient', () => ({
+  getIamInfo: jest.fn().mockResolvedValue({
+    accountId: '123456789012',
+    displayName: 'Test User',
+    userId: 'test-user-id',
+  }),
+}));
 
 jest.mock('../../src/common/logger', () => ({
   logger: {
@@ -33,11 +37,12 @@ const mockCreateAliyunClient = require('../../src/common/aliyunClient')
 describe('Destroy Flow Service Test', () => {
   const tempStateDir = path.join(__dirname, '../fixtures/temp-state-destroy');
   const fixturesDir = path.join(__dirname, '../fixtures');
+  let mockClient: MockAliyunClient;
 
   beforeEach(async () => {
     jest.clearAllMocks();
 
-    const mockClient = createMockAliyunClient();
+    mockClient = createMockAliyunClient();
     mockCreateAliyunClient.mockReturnValue(mockClient);
 
     await fs.mkdir(tempStateDir, { recursive: true }).catch(() => {});
@@ -49,9 +54,6 @@ describe('Destroy Flow Service Test', () => {
 
   describe('Aliyun Destroy', () => {
     it('should destroy FC3 function and clean state', async () => {
-      const mockClient = createMockAliyunClient();
-      mockCreateAliyunClient.mockReturnValue(mockClient);
-
       await destroyStack({
         location: fixturesDir,
         stage: 'dev',
@@ -63,10 +65,8 @@ describe('Destroy Flow Service Test', () => {
     });
 
     it('should handle destroy when resource does not exist', async () => {
-      const mockClient = createMockAliyunClient();
       mockClient.fc3.getFunction.mockRejectedValueOnce({ code: 'FunctionNotFound' });
       mockClient.fc3.deleteFunction.mockRejectedValueOnce({ code: 'FunctionNotFound' });
-      mockCreateAliyunClient.mockReturnValue(mockClient);
 
       await destroyStack({
         location: fixturesDir,
@@ -79,9 +79,7 @@ describe('Destroy Flow Service Test', () => {
 
   describe('Error Handling', () => {
     it('should throw error when destroy fails with access denied', async () => {
-      const mockClient = createMockAliyunClient();
       mockClient.fc3.deleteFunction.mockRejectedValueOnce(new Error('AccessDenied'));
-      mockCreateAliyunClient.mockReturnValue(mockClient);
 
       await expect(
         destroyStack({

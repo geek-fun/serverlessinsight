@@ -1,5 +1,6 @@
 import { createEsOperations, EsAppStatus } from '../../../../src/common/aliyunClient/esOperations';
 import type { Context } from '../../../../src/types';
+import type EsServerlessClient from '@alicloud/es-serverless20230627';
 
 const mockCreateApp = jest.fn();
 const mockGetApp = jest.fn();
@@ -11,7 +12,7 @@ const mockEsClient = {
   getApp: mockGetApp,
   updateApp: mockUpdateApp,
   deleteApp: mockDeleteApp,
-} as unknown as Context;
+} as unknown as EsServerlessClient;
 
 jest.mock('../../../../src/common/logger', () => ({
   logger: {

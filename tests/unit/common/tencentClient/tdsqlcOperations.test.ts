@@ -63,7 +63,7 @@ describe('tdsqlcOperations', () => {
         ],
       });
 
-      const _config = {
+      const config = {
         ClusterName: 'test-cluster',
         DbType: 'cynosdb',
         DbVersion: '5.7',
@@ -92,7 +92,7 @@ describe('tdsqlcOperations', () => {
         ClusterIds: [],
       });
 
-      const _config = {
+      const config = {
         ClusterName: 'test-cluster',
         DbType: 'cynosdb',
         DbVersion: '5.7',
@@ -121,16 +121,6 @@ describe('tdsqlcOperations', () => {
         ],
       });
 
-      const _config = {
-        ClusterName: 'test-cluster',
-        DbType: 'cynosdb',
-        DbVersion: '5.7',
-        DbMode: 'serverless',
-        AdminPassword: 'password123',
-        MinCpu: 0.5,
-        MaxCpu: 1,
-      };
-
       expect(mockCynosdbClient.CreateClusters).toBeDefined();
       expect(mockCynosdbClient.DescribeClusters).toBeDefined();
     });
@@ -149,7 +139,7 @@ describe('tdsqlcOperations', () => {
         ],
       });
 
-      const _config = {
+      const config = {
         ClusterName: 'test-cluster',
         DbType: 'cynosdb',
         DbVersion: '5.7',
@@ -166,7 +156,7 @@ describe('tdsqlcOperations', () => {
       const error = new Error('API error');
       mockCynosdbClient.CreateClusters.mockRejectedValue(error);
 
-      const _config = {
+      const config = {
         ClusterName: 'test-cluster',
         DbType: 'cynosdb',
         DbVersion: '5.7',
@@ -269,7 +259,7 @@ describe('tdsqlcOperations', () => {
         ],
       });
 
-      const _config = {
+      const config = {
         ClusterName: 'test-cluster',
         DbType: 'cynosdb',
         DbVersion: '5.7',
@@ -294,7 +284,7 @@ describe('tdsqlcOperations', () => {
       const error = new Error('update failed');
       mockCynosdbClient.ModifyServerlessStrategy.mockRejectedValue(error);
 
-      const _config = {
+      const config = {
         ClusterName: 'test-cluster',
         DbType: 'cynosdb',
         DbVersion: '5.7',

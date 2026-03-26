@@ -1,7 +1,7 @@
 /* eslint-disable @typescript-eslint/no-require-imports */
-/* eslint-disable @typescript-eslint/no-explicit-any */
 import { ProviderEnum } from '../../../../src/common';
 import { CURRENT_STATE_VERSION, StateFile, ServerlessIac } from '../../../../src/types';
+import type { StateBackend } from '../../../../src/common/stateBackend/types';
 
 const mockedLogger = {
   info: jest.fn(),
@@ -9,10 +9,17 @@ const mockedLogger = {
   warn: jest.fn(),
 };
 
-const mockedStateBackend = {
+const createMockStateBackend = (): StateBackend => ({
   loadState: jest.fn(),
   saveState: jest.fn(),
-};
+  acquireLock: jest.fn(),
+  releaseLock: jest.fn(),
+  forceUnlock: jest.fn(),
+  readLock: jest.fn(),
+  withLock: jest.fn(),
+});
+
+const mockedStateBackend = createMockStateBackend();
 
 const mockedPlanner = {
   generateFunctionPlan: jest.fn(),
@@ -110,8 +117,8 @@ const initialState: StateFile = {
 describe('Deployer Integration', () => {
   beforeEach(() => {
     jest.clearAllMocks();
-    mockedStateBackend.loadState.mockResolvedValue(initialState);
-    mockedStateBackend.saveState.mockResolvedValue(undefined);
+    (mockedStateBackend.loadState as jest.Mock).mockResolvedValue(initialState);
+    (mockedStateBackend.saveState as jest.Mock).mockResolvedValue(undefined);
     mockedPlanner.generateFunctionPlan.mockResolvedValue({ items: [] });
     mockedPlanner.generateBucketPlan.mockResolvedValue({ items: [] });
     mockedPlanner.generateDatabasePlan.mockResolvedValue({ items: [] });
@@ -135,7 +142,7 @@ describe('Deployer Integration', () => {
       };
 
       try {
-        await deployAliyunStack(iac, mockedStateBackend as any);
+        await deployAliyunStack(iac, mockedStateBackend);
       } catch {
         // Test may fail on cycle detection or other validation, but we're testing planner calls
       }

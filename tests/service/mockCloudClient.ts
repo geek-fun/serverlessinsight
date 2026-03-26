@@ -58,6 +58,14 @@ export type MockAliyunClient = {
     createSecurityGroup: jest.Mock;
     describeSecurityGroups: jest.Mock;
     deleteSecurityGroup: jest.Mock;
+    getSecurityGroupByName: jest.Mock;
+  };
+  sls: {
+    createProject: jest.Mock;
+    createLogstore: jest.Mock;
+    createIndex: jest.Mock;
+    waitForProject: jest.Mock;
+    waitForLogstore: jest.Mock;
   };
 };
 
@@ -137,6 +145,14 @@ export const createMockAliyunClient = (): MockAliyunClient => ({
       .fn()
       .mockResolvedValue({ body: { SecurityGroups: { SecurityGroup: [] } } }),
     deleteSecurityGroup: jest.fn().mockResolvedValue({}),
+    getSecurityGroupByName: jest.fn().mockResolvedValue({ securityGroupId: 'sg-123' }),
+  },
+  sls: {
+    createProject: jest.fn().mockResolvedValue({ projectName: 'test-project' }),
+    createLogstore: jest.fn().mockResolvedValue({ logstoreName: 'test-logstore' }),
+    createIndex: jest.fn().mockResolvedValue({}),
+    waitForProject: jest.fn().mockResolvedValue({}),
+    waitForLogstore: jest.fn().mockResolvedValue({}),
   },
 });
 

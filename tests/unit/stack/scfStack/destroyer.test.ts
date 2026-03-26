@@ -55,7 +55,7 @@ describe('destroyer', () => {
     mockBackend = {
       loadState: jest.fn().mockResolvedValue(initialState),
       saveState: jest.fn(),
-    } as unknown as Context;
+    } as any;
 
     (common.getContext as jest.Mock).mockReturnValue({
       stage: 'dev',

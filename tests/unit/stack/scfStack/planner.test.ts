@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 /* eslint-disable @typescript-eslint/no-unused-vars */
 import { generateTencentPlan, displayPlan } from '../../../../src/stack/scfStack/planner';
 import * as scfPlanner from '../../../../src/stack/scfStack/scfPlanner';
@@ -52,7 +53,7 @@ describe('planner', () => {
     mockBackend = {
       loadState: jest.fn().mockResolvedValue(initialState),
       saveState: jest.fn(),
-    } as unknown as Context;
+    } as any;
 
     (common.getContext as jest.Mock).mockReturnValue({
       stage: 'dev',

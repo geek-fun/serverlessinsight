@@ -5,6 +5,8 @@ import {
   type ApigwApiConfig,
 } from '../../../../src/common/aliyunClient/apigwOperations';
 import type { Context, StateFile } from '../../../../src/types';
+import type CloudApiClient from '@alicloud/cloudapi20160714';
+import type DnsClient from '@alicloud/alidns20150109';
 
 const mockCreateApiGroup = jest.fn();
 const mockDescribeApiGroup = jest.fn();
@@ -36,7 +38,7 @@ const mockApigwClient = {
   setDomain: mockSetDomain,
   setDomainCertificate: mockSetDomainCertificate,
   deleteDomain: mockDeleteDomain,
-} as unknown as Context;
+} as unknown as CloudApiClient;
 
 const mockAddDomainRecord = jest.fn();
 const mockDescribeDomainRecords = jest.fn();
@@ -46,7 +48,7 @@ const mockDnsClient = {
   addDomainRecord: mockAddDomainRecord,
   describeDomainRecords: mockDescribeDomainRecords,
   deleteDomainRecord: mockDeleteDomainRecord,
-} as unknown as Context;
+} as unknown as DnsClient;
 
 jest.mock('../../../../src/common/logger', () => ({
   logger: {
@@ -79,7 +81,7 @@ jest.mock('../../../../src/common/sidUtils', () => ({
   buildSid: jest.fn((_provider, _service, _stage, id) => `sid-${id}`),
 }));
 
-jest.mock('../../../../src/common/dnsOperations');
+jest.mock('../../../../src/common/aliyunClient/dnsOperations');
 
 jest.mock('node:dns', () => ({
   promises: {
@@ -538,7 +540,7 @@ describe('apigwOperations', () => {
       mockAddDomainRecord.mockResolvedValue('record-123');
       mockSetDomain.mockResolvedValue({});
 
-      jest.doMock('../../../../src/common/dnsOperations', () => ({
+      jest.doMock('../../../../src/common/aliyunClient/dnsOperations', () => ({
         createDnsOperations: jest.fn(() => ({
           describeDomainRecords: mockDescribeDomainRecords,
           addDomainRecord: mockAddDomainRecord,

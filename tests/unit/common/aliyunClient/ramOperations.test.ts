@@ -1,4 +1,5 @@
 import { createRamOperations } from '../../../../src/common/aliyunClient/ramOperations';
+import type RamClient from '@alicloud/ram20150501';
 
 const mockCreatePolicy = jest.fn();
 const mockAttachPolicyToRole = jest.fn();
@@ -18,7 +19,7 @@ const mockRamClient = {
   detachPolicyFromRole: mockDetachPolicyFromRole,
   deletePolicy: mockDeletePolicy,
   deleteRole: mockDeleteRole,
-} as unknown as Context;
+} as unknown as RamClient;
 
 jest.mock('../../../../src/common/logger', () => ({
   logger: {
