@@ -692,4 +692,9 @@ export const en = {
   VOLCENGINE_CREATING_APIGW: 'Creating Volcengine API Gateway {{gatewayName}}',
   VOLCENGINE_DELETING_APIGW: 'Deleting Volcengine API Gateway {{gatewayName}}',
   VOLCENGINE_APIGW_NOT_FOUND: 'Volcengine API Gateway {{gatewayName}} not found',
+
+  // Additional Volcengine-specific messages
+  RESOURCE_STATE_NOT_FOUND: 'Resource state not found for logical ID: {{logicalId}}',
+  RESOURCE_INSTANCE_NOT_FOUND: 'Resource instance not found for logical ID: {{logicalId}}',
+  UPDATING_RESOURCE_WITH_NO_CHANGES: 'No changes detected for {{resourceType}}: {{name}}',
 };

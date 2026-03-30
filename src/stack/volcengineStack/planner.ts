@@ -2,12 +2,15 @@ import { ServerlessIac, PlanItem } from '../../types';
 import { getContext, getDependencyInfo, toDotFormat } from '../../common';
 import { StateBackend } from '../../common/stateBackend';
 import { lang } from '../../lang';
+import { generateFunctionPlan } from './vefaasPlanner';
 
-export const generateVolcenginePlan = async (_iac: ServerlessIac, backend: StateBackend) => {
+export const generateVolcenginePlan = async (iac: ServerlessIac, backend: StateBackend) => {
   const context = getContext();
-  const _state = await backend.loadState('volcengine', context.app, context.service, context.stage);
+  const state = await backend.loadState('volcengine', context.app, context.service, context.stage);
 
-  const allItems: PlanItem[] = [];
+  const functionPlan = await generateFunctionPlan(context, state, iac.functions);
+
+  const allItems: PlanItem[] = [...functionPlan.items];
 
   const dependencyInfo = getDependencyInfo(allItems);
 
