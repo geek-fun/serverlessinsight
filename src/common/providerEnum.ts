@@ -3,4 +3,5 @@ export enum ProviderEnum {
   ALIYUN = 'aliyun',
   TENCENT = 'tencent',
   AWS = 'aws',
+  VOLCENGINE = 'volcengine',
 }

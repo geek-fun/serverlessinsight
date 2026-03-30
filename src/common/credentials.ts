@@ -23,6 +23,21 @@ export const getCredentials = (
   }
 
   switch (provider) {
+    case ProviderEnum.VOLCENGINE:
+      return {
+        accessKeyId:
+          config?.accessKeyId ??
+          process.env.VOLCSTACK_ACCESS_KEY_ID ??
+          process.env.VOLCENGINE_ACCESS_KEY_ID,
+        accessKeySecret:
+          config?.accessKeySecret ??
+          process.env.VOLCSTACK_SECRET_ACCESS_KEY ??
+          process.env.VOLCENGINE_ACCESS_KEY_SECRET,
+        securityToken:
+          config?.securityToken ??
+          process.env.VOLCSTACK_SESSION_TOKEN ??
+          process.env.VOLCENGINE_SESSION_TOKEN,
+      };
     case ProviderEnum.TENCENT:
       return {
         accessKeyId: config?.accessKeyId ?? process.env.TENCENTCLOUD_SECRET_ID,
