@@ -654,4 +654,20 @@ export const zhCN = {
     '正在更新函数 {{functionName}} 代码，使用 TOS ({{size}} MB) 到 {{bucket}}/{{key}}',
   FUNCTION_CODE_UPDATED: '函数 {{functionName}} 代码已更新',
   FUNCTION_DELETED: '函数 {{functionName}} 已删除',
+
+  // TOS Object Storage messages
+  TOS_BUCKET_CREATED: 'TOS 存储桶 {{bucketName}} 创建成功',
+  TOS_BUCKET_DELETED: 'TOS 存储桶 {{bucketName}} 删除成功',
+  TOS_BUCKET_ACL_UPDATED: 'TOS 存储桶 {{bucketName}} ACL 已更新为 {{acl}}',
+  TOS_BUCKET_WEBSITE_CONFIGURED: 'TOS 存储桶 {{bucketName}} 静态网站已配置',
+  TOS_BUCKET_WEBSITE_UPDATED: 'TOS 存储桶 {{bucketName}} 静态网站配置已更新',
+  TOS_BUCKET_NOT_FOUND: 'TOS 存储桶 {{bucketName}} 未找到',
+  TOS_BUCKET_TRACKED_CAN_RETRY: '存储桶已在状态中跟踪，您可以重试部署以上传文件',
+  TOS_BUCKET_FILE_UPLOAD_FAILED_STATE_SAVED:
+    '上传文件到存储桶失败，但存储桶已创建并保存到状态：{{error}}',
+  TOS_OBJECT_UPLOADED: '已上传对象 {{key}} 到存储桶 {{bucket}}',
+  TOS_FILES_UPLOADED: '已从 {{path}} 上传文件到存储桶 {{bucket}}',
+  VOLCENGINE_TOS_CLIENT_NOT_INITIALIZED: 'TOS 客户端未初始化。请检查您的凭证。',
+  VOLCENGINE_BUCKET_DELETE_FAILED: '删除存储桶 {{bucketName}} 失败：{{error}}',
+  VOLCENGINE_FUNCTION_DELETE_FAILED: '删除函数 {{functionName}} 失败：{{error}}',
 };

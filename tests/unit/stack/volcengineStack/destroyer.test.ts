@@ -29,6 +29,18 @@ jest.mock('../../../../src/lang', () => ({
   },
 }));
 
+jest.mock('../../../../src/stack/volcengineStack/tosResource', () => ({
+  deleteResource: jest.fn(),
+}));
+
+jest.mock('../../../../src/stack/volcengineStack/vefaasResource', () => ({
+  deleteResource: jest.fn(),
+}));
+
+jest.mock('../../../../src/common/stateManager', () => ({
+  getAllResources: jest.fn(),
+}));
+
 describe('volcengineStack destroyer', () => {
   const mockContext = {
     app: 'test-app',
@@ -67,6 +79,9 @@ describe('volcengineStack destroyer', () => {
 
   describe('destroyVolcengineStack', () => {
     it('should destroy stack successfully', async () => {
+      const { getAllResources } = jest.requireMock('../../../../src/common/stateManager');
+      getAllResources.mockReturnValue({});
+
       await destroyVolcengineStack(mockBackend);
 
       expect(mockBackend.loadState).toHaveBeenCalled();
@@ -74,6 +89,9 @@ describe('volcengineStack destroyer', () => {
     });
 
     it('should load state with correct parameters', async () => {
+      const { getAllResources } = jest.requireMock('../../../../src/common/stateManager');
+      getAllResources.mockReturnValue({});
+
       await destroyVolcengineStack(mockBackend);
 
       expect(mockBackend.loadState).toHaveBeenCalledWith(
@@ -85,6 +103,9 @@ describe('volcengineStack destroyer', () => {
     });
 
     it('should save state after destruction', async () => {
+      const { getAllResources } = jest.requireMock('../../../../src/common/stateManager');
+      getAllResources.mockReturnValue({});
+
       await destroyVolcengineStack(mockBackend);
 
       expect(mockBackend.saveState).toHaveBeenCalledWith(
@@ -93,6 +114,286 @@ describe('volcengineStack destroyer', () => {
         'test-service',
         'dev',
       );
+    });
+
+    it('should delete buckets in state', async () => {
+      const stateWithBucket: StateFile = {
+        ...mockState,
+        resources: {
+          'buckets.static_site': {
+            mode: 'managed',
+            region: 'cn-beijing',
+            definition: { bucketName: 'test-bucket' },
+            instances: [{ sid: 'test-sid', id: 'test-bucket', type: 'VOLCENGINE_TOS_BUCKET' }],
+            lastUpdated: '2024-01-01T00:00:00Z',
+          },
+        },
+      };
+
+      mockBackend.loadState = jest.fn().mockResolvedValue(stateWithBucket);
+      const { getAllResources } = jest.requireMock('../../../../src/common/stateManager');
+      const { deleteResource } = jest.requireMock(
+        '../../../../src/stack/volcengineStack/tosResource',
+      );
+      getAllResources.mockReturnValue(stateWithBucket.resources);
+      deleteResource.mockResolvedValueOnce(mockState);
+
+      await destroyVolcengineStack(mockBackend);
+
+      expect(deleteResource).toHaveBeenCalledWith(
+        mockContext,
+        'test-bucket',
+        'buckets.static_site',
+        stateWithBucket,
+      );
+    });
+
+    it('should delete functions in state', async () => {
+      const stateWithFunction: StateFile = {
+        ...mockState,
+        resources: {
+          'functions.test_fn': {
+            mode: 'managed',
+            region: 'cn-beijing',
+            definition: { functionName: 'test-function' },
+            instances: [
+              { sid: 'test-sid', id: 'test-function', type: 'VOLCENGINE_VEFAAS_FUNCTION' },
+            ],
+            lastUpdated: '2024-01-01T00:00:00Z',
+          },
+        },
+      };
+
+      mockBackend.loadState = jest.fn().mockResolvedValue(stateWithFunction);
+      const { getAllResources } = jest.requireMock('../../../../src/common/stateManager');
+      const { deleteResource } = jest.requireMock(
+        '../../../../src/stack/volcengineStack/vefaasResource',
+      );
+      getAllResources.mockReturnValue(stateWithFunction.resources);
+      deleteResource.mockResolvedValueOnce(mockState);
+
+      await destroyVolcengineStack(mockBackend);
+
+      expect(deleteResource).toHaveBeenCalledWith(
+        mockContext,
+        'test-function',
+        'functions.test_fn',
+        stateWithFunction,
+      );
+    });
+
+    it('should handle bucket deletion error', async () => {
+      const stateWithBucket: StateFile = {
+        ...mockState,
+        resources: {
+          'buckets.static_site': {
+            mode: 'managed',
+            region: 'cn-beijing',
+            definition: { bucketName: 'test-bucket' },
+            instances: [{ sid: 'test-sid', id: 'test-bucket', type: 'VOLCENGINE_TOS_BUCKET' }],
+            lastUpdated: '2024-01-01T00:00:00Z',
+          },
+        },
+      };
+
+      mockBackend.loadState = jest.fn().mockResolvedValue(stateWithBucket);
+      const { getAllResources } = jest.requireMock('../../../../src/common/stateManager');
+      const { deleteResource } = jest.requireMock(
+        '../../../../src/stack/volcengineStack/tosResource',
+      );
+      getAllResources.mockReturnValue(stateWithBucket.resources);
+      deleteResource.mockRejectedValueOnce(new Error('Deletion failed'));
+
+      await destroyVolcengineStack(mockBackend);
+
+      expect(mockBackend.saveState).toHaveBeenCalled();
+    });
+
+    it('should handle bucket deletion error with non-Error object', async () => {
+      const stateWithBucket: StateFile = {
+        ...mockState,
+        resources: {
+          'buckets.static_site': {
+            mode: 'managed',
+            region: 'cn-beijing',
+            definition: { bucketName: 'test-bucket' },
+            instances: [{ sid: 'test-sid', id: 'test-bucket', type: 'VOLCENGINE_TOS_BUCKET' }],
+            lastUpdated: '2024-01-01T00:00:00Z',
+          },
+        },
+      };
+
+      mockBackend.loadState = jest.fn().mockResolvedValue(stateWithBucket);
+      const { getAllResources } = jest.requireMock('../../../../src/common/stateManager');
+      const { deleteResource } = jest.requireMock(
+        '../../../../src/stack/volcengineStack/tosResource',
+      );
+      getAllResources.mockReturnValue(stateWithBucket.resources);
+      deleteResource.mockRejectedValueOnce('String error');
+
+      await destroyVolcengineStack(mockBackend);
+
+      expect(mockBackend.saveState).toHaveBeenCalled();
+    });
+
+    it('should handle function deletion error', async () => {
+      const stateWithFunction: StateFile = {
+        ...mockState,
+        resources: {
+          'functions.test_fn': {
+            mode: 'managed',
+            region: 'cn-beijing',
+            definition: { functionName: 'test-function' },
+            instances: [
+              { sid: 'test-sid', id: 'test-function', type: 'VOLCENGINE_VEFAAS_FUNCTION' },
+            ],
+            lastUpdated: '2024-01-01T00:00:00Z',
+          },
+        },
+      };
+
+      mockBackend.loadState = jest.fn().mockResolvedValue(stateWithFunction);
+      const { getAllResources } = jest.requireMock('../../../../src/common/stateManager');
+      const { deleteResource } = jest.requireMock(
+        '../../../../src/stack/volcengineStack/vefaasResource',
+      );
+      getAllResources.mockReturnValue(stateWithFunction.resources);
+      deleteResource.mockRejectedValueOnce(new Error('Deletion failed'));
+
+      await destroyVolcengineStack(mockBackend);
+
+      expect(mockBackend.saveState).toHaveBeenCalled();
+    });
+
+    it('should handle function deletion error with non-Error object', async () => {
+      const stateWithFunction: StateFile = {
+        ...mockState,
+        resources: {
+          'functions.test_fn': {
+            mode: 'managed',
+            region: 'cn-beijing',
+            definition: { functionName: 'test-function' },
+            instances: [
+              { sid: 'test-sid', id: 'test-function', type: 'VOLCENGINE_VEFAAS_FUNCTION' },
+            ],
+            lastUpdated: '2024-01-01T00:00:00Z',
+          },
+        },
+      };
+
+      mockBackend.loadState = jest.fn().mockResolvedValue(stateWithFunction);
+      const { getAllResources } = jest.requireMock('../../../../src/common/stateManager');
+      const { deleteResource } = jest.requireMock(
+        '../../../../src/stack/volcengineStack/vefaasResource',
+      );
+      getAllResources.mockReturnValue(stateWithFunction.resources);
+      deleteResource.mockRejectedValueOnce({ code: 'SomeError' });
+
+      await destroyVolcengineStack(mockBackend);
+
+      expect(mockBackend.saveState).toHaveBeenCalled();
+    });
+
+    it('should skip bucket with missing bucketName', async () => {
+      const stateWithBucket: StateFile = {
+        ...mockState,
+        resources: {
+          'buckets.static_site': {
+            mode: 'managed',
+            region: 'cn-beijing',
+            definition: {},
+            instances: [{ sid: 'test-sid', id: 'test-bucket', type: 'VOLCENGINE_TOS_BUCKET' }],
+            lastUpdated: '2024-01-01T00:00:00Z',
+          },
+        },
+      };
+
+      const { getAllResources } = jest.requireMock('../../../../src/common/stateManager');
+      const { deleteResource } = jest.requireMock(
+        '../../../../src/stack/volcengineStack/tosResource',
+      );
+      getAllResources.mockReturnValue(stateWithBucket.resources);
+
+      await destroyVolcengineStack(mockBackend);
+
+      expect(deleteResource).not.toHaveBeenCalled();
+    });
+
+    it('should skip function with missing functionName', async () => {
+      const stateWithFunction: StateFile = {
+        ...mockState,
+        resources: {
+          'functions.test_fn': {
+            mode: 'managed',
+            region: 'cn-beijing',
+            definition: {},
+            instances: [
+              { sid: 'test-sid', id: 'test-function', type: 'VOLCENGINE_VEFAAS_FUNCTION' },
+            ],
+            lastUpdated: '2024-01-01T00:00:00Z',
+          },
+        },
+      };
+
+      const { getAllResources } = jest.requireMock('../../../../src/common/stateManager');
+      const { deleteResource } = jest.requireMock(
+        '../../../../src/stack/volcengineStack/vefaasResource',
+      );
+      getAllResources.mockReturnValue(stateWithFunction.resources);
+
+      await destroyVolcengineStack(mockBackend);
+
+      expect(deleteResource).not.toHaveBeenCalled();
+    });
+
+    it('should skip resources without matching instance type', async () => {
+      const stateWithOther: StateFile = {
+        ...mockState,
+        resources: {
+          'buckets.static_site': {
+            mode: 'managed',
+            region: 'cn-beijing',
+            definition: { bucketName: 'test-bucket' },
+            instances: [{ sid: 'test-sid', id: 'test-bucket', type: 'OTHER_TYPE' }],
+            lastUpdated: '2024-01-01T00:00:00Z',
+          },
+        },
+      };
+
+      const { getAllResources } = jest.requireMock('../../../../src/common/stateManager');
+      const { deleteResource } = jest.requireMock(
+        '../../../../src/stack/volcengineStack/tosResource',
+      );
+      getAllResources.mockReturnValue(stateWithOther.resources);
+
+      await destroyVolcengineStack(mockBackend);
+
+      expect(deleteResource).not.toHaveBeenCalled();
+    });
+
+    it('should skip resources without instances', async () => {
+      const stateWithoutInstances: StateFile = {
+        ...mockState,
+        resources: {
+          'buckets.static_site': {
+            mode: 'managed',
+            region: 'cn-beijing',
+            definition: { bucketName: 'test-bucket' },
+            instances: [],
+            lastUpdated: '2024-01-01T00:00:00Z',
+          },
+        },
+      };
+
+      const { getAllResources } = jest.requireMock('../../../../src/common/stateManager');
+      const { deleteResource } = jest.requireMock(
+        '../../../../src/stack/volcengineStack/tosResource',
+      );
+      getAllResources.mockReturnValue(stateWithoutInstances.resources);
+
+      await destroyVolcengineStack(mockBackend);
+
+      expect(deleteResource).not.toHaveBeenCalled();
     });
   });
 });

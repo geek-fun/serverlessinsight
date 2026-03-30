@@ -68,6 +68,82 @@ describe('vefaasOperations code size validation', () => {
       expect(files.length).toBeGreaterThan(0);
       expect(files.some((f) => f.endsWith('.js'))).toBe(true);
     });
+
+    it('should warn when ZIP has no handler files', async () => {
+      // eslint-disable-next-line @typescript-eslint/no-require-imports
+      const JSZip = require('jszip');
+      const noHandlerZipPath = path.join(testArtifactDir, 'no-handler.zip');
+
+      const zip = new JSZip();
+      zip.file('readme.txt', 'No handler here');
+      const content = await zip.generateAsync({ type: 'nodebuffer' });
+      fs.writeFileSync(noHandlerZipPath, content);
+
+      const { logger } = jest.requireMock('../../../../src/common/logger');
+
+      const operations = createVefaasOperations(
+        new Service({ serviceName: 'vefaas' }) as jest.Mocked<Service>,
+      );
+      await operations.createFunction(
+        {
+          functionName: 'test-fn',
+          runtime: 'nodejs/v18',
+          handler: 'index.handler',
+          memoryMb: 128,
+          requestTimeout: 30,
+        },
+        noHandlerZipPath,
+      );
+
+      expect(logger.warn).toHaveBeenCalled();
+    });
+
+    it('should throw for empty ZIP file', async () => {
+      // eslint-disable-next-line @typescript-eslint/no-require-imports
+      const JSZip = require('jszip');
+      const emptyZipPath = path.join(testArtifactDir, 'empty.zip');
+
+      const zip = new JSZip();
+      const content = await zip.generateAsync({ type: 'nodebuffer' });
+      fs.writeFileSync(emptyZipPath, content);
+
+      const operations = createVefaasOperations(
+        new Service({ serviceName: 'vefaas' }) as jest.Mocked<Service>,
+      );
+      await expect(
+        operations.createFunction(
+          {
+            functionName: 'test-fn',
+            runtime: 'nodejs/v18',
+            handler: 'index.handler',
+            memoryMb: 128,
+            requestTimeout: 30,
+          },
+          emptyZipPath,
+        ),
+      ).rejects.toThrow();
+    });
+
+    it('should throw for invalid ZIP file', async () => {
+      const invalidZipPath = path.join(testArtifactDir, 'invalid.zip');
+      fs.writeFileSync(invalidZipPath, Buffer.from('not a valid zip file'));
+
+      const operations = createVefaasOperations(
+        new Service({ serviceName: 'vefaas' }) as jest.Mocked<Service>,
+      );
+      await expect(
+        operations.createFunction(
+          {
+            functionName: 'test-fn',
+            runtime: 'nodejs/v18',
+            handler: 'index.handler',
+            memoryMb: 128,
+            requestTimeout: 30,
+          },
+          invalidZipPath,
+        ),
+      ).rejects.toThrow();
+    });
   });
 
   describe('deployment strategy selection', () => {
@@ -233,6 +309,67 @@ describe('vefaasOperations code size validation', () => {
           expect.objectContaining({
             functionId: 'func-1',
             runtime: 'nodejs/v18',
+          }),
+        );
+      });
+    });
+
+    describe('getFunction error handling', () => {
+      it('should return null for ResourceNotFound error', async () => {
+        mockService.fetchOpenAPI.mockRejectedValueOnce({ code: 'ResourceNotFound' });
+
+        const result = await operations.getFunction('non-existent');
+
+        expect(result).toBeNull();
+      });
+
+      it('should throw for other errors', async () => {
+        mockService.fetchOpenAPI.mockRejectedValueOnce({
+          code: 'OtherError',
+          message: 'Something went wrong',
+        });
+
+        await expect(operations.getFunction('test-function')).rejects.toEqual({
+          code: 'OtherError',
+          message: 'Something went wrong',
+        });
+      });
+    });
+
+    describe('environment variables', () => {
+      it('should create function with environment variables', async () => {
+        const configWithEnv: VefaasFunctionConfig = {
+          ...mockConfig,
+          environmentVariables: { NODE_ENV: 'production', DEBUG: 'false' },
+        };
+
+        await operations.createFunction(configWithEnv, smallZipPath);
+
+        expect(mockService.fetchOpenAPI).toHaveBeenCalledWith(
+          expect.objectContaining({
+            data: expect.objectContaining({
+              Envs: [
+                { key: 'NODE_ENV', value: 'production' },
+                { key: 'DEBUG', value: 'false' },
+              ],
+            }),
+          }),
+        );
+      });
+
+      it('should update function with environment variables', async () => {
+        const configWithEnv: VefaasFunctionConfig = {
+          ...mockConfig,
+          environmentVariables: { NODE_ENV: 'staging' },
+        };
+
+        await operations.updateFunctionConfiguration(configWithEnv);
+
+        expect(mockService.fetchOpenAPI).toHaveBeenCalledWith(
+          expect.objectContaining({
+            data: expect.objectContaining({
+              Envs: [{ key: 'NODE_ENV', value: 'staging' }],
+            }),
           }),
         );
       });

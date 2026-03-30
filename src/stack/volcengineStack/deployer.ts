@@ -4,6 +4,8 @@ import { StateBackend } from '../../common/stateBackend';
 import { lang } from '../../lang';
 import { generateFunctionPlan } from './vefaasPlanner';
 import { executeFunctionPlan } from './vefaasExecutor';
+import { generateBucketPlan } from './tosPlanner';
+import { executeBucketPlan } from './tosExecutor';
 
 export const deployVolcengineStack = async (iac: ServerlessIac, backend: StateBackend) => {
   const context = getContext();
@@ -19,6 +21,29 @@ export const deployVolcengineStack = async (iac: ServerlessIac, backend: StateBa
   logger.info(lang.__('GENERATING_PLAN'));
 
   const functionPlan = await generateFunctionPlan(context, state, iac.functions);
+  const bucketPlan = await generateBucketPlan(context, state, iac.buckets);
+
+  const bucketResult = await executeBucketPlan(
+    context,
+    bucketPlan,
+    iac.buckets,
+    state,
+    onStateChange,
+  );
+
+  if (bucketResult.partialFailure) {
+    const error = bucketResult.partialFailure.error as Error & { isPartialFailure?: boolean };
+    error.isPartialFailure = true;
+    logger.error(
+      lang.__('PARTIAL_DEPLOYMENT_FAILURE', {
+        resourceType: 'Bucket',
+        name: bucketResult.partialFailure.failedItem.logicalId,
+      }),
+    );
+    throw error;
+  }
+
+  state = bucketResult.state;
 
   const functionResult = await executeFunctionPlan(
     context,

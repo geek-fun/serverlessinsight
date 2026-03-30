@@ -79,13 +79,23 @@ export type VefaasFunctionInfo = {
 
 /**
  * TOS bucket ACL options
+ * @see https://www.volcengine.com/docs/6516/74857
  */
 export type TosAcl = 'private' | 'public-read' | 'public-read-write';
 
 /**
  * TOS storage class options
+ * @see https://www.volcengine.com/docs/6516/74858
  */
 export type TosStorageClass = 'STANDARD' | 'IA' | 'ARCHIVE';
+
+/**
+ * TOS bucket website configuration
+ */
+export type TosWebsiteConfig = {
+  indexDocument: string;
+  errorDocument?: string;
+};
 
 /**
  * Configuration for creating a TOS bucket
@@ -94,25 +104,33 @@ export type TosBucketConfig = {
   bucketName: string;
   acl?: TosAcl;
   storageClass?: TosStorageClass;
-  website?: {
-    index: string;
-    errorPage?: string;
-    code?: string;
-    domain?: string;
-  };
+  websiteConfig?: TosWebsiteConfig;
+  websiteCodeHash?: string;
+  domain?: string;
 };
 
 /**
  * Response from TOS headBucket API
  */
 export type TosBucketInfo = {
-  bucketName?: string;
+  name: string;
   location?: string;
   creationDate?: string;
-  storageClass?: string;
+  storageClass?: TosStorageClass;
   extranetEndpoint?: string;
   intranetEndpoint?: string;
-  acl?: string;
+  acl?: TosAcl;
+  websiteConfig?: TosWebsiteConfig;
+};
+
+/**
+ * TOS object metadata
+ */
+export type TosObjectInfo = {
+  key: string;
+  size?: number;
+  lastModified?: string;
+  etag?: string;
 };
 
 // ============================================================================
@@ -223,13 +241,15 @@ export type VolcengineClient = {
     listFunctions: () => Promise<VefaasFunctionInfo[]>;
   };
   tos: {
-    createBucket: (config: TosBucketConfig) => Promise<void>;
+    createBucket: (config: TosBucketConfig) => Promise<TosBucketInfo>;
     getBucket: (bucketName: string) => Promise<TosBucketInfo | null>;
     deleteBucket: (bucketName: string) => Promise<void>;
+    updateBucketAcl: (bucketName: string, acl: TosAcl) => Promise<void>;
+    updateBucketWebsite: (bucketName: string, config: TosWebsiteConfig) => Promise<void>;
     putObject: (bucket: string, key: string, body: Buffer) => Promise<void>;
-    listObjects: (bucket: string, prefix?: string) => Promise<string[]>;
+    listObjects: (bucket: string, prefix?: string) => Promise<TosObjectInfo[]>;
     deleteObjects: (bucket: string, keys: string[]) => Promise<void>;
-    setBucketWebsite: (bucket: string, config: TosBucketConfig['website']) => Promise<void>;
+    uploadFiles: (bucketName: string, sourcePath: string) => Promise<void>;
   };
   iam: {
     createRole: (config: IamRoleConfig) => Promise<IamRoleInfo>;
