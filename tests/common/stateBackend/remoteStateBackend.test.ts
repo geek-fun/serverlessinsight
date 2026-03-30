@@ -1,12 +1,6 @@
 import { createRemoteStateBackend } from '../../../src/common/stateBackend/remoteStateBackend';
 import { StorageAdapter } from '../../../src/common/stateBackend/types';
-import {
-  StateFile,
-  LockMetadata,
-  CURRENT_STATE_VERSION,
-  ResourceState,
-  LockOptions,
-} from '../../../src/types';
+import { StateFile, LockMetadata, CURRENT_STATE_VERSION, ResourceState } from '../../../src/types';
 import { LockError } from '../../../src/common/lockManager';
 import * as lockUtils from '../../../src/common/stateBackend/lockUtils';
 
@@ -15,7 +9,7 @@ jest.mock('../../../src/common/logger');
 
 describe('remoteStateBackend', () => {
   let mockAdapter: jest.Mocked<StorageAdapter>;
-  const mockLockUtils = lockUtils as any;
+  const mockLockUtils = lockUtils as jest.Mocked<typeof lockUtils>;
 
   beforeEach(() => {
     jest.clearAllMocks();
