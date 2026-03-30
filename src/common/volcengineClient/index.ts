@@ -24,9 +24,20 @@ const initializeSdkClients = (context: Context) => {
     ...(context.securityToken && { sessionToken: context.securityToken }),
   });
 
+  const tosService = new Service({
+    serviceName: 'tos',
+    defaultVersion: '2018-08-01',
+    protocol: 'https',
+    host: `tos-${context.region}.volces.com`,
+    accessKeyId: context.accessKeyId,
+    secretKey: context.accessKeySecret,
+    region: context.region,
+    ...(context.securityToken && { sessionToken: context.securityToken }),
+  });
+
   return {
     vefaas: vefaasService,
-    tos: null,
+    tos: tosService,
     iam: null,
     apigw: null,
   };

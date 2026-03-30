@@ -26,6 +26,26 @@ jest.mock('../../../../src/lang', () => ({
   },
 }));
 
+jest.mock('../../../../src/stack/volcengineStack/vefaasPlanner', () => ({
+  generateFunctionPlan: jest.fn().mockResolvedValue({ items: [] }),
+}));
+
+jest.mock('../../../../src/stack/volcengineStack/vefaasExecutor', () => ({
+  executeFunctionPlan: jest
+    .fn()
+    .mockImplementation((context, plan, functions, state) => Promise.resolve({ state })),
+}));
+
+jest.mock('../../../../src/stack/volcengineStack/tosPlanner', () => ({
+  generateBucketPlan: jest.fn().mockResolvedValue({ items: [] }),
+}));
+
+jest.mock('../../../../src/stack/volcengineStack/tosExecutor', () => ({
+  executeBucketPlan: jest
+    .fn()
+    .mockImplementation((context, plan, buckets, state) => Promise.resolve({ state })),
+}));
+
 describe('volcengineStack deployer', () => {
   const mockContext = {
     app: 'test-app',
@@ -99,6 +119,50 @@ describe('volcengineStack deployer', () => {
         'test-app',
         'test-service',
         'dev',
+      );
+    });
+
+    it('should throw on bucket partial failure', async () => {
+      const { executeBucketPlan } = jest.requireMock(
+        '../../../../src/stack/volcengineStack/tosExecutor',
+      );
+      executeBucketPlan.mockResolvedValueOnce({
+        state: mockState,
+        partialFailure: {
+          failedItem: {
+            logicalId: 'buckets.test',
+            action: 'create',
+            resourceType: 'VOLCENGINE_TOS_BUCKET',
+          },
+          error: new Error('Bucket creation failed'),
+          successfulItems: [],
+        },
+      });
+
+      await expect(deployVolcengineStack(mockIac, mockBackend)).rejects.toThrow(
+        'Bucket creation failed',
+      );
+    });
+
+    it('should throw on function partial failure', async () => {
+      const { executeFunctionPlan } = jest.requireMock(
+        '../../../../src/stack/volcengineStack/vefaasExecutor',
+      );
+      executeFunctionPlan.mockResolvedValueOnce({
+        state: mockState,
+        partialFailure: {
+          failedItem: {
+            logicalId: 'functions.test',
+            action: 'create',
+            resourceType: 'VOLCENGINE_VEFAAS_FUNCTION',
+          },
+          error: new Error('Function creation failed'),
+          successfulItems: [],
+        },
+      });
+
+      await expect(deployVolcengineStack(mockIac, mockBackend)).rejects.toThrow(
+        'Function creation failed',
       );
     });
   });

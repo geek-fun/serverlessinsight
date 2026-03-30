@@ -719,4 +719,21 @@ export const en = {
     'Updating function {{functionName}} code with TOS ({{size}} MB) to {{bucket}}/{{key}}',
   FUNCTION_CODE_UPDATED: 'Function {{functionName}} code updated',
   FUNCTION_DELETED: 'Function {{functionName}} deleted',
+
+  // TOS Object Storage messages
+  TOS_BUCKET_CREATED: 'TOS bucket {{bucketName}} created successfully',
+  TOS_BUCKET_DELETED: 'TOS bucket {{bucketName}} deleted successfully',
+  TOS_BUCKET_ACL_UPDATED: 'TOS bucket {{bucketName}} ACL updated to {{acl}}',
+  TOS_BUCKET_WEBSITE_CONFIGURED: 'TOS bucket {{bucketName}} website configured',
+  TOS_BUCKET_WEBSITE_UPDATED: 'TOS bucket {{bucketName}} website configuration updated',
+  TOS_BUCKET_NOT_FOUND: 'TOS bucket {{bucketName}} not found',
+  TOS_BUCKET_TRACKED_CAN_RETRY:
+    'Bucket is tracked in state, you can retry deployment to upload files',
+  TOS_BUCKET_FILE_UPLOAD_FAILED_STATE_SAVED:
+    'Failed to upload files to bucket, but bucket was created and saved to state: {{error}}',
+  TOS_OBJECT_UPLOADED: 'Uploaded object {{key}} to bucket {{bucket}}',
+  TOS_FILES_UPLOADED: 'Uploaded files from {{path}} to bucket {{bucket}}',
+  VOLCENGINE_TOS_CLIENT_NOT_INITIALIZED: 'TOS client not initialized. Check your credentials.',
+  VOLCENGINE_BUCKET_DELETE_FAILED: 'Failed to delete bucket {{bucketName}}: {{error}}',
+  VOLCENGINE_FUNCTION_DELETE_FAILED: 'Failed to delete function {{functionName}}: {{error}}',
 };
