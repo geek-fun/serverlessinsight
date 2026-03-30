@@ -1,3 +1,4 @@
+import { Service } from '@volcengine/openapi';
 import type { Context } from '../../types';
 import type { VolcengineClient } from './types';
 import { createVefaasOperations } from './vefaasOperations';
@@ -11,9 +12,20 @@ export * from './tosOperations';
 export * from './iamOperations';
 export * from './apigwOperations';
 
-const initializeSdkClients = (_context: Context) => {
+const initializeSdkClients = (context: Context) => {
+  const vefaasService = new Service({
+    serviceName: 'vefaas',
+    defaultVersion: '2024-06-06',
+    protocol: 'https',
+    host: 'vefaas.volcengineapi.com',
+    accessKeyId: context.accessKeyId,
+    secretKey: context.accessKeySecret,
+    region: context.region,
+    ...(context.securityToken && { sessionToken: context.securityToken }),
+  });
+
   return {
-    vefaas: null,
+    vefaas: vefaasService,
     tos: null,
     iam: null,
     apigw: null,

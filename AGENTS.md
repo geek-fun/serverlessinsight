@@ -725,3 +725,43 @@ export const createRamOperations = (ramClient: RamSdkClient) => ({
 - State is stored in `.serverlessinsight/state-{app}-{service}.json`
 - Use `setResource`, `getResource`, `removeResource` from `src/common/stateManager`
 - Resources have a `status`: `'ready'` | `'tainted'`
+
+## Commit Policy - CRITICAL
+
+**NEVER commit changes unless the user explicitly requests it.**
+
+- Do NOT commit after implementing features
+- Do NOT commit after fixing bugs
+- Do NOT commit after refactoring
+- Do NOT commit for "cleanliness" or "convenience"
+- Wait for explicit user instruction like "commit the changes" or "create a commit"
+
+**Rationale**: Users may want to:
+
+- Review changes before committing
+- Combine multiple changes into one commit
+- Split changes into different commits
+- Test changes before committing
+- Discard changes without polluting git history
+
+**If you accidentally commit**: Immediately revert and apologize.
+
+## Commit Policy - CRITICAL
+
+**NEVER commit changes unless the user explicitly requests it.**
+
+- Do NOT commit after implementing features
+- Do NOT commit after fixing bugs
+- Do NOT commit after refactoring
+- Do NOT commit for "cleanliness" or "convenience"
+- Wait for explicit user instruction like "commit the changes" or "create a commit"
+
+**Rationale**: Users may want to:
+
+- Review changes before committing
+- Combine multiple changes into one commit
+- Split changes into different commits
+- Test changes before committing
+- Discard changes without polluting git history
+
+**If you accidentally commit**: Immediately revert and apologize.
