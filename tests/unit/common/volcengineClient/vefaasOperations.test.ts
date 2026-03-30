@@ -10,7 +10,7 @@ describe('vefaasOperations', () => {
 
   const mockConfig: VefaasFunctionConfig = {
     functionName: 'test-function',
-    runtime: 'nodejs18',
+    runtime: 'nodejs/v18',
     handler: 'index.handler',
     memoryMb: 512,
     requestTimeout: 30,
