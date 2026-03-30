@@ -1897,7 +1897,7 @@ describe('Fc3Resource', () => {
       await updateResource(mockContext, testFunction, stateWithMatch);
 
       expect(mockedLogger.warn).toHaveBeenCalledWith(
-        expect.stringContaining('UPDATING_RESOURCE_WITH_NO_CHANGES'),
+        expect.stringContaining('No changes detected'),
       );
     });
 
