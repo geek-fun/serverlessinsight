@@ -628,4 +628,30 @@ export const zhCN = {
   VOLCENGINE_CREATING_APIGW: '正在创建火山引擎 API 网关 {{gatewayName}}',
   VOLCENGINE_DELETING_APIGW: '正在删除火山引擎 API 网关 {{gatewayName}}',
   VOLCENGINE_APIGW_NOT_FOUND: '火山引擎 API 网关 {{gatewayName}} 未找到',
+
+  // Additional Volcengine-specific messages
+  RESOURCE_STATE_NOT_FOUND: '未找到逻辑 ID 为 {{logicalId}} 的资源状态',
+  RESOURCE_INSTANCE_NOT_FOUND: '未找到逻辑 ID 为 {{logicalId}} 的资源实例',
+  UPDATING_RESOURCE_WITH_NO_CHANGES: '未检测到 {{resourceType}}: {{name}} 的变更',
+
+  // Code deployment messages
+  CODE_PACKAGE_TOO_LARGE:
+    '代码包大小 ({{size}} MB) 超过最大限制。ZIP 最大：{{maxZip}} MB, TOS 最大：{{maxTos}} MB',
+  CODE_PACKAGE_EXCEEDS_ZIP_LIMIT:
+    '代码包 ({{size}} MB) 超过 ZIP 限制 ({{limit}} MB)，使用 TOS 上传策略',
+  CODE_PACKAGE_EMPTY: '代码包为空',
+  CODE_PACKAGE_MAY_MISS_HANDLER: '代码包可能不包含处理函数文件',
+  CODE_PACKAGE_INVALID_ZIP: '无效的 ZIP 包：{{error}}',
+  DEPLOYING_FUNCTION_WITH_ZIP: '正在部署函数 {{functionName}}，使用 ZIP 包 ({{size}} MB)',
+  DEPLOYING_FUNCTION_WITH_TOS:
+    '正在部署函数 {{functionName}}，使用 TOS ({{size}} MB) 到 {{bucket}}/{{key}}',
+  UPLOADING_CODE_TO_TOS: '正在上传代码到 TOS: {{bucket}}/{{key}}',
+  CODE_UPLOADED_TO_TOS: '代码已上传到 TOS: {{bucket}}/{{key}} ({{size}} MB)',
+  FUNCTION_CREATED: '函数 {{functionName}} 创建成功',
+  FUNCTION_CONFIGURATION_UPDATED: '函数 {{functionName}} 配置已更新',
+  UPDATING_FUNCTION_CODE_WITH_ZIP: '正在更新函数 {{functionName}} 代码，使用 ZIP 包 ({{size}} MB)',
+  UPDATING_FUNCTION_CODE_WITH_TOS:
+    '正在更新函数 {{functionName}} 代码，使用 TOS ({{size}} MB) 到 {{bucket}}/{{key}}',
+  FUNCTION_CODE_UPDATED: '函数 {{functionName}} 代码已更新',
+  FUNCTION_DELETED: '函数 {{functionName}} 已删除',
 };

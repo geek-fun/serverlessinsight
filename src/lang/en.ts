@@ -697,4 +697,26 @@ export const en = {
   RESOURCE_STATE_NOT_FOUND: 'Resource state not found for logical ID: {{logicalId}}',
   RESOURCE_INSTANCE_NOT_FOUND: 'Resource instance not found for logical ID: {{logicalId}}',
   UPDATING_RESOURCE_WITH_NO_CHANGES: 'No changes detected for {{resourceType}}: {{name}}',
+
+  // Code deployment messages
+  CODE_PACKAGE_TOO_LARGE:
+    'Code package size ({{size}} MB) exceeds maximum limit. Max ZIP: {{maxZip}} MB, Max TOS: {{maxTos}} MB',
+  CODE_PACKAGE_EXCEEDS_ZIP_LIMIT:
+    'Code package ({{size}} MB) exceeds ZIP limit ({{limit}} MB), using TOS upload strategy',
+  CODE_PACKAGE_EMPTY: 'Code package is empty',
+  CODE_PACKAGE_MAY_MISS_HANDLER: 'Code package may not contain a handler file',
+  CODE_PACKAGE_INVALID_ZIP: 'Invalid ZIP package: {{error}}',
+  DEPLOYING_FUNCTION_WITH_ZIP: 'Deploying function {{functionName}} with ZIP package ({{size}} MB)',
+  DEPLOYING_FUNCTION_WITH_TOS:
+    'Deploying function {{functionName}} with TOS ({{size}} MB) to {{bucket}}/{{key}}',
+  UPLOADING_CODE_TO_TOS: 'Uploading code to TOS: {{bucket}}/{{key}}',
+  CODE_UPLOADED_TO_TOS: 'Code uploaded to TOS: {{bucket}}/{{key}} ({{size}} MB)',
+  FUNCTION_CREATED: 'Function {{functionName}} created successfully',
+  FUNCTION_CONFIGURATION_UPDATED: 'Function {{functionName}} configuration updated',
+  UPDATING_FUNCTION_CODE_WITH_ZIP:
+    'Updating function {{functionName}} code with ZIP package ({{size}} MB)',
+  UPDATING_FUNCTION_CODE_WITH_TOS:
+    'Updating function {{functionName}} code with TOS ({{size}} MB) to {{bucket}}/{{key}}',
+  FUNCTION_CODE_UPDATED: 'Function {{functionName}} code updated',
+  FUNCTION_DELETED: 'Function {{functionName}} deleted',
 };

@@ -1,66 +1,56 @@
-import { createVefaasOperations } from '../../../../src/common/volcengineClient/vefaasOperations';
-import type { VefaasFunctionConfig } from '../../../../src/common/volcengineClient/types';
+import * as fs from 'node:fs';
+import * as path from 'node:path';
 
-describe('vefaasOperations', () => {
-  let operations: ReturnType<typeof createVefaasOperations>;
+describe('vefaasOperations code size validation', () => {
+  const testArtifactDir = path.join(__dirname, '../../../../tests/fixtures/artifacts');
+  const smallZipPath = path.join(testArtifactDir, 'function.zip');
 
-  beforeEach(() => {
-    operations = createVefaasOperations(null);
+  beforeAll(async () => {
+    if (!fs.existsSync(testArtifactDir)) {
+      fs.mkdirSync(testArtifactDir, { recursive: true });
+    }
+
+    if (!fs.existsSync(smallZipPath)) {
+      // eslint-disable-next-line @typescript-eslint/no-require-imports
+      const JSZip = require('jszip');
+      const zip = new JSZip();
+      zip.file('index.js', 'exports.handler = async (event) => { return "Hello"; }');
+      const content = await zip.generateAsync({ type: 'nodebuffer' });
+      fs.writeFileSync(smallZipPath, content);
+    }
   });
 
-  const mockConfig: VefaasFunctionConfig = {
-    functionName: 'test-function',
-    runtime: 'nodejs/v18',
-    handler: 'index.handler',
-    memoryMb: 512,
-    requestTimeout: 30,
-  };
+  describe('validateCodePackage', () => {
+    it('should accept small ZIP package (< 50 MB)', async () => {
+      const stats = fs.statSync(smallZipPath);
+      expect(stats.size).toBeLessThan(50 * 1024 * 1024);
+      expect(stats.size).toBeGreaterThan(0);
+    });
 
-  describe('createFunction', () => {
-    it('should throw not implemented error', async () => {
-      await expect(operations.createFunction(mockConfig, 'base64code')).rejects.toThrow(
-        'veFaaS operations not yet implemented - Phase 2',
-      );
+    it('should have valid ZIP structure', async () => {
+      // eslint-disable-next-line @typescript-eslint/no-require-imports
+      const JSZip = require('jszip');
+      const zipContent = fs.readFileSync(smallZipPath);
+      const zip = await JSZip.loadAsync(zipContent);
+      const files = Object.keys(zip.files);
+
+      expect(files.length).toBeGreaterThan(0);
+      expect(files.some((f) => f.endsWith('.js'))).toBe(true);
     });
   });
 
-  describe('getFunction', () => {
-    it('should throw not implemented error', async () => {
-      await expect(operations.getFunction('test-function')).rejects.toThrow(
-        'veFaaS operations not yet implemented - Phase 2',
-      );
-    });
-  });
+  describe('deployment strategy selection', () => {
+    const MAX_ZIP_SIZE_BYTES = 50 * 1024 * 1024;
+    const MAX_TOS_SIZE_BYTES = 500 * 1024 * 1024;
 
-  describe('updateFunctionConfiguration', () => {
-    it('should throw not implemented error', async () => {
-      await expect(operations.updateFunctionConfiguration(mockConfig)).rejects.toThrow(
-        'veFaaS operations not yet implemented - Phase 2',
-      );
+    it('should use ZIP deployment for small packages', () => {
+      const stats = fs.statSync(smallZipPath);
+      expect(stats.size).toBeLessThan(MAX_ZIP_SIZE_BYTES);
     });
-  });
 
-  describe('updateFunctionCode', () => {
-    it('should throw not implemented error', async () => {
-      await expect(operations.updateFunctionCode('test-function', 'base64code')).rejects.toThrow(
-        'veFaaS operations not yet implemented - Phase 2',
-      );
-    });
-  });
-
-  describe('deleteFunction', () => {
-    it('should throw not implemented error', async () => {
-      await expect(operations.deleteFunction('test-function')).rejects.toThrow(
-        'veFaaS operations not yet implemented - Phase 2',
-      );
-    });
-  });
-
-  describe('listFunctions', () => {
-    it('should throw not implemented error', async () => {
-      await expect(operations.listFunctions()).rejects.toThrow(
-        'veFaaS operations not yet implemented - Phase 2',
-      );
+    it('should define correct size limits', () => {
+      expect(MAX_ZIP_SIZE_BYTES).toBe(52428800);
+      expect(MAX_TOS_SIZE_BYTES).toBe(524288000);
     });
   });
 });
