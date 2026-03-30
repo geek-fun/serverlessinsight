@@ -37,6 +37,7 @@
     "tencent-cloud-functions",
     "alibaba-cloud-functions",
     "huawei-cloud-functions",
+    "volcengine-cloud-functions",
     "serverless-framework",
     "serverless-management",
     "serverless-automation",
@@ -48,6 +49,7 @@
     "azure",
     "huawei",
     "google",
+    "volcengine",
     "function"
   ],
   "dependencies": {
@@ -63,6 +65,8 @@
     "@alicloud/ram20150501": "^1.2.0",
     "@alicloud/rds20140815": "^15.5.1",
     "@alicloud/sls20201230": "^5.9.0",
+    "@volcengine/openapi": "^1.36.0",
+    "@volcengine/tos-sdk": "^2.7.0",
     "ajv": "^8.18.0",
     "ali-oss": "^6.23.0",
     "commander": "^14.0.3",

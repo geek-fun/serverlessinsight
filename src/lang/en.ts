@@ -649,4 +649,47 @@ export const en = {
   RETRY_ATTEMPT_FAILED: '{{operation}} attempt {{attempt}}/{{max}} failed: {{error}}. Retrying...',
   RETRY_ALL_ATTEMPTS_FAILED: '{{operation}} failed after {{max}} attempts: {{error}}',
   RETRY_UNEXPECTED_FAILURE: '{{operation}} failed unexpectedly',
+
+  // Rate Limit messages
+  RATE_LIMIT_CREATING: 'Creating traffic control policy: {{policyName}}',
+  RATE_LIMIT_CREATED: 'Traffic control policy created: {{policyName}} (ID: {{policyId}})',
+  RATE_LIMIT_UPDATING: 'Updating traffic control policy: {{policyName}}',
+  RATE_LIMIT_UPDATED: 'Traffic control policy updated: {{policyName}}',
+  RATE_LIMIT_DELETING: 'Deleting traffic control policy: {{policyId}}',
+  RATE_LIMIT_DELETED: 'Traffic control policy deleted: {{policyId}}',
+  RATE_LIMIT_BINDING: 'Binding traffic control {{policyId}} to APIs in group {{groupId}}',
+  RATE_LIMIT_BOUND: 'Traffic control {{policyId}} bound to {{apiCount}} API(s)',
+  RATE_LIMIT_UNBINDING: 'Unbinding traffic control from APIs in group {{groupId}}',
+  RATE_LIMIT_UNBOUND: 'Traffic control unbound from APIs in group {{groupId}}',
+  RATE_LIMIT_NOT_FOUND: 'Traffic control policy not found: {{policyId}}',
+  RATE_LIMIT_CREATE_FAILED: 'Failed to create traffic control policy: {{error}}',
+  RATE_LIMIT_UPDATE_FAILED: 'Failed to update traffic control policy: {{error}}',
+  RATE_LIMIT_DELETE_FAILED: 'Failed to delete traffic control policy: {{error}}',
+  RATE_LIMIT_BIND_FAILED: 'Failed to bind traffic control to APIs: {{error}}',
+  RATE_LIMIT_UNBIND_FAILED: 'Failed to unbind traffic control from APIs: {{error}}',
+  RATE_LIMIT_CONFIG_INVALID: 'Invalid rate_limit configuration: must specify either qps or scopes',
+  RATE_LIMIT_SCOPE_INVALID:
+    'Rate limit scope "{{scope}}" is not supported by provider "{{provider}}"',
+  RATE_LIMIT_LIMITBY_REQUIRES_NAME:
+    'Rate limit limit_by type "{{type}}" requires a "name" parameter',
+  RATE_LIMIT_SKIPPED_WARNING:
+    'Rate limit creation failed but API deployment succeeded. You can retry by running deploy again.',
+
+  // Volcengine provider messages
+  PROVIDER_VOLCENGINE: 'Volcengine',
+  VOLCENGINE_DEPLOYING_STACK: 'Deploying stack to Volcengine...',
+  VOLCENGINE_CREATING_FUNCTION: 'Creating Volcengine function {{functionName}}',
+  VOLCENGINE_UPDATING_FUNCTION: 'Updating Volcengine function {{functionName}}',
+  VOLCENGINE_DELETING_FUNCTION: 'Deleting Volcengine function {{functionName}}',
+  VOLCENGINE_FUNCTION_NOT_FOUND: 'Volcengine function {{functionName}} not found',
+  VOLCENGINE_FUNCTION_READY: 'Volcengine function {{functionName}} is ready',
+  VOLCENGINE_CREATING_BUCKET: 'Creating Volcengine TOS bucket {{bucketName}}',
+  VOLCENGINE_DELETING_BUCKET: 'Deleting Volcengine TOS bucket {{bucketName}}',
+  VOLCENGINE_BUCKET_NOT_FOUND: 'Volcengine TOS bucket {{bucketName}} not found',
+  VOLCENGINE_CREATING_ROLE: 'Creating Volcengine IAM role {{roleName}}',
+  VOLCENGINE_DELETING_ROLE: 'Deleting Volcengine IAM role {{roleName}}',
+  VOLCENGINE_ROLE_NOT_FOUND: 'Volcengine IAM role {{roleName}} not found',
+  VOLCENGINE_CREATING_APIGW: 'Creating Volcengine API Gateway {{gatewayName}}',
+  VOLCENGINE_DELETING_APIGW: 'Deleting Volcengine API Gateway {{gatewayName}}',
+  VOLCENGINE_APIGW_NOT_FOUND: 'Volcengine API Gateway {{gatewayName}} not found',
 };

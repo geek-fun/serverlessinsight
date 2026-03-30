@@ -5,6 +5,7 @@ import { createStateBackend } from '../common/stateBackend';
 import { parseYaml, revalYaml } from '../parser';
 import { generateTencentPlan, displayPlan } from '../stack/scfStack';
 import { generateAliyunPlan } from '../stack/aliyunStack';
+import { generateVolcenginePlan } from '../stack/volcengineStack';
 import { lang } from '../lang';
 
 const askConfirmation = async (): Promise<boolean> => {
@@ -68,6 +69,8 @@ export const deploy = async (options: {
     planResult = await generateTencentPlan(iac, backend);
   } else if (iac.provider.name === ProviderEnum.ALIYUN) {
     planResult = await generateAliyunPlan(iac, backend);
+  } else if (iac.provider.name === ProviderEnum.VOLCENGINE) {
+    planResult = await generateVolcenginePlan(iac, backend);
   } else {
     throw new Error(lang.__('PLAN_COMMAND_NOT_SUPPORTED'));
   }

@@ -4,6 +4,7 @@ import { parseYaml, revalYaml } from '../parser';
 import { lang } from '../lang';
 import { destroyTencentStack } from '../stack/scfStack';
 import { destroyAliyunStack } from '../stack/aliyunStack';
+import { destroyVolcengineStack } from '../stack/volcengineStack';
 
 export const destroyStack = async (options: {
   location: string;
@@ -45,6 +46,8 @@ export const destroyStack = async (options: {
       await destroyTencentStack(backend);
     } else if (iac.provider.name === ProviderEnum.ALIYUN) {
       await destroyAliyunStack(backend);
+    } else if (iac.provider.name === ProviderEnum.VOLCENGINE) {
+      await destroyVolcengineStack(backend);
     } else {
       throw new Error(`Unsupported provider: ${iac.provider.name}`);
     }

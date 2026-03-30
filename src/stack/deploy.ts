@@ -3,6 +3,7 @@ import { ProviderEnum } from '../common';
 import { StateBackend } from '../common/stateBackend';
 import { deployTencentStack } from './scfStack';
 import { deployAliyunStack } from './aliyunStack';
+import { deployVolcengineStack } from './volcengineStack';
 
 const deployHuawei = async (): Promise<void> => {
   throw new Error(
@@ -19,5 +20,7 @@ export const deployStack = async (iac: ServerlessIac, backend: StateBackend) => 
     await deployAliyunStack(iac, backend);
   } else if (iac.provider.name === ProviderEnum.HUAWEI) {
     await deployHuawei();
+  } else if (iac.provider.name === ProviderEnum.VOLCENGINE) {
+    await deployVolcengineStack(iac, backend);
   }
 };
