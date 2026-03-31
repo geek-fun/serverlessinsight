@@ -1,0 +1,59 @@
+version: 0.1.0
+provider:
+  name: volcengine
+  region: cn-beijing
+
+app: insight-poc
+service: insight-poc-advanced
+
+functions:
+  vpc_function:
+    name: insight-poc-vpc-fn
+    code:
+      runtime: nodejs/v18
+      handler: index.handler
+      path: ./artifacts/function.zip
+    memory: 512
+    timeout: 60
+    log: true
+    network:
+      vpc_id: vpc-xxx
+      subnet_ids:
+        - subnet-xxx
+      security_group:
+        name: fn-security-group
+        ingress:
+          - protocol: TCP
+            port: 443
+            source: 0.0.0.0/0
+        egress:
+          - protocol: TCP
+            port: 0
+            destination: 0.0.0.0/0
+    environment:
+      DATABASE_URL: mysql://...
+      REDIS_URL: redis://...
+
+  basic_function:
+    name: insight-poc-basic-fn
+    code:
+      runtime: python/v3.10
+      handler: main.handler
+      path: ./artifacts/processor.zip
+    memory: 256
+    timeout: 30
+    log: true
+    environment:
+      DEBUG: 'true'
+
+events:
+  api_gateway:
+    type: API_GATEWAY
+    name: insight-poc-api
+    triggers:
+      - method: GET
+        path: /api/hello
+        backend: ${functions.basic_function}
+      - method: POST
+        path: /api/process
+        backend: ${functions.vpc_function}

@@ -91,11 +91,35 @@ describe('vefaasResource', () => {
       updateFunctionCode: jest.fn(),
       deleteFunction: jest.fn(),
     },
+    iam: {
+      createRole: jest.fn(),
+      getRole: jest.fn(),
+      updateRoleTrustPolicy: jest.fn(),
+      deleteRole: jest.fn(),
+      attachRolePolicy: jest.fn(),
+      detachRolePolicy: jest.fn(),
+    },
+    tls: {
+      createProject: jest.fn(),
+      getProject: jest.fn(),
+      deleteProject: jest.fn(),
+      createTopic: jest.fn(),
+      getTopic: jest.fn(),
+      deleteTopic: jest.fn(),
+      createIndex: jest.fn(),
+      deleteIndex: jest.fn(),
+      waitForProject: jest.fn(),
+      waitForTopic: jest.fn(),
+    },
   };
 
   beforeEach(() => {
     jest.clearAllMocks();
     (createVolcengineClient as jest.Mock).mockReturnValue(mockVefaasClient);
+    mockVefaasClient.iam.createRole.mockResolvedValue({
+      roleName: 'test-app-test-service-dev-role',
+      trn: 'trn:iam::123456:role/test-app-test-service-dev-role',
+    });
   });
 
   describe('createResource', () => {
@@ -113,6 +137,7 @@ describe('vefaasResource', () => {
       await createResource(mockContext, mockFunction, mockState);
 
       expect(mockVefaasClient.vefaas.createFunction).toHaveBeenCalled();
+      expect(mockVefaasClient.iam.createRole).toHaveBeenCalled();
       expect(setResource).toHaveBeenCalled();
     });
 
@@ -172,7 +197,11 @@ describe('vefaasResource', () => {
     it('should read function from provider', async () => {
       mockVefaasClient.vefaas.getFunction.mockResolvedValueOnce({
         functionName: 'test-function',
+        functionId: 'func-123',
         runtime: 'nodejs16',
+        handler: 'index.handler',
+        memoryMb: 128,
+        requestTimeout: 30,
       });
 
       const result = await readResource(mockContext, 'test-function');
@@ -180,7 +209,11 @@ describe('vefaasResource', () => {
       expect(mockVefaasClient.vefaas.getFunction).toHaveBeenCalledWith('test-function');
       expect(result).toEqual({
         functionName: 'test-function',
+        functionId: 'func-123',
         runtime: 'nodejs16',
+        handler: 'index.handler',
+        memoryMb: 128,
+        requestTimeout: 30,
       });
     });
   });
@@ -207,6 +240,12 @@ describe('vefaasResource', () => {
               id: 'test-function',
               functionName: 'test-function',
             },
+            {
+              type: 'VOLCENGINE_IAM_ROLE',
+              sid: 'volcengine-iam_role-dev-test-app-test-service-dev-role',
+              id: 'test-app-test-service-dev-role',
+              trn: 'trn:iam::123456:role/test-app-test-service-dev-role',
+            },
           ],
           lastUpdated: '2024-01-01T00:00:00Z',
         },
@@ -220,7 +259,11 @@ describe('vefaasResource', () => {
       mockVefaasClient.vefaas.updateFunctionConfiguration.mockResolvedValueOnce(undefined);
       mockVefaasClient.vefaas.getFunction.mockResolvedValueOnce({
         functionName: 'test-function',
+        functionId: 'func-123',
         runtime: 'nodejs18',
+        handler: 'index.handler',
+        memoryMb: 128,
+        requestTimeout: 30,
       });
 
       await updateResource(mockContext, mockFunction, stateWithFunction);
@@ -235,6 +278,11 @@ describe('vefaasResource', () => {
       mockVefaasClient.vefaas.updateFunctionCode.mockResolvedValueOnce(undefined);
       mockVefaasClient.vefaas.getFunction.mockResolvedValueOnce({
         functionName: 'test-function',
+        functionId: 'func-123',
+        runtime: 'nodejs16',
+        handler: 'index.handler',
+        memoryMb: 128,
+        requestTimeout: 30,
       });
 
       await updateResource(mockContext, mockFunction, stateWithFunction);
@@ -268,12 +316,42 @@ describe('vefaasResource', () => {
   });
 
   describe('deleteResource', () => {
+    const stateWithFunction: StateFile = {
+      ...mockState,
+      resources: {
+        'functions.test_fn': {
+          mode: 'managed',
+          region: 'cn-beijing',
+          definition: {
+            functionName: 'test-function',
+            codeHash: 'old-hash',
+          },
+          instances: [
+            {
+              type: 'VOLCENGINE_VEFAAS_FUNCTION',
+              sid: 'volcengine-test-service-dev-test-function',
+              id: 'test-function',
+              functionName: 'test-function',
+            },
+            {
+              type: 'VOLCENGINE_IAM_ROLE',
+              sid: 'volcengine-iam_role-dev-test-app-test-service-dev-role',
+              id: 'test-app-test-service-dev-role',
+            },
+          ],
+          lastUpdated: '2024-01-01T00:00:00Z',
+        },
+      },
+    };
+
     it('should delete function successfully', async () => {
       mockVefaasClient.vefaas.deleteFunction.mockResolvedValueOnce(undefined);
+      (getResource as jest.Mock).mockReturnValue(stateWithFunction.resources['functions.test_fn']);
 
-      await deleteResource(mockContext, 'test-function', 'functions.test_fn', mockState);
+      await deleteResource(mockContext, 'test-function', 'functions.test_fn', stateWithFunction);
 
       expect(mockVefaasClient.vefaas.deleteFunction).toHaveBeenCalledWith('test-function');
+      expect(mockVefaasClient.iam.deleteRole).toHaveBeenCalled();
       expect(removeResource).toHaveBeenCalled();
     });
 
@@ -282,8 +360,9 @@ describe('vefaasResource', () => {
       error.code = 'FunctionNotFound';
 
       mockVefaasClient.vefaas.deleteFunction.mockRejectedValueOnce(error);
+      (getResource as jest.Mock).mockReturnValue(stateWithFunction.resources['functions.test_fn']);
 
-      await deleteResource(mockContext, 'test-function', 'functions.test_fn', mockState);
+      await deleteResource(mockContext, 'test-function', 'functions.test_fn', stateWithFunction);
 
       expect(removeResource).toHaveBeenCalled();
     });
@@ -293,9 +372,10 @@ describe('vefaasResource', () => {
       error.code = 'AccessDenied';
 
       mockVefaasClient.vefaas.deleteFunction.mockRejectedValueOnce(error);
+      (getResource as jest.Mock).mockReturnValue(stateWithFunction.resources['functions.test_fn']);
 
       await expect(
-        deleteResource(mockContext, 'test-function', 'functions.test_fn', mockState),
+        deleteResource(mockContext, 'test-function', 'functions.test_fn', stateWithFunction),
       ).rejects.toThrow('Access denied');
     });
   });

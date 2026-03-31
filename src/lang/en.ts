@@ -739,4 +739,54 @@ export const en = {
   VOLCENGINE_APIGW_CLIENT_NOT_INITIALIZED:
     'API Gateway client not initialized. Check your credentials.',
   VOLCENGINE_APIGW_DELETE_FAILED: 'Failed to delete API Gateway {{logicalId}}: {{error}}',
+
+  // Volcengine IAM messages
+  IAM_ROLE_CREATED: 'IAM role {{roleName}} created successfully',
+  IAM_ROLE_DELETED: 'IAM role {{roleName}} deleted successfully',
+  IAM_ROLE_ALREADY_EXISTS:
+    'IAM role "{{roleName}}" already exists in cloud (state drift detected). ' +
+    'Updating trust policy and reusing existing role.',
+  IAM_ROLE_NOT_FOUND_IN_CLOUD:
+    'IAM role "{{roleName}}" does not exist in the cloud provider. ' +
+    'The role may have been deleted manually. ' +
+    'To fix: remove the role from state and redeploy.',
+  IAM_ROLE_DRIFT_RECOVERY_FAILED:
+    'Failed to recover from IAM role state drift for "{{roleName}}": {{error}}. ' +
+    'The role existed in the cloud but recovery operations failed. ' +
+    'To fix: manually verify the role in the cloud console, remove it from state, and redeploy.',
+  IAM_ROLE_TRUST_POLICY_UPDATED: 'IAM role {{roleName}} trust policy updated',
+  IAM_POLICY_ALREADY_EXISTS: 'IAM policy {{policyName}} already exists, reusing',
+  IAM_POLICY_ALREADY_ATTACHED: 'IAM policy {{policyName}} already attached to role {{roleName}}',
+  IAM_POLICY_ATTACHED: 'IAM policy {{policyName}} attached to role {{roleName}}',
+  IAM_POLICY_DETACHED: 'IAM policy {{policyName}} detached from role {{roleName}}',
+  CREATING_IAM_ROLE: 'Creating IAM role: {{roleName}}',
+  DELETING_IAM_ROLE: 'Deleting IAM role: {{id}}',
+
+  // Volcengine TLS (Log Service) messages
+  TLS_PROJECT_CREATED: 'TLS project {{projectName}} created successfully',
+  TLS_PROJECT_DELETED: 'TLS project {{projectName}} deleted successfully',
+  TLS_PROJECT_NOT_FOUND: 'TLS project {{projectName}} not found',
+  TLS_PROJECT_TIMEOUT: 'Timeout waiting for TLS project {{projectName}} to be ready',
+  TLS_TOPIC_CREATED: 'TLS topic {{topicName}} created successfully',
+  TLS_TOPIC_DELETED: 'TLS topic {{topicName}} deleted successfully',
+  TLS_TOPIC_NOT_FOUND: 'TLS topic {{topicName}} not found',
+  TLS_TOPIC_TIMEOUT: 'Timeout waiting for TLS topic {{topicName}} to be ready',
+  TLS_INDEX_CREATED: 'TLS index for topic {{topicName}} created successfully',
+  TLS_INDEX_DELETED: 'TLS index for topic {{topicName}} deleted successfully',
+  TLS_PROJECT_FAILED: 'TLS project {{projectName}} failed to create',
+  TLS_TOPIC_FAILED: 'TLS topic {{topicName}} failed to create',
+  CREATING_TLS_PROJECT: 'Creating TLS project: {{projectName}}',
+  CREATING_TLS_TOPIC: 'Creating TLS topic: {{topicName}}',
+  CREATING_TLS_INDEX: 'Creating TLS index for topic: {{topicName}}',
+  DELETING_TLS_PROJECT: 'Deleting TLS project: {{id}}',
+  DELETING_TLS_TOPIC: 'Deleting TLS topic: {{id}}',
+  DELETING_TLS_INDEX: 'Deleting TLS index: {{id}}',
+  WAITING_FOR_TLS_RESOURCES: 'Waiting for TLS resources to be ready: {{projectName}}/{{topicName}}',
+
+  // Volcengine veFaaS dependent resources
+  VEFAAS_DEPENDENT_RESOURCES_TRACKED: 'Dependent resources (TLS, IAM) are tracked in state',
+  VEFAAS_CAN_RETRY_DEPLOYMENT:
+    'You can retry deployment - the system will reuse existing dependent resources',
+  VEFAAS_FUNCTION_EXISTS_RECOVERY:
+    'Function {{functionName}} already exists in provider (tainted recovery), skipping create and refreshing state',
 };
