@@ -37,6 +37,10 @@ jest.mock('../../../../src/stack/volcengineStack/vefaasResource', () => ({
   deleteResource: jest.fn(),
 }));
 
+jest.mock('../../../../src/stack/volcengineStack/apigwResource', () => ({
+  deleteApigwResource: jest.fn(),
+}));
+
 jest.mock('../../../../src/common/stateManager', () => ({
   getAllResources: jest.fn(),
 }));
@@ -394,6 +398,122 @@ describe('volcengineStack destroyer', () => {
       await destroyVolcengineStack(mockBackend);
 
       expect(deleteResource).not.toHaveBeenCalled();
+    });
+
+    it('should delete API Gateway in state', async () => {
+      const stateWithApigw: StateFile = {
+        ...mockState,
+        resources: {
+          'events.api_gateway': {
+            mode: 'managed',
+            region: 'cn-beijing',
+            definition: { groupName: 'test-gateway' },
+            instances: [{ sid: 'test-sid', id: 'gateway-123', type: 'VOLCENGINE_APIGW_GROUP' }],
+            lastUpdated: '2024-01-01T00:00:00Z',
+          },
+        },
+      };
+
+      mockBackend.loadState = jest.fn().mockResolvedValue(stateWithApigw);
+      const { getAllResources } = jest.requireMock('../../../../src/common/stateManager');
+      const { deleteApigwResource } = jest.requireMock(
+        '../../../../src/stack/volcengineStack/apigwResource',
+      );
+      getAllResources.mockReturnValue(stateWithApigw.resources);
+      deleteApigwResource.mockResolvedValueOnce(mockState);
+
+      await destroyVolcengineStack(mockBackend);
+
+      expect(deleteApigwResource).toHaveBeenCalledWith(
+        mockContext,
+        'events.api_gateway',
+        stateWithApigw,
+      );
+    });
+
+    it('should delete API Gateway API in state', async () => {
+      const stateWithApigwApi: StateFile = {
+        ...mockState,
+        resources: {
+          'events.api_gateway': {
+            mode: 'managed',
+            region: 'cn-beijing',
+            definition: { groupName: 'test-gateway' },
+            instances: [{ sid: 'test-sid', id: 'api-123', type: 'VOLCENGINE_APIGW_API' }],
+            lastUpdated: '2024-01-01T00:00:00Z',
+          },
+        },
+      };
+
+      mockBackend.loadState = jest.fn().mockResolvedValue(stateWithApigwApi);
+      const { getAllResources } = jest.requireMock('../../../../src/common/stateManager');
+      const { deleteApigwResource } = jest.requireMock(
+        '../../../../src/stack/volcengineStack/apigwResource',
+      );
+      getAllResources.mockReturnValue(stateWithApigwApi.resources);
+      deleteApigwResource.mockResolvedValueOnce(mockState);
+
+      await destroyVolcengineStack(mockBackend);
+
+      expect(deleteApigwResource).toHaveBeenCalledWith(
+        mockContext,
+        'events.api_gateway',
+        stateWithApigwApi,
+      );
+    });
+
+    it('should handle API Gateway deletion error', async () => {
+      const stateWithApigw: StateFile = {
+        ...mockState,
+        resources: {
+          'events.api_gateway': {
+            mode: 'managed',
+            region: 'cn-beijing',
+            definition: { groupName: 'test-gateway' },
+            instances: [{ sid: 'test-sid', id: 'gateway-123', type: 'VOLCENGINE_APIGW_GROUP' }],
+            lastUpdated: '2024-01-01T00:00:00Z',
+          },
+        },
+      };
+
+      mockBackend.loadState = jest.fn().mockResolvedValue(stateWithApigw);
+      const { getAllResources } = jest.requireMock('../../../../src/common/stateManager');
+      const { deleteApigwResource } = jest.requireMock(
+        '../../../../src/stack/volcengineStack/apigwResource',
+      );
+      getAllResources.mockReturnValue(stateWithApigw.resources);
+      deleteApigwResource.mockRejectedValueOnce(new Error('Deletion failed'));
+
+      await destroyVolcengineStack(mockBackend);
+
+      expect(mockBackend.saveState).toHaveBeenCalled();
+    });
+
+    it('should handle API Gateway deletion error with non-Error object', async () => {
+      const stateWithApigw: StateFile = {
+        ...mockState,
+        resources: {
+          'events.api_gateway': {
+            mode: 'managed',
+            region: 'cn-beijing',
+            definition: { groupName: 'test-gateway' },
+            instances: [{ sid: 'test-sid', id: 'gateway-123', type: 'VOLCENGINE_APIGW_GROUP' }],
+            lastUpdated: '2024-01-01T00:00:00Z',
+          },
+        },
+      };
+
+      mockBackend.loadState = jest.fn().mockResolvedValue(stateWithApigw);
+      const { getAllResources } = jest.requireMock('../../../../src/common/stateManager');
+      const { deleteApigwResource } = jest.requireMock(
+        '../../../../src/stack/volcengineStack/apigwResource',
+      );
+      getAllResources.mockReturnValue(stateWithApigw.resources);
+      deleteApigwResource.mockRejectedValueOnce('String error');
+
+      await destroyVolcengineStack(mockBackend);
+
+      expect(mockBackend.saveState).toHaveBeenCalled();
     });
   });
 });

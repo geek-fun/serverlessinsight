@@ -6,6 +6,8 @@ import { generateFunctionPlan } from './vefaasPlanner';
 import { executeFunctionPlan } from './vefaasExecutor';
 import { generateBucketPlan } from './tosPlanner';
 import { executeBucketPlan } from './tosExecutor';
+import { generateApigwPlan } from './apigwPlanner';
+import { executeApigwPlan } from './apigwExecutor';
 
 export const deployVolcengineStack = async (iac: ServerlessIac, backend: StateBackend) => {
   const context = getContext();
@@ -22,6 +24,7 @@ export const deployVolcengineStack = async (iac: ServerlessIac, backend: StateBa
 
   const functionPlan = await generateFunctionPlan(context, state, iac.functions);
   const bucketPlan = await generateBucketPlan(context, state, iac.buckets);
+  const apigwPlan = await generateApigwPlan(context, state, iac.events, iac.service);
 
   const bucketResult = await executeBucketPlan(
     context,
@@ -65,7 +68,30 @@ export const deployVolcengineStack = async (iac: ServerlessIac, backend: StateBa
     throw error;
   }
 
-  await backend.saveState(functionResult.state, iac.app, iac.service, context.stage);
+  state = functionResult.state;
+
+  const apigwResult = await executeApigwPlan(
+    context,
+    apigwPlan,
+    iac.events,
+    iac.service,
+    state,
+    onStateChange,
+  );
+
+  if (apigwResult.partialFailure) {
+    const error = apigwResult.partialFailure.error as Error & { isPartialFailure?: boolean };
+    error.isPartialFailure = true;
+    logger.error(
+      lang.__('PARTIAL_DEPLOYMENT_FAILURE', {
+        resourceType: 'API Gateway',
+        name: apigwResult.partialFailure.failedItem.logicalId,
+      }),
+    );
+    throw error;
+  }
+
+  await backend.saveState(apigwResult.state, iac.app, iac.service, context.stage);
 
   logger.info(lang.__('STACK_DEPLOYED'));
 };

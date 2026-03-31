@@ -4,6 +4,7 @@ import { getAllResources } from '../../common/stateManager';
 import { lang } from '../../lang';
 import { deleteResource } from './tosResource';
 import { deleteResource as deleteFunctionResource } from './vefaasResource';
+import { deleteApigwResource } from './apigwResource';
 
 export const destroyVolcengineStack = async (backend: StateBackend) => {
   const context = getContext();
@@ -18,6 +19,29 @@ export const destroyVolcengineStack = async (backend: StateBackend) => {
 
   let state = await backend.loadState(providerName, context.app, context.service, context.stage);
   const allResources = getAllResources(state);
+
+  const eventEntries = Object.entries(allResources).filter(
+    ([logicalId, resourceState]) =>
+      logicalId.startsWith('events.') &&
+      resourceState.instances?.some(
+        (i) => i.type === 'VOLCENGINE_APIGW_GROUP' || i.type === 'VOLCENGINE_APIGW_API',
+      ),
+  );
+
+  for (const [logicalId] of eventEntries) {
+    try {
+      logger.info(lang.__('DELETING_RESOURCE', { resourceType: 'API Gateway', name: logicalId }));
+      state = await deleteApigwResource(context, logicalId, state);
+      logger.info(lang.__('RESOURCE_DELETED', { resourceType: 'API Gateway', name: logicalId }));
+    } catch (error) {
+      logger.error(
+        lang.__('VOLCENGINE_APIGW_DELETE_FAILED', {
+          logicalId,
+          error: error instanceof Error ? error.message : String(error),
+        }),
+      );
+    }
+  }
 
   const bucketEntries = Object.entries(allResources).filter(
     ([logicalId, resourceState]) =>
