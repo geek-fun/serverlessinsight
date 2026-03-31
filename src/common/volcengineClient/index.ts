@@ -35,11 +35,22 @@ const initializeSdkClients = (context: Context) => {
     ...(context.securityToken && { sessionToken: context.securityToken }),
   });
 
+  const apigwService = new Service({
+    serviceName: 'apig',
+    defaultVersion: '2021-03-03',
+    protocol: 'https',
+    host: 'apig.volcengineapi.com',
+    accessKeyId: context.accessKeyId,
+    secretKey: context.accessKeySecret,
+    region: context.region,
+    ...(context.securityToken && { sessionToken: context.securityToken }),
+  });
+
   return {
     vefaas: vefaasService,
     tos: tosService,
     iam: null,
-    apigw: null,
+    apigw: apigwService,
   };
 };
 

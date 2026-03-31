@@ -736,4 +736,7 @@ export const en = {
   VOLCENGINE_TOS_CLIENT_NOT_INITIALIZED: 'TOS client not initialized. Check your credentials.',
   VOLCENGINE_BUCKET_DELETE_FAILED: 'Failed to delete bucket {{bucketName}}: {{error}}',
   VOLCENGINE_FUNCTION_DELETE_FAILED: 'Failed to delete function {{functionName}}: {{error}}',
+  VOLCENGINE_APIGW_CLIENT_NOT_INITIALIZED:
+    'API Gateway client not initialized. Check your credentials.',
+  VOLCENGINE_APIGW_DELETE_FAILED: 'Failed to delete API Gateway {{logicalId}}: {{error}}',
 };

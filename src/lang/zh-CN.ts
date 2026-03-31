@@ -670,4 +670,6 @@ export const zhCN = {
   VOLCENGINE_TOS_CLIENT_NOT_INITIALIZED: 'TOS 客户端未初始化。请检查您的凭证。',
   VOLCENGINE_BUCKET_DELETE_FAILED: '删除存储桶 {{bucketName}} 失败：{{error}}',
   VOLCENGINE_FUNCTION_DELETE_FAILED: '删除函数 {{functionName}} 失败：{{error}}',
+  VOLCENGINE_APIGW_CLIENT_NOT_INITIALIZED: 'API 网关客户端未初始化。请检查您的凭证。',
+  VOLCENGINE_APIGW_DELETE_FAILED: '删除 API 网关 {{logicalId}} 失败：{{error}}',
 };

@@ -177,24 +177,73 @@ export type IamRoleInfo = {
 // API Gateway Types
 // ============================================================================
 
-/**
- * HTTP method for API Gateway triggers
- */
 export type ApigwHttpMethod = 'GET' | 'POST' | 'PUT' | 'DELETE' | 'PATCH' | 'HEAD' | 'OPTIONS';
 
-/**
- * API Gateway trigger configuration
- */
+export type ApigwGroupConfig = {
+  groupName: string;
+  description?: string;
+  protocol?: 'HTTP' | 'HTTPS' | 'HTTP&HTTPS';
+};
+
+export type ApigwGroupInfo = {
+  gatewayId?: string;
+  gatewayName?: string;
+  protocol?: string;
+  status?: string;
+  createdTime?: string;
+  description?: string;
+  subDomain?: string;
+};
+
+export type ApigwApiConfig = {
+  gatewayId: string;
+  serviceId?: string;
+  apiName: string;
+  method: ApigwHttpMethod;
+  path: string;
+  backendFunctionName: string;
+  backendType: 'veFaaS';
+  requestTimeout?: number;
+};
+
+export type ApigwApiInfo = {
+  apiId?: string;
+  apiName?: string;
+  gatewayId?: string;
+  serviceId?: string;
+  method?: string;
+  path?: string;
+  description?: string;
+  backendType?: string;
+  backendId?: string;
+  backendFunctionName?: string;
+  status?: string;
+  createdTime?: string;
+};
+
+export type ApigwDomainConfig = {
+  gatewayId: string;
+  serviceId?: string;
+  domainName: string;
+  certificateId?: string;
+  certificateBody?: string;
+  certificatePrivateKey?: string;
+};
+
+export type ApigwDomainInfo = {
+  domainName?: string;
+  gatewayId?: string;
+  serviceId?: string;
+  status?: string;
+  certificateId?: string;
+};
+
 export type ApigwTriggerConfig = {
   method: ApigwHttpMethod;
   path: string;
   backendFunctionName: string;
-  description?: string;
 };
 
-/**
- * Configuration for creating an API Gateway
- */
 export type ApigwConfig = {
   gatewayName: string;
   protocol?: 'HTTP' | 'HTTPS' | 'HTTP&HTTPS';
@@ -206,9 +255,6 @@ export type ApigwConfig = {
   };
 };
 
-/**
- * Response from API Gateway getGateway API
- */
 export type ApigwInfo = {
   gatewayId?: string;
   gatewayName?: string;
@@ -261,10 +307,18 @@ export type VolcengineClient = {
     deleteRole: (roleName: string) => Promise<void>;
   };
   apigw: {
-    createGateway: (config: ApigwConfig) => Promise<ApigwInfo>;
-    getGateway: (gatewayId: string) => Promise<ApigwInfo | null>;
-    updateGateway: (gatewayId: string, config: ApigwConfig) => Promise<void>;
+    createGateway: (config: ApigwGroupConfig) => Promise<ApigwGroupInfo>;
+    getGateway: (gatewayId: string) => Promise<ApigwGroupInfo | null>;
+    findGatewayByName: (gatewayName: string) => Promise<ApigwGroupInfo | null>;
+    updateGateway: (gatewayId: string, config: ApigwGroupConfig) => Promise<void>;
     deleteGateway: (gatewayId: string) => Promise<void>;
+    createApi: (config: ApigwApiConfig) => Promise<string>;
+    getApi: (gatewayId: string, apiId: string) => Promise<ApigwApiInfo | null>;
+    updateApi: (apiId: string, config: ApigwApiConfig) => Promise<void>;
+    deleteApi: (gatewayId: string, apiId: string) => Promise<void>;
+    deployApi: (gatewayId: string, apiId: string) => Promise<void>;
+    bindDomain: (config: ApigwDomainConfig) => Promise<void>;
+    unbindDomain: (gatewayId: string, domainName: string) => Promise<void>;
   };
 };
 

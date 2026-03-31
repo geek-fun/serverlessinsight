@@ -4,6 +4,7 @@ import { StateBackend } from '../../common/stateBackend';
 import { lang } from '../../lang';
 import { generateFunctionPlan } from './vefaasPlanner';
 import { generateBucketPlan } from './tosPlanner';
+import { generateApigwPlan } from './apigwPlanner';
 
 export const generateVolcenginePlan = async (iac: ServerlessIac, backend: StateBackend) => {
   const context = getContext();
@@ -11,8 +12,9 @@ export const generateVolcenginePlan = async (iac: ServerlessIac, backend: StateB
 
   const functionPlan = await generateFunctionPlan(context, state, iac.functions);
   const bucketPlan = await generateBucketPlan(context, state, iac.buckets);
+  const apigwPlan = await generateApigwPlan(context, state, iac.events, iac.service);
 
-  const allItems: PlanItem[] = [...functionPlan.items, ...bucketPlan.items];
+  const allItems: PlanItem[] = [...functionPlan.items, ...bucketPlan.items, ...apigwPlan.items];
 
   const dependencyInfo = getDependencyInfo(allItems);
 

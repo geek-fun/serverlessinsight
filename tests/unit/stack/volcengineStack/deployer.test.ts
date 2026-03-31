@@ -46,6 +46,16 @@ jest.mock('../../../../src/stack/volcengineStack/tosExecutor', () => ({
     .mockImplementation((context, plan, buckets, state) => Promise.resolve({ state })),
 }));
 
+jest.mock('../../../../src/stack/volcengineStack/apigwPlanner', () => ({
+  generateApigwPlan: jest.fn().mockResolvedValue({ items: [] }),
+}));
+
+jest.mock('../../../../src/stack/volcengineStack/apigwExecutor', () => ({
+  executeApigwPlan: jest
+    .fn()
+    .mockImplementation((context, plan, events, service, state) => Promise.resolve({ state })),
+}));
+
 describe('volcengineStack deployer', () => {
   const mockContext = {
     app: 'test-app',
@@ -163,6 +173,28 @@ describe('volcengineStack deployer', () => {
 
       await expect(deployVolcengineStack(mockIac, mockBackend)).rejects.toThrow(
         'Function creation failed',
+      );
+    });
+
+    it('should throw on apigw partial failure', async () => {
+      const { executeApigwPlan } = jest.requireMock(
+        '../../../../src/stack/volcengineStack/apigwExecutor',
+      );
+      executeApigwPlan.mockResolvedValueOnce({
+        state: mockState,
+        partialFailure: {
+          failedItem: {
+            logicalId: 'events.test',
+            action: 'create',
+            resourceType: 'VOLCENGINE_APIGW',
+          },
+          error: new Error('API Gateway creation failed'),
+          successfulItems: [],
+        },
+      });
+
+      await expect(deployVolcengineStack(mockIac, mockBackend)).rejects.toThrow(
+        'API Gateway creation failed',
       );
     });
   });
