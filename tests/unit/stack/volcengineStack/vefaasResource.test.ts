@@ -120,6 +120,14 @@ describe('vefaasResource', () => {
       roleName: 'test-app-test-service-dev-role',
       trn: 'trn:iam::123456:role/test-app-test-service-dev-role',
     });
+    mockVefaasClient.tls.createProject.mockResolvedValue({
+      projectName: 'test-project',
+    });
+    mockVefaasClient.tls.createTopic.mockResolvedValue({
+      topicName: 'test-topic',
+    });
+    mockVefaasClient.tls.waitForProject.mockResolvedValue(undefined);
+    mockVefaasClient.tls.waitForTopic.mockResolvedValue(undefined);
   });
 
   describe('createResource', () => {
@@ -139,6 +147,134 @@ describe('vefaasResource', () => {
       expect(mockVefaasClient.vefaas.createFunction).toHaveBeenCalled();
       expect(mockVefaasClient.iam.createRole).toHaveBeenCalled();
       expect(setResource).toHaveBeenCalled();
+    });
+
+    it('should create function with TLS logging enabled', async () => {
+      const mockFunctionWithLog: FunctionDomain = {
+        ...mockFunction,
+        log: true,
+      };
+
+      mockVefaasClient.vefaas.createFunction.mockResolvedValueOnce(undefined);
+      mockVefaasClient.vefaas.getFunction.mockResolvedValueOnce({
+        functionName: 'test-function',
+        functionId: 'func-123',
+        runtime: 'nodejs16',
+        handler: 'index.handler',
+        memoryMb: 128,
+        requestTimeout: 30,
+      });
+
+      await createResource(mockContext, mockFunctionWithLog, mockState);
+
+      expect(mockVefaasClient.tls.createProject).toHaveBeenCalled();
+      expect(mockVefaasClient.tls.createTopic).toHaveBeenCalled();
+      expect(mockVefaasClient.tls.createIndex).toHaveBeenCalled();
+      expect(mockVefaasClient.tls.waitForProject).toHaveBeenCalled();
+      expect(mockVefaasClient.tls.waitForTopic).toHaveBeenCalled();
+      expect(mockVefaasClient.vefaas.createFunction).toHaveBeenCalledWith(
+        expect.objectContaining({
+          logConfig: expect.objectContaining({
+            project: expect.any(String),
+            topic: expect.any(String),
+          }),
+        }),
+        expect.any(String),
+      );
+    });
+
+    it('should reuse existing TLS resources when present', async () => {
+      const mockFunctionWithLog: FunctionDomain = {
+        ...mockFunction,
+        log: true,
+      };
+
+      const stateWithTls: StateFile = {
+        ...mockState,
+        resources: {
+          'functions.test_fn': {
+            mode: 'managed',
+            region: 'cn-beijing',
+            definition: {},
+            instances: [
+              {
+                type: 'VOLCENGINE_TLS_PROJECT',
+                sid: 'sid-tls-project',
+                id: 'existing-project',
+                attributes: {},
+              },
+              {
+                type: 'VOLCENGINE_TLS_TOPIC',
+                sid: 'sid-tls-topic',
+                id: 'existing-project/existing-topic',
+                attributes: {},
+              },
+              {
+                type: 'VOLCENGINE_TLS_INDEX',
+                sid: 'sid-tls-index',
+                id: 'existing-project/existing-topic/index',
+                attributes: {},
+              },
+            ],
+            status: 'ready',
+            lastUpdated: '2024-01-01T00:00:00Z',
+          },
+        },
+      };
+
+      (getResource as jest.Mock).mockReturnValue(stateWithTls.resources['functions.test_fn']);
+
+      mockVefaasClient.vefaas.createFunction.mockResolvedValueOnce(undefined);
+      mockVefaasClient.vefaas.getFunction.mockResolvedValueOnce({
+        functionName: 'test-function',
+        functionId: 'func-123',
+        runtime: 'nodejs16',
+        handler: 'index.handler',
+        memoryMb: 128,
+        requestTimeout: 30,
+      });
+
+      await createResource(mockContext, mockFunctionWithLog, stateWithTls);
+
+      expect(mockVefaasClient.tls.createProject).not.toHaveBeenCalled();
+    });
+
+    it('should create function with VPC config', async () => {
+      const mockFunctionWithVpc: FunctionDomain = {
+        ...mockFunction,
+        network: {
+          vpc_id: 'vpc-123',
+          subnet_ids: ['subnet-1', 'subnet-2'],
+          security_group: {
+            name: 'test-sg',
+            ingress: [],
+            egress: [],
+          },
+        },
+      };
+
+      mockVefaasClient.vefaas.createFunction.mockResolvedValueOnce(undefined);
+      mockVefaasClient.vefaas.getFunction.mockResolvedValueOnce({
+        functionName: 'test-function',
+        functionId: 'func-123',
+        runtime: 'nodejs16',
+        handler: 'index.handler',
+        memoryMb: 128,
+        requestTimeout: 30,
+      });
+
+      await createResource(mockContext, mockFunctionWithVpc, mockState);
+
+      expect(mockVefaasClient.vefaas.createFunction).toHaveBeenCalledWith(
+        expect.objectContaining({
+          vpcConfig: {
+            vpcId: 'vpc-123',
+            subnetIds: ['subnet-1', 'subnet-2'],
+            securityGroupIds: [],
+          },
+        }),
+        expect.any(String),
+      );
     });
 
     it('should handle recoverable timeout error', async () => {
@@ -353,6 +489,66 @@ describe('vefaasResource', () => {
       expect(mockVefaasClient.vefaas.deleteFunction).toHaveBeenCalledWith('test-function');
       expect(mockVefaasClient.iam.deleteRole).toHaveBeenCalled();
       expect(removeResource).toHaveBeenCalled();
+    });
+
+    it('should delete function with TLS resources', async () => {
+      const stateWithTls: StateFile = {
+        ...mockState,
+        resources: {
+          'functions.test_fn': {
+            mode: 'managed',
+            region: 'cn-beijing',
+            definition: {
+              functionName: 'test-function',
+              codeHash: 'old-hash',
+            },
+            instances: [
+              {
+                type: 'VOLCENGINE_VEFAAS_FUNCTION',
+                sid: 'volcengine-test-service-dev-test-function',
+                id: 'test-function',
+                functionName: 'test-function',
+              },
+              {
+                type: 'VOLCENGINE_IAM_ROLE',
+                sid: 'volcengine-iam_role-dev-test-app-test-service-dev-role',
+                id: 'test-app-test-service-dev-role',
+              },
+              {
+                type: 'VOLCENGINE_TLS_PROJECT',
+                sid: 'volcengine-tls_project-dev-test-project',
+                id: 'test-project',
+              },
+              {
+                type: 'VOLCENGINE_TLS_TOPIC',
+                sid: 'volcengine-tls_topic-dev-test-topic',
+                id: 'test-project/test-topic',
+              },
+              {
+                type: 'VOLCENGINE_TLS_INDEX',
+                sid: 'volcengine-tls_index-dev-test-index',
+                id: 'test-project/test-topic/index',
+              },
+            ],
+            lastUpdated: '2024-01-01T00:00:00Z',
+          },
+        },
+      };
+
+      mockVefaasClient.vefaas.deleteFunction.mockResolvedValueOnce(undefined);
+      mockVefaasClient.tls.deleteIndex.mockResolvedValueOnce(undefined);
+      mockVefaasClient.tls.deleteTopic.mockResolvedValueOnce(undefined);
+      mockVefaasClient.tls.deleteProject.mockResolvedValueOnce(undefined);
+      mockVefaasClient.iam.deleteRole.mockResolvedValueOnce(undefined);
+      (getResource as jest.Mock).mockReturnValue(stateWithTls.resources['functions.test_fn']);
+
+      await deleteResource(mockContext, 'test-function', 'functions.test_fn', stateWithTls);
+
+      expect(mockVefaasClient.vefaas.deleteFunction).toHaveBeenCalledWith('test-function');
+      expect(mockVefaasClient.tls.deleteIndex).toHaveBeenCalled();
+      expect(mockVefaasClient.tls.deleteTopic).toHaveBeenCalled();
+      expect(mockVefaasClient.tls.deleteProject).toHaveBeenCalled();
+      expect(mockVefaasClient.iam.deleteRole).toHaveBeenCalled();
     });
 
     it('should handle FunctionNotFound error', async () => {
