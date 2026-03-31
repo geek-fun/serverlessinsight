@@ -196,14 +196,23 @@ const createDependentResources = async (
   }
 
   const iamRoleInstance = instances.find((i) => i.type === 'VOLCENGINE_IAM_ROLE');
-  const role: { roleName: string; trn: string } | undefined = iamRoleInstance
-    ? {
-        roleName,
-        trn:
-          iamRoleInstance.trn ??
-          (context.accountId ? `trn:iam::${context.accountId}:role/${roleName}` : ''),
-      }
-    : undefined;
+
+  if (!iamRoleInstance) {
+    throw new Error(lang.__('IAM_ROLE_INSTANCE_NOT_FOUND', { roleName }));
+  }
+
+  const trn =
+    iamRoleInstance.trn ??
+    (context.accountId ? `trn:iam::${context.accountId}:role/${roleName}` : undefined);
+
+  if (!trn) {
+    throw new Error(lang.__('IAM_ROLE_TRN_MISSING', { roleName }));
+  }
+
+  const role = {
+    roleName,
+    trn,
+  };
 
   return {
     logConfig,
@@ -452,11 +461,19 @@ export const updateResource = async (
   } else {
     const iamRoleInstance = existingInstances.find((i) => i.type === 'VOLCENGINE_IAM_ROLE');
     if (iamRoleInstance) {
+      const trn =
+        iamRoleInstance.trn ??
+        (context.accountId
+          ? `trn:iam::${context.accountId}:role/${iamRoleInstance.id}`
+          : undefined);
+
+      if (!trn) {
+        throw new Error(lang.__('IAM_ROLE_TRN_MISSING', { roleName: iamRoleInstance.id }));
+      }
+
       role = {
         roleName: iamRoleInstance.id,
-        trn:
-          iamRoleInstance.trn ??
-          (context.accountId ? `trn:iam::${context.accountId}:role/${iamRoleInstance.id}` : ''),
+        trn,
       };
 
       const trustedServices = getTrustedServicesForFunction(fn, context);

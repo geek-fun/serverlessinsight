@@ -691,6 +691,10 @@ export const zhCN = {
   IAM_POLICY_ALREADY_ATTACHED: 'IAM 策略 {{policyName}} 已附加到角色 {{roleName}}',
   IAM_POLICY_ATTACHED: 'IAM 策略 {{policyName}} 已附加到角色 {{roleName}}',
   IAM_POLICY_DETACHED: 'IAM 策略 {{policyName}} 已从角色 {{roleName}} 分离',
+  IAM_ROLE_INSTANCE_NOT_FOUND: 'IAM 角色实例在状态中未找到：{{roleName}}',
+  IAM_ROLE_TRN_MISSING:
+    'IAM 角色 TRN 缺失且无法获取 accountId 来构造 {{roleName}} 的 TRN。' +
+    '请确保 IAM 角色创建成功且 accountId 已配置。',
   CREATING_IAM_ROLE: '正在创建 IAM 角色：{{roleName}}',
   DELETING_IAM_ROLE: '正在删除 IAM 角色：{{id}}',
 

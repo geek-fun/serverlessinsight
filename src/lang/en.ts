@@ -759,6 +759,10 @@ export const en = {
   IAM_POLICY_ALREADY_ATTACHED: 'IAM policy {{policyName}} already attached to role {{roleName}}',
   IAM_POLICY_ATTACHED: 'IAM policy {{policyName}} attached to role {{roleName}}',
   IAM_POLICY_DETACHED: 'IAM policy {{policyName}} detached from role {{roleName}}',
+  IAM_ROLE_INSTANCE_NOT_FOUND: 'IAM role instance not found in state for {{roleName}}',
+  IAM_ROLE_TRN_MISSING:
+    'IAM role TRN is missing and accountId is not available to construct it for {{roleName}}. ' +
+    'Ensure the IAM role was created successfully and accountId is configured.',
   CREATING_IAM_ROLE: 'Creating IAM role: {{roleName}}',
   DELETING_IAM_ROLE: 'Deleting IAM role: {{id}}',
 
