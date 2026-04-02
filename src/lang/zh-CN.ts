@@ -697,6 +697,7 @@ export const zhCN = {
     '请确保 IAM 角色创建成功且 accountId 已配置。',
   CREATING_IAM_ROLE: '正在创建 IAM 角色：{{roleName}}',
   DELETING_IAM_ROLE: '正在删除 IAM 角色：{{id}}',
+  IAM_POLICY_DETACH_FAILED: '从角色 {{roleName}} 解除 IAM 策略 {{policyName}} 失败：{{error}}',
 
   // Volcengine TLS (Log Service) messages
   TLS_PROJECT_CREATED: 'TLS 项目 {{projectName}} 创建成功',

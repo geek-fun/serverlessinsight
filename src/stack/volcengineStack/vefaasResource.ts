@@ -81,6 +81,7 @@ const buildVefaasInstanceFromProvider = (info: VefaasFunctionInfo, sid: string) 
     status: info.status ?? null,
     createdTime: info.createdTime ?? null,
     lastUpdateTime: info.lastModifiedTime ?? null,
+    role: info.role ?? null,
     vpcConfig: info.vpcConfig
       ? {
           vpcId: info.vpcConfig.vpcId ?? null,
@@ -88,6 +89,12 @@ const buildVefaasInstanceFromProvider = (info: VefaasFunctionInfo, sid: string) 
           securityGroupIds: info.vpcConfig.securityGroupIds ?? [],
         }
       : {},
+    logConfig: info.logConfig
+      ? {
+          project: info.logConfig.project ?? null,
+          topic: info.logConfig.topic ?? null,
+        }
+      : null,
   };
 };
 
@@ -176,7 +183,10 @@ const createDependentResources = async (
     const iamRoleInstance = existingInstances.find((i) => i.type === 'VOLCENGINE_IAM_ROLE');
     if (iamRoleInstance) {
       instances.push(iamRoleInstance);
-      await client.iam.updateRoleTrustPolicy(roleName, buildDefaultTrustPolicy(trustedServices));
+      await client.iam.updateRoleTrustPolicy(
+        iamRoleInstance.id,
+        buildDefaultTrustPolicy(trustedServices),
+      );
     }
   } else {
     logger.info(lang.__('CREATING_IAM_ROLE', { roleName }));
@@ -203,7 +213,7 @@ const createDependentResources = async (
 
   const trn =
     iamRoleInstance.trn ??
-    (context.accountId ? `trn:iam::${context.accountId}:role/${roleName}` : undefined);
+    (context.accountId ? `trn:iam::${context.accountId}:role/${iamRoleInstance.id}` : undefined);
 
   if (!trn) {
     throw new Error(lang.__('IAM_ROLE_TRN_MISSING', { roleName }));
@@ -296,7 +306,7 @@ export const createResource = async (
       ? {
           vpcId: fn.network.vpc_id,
           subnetIds: fn.network.subnet_ids,
-          securityGroupIds: [],
+          securityGroupIds: fn.network.security_group?.name ? [fn.network.security_group.name] : [],
         }
       : undefined,
     tosMountConfig: fn.storage?.nas?.[0]
@@ -422,6 +432,7 @@ export const updateResource = async (
   }
 
   const existingInstances = (currentState.instances ?? []) as Array<DependentInstance>;
+  const isTainted = currentState.status === 'tainted';
 
   const hasTlsResources = existingInstances.some((i) => i.type === 'VOLCENGINE_TLS_PROJECT');
   const hasIamRole = existingInstances.some((i) => i.type === 'VOLCENGINE_IAM_ROLE');
@@ -431,7 +442,7 @@ export const updateResource = async (
   let logConfig: { project: string; topic: string } | undefined;
   let role: { roleName: string; trn: string } | undefined;
 
-  if (fn.log && !hasTlsResources) {
+  if (fn.log && !hasTlsResources && !isTainted) {
     const deps = await createDependentResources(
       context,
       { ...fn, network: undefined, storage: { disk: undefined, nas: undefined } },
@@ -450,7 +461,7 @@ export const updateResource = async (
     }
   }
 
-  if (!hasIamRole) {
+  if (!hasIamRole && !isTainted) {
     const deps = await createDependentResources(
       context,
       { ...fn, log: false, network: undefined, storage: { disk: undefined, nas: undefined } },
@@ -491,7 +502,7 @@ export const updateResource = async (
       ? {
           vpcId: fn.network.vpc_id,
           subnetIds: fn.network.subnet_ids,
-          securityGroupIds: [],
+          securityGroupIds: fn.network.security_group?.name ? [fn.network.security_group.name] : [],
         }
       : undefined,
     tosMountConfig: fn.storage?.nas?.[0]

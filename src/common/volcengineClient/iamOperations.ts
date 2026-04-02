@@ -370,8 +370,18 @@ export const createIamOperations = (iamClient: IamSdkClient) => {
         });
 
         logger.info(lang.__('IAM_POLICY_DETACHED', { policyName, roleName }));
-      } catch {
-        // Ignore if policy is not attached
+      } catch (error: unknown) {
+        if (
+          error &&
+          typeof error === 'object' &&
+          'code' in error &&
+          (error.code === 'PolicyNotAttached' || error.code === 'NoSuchEntity')
+        ) {
+          return;
+        }
+        logger.warn(
+          lang.__('IAM_POLICY_DETACH_FAILED', { policyName, roleName, error: String(error) }),
+        );
       }
     },
   };

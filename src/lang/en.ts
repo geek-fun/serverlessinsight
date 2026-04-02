@@ -765,6 +765,8 @@ export const en = {
     'Ensure the IAM role was created successfully and accountId is configured.',
   CREATING_IAM_ROLE: 'Creating IAM role: {{roleName}}',
   DELETING_IAM_ROLE: 'Deleting IAM role: {{id}}',
+  IAM_POLICY_DETACH_FAILED:
+    'Failed to detach IAM policy {{policyName}} from role {{roleName}}: {{error}}',
 
   // Volcengine TLS (Log Service) messages
   TLS_PROJECT_CREATED: 'TLS project {{projectName}} created successfully',
