@@ -153,14 +153,37 @@ export const mapRuntime = (standardRuntime: string, provider: ProviderEnum): str
   return providerRuntime;
 };
 
-export const isRuntimeSupported = (standardRuntime: string, provider: ProviderEnum): boolean => {
-  const mapping = runtimeMappings[standardRuntime as StandardRuntime];
+const VOLCENGINE_NATIVE_RUNTIMES = [
+  'nodejs/v20',
+  'nodejs/v18',
+  'nodejs/v16',
+  'nodejs/v14',
+  'python/v3.12',
+  'python/v3.11',
+  'python/v3.10',
+  'python/v3.9',
+  'golang/v1',
+  'java/v21',
+  'java/v17',
+  'java/v11',
+  'java/v8',
+];
+
+export const isRuntimeSupported = (runtime: string, provider: ProviderEnum): boolean => {
+  if (provider === ProviderEnum.VOLCENGINE) {
+    return VOLCENGINE_NATIVE_RUNTIMES.includes(runtime);
+  }
+  const mapping = runtimeMappings[runtime as StandardRuntime];
   return !!mapping && !!mapping[provider];
 };
 
 export const getSupportedRuntimes = (provider?: ProviderEnum): string[] => {
   if (!provider) {
-    return Object.values(StandardRuntime);
+    return [...Object.values(StandardRuntime), ...VOLCENGINE_NATIVE_RUNTIMES];
+  }
+
+  if (provider === ProviderEnum.VOLCENGINE) {
+    return VOLCENGINE_NATIVE_RUNTIMES;
   }
 
   return Object.entries(runtimeMappings)

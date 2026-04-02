@@ -96,6 +96,73 @@ describe('vefaasPlanner', () => {
       jest.spyOn(hashUtils, 'computeFileHash').mockReturnValue('test-hash');
     });
 
+    it('should not include non-function resources in delete plan', async () => {
+      const stateWithMixed: StateFile = {
+        ...mockState,
+        resources: {
+          'functions.old_fn': {
+            mode: 'managed',
+            region: 'cn-beijing',
+            definition: { functionName: 'old-function' },
+            instances: [
+              { sid: 'test-sid', id: 'old-function', type: 'VOLCENGINE_VEFAAS_FUNCTION' },
+            ],
+            lastUpdated: '2024-01-01T00:00:00Z',
+          },
+          'events.api_gateway': {
+            mode: 'managed',
+            region: 'cn-beijing',
+            definition: { groupName: 'test-gateway' },
+            instances: [{ sid: 'event-sid', id: 'gateway-123', type: 'VOLCENGINE_APIGW_GROUP' }],
+            lastUpdated: '2024-01-01T00:00:00Z',
+          },
+        },
+      };
+
+      jest.spyOn(stateManager, 'getAllResources').mockReturnValue(stateWithMixed.resources);
+
+      const result = await generateFunctionPlan(mockContext, stateWithMixed, []);
+
+      expect(result.items).toHaveLength(1);
+      expect(result.items[0].logicalId).toBe('functions.old_fn');
+    });
+
+    it('should generate delete plan for functions removed from desired set', async () => {
+      const stateWithMultipleFns: StateFile = {
+        ...mockState,
+        resources: {
+          'functions.test_fn': {
+            mode: 'managed',
+            region: 'cn-beijing',
+            definition: { functionName: 'test-function' },
+            instances: [
+              { sid: 'test-sid', id: 'test-function', type: 'VOLCENGINE_VEFAAS_FUNCTION' },
+            ],
+            lastUpdated: '2024-01-01T00:00:00Z',
+          },
+          'functions.old_fn': {
+            mode: 'managed',
+            region: 'cn-beijing',
+            definition: { functionName: 'old-function' },
+            instances: [
+              { sid: 'test-sid2', id: 'old-function', type: 'VOLCENGINE_VEFAAS_FUNCTION' },
+            ],
+            lastUpdated: '2024-01-01T00:00:00Z',
+          },
+        },
+      };
+
+      mockVefaasClient.vefaas.getFunction.mockResolvedValueOnce(null);
+      jest.spyOn(stateManager, 'getAllResources').mockReturnValue(stateWithMultipleFns.resources);
+      jest.spyOn(stateManager, 'getResource').mockReturnValue(undefined);
+
+      const result = await generateFunctionPlan(mockContext, stateWithMultipleFns, [mockFunction]);
+
+      const deleteItems = result.items.filter((i) => i.action === 'delete');
+      expect(deleteItems).toHaveLength(1);
+      expect(deleteItems[0].logicalId).toBe('functions.old_fn');
+    });
+
     it('should return empty plan when functions array is empty', async () => {
       const result = await generateFunctionPlan(mockContext, mockState, []);
 

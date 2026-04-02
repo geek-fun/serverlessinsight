@@ -1,0 +1,31 @@
+version: 0.1.0
+provider:
+  name: volcengine
+  region: cn-beijing
+
+app: insight-poc
+service: insight-poc-api
+
+functions:
+  api_function:
+    name: insight-poc-api-fn
+    code:
+      runtime: nodejs/v18
+      handler: index.handler
+      path: ./artifacts/function.zip
+    memory: 256
+    timeout: 30
+    environment:
+      NODE_ENV: production
+
+events:
+  api_gateway:
+    type: API_GATEWAY
+    name: insight-poc-api
+    triggers:
+      - method: GET
+        path: /api/hello
+        backend: ${functions.api_function}
+      - method: POST
+        path: /api/data
+        backend: ${functions.api_function}

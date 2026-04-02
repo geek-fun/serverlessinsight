@@ -234,6 +234,143 @@ describe('apigwPlanner', () => {
       expect(result.items[0].drifted).toBe(true);
     });
 
+    it('should generate delete plan for removed events when events is empty', async () => {
+      const stateWithResource: StateFile = {
+        ...mockState,
+        resources: {
+          'events.old_gateway': {
+            mode: 'managed',
+            region: 'cn-beijing',
+            definition: { groupName: 'old-gateway' },
+            instances: [],
+            lastUpdated: '2024-01-01T00:00:00Z',
+          },
+        },
+      };
+
+      const result = await generateApigwPlan(mockContext, stateWithResource, [], 'test-service');
+
+      expect(result.items).toHaveLength(1);
+      expect(result.items[0].action).toBe('delete');
+      expect(result.items[0].logicalId).toBe('events.old_gateway');
+    });
+
+    it('should generate update plan when definition changed', async () => {
+      const { attributesEqual } = jest.requireMock('../../../../src/common/hashUtils');
+      attributesEqual.mockReturnValue(false);
+
+      const stateWithResource: StateFile = {
+        ...mockState,
+        resources: {
+          'events.api_gateway': {
+            mode: 'managed',
+            region: 'cn-beijing',
+            definition: { groupName: 'test-gateway-old' },
+            instances: [
+              {
+                type: 'VOLCENGINE_APIGW_GROUP',
+                sid: 'volcengine:apigw:dev:gateway-123',
+                id: 'gateway-123',
+              },
+            ],
+            lastUpdated: '2024-01-01T00:00:00Z',
+          },
+        },
+      };
+
+      const result = await generateApigwPlan(
+        mockContext,
+        stateWithResource,
+        [mockEvent],
+        'test-service',
+      );
+
+      expect(result.items).toHaveLength(1);
+      expect(result.items[0].action).toBe('update');
+    });
+
+    it('should handle error when fetching existing state gateway', async () => {
+      const { createVolcengineClient } = jest.requireMock(
+        '../../../../src/common/volcengineClient',
+      );
+      createVolcengineClient.mockReturnValueOnce({
+        apigw: {
+          getGateway: jest.fn().mockRejectedValue(new Error('Network error')),
+          findGatewayByName: jest.fn().mockResolvedValue(null),
+        },
+      });
+
+      const stateWithResource: StateFile = {
+        ...mockState,
+        resources: {
+          'events.api_gateway': {
+            mode: 'managed',
+            region: 'cn-beijing',
+            definition: { groupName: 'test-gateway' },
+            instances: [
+              {
+                type: 'VOLCENGINE_APIGW_GROUP',
+                sid: 'volcengine:apigw:dev:gateway-123',
+                id: 'gateway-123',
+              },
+            ],
+            lastUpdated: '2024-01-01T00:00:00Z',
+          },
+        },
+      };
+
+      const result = await generateApigwPlan(
+        mockContext,
+        stateWithResource,
+        [mockEvent],
+        'test-service',
+      );
+
+      expect(result.items).toHaveLength(1);
+      expect(result.items[0].action).toBe('create');
+    });
+
+    it('should skip non-events resources in deletion filter', async () => {
+      const stateWithMixed: StateFile = {
+        ...mockState,
+        resources: {
+          'events.api_gateway': {
+            mode: 'managed',
+            region: 'cn-beijing',
+            definition: { groupName: 'test-gateway' },
+            instances: [
+              {
+                type: 'VOLCENGINE_APIGW_GROUP',
+                sid: 'volcengine:apigw:dev:gateway-123',
+                id: 'gateway-123',
+              },
+            ],
+            lastUpdated: '2024-01-01T00:00:00Z',
+          },
+          'functions.some_fn': {
+            mode: 'managed',
+            region: 'cn-beijing',
+            definition: { functionName: 'some-function' },
+            instances: [{ sid: 'fn-sid', id: 'some-function', type: 'VOLCENGINE_VEFAAS_FUNCTION' }],
+            lastUpdated: '2024-01-01T00:00:00Z',
+          },
+        },
+      };
+
+      const { attributesEqual } = jest.requireMock('../../../../src/common/hashUtils');
+      attributesEqual.mockReturnValue(true);
+
+      const result = await generateApigwPlan(
+        mockContext,
+        stateWithMixed,
+        [mockEvent],
+        'test-service',
+      );
+
+      const deleteItems = result.items.filter((i) => i.action === 'delete');
+      expect(deleteItems).toHaveLength(0);
+    });
+
     it('should handle error when checking remote', async () => {
       const { createVolcengineClient } = jest.requireMock(
         '../../../../src/common/volcengineClient',

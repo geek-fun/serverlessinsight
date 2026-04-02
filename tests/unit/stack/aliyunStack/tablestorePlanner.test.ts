@@ -388,5 +388,85 @@ describe('TableStore Planner', () => {
         resourceType: 'ALIYUN_TABLESTORE_TABLE',
       });
     });
+
+    it('should plan update with drift when primary key changes', async () => {
+      mockTablestoreOperations.getTable.mockResolvedValue({
+        tableName: 'test-table',
+        primaryKey: [{ name: 'old_id', type: 'INTEGER' }],
+      });
+
+      const state = setResource(initialState, 'tables.test_table', {
+        mode: 'managed',
+        region: 'cn-hangzhou',
+        definition: {
+          instanceName: 'test-instance',
+          tableName: 'test-table',
+          clusterType: 'HYBRID',
+          description: null,
+          primaryKey: [{ name: 'old_id', type: 'INTEGER' }],
+          attributes: [{ name: 'id', type: 'INTEGER' }],
+          reservedThroughput: { capacityUnit: { read: 10, write: 5 } },
+          onDemandThroughput: null,
+          tableOptions: { timeToLive: -1, maxVersions: 1 },
+          network: { type: 'PUBLIC', ingressRules: [] },
+        },
+        instances: [
+          {
+            type: 'ALIYUN_TABLESTORE_TABLE',
+            sid: 'si:aliyun:ots:default:test-instance/test-table',
+            id: 'test-instance/test-table',
+            instanceName: 'test-instance',
+            tableName: 'test-table',
+            clusterType: 'HYBRID',
+            primaryKey: [{ name: 'old_id', type: 'INTEGER' }],
+          },
+        ],
+        lastUpdated: new Date().toISOString(),
+      });
+
+      const plan = await generateTablePlan(mockContext, state, [testTable]);
+
+      expect(plan.items).toHaveLength(1);
+      expect(plan.items[0]).toMatchObject({
+        logicalId: 'tables.test_table',
+        action: 'update',
+        resourceType: 'ALIYUN_TABLESTORE_TABLE',
+        drifted: true,
+      });
+    });
+
+    it('should use empty object fallback when currentState.definition is null', async () => {
+      mockTablestoreOperations.getTable.mockResolvedValue({
+        tableName: 'test-table',
+        primaryKey: [{ name: 'id', type: 'INTEGER' }],
+      });
+
+      const state = setResource(initialState, 'tables.test_table', {
+        mode: 'managed',
+        region: 'cn-hangzhou',
+        definition: null as unknown as Record<string, unknown>,
+        instances: [
+          {
+            type: 'ALIYUN_TABLESTORE_TABLE',
+            sid: 'si:aliyun:ots:default:test-instance/test-table',
+            id: 'test-instance/test-table',
+            instanceName: 'test-instance',
+            tableName: 'test-table',
+            clusterType: 'HYBRID',
+            primaryKey: [{ name: 'id', type: 'INTEGER' }],
+          },
+        ],
+        lastUpdated: new Date().toISOString(),
+      });
+
+      const plan = await generateTablePlan(mockContext, state, [testTable]);
+
+      expect(plan.items).toHaveLength(1);
+      expect(plan.items[0]).toMatchObject({
+        logicalId: 'tables.test_table',
+        action: 'update',
+        resourceType: 'ALIYUN_TABLESTORE_TABLE',
+      });
+    });
   });
 });

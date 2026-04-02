@@ -241,6 +241,18 @@ describe('runtimeMapper', () => {
       expect(isRuntimeSupported(StandardRuntime.PYTHON3_10, ProviderEnum.TENCENT)).toBe(true);
       expect(isRuntimeSupported(StandardRuntime.PYTHON3_10, ProviderEnum.AWS)).toBe(true);
     });
+
+    it('returns true for Volcengine native runtimes', () => {
+      expect(isRuntimeSupported('nodejs/v18', ProviderEnum.VOLCENGINE)).toBe(true);
+      expect(isRuntimeSupported('python/v3.10', ProviderEnum.VOLCENGINE)).toBe(true);
+      expect(isRuntimeSupported('golang/v1', ProviderEnum.VOLCENGINE)).toBe(true);
+      expect(isRuntimeSupported('java/v17', ProviderEnum.VOLCENGINE)).toBe(true);
+    });
+
+    it('returns false for non-Volcengine runtimes when provider is Volcengine', () => {
+      expect(isRuntimeSupported('nodejs18', ProviderEnum.VOLCENGINE)).toBe(false);
+      expect(isRuntimeSupported('invalid_runtime', ProviderEnum.VOLCENGINE)).toBe(false);
+    });
   });
 
   describe('getSupportedRuntimes', () => {
@@ -286,6 +298,17 @@ describe('runtimeMapper', () => {
       expect(awsRuntimes).not.toContain(StandardRuntime.PHP8_0);
       expect(awsRuntimes).not.toContain(StandardRuntime.GO1);
       expect(awsRuntimes).not.toContain(StandardRuntime.DOTNET_CORE3_1);
+    });
+
+    it('returns only Volcengine native runtimes', () => {
+      const volcengineRuntimes = getSupportedRuntimes(ProviderEnum.VOLCENGINE);
+      expect(volcengineRuntimes).toContain('nodejs/v18');
+      expect(volcengineRuntimes).toContain('nodejs/v20');
+      expect(volcengineRuntimes).toContain('python/v3.10');
+      expect(volcengineRuntimes).toContain('golang/v1');
+      expect(volcengineRuntimes).toContain('java/v17');
+      expect(volcengineRuntimes).not.toContain('nodejs18');
+      expect(volcengineRuntimes).not.toContain(StandardRuntime.NODEJS18);
     });
   });
 });

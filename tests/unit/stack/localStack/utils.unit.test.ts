@@ -129,9 +129,25 @@ describe('LocalStack Utils', () => {
       fs.rmSync(extractedPath, { recursive: true, force: true });
     });
 
+    it('should return tempDir when single root entry is a file (not directory)', async () => {
+      const zip = new JSZip();
+      zip.file('single-file.js', 'module.exports = {};');
+
+      const zipPath = path.join(tempDir, 'single-file.zip');
+      const content = await zip.generateAsync({ type: 'nodebuffer' });
+      fs.writeFileSync(zipPath, content);
+
+      const extractedPath = await extractZipFile(zipPath);
+
+      expect(fs.existsSync(extractedPath)).toBe(true);
+      expect(fs.statSync(extractedPath).isDirectory()).toBe(true);
+      expect(fs.existsSync(path.join(extractedPath, 'single-file.js'))).toBe(true);
+
+      fs.rmSync(extractedPath, { recursive: true, force: true });
+    });
+
     it('should create parent directories when needed', async () => {
       const zip = new JSZip();
-      // Add multiple files at root level to avoid single-root optimization
       zip.file('README.md', 'readme');
       zip.file('deep/nested/path/file.js', 'content');
 
@@ -149,7 +165,6 @@ describe('LocalStack Utils', () => {
         true,
       );
 
-      // Clean up
       fs.rmSync(extractedPath, { recursive: true, force: true });
     });
   });

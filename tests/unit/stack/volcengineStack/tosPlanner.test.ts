@@ -282,5 +282,71 @@ describe('tosPlanner', () => {
       expect(result.items).toHaveLength(1);
       expect(result.items[0].action).toBe('create');
     });
+
+    it('should return null websiteCodeHash when computeDirectoryHash throws', async () => {
+      const buckets: Array<BucketDomain> = [
+        {
+          key: 'static_site',
+          name: 'test-bucket',
+          website: {
+            index: 'index.html',
+            code: './non-existent-dir',
+            error_page: '404.html',
+            error_code: 404,
+          },
+        },
+      ];
+
+      jest.spyOn(hashUtils, 'computeDirectoryHash').mockImplementation(() => {
+        throw new Error('Directory not found');
+      });
+      mockTosClient.tos.getBucket.mockResolvedValueOnce(null);
+
+      const result = await generateBucketPlan(mockContext, mockState, buckets);
+
+      expect(result.items).toHaveLength(1);
+      expect(result.items[0].action).toBe('create');
+    });
+
+    it('should generate delete plan for buckets removed from desired set', async () => {
+      const buckets: Array<BucketDomain> = [
+        {
+          key: 'active_bucket',
+          name: 'active-bucket',
+        },
+      ];
+
+      const stateWithMultipleBuckets: StateFile = {
+        ...mockState,
+        resources: {
+          'buckets.active_bucket': {
+            mode: 'managed',
+            region: 'cn-beijing',
+            definition: { bucketName: 'active-bucket' },
+            instances: [{ sid: 'test-sid', id: 'active-bucket', type: 'VOLCENGINE_TOS_BUCKET' }],
+            lastUpdated: '2024-01-01T00:00:00Z',
+          },
+          'buckets.old_bucket': {
+            mode: 'managed',
+            region: 'cn-beijing',
+            definition: { bucketName: 'old-bucket' },
+            instances: [{ sid: 'test-sid2', id: 'old-bucket', type: 'VOLCENGINE_TOS_BUCKET' }],
+            lastUpdated: '2024-01-01T00:00:00Z',
+          },
+        },
+      };
+
+      mockTosClient.tos.getBucket.mockResolvedValueOnce(null);
+      jest
+        .spyOn(stateManager, 'getAllResources')
+        .mockReturnValue(stateWithMultipleBuckets.resources);
+      jest.spyOn(stateManager, 'getResource').mockReturnValue(undefined);
+
+      const result = await generateBucketPlan(mockContext, stateWithMultipleBuckets, buckets);
+
+      const deleteItems = result.items.filter((i) => i.action === 'delete');
+      expect(deleteItems).toHaveLength(1);
+      expect(deleteItems[0].logicalId).toBe('buckets.old_bucket');
+    });
   });
 });
