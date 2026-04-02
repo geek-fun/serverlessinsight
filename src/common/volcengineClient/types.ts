@@ -40,6 +40,7 @@ export type VefaasFunctionConfig = {
   requestTimeout: number;
   description?: string;
   environmentVariables?: Record<string, string>;
+  role?: string;
   vpcConfig?: {
     vpcId: string;
     subnetIds: string[];
@@ -48,6 +49,10 @@ export type VefaasFunctionConfig = {
   tosMountConfig?: {
     bucketName: string;
     mountPath: string;
+  };
+  logConfig?: {
+    project: string;
+    topic: string;
   };
 };
 
@@ -66,10 +71,15 @@ export type VefaasFunctionInfo = {
   status?: string;
   createdTime?: string;
   lastModifiedTime?: string;
+  role?: string;
   vpcConfig?: {
     vpcId?: string;
     subnetIds?: string[];
     securityGroupIds?: string[];
+  };
+  logConfig?: {
+    project?: string;
+    topic?: string;
   };
 };
 
@@ -171,6 +181,73 @@ export type IamRoleInfo = {
   createdTime?: string;
   description?: string;
   maxSessionDuration?: number;
+  trustPolicyDocument?: string;
+  policyName?: string;
+};
+
+// ============================================================================
+// TLS (Log Service) Types
+// ============================================================================
+
+/**
+ * Configuration for creating a TLS project
+ */
+export type TlsProjectConfig = {
+  projectName: string;
+  description?: string;
+  region?: string;
+};
+
+/**
+ * Response from TLS getProject API
+ */
+export type TlsProjectInfo = {
+  projectId?: string;
+  projectName?: string;
+  description?: string;
+  region?: string;
+  createTime?: string;
+  status?: string;
+};
+
+/**
+ * Configuration for creating a TLS topic
+ */
+export type TlsTopicConfig = {
+  projectName: string;
+  topicName: string;
+  description?: string;
+  ttl?: number;
+};
+
+/**
+ * Response from TLS getTopic API
+ */
+export type TlsTopicInfo = {
+  topicId?: string;
+  topicName?: string;
+  projectName?: string;
+  description?: string;
+  ttl?: number;
+  createTime?: string;
+  status?: string;
+};
+
+/**
+ * Configuration for creating a TLS index
+ */
+export type TlsIndexConfig = {
+  projectName: string;
+  topicName: string;
+  fullTextIndex?: {
+    delimiter?: string;
+    caseSensitive?: boolean;
+  };
+  keyValueIndex?: Array<{
+    key: string;
+    value: string;
+    type: string;
+  }>;
 };
 
 // ============================================================================
@@ -305,6 +382,24 @@ export type VolcengineClient = {
       policy: IamRoleConfig['trustPolicy'],
     ) => Promise<void>;
     deleteRole: (roleName: string) => Promise<void>;
+    attachRolePolicy: (
+      roleName: string,
+      policyName: string,
+      policyType: 'System' | 'Custom',
+    ) => Promise<void>;
+    detachRolePolicy: (roleName: string, policyName: string) => Promise<void>;
+  };
+  tls: {
+    createProject: (config: TlsProjectConfig) => Promise<TlsProjectInfo>;
+    getProject: (projectName: string) => Promise<TlsProjectInfo | null>;
+    deleteProject: (projectName: string) => Promise<void>;
+    createTopic: (config: TlsTopicConfig) => Promise<TlsTopicInfo>;
+    getTopic: (projectName: string, topicName: string) => Promise<TlsTopicInfo | null>;
+    deleteTopic: (projectName: string, topicName: string) => Promise<void>;
+    createIndex: (config: TlsIndexConfig) => Promise<void>;
+    deleteIndex: (projectName: string, topicName: string) => Promise<void>;
+    waitForProject: (projectName: string) => Promise<void>;
+    waitForTopic: (projectName: string, topicName: string) => Promise<void>;
   };
   apigw: {
     createGateway: (config: ApigwGroupConfig) => Promise<ApigwGroupInfo>;

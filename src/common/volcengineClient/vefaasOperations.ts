@@ -190,6 +190,7 @@ export const createVefaasOperations = (client: VefaasSdkClient) => {
         ...(config.environmentVariables && {
           Envs: buildEnvVariables(config.environmentVariables),
         }),
+        ...(config.role && { Role: config.role }),
         ...codeSource,
         ...(config.vpcConfig && {
           VpcConfig: {
@@ -208,6 +209,13 @@ export const createVefaasOperations = (client: VefaasSdkClient) => {
                 LocalMountPath: config.tosMountConfig.mountPath,
               },
             ],
+          },
+        }),
+        ...(config.logConfig && {
+          LogConfig: {
+            EnableLog: true,
+            ProjectName: config.logConfig.project,
+            TopicName: config.logConfig.topic,
           },
         }),
       };
@@ -249,6 +257,26 @@ export const createVefaasOperations = (client: VefaasSdkClient) => {
           status: data.Status as string | undefined,
           createdTime: data.CreationTime as string | undefined,
           lastModifiedTime: data.LastUpdateTime as string | undefined,
+          role: data.Role as string | undefined,
+          vpcConfig: data.VpcConfig
+            ? {
+                vpcId: (data.VpcConfig as Record<string, unknown>).VpcId as string | undefined,
+                subnetIds: (data.VpcConfig as Record<string, unknown>).SubnetIds as
+                  | string[]
+                  | undefined,
+                securityGroupIds: (data.VpcConfig as Record<string, unknown>).SecurityGroupIds as
+                  | string[]
+                  | undefined,
+              }
+            : undefined,
+          logConfig: data.LogConfig
+            ? {
+                project: (data.LogConfig as Record<string, unknown>).ProjectName as
+                  | string
+                  | undefined,
+                topic: (data.LogConfig as Record<string, unknown>).TopicName as string | undefined,
+              }
+            : undefined,
         };
       } catch (error: unknown) {
         if (error && typeof error === 'object' && 'code' in error) {
@@ -271,6 +299,7 @@ export const createVefaasOperations = (client: VefaasSdkClient) => {
         ...(config.environmentVariables && {
           Envs: buildEnvVariables(config.environmentVariables),
         }),
+        ...(config.role && { Role: config.role }),
         ...(config.vpcConfig && {
           VpcConfig: {
             EnableVpc: true,
@@ -288,6 +317,13 @@ export const createVefaasOperations = (client: VefaasSdkClient) => {
                 LocalMountPath: config.tosMountConfig.mountPath,
               },
             ],
+          },
+        }),
+        ...(config.logConfig && {
+          LogConfig: {
+            EnableLog: true,
+            ProjectName: config.logConfig.project,
+            TopicName: config.logConfig.topic,
           },
         }),
       };

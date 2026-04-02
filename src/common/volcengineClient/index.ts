@@ -5,12 +5,14 @@ import { createVefaasOperations } from './vefaasOperations';
 import { createTosOperations } from './tosOperations';
 import { createIamOperations } from './iamOperations';
 import { createApigwOperations } from './apigwOperations';
+import { createTlsOperations } from './tlsOperations';
 
 export * from './types';
 export * from './vefaasOperations';
 export * from './tosOperations';
 export * from './iamOperations';
 export * from './apigwOperations';
+export * from './tlsOperations';
 
 const initializeSdkClients = (context: Context) => {
   const vefaasService = new Service({
@@ -35,6 +37,28 @@ const initializeSdkClients = (context: Context) => {
     ...(context.securityToken && { sessionToken: context.securityToken }),
   });
 
+  const iamService = new Service({
+    serviceName: 'iam',
+    defaultVersion: '2024-01-01',
+    protocol: 'https',
+    host: 'iam.volcengineapi.com',
+    accessKeyId: context.accessKeyId,
+    secretKey: context.accessKeySecret,
+    region: context.region,
+    ...(context.securityToken && { sessionToken: context.securityToken }),
+  });
+
+  const tlsService = new Service({
+    serviceName: 'tls',
+    defaultVersion: '2024-01-01',
+    protocol: 'https',
+    host: `tls.${context.region}.volces.com`,
+    accessKeyId: context.accessKeyId,
+    secretKey: context.accessKeySecret,
+    region: context.region,
+    ...(context.securityToken && { sessionToken: context.securityToken }),
+  });
+
   const apigwService = new Service({
     serviceName: 'apig',
     defaultVersion: '2021-03-03',
@@ -49,7 +73,8 @@ const initializeSdkClients = (context: Context) => {
   return {
     vefaas: vefaasService,
     tos: tosService,
-    iam: null,
+    iam: iamService,
+    tls: tlsService,
     apigw: apigwService,
   };
 };
@@ -61,6 +86,7 @@ export const createVolcengineClient = (context: Context): VolcengineClient => {
     vefaas: createVefaasOperations(sdkClients.vefaas),
     tos: createTosOperations(sdkClients.tos, context.region),
     iam: createIamOperations(sdkClients.iam),
+    tls: createTlsOperations(sdkClients.tls),
     apigw: createApigwOperations(sdkClients.apigw),
   };
 };

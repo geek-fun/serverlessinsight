@@ -672,4 +672,57 @@ export const zhCN = {
   VOLCENGINE_FUNCTION_DELETE_FAILED: '删除函数 {{functionName}} 失败：{{error}}',
   VOLCENGINE_APIGW_CLIENT_NOT_INITIALIZED: 'API 网关客户端未初始化。请检查您的凭证。',
   VOLCENGINE_APIGW_DELETE_FAILED: '删除 API 网关 {{logicalId}} 失败：{{error}}',
+
+  // Volcengine IAM messages
+  IAM_ROLE_CREATED: 'IAM 角色 {{roleName}} 创建成功',
+  IAM_ROLE_DELETED: 'IAM 角色 {{roleName}} 删除成功',
+  IAM_ROLE_ALREADY_EXISTS:
+    'IAM 角色 "{{roleName}}" 在云端已存在（检测到状态漂移）。' + '正在更新信任策略并复用现有角色。',
+  IAM_ROLE_NOT_FOUND_IN_CLOUD:
+    '云提供商中不存在 IAM 角色 "{{roleName}}"。' +
+    '该角色可能已被手动删除。' +
+    '修复方法：从状态中移除该角色并重新部署。',
+  IAM_ROLE_DRIFT_RECOVERY_FAILED:
+    'IAM 角色 "{{roleName}}" 状态漂移恢复失败：{{error}}。' +
+    '角色在云端存在但恢复操作失败。' +
+    '修复方法：在云控制台手动确认角色状态，从状态中移除该角色并重新部署。',
+  IAM_ROLE_TRUST_POLICY_UPDATED: 'IAM 角色 {{roleName}} 信任策略已更新',
+  IAM_POLICY_ALREADY_EXISTS: 'IAM 策略 {{policyName}} 已存在，复用现有策略',
+  IAM_POLICY_ALREADY_ATTACHED: 'IAM 策略 {{policyName}} 已附加到角色 {{roleName}}',
+  IAM_POLICY_ATTACHED: 'IAM 策略 {{policyName}} 已附加到角色 {{roleName}}',
+  IAM_POLICY_DETACHED: 'IAM 策略 {{policyName}} 已从角色 {{roleName}} 分离',
+  IAM_ROLE_INSTANCE_NOT_FOUND: 'IAM 角色实例在状态中未找到：{{roleName}}',
+  IAM_ROLE_TRN_MISSING:
+    'IAM 角色 TRN 缺失且无法获取 accountId 来构造 {{roleName}} 的 TRN。' +
+    '请确保 IAM 角色创建成功且 accountId 已配置。',
+  CREATING_IAM_ROLE: '正在创建 IAM 角色：{{roleName}}',
+  DELETING_IAM_ROLE: '正在删除 IAM 角色：{{id}}',
+  IAM_POLICY_DETACH_FAILED: '从角色 {{roleName}} 解除 IAM 策略 {{policyName}} 失败：{{error}}',
+
+  // Volcengine TLS (Log Service) messages
+  TLS_PROJECT_CREATED: 'TLS 项目 {{projectName}} 创建成功',
+  TLS_PROJECT_DELETED: 'TLS 项目 {{projectName}} 删除成功',
+  TLS_PROJECT_NOT_FOUND: 'TLS 项目 {{projectName}} 未找到',
+  TLS_PROJECT_TIMEOUT: '等待 TLS 项目 {{projectName}} 就绪超时',
+  TLS_TOPIC_CREATED: 'TLS 主题 {{topicName}} 创建成功',
+  TLS_TOPIC_DELETED: 'TLS 主题 {{topicName}} 删除成功',
+  TLS_TOPIC_NOT_FOUND: 'TLS 主题 {{topicName}} 未找到',
+  TLS_TOPIC_TIMEOUT: '等待 TLS 主题 {{topicName}} 就绪超时',
+  TLS_INDEX_CREATED: 'TLS 主题 {{topicName}} 索引创建成功',
+  TLS_INDEX_DELETED: 'TLS 主题 {{topicName}} 索引删除成功',
+  TLS_PROJECT_FAILED: 'TLS 项目 {{projectName}} 创建失败',
+  TLS_TOPIC_FAILED: 'TLS 主题 {{topicName}} 创建失败',
+  CREATING_TLS_PROJECT: '正在创建 TLS 项目：{{projectName}}',
+  CREATING_TLS_TOPIC: '正在创建 TLS 主题：{{topicName}}',
+  CREATING_TLS_INDEX: '正在为 TLS 主题创建索引：{{topicName}}',
+  DELETING_TLS_PROJECT: '正在删除 TLS 项目：{{id}}',
+  DELETING_TLS_TOPIC: '正在删除 TLS 主题：{{id}}',
+  DELETING_TLS_INDEX: '正在删除 TLS 索引：{{id}}',
+  WAITING_FOR_TLS_RESOURCES: '等待 TLS 资源就绪：{{projectName}}/{{topicName}}',
+
+  // Volcengine veFaaS dependent resources
+  VEFAAS_DEPENDENT_RESOURCES_TRACKED: '依赖资源（TLS、IAM）已在状态中跟踪',
+  VEFAAS_CAN_RETRY_DEPLOYMENT: '您可以重试部署 - 系统将复用现有的依赖资源',
+  VEFAAS_FUNCTION_EXISTS_RECOVERY:
+    '函数 {{functionName}} 在提供商中已存在（状态恢复中），跳过创建并刷新状态',
 };

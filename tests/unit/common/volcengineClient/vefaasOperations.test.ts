@@ -213,6 +213,10 @@ describe('vefaasOperations code size validation', () => {
             Handler: 'index.handler',
             MemoryMb: 512,
             Status: 'Active',
+            Envs: [
+              { key: 'NODE_ENV', value: 'production' },
+              { key: 'DEBUG', value: 'false' },
+            ],
           },
           ResponseMetadata: { RequestId: 'test-request-id', Service: 'vefaas' },
         });
@@ -224,8 +228,42 @@ describe('vefaasOperations code size validation', () => {
             functionId: 'func-123',
             functionName: 'test-function',
             runtime: 'nodejs/v18',
+            environmentVariables: { NODE_ENV: 'production', DEBUG: 'false' },
           }),
         );
+      });
+
+      it('should return function info with role and logConfig', async () => {
+        mockService.fetchOpenAPI.mockResolvedValueOnce({
+          Result: {
+            FunctionId: 'func-123',
+            FunctionName: 'test-function',
+            Runtime: 'nodejs/v18',
+            Handler: 'index.handler',
+            MemoryMb: 512,
+            Role: 'trn:iam::123456:role/test-role',
+            LogConfig: {
+              ProjectName: 'test-project',
+              TopicName: 'test-topic',
+            },
+            VpcConfig: {
+              VpcId: 'vpc-123',
+              SubnetIds: ['subnet-1'],
+              SecurityGroupIds: ['sg-1'],
+            },
+          },
+          ResponseMetadata: { RequestId: 'test-request-id', Service: 'vefaas' },
+        });
+
+        const result = await operations.getFunction('test-function');
+
+        expect(result?.role).toBe('trn:iam::123456:role/test-role');
+        expect(result?.logConfig).toEqual({ project: 'test-project', topic: 'test-topic' });
+        expect(result?.vpcConfig).toEqual({
+          vpcId: 'vpc-123',
+          subnetIds: ['subnet-1'],
+          securityGroupIds: ['sg-1'],
+        });
       });
 
       it('should return null when function not found', async () => {
@@ -369,6 +407,153 @@ describe('vefaasOperations code size validation', () => {
           expect.objectContaining({
             data: expect.objectContaining({
               Envs: [{ key: 'NODE_ENV', value: 'staging' }],
+            }),
+          }),
+        );
+      });
+
+      it('should create function with role', async () => {
+        const configWithRole: VefaasFunctionConfig = {
+          ...mockConfig,
+          role: 'trn:iam::123456:role/test-role',
+        };
+
+        await operations.createFunction(configWithRole, smallZipPath);
+
+        expect(mockService.fetchOpenAPI).toHaveBeenCalledWith(
+          expect.objectContaining({
+            data: expect.objectContaining({
+              Role: 'trn:iam::123456:role/test-role',
+            }),
+          }),
+        );
+      });
+
+      it('should create function with logConfig', async () => {
+        const configWithLog: VefaasFunctionConfig = {
+          ...mockConfig,
+          logConfig: { project: 'test-project', topic: 'test-topic' },
+        };
+
+        await operations.createFunction(configWithLog, smallZipPath);
+
+        expect(mockService.fetchOpenAPI).toHaveBeenCalledWith(
+          expect.objectContaining({
+            data: expect.objectContaining({
+              LogConfig: {
+                EnableLog: true,
+                ProjectName: 'test-project',
+                TopicName: 'test-topic',
+              },
+            }),
+          }),
+        );
+      });
+
+      it('should update function with role', async () => {
+        const configWithRole: VefaasFunctionConfig = {
+          ...mockConfig,
+          role: 'trn:iam::123456:role/test-role',
+        };
+
+        await operations.updateFunctionConfiguration(configWithRole);
+
+        expect(mockService.fetchOpenAPI).toHaveBeenCalledWith(
+          expect.objectContaining({
+            data: expect.objectContaining({
+              Role: 'trn:iam::123456:role/test-role',
+            }),
+          }),
+        );
+      });
+
+      it('should update function with logConfig', async () => {
+        const configWithLog: VefaasFunctionConfig = {
+          ...mockConfig,
+          logConfig: { project: 'test-project', topic: 'test-topic' },
+        };
+
+        await operations.updateFunctionConfiguration(configWithLog);
+
+        expect(mockService.fetchOpenAPI).toHaveBeenCalledWith(
+          expect.objectContaining({
+            data: expect.objectContaining({
+              LogConfig: {
+                EnableLog: true,
+                ProjectName: 'test-project',
+                TopicName: 'test-topic',
+              },
+            }),
+          }),
+        );
+      });
+
+      it('should create function with vpcConfig', async () => {
+        const configWithVpc: VefaasFunctionConfig = {
+          ...mockConfig,
+          vpcConfig: {
+            vpcId: 'vpc-123',
+            subnetIds: ['subnet-1', 'subnet-2'],
+            securityGroupIds: ['sg-1'],
+          },
+        };
+
+        await operations.createFunction(configWithVpc, smallZipPath);
+
+        expect(mockService.fetchOpenAPI).toHaveBeenCalledWith(
+          expect.objectContaining({
+            data: expect.objectContaining({
+              VpcConfig: {
+                EnableVpc: true,
+                VpcId: 'vpc-123',
+                SubnetIds: ['subnet-1', 'subnet-2'],
+                SecurityGroupIds: ['sg-1'],
+              },
+            }),
+          }),
+        );
+      });
+
+      it('should create function with tosMountConfig', async () => {
+        const configWithTos: VefaasFunctionConfig = {
+          ...mockConfig,
+          tosMountConfig: {
+            bucketName: 'test-bucket',
+            mountPath: '/mnt/tos',
+          },
+        };
+
+        await operations.createFunction(configWithTos, smallZipPath);
+
+        expect(mockService.fetchOpenAPI).toHaveBeenCalledWith(
+          expect.objectContaining({
+            data: expect.objectContaining({
+              TosMountConfig: {
+                EnableTos: true,
+                MountPoints: [
+                  {
+                    BucketName: 'test-bucket',
+                    LocalMountPath: '/mnt/tos',
+                  },
+                ],
+              },
+            }),
+          }),
+        );
+      });
+
+      it('should create function with description', async () => {
+        const configWithDesc: VefaasFunctionConfig = {
+          ...mockConfig,
+          description: 'Test function description',
+        };
+
+        await operations.createFunction(configWithDesc, smallZipPath);
+
+        expect(mockService.fetchOpenAPI).toHaveBeenCalledWith(
+          expect.objectContaining({
+            data: expect.objectContaining({
+              Description: 'Test function description',
             }),
           }),
         );
