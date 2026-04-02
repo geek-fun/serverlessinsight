@@ -270,7 +270,7 @@ describe('vefaasResource', () => {
           vpcConfig: {
             vpcId: 'vpc-123',
             subnetIds: ['subnet-1', 'subnet-2'],
-            securityGroupIds: [],
+            securityGroupIds: ['test-sg'],
           },
         }),
         expect.any(String),
