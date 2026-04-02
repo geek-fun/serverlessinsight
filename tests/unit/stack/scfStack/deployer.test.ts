@@ -258,5 +258,44 @@ describe('deployer', () => {
       expect(scfExecutor.executeFunctionPlan).toHaveBeenCalled();
       expect(cosExecutor.executeBucketPlan).toHaveBeenCalled();
     });
+    it('should handle database plan partial failure', async () => {
+      const error = new Error('Database deploy failed');
+      (error as any).isPartialFailure = true;
+
+      (tdsqlcExecutor.executeDatabasePlan as jest.Mock).mockResolvedValue({
+        state: initialState,
+        partialFailure: {
+          failedItem: {
+            logicalId: 'databases.test',
+            action: 'create',
+            resourceType: 'TDSQLC',
+          },
+          error,
+          successfulItems: [],
+        },
+      });
+
+      await expect(deployTencentStack(testIac, mockBackend)).rejects.toThrow();
+    });
+
+    it('should handle es plan partial failure', async () => {
+      const error = new Error('ES deploy failed');
+      (error as any).isPartialFailure = true;
+
+      (esExecutor.executeEsPlan as jest.Mock).mockResolvedValue({
+        state: initialState,
+        partialFailure: {
+          failedItem: {
+            logicalId: 'databases.es_test',
+            action: 'create',
+            resourceType: 'ES_SERVERLESS',
+          },
+          error,
+          successfulItems: [],
+        },
+      });
+
+      await expect(deployTencentStack(testIac, mockBackend)).rejects.toThrow();
+    });
   });
 });

@@ -80,6 +80,15 @@ describe('lockUtils', () => {
       const email = getUserEmail();
       expect(email).toBe('user@example.com');
     });
+
+    it('should fall back to username@hostname when git returns empty email', () => {
+      (execSync as jest.Mock).mockReturnValue('   ');
+      (os.userInfo as jest.Mock).mockReturnValue({ username: 'testuser' });
+      (os.hostname as jest.Mock).mockReturnValue('localhost');
+
+      const email = getUserEmail();
+      expect(email).toBe('testuser@localhost');
+    });
   });
 
   describe('sleep', () => {

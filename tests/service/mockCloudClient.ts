@@ -196,6 +196,175 @@ export const createMockTencentClient = (): MockTencentClient => ({
   },
 });
 
+export type MockVolcengineClient = {
+  vefaas: {
+    createFunction: jest.Mock;
+    getFunction: jest.Mock;
+    updateFunctionConfiguration: jest.Mock;
+    updateFunctionCode: jest.Mock;
+    deleteFunction: jest.Mock;
+    listFunctions: jest.Mock;
+  };
+  tos: {
+    createBucket: jest.Mock;
+    getBucket: jest.Mock;
+    deleteBucket: jest.Mock;
+    updateBucketAcl: jest.Mock;
+    updateBucketWebsite: jest.Mock;
+    putObject: jest.Mock;
+    listObjects: jest.Mock;
+    deleteObjects: jest.Mock;
+    uploadFiles: jest.Mock;
+  };
+  iam: {
+    createRole: jest.Mock;
+    getRole: jest.Mock;
+    updateRoleTrustPolicy: jest.Mock;
+    deleteRole: jest.Mock;
+    attachRolePolicy: jest.Mock;
+    detachRolePolicy: jest.Mock;
+  };
+  tls: {
+    createProject: jest.Mock;
+    getProject: jest.Mock;
+    deleteProject: jest.Mock;
+    createTopic: jest.Mock;
+    getTopic: jest.Mock;
+    deleteTopic: jest.Mock;
+    createIndex: jest.Mock;
+    deleteIndex: jest.Mock;
+    waitForProject: jest.Mock;
+    waitForTopic: jest.Mock;
+  };
+  apigw: {
+    createGateway: jest.Mock;
+    getGateway: jest.Mock;
+    findGatewayByName: jest.Mock;
+    updateGateway: jest.Mock;
+    deleteGateway: jest.Mock;
+    createApi: jest.Mock;
+    getApi: jest.Mock;
+    updateApi: jest.Mock;
+    deleteApi: jest.Mock;
+    deployApi: jest.Mock;
+    bindDomain: jest.Mock;
+    unbindDomain: jest.Mock;
+  };
+};
+
+export const createMockVolcengineClient = (): MockVolcengineClient => ({
+  vefaas: {
+    createFunction: jest.fn().mockResolvedValue(undefined),
+    getFunction: jest.fn().mockResolvedValue({
+      functionId: 'func-123',
+      functionName: 'test-function',
+      runtime: 'nodejs/v18',
+      handler: 'index.handler',
+      memoryMb: 128,
+      requestTimeout: 30,
+      status: 'Active',
+    }),
+    updateFunctionConfiguration: jest.fn().mockResolvedValue(undefined),
+    updateFunctionCode: jest.fn().mockResolvedValue(undefined),
+    deleteFunction: jest.fn().mockResolvedValue(undefined),
+    listFunctions: jest.fn().mockResolvedValue([]),
+  },
+  tos: {
+    createBucket: jest.fn().mockResolvedValue({
+      name: 'test-bucket',
+      location: 'cn-beijing',
+      extranetEndpoint: 'test-bucket.tos-cn-beijing.volces.com',
+    }),
+    getBucket: jest.fn().mockResolvedValue({
+      name: 'test-bucket',
+      location: 'cn-beijing',
+      extranetEndpoint: 'test-bucket.tos-cn-beijing.volces.com',
+    }),
+    deleteBucket: jest.fn().mockResolvedValue(undefined),
+    updateBucketAcl: jest.fn().mockResolvedValue(undefined),
+    updateBucketWebsite: jest.fn().mockResolvedValue(undefined),
+    putObject: jest.fn().mockResolvedValue(undefined),
+    listObjects: jest.fn().mockResolvedValue([]),
+    deleteObjects: jest.fn().mockResolvedValue(undefined),
+    uploadFiles: jest.fn().mockResolvedValue(undefined),
+  },
+  iam: {
+    createRole: jest.fn().mockResolvedValue({
+      roleName: 'test-role',
+      roleId: 'role-123',
+      trn: 'trn:iam::123456789012:role/test-role',
+    }),
+    getRole: jest.fn().mockResolvedValue({
+      roleName: 'test-role',
+      roleId: 'role-123',
+      trn: 'trn:iam::123456789012:role/test-role',
+    }),
+    updateRoleTrustPolicy: jest.fn().mockResolvedValue(undefined),
+    deleteRole: jest.fn().mockResolvedValue(undefined),
+    attachRolePolicy: jest.fn().mockResolvedValue(undefined),
+    detachRolePolicy: jest.fn().mockResolvedValue(undefined),
+  },
+  tls: {
+    createProject: jest.fn().mockResolvedValue({
+      projectId: 'proj-123',
+      projectName: 'test-project',
+      status: 'Running',
+    }),
+    getProject: jest.fn().mockResolvedValue({
+      projectId: 'proj-123',
+      projectName: 'test-project',
+      status: 'Running',
+    }),
+    deleteProject: jest.fn().mockResolvedValue(undefined),
+    createTopic: jest.fn().mockResolvedValue({
+      topicId: 'topic-123',
+      topicName: 'test-topic',
+      status: 'Running',
+    }),
+    getTopic: jest.fn().mockResolvedValue({
+      topicId: 'topic-123',
+      topicName: 'test-topic',
+      status: 'Running',
+    }),
+    deleteTopic: jest.fn().mockResolvedValue(undefined),
+    createIndex: jest.fn().mockResolvedValue(undefined),
+    deleteIndex: jest.fn().mockResolvedValue(undefined),
+    waitForProject: jest.fn().mockResolvedValue(undefined),
+    waitForTopic: jest.fn().mockResolvedValue(undefined),
+  },
+  apigw: {
+    createGateway: jest.fn().mockResolvedValue({
+      gatewayId: 'gw-123',
+      gatewayName: 'test-gateway',
+      status: 'Running',
+      subDomain: 'gw-123.apig.cn-beijing.volces.com',
+    }),
+    getGateway: jest.fn().mockResolvedValue({
+      gatewayId: 'gw-123',
+      gatewayName: 'test-gateway',
+      status: 'Running',
+      subDomain: 'gw-123.apig.cn-beijing.volces.com',
+    }),
+    findGatewayByName: jest.fn().mockResolvedValue(null),
+    updateGateway: jest.fn().mockResolvedValue(undefined),
+    deleteGateway: jest.fn().mockResolvedValue(undefined),
+    createApi: jest.fn().mockResolvedValue('api-123'),
+    getApi: jest.fn().mockResolvedValue({
+      apiId: 'api-123',
+      apiName: 'test-api',
+      gatewayId: 'gw-123',
+      method: 'GET',
+      path: '/api/hello',
+      status: 'Running',
+    }),
+    updateApi: jest.fn().mockResolvedValue(undefined),
+    deleteApi: jest.fn().mockResolvedValue(undefined),
+    deployApi: jest.fn().mockResolvedValue(undefined),
+    bindDomain: jest.fn().mockResolvedValue(undefined),
+    unbindDomain: jest.fn().mockResolvedValue(undefined),
+  },
+});
+
 export const createMockContext = (overrides?: Partial<Context>): Context =>
   ({
     provider: ProviderEnum.ALIYUN,

@@ -1,0 +1,34 @@
+version: 0.1.0
+provider:
+  name: volcengine
+  region: cn-beijing
+
+app: insight-poc
+service: insight-poc-vpc
+
+functions:
+  vpc_function:
+    name: insight-poc-vpc-fn
+    code:
+      runtime: nodejs/v18
+      handler: index.handler
+      path: ./artifacts/function.zip
+    memory: 512
+    timeout: 60
+    network:
+      vpc_id: vpc-xxx
+      subnet_ids:
+        - subnet-xxx
+      security_group:
+        name: fn-security-group
+        ingress:
+          - protocol: TCP
+            port: 443
+            source: 0.0.0.0/0
+        egress:
+          - protocol: TCP
+            port: 0
+            destination: 0.0.0.0/0
+    environment:
+      DATABASE_URL: mysql://rds-host:3306/mydb
+      REDIS_URL: redis://redis-host:6379

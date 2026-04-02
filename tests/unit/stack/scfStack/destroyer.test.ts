@@ -250,5 +250,45 @@ describe('destroyer', () => {
 
       expect(mockBackend.saveState).toHaveBeenCalled();
     });
+
+    it('should handle database deletion failure', async () => {
+      const error = new Error('Database deletion failed');
+      (error as any).isPartialFailure = true;
+
+      (tdsqlcExecutor.executeDatabasePlan as jest.Mock).mockResolvedValue({
+        state: initialState,
+        partialFailure: {
+          failedItem: {
+            logicalId: 'databases.test',
+            action: 'delete',
+            resourceType: 'TDSQLC',
+          },
+          error,
+          successfulItems: [],
+        },
+      });
+
+      await expect(destroyTencentStack(mockBackend)).rejects.toThrow();
+    });
+
+    it('should handle es deletion failure', async () => {
+      const error = new Error('ES deletion failed');
+      (error as any).isPartialFailure = true;
+
+      (esExecutor.executeEsPlan as jest.Mock).mockResolvedValue({
+        state: initialState,
+        partialFailure: {
+          failedItem: {
+            logicalId: 'databases.es_test',
+            action: 'delete',
+            resourceType: 'ES_SERVERLESS',
+          },
+          error,
+          successfulItems: [],
+        },
+      });
+
+      await expect(destroyTencentStack(mockBackend)).rejects.toThrow();
+    });
   });
 });

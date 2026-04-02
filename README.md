@@ -52,6 +52,7 @@ ServerlessInsight supports the following cloud providers:
 | ----------------- | ---------------- | -------------- | -------------- | ---------------- | ------- |
 | **Alibaba Cloud** | ✅ FC3           | ✅ API Gateway | ✅ OSS         | ✅ RDS, OTS, ESS | Stable  |
 | **Tencent Cloud** | ✅ SCF           | 🚧 Coming Soon | ✅ COS         | ✅ TDSQL-C       | Stable  |
+| **Volcengine**    | ✅ veFaaS        | ✅ API Gateway | ✅ TOS         | —                | Stable  |
 | **Huawei Cloud**  | ✅ FunctionGraph | 🚧 Coming Soon | 🚧 Coming Soon | 🚧 Coming Soon   | Beta    |
 | **AWS**           | 🔜 Planned       | 🔜 Planned     | 🔜 Planned     | 🔜 Planned       | Planned |
 | **Azure**         | 🔜 Planned       | 🔜 Planned     | 🔜 Planned     | 🔜 Planned       | Planned |

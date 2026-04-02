@@ -239,6 +239,48 @@ describe('vefaasResource', () => {
       expect(mockVefaasClient.tls.createProject).not.toHaveBeenCalled();
     });
 
+    it('should reuse existing IAM role and call updateRoleTrustPolicy when hasIamRole=true', async () => {
+      const stateWithIamRole: StateFile = {
+        ...mockState,
+        resources: {
+          'functions.test_fn': {
+            mode: 'managed',
+            region: 'cn-beijing',
+            definition: {},
+            instances: [
+              {
+                type: 'VOLCENGINE_IAM_ROLE',
+                sid: 'volcengine-iam_role-dev-test-app-test-service-dev-role',
+                id: 'test-app-test-service-dev-role',
+                trn: 'trn:iam::123456:role/test-app-test-service-dev-role',
+                attributes: {},
+              },
+            ],
+            status: 'ready',
+            lastUpdated: '2024-01-01T00:00:00Z',
+          },
+        },
+      };
+
+      (getResource as jest.Mock).mockReturnValue(stateWithIamRole.resources['functions.test_fn']);
+
+      mockVefaasClient.iam.updateRoleTrustPolicy.mockResolvedValueOnce(undefined);
+      mockVefaasClient.vefaas.createFunction.mockResolvedValueOnce(undefined);
+      mockVefaasClient.vefaas.getFunction.mockResolvedValueOnce({
+        functionName: 'test-function',
+        functionId: 'func-123',
+        runtime: 'nodejs16',
+        handler: 'index.handler',
+        memoryMb: 128,
+        requestTimeout: 30,
+      });
+
+      await createResource(mockContext, mockFunction, stateWithIamRole);
+
+      expect(mockVefaasClient.iam.updateRoleTrustPolicy).toHaveBeenCalled();
+      expect(mockVefaasClient.iam.createRole).not.toHaveBeenCalled();
+    });
+
     it('should create function with VPC config', async () => {
       const mockFunctionWithVpc: FunctionDomain = {
         ...mockFunction,
@@ -326,6 +368,47 @@ describe('vefaasResource', () => {
       mockVefaasClient.vefaas.getFunction.mockResolvedValueOnce(null);
 
       await expect(createResource(mockContext, mockFunction, mockState)).rejects.toThrow();
+    });
+
+    it('should skip createFunction when tainted state has existing function on provider', async () => {
+      const taintedState: StateFile = {
+        ...mockState,
+        resources: {
+          'functions.test_fn': {
+            mode: 'managed',
+            region: 'cn-beijing',
+            definition: {},
+            instances: [],
+            status: 'tainted',
+            lastUpdated: '2024-01-01T00:00:00Z',
+          },
+        },
+      };
+
+      (getResource as jest.Mock).mockReturnValue(taintedState.resources['functions.test_fn']);
+
+      mockVefaasClient.vefaas.getFunction
+        .mockResolvedValueOnce({
+          functionName: 'test-function',
+          functionId: 'func-123',
+          runtime: 'nodejs16',
+          handler: 'index.handler',
+          memoryMb: 128,
+          requestTimeout: 30,
+        })
+        .mockResolvedValueOnce({
+          functionName: 'test-function',
+          functionId: 'func-123',
+          runtime: 'nodejs16',
+          handler: 'index.handler',
+          memoryMb: 128,
+          requestTimeout: 30,
+        });
+
+      await createResource(mockContext, mockFunction, taintedState);
+
+      expect(mockVefaasClient.vefaas.createFunction).not.toHaveBeenCalled();
+      expect(mockVefaasClient.vefaas.getFunction).toHaveBeenCalledWith('test-function');
     });
 
     it('should throw error when IAM role TRN is missing and accountId is not available', async () => {
@@ -822,6 +905,85 @@ describe('vefaasResource', () => {
 
       await deleteResource(mockContext, 'test-function', 'functions.test_fn', stateWithFunction);
 
+      expect(removeResource).toHaveBeenCalled();
+    });
+
+    it('should warn on unknown dependent resource type and continue', async () => {
+      const stateWithUnknown: StateFile = {
+        ...mockState,
+        resources: {
+          'functions.test_fn': {
+            mode: 'managed',
+            region: 'cn-beijing',
+            definition: { functionName: 'test-function', codeHash: 'old-hash' },
+            instances: [
+              {
+                type: 'VOLCENGINE_VEFAAS_FUNCTION',
+                sid: 'volcengine-test-service-dev-test-function',
+                id: 'test-function',
+                functionName: 'test-function',
+                attributes: {},
+              },
+              {
+                type: 'VOLCENGINE_UNKNOWN_TYPE',
+                sid: 'volcengine-unknown-dev-something',
+                id: 'something',
+                attributes: {},
+              },
+            ],
+            lastUpdated: '2024-01-01T00:00:00Z',
+          },
+        },
+      };
+
+      mockVefaasClient.vefaas.deleteFunction.mockResolvedValueOnce(undefined);
+      (getResource as jest.Mock).mockReturnValue(stateWithUnknown.resources['functions.test_fn']);
+
+      const { logger } = jest.requireMock('../../../../src/common/logger');
+
+      await deleteResource(mockContext, 'test-function', 'functions.test_fn', stateWithUnknown);
+
+      expect(logger.warn).toHaveBeenCalled();
+      expect(removeResource).toHaveBeenCalled();
+    });
+
+    it('should log error when a delete operation throws during cleanup', async () => {
+      const stateWithIamRole: StateFile = {
+        ...mockState,
+        resources: {
+          'functions.test_fn': {
+            mode: 'managed',
+            region: 'cn-beijing',
+            definition: { functionName: 'test-function', codeHash: 'old-hash' },
+            instances: [
+              {
+                type: 'VOLCENGINE_VEFAAS_FUNCTION',
+                sid: 'volcengine-test-service-dev-test-function',
+                id: 'test-function',
+                functionName: 'test-function',
+                attributes: {},
+              },
+              {
+                type: 'VOLCENGINE_IAM_ROLE',
+                sid: 'volcengine-iam_role-dev-role',
+                id: 'test-app-test-service-dev-role',
+                attributes: {},
+              },
+            ],
+            lastUpdated: '2024-01-01T00:00:00Z',
+          },
+        },
+      };
+
+      mockVefaasClient.vefaas.deleteFunction.mockResolvedValueOnce(undefined);
+      mockVefaasClient.iam.deleteRole.mockRejectedValueOnce(new Error('IAM delete failed'));
+      (getResource as jest.Mock).mockReturnValue(stateWithIamRole.resources['functions.test_fn']);
+
+      const { logger } = jest.requireMock('../../../../src/common/logger');
+
+      await deleteResource(mockContext, 'test-function', 'functions.test_fn', stateWithIamRole);
+
+      expect(logger.error).toHaveBeenCalled();
       expect(removeResource).toHaveBeenCalled();
     });
 

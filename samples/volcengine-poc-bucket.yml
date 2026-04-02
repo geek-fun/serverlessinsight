@@ -1,0 +1,17 @@
+version: 0.1.0
+provider:
+  name: volcengine
+  region: cn-beijing
+
+app: insight-poc
+service: insight-poc-bucket
+
+buckets:
+  website_bucket:
+    name: insight-poc-website
+    security:
+      acl: PUBLIC_READ
+    website:
+      code: ./dist
+      index: index.html
+      error_page: 404.html

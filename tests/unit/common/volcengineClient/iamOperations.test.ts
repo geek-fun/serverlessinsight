@@ -472,5 +472,41 @@ describe('iamOperations', () => {
 
       await operations.detachRolePolicy('test-role', 'test-policy');
     });
+
+    it('should warn when detach fails with non-recoverable error', async () => {
+      const error = new Error('Access denied') as Error & { code: string };
+      error.code = 'AccessDenied';
+
+      mockClient.fetchOpenAPI.mockRejectedValueOnce(error);
+
+      const { logger } = jest.requireMock('../../../../src/common/logger');
+
+      await operations.detachRolePolicy('test-role', 'test-policy');
+
+      expect(logger.warn).toHaveBeenCalled();
+    });
+  });
+
+  describe('createRole - non-object error handling', () => {
+    it('should rethrow non-object policy creation error', async () => {
+      mockClient.fetchOpenAPI
+        .mockResolvedValueOnce({
+          Result: { Role: { RoleName: 'test-role', RoleId: 'role-123' } },
+        })
+        .mockRejectedValueOnce('plain string error');
+
+      await expect(operations.createRole(mockConfig)).rejects.toBe('plain string error');
+    });
+
+    it('should rethrow non-object policy attach error', async () => {
+      mockClient.fetchOpenAPI
+        .mockResolvedValueOnce({
+          Result: { Role: { RoleName: 'test-role', RoleId: 'role-123' } },
+        })
+        .mockResolvedValueOnce({})
+        .mockRejectedValueOnce('plain string attach error');
+
+      await expect(operations.createRole(mockConfig)).rejects.toBe('plain string attach error');
+    });
   });
 });

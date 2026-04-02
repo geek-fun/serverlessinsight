@@ -1,0 +1,19 @@
+version: 0.0.1
+app: insight-poc-app
+provider:
+  name: volcengine
+  region: cn-beijing
+
+service: insight-poc
+
+functions:
+  insight_poc_fn:
+    name: insight-poc-fn
+    code:
+      runtime: nodejs/v18
+      handler: index.handler
+      path: tests/fixtures/artifacts/artifact.zip
+    memory: 128
+    timeout: 30
+    environment:
+      NODE_ENV: production

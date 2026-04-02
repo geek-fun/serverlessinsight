@@ -238,4 +238,53 @@ describe('cosStateBackend', () => {
 
     await expect(capturedAdapter.read('state.json')).rejects.toThrow('Access Denied');
   });
+
+  it('should propagate errors on write', async () => {
+    const testError = new Error('Write Failed');
+    mockCosClient.putObject.mockImplementation(
+      ({ _Key, _Body }: { _Key: string; _Body: string }, callback: (err: unknown) => void) => {
+        callback(testError);
+      },
+    );
+
+    const {
+      createRemoteStateBackend,
+    } = require('../../../../src/common/stateBackend/remoteStateBackend');
+    const adapterCapture = jest.fn();
+    (createRemoteStateBackend as jest.Mock).mockImplementation((adapter: StorageAdapter) => {
+      adapterCapture(adapter);
+      return { saveState: jest.fn() };
+    });
+
+    createCosStateBackend(config);
+    const capturedAdapter = adapterCapture.mock.calls[0][0];
+
+    await expect(capturedAdapter.write('state.json', { app: 'test' })).rejects.toThrow(
+      'Write Failed',
+    );
+  });
+
+  it('should propagate non-404 errors on delete', async () => {
+    const testError = new Error('Delete Failed');
+    (testError as unknown as { statusCode: number }).statusCode = 500;
+    mockCosClient.deleteObject.mockImplementation(
+      ({ _Key }: { _Key: string }, callback: (err: unknown) => void) => {
+        callback(testError);
+      },
+    );
+
+    const {
+      createRemoteStateBackend,
+    } = require('../../../../src/common/stateBackend/remoteStateBackend');
+    const adapterCapture = jest.fn();
+    (createRemoteStateBackend as jest.Mock).mockImplementation((adapter: StorageAdapter) => {
+      adapterCapture(adapter);
+      return { loadState: jest.fn() };
+    });
+
+    createCosStateBackend(config);
+    const capturedAdapter = adapterCapture.mock.calls[0][0];
+
+    await expect(capturedAdapter.delete('state.json')).rejects.toThrow('Delete Failed');
+  });
 });

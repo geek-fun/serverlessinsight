@@ -1,0 +1,19 @@
+version: 0.1.0
+provider:
+  name: volcengine
+  region: cn-beijing
+
+app: insight-poc
+service: insight-poc-function
+
+functions:
+  hello_function:
+    name: insight-poc-hello-fn
+    code:
+      runtime: nodejs/v18
+      handler: index.handler
+      path: ./artifacts/function.zip
+    memory: 128
+    timeout: 30
+    environment:
+      NODE_ENV: production
