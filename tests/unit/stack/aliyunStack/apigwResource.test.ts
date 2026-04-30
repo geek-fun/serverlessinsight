@@ -7,6 +7,7 @@ import {
   deleteApigwResource,
 } from '../../../../src/stack/aliyunStack/apigwResource';
 import { Context, CURRENT_STATE_VERSION, StateFile, EventDomain } from '../../../../src/types';
+import { extractMainDomain, extractHostRecord } from '../../../../src/common/domainUtils';
 
 const mockedApigwOperations = {
   findApiGroupByName: jest.fn(),
@@ -28,8 +29,21 @@ const mockedCasOperations = {
   getCertificate: jest.fn(),
 };
 
+const mockedCdnOperations = {
+  addCdnDomain: jest.fn(),
+  describeCdnDomainDetail: jest.fn(),
+  deleteCdnDomain: jest.fn(),
+  modifyCdnDomain: jest.fn(),
+  setDomainServerCertificate: jest.fn(),
+  applyCacheConfig: jest.fn(),
+  applyProtocolConfig: jest.fn(),
+  applyCompression: jest.fn(),
+  applyHttpsRedirect: jest.fn(),
+};
+
 const mockedDnsOperations = {
   deleteDomainRecord: jest.fn(),
+  addDomainRecord: jest.fn(),
 };
 
 const mockedApigwTypes = {
@@ -59,6 +73,7 @@ jest.mock('../../../../src/common/aliyunClient', () => ({
     apigw: mockedApigwOperations,
     cas: mockedCasOperations,
     dns: mockedDnsOperations,
+    cdn: mockedCdnOperations,
   }),
 }));
 
@@ -96,6 +111,7 @@ jest.mock('../../../../src/common/certUtils', () => ({
 }));
 
 jest.mock('../../../../src/common/domainUtils', () => ({
+  ...jest.requireActual('../../../../src/common/domainUtils'),
   deriveWwwDomain: jest.fn((domain: string) => `www.${domain}`),
 }));
 
@@ -150,6 +166,7 @@ describe('ApigwResource', () => {
       mockedApigwOperations.getApiGroup.mockResolvedValue({
         groupId: 'group-123',
         groupName: 'test-api-group',
+        subDomain: 'group-123.apigw.aliyuncs.com',
       });
       mockedApigwOperations.createApi.mockResolvedValue('api-456');
       mockedApigwOperations.getApi.mockResolvedValue({
@@ -232,6 +249,7 @@ describe('ApigwResource', () => {
       mockedApigwOperations.getApiGroup.mockResolvedValue({
         groupId: 'group-123',
         groupName: 'test-api-group',
+        subDomain: 'group-123.apigw.aliyuncs.com',
       });
       mockedApigwOperations.createApi.mockResolvedValue('api-id');
       mockedApigwOperations.getApi.mockResolvedValue({
@@ -465,6 +483,39 @@ describe('ApigwResource', () => {
       expect(mockedStateManager.removeResource).toHaveBeenCalled();
     });
 
+    it('should delete CDN resources during deletion for CDN-backed domain', async () => {
+      const existingState = {
+        instances: [
+          { type: 'ALIYUN_APIGW_GROUP', id: 'group-123' },
+          { type: 'ALIYUN_CDN_DISTRIBUTION', id: 'example.com', domainName: 'example.com' },
+          {
+            type: 'ALIYUN_CDN_DNS_CNAME',
+            id: 'dns-record-123',
+            domain: 'example.com',
+            dnsRecordId: 'dns-record-123',
+          },
+        ],
+        definition: {
+          domain: {
+            domainName: 'example.com',
+            cdnEnabled: true,
+            wwwBindApex: false,
+          },
+        },
+      };
+
+      mockedStateManager.getResource.mockReturnValue(existingState);
+      mockedCdnOperations.deleteCdnDomain.mockResolvedValue(undefined);
+      mockedDnsOperations.deleteDomainRecord.mockResolvedValue(undefined);
+      mockedApigwOperations.deleteApiGroup.mockResolvedValue(undefined);
+
+      await deleteApigwResource(mockContext, 'events.api_gateway', initialState);
+
+      expect(mockedCdnOperations.deleteCdnDomain).toHaveBeenCalledWith('example.com');
+      expect(mockedDnsOperations.deleteDomainRecord).toHaveBeenCalledWith('dns-record-123');
+      expect(mockedApigwOperations.unbindCustomDomain).not.toHaveBeenCalled();
+    });
+
     it('should unbind primary domain and www domain during deletion', async () => {
       const existingState = {
         instances: [{ type: 'ALIYUN_APIGW_GROUP', id: 'group-123' }],
@@ -640,6 +691,7 @@ describe('ApigwResource', () => {
       mockedApigwOperations.getApiGroup.mockResolvedValue({
         groupId: 'group-123',
         groupName: 'test-api-group',
+        subDomain: 'group-123.apigw.aliyuncs.com',
       });
       mockedApigwOperations.createApi.mockResolvedValue('api-456');
       mockedApigwOperations.getApi.mockResolvedValue({
@@ -658,6 +710,20 @@ describe('ApigwResource', () => {
         requestProtocol: 'HTTPS',
         isHttpRedirectToHttps: true,
       });
+    };
+
+    const setupCdnMocks = (cname = 'api.example.com.cdn.aliyuncs.com') => {
+      mockedCdnOperations.addCdnDomain.mockResolvedValue(undefined);
+      mockedCdnOperations.describeCdnDomainDetail.mockResolvedValue({
+        domainName: 'example.com',
+        cname,
+      });
+      mockedCdnOperations.setDomainServerCertificate.mockResolvedValue(undefined);
+      mockedCdnOperations.applyCacheConfig.mockResolvedValue(undefined);
+      mockedCdnOperations.applyProtocolConfig.mockResolvedValue(undefined);
+      mockedCdnOperations.applyCompression.mockResolvedValue(undefined);
+      mockedCdnOperations.applyHttpsRedirect.mockResolvedValue(undefined);
+      mockedDnsOperations.addDomainRecord.mockResolvedValue('dns-record-123');
     };
 
     it('should bind primary domain with certificate_id', async () => {
@@ -806,6 +872,389 @@ describe('ApigwResource', () => {
       );
     });
 
+    it('should create CDN distribution when domain.cdn is enabled', async () => {
+      setupBasicCreateMocks();
+      setupCdnMocks();
+      mockedApigwOperations.getApiGroup.mockResolvedValue({
+        groupId: 'group-123',
+        groupName: 'test-api-group',
+        subDomain: 'group-123.apigw.aliyuncs.com',
+      });
+      mockedCasOperations.getCertificate.mockResolvedValue({
+        cert: 'cert-body',
+        key: 'cert-key',
+      });
+      mockedApigwTypes.extractEventDomainDefinition.mockReturnValue({
+        domainName: 'example.com',
+        cdnEnabled: true,
+      });
+
+      const eventWithDomain: EventDomain = {
+        ...testEvent,
+        domain: {
+          domain_name: 'example.com',
+          certificate_id: 'cert-id-123',
+          www_bind_apex: false,
+          cdn: true,
+        },
+      };
+
+      await createApigwResource(
+        mockContext,
+        eventWithDomain,
+        'test-service',
+        undefined,
+        initialState,
+      );
+
+      expect(mockedCdnOperations.addCdnDomain).toHaveBeenCalledWith(
+        expect.objectContaining({
+          domainName: 'example.com',
+          cdnType: 'web',
+          sources: [expect.objectContaining({ content: 'group-123.apigw.aliyuncs.com' })],
+        }),
+      );
+      expect(mockedDnsOperations.addDomainRecord).toHaveBeenCalledWith(
+        expect.objectContaining({
+          domainName: extractMainDomain('example.com'),
+          rr: extractHostRecord('example.com', extractMainDomain('example.com')),
+          type: 'CNAME',
+          value: 'api.example.com.cdn.aliyuncs.com',
+        }),
+      );
+      expect(mockedCdnOperations.setDomainServerCertificate).toHaveBeenCalledWith(
+        'example.com',
+        expect.objectContaining({
+          serverCertificate: 'cert-body',
+          privateKey: 'cert-key',
+        }),
+      );
+      expect(mockedApigwOperations.bindCustomDomain).not.toHaveBeenCalled();
+      expect(mockedStateManager.setResource).toHaveBeenCalled();
+    });
+
+    it('should create CDN distributions for primary and www domains', async () => {
+      setupBasicCreateMocks();
+      setupCdnMocks('cdn-target.aliyuncs.com');
+      mockedApigwOperations.getApiGroup.mockResolvedValue({
+        groupId: 'group-123',
+        groupName: 'test-api-group',
+        subDomain: 'group-123.apigw.aliyuncs.com',
+      });
+      mockedApigwTypes.extractEventDomainDefinition.mockReturnValue({
+        domainName: 'example.com',
+        wwwBindApex: true,
+        cdnEnabled: true,
+      });
+
+      const eventWithDomain: EventDomain = {
+        ...testEvent,
+        domain: {
+          domain_name: 'example.com',
+          certificate_body: 'cert-body',
+          certificate_private_key: 'cert-key',
+          www_bind_apex: true,
+          cdn: {
+            enabled: true,
+            cache_ttl: 60,
+            ignore_query_string: false,
+          },
+        },
+      };
+
+      await createApigwResource(
+        mockContext,
+        eventWithDomain,
+        'test-service',
+        undefined,
+        initialState,
+      );
+
+      expect(mockedCdnOperations.addCdnDomain).toHaveBeenCalledTimes(2);
+      expect(mockedDnsOperations.addDomainRecord).toHaveBeenCalledTimes(2);
+      expect(mockedDnsOperations.addDomainRecord).toHaveBeenNthCalledWith(
+        1,
+        expect.objectContaining({
+          domainName: extractMainDomain('example.com'),
+          rr: extractHostRecord('example.com', extractMainDomain('example.com')),
+          type: 'CNAME',
+          value: 'cdn-target.aliyuncs.com',
+        }),
+      );
+      expect(mockedDnsOperations.addDomainRecord).toHaveBeenNthCalledWith(
+        2,
+        expect.objectContaining({
+          domainName: extractMainDomain('www.example.com'),
+          rr: extractHostRecord('www.example.com', extractMainDomain('www.example.com')),
+          type: 'CNAME',
+          value: 'cdn-target.aliyuncs.com',
+        }),
+      );
+      expect(mockedCdnOperations.applyCacheConfig).toHaveBeenCalledWith('example.com', 60, false);
+      expect(mockedCdnOperations.applyCacheConfig).toHaveBeenCalledWith(
+        'www.example.com',
+        60,
+        false,
+      );
+    });
+
+    it('should apply advanced CDN settings and skip DNS record when CDN cname is unavailable', async () => {
+      setupBasicCreateMocks();
+      mockedCdnOperations.addCdnDomain.mockResolvedValue(undefined);
+      mockedCdnOperations.describeCdnDomainDetail.mockResolvedValue({
+        domainName: 'example.com',
+      });
+      mockedCdnOperations.applyProtocolConfig.mockResolvedValue(undefined);
+      mockedCdnOperations.applyCompression.mockResolvedValue(undefined);
+      mockedCdnOperations.applyHttpsRedirect.mockResolvedValue(undefined);
+      mockedApigwTypes.extractEventDomainDefinition.mockReturnValue({
+        domainName: 'example.com',
+        cdnEnabled: true,
+      });
+
+      const eventWithDomain: EventDomain = {
+        ...testEvent,
+        domain: {
+          domain_name: 'example.com',
+          www_bind_apex: false,
+          cdn: {
+            enabled: true,
+            cdn_type: 'download',
+            scope: 'domestic',
+            origin_protocol: 'https',
+            compression: true,
+            force_redirect_https: true,
+          },
+        },
+      };
+
+      await createApigwResource(
+        mockContext,
+        eventWithDomain,
+        'test-service',
+        undefined,
+        initialState,
+      );
+
+      expect(mockedCdnOperations.addCdnDomain).toHaveBeenCalledWith(
+        expect.objectContaining({
+          domainName: 'example.com',
+          cdnType: 'download',
+          scope: 'domestic',
+          sources: [
+            expect.objectContaining({
+              content: 'group-123.apigw.aliyuncs.com',
+              port: 443,
+            }),
+          ],
+        }),
+      );
+      expect(mockedCdnOperations.applyProtocolConfig).toHaveBeenCalledWith('example.com', 'https');
+      expect(mockedCdnOperations.applyCompression).toHaveBeenCalledWith('example.com', true);
+      expect(mockedCdnOperations.applyHttpsRedirect).toHaveBeenCalledWith('example.com', true);
+      expect(mockedDnsOperations.addDomainRecord).not.toHaveBeenCalled();
+    });
+
+    it('should track CDN instances with domain fallback id during create', async () => {
+      setupBasicCreateMocks();
+      mockedCdnOperations.addCdnDomain.mockResolvedValue(undefined);
+      mockedCdnOperations.describeCdnDomainDetail.mockResolvedValue({
+        domainName: 'example.com',
+        cname: 'fallback-cdn.aliyuncs.com',
+      });
+      mockedCdnOperations.applyCacheConfig.mockResolvedValue(undefined);
+      mockedDnsOperations.addDomainRecord.mockResolvedValue('');
+      mockedApigwTypes.extractEventDomainDefinition.mockReturnValue({
+        domainName: 'example.com',
+        cdnEnabled: true,
+      });
+
+      const eventWithDomain: EventDomain = {
+        ...testEvent,
+        domain: {
+          domain_name: 'example.com',
+          www_bind_apex: false,
+          cdn: {
+            enabled: true,
+            ignore_query_string: true,
+          },
+        },
+      };
+
+      await createApigwResource(
+        mockContext,
+        eventWithDomain,
+        'test-service',
+        undefined,
+        initialState,
+      );
+
+      expect(mockedCdnOperations.applyCacheConfig).toHaveBeenCalledWith(
+        'example.com',
+        undefined,
+        true,
+      );
+      expect(mockedStateManager.setResource).toHaveBeenLastCalledWith(
+        expect.anything(),
+        'events.api_gateway',
+        expect.objectContaining({
+          instances: expect.arrayContaining([
+            expect.objectContaining({
+              type: 'ALIYUN_CDN_DISTRIBUTION',
+              id: 'example.com',
+              domainName: 'example.com',
+              cname: 'fallback-cdn.aliyuncs.com',
+            }),
+            expect.objectContaining({
+              type: 'ALIYUN_CDN_DNS_CNAME',
+              id: 'example.com',
+              domain: 'example.com',
+              cname: 'fallback-cdn.aliyuncs.com',
+              dnsRecordId: undefined,
+            }),
+          ]),
+        }),
+      );
+    });
+
+    it('should log error and return state when origin subDomain is missing during create', async () => {
+      setupBasicCreateMocks();
+      mockedApigwOperations.getApiGroup.mockResolvedValue({
+        groupId: 'group-123',
+        groupName: 'test-api-group',
+      });
+      mockedApigwTypes.extractEventDomainDefinition.mockReturnValue({
+        domainName: 'example.com',
+      });
+      mockedApigwOperations.bindCustomDomain.mockResolvedValue(initialState);
+
+      const eventWithDomain: EventDomain = {
+        ...testEvent,
+        domain: {
+          domain_name: 'example.com',
+          certificate_body: 'cert-body',
+          certificate_private_key: 'cert-key',
+          www_bind_apex: false,
+        },
+      };
+
+      const result = await createApigwResource(
+        mockContext,
+        eventWithDomain,
+        'test-service',
+        undefined,
+        initialState,
+      );
+
+      expect(mockedLogger.error).toHaveBeenCalled();
+      expect(mockedApigwOperations.bindCustomDomain).not.toHaveBeenCalled();
+      expect(result).toBeDefined();
+    });
+
+    it('should bind directly when domain.cdn is false', async () => {
+      setupBasicCreateMocks();
+      mockedApigwTypes.extractEventDomainDefinition.mockReturnValue({
+        domainName: 'example.com',
+      });
+      mockedApigwOperations.bindCustomDomain.mockResolvedValue(initialState);
+
+      const eventWithDomain: EventDomain = {
+        ...testEvent,
+        domain: {
+          domain_name: 'example.com',
+          certificate_body: 'cert-body',
+          certificate_private_key: 'cert-key',
+          www_bind_apex: false,
+          cdn: false,
+        },
+      };
+
+      await createApigwResource(
+        mockContext,
+        eventWithDomain,
+        'test-service',
+        undefined,
+        initialState,
+      );
+
+      expect(mockedCdnOperations.addCdnDomain).not.toHaveBeenCalled();
+      expect(mockedApigwOperations.bindCustomDomain).toHaveBeenCalledWith(
+        expect.objectContaining({ domainName: 'example.com' }),
+        expect.anything(),
+        expect.anything(),
+      );
+    });
+
+    it('should create CDN distribution without certificate upload when no certificate is provided', async () => {
+      setupBasicCreateMocks();
+      setupCdnMocks('no-cert-cdn.aliyuncs.com');
+      mockedApigwTypes.extractEventDomainDefinition.mockReturnValue({
+        domainName: 'example.com',
+        cdnEnabled: true,
+      });
+
+      const eventWithDomain: EventDomain = {
+        ...testEvent,
+        domain: {
+          domain_name: 'example.com',
+          www_bind_apex: false,
+          cdn: true,
+        },
+      };
+
+      await createApigwResource(
+        mockContext,
+        eventWithDomain,
+        'test-service',
+        undefined,
+        initialState,
+      );
+
+      expect(mockedCdnOperations.addCdnDomain).toHaveBeenCalled();
+      expect(mockedCdnOperations.setDomainServerCertificate).not.toHaveBeenCalled();
+      expect(mockedDnsOperations.addDomainRecord).toHaveBeenCalledWith(
+        expect.objectContaining({
+          domainName: extractMainDomain('example.com'),
+          rr: extractHostRecord('example.com', extractMainDomain('example.com')),
+          value: 'no-cert-cdn.aliyuncs.com',
+        }),
+      );
+    });
+
+    it('should fall back to direct binding when domain.cdn is an unsupported string', async () => {
+      setupBasicCreateMocks();
+      mockedApigwTypes.extractEventDomainDefinition.mockReturnValue({
+        domainName: 'example.com',
+      });
+      mockedApigwOperations.bindCustomDomain.mockResolvedValue(initialState);
+
+      const eventWithDomain: EventDomain = {
+        ...testEvent,
+        domain: {
+          domain_name: 'example.com',
+          certificate_body: 'cert-body',
+          certificate_private_key: 'cert-key',
+          www_bind_apex: false,
+          cdn: 'enabled' as never,
+        },
+      };
+
+      await createApigwResource(
+        mockContext,
+        eventWithDomain,
+        'test-service',
+        undefined,
+        initialState,
+      );
+
+      expect(mockedCdnOperations.addCdnDomain).not.toHaveBeenCalled();
+      expect(mockedApigwOperations.bindCustomDomain).toHaveBeenCalledWith(
+        expect.objectContaining({ domainName: 'example.com' }),
+        expect.anything(),
+        expect.anything(),
+      );
+    });
+
     it('should bind primary and www domain when www_bind_apex is true', async () => {
       setupBasicCreateMocks();
       mockedApigwTypes.extractEventDomainDefinition.mockReturnValue({
@@ -916,6 +1365,20 @@ describe('ApigwResource', () => {
       });
     };
 
+    const setupCdnMocks = (cname = 'api.example.com.cdn.aliyuncs.com') => {
+      mockedCdnOperations.addCdnDomain.mockResolvedValue(undefined);
+      mockedCdnOperations.describeCdnDomainDetail.mockResolvedValue({
+        domainName: 'example.com',
+        cname,
+      });
+      mockedCdnOperations.setDomainServerCertificate.mockResolvedValue(undefined);
+      mockedCdnOperations.applyCacheConfig.mockResolvedValue(undefined);
+      mockedCdnOperations.applyProtocolConfig.mockResolvedValue(undefined);
+      mockedCdnOperations.applyCompression.mockResolvedValue(undefined);
+      mockedCdnOperations.applyHttpsRedirect.mockResolvedValue(undefined);
+      mockedDnsOperations.addDomainRecord.mockResolvedValue('dns-record-123');
+    };
+
     it('should fallback to create when no group instance exists in state', async () => {
       const existingState = {
         instances: [{ type: 'ALIYUN_APIGW_API', id: 'api-456', apiName: 'test-api' }],
@@ -969,6 +1432,790 @@ describe('ApigwResource', () => {
       await expect(
         updateApigwResource(mockContext, testEvent, 'test-service', undefined, initialState),
       ).rejects.toThrow('Failed to get API group info after update');
+    });
+
+    it('should create CDN distribution during update when cdn is enabled', async () => {
+      setupBasicUpdateMocks();
+      setupCdnMocks('api-cdn.aliyuncs.com');
+      const existingState = {
+        instances: [
+          { type: 'ALIYUN_APIGW_GROUP', id: 'group-123' },
+          { type: 'ALIYUN_APIGW_API', id: 'api-456', apiName: 'test-api' },
+        ],
+        definition: {},
+      };
+
+      mockedStateManager.getResource.mockReturnValue(existingState);
+      mockedApigwOperations.getApiGroup.mockResolvedValue({
+        groupId: 'group-123',
+        groupName: 'test-api-group',
+        subDomain: 'group-123.apigw.aliyuncs.com',
+      });
+      mockedApigwTypes.extractEventDomainDefinition.mockReturnValue({
+        domainName: 'example.com',
+        cdnEnabled: true,
+      });
+
+      const eventWithDomain: EventDomain = {
+        ...testEvent,
+        domain: {
+          domain_name: 'example.com',
+          certificate_body: 'cert-body',
+          certificate_private_key: 'cert-key',
+          www_bind_apex: false,
+          cdn: true,
+        },
+      };
+
+      await updateApigwResource(
+        mockContext,
+        eventWithDomain,
+        'test-service',
+        undefined,
+        initialState,
+      );
+
+      expect(mockedCdnOperations.addCdnDomain).toHaveBeenCalledWith(
+        expect.objectContaining({
+          domainName: 'example.com',
+          sources: [expect.objectContaining({ content: 'group-123.apigw.aliyuncs.com' })],
+        }),
+      );
+      expect(mockedDnsOperations.addDomainRecord).toHaveBeenCalledWith(
+        expect.objectContaining({
+          domainName: extractMainDomain('example.com'),
+          rr: extractHostRecord('example.com', extractMainDomain('example.com')),
+          type: 'CNAME',
+          value: 'api-cdn.aliyuncs.com',
+        }),
+      );
+      expect(mockedApigwOperations.bindCustomDomain).not.toHaveBeenCalled();
+    });
+
+    it('should modify existing CDN distribution during update when tracked CDN instances exist', async () => {
+      setupBasicUpdateMocks();
+      const existingState = {
+        instances: [
+          { type: 'ALIYUN_APIGW_GROUP', id: 'group-123' },
+          { type: 'ALIYUN_APIGW_API', id: 'api-456', apiName: 'test-api' },
+          {
+            type: 'ALIYUN_CDN_DISTRIBUTION',
+            id: 'example.com',
+            domainName: 'example.com',
+            cname: 'old-cdn.aliyuncs.com',
+          },
+          {
+            type: 'ALIYUN_CDN_DNS_CNAME',
+            id: 'dns-record-123',
+            domain: 'example.com',
+            cname: 'old-cdn.aliyuncs.com',
+            dnsRecordId: 'dns-record-123',
+          },
+        ],
+        definition: {
+          domain: {
+            domainName: 'example.com',
+            cdnEnabled: true,
+            wwwBindApex: false,
+          },
+        },
+      };
+
+      mockedStateManager.getResource.mockReturnValue(existingState);
+      mockedApigwOperations.getApiGroup.mockResolvedValue({
+        groupId: 'group-123',
+        groupName: 'test-api-group',
+        subDomain: 'group-123.apigw.aliyuncs.com',
+      });
+      mockedCdnOperations.describeCdnDomainDetail.mockResolvedValue({
+        domainName: 'example.com',
+        cname: 'updated-cdn.aliyuncs.com',
+      });
+      mockedApigwTypes.extractEventDomainDefinition.mockReturnValue({
+        domainName: 'example.com',
+        cdnEnabled: true,
+      });
+
+      const eventWithDomain: EventDomain = {
+        ...testEvent,
+        domain: {
+          domain_name: 'example.com',
+          certificate_body: 'cert-body',
+          certificate_private_key: 'cert-key',
+          www_bind_apex: false,
+          cdn: {
+            enabled: true,
+            cdn_type: 'download',
+            scope: 'domestic',
+            cache_ttl: 30,
+            ignore_query_string: true,
+            origin_protocol: 'https',
+            compression: true,
+            force_redirect_https: true,
+          },
+        },
+      };
+
+      await updateApigwResource(
+        mockContext,
+        eventWithDomain,
+        'test-service',
+        undefined,
+        initialState,
+      );
+
+      expect(mockedCdnOperations.modifyCdnDomain).toHaveBeenCalledWith(
+        expect.objectContaining({
+          domainName: 'example.com',
+          cdnType: 'download',
+          scope: 'domestic',
+          sources: [
+            expect.objectContaining({
+              content: 'group-123.apigw.aliyuncs.com',
+              port: 443,
+            }),
+          ],
+        }),
+      );
+      expect(mockedCdnOperations.addCdnDomain).not.toHaveBeenCalled();
+      expect(mockedCdnOperations.applyCacheConfig).toHaveBeenCalledWith('example.com', 30, true);
+      expect(mockedCdnOperations.applyProtocolConfig).toHaveBeenCalledWith('example.com', 'https');
+      expect(mockedCdnOperations.applyCompression).toHaveBeenCalledWith('example.com', true);
+      expect(mockedCdnOperations.applyHttpsRedirect).toHaveBeenCalledWith('example.com', true);
+      expect(mockedCdnOperations.setDomainServerCertificate).toHaveBeenCalledWith(
+        'example.com',
+        expect.objectContaining({
+          serverCertificate: 'cert-body',
+          privateKey: 'cert-key',
+        }),
+      );
+      expect(mockedDnsOperations.addDomainRecord).not.toHaveBeenCalled();
+      expect(mockedStateManager.setResource).toHaveBeenLastCalledWith(
+        expect.anything(),
+        'events.api_gateway',
+        expect.objectContaining({
+          instances: expect.arrayContaining([
+            expect.objectContaining({
+              type: 'ALIYUN_CDN_DISTRIBUTION',
+              domainName: 'example.com',
+              cname: 'updated-cdn.aliyuncs.com',
+            }),
+            expect.objectContaining({
+              type: 'ALIYUN_CDN_DNS_CNAME',
+              domain: 'example.com',
+              cname: 'updated-cdn.aliyuncs.com',
+              dnsRecordId: 'dns-record-123',
+            }),
+          ]),
+        }),
+      );
+      expect(mockedApigwOperations.bindCustomDomain).not.toHaveBeenCalled();
+    });
+
+    it('should create missing www CDN distribution and modify primary during update', async () => {
+      setupBasicUpdateMocks();
+      const existingState = {
+        instances: [
+          { type: 'ALIYUN_APIGW_GROUP', id: 'group-123' },
+          { type: 'ALIYUN_APIGW_API', id: 'api-456', apiName: 'test-api' },
+          {
+            type: 'ALIYUN_CDN_DISTRIBUTION',
+            id: 'example.com',
+            domainName: 'example.com',
+            cname: 'primary-cdn.aliyuncs.com',
+          },
+          {
+            type: 'ALIYUN_CDN_DNS_CNAME',
+            id: 'dns-record-123',
+            domain: 'example.com',
+            cname: 'primary-cdn.aliyuncs.com',
+            dnsRecordId: 'dns-record-123',
+          },
+        ],
+        definition: {
+          domain: {
+            domainName: 'example.com',
+            cdnEnabled: true,
+            wwwBindApex: false,
+          },
+        },
+      };
+
+      mockedStateManager.getResource.mockReturnValue(existingState);
+      mockedApigwOperations.getApiGroup.mockResolvedValue({
+        groupId: 'group-123',
+        groupName: 'test-api-group',
+        subDomain: 'group-123.apigw.aliyuncs.com',
+      });
+      mockedCdnOperations.describeCdnDomainDetail
+        .mockResolvedValueOnce({
+          domainName: 'example.com',
+          cname: 'primary-cdn.aliyuncs.com',
+        })
+        .mockResolvedValueOnce({
+          domainName: 'www.example.com',
+          cname: 'www-cdn.aliyuncs.com',
+        });
+      mockedDnsOperations.addDomainRecord.mockResolvedValue('dns-record-www');
+      mockedApigwTypes.extractEventDomainDefinition.mockReturnValue({
+        domainName: 'example.com',
+        cdnEnabled: true,
+        wwwBindApex: true,
+      });
+
+      const eventWithDomain: EventDomain = {
+        ...testEvent,
+        domain: {
+          domain_name: 'example.com',
+          certificate_body: 'cert-body',
+          certificate_private_key: 'cert-key',
+          www_bind_apex: true,
+          cdn: true,
+        },
+      };
+
+      await updateApigwResource(
+        mockContext,
+        eventWithDomain,
+        'test-service',
+        undefined,
+        initialState,
+      );
+
+      expect(mockedCdnOperations.modifyCdnDomain).toHaveBeenCalledWith(
+        expect.objectContaining({ domainName: 'example.com' }),
+      );
+      expect(mockedCdnOperations.addCdnDomain).toHaveBeenCalledWith(
+        expect.objectContaining({ domainName: 'www.example.com' }),
+      );
+      expect(mockedDnsOperations.addDomainRecord).toHaveBeenCalledWith(
+        expect.objectContaining({
+          domainName: extractMainDomain('www.example.com'),
+          rr: extractHostRecord('www.example.com', extractMainDomain('www.example.com')),
+          type: 'CNAME',
+          value: 'www-cdn.aliyuncs.com',
+        }),
+      );
+      expect(mockedApigwOperations.bindCustomDomain).not.toHaveBeenCalled();
+    });
+
+    it('should delete removed www CDN distribution during update when www_bind_apex is disabled', async () => {
+      setupBasicUpdateMocks();
+      const existingState = {
+        instances: [
+          { type: 'ALIYUN_APIGW_GROUP', id: 'group-123' },
+          { type: 'ALIYUN_APIGW_API', id: 'api-456', apiName: 'test-api' },
+          {
+            type: 'ALIYUN_CDN_DISTRIBUTION',
+            id: 'example.com',
+            domainName: 'example.com',
+            cname: 'primary-cdn.aliyuncs.com',
+          },
+          {
+            type: 'ALIYUN_CDN_DNS_CNAME',
+            id: 'dns-record-123',
+            domain: 'example.com',
+            cname: 'primary-cdn.aliyuncs.com',
+            dnsRecordId: 'dns-record-123',
+          },
+          {
+            type: 'ALIYUN_CDN_DISTRIBUTION',
+            id: 'www.example.com',
+            domainName: 'www.example.com',
+            cname: 'www-cdn.aliyuncs.com',
+          },
+          {
+            type: 'ALIYUN_CDN_DNS_CNAME',
+            id: 'dns-record-www',
+            domain: 'www.example.com',
+            cname: 'www-cdn.aliyuncs.com',
+            dnsRecordId: 'dns-record-www',
+          },
+        ],
+        definition: {
+          domain: {
+            domainName: 'example.com',
+            cdnEnabled: true,
+            wwwBindApex: true,
+          },
+        },
+      };
+
+      mockedStateManager.getResource.mockReturnValue(existingState);
+      mockedApigwOperations.getApiGroup.mockResolvedValue({
+        groupId: 'group-123',
+        groupName: 'test-api-group',
+        subDomain: 'group-123.apigw.aliyuncs.com',
+      });
+      mockedCdnOperations.describeCdnDomainDetail.mockResolvedValue({
+        domainName: 'example.com',
+        cname: 'primary-cdn.aliyuncs.com',
+      });
+      mockedCdnOperations.deleteCdnDomain.mockResolvedValue(undefined);
+      mockedDnsOperations.deleteDomainRecord.mockResolvedValue(undefined);
+      mockedApigwTypes.extractEventDomainDefinition.mockReturnValue({
+        domainName: 'example.com',
+        cdnEnabled: true,
+        wwwBindApex: false,
+      });
+
+      const eventWithDomain: EventDomain = {
+        ...testEvent,
+        domain: {
+          domain_name: 'example.com',
+          certificate_body: 'cert-body',
+          certificate_private_key: 'cert-key',
+          www_bind_apex: false,
+          cdn: true,
+        },
+      };
+
+      await updateApigwResource(
+        mockContext,
+        eventWithDomain,
+        'test-service',
+        undefined,
+        initialState,
+      );
+
+      expect(mockedCdnOperations.modifyCdnDomain).toHaveBeenCalledWith(
+        expect.objectContaining({ domainName: 'example.com' }),
+      );
+      expect(mockedCdnOperations.deleteCdnDomain).toHaveBeenCalledWith('www.example.com');
+      expect(mockedDnsOperations.deleteDomainRecord).toHaveBeenCalledWith('dns-record-www');
+      expect(mockedCdnOperations.addCdnDomain).not.toHaveBeenCalled();
+      expect(mockedApigwOperations.bindCustomDomain).not.toHaveBeenCalled();
+    });
+
+    it('should track CDN instances with domain fallback id during update', async () => {
+      setupBasicUpdateMocks();
+      const existingState = {
+        instances: [
+          { type: 'ALIYUN_APIGW_GROUP', id: 'group-123' },
+          { type: 'ALIYUN_APIGW_API', id: 'api-456', apiName: 'test-api' },
+        ],
+        definition: {},
+      };
+
+      mockedStateManager.getResource.mockReturnValue(existingState);
+      mockedCdnOperations.addCdnDomain.mockResolvedValue(undefined);
+      mockedCdnOperations.describeCdnDomainDetail.mockResolvedValue({
+        domainName: 'example.com',
+        cname: 'update-fallback-cdn.aliyuncs.com',
+      });
+      mockedCdnOperations.applyCacheConfig.mockResolvedValue(undefined);
+      mockedDnsOperations.addDomainRecord.mockResolvedValue('');
+      mockedApigwOperations.getApiGroup.mockResolvedValue({
+        groupId: 'group-123',
+        groupName: 'test-api-group',
+        subDomain: 'group-123.apigw.aliyuncs.com',
+      });
+      mockedApigwTypes.extractEventDomainDefinition.mockReturnValue({
+        domainName: 'example.com',
+        cdnEnabled: true,
+      });
+
+      const eventWithDomain: EventDomain = {
+        ...testEvent,
+        domain: {
+          domain_name: 'example.com',
+          www_bind_apex: false,
+          cdn: {
+            enabled: true,
+            ignore_query_string: false,
+          },
+        },
+      };
+
+      await updateApigwResource(
+        mockContext,
+        eventWithDomain,
+        'test-service',
+        undefined,
+        initialState,
+      );
+
+      expect(mockedCdnOperations.applyCacheConfig).toHaveBeenCalledWith(
+        'example.com',
+        undefined,
+        false,
+      );
+      expect(mockedStateManager.setResource).toHaveBeenLastCalledWith(
+        expect.anything(),
+        'events.api_gateway',
+        expect.objectContaining({
+          instances: expect.arrayContaining([
+            expect.objectContaining({
+              type: 'ALIYUN_CDN_DISTRIBUTION',
+              id: 'example.com',
+              domainName: 'example.com',
+              cname: 'update-fallback-cdn.aliyuncs.com',
+            }),
+            expect.objectContaining({
+              type: 'ALIYUN_CDN_DNS_CNAME',
+              id: 'example.com',
+              domain: 'example.com',
+              cname: 'update-fallback-cdn.aliyuncs.com',
+              dnsRecordId: undefined,
+            }),
+          ]),
+        }),
+      );
+    });
+
+    it('should delete CDN resources when removing CDN-backed domain', async () => {
+      setupBasicUpdateMocks();
+      const existingState = {
+        instances: [
+          { type: 'ALIYUN_APIGW_GROUP', id: 'group-123' },
+          { type: 'ALIYUN_APIGW_API', id: 'api-456', apiName: 'test-api' },
+          { type: 'ALIYUN_CDN_DISTRIBUTION', id: 'example.com', domainName: 'example.com' },
+          {
+            type: 'ALIYUN_CDN_DNS_CNAME',
+            id: 'dns-record-123',
+            domain: 'example.com',
+            dnsRecordId: 'dns-record-123',
+          },
+        ],
+        definition: {
+          domain: {
+            domainName: 'example.com',
+            cdnEnabled: true,
+            wwwBindApex: false,
+          },
+        },
+      };
+
+      mockedStateManager.getResource.mockReturnValue(existingState);
+      mockedApigwTypes.extractEventDomainDefinition.mockReturnValue(null);
+      mockedCdnOperations.deleteCdnDomain.mockResolvedValue(undefined);
+      mockedDnsOperations.deleteDomainRecord.mockResolvedValue(undefined);
+
+      const eventNoDomain: EventDomain = {
+        ...testEvent,
+        domain: undefined,
+      };
+
+      await updateApigwResource(
+        mockContext,
+        eventNoDomain,
+        'test-service',
+        undefined,
+        initialState,
+      );
+
+      expect(mockedCdnOperations.deleteCdnDomain).toHaveBeenCalledWith('example.com');
+      expect(mockedDnsOperations.deleteDomainRecord).toHaveBeenCalledWith('dns-record-123');
+      expect(mockedApigwOperations.unbindCustomDomain).not.toHaveBeenCalled();
+    });
+
+    it('should create primary and www CDN distributions with advanced settings during update', async () => {
+      setupBasicUpdateMocks();
+      setupCdnMocks('multi-cdn.aliyuncs.com');
+      const existingState = {
+        instances: [
+          { type: 'ALIYUN_APIGW_GROUP', id: 'group-123' },
+          { type: 'ALIYUN_APIGW_API', id: 'api-456', apiName: 'test-api' },
+        ],
+        definition: {},
+      };
+
+      mockedStateManager.getResource.mockReturnValue(existingState);
+      mockedApigwOperations.getApiGroup.mockResolvedValue({
+        groupId: 'group-123',
+        groupName: 'test-api-group',
+        subDomain: 'group-123.apigw.aliyuncs.com',
+      });
+      mockedApigwTypes.extractEventDomainDefinition.mockReturnValue({
+        domainName: 'example.com',
+        wwwBindApex: true,
+        cdnEnabled: true,
+      });
+
+      const eventWithDomain: EventDomain = {
+        ...testEvent,
+        domain: {
+          domain_name: 'example.com',
+          certificate_body: 'cert-body',
+          certificate_private_key: 'cert-key',
+          www_bind_apex: true,
+          cdn: {
+            enabled: true,
+            cdn_type: 'video',
+            scope: 'overseas',
+            cache_ttl: 120,
+            ignore_query_string: true,
+            origin_protocol: 'follow',
+            compression: false,
+            force_redirect_https: false,
+          },
+        },
+      };
+
+      await updateApigwResource(
+        mockContext,
+        eventWithDomain,
+        'test-service',
+        undefined,
+        initialState,
+      );
+
+      expect(mockedCdnOperations.addCdnDomain).toHaveBeenCalledTimes(2);
+      expect(mockedCdnOperations.addCdnDomain).toHaveBeenNthCalledWith(
+        1,
+        expect.objectContaining({
+          domainName: 'example.com',
+          cdnType: 'video',
+          scope: 'overseas',
+        }),
+      );
+      expect(mockedCdnOperations.addCdnDomain).toHaveBeenNthCalledWith(
+        2,
+        expect.objectContaining({
+          domainName: 'www.example.com',
+          cdnType: 'video',
+          scope: 'overseas',
+        }),
+      );
+      expect(mockedCdnOperations.applyProtocolConfig).toHaveBeenCalledWith('example.com', 'follow');
+      expect(mockedCdnOperations.applyProtocolConfig).toHaveBeenCalledWith(
+        'www.example.com',
+        'follow',
+      );
+      expect(mockedCdnOperations.applyCompression).toHaveBeenCalledWith('example.com', false);
+      expect(mockedCdnOperations.applyCompression).toHaveBeenCalledWith('www.example.com', false);
+      expect(mockedCdnOperations.applyHttpsRedirect).toHaveBeenCalledWith('example.com', false);
+      expect(mockedCdnOperations.applyHttpsRedirect).toHaveBeenCalledWith('www.example.com', false);
+      expect(mockedDnsOperations.addDomainRecord).toHaveBeenNthCalledWith(
+        1,
+        expect.objectContaining({
+          domainName: extractMainDomain('example.com'),
+          rr: extractHostRecord('example.com', extractMainDomain('example.com')),
+          type: 'CNAME',
+          value: 'multi-cdn.aliyuncs.com',
+        }),
+      );
+      expect(mockedDnsOperations.addDomainRecord).toHaveBeenNthCalledWith(
+        2,
+        expect.objectContaining({
+          domainName: extractMainDomain('www.example.com'),
+          rr: extractHostRecord('www.example.com', extractMainDomain('www.example.com')),
+          type: 'CNAME',
+          value: 'multi-cdn.aliyuncs.com',
+        }),
+      );
+    });
+
+    it('should clean up only matching previous CDN resources when switching to direct binding', async () => {
+      setupBasicUpdateMocks();
+      const existingState = {
+        instances: [
+          { type: 'ALIYUN_APIGW_GROUP', id: 'group-123' },
+          { type: 'ALIYUN_APIGW_API', id: 'api-456', apiName: 'test-api' },
+          { type: 'ALIYUN_CDN_DISTRIBUTION', id: 'example.com', domainName: 'example.com' },
+          {
+            type: 'ALIYUN_CDN_DNS_CNAME',
+            id: 'dns-record-1',
+            domain: 'example.com',
+            cname: 'cdn.example.com',
+            dnsRecordId: 'dns-record-1',
+          },
+          { type: 'ALIYUN_CDN_DISTRIBUTION', id: 'www.example.com', domainName: 'www.example.com' },
+          {
+            type: 'ALIYUN_CDN_DNS_CNAME',
+            id: 'dns-record-2',
+            domain: 'www.example.com',
+            cname: 'cdn.example.com',
+            dnsRecordId: 'dns-record-2',
+          },
+          { type: 'ALIYUN_CDN_DISTRIBUTION', id: 'other.com', domainName: 'other.com' },
+          {
+            type: 'ALIYUN_CDN_DNS_CNAME',
+            id: 'dns-record-other',
+            domain: 'other.com',
+            cname: 'cdn.other.com',
+            dnsRecordId: 'dns-record-other',
+          },
+        ],
+        definition: {
+          domain: {
+            domainName: 'example.com',
+            wwwBindApex: true,
+            cdnEnabled: true,
+          },
+        },
+      };
+
+      mockedStateManager.getResource.mockReturnValue(existingState);
+      mockedCdnOperations.deleteCdnDomain.mockResolvedValue(undefined);
+      mockedDnsOperations.deleteDomainRecord.mockResolvedValue(undefined);
+      mockedApigwTypes.extractEventDomainDefinition.mockReturnValue({
+        domainName: 'example.com',
+        wwwBindApex: false,
+      });
+      mockedApigwOperations.bindCustomDomain.mockResolvedValue(initialState);
+
+      const eventWithDomain: EventDomain = {
+        ...testEvent,
+        domain: {
+          domain_name: 'example.com',
+          certificate_body: 'cert-body',
+          certificate_private_key: 'cert-key',
+          www_bind_apex: false,
+        },
+      };
+
+      await updateApigwResource(
+        mockContext,
+        eventWithDomain,
+        'test-service',
+        undefined,
+        initialState,
+      );
+
+      expect(mockedCdnOperations.deleteCdnDomain).toHaveBeenCalledWith('example.com');
+      expect(mockedCdnOperations.deleteCdnDomain).toHaveBeenCalledWith('www.example.com');
+      expect(mockedCdnOperations.deleteCdnDomain).not.toHaveBeenCalledWith('other.com');
+      expect(mockedDnsOperations.deleteDomainRecord).toHaveBeenCalledWith('dns-record-1');
+      expect(mockedDnsOperations.deleteDomainRecord).toHaveBeenCalledWith('dns-record-2');
+      expect(mockedDnsOperations.deleteDomainRecord).not.toHaveBeenCalledWith('dns-record-other');
+      expect(mockedApigwOperations.bindCustomDomain).toHaveBeenCalledWith(
+        expect.objectContaining({ domainName: 'example.com' }),
+        expect.anything(),
+        expect.anything(),
+      );
+      expect(mockedApigwOperations.unbindCustomDomain).not.toHaveBeenCalled();
+    });
+
+    it('should warn on CDN deletion failure and skip DNS cleanup without record id', async () => {
+      setupBasicUpdateMocks();
+      const existingState = {
+        instances: [
+          { type: 'ALIYUN_APIGW_GROUP', id: 'group-123' },
+          { type: 'ALIYUN_APIGW_API', id: 'api-456', apiName: 'test-api' },
+          { type: 'ALIYUN_CDN_DISTRIBUTION', id: 'example.com', domainName: 'example.com' },
+          {
+            type: 'ALIYUN_CDN_DNS_CNAME',
+            id: 'example.com',
+            domain: 'example.com',
+            cname: 'cdn.example.com',
+          },
+        ],
+        definition: {
+          domain: {
+            domainName: 'example.com',
+            wwwBindApex: false,
+            cdnEnabled: true,
+          },
+        },
+      };
+
+      mockedStateManager.getResource.mockReturnValue(existingState);
+      mockedCdnOperations.deleteCdnDomain.mockRejectedValue(new Error('cdn delete failed'));
+      mockedApigwTypes.extractEventDomainDefinition.mockReturnValue({
+        domainName: 'example.com',
+      });
+      mockedApigwOperations.bindCustomDomain.mockResolvedValue(initialState);
+
+      const eventWithDomain: EventDomain = {
+        ...testEvent,
+        domain: {
+          domain_name: 'example.com',
+          certificate_body: 'cert-body',
+          certificate_private_key: 'cert-key',
+          www_bind_apex: false,
+        },
+      };
+
+      await updateApigwResource(
+        mockContext,
+        eventWithDomain,
+        'test-service',
+        undefined,
+        initialState,
+      );
+
+      expect(mockedLogger.warn).toHaveBeenCalled();
+      expect(mockedDnsOperations.deleteDomainRecord).not.toHaveBeenCalled();
+    });
+
+    it('should throw when CDN is enabled and group has no subDomain during update', async () => {
+      setupBasicUpdateMocks();
+      const existingState = {
+        instances: [
+          { type: 'ALIYUN_APIGW_GROUP', id: 'group-123' },
+          { type: 'ALIYUN_APIGW_API', id: 'api-456', apiName: 'test-api' },
+        ],
+        definition: {},
+      };
+
+      mockedStateManager.getResource.mockReturnValue(existingState);
+      mockedApigwOperations.getApiGroup.mockResolvedValue({
+        groupId: 'group-123',
+        groupName: 'test-api-group',
+      });
+      mockedApigwTypes.extractEventDomainDefinition.mockReturnValue({
+        domainName: 'example.com',
+        cdnEnabled: true,
+      });
+
+      const eventWithDomain: EventDomain = {
+        ...testEvent,
+        domain: {
+          domain_name: 'example.com',
+          www_bind_apex: false,
+          cdn: true,
+        },
+      };
+
+      await expect(
+        updateApigwResource(mockContext, eventWithDomain, 'test-service', undefined, initialState),
+      ).rejects.toThrow('API Gateway group group-123 has no subDomain for CDN origin');
+    });
+
+    it('should bind directly during update when domain.cdn.enabled is false', async () => {
+      setupBasicUpdateMocks();
+      const existingState = {
+        instances: [
+          { type: 'ALIYUN_APIGW_GROUP', id: 'group-123' },
+          { type: 'ALIYUN_APIGW_API', id: 'api-456', apiName: 'test-api' },
+        ],
+        definition: {},
+      };
+
+      mockedStateManager.getResource.mockReturnValue(existingState);
+      mockedApigwTypes.extractEventDomainDefinition.mockReturnValue({
+        domainName: 'example.com',
+      });
+      mockedApigwOperations.bindCustomDomain.mockResolvedValue(initialState);
+
+      const eventWithDomain: EventDomain = {
+        ...testEvent,
+        domain: {
+          domain_name: 'example.com',
+          certificate_body: 'cert-body',
+          certificate_private_key: 'cert-key',
+          www_bind_apex: false,
+          cdn: {
+            enabled: false,
+          },
+        },
+      };
+
+      await updateApigwResource(
+        mockContext,
+        eventWithDomain,
+        'test-service',
+        undefined,
+        initialState,
+      );
+
+      expect(mockedCdnOperations.addCdnDomain).not.toHaveBeenCalled();
+      expect(mockedApigwOperations.bindCustomDomain).toHaveBeenCalledWith(
+        expect.objectContaining({ domainName: 'example.com' }),
+        expect.anything(),
+        expect.anything(),
+      );
     });
 
     it('should bind domain with www during update', async () => {

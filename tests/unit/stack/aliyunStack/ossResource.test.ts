@@ -23,6 +23,9 @@ const mockOssOperations = {
   updateBucketWebsite: jest.fn(),
   bindCustomDomain: jest.fn(),
   unbindCustomDomain: jest.fn(),
+  enableTransferAcceleration: jest.fn(),
+  getAccelerateEndpoint: jest.fn(),
+  getBucketCnameEndpoint: jest.fn().mockResolvedValue('test-bucket.oss-cn-hangzhou.aliyuncs.com'),
 };
 
 const mockCasOperations = {
@@ -31,9 +34,29 @@ const mockCasOperations = {
   deleteCertificate: jest.fn(),
 };
 
+const mockCdnOperations = {
+  addCdnDomain: jest.fn(),
+  describeCdnDomainDetail: jest.fn(),
+  deleteCdnDomain: jest.fn(),
+  modifyCdnDomain: jest.fn(),
+  setDomainServerCertificate: jest.fn(),
+  applyCacheConfig: jest.fn(),
+  applyProtocolConfig: jest.fn(),
+  applyCompression: jest.fn(),
+  applyHttpsRedirect: jest.fn(),
+};
+
+const mockDnsOperations = {
+  addDomainRecord: jest.fn().mockResolvedValue('dns-record-id'),
+  deleteDomainRecord: jest.fn(),
+  describeDomainRecords: jest.fn(),
+  checkDomainRecordExists: jest.fn(),
+};
+
 const mockedStateManager = {
   setResource: jest.fn(),
   removeResource: jest.fn(),
+  getResource: jest.fn(),
 };
 
 const mockedLogger = {
@@ -42,10 +65,18 @@ const mockedLogger = {
   warn: jest.fn(),
 };
 
+jest.mock('../../../../src/common/hashUtils', () => ({
+  computeDirectoryHash: jest.fn().mockReturnValue('hash-abc'),
+  computeFileHash: jest.fn().mockReturnValue('file-hash'),
+  attributesEqual: jest.requireActual('../../../../src/common/hashUtils').attributesEqual,
+}));
+
 jest.mock('../../../../src/common/aliyunClient', () => ({
   createAliyunClient: () => ({
     oss: mockOssOperations,
     cas: mockCasOperations,
+    cdn: mockCdnOperations,
+    dns: mockDnsOperations,
   }),
 }));
 
@@ -1813,5 +1844,470 @@ describe('OssResource', () => {
       const wwwDns = instances.find((i: Record<string, unknown>) => i.isWwwVariant === true);
       expect(wwwDns).toBeUndefined();
     });
+  });
+
+  describe('CDN batch coverage', () => {
+    beforeEach(() => {
+      jest.clearAllMocks();
+      mockCdnOperations.addCdnDomain.mockResolvedValue({});
+      mockCdnOperations.describeCdnDomainDetail.mockResolvedValue({
+        domainName: 'x.com',
+        cname: 'x.cdn.com',
+        status: 'online',
+      });
+      mockCdnOperations.setDomainServerCertificate.mockResolvedValue({});
+      mockCdnOperations.deleteCdnDomain.mockResolvedValue({});
+      mockCdnOperations.applyCacheConfig.mockResolvedValue({});
+      mockCdnOperations.applyProtocolConfig.mockResolvedValue({});
+      mockCdnOperations.applyCompression.mockResolvedValue({});
+      mockCdnOperations.applyHttpsRedirect.mockResolvedValue({});
+      mockCdnOperations.modifyCdnDomain.mockResolvedValue({});
+      mockOssOperations.createBucket.mockResolvedValue({ name: 'tb', location: 'oss-cn-hangzhou' });
+      mockOssOperations.getBucket.mockResolvedValue({ name: 'tb', location: 'oss-cn-hangzhou' });
+      mockOssOperations.bindCustomDomain.mockResolvedValue({
+        domain: 'x.com',
+        cname: 'bkt.oss.com',
+        bucketCnameBound: true,
+      });
+      mockOssOperations.enableTransferAcceleration.mockResolvedValue(true);
+      mockOssOperations.getAccelerateEndpoint.mockResolvedValue('bkt.oss-accelerate.aliyuncs.com');
+      mockDnsOperations.addDomainRecord.mockResolvedValue('did');
+      mockedStateManager.setResource.mockImplementation((_s, _l, rs) => ({
+        ..._s,
+        resources: { b: rs },
+      }));
+    });
+
+    it('CDN boolean true creates distribution', async () => {
+      const b: BucketDomain = {
+        key: 'b',
+        name: 'tb',
+        security: { acl: BucketAccessEnum.PUBLIC_READ, force_delete: false },
+        website: { code: './d', index: 'i.html', error_page: '404.html', error_code: 404 },
+        domain: { domain_name: 'x.com', cdn: true, www_bind_apex: false },
+      };
+      await createBucketResource(mockContext, b, initialState);
+      expect(mockCdnOperations.addCdnDomain).toHaveBeenCalled();
+    });
+
+    it('Accelerate only no CDN', async () => {
+      const b: BucketDomain = {
+        key: 'b',
+        name: 'tb',
+        security: { acl: BucketAccessEnum.PUBLIC_READ, force_delete: false },
+        website: { code: './d', index: 'i.html', error_page: '404.html', error_code: 404 },
+        domain: { domain_name: 'x.com', accelerate: true, www_bind_apex: false },
+      };
+      await createBucketResource(mockContext, b, initialState);
+      expect(mockOssOperations.enableTransferAcceleration).toHaveBeenCalled();
+      expect(mockCdnOperations.addCdnDomain).not.toHaveBeenCalled();
+    });
+
+    it('No CDN no accelerate uses direct binding', async () => {
+      const b: BucketDomain = {
+        key: 'b',
+        name: 'tb',
+        security: { acl: BucketAccessEnum.PUBLIC_READ, force_delete: false },
+        website: {
+          code: './d',
+          index: 'i.html',
+          error_page: '404.html',
+          error_code: 404,
+          domain: 'x.com',
+        },
+      };
+      await createBucketResource(mockContext, b, initialState);
+      expect(mockOssOperations.bindCustomDomain).toHaveBeenCalled();
+    });
+
+    it('CDN with www_apex creates www distribution', async () => {
+      const b: BucketDomain = {
+        key: 'b',
+        name: 'tb',
+        security: { acl: BucketAccessEnum.PUBLIC_READ, force_delete: false },
+        website: { code: './d', index: 'i.html', error_page: '404.html', error_code: 404 },
+        domain: { domain_name: 'example.com', cdn: true, www_bind_apex: true },
+      };
+      await createBucketResource(mockContext, b, initialState);
+      expect(mockCdnOperations.addCdnDomain).toHaveBeenCalledTimes(2);
+    });
+
+    it('CDN delete via deleteBucketResource', async () => {
+      const state: StateFile = {
+        ...initialState,
+        resources: {
+          'buckets.b': {
+            mode: 'managed',
+            region: 'cn-hangzhou',
+            definition: { bucketName: 'tb' },
+            instances: [
+              { sid: 's', id: 'tb', type: 'ALIYUN_OSS_BUCKET', bucketName: 'tb' },
+              { sid: 'c', id: 'x.com', type: 'ALIYUN_CDN_DISTRIBUTION', domainName: 'x.com' },
+              {
+                sid: 'd',
+                id: 'did',
+                type: 'ALIYUN_CDN_DNS_CNAME',
+                domain: 'x.com',
+                dnsRecordId: 'did',
+              },
+            ],
+            lastUpdated: new Date().toISOString(),
+          },
+        },
+      };
+      mockOssOperations.getBucket.mockResolvedValue(null);
+      await deleteBucketResource(mockContext, 'tb', 'buckets.b', state);
+      expect(mockCdnOperations.deleteCdnDomain).toHaveBeenCalledWith('x.com');
+    });
+  });
+
+  describe('CDN integration tests', () => {
+    const baseInfo = { name: 'tb', location: 'oss-cn-hangzhou', acl: 'private' };
+
+    beforeEach(() => {
+      jest.clearAllMocks();
+      mockCdnOperations.addCdnDomain.mockResolvedValue({});
+      mockCdnOperations.describeCdnDomainDetail.mockResolvedValue({
+        domainName: 'x.com',
+        cname: 'x.cdn.com',
+        status: 'online',
+      });
+      mockCdnOperations.deleteCdnDomain.mockResolvedValue({});
+      mockCdnOperations.setDomainServerCertificate.mockResolvedValue({});
+      mockOssOperations.createBucket.mockResolvedValue(baseInfo);
+      mockOssOperations.getBucket.mockResolvedValue(baseInfo);
+      mockOssOperations.bindCustomDomain.mockResolvedValue({
+        domain: 'x.com',
+        cname: 'b.oss.com',
+        bucketCnameBound: true,
+      });
+      mockOssOperations.enableTransferAcceleration.mockResolvedValue(true);
+      mockOssOperations.getAccelerateEndpoint.mockResolvedValue('b.oss-accelerate.aliyuncs.com');
+      mockDnsOperations.addDomainRecord.mockResolvedValue('did');
+      mockedStateManager.setResource.mockImplementation((_s, _l, rs) => ({
+        ..._s,
+        resources: { b: rs },
+      }));
+    });
+
+    function makeBucket(overrides: Partial<BucketDomain> = {}): BucketDomain {
+      return {
+        key: 'b',
+        name: 'tb',
+        security: { acl: BucketAccessEnum.PUBLIC_READ, force_delete: false },
+        ...overrides,
+      };
+    }
+
+    it('CDN true creates distribution', async () => {
+      const b = makeBucket({ domain: { domain_name: 'x.com', cdn: true, www_bind_apex: false } });
+      await createBucketResource(mockContext, b, initialState);
+      expect(mockCdnOperations.addCdnDomain).toHaveBeenCalledWith(
+        expect.objectContaining({ domainName: 'x.com', cdnType: 'web' }),
+      );
+    });
+
+    it('Accelerate only calls enableTransferAcceleration', async () => {
+      const b = makeBucket({
+        domain: { domain_name: 'x.com', accelerate: true, www_bind_apex: false },
+      });
+      await createBucketResource(mockContext, b, initialState);
+      expect(mockOssOperations.enableTransferAcceleration).toHaveBeenCalled();
+      expect(mockCdnOperations.addCdnDomain).not.toHaveBeenCalled();
+    });
+
+    it('www_apex with CDN creates two distributions', async () => {
+      const b = makeBucket({
+        domain: { domain_name: 'example.com', cdn: true, www_bind_apex: true },
+      });
+      await createBucketResource(mockContext, b, initialState);
+      expect(mockCdnOperations.addCdnDomain).toHaveBeenCalledTimes(2);
+    });
+
+    it('CDN delete cleans up distribution', async () => {
+      const state: StateFile = {
+        ...initialState,
+        resources: {
+          'buckets.b': {
+            mode: 'managed',
+            region: 'cn-hangzhou',
+            definition: {},
+            instances: [
+              { sid: 's', id: 'tb', type: 'ALIYUN_OSS_BUCKET', bucketName: 'tb' },
+              { sid: 'c', id: 'x.com', type: 'ALIYUN_CDN_DISTRIBUTION', domainName: 'x.com' },
+              {
+                sid: 'd',
+                id: 'dns',
+                type: 'ALIYUN_CDN_DNS_CNAME',
+                domain: 'x.com',
+                dnsRecordId: 'dns',
+              },
+            ],
+            lastUpdated: new Date().toISOString(),
+          },
+        },
+      };
+      mockOssOperations.getBucket.mockResolvedValue(null);
+      await deleteBucketResource(mockContext, 'tb', 'buckets.b', state);
+      expect(mockCdnOperations.deleteCdnDomain).toHaveBeenCalledWith('x.com');
+    });
+  });
+
+  describe('CDN coverage', () => {
+    function mkBucket(overrides: Record<string, unknown> = {}): BucketDomain {
+      return {
+        key: 'b',
+        name: 'tb',
+        security: { acl: BucketAccessEnum.PUBLIC_READ, force_delete: false },
+        ...overrides,
+      } as BucketDomain;
+    }
+
+    beforeEach(() => {
+      jest.clearAllMocks();
+      mockCdnOperations.addCdnDomain.mockResolvedValue({});
+      mockCdnOperations.describeCdnDomainDetail.mockResolvedValue({
+        domainName: 'x.c',
+        cname: 'x.cdn.c',
+        status: 'online',
+      });
+      mockCdnOperations.setDomainServerCertificate.mockResolvedValue({});
+      mockCdnOperations.deleteCdnDomain.mockResolvedValue({});
+      mockOssOperations.createBucket.mockResolvedValue({ name: 'tb', location: 'oss-cn-hangzhou' });
+      mockOssOperations.getBucket.mockResolvedValue({ name: 'tb', location: 'oss-cn-hangzhou' });
+      mockOssOperations.bindCustomDomain.mockResolvedValue({
+        domain: 'x.c',
+        cname: 'bkt.o.c',
+        bucketCnameBound: true,
+      });
+      mockOssOperations.enableTransferAcceleration.mockResolvedValue(true);
+      mockOssOperations.getAccelerateEndpoint.mockResolvedValue('bkt.oss-accelerate.aliyuncs.com');
+      mockDnsOperations.addDomainRecord.mockResolvedValue('did');
+      mockedStateManager.setResource.mockImplementation((_s, _l, rs) => ({
+        ..._s,
+        resources: { b: rs },
+      }));
+    });
+
+    it('cdn:true', () =>
+      createBucketResource(
+        mockContext,
+        mkBucket({ domain: { domain_name: 'a.c', cdn: true, www_bind_apex: false } }),
+        initialState,
+      ).then(() => {
+        expect(mockCdnOperations.addCdnDomain).toHaveBeenCalled();
+      }));
+    it('accelerate', () =>
+      createBucketResource(
+        mockContext,
+        mkBucket({ domain: { domain_name: 'a.c', accelerate: true, www_bind_apex: false } }),
+        initialState,
+      ).then(() => {
+        expect(mockOssOperations.enableTransferAcceleration).toHaveBeenCalled();
+      }));
+    it('cdn+accel', () =>
+      createBucketResource(
+        mockContext,
+        mkBucket({
+          domain: { domain_name: 'a.c', cdn: true, accelerate: true, www_bind_apex: false },
+        }),
+        initialState,
+      ).then(() => {
+        expect(mockCdnOperations.addCdnDomain).toHaveBeenCalled();
+        expect(mockOssOperations.enableTransferAcceleration).toHaveBeenCalled();
+      }));
+    it('cdn:false', () =>
+      createBucketResource(
+        mockContext,
+        mkBucket({ domain: { domain_name: 'a.c', cdn: false, www_bind_apex: false } }),
+        initialState,
+      ).then(() => {
+        expect(mockCdnOperations.addCdnDomain).not.toHaveBeenCalled();
+      }));
+  });
+
+  describe('CDN full coverage', () => {
+    beforeEach(() => {
+      jest.clearAllMocks();
+      mockCdnOperations.addCdnDomain.mockResolvedValue({});
+      mockCdnOperations.describeCdnDomainDetail.mockResolvedValue({
+        domainName: 'x.c',
+        cname: 'x.cdn.c',
+        status: 'online',
+      });
+      mockCdnOperations.setDomainServerCertificate.mockResolvedValue({});
+      mockCdnOperations.deleteCdnDomain.mockResolvedValue({});
+      mockOssOperations.createBucket.mockResolvedValue({ name: 'tb', location: 'oss-cn-hangzhou' });
+      mockOssOperations.getBucket.mockResolvedValue({ name: 'tb', location: 'oss-cn-hangzhou' });
+      mockOssOperations.bindCustomDomain.mockResolvedValue({
+        domain: 'x.c',
+        cname: 'bkt.oss.c',
+        bucketCnameBound: true,
+      });
+      mockOssOperations.enableTransferAcceleration.mockResolvedValue(true);
+      mockOssOperations.getAccelerateEndpoint.mockResolvedValue('bkt.oss-accelerate.aliyuncs.com');
+      mockDnsOperations.addDomainRecord.mockResolvedValue('did');
+      mockedStateManager.setResource.mockImplementation((_s, _l, rs) => ({
+        ..._s,
+        resources: { b: rs },
+      }));
+    });
+
+    it('cdn true', async () => {
+      const b: BucketDomain = {
+        key: 'b',
+        name: 'tb',
+        security: { acl: BucketAccessEnum.PUBLIC_READ, force_delete: false },
+        domain: { domain_name: 'x.c', cdn: true, www_bind_apex: false },
+      };
+      await createBucketResource(mockContext, b, initialState);
+      expect(mockCdnOperations.addCdnDomain).toHaveBeenCalled();
+      expect(mockDnsOperations.addDomainRecord).toHaveBeenCalled();
+    });
+
+    it('accelerate', async () => {
+      const b: BucketDomain = {
+        key: 'b',
+        name: 'tb',
+        security: { acl: BucketAccessEnum.PUBLIC_READ, force_delete: false },
+        domain: { domain_name: 'x.c', accelerate: true, www_bind_apex: false },
+      };
+      await createBucketResource(mockContext, b, initialState);
+      expect(mockOssOperations.enableTransferAcceleration).toHaveBeenCalled();
+      expect(mockCdnOperations.addCdnDomain).not.toHaveBeenCalled();
+    });
+
+    it('cdn false', async () => {
+      const b: BucketDomain = {
+        key: 'b',
+        name: 'tb',
+        security: { acl: BucketAccessEnum.PUBLIC_READ, force_delete: false },
+        domain: { domain_name: 'x.c', cdn: false, www_bind_apex: false },
+      };
+      await createBucketResource(mockContext, b, initialState);
+      expect(mockCdnOperations.addCdnDomain).not.toHaveBeenCalled();
+      expect(mockOssOperations.bindCustomDomain).toHaveBeenCalled();
+    });
+
+    it('cdn + accelerate + www', async () => {
+      const b: BucketDomain = {
+        key: 'b',
+        name: 'tb',
+        security: { acl: BucketAccessEnum.PUBLIC_READ, force_delete: false },
+        domain: { domain_name: 'example.com', cdn: true, accelerate: true, www_bind_apex: true },
+      };
+      await createBucketResource(mockContext, b, initialState);
+      expect(mockCdnOperations.addCdnDomain).toHaveBeenCalled();
+      expect(mockOssOperations.enableTransferAcceleration).toHaveBeenCalled();
+    });
+
+    it('cdn update fail', async () => {
+      const existing = {
+        mode: 'managed' as const,
+        region: 'cn-hangzhou',
+        definition: { bucketName: 'tb', cdnEnabled: true, domain: 'x.c' },
+        instances: [
+          { sid: 's', id: 'tb', type: 'ALIYUN_OSS_BUCKET', bucketName: 'tb' },
+          { sid: 'c', id: 'x.c', type: 'ALIYUN_CDN_DISTRIBUTION', domainName: 'x.c' },
+          { sid: 'd', id: 'did', type: 'ALIYUN_CDN_DNS_CNAME', domain: 'x.c', dnsRecordId: 'did' },
+        ],
+        lastUpdated: new Date().toISOString(),
+      };
+      mockedStateManager.getResource.mockReturnValue(existing);
+      const b: BucketDomain = {
+        key: 'b',
+        name: 'tb',
+        security: { acl: BucketAccessEnum.PUBLIC_READ, force_delete: false },
+        domain: { domain_name: 'x.c', cdn: false, www_bind_apex: false },
+      };
+      await expect(
+        updateBucketResource(mockContext, b, {
+          ...initialState,
+          resources: { 'buckets.b': existing },
+        }),
+      ).rejects.toThrow();
+    });
+
+    it('cdn delete', async () => {
+      const s: StateFile = {
+        ...initialState,
+        resources: {
+          'buckets.b': {
+            mode: 'managed',
+            region: 'cn-hangzhou',
+            definition: {},
+            instances: [
+              { sid: 's', id: 'tb', type: 'ALIYUN_OSS_BUCKET', bucketName: 'tb' },
+              { sid: 'c', id: 'x.c', type: 'ALIYUN_CDN_DISTRIBUTION', domainName: 'x.c' },
+            ],
+            lastUpdated: new Date().toISOString(),
+          },
+        },
+      };
+      mockOssOperations.getBucket.mockResolvedValue(null);
+      await deleteBucketResource(mockContext, 'tb', 'buckets.b', s);
+      expect(mockCdnOperations.deleteCdnDomain).toHaveBeenCalledWith('x.c');
+    });
+  });
+
+  describe('CDN final', () => {
+    beforeEach(() => {
+      jest.clearAllMocks();
+      mockCdnOperations.addCdnDomain.mockResolvedValue({});
+      mockCdnOperations.describeCdnDomainDetail.mockResolvedValue({
+        domainName: 'x.c',
+        cname: 'x.cdn.c',
+        status: 'online',
+      });
+      mockCdnOperations.setDomainServerCertificate.mockResolvedValue({});
+      mockCdnOperations.deleteCdnDomain.mockResolvedValue({});
+      mockOssOperations.createBucket.mockResolvedValue({ name: 'tb', location: 'oss-cn-hangzhou' });
+      mockOssOperations.getBucket.mockResolvedValue({ name: 'tb', location: 'oss-cn-hangzhou' });
+      mockOssOperations.bindCustomDomain.mockResolvedValue({
+        domain: 'x.c',
+        cname: 'bkt.oss.c',
+        bucketCnameBound: true,
+      });
+      mockOssOperations.enableTransferAcceleration.mockResolvedValue(true);
+      mockOssOperations.getAccelerateEndpoint.mockResolvedValue('bkt.oss-accelerate.aliyuncs.com');
+      mockDnsOperations.addDomainRecord.mockResolvedValue('did');
+      mockedStateManager.setResource.mockImplementation((_s, _l, rs) => ({
+        ..._s,
+        resources: { b: rs },
+      }));
+    });
+
+    it('cdn obj', () =>
+      createBucketResource(
+        mockContext,
+        {
+          key: 'b',
+          name: 'tb',
+          security: { acl: BucketAccessEnum.PUBLIC_READ, force_delete: false },
+          domain: { domain_name: 'x.c', cdn: { enabled: true }, www_bind_apex: false },
+        } as BucketDomain,
+        initialState,
+      ).then(() => {
+        expect(mockCdnOperations.addCdnDomain).toHaveBeenCalled();
+      }));
+    it('domain string', () =>
+      createBucketResource(
+        mockContext,
+        {
+          key: 'b',
+          name: 'tb',
+          security: { acl: BucketAccessEnum.PUBLIC_READ, force_delete: false },
+          website: {
+            code: './dist',
+            index: 'i.html',
+            error_page: '404.html',
+            error_code: 404,
+            domain: 'x.c',
+          },
+        } as BucketDomain,
+        initialState,
+      ).then(() => {
+        expect(mockOssOperations.bindCustomDomain).toHaveBeenCalled();
+      }));
   });
 });

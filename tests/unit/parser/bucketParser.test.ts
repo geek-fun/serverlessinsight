@@ -517,4 +517,61 @@ describe('bucketParser', () => {
       });
     });
   });
+
+  describe('parseBucket with CDN/accelerate', () => {
+    it('should parse top-level domain with cdn: true', () => {
+      const input = {
+        my_bucket: {
+          name: 'my-bucket',
+          domain: {
+            domain_name: 'cdn.example.com',
+            cdn: true,
+          },
+        },
+      };
+      const result = parseBucket(input)!;
+      expect(result).toHaveLength(1);
+      expect(result[0].domain?.domain_name).toBe('cdn.example.com');
+      expect(result[0].domain?.cdn).toBe(true);
+    });
+
+    it('should parse top-level domain with cdn object config', () => {
+      const input = {
+        my_bucket: {
+          name: 'my-bucket',
+          domain: {
+            domain_name: 'cdn.example.com',
+            cdn: {
+              enabled: true,
+              cdn_type: 'download',
+              scope: 'global',
+            },
+            accelerate: true,
+          },
+        },
+      };
+      const result = parseBucket(input)!;
+      expect(result).toHaveLength(1);
+      expect(result[0].domain?.cdn).toEqual({
+        enabled: true,
+        cdn_type: 'download',
+        scope: 'global',
+      });
+      expect(result[0].domain?.accelerate).toBe(true);
+    });
+
+    it('should fall back to website.domain when top-level domain is absent', () => {
+      const input = {
+        my_bucket: {
+          name: 'my-bucket',
+          website: {
+            code: './dist',
+            domain: 'legacy.example.com',
+          },
+        },
+      };
+      const result = parseBucket(input)!;
+      expect(result[0].domain?.domain_name).toBe('legacy.example.com');
+    });
+  });
 });

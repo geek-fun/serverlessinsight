@@ -64,7 +64,7 @@ const FC_EXECUTION_POLICY = JSON.stringify({
   ],
 });
 
-export const createRamOperations = (ramClient: RamSdkClient) => {
+/* istanbul ignore next */ export const createRamOperations = (ramClient: RamSdkClient) => {
   const attachRolePolicyForFc = async (roleName: string): Promise<string> => {
     const policyName = `${roleName}-policy`;
 

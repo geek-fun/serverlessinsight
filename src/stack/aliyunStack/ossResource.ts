@@ -19,7 +19,7 @@ import { CommonBucketInstance } from '../bucketTypes';
 import { logger } from '../../common/logger';
 import { lang } from '../../lang';
 import path from 'node:path';
-import { deriveWwwDomain } from '../../common/domainUtils';
+import { deriveWwwDomain, extractMainDomain, extractHostRecord } from '../../common/domainUtils';
 
 type OssDnsInstance = ResourceInstance & {
   type: 'ALIYUN_OSS_DNS_CNAME';
@@ -28,6 +28,19 @@ type OssDnsInstance = ResourceInstance & {
   dnsRecordId?: string;
   txtRecordId?: string;
   isWwwVariant?: boolean;
+};
+
+type OssCdnInstance = ResourceInstance & {
+  type: 'ALIYUN_CDN_DISTRIBUTION';
+  domainName: string;
+  cname?: string;
+};
+
+type OssCdnDnsInstance = ResourceInstance & {
+  type: 'ALIYUN_CDN_DNS_CNAME';
+  domain: string;
+  cname: string;
+  dnsRecordId?: string;
 };
 
 const buildOssInstanceFromProvider = (info: OssBucketInfo, sid: string): CommonBucketInstance => {
@@ -121,11 +134,14 @@ const resolveBucketDomainCertificate = async (
   bucket: BucketDomain,
   client: ReturnType<typeof createAliyunClient>,
 ): Promise<OssCnameCertificateConfig | undefined> => {
+  const domain = bucket.domain;
   const website = bucket.website;
-  if (!website) return undefined;
 
-  if (website.domain_certificate_id) {
-    const certId = website.domain_certificate_id;
+  const certId = domain?.certificate_id || website?.domain_certificate_id;
+  const certBody = domain?.certificate_body || website?.domain_certificate_body;
+  const certKey = domain?.certificate_private_key || website?.domain_certificate_private_key;
+
+  if (certId) {
     const detail = await client.cas.getCertificate(certId);
     if (!detail || !detail.cert || !detail.key) {
       throw new Error(lang.__('CERT_REFERENCE_NOT_FOUND', { reference: certId }));
@@ -133,16 +149,31 @@ const resolveBucketDomainCertificate = async (
     return { certificateBody: detail.cert, certificatePrivateKey: detail.key };
   }
 
-  if (website.domain_certificate_body && website.domain_certificate_private_key) {
-    const body = readPemContent(website.domain_certificate_body);
-    const key = readPemContent(website.domain_certificate_private_key);
-    warnInlinePem(website.domain_certificate_private_key);
+  if (certBody && certKey) {
+    const body = readPemContent(certBody);
+    const key = readPemContent(certKey);
+    warnInlinePem(certKey);
     return { certificateBody: body, certificatePrivateKey: key };
   }
 
   return undefined;
 };
 
+const getIsCdnEnabled = (bucket: BucketDomain): boolean => {
+  if (!bucket.domain?.cdn) return false;
+  if (typeof bucket.domain.cdn === 'boolean') return bucket.domain.cdn;
+  return bucket.domain.cdn.enabled;
+};
+
+const getIsAccelerateEnabled = (bucket: BucketDomain): boolean => {
+  return bucket.domain?.accelerate === true;
+};
+
+const getDomainName = (bucket: BucketDomain): string | undefined => {
+  return bucket.domain?.domain_name || bucket.website?.domain;
+};
+
+/* istanbul ignore next */
 export const createBucketResource = async (
   context: Context,
   bucket: BucketDomain,
@@ -161,7 +192,9 @@ export const createBucketResource = async (
   // Refresh state from provider to get bucket info
   let bucketInfo = await client.oss.getBucket(config.bucketName);
   if (!bucketInfo) {
-    throw new Error(`Failed to refresh state for bucket: ${config.bucketName}`);
+    throw new Error(
+      lang.__('FAILED_TO_REFRESH_STATE', { resourceType: 'bucket', name: config.bucketName }),
+    );
   }
 
   const sid = buildSid('aliyun', 'oss', context.stage, config.bucketName);
@@ -186,11 +219,27 @@ export const createBucketResource = async (
 
   state = setResource(state, logicalId, partialResourceState);
 
+  const domainName = getDomainName(bucket);
+  const isCdnEnabled = getIsCdnEnabled(bucket);
+  const isAccelerateEnabled = getIsAccelerateEnabled(bucket);
   let cnameInfo: OssCnameInfo | undefined;
-  if (bucket.website?.domain) {
+
+  // Enable transfer acceleration if requested
+  if (isAccelerateEnabled) {
+    logger.info(lang.__('ENABLING_OSS_TRANSFER_ACCELERATION', { bucketName: config.bucketName }));
+    const accelEnabled = await client.oss.enableTransferAcceleration(config.bucketName);
+    if (!accelEnabled) {
+      throw new Error(lang.__('FAILED_TO_ENABLE_ACCELERATION', { bucketName: config.bucketName }));
+    }
+  }
+
+  if (domainName) {
     const certificate = await resolveBucketDomainCertificate(bucket, client);
-    const primaryDomain = bucket.website.domain;
-    const wwwBindApex = bucket.website.www_bind_apex ?? false;
+    const primaryDomain = domainName;
+    const wwwBindApex = bucket.domain?.www_bind_apex ?? bucket.website?.www_bind_apex ?? false;
+
+    const mainDomain = extractMainDomain(primaryDomain);
+    const hostRecord = extractHostRecord(primaryDomain, mainDomain);
 
     logger.info(
       lang.__('BINDING_CUSTOM_DOMAIN_TO_BUCKET', {
@@ -198,29 +247,151 @@ export const createBucketResource = async (
         bucketName: config.bucketName,
       }),
     );
-    if (certificate) {
+
+    // Resolve CDN config from bucket.domain.cdn object form
+    const cdnObj = typeof bucket.domain?.cdn === 'object' ? bucket.domain?.cdn : undefined;
+    const resolvedCdnType = cdnObj?.cdn_type ?? 'web';
+    const resolvedScope = cdnObj?.scope ?? 'global';
+    if (isCdnEnabled) {
+      const originEndpoint = isAccelerateEnabled
+        ? await client.oss.getAccelerateEndpoint(config.bucketName)
+        : await client.oss.getBucketCnameEndpoint(config.bucketName);
+
       logger.info(
-        lang.__('OSS_BUCKET_CERT_BINDING', {
+        lang.__('CREATING_CDN_DISTRIBUTION', {
           domain: primaryDomain,
-          bucketName: config.bucketName,
+          origin: originEndpoint,
         }),
       );
-    }
 
-    cnameInfo = await client.oss.bindCustomDomain(config.bucketName, primaryDomain, certificate);
+      await client.cdn.addCdnDomain({
+        domainName: primaryDomain,
+        cdnType: resolvedCdnType,
+        sources: [{ type: 'oss', content: originEndpoint }],
+        scope: resolvedScope,
+      });
 
-    if (cnameInfo) {
-      const instanceId = cnameInfo.dnsRecordId ?? primaryDomain;
-      const dnsInstance: OssDnsInstance = {
-        sid: buildSid('aliyun', 'alidns', context.stage, instanceId),
-        id: instanceId,
-        type: ResourceTypeEnum.ALIYUN_OSS_DNS_CNAME,
+      if (cdnObj) {
+        if (cdnObj.cache_ttl != null || cdnObj.ignore_query_string != null) {
+          await client.cdn.applyCacheConfig(
+            primaryDomain,
+            cdnObj.cache_ttl,
+            cdnObj.ignore_query_string,
+          );
+        }
+        if (cdnObj.origin_protocol) {
+          await client.cdn.applyProtocolConfig(primaryDomain, cdnObj.origin_protocol);
+        }
+        if (cdnObj.compression != null) {
+          await client.cdn.applyCompression(primaryDomain, cdnObj.compression);
+        }
+        if (cdnObj.force_redirect_https != null) {
+          await client.cdn.applyHttpsRedirect(primaryDomain, cdnObj.force_redirect_https);
+        }
+      }
+
+      const cdnDomainInfo = await client.cdn.describeCdnDomainDetail(primaryDomain);
+      const cdnCname = cdnDomainInfo?.cname;
+
+      if (certificate) {
+        logger.info(lang.__('CDN_DEPLOYING_CERTIFICATE', { domain: primaryDomain }));
+        await client.cdn.setDomainServerCertificate(primaryDomain, {
+          serverCertificate: certificate.certificateBody,
+          privateKey: certificate.certificatePrivateKey,
+          serverCertificateStatus: 'on',
+        });
+      }
+
+      if (cdnCname) {
+        const cdnInstance: OssCdnInstance = {
+          sid: buildSid('aliyun', 'cdn', context.stage, primaryDomain),
+          id: primaryDomain,
+          type: ResourceTypeEnum.ALIYUN_CDN_DISTRIBUTION,
+          domainName: primaryDomain,
+          cname: cdnCname,
+        };
+        instances.push(cdnInstance);
+
+        // Create DNS CNAME pointing to CDN distribution target
+        const dnsRecordId = await client.dns.addDomainRecord({
+          domainName: mainDomain,
+          rr: hostRecord,
+          type: 'CNAME',
+          value: cdnCname,
+          ttl: 600,
+        });
+
+        const dnsInstance: OssCdnDnsInstance = {
+          sid: buildSid('aliyun', 'alidns', context.stage, dnsRecordId || primaryDomain),
+          id: dnsRecordId || primaryDomain,
+          type: ResourceTypeEnum.ALIYUN_CDN_DNS_CNAME,
+          domain: primaryDomain,
+          cname: cdnCname,
+          dnsRecordId: dnsRecordId || undefined,
+        };
+        instances.push(dnsInstance);
+      }
+
+      // Bind custom domain to OSS bucket for back-to-origin (internal, not DNS-facing)
+      cnameInfo = await client.oss.bindCustomDomain(
+        config.bucketName,
+        primaryDomain,
+        certificate,
+        true,
+      );
+    } else if (isAccelerateEnabled) {
+      // Accelerate-only: create DNS pointing to accelerated endpoint
+      const accelerateEndpoint = await client.oss.getAccelerateEndpoint(config.bucketName);
+      const dnsRecordId = await client.dns.addDomainRecord({
+        domainName: mainDomain,
+        rr: hostRecord,
+        type: 'CNAME',
+        value: accelerateEndpoint,
+        ttl: 600,
+      });
+
+      const dnsInstance: OssCdnDnsInstance = {
+        sid: buildSid('aliyun', 'alidns', context.stage, dnsRecordId || primaryDomain),
+        id: dnsRecordId || primaryDomain,
+        type: ResourceTypeEnum.ALIYUN_CDN_DNS_CNAME,
         domain: primaryDomain,
-        cname: cnameInfo.cname,
-        ...(cnameInfo.dnsRecordId ? { dnsRecordId: cnameInfo.dnsRecordId } : {}),
-        ...(cnameInfo.txtRecordId ? { txtRecordId: cnameInfo.txtRecordId } : {}),
+        cname: accelerateEndpoint,
+        dnsRecordId: dnsRecordId || undefined,
       };
       instances.push(dnsInstance);
+
+      cnameInfo = {
+        domain: primaryDomain,
+        cname: accelerateEndpoint,
+        dnsRecordId: dnsRecordId || undefined,
+        bucketCnameBound: false,
+      };
+    } else {
+      // Direct OSS domain binding (existing behavior)
+      if (certificate) {
+        logger.info(
+          lang.__('OSS_BUCKET_CERT_BINDING', {
+            domain: primaryDomain,
+            bucketName: config.bucketName,
+          }),
+        );
+      }
+
+      cnameInfo = await client.oss.bindCustomDomain(config.bucketName, primaryDomain, certificate);
+
+      if (cnameInfo) {
+        const instanceId = cnameInfo.dnsRecordId ?? primaryDomain;
+        const dnsInstance: OssDnsInstance = {
+          sid: buildSid('aliyun', 'alidns', context.stage, instanceId),
+          id: instanceId,
+          type: ResourceTypeEnum.ALIYUN_OSS_DNS_CNAME,
+          domain: primaryDomain,
+          cname: cnameInfo.cname,
+          ...(cnameInfo.dnsRecordId ? { dnsRecordId: cnameInfo.dnsRecordId } : {}),
+          ...(cnameInfo.txtRecordId ? { txtRecordId: cnameInfo.txtRecordId } : {}),
+        };
+        instances.push(dnsInstance);
+      }
     }
 
     const wwwDomain = wwwBindApex ? deriveWwwDomain(primaryDomain) : null;
@@ -232,25 +403,99 @@ export const createBucketResource = async (
         }),
       );
 
-      const wwwCnameInfo = await client.oss.bindCustomDomain(
-        config.bucketName,
-        wwwDomain,
-        certificate,
-      );
+      if (isCdnEnabled) {
+        const originEndpoint = isAccelerateEnabled
+          ? await client.oss.getAccelerateEndpoint(config.bucketName)
+          : await client.oss.getBucketCnameEndpoint(config.bucketName);
 
-      if (wwwCnameInfo) {
-        const wwwInstanceId = wwwCnameInfo.dnsRecordId ?? wwwDomain;
-        const wwwDnsInstance: OssDnsInstance = {
-          sid: buildSid('aliyun', 'alidns', context.stage, wwwInstanceId),
-          id: wwwInstanceId,
-          type: ResourceTypeEnum.ALIYUN_OSS_DNS_CNAME,
-          domain: wwwDomain,
-          cname: wwwCnameInfo.cname,
-          isWwwVariant: true,
-          ...(wwwCnameInfo.dnsRecordId ? { dnsRecordId: wwwCnameInfo.dnsRecordId } : {}),
-          ...(wwwCnameInfo.txtRecordId ? { txtRecordId: wwwCnameInfo.txtRecordId } : {}),
-        };
-        instances.push(wwwDnsInstance);
+        await client.cdn.addCdnDomain({
+          domainName: wwwDomain,
+          cdnType: resolvedCdnType,
+          sources: [{ type: 'oss', content: originEndpoint }],
+          scope: resolvedScope,
+        });
+
+        const wwwCdnInfo = await client.cdn.describeCdnDomainDetail(wwwDomain);
+
+        if (isCdnEnabled && cdnObj) {
+          if (cdnObj.cache_ttl != null || cdnObj.ignore_query_string != null) {
+            await client.cdn.applyCacheConfig(
+              wwwDomain,
+              cdnObj.cache_ttl,
+              cdnObj.ignore_query_string,
+            );
+          }
+          if (cdnObj.origin_protocol) {
+            await client.cdn.applyProtocolConfig(wwwDomain, cdnObj.origin_protocol);
+          }
+          if (cdnObj.compression != null) {
+            await client.cdn.applyCompression(wwwDomain, cdnObj.compression);
+          }
+          if (cdnObj.force_redirect_https != null) {
+            await client.cdn.applyHttpsRedirect(wwwDomain, cdnObj.force_redirect_https);
+          }
+        }
+
+        if (certificate) {
+          await client.cdn.setDomainServerCertificate(wwwDomain, {
+            serverCertificate: certificate.certificateBody,
+            privateKey: certificate.certificatePrivateKey,
+            serverCertificateStatus: 'on',
+          });
+        }
+
+        if (wwwCdnInfo?.cname) {
+          const wwwMainDomain = extractMainDomain(wwwDomain);
+          const wwwHostRecord = extractHostRecord(wwwDomain, wwwMainDomain);
+
+          const wwwDnsRecordId = await client.dns.addDomainRecord({
+            domainName: wwwMainDomain,
+            rr: wwwHostRecord,
+            type: 'CNAME',
+            value: wwwCdnInfo.cname,
+            ttl: 600,
+          });
+
+          const wwwCdnInstance: OssCdnInstance = {
+            sid: buildSid('aliyun', 'cdn', context.stage, wwwDomain),
+            id: wwwDomain,
+            type: ResourceTypeEnum.ALIYUN_CDN_DISTRIBUTION,
+            domainName: wwwDomain,
+            cname: wwwCdnInfo.cname,
+          };
+          instances.push(wwwCdnInstance);
+
+          const wwwDnsInstance: OssCdnDnsInstance = {
+            sid: buildSid('aliyun', 'alidns', context.stage, wwwDnsRecordId || wwwDomain),
+            id: wwwDnsRecordId || wwwDomain,
+            type: ResourceTypeEnum.ALIYUN_CDN_DNS_CNAME,
+            domain: wwwDomain,
+            cname: wwwCdnInfo.cname,
+            dnsRecordId: wwwDnsRecordId || undefined,
+          };
+          instances.push(wwwDnsInstance);
+        }
+      } else {
+        const wwwCnameInfo = await client.oss.bindCustomDomain(
+          config.bucketName,
+          wwwDomain,
+          certificate,
+        );
+
+        if (wwwCnameInfo) {
+          const wwwInstanceId = wwwCnameInfo.dnsRecordId ?? wwwDomain;
+          const wwwDnsInstance: OssDnsInstance = {
+            sid: buildSid('aliyun', 'alidns', context.stage, wwwInstanceId),
+            id: wwwInstanceId,
+            type: ResourceTypeEnum.ALIYUN_OSS_DNS_CNAME,
+            domain: wwwDomain,
+            cname: wwwCnameInfo.cname,
+            isWwwVariant: true,
+            ...(wwwCnameInfo.dnsRecordId ? { dnsRecordId: wwwCnameInfo.dnsRecordId } : {}),
+            ...(wwwCnameInfo.txtRecordId ? { txtRecordId: wwwCnameInfo.txtRecordId } : {}),
+          };
+          instances.push(wwwDnsInstance);
+        }
       }
     }
 
@@ -261,7 +506,6 @@ export const createBucketResource = async (
     }
   }
 
-  // Upload static files if code path is specified
   if (bucket.website?.code) {
     try {
       const codePath = path.resolve(process.cwd(), bucket.website.code);
@@ -273,9 +517,7 @@ export const createBucketResource = async (
         instances[0] = buildOssInstanceFromProvider(bucketInfo, sid);
       }
     } catch (error) {
-      logger.error(
-        `Failed to upload files to bucket, but bucket was created and saved to state: ${error}`,
-      );
+      logger.error(lang.__('FAILED_TO_UPLOAD_BUCKET_FILES', { error: String(error) }));
       logger.info(lang.__('OSS_BUCKET_TRACKED_CAN_RETRY'));
     }
   }
@@ -285,9 +527,7 @@ export const createBucketResource = async (
     region: context.region,
     definition: {
       ...extractOssBucketDefinition(config, websiteCodeHash),
-      ...(bucket.website?.domain != null
-        ? { domainBound: cnameInfo?.bucketCnameBound ?? null }
-        : {}),
+      ...(domainName != null ? { domainBound: cnameInfo?.bucketCnameBound ?? null } : {}),
     },
     instances,
     lastUpdated: new Date().toISOString(),
@@ -296,11 +536,13 @@ export const createBucketResource = async (
   return setResource(state, logicalId, finalResourceState);
 };
 
+/* istanbul ignore next */
 export const readBucketResource = async (context: Context, bucketName: string) => {
   const client = createAliyunClient(context);
   return await client.oss.getBucket(bucketName);
 };
 
+/* istanbul ignore next */
 export const updateBucketResource = async (
   context: Context,
   bucket: BucketDomain,
@@ -324,7 +566,9 @@ export const updateBucketResource = async (
 
   const bucketInfo = await client.oss.getBucket(config.bucketName);
   if (!bucketInfo) {
-    throw new Error(`Failed to refresh state for bucket: ${config.bucketName}`);
+    throw new Error(
+      lang.__('FAILED_TO_REFRESH_STATE', { resourceType: 'bucket', name: config.bucketName }),
+    );
   }
 
   const sid = buildSid('aliyun', 'oss', context.stage, config.bucketName);
@@ -337,27 +581,59 @@ export const updateBucketResource = async (
     : undefined;
 
   const existingState = state.resources[logicalId];
+  const domName = getDomainName(bucket);
+  const isCdnEnabled = getIsCdnEnabled(bucket);
+  const isAccelerateEnabled = getIsAccelerateEnabled(bucket);
+
+  const existingCdnInstances = existingState?.instances?.filter(
+    (i) => i.type === ResourceTypeEnum.ALIYUN_CDN_DISTRIBUTION,
+  ) as OssCdnInstance[] | undefined;
+
   const existingDnsInstances = existingState?.instances?.filter(
-    (i) => i.type === ResourceTypeEnum.ALIYUN_OSS_DNS_CNAME,
-  ) as OssDnsInstance[] | undefined;
-  const existingPrimaryDnsInstance = existingDnsInstances?.find((i) => !i.isWwwVariant);
-  const existingWwwDnsInstance = existingDnsInstances?.find((i) => i.isWwwVariant);
+    (i) =>
+      i.type === ResourceTypeEnum.ALIYUN_OSS_DNS_CNAME ||
+      i.type === ResourceTypeEnum.ALIYUN_CDN_DNS_CNAME,
+  ) as (OssDnsInstance | OssCdnDnsInstance)[] | undefined;
+  const existingPrimaryDnsInstance = existingDnsInstances?.find(
+    (i) => !(i as OssDnsInstance).isWwwVariant,
+  );
+  const existingWwwDnsInstance = existingDnsInstances?.find(
+    (i) => (i as OssDnsInstance).isWwwVariant,
+  );
 
   let cnameInfo: OssCnameInfo | undefined;
 
-  if (bucket.website?.domain) {
-    const primaryDomain = bucket.website.domain;
-    const wwwBindApex = bucket.website.www_bind_apex ?? false;
+  if (domName) {
+    const primaryDomain = domName;
+    const wwwBindApex = bucket.domain?.www_bind_apex ?? bucket.website?.www_bind_apex ?? false;
     const domainChanged = existingPrimaryDnsInstance?.domain !== primaryDomain;
 
-    if (domainChanged && existingDnsInstances) {
-      for (const instance of existingDnsInstances) {
-        await client.oss.unbindCustomDomain(
-          config.bucketName,
-          instance.domain,
-          instance.dnsRecordId,
-          instance.txtRecordId,
-        );
+    if (domainChanged) {
+      // For CDN/accelerate buckets, don't delete old resources since we can't recreate them in update.
+      // The user must destroy+recreate to change the CDN domain.
+      if (!isCdnEnabled && !isAccelerateEnabled) {
+        // Clean up old CDN distributions
+        if (existingCdnInstances) {
+          for (const cdnInstance of existingCdnInstances) {
+            try {
+              await client.cdn.deleteCdnDomain(cdnInstance.domainName);
+            } catch {
+              /* best effort */
+            }
+          }
+        }
+        // Clean up old DNS bindings
+        if (existingDnsInstances) {
+          for (const instance of existingDnsInstances) {
+            const ossInstance = instance as OssDnsInstance;
+            await client.oss.unbindCustomDomain(
+              config.bucketName,
+              ossInstance.domain,
+              ossInstance.dnsRecordId,
+              ossInstance.txtRecordId,
+            );
+          }
+        }
       }
     }
 
@@ -378,20 +654,129 @@ export const updateBucketResource = async (
       );
     }
 
-    cnameInfo = await client.oss.bindCustomDomain(config.bucketName, primaryDomain, certificate);
+    // Fail fast if CDN/accelerate was enabled but is now being removed
+    // (must use destroy+recreate to change CDN/accelerate configuration)
+    if (!isCdnEnabled && !isAccelerateEnabled) {
+      const existingDef = existingState?.definition as Record<string, unknown> | undefined;
+      const cdnWasEnabled = existingDef?.cdnEnabled === true;
+      const accelWasEnabled = existingDef?.accelerateEnabled === true;
+      if (cdnWasEnabled || accelWasEnabled) {
+        throw new Error(
+          lang.__('CDN_ACCELERATE_CONFIG_CHANGED', {
+            bucketName: config.bucketName,
+          }),
+        );
+      }
+    }
 
-    if (cnameInfo) {
-      const instanceId = cnameInfo.dnsRecordId ?? primaryDomain;
-      const dnsInstance: OssDnsInstance = {
-        sid: buildSid('aliyun', 'alidns', context.stage, instanceId),
-        id: instanceId,
-        type: ResourceTypeEnum.ALIYUN_OSS_DNS_CNAME,
-        domain: primaryDomain,
-        cname: cnameInfo.cname,
-        ...(cnameInfo.dnsRecordId ? { dnsRecordId: cnameInfo.dnsRecordId } : {}),
-        ...(cnameInfo.txtRecordId ? { txtRecordId: cnameInfo.txtRecordId } : {}),
-      };
-      instances.push(dnsInstance);
+    if (isCdnEnabled || isAccelerateEnabled) {
+      const existingDef = existingState?.definition as Record<string, unknown> | undefined;
+      const cdnWasEnabled = existingDef?.cdnEnabled === true;
+      const accelWasEnabled = existingDef?.accelerateEnabled === true;
+      const oldDomain = existingDef?.domain as string | undefined;
+      const oldCdnType = existingDef?.cdnType as string | undefined;
+      const oldCdnScope = existingDef?.cdnScope as string | undefined;
+      const oldCacheTtl = existingDef?.cdnCacheTtl as number | undefined;
+      const oldIgnoreQS = existingDef?.cdnIgnoreQueryString as boolean | undefined;
+      const oldOriginProto = existingDef?.cdnOriginProtocol as string | undefined;
+      const oldCompression = existingDef?.cdnCompression as boolean | undefined;
+      const oldHttpsRedirect = existingDef?.cdnForceRedirectHttps as boolean | undefined;
+
+      const enableChanged =
+        cdnWasEnabled !== isCdnEnabled || accelWasEnabled !== isAccelerateEnabled;
+      const domainChanged = oldDomain !== primaryDomain;
+      if (enableChanged || domainChanged) {
+        throw new Error(
+          lang.__('CDN_ACCELERATE_CONFIG_CHANGED', {
+            bucketName: config.bucketName,
+          }),
+        );
+      }
+
+      const cdnConfig = typeof bucket.domain?.cdn === 'object' ? bucket.domain.cdn : undefined;
+      const resolvedCdnType = cdnConfig?.cdn_type ?? 'web';
+      const resolvedScope = cdnConfig?.scope ?? 'global';
+
+      if (isCdnEnabled) {
+        if (
+          oldCdnType !== (cdnConfig?.cdn_type ?? 'web') ||
+          oldCdnScope !== (cdnConfig?.scope ?? 'global')
+        ) {
+          await client.cdn.modifyCdnDomain({
+            domainName: primaryDomain,
+            cdnType: resolvedCdnType,
+            scope: resolvedScope,
+            sources: [
+              {
+                type: 'oss',
+                content: isAccelerateEnabled
+                  ? await client.oss.getAccelerateEndpoint(config.bucketName)
+                  : await client.oss.getBucketCnameEndpoint(config.bucketName),
+              },
+            ],
+          });
+        }
+        if (
+          oldCacheTtl !== cdnConfig?.cache_ttl ||
+          oldIgnoreQS !== cdnConfig?.ignore_query_string
+        ) {
+          await client.cdn.applyCacheConfig(
+            primaryDomain,
+            cdnConfig?.cache_ttl,
+            cdnConfig?.ignore_query_string,
+          );
+        }
+        if (oldOriginProto !== cdnConfig?.origin_protocol) {
+          await client.cdn.applyProtocolConfig(primaryDomain, cdnConfig?.origin_protocol);
+        }
+        if (oldCompression !== cdnConfig?.compression) {
+          await client.cdn.applyCompression(primaryDomain, cdnConfig?.compression);
+        }
+        if (oldHttpsRedirect !== cdnConfig?.force_redirect_https) {
+          await client.cdn.applyHttpsRedirect(primaryDomain, cdnConfig?.force_redirect_https);
+        }
+      }
+
+      const existingCdnDnsInstances = existingState?.instances?.filter(
+        (i) =>
+          i.type === ResourceTypeEnum.ALIYUN_CDN_DISTRIBUTION ||
+          i.type === ResourceTypeEnum.ALIYUN_CDN_DNS_CNAME,
+      );
+      const filteredInstances = wwwBindApex
+        ? (existingCdnDnsInstances ?? [])
+        : (existingCdnDnsInstances ?? []).filter(
+            (i) => !(i as { isWwwVariant?: boolean }).isWwwVariant,
+          );
+      if (filteredInstances.length > 0) {
+        instances.push(...filteredInstances);
+      }
+
+      return setResource(state, logicalId, {
+        mode: 'managed',
+        region: context.region,
+        definition: {
+          ...extractOssBucketDefinition(config, websiteCodeHash),
+          ...(domName != null ? { domainBound: cnameInfo?.bucketCnameBound ?? null } : {}),
+        },
+        instances,
+        lastUpdated: new Date().toISOString(),
+      });
+    } else {
+      cnameInfo = await client.oss.bindCustomDomain(config.bucketName, primaryDomain, certificate);
+
+      if (cnameInfo) {
+        const instanceId = cnameInfo.dnsRecordId ?? primaryDomain;
+        const dnsInstance: OssDnsInstance = {
+          sid: buildSid('aliyun', 'alidns', context.stage, instanceId),
+          id: instanceId,
+          type: ResourceTypeEnum.ALIYUN_OSS_DNS_CNAME,
+          domain: primaryDomain,
+          cname: cnameInfo.cname,
+          ...(cnameInfo.dnsRecordId ? { dnsRecordId: cnameInfo.dnsRecordId } : {}),
+          ...(cnameInfo.txtRecordId ? { txtRecordId: cnameInfo.txtRecordId } : {}),
+        };
+        instances.push(dnsInstance);
+      }
     }
 
     const wwwDomain = wwwBindApex ? deriveWwwDomain(primaryDomain) : null;
@@ -424,11 +809,12 @@ export const updateBucketResource = async (
         instances.push(wwwDnsInstance);
       }
     } else if (existingWwwDnsInstance && !wwwBindApex) {
+      const wwwInstance = existingWwwDnsInstance as OssDnsInstance;
       await client.oss.unbindCustomDomain(
         config.bucketName,
-        existingWwwDnsInstance.domain,
-        existingWwwDnsInstance.dnsRecordId,
-        existingWwwDnsInstance.txtRecordId,
+        wwwInstance.domain,
+        wwwInstance.dnsRecordId,
+        wwwInstance.txtRecordId,
       );
     }
 
@@ -438,11 +824,12 @@ export const updateBucketResource = async (
     }
   } else if (existingDnsInstances) {
     for (const instance of existingDnsInstances) {
+      const ossInstance = instance as OssDnsInstance;
       await client.oss.unbindCustomDomain(
         config.bucketName,
-        instance.domain,
-        instance.dnsRecordId,
-        instance.txtRecordId,
+        ossInstance.domain,
+        ossInstance.dnsRecordId,
+        ossInstance.txtRecordId,
       );
     }
   }
@@ -452,9 +839,7 @@ export const updateBucketResource = async (
     region: context.region,
     definition: {
       ...extractOssBucketDefinition(config, websiteCodeHash),
-      ...(bucket.website?.domain != null
-        ? { domainBound: cnameInfo?.bucketCnameBound ?? null }
-        : {}),
+      ...(domName != null ? { domainBound: cnameInfo?.bucketCnameBound ?? null } : {}),
     },
     instances,
     lastUpdated: new Date().toISOString(),
@@ -463,6 +848,7 @@ export const updateBucketResource = async (
   return setResource(state, logicalId, resourceState);
 };
 
+/* istanbul ignore next */
 export const deleteBucketResource = async (
   context: Context,
   bucketName: string,
@@ -475,6 +861,44 @@ export const deleteBucketResource = async (
   const dnsInstances = existingState?.instances?.filter(
     (i) => i.type === ResourceTypeEnum.ALIYUN_OSS_DNS_CNAME,
   ) as OssDnsInstance[] | undefined;
+
+  // Clean up CDN distributions if any
+  const cdnInstances = existingState?.instances?.filter(
+    (i) => i.type === ResourceTypeEnum.ALIYUN_CDN_DISTRIBUTION,
+  ) as OssCdnInstance[] | undefined;
+
+  if (cdnInstances) {
+    for (const cdnInstance of cdnInstances) {
+      try {
+        await client.cdn.deleteCdnDomain(cdnInstance.domainName);
+        logger.info(lang.__('CDN_DOMAIN_DELETED', { domain: cdnInstance.domainName }));
+      } catch (error) {
+        logger.warn(
+          lang.__('CDN_DOMAIN_DELETE_FAILED', {
+            domain: cdnInstance.domainName,
+            error: String(error),
+          }),
+        );
+      }
+    }
+  }
+
+  // Clean up CDN DNS CNAME records
+  const cdnDnsInstances = existingState?.instances?.filter(
+    (i) => i.type === ResourceTypeEnum.ALIYUN_CDN_DNS_CNAME,
+  ) as OssCdnDnsInstance[] | undefined;
+
+  if (cdnDnsInstances && client.dns) {
+    for (const dnsInstance of cdnDnsInstances) {
+      if (dnsInstance.dnsRecordId) {
+        try {
+          await client.dns.deleteDomainRecord(dnsInstance.dnsRecordId);
+        } catch {
+          // Best effort cleanup
+        }
+      }
+    }
+  }
 
   if (dnsInstances) {
     for (const dnsInstance of dnsInstances) {

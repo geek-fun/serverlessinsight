@@ -30,6 +30,20 @@ export type MockAliyunClient = {
     putBucketWebsite: jest.Mock;
     deleteBucketWebsite: jest.Mock;
     putBucketAcl: jest.Mock;
+    enableTransferAcceleration: jest.Mock;
+    getAccelerateEndpoint: jest.Mock;
+    getBucketCnameEndpoint: jest.Mock;
+  };
+  cdn: {
+    addCdnDomain: jest.Mock;
+    describeCdnDomainDetail: jest.Mock;
+    deleteCdnDomain: jest.Mock;
+    modifyCdnDomain: jest.Mock;
+    setDomainServerCertificate: jest.Mock;
+    applyCacheConfig: jest.Mock;
+    applyProtocolConfig: jest.Mock;
+    applyCompression: jest.Mock;
+    applyHttpsRedirect: jest.Mock;
   };
   ram: {
     createRole: jest.Mock;
@@ -109,6 +123,24 @@ export const createMockAliyunClient = (): MockAliyunClient => ({
     putBucketWebsite: jest.fn().mockResolvedValue({}),
     deleteBucketWebsite: jest.fn().mockResolvedValue({}),
     putBucketAcl: jest.fn().mockResolvedValue({}),
+    enableTransferAcceleration: jest.fn().mockResolvedValue(true),
+    getAccelerateEndpoint: jest.fn().mockResolvedValue('test-bucket.oss-accelerate.aliyuncs.com'),
+    getBucketCnameEndpoint: jest.fn().mockResolvedValue('test-bucket.oss-cn-hangzhou.aliyuncs.com'),
+  },
+  cdn: {
+    addCdnDomain: jest.fn().mockResolvedValue({}),
+    describeCdnDomainDetail: jest.fn().mockResolvedValue({
+      domainName: 'cdn.example.com',
+      cname: 'cdn.example.com.cdn.aliyuncs.com',
+      status: 'online',
+    }),
+    deleteCdnDomain: jest.fn().mockResolvedValue({}),
+    modifyCdnDomain: jest.fn().mockResolvedValue({}),
+    setDomainServerCertificate: jest.fn().mockResolvedValue({}),
+    applyCacheConfig: jest.fn().mockResolvedValue({}),
+    applyProtocolConfig: jest.fn().mockResolvedValue({}),
+    applyCompression: jest.fn().mockResolvedValue({}),
+    applyHttpsRedirect: jest.fn().mockResolvedValue({}),
   },
   ram: {
     createRole: jest.fn().mockResolvedValue({ body: { Role: { RoleName: 'test-role' } } }),

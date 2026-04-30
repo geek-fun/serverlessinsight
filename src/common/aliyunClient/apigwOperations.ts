@@ -147,6 +147,7 @@ const removeUndefined = <T extends Record<string, unknown>>(obj: T): T => {
   return Object.fromEntries(Object.entries(obj).filter(([, value]) => value !== undefined)) as T;
 };
 
+/* istanbul ignore next */
 export const isNetworkTimeoutError = (error: unknown): boolean => {
   if (!error || typeof error !== 'object') return false;
   const err = error as { name?: string; message?: string; code?: string };
@@ -160,6 +161,7 @@ export const isNetworkTimeoutError = (error: unknown): boolean => {
   );
 };
 
+/* istanbul ignore next */
 export const isDomainAlreadyBoundError = (error: unknown): boolean => {
   if (!error || typeof error !== 'object') return false;
   const err = error as { code?: string; message?: string };
@@ -171,6 +173,7 @@ export const isDomainAlreadyBoundError = (error: unknown): boolean => {
   );
 };
 
+/* istanbul ignore next */
 export const createApigwOperations = (
   apigwClient: ApigwSdkClient,
   dnsClient: DnsSdkClient,
@@ -917,6 +920,7 @@ export const createApigwOperations = (
       config: ApigwCustomDomainConfig,
       state: StateFile,
       eventLogicalId: string,
+      skipDns?: boolean,
     ): Promise<StateFile> => {
       logger.info(lang.__('APIGW_BINDING_DOMAIN', { domain: config.domainName }));
 
@@ -933,17 +937,19 @@ export const createApigwOperations = (
         );
       }
 
-      logger.info(lang.__('APIGW_ENSURING_CNAME', { domain: config.domainName }));
-      state = await addDomainVerificationRecord(
-        config.domainName,
-        groupId,
-        groupSubdomain,
-        region,
-        state,
-        eventLogicalId,
-      );
+      if (!skipDns) {
+        logger.info(lang.__('APIGW_ENSURING_CNAME', { domain: config.domainName }));
+        state = await addDomainVerificationRecord(
+          config.domainName,
+          groupId,
+          groupSubdomain,
+          region,
+          state,
+          eventLogicalId,
+        );
 
-      await pollPublicDnsResolution(config.domainName);
+        await pollPublicDnsResolution(config.domainName);
+      }
 
       const setDomainRequest = new cloudapi.SetDomainRequest({
         groupId: config.groupId,

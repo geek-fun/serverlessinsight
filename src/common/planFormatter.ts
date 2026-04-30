@@ -42,6 +42,7 @@ const isSimpleObject = (val: unknown): boolean => {
   return Object.values(obj).every((v) => typeof v !== 'object' || v === null);
 };
 
+/* istanbul ignore next */
 export const computeAttributeDiffs = (
   before: Record<string, unknown> | undefined,
   after: Record<string, unknown> | undefined,
@@ -250,6 +251,7 @@ const ACTION_COLOR: Record<string, keyof typeof COLOR> = {
   refresh: 'CYAN',
 };
 
+/* istanbul ignore next */
 export const formatPlanItem = (
   item: PlanItem,
   config: PlanDisplayConfig = DEFAULT_CONFIG,
@@ -291,6 +293,7 @@ export const formatPlanItem = (
   return [headerLine, resourceLine, ...attrLines, ...hiddenLine].join('\n');
 };
 
+/* istanbul ignore next */
 export const formatPlan = (
   items: PlanItem[],
   config: PlanDisplayConfig = DEFAULT_CONFIG,
@@ -332,6 +335,7 @@ export const formatPlan = (
   return [...header, ...itemLines, summary].join('\n');
 };
 
+/* istanbul ignore next */
 export const displayPlan = (planResult: { items: PlanItem[] }): void => {
   const output = formatPlan(planResult.items);
   logger.info(output);

@@ -1,4 +1,4 @@
-import { EventDomain, ResourceAttributes } from '../../types';
+import { CdnConfig, EventDomain, ResourceAttributes } from '../../types';
 import { getIacDefinition, isFunctionDomain, getContext, logger } from '../../common';
 import { lang } from '../../lang';
 
@@ -310,6 +310,44 @@ export const inferProtocolConfig = (protocol?: string | string[]): ProtocolConfi
   return { requestProtocol: protocol };
 };
 
+const getDomainCdnConfig = (domain: EventDomain['domain']): CdnConfig | undefined => {
+  const domainCdn = domain?.cdn;
+  if (domainCdn == null) {
+    return undefined;
+  }
+
+  if (typeof domainCdn === 'boolean') {
+    return domainCdn ? { enabled: true } : undefined;
+  }
+
+  if (typeof domainCdn === 'string') {
+    return undefined;
+  }
+
+  return {
+    enabled: domainCdn.enabled == null ? true : String(domainCdn.enabled) === 'true',
+    ...(domainCdn.cdn_type != null
+      ? { cdn_type: String(domainCdn.cdn_type) as CdnConfig['cdn_type'] }
+      : {}),
+    ...(domainCdn.scope != null ? { scope: String(domainCdn.scope) as CdnConfig['scope'] } : {}),
+    ...(domainCdn.cache_ttl != null ? { cache_ttl: Number(domainCdn.cache_ttl) } : {}),
+    ...(domainCdn.ignore_query_string != null
+      ? { ignore_query_string: String(domainCdn.ignore_query_string) === 'true' }
+      : {}),
+    ...(domainCdn.origin_protocol != null
+      ? {
+          origin_protocol: String(domainCdn.origin_protocol) as CdnConfig['origin_protocol'],
+        }
+      : {}),
+    ...(domainCdn.compression != null
+      ? { compression: String(domainCdn.compression) === 'true' }
+      : {}),
+    ...(domainCdn.force_redirect_https != null
+      ? { force_redirect_https: String(domainCdn.force_redirect_https) === 'true' }
+      : {}),
+  };
+};
+
 export type EventDomainDefinition = {
   domainName: string;
   wwwBindApex: boolean;
@@ -317,6 +355,14 @@ export type EventDomainDefinition = {
   certificateBody: string | null;
   certificatePrivateKey: string | null;
   protocol: string | string[] | null;
+  cdnEnabled?: boolean;
+  cdnType?: string;
+  cdnScope?: string;
+  cdnCacheTtl?: number;
+  cdnIgnoreQueryString?: boolean;
+  cdnOriginProtocol?: string;
+  cdnCompression?: boolean;
+  cdnForceRedirectHttps?: boolean;
 };
 
 export const extractEventDomainDefinition = (
@@ -325,7 +371,8 @@ export const extractEventDomainDefinition = (
   if (!domain) {
     return null;
   }
-  return {
+
+  const definition: EventDomainDefinition = {
     domainName: domain.domain_name as string,
     wwwBindApex: domain.www_bind_apex === true,
     certificateId: (domain.certificate_id as string) ?? null,
@@ -333,4 +380,32 @@ export const extractEventDomainDefinition = (
     certificatePrivateKey: domain.certificate_private_key ? '(managed)' : null,
     protocol: (domain.protocol as string | string[] | null) ?? null,
   };
+
+  const cdnConfig = getDomainCdnConfig(domain);
+  if (cdnConfig?.enabled === true) {
+    definition.cdnEnabled = true;
+    if (cdnConfig.cdn_type != null) {
+      definition.cdnType = cdnConfig.cdn_type as string;
+    }
+    if (cdnConfig.scope != null) {
+      definition.cdnScope = cdnConfig.scope as string;
+    }
+    if (cdnConfig.cache_ttl != null) {
+      definition.cdnCacheTtl = cdnConfig.cache_ttl as number;
+    }
+    if (cdnConfig.ignore_query_string != null) {
+      definition.cdnIgnoreQueryString = cdnConfig.ignore_query_string as boolean;
+    }
+    if (cdnConfig.origin_protocol != null) {
+      definition.cdnOriginProtocol = cdnConfig.origin_protocol as string;
+    }
+    if (cdnConfig.compression != null) {
+      definition.cdnCompression = cdnConfig.compression as boolean;
+    }
+    if (cdnConfig.force_redirect_https != null) {
+      definition.cdnForceRedirectHttps = cdnConfig.force_redirect_https as boolean;
+    }
+  }
+
+  return definition;
 };

@@ -1705,4 +1705,50 @@ describe('ossOperations getBucket additional branches', () => {
     // unbindCustomDomain calls removeCorsRuleForDomain which catches deleteBucketCORS error
     await expect(ops.unbindCustomDomain('test-bucket', 'cdn.example.com')).resolves.toBeUndefined();
   });
+
+  describe('bindCustomDomain with skipDns', () => {
+    beforeEach(() => {
+      mockRequest.mockReset();
+      mockGetBucketInfo.mockResolvedValue({
+        bucket: {
+          Name: 'test-bucket',
+          Location: 'oss-cn-hangzhou',
+        },
+      });
+    });
+
+    it('should not create DNS CNAME record when skipDns is true', async () => {
+      const dnsOps = {
+        describeDomainRecords: jest.fn(),
+        addDomainRecord: jest.fn().mockResolvedValue('dns-record-id'),
+        deleteDomainRecord: jest.fn(),
+        checkDomainRecordExists: jest.fn(),
+      };
+
+      mockRequest.mockResolvedValueOnce({});
+
+      const ops = createOssOperations(mockOssClient, 'cn-hangzhou', dnsOps);
+      const result = await ops.bindCustomDomain('test-bucket', 'cdn.example.com', undefined, true);
+
+      expect(result.domain).toBe('cdn.example.com');
+      expect(dnsOps.addDomainRecord).not.toHaveBeenCalled();
+    });
+
+    it('should create DNS CNAME record when skipDns is false/omitted', async () => {
+      const dnsOps = {
+        describeDomainRecords: jest.fn().mockResolvedValue([]),
+        addDomainRecord: jest.fn().mockResolvedValue('dns-record-id'),
+        deleteDomainRecord: jest.fn(),
+        checkDomainRecordExists: jest.fn(),
+      };
+
+      mockRequest.mockResolvedValueOnce({});
+
+      const ops = createOssOperations(mockOssClient, 'cn-hangzhou', dnsOps);
+      const result = await ops.bindCustomDomain('test-bucket', 'cdn.example.com', undefined, false);
+
+      expect(result.domain).toBe('cdn.example.com');
+      expect(dnsOps.addDomainRecord).toHaveBeenCalled();
+    });
+  });
 });

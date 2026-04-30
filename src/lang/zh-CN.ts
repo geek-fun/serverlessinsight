@@ -724,5 +724,25 @@ export const zhCN = {
   VEFAAS_DEPENDENT_RESOURCES_TRACKED: '依赖资源（TLS、IAM）已在状态中跟踪',
   VEFAAS_CAN_RETRY_DEPLOYMENT: '您可以重试部署 - 系统将复用现有的依赖资源',
   VEFAAS_FUNCTION_EXISTS_RECOVERY:
-    '函数 {{functionName}} 在提供商中已存在（状态恢复中），跳过创建并刷新状态',
+    '函数 {{functionName}} 已存在于云服务商（tainted 恢复），跳过创建并刷新状态',
+
+  // CDN messages
+  ENABLING_OSS_TRANSFER_ACCELERATION: '正在为存储桶 {{bucketName}} 开启 OSS 传输加速',
+  OSS_TRANSFER_ACCELERATION_ENABLED: '存储桶 {{bucketName}} 的 OSS 传输加速已开启',
+  OSS_TRANSFER_ACCELERATION_ENABLE_FAILED: '开启存储桶 {{bucketName}} 的传输加速失败：{{error}}',
+  CREATING_CDN_DISTRIBUTION: '正在为 {{domain}} 创建 CDN 加速域名，源站为 {{origin}}',
+  CDN_DEPLOYING_CERTIFICATE: '正在为 CDN 域名 {{domain}} 部署 SSL 证书',
+  CDN_DOMAIN_DELETED: 'CDN 域名 {{domain}} 已删除',
+  CDN_DOMAIN_DELETE_FAILED: '删除 CDN 域名 {{domain}} 失败：{{error}}',
+  CDN_ACCELERATE_SKIP_UPDATE:
+    '{{domain}} 的 CDN/加速配置在存储桶 {{bucketName}} 上未变化。CDN 设置在创建时管理。',
+  CDN_DOMAIN_CHANGE_REQUIRES_RECREATE:
+    '无法在更新时更改 CDN/加速域名从 {{oldDomain}} 到 {{newDomain}}。请使用销毁重建操作。',
+  BUCKET_DOMAIN_DEPRECATED:
+    '[已弃用] 存储桶 "{{key}}": website.domain 已弃用，请使用顶层 "domain" 配置。',
+  FAILED_TO_REFRESH_STATE: '刷新 {{resourceType}} {{name}} 的状态失败',
+  FAILED_TO_UPLOAD_BUCKET_FILES: '上传文件到存储桶失败，但存储桶已创建并保存到状态：{{error}}',
+  FAILED_TO_ENABLE_ACCELERATION: '无法为存储桶 {{bucketName}} 开启传输加速',
+  CDN_ACCELERATE_CONFIG_CHANGED:
+    '无法通过更新操作更改存储桶 {{bucketName}} 的 CDN/加速配置。请使用销毁重建操作来更改 CDN 或加速配置。',
 };
