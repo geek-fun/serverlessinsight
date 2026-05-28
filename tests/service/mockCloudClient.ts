@@ -81,6 +81,12 @@ export type MockAliyunClient = {
     waitForProject: jest.Mock;
     waitForLogstore: jest.Mock;
   };
+  dns: {
+    addDomainRecord: jest.Mock;
+    deleteDomainRecord: jest.Mock;
+    describeDomainRecords: jest.Mock;
+    checkDomainRecordExists: jest.Mock;
+  };
 };
 
 export const createMockAliyunClient = (): MockAliyunClient => ({
@@ -185,6 +191,12 @@ export const createMockAliyunClient = (): MockAliyunClient => ({
     createIndex: jest.fn().mockResolvedValue({}),
     waitForProject: jest.fn().mockResolvedValue({}),
     waitForLogstore: jest.fn().mockResolvedValue({}),
+  },
+  dns: {
+    addDomainRecord: jest.fn().mockResolvedValue('record-123'),
+    deleteDomainRecord: jest.fn().mockResolvedValue({}),
+    describeDomainRecords: jest.fn().mockResolvedValue([]),
+    checkDomainRecordExists: jest.fn().mockResolvedValue(false),
   },
 });
 

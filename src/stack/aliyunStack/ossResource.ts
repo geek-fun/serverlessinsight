@@ -417,7 +417,7 @@ export const createBucketResource = async (
 
         const wwwCdnInfo = await client.cdn.describeCdnDomainDetail(wwwDomain);
 
-        if (isCdnEnabled && cdnObj) {
+        if (cdnObj) {
           if (cdnObj.cache_ttl != null || cdnObj.ignore_query_string != null) {
             await client.cdn.applyCacheConfig(
               wwwDomain,

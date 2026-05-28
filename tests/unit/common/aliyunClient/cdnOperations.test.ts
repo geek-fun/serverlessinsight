@@ -6,6 +6,7 @@ const mockDescribeCdnDomainDetail = jest.fn();
 const mockDeleteCdnDomain = jest.fn();
 const mockModifyCdnDomain = jest.fn();
 const mockSetCdnDomainSSLCertificate = jest.fn();
+const mockBatchSetCdnDomainConfig = jest.fn();
 
 const mockCdnClient = {
   addCdnDomain: mockAddCdnDomain,
@@ -13,6 +14,7 @@ const mockCdnClient = {
   deleteCdnDomain: mockDeleteCdnDomain,
   modifyCdnDomain: mockModifyCdnDomain,
   setCdnDomainSSLCertificate: mockSetCdnDomainSSLCertificate,
+  batchSetCdnDomainConfig: mockBatchSetCdnDomainConfig,
 } as unknown as InstanceType<typeof CdnClient>;
 
 describe('CdnOperations', () => {
@@ -135,6 +137,186 @@ describe('CdnOperations', () => {
       expect(mockModifyCdnDomain).toHaveBeenCalledWith(
         expect.objectContaining({ domainName: 'cdn.example.com' }),
       );
+    });
+  });
+
+  describe('applyCacheConfig', () => {
+    it('should set cache TTL and ignore query string', async () => {
+      mockBatchSetCdnDomainConfig.mockResolvedValue({});
+
+      await operations.applyCacheConfig('cdn.example.com', 3600, true);
+
+      expect(mockBatchSetCdnDomainConfig).toHaveBeenCalledWith(
+        expect.objectContaining({
+          domainNames: 'cdn.example.com',
+          functions: JSON.stringify([
+            {
+              featureName: 'cache_expire',
+              featureParameters: {
+                cache_ttl: '3600',
+                ignore_query_string: 'on',
+                redirect_type: 'default',
+              },
+            },
+          ]),
+        }),
+      );
+    });
+
+    it('should set only cache TTL when ignoreQueryString is undefined', async () => {
+      mockBatchSetCdnDomainConfig.mockResolvedValue({});
+
+      await operations.applyCacheConfig('cdn.example.com', 7200);
+
+      expect(mockBatchSetCdnDomainConfig).toHaveBeenCalledWith(
+        expect.objectContaining({
+          domainNames: 'cdn.example.com',
+          functions: JSON.stringify([
+            {
+              featureName: 'cache_expire',
+              featureParameters: {
+                cache_ttl: '7200',
+                ignore_query_string: 'off',
+                redirect_type: 'default',
+              },
+            },
+          ]),
+        }),
+      );
+    });
+
+    it('should not call API when both params are null/undefined', async () => {
+      await operations.applyCacheConfig('cdn.example.com');
+      expect(mockBatchSetCdnDomainConfig).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('applyProtocolConfig', () => {
+    it('should set origin protocol to follow', async () => {
+      mockBatchSetCdnDomainConfig.mockResolvedValue({});
+
+      await operations.applyProtocolConfig('cdn.example.com', 'follow');
+
+      expect(mockBatchSetCdnDomainConfig).toHaveBeenCalledWith(
+        expect.objectContaining({
+          domainNames: 'cdn.example.com',
+          functions: JSON.stringify([
+            {
+              featureName: 'forward_scheme',
+              featureParameters: { enable: 'follow' },
+            },
+          ]),
+        }),
+      );
+    });
+
+    it('should set origin protocol to https', async () => {
+      mockBatchSetCdnDomainConfig.mockResolvedValue({});
+
+      await operations.applyProtocolConfig('cdn.example.com', 'https');
+
+      expect(mockBatchSetCdnDomainConfig).toHaveBeenCalledWith(
+        expect.objectContaining({
+          domainNames: 'cdn.example.com',
+          functions: JSON.stringify([
+            {
+              featureName: 'forward_scheme',
+              featureParameters: { enable: 'https' },
+            },
+          ]),
+        }),
+      );
+    });
+
+    it('should not call API when originProtocol is undefined', async () => {
+      await operations.applyProtocolConfig('cdn.example.com', undefined);
+      expect(mockBatchSetCdnDomainConfig).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('applyCompression', () => {
+    it('should enable compression', async () => {
+      mockBatchSetCdnDomainConfig.mockResolvedValue({});
+
+      await operations.applyCompression('cdn.example.com', true);
+
+      expect(mockBatchSetCdnDomainConfig).toHaveBeenCalledWith(
+        expect.objectContaining({
+          domainNames: 'cdn.example.com',
+          functions: JSON.stringify([
+            {
+              featureName: 'page_compress',
+              featureParameters: { enable: 'on' },
+            },
+          ]),
+        }),
+      );
+    });
+
+    it('should disable compression', async () => {
+      mockBatchSetCdnDomainConfig.mockResolvedValue({});
+
+      await operations.applyCompression('cdn.example.com', false);
+
+      expect(mockBatchSetCdnDomainConfig).toHaveBeenCalledWith(
+        expect.objectContaining({
+          domainNames: 'cdn.example.com',
+          functions: JSON.stringify([
+            {
+              featureName: 'page_compress',
+              featureParameters: { enable: 'off' },
+            },
+          ]),
+        }),
+      );
+    });
+
+    it('should not call API when enabled is undefined', async () => {
+      await operations.applyCompression('cdn.example.com', undefined);
+      expect(mockBatchSetCdnDomainConfig).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('applyHttpsRedirect', () => {
+    it('should enable HTTPS redirect', async () => {
+      mockBatchSetCdnDomainConfig.mockResolvedValue({});
+
+      await operations.applyHttpsRedirect('cdn.example.com', true);
+
+      expect(mockBatchSetCdnDomainConfig).toHaveBeenCalledWith(
+        expect.objectContaining({
+          domainNames: 'cdn.example.com',
+          functions: JSON.stringify([
+            {
+              featureName: 'force_redirect',
+              featureParameters: { redirect_code: '301', redirect_type: 'https' },
+            },
+          ]),
+        }),
+      );
+    });
+
+    it('should disable HTTPS redirect', async () => {
+      mockBatchSetCdnDomainConfig.mockResolvedValue({});
+
+      await operations.applyHttpsRedirect('cdn.example.com', false);
+
+      expect(mockBatchSetCdnDomainConfig).toHaveBeenCalledWith(
+        expect.objectContaining({
+          domainNames: 'cdn.example.com',
+          functions: JSON.stringify([
+            {
+              featureName: 'force_redirect',
+              featureParameters: { redirect_code: '301', redirect_type: 'http' },
+            },
+          ]),
+        }),
+      );
+    });
+
+    it('should not call API when enabled is undefined', async () => {
+      await operations.applyHttpsRedirect('cdn.example.com', undefined);
+      expect(mockBatchSetCdnDomainConfig).not.toHaveBeenCalled();
     });
   });
 

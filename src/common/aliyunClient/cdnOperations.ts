@@ -173,9 +173,9 @@ const applyProtocolConfig =
     if (originProtocol) {
       const functions = [
         {
-          featureName: 'range',
+          featureName: 'forward_scheme',
           featureParameters: {
-            back_to_origin: originProtocol,
+            enable: originProtocol,
           },
         },
       ];
