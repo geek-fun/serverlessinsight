@@ -8,7 +8,8 @@
     "skipLibCheck": true,
     "outDir": "./dist",
     "rootDir": "./",
-    "resolveJsonModule": true
+    "resolveJsonModule": true,
+    "types": ["jest", "node"]
   },
   "include": ["src/**/*"]
 }

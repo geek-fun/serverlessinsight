@@ -5,14 +5,14 @@ const mockAddCdnDomain = jest.fn();
 const mockDescribeCdnDomainDetail = jest.fn();
 const mockDeleteCdnDomain = jest.fn();
 const mockModifyCdnDomain = jest.fn();
-const mockSetDomainServerCertificate = jest.fn();
+const mockSetCdnDomainSSLCertificate = jest.fn();
 
 const mockCdnClient = {
   addCdnDomain: mockAddCdnDomain,
   describeCdnDomainDetail: mockDescribeCdnDomainDetail,
   deleteCdnDomain: mockDeleteCdnDomain,
   modifyCdnDomain: mockModifyCdnDomain,
-  setDomainServerCertificate: mockSetDomainServerCertificate,
+  setCdnDomainSSLCertificate: mockSetCdnDomainSSLCertificate,
 } as unknown as InstanceType<typeof CdnClient>;
 
 describe('CdnOperations', () => {
@@ -106,7 +106,7 @@ describe('CdnOperations', () => {
 
   describe('setDomainServerCertificate', () => {
     it('should deploy SSL certificate to CDN domain', async () => {
-      mockSetDomainServerCertificate.mockResolvedValue({});
+      mockSetCdnDomainSSLCertificate.mockResolvedValue({});
 
       await operations.setDomainServerCertificate('cdn.example.com', {
         serverCertificate: '-----BEGIN CERTIFICATE-----\n...\n-----END CERTIFICATE-----',
@@ -114,10 +114,10 @@ describe('CdnOperations', () => {
         serverCertificateStatus: 'on',
       });
 
-      expect(mockSetDomainServerCertificate).toHaveBeenCalledWith(
+      expect(mockSetCdnDomainSSLCertificate).toHaveBeenCalledWith(
         expect.objectContaining({
           domainName: 'cdn.example.com',
-          serverCertificateStatus: 'on',
+          SSLProtocol: 'on',
         }),
       );
     });
@@ -190,7 +190,7 @@ describe('CdnOperations', () => {
       expect(mockModifyCdnDomain).toHaveBeenCalled();
     });
     it('set cert with all params', async () => {
-      mockSetDomainServerCertificate.mockResolvedValue({});
+      mockSetCdnDomainSSLCertificate.mockResolvedValue({});
       await operations.setDomainServerCertificate('x.c', {
         certName: 'my-cert',
         certType: 'cas',
@@ -200,7 +200,7 @@ describe('CdnOperations', () => {
         serverCertificateStatus: 'on',
         certRegion: 'cn-hangzhou',
       });
-      expect(mockSetDomainServerCertificate).toHaveBeenCalledWith(
+      expect(mockSetCdnDomainSSLCertificate).toHaveBeenCalledWith(
         expect.objectContaining({ domainName: 'x.c', certType: 'cas', certName: 'my-cert' }),
       );
     });

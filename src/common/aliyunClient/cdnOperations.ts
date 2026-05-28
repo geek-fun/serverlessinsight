@@ -127,17 +127,17 @@ const modifyCdnDomain =
 const setDomainServerCertificate =
   (cdnClient: CdnSdkClient) =>
   async (domainName: string, certConfig: CdnCertificateConfig): Promise<void> => {
-    const request = new cdn.SetDomainServerCertificateRequest({
+    const request = new cdn.SetCdnDomainSSLCertificateRequest({
       domainName,
       certName: certConfig.certName,
       certType: certConfig.certType ?? 'upload',
       certId: certConfig.certId,
-      serverCertificate: certConfig.serverCertificate,
-      privateKey: certConfig.privateKey,
-      serverCertificateStatus: certConfig.serverCertificateStatus ?? 'on',
+      SSLPub: certConfig.serverCertificate,
+      SSLPri: certConfig.privateKey,
+      SSLProtocol: certConfig.serverCertificateStatus ?? 'on',
       certRegion: certConfig.certRegion,
     });
-    await cdnClient.setDomainServerCertificate(request);
+    await cdnClient.setCdnDomainSSLCertificate(request);
   };
 
 const applyCacheConfig =
