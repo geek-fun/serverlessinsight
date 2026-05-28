@@ -9,7 +9,9 @@
 [![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
 [![codecov](https://codecov.io/gh/geek-fun/serverlessinsight/graph/badge.svg?token=ISW7MFuSlf)](https://codecov.io/gh/geek-fun/serverlessinsight)
 
-**为快速增长的业务提供全生命周期跨云服务商的 Serverless 应用管理**
+**描述你的应用，剩下的交给我们。**
+
+*为快速增长的业务提供全生命周期跨云服务商的 Serverless 应用管理*
 
 [官方网站](https://serverlessinsight.geekfun.club) • [文档](https://serverlessinsight.geekfun.club) • [示例](./samples) • [English](./README.md)
 

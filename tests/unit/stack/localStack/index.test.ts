@@ -28,12 +28,23 @@ describe('localStack Server', () => {
   });
 
   it('should handle API Gateway request for valid trigger', async () => {
-    const response = await makeRequest(
-      `http://localhost:${SI_LOCALSTACK_SERVER_PORT}/si_events/gateway_event/api/hello`,
-    );
+    // Retry logic to handle occasional ECONNRESET race condition during server startup
+    const maxRetries = 3;
+    let response: Awaited<ReturnType<typeof makeRequest>> | undefined;
+    for (let i = 0; i < maxRetries; i++) {
+      try {
+        response = await makeRequest(
+          `http://localhost:${SI_LOCALSTACK_SERVER_PORT}/si_events/gateway_event/api/hello`,
+        );
+        break;
+      } catch (err) {
+        if (i === maxRetries - 1) throw err;
+        await new Promise((resolve) => setTimeout(resolve, 100));
+      }
+    }
 
-    expect(response.statusCode).toBe(200);
-    expect(response.data).toBe('"ServerlessInsight Hello World"');
+    expect(response!.statusCode).toBe(200);
+    expect(response!.data).toBe('"ServerlessInsight Hello World"');
   });
 
   it('should return 404 for non-matching path', async () => {

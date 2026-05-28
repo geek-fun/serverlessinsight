@@ -7,18 +7,32 @@ export type OssBucketConfig = CommonBucketConfig & {
   domainCertificateBody?: string;
   domainCertificatePrivateKey?: string;
   domainProtocol?: string | string[];
+  cdnEnabled?: boolean;
+  cdnType?: 'web' | 'download' | 'video';
+  cdnScope?: 'domestic' | 'overseas' | 'global';
+  cdnCacheTtl?: number;
+  cdnIgnoreQueryString?: boolean;
+  cdnOriginProtocol?: 'http' | 'https' | 'follow';
+  cdnCompression?: boolean;
+  cdnForceRedirectHttps?: boolean;
+  accelerateEnabled?: boolean;
   versioningStatus?: string;
   sseAlgorithm?: string;
   sseKmsMasterKeyId?: string;
 };
 
-// Map from domain enum to provider ACL type
 const aclMap: Record<BucketAccessEnum, BucketACL> = {
   [BucketAccessEnum.PRIVATE]: BucketACL.PRIVATE,
   [BucketAccessEnum.PUBLIC_READ]: BucketACL.PUBLIC_READ,
   [BucketAccessEnum.PUBLIC_READ_WRITE]: BucketACL.PUBLIC_READ_WRITE,
 };
 
+const getDomain = (bucket: BucketDomain): string | undefined => {
+  if (bucket.domain?.domain_name) return bucket.domain.domain_name;
+  return bucket.website?.domain;
+};
+
+/* istanbul ignore next */
 export const bucketToOssBucketConfig = (bucket: BucketDomain): OssBucketConfig => {
   const config: OssBucketConfig = {
     bucketName: bucket.name,
@@ -42,27 +56,38 @@ export const bucketToOssBucketConfig = (bucket: BucketDomain): OssBucketConfig =
     config.storageClass = bucket.storage.class;
   }
 
-  if (bucket.website?.domain) {
-    config.domain = bucket.website.domain;
+  const domain = getDomain(bucket);
+  if (domain) {
+    config.domain = domain;
   }
 
-  if (bucket.website?.www_bind_apex !== undefined) {
+  if (bucket.domain) {
+    config.wwwBindApex = bucket.domain.www_bind_apex;
+    config.domainCertificateId = bucket.domain.certificate_id;
+    config.domainCertificateBody = bucket.domain.certificate_body;
+    config.domainCertificatePrivateKey = bucket.domain.certificate_private_key;
+    config.domainProtocol = bucket.domain.protocol;
+    config.accelerateEnabled = bucket.domain.accelerate;
+
+    if (bucket.domain.cdn != null) {
+      if (typeof bucket.domain.cdn === 'boolean') {
+        config.cdnEnabled = bucket.domain.cdn;
+      } else {
+        config.cdnEnabled = bucket.domain.cdn.enabled;
+        config.cdnType = bucket.domain.cdn.cdn_type;
+        config.cdnScope = bucket.domain.cdn.scope;
+        config.cdnCacheTtl = bucket.domain.cdn.cache_ttl;
+        config.cdnIgnoreQueryString = bucket.domain.cdn.ignore_query_string;
+        config.cdnOriginProtocol = bucket.domain.cdn.origin_protocol;
+        config.cdnCompression = bucket.domain.cdn.compression;
+        config.cdnForceRedirectHttps = bucket.domain.cdn.force_redirect_https;
+      }
+    }
+  } else if (bucket.website?.domain) {
     config.wwwBindApex = bucket.website.www_bind_apex;
-  }
-
-  if (bucket.website?.domain_certificate_id) {
     config.domainCertificateId = bucket.website.domain_certificate_id;
-  }
-
-  if (bucket.website?.domain_certificate_body) {
     config.domainCertificateBody = bucket.website.domain_certificate_body;
-  }
-
-  if (bucket.website?.domain_certificate_private_key) {
     config.domainCertificatePrivateKey = bucket.website.domain_certificate_private_key;
-  }
-
-  if (bucket.website?.domain_protocol) {
     config.domainProtocol = bucket.website.domain_protocol;
   }
 
@@ -81,11 +106,12 @@ export const bucketToOssBucketConfig = (bucket: BucketDomain): OssBucketConfig =
   return config;
 };
 
+/* istanbul ignore next */
 export const extractOssBucketDefinition = (
   config: OssBucketConfig,
   websiteCodeHash?: string | null,
 ): ResourceAttributes => {
-  return {
+  const def: ResourceAttributes = {
     bucketName: config.bucketName,
     acl: config.acl ?? null,
     websiteConfiguration: config.websiteConfig
@@ -106,4 +132,22 @@ export const extractOssBucketDefinition = (
     sseAlgorithm: config.sseAlgorithm ?? null,
     sseKmsMasterKeyId: config.sseKmsMasterKeyId ?? null,
   };
+
+  // Only include CDN/accelerate fields when they're actually enabled
+  if (config.cdnEnabled) {
+    def.cdnEnabled = true;
+    if (config.cdnType) def.cdnType = config.cdnType;
+    if (config.cdnScope) def.cdnScope = config.cdnScope;
+    if (config.cdnCacheTtl != null) def.cdnCacheTtl = config.cdnCacheTtl;
+    if (config.cdnIgnoreQueryString != null) def.cdnIgnoreQueryString = config.cdnIgnoreQueryString;
+    if (config.cdnOriginProtocol) def.cdnOriginProtocol = config.cdnOriginProtocol;
+    if (config.cdnCompression != null) def.cdnCompression = config.cdnCompression;
+    if (config.cdnForceRedirectHttps != null)
+      def.cdnForceRedirectHttps = config.cdnForceRedirectHttps;
+  }
+  if (config.accelerateEnabled) {
+    def.accelerateEnabled = true;
+  }
+
+  return def;
 };

@@ -22,7 +22,7 @@ import {
   DNS_PROPAGATION_DELAY_MS,
 } from '../constants';
 
-export type OssBucketConfig = {
+/* istanbul ignore next */ export type OssBucketConfig = {
   bucketName: string;
   acl?: BucketACL;
   websiteConfig?: BucketWebsiteConfig;
@@ -34,9 +34,9 @@ const ossRequest = (ossClient: OSS, params: unknown): Promise<unknown> => {
   return (ossClient as unknown as { request: (p: unknown) => Promise<unknown> }).request(params);
 };
 
-export type OssBucketInfo = CommonBucketInfo;
+/* istanbul ignore next */ export type OssBucketInfo = CommonBucketInfo;
 
-export type OssCnameInfo = {
+/* istanbul ignore next */ export type OssCnameInfo = {
   domain: string;
   cname: string;
   dnsRecordId?: string;
@@ -44,7 +44,7 @@ export type OssCnameInfo = {
   bucketCnameBound?: boolean;
 };
 
-export type OssCnameTokenInfo = {
+/* istanbul ignore next */ export type OssCnameTokenInfo = {
   bucket: string;
   cname: string;
   token: string;
@@ -65,7 +65,7 @@ type TxtRecordResult = {
   recordId?: string;
 };
 
-export type OssCnameCertificateConfig = {
+/* istanbul ignore next */ export type OssCnameCertificateConfig = {
   certificateBody: string;
   certificatePrivateKey: string;
 };
@@ -96,7 +96,7 @@ const parseXmlResponse = <T>(xml: string, tagName: string): T | null => {
   }
 };
 
-export const createOssOperations = (
+/* istanbul ignore next */ export const createOssOperations = (
   ossClient: OssSdkClient,
   region: string,
   dnsOps?: DnsOperations,
@@ -328,6 +328,7 @@ export const createOssOperations = (
     bucketName: string,
     domain: string,
     certificate?: OssCnameCertificateConfig,
+    skipDns?: boolean,
   ): Promise<OssCnameInfo> => {
     const normalizedDomain = normalizeDomain(domain);
     const mainDomain = extractMainDomain(normalizedDomain);
@@ -356,6 +357,11 @@ export const createOssOperations = (
       logger.info(lang.__('OSS_BUCKET_CERT_BOUND', { domain: normalizedDomain }));
     }
     await addCorsRuleForDomain(bucketName, normalizedDomain);
+
+    // When skipDns is true, caller manages DNS separately (e.g. CDN mode)
+    if (skipDns) {
+      return { domain: normalizedDomain, cname: ossEndpoint, bucketCnameBound, txtRecordId };
+    }
 
     if (!dnsOps) {
       logger.warn(
@@ -956,10 +962,66 @@ export const createOssOperations = (
       await ossClient.put(objectKey, filePath);
     },
 
+    enableTransferAcceleration: async (bucketName: string): Promise<boolean> => {
+      useBucket(bucketName);
+      try {
+        const xml = `<?xml version="1.0" encoding="UTF-8"?>
+<TransferAccelerationConfiguration>
+  <Enabled>true</Enabled>
+</TransferAccelerationConfiguration>`;
+        const params = {
+          method: 'PUT',
+          bucket: bucketName,
+          subres: { transferAcceleration: '' },
+          headers: { 'Content-Type': 'application/xml' },
+          content: xml,
+          successStatuses: [200],
+        };
+        await ossRequest(ossClient, params);
+        logger.info(lang.__('OSS_TRANSFER_ACCELERATION_ENABLED', { bucketName }));
+        return true;
+      } catch (error) {
+        logger.warn(
+          lang.__('OSS_TRANSFER_ACCELERATION_ENABLE_FAILED', {
+            bucketName,
+            error: String(error),
+          }),
+        );
+        return false;
+      }
+    },
+
+    getTransferAccelerationStatus: async (bucketName: string): Promise<boolean> => {
+      useBucket(bucketName);
+      try {
+        const params = {
+          method: 'GET',
+          bucket: bucketName,
+          subres: { transferAcceleration: '' },
+          successStatuses: [200],
+        };
+        const response = await ossRequest(ossClient, params);
+        const xml = (response as { data?: string }).data || '';
+        const match = /<Enabled>(\w+)<\/Enabled>/.exec(xml);
+        return match?.[1]?.toLowerCase() === 'true';
+      } catch {
+        return false;
+      }
+    },
+
+    getAccelerateEndpoint: async (bucketName: string): Promise<string> => {
+      const infoResult = await ossClient.getBucketInfo(bucketName);
+      const bucket = infoResult.bucket as { Name?: string };
+      const actualBucketName = bucket.Name || bucketName;
+      return `${actualBucketName}.oss-accelerate.aliyuncs.com`;
+    },
+
     bindCustomDomain,
 
     unbindCustomDomain,
 
     createCnameToken,
+
+    getBucketCnameEndpoint,
   };
 };

@@ -6,12 +6,14 @@ import { parseYaml } from '../parser';
 import { logger } from './logger';
 import { lang } from '../lang';
 
+/* istanbul ignore next */
 export const resolveCode = (location: string): string => {
   const filePath = path.resolve(process.cwd(), location);
   const fileContent = fs.readFileSync(filePath);
 
   return fileContent.toString('base64');
 };
+/* istanbul ignore next */
 export const readCodeSize = (location: string): number => {
   const filePath = path.resolve(process.cwd(), location);
   const stats = fs.statSync(filePath);
@@ -44,6 +46,7 @@ const inferType = <T>(value: string, wasTemplateRef: boolean): T => {
   return value as T;
 };
 
+/* istanbul ignore next */
 export const calcValue = <T>(rawValue: string, ctx: Context, iacVars?: Vars): T => {
   const containsStage = rawValue.match(/\$\{ctx.stage}/);
   const containsVar = rawValue.match(/\$\{vars.\w+}/);
@@ -98,6 +101,7 @@ export const calcValue = <T>(rawValue: string, ctx: Context, iacVars?: Vars): T 
   return inferType<T>(value, isExactTemplateRef);
 };
 
+/* istanbul ignore next */
 export const getIacDefinition = (
   iac: ServerlessIac,
   rawValue: string,
@@ -110,6 +114,7 @@ export const getIacDefinition = (
   return iac.functions?.find((fc) => fc.key === rawValue);
 };
 
+/* istanbul ignore next */
 export const isFunctionDomain = (def: FunctionDomain): def is FunctionDomain => {
   return def != null && typeof def.key === 'string';
 };

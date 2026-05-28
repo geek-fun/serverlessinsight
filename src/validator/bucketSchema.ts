@@ -1,5 +1,128 @@
 import { resolvableNumber, resolvableBoolean, resolvableEnum } from './templateRefSchema';
 
+const cdnSchema = {
+  oneOf: [
+    { type: 'boolean' },
+    {
+      type: 'object',
+      properties: {
+        enabled: resolvableBoolean,
+        cdn_type: { type: 'string', enum: ['web', 'download', 'video'] },
+        scope: { type: 'string', enum: ['domestic', 'overseas', 'global'] },
+        cache_ttl: { type: 'number' },
+        ignore_query_string: resolvableBoolean,
+        origin_protocol: { type: 'string', enum: ['http', 'https', 'follow'] },
+        compression: resolvableBoolean,
+        force_redirect_https: resolvableBoolean,
+      },
+      additionalProperties: false,
+    },
+  ],
+};
+
+const bucketDomainSchema = {
+  oneOf: [
+    { type: 'string' },
+    {
+      type: 'object',
+      properties: {
+        domain_name: { type: 'string' },
+        certificate_id: { type: 'string' },
+        certificate_body: { type: 'string' },
+        certificate_private_key: { type: 'string' },
+        protocol: {
+          oneOf: [
+            { type: 'string', enum: ['HTTP', 'HTTPS'] },
+            {
+              type: 'array',
+              items: { type: 'string', enum: ['HTTP', 'HTTPS'] },
+              minItems: 1,
+              uniqueItems: true,
+            },
+          ],
+        },
+        www_bind_apex: resolvableBoolean,
+        cdn: cdnSchema,
+        accelerate: resolvableBoolean,
+      },
+      required: ['domain_name'],
+      additionalProperties: false,
+      oneOf: [
+        {
+          not: {
+            anyOf: [
+              { required: ['certificate_id'] },
+              { required: ['certificate_body'] },
+              { required: ['certificate_private_key'] },
+            ],
+          },
+        },
+        {
+          required: ['certificate_body', 'certificate_private_key'],
+          not: { required: ['certificate_id'] },
+        },
+        {
+          required: ['certificate_id'],
+          not: {
+            anyOf: [{ required: ['certificate_body'] }, { required: ['certificate_private_key'] }],
+          },
+        },
+      ],
+    },
+  ],
+};
+
+const bucketWebsiteDomainSchema = {
+  oneOf: [
+    { type: 'string' },
+    {
+      type: 'object',
+      properties: {
+        domain_name: { type: 'string' },
+        certificate_id: { type: 'string' },
+        certificate_body: { type: 'string' },
+        certificate_private_key: { type: 'string' },
+        protocol: {
+          oneOf: [
+            { type: 'string', enum: ['HTTP', 'HTTPS'] },
+            {
+              type: 'array',
+              items: { type: 'string', enum: ['HTTP', 'HTTPS'] },
+              minItems: 1,
+              uniqueItems: true,
+            },
+          ],
+        },
+        www_bind_apex: resolvableBoolean,
+        cdn: cdnSchema,
+      },
+      required: ['domain_name'],
+      additionalProperties: false,
+      oneOf: [
+        {
+          not: {
+            anyOf: [
+              { required: ['certificate_id'] },
+              { required: ['certificate_body'] },
+              { required: ['certificate_private_key'] },
+            ],
+          },
+        },
+        {
+          required: ['certificate_body', 'certificate_private_key'],
+          not: { required: ['certificate_id'] },
+        },
+        {
+          required: ['certificate_id'],
+          not: {
+            anyOf: [{ required: ['certificate_body'] }, { required: ['certificate_private_key'] }],
+          },
+        },
+      ],
+    },
+  ],
+};
+
 export const bucketSchema = {
   $id: 'https://serverlessinsight.geekfun.club/schemas/bucketschema.json',
   type: 'object',
@@ -44,64 +167,16 @@ export const bucketSchema = {
           },
           additionalProperties: false,
         },
+        // Canonical domain config (top-level)
+        domain: bucketDomainSchema,
         website: {
           type: 'object',
           properties: {
             code: {
               type: 'string',
             },
-            domain: {
-              oneOf: [
-                { type: 'string' },
-                {
-                  type: 'object',
-                  properties: {
-                    domain_name: { type: 'string' },
-                    certificate_id: { type: 'string' },
-                    certificate_body: { type: 'string' },
-                    certificate_private_key: { type: 'string' },
-                    protocol: {
-                      oneOf: [
-                        { type: 'string', enum: ['HTTP', 'HTTPS'] },
-                        {
-                          type: 'array',
-                          items: { type: 'string', enum: ['HTTP', 'HTTPS'] },
-                          minItems: 1,
-                          uniqueItems: true,
-                        },
-                      ],
-                    },
-                    www_bind_apex: resolvableBoolean,
-                  },
-                  required: ['domain_name'],
-                  additionalProperties: false,
-                  oneOf: [
-                    {
-                      not: {
-                        anyOf: [
-                          { required: ['certificate_id'] },
-                          { required: ['certificate_body'] },
-                          { required: ['certificate_private_key'] },
-                        ],
-                      },
-                    },
-                    {
-                      required: ['certificate_body', 'certificate_private_key'],
-                      not: { required: ['certificate_id'] },
-                    },
-                    {
-                      required: ['certificate_id'],
-                      not: {
-                        anyOf: [
-                          { required: ['certificate_body'] },
-                          { required: ['certificate_private_key'] },
-                        ],
-                      },
-                    },
-                  ],
-                },
-              ],
-            },
+            // Deprecated: Use top-level `domain` instead
+            domain: bucketWebsiteDomainSchema,
             index: {
               type: 'string',
             },

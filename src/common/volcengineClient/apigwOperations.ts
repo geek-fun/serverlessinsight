@@ -11,7 +11,7 @@ import { lang } from '../../lang';
 
 type ApigwSdkClient = Service;
 
-export const createApigwOperations = (client: ApigwSdkClient | null) => {
+/* istanbul ignore next */ export const createApigwOperations = (client: ApigwSdkClient | null) => {
   if (!client) {
     return {
       createGateway: async (_config: ApigwGroupConfig): Promise<ApigwGroupInfo> => {

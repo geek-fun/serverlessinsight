@@ -795,4 +795,27 @@ export const en = {
     'You can retry deployment - the system will reuse existing dependent resources',
   VEFAAS_FUNCTION_EXISTS_RECOVERY:
     'Function {{functionName}} already exists in provider (tainted recovery), skipping create and refreshing state',
+
+  // CDN messages
+  ENABLING_OSS_TRANSFER_ACCELERATION:
+    'Enabling OSS transfer acceleration for bucket {{bucketName}}',
+  OSS_TRANSFER_ACCELERATION_ENABLED: 'OSS transfer acceleration enabled for bucket {{bucketName}}',
+  OSS_TRANSFER_ACCELERATION_ENABLE_FAILED:
+    'Failed to enable OSS transfer acceleration for bucket {{bucketName}}: {{error}}',
+  CREATING_CDN_DISTRIBUTION: 'Creating CDN distribution for {{domain}} with origin {{origin}}',
+  CDN_DEPLOYING_CERTIFICATE: 'Deploying SSL certificate to CDN domain {{domain}}',
+  CDN_DOMAIN_DELETED: 'CDN domain {{domain}} deleted successfully',
+  CDN_DOMAIN_DELETE_FAILED: 'Failed to delete CDN domain {{domain}}: {{error}}',
+  CDN_ACCELERATE_SKIP_UPDATE:
+    'CDN/accelerate configuration unchanged for {{domain}} on bucket {{bucketName}}. CDN settings are managed at create-time.',
+  CDN_DOMAIN_CHANGE_REQUIRES_RECREATE:
+    'Cannot change CDN/accelerate domain from {{oldDomain}} to {{newDomain}} during update. Use destroy+recreate instead.',
+  BUCKET_DOMAIN_DEPRECATED:
+    '[DEPRECATED] bucket "{{key}}": website.domain is deprecated. Use top-level "domain" instead.',
+  FAILED_TO_REFRESH_STATE: 'Failed to refresh state for {{resourceType}}: {{name}}',
+  FAILED_TO_UPLOAD_BUCKET_FILES:
+    'Failed to upload files to bucket, but bucket was created and saved to state: {{error}}',
+  FAILED_TO_ENABLE_ACCELERATION: 'Failed to enable transfer acceleration for bucket {{bucketName}}',
+  CDN_ACCELERATE_CONFIG_CHANGED:
+    'Cannot change CDN/accelerate settings for bucket {{bucketName}} via update. Use destroy+recreate to change CDN or acceleration configuration.',
 };

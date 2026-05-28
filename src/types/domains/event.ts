@@ -1,4 +1,5 @@
 import { Resolvable } from './resolvable';
+import { EventDomainConfig } from './bucket';
 
 export enum EventTypes {
   API_GATEWAY = 'API_GATEWAY',
@@ -12,14 +13,7 @@ export type EventRaw = {
     path: Resolvable<string>;
     backend: Resolvable<string>;
   }>;
-  domain?: {
-    domain_name: Resolvable<string>;
-    www_bind_apex?: Resolvable<boolean>;
-    certificate_id?: Resolvable<string>;
-    certificate_body?: Resolvable<string>;
-    certificate_private_key?: Resolvable<string>;
-    protocol?: Resolvable<string | string[]>;
-  };
+  domain?: EventDomainConfig;
 };
 
 export type EventDomain = {

@@ -1,4 +1,12 @@
-import { Context, EventDomain, ResourceInstance, ResourceState, StateFile } from '../../types';
+import {
+  Context,
+  EventDomain,
+  ResourceInstance,
+  ResourceState,
+  ResourceTypeEnum,
+  StateFile,
+  CdnConfig,
+} from '../../types';
 import { createAliyunClient, ApigwCustomDomainConfig } from '../../common/aliyunClient';
 import {
   ApigwGroupInfo,
@@ -15,7 +23,324 @@ import { buildSid } from '../../common';
 import { readPemContent, warnInlinePem } from '../../common/certUtils';
 import { logger } from '../../common/logger';
 import { lang } from '../../lang';
-import { deriveWwwDomain } from '../../common/domainUtils';
+import { deriveWwwDomain, extractHostRecord, extractMainDomain } from '../../common/domainUtils';
+
+type ApigwCdnInstance = ResourceInstance & {
+  type: 'ALIYUN_CDN_DISTRIBUTION';
+  domainName: string;
+  cname?: string;
+  isWwwVariant?: boolean;
+};
+
+type ApigwCdnDnsInstance = ResourceInstance & {
+  type: 'ALIYUN_CDN_DNS_CNAME';
+  domain: string;
+  cname: string;
+  dnsRecordId?: string;
+  isWwwVariant?: boolean;
+};
+
+const getCdnConfig = (event: EventDomain): CdnConfig | undefined => {
+  const domainCdn = event.domain?.cdn;
+  if (domainCdn == null) {
+    return undefined;
+  }
+
+  if (typeof domainCdn === 'boolean') {
+    return domainCdn ? { enabled: true } : undefined;
+  }
+
+  if (typeof domainCdn === 'string') {
+    return undefined;
+  }
+
+  return {
+    enabled: domainCdn.enabled == null ? true : String(domainCdn.enabled) === 'true',
+    ...(domainCdn.cdn_type != null
+      ? { cdn_type: String(domainCdn.cdn_type) as CdnConfig['cdn_type'] }
+      : {}),
+    ...(domainCdn.scope != null ? { scope: String(domainCdn.scope) as CdnConfig['scope'] } : {}),
+    ...(domainCdn.cache_ttl != null ? { cache_ttl: Number(domainCdn.cache_ttl) } : {}),
+    ...(domainCdn.ignore_query_string != null
+      ? { ignore_query_string: String(domainCdn.ignore_query_string) === 'true' }
+      : {}),
+    ...(domainCdn.origin_protocol != null
+      ? {
+          origin_protocol: String(domainCdn.origin_protocol) as CdnConfig['origin_protocol'],
+        }
+      : {}),
+    ...(domainCdn.compression != null
+      ? { compression: String(domainCdn.compression) === 'true' }
+      : {}),
+    ...(domainCdn.force_redirect_https != null
+      ? { force_redirect_https: String(domainCdn.force_redirect_https) === 'true' }
+      : {}),
+  };
+};
+
+const getIsCdnEnabled = (event: EventDomain): boolean => {
+  return getCdnConfig(event)?.enabled === true;
+};
+
+const applyCdnSettings = async (
+  client: ReturnType<typeof createAliyunClient>,
+  domainName: string,
+  event: EventDomain,
+): Promise<void> => {
+  const cdnConfig = getCdnConfig(event);
+  if (!cdnConfig) {
+    return;
+  }
+
+  if (cdnConfig.cache_ttl != null || cdnConfig.ignore_query_string != null) {
+    await client.cdn.applyCacheConfig(
+      domainName,
+      cdnConfig.cache_ttl,
+      cdnConfig.ignore_query_string,
+    );
+  }
+
+  if (cdnConfig.origin_protocol) {
+    await client.cdn.applyProtocolConfig(domainName, cdnConfig.origin_protocol);
+  }
+
+  if (cdnConfig.compression != null) {
+    await client.cdn.applyCompression(domainName, cdnConfig.compression);
+  }
+
+  if (cdnConfig.force_redirect_https != null) {
+    await client.cdn.applyHttpsRedirect(domainName, cdnConfig.force_redirect_https);
+  }
+};
+
+const buildApigwCdnDistributionConfig = (
+  event: EventDomain,
+  domainName: string,
+  originDomain: string,
+) => {
+  const cdnConfig = getCdnConfig(event);
+
+  return {
+    domainName,
+    cdnType: cdnConfig?.cdn_type ?? 'web',
+    sources: [
+      {
+        type: 'domain',
+        content: originDomain,
+        ...(cdnConfig?.origin_protocol === 'https' ? { port: 443 } : {}),
+      },
+    ],
+    scope: cdnConfig?.scope ?? 'global',
+  };
+};
+
+const createApigwCdnDistribution = async (
+  context: Context,
+  client: ReturnType<typeof createAliyunClient>,
+  event: EventDomain,
+  domainName: string,
+  originDomain: string,
+  instances: Array<ResourceInstance>,
+  certificate?: {
+    certificateBody?: string;
+    certificatePrivateKey?: string;
+  },
+): Promise<void> => {
+  logger.info(
+    lang.__('CREATING_CDN_DISTRIBUTION', {
+      domain: domainName,
+      origin: originDomain,
+    }),
+  );
+
+  await client.cdn.addCdnDomain(buildApigwCdnDistributionConfig(event, domainName, originDomain));
+
+  await applyCdnSettings(client, domainName, event);
+
+  if (certificate?.certificateBody && certificate.certificatePrivateKey) {
+    await client.cdn.setDomainServerCertificate(domainName, {
+      serverCertificate: certificate.certificateBody,
+      privateKey: certificate.certificatePrivateKey,
+      serverCertificateStatus: 'on',
+    });
+  }
+
+  const cdnDomainInfo = await client.cdn.describeCdnDomainDetail(domainName);
+  const cdnCname = cdnDomainInfo?.cname;
+
+  if (!cdnCname) {
+    return;
+  }
+
+  const mainDomain = extractMainDomain(domainName);
+  const hostRecord = extractHostRecord(domainName, mainDomain);
+  const dnsRecordId = await client.dns.addDomainRecord({
+    domainName: mainDomain,
+    rr: hostRecord,
+    type: 'CNAME',
+    value: cdnCname,
+    ttl: 600,
+  });
+
+  const isWwwVariant = domainName.startsWith('www.');
+
+  const cdnInstance: ApigwCdnInstance = {
+    sid: buildSid('aliyun', 'cdn', context.stage, domainName),
+    id: domainName,
+    type: ResourceTypeEnum.ALIYUN_CDN_DISTRIBUTION,
+    domainName,
+    cname: cdnCname,
+    ...(isWwwVariant ? { isWwwVariant: true } : {}),
+  };
+  instances.push(cdnInstance);
+
+  const dnsInstance: ApigwCdnDnsInstance = {
+    sid: buildSid('aliyun', 'alidns', context.stage, dnsRecordId || domainName),
+    id: dnsRecordId || domainName,
+    type: ResourceTypeEnum.ALIYUN_CDN_DNS_CNAME,
+    domain: domainName,
+    cname: cdnCname,
+    dnsRecordId: dnsRecordId || undefined,
+    ...(isWwwVariant ? { isWwwVariant: true } : {}),
+  };
+  instances.push(dnsInstance);
+};
+
+const getApigwTrackedDomains = (
+  domainName?: string | null,
+  wwwBindApex?: boolean,
+): Array<string> => {
+  if (!domainName) {
+    return [];
+  }
+
+  return [domainName, ...(wwwBindApex ? [deriveWwwDomain(domainName)] : [])].filter(
+    (domain): domain is string => Boolean(domain),
+  );
+};
+
+const updateApigwCdnDistribution = async (
+  context: Context,
+  client: ReturnType<typeof createAliyunClient>,
+  event: EventDomain,
+  domainName: string,
+  originDomain: string,
+  existingInstances: Array<ResourceInstance>,
+  instances: Array<ResourceInstance>,
+  certificate?: {
+    certificateBody?: string;
+    certificatePrivateKey?: string;
+  },
+): Promise<void> => {
+  const trackedInstances = getTrackedApigwCdnInstances(existingInstances, [domainName]);
+  const hasTrackedDistribution = trackedInstances.some(
+    (instance) => instance.type === ResourceTypeEnum.ALIYUN_CDN_DISTRIBUTION,
+  );
+
+  if (!hasTrackedDistribution) {
+    await createApigwCdnDistribution(
+      context,
+      client,
+      event,
+      domainName,
+      originDomain,
+      instances,
+      certificate,
+    );
+    return;
+  }
+
+  await client.cdn.modifyCdnDomain(
+    buildApigwCdnDistributionConfig(event, domainName, originDomain),
+  );
+  await applyCdnSettings(client, domainName, event);
+
+  if (certificate?.certificateBody && certificate.certificatePrivateKey) {
+    await client.cdn.setDomainServerCertificate(domainName, {
+      serverCertificate: certificate.certificateBody,
+      privateKey: certificate.certificatePrivateKey,
+      serverCertificateStatus: 'on',
+    });
+  }
+
+  const cdnDomainInfo = await client.cdn.describeCdnDomainDetail(domainName);
+  const cdnCname = cdnDomainInfo?.cname;
+
+  instances.push(
+    ...trackedInstances.map((instance) => ({
+      ...instance,
+      ...(cdnCname ? { cname: cdnCname } : {}),
+    })),
+  );
+};
+
+const getApigwCdnResourceDomain = (instance: ApigwCdnInstance | ApigwCdnDnsInstance): string => {
+  return instance.type === ResourceTypeEnum.ALIYUN_CDN_DISTRIBUTION
+    ? instance.domainName
+    : instance.domain;
+};
+
+const getTrackedApigwCdnInstances = (
+  instances: Array<ResourceInstance>,
+  domains: Array<string>,
+): Array<ApigwCdnInstance | ApigwCdnDnsInstance> => {
+  return instances.filter((instance) => {
+    if (
+      instance.type !== ResourceTypeEnum.ALIYUN_CDN_DISTRIBUTION &&
+      instance.type !== ResourceTypeEnum.ALIYUN_CDN_DNS_CNAME
+    ) {
+      return false;
+    }
+
+    return domains.includes(
+      getApigwCdnResourceDomain(instance as ApigwCdnInstance | ApigwCdnDnsInstance),
+    );
+  }) as Array<ApigwCdnInstance | ApigwCdnDnsInstance>;
+};
+
+const cleanupApigwCdnResources = async (
+  client: ReturnType<typeof createAliyunClient>,
+  instances: Array<ResourceInstance>,
+  domains?: Array<string>,
+): Promise<void> => {
+  const matchedInstances =
+    domains && domains.length > 0 ? getTrackedApigwCdnInstances(instances, domains) : [];
+  const resourcesToCleanup = domains && domains.length > 0 ? matchedInstances : instances;
+
+  const cdnInstances = resourcesToCleanup.filter(
+    (instance) => instance.type === ResourceTypeEnum.ALIYUN_CDN_DISTRIBUTION,
+  ) as ApigwCdnInstance[];
+
+  for (const cdnInstance of cdnInstances) {
+    try {
+      await client.cdn.deleteCdnDomain(cdnInstance.domainName);
+      logger.info(lang.__('CDN_DOMAIN_DELETED', { domain: cdnInstance.domainName }));
+    } catch (error) {
+      logger.warn(
+        lang.__('CDN_DOMAIN_DELETE_FAILED', {
+          domain: cdnInstance.domainName,
+          error: String(error),
+        }),
+      );
+    }
+  }
+
+  const cdnDnsInstances = resourcesToCleanup.filter(
+    (instance) => instance.type === ResourceTypeEnum.ALIYUN_CDN_DNS_CNAME,
+  ) as ApigwCdnDnsInstance[];
+
+  for (const dnsInstance of cdnDnsInstances) {
+    if (!dnsInstance.dnsRecordId) {
+      continue;
+    }
+
+    try {
+      await client.dns.deleteDomainRecord(dnsInstance.dnsRecordId);
+    } catch {
+      // Best effort cleanup
+    }
+  }
+};
 
 const buildApigwGroupInstanceFromProvider = (
   info: ApigwGroupInfo,
@@ -246,6 +571,12 @@ export const createApigwResource = async (
     try {
       const primaryDomain = event.domain.domain_name as string;
       const wwwBindApex = event.domain.www_bind_apex === true;
+      const isCdnEnabled = getIsCdnEnabled(event);
+      const originDomain = groupInfo.subDomain;
+
+      if (!originDomain) {
+        throw new Error(`API Gateway group ${groupId} has no subDomain for CDN origin`);
+      }
 
       const domainConfig = await buildDomainBindingConfig(
         event.domain,
@@ -255,7 +586,23 @@ export const createApigwResource = async (
         context.stage,
         client,
       );
-      state = await client.apigw.bindCustomDomain(domainConfig, state, logicalId);
+
+      if (isCdnEnabled) {
+        await createApigwCdnDistribution(
+          context,
+          client,
+          event,
+          primaryDomain,
+          originDomain,
+          instances,
+          {
+            certificateBody: domainConfig.certificateBody,
+            certificatePrivateKey: domainConfig.certificatePrivateKey,
+          },
+        );
+      } else {
+        state = await client.apigw.bindCustomDomain(domainConfig, state, logicalId);
+      }
 
       const wwwDomain = wwwBindApex ? deriveWwwDomain(primaryDomain) : null;
       if (wwwDomain) {
@@ -268,7 +615,23 @@ export const createApigwResource = async (
             ? `${domainConfig.certificateName}-www`
             : undefined,
         };
-        state = await client.apigw.bindCustomDomain(wwwDomainConfig, state, logicalId);
+
+        if (isCdnEnabled) {
+          await createApigwCdnDistribution(
+            context,
+            client,
+            event,
+            wwwDomain,
+            originDomain,
+            instances,
+            {
+              certificateBody: wwwDomainConfig.certificateBody,
+              certificatePrivateKey: wwwDomainConfig.certificatePrivateKey,
+            },
+          );
+        } else {
+          state = await client.apigw.bindCustomDomain(wwwDomainConfig, state, logicalId);
+        }
       }
     } catch (error) {
       logger.error(lang.__('APIGW_DOMAIN_BINDING_FAILED', { error: String(error) }));
@@ -421,12 +784,21 @@ export const updateApigwResource = async (
   if (event.domain) {
     const primaryDomain = event.domain.domain_name as string;
     const wwwBindApex = event.domain.www_bind_apex === true;
+    const wwwDomain = wwwBindApex ? deriveWwwDomain(primaryDomain) : null;
+    const isCdnEnabled = getIsCdnEnabled(event);
     const existingDomain = existingState.definition?.domain as
       | Record<string, unknown>
       | null
       | undefined;
     const previousWwwBindApex = existingDomain?.wwwBindApex === true;
     const previousDomainName = existingDomain?.domainName as string | null | undefined;
+    const previousCdnEnabled = existingDomain?.cdnEnabled === true;
+    const previousTrackedDomains = getApigwTrackedDomains(previousDomainName, previousWwwBindApex);
+    const originDomain = groupInfo.subDomain;
+
+    if (isCdnEnabled && !originDomain) {
+      throw new Error(`API Gateway group ${groupId} has no subDomain for CDN origin`);
+    }
 
     const domainConfig = await buildDomainBindingConfig(
       event.domain,
@@ -436,25 +808,81 @@ export const updateApigwResource = async (
       context.stage,
       client,
     );
-    state = await client.apigw.bindCustomDomain(domainConfig, state, logicalId);
 
-    const wwwDomain = wwwBindApex ? deriveWwwDomain(primaryDomain) : null;
-    if (wwwDomain) {
-      logger.info(lang.__('APIGW_BINDING_DOMAIN', { domain: wwwDomain }));
+    if (isCdnEnabled) {
+      const desiredDomains = [primaryDomain, ...(wwwDomain ? [wwwDomain] : [])];
+      const cdnDomainsToCleanup = previousCdnEnabled
+        ? previousTrackedDomains.filter((domain) => !desiredDomains.includes(domain))
+        : [];
 
-      const wwwDomainConfig: ApigwCustomDomainConfig = {
-        ...domainConfig,
-        domainName: wwwDomain,
-        certificateName: domainConfig.certificateName
-          ? `${domainConfig.certificateName}-www`
-          : undefined,
-      };
-      state = await client.apigw.bindCustomDomain(wwwDomainConfig, state, logicalId);
+      if (cdnDomainsToCleanup.length > 0) {
+        await cleanupApigwCdnResources(client, existingInstances, cdnDomainsToCleanup);
+      }
+
+      await updateApigwCdnDistribution(
+        context,
+        client,
+        event,
+        primaryDomain,
+        originDomain as string,
+        existingInstances,
+        instances,
+        {
+          certificateBody: domainConfig.certificateBody,
+          certificatePrivateKey: domainConfig.certificatePrivateKey,
+        },
+      );
+
+      if (wwwDomain) {
+        logger.info(lang.__('APIGW_BINDING_DOMAIN', { domain: wwwDomain }));
+
+        const wwwDomainConfig: ApigwCustomDomainConfig = {
+          ...domainConfig,
+          domainName: wwwDomain,
+          certificateName: domainConfig.certificateName
+            ? `${domainConfig.certificateName}-www`
+            : undefined,
+        };
+
+        await updateApigwCdnDistribution(
+          context,
+          client,
+          event,
+          wwwDomain,
+          originDomain as string,
+          existingInstances,
+          instances,
+          {
+            certificateBody: wwwDomainConfig.certificateBody,
+            certificatePrivateKey: wwwDomainConfig.certificatePrivateKey,
+          },
+        );
+      }
+    } else {
+      if (previousCdnEnabled && previousTrackedDomains.length > 0) {
+        await cleanupApigwCdnResources(client, existingInstances, previousTrackedDomains);
+      }
+
+      state = await client.apigw.bindCustomDomain(domainConfig, state, logicalId);
+
+      if (wwwDomain) {
+        logger.info(lang.__('APIGW_BINDING_DOMAIN', { domain: wwwDomain }));
+
+        const wwwDomainConfig: ApigwCustomDomainConfig = {
+          ...domainConfig,
+          domainName: wwwDomain,
+          certificateName: domainConfig.certificateName
+            ? `${domainConfig.certificateName}-www`
+            : undefined,
+        };
+
+        state = await client.apigw.bindCustomDomain(wwwDomainConfig, state, logicalId);
+      }
     }
 
     if (previousWwwBindApex && previousDomainName) {
       const previousWwwDomain = deriveWwwDomain(previousDomainName);
-      if (previousWwwDomain && previousWwwDomain !== wwwDomain) {
+      if (previousWwwDomain && previousWwwDomain !== wwwDomain && !previousCdnEnabled) {
         try {
           await client.apigw.unbindCustomDomain(groupId, previousWwwDomain);
         } catch (error) {
@@ -474,26 +902,31 @@ export const updateApigwResource = async (
       | undefined;
     if (existingDomain?.domainName) {
       const previousDomain = existingDomain.domainName as string;
-      try {
-        await client.apigw.unbindCustomDomain(groupId, previousDomain);
-      } catch (error) {
-        logger.warn(
-          lang.__('APIGW_DOMAIN_UNBIND_FAILED', { domain: previousDomain, error: String(error) }),
-        );
-      }
+      const previousCdnEnabled = existingDomain.cdnEnabled === true;
+      if (previousCdnEnabled) {
+        await cleanupApigwCdnResources(client, existingInstances);
+      } else {
+        try {
+          await client.apigw.unbindCustomDomain(groupId, previousDomain);
+        } catch (error) {
+          logger.warn(
+            lang.__('APIGW_DOMAIN_UNBIND_FAILED', { domain: previousDomain, error: String(error) }),
+          );
+        }
 
-      if (existingDomain.wwwBindApex === true) {
-        const previousWwwDomain = deriveWwwDomain(previousDomain);
-        if (previousWwwDomain) {
-          try {
-            await client.apigw.unbindCustomDomain(groupId, previousWwwDomain);
-          } catch (error) {
-            logger.warn(
-              lang.__('APIGW_WWW_DOMAIN_UNBIND_FAILED', {
-                domain: previousWwwDomain,
-                error: String(error),
-              }),
-            );
+        if (existingDomain.wwwBindApex === true) {
+          const previousWwwDomain = deriveWwwDomain(previousDomain);
+          if (previousWwwDomain) {
+            try {
+              await client.apigw.unbindCustomDomain(groupId, previousWwwDomain);
+            } catch (error) {
+              logger.warn(
+                lang.__('APIGW_WWW_DOMAIN_UNBIND_FAILED', {
+                  domain: previousWwwDomain,
+                  error: String(error),
+                }),
+              );
+            }
           }
         }
       }
@@ -551,26 +984,30 @@ export const deleteApigwResource = async (
     | undefined;
   if (existingDomain?.domainName) {
     const primaryDomain = existingDomain.domainName as string;
-    try {
-      await client.apigw.unbindCustomDomain(groupId, primaryDomain);
-    } catch (error) {
-      logger.warn(
-        lang.__('APIGW_DOMAIN_UNBIND_FAILED', { domain: primaryDomain, error: String(error) }),
-      );
-    }
+    if (existingDomain.cdnEnabled === true) {
+      await cleanupApigwCdnResources(client, existingInstances);
+    } else {
+      try {
+        await client.apigw.unbindCustomDomain(groupId, primaryDomain);
+      } catch (error) {
+        logger.warn(
+          lang.__('APIGW_DOMAIN_UNBIND_FAILED', { domain: primaryDomain, error: String(error) }),
+        );
+      }
 
-    if (existingDomain.wwwBindApex === true) {
-      const wwwDomain = deriveWwwDomain(primaryDomain);
-      if (wwwDomain) {
-        try {
-          await client.apigw.unbindCustomDomain(groupId, wwwDomain);
-        } catch (error) {
-          logger.warn(
-            lang.__('APIGW_WWW_DOMAIN_UNBIND_FAILED', {
-              domain: wwwDomain,
-              error: String(error),
-            }),
-          );
+      if (existingDomain.wwwBindApex === true) {
+        const wwwDomain = deriveWwwDomain(primaryDomain);
+        if (wwwDomain) {
+          try {
+            await client.apigw.unbindCustomDomain(groupId, wwwDomain);
+          } catch (error) {
+            logger.warn(
+              lang.__('APIGW_WWW_DOMAIN_UNBIND_FAILED', {
+                domain: wwwDomain,
+                error: String(error),
+              }),
+            );
+          }
         }
       }
     }

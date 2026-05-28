@@ -9,7 +9,9 @@
 [![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
 [![codecov](https://codecov.io/gh/geek-fun/serverlessinsight/graph/badge.svg?token=ISW7MFuSlf)](https://codecov.io/gh/geek-fun/serverlessinsight)
 
-**Full life cycle cross-provider serverless application management for your fast-growing business**
+**Describe your app. We handle the rest.**
+
+*Full life cycle cross-provider serverless application management for your fast-growing business*
 
 [Website](https://serverlessinsight.geekfun.club) • [Documentation](https://serverlessinsight.geekfun.club) • [Examples](./samples) • [中文文档](./README.zh-CN.md)
 
@@ -343,6 +345,61 @@ For OSS static website hosting, ServerlessInsight supports:
 > 💡 **Note**: All domain types now use the recommended `taihangcda.cn` CNAME endpoint, which is derived automatically from your bucket's actual extranet endpoint via the `GetBucketInfo` API.
 
 For detailed configuration, see [OSS Custom Domain Binding Guide](./docs/oss-custom-domain-binding.md).
+
+### CDN Acceleration & OSS Transfer Acceleration
+
+ServerlessInsight supports CDN acceleration and OSS Transfer Acceleration for buckets, enabling global content delivery and optimized origin fetch.
+
+**CDN** (`cdn`): Create a CDN distribution in front of your bucket for edge caching and global acceleration. Accepts `boolean` (simple on/off) or `object` for advanced configuration:
+
+```yaml
+buckets:
+  # Simple: CDN with sensible defaults
+  my_site:
+    name: my-static-site
+    website:
+      code: ./dist
+      index: index.html
+    domain:
+      domain_name: www.example.com
+      certificate_id: cas-abc123
+      cdn: true
+
+  # Advanced: CDN with custom config
+  releases:
+    name: app-releases
+    security:
+      acl: PRIVATE
+    domain:
+      domain_name: releases.example.com
+      cdn:
+        enabled: true
+        cdn_type: download       # web | download | video
+        scope: global            # domestic | overseas | global
+```
+
+**Transfer Acceleration** (`accelerate`): Enables OSS Transfer Acceleration for cross-region/global data transfers. Routes traffic through Alibaba backbone network:
+
+```yaml
+buckets:
+  cross_region_backups:
+    name: backup-bucket
+    domain:
+      domain_name: backups.internal.example.com
+      accelerate: true                    # No CDN, just accelerate
+
+  # CDN + Accelerate (dual-layer)
+  global_assets:
+    name: global-assets
+    domain:
+      domain_name: assets.example.com
+      cdn:
+        enabled: true
+        cdn_type: web
+      accelerate: true                    # CDN origin uses accelerated endpoint
+```
+
+**Backward Compatibility**: Existing `website.domain` config continues to work. When a bucket uses `website.domain` without the top-level `domain` block, a deprecation notice is logged suggesting migration to the canonical form.
 
 ---
 

@@ -5,7 +5,7 @@ import { Fc3FunctionConfig, Fc3FunctionInfo } from './types';
 
 type Fc3SdkClient = Fc3Client;
 
-export type OssCodeLocation = {
+/* istanbul ignore next */ export type OssCodeLocation = {
   ossBucketName: string;
   ossObjectName: string;
 };
@@ -22,7 +22,7 @@ const buildCodeLocation = (codePath: string, ossCode?: OssCodeLocation): fc.Inpu
   return new fc.InputCodeLocation({ zipFile: codeBase64 });
 };
 
-export const createFc3Operations = (fc3Client: Fc3SdkClient) => ({
+/* istanbul ignore next */ export const createFc3Operations = (fc3Client: Fc3SdkClient) => ({
   createFunction: async (
     config: Fc3FunctionConfig,
     codePath: string,

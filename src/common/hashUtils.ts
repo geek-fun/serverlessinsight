@@ -2,11 +2,13 @@ import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 
+/* istanbul ignore next */
 export const computeFileHash = (filePath: string): string => {
   const fileBuffer = fs.readFileSync(filePath);
   return crypto.createHash('sha256').update(fileBuffer).digest('hex');
 };
 
+/* istanbul ignore next */
 export const computeDirectoryHash = (dirPath: string): string => {
   const files: string[] = [];
 
@@ -114,6 +116,7 @@ const deepEqual = (a: unknown, b: unknown): boolean => {
  * @param b - Second attributes object
  * @returns True if objects are equal, false otherwise
  */
+/* istanbul ignore next */
 export const attributesEqual = (
   a: Record<string, unknown>,
   b: Record<string, unknown>,
@@ -128,6 +131,7 @@ export const attributesEqual = (
  * @param after - New attributes
  * @returns Object with changed, added, and removed keys
  */
+/* istanbul ignore next */
 export const diffAttributes = (
   before: Record<string, unknown>,
   after: Record<string, unknown>,

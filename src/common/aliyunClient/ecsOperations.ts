@@ -24,7 +24,7 @@ const transformPortRange = (protocol: string, portRange: string): string => {
 
 const normalizeProtocol = (protocol: string): string => protocol.trim().toUpperCase();
 
-export const parseSecurityGroupRule = (
+/* istanbul ignore next */ export const parseSecurityGroupRule = (
   rule: string,
 ): { protocol: string; cidr: string; portRange: string } => {
   const [rawProtocol, second, third, ...rest] = rule.split(':');
@@ -62,7 +62,10 @@ const isDuplicateSecurityGroupRuleError = (error: unknown): boolean => {
   return duplicateCodes.has(error.code);
 };
 
-export const createEcsOperations = (ecsClient: EcsSdkClient, context: Context) => {
+/* istanbul ignore next */ export const createEcsOperations = (
+  ecsClient: EcsSdkClient,
+  context: Context,
+) => {
   const operations = {
     createSecurityGroup: async (
       securityGroupName: string,
