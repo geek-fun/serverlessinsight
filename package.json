@@ -109,6 +109,7 @@
     "typescript": "^6.0.3"
   },
   "overrides": {
-    "fast-xml-parser": ">=5.3.8"
+    "fast-xml-parser": ">=5.3.8",
+    "protobufjs": "^7.6.1"
   }
 }
