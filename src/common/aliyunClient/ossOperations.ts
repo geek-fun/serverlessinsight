@@ -1,6 +1,15 @@
 import OSS from 'ali-oss';
 import fs from 'node:fs';
 import path from 'node:path';
+
+// Extend OSS PutBucketWebsiteConfig to include SupportSubDir and Type parameters
+declare module 'ali-oss' {
+  interface PutBucketWebsiteConfig {
+    supportSubDir?: boolean;
+    type?: number;
+  }
+}
+
 import {
   BucketACL,
   CommonBucketInfo,
@@ -729,6 +738,8 @@ const parseXmlResponse = <T>(xml: string, tagName: string): T | null => {
         await ossClient.putBucketWebsite(config.bucketName, {
           index: config.websiteConfig.indexDocument,
           error: config.websiteConfig.errorDocument,
+          supportSubDir: true,
+          type: 2,
         });
       }
 
@@ -893,6 +904,8 @@ const parseXmlResponse = <T>(xml: string, tagName: string): T | null => {
       await ossClient.putBucketWebsite(bucketName, {
         index: websiteConfig.indexDocument,
         error: websiteConfig.errorDocument,
+        supportSubDir: true,
+        type: 2,
       });
     },
 

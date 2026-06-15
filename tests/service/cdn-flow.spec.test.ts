@@ -221,7 +221,6 @@ buckets:
     website:
       code: ${JSON.stringify(WEBSITE_SOURCE_PATH)}
       index: index.html
-      error_page: 404.html
     domain:
       domain_name: ${BUCKET_DOMAIN}
       certificate_id: ${BUCKET_CERT_ID}

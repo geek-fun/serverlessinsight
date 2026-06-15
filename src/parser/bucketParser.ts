@@ -1,9 +1,5 @@
 import { BucketAccessEnum, BucketDomain, BucketRaw, CdnConfig, CdnRawConfig } from '../types';
-import {
-  parseBooleanWithDefault,
-  parseNumberWithDefault,
-  parseStringWithDefault,
-} from './parseUtils';
+import { parseBooleanWithDefault, parseStringWithDefault } from './parseUtils';
 import { logger } from '../common/logger';
 import { lang } from '../lang';
 
@@ -168,8 +164,6 @@ export const parseBucket = (buckets: {
             code: String(bucket.website.code),
             ...websiteDomain,
             index: parseStringWithDefault(bucket.website.index, 'index.html'),
-            error_page: parseStringWithDefault(bucket.website.error_page, '404.html'),
-            error_code: parseNumberWithDefault(bucket.website.error_code, 404),
           }
         : undefined,
     };

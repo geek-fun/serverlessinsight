@@ -135,12 +135,9 @@ export const bucketToCosBucketConfig = (bucket: BucketDomain, region: string): C
       },
     };
 
-    // Only add ErrorDocument if error_page is defined
-    if (bucket.website.error_page) {
-      config.WebsiteConfiguration.ErrorDocument = {
-        Key: bucket.website.error_page,
-      };
-    }
+    config.WebsiteConfiguration.ErrorDocument = {
+      Key: bucket.website.index,
+    };
 
     if (bucket.website.domain) {
       config.Domain = bucket.website.domain;

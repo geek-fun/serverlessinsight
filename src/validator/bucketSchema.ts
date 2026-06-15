@@ -1,4 +1,4 @@
-import { resolvableNumber, resolvableBoolean, resolvableEnum } from './templateRefSchema';
+import { resolvableBoolean, resolvableEnum } from './templateRefSchema';
 
 const cdnSchema = {
   oneOf: [
@@ -180,10 +180,6 @@ export const bucketSchema = {
             index: {
               type: 'string',
             },
-            error_page: {
-              type: 'string',
-            },
-            error_code: resolvableNumber,
           },
           required: ['code'],
           additionalProperties: false,

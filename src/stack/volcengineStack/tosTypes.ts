@@ -40,11 +40,8 @@ export const bucketToTosConfig = (bucket: BucketDomain) => {
   if (bucket.website) {
     config.websiteConfig = {
       indexDocument: bucket.website.index,
+      errorDocument: bucket.website.index,
     };
-
-    if (bucket.website.error_page) {
-      config.websiteConfig.errorDocument = bucket.website.error_page;
-    }
   }
 
   return config;

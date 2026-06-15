@@ -9,7 +9,7 @@ The Tencent COS support provides full lifecycle management for cloud storage buc
 - **State Management**: Local state tracking in `.serverlessinsight/state.json`
 - **Plan & Apply Flow**: Preview changes before applying them
 - **Drift Detection**: Detect manual changes made outside ServerlessInsight
-- **Website Hosting**: Configure static website hosting with error pages
+- **Website Hosting**: Configure static website hosting
 - **Access Control**: Configure bucket ACL (private, public-read, public-read-write)
 - **Idempotent Operations**: Safe to re-run deployments
 
@@ -39,8 +39,6 @@ buckets:
     website: # Optional: Enable static website hosting
       code: dist # Local directory to deploy (not implemented yet)
       index: index.html
-      error_page: 404.html
-      error_code: 404
 ```
 
 ## Bucket Naming Requirements
@@ -187,9 +185,7 @@ buckets:
     security:
       acl: PUBLIC_READ # Website content must be publicly readable
     website:
-      index: index.html # Default page
-      error_page: 404.html # Error page
-      error_code: 404 # HTTP error code
+      index: index.html # Default page (also used as error document for SPA routing)
 ```
 
 After deployment, your website will be accessible at:
@@ -229,8 +225,6 @@ buckets:
       acl: PUBLIC_READ
     website:
       index: index.html
-      error_page: 404.html
-      error_code: 404
 ```
 
 ## Idempotency
@@ -289,8 +283,6 @@ buckets:
       acl: PUBLIC_READ
     website: # Added website configuration
       index: index.html
-      error_page: 404.html
-      error_code: 404
 ```
 
 Run `si deploy` to apply the change.
@@ -349,8 +341,6 @@ buckets:
       acl: PUBLIC_READ
     website:
       index: index.html
-      error_page: error.html
-      error_code: 404
 ```
 
 ### Multiple Buckets
@@ -380,8 +370,6 @@ buckets:
       acl: PUBLIC_READ
     website:
       index: index.html
-      error_page: 404.html
-      error_code: 404
 ```
 
 ## Troubleshooting
@@ -425,7 +413,7 @@ coscmd delete -r -f /
 If your website is not accessible after deployment:
 
 1. Verify ACL is set to `PUBLIC_READ`
-2. Check that `index` and `error_page` files exist in the bucket
+2. Check that `index` file exists in the bucket
 3. Access the website using the correct URL format:
    ```
    http://{bucket-name}.cos-website.{region}.myqcloud.com

@@ -1,0 +1,63 @@
+version: 0.1.0
+
+provider:
+  name: aliyun
+  region: cn-hongkong
+
+app: insight-poc
+service: insight-poc-cdn-bucket
+
+tags:
+  owner: geek-fun
+
+# Example 1: Simple CDN configuration
+# Just enable CDN with default settings
+buckets:
+  simple_cdn_bucket:
+    name: insight-poc-simple-cdn
+    security:
+      acl: PUBLIC_READ
+    website:
+      code: dist
+      index: index.html
+    domain:
+      domain_name: static.example.com
+      certificate_id: cas-cert-abc123
+      cdn: true  # Simple: CDN enabled with sensible defaults
+
+  # Example 2: Advanced CDN configuration
+  # Full control over CDN settings
+  advanced_cdn_bucket:
+    name: insight-poc-advanced-cdn
+    security:
+      acl: PUBLIC_READ
+    website:
+      code: dist
+      index: index.html
+    domain:
+      domain_name: assets.example.com
+      certificate_id: cas-cert-def456
+      cdn:
+        enabled: true
+        cdn_type: web           # web | download | video
+        scope: global           # domestic | overseas | global
+        cache_ttl: 3600         # Cache TTL in seconds
+        ignore_query_string: false  # Ignore query string in cache key
+        origin_protocol: https  # http | https | follow
+        compression: true       # Enable Gzip compression
+        force_redirect_https: true  # Force HTTPS redirect
+
+  # Example 3: CDN + Transfer Acceleration (dual-layer)
+  # CDN origin uses accelerated OSS endpoint
+  dual_acceleration_bucket:
+    name: insight-poc-dual-accel
+    security:
+      acl: PRIVATE
+    domain:
+      domain_name: downloads.example.com
+      certificate_id: cas-cert-ghi789
+      cdn:
+        enabled: true
+        cdn_type: download
+        scope: global
+      accelerate: true  # OSS Transfer Acceleration for origin fetch

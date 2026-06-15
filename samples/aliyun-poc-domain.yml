@@ -19,5 +19,3 @@ buckets:
       code: dist
       domain: meke-ui.serverlessinsight.com
       index: index.html
-      error_page: 404.html
-      error_code: 404
