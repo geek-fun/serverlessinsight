@@ -17,5 +17,3 @@ buckets:
     website:
       code: dist
       index: index.html
-      error_page: 404.html
-      error_code: 404

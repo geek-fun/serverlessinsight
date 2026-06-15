@@ -153,8 +153,6 @@ describe('tosResource', () => {
         website: {
           index: 'index.html',
           code: './dist',
-          error_page: '404.html',
-          error_code: 404,
         },
       };
 
@@ -181,8 +179,6 @@ describe('tosResource', () => {
         website: {
           index: 'index.html',
           code: './dist',
-          error_page: '404.html',
-          error_code: 404,
         },
       };
 
@@ -226,8 +222,6 @@ describe('tosResource', () => {
         website: {
           index: 'index.html',
           code: './dist',
-          error_page: '404.html',
-          error_code: 404,
         },
       };
 

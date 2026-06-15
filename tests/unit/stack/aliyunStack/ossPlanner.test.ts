@@ -60,8 +60,6 @@ describe('OSS Planner', () => {
     website: {
       index: 'index.html',
       code: 'dist',
-      error_page: '404.html',
-      error_code: 404,
     },
   };
 
@@ -92,7 +90,7 @@ describe('OSS Planner', () => {
         acl: 'public-read',
         websiteConfig: {
           indexDocument: 'index.html',
-          errorDocument: '404.html',
+          errorDocument: 'index.html',
         },
       });
 
@@ -104,7 +102,7 @@ describe('OSS Planner', () => {
           acl: 'public-read',
           websiteConfiguration: {
             indexDocument: 'index.html',
-            errorDocument: '404.html',
+            errorDocument: 'index.html',
           },
           websiteCodeHash: 'mock-website-hash',
           storageClass: null,
@@ -142,7 +140,7 @@ describe('OSS Planner', () => {
       mockOssOperations.getBucket.mockResolvedValue({
         name: 'test-bucket',
         acl: 'public-read',
-        websiteConfig: { indexDocument: 'index.html', errorDocument: '404.html' },
+        websiteConfig: { indexDocument: 'index.html', errorDocument: 'index.html' },
       });
 
       const state = setResource(initialState, 'buckets.test_bucket', {
@@ -151,7 +149,7 @@ describe('OSS Planner', () => {
         definition: {
           bucketName: 'test-bucket',
           acl: 'public-read',
-          websiteConfiguration: { indexDocument: 'index.html', errorDocument: '404.html' },
+          websiteConfiguration: { indexDocument: 'index.html', errorDocument: 'index.html' },
           websiteCodeHash: 'mock-website-hash',
           storageClass: null,
           domain: 'www.example.com',
@@ -195,7 +193,7 @@ describe('OSS Planner', () => {
       mockOssOperations.getBucket.mockResolvedValue({
         name: 'test-bucket',
         acl: 'public-read',
-        websiteConfig: { indexDocument: 'index.html', errorDocument: '404.html' },
+        websiteConfig: { indexDocument: 'index.html', errorDocument: 'index.html' },
       });
 
       const state = setResource(initialState, 'buckets.test_bucket', {
@@ -204,7 +202,7 @@ describe('OSS Planner', () => {
         definition: {
           bucketName: 'test-bucket',
           acl: 'public-read',
-          websiteConfiguration: { indexDocument: 'index.html', errorDocument: '404.html' },
+          websiteConfiguration: { indexDocument: 'index.html', errorDocument: 'index.html' },
           websiteCodeHash: 'mock-website-hash',
           storageClass: null,
           domain: 'www.example.com',
@@ -247,7 +245,7 @@ describe('OSS Planner', () => {
       mockOssOperations.getBucket.mockResolvedValue({
         name: 'test-bucket',
         acl: 'public-read',
-        websiteConfig: { indexDocument: 'index.html', errorDocument: '404.html' },
+        websiteConfig: { indexDocument: 'index.html', errorDocument: 'index.html' },
       });
 
       const state = setResource(initialState, 'buckets.test_bucket', {
@@ -256,7 +254,7 @@ describe('OSS Planner', () => {
         definition: {
           bucketName: 'test-bucket',
           acl: 'public-read',
-          websiteConfiguration: { indexDocument: 'index.html', errorDocument: '404.html' },
+          websiteConfiguration: { indexDocument: 'index.html', errorDocument: 'index.html' },
           websiteCodeHash: 'mock-website-hash',
           storageClass: null,
           domain: null,
@@ -296,7 +294,7 @@ describe('OSS Planner', () => {
         acl: 'private',
         websiteConfig: {
           indexDocument: 'index.html',
-          errorDocument: '404.html',
+          errorDocument: 'index.html',
         },
       });
 
@@ -308,7 +306,7 @@ describe('OSS Planner', () => {
           acl: 'private',
           websiteConfiguration: {
             indexDocument: 'index.html',
-            errorDocument: '404.html',
+            errorDocument: 'index.html',
           },
           websiteCodeHash: 'mock-website-hash',
           storageClass: null,
@@ -395,7 +393,7 @@ describe('OSS Planner', () => {
           acl: 'public-read',
           websiteConfiguration: {
             indexDocument: 'index.html',
-            errorDocument: '404.html',
+            errorDocument: 'index.html',
           },
           websiteCodeHash: 'mock-website-hash',
           storageClass: null,
@@ -435,7 +433,7 @@ describe('OSS Planner', () => {
       mockOssOperations.getBucket.mockResolvedValue({
         name: 'test-bucket',
         acl: 'public-read',
-        websiteConfig: { indexDocument: 'index.html', errorDocument: '404.html' },
+        websiteConfig: { indexDocument: 'index.html', errorDocument: 'index.html' },
       });
 
       const state = setResource(initialState, 'buckets.test_bucket', {
@@ -444,7 +442,7 @@ describe('OSS Planner', () => {
         definition: {
           bucketName: 'test-bucket',
           acl: 'public-read',
-          websiteConfiguration: { indexDocument: 'index.html', errorDocument: '404.html' },
+          websiteConfiguration: { indexDocument: 'index.html', errorDocument: 'index.html' },
           websiteCodeHash: 'different-hash',
           storageClass: null,
           domain: null,

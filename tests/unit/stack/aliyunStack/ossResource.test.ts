@@ -323,7 +323,7 @@ describe('OssResource', () => {
         {
           key: 'test_bucket',
           name: 'test-bucket',
-          website: { index: 'index.html', code: './dist', error_page: '404.html', error_code: 404 },
+          website: { index: 'index.html', code: './dist' },
         },
         initialState,
       );
@@ -379,7 +379,7 @@ describe('OssResource', () => {
         {
           key: 'test_bucket',
           name: 'test-bucket',
-          website: { index: 'index.html', code: './dist', error_page: '404.html', error_code: 404 },
+          website: { index: 'index.html', code: './dist' },
         },
         initialState,
       );
@@ -438,7 +438,7 @@ describe('OssResource', () => {
         {
           key: 'test_bucket',
           name: 'test-bucket',
-          website: { index: 'index.html', code: './dist', error_page: '404.html', error_code: 404 },
+          website: { index: 'index.html', code: './dist' },
         },
         initialState,
       );
@@ -489,7 +489,7 @@ describe('OssResource', () => {
         {
           key: 'test_bucket',
           name: 'test-bucket',
-          website: { index: 'index.html', code: './dist', error_page: '404.html', error_code: 404 },
+          website: { index: 'index.html', code: './dist' },
         },
         initialState,
       );
@@ -538,7 +538,7 @@ describe('OssResource', () => {
         {
           key: 'test_bucket',
           name: 'test-bucket',
-          website: { index: 'index.html', code: './dist', error_page: '404.html', error_code: 404 },
+          website: { index: 'index.html', code: './dist' },
         },
         initialState,
       );
@@ -588,7 +588,7 @@ describe('OssResource', () => {
         {
           key: 'test_bucket',
           name: 'test-bucket',
-          website: { index: 'index.html', code: './dist', error_page: '404.html', error_code: 404 },
+          website: { index: 'index.html', code: './dist' },
         },
         initialState,
       );
@@ -638,7 +638,7 @@ describe('OssResource', () => {
         {
           key: 'test_bucket',
           name: 'test-bucket',
-          website: { index: 'index.html', code: './dist', error_page: '404.html', error_code: 404 },
+          website: { index: 'index.html', code: './dist' },
         },
         initialState,
       );
@@ -690,7 +690,7 @@ describe('OssResource', () => {
         {
           key: 'test_bucket',
           name: 'test-bucket',
-          website: { index: 'index.html', code: './dist', error_page: '404.html', error_code: 404 },
+          website: { index: 'index.html', code: './dist' },
         },
         initialState,
       );
@@ -731,7 +731,7 @@ describe('OssResource', () => {
         {
           key: 'test_bucket',
           name: 'test-bucket',
-          website: { index: 'index.html', code: './dist', error_page: '404.html', error_code: 404 },
+          website: { index: 'index.html', code: './dist' },
         },
         initialState,
       );
@@ -772,7 +772,7 @@ describe('OssResource', () => {
         {
           key: 'test_bucket',
           name: 'test-bucket',
-          website: { index: 'index.html', code: './dist', error_page: '404.html', error_code: 404 },
+          website: { index: 'index.html', code: './dist' },
         },
         initialState,
       );
@@ -803,8 +803,6 @@ describe('OssResource', () => {
       website: {
         index: 'index.html',
         code: './dist',
-        error_page: '404.html',
-        error_code: 404,
       },
     };
 
@@ -1264,8 +1262,6 @@ describe('OssResource', () => {
       website: {
         index: 'index.html',
         code: './dist',
-        error_page: '404.html',
-        error_code: 404,
       },
     };
 
@@ -1388,8 +1384,6 @@ describe('OssResource', () => {
         website: {
           index: 'index.html',
           code: './dist',
-          error_page: '404.html',
-          error_code: 404,
         },
       };
 
@@ -1417,8 +1411,6 @@ describe('OssResource', () => {
         website: {
           index: 'index.html',
           code: './dist',
-          error_page: '404.html',
-          error_code: 404,
         },
       };
 
@@ -1665,8 +1657,6 @@ describe('OssResource', () => {
         website: {
           index: 'index.html',
           code: './dist',
-          error_page: '404.html',
-          error_code: 404,
         },
       };
 
@@ -1883,7 +1873,7 @@ describe('OssResource', () => {
         key: 'b',
         name: 'tb',
         security: { acl: BucketAccessEnum.PUBLIC_READ, force_delete: false },
-        website: { code: './d', index: 'i.html', error_page: '404.html', error_code: 404 },
+        website: { code: './d', index: 'i.html' },
         domain: { domain_name: 'x.com', cdn: true, www_bind_apex: false },
       };
       await createBucketResource(mockContext, b, initialState);
@@ -1895,7 +1885,7 @@ describe('OssResource', () => {
         key: 'b',
         name: 'tb',
         security: { acl: BucketAccessEnum.PUBLIC_READ, force_delete: false },
-        website: { code: './d', index: 'i.html', error_page: '404.html', error_code: 404 },
+        website: { code: './d', index: 'i.html' },
         domain: { domain_name: 'x.com', accelerate: true, www_bind_apex: false },
       };
       await createBucketResource(mockContext, b, initialState);
@@ -1911,8 +1901,7 @@ describe('OssResource', () => {
         website: {
           code: './d',
           index: 'i.html',
-          error_page: '404.html',
-          error_code: 404,
+
           domain: 'x.com',
         },
       };
@@ -1925,7 +1914,7 @@ describe('OssResource', () => {
         key: 'b',
         name: 'tb',
         security: { acl: BucketAccessEnum.PUBLIC_READ, force_delete: false },
-        website: { code: './d', index: 'i.html', error_page: '404.html', error_code: 404 },
+        website: { code: './d', index: 'i.html' },
         domain: { domain_name: 'example.com', cdn: true, www_bind_apex: true },
       };
       await createBucketResource(mockContext, b, initialState);
@@ -2300,8 +2289,7 @@ describe('OssResource', () => {
           website: {
             code: './dist',
             index: 'i.html',
-            error_page: '404.html',
-            error_code: 404,
+
             domain: 'x.c',
           },
         } as BucketDomain,

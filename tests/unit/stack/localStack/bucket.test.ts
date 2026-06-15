@@ -44,8 +44,6 @@ describe('bucketsHandler', () => {
     website: {
       code: 'tests/fixtures/test-bucket',
       index: 'index.html',
-      error_page: '404.html',
-      error_code: 404,
     },
   };
 

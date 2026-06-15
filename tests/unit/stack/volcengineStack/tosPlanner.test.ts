@@ -88,8 +88,6 @@ describe('tosPlanner', () => {
           website: {
             index: 'index.html',
             code: './dist',
-            error_page: '404.html',
-            error_code: 404,
           },
         },
       ];
@@ -291,8 +289,6 @@ describe('tosPlanner', () => {
           website: {
             index: 'index.html',
             code: './non-existent-dir',
-            error_page: '404.html',
-            error_code: 404,
           },
         },
       ];

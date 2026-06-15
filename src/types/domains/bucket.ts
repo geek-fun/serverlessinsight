@@ -60,8 +60,6 @@ export type BucketRaw = {
     // Deprecated: Use top-level `domain` instead
     domain?: Resolvable<string> | BucketWebsiteDomainConfig;
     index?: Resolvable<string>;
-    error_page?: Resolvable<string>;
-    error_code?: Resolvable<number>;
   };
 };
 
@@ -109,8 +107,6 @@ export type BucketDomain = {
     domain_certificate_private_key?: string;
     domain_protocol?: string | string[];
     code: string;
-    error_page: string;
-    error_code: number;
   };
 };
 

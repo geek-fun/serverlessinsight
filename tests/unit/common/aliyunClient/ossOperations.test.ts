@@ -1448,6 +1448,8 @@ describe('ossOperations additional createBucket branches', () => {
     expect(mockOssClient2.putBucketWebsite).toHaveBeenCalledWith('test-bucket', {
       index: 'index.html',
       error: '404.html',
+      supportSubDir: true,
+      type: 2,
     });
   });
 });

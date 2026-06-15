@@ -203,8 +203,6 @@ describe('bucketParser', () => {
         domain_certificate_private_key: undefined,
         domain_protocol: undefined,
         index: 'index.html',
-        error_page: '404.html',
-        error_code: 404,
       });
     });
 
@@ -246,8 +244,6 @@ describe('bucketParser', () => {
         domain_certificate_private_key: undefined,
         domain_protocol: undefined,
         index: 'index.html',
-        error_page: '404.html',
-        error_code: 404,
       });
     });
 
@@ -275,8 +271,6 @@ describe('bucketParser', () => {
         domain_certificate_private_key: undefined,
         domain_protocol: undefined,
         index: 'index.html',
-        error_page: '404.html',
-        error_code: 404,
       });
     });
 
@@ -410,8 +404,6 @@ describe('bucketParser', () => {
           website: {
             code: './dist',
             index: 'home.html',
-            error_page: 'error.html',
-            error_code: 500,
           },
         },
       };
@@ -419,8 +411,6 @@ describe('bucketParser', () => {
       const result = parseBucket(buckets);
 
       expect(result?.[0].website?.index).toBe('home.html');
-      expect(result?.[0].website?.error_page).toBe('error.html');
-      expect(result?.[0].website?.error_code).toBe(500);
     });
 
     it('should parse bucket without website configuration', () => {
@@ -482,8 +472,6 @@ describe('bucketParser', () => {
               protocol: ['http', 'https'],
             },
             index: 'index.html',
-            error_page: '404.html',
-            error_code: 404,
           },
         },
       };
@@ -511,8 +499,6 @@ describe('bucketParser', () => {
           domain_certificate_private_key: '-----BEGIN PRIVATE KEY-----',
           domain_protocol: ['http', 'https'],
           index: 'index.html',
-          error_page: '404.html',
-          error_code: 404,
         },
       });
     });

@@ -61,8 +61,6 @@ describe('OssTypes', () => {
         website: {
           index: 'index.html',
           code: 'dist',
-          error_page: '404.html',
-          error_code: 404,
         },
       };
 
@@ -71,7 +69,7 @@ describe('OssTypes', () => {
       expect(result.bucketName).toBe('test-bucket');
       expect(result.websiteConfig).toEqual({
         indexDocument: 'index.html',
-        errorDocument: '404.html',
+        errorDocument: 'index.html',
       });
     });
 
@@ -86,8 +84,6 @@ describe('OssTypes', () => {
         website: {
           index: 'index.html',
           code: 'dist',
-          error_page: '404.html',
-          error_code: 404,
         },
       };
 
@@ -97,7 +93,7 @@ describe('OssTypes', () => {
       expect(result.acl).toBe(BucketACL.PUBLIC_READ);
       expect(result.websiteConfig).toEqual({
         indexDocument: 'index.html',
-        errorDocument: '404.html',
+        errorDocument: 'index.html',
       });
     });
 
@@ -123,8 +119,7 @@ describe('OssTypes', () => {
         website: {
           index: 'index.html',
           code: 'dist',
-          error_page: '404.html',
-          error_code: 404,
+
           domain: 'www.example.com',
         },
       };

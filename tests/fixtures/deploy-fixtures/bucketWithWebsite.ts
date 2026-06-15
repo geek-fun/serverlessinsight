@@ -16,8 +16,6 @@ export const bucketWithWebsiteIac = {
         code: 'tests/fixtures/artifacts/large-artifact.zip',
         domain: 'my-bucket.com',
         index: 'index.html',
-        error_page: '404.html',
-        error_code: 404,
       },
     },
   ],
@@ -114,7 +112,7 @@ export const bucketWithWebsiteRos = {
         WebsiteConfigurationV2: {
           ErrorDocument: {
             HttpStatus: '404',
-            Key: '404.html',
+            Key: 'index.html',
           },
           IndexDocument: {
             Suffix: 'index.html',

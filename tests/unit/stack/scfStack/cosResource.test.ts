@@ -116,8 +116,6 @@ describe('CosResource', () => {
         website: {
           index: 'index.html',
           code: './dist',
-          error_page: 'error.html',
-          error_code: 404,
         },
       };
 
@@ -151,8 +149,7 @@ describe('CosResource', () => {
         website: {
           index: 'index.html',
           code: './dist',
-          error_page: 'error.html',
-          error_code: 404,
+
           domain: 'cdn.example.com',
           domain_certificate_body: 'CERT-BODY',
           domain_certificate_private_key: 'CERT-KEY',
@@ -192,8 +189,6 @@ describe('CosResource', () => {
           index: 'index.html',
           domain: 'cdn.example.com',
           code: './dist',
-          error_page: 'error.html',
-          error_code: 404,
         },
       };
 
@@ -219,8 +214,7 @@ describe('CosResource', () => {
         website: {
           index: 'index.html',
           code: './dist',
-          error_page: 'error.html',
-          error_code: 404,
+
           domain: 'cdn.example.com',
           domain_certificate_body: 'CERT-BODY',
           domain_certificate_private_key: 'CERT-KEY',
@@ -252,8 +246,7 @@ describe('CosResource', () => {
         website: {
           index: 'index.html',
           code: './dist',
-          error_page: 'error.html',
-          error_code: 404,
+
           domain: 'cdn.example.com',
           domain_certificate_id: 'existing-cert-12345',
         },
@@ -296,8 +289,6 @@ describe('CosResource', () => {
           domain_certificate_body: 'CERT-BODY',
           domain_certificate_private_key: 'CERT-KEY',
           code: './dist',
-          error_page: 'error.html',
-          error_code: 404,
         },
       };
 
@@ -334,8 +325,6 @@ describe('CosResource', () => {
           domain: 'cdn.example.com',
           domain_certificate_id: 'existing-cert-99999',
           code: './dist',
-          error_page: 'error.html',
-          error_code: 404,
         },
       };
 
@@ -362,8 +351,6 @@ describe('CosResource', () => {
           index: 'index.html',
           domain: 'cdn.example.com',
           code: './dist',
-          error_page: 'error.html',
-          error_code: 404,
         },
       };
 
@@ -820,8 +807,6 @@ describe('CosResource', () => {
             website: {
               index: 'index.html',
               code: './dist',
-              error_page: 'error.html',
-              error_code: 404,
             },
           },
           initialState,
@@ -846,8 +831,7 @@ describe('CosResource', () => {
           website: {
             index: 'index.html',
             code: './dist',
-            error_page: 'error.html',
-            error_code: 404,
+
             domain: 'example.com',
             www_bind_apex: true,
           },
@@ -893,8 +877,7 @@ describe('CosResource', () => {
           website: {
             index: 'index.html',
             code: './dist',
-            error_page: 'error.html',
-            error_code: 404,
+
             domain: 'example.com',
             www_bind_apex: true,
             domain_certificate_body: 'CERT-BODY',
@@ -947,8 +930,7 @@ describe('CosResource', () => {
           website: {
             index: 'index.html',
             code: './dist',
-            error_page: 'error.html',
-            error_code: 404,
+
             domain: 'example.com',
             www_bind_apex: true,
             domain_certificate_body: 'CERT-BODY',
@@ -985,8 +967,7 @@ describe('CosResource', () => {
           website: {
             index: 'index.html',
             code: './dist',
-            error_page: 'error.html',
-            error_code: 404,
+
             domain: 'example.com',
             www_bind_apex: true,
           },
@@ -1016,8 +997,7 @@ describe('CosResource', () => {
           website: {
             index: 'index.html',
             code: './dist',
-            error_page: 'error.html',
-            error_code: 404,
+
             domain: 'cdn.example.com',
           },
         },
@@ -1046,8 +1026,7 @@ describe('CosResource', () => {
           website: {
             index: 'index.html',
             code: './dist',
-            error_page: 'error.html',
-            error_code: 404,
+
             domain: 'cdn.example.com',
           },
         },
@@ -1071,8 +1050,7 @@ describe('CosResource', () => {
           website: {
             index: 'index.html',
             code: './dist',
-            error_page: 'error.html',
-            error_code: 404,
+
             domain: 'cdn.example.com',
           },
         },
@@ -1131,8 +1109,6 @@ describe('CosResource', () => {
             website: {
               index: 'index.html',
               code: './dist',
-              error_page: 'error.html',
-              error_code: 404,
             },
           },
           initialState,
@@ -1157,8 +1133,7 @@ describe('CosResource', () => {
           website: {
             index: 'index.html',
             code: './dist',
-            error_page: 'error.html',
-            error_code: 404,
+
             domain: 'new.example.com',
           },
         },
@@ -1199,8 +1174,7 @@ describe('CosResource', () => {
           website: {
             index: 'index.html',
             code: './dist',
-            error_page: 'error.html',
-            error_code: 404,
+
             domain: 'example.com',
             www_bind_apex: true,
             domain_certificate_id: 'cert-ref-123',
@@ -1269,8 +1243,7 @@ describe('CosResource', () => {
           website: {
             index: 'index.html',
             code: './dist',
-            error_page: 'error.html',
-            error_code: 404,
+
             domain: 'example.com',
             www_bind_apex: false,
           },
@@ -1297,8 +1270,6 @@ describe('CosResource', () => {
           website: {
             index: 'index.html',
             code: './dist',
-            error_page: 'error.html',
-            error_code: 404,
           },
         },
         stateWithDomain,
@@ -1329,8 +1300,7 @@ describe('CosResource', () => {
           website: {
             index: 'index.html',
             code: './dist',
-            error_page: 'error.html',
-            error_code: 404,
+
             domain: 'cdn.example.com',
           },
         },
@@ -1375,8 +1345,7 @@ describe('CosResource', () => {
           website: {
             index: 'index.html',
             code: './dist',
-            error_page: 'error.html',
-            error_code: 404,
+
             domain_certificate_body: 'CERT-BODY',
             domain_certificate_private_key: 'CERT-KEY',
           },
@@ -1403,8 +1372,7 @@ describe('CosResource', () => {
           website: {
             index: 'index.html',
             code: './dist',
-            error_page: 'error.html',
-            error_code: 404,
+
             domain_certificate_id: 'cert-id-999',
           },
         },

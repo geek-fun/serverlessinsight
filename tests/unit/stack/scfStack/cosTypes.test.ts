@@ -66,8 +66,6 @@ describe('CosTypes', () => {
         website: {
           index: 'index.html',
           code: 'dist',
-          error_page: '404.html',
-          error_code: 404,
         },
       };
 
@@ -81,7 +79,7 @@ describe('CosTypes', () => {
             Suffix: 'index.html',
           },
           ErrorDocument: {
-            Key: '404.html',
+            Key: 'index.html',
           },
         },
       });
@@ -98,8 +96,6 @@ describe('CosTypes', () => {
         website: {
           index: 'index.html',
           code: 'dist',
-          error_page: '404.html',
-          error_code: 404,
         },
       };
 
@@ -114,7 +110,7 @@ describe('CosTypes', () => {
             Suffix: 'index.html',
           },
           ErrorDocument: {
-            Key: '404.html',
+            Key: 'index.html',
           },
         },
       });
