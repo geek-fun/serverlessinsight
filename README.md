@@ -1,54 +1,74 @@
-# ServerlessInsight
-
 <div align="center">
 
-[![Node.js CI](https://github.com/geek-fun/serverlessinsight/actions/workflows/node.yml/badge.svg)](https://github.com/geek-fun/serverlessinsight/actions/workflows/node.yml)
-[![release](https://github.com/geek-fun/serverlessinsight/actions/workflows/release.yml/badge.svg)](https://github.com/geek-fun/serverlessinsight/actions/workflows/release.yml)
-[![npm version](https://badge.fury.io/js/@geek-fun%2Fserverlessinsight.svg)](https://badge.fury.io/js/@geek-fun%2Fserverlessinsight)
-[![Known Vulnerabilities](https://snyk.io/test/github/geek-fun/serverlessinsight/badge.svg)](https://snyk.io/test/github/geek-fun/serverlessinsight)
-[![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
-[![codecov](https://codecov.io/gh/geek-fun/serverlessinsight/graph/badge.svg?token=ISW7MFuSlf)](https://codecov.io/gh/geek-fun/serverlessinsight)
+# ServerlessInsight
 
-**Describe your app. We handle the rest.**
+**Full life cycle cross-provider serverless management — describe your app, we handle the rest.**
 
-*Full life cycle cross-provider serverless application management for your fast-growing business*
+**Open source. Multi-cloud. Infrastructure as Code.**
 
-[Website](https://serverlessinsight.geekfun.club) • [Documentation](https://serverlessinsight.geekfun.club) • [Examples](./samples) • [中文文档](./README.zh-CN.md)
+[![Release](https://img.shields.io/github/v/release/geek-fun/serverlessinsight?color=orange&label=release&style=for-the-badge&logo=github)](https://github.com/geek-fun/serverlessinsight/releases)
+[![npm version](https://img.shields.io/npm/v/@geek-fun/serverlessinsight?color=orange&style=for-the-badge&logo=npm)](https://www.npmjs.com/package/@geek-fun/serverlessinsight)
+[![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg?style=for-the-badge&logo=apache)](LICENSE)
+[![Stars](https://img.shields.io/github/stars/geek-fun/serverlessinsight?style=for-the-badge&logo=github)](https://github.com/geek-fun/serverlessinsight/stargazers)
+[![CI](https://github.com/geek-fun/serverlessinsight/actions/workflows/node.yml/badge.svg?style=for-the-badge)](https://github.com/geek-fun/serverlessinsight/actions/workflows/node.yml)
+
+<p>
+  <img src="https://img.shields.io/badge/Node.js-339933?style=for-the-badge&logo=nodedotjs&logoColor=white"/>
+  <img src="https://img.shields.io/badge/TypeScript-3178C6?style=for-the-badge&logo=typescript&logoColor=white"/>
+  <img src="https://img.shields.io/badge/Alibaba%20Cloud-FF6A00?style=for-the-badge&logo=alibabacloud&logoColor=white"/>
+  <img src="https://img.shields.io/badge/Tencent%20Cloud-0A9AED?style=for-the-badge&logo=tencentqq&logoColor=white"/>
+  <img src="https://img.shields.io/badge/Huawei%20Cloud-FF0000?style=for-the-badge&logo=hauwei&logoColor=white"/>
+  <img src="https://img.shields.io/badge/AWS-232F3E?style=for-the-badge&logo=amazonwebservices&logoColor=white"/>
+</p>
+
+[npm i -g @geek-fun/serverlessinsight](https://www.npmjs.com/package/@geek-fun/serverlessinsight) · [Docs](https://serverlessinsight.geekfun.club) · [Website](https://serverlessinsight.geekfun.club) · [GitHub](https://github.com/geek-fun/serverlessinsight)
+
+English · [简体中文](README.zh-CN.md)
 
 </div>
 
 ---
 
-ServerlessInsight is a powerful serverless framework for managing serverless applications across multiple cloud providers. It provides a unified interface to deploy, manage, and debug serverless functions and resources using Infrastructure as Code (IaC) principles.
+ServerlessInsight is a **cross-provider serverless framework** — it replaces cloud-specific CLI tools, web consoles, and DIY scripts with a single unified tool. Define your serverless infrastructure in YAML once, deploy to Alibaba Cloud, Tencent Cloud, Huawei Cloud, and more. Think of it as Terraform for serverless, purpose-built for functions, API gateways, storage, and databases.
 
-Whether you're building on AWS, Alibaba Cloud, Huawei Cloud, or other providers, ServerlessInsight simplifies your development workflow with:
+<p align="center">
+  <img src="https://img.shields.io/badge/Alibaba%20Cloud-FF6A00?logo=alibabacloud&logoColor=white" />
+  <img src="https://img.shields.io/badge/Tencent%20Cloud-0A9AED?logo=tencentqq&logoColor=white" />
+  <img src="https://img.shields.io/badge/Huawei%20Cloud-FF0000?logo=huawei&logoColor=white" />
+  <img src="https://img.shields.io/badge/Volcengine-1677FF?logoColor=white" />
+  <img src="https://img.shields.io/badge/AWS-232F3E?logo=amazonwebservices&logoColor=white" />
+  <img src="https://img.shields.io/badge/Azure-0078D4?logo=microsoftazure&logoColor=white" />
+  <img src="https://img.shields.io/badge/GCP-4285F4?logo=googlecloud&logoColor=white" />
+</p>
 
-- **Multi-cloud support** - Work with multiple cloud providers using a single tool
-- **Infrastructure as Code** - Define your serverless infrastructure in YAML
-- **Local development** - Test your functions locally before deploying
-- **Type-safe templates** - Validate your configurations before deployment
+## Installation
 
----
+<a href="https://www.npmjs.com/package/@geek-fun/serverlessinsight">
+  <img src="https://img.shields.io/badge/npm_install-g_--g_@geek--fun/serverlessinsight-CB3837?style=for-the-badge&logo=npm&logoColor=white" alt="npm install">
+</a>
+&nbsp;
+<a href="https://github.com/geek-fun/serverlessinsight/releases">
+  <img src="https://img.shields.io/badge/Releases-GitHub-lightgrey?style=for-the-badge&logo=github" alt="Releases">
+</a>
+&nbsp;
+<a href="https://serverlessinsight.geekfun.club">
+  <img src="https://img.shields.io/badge/Docs-serverlessinsight.geekfun.club-blue?style=for-the-badge&logo=gitbook&logoColor=white" alt="Docs">
+</a>
 
-## ✨ Features
+```bash
+npm install -g @geek-fun/serverlessinsight
+si --version
+```
 
-- 🌍 **Multi-Cloud Provider Support** - Deploy to Alibaba Cloud, Huawei Cloud, and more
-- 📦 **Unified Configuration** - Single YAML format for all providers
-- 🚀 **Quick Deployment** - Deploy serverless applications with a single command
-- 🔍 **Template Validation** - Validate your IaC templates before deployment
-- 🏠 **Local Testing** - Run and debug serverless functions locally
-- 🔄 **Template Generation** - Generate provider-specific IaC templates
-- 🌐 **API Gateway Integration** - Configure HTTP endpoints for your functions
-- 🌐 **Custom Domain Binding** - Automatic domain binding with DNS verification for OSS and API Gateway
-- 💾 **Resource Management** - Manage storage, databases, and other cloud resources
-- 🔐 **Security First** - Built-in validation and security best practices
-- 📊 **Comprehensive Logging** - Debug and monitor your applications
+## Key Features
 
----
+### Multi-Cloud, One Config
 
-## ☁️ Supported Providers
+Define your infrastructure once in YAML and deploy across Alibaba Cloud, Tencent Cloud, Huawei Cloud, and Volcengine — with AWS, Azure, and GCP on the roadmap. No more juggling cloud-specific CLIs or Terraform modules for every provider.
 
-ServerlessInsight supports the following cloud providers:
+- **Unified configuration** — single `serverless.yml` format for all providers
+- **Provider-specific template generation** — generate native IaC templates from your config
+- **Cross-provider awareness** — the same abstractions work across different clouds
 
 | Provider          | Functions        | API Gateway    | Storage        | Databases        | Status  |
 | ----------------- | ---------------- | -------------- | -------------- | ---------------- | ------- |
@@ -60,58 +80,111 @@ ServerlessInsight supports the following cloud providers:
 | **Azure**         | 🔜 Planned       | 🔜 Planned     | 🔜 Planned     | 🔜 Planned       | Planned |
 | **Google Cloud**  | 🔜 Planned       | 🔜 Planned     | 🔜 Planned     | 🔜 Planned       | Planned |
 
----
+### Infrastructure as Code
 
-## 🚀 Getting Started
+Declarative YAML configuration with validation, planning, and state management — following proven IaC patterns.
 
-### Prerequisites
+- **Plan before deploy** — `si plan` shows exactly what will change before anything happens
+- **State tracking** — incremental deployments with drift detection via local state files
+- **Validation** — type-safe template validation catches config errors before they reach the cloud
+- **Partial failure recovery** — successfully deployed resources are saved even when others fail; retry to continue
 
-- **Node.js** 16.x or higher
-- Cloud provider credentials (Alibaba Cloud AccessKey, Huawei Cloud credentials, etc.)
-
-### Installation
-
-Install ServerlessInsight globally using npm:
+### Quick Deployment
 
 ```bash
-npm install -g @geek-fun/serverlessinsight
-```
-
-Verify the installation:
-
-```bash
-si --version
-```
-
----
-
-## 📚 Usage
-
-```bash
-# Validate your serverless configuration
+# Validate your config
 si validate -f serverless.yml
 
-# Generate deployment plan (see what will change)
+# Preview changes
 si plan -f serverless.yml
 
-# Deploy your serverless application
-si deploy -f serverless.yml -s dev
+# Deploy to production
+si deploy -f serverless.yml -s prod
 
-# Run your application locally for debugging
-si local -f serverless.yml -s local
-
-# Show deployed resource information
-si show -f serverless.yml
-
-# Destroy the deployed stack
+# Destroy when done
 si destroy -f serverless.yml
 ```
 
----
+### Local Development
 
-## 💡 Examples
+Run and debug your serverless functions locally without deploying to the cloud.
 
-ServerlessInsight uses a simple YAML format to define your serverless infrastructure:
+- **LocalStack server** — test functions, buckets, and API endpoints locally
+- **Bucket file serving** — access local storage files via HTTP for rapid iteration
+- **Same config, different target** — `si local -f serverless.yml -s local` uses your existing config
+
+### API Gateway & Custom Domain
+
+Configure HTTP endpoints and bind custom domains with automatic DNS verification.
+
+- **API Gateway integration** — define triggers with HTTP methods and paths
+- **Custom domain binding** — automatic CNAME + DNS TXT ownership verification for OSS and API Gateway
+- **CDN acceleration** — edge caching and global content delivery for static sites
+- **OSS Transfer Acceleration** — cross-region data transfers through Alibaba backbone
+
+### Resource Management
+
+Beyond functions — manage the full serverless stack including storage, databases, and more.
+
+- **Object storage** — OSS (Alibaba), COS (Tencent), TOS (Volcengine)
+- **Databases** — RDS, OTS, ESS, TDSQL-C with more on the way
+- **Elasticsearch Serverless** — deploy and manage ES clusters
+- **GPU functions** — deploy GPU-enabled serverless functions
+
+### Architecture
+
+ServerlessInsight follows a **functional client architecture** that cleanly separates cloud provider SDKs from business logic:
+
+```
+┌─────────────────────────────────────────┐
+│   Resource / Planner / Executor Layer   │  ← Provider-agnostic business logic
+│   (Pure functions, no SDK imports)       │
+└─────────────────────────────────────────┘
+                    ↓
+┌─────────────────────────────────────────┐
+│         Functional Client Layer          │  ← Encapsulated SDK operations
+│   (aliyunClient.ts, tencentClient.ts)   │
+└─────────────────────────────────────────┘
+                    ↓
+┌─────────────────────────────────────────┐
+│      Cloud Provider SDKs                 │  ← @alicloud/*, tencentcloud-*
+└─────────────────────────────────────────┘
+```
+
+- **Functional & pure** — business logic uses pure functions with immutable data
+- **SDK encapsulation** — provider SDKs accessed ONLY through client modules
+- **No classes** — prefer `type` over `interface`, functional patterns over classes
+
+## Development
+
+ServerlessInsight is built with [Node.js](https://nodejs.org/) + [TypeScript](https://www.typescriptlang.org/), [Commander.js](https://github.com/tj/commander.js/) CLI, and pure functional architecture.
+
+### Prerequisites
+
+- **Node.js** >= 16
+
+### Quick Start
+
+```bash
+git clone https://github.com/geek-fun/serverlessinsight.git
+cd serverlessinsight
+npm install
+npm run build
+npm link
+```
+
+### Scripts
+
+| Command | Description |
+|---------|-------------|
+| `npm run build` | TypeScript compilation |
+| `npm test` | Run all tests with coverage |
+| `npm run test:unit` | Unit tests only |
+| `npm run test:service` | Service tests only |
+| `npm run lint:check` | ESLint check |
+| `npm run lint:fix` | Auto-fix lint issues |
+
+### Sample Config
 
 ```yaml
 version: 0.0.1
@@ -130,8 +203,6 @@ functions:
       path: ./src
     memory: 512
     timeout: 10
-    environment:
-      NODE_ENV: production
 
 events:
   api_gateway:
@@ -143,363 +214,38 @@ events:
         backend: ${functions.hello_function}
 ```
 
-For more examples, check out the [samples](./samples) directory:
+More in the [samples](./samples) directory.
 
-- [API Gateway Example](./samples/aliyun-poc-api.yml) - Deploy functions with HTTP endpoints
-- [Storage Example](./samples/aliyun-poc-bucket.yml) - Configure OSS buckets
-- [Custom Domain Example](./samples/aliyun-poc-domain.yml) - Configure OSS static website with custom domain binding
-- [Database Example](./samples/aliyun-poc-rds.yml) - Set up RDS databases
-- [Table Store Example](./samples/aliyun-poc-table.yml) - Configure OTS table storage
-- [Elasticsearch Example](./samples/aliyun-poc-es.yml) - Deploy Elasticsearch Serverless
-- [GPU Functions Example](./samples/aliyun-poc-fc-gpu.yml) - Deploy GPU-enabled functions
-- [Huawei Cloud Example](./samples/huawei-poc-fc.yml) - Deploy to Huawei Cloud FunctionGraph
+## Community
 
----
+<p align="center">
+  <a href="https://github.com/geek-fun/serverlessinsight/discussions"><img src="https://img.shields.io/badge/GitHub_Discussions-Join-181717?style=for-the-badge&logo=github&logoColor=white" alt="GitHub Discussions" /></a>
+  &nbsp;&nbsp;&nbsp;
+  <a href="https://github.com/geek-fun/serverlessinsight/issues"><img src="https://img.shields.io/badge/GitHub_Issues-Report-181717?style=for-the-badge&logo=github&logoColor=white" alt="GitHub Issues" /></a>
+  &nbsp;&nbsp;&nbsp;
+  <a href="https://github.com/geek-fun"><img src="https://img.shields.io/badge/GitHub-Follow-181717?style=for-the-badge&logo=github&logoColor=white" alt="GitHub" /></a>
+</p>
 
-## 🔧 Local Development
+## Contributing
 
-```bash
-# Clone and setup
-git clone https://github.com/geek-fun/serverlessinsight.git
-cd serverlessinsight
-npm install
+Contributions welcome! Open an issue or pull request. See the [AGENTS.md](AGENTS.md) for coding conventions.
 
-# Build and link for development
-npm run build
-npm link
+## Sponsor
 
-# Run local development server
-si local -f serverless.yml -s local
+<p align="center">
+  <a href="https://github.com/sponsors/geek-fun"><img src="https://img.shields.io/badge/GitHub_Sponsors-%E2%9D%A4_Support-EA4AAA?style=for-the-badge&logo=githubsponsors&logoColor=white" alt="GitHub Sponsors" /></a>
+</p>
 
-# Run tests
-npm test
+## Star History
 
-# Lint code
-npm run lint:check
-```
+<a href="https://www.star-history.com/?repos=geek-fun/serverlessinsight&type=date">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/chart?repos=geek-fun/serverlessinsight&type=date&theme=dark" />
+    <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/chart?repos=geek-fun/serverlessinsight&type=date" />
+    <img alt="Star History Chart" src="https://api.star-history.com/chart?repos=geek-fun/serverlessinsight&type=date" />
+  </picture>
+</a>
 
-### Local Testing with Buckets
+## License
 
-When running the local development server, you can test bucket operations by accessing files through the LocalStack server:
-
-```bash
-# List all files in a bucket
-curl http://localhost:4567/si_buckets/<bucket_key>/
-
-# Access a specific file from a bucket
-curl http://localhost:4567/si_buckets/<bucket_key>/path/to/file.html
-
-# List files in a subdirectory
-curl http://localhost:4567/si_buckets/<bucket_key>/subdir/
-```
-
-The bucket handler serves files from the directory specified in your bucket's `website.code` configuration.
-
-### Architecture
-
-ServerlessInsight follows a **functional client architecture** that cleanly separates cloud provider SDKs from business logic:
-
-#### Layered Design
-
-```
-┌─────────────────────────────────────────┐
-│   Resource / Planner / Executor Layer   │  ← Provider-agnostic business logic
-│   (Pure functions, no SDK imports)       │
-└─────────────────────────────────────────┘
-                    ↓
-┌─────────────────────────────────────────┐
-│         Functional Client Layer          │  ← Encapsulated SDK operations
-│   (aliyunClient.ts, tencentClient.ts)   │
-└─────────────────────────────────────────┘
-                    ↓
-┌─────────────────────────────────────────┐
-│      Cloud Provider SDKs                 │  ← @alicloud/*, tencentcloud-*
-└─────────────────────────────────────────┘
-```
-
-#### Key Principles
-
-- **Functional & Pure**: All business logic uses pure functions with immutable data
-- **SDK Encapsulation**: Provider SDKs are accessed ONLY through client modules
-- **Operation Functions**: Clients expose high-level operation functions (e.g., `createFunction`, `getFunction`)
-- **No Classes**: Prefer `type` over `interface`, and functional patterns over classes
-- **Minimal Side Effects**: File I/O and other side effects are isolated at boundaries
-
-#### Client Pattern Example
-
-```typescript
-// ✅ Client exposes operation functions, not raw SDKs
-export type AliyunClient = {
-  fc3: {
-    createFunction: (config: Fc3FunctionConfig, codeBase64: string) => Promise<void>;
-    getFunction: (functionName: string) => Promise<Fc3FunctionInfo | null>;
-    // ... other operations
-  };
-  // ... other services
-};
-
-// ✅ Resource layer uses clean client API
-const client = createAliyunClient(context);
-const codeBase64 = readFileAsBase64(codePath);
-await client.fc3.createFunction(config, codeBase64);
-```
-
-This architecture enables:
-
-- **Better Testing**: Mock client operations instead of SDKs
-- **Maintainability**: Provider changes isolated to client layer
-- **Type Safety**: Strong typing throughout the stack
-- **Code Reuse**: Shared client operations across resources
-
----
-
-## 🌐 Custom Domain Binding
-
-ServerlessInsight provides automatic custom domain binding for OSS buckets and API Gateway with built-in DNS verification.
-
-### OSS Custom Domain Binding
-
-When you configure a custom domain for an OSS bucket (static website hosting), ServerlessInsight automatically:
-
-1. **Binds the domain** to your OSS bucket
-2. **Creates DNS CNAME records** pointing to the correct OSS endpoint
-3. **Handles domain ownership verification** via DNS TXT records when required by the cloud provider
-4. **Manages retry logic** with DNS propagation polling for reliable binding
-
-```yaml
-buckets:
-  my_website:
-    name: my-website-bucket
-    security:
-      acl: PUBLIC_READ
-    website:
-      code: ./dist
-      domain: www.example.com # Custom domain binding
-      index: index.html
-      error_page: 404.html
-```
-
-### Domain Ownership Verification Flow
-
-When binding a custom domain that requires ownership verification:
-
-```
-┌─────────────────────────────────────────────────────────────────┐
-│                    OSS Custom Domain Binding                     │
-└─────────────────────────────────────────────────────────────────┘
-                               │
-                               ▼
-                   ┌───────────────────────┐
-                   │   PutCname (Attempt)   │
-                   └───────────────────────┘
-                               │
-           ┌───────────────────┴───────────────────┐
-           │                                       │
-           ▼                                       ▼
-   ┌───────────────┐                    ┌─────────────────┐
-   │   Success     │                    │ NeedVerifyDomain│
-   └───────────────┘                    │    Ownership    │
-                                        └─────────────────┘
-                                                  │
-                                                  ▼
-                                    ┌─────────────────────────┐
-                                    │  CreateCnameToken API   │
-                                    │  (Get TXT record value) │
-                                    └─────────────────────────┘
-                                                  │
-                                                  ▼
-                                    ┌─────────────────────────┐
-                                    │  Check existing TXT     │
-                                    │  records (avoid dupes)  │
-                                    └─────────────────────────┘
-                                                  │
-                                                  ▼
-                                    ┌─────────────────────────┐
-                                    │  Add DNS TXT Record     │
-                                    │  (_dnsauth.domain)      │
-                                    └─────────────────────────┘
-                                                  │
-                                                  ▼
-                                    ┌─────────────────────────┐
-                                    │  Poll DNS Propagation   │
-                                    │  (up to 10 × 1 min)     │
-                                    └─────────────────────────┘
-                                                  │
-                                                  ▼
-                                    ┌─────────────────────────┐
-                                    │  Retry PutCname         │
-                                    │  (up to 5 × 30 sec)     │
-                                    └─────────────────────────┘
-```
-
-### Supported Domain Types
-
-For OSS static website hosting, ServerlessInsight supports:
-
-| Domain Type       | CNAME Target                  | Use Case                                       |
-| ----------------- | ----------------------------- | ---------------------------------------------- |
-| Root domain (`@`) | `bucket.region.taihangcda.cn` | Bypasses DNS CNAME restriction on root domains |
-| Subdomain (`www`) | `bucket.region.taihangcda.cn` | Standard CNAME for all subdomains              |
-| Any subdomain     | `bucket.region.taihangcda.cn` | Unified CNAME endpoint for all domain types    |
-
-> 💡 **Note**: All domain types now use the recommended `taihangcda.cn` CNAME endpoint, which is derived automatically from your bucket's actual extranet endpoint via the `GetBucketInfo` API.
-
-For detailed configuration, see [OSS Custom Domain Binding Guide](./docs/oss-custom-domain-binding.md).
-
-### CDN Acceleration & OSS Transfer Acceleration
-
-ServerlessInsight supports CDN acceleration and OSS Transfer Acceleration for buckets, enabling global content delivery and optimized origin fetch.
-
-**CDN** (`cdn`): Create a CDN distribution in front of your bucket for edge caching and global acceleration. Accepts `boolean` (simple on/off) or `object` for advanced configuration:
-
-```yaml
-buckets:
-  # Simple: CDN with sensible defaults
-  my_site:
-    name: my-static-site
-    website:
-      code: ./dist
-      index: index.html
-    domain:
-      domain_name: www.example.com
-      certificate_id: cas-abc123
-      cdn: true
-
-  # Advanced: CDN with custom config
-  releases:
-    name: app-releases
-    security:
-      acl: PRIVATE
-    domain:
-      domain_name: releases.example.com
-      cdn:
-        enabled: true
-        cdn_type: download       # web | download | video
-        scope: global            # domestic | overseas | global
-```
-
-**Transfer Acceleration** (`accelerate`): Enables OSS Transfer Acceleration for cross-region/global data transfers. Routes traffic through Alibaba backbone network:
-
-```yaml
-buckets:
-  cross_region_backups:
-    name: backup-bucket
-    domain:
-      domain_name: backups.internal.example.com
-      accelerate: true                    # No CDN, just accelerate
-
-  # CDN + Accelerate (dual-layer)
-  global_assets:
-    name: global-assets
-    domain:
-      domain_name: assets.example.com
-      cdn:
-        enabled: true
-        cdn_type: web
-      accelerate: true                    # CDN origin uses accelerated endpoint
-```
-
-**Backward Compatibility**: Existing `website.domain` config continues to work. When a bucket uses `website.domain` without the top-level `domain` block, a deprecation notice is logged suggesting migration to the canonical form.
-
----
-
-## 🗄️ State Management
-
-ServerlessInsight uses a state-based deployment model that tracks all deployed resources in a local state file (`.serverlessinsight/state-{app}-{service}.json` in the project directory). This enables:
-
-- **Incremental deployments** - Only changed resources are updated
-- **Drift detection** - Identifies differences between local state and cloud resources
-- **Safe destruction** - Knows which resources to clean up
-
-### Partial Failure Recovery
-
-When deploying multiple resources, if one fails, ServerlessInsight ensures that:
-
-1. **Successfully deployed resources are always saved to state** - Even if subsequent resources fail, your state file will contain all resources that were successfully created/updated/deleted
-2. **Clear error reporting** - You'll see which resources succeeded and which failed
-3. **Easy retry** - Simply run `deploy` again to continue from where you left off
-
-Example partial failure output:
-
-```
-⚠️  PARTIAL DEPLOYMENT FAILURE: 2 resource(s) succeeded, but functions.api_handler failed.
-State has been saved for successfully deployed resources. Run deploy again to retry failed resources.
-Next steps: 1) Review the error above, 2) Fix any configuration issues, 3) Run deploy again to continue.
-```
-
-### State File Location
-
-The state file is stored as `.serverlessinsight/state-{app}-{service}.json` in your project directory (e.g., `.serverlessinsight/state-myapp-myservice.json`). This file:
-
-- Should be committed to version control for team collaboration
-- Contains resource metadata and identifiers
-- Is automatically updated after each successful operation
-
-### State Recovery
-
-If you encounter state drift (cloud resources exist that aren't in your state file):
-
-1. **Manual import** - Currently, resources must be manually added to the state file
-2. **Clean start** - Delete the state file and resources in the cloud, then redeploy
-
-> 💡 **Tip**: Always backup your state file before making manual modifications.
-
----
-
-## 📘 Documentation
-
-For comprehensive documentation, visit [serverlessinsight.geekfun.club](https://serverlessinsight.geekfun.club)
-
-Additional resources:
-
-- [Quick Start Guide](https://serverlessinsight.geekfun.club)
-- [Configuration Reference](https://serverlessinsight.geekfun.club)
-- [API Documentation](https://serverlessinsight.geekfun.club)
-- [Best Practices](https://serverlessinsight.geekfun.club)
-
----
-
-## 🤝 Contributing
-
-We welcome contributions from the community! Here's how you can help:
-
-1. **Fork the repository**
-2. **Create a feature branch** (`git checkout -b feature/amazing-feature`)
-3. **Commit your changes** (`git commit -m 'Add amazing feature'`)
-4. **Push to the branch** (`git push origin feature/amazing-feature`)
-5. **Open a Pull Request**
-
----
-
-## 👥 Community
-
-Join our community to get help, share ideas, and contribute:
-
-- **GitHub Issues** - [Report bugs or request features](https://github.com/geek-fun/serverlessinsight/issues)
-- **Website** - [serverlessinsight.geekfun.club](https://serverlessinsight.geekfun.club)
-
----
-
-## 📄 License
-
-This project is licensed under the Apache License 2.0 - see the [LICENSE](LICENSE) file for details.
-
----
-
-## 🙏 Acknowledgments
-
-ServerlessInsight is built with these amazing technologies:
-
-- [Node.js](https://nodejs.org/) - JavaScript runtime
-- [TypeScript](https://www.typescriptlang.org/) - Type-safe JavaScript
-- [Commander.js](https://github.com/tj/commander.js/) - CLI framework
-
----
-
-<div align="center">
-
-**Made with ❤️ by the [geek-fun](https://github.com/geek-fun) team**
-
-[⬆ Back to Top](#serverlessinsight)
-
-</div>
+[Apache 2.0](LICENSE) © GEEKFUN
