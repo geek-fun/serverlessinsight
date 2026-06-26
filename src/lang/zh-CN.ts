@@ -51,7 +51,7 @@ export const zhCN = {
   LOCAL_SERVER_STOPPED: '本地服务器已停止',
   LOCAL_GATEWAY_ERROR: '本地网关错误',
   ERROR_STOPPING_LOCAL_SERVER: '停止本地服务器时出错',
-  RUN_LOCAL_STARTING: '启动本地运行: stage={{stage}} port={{port}} debug={{debug}} watch={{watch}}',
+  RUN_LOCAL_STARTING: '启动本地运行: stage={{stage}} debug={{debug}} watch={{watch}}',
 
   // Function execution
   FUNCTION_REQUEST_RECEIVED: '本地服务器收到函数请求 -> {{method}} {{identifier}} ',

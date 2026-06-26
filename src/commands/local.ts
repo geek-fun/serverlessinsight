@@ -5,14 +5,13 @@ import { lang } from '../lang';
 
 export type RunLocalOptions = {
   stage: string;
-  port: number;
   debug: boolean;
   watch: boolean;
   location: string | undefined;
 };
 
 export const runLocal = async (opts: RunLocalOptions) => {
-  const { stage, port, debug, watch, location } = opts;
+  const { stage, debug, watch, location } = opts;
 
   const iacLocation = getIacLocation(location);
   const rawIac = parseYaml(iacLocation);
@@ -27,7 +26,6 @@ export const runLocal = async (opts: RunLocalOptions) => {
   logger.info(
     lang.__('RUN_LOCAL_STARTING', {
       stage,
-      port: String(port),
       debug: String(debug),
       watch: String(watch),
     }),

@@ -52,8 +52,7 @@ export const en = {
   LOCAL_SERVER_STOPPED: 'localServer stopped',
   LOCAL_GATEWAY_ERROR: 'Local gateway error',
   ERROR_STOPPING_LOCAL_SERVER: 'Error stopping localServer',
-  RUN_LOCAL_STARTING:
-    'run-local starting: stage={{stage}} port={{port}} debug={{debug}} watch={{watch}}',
+  RUN_LOCAL_STARTING: 'run-local starting: stage={{stage}} debug={{debug}} watch={{watch}}',
 
   // Function execution
   FUNCTION_REQUEST_RECEIVED:
