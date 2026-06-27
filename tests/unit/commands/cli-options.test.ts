@@ -119,7 +119,7 @@ describe('local command action handler', () => {
     const fixtureFile = 'tests/fixtures/serverless-insight.yml';
 
     await expect(
-      runLocal({ location: fixtureFile, stage: 'local', port: 3000, debug: false, watch: true }),
+      runLocal({ location: fixtureFile, stage: 'local', debug: false, watch: true }),
     ).resolves.not.toThrow();
   });
 });
