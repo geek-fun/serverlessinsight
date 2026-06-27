@@ -20,8 +20,14 @@ export const readCodeSize = (location: string): number => {
   return stats.size;
 };
 
-const getParam = (key: string, records?: Array<{ key: string; value: string }>) => {
-  return records?.find((param) => param.key === key)?.value as string;
+type ParamRecord = Array<{ key: string; value: string }> | Record<string, string>;
+
+const getParam = (key: string, records?: ParamRecord): string | undefined => {
+  if (!records) return undefined;
+  if (Array.isArray(records)) {
+    return records.find((param) => param.key === key)?.value;
+  }
+  return records[key];
 };
 
 // Attempt to infer the type of the value if it was a template reference
@@ -85,7 +91,8 @@ export const calcValue = <T>(rawValue: string, ctx: Context, iacVars?: Vars): T 
 
   if (containsMap?.length) {
     value = value.replace(/\$\{stages\.(\w+)}/g, (_, key) => {
-      const stageValue = getParam(key, get(ctx.stages, `${ctx.stage}`));
+      const stageConfig = get(ctx.stages, `${ctx.stage}`, {});
+      const stageValue = getParam(key, stageConfig);
       if (!stageValue) {
         logger.warn(
           lang.__('STAGE_VARIABLE_NOT_FOUND', {

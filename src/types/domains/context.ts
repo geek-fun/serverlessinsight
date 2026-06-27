@@ -14,7 +14,7 @@ export type Context = {
   iacLocation: string;
   parameters?: Array<{ key: string; value: string }>;
   stages?: {
-    [stage: string]: Array<{ key: string; value: string }>;
+    [stage: string]: Array<{ key: string; value: string }> | Record<string, string>;
   };
   tags?: Array<{ key: string; value: string }>;
   iac?: ServerlessIac;

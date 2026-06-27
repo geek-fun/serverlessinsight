@@ -177,6 +177,18 @@ describe('unit test for parse', () => {
       expect(result.functions![0].environment?.NODE_ENV).toBe('default');
     });
 
+    it('should evaluate ${stages.xxx} with object-format stages (YAML style)', () => {
+      const objectStagesContext: Context = {
+        ...testContext,
+        stages: {
+          default: { region: 'cn-hangzhou', node_env: 'default' },
+        },
+      };
+      const result = revalYaml(iacLocation, objectStagesContext);
+
+      expect(result.functions![0].environment?.NODE_ENV).toBe('default');
+    });
+
     it('should keep ${functions.xxx} references unchanged', () => {
       const result = revalYaml(iacLocation, testContext);
 
