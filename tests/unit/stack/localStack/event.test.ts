@@ -324,7 +324,7 @@ describe('eventsHandler', () => {
     expect(res?.statusCode).toBe(200);
   });
 
-  it('matches trigger when request method is ANY', async () => {
+  it('matches trigger when trigger method is ANY', async () => {
     const customIac: ServerlessIac = {
       version: '0.0.1',
       app: 'test-app',
@@ -349,16 +349,15 @@ describe('eventsHandler', () => {
           key: 'any_event',
           name: 'any-event',
           type: EventTypes.API_GATEWAY,
-          triggers: [{ method: 'POST', path: '/api/any', backend: '${functions.any_fn}' }],
+          triggers: [{ method: 'ANY', path: '/api/any', backend: '${functions.any_fn}' }],
         },
       ],
     };
 
     const req = mockRequest('GET');
-    req.method = 'ANY';
     const res = await eventsHandler(
       req,
-      { ...parsedBase, identifier: 'any_event', url: '/api/any', method: 'ANY' },
+      { ...parsedBase, identifier: 'any_event', url: '/api/any', method: 'GET' },
       customIac,
     );
 
