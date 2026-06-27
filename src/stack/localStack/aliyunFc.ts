@@ -158,11 +158,27 @@ export const transformFCResponse = (
       body = Buffer.from(body, 'base64').toString('utf-8');
     }
 
+    // Only JSON-parse if the response Content-Type indicates JSON — otherwise pass through as-is.
+    // Aliyun API Gateway PASSTHROUGH mode sends raw body; si-local mirrors this behavior.
     if (typeof body === 'string') {
-      try {
-        body = JSON.parse(body);
-      } catch {
-        // If parsing fails, keep as string
+      const contentType =
+        typeof headers === 'object' && headers
+          ? (Object.values(headers).find(
+              (v) => typeof v === 'string' && v.toLowerCase().includes('application/json'),
+            ) ??
+            Object.keys(headers).find(
+              (k) =>
+                k.toLowerCase() === 'content-type' &&
+                typeof headers[k] === 'string' &&
+                headers[k].toLowerCase().includes('application/json'),
+            ))
+          : undefined;
+      if (contentType || /^\s*[{[]/.test(body)) {
+        try {
+          body = JSON.parse(body);
+        } catch {
+          // keep as string
+        }
       }
     }
 

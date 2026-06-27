@@ -370,6 +370,128 @@ describe('Aliyun FC Utilities', () => {
 
       expect(result.statusCode).toBe(200);
     });
+
+    it('should pass through HTML body unchanged when Content-Type is text/html', () => {
+      const fcResponse = {
+        statusCode: 200,
+        body: '<!DOCTYPE html><html><body>Hello</body></html>',
+        headers: { 'Content-Type': 'text/html; charset=utf-8' },
+      };
+
+      const result = transformFCResponse(fcResponse);
+
+      expect(result.body).toBe('<!DOCTYPE html><html><body>Hello</body></html>');
+      expect(typeof result.body).toBe('string');
+      expect(result.statusCode).toBe(200);
+      expect(result.headers['Content-Type']).toBe('text/html; charset=utf-8');
+    });
+
+    it('should pass through HTML body when Content-Type is text/html (lowercase)', () => {
+      const fcResponse = {
+        statusCode: 200,
+        body: '<html></html>',
+        headers: { 'content-type': 'text/html' },
+      };
+
+      const result = transformFCResponse(fcResponse);
+
+      expect(result.body).toBe('<html></html>');
+      expect(typeof result.body).toBe('string');
+    });
+
+    it('should pass through plain text body when Content-Type is text/plain', () => {
+      const fcResponse = {
+        statusCode: 200,
+        body: 'Hello, this is plain text',
+        headers: { 'Content-Type': 'text/plain' },
+      };
+
+      const result = transformFCResponse(fcResponse);
+
+      expect(result.body).toBe('Hello, this is plain text');
+      expect(typeof result.body).toBe('string');
+    });
+
+    it('should pass through CSS body unchanged', () => {
+      const fcResponse = {
+        statusCode: 200,
+        body: 'body { color: red; }',
+        headers: { 'Content-Type': 'text/css' },
+      };
+
+      const result = transformFCResponse(fcResponse);
+
+      expect(result.body).toBe('body { color: red; }');
+      expect(typeof result.body).toBe('string');
+    });
+
+    it('should pass through PNG binary (base64 decoded) body unchanged', () => {
+      const pngData = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
+      const base64Png = pngData.toString('base64');
+
+      const fcResponse = {
+        statusCode: 200,
+        body: base64Png,
+        headers: { 'Content-Type': 'image/png' },
+        isBase64Encoded: true,
+      };
+
+      const result = transformFCResponse(fcResponse);
+
+      expect(result.body).not.toBe(base64Png);
+      expect(Buffer.isBuffer(result.body)).toBe(false);
+      expect(result.headers['Content-Type']).toBe('image/png');
+    });
+
+    it('should still JSON-parse body when Content-Type is application/json', () => {
+      const fcResponse = {
+        statusCode: 200,
+        body: '{"key":"value"}',
+        headers: { 'Content-Type': 'application/json' },
+      };
+
+      const result = transformFCResponse(fcResponse);
+
+      expect(result.body).toEqual({ key: 'value' });
+    });
+
+    it('should JSON-parse body that looks like JSON (starts with {) even without Content-Type header', () => {
+      const fcResponse = {
+        statusCode: 200,
+        body: '{"data": "test"}',
+        headers: {},
+      };
+
+      const result = transformFCResponse(fcResponse);
+
+      expect(result.body).toEqual({ data: 'test' });
+    });
+
+    it('should pass through body that is not JSON-like and has no Content-Type', () => {
+      const fcResponse = {
+        statusCode: 200,
+        body: 'just some string data',
+        headers: {},
+      };
+
+      const result = transformFCResponse(fcResponse);
+
+      expect(result.body).toBe('just some string data');
+      expect(typeof result.body).toBe('string');
+    });
+
+    it('should pass through JavaScript body unchanged', () => {
+      const fcResponse = {
+        statusCode: 200,
+        body: "console.log('hello');",
+        headers: { 'Content-Type': 'application/javascript' },
+      };
+
+      const result = transformFCResponse(fcResponse);
+
+      expect(result.body).toBe("console.log('hello');");
+      expect(typeof result.body).toBe('string');
+    });
   });
 
   describe('logApiGatewayRequest', () => {
