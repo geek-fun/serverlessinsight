@@ -22,7 +22,7 @@ const matchTrigger = (
   req: { method: string; path: string },
   trigger: { method: string; path: string },
 ): boolean => {
-  if (req.method !== 'ANY' && req.method !== trigger.method) {
+  if (trigger.method !== 'ANY' && req.method !== trigger.method) {
     return false;
   }
 

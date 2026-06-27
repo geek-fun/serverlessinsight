@@ -41,8 +41,13 @@ const loadHandlerModule = async (handlerPath: string): Promise<Record<string, un
     // eslint-disable-next-line @typescript-eslint/no-require-imports
     return require(handlerPath) as Record<string, unknown>;
   } catch {
+    // Dynamic import — use Function constructor to prevent TypeScript CJS transform
+    // which would replace import() with require() that breaks with file:// URLs
+    const importModule = new Function('specifier', 'return import(specifier)') as (
+      specifier: string,
+    ) => Promise<Record<string, unknown>>;
     const fileUrl = pathToFileURL(handlerPath + '.js').href;
-    return (await import(fileUrl)) as Record<string, unknown>;
+    return importModule(fileUrl);
   }
 };
 
