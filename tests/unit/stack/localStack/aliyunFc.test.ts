@@ -118,3 +118,115 @@ describe('Aliyun FC LocalStack', () => {
     expect(body.queryParameters).toEqual({ param: 'value' });
   });
 });
+
+describe('Aliyun FC LocalStack - HTML serving', () => {
+  const iac: ServerlessIac = {
+    app: 'html-serving-app',
+    version: '0.0.1',
+    service: 'html-serving-test',
+    provider: {
+      name: ProviderEnum.ALIYUN,
+      region: 'cn-hangzhou',
+    },
+    functions: [
+      {
+        key: 'html_fn',
+        name: 'html-serving-function',
+        code: {
+          runtime: 'nodejs18',
+          handler: 'index.handler',
+          path: 'tests/fixtures/aliyun-fc-handler-html',
+        },
+        memory: 512,
+        timeout: 10,
+        environment: {},
+        storage: {},
+      },
+      {
+        key: 'css_fn',
+        name: 'css-serving-function',
+        code: {
+          runtime: 'nodejs18',
+          handler: 'index.css',
+          path: 'tests/fixtures/aliyun-fc-handler-html',
+        },
+        memory: 512,
+        timeout: 10,
+        environment: {},
+        storage: {},
+      },
+    ],
+    events: [
+      {
+        key: 'static_gateway',
+        name: 'static-api-gateway',
+        type: EventTypes.API_GATEWAY,
+        triggers: [
+          {
+            method: 'GET',
+            path: '/map/map.html',
+            backend: 'html_fn',
+          },
+          {
+            method: 'GET',
+            path: '/static/style.css',
+            backend: 'css_fn',
+          },
+        ],
+      },
+    ],
+  };
+
+  beforeAll(async () => {
+    // Stop previous LocalStack if running
+    await stopLocal().catch(() => {});
+    await startLocalStack(iac);
+    await new Promise((resolve) => setTimeout(resolve, 1500));
+  });
+
+  afterAll(async () => {
+    await stopLocal();
+  });
+
+  it('should serve HTML response with correct Content-Type', async () => {
+    const res = await makeRequest(
+      `http://localhost:${SI_LOCALSTACK_SERVER_PORT}/si_events/static_gateway/map/map.html`,
+    );
+
+    expect(res.statusCode).toBe(200);
+    expect(res.headers['content-type']).toBe('text/html; charset=utf-8');
+    expect(res.data.startsWith('<!DOCTYPE html>')).toBe(true);
+    expect(res.data).toContain('<h1>Hello from HTML handler</h1>');
+  });
+
+  it('should NOT wrap HTML body in JSON', async () => {
+    const res = await makeRequest(
+      `http://localhost:${SI_LOCALSTACK_SERVER_PORT}/si_events/static_gateway/map/map.html`,
+    );
+
+    expect(res.data.charAt(0)).toBe('<');
+    expect(res.data.charAt(0)).not.toBe('"');
+    expect(res.data.charAt(0)).not.toBe('{');
+  });
+
+  it('should serve CSS response with correct Content-Type', async () => {
+    const res = await makeRequest(
+      `http://localhost:${SI_LOCALSTACK_SERVER_PORT}/si_events/static_gateway/static/style.css`,
+    );
+
+    expect(res.statusCode).toBe(200);
+    expect(res.headers['content-type']).toBe('text/css');
+    expect(res.data).toContain('body { margin: 0');
+    expect(res.data).not.toContain('"body');
+  });
+
+  it('should serve HTML via direct function invocation', async () => {
+    const res = await makeRequest(
+      `http://localhost:${SI_LOCALSTACK_SERVER_PORT}/si_functions/html_fn/any-path`,
+    );
+
+    expect(res.statusCode).toBe(200);
+    expect(res.headers['content-type']).toBe('text/html; charset=utf-8');
+    expect(res.data).toContain('<!DOCTYPE html>');
+  });
+});

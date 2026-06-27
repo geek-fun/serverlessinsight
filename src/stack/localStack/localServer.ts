@@ -87,15 +87,10 @@ export const servLocal = async (
         return;
       }
 
-      // Raw responses (e.g., from bucket handler) include both Content-Type and Content-Length headers
-      // and the body is already formatted as a string (not a JSON object)
-      const isRawResponse =
-        typeof outcome.body === 'string' &&
-        outcome.headers?.['Content-Type'] &&
-        outcome.headers?.['Content-Length'];
-
-      if (isRawResponse) {
-        respondRaw(res, outcome.statusCode, outcome.body as string, outcome.headers);
+      // Cloud API Gateway in PASSTHROUGH mode passes through all responses as-is.
+      // Si-local mirrors this by always using respondRaw for function responses.
+      if (typeof outcome.body === 'string' || Buffer.isBuffer(outcome.body)) {
+        respondRaw(res, outcome.statusCode, outcome.body, outcome.headers);
       } else {
         respondJson(res, outcome.statusCode, outcome.body ?? {}, outcome.headers);
       }
