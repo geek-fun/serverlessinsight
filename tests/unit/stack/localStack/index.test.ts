@@ -44,7 +44,7 @@ describe('localStack Server', () => {
     }
 
     expect(response!.statusCode).toBe(200);
-    expect(response!.data).toBe('"ServerlessInsight Hello World"');
+    expect(response!.data).toBe('ServerlessInsight Hello World');
   });
 
   it('should return 404 for non-matching path', async () => {
