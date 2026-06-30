@@ -425,22 +425,23 @@ describe('Aliyun FC Utilities', () => {
       expect(typeof result.body).toBe('string');
     });
 
-    it('should pass through PNG binary (base64 decoded) body unchanged', () => {
+    it('should pass through PNG binary body as Buffer (not string)', () => {
       const pngData = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
       const base64Png = pngData.toString('base64');
 
       const fcResponse = {
         statusCode: 200,
         body: base64Png,
-        headers: { 'Content-Type': 'image/png' },
+        headers: { 'content-type': 'image/png' },
         isBase64Encoded: true,
       };
 
       const result = transformFCResponse(fcResponse);
 
       expect(result.body).not.toBe(base64Png);
-      expect(Buffer.isBuffer(result.body)).toBe(false);
-      expect(result.headers['Content-Type']).toBe('image/png');
+      expect(Buffer.isBuffer(result.body)).toBe(true);
+      expect((result.body as Buffer).equals(pngData)).toBe(true);
+      expect(result.headers['content-type']).toBe('image/png');
     });
 
     it('should still JSON-parse body when Content-Type is application/json', () => {

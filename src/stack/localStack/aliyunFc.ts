@@ -155,7 +155,16 @@ export const transformFCResponse = (
     let body = rawBody;
 
     if (isBase64Encoded && typeof body === 'string') {
-      body = Buffer.from(body, 'base64').toString('utf-8');
+      const decoded = Buffer.from(body, 'base64');
+      const contentType = String(
+        typeof headers === 'object' && headers ? headers['content-type'] || '' : '',
+      );
+      const isBinary =
+        /^(image|audio|video)\//.test(contentType) ||
+        contentType === 'application/octet-stream' ||
+        contentType === 'application/pdf' ||
+        contentType.includes('font/');
+      body = isBinary ? decoded : decoded.toString('utf-8');
     }
 
     // Only JSON-parse if the response Content-Type indicates JSON — otherwise pass through as-is.
