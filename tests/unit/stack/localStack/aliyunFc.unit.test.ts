@@ -542,6 +542,64 @@ describe('Aliyun FC Utilities', () => {
       expect(result.body).toBe('buffer response');
     });
 
+    it('should preserve font/woff2 binary body as Buffer', () => {
+      const woffData = Buffer.from([0x77, 0x4f, 0x46, 0x46]);
+      const fcResponse = {
+        statusCode: 200,
+        body: woffData.toString('base64'),
+        headers: { 'content-type': 'font/woff2' },
+        isBase64Encoded: true,
+      };
+
+      const result = transformFCResponse(fcResponse);
+
+      expect(Buffer.isBuffer(result.body)).toBe(true);
+      expect((result.body as Buffer).equals(woffData)).toBe(true);
+    });
+
+    it('should preserve font/ttf binary body as Buffer', () => {
+      const ttfData = Buffer.from([0x00, 0x01, 0x00, 0x00, 0x00]);
+      const fcResponse = {
+        statusCode: 200,
+        body: ttfData.toString('base64'),
+        headers: { 'content-type': 'font/ttf' },
+        isBase64Encoded: true,
+      };
+
+      const result = transformFCResponse(fcResponse);
+
+      expect(Buffer.isBuffer(result.body)).toBe(true);
+      expect((result.body as Buffer).equals(ttfData)).toBe(true);
+    });
+
+    it('should fall back to string when headers is null with base64 body', () => {
+      const fcResponse = {
+        statusCode: 200,
+        body: Buffer.from('some text').toString('base64'),
+        headers: null,
+        isBase64Encoded: true,
+      };
+
+      const result = transformFCResponse(fcResponse);
+
+      expect(typeof result.body).toBe('string');
+      expect(result.body).toBe('some text');
+    });
+
+    it('should skip base64 decode when isBase64Encoded is false despite binary Content-Type', () => {
+      const fcResponse = {
+        statusCode: 200,
+        body: 'some raw string body',
+        headers: { 'content-type': 'image/png' },
+        isBase64Encoded: false,
+      };
+
+      const result = transformFCResponse(fcResponse);
+
+      expect(typeof result.body).toBe('string');
+      expect(result.body).toBe('some raw string body');
+    });
+
     it('should still JSON-parse body when Content-Type is application/json', () => {
       const fcResponse = {
         statusCode: 200,
