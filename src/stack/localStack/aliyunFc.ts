@@ -161,7 +161,6 @@ export const transformFCResponse = (
       );
       const isBinary =
         /^(image|audio|video)\//.test(contentType) ||
-        contentType === 'application/octet-stream' ||
         contentType === 'application/pdf' ||
         contentType.includes('font/');
       body = isBinary ? decoded : decoded.toString('utf-8');

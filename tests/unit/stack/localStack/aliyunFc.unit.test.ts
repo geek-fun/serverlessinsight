@@ -444,6 +444,104 @@ describe('Aliyun FC Utilities', () => {
       expect(result.headers['content-type']).toBe('image/png');
     });
 
+    it('should preserve JPEG binary body as Buffer', () => {
+      const jpgData = Buffer.from([0xff, 0xd8, 0xff, 0xe0, 0x00, 0x10, 0x4a, 0x46]);
+      const fcResponse = {
+        statusCode: 200,
+        body: jpgData.toString('base64'),
+        headers: { 'content-type': 'image/jpeg' },
+        isBase64Encoded: true,
+      };
+
+      const result = transformFCResponse(fcResponse);
+
+      expect(Buffer.isBuffer(result.body)).toBe(true);
+      expect((result.body as Buffer).equals(jpgData)).toBe(true);
+    });
+
+    it('should preserve audio/mpeg binary body as Buffer', () => {
+      const fcResponse = {
+        statusCode: 200,
+        body: Buffer.from([0xff, 0xfb]).toString('base64'),
+        headers: { 'content-type': 'audio/mpeg' },
+        isBase64Encoded: true,
+      };
+
+      const result = transformFCResponse(fcResponse);
+
+      expect(Buffer.isBuffer(result.body)).toBe(true);
+    });
+
+    it('should preserve video/mp4 binary body as Buffer', () => {
+      const fcResponse = {
+        statusCode: 200,
+        body: Buffer.from([0x00, 0x00, 0x00, 0x18]).toString('base64'),
+        headers: { 'content-type': 'video/mp4' },
+        isBase64Encoded: true,
+      };
+
+      const result = transformFCResponse(fcResponse);
+
+      expect(Buffer.isBuffer(result.body)).toBe(true);
+    });
+
+    it('should preserve application/pdf binary body as Buffer', () => {
+      const pdfData = Buffer.from([0x25, 0x50, 0x44, 0x46]);
+      const fcResponse = {
+        statusCode: 200,
+        body: pdfData.toString('base64'),
+        headers: { 'content-type': 'application/pdf' },
+        isBase64Encoded: true,
+      };
+
+      const result = transformFCResponse(fcResponse);
+
+      expect(Buffer.isBuffer(result.body)).toBe(true);
+      expect((result.body as Buffer).equals(pdfData)).toBe(true);
+    });
+
+    it('should convert text/plain base64 body to UTF-8 string (not Buffer)', () => {
+      const fcResponse = {
+        statusCode: 200,
+        body: Buffer.from('hello world').toString('base64'),
+        headers: { 'content-type': 'text/plain' },
+        isBase64Encoded: true,
+      };
+
+      const result = transformFCResponse(fcResponse);
+
+      expect(typeof result.body).toBe('string');
+      expect(result.body).toBe('hello world');
+    });
+
+    it('should convert application/json base64 body to string, then JSON-parse', () => {
+      const jsonStr = '{"key":"value"}';
+      const fcResponse = {
+        statusCode: 200,
+        body: Buffer.from(jsonStr).toString('base64'),
+        headers: { 'content-type': 'application/json' },
+        isBase64Encoded: true,
+      };
+
+      const result = transformFCResponse(fcResponse);
+
+      expect(result.body).toEqual({ key: 'value' });
+    });
+
+    it('should NOT treat application/octet-stream as binary (too generic)', () => {
+      const fcResponse = {
+        statusCode: 200,
+        body: Buffer.from('buffer response').toString('base64'),
+        headers: { 'content-type': 'application/octet-stream' },
+        isBase64Encoded: true,
+      };
+
+      const result = transformFCResponse(fcResponse);
+
+      expect(typeof result.body).toBe('string');
+      expect(result.body).toBe('buffer response');
+    });
+
     it('should still JSON-parse body when Content-Type is application/json', () => {
       const fcResponse = {
         statusCode: 200,
