@@ -27,6 +27,7 @@ import {
 } from '../../types';
 import { extractFc3Definition, Fc3FunctionInfo, functionToFc3Config } from './fc3Types';
 import { logger } from '../../common/logger';
+import type { IamStatement } from '../../common/iamStatements';
 import { lang } from '../../lang';
 
 type DependentInstance = {
@@ -275,7 +276,12 @@ const createDependentResources = async (
     }
   } else {
     logger.info(lang.__('CREATING_RAM_ROLE', { roleName }));
-    const ramRole = await client.ram.createRole(roleName, trustedServices);
+    const ramRole = await client.ram.createRole(
+      roleName,
+      trustedServices,
+      undefined,
+      fn.iam?.statements,
+    );
     instances.push({
       type: 'ALIYUN_RAM_ROLE',
       id: roleName,
@@ -541,7 +547,8 @@ export const createResource = async (
 
   const codePath = fn.code!.path;
   const codeHash = computeFileHash(codePath);
-  const definition = extractFc3Definition(config, codeHash);
+  const baseDefinition = extractFc3Definition(config, codeHash);
+  const definition = fn.iam ? { ...baseDefinition, iam: fn.iam } : baseDefinition;
 
   const dependentInstances = dependentResources.instances.map((dep) => ({
     sid:
@@ -704,6 +711,16 @@ export const updateResource = async (
 
       const trustedServices = getTrustedServicesForFunction(context, fn.key);
       await client.ram.updateRoleTrustPolicy(ramRoleInstance.id, trustedServices);
+
+      const existingIam = existingState?.definition?.iam as Record<string, unknown> | undefined;
+      const desiredIam = fn.iam;
+      const iamChanged = !attributesEqual(existingIam ?? {}, desiredIam ?? {});
+      if (iamChanged) {
+        await client.ram.updateRolePolicy(
+          ramRoleInstance.id,
+          (desiredIam as { statements?: IamStatement[] })?.statements,
+        );
+      }
     }
   }
 
@@ -794,7 +811,11 @@ export const updateResource = async (
   const existingConfig = existingState?.definition as ResourceAttributes | undefined;
   const desiredDefinition = extractFc3Definition(config, desiredCodeHash);
 
-  const { codeHash: _existingCodeHash, ...existingConfigOnly } = existingConfig || {};
+  const {
+    codeHash: _existingCodeHash,
+    iam: _existingIam,
+    ...existingConfigOnly
+  } = existingConfig || {};
   const { codeHash: _desiredCodeHash, ...desiredConfigOnly } = desiredDefinition;
   const configChanged = !attributesEqual(existingConfigOnly, desiredConfigOnly);
 
@@ -819,7 +840,8 @@ export const updateResource = async (
   }
 
   const codeHash = computeFileHash(codePath);
-  const definition = extractFc3Definition(config, codeHash);
+  const baseDefinition = extractFc3Definition(config, codeHash);
+  const definition = fn.iam ? { ...baseDefinition, iam: fn.iam } : baseDefinition;
   const sid = buildSid('aliyun', 'fc3', context.stage, fn.name);
 
   const fcInstance = buildFc3InstanceFromProvider(functionInfo, sid);
