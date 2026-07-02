@@ -789,6 +789,167 @@ describe('unit test for validate', () => {
       expect(validateYaml(validYaml)).toBe(true);
     });
 
+    describe('iam validation', () => {
+      it('should pass validation when iam with statements is valid', () => {
+        const validYaml = {
+          ...jsonIac,
+          functions: {
+            test_fn: {
+              name: 'test-fn',
+              code: {
+                runtime: 'nodejs18',
+                handler: 'index.handler',
+                path: 'tests/fixtures/artifacts/artifact.zip',
+              },
+              iam: {
+                statements: [
+                  {
+                    effect: 'Allow',
+                    actions: ['log:PostLogStoreLogs'],
+                    resources: ['acs:log:*:*:project/*/logstore/*'],
+                  },
+                ],
+              },
+            },
+          },
+        } as unknown as ServerlessIacRaw;
+        expect(validateYaml(validYaml)).toBe(true);
+      });
+
+      it('should pass validation when iam has multiple statements with sid', () => {
+        const validYaml = {
+          ...jsonIac,
+          functions: {
+            test_fn: {
+              name: 'test-fn',
+              code: {
+                runtime: 'nodejs18',
+                handler: 'index.handler',
+                path: 'tests/fixtures/artifacts/artifact.zip',
+              },
+              iam: {
+                statements: [
+                  {
+                    sid: 'AllowLog',
+                    effect: 'Allow',
+                    actions: ['log:PostLogStoreLogs'],
+                    resources: ['*'],
+                  },
+                  {
+                    effect: 'Deny',
+                    actions: ['oss:DeleteBucket'],
+                    resources: ['acs:oss:*:*:my-bucket'],
+                  },
+                ],
+              },
+            },
+          },
+        } as unknown as ServerlessIacRaw;
+        expect(validateYaml(validYaml)).toBe(true);
+      });
+
+      it('should pass validation when iam is omitted', () => {
+        const validYaml = {
+          ...jsonIac,
+          functions: {
+            test_fn: {
+              name: 'test-fn',
+              code: {
+                runtime: 'nodejs18',
+                handler: 'index.handler',
+                path: 'tests/fixtures/artifacts/artifact.zip',
+              },
+            },
+          },
+        } as unknown as ServerlessIacRaw;
+        expect(validateYaml(validYaml)).toBe(true);
+      });
+
+      it('should throw error when iam.statements is missing', () => {
+        const invalidYaml = {
+          ...jsonIac,
+          functions: {
+            test_fn: {
+              name: 'test-fn',
+              code: {
+                runtime: 'nodejs18',
+                handler: 'index.handler',
+                path: 'tests/fixtures/artifacts/artifact.zip',
+              },
+              iam: {},
+            },
+          },
+        } as unknown as ServerlessIacRaw;
+        expect(() => validateYaml(invalidYaml)).toThrow('Invalid yaml');
+      });
+
+      it('should throw error when statement has invalid effect', () => {
+        const invalidYaml = {
+          ...jsonIac,
+          functions: {
+            test_fn: {
+              name: 'test-fn',
+              code: {
+                runtime: 'nodejs18',
+                handler: 'index.handler',
+                path: 'tests/fixtures/artifacts/artifact.zip',
+              },
+              iam: {
+                statements: [
+                  { effect: 'Grant', actions: ['log:PostLogStoreLogs'], resources: ['*'] },
+                ],
+              },
+            },
+          },
+        } as unknown as ServerlessIacRaw;
+        expect(() => validateYaml(invalidYaml)).toThrow('Invalid yaml');
+      });
+
+      it('should throw error when statement is missing required effect field', () => {
+        const invalidYaml = {
+          ...jsonIac,
+          functions: {
+            test_fn: {
+              name: 'test-fn',
+              code: {
+                runtime: 'nodejs18',
+                handler: 'index.handler',
+                path: 'tests/fixtures/artifacts/artifact.zip',
+              },
+              iam: {
+                // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                statements: [{ actions: ['log:PostLogStoreLogs'], resources: ['*'] } as any],
+              },
+            },
+          },
+        } as unknown as ServerlessIacRaw;
+        expect(() => validateYaml(invalidYaml)).toThrow('Invalid yaml');
+      });
+
+      it('should throw error when actions is not an array', () => {
+        const invalidYaml = {
+          ...jsonIac,
+          functions: {
+            test_fn: {
+              name: 'test-fn',
+              code: {
+                runtime: 'nodejs18',
+                handler: 'index.handler',
+                path: 'tests/fixtures/artifacts/artifact.zip',
+              },
+              iam: {
+                statements: [
+                  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                  { effect: 'Allow', actions: 'log:PostLogStoreLogs', resources: ['*'] } as any,
+                ],
+              },
+            },
+          },
+        } as unknown as ServerlessIacRaw;
+        expect(() => validateYaml(invalidYaml)).toThrow('Invalid yaml');
+      });
+    });
+
     it('should fail when both certificate_id and certificate_body are provided in bucket domain', () => {
       const invalidYaml = {
         ...jsonIac,

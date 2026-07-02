@@ -116,6 +116,27 @@ export const functionSchema = {
           },
           required: ['vpc_id', 'subnet_ids', 'security_group'],
         },
+        iam: {
+          type: 'object',
+          additionalProperties: false,
+          properties: {
+            statements: {
+              type: 'array',
+              items: {
+                type: 'object',
+                additionalProperties: false,
+                properties: {
+                  sid: { type: 'string' },
+                  effect: { type: 'string', enum: ['Allow', 'Deny'] },
+                  actions: { type: 'array', items: { type: 'string' } },
+                  resources: { type: 'array', items: { type: 'string' } },
+                },
+                required: ['effect', 'actions', 'resources'],
+              },
+            },
+          },
+          required: ['statements'],
+        },
         storage: {
           type: 'object',
           properties: {
