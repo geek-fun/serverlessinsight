@@ -1,4 +1,5 @@
 import type { Context } from '../../types';
+import type { IamStatement } from '../iamStatements';
 
 /**
  * Volcengine provider type definitions
@@ -169,6 +170,7 @@ export type IamRoleConfig = {
     Statement: IamTrustPolicyStatement[];
   };
   maxSessionDuration?: number;
+  customStatements?: IamStatement[];
 };
 
 /**
@@ -388,6 +390,7 @@ export type VolcengineClient = {
       policyType: 'System' | 'Custom',
     ) => Promise<void>;
     detachRolePolicy: (roleName: string, policyName: string) => Promise<void>;
+    updateRolePolicy: (roleName: string, customStatements?: IamStatement[]) => Promise<void>;
   };
   tls: {
     createProject: (config: TlsProjectConfig) => Promise<TlsProjectInfo>;

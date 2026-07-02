@@ -22,6 +22,7 @@ import {
   buildDefaultTrustPolicy,
   VefaasFunctionInfo,
 } from './vefaasTypes';
+import type { IamStatement } from '../../common/iamStatements';
 import { logger } from '../../common/logger';
 import { lang } from '../../lang';
 
@@ -195,6 +196,7 @@ const createDependentResources = async (
       displayName: roleName,
       description: `veFaaS execution role for ${serviceName}`,
       trustPolicy: buildDefaultTrustPolicy(trustedServices),
+      customStatements: fn.iam?.statements as IamStatement[] | undefined,
     });
     instances.push({
       type: 'VOLCENGINE_IAM_ROLE',
@@ -319,7 +321,8 @@ export const createResource = async (
 
   const codePath = fn.code!.path;
   const codeHash = computeFileHash(codePath);
-  const definition = extractVefaasDefinition(config, codeHash);
+  const resourceAttributes = extractVefaasDefinition(config, codeHash);
+  const definition = fn.iam ? { ...resourceAttributes, iam: fn.iam } : resourceAttributes;
 
   const sid = buildSid('volcengine', context.service, context.stage, fn.name);
 
@@ -493,6 +496,16 @@ export const updateResource = async (
         buildDefaultTrustPolicy(trustedServices),
       );
     }
+
+    const currentIamStatements = (currentState.definition as Record<string, unknown>)?.iam as
+      | { statements?: IamStatement[] }
+      | undefined;
+    const desiredIamStatements = fn.iam?.statements as IamStatement[] | undefined;
+    const iamChanged =
+      JSON.stringify(currentIamStatements?.statements) !== JSON.stringify(desiredIamStatements);
+    if (iamChanged && iamRoleInstance) {
+      await client.iam.updateRolePolicy(iamRoleInstance.id, desiredIamStatements);
+    }
   }
 
   const config = functionToVefaasConfig(fn, {
@@ -515,7 +528,8 @@ export const updateResource = async (
 
   const codePath = fn.code!.path;
   const desiredCodeHash = computeFileHash(codePath);
-  const desiredDefinition = extractVefaasDefinition(config, desiredCodeHash);
+  const baseDefinition = extractVefaasDefinition(config, desiredCodeHash);
+  const desiredDefinition = fn.iam ? { ...baseDefinition, iam: fn.iam } : baseDefinition;
 
   const currentDefinition = currentState.definition || {};
   const currentCodeHash = currentDefinition.codeHash as string | undefined;

@@ -1,5 +1,11 @@
 import { Service } from '@volcengine/openapi';
 import type { IamRoleConfig, IamRoleInfo } from './types';
+import {
+  mergePolicyStatements,
+  parseBuiltInStatements,
+  buildPolicyDocument,
+} from '../iamStatements';
+import type { IamStatement } from '../iamStatements';
 import { logger } from '../logger';
 import { lang } from '../../lang';
 
@@ -46,8 +52,34 @@ const VEFAAS_EXECUTION_POLICY = JSON.stringify({
   ],
 });
 
+const VEFAAS_EXECUTION_STATEMENTS = parseBuiltInStatements(VEFAAS_EXECUTION_POLICY);
+
+const mapToVolcengineStatement = (stmt: IamStatement): Record<string, unknown> => {
+  const result: Record<string, unknown> = {
+    Effect: stmt.effect,
+    Action: stmt.actions,
+    Resource: stmt.resources,
+  };
+  if (stmt.sid) {
+    result.Sid = stmt.sid;
+  }
+  return result;
+};
+
+const buildExecutionPolicy = (customStatements?: IamStatement[]): string => {
+  const merged = mergePolicyStatements(
+    VEFAAS_EXECUTION_STATEMENTS,
+    customStatements,
+    mapToVolcengineStatement,
+  );
+  return buildPolicyDocument(merged);
+};
+
 export const createIamOperations = (iamClient: IamSdkClient) => {
-  const createAndAttachPolicy = async (roleName: string): Promise<string> => {
+  const createAndAttachPolicy = async (
+    roleName: string,
+    customStatements?: IamStatement[],
+  ): Promise<string> => {
     const policyName = `${roleName}-policy`;
 
     try {
@@ -58,7 +90,7 @@ export const createIamOperations = (iamClient: IamSdkClient) => {
         headers: { 'content-type': 'application/json' },
         data: {
           PolicyName: policyName,
-          PolicyDocument: VEFAAS_EXECUTION_POLICY,
+          PolicyDocument: buildExecutionPolicy(customStatements),
           Description: `veFaaS execution policy for ${roleName}`,
         },
       });
@@ -136,9 +168,70 @@ export const createIamOperations = (iamClient: IamSdkClient) => {
     }
   };
 
+  const attachRolePolicyImpl = async (
+    roleName: string,
+    policyName: string,
+    policyType: 'System' | 'Custom',
+  ): Promise<void> => {
+    try {
+      await iamClient.fetchOpenAPI({
+        Action: 'AttachRolePolicy',
+        Version: '2024-01-01',
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        data: {
+          RoleName: roleName,
+          PolicyName: policyName,
+          PolicyType: policyType,
+        },
+      });
+
+      logger.info(lang.__('IAM_POLICY_ATTACHED', { policyName, roleName }));
+    } catch (error: unknown) {
+      if (error && typeof error === 'object' && 'code' in error) {
+        if (error.code === 'PolicyAlreadyAttached' || error.code === 'Conflict') {
+          logger.info(lang.__('IAM_POLICY_ALREADY_ATTACHED', { policyName, roleName }));
+          return;
+        }
+      }
+      throw error;
+    }
+  };
+
+  const detachRolePolicyImpl = async (roleName: string, policyName: string): Promise<void> => {
+    try {
+      await iamClient.fetchOpenAPI({
+        Action: 'DetachRolePolicy',
+        Version: '2024-01-01',
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        data: {
+          RoleName: roleName,
+          PolicyName: policyName,
+          PolicyType: 'Custom',
+        },
+      });
+
+      logger.info(lang.__('IAM_POLICY_DETACHED', { policyName, roleName }));
+    } catch (error: unknown) {
+      if (
+        error &&
+        typeof error === 'object' &&
+        'code' in error &&
+        (error.code === 'PolicyNotAttached' || error.code === 'NoSuchEntity')
+      ) {
+        return;
+      }
+      logger.warn(
+        lang.__('IAM_POLICY_DETACH_FAILED', { policyName, roleName, error: String(error) }),
+      );
+    }
+  };
+
   return {
     createRole: async (config: IamRoleConfig): Promise<IamRoleInfo> => {
       const roleName = config.roleName;
+      const customStatements = config.customStatements;
       const trustedServices =
         config.trustPolicy.Statement[0]?.Principal.Service || DEFAULT_TRUST_POLICY_SERVICES;
       const trustPolicyDocument = buildTrustPolicyDocument(trustedServices);
@@ -162,7 +255,7 @@ export const createIamOperations = (iamClient: IamSdkClient) => {
         const data = (response.Result || {}) as Record<string, unknown>;
         const roleData = (data.Role || {}) as Record<string, unknown>;
 
-        const policyName = await createAndAttachPolicy(roleName);
+        const policyName = await createAndAttachPolicy(roleName, customStatements);
 
         logger.info(lang.__('IAM_ROLE_CREATED', { roleName }));
 
@@ -330,59 +423,20 @@ export const createIamOperations = (iamClient: IamSdkClient) => {
       policyName: string,
       policyType: 'System' | 'Custom',
     ): Promise<void> => {
-      try {
-        await iamClient.fetchOpenAPI({
-          Action: 'AttachRolePolicy',
-          Version: '2024-01-01',
-          method: 'POST',
-          headers: { 'content-type': 'application/json' },
-          data: {
-            RoleName: roleName,
-            PolicyName: policyName,
-            PolicyType: policyType,
-          },
-        });
-
-        logger.info(lang.__('IAM_POLICY_ATTACHED', { policyName, roleName }));
-      } catch (error: unknown) {
-        if (error && typeof error === 'object' && 'code' in error) {
-          if (error.code === 'PolicyAlreadyAttached' || error.code === 'Conflict') {
-            logger.info(lang.__('IAM_POLICY_ALREADY_ATTACHED', { policyName, roleName }));
-            return;
-          }
-        }
-        throw error;
-      }
+      await attachRolePolicyImpl(roleName, policyName, policyType);
     },
 
     detachRolePolicy: async (roleName: string, policyName: string): Promise<void> => {
-      try {
-        await iamClient.fetchOpenAPI({
-          Action: 'DetachRolePolicy',
-          Version: '2024-01-01',
-          method: 'POST',
-          headers: { 'content-type': 'application/json' },
-          data: {
-            RoleName: roleName,
-            PolicyName: policyName,
-            PolicyType: 'Custom',
-          },
-        });
+      await detachRolePolicyImpl(roleName, policyName);
+    },
 
-        logger.info(lang.__('IAM_POLICY_DETACHED', { policyName, roleName }));
-      } catch (error: unknown) {
-        if (
-          error &&
-          typeof error === 'object' &&
-          'code' in error &&
-          (error.code === 'PolicyNotAttached' || error.code === 'NoSuchEntity')
-        ) {
-          return;
-        }
-        logger.warn(
-          lang.__('IAM_POLICY_DETACH_FAILED', { policyName, roleName, error: String(error) }),
-        );
-      }
+    updateRolePolicy: async (
+      roleName: string,
+      customStatements?: IamStatement[],
+    ): Promise<void> => {
+      await detachAndDeletePolicy(roleName);
+      await createAndAttachPolicy(roleName, customStatements);
+      logger.info(lang.__('IAM_ROLE_POLICY_UPDATED', { roleName }));
     },
   };
 };
