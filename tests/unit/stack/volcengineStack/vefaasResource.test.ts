@@ -98,6 +98,9 @@ describe('vefaasResource', () => {
       deleteRole: jest.fn(),
       attachRolePolicy: jest.fn(),
       detachRolePolicy: jest.fn(),
+      updateRolePolicy: jest.fn(),
+      updateManagedPolicies: jest.fn(),
+      listAttachedRolePolicies: jest.fn(),
     },
     tls: {
       createProject: jest.fn(),
@@ -115,6 +118,7 @@ describe('vefaasResource', () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
+    (getResource as jest.Mock).mockReset();
     (createVolcengineClient as jest.Mock).mockReturnValue(mockVefaasClient);
     mockVefaasClient.iam.createRole.mockResolvedValue({
       roleName: 'test-app-test-service-dev-role',
@@ -422,6 +426,19 @@ describe('vefaasResource', () => {
         trn: undefined,
       });
 
+      await expect(
+        createResource(contextWithoutAccountId, mockFunction, mockState),
+      ).rejects.toThrow();
+    });
+
+    it('should use external role TRN when iam.role is a string', async () => {
+      const mockFunctionWithExternalRole: FunctionDomain = {
+        ...mockFunction,
+        iam: {
+          role: 'trn:iam::123456:role/existing-role',
+        },
+      };
+
       mockVefaasClient.vefaas.createFunction.mockResolvedValueOnce(undefined);
       mockVefaasClient.vefaas.getFunction.mockResolvedValueOnce({
         functionName: 'test-function',
@@ -432,9 +449,89 @@ describe('vefaasResource', () => {
         requestTimeout: 30,
       });
 
-      await expect(
-        createResource(contextWithoutAccountId, mockFunction, mockState),
-      ).rejects.toThrow();
+      await createResource(mockContext, mockFunctionWithExternalRole, mockState);
+
+      expect(mockVefaasClient.iam.createRole).not.toHaveBeenCalled();
+      expect(setResource).toHaveBeenCalled();
+      expect(mockVefaasClient.vefaas.createFunction).toHaveBeenCalledWith(
+        expect.objectContaining({
+          role: 'trn:iam::123456:role/existing-role',
+        }),
+        expect.any(String),
+      );
+    });
+
+    it('should use custom role name when iam.role is an object with name', async () => {
+      const mockFunctionWithCustomRole: FunctionDomain = {
+        ...mockFunction,
+        iam: {
+          role: {
+            name: 'my-custom-role-name',
+            statements: [
+              {
+                effect: 'Allow',
+                actions: ['ecs:DescribeInstances'],
+                resources: ['*'],
+              },
+            ],
+          },
+        },
+      };
+
+      mockVefaasClient.vefaas.createFunction.mockResolvedValueOnce(undefined);
+      mockVefaasClient.vefaas.getFunction.mockResolvedValueOnce({
+        functionName: 'test-function',
+        functionId: 'func-123',
+        runtime: 'nodejs16',
+        handler: 'index.handler',
+        memoryMb: 128,
+        requestTimeout: 30,
+      });
+
+      await createResource(mockContext, mockFunctionWithCustomRole, mockState);
+
+      expect(mockVefaasClient.iam.createRole).toHaveBeenCalledWith(
+        expect.objectContaining({
+          roleName: 'my-custom-role-name',
+          customStatements: [
+            {
+              effect: 'Allow',
+              actions: ['ecs:DescribeInstances'],
+              resources: ['*'],
+            },
+          ],
+        }),
+      );
+    });
+
+    it('should pass managed_policies to createRole', async () => {
+      const mockFunctionWithManagedPolicies: FunctionDomain = {
+        ...mockFunction,
+        iam: {
+          role: {
+            managed_policies: ['AdministratorAccess', 'ReadOnlyAccess'],
+          },
+        },
+      };
+
+      mockVefaasClient.vefaas.createFunction.mockResolvedValueOnce(undefined);
+      mockVefaasClient.vefaas.getFunction.mockResolvedValueOnce({
+        functionName: 'test-function',
+        functionId: 'func-123',
+        runtime: 'nodejs16',
+        handler: 'index.handler',
+        memoryMb: 128,
+        requestTimeout: 30,
+      });
+
+      await createResource(mockContext, mockFunctionWithManagedPolicies, mockState);
+
+      expect(mockVefaasClient.iam.createRole).toHaveBeenCalledWith(
+        expect.objectContaining({
+          roleName: 'test-app-test-service-dev-role',
+          managedPolicies: ['AdministratorAccess', 'ReadOnlyAccess'],
+        }),
+      );
     });
   });
 
@@ -794,6 +891,138 @@ describe('vefaasResource', () => {
         }),
       );
     });
+
+    it('should update managed policies when they change', async () => {
+      const stateWithManagedPolicies: StateFile = {
+        ...mockState,
+        resources: {
+          'functions.test_fn': {
+            mode: 'managed',
+            region: 'cn-beijing',
+            definition: {
+              functionName: 'test-function',
+              codeHash: 'test-hash-123',
+              runtime: 'nodejs16',
+              handler: 'index.handler',
+              memorySize: 128,
+              timeout: 30,
+              iam: {
+                role: {
+                  managed_policies: ['AdministratorAccess'],
+                  statements: [],
+                },
+              },
+            },
+            instances: [
+              {
+                type: 'VOLCENGINE_VEFAAS_FUNCTION',
+                sid: 'volcengine-test-service-dev-test-function',
+                id: 'test-function',
+                functionName: 'test-function',
+              },
+              {
+                type: 'VOLCENGINE_IAM_ROLE',
+                sid: 'volcengine-iam_role-dev-test-app-test-service-dev-role',
+                id: 'test-app-test-service-dev-role',
+                trn: 'trn:iam::123456:role/test-app-test-service-dev-role',
+              },
+            ],
+            lastUpdated: '2024-01-01T00:00:00Z',
+          },
+        },
+      };
+
+      const mockFunctionUpdatedPolicies: FunctionDomain = {
+        ...mockFunction,
+        iam: {
+          role: {
+            managed_policies: ['AdministratorAccess', 'ReadOnlyAccess'],
+            statements: [],
+          },
+        },
+      };
+
+      (getResource as jest.Mock).mockReturnValue(
+        stateWithManagedPolicies.resources['functions.test_fn'],
+      );
+      (attributesEqual as jest.Mock).mockReturnValue(true);
+
+      mockVefaasClient.vefaas.getFunction.mockResolvedValueOnce({
+        functionName: 'test-function',
+        functionId: 'func-123',
+        runtime: 'nodejs16',
+        handler: 'index.handler',
+        memoryMb: 128,
+        requestTimeout: 30,
+      });
+
+      await updateResource(mockContext, mockFunctionUpdatedPolicies, stateWithManagedPolicies);
+
+      expect(mockVefaasClient.iam.updateManagedPolicies).toHaveBeenCalledWith(
+        'test-app-test-service-dev-role',
+        ['AdministratorAccess', 'ReadOnlyAccess'],
+      );
+    });
+
+    it('should skip role management for external role (string TRN)', async () => {
+      const stateWithExternalRole: StateFile = {
+        ...mockState,
+        resources: {
+          'functions.test_fn': {
+            mode: 'managed',
+            region: 'cn-beijing',
+            definition: {
+              functionName: 'test-function',
+              codeHash: 'test-hash-123',
+              runtime: 'nodejs16',
+              handler: 'index.handler',
+              memorySize: 128,
+              timeout: 30,
+              iam: {
+                role: 'trn:iam::123456:role/external-role',
+              },
+            },
+            instances: [
+              {
+                type: 'VOLCENGINE_VEFAAS_FUNCTION',
+                sid: 'volcengine-test-service-dev-test-function',
+                id: 'test-function',
+                functionName: 'test-function',
+              },
+            ],
+            lastUpdated: '2024-01-01T00:00:00Z',
+          },
+        },
+      };
+
+      const mockFunctionWithExternalRole: FunctionDomain = {
+        ...mockFunction,
+        iam: {
+          role: 'trn:iam::123456:role/external-role',
+        },
+      };
+
+      (getResource as jest.Mock).mockReturnValue(
+        stateWithExternalRole.resources['functions.test_fn'],
+      );
+      (attributesEqual as jest.Mock).mockReturnValue(true);
+
+      mockVefaasClient.vefaas.getFunction.mockResolvedValueOnce({
+        functionName: 'test-function',
+        functionId: 'func-123',
+        runtime: 'nodejs16',
+        handler: 'index.handler',
+        memoryMb: 128,
+        requestTimeout: 30,
+      });
+
+      await updateResource(mockContext, mockFunctionWithExternalRole, stateWithExternalRole);
+
+      expect(mockVefaasClient.iam.updateRoleTrustPolicy).not.toHaveBeenCalled();
+      expect(mockVefaasClient.iam.updateRolePolicy).not.toHaveBeenCalled();
+      expect(mockVefaasClient.iam.updateManagedPolicies).not.toHaveBeenCalled();
+      expect(mockVefaasClient.iam.createRole).not.toHaveBeenCalled();
+    });
   });
 
   describe('deleteResource', () => {
@@ -997,6 +1226,53 @@ describe('vefaasResource', () => {
       await expect(
         deleteResource(mockContext, 'test-function', 'functions.test_fn', stateWithFunction),
       ).rejects.toThrow('Access denied');
+    });
+
+    it('should skip deletion for external IAM role with external=true attribute', async () => {
+      const stateWithExternalRole: StateFile = {
+        ...mockState,
+        resources: {
+          'functions.test_fn': {
+            mode: 'managed',
+            region: 'cn-beijing',
+            definition: { functionName: 'test-function', codeHash: 'old-hash' },
+            instances: [
+              {
+                type: 'VOLCENGINE_VEFAAS_FUNCTION',
+                sid: 'volcengine-test-service-dev-test-function',
+                id: 'test-function',
+                functionName: 'test-function',
+              },
+              {
+                type: 'VOLCENGINE_IAM_ROLE',
+                sid: 'volcengine-iam_role-dev-role',
+                id: 'external-role-trn',
+                attributes: { external: true },
+              },
+            ],
+            lastUpdated: '2024-01-01T00:00:00Z',
+          },
+        },
+      };
+
+      mockVefaasClient.vefaas.deleteFunction.mockResolvedValueOnce(undefined);
+      (getResource as jest.Mock).mockReturnValue(
+        stateWithExternalRole.resources['functions.test_fn'],
+      );
+
+      const { logger } = jest.requireMock('../../../../src/common/logger');
+
+      await deleteResource(
+        mockContext,
+        'test-function',
+        'functions.test_fn',
+        stateWithExternalRole,
+      );
+
+      expect(mockVefaasClient.iam.deleteRole).not.toHaveBeenCalled();
+      expect(logger.info).toHaveBeenCalledWith(
+        expect.stringContaining('Skipping deletion of external IAM role'),
+      );
     });
   });
 });

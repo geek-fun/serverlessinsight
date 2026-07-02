@@ -10,6 +10,7 @@ export type ScfFunctionConfig = {
   Runtime: string;
   MemorySize?: number;
   Timeout?: number;
+  Role?: string;
   Environment?: {
     Variables?: Array<{
       Key: string;
@@ -272,4 +273,13 @@ export type TencentEsSpaceInfo = {
   IndexCount?: number;
   KibanaUrl?: string;
   KibanaPrivateUrl?: string;
+};
+
+// Tencent CAM (Cloud Access Management) types
+export type CamRoleInfo = {
+  roleName?: string;
+  roleId?: string;
+  roleArn?: string;
+  description?: string;
+  policyName?: string;
 };

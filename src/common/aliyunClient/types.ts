@@ -135,6 +135,7 @@ export type RamRoleInfo = {
   maxSessionDuration?: number;
   assumeRolePolicyDocument?: string;
   policyName?: string;
+  managedPolicies?: string[];
 };
 
 export type SecurityGroupRule = {

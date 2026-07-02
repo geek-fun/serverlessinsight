@@ -120,22 +120,34 @@ export const functionSchema = {
           type: 'object',
           additionalProperties: false,
           properties: {
-            statements: {
-              type: 'array',
-              items: {
-                type: 'object',
-                additionalProperties: false,
-                properties: {
-                  sid: { type: 'string' },
-                  effect: { type: 'string', enum: ['Allow', 'Deny'] },
-                  actions: { type: 'array', items: { type: 'string' } },
-                  resources: { type: 'array', items: { type: 'string' } },
+            role: {
+              oneOf: [
+                { type: 'string' },
+                {
+                  type: 'object',
+                  additionalProperties: false,
+                  properties: {
+                    name: { type: 'string' },
+                    managed_policies: { type: 'array', items: { type: 'string' } },
+                    statements: {
+                      type: 'array',
+                      items: {
+                        type: 'object',
+                        additionalProperties: false,
+                        properties: {
+                          sid: { type: 'string' },
+                          effect: { type: 'string', enum: ['Allow', 'Deny'] },
+                          actions: { type: 'array', items: { type: 'string' } },
+                          resources: { type: 'array', items: { type: 'string' } },
+                        },
+                        required: ['effect', 'actions', 'resources'],
+                      },
+                    },
+                  },
                 },
-                required: ['effect', 'actions', 'resources'],
-              },
+              ],
             },
           },
-          required: ['statements'],
         },
         storage: {
           type: 'object',

@@ -150,45 +150,49 @@ describe('parseFunction', () => {
     });
   });
 
-  it('should parse function with iam statements', () => {
+  it('should parse function with iam role and statements', () => {
     const result = parseFunction({
       fn: {
         name: 'iam-fn',
         code: { runtime: 'nodejs18', handler: 'index.handler', path: './src' },
         iam: {
-          statements: [
-            {
-              effect: 'Allow' as const,
-              actions: ['log:PostLogStoreLogs'],
-              resources: ['acs:log:*:*:project/*/logstore/*'],
-            },
-            {
-              sid: 'DenySpecific',
-              effect: 'Deny' as const,
-              actions: ['oss:DeleteBucket'],
-              resources: ['acs:oss:*:*:my-bucket'],
-            },
-          ],
+          role: {
+            statements: [
+              {
+                effect: 'Allow' as const,
+                actions: ['log:PostLogStoreLogs'],
+                resources: ['acs:log:*:*:project/*/logstore/*'],
+              },
+              {
+                sid: 'DenySpecific',
+                effect: 'Deny' as const,
+                actions: ['oss:DeleteBucket'],
+                resources: ['acs:oss:*:*:my-bucket'],
+              },
+            ],
+          },
         },
       },
     });
 
     expect(result).toHaveLength(1);
     expect(result![0].iam).toEqual({
-      statements: [
-        {
-          sid: undefined,
-          effect: 'Allow',
-          actions: ['log:PostLogStoreLogs'],
-          resources: ['acs:log:*:*:project/*/logstore/*'],
-        },
-        {
-          sid: 'DenySpecific',
-          effect: 'Deny',
-          actions: ['oss:DeleteBucket'],
-          resources: ['acs:oss:*:*:my-bucket'],
-        },
-      ],
+      role: {
+        statements: [
+          {
+            sid: undefined,
+            effect: 'Allow',
+            actions: ['log:PostLogStoreLogs'],
+            resources: ['acs:log:*:*:project/*/logstore/*'],
+          },
+          {
+            sid: 'DenySpecific',
+            effect: 'Deny',
+            actions: ['oss:DeleteBucket'],
+            resources: ['acs:oss:*:*:my-bucket'],
+          },
+        ],
+      },
     });
   });
 

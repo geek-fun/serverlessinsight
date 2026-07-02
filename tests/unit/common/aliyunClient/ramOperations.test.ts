@@ -9,6 +9,7 @@ const mockUpdateRole = jest.fn();
 const mockDetachPolicyFromRole = jest.fn();
 const mockDeletePolicy = jest.fn();
 const mockDeleteRole = jest.fn();
+const mockListPoliciesForRole = jest.fn();
 
 const mockRamClient = {
   createPolicy: mockCreatePolicy,
@@ -19,6 +20,7 @@ const mockRamClient = {
   detachPolicyFromRole: mockDetachPolicyFromRole,
   deletePolicy: mockDeletePolicy,
   deleteRole: mockDeleteRole,
+  listPoliciesForRole: mockListPoliciesForRole,
 } as unknown as RamClient;
 
 jest.mock('../../../../src/common/logger', () => ({
@@ -307,6 +309,323 @@ describe('ramOperations', () => {
       mockDeleteRole.mockRejectedValue(new Error('RoleNotEmpty'));
 
       await expect(operations.deleteRole('fc-execution-role')).rejects.toThrow('RoleNotEmpty');
+    });
+
+    it('should detach managed policies before custom policy and role deletion', async () => {
+      mockDetachPolicyFromRole.mockResolvedValue({});
+      mockDeletePolicy.mockResolvedValue({});
+      mockDeleteRole.mockResolvedValue({});
+
+      await operations.deleteRole('fc-execution-role', ['AliyunOSSFullAccess']);
+
+      // Detach managed policy first
+      expect(mockDetachPolicyFromRole).toHaveBeenCalledWith(
+        expect.objectContaining({
+          policyType: 'System',
+          policyName: 'AliyunOSSFullAccess',
+          roleName: 'fc-execution-role',
+        }),
+      );
+      // Then detach custom inline policy
+      expect(mockDetachPolicyFromRole).toHaveBeenCalledWith(
+        expect.objectContaining({
+          policyType: 'Custom',
+          policyName: 'fc-execution-role-policy',
+          roleName: 'fc-execution-role',
+        }),
+      );
+      expect(mockDeleteRole).toHaveBeenCalled();
+    });
+  });
+
+  describe('createRole with managedPolicies', () => {
+    it('should attach managed policies after role creation', async () => {
+      mockCreateRole.mockResolvedValue({
+        body: {
+          role: {
+            roleName: 'fc-execution-role',
+            roleId: 'role-123',
+            arn: 'arn:aliyun:ram::123456789:role/fc-execution-role',
+            description: 'FC execution role',
+            createDate: '2023-01-01T00:00:00Z',
+            updateDate: '2023-01-01T00:00:00Z',
+            maxSessionDuration: 3600,
+          },
+        },
+      });
+
+      mockCreatePolicy.mockResolvedValue({});
+      mockAttachPolicyToRole.mockResolvedValue({});
+
+      const result = await operations.createRole(
+        'fc-execution-role',
+        ['fc.aliyuncs.com'],
+        undefined,
+        undefined,
+        ['AliyunOSSFullAccess', 'AliyunLogFullAccess'],
+      );
+
+      // Should attach both managed policies as System type
+      expect(mockAttachPolicyToRole).toHaveBeenCalledWith(
+        expect.objectContaining({
+          policyType: 'System',
+          policyName: 'AliyunOSSFullAccess',
+          roleName: 'fc-execution-role',
+        }),
+      );
+      expect(mockAttachPolicyToRole).toHaveBeenCalledWith(
+        expect.objectContaining({
+          policyType: 'System',
+          policyName: 'AliyunLogFullAccess',
+          roleName: 'fc-execution-role',
+        }),
+      );
+      // Should also attach the custom inline policy
+      expect(mockAttachPolicyToRole).toHaveBeenCalledWith(
+        expect.objectContaining({
+          policyType: 'Custom',
+          policyName: 'fc-execution-role-policy',
+          roleName: 'fc-execution-role',
+        }),
+      );
+      expect(result.managedPolicies).toEqual(['AliyunOSSFullAccess', 'AliyunLogFullAccess']);
+    });
+
+    it('should not attach managed policies when none provided', async () => {
+      mockCreateRole.mockResolvedValue({
+        body: { role: { roleName: 'fc-execution-role', roleId: 'role-123' } },
+      });
+      mockCreatePolicy.mockResolvedValue({});
+      mockAttachPolicyToRole.mockResolvedValue({});
+
+      await operations.createRole('fc-execution-role', ['fc.aliyuncs.com']);
+
+      // Should only attach the custom inline policy
+      const customCalls = mockAttachPolicyToRole.mock.calls.filter(
+        (call: Record<string, unknown>[]) => call[0].policyType === 'System',
+      );
+      expect(customCalls).toHaveLength(0);
+    });
+  });
+
+  describe('attachManagedPolicies', () => {
+    it('should attach multiple managed policies', async () => {
+      mockAttachPolicyToRole.mockResolvedValue({});
+
+      await operations.attachManagedPolicies('fc-execution-role', [
+        'AliyunOSSFullAccess',
+        'AliyunLogFullAccess',
+      ]);
+
+      expect(mockAttachPolicyToRole).toHaveBeenCalledTimes(2);
+      expect(mockAttachPolicyToRole).toHaveBeenCalledWith(
+        expect.objectContaining({
+          policyType: 'System',
+          policyName: 'AliyunOSSFullAccess',
+          roleName: 'fc-execution-role',
+        }),
+      );
+      expect(mockAttachPolicyToRole).toHaveBeenCalledWith(
+        expect.objectContaining({
+          policyType: 'System',
+          policyName: 'AliyunLogFullAccess',
+          roleName: 'fc-execution-role',
+        }),
+      );
+    });
+
+    it('should handle already-attached error gracefully', async () => {
+      const alreadyAttachedError = new Error('EntityAlreadyExists.Role.Policy');
+      Object.assign(alreadyAttachedError, { code: 'EntityAlreadyExists.Role.Policy' });
+      mockAttachPolicyToRole.mockRejectedValueOnce(alreadyAttachedError).mockResolvedValueOnce({});
+
+      await expect(
+        operations.attachManagedPolicies('fc-execution-role', [
+          'AliyunOSSFullAccess',
+          'AliyunLogFullAccess',
+        ]),
+      ).resolves.toBeUndefined();
+    });
+
+    it('should rethrow non-already-attached errors', async () => {
+      mockAttachPolicyToRole.mockRejectedValue(new Error('AccessDenied'));
+
+      await expect(
+        operations.attachManagedPolicies('fc-execution-role', ['AliyunOSSFullAccess']),
+      ).rejects.toThrow('AccessDenied');
+    });
+  });
+
+  describe('detachManagedPolicies', () => {
+    it('should detach multiple managed policies', async () => {
+      mockDetachPolicyFromRole.mockResolvedValue({});
+
+      await operations.detachManagedPolicies('fc-execution-role', [
+        'AliyunOSSFullAccess',
+        'AliyunLogFullAccess',
+      ]);
+
+      expect(mockDetachPolicyFromRole).toHaveBeenCalledTimes(2);
+      expect(mockDetachPolicyFromRole).toHaveBeenCalledWith(
+        expect.objectContaining({
+          policyType: 'System',
+          policyName: 'AliyunOSSFullAccess',
+          roleName: 'fc-execution-role',
+        }),
+      );
+      expect(mockDetachPolicyFromRole).toHaveBeenCalledWith(
+        expect.objectContaining({
+          policyType: 'System',
+          policyName: 'AliyunLogFullAccess',
+          roleName: 'fc-execution-role',
+        }),
+      );
+    });
+
+    it('should handle not-attached error gracefully', async () => {
+      const notAttachedError = new Error('EntityNotExist.Role.Policy');
+      Object.assign(notAttachedError, { code: 'EntityNotExist.Role.Policy' });
+      mockDetachPolicyFromRole.mockRejectedValueOnce(notAttachedError).mockResolvedValueOnce({});
+
+      await expect(
+        operations.detachManagedPolicies('fc-execution-role', [
+          'AliyunOSSFullAccess',
+          'AliyunLogFullAccess',
+        ]),
+      ).resolves.toBeUndefined();
+    });
+
+    it('should rethrow non-not-attached errors', async () => {
+      mockDetachPolicyFromRole.mockRejectedValue(new Error('AccessDenied'));
+
+      await expect(
+        operations.detachManagedPolicies('fc-execution-role', ['AliyunOSSFullAccess']),
+      ).rejects.toThrow('AccessDenied');
+    });
+  });
+
+  describe('listAttachedRolePolicies', () => {
+    it('should return list of attached system policy names', async () => {
+      mockListPoliciesForRole.mockResolvedValue({
+        body: {
+          policies: {
+            policy: [
+              { policyName: 'AliyunOSSFullAccess', policyType: 'System' },
+              { policyName: 'fc-execution-role-policy', policyType: 'Custom' },
+              { policyName: 'AliyunLogFullAccess', policyType: 'System' },
+            ],
+          },
+        },
+      });
+
+      const result = await operations.listAttachedRolePolicies('fc-execution-role');
+
+      expect(result).toEqual(['AliyunOSSFullAccess', 'AliyunLogFullAccess']);
+    });
+
+    it('should return empty array when no policies attached', async () => {
+      mockListPoliciesForRole.mockResolvedValue({
+        body: { policies: { policy: [] } },
+      });
+
+      const result = await operations.listAttachedRolePolicies('fc-execution-role');
+
+      expect(result).toEqual([]);
+    });
+
+    it('should return empty array when response is empty', async () => {
+      mockListPoliciesForRole.mockResolvedValue(null);
+
+      const result = await operations.listAttachedRolePolicies('fc-execution-role');
+
+      expect(result).toEqual([]);
+    });
+  });
+
+  describe('updateManagedPolicies', () => {
+    it('should attach new and detach removed policies', async () => {
+      mockListPoliciesForRole.mockResolvedValue({
+        body: {
+          policies: {
+            policy: [
+              { policyName: 'AliyunOSSFullAccess', policyType: 'System' },
+              { policyName: 'AliyunLogFullAccess', policyType: 'System' },
+            ],
+          },
+        },
+      });
+      mockAttachPolicyToRole.mockResolvedValue({});
+      mockDetachPolicyFromRole.mockResolvedValue({});
+
+      await operations.updateManagedPolicies('fc-execution-role', [
+        'AliyunLogFullAccess',
+        'AliyunRDSFullAccess',
+      ]);
+
+      // Detach removed: AliyunOSSFullAccess
+      expect(mockDetachPolicyFromRole).toHaveBeenCalledWith(
+        expect.objectContaining({
+          policyType: 'System',
+          policyName: 'AliyunOSSFullAccess',
+          roleName: 'fc-execution-role',
+        }),
+      );
+      // Attach new: AliyunRDSFullAccess
+      expect(mockAttachPolicyToRole).toHaveBeenCalledWith(
+        expect.objectContaining({
+          policyType: 'System',
+          policyName: 'AliyunRDSFullAccess',
+          roleName: 'fc-execution-role',
+        }),
+      );
+      // Should NOT detach AliyunLogFullAccess (still desired)
+      expect(mockDetachPolicyFromRole).not.toHaveBeenCalledWith(
+        expect.objectContaining({ policyName: 'AliyunLogFullAccess' }),
+      );
+      // Should NOT attach AliyunOSSFullAccess (already current)
+      expect(mockAttachPolicyToRole).not.toHaveBeenCalledWith(
+        expect.objectContaining({ policyName: 'AliyunOSSFullAccess' }),
+      );
+    });
+
+    it('should handle full ARN format in desired policies', async () => {
+      mockListPoliciesForRole.mockResolvedValue({
+        body: {
+          policies: {
+            policy: [{ policyName: 'AliyunOSSFullAccess', policyType: 'System' }],
+          },
+        },
+      });
+      mockAttachPolicyToRole.mockResolvedValue({});
+      mockDetachPolicyFromRole.mockResolvedValue({});
+
+      await operations.updateManagedPolicies('fc-execution-role', [
+        'acs:ram::123456789:policy/AliyunRDSFullAccess',
+      ]);
+
+      // Detach OSS (removed)
+      expect(mockDetachPolicyFromRole).toHaveBeenCalledWith(
+        expect.objectContaining({ policyName: 'AliyunOSSFullAccess' }),
+      );
+      // Attach RDS (new - extracted from ARN)
+      expect(mockAttachPolicyToRole).toHaveBeenCalledWith(
+        expect.objectContaining({ policyName: 'AliyunRDSFullAccess' }),
+      );
+    });
+
+    it('should be no-op when desired matches current', async () => {
+      mockListPoliciesForRole.mockResolvedValue({
+        body: {
+          policies: {
+            policy: [{ policyName: 'AliyunOSSFullAccess', policyType: 'System' }],
+          },
+        },
+      });
+
+      await operations.updateManagedPolicies('fc-execution-role', ['AliyunOSSFullAccess']);
+
+      expect(mockAttachPolicyToRole).not.toHaveBeenCalled();
+      expect(mockDetachPolicyFromRole).not.toHaveBeenCalled();
     });
   });
 });

@@ -198,7 +198,11 @@ export const createIamOperations = (iamClient: IamSdkClient) => {
     }
   };
 
-  const detachRolePolicyImpl = async (roleName: string, policyName: string): Promise<void> => {
+  const detachRolePolicyImpl = async (
+    roleName: string,
+    policyName: string,
+    policyType: 'System' | 'Custom' = 'Custom',
+  ): Promise<void> => {
     try {
       await iamClient.fetchOpenAPI({
         Action: 'DetachRolePolicy',
@@ -208,7 +212,7 @@ export const createIamOperations = (iamClient: IamSdkClient) => {
         data: {
           RoleName: roleName,
           PolicyName: policyName,
-          PolicyType: 'Custom',
+          PolicyType: policyType,
         },
       });
 
@@ -225,6 +229,31 @@ export const createIamOperations = (iamClient: IamSdkClient) => {
       logger.warn(
         lang.__('IAM_POLICY_DETACH_FAILED', { policyName, roleName, error: String(error) }),
       );
+    }
+  };
+
+  const listAttachedRolePoliciesImpl = async (roleName: string): Promise<string[]> => {
+    try {
+      const response = await iamClient.fetchOpenAPI({
+        Action: 'ListAttachedRolePolicies',
+        Version: '2024-01-01',
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        data: { RoleName: roleName },
+      });
+
+      const result = (response.Result || {}) as Record<string, unknown>;
+      const attachedPolicies = result.AttachedRolePolicies as
+        | Array<{ PolicyName?: string }>
+        | undefined;
+
+      if (!attachedPolicies) {
+        return [];
+      }
+
+      return attachedPolicies.filter((p) => p.PolicyName).map((p) => p.PolicyName as string);
+    } catch {
+      return [];
     }
   };
 
@@ -257,6 +286,12 @@ export const createIamOperations = (iamClient: IamSdkClient) => {
 
         const policyName = await createAndAttachPolicy(roleName, customStatements);
 
+        if (config.managedPolicies && config.managedPolicies.length > 0) {
+          for (const policyArn of config.managedPolicies) {
+            await attachRolePolicyImpl(roleName, policyArn, 'System');
+          }
+        }
+
         logger.info(lang.__('IAM_ROLE_CREATED', { roleName }));
 
         return {
@@ -268,6 +303,7 @@ export const createIamOperations = (iamClient: IamSdkClient) => {
           maxSessionDuration: roleData.MaxSessionDuration as number | undefined,
           trustPolicyDocument,
           policyName,
+          managedPolicies: config.managedPolicies,
         };
       } catch (error: unknown) {
         if (error && typeof error === 'object' && 'code' in error) {
@@ -296,6 +332,12 @@ export const createIamOperations = (iamClient: IamSdkClient) => {
 
               const policyName = await createAndAttachPolicy(roleName);
 
+              if (config.managedPolicies && config.managedPolicies.length > 0) {
+                for (const policyArn of config.managedPolicies) {
+                  await attachRolePolicyImpl(roleName, policyArn, 'System');
+                }
+              }
+
               const roleData = ((existingRole.Result || {}) as Record<string, unknown>)
                 .Role as Record<string, unknown>;
 
@@ -308,6 +350,7 @@ export const createIamOperations = (iamClient: IamSdkClient) => {
                 maxSessionDuration: roleData?.MaxSessionDuration as number | undefined,
                 trustPolicyDocument,
                 policyName,
+                managedPolicies: config.managedPolicies,
               };
             } catch (recoveryError: unknown) {
               // eslint-disable-next-line preserve-caught-error
@@ -395,6 +438,12 @@ export const createIamOperations = (iamClient: IamSdkClient) => {
     },
 
     deleteRole: async (roleName: string): Promise<void> => {
+      // Detach managed policies before cleaning up custom policies and role
+      const currentManagedPolicies = await listAttachedRolePoliciesImpl(roleName);
+      for (const policyName of currentManagedPolicies) {
+        await detachRolePolicyImpl(roleName, policyName, 'System');
+      }
+
       await detachAndDeletePolicy(roleName);
 
       try {
@@ -437,6 +486,32 @@ export const createIamOperations = (iamClient: IamSdkClient) => {
       await detachAndDeletePolicy(roleName);
       await createAndAttachPolicy(roleName, customStatements);
       logger.info(lang.__('IAM_ROLE_POLICY_UPDATED', { roleName }));
+    },
+
+    listAttachedRolePolicies: async (roleName: string): Promise<string[]> => {
+      return listAttachedRolePoliciesImpl(roleName);
+    },
+
+    updateManagedPolicies: async (roleName: string, desiredPolicies: string[]): Promise<void> => {
+      const currentPolicies = await listAttachedRolePoliciesImpl(roleName);
+
+      const currentSet = new Set(currentPolicies);
+      const desiredSet = new Set(desiredPolicies);
+
+      const toAttach = desiredPolicies.filter((p) => !currentSet.has(p));
+      const toDetach = currentPolicies.filter((p) => !desiredSet.has(p));
+
+      for (const policyName of toDetach) {
+        logger.info(lang.__('DETACHING_MANAGED_POLICY', { policyArn: policyName, roleName }));
+        await detachRolePolicyImpl(roleName, policyName, 'System');
+        logger.info(lang.__('MANAGED_POLICY_DETACHED', { policyArn: policyName, roleName }));
+      }
+
+      for (const policyName of toAttach) {
+        logger.info(lang.__('ATTACHING_MANAGED_POLICY', { policyArn: policyName, roleName }));
+        await attachRolePolicyImpl(roleName, policyName, 'System');
+        logger.info(lang.__('MANAGED_POLICY_ATTACHED', { policyArn: policyName, roleName }));
+      }
     },
   };
 };

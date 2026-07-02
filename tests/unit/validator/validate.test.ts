@@ -790,7 +790,7 @@ describe('unit test for validate', () => {
     });
 
     describe('iam validation', () => {
-      it('should pass validation when iam with statements is valid', () => {
+      it('accepts iam with role as string', () => {
         const validYaml = {
           ...jsonIac,
           functions: {
@@ -802,13 +802,7 @@ describe('unit test for validate', () => {
                 path: 'tests/fixtures/artifacts/artifact.zip',
               },
               iam: {
-                statements: [
-                  {
-                    effect: 'Allow',
-                    actions: ['log:PostLogStoreLogs'],
-                    resources: ['acs:log:*:*:project/*/logstore/*'],
-                  },
-                ],
+                role: 'acs:ram::123456789:role/my-role',
               },
             },
           },
@@ -816,8 +810,133 @@ describe('unit test for validate', () => {
         expect(validateYaml(validYaml)).toBe(true);
       });
 
-      it('should pass validation when iam has multiple statements with sid', () => {
+      it('accepts iam with role as object with name', () => {
         const validYaml = {
+          ...jsonIac,
+          functions: {
+            test_fn: {
+              name: 'test-fn',
+              code: {
+                runtime: 'nodejs18',
+                handler: 'index.handler',
+                path: 'tests/fixtures/artifacts/artifact.zip',
+              },
+              iam: {
+                role: {
+                  name: 'my-custom-role',
+                },
+              },
+            },
+          },
+        } as unknown as ServerlessIacRaw;
+        expect(validateYaml(validYaml)).toBe(true);
+      });
+
+      it('accepts iam with role object with managed_policies', () => {
+        const validYaml = {
+          ...jsonIac,
+          functions: {
+            test_fn: {
+              name: 'test-fn',
+              code: {
+                runtime: 'nodejs18',
+                handler: 'index.handler',
+                path: 'tests/fixtures/artifacts/artifact.zip',
+              },
+              iam: {
+                role: {
+                  managed_policies: ['AliyunOSSFullAccess', 'AliyunLogFullAccess'],
+                },
+              },
+            },
+          },
+        } as unknown as ServerlessIacRaw;
+        expect(validateYaml(validYaml)).toBe(true);
+      });
+
+      it('accepts iam with role object with statements', () => {
+        const validYaml = {
+          ...jsonIac,
+          functions: {
+            test_fn: {
+              name: 'test-fn',
+              code: {
+                runtime: 'nodejs18',
+                handler: 'index.handler',
+                path: 'tests/fixtures/artifacts/artifact.zip',
+              },
+              iam: {
+                role: {
+                  statements: [
+                    {
+                      effect: 'Allow',
+                      actions: ['log:PostLogStoreLogs'],
+                      resources: ['acs:log:*:*:project/*/logstore/*'],
+                    },
+                  ],
+                },
+              },
+            },
+          },
+        } as unknown as ServerlessIacRaw;
+        expect(validateYaml(validYaml)).toBe(true);
+      });
+
+      it('accepts iam with role object with all fields', () => {
+        const validYaml = {
+          ...jsonIac,
+          functions: {
+            test_fn: {
+              name: 'test-fn',
+              code: {
+                runtime: 'nodejs18',
+                handler: 'index.handler',
+                path: 'tests/fixtures/artifacts/artifact.zip',
+              },
+              iam: {
+                role: {
+                  name: 'my-custom-role',
+                  managed_policies: ['AliyunOSSFullAccess'],
+                  statements: [
+                    {
+                      sid: 'AllowLog',
+                      effect: 'Allow',
+                      actions: ['log:PostLogStoreLogs'],
+                      resources: ['*'],
+                    },
+                    {
+                      effect: 'Deny',
+                      actions: ['oss:DeleteBucket'],
+                      resources: ['acs:oss:*:*:my-bucket'],
+                    },
+                  ],
+                },
+              },
+            },
+          },
+        } as unknown as ServerlessIacRaw;
+        expect(validateYaml(validYaml)).toBe(true);
+      });
+
+      it('omitting iam is valid (regression)', () => {
+        const validYaml = {
+          ...jsonIac,
+          functions: {
+            test_fn: {
+              name: 'test-fn',
+              code: {
+                runtime: 'nodejs18',
+                handler: 'index.handler',
+                path: 'tests/fixtures/artifacts/artifact.zip',
+              },
+            },
+          },
+        } as unknown as ServerlessIacRaw;
+        expect(validateYaml(validYaml)).toBe(true);
+      });
+
+      it('rejects old top-level iam.statements format', () => {
+        const invalidYaml = {
           ...jsonIac,
           functions: {
             test_fn: {
@@ -830,73 +949,10 @@ describe('unit test for validate', () => {
               iam: {
                 statements: [
                   {
-                    sid: 'AllowLog',
                     effect: 'Allow',
                     actions: ['log:PostLogStoreLogs'],
                     resources: ['*'],
                   },
-                  {
-                    effect: 'Deny',
-                    actions: ['oss:DeleteBucket'],
-                    resources: ['acs:oss:*:*:my-bucket'],
-                  },
-                ],
-              },
-            },
-          },
-        } as unknown as ServerlessIacRaw;
-        expect(validateYaml(validYaml)).toBe(true);
-      });
-
-      it('should pass validation when iam is omitted', () => {
-        const validYaml = {
-          ...jsonIac,
-          functions: {
-            test_fn: {
-              name: 'test-fn',
-              code: {
-                runtime: 'nodejs18',
-                handler: 'index.handler',
-                path: 'tests/fixtures/artifacts/artifact.zip',
-              },
-            },
-          },
-        } as unknown as ServerlessIacRaw;
-        expect(validateYaml(validYaml)).toBe(true);
-      });
-
-      it('should throw error when iam.statements is missing', () => {
-        const invalidYaml = {
-          ...jsonIac,
-          functions: {
-            test_fn: {
-              name: 'test-fn',
-              code: {
-                runtime: 'nodejs18',
-                handler: 'index.handler',
-                path: 'tests/fixtures/artifacts/artifact.zip',
-              },
-              iam: {},
-            },
-          },
-        } as unknown as ServerlessIacRaw;
-        expect(() => validateYaml(invalidYaml)).toThrow('Invalid yaml');
-      });
-
-      it('should throw error when statement has invalid effect', () => {
-        const invalidYaml = {
-          ...jsonIac,
-          functions: {
-            test_fn: {
-              name: 'test-fn',
-              code: {
-                runtime: 'nodejs18',
-                handler: 'index.handler',
-                path: 'tests/fixtures/artifacts/artifact.zip',
-              },
-              iam: {
-                statements: [
-                  { effect: 'Grant', actions: ['log:PostLogStoreLogs'], resources: ['*'] },
                 ],
               },
             },
@@ -905,7 +961,7 @@ describe('unit test for validate', () => {
         expect(() => validateYaml(invalidYaml)).toThrow('Invalid yaml');
       });
 
-      it('should throw error when statement is missing required effect field', () => {
+      it('rejects invalid effect in statements', () => {
         const invalidYaml = {
           ...jsonIac,
           functions: {
@@ -917,8 +973,12 @@ describe('unit test for validate', () => {
                 path: 'tests/fixtures/artifacts/artifact.zip',
               },
               iam: {
-                // eslint-disable-next-line @typescript-eslint/no-explicit-any
-                statements: [{ actions: ['log:PostLogStoreLogs'], resources: ['*'] } as any],
+                role: {
+                  statements: [
+                    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                    { effect: 'Grant', actions: ['log:PostLogStoreLogs'], resources: ['*'] } as any,
+                  ],
+                },
               },
             },
           },
@@ -926,7 +986,7 @@ describe('unit test for validate', () => {
         expect(() => validateYaml(invalidYaml)).toThrow('Invalid yaml');
       });
 
-      it('should throw error when actions is not an array', () => {
+      it('rejects unknown property in role object', () => {
         const invalidYaml = {
           ...jsonIac,
           functions: {
@@ -938,10 +998,10 @@ describe('unit test for validate', () => {
                 path: 'tests/fixtures/artifacts/artifact.zip',
               },
               iam: {
-                statements: [
+                role: {
                   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-                  { effect: 'Allow', actions: 'log:PostLogStoreLogs', resources: ['*'] } as any,
-                ],
+                  unknown_field: 'value' as any,
+                },
               },
             },
           },

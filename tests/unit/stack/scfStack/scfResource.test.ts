@@ -8,7 +8,7 @@ import * as scfTypes from '../../../../src/stack/scfStack/scfTypes';
 import * as stateManager from '../../../../src/common/stateManager';
 import * as hashUtils from '../../../../src/common/hashUtils';
 import { ProviderEnum } from '../../../../src/common';
-import { Context, StateFile, CURRENT_STATE_VERSION } from '../../../../src/types';
+import { Context, StateFile, CURRENT_STATE_VERSION, ResourceTypeEnum } from '../../../../src/types';
 
 const mockScfOperations = {
   createFunction: jest.fn(),
@@ -18,6 +18,14 @@ const mockScfOperations = {
   deleteFunction: jest.fn(),
 };
 
+const mockCamOperations = {
+  createRole: jest.fn(),
+  getRole: jest.fn(),
+  deleteRole: jest.fn(),
+  updateRolePolicy: jest.fn(),
+  updateManagedPolicies: jest.fn(),
+};
+
 jest.mock('../../../../src/stack/scfStack/scfTypes');
 jest.mock('../../../../src/common/stateManager');
 jest.mock('../../../../src/common/hashUtils');
@@ -25,6 +33,7 @@ jest.mock('../../../../src/common/hashUtils');
 jest.mock('../../../../src/common/tencentClient', () => ({
   createTencentClient: () => ({
     scf: mockScfOperations,
+    cam: mockCamOperations,
     cos: {},
     tdsqlc: {},
   }),
@@ -109,15 +118,31 @@ describe('ScfResource', () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
+    jest.useRealTimers();
     (scfTypes.functionToScfConfig as jest.Mock).mockReturnValue(mockConfig);
     (scfTypes.extractScfDefinition as jest.Mock).mockReturnValue(mockDefinition);
     (hashUtils.computeFileHash as jest.Mock).mockReturnValue('mock-code-hash');
     mockScfOperations.getFunction.mockResolvedValue(mockFunctionInfo);
+    (stateManager.getResource as jest.Mock).mockReturnValue(undefined);
   });
 
   describe('createResource', () => {
     it('should create a resource and refresh state from provider', async () => {
-      const newState = {
+      const taintedState = {
+        ...initialState,
+        resources: {
+          'functions.test_fn': {
+            mode: 'managed',
+            region: 'ap-guangzhou',
+            definition: mockDefinition,
+            instances: [],
+            lastUpdated: expect.any(String),
+            status: 'tainted',
+          },
+        },
+      };
+
+      const finalState = {
         ...initialState,
         resources: {
           'functions.test_fn': {
@@ -126,12 +151,15 @@ describe('ScfResource', () => {
             definition: mockDefinition,
             instances: expect.any(Array),
             lastUpdated: expect.any(String),
+            status: 'ready',
           },
         },
       };
 
       (mockScfOperations.createFunction as jest.Mock).mockResolvedValue(undefined);
-      (stateManager.setResource as jest.Mock).mockReturnValue(newState);
+      (stateManager.setResource as jest.Mock)
+        .mockReturnValueOnce(taintedState)
+        .mockReturnValueOnce(finalState);
 
       const result = await createResource(mockContext, testFunction, initialState);
 
@@ -142,9 +170,14 @@ describe('ScfResource', () => {
       );
       expect(mockScfOperations.getFunction).toHaveBeenCalledWith('test-function');
       expect(hashUtils.computeFileHash).toHaveBeenCalledWith('test.zip');
-      expect(scfTypes.extractScfDefinition).toHaveBeenCalledWith(mockConfig, 'mock-code-hash');
-      expect(stateManager.setResource).toHaveBeenCalledWith(
-        initialState,
+      expect(scfTypes.extractScfDefinition).toHaveBeenCalledWith(
+        mockConfig,
+        'mock-code-hash',
+        undefined,
+      );
+      // Check final setResource call (second call)
+      expect(stateManager.setResource).toHaveBeenLastCalledWith(
+        expect.objectContaining({ version: CURRENT_STATE_VERSION }),
         'functions.test_fn',
         expect.objectContaining({
           mode: 'managed',
@@ -163,9 +196,85 @@ describe('ScfResource', () => {
               codeSha256: 'provider-code-sha256',
             }),
           ]),
+          status: 'ready',
         }),
       );
-      expect(result).toEqual(newState);
+      expect(result).toEqual(finalState);
+    });
+
+    it('should create resource with CAM role when iam config provided', async () => {
+      jest.useFakeTimers();
+
+      const fnWithIam = {
+        ...testFunction,
+        iam: {
+          role: {
+            name: 'test-scf-role',
+            statements: [
+              { effect: 'Allow' as const, actions: ['scf:InvokeFunction'], resources: ['*'] },
+            ],
+          },
+        },
+      };
+
+      (mockCamOperations.createRole as jest.Mock).mockResolvedValue({
+        roleName: 'test-scf-role',
+        roleId: 'role-id',
+        roleArn: 'test-scf-role',
+        policyName: 'test-scf-role-policy',
+      });
+      (mockScfOperations.createFunction as jest.Mock).mockResolvedValue(undefined);
+      (stateManager.setResource as jest.Mock).mockReturnValue(initialState);
+
+      const createPromise = createResource(mockContext, fnWithIam, initialState);
+      await jest.advanceTimersByTimeAsync(5000);
+      await createPromise;
+
+      // Should create the CAM role
+      expect(mockCamOperations.createRole).toHaveBeenCalledWith(
+        'test-scf-role',
+        ['scf.tencentcloudapi.com'],
+        expect.any(String),
+        expect.arrayContaining([expect.objectContaining({ effect: 'Allow' })]),
+        undefined,
+      );
+
+      // Should pass role to SCF config
+      const expectedConfig = {
+        ...mockConfig,
+        Role: 'test-scf-role',
+      };
+      expect(mockScfOperations.createFunction).toHaveBeenCalledWith(
+        expectedConfig,
+        'base64encodedcontent',
+      );
+    });
+
+    it('should use external role ARN directly without creating CAM role', async () => {
+      const fnWithExternalRole = {
+        ...testFunction,
+        iam: {
+          role: 'qcs::cam:uin/123:roleName/external-role',
+        },
+      };
+
+      (mockScfOperations.createFunction as jest.Mock).mockResolvedValue(undefined);
+      (stateManager.setResource as jest.Mock).mockReturnValue(initialState);
+
+      await createResource(mockContext, fnWithExternalRole, initialState);
+
+      // Should NOT create a CAM role
+      expect(mockCamOperations.createRole).not.toHaveBeenCalled();
+
+      // Should pass external role ARN to SCF config
+      const expectedConfig = {
+        ...mockConfig,
+        Role: 'qcs::cam:uin/123:roleName/external-role',
+      };
+      expect(mockScfOperations.createFunction).toHaveBeenCalledWith(
+        expectedConfig,
+        'base64encodedcontent',
+      );
     });
 
     it('should propagate errors from createScfFunction', async () => {
@@ -416,7 +525,11 @@ describe('ScfResource', () => {
       );
       expect(mockScfOperations.getFunction).toHaveBeenCalledWith('test-function');
       expect(hashUtils.computeFileHash).toHaveBeenCalledWith('test.zip');
-      expect(scfTypes.extractScfDefinition).toHaveBeenCalledWith(mockConfig, 'mock-code-hash');
+      expect(scfTypes.extractScfDefinition).toHaveBeenCalledWith(
+        mockConfig,
+        'mock-code-hash',
+        undefined,
+      );
       expect(stateManager.setResource).toHaveBeenCalledWith(
         initialState,
         'functions.test_fn',
@@ -465,22 +578,50 @@ describe('ScfResource', () => {
         'Failed to refresh state for function: test-function',
       );
     });
-  });
 
-  describe('deleteResource', () => {
-    it('should delete resource and remove from state', async () => {
-      const stateWithFunction: StateFile = {
+    it('should update with existing role and detect iam changes', async () => {
+      const fnWithIam = {
+        ...testFunction,
+        iam: {
+          role: {
+            name: 'existing-role',
+            statements: [
+              { effect: 'Allow' as const, actions: ['scf:InvokeFunction'], resources: ['*'] },
+            ],
+            managed_policies: ['QcloudSCFFullAccess'],
+          },
+        },
+      };
+
+      const stateWithRole: StateFile = {
         ...initialState,
         resources: {
           'functions.test_fn': {
             mode: 'managed',
             region: 'ap-guangzhou',
-            definition: mockDefinition,
+            definition: {
+              ...mockDefinition,
+              iam: {
+                role: {
+                  name: 'existing-role',
+                  statements: [
+                    { effect: 'Allow', actions: ['scf:InvokeFunction'], resources: ['*'] },
+                  ],
+                  managed_policies: ['QcloudSCFFullAccess'],
+                },
+              },
+            },
             instances: [
               {
                 sid: 'si:tencent:scf:default:test-function',
                 id: 'test-function',
                 functionName: 'test-function',
+              },
+              {
+                sid: 'si:tencent:scf-role:default:existing-role',
+                type: ResourceTypeEnum.TENCENT_SCF_ROLE,
+                id: 'existing-role',
+                roleArn: 'existing-role',
               },
             ],
             lastUpdated: '2025-01-01T00:00:00Z',
@@ -488,6 +629,111 @@ describe('ScfResource', () => {
         },
       };
 
+      (stateManager.getResource as jest.Mock).mockReturnValue(
+        stateWithRole.resources['functions.test_fn'],
+      );
+      (mockScfOperations.updateFunctionConfiguration as jest.Mock).mockResolvedValue(undefined);
+      (mockScfOperations.updateFunctionCode as jest.Mock).mockResolvedValue(undefined);
+      (mockCamOperations.updateRolePolicy as jest.Mock).mockResolvedValue(undefined);
+      (mockCamOperations.updateManagedPolicies as jest.Mock).mockResolvedValue(undefined);
+      (stateManager.setResource as jest.Mock).mockReturnValue(stateWithRole);
+
+      await updateResource(mockContext, fnWithIam, stateWithRole);
+
+      // Role config should be injected into SCF config
+      const expectedConfig = {
+        ...mockConfig,
+        Role: 'existing-role',
+      };
+      expect(mockScfOperations.updateFunctionConfiguration).toHaveBeenCalledWith(expectedConfig);
+    });
+
+    it('should create role during update when no existing role', async () => {
+      jest.useFakeTimers();
+
+      const fnWithIam = {
+        ...testFunction,
+        iam: {
+          role: {
+            name: 'new-role',
+          },
+        },
+      };
+
+      // No existing state has role
+      (stateManager.getResource as jest.Mock).mockReturnValue(undefined);
+      (mockCamOperations.createRole as jest.Mock).mockResolvedValue({
+        roleName: 'new-role',
+        roleId: 'role-id',
+        roleArn: 'new-role',
+        policyName: 'new-role-policy',
+      });
+      (mockScfOperations.updateFunctionConfiguration as jest.Mock).mockResolvedValue(undefined);
+      (mockScfOperations.updateFunctionCode as jest.Mock).mockResolvedValue(undefined);
+      (stateManager.setResource as jest.Mock).mockReturnValue(initialState);
+
+      const updatePromise = updateResource(mockContext, fnWithIam, initialState);
+      await jest.advanceTimersByTimeAsync(5000);
+      await updatePromise;
+
+      expect(mockCamOperations.createRole).toHaveBeenCalled();
+      const expectedConfig = {
+        ...mockConfig,
+        Role: 'new-role',
+      };
+      expect(mockScfOperations.updateFunctionConfiguration).toHaveBeenCalledWith(expectedConfig);
+    });
+  });
+
+  describe('deleteResource', () => {
+    const stateWithFunction: StateFile = {
+      ...initialState,
+      resources: {
+        'functions.test_fn': {
+          mode: 'managed',
+          region: 'ap-guangzhou',
+          definition: mockDefinition,
+          instances: [
+            {
+              sid: 'si:tencent:scf:default:test-function',
+              id: 'test-function',
+              functionName: 'test-function',
+            },
+          ],
+          lastUpdated: '2025-01-01T00:00:00Z',
+        },
+      },
+    };
+
+    const stateWithFunctionAndRole: StateFile = {
+      ...initialState,
+      resources: {
+        'functions.test_fn': {
+          mode: 'managed',
+          region: 'ap-guangzhou',
+          definition: { ...mockDefinition, iam: { role: { name: 'test-role' } } },
+          instances: [
+            {
+              sid: 'si:tencent:scf:default:test-function',
+              id: 'test-function',
+              functionName: 'test-function',
+            },
+            {
+              sid: 'si:tencent:scf-role:default:test-role',
+              type: ResourceTypeEnum.TENCENT_SCF_ROLE,
+              id: 'test-role',
+              roleArn: 'test-role',
+            },
+          ],
+          lastUpdated: '2025-01-01T00:00:00Z',
+        },
+      },
+    };
+
+    it('should delete resource and remove from state', async () => {
+      (stateManager.getResource as jest.Mock).mockReturnValue(
+        stateWithFunction.resources['functions.test_fn'],
+      );
       (mockScfOperations.deleteFunction as jest.Mock).mockResolvedValue(undefined);
       (stateManager.removeResource as jest.Mock).mockReturnValue(initialState);
 
@@ -507,25 +753,9 @@ describe('ScfResource', () => {
     });
 
     it('should handle ResourceNotFound.FunctionName gracefully and remove state', async () => {
-      const stateWithFunction: StateFile = {
-        ...initialState,
-        resources: {
-          'functions.test_fn': {
-            mode: 'managed',
-            region: 'ap-guangzhou',
-            definition: mockDefinition,
-            instances: [
-              {
-                sid: 'si:tencent:scf:default:test-function',
-                id: 'test-function',
-                functionName: 'test-function',
-              },
-            ],
-            lastUpdated: '2025-01-01T00:00:00Z',
-          },
-        },
-      };
-
+      (stateManager.getResource as jest.Mock).mockReturnValue(
+        stateWithFunction.resources['functions.test_fn'],
+      );
       const notFoundError = Object.assign(new Error('not found'), {
         code: 'ResourceNotFound.FunctionName',
       });
@@ -548,12 +778,77 @@ describe('ScfResource', () => {
     });
 
     it('should rethrow unexpected errors from deleteFunction', async () => {
+      (stateManager.getResource as jest.Mock).mockReturnValue(
+        stateWithFunction.resources['functions.test_fn'],
+      );
       const error = new Error('Delete failed');
       (mockScfOperations.deleteFunction as jest.Mock).mockRejectedValue(error);
 
       await expect(
-        deleteResource(mockContext, 'test-function', 'functions.test_fn', initialState),
+        deleteResource(mockContext, 'test-function', 'functions.test_fn', stateWithFunction),
       ).rejects.toThrow('Delete failed');
+    });
+
+    it('should delete role after function when role present in state', async () => {
+      (stateManager.getResource as jest.Mock).mockReturnValue(
+        stateWithFunctionAndRole.resources['functions.test_fn'],
+      );
+      (mockScfOperations.deleteFunction as jest.Mock).mockResolvedValue(undefined);
+      (mockCamOperations.deleteRole as jest.Mock).mockResolvedValue(undefined);
+      (stateManager.removeResource as jest.Mock).mockReturnValue(initialState);
+
+      const result = await deleteResource(
+        mockContext,
+        'test-function',
+        'functions.test_fn',
+        stateWithFunctionAndRole,
+      );
+
+      expect(mockScfOperations.deleteFunction).toHaveBeenCalledWith('test-function');
+      expect(mockCamOperations.deleteRole).toHaveBeenCalledWith('test-role');
+      expect(stateManager.removeResource).toHaveBeenCalledWith(
+        stateWithFunctionAndRole,
+        'functions.test_fn',
+      );
+      expect(result).toEqual(initialState);
+    });
+
+    it('should skip role deletion for external roles', async () => {
+      const stateWithExternalRole: StateFile = {
+        ...initialState,
+        resources: {
+          'functions.test_fn': {
+            ...stateWithFunctionAndRole.resources['functions.test_fn'],
+            instances: [
+              stateWithFunctionAndRole.resources['functions.test_fn'].instances[0],
+              {
+                sid: 'si:tencent:scf-role:default:external-role',
+                type: ResourceTypeEnum.TENCENT_SCF_ROLE,
+                id: 'external-role',
+                roleArn: 'qcs::cam:uin/123:roleName/external-role',
+                external: true,
+              },
+            ],
+          },
+        },
+      };
+      (stateManager.getResource as jest.Mock).mockReturnValue(
+        stateWithExternalRole.resources['functions.test_fn'],
+      );
+      (mockScfOperations.deleteFunction as jest.Mock).mockResolvedValue(undefined);
+      (mockCamOperations.deleteRole as jest.Mock).mockResolvedValue(undefined);
+      (stateManager.removeResource as jest.Mock).mockReturnValue(initialState);
+
+      await deleteResource(
+        mockContext,
+        'test-function',
+        'functions.test_fn',
+        stateWithExternalRole,
+      );
+
+      // Function should be deleted, but role should NOT be deleted (external)
+      expect(mockScfOperations.deleteFunction).toHaveBeenCalledWith('test-function');
+      expect(mockCamOperations.deleteRole).not.toHaveBeenCalled();
     });
   });
 
@@ -693,8 +988,8 @@ describe('ScfResource', () => {
 
       await createResource(mockContext, testFunction, initialState);
 
-      expect(stateManager.setResource).toHaveBeenCalledWith(
-        initialState,
+      expect(stateManager.setResource).toHaveBeenLastCalledWith(
+        expect.objectContaining({ version: CURRENT_STATE_VERSION }),
         'functions.test_fn',
         expect.objectContaining({
           instances: expect.arrayContaining([
@@ -805,8 +1100,8 @@ describe('ScfResource', () => {
 
       await createResource(mockContext, testFunction, initialState);
 
-      expect(stateManager.setResource).toHaveBeenCalledWith(
-        initialState,
+      expect(stateManager.setResource).toHaveBeenLastCalledWith(
+        expect.objectContaining({ version: CURRENT_STATE_VERSION }),
         'functions.test_fn',
         expect.objectContaining({
           instances: expect.arrayContaining([
@@ -833,8 +1128,8 @@ describe('ScfResource', () => {
 
       await createResource(mockContext, testFunction, initialState);
 
-      expect(stateManager.setResource).toHaveBeenCalledWith(
-        initialState,
+      expect(stateManager.setResource).toHaveBeenLastCalledWith(
+        expect.objectContaining({ version: CURRENT_STATE_VERSION }),
         'functions.test_fn',
         expect.objectContaining({
           instances: expect.arrayContaining([
@@ -877,8 +1172,8 @@ describe('ScfResource', () => {
 
       await createResource(mockContext, testFunction, initialState);
 
-      expect(stateManager.setResource).toHaveBeenCalledWith(
-        initialState,
+      expect(stateManager.setResource).toHaveBeenLastCalledWith(
+        expect.objectContaining({ version: CURRENT_STATE_VERSION }),
         'functions.test_fn',
         expect.objectContaining({
           instances: expect.arrayContaining([
@@ -919,8 +1214,8 @@ describe('ScfResource', () => {
 
       await createResource(mockContext, testFunction, initialState);
 
-      expect(stateManager.setResource).toHaveBeenCalledWith(
-        initialState,
+      expect(stateManager.setResource).toHaveBeenLastCalledWith(
+        expect.objectContaining({ version: CURRENT_STATE_VERSION }),
         'functions.test_fn',
         expect.objectContaining({
           instances: expect.arrayContaining([
@@ -958,8 +1253,8 @@ describe('ScfResource', () => {
 
       await createResource(mockContext, testFunction, initialState);
 
-      expect(stateManager.setResource).toHaveBeenCalledWith(
-        initialState,
+      expect(stateManager.setResource).toHaveBeenLastCalledWith(
+        expect.objectContaining({ version: CURRENT_STATE_VERSION }),
         'functions.test_fn',
         expect.objectContaining({
           instances: expect.arrayContaining([
@@ -994,8 +1289,8 @@ describe('ScfResource', () => {
 
       await createResource(mockContext, testFunction, initialState);
 
-      expect(stateManager.setResource).toHaveBeenCalledWith(
-        initialState,
+      expect(stateManager.setResource).toHaveBeenLastCalledWith(
+        expect.objectContaining({ version: CURRENT_STATE_VERSION }),
         'functions.test_fn',
         expect.objectContaining({
           instances: expect.arrayContaining([
@@ -1025,8 +1320,8 @@ describe('ScfResource', () => {
 
       await createResource(mockContext, testFunction, initialState);
 
-      expect(stateManager.setResource).toHaveBeenCalledWith(
-        initialState,
+      expect(stateManager.setResource).toHaveBeenLastCalledWith(
+        expect.objectContaining({ version: CURRENT_STATE_VERSION }),
         'functions.test_fn',
         expect.objectContaining({
           instances: expect.arrayContaining([
@@ -1084,8 +1379,8 @@ describe('ScfResource', () => {
 
       await createResource(mockContext, testFunction, initialState);
 
-      expect(stateManager.setResource).toHaveBeenCalledWith(
-        initialState,
+      expect(stateManager.setResource).toHaveBeenLastCalledWith(
+        expect.objectContaining({ version: CURRENT_STATE_VERSION }),
         'functions.test_fn',
         expect.objectContaining({
           instances: expect.arrayContaining([
@@ -1174,8 +1469,8 @@ describe('ScfResource', () => {
 
       await createResource(mockContext, testFunction, initialState);
 
-      expect(stateManager.setResource).toHaveBeenCalledWith(
-        initialState,
+      expect(stateManager.setResource).toHaveBeenLastCalledWith(
+        expect.objectContaining({ version: CURRENT_STATE_VERSION }),
         'functions.test_fn',
         expect.objectContaining({
           instances: expect.arrayContaining([

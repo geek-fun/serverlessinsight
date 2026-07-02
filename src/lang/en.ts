@@ -768,6 +768,21 @@ export const en = {
   IAM_POLICY_DETACH_FAILED:
     'Failed to detach IAM policy {{policyName}} from role {{roleName}}: {{error}}',
 
+  // Tencent CAM role messages
+  ATTACHING_MANAGED_POLICY: 'Attaching managed policy {{policyArn}} to role {{roleName}}',
+  DETACHING_MANAGED_POLICY: 'Detaching managed policy {{policyArn}} from role {{roleName}}',
+  MANAGED_POLICY_ATTACHED: 'Managed policy {{policyArn}} attached to role {{roleName}}',
+  MANAGED_POLICY_DETACHED: 'Managed policy {{policyArn}} detached from role {{roleName}}',
+  USING_EXISTING_ROLE: 'Using existing role {{roleArn}} for function',
+  TENCENT_CAM_ROLE_CREATED: 'Tencent CAM role {{roleName}} created',
+  TENCENT_CAM_ROLE_DELETED: 'Tencent CAM role {{roleName}} deleted',
+  TENCENT_CAM_ROLE_NOT_FOUND: 'Tencent CAM role {{roleName}} not found in cloud provider',
+  TENCENT_CAM_ROLE_ALREADY_EXISTS: 'Tencent CAM role {{roleName}} already exists',
+  TENCENT_CAM_ROLE_DRIFT_RECOVERY_FAILED:
+    'Tencent CAM role drift recovery failed for {{roleName}}: {{error}}',
+  TENCENT_CAM_POLICY_ALREADY_ATTACHED: 'Policy already attached to CAM role {{roleName}}',
+  TENCENT_CAM_POLICY_ALREADY_EXISTS: 'Tencent CAM policy already exists',
+
   // Volcengine TLS (Log Service) messages
   TLS_PROJECT_CREATED: 'TLS project {{projectName}} created successfully',
   TLS_PROJECT_DELETED: 'TLS project {{projectName}} deleted successfully',

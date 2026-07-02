@@ -29,12 +29,18 @@ export type FunctionRaw = {
     };
   };
   iam?: {
-    statements?: Array<{
-      sid?: Resolvable<string>;
-      effect: Resolvable<'Allow' | 'Deny'>;
-      actions: Array<Resolvable<string>>;
-      resources: Array<Resolvable<string>>;
-    }>;
+    role?:
+      | Resolvable<string>
+      | {
+          name?: Resolvable<string>;
+          managed_policies?: Array<Resolvable<string>>;
+          statements?: Array<{
+            sid?: Resolvable<string>;
+            effect: Resolvable<'Allow' | 'Deny'>;
+            actions: Array<Resolvable<string>>;
+            resources: Array<Resolvable<string>>;
+          }>;
+        };
   };
   storage?: {
     disk?: Resolvable<number>;
@@ -75,12 +81,18 @@ export type FunctionDomain = {
     };
   };
   iam?: {
-    statements?: Array<{
-      sid?: string;
-      effect: 'Allow' | 'Deny';
-      actions: string[];
-      resources: string[];
-    }>;
+    role?:
+      | string
+      | {
+          name?: string;
+          managed_policies?: string[];
+          statements?: Array<{
+            sid?: string;
+            effect: 'Allow' | 'Deny';
+            actions: string[];
+            resources: string[];
+          }>;
+        };
   };
   storage: {
     disk?: number;

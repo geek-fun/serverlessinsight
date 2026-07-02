@@ -30,12 +30,29 @@ export const parseFunction = (functions?: {
     timeout: parseNumber(func.timeout),
     iam: func.iam
       ? {
-          statements: func.iam.statements?.map((s) => ({
-            sid: s.sid as string | undefined,
-            effect: s.effect as 'Allow' | 'Deny',
-            actions: s.actions.map(String),
-            resources: s.resources.map(String),
-          })),
+          role:
+            func.iam.role !== undefined
+              ? typeof func.iam.role === 'string'
+                ? func.iam.role
+                : {
+                    ...(func.iam.role.name !== undefined
+                      ? { name: String(func.iam.role.name) }
+                      : {}),
+                    ...(func.iam.role.managed_policies !== undefined
+                      ? { managed_policies: func.iam.role.managed_policies.map(String) }
+                      : {}),
+                    ...(func.iam.role.statements !== undefined
+                      ? {
+                          statements: func.iam.role.statements.map((s) => ({
+                            sid: s.sid as string | undefined,
+                            effect: s.effect as 'Allow' | 'Deny',
+                            actions: s.actions.map(String),
+                            resources: s.resources.map(String),
+                          })),
+                        }
+                      : {}),
+                  }
+              : undefined,
         }
       : undefined,
     environment: func.environment,

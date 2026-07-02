@@ -17,10 +17,11 @@ functions:
     timeout: 10
     log: true
     iam:
-      statements:
-        - sid: OSSRead
-          effect: Allow
-          actions:
-            - oss:GetObject
-          resources:
-            - acs:oss:*:*:my-bucket/*
+      role:
+        statements:
+          - sid: OSSRead
+            effect: Allow
+            actions:
+              - oss:GetObject
+            resources:
+              - acs:oss:*:*:my-bucket/*

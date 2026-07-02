@@ -400,6 +400,7 @@ describe('iamOperations', () => {
       accessDeniedError.code = 'AccessDenied';
 
       mockClient.fetchOpenAPI
+        .mockResolvedValueOnce({ Result: { AttachedRolePolicies: [] } })
         .mockResolvedValueOnce({})
         .mockResolvedValueOnce({})
         .mockRejectedValueOnce(accessDeniedError);
@@ -484,6 +485,325 @@ describe('iamOperations', () => {
       await operations.detachRolePolicy('test-role', 'test-policy');
 
       expect(logger.warn).toHaveBeenCalled();
+    });
+  });
+
+  describe('createRole - managed policies', () => {
+    it('should attach managed policies when managedPolicies is provided', async () => {
+      const configWithManaged: IamRoleConfig = {
+        ...mockConfig,
+        managedPolicies: ['arn:policy:one', 'arn:policy:two'],
+      };
+
+      mockClient.fetchOpenAPI
+        .mockResolvedValueOnce({
+          Result: {
+            Role: {
+              RoleName: 'test-role',
+              RoleId: 'role-123',
+              TRN: 'trn:iam::123456:role/test-role',
+              Description: 'Test role',
+              CreateTime: '2024-01-01T00:00:00Z',
+              MaxSessionDuration: 3600,
+            },
+          },
+        })
+        .mockResolvedValueOnce({})
+        .mockResolvedValueOnce({})
+        .mockResolvedValueOnce({})
+        .mockResolvedValueOnce({});
+
+      const result = await operations.createRole(configWithManaged);
+
+      expect(result.roleName).toBe('test-role');
+      expect(result.managedPolicies).toEqual(['arn:policy:one', 'arn:policy:two']);
+
+      expect(mockClient.fetchOpenAPI).toHaveBeenCalledWith(
+        expect.objectContaining({
+          Action: 'AttachRolePolicy',
+          data: expect.objectContaining({
+            PolicyName: 'arn:policy:one',
+            PolicyType: 'System',
+          }),
+        }),
+      );
+      expect(mockClient.fetchOpenAPI).toHaveBeenCalledWith(
+        expect.objectContaining({
+          Action: 'AttachRolePolicy',
+          data: expect.objectContaining({
+            PolicyName: 'arn:policy:two',
+            PolicyType: 'System',
+          }),
+        }),
+      );
+    });
+
+    it('should attach managed policies in RoleAlreadyExists branch', async () => {
+      const configWithManaged: IamRoleConfig = {
+        ...mockConfig,
+        managedPolicies: ['arn:policy:one'],
+      };
+
+      const existingError = new Error('Role exists') as Error & { code: string };
+      existingError.code = 'RoleAlreadyExists';
+
+      mockClient.fetchOpenAPI
+        .mockRejectedValueOnce(existingError)
+        .mockResolvedValueOnce({
+          Result: {
+            Role: {
+              RoleName: 'test-role',
+              RoleId: 'role-123',
+            },
+          },
+        })
+        .mockResolvedValueOnce({})
+        .mockResolvedValueOnce({})
+        .mockResolvedValueOnce({});
+
+      const result = await operations.createRole(configWithManaged);
+
+      expect(result.roleName).toBe('test-role');
+      expect(result.managedPolicies).toEqual(['arn:policy:one']);
+      expect(mockClient.fetchOpenAPI).toHaveBeenCalledWith(
+        expect.objectContaining({
+          Action: 'AttachRolePolicy',
+          data: expect.objectContaining({
+            PolicyName: 'arn:policy:one',
+            PolicyType: 'System',
+          }),
+        }),
+      );
+    });
+
+    it('should skip managed policy attachment when managedPolicies is empty', async () => {
+      const configNoManaged: IamRoleConfig = {
+        ...mockConfig,
+        managedPolicies: [],
+      };
+
+      mockClient.fetchOpenAPI
+        .mockResolvedValueOnce({
+          Result: {
+            Role: {
+              RoleName: 'test-role',
+              RoleId: 'role-123',
+            },
+          },
+        })
+        .mockResolvedValueOnce({})
+        .mockResolvedValueOnce({});
+
+      const result = await operations.createRole(configNoManaged);
+
+      expect(result.roleName).toBe('test-role');
+      expect(result.managedPolicies).toEqual([]);
+      // Only 3 calls: CreateRole, CreatePolicy, AttachRolePolicy (inline)
+      expect(mockClient.fetchOpenAPI).toHaveBeenCalledTimes(3);
+    });
+  });
+
+  describe('deleteRole - managed policies', () => {
+    it('should detach managed policies before deleting role', async () => {
+      mockClient.fetchOpenAPI
+        .mockResolvedValueOnce({
+          Result: {
+            AttachedRolePolicies: [
+              { PolicyName: 'arn:policy:one' },
+              { PolicyName: 'arn:policy:two' },
+            ],
+          },
+        })
+        .mockResolvedValueOnce({})
+        .mockResolvedValueOnce({})
+        .mockResolvedValueOnce({})
+        .mockResolvedValueOnce({})
+        .mockResolvedValueOnce({});
+
+      await operations.deleteRole('test-role');
+
+      // 1st call: ListAttachedRolePolicies
+      expect(mockClient.fetchOpenAPI).toHaveBeenNthCalledWith(
+        1,
+        expect.objectContaining({ Action: 'ListAttachedRolePolicies' }),
+      );
+      // 2nd call: DetachRolePolicy for managed policy one (System)
+      expect(mockClient.fetchOpenAPI).toHaveBeenNthCalledWith(
+        2,
+        expect.objectContaining({
+          Action: 'DetachRolePolicy',
+          data: expect.objectContaining({
+            PolicyName: 'arn:policy:one',
+            PolicyType: 'System',
+          }),
+        }),
+      );
+      // 3rd call: DetachRolePolicy for managed policy two (System)
+      expect(mockClient.fetchOpenAPI).toHaveBeenNthCalledWith(
+        3,
+        expect.objectContaining({
+          Action: 'DetachRolePolicy',
+          data: expect.objectContaining({
+            PolicyName: 'arn:policy:two',
+            PolicyType: 'System',
+          }),
+        }),
+      );
+      // 4th call: DetachRolePolicy for custom inline policy (Custom - from detachAndDeletePolicy)
+      expect(mockClient.fetchOpenAPI).toHaveBeenNthCalledWith(
+        4,
+        expect.objectContaining({
+          Action: 'DetachRolePolicy',
+          data: expect.objectContaining({
+            PolicyType: 'Custom',
+          }),
+        }),
+      );
+    });
+
+    it('should handle ListAttachedRolePolicies returning empty and still delete role', async () => {
+      mockClient.fetchOpenAPI
+        .mockResolvedValueOnce({
+          Result: {
+            AttachedRolePolicies: [],
+          },
+        })
+        .mockResolvedValueOnce({})
+        .mockResolvedValueOnce({})
+        .mockResolvedValueOnce({});
+
+      await operations.deleteRole('test-role');
+
+      expect(mockClient.fetchOpenAPI).toHaveBeenCalledWith(
+        expect.objectContaining({ Action: 'DeleteRole' }),
+      );
+    });
+  });
+
+  describe('listAttachedRolePolicies', () => {
+    it('should return policy names from API response', async () => {
+      mockClient.fetchOpenAPI.mockResolvedValueOnce({
+        Result: {
+          AttachedRolePolicies: [
+            { PolicyName: 'arn:policy:one' },
+            { PolicyName: 'arn:policy:two' },
+          ],
+        },
+      });
+
+      const result = await operations.listAttachedRolePolicies('test-role');
+
+      expect(result).toEqual(['arn:policy:one', 'arn:policy:two']);
+      expect(mockClient.fetchOpenAPI).toHaveBeenCalledWith(
+        expect.objectContaining({ Action: 'ListAttachedRolePolicies' }),
+      );
+    });
+
+    it('should return empty array when no policies attached', async () => {
+      mockClient.fetchOpenAPI.mockResolvedValueOnce({
+        Result: {},
+      });
+
+      const result = await operations.listAttachedRolePolicies('test-role');
+
+      expect(result).toEqual([]);
+    });
+
+    it('should return empty array on API error', async () => {
+      const error = new Error('API error') as Error & { code: string };
+      error.code = 'AccessDenied';
+
+      mockClient.fetchOpenAPI.mockRejectedValueOnce(error);
+
+      const result = await operations.listAttachedRolePolicies('test-role');
+
+      expect(result).toEqual([]);
+    });
+  });
+
+  describe('updateManagedPolicies', () => {
+    it('should attach new and detach removed policies', async () => {
+      mockClient.fetchOpenAPI
+        .mockResolvedValueOnce({
+          Result: {
+            AttachedRolePolicies: [{ PolicyName: 'arn:policy:a' }, { PolicyName: 'arn:policy:b' }],
+          },
+        })
+        .mockResolvedValueOnce({})
+        .mockResolvedValueOnce({})
+        .mockResolvedValueOnce({})
+        .mockResolvedValueOnce({});
+
+      await operations.updateManagedPolicies('test-role', ['arn:policy:b', 'arn:policy:c']);
+
+      // 1st: ListAttachedRolePolicies → [a, b]
+      // 2nd: DetachRolePolicy for a (removed) - System
+      expect(mockClient.fetchOpenAPI).toHaveBeenNthCalledWith(
+        2,
+        expect.objectContaining({
+          Action: 'DetachRolePolicy',
+          data: expect.objectContaining({
+            PolicyName: 'arn:policy:a',
+            PolicyType: 'System',
+          }),
+        }),
+      );
+      // 3rd: AttachRolePolicy for c (new) - System
+      expect(mockClient.fetchOpenAPI).toHaveBeenNthCalledWith(
+        3,
+        expect.objectContaining({
+          Action: 'AttachRolePolicy',
+          data: expect.objectContaining({
+            PolicyName: 'arn:policy:c',
+            PolicyType: 'System',
+          }),
+        }),
+      );
+    });
+
+    it('should do nothing when current and desired are identical', async () => {
+      mockClient.fetchOpenAPI.mockResolvedValueOnce({
+        Result: {
+          AttachedRolePolicies: [{ PolicyName: 'arn:policy:a' }, { PolicyName: 'arn:policy:b' }],
+        },
+      });
+
+      await operations.updateManagedPolicies('test-role', ['arn:policy:a', 'arn:policy:b']);
+
+      // Only 1 call: ListAttachedRolePolicies, no attach/detach needed
+      expect(mockClient.fetchOpenAPI).toHaveBeenCalledTimes(1);
+    });
+
+    it('should handle empty desired policies by detaching all', async () => {
+      mockClient.fetchOpenAPI
+        .mockResolvedValueOnce({
+          Result: {
+            AttachedRolePolicies: [{ PolicyName: 'arn:policy:a' }, { PolicyName: 'arn:policy:b' }],
+          },
+        })
+        .mockResolvedValueOnce({})
+        .mockResolvedValueOnce({});
+
+      await operations.updateManagedPolicies('test-role', []);
+
+      // 1st: ListAttachedRolePolicies
+      // 2nd: DetachRolePolicy for a
+      // 3rd: DetachRolePolicy for b
+      expect(mockClient.fetchOpenAPI).toHaveBeenCalledTimes(3);
+      expect(mockClient.fetchOpenAPI).toHaveBeenNthCalledWith(
+        2,
+        expect.objectContaining({
+          Action: 'DetachRolePolicy',
+          data: expect.objectContaining({ PolicyName: 'arn:policy:a' }),
+        }),
+      );
+      expect(mockClient.fetchOpenAPI).toHaveBeenNthCalledWith(
+        3,
+        expect.objectContaining({
+          Action: 'DetachRolePolicy',
+          data: expect.objectContaining({ PolicyName: 'arn:policy:b' }),
+        }),
+      );
     });
   });
 
