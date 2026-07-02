@@ -1,4 +1,11 @@
-import { BucketAccessEnum, BucketDomain, BucketRaw, CdnConfig, CdnRawConfig } from '../types';
+import {
+  BucketAccessEnum,
+  BucketDomain,
+  BucketRaw,
+  BucketIam,
+  CdnConfig,
+  CdnRawConfig,
+} from '../types';
 import { parseBooleanWithDefault, parseStringWithDefault } from './parseUtils';
 import { logger } from '../common/logger';
 import { lang } from '../lang';
@@ -130,6 +137,42 @@ export const parseBucket = (buckets: {
 
     const websiteDomain = parseWebsiteDomain(bucket.website?.domain);
 
+    // Parse IAM policy statements
+    let iam: BucketIam | undefined;
+    if (bucket.iam?.resource?.statements && Array.isArray(bucket.iam.resource.statements)) {
+      iam = {
+        resource: {
+          statements: bucket.iam.resource.statements.map((stmt) => {
+            const actionRaw = stmt.Action;
+            const actions = Array.isArray(actionRaw) ? actionRaw.map(String) : [String(actionRaw)];
+
+            const resourceRaw = stmt.Resource;
+            const resources = Array.isArray(resourceRaw)
+              ? resourceRaw.map(String)
+              : [String(resourceRaw)];
+
+            const principal: Record<string, string | string[]> = {};
+            for (const [key, val] of Object.entries(stmt.Principal || {})) {
+              principal[key] = val as string | string[];
+            }
+
+            const parsedStmt: BucketIam['resource']['statements'][0] = {
+              Effect: stmt.Effect,
+              Principal: principal,
+              Action: actions,
+              Resource: resources,
+            };
+
+            if (stmt.Condition != null) {
+              parsedStmt.Condition = stmt.Condition as Record<string, unknown>;
+            }
+
+            return parsedStmt;
+          }),
+        },
+      };
+    }
+
     return {
       key,
       name: String(bucket.name),
@@ -159,6 +202,7 @@ export const parseBucket = (buckets: {
         : undefined,
       // Parsed top-level domain config
       domain: domainParsed,
+      iam,
       website: bucket.website
         ? {
             code: String(bucket.website.code),

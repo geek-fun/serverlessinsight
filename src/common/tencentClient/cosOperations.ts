@@ -663,5 +663,83 @@ const createCosOperations = (cosClient: CosSdkClient, region: string, dnsOps?: D
     unbindCustomDomain,
 
     getCosEndpoint,
+
+    putBucketPolicy: async (
+      bucketName: string,
+      region: string,
+      policy: Record<string, unknown>,
+    ): Promise<void> => {
+      await new Promise<void>((resolve, reject) => {
+        cosClient.putBucketPolicy(
+          {
+            Bucket: bucketName,
+            Region: region,
+            Policy: policy,
+          },
+          (err: unknown) => {
+            if (err) reject(err);
+            else resolve();
+          },
+        );
+      });
+      logger.info(lang.__('COS_BUCKET_POLICY_SET', { bucketName }));
+    },
+
+    getBucketPolicy: async (
+      bucketName: string,
+      region: string,
+    ): Promise<Record<string, unknown> | null> => {
+      try {
+        const result = await new Promise<{ Policy?: string }>((resolve, reject) => {
+          cosClient.getBucketPolicy(
+            {
+              Bucket: bucketName,
+              Region: region,
+            },
+            (err: unknown, data: unknown) => {
+              if (err) reject(err);
+              else resolve(data as { Policy?: string });
+            },
+          );
+        });
+        if (result.Policy) {
+          return typeof result.Policy === 'string' ? JSON.parse(result.Policy) : result.Policy;
+        }
+        return null;
+      } catch (err: unknown) {
+        const e = err as { statusCode?: number; code?: string };
+        if (e.statusCode === 404 || e.statusCode === 403 || e.code === 'NoSuchBucketPolicy') {
+          return null;
+        }
+        throw err;
+      }
+    },
+
+    deleteBucketPolicy: async (bucketName: string, region: string): Promise<void> => {
+      try {
+        // COS SDK doesn't have a direct deleteBucketPolicy method.
+        // We delete by setting an empty policy.
+        const emptyPolicy = {
+          version: '2.0',
+          statement: [],
+        };
+        await new Promise<void>((resolve, reject) => {
+          cosClient.putBucketPolicy(
+            {
+              Bucket: bucketName,
+              Region: region,
+              Policy: emptyPolicy,
+            },
+            (err: unknown) => {
+              if (err) reject(err);
+              else resolve();
+            },
+          );
+        });
+        logger.info(lang.__('COS_BUCKET_POLICY_DELETED', { bucketName }));
+      } catch {
+        // Best effort cleanup
+      }
+    },
   };
 };

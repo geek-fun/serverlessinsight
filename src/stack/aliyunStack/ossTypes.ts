@@ -1,7 +1,8 @@
-import { BucketAccessEnum, BucketDomain, ResourceAttributes } from '../../types';
+import { BucketAccessEnum, BucketDomain, BucketIam, ResourceAttributes } from '../../types';
 import { BucketACL, CommonBucketConfig } from '../bucketTypes';
 
 export type OssBucketConfig = CommonBucketConfig & {
+  iam?: BucketIam;
   wwwBindApex?: boolean;
   domainCertificateId?: string;
   domainCertificateBody?: string;
@@ -37,6 +38,10 @@ export const bucketToOssBucketConfig = (bucket: BucketDomain): OssBucketConfig =
   const config: OssBucketConfig = {
     bucketName: bucket.name,
   };
+
+  if (bucket.iam) {
+    config.iam = bucket.iam;
+  }
 
   if (bucket.security?.acl) {
     config.acl = aclMap[bucket.security.acl];
@@ -104,6 +109,11 @@ export const bucketToOssBucketConfig = (bucket: BucketDomain): OssBucketConfig =
 };
 
 /* istanbul ignore next */
+const serializeBucketPolicy = (iam?: BucketIam): string | null => {
+  if (!iam?.resource?.statements || iam.resource.statements.length === 0) return null;
+  return JSON.stringify(iam);
+};
+
 export const extractOssBucketDefinition = (
   config: OssBucketConfig,
   websiteCodeHash?: string | null,
@@ -128,6 +138,7 @@ export const extractOssBucketDefinition = (
     versioningStatus: config.versioningStatus ?? null,
     sseAlgorithm: config.sseAlgorithm ?? null,
     sseKmsMasterKeyId: config.sseKmsMasterKeyId ?? null,
+    policy: serializeBucketPolicy(config.iam),
   };
 
   // Only include CDN/accelerate fields when they're actually enabled

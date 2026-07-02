@@ -761,4 +761,15 @@ export const zhCN = {
   FAILED_TO_ENABLE_ACCELERATION: '无法为存储桶 {{bucketName}} 开启传输加速',
   CDN_ACCELERATE_CONFIG_CHANGED:
     '无法通过更新操作更改存储桶 {{bucketName}} 的 CDN/加速配置。请使用销毁重建操作来更改 CDN 或加速配置。',
+
+  // Bucket IAM Policy messages
+  BUCKET_POLICY_APPLYING: '正在为存储桶 {{bucketName}} 应用 IAM 策略',
+  BUCKET_POLICY_APPLIED: 'IAM 策略已应用于存储桶 {{bucketName}}',
+  BUCKET_POLICY_DELETED: 'IAM 策略已从存储桶 {{bucketName}} 移除',
+  OSS_BUCKET_POLICY_SET: 'OSS 存储桶 {{bucketName}} 策略已设置',
+  OSS_BUCKET_POLICY_DELETED: 'OSS 存储桶 {{bucketName}} 策略已删除',
+  COS_BUCKET_POLICY_SET: 'COS 存储桶 {{bucketName}} 策略已设置',
+  COS_BUCKET_POLICY_DELETED: 'COS 存储桶 {{bucketName}} 策略已删除',
+  TOS_BUCKET_POLICY_SET: 'TOS 存储桶 {{bucketName}} 策略已设置',
+  TOS_BUCKET_POLICY_DELETED: 'TOS 存储桶 {{bucketName}} 策略已删除',
 };

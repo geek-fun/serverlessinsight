@@ -833,4 +833,15 @@ export const en = {
   FAILED_TO_ENABLE_ACCELERATION: 'Failed to enable transfer acceleration for bucket {{bucketName}}',
   CDN_ACCELERATE_CONFIG_CHANGED:
     'Cannot change CDN/accelerate settings for bucket {{bucketName}} via update. Use destroy+recreate to change CDN or acceleration configuration.',
+
+  // Bucket IAM Policy messages
+  BUCKET_POLICY_APPLYING: 'Applying IAM bucket policy to bucket {{bucketName}}',
+  BUCKET_POLICY_APPLIED: 'IAM bucket policy applied to bucket {{bucketName}}',
+  BUCKET_POLICY_DELETED: 'IAM bucket policy removed from bucket {{bucketName}}',
+  OSS_BUCKET_POLICY_SET: 'OSS bucket policy set for {{bucketName}}',
+  OSS_BUCKET_POLICY_DELETED: 'OSS bucket policy deleted for {{bucketName}}',
+  COS_BUCKET_POLICY_SET: 'COS bucket policy set for {{bucketName}}',
+  COS_BUCKET_POLICY_DELETED: 'COS bucket policy deleted for {{bucketName}}',
+  TOS_BUCKET_POLICY_SET: 'TOS bucket policy set for {{bucketName}}',
+  TOS_BUCKET_POLICY_DELETED: 'TOS bucket policy deleted for {{bucketName}}',
 };

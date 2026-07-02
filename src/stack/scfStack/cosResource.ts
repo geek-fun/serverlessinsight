@@ -1,6 +1,7 @@
 import {
   Context,
   BucketDomain,
+  BucketIamStatement,
   ResourceState,
   StateFile,
   ResourceInstance,
@@ -14,6 +15,57 @@ import { readPemContent, warnInlinePem } from '../../common/certUtils';
 import { logger } from '../../common/logger';
 import { lang } from '../../lang';
 import { deriveWwwDomain } from '../../common/domainUtils';
+
+const toLowercasePolicy = (stmt: BucketIamStatement): Record<string, unknown> => {
+  const s: Record<string, unknown> = {
+    effect: stmt.Effect.toLowerCase(),
+    principal: stmt.Principal,
+    action: stmt.Action,
+    resource: stmt.Resource,
+  };
+  if (stmt.Condition) {
+    s.condition = stmt.Condition;
+  }
+  return s;
+};
+
+const buildCosBucketPolicyJson = (iam: BucketDomain['iam']): Record<string, unknown> | null => {
+  if (!iam?.resource?.statements || iam.resource.statements.length === 0) return null;
+  return {
+    version: '2.0',
+    statement: iam.resource.statements.map(toLowercasePolicy),
+  };
+};
+
+const applyBucketPolicy = async (
+  client: ReturnType<typeof createTencentClient>,
+  bucket: BucketDomain,
+  region: string,
+): Promise<void> => {
+  if (!bucket.iam) return;
+  const policy = buildCosBucketPolicyJson(bucket.iam);
+  if (!policy) {
+    // iam exists but has no statements — delete any existing policy
+    await deleteBucketPolicy(client, bucket.name, region);
+    return;
+  }
+  logger.info(lang.__('BUCKET_POLICY_APPLYING', { bucketName: bucket.name }));
+  await client.cos.putBucketPolicy(bucket.name, region, policy);
+  logger.info(lang.__('BUCKET_POLICY_APPLIED', { bucketName: bucket.name }));
+};
+
+const deleteBucketPolicy = async (
+  client: ReturnType<typeof createTencentClient>,
+  bucketName: string,
+  region: string,
+): Promise<void> => {
+  try {
+    await client.cos.deleteBucketPolicy(bucketName, region);
+    logger.info(lang.__('BUCKET_POLICY_DELETED', { bucketName }));
+  } catch {
+    // Best effort cleanup
+  }
+};
 
 type CosDnsInstance = ResourceInstance & {
   type: 'TENCENT_COS_DNS_CNAME';
@@ -275,6 +327,9 @@ export const createBucketResource = async (
     }
   }
 
+  // Apply IAM bucket policy if configured
+  await applyBucketPolicy(client, bucket, context.region);
+
   const resourceState: ResourceState = {
     mode: 'managed',
     region: context.region,
@@ -423,6 +478,18 @@ export const updateBucketResource = async (
     }
   }
 
+  // Apply IAM bucket policy if configured (update or remove)
+  const existingDef = existingState?.definition as Record<string, unknown> | undefined;
+  const oldPolicyJson = existingDef?.policy as string | undefined;
+  const newPolicyJson = bucket.iam ? JSON.stringify(bucket.iam) : null;
+  if (newPolicyJson !== (oldPolicyJson ?? null)) {
+    if (newPolicyJson) {
+      await applyBucketPolicy(client, bucket, context.region);
+    } else {
+      await deleteBucketPolicy(client, config.Bucket, context.region);
+    }
+  }
+
   const resourceState: ResourceState = {
     mode: 'managed',
     region: context.region,
@@ -447,6 +514,9 @@ export const deleteBucketResource = async (
   const dnsInstances = existingState?.instances?.filter(
     (i) => i.type === ResourceTypeEnum.COS_DNS_CNAME,
   ) as CosDnsInstance[] | undefined;
+
+  // Clean up bucket policy before deleting bucket
+  await deleteBucketPolicy(client, bucketName, region);
 
   if (dnsInstances) {
     for (const dnsInstance of dnsInstances) {
