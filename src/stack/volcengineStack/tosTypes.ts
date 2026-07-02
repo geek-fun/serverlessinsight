@@ -1,4 +1,4 @@
-import { BucketDomain, ResourceAttributes } from '../../types';
+import { BucketDomain, BucketIam, ResourceAttributes } from '../../types';
 import type {
   TosAcl,
   TosStorageClass,
@@ -11,6 +11,7 @@ export type TosBucketDefinition = {
   storageClass: TosStorageClass | null;
   websiteConfiguration: TosWebsiteConfig | null;
   websiteCodeHash: string | null;
+  iam?: BucketIam;
 };
 
 const aclMap: Record<string, TosAcl> = {
@@ -25,9 +26,14 @@ export const bucketToTosConfig = (bucket: BucketDomain) => {
     acl?: TosAcl;
     storageClass?: TosStorageClass;
     websiteConfig?: TosWebsiteConfig;
+    iam?: BucketIam;
   } = {
     bucketName: bucket.name,
   };
+
+  if (bucket.iam) {
+    config.iam = bucket.iam;
+  }
 
   if (bucket.security?.acl) {
     config.acl = aclMap[bucket.security.acl];
@@ -47,6 +53,11 @@ export const bucketToTosConfig = (bucket: BucketDomain) => {
   return config;
 };
 
+const serializeBucketPolicy = (iam?: BucketIam): string | null => {
+  if (!iam?.resource?.statements || iam.resource.statements.length === 0) return null;
+  return JSON.stringify(iam);
+};
+
 export const extractTosBucketDefinition = (
   config: ReturnType<typeof bucketToTosConfig>,
   websiteCodeHash?: string | null,
@@ -62,6 +73,7 @@ export const extractTosBucketDefinition = (
         }
       : null,
     websiteCodeHash: websiteCodeHash ?? null,
+    policy: serializeBucketPolicy(config.iam),
   };
 };
 

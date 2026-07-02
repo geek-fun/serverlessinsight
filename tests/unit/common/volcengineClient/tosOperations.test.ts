@@ -624,5 +624,118 @@ describe('tosOperations', () => {
         );
       });
     });
+
+    describe('putBucketPolicy', () => {
+      it('should put bucket policy successfully', async () => {
+        mockClient.fetchOpenAPI.mockResolvedValueOnce({});
+
+        await operations.putBucketPolicy('test-bucket', {
+          Statement: [
+            {
+              Effect: 'Allow',
+              Principal: { trn: 'trn:iam:::role/my-role' },
+              Action: ['tos:PutObject'],
+              Resource: ['trn:tos:::test-bucket/*'],
+            },
+          ],
+        });
+
+        expect(mockClient.fetchOpenAPI).toHaveBeenCalledWith(
+          expect.objectContaining({
+            Action: 'PutBucketPolicy',
+            Version: '2018-08-01',
+            query: expect.objectContaining({ Bucket: 'test-bucket' }),
+          }),
+        );
+      });
+
+      it('should throw error with null client', async () => {
+        const nullClientOperations = createTosOperations(null, 'cn-beijing');
+
+        await expect(
+          nullClientOperations.putBucketPolicy('test-bucket', { Statement: [] }),
+        ).rejects.toThrow('VOLCENGINE_TOS_CLIENT_NOT_INITIALIZED');
+      });
+    });
+
+    describe('getBucketPolicy', () => {
+      it('should return policy when it exists', async () => {
+        mockClient.fetchOpenAPI.mockResolvedValueOnce({
+          Result: {
+            Statement: [
+              {
+                Effect: 'Allow',
+                Principal: { trn: 'trn:iam:::role/my-role' },
+                Action: ['tos:GetObject'],
+                Resource: ['trn:tos:::test-bucket/*'],
+              },
+            ],
+          },
+        });
+
+        const result = await operations.getBucketPolicy('test-bucket');
+
+        expect(result).toBeTruthy();
+        expect(mockClient.fetchOpenAPI).toHaveBeenCalledWith(
+          expect.objectContaining({ Action: 'GetBucketPolicy' }),
+        );
+      });
+
+      it('should return null when policy does not exist (NoSuchBucketPolicy)', async () => {
+        const error = new Error('Not found') as Error & { code: string };
+        error.code = 'NoSuchBucketPolicy';
+        mockClient.fetchOpenAPI.mockRejectedValueOnce(error);
+
+        const result = await operations.getBucketPolicy('test-bucket');
+
+        expect(result).toBeNull();
+      });
+
+      it('should return null when policy does not exist (ResourceNotFound)', async () => {
+        const error = new Error('Not found') as Error & { code: string };
+        error.code = 'ResourceNotFound';
+        mockClient.fetchOpenAPI.mockRejectedValueOnce(error);
+
+        const result = await operations.getBucketPolicy('test-bucket');
+
+        expect(result).toBeNull();
+      });
+
+      it('should throw error with null client', async () => {
+        const nullClientOperations = createTosOperations(null, 'cn-beijing');
+
+        await expect(nullClientOperations.getBucketPolicy('test-bucket')).rejects.toThrow(
+          'VOLCENGINE_TOS_CLIENT_NOT_INITIALIZED',
+        );
+      });
+    });
+
+    describe('deleteBucketPolicy', () => {
+      it('should delete bucket policy successfully', async () => {
+        mockClient.fetchOpenAPI.mockResolvedValueOnce({});
+
+        await operations.deleteBucketPolicy('test-bucket');
+
+        expect(mockClient.fetchOpenAPI).toHaveBeenCalledWith(
+          expect.objectContaining({ Action: 'DeleteBucketPolicy' }),
+        );
+      });
+
+      it('should handle NoSuchBucketPolicy error gracefully', async () => {
+        const error = new Error('Not found') as Error & { code: string };
+        error.code = 'NoSuchBucketPolicy';
+        mockClient.fetchOpenAPI.mockRejectedValueOnce(error);
+
+        await expect(operations.deleteBucketPolicy('test-bucket')).resolves.toBeUndefined();
+      });
+
+      it('should throw error with null client', async () => {
+        const nullClientOperations = createTosOperations(null, 'cn-beijing');
+
+        await expect(nullClientOperations.deleteBucketPolicy('test-bucket')).rejects.toThrow(
+          'VOLCENGINE_TOS_CLIENT_NOT_INITIALIZED',
+        );
+      });
+    });
   });
 });

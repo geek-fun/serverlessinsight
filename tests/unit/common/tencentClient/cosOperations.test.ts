@@ -7,6 +7,8 @@ const mockDeleteBucketCors = jest.fn();
 const mockPutBucketDomain = jest.fn();
 const mockGetBucketDomain = jest.fn();
 const mockDeleteBucketDomain = jest.fn();
+const mockPutBucketPolicy = jest.fn();
+const mockGetBucketPolicy = jest.fn();
 const mockHeadBucket = jest.fn();
 const mockPutBucket = jest.fn();
 const mockDeleteBucket = jest.fn();
@@ -33,6 +35,8 @@ const mockCosClient = {
   putBucketDomain: mockPutBucketDomain,
   getBucketDomain: mockGetBucketDomain,
   deleteBucketDomain: mockDeleteBucketDomain,
+  putBucketPolicy: mockPutBucketPolicy,
+  getBucketPolicy: mockGetBucketPolicy,
 } as unknown as COS;
 
 jest.mock('../../../../src/common/logger', () => ({
@@ -502,6 +506,109 @@ describe('cosOperations bucket management', () => {
       const endpoint = operations.getCosEndpoint('test-bucket');
 
       expect(endpoint).toBe('test-bucket.cos.ap-guangzhou.myqcloud.com');
+    });
+  });
+
+  describe('putBucketPolicy', () => {
+    it('should put bucket policy successfully', async () => {
+      mockPutBucketPolicy.mockImplementation((_params: unknown, cb: (err: null) => void) =>
+        cb(null),
+      );
+
+      await operations.putBucketPolicy('test-bucket', 'ap-guangzhou', {
+        version: '2.0',
+        statement: [
+          {
+            effect: 'allow',
+            principal: { qcs: ['qcs::cam::uin/123:role/my-role'] },
+            action: ['name/cos:GetObject'],
+            resource: ['qcs::cos:ap-guangzhou:uid/123:test-bucket/*'],
+          },
+        ],
+      });
+
+      expect(mockPutBucketPolicy).toHaveBeenCalledWith(
+        expect.objectContaining({ Bucket: 'test-bucket', Region: 'ap-guangzhou' }),
+        expect.any(Function),
+      );
+    });
+
+    it('should reject when putBucketPolicy fails', async () => {
+      mockPutBucketPolicy.mockImplementation((_params: unknown, cb: (err: Error) => void) =>
+        cb(new Error('PolicyError')),
+      );
+
+      await expect(
+        operations.putBucketPolicy('test-bucket', 'ap-guangzhou', {
+          version: '2.0',
+          statement: [],
+        }),
+      ).rejects.toThrow('PolicyError');
+    });
+  });
+
+  describe('getBucketPolicy', () => {
+    it('should return policy when it exists', async () => {
+      mockGetBucketPolicy.mockImplementation(
+        (_params: unknown, cb: (err: null, data: { Policy: string }) => void) =>
+          cb(null, {
+            Policy: JSON.stringify({
+              version: '2.0',
+              statement: [
+                {
+                  effect: 'allow',
+                  principal: { qcs: ['qcs::cam::uin/123:role/my-role'] },
+                  action: ['name/cos:GetObject'],
+                  resource: ['*'],
+                },
+              ],
+            }),
+          }),
+      );
+
+      const result = await operations.getBucketPolicy('test-bucket', 'ap-guangzhou');
+
+      expect(result).toBeTruthy();
+      expect(result).toHaveProperty('version', '2.0');
+    });
+
+    it('should return null when policy does not exist (404)', async () => {
+      mockGetBucketPolicy.mockImplementation(
+        (_params: unknown, cb: (err: { statusCode: number }) => void) => cb({ statusCode: 404 }),
+      );
+
+      const result = await operations.getBucketPolicy('test-bucket', 'ap-guangzhou');
+
+      expect(result).toBeNull();
+    });
+
+    it('should return null when policy does not exist (403)', async () => {
+      mockGetBucketPolicy.mockImplementation(
+        (_params: unknown, cb: (err: { statusCode: number }) => void) => cb({ statusCode: 403 }),
+      );
+
+      const result = await operations.getBucketPolicy('test-bucket', 'ap-guangzhou');
+
+      expect(result).toBeNull();
+    });
+  });
+
+  describe('deleteBucketPolicy', () => {
+    it('should delete bucket policy by setting empty policy', async () => {
+      mockPutBucketPolicy.mockImplementation((_params: unknown, cb: (err: null) => void) =>
+        cb(null),
+      );
+
+      await operations.deleteBucketPolicy('test-bucket', 'ap-guangzhou');
+
+      expect(mockPutBucketPolicy).toHaveBeenCalledWith(
+        expect.objectContaining({
+          Bucket: 'test-bucket',
+          Region: 'ap-guangzhou',
+          Policy: expect.objectContaining({ version: '2.0', statement: [] }),
+        }),
+        expect.any(Function),
+      );
     });
   });
 

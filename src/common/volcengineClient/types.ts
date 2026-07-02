@@ -377,6 +377,9 @@ export type VolcengineClient = {
     listObjects: (bucket: string, prefix?: string) => Promise<TosObjectInfo[]>;
     deleteObjects: (bucket: string, keys: string[]) => Promise<void>;
     uploadFiles: (bucketName: string, sourcePath: string) => Promise<void>;
+    putBucketPolicy: (bucketName: string, policy: Record<string, unknown>) => Promise<void>;
+    getBucketPolicy: (bucketName: string) => Promise<Record<string, unknown> | null>;
+    deleteBucketPolicy: (bucketName: string) => Promise<void>;
   };
   iam: {
     createRole: (config: IamRoleConfig) => Promise<IamRoleInfo>;

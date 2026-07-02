@@ -407,6 +407,95 @@ export const createTosOperations = (client: TosSdkClient | null, _region: string
       });
     },
 
+    putBucketPolicy: async (bucketName: string, policy: Record<string, unknown>): Promise<void> => {
+      if (!client) {
+        throw new Error(lang.__('VOLCENGINE_TOS_CLIENT_NOT_INITIALIZED'));
+      }
+
+      await client.fetchOpenAPI({
+        Action: 'PutBucketPolicy',
+        Version: '2018-08-01',
+        method: 'PUT',
+        headers: {
+          'content-type': 'application/json',
+        },
+        query: {
+          Bucket: bucketName,
+        },
+        data: policy,
+      });
+
+      logger.info(lang.__('TOS_BUCKET_POLICY_SET', { bucketName }));
+    },
+
+    getBucketPolicy: async (bucketName: string): Promise<Record<string, unknown> | null> => {
+      if (!client) {
+        throw new Error(lang.__('VOLCENGINE_TOS_CLIENT_NOT_INITIALIZED'));
+      }
+
+      try {
+        const response = await client.fetchOpenAPI({
+          Action: 'GetBucketPolicy',
+          Version: '2018-08-01',
+          method: 'GET',
+          query: {
+            Bucket: bucketName,
+          },
+        });
+
+        // The response may contain the policy document in the Result
+        const result = (response.Result || {}) as Record<string, unknown>;
+        if (result.Policy) {
+          return typeof result.Policy === 'string'
+            ? JSON.parse(result.Policy)
+            : (result.Policy as Record<string, unknown>);
+        }
+        // Some TOS responses return the policy directly on the result
+        if (result.Statement || result.Version) {
+          return result as Record<string, unknown>;
+        }
+        return null;
+      } catch (error: unknown) {
+        if (
+          error &&
+          typeof error === 'object' &&
+          'code' in error &&
+          (error.code === 'NoSuchBucketPolicy' || error.code === 'ResourceNotFound')
+        ) {
+          return null;
+        }
+        throw error;
+      }
+    },
+
+    deleteBucketPolicy: async (bucketName: string): Promise<void> => {
+      if (!client) {
+        throw new Error(lang.__('VOLCENGINE_TOS_CLIENT_NOT_INITIALIZED'));
+      }
+
+      try {
+        await client.fetchOpenAPI({
+          Action: 'DeleteBucketPolicy',
+          Version: '2018-08-01',
+          method: 'DELETE',
+          query: {
+            Bucket: bucketName,
+          },
+        });
+        logger.info(lang.__('TOS_BUCKET_POLICY_DELETED', { bucketName }));
+      } catch (error: unknown) {
+        if (
+          error &&
+          typeof error === 'object' &&
+          'code' in error &&
+          (error.code === 'NoSuchBucketPolicy' || error.code === 'ResourceNotFound')
+        ) {
+          return;
+        }
+        throw error;
+      }
+    },
+
     uploadFiles: async (bucketName: string, sourcePath: string): Promise<void> => {
       if (!client) {
         throw new Error(lang.__('VOLCENGINE_TOS_CLIENT_NOT_INITIALIZED'));

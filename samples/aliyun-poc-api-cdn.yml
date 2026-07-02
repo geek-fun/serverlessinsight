@@ -1,0 +1,75 @@
+version: 0.1.0
+
+provider:
+  name: aliyun
+  region: cn-hongkong
+
+vars:
+  handler: index.handler
+
+stages:
+  dev:
+    region: cn-hongkong
+    node_env: development
+
+app: insight-poc
+service: insight-poc-cdn-api
+
+tags:
+  owner: geek-fun
+
+functions:
+  api_handler:
+    name: insight-poc-cdn-api-fn
+    code:
+      runtime: nodejs18
+      handler: ${vars.handler}
+      path: tests/fixtures/artifacts/artifact.zip
+    memory: 512
+    timeout: 10
+    environment:
+      NODE_ENV: ${stages.node_env}
+
+# Example: API Gateway with CDN acceleration
+# CDN sits in front of API Gateway for edge caching
+events:
+  cdn_gateway:
+    type: API_GATEWAY
+    name: insight-poc-cdn-gateway
+    triggers:
+      - method: GET
+        path: /api/hello
+        backend: ${functions.api_handler}
+    domain:
+      domain_name: api.example.com
+      certificate_id: cas-cert-api123
+      cdn:
+        enabled: true
+        cdn_type: web
+        scope: global
+        cache_ttl: 300           # Short TTL for API responses
+        ignore_query_string: false  # Different query params = different cache
+        origin_protocol: https   # Use HTTPS to origin (API Gateway)
+        compression: true
+        force_redirect_https: true
+
+  # Example: Static API responses with long cache
+  static_api_gateway:
+    type: API_GATEWAY
+    name: insight-poc-static-api
+    triggers:
+      - method: GET
+        path: /api/config
+        backend: ${functions.api_handler}
+    domain:
+      domain_name: config.example.com
+      certificate_id: cas-cert-config456
+      cdn:
+        enabled: true
+        cdn_type: web
+        scope: domestic
+        cache_ttl: 86400         # 24 hours for static config
+        ignore_query_string: true  # Ignore query params, same response
+        origin_protocol: follow  # Follow original protocol
+        compression: true
+        force_redirect_https: true

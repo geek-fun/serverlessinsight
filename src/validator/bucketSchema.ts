@@ -123,6 +123,54 @@ const bucketWebsiteDomainSchema = {
   ],
 };
 
+const iamStatementPrincipalSchema = {
+  type: 'object',
+  minProperties: 1,
+  additionalProperties: { type: 'string' },
+};
+
+const iamStatementSchema = {
+  type: 'object',
+  properties: {
+    effect: { type: 'string', enum: ['Allow', 'Deny'] },
+    principal: iamStatementPrincipalSchema,
+    action: {
+      oneOf: [{ type: 'string' }, { type: 'array', items: { type: 'string' }, minItems: 1 }],
+    },
+    resource: {
+      oneOf: [{ type: 'string' }, { type: 'array', items: { type: 'string' }, minItems: 1 }],
+    },
+    condition: {
+      type: 'object',
+      additionalProperties: true,
+    },
+  },
+  required: ['effect', 'principal', 'action', 'resource'],
+  additionalProperties: false,
+};
+
+const iamResourceSchema = {
+  type: 'object',
+  properties: {
+    statements: {
+      type: 'array',
+      items: iamStatementSchema,
+      minItems: 1,
+    },
+  },
+  required: ['statements'],
+  additionalProperties: false,
+};
+
+const iamSchema = {
+  type: 'object',
+  properties: {
+    resource: iamResourceSchema,
+  },
+  required: ['resource'],
+  additionalProperties: false,
+};
+
 export const bucketSchema = {
   $id: 'https://serverlessinsight.geekfun.club/schemas/bucketschema.json',
   type: 'object',
@@ -184,6 +232,7 @@ export const bucketSchema = {
           required: ['code'],
           additionalProperties: false,
         },
+        iam: iamSchema,
       },
       required: ['name'],
       additionalProperties: false,

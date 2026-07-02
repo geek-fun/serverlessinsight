@@ -225,4 +225,9 @@ export type CommonBucketInstance = {
     key?: string | null;
     value?: string | null;
   }>;
+  /**
+   * Bucket policy (IAM resource policy) stored as provider-specific JSON string.
+   * Used for diff during planning and cleanup during destroy.
+   */
+  policy?: string | null;
 };

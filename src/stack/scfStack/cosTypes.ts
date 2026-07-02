@@ -1,8 +1,9 @@
-import { BucketDomain, ResourceAttributes } from '../../types';
+import { BucketDomain, BucketIam, ResourceAttributes } from '../../types';
 
 export type CosBucketConfig = {
   Bucket: string;
   Region: string;
+  IamPolicy?: BucketIam;
   ACL?: 'private' | 'public-read' | 'public-read-write';
   WebsiteConfiguration?: {
     IndexDocument: {
@@ -119,6 +120,10 @@ export const bucketToCosBucketConfig = (bucket: BucketDomain, region: string): C
     Region: region,
   };
 
+  if (bucket.iam) {
+    config.IamPolicy = bucket.iam;
+  }
+
   if (bucket.security?.acl) {
     const aclMap: Record<string, 'private' | 'public-read' | 'public-read-write'> = {
       PRIVATE: 'private',
@@ -174,6 +179,11 @@ export const bucketToCosBucketConfig = (bucket: BucketDomain, region: string): C
   return config;
 };
 
+const serializeBucketPolicy = (iam?: BucketIam): string | null => {
+  if (!iam?.resource?.statements || iam.resource.statements.length === 0) return null;
+  return JSON.stringify(iam);
+};
+
 export const extractCosBucketDefinition = (config: CosBucketConfig): ResourceAttributes => {
   return {
     bucket: config.Bucket,
@@ -194,5 +204,6 @@ export const extractCosBucketDefinition = (config: CosBucketConfig): ResourceAtt
     versioningStatus: config.VersioningStatus ?? null,
     sseAlgorithm: config.SseAlgorithm ?? null,
     sseKmsMasterKeyId: config.SseKmsMasterKeyId ?? null,
+    policy: serializeBucketPolicy(config.IamPolicy),
   };
 };

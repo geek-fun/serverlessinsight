@@ -1036,5 +1036,52 @@ const parseXmlResponse = <T>(xml: string, tagName: string): T | null => {
     createCnameToken,
 
     getBucketCnameEndpoint,
+
+    putBucketPolicy: async (bucketName: string, policy: Record<string, unknown>): Promise<void> => {
+      useBucket(bucketName);
+      await ossClient.putBucketPolicy(bucketName, policy as never);
+      logger.info(lang.__('OSS_BUCKET_POLICY_SET', { bucketName }));
+    },
+
+    getBucketPolicy: async (bucketName: string): Promise<Record<string, unknown> | null> => {
+      useBucket(bucketName);
+      try {
+        const result: { policy?: Record<string, unknown> | string } =
+          (await ossClient.getBucketPolicy(bucketName)) as never;
+        return result.policy
+          ? typeof result.policy === 'string'
+            ? JSON.parse(result.policy)
+            : result.policy
+          : null;
+      } catch (error: unknown) {
+        if (
+          error &&
+          typeof error === 'object' &&
+          'code' in error &&
+          error.code === 'NoSuchBucketPolicy'
+        ) {
+          return null;
+        }
+        throw error;
+      }
+    },
+
+    deleteBucketPolicy: async (bucketName: string): Promise<void> => {
+      useBucket(bucketName);
+      try {
+        await ossClient.deleteBucketPolicy(bucketName);
+        logger.info(lang.__('OSS_BUCKET_POLICY_DELETED', { bucketName }));
+      } catch (error: unknown) {
+        if (
+          error &&
+          typeof error === 'object' &&
+          'code' in error &&
+          error.code === 'NoSuchBucketPolicy'
+        ) {
+          return;
+        }
+        throw error;
+      }
+    },
   };
 };

@@ -169,6 +169,49 @@ const getIsAccelerateEnabled = (bucket: BucketDomain): boolean => {
   return bucket.domain?.accelerate === true;
 };
 
+const buildOssBucketPolicyJson = (iam: BucketDomain['iam']): Record<string, unknown> | null => {
+  if (!iam?.resource?.statements || iam.resource.statements.length === 0) return null;
+  return {
+    Version: '1',
+    Statement: iam.resource.statements.map((stmt) => {
+      const s: Record<string, unknown> = {
+        Effect: stmt.effect,
+        Principal: stmt.principal,
+        Action: stmt.action,
+        Resource: stmt.resource,
+      };
+      if (stmt.condition) {
+        s.Condition = stmt.condition;
+      }
+      return s;
+    }),
+  };
+};
+
+const applyBucketPolicy = async (
+  client: ReturnType<typeof createAliyunClient>,
+  bucket: BucketDomain,
+): Promise<void> => {
+  if (!bucket.iam) return;
+  const policy = buildOssBucketPolicyJson(bucket.iam);
+  if (!policy) return;
+  logger.info(lang.__('BUCKET_POLICY_APPLYING', { bucketName: bucket.name }));
+  await client.oss.putBucketPolicy(bucket.name, policy);
+  logger.info(lang.__('BUCKET_POLICY_APPLIED', { bucketName: bucket.name }));
+};
+
+const deleteBucketPolicy = async (
+  client: ReturnType<typeof createAliyunClient>,
+  bucketName: string,
+): Promise<void> => {
+  try {
+    await client.oss.deleteBucketPolicy(bucketName);
+    logger.info(lang.__('BUCKET_POLICY_DELETED', { bucketName }));
+  } catch {
+    // Best effort cleanup
+  }
+};
+
 const getDomainName = (bucket: BucketDomain): string | undefined => {
   return bucket.domain?.domain_name || bucket.website?.domain;
 };
@@ -522,6 +565,9 @@ export const createBucketResource = async (
     }
   }
 
+  // Apply IAM bucket policy if configured
+  await applyBucketPolicy(client, bucket);
+
   const finalResourceState: ResourceState = {
     mode: 'managed',
     region: context.region,
@@ -834,6 +880,26 @@ export const updateBucketResource = async (
     }
   }
 
+  // Apply IAM bucket policy if configured (update or remove)
+  const existingDef = existingState?.definition as Record<string, unknown> | undefined;
+  const oldPolicyJson = existingDef?.policy as string | undefined;
+  const newPolicyJson = bucket.iam ? JSON.stringify(bucket.iam) : null;
+  if (newPolicyJson !== (oldPolicyJson ?? null)) {
+    if (newPolicyJson) {
+      logger.info(lang.__('BUCKET_POLICY_APPLYING', { bucketName: config.bucketName }));
+      const policyObj = buildOssBucketPolicyJson(bucket.iam);
+      if (policyObj) {
+        await client.oss.putBucketPolicy(config.bucketName, policyObj);
+        logger.info(lang.__('BUCKET_POLICY_APPLIED', { bucketName: config.bucketName }));
+      } else {
+        // iam exists but has no statements — delete any existing policy
+        await deleteBucketPolicy(client, config.bucketName);
+      }
+    } else {
+      await deleteBucketPolicy(client, config.bucketName);
+    }
+  }
+
   const resourceState: ResourceState = {
     mode: 'managed',
     region: context.region,
@@ -899,6 +965,9 @@ export const deleteBucketResource = async (
       }
     }
   }
+
+  // Clean up bucket policy before deleting bucket
+  await deleteBucketPolicy(client, bucketName);
 
   if (dnsInstances) {
     for (const dnsInstance of dnsInstances) {

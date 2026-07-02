@@ -164,6 +164,29 @@ describe('CosTypes', () => {
       expect(result.SseAlgorithm).toBe('AES256');
       expect(result.SseKmsMasterKeyId).toBeUndefined();
     });
+
+    it('should include IamPolicy when iam is defined on bucket', () => {
+      const bucket: BucketDomain = {
+        key: 'test_bucket',
+        name: 'test-bucket',
+        iam: {
+          resource: {
+            statements: [
+              {
+                effect: 'Allow',
+                principal: { qcs: 'qcs::cam::uin/123:role/my-role' },
+                action: ['name/cos:GetObject'],
+                resource: ['qcs::cos:ap-guangzhou:uid/123:test-bucket/*'],
+              },
+            ],
+          },
+        },
+      };
+
+      const result = bucketToCosBucketConfig(bucket, 'ap-guangzhou');
+
+      expect(result.IamPolicy).toEqual(bucket.iam);
+    });
   });
 
   describe('extractCosBucketDefinition', () => {
@@ -186,6 +209,7 @@ describe('CosTypes', () => {
         domainCertificateBody: null,
         domainCertificatePrivateKey: null,
         domainProtocol: null,
+        policy: null,
         versioningStatus: null,
         sseAlgorithm: null,
         sseKmsMasterKeyId: null,
@@ -276,6 +300,69 @@ describe('CosTypes', () => {
       expect(definition.versioningStatus).toBeNull();
       expect(definition.sseAlgorithm).toBeNull();
       expect(definition.sseKmsMasterKeyId).toBeNull();
+    });
+
+    it('should include policy when IamPolicy is set', () => {
+      const config = {
+        Bucket: 'test-bucket',
+        Region: 'ap-guangzhou',
+        IamPolicy: {
+          resource: {
+            statements: [
+              {
+                effect: 'Allow' as const,
+                principal: { qcs: 'qcs::cam::uin/123:role/my-role' },
+                action: ['name/cos:GetObject'],
+                resource: ['qcs::cos:ap-guangzhou:uid/123:test-bucket/*'],
+              },
+            ],
+          },
+        },
+      };
+
+      const definition = extractCosBucketDefinition(config);
+
+      expect(definition.policy).toBe(
+        JSON.stringify({
+          resource: {
+            statements: [
+              {
+                effect: 'Allow',
+                principal: { qcs: 'qcs::cam::uin/123:role/my-role' },
+                action: ['name/cos:GetObject'],
+                resource: ['qcs::cos:ap-guangzhou:uid/123:test-bucket/*'],
+              },
+            ],
+          },
+        }),
+      );
+    });
+
+    it('should set policy to null when IamPolicy is empty', () => {
+      const config = {
+        Bucket: 'test-bucket',
+        Region: 'ap-guangzhou',
+        IamPolicy: {
+          resource: {
+            statements: [],
+          },
+        },
+      };
+
+      const definition = extractCosBucketDefinition(config);
+
+      expect(definition.policy).toBeNull();
+    });
+
+    it('should set policy to null when IamPolicy not defined', () => {
+      const config = {
+        Bucket: 'test-bucket',
+        Region: 'ap-guangzhou',
+      };
+
+      const definition = extractCosBucketDefinition(config);
+
+      expect(definition.policy).toBeNull();
     });
   });
 });

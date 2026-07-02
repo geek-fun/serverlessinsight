@@ -199,6 +199,7 @@ describe('OssTypes', () => {
         domainCertificateBody: null,
         domainCertificatePrivateKey: null,
         domainProtocol: null,
+        policy: null,
         versioningStatus: null,
         sseAlgorithm: null,
         sseKmsMasterKeyId: null,

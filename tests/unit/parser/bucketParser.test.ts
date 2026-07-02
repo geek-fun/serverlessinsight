@@ -559,5 +559,326 @@ describe('bucketParser', () => {
       const result = parseBucket(input)!;
       expect(result[0].domain?.domain_name).toBe('legacy.example.com');
     });
+
+    describe('IAM policy statements', () => {
+      it('should parse iam with single statement', () => {
+        const input = {
+          my_bucket: {
+            name: 'test-bucket',
+            iam: {
+              resource: {
+                statements: [
+                  {
+                    effect: 'Allow' as const,
+                    principal: { RAM: 'acs:ram::123:role/my-role' },
+                    action: ['oss:PutObject', 'oss:GetObject'],
+                    resource: ['acs:oss:*:*:my-bucket/*'],
+                  },
+                ],
+              },
+            },
+          },
+        } as never;
+
+        const result = parseBucket(input)!;
+        expect(result[0].iam).toEqual({
+          resource: {
+            statements: [
+              {
+                effect: 'Allow',
+                principal: { RAM: 'acs:ram::123:role/my-role' },
+                action: ['oss:PutObject', 'oss:GetObject'],
+                resource: ['acs:oss:*:*:my-bucket/*'],
+              },
+            ],
+          },
+        });
+      });
+
+      it('should parse iam with condition', () => {
+        const input = {
+          my_bucket: {
+            name: 'test-bucket',
+            iam: {
+              resource: {
+                statements: [
+                  {
+                    effect: 'Deny' as const,
+                    principal: { qcs: 'qcs::cam::uin/456:role/my-role' },
+                    action: ['name/cos:DeleteObject'],
+                    resource: ['qcs::cos:ap-beijing:uid/456:my-bucket/*'],
+                    condition: {
+                      ip_address: {
+                        'qcs:ip': ['10.0.0.0/8'],
+                      },
+                    },
+                  },
+                ],
+              },
+            },
+          },
+        } as never;
+
+        const result = parseBucket(input)!;
+        expect(result[0].iam?.resource.statements[0].condition).toEqual({
+          ip_address: {
+            'qcs:ip': ['10.0.0.0/8'],
+          },
+        });
+        expect(result[0].iam?.resource.statements[0].effect).toBe('Deny');
+      });
+
+      it('should parse iam with single string action/resource', () => {
+        const input = {
+          my_bucket: {
+            name: 'test-bucket',
+            iam: {
+              resource: {
+                statements: [
+                  {
+                    effect: 'Allow' as const,
+                    principal: { RAM: 'acs:ram::123:role/my-role' },
+                    action: 'oss:PutObject',
+                    resource: 'acs:oss:*:*:my-bucket/*',
+                  },
+                ],
+              },
+            },
+          },
+        } as never;
+
+        const result = parseBucket(input)!;
+        expect(result[0].iam?.resource.statements[0].action).toEqual(['oss:PutObject']);
+        expect(result[0].iam?.resource.statements[0].resource).toEqual(['acs:oss:*:*:my-bucket/*']);
+      });
+
+      it('should handle trn: principal for volcengine', () => {
+        const input = {
+          my_bucket: {
+            name: 'test-bucket',
+            iam: {
+              resource: {
+                statements: [
+                  {
+                    effect: 'Allow' as const,
+                    principal: { trn: 'trn:iam:::role/my-role' },
+                    action: ['tos:PutObject'],
+                    resource: ['trn:tos:::my-bucket/*'],
+                  },
+                ],
+              },
+            },
+          },
+        } as never;
+
+        const result = parseBucket(input)!;
+        expect(result[0].iam?.resource.statements[0].principal).toEqual({
+          trn: 'trn:iam:::role/my-role',
+        });
+      });
+
+      it('should return undefined iam when not specified', () => {
+        const input = {
+          my_bucket: {
+            name: 'test-bucket',
+          },
+        };
+
+        const result = parseBucket(input)!;
+        expect(result[0].iam).toBeUndefined();
+      });
+
+      it('should return undefined iam when iam block is present but empty', () => {
+        const input = {
+          my_bucket: {
+            name: 'test-bucket',
+            iam: {} as never,
+          },
+        };
+
+        const result = parseBucket(input)!;
+        expect(result[0].iam).toBeUndefined();
+      });
+    });
+  });
+});
+
+describe('parseBucket with IAM', () => {
+  it('should parse bucket with IAM policy statements', () => {
+    const buckets: { [key: string]: BucketRaw } = {
+      my_bucket: {
+        name: 'test-bucket',
+        iam: {
+          resource: {
+            statements: [
+              {
+                effect: 'Allow' as const,
+                principal: { AWS: '*', Service: 'oss.aliyuncs.com' },
+                action: 'oss:GetObject',
+                resource: 'acs:oss:*:*:my-bucket/*',
+              },
+            ],
+          },
+        },
+      },
+    };
+
+    const result = parseBucket(buckets);
+    expect(result?.[0].iam).toEqual({
+      resource: {
+        statements: [
+          {
+            effect: 'Allow' as const,
+            principal: { AWS: '*', Service: 'oss.aliyuncs.com' },
+            action: ['oss:GetObject'],
+            resource: ['acs:oss:*:*:my-bucket/*'],
+          },
+        ],
+      },
+    });
+  });
+
+  it('should parse bucket with Deny effect', () => {
+    const buckets: { [key: string]: BucketRaw } = {
+      my_bucket: {
+        name: 'test-bucket',
+        iam: {
+          resource: {
+            statements: [
+              {
+                effect: 'Deny' as const,
+                principal: { AWS: '*' },
+                action: 'oss:DeleteObject',
+                resource: 'acs:oss:*:*:my-bucket/secret/*',
+              },
+            ],
+          },
+        },
+      },
+    };
+
+    const result = parseBucket(buckets);
+    expect(result?.[0]?.iam?.resource?.statements[0]?.effect).toBe('Deny');
+  });
+
+  it('should parse bucket with multiple actions and resources', () => {
+    const buckets: { [key: string]: BucketRaw } = {
+      my_bucket: {
+        name: 'test-bucket',
+        iam: {
+          resource: {
+            statements: [
+              {
+                effect: 'Allow' as const,
+                principal: { Service: 'oss.aliyuncs.com' },
+                action: ['oss:GetObject', 'oss:PutObject', 'oss:ListObjects'],
+                resource: ['acs:oss:*:*:my-bucket/*', 'acs:oss:*:*:my-bucket'],
+              },
+            ],
+          },
+        },
+      },
+    };
+
+    const result = parseBucket(buckets);
+    expect(result?.[0]?.iam?.resource?.statements[0]?.action).toEqual([
+      'oss:GetObject',
+      'oss:PutObject',
+      'oss:ListObjects',
+    ]);
+    expect(result?.[0]?.iam?.resource?.statements[0]?.resource).toEqual([
+      'acs:oss:*:*:my-bucket/*',
+      'acs:oss:*:*:my-bucket',
+    ]);
+  });
+
+  it('should parse bucket with condition', () => {
+    const buckets: { [key: string]: BucketRaw } = {
+      my_bucket: {
+        name: 'test-bucket',
+        iam: {
+          resource: {
+            statements: [
+              {
+                effect: 'Allow' as const,
+                principal: { AWS: '*' },
+                action: 'oss:GetObject',
+                resource: 'acs:oss:*:*:my-bucket/*',
+                condition: {
+                  StringEquals: {
+                    'acs:SourceVpc': 'vpc-bp1hv9eam4z3b3j3z3z3z',
+                  },
+                },
+              },
+            ],
+          },
+        },
+      },
+    };
+
+    const result = parseBucket(buckets);
+    expect(result?.[0]?.iam?.resource?.statements[0]?.condition).toEqual({
+      StringEquals: {
+        'acs:SourceVpc': 'vpc-bp1hv9eam4z3b3j3z3z3z',
+      },
+    });
+  });
+
+  it('should parse bucket with multiple statements', () => {
+    const buckets: { [key: string]: BucketRaw } = {
+      my_bucket: {
+        name: 'test-bucket',
+        iam: {
+          resource: {
+            statements: [
+              {
+                effect: 'Allow' as const,
+                principal: { AWS: '*' },
+                action: 'oss:GetObject',
+                resource: 'acs:oss:*:*:public-bucket/*',
+              },
+              {
+                effect: 'Deny' as const,
+                principal: { AWS: '*' },
+                action: 'oss:DeleteObject',
+                resource: 'acs:oss:*:*:public-bucket/secret/*',
+              },
+            ],
+          },
+        },
+      },
+    };
+
+    const result = parseBucket(buckets);
+    expect(result?.[0]?.iam?.resource?.statements).toHaveLength(2);
+    expect(result?.[0]?.iam?.resource?.statements[0]?.effect).toBe('Allow');
+    expect(result?.[0]?.iam?.resource?.statements[1]?.effect).toBe('Deny');
+  });
+
+  it('should return undefined iam when not configured', () => {
+    const buckets: { [key: string]: BucketRaw } = {
+      my_bucket: {
+        name: 'test-bucket',
+      },
+    };
+
+    const result = parseBucket(buckets);
+    expect(result?.[0]?.iam).toBeUndefined();
+  });
+
+  it('should return iam with empty statements array when specified', () => {
+    const buckets: { [key: string]: BucketRaw } = {
+      my_bucket: {
+        name: 'test-bucket',
+        iam: {
+          resource: {
+            statements: [],
+          },
+        },
+      },
+    };
+
+    const result = parseBucket(buckets);
+    expect(result?.[0]?.iam).toEqual({ resource: { statements: [] } });
   });
 });

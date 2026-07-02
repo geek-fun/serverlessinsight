@@ -50,43 +50,6 @@ jest.mock('../../../../src/lang', () => ({
   },
 }));
 
-jest.mock('../../../../src/common', () => ({
-  setResource: jest.fn((state, logicalId, resourceState) => ({
-    ...state,
-    resources: { ...state.resources, [logicalId]: resourceState },
-  })),
-  removeResource: jest.fn((state, logicalId) => ({
-    ...state,
-    resources: Object.fromEntries(
-      Object.entries(state.resources).filter(([key]) => key !== logicalId),
-    ),
-  })),
-  buildSid: jest.fn((provider, service, stage, name) => `${provider}-${service}-${stage}-${name}`),
-  computeDirectoryHash: jest.fn(() => 'test-hash-123'),
-  ProviderEnum: {
-    HUAWEI: 'huawei',
-    ALIYUN: 'aliyun',
-    TENCENT: 'tencent',
-    AWS: 'aws',
-    VOLCENGINE: 'volcengine',
-  },
-}));
-
-jest.mock('../../../../src/common/logger', () => ({
-  logger: {
-    info: jest.fn(),
-    warn: jest.fn(),
-    error: jest.fn(),
-    debug: jest.fn(),
-  },
-}));
-
-jest.mock('../../../../src/lang', () => ({
-  lang: {
-    __: (key: string) => key,
-  },
-}));
-
 describe('tosResource', () => {
   const mockContext: Context = {
     app: 'test-app',
@@ -116,6 +79,9 @@ describe('tosResource', () => {
       updateBucketAcl: jest.fn(),
       updateBucketWebsite: jest.fn(),
       uploadFiles: jest.fn(),
+      putBucketPolicy: jest.fn(),
+      getBucketPolicy: jest.fn(),
+      deleteBucketPolicy: jest.fn(),
     },
   };
 
@@ -170,6 +136,104 @@ describe('tosResource', () => {
 
       expect(mockTosClient.tos.uploadFiles).toHaveBeenCalledWith('test-bucket', expect.any(String));
       expect(setResource).toHaveBeenCalled();
+    });
+
+    it('should apply IAM bucket policy when iam is configured', async () => {
+      const bucket: BucketDomain = {
+        key: 'static_site',
+        name: 'test-bucket',
+        iam: {
+          resource: {
+            statements: [
+              {
+                effect: 'Allow',
+                principal: { trn: 'trn:iam:::role/my-role' },
+                action: ['tos:PutObject'],
+                resource: ['trn:tos:::test-bucket/*'],
+              },
+            ],
+          },
+        },
+      };
+
+      mockTosClient.tos.createBucket.mockResolvedValueOnce({
+        name: 'test-bucket',
+        location: 'cn-beijing',
+      });
+
+      await createResource(mockContext, bucket, mockState);
+
+      expect(mockTosClient.tos.putBucketPolicy).toHaveBeenCalledWith('test-bucket', {
+        Statement: [
+          {
+            Effect: 'Allow',
+            Principal: { trn: 'trn:iam:::role/my-role' },
+            Action: ['tos:PutObject'],
+            Resource: ['trn:tos:::test-bucket/*'],
+          },
+        ],
+      });
+    });
+
+    it('should apply IAM bucket policy with condition', async () => {
+      const bucket: BucketDomain = {
+        key: 'static_site',
+        name: 'test-bucket',
+        iam: {
+          resource: {
+            statements: [
+              {
+                effect: 'Allow',
+                principal: { trn: 'trn:iam:::role/my-role' },
+                action: ['tos:GetObject'],
+                resource: ['trn:tos:::test-bucket/*'],
+                condition: { ip_address: { 'trn:SourceIp': '10.0.0.0/8' } },
+              },
+            ],
+          },
+        },
+      };
+
+      mockTosClient.tos.createBucket.mockResolvedValueOnce({
+        name: 'test-bucket',
+        location: 'cn-beijing',
+      });
+
+      await createResource(mockContext, bucket, mockState);
+
+      expect(mockTosClient.tos.putBucketPolicy).toHaveBeenCalledWith('test-bucket', {
+        Statement: [
+          {
+            Effect: 'Allow',
+            Principal: { trn: 'trn:iam:::role/my-role' },
+            Action: ['tos:GetObject'],
+            Resource: ['trn:tos:::test-bucket/*'],
+            Condition: { ip_address: { 'trn:SourceIp': '10.0.0.0/8' } },
+          },
+        ],
+      });
+    });
+
+    it('should delete policy when iam has empty statements', async () => {
+      const bucket: BucketDomain = {
+        key: 'static_site',
+        name: 'test-bucket',
+        iam: {
+          resource: {
+            statements: [],
+          },
+        },
+      };
+
+      mockTosClient.tos.createBucket.mockResolvedValueOnce({
+        name: 'test-bucket',
+        location: 'cn-beijing',
+      });
+      mockTosClient.tos.deleteBucketPolicy.mockResolvedValueOnce(undefined);
+
+      await createResource(mockContext, bucket, mockState);
+
+      expect(mockTosClient.tos.deleteBucketPolicy).toHaveBeenCalledWith('test-bucket');
     });
 
     it('should handle upload error gracefully', async () => {
@@ -250,9 +314,153 @@ describe('tosResource', () => {
 
       await expect(updateResource(mockContext, bucket, mockState)).rejects.toThrow();
     });
+
+    it('should apply bucket policy when iam changes', async () => {
+      mockTosClient.tos.getBucket.mockResolvedValueOnce({
+        name: 'test-bucket',
+        location: 'cn-beijing',
+        acl: 'private',
+      });
+      mockTosClient.tos.putBucketPolicy.mockResolvedValueOnce(undefined);
+
+      const bucket: BucketDomain = {
+        key: 'test_bucket',
+        name: 'test-bucket',
+        iam: {
+          resource: {
+            statements: [
+              {
+                effect: 'Allow',
+                principal: { Service: 'tos.volcengine.com' },
+                action: ['tos:GetObject'],
+                resource: ['trn:tos:::my-bucket/*'],
+              },
+            ],
+          },
+        },
+      };
+
+      await updateResource(mockContext, bucket, mockState);
+
+      expect(mockTosClient.tos.putBucketPolicy).toHaveBeenCalledWith(
+        'test-bucket',
+        expect.objectContaining({ Statement: expect.any(Array) }),
+      );
+    });
+
+    it('should remove policy when iam is removed', async () => {
+      const stateWithPolicy: StateFile = {
+        ...mockState,
+        resources: {
+          'buckets.test_bucket': {
+            mode: 'managed',
+            region: 'cn-beijing',
+            definition: {
+              bucketName: 'test-bucket',
+              policy:
+                '{"resource":{"statements":[{"effect":"Allow","action":["tos:GetObject"],"resource":["*"],"principal":{"Service":"tos"}}]}}',
+            },
+            instances: [{ sid: 'tos-sid', id: 'test-bucket', type: 'VOLCENGINE_TOS_BUCKET' }],
+            lastUpdated: new Date().toISOString(),
+          },
+        },
+      };
+
+      mockTosClient.tos.getBucket.mockResolvedValueOnce({
+        name: 'test-bucket',
+        location: 'cn-beijing',
+      });
+      mockTosClient.tos.deleteBucketPolicy.mockResolvedValueOnce(undefined);
+
+      const bucket: BucketDomain = {
+        key: 'test_bucket',
+        name: 'test-bucket',
+      };
+
+      await updateResource(mockContext, bucket, stateWithPolicy);
+
+      expect(mockTosClient.tos.deleteBucketPolicy).toHaveBeenCalledWith('test-bucket');
+    });
+
+    it('should not call policy functions when iam is unchanged', async () => {
+      const stateWithPolicy: StateFile = {
+        ...mockState,
+        resources: {
+          'buckets.test_bucket': {
+            mode: 'managed',
+            region: 'cn-beijing',
+            definition: {
+              bucketName: 'test-bucket',
+              policy: JSON.stringify({
+                resource: {
+                  statements: [
+                    {
+                      effect: 'Allow',
+                      principal: { Service: 'tos.volcengine.com' },
+                      action: ['tos:GetObject'],
+                      resource: ['trn:tos:::my-bucket/*'],
+                    },
+                  ],
+                },
+              }),
+            },
+            instances: [{ sid: 'tos-sid', id: 'test-bucket', type: 'VOLCENGINE_TOS_BUCKET' }],
+            lastUpdated: new Date().toISOString(),
+          },
+        },
+      };
+
+      mockTosClient.tos.getBucket.mockResolvedValueOnce({
+        name: 'test-bucket',
+        location: 'cn-beijing',
+      });
+
+      const bucket: BucketDomain = {
+        key: 'test_bucket',
+        name: 'test-bucket',
+        iam: {
+          resource: {
+            statements: [
+              {
+                effect: 'Allow',
+                principal: { Service: 'tos.volcengine.com' },
+                action: ['tos:GetObject'],
+                resource: ['trn:tos:::my-bucket/*'],
+              },
+            ],
+          },
+        },
+      };
+
+      await updateResource(mockContext, bucket, stateWithPolicy);
+
+      expect(mockTosClient.tos.putBucketPolicy).not.toHaveBeenCalled();
+      expect(mockTosClient.tos.deleteBucketPolicy).not.toHaveBeenCalled();
+    });
   });
 
   describe('deleteResource', () => {
+    it('should delete bucket policy before deleting bucket', async () => {
+      mockTosClient.tos.deleteBucketPolicy.mockResolvedValueOnce(undefined);
+      mockTosClient.tos.deleteBucket.mockResolvedValueOnce(undefined);
+
+      await deleteResource(mockContext, 'test-bucket', 'buckets.static_site', mockState);
+
+      expect(mockTosClient.tos.deleteBucketPolicy).toHaveBeenCalledWith('test-bucket');
+      expect(mockTosClient.tos.deleteBucket).toHaveBeenCalledWith('test-bucket');
+      expect(removeResource).toHaveBeenCalledWith(mockState, 'buckets.static_site');
+    });
+
+    it('should delete bucket successfully when deleteBucketPolicy fails', async () => {
+      mockTosClient.tos.deleteBucketPolicy.mockRejectedValueOnce(new Error('Policy error'));
+      mockTosClient.tos.deleteBucket.mockResolvedValueOnce(undefined);
+
+      await deleteResource(mockContext, 'test-bucket', 'buckets.static_site', mockState);
+
+      expect(mockTosClient.tos.deleteBucket).toHaveBeenCalledWith('test-bucket');
+      expect(removeResource).toHaveBeenCalledWith(mockState, 'buckets.static_site');
+    });
+
     it('should delete bucket successfully', async () => {
       mockTosClient.tos.deleteBucket.mockResolvedValueOnce(undefined);
 

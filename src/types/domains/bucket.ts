@@ -61,6 +61,7 @@ export type BucketRaw = {
     domain?: Resolvable<string> | BucketWebsiteDomainConfig;
     index?: Resolvable<string>;
   };
+  iam?: BucketIamRaw;
 };
 
 export enum BucketAccessEnum {
@@ -108,6 +109,7 @@ export type BucketDomain = {
     domain_protocol?: string | string[];
     code: string;
   };
+  iam?: BucketIam;
 };
 
 export type EventDomainConfig = {
@@ -118,4 +120,48 @@ export type EventDomainConfig = {
   certificate_private_key?: Resolvable<string>;
   protocol?: Resolvable<string | string[]>;
   cdn?: Resolvable<boolean> | CdnRawConfig;
+};
+
+// ============================================================================
+// Bucket IAM Policy Types
+// ============================================================================
+
+/**
+ * Raw (unresolved) IAM policy statement from YAML config.
+ */
+export type BucketIamStatementRaw = {
+  effect: 'Allow' | 'Deny';
+  principal: Record<string, Resolvable<string | string[]>>;
+  action: Resolvable<string | string[]>;
+  resource: Resolvable<string | string[]>;
+  condition?: Record<string, unknown>;
+};
+
+/**
+ * Raw (unresolved) IAM resource policy config from YAML.
+ */
+export type BucketIamRaw = {
+  resource: {
+    statements: BucketIamStatementRaw[];
+  };
+};
+
+/**
+ * Parsed IAM policy statement (all fields resolved).
+ */
+export type BucketIamStatement = {
+  effect: 'Allow' | 'Deny';
+  principal: Record<string, string | string[]>;
+  action: string[];
+  resource: string[];
+  condition?: Record<string, unknown>;
+};
+
+/**
+ * Parsed IAM resource policy config.
+ */
+export type BucketIam = {
+  resource: {
+    statements: BucketIamStatement[];
+  };
 };
