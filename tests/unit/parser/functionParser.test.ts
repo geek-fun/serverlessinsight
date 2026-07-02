@@ -160,14 +160,14 @@ describe('parseFunction', () => {
             statements: [
               {
                 effect: 'Allow' as const,
-                actions: ['log:PostLogStoreLogs'],
-                resources: ['acs:log:*:*:project/*/logstore/*'],
+                action: ['log:PostLogStoreLogs'],
+                resource: ['acs:log:*:*:project/*/logstore/*'],
               },
               {
                 sid: 'DenySpecific',
                 effect: 'Deny' as const,
-                actions: ['oss:DeleteBucket'],
-                resources: ['acs:oss:*:*:my-bucket'],
+                action: ['oss:DeleteBucket'],
+                resource: ['acs:oss:*:*:my-bucket'],
               },
             ],
           },
@@ -182,14 +182,14 @@ describe('parseFunction', () => {
           {
             sid: undefined,
             effect: 'Allow',
-            actions: ['log:PostLogStoreLogs'],
-            resources: ['acs:log:*:*:project/*/logstore/*'],
+            action: ['log:PostLogStoreLogs'],
+            resource: ['acs:log:*:*:project/*/logstore/*'],
           },
           {
             sid: 'DenySpecific',
             effect: 'Deny',
-            actions: ['oss:DeleteBucket'],
-            resources: ['acs:oss:*:*:my-bucket'],
+            action: ['oss:DeleteBucket'],
+            resource: ['acs:oss:*:*:my-bucket'],
           },
         ],
       },

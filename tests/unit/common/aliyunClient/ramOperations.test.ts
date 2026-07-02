@@ -495,7 +495,7 @@ describe('ramOperations', () => {
         'fc-execution-role',
         ['fc.aliyuncs.com'],
         undefined,
-        [{ sid: 'custom-ecs', effect: 'Allow', actions: ['ecs:*'], resources: ['*'] }],
+        [{ sid: 'custom-ecs', effect: 'Allow', action: ['ecs:*'], resource: ['*'] }],
       );
 
       expect(result).toBeDefined();
@@ -528,7 +528,7 @@ describe('ramOperations', () => {
         'fc-execution-role',
         ['fc.aliyuncs.com'],
         undefined,
-        [{ effect: 'Deny', actions: ['ram:DeleteRole'], resources: ['*'] }],
+        [{ effect: 'Deny', action: ['ram:DeleteRole'], resource: ['*'] }],
       );
 
       expect(result).toBeDefined();

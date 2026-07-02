@@ -38,8 +38,8 @@ const SCF_EXECUTION_STATEMENTS = parseBuiltInStatements(SCF_EXECUTION_POLICY);
 const mapToCamStatement = (stmt: IamStatement): Record<string, unknown> => {
   const result: Record<string, unknown> = {
     Effect: stmt.effect,
-    Action: stmt.actions,
-    Resource: stmt.resources,
+    Action: stmt.action,
+    Resource: stmt.resource,
   };
   if (stmt.sid) {
     result.Sid = stmt.sid;

@@ -57,8 +57,8 @@ const VEFAAS_EXECUTION_STATEMENTS = parseBuiltInStatements(VEFAAS_EXECUTION_POLI
 const mapToVolcengineStatement = (stmt: IamStatement): Record<string, unknown> => {
   const result: Record<string, unknown> = {
     Effect: stmt.effect,
-    Action: stmt.actions,
-    Resource: stmt.resources,
+    Action: stmt.action,
+    Resource: stmt.resource,
   };
   if (stmt.sid) {
     result.Sid = stmt.sid;

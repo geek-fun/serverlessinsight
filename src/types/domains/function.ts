@@ -37,8 +37,8 @@ export type FunctionRaw = {
           statements?: Array<{
             sid?: Resolvable<string>;
             effect: Resolvable<'Allow' | 'Deny'>;
-            actions: Array<Resolvable<string>>;
-            resources: Array<Resolvable<string>>;
+            action: Resolvable<string | string[]>;
+            resource: Resolvable<string | string[]>;
           }>;
         };
   };
@@ -89,8 +89,8 @@ export type FunctionDomain = {
           statements?: Array<{
             sid?: string;
             effect: 'Allow' | 'Deny';
-            actions: string[];
-            resources: string[];
+            action: string[];
+            resource: string[];
           }>;
         };
   };

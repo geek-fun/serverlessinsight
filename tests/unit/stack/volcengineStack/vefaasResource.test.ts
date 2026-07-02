@@ -470,8 +470,8 @@ describe('vefaasResource', () => {
             statements: [
               {
                 effect: 'Allow',
-                actions: ['ecs:DescribeInstances'],
-                resources: ['*'],
+                action: ['ecs:DescribeInstances'],
+                resource: ['*'],
               },
             ],
           },
@@ -496,8 +496,8 @@ describe('vefaasResource', () => {
           customStatements: [
             {
               effect: 'Allow',
-              actions: ['ecs:DescribeInstances'],
-              resources: ['*'],
+              action: ['ecs:DescribeInstances'],
+              resource: ['*'],
             },
           ],
         }),

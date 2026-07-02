@@ -211,7 +211,7 @@ describe('ScfResource', () => {
           role: {
             name: 'test-scf-role',
             statements: [
-              { effect: 'Allow' as const, actions: ['scf:InvokeFunction'], resources: ['*'] },
+              { effect: 'Allow' as const, action: ['scf:InvokeFunction'], resource: ['*'] },
             ],
           },
         },
@@ -309,7 +309,7 @@ describe('ScfResource', () => {
           role: {
             name: 'existing-role',
             statements: [
-              { effect: 'Allow' as const, actions: ['scf:InvokeFunction'], resources: ['*'] },
+              { effect: 'Allow' as const, action: ['scf:InvokeFunction'], resource: ['*'] },
             ],
           },
         },
@@ -646,7 +646,7 @@ describe('ScfResource', () => {
           role: {
             name: 'existing-role',
             statements: [
-              { effect: 'Allow' as const, actions: ['scf:InvokeFunction'], resources: ['*'] },
+              { effect: 'Allow' as const, action: ['scf:InvokeFunction'], resource: ['*'] },
             ],
             managed_policies: ['QcloudSCFFullAccess'],
           },
@@ -665,7 +665,7 @@ describe('ScfResource', () => {
                 role: {
                   name: 'existing-role',
                   statements: [
-                    { effect: 'Allow', actions: ['scf:InvokeFunction'], resources: ['*'] },
+                    { effect: 'Allow', action: ['scf:InvokeFunction'], resource: ['*'] },
                   ],
                   managed_policies: ['QcloudSCFFullAccess'],
                 },

@@ -870,8 +870,8 @@ describe('unit test for validate', () => {
                   statements: [
                     {
                       effect: 'Allow',
-                      actions: ['log:PostLogStoreLogs'],
-                      resources: ['acs:log:*:*:project/*/logstore/*'],
+                      action: ['log:PostLogStoreLogs'],
+                      resource: ['acs:log:*:*:project/*/logstore/*'],
                     },
                   ],
                 },
@@ -901,13 +901,13 @@ describe('unit test for validate', () => {
                     {
                       sid: 'AllowLog',
                       effect: 'Allow',
-                      actions: ['log:PostLogStoreLogs'],
-                      resources: ['*'],
+                      action: ['log:PostLogStoreLogs'],
+                      resource: ['*'],
                     },
                     {
                       effect: 'Deny',
-                      actions: ['oss:DeleteBucket'],
-                      resources: ['acs:oss:*:*:my-bucket'],
+                      action: ['oss:DeleteBucket'],
+                      resource: ['acs:oss:*:*:my-bucket'],
                     },
                   ],
                 },
@@ -976,7 +976,7 @@ describe('unit test for validate', () => {
                 role: {
                   statements: [
                     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-                    { effect: 'Grant', actions: ['log:PostLogStoreLogs'], resources: ['*'] } as any,
+                    { effect: 'Grant', action: ['log:PostLogStoreLogs'], resource: ['*'] } as any,
                   ],
                 },
               },
