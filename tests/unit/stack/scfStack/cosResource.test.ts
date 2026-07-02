@@ -5,7 +5,13 @@ import {
   deleteBucketResource,
   readBucketResource,
 } from '../../../../src/stack/scfStack/cosResource';
-import { Context, CURRENT_STATE_VERSION, StateFile, BucketAccessEnum } from '../../../../src/types';
+import {
+  Context,
+  CURRENT_STATE_VERSION,
+  StateFile,
+  BucketAccessEnum,
+  BucketDomain,
+} from '../../../../src/types';
 
 const mockCosOperations = {
   createBucket: jest.fn(),
