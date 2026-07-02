@@ -53,6 +53,8 @@ export type MockAliyunClient = {
     deletePolicy: jest.Mock;
     attachPolicyToRole: jest.Mock;
     detachPolicyFromRole: jest.Mock;
+    updateRolePolicy: jest.Mock;
+    updateRoleTrustPolicy: jest.Mock;
   };
   nas: {
     createFileSystem: jest.Mock;
@@ -156,6 +158,10 @@ export const createMockAliyunClient = (): MockAliyunClient => ({
     deletePolicy: jest.fn().mockResolvedValue({}),
     attachPolicyToRole: jest.fn().mockResolvedValue({}),
     detachPolicyFromRole: jest.fn().mockResolvedValue({}),
+    updateRolePolicy: jest.fn().mockResolvedValue(undefined),
+    updateRoleTrustPolicy: jest
+      .fn()
+      .mockResolvedValue({ body: { Role: { RoleName: 'test-role' } } }),
   },
   nas: {
     createFileSystem: jest.fn().mockResolvedValue({ body: { fileSystemId: 'fs-123' } }),
@@ -267,6 +273,7 @@ export type MockVolcengineClient = {
     deleteRole: jest.Mock;
     attachRolePolicy: jest.Mock;
     detachRolePolicy: jest.Mock;
+    updateRolePolicy: jest.Mock;
   };
   tls: {
     createProject: jest.Mock;
@@ -347,6 +354,7 @@ export const createMockVolcengineClient = (): MockVolcengineClient => ({
     deleteRole: jest.fn().mockResolvedValue(undefined),
     attachRolePolicy: jest.fn().mockResolvedValue(undefined),
     detachRolePolicy: jest.fn().mockResolvedValue(undefined),
+    updateRolePolicy: jest.fn().mockResolvedValue(undefined),
   },
   tls: {
     createProject: jest.fn().mockResolvedValue({

@@ -42,7 +42,7 @@ export const generateFunctionPlan = async (
       const config = functionToScfConfig(fn);
       const codePath = fn.code!.path;
       const desiredCodeHash = computeFileHash(codePath);
-      const desiredDefinition = extractScfDefinition(config, desiredCodeHash);
+      const desiredDefinition = extractScfDefinition(config, desiredCodeHash, fn.iam);
 
       if (!currentState) {
         return {

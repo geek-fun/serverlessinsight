@@ -22,6 +22,7 @@ import {
   buildDefaultTrustPolicy,
   VefaasFunctionInfo,
 } from './vefaasTypes';
+import type { IamStatement } from '../../common/iamStatements';
 import { logger } from '../../common/logger';
 import { lang } from '../../lang';
 
@@ -176,7 +177,18 @@ const createDependentResources = async (
     }
   }
 
-  const roleName = `${serviceName}-${context.stage}-role`;
+  const iamConfig = fn.iam?.role;
+  const statements = iamConfig && typeof iamConfig !== 'string' ? iamConfig.statements : undefined;
+  const managedPolicies =
+    iamConfig && typeof iamConfig !== 'string' ? iamConfig.managed_policies : undefined;
+  const customRoleName = iamConfig && typeof iamConfig !== 'string' ? iamConfig.name : undefined;
+
+  if (iamConfig && typeof iamConfig === 'string') {
+    const role = { roleName: iamConfig, trn: iamConfig };
+    return { logConfig, role, instances: [] };
+  }
+
+  const roleName = customRoleName ?? `${serviceName}-${context.stage}-role`;
   const trustedServices = getTrustedServicesForFunction(fn, context);
 
   if (hasIamRole) {
@@ -195,6 +207,8 @@ const createDependentResources = async (
       displayName: roleName,
       description: `veFaaS execution role for ${serviceName}`,
       trustPolicy: buildDefaultTrustPolicy(trustedServices),
+      customStatements: statements as IamStatement[] | undefined,
+      managedPolicies,
     });
     instances.push({
       type: 'VOLCENGINE_IAM_ROLE',
@@ -260,10 +274,18 @@ const deleteDependentResources = async (
           logger.info(lang.__('DELETING_TLS_PROJECT', { id: instance.id }));
           await client.tls.deleteProject(instance.id);
           break;
-        case 'VOLCENGINE_IAM_ROLE':
+        case 'VOLCENGINE_IAM_ROLE': {
+          const attrs = instance.attributes as Record<string, unknown> | undefined;
+          if (attrs?.external === true) {
+            logger.info(
+              `Skipping deletion of external IAM role: ${instance.id} (managed externally)`,
+            );
+            break;
+          }
           logger.info(lang.__('DELETING_IAM_ROLE', { id: instance.id }));
           await client.iam.deleteRole(instance.id);
           break;
+        }
         default:
           logger.warn(lang.__('UNKNOWN_RESOURCE_TYPE', { type: instance.type }));
       }
@@ -319,7 +341,8 @@ export const createResource = async (
 
   const codePath = fn.code!.path;
   const codeHash = computeFileHash(codePath);
-  const definition = extractVefaasDefinition(config, codeHash);
+  const resourceAttributes = extractVefaasDefinition(config, codeHash);
+  const definition = fn.iam ? { ...resourceAttributes, iam: fn.iam } : resourceAttributes;
 
   const sid = buildSid('volcengine', context.service, context.stage, fn.name);
 
@@ -461,7 +484,18 @@ export const updateResource = async (
     }
   }
 
-  if (!hasIamRole && !isTainted) {
+  // Determine if the current role is external (string TRN)
+  const currentIam = (currentState.definition as Record<string, unknown>)?.iam as
+    | {
+        role?: string | { name?: string; managed_policies?: string[]; statements?: IamStatement[] };
+      }
+    | undefined;
+  const isExternalRole = currentIam?.role && typeof currentIam.role === 'string';
+
+  if (isExternalRole) {
+    // External role - skip role management, use TRN directly
+    role = { roleName: currentIam.role as string, trn: currentIam.role as string };
+  } else if (!hasIamRole && !isTainted) {
     const deps = await createDependentResources(
       context,
       { ...fn, log: false, network: undefined, storage: { disk: undefined, nas: undefined } },
@@ -493,6 +527,29 @@ export const updateResource = async (
         buildDefaultTrustPolicy(trustedServices),
       );
     }
+
+    // Check statement changes
+    const currentRoleConfig =
+      currentIam?.role && typeof currentIam.role !== 'string' ? currentIam.role : undefined;
+    const desiredRoleConfig =
+      fn.iam?.role && typeof fn.iam.role !== 'string' ? fn.iam.role : undefined;
+
+    const desiredIamStatements = desiredRoleConfig?.statements as IamStatement[] | undefined;
+    const currentStatementList = currentRoleConfig?.statements as IamStatement[] | undefined;
+    const iamChanged =
+      JSON.stringify(currentStatementList) !== JSON.stringify(desiredIamStatements);
+    if (iamChanged && iamRoleInstance) {
+      await client.iam.updateRolePolicy(iamRoleInstance.id, desiredIamStatements);
+    }
+
+    // Check managed policy changes
+    const desiredManagedPolicies = desiredRoleConfig?.managed_policies;
+    const currentManagedPoliciesList = currentRoleConfig?.managed_policies;
+    const managedPoliciesChanged =
+      JSON.stringify(currentManagedPoliciesList) !== JSON.stringify(desiredManagedPolicies);
+    if (managedPoliciesChanged && iamRoleInstance) {
+      await client.iam.updateManagedPolicies(iamRoleInstance.id, desiredManagedPolicies ?? []);
+    }
   }
 
   const config = functionToVefaasConfig(fn, {
@@ -515,7 +572,8 @@ export const updateResource = async (
 
   const codePath = fn.code!.path;
   const desiredCodeHash = computeFileHash(codePath);
-  const desiredDefinition = extractVefaasDefinition(config, desiredCodeHash);
+  const baseDefinition = extractVefaasDefinition(config, desiredCodeHash);
+  const desiredDefinition = fn.iam ? { ...baseDefinition, iam: fn.iam } : baseDefinition;
 
   const currentDefinition = currentState.definition || {};
   const currentCodeHash = currentDefinition.codeHash as string | undefined;

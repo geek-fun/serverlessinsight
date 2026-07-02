@@ -28,6 +28,33 @@ export const parseFunction = (functions?: {
     memory: parseNumber(func.memory),
     gpu: func.gpu as FunctionGpuEnum,
     timeout: parseNumber(func.timeout),
+    iam: func.iam
+      ? {
+          role:
+            func.iam.role !== undefined
+              ? typeof func.iam.role === 'string'
+                ? func.iam.role
+                : {
+                    ...(func.iam.role.name !== undefined
+                      ? { name: String(func.iam.role.name) }
+                      : {}),
+                    ...(func.iam.role.managed_policies !== undefined
+                      ? { managed_policies: func.iam.role.managed_policies.map(String) }
+                      : {}),
+                    ...(func.iam.role.statements !== undefined
+                      ? {
+                          statements: func.iam.role.statements.map((s) => ({
+                            sid: s.sid as string | undefined,
+                            effect: s.effect as 'Allow' | 'Deny',
+                            actions: s.actions.map(String),
+                            resources: s.resources.map(String),
+                          })),
+                        }
+                      : {}),
+                  }
+              : undefined,
+        }
+      : undefined,
     environment: func.environment,
     log: parseBoolean(func.log),
     network: func.network,

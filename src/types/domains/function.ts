@@ -28,6 +28,20 @@ export type FunctionRaw = {
       egress: Array<Resolvable<string>>;
     };
   };
+  iam?: {
+    role?:
+      | Resolvable<string>
+      | {
+          name?: Resolvable<string>;
+          managed_policies?: Array<Resolvable<string>>;
+          statements?: Array<{
+            sid?: Resolvable<string>;
+            effect: Resolvable<'Allow' | 'Deny'>;
+            actions: Array<Resolvable<string>>;
+            resources: Array<Resolvable<string>>;
+          }>;
+        };
+  };
   storage?: {
     disk?: Resolvable<number>;
     nas?: Array<{
@@ -65,6 +79,20 @@ export type FunctionDomain = {
       ingress: Array<string>;
       egress: Array<string>;
     };
+  };
+  iam?: {
+    role?:
+      | string
+      | {
+          name?: string;
+          managed_policies?: string[];
+          statements?: Array<{
+            sid?: string;
+            effect: 'Allow' | 'Deny';
+            actions: string[];
+            resources: string[];
+          }>;
+        };
   };
   storage: {
     disk?: number;

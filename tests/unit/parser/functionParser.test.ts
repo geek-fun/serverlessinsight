@@ -150,6 +150,63 @@ describe('parseFunction', () => {
     });
   });
 
+  it('should parse function with iam role and statements', () => {
+    const result = parseFunction({
+      fn: {
+        name: 'iam-fn',
+        code: { runtime: 'nodejs18', handler: 'index.handler', path: './src' },
+        iam: {
+          role: {
+            statements: [
+              {
+                effect: 'Allow' as const,
+                actions: ['log:PostLogStoreLogs'],
+                resources: ['acs:log:*:*:project/*/logstore/*'],
+              },
+              {
+                sid: 'DenySpecific',
+                effect: 'Deny' as const,
+                actions: ['oss:DeleteBucket'],
+                resources: ['acs:oss:*:*:my-bucket'],
+              },
+            ],
+          },
+        },
+      },
+    });
+
+    expect(result).toHaveLength(1);
+    expect(result![0].iam).toEqual({
+      role: {
+        statements: [
+          {
+            sid: undefined,
+            effect: 'Allow',
+            actions: ['log:PostLogStoreLogs'],
+            resources: ['acs:log:*:*:project/*/logstore/*'],
+          },
+          {
+            sid: 'DenySpecific',
+            effect: 'Deny',
+            actions: ['oss:DeleteBucket'],
+            resources: ['acs:oss:*:*:my-bucket'],
+          },
+        ],
+      },
+    });
+  });
+
+  it('should parse function without iam statements', () => {
+    const result = parseFunction({
+      fn: {
+        name: 'no-iam-fn',
+        code: { runtime: 'nodejs18', handler: 'index.handler', path: './src' },
+      },
+    });
+
+    expect(result![0].iam).toBeUndefined();
+  });
+
   it('should parse multiple functions', () => {
     const result = parseFunction({
       fn_a: { name: 'fn-a', code: { runtime: 'nodejs18', handler: 'a.handler', path: './a' } },

@@ -14,6 +14,7 @@ export const createScfOperations = (scfClient: ScfSdkClient) => ({
       Runtime: config.Runtime,
       MemorySize: config.MemorySize,
       Timeout: config.Timeout,
+      ...(config.Role && { Role: config.Role }),
       ...(config.Environment && { Environment: config.Environment }),
     };
 
@@ -150,6 +151,7 @@ export const createScfOperations = (scfClient: ScfSdkClient) => ({
       Runtime: config.Runtime,
       MemorySize: config.MemorySize,
       Timeout: config.Timeout,
+      ...(config.Role && { Role: config.Role }),
       ...(config.Environment && { Environment: config.Environment }),
     };
 

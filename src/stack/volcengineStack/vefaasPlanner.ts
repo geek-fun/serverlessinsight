@@ -42,7 +42,8 @@ export const generateFunctionPlan = async (
       const config = functionToVefaasConfig(fn);
       const codePath = fn.code!.path;
       const desiredCodeHash = computeFileHash(codePath);
-      const desiredDefinition = extractVefaasDefinition(config, desiredCodeHash);
+      const baseDefinition = extractVefaasDefinition(config, desiredCodeHash);
+      const desiredDefinition = fn.iam ? { ...baseDefinition, iam: fn.iam } : baseDefinition;
 
       if (!currentState || currentState.status === 'tainted') {
         return {

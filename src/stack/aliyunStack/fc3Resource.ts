@@ -27,6 +27,7 @@ import {
 } from '../../types';
 import { extractFc3Definition, Fc3FunctionInfo, functionToFc3Config } from './fc3Types';
 import { logger } from '../../common/logger';
+import type { IamStatement } from '../../common/iamStatements';
 import { lang } from '../../lang';
 
 type DependentInstance = {
@@ -34,6 +35,7 @@ type DependentInstance = {
   id: string;
   sid?: string;
   roleArn?: string;
+  external?: boolean;
   attributes: Record<string, unknown>;
 };
 
@@ -263,19 +265,42 @@ const createDependentResources = async (
     }
   }
 
-  const roleName = `${serviceName}-${context.stage}-fc-role`;
+  const iamConfig = fn.iam?.role;
+  const statements = iamConfig && typeof iamConfig !== 'string' ? iamConfig.statements : undefined;
+  const managedPolicies =
+    iamConfig && typeof iamConfig !== 'string' ? iamConfig.managed_policies : undefined;
+  const customRoleName = iamConfig && typeof iamConfig !== 'string' ? iamConfig.name : undefined;
+  const defaultRoleName = `${serviceName}-${context.stage}-fc-role`;
 
   const trustedServices = getTrustedServicesForFunction(context, fn.key);
 
-  if (hasRamRole) {
+  const isExternalRole = typeof iamConfig === 'string';
+
+  if (isExternalRole) {
+    // External role - use ARN directly, skip creation and management
+    instances.push({
+      type: 'ALIYUN_RAM_ROLE',
+      id: iamConfig,
+      roleArn: iamConfig,
+      external: true,
+      attributes: {} as Record<string, unknown>,
+    });
+  } else if (hasRamRole) {
     const ramRoleInstance = existingInstances.find((i) => i.type === 'ALIYUN_RAM_ROLE');
     if (ramRoleInstance) {
       instances.push(ramRoleInstance);
-      await client.ram.updateRoleTrustPolicy(roleName, trustedServices);
+      await client.ram.updateRoleTrustPolicy(ramRoleInstance.id, trustedServices);
     }
   } else {
+    const roleName = customRoleName ?? defaultRoleName;
     logger.info(lang.__('CREATING_RAM_ROLE', { roleName }));
-    const ramRole = await client.ram.createRole(roleName, trustedServices);
+    const ramRole = await client.ram.createRole(
+      roleName,
+      trustedServices,
+      undefined,
+      statements,
+      managedPolicies,
+    );
     instances.push({
       type: 'ALIYUN_RAM_ROLE',
       id: roleName,
@@ -286,10 +311,14 @@ const createDependentResources = async (
   }
 
   const ramRoleInstance = instances.find((i) => i.type === 'ALIYUN_RAM_ROLE');
-  const role = {
-    roleName,
-    arn: ramRoleInstance?.roleArn ?? `acs:ram::${context.accountId}:role/${roleName}`,
-  };
+  const role = isExternalRole
+    ? { roleName: '', arn: iamConfig }
+    : {
+        roleName: customRoleName ?? defaultRoleName,
+        arn:
+          ramRoleInstance?.roleArn ??
+          `acs:ram::${context.accountId}:role/${customRoleName ?? defaultRoleName}`,
+      };
 
   if (fn.network) {
     if (hasSecurityGroup) {
@@ -437,10 +466,17 @@ const deleteDependentResources = async (
           logger.info(lang.__('DELETING_SECURITY_GROUP', { id: instance.id }));
           await client.ecs.deleteSecurityGroup(instance.id);
           break;
-        case 'ALIYUN_RAM_ROLE':
+        case 'ALIYUN_RAM_ROLE': {
+          const ramInstance = instance as unknown as {
+            external?: boolean;
+            managedPolicies?: string[];
+          };
+          if (ramInstance.external) break; // Skip external roles
+          const managedPolicies = ramInstance.managedPolicies;
           logger.info(lang.__('DELETING_RAM_ROLE', { id: instance.id }));
-          await client.ram.deleteRole(instance.id);
+          await client.ram.deleteRole(instance.id, managedPolicies);
           break;
+        }
         case 'ALIYUN_SLS_INDEX': {
           const [projectName, logstoreName] = instance.id.split('/');
           logger.info(lang.__('DELETING_SLS_INDEX', { id: instance.id }));
@@ -541,7 +577,8 @@ export const createResource = async (
 
   const codePath = fn.code!.path;
   const codeHash = computeFileHash(codePath);
-  const definition = extractFc3Definition(config, codeHash);
+  const baseDefinition = extractFc3Definition(config, codeHash);
+  const definition = fn.iam ? { ...baseDefinition, iam: fn.iam } : baseDefinition;
 
   const dependentInstances = dependentResources.instances.map((dep) => ({
     sid:
@@ -550,6 +587,7 @@ export const createResource = async (
     id: dep.id,
     type: dep.type,
     ...(dep.roleArn ? { roleArn: dep.roleArn } : {}),
+    ...(dep.external ? { external: dep.external } : {}),
     ...dep.attributes,
   }));
 
@@ -686,7 +724,12 @@ export const updateResource = async (
     }
   }
 
-  if (!hasRamRole) {
+  const newIamRole = fn.iam?.role;
+
+  if (typeof newIamRole === 'string') {
+    // External role - use ARN directly, skip management
+    role = { roleName: '', arn: newIamRole };
+  } else if (!hasRamRole) {
     const deps = await createDependentResources(
       context,
       { ...fn, log: false, network: undefined, storage: { ...fn.storage, nas: undefined } },
@@ -704,6 +747,52 @@ export const updateResource = async (
 
       const trustedServices = getTrustedServicesForFunction(context, fn.key);
       await client.ram.updateRoleTrustPolicy(ramRoleInstance.id, trustedServices);
+
+      const existingIam = existingState?.definition?.iam as Record<string, unknown> | undefined;
+      const desiredIam = fn.iam;
+      const iamChanged = !attributesEqual(existingIam ?? {}, desiredIam ?? {});
+      if (iamChanged) {
+        // Check for statement changes
+        const desiredStatements = newIamRole ? newIamRole.statements : undefined;
+        const existingRole = existingIam?.role as Record<string, unknown> | undefined;
+        const existingStatements =
+          existingRole && typeof existingRole !== 'string' ? existingRole.statements : undefined;
+        const desiredStatementsVal = (desiredStatements ?? []) as unknown as Record<
+          string,
+          unknown
+        >;
+        const existingStatementsVal = (existingStatements ?? []) as unknown as Record<
+          string,
+          unknown
+        >;
+        if (!attributesEqual(existingStatementsVal, desiredStatementsVal)) {
+          await client.ram.updateRolePolicy(
+            ramRoleInstance.id,
+            desiredStatements as IamStatement[] | undefined,
+          );
+        }
+
+        // Check for managed policy changes
+        const desiredManagedPolicies = newIamRole ? newIamRole.managed_policies : undefined;
+        const existingManagedPolicies =
+          existingRole && typeof existingRole !== 'string'
+            ? existingRole.managed_policies
+            : undefined;
+        const desiredManagedPoliciesVal = (desiredManagedPolicies ?? []) as unknown as Record<
+          string,
+          unknown
+        >;
+        const existingManagedPoliciesVal = (existingManagedPolicies ?? []) as unknown as Record<
+          string,
+          unknown
+        >;
+        if (!attributesEqual(existingManagedPoliciesVal, desiredManagedPoliciesVal)) {
+          await client.ram.updateManagedPolicies(
+            ramRoleInstance.id,
+            (desiredManagedPolicies as string[]) ?? [],
+          );
+        }
+      }
     }
   }
 
@@ -794,7 +883,11 @@ export const updateResource = async (
   const existingConfig = existingState?.definition as ResourceAttributes | undefined;
   const desiredDefinition = extractFc3Definition(config, desiredCodeHash);
 
-  const { codeHash: _existingCodeHash, ...existingConfigOnly } = existingConfig || {};
+  const {
+    codeHash: _existingCodeHash,
+    iam: _existingIam,
+    ...existingConfigOnly
+  } = existingConfig || {};
   const { codeHash: _desiredCodeHash, ...desiredConfigOnly } = desiredDefinition;
   const configChanged = !attributesEqual(existingConfigOnly, desiredConfigOnly);
 
@@ -819,12 +912,14 @@ export const updateResource = async (
   }
 
   const codeHash = computeFileHash(codePath);
-  const definition = extractFc3Definition(config, codeHash);
+  const baseDefinition = extractFc3Definition(config, codeHash);
+  const definition = fn.iam ? { ...baseDefinition, iam: fn.iam } : baseDefinition;
   const sid = buildSid('aliyun', 'fc3', context.stage, fn.name);
 
   const fcInstance = buildFc3InstanceFromProvider(functionInfo, sid);
   const existingDependentInstances = existingInstances
     .filter((i) => i.type !== 'ALIYUN_FC3_FUNCTION')
+    .filter((i) => !(typeof fn.iam?.role === 'string' && i.type === 'ALIYUN_RAM_ROLE'))
     .map((i) => {
       const { sid: existingSid, id: existingId, ...rest } = i;
       return {
@@ -847,6 +942,7 @@ export const updateResource = async (
     id: dep.id,
     type: dep.type,
     ...(dep.roleArn ? { roleArn: dep.roleArn } : {}),
+    ...(dep.external ? { external: dep.external } : {}),
     ...dep.attributes,
   }));
 

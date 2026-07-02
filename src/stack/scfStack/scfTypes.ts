@@ -1,4 +1,4 @@
-import { FunctionDomain, ResourceAttributes } from '../../types';
+import type { FunctionDomain, ResourceAttributes } from '../../types';
 import { mapRuntime, ProviderEnum } from '../../common';
 
 export type ScfFunctionConfig = {
@@ -7,6 +7,7 @@ export type ScfFunctionConfig = {
   Handler: string;
   MemorySize: number;
   Timeout: number;
+  Role?: string;
   Environment?: {
     Variables: Array<{ Key: string; Value: string }>;
   };
@@ -149,13 +150,14 @@ export type ScfFunctionInfo = {
   };
 };
 
-export const functionToScfConfig = (fn: FunctionDomain): ScfFunctionConfig => {
+export const functionToScfConfig = (fn: FunctionDomain, role?: string): ScfFunctionConfig => {
   const config: ScfFunctionConfig = {
     FunctionName: fn.name,
     Runtime: mapRuntime(fn.code!.runtime, ProviderEnum.TENCENT),
     Handler: fn.code!.handler,
     MemorySize: fn.memory ?? 128,
     Timeout: fn.timeout ?? 3,
+    ...(role ? { Role: role } : {}),
   };
 
   if (fn.environment && Object.keys(fn.environment).length > 0) {
@@ -203,6 +205,7 @@ export const functionToScfConfig = (fn: FunctionDomain): ScfFunctionConfig => {
 export const extractScfDefinition = (
   config: ScfFunctionConfig,
   codeHash: string,
+  iam?: FunctionDomain['iam'],
 ): ResourceAttributes => {
   const envMap: Record<string, string> =
     config.Environment?.Variables?.reduce(
@@ -210,7 +213,7 @@ export const extractScfDefinition = (
       {} as Record<string, string>,
     ) ?? {};
 
-  return {
+  const baseDefinition: ResourceAttributes = {
     functionName: config.FunctionName,
     runtime: config.Runtime,
     handler: config.Handler,
@@ -224,6 +227,8 @@ export const extractScfDefinition = (
     useGpu: config.UseGpu ?? null,
     imageConfig: config.ImageConfig ?? null,
   };
+
+  return iam ? { ...baseDefinition, iam } : baseDefinition;
 };
 
 export const extractFunctionDomainDefinition = (
@@ -231,5 +236,5 @@ export const extractFunctionDomainDefinition = (
   codeHash: string,
 ): ResourceAttributes => {
   const config = functionToScfConfig(fn);
-  return extractScfDefinition(config, codeHash);
+  return extractScfDefinition(config, codeHash, fn.iam);
 };

@@ -687,6 +687,7 @@ export const zhCN = {
     '角色在云端存在但恢复操作失败。' +
     '修复方法：在云控制台手动确认角色状态，从状态中移除该角色并重新部署。',
   IAM_ROLE_TRUST_POLICY_UPDATED: 'IAM 角色 {{roleName}} 信任策略已更新',
+  IAM_ROLE_POLICY_UPDATED: 'IAM 角色 {{roleName}} 执行策略已更新',
   IAM_POLICY_ALREADY_EXISTS: 'IAM 策略 {{policyName}} 已存在，复用现有策略',
   IAM_POLICY_ALREADY_ATTACHED: 'IAM 策略 {{policyName}} 已附加到角色 {{roleName}}',
   IAM_POLICY_ATTACHED: 'IAM 策略 {{policyName}} 已附加到角色 {{roleName}}',
@@ -698,6 +699,21 @@ export const zhCN = {
   CREATING_IAM_ROLE: '正在创建 IAM 角色：{{roleName}}',
   DELETING_IAM_ROLE: '正在删除 IAM 角色：{{id}}',
   IAM_POLICY_DETACH_FAILED: '从角色 {{roleName}} 解除 IAM 策略 {{policyName}} 失败：{{error}}',
+
+  // Tencent CAM role messages
+  ATTACHING_MANAGED_POLICY: '正在为角色 {{roleName}} 附加托管策略 {{policyArn}}',
+  DETACHING_MANAGED_POLICY: '正在从角色 {{roleName}} 解除托管策略 {{policyArn}}',
+  MANAGED_POLICY_ATTACHED: '托管策略 {{policyArn}} 已附加到角色 {{roleName}}',
+  MANAGED_POLICY_DETACHED: '托管策略 {{policyArn}} 已从角色 {{roleName}} 解除',
+  USING_EXISTING_ROLE: '为函数使用已有角色 {{roleArn}}',
+  TENCENT_CAM_ROLE_CREATED: '腾讯云 CAM 角色 {{roleName}} 创建成功',
+  TENCENT_CAM_ROLE_DELETED: '腾讯云 CAM 角色 {{roleName}} 删除成功',
+  TENCENT_CAM_ROLE_NOT_FOUND: '腾讯云 CAM 角色 {{roleName}} 在云服务商中未找到',
+  TENCENT_CAM_ROLE_ALREADY_EXISTS: '腾讯云 CAM 角色 {{roleName}} 已存在',
+  TENCENT_CAM_ROLE_DRIFT_RECOVERY_FAILED:
+    '腾讯云 CAM 角色 {{roleName}} 状态漂移恢复失败：{{error}}',
+  TENCENT_CAM_POLICY_ALREADY_ATTACHED: 'CAM 角色 {{roleName}} 已附加该策略',
+  TENCENT_CAM_POLICY_ALREADY_EXISTS: '腾讯云 CAM 策略已存在',
 
   // Volcengine TLS (Log Service) messages
   TLS_PROJECT_CREATED: 'TLS 项目 {{projectName}} 创建成功',

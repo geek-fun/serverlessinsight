@@ -122,7 +122,8 @@ export const generateFunctionPlan = async (
       const config = await resolveVpcConfigSecurityGroup(context, rawConfig);
       const codePath = fn.code!.path;
       const desiredCodeHash = computeFileHash(codePath);
-      const desiredDefinition = extractFc3Definition(config, desiredCodeHash);
+      const baseDefinition = extractFc3Definition(config, desiredCodeHash);
+      const desiredDefinition = fn.iam ? { ...baseDefinition, iam: fn.iam } : baseDefinition;
 
       if (!currentState || currentState.status === 'tainted') {
         return {
