@@ -137,10 +137,20 @@ export const functionSchema = {
                         properties: {
                           sid: { type: 'string' },
                           effect: { type: 'string', enum: ['Allow', 'Deny'] },
-                          actions: { type: 'array', items: { type: 'string' } },
-                          resources: { type: 'array', items: { type: 'string' } },
+                          action: {
+                            oneOf: [
+                              { type: 'string' },
+                              { type: 'array', items: { type: 'string' }, minItems: 1 },
+                            ],
+                          },
+                          resource: {
+                            oneOf: [
+                              { type: 'string' },
+                              { type: 'array', items: { type: 'string' }, minItems: 1 },
+                            ],
+                          },
                         },
-                        required: ['effect', 'actions', 'resources'],
+                        required: ['effect', 'action', 'resource'],
                       },
                     },
                   },

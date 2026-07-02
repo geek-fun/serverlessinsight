@@ -43,12 +43,20 @@ export const parseFunction = (functions?: {
                       : {}),
                     ...(func.iam.role.statements !== undefined
                       ? {
-                          statements: func.iam.role.statements.map((s) => ({
-                            sid: s.sid as string | undefined,
-                            effect: s.effect as 'Allow' | 'Deny',
-                            actions: s.actions.map(String),
-                            resources: s.resources.map(String),
-                          })),
+                          statements: func.iam.role.statements.map((s) => {
+                            const rawAction = s.action;
+                            const rawResource = s.resource;
+                            return {
+                              sid: s.sid as string | undefined,
+                              effect: s.effect as 'Allow' | 'Deny',
+                              action: Array.isArray(rawAction)
+                                ? rawAction.map(String)
+                                : [String(rawAction)],
+                              resource: Array.isArray(rawResource)
+                                ? rawResource.map(String)
+                                : [String(rawResource)],
+                            };
+                          }),
                         }
                       : {}),
                   }

@@ -80,8 +80,8 @@ const extractPolicyNameFromArn = (arn: string): string => {
 const mapToAliyunStatement = (stmt: IamStatement): Record<string, unknown> => {
   const result: Record<string, unknown> = {
     Effect: stmt.effect,
-    Action: stmt.actions,
-    Resource: stmt.resources,
+    Action: stmt.action,
+    Resource: stmt.resource,
   };
   if (stmt.sid) {
     result.Sid = stmt.sid;

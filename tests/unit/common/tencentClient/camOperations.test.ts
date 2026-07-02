@@ -304,7 +304,7 @@ describe('camOperations', () => {
       mockCamClient.AttachRolePolicy.mockResolvedValue({});
 
       await operations.createRole('custom-stmt-role', ['scf.tencentcloud.com'], undefined, [
-        { effect: 'Allow', actions: ['cos:GetObject'], resources: ['qcs::cos:::*'] },
+        { effect: 'Allow', action: ['cos:GetObject'], resource: ['qcs::cos:::*'] },
       ]);
 
       expect(mockCamClient.CreatePolicy).toHaveBeenCalledWith(
@@ -323,7 +323,7 @@ describe('camOperations', () => {
       mockCamClient.AttachRolePolicy.mockResolvedValue({});
 
       await operations.createRole('sid-role', ['scf.tencentcloud.com'], undefined, [
-        { sid: 'MyCustomSid', effect: 'Allow', actions: ['scf:*'], resources: ['*'] },
+        { sid: 'MyCustomSid', effect: 'Allow', action: ['scf:*'], resource: ['*'] },
       ]);
 
       const policyDocCall = mockCamClient.CreatePolicy.mock.calls[0][0];
@@ -459,7 +459,7 @@ describe('camOperations', () => {
       mockCamClient.AttachRolePolicy.mockResolvedValue({});
 
       await operations.updateRolePolicy('test-role', [
-        { effect: 'Allow', actions: ['cos:PutObject'], resources: ['*'] },
+        { effect: 'Allow', action: ['cos:PutObject'], resource: ['*'] },
       ]);
 
       expect(mockCamClient.DetachRolePolicy).toHaveBeenCalledWith({

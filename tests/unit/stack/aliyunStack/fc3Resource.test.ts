@@ -2010,8 +2010,8 @@ describe('Fc3Resource', () => {
             statements: [
               {
                 effect: 'Allow' as const,
-                actions: ['oss:GetObject'],
-                resources: ['acs:oss:*:*:my-bucket/*'],
+                action: ['oss:GetObject'],
+                resource: ['acs:oss:*:*:my-bucket/*'],
               },
             ],
             managed_policies: ['AliyunOSSFullAccess', 'AliyunLogFullAccess'],
@@ -2052,8 +2052,8 @@ describe('Fc3Resource', () => {
             statements: [
               {
                 effect: 'Allow' as const,
-                actions: ['oss:GetObject'],
-                resources: ['*'],
+                action: ['oss:GetObject'],
+                resource: ['*'],
               },
             ],
           },
@@ -2168,8 +2168,8 @@ describe('Fc3Resource', () => {
                   statements: [
                     {
                       effect: 'Allow',
-                      actions: ['oss:GetObject'],
-                      resources: ['*'],
+                      action: ['oss:GetObject'],
+                      resource: ['*'],
                     },
                   ],
                 },
@@ -2200,8 +2200,8 @@ describe('Fc3Resource', () => {
             statements: [
               {
                 effect: 'Allow' as const,
-                actions: ['oss:GetObject', 'oss:PutObject'],
-                resources: ['*'],
+                action: ['oss:GetObject', 'oss:PutObject'],
+                resource: ['*'],
               },
             ],
           },

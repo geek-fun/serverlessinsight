@@ -21,7 +21,7 @@ functions:
         statements:
           - sid: OSSRead
             effect: Allow
-            actions:
+            action:
               - oss:GetObject
-            resources:
+            resource:
               - acs:oss:*:*:my-bucket/*

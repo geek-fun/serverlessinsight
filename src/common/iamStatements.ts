@@ -5,8 +5,8 @@
 export type IamStatement = {
   sid?: string;
   effect: 'Allow' | 'Deny';
-  actions: string[];
-  resources: string[];
+  action: string[];
+  resource: string[];
 };
 
 /**

@@ -10,8 +10,8 @@ type NativeStatement = { Effect: string; Action: string[]; Resource: string; Sid
 const toNative = (stmt: IamStatement): NativeStatement => {
   const native: NativeStatement = {
     Effect: stmt.effect,
-    Action: stmt.actions,
-    Resource: stmt.resources.join(','),
+    Action: stmt.action,
+    Resource: stmt.resource.join(','),
   };
   if (stmt.sid) {
     native.Sid = stmt.sid;
@@ -27,8 +27,8 @@ describe('iamStatements', () => {
         { Effect: 'Allow', Action: ['log:PostLogStoreLogs'], Resource: '*' },
       ];
       const custom: IamStatement[] = [
-        { effect: 'Allow', actions: ['ecs:DescribeInstances'], resources: ['*'] },
-        { effect: 'Deny', actions: ['oss:DeleteBucket'], resources: ['*'] },
+        { effect: 'Allow', action: ['ecs:DescribeInstances'], resource: ['*'] },
+        { effect: 'Deny', action: ['oss:DeleteBucket'], resource: ['*'] },
       ];
 
       const result = mergePolicyStatements(builtIn, custom, toNative);
@@ -73,7 +73,7 @@ describe('iamStatements', () => {
     it('maps Sid to native statement when present', () => {
       const builtIn: NativeStatement[] = [];
       const custom: IamStatement[] = [
-        { sid: 'CustomS3Access', effect: 'Allow', actions: ['s3:GetObject'], resources: ['*'] },
+        { sid: 'CustomS3Access', effect: 'Allow', action: ['s3:GetObject'], resource: ['*'] },
       ];
 
       const result = mergePolicyStatements(builtIn, custom, toNative);
@@ -90,7 +90,7 @@ describe('iamStatements', () => {
     it('omits Sid field when undefined', () => {
       const builtIn: NativeStatement[] = [];
       const custom: IamStatement[] = [
-        { effect: 'Allow', actions: ['s3:GetObject'], resources: ['*'] },
+        { effect: 'Allow', action: ['s3:GetObject'], resource: ['*'] },
       ];
 
       const result = mergePolicyStatements(builtIn, custom, toNative);
