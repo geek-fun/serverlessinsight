@@ -277,6 +277,66 @@ describe('ScfResource', () => {
       );
     });
 
+    it('should reuse existing CAM role when state has dependent instances', async () => {
+      const stateWithExistingRole: StateFile = {
+        ...initialState,
+        resources: {
+          'functions.test_fn': {
+            mode: 'managed',
+            region: 'ap-guangzhou',
+            definition: mockDefinition,
+            instances: [
+              {
+                sid: 'si:tencent:scf:default:test-function',
+                id: 'test-function',
+                functionName: 'test-function',
+              },
+              {
+                sid: 'si:tencent:scf-role:default:existing-role',
+                type: ResourceTypeEnum.TENCENT_SCF_ROLE,
+                id: 'existing-role',
+                roleArn: 'existing-role',
+              },
+            ],
+            lastUpdated: '2025-01-01T00:00:00Z',
+          },
+        },
+      };
+
+      const fnWithIam = {
+        ...testFunction,
+        iam: {
+          role: {
+            name: 'existing-role',
+            statements: [
+              { effect: 'Allow' as const, actions: ['scf:InvokeFunction'], resources: ['*'] },
+            ],
+          },
+        },
+      };
+
+      (stateManager.getResource as jest.Mock).mockReturnValue(
+        stateWithExistingRole.resources['functions.test_fn'],
+      );
+      (mockScfOperations.createFunction as jest.Mock).mockResolvedValue(undefined);
+      (stateManager.setResource as jest.Mock).mockReturnValue(initialState);
+
+      await createResource(mockContext, fnWithIam, stateWithExistingRole);
+
+      // Should NOT create a new CAM role (reuses existing one)
+      expect(mockCamOperations.createRole).not.toHaveBeenCalled();
+
+      // Should pass existing role ARN to SCF config
+      const expectedConfig = {
+        ...mockConfig,
+        Role: 'existing-role',
+      };
+      expect(mockScfOperations.createFunction).toHaveBeenCalledWith(
+        expectedConfig,
+        'base64encodedcontent',
+      );
+    });
+
     it('should propagate errors from createScfFunction', async () => {
       const error = new Error('Create failed');
       (mockScfOperations.createFunction as jest.Mock).mockRejectedValue(error);
@@ -683,6 +743,28 @@ describe('ScfResource', () => {
       };
       expect(mockScfOperations.updateFunctionConfiguration).toHaveBeenCalledWith(expectedConfig);
     });
+
+    it('should update with external role ARN string', async () => {
+      const fnWithExternalRole = {
+        ...testFunction,
+        iam: {
+          role: 'qcs::cam:uin/123:roleName/external-update-role',
+        },
+      };
+
+      (mockScfOperations.updateFunctionConfiguration as jest.Mock).mockResolvedValue(undefined);
+      (mockScfOperations.updateFunctionCode as jest.Mock).mockResolvedValue(undefined);
+      (stateManager.setResource as jest.Mock).mockReturnValue(initialState);
+
+      await updateResource(mockContext, fnWithExternalRole, initialState);
+
+      const expectedConfig = {
+        ...mockConfig,
+        Role: 'qcs::cam:uin/123:roleName/external-update-role',
+      };
+      expect(mockScfOperations.updateFunctionConfiguration).toHaveBeenCalledWith(expectedConfig);
+      expect(mockCamOperations.createRole).not.toHaveBeenCalled();
+    });
   });
 
   describe('deleteResource', () => {
@@ -849,6 +931,48 @@ describe('ScfResource', () => {
       // Function should be deleted, but role should NOT be deleted (external)
       expect(mockScfOperations.deleteFunction).toHaveBeenCalledWith('test-function');
       expect(mockCamOperations.deleteRole).not.toHaveBeenCalled();
+    });
+
+    it('should log warning for unknown dependent resource types during deletion', async () => {
+      const stateWithUnknownType: StateFile = {
+        ...initialState,
+        resources: {
+          'functions.test_fn': {
+            mode: 'managed',
+            region: 'ap-guangzhou',
+            definition: mockDefinition,
+            instances: [
+              {
+                sid: 'si:tencent:scf:default:test-function',
+                id: 'test-function',
+                functionName: 'test-function',
+              },
+              {
+                sid: 'si:tencent:unknown:default:unknown-resource',
+                type: 'SOME_UNKNOWN_TYPE',
+                id: 'unknown-resource',
+              },
+            ],
+            lastUpdated: '2025-01-01T00:00:00Z',
+          },
+        },
+      };
+
+      (stateManager.getResource as jest.Mock).mockReturnValue(
+        stateWithUnknownType.resources['functions.test_fn'],
+      );
+      (mockScfOperations.deleteFunction as jest.Mock).mockResolvedValue(undefined);
+      (stateManager.removeResource as jest.Mock).mockReturnValue(initialState);
+
+      await deleteResource(mockContext, 'test-function', 'functions.test_fn', stateWithUnknownType);
+
+      expect(mockScfOperations.deleteFunction).toHaveBeenCalledWith('test-function');
+      // Role deletion should not be attempted for unknown type
+      expect(mockCamOperations.deleteRole).not.toHaveBeenCalled();
+      expect(stateManager.removeResource).toHaveBeenCalledWith(
+        stateWithUnknownType,
+        'functions.test_fn',
+      );
     });
   });
 

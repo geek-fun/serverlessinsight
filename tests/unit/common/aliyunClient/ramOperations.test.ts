@@ -406,6 +406,139 @@ describe('ramOperations', () => {
       );
       expect(customCalls).toHaveLength(0);
     });
+
+    it('should handle already-attached error for managed policies during role creation', async () => {
+      mockCreateRole.mockResolvedValue({
+        body: {
+          role: {
+            roleName: 'fc-execution-role',
+            roleId: 'role-123',
+            arn: 'arn:aliyun:ram::123456789:role/fc-execution-role',
+            description: 'FC execution role',
+            createDate: '2023-01-01T00:00:00Z',
+            updateDate: '2023-01-01T00:00:00Z',
+            maxSessionDuration: 3600,
+          },
+        },
+      });
+
+      mockCreatePolicy.mockResolvedValue({});
+
+      const alreadyAttachedError = new Error('EntityAlreadyExists.Role.Policy');
+      Object.assign(alreadyAttachedError, { code: 'EntityAlreadyExists.Role.Policy' });
+      mockAttachPolicyToRole
+        .mockResolvedValueOnce({})
+        .mockRejectedValueOnce(alreadyAttachedError)
+        .mockResolvedValueOnce({});
+
+      const result = await operations.createRole(
+        'fc-execution-role',
+        ['fc.aliyuncs.com'],
+        undefined,
+        undefined,
+        ['AliyunOSSFullAccess', 'AliyunLogFullAccess'],
+      );
+
+      expect(result).toBeDefined();
+      expect(result.roleName).toBe('fc-execution-role');
+      expect(mockAttachPolicyToRole).toHaveBeenCalledTimes(3);
+    });
+
+    it('should throw on unexpected managed policy error during role creation', async () => {
+      mockCreateRole.mockResolvedValue({
+        body: {
+          role: {
+            roleName: 'fc-execution-role',
+            roleId: 'role-123',
+            arn: 'arn:aliyun:ram::123456789:role/fc-execution-role',
+            description: 'FC execution role',
+            createDate: '2023-01-01T00:00:00Z',
+            updateDate: '2023-01-01T00:00:00Z',
+            maxSessionDuration: 3600,
+          },
+        },
+      });
+
+      mockCreatePolicy.mockResolvedValue({});
+      mockAttachPolicyToRole
+        .mockResolvedValueOnce({})
+        .mockRejectedValueOnce(new Error('AccessDenied'));
+
+      await expect(
+        operations.createRole('fc-execution-role', ['fc.aliyuncs.com'], undefined, undefined, [
+          'AliyunOSSFullAccess',
+        ]),
+      ).rejects.toThrow('AccessDenied');
+    });
+  });
+
+  describe('createRole with customStatements', () => {
+    it('should create role with custom statements including sid', async () => {
+      mockCreateRole.mockResolvedValue({
+        body: {
+          role: {
+            roleName: 'fc-execution-role',
+            roleId: 'role-123',
+            arn: 'arn:aliyun:ram::123456789:role/fc-execution-role',
+            description: 'FC execution role',
+            createDate: '2023-01-01T00:00:00Z',
+            updateDate: '2023-01-01T00:00:00Z',
+            maxSessionDuration: 3600,
+          },
+        },
+      });
+
+      mockCreatePolicy.mockResolvedValue({});
+      mockAttachPolicyToRole.mockResolvedValue({});
+
+      const result = await operations.createRole(
+        'fc-execution-role',
+        ['fc.aliyuncs.com'],
+        undefined,
+        [{ sid: 'custom-ecs', effect: 'Allow', actions: ['ecs:*'], resources: ['*'] }],
+      );
+
+      expect(result).toBeDefined();
+      expect(result.roleName).toBe('fc-execution-role');
+
+      const createPolicyCall = mockCreatePolicy.mock.calls[0][0];
+      const policyDoc = JSON.parse(createPolicyCall.policyDocument);
+      const customStmt = policyDoc.Statement[5];
+      expect(customStmt.Sid).toBe('custom-ecs');
+      expect(customStmt.Effect).toBe('Allow');
+      expect(customStmt.Action).toEqual(['ecs:*']);
+      expect(customStmt.Resource).toEqual(['*']);
+    });
+
+    it('should create role with custom statements without sid', async () => {
+      mockCreateRole.mockResolvedValue({
+        body: {
+          role: {
+            roleName: 'fc-execution-role',
+            roleId: 'role-123',
+            arn: 'arn:aliyun:ram::123456789:role/fc-execution-role',
+          },
+        },
+      });
+
+      mockCreatePolicy.mockResolvedValue({});
+      mockAttachPolicyToRole.mockResolvedValue({});
+
+      const result = await operations.createRole(
+        'fc-execution-role',
+        ['fc.aliyuncs.com'],
+        undefined,
+        [{ effect: 'Deny', actions: ['ram:DeleteRole'], resources: ['*'] }],
+      );
+
+      expect(result).toBeDefined();
+
+      const policyDoc = JSON.parse(mockCreatePolicy.mock.calls[0][0].policyDocument);
+      const customStmt = policyDoc.Statement[5];
+      expect(customStmt.Sid).toBeUndefined();
+      expect(customStmt.Effect).toBe('Deny');
+      expect(customStmt.Action).toEqual(['ram:DeleteRole']);
+    });
   });
 
   describe('attachManagedPolicies', () => {

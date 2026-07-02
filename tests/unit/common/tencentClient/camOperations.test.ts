@@ -126,6 +126,56 @@ describe('camOperations', () => {
       });
     });
 
+    it('should throw when AttachRolePolicy fails with unexpected error', async () => {
+      mockCamClient.CreateRole.mockResolvedValue({ RoleId: 'role-123' });
+      mockCamClient.GetRole.mockResolvedValue({
+        RoleInfo: { RoleId: 'role-123', RoleName: 'attach-fail-role', RoleArn: '' },
+      });
+      mockCamClient.CreatePolicy.mockResolvedValue({ PolicyId: 1 });
+      const error = Object.assign(new Error('AccessDenied'), { code: 'AccessDenied' });
+      mockCamClient.AttachRolePolicy.mockRejectedValue(error);
+
+      await expect(
+        operations.createRole('attach-fail-role', ['scf.tencentcloud.com']),
+      ).rejects.toThrow('AccessDenied');
+    });
+
+    it('should throw when AttachRolePolicy throws error without code property', async () => {
+      mockCamClient.CreateRole.mockResolvedValue({ RoleId: 'role-123' });
+      mockCamClient.GetRole.mockResolvedValue({
+        RoleInfo: { RoleId: 'role-123', RoleName: 'attach-no-code-role', RoleArn: '' },
+      });
+      mockCamClient.CreatePolicy.mockResolvedValue({ PolicyId: 1 });
+      mockCamClient.AttachRolePolicy.mockRejectedValue(new Error('NoCodeError'));
+
+      await expect(
+        operations.createRole('attach-no-code-role', ['scf.tencentcloud.com']),
+      ).rejects.toThrow('NoCodeError');
+    });
+
+    it('should swallow AlreadyExist error when attaching managed policy', async () => {
+      mockCamClient.CreateRole.mockResolvedValue({ RoleId: 'role-123' });
+      mockCamClient.GetRole.mockResolvedValue({
+        RoleInfo: { RoleId: 'role-123', RoleName: 'attach-swallow-role', RoleArn: '' },
+      });
+      mockCamClient.CreatePolicy.mockResolvedValue({ PolicyId: 1 });
+      const attachError = Object.assign(new Error('AlreadyExist'), {
+        code: 'InvalidParameter.AttachmentRoleAlreadyExist',
+      });
+      mockCamClient.AttachRolePolicy.mockRejectedValue(attachError);
+
+      const result = await operations.createRole(
+        'attach-swallow-role',
+        ['scf.tencentcloud.com'],
+        undefined,
+        undefined,
+        ['QCS::AdministratorAccess'],
+      );
+
+      expect(result).toBeDefined();
+      expect(mockCamClient.AttachRolePolicy).toHaveBeenCalled();
+    });
+
     it('should handle role already exists error by recovering', async () => {
       const error = Object.assign(new Error('RoleAlreadyExist'), {
         code: 'InvalidParameter.RoleAlreadyExist',
@@ -176,6 +226,31 @@ describe('camOperations', () => {
       expect(result.policyName).toBe('scf-execution-role-policy');
     });
 
+    it('should throw when CreatePolicy fails with unexpected error', async () => {
+      mockCamClient.CreateRole.mockResolvedValue({ RoleId: 'role-123' });
+      mockCamClient.GetRole.mockResolvedValue({
+        RoleInfo: { RoleId: 'role-123', RoleName: 'create-policy-fail-role', RoleArn: '' },
+      });
+      const error = Object.assign(new Error('AccessDenied'), { code: 'AccessDenied' });
+      mockCamClient.CreatePolicy.mockRejectedValue(error);
+
+      await expect(
+        operations.createRole('create-policy-fail-role', ['scf.tencentcloud.com']),
+      ).rejects.toThrow('AccessDenied');
+    });
+
+    it('should rethrow CreatePolicy error without code property', async () => {
+      mockCamClient.CreateRole.mockResolvedValue({ RoleId: 'role-123' });
+      mockCamClient.GetRole.mockResolvedValue({
+        RoleInfo: { RoleId: 'role-123', RoleName: 'no-code-error-role', RoleArn: '' },
+      });
+      mockCamClient.CreatePolicy.mockRejectedValue(new Error('PlainErrorNoCode'));
+
+      await expect(
+        operations.createRole('no-code-error-role', ['scf.tencentcloud.com']),
+      ).rejects.toThrow('PlainErrorNoCode');
+    });
+
     it('should throw on drift recovery failure', async () => {
       const error = Object.assign(new Error('RoleAlreadyExist'), {
         code: 'InvalidParameter.RoleAlreadyExist',
@@ -186,6 +261,38 @@ describe('camOperations', () => {
       await expect(
         operations.createRole('scf-execution-role', ['scf.tencentcloud.com']),
       ).rejects.toThrow('TENCENT_CAM_ROLE_DRIFT_RECOVERY_FAILED');
+    });
+
+    it('should reattach managed policies during drift recovery', async () => {
+      const error = Object.assign(new Error('RoleAlreadyExist'), {
+        code: 'InvalidParameter.RoleAlreadyExist',
+      });
+      mockCamClient.CreateRole.mockRejectedValueOnce(error);
+      mockCamClient.GetRole.mockResolvedValue({
+        RoleInfo: {
+          RoleId: 'role-123',
+          RoleName: 'drift-recover-role',
+          RoleArn: 'trn:cam::123:role/drift-recover-role',
+        },
+      });
+      mockCamClient.CreatePolicy.mockResolvedValue({ PolicyId: 1 });
+      mockCamClient.AttachRolePolicy.mockResolvedValue({});
+
+      const result = await operations.createRole(
+        'drift-recover-role',
+        ['scf.tencentcloudapi.com'],
+        undefined,
+        undefined,
+        ['QCS::AdministratorAccess'],
+      );
+
+      expect(result.roleName).toBe('drift-recover-role');
+      expect(result.roleId).toBe('role-123');
+      expect(result.roleArn).toBe('trn:cam::123:role/drift-recover-role');
+      expect(mockCamClient.AttachRolePolicy).toHaveBeenCalledWith({
+        PolicyName: 'QCS::AdministratorAccess',
+        AttachRoleName: 'drift-recover-role',
+      });
     });
 
     it('should include custom statements in execution policy', async () => {
@@ -204,6 +311,25 @@ describe('camOperations', () => {
         expect.objectContaining({
           PolicyDocument: expect.stringContaining('cos:GetObject'),
         }),
+      );
+    });
+
+    it('should include sid in statement when provided', async () => {
+      mockCamClient.CreateRole.mockResolvedValue({ RoleId: 'role-sid' });
+      mockCamClient.GetRole.mockResolvedValue({
+        RoleInfo: { RoleId: 'role-sid', RoleName: 'sid-role', RoleArn: '' },
+      });
+      mockCamClient.CreatePolicy.mockResolvedValue({ PolicyId: 1 });
+      mockCamClient.AttachRolePolicy.mockResolvedValue({});
+
+      await operations.createRole('sid-role', ['scf.tencentcloud.com'], undefined, [
+        { sid: 'MyCustomSid', effect: 'Allow', actions: ['scf:*'], resources: ['*'] },
+      ]);
+
+      const policyDocCall = mockCamClient.CreatePolicy.mock.calls[0][0];
+      const parsedDoc = JSON.parse(policyDocCall.PolicyDocument);
+      expect(parsedDoc.Statement).toEqual(
+        expect.arrayContaining([expect.objectContaining({ Sid: 'MyCustomSid' })]),
       );
     });
   });
@@ -312,6 +438,17 @@ describe('camOperations', () => {
 
       expect(mockCamClient.DeleteRole).toHaveBeenCalled();
     });
+
+    it('should throw on unexpected detach policy error', async () => {
+      const error = Object.assign(new Error('AccessDenied'), {
+        code: 'AccessDenied',
+      });
+      mockCamClient.DetachRolePolicy.mockRejectedValue(error);
+      mockCamClient.ListPolicies.mockResolvedValue({ List: [] });
+
+      await expect(operations.deleteRole('test-role')).rejects.toThrow('AccessDenied');
+      expect(mockCamClient.DeleteRole).not.toHaveBeenCalled();
+    });
   });
 
   describe('updateRolePolicy', () => {
@@ -354,6 +491,28 @@ describe('camOperations', () => {
       await operations.updateRolePolicy('test-role');
 
       expect(mockCamClient.AttachRolePolicy).toHaveBeenCalled();
+    });
+
+    it('should delete old policy when found during updateRolePolicy', async () => {
+      mockCamClient.DetachRolePolicy.mockResolvedValue({});
+      mockCamClient.ListPolicies.mockResolvedValue({
+        List: [{ PolicyName: 'test-role-policy', PolicyId: 42 }],
+      });
+      mockCamClient.CreatePolicy.mockResolvedValue({ PolicyId: 2 });
+      mockCamClient.AttachRolePolicy.mockResolvedValue({});
+
+      await operations.updateRolePolicy('test-role');
+
+      expect(mockCamClient.DeletePolicy).toHaveBeenCalledWith({ PolicyId: [42] });
+      expect(mockCamClient.CreatePolicy).toHaveBeenCalled();
+    });
+
+    it('should rethrow error without code from CreatePolicy in updateRolePolicy', async () => {
+      mockCamClient.DetachRolePolicy.mockResolvedValue({});
+      mockCamClient.ListPolicies.mockResolvedValue({ List: [] });
+      mockCamClient.CreatePolicy.mockRejectedValue(new Error('CreatePolicyFailed'));
+
+      await expect(operations.updateRolePolicy('test-role')).rejects.toThrow('CreatePolicyFailed');
     });
   });
 
