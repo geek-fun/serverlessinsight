@@ -143,28 +143,28 @@ export const parseBucket = (buckets: {
       iam = {
         resource: {
           statements: bucket.iam.resource.statements.map((stmt) => {
-            const actionRaw = stmt.Action;
+            const actionRaw = stmt.action;
             const actions = Array.isArray(actionRaw) ? actionRaw.map(String) : [String(actionRaw)];
 
-            const resourceRaw = stmt.Resource;
+            const resourceRaw = stmt.resource;
             const resources = Array.isArray(resourceRaw)
               ? resourceRaw.map(String)
               : [String(resourceRaw)];
 
             const principal: Record<string, string | string[]> = {};
-            for (const [key, val] of Object.entries(stmt.Principal || {})) {
+            for (const [key, val] of Object.entries(stmt.principal || {})) {
               principal[key] = val as string | string[];
             }
 
             const parsedStmt: BucketIam['resource']['statements'][0] = {
-              Effect: stmt.Effect,
-              Principal: principal,
-              Action: actions,
-              Resource: resources,
+              effect: stmt.effect,
+              principal: principal,
+              action: actions,
+              resource: resources,
             };
 
-            if (stmt.Condition != null) {
-              parsedStmt.Condition = stmt.Condition as Record<string, unknown>;
+            if (stmt.condition != null) {
+              parsedStmt.condition = stmt.condition as Record<string, unknown>;
             }
 
             return parsedStmt;

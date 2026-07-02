@@ -130,11 +130,11 @@ export type EventDomainConfig = {
  * Raw (unresolved) IAM policy statement from YAML config.
  */
 export type BucketIamStatementRaw = {
-  Effect: 'Allow' | 'Deny';
-  Principal: Record<string, Resolvable<string | string[]>>;
-  Action: Resolvable<string | string[]>;
-  Resource: Resolvable<string | string[]>;
-  Condition?: Record<string, unknown>;
+  effect: 'Allow' | 'Deny';
+  principal: Record<string, Resolvable<string | string[]>>;
+  action: Resolvable<string | string[]>;
+  resource: Resolvable<string | string[]>;
+  condition?: Record<string, unknown>;
 };
 
 /**
@@ -150,11 +150,11 @@ export type BucketIamRaw = {
  * Parsed IAM policy statement (all fields resolved).
  */
 export type BucketIamStatement = {
-  Effect: 'Allow' | 'Deny';
-  Principal: Record<string, string | string[]>;
-  Action: string[];
-  Resource: string[];
-  Condition?: Record<string, unknown>;
+  effect: 'Allow' | 'Deny';
+  principal: Record<string, string | string[]>;
+  action: string[];
+  resource: string[];
+  condition?: Record<string, unknown>;
 };
 
 /**

@@ -132,20 +132,20 @@ const iamStatementPrincipalSchema = {
 const iamStatementSchema = {
   type: 'object',
   properties: {
-    Effect: { type: 'string', enum: ['Allow', 'Deny'] },
-    Principal: iamStatementPrincipalSchema,
-    Action: {
+    effect: { type: 'string', enum: ['Allow', 'Deny'] },
+    principal: iamStatementPrincipalSchema,
+    action: {
       oneOf: [{ type: 'string' }, { type: 'array', items: { type: 'string' }, minItems: 1 }],
     },
-    Resource: {
+    resource: {
       oneOf: [{ type: 'string' }, { type: 'array', items: { type: 'string' }, minItems: 1 }],
     },
-    Condition: {
+    condition: {
       type: 'object',
       additionalProperties: true,
     },
   },
-  required: ['Effect', 'Principal', 'Action', 'Resource'],
+  required: ['effect', 'principal', 'action', 'resource'],
   additionalProperties: false,
 };
 

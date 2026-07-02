@@ -26,6 +26,8 @@ const mockOssOperations = {
   enableTransferAcceleration: jest.fn(),
   getAccelerateEndpoint: jest.fn(),
   getBucketCnameEndpoint: jest.fn().mockResolvedValue('test-bucket.oss-cn-hangzhou.aliyuncs.com'),
+  putBucketPolicy: jest.fn(),
+  deleteBucketPolicy: jest.fn(),
 };
 
 const mockCasOperations = {
@@ -2297,5 +2299,282 @@ describe('OssResource', () => {
       ).then(() => {
         expect(mockOssOperations.bindCustomDomain).toHaveBeenCalled();
       }));
+
+    describe('createBucketResource - IAM policy', () => {
+      it('should apply bucket policy when iam is configured', async () => {
+        const bucket: BucketDomain = {
+          key: 'test_bucket',
+          name: 'test-bucket',
+          iam: {
+            resource: {
+              statements: [
+                {
+                  effect: 'Allow',
+                  principal: { Service: 'oss.aliyuncs.com' },
+                  action: ['oss:GetObject', 'oss:PutObject'],
+                  resource: ['acs:oss:*:*:my-bucket/*'],
+                },
+              ],
+            },
+          },
+        };
+
+        mockOssOperations.getBucket.mockResolvedValue({
+          name: 'test-bucket',
+          location: 'oss-cn-hangzhou',
+          acl: 'private',
+          storageClass: 'Standard',
+          creationDate: '2024-01-01',
+        });
+        mockOssOperations.putBucketPolicy.mockResolvedValue(undefined);
+        mockedStateManager.setResource.mockImplementation(
+          (_state: StateFile, _logicalId: string, resourceState: unknown) => ({
+            ...initialState,
+            resources: { 'buckets.test_bucket': resourceState },
+          }),
+        );
+
+        await createBucketResource(mockContext, bucket, initialState);
+
+        expect(mockOssOperations.putBucketPolicy).toHaveBeenCalledWith(
+          'test-bucket',
+          expect.objectContaining({
+            Version: '1',
+            Statement: expect.arrayContaining([
+              expect.objectContaining({
+                Effect: 'Allow',
+                Action: ['oss:GetObject', 'oss:PutObject'],
+              }),
+            ]),
+          }),
+        );
+      });
+
+      it('should not call putBucketPolicy when iam is not configured', async () => {
+        const bucket: BucketDomain = {
+          key: 'test_bucket',
+          name: 'test-bucket',
+        };
+
+        mockOssOperations.getBucket.mockResolvedValue({
+          name: 'test-bucket',
+          location: 'oss-cn-hangzhou',
+          acl: 'private',
+          storageClass: 'Standard',
+          creationDate: '2024-01-01',
+        });
+        mockedStateManager.setResource.mockImplementation(
+          (_state: StateFile, _logicalId: string, resourceState: unknown) => ({
+            ...initialState,
+            resources: { 'buckets.test_bucket': resourceState },
+          }),
+        );
+
+        await createBucketResource(mockContext, bucket, initialState);
+
+        expect(mockOssOperations.putBucketPolicy).not.toHaveBeenCalled();
+      });
+    });
+
+    describe('updateBucketResource - IAM policy', () => {
+      it('should apply updated policy when iam changes', async () => {
+        const stateWithPolicy: StateFile = {
+          ...initialState,
+          resources: {
+            'buckets.test_bucket': {
+              mode: 'managed',
+              region: 'cn-hangzhou',
+              definition: {
+                bucketName: 'test-bucket',
+                policy: JSON.stringify({
+                  resource: {
+                    statements: [
+                      {
+                        effect: 'Allow',
+                        action: ['oss:GetObject'],
+                        resource: ['*'],
+                        principal: { Service: 'oss' },
+                      },
+                    ],
+                  },
+                }),
+              },
+              instances: [{ sid: 'oss-sid', id: 'test-bucket', type: 'ALIYUN_OSS_BUCKET' }],
+              lastUpdated: new Date().toISOString(),
+            },
+          },
+        };
+
+        const bucket: BucketDomain = {
+          key: 'test_bucket',
+          name: 'test-bucket',
+          iam: {
+            resource: {
+              statements: [
+                {
+                  effect: 'Allow',
+                  principal: { Service: 'oss.aliyuncs.com' },
+                  action: ['oss:GetObject', 'oss:PutObject'],
+                  resource: ['acs:oss:*:*:my-bucket/*'],
+                },
+              ],
+            },
+          },
+        };
+
+        mockOssOperations.getBucket.mockResolvedValue({
+          name: 'test-bucket',
+          location: 'oss-cn-hangzhou',
+          acl: 'private',
+          storageClass: 'Standard',
+        });
+        mockOssOperations.putBucketPolicy.mockResolvedValue(undefined);
+        mockedStateManager.setResource.mockImplementation(
+          (_state: StateFile, _logicalId: string, resourceState: unknown) => ({
+            ...initialState,
+            resources: { 'buckets.test_bucket': resourceState },
+          }),
+        );
+
+        await updateBucketResource(mockContext, bucket, stateWithPolicy);
+
+        expect(mockOssOperations.putBucketPolicy).toHaveBeenCalledWith(
+          'test-bucket',
+          expect.objectContaining({ Version: '1', Statement: expect.any(Array) }),
+        );
+      });
+
+      it('should remove policy when iam is removed', async () => {
+        const stateWithPolicy: StateFile = {
+          ...initialState,
+          resources: {
+            'buckets.test_bucket': {
+              mode: 'managed',
+              region: 'cn-hangzhou',
+              definition: {
+                bucketName: 'test-bucket',
+                policy: JSON.stringify({
+                  resource: {
+                    statements: [
+                      {
+                        effect: 'Allow',
+                        action: ['oss:GetObject'],
+                        resource: ['*'],
+                        principal: { Service: 'oss' },
+                      },
+                    ],
+                  },
+                }),
+              },
+              instances: [{ sid: 'oss-sid', id: 'test-bucket', type: 'ALIYUN_OSS_BUCKET' }],
+              lastUpdated: new Date().toISOString(),
+            },
+          },
+        };
+
+        const bucket: BucketDomain = {
+          key: 'test_bucket',
+          name: 'test-bucket',
+        };
+
+        mockOssOperations.getBucket.mockResolvedValue({
+          name: 'test-bucket',
+          location: 'oss-cn-hangzhou',
+          acl: 'private',
+          storageClass: 'Standard',
+        });
+        mockOssOperations.deleteBucketPolicy.mockResolvedValue(undefined);
+        mockedStateManager.setResource.mockImplementation(
+          (_state: StateFile, _logicalId: string, resourceState: unknown) => ({
+            ...initialState,
+            resources: { 'buckets.test_bucket': resourceState },
+          }),
+        );
+
+        await updateBucketResource(mockContext, bucket, stateWithPolicy);
+
+        expect(mockOssOperations.deleteBucketPolicy).toHaveBeenCalledWith('test-bucket');
+      });
+
+      it('should not call policy functions when iam is unchanged', async () => {
+        const existingIam = {
+          resource: {
+            statements: [
+              {
+                effect: 'Allow' as const,
+                principal: { Service: 'oss' },
+                action: ['oss:GetObject'],
+                resource: ['*'],
+              },
+            ],
+          },
+        };
+
+        const stateWithPolicy: StateFile = {
+          ...initialState,
+          resources: {
+            'buckets.test_bucket': {
+              mode: 'managed',
+              region: 'cn-hangzhou',
+              definition: {
+                bucketName: 'test-bucket',
+                policy: JSON.stringify(existingIam),
+              },
+              instances: [{ sid: 'oss-sid', id: 'test-bucket', type: 'ALIYUN_OSS_BUCKET' }],
+              lastUpdated: new Date().toISOString(),
+            },
+          },
+        };
+
+        mockOssOperations.getBucket.mockResolvedValue({
+          name: 'test-bucket',
+          location: 'oss-cn-hangzhou',
+          acl: 'private',
+          storageClass: 'Standard',
+        });
+        mockedStateManager.setResource.mockImplementation(
+          (_state: StateFile, _logicalId: string, resourceState: unknown) => ({
+            ...initialState,
+            resources: { 'buckets.test_bucket': resourceState },
+          }),
+        );
+
+        await updateBucketResource(
+          mockContext,
+          { key: 'test_bucket', name: 'test-bucket', iam: existingIam } as BucketDomain,
+          stateWithPolicy,
+        );
+
+        expect(mockOssOperations.putBucketPolicy).not.toHaveBeenCalled();
+        expect(mockOssOperations.deleteBucketPolicy).not.toHaveBeenCalled();
+      });
+    });
+
+    describe('deleteBucketResource - IAM policy cleanup', () => {
+      it('should delete bucket policy when deleting bucket', async () => {
+        const bucketName = 'test-bucket';
+        const logicalId = 'buckets.test_bucket';
+        const stateWithBucket: StateFile = {
+          ...initialState,
+          resources: {
+            [logicalId]: {
+              mode: 'managed',
+              region: 'cn-hangzhou',
+              definition: {},
+              instances: [],
+              lastUpdated: new Date().toISOString(),
+            },
+          },
+        };
+
+        mockOssOperations.deleteBucketPolicy.mockResolvedValue(undefined);
+        mockOssOperations.deleteBucket.mockResolvedValue(undefined);
+        mockedStateManager.removeResource.mockReturnValue(initialState);
+
+        await deleteBucketResource(mockContext, bucketName, logicalId, stateWithBucket);
+
+        expect(mockOssOperations.deleteBucketPolicy).toHaveBeenCalledWith(bucketName);
+      });
+    });
   });
 });

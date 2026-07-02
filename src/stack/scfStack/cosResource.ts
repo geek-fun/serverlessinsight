@@ -16,15 +16,15 @@ import { logger } from '../../common/logger';
 import { lang } from '../../lang';
 import { deriveWwwDomain } from '../../common/domainUtils';
 
-const toLowercasePolicy = (stmt: BucketIamStatement): Record<string, unknown> => {
+const toCosStatement = (stmt: BucketIamStatement): Record<string, unknown> => {
   const s: Record<string, unknown> = {
-    effect: stmt.Effect.toLowerCase(),
-    principal: stmt.Principal,
-    action: stmt.Action,
-    resource: stmt.Resource,
+    effect: stmt.effect.toLowerCase(),
+    principal: stmt.principal,
+    action: stmt.action,
+    resource: stmt.resource,
   };
-  if (stmt.Condition) {
-    s.condition = stmt.Condition;
+  if (stmt.condition) {
+    s.condition = stmt.condition;
   }
   return s;
 };
@@ -33,7 +33,7 @@ const buildCosBucketPolicyJson = (iam: BucketDomain['iam']): Record<string, unkn
   if (!iam?.resource?.statements || iam.resource.statements.length === 0) return null;
   return {
     version: '2.0',
-    statement: iam.resource.statements.map(toLowercasePolicy),
+    statement: iam.resource.statements.map(toCosStatement),
   };
 };
 

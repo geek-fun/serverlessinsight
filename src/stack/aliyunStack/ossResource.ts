@@ -175,13 +175,13 @@ const buildOssBucketPolicyJson = (iam: BucketDomain['iam']): Record<string, unkn
     Version: '1',
     Statement: iam.resource.statements.map((stmt) => {
       const s: Record<string, unknown> = {
-        Effect: stmt.Effect,
-        Principal: stmt.Principal,
-        Action: stmt.Action,
-        Resource: stmt.Resource,
+        Effect: stmt.effect,
+        Principal: stmt.principal,
+        Action: stmt.action,
+        Resource: stmt.resource,
       };
-      if (stmt.Condition) {
-        s.Condition = stmt.Condition;
+      if (stmt.condition) {
+        s.Condition = stmt.condition;
       }
       return s;
     }),

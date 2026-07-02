@@ -17,6 +17,8 @@ const mockCosOperations = {
   bindCustomDomain: jest.fn(),
   unbindCustomDomain: jest.fn(),
   getCosEndpoint: jest.fn(),
+  putBucketPolicy: jest.fn(),
+  deleteBucketPolicy: jest.fn(),
 };
 
 const mockSslOperations = {
@@ -1399,6 +1401,245 @@ describe('CosResource', () => {
       );
 
       expect(mockCosOperations.bindCustomDomain).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('createBucketResource - IAM policy', () => {
+    const mockBucketInfoBase = {
+      Name: 'test-bucket',
+      Location: 'ap-guangzhou',
+      CreationDate: '2024-01-01',
+      ACL: 'private',
+    };
+
+    it('should apply bucket policy when iam is configured', async () => {
+      mockCosOperations.createBucket.mockResolvedValue(undefined);
+      mockCosOperations.getBucket.mockResolvedValue(mockBucketInfoBase);
+      mockCosOperations.putBucketPolicy.mockResolvedValue(undefined);
+
+      const bucket = {
+        key: 'test_bucket',
+        name: 'test-bucket',
+        iam: {
+          resource: {
+            statements: [
+              {
+                effect: 'Allow' as const,
+                principal: { Service: 'cos.tencentcloud.com' },
+                action: ['cos:GetObject'],
+                resource: ['qcs::cos:ap-guangzhou:uid/123:test-bucket/*'],
+              },
+            ],
+          },
+        },
+      };
+
+      await createBucketResource(mockContext, bucket as BucketDomain, initialState);
+
+      expect(mockCosOperations.putBucketPolicy).toHaveBeenCalledWith(
+        'test-bucket',
+        'ap-guangzhou',
+        expect.objectContaining({
+          version: '2.0',
+          statement: expect.arrayContaining([
+            expect.objectContaining({
+              effect: 'allow',
+              action: ['cos:GetObject'],
+            }),
+          ]),
+        }),
+      );
+    });
+
+    it('should delete bucket policy when iam has empty statements', async () => {
+      mockCosOperations.createBucket.mockResolvedValue(undefined);
+      mockCosOperations.getBucket.mockResolvedValue(mockBucketInfoBase);
+      mockCosOperations.deleteBucketPolicy.mockResolvedValue(undefined);
+
+      const bucket = {
+        key: 'test_bucket',
+        name: 'test-bucket',
+        iam: {
+          resource: {
+            statements: [],
+          },
+        },
+      };
+
+      await createBucketResource(mockContext, bucket as BucketDomain, initialState);
+
+      expect(mockCosOperations.deleteBucketPolicy).toHaveBeenCalledWith(
+        'test-bucket',
+        'ap-guangzhou',
+      );
+    });
+
+    it('should not call policy functions when iam is not configured', async () => {
+      mockCosOperations.createBucket.mockResolvedValue(undefined);
+      mockCosOperations.getBucket.mockResolvedValue(mockBucketInfoBase);
+
+      const bucket = {
+        key: 'test_bucket',
+        name: 'test-bucket',
+      };
+
+      await createBucketResource(mockContext, bucket as BucketDomain, initialState);
+
+      expect(mockCosOperations.putBucketPolicy).not.toHaveBeenCalled();
+      expect(mockCosOperations.deleteBucketPolicy).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('updateBucketResource - IAM policy', () => {
+    const mockBucketInfoBase = {
+      Name: 'test-bucket',
+      Location: 'ap-guangzhou',
+      CreationDate: '2024-01-01',
+      ACL: 'private',
+    };
+
+    const stateWithPolicy: StateFile = {
+      ...initialState,
+      resources: {
+        'buckets.test_bucket': {
+          mode: 'managed',
+          region: 'ap-guangzhou',
+          definition: {
+            bucketName: 'test-bucket',
+            policy: JSON.stringify({
+              resource: {
+                statements: [
+                  {
+                    effect: 'Allow',
+                    action: ['cos:GetObject'],
+                    resource: ['*'],
+                    principal: { Service: 'cos' },
+                  },
+                ],
+              },
+            }),
+          },
+          instances: [{ sid: 'cos-sid', id: 'test-bucket', type: 'COS_BUCKET' }],
+          lastUpdated: new Date().toISOString(),
+        },
+      },
+    };
+
+    it('should apply updated policy when iam changes', async () => {
+      mockCosOperations.getBucket.mockResolvedValue(mockBucketInfoBase);
+      mockCosOperations.putBucketPolicy.mockResolvedValue(undefined);
+
+      const bucket = {
+        key: 'test_bucket',
+        name: 'test-bucket',
+        iam: {
+          resource: {
+            statements: [
+              {
+                effect: 'Allow' as const,
+                principal: { Service: 'cos.tencentcloud.com' },
+                action: ['cos:GetObject', 'cos:PutObject'],
+                resource: ['qcs::cos:ap-guangzhou:uid/123:test-bucket/*'],
+              },
+            ],
+          },
+        },
+      };
+
+      await updateBucketResource(mockContext, bucket as BucketDomain, stateWithPolicy);
+
+      expect(mockCosOperations.putBucketPolicy).toHaveBeenCalledWith(
+        'test-bucket',
+        'ap-guangzhou',
+        expect.objectContaining({ version: '2.0' }),
+      );
+    });
+
+    it('should remove policy when iam is removed', async () => {
+      mockCosOperations.getBucket.mockResolvedValue(mockBucketInfoBase);
+      mockCosOperations.deleteBucketPolicy.mockResolvedValue(undefined);
+
+      const bucket = {
+        key: 'test_bucket',
+        name: 'test-bucket',
+      };
+
+      await updateBucketResource(mockContext, bucket as BucketDomain, stateWithPolicy);
+
+      expect(mockCosOperations.deleteBucketPolicy).toHaveBeenCalledWith(
+        'test-bucket',
+        'ap-guangzhou',
+      );
+    });
+
+    it('should not call policy functions when iam is unchanged', async () => {
+      mockCosOperations.getBucket.mockResolvedValue(mockBucketInfoBase);
+
+      const existingIam = {
+        resource: {
+          statements: [
+            {
+              effect: 'Allow' as const,
+              principal: { Service: 'cos' },
+              action: ['cos:GetObject'],
+              resource: ['*'],
+            },
+          ],
+        },
+      };
+
+      const stateWithMatchingPolicy: StateFile = {
+        ...initialState,
+        resources: {
+          'buckets.test_bucket': {
+            mode: 'managed',
+            region: 'ap-guangzhou',
+            definition: {
+              bucketName: 'test-bucket',
+              policy: JSON.stringify(existingIam),
+            },
+            instances: [{ sid: 'cos-sid', id: 'test-bucket', type: 'COS_BUCKET' }],
+            lastUpdated: new Date().toISOString(),
+          },
+        },
+      };
+
+      await updateBucketResource(
+        mockContext,
+        { key: 'test_bucket', name: 'test-bucket', iam: existingIam } as BucketDomain,
+        stateWithMatchingPolicy,
+      );
+
+      expect(mockCosOperations.putBucketPolicy).not.toHaveBeenCalled();
+      expect(mockCosOperations.deleteBucketPolicy).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('deleteBucketResource - IAM policy cleanup', () => {
+    it('should delete bucket policy when deleting bucket', async () => {
+      const bucketName = 'test-bucket';
+      const region = 'ap-guangzhou';
+      const logicalId = 'buckets.test_bucket';
+      const stateWithBucket: StateFile = {
+        ...initialState,
+        resources: {
+          [logicalId]: {
+            mode: 'managed',
+            region: 'ap-guangzhou',
+            definition: {},
+            instances: [],
+            lastUpdated: new Date().toISOString(),
+          },
+        },
+      };
+
+      mockCosOperations.deleteBucketPolicy.mockResolvedValue(undefined);
+      mockCosOperations.deleteBucket.mockResolvedValue(undefined);
+      mockedStateManager.removeResource.mockReturnValue(initialState);
+
+      await deleteBucketResource(mockContext, bucketName, region, logicalId, stateWithBucket);
+
+      expect(mockCosOperations.deleteBucketPolicy).toHaveBeenCalledWith(bucketName, region);
     });
   });
 });
