@@ -28,6 +28,14 @@ export type FunctionRaw = {
       egress: Array<Resolvable<string>>;
     };
   };
+  iam?: {
+    statements?: Array<{
+      sid?: Resolvable<string>;
+      effect: Resolvable<'Allow' | 'Deny'>;
+      actions: Array<Resolvable<string>>;
+      resources: Array<Resolvable<string>>;
+    }>;
+  };
   storage?: {
     disk?: Resolvable<number>;
     nas?: Array<{
@@ -65,6 +73,14 @@ export type FunctionDomain = {
       ingress: Array<string>;
       egress: Array<string>;
     };
+  };
+  iam?: {
+    statements?: Array<{
+      sid?: string;
+      effect: 'Allow' | 'Deny';
+      actions: string[];
+      resources: string[];
+    }>;
   };
   storage: {
     disk?: number;
