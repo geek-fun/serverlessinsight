@@ -28,6 +28,16 @@ export const parseFunction = (functions?: {
     memory: parseNumber(func.memory),
     gpu: func.gpu as FunctionGpuEnum,
     timeout: parseNumber(func.timeout),
+    iam: func.iam
+      ? {
+          statements: func.iam.statements?.map((s) => ({
+            sid: s.sid as string | undefined,
+            effect: s.effect as 'Allow' | 'Deny',
+            actions: s.actions.map(String),
+            resources: s.resources.map(String),
+          })),
+        }
+      : undefined,
     environment: func.environment,
     log: parseBoolean(func.log),
     network: func.network,
