@@ -687,6 +687,7 @@ export const zhCN = {
     '角色在云端存在但恢复操作失败。' +
     '修复方法：在云控制台手动确认角色状态，从状态中移除该角色并重新部署。',
   IAM_ROLE_TRUST_POLICY_UPDATED: 'IAM 角色 {{roleName}} 信任策略已更新',
+  IAM_ROLE_POLICY_UPDATED: 'IAM 角色 {{roleName}} 执行策略已更新',
   IAM_POLICY_ALREADY_EXISTS: 'IAM 策略 {{policyName}} 已存在，复用现有策略',
   IAM_POLICY_ALREADY_ATTACHED: 'IAM 策略 {{policyName}} 已附加到角色 {{roleName}}',
   IAM_POLICY_ATTACHED: 'IAM 策略 {{policyName}} 已附加到角色 {{roleName}}',

@@ -754,6 +754,7 @@ export const en = {
     'The role existed in the cloud but recovery operations failed. ' +
     'To fix: manually verify the role in the cloud console, remove it from state, and redeploy.',
   IAM_ROLE_TRUST_POLICY_UPDATED: 'IAM role {{roleName}} trust policy updated',
+  IAM_ROLE_POLICY_UPDATED: 'IAM role {{roleName}} execution policy updated',
   IAM_POLICY_ALREADY_EXISTS: 'IAM policy {{policyName}} already exists, reusing',
   IAM_POLICY_ALREADY_ATTACHED: 'IAM policy {{policyName}} already attached to role {{roleName}}',
   IAM_POLICY_ATTACHED: 'IAM policy {{policyName}} attached to role {{roleName}}',
