@@ -1,0 +1,26 @@
+version: 0.0.1
+app: iam-test-app
+provider:
+  name: aliyun
+  region: cn-hangzhou
+
+service: iam-test-service
+
+functions:
+  iam_fn:
+    name: iam-test-fn
+    code:
+      runtime: nodejs18
+      handler: index.handler
+      path: tests/fixtures/artifacts/artifact.zip
+    memory: 128
+    timeout: 10
+    log: true
+    iam:
+      statements:
+        - sid: OSSRead
+          effect: Allow
+          actions:
+            - oss:GetObject
+          resources:
+            - acs:oss:*:*:my-bucket/*
