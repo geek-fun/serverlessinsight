@@ -12,6 +12,7 @@ export const getIamInfo = async (context: Context) => {
   const imsConfig = new openApi.Config({
     accessKeyId: context.accessKeyId,
     accessKeySecret: context.accessKeySecret,
+    regionId: context.region,
   });
   imsConfig.connectTimeout = ALIYUN_FC3_CONNECT_TIMEOUT_MS;
   imsConfig.readTimeout = ALIYUN_FC3_READ_TIMEOUT_MS;

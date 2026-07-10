@@ -115,14 +115,12 @@ const buildExecutionPolicy = (customStatements?: IamStatement[]): string => {
       await ramClient.createPolicy(createPolicyRequest);
     } catch (error: unknown) {
       // Policy may already exist
-      if (
-        !(
-          error &&
-          typeof error === 'object' &&
-          'code' in error &&
-          error.code === 'EntityAlreadyExists.Policy'
-        )
-      ) {
+      if (!(
+        error &&
+        typeof error === 'object' &&
+        'code' in error &&
+        error.code === 'EntityAlreadyExists.Policy'
+      )) {
         throw error;
       }
     }
@@ -137,14 +135,12 @@ const buildExecutionPolicy = (customStatements?: IamStatement[]): string => {
       await ramClient.attachPolicyToRole(attachRequest);
     } catch (error: unknown) {
       // Policy may already be attached
-      if (
-        !(
-          error &&
-          typeof error === 'object' &&
-          'code' in error &&
-          error.code === 'EntityAlreadyExists.Role.Policy'
-        )
-      ) {
+      if (!(
+        error &&
+        typeof error === 'object' &&
+        'code' in error &&
+        error.code === 'EntityAlreadyExists.Role.Policy'
+      )) {
         throw error;
       }
     }

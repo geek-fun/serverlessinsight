@@ -262,18 +262,15 @@ export const createVefaasOperations = (client: VefaasSdkClient) => {
             ? {
                 vpcId: (data.VpcConfig as Record<string, unknown>).VpcId as string | undefined,
                 subnetIds: (data.VpcConfig as Record<string, unknown>).SubnetIds as
-                  | string[]
-                  | undefined,
+                  string[] | undefined,
                 securityGroupIds: (data.VpcConfig as Record<string, unknown>).SecurityGroupIds as
-                  | string[]
-                  | undefined,
+                  string[] | undefined,
               }
             : undefined,
           logConfig: data.LogConfig
             ? {
                 project: (data.LogConfig as Record<string, unknown>).ProjectName as
-                  | string
-                  | undefined,
+                  string | undefined,
                 topic: (data.LogConfig as Record<string, unknown>).TopicName as string | undefined,
               }
             : undefined,

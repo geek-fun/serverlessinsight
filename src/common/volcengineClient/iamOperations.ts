@@ -244,8 +244,7 @@ export const createIamOperations = (iamClient: IamSdkClient) => {
 
       const result = (response.Result || {}) as Record<string, unknown>;
       const attachedPolicies = result.AttachedRolePolicies as
-        | Array<{ PolicyName?: string }>
-        | undefined;
+        Array<{ PolicyName?: string }> | undefined;
 
       if (!attachedPolicies) {
         return [];

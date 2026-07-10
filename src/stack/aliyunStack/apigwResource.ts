@@ -787,9 +787,7 @@ export const updateApigwResource = async (
     const wwwDomain = wwwBindApex ? deriveWwwDomain(primaryDomain) : null;
     const isCdnEnabled = getIsCdnEnabled(event);
     const existingDomain = existingState.definition?.domain as
-      | Record<string, unknown>
-      | null
-      | undefined;
+      Record<string, unknown> | null | undefined;
     const previousWwwBindApex = existingDomain?.wwwBindApex === true;
     const previousDomainName = existingDomain?.domainName as string | null | undefined;
     const previousCdnEnabled = existingDomain?.cdnEnabled === true;
@@ -897,9 +895,7 @@ export const updateApigwResource = async (
     }
   } else {
     const existingDomain = existingState.definition?.domain as
-      | Record<string, unknown>
-      | null
-      | undefined;
+      Record<string, unknown> | null | undefined;
     if (existingDomain?.domainName) {
       const previousDomain = existingDomain.domainName as string;
       const previousCdnEnabled = existingDomain.cdnEnabled === true;
@@ -979,9 +975,7 @@ export const deleteApigwResource = async (
   state = await cleanupDnsRecords(context, logicalId, state);
 
   const existingDomain = existingState.definition?.domain as
-    | Record<string, unknown>
-    | null
-    | undefined;
+    Record<string, unknown> | null | undefined;
   if (existingDomain?.domainName) {
     const primaryDomain = existingDomain.domainName as string;
     if (existingDomain.cdnEnabled === true) {

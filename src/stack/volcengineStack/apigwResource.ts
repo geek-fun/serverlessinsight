@@ -315,9 +315,7 @@ export const updateApigwResource = async (
     await client.apigw.bindDomain(domainConfig);
   } else {
     const existingDomain = existingState.definition?.domain as
-      | Record<string, unknown>
-      | null
-      | undefined;
+      Record<string, unknown> | null | undefined;
     if (existingDomain?.domainName) {
       const previousDomain = existingDomain.domainName as string;
       try {
@@ -372,9 +370,7 @@ export const deleteApigwResource = async (
   const gatewayId = groupInstance.id;
 
   const existingDomain = existingState.definition?.domain as
-    | Record<string, unknown>
-    | null
-    | undefined;
+    Record<string, unknown> | null | undefined;
   if (existingDomain?.domainName) {
     const primaryDomain = existingDomain.domainName as string;
     try {
