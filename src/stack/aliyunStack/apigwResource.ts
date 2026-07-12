@@ -24,6 +24,7 @@ import { readPemContent, warnInlinePem } from '../../common/certUtils';
 import { logger } from '../../common/logger';
 import { lang } from '../../lang';
 import { deriveWwwDomain, extractHostRecord, extractMainDomain } from '../../common/domainUtils';
+import { attributesEqual } from '../../common/hashUtils';
 
 type ApigwCdnInstance = ResourceInstance & {
   type: 'ALIYUN_CDN_DISTRIBUTION';
@@ -869,15 +870,49 @@ export const updateApigwResource = async (
   }
 
   if (event.domain) {
+    const desiredDomainDef = extractEventDomainDefinition(event.domain);
+    const previousDomainDef = existingState?.definition?.domain as
+      Record<string, unknown> | null | undefined;
+
+    // Skip domain binding when the domain configuration hasn't changed AND
+    // the domain was previously successfully bound (DNS records exist in state).
+    // This avoids unnecessary DNS verification (minutes-long) on every deploy.
+    // We check DNS sub-resources to avoid skipping after a previously failed binding.
+    const hasBoundDomains =
+      getResource(state, `${logicalId}.dns_verification`) !== undefined ||
+      getResource(state, `${logicalId}.dns_txt_verification`) !== undefined;
+    if (
+      previousDomainDef &&
+      desiredDomainDef &&
+      hasBoundDomains &&
+      attributesEqual(previousDomainDef, desiredDomainDef as Record<string, unknown>)
+    ) {
+      logger.info('Domain configuration unchanged and previously bound, skipping DNS verification');
+      // Still include existing domain instances for state consistency
+      const existingDomainInstances =
+        existingState?.instances?.filter(
+          (i) =>
+            i.type === 'ALIYUN_APIGW_GROUP' ||
+            i.type === 'ALIYUN_APIGW_API' ||
+            i.type === 'ALIYUN_APIGW_DEPLOYMENT',
+        ) ?? [];
+      instances.push(...existingDomainInstances);
+      return setResource(state, logicalId, {
+        mode: 'managed',
+        region: context.region,
+        definition: { ...(existingState?.definition ?? {}), domain: desiredDomainDef },
+        instances: [...instances, ...existingDomainInstances],
+        lastUpdated: new Date().toISOString(),
+      });
+    }
+
     const primaryDomain = event.domain.domain_name as string;
     const wwwBindApex = event.domain.www_bind_apex === true;
     const wwwDomain = wwwBindApex ? deriveWwwDomain(primaryDomain) : null;
     const isCdnEnabled = getIsCdnEnabled(event);
-    const existingDomain = existingState?.definition?.domain as
-      Record<string, unknown> | null | undefined;
-    const previousWwwBindApex = existingDomain?.wwwBindApex === true;
-    const previousDomainName = existingDomain?.domainName as string | null | undefined;
-    const previousCdnEnabled = existingDomain?.cdnEnabled === true;
+    const previousWwwBindApex = previousDomainDef?.wwwBindApex === true;
+    const previousDomainName = previousDomainDef?.domainName as string | null | undefined;
+    const previousCdnEnabled = previousDomainDef?.cdnEnabled === true;
     const previousTrackedDomains = getApigwTrackedDomains(previousDomainName, previousWwwBindApex);
     const originDomain = groupInfo.subDomain;
 
