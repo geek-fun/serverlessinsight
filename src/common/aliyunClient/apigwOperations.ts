@@ -294,7 +294,9 @@ export const createApigwOperations = (
     // For CNAME verification: point the domain directly to the group subdomain
     const verificationHost = domainName;
     const verificationValue = groupSubdomain;
-    const dnsResourceId = `${eventLogicalId}.dns_verification`;
+    // Use domain-specific key so primary and www don't collide
+    const domainKey = domainName.replace(/[^a-zA-Z0-9]/g, '_');
+    const dnsResourceId = `${eventLogicalId}.dns_verification.${domainKey}`;
 
     try {
       // Check if DNS record is tracked in state
@@ -435,7 +437,8 @@ export const createApigwOperations = (
   ): Promise<StateFile> => {
     const mainDomain = extractMainDomain(domainName);
     const txtRecord = buildTxtVerificationRecord(groupId, domainName, groupSubdomain, mainDomain);
-    const txtResourceId = `${eventLogicalId}.dns_txt_verification`;
+    const txtDomainKey = domainName.replace(/[^a-zA-Z0-9]/g, '_');
+    const txtResourceId = `${eventLogicalId}.dns_txt_verification.${txtDomainKey}`;
 
     logger.info(lang.__('APIGW_TXT_ADDING_RECORD', { rr: txtRecord.rr, value: txtRecord.value }));
 
