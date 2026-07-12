@@ -874,6 +874,28 @@ export const createApigwOperations = (
     },
 
     /**
+     * List all APIs in a group
+     */
+    listApisByGroup: async (
+      groupId: string,
+    ): Promise<Array<{ apiId: string; apiName: string }>> => {
+      const request = new cloudapi.DescribeApisRequest({
+        groupId,
+        pageSize: 100,
+        pageNumber: 1,
+      });
+      const response = await apigwClient.describeApis(request);
+      const apiSummaries = response.body?.apiSummarys?.apiSummary ?? [];
+      const results: Array<{ apiId: string; apiName: string }> = [];
+      for (const api of apiSummaries) {
+        if (api.apiId && api.apiName) {
+          results.push({ apiId: api.apiId, apiName: api.apiName });
+        }
+      }
+      return results;
+    },
+
+    /**
      * Delete API
      */
     deleteApi: async (groupId: string, apiId: string): Promise<void> => {

@@ -681,19 +681,106 @@ export const updateApigwResource = async (
   const logicalId = `events.${event.key}`;
   const existingState = getResource(state, logicalId);
   const client = createAliyunClient(context);
+  let existingInstances: Array<ResourceInstance>;
+  let groupId: string;
 
-  if (!existingState) {
-    return createApigwResource(context, event, serviceName, roleArn, state);
+  // Precompute expected API names from triggers to safely filter cloud APIs
+  const expectedApiNames = new Set<string>(
+    event.triggers.map((trigger) => {
+      const apiConfig = triggerToApigwApiConfig(
+        event,
+        trigger,
+        'placeholder',
+        serviceName,
+        context.region,
+        context.stage,
+        roleArn,
+      );
+      return apiConfig.apiName;
+    }),
+  );
+
+  const buildCloudInstance = (
+    cloudGroup: ApigwGroupInfo,
+    cloudApis: Array<{ apiId: string; apiName: string }>,
+  ): { instances: Array<ResourceInstance>; groupId: string } => {
+    const gId = cloudGroup.groupId!;
+    return {
+      groupId: gId,
+      instances: [
+        buildApigwGroupInstanceFromProvider(cloudGroup, context.stage),
+        // Only include cloud APIs whose name matches our expected set.
+        // This prevents accidentally managing or deleting APIs created
+        // by other processes within the same group.
+        ...cloudApis
+          .filter((api) => expectedApiNames.has(api.apiName))
+          .map((api) => ({
+            type: 'ALIYUN_APIGW_API' as const,
+            sid: buildSid('aliyun', 'apigateway', context.stage, `${gId}/${api.apiId}`),
+            id: api.apiId,
+            apiId: api.apiId,
+            apiName: api.apiName,
+            groupId: gId,
+          })),
+      ],
+    };
+  };
+
+  // Shared helper: try to find the group from cloud. On any error (or not found),
+  // fall back to full creation since there's nothing to update.
+  const findCloudGroupOrCreate = async (): Promise<never> => {
+    return createApigwResource(context, event, serviceName, roleArn, state) as never;
+  };
+
+  if (existingState) {
+    existingInstances = existingState.instances;
+    const groupInstance = existingInstances.find((i) => i.type === 'ALIYUN_APIGW_GROUP');
+    if (groupInstance) {
+      groupId = groupInstance.id;
+    } else {
+      const groupConfig = eventToApigwGroupConfig(event, serviceName, context.stage);
+      try {
+        const cloudGroup = await client.apigw.findApiGroupByName(groupConfig.groupName);
+        if (!cloudGroup?.groupId) {
+          return findCloudGroupOrCreate();
+        }
+        const cloudApis = await client.apigw.listApisByGroup(cloudGroup.groupId);
+        const built = buildCloudInstance(cloudGroup, cloudApis);
+        groupId = built.groupId;
+        existingInstances = built.instances;
+        state = setResource(state, logicalId, {
+          mode: 'managed',
+          region: context.region,
+          definition: {},
+          instances: existingInstances,
+          lastUpdated: new Date().toISOString(),
+        });
+      } catch {
+        return findCloudGroupOrCreate();
+      }
+    }
+  } else {
+    const groupConfig = eventToApigwGroupConfig(event, serviceName, context.stage);
+    try {
+      const cloudGroup = await client.apigw.findApiGroupByName(groupConfig.groupName);
+      if (!cloudGroup?.groupId) {
+        return findCloudGroupOrCreate();
+      }
+      const cloudApis = await client.apigw.listApisByGroup(cloudGroup.groupId);
+      const built = buildCloudInstance(cloudGroup, cloudApis);
+      groupId = built.groupId;
+      existingInstances = built.instances;
+      state = setResource(state, logicalId, {
+        mode: 'managed',
+        region: context.region,
+        definition: {},
+        instances: existingInstances,
+        lastUpdated: new Date().toISOString(),
+      });
+    } catch {
+      return findCloudGroupOrCreate();
+    }
   }
-
-  const existingInstances = existingState.instances;
-
-  const groupInstance = existingInstances.find((i) => i.type === 'ALIYUN_APIGW_GROUP');
-  if (!groupInstance) {
-    return createApigwResource(context, event, serviceName, roleArn, state);
-  }
-
-  const groupId = groupInstance.id;
 
   const groupConfig = eventToApigwGroupConfig(event, serviceName, context.stage);
   await client.apigw.updateApiGroup(groupId, groupConfig);
@@ -786,7 +873,7 @@ export const updateApigwResource = async (
     const wwwBindApex = event.domain.www_bind_apex === true;
     const wwwDomain = wwwBindApex ? deriveWwwDomain(primaryDomain) : null;
     const isCdnEnabled = getIsCdnEnabled(event);
-    const existingDomain = existingState.definition?.domain as
+    const existingDomain = existingState?.definition?.domain as
       Record<string, unknown> | null | undefined;
     const previousWwwBindApex = existingDomain?.wwwBindApex === true;
     const previousDomainName = existingDomain?.domainName as string | null | undefined;
@@ -894,7 +981,7 @@ export const updateApigwResource = async (
       }
     }
   } else {
-    const existingDomain = existingState.definition?.domain as
+    const existingDomain = existingState?.definition?.domain as
       Record<string, unknown> | null | undefined;
     if (existingDomain?.domainName) {
       const previousDomain = existingDomain.domainName as string;
@@ -974,7 +1061,7 @@ export const deleteApigwResource = async (
 
   state = await cleanupDnsRecords(context, logicalId, state);
 
-  const existingDomain = existingState.definition?.domain as
+  const existingDomain = existingState!.definition?.domain as
     Record<string, unknown> | null | undefined;
   if (existingDomain?.domainName) {
     const primaryDomain = existingDomain.domainName as string;

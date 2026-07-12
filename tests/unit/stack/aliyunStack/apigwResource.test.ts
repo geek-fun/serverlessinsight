@@ -20,6 +20,7 @@ const mockedApigwOperations = {
   deployApi: jest.fn(),
   abolishApi: jest.fn(),
   deleteApi: jest.fn(),
+  listApisByGroup: jest.fn(),
   deleteApiGroup: jest.fn(),
   bindCustomDomain: jest.fn(),
   unbindCustomDomain: jest.fn(),
@@ -371,6 +372,99 @@ describe('ApigwResource', () => {
       await updateApigwResource(mockContext, testEvent, 'test-service', undefined, initialState);
 
       expect(mockedApigwOperations.createApiGroup).toHaveBeenCalled();
+    });
+
+    it('should recover from drift when no state but group exists in cloud', async () => {
+      mockedStateManager.getResource.mockReturnValue(null);
+      mockedApigwOperations.findApiGroupByName.mockResolvedValue({
+        groupId: 'group-drift',
+        groupName: 'test-api-group',
+        subDomain: 'group-drift.apigw.aliyuncs.com',
+      });
+      mockedApigwOperations.listApisByGroup.mockResolvedValue([
+        { apiId: 'api-match', apiName: 'test-api' },
+      ]);
+      mockedApigwOperations.updateApiGroup.mockResolvedValue(undefined);
+      mockedApigwOperations.getApiGroup.mockResolvedValue({
+        groupId: 'group-drift',
+        groupName: 'test-api-group',
+        subDomain: 'group-drift.apigw.aliyuncs.com',
+      });
+      mockedApigwOperations.getApi.mockResolvedValue({
+        apiId: 'api-match',
+        apiName: 'test-api',
+      });
+      mockedApigwOperations.updateApi.mockResolvedValue(undefined);
+      mockedApigwOperations.deployApi.mockResolvedValue(undefined);
+      mockedApigwTypes.eventToApigwGroupConfig.mockReturnValue({
+        groupName: 'test-api-group',
+      });
+      mockedApigwTypes.extractApigwGroupDefinition.mockReturnValue({});
+      mockedApigwTypes.triggerToApigwApiConfig.mockReturnValue({
+        apiName: 'test-api',
+      });
+      mockedApigwTypes.generateApiKey.mockReturnValue('GET_api_hello');
+      mockedApigwTypes.inferProtocolConfig.mockReturnValue({
+        requestProtocol: 'HTTPS',
+        isHttpRedirectToHttps: true,
+      });
+      mockedApigwTypes.extractEventDomainDefinition.mockReturnValue(null);
+
+      await updateApigwResource(mockContext, testEvent, 'test-service', undefined, initialState);
+
+      expect(mockedApigwOperations.findApiGroupByName).toHaveBeenCalled();
+      expect(mockedApigwOperations.listApisByGroup).toHaveBeenCalledWith('group-drift');
+      expect(mockedApigwOperations.updateApi).toHaveBeenCalled();
+      expect(mockedApigwOperations.createApi).not.toHaveBeenCalled();
+    });
+
+    it('should skip non-matching cloud APIs during drift recovery', async () => {
+      mockedStateManager.getResource.mockReturnValue(null);
+      mockedApigwOperations.findApiGroupByName.mockResolvedValue({
+        groupId: 'group-drift',
+        groupName: 'test-api-group',
+        subDomain: 'group-drift.apigw.aliyuncs.com',
+      });
+      // Cloud has 2 APIs: one matching, one not
+      mockedApigwOperations.listApisByGroup.mockResolvedValue([
+        { apiId: 'api-match', apiName: 'test-api' },
+        { apiId: 'api-orphan', apiName: 'manual-api' },
+      ]);
+      mockedApigwOperations.updateApiGroup.mockResolvedValue(undefined);
+      mockedApigwOperations.getApiGroup.mockResolvedValue({
+        groupId: 'group-drift',
+        groupName: 'test-api-group',
+        subDomain: 'group-drift.apigw.aliyuncs.com',
+      });
+      mockedApigwOperations.getApi.mockImplementation((groupId: string, apiId: string) => {
+        if (apiId === 'api-match') {
+          return Promise.resolve({ apiId: 'api-match', apiName: 'test-api' });
+        }
+        return Promise.resolve({ apiId: apiId, apiName: 'manual-api' });
+      });
+      mockedApigwOperations.updateApi.mockResolvedValue(undefined);
+      mockedApigwOperations.deployApi.mockResolvedValue(undefined);
+      mockedApigwTypes.eventToApigwGroupConfig.mockReturnValue({
+        groupName: 'test-api-group',
+      });
+      mockedApigwTypes.extractApigwGroupDefinition.mockReturnValue({});
+      mockedApigwTypes.triggerToApigwApiConfig.mockReturnValue({
+        apiName: 'test-api',
+      });
+      mockedApigwTypes.generateApiKey.mockReturnValue('GET_api_hello');
+      mockedApigwTypes.inferProtocolConfig.mockReturnValue({
+        requestProtocol: 'HTTPS',
+        isHttpRedirectToHttps: true,
+      });
+      mockedApigwTypes.extractEventDomainDefinition.mockReturnValue(null);
+
+      await updateApigwResource(mockContext, testEvent, 'test-service', undefined, initialState);
+
+      // Only the matching API should be updated; the orphan is left untouched
+      expect(mockedApigwOperations.updateApi).toHaveBeenCalledWith('api-match', expect.any(Object));
+      // The orphan API should NOT be deleted
+      expect(mockedApigwOperations.abolishApi).not.toHaveBeenCalled();
+      expect(mockedApigwOperations.deleteApi).not.toHaveBeenCalled();
     });
 
     it('should delete unused APIs', async () => {
