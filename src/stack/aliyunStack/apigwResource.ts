@@ -878,9 +878,17 @@ export const updateApigwResource = async (
     // the domain was previously successfully bound (DNS records exist in state).
     // This avoids unnecessary DNS verification (minutes-long) on every deploy.
     // We check DNS sub-resources to avoid skipping after a previously failed binding.
+    // Check for ANY DNS sub-resource — covers both primary and www domains.
+    // If any domain was previously bound, its DNS record exists in state.
     const hasBoundDomains =
       getResource(state, `${logicalId}.dns_verification`) !== undefined ||
-      getResource(state, `${logicalId}.dns_txt_verification`) !== undefined;
+      getResource(state, `${logicalId}.dns_txt_verification`) !== undefined ||
+      Object.keys(state.resources ?? {}).some(
+        (k) =>
+          k.startsWith(`${logicalId}.dns_`) &&
+          k !== `${logicalId}.dns_verification` &&
+          k !== `${logicalId}.dns_txt_verification`,
+      );
     if (
       previousDomainDef &&
       desiredDomainDef &&
@@ -1169,10 +1177,18 @@ const cleanupDnsRecords = async (
   state: StateFile,
 ): Promise<StateFile> => {
   const client = createAliyunClient(context);
-  const dnsResourceIds = [
+  // Backward-compatible: always check old-style fixed keys, then scan for
+  // domain-specific keys (primary + www + any) created by the new code.
+  const dnsResourceIds: string[] = [
     `${eventLogicalId}.dns_verification`,
     `${eventLogicalId}.dns_txt_verification`,
   ];
+  const dnsPrefix = `${eventLogicalId}.dns_`;
+  for (const key of Object.keys(state.resources ?? {})) {
+    if (key.startsWith(dnsPrefix) && !dnsResourceIds.includes(key)) {
+      dnsResourceIds.push(key);
+    }
+  }
 
   for (const dnsResourceId of dnsResourceIds) {
     const dnsState = getResource(state, dnsResourceId);
