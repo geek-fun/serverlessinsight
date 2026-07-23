@@ -219,11 +219,17 @@ More in the [samples](./samples) directory.
 ## Community
 
 <p align="center">
-  <a href="https://github.com/geek-fun/serverlessinsight/discussions"><img src="https://img.shields.io/badge/GitHub_Discussions-Join-181717&logo=github&logoColor=white" alt="GitHub Discussions" /></a>
+  <img src="https://www.geekfun.club/wechat-group.jpg" width="140" alt="WeChat Group">
+</p>
+
+<p align="center">
+  <a href="https://discord.gg/5NSUyPK2E"><img src="https://img.shields.io/badge/Discord-Join-5865F2?logo=discord&logoColor=white" alt="Discord" /></a>
   &nbsp;&nbsp;&nbsp;
-  <a href="https://github.com/geek-fun/serverlessinsight/issues"><img src="https://img.shields.io/badge/GitHub_Issues-Report-181717&logo=github&logoColor=white" alt="GitHub Issues" /></a>
+  <a href="https://x.com/geekfun_club"><img src="https://img.shields.io/badge/X-Follow-000000?logo=x&logoColor=white" alt="X / Twitter" /></a>
   &nbsp;&nbsp;&nbsp;
-  <a href="https://github.com/geek-fun"><img src="https://img.shields.io/badge/GitHub-Follow-181717&logo=github&logoColor=white" alt="GitHub" /></a>
+  <a href="https://www.youtube.com/@geekfun-club"><img src="https://img.shields.io/badge/YouTube-Subscribe-FF0000?logo=youtube&logoColor=white" alt="YouTube" /></a>
+  &nbsp;&nbsp;&nbsp;
+  <a href="https://github.com/geek-fun"><img src="https://img.shields.io/badge/GitHub-Follow-181717?logo=github&logoColor=white" alt="GitHub" /></a>
 </p>
 
 ## Contributing
@@ -233,7 +239,7 @@ Contributions welcome! Open an issue or pull request. See the [AGENTS.md](AGENTS
 ## Sponsor
 
 <p align="center">
-  <a href="https://github.com/sponsors/geek-fun"><img src="https://img.shields.io/badge/GitHub_Sponsors-%E2%9D%A4_Support-EA4AAA&logo=githubsponsors&logoColor=white" alt="GitHub Sponsors" /></a>
+  <a href="https://github.com/sponsors/geek-fun"><img src="https://img.shields.io/badge/GitHub_Sponsors-%E2%9D%A4_Support-EA4AAA?logo=githubsponsors&logoColor=white" alt="GitHub Sponsors" /></a>
 </p>
 
 ## Star History

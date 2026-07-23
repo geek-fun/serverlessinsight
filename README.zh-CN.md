@@ -341,12 +341,25 @@ ServerlessInsight 使用基于状态的部署模型，在本地状态文件 (`.s
 
 ## 👥 社区
 
-加入我们的社区以获取帮助、分享想法和贡献：
+<p align="center">
+  <img src="https://www.geekfun.club/wechat-group.jpg" width="140" alt="微信群">
+</p>
 
-- **GitHub Issues** - [报告错误或请求功能](https://github.com/geek-fun/serverlessinsight/issues)
-- **官方网站** - [serverlessinsight.geekfun.club](https://serverlessinsight.geekfun.club)
+<p align="center">
+  <a href="https://discord.gg/5NSUyPK2E"><img src="https://img.shields.io/badge/Discord-加入-5865F2?logo=discord&logoColor=white" alt="Discord" /></a>
+  &nbsp;&nbsp;&nbsp;
+  <a href="https://x.com/geekfun_club"><img src="https://img.shields.io/badge/X-关注-000000?logo=x&logoColor=white" alt="X / Twitter" /></a>
+  &nbsp;&nbsp;&nbsp;
+  <a href="https://www.youtube.com/@geekfun-club"><img src="https://img.shields.io/badge/YouTube-订阅-FF0000?logo=youtube&logoColor=white" alt="YouTube" /></a>
+  &nbsp;&nbsp;&nbsp;
+  <a href="https://github.com/geek-fun"><img src="https://img.shields.io/badge/GitHub-关注-181717?logo=github&logoColor=white" alt="GitHub" /></a>
+</p>
 
----
+## Sponsor
+
+<p align="center">
+  <a href="https://github.com/sponsors/geek-fun"><img src="https://img.shields.io/badge/GitHub_Sponsors-%E2%9D%A4_支持-EA4AAA?logo=githubsponsors&logoColor=white" alt="GitHub Sponsors" /></a>
+</p>
 
 ## 📄 许可证
 
