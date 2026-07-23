@@ -6,19 +6,19 @@
 
 **Open source. Multi-cloud. Infrastructure as Code.**
 
-[![Release](https://img.shields.io/github/v/release/geek-fun/serverlessinsight?color=orange&label=release&style=for-the-badge&logo=github)](https://github.com/geek-fun/serverlessinsight/releases)
-[![npm version](https://img.shields.io/npm/v/@geek-fun/serverlessinsight?color=orange&style=for-the-badge&logo=npm)](https://www.npmjs.com/package/@geek-fun/serverlessinsight)
-[![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg?style=for-the-badge&logo=apache)](LICENSE)
-[![Stars](https://img.shields.io/github/stars/geek-fun/serverlessinsight?style=for-the-badge&logo=github)](https://github.com/geek-fun/serverlessinsight/stargazers)
-[![CI](https://github.com/geek-fun/serverlessinsight/actions/workflows/node.yml/badge.svg?style=for-the-badge)](https://github.com/geek-fun/serverlessinsight/actions/workflows/node.yml)
+[![Release](https://img.shields.io/github/v/release/geek-fun/serverlessinsight?color=orange&label=release&logo=github)](https://github.com/geek-fun/serverlessinsight/releases)
+[![npm version](https://img.shields.io/npm/v/@geek-fun/serverlessinsight?color=orange&logo=npm)](https://www.npmjs.com/package/@geek-fun/serverlessinsight)
+[![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg&logo=apache)](LICENSE)
+[![Stars](https://img.shields.io/github/stars/geek-fun/serverlessinsight&logo=github)](https://github.com/geek-fun/serverlessinsight/stargazers)
+[![CI](https://github.com/geek-fun/serverlessinsight/actions/workflows/node.yml/badge.svg)](https://github.com/geek-fun/serverlessinsight/actions/workflows/node.yml)
 
 <p>
-  <img src="https://img.shields.io/badge/Node.js-339933?style=for-the-badge&logo=nodedotjs&logoColor=white"/>
-  <img src="https://img.shields.io/badge/TypeScript-3178C6?style=for-the-badge&logo=typescript&logoColor=white"/>
-  <img src="https://img.shields.io/badge/Alibaba%20Cloud-FF6A00?style=for-the-badge&logo=alibabacloud&logoColor=white"/>
-  <img src="https://img.shields.io/badge/Tencent%20Cloud-0A9AED?style=for-the-badge&logo=tencentqq&logoColor=white"/>
-  <img src="https://img.shields.io/badge/Huawei%20Cloud-FF0000?style=for-the-badge&logo=hauwei&logoColor=white"/>
-  <img src="https://img.shields.io/badge/AWS-232F3E?style=for-the-badge&logo=amazonwebservices&logoColor=white"/>
+  <img src="https://img.shields.io/badge/Node.js-339933&logo=nodedotjs&logoColor=white"/>
+  <img src="https://img.shields.io/badge/TypeScript-3178C6&logo=typescript&logoColor=white"/>
+  <img src="https://img.shields.io/badge/Alibaba%20Cloud-FF6A00&logo=alibabacloud&logoColor=white"/>
+  <img src="https://img.shields.io/badge/Tencent%20Cloud-0A9AED&logo=tencentqq&logoColor=white"/>
+  <img src="https://img.shields.io/badge/Huawei%20Cloud-FF0000&logo=hauwei&logoColor=white"/>
+  <img src="https://img.shields.io/badge/AWS-232F3E&logo=amazonwebservices&logoColor=white"/>
 </p>
 
 [npm i -g @geek-fun/serverlessinsight](https://www.npmjs.com/package/@geek-fun/serverlessinsight) · [Docs](https://serverlessinsight.geekfun.club) · [Website](https://serverlessinsight.geekfun.club) · [GitHub](https://github.com/geek-fun/serverlessinsight)
@@ -44,15 +44,15 @@ ServerlessInsight is a **cross-provider serverless framework** — it replaces c
 ## Installation
 
 <a href="https://www.npmjs.com/package/@geek-fun/serverlessinsight">
-  <img src="https://img.shields.io/badge/npm_install-g_--g_@geek--fun/serverlessinsight-CB3837?style=for-the-badge&logo=npm&logoColor=white" alt="npm install">
+  <img src="https://img.shields.io/badge/npm_install-g_--g_@geek--fun/serverlessinsight-CB3837&logo=npm&logoColor=white" alt="npm install">
 </a>
 &nbsp;
 <a href="https://github.com/geek-fun/serverlessinsight/releases">
-  <img src="https://img.shields.io/badge/Releases-GitHub-lightgrey?style=for-the-badge&logo=github" alt="Releases">
+  <img src="https://img.shields.io/badge/Releases-GitHub-lightgrey&logo=github" alt="Releases">
 </a>
 &nbsp;
 <a href="https://serverlessinsight.geekfun.club">
-  <img src="https://img.shields.io/badge/Docs-serverlessinsight.geekfun.club-blue?style=for-the-badge&logo=gitbook&logoColor=white" alt="Docs">
+  <img src="https://img.shields.io/badge/Docs-serverlessinsight.geekfun.club-blue&logo=gitbook&logoColor=white" alt="Docs">
 </a>
 
 ```bash
@@ -219,11 +219,11 @@ More in the [samples](./samples) directory.
 ## Community
 
 <p align="center">
-  <a href="https://github.com/geek-fun/serverlessinsight/discussions"><img src="https://img.shields.io/badge/GitHub_Discussions-Join-181717?style=for-the-badge&logo=github&logoColor=white" alt="GitHub Discussions" /></a>
+  <a href="https://github.com/geek-fun/serverlessinsight/discussions"><img src="https://img.shields.io/badge/GitHub_Discussions-Join-181717&logo=github&logoColor=white" alt="GitHub Discussions" /></a>
   &nbsp;&nbsp;&nbsp;
-  <a href="https://github.com/geek-fun/serverlessinsight/issues"><img src="https://img.shields.io/badge/GitHub_Issues-Report-181717?style=for-the-badge&logo=github&logoColor=white" alt="GitHub Issues" /></a>
+  <a href="https://github.com/geek-fun/serverlessinsight/issues"><img src="https://img.shields.io/badge/GitHub_Issues-Report-181717&logo=github&logoColor=white" alt="GitHub Issues" /></a>
   &nbsp;&nbsp;&nbsp;
-  <a href="https://github.com/geek-fun"><img src="https://img.shields.io/badge/GitHub-Follow-181717?style=for-the-badge&logo=github&logoColor=white" alt="GitHub" /></a>
+  <a href="https://github.com/geek-fun"><img src="https://img.shields.io/badge/GitHub-Follow-181717&logo=github&logoColor=white" alt="GitHub" /></a>
 </p>
 
 ## Contributing
@@ -233,7 +233,7 @@ Contributions welcome! Open an issue or pull request. See the [AGENTS.md](AGENTS
 ## Sponsor
 
 <p align="center">
-  <a href="https://github.com/sponsors/geek-fun"><img src="https://img.shields.io/badge/GitHub_Sponsors-%E2%9D%A4_Support-EA4AAA?style=for-the-badge&logo=githubsponsors&logoColor=white" alt="GitHub Sponsors" /></a>
+  <a href="https://github.com/sponsors/geek-fun"><img src="https://img.shields.io/badge/GitHub_Sponsors-%E2%9D%A4_Support-EA4AAA&logo=githubsponsors&logoColor=white" alt="GitHub Sponsors" /></a>
 </p>
 
 ## Star History
