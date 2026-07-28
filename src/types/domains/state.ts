@@ -71,6 +71,9 @@ export type StateFile = {
   provider: string;
   app: string;
   service: string;
+  orgId?: string;
+  appId?: string;
+  serviceId?: string;
   stages: Record<string, StageState>;
   resources: Record<string, ResourceState>;
 };
