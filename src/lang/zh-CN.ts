@@ -772,4 +772,67 @@ export const zhCN = {
   COS_BUCKET_POLICY_DELETED: 'COS 存储桶 {{bucketName}} 策略已删除',
   TOS_BUCKET_POLICY_SET: 'TOS 存储桶 {{bucketName}} 策略已设置',
   TOS_BUCKET_POLICY_DELETED: 'TOS 存储桶 {{bucketName}} 策略已删除',
+
+  // Auth / Login / Logout / Whoami 消息
+  LOGIN_ALREADY_LOGGED_IN: '已登录为 {{userEmail}}（组织: {{orgName}}）。重新认证？[y/N]',
+  LOGIN_REVOKING_OLD_KEY: '正在撤销旧的 API 密钥...',
+  LOGIN_CHOOSE_METHOD: '请选择认证方式：',
+  LOGIN_OPTION_BROWSER: '通过 Web 控制台登录（打开浏览器）',
+  LOGIN_OPTION_API_KEY: '输入 API 密钥（粘贴已有密钥）',
+  LOGIN_SELECT_CHOICE: '请输入选项 (1)：',
+  LOGIN_ENTER_API_KEY: '请输入您的 API 密钥：',
+  LOGIN_VALIDATING_KEY: '正在验证 API 密钥...',
+  LOGIN_KEY_INVALID: '无效的 API 密钥，请检查后重试。',
+  LOGIN_KEY_FORMAT_INVALID: 'API 密钥格式无效。格式应为：si_<prefix>_<secret>',
+  LOGIN_STARTING_SERVER: '正在启动本地服务器以接收认证回调...',
+  LOGIN_OPENING_BROWSER: '正在打开浏览器进行控制台授权...',
+  LOGIN_BROWSER_UNAVAILABLE: '无法自动打开浏览器。\n请手动在浏览器中访问以下地址：\n{{url}}',
+  LOGIN_SERVER_DONE: '已收到授权，正在完成登录...',
+  LOGIN_SUCCESS: '✅ 已登录为 {{userEmail}} · 组织: {{orgName}}',
+  LOGIN_SUCCESS_KEY: '✅ 已通过 API 密钥认证 · 组织: {{orgName}}',
+  LOGIN_TIMEOUT: '登录超时，请重试。',
+  LOGIN_SERVER_ERROR: '登录服务器错误：{{error}}',
+  LOGIN_CANCELLED: '登录已取消。',
+
+  LOGOUT_REVOKING: '正在撤销 API 密钥...',
+  LOGOUT_DELETING_CREDENTIALS: '正在删除存储的凭证...',
+  LOGOUT_SUCCESS: '✅ 已退出登录',
+  LOGOUT_NOT_LOGGED_IN: '尚未登录。',
+  LOGOUT_REVOKE_FAILED: '撤销 API 密钥失败：{{error}}',
+
+  WHOAMI_LOGGED_IN: '已登录为 {{userEmail}}',
+  WHOAMI_ORG: '组织: {{orgName}}',
+  WHOAMI_CONSOLE: '控制台: {{url}}',
+  WHOAMI_API_KEY: 'API 密钥: {{keyPrefix}}...',
+  WHOAMI_NOT_LOGGED_IN: '尚未登录。请运行 `si login` 进行认证。',
+  WHOAMI_KEY_ACTIVE: '活跃',
+
+  // 凭证消息
+  CREDENTIAL_NOT_FOUND: '未找到凭证。',
+  CREDENTIAL_CORRUPTED: '凭证文件已损坏，请重新运行 `si login`。',
+  CREDENTIAL_FILE_PERMISSION: '警告：credentials.json 权限为 {{perms}}，建议设置为 0600',
+  CREDENTIAL_KEY_EXPIRED: '存储的 API 密钥已过期，请重新运行 `si login`。',
+  CREDENTIAL_KEY_REVOKED: 'API 密钥已被撤销。请运行 `si login` 或更新 SI_API_KEY。',
+  CREDENTIAL_KEY_DISABLED: 'API 密钥已被管理员禁用。请联系您的管理员。',
+  CREDENTIAL_NETWORK_ERROR: '无法连接到控制台，请检查网络连接。',
+  CREDENTIAL_KEY_SCOPE: 'API 密钥没有服务 {{service}} 的 {{permission}} 权限',
+
+  // SaaS 后端消息
+  SAAS_BACKEND_LOADING_STATE: '正在从控制台加载状态...',
+  SAAS_BACKEND_SAVING_STATE: '正在保存状态到控制台...',
+  SAAS_BACKEND_DEPLOYMENT_STARTED: '正在控制台启动部署...',
+  SAAS_BACKEND_DEPLOYMENT_EVENT: '部署事件：{{logicalId}} {{action}} {{status}}',
+  SAAS_BACKEND_DEPLOYMENT_COMPLETE: '部署已在控制台完成。',
+  SAAS_BACKEND_DEPLOYMENT_FAILED: '部署在控制台失败：{{error}}',
+  SAAS_BACKEND_LOCK_CHECK: '正在检查部署锁状态...',
+  SAAS_BACKEND_NO_CREDENTIALS:
+    'SaaS 状态后端需要登录 Console。\n请运行 `si login`，或：\n- 设置 SI_API_KEY 环境变量\n- 使用 --si-api-key 参数\n- 在 serverlessinsight.yml 中配置本地或存储桶后端',
+  SAAS_BACKEND_CONSOLE_UNREACHABLE: '无法连接到控制台。部署需要控制台连接。',
+
+  // API 错误消息
+  API_ERROR_401: 'API 密钥无效或已过期，请运行 `si login` 更新。',
+  API_ERROR_403: '访问被拒绝，请联系管理员。',
+  API_ERROR_409: '状态冲突：{{message}}',
+  API_ERROR_NETWORK: '网络错误：{{message}}。请检查网络连接。',
+  API_ERROR_UNKNOWN: 'API 错误 ({{status}})：{{message}}',
 };
