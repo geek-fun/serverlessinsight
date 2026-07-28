@@ -39,6 +39,7 @@ export const deploy = async (options: {
   accessKeySecret?: string;
   securityToken?: string;
   autoApprove?: boolean;
+  siApiKey?: string;
 }) => {
   logger.info(lang.__('VALIDATING_YAML'));
   const iacLocation = getIacLocation(options.location);
@@ -61,7 +62,7 @@ export const deploy = async (options: {
 
   setIac(iac);
 
-  const backend = createStateBackend(iac.backend, context);
+  const backend = createStateBackend(iac.backend, { ...context, siApiKey: options.siApiKey });
 
   logger.info(lang.__('GENERATING_PLAN'));
   let planResult;

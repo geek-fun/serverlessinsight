@@ -1,6 +1,6 @@
 import { ResourceState, ResourceTypeEnum, ServerlessIac } from '../types';
 import { StateBackendType } from '../types/domains/backend';
-import { getStatePath, loadState, getContext, hasCredentials } from '../common';
+import { getStatePath, loadState, getContext } from '../common';
 import { readLockFileForCommand } from '../common/lockManager';
 import { createStateBackend } from '../common/stateBackend';
 import { logger } from '../common/logger';
@@ -228,29 +228,33 @@ export const show = async (options: ShowOptions): Promise<void> => {
   let stateLocation: string;
   let usingRemoteBackend = false;
 
-  const shouldUseRemoteBackend = options.iac?.backend?.type === StateBackendType.BUCKET_STORE;
+  const backendType = options.iac?.backend?.type;
+  const shouldUseRemoteBackend =
+    backendType === StateBackendType.BUCKET_STORE ||
+    backendType === StateBackendType.SAAS ||
+    !backendType;
 
-  if (shouldUseRemoteBackend && hasCredentials(context)) {
+  if (shouldUseRemoteBackend) {
     try {
       const backend: StateBackend = createStateBackend(options.iac!.backend, context);
       state = await backend.loadState(context.provider, context.app, context.service, stage);
       lockInfo = await backend.readLock();
       usingRemoteBackend = true;
-      stateLocation = getBackendLocationString(options.iac!.backend);
+      stateLocation =
+        backendType === StateBackendType.SAAS || !backendType
+          ? 'Console (SaaS state)'
+          : getBackendLocationString(options.iac!.backend);
     } catch (error) {
-      logger.warn(
-        `Failed to load state from remote backend, falling back to local state: ${error}`,
-      );
+      if (backendType === StateBackendType.SAAS || !backendType) {
+        logger.warn(`SaaS backend unavailable: ${error}. Using local state.`);
+      } else {
+        logger.warn(`Failed to load state from remote backend: ${error}. Using local state.`);
+      }
       state = loadLocalState(context.provider, context.app, context.service, stage, baseDir);
       lockInfo = readLocalLock(context.app, context.service, baseDir);
       stateLocation = getStatePath(context.app, context.service, baseDir);
     }
   } else {
-    if (shouldUseRemoteBackend && !hasCredentials(context)) {
-      logger.warn(
-        'Remote backend configured but credentials not available. Falling back to local state.',
-      );
-    }
     state = loadLocalState(context.provider, context.app, context.service, stage, baseDir);
     lockInfo = readLocalLock(context.app, context.service, baseDir);
     stateLocation = getStatePath(context.app, context.service, baseDir);
