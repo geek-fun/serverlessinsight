@@ -1254,6 +1254,78 @@ describe('Fc3Resource', () => {
 
       expect(mockedFc3Operations.deleteFunction).toHaveBeenCalled();
     });
+
+    it('should delete HTTP trigger before deleting function', async () => {
+      const stateWithTrigger: StateFile = {
+        ...initialState,
+        resources: {
+          'functions.test_fn': {
+            mode: 'managed',
+            region: 'cn-hangzhou',
+            definition: mockDefinition,
+            instances: [
+              {
+                sid: 'si:aliyun:fc3:default:test-function',
+                id: 'test-function',
+                type: 'ALIYUN_FC3_FUNCTION',
+              },
+              {
+                sid: 'si:aliyun:fc3-http-trigger:default:test-function',
+                id: 'http-trigger',
+                type: 'ALIYUN_FC3_HTTP_TRIGGER',
+              },
+            ],
+            lastUpdated: '2025-01-01T00:00:00Z',
+          },
+        },
+      };
+
+      mockedFc3Operations.deleteFunction.mockResolvedValue(undefined);
+      mockedStateManager.removeResource.mockReturnValue(initialState);
+
+      await deleteResource(mockContext, 'test-function', 'functions.test_fn', stateWithTrigger);
+
+      expect(mockedFc3Operations.deleteTrigger).toHaveBeenCalledWith(
+        'test-function',
+        'http-trigger',
+      );
+      expect(mockedFc3Operations.deleteFunction).toHaveBeenCalledWith('test-function');
+    });
+
+    it('should delete custom domain before deleting function', async () => {
+      const stateWithDomain: StateFile = {
+        ...initialState,
+        resources: {
+          'functions.test_fn': {
+            mode: 'managed',
+            region: 'cn-hangzhou',
+            definition: mockDefinition,
+            instances: [
+              {
+                sid: 'si:aliyun:fc3:default:test-function',
+                id: 'test-function',
+                type: 'ALIYUN_FC3_FUNCTION',
+              },
+              {
+                sid: 'si:aliyun:fc3-custom-domain:default:api.example.com',
+                id: 'api.example.com',
+                type: 'ALIYUN_FC3_CUSTOM_DOMAIN',
+              },
+            ],
+            lastUpdated: '2025-01-01T00:00:00Z',
+          },
+        },
+      };
+
+      mockedFc3Operations.deleteFunction.mockResolvedValue(undefined);
+      mockedFc3Operations.deleteCustomDomain.mockResolvedValue(undefined);
+      mockedStateManager.removeResource.mockReturnValue(initialState);
+
+      await deleteResource(mockContext, 'test-function', 'functions.test_fn', stateWithDomain);
+
+      expect(mockedFc3Operations.deleteCustomDomain).toHaveBeenCalledWith('api.example.com');
+      expect(mockedFc3Operations.deleteFunction).toHaveBeenCalledWith('test-function');
+    });
   });
 
   describe('createResource with dependent resources', () => {
