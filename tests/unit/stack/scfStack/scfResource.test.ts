@@ -902,6 +902,102 @@ describe('ScfResource', () => {
         }),
       );
     });
+
+    it('should recreate HTTP trigger when auth_type changes during update', async () => {
+      const fnWithHttpTrigger = {
+        ...testFunction,
+        triggers: { http: { auth_type: 'iam' as const } },
+      };
+
+      const stateWithOldTrigger: StateFile = {
+        ...initialState,
+        resources: {
+          'functions.test_fn': {
+            mode: 'managed',
+            region: 'ap-guangzhou',
+            definition: mockDefinition,
+            instances: [
+              {
+                sid: 'si:tencent:scf:default:test-function',
+                id: 'test-function',
+                functionName: 'test-function',
+                triggers: [
+                  {
+                    type: 'http',
+                    triggerName: 'test_fn-http-trigger',
+                    triggerDesc: JSON.stringify({ authType: 'NONE' }),
+                  },
+                ],
+              },
+            ],
+            lastUpdated: '2025-01-01T00:00:00Z',
+          },
+        },
+      };
+
+      (stateManager.getResource as jest.Mock).mockReturnValue(
+        stateWithOldTrigger.resources['functions.test_fn'],
+      );
+      (mockScfOperations.updateFunctionConfiguration as jest.Mock).mockResolvedValue(undefined);
+      (mockScfOperations.updateFunctionCode as jest.Mock).mockResolvedValue(undefined);
+      (stateManager.setResource as jest.Mock).mockReturnValue(initialState);
+
+      await updateResource(mockContext, fnWithHttpTrigger, stateWithOldTrigger);
+
+      expect(mockScfOperations.deleteTrigger).toHaveBeenCalled();
+      expect(mockScfOperations.createTrigger).toHaveBeenCalledWith(
+        expect.objectContaining({
+          FunctionName: 'test-function',
+          Type: 'http',
+        }),
+      );
+    });
+
+    it('should delete HTTP trigger when triggers.http is removed during update', async () => {
+      const fnWithoutTrigger = { ...testFunction };
+
+      const stateWithTrigger: StateFile = {
+        ...initialState,
+        resources: {
+          'functions.test_fn': {
+            mode: 'managed',
+            region: 'ap-guangzhou',
+            definition: mockDefinition,
+            instances: [
+              {
+                sid: 'si:tencent:scf:default:test-function',
+                id: 'test-function',
+                functionName: 'test-function',
+                triggers: [
+                  {
+                    type: 'http',
+                    triggerName: 'test_fn-http-trigger',
+                    triggerDesc: JSON.stringify({ authType: 'NONE' }),
+                  },
+                ],
+              },
+            ],
+            lastUpdated: '2025-01-01T00:00:00Z',
+          },
+        },
+      };
+
+      (stateManager.getResource as jest.Mock).mockReturnValue(
+        stateWithTrigger.resources['functions.test_fn'],
+      );
+      (mockScfOperations.updateFunctionConfiguration as jest.Mock).mockResolvedValue(undefined);
+      (mockScfOperations.updateFunctionCode as jest.Mock).mockResolvedValue(undefined);
+      (stateManager.setResource as jest.Mock).mockReturnValue(initialState);
+
+      await updateResource(mockContext, fnWithoutTrigger, stateWithTrigger);
+
+      expect(mockScfOperations.deleteTrigger).toHaveBeenCalledWith(
+        expect.objectContaining({
+          FunctionName: 'test-function',
+          TriggerName: 'test_fn-http-trigger',
+        }),
+      );
+    });
   });
 
   describe('deleteResource', () => {
