@@ -20,6 +20,10 @@ const mockedFc3Operations = {
   updateFunctionConfiguration: jest.fn(),
   updateFunctionCode: jest.fn(),
   deleteFunction: jest.fn(),
+  createTrigger: jest.fn(),
+  deleteTrigger: jest.fn(),
+  createCustomDomain: jest.fn(),
+  deleteCustomDomain: jest.fn(),
 };
 const mockedFc3Types = {
   functionToFc3Config: jest.fn(),
@@ -81,6 +85,7 @@ jest.mock('../../../../src/common/aliyunClient', () => ({
     ram: mockedRamOperations,
     ecs: mockedEcsOperations,
     nas: mockedNasOperations,
+    cas: { getCertificate: jest.fn().mockResolvedValue({ cert: 'c', key: 'k' }) },
   }),
 }));
 
@@ -615,6 +620,50 @@ describe('Fc3Resource', () => {
       expect(mockedOssOperations.getBucket).toHaveBeenCalled();
       expect(mockedOssOperations.createBucket).not.toHaveBeenCalled();
       expect(mockedOssOperations.putFile).toHaveBeenCalled();
+    });
+
+    it('should create HTTP trigger when triggers.http is configured', async () => {
+      const fnWithTrigger = {
+        ...testFunction,
+        triggers: { http: { auth_type: 'public' as const } },
+      };
+
+      const readyState = {
+        ...initialState,
+        resources: { 'functions.test_fn': expect.anything() },
+      };
+      mockedStateManager.setResource.mockReturnValue(readyState);
+
+      await createResource(mockContext, fnWithTrigger, initialState);
+
+      expect(mockedFc3Operations.createTrigger).toHaveBeenCalledWith(
+        'test-function',
+        'http-trigger',
+        'http',
+        expect.objectContaining({ authType: 'anonymous', methods: expect.any(Array) }),
+      );
+    });
+
+    it('should create custom domain when domain is configured', async () => {
+      const fnWithDomain = {
+        ...testFunction,
+        domain: { domain_name: 'api.example.com', protocol: 'HTTPS' },
+      };
+
+      const readyState = {
+        ...initialState,
+        resources: { 'functions.test_fn': expect.anything() },
+      };
+      mockedStateManager.setResource.mockReturnValue(readyState);
+
+      await createResource(mockContext, fnWithDomain, initialState);
+
+      expect(mockedFc3Operations.createCustomDomain).toHaveBeenCalledWith(
+        'api.example.com',
+        'HTTPS',
+        'test-function',
+        undefined,
+      );
     });
   });
 
