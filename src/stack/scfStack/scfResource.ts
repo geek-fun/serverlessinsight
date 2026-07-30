@@ -16,6 +16,7 @@ type ScfDependentInstance = {
   sid: string;
   roleArn?: string;
   external?: boolean;
+  protocol?: string;
 };
 
 const delay = async (ms: number): Promise<void> => {
@@ -348,7 +349,7 @@ export const createResource = async (
     logger.info(lang.__('CREATING_CUSTOM_DOMAIN', { domainName: fn.domain.domain_name }));
     await client.scf.createCustomDomain({
       Domain: fn.domain.domain_name,
-      Protocol: fn.domain.protocol === 'HTTP,HTTPS' ? 'HTTP&HTTPS' : fn.domain.protocol,
+      Protocol: fn.domain.protocol,
       EndpointsConfig: [
         {
           Namespace: 'default',
@@ -373,6 +374,7 @@ export const createResource = async (
       sid: domainSid,
       type: 'TENCENT_SCF_CUSTOM_DOMAIN',
       id: fn.domain.domain_name,
+      protocol: fn.domain.protocol,
     });
   }
 
@@ -588,7 +590,7 @@ export const updateResource = async (
     logger.info(lang.__('CREATING_CUSTOM_DOMAIN', { domainName: fn.domain.domain_name }));
     await client.scf.createCustomDomain({
       Domain: fn.domain.domain_name,
-      Protocol: fn.domain.protocol === 'HTTP,HTTPS' ? 'HTTP&HTTPS' : fn.domain.protocol,
+      Protocol: fn.domain.protocol,
       EndpointsConfig: [
         {
           Namespace: 'default',
@@ -610,20 +612,27 @@ export const updateResource = async (
     } catch (err) {
       const errorCode = (err as { code?: string })?.code;
       if (errorCode === 'ResourceNotFound') {
-        logger.warn(lang.__('HTTP_TRIGGER_NOT_FOUND', { triggerName: existingCustomDomain.id }));
+        logger.warn(
+          lang.__('RESOURCE_NOT_FOUND_PROVIDER', {
+            resourceType: 'Custom Domain',
+            name: existingCustomDomain.id,
+          }),
+        );
       } else {
         throw err;
       }
     }
   } else if (fn.domain && existingCustomDomain) {
-    const domainChanged = fn.domain.domain_name !== existingCustomDomain.id;
+    const domainChanged =
+      fn.domain.domain_name !== existingCustomDomain.id ||
+      fn.domain.protocol !== existingCustomDomain.protocol;
     if (domainChanged) {
       logger.info(lang.__('DELETING_CUSTOM_DOMAIN', { domainName: existingCustomDomain.id }));
       await client.scf.deleteCustomDomain(existingCustomDomain.id);
       logger.info(lang.__('CREATING_CUSTOM_DOMAIN', { domainName: fn.domain.domain_name }));
       await client.scf.createCustomDomain({
         Domain: fn.domain.domain_name,
-        Protocol: fn.domain.protocol === 'HTTP,HTTPS' ? 'HTTP&HTTPS' : fn.domain.protocol,
+        Protocol: fn.domain.protocol,
         EndpointsConfig: [
           {
             Namespace: 'default',
@@ -688,6 +697,7 @@ export const updateResource = async (
       sid: domainSid,
       type: 'TENCENT_SCF_CUSTOM_DOMAIN' as ResourceTypeEnum,
       id: fn.domain.domain_name,
+      protocol: fn.domain.protocol,
     });
   }
 
@@ -760,7 +770,12 @@ export const deleteResource = async (
     } catch (err) {
       const errorCode = (err as { code?: string })?.code;
       if (errorCode === 'ResourceNotFound') {
-        logger.warn(lang.__('HTTP_TRIGGER_NOT_FOUND', { triggerName: existingCustomDomain.id }));
+        logger.warn(
+          lang.__('RESOURCE_NOT_FOUND_PROVIDER', {
+            resourceType: 'Custom Domain',
+            name: existingCustomDomain.id,
+          }),
+        );
       } else {
         throw err;
       }

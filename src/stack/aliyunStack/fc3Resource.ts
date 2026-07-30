@@ -708,6 +708,13 @@ export const createResource = async (
 
   if (fn.domain) {
     logger.info(lang.__('CREATING_CUSTOM_DOMAIN', { domainName: fn.domain.domain_name }));
+
+    if (fn.domain.certificate_id) {
+      logger.warn(
+        `Custom domain '${fn.domain.domain_name}': certificate_id '${fn.domain.certificate_id}' is configured but certificate binding requires CAS integration which is not yet implemented. The domain will be created without HTTPS certificate.`,
+      );
+    }
+
     await client.fc3.createCustomDomain(fn.domain.domain_name, fn.domain.protocol, fn.name);
     logger.info(lang.__('CUSTOM_DOMAIN_CREATED', { domainName: fn.domain.domain_name }));
 
@@ -1017,6 +1024,13 @@ export const updateResource = async (
 
   if (desiredDomain && !existingCustomDomain) {
     logger.info(lang.__('CREATING_CUSTOM_DOMAIN', { domainName: desiredDomain.domain_name }));
+
+    if (desiredDomain.certificate_id) {
+      logger.warn(
+        `Custom domain '${desiredDomain.domain_name}': certificate_id '${desiredDomain.certificate_id}' is configured but certificate binding requires CAS integration which is not yet implemented. The domain will be created without HTTPS certificate.`,
+      );
+    }
+
     await client.fc3.createCustomDomain(desiredDomain.domain_name, desiredDomain.protocol, fn.name);
     logger.info(lang.__('CUSTOM_DOMAIN_CREATED', { domainName: desiredDomain.domain_name }));
   } else if (!desiredDomain && existingCustomDomain) {
@@ -1041,6 +1055,13 @@ export const updateResource = async (
       desiredDomain.protocol !== existingProtocol;
     if (domainChanged) {
       logger.info(lang.__('UPDATING_CUSTOM_DOMAIN', { domainName: desiredDomain.domain_name }));
+
+      if (desiredDomain.certificate_id) {
+        logger.warn(
+          `Custom domain '${desiredDomain.domain_name}': certificate_id '${desiredDomain.certificate_id}' is configured but certificate binding requires CAS integration which is not yet implemented.`,
+        );
+      }
+
       try {
         await client.fc3.deleteCustomDomain(existingCustomDomain.id);
       } catch (err) {
