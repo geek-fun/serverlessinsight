@@ -830,6 +830,17 @@ describe('ScfResource', () => {
   });
 
   describe('updateResource with triggers.http', () => {
+    it('should throw when updating with triggers.http and no auth_type', async () => {
+      const fnWithInvalidTrigger = {
+        ...testFunction,
+        triggers: { http: { auth_type: undefined as unknown as 'public' | 'iam' } },
+      };
+
+      await expect(updateResource(mockContext, fnWithInvalidTrigger, initialState)).rejects.toThrow(
+        'auth_type',
+      );
+    });
+
     it('should create HTTP trigger when triggers.http is added during update', async () => {
       const fnWithHttpTrigger = {
         ...testFunction,
