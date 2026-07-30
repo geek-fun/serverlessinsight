@@ -844,4 +844,24 @@ export const en = {
   COS_BUCKET_POLICY_DELETED: 'COS bucket policy deleted for {{bucketName}}',
   TOS_BUCKET_POLICY_SET: 'TOS bucket policy set for {{bucketName}}',
   TOS_BUCKET_POLICY_DELETED: 'TOS bucket policy deleted for {{bucketName}}',
+
+  // HTTP trigger messages
+  HTTP_TRIGGER_AUTH_TYPE_REQUIRED:
+    "HTTP trigger '{{functionName}}' requires 'auth_type' (public or iam)",
+  CREATING_HTTP_TRIGGER:
+    "Creating HTTP trigger '{{triggerName}}' for function '{{functionName}}'...",
+  HTTP_TRIGGER_CREATED: "HTTP trigger '{{triggerName}}' created for function '{{functionName}}'",
+  UPDATING_HTTP_TRIGGER: "Recreating HTTP trigger for function '{{functionName}}'...",
+  DELETING_HTTP_TRIGGER:
+    "Deleting HTTP trigger '{{triggerName}}' for function '{{functionName}}'...",
+  HTTP_TRIGGER_DELETED: "HTTP trigger '{{triggerName}}' deleted",
+  HTTP_TRIGGER_NOT_FOUND: "HTTP trigger '{{triggerName}}' not found in provider, skipping delete",
+  CREATING_CUSTOM_DOMAIN: "Creating custom domain '{{domainName}}'...",
+  CUSTOM_DOMAIN_CREATED: "Custom domain '{{domainName}}' created",
+  UPDATING_CUSTOM_DOMAIN: "Updating custom domain '{{domainName}}'...",
+  DELETING_CUSTOM_DOMAIN: "Deleting custom domain '{{domainName}}'...",
+  CUSTOM_DOMAIN_DELETED: "Custom domain '{{domainName}}' deleted",
+  DOMAIN_NOT_SUPPORTED_PROVIDER: "Custom domain is not supported for provider '{{provider}}'",
+  INVALID_HTTP_TRIGGER_AUTH_TYPE:
+    "Invalid HTTP trigger auth_type '{{authType}}'; must be 'public' or 'iam'",
 };

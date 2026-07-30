@@ -772,4 +772,22 @@ export const zhCN = {
   COS_BUCKET_POLICY_DELETED: 'COS 存储桶 {{bucketName}} 策略已删除',
   TOS_BUCKET_POLICY_SET: 'TOS 存储桶 {{bucketName}} 策略已设置',
   TOS_BUCKET_POLICY_DELETED: 'TOS 存储桶 {{bucketName}} 策略已删除',
+
+  // HTTP trigger messages
+  HTTP_TRIGGER_AUTH_TYPE_REQUIRED:
+    "HTTP 触发器 '{{functionName}}' 需要设置 'auth_type'（public 或 iam）",
+  CREATING_HTTP_TRIGGER: "正在为函数 '{{functionName}}' 创建 HTTP 触发器 '{{triggerName}}'...",
+  HTTP_TRIGGER_CREATED: "HTTP 触发器 '{{triggerName}}' 已为函数 '{{functionName}}' 创建成功",
+  UPDATING_HTTP_TRIGGER: "正在重新创建函数 '{{functionName}}' 的 HTTP 触发器...",
+  DELETING_HTTP_TRIGGER: "正在删除函数 '{{functionName}}' 的 HTTP 触发器 '{{triggerName}}'...",
+  HTTP_TRIGGER_DELETED: "HTTP 触发器 '{{triggerName}}' 已删除",
+  HTTP_TRIGGER_NOT_FOUND: "HTTP 触发器 '{{triggerName}}' 在云平台中不存在，跳过删除",
+  CREATING_CUSTOM_DOMAIN: "正在创建自定义域名 '{{domainName}}'...",
+  CUSTOM_DOMAIN_CREATED: "自定义域名 '{{domainName}}' 已创建",
+  UPDATING_CUSTOM_DOMAIN: "正在更新自定义域名 '{{domainName}}'...",
+  DELETING_CUSTOM_DOMAIN: "正在删除自定义域名 '{{domainName}}'...",
+  CUSTOM_DOMAIN_DELETED: "自定义域名 '{{domainName}}' 已删除",
+  DOMAIN_NOT_SUPPORTED_PROVIDER: "当前云平台 '{{provider}}' 不支持自定义域名",
+  INVALID_HTTP_TRIGGER_AUTH_TYPE:
+    "无效的 HTTP 触发器 auth_type '{{authType}}'，必须为 'public' 或 'iam'",
 };

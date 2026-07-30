@@ -1,5 +1,27 @@
 import { Resolvable } from './resolvable';
 
+export type HttpTriggerRaw = {
+  auth_type: Resolvable<'public' | 'iam'>;
+  access?: Array<Resolvable<'public' | 'internal'>>;
+};
+
+export type HttpTrigger = {
+  auth_type: 'public' | 'iam';
+  access?: Array<'public' | 'internal'>;
+};
+
+export type FunctionDomainConfigRaw = {
+  domain_name: Resolvable<string>;
+  certificate_id?: Resolvable<string>;
+  protocol?: Resolvable<string>;
+};
+
+export type FunctionDomainConfigParsed = {
+  domain_name: string;
+  certificate_id?: string;
+  protocol: string;
+};
+
 export type FunctionRaw = {
   name: Resolvable<string>;
   code?: {
@@ -42,6 +64,10 @@ export type FunctionRaw = {
           }>;
         };
   };
+  triggers?: {
+    http?: HttpTriggerRaw;
+  };
+  domain?: FunctionDomainConfigRaw;
   storage?: {
     disk?: Resolvable<number>;
     nas?: Array<{
@@ -94,6 +120,10 @@ export type FunctionDomain = {
           }>;
         };
   };
+  triggers?: {
+    http?: HttpTrigger;
+  };
+  domain?: FunctionDomainConfigParsed;
   storage: {
     disk?: number;
     nas?: Array<{

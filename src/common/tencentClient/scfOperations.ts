@@ -167,6 +167,100 @@ export const createScfOperations = (scfClient: ScfSdkClient) => ({
     await scfClient.UpdateFunctionCode(params);
   },
 
+  createTrigger: async (params: {
+    FunctionName: string;
+    TriggerName: string;
+    Type: string;
+    TriggerDesc?: string;
+    Qualifier?: string;
+    Enable?: string;
+  }): Promise<void> => {
+    await scfClient.CreateTrigger({
+      FunctionName: params.FunctionName,
+      TriggerName: params.TriggerName,
+      Type: params.Type,
+      ...(params.TriggerDesc ? { TriggerDesc: params.TriggerDesc } : {}),
+      ...(params.Qualifier ? { Qualifier: params.Qualifier } : {}),
+      ...(params.Enable ? { Enable: params.Enable } : {}),
+    });
+  },
+
+  deleteTrigger: async (params: {
+    FunctionName: string;
+    TriggerName: string;
+    Type: string;
+  }): Promise<void> => {
+    await scfClient.DeleteTrigger({
+      FunctionName: params.FunctionName,
+      TriggerName: params.TriggerName,
+      Type: params.Type,
+    });
+  },
+
+  createCustomDomain: async (params: {
+    Domain: string;
+    Protocol: string;
+    EndpointsConfig: Array<{
+      Namespace: string;
+      FunctionName: string;
+      Qualifier: string;
+      PathMatch: string;
+    }>;
+    CertConfig?: { CertificateId?: string };
+  }): Promise<void> => {
+    await scfClient.CreateCustomDomain({
+      Domain: params.Domain,
+      Protocol: params.Protocol,
+      EndpointsConfig: params.EndpointsConfig.map((ep) => ({
+        Namespace: ep.Namespace,
+        FunctionName: ep.FunctionName,
+        Qualifier: ep.Qualifier,
+        PathMatch: ep.PathMatch,
+      })),
+      ...(params.CertConfig ? { CertConfig: params.CertConfig } : {}),
+    });
+  },
+
+  getCustomDomain: async (
+    domain: string,
+  ): Promise<{
+    Domain?: string;
+    Protocol?: string;
+    EndpointsConfig?: Array<{
+      FunctionName?: string;
+      Qualifier?: string;
+      PathMatch?: string;
+    }>;
+  } | null> => {
+    try {
+      const response = await scfClient.GetCustomDomain({ Domain: domain });
+      if (!response) return null;
+      return {
+        Domain: response.Domain,
+        Protocol: response.Protocol,
+        EndpointsConfig: response.EndpointsConfig?.map((ep) => ({
+          FunctionName: ep.FunctionName,
+          Qualifier: ep.Qualifier,
+          PathMatch: ep.PathMatch,
+        })),
+      };
+    } catch (error: unknown) {
+      if (
+        error &&
+        typeof error === 'object' &&
+        'code' in error &&
+        error.code === 'ResourceNotFound'
+      ) {
+        return null;
+      }
+      throw error;
+    }
+  },
+
+  deleteCustomDomain: async (domain: string): Promise<void> => {
+    await scfClient.DeleteCustomDomain({ Domain: domain });
+  },
+
   deleteFunction: async (functionName: string): Promise<void> => {
     const params = {
       FunctionName: functionName,

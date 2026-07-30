@@ -17,3 +17,4 @@ export * from './dependencyGraph';
 export * from './sidUtils';
 export * from './certUtils';
 export * from './planFormatter';
+export * from './triggerMapper';

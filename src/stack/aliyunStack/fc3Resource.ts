@@ -11,6 +11,9 @@ import {
   getContext,
   buildSid,
   attributesEqual,
+  mapAuthType,
+  mapAliyunAccess,
+  ProviderEnum,
 } from '../../common';
 import {
   FC3_CODE_INLINE_SIZE_LIMIT,
@@ -20,6 +23,7 @@ import {
 import {
   Context,
   FunctionDomain,
+  HttpTrigger,
   PartialResourceError,
   ResourceAttributes,
   ResourceState,
@@ -178,6 +182,18 @@ const buildFc3InstanceFromProvider = (info: Fc3FunctionInfo, sid: string) => {
     lastUpdateStatus: info.lastUpdateStatus ?? null,
     lastUpdateStatusReason: info.lastUpdateStatusReason ?? null,
     lastUpdateStatusReasonCode: info.lastUpdateStatusReasonCode ?? null,
+  };
+};
+
+const buildHttpTriggerConfig = (
+  trigger: HttpTrigger,
+): { authType: string; methods: string[]; disableURLInternet?: boolean } => {
+  const authType = mapAuthType(ProviderEnum.ALIYUN, trigger.auth_type);
+  const { disableURLInternet } = mapAliyunAccess(trigger.access);
+  return {
+    authType,
+    methods: ['GET', 'POST', 'PUT', 'DELETE', 'HEAD', 'PATCH'],
+    ...(disableURLInternet !== undefined ? { disableURLInternet } : {}),
   };
 };
 
@@ -493,6 +509,17 @@ const deleteDependentResources = async (
           logger.info(lang.__('DELETING_SLS_PROJECT', { id: instance.id }));
           await client.sls.deleteProject(instance.id);
           break;
+        case 'ALIYUN_FC3_HTTP_TRIGGER':
+          // HTTP trigger deletion requires functionName which is not available here.
+          // It is handled directly in deleteResource before calling this function.
+          logger.warn(
+            `HTTP trigger '${instance.id}' should be deleted before reaching dependent resource cleanup`,
+          );
+          break;
+        case 'ALIYUN_FC3_CUSTOM_DOMAIN':
+          logger.info(lang.__('DELETING_CUSTOM_DOMAIN', { domainName: instance.id }));
+          await client.fc3.deleteCustomDomain(instance.id);
+          break;
         default:
           logger.warn(lang.__('UNKNOWN_RESOURCE_TYPE', { type: instance.type }));
       }
@@ -659,11 +686,44 @@ export const createResource = async (
 
   const fcInstance = buildFc3InstanceFromProvider(functionInfo, sid);
 
+  const lifecycleInstances = [];
+  if (fn.triggers?.http) {
+    const triggerConfig = buildHttpTriggerConfig(fn.triggers.http);
+
+    logger.info(
+      lang.__('CREATING_HTTP_TRIGGER', { triggerName: 'http-trigger', functionName: fn.name }),
+    );
+    await client.fc3.createTrigger(fn.name, 'http-trigger', 'http', triggerConfig);
+    logger.info(
+      lang.__('HTTP_TRIGGER_CREATED', { triggerName: 'http-trigger', functionName: fn.name }),
+    );
+
+    lifecycleInstances.push({
+      type: 'ALIYUN_FC3_HTTP_TRIGGER',
+      id: 'http-trigger',
+      sid: buildSid('aliyun', 'fc3-http-trigger', context.stage, fn.name),
+      attributes: { ...triggerConfig } as unknown as Record<string, unknown>,
+    });
+  }
+
+  if (fn.domain) {
+    logger.info(lang.__('CREATING_CUSTOM_DOMAIN', { domainName: fn.domain.domain_name }));
+    await client.fc3.createCustomDomain(fn.domain.domain_name, fn.domain.protocol, fn.name);
+    logger.info(lang.__('CUSTOM_DOMAIN_CREATED', { domainName: fn.domain.domain_name }));
+
+    lifecycleInstances.push({
+      type: 'ALIYUN_FC3_CUSTOM_DOMAIN',
+      id: fn.domain.domain_name,
+      sid: buildSid('aliyun', 'fc3-custom-domain', context.stage, fn.domain.domain_name),
+      attributes: { protocol: fn.domain.protocol },
+    });
+  }
+
   const resourceState: ResourceState = {
     mode: 'managed',
     region: context.region,
     definition,
-    instances: [fcInstance, ...dependentInstances],
+    instances: [fcInstance, ...lifecycleInstances, ...dependentInstances],
     lastUpdated: new Date().toISOString(),
     status: 'ready',
   };
@@ -906,6 +966,96 @@ export const updateResource = async (
     );
   }
 
+  const existingHttpTrigger = existingInstances.find(
+    (i) => i.type === 'ALIYUN_FC3_HTTP_TRIGGER',
+  ) as DependentInstance | undefined;
+  const desiredHttpTrigger = fn.triggers?.http;
+
+  if (desiredHttpTrigger && !existingHttpTrigger) {
+    const triggerConfig = buildHttpTriggerConfig(desiredHttpTrigger);
+    logger.info(
+      lang.__('CREATING_HTTP_TRIGGER', { triggerName: 'http-trigger', functionName: fn.name }),
+    );
+    await client.fc3.createTrigger(fn.name, 'http-trigger', 'http', triggerConfig);
+    logger.info(
+      lang.__('HTTP_TRIGGER_CREATED', { triggerName: 'http-trigger', functionName: fn.name }),
+    );
+  } else if (!desiredHttpTrigger && existingHttpTrigger) {
+    logger.info(
+      lang.__('DELETING_HTTP_TRIGGER', { triggerName: 'http-trigger', functionName: fn.name }),
+    );
+    try {
+      await client.fc3.deleteTrigger(fn.name, 'http-trigger');
+      logger.info(lang.__('HTTP_TRIGGER_DELETED', { triggerName: 'http-trigger' }));
+    } catch (err) {
+      const errorCode = (err as { code?: string })?.code;
+      if (errorCode !== 'TriggerNotFound') throw err;
+      logger.warn(lang.__('HTTP_TRIGGER_NOT_FOUND', { triggerName: 'http-trigger' }));
+    }
+  } else if (desiredHttpTrigger && existingHttpTrigger) {
+    const desiredTriggerConfig = buildHttpTriggerConfig(desiredHttpTrigger);
+    const existingAttrs = existingHttpTrigger.attributes ?? {};
+    if (!attributesEqual(desiredTriggerConfig, existingAttrs)) {
+      logger.info(lang.__('UPDATING_HTTP_TRIGGER', { functionName: fn.name }));
+      try {
+        await client.fc3.deleteTrigger(fn.name, 'http-trigger');
+      } catch (err) {
+        const errorCode = (err as { code?: string })?.code;
+        if (errorCode !== 'TriggerNotFound') throw err;
+      }
+      await client.fc3.createTrigger(fn.name, 'http-trigger', 'http', desiredTriggerConfig);
+      logger.info(
+        lang.__('HTTP_TRIGGER_CREATED', { triggerName: 'http-trigger', functionName: fn.name }),
+      );
+    }
+  }
+
+  const existingCustomDomain = existingInstances.find(
+    (i) => i.type === 'ALIYUN_FC3_CUSTOM_DOMAIN',
+  ) as DependentInstance | undefined;
+  const desiredDomain = fn.domain;
+
+  if (desiredDomain && !existingCustomDomain) {
+    logger.info(lang.__('CREATING_CUSTOM_DOMAIN', { domainName: desiredDomain.domain_name }));
+    await client.fc3.createCustomDomain(desiredDomain.domain_name, desiredDomain.protocol, fn.name);
+    logger.info(lang.__('CUSTOM_DOMAIN_CREATED', { domainName: desiredDomain.domain_name }));
+  } else if (!desiredDomain && existingCustomDomain) {
+    logger.info(lang.__('DELETING_CUSTOM_DOMAIN', { domainName: existingCustomDomain.id }));
+    try {
+      await client.fc3.deleteCustomDomain(existingCustomDomain.id);
+      logger.info(lang.__('CUSTOM_DOMAIN_DELETED', { domainName: existingCustomDomain.id }));
+    } catch (err) {
+      const errorCode = (err as { code?: string })?.code;
+      if (errorCode !== 'CustomDomainNotFound') throw err;
+      logger.warn(
+        lang.__('RESOURCE_NOT_FOUND_PROVIDER', {
+          resourceType: 'Custom Domain',
+          name: existingCustomDomain.id,
+        }),
+      );
+    }
+  } else if (desiredDomain && existingCustomDomain) {
+    const existingProtocol = existingCustomDomain.attributes?.protocol as string | undefined;
+    const domainChanged =
+      desiredDomain.domain_name !== existingCustomDomain.id ||
+      desiredDomain.protocol !== existingProtocol;
+    if (domainChanged) {
+      logger.info(lang.__('UPDATING_CUSTOM_DOMAIN', { domainName: desiredDomain.domain_name }));
+      try {
+        await client.fc3.deleteCustomDomain(existingCustomDomain.id);
+      } catch (err) {
+        const errorCode = (err as { code?: string })?.code;
+        if (errorCode !== 'CustomDomainNotFound') throw err;
+      }
+      await client.fc3.createCustomDomain(
+        desiredDomain.domain_name,
+        desiredDomain.protocol,
+        fn.name,
+      );
+      logger.info(lang.__('CUSTOM_DOMAIN_CREATED', { domainName: desiredDomain.domain_name }));
+    }
+  }
+
   const functionInfo = await client.fc3.getFunction(fn.name);
   if (!functionInfo) {
     throw new Error(`Failed to refresh state for function: ${fn.name}`);
@@ -917,8 +1067,30 @@ export const updateResource = async (
   const sid = buildSid('aliyun', 'fc3', context.stage, fn.name);
 
   const fcInstance = buildFc3InstanceFromProvider(functionInfo, sid);
+
+  const lifecycleInstances = [];
+  if (fn.triggers?.http) {
+    const triggerConfig = buildHttpTriggerConfig(fn.triggers.http);
+    lifecycleInstances.push({
+      type: 'ALIYUN_FC3_HTTP_TRIGGER',
+      id: 'http-trigger',
+      sid: buildSid('aliyun', 'fc3-http-trigger', context.stage, fn.name),
+      attributes: { ...triggerConfig } as unknown as Record<string, unknown>,
+    });
+  }
+  if (fn.domain) {
+    lifecycleInstances.push({
+      type: 'ALIYUN_FC3_CUSTOM_DOMAIN',
+      id: fn.domain.domain_name,
+      sid: buildSid('aliyun', 'fc3-custom-domain', context.stage, fn.domain.domain_name),
+      attributes: { protocol: fn.domain.protocol },
+    });
+  }
+
   const existingDependentInstances = existingInstances
     .filter((i) => i.type !== 'ALIYUN_FC3_FUNCTION')
+    .filter((i) => i.type !== 'ALIYUN_FC3_HTTP_TRIGGER')
+    .filter((i) => i.type !== 'ALIYUN_FC3_CUSTOM_DOMAIN')
     .filter((i) => !(typeof fn.iam?.role === 'string' && i.type === 'ALIYUN_RAM_ROLE'))
     .map((i) => {
       const { sid: existingSid, id: existingId, ...rest } = i;
@@ -950,7 +1122,12 @@ export const updateResource = async (
     mode: 'managed',
     region: context.region,
     definition,
-    instances: [fcInstance, ...existingDependentInstances, ...newDependentInstancesMapped],
+    instances: [
+      fcInstance,
+      ...lifecycleInstances,
+      ...existingDependentInstances,
+      ...newDependentInstancesMapped,
+    ],
     lastUpdated: new Date().toISOString(),
   };
 
@@ -966,9 +1143,49 @@ export const deleteResource = async (
   const existingState = getResource(state, logicalId);
   const existingInstances = (existingState?.instances ?? []) as Array<DependentInstance>;
 
-  const hasFcFunction = existingInstances.some((i) => i.type === 'ALIYUN_FC3_FUNCTION');
-
   const client = createAliyunClient(context);
+
+  // Delete HTTP trigger and custom domain before function (they depend on it)
+  const httpTriggerInstance = existingInstances.find((i) => i.type === 'ALIYUN_FC3_HTTP_TRIGGER');
+  if (httpTriggerInstance) {
+    logger.info(
+      lang.__('DELETING_HTTP_TRIGGER', { triggerName: httpTriggerInstance.id, functionName }),
+    );
+    try {
+      await client.fc3.deleteTrigger(functionName, httpTriggerInstance.id);
+      logger.info(lang.__('HTTP_TRIGGER_DELETED', { triggerName: httpTriggerInstance.id }));
+    } catch (err) {
+      const errorCode = (err as { code?: string })?.code;
+      if (errorCode === 'TriggerNotFound') {
+        logger.warn(lang.__('HTTP_TRIGGER_NOT_FOUND', { triggerName: httpTriggerInstance.id }));
+      } else {
+        throw err;
+      }
+    }
+  }
+
+  const customDomainInstance = existingInstances.find((i) => i.type === 'ALIYUN_FC3_CUSTOM_DOMAIN');
+  if (customDomainInstance) {
+    logger.info(lang.__('DELETING_CUSTOM_DOMAIN', { domainName: customDomainInstance.id }));
+    try {
+      await client.fc3.deleteCustomDomain(customDomainInstance.id);
+      logger.info(lang.__('CUSTOM_DOMAIN_DELETED', { domainName: customDomainInstance.id }));
+    } catch (err) {
+      const errorCode = (err as { code?: string })?.code;
+      if (errorCode === 'CustomDomainNotFound') {
+        logger.warn(
+          lang.__('RESOURCE_NOT_FOUND_PROVIDER', {
+            resourceType: 'Custom Domain',
+            name: customDomainInstance.id,
+          }),
+        );
+      } else {
+        throw err;
+      }
+    }
+  }
+
+  const hasFcFunction = existingInstances.some((i) => i.type === 'ALIYUN_FC3_FUNCTION');
   if (hasFcFunction) {
     try {
       await client.fc3.deleteFunction(functionName);
@@ -985,7 +1202,11 @@ export const deleteResource = async (
   }
 
   const dependentInstances = existingInstances.filter(
-    (i) => i.type !== 'ALIYUN_FC3_FUNCTION' && !i.type.includes('undefined'),
+    (i) =>
+      i.type !== 'ALIYUN_FC3_FUNCTION' &&
+      i.type !== 'ALIYUN_FC3_HTTP_TRIGGER' &&
+      i.type !== 'ALIYUN_FC3_CUSTOM_DOMAIN' &&
+      !i.type.includes('undefined'),
   );
   if (dependentInstances.length > 0) {
     await deleteDependentResources(context, dependentInstances);

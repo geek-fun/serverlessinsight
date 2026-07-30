@@ -3,7 +3,7 @@ import { createTencentClient } from '../../common/tencentClient';
 import { readFileAsBase64 } from '../../common/fileUtils';
 import { functionToScfConfig, extractScfDefinition, ScfFunctionInfo } from './scfTypes';
 import { getResource, setResource, removeResource } from '../../common/stateManager';
-import { buildSid, attributesEqual } from '../../common';
+import { buildSid, attributesEqual, ProviderEnum, mapAuthType, mapAccess } from '../../common';
 import { RAM_ROLE_PROPAGATION_DELAY_MS } from '../../common/constants';
 import { computeFileHash } from '../../common/hashUtils';
 import { logger } from '../../common/logger';
@@ -313,7 +313,70 @@ export const createResource = async (
 
   await client.scf.createFunction(config, codeBase64);
 
-  // Refresh state from provider to get all attributes
+  // Create HTTP trigger if configured
+  if (fn.triggers?.http) {
+    if (!fn.triggers.http.auth_type) {
+      throw new Error(lang.__('HTTP_TRIGGER_AUTH_TYPE_REQUIRED', { functionName: fn.name }));
+    }
+
+    const authType = mapAuthType(ProviderEnum.TENCENT, fn.triggers.http.auth_type);
+    const access = mapAccess(fn.triggers.http.access);
+    const triggerName = `${fn.key}-http-trigger`;
+
+    const triggerDesc = JSON.stringify({
+      authType,
+      ...(access.enableExtranet !== undefined ? { enableExtranet: access.enableExtranet } : {}),
+      ...(access.enableIntranet !== undefined ? { enableIntranet: access.enableIntranet } : {}),
+    });
+
+    logger.info(lang.__('CREATING_HTTP_TRIGGER', { triggerName, functionName: fn.name }));
+
+    await client.scf.createTrigger({
+      FunctionName: fn.name,
+      TriggerName: triggerName,
+      Type: 'http',
+      TriggerDesc: triggerDesc,
+      Qualifier: '$DEFAULT',
+      Enable: 'OPEN',
+    });
+
+    logger.info(lang.__('HTTP_TRIGGER_CREATED', { triggerName, functionName: fn.name }));
+  }
+
+  // Create custom domain if configured
+  if (fn.domain) {
+    logger.info(lang.__('CREATING_CUSTOM_DOMAIN', { domainName: fn.domain.domain_name }));
+    await client.scf.createCustomDomain({
+      Domain: fn.domain.domain_name,
+      Protocol: fn.domain.protocol === 'HTTP,HTTPS' ? 'HTTP&HTTPS' : fn.domain.protocol,
+      EndpointsConfig: [
+        {
+          Namespace: 'default',
+          FunctionName: fn.name,
+          Qualifier: '$DEFAULT',
+          PathMatch: '/*',
+        },
+      ],
+      ...(fn.domain.certificate_id
+        ? { CertConfig: { CertificateId: fn.domain.certificate_id } }
+        : {}),
+    });
+    logger.info(lang.__('CUSTOM_DOMAIN_CREATED', { domainName: fn.domain.domain_name }));
+
+    const domainSid = buildSid(
+      'tencent',
+      'scf-custom-domain',
+      context.stage,
+      fn.domain.domain_name,
+    );
+    dependentInstances.push({
+      sid: domainSid,
+      type: 'TENCENT_SCF_CUSTOM_DOMAIN',
+      id: fn.domain.domain_name,
+    });
+  }
+
+  // Refresh state from provider to get all attributes (including triggers)
   const functionInfo = await client.scf.getFunction(fn.name);
   if (!functionInfo) {
     throw new Error(`Failed to refresh state for function: ${fn.name}`);
@@ -346,8 +409,13 @@ export const updateResource = async (
   state: StateFile,
 ): Promise<StateFile> => {
   const logicalId = `functions.${fn.key}`;
+
   const existingState = getResource(state, logicalId);
   const existingInstances = (existingState?.instances ?? []) as Array<Record<string, unknown>>;
+
+  const existingFnInstance = existingInstances.find(
+    (i) => (i as ScfDependentInstance).type === undefined,
+  ) as Record<string, unknown> | undefined;
 
   const hasCamRole = existingInstances.some((i) => i.type === ResourceTypeEnum.TENCENT_SCF_ROLE);
   const client = createTencentClient(context);
@@ -435,7 +503,144 @@ export const updateResource = async (
   // Update code
   await client.scf.updateFunctionCode(fn.name, codeBase64);
 
-  // Refresh state from provider to get all attributes
+  const existingHttpTrigger = (
+    existingFnInstance?.triggers as Array<Record<string, unknown>> | undefined
+  )?.find((t) => t.type === 'http');
+
+  const desiredHttpConfig = fn.triggers?.http;
+
+  if (desiredHttpConfig) {
+    if (!desiredHttpConfig.auth_type) {
+      throw new Error(lang.__('HTTP_TRIGGER_AUTH_TYPE_REQUIRED', { functionName: fn.name }));
+    }
+
+    const authType = mapAuthType(ProviderEnum.TENCENT, desiredHttpConfig.auth_type);
+    const access = mapAccess(desiredHttpConfig.access);
+    const triggerName = `${fn.key}-http-trigger`;
+    const desiredTriggerDesc = JSON.stringify({
+      authType,
+      ...(access.enableExtranet !== undefined ? { enableExtranet: access.enableExtranet } : {}),
+      ...(access.enableIntranet !== undefined ? { enableIntranet: access.enableIntranet } : {}),
+    });
+
+    if (existingHttpTrigger) {
+      if (existingHttpTrigger.triggerDesc !== desiredTriggerDesc) {
+        logger.info(lang.__('UPDATING_HTTP_TRIGGER', { functionName: fn.name }));
+        try {
+          await client.scf.deleteTrigger({
+            FunctionName: fn.name,
+            TriggerName: existingHttpTrigger.triggerName as string,
+            Type: 'http',
+          });
+        } catch (err) {
+          const errorCode = (err as { code?: string })?.code;
+          if (errorCode !== 'ResourceNotFound.TriggerName' && errorCode !== 'ResourceNotFound') {
+            throw err;
+          }
+        }
+        await client.scf.createTrigger({
+          FunctionName: fn.name,
+          TriggerName: triggerName,
+          Type: 'http',
+          TriggerDesc: desiredTriggerDesc,
+          Qualifier: '$DEFAULT',
+          Enable: 'OPEN',
+        });
+      }
+    } else {
+      logger.info(lang.__('CREATING_HTTP_TRIGGER', { triggerName, functionName: fn.name }));
+      await client.scf.createTrigger({
+        FunctionName: fn.name,
+        TriggerName: triggerName,
+        Type: 'http',
+        TriggerDesc: desiredTriggerDesc,
+        Qualifier: '$DEFAULT',
+        Enable: 'OPEN',
+      });
+      logger.info(lang.__('HTTP_TRIGGER_CREATED', { triggerName, functionName: fn.name }));
+    }
+  } else if (existingHttpTrigger) {
+    const tName = existingHttpTrigger.triggerName as string;
+    logger.info(lang.__('DELETING_HTTP_TRIGGER', { triggerName: tName, functionName: fn.name }));
+    try {
+      await client.scf.deleteTrigger({
+        FunctionName: fn.name,
+        TriggerName: tName,
+        Type: 'http',
+      });
+      logger.info(lang.__('HTTP_TRIGGER_DELETED', { triggerName: tName }));
+    } catch (err) {
+      const errorCode = (err as { code?: string })?.code;
+      if (errorCode === 'ResourceNotFound.TriggerName' || errorCode === 'ResourceNotFound') {
+        logger.warn(lang.__('HTTP_TRIGGER_NOT_FOUND', { triggerName: tName }));
+      } else {
+        throw err;
+      }
+    }
+  }
+
+  // Reconcile custom domain
+  const existingCustomDomain = existingInstances.find(
+    (i) => (i as ScfDependentInstance).type === 'TENCENT_SCF_CUSTOM_DOMAIN',
+  ) as ScfDependentInstance | undefined;
+
+  if (fn.domain && !existingCustomDomain) {
+    logger.info(lang.__('CREATING_CUSTOM_DOMAIN', { domainName: fn.domain.domain_name }));
+    await client.scf.createCustomDomain({
+      Domain: fn.domain.domain_name,
+      Protocol: fn.domain.protocol === 'HTTP,HTTPS' ? 'HTTP&HTTPS' : fn.domain.protocol,
+      EndpointsConfig: [
+        {
+          Namespace: 'default',
+          FunctionName: fn.name,
+          Qualifier: '$DEFAULT',
+          PathMatch: '/*',
+        },
+      ],
+      ...(fn.domain.certificate_id
+        ? { CertConfig: { CertificateId: fn.domain.certificate_id } }
+        : {}),
+    });
+    logger.info(lang.__('CUSTOM_DOMAIN_CREATED', { domainName: fn.domain.domain_name }));
+  } else if (!fn.domain && existingCustomDomain) {
+    logger.info(lang.__('DELETING_CUSTOM_DOMAIN', { domainName: existingCustomDomain.id }));
+    try {
+      await client.scf.deleteCustomDomain(existingCustomDomain.id);
+      logger.info(lang.__('CUSTOM_DOMAIN_DELETED', { domainName: existingCustomDomain.id }));
+    } catch (err) {
+      const errorCode = (err as { code?: string })?.code;
+      if (errorCode === 'ResourceNotFound') {
+        logger.warn(lang.__('HTTP_TRIGGER_NOT_FOUND', { triggerName: existingCustomDomain.id }));
+      } else {
+        throw err;
+      }
+    }
+  } else if (fn.domain && existingCustomDomain) {
+    const domainChanged = fn.domain.domain_name !== existingCustomDomain.id;
+    if (domainChanged) {
+      logger.info(lang.__('DELETING_CUSTOM_DOMAIN', { domainName: existingCustomDomain.id }));
+      await client.scf.deleteCustomDomain(existingCustomDomain.id);
+      logger.info(lang.__('CREATING_CUSTOM_DOMAIN', { domainName: fn.domain.domain_name }));
+      await client.scf.createCustomDomain({
+        Domain: fn.domain.domain_name,
+        Protocol: fn.domain.protocol === 'HTTP,HTTPS' ? 'HTTP&HTTPS' : fn.domain.protocol,
+        EndpointsConfig: [
+          {
+            Namespace: 'default',
+            FunctionName: fn.name,
+            Qualifier: '$DEFAULT',
+            PathMatch: '/*',
+          },
+        ],
+        ...(fn.domain.certificate_id
+          ? { CertConfig: { CertificateId: fn.domain.certificate_id } }
+          : {}),
+      });
+      logger.info(lang.__('CUSTOM_DOMAIN_CREATED', { domainName: fn.domain.domain_name }));
+    }
+  }
+
+  // Refresh state from provider to get all attributes (including triggers)
   const functionInfo = await client.scf.getFunction(fn.name);
   if (!functionInfo) {
     throw new Error(`Failed to refresh state for function: ${fn.name}`);
@@ -444,9 +649,12 @@ export const updateResource = async (
   const definition = extractScfDefinition(config, codeHash, fn.iam);
   const sid = buildSid('tencent', 'scf', context.stage, fn.name);
 
-  // Rebuild dependent instances list
   const existingDependentInstances = existingInstances
-    .filter((i) => (i as ScfDependentInstance).type !== undefined)
+    .filter(
+      (i) =>
+        (i as ScfDependentInstance).type !== undefined &&
+        (i as ScfDependentInstance).type !== 'TENCENT_SCF_CUSTOM_DOMAIN',
+    )
     .map((i) => {
       const { type, id, sid, roleArn, external } = i as ScfDependentInstance;
       return {
@@ -466,6 +674,20 @@ export const updateResource = async (
       type: ResourceTypeEnum.TENCENT_SCF_ROLE,
       id: role.roleName ?? '',
       ...(role.arn ? { roleArn: role.arn } : {}),
+    });
+  }
+
+  if (fn.domain) {
+    const domainSid = buildSid(
+      'tencent',
+      'scf-custom-domain',
+      context.stage,
+      fn.domain.domain_name,
+    );
+    newDependentInstances.push({
+      sid: domainSid,
+      type: 'TENCENT_SCF_CUSTOM_DOMAIN' as ResourceTypeEnum,
+      id: fn.domain.domain_name,
     });
   }
 
@@ -493,9 +715,60 @@ export const deleteResource = async (
   const existingState = getResource(state, logicalId);
   const existingInstances = (existingState?.instances ?? []) as Array<Record<string, unknown>>;
 
+  const client = createTencentClient(context);
+
+  // Delete HTTP trigger before deleting function
+  const fnInstance = existingInstances.find(
+    (i) => (i as ScfDependentInstance).type === undefined,
+  ) as Record<string, unknown> | undefined;
+  const httpTrigger = (fnInstance?.triggers as Array<Record<string, unknown>> | undefined)?.find(
+    (t) => t.type === 'http',
+  );
+  if (httpTrigger) {
+    try {
+      const triggerName = httpTrigger.triggerName as string;
+      logger.info(lang.__('DELETING_HTTP_TRIGGER', { triggerName, functionName }));
+      await client.scf.deleteTrigger({
+        FunctionName: functionName,
+        TriggerName: triggerName,
+        Type: 'http',
+      });
+      logger.info(lang.__('HTTP_TRIGGER_DELETED', { triggerName }));
+    } catch (err) {
+      const errorCode = (err as { code?: string })?.code;
+      if (errorCode === 'ResourceNotFound.TriggerName' || errorCode === 'ResourceNotFound') {
+        logger.warn(
+          lang.__('HTTP_TRIGGER_NOT_FOUND', {
+            triggerName: httpTrigger.triggerName as string,
+          }),
+        );
+      } else {
+        throw err;
+      }
+    }
+  }
+
+  // Delete custom domain before deleting function
+  const existingCustomDomain = existingInstances.find(
+    (i) => (i as ScfDependentInstance).type === 'TENCENT_SCF_CUSTOM_DOMAIN',
+  ) as ScfDependentInstance | undefined;
+  if (existingCustomDomain) {
+    try {
+      logger.info(lang.__('DELETING_CUSTOM_DOMAIN', { domainName: existingCustomDomain.id }));
+      await client.scf.deleteCustomDomain(existingCustomDomain.id);
+      logger.info(lang.__('CUSTOM_DOMAIN_DELETED', { domainName: existingCustomDomain.id }));
+    } catch (err) {
+      const errorCode = (err as { code?: string })?.code;
+      if (errorCode === 'ResourceNotFound') {
+        logger.warn(lang.__('HTTP_TRIGGER_NOT_FOUND', { triggerName: existingCustomDomain.id }));
+      } else {
+        throw err;
+      }
+    }
+  }
+
   const hasFunction = existingInstances.some((i) => (i as ScfDependentInstance).type === undefined);
 
-  const client = createTencentClient(context);
   if (hasFunction) {
     try {
       await client.scf.deleteFunction(functionName);
@@ -512,7 +785,9 @@ export const deleteResource = async (
   }
 
   const dependentInstances = existingInstances.filter(
-    (i) => (i as ScfDependentInstance).type !== undefined,
+    (i) =>
+      (i as ScfDependentInstance).type !== undefined &&
+      (i as ScfDependentInstance).type !== 'TENCENT_SCF_CUSTOM_DOMAIN',
   ) as Array<{ type: string; id: string; external?: boolean }>;
   if (dependentInstances.length > 0) {
     await deleteDependentResources(context, dependentInstances);
