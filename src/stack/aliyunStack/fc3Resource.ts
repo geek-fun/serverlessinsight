@@ -709,20 +709,33 @@ export const createResource = async (
   if (fn.domain) {
     logger.info(lang.__('CREATING_CUSTOM_DOMAIN', { domainName: fn.domain.domain_name }));
 
+    let certConfig: { certName: string; certificate: string; privateKey: string } | undefined;
     if (fn.domain.certificate_id) {
-      logger.warn(
-        `Custom domain '${fn.domain.domain_name}': certificate_id '${fn.domain.certificate_id}' is configured but certificate binding requires CAS integration which is not yet implemented. The domain will be created without HTTPS certificate.`,
-      );
+      const certId = fn.domain.certificate_id;
+      const detail = await client.cas.getCertificate(certId);
+      if (!detail || !detail.cert || !detail.key) {
+        throw new Error(lang.__('CERT_REFERENCE_NOT_FOUND', { reference: certId }));
+      }
+      certConfig = {
+        certName: `${context.service}-${context.stage}-fc3-domain`,
+        certificate: detail.cert,
+        privateKey: detail.key,
+      };
     }
 
-    await client.fc3.createCustomDomain(fn.domain.domain_name, fn.domain.protocol, fn.name);
+    await client.fc3.createCustomDomain(
+      fn.domain.domain_name,
+      fn.domain.protocol,
+      fn.name,
+      certConfig,
+    );
     logger.info(lang.__('CUSTOM_DOMAIN_CREATED', { domainName: fn.domain.domain_name }));
 
     lifecycleInstances.push({
       type: 'ALIYUN_FC3_CUSTOM_DOMAIN',
       id: fn.domain.domain_name,
       sid: buildSid('aliyun', 'fc3-custom-domain', context.stage, fn.domain.domain_name),
-      attributes: { protocol: fn.domain.protocol },
+      attributes: { protocol: fn.domain.protocol, certificate_id: fn.domain.certificate_id },
     });
   }
 
@@ -1025,13 +1038,26 @@ export const updateResource = async (
   if (desiredDomain && !existingCustomDomain) {
     logger.info(lang.__('CREATING_CUSTOM_DOMAIN', { domainName: desiredDomain.domain_name }));
 
+    let certConfig: { certName: string; certificate: string; privateKey: string } | undefined;
     if (desiredDomain.certificate_id) {
-      logger.warn(
-        `Custom domain '${desiredDomain.domain_name}': certificate_id '${desiredDomain.certificate_id}' is configured but certificate binding requires CAS integration which is not yet implemented. The domain will be created without HTTPS certificate.`,
-      );
+      const certId = desiredDomain.certificate_id;
+      const detail = await client.cas.getCertificate(certId);
+      if (!detail || !detail.cert || !detail.key) {
+        throw new Error(lang.__('CERT_REFERENCE_NOT_FOUND', { reference: certId }));
+      }
+      certConfig = {
+        certName: `${context.service}-${context.stage}-fc3-domain`,
+        certificate: detail.cert,
+        privateKey: detail.key,
+      };
     }
 
-    await client.fc3.createCustomDomain(desiredDomain.domain_name, desiredDomain.protocol, fn.name);
+    await client.fc3.createCustomDomain(
+      desiredDomain.domain_name,
+      desiredDomain.protocol,
+      fn.name,
+      certConfig,
+    );
     logger.info(lang.__('CUSTOM_DOMAIN_CREATED', { domainName: desiredDomain.domain_name }));
   } else if (!desiredDomain && existingCustomDomain) {
     logger.info(lang.__('DELETING_CUSTOM_DOMAIN', { domainName: existingCustomDomain.id }));
@@ -1056,10 +1082,18 @@ export const updateResource = async (
     if (domainChanged) {
       logger.info(lang.__('UPDATING_CUSTOM_DOMAIN', { domainName: desiredDomain.domain_name }));
 
+      let certConfig: { certName: string; certificate: string; privateKey: string } | undefined;
       if (desiredDomain.certificate_id) {
-        logger.warn(
-          `Custom domain '${desiredDomain.domain_name}': certificate_id '${desiredDomain.certificate_id}' is configured but certificate binding requires CAS integration which is not yet implemented.`,
-        );
+        const certId = desiredDomain.certificate_id;
+        const detail = await client.cas.getCertificate(certId);
+        if (!detail || !detail.cert || !detail.key) {
+          throw new Error(lang.__('CERT_REFERENCE_NOT_FOUND', { reference: certId }));
+        }
+        certConfig = {
+          certName: `${context.service}-${context.stage}-fc3-domain`,
+          certificate: detail.cert,
+          privateKey: detail.key,
+        };
       }
 
       try {
@@ -1072,6 +1106,7 @@ export const updateResource = async (
         desiredDomain.domain_name,
         desiredDomain.protocol,
         fn.name,
+        certConfig,
       );
       logger.info(lang.__('CUSTOM_DOMAIN_CREATED', { domainName: desiredDomain.domain_name }));
     }
