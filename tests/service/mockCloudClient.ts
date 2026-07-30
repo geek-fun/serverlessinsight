@@ -92,6 +92,9 @@ export type MockAliyunClient = {
     describeDomainRecords: jest.Mock;
     checkDomainRecordExists: jest.Mock;
   };
+  cas: {
+    getCertificate: jest.Mock;
+  };
 };
 
 export const createMockAliyunClient = (): MockAliyunClient => ({
@@ -209,6 +212,11 @@ export const createMockAliyunClient = (): MockAliyunClient => ({
     deleteDomainRecord: jest.fn().mockResolvedValue({}),
     describeDomainRecords: jest.fn().mockResolvedValue([]),
     checkDomainRecordExists: jest.fn().mockResolvedValue(false),
+  },
+  cas: {
+    getCertificate: jest
+      .fn()
+      .mockResolvedValue({ cert: 'fake-cert-content', key: 'fake-key-content' }),
   },
 });
 
