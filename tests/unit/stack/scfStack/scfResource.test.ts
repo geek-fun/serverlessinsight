@@ -532,6 +532,17 @@ describe('ScfResource', () => {
       expect(result).toEqual(newState);
     });
 
+    it('should throw when triggers.http config has no auth_type', async () => {
+      const fnWithInvalidTrigger = {
+        ...testFunction,
+        triggers: { http: { auth_type: undefined as unknown as 'public' | 'iam' } },
+      };
+
+      await expect(createResource(mockContext, fnWithInvalidTrigger, initialState)).rejects.toThrow(
+        'auth_type',
+      );
+    });
+
     it('should create HTTP trigger when triggers.http is configured', async () => {
       const fnWithHttpTrigger = {
         ...testFunction,
@@ -1279,6 +1290,84 @@ describe('ScfResource', () => {
       );
       (mockScfOperations.deleteFunction as jest.Mock).mockResolvedValue(undefined);
       (mockScfOperations.deleteCustomDomain as jest.Mock).mockResolvedValue(undefined);
+      (stateManager.removeResource as jest.Mock).mockReturnValue(initialState);
+
+      await deleteResource(mockContext, 'test-function', 'functions.test_fn', stateWithDomain);
+
+      expect(mockScfOperations.deleteCustomDomain).toHaveBeenCalledWith('api.example.com');
+      expect(mockScfOperations.deleteFunction).toHaveBeenCalledWith('test-function');
+    });
+
+    it('should handle HTTP trigger not found during delete gracefully', async () => {
+      const stateWithTrigger: StateFile = {
+        ...initialState,
+        resources: {
+          'functions.test_fn': {
+            mode: 'managed',
+            region: 'ap-guangzhou',
+            definition: mockDefinition,
+            instances: [
+              {
+                sid: 'si:tencent:scf:default:test-function',
+                id: 'test-function',
+                functionName: 'test-function',
+                triggers: [
+                  { type: 'http', triggerName: 'test_fn-http-trigger', triggerDesc: '{}' },
+                ],
+              },
+            ],
+            lastUpdated: '2025-01-01T00:00:00Z',
+          },
+        },
+      };
+
+      (stateManager.getResource as jest.Mock).mockReturnValue(
+        stateWithTrigger.resources['functions.test_fn'],
+      );
+      (mockScfOperations.deleteFunction as jest.Mock).mockResolvedValue(undefined);
+      (mockScfOperations.deleteTrigger as jest.Mock).mockRejectedValue(
+        Object.assign(new Error('not found'), { code: 'ResourceNotFound' }),
+      );
+      (stateManager.removeResource as jest.Mock).mockReturnValue(initialState);
+
+      await deleteResource(mockContext, 'test-function', 'functions.test_fn', stateWithTrigger);
+
+      expect(mockScfOperations.deleteTrigger).toHaveBeenCalled();
+      expect(mockScfOperations.deleteFunction).toHaveBeenCalledWith('test-function');
+    });
+
+    it('should handle custom domain not found during delete gracefully', async () => {
+      const stateWithDomain: StateFile = {
+        ...initialState,
+        resources: {
+          'functions.test_fn': {
+            mode: 'managed',
+            region: 'ap-guangzhou',
+            definition: mockDefinition,
+            instances: [
+              {
+                sid: 'si:tencent:scf:default:test-function',
+                id: 'test-function',
+                functionName: 'test-function',
+              },
+              {
+                sid: 'si:tencent:scf-custom-domain:default:api.example.com',
+                type: 'TENCENT_SCF_CUSTOM_DOMAIN',
+                id: 'api.example.com',
+              },
+            ],
+            lastUpdated: '2025-01-01T00:00:00Z',
+          },
+        },
+      };
+
+      (stateManager.getResource as jest.Mock).mockReturnValue(
+        stateWithDomain.resources['functions.test_fn'],
+      );
+      (mockScfOperations.deleteFunction as jest.Mock).mockResolvedValue(undefined);
+      (mockScfOperations.deleteCustomDomain as jest.Mock).mockRejectedValue(
+        Object.assign(new Error('not found'), { code: 'ResourceNotFound' }),
+      );
       (stateManager.removeResource as jest.Mock).mockReturnValue(initialState);
 
       await deleteResource(mockContext, 'test-function', 'functions.test_fn', stateWithDomain);
