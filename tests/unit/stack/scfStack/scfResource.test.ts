@@ -1020,6 +1020,92 @@ describe('ScfResource', () => {
         }),
       );
     });
+
+    it('should delete custom domain when domain is removed during update', async () => {
+      const fnWithoutDomain = { ...testFunction };
+
+      const stateWithDomain: StateFile = {
+        ...initialState,
+        resources: {
+          'functions.test_fn': {
+            mode: 'managed',
+            region: 'ap-guangzhou',
+            definition: mockDefinition,
+            instances: [
+              {
+                sid: 'si:tencent:scf:default:test-function',
+                id: 'test-function',
+                functionName: 'test-function',
+              },
+              {
+                sid: 'si:tencent:scf-custom-domain:default:api.example.com',
+                type: 'TENCENT_SCF_CUSTOM_DOMAIN',
+                id: 'api.example.com',
+              },
+            ],
+            lastUpdated: '2025-01-01T00:00:00Z',
+          },
+        },
+      };
+
+      (stateManager.getResource as jest.Mock).mockReturnValue(
+        stateWithDomain.resources['functions.test_fn'],
+      );
+      (mockScfOperations.updateFunctionConfiguration as jest.Mock).mockResolvedValue(undefined);
+      (mockScfOperations.updateFunctionCode as jest.Mock).mockResolvedValue(undefined);
+      (stateManager.setResource as jest.Mock).mockReturnValue(initialState);
+
+      await updateResource(mockContext, fnWithoutDomain, stateWithDomain);
+
+      expect(mockScfOperations.deleteCustomDomain).toHaveBeenCalledWith('api.example.com');
+    });
+
+    it('should recreate custom domain when domain name changes during update', async () => {
+      const fnWithNewDomain = {
+        ...testFunction,
+        domain: { domain_name: 'new.example.com', protocol: 'HTTPS' },
+      };
+
+      const stateWithOldDomain: StateFile = {
+        ...initialState,
+        resources: {
+          'functions.test_fn': {
+            mode: 'managed',
+            region: 'ap-guangzhou',
+            definition: mockDefinition,
+            instances: [
+              {
+                sid: 'si:tencent:scf:default:test-function',
+                id: 'test-function',
+                functionName: 'test-function',
+              },
+              {
+                sid: 'si:tencent:scf-custom-domain:default:old.example.com',
+                type: 'TENCENT_SCF_CUSTOM_DOMAIN',
+                id: 'old.example.com',
+                protocol: 'HTTPS',
+              },
+            ],
+            lastUpdated: '2025-01-01T00:00:00Z',
+          },
+        },
+      };
+
+      (stateManager.getResource as jest.Mock).mockReturnValue(
+        stateWithOldDomain.resources['functions.test_fn'],
+      );
+      (mockScfOperations.updateFunctionConfiguration as jest.Mock).mockResolvedValue(undefined);
+      (mockScfOperations.updateFunctionCode as jest.Mock).mockResolvedValue(undefined);
+      (mockScfOperations.deleteCustomDomain as jest.Mock).mockResolvedValue(undefined);
+      (stateManager.setResource as jest.Mock).mockReturnValue(initialState);
+
+      await updateResource(mockContext, fnWithNewDomain, stateWithOldDomain);
+
+      expect(mockScfOperations.deleteCustomDomain).toHaveBeenCalledWith('old.example.com');
+      expect(mockScfOperations.createCustomDomain).toHaveBeenCalledWith(
+        expect.objectContaining({ Domain: 'new.example.com' }),
+      );
+    });
   });
 
   describe('deleteResource', () => {
