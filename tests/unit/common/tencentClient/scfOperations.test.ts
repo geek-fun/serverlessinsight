@@ -23,6 +23,11 @@ const mockScfClient = {
   UpdateFunctionConfiguration: jest.fn(),
   UpdateFunctionCode: jest.fn(),
   DeleteFunction: jest.fn(),
+  CreateTrigger: jest.fn(),
+  DeleteTrigger: jest.fn(),
+  CreateCustomDomain: jest.fn(),
+  GetCustomDomain: jest.fn(),
+  DeleteCustomDomain: jest.fn(),
 };
 
 describe('scfOperations', () => {
@@ -84,6 +89,27 @@ describe('scfOperations', () => {
       expect(mockScfClient.CreateFunction).toHaveBeenCalledWith(
         expect.objectContaining({
           Environment: config.Environment,
+        }),
+      );
+    });
+
+    it('should create function with Role when provided', async () => {
+      mockScfClient.CreateFunction.mockResolvedValue({});
+
+      const config = {
+        FunctionName: 'test-function',
+        Handler: 'index.handler',
+        Runtime: 'nodejs18.x',
+        MemorySize: 256,
+        Timeout: 30,
+        Role: 'role-id-123',
+      };
+
+      await operations.createFunction(config, 'BASE64_CODE');
+
+      expect(mockScfClient.CreateFunction).toHaveBeenCalledWith(
+        expect.objectContaining({
+          Role: 'role-id-123',
         }),
       );
     });
@@ -236,6 +262,48 @@ describe('scfOperations', () => {
       expect(result).toBeNull();
     });
 
+    it('should default missing environment variable, trigger, and tag fields', async () => {
+      mockScfClient.GetFunction.mockResolvedValue({
+        FunctionName: 'test-function',
+        Runtime: 'nodejs18.x',
+        Handler: 'index.handler',
+        MemorySize: 256,
+        Timeout: 30,
+        Environment: {
+          Variables: [{}, { Key: 'NODE_ENV' }],
+        },
+        Triggers: [{}, { Type: 'timer' }],
+        Tags: [{}, { Key: 'team' }],
+      });
+
+      const result = await operations.getFunction('test-function');
+
+      expect(result?.Environment?.Variables).toEqual([
+        { Key: '', Value: '' },
+        { Key: 'NODE_ENV', Value: '' },
+      ]);
+      expect(result?.Triggers?.[0]).toEqual(
+        expect.objectContaining({
+          ModTime: '',
+          Type: '',
+          TriggerDesc: '',
+          TriggerName: '',
+          AddTime: '',
+          Enable: 0,
+        }),
+      );
+      expect(result?.Triggers?.[1]).toEqual(
+        expect.objectContaining({
+          Type: 'timer',
+          Enable: 0,
+        }),
+      );
+      expect(result?.Tags).toEqual([
+        { Key: '', Value: '' },
+        { Key: 'team', Value: '' },
+      ]);
+    });
+
     it('should rethrow unexpected errors', async () => {
       const error = new Error('unauthorized');
       mockScfClient.GetFunction.mockRejectedValue(error);
@@ -309,6 +377,27 @@ describe('scfOperations', () => {
       );
     });
 
+    it('should include Role in updateFunctionConfiguration when provided', async () => {
+      mockScfClient.UpdateFunctionConfiguration.mockResolvedValue({});
+
+      const config = {
+        FunctionName: 'test-function',
+        Handler: 'index.handler',
+        Runtime: 'nodejs18.x',
+        MemorySize: 512,
+        Timeout: 60,
+        Role: 'role-id-123',
+      };
+
+      await operations.updateFunctionConfiguration(config);
+
+      expect(mockScfClient.UpdateFunctionConfiguration).toHaveBeenCalledWith(
+        expect.objectContaining({
+          Role: 'role-id-123',
+        }),
+      );
+    });
+
     it('should handle update errors', async () => {
       const error = new Error('update failed');
       mockScfClient.UpdateFunctionConfiguration.mockRejectedValue(error);
@@ -361,6 +450,208 @@ describe('scfOperations', () => {
       mockScfClient.DeleteFunction.mockRejectedValue(error);
 
       await expect(operations.deleteFunction('test-function')).rejects.toThrow('delete failed');
+    });
+  });
+
+  describe('createTrigger', () => {
+    it('should create trigger with all params', async () => {
+      mockScfClient.CreateTrigger.mockResolvedValue({});
+
+      await operations.createTrigger({
+        FunctionName: 'test-function',
+        TriggerName: 'http-trigger',
+        Type: 'http',
+        TriggerDesc: '{"authType":"NONE"}',
+        Qualifier: '$DEFAULT',
+        Enable: 'OPEN',
+      });
+
+      expect(mockScfClient.CreateTrigger).toHaveBeenCalledWith({
+        FunctionName: 'test-function',
+        TriggerName: 'http-trigger',
+        Type: 'http',
+        TriggerDesc: '{"authType":"NONE"}',
+        Qualifier: '$DEFAULT',
+        Enable: 'OPEN',
+      });
+    });
+
+    it('should create trigger with only required params', async () => {
+      mockScfClient.CreateTrigger.mockResolvedValue({});
+
+      await operations.createTrigger({
+        FunctionName: 'test-function',
+        TriggerName: 'timer-trigger',
+        Type: 'timer',
+      });
+
+      expect(mockScfClient.CreateTrigger).toHaveBeenCalledWith({
+        FunctionName: 'test-function',
+        TriggerName: 'timer-trigger',
+        Type: 'timer',
+      });
+    });
+
+    it('should propagate SDK errors', async () => {
+      const error = new Error('CreateTrigger failed');
+      mockScfClient.CreateTrigger.mockRejectedValue(error);
+
+      await expect(
+        operations.createTrigger({
+          FunctionName: 'test-function',
+          TriggerName: 'http-trigger',
+          Type: 'http',
+        }),
+      ).rejects.toThrow('CreateTrigger failed');
+    });
+  });
+
+  describe('deleteTrigger', () => {
+    it('should delete trigger successfully', async () => {
+      mockScfClient.DeleteTrigger.mockResolvedValue({});
+
+      await operations.deleteTrigger({
+        FunctionName: 'test-function',
+        TriggerName: 'http-trigger',
+        Type: 'http',
+      });
+
+      expect(mockScfClient.DeleteTrigger).toHaveBeenCalledWith({
+        FunctionName: 'test-function',
+        TriggerName: 'http-trigger',
+        Type: 'http',
+      });
+    });
+
+    it('should propagate SDK errors', async () => {
+      const error = new Error('DeleteTrigger failed');
+      mockScfClient.DeleteTrigger.mockRejectedValue(error);
+
+      await expect(
+        operations.deleteTrigger({
+          FunctionName: 'test-function',
+          TriggerName: 'http-trigger',
+          Type: 'http',
+        }),
+      ).rejects.toThrow('DeleteTrigger failed');
+    });
+  });
+
+  describe('createCustomDomain', () => {
+    it('should create custom domain with endpoints config', async () => {
+      mockScfClient.CreateCustomDomain.mockResolvedValue({});
+
+      await operations.createCustomDomain({
+        Domain: 'api.example.com',
+        Protocol: 'HTTPS',
+        EndpointsConfig: [
+          {
+            Namespace: 'default',
+            FunctionName: 'test-function',
+            Qualifier: '$DEFAULT',
+            PathMatch: '/*',
+          },
+        ],
+      });
+
+      expect(mockScfClient.CreateCustomDomain).toHaveBeenCalledWith({
+        Domain: 'api.example.com',
+        Protocol: 'HTTPS',
+        EndpointsConfig: [
+          {
+            Namespace: 'default',
+            FunctionName: 'test-function',
+            Qualifier: '$DEFAULT',
+            PathMatch: '/*',
+          },
+        ],
+      });
+    });
+
+    it('should create custom domain with cert config', async () => {
+      mockScfClient.CreateCustomDomain.mockResolvedValue({});
+
+      await operations.createCustomDomain({
+        Domain: 'api.example.com',
+        Protocol: 'HTTPS',
+        EndpointsConfig: [
+          { Namespace: 'default', FunctionName: 'fn', Qualifier: '$DEFAULT', PathMatch: '/*' },
+        ],
+        CertConfig: { CertificateId: 'cert-123' },
+      });
+
+      expect(mockScfClient.CreateCustomDomain).toHaveBeenCalledWith(
+        expect.objectContaining({
+          CertConfig: { CertificateId: 'cert-123' },
+        }),
+      );
+    });
+  });
+
+  describe('getCustomDomain', () => {
+    it('should return custom domain info', async () => {
+      mockScfClient.GetCustomDomain.mockResolvedValue({
+        Domain: 'api.example.com',
+        Protocol: 'HTTPS',
+        EndpointsConfig: [
+          { FunctionName: 'test-function', Qualifier: '$DEFAULT', PathMatch: '/*' },
+        ],
+      });
+
+      const result = await operations.getCustomDomain('api.example.com');
+
+      expect(mockScfClient.GetCustomDomain).toHaveBeenCalledWith({ Domain: 'api.example.com' });
+      expect(result).toEqual({
+        Domain: 'api.example.com',
+        Protocol: 'HTTPS',
+        EndpointsConfig: [
+          { FunctionName: 'test-function', Qualifier: '$DEFAULT', PathMatch: '/*' },
+        ],
+      });
+    });
+
+    it('should return null when GetCustomDomain response is empty', async () => {
+      mockScfClient.GetCustomDomain.mockResolvedValue(undefined);
+
+      const result = await operations.getCustomDomain('api.example.com');
+
+      expect(mockScfClient.GetCustomDomain).toHaveBeenCalledWith({ Domain: 'api.example.com' });
+      expect(result).toBeNull();
+    });
+
+    it('should return null when domain not found', async () => {
+      const error = Object.assign(new Error('not found'), { code: 'ResourceNotFound' });
+      mockScfClient.GetCustomDomain.mockRejectedValue(error);
+
+      const result = await operations.getCustomDomain('nonexistent.example.com');
+
+      expect(result).toBeNull();
+    });
+
+    it('should propagate unexpected errors', async () => {
+      const error = new Error('unauthorized');
+      mockScfClient.GetCustomDomain.mockRejectedValue(error);
+
+      await expect(operations.getCustomDomain('api.example.com')).rejects.toThrow('unauthorized');
+    });
+  });
+
+  describe('deleteCustomDomain', () => {
+    it('should delete custom domain successfully', async () => {
+      mockScfClient.DeleteCustomDomain.mockResolvedValue({});
+
+      await operations.deleteCustomDomain('api.example.com');
+
+      expect(mockScfClient.DeleteCustomDomain).toHaveBeenCalledWith({ Domain: 'api.example.com' });
+    });
+
+    it('should propagate SDK errors', async () => {
+      const error = new Error('DeleteCustomDomain failed');
+      mockScfClient.DeleteCustomDomain.mockRejectedValue(error);
+
+      await expect(operations.deleteCustomDomain('api.example.com')).rejects.toThrow(
+        'DeleteCustomDomain failed',
+      );
     });
   });
 });

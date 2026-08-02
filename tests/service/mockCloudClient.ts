@@ -10,6 +10,9 @@ export type MockAliyunClient = {
     deleteFunction: jest.Mock;
     createTrigger: jest.Mock;
     deleteTrigger: jest.Mock;
+    createCustomDomain: jest.Mock;
+    getCustomDomain: jest.Mock;
+    deleteCustomDomain: jest.Mock;
   };
   apigw: {
     createApiGroup: jest.Mock;
@@ -89,6 +92,9 @@ export type MockAliyunClient = {
     describeDomainRecords: jest.Mock;
     checkDomainRecordExists: jest.Mock;
   };
+  cas: {
+    getCertificate: jest.Mock;
+  };
 };
 
 export const createMockAliyunClient = (): MockAliyunClient => ({
@@ -109,6 +115,9 @@ export const createMockAliyunClient = (): MockAliyunClient => ({
     deleteFunction: jest.fn().mockResolvedValue({}),
     createTrigger: jest.fn().mockResolvedValue({ body: { triggerName: 'http-trigger' } }),
     deleteTrigger: jest.fn().mockResolvedValue({}),
+    createCustomDomain: jest.fn().mockResolvedValue({ body: { domainName: 'api.example.com' } }),
+    getCustomDomain: jest.fn().mockResolvedValue(null),
+    deleteCustomDomain: jest.fn().mockResolvedValue({}),
   },
   apigw: {
     createApiGroup: jest.fn().mockResolvedValue({ body: { groupId: 'group-123' } }),
@@ -204,6 +213,11 @@ export const createMockAliyunClient = (): MockAliyunClient => ({
     describeDomainRecords: jest.fn().mockResolvedValue([]),
     checkDomainRecordExists: jest.fn().mockResolvedValue(false),
   },
+  cas: {
+    getCertificate: jest
+      .fn()
+      .mockResolvedValue({ cert: 'fake-cert-content', key: 'fake-key-content' }),
+  },
 });
 
 export type MockTencentClient = {
@@ -213,6 +227,11 @@ export type MockTencentClient = {
     DeleteFunction: jest.Mock;
     UpdateFunctionCode: jest.Mock;
     UpdateFunctionConfiguration: jest.Mock;
+    CreateTrigger: jest.Mock;
+    DeleteTrigger: jest.Mock;
+    CreateCustomDomain: jest.Mock;
+    GetCustomDomain: jest.Mock;
+    DeleteCustomDomain: jest.Mock;
   };
   cos: {
     putBucket: jest.Mock;
@@ -233,6 +252,11 @@ export const createMockTencentClient = (): MockTencentClient => ({
     DeleteFunction: jest.fn().mockResolvedValue({}),
     UpdateFunctionCode: jest.fn().mockResolvedValue({}),
     UpdateFunctionConfiguration: jest.fn().mockResolvedValue({}),
+    CreateTrigger: jest.fn().mockResolvedValue({ TriggerName: 'http-trigger', Type: 'http' }),
+    DeleteTrigger: jest.fn().mockResolvedValue({}),
+    CreateCustomDomain: jest.fn().mockResolvedValue({}),
+    GetCustomDomain: jest.fn().mockResolvedValue(null),
+    DeleteCustomDomain: jest.fn().mockResolvedValue({}),
   },
   cos: {
     putBucket: jest.fn().mockResolvedValue({}),

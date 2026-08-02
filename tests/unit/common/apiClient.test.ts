@@ -5,42 +5,7 @@ jest.mock('../../../src/lang', () => ({
   },
 }));
 
-const mockKyInstance = {
-  get: jest.fn(),
-  post: jest.fn(),
-  patch: jest.fn(),
-  delete: jest.fn(),
-  extend: jest.fn(),
-};
-
-// ky v1 exports: { default, HTTPError, TimeoutError, ... }
-class MockHTTPError extends Error {
-  response: Response;
-  constructor(response: Response) {
-    super(`HTTP Error ${response.status}`);
-    this.name = 'HTTPError';
-    this.response = response;
-  }
-}
-
-class MockTimeoutError extends Error {
-  constructor(message: string) {
-    super(message);
-    this.name = 'TimeoutError';
-  }
-}
-
-const mockKyModule = {
-  __esModule: true,
-  default: Object.assign(
-    jest.fn(() => mockKyInstance),
-    { extend: jest.fn(() => mockKyInstance) },
-  ),
-  HTTPError: MockHTTPError,
-  TimeoutError: MockTimeoutError,
-};
-
-jest.mock('ky', () => mockKyModule);
+const mockFetch = jest.fn();
 
 const ORIGINAL_ENV = { ...process.env };
 
@@ -55,6 +20,7 @@ describe('apiClient', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     process.env = { ...ORIGINAL_ENV };
+    global.fetch = mockFetch as unknown as typeof fetch;
     client = createApiClient({ apiKey: testApiKey, baseUrl: testBaseUrl });
   });
 
@@ -63,12 +29,17 @@ describe('apiClient', () => {
   });
 
   describe('createApiClient', () => {
-    it('should create a client with the correct base URL and auth header', () => {
-      expect(mockKyModule.default.extend).toHaveBeenCalledWith(
+    it('should send the auth header and content type on every request', async () => {
+      mockFetch.mockResolvedValue(new Response(JSON.stringify({ data: 'ok' }), { status: 200 }));
+
+      await client.get('/test');
+
+      expect(mockFetch).toHaveBeenCalledWith(
+        `${testBaseUrl}/test`,
         expect.objectContaining({
-          prefixUrl: testBaseUrl,
           headers: expect.objectContaining({
             Authorization: `Bearer ${testApiKey}`,
+            'Content-Type': 'application/json',
           }),
         }),
       );
@@ -77,52 +48,81 @@ describe('apiClient', () => {
 
   describe('get', () => {
     it('should make a GET request to the given path', async () => {
-      mockKyInstance.get.mockResolvedValue({ json: () => Promise.resolve({ data: 'ok' }) });
+      mockFetch.mockResolvedValue(new Response(JSON.stringify({ data: 'ok' }), { status: 200 }));
+
       const result = await client.get('/test');
-      expect(mockKyInstance.get).toHaveBeenCalledWith('/test');
+
+      expect(mockFetch).toHaveBeenCalledWith(
+        `${testBaseUrl}/test`,
+        expect.objectContaining({ method: 'GET' }),
+      );
       expect(result).toEqual({ data: 'ok' });
     });
   });
 
   describe('post', () => {
     it('should make a POST request with JSON body', async () => {
-      mockKyInstance.post.mockResolvedValue({ json: () => Promise.resolve({ id: '123' }) });
+      mockFetch.mockResolvedValue(new Response(JSON.stringify({ id: '123' }), { status: 200 }));
       const body = { name: 'test' };
+
       const result = await client.post('/items', body);
-      expect(mockKyInstance.post).toHaveBeenCalledWith('/items', { json: body });
+
+      expect(mockFetch).toHaveBeenCalledWith(
+        `${testBaseUrl}/items`,
+        expect.objectContaining({ method: 'POST', body: JSON.stringify(body) }),
+      );
       expect(result).toEqual({ id: '123' });
     });
 
     it('should make a POST request without body', async () => {
-      mockKyInstance.post.mockResolvedValue({ json: () => Promise.resolve({}) });
+      mockFetch.mockResolvedValue(new Response(JSON.stringify({}), { status: 200 }));
+
       await client.post('/items');
-      expect(mockKyInstance.post).toHaveBeenCalledWith('/items');
+
+      expect(mockFetch).toHaveBeenCalledWith(
+        `${testBaseUrl}/items`,
+        expect.objectContaining({
+          method: 'POST',
+          headers: expect.anything(),
+        }),
+      );
+      expect(mockFetch.mock.calls[0][1]).not.toHaveProperty('body');
     });
   });
 
   describe('patch', () => {
     it('should make a PATCH request with JSON body', async () => {
-      mockKyInstance.patch.mockResolvedValue({ json: () => Promise.resolve({ updated: true }) });
+      mockFetch.mockResolvedValue(new Response(JSON.stringify({ updated: true }), { status: 200 }));
       const body = { phase: 'start' };
+
       const result = await client.patch('/deploy/1', body);
-      expect(mockKyInstance.patch).toHaveBeenCalledWith('/deploy/1', { json: body });
+
+      expect(mockFetch).toHaveBeenCalledWith(
+        `${testBaseUrl}/deploy/1`,
+        expect.objectContaining({ method: 'PATCH', body: JSON.stringify(body) }),
+      );
       expect(result).toEqual({ updated: true });
     });
   });
 
   describe('delete', () => {
     it('should make a DELETE request', async () => {
-      mockKyInstance.delete.mockResolvedValue({ json: () => Promise.resolve({ deleted: true }) });
+      mockFetch.mockResolvedValue(new Response(JSON.stringify({ deleted: true }), { status: 200 }));
+
       const result = await client.delete('/keys/1');
-      expect(mockKyInstance.delete).toHaveBeenCalledWith('/keys/1');
+
+      expect(mockFetch).toHaveBeenCalledWith(
+        `${testBaseUrl}/keys/1`,
+        expect.objectContaining({ method: 'DELETE' }),
+      );
       expect(result).toEqual({ deleted: true });
     });
 
     it('should handle 204 No Content response', async () => {
-      mockKyInstance.delete.mockResolvedValue({
-        json: () => Promise.reject(new Error('no content')),
-      });
+      mockFetch.mockResolvedValue(new Response(null, { status: 204 }));
+
       const result = await client.delete('/keys/1');
+
       expect(result).toBeUndefined();
     });
   });
@@ -135,6 +135,7 @@ describe('validateApiKey', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     process.env = { ...ORIGINAL_ENV };
+    global.fetch = mockFetch as unknown as typeof fetch;
   });
 
   afterAll(() => {
@@ -149,10 +150,14 @@ describe('validateApiKey', () => {
       userEmail: 'test@example.com',
       scopes: ['deploy', 'read'],
     };
-    mockKyInstance.get.mockResolvedValue({ json: () => Promise.resolve(mockResponse) });
+    mockFetch.mockResolvedValue(new Response(JSON.stringify(mockResponse), { status: 200 }));
 
     const result = await validateApiKey(validKey, testBaseUrl);
-    expect(mockKyInstance.get).toHaveBeenCalledWith('/api/v1/auth/api-keys/validate');
+
+    expect(mockFetch).toHaveBeenCalledWith(
+      `${testBaseUrl}/api/v1/auth/api-keys/validate`,
+      expect.objectContaining({ method: 'GET' }),
+    );
     expect(result).toEqual({
       orgId: 'org-uuid',
       orgName: 'TestOrg',
@@ -162,23 +167,31 @@ describe('validateApiKey', () => {
   });
 
   it('should reject when key is invalid (401)', async () => {
-    mockKyInstance.get.mockRejectedValue(
-      new mockKyModule.HTTPError(new Response(null, { status: 401 })),
-    );
+    mockFetch.mockResolvedValue(new Response(null, { status: 401 }));
 
     await expect(validateApiKey(validKey, testBaseUrl)).rejects.toThrow('API_ERROR_401');
   });
 
   it('should reject when key is forbidden (403)', async () => {
-    mockKyInstance.get.mockRejectedValue(
-      new mockKyModule.HTTPError(new Response(null, { status: 403 })),
-    );
+    mockFetch.mockResolvedValue(new Response(null, { status: 403 }));
 
     await expect(validateApiKey(validKey, testBaseUrl)).rejects.toThrow('API_ERROR_403');
   });
 
+  it('should reject on conflict (409)', async () => {
+    mockFetch.mockResolvedValue(new Response(null, { status: 409 }));
+
+    await expect(validateApiKey(validKey, testBaseUrl)).rejects.toThrow('API_ERROR_409');
+  });
+
+  it('should reject with unknown error on other status codes', async () => {
+    mockFetch.mockResolvedValue(new Response(null, { status: 500 }));
+
+    await expect(validateApiKey(validKey, testBaseUrl)).rejects.toThrow('API_ERROR_UNKNOWN');
+  });
+
   it('should handle network errors', async () => {
-    mockKyInstance.get.mockRejectedValue(new Error('fetch failed'));
+    mockFetch.mockRejectedValue(new TypeError('fetch failed'));
 
     await expect(validateApiKey(validKey, testBaseUrl)).rejects.toThrow('CREDENTIAL_NETWORK_ERROR');
   });

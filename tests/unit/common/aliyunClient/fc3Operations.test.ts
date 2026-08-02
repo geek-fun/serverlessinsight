@@ -12,12 +12,22 @@ const mockCreateFunction = jest.fn();
 const mockGetFunction = jest.fn();
 const mockUpdateFunction = jest.fn();
 const mockDeleteFunction = jest.fn();
+const mockCreateTrigger = jest.fn();
+const mockDeleteTrigger = jest.fn();
+const mockCreateCustomDomain = jest.fn();
+const mockGetCustomDomain = jest.fn();
+const mockDeleteCustomDomain = jest.fn();
 
 const mockFc3Client = {
   createFunction: mockCreateFunction,
   getFunction: mockGetFunction,
   updateFunction: mockUpdateFunction,
   deleteFunction: mockDeleteFunction,
+  createTrigger: mockCreateTrigger,
+  deleteTrigger: mockDeleteTrigger,
+  createCustomDomain: mockCreateCustomDomain,
+  getCustomDomain: mockGetCustomDomain,
+  deleteCustomDomain: mockDeleteCustomDomain,
 } as unknown as Fc3Client;
 
 jest.mock('../../../../src/common/logger', () => ({
@@ -406,6 +416,152 @@ describe('fc3Operations', () => {
       mockDeleteFunction.mockRejectedValue(new Error('AccessDenied'));
 
       await expect(operations.deleteFunction('test-function')).rejects.toThrow('AccessDenied');
+    });
+  });
+
+  describe('createTrigger', () => {
+    it('should create trigger with config', async () => {
+      await operations.createTrigger(
+        'test-function',
+        'http-trigger',
+        'http',
+        { authType: 'anonymous', methods: ['GET'] },
+        '$LATEST',
+      );
+
+      expect(mockCreateTrigger).toHaveBeenCalledTimes(1);
+      const [fnName, request] = mockCreateTrigger.mock.calls[0];
+      expect(fnName).toBe('test-function');
+      expect(request.body.triggerName).toBe('http-trigger');
+      expect(request.body.triggerType).toBe('http');
+      expect(request.body.triggerConfig).toBe(
+        JSON.stringify({ authType: 'anonymous', methods: ['GET'] }),
+      );
+      expect(request.body.qualifier).toBe('$LATEST');
+    });
+
+    it('should create trigger without qualifier', async () => {
+      await operations.createTrigger('test-function', 'timer-trigger', 'timer', {
+        cron: '* * * * *',
+      });
+
+      expect(mockCreateTrigger).toHaveBeenCalledTimes(1);
+      const [fnName, request] = mockCreateTrigger.mock.calls[0];
+      expect(fnName).toBe('test-function');
+      expect(request.body.qualifier).toBeUndefined();
+    });
+
+    it('should propagate SDK errors', async () => {
+      mockCreateTrigger.mockRejectedValue(new Error('TriggerAlreadyExists'));
+
+      await expect(
+        operations.createTrigger('test-function', 'http-trigger', 'http', {}),
+      ).rejects.toThrow('TriggerAlreadyExists');
+    });
+  });
+
+  describe('deleteTrigger', () => {
+    it('should delete trigger successfully', async () => {
+      await operations.deleteTrigger('test-function', 'http-trigger');
+
+      expect(mockDeleteTrigger).toHaveBeenCalledWith('test-function', 'http-trigger');
+    });
+
+    it('should propagate SDK errors', async () => {
+      mockDeleteTrigger.mockRejectedValue(new Error('TriggerNotFound'));
+
+      await expect(operations.deleteTrigger('test-function', 'http-trigger')).rejects.toThrow(
+        'TriggerNotFound',
+      );
+    });
+  });
+
+  describe('createCustomDomain', () => {
+    it('should create custom domain with route to function', async () => {
+      await operations.createCustomDomain('api.example.com', 'HTTPS', 'test-function');
+
+      expect(mockCreateCustomDomain).toHaveBeenCalledTimes(1);
+      const [request] = mockCreateCustomDomain.mock.calls[0];
+      expect(request.body.domainName).toBe('api.example.com');
+      expect(request.body.protocol).toBe('HTTPS');
+      expect(request.body.routeConfig.routes[0].path).toBe('/*');
+      expect(request.body.routeConfig.routes[0].functionName).toBe('test-function');
+      expect(request.body.certConfig).toBeUndefined();
+    });
+
+    it('should create custom domain with cert config', async () => {
+      await operations.createCustomDomain('api.example.com', 'HTTPS', 'test-function', {
+        certName: 'my-cert',
+        certificate: 'PEM-CERT',
+        privateKey: 'PEM-KEY',
+      });
+
+      expect(mockCreateCustomDomain).toHaveBeenCalledTimes(1);
+      const [request] = mockCreateCustomDomain.mock.calls[0];
+      expect(request.body.certConfig.certName).toBe('my-cert');
+      expect(request.body.certConfig.certificate).toBe('PEM-CERT');
+      expect(request.body.certConfig.privateKey).toBe('PEM-KEY');
+    });
+
+    it('should propagate SDK errors', async () => {
+      mockCreateCustomDomain.mockRejectedValue(new Error('DomainAlreadyExists'));
+
+      await expect(
+        operations.createCustomDomain('api.example.com', 'HTTPS', 'test-function'),
+      ).rejects.toThrow('DomainAlreadyExists');
+    });
+  });
+
+  describe('getCustomDomain', () => {
+    it('should return custom domain info', async () => {
+      mockGetCustomDomain.mockResolvedValue({
+        body: {
+          domainName: 'api.example.com',
+          protocol: 'HTTPS',
+          certConfig: { certName: 'my-cert', certificateId: '123' },
+        },
+      });
+
+      const result = await operations.getCustomDomain('api.example.com');
+
+      expect(mockGetCustomDomain).toHaveBeenCalledWith('api.example.com');
+      expect(result).toEqual({
+        domainName: 'api.example.com',
+        protocol: 'HTTPS',
+        certConfig: { certName: 'my-cert', certificateId: '123' },
+      });
+    });
+
+    it('should return null when domain not found', async () => {
+      const error = Object.assign(new Error('not found'), { code: 'CustomDomainNotFound' });
+      mockGetCustomDomain.mockRejectedValue(error);
+
+      const result = await operations.getCustomDomain('nonexistent.example.com');
+
+      expect(result).toBeNull();
+    });
+
+    it('should propagate unexpected errors', async () => {
+      const error = new Error('unauthorized');
+      mockGetCustomDomain.mockRejectedValue(error);
+
+      await expect(operations.getCustomDomain('api.example.com')).rejects.toThrow('unauthorized');
+    });
+  });
+
+  describe('deleteCustomDomain', () => {
+    it('should delete custom domain successfully', async () => {
+      await operations.deleteCustomDomain('api.example.com');
+
+      expect(mockDeleteCustomDomain).toHaveBeenCalledWith('api.example.com');
+    });
+
+    it('should propagate SDK errors', async () => {
+      mockDeleteCustomDomain.mockRejectedValue(new Error('AccessDenied'));
+
+      await expect(operations.deleteCustomDomain('api.example.com')).rejects.toThrow(
+        'AccessDenied',
+      );
     });
   });
 });

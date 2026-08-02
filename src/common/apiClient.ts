@@ -1,4 +1,3 @@
-import ky, { HTTPError, TimeoutError } from 'ky';
 import { lang } from '../lang';
 
 export type ApiClientOptions = {
@@ -21,27 +20,29 @@ export type ValidateResult = {
   readonly scopes: readonly string[];
 };
 
-const handleError = (error: unknown): never => {
-  if (error instanceof HTTPError) {
-    const status = error.response.status;
-    if (status === 401) throw new Error(lang.__('API_ERROR_401'));
-    if (status === 403) throw new Error(lang.__('API_ERROR_403'));
-    if (status === 409) {
-      throw new Error(lang.__('API_ERROR_409', { message: error.message }));
-    }
-    throw new Error(
-      lang.__('API_ERROR_UNKNOWN', { status: String(status), message: error.message }),
-    );
+type HttpMethod = 'get' | 'post' | 'patch' | 'delete';
+
+const handleHttpError = (response: Response): never => {
+  const status = response.status;
+  if (status === 401) throw new Error(lang.__('API_ERROR_401'));
+  if (status === 403) throw new Error(lang.__('API_ERROR_403'));
+  if (status === 409) {
+    throw new Error(lang.__('API_ERROR_409', { message: `HTTP Error ${status}` }));
   }
-  if (error instanceof TimeoutError || error instanceof TypeError) {
-    throw new Error(lang.__('CREDENTIAL_NETWORK_ERROR'));
-  }
-  // Generic Error from fetch/ky (network failures, DNS errors, etc.)
-  if (error instanceof Error) {
-    throw new Error(lang.__('CREDENTIAL_NETWORK_ERROR'));
-  }
-  throw error;
+  throw new Error(
+    lang.__('API_ERROR_UNKNOWN', { status: String(status), message: `HTTP Error ${status}` }),
+  );
 };
+
+const buildRequestInit = (
+  method: HttpMethod,
+  headers: Record<string, string>,
+  body?: unknown,
+): RequestInit => ({
+  method: method.toUpperCase(),
+  headers,
+  ...(body !== undefined ? { body: JSON.stringify(body) } : {}),
+});
 
 export const createApiClient = (options: ApiClientOptions): ApiClient => {
   const { apiKey, baseUrl, orgId } = options;
@@ -54,28 +55,23 @@ export const createApiClient = (options: ApiClientOptions): ApiClient => {
     headers['X-Org-Id'] = orgId;
   }
 
-  const instance = ky.extend({
-    prefixUrl: baseUrl,
-    headers,
-    retry: 0,
-  });
-
-  const request = async <T>(
-    method: 'get' | 'post' | 'patch' | 'delete',
-    path: string,
-    body?: unknown,
-  ): Promise<T> => {
+  const request = async <T>(method: HttpMethod, path: string, body?: unknown): Promise<T> => {
+    let response: Response;
     try {
-      const response = await (body !== undefined
-        ? instance[method](path, { json: body })
-        : instance[method](path));
-      try {
-        return (await response.json()) as T;
-      } catch {
-        return undefined as T;
-      }
-    } catch (error) {
-      return handleError(error);
+      response = await fetch(`${baseUrl}${path}`, buildRequestInit(method, headers, body));
+    } catch {
+      // Network-level failures (DNS, connection refused, timeout) surface as fetch rejections
+      throw new Error(lang.__('CREDENTIAL_NETWORK_ERROR'));
+    }
+
+    if (!response.ok) {
+      handleHttpError(response);
+    }
+
+    try {
+      return (await response.json()) as T;
+    } catch {
+      return undefined as T;
     }
   };
 
