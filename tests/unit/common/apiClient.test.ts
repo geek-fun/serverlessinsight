@@ -142,13 +142,17 @@ describe('validateApiKey', () => {
     process.env = ORIGINAL_ENV;
   });
 
-  it('should call the validate endpoint and return org info on success', async () => {
+  it('should call the validate endpoint and return org info on success (real envelope + snake_case)', async () => {
     const mockResponse = {
-      valid: true,
-      orgId: 'org-uuid',
-      orgName: 'TestOrg',
-      userEmail: 'test@example.com',
-      scopes: ['deploy', 'read'],
+      code: 2000,
+      messages: ['success'],
+      data: {
+        valid: true,
+        org_id: 'org-uuid',
+        org_name: 'TestOrg',
+        user: { id: 'u1', email: 'test@example.com' },
+        scopes: ['deploy', 'read'],
+      },
     };
     mockFetch.mockResolvedValue(new Response(JSON.stringify(mockResponse), { status: 200 }));
 
@@ -194,5 +198,77 @@ describe('validateApiKey', () => {
     mockFetch.mockRejectedValue(new TypeError('fetch failed'));
 
     await expect(validateApiKey(validKey, testBaseUrl)).rejects.toThrow('CREDENTIAL_NETWORK_ERROR');
+  });
+});
+
+describe('apiClient envelope unwrapping', () => {
+  let client: ApiClient;
+  const testApiKey = 'si_testprefix_testsecretkey1234567890abcdefghij';
+  const testBaseUrl = 'https://api.console.serverlessinsight.com';
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    global.fetch = mockFetch as unknown as typeof fetch;
+    client = createApiClient({ apiKey: testApiKey, baseUrl: testBaseUrl });
+  });
+
+  it('should unwrap { code, messages, data } envelope and return data', async () => {
+    mockFetch.mockResolvedValue(
+      new Response(JSON.stringify({ code: 2000, messages: ['success'], data: { id: 'abc' } }), {
+        status: 200,
+      }),
+    );
+
+    const result = await client.get('/test');
+    expect(result).toEqual({ id: 'abc' });
+  });
+
+  it('should camelCase snake_case payload keys', async () => {
+    mockFetch.mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          code: 2000,
+          messages: ['success'],
+          data: {
+            org_id: 'org-1',
+            key_prefix: 'abc',
+            nested: { last_used_at: '2026-01-01' },
+          },
+        }),
+        { status: 200 },
+      ),
+    );
+
+    const result = await client.get('/test');
+    expect(result).toEqual({
+      orgId: 'org-1',
+      keyPrefix: 'abc',
+      nested: { lastUsedAt: '2026-01-01' },
+    });
+  });
+
+  it('should NOT camelCase keys inside opaque JSONB payloads (state_json)', async () => {
+    mockFetch.mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          code: 2000,
+          messages: ['success'],
+          data: {
+            state_json: { some_resource_key: { FunctionName: 'fn' } },
+          },
+        }),
+        { status: 200 },
+      ),
+    );
+
+    const result = (await client.get('/test')) as { stateJson: Record<string, unknown> };
+    expect(result.stateJson).toEqual({ some_resource_key: { FunctionName: 'fn' } });
+  });
+
+  it('should pass through non-envelope responses untouched', async () => {
+    mockFetch.mockResolvedValue(new Response(JSON.stringify({ data: 'ok' }), { status: 200 }));
+
+    const result = await client.get('/test');
+    expect(result).toEqual({ data: 'ok' });
   });
 });
