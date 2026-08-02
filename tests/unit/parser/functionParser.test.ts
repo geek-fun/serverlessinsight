@@ -196,6 +196,97 @@ describe('parseFunction', () => {
     });
   });
 
+  it('should parse iam.role as a string (external role)', () => {
+    const result = parseFunction({
+      fn: {
+        name: 'external-role-fn',
+        code: { runtime: 'nodejs18', handler: 'index.handler', path: './src' },
+        iam: { role: 'acs:ram::123456789012:role/external-role' },
+      },
+    });
+
+    expect(result![0].iam).toEqual({ role: 'acs:ram::123456789012:role/external-role' });
+  });
+
+  it('should parse iam.role object with name and managed_policies', () => {
+    const result = parseFunction({
+      fn: {
+        name: 'role-fn',
+        code: { runtime: 'nodejs18', handler: 'index.handler', path: './src' },
+        iam: {
+          role: {
+            name: 'custom-role',
+            managed_policies: ['AliyunOSSFullAccess', 'AliyunLogFullAccess'],
+          },
+        },
+      },
+    });
+
+    expect(result![0].iam).toEqual({
+      role: {
+        name: 'custom-role',
+        managed_policies: ['AliyunOSSFullAccess', 'AliyunLogFullAccess'],
+      },
+    });
+  });
+
+  it('should parse iam.role object without name or managed_policies', () => {
+    const result = parseFunction({
+      fn: {
+        name: 'minimal-role-fn',
+        code: { runtime: 'nodejs18', handler: 'index.handler', path: './src' },
+        iam: { role: {} },
+      },
+    });
+
+    expect(result![0].iam).toEqual({ role: {} });
+  });
+
+  it('should parse statements with single string action and resource', () => {
+    const result = parseFunction({
+      fn: {
+        name: 'single-statement-fn',
+        code: { runtime: 'nodejs18', handler: 'index.handler', path: './src' },
+        iam: {
+          role: {
+            statements: [
+              {
+                effect: 'Allow' as const,
+                action: 'log:PostLogStoreLogs',
+                resource: 'acs:log:*:*:project/*/logstore/*',
+              },
+            ],
+          },
+        },
+      },
+    });
+
+    expect(result![0].iam).toEqual({
+      role: {
+        statements: [
+          {
+            sid: undefined,
+            effect: 'Allow',
+            action: ['log:PostLogStoreLogs'],
+            resource: ['acs:log:*:*:project/*/logstore/*'],
+          },
+        ],
+      },
+    });
+  });
+
+  it('should parse iam object without role', () => {
+    const result = parseFunction({
+      fn: {
+        name: 'no-role-fn',
+        code: { runtime: 'nodejs18', handler: 'index.handler', path: './src' },
+        iam: {},
+      },
+    });
+
+    expect(result![0].iam).toEqual({ role: undefined });
+  });
+
   it('should parse function without iam statements', () => {
     const result = parseFunction({
       fn: {

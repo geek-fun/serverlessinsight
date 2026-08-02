@@ -71,6 +71,9 @@ const mockedOssOperations = {
   createBucket: jest.fn(),
   putFile: jest.fn(),
 };
+const mockedCasOperations = {
+  getCertificate: jest.fn(),
+};
 const mockedLogger = {
   info: jest.fn(),
   error: jest.fn(),
@@ -85,7 +88,7 @@ jest.mock('../../../../src/common/aliyunClient', () => ({
     ram: mockedRamOperations,
     ecs: mockedEcsOperations,
     nas: mockedNasOperations,
-    cas: { getCertificate: jest.fn().mockResolvedValue({ cert: 'c', key: 'k' }) },
+    cas: mockedCasOperations,
   }),
 }));
 
@@ -255,6 +258,14 @@ describe('Fc3Resource', () => {
     mockedOssOperations.putFile.mockResolvedValue(undefined);
 
     mockedStatSync.mockReturnValue({ size: 1024 });
+
+    mockedCasOperations.getCertificate.mockResolvedValue({ cert: 'c', key: 'k' });
+
+    // Trigger/domain operations default to success to avoid cross-test contamination
+    mockedFc3Operations.createTrigger.mockResolvedValue(undefined);
+    mockedFc3Operations.deleteTrigger.mockResolvedValue(undefined);
+    mockedFc3Operations.createCustomDomain.mockResolvedValue(undefined);
+    mockedFc3Operations.deleteCustomDomain.mockResolvedValue(undefined);
 
     mockedStateManager.setResource.mockReturnValue(undefined);
     mockedStateManager.removeResource.mockReturnValue(undefined);
@@ -665,6 +676,56 @@ describe('Fc3Resource', () => {
         undefined,
       );
     });
+
+    it('should fetch certificate from CAS and pass certConfig when domain has certificate_id', async () => {
+      const fnWithCert = {
+        ...testFunction,
+        domain: {
+          domain_name: 'api.example.com',
+          protocol: 'HTTPS',
+          certificate_id: 'cert-123',
+        },
+      };
+
+      const readyState = {
+        ...initialState,
+        resources: { 'functions.test_fn': expect.anything() },
+      };
+      mockedStateManager.setResource.mockReturnValue(readyState);
+      mockedCasOperations.getCertificate.mockResolvedValue({ cert: 'cert-body', key: 'key-body' });
+
+      await createResource(mockContext, fnWithCert, initialState);
+
+      expect(mockedCasOperations.getCertificate).toHaveBeenCalledWith('cert-123');
+      expect(mockedFc3Operations.createCustomDomain).toHaveBeenCalledWith(
+        'api.example.com',
+        'HTTPS',
+        'test-function',
+        {
+          certName: 'test-service-default-fc3-domain',
+          certificate: 'cert-body',
+          privateKey: 'key-body',
+        },
+      );
+    });
+
+    it('should throw CERT_REFERENCE_NOT_FOUND when certificate is missing from CAS', async () => {
+      const fnWithCert = {
+        ...testFunction,
+        domain: {
+          domain_name: 'api.example.com',
+          protocol: 'HTTPS',
+          certificate_id: 'cert-missing',
+        },
+      };
+
+      mockedCasOperations.getCertificate.mockResolvedValue(null);
+
+      await expect(createResource(mockContext, fnWithCert, initialState)).rejects.toThrow(
+        'Certificate reference "cert-missing" could not be resolved.',
+      );
+      expect(mockedFc3Operations.createCustomDomain).not.toHaveBeenCalled();
+    });
   });
 
   describe('readResource', () => {
@@ -1003,6 +1064,507 @@ describe('Fc3Resource', () => {
         'http-trigger',
       );
       expect(mockedFc3Operations.deleteCustomDomain).toHaveBeenCalledWith('api.example.com');
+    });
+
+    it('should ignore TriggerNotFound when deleting HTTP trigger during update', async () => {
+      const fnWithoutLifecycle = { ...testFunction };
+
+      const stateWithTrigger: StateFile = {
+        ...initialState,
+        resources: {
+          'functions.test_fn': {
+            mode: 'managed',
+            region: 'cn-hangzhou',
+            definition: mockDefinition,
+            instances: [
+              {
+                sid: 'si:aliyun:fc3:default:test-function',
+                id: 'test-function',
+                type: 'ALIYUN_FC3_FUNCTION',
+              },
+              {
+                sid: 'si:aliyun:fc3-http-trigger:default:test-function',
+                id: 'http-trigger',
+                type: 'ALIYUN_FC3_HTTP_TRIGGER',
+              },
+            ],
+            lastUpdated: '2025-01-01T00:00:00Z',
+          },
+        },
+      };
+
+      mockedFc3Operations.updateFunctionConfiguration.mockResolvedValue(undefined);
+      mockedFc3Operations.updateFunctionCode.mockResolvedValue(undefined);
+      mockedFc3Operations.deleteTrigger.mockRejectedValue({ code: 'TriggerNotFound' });
+      mockedStateManager.setResource.mockReturnValue(initialState);
+
+      await updateResource(mockContext, fnWithoutLifecycle, stateWithTrigger);
+
+      expect(mockedFc3Operations.deleteTrigger).toHaveBeenCalledWith(
+        'test-function',
+        'http-trigger',
+      );
+      expect(mockedLogger.warn).toHaveBeenCalled();
+    });
+
+    it('should rethrow unexpected errors when deleting HTTP trigger during update', async () => {
+      const fnWithoutLifecycle = { ...testFunction };
+
+      const stateWithTrigger: StateFile = {
+        ...initialState,
+        resources: {
+          'functions.test_fn': {
+            mode: 'managed',
+            region: 'cn-hangzhou',
+            definition: mockDefinition,
+            instances: [
+              {
+                sid: 'si:aliyun:fc3:default:test-function',
+                id: 'test-function',
+                type: 'ALIYUN_FC3_FUNCTION',
+              },
+              {
+                sid: 'si:aliyun:fc3-http-trigger:default:test-function',
+                id: 'http-trigger',
+                type: 'ALIYUN_FC3_HTTP_TRIGGER',
+              },
+            ],
+            lastUpdated: '2025-01-01T00:00:00Z',
+          },
+        },
+      };
+
+      mockedFc3Operations.updateFunctionConfiguration.mockResolvedValue(undefined);
+      mockedFc3Operations.updateFunctionCode.mockResolvedValue(undefined);
+      mockedFc3Operations.deleteTrigger.mockRejectedValue(
+        Object.assign(new Error('Forbidden'), { code: 'Forbidden' }),
+      );
+
+      await expect(
+        updateResource(mockContext, fnWithoutLifecycle, stateWithTrigger),
+      ).rejects.toThrow('Forbidden');
+    });
+
+    it('should recreate HTTP trigger when trigger config changes during update', async () => {
+      const fnWithTrigger = {
+        ...testFunction,
+        triggers: { http: { auth_type: 'public' as const } },
+      };
+
+      const stateWithOldTriggerConfig: StateFile = {
+        ...initialState,
+        resources: {
+          'functions.test_fn': {
+            mode: 'managed',
+            region: 'cn-hangzhou',
+            definition: mockDefinition,
+            instances: [
+              {
+                sid: 'si:aliyun:fc3:default:test-function',
+                id: 'test-function',
+                type: 'ALIYUN_FC3_FUNCTION',
+              },
+              {
+                sid: 'si:aliyun:fc3-http-trigger:default:test-function',
+                id: 'http-trigger',
+                type: 'ALIYUN_FC3_HTTP_TRIGGER',
+                attributes: { authType: 'anonymous', methods: ['GET'] },
+              },
+            ],
+            lastUpdated: '2025-01-01T00:00:00Z',
+          },
+        },
+      };
+
+      mockedFc3Operations.updateFunctionConfiguration.mockResolvedValue(undefined);
+      mockedFc3Operations.updateFunctionCode.mockResolvedValue(undefined);
+      mockedFc3Operations.deleteTrigger.mockResolvedValue(undefined);
+      mockedFc3Operations.createTrigger.mockResolvedValue(undefined);
+      mockedStateManager.setResource.mockReturnValue(initialState);
+
+      await updateResource(mockContext, fnWithTrigger, stateWithOldTriggerConfig);
+
+      expect(mockedFc3Operations.deleteTrigger).toHaveBeenCalledWith(
+        'test-function',
+        'http-trigger',
+      );
+      expect(mockedFc3Operations.createTrigger).toHaveBeenCalledWith(
+        'test-function',
+        'http-trigger',
+        'http',
+        expect.objectContaining({ authType: 'anonymous' }),
+      );
+    });
+
+    it('should ignore TriggerNotFound when recreating HTTP trigger during update', async () => {
+      const fnWithTrigger = {
+        ...testFunction,
+        triggers: { http: { auth_type: 'public' as const } },
+      };
+
+      const stateWithOldTriggerConfig: StateFile = {
+        ...initialState,
+        resources: {
+          'functions.test_fn': {
+            mode: 'managed',
+            region: 'cn-hangzhou',
+            definition: mockDefinition,
+            instances: [
+              {
+                sid: 'si:aliyun:fc3:default:test-function',
+                id: 'test-function',
+                type: 'ALIYUN_FC3_FUNCTION',
+              },
+              {
+                sid: 'si:aliyun:fc3-http-trigger:default:test-function',
+                id: 'http-trigger',
+                type: 'ALIYUN_FC3_HTTP_TRIGGER',
+                attributes: { authType: 'anonymous', methods: ['GET'] },
+              },
+            ],
+            lastUpdated: '2025-01-01T00:00:00Z',
+          },
+        },
+      };
+
+      mockedFc3Operations.updateFunctionConfiguration.mockResolvedValue(undefined);
+      mockedFc3Operations.updateFunctionCode.mockResolvedValue(undefined);
+      mockedFc3Operations.deleteTrigger.mockRejectedValue({ code: 'TriggerNotFound' });
+      mockedFc3Operations.createTrigger.mockResolvedValue(undefined);
+      mockedStateManager.setResource.mockReturnValue(initialState);
+
+      await updateResource(mockContext, fnWithTrigger, stateWithOldTriggerConfig);
+
+      expect(mockedFc3Operations.deleteTrigger).toHaveBeenCalledWith(
+        'test-function',
+        'http-trigger',
+      );
+      expect(mockedFc3Operations.createTrigger).toHaveBeenCalled();
+    });
+
+    it('should fetch certificate when adding custom domain with certificate_id during update', async () => {
+      const fnWithCertDomain = {
+        ...testFunction,
+        domain: {
+          domain_name: 'api.example.com',
+          protocol: 'HTTPS',
+          certificate_id: 'cert-123',
+        },
+      };
+
+      const stateWithoutDomain: StateFile = {
+        ...initialState,
+        resources: {
+          'functions.test_fn': {
+            mode: 'managed',
+            region: 'cn-hangzhou',
+            definition: mockDefinition,
+            instances: [
+              {
+                sid: 'si:aliyun:fc3:default:test-function',
+                id: 'test-function',
+                type: 'ALIYUN_FC3_FUNCTION',
+              },
+            ],
+            lastUpdated: '2025-01-01T00:00:00Z',
+          },
+        },
+      };
+
+      mockedFc3Operations.updateFunctionConfiguration.mockResolvedValue(undefined);
+      mockedFc3Operations.updateFunctionCode.mockResolvedValue(undefined);
+      mockedFc3Operations.createCustomDomain.mockResolvedValue(undefined);
+      mockedCasOperations.getCertificate.mockResolvedValue({ cert: 'cert-body', key: 'key-body' });
+      mockedStateManager.setResource.mockReturnValue(initialState);
+
+      await updateResource(mockContext, fnWithCertDomain, stateWithoutDomain);
+
+      expect(mockedCasOperations.getCertificate).toHaveBeenCalledWith('cert-123');
+      expect(mockedFc3Operations.createCustomDomain).toHaveBeenCalledWith(
+        'api.example.com',
+        'HTTPS',
+        'test-function',
+        {
+          certName: 'test-service-default-fc3-domain',
+          certificate: 'cert-body',
+          privateKey: 'key-body',
+        },
+      );
+    });
+
+    it('should throw CERT_REFERENCE_NOT_FOUND when certificate missing during domain creation in update', async () => {
+      const fnWithCertDomain = {
+        ...testFunction,
+        domain: {
+          domain_name: 'api.example.com',
+          protocol: 'HTTPS',
+          certificate_id: 'cert-missing',
+        },
+      };
+
+      const stateWithoutDomain: StateFile = {
+        ...initialState,
+        resources: {
+          'functions.test_fn': {
+            mode: 'managed',
+            region: 'cn-hangzhou',
+            definition: mockDefinition,
+            instances: [
+              {
+                sid: 'si:aliyun:fc3:default:test-function',
+                id: 'test-function',
+                type: 'ALIYUN_FC3_FUNCTION',
+              },
+            ],
+            lastUpdated: '2025-01-01T00:00:00Z',
+          },
+        },
+      };
+
+      mockedFc3Operations.updateFunctionConfiguration.mockResolvedValue(undefined);
+      mockedFc3Operations.updateFunctionCode.mockResolvedValue(undefined);
+      mockedCasOperations.getCertificate.mockResolvedValue(null);
+
+      await expect(
+        updateResource(mockContext, fnWithCertDomain, stateWithoutDomain),
+      ).rejects.toThrow('Certificate reference "cert-missing" could not be resolved.');
+      expect(mockedFc3Operations.createCustomDomain).not.toHaveBeenCalled();
+    });
+
+    it('should ignore CustomDomainNotFound when deleting custom domain during update', async () => {
+      const fnWithoutLifecycle = { ...testFunction };
+
+      const stateWithDomain: StateFile = {
+        ...initialState,
+        resources: {
+          'functions.test_fn': {
+            mode: 'managed',
+            region: 'cn-hangzhou',
+            definition: mockDefinition,
+            instances: [
+              {
+                sid: 'si:aliyun:fc3:default:test-function',
+                id: 'test-function',
+                type: 'ALIYUN_FC3_FUNCTION',
+              },
+              {
+                sid: 'si:aliyun:fc3-custom-domain:default:api.example.com',
+                id: 'api.example.com',
+                type: 'ALIYUN_FC3_CUSTOM_DOMAIN',
+                attributes: { protocol: 'HTTPS' },
+              },
+            ],
+            lastUpdated: '2025-01-01T00:00:00Z',
+          },
+        },
+      };
+
+      mockedFc3Operations.updateFunctionConfiguration.mockResolvedValue(undefined);
+      mockedFc3Operations.updateFunctionCode.mockResolvedValue(undefined);
+      mockedFc3Operations.deleteCustomDomain.mockRejectedValue({ code: 'CustomDomainNotFound' });
+      mockedStateManager.setResource.mockReturnValue(initialState);
+
+      await updateResource(mockContext, fnWithoutLifecycle, stateWithDomain);
+
+      expect(mockedFc3Operations.deleteCustomDomain).toHaveBeenCalledWith('api.example.com');
+      expect(mockedLogger.warn).toHaveBeenCalled();
+    });
+
+    it('should recreate custom domain when domain changes during update', async () => {
+      const fnWithNewDomain = {
+        ...testFunction,
+        domain: { domain_name: 'new.example.com', protocol: 'HTTPS' },
+      };
+
+      const stateWithOldDomain: StateFile = {
+        ...initialState,
+        resources: {
+          'functions.test_fn': {
+            mode: 'managed',
+            region: 'cn-hangzhou',
+            definition: mockDefinition,
+            instances: [
+              {
+                sid: 'si:aliyun:fc3:default:test-function',
+                id: 'test-function',
+                type: 'ALIYUN_FC3_FUNCTION',
+              },
+              {
+                sid: 'si:aliyun:fc3-custom-domain:default:old.example.com',
+                id: 'old.example.com',
+                type: 'ALIYUN_FC3_CUSTOM_DOMAIN',
+                attributes: { protocol: 'HTTPS' },
+              },
+            ],
+            lastUpdated: '2025-01-01T00:00:00Z',
+          },
+        },
+      };
+
+      mockedFc3Operations.updateFunctionConfiguration.mockResolvedValue(undefined);
+      mockedFc3Operations.updateFunctionCode.mockResolvedValue(undefined);
+      mockedFc3Operations.deleteCustomDomain.mockResolvedValue(undefined);
+      mockedFc3Operations.createCustomDomain.mockResolvedValue(undefined);
+      mockedStateManager.setResource.mockReturnValue(initialState);
+
+      await updateResource(mockContext, fnWithNewDomain, stateWithOldDomain);
+
+      expect(mockedFc3Operations.deleteCustomDomain).toHaveBeenCalledWith('old.example.com');
+      expect(mockedFc3Operations.createCustomDomain).toHaveBeenCalledWith(
+        'new.example.com',
+        'HTTPS',
+        'test-function',
+        undefined,
+      );
+    });
+
+    it('should throw CERT_REFERENCE_NOT_FOUND when certificate missing during domain update', async () => {
+      const fnWithNewCertDomain = {
+        ...testFunction,
+        domain: {
+          domain_name: 'new.example.com',
+          protocol: 'HTTPS',
+          certificate_id: 'cert-missing',
+        },
+      };
+
+      const stateWithOldDomain: StateFile = {
+        ...initialState,
+        resources: {
+          'functions.test_fn': {
+            mode: 'managed',
+            region: 'cn-hangzhou',
+            definition: mockDefinition,
+            instances: [
+              {
+                sid: 'si:aliyun:fc3:default:test-function',
+                id: 'test-function',
+                type: 'ALIYUN_FC3_FUNCTION',
+              },
+              {
+                sid: 'si:aliyun:fc3-custom-domain:default:old.example.com',
+                id: 'old.example.com',
+                type: 'ALIYUN_FC3_CUSTOM_DOMAIN',
+                attributes: { protocol: 'HTTPS' },
+              },
+            ],
+            lastUpdated: '2025-01-01T00:00:00Z',
+          },
+        },
+      };
+
+      mockedFc3Operations.updateFunctionConfiguration.mockResolvedValue(undefined);
+      mockedFc3Operations.updateFunctionCode.mockResolvedValue(undefined);
+      mockedCasOperations.getCertificate.mockResolvedValue(null);
+
+      await expect(
+        updateResource(mockContext, fnWithNewCertDomain, stateWithOldDomain),
+      ).rejects.toThrow('Certificate reference "cert-missing" could not be resolved.');
+    });
+
+    it('should ignore CustomDomainNotFound when deleting old domain during domain update', async () => {
+      const fnWithNewDomain = {
+        ...testFunction,
+        domain: { domain_name: 'new.example.com', protocol: 'HTTPS' },
+      };
+
+      const stateWithOldDomain: StateFile = {
+        ...initialState,
+        resources: {
+          'functions.test_fn': {
+            mode: 'managed',
+            region: 'cn-hangzhou',
+            definition: mockDefinition,
+            instances: [
+              {
+                sid: 'si:aliyun:fc3:default:test-function',
+                id: 'test-function',
+                type: 'ALIYUN_FC3_FUNCTION',
+              },
+              {
+                sid: 'si:aliyun:fc3-custom-domain:default:old.example.com',
+                id: 'old.example.com',
+                type: 'ALIYUN_FC3_CUSTOM_DOMAIN',
+                attributes: { protocol: 'HTTPS' },
+              },
+            ],
+            lastUpdated: '2025-01-01T00:00:00Z',
+          },
+        },
+      };
+
+      mockedFc3Operations.updateFunctionConfiguration.mockResolvedValue(undefined);
+      mockedFc3Operations.updateFunctionCode.mockResolvedValue(undefined);
+      mockedFc3Operations.deleteCustomDomain.mockRejectedValue({ code: 'CustomDomainNotFound' });
+      mockedFc3Operations.createCustomDomain.mockResolvedValue(undefined);
+      mockedStateManager.setResource.mockReturnValue(initialState);
+
+      await updateResource(mockContext, fnWithNewDomain, stateWithOldDomain);
+
+      expect(mockedFc3Operations.deleteCustomDomain).toHaveBeenCalledWith('old.example.com');
+      expect(mockedFc3Operations.createCustomDomain).toHaveBeenCalledWith(
+        'new.example.com',
+        'HTTPS',
+        'test-function',
+        undefined,
+      );
+    });
+
+    it('should fetch certificate and pass certConfig when domain changes during update', async () => {
+      const fnWithNewCertDomain = {
+        ...testFunction,
+        domain: {
+          domain_name: 'new.example.com',
+          protocol: 'HTTPS',
+          certificate_id: 'cert-123',
+        },
+      };
+
+      const stateWithOldDomain: StateFile = {
+        ...initialState,
+        resources: {
+          'functions.test_fn': {
+            mode: 'managed',
+            region: 'cn-hangzhou',
+            definition: mockDefinition,
+            instances: [
+              {
+                sid: 'si:aliyun:fc3:default:test-function',
+                id: 'test-function',
+                type: 'ALIYUN_FC3_FUNCTION',
+              },
+              {
+                sid: 'si:aliyun:fc3-custom-domain:default:old.example.com',
+                id: 'old.example.com',
+                type: 'ALIYUN_FC3_CUSTOM_DOMAIN',
+                attributes: { protocol: 'HTTPS' },
+              },
+            ],
+            lastUpdated: '2025-01-01T00:00:00Z',
+          },
+        },
+      };
+
+      mockedFc3Operations.updateFunctionConfiguration.mockResolvedValue(undefined);
+      mockedFc3Operations.updateFunctionCode.mockResolvedValue(undefined);
+      mockedFc3Operations.deleteCustomDomain.mockResolvedValue(undefined);
+      mockedFc3Operations.createCustomDomain.mockResolvedValue(undefined);
+      mockedCasOperations.getCertificate.mockResolvedValue({ cert: 'cert-body', key: 'key-body' });
+      mockedStateManager.setResource.mockReturnValue(initialState);
+
+      await updateResource(mockContext, fnWithNewCertDomain, stateWithOldDomain);
+
+      expect(mockedCasOperations.getCertificate).toHaveBeenCalledWith('cert-123');
+      expect(mockedFc3Operations.createCustomDomain).toHaveBeenCalledWith(
+        'new.example.com',
+        'HTTPS',
+        'test-function',
+        {
+          certName: 'test-service-default-fc3-domain',
+          certificate: 'cert-body',
+          privateKey: 'key-body',
+        },
+      );
     });
   });
 
@@ -1421,6 +1983,149 @@ describe('Fc3Resource', () => {
 
       expect(mockedFc3Operations.deleteCustomDomain).toHaveBeenCalledWith('api.example.com');
       expect(mockedFc3Operations.deleteFunction).toHaveBeenCalledWith('test-function');
+    });
+
+    it('should ignore TriggerNotFound when deleting HTTP trigger during delete', async () => {
+      const stateWithTrigger: StateFile = {
+        ...initialState,
+        resources: {
+          'functions.test_fn': {
+            mode: 'managed',
+            region: 'cn-hangzhou',
+            definition: mockDefinition,
+            instances: [
+              {
+                sid: 'si:aliyun:fc3:default:test-function',
+                id: 'test-function',
+                type: 'ALIYUN_FC3_FUNCTION',
+              },
+              {
+                sid: 'si:aliyun:fc3-http-trigger:default:test-function',
+                id: 'http-trigger',
+                type: 'ALIYUN_FC3_HTTP_TRIGGER',
+              },
+            ],
+            lastUpdated: '2025-01-01T00:00:00Z',
+          },
+        },
+      };
+
+      mockedFc3Operations.deleteFunction.mockResolvedValue(undefined);
+      mockedFc3Operations.deleteTrigger.mockRejectedValue({ code: 'TriggerNotFound' });
+      mockedStateManager.removeResource.mockReturnValue(initialState);
+
+      await deleteResource(mockContext, 'test-function', 'functions.test_fn', stateWithTrigger);
+
+      expect(mockedFc3Operations.deleteTrigger).toHaveBeenCalledWith(
+        'test-function',
+        'http-trigger',
+      );
+      expect(mockedFc3Operations.deleteFunction).toHaveBeenCalledWith('test-function');
+      expect(mockedLogger.warn).toHaveBeenCalled();
+    });
+
+    it('should rethrow unexpected errors when deleting HTTP trigger during delete', async () => {
+      const stateWithTrigger: StateFile = {
+        ...initialState,
+        resources: {
+          'functions.test_fn': {
+            mode: 'managed',
+            region: 'cn-hangzhou',
+            definition: mockDefinition,
+            instances: [
+              {
+                sid: 'si:aliyun:fc3:default:test-function',
+                id: 'test-function',
+                type: 'ALIYUN_FC3_FUNCTION',
+              },
+              {
+                sid: 'si:aliyun:fc3-http-trigger:default:test-function',
+                id: 'http-trigger',
+                type: 'ALIYUN_FC3_HTTP_TRIGGER',
+              },
+            ],
+            lastUpdated: '2025-01-01T00:00:00Z',
+          },
+        },
+      };
+
+      mockedFc3Operations.deleteTrigger.mockRejectedValue(
+        Object.assign(new Error('Forbidden'), { code: 'Forbidden' }),
+      );
+
+      await expect(
+        deleteResource(mockContext, 'test-function', 'functions.test_fn', stateWithTrigger),
+      ).rejects.toThrow('Forbidden');
+    });
+
+    it('should ignore CustomDomainNotFound when deleting custom domain during delete', async () => {
+      const stateWithDomain: StateFile = {
+        ...initialState,
+        resources: {
+          'functions.test_fn': {
+            mode: 'managed',
+            region: 'cn-hangzhou',
+            definition: mockDefinition,
+            instances: [
+              {
+                sid: 'si:aliyun:fc3:default:test-function',
+                id: 'test-function',
+                type: 'ALIYUN_FC3_FUNCTION',
+              },
+              {
+                sid: 'si:aliyun:fc3-custom-domain:default:api.example.com',
+                id: 'api.example.com',
+                type: 'ALIYUN_FC3_CUSTOM_DOMAIN',
+              },
+            ],
+            lastUpdated: '2025-01-01T00:00:00Z',
+          },
+        },
+      };
+
+      mockedFc3Operations.deleteFunction.mockResolvedValue(undefined);
+      mockedFc3Operations.deleteCustomDomain.mockRejectedValue({ code: 'CustomDomainNotFound' });
+      mockedStateManager.removeResource.mockReturnValue(initialState);
+
+      await deleteResource(mockContext, 'test-function', 'functions.test_fn', stateWithDomain);
+
+      expect(mockedFc3Operations.deleteCustomDomain).toHaveBeenCalledWith('api.example.com');
+      expect(mockedFc3Operations.deleteFunction).toHaveBeenCalledWith('test-function');
+      expect(mockedLogger.warn).toHaveBeenCalled();
+    });
+
+    it('should rethrow unexpected errors when deleting custom domain during delete', async () => {
+      const stateWithDomain: StateFile = {
+        ...initialState,
+        resources: {
+          'functions.test_fn': {
+            mode: 'managed',
+            region: 'cn-hangzhou',
+            definition: mockDefinition,
+            instances: [
+              {
+                sid: 'si:aliyun:fc3:default:test-function',
+                id: 'test-function',
+                type: 'ALIYUN_FC3_FUNCTION',
+              },
+              {
+                sid: 'si:aliyun:fc3-custom-domain:default:api.example.com',
+                id: 'api.example.com',
+                type: 'ALIYUN_FC3_CUSTOM_DOMAIN',
+              },
+            ],
+            lastUpdated: '2025-01-01T00:00:00Z',
+          },
+        },
+      };
+
+      mockedFc3Operations.deleteCustomDomain.mockRejectedValue(
+        Object.assign(new Error('Forbidden'), { code: 'Forbidden' }),
+      );
+
+      await expect(
+        deleteResource(mockContext, 'test-function', 'functions.test_fn', stateWithDomain),
+      ).rejects.toThrow('Forbidden');
     });
   });
 

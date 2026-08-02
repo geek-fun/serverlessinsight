@@ -127,6 +127,10 @@ describe('ScfResource', () => {
     (scfTypes.extractScfDefinition as jest.Mock).mockReturnValue(mockDefinition);
     (hashUtils.computeFileHash as jest.Mock).mockReturnValue('mock-code-hash');
     mockScfOperations.getFunction.mockResolvedValue(mockFunctionInfo);
+    mockScfOperations.deleteTrigger.mockResolvedValue(undefined);
+    mockScfOperations.createTrigger.mockResolvedValue(undefined);
+    mockScfOperations.deleteCustomDomain.mockResolvedValue(undefined);
+    mockScfOperations.createCustomDomain.mockResolvedValue(undefined);
     (stateManager.getResource as jest.Mock).mockReturnValue(undefined);
   });
 
@@ -975,6 +979,197 @@ describe('ScfResource', () => {
       );
     });
 
+    it('should ignore ResourceNotFound when deleting old trigger during HTTP trigger recreate', async () => {
+      const fnWithHttpTrigger = {
+        ...testFunction,
+        triggers: { http: { auth_type: 'iam' as const } },
+      };
+
+      const stateWithOldTrigger: StateFile = {
+        ...initialState,
+        resources: {
+          'functions.test_fn': {
+            mode: 'managed',
+            region: 'ap-guangzhou',
+            definition: mockDefinition,
+            instances: [
+              {
+                sid: 'si:tencent:scf:default:test-function',
+                id: 'test-function',
+                functionName: 'test-function',
+                triggers: [
+                  {
+                    type: 'http',
+                    triggerName: 'test_fn-http-trigger',
+                    triggerDesc: JSON.stringify({ authType: 'NONE' }),
+                  },
+                ],
+              },
+            ],
+            lastUpdated: '2025-01-01T00:00:00Z',
+          },
+        },
+      };
+
+      (stateManager.getResource as jest.Mock).mockReturnValue(
+        stateWithOldTrigger.resources['functions.test_fn'],
+      );
+      (mockScfOperations.updateFunctionConfiguration as jest.Mock).mockResolvedValue(undefined);
+      (mockScfOperations.updateFunctionCode as jest.Mock).mockResolvedValue(undefined);
+      (mockScfOperations.deleteTrigger as jest.Mock).mockRejectedValue(
+        Object.assign(new Error('not found'), { code: 'ResourceNotFound.TriggerName' }),
+      );
+      (stateManager.setResource as jest.Mock).mockReturnValue(initialState);
+
+      await updateResource(mockContext, fnWithHttpTrigger, stateWithOldTrigger);
+
+      expect(mockScfOperations.deleteTrigger).toHaveBeenCalled();
+      expect(mockScfOperations.createTrigger).toHaveBeenCalledWith(
+        expect.objectContaining({
+          FunctionName: 'test-function',
+          Type: 'http',
+        }),
+      );
+    });
+
+    it('should rethrow unexpected errors when recreating HTTP trigger during update', async () => {
+      const fnWithHttpTrigger = {
+        ...testFunction,
+        triggers: { http: { auth_type: 'iam' as const } },
+      };
+
+      const stateWithOldTrigger: StateFile = {
+        ...initialState,
+        resources: {
+          'functions.test_fn': {
+            mode: 'managed',
+            region: 'ap-guangzhou',
+            definition: mockDefinition,
+            instances: [
+              {
+                sid: 'si:tencent:scf:default:test-function',
+                id: 'test-function',
+                functionName: 'test-function',
+                triggers: [
+                  {
+                    type: 'http',
+                    triggerName: 'test_fn-http-trigger',
+                    triggerDesc: JSON.stringify({ authType: 'NONE' }),
+                  },
+                ],
+              },
+            ],
+            lastUpdated: '2025-01-01T00:00:00Z',
+          },
+        },
+      };
+
+      (stateManager.getResource as jest.Mock).mockReturnValue(
+        stateWithOldTrigger.resources['functions.test_fn'],
+      );
+      (mockScfOperations.updateFunctionConfiguration as jest.Mock).mockResolvedValue(undefined);
+      (mockScfOperations.updateFunctionCode as jest.Mock).mockResolvedValue(undefined);
+      (mockScfOperations.deleteTrigger as jest.Mock).mockRejectedValue(new Error('delete failed'));
+      (stateManager.setResource as jest.Mock).mockReturnValue(initialState);
+
+      await expect(
+        updateResource(mockContext, fnWithHttpTrigger, stateWithOldTrigger),
+      ).rejects.toThrow('delete failed');
+      expect(mockScfOperations.createTrigger).not.toHaveBeenCalled();
+    });
+
+    it('should create HTTP trigger with access flags when access is configured during update', async () => {
+      const fnWithAccess = {
+        ...testFunction,
+        triggers: {
+          http: { auth_type: 'iam' as const, access: ['public' as const, 'internal' as const] },
+        },
+      };
+
+      const stateWithoutTrigger: StateFile = {
+        ...initialState,
+        resources: {
+          'functions.test_fn': {
+            mode: 'managed',
+            region: 'ap-guangzhou',
+            definition: mockDefinition,
+            instances: [
+              {
+                sid: 'si:tencent:scf:default:test-function',
+                id: 'test-function',
+                functionName: 'test-function',
+              },
+            ],
+            lastUpdated: '2025-01-01T00:00:00Z',
+          },
+        },
+      };
+
+      (stateManager.getResource as jest.Mock).mockReturnValue(
+        stateWithoutTrigger.resources['functions.test_fn'],
+      );
+      (mockScfOperations.updateFunctionConfiguration as jest.Mock).mockResolvedValue(undefined);
+      (mockScfOperations.updateFunctionCode as jest.Mock).mockResolvedValue(undefined);
+      (stateManager.setResource as jest.Mock).mockReturnValue(initialState);
+
+      await updateResource(mockContext, fnWithAccess, stateWithoutTrigger);
+
+      expect(mockScfOperations.createTrigger).toHaveBeenCalledWith(
+        expect.objectContaining({
+          TriggerDesc: JSON.stringify({
+            authType: 'CAM',
+            enableExtranet: true,
+            enableIntranet: true,
+          }),
+        }),
+      );
+    });
+
+    it('should not touch HTTP trigger when trigger config is unchanged during update', async () => {
+      const fnWithHttpTrigger = {
+        ...testFunction,
+        triggers: { http: { auth_type: 'public' as const } },
+      };
+
+      const stateWithMatchingTrigger: StateFile = {
+        ...initialState,
+        resources: {
+          'functions.test_fn': {
+            mode: 'managed',
+            region: 'ap-guangzhou',
+            definition: mockDefinition,
+            instances: [
+              {
+                sid: 'si:tencent:scf:default:test-function',
+                id: 'test-function',
+                functionName: 'test-function',
+                triggers: [
+                  {
+                    type: 'http',
+                    triggerName: 'test_fn-http-trigger',
+                    triggerDesc: JSON.stringify({ authType: 'NONE' }),
+                  },
+                ],
+              },
+            ],
+            lastUpdated: '2025-01-01T00:00:00Z',
+          },
+        },
+      };
+
+      (stateManager.getResource as jest.Mock).mockReturnValue(
+        stateWithMatchingTrigger.resources['functions.test_fn'],
+      );
+      (mockScfOperations.updateFunctionConfiguration as jest.Mock).mockResolvedValue(undefined);
+      (mockScfOperations.updateFunctionCode as jest.Mock).mockResolvedValue(undefined);
+      (stateManager.setResource as jest.Mock).mockReturnValue(initialState);
+
+      await updateResource(mockContext, fnWithHttpTrigger, stateWithMatchingTrigger);
+
+      expect(mockScfOperations.deleteTrigger).not.toHaveBeenCalled();
+      expect(mockScfOperations.createTrigger).not.toHaveBeenCalled();
+    });
+
     it('should delete HTTP trigger when triggers.http is removed during update', async () => {
       const fnWithoutTrigger = { ...testFunction };
 
@@ -1021,6 +1216,97 @@ describe('ScfResource', () => {
       );
     });
 
+    it('should ignore ResourceNotFound when deleting HTTP trigger during update', async () => {
+      const fnWithoutTrigger = { ...testFunction };
+
+      const stateWithTrigger: StateFile = {
+        ...initialState,
+        resources: {
+          'functions.test_fn': {
+            mode: 'managed',
+            region: 'ap-guangzhou',
+            definition: mockDefinition,
+            instances: [
+              {
+                sid: 'si:tencent:scf:default:test-function',
+                id: 'test-function',
+                functionName: 'test-function',
+                triggers: [
+                  {
+                    type: 'http',
+                    triggerName: 'test_fn-http-trigger',
+                    triggerDesc: JSON.stringify({ authType: 'NONE' }),
+                  },
+                ],
+              },
+            ],
+            lastUpdated: '2025-01-01T00:00:00Z',
+          },
+        },
+      };
+
+      (stateManager.getResource as jest.Mock).mockReturnValue(
+        stateWithTrigger.resources['functions.test_fn'],
+      );
+      (mockScfOperations.updateFunctionConfiguration as jest.Mock).mockResolvedValue(undefined);
+      (mockScfOperations.updateFunctionCode as jest.Mock).mockResolvedValue(undefined);
+      (mockScfOperations.deleteTrigger as jest.Mock).mockRejectedValue(
+        Object.assign(new Error('not found'), { code: 'ResourceNotFound.TriggerName' }),
+      );
+      (stateManager.setResource as jest.Mock).mockReturnValue(initialState);
+
+      await updateResource(mockContext, fnWithoutTrigger, stateWithTrigger);
+
+      expect(mockScfOperations.deleteTrigger).toHaveBeenCalledWith(
+        expect.objectContaining({
+          FunctionName: 'test-function',
+          TriggerName: 'test_fn-http-trigger',
+        }),
+      );
+    });
+
+    it('should rethrow unexpected errors when deleting HTTP trigger during update', async () => {
+      const fnWithoutTrigger = { ...testFunction };
+
+      const stateWithTrigger: StateFile = {
+        ...initialState,
+        resources: {
+          'functions.test_fn': {
+            mode: 'managed',
+            region: 'ap-guangzhou',
+            definition: mockDefinition,
+            instances: [
+              {
+                sid: 'si:tencent:scf:default:test-function',
+                id: 'test-function',
+                functionName: 'test-function',
+                triggers: [
+                  {
+                    type: 'http',
+                    triggerName: 'test_fn-http-trigger',
+                    triggerDesc: JSON.stringify({ authType: 'NONE' }),
+                  },
+                ],
+              },
+            ],
+            lastUpdated: '2025-01-01T00:00:00Z',
+          },
+        },
+      };
+
+      (stateManager.getResource as jest.Mock).mockReturnValue(
+        stateWithTrigger.resources['functions.test_fn'],
+      );
+      (mockScfOperations.updateFunctionConfiguration as jest.Mock).mockResolvedValue(undefined);
+      (mockScfOperations.updateFunctionCode as jest.Mock).mockResolvedValue(undefined);
+      (mockScfOperations.deleteTrigger as jest.Mock).mockRejectedValue(new Error('delete failed'));
+      (stateManager.setResource as jest.Mock).mockReturnValue(initialState);
+
+      await expect(updateResource(mockContext, fnWithoutTrigger, stateWithTrigger)).rejects.toThrow(
+        'delete failed',
+      );
+    });
+
     it('should delete custom domain when domain is removed during update', async () => {
       const fnWithoutDomain = { ...testFunction };
 
@@ -1058,6 +1344,90 @@ describe('ScfResource', () => {
       await updateResource(mockContext, fnWithoutDomain, stateWithDomain);
 
       expect(mockScfOperations.deleteCustomDomain).toHaveBeenCalledWith('api.example.com');
+    });
+
+    it('should ignore ResourceNotFound when deleting custom domain during update', async () => {
+      const fnWithoutDomain = { ...testFunction };
+
+      const stateWithDomain: StateFile = {
+        ...initialState,
+        resources: {
+          'functions.test_fn': {
+            mode: 'managed',
+            region: 'ap-guangzhou',
+            definition: mockDefinition,
+            instances: [
+              {
+                sid: 'si:tencent:scf:default:test-function',
+                id: 'test-function',
+                functionName: 'test-function',
+              },
+              {
+                sid: 'si:tencent:scf-custom-domain:default:api.example.com',
+                type: 'TENCENT_SCF_CUSTOM_DOMAIN',
+                id: 'api.example.com',
+              },
+            ],
+            lastUpdated: '2025-01-01T00:00:00Z',
+          },
+        },
+      };
+
+      (stateManager.getResource as jest.Mock).mockReturnValue(
+        stateWithDomain.resources['functions.test_fn'],
+      );
+      (mockScfOperations.updateFunctionConfiguration as jest.Mock).mockResolvedValue(undefined);
+      (mockScfOperations.updateFunctionCode as jest.Mock).mockResolvedValue(undefined);
+      (mockScfOperations.deleteCustomDomain as jest.Mock).mockRejectedValue(
+        Object.assign(new Error('not found'), { code: 'ResourceNotFound' }),
+      );
+      (stateManager.setResource as jest.Mock).mockReturnValue(initialState);
+
+      await updateResource(mockContext, fnWithoutDomain, stateWithDomain);
+
+      expect(mockScfOperations.deleteCustomDomain).toHaveBeenCalledWith('api.example.com');
+    });
+
+    it('should rethrow unexpected errors when deleting custom domain during update', async () => {
+      const fnWithoutDomain = { ...testFunction };
+
+      const stateWithDomain: StateFile = {
+        ...initialState,
+        resources: {
+          'functions.test_fn': {
+            mode: 'managed',
+            region: 'ap-guangzhou',
+            definition: mockDefinition,
+            instances: [
+              {
+                sid: 'si:tencent:scf:default:test-function',
+                id: 'test-function',
+                functionName: 'test-function',
+              },
+              {
+                sid: 'si:tencent:scf-custom-domain:default:api.example.com',
+                type: 'TENCENT_SCF_CUSTOM_DOMAIN',
+                id: 'api.example.com',
+              },
+            ],
+            lastUpdated: '2025-01-01T00:00:00Z',
+          },
+        },
+      };
+
+      (stateManager.getResource as jest.Mock).mockReturnValue(
+        stateWithDomain.resources['functions.test_fn'],
+      );
+      (mockScfOperations.updateFunctionConfiguration as jest.Mock).mockResolvedValue(undefined);
+      (mockScfOperations.updateFunctionCode as jest.Mock).mockResolvedValue(undefined);
+      (mockScfOperations.deleteCustomDomain as jest.Mock).mockRejectedValue(
+        new Error('delete failed'),
+      );
+      (stateManager.setResource as jest.Mock).mockReturnValue(initialState);
+
+      await expect(updateResource(mockContext, fnWithoutDomain, stateWithDomain)).rejects.toThrow(
+        'delete failed',
+      );
     });
 
     it('should recreate custom domain when domain name changes during update', async () => {
@@ -1104,6 +1474,197 @@ describe('ScfResource', () => {
       expect(mockScfOperations.deleteCustomDomain).toHaveBeenCalledWith('old.example.com');
       expect(mockScfOperations.createCustomDomain).toHaveBeenCalledWith(
         expect.objectContaining({ Domain: 'new.example.com' }),
+      );
+    });
+
+    it('should recreate custom domain when protocol changes during update', async () => {
+      const fnWithNewProtocol = {
+        ...testFunction,
+        domain: { domain_name: 'api.example.com', protocol: 'HTTP' },
+      };
+
+      const stateWithOldProtocol: StateFile = {
+        ...initialState,
+        resources: {
+          'functions.test_fn': {
+            mode: 'managed',
+            region: 'ap-guangzhou',
+            definition: mockDefinition,
+            instances: [
+              {
+                sid: 'si:tencent:scf:default:test-function',
+                id: 'test-function',
+                functionName: 'test-function',
+              },
+              {
+                sid: 'si:tencent:scf-custom-domain:default:api.example.com',
+                type: 'TENCENT_SCF_CUSTOM_DOMAIN',
+                id: 'api.example.com',
+                protocol: 'HTTPS',
+              },
+            ],
+            lastUpdated: '2025-01-01T00:00:00Z',
+          },
+        },
+      };
+
+      (stateManager.getResource as jest.Mock).mockReturnValue(
+        stateWithOldProtocol.resources['functions.test_fn'],
+      );
+      (mockScfOperations.updateFunctionConfiguration as jest.Mock).mockResolvedValue(undefined);
+      (mockScfOperations.updateFunctionCode as jest.Mock).mockResolvedValue(undefined);
+      (mockScfOperations.deleteCustomDomain as jest.Mock).mockResolvedValue(undefined);
+      (stateManager.setResource as jest.Mock).mockReturnValue(initialState);
+
+      await updateResource(mockContext, fnWithNewProtocol, stateWithOldProtocol);
+
+      expect(mockScfOperations.deleteCustomDomain).toHaveBeenCalledWith('api.example.com');
+      expect(mockScfOperations.createCustomDomain).toHaveBeenCalledWith(
+        expect.objectContaining({ Domain: 'api.example.com', Protocol: 'HTTP' }),
+      );
+    });
+
+    it('should pass CertConfig when creating custom domain with certificate_id during update', async () => {
+      const fnWithCertDomain = {
+        ...testFunction,
+        domain: {
+          domain_name: 'api.example.com',
+          protocol: 'HTTPS',
+          certificate_id: 'cert-123',
+        },
+      };
+
+      const stateWithoutDomain: StateFile = {
+        ...initialState,
+        resources: {
+          'functions.test_fn': {
+            mode: 'managed',
+            region: 'ap-guangzhou',
+            definition: mockDefinition,
+            instances: [
+              {
+                sid: 'si:tencent:scf:default:test-function',
+                id: 'test-function',
+                functionName: 'test-function',
+              },
+            ],
+            lastUpdated: '2025-01-01T00:00:00Z',
+          },
+        },
+      };
+
+      (stateManager.getResource as jest.Mock).mockReturnValue(
+        stateWithoutDomain.resources['functions.test_fn'],
+      );
+      (mockScfOperations.updateFunctionConfiguration as jest.Mock).mockResolvedValue(undefined);
+      (mockScfOperations.updateFunctionCode as jest.Mock).mockResolvedValue(undefined);
+      (stateManager.setResource as jest.Mock).mockReturnValue(initialState);
+
+      await updateResource(mockContext, fnWithCertDomain, stateWithoutDomain);
+
+      expect(mockScfOperations.createCustomDomain).toHaveBeenCalledWith(
+        expect.objectContaining({
+          Domain: 'api.example.com',
+          CertConfig: { CertificateId: 'cert-123' },
+        }),
+      );
+    });
+
+    it('should not touch custom domain when domain is unchanged during update', async () => {
+      const fnWithSameDomain = {
+        ...testFunction,
+        domain: { domain_name: 'api.example.com', protocol: 'HTTPS' },
+      };
+
+      const stateWithMatchingDomain: StateFile = {
+        ...initialState,
+        resources: {
+          'functions.test_fn': {
+            mode: 'managed',
+            region: 'ap-guangzhou',
+            definition: mockDefinition,
+            instances: [
+              {
+                sid: 'si:tencent:scf:default:test-function',
+                id: 'test-function',
+                functionName: 'test-function',
+              },
+              {
+                sid: 'si:tencent:scf-custom-domain:default:api.example.com',
+                type: 'TENCENT_SCF_CUSTOM_DOMAIN',
+                id: 'api.example.com',
+                protocol: 'HTTPS',
+              },
+            ],
+            lastUpdated: '2025-01-01T00:00:00Z',
+          },
+        },
+      };
+
+      (stateManager.getResource as jest.Mock).mockReturnValue(
+        stateWithMatchingDomain.resources['functions.test_fn'],
+      );
+      (mockScfOperations.updateFunctionConfiguration as jest.Mock).mockResolvedValue(undefined);
+      (mockScfOperations.updateFunctionCode as jest.Mock).mockResolvedValue(undefined);
+      (stateManager.setResource as jest.Mock).mockReturnValue(initialState);
+
+      await updateResource(mockContext, fnWithSameDomain, stateWithMatchingDomain);
+
+      expect(mockScfOperations.deleteCustomDomain).not.toHaveBeenCalled();
+      expect(mockScfOperations.createCustomDomain).not.toHaveBeenCalled();
+    });
+
+    it('should pass CertConfig when recreating custom domain with certificate_id during update', async () => {
+      const fnWithNewCertDomain = {
+        ...testFunction,
+        domain: {
+          domain_name: 'new.example.com',
+          protocol: 'HTTPS',
+          certificate_id: 'cert-123',
+        },
+      };
+
+      const stateWithOldDomain: StateFile = {
+        ...initialState,
+        resources: {
+          'functions.test_fn': {
+            mode: 'managed',
+            region: 'ap-guangzhou',
+            definition: mockDefinition,
+            instances: [
+              {
+                sid: 'si:tencent:scf:default:test-function',
+                id: 'test-function',
+                functionName: 'test-function',
+              },
+              {
+                sid: 'si:tencent:scf-custom-domain:default:old.example.com',
+                type: 'TENCENT_SCF_CUSTOM_DOMAIN',
+                id: 'old.example.com',
+                protocol: 'HTTPS',
+              },
+            ],
+            lastUpdated: '2025-01-01T00:00:00Z',
+          },
+        },
+      };
+
+      (stateManager.getResource as jest.Mock).mockReturnValue(
+        stateWithOldDomain.resources['functions.test_fn'],
+      );
+      (mockScfOperations.updateFunctionConfiguration as jest.Mock).mockResolvedValue(undefined);
+      (mockScfOperations.updateFunctionCode as jest.Mock).mockResolvedValue(undefined);
+      (mockScfOperations.deleteCustomDomain as jest.Mock).mockResolvedValue(undefined);
+      (stateManager.setResource as jest.Mock).mockReturnValue(initialState);
+
+      await updateResource(mockContext, fnWithNewCertDomain, stateWithOldDomain);
+
+      expect(mockScfOperations.deleteCustomDomain).toHaveBeenCalledWith('old.example.com');
+      expect(mockScfOperations.createCustomDomain).toHaveBeenCalledWith(
+        expect.objectContaining({
+          Domain: 'new.example.com',
+          CertConfig: { CertificateId: 'cert-123' },
+        }),
       );
     });
   });
@@ -1471,6 +2032,82 @@ describe('ScfResource', () => {
 
       expect(mockScfOperations.deleteCustomDomain).toHaveBeenCalledWith('api.example.com');
       expect(mockScfOperations.deleteFunction).toHaveBeenCalledWith('test-function');
+    });
+
+    it('should rethrow unexpected errors when deleting HTTP trigger during delete', async () => {
+      const stateWithTrigger: StateFile = {
+        ...initialState,
+        resources: {
+          'functions.test_fn': {
+            mode: 'managed',
+            region: 'ap-guangzhou',
+            definition: mockDefinition,
+            instances: [
+              {
+                sid: 'si:tencent:scf:default:test-function',
+                id: 'test-function',
+                functionName: 'test-function',
+                triggers: [
+                  { type: 'http', triggerName: 'test_fn-http-trigger', triggerDesc: '{}' },
+                ],
+              },
+            ],
+            lastUpdated: '2025-01-01T00:00:00Z',
+          },
+        },
+      };
+
+      (stateManager.getResource as jest.Mock).mockReturnValue(
+        stateWithTrigger.resources['functions.test_fn'],
+      );
+      (mockScfOperations.deleteTrigger as jest.Mock).mockRejectedValue(new Error('delete failed'));
+      (mockScfOperations.deleteFunction as jest.Mock).mockResolvedValue(undefined);
+      (stateManager.removeResource as jest.Mock).mockReturnValue(initialState);
+
+      await expect(
+        deleteResource(mockContext, 'test-function', 'functions.test_fn', stateWithTrigger),
+      ).rejects.toThrow('delete failed');
+      expect(mockScfOperations.deleteFunction).not.toHaveBeenCalled();
+    });
+
+    it('should rethrow unexpected errors when deleting custom domain during delete', async () => {
+      const stateWithDomain: StateFile = {
+        ...initialState,
+        resources: {
+          'functions.test_fn': {
+            mode: 'managed',
+            region: 'ap-guangzhou',
+            definition: mockDefinition,
+            instances: [
+              {
+                sid: 'si:tencent:scf:default:test-function',
+                id: 'test-function',
+                functionName: 'test-function',
+              },
+              {
+                sid: 'si:tencent:scf-custom-domain:default:api.example.com',
+                type: 'TENCENT_SCF_CUSTOM_DOMAIN',
+                id: 'api.example.com',
+              },
+            ],
+            lastUpdated: '2025-01-01T00:00:00Z',
+          },
+        },
+      };
+
+      (stateManager.getResource as jest.Mock).mockReturnValue(
+        stateWithDomain.resources['functions.test_fn'],
+      );
+      (mockScfOperations.deleteCustomDomain as jest.Mock).mockRejectedValue(
+        new Error('delete failed'),
+      );
+      (mockScfOperations.deleteFunction as jest.Mock).mockResolvedValue(undefined);
+      (stateManager.removeResource as jest.Mock).mockReturnValue(initialState);
+
+      await expect(
+        deleteResource(mockContext, 'test-function', 'functions.test_fn', stateWithDomain),
+      ).rejects.toThrow('delete failed');
+      expect(mockScfOperations.deleteFunction).not.toHaveBeenCalled();
     });
   });
 

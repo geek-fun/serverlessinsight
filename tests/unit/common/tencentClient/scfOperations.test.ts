@@ -93,6 +93,27 @@ describe('scfOperations', () => {
       );
     });
 
+    it('should create function with Role when provided', async () => {
+      mockScfClient.CreateFunction.mockResolvedValue({});
+
+      const config = {
+        FunctionName: 'test-function',
+        Handler: 'index.handler',
+        Runtime: 'nodejs18.x',
+        MemorySize: 256,
+        Timeout: 30,
+        Role: 'role-id-123',
+      };
+
+      await operations.createFunction(config, 'BASE64_CODE');
+
+      expect(mockScfClient.CreateFunction).toHaveBeenCalledWith(
+        expect.objectContaining({
+          Role: 'role-id-123',
+        }),
+      );
+    });
+
     it('should handle SDK errors during creation', async () => {
       const error = new Error('CreateFunction failed');
       mockScfClient.CreateFunction.mockRejectedValue(error);
@@ -241,6 +262,48 @@ describe('scfOperations', () => {
       expect(result).toBeNull();
     });
 
+    it('should default missing environment variable, trigger, and tag fields', async () => {
+      mockScfClient.GetFunction.mockResolvedValue({
+        FunctionName: 'test-function',
+        Runtime: 'nodejs18.x',
+        Handler: 'index.handler',
+        MemorySize: 256,
+        Timeout: 30,
+        Environment: {
+          Variables: [{}, { Key: 'NODE_ENV' }],
+        },
+        Triggers: [{}, { Type: 'timer' }],
+        Tags: [{}, { Key: 'team' }],
+      });
+
+      const result = await operations.getFunction('test-function');
+
+      expect(result?.Environment?.Variables).toEqual([
+        { Key: '', Value: '' },
+        { Key: 'NODE_ENV', Value: '' },
+      ]);
+      expect(result?.Triggers?.[0]).toEqual(
+        expect.objectContaining({
+          ModTime: '',
+          Type: '',
+          TriggerDesc: '',
+          TriggerName: '',
+          AddTime: '',
+          Enable: 0,
+        }),
+      );
+      expect(result?.Triggers?.[1]).toEqual(
+        expect.objectContaining({
+          Type: 'timer',
+          Enable: 0,
+        }),
+      );
+      expect(result?.Tags).toEqual([
+        { Key: '', Value: '' },
+        { Key: 'team', Value: '' },
+      ]);
+    });
+
     it('should rethrow unexpected errors', async () => {
       const error = new Error('unauthorized');
       mockScfClient.GetFunction.mockRejectedValue(error);
@@ -310,6 +373,27 @@ describe('scfOperations', () => {
       expect(mockScfClient.UpdateFunctionConfiguration).toHaveBeenCalledWith(
         expect.objectContaining({
           Environment: config.Environment,
+        }),
+      );
+    });
+
+    it('should include Role in updateFunctionConfiguration when provided', async () => {
+      mockScfClient.UpdateFunctionConfiguration.mockResolvedValue({});
+
+      const config = {
+        FunctionName: 'test-function',
+        Handler: 'index.handler',
+        Runtime: 'nodejs18.x',
+        MemorySize: 512,
+        Timeout: 60,
+        Role: 'role-id-123',
+      };
+
+      await operations.updateFunctionConfiguration(config);
+
+      expect(mockScfClient.UpdateFunctionConfiguration).toHaveBeenCalledWith(
+        expect.objectContaining({
+          Role: 'role-id-123',
         }),
       );
     });
@@ -524,6 +608,15 @@ describe('scfOperations', () => {
           { FunctionName: 'test-function', Qualifier: '$DEFAULT', PathMatch: '/*' },
         ],
       });
+    });
+
+    it('should return null when GetCustomDomain response is empty', async () => {
+      mockScfClient.GetCustomDomain.mockResolvedValue(undefined);
+
+      const result = await operations.getCustomDomain('api.example.com');
+
+      expect(mockScfClient.GetCustomDomain).toHaveBeenCalledWith({ Domain: 'api.example.com' });
+      expect(result).toBeNull();
     });
 
     it('should return null when domain not found', async () => {
