@@ -210,6 +210,9 @@ describe('show command', () => {
 
     it('should fallback to local state when credentials not available', async () => {
       (hasCredentials as jest.Mock).mockReturnValue(false);
+      (createStateBackend as jest.Mock).mockImplementation(() => {
+        throw new Error('credentials not available');
+      });
 
       process.chdir(testDir);
       const stateDir = path.join(testDir, '.serverlessinsight');
