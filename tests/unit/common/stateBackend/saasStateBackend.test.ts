@@ -78,7 +78,7 @@ describe('saasStateBackend', () => {
 
       const result = await backend.loadState('aliyun', 'myapp', 'myservice', 'dev');
 
-      expect(mockApiClient.post).toHaveBeenCalledWith('api/v1/deployments/', {
+      expect(mockApiClient.post).toHaveBeenCalledWith('/api/v1/deployments/', {
         appName: 'myapp',
         serviceName: 'myservice',
         provider: 'aliyun',
@@ -87,7 +87,7 @@ describe('saasStateBackend', () => {
         source: 'cli',
       });
       expect(mockApiClient.get).toHaveBeenCalledWith(
-        'api/v1/apps/app-1/services/svc-1/state/current?stage=dev',
+        '/api/v1/apps/app-1/services/svc-1/state/current?stage=dev',
       );
       expect(result.version).toBe('3.0');
       expect(result).toEqual(
@@ -180,7 +180,7 @@ describe('saasStateBackend', () => {
       await backend.saveState(state, 'myapp', 'myservice', 'dev');
 
       expect(mockApiClient.post).toHaveBeenLastCalledWith(
-        'api/v1/apps/app-1/services/svc-1/state/sync',
+        '/api/v1/apps/app-1/services/svc-1/state/sync',
         expect.objectContaining({
           appName: 'myapp',
           serviceName: 'myservice',
@@ -198,7 +198,7 @@ describe('saasStateBackend', () => {
       const result = await backend.forceUnlock('deploy-1');
 
       expect(mockApiClient.post).toHaveBeenCalledWith(
-        'api/v1/deployments/deploy-1/force-unlock',
+        '/api/v1/deployments/deploy-1/force-unlock',
         {},
       );
       expect(result).toBe(true);
@@ -245,7 +245,7 @@ describe('saasStateBackend', () => {
       const lock = await backend.readLock();
 
       expect(mockApiClient.get).toHaveBeenLastCalledWith(
-        'api/v1/deployments/active?service_id=svc-1&stage=dev',
+        '/api/v1/deployments/active?service_id=svc-1&stage=dev',
       );
       expect(lock).toEqual(
         expect.objectContaining({
@@ -311,12 +311,12 @@ describe('saasStateBackend', () => {
       const fn = jest.fn().mockResolvedValue('ok');
       const result = await backend.withLock('deploy', fn);
 
-      expect(mockApiClient.patch).toHaveBeenCalledWith('api/v1/deployments/deploy-1', {
+      expect(mockApiClient.patch).toHaveBeenCalledWith('/api/v1/deployments/deploy-1', {
         phase: 'start',
       });
       expect(fn).toHaveBeenCalled();
       expect(mockApiClient.patch).toHaveBeenLastCalledWith(
-        'api/v1/deployments/deploy-1',
+        '/api/v1/deployments/deploy-1',
         expect.objectContaining({ phase: 'complete', result: 'ok' }),
       );
       expect(result).toBe('ok');
@@ -350,7 +350,7 @@ describe('saasStateBackend', () => {
       await expect(backend.withLock('deploy', fn)).rejects.toThrow('boom');
 
       expect(mockApiClient.patch).toHaveBeenLastCalledWith(
-        'api/v1/deployments/deploy-1',
+        '/api/v1/deployments/deploy-1',
         expect.objectContaining({ phase: 'fail' }),
       );
     });

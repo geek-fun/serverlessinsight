@@ -4,6 +4,7 @@ import { loadCredentials, getConsoleUrl } from '../credentialStore';
 import { StateBackend } from './types';
 import { StateFile, LockMetadata, LockOptions, CURRENT_STATE_VERSION } from '../../types';
 import { lang } from '../../lang';
+import crypto from 'node:crypto';
 
 export type SaasBackendContext = {
   readonly app: string;
@@ -60,7 +61,7 @@ export const createSaasStateBackend = (context: SaasBackendContext): StateBacken
    * This resolves YAML names to Console UUIDs and caches them.
    */
   const provision = async (provider: string, stage: string): Promise<void> => {
-    const result = await client.post<DeploymentInitResponse>('api/v1/deployments/', {
+    const result = await client.post<DeploymentInitResponse>('/api/v1/deployments/', {
       appName: context.app,
       serviceName: context.service,
       provider,
@@ -95,7 +96,7 @@ export const createSaasStateBackend = (context: SaasBackendContext): StateBacken
 
       try {
         const state = await client.get<{ stateJson: StateFile }>(
-          `api/v1/apps/${resolvedAppId}/services/${resolvedServiceId}/state/current?stage=${encodeURIComponent(stage)}`,
+          `/api/v1/apps/${resolvedAppId}/services/${resolvedServiceId}/state/current?stage=${encodeURIComponent(stage)}`,
         );
         // Attach console metadata so subsequent deploys have the UUIDs
         return {
@@ -124,16 +125,19 @@ export const createSaasStateBackend = (context: SaasBackendContext): StateBacken
       // If not provisioned yet, use the state's provider for provisioning
       await ensureProvisioned(state.provider, stage);
 
+      // The backend persists the full state file under state_json — send the whole
+      // StateFile (not just resources) so loadState round-trips it unchanged.
       const body = {
         appName: app,
         serviceName: service,
         provider: state.provider,
         stage,
-        stateJson: state.resources,
+        stateJson: state,
+        contentHash: crypto.createHash('sha256').update(JSON.stringify(state)).digest('hex'),
         resourceCount: Object.keys(state.resources).length,
       };
       await client.post(
-        `api/v1/apps/${resolvedAppId}/services/${resolvedServiceId}/state/sync`,
+        `/api/v1/apps/${resolvedAppId}/services/${resolvedServiceId}/state/sync`,
         body,
       );
     },
@@ -148,7 +152,7 @@ export const createSaasStateBackend = (context: SaasBackendContext): StateBacken
 
     forceUnlock: async (lockId: string): Promise<boolean> => {
       try {
-        await client.post(`api/v1/deployments/${lockId}/force-unlock`, {});
+        await client.post(`/api/v1/deployments/${lockId}/force-unlock`, {});
         return true;
       } catch {
         return false;
@@ -161,9 +165,10 @@ export const createSaasStateBackend = (context: SaasBackendContext): StateBacken
       }
       try {
         const active = await client.get<ActiveDeployment[]>(
-          `api/v1/deployments/active?service_id=${resolvedServiceId}&stage=${currentStage ?? ''}`,
+          `/api/v1/deployments/active?service_id=${resolvedServiceId}&stage=${currentStage ?? ''}`,
         );
-        if (active.length > 0) {
+        // Backend returns data:null (not []) when no deployment is active
+        if (Array.isArray(active) && active.length > 0) {
           const d = active[0];
           return {
             id: d.id,
@@ -194,12 +199,12 @@ export const createSaasStateBackend = (context: SaasBackendContext): StateBacken
       }
 
       // Acquire lock via phase:start (server checks for 409 conflicts)
-      await client.patch(`api/v1/deployments/${currentDeploymentId}`, { phase: 'start' });
+      await client.patch(`/api/v1/deployments/${currentDeploymentId}`, { phase: 'start' });
 
       try {
         const result = await fn();
         // Complete with success
-        await client.patch(`api/v1/deployments/${currentDeploymentId}`, {
+        await client.patch(`/api/v1/deployments/${currentDeploymentId}`, {
           phase: 'complete',
           result,
         });
@@ -207,7 +212,7 @@ export const createSaasStateBackend = (context: SaasBackendContext): StateBacken
       } catch (err) {
         // Fail with error
         try {
-          await client.patch(`api/v1/deployments/${currentDeploymentId}`, {
+          await client.patch(`/api/v1/deployments/${currentDeploymentId}`, {
             phase: 'fail',
             error: { message: err instanceof Error ? err.message : String(err) },
           });
