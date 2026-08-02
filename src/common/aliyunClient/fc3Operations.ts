@@ -269,4 +269,89 @@ const buildCodeLocation = (codePath: string, ossCode?: OssCodeLocation): fc.Inpu
   deleteFunction: async (functionName: string): Promise<void> => {
     await fc3Client.deleteFunction(functionName);
   },
+
+  createTrigger: async (
+    functionName: string,
+    triggerName: string,
+    triggerType: string,
+    triggerConfig: Record<string, unknown>,
+    qualifier?: string,
+  ): Promise<void> => {
+    const createTriggerInput = new fc.CreateTriggerInput({
+      triggerName,
+      triggerType,
+      triggerConfig: JSON.stringify(triggerConfig),
+      ...(qualifier ? { qualifier } : {}),
+    });
+    const request = new fc.CreateTriggerRequest({
+      body: createTriggerInput,
+    });
+    await fc3Client.createTrigger(functionName, request);
+  },
+
+  deleteTrigger: async (functionName: string, triggerName: string): Promise<void> => {
+    await fc3Client.deleteTrigger(functionName, triggerName);
+  },
+
+  createCustomDomain: async (
+    domainName: string,
+    protocol: string,
+    fnName: string,
+    certConfig?: { certName: string; certificate: string; privateKey: string },
+  ): Promise<void> => {
+    const createCustomDomainInput = new fc.CreateCustomDomainInput({
+      domainName,
+      protocol,
+      ...(certConfig ? { certConfig: new fc.CertConfig(certConfig) } : {}),
+      routeConfig: new fc.RouteConfig({
+        routes: [
+          new fc.PathConfig({
+            path: '/*',
+            functionName: fnName,
+          }),
+        ],
+      }),
+    });
+    const request = new fc.CreateCustomDomainRequest({
+      body: createCustomDomainInput,
+    });
+    await fc3Client.createCustomDomain(request);
+  },
+
+  getCustomDomain: async (
+    domainName: string,
+  ): Promise<{
+    domainName?: string;
+    protocol?: string;
+    certConfig?: { certName?: string; certificateId?: string };
+  } | null> => {
+    try {
+      const response = await fc3Client.getCustomDomain(domainName);
+      if (!response || !response.body) return null;
+      return {
+        domainName: response.body.domainName,
+        protocol: response.body.protocol,
+        certConfig: response.body.certConfig
+          ? {
+              certName: response.body.certConfig.certName,
+              certificateId: response.body.certConfig.certificateId,
+            }
+          : undefined,
+      };
+    } catch (error: unknown) {
+      if (
+        error &&
+        typeof error === 'object' &&
+        'code' in error &&
+        error.code === 'CustomDomainNotFound'
+      ) {
+        return null;
+      }
+      throw error;
+    }
+  },
+
+  deleteCustomDomain: async (domainName: string): Promise<void> => {
+    await fc3Client.deleteCustomDomain(domainName);
+  },
 });

@@ -159,6 +159,35 @@ export const functionSchema = {
             },
           },
         },
+        triggers: {
+          type: 'object',
+          additionalProperties: false,
+          properties: {
+            http: {
+              type: 'object',
+              required: ['auth_type'],
+              additionalProperties: false,
+              properties: {
+                auth_type: resolvableEnum(['public', 'iam']),
+                access: {
+                  type: 'array',
+                  items: resolvableEnum(['public', 'internal']),
+                  minItems: 1,
+                },
+              },
+            },
+          },
+        },
+        domain: {
+          type: 'object',
+          required: ['domain_name'],
+          additionalProperties: false,
+          properties: {
+            domain_name: { type: 'string' },
+            certificate_id: { type: 'string' },
+            protocol: resolvableEnum(['HTTP', 'HTTPS']),
+          },
+        },
         storage: {
           type: 'object',
           properties: {

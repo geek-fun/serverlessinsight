@@ -196,6 +196,97 @@ describe('parseFunction', () => {
     });
   });
 
+  it('should parse iam.role as a string (external role)', () => {
+    const result = parseFunction({
+      fn: {
+        name: 'external-role-fn',
+        code: { runtime: 'nodejs18', handler: 'index.handler', path: './src' },
+        iam: { role: 'acs:ram::123456789012:role/external-role' },
+      },
+    });
+
+    expect(result![0].iam).toEqual({ role: 'acs:ram::123456789012:role/external-role' });
+  });
+
+  it('should parse iam.role object with name and managed_policies', () => {
+    const result = parseFunction({
+      fn: {
+        name: 'role-fn',
+        code: { runtime: 'nodejs18', handler: 'index.handler', path: './src' },
+        iam: {
+          role: {
+            name: 'custom-role',
+            managed_policies: ['AliyunOSSFullAccess', 'AliyunLogFullAccess'],
+          },
+        },
+      },
+    });
+
+    expect(result![0].iam).toEqual({
+      role: {
+        name: 'custom-role',
+        managed_policies: ['AliyunOSSFullAccess', 'AliyunLogFullAccess'],
+      },
+    });
+  });
+
+  it('should parse iam.role object without name or managed_policies', () => {
+    const result = parseFunction({
+      fn: {
+        name: 'minimal-role-fn',
+        code: { runtime: 'nodejs18', handler: 'index.handler', path: './src' },
+        iam: { role: {} },
+      },
+    });
+
+    expect(result![0].iam).toEqual({ role: {} });
+  });
+
+  it('should parse statements with single string action and resource', () => {
+    const result = parseFunction({
+      fn: {
+        name: 'single-statement-fn',
+        code: { runtime: 'nodejs18', handler: 'index.handler', path: './src' },
+        iam: {
+          role: {
+            statements: [
+              {
+                effect: 'Allow' as const,
+                action: 'log:PostLogStoreLogs',
+                resource: 'acs:log:*:*:project/*/logstore/*',
+              },
+            ],
+          },
+        },
+      },
+    });
+
+    expect(result![0].iam).toEqual({
+      role: {
+        statements: [
+          {
+            sid: undefined,
+            effect: 'Allow',
+            action: ['log:PostLogStoreLogs'],
+            resource: ['acs:log:*:*:project/*/logstore/*'],
+          },
+        ],
+      },
+    });
+  });
+
+  it('should parse iam object without role', () => {
+    const result = parseFunction({
+      fn: {
+        name: 'no-role-fn',
+        code: { runtime: 'nodejs18', handler: 'index.handler', path: './src' },
+        iam: {},
+      },
+    });
+
+    expect(result![0].iam).toEqual({ role: undefined });
+  });
+
   it('should parse function without iam statements', () => {
     const result = parseFunction({
       fn: {
@@ -237,5 +328,116 @@ describe('parseFunction', () => {
 
     expect(result![0].memory).toBe(256);
     expect(result![0].timeout).toBe(30);
+  });
+
+  describe('triggers.http', () => {
+    it('should parse triggers.http with public auth_type', () => {
+      const result = parseFunction({
+        fn: {
+          name: 'http-fn',
+          code: { runtime: 'nodejs18', handler: 'index.handler', path: './src' },
+          triggers: { http: { auth_type: 'public' as const } },
+        },
+      });
+
+      expect(result![0].triggers).toEqual({ http: { auth_type: 'public', access: undefined } });
+    });
+
+    it('should parse triggers.http with iam auth_type', () => {
+      const result = parseFunction({
+        fn: {
+          name: 'http-fn',
+          triggers: { http: { auth_type: 'iam' as const } },
+        },
+      });
+
+      expect(result![0].triggers?.http?.auth_type).toBe('iam');
+    });
+
+    it('should parse triggers.http with access array', () => {
+      const result = parseFunction({
+        fn: {
+          name: 'http-fn',
+          triggers: {
+            http: {
+              auth_type: 'public' as const,
+              access: ['public' as const, 'internal' as const],
+            },
+          },
+        },
+      });
+
+      expect(result![0].triggers?.http?.access).toEqual(['public', 'internal']);
+    });
+
+    it('should throw when auth_type is missing', () => {
+      expect(() =>
+        parseFunction({
+          fn: {
+            name: 'http-fn',
+            triggers: { http: { auth_type: undefined as unknown as 'public' | 'iam' } },
+          },
+        }),
+      ).toThrow('HTTP_TRIGGER_AUTH_TYPE_REQUIRED');
+    });
+
+    it('should throw on invalid auth_type', () => {
+      expect(() =>
+        parseFunction({
+          fn: {
+            name: 'http-fn',
+            triggers: { http: { auth_type: 'invalid' as 'public' | 'iam' } },
+          },
+        }),
+      ).toThrow('INVALID_HTTP_TRIGGER_AUTH_TYPE');
+    });
+
+    it('should not include triggers key when no http trigger is set', () => {
+      const result = parseFunction({
+        fn: { name: 'no-trigger-fn' },
+      });
+
+      expect(result![0]).not.toHaveProperty('triggers');
+    });
+  });
+
+  describe('domain', () => {
+    it('should parse domain with domain_name only', () => {
+      const result = parseFunction({
+        fn: {
+          name: 'domain-fn',
+          domain: { domain_name: 'api.example.com' },
+        },
+      });
+
+      expect(result![0].domain).toEqual({
+        domain_name: 'api.example.com',
+        certificate_id: undefined,
+        protocol: 'HTTPS',
+      });
+    });
+
+    it('should parse domain with certificate_id and protocol', () => {
+      const result = parseFunction({
+        fn: {
+          name: 'domain-fn',
+          domain: { domain_name: 'api.example.com', certificate_id: 'cert-123', protocol: 'HTTP' },
+        },
+      });
+
+      expect(result![0].domain).toEqual({
+        domain_name: 'api.example.com',
+        certificate_id: 'cert-123',
+        protocol: 'HTTP',
+      });
+    });
+
+    it('should not include domain key when no domain is set', () => {
+      const result = parseFunction({
+        fn: { name: 'no-domain-fn' },
+      });
+
+      expect(result![0]).not.toHaveProperty('domain');
+    });
   });
 });
