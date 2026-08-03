@@ -6,6 +6,8 @@
 
 **Open source. Multi-cloud. Infrastructure as Code.**
 
+**Serverless CLI for Alibaba Cloud · Tencent Cloud · Huawei Cloud · Volcengine.**
+
 [![Release](https://img.shields.io/github/v/release/geek-fun/serverlessinsight?color=orange&label=release&logo=github)](https://github.com/geek-fun/serverlessinsight/releases)
 [![npm version](https://img.shields.io/npm/v/@geek-fun/serverlessinsight?color=orange&logo=npm)](https://www.npmjs.com/package/@geek-fun/serverlessinsight)
 [![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg&logo=apache)](LICENSE)
