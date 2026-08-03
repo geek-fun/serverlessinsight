@@ -36,6 +36,15 @@ jest.mock('node:readline', () => ({
   })),
 }));
 
+const mockServer = {
+  listen: jest.fn(),
+  close: jest.fn(),
+};
+jest.mock('node:http', () => ({
+  ...jest.requireActual('node:http'),
+  createServer: jest.fn(() => mockServer),
+}));
+
 import { login } from '../../../src/commands/login';
 import { validateApiKey } from '../../../src/common/apiClient';
 import { logger } from '../../../src/common/logger';
@@ -174,21 +183,28 @@ describe('login command', () => {
     const openMock = jest.requireMock('open') as jest.Mock;
     openMock.mockImplementation(() => Promise.resolve());
 
+    const createServerMock = jest.requireMock('node:http').createServer as jest.Mock;
+    mockServer.listen.mockImplementationOnce((_port: unknown, _host: unknown, cb: () => void) => {
+      cb();
+      return mockServer;
+    });
+
     const loginPromise = login({});
-    await new Promise((resolve) => setTimeout(resolve, 300));
+    await new Promise((resolve) => setTimeout(resolve, 50));
 
-    const fullUrl = openMock.mock.calls[0]?.[0] as string;
-    expect(fullUrl).toContain('/cli/authorize');
-    const redirectUri = new URL(fullUrl).searchParams.get('redirect_uri') as string;
-    const port = new URL(redirectUri).port;
-
-    const res = await fetch(
-      `http://127.0.0.1:${port}/callback?api_key=si_abcdef123456_0123456789abcdef0123456789abcdef01&org_id=org-1&org_name=Test%20Org&user_email=user%40test.com`,
+    const handler = createServerMock.mock.calls[0][0];
+    const mockRes = { writeHead: jest.fn(), end: jest.fn() };
+    await handler(
+      {
+        url: '/callback?api_key=si_abcdef123456_0123456789abcdef0123456789abcdef01&org_id=org-1&org_name=Test%20Org&user_email=user%40test.com',
+      },
+      mockRes,
     );
-    expect(res.status).toBe(200);
 
     await loginPromise;
 
+    expect(openMock).toHaveBeenCalledWith(expect.stringContaining('/cli/authorize'));
+    expect(mockServer.close).toHaveBeenCalled();
     expect(mockSaveCredentials).toHaveBeenCalledWith({
       apiKey: 'si_abcdef123456_0123456789abcdef0123456789abcdef01',
       consoleUrl: 'https://api.console.test.com',
