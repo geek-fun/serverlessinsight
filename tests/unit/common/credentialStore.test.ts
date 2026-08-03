@@ -6,8 +6,10 @@ jest.mock('../../../src/lang', () => ({
   lang: { __: (key: string) => key },
 }));
 
+import path from 'node:path';
+
 const mockHomedir = '/home/testuser';
-const mockCredentialsPath = '/home/testuser/.serverlessinsight/credentials.json';
+const mockCredentialsPath = path.join(mockHomedir, '.serverlessinsight', 'credentials.json');
 
 jest.mock('node:os', () => ({
   homedir: jest.fn(() => mockHomedir),
@@ -93,7 +95,7 @@ describe('credentialStore', () => {
         orgName: 'ON',
       };
       saveCredentials(creds);
-      expect(mockFs.mkdirSync).toHaveBeenCalledWith('/home/testuser/.serverlessinsight', {
+      expect(mockFs.mkdirSync).toHaveBeenCalledWith(path.join(mockHomedir, '.serverlessinsight'), {
         recursive: true,
       });
       expect(mockFs.writeFileSync).toHaveBeenCalledWith(
