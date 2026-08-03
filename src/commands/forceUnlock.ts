@@ -54,7 +54,6 @@ export const forceUnlockCommand = async (
     );
     const context = getContext();
     const iac = revalYaml(iacLocation, context);
-    backend = createStateBackend(iac.backend, context);
     if (!iac.backend || iac.backend.type === StateBackendType.SAAS) {
       logger.info(
         lang.__('SAAS_FORCE_UNLOCK_NOT_SUPPORTED', {
@@ -63,6 +62,7 @@ export const forceUnlockCommand = async (
       );
       return;
     }
+    backend = createStateBackend(iac.backend, context);
   } else {
     const stateDir = path.join(process.cwd(), '.serverlessinsight');
     let foundStatePath: string | undefined;
