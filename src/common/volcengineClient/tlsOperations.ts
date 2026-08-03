@@ -8,19 +8,74 @@ import type {
 } from './types';
 import { logger } from '../logger';
 import { lang } from '../../lang';
+import { pollUntil, PollingTimeoutError } from '../polling';
 
 type TlsSdkClient = Service;
 
 const WAIT_INTERVAL_MS = 5000;
 const MAX_WAIT_ATTEMPTS = 30;
 
-const delay = (ms: number): Promise<void> =>
-  new Promise((resolve) => {
-    setTimeout(resolve, ms);
-  });
+const waitForProjectReady = async (
+  getProject: (projectName: string) => Promise<TlsProjectInfo | null>,
+  projectName: string,
+): Promise<void> => {
+  try {
+    await pollUntil({
+      description: `TLS project ${projectName} to be ready`,
+      fetch: async () => {
+        const project = await getProject(projectName);
+        if (!project) {
+          throw new Error(lang.__('TLS_PROJECT_NOT_FOUND', { projectName }));
+        }
+        if (project.status === 'Failed' || project.status === 'Error') {
+          throw new Error(lang.__('TLS_PROJECT_FAILED', { projectName }));
+        }
+        return project;
+      },
+      isDone: (project) => project?.status === 'Active',
+      intervalMs: WAIT_INTERVAL_MS,
+      maxAttempts: MAX_WAIT_ATTEMPTS,
+    });
+  } catch (e) {
+    if (e instanceof PollingTimeoutError) {
+      throw new Error(lang.__('TLS_PROJECT_TIMEOUT', { projectName }), { cause: e });
+    }
+    throw e;
+  }
+};
+
+const waitForTopicReady = async (
+  getTopic: (projectName: string, topicName: string) => Promise<TlsTopicInfo | null>,
+  projectName: string,
+  topicName: string,
+): Promise<void> => {
+  try {
+    await pollUntil({
+      description: `TLS topic ${topicName} to be ready`,
+      fetch: async () => {
+        const topic = await getTopic(projectName, topicName);
+        if (!topic) {
+          throw new Error(lang.__('TLS_TOPIC_NOT_FOUND', { topicName }));
+        }
+        if (topic.status === 'Failed' || topic.status === 'Error') {
+          throw new Error(lang.__('TLS_TOPIC_FAILED', { topicName }));
+        }
+        return topic;
+      },
+      isDone: (topic) => topic?.status === 'Active',
+      intervalMs: WAIT_INTERVAL_MS,
+      maxAttempts: MAX_WAIT_ATTEMPTS,
+    });
+  } catch (e) {
+    if (e instanceof PollingTimeoutError) {
+      throw new Error(lang.__('TLS_TOPIC_TIMEOUT', { topicName }), { cause: e });
+    }
+    throw e;
+  }
+};
 
 export const createTlsOperations = (tlsClient: TlsSdkClient) => {
-  return {
+  const operations = {
     createProject: async (config: TlsProjectConfig): Promise<TlsProjectInfo> => {
       const response = await tlsClient.fetchOpenAPI({
         Action: 'CreateProject',
@@ -235,50 +290,13 @@ export const createTlsOperations = (tlsClient: TlsSdkClient) => {
     },
 
     waitForProject: async (projectName: string): Promise<void> => {
-      for (let attempt = 0; attempt < MAX_WAIT_ATTEMPTS; attempt++) {
-        const project = await tlsClient.fetchOpenAPI({
-          Action: 'GetProject',
-          Version: '2024-01-01',
-          method: 'POST',
-          headers: { 'content-type': 'application/json' },
-          data: { ProjectName: projectName },
-        });
-        const data = (project.Result || {}) as Record<string, unknown>;
-        const status = data.Status as string | undefined;
-        if (status === 'Active') {
-          return;
-        }
-        if (status === 'Failed' || status === 'Error') {
-          throw new Error(lang.__('TLS_PROJECT_FAILED', { projectName }));
-        }
-        await delay(WAIT_INTERVAL_MS);
-      }
-      throw new Error(lang.__('TLS_PROJECT_TIMEOUT', { projectName }));
+      await waitForProjectReady(operations.getProject, projectName);
     },
 
     waitForTopic: async (projectName: string, topicName: string): Promise<void> => {
-      for (let attempt = 0; attempt < MAX_WAIT_ATTEMPTS; attempt++) {
-        const topic = await tlsClient.fetchOpenAPI({
-          Action: 'GetTopic',
-          Version: '2024-01-01',
-          method: 'POST',
-          headers: { 'content-type': 'application/json' },
-          data: {
-            ProjectName: projectName,
-            TopicName: topicName,
-          },
-        });
-        const data = (topic.Result || {}) as Record<string, unknown>;
-        const status = data.Status as string | undefined;
-        if (status === 'Active') {
-          return;
-        }
-        if (status === 'Failed' || status === 'Error') {
-          throw new Error(lang.__('TLS_TOPIC_FAILED', { topicName }));
-        }
-        await delay(WAIT_INTERVAL_MS);
-      }
-      throw new Error(lang.__('TLS_TOPIC_TIMEOUT', { topicName }));
+      await waitForTopicReady(operations.getTopic, projectName, topicName);
     },
   };
+
+  return operations;
 };
