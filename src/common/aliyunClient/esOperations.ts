@@ -2,6 +2,7 @@ import EsServerlessClient, * as EsModels from '@alicloud/es-serverless20230627';
 import { Context } from '../../types';
 import { logger } from '../logger';
 import { lang } from '../../lang';
+import { pollUntil, PollingTimeoutError } from '../polling';
 
 export enum EsAppStatus {
   ACTIVE = 'ACTIVE',
@@ -101,31 +102,33 @@ const waitForEsAppReady = async (
   getApp: (appId: string) => Promise<EsInfo | null>,
   appId: string,
 ): Promise<void> => {
-  const maxAttempts = 60;
-  let attempts = 0;
-
-  while (attempts < maxAttempts) {
-    const app = await getApp(appId);
-
-    if (!app) {
-      throw new Error(lang.__('ES_APP_NOT_FOUND', { appId }));
+  try {
+    await pollUntil({
+      description: `ES app ${appId} to be ready`,
+      fetch: async () => {
+        const app = await getApp(appId);
+        if (!app) {
+          throw new Error(lang.__('ES_APP_NOT_FOUND', { appId }));
+        }
+        if (app.status === EsAppStatus.DELETED || app.status === EsAppStatus.FAILED) {
+          throw new Error(lang.__('ES_APP_ERROR_STATE', { status: app.status }));
+        }
+        return app;
+      },
+      isDone: (app) => app?.status === EsAppStatus.ACTIVE,
+      intervalMs: 10000,
+      maxAttempts: 60,
+      onProgress: (app) => {
+        if (app) logger.info(lang.__('ES_APP_WAITING', { appId, status: app.status ?? 'unknown' }));
+      },
+    });
+    logger.info(lang.__('ES_APP_READY', { appId }));
+  } catch (e) {
+    if (e instanceof PollingTimeoutError) {
+      throw new Error(lang.__('ES_APP_TIMEOUT_READY', { appId }), { cause: e });
     }
-
-    if (app.status === EsAppStatus.ACTIVE) {
-      logger.info(lang.__('ES_APP_READY', { appId }));
-      return;
-    }
-
-    if (app.status === EsAppStatus.DELETED || app.status === EsAppStatus.FAILED) {
-      throw new Error(lang.__('ES_APP_ERROR_STATE', { status: app.status }));
-    }
-
-    logger.info(lang.__('ES_APP_WAITING', { appId, status: app.status ?? 'unknown' }));
-    await new Promise((resolve) => setTimeout(resolve, 10000));
-    attempts++;
+    throw e;
   }
-
-  throw new Error(lang.__('ES_APP_TIMEOUT_READY', { appId }));
 };
 
 export const createEsOperations = (esClient: EsServerlessClient, context: Context) => {
@@ -259,24 +262,22 @@ export const createEsOperations = (esClient: EsServerlessClient, context: Contex
         await esClient.deleteApp(appName);
         logger.info(lang.__('ES_APP_DELETION_INITIATED', { appName }));
 
-        // Wait for app to be deleted
-        const maxAttempts = 60;
-        let attempts = 0;
-
-        while (attempts < maxAttempts) {
-          const app = await operations.getApp(appName);
-
-          if (!app) {
-            logger.info(lang.__('ES_APP_DELETED', { appName }));
-            return;
+        try {
+          await pollUntil({
+            description: `ES app ${appName} to be deleted`,
+            fetch: () => operations.getApp(appName),
+            isDone: (app) => app === null,
+            intervalMs: 10000,
+            maxAttempts: 60,
+            onProgress: () => logger.info(lang.__('ES_APP_WAITING_DELETE', { appName })),
+          });
+        } catch (e) {
+          if (e instanceof PollingTimeoutError) {
+            throw new Error(lang.__('ES_APP_TIMEOUT_DELETE', { appName }), { cause: e });
           }
-
-          logger.info(lang.__('ES_APP_WAITING_DELETE', { appName }));
-          await new Promise((resolve) => setTimeout(resolve, 10000));
-          attempts++;
+          throw e;
         }
-
-        throw new Error(lang.__('ES_APP_TIMEOUT_DELETE', { appName }));
+        logger.info(lang.__('ES_APP_DELETED', { appName }));
       } catch (error) {
         // If app is not found, consider it deleted
         if (
