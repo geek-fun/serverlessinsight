@@ -192,24 +192,11 @@ describe('saasStateBackend', () => {
   });
 
   describe('forceUnlock', () => {
-    it('should return true when force-unlock succeeds', async () => {
-      mockApiClient.post.mockResolvedValue({});
-
-      const result = await backend.forceUnlock('deploy-1');
-
-      expect(mockApiClient.post).toHaveBeenCalledWith(
-        '/api/v1/deployments/deploy-1/force-unlock',
-        {},
+    it('should throw a web-console hint (SaaS force-unlock is not supported via CLI)', async () => {
+      await expect(backend.forceUnlock('deploy-1')).rejects.toThrow(
+        'SAAS_FORCE_UNLOCK_NOT_SUPPORTED',
       );
-      expect(result).toBe(true);
-    });
-
-    it('should return false when force-unlock fails', async () => {
-      mockApiClient.post.mockRejectedValue(new Error('failed'));
-
-      const result = await backend.forceUnlock('deploy-1');
-
-      expect(result).toBe(false);
+      expect(mockApiClient.post).not.toHaveBeenCalled();
     });
   });
 

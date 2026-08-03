@@ -244,6 +244,8 @@ export const en = {
     '\n⚠️  WARNING: Force unlocking can cause state corruption if another\noperation is still running!',
   FORCE_UNLOCK_CONFIRM: 'Are you absolutely sure? (yes/no): ',
   FORCE_UNLOCK_CANCELLED: 'Force unlock cancelled',
+  SAAS_FORCE_UNLOCK_NOT_SUPPORTED:
+    'Force unlock is not supported via CLI for SaaS state. Open {{consoleUrl}} in your browser and unlock the deployment from the Deployments page.',
   PLAN_COMMAND_NOT_SUPPORTED: 'Plan command is not supported for this provider',
 
   // Lock info formatting

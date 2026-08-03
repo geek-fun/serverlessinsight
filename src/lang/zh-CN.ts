@@ -226,6 +226,8 @@ export const zhCN = {
   FORCE_UNLOCK_WARNING: '\n⚠️  警告: 强制解锁可能会导致状态损坏，如果另一个操作仍在运行！',
   FORCE_UNLOCK_CONFIRM: '您确定吗？(yes/no): ',
   FORCE_UNLOCK_CANCELLED: '强制解锁已取消',
+  SAAS_FORCE_UNLOCK_NOT_SUPPORTED:
+    'SaaS 模式下不支持通过 CLI 强制解锁。请在浏览器中打开 {{consoleUrl}}，从部署页面解锁该部署。',
   PLAN_COMMAND_NOT_SUPPORTED: '此提供商不支持 Plan 命令',
 
   // Lock info formatting

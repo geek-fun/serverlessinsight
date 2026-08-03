@@ -3,6 +3,7 @@ import { withLock, readLockFileForCommand } from '../../../src/common/lockManage
 import { getStatePath } from '../../../src/common/stateManager';
 import { LOCK_FILE_SUFFIX } from '../../../src/common/constants';
 import fs from 'node:fs';
+import path from 'node:path';
 
 jest.mock('node:readline', () => ({
   createInterface: jest.fn(() => ({
@@ -125,5 +126,25 @@ describe('forceUnlockCommand', () => {
     }
 
     await promise.catch(() => {});
+  });
+
+  it('should print a web-console hint instead of unlocking when SaaS backend (no backend config in yml)', async () => {
+    const loggerInfo = jest.spyOn(console, 'log').mockImplementation(() => {});
+    const ymlPath = path.join(testDir, 'saas.yml');
+    fs.writeFileSync(
+      ymlPath,
+      [
+        'version: 0.1.0',
+        'provider:',
+        '  name: aliyun',
+        '  region: cn-hongkong',
+        'app: test-app',
+        'service: test-service',
+      ].join('\n'),
+    );
+
+    await forceUnlockCommand('any-lock-id', { location: ymlPath });
+
+    loggerInfo.mockRestore();
   });
 });

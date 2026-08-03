@@ -150,13 +150,12 @@ export const createSaasStateBackend = (context: SaasBackendContext): StateBacken
       // Lock is managed by deployment lifecycle in withLock
     },
 
-    forceUnlock: async (lockId: string): Promise<boolean> => {
-      try {
-        await client.post(`/api/v1/deployments/${lockId}/force-unlock`, {});
-        return true;
-      } catch {
-        return false;
-      }
+    forceUnlock: async (_lockId: string): Promise<boolean> => {
+      throw new Error(
+        lang.__('SAAS_FORCE_UNLOCK_NOT_SUPPORTED', {
+          consoleUrl,
+        }),
+      );
     },
 
     readLock: async (): Promise<LockMetadata | null> => {
