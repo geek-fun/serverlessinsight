@@ -33,3 +33,9 @@ export const APIGW_DNS_PUBLIC_RESOLUTION_DELAY_MS = 30_000; // 30 seconds
 
 // RAM role propagation
 export const RAM_ROLE_PROPAGATION_DELAY_MS = 5000; // 5 seconds
+
+// SCF function status polling (CreateFunction is async — Status is 'Creating'
+// until the platform finishes provisioning; follow-up calls like CreateTrigger
+// fail with "Status is Creating, unsupport operate" if issued too early)
+export const SCF_STATUS_POLL_INTERVAL_MS = 3000; // 3 seconds
+export const SCF_STATUS_POLL_MAX_ATTEMPTS = 20; // up to 60 seconds

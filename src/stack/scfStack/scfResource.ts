@@ -4,7 +4,11 @@ import { readFileAsBase64 } from '../../common/fileUtils';
 import { functionToScfConfig, extractScfDefinition, ScfFunctionInfo } from './scfTypes';
 import { getResource, setResource, removeResource } from '../../common/stateManager';
 import { buildSid, attributesEqual, ProviderEnum, mapAuthType, mapAccess } from '../../common';
-import { RAM_ROLE_PROPAGATION_DELAY_MS } from '../../common/constants';
+import {
+  RAM_ROLE_PROPAGATION_DELAY_MS,
+  SCF_STATUS_POLL_INTERVAL_MS,
+  SCF_STATUS_POLL_MAX_ATTEMPTS,
+} from '../../common/constants';
 import { computeFileHash } from '../../common/hashUtils';
 import { logger } from '../../common/logger';
 import { lang } from '../../lang';
@@ -23,6 +27,24 @@ const delay = async (ms: number): Promise<void> => {
   await new Promise((resolve) => {
     setTimeout(resolve, ms);
   });
+};
+
+const waitForFunctionActive = async (
+  client: ReturnType<typeof createTencentClient>,
+  functionName: string,
+): Promise<void> => {
+  for (let attempt = 1; attempt <= SCF_STATUS_POLL_MAX_ATTEMPTS; attempt++) {
+    const info = await client.scf.getFunction(functionName);
+    if (info?.Status === 'Active') {
+      return;
+    }
+    if (attempt === SCF_STATUS_POLL_MAX_ATTEMPTS) {
+      throw new Error(
+        `Timed out waiting for SCF function ${functionName} to become Active (last status: ${info?.Status ?? 'unknown'})`,
+      );
+    }
+    await delay(SCF_STATUS_POLL_INTERVAL_MS);
+  }
 };
 
 const buildScfInstanceFromProvider = (info: ScfFunctionInfo, sid: string) => {
@@ -313,6 +335,12 @@ export const createResource = async (
   const client = createTencentClient(context);
 
   await client.scf.createFunction(config, codeBase64);
+
+  // CreateFunction is async on Tencent SCF — the function stays in 'Creating'
+  // status until the platform finishes provisioning. Follow-up calls (e.g.
+  // CreateTrigger) fail with "Status is Creating, unsupport operate" if issued
+  // too early, so poll until the function is Active before proceeding.
+  await waitForFunctionActive(client, fn.name);
 
   // Create HTTP trigger if configured
   if (fn.triggers?.http) {
