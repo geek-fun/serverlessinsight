@@ -355,45 +355,6 @@ describe('ScfResource', () => {
       );
     });
 
-    it('should wait for function to become Active before creating trigger', async () => {
-      (mockScfOperations.createFunction as jest.Mock).mockResolvedValue(undefined);
-      const fnWithHttpTrigger = {
-        ...testFunction,
-        triggers: { http: { auth_type: 'public' as const, access: ['public' as const] } },
-      };
-      // First call returns Creating (function still provisioning), second returns Active
-      (mockScfOperations.getFunction as jest.Mock)
-        .mockResolvedValueOnce({ ...mockFunctionInfo, Status: 'Creating' })
-        .mockResolvedValueOnce({ ...mockFunctionInfo, Status: 'Active' });
-      jest.spyOn(global, 'setTimeout').mockImplementation(((cb: () => void) => {
-        cb();
-        return 0 as unknown as ReturnType<typeof setTimeout>;
-      }) as typeof setTimeout);
-
-      await createResource(mockContext, fnWithHttpTrigger, initialState);
-
-      // 2 calls in the polling loop (Creating -> Active) + 1 refresh call
-      expect(mockScfOperations.getFunction).toHaveBeenCalledTimes(3);
-      expect(mockScfOperations.createTrigger).toHaveBeenCalled();
-    });
-
-    it('should throw a timeout error when function never becomes Active', async () => {
-      (mockScfOperations.createFunction as jest.Mock).mockResolvedValue(undefined);
-      (mockScfOperations.getFunction as jest.Mock).mockResolvedValue({
-        ...mockFunctionInfo,
-        Status: 'Creating',
-      });
-      jest.spyOn(global, 'setTimeout').mockImplementation(((cb: () => void) => {
-        cb();
-        return 0 as unknown as ReturnType<typeof setTimeout>;
-      }) as typeof setTimeout);
-
-      await expect(createResource(mockContext, testFunction, initialState)).rejects.toThrow(
-        /Timed out waiting for SCF function test-function to become Active/,
-      );
-      expect(mockScfOperations.createTrigger).not.toHaveBeenCalled();
-    });
-
     it('should handle function info with null/undefined CfsConfig fields', async () => {
       const functionInfoWithNullCfs = {
         ...mockFunctionInfo,
@@ -2754,10 +2715,9 @@ describe('ScfResource', () => {
 
       const newState = { ...initialState, resources: {} };
       (mockScfOperations.createFunction as jest.Mock).mockResolvedValue(undefined);
-      // Polling needs an Active status to pass; refresh then receives the all-null info
-      (mockScfOperations.getFunction as jest.Mock)
-        .mockResolvedValueOnce({ ...infoWithAllNulls, Status: 'Active' })
-        .mockResolvedValue(infoWithAllNulls);
+      // createFunction is mocked (polling lives in scfOperations), so getFunction
+      // here is only the post-create refresh — return the all-null info directly
+      (mockScfOperations.getFunction as jest.Mock).mockResolvedValue(infoWithAllNulls);
       (stateManager.setResource as jest.Mock).mockReturnValue(newState);
 
       await createResource(mockContext, testFunction, initialState);

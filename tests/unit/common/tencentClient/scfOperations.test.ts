@@ -37,9 +37,24 @@ describe('scfOperations', () => {
     jest.clearAllMocks();
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     operations = createScfOperations(mockScfClient as any);
+    // Default GetFunction to Active so waits (create/update/delete polling)
+    // complete immediately; individual tests override for poll behavior.
+    mockScfClient.GetFunction.mockResolvedValue({
+      FunctionName: 'test-function',
+      Status: 'Active',
+    });
   });
 
   describe('createFunction', () => {
+    beforeEach(() => {
+      // createFunction polls until Active — default GetFunction to ready so
+      // config-focused tests don't hang or time out
+      mockScfClient.GetFunction.mockResolvedValue({
+        FunctionName: 'test-function',
+        Status: 'Active',
+      });
+    });
+
     it('should create function successfully with basic config', async () => {
       mockScfClient.CreateFunction.mockResolvedValue({
         FunctionName: 'test-function',
@@ -145,6 +160,56 @@ describe('scfOperations', () => {
           Environment: expect.anything(),
         }),
       );
+    });
+
+    it('should poll until Status becomes Active before returning', async () => {
+      mockScfClient.CreateFunction.mockResolvedValue({});
+      mockScfClient.GetFunction.mockResolvedValueOnce({
+        FunctionName: 'test-function',
+        Status: 'Creating',
+      }).mockResolvedValueOnce({ FunctionName: 'test-function', Status: 'Active' });
+      jest.spyOn(global, 'setTimeout').mockImplementation(((cb: () => void) => {
+        cb();
+        return 0 as unknown as ReturnType<typeof setTimeout>;
+      }) as typeof setTimeout);
+
+      await operations.createFunction(
+        {
+          FunctionName: 'test-function',
+          Handler: 'index.handler',
+          Runtime: 'nodejs18.x',
+          MemorySize: 256,
+          Timeout: 30,
+        },
+        'BASE64_CODE',
+      );
+
+      expect(mockScfClient.GetFunction).toHaveBeenCalledTimes(2);
+    });
+
+    it('should throw PollingTimeoutError when Status never becomes Active', async () => {
+      mockScfClient.CreateFunction.mockResolvedValue({});
+      mockScfClient.GetFunction.mockResolvedValue({
+        FunctionName: 'test-function',
+        Status: 'Creating',
+      });
+      jest.spyOn(global, 'setTimeout').mockImplementation(((cb: () => void) => {
+        cb();
+        return 0 as unknown as ReturnType<typeof setTimeout>;
+      }) as typeof setTimeout);
+
+      await expect(
+        operations.createFunction(
+          {
+            FunctionName: 'test-function',
+            Handler: 'index.handler',
+            Runtime: 'nodejs18.x',
+            MemorySize: 256,
+            Timeout: 30,
+          },
+          'BASE64_CODE',
+        ),
+      ).rejects.toThrow(/Polling timed out: SCF function test-function to become Active/);
     });
   });
 
@@ -437,6 +502,8 @@ describe('scfOperations', () => {
   describe('deleteFunction', () => {
     it('should delete function successfully', async () => {
       mockScfClient.DeleteFunction.mockResolvedValue({});
+      // waitForFunctionDeleted polls until GetFunction returns null
+      mockScfClient.GetFunction.mockResolvedValue(null);
 
       await operations.deleteFunction('test-function');
 
