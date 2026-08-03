@@ -2,6 +2,7 @@ import { Context } from '../../types';
 import { TencentEsSpaceConfig, TencentEsSpaceInfo, TencentEsSpaceStatus } from './types';
 import { logger } from '../logger';
 import { lang } from '../../lang';
+import { pollUntil, PollingTimeoutError } from '../polling';
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type EsClient = any;
@@ -10,62 +11,64 @@ const waitForSpaceReady = async (
   getSpace: (spaceId: string) => Promise<TencentEsSpaceInfo | null>,
   spaceId: string,
 ): Promise<void> => {
-  const maxAttempts = 60;
-  let attempts = 0;
-
-  while (attempts < maxAttempts) {
-    const space = await getSpace(spaceId);
-
-    if (!space) {
-      throw new Error(lang.__('TENCENT_ES_SPACE_NOT_FOUND', { spaceId }));
+  try {
+    await pollUntil({
+      description: `Tencent ES space ${spaceId} to be ready`,
+      fetch: async () => {
+        const space = await getSpace(spaceId);
+        if (!space) {
+          throw new Error(lang.__('TENCENT_ES_SPACE_NOT_FOUND', { spaceId }));
+        }
+        if (
+          space.Status === TencentEsSpaceStatus.DELETED ||
+          space.Status === TencentEsSpaceStatus.DELETING
+        ) {
+          throw new Error(
+            lang.__('TENCENT_ES_SPACE_ERROR_STATE', { status: String(space.Status) }),
+          );
+        }
+        return space;
+      },
+      isDone: (space) => space?.Status === TencentEsSpaceStatus.NORMAL,
+      intervalMs: 10000,
+      maxAttempts: 60,
+      onProgress: (space) => {
+        if (space) {
+          logger.info(
+            lang.__('TENCENT_ES_SPACE_WAITING', { spaceId, status: String(space.Status) }),
+          );
+        }
+      },
+    });
+    logger.info(lang.__('TENCENT_ES_SPACE_READY', { spaceId }));
+  } catch (e) {
+    if (e instanceof PollingTimeoutError) {
+      throw new Error(lang.__('TENCENT_ES_SPACE_TIMEOUT_READY', { spaceId }), { cause: e });
     }
-
-    if (space.Status === TencentEsSpaceStatus.NORMAL) {
-      logger.info(lang.__('TENCENT_ES_SPACE_READY', { spaceId }));
-      return;
-    }
-
-    if (
-      space.Status === TencentEsSpaceStatus.DELETED ||
-      space.Status === TencentEsSpaceStatus.DELETING
-    ) {
-      throw new Error(lang.__('TENCENT_ES_SPACE_ERROR_STATE', { status: String(space.Status) }));
-    }
-
-    logger.info(lang.__('TENCENT_ES_SPACE_WAITING', { spaceId, status: String(space.Status) }));
-    await new Promise((resolve) => setTimeout(resolve, 10000));
-    attempts++;
+    throw e;
   }
-
-  throw new Error(lang.__('TENCENT_ES_SPACE_TIMEOUT_READY', { spaceId }));
 };
 
 const waitForSpaceDeleted = async (
   getSpace: (spaceId: string) => Promise<TencentEsSpaceInfo | null>,
   spaceId: string,
 ): Promise<void> => {
-  const maxAttempts = 60;
-  let attempts = 0;
-
-  while (attempts < maxAttempts) {
-    const space = await getSpace(spaceId);
-
-    if (!space) {
-      logger.info(lang.__('TENCENT_ES_SPACE_DELETED', { spaceId }));
-      return;
+  try {
+    await pollUntil({
+      description: `Tencent ES space ${spaceId} to be deleted`,
+      fetch: () => getSpace(spaceId),
+      isDone: (space) => space === null || space?.Status === TencentEsSpaceStatus.DELETED,
+      intervalMs: 10000,
+      maxAttempts: 60,
+      onProgress: () => logger.info(lang.__('TENCENT_ES_SPACE_WAITING_DELETE', { spaceId })),
+    });
+    logger.info(lang.__('TENCENT_ES_SPACE_DELETED', { spaceId }));
+  } catch (e) {
+    if (e instanceof PollingTimeoutError) {
+      throw new Error(lang.__('TENCENT_ES_SPACE_TIMEOUT_DELETE', { spaceId }), { cause: e });
     }
-
-    if (space.Status === TencentEsSpaceStatus.DELETED) {
-      logger.info(lang.__('TENCENT_ES_SPACE_DELETED', { spaceId }));
-      return;
-    }
-
-    logger.info(lang.__('TENCENT_ES_SPACE_WAITING_DELETE', { spaceId }));
-    await new Promise((resolve) => setTimeout(resolve, 10000));
-    attempts++;
+    throw e;
   }
-
-  throw new Error(lang.__('TENCENT_ES_SPACE_TIMEOUT_DELETE', { spaceId }));
 };
 
 export const createTencentEsOperations = (esClient: EsClient, _context: Context) => {
