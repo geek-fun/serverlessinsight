@@ -2,6 +2,7 @@ import RdsClient from '@alicloud/rds20140815';
 import { Context } from '../../types';
 import { logger } from '../logger';
 import { lang } from '../../lang';
+import { pollUntil, PollingTimeoutError } from '../polling';
 
 export enum RdsInstanceStatus {
   RUNNING = 'Running',
@@ -70,39 +71,45 @@ const waitForRdsInstanceReady = async (
   getInstance: (instanceId: string) => Promise<RdsInfo | null>,
   instanceId: string,
 ): Promise<void> => {
-  const maxAttempts = 60;
-  let attempts = 0;
-
-  while (attempts < maxAttempts) {
-    const instance = await getInstance(instanceId);
-
-    if (!instance) {
-      throw new Error(lang.__('RDS_INSTANCE_NOT_FOUND', { instanceId }));
+  try {
+    await pollUntil({
+      description: `RDS instance ${instanceId} to be ready`,
+      fetch: async () => {
+        const instance = await getInstance(instanceId);
+        if (!instance) {
+          throw new Error(lang.__('RDS_INSTANCE_NOT_FOUND', { instanceId }));
+        }
+        if (
+          instance.dbInstanceStatus === RdsInstanceStatus.DELETED ||
+          instance.dbInstanceStatus === RdsInstanceStatus.DELETE_FAILED
+        ) {
+          throw new Error(
+            lang.__('RDS_INSTANCE_ERROR_STATE', { status: instance.dbInstanceStatus }),
+          );
+        }
+        return instance;
+      },
+      isDone: (instance) => instance?.dbInstanceStatus === RdsInstanceStatus.RUNNING,
+      intervalMs: 10000,
+      maxAttempts: 60,
+      onProgress: (instance) => {
+        if (instance) {
+          logger.info(
+            lang.__('RDS_INSTANCE_WAITING', {
+              instanceId,
+              status: instance.dbInstanceStatus ?? 'unknown',
+            }),
+          );
+        }
+      },
+    });
+    logger.info(lang.__('RDS_INSTANCE_READY', { instanceId }));
+  } catch (e) {
+    if (e instanceof PollingTimeoutError) {
+      throw new Error(lang.__('RDS_INSTANCE_TIMEOUT_READY', { instanceId }), { cause: e });
     }
-
-    if (instance.dbInstanceStatus === RdsInstanceStatus.RUNNING) {
-      logger.info(lang.__('RDS_INSTANCE_READY', { instanceId }));
-      return;
-    }
-
-    if (
-      instance.dbInstanceStatus === RdsInstanceStatus.DELETED ||
-      instance.dbInstanceStatus === RdsInstanceStatus.DELETE_FAILED
-    ) {
-      throw new Error(lang.__('RDS_INSTANCE_ERROR_STATE', { status: instance.dbInstanceStatus }));
-    }
-
-    logger.info(
-      lang.__('RDS_INSTANCE_WAITING', {
-        instanceId,
-        status: instance.dbInstanceStatus ?? 'unknown',
-      }),
-    );
-    await new Promise((resolve) => setTimeout(resolve, 10000));
-    attempts++;
+    throw e;
   }
-
-  throw new Error(lang.__('RDS_INSTANCE_TIMEOUT_READY', { instanceId }));
 };
 
 export const createRdsOperations = (rdsClient: RdsClient, context: Context) => {
@@ -258,23 +265,22 @@ export const createRdsOperations = (rdsClient: RdsClient, context: Context) => {
         logger.info(lang.__('RDS_INSTANCE_DELETION_INITIATED', { instanceId }));
 
         // Wait for instance to be deleted
-        const maxAttempts = 60;
-        let attempts = 0;
-
-        while (attempts < maxAttempts) {
-          const instance = await operations.getInstance(instanceId);
-
-          if (!instance) {
-            logger.info(lang.__('RDS_INSTANCE_DELETED', { instanceId }));
-            return;
+        try {
+          await pollUntil({
+            description: `RDS instance ${instanceId} to be deleted`,
+            fetch: () => operations.getInstance(instanceId),
+            isDone: (instance) => instance === null,
+            intervalMs: 10000,
+            maxAttempts: 60,
+            onProgress: () => logger.info(lang.__('RDS_INSTANCE_WAITING_DELETE', { instanceId })),
+          });
+        } catch (e) {
+          if (e instanceof PollingTimeoutError) {
+            throw new Error(lang.__('RDS_INSTANCE_TIMEOUT_DELETE', { instanceId }), { cause: e });
           }
-
-          logger.info(lang.__('RDS_INSTANCE_WAITING_DELETE', { instanceId }));
-          await new Promise((resolve) => setTimeout(resolve, 10000));
-          attempts++;
+          throw e;
         }
-
-        throw new Error(lang.__('RDS_INSTANCE_TIMEOUT_DELETE', { instanceId }));
+        logger.info(lang.__('RDS_INSTANCE_DELETED', { instanceId }));
       } catch (error) {
         // If instance is not found, consider it deleted
         if (
