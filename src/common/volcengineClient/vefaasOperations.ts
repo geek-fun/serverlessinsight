@@ -2,6 +2,8 @@ import { Service } from '@volcengine/openapi';
 import type { VefaasFunctionConfig, VefaasFunctionInfo } from './types';
 import { logger } from '../../common/logger';
 import { lang } from '../../lang';
+import { pollUntil, PollingTimeoutError } from '../polling';
+import { SCF_STATUS_POLL_INTERVAL_MS, SCF_STATUS_POLL_MAX_ATTEMPTS } from '../constants';
 import * as fs from 'node:fs';
 
 type VefaasSdkClient = Service;
@@ -132,7 +134,48 @@ export const createVefaasOperations = (client: VefaasSdkClient) => {
     region: (client as unknown as { region: string }).region,
   });
 
-  return {
+  const operations = {
+    waitForFunctionActive: async (functionName: string): Promise<VefaasFunctionInfo | null> => {
+      try {
+        return await pollUntil({
+          description: `veFaaS function ${functionName} to become Active`,
+          fetch: () => operations.getFunction(functionName),
+          isDone: (info) => info?.status === 'Active',
+          intervalMs: SCF_STATUS_POLL_INTERVAL_MS,
+          maxAttempts: SCF_STATUS_POLL_MAX_ATTEMPTS,
+        });
+      } catch (e) {
+        if (e instanceof PollingTimeoutError) {
+          throw new Error(
+            `Timed out waiting for veFaaS function ${functionName} to become Active`,
+            {
+              cause: e,
+            },
+          );
+        }
+        throw e;
+      }
+    },
+
+    waitForFunctionDeleted: async (functionName: string): Promise<void> => {
+      try {
+        await pollUntil({
+          description: `veFaaS function ${functionName} to be deleted`,
+          fetch: () => operations.getFunction(functionName),
+          isDone: (info) => info === null,
+          intervalMs: SCF_STATUS_POLL_INTERVAL_MS,
+          maxAttempts: SCF_STATUS_POLL_MAX_ATTEMPTS,
+        });
+      } catch (e) {
+        if (e instanceof PollingTimeoutError) {
+          throw new Error(`Timed out waiting for veFaaS function ${functionName} to be deleted`, {
+            cause: e,
+          });
+        }
+        throw e;
+      }
+    },
+
     createFunction: async (config: VefaasFunctionConfig, codePath: string): Promise<void> => {
       const { size, sizeMB } = await validateCodePackage(codePath);
 
@@ -227,6 +270,11 @@ export const createVefaasOperations = (client: VefaasSdkClient) => {
         headers: { 'content-type': 'application/json' },
         data: params,
       });
+
+      // CreateFunction is async on veFaaS — the function stays non-Active until
+      // the platform finishes provisioning. Follow-up calls (e.g. update or
+      // trigger setup) fail if issued too early, so poll until Active.
+      await operations.waitForFunctionActive(config.functionName);
 
       logger.info(lang.__('FUNCTION_CREATED', { functionName: config.functionName }));
     },
@@ -325,6 +373,7 @@ export const createVefaasOperations = (client: VefaasSdkClient) => {
         }),
       };
 
+      await operations.waitForFunctionActive(config.functionName);
       await client.fetchOpenAPI({
         Action: 'UpdateFunction',
         Version: '2024-06-06',
@@ -378,6 +427,7 @@ export const createVefaasOperations = (client: VefaasSdkClient) => {
         };
       }
 
+      await operations.waitForFunctionActive(functionName);
       await client.fetchOpenAPI({
         Action: 'UpdateFunction',
         Version: '2024-06-06',
@@ -400,6 +450,10 @@ export const createVefaasOperations = (client: VefaasSdkClient) => {
         headers: { 'content-type': 'application/json' },
         data: { FunctionName: functionName },
       });
+
+      // DeleteFunction returns immediately — wait for the function to be gone so
+      // a subsequent create (retry) does not collide with a still-deleting function.
+      await operations.waitForFunctionDeleted(functionName);
 
       logger.info(lang.__('FUNCTION_DELETED', { functionName }));
     },
@@ -430,4 +484,6 @@ export const createVefaasOperations = (client: VefaasSdkClient) => {
       }));
     },
   };
+
+  return operations;
 };
