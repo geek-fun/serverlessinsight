@@ -47,7 +47,7 @@ export const generateBucketPlan = async (
       })();
       const desiredDefinition = extractOssBucketDefinition(config, websiteCodeHash);
 
-      if (!currentState) {
+      if (!currentState || currentState.status === 'tainted') {
         return {
           logicalId,
           action: 'create',

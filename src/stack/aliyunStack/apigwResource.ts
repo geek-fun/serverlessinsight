@@ -6,6 +6,7 @@ import {
   ResourceTypeEnum,
   StateFile,
   CdnConfig,
+  PartialResourceError,
 } from '../../types';
 import { createAliyunClient, ApigwCustomDomainConfig } from '../../common/aliyunClient';
 import {
@@ -515,131 +516,147 @@ export const createApigwResource = async (
     },
     instances,
     lastUpdated: new Date().toISOString(),
+    status: 'tainted',
   };
 
-  state = setResource(state, logicalId, partialResourceState);
+  const stateAfterDependents = setResource(state, logicalId, partialResourceState);
+  let currentState = stateAfterDependents;
 
-  // Create APIs and deployments for each trigger
-  for (const trigger of event.triggers) {
-    const apiConfig = triggerToApigwApiConfig(
-      event,
-      trigger,
-      groupId,
-      serviceName,
-      context.region,
-      context.stage,
-      roleArn,
-    );
-
-    const apiId = await client.apigw.createApi(apiConfig);
-
-    // Get API info for state
-    const apiInfo = await client.apigw.getApi(groupId, apiId);
-    if (apiInfo) {
-      instances.push(buildApigwApiInstanceFromProvider(apiInfo, context.stage, groupId));
-    }
-
-    // Deploy API to RELEASE stage
-    const deploymentConfig = {
-      groupId,
-      apiId,
-      stageName: 'RELEASE' as const,
-      description: `${serviceName} API deployment for ${trigger.method} ${trigger.path}`,
-    };
-
-    await client.apigw.deployApi(deploymentConfig);
-    instances.push(buildApigwDeploymentInstance(groupId, apiId, 'RELEASE', context.stage));
-
-    const updatedResourceState: ResourceState = {
-      mode: 'managed',
-      region: context.region,
-      definition: {
-        ...groupDefinition,
-        triggers: event.triggers.map((t) => ({
-          method: t.method,
-          path: t.path,
-          backend: t.backend,
-        })),
-        domain: extractEventDomainDefinition(event.domain),
-      },
-      instances,
-      lastUpdated: new Date().toISOString(),
-    };
-    state = setResource(state, logicalId, updatedResourceState);
-  }
-
-  if (event.domain) {
-    try {
-      const primaryDomain = event.domain.domain_name as string;
-      const wwwBindApex = event.domain.www_bind_apex === true;
-      const isCdnEnabled = getIsCdnEnabled(event);
-      const originDomain = groupInfo.subDomain;
-
-      if (!originDomain) {
-        throw new Error(`API Gateway group ${groupId} has no subDomain for CDN origin`);
-      }
-
-      const domainConfig = await buildDomainBindingConfig(
-        event.domain,
+  try {
+    // Create APIs and deployments for each trigger
+    for (const trigger of event.triggers) {
+      const apiConfig = triggerToApigwApiConfig(
+        event,
+        trigger,
         groupId,
         serviceName,
-        event.key,
+        context.region,
         context.stage,
-        client,
+        roleArn,
       );
 
-      if (isCdnEnabled) {
-        await createApigwCdnDistribution(
-          context,
-          client,
-          event,
-          primaryDomain,
-          originDomain,
-          instances,
-          {
-            certificateBody: domainConfig.certificateBody,
-            certificatePrivateKey: domainConfig.certificatePrivateKey,
-          },
-        );
-      } else {
-        state = await client.apigw.bindCustomDomain(domainConfig, state, logicalId);
+      const apiId = await client.apigw.createApi(apiConfig);
+
+      // Get API info for state
+      const apiInfo = await client.apigw.getApi(groupId, apiId);
+      if (apiInfo) {
+        instances.push(buildApigwApiInstanceFromProvider(apiInfo, context.stage, groupId));
       }
 
-      const wwwDomain = wwwBindApex ? deriveWwwDomain(primaryDomain) : null;
-      if (wwwDomain) {
-        logger.info(lang.__('APIGW_BINDING_DOMAIN', { domain: wwwDomain }));
+      // Deploy API to RELEASE stage
+      const deploymentConfig = {
+        groupId,
+        apiId,
+        stageName: 'RELEASE' as const,
+        description: `${serviceName} API deployment for ${trigger.method} ${trigger.path}`,
+      };
 
-        const wwwDomainConfig: ApigwCustomDomainConfig = {
-          ...domainConfig,
-          domainName: wwwDomain,
-          certificateName: domainConfig.certificateName
-            ? `${domainConfig.certificateName}-www`
-            : undefined,
-        };
+      await client.apigw.deployApi(deploymentConfig);
+      instances.push(buildApigwDeploymentInstance(groupId, apiId, 'RELEASE', context.stage));
+
+      const updatedResourceState: ResourceState = {
+        mode: 'managed',
+        region: context.region,
+        definition: {
+          ...groupDefinition,
+          triggers: event.triggers.map((t) => ({
+            method: t.method,
+            path: t.path,
+            backend: t.backend,
+          })),
+          domain: extractEventDomainDefinition(event.domain),
+        },
+        instances,
+        lastUpdated: new Date().toISOString(),
+      };
+      currentState = setResource(currentState, logicalId, updatedResourceState);
+    }
+
+    if (event.domain) {
+      try {
+        const primaryDomain = event.domain.domain_name as string;
+        const wwwBindApex = event.domain.www_bind_apex === true;
+        const isCdnEnabled = getIsCdnEnabled(event);
+        const originDomain = groupInfo.subDomain;
+
+        if (!originDomain) {
+          throw new Error(`API Gateway group ${groupId} has no subDomain for CDN origin`);
+        }
+
+        const domainConfig = await buildDomainBindingConfig(
+          event.domain,
+          groupId,
+          serviceName,
+          event.key,
+          context.stage,
+          client,
+        );
 
         if (isCdnEnabled) {
           await createApigwCdnDistribution(
             context,
             client,
             event,
-            wwwDomain,
+            primaryDomain,
             originDomain,
             instances,
             {
-              certificateBody: wwwDomainConfig.certificateBody,
-              certificatePrivateKey: wwwDomainConfig.certificatePrivateKey,
+              certificateBody: domainConfig.certificateBody,
+              certificatePrivateKey: domainConfig.certificatePrivateKey,
             },
           );
         } else {
-          state = await client.apigw.bindCustomDomain(wwwDomainConfig, state, logicalId);
+          currentState = await client.apigw.bindCustomDomain(domainConfig, currentState, logicalId);
         }
+
+        const wwwDomain = wwwBindApex ? deriveWwwDomain(primaryDomain) : null;
+        if (wwwDomain) {
+          logger.info(lang.__('APIGW_BINDING_DOMAIN', { domain: wwwDomain }));
+
+          const wwwDomainConfig: ApigwCustomDomainConfig = {
+            ...domainConfig,
+            domainName: wwwDomain,
+            certificateName: domainConfig.certificateName
+              ? `${domainConfig.certificateName}-www`
+              : undefined,
+          };
+
+          if (isCdnEnabled) {
+            await createApigwCdnDistribution(
+              context,
+              client,
+              event,
+              wwwDomain,
+              originDomain,
+              instances,
+              {
+                certificateBody: wwwDomainConfig.certificateBody,
+                certificatePrivateKey: wwwDomainConfig.certificatePrivateKey,
+              },
+            );
+          } else {
+            currentState = await client.apigw.bindCustomDomain(
+              wwwDomainConfig,
+              currentState,
+              logicalId,
+            );
+          }
+        }
+      } catch (error) {
+        logger.error(lang.__('APIGW_DOMAIN_BINDING_FAILED', { error: String(error) }));
+        logger.info(lang.__('APIGW_GROUP_APIS_CREATED_DOMAIN_FAILED'));
+        logger.info(lang.__('APIGW_STATE_SAVED_RETRY'));
+        throw new PartialResourceError(
+          stateAfterDependents,
+          error instanceof Error ? error : new Error(String(error)),
+        );
       }
-    } catch (error) {
-      logger.error(lang.__('APIGW_DOMAIN_BINDING_FAILED', { error: String(error) }));
-      logger.info(lang.__('APIGW_GROUP_APIS_CREATED_DOMAIN_FAILED'));
-      logger.info(lang.__('APIGW_STATE_SAVED_RETRY'));
-      return state;
     }
+  } catch (error) {
+    throw new PartialResourceError(
+      stateAfterDependents,
+      error instanceof Error ? error : new Error(String(error)),
+    );
   }
 
   // Update final state with all instances (group + APIs + deployments)
@@ -659,7 +676,7 @@ export const createApigwResource = async (
     lastUpdated: new Date().toISOString(),
   };
 
-  return setResource(state, logicalId, finalResourceState);
+  return setResource(currentState, logicalId, finalResourceState);
 };
 
 export const readApigwResource = async (context: Context, groupId: string) => {
@@ -1139,31 +1156,19 @@ export const deleteApigwResource = async (
 
   const deployments = existingInstances.filter((i) => i.type === 'ALIYUN_APIGW_DEPLOYMENT');
   for (const deployment of deployments) {
-    try {
-      await client.apigw.abolishApi(
-        (deployment.groupId as string) || groupId,
-        deployment.apiId as string,
-        (deployment.stageName as string) || 'RELEASE',
-      );
-    } catch {
-      // Deployment might already be abolished
-    }
+    await client.apigw.abolishApi(
+      (deployment.groupId as string) || groupId,
+      deployment.apiId as string,
+      (deployment.stageName as string) || 'RELEASE',
+    );
   }
 
   const apis = existingInstances.filter((i) => i.type === 'ALIYUN_APIGW_API');
   for (const api of apis) {
-    try {
-      await client.apigw.deleteApi(groupId, api.id);
-    } catch {
-      // API might already be deleted
-    }
+    await client.apigw.deleteApi(groupId, api.id);
   }
 
-  try {
-    await client.apigw.deleteApiGroup(groupId);
-  } catch {
-    // Group might already be deleted
-  }
+  await client.apigw.deleteApiGroup(groupId);
 
   return removeResource(state, logicalId);
 };

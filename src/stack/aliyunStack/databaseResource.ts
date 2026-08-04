@@ -1,4 +1,11 @@
-import { Context, DatabaseDomain, DatabaseEnum, ResourceState, StateFile } from '../../types';
+import {
+  Context,
+  DatabaseDomain,
+  DatabaseEnum,
+  PartialResourceError,
+  ResourceState,
+  StateFile,
+} from '../../types';
 import { createAliyunClient } from '../../common/aliyunClient';
 import { databaseToRdsConfig, extractRdsDefinition, RdsInfo } from './rdsTypes';
 import { databaseToEsConfig, extractEsDefinition, EsInfo } from './esServerlessTypes';
@@ -103,68 +110,90 @@ export const createDatabaseResource = async (
   state: StateFile,
 ): Promise<StateFile> => {
   const client = createAliyunClient(context);
+  const logicalId = `databases.${database.key}`;
 
-  let instanceId: string;
-  let definition: Record<string, unknown>;
-  let instance: unknown;
-  let resourceType: string;
+  const isEs = database.type === DatabaseEnum.ELASTICSEARCH_SERVERLESS;
+  const isRds = [
+    DatabaseEnum.RDS_MYSQL_SERVERLESS,
+    DatabaseEnum.RDS_PGSQL_SERVERLESS,
+    DatabaseEnum.RDS_MSSQL_SERVERLESS,
+  ].includes(database.type);
 
-  if (database.type === DatabaseEnum.ELASTICSEARCH_SERVERLESS) {
-    // Create Elasticsearch Serverless app
-    const config = databaseToEsConfig(database);
-    instanceId = await client.es.createApp(config);
-
-    // Refresh state from provider to get all attributes
-    const appInfo = await client.es.getApp(instanceId);
-    if (!appInfo) {
-      throw new Error(`Failed to refresh state for ES app: ${instanceId}`);
-    }
-
-    definition = extractEsDefinition(config);
-    const sid = buildSid('aliyun', 'es', context.stage, instanceId);
-    instance = buildEsInstanceFromProvider(appInfo, sid);
-    resourceType = 'ALIYUN_ES_SERVERLESS';
-  } else if (
-    [
-      DatabaseEnum.RDS_MYSQL_SERVERLESS,
-      DatabaseEnum.RDS_PGSQL_SERVERLESS,
-      DatabaseEnum.RDS_MSSQL_SERVERLESS,
-    ].includes(database.type)
-  ) {
-    // Create RDS Serverless instance
-    const config = databaseToRdsConfig(database);
-    instanceId = await client.rds.createInstance(config);
-
-    // Refresh state from provider to get all attributes
-    const rdsInfo = await client.rds.getInstance(instanceId);
-    if (!rdsInfo) {
-      throw new Error(`Failed to refresh state for RDS instance: ${instanceId}`);
-    }
-
-    definition = extractRdsDefinition(config);
-    const sid = buildSid('aliyun', 'rds', context.stage, instanceId);
-    instance = buildRdsInstanceFromProvider(rdsInfo, sid);
-    resourceType = 'ALIYUN_RDS_SERVERLESS';
-  } else {
+  if (!isEs && !isRds) {
     throw new Error(`Unsupported database type: ${database.type}`);
   }
 
-  const resourceState: ResourceState = {
+  const resourceType = isEs ? 'ALIYUN_ES_SERVERLESS' : 'ALIYUN_RDS_SERVERLESS';
+  const definition: Record<string, unknown> = isEs
+    ? extractEsDefinition(databaseToEsConfig(database))
+    : extractRdsDefinition(databaseToRdsConfig(database));
+
+  const taintedResourceState: ResourceState = {
     mode: 'managed',
     region: context.region,
     definition,
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    instances: [instance as any],
+    instances: [],
     lastUpdated: new Date().toISOString(),
     metadata: {
       databaseName: database.name,
-      instanceId,
       resourceType,
     },
+    status: 'tainted',
   };
 
-  const logicalId = `databases.${database.key}`;
-  return setResource(state, logicalId, resourceState);
+  const stateAfterDependents = setResource(state, logicalId, taintedResourceState);
+
+  try {
+    let instanceId: string;
+    let instance: unknown;
+
+    if (isEs) {
+      const config = databaseToEsConfig(database);
+      instanceId = await client.es.createApp(config);
+
+      // Refresh state from provider to get all attributes
+      const appInfo = await client.es.getApp(instanceId);
+      if (!appInfo) {
+        throw new Error(`Failed to refresh state for ES app: ${instanceId}`);
+      }
+
+      const sid = buildSid('aliyun', 'es', context.stage, instanceId);
+      instance = buildEsInstanceFromProvider(appInfo, sid);
+    } else {
+      const config = databaseToRdsConfig(database);
+      instanceId = await client.rds.createInstance(config);
+
+      // Refresh state from provider to get all attributes
+      const rdsInfo = await client.rds.getInstance(instanceId);
+      if (!rdsInfo) {
+        throw new Error(`Failed to refresh state for RDS instance: ${instanceId}`);
+      }
+
+      const sid = buildSid('aliyun', 'rds', context.stage, instanceId);
+      instance = buildRdsInstanceFromProvider(rdsInfo, sid);
+    }
+
+    const resourceState: ResourceState = {
+      mode: 'managed',
+      region: context.region,
+      definition,
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      instances: [instance as any],
+      lastUpdated: new Date().toISOString(),
+      metadata: {
+        databaseName: database.name,
+        instanceId,
+        resourceType,
+      },
+    };
+
+    return setResource(stateAfterDependents, logicalId, resourceState);
+  } catch (error) {
+    throw new PartialResourceError(
+      stateAfterDependents,
+      error instanceof Error ? error : new Error(String(error)),
+    );
+  }
 };
 
 export const readDatabaseResource = async (

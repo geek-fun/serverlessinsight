@@ -84,6 +84,50 @@ describe('OSS Planner', () => {
       expect(plan.items[0].changes?.after).toBeDefined();
     });
 
+    it('should plan to create when existing state is tainted', async () => {
+      const state = setResource(initialState, 'buckets.test_bucket', {
+        mode: 'managed',
+        region: 'cn-hangzhou',
+        definition: {
+          bucketName: 'test-bucket',
+          acl: 'public-read',
+          websiteConfiguration: { indexDocument: 'index.html', errorDocument: 'index.html' },
+          websiteCodeHash: 'mock-website-hash',
+          storageClass: null,
+          domain: null,
+          wwwBindApex: false,
+          domainCertificateId: null,
+          domainCertificateBody: null,
+          domainCertificatePrivateKey: null,
+          domainProtocol: null,
+          policy: null,
+          versioningStatus: null,
+          sseAlgorithm: null,
+          sseKmsMasterKeyId: null,
+        },
+        instances: [
+          {
+            sid: 'si:aliyun:oss:default:test-bucket',
+            id: 'test-bucket',
+            bucketName: 'test-bucket',
+          },
+        ],
+        lastUpdated: new Date().toISOString(),
+        status: 'tainted',
+      });
+
+      const plan = await generateBucketPlan(mockContext, state, [testBucket]);
+
+      expect(plan.items).toHaveLength(1);
+      expect(plan.items[0]).toMatchObject({
+        logicalId: 'buckets.test_bucket',
+        action: 'create',
+        resourceType: 'ALIYUN_OSS_BUCKET',
+      });
+      expect(plan.items[0].changes?.after).toBeDefined();
+      expect(mockOssOperations.getBucket).not.toHaveBeenCalled();
+    });
+
     it('should plan no changes when bucket exists and matches state', async () => {
       mockOssOperations.getBucket.mockResolvedValue({
         name: 'test-bucket',

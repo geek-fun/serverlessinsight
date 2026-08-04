@@ -6,7 +6,13 @@ import {
   updateApigwResource,
   deleteApigwResource,
 } from '../../../../src/stack/aliyunStack/apigwResource';
-import { Context, CURRENT_STATE_VERSION, StateFile, EventDomain } from '../../../../src/types';
+import {
+  Context,
+  CURRENT_STATE_VERSION,
+  PartialResourceError,
+  StateFile,
+  EventDomain,
+} from '../../../../src/types';
 import { extractMainDomain, extractHostRecord } from '../../../../src/common/domainUtils';
 
 const mockedApigwOperations = {
@@ -233,6 +239,46 @@ describe('ApigwResource', () => {
       await expect(
         createApigwResource(mockContext, testEvent, 'test-service', undefined, initialState),
       ).rejects.toThrow('Failed to get API group info after creation');
+    });
+
+    it('should throw PartialResourceError with tainted state when createApi fails after group creation', async () => {
+      mockedApigwOperations.findApiGroupByName.mockRejectedValue(new Error('Not found'));
+      mockedApigwOperations.createApiGroup.mockResolvedValue('group-123');
+      mockedApigwOperations.getApiGroup.mockResolvedValue({
+        groupId: 'group-123',
+        groupName: 'test-api-group',
+        subDomain: 'group-123.apigw.aliyuncs.com',
+      });
+      mockedApigwOperations.createApi.mockRejectedValue(new Error('Create failed'));
+      mockedApigwTypes.eventToApigwGroupConfig.mockReturnValue({
+        groupName: 'test-api-group',
+      });
+      mockedApigwTypes.extractApigwGroupDefinition.mockReturnValue({});
+      mockedApigwTypes.triggerToApigwApiConfig.mockReturnValue({
+        apiName: 'test-api',
+      });
+      mockedApigwTypes.extractEventDomainDefinition.mockReturnValue(null);
+      mockedStateManager.setResource.mockImplementation(
+        (state: StateFile, logicalId: string, resourceState: unknown) => ({
+          ...state,
+          resources: { ...state.resources, [logicalId]: resourceState },
+        }),
+      );
+
+      const error = await createApigwResource(
+        mockContext,
+        testEvent,
+        'test-service',
+        undefined,
+        initialState,
+      ).catch((e: unknown) => e);
+
+      expect(error).toBeInstanceOf(PartialResourceError);
+      const partialError = error as PartialResourceError;
+      expect(partialError.updatedState.resources['events.api_gateway']).toMatchObject({
+        status: 'tainted',
+      });
+      expect(partialError.cause.message).toBe('Create failed');
     });
 
     it('should handle multiple triggers', async () => {
@@ -559,7 +605,7 @@ describe('ApigwResource', () => {
       expect(mockedStateManager.removeResource).toHaveBeenCalled();
     });
 
-    it('should continue deletion even if APIs or group fail to delete', async () => {
+    it('should propagate API delete failure and keep resource in state', async () => {
       const existingState = {
         instances: [
           { type: 'ALIYUN_APIGW_GROUP', id: 'group-123' },
@@ -569,12 +615,38 @@ describe('ApigwResource', () => {
       };
 
       mockedStateManager.getResource.mockReturnValue(existingState);
-      mockedApigwOperations.deleteApi.mockRejectedValue(new Error('API not found'));
-      mockedApigwOperations.deleteApiGroup.mockRejectedValue(new Error('Group not found'));
+      mockedApigwOperations.deleteApi.mockRejectedValue(new Error('API delete failed'));
 
-      await deleteApigwResource(mockContext, 'events.api_gateway', initialState);
+      await expect(
+        deleteApigwResource(mockContext, 'events.api_gateway', initialState),
+      ).rejects.toThrow('API delete failed');
+      expect(mockedStateManager.removeResource).not.toHaveBeenCalledWith(
+        expect.anything(),
+        'events.api_gateway',
+      );
+      expect(mockedApigwOperations.deleteApiGroup).not.toHaveBeenCalled();
+    });
 
-      expect(mockedStateManager.removeResource).toHaveBeenCalled();
+    it('should propagate deleteApiGroup failure and keep resource in state', async () => {
+      const existingState = {
+        instances: [
+          { type: 'ALIYUN_APIGW_GROUP', id: 'group-123' },
+          { type: 'ALIYUN_APIGW_API', id: 'api-456' },
+        ],
+        definition: {},
+      };
+
+      mockedStateManager.getResource.mockReturnValue(existingState);
+      mockedApigwOperations.deleteApi.mockResolvedValue(undefined);
+      mockedApigwOperations.deleteApiGroup.mockRejectedValue(new Error('Group delete failed'));
+
+      await expect(
+        deleteApigwResource(mockContext, 'events.api_gateway', initialState),
+      ).rejects.toThrow('Group delete failed');
+      expect(mockedStateManager.removeResource).not.toHaveBeenCalledWith(
+        expect.anything(),
+        'events.api_gateway',
+      );
     });
 
     it('should delete CDN resources during deletion for CDN-backed domain', async () => {
@@ -860,7 +932,7 @@ describe('ApigwResource', () => {
       );
     });
 
-    it('should log error and return state when certificate_id references non-existent cert', async () => {
+    it('should throw PartialResourceError when certificate_id references non-existent cert', async () => {
       setupBasicCreateMocks();
       mockedCasOperations.getCertificate.mockResolvedValue(null);
       mockedApigwTypes.extractEventDomainDefinition.mockReturnValue({
@@ -876,16 +948,10 @@ describe('ApigwResource', () => {
         },
       };
 
-      const result = await createApigwResource(
-        mockContext,
-        eventWithDomain,
-        'test-service',
-        undefined,
-        initialState,
-      );
-
+      await expect(
+        createApigwResource(mockContext, eventWithDomain, 'test-service', undefined, initialState),
+      ).rejects.toBeInstanceOf(PartialResourceError);
       expect(mockedLogger.error).toHaveBeenCalled();
-      expect(result).toBeDefined();
     });
 
     it('should bind domain with certificate_body and certificate_private_key', async () => {
@@ -1211,7 +1277,7 @@ describe('ApigwResource', () => {
       );
     });
 
-    it('should log error and return state when origin subDomain is missing during create', async () => {
+    it('should throw PartialResourceError when origin subDomain is missing during create', async () => {
       setupBasicCreateMocks();
       mockedApigwOperations.getApiGroup.mockResolvedValue({
         groupId: 'group-123',
@@ -1232,17 +1298,11 @@ describe('ApigwResource', () => {
         },
       };
 
-      const result = await createApigwResource(
-        mockContext,
-        eventWithDomain,
-        'test-service',
-        undefined,
-        initialState,
-      );
-
+      await expect(
+        createApigwResource(mockContext, eventWithDomain, 'test-service', undefined, initialState),
+      ).rejects.toBeInstanceOf(PartialResourceError);
       expect(mockedLogger.error).toHaveBeenCalled();
       expect(mockedApigwOperations.bindCustomDomain).not.toHaveBeenCalled();
-      expect(result).toBeDefined();
     });
 
     it('should bind directly when domain.cdn is false', async () => {
@@ -1390,7 +1450,7 @@ describe('ApigwResource', () => {
       );
     });
 
-    it('should log error and return state when domain binding fails', async () => {
+    it('should throw PartialResourceError when domain binding fails', async () => {
       setupBasicCreateMocks();
       mockedApigwTypes.extractEventDomainDefinition.mockReturnValue({
         domainName: 'example.com',
@@ -1407,17 +1467,11 @@ describe('ApigwResource', () => {
         },
       };
 
-      const result = await createApigwResource(
-        mockContext,
-        eventWithDomain,
-        'test-service',
-        undefined,
-        initialState,
-      );
-
+      await expect(
+        createApigwResource(mockContext, eventWithDomain, 'test-service', undefined, initialState),
+      ).rejects.toBeInstanceOf(PartialResourceError);
       expect(mockedLogger.error).toHaveBeenCalled();
       expect(mockedLogger.info).toHaveBeenCalled();
-      expect(result).toBeDefined();
     });
 
     it('should use existing group when findApiGroupByName returns group without groupId', async () => {

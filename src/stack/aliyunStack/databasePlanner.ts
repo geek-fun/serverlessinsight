@@ -101,7 +101,7 @@ export const generateDatabasePlan = async (
       const resourceType = getResourceType(database);
       const desiredDefinition = getDesiredDefinition(database);
 
-      if (!currentState) {
+      if (!currentState || currentState.status === 'tainted') {
         return {
           logicalId,
           action: 'create',

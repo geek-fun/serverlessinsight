@@ -7,6 +7,7 @@ import {
   DatabaseDomain,
   DatabaseEnum,
   DatabaseVersionEnum,
+  PartialResourceError,
   Plan,
 } from '../../../../src/types';
 
@@ -219,6 +220,52 @@ describe('DatabaseExecutor', () => {
       expect(result.partialFailure).toBeDefined();
       expect(result.partialFailure?.error).toBe(error);
       expect(result.partialFailure?.failedItem.logicalId).toBe('databases.db1');
+    });
+
+    it('should persist tainted state via onStateChange when resource throws PartialResourceError', async () => {
+      const database = createTestDatabase('db1');
+      const plan: Plan = {
+        items: [
+          {
+            logicalId: 'databases.db1',
+            action: 'create',
+            resourceType: 'ALIYUN_RDS_SERVERLESS',
+          },
+        ],
+      };
+
+      const updatedState: StateFile = {
+        ...initialState,
+        resources: {
+          'databases.db1': {
+            mode: 'managed',
+            region: 'cn-hangzhou',
+            definition: {},
+            instances: [],
+            lastUpdated: new Date().toISOString(),
+            status: 'tainted',
+          },
+        },
+      };
+      const cause = new Error('Create failed');
+      mockedDatabaseResource.createDatabaseResource.mockRejectedValue(
+        new PartialResourceError(updatedState, cause),
+      );
+
+      const onStateChange = jest.fn();
+      const result = await executeDatabasePlan(
+        mockContext,
+        plan,
+        [database],
+        initialState,
+        onStateChange,
+      );
+
+      expect(result.state).toEqual(updatedState);
+      expect(result.partialFailure).toBeDefined();
+      expect(result.partialFailure?.error).toBe(cause);
+      expect(result.partialFailure?.failedItem.logicalId).toBe('databases.db1');
+      expect(onStateChange).toHaveBeenCalledWith(updatedState);
     });
 
     it('should handle update action failure with partial failure result', async () => {

@@ -10,6 +10,7 @@ import {
   BucketDomain,
   Context,
   CURRENT_STATE_VERSION,
+  PartialResourceError,
   StateFile,
 } from '../../../../src/types';
 import { CommonBucketInstance } from '../../../../src/stack/bucketTypes';
@@ -290,6 +291,39 @@ describe('OssResource', () => {
       );
       expect(mockOssOperations.deleteBucket).toHaveBeenCalledWith(bucketName);
       expect(result).toEqual(initialState);
+    });
+
+    it('should propagate CDN delete failure and not remove resource from state', async () => {
+      const bucketName = 'test-bucket';
+      const logicalId = 'buckets.test_bucket';
+      const stateWithCdn: StateFile = {
+        ...initialState,
+        resources: {
+          [logicalId]: {
+            mode: 'managed',
+            region: 'cn-hangzhou',
+            definition: {},
+            instances: [
+              { sid: 'oss-sid', id: bucketName, type: 'ALIYUN_OSS_BUCKET' },
+              {
+                sid: 'cdn-sid',
+                id: 'example.com',
+                type: 'ALIYUN_CDN_DISTRIBUTION',
+                domainName: 'example.com',
+              },
+            ],
+            lastUpdated: new Date().toISOString(),
+          },
+        },
+      };
+
+      mockCdnOperations.deleteCdnDomain.mockRejectedValue(new Error('CDN delete failed'));
+
+      await expect(
+        deleteBucketResource(mockContext, bucketName, logicalId, stateWithCdn),
+      ).rejects.toThrow('CDN delete failed');
+      expect(mockedStateManager.removeResource).not.toHaveBeenCalled();
+      expect(mockOssOperations.deleteBucket).not.toHaveBeenCalled();
     });
   });
 
@@ -966,6 +1000,34 @@ describe('OssResource', () => {
       await expect(createBucketResource(mockContext, baseBucket, initialState)).rejects.toThrow(
         'Failed to refresh state for bucket: test-bucket',
       );
+    });
+
+    it('should throw PartialResourceError with tainted state when transfer acceleration fails after bucket creation', async () => {
+      const bucket: BucketDomain = {
+        ...baseBucket,
+        domain: { domain_name: 'accel.example.com', www_bind_apex: false, accelerate: true },
+      };
+
+      mockOssOperations.createBucket.mockResolvedValue(baseBucketInfo);
+      mockOssOperations.getBucket.mockResolvedValue(baseBucketInfo);
+      mockOssOperations.enableTransferAcceleration.mockRejectedValue(new Error('Create failed'));
+      mockedStateManager.setResource.mockImplementation(
+        (_state: StateFile, _logicalId: string, resourceState: unknown) => ({
+          ...initialState,
+          resources: { 'buckets.test_bucket': resourceState },
+        }),
+      );
+
+      const error = await createBucketResource(mockContext, bucket, initialState).catch(
+        (e: unknown) => e,
+      );
+
+      expect(error).toBeInstanceOf(PartialResourceError);
+      const partialError = error as PartialResourceError;
+      expect(partialError.updatedState.resources['buckets.test_bucket']).toMatchObject({
+        status: 'tainted',
+      });
+      expect(partialError.cause.message).toBe('Create failed');
     });
 
     it('should bind www domain when www_bind_apex is true', async () => {

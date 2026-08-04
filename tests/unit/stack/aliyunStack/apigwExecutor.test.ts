@@ -3,7 +3,14 @@ import { logger } from '../../../../src/common/logger';
 import { getResource } from '../../../../src/common/stateManager';
 import { executeApigwPlan } from '../../../../src/stack/aliyunStack/apigwExecutor';
 import * as apigwResource from '../../../../src/stack/aliyunStack/apigwResource';
-import { Context, CURRENT_STATE_VERSION, EventTypes, Plan, StateFile } from '../../../../src/types';
+import {
+  Context,
+  CURRENT_STATE_VERSION,
+  EventTypes,
+  PartialResourceError,
+  Plan,
+  StateFile,
+} from '../../../../src/types';
 
 // Mock dependencies
 jest.mock('../../../../src/stack/aliyunStack/apigwResource');
@@ -350,6 +357,53 @@ describe('ApigwExecutor', () => {
       expect(result.partialFailure?.failedItem.logicalId).toBe('events.test_api');
       expect(result.partialFailure?.error).toBe(error);
       expect(result.partialFailure?.successfulItems).toEqual([]);
+    });
+
+    it('should persist tainted state via onStateChange when resource throws PartialResourceError', async () => {
+      const plan: Plan = {
+        items: [
+          {
+            logicalId: 'events.test_api',
+            action: 'create',
+            resourceType: 'ALIYUN_APIGW',
+          },
+        ],
+      };
+
+      const updatedState: StateFile = {
+        ...initialState,
+        resources: {
+          'events.test_api': {
+            mode: 'managed',
+            region: 'cn-hangzhou',
+            definition: {},
+            instances: [],
+            lastUpdated: new Date().toISOString(),
+            status: 'tainted',
+          },
+        },
+      };
+      const cause = new Error('Create failed');
+      (apigwResource.createApigwResource as jest.Mock).mockRejectedValue(
+        new PartialResourceError(updatedState, cause),
+      );
+
+      const onStateChange = jest.fn();
+      const result = await executeApigwPlan(
+        mockContext,
+        plan,
+        [testEvent],
+        serviceName,
+        roleArn,
+        initialState,
+        onStateChange,
+      );
+
+      expect(result.state).toEqual(updatedState);
+      expect(result.partialFailure).toBeDefined();
+      expect(result.partialFailure?.error).toBe(cause);
+      expect(result.partialFailure?.failedItem.logicalId).toBe('events.test_api');
+      expect(onStateChange).toHaveBeenCalledWith(updatedState);
     });
 
     it('should save state after each successful operation', async () => {

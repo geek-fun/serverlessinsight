@@ -8,6 +8,7 @@ import {
 import {
   Context,
   CURRENT_STATE_VERSION,
+  PartialResourceError,
   StateFile,
   DatabaseEnum,
   DatabaseDomain,
@@ -631,6 +632,37 @@ describe('DatabaseResource', () => {
       await expect(
         createDatabaseResource(mockContext, unsupportedDatabase, initialState),
       ).rejects.toThrow('Unsupported database type: UNSUPPORTED_DB');
+    });
+
+    it('should throw PartialResourceError with tainted state when create fails', async () => {
+      const rdsDatabase = {
+        key: 'my_rds',
+        name: 'my-rds-mysql',
+        type: DatabaseEnum.RDS_MYSQL_SERVERLESS,
+        rds: {
+          engine: 'MySQL',
+        },
+      } as unknown as DatabaseDomain;
+
+      mockRdsOperations.createInstance.mockResolvedValue('rm-12345');
+      mockRdsOperations.getInstance.mockRejectedValue(new Error('Create failed'));
+      mockedStateManager.setResource.mockImplementation(
+        (_state: StateFile, _logicalId: string, resourceState: unknown) => ({
+          ...initialState,
+          resources: { 'databases.my_rds': resourceState },
+        }),
+      );
+
+      const error = await createDatabaseResource(mockContext, rdsDatabase, initialState).catch(
+        (e: unknown) => e,
+      );
+
+      expect(error).toBeInstanceOf(PartialResourceError);
+      const partialError = error as PartialResourceError;
+      expect(partialError.updatedState.resources['databases.my_rds']).toMatchObject({
+        status: 'tainted',
+      });
+      expect(partialError.cause.message).toBe('Create failed');
     });
   });
 
