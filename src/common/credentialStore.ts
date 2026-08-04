@@ -55,6 +55,7 @@ export const saveCredentials = (creds: ConsoleCredentials): void => {
   ensureCredentialsDir();
   const credPath = getCredentialsPath();
   fs.writeFileSync(credPath, JSON.stringify(creds, null, 2), 'utf-8');
+  fs.chmodSync(credPath, 0o600);
 };
 
 export const deleteCredentials = (): void => {

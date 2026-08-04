@@ -19,6 +19,7 @@ const mockFs = {
   existsSync: jest.fn(),
   readFileSync: jest.fn(),
   writeFileSync: jest.fn(),
+  chmodSync: jest.fn(),
   unlinkSync: jest.fn(),
   mkdirSync: jest.fn(),
 };
@@ -103,6 +104,19 @@ describe('credentialStore', () => {
         JSON.stringify(creds, null, 2),
         'utf-8',
       );
+    });
+
+    it('should restrict credentials file permissions to owner (0600)', () => {
+      mockFs.existsSync.mockReturnValue(false);
+      const creds: ConsoleCredentials = {
+        apiKey: 'si_key',
+        consoleUrl: 'https://api.test.com',
+        userEmail: 'u@t.com',
+        orgId: 'oid',
+        orgName: 'ON',
+      };
+      saveCredentials(creds);
+      expect(mockFs.chmodSync).toHaveBeenCalledWith(mockCredentialsPath, 0o600);
     });
   });
 
