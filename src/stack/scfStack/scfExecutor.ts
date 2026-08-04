@@ -1,6 +1,7 @@
 import {
   Context,
   FunctionDomain,
+  PartialResourceError,
   Plan,
   PlanItem,
   StateFile,
@@ -122,6 +123,21 @@ export const executeFunctionPlan = async (
         }
       }
     } catch (error) {
+      if (error instanceof PartialResourceError) {
+        const updatedState = error.updatedState;
+        if (onStateChange) {
+          onStateChange(updatedState);
+        }
+        return {
+          state: updatedState,
+          partialFailure: {
+            failedItem: item,
+            error: error.cause,
+            successfulItems,
+          },
+        };
+      }
+
       return {
         state: currentState,
         partialFailure: {

@@ -350,9 +350,350 @@ describe('ScfResource', () => {
       const error = new Error('Create failed');
       (mockScfOperations.createFunction as jest.Mock).mockRejectedValue(error);
 
-      await expect(createResource(mockContext, testFunction, initialState)).rejects.toThrow(
-        'Create failed',
+      const taintedState = {
+        ...initialState,
+        resources: {
+          'functions.test_fn': {
+            mode: 'managed',
+            region: 'ap-guangzhou',
+            definition: mockDefinition,
+            instances: [],
+            lastUpdated: expect.any(String),
+            status: 'tainted',
+          },
+        },
+      };
+      (stateManager.setResource as jest.Mock).mockReturnValue(taintedState);
+
+      await expect(createResource(mockContext, testFunction, initialState)).rejects.toMatchObject({
+        name: 'PartialResourceError',
+        cause: { message: 'Create failed' },
+        updatedState: expect.objectContaining({
+          resources: expect.objectContaining({
+            'functions.test_fn': expect.objectContaining({ status: 'tainted' }),
+          }),
+        }),
+      });
+    });
+
+    it('should persist tainted state via PartialResourceError on createFunction failure', async () => {
+      jest.useFakeTimers();
+
+      const networkError = Object.assign(new Error('socket hang up'), { code: 'ECONNRESET' });
+      (mockScfOperations.createFunction as jest.Mock).mockRejectedValue(networkError);
+      // Reconciliation after the recovery delay: function still not in provider
+      (mockScfOperations.getFunction as jest.Mock).mockResolvedValue(null);
+
+      const taintedState = {
+        ...initialState,
+        resources: {
+          'functions.test_fn': {
+            mode: 'managed',
+            region: 'ap-guangzhou',
+            definition: mockDefinition,
+            instances: [],
+            lastUpdated: expect.any(String),
+            status: 'tainted',
+          },
+        },
+      };
+      (stateManager.setResource as jest.Mock).mockReturnValue(taintedState);
+
+      const promise = createResource(mockContext, testFunction, initialState);
+      const assertion = expect(promise).rejects.toMatchObject({
+        name: 'PartialResourceError',
+        cause: { message: 'socket hang up' },
+        updatedState: expect.objectContaining({
+          resources: expect.objectContaining({
+            'functions.test_fn': expect.objectContaining({ status: 'tainted' }),
+          }),
+        }),
+      });
+      await jest.advanceTimersByTimeAsync(2000);
+      await assertion;
+    });
+
+    it('should skip createFunction and refresh when state is tainted and cloud has function', async () => {
+      const taintedState: StateFile = {
+        ...initialState,
+        resources: {
+          'functions.test_fn': {
+            mode: 'managed',
+            region: 'ap-guangzhou',
+            definition: mockDefinition,
+            instances: [],
+            lastUpdated: '2025-01-01T00:00:00Z',
+            status: 'tainted',
+          },
+        },
+      };
+
+      const finalState = {
+        ...initialState,
+        resources: {
+          'functions.test_fn': {
+            mode: 'managed',
+            region: 'ap-guangzhou',
+            definition: mockDefinition,
+            instances: expect.any(Array),
+            lastUpdated: expect.any(String),
+            status: 'ready',
+          },
+        },
+      };
+
+      (stateManager.getResource as jest.Mock).mockReturnValue(
+        taintedState.resources['functions.test_fn'],
       );
+      (mockScfOperations.getFunction as jest.Mock).mockResolvedValue(mockFunctionInfo);
+      (stateManager.setResource as jest.Mock)
+        .mockReturnValueOnce(taintedState)
+        .mockReturnValueOnce(finalState);
+
+      const result = await createResource(mockContext, testFunction, taintedState);
+
+      expect(mockScfOperations.createFunction).not.toHaveBeenCalled();
+      expect(mockScfOperations.getFunction).toHaveBeenCalledWith('test-function');
+      expect(stateManager.setResource).toHaveBeenLastCalledWith(
+        expect.objectContaining({ version: CURRENT_STATE_VERSION }),
+        'functions.test_fn',
+        expect.objectContaining({ status: 'ready' }),
+      );
+      expect(result).toEqual(finalState);
+    });
+
+    it('should attempt create when tainted but cloud has no function', async () => {
+      const taintedState: StateFile = {
+        ...initialState,
+        resources: {
+          'functions.test_fn': {
+            mode: 'managed',
+            region: 'ap-guangzhou',
+            definition: mockDefinition,
+            instances: [],
+            lastUpdated: '2025-01-01T00:00:00Z',
+            status: 'tainted',
+          },
+        },
+      };
+
+      (stateManager.getResource as jest.Mock).mockReturnValue(
+        taintedState.resources['functions.test_fn'],
+      );
+      // Tainted retry check finds nothing, post-create refresh returns the info
+      (mockScfOperations.getFunction as jest.Mock)
+        .mockResolvedValueOnce(null)
+        .mockResolvedValue(mockFunctionInfo);
+      (mockScfOperations.createFunction as jest.Mock).mockResolvedValue(undefined);
+      (stateManager.setResource as jest.Mock).mockReturnValue(initialState);
+
+      await createResource(mockContext, testFunction, taintedState);
+
+      expect(mockScfOperations.createFunction).toHaveBeenCalledTimes(1);
+      expect(mockScfOperations.createFunction).toHaveBeenCalledWith(
+        mockConfig,
+        'base64encodedcontent',
+      );
+    });
+
+    it('should throw PartialResourceError on already-exists when state not tainted', async () => {
+      const alreadyExistsError = {
+        code: 'ResourceInUse',
+        message: '指定的Function已存在，请勿重复创建',
+      };
+      (mockScfOperations.createFunction as jest.Mock).mockRejectedValue(alreadyExistsError);
+
+      const taintedState = {
+        ...initialState,
+        resources: {
+          'functions.test_fn': {
+            mode: 'managed',
+            region: 'ap-guangzhou',
+            definition: mockDefinition,
+            instances: [],
+            lastUpdated: expect.any(String),
+            status: 'tainted',
+          },
+        },
+      };
+      (stateManager.setResource as jest.Mock).mockReturnValue(taintedState);
+
+      await expect(createResource(mockContext, testFunction, initialState)).rejects.toMatchObject({
+        name: 'PartialResourceError',
+        updatedState: expect.objectContaining({
+          resources: expect.objectContaining({
+            'functions.test_fn': expect.objectContaining({ status: 'tainted' }),
+          }),
+        }),
+      });
+
+      // Non-recoverable on the non-tainted path: no reconciliation getFunction is
+      // attempted and the state never reaches 'ready' — the already-exists must
+      // surface so the user resolves the collision manually.
+      expect(mockScfOperations.createFunction).toHaveBeenCalledTimes(1);
+      expect(mockScfOperations.getFunction).not.toHaveBeenCalled();
+      expect(stateManager.setResource).not.toHaveBeenCalledWith(
+        expect.anything(),
+        'functions.test_fn',
+        expect.objectContaining({ status: 'ready' }),
+      );
+    });
+
+    it('should throw PartialResourceError on already-exists when only the code matches (ResourceInUse)', async () => {
+      (mockScfOperations.createFunction as jest.Mock).mockRejectedValue({ code: 'ResourceInUse' });
+
+      const taintedState = {
+        ...initialState,
+        resources: {
+          'functions.test_fn': {
+            mode: 'managed',
+            region: 'ap-guangzhou',
+            definition: mockDefinition,
+            instances: [],
+            lastUpdated: expect.any(String),
+            status: 'tainted',
+          },
+        },
+      };
+      (stateManager.setResource as jest.Mock).mockReturnValue(taintedState);
+
+      await expect(createResource(mockContext, testFunction, initialState)).rejects.toMatchObject({
+        name: 'PartialResourceError',
+        updatedState: expect.objectContaining({
+          resources: expect.objectContaining({
+            'functions.test_fn': expect.objectContaining({ status: 'tainted' }),
+          }),
+        }),
+      });
+
+      // The ResourceInUse code-level match was removed from isRecoverableCreateError.
+      expect(mockScfOperations.getFunction).not.toHaveBeenCalled();
+    });
+
+    it('should reconcile with provider after a recoverable Timeout create error (non-tainted)', async () => {
+      jest.useFakeTimers();
+
+      (mockScfOperations.createFunction as jest.Mock).mockRejectedValue({ code: 'Timeout' });
+      // Reconciliation after the recovery delay finds the function → continue flow
+      (mockScfOperations.getFunction as jest.Mock).mockResolvedValue(mockFunctionInfo);
+
+      const finalState = {
+        ...initialState,
+        resources: {
+          'functions.test_fn': {
+            mode: 'managed',
+            region: 'ap-guangzhou',
+            definition: mockDefinition,
+            instances: expect.any(Array),
+            lastUpdated: expect.any(String),
+            status: 'ready',
+          },
+        },
+      };
+      (stateManager.setResource as jest.Mock)
+        .mockReturnValueOnce(initialState)
+        .mockReturnValueOnce(finalState);
+
+      const promise = createResource(mockContext, testFunction, initialState);
+      await jest.advanceTimersByTimeAsync(2000);
+      const result = await promise;
+
+      expect(mockScfOperations.createFunction).toHaveBeenCalledTimes(1);
+      // Reconciliation getFunction (after the recovery delay) + final state refresh
+      expect(mockScfOperations.getFunction).toHaveBeenCalledTimes(2);
+      expect(stateManager.setResource).toHaveBeenLastCalledWith(
+        expect.objectContaining({ version: CURRENT_STATE_VERSION }),
+        'functions.test_fn',
+        expect.objectContaining({ status: 'ready' }),
+      );
+      expect(result).toEqual(finalState);
+    });
+
+    it('should skip createTrigger when adopting a tainted function that already has the HTTP trigger', async () => {
+      const taintedState: StateFile = {
+        ...initialState,
+        resources: {
+          'functions.test_fn': {
+            mode: 'managed',
+            region: 'ap-guangzhou',
+            definition: mockDefinition,
+            instances: [],
+            lastUpdated: '2025-01-01T00:00:00Z',
+            status: 'tainted',
+          },
+        },
+      };
+
+      (stateManager.getResource as jest.Mock).mockReturnValue(
+        taintedState.resources['functions.test_fn'],
+      );
+
+      const fnWithHttpTrigger = {
+        ...testFunction,
+        triggers: { http: { auth_type: 'public' as const } },
+      };
+
+      const functionWithTrigger = {
+        ...mockFunctionInfo,
+        Triggers: [
+          {
+            ModTime: '2025-01-01',
+            Type: 'http',
+            TriggerDesc: JSON.stringify({ authType: 'NONE' }),
+            TriggerName: 'test_fn-http-trigger',
+            AddTime: '2025-01-01',
+            Enable: 1,
+          },
+        ],
+      };
+      (mockScfOperations.getFunction as jest.Mock).mockResolvedValue(functionWithTrigger);
+      (stateManager.setResource as jest.Mock).mockReturnValue(initialState);
+
+      await createResource(mockContext, fnWithHttpTrigger, taintedState);
+
+      // Tainted pre-flight adoption skips create; the trigger is already attached
+      // in the adopted provider info → createTrigger skipped.
+      expect(mockScfOperations.createFunction).not.toHaveBeenCalled();
+      expect(mockScfOperations.createTrigger).not.toHaveBeenCalled();
+    });
+
+    it('should tolerate already-exists errors from createTrigger during tainted adoption', async () => {
+      const taintedState: StateFile = {
+        ...initialState,
+        resources: {
+          'functions.test_fn': {
+            mode: 'managed',
+            region: 'ap-guangzhou',
+            definition: mockDefinition,
+            instances: [],
+            lastUpdated: '2025-01-01T00:00:00Z',
+            status: 'tainted',
+          },
+        },
+      };
+
+      (stateManager.getResource as jest.Mock).mockReturnValue(
+        taintedState.resources['functions.test_fn'],
+      );
+
+      const fnWithHttpTrigger = {
+        ...testFunction,
+        triggers: { http: { auth_type: 'public' as const } },
+      };
+
+      // Tainted pre-flight adoption surfaces no triggers in the provider info →
+      // createTrigger is attempted and rejected with an already-exists error → must
+      // be tolerated via isTriggerAlreadyExistsError.
+      (mockScfOperations.getFunction as jest.Mock).mockResolvedValue(mockFunctionInfo);
+      (mockScfOperations.createTrigger as jest.Mock).mockRejectedValue({
+        code: 'ResourceInUse',
+        message: '指定的Trigger已存在',
+      });
+      (stateManager.setResource as jest.Mock).mockReturnValue(initialState);
+
+      await createResource(mockContext, fnWithHttpTrigger, taintedState);
+
+      expect(mockScfOperations.createTrigger).toHaveBeenCalledTimes(1);
     });
 
     it('should handle function info with null/undefined CfsConfig fields', async () => {

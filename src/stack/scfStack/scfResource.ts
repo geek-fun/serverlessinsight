@@ -1,4 +1,11 @@
-import { Context, FunctionDomain, ResourceState, StateFile, ResourceTypeEnum } from '../../types';
+import {
+  Context,
+  FunctionDomain,
+  PartialResourceError,
+  ResourceState,
+  StateFile,
+  ResourceTypeEnum,
+} from '../../types';
 import { createTencentClient } from '../../common/tencentClient';
 import { readFileAsBase64 } from '../../common/fileUtils';
 import { functionToScfConfig, extractScfDefinition, ScfFunctionInfo } from './scfTypes';
@@ -19,10 +26,71 @@ type ScfDependentInstance = {
   protocol?: string;
 };
 
+// Minimal provider shape needed for trigger-duplication checks on adoption —
+// the full provider info type (common/tencentClient/types) differs from the
+// state-builder ScfFunctionInfo type below.
+type AdoptedProviderInfo = {
+  Triggers?: Array<{ TriggerName: string; Type: string }>;
+};
+
 const delay = async (ms: number): Promise<void> => {
   await new Promise((resolve) => {
     setTimeout(resolve, ms);
   });
+};
+
+// Delay before probing the provider after a recoverable create error — the
+// platform may still be propagating a just-created function.
+const RECOVERY_GET_FUNCTION_DELAY_MS = 1500;
+
+// Create errors recoverable by reconciling with provider state. Deliberately
+// limited to timeout/network conditions. A create-time "already exists" (Tencent
+// reports ResourceInUse with a localized message "指定的Function已存在，请勿重复创建")
+// is NOT recoverable on the non-tainted path: the cloud resource may not be owned
+// by this stack, so it must propagate as PartialResourceError (persisting tainted
+// state) for the user to resolve manually — no auto-adopt (product decision D1).
+// Only the tainted pre-flight path may adopt a pre-existing function.
+const isRecoverableCreateError = (error: unknown): boolean => {
+  const code =
+    error && typeof error === 'object' && 'code' in error && typeof error.code === 'string'
+      ? error.code.toLowerCase()
+      : '';
+
+  const message =
+    error instanceof Error ? error.message.toLowerCase() : String(error).toLowerCase();
+
+  return (
+    code === 'readtimeout' ||
+    code === 'timeout' ||
+    code === 'requesttimeout' ||
+    code === 'econnreset' ||
+    code === 'etimedout' ||
+    message.includes('readtimeout') ||
+    message.includes('timeout') ||
+    message.includes('socket hang up') ||
+    message.includes('econnreset') ||
+    message.includes('etimedout')
+  );
+};
+
+// Narrow already-exists check for trigger-create errors — used only as a
+// backstop when adopting a function whose triggers were not visible in the
+// provider refresh. Deliberately does NOT match timeouts/network errors, which
+// must propagate so a missing trigger is never silently swallowed.
+const isTriggerAlreadyExistsError = (error: unknown): boolean => {
+  const code =
+    error && typeof error === 'object' && 'code' in error && typeof error.code === 'string'
+      ? error.code.toLowerCase()
+      : '';
+
+  const message =
+    error instanceof Error ? error.message.toLowerCase() : String(error).toLowerCase();
+
+  return (
+    code.includes('resourceinuse') ||
+    message.includes('已存在') ||
+    message.includes('already exist')
+  );
 };
 
 const buildScfInstanceFromProvider = (info: ScfFunctionInfo, sid: string) => {
@@ -312,10 +380,52 @@ export const createResource = async (
 
   const client = createTencentClient(context);
 
-  await client.scf.createFunction(config, codeBase64);
+  const isTainted = existingResourceState?.status === 'tainted';
+  const existingFunctionOnRetry = isTainted ? await client.scf.getFunction(fn.name) : null;
 
-  // createFunction internally polls until the function is Active (see
-  // scfOperations) — triggers/domains below are safe to attach immediately.
+  // Provider info of a function adopted from a previous partial run (tainted
+  // retry or reconciled after a create error) — used to skip already-attached
+  // triggers below.
+  let adoptedInfo: AdoptedProviderInfo | null = existingFunctionOnRetry;
+
+  if (existingFunctionOnRetry) {
+    logger.info(
+      `Function ${fn.name} already exists in provider (tainted recovery), skipping create and refreshing state`,
+    );
+  }
+
+  try {
+    if (!existingFunctionOnRetry) {
+      // createFunction internally polls until the function is Active (see
+      // scfOperations) — triggers/domains below are safe to attach immediately.
+      await client.scf.createFunction(config, codeBase64);
+    }
+  } catch (error) {
+    if (isRecoverableCreateError(error)) {
+      logger.warn(
+        `Create function returned recoverable error for ${fn.name}, reconciling with provider state: ${String(error)}`,
+      );
+
+      await delay(RECOVERY_GET_FUNCTION_DELAY_MS);
+      const afterError = await client.scf.getFunction(fn.name);
+      if (afterError) {
+        adoptedInfo = afterError;
+        logger.info(
+          `Function ${fn.name} found after create error reconciliation, continuing deployment flow`,
+        );
+      } else {
+        throw new PartialResourceError(
+          stateAfterDependents,
+          error instanceof Error ? error : new Error(String(error)),
+        );
+      }
+    } else {
+      throw new PartialResourceError(
+        stateAfterDependents,
+        error instanceof Error ? error : new Error(String(error)),
+      );
+    }
+  }
 
   // Create HTTP trigger if configured
   if (fn.triggers?.http) {
@@ -333,18 +443,39 @@ export const createResource = async (
       ...(access.enableIntranet !== undefined ? { enableIntranet: access.enableIntranet } : {}),
     });
 
-    logger.info(lang.__('CREATING_HTTP_TRIGGER', { triggerName, functionName: fn.name }));
+    // When adopting a pre-existing function (tainted retry or after an
+    // "already exists" reconciliation), the HTTP trigger may already be
+    // attached — skip re-creating it to avoid a duplicate-create error.
+    const triggerAlreadyAttached = (adoptedInfo?.Triggers ?? []).some(
+      (t) => t.TriggerName === triggerName && t.Type === 'http',
+    );
 
-    await client.scf.createTrigger({
-      FunctionName: fn.name,
-      TriggerName: triggerName,
-      Type: 'http',
-      TriggerDesc: triggerDesc,
-      Qualifier: '$DEFAULT',
-      Enable: 'OPEN',
-    });
+    if (triggerAlreadyAttached) {
+      logger.info(`HTTP trigger ${triggerName} already attached to ${fn.name}, skipping creation`);
+    } else {
+      logger.info(lang.__('CREATING_HTTP_TRIGGER', { triggerName, functionName: fn.name }));
 
-    logger.info(lang.__('HTTP_TRIGGER_CREATED', { triggerName, functionName: fn.name }));
+      try {
+        await client.scf.createTrigger({
+          FunctionName: fn.name,
+          TriggerName: triggerName,
+          Type: 'http',
+          TriggerDesc: triggerDesc,
+          Qualifier: '$DEFAULT',
+          Enable: 'OPEN',
+        });
+
+        logger.info(lang.__('HTTP_TRIGGER_CREATED', { triggerName, functionName: fn.name }));
+      } catch (error) {
+        if (isTriggerAlreadyExistsError(error)) {
+          logger.warn(
+            `HTTP trigger ${triggerName} already exists on ${fn.name}, continuing: ${String(error)}`,
+          );
+        } else {
+          throw error;
+        }
+      }
+    }
   }
 
   // Create custom domain if configured

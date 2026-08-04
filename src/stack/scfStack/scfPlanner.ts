@@ -44,7 +44,7 @@ export const generateFunctionPlan = async (
       const desiredCodeHash = computeFileHash(codePath);
       const desiredDefinition = extractScfDefinition(config, desiredCodeHash, fn.iam);
 
-      if (!currentState) {
+      if (!currentState || currentState.status === 'tainted') {
         return {
           logicalId,
           action: 'create',
