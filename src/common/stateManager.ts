@@ -70,7 +70,7 @@ const parseStateVersion = (version: string): number => {
  * rejected instead. Older/legacy versions without a registered migration load
  * as-is (they predate the migration registry).
  */
-const migrateState = (raw: StateFile): StateFile => {
+export const migrateState = (raw: StateFile): StateFile => {
   if (!raw.version) {
     logger.debug(
       { stateVersion: raw.version },

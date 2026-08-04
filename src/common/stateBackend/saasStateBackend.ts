@@ -3,6 +3,7 @@ import type { ApiClient } from '../apiClient';
 import { loadCredentials, getConsoleUrl } from '../credentialStore';
 import { StateBackend } from './types';
 import { StateFile, LockMetadata, LockOptions, CURRENT_STATE_VERSION } from '../../types';
+import { migrateState } from '../stateManager';
 import { lang } from '../../lang';
 import crypto from 'node:crypto';
 
@@ -100,7 +101,7 @@ export const createSaasStateBackend = (context: SaasBackendContext): StateBacken
         );
         // Attach console metadata so subsequent deploys have the UUIDs
         return {
-          ...state.stateJson,
+          ...migrateState(state.stateJson),
           orgId,
           appId: resolvedAppId!,
           serviceId: resolvedServiceId!,
