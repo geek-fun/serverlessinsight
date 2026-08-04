@@ -271,7 +271,7 @@ describe('tosExecutor', () => {
       expect(result.state).toBe(mockState);
     });
 
-    it('should handle PartialResourceError with updatedState', async () => {
+    it('should handle PartialResourceError with updatedState and await onStateChange', async () => {
       const plan: Plan = {
         items: [
           {
@@ -306,16 +306,34 @@ describe('tosExecutor', () => {
 
       (createResource as jest.Mock).mockRejectedValueOnce(partialError);
 
-      const onStateChange = jest.fn();
-      const result = await executeBucketPlan(
+      let resolveSave: (() => void) | undefined;
+      const onStateChange = jest.fn(() => {
+        return new Promise<void>((resolve) => {
+          resolveSave = resolve;
+        });
+      });
+
+      let executorResolved = false;
+      const executorPromise = executeBucketPlan(
         mockContext,
         plan,
         [mockBucket],
         mockState,
         onStateChange,
-      );
+      ).then((result) => {
+        executorResolved = true;
+        return result;
+      });
+
+      await new Promise((resolve) => setImmediate(resolve));
 
       expect(onStateChange).toHaveBeenCalledWith(updatedState);
+      expect(executorResolved).toBe(false);
+
+      resolveSave!();
+      const result = await executorPromise;
+
+      expect(executorResolved).toBe(true);
       expect(result.state).toBe(updatedState);
       expect(result.partialFailure).toBeDefined();
       expect(result.partialFailure?.error).toBe(causeError);

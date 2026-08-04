@@ -101,6 +101,41 @@ describe('tosPlanner', () => {
       expect(result.items[0].logicalId).toBe('buckets.static_site');
     });
 
+    it('should generate create plan for tainted bucket state', async () => {
+      const buckets: Array<BucketDomain> = [
+        {
+          key: 'static_site',
+          name: 'test-bucket',
+        },
+      ];
+
+      const stateWithTainted: StateFile = {
+        ...mockState,
+        resources: {
+          'buckets.static_site': {
+            mode: 'managed',
+            region: 'cn-beijing',
+            definition: {
+              bucketName: 'test-bucket',
+            },
+            instances: [{ sid: 'test-sid', id: 'test-bucket', type: 'VOLCENGINE_TOS_BUCKET' }],
+            status: 'tainted',
+            lastUpdated: '2024-01-01T00:00:00Z',
+          },
+        },
+      };
+
+      jest
+        .spyOn(stateManager, 'getResource')
+        .mockReturnValue(stateWithTainted.resources['buckets.static_site']);
+
+      const result = await generateBucketPlan(mockContext, stateWithTainted, buckets);
+
+      expect(result.items).toHaveLength(1);
+      expect(result.items[0].action).toBe('create');
+      expect(mockTosClient.tos.getBucket).not.toHaveBeenCalled();
+    });
+
     it('should generate update plan when bucket exists with changes', async () => {
       const buckets: Array<BucketDomain> = [
         {

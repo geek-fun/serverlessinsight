@@ -1,4 +1,11 @@
-import { Context, EventDomain, ResourceInstance, ResourceState, StateFile } from '../../types';
+import {
+  Context,
+  EventDomain,
+  ResourceInstance,
+  ResourceState,
+  StateFile,
+  PartialResourceError,
+} from '../../types';
 import { createVolcengineClient } from '../../common/volcengineClient';
 import type {
   ApigwGroupInfo,
@@ -123,63 +130,60 @@ export const createApigwResource = async (
       domain: extractEventDomainDefinition(event.domain),
     },
     instances,
+    status: 'tainted',
     lastUpdated: new Date().toISOString(),
   };
 
-  state = setResource(state, logicalId, partialResourceState);
+  const stateAfterDependents = setResource(state, logicalId, partialResourceState);
 
-  for (const trigger of event.triggers) {
-    const apiConfig = triggerToApigwApiConfig(
-      event,
-      trigger,
-      gatewayId,
-      serviceName,
-      context.region,
-      context.stage,
-    );
-
-    const apiId = await client.apigw.createApi(apiConfig);
-
-    const apiInfo = await client.apigw.getApi(gatewayId, apiId);
-    if (apiInfo) {
-      instances.push(buildApigwApiInstanceFromProvider(apiInfo, context.stage, gatewayId));
-    }
-
-    await client.apigw.deployApi(gatewayId, apiId);
-    instances.push(buildApigwDeploymentInstance(gatewayId, apiId, 'RELEASE', context.stage));
-
-    const updatedResourceState: ResourceState = {
-      mode: 'managed',
-      region: context.region,
-      definition: {
-        ...groupDefinition,
-        triggers: event.triggers.map((t) => ({
-          method: t.method,
-          path: t.path,
-          backend: t.backend,
-        })),
-        domain: extractEventDomainDefinition(event.domain),
-      },
-      instances,
-      lastUpdated: new Date().toISOString(),
-    };
-    state = setResource(state, logicalId, updatedResourceState);
-  }
-
-  if (event.domain) {
-    try {
-      const domainConfig: ApigwDomainConfig = {
+  try {
+    for (const trigger of event.triggers) {
+      const apiConfig = triggerToApigwApiConfig(
+        event,
+        trigger,
         gatewayId,
-        domainName: event.domain.domain_name as string,
-        certificateId: event.domain.certificate_id as string | undefined,
-      };
-      await client.apigw.bindDomain(domainConfig);
-    } catch (error) {
-      logger.error(lang.__('APIGW_DOMAIN_BINDING_FAILED', { error: String(error) }));
-      logger.info(lang.__('APIGW_GROUP_APIS_CREATED_DOMAIN_FAILED'));
-      logger.info(lang.__('APIGW_STATE_SAVED_RETRY'));
-      return state;
+        serviceName,
+        context.region,
+        context.stage,
+      );
+
+      const apiId = await client.apigw.createApi(apiConfig);
+
+      const apiInfo = await client.apigw.getApi(gatewayId, apiId);
+      if (apiInfo) {
+        instances.push(buildApigwApiInstanceFromProvider(apiInfo, context.stage, gatewayId));
+      }
+
+      await client.apigw.deployApi(gatewayId, apiId);
+      instances.push(buildApigwDeploymentInstance(gatewayId, apiId, 'RELEASE', context.stage));
     }
+
+    if (event.domain) {
+      try {
+        const domainConfig: ApigwDomainConfig = {
+          gatewayId,
+          domainName: event.domain.domain_name as string,
+          certificateId: event.domain.certificate_id as string | undefined,
+        };
+        await client.apigw.bindDomain(domainConfig);
+      } catch (error) {
+        logger.error(lang.__('APIGW_DOMAIN_BINDING_FAILED', { error: String(error) }));
+        logger.info(lang.__('APIGW_GROUP_APIS_CREATED_DOMAIN_FAILED'));
+        logger.info(lang.__('APIGW_STATE_SAVED_RETRY'));
+        throw new PartialResourceError(
+          stateAfterDependents,
+          error instanceof Error ? error : new Error(String(error)),
+        );
+      }
+    }
+  } catch (error) {
+    if (error instanceof PartialResourceError) {
+      throw error;
+    }
+    throw new PartialResourceError(
+      stateAfterDependents,
+      error instanceof Error ? error : new Error(String(error)),
+    );
   }
 
   const finalResourceState: ResourceState = {
@@ -195,10 +199,11 @@ export const createApigwResource = async (
       domain: extractEventDomainDefinition(event.domain),
     },
     instances,
+    status: 'ready',
     lastUpdated: new Date().toISOString(),
   };
 
-  return setResource(state, logicalId, finalResourceState);
+  return setResource(stateAfterDependents, logicalId, finalResourceState);
 };
 
 export const readApigwResource = async (context: Context, gatewayId: string) => {
@@ -373,29 +378,15 @@ export const deleteApigwResource = async (
     Record<string, unknown> | null | undefined;
   if (existingDomain?.domainName) {
     const primaryDomain = existingDomain.domainName as string;
-    try {
-      await client.apigw.unbindDomain(gatewayId, primaryDomain);
-    } catch (error) {
-      logger.warn(
-        lang.__('APIGW_DOMAIN_UNBIND_FAILED', { domain: primaryDomain, error: String(error) }),
-      );
-    }
+    await client.apigw.unbindDomain(gatewayId, primaryDomain);
   }
 
   const apis = existingInstances.filter((i) => i.type === 'VOLCENGINE_APIGW_API');
   for (const api of apis) {
-    try {
-      await client.apigw.deleteApi(gatewayId, api.id);
-    } catch {
-      // API might already be deleted
-    }
+    await client.apigw.deleteApi(gatewayId, api.id);
   }
 
-  try {
-    await client.apigw.deleteGateway(gatewayId);
-  } catch {
-    // Gateway might already be deleted
-  }
+  await client.apigw.deleteGateway(gatewayId);
 
   return removeResource(state, logicalId);
 };

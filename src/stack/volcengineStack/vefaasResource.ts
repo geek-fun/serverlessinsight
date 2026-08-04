@@ -256,47 +256,37 @@ const deleteDependentResources = async (
   const client = createVolcengineClient(context);
 
   for (const instance of [...instances].reverse()) {
-    try {
-      switch (instance.type) {
-        case 'VOLCENGINE_TLS_INDEX': {
-          const [projectName, topicName] = instance.id.split('/');
-          logger.info(lang.__('DELETING_TLS_INDEX', { id: instance.id }));
-          await client.tls.deleteIndex(projectName, topicName);
-          break;
-        }
-        case 'VOLCENGINE_TLS_TOPIC': {
-          const [projectName, topicName] = instance.id.split('/');
-          logger.info(lang.__('DELETING_TLS_TOPIC', { id: instance.id }));
-          await client.tls.deleteTopic(projectName, topicName);
-          break;
-        }
-        case 'VOLCENGINE_TLS_PROJECT':
-          logger.info(lang.__('DELETING_TLS_PROJECT', { id: instance.id }));
-          await client.tls.deleteProject(instance.id);
-          break;
-        case 'VOLCENGINE_IAM_ROLE': {
-          const attrs = instance.attributes as Record<string, unknown> | undefined;
-          if (attrs?.external === true) {
-            logger.info(
-              `Skipping deletion of external IAM role: ${instance.id} (managed externally)`,
-            );
-            break;
-          }
-          logger.info(lang.__('DELETING_IAM_ROLE', { id: instance.id }));
-          await client.iam.deleteRole(instance.id);
-          break;
-        }
-        default:
-          logger.warn(lang.__('UNKNOWN_RESOURCE_TYPE', { type: instance.type }));
+    switch (instance.type) {
+      case 'VOLCENGINE_TLS_INDEX': {
+        const [projectName, topicName] = instance.id.split('/');
+        logger.info(lang.__('DELETING_TLS_INDEX', { id: instance.id }));
+        await client.tls.deleteIndex(projectName, topicName);
+        break;
       }
-    } catch (err) {
-      logger.error(
-        lang.__('FAILED_TO_DELETE_RESOURCE', {
-          type: instance.type,
-          id: instance.id,
-          error: String(err),
-        }),
-      );
+      case 'VOLCENGINE_TLS_TOPIC': {
+        const [projectName, topicName] = instance.id.split('/');
+        logger.info(lang.__('DELETING_TLS_TOPIC', { id: instance.id }));
+        await client.tls.deleteTopic(projectName, topicName);
+        break;
+      }
+      case 'VOLCENGINE_TLS_PROJECT':
+        logger.info(lang.__('DELETING_TLS_PROJECT', { id: instance.id }));
+        await client.tls.deleteProject(instance.id);
+        break;
+      case 'VOLCENGINE_IAM_ROLE': {
+        const attrs = instance.attributes as Record<string, unknown> | undefined;
+        if (attrs?.external === true) {
+          logger.info(
+            `Skipping deletion of external IAM role: ${instance.id} (managed externally)`,
+          );
+          break;
+        }
+        logger.info(lang.__('DELETING_IAM_ROLE', { id: instance.id }));
+        await client.iam.deleteRole(instance.id);
+        break;
+      }
+      default:
+        logger.warn(lang.__('UNKNOWN_RESOURCE_TYPE', { type: instance.type }));
     }
   }
 };

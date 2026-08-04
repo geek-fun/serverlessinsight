@@ -245,7 +245,7 @@ describe('apigwResource', () => {
       expect(result).toBeDefined();
     });
 
-    it('should handle domain binding failure gracefully', async () => {
+    it('should throw PartialResourceError when domain binding fails', async () => {
       const { createVolcengineClient } = jest.requireMock(
         '../../../../src/common/volcengineClient',
       );
@@ -271,14 +271,89 @@ describe('apigwResource', () => {
         },
       };
 
-      const result = await createApigwResource(
-        mockContext,
-        eventWithDomain,
-        'test-service',
-        mockState,
+      await expect(
+        createApigwResource(mockContext, eventWithDomain, 'test-service', mockState),
+      ).rejects.toMatchObject({
+        name: 'PartialResourceError',
+        updatedState: {
+          resources: {
+            'events.api_gateway': {
+              status: 'tainted',
+            },
+          },
+        },
+        cause: { message: 'Domain binding failed' },
+      });
+    });
+
+    it('should throw PartialResourceError with tainted state when createApi fails', async () => {
+      const { createVolcengineClient } = jest.requireMock(
+        '../../../../src/common/volcengineClient',
       );
+      createVolcengineClient.mockReturnValueOnce({
+        apigw: {
+          createGateway: jest.fn().mockResolvedValue({ gatewayId: 'gateway-123' }),
+          getGateway: jest.fn().mockResolvedValue({
+            gatewayId: 'gateway-123',
+            gatewayName: 'test-gateway',
+          }),
+          findGatewayByName: jest.fn().mockResolvedValue(null),
+          createApi: jest.fn().mockRejectedValue(new Error('Create failed')),
+        },
+      });
+
+      await expect(
+        createApigwResource(mockContext, mockEvent, 'test-service', mockState),
+      ).rejects.toMatchObject({
+        name: 'PartialResourceError',
+        updatedState: {
+          resources: {
+            'events.api_gateway': {
+              status: 'tainted',
+            },
+          },
+        },
+        cause: { message: 'Create failed' },
+      });
+    });
+
+    it('should throw PartialResourceError when deployApi fails', async () => {
+      const { createVolcengineClient } = jest.requireMock(
+        '../../../../src/common/volcengineClient',
+      );
+      createVolcengineClient.mockReturnValueOnce({
+        apigw: {
+          createGateway: jest.fn().mockResolvedValue({ gatewayId: 'gateway-123' }),
+          getGateway: jest.fn().mockResolvedValue({
+            gatewayId: 'gateway-123',
+            gatewayName: 'test-gateway',
+          }),
+          findGatewayByName: jest.fn().mockResolvedValue(null),
+          createApi: jest.fn().mockResolvedValue('api-123'),
+          getApi: jest.fn().mockResolvedValue({ apiId: 'api-123' }),
+          deployApi: jest.fn().mockRejectedValue(new Error('Deploy failed')),
+        },
+      });
+
+      await expect(
+        createApigwResource(mockContext, mockEvent, 'test-service', mockState),
+      ).rejects.toMatchObject({
+        name: 'PartialResourceError',
+        cause: { message: 'Deploy failed' },
+      });
+    });
+
+    it('should write ready state on successful create', async () => {
+      const { setResource } = jest.requireMock('../../../../src/common/stateManager');
+
+      const result = await createApigwResource(mockContext, mockEvent, 'test-service', mockState);
 
       expect(result).toBeDefined();
+      expect(setResource).toHaveBeenCalledWith(
+        expect.anything(),
+        'events.api_gateway',
+        expect.objectContaining({ status: 'ready' }),
+      );
     });
   });
 
@@ -796,10 +871,11 @@ describe('apigwResource', () => {
       expect(result).toBeDefined();
     });
 
-    it('should handle delete with unbind domain failure', async () => {
+    it('should propagate unbind domain failure and keep resource in state', async () => {
       const { createVolcengineClient } = jest.requireMock(
         '../../../../src/common/volcengineClient',
       );
+      const { removeResource } = jest.requireMock('../../../../src/common/stateManager');
       createVolcengineClient.mockReturnValueOnce({
         apigw: {
           getGateway: jest.fn().mockResolvedValue({ gatewayId: 'gateway-123' }),
@@ -832,18 +908,17 @@ describe('apigwResource', () => {
         },
       };
 
-      const result = await deleteApigwResource(
-        mockContext,
-        'events.api_gateway',
-        stateWithResource,
-      );
-      expect(result).toBeDefined();
+      await expect(
+        deleteApigwResource(mockContext, 'events.api_gateway', stateWithResource),
+      ).rejects.toThrow('Unbind failed');
+      expect(removeResource).not.toHaveBeenCalled();
     });
 
-    it('should handle delete with delete api failure', async () => {
+    it('should propagate delete api failure and keep resource in state', async () => {
       const { createVolcengineClient } = jest.requireMock(
         '../../../../src/common/volcengineClient',
       );
+      const { removeResource } = jest.requireMock('../../../../src/common/stateManager');
       createVolcengineClient.mockReturnValueOnce({
         apigw: {
           getGateway: jest.fn().mockResolvedValue({ gatewayId: 'gateway-123' }),
@@ -879,12 +954,56 @@ describe('apigwResource', () => {
         },
       };
 
-      const result = await deleteApigwResource(
-        mockContext,
-        'events.api_gateway',
-        stateWithResource,
+      await expect(
+        deleteApigwResource(mockContext, 'events.api_gateway', stateWithResource),
+      ).rejects.toThrow('Delete API failed');
+      expect(removeResource).not.toHaveBeenCalled();
+    });
+
+    it('should propagate deleteGateway failure and keep resource in state', async () => {
+      const { createVolcengineClient } = jest.requireMock(
+        '../../../../src/common/volcengineClient',
       );
-      expect(result).toBeDefined();
+      const { removeResource } = jest.requireMock('../../../../src/common/stateManager');
+      createVolcengineClient.mockReturnValueOnce({
+        apigw: {
+          getGateway: jest.fn().mockResolvedValue({ gatewayId: 'gateway-123' }),
+          unbindDomain: jest.fn().mockResolvedValue(undefined),
+          deleteApi: jest.fn().mockResolvedValue(undefined),
+          deleteGateway: jest.fn().mockRejectedValue(new Error('Delete gateway failed')),
+        },
+      });
+
+      const stateWithResource: StateFile = {
+        ...mockState,
+        resources: {
+          'events.api_gateway': {
+            mode: 'managed',
+            region: 'cn-beijing',
+            definition: { groupName: 'test-gateway' },
+            instances: [
+              {
+                type: 'VOLCENGINE_APIGW_GROUP',
+                sid: 'volcengine:apigw:dev:gateway-123',
+                id: 'gateway-123',
+                gatewayId: 'gateway-123',
+              },
+              {
+                type: 'VOLCENGINE_APIGW_API',
+                sid: 'volcengine:apigw:dev:gateway-123/api-123',
+                id: 'api-123',
+                apiId: 'api-123',
+              },
+            ],
+            lastUpdated: '2024-01-01T00:00:00Z',
+          },
+        },
+      };
+
+      await expect(
+        deleteApigwResource(mockContext, 'events.api_gateway', stateWithResource),
+      ).rejects.toThrow('Delete gateway failed');
+      expect(removeResource).not.toHaveBeenCalled();
     });
   });
 });

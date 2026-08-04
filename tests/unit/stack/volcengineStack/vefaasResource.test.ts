@@ -1176,7 +1176,7 @@ describe('vefaasResource', () => {
       expect(removeResource).toHaveBeenCalled();
     });
 
-    it('should log error when a delete operation throws during cleanup', async () => {
+    it('should propagate error when dependent resource delete fails and keep resource in state', async () => {
       const stateWithIamRole: StateFile = {
         ...mockState,
         resources: {
@@ -1208,12 +1208,10 @@ describe('vefaasResource', () => {
       mockVefaasClient.iam.deleteRole.mockRejectedValueOnce(new Error('IAM delete failed'));
       (getResource as jest.Mock).mockReturnValue(stateWithIamRole.resources['functions.test_fn']);
 
-      const { logger } = jest.requireMock('../../../../src/common/logger');
-
-      await deleteResource(mockContext, 'test-function', 'functions.test_fn', stateWithIamRole);
-
-      expect(logger.error).toHaveBeenCalled();
-      expect(removeResource).toHaveBeenCalled();
+      await expect(
+        deleteResource(mockContext, 'test-function', 'functions.test_fn', stateWithIamRole),
+      ).rejects.toThrow('IAM delete failed');
+      expect(removeResource).not.toHaveBeenCalled();
     });
 
     it('should throw other errors', async () => {

@@ -1,6 +1,13 @@
 import { createVolcengineClient } from '../../common/volcengineClient';
 import { setResource, removeResource, buildSid, computeDirectoryHash } from '../../common';
-import { Context, BucketDomain, ResourceState, StateFile, ResourceInstance } from '../../types';
+import {
+  Context,
+  BucketDomain,
+  ResourceState,
+  StateFile,
+  ResourceInstance,
+  PartialResourceError,
+} from '../../types';
 import {
   bucketToTosConfig,
   extractTosBucketDefinition,
@@ -48,12 +55,8 @@ const deleteBucketPolicy = async (
   client: ReturnType<typeof createVolcengineClient>,
   bucketName: string,
 ): Promise<void> => {
-  try {
-    await client.tos.deleteBucketPolicy(bucketName);
-    logger.info(lang.__('BUCKET_POLICY_DELETED', { bucketName }));
-  } catch {
-    // Best effort cleanup
-  }
+  await client.tos.deleteBucketPolicy(bucketName);
+  logger.info(lang.__('BUCKET_POLICY_DELETED', { bucketName }));
 };
 
 export const createResource = async (
@@ -64,8 +67,6 @@ export const createResource = async (
   const config = bucketToTosConfig(bucket);
   const client = createVolcengineClient(context);
 
-  const bucketInfo = await client.tos.createBucket(config);
-
   const sid = buildSid('volcengine', 'tos', context.stage, bucket.name);
   const logicalId = `buckets.${bucket.key}`;
 
@@ -73,39 +74,68 @@ export const createResource = async (
     ? computeDirectoryHash(path.resolve(process.cwd(), bucket.website.code))
     : undefined;
 
-  const instances: Array<ResourceInstance> = [buildTosInstanceFromProvider(bucketInfo, sid)];
-
-  if (bucket.website?.code) {
-    try {
-      const codePath = path.resolve(process.cwd(), bucket.website.code);
-      await client.tos.uploadFiles(bucket.name, codePath);
-
-      const refreshedInfo = await client.tos.getBucket(bucket.name);
-      if (refreshedInfo) {
-        instances[0] = buildTosInstanceFromProvider(refreshedInfo, sid);
-      }
-    } catch (error) {
-      logger.error(
-        lang.__('TOS_BUCKET_FILE_UPLOAD_FAILED_STATE_SAVED', {
-          error: error instanceof Error ? error.message : String(error),
-        }),
-      );
-      logger.info(lang.__('TOS_BUCKET_TRACKED_CAN_RETRY'));
-    }
-  }
-
-  // Apply IAM bucket policy if configured
-  await applyBucketPolicy(client, bucket);
-
-  const resourceState: ResourceState = {
+  const taintedResourceState: ResourceState = {
     mode: 'managed',
     region: context.region,
     definition: extractTosBucketDefinition(config, websiteCodeHash),
-    instances,
+    instances: [
+      {
+        type: 'VOLCENGINE_TOS_BUCKET',
+        sid,
+        id: bucket.name,
+        bucketName: bucket.name,
+        attributes: {},
+      },
+    ],
+    status: 'tainted',
     lastUpdated: new Date().toISOString(),
   };
 
-  return setResource(state, logicalId, resourceState);
+  const stateAfterDependents = setResource(state, logicalId, taintedResourceState);
+
+  try {
+    const bucketInfo = await client.tos.createBucket(config);
+
+    const instances: Array<ResourceInstance> = [buildTosInstanceFromProvider(bucketInfo, sid)];
+
+    if (bucket.website?.code) {
+      try {
+        const codePath = path.resolve(process.cwd(), bucket.website.code);
+        await client.tos.uploadFiles(bucket.name, codePath);
+
+        const refreshedInfo = await client.tos.getBucket(bucket.name);
+        if (refreshedInfo) {
+          instances[0] = buildTosInstanceFromProvider(refreshedInfo, sid);
+        }
+      } catch (error) {
+        logger.error(
+          lang.__('TOS_BUCKET_FILE_UPLOAD_FAILED_STATE_SAVED', {
+            error: error instanceof Error ? error.message : String(error),
+          }),
+        );
+        logger.info(lang.__('TOS_BUCKET_TRACKED_CAN_RETRY'));
+      }
+    }
+
+    // Apply IAM bucket policy if configured
+    await applyBucketPolicy(client, bucket);
+
+    const resourceState: ResourceState = {
+      mode: 'managed',
+      region: context.region,
+      definition: extractTosBucketDefinition(config, websiteCodeHash),
+      instances,
+      status: 'ready',
+      lastUpdated: new Date().toISOString(),
+    };
+
+    return setResource(stateAfterDependents, logicalId, resourceState);
+  } catch (error) {
+    throw new PartialResourceError(
+      stateAfterDependents,
+      error instanceof Error ? error : new Error(String(error)),
+    );
+  }
 };
 
 export const readResource = async (context: Context, bucketName: string) => {

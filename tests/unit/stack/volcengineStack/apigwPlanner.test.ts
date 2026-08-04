@@ -98,6 +98,52 @@ describe('apigwPlanner', () => {
       expect(result.items[0].resourceType).toBe('VOLCENGINE_APIGW');
     });
 
+    it('should generate create plan for tainted event state without drift-import', async () => {
+      const { createVolcengineClient } = jest.requireMock(
+        '../../../../src/common/volcengineClient',
+      );
+      const findGatewayByName = jest.fn().mockResolvedValue({
+        gatewayId: 'existing-gateway',
+        gatewayName: 'test-gateway',
+      });
+      createVolcengineClient.mockReturnValueOnce({
+        apigw: {
+          findGatewayByName,
+        },
+      });
+
+      const stateWithTainted: StateFile = {
+        ...mockState,
+        resources: {
+          'events.api_gateway': {
+            mode: 'managed',
+            region: 'cn-beijing',
+            definition: { groupName: 'test-gateway' },
+            instances: [
+              {
+                type: 'VOLCENGINE_APIGW_GROUP',
+                sid: 'volcengine:apigw:dev:gateway-123',
+                id: 'gateway-123',
+              },
+            ],
+            status: 'tainted',
+            lastUpdated: '2024-01-01T00:00:00Z',
+          },
+        },
+      };
+
+      const result = await generateApigwPlan(
+        mockContext,
+        stateWithTainted,
+        [mockEvent],
+        'test-service',
+      );
+
+      expect(result.items).toHaveLength(1);
+      expect(result.items[0].action).toBe('create');
+      expect(findGatewayByName).not.toHaveBeenCalled();
+    });
+
     it('should generate update plan for drifted resource', async () => {
       const { createVolcengineClient } = jest.requireMock(
         '../../../../src/common/volcengineClient',

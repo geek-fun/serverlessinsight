@@ -256,6 +256,78 @@ describe('tosResource', () => {
 
       expect(setResource).toHaveBeenCalled();
     });
+
+    it('should throw PartialResourceError with tainted state when createBucket fails', async () => {
+      const bucket: BucketDomain = {
+        key: 'static_site',
+        name: 'test-bucket',
+      };
+
+      mockTosClient.tos.createBucket.mockRejectedValueOnce(new Error('Create failed'));
+
+      await expect(createResource(mockContext, bucket, mockState)).rejects.toMatchObject({
+        name: 'PartialResourceError',
+        updatedState: {
+          resources: {
+            'buckets.static_site': {
+              status: 'tainted',
+            },
+          },
+        },
+        cause: { message: 'Create failed' },
+      });
+    });
+
+    it('should throw PartialResourceError with tainted state when applyBucketPolicy fails', async () => {
+      const bucket: BucketDomain = {
+        key: 'static_site',
+        name: 'test-bucket',
+        iam: {
+          resource: {
+            statements: [
+              {
+                effect: 'Allow',
+                principal: { trn: 'trn:iam:::role/my-role' },
+                action: ['tos:PutObject'],
+                resource: ['trn:tos:::test-bucket/*'],
+              },
+            ],
+          },
+        },
+      };
+
+      mockTosClient.tos.createBucket.mockResolvedValueOnce({
+        name: 'test-bucket',
+        location: 'cn-beijing',
+      });
+      mockTosClient.tos.putBucketPolicy.mockRejectedValueOnce(new Error('Policy create failed'));
+
+      await expect(createResource(mockContext, bucket, mockState)).rejects.toMatchObject({
+        name: 'PartialResourceError',
+        cause: { message: 'Policy create failed' },
+      });
+    });
+
+    it('should write ready state on successful create', async () => {
+      const bucket: BucketDomain = {
+        key: 'static_site',
+        name: 'test-bucket',
+      };
+
+      mockTosClient.tos.createBucket.mockResolvedValueOnce({
+        name: 'test-bucket',
+        location: 'cn-beijing',
+        acl: 'private',
+      });
+
+      await createResource(mockContext, bucket, mockState);
+
+      expect(setResource).toHaveBeenCalledWith(
+        expect.anything(),
+        'buckets.static_site',
+        expect.objectContaining({ status: 'ready' }),
+      );
+    });
   });
 
   describe('readResource', () => {
@@ -451,14 +523,15 @@ describe('tosResource', () => {
       expect(removeResource).toHaveBeenCalledWith(mockState, 'buckets.static_site');
     });
 
-    it('should delete bucket successfully when deleteBucketPolicy fails', async () => {
+    it('should propagate deleteBucketPolicy error and keep resource in state', async () => {
       mockTosClient.tos.deleteBucketPolicy.mockRejectedValueOnce(new Error('Policy error'));
-      mockTosClient.tos.deleteBucket.mockResolvedValueOnce(undefined);
 
-      await deleteResource(mockContext, 'test-bucket', 'buckets.static_site', mockState);
+      await expect(
+        deleteResource(mockContext, 'test-bucket', 'buckets.static_site', mockState),
+      ).rejects.toThrow('Policy error');
 
-      expect(mockTosClient.tos.deleteBucket).toHaveBeenCalledWith('test-bucket');
-      expect(removeResource).toHaveBeenCalledWith(mockState, 'buckets.static_site');
+      expect(mockTosClient.tos.deleteBucket).not.toHaveBeenCalled();
+      expect(removeResource).not.toHaveBeenCalled();
     });
 
     it('should delete bucket successfully', async () => {
