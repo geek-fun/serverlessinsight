@@ -9,8 +9,15 @@ import {
   removeResource,
   getAllResources,
   getRoleArnFromState,
+  registerStateMigration,
+  clearStateMigrations,
 } from '../../../src/common/stateManager';
-import { ResourceState, CURRENT_STATE_VERSION, StateCorruptError } from '../../../src/types';
+import {
+  ResourceState,
+  CURRENT_STATE_VERSION,
+  StateCorruptError,
+  StateVersionError,
+} from '../../../src/types';
 import fs from 'node:fs';
 import path from 'node:path';
 
@@ -169,6 +176,121 @@ describe('StateManager', () => {
         expect(() => loadState('tencent', 'test-app', 'test-service', 'default', testDir)).toThrow(
           StateCorruptError,
         );
+      });
+    });
+
+    describe('state version migration scaffold (P4)', () => {
+      const writeState = (body: Record<string, unknown>): void => {
+        ensureStateDir(testDir);
+        fs.writeFileSync(statePath, JSON.stringify(body));
+      };
+
+      it('loadState throws StateVersionError on a newer unknown state version', () => {
+        writeState({
+          version: '99.0',
+          provider: 'tencent',
+          app: 'test-app',
+          service: 'test-service',
+          stages: {},
+          resources: {},
+        });
+
+        expect(() => loadState('tencent', 'test-app', 'test-service', 'default', testDir)).toThrow(
+          StateVersionError,
+        );
+        expect(() => loadState('tencent', 'test-app', 'test-service', 'default', testDir)).toThrow(
+          /upgrade/i,
+        );
+      });
+
+      it('loadState loads state with version === CURRENT_STATE_VERSION without throwing', () => {
+        writeState({
+          version: CURRENT_STATE_VERSION,
+          provider: 'tencent',
+          app: 'test-app',
+          service: 'test-service',
+          stages: { default: { resources: {} } },
+          resources: {},
+        });
+
+        const state = loadState('tencent', 'test-app', 'test-service', 'default', testDir);
+        expect(state.version).toBe(CURRENT_STATE_VERSION);
+      });
+
+      it('loadState loads a legacy state with an older version field without throwing', () => {
+        writeState({
+          version: '1.0.0',
+          provider: 'tencent',
+          app: 'test-app',
+          service: 'test-service',
+          stages: { default: { resources: {} } },
+          resources: {},
+        });
+
+        const state = loadState('tencent', 'test-app', 'test-service', 'default', testDir);
+        expect(state.version).toBe('1.0.0');
+        expect(state.resources).toEqual({});
+      });
+
+      it('loadState loads a legacy state with a missing version field without throwing', () => {
+        writeState({
+          provider: 'tencent',
+          app: 'test-app',
+          service: 'test-service',
+          stages: { default: {} },
+          resources: {},
+        });
+
+        const state = loadState('tencent', 'test-app', 'test-service', 'default', testDir);
+        expect(state.version).toBeUndefined();
+        expect(state.resources).toEqual({});
+      });
+
+      it('applies a registered migration for an older state version', () => {
+        const migrateSpy = jest.fn((state: Record<string, unknown>) => ({
+          ...state,
+          version: CURRENT_STATE_VERSION,
+          migrated: true,
+        }));
+        registerStateMigration('0.5', migrateSpy);
+        try {
+          writeState({
+            version: '0.5',
+            provider: 'tencent',
+            app: 'test-app',
+            service: 'test-service',
+            stages: { default: { resources: {} } },
+            resources: {},
+          });
+
+          const state = loadState('tencent', 'test-app', 'test-service', 'default', testDir);
+
+          expect(migrateSpy).toHaveBeenCalledTimes(1);
+          expect(state.version).toBe(CURRENT_STATE_VERSION);
+          expect((state as { migrated?: boolean }).migrated).toBe(true);
+        } finally {
+          clearStateMigrations();
+        }
+      });
+
+      it('throws StateVersionError when a registered migration cannot reach CURRENT', () => {
+        registerStateMigration('0.5', (state) => ({ ...state, version: '1.0' }));
+        try {
+          writeState({
+            version: '0.5',
+            provider: 'tencent',
+            app: 'test-app',
+            service: 'test-service',
+            stages: {},
+            resources: {},
+          });
+
+          expect(() =>
+            loadState('tencent', 'test-app', 'test-service', 'default', testDir),
+          ).toThrow(StateVersionError);
+        } finally {
+          clearStateMigrations();
+        }
       });
     });
   });

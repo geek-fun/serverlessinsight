@@ -154,3 +154,21 @@ export class StateCorruptError extends Error {
     this.cause = cause;
   }
 }
+
+export class StateVersionError extends Error {
+  readonly version: string;
+  readonly currentVersion: string;
+  readonly cause: unknown;
+
+  constructor(version: string, currentVersion: string, cause?: unknown) {
+    super(
+      `State file version "${version}" is not supported by this CLI (current "${currentVersion}"). ` +
+        'Upgrade the CLI to a version that understands this state format, or restore a compatible state file.',
+      cause !== undefined ? { cause } : undefined,
+    );
+    this.name = 'StateVersionError';
+    this.version = version;
+    this.currentVersion = currentVersion;
+    this.cause = cause;
+  }
+}

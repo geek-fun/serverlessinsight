@@ -1,8 +1,15 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import crypto from 'node:crypto';
-import { ResourceState, StateFile, StateCorruptError, CURRENT_STATE_VERSION } from '../types';
+import {
+  ResourceState,
+  StateFile,
+  StateCorruptError,
+  StateVersionError,
+  CURRENT_STATE_VERSION,
+} from '../types';
 import { withLock, LockOptions } from './lockManager';
+import { logger } from './logger';
 
 const STATE_DIR = '.serverlessinsight';
 
@@ -24,12 +31,93 @@ export const ensureStateDir = (baseDir: string = process.cwd()): void => {
 };
 
 /**
+ * A state migration transforms a state file written by `fromVersion` into a
+ * newer format. The migration itself must stamp the resulting state with the
+ * next `version` so the chain can advance toward CURRENT_STATE_VERSION.
+ */
+export type StateMigration = (state: Record<string, unknown>) => Record<string, unknown>;
+
+const STATE_MIGRATIONS: Array<{ fromVersion: string; migrate: StateMigration }> = [];
+
+/**
+ * Register a migration from `fromVersion` to a newer format. Applied in
+ * registration order during `loadState`; empty today because CURRENT_STATE_VERSION
+ * ('3.0') is the only format this CLI writes so far.
+ */
+export const registerStateMigration = (fromVersion: string, migrate: StateMigration): void => {
+  STATE_MIGRATIONS.push({ fromVersion, migrate });
+};
+
+/** Drop all registered migrations (test/cleanup helper). */
+export const clearStateMigrations = (): void => {
+  STATE_MIGRATIONS.length = 0;
+};
+
+/**
+ * Parse a state version string ("3.0", "1.0.0") into a comparable number.
+ * Versions are treated as legacy-format (major.minor[.patch]); a missing
+ * minor/patch defaults to 0. Non-numeric segments are ignored.
+ */
+const parseStateVersion = (version: string): number => {
+  const [major, minor] = version.split('.').map((part) => parseInt(part, 10));
+  return (isNaN(major) ? 0 : major) * 1000 + (isNaN(minor) ? 0 : minor);
+};
+
+/**
+ * Apply registered migrations to bring `raw` up to CURRENT_STATE_VERSION, then
+ * guard against versions that cannot reach it. A state written by a NEWER CLI
+ * must not be silently read (downgraded) — that risks data loss — so it is
+ * rejected instead. Older/legacy versions without a registered migration load
+ * as-is (they predate the migration registry).
+ */
+const migrateState = (raw: StateFile): StateFile => {
+  if (!raw.version) {
+    logger.debug(
+      { stateVersion: raw.version },
+      'state file has no version field; treating as legacy',
+    );
+    return raw;
+  }
+  if (raw.version === CURRENT_STATE_VERSION) {
+    return raw;
+  }
+
+  let migrated: Record<string, unknown> = raw as unknown as Record<string, unknown>;
+  let hops = 0;
+  while (migrated.version !== CURRENT_STATE_VERSION && hops < STATE_MIGRATIONS.length) {
+    const entry = STATE_MIGRATIONS.find((m) => m.fromVersion === migrated.version);
+    if (!entry) {
+      break;
+    }
+    migrated = entry.migrate(migrated);
+    hops++;
+  }
+
+  const migratedVersion = String(migrated.version ?? '');
+  if (migratedVersion && migratedVersion !== CURRENT_STATE_VERSION) {
+    // A registered migration ran but did not land on CURRENT — refuse rather
+    // than persist a half-migrated state.
+    if (hops > 0) {
+      throw new StateVersionError(migratedVersion, CURRENT_STATE_VERSION);
+    }
+    // No migration was applicable. Only reject versions NEWER than CURRENT
+    // (written by a newer CLI, or an unknown future format). Older legacy
+    // versions load as-is.
+    if (parseStateVersion(migratedVersion) > parseStateVersion(CURRENT_STATE_VERSION)) {
+      throw new StateVersionError(migratedVersion, CURRENT_STATE_VERSION);
+    }
+  }
+  return migrated as unknown as StateFile;
+};
+
+/**
  * Load state file, scoped to the given stage.
  * The returned StateFile has `resources` populated from `stages[stage].resources`.
  * A corrupt primary is recovered from `statePath + '.backup'`; if both are corrupt,
  * StateCorruptError is thrown instead of silently returning empty state.
+ * Registered version migrations are applied on load; a state version that cannot
+ * be migrated to CURRENT_STATE_VERSION throws StateVersionError.
  */
-/* istanbul ignore next */
 export const loadState = (
   provider: string,
   app: string,
@@ -56,16 +144,22 @@ export const loadState = (
     }
   };
 
+  const hydrate = (raw: StateFile): StateFile => {
+    const migrated = migrateState(raw);
+    const stageResources = migrated.stages?.[stage]?.resources ?? {};
+    return { ...migrated, resources: stageResources };
+  };
+
   try {
     const content = fs.readFileSync(statePath, 'utf-8');
-    const raw = JSON.parse(content) as StateFile;
-    const stageResources = raw.stages?.[stage]?.resources ?? {};
-    return { ...raw, resources: stageResources };
+    return hydrate(JSON.parse(content) as StateFile);
   } catch (error) {
+    if (error instanceof StateVersionError) {
+      throw error;
+    }
     const backup = readBackup();
     if (backup) {
-      const stageResources = backup.stages?.[stage]?.resources ?? {};
-      return { ...backup, resources: stageResources };
+      return hydrate(backup);
     }
     throw new StateCorruptError(statePath, error);
   }
