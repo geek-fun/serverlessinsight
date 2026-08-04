@@ -6,6 +6,7 @@ import {
   StateFile,
   SaveStateFn,
   ExecutionResult,
+  PartialResourceError,
 } from '../../types';
 import { createBucketResource, deleteBucketResource, updateBucketResource } from './cosResource';
 import { logger } from '../../common';
@@ -123,6 +124,21 @@ export const executeBucketPlan = async (
         }
       }
     } catch (error) {
+      if (error instanceof PartialResourceError) {
+        const updatedState = error.updatedState;
+        if (onStateChange) {
+          await onStateChange(updatedState);
+        }
+        return {
+          state: updatedState,
+          partialFailure: {
+            failedItem: item,
+            error: error.cause,
+            successfulItems,
+          },
+        };
+      }
+
       return {
         state: currentState,
         partialFailure: {

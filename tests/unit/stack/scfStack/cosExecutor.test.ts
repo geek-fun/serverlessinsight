@@ -13,6 +13,7 @@ import {
   BucketDomain,
   BucketAccessEnum,
   ResourceMode,
+  PartialResourceError,
 } from '../../../../src/types';
 
 jest.mock('../../../../src/stack/scfStack/cosResource');
@@ -353,6 +354,53 @@ describe('cosExecutor', () => {
       expect(result.partialFailure?.failedItem).toEqual(plan.items[0]);
       expect(result.partialFailure?.successfulItems).toEqual([]);
       expect(result.state).toEqual(initialState);
+    });
+
+    it('should persist updatedState via onStateChange on PartialResourceError', async () => {
+      const plan: Plan = {
+        items: [
+          {
+            logicalId: 'buckets.test_bucket',
+            action: 'create',
+            resourceType: 'COS_BUCKET',
+            changes: { after: {} },
+          },
+        ],
+      };
+
+      const taintedState: StateFile = {
+        ...initialState,
+        resources: {
+          'buckets.test_bucket': {
+            mode: 'managed',
+            region: 'ap-guangzhou',
+            definition: { bucket: 'test-bucket' },
+            instances: [],
+            lastUpdated: new Date().toISOString(),
+          },
+        },
+      };
+
+      const causeErr = new Error('Create failed after partial provision');
+      (cosResource.createBucketResource as jest.Mock).mockRejectedValue(
+        new PartialResourceError(taintedState, causeErr),
+      );
+
+      const onStateChange = jest.fn();
+      const result = await executeBucketPlan(
+        mockContext,
+        plan,
+        [testBucket],
+        initialState,
+        onStateChange,
+      );
+
+      expect(onStateChange).toHaveBeenCalledWith(taintedState);
+      expect(result.state).toEqual(taintedState);
+      expect(result.partialFailure).toBeDefined();
+      expect(result.partialFailure?.error).toBe(causeErr);
+      expect(result.partialFailure?.failedItem.logicalId).toBe('buckets.test_bucket');
+      expect(result.partialFailure?.successfulItems).toEqual([]);
     });
 
     it('should return partial failure on update action error', async () => {

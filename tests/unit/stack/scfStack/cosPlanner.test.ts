@@ -112,6 +112,29 @@ describe('cosPlanner', () => {
       expect(plan.items.find((i) => i.action === 'delete')).toBeDefined();
     });
 
+    it('should plan create when state status is tainted', async () => {
+      (stateManager.getResource as jest.Mock).mockReturnValue({
+        mode: 'managed',
+        region: 'ap-guangzhou',
+        status: 'tainted',
+        definition: { bucket: 'test-bucket' },
+        instances: [],
+        lastUpdated: new Date().toISOString(),
+      });
+      (stateManager.getAllResources as jest.Mock).mockReturnValue({});
+
+      const plan = await generateBucketPlan(mockContext, initialState, [testBucket]);
+
+      expect(plan.items).toHaveLength(1);
+      expect(plan.items[0]).toMatchObject({
+        logicalId: 'buckets.test_bucket',
+        action: 'create',
+        resourceType: 'COS_BUCKET',
+      });
+      expect(plan.items[0].changes?.after).toBeDefined();
+      expect(plan.items[0].changes?.before).toBeUndefined();
+    });
+
     it('should plan creation when bucket does not exist in state', async () => {
       (stateManager.getResource as jest.Mock).mockReturnValue(null);
       (stateManager.getAllResources as jest.Mock).mockReturnValue({});

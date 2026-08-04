@@ -148,6 +148,30 @@ describe('esServerlessPlanner', () => {
       expect(plan.items[0].resourceType).toBe('TENCENT_ES_SERVERLESS');
     });
 
+    it('should plan create when state status is tainted', async () => {
+      (stateManager.getResource as jest.Mock).mockReturnValue({
+        mode: 'managed',
+        region: 'ap-guangzhou',
+        status: 'tainted',
+        definition: { name: 'test-db' },
+        instances: [{ sid: 'si:tencent:es', id: 'space-123' }],
+        lastUpdated: new Date().toISOString(),
+        metadata: { spaceId: 'space-123' },
+      });
+      (stateManager.getAllResources as jest.Mock).mockReturnValue({});
+
+      const plan = await generateEsPlan(mockContext, initialState, [testDatabase]);
+
+      expect(plan.items).toHaveLength(1);
+      expect(plan.items[0]).toMatchObject({
+        logicalId: 'databases.test_db',
+        action: 'create',
+        resourceType: 'TENCENT_ES_SERVERLESS',
+      });
+      expect(plan.items[0].changes?.after).toBeDefined();
+      expect(plan.items[0].changes?.before).toBeUndefined();
+    });
+
     it('should plan creation when ES database exists in state but not in cloud', async () => {
       const stateWithDb: StateFile = {
         ...initialState,

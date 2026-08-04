@@ -112,6 +112,31 @@ describe('TdsqlcPlanner', () => {
       });
     });
 
+    it('should generate create plan when state status is tainted', async () => {
+      const taintedState: ResourceState = {
+        mode: 'managed',
+        region: 'ap-guangzhou',
+        status: 'tainted',
+        definition: expectedDefinition,
+        instances: [],
+        lastUpdated: '2024-01-01T00:00:00Z',
+        metadata: { clusterId: 'cynosdbmysql-test123' },
+      };
+      jest.spyOn(stateManager, 'getResource').mockReturnValue(taintedState);
+      jest.spyOn(stateManager, 'getAllResources').mockReturnValue({});
+
+      const result = await generateDatabasePlan(mockContext, mockState, [mockDatabase]);
+
+      expect(result.items).toHaveLength(1);
+      expect(result.items[0]).toMatchObject({
+        logicalId: 'databases.test_db',
+        action: 'create',
+        resourceType: 'TDSQL_C_SERVERLESS',
+      });
+      expect(result.items[0].changes?.after).toBeDefined();
+      expect(result.items[0].changes?.before).toBeUndefined();
+    });
+
     it('should generate update plan when definition changes', async () => {
       const existingState: ResourceState = {
         mode: 'managed',

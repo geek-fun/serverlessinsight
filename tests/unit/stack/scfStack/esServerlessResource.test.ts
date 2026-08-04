@@ -277,6 +277,38 @@ describe('EsServerlessResource', () => {
       );
     });
 
+    it('should persist tainted state via PartialResourceError on create failure', async () => {
+      const error = new Error('Create failed');
+      mockEsOperations.createSpace.mockRejectedValue(error);
+
+      const taintedState = {
+        ...initialState,
+        resources: {
+          'databases.test_es': {
+            mode: 'managed',
+            region: 'ap-guangzhou',
+            definition: {},
+            instances: [],
+            lastUpdated: expect.any(String),
+            status: 'tainted',
+          },
+        },
+      };
+      mockedStateManager.setResource.mockReturnValue(taintedState);
+
+      await expect(
+        createEsResource(mockContext, createTestDatabase('test_es'), initialState),
+      ).rejects.toMatchObject({
+        name: 'PartialResourceError',
+        cause: { message: 'Create failed' },
+        updatedState: expect.objectContaining({
+          resources: expect.objectContaining({
+            'databases.test_es': expect.objectContaining({ status: 'tainted' }),
+          }),
+        }),
+      });
+    });
+
     it('should create ES space with VPC configuration', async () => {
       const database: DatabaseDomain = {
         ...createTestDatabase('test_es'),

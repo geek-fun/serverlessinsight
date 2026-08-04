@@ -46,7 +46,7 @@ export const generateEsPlan = async (
       const config = databaseToTencentEsConfig(database);
       const desiredDefinition = extractTencentEsDefinition(config);
 
-      if (!currentState) {
+      if (!currentState || currentState.status === 'tainted') {
         return {
           logicalId,
           action: 'create',
