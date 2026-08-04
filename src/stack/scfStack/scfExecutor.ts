@@ -113,7 +113,7 @@ export const executeFunctionPlan = async (
         currentState = newState;
         successfulItems.push(item);
         if (onStateChange) {
-          onStateChange(currentState);
+          await onStateChange(currentState);
           logger.debug(
             lang.__('STATE_PERSISTED_AFTER_OPERATION', {
               action: item.action,
@@ -126,7 +126,7 @@ export const executeFunctionPlan = async (
       if (error instanceof PartialResourceError) {
         const updatedState = error.updatedState;
         if (onStateChange) {
-          onStateChange(updatedState);
+          await onStateChange(updatedState);
         }
         return {
           state: updatedState,

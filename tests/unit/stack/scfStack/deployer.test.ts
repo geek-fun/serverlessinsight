@@ -229,6 +229,45 @@ describe('deployer', () => {
       expect(mockBackend.saveState).toHaveBeenCalled();
     });
 
+    it('should await onStateChange (backend.saveState) before deploy returns', async () => {
+      const newState = { ...initialState, resources: { test: {} as any } };
+
+      (scfExecutor.executeFunctionPlan as jest.Mock).mockImplementation(
+        async (context, plan, functions, state, onStateChange) => {
+          if (onStateChange) {
+            await onStateChange(newState);
+          }
+          return { state: newState };
+        },
+      );
+
+      let resolveSave: (() => void) | undefined;
+      let saveStarted = false;
+      (mockBackend.saveState as jest.Mock)
+        .mockImplementationOnce(() => {
+          saveStarted = true;
+          return new Promise<void>((resolve) => {
+            resolveSave = resolve;
+          });
+        })
+        .mockResolvedValue(undefined);
+
+      let deployResolved = false;
+      const deployPromise = deployTencentStack(testIac, mockBackend).then(() => {
+        deployResolved = true;
+      });
+
+      await new Promise((resolve) => setImmediate(resolve));
+
+      expect(saveStarted).toBe(true);
+      expect(deployResolved).toBe(false);
+
+      resolveSave!();
+      await deployPromise;
+
+      expect(deployResolved).toBe(true);
+    });
+
     it('should combine plans from all resource types', async () => {
       const functionPlan: Plan = {
         items: [

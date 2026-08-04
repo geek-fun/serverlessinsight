@@ -1,6 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { ResourceState, StateFile, CURRENT_STATE_VERSION } from '../types';
+import crypto from 'node:crypto';
+import { ResourceState, StateFile, StateCorruptError, CURRENT_STATE_VERSION } from '../types';
 import { withLock, LockOptions } from './lockManager';
 
 const STATE_DIR = '.serverlessinsight';
@@ -25,6 +26,8 @@ export const ensureStateDir = (baseDir: string = process.cwd()): void => {
 /**
  * Load state file, scoped to the given stage.
  * The returned StateFile has `resources` populated from `stages[stage].resources`.
+ * A corrupt primary is recovered from `statePath + '.backup'`; if both are corrupt,
+ * StateCorruptError is thrown instead of silently returning empty state.
  */
 /* istanbul ignore next */
 export const loadState = (
@@ -35,19 +38,37 @@ export const loadState = (
   baseDir: string = process.cwd(),
 ): StateFile => {
   const statePath = getStatePath(app, service, baseDir);
-  try {
-    if (fs.existsSync(statePath)) {
-      const content = fs.readFileSync(statePath, 'utf-8');
-      const raw = JSON.parse(content) as StateFile;
-      // Populate in-memory resources from the stage slice
-      const stageResources = raw.stages?.[stage]?.resources ?? {};
-      return { ...raw, resources: stageResources };
-    }
-  } catch {
-    // Ignore error, fall through to empty state
+
+  if (!fs.existsSync(statePath)) {
+    return { version: CURRENT_STATE_VERSION, provider, app, service, stages: {}, resources: {} };
   }
 
-  return { version: CURRENT_STATE_VERSION, provider, app, service, stages: {}, resources: {} };
+  const readBackup = (): StateFile | null => {
+    const backupPath = `${statePath}.backup`;
+    if (!fs.existsSync(backupPath)) {
+      return null;
+    }
+    try {
+      const content = fs.readFileSync(backupPath, 'utf-8');
+      return JSON.parse(content) as StateFile;
+    } catch {
+      return null;
+    }
+  };
+
+  try {
+    const content = fs.readFileSync(statePath, 'utf-8');
+    const raw = JSON.parse(content) as StateFile;
+    const stageResources = raw.stages?.[stage]?.resources ?? {};
+    return { ...raw, resources: stageResources };
+  } catch (error) {
+    const backup = readBackup();
+    if (backup) {
+      const stageResources = backup.stages?.[stage]?.resources ?? {};
+      return { ...backup, resources: stageResources };
+    }
+    throw new StateCorruptError(statePath, error);
+  }
 };
 
 /* istanbul ignore next */
@@ -60,6 +81,8 @@ export const saveState = (
 ): void => {
   ensureStateDir(baseDir);
   const statePath = getStatePath(app, service, baseDir);
+  const tmpPath = `${statePath}.tmp`;
+  const backupPath = `${statePath}.backup`;
 
   // Read the existing file to preserve other stages
   let existing: StateFile = {
@@ -83,6 +106,8 @@ export const saveState = (
   const stateToSave: StateFile = {
     ...existing,
     version: CURRENT_STATE_VERSION,
+    lineage: existing.lineage || crypto.randomUUID(),
+    serial: (existing.serial ?? 0) + 1,
     app,
     service,
     provider: state.provider,
@@ -93,7 +118,29 @@ export const saveState = (
     resources: state.resources,
   };
 
-  fs.writeFileSync(statePath, JSON.stringify(stateToSave, null, 2), 'utf-8');
+  // Atomic write: back up the previous state, then write tmp + fsync + rename
+  try {
+    if (fs.existsSync(statePath)) {
+      fs.copyFileSync(statePath, backupPath);
+    }
+    const fd = fs.openSync(tmpPath, 'w');
+    try {
+      fs.writeFileSync(fd, JSON.stringify(stateToSave, null, 2), 'utf-8');
+      fs.fsyncSync(fd);
+    } finally {
+      fs.closeSync(fd);
+    }
+    fs.renameSync(tmpPath, statePath);
+  } catch (error) {
+    try {
+      if (fs.existsSync(tmpPath)) {
+        fs.rmSync(tmpPath);
+      }
+    } catch {
+      // ignore cleanup failure
+    }
+    throw error;
+  }
 };
 
 /**

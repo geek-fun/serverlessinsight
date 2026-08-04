@@ -463,6 +463,65 @@ describe('ScfExecutor', () => {
       expect(onStateChange).toHaveBeenCalledWith(newState);
     });
 
+    it('should await onStateChange before resolving (no fire-and-forget saves)', async () => {
+      const plan: Plan = {
+        items: [
+          {
+            logicalId: 'functions.test_fn',
+            action: 'create',
+            resourceType: 'SCF',
+          },
+        ],
+      };
+
+      const newState = {
+        ...initialState,
+        resources: {
+          'functions.test_fn': {
+            mode: 'managed',
+            region: 'ap-guangzhou',
+            definition: { functionName: 'test-function' },
+            instances: [{ sid: 'si:test:test:default:test', id: 'test-function' }],
+            lastUpdated: new Date().toISOString(),
+          },
+        },
+      };
+
+      (scfResource.createResource as jest.Mock).mockResolvedValue(newState);
+
+      let resolveSave: (() => void) | undefined;
+      let saveStarted = false;
+      const onStateChange = jest.fn(() => {
+        saveStarted = true;
+        return new Promise<void>((resolve) => {
+          resolveSave = resolve;
+        });
+      });
+
+      let executorResolved = false;
+      const executorPromise = executeFunctionPlan(
+        mockContext,
+        plan,
+        [testFunction],
+        initialState,
+        onStateChange,
+      ).then((result) => {
+        executorResolved = true;
+        return result;
+      });
+
+      await new Promise((resolve) => setImmediate(resolve));
+
+      expect(saveStarted).toBe(true);
+      expect(executorResolved).toBe(false);
+
+      resolveSave!();
+      const result = await executorPromise;
+
+      expect(executorResolved).toBe(true);
+      expect(result.partialFailure).toBeUndefined();
+    });
+
     it('should track successful items on partial failure', async () => {
       const plan: Plan = {
         items: [

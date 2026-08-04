@@ -15,9 +15,9 @@ export const deployVolcengineStack = async (iac: ServerlessIac, backend: StateBa
 
   let state = await backend.loadState('volcengine', iac.app, iac.service, context.stage);
 
-  const onStateChange = (newState: typeof state) => {
+  const onStateChange = async (newState: typeof state) => {
     state = newState;
-    backend.saveState(state, iac.app, iac.service, context.stage);
+    await backend.saveState(state, iac.app, iac.service, context.stage);
   };
 
   logger.info(lang.__('GENERATING_PLAN'));

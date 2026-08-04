@@ -14,8 +14,9 @@ import { executeApigwPlan } from './apigwExecutor';
 import { ExecutionResult, PartialFailureError, PlanItem, StateFile } from '../../types';
 
 const createSaveStateFn =
-  (backend: StateBackend, app: string, service: string, stage: string) => (state: StateFile) => {
-    backend.saveState(state, app, service, stage);
+  (backend: StateBackend, app: string, service: string, stage: string) =>
+  async (state: StateFile) => {
+    await backend.saveState(state, app, service, stage);
   };
 
 const handlePartialFailure = (failure: PartialFailureError): never => {

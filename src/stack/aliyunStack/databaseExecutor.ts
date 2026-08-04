@@ -187,7 +187,7 @@ export const executeDatabasePlan = async (
         currentState = newState;
         successfulItems.push(item);
         if (onStateChange) {
-          onStateChange(currentState);
+          await onStateChange(currentState);
           logger.debug(
             lang.__('STATE_PERSISTED_AFTER_OPERATION', {
               action: item.action,

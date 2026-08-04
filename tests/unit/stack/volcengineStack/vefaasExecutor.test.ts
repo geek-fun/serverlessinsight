@@ -315,16 +315,34 @@ describe('vefaasExecutor', () => {
 
       (createResource as jest.Mock).mockRejectedValueOnce(partialError);
 
-      const onStateChange = jest.fn();
-      const result = await executeFunctionPlan(
+      let resolveSave: (() => void) | undefined;
+      const onStateChange = jest.fn(() => {
+        return new Promise<void>((resolve) => {
+          resolveSave = resolve;
+        });
+      });
+
+      let executorResolved = false;
+      const executorPromise = executeFunctionPlan(
         mockContext,
         plan,
         [mockFunction],
         mockState,
         onStateChange,
-      );
+      ).then((result) => {
+        executorResolved = true;
+        return result;
+      });
+
+      await new Promise((resolve) => setImmediate(resolve));
 
       expect(onStateChange).toHaveBeenCalledWith(updatedState);
+      expect(executorResolved).toBe(false);
+
+      resolveSave!();
+      const result = await executorPromise;
+
+      expect(executorResolved).toBe(true);
       expect(result.state).toBe(updatedState);
       expect(result.partialFailure).toBeDefined();
       expect(result.partialFailure?.error).toBe(causeError);

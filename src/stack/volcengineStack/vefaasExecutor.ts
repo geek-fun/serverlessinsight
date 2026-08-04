@@ -115,14 +115,14 @@ export const executeFunctionPlan = async (
         successfulItems.push(item);
 
         if (onStateChange) {
-          onStateChange(currentState);
+          await onStateChange(currentState);
         }
       }
     } catch (error) {
       if (error instanceof PartialResourceError) {
         const updatedState = error.updatedState;
         if (onStateChange) {
-          onStateChange(updatedState);
+          await onStateChange(updatedState);
         }
         return {
           state: updatedState,

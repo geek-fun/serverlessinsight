@@ -74,6 +74,8 @@ export type StateFile = {
   orgId?: string;
   appId?: string;
   serviceId?: string;
+  serial?: number;
+  lineage?: string;
   stages: Record<string, StageState>;
   resources: Record<string, ResourceState>;
 };
@@ -112,7 +114,7 @@ export type PlanDisplayConfig = {
   maxUnchangedHidden: number;
 };
 
-export type SaveStateFn = (state: StateFile) => void;
+export type SaveStateFn = (state: StateFile) => Promise<void>;
 
 export type PartialFailureError = {
   failedItem: PlanItem;
@@ -133,6 +135,22 @@ export class PartialResourceError extends Error {
     super(`Partial resource creation failed: ${cause.message}`);
     this.name = 'PartialResourceError';
     this.updatedState = updatedState;
+    this.cause = cause;
+  }
+}
+
+export class StateCorruptError extends Error {
+  readonly path: string;
+  readonly cause: unknown;
+
+  constructor(path: string, cause: unknown) {
+    super(
+      `State file at "${path}" is corrupt and no valid "${path}.backup" is available to recover from. ` +
+        'Restore the state file from the .backup file if it exists, or remove the corrupt file and re-run the deploy to rebuild state.',
+      { cause },
+    );
+    this.name = 'StateCorruptError';
+    this.path = path;
     this.cause = cause;
   }
 }
