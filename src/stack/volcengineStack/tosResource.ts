@@ -1,5 +1,11 @@
 import { createVolcengineClient } from '../../common/volcengineClient';
-import { setResource, removeResource, buildSid, computeDirectoryHash } from '../../common';
+import {
+  setResource,
+  removeResource,
+  buildSid,
+  computeDirectoryHash,
+  getResource,
+} from '../../common';
 import {
   Context,
   BucketDomain,
@@ -74,19 +80,31 @@ export const createResource = async (
     ? computeDirectoryHash(path.resolve(process.cwd(), bucket.website.code))
     : undefined;
 
+  const existingResourceState = getResource(state, logicalId);
+  const isTainted = existingResourceState?.status === 'tainted';
+  const existingBucketOnRetry = isTainted ? await client.tos.getBucket(bucket.name) : null;
+
+  if (existingBucketOnRetry) {
+    logger.info(
+      `Bucket ${bucket.name} already exists in provider (tainted recovery), skipping create`,
+    );
+  }
+
   const taintedResourceState: ResourceState = {
     mode: 'managed',
     region: context.region,
     definition: extractTosBucketDefinition(config, websiteCodeHash),
-    instances: [
-      {
-        type: 'VOLCENGINE_TOS_BUCKET',
-        sid,
-        id: bucket.name,
-        bucketName: bucket.name,
-        attributes: {},
-      },
-    ],
+    instances: existingBucketOnRetry
+      ? [buildTosInstanceFromProvider(existingBucketOnRetry, sid)]
+      : [
+          {
+            type: 'VOLCENGINE_TOS_BUCKET',
+            sid,
+            id: bucket.name,
+            bucketName: bucket.name,
+            attributes: {},
+          },
+        ],
     status: 'tainted',
     lastUpdated: new Date().toISOString(),
   };
@@ -94,26 +112,17 @@ export const createResource = async (
   const stateAfterDependents = setResource(state, logicalId, taintedResourceState);
 
   try {
-    const bucketInfo = await client.tos.createBucket(config);
+    const bucketInfo = existingBucketOnRetry ?? (await client.tos.createBucket(config));
 
     const instances: Array<ResourceInstance> = [buildTosInstanceFromProvider(bucketInfo, sid)];
 
     if (bucket.website?.code) {
-      try {
-        const codePath = path.resolve(process.cwd(), bucket.website.code);
-        await client.tos.uploadFiles(bucket.name, codePath);
+      const codePath = path.resolve(process.cwd(), bucket.website.code);
+      await client.tos.uploadFiles(bucket.name, codePath);
 
-        const refreshedInfo = await client.tos.getBucket(bucket.name);
-        if (refreshedInfo) {
-          instances[0] = buildTosInstanceFromProvider(refreshedInfo, sid);
-        }
-      } catch (error) {
-        logger.error(
-          lang.__('TOS_BUCKET_FILE_UPLOAD_FAILED_STATE_SAVED', {
-            error: error instanceof Error ? error.message : String(error),
-          }),
-        );
-        logger.info(lang.__('TOS_BUCKET_TRACKED_CAN_RETRY'));
+      const refreshedInfo = await client.tos.getBucket(bucket.name);
+      if (refreshedInfo) {
+        instances[0] = buildTosInstanceFromProvider(refreshedInfo, sid);
       }
     }
 

@@ -87,6 +87,7 @@ jest.mock('../../../../src/common/stateManager', () => ({
   ...jest.requireActual('../../../../src/common/stateManager'),
   setResource: (...args: unknown[]) => mockedStateManager.setResource(...args),
   removeResource: (...args: unknown[]) => mockedStateManager.removeResource(...args),
+  getResource: (...args: unknown[]) => mockedStateManager.getResource(...args),
 }));
 
 jest.mock('../../../../src/common/logger', () => ({
@@ -122,6 +123,7 @@ describe('OssResource', () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
+    mockedStateManager.getResource.mockReturnValue(undefined);
   });
 
   describe('deleteBucketResource', () => {
@@ -1224,7 +1226,7 @@ describe('OssResource', () => {
       expect(mockOssOperations.getBucket).toHaveBeenCalledTimes(2);
     });
 
-    it('should handle upload failure gracefully and still return state', async () => {
+    it('should throw PartialResourceError with tainted state when upload fails', async () => {
       mockOssOperations.createBucket.mockResolvedValue(baseBucketInfo);
       mockOssOperations.getBucket.mockResolvedValue(baseBucketInfo);
       mockOssOperations.uploadFiles.mockRejectedValue(new Error('Upload network error'));
@@ -1235,12 +1237,80 @@ describe('OssResource', () => {
         }),
       );
 
+      const error = await createBucketResource(mockContext, baseBucket, initialState).catch(
+        (e: unknown) => e,
+      );
+
+      expect(error).toBeInstanceOf(PartialResourceError);
+      const partialError = error as PartialResourceError;
+      expect(partialError.updatedState.resources['buckets.test_bucket']).toMatchObject({
+        status: 'tainted',
+      });
+      // Bucket instance present in the tainted state so a retry can recover it
+      expect(partialError.updatedState.resources['buckets.test_bucket'].instances).toHaveLength(1);
+      expect(partialError.cause.message).toBe('Upload network error');
+      // The swallowed-upload path previously wrote a 'ready' state — never again
+      const readyCalls = mockedStateManager.setResource.mock.calls.filter(
+        ([, , resourceState]) => (resourceState as { status?: string }).status === 'ready',
+      );
+      expect(readyCalls).toHaveLength(0);
+    });
+
+    it('should skip createBucket and retry upload when tainted and bucket exists in provider', async () => {
+      mockOssOperations.getBucket.mockResolvedValue(baseBucketInfo);
+      mockOssOperations.uploadFiles.mockResolvedValue(undefined);
+      mockedStateManager.getResource.mockReturnValueOnce({
+        mode: 'managed',
+        region: 'cn-hangzhou',
+        definition: {},
+        instances: [],
+        lastUpdated: new Date().toISOString(),
+        status: 'tainted',
+      });
+      mockedStateManager.setResource.mockImplementation(
+        (_state: StateFile, _logicalId: string, resourceState: unknown) => ({
+          ...initialState,
+          resources: { 'buckets.test_bucket': resourceState },
+        }),
+      );
+
       const result = await createBucketResource(mockContext, baseBucket, initialState);
 
-      expect(mockedLogger.error).toHaveBeenCalledWith(
-        expect.stringContaining('Failed to upload files to bucket'),
+      expect(mockOssOperations.createBucket).not.toHaveBeenCalled();
+      expect(mockOssOperations.uploadFiles).toHaveBeenCalledWith(
+        'test-bucket',
+        expect.stringContaining('dist'),
       );
-      expect(result.resources['buckets.test_bucket']).toBeDefined();
+      expect(result.resources['buckets.test_bucket'].instances).toHaveLength(1);
+    });
+
+    it('should create bucket when tainted but bucket absent in provider', async () => {
+      mockOssOperations.getBucket
+        .mockResolvedValueOnce(null) // pre-flight: no existing bucket in provider
+        .mockResolvedValue(baseBucketInfo);
+      mockOssOperations.createBucket.mockResolvedValue(baseBucketInfo);
+      mockOssOperations.uploadFiles.mockResolvedValue(undefined);
+      mockedStateManager.getResource.mockReturnValueOnce({
+        mode: 'managed',
+        region: 'cn-hangzhou',
+        definition: {},
+        instances: [],
+        lastUpdated: new Date().toISOString(),
+        status: 'tainted',
+      });
+      mockedStateManager.setResource.mockImplementation(
+        (_state: StateFile, _logicalId: string, resourceState: unknown) => ({
+          ...initialState,
+          resources: { 'buckets.test_bucket': resourceState },
+        }),
+      );
+
+      const result = await createBucketResource(mockContext, baseBucket, initialState);
+
+      expect(mockOssOperations.createBucket).toHaveBeenCalledWith(
+        expect.objectContaining({ bucketName: 'test-bucket' }),
+      );
+      expect(result.resources['buckets.test_bucket'].instances).toHaveLength(1);
     });
 
     it('should handle upload success with null getBucket refresh', async () => {

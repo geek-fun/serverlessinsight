@@ -4,7 +4,13 @@ import {
   OssCnameInfo,
   OssCnameCertificateConfig,
 } from '../../common/aliyunClient/ossOperations';
-import { setResource, removeResource, buildSid, computeDirectoryHash } from '../../common';
+import {
+  setResource,
+  removeResource,
+  buildSid,
+  computeDirectoryHash,
+  getResource,
+} from '../../common';
 import { readPemContent, warnInlinePem } from '../../common/certUtils';
 import {
   Context,
@@ -226,29 +232,26 @@ export const createBucketResource = async (
   const config = bucketToOssBucketConfig(bucket);
   const client = createAliyunClient(context);
 
-  await client.oss.createBucket({
-    bucketName: config.bucketName,
-    acl: config.acl,
-    websiteConfig: config.websiteConfig,
-    storageClass: config.storageClass,
-  });
-
-  // Refresh state from provider to get bucket info
-  let bucketInfo = await client.oss.getBucket(config.bucketName);
-  if (!bucketInfo) {
-    throw new Error(
-      lang.__('FAILED_TO_REFRESH_STATE', { resourceType: 'bucket', name: config.bucketName }),
-    );
-  }
-
   const sid = buildSid('aliyun', 'oss', context.stage, config.bucketName);
   const logicalId = `buckets.${bucket.key}`;
-
-  const instances: Array<ResourceInstance> = [buildOssInstanceFromProvider(bucketInfo, sid)];
 
   const websiteCodeHash = bucket.website?.code
     ? computeDirectoryHash(path.resolve(process.cwd(), bucket.website.code))
     : undefined;
+
+  const existingResourceState = getResource(state, logicalId);
+  const isTainted = existingResourceState?.status === 'tainted';
+  const existingBucketOnRetry = isTainted ? await client.oss.getBucket(config.bucketName) : null;
+
+  if (existingBucketOnRetry) {
+    logger.info(
+      `Bucket ${config.bucketName} already exists in provider (tainted recovery), skipping create`,
+    );
+  }
+
+  const instances: Array<ResourceInstance> = existingBucketOnRetry
+    ? [buildOssInstanceFromProvider(existingBucketOnRetry, sid)]
+    : [];
 
   const partialResourceState: ResourceState = {
     mode: 'managed',
@@ -270,6 +273,26 @@ export const createBucketResource = async (
   let cnameInfo: OssCnameInfo | undefined;
 
   try {
+    if (!existingBucketOnRetry) {
+      await client.oss.createBucket({
+        bucketName: config.bucketName,
+        acl: config.acl,
+        websiteConfig: config.websiteConfig,
+        storageClass: config.storageClass,
+      });
+    }
+
+    // Refresh state from provider to get bucket info
+    let bucketInfo = existingBucketOnRetry ?? null;
+    if (!bucketInfo) {
+      bucketInfo = await client.oss.getBucket(config.bucketName);
+      if (!bucketInfo) {
+        throw new Error(
+          lang.__('FAILED_TO_REFRESH_STATE', { resourceType: 'bucket', name: config.bucketName }),
+        );
+      }
+    }
+    instances[0] = buildOssInstanceFromProvider(bucketInfo, sid);
     // Enable transfer acceleration if requested
     if (isAccelerateEnabled) {
       logger.info(lang.__('ENABLING_OSS_TRANSFER_ACCELERATION', { bucketName: config.bucketName }));
@@ -559,18 +582,13 @@ export const createBucketResource = async (
     }
 
     if (bucket.website?.code) {
-      try {
-        const codePath = path.resolve(process.cwd(), bucket.website.code);
-        await client.oss.uploadFiles(config.bucketName, codePath);
+      const codePath = path.resolve(process.cwd(), bucket.website.code);
+      await client.oss.uploadFiles(config.bucketName, codePath);
 
-        // Refresh state after upload to get updated info
-        bucketInfo = await client.oss.getBucket(config.bucketName);
-        if (bucketInfo) {
-          instances[0] = buildOssInstanceFromProvider(bucketInfo, sid);
-        }
-      } catch (error) {
-        logger.error(lang.__('FAILED_TO_UPLOAD_BUCKET_FILES', { error: String(error) }));
-        logger.info(lang.__('OSS_BUCKET_TRACKED_CAN_RETRY'));
+      // Refresh state after upload to get updated info
+      bucketInfo = await client.oss.getBucket(config.bucketName);
+      if (bucketInfo) {
+        instances[0] = buildOssInstanceFromProvider(bucketInfo, sid);
       }
     }
 
