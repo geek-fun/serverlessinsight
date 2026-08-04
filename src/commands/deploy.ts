@@ -90,9 +90,50 @@ export const deploy = async (options: {
 
   logger.info(lang.__('DEPLOYING_STACK'));
   logger.info(lang.__('ACQUIRING_LOCK'));
-  await backend.withLock('deploy', async () => {
-    await deployStack(iac, backend);
-  });
+
+  // Release the active lock on SIGINT/SIGTERM so Ctrl+C doesn't leave a stale
+  // lock behind. Best-effort: the local backend release is synchronous (unlink)
+  // and completes before exit; remote backends may be cut short, and their lock
+  // is then recovered via the stale/dead-PID detection path.
+  const activeSignals: NodeJS.Signals[] = ['SIGINT', 'SIGTERM'];
+  const signalHandlers = new Map<NodeJS.Signals, () => void>();
+  let currentLockId: string | null = null;
+  let released = false;
+
+  const releaseOnSignal = (): void => {
+    if (released) return;
+    released = true;
+    if (currentLockId) {
+      void backend.releaseLock(currentLockId).catch(() => {
+        // best-effort release — ignore failures on the exit path
+      });
+    }
+    process.exit(130);
+  };
+
+  for (const sig of activeSignals) {
+    const handler = (): void => releaseOnSignal();
+    process.on(sig, handler);
+    signalHandlers.set(sig, handler);
+  }
+
+  try {
+    await backend.withLock(
+      'deploy',
+      async () => {
+        await deployStack(iac, backend);
+      },
+      {},
+      (lockId) => {
+        currentLockId = lockId;
+      },
+    );
+  } finally {
+    for (const [sig, handler] of signalHandlers) {
+      process.removeListener(sig, handler);
+    }
+    signalHandlers.clear();
+  }
 
   logger.info(lang.__('STACK_DEPLOYED'));
 };

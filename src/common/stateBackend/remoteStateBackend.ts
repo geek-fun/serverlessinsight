@@ -183,11 +183,13 @@ export const createRemoteStateBackend = (
       operation: string,
       fn: () => Promise<T>,
       options?: LockOptions,
+      onLockAcquired?: (lockId: string) => void,
     ): Promise<T> => {
       let lockId: string | null = null;
       try {
         const meta = await acquireLockObject(operation, options);
         lockId = meta.id;
+        onLockAcquired?.(lockId);
         return await fn();
       } finally {
         if (lockId) {

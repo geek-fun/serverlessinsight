@@ -249,4 +249,124 @@ describe('unit test for deploy command', () => {
     expect(readline.createInterface).not.toHaveBeenCalled();
     expect(mockedDeployStack).toHaveBeenCalledTimes(1);
   });
+
+  describe('signal-aware lock release', () => {
+    it('should release the active lock and exit(130) when SIGINT is received', async () => {
+      setupAliyunMocks();
+      const releaseLock = jest.fn().mockResolvedValue(undefined);
+      mockedCreateStateBackend.mockReturnValue({
+        withLock: jest.fn(
+          (
+            _op: string,
+            fn: () => Promise<unknown>,
+            _options?: unknown,
+            onLockAcquired?: (id: string) => void,
+          ) => {
+            onLockAcquired?.('deploy-lock-id');
+            return fn();
+          },
+        ),
+        releaseLock,
+        getState: jest.fn(),
+        setState: jest.fn(),
+      });
+
+      const exitSpy = jest.spyOn(process, 'exit').mockImplementation(() => {
+        return undefined as never;
+      });
+
+      let releaseDeploy: (() => void) | undefined;
+      mockedDeployStack.mockImplementation(
+        () =>
+          new Promise<void>((resolve) => {
+            releaseDeploy = resolve;
+          }),
+      );
+
+      const baselineSigint = process.listenerCount('SIGINT');
+      const baselineSigterm = process.listenerCount('SIGTERM');
+
+      const deployPromise = deploy(baseOptions);
+
+      await new Promise<void>((resolve) => {
+        const timer = setInterval(() => {
+          if (releaseDeploy) {
+            clearInterval(timer);
+            resolve();
+          }
+        }, 5);
+      });
+
+      process.emit('SIGINT');
+
+      expect(releaseLock).toHaveBeenCalledWith('deploy-lock-id');
+      expect(exitSpy).toHaveBeenCalledWith(130);
+
+      releaseDeploy?.();
+      await deployPromise;
+
+      expect(process.listenerCount('SIGINT')).toBe(baselineSigint);
+      expect(process.listenerCount('SIGTERM')).toBe(baselineSigterm);
+
+      exitSpy.mockRestore();
+    });
+
+    it('should exit(130) without releasing when no lock is acquired yet', async () => {
+      setupAliyunMocks();
+
+      const releaseLock = jest.fn();
+      mockedCreateStateBackend.mockReturnValue({
+        // onLockAcquired is intentionally never invoked: simulates a signal
+        // arriving before the lock has been acquired.
+        withLock: jest.fn((_op: string, fn: () => Promise<unknown>) => fn()),
+        releaseLock,
+        getState: jest.fn(),
+        setState: jest.fn(),
+      });
+
+      const exitSpy = jest.spyOn(process, 'exit').mockImplementation(() => {
+        return undefined as never;
+      });
+
+      let releaseDeploy: (() => void) | undefined;
+      mockedDeployStack.mockImplementation(
+        () =>
+          new Promise<void>((resolve) => {
+            releaseDeploy = resolve;
+          }),
+      );
+
+      const deployPromise = deploy(baseOptions);
+
+      await new Promise<void>((resolve) => {
+        const timer = setInterval(() => {
+          if (releaseDeploy) {
+            clearInterval(timer);
+            resolve();
+          }
+        }, 5);
+      });
+
+      process.emit('SIGINT');
+
+      expect(releaseLock).not.toHaveBeenCalled();
+      expect(exitSpy).toHaveBeenCalledWith(130);
+
+      releaseDeploy?.();
+      await deployPromise;
+
+      exitSpy.mockRestore();
+    });
+
+    it('should remove signal handlers after a normal deploy completes', async () => {
+      setupAliyunMocks();
+      const baselineSigint = process.listenerCount('SIGINT');
+      const baselineSigterm = process.listenerCount('SIGTERM');
+
+      await deploy(baseOptions);
+
+      expect(process.listenerCount('SIGINT')).toBe(baselineSigint);
+      expect(process.listenerCount('SIGTERM')).toBe(baselineSigterm);
+    });
+  });
 });

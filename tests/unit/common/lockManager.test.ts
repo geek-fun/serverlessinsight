@@ -64,6 +64,27 @@ describe('LockManager', () => {
       expect(result).toBe('test-result');
     });
 
+    it('should invoke onLockAcquired with the lock id after acquisition', async () => {
+      const onLockAcquired = jest.fn();
+      let capturedId: string | undefined;
+
+      await withLock(
+        statePath,
+        'deploy',
+        async () => {
+          const lock = readLockFileForCommand(statePath);
+          capturedId = lock?.id;
+        },
+        {},
+        (id) => {
+          onLockAcquired(id);
+        },
+      );
+
+      expect(onLockAcquired).toHaveBeenCalledTimes(1);
+      expect(onLockAcquired).toHaveBeenCalledWith(capturedId);
+    });
+
     it('should fail to acquire lock when another lock exists', async () => {
       // Acquire first lock
       const promise1 = withLock(
@@ -347,6 +368,133 @@ describe('LockManager', () => {
       if (fs.existsSync(lockPath)) {
         fs.unlinkSync(lockPath);
       }
+    });
+  });
+
+  describe('O_EXCL atomic lock acquisition', () => {
+    it('should acquire the lock via atomic O_EXCL create', async () => {
+      const eexist = new Error('EEXIST') as NodeJS.ErrnoException;
+      eexist.code = 'EEXIST';
+
+      const openSpy = jest.spyOn(fs, 'openSync');
+      // Simulate the race: another process appears to hold the lock on the
+      // first attempt, then the retry acquires it.
+      openSpy.mockImplementationOnce(() => {
+        throw eexist;
+      });
+
+      const result = await acquireLockInternal(statePath, 'deploy', {
+        timeout: 2000,
+        retryDelay: 50,
+      });
+
+      expect(result).toBeDefined();
+      expect(result.processId).toBe(process.pid);
+      // The lock file must have been created via the O_EXCL path.
+      expect(openSpy).toHaveBeenCalledWith(lockPath, 'wx');
+      expect(fs.existsSync(lockPath)).toBe(true);
+
+      openSpy.mockRestore();
+    });
+
+    it('should not overwrite a lock held by an alive process', async () => {
+      const lockDir = path.dirname(lockPath);
+      if (!fs.existsSync(lockDir)) {
+        fs.mkdirSync(lockDir, { recursive: true });
+      }
+      fs.writeFileSync(
+        lockPath,
+        JSON.stringify({
+          id: 'held-lock',
+          user: 'test@test.com',
+          processId: process.pid,
+          hostname: os.hostname(),
+          operation: 'deploy',
+          acquiredAt: new Date().toISOString(),
+          path: statePath,
+        }),
+        'utf-8',
+      );
+
+      await expect(
+        acquireLockInternal(statePath, 'deploy', { timeout: 500, retryDelay: 100 }),
+      ).rejects.toThrow(LockError);
+
+      // The existing lock must be untouched by the failed acquisition.
+      const existing = JSON.parse(fs.readFileSync(lockPath, 'utf-8')) as { id: string };
+      expect(existing.id).toBe('held-lock');
+
+      fs.unlinkSync(lockPath);
+    });
+
+    it('should flag a stale lock with LockError without removing it', async () => {
+      const lockDir = path.dirname(lockPath);
+      if (!fs.existsSync(lockDir)) {
+        fs.mkdirSync(lockDir, { recursive: true });
+      }
+      fs.writeFileSync(
+        lockPath,
+        JSON.stringify({
+          id: 'stale-lock',
+          user: 'test@test.com',
+          processId: 999999,
+          hostname: 'some-other-host',
+          operation: 'deploy',
+          acquiredAt: new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString(),
+          path: statePath,
+        }),
+        'utf-8',
+      );
+
+      await expect(
+        acquireLockInternal(statePath, 'deploy', { timeout: 1000, retryDelay: 100 }),
+      ).rejects.toThrow(LockError);
+
+      // Stale locks are flagged, not removed — force-unlock remains the manual path.
+      expect(fs.existsSync(lockPath)).toBe(true);
+
+      fs.unlinkSync(lockPath);
+    });
+
+    it('should remove a partial lock file when writing fails after the atomic create', async () => {
+      const writeSpy = jest.spyOn(fs, 'writeFileSync');
+      writeSpy.mockImplementationOnce(() => {
+        throw new Error('disk full');
+      });
+
+      await expect(
+        acquireLockInternal(statePath, 'deploy', { timeout: 1000, retryDelay: 100 }),
+      ).rejects.toThrow('disk full');
+
+      // The partial lock file created by openSync must have been cleaned up so
+      // a later attempt can retry instead of looping on EEXIST forever.
+      expect(fs.existsSync(lockPath)).toBe(false);
+
+      writeSpy.mockRestore();
+    });
+
+    it('should throw a final LockError when the retry loop exhausts', async () => {
+      const lockDir = path.dirname(lockPath);
+      if (!fs.existsSync(lockDir)) {
+        fs.mkdirSync(lockDir, { recursive: true });
+      }
+      // A corrupt/empty lock file makes openSync always EEXIST while
+      // readLockFile returns null, so none of the stale/timeout/dead-PID
+      // branches fire and the loop must exhaust.
+      fs.writeFileSync(lockPath, '', 'utf-8');
+
+      const eexist = new Error('EEXIST') as NodeJS.ErrnoException;
+      eexist.code = 'EEXIST';
+      const openSpy = jest.spyOn(fs, 'openSync').mockImplementation(() => {
+        throw eexist;
+      });
+
+      await expect(
+        acquireLockInternal(statePath, 'deploy', { timeout: 50, retryDelay: 10 }),
+      ).rejects.toThrow(LockError);
+
+      openSpy.mockRestore();
+      fs.unlinkSync(lockPath);
     });
   });
 });

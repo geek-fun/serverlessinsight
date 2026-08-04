@@ -8,9 +8,16 @@ ServerlessInsight implements automatic state locking to prevent concurrent modif
 
 State locking is **automatic and transparent** during normal operations. When you run commands that modify infrastructure (`deploy` or `destroy`), ServerlessInsight:
 
-1. **Acquires a lock** before making any changes
+1. **Acquires a lock** before making any changes (atomically — see [Lock Acquisition](#lock-acquisition))
 2. **Performs the operation** while holding the lock
 3. **Releases the lock** automatically on completion or error
+
+### Crash Safety (Ctrl+C / SIGTERM)
+
+If you interrupt a running `deploy` or `destroy` with `Ctrl+C` (`SIGINT`) or `SIGTERM`, the CLI releases the active lock before exiting. The release is best-effort:
+
+- **Local backend**: release is synchronous (a direct file `unlink`), so it always completes before the process exits.
+- **Remote backend**: release is an async storage delete that may be cut short by the exit. If that happens, the remote lock is recovered automatically via the existing stale/dead-PID detection path (a lock older than 1 hour is flagged as stale, and a lock whose process ID is no longer alive on the same host is auto-released on the next acquisition attempt).
 
 ## Lock Behavior
 
@@ -27,6 +34,7 @@ No manual lock/unlock commands are needed for normal operations.
 
 - **Timeout**: 10 minutes by default
 - **Retry**: Exponential backoff (2s, 4s, 8s, 16s, 30s max)
+- **Atomic acquisition**: The lock file is created with `open(path, 'wx')` (`O_EXCL`). If the file already exists, the create fails atomically with `EEXIST` — two processes can never both observe "no lock" and both write. The previous read-then-write-then-verify sequence has been replaced by this single atomic create.
 - **Storage**:
   - **Local backend**: `.serverlessinsight/state.json.si-lock` file (local file system)
   - **Remote backend**: Lock object stored alongside state in the remote backend (e.g., OSS/COS bucket), shared across machines/CI runners
@@ -143,9 +151,9 @@ State locking adds minimal overhead:
 
 ### Lock File Remains After Crash
 
-**Problem**: A deployment crashed but the lock file wasn't removed.
+**Problem**: A deployment crashed (e.g., SIGKILL, machine power loss) and the lock file wasn't removed.
 
-**Solution**:
+**Solution**: Interruptions via `Ctrl+C`/`SIGTERM` are handled gracefully and release the lock. For a hard crash, the lock is recovered on the next acquisition attempt (dead-PID auto-release on the same host, or the stale-lock path), or you can run:
 
 ```bash
 si force-unlock <LOCK_ID>
@@ -182,7 +190,7 @@ si force-unlock <LOCK_ID>
 
 ### Q: What happens if my process crashes?
 
-**A**: The lock will remain until you use `force-unlock`. This prevents partial deployments from corrupting state.
+**A**: If you interrupt it with `Ctrl+C` or `SIGTERM`, the lock is released before exit. If the process is killed abruptly (SIGKILL, power loss), the lock remains until the next acquisition attempt recovers it (dead-PID or stale-lock detection) or you run `si force-unlock`. This prevents partial deployments from corrupting state.
 
 ### Q: Can multiple people deploy simultaneously?
 

@@ -25,12 +25,10 @@ export class LockError extends Error {
   }
 }
 
-/* istanbul ignore next */
 export const getLockPath = (statePath: string): string => {
   return `${statePath}${LOCK_FILE_SUFFIX}`;
 };
 
-/* istanbul ignore next */
 export const generateLockId = (): string => {
   return crypto.randomBytes(16).toString('hex');
 };
@@ -77,14 +75,6 @@ const readLockFile = (lockPath: string): LockMetadata | null => {
   return null;
 };
 
-const writeLockFile = (lockPath: string, metadata: LockMetadata): void => {
-  const lockDir = path.dirname(lockPath);
-  if (!fs.existsSync(lockDir)) {
-    fs.mkdirSync(lockDir, { recursive: true });
-  }
-  fs.writeFileSync(lockPath, JSON.stringify(metadata, null, 2), 'utf-8');
-};
-
 const removeLockFile = (lockPath: string): void => {
   if (fs.existsSync(lockPath)) {
     fs.unlinkSync(lockPath);
@@ -126,7 +116,6 @@ const getTimeAgo = (acquiredAt: Date): string => {
   }
 };
 
-/* istanbul ignore next */
 export const formatLockInfo = (lock: LockMetadata): string => {
   const acquiredAt = new Date(lock.acquiredAt);
   const timeAgo = getTimeAgo(acquiredAt);
@@ -146,7 +135,6 @@ const sleep = (ms: number): Promise<void> => {
   return new Promise((resolve) => setTimeout(resolve, ms));
 };
 
-/* istanbul ignore next */
 export const acquireLockInternal = async (
   statePath: string,
   operation: string,
@@ -163,63 +151,84 @@ export const acquireLockInternal = async (
   let attempt = 0;
 
   while (attempt <= maxRetries) {
-    // Check if lock file exists
-    const existingLock = readLockFile(lockPath);
-
-    if (!existingLock) {
-      // No lock exists, try to acquire
-      try {
-        writeLockFile(lockPath, metadata);
-        // Verify we got the lock by reading it back
-        const verifyLock = readLockFile(lockPath);
-        if (verifyLock && verifyLock.id === metadata.id) {
-          return metadata;
-        }
-      } catch {
-        // Failed to write lock, will retry
+    try {
+      const lockDir = path.dirname(lockPath);
+      if (!fs.existsSync(lockDir)) {
+        fs.mkdirSync(lockDir, { recursive: true });
       }
-    } else {
-      if (existingLock.hostname === os.hostname() && !isProcessAlive(existingLock.processId)) {
+      // Atomic O_EXCL create: fails with EEXIST if another process holds the
+      // lock, so two processes can never both acquire.
+      let fd: number | null = null;
+      try {
+        fd = fs.openSync(lockPath, 'wx');
+        fs.writeFileSync(fd, JSON.stringify(metadata, null, 2), 'utf-8');
+        fs.fsyncSync(fd);
+      } finally {
+        if (fd !== null) {
+          fs.closeSync(fd);
+        }
+      }
+      return metadata;
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== 'EEXIST') {
+        // If we created the lock file but failed to finish writing it, remove
+        // the partial file so a later attempt can retry cleanly.
+        if (fs.existsSync(lockPath)) {
+          try {
+            fs.unlinkSync(lockPath);
+          } catch {
+            // best-effort cleanup
+          }
+        }
+        throw error;
+      }
+
+      const existingLock = readLockFile(lockPath);
+
+      if (existingLock) {
+        if (existingLock.hostname === os.hostname() && !isProcessAlive(existingLock.processId)) {
+          logger.info(
+            lang.__('LOCK_AUTO_RELEASED_DEAD_PROCESS', {
+              processId: String(existingLock.processId),
+              hostname: existingLock.hostname,
+              user: existingLock.user,
+              acquiredAt: existingLock.acquiredAt,
+            }),
+          );
+          removeLockFile(lockPath);
+          attempt++;
+          continue;
+        }
+
+        if (isLockStale(existingLock)) {
+          // Lock is stale, but we don't auto-remove it
+          // User must use force-unlock
+          throw new LockError(
+            `State is currently locked (stale lock detected).\n${formatLockInfo(existingLock)}\nThis lock appears to be stale. If you are certain no other operation is running, use:\n  si force-unlock ${existingLock.id}`,
+            existingLock,
+          );
+        }
+
+        // Check if timeout exceeded
+        if (Date.now() - startTime >= timeout) {
+          throw new LockError(
+            `Failed to acquire lock after ${timeout / 1000} seconds.\n${formatLockInfo(existingLock)}\nIf you are certain no other operation is running, use:\n  si force-unlock ${existingLock.id}`,
+            existingLock,
+          );
+        }
+
+        const acquiredAt = new Date(existingLock.acquiredAt);
+        const minutesAgo = Math.floor((Date.now() - acquiredAt.getTime()) / 60000);
+        const timeAgo =
+          minutesAgo < 1 ? lang.__('LOCK_TIME_AGO_LESS_THAN_MINUTE') : `${minutesAgo}m`;
         logger.info(
-          lang.__('LOCK_AUTO_RELEASED_DEAD_PROCESS', {
-            processId: String(existingLock.processId),
-            hostname: existingLock.hostname,
+          lang.__('LOCK_WAITING', {
             user: existingLock.user,
-            acquiredAt: existingLock.acquiredAt,
+            timeAgo,
+            attempt: String(attempt + 1),
           }),
         );
-        removeLockFile(lockPath);
-        attempt++;
-        continue;
       }
-
-      if (isLockStale(existingLock)) {
-        // Lock is stale, but we don't auto-remove it
-        // User must use force-unlock
-        throw new LockError(
-          `State is currently locked (stale lock detected).\n${formatLockInfo(existingLock)}\nThis lock appears to be stale. If you are certain no other operation is running, use:\n  si force-unlock ${existingLock.id}`,
-          existingLock,
-        );
-      }
-
-      // Check if timeout exceeded
-      if (Date.now() - startTime >= timeout) {
-        throw new LockError(
-          `Failed to acquire lock after ${timeout / 1000} seconds.\n${formatLockInfo(existingLock)}\nIf you are certain no other operation is running, use:\n  si force-unlock ${existingLock.id}`,
-          existingLock,
-        );
-      }
-
-      const acquiredAt = new Date(existingLock.acquiredAt);
-      const minutesAgo = Math.floor((Date.now() - acquiredAt.getTime()) / 60000);
-      const timeAgo = minutesAgo < 1 ? lang.__('LOCK_TIME_AGO_LESS_THAN_MINUTE') : `${minutesAgo}m`;
-      logger.info(
-        lang.__('LOCK_WAITING', {
-          user: existingLock.user,
-          timeAgo,
-          attempt: String(attempt + 1),
-        }),
-      );
     }
 
     // Wait before retrying with exponential backoff
@@ -236,7 +245,6 @@ export const acquireLockInternal = async (
   );
 };
 
-/* istanbul ignore next */
 export const releaseLockInternal = (statePath: string, lockId: string): void => {
   const lockPath = getLockPath(statePath);
   const existingLock = readLockFile(lockPath);
@@ -247,7 +255,6 @@ export const releaseLockInternal = (statePath: string, lockId: string): void => 
   }
 };
 
-/* istanbul ignore next */
 export const forceUnlock = (statePath: string, lockId: string): boolean => {
   const lockPath = getLockPath(statePath);
   const existingLock = readLockFile(lockPath);
@@ -266,16 +273,17 @@ export const forceUnlock = (statePath: string, lockId: string): boolean => {
   return true;
 };
 
-/* istanbul ignore next */
 export const withLock = async <T>(
   statePath: string,
   operation: string,
   fn: () => Promise<T>,
   options?: LockOptions,
+  onLockAcquired?: (lockId: string) => void,
 ): Promise<T> => {
   let lock: LockMetadata | null = null;
   try {
     lock = await acquireLockInternal(statePath, operation, options);
+    onLockAcquired?.(lock.id);
     return await fn();
   } finally {
     if (lock) {
@@ -285,7 +293,6 @@ export const withLock = async <T>(
 };
 
 // Export only for forceUnlock command which needs to read lock info
-/* istanbul ignore next */
 export const readLockFileForCommand = (statePath: string): LockMetadata | null => {
   const lockPath = getLockPath(statePath);
   return readLockFile(lockPath);

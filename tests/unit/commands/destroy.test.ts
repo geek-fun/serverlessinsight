@@ -180,4 +180,63 @@ describe('destroy command', () => {
       true,
     );
   });
+
+  it('should release the active lock and exit(130) when SIGINT is received', async () => {
+    const releaseLock = jest.fn().mockResolvedValue(undefined);
+    (createStateBackend as jest.Mock).mockReturnValue({
+      withLock: jest.fn(
+        (
+          _op: string,
+          fn: () => Promise<unknown>,
+          _options?: unknown,
+          onLockAcquired?: (id: string) => void,
+        ) => {
+          onLockAcquired?.('destroy-lock-id');
+          return fn();
+        },
+      ),
+      releaseLock,
+    });
+
+    const exitSpy = jest.spyOn(process, 'exit').mockImplementation(() => {
+      return undefined as never;
+    });
+
+    let releaseDestroy: (() => void) | undefined;
+    (
+      jest.requireMock('../../../src/stack/aliyunStack').destroyAliyunStack as jest.Mock
+    ).mockImplementation(
+      () =>
+        new Promise<void>((resolve) => {
+          releaseDestroy = resolve;
+        }),
+    );
+
+    const baselineSigint = process.listenerCount('SIGINT');
+    const baselineSigterm = process.listenerCount('SIGTERM');
+
+    const destroyPromise = destroyStack({ location: '/test/path' });
+
+    await new Promise<void>((resolve) => {
+      const timer = setInterval(() => {
+        if (releaseDestroy) {
+          clearInterval(timer);
+          resolve();
+        }
+      }, 5);
+    });
+
+    process.emit('SIGINT');
+
+    expect(releaseLock).toHaveBeenCalledWith('destroy-lock-id');
+    expect(exitSpy).toHaveBeenCalledWith(130);
+
+    releaseDestroy?.();
+    await destroyPromise;
+
+    expect(process.listenerCount('SIGINT')).toBe(baselineSigint);
+    expect(process.listenerCount('SIGTERM')).toBe(baselineSigterm);
+
+    exitSpy.mockRestore();
+  });
 });

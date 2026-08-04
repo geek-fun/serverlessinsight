@@ -189,6 +189,7 @@ export const createSaasStateBackend = (context: SaasBackendContext): StateBacken
       operation: string,
       fn: () => Promise<T>,
       _options?: LockOptions,
+      onLockAcquired?: (lockId: string) => void,
     ): Promise<T> => {
       if (!currentStage) {
         throw new Error('SaaS state backend: call loadState() first to set stage');
@@ -199,6 +200,7 @@ export const createSaasStateBackend = (context: SaasBackendContext): StateBacken
 
       // Acquire lock via phase:start (server checks for 409 conflicts)
       await client.patch(`/api/v1/deployments/${currentDeploymentId}`, { phase: 'start' });
+      onLockAcquired?.(currentDeploymentId);
 
       try {
         const result = await fn();
