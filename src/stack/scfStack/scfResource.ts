@@ -26,6 +26,28 @@ type ScfDependentInstance = {
   protocol?: string;
 };
 
+/**
+ * Best-effort extraction of a cloud-SDK error's useful details. Tencent SDK
+ * errors carry `code`/`message`/`requestId` (and may throw with an empty
+ * `message`), so we compose them into a non-empty, diagnosable string —
+ * otherwise a PartialResourceError surfaces as a blank failure line.
+ */
+const toErrorMessage = (error: unknown): string => {
+  if (error instanceof Error && error.message) {
+    return error.message;
+  }
+  if (error && typeof error === 'object') {
+    const parts: string[] = [];
+    const rec = error as Record<string, unknown>;
+    if (typeof rec.code === 'string' && rec.code) parts.push(rec.code);
+    if (typeof rec.message === 'string' && rec.message) parts.push(rec.message);
+    if (typeof rec.requestId === 'string' && rec.requestId)
+      parts.push(`requestId=${rec.requestId}`);
+    if (parts.length > 0) return parts.join(' · ');
+  }
+  return String(error) || 'unknown error';
+};
+
 // Minimal provider shape needed for trigger-duplication checks on adoption —
 // the full provider info type (common/tencentClient/types) differs from the
 // state-builder ScfFunctionInfo type below.
@@ -420,16 +442,10 @@ export const createResource = async (
           `Function ${fn.name} found after create error reconciliation, continuing deployment flow`,
         );
       } else {
-        throw new PartialResourceError(
-          stateAfterDependents,
-          error instanceof Error ? error : new Error(String(error)),
-        );
+        throw new PartialResourceError(stateAfterDependents, new Error(toErrorMessage(error)));
       }
     } else {
-      throw new PartialResourceError(
-        stateAfterDependents,
-        error instanceof Error ? error : new Error(String(error)),
-      );
+      throw new PartialResourceError(stateAfterDependents, new Error(toErrorMessage(error)));
     }
   }
 
@@ -445,10 +461,21 @@ export const createResource = async (
       ...(access.enableIntranet !== undefined ? { enableIntranet: access.enableIntranet } : {}),
     });
 
-    // When adopting a pre-existing function (tainted retry or after an
-    // "already exists" reconciliation), the HTTP trigger may already be
-    // attached — skip re-creating it to avoid a duplicate-create error.
-    const triggerAlreadyAttached = (adoptedInfo?.Triggers ?? []).some(
+    // Probe the provider for an already-attached trigger BEFORE attempting to
+    // create it. A leftover trigger from a previous partial run (function exists
+    // in cloud, state blank) would otherwise collide with CreateTrigger and
+    // surface as a confusing empty error. Applies to both fresh creates (function
+    // just created — Triggers from the createFunction flow) and tainted retries.
+    let providerTriggers: Array<{ TriggerName: string; Type: string }> =
+      adoptedInfo?.Triggers ?? [];
+    if (providerTriggers.length === 0) {
+      const probe = await client.scf.getFunction(fn.name);
+      if (probe) {
+        providerTriggers = probe.Triggers ?? [];
+      }
+    }
+
+    const triggerAlreadyAttached = providerTriggers.some(
       (t) => t.TriggerName === triggerName && t.Type === 'http',
     );
 
@@ -476,10 +503,7 @@ export const createResource = async (
         } else {
           // The function exists in the cloud but the trigger failed to attach —
           // persist the tainted state so a re-run reconciles instead of losing it.
-          throw new PartialResourceError(
-            stateAfterDependents,
-            error instanceof Error ? error : new Error(String(error)),
-          );
+          throw new PartialResourceError(stateAfterDependents, new Error(toErrorMessage(error)));
         }
       }
     }
@@ -505,10 +529,7 @@ export const createResource = async (
           : {}),
       });
     } catch (error) {
-      throw new PartialResourceError(
-        stateAfterDependents,
-        error instanceof Error ? error : new Error(String(error)),
-      );
+      throw new PartialResourceError(stateAfterDependents, new Error(toErrorMessage(error)));
     }
     logger.info(lang.__('CUSTOM_DOMAIN_CREATED', { domainName: fn.domain.domain_name }));
 
@@ -531,10 +552,7 @@ export const createResource = async (
   try {
     functionInfo = await client.scf.getFunction(fn.name);
   } catch (error) {
-    throw new PartialResourceError(
-      stateAfterDependents,
-      error instanceof Error ? error : new Error(String(error)),
-    );
+    throw new PartialResourceError(stateAfterDependents, new Error(toErrorMessage(error)));
   }
   if (!functionInfo) {
     throw new PartialResourceError(

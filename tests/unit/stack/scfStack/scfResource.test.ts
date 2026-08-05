@@ -735,6 +735,37 @@ describe('ScfResource', () => {
       expect(mockScfOperations.createTrigger).toHaveBeenCalledTimes(1);
     });
 
+    it('should skip createTrigger when a fresh create finds the trigger already attached in provider', async () => {
+      (mockScfOperations.createFunction as jest.Mock).mockResolvedValue(undefined);
+      (mockScfOperations.getFunction as jest.Mock).mockResolvedValue({
+        ...mockFunctionInfo,
+        Triggers: [
+          {
+            ModTime: '2025-01-01',
+            Type: 'http',
+            TriggerDesc: JSON.stringify({ authType: 'NONE' }),
+            TriggerName: 'test_fn-http-trigger',
+            AddTime: '2025-01-01',
+            Enable: 1,
+          },
+        ],
+      });
+      (stateManager.setResource as jest.Mock).mockReturnValue(initialState);
+
+      const fnWithHttpTrigger = {
+        ...testFunction,
+        triggers: { http: { auth_type: 'public' as const } },
+      };
+
+      await createResource(mockContext, fnWithHttpTrigger, initialState);
+
+      // Function created, then a provider refresh reveals the HTTP trigger is
+      // already attached (leftover from a previous run) → createTrigger skipped,
+      // no already-exists error.
+      expect(mockScfOperations.createFunction).toHaveBeenCalledTimes(1);
+      expect(mockScfOperations.createTrigger).not.toHaveBeenCalled();
+    });
+
     it('should handle function info with null/undefined CfsConfig fields', async () => {
       const functionInfoWithNullCfs = {
         ...mockFunctionInfo,
