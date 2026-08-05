@@ -10,12 +10,30 @@ import { createTencentClient } from '../../common/tencentClient';
 import { readFileAsBase64 } from '../../common/fileUtils';
 import { functionToScfConfig, extractScfDefinition, ScfFunctionInfo } from './scfTypes';
 import { getResource, setResource, removeResource } from '../../common/stateManager';
-import { buildSid, attributesEqual, ProviderEnum, mapAuthType, mapAccess } from '../../common';
+import { buildSid, attributesEqual, ProviderEnum, mapAuthType } from '../../common';
 import { RAM_ROLE_PROPAGATION_DELAY_MS } from '../../common/constants';
 import { computeFileHash } from '../../common/hashUtils';
 import { logger } from '../../common/logger';
 import { lang } from '../../lang';
 import type { IamStatement } from '../../common/iamStatements';
+
+/**
+ * Build the API Gateway trigger description for Tencent CreateTrigger.
+ * Format (official Trigger Configuration Description): { api: { authRequired,
+ * requestConfig: { method }, isIntegratedResponse }, service: { serviceName },
+ * release: { environmentName } }. authRequired is FALSE when mapAuthType
+ * returned 'NONE' (public, no auth) and TRUE otherwise.
+ */
+const buildTencentTriggerDesc = (authType: string): string =>
+  JSON.stringify({
+    api: {
+      authRequired: authType === 'NONE' ? 'FALSE' : 'TRUE',
+      requestConfig: { method: 'ANY' },
+      isIntegratedResponse: 'FALSE',
+    },
+    service: { serviceName: 'SCF_API_SERVICE' },
+    release: { environmentName: 'release' },
+  });
 
 type ScfDependentInstance = {
   type: string;
@@ -452,14 +470,9 @@ export const createResource = async (
   // Create HTTP trigger if configured
   if (fn.triggers?.http) {
     const authType = mapAuthType(ProviderEnum.TENCENT, fn.triggers.http.auth_type);
-    const access = mapAccess(fn.triggers.http.access);
     const triggerName = `${fn.key}-http-trigger`;
 
-    const triggerDesc = JSON.stringify({
-      authType,
-      ...(access.enableExtranet !== undefined ? { enableExtranet: access.enableExtranet } : {}),
-      ...(access.enableIntranet !== undefined ? { enableIntranet: access.enableIntranet } : {}),
-    });
+    const triggerDesc = buildTencentTriggerDesc(authType);
 
     // Probe the provider for an already-attached trigger BEFORE attempting to
     // create it. A leftover trigger from a previous partial run (function exists
@@ -694,13 +707,8 @@ export const updateResource = async (
     }
 
     const authType = mapAuthType(ProviderEnum.TENCENT, desiredHttpConfig.auth_type);
-    const access = mapAccess(desiredHttpConfig.access);
     const triggerName = `${fn.key}-http-trigger`;
-    const desiredTriggerDesc = JSON.stringify({
-      authType,
-      ...(access.enableExtranet !== undefined ? { enableExtranet: access.enableExtranet } : {}),
-      ...(access.enableIntranet !== undefined ? { enableIntranet: access.enableIntranet } : {}),
-    });
+    const desiredTriggerDesc = buildTencentTriggerDesc(authType);
 
     if (existingHttpTrigger) {
       if (existingHttpTrigger.triggerDesc !== desiredTriggerDesc) {

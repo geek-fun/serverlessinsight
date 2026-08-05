@@ -1520,9 +1520,13 @@ describe('ScfResource', () => {
       expect(mockScfOperations.createTrigger).toHaveBeenCalledWith(
         expect.objectContaining({
           TriggerDesc: JSON.stringify({
-            authType: 'CAM',
-            enableExtranet: true,
-            enableIntranet: true,
+            api: {
+              authRequired: 'TRUE',
+              requestConfig: { method: 'ANY' },
+              isIntegratedResponse: 'FALSE',
+            },
+            service: { serviceName: 'SCF_API_SERVICE' },
+            release: { environmentName: 'release' },
           }),
         }),
       );
@@ -1550,7 +1554,15 @@ describe('ScfResource', () => {
                   {
                     type: 'http',
                     triggerName: 'test_fn-http-trigger',
-                    triggerDesc: JSON.stringify({ authType: 'NONE' }),
+                    triggerDesc: JSON.stringify({
+                      api: {
+                        authRequired: 'FALSE',
+                        requestConfig: { method: 'ANY' },
+                        isIntegratedResponse: 'FALSE',
+                      },
+                      service: { serviceName: 'SCF_API_SERVICE' },
+                      release: { environmentName: 'release' },
+                    }),
                   },
                 ],
               },
