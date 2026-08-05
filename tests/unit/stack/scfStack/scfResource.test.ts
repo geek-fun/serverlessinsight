@@ -725,7 +725,7 @@ describe('ScfResource', () => {
           {
             ModTime: '2025-01-01',
             Type: 'http',
-            TriggerDesc: JSON.stringify({ authType: 'NONE' }),
+            TriggerDesc: JSON.stringify({ AuthType: 'NONE', NetConfig: { EnableExtranet: true } }),
             TriggerName: 'test_fn-http-trigger',
             AddTime: '2025-01-01',
             Enable: 1,
@@ -790,7 +790,7 @@ describe('ScfResource', () => {
           {
             ModTime: '2025-01-01',
             Type: 'http',
-            TriggerDesc: JSON.stringify({ authType: 'NONE' }),
+            TriggerDesc: JSON.stringify({ AuthType: 'NONE', NetConfig: { EnableExtranet: true } }),
             TriggerName: 'test_fn-http-trigger',
             AddTime: '2025-01-01',
             Enable: 1,
@@ -1092,7 +1092,16 @@ describe('ScfResource', () => {
       });
       (mockScfOperations.getFunction as jest.Mock).mockResolvedValue({
         ...mockFunctionInfo,
-        Triggers: [{ TriggerName: 'test_fn-http-trigger', Type: 'http' }],
+        Triggers: [
+          {
+            TriggerName: 'test_fn-http-trigger',
+            Type: 'http',
+            TriggerDesc: JSON.stringify({
+              AuthType: 'NONE',
+              NetConfig: { EnableExtranet: true },
+            }),
+          },
+        ],
       });
 
       const result = await updateResource(mockContext, fnWithTrigger, initialState);
@@ -1124,6 +1133,42 @@ describe('ScfResource', () => {
       await updateResource(mockContext, fnWithTrigger, initialState);
 
       expect(mockScfOperations.createTrigger).toHaveBeenCalledTimes(1);
+    });
+
+    it('should skip createTrigger when provider trigger has a random name (Function URL style)', async () => {
+      // Tencent names Function URL triggers with a random id, not our
+      // ${fn.key}-http-trigger — name matching would never find it.
+      const fnWithTrigger = {
+        ...testFunction,
+        triggers: { http: { auth_type: 'public' as const } },
+      };
+      (mockScfOperations.updateFunctionConfiguration as jest.Mock).mockResolvedValue(undefined);
+      (mockScfOperations.updateFunctionCode as jest.Mock).mockResolvedValue(undefined);
+      (stateManager.setResource as jest.Mock).mockReturnValue(initialState);
+      (stateManager.getResource as jest.Mock).mockReturnValue({
+        mode: 'managed',
+        region: 'ap-guangzhou',
+        definition: { ...mockDefinition },
+        instances: [],
+        lastUpdated: '2025-01-01T00:00:00Z',
+      });
+      (mockScfOperations.getFunction as jest.Mock).mockResolvedValue({
+        ...mockFunctionInfo,
+        Triggers: [
+          {
+            TriggerName: '5obtzwwxw1',
+            Type: 'http',
+            TriggerDesc: JSON.stringify({
+              AuthType: 'NONE',
+              NetConfig: { EnableExtranet: true },
+            }),
+          },
+        ],
+      });
+
+      await updateResource(mockContext, fnWithTrigger, initialState);
+
+      expect(mockScfOperations.createTrigger).not.toHaveBeenCalled();
     });
 
     it('should update resource and refresh state from provider', async () => {

@@ -38,6 +38,13 @@ const buildTencentTriggerDesc = (
     },
   });
 
+// Tencent names Function URL triggers with a random id (e.g. "5obtzwwxw1"), not
+// our ${fn.key}-http-trigger, so name-based matching never finds them. A
+// Function URL trigger is identified by Type 'http' + a TriggerDesc carrying
+// the NetConfig field (the API Gateway flavor uses api/service/release instead).
+const isFunctionUrlTrigger = (t: { TriggerName?: string; Type?: string; TriggerDesc?: string }) =>
+  t.Type === 'http' && typeof t.TriggerDesc === 'string' && t.TriggerDesc.includes('NetConfig');
+
 type ScfDependentInstance = {
   type: string;
   id: string;
@@ -514,9 +521,7 @@ export const createResource = async (
       }
     }
 
-    const triggerAlreadyAttached = providerTriggers.some(
-      (t) => t.TriggerName === triggerName && t.Type === 'http',
-    );
+    const triggerAlreadyAttached = providerTriggers.some(isFunctionUrlTrigger);
 
     if (triggerAlreadyAttached) {
       logger.info(`HTTP trigger ${triggerName} already attached to ${fn.name}, skipping creation`);
@@ -802,9 +807,7 @@ export const updateResource = async (
       // in the provider (e.g. adopted function whose state lacked trigger
       // records). Probe before creating to stay idempotent.
       const probe = await client.scf.getFunction(fn.name);
-      const providerTriggerAttached = (probe?.Triggers ?? []).some(
-        (t) => t.TriggerName === triggerName && t.Type === 'http',
-      );
+      const providerTriggerAttached = (probe?.Triggers ?? []).some(isFunctionUrlTrigger);
 
       if (providerTriggerAttached) {
         logger.info(
@@ -812,15 +815,25 @@ export const updateResource = async (
         );
       } else {
         logger.info(lang.__('CREATING_HTTP_TRIGGER', { triggerName, functionName: fn.name }));
-        await client.scf.createTrigger({
-          FunctionName: fn.name,
-          TriggerName: triggerName,
-          Type: 'http',
-          TriggerDesc: desiredTriggerDesc,
-          Qualifier: '$DEFAULT',
-          Enable: 'OPEN',
-        });
-        logger.info(lang.__('HTTP_TRIGGER_CREATED', { triggerName, functionName: fn.name }));
+        try {
+          await client.scf.createTrigger({
+            FunctionName: fn.name,
+            TriggerName: triggerName,
+            Type: 'http',
+            TriggerDesc: desiredTriggerDesc,
+            Qualifier: '$DEFAULT',
+            Enable: 'OPEN',
+          });
+          logger.info(lang.__('HTTP_TRIGGER_CREATED', { triggerName, functionName: fn.name }));
+        } catch (error) {
+          if (isResourceAlreadyExistsError(error)) {
+            logger.warn(
+              `HTTP trigger ${triggerName} already exists on ${fn.name}, continuing: ${String(error)}`,
+            );
+          } else {
+            throw error;
+          }
+        }
       }
     }
   } else if (existingHttpTrigger) {
