@@ -173,10 +173,11 @@ export const createScfOperations = (scfClient: ScfSdkClient) => {
     },
 
     updateFunctionConfiguration: async (config: ScfFunctionConfig): Promise<void> => {
+      // Handler and Runtime are set at creation time and CANNOT be changed via
+      // UpdateFunctionConfiguration (Tencent rejects them with
+      // InvalidParameterValue.Handler / .Runtime) — omit them here.
       const params = {
         FunctionName: config.FunctionName,
-        Handler: config.Handler,
-        Runtime: config.Runtime,
         MemorySize: config.MemorySize,
         Timeout: config.Timeout,
         ...(config.Role && { Role: config.Role }),

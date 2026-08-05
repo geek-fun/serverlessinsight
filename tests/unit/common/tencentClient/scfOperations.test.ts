@@ -412,8 +412,6 @@ describe('scfOperations', () => {
 
       expect(mockScfClient.UpdateFunctionConfiguration).toHaveBeenCalledWith({
         FunctionName: 'test-function',
-        Handler: 'index.handler',
-        Runtime: 'nodejs18.x',
         MemorySize: 512,
         Timeout: 60,
       });
