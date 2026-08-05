@@ -30,13 +30,28 @@ const mockScfClient = {
   DeleteCustomDomain: jest.fn(),
 };
 
+const mockTagClient = {
+  TagResources: jest.fn(),
+};
+
+const mockCamClient = {
+  GetUserAppId: jest.fn(),
+};
+
 describe('scfOperations', () => {
   let operations: ReturnType<typeof createScfOperations>;
 
   beforeEach(() => {
     jest.clearAllMocks();
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    operations = createScfOperations(mockScfClient as any);
+    operations = createScfOperations(mockScfClient as any, {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      tag: mockTagClient as any,
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      cam: mockCamClient as any,
+      region: 'ap-guangzhou',
+      namespace: 'default',
+    });
     // Default GetFunction to Active so waits (create/update/delete polling)
     // complete immediately; individual tests override for poll behavior.
     mockScfClient.GetFunction.mockResolvedValue({
@@ -211,6 +226,50 @@ describe('scfOperations', () => {
         ),
       ).rejects.toThrow(/Polling timed out: SCF function test-function to become Active/);
     });
+
+    it('should attach ownership tags via TagResources after create', async () => {
+      mockScfClient.CreateFunction.mockResolvedValue({ FunctionName: 'test-function' });
+      mockCamClient.GetUserAppId.mockResolvedValue({ Uin: '100010232281' });
+      mockTagClient.TagResources.mockResolvedValue({});
+
+      const config = {
+        FunctionName: 'test-function',
+        Handler: 'index.handler',
+        Runtime: 'nodejs18.x',
+        MemorySize: 256,
+        Timeout: 30,
+        Tags: [{ Key: 'si-owned-by', Value: 'test-app:functions.test_fn' }],
+      };
+
+      await operations.createFunction(config, 'BASE64_CODE');
+
+      expect(mockScfClient.CreateFunction).toHaveBeenCalledWith(
+        expect.not.objectContaining({ Tags: expect.anything() }),
+      );
+      expect(mockCamClient.GetUserAppId).toHaveBeenCalled();
+      expect(mockTagClient.TagResources).toHaveBeenCalledWith({
+        ResourceList: [
+          'qcs::scf:ap-guangzhou:uin/100010232281:namespace/default/function/test-function',
+        ],
+        Tags: [{ TagKey: 'si-owned-by', TagValue: 'test-app:functions.test_fn' }],
+      });
+    });
+
+    it('should skip TagResources when config has no tags', async () => {
+      mockScfClient.CreateFunction.mockResolvedValue({ FunctionName: 'test-function' });
+
+      const config = {
+        FunctionName: 'test-function',
+        Handler: 'index.handler',
+        Runtime: 'nodejs18.x',
+        MemorySize: 256,
+        Timeout: 30,
+      };
+
+      await operations.createFunction(config, 'BASE64_CODE');
+
+      expect(mockTagClient.TagResources).not.toHaveBeenCalled();
+    });
   });
 
   describe('getFunction', () => {
@@ -244,6 +303,17 @@ describe('scfOperations', () => {
     it('should return null when function is not found', async () => {
       const error = Object.assign(new Error('not found'), {
         code: 'ResourceNotFound.FunctionName',
+      });
+      mockScfClient.GetFunction.mockRejectedValue(error);
+
+      const result = await operations.getFunction('nonexistent-function');
+
+      expect(result).toBeNull();
+    });
+
+    it('should return null when function not found (ResourceNotFound.Function)', async () => {
+      const error = Object.assign(new Error('未找到指定的Function，请创建后再试。'), {
+        code: 'ResourceNotFound.Function',
       });
       mockScfClient.GetFunction.mockRejectedValue(error);
 

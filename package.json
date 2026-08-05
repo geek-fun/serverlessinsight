@@ -86,6 +86,7 @@
     "tencentcloud-sdk-nodejs-es": "^4.1.263",
     "tencentcloud-sdk-nodejs-scf": "^4.1.168",
     "tencentcloud-sdk-nodejs-ssl": "^4.1.239",
+    "tencentcloud-sdk-nodejs-tag": "^4.1.244",
     "yaml": "^2.9.0"
   },
   "devDependencies": {

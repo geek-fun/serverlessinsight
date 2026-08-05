@@ -1,11 +1,42 @@
 import * as tencentcloud from 'tencentcloud-sdk-nodejs-scf';
+import * as tagTencentcloud from 'tencentcloud-sdk-nodejs-tag';
+import * as camTencentcloud from 'tencentcloud-sdk-nodejs-cam';
 import { ScfFunctionConfig, ScfFunctionInfo } from './types';
 import { pollUntil } from '../polling';
 import { SCF_STATUS_POLL_INTERVAL_MS, SCF_STATUS_POLL_MAX_ATTEMPTS } from '../constants';
 
 type ScfSdkClient = InstanceType<typeof tencentcloud.scf.v20180416.Client>;
+type TagSdkClient = InstanceType<typeof tagTencentcloud.tag.v20180813.Client>;
+type CamSdkClient = InstanceType<typeof camTencentcloud.cam.v20190116.Client>;
 
-export const createScfOperations = (scfClient: ScfSdkClient) => {
+export interface ScfOperationsDeps {
+  tag: TagSdkClient;
+  cam: CamSdkClient;
+  region: string;
+  namespace: string;
+}
+
+export const createScfOperations = (scfClient: ScfSdkClient, deps: ScfOperationsDeps) => {
+  const { tag: tagClient, cam: camClient, region, namespace } = deps;
+
+  const getAccountUin = async (): Promise<string> => {
+    const res = await camClient.GetUserAppId(null);
+    if (!res?.Uin) {
+      throw new Error('Failed to resolve Tencent Cloud account Uin for resource tagging');
+    }
+    return res.Uin;
+  };
+
+  const tagFunction = async (functionName: string, tags: Array<{ Key: string; Value: string }>) => {
+    if (tags.length === 0) return;
+    const uin = await getAccountUin();
+    const resource = `qcs::scf:${region}:uin/${uin}:namespace/${namespace}/function/${functionName}`;
+    await tagClient.TagResources({
+      ResourceList: [resource],
+      Tags: tags.map((t) => ({ TagKey: t.Key, TagValue: t.Value })),
+    });
+  };
+
   const operations = {
     waitForFunctionActive: async (functionName: string): Promise<ScfFunctionInfo | null> =>
       pollUntil({
@@ -38,7 +69,6 @@ export const createScfOperations = (scfClient: ScfSdkClient) => {
         Timeout: config.Timeout,
         ...(config.Role && { Role: config.Role }),
         ...(config.Environment && { Environment: config.Environment }),
-        ...(config.Tags && { Tags: config.Tags }),
       };
 
       await scfClient.CreateFunction(params);
@@ -48,6 +78,14 @@ export const createScfOperations = (scfClient: ScfSdkClient) => {
       // CreateTrigger) fail with "Status is Creating, unsupport operate" if issued
       // too early, so poll until Active before returning.
       await operations.waitForFunctionActive(params.FunctionName);
+
+      // CreateFunction's Tags param is silently dropped by the API (verified
+      // empirically — GetFunction returns [] even when Tags was sent). Ownership
+      // tags must be attached via the tag service's TagResources with the
+      // namespace-qualified ARN, otherwise adoption can never verify ownership.
+      if (config.Tags && config.Tags.length > 0) {
+        await tagFunction(params.FunctionName, config.Tags);
+      }
     },
 
     getFunction: async (functionName: string): Promise<ScfFunctionInfo | null> => {
@@ -165,7 +203,8 @@ export const createScfOperations = (scfClient: ScfSdkClient) => {
           error &&
           typeof error === 'object' &&
           'code' in error &&
-          error.code === 'ResourceNotFound.FunctionName'
+          (error.code === 'ResourceNotFound.FunctionName' ||
+            error.code === 'ResourceNotFound.Function')
         ) {
           return null;
         }
