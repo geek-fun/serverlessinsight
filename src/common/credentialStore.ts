@@ -75,6 +75,25 @@ export const getConsoleUrl = (): string => {
   return process.env.SI_CONSOLE_URL || DEFAULT_CONSOLE_URL;
 };
 
+/**
+ * Resolve the console FRONTEND (UI) URL for browser flows (e.g. /cli/authorize).
+ * The API URL and the UI URL differ: production uses api./console. subdomains;
+ * local dev runs the API on :3000 and the Vite dev server on :5173.
+ */
+export const resolveConsoleUiUrl = (creds?: { readonly consoleUrl?: string }): string => {
+  if (process.env.SI_CONSOLE_UI_URL) {
+    return process.env.SI_CONSOLE_UI_URL;
+  }
+  const apiUrl = resolveConsoleUrl(creds);
+  if (apiUrl.includes('api.')) {
+    return apiUrl.replace('api.', 'console.');
+  }
+  if (apiUrl.includes('localhost:3000')) {
+    return apiUrl.replace('localhost:3000', 'localhost:5173');
+  }
+  return apiUrl;
+};
+
 export const resolveApiKey = (params: ResolveApiKeyParams): string | null => {
   const { siApiKey, envKey, creds } = params;
   return siApiKey ?? envKey ?? creds?.apiKey ?? null;

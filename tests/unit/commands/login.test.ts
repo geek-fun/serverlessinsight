@@ -16,6 +16,7 @@ const mockLoadCredentials = jest.fn();
 const mockSaveCredentials = jest.fn();
 const mockDeleteCredentials = jest.fn();
 const mockResolveConsoleUrl = jest.fn();
+const mockResolveConsoleUiUrl = jest.fn();
 const mockValidateApiKeyFormat = jest.fn();
 
 jest.mock('../../../src/common/credentialStore', () => ({
@@ -23,6 +24,7 @@ jest.mock('../../../src/common/credentialStore', () => ({
   saveCredentials: (...args: unknown[]) => mockSaveCredentials(...args),
   deleteCredentials: (...args: unknown[]) => mockDeleteCredentials(...args),
   resolveConsoleUrl: (...args: unknown[]) => mockResolveConsoleUrl(...args),
+  resolveConsoleUiUrl: (...args: unknown[]) => mockResolveConsoleUiUrl(...args),
   validateApiKeyFormat: (...args: unknown[]) => mockValidateApiKeyFormat(...args),
 }));
 
@@ -58,6 +60,8 @@ describe('login command', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     mockReadlineAnswer = '2';
+    mockResolveConsoleUrl.mockReturnValue('https://api.console.test.com');
+    mockResolveConsoleUiUrl.mockReturnValue('https://console.console.test.com');
     process.env = { ...ORIGINAL_ENV };
     delete process.env.SI_API_KEY;
     delete process.env.SI_CONSOLE_URL;

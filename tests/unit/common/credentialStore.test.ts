@@ -34,6 +34,7 @@ import {
   saveCredentials,
   deleteCredentials,
   resolveConsoleUrl,
+  resolveConsoleUiUrl,
   resolveApiKey,
   validateApiKeyFormat,
 } from '../../../src/common/credentialStore';
@@ -150,6 +151,36 @@ describe('credentialStore', () => {
       delete process.env.SI_CONSOLE_URL;
       const result = resolveConsoleUrl({});
       expect(result).toBe('https://api.console.serverlessinsight.com');
+    });
+  });
+
+  describe('resolveConsoleUiUrl', () => {
+    it('should return SI_CONSOLE_UI_URL env var when set', () => {
+      process.env.SI_CONSOLE_UI_URL = 'https://ui.custom.com';
+      const result = resolveConsoleUiUrl({
+        consoleUrl: 'https://api.console.serverlessinsight.com',
+      });
+      expect(result).toBe('https://ui.custom.com');
+    });
+
+    it('should derive prod UI url by replacing api. with console.', () => {
+      delete process.env.SI_CONSOLE_UI_URL;
+      const result = resolveConsoleUiUrl({
+        consoleUrl: 'https://api.console.serverlessinsight.com',
+      });
+      expect(result).toBe('https://console.console.serverlessinsight.com');
+    });
+
+    it('should derive local UI url by switching port 3000 to 5173', () => {
+      delete process.env.SI_CONSOLE_UI_URL;
+      const result = resolveConsoleUiUrl({ consoleUrl: 'http://localhost:3000' });
+      expect(result).toBe('http://localhost:5173');
+    });
+
+    it('should return console url unchanged when no api. prefix and not localhost', () => {
+      delete process.env.SI_CONSOLE_UI_URL;
+      const result = resolveConsoleUiUrl({ consoleUrl: 'https://example.com/console' });
+      expect(result).toBe('https://example.com/console');
     });
   });
 

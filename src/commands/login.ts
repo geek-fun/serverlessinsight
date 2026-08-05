@@ -8,6 +8,7 @@ import {
   loadCredentials,
   deleteCredentials,
   resolveConsoleUrl,
+  resolveConsoleUiUrl,
   validateApiKeyFormat,
 } from '../common/credentialStore';
 import { lang } from '../lang';
@@ -80,9 +81,9 @@ const loginWithBrowser = async (consoleUrl: string): Promise<boolean> => {
     });
 
     server.listen(randomPort, '127.0.0.1', () => {
-      const authUrl = consoleUrl.replace('api.', 'console.');
+      const uiUrl = resolveConsoleUiUrl({ consoleUrl });
       const redirectUri = `http://127.0.0.1:${randomPort}/callback`;
-      const fullUrl = `${authUrl}/cli/authorize?redirect_uri=${encodeURIComponent(redirectUri)}`;
+      const fullUrl = `${uiUrl}/cli/authorize?redirect_uri=${encodeURIComponent(redirectUri)}`;
 
       logger.info(lang.__('LOGIN_OPENING_BROWSER'));
       try {
