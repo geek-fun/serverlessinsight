@@ -692,8 +692,44 @@ export const updateResource = async (
   const codeBase64 = readFileAsBase64(codePath);
   const codeHash = computeFileHash(codePath);
 
-  // Update configuration
-  await client.scf.updateFunctionConfiguration(config);
+  // Only push configuration when the mutable config fields actually changed —
+  // Tencent's UpdateFunctionConfiguration rejects Handler/Runtime (immutable at
+  // creation) and we don't want to re-send unchanged values. Handler/Runtime
+  // changes are a hard error: the platform cannot apply them on update.
+  const desiredDefinition = extractScfDefinition(config, codeHash, fn.iam);
+  const existingDefinition = (existingState?.definition ?? {}) as Record<string, unknown>;
+  const CONFIG_DIFF_KEYS = ['runtime', 'handler', 'memorySize', 'timeout', 'environment', 'role'];
+  const mutableKeys = CONFIG_DIFF_KEYS.filter((k) => k !== 'runtime' && k !== 'handler');
+
+  if (
+    desiredDefinition.handler &&
+    existingDefinition.handler &&
+    desiredDefinition.handler !== existingDefinition.handler
+  ) {
+    throw new Error(
+      `Handler is immutable in Tencent SCF and cannot be changed on update (${String(
+        existingDefinition.handler,
+      )} -> ${String(desiredDefinition.handler)}). Delete and recreate the function instead.`,
+    );
+  }
+  if (
+    desiredDefinition.runtime &&
+    existingDefinition.runtime &&
+    desiredDefinition.runtime !== existingDefinition.runtime
+  ) {
+    throw new Error(
+      `Runtime is immutable in Tencent SCF and cannot be changed on update (${String(
+        existingDefinition.runtime,
+      )} -> ${String(desiredDefinition.runtime)}). Delete and recreate the function instead.`,
+    );
+  }
+
+  const configChanged = mutableKeys.some(
+    (k) => desiredDefinition[k as keyof typeof desiredDefinition] !== existingDefinition[k],
+  );
+  if (configChanged) {
+    await client.scf.updateFunctionConfiguration(config);
+  }
 
   // Update code
   await client.scf.updateFunctionCode(fn.name, codeBase64);

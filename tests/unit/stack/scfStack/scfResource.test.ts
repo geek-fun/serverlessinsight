@@ -8,7 +8,13 @@ import * as scfTypes from '../../../../src/stack/scfStack/scfTypes';
 import * as stateManager from '../../../../src/common/stateManager';
 import * as hashUtils from '../../../../src/common/hashUtils';
 import { ProviderEnum } from '../../../../src/common';
-import { Context, StateFile, CURRENT_STATE_VERSION, ResourceTypeEnum } from '../../../../src/types';
+import {
+  Context,
+  ResourceState,
+  StateFile,
+  CURRENT_STATE_VERSION,
+  ResourceTypeEnum,
+} from '../../../../src/types';
 
 const mockScfOperations = {
   createFunction: jest.fn(),
@@ -1043,11 +1049,22 @@ describe('ScfResource', () => {
       (mockScfOperations.updateFunctionConfiguration as jest.Mock).mockResolvedValue(undefined);
       (mockScfOperations.updateFunctionCode as jest.Mock).mockResolvedValue(undefined);
       (stateManager.setResource as jest.Mock).mockReturnValue(newState);
+      // Existing state has the SAME config fields (only codeHash differs) → the
+      // configuration must NOT be re-pushed, only the code.
+      (stateManager.getResource as jest.Mock).mockReturnValue({
+        mode: 'managed',
+        region: 'ap-guangzhou',
+        definition: { ...mockDefinition },
+        instances: [],
+        lastUpdated: '2025-01-01T00:00:00Z',
+      });
 
       const result = await updateResource(mockContext, testFunction, initialState);
 
       expect(scfTypes.functionToScfConfig).toHaveBeenCalledWith(testFunction);
-      expect(mockScfOperations.updateFunctionConfiguration).toHaveBeenCalledWith(mockConfig);
+      // Config is unchanged (existing definition === desired) → configuration is
+      // NOT re-pushed; only the code is updated.
+      expect(mockScfOperations.updateFunctionConfiguration).not.toHaveBeenCalled();
       expect(mockScfOperations.updateFunctionCode).toHaveBeenCalledWith(
         'test-function',
         'base64encodedcontent',
@@ -1079,9 +1096,65 @@ describe('ScfResource', () => {
       expect(result).toEqual(newState);
     });
 
+    it('should re-push configuration when a mutable config field changes', async () => {
+      (mockScfOperations.updateFunctionConfiguration as jest.Mock).mockResolvedValue(undefined);
+      (mockScfOperations.updateFunctionCode as jest.Mock).mockResolvedValue(undefined);
+      (stateManager.setResource as jest.Mock).mockReturnValue(initialState);
+      // Existing config differs on a MUTABLE field (memorySize) → config re-pushed.
+      (stateManager.getResource as jest.Mock).mockReturnValue({
+        mode: 'managed',
+        region: 'ap-guangzhou',
+        definition: { ...mockDefinition, memorySize: 256 },
+        instances: [],
+        lastUpdated: '2025-01-01T00:00:00Z',
+      });
+
+      await updateResource(mockContext, testFunction, initialState);
+
+      expect(mockScfOperations.updateFunctionConfiguration).toHaveBeenCalledTimes(1);
+      expect(mockScfOperations.updateFunctionConfiguration).toHaveBeenCalledWith(
+        expect.objectContaining({ FunctionName: 'test-function' }),
+      );
+      // Immutable Handler/Runtime stripping happens inside scfOperations
+      // (covered by scfOperations.test.ts) — the resource layer passes config
+      // through as-is.
+    });
+
+    it('should throw a clear error when Handler changes on update', async () => {
+      (mockScfOperations.updateFunctionCode as jest.Mock).mockResolvedValue(undefined);
+      // Existing definition has a DIFFERENT handler.
+      (stateManager.getResource as jest.Mock).mockReturnValue({
+        mode: 'managed',
+        region: 'ap-guangzhou',
+        definition: { ...mockDefinition, handler: 'old.handler' },
+        instances: [],
+        lastUpdated: '2025-01-01T00:00:00Z',
+      });
+      const fnWithNewHandler = {
+        ...testFunction,
+        code: { ...testFunction.code, handler: 'new.handler' },
+      };
+
+      await expect(updateResource(mockContext, fnWithNewHandler, initialState)).rejects.toThrow(
+        /Handler is immutable/,
+      );
+      expect(mockScfOperations.updateFunctionConfiguration).not.toHaveBeenCalled();
+      expect(mockScfOperations.updateFunctionCode).not.toHaveBeenCalled();
+    });
+
     it('should propagate errors from updateScfFunctionConfiguration', async () => {
       const error = new Error('Update config failed');
       (mockScfOperations.updateFunctionConfiguration as jest.Mock).mockRejectedValue(error);
+      (mockScfOperations.updateFunctionCode as jest.Mock).mockResolvedValue(undefined);
+      // Make a mutable config field differ so the configuration is re-pushed.
+      const oldConfigResource: ResourceState = {
+        mode: 'managed',
+        region: 'ap-guangzhou',
+        definition: { ...mockDefinition, memorySize: 256 },
+        instances: [],
+        lastUpdated: '2025-01-01T00:00:00Z',
+      };
+      (stateManager.getResource as jest.Mock).mockReturnValue(oldConfigResource);
 
       await expect(updateResource(mockContext, testFunction, initialState)).rejects.toThrow(
         'Update config failed',
@@ -1169,12 +1242,11 @@ describe('ScfResource', () => {
 
       await updateResource(mockContext, fnWithIam, stateWithRole);
 
-      // Role config should be injected into SCF config
-      const expectedConfig = {
-        ...mockConfig,
-        Role: 'existing-role',
-      };
-      expect(mockScfOperations.updateFunctionConfiguration).toHaveBeenCalledWith(expectedConfig);
+      // Role config is injected into the SCF config, but since no mutable config
+      // field changed (memory/timeout/env identical), the configuration is not
+      // re-pushed — role changes are applied via updateRolePolicy/updateManagedPolicies.
+      expect(mockCamOperations.updateRolePolicy).toHaveBeenCalled();
+      expect(mockScfOperations.updateFunctionConfiguration).not.toHaveBeenCalled();
     });
 
     it('should create role during update when no existing role', async () => {
