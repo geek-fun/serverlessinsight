@@ -92,7 +92,7 @@ describe('Apigw Planner', () => {
       expect(plan.items[0].changes?.after).toBeDefined();
     });
 
-    it('should plan to create when existing state is tainted', async () => {
+    it('should plan to create when existing state is tainted and no remote group exists', async () => {
       let state = loadState('aliyun', 'test-app', 'test-service', 'default', testDir);
       state = setResource(state, 'events.test_api', {
         mode: 'managed',
@@ -115,6 +115,7 @@ describe('Apigw Planner', () => {
         lastUpdated: new Date().toISOString(),
         status: 'tainted',
       });
+      mockApigwOperations.findApiGroupByName.mockResolvedValue(null);
 
       const plan = await generateApigwPlan(mockContext, state, [testEvent], 'test-service');
 
@@ -125,7 +126,98 @@ describe('Apigw Planner', () => {
         resourceType: 'ALIYUN_APIGW',
       });
       expect(plan.items[0].changes?.after).toBeDefined();
-      expect(mockApigwOperations.findApiGroupByName).not.toHaveBeenCalled();
+      expect(mockApigwOperations.findApiGroupByName).toHaveBeenCalled();
+    });
+
+    it('should plan to create when state is tainted and remote group carries our ownership tag', async () => {
+      let state = loadState('aliyun', 'test-app', 'test-service', 'default', testDir);
+      state = setResource(state, 'events.test_api', {
+        mode: 'managed',
+        region: 'cn-hangzhou',
+        definition: {
+          groupName: 'test-service-default-agw-group',
+          description: 'API Gateway group for test-service',
+          basePath: null,
+          triggers: [{ method: 'GET', path: '/users', backend: 'userFunction' }],
+          domain: null,
+        },
+        instances: [],
+        lastUpdated: new Date().toISOString(),
+        status: 'tainted',
+      });
+      mockApigwOperations.findApiGroupByName.mockResolvedValue({
+        groupId: 'group-123',
+        groupName: 'test-service-default-agw-group',
+        tags: [{ Key: 'si-owned-by', Value: 'test-app-test-service:events.test_api' }],
+      });
+
+      const plan = await generateApigwPlan(mockContext, state, [testEvent], 'test-service');
+
+      expect(plan.items).toHaveLength(1);
+      expect(plan.items[0]).toMatchObject({
+        logicalId: 'events.test_api',
+        action: 'create',
+        resourceType: 'ALIYUN_APIGW',
+      });
+      expect(plan.items[0].changes?.after).toBeDefined();
+    });
+
+    it('should fail fast when state is tainted and remote group lacks our ownership tag', async () => {
+      let state = loadState('aliyun', 'test-app', 'test-service', 'default', testDir);
+      state = setResource(state, 'events.test_api', {
+        mode: 'managed',
+        region: 'cn-hangzhou',
+        definition: {
+          groupName: 'test-service-default-agw-group',
+          description: 'API Gateway group for test-service',
+          basePath: null,
+          triggers: [{ method: 'GET', path: '/users', backend: 'userFunction' }],
+          domain: null,
+        },
+        instances: [],
+        lastUpdated: new Date().toISOString(),
+        status: 'tainted',
+      });
+      mockApigwOperations.findApiGroupByName.mockResolvedValue({
+        groupId: 'group-123',
+        groupName: 'test-service-default-agw-group',
+        tags: [{ Key: 'env', Value: 'prod' }],
+      });
+
+      await expect(
+        generateApigwPlan(mockContext, state, [testEvent], 'test-service'),
+      ).rejects.toThrow('not owned by this stack');
+    });
+
+    it('should fail fast when state is missing but remote group exists untagged', async () => {
+      const state = loadState('aliyun', 'test-app', 'test-service', 'default', testDir);
+      mockApigwOperations.findApiGroupByName.mockResolvedValue({
+        groupId: 'group-123',
+        groupName: 'test-service-default-agw-group',
+      });
+
+      await expect(
+        generateApigwPlan(mockContext, state, [testEvent], 'test-service'),
+      ).rejects.toThrow('not owned by this stack');
+    });
+
+    it('should plan to import drift when state is missing but remote group carries our ownership tag', async () => {
+      const state = loadState('aliyun', 'test-app', 'test-service', 'default', testDir);
+      mockApigwOperations.findApiGroupByName.mockResolvedValue({
+        groupId: 'group-123',
+        groupName: 'test-service-default-agw-group',
+        tags: [{ Key: 'si-owned-by', Value: 'test-app-test-service:events.test_api' }],
+      });
+
+      const plan = await generateApigwPlan(mockContext, state, [testEvent], 'test-service');
+
+      expect(plan.items).toHaveLength(1);
+      expect(plan.items[0]).toMatchObject({
+        logicalId: 'events.test_api',
+        action: 'update',
+        resourceType: 'ALIYUN_APIGW',
+        drifted: true,
+      });
     });
 
     it('should plan no changes when event exists and matches state', async () => {

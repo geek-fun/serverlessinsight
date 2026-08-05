@@ -343,5 +343,64 @@ describe('cosPlanner', () => {
         plan.items.filter((i) => i.action === 'delete' && i.logicalId === 'buckets.old_bucket'),
       ).toHaveLength(1);
     });
+
+    it('should fail fast when state is empty but remote bucket exists untagged', async () => {
+      (stateManager.getResource as jest.Mock).mockReturnValue(null);
+      (stateManager.getAllResources as jest.Mock).mockReturnValue({});
+      (mockCosOperations.getBucket as jest.Mock).mockResolvedValue({
+        Name: 'test-bucket',
+        Location: 'ap-guangzhou',
+        Tags: [{ Key: 'env', Value: 'prod' }],
+      });
+
+      await expect(generateBucketPlan(mockContext, initialState, [testBucket])).rejects.toThrow(
+        'not owned by this stack',
+      );
+    });
+
+    it('should plan create when state is empty but remote bucket exists with our tag', async () => {
+      (stateManager.getResource as jest.Mock).mockReturnValue(null);
+      (stateManager.getAllResources as jest.Mock).mockReturnValue({});
+      (mockCosOperations.getBucket as jest.Mock).mockResolvedValue({
+        Name: 'test-bucket',
+        Location: 'ap-guangzhou',
+        Tags: [{ Key: 'si-owned-by', Value: 'test-app-test-service:buckets.test_bucket' }],
+      });
+
+      const plan = await generateBucketPlan(mockContext, initialState, [testBucket]);
+
+      expect(plan.items[0]).toMatchObject({ logicalId: 'buckets.test_bucket', action: 'create' });
+    });
+
+    it('should plan create when state is empty and remote bucket does not exist', async () => {
+      (stateManager.getResource as jest.Mock).mockReturnValue(null);
+      (stateManager.getAllResources as jest.Mock).mockReturnValue({});
+      (mockCosOperations.getBucket as jest.Mock).mockResolvedValue(null);
+
+      const plan = await generateBucketPlan(mockContext, initialState, [testBucket]);
+
+      expect(plan.items[0]).toMatchObject({ logicalId: 'buckets.test_bucket', action: 'create' });
+    });
+
+    it('should fail fast when state is tainted and remote bucket exists untagged', async () => {
+      (stateManager.getResource as jest.Mock).mockReturnValue({
+        mode: 'managed',
+        region: 'ap-guangzhou',
+        status: 'tainted',
+        definition: { bucket: 'test-bucket' },
+        instances: [],
+        lastUpdated: new Date().toISOString(),
+      });
+      (stateManager.getAllResources as jest.Mock).mockReturnValue({});
+      (mockCosOperations.getBucket as jest.Mock).mockResolvedValue({
+        Name: 'test-bucket',
+        Location: 'ap-guangzhou',
+        Tags: [],
+      });
+
+      await expect(generateBucketPlan(mockContext, initialState, [testBucket])).rejects.toThrow(
+        'not owned by this stack',
+      );
+    });
   });
 });

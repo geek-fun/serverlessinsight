@@ -799,6 +799,65 @@ describe('Fc3Resource', () => {
       );
       expect(mockedFc3Operations.createCustomDomain).not.toHaveBeenCalled();
     });
+
+    it('should stamp the ownership tag into the create config', async () => {
+      mockedFc3Operations.getFunction.mockResolvedValueOnce(mockFunctionInfo);
+      mockedFc3Operations.createFunction.mockResolvedValue(undefined);
+      const readyState = { ...initialState, _ready: true };
+      mockedStateManager.setResource.mockReturnValue(readyState);
+
+      await createResource(mockContext, testFunction, initialState);
+
+      expect(mockedFc3Operations.createFunction).toHaveBeenCalledWith(
+        expect.objectContaining({
+          tags: [{ key: 'si-owned-by', value: 'test-app-test-service:functions.test_fn' }],
+        }),
+        'test.zip',
+        undefined,
+      );
+    });
+
+    it('should idempotently adopt an existing function that carries our ownership tag', async () => {
+      const existsError = Object.assign(
+        new Error('function test-function already exists in service default'),
+        { code: 'FunctionAlreadyExists' },
+      );
+      mockedFc3Operations.createFunction.mockRejectedValue(existsError);
+      // Probe (collision path) and final refresh both return the tagged function
+      mockedFc3Operations.getFunction.mockResolvedValue({
+        ...mockFunctionInfo,
+        tags: [{ Key: 'si-owned-by', Value: 'test-app-test-service:functions.test_fn' }],
+      });
+      const readyState = { ...initialState, _ready: true };
+      mockedStateManager.setResource.mockReturnValue(readyState);
+
+      const result = await createResource(mockContext, testFunction, initialState);
+
+      // createFunction was attempted once (rejected with collision), then adopted
+      // — no re-create, flow continues to refresh state.
+      expect(mockedFc3Operations.createFunction).toHaveBeenCalledTimes(1);
+      expect(mockedFc3Operations.getFunction).toHaveBeenCalled();
+      expect(result).toEqual(readyState);
+    });
+
+    it('should reject adoption when existing function lacks our ownership tag', async () => {
+      const existsError = Object.assign(
+        new Error('function test-function already exists in service default'),
+        { code: 'FunctionAlreadyExists' },
+      );
+      mockedFc3Operations.createFunction.mockRejectedValue(existsError);
+      mockedFc3Operations.getFunction.mockResolvedValue({
+        ...mockFunctionInfo,
+        tags: [{ Key: 'other-project-tag', Value: 'someone-else' }],
+      });
+      const taintedState = { ...initialState, _tainted: true };
+      mockedStateManager.setResource.mockReturnValue(taintedState);
+
+      await expect(createResource(mockContext, testFunction, initialState)).rejects.toMatchObject({
+        name: 'PartialResourceError',
+        cause: { message: expect.stringContaining('not owned by this stack') },
+      });
+    });
   });
 
   describe('readResource', () => {

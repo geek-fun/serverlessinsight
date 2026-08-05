@@ -41,6 +41,7 @@ export type Fc3FunctionConfig = {
   description?: string;
   internetAccess?: boolean;
   role?: string;
+  tags?: Array<{ key: string; value: string }>;
 };
 
 export type Fc3FunctionInfo = {
@@ -99,6 +100,7 @@ export type Fc3FunctionInfo = {
   lastUpdateStatus?: string;
   lastUpdateStatusReason?: string;
   lastUpdateStatusReasonCode?: string;
+  tags?: Array<{ Key?: string; Value?: string }>;
 };
 
 export type SlsProjectInfo = {

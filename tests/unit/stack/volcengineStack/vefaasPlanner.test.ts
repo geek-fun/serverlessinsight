@@ -179,6 +179,84 @@ describe('vefaasPlanner', () => {
       expect(result.items[0].logicalId).toBe('functions.test_fn');
     });
 
+    it('should fail fast when state is empty but remote function exists untagged', async () => {
+      mockVefaasClient.vefaas.getFunction.mockResolvedValueOnce({
+        functionName: 'test-function',
+        runtime: 'nodejs/v18',
+        handler: 'index.handler',
+        memoryMb: 128,
+        requestTimeout: 30,
+        Tags: [{ Key: 'env', Value: 'prod' }],
+      });
+
+      await expect(generateFunctionPlan(mockContext, mockState, [mockFunction])).rejects.toThrow(
+        'not owned by this stack',
+      );
+    });
+
+    it('should plan create when state is empty but remote exists with our tag', async () => {
+      mockVefaasClient.vefaas.getFunction.mockResolvedValueOnce({
+        functionName: 'test-function',
+        runtime: 'nodejs/v18',
+        handler: 'index.handler',
+        memoryMb: 128,
+        requestTimeout: 30,
+        Tags: [{ Key: 'si-owned-by', Value: 'test-app-test-service:functions.test_fn' }],
+      });
+
+      const result = await generateFunctionPlan(mockContext, mockState, [mockFunction]);
+
+      expect(result.items).toHaveLength(1);
+      expect(result.items[0]).toMatchObject({
+        logicalId: 'functions.test_fn',
+        action: 'create',
+      });
+    });
+
+    it('should plan create when state is empty and remote function is missing', async () => {
+      mockVefaasClient.vefaas.getFunction.mockResolvedValueOnce(null);
+
+      const result = await generateFunctionPlan(mockContext, mockState, [mockFunction]);
+
+      expect(result.items).toHaveLength(1);
+      expect(result.items[0]).toMatchObject({
+        logicalId: 'functions.test_fn',
+        action: 'create',
+      });
+    });
+
+    it('should fail fast when state is tainted and remote function exists untagged', async () => {
+      const taintedState: StateFile = {
+        ...mockState,
+        resources: {
+          'functions.test_fn': {
+            mode: 'managed',
+            region: 'cn-beijing',
+            definition: { functionName: 'test-function' },
+            instances: [],
+            status: 'tainted',
+            lastUpdated: '2024-01-01T00:00:00Z',
+          },
+        },
+      };
+
+      jest
+        .spyOn(stateManager, 'getResource')
+        .mockReturnValue(taintedState.resources['functions.test_fn']);
+      mockVefaasClient.vefaas.getFunction.mockResolvedValueOnce({
+        functionName: 'test-function',
+        runtime: 'nodejs/v18',
+        handler: 'index.handler',
+        memoryMb: 128,
+        requestTimeout: 30,
+        Tags: [],
+      });
+
+      await expect(generateFunctionPlan(mockContext, taintedState, [mockFunction])).rejects.toThrow(
+        'not owned by this stack',
+      );
+    });
+
     it('should generate update plan when function exists with changes', async () => {
       const stateWithFunction: StateFile = {
         ...mockState,

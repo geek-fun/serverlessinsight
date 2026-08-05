@@ -138,6 +138,36 @@ describe('tosOperations', () => {
         expect(result.name).toBe('test-bucket');
       });
 
+      it('should send ownership tags via the x-tos-tagging header on CreateBucket', async () => {
+        const configWithTags: TosBucketConfig = {
+          bucketName: 'test-bucket',
+          Tags: [{ Key: 'si-owned-by', Value: 'app-svc:buckets.test' }],
+        };
+
+        mockClient.fetchOpenAPI
+          .mockResolvedValueOnce({}) // CreateBucket
+          .mockResolvedValueOnce({
+            // GetBucketInfo
+            Result: {
+              BucketInfo: {
+                Location: 'cn-beijing',
+                StorageClass: 'STANDARD',
+              },
+            },
+          });
+
+        await operations.createBucket(configWithTags);
+
+        expect(mockClient.fetchOpenAPI).toHaveBeenCalledWith(
+          expect.objectContaining({
+            Action: 'CreateBucket',
+            headers: expect.objectContaining({
+              'x-tos-tagging': 'si-owned-by=app-svc%3Abuckets.test',
+            }),
+          }),
+        );
+      });
+
       it('should create bucket with storage class', async () => {
         const configWithStorageClass: TosBucketConfig = {
           bucketName: 'test-bucket',
@@ -287,6 +317,42 @@ describe('tosOperations', () => {
           indexDocument: 'index.html',
           errorDocument: '404.html',
         });
+      });
+
+      it('should return bucket tags from GetBucketTagging', async () => {
+        mockClient.fetchOpenAPI
+          .mockResolvedValueOnce({
+            // GetBucketInfo
+            Result: {
+              BucketInfo: {
+                Location: 'cn-beijing',
+                StorageClass: 'STANDARD',
+              },
+            },
+          })
+          .mockResolvedValueOnce({
+            // GetBucketWebsite (none)
+            Result: {},
+          })
+          .mockResolvedValueOnce({
+            // GetBucketTagging
+            Result: {
+              TagSet: {
+                Tags: [
+                  { Key: 'si-owned-by', Value: 'app-svc:buckets.test' },
+                  { Key: 'env', Value: 'prod' },
+                ],
+              },
+            },
+          });
+
+        const result = await operations.getBucket('test-bucket');
+
+        expect(result).not.toBeNull();
+        expect(result?.Tags).toEqual([
+          { Key: 'si-owned-by', Value: 'app-svc:buckets.test' },
+          { Key: 'env', Value: 'prod' },
+        ]);
       });
 
       it('should return null when bucket does not exist (NoSuchBucket)', async () => {

@@ -101,6 +101,7 @@ describe('CosResource', () => {
     CorsConfiguration: [],
     VersioningConfiguration: { status: 'Enabled' },
     TaggingConfiguration: { tags: [] },
+    Tags: [{ Key: 'si-owned-by', Value: 'test-app-test-service:buckets.test_bucket' }],
   };
 
   beforeEach(() => {
@@ -188,7 +189,7 @@ describe('CosResource', () => {
       });
 
       const domainBucket = {
-        key: 'my_bucket',
+        key: 'test_bucket',
         name: 'test-bucket',
         website: {
           index: 'index.html',
@@ -253,7 +254,7 @@ describe('CosResource', () => {
       });
 
       const domainBucket = {
-        key: 'my_bucket',
+        key: 'test_bucket',
         name: 'test-bucket',
         website: {
           index: 'index.html',
@@ -285,7 +286,7 @@ describe('CosResource', () => {
       });
 
       const domainBucket = {
-        key: 'my_bucket',
+        key: 'test_bucket',
         name: 'test-bucket',
         website: {
           index: 'index.html',
@@ -305,6 +306,87 @@ describe('CosResource', () => {
         'cos',
         ['ap-guangzhou|test-bucket|cdn.example.com'],
       );
+    });
+
+    it('should stamp the ownership tag onto the createBucket config (x-cos-tagging header source)', async () => {
+      mockCosOperations.createBucket.mockResolvedValue(undefined);
+      mockCosOperations.getBucket.mockResolvedValue(mockBucketInfo);
+
+      await createBucketResource(
+        mockContext,
+        { key: 'test_bucket', name: 'test-bucket' },
+        initialState,
+      );
+
+      expect(mockCosOperations.createBucket).toHaveBeenCalledWith(
+        expect.objectContaining({
+          Bucket: 'test-bucket',
+          Region: 'ap-guangzhou',
+          Tags: [{ Key: 'si-owned-by', Value: 'test-app-test-service:buckets.test_bucket' }],
+        }),
+      );
+    });
+
+    it('should idempotently adopt a bucket that already exists and carries our ownership tag', async () => {
+      const existsError = Object.assign(new Error('BucketAlreadyExists'), {
+        code: 'BucketAlreadyExists',
+      });
+      mockCosOperations.createBucket.mockRejectedValue(existsError);
+      mockCosOperations.getBucket.mockResolvedValue(mockBucketInfo);
+
+      const result = await createBucketResource(
+        mockContext,
+        { key: 'test_bucket', name: 'test-bucket' },
+        initialState,
+      );
+
+      expect(mockCosOperations.createBucket).toHaveBeenCalledTimes(1);
+      expect(mockCosOperations.getBucket).toHaveBeenCalledWith('test-bucket', 'ap-guangzhou');
+      expect(result).toBeDefined();
+    });
+
+    it('should refuse an untagged pre-existing bucket even when createBucket succeeds idempotently', async () => {
+      // COS PutBucket is idempotent for the same region/owner — createBucket
+      // resolves, but the bucket pre-existed without our ownership tag, so it
+      // must be refused rather than silently adopted.
+      mockCosOperations.createBucket.mockResolvedValue(undefined);
+      mockCosOperations.getBucket.mockResolvedValue({
+        ...mockBucketInfo,
+        Tags: [{ Key: 'env', Value: 'prod' }],
+      });
+
+      await expect(
+        createBucketResource(
+          mockContext,
+          { key: 'test_bucket', name: 'test-bucket' },
+          initialState,
+        ),
+      ).rejects.toMatchObject({
+        name: 'PartialResourceError',
+        cause: { message: expect.stringContaining('not owned by this stack') },
+      });
+    });
+
+    it('should refuse adoption when a bucket collision occurs and the bucket lacks our ownership tag', async () => {
+      const existsError = Object.assign(new Error('BucketAlreadyOwnedByYou'), {
+        code: 'BucketAlreadyOwnedByYou',
+      });
+      mockCosOperations.createBucket.mockRejectedValue(existsError);
+      mockCosOperations.getBucket.mockResolvedValue({
+        ...mockBucketInfo,
+        Tags: [{ Key: 'other-project-tag', Value: 'someone-else' }],
+      });
+
+      await expect(
+        createBucketResource(
+          mockContext,
+          { key: 'test_bucket', name: 'test-bucket' },
+          initialState,
+        ),
+      ).rejects.toMatchObject({
+        name: 'PartialResourceError',
+        cause: { message: expect.stringContaining('not owned by this stack') },
+      });
     });
   });
 
@@ -864,6 +946,7 @@ describe('CosResource', () => {
       Location: 'ap-guangzhou',
       CreationDate: '2024-01-01',
       ACL: 'private',
+      Tags: [{ Key: 'si-owned-by', Value: 'test-app-test-service:buckets.test_bucket' }],
     };
 
     it('should throw when getBucket returns null after create', async () => {
@@ -1407,6 +1490,7 @@ describe('CosResource', () => {
         Name: 'test-bucket',
         Location: 'ap-guangzhou',
         CreationDate: '2024-01-01',
+        Tags: [{ Key: 'si-owned-by', Value: 'test-app-test-service:buckets.test_bucket' }],
       });
 
       await createBucketResource(
@@ -1434,6 +1518,7 @@ describe('CosResource', () => {
         Name: 'test-bucket',
         Location: 'ap-guangzhou',
         CreationDate: '2024-01-01',
+        Tags: [{ Key: 'si-owned-by', Value: 'test-app-test-service:buckets.test_bucket' }],
       });
 
       await createBucketResource(
@@ -1459,6 +1544,7 @@ describe('CosResource', () => {
       mockCosOperations.getBucket.mockResolvedValue({
         Name: 'test-bucket',
         Location: 'ap-guangzhou',
+        Tags: [{ Key: 'si-owned-by', Value: 'test-app-test-service:buckets.test_bucket' }],
       });
 
       await createBucketResource(
@@ -1480,6 +1566,7 @@ describe('CosResource', () => {
       Location: 'ap-guangzhou',
       CreationDate: '2024-01-01',
       ACL: 'private',
+      Tags: [{ Key: 'si-owned-by', Value: 'test-app-test-service:buckets.test_bucket' }],
     };
 
     it('should apply bucket policy when iam is configured', async () => {

@@ -98,7 +98,7 @@ describe('apigwPlanner', () => {
       expect(result.items[0].resourceType).toBe('VOLCENGINE_APIGW');
     });
 
-    it('should generate create plan for tainted event state without drift-import', async () => {
+    it('should fail fast when state is tainted and remote gateway exists untagged', async () => {
       const { createVolcengineClient } = jest.requireMock(
         '../../../../src/common/volcengineClient',
       );
@@ -132,6 +132,45 @@ describe('apigwPlanner', () => {
         },
       };
 
+      await expect(
+        generateApigwPlan(mockContext, stateWithTainted, [mockEvent], 'test-service'),
+      ).rejects.toThrow('not owned by this stack');
+    });
+
+    it('should plan create when state is tainted and remote gateway exists with our tag', async () => {
+      const { createVolcengineClient } = jest.requireMock(
+        '../../../../src/common/volcengineClient',
+      );
+      createVolcengineClient.mockReturnValueOnce({
+        apigw: {
+          findGatewayByName: jest.fn().mockResolvedValue({
+            gatewayId: 'existing-gateway',
+            gatewayName: 'test-gateway',
+            tags: [{ Key: 'si-owned-by', Value: 'test-app-test-service:events.api_gateway' }],
+          }),
+        },
+      });
+
+      const stateWithTainted: StateFile = {
+        ...mockState,
+        resources: {
+          'events.api_gateway': {
+            mode: 'managed',
+            region: 'cn-beijing',
+            definition: { groupName: 'test-gateway' },
+            instances: [
+              {
+                type: 'VOLCENGINE_APIGW_GROUP',
+                sid: 'volcengine:apigw:dev:gateway-123',
+                id: 'gateway-123',
+              },
+            ],
+            status: 'tainted',
+            lastUpdated: '2024-01-01T00:00:00Z',
+          },
+        },
+      };
+
       const result = await generateApigwPlan(
         mockContext,
         stateWithTainted,
@@ -141,31 +180,24 @@ describe('apigwPlanner', () => {
 
       expect(result.items).toHaveLength(1);
       expect(result.items[0].action).toBe('create');
-      expect(findGatewayByName).not.toHaveBeenCalled();
     });
 
-    it('should generate update plan for drifted resource', async () => {
+    it('should fail fast when state is missing and remote gateway exists untagged', async () => {
       const { createVolcengineClient } = jest.requireMock(
         '../../../../src/common/volcengineClient',
       );
       createVolcengineClient.mockReturnValueOnce({
         apigw: {
-          getGateway: jest.fn().mockResolvedValue({
-            gatewayId: 'gateway-123',
-            gatewayName: 'test-gateway',
-          }),
           findGatewayByName: jest.fn().mockResolvedValue({
             gatewayId: 'existing-gateway',
-            gatewayName: 'test-service-dev-apigw',
+            gatewayName: 'test-gateway',
           }),
         },
       });
 
-      const result = await generateApigwPlan(mockContext, mockState, [mockEvent], 'test-service');
-
-      expect(result.items).toHaveLength(1);
-      expect(result.items[0].action).toBe('update');
-      expect(result.items[0].drifted).toBe(true);
+      await expect(
+        generateApigwPlan(mockContext, mockState, [mockEvent], 'test-service'),
+      ).rejects.toThrow('not owned by this stack');
     });
 
     it('should generate delete plan for removed events', async () => {
@@ -417,7 +449,7 @@ describe('apigwPlanner', () => {
       expect(deleteItems).toHaveLength(0);
     });
 
-    it('should handle error when checking remote', async () => {
+    it('should propagate the error when the remote probe fails', async () => {
       const { createVolcengineClient } = jest.requireMock(
         '../../../../src/common/volcengineClient',
       );
@@ -427,10 +459,9 @@ describe('apigwPlanner', () => {
         },
       });
 
-      const result = await generateApigwPlan(mockContext, mockState, [mockEvent], 'test-service');
-
-      expect(result.items).toHaveLength(1);
-      expect(result.items[0].action).toBe('create');
+      await expect(
+        generateApigwPlan(mockContext, mockState, [mockEvent], 'test-service'),
+      ).rejects.toThrow('Network error');
     });
   });
 });

@@ -25,6 +25,8 @@ import {
 import type { IamStatement } from '../../common/iamStatements';
 import { logger } from '../../common/logger';
 import { lang } from '../../lang';
+import { OWNERSHIP_TAG_KEY, buildOwnershipTagValue, isOwnedByStack } from '../ownershipTag';
+import { isResourceAlreadyExistsError } from '../alreadyExists';
 
 type DependentInstance = {
   type: string;
@@ -36,6 +38,11 @@ type DependentInstance = {
 
 const RECOVERY_GET_FUNCTION_DELAY_MS = 1500;
 const IAM_ROLE_PROPAGATION_DELAY_MS = 3000;
+
+// Volcengine SDK surfaces "resource already exists" collisions with code
+// `Conflict` (the shared isResourceAlreadyExistsError also matches the message
+// "already exists" / "已存在" for the veFaaS flavor of the error).
+const VEFAAS_ALREADY_EXISTS_CODES = ['Conflict'];
 
 const delay = async (ms: number): Promise<void> => {
   await new Promise((resolve) => {
@@ -328,6 +335,7 @@ export const createResource = async (
         }
       : undefined,
   });
+  config.Tags = [{ Key: OWNERSHIP_TAG_KEY, Value: buildOwnershipTagValue(context, logicalId) }];
 
   const codePath = fn.code!.path;
   const codeHash = computeFileHash(codePath);
@@ -391,6 +399,26 @@ export const createResource = async (
       const functionAfterError = await client.vefaas.getFunction(fn.name);
       if (!functionAfterError) {
         throw new PartialResourceError(stateAfterDependents, error as Error);
+      }
+    } else if (isResourceAlreadyExistsError(error, VEFAAS_ALREADY_EXISTS_CODES)) {
+      // Idempotent adoption: the function already exists in the provider.
+      // Adopt it ONLY if it carries our ownership tag (proves a previous run
+      // of THIS stack created it — e.g. state was reset). An untagged
+      // same-named function may belong to another project, so it must fail
+      // loudly rather than silently taking it over (destroy would then remove
+      // a resource that was never ours).
+      const probe = await client.vefaas.getFunction(fn.name);
+      if (probe && isOwnedByStack(context, logicalId, probe.Tags)) {
+        logger.info(
+          `Function ${fn.name} exists and carries ownership tag (${OWNERSHIP_TAG_KEY}), adopting idempotently`,
+        );
+      } else {
+        throw new PartialResourceError(
+          stateAfterDependents,
+          new Error(
+            `Function ${fn.name} already exists in provider but is not owned by this stack (missing ${OWNERSHIP_TAG_KEY} tag). Refusing to adopt — resolve manually.`,
+          ),
+        );
       }
     } else {
       throw new PartialResourceError(stateAfterDependents, error as Error);

@@ -43,6 +43,7 @@ export type ApigwGroupInfo = {
   billingStatus?: string;
   illegalStatus?: string;
   trafficLimit?: number;
+  tags?: Array<{ Key?: string; Value?: string }>;
 };
 
 export type ApigwApiConfig = {
@@ -655,6 +656,7 @@ export const createApigwOperations = (
         billingStatus: group.billingStatus,
         illegalStatus: group.illegalStatus,
         trafficLimit: group.trafficLimit,
+        tags: group.tags?.tagInfo?.map((t) => ({ Key: t.key, Value: t.value })),
       };
     },
 

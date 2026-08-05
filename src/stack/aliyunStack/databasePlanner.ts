@@ -12,6 +12,12 @@ import { databaseToRdsConfig, extractRdsDefinition } from './rdsTypes';
 import { databaseToEsConfig, extractEsDefinition } from './esServerlessTypes';
 import { getAllResources, getResource } from '../../common/stateManager';
 import { attributesEqual } from '../../common/hashUtils';
+import { OWNERSHIP_TAG_KEY, isOwnedByStack } from '../ownershipTag';
+
+const toOwnershipTagShape = (
+  tags: Array<{ key?: string; value?: string }> | undefined,
+): Array<{ Key?: string; Value?: string }> | undefined =>
+  tags?.map((t) => ({ Key: t.key, Value: t.value }));
 
 const planDatabaseDeletion = (
   logicalId: string,
@@ -102,6 +108,20 @@ export const generateDatabasePlan = async (
       const desiredDefinition = getDesiredDefinition(database);
 
       if (!currentState || currentState.status === 'tainted') {
+        // No usable local state: probe the provider before planning create.
+        // If a same-named resource already exists WITHOUT our ownership tag it
+        // may belong to another project — fail fast in the plan instead of
+        // letting the executor discover it mid-deploy.
+        const remote =
+          resourceType === 'ALIYUN_ES_SERVERLESS'
+            ? await client.es.getApp(database.name)
+            : await client.rds.getInstanceByName(database.name);
+        if (remote && !isOwnedByStack(context, logicalId, toOwnershipTagShape(remote.tags))) {
+          throw new Error(
+            `${resourceType} ${database.name} already exists in provider but is not owned by this stack (missing ${OWNERSHIP_TAG_KEY} tag). Refusing to create — resolve manually.`,
+          );
+        }
+
         return {
           logicalId,
           action: 'create',

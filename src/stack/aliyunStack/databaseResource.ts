@@ -13,6 +13,22 @@ import { setResource, removeResource } from '../../common/stateManager';
 import { buildSid } from '../../common';
 import { logger } from '../../common/logger';
 import { lang } from '../../lang';
+import { OWNERSHIP_TAG_KEY, buildOwnershipTagValue, isOwnedByStack } from '../ownershipTag';
+import { isResourceAlreadyExistsError } from '../alreadyExists';
+
+// Normalize provider tag shape ({key,value}) to the ownership-check shape ({Key,Value}).
+const toOwnershipTagShape = (
+  tags: Array<{ key?: string; value?: string }> | undefined,
+): Array<{ Key?: string; Value?: string }> | undefined =>
+  tags?.map((t) => ({ Key: t.key, Value: t.value }));
+
+// RDS CreateDBInstance reports a name collision as InvalidDBInstanceName.Duplicate
+// ("Specified DB instance name already exists in the Aliyun RDS"). ES Serverless
+// does not publish its CreateApp collision code in the SDK — DuplicateResource is
+// Aliyun's common "resource already exists" code, and the generic matcher in
+// alreadyExists.ts additionally catches '已存在'/'already exist' messages.
+const RDS_ALREADY_EXISTS_CODES = ['InvalidDBInstanceName.Duplicate'];
+const ES_ALREADY_EXISTS_CODES = ['DuplicateResource'];
 
 const buildRdsInstanceFromProvider = (info: RdsInfo, sid: string) => {
   return {
@@ -149,7 +165,28 @@ export const createDatabaseResource = async (
 
     if (isEs) {
       const config = databaseToEsConfig(database);
-      instanceId = await client.es.createApp(config);
+      config.tags = [{ key: OWNERSHIP_TAG_KEY, value: buildOwnershipTagValue(context, logicalId) }];
+
+      try {
+        instanceId = await client.es.createApp(config);
+      } catch (error) {
+        if (isResourceAlreadyExistsError(error, ES_ALREADY_EXISTS_CODES)) {
+          const probe = await client.es.getApp(config.appName);
+          if (probe && isOwnedByStack(context, logicalId, toOwnershipTagShape(probe.tags))) {
+            instanceId = probe.appId ?? config.appName;
+            logger.info(
+              `ES app ${config.appName} exists and carries ownership tag (${OWNERSHIP_TAG_KEY}), adopting idempotently`,
+            );
+          } else {
+            throw new Error(
+              `ES app ${config.appName} already exists in provider but is not owned by this stack (missing ${OWNERSHIP_TAG_KEY} tag). Refusing to adopt — resolve manually.`,
+              { cause: error },
+            );
+          }
+        } else {
+          throw error;
+        }
+      }
 
       // Refresh state from provider to get all attributes
       const appInfo = await client.es.getApp(instanceId);
@@ -161,7 +198,31 @@ export const createDatabaseResource = async (
       instance = buildEsInstanceFromProvider(appInfo, sid);
     } else {
       const config = databaseToRdsConfig(database);
-      instanceId = await client.rds.createInstance(config);
+      config.tags = [{ key: OWNERSHIP_TAG_KEY, value: buildOwnershipTagValue(context, logicalId) }];
+
+      try {
+        instanceId = await client.rds.createInstance(config);
+      } catch (error) {
+        if (isResourceAlreadyExistsError(error, RDS_ALREADY_EXISTS_CODES)) {
+          const probe = await client.rds.getInstanceByName(config.dbInstanceDescription);
+          if (
+            probe?.dbInstanceId &&
+            isOwnedByStack(context, logicalId, toOwnershipTagShape(probe.tags))
+          ) {
+            instanceId = probe.dbInstanceId;
+            logger.info(
+              `RDS instance ${config.dbInstanceDescription} exists and carries ownership tag (${OWNERSHIP_TAG_KEY}), adopting idempotently`,
+            );
+          } else {
+            throw new Error(
+              `RDS instance ${config.dbInstanceDescription} already exists in provider but is not owned by this stack (missing ${OWNERSHIP_TAG_KEY} tag). Refusing to adopt — resolve manually.`,
+              { cause: error },
+            );
+          }
+        } else {
+          throw error;
+        }
+      }
 
       // Refresh state from provider to get all attributes
       const rdsInfo = await client.rds.getInstance(instanceId);

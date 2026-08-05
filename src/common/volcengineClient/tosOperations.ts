@@ -62,13 +62,22 @@ export const createTosOperations = (client: TosSdkClient | null, _region: string
         params.StorageClass = config.storageClass;
       }
 
+      // TOS CreateBucket accepts bucket tags via the x-tos-tagging HTTP header,
+      // formatted as URL-encoded key=value pairs joined by '&' (S3-compatible).
+      const headers: Record<string, string> = {
+        'content-type': 'application/xml',
+      };
+      if (config.Tags && config.Tags.length > 0) {
+        headers['x-tos-tagging'] = config.Tags.map(
+          (t) => `${encodeURIComponent(t.Key)}=${encodeURIComponent(t.Value)}`,
+        ).join('&');
+      }
+
       await client.fetchOpenAPI({
         Action: 'CreateBucket',
         Version: '2018-08-01',
         method: 'PUT',
-        headers: {
-          'content-type': 'application/xml',
-        },
+        headers,
         query: params,
       });
 
@@ -170,6 +179,25 @@ export const createTosOperations = (client: TosSdkClient | null, _region: string
           // Website config may not exist
         }
 
+        let tags: Array<{ Key: string; Value: string }> | undefined;
+        try {
+          const taggingResponse = await client.fetchOpenAPI({
+            Action: 'GetBucketTagging',
+            Version: '2018-08-01',
+            method: 'GET',
+            query: {
+              Bucket: bucketName,
+            },
+          });
+
+          const taggingResult = (taggingResponse.Result || {}) as Record<string, unknown>;
+          const tagSet = (taggingResult.TagSet || {}) as Record<string, unknown>;
+          const tagList = (tagSet.Tags || []) as Array<Record<string, unknown>>;
+          tags = tagList.map((t) => ({ Key: t.Key as string, Value: t.Value as string }));
+        } catch {
+          // Bucket tagging may not be configured
+        }
+
         return {
           name: bucketName,
           location: bucketData.Location as string | undefined,
@@ -179,6 +207,7 @@ export const createTosOperations = (client: TosSdkClient | null, _region: string
           intranetEndpoint: bucketData.IntranetEndpoint as string | undefined,
           acl: bucketData.ACL as TosAcl | undefined,
           websiteConfig,
+          Tags: tags,
         };
       } catch (error: unknown) {
         if (

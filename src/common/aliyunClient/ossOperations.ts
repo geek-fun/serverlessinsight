@@ -18,6 +18,7 @@ import {
   BucketCorsRule,
   BucketLifecycleRule,
   BucketOwner,
+  BucketTag,
 } from '../../stack/bucketTypes';
 import { DnsOperations } from './dnsOperations';
 import { logger } from '../logger';
@@ -37,6 +38,7 @@ import {
   websiteConfig?: BucketWebsiteConfig;
   storageClass?: string;
   domain?: string;
+  Tags?: Array<{ Key: string; Value: string }>;
 };
 
 const ossRequest = (ossClient: OSS, params: unknown): Promise<unknown> => {
@@ -715,10 +717,26 @@ const parseXmlResponse = <T>(xml: string, tagName: string): T | null => {
 
   return {
     createBucket: async (config: OssBucketConfig): Promise<OssBucketInfo> => {
+      const putBucketOptions: {
+        storageClass?: OSS.StorageType;
+        headers?: Record<string, string>;
+      } = {};
+
       if (config.storageClass) {
-        await ossClient.putBucket(config.bucketName, {
-          storageClass: config.storageClass as OSS.StorageType,
-        } as OSS.PutBucketOptions);
+        putBucketOptions.storageClass = config.storageClass as OSS.StorageType;
+      }
+      if (config.Tags && config.Tags.length > 0) {
+        // OSS accepts bucket tags at create time via the x-oss-bucket-tagging
+        // header: URL-encoded `key1=value1&key2=value2`.
+        putBucketOptions.headers = {
+          'x-oss-bucket-tagging': config.Tags.map(
+            (tag) => `${encodeURIComponent(tag.Key)}=${encodeURIComponent(tag.Value)}`,
+          ).join('&'),
+        };
+      }
+
+      if (putBucketOptions.storageClass || putBucketOptions.headers) {
+        await ossClient.putBucket(config.bucketName, putBucketOptions as OSS.PutBucketOptions);
       } else {
         await ossClient.putBucket(config.bucketName);
       }
@@ -850,6 +868,21 @@ const parseXmlResponse = <T>(xml: string, tagName: string): T | null => {
           // Lifecycle config might not exist
         }
 
+        // Get bucket tags
+        let tags: BucketTag[] | undefined;
+        try {
+          const tagsResult = await (
+            ossClient as unknown as {
+              getBucketTags: (name: string) => Promise<{ tag?: Record<string, string> }>;
+            }
+          ).getBucketTags(bucketName);
+          if (tagsResult.tag) {
+            tags = Object.entries(tagsResult.tag).map(([key, value]) => ({ key, value }));
+          }
+        } catch {
+          // No bucket tags configured
+        }
+
         // Build owner info
         const owner: BucketOwner | undefined = bucket?.Owner
           ? {
@@ -874,6 +907,7 @@ const parseXmlResponse = <T>(xml: string, tagName: string): T | null => {
           loggingConfig,
           corsRules,
           lifecycleRules,
+          tags,
         };
       } catch (error: unknown) {
         if (

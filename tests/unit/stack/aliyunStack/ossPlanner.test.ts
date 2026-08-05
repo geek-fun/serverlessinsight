@@ -125,7 +125,73 @@ describe('OSS Planner', () => {
         resourceType: 'ALIYUN_OSS_BUCKET',
       });
       expect(plan.items[0].changes?.after).toBeDefined();
-      expect(mockOssOperations.getBucket).not.toHaveBeenCalled();
+      // Tainted state probes the provider before planning create (fail-fast on
+      // a same-named bucket that is not owned by this stack)
+      expect(mockOssOperations.getBucket).toHaveBeenCalled();
+    });
+
+    it('should fail fast when state is empty but remote bucket exists untagged', async () => {
+      mockOssOperations.getBucket.mockResolvedValue({
+        name: 'test-bucket',
+        acl: 'public-read',
+        tags: [{ key: 'env', value: 'prod' }],
+      });
+
+      await expect(generateBucketPlan(mockContext, initialState, [testBucket])).rejects.toThrow(
+        'not owned by this stack',
+      );
+    });
+
+    it('should plan create when state is empty but remote exists with our tag', async () => {
+      mockOssOperations.getBucket.mockResolvedValue({
+        name: 'test-bucket',
+        acl: 'public-read',
+        tags: [{ key: 'si-owned-by', value: 'test-app-test-service:buckets.test_bucket' }],
+      });
+
+      const plan = await generateBucketPlan(mockContext, initialState, [testBucket]);
+
+      expect(plan.items).toHaveLength(1);
+      expect(plan.items[0]).toMatchObject({
+        logicalId: 'buckets.test_bucket',
+        action: 'create',
+        resourceType: 'ALIYUN_OSS_BUCKET',
+      });
+    });
+
+    it('should plan create when state is empty and remote bucket is missing', async () => {
+      mockOssOperations.getBucket.mockResolvedValue(null);
+
+      const plan = await generateBucketPlan(mockContext, initialState, [testBucket]);
+
+      expect(plan.items).toHaveLength(1);
+      expect(plan.items[0]).toMatchObject({
+        logicalId: 'buckets.test_bucket',
+        action: 'create',
+        resourceType: 'ALIYUN_OSS_BUCKET',
+      });
+      expect(mockOssOperations.getBucket).toHaveBeenCalledWith('test-bucket');
+    });
+
+    it('should fail fast when state is tainted and remote exists untagged', async () => {
+      mockOssOperations.getBucket.mockResolvedValue({
+        name: 'test-bucket',
+        acl: 'public-read',
+        tags: [],
+      });
+
+      const state = setResource(initialState, 'buckets.test_bucket', {
+        mode: 'managed',
+        region: 'cn-hangzhou',
+        status: 'tainted',
+        definition: { bucketName: 'test-bucket' },
+        instances: [],
+        lastUpdated: new Date().toISOString(),
+      });
+
+      await expect(generateBucketPlan(mockContext, state, [testBucket])).rejects.toThrow(
+        'not owned by this stack',
+      );
     });
 
     it('should plan no changes when bucket exists and matches state', async () => {

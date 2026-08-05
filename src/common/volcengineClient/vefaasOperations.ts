@@ -234,6 +234,7 @@ export const createVefaasOperations = (client: VefaasSdkClient) => {
           Envs: buildEnvVariables(config.environmentVariables),
         }),
         ...(config.role && { Role: config.role }),
+        ...(config.Tags && { Tags: config.Tags }),
         ...codeSource,
         ...(config.vpcConfig && {
           VpcConfig: {
@@ -322,6 +323,10 @@ export const createVefaasOperations = (client: VefaasSdkClient) => {
                 topic: (data.LogConfig as Record<string, unknown>).TopicName as string | undefined,
               }
             : undefined,
+          Tags: (data.Tags as Array<{ Key?: string; Value?: string }> | undefined)?.map((t) => ({
+            Key: t.Key,
+            Value: t.Value,
+          })),
         };
       } catch (error: unknown) {
         if (error && typeof error === 'object' && 'code' in error) {

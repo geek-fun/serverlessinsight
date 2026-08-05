@@ -421,6 +421,44 @@ describe('ossOperations public access block', () => {
 
       expect(mockPutBucketACL).toHaveBeenCalledWith('test-bucket', BucketACL.PUBLIC_READ);
     });
+
+    it('should send bucket tags via x-oss-bucket-tagging header on create', async () => {
+      await operations.createBucket({
+        bucketName: 'test-bucket',
+        Tags: [{ Key: 'si-owned-by', Value: 'test-app-test-service:buckets.test_bucket' }],
+      });
+
+      expect(mockPutBucket).toHaveBeenCalledWith(
+        'test-bucket',
+        expect.objectContaining({
+          headers: {
+            'x-oss-bucket-tagging': 'si-owned-by=test-app-test-service%3Abuckets.test_bucket',
+          },
+        }),
+      );
+    });
+
+    it('should send tagging header alongside storage class', async () => {
+      await operations.createBucket({
+        bucketName: 'test-bucket',
+        storageClass: 'IA',
+        Tags: [{ Key: 'env', Value: 'prod' }],
+      });
+
+      expect(mockPutBucket).toHaveBeenCalledWith(
+        'test-bucket',
+        expect.objectContaining({
+          storageClass: 'IA',
+          headers: { 'x-oss-bucket-tagging': 'env=prod' },
+        }),
+      );
+    });
+
+    it('should not send tagging header when no tags configured', async () => {
+      await operations.createBucket({ bucketName: 'test-bucket' });
+
+      expect(mockPutBucket).toHaveBeenCalledWith('test-bucket');
+    });
   });
 
   describe('updateBucketAcl', () => {
@@ -719,6 +757,44 @@ describe('ossOperations bucket operations', () => {
       expect(result?.name).toBe('test-bucket');
       expect(result?.acl).toBeUndefined();
       expect(result?.websiteConfig).toBeUndefined();
+    });
+
+    it('should read bucket tags into key/value pairs', async () => {
+      const mockOssClient2 = {
+        ...mockOssClient,
+        getBucketInfo: jest.fn().mockResolvedValue({
+          bucket: { Name: 'test-bucket', Location: 'oss-cn-hangzhou' },
+        }),
+        getBucketTags: jest.fn().mockResolvedValue({
+          tag: {
+            'si-owned-by': 'test-app-test-service:buckets.test_bucket',
+            env: 'prod',
+          },
+        }),
+      } as unknown as OSS;
+
+      const ops = createOssOperations(mockOssClient2, 'cn-hangzhou');
+      const result = await ops.getBucket('test-bucket');
+
+      expect(result?.tags).toEqual([
+        { key: 'si-owned-by', value: 'test-app-test-service:buckets.test_bucket' },
+        { key: 'env', value: 'prod' },
+      ]);
+    });
+
+    it('should return undefined tags when bucket has no tag configuration', async () => {
+      const mockOssClient2 = {
+        ...mockOssClient,
+        getBucketInfo: jest.fn().mockResolvedValue({
+          bucket: { Name: 'test-bucket', Location: 'oss-cn-hangzhou' },
+        }),
+        getBucketTags: jest.fn().mockRejectedValue({ code: 'NoSuchBucketTagging' }),
+      } as unknown as OSS;
+
+      const ops = createOssOperations(mockOssClient2, 'cn-hangzhou');
+      const result = await ops.getBucket('test-bucket');
+
+      expect(result?.tags).toBeUndefined();
     });
   });
 

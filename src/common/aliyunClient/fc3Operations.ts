@@ -135,6 +135,9 @@ const buildCodeLocation = (codePath: string, ossCode?: OssCodeLocation): fc.Inpu
         ...(config.description && { description: config.description }),
         ...(config.internetAccess !== undefined && { internetAccess: config.internetAccess }),
         ...(config.role && { role: config.role }),
+        ...(config.tags && {
+          tags: config.tags.map((t) => new fc.Tag({ key: t.key, value: t.value })),
+        }),
       });
 
       const request = new fc.CreateFunctionRequest({
@@ -227,6 +230,7 @@ const buildCodeLocation = (codePath: string, ossCode?: OssCodeLocation): fc.Inpu
           lastUpdateStatus: body.lastUpdateStatus,
           lastUpdateStatusReason: body.lastUpdateStatusReason,
           lastUpdateStatusReasonCode: body.lastUpdateStatusReasonCode,
+          tags: body.tags?.map((t) => ({ Key: t.key, Value: t.value })),
         };
       } catch (error: unknown) {
         if (

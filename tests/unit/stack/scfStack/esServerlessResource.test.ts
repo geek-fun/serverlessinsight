@@ -17,6 +17,7 @@ import {
 const mockEsOperations = {
   createSpace: jest.fn(),
   getSpace: jest.fn(),
+  getSpaceByName: jest.fn(),
   updateSpace: jest.fn(),
   deleteSpace: jest.fn(),
 };
@@ -338,6 +339,77 @@ describe('EsServerlessResource', () => {
           VpcInfo: [{ VpcId: 'vpc-123', SubnetId: 'subnet-456' }],
         }),
       );
+    });
+
+    it('should stamp the ownership tag on the createSpace call', async () => {
+      const database = createTestDatabase('test_es');
+      const spaceId = 'es-space-test123';
+
+      mockEsOperations.createSpace.mockResolvedValue(spaceId);
+      mockEsOperations.getSpace.mockResolvedValue({
+        SpaceId: spaceId,
+        SpaceName: 'test-es-space',
+        Status: 1,
+      });
+      mockedStateManager.setResource.mockReturnValue(initialState);
+
+      await createEsResource(mockContext, database, initialState);
+
+      expect(mockEsOperations.createSpace).toHaveBeenCalledWith(
+        expect.objectContaining({
+          SpaceName: 'test-es-space',
+          Tags: [{ Key: 'si-owned-by', Value: 'test-app-test-service:databases.test_es' }],
+        }),
+      );
+    });
+
+    it('should idempotently adopt an existing space that carries our ownership tag', async () => {
+      const database = createTestDatabase('test_es');
+      const existsError = Object.assign(new Error('空间名已存在。'), {
+        code: 'InvalidParameter.SpaceNameExist',
+      });
+      mockEsOperations.createSpace.mockRejectedValue(existsError);
+      mockEsOperations.getSpaceByName.mockResolvedValue({
+        SpaceId: 'es-space-test123',
+        SpaceName: 'test-es-space',
+        Status: 1,
+        Tags: [{ Key: 'si-owned-by', Value: 'test-app-test-service:databases.test_es' }],
+      });
+      mockedStateManager.setResource.mockReturnValue(initialState);
+
+      const result = await createEsResource(mockContext, database, initialState);
+
+      expect(mockEsOperations.createSpace).toHaveBeenCalledTimes(1);
+      expect(mockEsOperations.getSpaceByName).toHaveBeenCalledWith('test-es-space');
+      expect(mockedStateManager.setResource).toHaveBeenLastCalledWith(
+        initialState,
+        'databases.test_es',
+        expect.objectContaining({
+          instances: expect.arrayContaining([expect.objectContaining({ id: 'es-space-test123' })]),
+        }),
+      );
+      expect(result).toBe(initialState);
+    });
+
+    it('should reject adoption when existing space lacks our ownership tag', async () => {
+      const existsError = Object.assign(new Error('空间名已存在。'), {
+        code: 'InvalidParameter.SpaceNameExist',
+      });
+      mockEsOperations.createSpace.mockRejectedValue(existsError);
+      mockEsOperations.getSpaceByName.mockResolvedValue({
+        SpaceId: 'es-space-test123',
+        SpaceName: 'test-es-space',
+        Status: 1,
+        Tags: [{ Key: 'other-project-tag', Value: 'someone-else' }],
+      });
+      mockedStateManager.setResource.mockReturnValue(initialState);
+
+      await expect(
+        createEsResource(mockContext, createTestDatabase('test_es'), initialState),
+      ).rejects.toMatchObject({
+        name: 'PartialResourceError',
+        cause: { message: expect.stringContaining('not owned by this stack') },
+      });
     });
   });
 

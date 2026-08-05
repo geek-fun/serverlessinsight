@@ -327,12 +327,22 @@ const createCosOperations = (cosClient: CosSdkClient, region: string, dnsOps?: D
 
   return {
     createBucket: async (config: CosBucketConfig): Promise<void> => {
+      // COS PutBucket accepts tags via the x-cos-tagging HTTP header, formatted
+      // as URL-encoded key=value pairs joined by '&'.
+      const headers: Record<string, string> = {};
+      if (config.Tags && config.Tags.length > 0) {
+        headers['x-cos-tagging'] = config.Tags.map(
+          (t) => `${encodeURIComponent(t.Key)}=${encodeURIComponent(t.Value)}`,
+        ).join('&');
+      }
+
       // Create bucket
       await new Promise<void>((resolve, reject) => {
         cosClient.putBucket(
           {
             Bucket: config.Bucket,
             Region: config.Region,
+            ...(Object.keys(headers).length > 0 ? { Headers: headers } : {}),
           },
           (err) => {
             if (err) {
@@ -575,6 +585,7 @@ const createCosOperations = (cosClient: CosSdkClient, region: string, dnsOps?: D
           CorsConfiguration: corsConfiguration,
           VersioningConfiguration: versioningConfig,
           TaggingConfiguration: taggingConfig,
+          Tags: taggingConfig?.tags?.map((t) => ({ Key: t.key ?? '', Value: t.value ?? '' })),
         };
       } catch (error: unknown) {
         if (error && typeof error === 'object' && 'statusCode' in error) {

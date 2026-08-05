@@ -33,6 +33,8 @@ import { extractFc3Definition, Fc3FunctionInfo, functionToFc3Config } from './fc
 import { logger } from '../../common/logger';
 import type { IamStatement } from '../../common/iamStatements';
 import { lang } from '../../lang';
+import { OWNERSHIP_TAG_KEY, buildOwnershipTagValue, isOwnedByStack } from '../ownershipTag';
+import { isResourceAlreadyExistsError } from '../alreadyExists';
 
 type DependentInstance = {
   type: string;
@@ -547,6 +549,10 @@ export const createResource = async (
   );
 
   let config = functionToFc3Config(fn);
+  config = {
+    ...config,
+    tags: [{ key: OWNERSHIP_TAG_KEY, value: buildOwnershipTagValue(context, logicalId) }],
+  };
 
   if (dependentResources.logConfig) {
     config = {
@@ -658,6 +664,26 @@ export const createResource = async (
             error instanceof Error ? error : new Error(String(error)),
           );
         }
+      }
+    } else if (isResourceAlreadyExistsError(error, ['FunctionAlreadyExists'])) {
+      // Idempotent adoption: the function already exists in the provider.
+      // Adopt it ONLY if it carries our ownership tag (proves a previous run
+      // of THIS stack created it — e.g. state was reset). An untagged
+      // same-named function may belong to another project, so it must fail
+      // loudly rather than silently taking it over (destroy would then remove
+      // a resource that was never ours).
+      const probe = await client.fc3.getFunction(fn.name);
+      if (probe && isOwnedByStack(context, logicalId, probe.tags)) {
+        logger.info(
+          `Function ${fn.name} exists and carries ownership tag (${OWNERSHIP_TAG_KEY}), adopting idempotently`,
+        );
+      } else {
+        throw new PartialResourceError(
+          stateAfterDependents,
+          new Error(
+            `Function ${fn.name} already exists in provider but is not owned by this stack (missing ${OWNERSHIP_TAG_KEY} tag). Refusing to adopt — resolve manually.`,
+          ),
+        );
       }
     } else {
       throw new PartialResourceError(

@@ -101,6 +101,100 @@ describe('tosPlanner', () => {
       expect(result.items[0].logicalId).toBe('buckets.static_site');
     });
 
+    it('should fail fast when state is empty but remote bucket exists untagged', async () => {
+      const buckets: Array<BucketDomain> = [
+        {
+          key: 'static_site',
+          name: 'test-bucket',
+        },
+      ];
+
+      mockTosClient.tos.getBucket.mockResolvedValue({
+        name: 'test-bucket',
+        location: 'cn-beijing',
+        Tags: [{ Key: 'env', Value: 'prod' }],
+      });
+
+      await expect(generateBucketPlan(mockContext, mockState, buckets)).rejects.toThrow(
+        'not owned by this stack',
+      );
+    });
+
+    it('should plan create when state is empty but remote bucket exists with our tag', async () => {
+      const buckets: Array<BucketDomain> = [
+        {
+          key: 'static_site',
+          name: 'test-bucket',
+        },
+      ];
+
+      mockTosClient.tos.getBucket.mockResolvedValue({
+        name: 'test-bucket',
+        location: 'cn-beijing',
+        Tags: [{ Key: 'si-owned-by', Value: 'test-app-test-service:buckets.static_site' }],
+      });
+
+      const result = await generateBucketPlan(mockContext, mockState, buckets);
+
+      expect(result.items).toHaveLength(1);
+      expect(result.items[0].action).toBe('create');
+    });
+
+    it('should plan create when state is empty and remote bucket is missing', async () => {
+      const buckets: Array<BucketDomain> = [
+        {
+          key: 'static_site',
+          name: 'test-bucket',
+        },
+      ];
+
+      mockTosClient.tos.getBucket.mockResolvedValue(null);
+
+      const result = await generateBucketPlan(mockContext, mockState, buckets);
+
+      expect(result.items).toHaveLength(1);
+      expect(result.items[0].action).toBe('create');
+    });
+
+    it('should fail fast when state is tainted and remote bucket exists untagged', async () => {
+      const buckets: Array<BucketDomain> = [
+        {
+          key: 'static_site',
+          name: 'test-bucket',
+        },
+      ];
+
+      const stateWithTainted: StateFile = {
+        ...mockState,
+        resources: {
+          'buckets.static_site': {
+            mode: 'managed',
+            region: 'cn-beijing',
+            definition: {
+              bucketName: 'test-bucket',
+            },
+            instances: [{ sid: 'test-sid', id: 'test-bucket', type: 'VOLCENGINE_TOS_BUCKET' }],
+            status: 'tainted',
+            lastUpdated: '2024-01-01T00:00:00Z',
+          },
+        },
+      };
+
+      jest
+        .spyOn(stateManager, 'getResource')
+        .mockReturnValue(stateWithTainted.resources['buckets.static_site']);
+
+      mockTosClient.tos.getBucket.mockResolvedValue({
+        name: 'test-bucket',
+        location: 'cn-beijing',
+        Tags: [],
+      });
+
+      await expect(generateBucketPlan(mockContext, stateWithTainted, buckets)).rejects.toThrow(
+        'not owned by this stack',
+      );
+    });
+
     it('should generate create plan for tainted bucket state', async () => {
       const buckets: Array<BucketDomain> = [
         {
@@ -129,11 +223,13 @@ describe('tosPlanner', () => {
         .spyOn(stateManager, 'getResource')
         .mockReturnValue(stateWithTainted.resources['buckets.static_site']);
 
+      mockTosClient.tos.getBucket.mockResolvedValue(null); // no existing bucket in provider
+
       const result = await generateBucketPlan(mockContext, stateWithTainted, buckets);
 
       expect(result.items).toHaveLength(1);
       expect(result.items[0].action).toBe('create');
-      expect(mockTosClient.tos.getBucket).not.toHaveBeenCalled();
+      expect(mockTosClient.tos.getBucket).toHaveBeenCalledWith('test-bucket');
     });
 
     it('should generate update plan when bucket exists with changes', async () => {

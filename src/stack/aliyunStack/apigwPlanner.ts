@@ -7,6 +7,7 @@ import {
 } from './apigwTypes';
 import { getAllResources, getResource } from '../../common/stateManager';
 import { attributesEqual } from '../../common/hashUtils';
+import { OWNERSHIP_TAG_KEY, isOwnedByStack } from '../ownershipTag';
 
 const DNS_SUB_RESOURCE_SUFFIXES = ['.dns_verification', '.dns_txt_verification'];
 
@@ -60,24 +61,27 @@ export const generateApigwPlan = async (
       };
 
       if (!currentState || currentState.status === 'tainted') {
-        // Tainted = our own half-made resource, never import it as drift
-        if (!currentState) {
-          // No state exists, check if resource exists remotely
-          try {
-            const remoteGroup = await client.apigw.findApiGroupByName(groupConfig.groupName);
-            if (remoteGroup) {
-              // Resource exists remotely but not in state - this is drift
-              // We should update (import) it rather than try to create again
-              return {
-                logicalId,
-                action: 'update',
-                resourceType: 'ALIYUN_APIGW',
-                changes: { after: desiredDefinition },
-                drifted: true,
-              };
-            }
-          } catch {
-            // Ignore errors when checking remote
+        // No usable local state: probe the provider before planning create.
+        // If a same-named group already exists WITHOUT our ownership tag it
+        // may belong to another project — fail fast in the plan instead of
+        // letting the executor discover it mid-deploy.
+        const remoteGroup = await client.apigw.findApiGroupByName(groupConfig.groupName);
+        if (remoteGroup?.groupId) {
+          if (!isOwnedByStack(context, logicalId, remoteGroup.tags)) {
+            throw new Error(
+              `API group ${groupConfig.groupName} already exists in provider but is not owned by this stack (missing ${OWNERSHIP_TAG_KEY} tag). Refusing to create — resolve manually.`,
+            );
+          }
+          if (!currentState) {
+            // Resource exists remotely (and is ours) but not in state — drift:
+            // import it via update rather than trying to create it again.
+            return {
+              logicalId,
+              action: 'update',
+              resourceType: 'ALIYUN_APIGW',
+              changes: { after: desiredDefinition },
+              drifted: true,
+            };
           }
         }
 

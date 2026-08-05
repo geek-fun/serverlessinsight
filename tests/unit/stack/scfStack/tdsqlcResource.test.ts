@@ -18,6 +18,7 @@ import {
 const mockTdsqlcOperations = {
   createCluster: jest.fn(),
   getCluster: jest.fn(),
+  getClusterByName: jest.fn(),
   updateCluster: jest.fn(),
   deleteCluster: jest.fn(),
 };
@@ -149,6 +150,9 @@ describe('TdsqlcResource', () => {
           DbMode: 'SERVERLESS',
           MinCpu: 1,
           MaxCpu: 8,
+          ResourceTags: [
+            { TagKey: 'si-owned-by', TagValue: 'test-app-test-service:databases.test_db' },
+          ],
         }),
       );
 
@@ -176,6 +180,63 @@ describe('TdsqlcResource', () => {
       );
 
       expect(result).toEqual(updatedState);
+    });
+
+    it('should idempotently adopt an existing cluster that carries our ownership tag', async () => {
+      const existsError = Object.assign(new Error('集群名称已存在'), { code: 'ResourceInUse' });
+      mockTdsqlcOperations.createCluster.mockRejectedValue(existsError);
+      mockTdsqlcOperations.getClusterByName.mockResolvedValue({
+        ...mockClusterInfo,
+        ResourceTags: [
+          { TagKey: 'si-owned-by', TagValue: 'test-app-test-service:databases.test_db' },
+        ],
+      });
+
+      const updatedState: StateFile = {
+        ...mockState,
+        resources: {
+          'databases.test_db': {
+            mode: 'managed',
+            region: 'ap-guangzhou',
+            definition: {},
+            instances: [],
+            lastUpdated: new Date().toISOString(),
+          },
+        },
+      };
+      mockedStateManager.setResource.mockReturnValue(updatedState);
+
+      const result = await createDatabaseResource(mockContext, mockDatabase, mockState);
+
+      expect(mockTdsqlcOperations.createCluster).toHaveBeenCalledTimes(1);
+      expect(mockTdsqlcOperations.getClusterByName).toHaveBeenCalledWith('test-tdsqlc');
+      expect(mockedStateManager.setResource).toHaveBeenCalledWith(
+        mockState,
+        'databases.test_db',
+        expect.objectContaining({
+          metadata: expect.objectContaining({ clusterId: 'cynosdbmysql-test123' }),
+          instances: expect.arrayContaining([
+            expect.objectContaining({ id: 'cynosdbmysql-test123', status: 'running' }),
+          ]),
+        }),
+      );
+      expect(result).toEqual(updatedState);
+    });
+
+    it('should reject adoption when existing cluster lacks our ownership tag', async () => {
+      const existsError = Object.assign(new Error('集群名称已存在'), { code: 'ResourceInUse' });
+      mockTdsqlcOperations.createCluster.mockRejectedValue(existsError);
+      mockTdsqlcOperations.getClusterByName.mockResolvedValue({
+        ...mockClusterInfo,
+        ResourceTags: [{ TagKey: 'other-project-tag', TagValue: 'someone-else' }],
+      });
+
+      await expect(
+        createDatabaseResource(mockContext, mockDatabase, mockState),
+      ).rejects.toMatchObject({
+        name: 'PartialResourceError',
+        cause: { message: expect.stringContaining('not owned by this stack') },
+      });
     });
 
     it('should throw error when refresh state fails', async () => {

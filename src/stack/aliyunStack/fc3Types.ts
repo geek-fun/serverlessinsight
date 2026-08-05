@@ -56,6 +56,7 @@ export type Fc3FunctionConfig = {
   description?: string;
   internetAccess?: boolean;
   role?: string;
+  tags?: Array<{ key: string; value: string }>;
 };
 
 export type Fc3FunctionInfo = {

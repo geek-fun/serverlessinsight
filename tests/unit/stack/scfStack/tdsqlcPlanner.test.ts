@@ -14,6 +14,7 @@ import { ProviderEnum } from '../../../../src/common';
 const mockTdsqlcOperations = {
   createCluster: jest.fn(),
   getCluster: jest.fn(),
+  getClusterByName: jest.fn(),
   updateCluster: jest.fn(),
   deleteCluster: jest.fn(),
 };
@@ -135,6 +136,91 @@ describe('TdsqlcPlanner', () => {
       });
       expect(result.items[0].changes?.after).toBeDefined();
       expect(result.items[0].changes?.before).toBeUndefined();
+    });
+
+    it('should fail fast when state is empty but remote cluster exists untagged', async () => {
+      jest.spyOn(stateManager, 'getResource').mockReturnValue(undefined);
+      jest.spyOn(stateManager, 'getAllResources').mockReturnValue({});
+      mockTdsqlcOperations.getClusterByName.mockResolvedValue({
+        ClusterId: 'cynosdbmysql-test123',
+        ClusterName: 'test-tdsqlc',
+        Status: 'running',
+        Region: 'ap-guangzhou',
+        DbType: 'MYSQL',
+        DbVersion: '8.0',
+        ResourceTags: [{ TagKey: 'env', TagValue: 'prod' }],
+      });
+
+      await expect(generateDatabasePlan(mockContext, mockState, [mockDatabase])).rejects.toThrow(
+        'not owned by this stack',
+      );
+    });
+
+    it('should plan create when state is empty but remote cluster exists with our tag', async () => {
+      jest.spyOn(stateManager, 'getResource').mockReturnValue(undefined);
+      jest.spyOn(stateManager, 'getAllResources').mockReturnValue({});
+      mockTdsqlcOperations.getClusterByName.mockResolvedValue({
+        ClusterId: 'cynosdbmysql-test123',
+        ClusterName: 'test-tdsqlc',
+        Status: 'running',
+        Region: 'ap-guangzhou',
+        DbType: 'MYSQL',
+        DbVersion: '8.0',
+        ResourceTags: [
+          { TagKey: 'si-owned-by', TagValue: 'test-app-test-service:databases.test_db' },
+        ],
+      });
+
+      const result = await generateDatabasePlan(mockContext, mockState, [mockDatabase]);
+
+      expect(result.items).toHaveLength(1);
+      expect(result.items[0]).toMatchObject({
+        logicalId: 'databases.test_db',
+        action: 'create',
+        resourceType: 'TDSQL_C_SERVERLESS',
+      });
+    });
+
+    it('should plan create when state is empty and remote cluster is absent', async () => {
+      jest.spyOn(stateManager, 'getResource').mockReturnValue(undefined);
+      jest.spyOn(stateManager, 'getAllResources').mockReturnValue({});
+      mockTdsqlcOperations.getClusterByName.mockResolvedValue(null);
+
+      const result = await generateDatabasePlan(mockContext, mockState, [mockDatabase]);
+
+      expect(result.items).toHaveLength(1);
+      expect(result.items[0]).toMatchObject({
+        logicalId: 'databases.test_db',
+        action: 'create',
+        resourceType: 'TDSQL_C_SERVERLESS',
+      });
+    });
+
+    it('should fail fast when state is tainted and remote cluster exists untagged', async () => {
+      const taintedState: ResourceState = {
+        mode: 'managed',
+        region: 'ap-guangzhou',
+        status: 'tainted',
+        definition: expectedDefinition,
+        instances: [],
+        lastUpdated: '2024-01-01T00:00:00Z',
+        metadata: { clusterId: 'cynosdbmysql-test123' },
+      };
+      jest.spyOn(stateManager, 'getResource').mockReturnValue(taintedState);
+      jest.spyOn(stateManager, 'getAllResources').mockReturnValue({});
+      mockTdsqlcOperations.getClusterByName.mockResolvedValue({
+        ClusterId: 'cynosdbmysql-test123',
+        ClusterName: 'test-tdsqlc',
+        Status: 'running',
+        Region: 'ap-guangzhou',
+        DbType: 'MYSQL',
+        DbVersion: '8.0',
+        ResourceTags: [],
+      });
+
+      await expect(generateDatabasePlan(mockContext, mockState, [mockDatabase])).rejects.toThrow(
+        'not owned by this stack',
+      );
     });
 
     it('should generate update plan when definition changes', async () => {

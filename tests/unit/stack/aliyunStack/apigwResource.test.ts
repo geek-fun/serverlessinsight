@@ -169,7 +169,7 @@ describe('ApigwResource', () => {
 
   describe('createApigwResource', () => {
     it('should create a new API group and APIs', async () => {
-      mockedApigwOperations.findApiGroupByName.mockRejectedValue(new Error('Not found'));
+      mockedApigwOperations.findApiGroupByName.mockResolvedValue(null);
       mockedApigwOperations.createApiGroup.mockResolvedValue('group-123');
       mockedApigwOperations.getApiGroup.mockResolvedValue({
         groupId: 'group-123',
@@ -199,10 +199,11 @@ describe('ApigwResource', () => {
       expect(mockedStateManager.setResource).toHaveBeenCalled();
     });
 
-    it('should reuse existing API group', async () => {
+    it('should reuse existing API group owned by this stack', async () => {
       mockedApigwOperations.findApiGroupByName.mockResolvedValue({
         groupId: 'existing-group',
         groupName: 'test-api-group',
+        tags: [{ Key: 'si-owned-by', Value: 'test-app-test-service:events.api_gateway' }],
       });
       mockedApigwOperations.getApiGroup.mockResolvedValue({
         groupId: 'existing-group',
@@ -232,8 +233,127 @@ describe('ApigwResource', () => {
       );
     });
 
+    it('should write ownership tag into groupConfig before create', async () => {
+      mockedApigwOperations.findApiGroupByName.mockResolvedValue(null);
+      mockedApigwOperations.createApiGroup.mockResolvedValue('group-123');
+      mockedApigwOperations.getApiGroup.mockResolvedValue({
+        groupId: 'group-123',
+        groupName: 'test-api-group',
+        subDomain: 'group-123.apigw.aliyuncs.com',
+      });
+      mockedApigwOperations.createApi.mockResolvedValue('api-456');
+      mockedApigwOperations.getApi.mockResolvedValue({
+        apiId: 'api-456',
+        apiName: 'test-api',
+      });
+      mockedApigwOperations.deployApi.mockResolvedValue(undefined);
+      mockedApigwTypes.eventToApigwGroupConfig.mockReturnValue({
+        groupName: 'test-api-group',
+      });
+      mockedApigwTypes.extractApigwGroupDefinition.mockReturnValue({});
+      mockedApigwTypes.triggerToApigwApiConfig.mockReturnValue({
+        apiName: 'test-api',
+      });
+      mockedApigwTypes.extractEventDomainDefinition.mockReturnValue(null);
+
+      await createApigwResource(mockContext, testEvent, 'test-service', undefined, initialState);
+
+      expect(mockedApigwOperations.createApiGroup).toHaveBeenCalledWith(
+        expect.objectContaining({
+          groupName: 'test-api-group',
+          tags: [{ key: 'si-owned-by', value: 'test-app-test-service:events.api_gateway' }],
+        }),
+      );
+    });
+
+    it('should refuse to reuse an existing group without our ownership tag', async () => {
+      mockedApigwOperations.findApiGroupByName.mockResolvedValue({
+        groupId: 'existing-group',
+        groupName: 'test-api-group',
+      });
+      mockedStateManager.setResource.mockImplementation(
+        (state: StateFile, logicalId: string, resourceState: unknown) => ({
+          ...state,
+          resources: { ...state.resources, [logicalId]: resourceState },
+        }),
+      );
+
+      const error = await createApigwResource(
+        mockContext,
+        testEvent,
+        'test-service',
+        undefined,
+        initialState,
+      ).catch((e: unknown) => e);
+
+      expect(error).toBeInstanceOf(PartialResourceError);
+      const partialError = error as PartialResourceError;
+      expect(partialError.cause.message).toContain('not owned by this stack');
+      expect(partialError.cause.message).toContain('si-owned-by');
+      expect(mockedApigwOperations.createApiGroup).not.toHaveBeenCalled();
+      expect(mockedApigwOperations.createApi).not.toHaveBeenCalled();
+    });
+
+    it('should fail loudly when the group probe errors instead of blind-creating', async () => {
+      mockedApigwOperations.findApiGroupByName.mockRejectedValue(new Error('probe failed'));
+      mockedStateManager.setResource.mockImplementation(
+        (state: StateFile, logicalId: string, resourceState: unknown) => ({
+          ...state,
+          resources: { ...state.resources, [logicalId]: resourceState },
+        }),
+      );
+
+      const error = await createApigwResource(
+        mockContext,
+        testEvent,
+        'test-service',
+        undefined,
+        initialState,
+      ).catch((e: unknown) => e);
+
+      expect(error).toBeInstanceOf(PartialResourceError);
+      const partialError = error as PartialResourceError;
+      expect(partialError.cause.message).toBe('probe failed');
+      expect(mockedApigwOperations.createApiGroup).not.toHaveBeenCalled();
+    });
+
+    it('should adopt idempotently when createApiGroup hits an already-exists error and the group is owned', async () => {
+      mockedApigwOperations.findApiGroupByName.mockResolvedValueOnce(null).mockResolvedValueOnce({
+        groupId: 'group-123',
+        groupName: 'test-api-group',
+        tags: [{ Key: 'si-owned-by', Value: 'test-app-test-service:events.api_gateway' }],
+      });
+      mockedApigwOperations.createApiGroup.mockRejectedValue(
+        Object.assign(new Error('API group already exists'), { code: 'RepeatedCommit' }),
+      );
+      mockedApigwOperations.getApiGroup.mockResolvedValue({
+        groupId: 'group-123',
+        groupName: 'test-api-group',
+        subDomain: 'group-123.apigw.aliyuncs.com',
+      });
+      mockedApigwOperations.createApi.mockResolvedValue('api-456');
+      mockedApigwOperations.getApi.mockResolvedValue({
+        apiId: 'api-456',
+        apiName: 'test-api',
+      });
+      mockedApigwOperations.deployApi.mockResolvedValue(undefined);
+      mockedApigwTypes.eventToApigwGroupConfig.mockReturnValue({
+        groupName: 'test-api-group',
+      });
+      mockedApigwTypes.extractApigwGroupDefinition.mockReturnValue({});
+      mockedApigwTypes.triggerToApigwApiConfig.mockReturnValue({
+        apiName: 'test-api',
+      });
+      mockedApigwTypes.extractEventDomainDefinition.mockReturnValue(null);
+
+      await createApigwResource(mockContext, testEvent, 'test-service', undefined, initialState);
+
+      expect(mockedApigwOperations.createApiGroup).toHaveBeenCalledTimes(1);
+      expect(mockedApigwOperations.createApi).toHaveBeenCalled();
+    });
+
     it('should throw error when group info retrieval fails', async () => {
-      mockedApigwOperations.findApiGroupByName.mockRejectedValue(new Error('Not found'));
+      mockedApigwOperations.findApiGroupByName.mockResolvedValue(null);
       mockedApigwOperations.createApiGroup.mockResolvedValue('group-123');
       mockedApigwOperations.getApiGroup.mockResolvedValue(null);
       mockedStateManager.setResource.mockImplementation(
@@ -260,7 +380,7 @@ describe('ApigwResource', () => {
     });
 
     it('should throw PartialResourceError with tainted state when getApiGroup fails after group creation', async () => {
-      mockedApigwOperations.findApiGroupByName.mockRejectedValue(new Error('Not found'));
+      mockedApigwOperations.findApiGroupByName.mockResolvedValue(null);
       mockedApigwOperations.createApiGroup.mockResolvedValue('group-123');
       mockedApigwOperations.getApiGroup.mockRejectedValue(new Error('group fetch failed'));
       mockedApigwTypes.eventToApigwGroupConfig.mockReturnValue({
@@ -295,7 +415,7 @@ describe('ApigwResource', () => {
     });
 
     it('should throw PartialResourceError with tainted state when createApi fails after group creation', async () => {
-      mockedApigwOperations.findApiGroupByName.mockRejectedValue(new Error('Not found'));
+      mockedApigwOperations.findApiGroupByName.mockResolvedValue(null);
       mockedApigwOperations.createApiGroup.mockResolvedValue('group-123');
       mockedApigwOperations.getApiGroup.mockResolvedValue({
         groupId: 'group-123',
@@ -344,7 +464,7 @@ describe('ApigwResource', () => {
         ],
       };
 
-      mockedApigwOperations.findApiGroupByName.mockRejectedValue(new Error('Not found'));
+      mockedApigwOperations.findApiGroupByName.mockResolvedValue(null);
       mockedApigwOperations.createApiGroup.mockResolvedValue('group-123');
       mockedApigwOperations.getApiGroup.mockResolvedValue({
         groupId: 'group-123',
@@ -447,7 +567,7 @@ describe('ApigwResource', () => {
 
     it('should create new resource if none exists', async () => {
       mockedStateManager.getResource.mockReturnValue(null);
-      mockedApigwOperations.findApiGroupByName.mockRejectedValue(new Error('Not found'));
+      mockedApigwOperations.findApiGroupByName.mockResolvedValue(null);
       mockedApigwOperations.createApiGroup.mockResolvedValue('group-123');
       mockedApigwOperations.getApiGroup.mockResolvedValue({
         groupId: 'group-123',
@@ -981,7 +1101,7 @@ describe('ApigwResource', () => {
 
   describe('createApigwResource - domain binding', () => {
     const setupBasicCreateMocks = () => {
-      mockedApigwOperations.findApiGroupByName.mockRejectedValue(new Error('Not found'));
+      mockedApigwOperations.findApiGroupByName.mockResolvedValue(null);
       mockedApigwOperations.createApiGroup.mockResolvedValue('group-123');
       mockedApigwOperations.getApiGroup.mockResolvedValue({
         groupId: 'group-123',
@@ -1664,7 +1784,7 @@ describe('ApigwResource', () => {
 
       mockedStateManager.getResource.mockReturnValue(existingState);
       // Setup create mocks for fallback
-      mockedApigwOperations.findApiGroupByName.mockRejectedValue(new Error('Not found'));
+      mockedApigwOperations.findApiGroupByName.mockResolvedValue(null);
       mockedApigwOperations.createApiGroup.mockResolvedValue('group-new');
       mockedApigwOperations.getApiGroup.mockResolvedValue({
         groupId: 'group-new',

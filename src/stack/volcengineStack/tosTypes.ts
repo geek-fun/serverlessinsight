@@ -27,6 +27,7 @@ export const bucketToTosConfig = (bucket: BucketDomain) => {
     storageClass?: TosStorageClass;
     websiteConfig?: TosWebsiteConfig;
     iam?: BucketIam;
+    Tags?: Array<{ Key: string; Value: string }>;
   } = {
     bucketName: bucket.name,
   };

@@ -61,6 +61,7 @@ type ApigwSdkClient = Service;
         Name: config.groupName,
         ...(config.description && { Description: config.description }),
         ...(config.protocol && { Protocol: config.protocol }),
+        ...(config.Tags && { Tags: config.Tags }),
       };
 
       const response = await client.fetchOpenAPI({
@@ -104,6 +105,7 @@ type ApigwSdkClient = Service;
           createdTime: data.CreatedTime as string | undefined,
           description: data.Description as string | undefined,
           subDomain: data.SubDomain as string | undefined,
+          tags: data.Tags as Array<{ Key: string; Value: string }> | undefined,
         };
       } catch (error: unknown) {
         if (error && typeof error === 'object' && 'code' in error) {
@@ -138,6 +140,7 @@ type ApigwSdkClient = Service;
         createdTime: gateway.CreatedTime as string | undefined,
         description: gateway.Description as string | undefined,
         subDomain: gateway.SubDomain as string | undefined,
+        tags: gateway.Tags as Array<{ Key: string; Value: string }> | undefined,
       };
     },
 

@@ -1,6 +1,7 @@
-import { CdnConfig, EventDomain, ResourceAttributes } from '../../types';
+import { CdnConfig, Context, EventDomain, ResourceAttributes } from '../../types';
 import { getIacDefinition, isFunctionDomain, getContext, logger } from '../../common';
 import { lang } from '../../lang';
+import { OWNERSHIP_TAG_KEY, buildOwnershipTagValue } from '../ownershipTag';
 
 // API Group types
 export type ApigwGroupConfig = {
@@ -26,6 +27,7 @@ export type ApigwGroupInfo = {
   billingStatus?: string;
   illegalStatus?: string;
   trafficLimit?: number;
+  tags?: Array<{ Key?: string; Value?: string }>;
 };
 
 // API types
@@ -131,16 +133,29 @@ export type ApigwCustomDomainConfig = {
 
 /**
  * Convert EventDomain to API Gateway group config
+ *
+ * When a context + logicalId are supplied, the config carries the ownership
+ * tag that lets a later run idempotently adopt the group created here (state
+ * reset or mid-run failure) without risking takeover of a same-named group
+ * that belongs to another project.
  */
 export const eventToApigwGroupConfig = (
   event: EventDomain,
   serviceName: string,
   stage: string,
+  context?: Pick<Context, 'app' | 'service'>,
+  logicalId?: string,
 ): ApigwGroupConfig => {
-  return {
+  const groupConfig: ApigwGroupConfig = {
     groupName: `${serviceName}-${stage}-agw-group`.replace(/_/g, '-'),
     description: `API Gateway group for ${serviceName}`,
   };
+  if (context && logicalId) {
+    groupConfig.tags = [
+      { key: OWNERSHIP_TAG_KEY, value: buildOwnershipTagValue(context, logicalId) },
+    ];
+  }
+  return groupConfig;
 };
 
 /**

@@ -153,6 +153,86 @@ describe('vefaasResource', () => {
       expect(setResource).toHaveBeenCalled();
     });
 
+    it('should stamp ownership tag into the createFunction config', async () => {
+      mockVefaasClient.vefaas.createFunction.mockReset();
+      mockVefaasClient.vefaas.getFunction.mockReset();
+      mockVefaasClient.vefaas.createFunction.mockResolvedValueOnce(undefined);
+      mockVefaasClient.vefaas.getFunction.mockResolvedValueOnce({
+        functionName: 'test-function',
+        functionId: 'func-123',
+        runtime: 'nodejs16',
+        handler: 'index.handler',
+        memoryMb: 128,
+        requestTimeout: 30,
+      });
+
+      await createResource(mockContext, mockFunction, mockState);
+
+      expect(mockVefaasClient.vefaas.createFunction).toHaveBeenCalledWith(
+        expect.objectContaining({
+          Tags: [{ Key: 'si-owned-by', Value: 'test-app-test-service:functions.test_fn' }],
+        }),
+        expect.any(String),
+      );
+    });
+
+    it('should idempotently adopt an existing function that carries our ownership tag', async () => {
+      mockVefaasClient.vefaas.createFunction.mockReset();
+      mockVefaasClient.vefaas.getFunction.mockReset();
+      const existsError = Object.assign(new Error('Function already exists'), { code: 'Conflict' });
+      mockVefaasClient.vefaas.createFunction.mockRejectedValueOnce(existsError);
+      mockVefaasClient.vefaas.getFunction
+        .mockResolvedValueOnce({
+          functionName: 'test-function',
+          functionId: 'func-123',
+          runtime: 'nodejs16',
+          handler: 'index.handler',
+          memoryMb: 128,
+          requestTimeout: 30,
+          Tags: [{ Key: 'si-owned-by', Value: 'test-app-test-service:functions.test_fn' }],
+        })
+        .mockResolvedValueOnce({
+          functionName: 'test-function',
+          functionId: 'func-123',
+          runtime: 'nodejs16',
+          handler: 'index.handler',
+          memoryMb: 128,
+          requestTimeout: 30,
+        });
+
+      const result = await createResource(mockContext, mockFunction, mockState);
+
+      expect(mockVefaasClient.vefaas.createFunction).toHaveBeenCalledTimes(1);
+      expect(mockVefaasClient.vefaas.getFunction).toHaveBeenCalled();
+      expect(setResource).toHaveBeenCalledWith(
+        expect.anything(),
+        'functions.test_fn',
+        expect.objectContaining({ status: 'ready' }),
+      );
+      expect(result).toBeDefined();
+    });
+
+    it('should refuse adoption when existing function lacks our ownership tag', async () => {
+      mockVefaasClient.vefaas.createFunction.mockReset();
+      mockVefaasClient.vefaas.getFunction.mockReset();
+      const existsError = Object.assign(new Error('Function already exists'), { code: 'Conflict' });
+      mockVefaasClient.vefaas.createFunction.mockRejectedValueOnce(existsError);
+      mockVefaasClient.vefaas.getFunction.mockResolvedValueOnce({
+        functionName: 'test-function',
+        functionId: 'func-123',
+        runtime: 'nodejs16',
+        handler: 'index.handler',
+        memoryMb: 128,
+        requestTimeout: 30,
+        Tags: [{ Key: 'other-project-tag', Value: 'someone-else' }],
+      });
+
+      await expect(createResource(mockContext, mockFunction, mockState)).rejects.toMatchObject({
+        name: 'PartialResourceError',
+        cause: { message: expect.stringContaining('not owned by this stack') },
+      });
+    });
+
     it('should create function with TLS logging enabled', async () => {
       const mockFunctionWithLog: FunctionDomain = {
         ...mockFunction,

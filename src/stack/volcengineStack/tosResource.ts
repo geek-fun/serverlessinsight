@@ -1,4 +1,5 @@
 import { createVolcengineClient } from '../../common/volcengineClient';
+import type { TosBucketInfo } from '../../common/volcengineClient/types';
 import {
   setResource,
   removeResource,
@@ -22,6 +23,8 @@ import {
 import { logger } from '../../common/logger';
 import { lang } from '../../lang';
 import path from 'node:path';
+import { OWNERSHIP_TAG_KEY, buildOwnershipTagValue, isOwnedByStack } from '../ownershipTag';
+import { isResourceAlreadyExistsError } from '../alreadyExists';
 
 const buildTosBucketPolicyJson = (iam: BucketDomain['iam']): Record<string, unknown> | null => {
   if (!iam?.resource?.statements || iam.resource.statements.length === 0) return null;
@@ -76,6 +79,11 @@ export const createResource = async (
   const sid = buildSid('volcengine', 'tos', context.stage, bucket.name);
   const logicalId = `buckets.${bucket.key}`;
 
+  // Stamp the ownership tag (sent as the x-tos-tagging header on CreateBucket)
+  // so a later run can idempotently adopt this bucket, and an unrelated
+  // same-named bucket is never adopted.
+  config.Tags = [{ Key: OWNERSHIP_TAG_KEY, Value: buildOwnershipTagValue(context, logicalId) }];
+
   const websiteCodeHash = bucket.website?.code
     ? computeDirectoryHash(path.resolve(process.cwd(), bucket.website.code))
     : undefined;
@@ -112,7 +120,43 @@ export const createResource = async (
   const stateAfterDependents = setResource(state, logicalId, taintedResourceState);
 
   try {
-    const bucketInfo = existingBucketOnRetry ?? (await client.tos.createBucket(config));
+    let bucketInfo: TosBucketInfo;
+    if (existingBucketOnRetry) {
+      bucketInfo = existingBucketOnRetry;
+    } else {
+      try {
+        await client.tos.createBucket(config);
+      } catch (error) {
+        // TOS CreateBucket may be idempotent for the same account; a collision
+        // (BucketAlreadyExists) surfaces only for a bucket owned by another
+        // account. Treat it as non-fatal and fall through to the ownership probe
+        // below — an untagged pre-existing bucket is refused there.
+        if (!isResourceAlreadyExistsError(error, ['BucketAlreadyExists'])) {
+          throw error;
+        }
+        logger.info(
+          `Bucket ${bucket.name} already exists in provider, verifying ownership tag before adopting`,
+        );
+      }
+
+      // CreateBucket succeeding does NOT prove the bucket is ours: a pre-existing
+      // bucket is returned idempotently. Only a bucket carrying our ownership tag
+      // may be adopted; an untagged one may belong to another project and must
+      // fail loudly rather than be silently taken over.
+      const probe = await client.tos.getBucket(bucket.name);
+      if (!probe) {
+        throw new Error(`Failed to refresh state for bucket: ${bucket.name}`);
+      }
+      if (!isOwnedByStack(context, logicalId, probe.Tags)) {
+        throw new PartialResourceError(
+          stateAfterDependents,
+          new Error(
+            `Bucket ${bucket.name} already exists in provider but is not owned by this stack (missing ${OWNERSHIP_TAG_KEY} tag). Refusing to adopt — resolve manually.`,
+          ),
+        );
+      }
+      bucketInfo = probe;
+    }
 
     const instances: Array<ResourceInstance> = [buildTosInstanceFromProvider(bucketInfo, sid)];
 

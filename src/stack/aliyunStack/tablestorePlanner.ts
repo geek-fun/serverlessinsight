@@ -34,6 +34,21 @@ export const generateTablePlan = async (
       const desiredDefinition = extractTableStoreDefinition(config);
 
       if (!currentState || currentState.status === 'tainted') {
+        // No usable local state: probe the provider before planning create.
+        // Aliyun Tablestore (OTS) supports only instance-level tags — table
+        // ownership cannot be verified, so tag-based adoption is IMPOSSIBLE.
+        // If a same-named table already exists it may belong to another
+        // project: fail fast in the plan instead of letting the executor
+        // discover the collision mid-deploy.
+        const client = createAliyunClient(context);
+        const tablestoreClient = client.tablestore(config.instanceName);
+        const remoteTable = await tablestoreClient.getTable(config.tableName);
+        if (remoteTable) {
+          throw new Error(
+            `Table ${config.tableName} already exists in provider but ownership cannot be verified (no table-level tags). Refusing to adopt — resolve manually.`,
+          );
+        }
+
         return {
           logicalId,
           action: 'create',

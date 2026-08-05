@@ -49,6 +49,30 @@ const waitForSpaceReady = async (
   }
 };
 
+// Maps a DescribeServerlessSpaces entry (SDK ServerlessSpace) to the internal
+// space info. The ES SDK reports tags as TagList of { TagKey, TagValue } while
+// the ownership check (isOwnedByStack) consumes { Key, Value } — normalized here
+// at the boundary so callers never see the provider shape.
+const toSpaceInfo = (space: {
+  SpaceId?: string;
+  SpaceName?: string;
+  Status?: number;
+  CreateTime?: string;
+  IndexCount?: number;
+  KibanaUrl?: string;
+  KibanaPrivateUrl?: string;
+  TagList?: Array<{ TagKey: string; TagValue: string }>;
+}): TencentEsSpaceInfo => ({
+  SpaceId: space.SpaceId || '',
+  SpaceName: space.SpaceName || '',
+  Status: space.Status ?? TencentEsSpaceStatus.CREATING,
+  CreateTime: space.CreateTime,
+  IndexCount: space.IndexCount,
+  KibanaUrl: space.KibanaUrl,
+  KibanaPrivateUrl: space.KibanaPrivateUrl,
+  Tags: (space.TagList ?? []).map((t) => ({ Key: t.TagKey, Value: t.TagValue })),
+});
+
 const waitForSpaceDeleted = async (
   getSpace: (spaceId: string) => Promise<TencentEsSpaceInfo | null>,
   spaceId: string,
@@ -90,6 +114,10 @@ export const createTencentEsOperations = (esClient: EsClient, _context: Context)
         params.KibanaWhiteIpList = config.KibanaWhiteIpList;
       }
 
+      if (config.Tags && config.Tags.length > 0) {
+        params.TagList = config.Tags.map((t) => ({ TagKey: t.Key, TagValue: t.Value }));
+      }
+
       try {
         const response = await esClient.CreateServerlessSpaceV2(params);
         logger.info(lang.__('TENCENT_ES_SPACE_CREATION_INITIATED'));
@@ -117,21 +145,28 @@ export const createTencentEsOperations = (esClient: EsClient, _context: Context)
       try {
         const response = await esClient.DescribeServerlessSpaces(params);
 
-        if (!response.ServerlessSpaces || response.ServerlessSpaces.length === 0) {
-          return null;
-        }
+        const space = response.ServerlessSpaces?.[0];
 
-        const space = response.ServerlessSpaces[0];
+        return space ? toSpaceInfo(space) : null;
+      } catch (error) {
+        logger.error(lang.__('TENCENT_ES_SPACE_GET_FAILED', { error: String(error) }));
+        return null;
+      }
+    },
 
-        return {
-          SpaceId: space.SpaceId || '',
-          SpaceName: space.SpaceName || '',
-          Status: space.Status ?? TencentEsSpaceStatus.CREATING,
-          CreateTime: space.CreateTime,
-          IndexCount: space.IndexCount,
-          KibanaUrl: space.KibanaUrl,
-          KibanaPrivateUrl: space.KibanaPrivateUrl,
-        };
+    getSpaceByName: async (spaceName: string): Promise<TencentEsSpaceInfo | null> => {
+      const params = {
+        SpaceNames: [spaceName],
+      };
+
+      try {
+        const response = await esClient.DescribeServerlessSpaces(params);
+
+        const space = (response.ServerlessSpaces ?? []).find((s: { SpaceName?: string }) => {
+          return s.SpaceName === spaceName;
+        });
+
+        return space ? toSpaceInfo(space) : null;
       } catch (error) {
         logger.error(lang.__('TENCENT_ES_SPACE_GET_FAILED', { error: String(error) }));
         return null;

@@ -3,6 +3,7 @@ import { createTencentClient } from '../../common/tencentClient';
 import { bucketToCosBucketConfig, extractCosBucketDefinition } from './cosTypes';
 import { getAllResources, getResource } from '../../common/stateManager';
 import { attributesEqual } from '../../common/hashUtils';
+import { OWNERSHIP_TAG_KEY, isOwnedByStack } from '../ownershipTag';
 
 const planBucketDeletion = (logicalId: string, definition: ResourceAttributes): PlanItem => ({
   logicalId,
@@ -34,6 +35,18 @@ export const generateBucketPlan = async (
       const desiredDefinition = extractCosBucketDefinition(config);
 
       if (!currentState || currentState.status === 'tainted') {
+        // No usable local state: probe the provider before planning create.
+        // If a same-named bucket already exists WITHOUT our ownership tag it
+        // may belong to another project — fail fast in the plan instead of
+        // letting the executor discover it mid-deploy.
+        const client = createTencentClient(context);
+        const remoteBucket = await client.cos.getBucket(bucket.name, context.region);
+        if (remoteBucket && !isOwnedByStack(context, logicalId, remoteBucket.Tags)) {
+          throw new Error(
+            `Bucket ${bucket.name} already exists in provider but is not owned by this stack (missing ${OWNERSHIP_TAG_KEY} tag). Refusing to create — resolve manually.`,
+          );
+        }
+
         return {
           logicalId,
           action: 'create',

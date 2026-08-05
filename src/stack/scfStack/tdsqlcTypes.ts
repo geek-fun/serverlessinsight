@@ -17,6 +17,7 @@ export type TdsqlcClusterConfig = {
   AutoPauseDelay?: number;
   StoragePayMode?: number;
   AdminPassword: string;
+  ResourceTags?: Array<{ TagKey: string; TagValue: string }>;
 };
 
 export type TdsqlcClusterInfo = {
@@ -40,7 +41,7 @@ export type TdsqlcClusterInfo = {
   Vport?: number;
   WanDomain?: string;
   WanIP?: string;
-  WanPort?: string;
+  WanPort?: number;
   WanStatus?: string;
   MinCpu?: number;
   MaxCpu?: number;
@@ -61,7 +62,7 @@ export type TdsqlcClusterInfo = {
   InstanceCount?: number;
   ProcessingTask?: string;
   SupportedFeatures?: string[];
-  RollbackSupport?: number;
+  RollbackSupport?: string;
   NetworkType?: string;
   ResourcePackageId?: string;
   ResourcePackageType?: string;
@@ -86,8 +87,15 @@ export type TdsqlcClusterInfo = {
   }>;
   CynosVersion?: string;
   CynosVersionStatus?: string;
-  IsLatestVersion?: string;
+  IsLatestVersion?: boolean;
 };
+
+// TDSQL-C tags are {TagKey,TagValue}; the ownership-tag matcher expects
+// {Key,Value}. Convert once at the probe site.
+export const tdsqlcTagsToOwnershipTags = (
+  tags: Array<{ TagKey?: string; TagValue?: string }> | undefined,
+): Array<{ Key?: string; Value?: string }> =>
+  (tags ?? []).map((t) => ({ Key: t.TagKey, Value: t.TagValue }));
 
 export const databaseToTdsqlcConfig = (database: DatabaseDomain): TdsqlcClusterConfig => {
   // Map version from enum to Tencent Cloud version format

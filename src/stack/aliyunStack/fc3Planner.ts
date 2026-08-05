@@ -10,6 +10,7 @@ import {
 } from '../../types';
 import { extractFc3Definition, Fc3FunctionConfig, functionToFc3Config } from './fc3Types';
 import { lang } from '../../lang';
+import { OWNERSHIP_TAG_KEY, isOwnedByStack } from '../ownershipTag';
 
 /**
  * Provider-managed logConfig fields that are set by the system after creation.
@@ -126,6 +127,18 @@ export const generateFunctionPlan = async (
       const desiredDefinition = fn.iam ? { ...baseDefinition, iam: fn.iam } : baseDefinition;
 
       if (!currentState || currentState.status === 'tainted') {
+        // No usable local state: probe the provider before planning create.
+        // If a same-named function already exists WITHOUT our ownership tag it
+        // may belong to another project — fail fast in the plan instead of
+        // letting the executor discover it mid-deploy.
+        const client = createAliyunClient(context);
+        const remoteFunction = await client.fc3.getFunction(fn.name);
+        if (remoteFunction && !isOwnedByStack(context, logicalId, remoteFunction.tags)) {
+          throw new Error(
+            `Function ${fn.name} already exists in provider but is not owned by this stack (missing ${OWNERSHIP_TAG_KEY} tag). Refusing to create — resolve manually.`,
+          );
+        }
+
         return {
           logicalId,
           action: 'create',

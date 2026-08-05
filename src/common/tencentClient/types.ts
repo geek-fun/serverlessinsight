@@ -97,6 +97,7 @@ export type CosBucketConfig = {
   Bucket: string;
   Region: string;
   ACL?: 'private' | 'public-read' | 'public-read-write';
+  Tags?: Array<{ Key: string; Value: string }>;
   WebsiteConfiguration?: {
     IndexDocument: {
       Suffix: string;
@@ -151,6 +152,7 @@ export type CosBucketInfo = {
       value?: string;
     }>;
   };
+  Tags?: Array<{ Key: string; Value: string }>;
 };
 
 export type TdsqlcClusterConfig = {
@@ -169,6 +171,8 @@ export type TdsqlcClusterConfig = {
   AutoPauseDelay?: number;
   StoragePayMode?: number;
   MaxStorageSize?: number;
+  // TDSQL-C tags use TagKey/TagValue (CreateClusters.ResourceTags.N), not SCF's {Key,Value}.
+  ResourceTags?: Array<{ TagKey: string; TagValue: string }>;
 };
 
 export type TdsqlcClusterInfo = {
@@ -226,8 +230,13 @@ export type TdsqlcClusterInfo = {
   BusinessType?: string;
   IsFreeze?: string;
   OrderSource?: string;
-  Ability?: unknown;
-  ResourceTags?: unknown[];
+  Ability?: {
+    IsSupportSlaveZone?: string;
+    NonsupportSlaveZoneReason?: string;
+    IsSupportRo?: string;
+    NonsupportRoReason?: string;
+  };
+  ResourceTags?: Array<{ TagKey?: string; TagValue?: string }>;
   CynosVersion?: string;
   CynosVersionStatus?: string;
   IsLatestVersion?: boolean;
@@ -264,6 +273,7 @@ export type TencentEsSpaceConfig = {
   }>;
   Zone?: string;
   KibanaWhiteIpList?: string[];
+  Tags?: Array<{ Key: string; Value: string }>;
 };
 
 export type TencentEsSpaceInfo = {
@@ -274,6 +284,7 @@ export type TencentEsSpaceInfo = {
   IndexCount?: number;
   KibanaUrl?: string;
   KibanaPrivateUrl?: string;
+  Tags?: Array<{ Key: string; Value: string }>;
 };
 
 // Tencent CAM (Cloud Access Management) types

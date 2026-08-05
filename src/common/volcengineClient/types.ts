@@ -55,6 +55,7 @@ export type VefaasFunctionConfig = {
     project: string;
     topic: string;
   };
+  Tags?: Array<{ Key: string; Value: string }>;
 };
 
 /**
@@ -82,6 +83,7 @@ export type VefaasFunctionInfo = {
     project?: string;
     topic?: string;
   };
+  Tags?: Array<{ Key?: string; Value?: string }>;
 };
 
 // ============================================================================
@@ -118,6 +120,7 @@ export type TosBucketConfig = {
   websiteConfig?: TosWebsiteConfig;
   websiteCodeHash?: string;
   domain?: string;
+  Tags?: Array<{ Key: string; Value: string }>;
 };
 
 /**
@@ -132,6 +135,7 @@ export type TosBucketInfo = {
   intranetEndpoint?: string;
   acl?: TosAcl;
   websiteConfig?: TosWebsiteConfig;
+  Tags?: Array<{ Key: string; Value: string }>;
 };
 
 /**
@@ -264,6 +268,7 @@ export type ApigwGroupConfig = {
   groupName: string;
   description?: string;
   protocol?: 'HTTP' | 'HTTPS' | 'HTTP&HTTPS';
+  Tags?: Array<{ Key: string; Value: string }>;
 };
 
 export type ApigwGroupInfo = {
@@ -274,6 +279,7 @@ export type ApigwGroupInfo = {
   createdTime?: string;
   description?: string;
   subDomain?: string;
+  tags?: Array<{ Key: string; Value: string }>;
 };
 
 export type ApigwApiConfig = {

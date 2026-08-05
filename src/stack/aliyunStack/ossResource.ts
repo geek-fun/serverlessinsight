@@ -23,6 +23,8 @@ import {
 } from '../../types';
 import { bucketToOssBucketConfig, extractOssBucketDefinition } from './ossTypes';
 import { CommonBucketInstance } from '../bucketTypes';
+import { OWNERSHIP_TAG_KEY, buildOwnershipTagValue, isOwnedByStack } from '../ownershipTag';
+import { isResourceAlreadyExistsError } from '../alreadyExists';
 import { logger } from '../../common/logger';
 import { lang } from '../../lang';
 import path from 'node:path';
@@ -49,6 +51,13 @@ type OssCdnDnsInstance = ResourceInstance & {
   cname: string;
   dnsRecordId?: string;
 };
+
+// getBucket returns tags as { key, value } (BucketTag); the ownership helper
+// expects { Key, Value }. Convert before verification.
+const toOwnershipTags = (
+  tags: OssBucketInfo['tags'],
+): Array<{ Key?: string; Value?: string }> | undefined =>
+  tags?.map((tag) => ({ Key: tag.key, Value: tag.value }));
 
 const buildOssInstanceFromProvider = (info: OssBucketInfo, sid: string): CommonBucketInstance => {
   return {
@@ -235,13 +244,19 @@ export const createBucketResource = async (
   const sid = buildSid('aliyun', 'oss', context.stage, config.bucketName);
   const logicalId = `buckets.${bucket.key}`;
 
+  // Stamp the ownership tag into the create config so the provider records who
+  // owns the bucket. A later deploy whose local state was reset can then adopt
+  // it idempotently (PutBucket is idempotent) only when the tag matches — a
+  // same-named untagged bucket is never silently taken over.
+  config.Tags = [{ Key: OWNERSHIP_TAG_KEY, Value: buildOwnershipTagValue(context, logicalId) }];
+
   const websiteCodeHash = bucket.website?.code
     ? computeDirectoryHash(path.resolve(process.cwd(), bucket.website.code))
     : undefined;
 
   const existingResourceState = getResource(state, logicalId);
   const isTainted = existingResourceState?.status === 'tainted';
-  const existingBucketOnRetry = isTainted ? await client.oss.getBucket(config.bucketName) : null;
+  let existingBucketOnRetry = isTainted ? await client.oss.getBucket(config.bucketName) : null;
 
   if (existingBucketOnRetry) {
     logger.info(
@@ -272,14 +287,44 @@ export const createBucketResource = async (
   const isAccelerateEnabled = getIsAccelerateEnabled(bucket);
   let cnameInfo: OssCnameInfo | undefined;
 
+  const refuseAdoptionError = (): Error =>
+    new Error(
+      `Bucket ${config.bucketName} already exists in provider but is not owned by this stack (missing ${OWNERSHIP_TAG_KEY} tag). Refusing to adopt — resolve manually.`,
+    );
+
   try {
     if (!existingBucketOnRetry) {
-      await client.oss.createBucket({
-        bucketName: config.bucketName,
-        acl: config.acl,
-        websiteConfig: config.websiteConfig,
-        storageClass: config.storageClass,
-      });
+      try {
+        await client.oss.createBucket({
+          bucketName: config.bucketName,
+          acl: config.acl,
+          websiteConfig: config.websiteConfig,
+          storageClass: config.storageClass,
+          Tags: config.Tags,
+        });
+      } catch (error) {
+        if (
+          isResourceAlreadyExistsError(error, ['BucketAlreadyExists', 'BucketAlreadyOwnedByYou'])
+        ) {
+          // Idempotent adoption: a same-named bucket already exists in the
+          // provider. Adopt it ONLY if it carries our ownership tag (proves a
+          // previous run of THIS stack created it — e.g. state was reset). An
+          // untagged bucket may belong to another project, so it must fail
+          // loudly rather than silently taking it over (destroy would then
+          // remove a resource that was never ours).
+          const probe = await client.oss.getBucket(config.bucketName);
+          if (probe && isOwnedByStack(context, logicalId, toOwnershipTags(probe.tags))) {
+            existingBucketOnRetry = probe;
+            logger.info(
+              `Bucket ${config.bucketName} exists and carries ownership tag (${OWNERSHIP_TAG_KEY}), adopting idempotently`,
+            );
+          } else {
+            throw new PartialResourceError(stateAfterDependents, refuseAdoptionError());
+          }
+        } else {
+          throw error;
+        }
+      }
     }
 
     // Refresh state from provider to get bucket info
@@ -290,6 +335,13 @@ export const createBucketResource = async (
         throw new Error(
           lang.__('FAILED_TO_REFRESH_STATE', { resourceType: 'bucket', name: config.bucketName }),
         );
+      }
+      // PutBucket is idempotent within the same region/account, so a
+      // "successful" create does NOT prove we created the bucket — it may have
+      // pre-existed. Verify ownership; an untagged bucket is refused rather
+      // than silently adopted.
+      if (!isOwnedByStack(context, logicalId, toOwnershipTags(bucketInfo.tags))) {
+        throw new PartialResourceError(stateAfterDependents, refuseAdoptionError());
       }
     }
     instances[0] = buildOssInstanceFromProvider(bucketInfo, sid);
@@ -595,6 +647,9 @@ export const createBucketResource = async (
     // Apply IAM bucket policy if configured
     await applyBucketPolicy(client, bucket);
   } catch (error) {
+    // Refusal/adoption errors already carry the tainted state — rethrow as-is
+    // instead of wrapping a PartialResourceError inside another one.
+    if (error instanceof PartialResourceError) throw error;
     throw new PartialResourceError(
       stateAfterDependents,
       error instanceof Error ? error : new Error(String(error)),

@@ -30,6 +30,8 @@ import { logger } from '../../common/logger';
 import { lang } from '../../lang';
 import { deriveWwwDomain, extractHostRecord, extractMainDomain } from '../../common/domainUtils';
 import { attributesEqual } from '../../common/hashUtils';
+import { OWNERSHIP_TAG_KEY, buildOwnershipTagValue, isOwnedByStack } from '../ownershipTag';
+import { isResourceAlreadyExistsError } from '../alreadyExists';
 
 type ApigwCdnInstance = ResourceInstance & {
   type: 'ALIYUN_CDN_DISTRIBUTION';
@@ -484,7 +486,19 @@ export const createApigwResource = async (
   const logicalId = `events.${event.key}`;
   const client = createAliyunClient(context);
 
-  const groupConfig = eventToApigwGroupConfig(event, serviceName, context.stage);
+  const groupConfig = eventToApigwGroupConfig(
+    event,
+    serviceName,
+    context.stage,
+    context,
+    logicalId,
+  );
+  // Stamp the ownership tag — the create-time contract that lets a later run
+  // (state reset, mid-run failure) idempotently adopt the group we create
+  // without risking takeover of a same-named group from another project.
+  groupConfig.tags = [
+    { key: OWNERSHIP_TAG_KEY, value: buildOwnershipTagValue(context, logicalId) },
+  ];
   const groupDefinition = extractApigwGroupDefinition(groupConfig);
   let groupId: string;
 
@@ -510,17 +524,43 @@ export const createApigwResource = async (
   });
 
   try {
-    try {
-      const existingGroup = await client.apigw.findApiGroupByName(groupConfig.groupName);
-      if (existingGroup?.groupId) {
+    const existingGroup = await client.apigw.findApiGroupByName(groupConfig.groupName);
+    if (existingGroup?.groupId) {
+      if (isOwnedByStack(context, logicalId, existingGroup.tags)) {
         logger.info(lang.__('APIGW_GROUP_FOUND_REUSING', { groupName: groupConfig.groupName }));
+        logger.info(`API group ${groupConfig.groupName} found and owned by this stack, reusing`);
         groupId = existingGroup.groupId;
       } else {
-        groupId = await client.apigw.createApiGroup(groupConfig);
+        throw new PartialResourceError(
+          stateAfterDependents,
+          new Error(
+            `API group ${groupConfig.groupName} already exists but is not owned by this stack (missing ${OWNERSHIP_TAG_KEY} tag). Refusing to adopt — resolve manually.`,
+          ),
+        );
       }
-    } catch (error) {
-      logger.debug(`Could not find existing group, creating new: ${error}`);
-      groupId = await client.apigw.createApiGroup(groupConfig);
+    } else {
+      try {
+        groupId = await client.apigw.createApiGroup(groupConfig);
+      } catch (error) {
+        if (isResourceAlreadyExistsError(error)) {
+          const probe = await client.apigw.findApiGroupByName(groupConfig.groupName);
+          if (probe?.groupId && isOwnedByStack(context, logicalId, probe.tags)) {
+            groupId = probe.groupId;
+            logger.info(
+              `API group ${groupConfig.groupName} exists after create conflict and carries ownership tag (${OWNERSHIP_TAG_KEY}), adopting idempotently`,
+            );
+          } else {
+            throw new PartialResourceError(
+              stateAfterDependents,
+              new Error(
+                `API group ${groupConfig.groupName} already exists but is not owned by this stack (missing ${OWNERSHIP_TAG_KEY} tag). Refusing to adopt — resolve manually.`,
+              ),
+            );
+          }
+        } else {
+          throw error;
+        }
+      }
     }
 
     // Get group info for state

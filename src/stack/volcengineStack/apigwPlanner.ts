@@ -7,6 +7,7 @@ import {
 } from './apigwTypes';
 import { getAllResources, getResource } from '../../common/stateManager';
 import { attributesEqual } from '../../common/hashUtils';
+import { OWNERSHIP_TAG_KEY, isOwnedByStack } from '../ownershipTag';
 
 const planEventDeletion = (logicalId: string, definition: Record<string, unknown>): PlanItem => ({
   logicalId,
@@ -50,21 +51,15 @@ export const generateApigwPlan = async (
       };
 
       if (!currentState || currentState.status === 'tainted') {
-        if (!currentState) {
-          try {
-            const remoteGateway = await client.apigw.findGatewayByName(groupConfig.groupName);
-            if (remoteGateway) {
-              return {
-                logicalId,
-                action: 'update',
-                resourceType: 'VOLCENGINE_APIGW',
-                changes: { after: desiredDefinition },
-                drifted: true,
-              };
-            }
-          } catch {
-            // Ignore errors when checking remote
-          }
+        // No usable local state: probe the provider before planning create.
+        // If a same-named gateway already exists WITHOUT our ownership tag it
+        // may belong to another project — fail fast in the plan instead of
+        // letting the executor discover it mid-deploy.
+        const remoteGateway = await client.apigw.findGatewayByName(groupConfig.groupName);
+        if (remoteGateway?.gatewayId && !isOwnedByStack(context, logicalId, remoteGateway.tags)) {
+          throw new Error(
+            `API Gateway group ${groupConfig.groupName} already exists in provider but is not owned by this stack (missing ${OWNERSHIP_TAG_KEY} tag). Refusing to create — resolve manually.`,
+          );
         }
 
         return {

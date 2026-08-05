@@ -11,6 +11,7 @@ import { createTencentClient } from '../../common/tencentClient';
 import { databaseToTencentEsConfig, extractTencentEsDefinition } from './esServerlessTypes';
 import { getAllResources, getResource } from '../../common/stateManager';
 import { attributesEqual } from '../../common/hashUtils';
+import { OWNERSHIP_TAG_KEY, isOwnedByStack } from '../ownershipTag';
 
 const planEsDeletion = (logicalId: string, definition: ResourceAttributes): PlanItem => ({
   logicalId,
@@ -47,6 +48,18 @@ export const generateEsPlan = async (
       const desiredDefinition = extractTencentEsDefinition(config);
 
       if (!currentState || currentState.status === 'tainted') {
+        // No usable local state: probe the provider before planning create.
+        // If a same-named space already exists WITHOUT our ownership tag it may
+        // belong to another project — fail fast in the plan instead of letting
+        // the executor discover it mid-deploy.
+        const client = createTencentClient(context);
+        const remoteSpace = await client.es.getSpaceByName(config.SpaceName);
+        if (remoteSpace && !isOwnedByStack(context, logicalId, remoteSpace.Tags)) {
+          throw new Error(
+            `ES space ${config.SpaceName} already exists in provider but is not owned by this stack (missing ${OWNERSHIP_TAG_KEY} tag). Refusing to create — resolve manually.`,
+          );
+        }
+
         return {
           logicalId,
           action: 'create',

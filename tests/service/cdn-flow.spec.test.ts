@@ -102,6 +102,7 @@ const getBucketInfo = () => ({
   location: 'oss-cn-hangzhou',
   acl: 'private',
   storageClass: 'Standard',
+  tags: [{ key: 'si-owned-by', value: `${APP_NAME}-${SERVICE_NAME}:buckets.site_bucket` }],
   websiteConfig: {
     indexDocument: 'index.html',
     errorDocument: '404.html',

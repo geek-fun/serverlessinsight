@@ -11,6 +11,7 @@ import {
 
 const mockedRdsOperations = {
   getInstance: jest.fn(),
+  getInstanceByName: jest.fn(),
 };
 
 const mockedEsOperations = {
@@ -88,6 +89,8 @@ describe('DatabasePlanner', () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
+    mockedRdsOperations.getInstanceByName.mockReset();
+    mockedEsOperations.getApp.mockReset();
     mockedStateManager.getAllResources.mockReturnValue({});
     mockedStateManager.getResource.mockReturnValue(null);
   });
@@ -148,6 +151,7 @@ describe('DatabasePlanner', () => {
       };
 
       mockedStateManager.getResource.mockReturnValue(existingState);
+      mockedRdsOperations.getInstanceByName.mockResolvedValue(null);
       mockedRdsTypes.databaseToRdsConfig.mockReturnValue({
         dbInstanceClass: 'serverless',
       });
@@ -166,6 +170,136 @@ describe('DatabasePlanner', () => {
         }),
       );
       expect(mockedRdsOperations.getInstance).not.toHaveBeenCalled();
+    });
+
+    it('should fail fast when state is empty but RDS instance exists untagged', async () => {
+      const database = createTestDatabase(DatabaseEnum.RDS_MYSQL_SERVERLESS, 'test_db');
+
+      mockedStateManager.getResource.mockReturnValue(null);
+      mockedRdsOperations.getInstanceByName.mockResolvedValue({
+        dbInstanceId: 'rm-12345',
+        dbInstanceDescription: 'test_db-name',
+        tags: [{ key: 'env', value: 'prod' }],
+      });
+      mockedRdsTypes.databaseToRdsConfig.mockReturnValue({});
+      mockedRdsTypes.extractRdsDefinition.mockReturnValue({ engine: 'mysql' });
+
+      await expect(generateDatabasePlan(mockContext, initialState, [database])).rejects.toThrow(
+        'not owned by this stack',
+      );
+    });
+
+    it('should plan create when state is empty but RDS instance exists with our tag', async () => {
+      const database = createTestDatabase(DatabaseEnum.RDS_MYSQL_SERVERLESS, 'test_db');
+
+      mockedStateManager.getResource.mockReturnValue(null);
+      mockedRdsOperations.getInstanceByName.mockResolvedValue({
+        dbInstanceId: 'rm-12345',
+        dbInstanceDescription: 'test_db-name',
+        tags: [{ key: 'si-owned-by', value: 'test-app-test-service:databases.test_db' }],
+      });
+      mockedRdsTypes.databaseToRdsConfig.mockReturnValue({});
+      mockedRdsTypes.extractRdsDefinition.mockReturnValue({ engine: 'mysql' });
+
+      const plan = await generateDatabasePlan(mockContext, initialState, [database]);
+
+      expect(plan.items[0]).toMatchObject({
+        logicalId: 'databases.test_db',
+        action: 'create',
+      });
+    });
+
+    it('should plan create when RDS probe returns null', async () => {
+      const database = createTestDatabase(DatabaseEnum.RDS_MYSQL_SERVERLESS, 'test_db');
+
+      mockedStateManager.getResource.mockReturnValue(null);
+      mockedRdsOperations.getInstanceByName.mockResolvedValue(null);
+      mockedRdsTypes.databaseToRdsConfig.mockReturnValue({});
+      mockedRdsTypes.extractRdsDefinition.mockReturnValue({ engine: 'mysql' });
+
+      const plan = await generateDatabasePlan(mockContext, initialState, [database]);
+
+      expect(plan.items[0]).toMatchObject({
+        logicalId: 'databases.test_db',
+        action: 'create',
+      });
+    });
+
+    it('should fail fast when state is tainted and RDS instance exists untagged', async () => {
+      const database = createTestDatabase(DatabaseEnum.RDS_MYSQL_SERVERLESS, 'test_db');
+
+      const existingState = {
+        status: 'tainted',
+        metadata: { resourceType: 'ALIYUN_RDS_SERVERLESS' },
+        instances: [],
+        definition: { engine: 'mysql' },
+      };
+
+      mockedStateManager.getResource.mockReturnValue(existingState);
+      mockedRdsOperations.getInstanceByName.mockResolvedValue({
+        dbInstanceId: 'rm-12345',
+        dbInstanceDescription: 'test_db-name',
+        tags: [],
+      });
+      mockedRdsTypes.databaseToRdsConfig.mockReturnValue({});
+      mockedRdsTypes.extractRdsDefinition.mockReturnValue({ engine: 'mysql' });
+
+      await expect(generateDatabasePlan(mockContext, initialState, [database])).rejects.toThrow(
+        'not owned by this stack',
+      );
+    });
+
+    it('should fail fast when state is empty but ES app exists untagged', async () => {
+      const database = createTestDatabase(DatabaseEnum.ELASTICSEARCH_SERVERLESS, 'test_es');
+
+      mockedStateManager.getResource.mockReturnValue(null);
+      mockedEsOperations.getApp.mockResolvedValue({
+        appId: 'es-app-12345',
+        appName: 'test_es-name',
+        tags: [{ key: 'env', value: 'prod' }],
+      });
+      mockedEsTypes.databaseToEsConfig.mockReturnValue({});
+      mockedEsTypes.extractEsDefinition.mockReturnValue({ appName: 'test_es-name' });
+
+      await expect(generateDatabasePlan(mockContext, initialState, [database])).rejects.toThrow(
+        'not owned by this stack',
+      );
+    });
+
+    it('should plan create when state is empty but ES app exists with our tag', async () => {
+      const database = createTestDatabase(DatabaseEnum.ELASTICSEARCH_SERVERLESS, 'test_es');
+
+      mockedStateManager.getResource.mockReturnValue(null);
+      mockedEsOperations.getApp.mockResolvedValue({
+        appId: 'es-app-12345',
+        appName: 'test_es-name',
+        tags: [{ key: 'si-owned-by', value: 'test-app-test-service:databases.test_es' }],
+      });
+      mockedEsTypes.databaseToEsConfig.mockReturnValue({});
+      mockedEsTypes.extractEsDefinition.mockReturnValue({ appName: 'test_es-name' });
+
+      const plan = await generateDatabasePlan(mockContext, initialState, [database]);
+
+      expect(plan.items[0]).toMatchObject({
+        logicalId: 'databases.test_es',
+        action: 'create',
+      });
+    });
+
+    it('should plan create when ES probe returns null', async () => {
+      const database = createTestDatabase(DatabaseEnum.ELASTICSEARCH_SERVERLESS, 'test_es');
+
+      mockedStateManager.getResource.mockReturnValue(null);
+      mockedEsOperations.getApp.mockResolvedValue(null);
+      mockedEsTypes.databaseToEsConfig.mockReturnValue({});
+      mockedEsTypes.extractEsDefinition.mockReturnValue({ appName: 'test_es-name' });
+
+      const plan = await generateDatabasePlan(mockContext, initialState, [database]);
+
+      expect(plan.items[0]).toMatchObject({
+        logicalId: 'databases.test_es',
+        action: 'create',
+      });
     });
 
     it('should plan creation of new Elasticsearch database', async () => {

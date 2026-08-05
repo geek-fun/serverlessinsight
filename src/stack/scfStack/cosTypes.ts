@@ -5,6 +5,7 @@ export type CosBucketConfig = {
   Region: string;
   IamPolicy?: BucketIam;
   ACL?: 'private' | 'public-read' | 'public-read-write';
+  Tags?: Array<{ Key: string; Value: string }>;
   WebsiteConfiguration?: {
     IndexDocument: {
       Suffix: string;

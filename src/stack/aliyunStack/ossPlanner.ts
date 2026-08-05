@@ -4,6 +4,7 @@ import { createAliyunClient } from '../../common/aliyunClient';
 import { bucketToOssBucketConfig, extractOssBucketDefinition } from './ossTypes';
 import { getAllResources, getResource } from '../../common/stateManager';
 import { attributesEqual, computeDirectoryHash } from '../../common/hashUtils';
+import { OWNERSHIP_TAG_KEY, isOwnedByStack } from '../ownershipTag';
 
 const planBucketDeletion = (logicalId: string, definition: ResourceAttributes): PlanItem => ({
   logicalId,
@@ -11,6 +12,13 @@ const planBucketDeletion = (logicalId: string, definition: ResourceAttributes): 
   resourceType: 'ALIYUN_OSS_BUCKET',
   changes: { before: normalizeDefinitionForDisplay(definition) },
 });
+
+// getBucket returns tags as { key, value } (BucketTag); the ownership helper
+// expects { Key, Value }. Convert before verification.
+const toOwnershipTags = (
+  tags: Array<{ key?: string; value?: string }> | undefined,
+): Array<{ Key?: string; Value?: string }> | undefined =>
+  tags?.map((tag) => ({ Key: tag.key, Value: tag.value }));
 
 const normalizeDefinitionForDisplay = (definition: ResourceAttributes): ResourceAttributes => {
   const { domainBound: _domainBound, ...rest } = definition as { domainBound?: unknown };
@@ -48,6 +56,21 @@ export const generateBucketPlan = async (
       const desiredDefinition = extractOssBucketDefinition(config, websiteCodeHash);
 
       if (!currentState || currentState.status === 'tainted') {
+        // No usable local state: probe the provider before planning create.
+        // If a same-named bucket already exists WITHOUT our ownership tag it
+        // may belong to another project — fail fast in the plan instead of
+        // letting the executor discover it mid-deploy.
+        const client = createAliyunClient(context);
+        const remoteBucket = await client.oss.getBucket(bucket.name);
+        if (
+          remoteBucket &&
+          !isOwnedByStack(context, logicalId, toOwnershipTags(remoteBucket.tags))
+        ) {
+          throw new Error(
+            `Bucket ${bucket.name} already exists in provider but is not owned by this stack (missing ${OWNERSHIP_TAG_KEY} tag). Refusing to create — resolve manually.`,
+          );
+        }
+
         return {
           logicalId,
           action: 'create',

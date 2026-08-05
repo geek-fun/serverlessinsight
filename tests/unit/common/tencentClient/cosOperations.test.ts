@@ -318,6 +318,36 @@ describe('cosOperations bucket management', () => {
         }),
       ).rejects.toThrow('BucketAlreadyExists');
     });
+
+    it('should send tags as an x-cos-tagging header on putBucket', async () => {
+      mockPutBucket.mockImplementation((_params: unknown, cb: (err: null) => void) => cb(null));
+
+      await operations.createBucket({
+        Bucket: 'test-bucket',
+        Region: 'ap-guangzhou',
+        Tags: [{ Key: 'si-owned-by', Value: 'test-app-test-service:buckets.test_bucket' }],
+      });
+
+      expect(mockPutBucket).toHaveBeenCalledWith(
+        expect.objectContaining({
+          Bucket: 'test-bucket',
+          Region: 'ap-guangzhou',
+          Headers: {
+            'x-cos-tagging': 'si-owned-by=test-app-test-service%3Abuckets.test_bucket',
+          },
+        }),
+        expect.any(Function),
+      );
+    });
+
+    it('should omit the x-cos-tagging header when no tags are configured', async () => {
+      mockPutBucket.mockImplementation((_params: unknown, cb: (err: null) => void) => cb(null));
+
+      await operations.createBucket({ Bucket: 'test-bucket', Region: 'ap-guangzhou' });
+
+      const putParams = mockPutBucket.mock.calls[0][0] as { Headers?: Record<string, string> };
+      expect(putParams.Headers).toBeUndefined();
+    });
   });
 
   describe('getBucket', () => {
@@ -697,6 +727,38 @@ describe('cosOperations bucket management', () => {
           { key: 'team', value: 'backend' },
         ],
       });
+    });
+
+    it('should return uppercase Tags for ownership verification when tagging is present', async () => {
+      mockHeadBucket.mockImplementation(
+        (_params: unknown, cb: (err: null, data: unknown) => void) => cb(null, {}),
+      );
+      mockGetBucketAcl.mockImplementation(
+        (_params: unknown, cb: (err: null, data: unknown) => void) =>
+          cb(null, { ACL: 'private', Owner: { ID: 'owner-id' }, Grants: [] }),
+      );
+      mockGetBucketCors.mockImplementation((_params: unknown, cb: (err: Error) => void) =>
+        cb(new Error('NoSuchCORSConfiguration')),
+      );
+      mockGetBucketWebsite.mockImplementation((_params: unknown, cb: (err: Error) => void) =>
+        cb(new Error('NoSuchWebsiteConfiguration')),
+      );
+      mockGetBucketVersioning.mockImplementation(
+        (_params: unknown, cb: (err: null, data: unknown) => void) =>
+          cb(null, { VersioningConfiguration: {} }),
+      );
+      mockGetBucketTagging.mockImplementation(
+        (_params: unknown, cb: (err: null, data: unknown) => void) =>
+          cb(null, {
+            Tags: [{ Key: 'si-owned-by', Value: 'test-app-test-service:buckets.test_bucket' }],
+          }),
+      );
+
+      const result = await operations.getBucket('test-bucket', 'ap-guangzhou');
+
+      expect(result?.Tags).toEqual([
+        { Key: 'si-owned-by', Value: 'test-app-test-service:buckets.test_bucket' },
+      ]);
     });
 
     it('should handle ACL with Grantee containing URI (Group type)', async () => {

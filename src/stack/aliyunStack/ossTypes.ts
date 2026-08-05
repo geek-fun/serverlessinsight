@@ -20,6 +20,7 @@ export type OssBucketConfig = CommonBucketConfig & {
   versioningStatus?: string;
   sseAlgorithm?: string;
   sseKmsMasterKeyId?: string;
+  Tags?: Array<{ Key: string; Value: string }>;
 };
 
 const aclMap: Record<BucketAccessEnum, BucketACL> = {

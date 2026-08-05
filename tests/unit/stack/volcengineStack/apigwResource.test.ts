@@ -147,32 +147,25 @@ describe('apigwResource', () => {
       expect(result).toBeDefined();
     });
 
-    it('should create gateway via catch block when findGatewayByName throws', async () => {
+    it('should throw when the gateway probe fails without blind create', async () => {
       const { createVolcengineClient } = jest.requireMock(
         '../../../../src/common/volcengineClient',
       );
+      const mockCreateGateway = jest.fn().mockResolvedValue({ gatewayId: 'new-gateway-456' });
       createVolcengineClient.mockReturnValueOnce({
         apigw: {
           findGatewayByName: jest.fn().mockRejectedValue(new Error('Network error')),
-          createGateway: jest.fn().mockResolvedValue({ gatewayId: 'new-gateway-456' }),
-          getGateway: jest.fn().mockResolvedValue({
-            gatewayId: 'new-gateway-456',
-            gatewayName: 'test-gateway',
-            protocol: 'HTTP',
-            status: 'Running',
-          }),
-          createApi: jest.fn().mockResolvedValue('api-123'),
-          getApi: jest
-            .fn()
-            .mockResolvedValue({ apiId: 'api-123', method: 'GET', path: '/api/test' }),
-          deployApi: jest.fn().mockResolvedValue(undefined),
-          bindDomain: jest.fn().mockResolvedValue(undefined),
+          createGateway: mockCreateGateway,
         },
       });
 
-      const result = await createApigwResource(mockContext, mockEvent, 'test-service', mockState);
+      await expect(
+        createApigwResource(mockContext, mockEvent, 'test-service', mockState),
+      ).rejects.toThrow('Network error');
 
-      expect(result).toBeDefined();
+      // A probe error must never fall back to a blind create — the gateway may
+      // already exist in the provider and belong to another project.
+      expect(mockCreateGateway).not.toHaveBeenCalled();
     });
 
     it('should throw when getGateway returns null after creation', async () => {
@@ -192,23 +185,23 @@ describe('apigwResource', () => {
       ).rejects.toThrow('Failed to get API Gateway info after creation');
     });
 
-    it('should reuse existing gateway if found', async () => {
+    it('should reuse an existing gateway that carries our ownership tag', async () => {
       const { createVolcengineClient } = jest.requireMock(
         '../../../../src/common/volcengineClient',
       );
+      const mockCreateGateway = jest.fn().mockResolvedValue({ gatewayId: 'gateway-123' });
       createVolcengineClient.mockReturnValueOnce({
         apigw: {
-          createGateway: jest.fn().mockResolvedValue({
-            gatewayId: 'gateway-123',
-          }),
+          createGateway: mockCreateGateway,
           getGateway: jest.fn().mockResolvedValue({
-            gatewayId: 'gateway-123',
+            gatewayId: 'existing-gateway',
             gatewayName: 'test-gateway',
             protocol: 'HTTP',
           }),
           findGatewayByName: jest.fn().mockResolvedValue({
             gatewayId: 'existing-gateway',
             gatewayName: 'test-gateway',
+            tags: [{ Key: 'si-owned-by', Value: 'test-app-test-service:events.api_gateway' }],
           }),
           createApi: jest.fn().mockResolvedValue('api-123'),
           getApi: jest.fn().mockResolvedValue({
@@ -224,6 +217,60 @@ describe('apigwResource', () => {
       const result = await createApigwResource(mockContext, mockEvent, 'test-service', mockState);
 
       expect(result).toBeDefined();
+      expect(mockCreateGateway).not.toHaveBeenCalled();
+    });
+
+    it('should refuse an existing gateway without our ownership tag', async () => {
+      const { createVolcengineClient } = jest.requireMock(
+        '../../../../src/common/volcengineClient',
+      );
+      const mockCreateGateway = jest.fn().mockResolvedValue({ gatewayId: 'gateway-123' });
+      createVolcengineClient.mockReturnValueOnce({
+        apigw: {
+          createGateway: mockCreateGateway,
+          findGatewayByName: jest.fn().mockResolvedValue({
+            gatewayId: 'existing-gateway',
+            gatewayName: 'test-gateway',
+          }),
+        },
+      });
+
+      await expect(
+        createApigwResource(mockContext, mockEvent, 'test-service', mockState),
+      ).rejects.toMatchObject({
+        name: 'PartialResourceError',
+        cause: { message: expect.stringContaining('not owned by this stack') },
+      });
+      expect(mockCreateGateway).not.toHaveBeenCalled();
+    });
+
+    it('should write ownership tag into the gateway config passed to createGateway', async () => {
+      const { createVolcengineClient } = jest.requireMock(
+        '../../../../src/common/volcengineClient',
+      );
+      const mockCreateGateway = jest.fn().mockResolvedValue({ gatewayId: 'gateway-123' });
+      createVolcengineClient.mockReturnValueOnce({
+        apigw: {
+          createGateway: mockCreateGateway,
+          getGateway: jest.fn().mockResolvedValue({
+            gatewayId: 'gateway-123',
+            gatewayName: 'test-gateway',
+          }),
+          findGatewayByName: jest.fn().mockResolvedValue(null),
+          createApi: jest.fn().mockResolvedValue('api-123'),
+          getApi: jest.fn().mockResolvedValue({ apiId: 'api-123' }),
+          deployApi: jest.fn().mockResolvedValue(undefined),
+          bindDomain: jest.fn().mockResolvedValue(undefined),
+        },
+      });
+
+      await createApigwResource(mockContext, mockEvent, 'test-service', mockState);
+
+      expect(mockCreateGateway).toHaveBeenCalledWith(
+        expect.objectContaining({
+          Tags: [{ Key: 'si-owned-by', Value: 'test-app-test-service:events.api_gateway' }],
+        }),
+      );
     });
 
     it('should handle domain binding', async () => {

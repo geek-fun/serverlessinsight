@@ -79,6 +79,60 @@ describe('FC3 Planner', () => {
       expect(plan.items[0].changes?.after).toBeDefined();
     });
 
+    it('should fail fast when state is empty but remote function exists untagged', async () => {
+      mockFc3Operations.getFunction.mockResolvedValue({
+        functionName: 'test-function',
+        runtime: 'nodejs20',
+        handler: 'index.handler',
+        memorySize: 512,
+        timeout: 10,
+        tags: [{ Key: 'env', Value: 'prod' }],
+      });
+
+      await expect(generateFunctionPlan(mockContext, initalState, [testFunction])).rejects.toThrow(
+        'not owned by this stack',
+      );
+    });
+
+    it('should plan create when state is empty but remote exists with our tag', async () => {
+      mockFc3Operations.getFunction.mockResolvedValue({
+        functionName: 'test-function',
+        runtime: 'nodejs20',
+        handler: 'index.handler',
+        memorySize: 512,
+        timeout: 10,
+        tags: [{ Key: 'si-owned-by', Value: 'test-app-test-service:functions.test_fn' }],
+      });
+
+      const plan = await generateFunctionPlan(mockContext, initalState, [testFunction]);
+
+      expect(plan.items[0]).toMatchObject({ logicalId: 'functions.test_fn', action: 'create' });
+    });
+
+    it('should fail fast when state is tainted and remote exists untagged', async () => {
+      mockFc3Operations.getFunction.mockResolvedValue({
+        functionName: 'test-function',
+        runtime: 'nodejs20',
+        handler: 'index.handler',
+        memorySize: 512,
+        timeout: 10,
+        tags: [],
+      });
+
+      const state = setResource(initalState, 'functions.test_fn', {
+        mode: 'managed',
+        region: 'cn-hangzhou',
+        status: 'tainted',
+        definition: { functionName: 'test-function' },
+        instances: [],
+        lastUpdated: new Date().toISOString(),
+      });
+
+      await expect(generateFunctionPlan(mockContext, state, [testFunction])).rejects.toThrow(
+        'not owned by this stack',
+      );
+    });
+
     it('should plan no changes when function exists and matches state', async () => {
       mockFc3Operations.getFunction.mockResolvedValue({
         functionName: 'test-function',

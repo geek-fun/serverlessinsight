@@ -8,6 +8,7 @@ import {
 } from '../../types';
 import { createVolcengineClient } from '../../common/volcengineClient';
 import type {
+  ApigwGroupConfig,
   ApigwGroupInfo,
   ApigwApiInfo,
   ApigwDomainConfig,
@@ -23,6 +24,8 @@ import { setResource, removeResource, getResource } from '../../common/stateMana
 import { buildSid } from '../../common';
 import { logger } from '../../common/logger';
 import { lang } from '../../lang';
+import { OWNERSHIP_TAG_KEY, buildOwnershipTagValue, isOwnedByStack } from '../ownershipTag';
+import { isResourceAlreadyExistsError } from '../alreadyExists';
 
 const buildApigwGroupInstanceFromProvider = (
   info: ApigwGroupInfo,
@@ -89,22 +92,56 @@ export const createApigwResource = async (
   const logicalId = `events.${event.key}`;
   const client = createVolcengineClient(context);
 
-  const groupConfig = eventToApigwGroupConfig(event, serviceName, context.stage);
+  const groupConfig: ApigwGroupConfig = {
+    ...eventToApigwGroupConfig(event, serviceName, context.stage),
+    Tags: [{ Key: OWNERSHIP_TAG_KEY, Value: buildOwnershipTagValue(context, logicalId) }],
+  };
   let gatewayId: string;
 
-  try {
-    const existingGateway = await client.apigw.findGatewayByName(groupConfig.groupName);
-    if (existingGateway?.gatewayId) {
+  // Probe the provider BEFORE creating so an unrelated same-named gateway is
+  // never taken over: reuse only when it carries our ownership tag, refuse
+  // otherwise. A probe error must propagate — it is not proof the gateway is
+  // absent, so falling back to a blind create could silently adopt another
+  // project's resource.
+  const existingGateway = await client.apigw.findGatewayByName(groupConfig.groupName);
+  if (existingGateway?.gatewayId) {
+    if (isOwnedByStack(context, logicalId, existingGateway.tags)) {
       logger.info(lang.__('APIGW_GROUP_FOUND_REUSING', { groupName: groupConfig.groupName }));
       gatewayId = existingGateway.gatewayId;
     } else {
+      throw new PartialResourceError(
+        state,
+        new Error(
+          `API Gateway group ${groupConfig.groupName} already exists in provider but is not owned by this stack (missing ${OWNERSHIP_TAG_KEY} tag). Refusing to adopt — resolve manually.`,
+        ),
+      );
+    }
+  } else {
+    // Not found — create. A collision (gateway appeared between probe and
+    // create) re-probes and adopts only if the gateway carries our tag.
+    try {
       const gatewayInfo = await client.apigw.createGateway(groupConfig);
       gatewayId = gatewayInfo.gatewayId!;
+    } catch (error) {
+      if (isResourceAlreadyExistsError(error)) {
+        const probe = await client.apigw.findGatewayByName(groupConfig.groupName);
+        if (probe?.gatewayId && isOwnedByStack(context, logicalId, probe.tags)) {
+          logger.info(
+            `API Gateway group ${groupConfig.groupName} exists and carries ownership tag (${OWNERSHIP_TAG_KEY}), adopting idempotently`,
+          );
+          gatewayId = probe.gatewayId;
+        } else {
+          throw new PartialResourceError(
+            state,
+            new Error(
+              `API Gateway group ${groupConfig.groupName} already exists in provider but is not owned by this stack (missing ${OWNERSHIP_TAG_KEY} tag). Refusing to adopt — resolve manually.`,
+            ),
+          );
+        }
+      } else {
+        throw error;
+      }
     }
-  } catch (error) {
-    logger.debug(`Could not find existing gateway, creating new: ${error}`);
-    const gatewayInfo = await client.apigw.createGateway(groupConfig);
-    gatewayId = gatewayInfo.gatewayId!;
   }
 
   const gatewayInfo = await client.apigw.getGateway(gatewayId);

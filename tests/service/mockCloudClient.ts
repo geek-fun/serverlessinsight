@@ -17,6 +17,7 @@ export type MockAliyunClient = {
   apigw: {
     createApiGroup: jest.Mock;
     getApiGroup: jest.Mock;
+    findApiGroupByName: jest.Mock;
     deleteApiGroup: jest.Mock;
     createApi: jest.Mock;
     getApi: jest.Mock;
@@ -100,131 +101,145 @@ export type MockAliyunClient = {
   };
 };
 
-export const createMockAliyunClient = (): MockAliyunClient => ({
-  fc3: {
-    createFunction: jest.fn().mockResolvedValue({ body: { functionName: 'test-function' } }),
-    getFunction: jest.fn().mockResolvedValue({
-      body: {
-        functionConfig: {
+export const createMockAliyunClient = (): MockAliyunClient => {
+  const fc3GetFunction = jest.fn().mockResolvedValue(null);
+
+  return {
+    fc3: {
+      createFunction: jest.fn().mockImplementation(async () => {
+        // Simulate a real create: once created, the function is queryable, so the
+        // executor's post-create refresh (getFunction) sees it. The planner probe
+        // (before create) still sees null (nothing exists yet).
+        fc3GetFunction.mockResolvedValue({
           functionName: 'test-function',
+          runtime: 'nodejs18',
+          handler: 'index.handler',
           memorySize: 128,
           timeout: 60,
-          runtime: 'nodejs18',
+          state: 'Running',
+        });
+      }),
+      getFunction: fc3GetFunction,
+      updateFunctionConfiguration: jest.fn().mockResolvedValue({}),
+      updateFunctionCode: jest.fn().mockResolvedValue({}),
+      deleteFunction: jest.fn().mockResolvedValue({}),
+      createTrigger: jest.fn().mockResolvedValue({ body: { triggerName: 'http-trigger' } }),
+      deleteTrigger: jest.fn().mockResolvedValue({}),
+      createCustomDomain: jest.fn().mockResolvedValue({ body: { domainName: 'api.example.com' } }),
+      getCustomDomain: jest.fn().mockResolvedValue(null),
+      deleteCustomDomain: jest.fn().mockResolvedValue({}),
+    },
+    apigw: {
+      createApiGroup: jest.fn().mockResolvedValue({ body: { groupId: 'group-123' } }),
+      getApiGroup: jest
+        .fn()
+        .mockResolvedValue({ body: { groupId: 'group-123', groupName: 'test-group' } }),
+      findApiGroupByName: jest.fn().mockResolvedValue(null),
+      deleteApiGroup: jest.fn().mockResolvedValue({}),
+      createApi: jest.fn().mockResolvedValue({ body: { apiId: 'api-123' } }),
+      getApi: jest.fn().mockResolvedValue({ body: { apiId: 'api-123', apiName: 'test-api' } }),
+      deleteApi: jest.fn().mockResolvedValue({}),
+      deployApi: jest.fn().mockResolvedValue({}),
+      abolishApi: jest.fn().mockResolvedValue({}),
+      bindCustomDomain: jest.fn().mockResolvedValue({}),
+      unbindCustomDomain: jest.fn().mockResolvedValue({}),
+    },
+    oss: {
+      createBucket: jest.fn().mockResolvedValue({}),
+      getBucketInfo: jest.fn().mockResolvedValue({ body: { BucketInfo: { Name: 'test-bucket' } } }),
+      deleteBucket: jest.fn().mockResolvedValue({}),
+      putBucketWebsite: jest.fn().mockResolvedValue({}),
+      deleteBucketWebsite: jest.fn().mockResolvedValue({}),
+      putBucketAcl: jest.fn().mockResolvedValue({}),
+      enableTransferAcceleration: jest.fn().mockResolvedValue(true),
+      getAccelerateEndpoint: jest.fn().mockResolvedValue('test-bucket.oss-accelerate.aliyuncs.com'),
+      getBucketCnameEndpoint: jest
+        .fn()
+        .mockResolvedValue('test-bucket.oss-cn-hangzhou.aliyuncs.com'),
+    },
+    cdn: {
+      addCdnDomain: jest.fn().mockResolvedValue({}),
+      describeCdnDomainDetail: jest.fn().mockResolvedValue({
+        domainName: 'cdn.example.com',
+        cname: 'cdn.example.com.cdn.aliyuncs.com',
+        status: 'online',
+      }),
+      deleteCdnDomain: jest.fn().mockResolvedValue({}),
+      modifyCdnDomain: jest.fn().mockResolvedValue({}),
+      setDomainServerCertificate: jest.fn().mockResolvedValue({}),
+      applyCacheConfig: jest.fn().mockResolvedValue({}),
+      applyProtocolConfig: jest.fn().mockResolvedValue({}),
+      applyCompression: jest.fn().mockResolvedValue({}),
+      applyHttpsRedirect: jest.fn().mockResolvedValue({}),
+    },
+    ram: {
+      createRole: jest.fn().mockResolvedValue({ body: { Role: { RoleName: 'test-role' } } }),
+      getRole: jest.fn().mockResolvedValue({ body: { Role: { RoleName: 'test-role' } } }),
+      deleteRole: jest.fn().mockResolvedValue({}),
+      createPolicy: jest
+        .fn()
+        .mockResolvedValue({ body: { Policy: { PolicyName: 'test-policy' } } }),
+      deletePolicy: jest.fn().mockResolvedValue({}),
+      attachPolicyToRole: jest.fn().mockResolvedValue({}),
+      detachPolicyFromRole: jest.fn().mockResolvedValue({}),
+      updateRolePolicy: jest.fn().mockResolvedValue(undefined),
+      updateRoleTrustPolicy: jest
+        .fn()
+        .mockResolvedValue({ body: { Role: { RoleName: 'test-role' } } }),
+    },
+    nas: {
+      createFileSystem: jest.fn().mockResolvedValue({ body: { fileSystemId: 'fs-123' } }),
+      getFileSystem: jest.fn().mockResolvedValue({ body: { fileSystems: { fileSystem: [] } } }),
+      deleteFileSystem: jest.fn().mockResolvedValue({}),
+      createMountTarget: jest
+        .fn()
+        .mockResolvedValue({ body: { mountTargetDomain: 'fs-123.cn-hangzhou.nas.aliyuncs.com' } }),
+      deleteMountTarget: jest.fn().mockResolvedValue({}),
+      createAccessGroup: jest.fn().mockResolvedValue({}),
+      deleteAccessGroup: jest.fn().mockResolvedValue({}),
+    },
+    rds: {
+      createDBInstance: jest.fn().mockResolvedValue({ body: { DBInstanceId: 'rds-123' } }),
+      describeDBInstanceAttribute: jest.fn().mockResolvedValue({
+        body: {
+          Items: {
+            DBInstanceAttribute: [{ DBInstanceId: 'rds-123', DBInstanceStatus: 'Running' }],
+          },
         },
-      },
-    }),
-    updateFunctionConfiguration: jest.fn().mockResolvedValue({}),
-    updateFunctionCode: jest.fn().mockResolvedValue({}),
-    deleteFunction: jest.fn().mockResolvedValue({}),
-    createTrigger: jest.fn().mockResolvedValue({ body: { triggerName: 'http-trigger' } }),
-    deleteTrigger: jest.fn().mockResolvedValue({}),
-    createCustomDomain: jest.fn().mockResolvedValue({ body: { domainName: 'api.example.com' } }),
-    getCustomDomain: jest.fn().mockResolvedValue(null),
-    deleteCustomDomain: jest.fn().mockResolvedValue({}),
-  },
-  apigw: {
-    createApiGroup: jest.fn().mockResolvedValue({ body: { groupId: 'group-123' } }),
-    getApiGroup: jest
-      .fn()
-      .mockResolvedValue({ body: { groupId: 'group-123', groupName: 'test-group' } }),
-    deleteApiGroup: jest.fn().mockResolvedValue({}),
-    createApi: jest.fn().mockResolvedValue({ body: { apiId: 'api-123' } }),
-    getApi: jest.fn().mockResolvedValue({ body: { apiId: 'api-123', apiName: 'test-api' } }),
-    deleteApi: jest.fn().mockResolvedValue({}),
-    deployApi: jest.fn().mockResolvedValue({}),
-    abolishApi: jest.fn().mockResolvedValue({}),
-    bindCustomDomain: jest.fn().mockResolvedValue({}),
-    unbindCustomDomain: jest.fn().mockResolvedValue({}),
-  },
-  oss: {
-    createBucket: jest.fn().mockResolvedValue({}),
-    getBucketInfo: jest.fn().mockResolvedValue({ body: { BucketInfo: { Name: 'test-bucket' } } }),
-    deleteBucket: jest.fn().mockResolvedValue({}),
-    putBucketWebsite: jest.fn().mockResolvedValue({}),
-    deleteBucketWebsite: jest.fn().mockResolvedValue({}),
-    putBucketAcl: jest.fn().mockResolvedValue({}),
-    enableTransferAcceleration: jest.fn().mockResolvedValue(true),
-    getAccelerateEndpoint: jest.fn().mockResolvedValue('test-bucket.oss-accelerate.aliyuncs.com'),
-    getBucketCnameEndpoint: jest.fn().mockResolvedValue('test-bucket.oss-cn-hangzhou.aliyuncs.com'),
-  },
-  cdn: {
-    addCdnDomain: jest.fn().mockResolvedValue({}),
-    describeCdnDomainDetail: jest.fn().mockResolvedValue({
-      domainName: 'cdn.example.com',
-      cname: 'cdn.example.com.cdn.aliyuncs.com',
-      status: 'online',
-    }),
-    deleteCdnDomain: jest.fn().mockResolvedValue({}),
-    modifyCdnDomain: jest.fn().mockResolvedValue({}),
-    setDomainServerCertificate: jest.fn().mockResolvedValue({}),
-    applyCacheConfig: jest.fn().mockResolvedValue({}),
-    applyProtocolConfig: jest.fn().mockResolvedValue({}),
-    applyCompression: jest.fn().mockResolvedValue({}),
-    applyHttpsRedirect: jest.fn().mockResolvedValue({}),
-  },
-  ram: {
-    createRole: jest.fn().mockResolvedValue({ body: { Role: { RoleName: 'test-role' } } }),
-    getRole: jest.fn().mockResolvedValue({ body: { Role: { RoleName: 'test-role' } } }),
-    deleteRole: jest.fn().mockResolvedValue({}),
-    createPolicy: jest.fn().mockResolvedValue({ body: { Policy: { PolicyName: 'test-policy' } } }),
-    deletePolicy: jest.fn().mockResolvedValue({}),
-    attachPolicyToRole: jest.fn().mockResolvedValue({}),
-    detachPolicyFromRole: jest.fn().mockResolvedValue({}),
-    updateRolePolicy: jest.fn().mockResolvedValue(undefined),
-    updateRoleTrustPolicy: jest
-      .fn()
-      .mockResolvedValue({ body: { Role: { RoleName: 'test-role' } } }),
-  },
-  nas: {
-    createFileSystem: jest.fn().mockResolvedValue({ body: { fileSystemId: 'fs-123' } }),
-    getFileSystem: jest.fn().mockResolvedValue({ body: { fileSystems: { fileSystem: [] } } }),
-    deleteFileSystem: jest.fn().mockResolvedValue({}),
-    createMountTarget: jest
-      .fn()
-      .mockResolvedValue({ body: { mountTargetDomain: 'fs-123.cn-hangzhou.nas.aliyuncs.com' } }),
-    deleteMountTarget: jest.fn().mockResolvedValue({}),
-    createAccessGroup: jest.fn().mockResolvedValue({}),
-    deleteAccessGroup: jest.fn().mockResolvedValue({}),
-  },
-  rds: {
-    createDBInstance: jest.fn().mockResolvedValue({ body: { DBInstanceId: 'rds-123' } }),
-    describeDBInstanceAttribute: jest.fn().mockResolvedValue({
-      body: {
-        Items: { DBInstanceAttribute: [{ DBInstanceId: 'rds-123', DBInstanceStatus: 'Running' }] },
-      },
-    }),
-    deleteDBInstance: jest.fn().mockResolvedValue({}),
-  },
-  ecs: {
-    createSecurityGroup: jest.fn().mockResolvedValue({ body: { SecurityGroupId: 'sg-123' } }),
-    describeSecurityGroups: jest
-      .fn()
-      .mockResolvedValue({ body: { SecurityGroups: { SecurityGroup: [] } } }),
-    deleteSecurityGroup: jest.fn().mockResolvedValue({}),
-    getSecurityGroupByName: jest.fn().mockResolvedValue({ securityGroupId: 'sg-123' }),
-  },
-  sls: {
-    createProject: jest.fn().mockResolvedValue({ projectName: 'test-project' }),
-    createLogstore: jest.fn().mockResolvedValue({ logstoreName: 'test-logstore' }),
-    createIndex: jest.fn().mockResolvedValue({}),
-    waitForProject: jest.fn().mockResolvedValue({}),
-    waitForLogstore: jest.fn().mockResolvedValue({}),
-    deleteIndex: jest.fn().mockResolvedValue(undefined),
-    deleteLogstore: jest.fn().mockResolvedValue(undefined),
-    deleteProject: jest.fn().mockResolvedValue(undefined),
-  },
-  dns: {
-    addDomainRecord: jest.fn().mockResolvedValue('record-123'),
-    deleteDomainRecord: jest.fn().mockResolvedValue({}),
-    describeDomainRecords: jest.fn().mockResolvedValue([]),
-    checkDomainRecordExists: jest.fn().mockResolvedValue(false),
-  },
-  cas: {
-    getCertificate: jest
-      .fn()
-      .mockResolvedValue({ cert: 'fake-cert-content', key: 'fake-key-content' }),
-  },
-});
+      }),
+      deleteDBInstance: jest.fn().mockResolvedValue({}),
+    },
+    ecs: {
+      createSecurityGroup: jest.fn().mockResolvedValue({ body: { SecurityGroupId: 'sg-123' } }),
+      describeSecurityGroups: jest
+        .fn()
+        .mockResolvedValue({ body: { SecurityGroups: { SecurityGroup: [] } } }),
+      deleteSecurityGroup: jest.fn().mockResolvedValue({}),
+      getSecurityGroupByName: jest.fn().mockResolvedValue({ securityGroupId: 'sg-123' }),
+    },
+    sls: {
+      createProject: jest.fn().mockResolvedValue({ projectName: 'test-project' }),
+      createLogstore: jest.fn().mockResolvedValue({ logstoreName: 'test-logstore' }),
+      createIndex: jest.fn().mockResolvedValue({}),
+      waitForProject: jest.fn().mockResolvedValue({}),
+      waitForLogstore: jest.fn().mockResolvedValue({}),
+      deleteIndex: jest.fn().mockResolvedValue(undefined),
+      deleteLogstore: jest.fn().mockResolvedValue(undefined),
+      deleteProject: jest.fn().mockResolvedValue(undefined),
+    },
+    dns: {
+      addDomainRecord: jest.fn().mockResolvedValue('record-123'),
+      deleteDomainRecord: jest.fn().mockResolvedValue({}),
+      describeDomainRecords: jest.fn().mockResolvedValue([]),
+      checkDomainRecordExists: jest.fn().mockResolvedValue(false),
+    },
+    cas: {
+      getCertificate: jest
+        .fn()
+        .mockResolvedValue({ cert: 'fake-cert-content', key: 'fake-key-content' }),
+    },
+  };
+};
 
 export type MockTencentClient = {
   scf: {

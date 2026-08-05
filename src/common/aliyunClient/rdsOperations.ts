@@ -37,6 +37,7 @@ export type RdsConfig = {
   vpcId?: string;
   vSwitchId?: string;
   zoneId?: string;
+  tags?: Array<{ key?: string; value?: string }>;
 };
 
 export type RdsInfo = {
@@ -65,6 +66,7 @@ export type RdsInfo = {
   regionId?: string;
   securityIPList?: string;
   multiAZ?: boolean;
+  tags?: Array<{ key?: string; value?: string }>;
 };
 
 const waitForRdsInstanceReady = async (
@@ -141,6 +143,8 @@ export const createRdsOperations = (rdsClient: RdsClient, context: Context) => {
             }
           : undefined,
         BurstingEnabled: config.burstingEnabled,
+        // SDK serializes Tag as Tag.1.Key / Tag.1.Value (ownership tag for idempotent adoption)
+        Tag: config.tags,
       };
 
       try {
@@ -211,6 +215,60 @@ export const createRdsOperations = (rdsClient: RdsClient, context: Context) => {
           securityIPList: instance.SecurityIPList,
           multiAZ: instance.MultiAZ === 'true',
         };
+      } catch (error) {
+        logger.error(lang.__('RDS_INSTANCE_GET_FAILED', { error: String(error) }));
+        return null;
+      }
+    },
+
+    getInstanceTags: async (
+      instanceId: string,
+    ): Promise<Array<{ key?: string; value?: string }>> => {
+      const params = {
+        RegionId: context.region,
+        ResourceType: 'INSTANCE',
+        ResourceId: [instanceId],
+      };
+
+      try {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const response = await rdsClient.listTagResources(params as any);
+        return (response.body?.tagResources?.tagResource ?? []).map((t) => ({
+          key: t.tagKey,
+          value: t.tagValue,
+        }));
+      } catch (error) {
+        logger.error(lang.__('RDS_INSTANCE_GET_FAILED', { error: String(error) }));
+        return [];
+      }
+    },
+
+    getInstanceByName: async (name: string): Promise<RdsInfo | null> => {
+      const params = {
+        RegionId: context.region,
+        SearchKey: name,
+        PageSize: 100,
+      };
+
+      try {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const response = await rdsClient.describeDBInstances(params as any);
+        // SearchKey fuzzy-matches DBInstanceId OR DBInstanceDescription, so filter
+        // to an exact description match to avoid adopting an unrelated instance.
+        const match = (response.body?.items?.DBInstance ?? []).find(
+          (i) => i.DBInstanceDescription === name,
+        );
+        if (!match?.DBInstanceId) {
+          return null;
+        }
+
+        const instance = await operations.getInstance(match.DBInstanceId);
+        if (!instance) {
+          return null;
+        }
+
+        const tags = await operations.getInstanceTags(match.DBInstanceId);
+        return { ...instance, tags };
       } catch (error) {
         logger.error(lang.__('RDS_INSTANCE_GET_FAILED', { error: String(error) }));
         return null;

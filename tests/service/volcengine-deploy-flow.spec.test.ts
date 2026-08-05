@@ -58,6 +58,21 @@ describe('Volcengine Deploy Flow Service Test', () => {
 
   describe('Volcengine veFaaS Deploy', () => {
     it('should deploy single veFaaS function and save state', async () => {
+      // The planner probes the provider on a fresh deploy and only proceeds
+      // when a same-named remote function carries our ownership tag.
+      mockClient.vefaas.getFunction.mockResolvedValue({
+        functionId: 'func-123',
+        functionName: 'insight-poc-fn',
+        runtime: 'nodejs/v18',
+        handler: 'index.handler',
+        memoryMb: 128,
+        requestTimeout: 30,
+        status: 'Active',
+        Tags: [
+          { Key: 'si-owned-by', Value: 'insight-poc-app-insight-poc:functions.insight_poc_fn' },
+        ],
+      });
+
       await deploy({
         location: fixtureFile,
         stage: 'dev',
