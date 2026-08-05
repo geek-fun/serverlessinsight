@@ -8,7 +8,11 @@ import {
   CdnConfig,
   PartialResourceError,
 } from '../../types';
-import { createAliyunClient, ApigwCustomDomainConfig } from '../../common/aliyunClient';
+import {
+  createAliyunClient,
+  ApigwCustomDomainConfig,
+  isApigwNotFoundError,
+} from '../../common/aliyunClient';
 import {
   ApigwGroupInfo,
   ApigwApiInfo,
@@ -318,6 +322,9 @@ const cleanupApigwCdnResources = async (
       await client.cdn.deleteCdnDomain(cdnInstance.domainName);
       logger.info(lang.__('CDN_DOMAIN_DELETED', { domain: cdnInstance.domainName }));
     } catch (error) {
+      if (!isApigwNotFoundError(error)) {
+        throw error;
+      }
       logger.warn(
         lang.__('CDN_DOMAIN_DELETE_FAILED', {
           domain: cdnInstance.domainName,
@@ -338,8 +345,10 @@ const cleanupApigwCdnResources = async (
 
     try {
       await client.dns.deleteDomainRecord(dnsInstance.dnsRecordId);
-    } catch {
-      // Best effort cleanup
+    } catch (error) {
+      if (!isApigwNotFoundError(error)) {
+        throw error;
+      }
     }
   }
 };
@@ -476,53 +485,65 @@ export const createApigwResource = async (
   const client = createAliyunClient(context);
 
   const groupConfig = eventToApigwGroupConfig(event, serviceName, context.stage);
+  const groupDefinition = extractApigwGroupDefinition(groupConfig);
   let groupId: string;
 
-  try {
-    const existingGroup = await client.apigw.findApiGroupByName(groupConfig.groupName);
-    if (existingGroup?.groupId) {
-      logger.info(lang.__('APIGW_GROUP_FOUND_REUSING', { groupName: groupConfig.groupName }));
-      groupId = existingGroup.groupId;
-    } else {
-      groupId = await client.apigw.createApiGroup(groupConfig);
-    }
-  } catch (error) {
-    logger.debug(`Could not find existing group, creating new: ${error}`);
-    groupId = await client.apigw.createApiGroup(groupConfig);
-  }
+  const buildResourceDefinition = (): Record<string, unknown> => ({
+    ...groupDefinition,
+    triggers: event.triggers.map((t) => ({
+      method: t.method,
+      path: t.path,
+      backend: t.backend,
+    })),
+    domain: extractEventDomainDefinition(event.domain),
+  });
 
-  // Get group info for state
-  const groupInfo = await client.apigw.getApiGroup(groupId);
-  if (!groupInfo) {
-    throw new Error(`Failed to get API group info after creation: ${groupId}`);
-  }
-
-  const instances: Array<ResourceInstance> = [
-    buildApigwGroupInstanceFromProvider(groupInfo, context.stage),
-  ];
-
-  const groupDefinition = extractApigwGroupDefinition(groupConfig);
-  const partialResourceState: ResourceState = {
+  // Persist a tainted state BEFORE any cloud side-effect so a group created
+  // in cloud but not yet tracked stays tracked if a later step fails.
+  let stateAfterDependents = setResource(state, logicalId, {
     mode: 'managed',
     region: context.region,
-    definition: {
-      ...groupDefinition,
-      triggers: event.triggers.map((t) => ({
-        method: t.method,
-        path: t.path,
-        backend: t.backend,
-      })),
-      domain: extractEventDomainDefinition(event.domain),
-    },
-    instances,
+    definition: buildResourceDefinition(),
+    instances: [],
     lastUpdated: new Date().toISOString(),
     status: 'tainted',
-  };
-
-  const stateAfterDependents = setResource(state, logicalId, partialResourceState);
-  let currentState = stateAfterDependents;
+  });
 
   try {
+    try {
+      const existingGroup = await client.apigw.findApiGroupByName(groupConfig.groupName);
+      if (existingGroup?.groupId) {
+        logger.info(lang.__('APIGW_GROUP_FOUND_REUSING', { groupName: groupConfig.groupName }));
+        groupId = existingGroup.groupId;
+      } else {
+        groupId = await client.apigw.createApiGroup(groupConfig);
+      }
+    } catch (error) {
+      logger.debug(`Could not find existing group, creating new: ${error}`);
+      groupId = await client.apigw.createApiGroup(groupConfig);
+    }
+
+    // Get group info for state
+    const groupInfo = await client.apigw.getApiGroup(groupId);
+    if (!groupInfo) {
+      throw new Error(`Failed to get API group info after creation: ${groupId}`);
+    }
+
+    const instances: Array<ResourceInstance> = [
+      buildApigwGroupInstanceFromProvider(groupInfo, context.stage),
+    ];
+
+    // Group id is now known - persist the tainted state carrying the group
+    // instance so a retry resumes from here if API creation fails below.
+    stateAfterDependents = setResource(stateAfterDependents, logicalId, {
+      mode: 'managed',
+      region: context.region,
+      definition: buildResourceDefinition(),
+      instances,
+      lastUpdated: new Date().toISOString(),
+      status: 'tainted',
+    });
+    let currentState = stateAfterDependents;
     // Create APIs and deployments for each trigger
     for (const trigger of event.triggers) {
       const apiConfig = triggerToApigwApiConfig(
@@ -652,31 +673,30 @@ export const createApigwResource = async (
         );
       }
     }
+    // Update final state with all instances (group + APIs + deployments)
+    const finalResourceState: ResourceState = {
+      mode: 'managed',
+      region: context.region,
+      definition: {
+        ...groupDefinition,
+        triggers: event.triggers.map((t) => ({
+          method: t.method,
+          path: t.path,
+          backend: t.backend,
+        })),
+        domain: extractEventDomainDefinition(event.domain),
+      },
+      instances,
+      lastUpdated: new Date().toISOString(),
+    };
+
+    return setResource(currentState, logicalId, finalResourceState);
   } catch (error) {
     throw new PartialResourceError(
       stateAfterDependents,
       error instanceof Error ? error : new Error(String(error)),
     );
   }
-
-  // Update final state with all instances (group + APIs + deployments)
-  const finalResourceState: ResourceState = {
-    mode: 'managed',
-    region: context.region,
-    definition: {
-      ...groupDefinition,
-      triggers: event.triggers.map((t) => ({
-        method: t.method,
-        path: t.path,
-        backend: t.backend,
-      })),
-      domain: extractEventDomainDefinition(event.domain),
-    },
-    instances,
-    lastUpdated: new Date().toISOString(),
-  };
-
-  return setResource(currentState, logicalId, finalResourceState);
 };
 
 export const readApigwResource = async (context: Context, groupId: string) => {
@@ -1031,6 +1051,9 @@ export const updateApigwResource = async (
         try {
           await client.apigw.unbindCustomDomain(groupId, previousWwwDomain);
         } catch (error) {
+          if (!isApigwNotFoundError(error)) {
+            throw error;
+          }
           logger.warn(
             lang.__('APIGW_WWW_DOMAIN_UNBIND_FAILED', {
               domain: previousWwwDomain,
@@ -1052,6 +1075,9 @@ export const updateApigwResource = async (
         try {
           await client.apigw.unbindCustomDomain(groupId, previousDomain);
         } catch (error) {
+          if (!isApigwNotFoundError(error)) {
+            throw error;
+          }
           logger.warn(
             lang.__('APIGW_DOMAIN_UNBIND_FAILED', { domain: previousDomain, error: String(error) }),
           );
@@ -1063,6 +1089,9 @@ export const updateApigwResource = async (
             try {
               await client.apigw.unbindCustomDomain(groupId, previousWwwDomain);
             } catch (error) {
+              if (!isApigwNotFoundError(error)) {
+                throw error;
+              }
               logger.warn(
                 lang.__('APIGW_WWW_DOMAIN_UNBIND_FAILED', {
                   domain: previousWwwDomain,
@@ -1131,6 +1160,9 @@ export const deleteApigwResource = async (
       try {
         await client.apigw.unbindCustomDomain(groupId, primaryDomain);
       } catch (error) {
+        if (!isApigwNotFoundError(error)) {
+          throw error;
+        }
         logger.warn(
           lang.__('APIGW_DOMAIN_UNBIND_FAILED', { domain: primaryDomain, error: String(error) }),
         );
@@ -1142,6 +1174,9 @@ export const deleteApigwResource = async (
           try {
             await client.apigw.unbindCustomDomain(groupId, wwwDomain);
           } catch (error) {
+            if (!isApigwNotFoundError(error)) {
+              throw error;
+            }
             logger.warn(
               lang.__('APIGW_WWW_DOMAIN_UNBIND_FAILED', {
                 domain: wwwDomain,
@@ -1156,19 +1191,55 @@ export const deleteApigwResource = async (
 
   const deployments = existingInstances.filter((i) => i.type === 'ALIYUN_APIGW_DEPLOYMENT');
   for (const deployment of deployments) {
-    await client.apigw.abolishApi(
-      (deployment.groupId as string) || groupId,
-      deployment.apiId as string,
-      (deployment.stageName as string) || 'RELEASE',
-    );
+    try {
+      await client.apigw.abolishApi(
+        (deployment.groupId as string) || groupId,
+        deployment.apiId as string,
+        (deployment.stageName as string) || 'RELEASE',
+      );
+    } catch (error) {
+      if (!isApigwNotFoundError(error)) {
+        throw error;
+      }
+      logger.warn(
+        lang.__('RESOURCE_NOT_FOUND_PROVIDER', {
+          resourceType: 'API deployment',
+          name: `${deployment.apiId as string}/${deployment.stageName as string}`,
+        }),
+      );
+    }
   }
 
   const apis = existingInstances.filter((i) => i.type === 'ALIYUN_APIGW_API');
   for (const api of apis) {
-    await client.apigw.deleteApi(groupId, api.id);
+    try {
+      await client.apigw.deleteApi(groupId, api.id);
+    } catch (error) {
+      if (!isApigwNotFoundError(error)) {
+        throw error;
+      }
+      logger.warn(
+        lang.__('RESOURCE_NOT_FOUND_PROVIDER', {
+          resourceType: 'API',
+          name: api.id,
+        }),
+      );
+    }
   }
 
-  await client.apigw.deleteApiGroup(groupId);
+  try {
+    await client.apigw.deleteApiGroup(groupId);
+  } catch (error) {
+    if (!isApigwNotFoundError(error)) {
+      throw error;
+    }
+    logger.warn(
+      lang.__('RESOURCE_NOT_FOUND_PROVIDER', {
+        resourceType: 'API Gateway group',
+        name: groupId,
+      }),
+    );
+  }
 
   return removeResource(state, logicalId);
 };

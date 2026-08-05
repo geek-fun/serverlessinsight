@@ -462,75 +462,65 @@ const deleteDependentResources = async (
   const client = createAliyunClient(context);
 
   for (const instance of [...instances].reverse()) {
-    try {
-      switch (instance.type) {
-        case 'ALIYUN_NAS_MOUNT_TARGET': {
-          const [fileSystemId, mountTargetDomain] = instance.id.split('/');
-          logger.info(lang.__('DELETING_NAS_MOUNT_TARGET', { id: instance.id }));
-          await client.nas.deleteMountTarget(fileSystemId, mountTargetDomain);
-          break;
-        }
-        case 'ALIYUN_NAS_FILE_SYSTEM':
-          logger.info(lang.__('DELETING_NAS_FILE_SYSTEM', { id: instance.id }));
-          await client.nas.deleteFileSystem(instance.id);
-          break;
-        case 'ALIYUN_NAS_ACCESS_GROUP':
-          logger.info(lang.__('DELETING_NAS_ACCESS_GROUP', { id: instance.id }));
-          await client.nas.deleteAccessGroup(instance.id);
-          break;
-        case 'ALIYUN_ECS_SECURITY_GROUP':
-          logger.info(lang.__('DELETING_SECURITY_GROUP', { id: instance.id }));
-          await client.ecs.deleteSecurityGroup(instance.id);
-          break;
-        case 'ALIYUN_RAM_ROLE': {
-          const ramInstance = instance as unknown as {
-            external?: boolean;
-            managedPolicies?: string[];
-          };
-          if (ramInstance.external) break; // Skip external roles
-          const managedPolicies = ramInstance.managedPolicies;
-          logger.info(lang.__('DELETING_RAM_ROLE', { id: instance.id }));
-          await client.ram.deleteRole(instance.id, managedPolicies);
-          break;
-        }
-        case 'ALIYUN_SLS_INDEX': {
-          const [projectName, logstoreName] = instance.id.split('/');
-          logger.info(lang.__('DELETING_SLS_INDEX', { id: instance.id }));
-          await client.sls.deleteIndex(projectName, logstoreName);
-          break;
-        }
-        case 'ALIYUN_SLS_LOGSTORE': {
-          const [projectName, logstoreName] = instance.id.split('/');
-          logger.info(lang.__('DELETING_SLS_LOGSTORE', { id: instance.id }));
-          await client.sls.deleteLogstore(projectName, logstoreName);
-          break;
-        }
-        case 'ALIYUN_SLS_PROJECT':
-          logger.info(lang.__('DELETING_SLS_PROJECT', { id: instance.id }));
-          await client.sls.deleteProject(instance.id);
-          break;
-        case 'ALIYUN_FC3_HTTP_TRIGGER':
-          // HTTP trigger deletion requires functionName which is not available here.
-          // It is handled directly in deleteResource before calling this function.
-          logger.warn(
-            `HTTP trigger '${instance.id}' should be deleted before reaching dependent resource cleanup`,
-          );
-          break;
-        case 'ALIYUN_FC3_CUSTOM_DOMAIN':
-          logger.info(lang.__('DELETING_CUSTOM_DOMAIN', { domainName: instance.id }));
-          await client.fc3.deleteCustomDomain(instance.id);
-          break;
-        default:
-          logger.warn(lang.__('UNKNOWN_RESOURCE_TYPE', { type: instance.type }));
+    switch (instance.type) {
+      case 'ALIYUN_NAS_MOUNT_TARGET': {
+        const [fileSystemId, mountTargetDomain] = instance.id.split('/');
+        logger.info(lang.__('DELETING_NAS_MOUNT_TARGET', { id: instance.id }));
+        await client.nas.deleteMountTarget(fileSystemId, mountTargetDomain);
+        break;
       }
-    } catch (err) {
-      logger.error(
-        lang.__('FAILED_TO_DELETE_RESOURCE', {
-          type: instance.type,
-          id: instance.id,
-          error: String(err),
-        }),
-      );
+      case 'ALIYUN_NAS_FILE_SYSTEM':
+        logger.info(lang.__('DELETING_NAS_FILE_SYSTEM', { id: instance.id }));
+        await client.nas.deleteFileSystem(instance.id);
+        break;
+      case 'ALIYUN_NAS_ACCESS_GROUP':
+        logger.info(lang.__('DELETING_NAS_ACCESS_GROUP', { id: instance.id }));
+        await client.nas.deleteAccessGroup(instance.id);
+        break;
+      case 'ALIYUN_ECS_SECURITY_GROUP':
+        logger.info(lang.__('DELETING_SECURITY_GROUP', { id: instance.id }));
+        await client.ecs.deleteSecurityGroup(instance.id);
+        break;
+      case 'ALIYUN_RAM_ROLE': {
+        const ramInstance = instance as unknown as {
+          external?: boolean;
+          managedPolicies?: string[];
+        };
+        if (ramInstance.external) break; // Skip external roles
+        const managedPolicies = ramInstance.managedPolicies;
+        logger.info(lang.__('DELETING_RAM_ROLE', { id: instance.id }));
+        await client.ram.deleteRole(instance.id, managedPolicies);
+        break;
+      }
+      case 'ALIYUN_SLS_INDEX': {
+        const [projectName, logstoreName] = instance.id.split('/');
+        logger.info(lang.__('DELETING_SLS_INDEX', { id: instance.id }));
+        await client.sls.deleteIndex(projectName, logstoreName);
+        break;
+      }
+      case 'ALIYUN_SLS_LOGSTORE': {
+        const [projectName, logstoreName] = instance.id.split('/');
+        logger.info(lang.__('DELETING_SLS_LOGSTORE', { id: instance.id }));
+        await client.sls.deleteLogstore(projectName, logstoreName);
+        break;
+      }
+      case 'ALIYUN_SLS_PROJECT':
+        logger.info(lang.__('DELETING_SLS_PROJECT', { id: instance.id }));
+        await client.sls.deleteProject(instance.id);
+        break;
+      case 'ALIYUN_FC3_HTTP_TRIGGER':
+        // HTTP trigger deletion requires functionName which is not available here.
+        // It is handled directly in deleteResource before calling this function.
+        logger.warn(
+          `HTTP trigger '${instance.id}' should be deleted before reaching dependent resource cleanup`,
+        );
+        break;
+      case 'ALIYUN_FC3_CUSTOM_DOMAIN':
+        logger.info(lang.__('DELETING_CUSTOM_DOMAIN', { domainName: instance.id }));
+        await client.fc3.deleteCustomDomain(instance.id);
+        break;
+      default:
+        logger.warn(lang.__('UNKNOWN_RESOURCE_TYPE', { type: instance.type }));
     }
   }
 };
@@ -677,7 +667,15 @@ export const createResource = async (
     }
   }
 
-  const functionInfo = await client.fc3.getFunction(fn.name);
+  let functionInfo: Fc3FunctionInfo | null;
+  try {
+    functionInfo = await client.fc3.getFunction(fn.name);
+  } catch (error) {
+    throw new PartialResourceError(
+      stateAfterDependents,
+      error instanceof Error ? error : new Error(String(error)),
+    );
+  }
   if (!functionInfo) {
     throw new PartialResourceError(
       stateAfterDependents,

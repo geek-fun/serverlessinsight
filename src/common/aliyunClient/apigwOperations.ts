@@ -173,6 +173,15 @@ export const isDomainAlreadyBoundError = (error: unknown): boolean => {
   );
 };
 
+export const isApigwNotFoundError = (error: unknown): boolean => {
+  if (!error || typeof error !== 'object') return false;
+  const err = error as { code?: string; message?: string };
+  return (
+    (typeof err.code === 'string' && err.code.includes('NotFound')) ||
+    (typeof err.message === 'string' && err.message.includes('NotFound'))
+  );
+};
+
 /* istanbul ignore next */
 export const createApigwOperations = (
   apigwClient: ApigwSdkClient,
@@ -602,12 +611,7 @@ export const createApigwOperations = (
           trafficLimit: response.body.trafficLimit,
         };
       } catch (error: unknown) {
-        if (
-          error &&
-          typeof error === 'object' &&
-          'code' in error &&
-          (error.code === 'NotFoundApiGroup' || error.code === 'InvalidGroupId.NotFound')
-        ) {
+        if (isApigwNotFoundError(error)) {
           return null;
         }
         throw error;
@@ -676,7 +680,20 @@ export const createApigwOperations = (
         groupId,
       });
 
-      await apigwClient.deleteApiGroup(request);
+      try {
+        await apigwClient.deleteApiGroup(request);
+      } catch (error: unknown) {
+        if (isApigwNotFoundError(error)) {
+          logger.warn(
+            lang.__('RESOURCE_NOT_FOUND_PROVIDER', {
+              resourceType: 'API Gateway group',
+              name: groupId,
+            }),
+          );
+          return;
+        }
+        throw error;
+      }
     },
 
     /**
@@ -812,12 +829,7 @@ export const createApigwOperations = (
           })),
         };
       } catch (error: unknown) {
-        if (
-          error &&
-          typeof error === 'object' &&
-          'code' in error &&
-          (error.code === 'NotFoundApi' || error.code === 'InvalidApiId.NotFound')
-        ) {
+        if (isApigwNotFoundError(error)) {
           return null;
         }
         throw error;
@@ -907,7 +919,20 @@ export const createApigwOperations = (
         apiId,
       });
 
-      await apigwClient.deleteApi(request);
+      try {
+        await apigwClient.deleteApi(request);
+      } catch (error: unknown) {
+        if (isApigwNotFoundError(error)) {
+          logger.warn(
+            lang.__('RESOURCE_NOT_FOUND_PROVIDER', {
+              resourceType: 'API',
+              name: apiId,
+            }),
+          );
+          return;
+        }
+        throw error;
+      }
     },
 
     /**
@@ -934,7 +959,20 @@ export const createApigwOperations = (
         stageName,
       });
 
-      await apigwClient.abolishApi(request);
+      try {
+        await apigwClient.abolishApi(request);
+      } catch (error: unknown) {
+        if (isApigwNotFoundError(error)) {
+          logger.warn(
+            lang.__('RESOURCE_NOT_FOUND_PROVIDER', {
+              resourceType: `API deployment ${apiId}`,
+              name: stageName,
+            }),
+          );
+          return;
+        }
+        throw error;
+      }
     },
 
     /**
@@ -1127,7 +1165,20 @@ export const createApigwOperations = (
         domainName,
       });
 
-      await apigwClient.deleteDomain(request);
+      try {
+        await apigwClient.deleteDomain(request);
+      } catch (error: unknown) {
+        if (isApigwNotFoundError(error)) {
+          logger.warn(
+            lang.__('RESOURCE_NOT_FOUND_PROVIDER', {
+              resourceType: 'custom domain',
+              name: domainName,
+            }),
+          );
+          return;
+        }
+        throw error;
+      }
     },
   };
 };

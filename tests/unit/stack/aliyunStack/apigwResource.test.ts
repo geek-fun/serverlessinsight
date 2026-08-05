@@ -76,6 +76,7 @@ const mockedLogger = {
 };
 
 jest.mock('../../../../src/common/aliyunClient', () => ({
+  ...jest.requireActual('../../../../src/common/aliyunClient'),
   createAliyunClient: () => ({
     apigw: mockedApigwOperations,
     cas: mockedCasOperations,
@@ -235,10 +236,62 @@ describe('ApigwResource', () => {
       mockedApigwOperations.findApiGroupByName.mockRejectedValue(new Error('Not found'));
       mockedApigwOperations.createApiGroup.mockResolvedValue('group-123');
       mockedApigwOperations.getApiGroup.mockResolvedValue(null);
+      mockedStateManager.setResource.mockImplementation(
+        (state: StateFile, logicalId: string, resourceState: unknown) => ({
+          ...state,
+          resources: { ...state.resources, [logicalId]: resourceState },
+        }),
+      );
 
-      await expect(
-        createApigwResource(mockContext, testEvent, 'test-service', undefined, initialState),
-      ).rejects.toThrow('Failed to get API group info after creation');
+      const error = await createApigwResource(
+        mockContext,
+        testEvent,
+        'test-service',
+        undefined,
+        initialState,
+      ).catch((e: unknown) => e);
+
+      expect(error).toBeInstanceOf(PartialResourceError);
+      const partialError = error as PartialResourceError;
+      expect(partialError.cause.message).toContain('Failed to get API group info after creation');
+      expect(partialError.updatedState.resources['events.api_gateway']).toMatchObject({
+        status: 'tainted',
+      });
+    });
+
+    it('should throw PartialResourceError with tainted state when getApiGroup fails after group creation', async () => {
+      mockedApigwOperations.findApiGroupByName.mockRejectedValue(new Error('Not found'));
+      mockedApigwOperations.createApiGroup.mockResolvedValue('group-123');
+      mockedApigwOperations.getApiGroup.mockRejectedValue(new Error('group fetch failed'));
+      mockedApigwTypes.eventToApigwGroupConfig.mockReturnValue({
+        groupName: 'test-api-group',
+      });
+      mockedApigwTypes.extractApigwGroupDefinition.mockReturnValue({});
+      mockedApigwTypes.triggerToApigwApiConfig.mockReturnValue({
+        apiName: 'test-api',
+      });
+      mockedApigwTypes.extractEventDomainDefinition.mockReturnValue(null);
+      mockedStateManager.setResource.mockImplementation(
+        (state: StateFile, logicalId: string, resourceState: unknown) => ({
+          ...state,
+          resources: { ...state.resources, [logicalId]: resourceState },
+        }),
+      );
+
+      const error = await createApigwResource(
+        mockContext,
+        testEvent,
+        'test-service',
+        undefined,
+        initialState,
+      ).catch((e: unknown) => e);
+
+      expect(error).toBeInstanceOf(PartialResourceError);
+      const partialError = error as PartialResourceError;
+      expect(partialError.updatedState.resources['events.api_gateway']).toMatchObject({
+        status: 'tainted',
+      });
+      expect(partialError.cause.message).toBe('group fetch failed');
     });
 
     it('should throw PartialResourceError with tainted state when createApi fails after group creation', async () => {
@@ -649,6 +702,74 @@ describe('ApigwResource', () => {
       );
     });
 
+    it('should tolerate NOT-FOUND deleteApi errors during deletion', async () => {
+      const existingState = {
+        instances: [
+          { type: 'ALIYUN_APIGW_GROUP', id: 'group-123' },
+          { type: 'ALIYUN_APIGW_API', id: 'api-456' },
+        ],
+        definition: {},
+      };
+
+      mockedStateManager.getResource.mockReturnValue(existingState);
+      mockedApigwOperations.deleteApi.mockRejectedValue({ code: 'NotFoundApi' });
+      mockedApigwOperations.deleteApiGroup.mockResolvedValue(undefined);
+
+      await deleteApigwResource(mockContext, 'events.api_gateway', initialState);
+
+      expect(mockedApigwOperations.deleteApiGroup).toHaveBeenCalled();
+      expect(mockedStateManager.removeResource).toHaveBeenCalled();
+    });
+
+    it('should tolerate NOT-FOUND abolishApi and deleteApiGroup errors during deletion', async () => {
+      const existingState = {
+        instances: [
+          { type: 'ALIYUN_APIGW_GROUP', id: 'group-123' },
+          { type: 'ALIYUN_APIGW_API', id: 'api-456' },
+          {
+            type: 'ALIYUN_APIGW_DEPLOYMENT',
+            groupId: 'group-123',
+            apiId: 'api-456',
+            stageName: 'RELEASE',
+          },
+        ],
+        definition: {},
+      };
+
+      mockedStateManager.getResource.mockReturnValue(existingState);
+      mockedApigwOperations.abolishApi.mockRejectedValue({ code: 'NotFoundDeployment' });
+      mockedApigwOperations.deleteApi.mockRejectedValue({ code: 'InvalidApiId.NotFound' });
+      mockedApigwOperations.deleteApiGroup.mockRejectedValue({ code: 'NotFoundApiGroup' });
+
+      await deleteApigwResource(mockContext, 'events.api_gateway', initialState);
+
+      expect(mockedStateManager.removeResource).toHaveBeenCalled();
+    });
+
+    it('should keep resource in state when delete fails mid-sequence after a successful sub-delete', async () => {
+      const existingState = {
+        instances: [
+          { type: 'ALIYUN_APIGW_GROUP', id: 'group-123' },
+          { type: 'ALIYUN_APIGW_API', id: 'api-456' },
+        ],
+        definition: {
+          domain: { domainName: 'example.com', wwwBindApex: false },
+        },
+      };
+
+      mockedStateManager.getResource.mockReturnValue(existingState);
+      mockedApigwOperations.unbindCustomDomain.mockResolvedValue(undefined);
+      mockedApigwOperations.deleteApi.mockRejectedValue(new Error('auth failed'));
+
+      await expect(
+        deleteApigwResource(mockContext, 'events.api_gateway', initialState),
+      ).rejects.toThrow('auth failed');
+      expect(mockedStateManager.removeResource).not.toHaveBeenCalledWith(
+        expect.anything(),
+        'events.api_gateway',
+      );
+    });
+
     it('should delete CDN resources during deletion for CDN-backed domain', async () => {
       const existingState = {
         instances: [
@@ -709,7 +830,7 @@ describe('ApigwResource', () => {
       );
     });
 
-    it('should warn when primary domain unbind fails during deletion', async () => {
+    it('should propagate primary domain unbind failure during deletion', async () => {
       const existingState = {
         instances: [{ type: 'ALIYUN_APIGW_GROUP', id: 'group-123' }],
         definition: {
@@ -724,12 +845,16 @@ describe('ApigwResource', () => {
       mockedApigwOperations.unbindCustomDomain.mockRejectedValue(new Error('unbind failed'));
       mockedApigwOperations.deleteApiGroup.mockResolvedValue(undefined);
 
-      await deleteApigwResource(mockContext, 'events.api_gateway', initialState);
-
-      expect(mockedLogger.warn).toHaveBeenCalled();
+      await expect(
+        deleteApigwResource(mockContext, 'events.api_gateway', initialState),
+      ).rejects.toThrow('unbind failed');
+      expect(mockedStateManager.removeResource).not.toHaveBeenCalledWith(
+        expect.anything(),
+        'events.api_gateway',
+      );
     });
 
-    it('should warn when www domain unbind fails during deletion', async () => {
+    it('should propagate www domain unbind failure during deletion', async () => {
       const existingState = {
         instances: [{ type: 'ALIYUN_APIGW_GROUP', id: 'group-123' }],
         definition: {
@@ -751,9 +876,13 @@ describe('ApigwResource', () => {
       );
       mockedApigwOperations.deleteApiGroup.mockResolvedValue(undefined);
 
-      await deleteApigwResource(mockContext, 'events.api_gateway', initialState);
-
-      expect(mockedLogger.warn).toHaveBeenCalled();
+      await expect(
+        deleteApigwResource(mockContext, 'events.api_gateway', initialState),
+      ).rejects.toThrow('www unbind failed');
+      expect(mockedStateManager.removeResource).not.toHaveBeenCalledWith(
+        expect.anything(),
+        'events.api_gateway',
+      );
     });
 
     it('should clean up DNS records with real record IDs', async () => {
@@ -2235,7 +2364,7 @@ describe('ApigwResource', () => {
       expect(mockedApigwOperations.unbindCustomDomain).not.toHaveBeenCalled();
     });
 
-    it('should warn on CDN deletion failure and skip DNS cleanup without record id', async () => {
+    it('should propagate CDN deletion failure during update', async () => {
       setupBasicUpdateMocks();
       const existingState = {
         instances: [
@@ -2275,16 +2404,14 @@ describe('ApigwResource', () => {
         },
       };
 
-      await updateApigwResource(
-        mockContext,
-        eventWithDomain,
-        'test-service',
-        undefined,
-        initialState,
+      await expect(
+        updateApigwResource(mockContext, eventWithDomain, 'test-service', undefined, initialState),
+      ).rejects.toThrow('cdn delete failed');
+      expect(mockedStateManager.setResource).not.toHaveBeenLastCalledWith(
+        expect.anything(),
+        'events.api_gateway',
+        expect.objectContaining({ instances: expect.anything() }),
       );
-
-      expect(mockedLogger.warn).toHaveBeenCalled();
-      expect(mockedDnsOperations.deleteDomainRecord).not.toHaveBeenCalled();
     });
 
     it('should throw when CDN is enabled and group has no subDomain during update', async () => {
@@ -2462,7 +2589,7 @@ describe('ApigwResource', () => {
       );
     });
 
-    it('should warn when unbinding previous www domain fails', async () => {
+    it('should propagate previous www domain unbind failure during update', async () => {
       setupBasicUpdateMocks();
       const existingState = {
         instances: [
@@ -2495,15 +2622,10 @@ describe('ApigwResource', () => {
         },
       };
 
-      await updateApigwResource(
-        mockContext,
-        eventWithDomain,
-        'test-service',
-        undefined,
-        initialState,
-      );
-
-      expect(mockedLogger.warn).toHaveBeenCalled();
+      await expect(
+        updateApigwResource(mockContext, eventWithDomain, 'test-service', undefined, initialState),
+      ).rejects.toThrow('unbind failed');
+      expect(mockedStateManager.setResource).not.toHaveBeenCalled();
     });
 
     it('should unbind old domain when domain is removed from event', async () => {
@@ -2525,7 +2647,6 @@ describe('ApigwResource', () => {
       mockedApigwTypes.extractEventDomainDefinition.mockReturnValue(null);
       mockedApigwOperations.unbindCustomDomain.mockResolvedValue(undefined);
 
-      // Event without domain
       const eventNoDomain: EventDomain = {
         ...testEvent,
         domain: undefined,
@@ -2545,7 +2666,7 @@ describe('ApigwResource', () => {
       );
     });
 
-    it('should warn when unbinding old domain fails on removal', async () => {
+    it('should propagate unbind failure when removing old domain', async () => {
       setupBasicUpdateMocks();
       const existingState = {
         instances: [
@@ -2569,15 +2690,10 @@ describe('ApigwResource', () => {
         domain: undefined,
       };
 
-      await updateApigwResource(
-        mockContext,
-        eventNoDomain,
-        'test-service',
-        undefined,
-        initialState,
-      );
-
-      expect(mockedLogger.warn).toHaveBeenCalled();
+      await expect(
+        updateApigwResource(mockContext, eventNoDomain, 'test-service', undefined, initialState),
+      ).rejects.toThrow('unbind err');
+      expect(mockedStateManager.setResource).not.toHaveBeenCalled();
     });
 
     it('should unbind old domain and old www domain when domain is removed', async () => {
@@ -2622,7 +2738,7 @@ describe('ApigwResource', () => {
       );
     });
 
-    it('should warn when www domain unbind fails during domain removal', async () => {
+    it('should propagate www domain unbind failure during domain removal', async () => {
       setupBasicUpdateMocks();
       const existingState = {
         instances: [
@@ -2653,6 +2769,36 @@ describe('ApigwResource', () => {
         domain: undefined,
       };
 
+      await expect(
+        updateApigwResource(mockContext, eventNoDomain, 'test-service', undefined, initialState),
+      ).rejects.toThrow('www unbind failed');
+      expect(mockedStateManager.setResource).not.toHaveBeenCalled();
+    });
+
+    it('should tolerate NOT-FOUND unbind error when removing old domain', async () => {
+      setupBasicUpdateMocks();
+      const existingState = {
+        instances: [
+          { type: 'ALIYUN_APIGW_GROUP', id: 'group-123' },
+          { type: 'ALIYUN_APIGW_API', id: 'api-456', apiName: 'test-api' },
+        ],
+        definition: {
+          domain: {
+            domainName: 'old-domain.com',
+            wwwBindApex: false,
+          },
+        },
+      };
+
+      mockedStateManager.getResource.mockReturnValue(existingState);
+      mockedApigwTypes.extractEventDomainDefinition.mockReturnValue(null);
+      mockedApigwOperations.unbindCustomDomain.mockRejectedValue({ code: 'NotFoundDomain' });
+
+      const eventNoDomain: EventDomain = {
+        ...testEvent,
+        domain: undefined,
+      };
+
       await updateApigwResource(
         mockContext,
         eventNoDomain,
@@ -2661,7 +2807,7 @@ describe('ApigwResource', () => {
         initialState,
       );
 
-      expect(mockedLogger.warn).toHaveBeenCalled();
+      expect(mockedStateManager.setResource).toHaveBeenCalled();
     });
 
     it('should create new API when no matching existing API found during update', async () => {

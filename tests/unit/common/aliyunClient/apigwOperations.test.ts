@@ -2,6 +2,7 @@ import {
   createApigwOperations,
   isNetworkTimeoutError,
   isDomainAlreadyBoundError,
+  isApigwNotFoundError,
   type ApigwApiConfig,
 } from '../../../../src/common/aliyunClient/apigwOperations';
 import type { Context, StateFile } from '../../../../src/types';
@@ -195,6 +196,54 @@ describe('isDomainAlreadyBoundError', () => {
 
   it('should return false for generic errors', () => {
     expect(isDomainAlreadyBoundError(new Error('Some other error'))).toBe(false);
+  });
+});
+
+describe('isApigwNotFoundError', () => {
+  it('should return true for NotFoundApi code', () => {
+    expect(isApigwNotFoundError({ code: 'NotFoundApi' })).toBe(true);
+  });
+
+  it('should return true for NotFoundApiGroup code', () => {
+    expect(isApigwNotFoundError({ code: 'NotFoundApiGroup' })).toBe(true);
+  });
+
+  it('should return true for NotFoundDeployment code', () => {
+    expect(isApigwNotFoundError({ code: 'NotFoundDeployment' })).toBe(true);
+  });
+
+  it('should return true for InvalidGroupId.NotFound code', () => {
+    expect(isApigwNotFoundError({ code: 'InvalidGroupId.NotFound' })).toBe(true);
+  });
+
+  it('should return true for InvalidApiId.NotFound code', () => {
+    expect(isApigwNotFoundError({ code: 'InvalidApiId.NotFound' })).toBe(true);
+  });
+
+  it('should return true for bare NotFound code', () => {
+    expect(isApigwNotFoundError({ code: 'NotFound' })).toBe(true);
+  });
+
+  it('should return true for message containing NotFound', () => {
+    expect(isApigwNotFoundError({ message: 'The specified Api is NotFound' })).toBe(true);
+  });
+
+  it('should return false for real errors', () => {
+    expect(isApigwNotFoundError({ code: 'Forbidden', message: 'Access denied' })).toBe(false);
+    expect(isApigwNotFoundError({ code: 'Throttling', message: 'Rate limit exceeded' })).toBe(
+      false,
+    );
+  });
+
+  it('should return false for null/undefined/non-objects', () => {
+    expect(isApigwNotFoundError(null)).toBe(false);
+    expect(isApigwNotFoundError(undefined)).toBe(false);
+    expect(isApigwNotFoundError('NotFound')).toBe(false);
+    expect(isApigwNotFoundError(42)).toBe(false);
+  });
+
+  it('should return false for generic Error objects', () => {
+    expect(isApigwNotFoundError(new Error('some other error'))).toBe(false);
   });
 });
 

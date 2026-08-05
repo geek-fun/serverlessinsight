@@ -464,6 +464,44 @@ describe('Fc3Resource', () => {
       );
     });
 
+    it('should throw PartialResourceError with tainted state when final refresh getFunction rejects', async () => {
+      const refreshError = new Error('refresh failed');
+      mockedFc3Operations.getFunction.mockRejectedValue(refreshError);
+      mockedFc3Operations.createFunction.mockResolvedValue(undefined);
+
+      const taintedState = {
+        ...initialState,
+        resources: {
+          'functions.test_fn': {
+            mode: 'managed',
+            region: 'cn-hangzhou',
+            definition: mockDefinition,
+            instances: [],
+            lastUpdated: expect.any(String),
+            status: 'tainted',
+          },
+        },
+      };
+      mockedStateManager.setResource.mockReturnValue(taintedState);
+
+      await expect(createResource(mockContext, testFunction, initialState)).rejects.toThrow(
+        PartialResourceError,
+      );
+
+      try {
+        await createResource(mockContext, testFunction, initialState);
+      } catch (err) {
+        expect(err).toBeInstanceOf(PartialResourceError);
+        const partialErr = err as PartialResourceError;
+        expect(partialErr.cause).toBe(refreshError);
+        expect(partialErr.cause.message).toBe('refresh failed');
+        expect(partialErr.updatedState).toEqual(taintedState);
+        expect(partialErr.updatedState.resources['functions.test_fn']).toMatchObject({
+          status: 'tainted',
+        });
+      }
+    });
+
     it('should skip createFunction when function exists in provider during tainted recovery', async () => {
       const taintedState: StateFile = {
         ...initialState,
@@ -1833,7 +1871,7 @@ describe('Fc3Resource', () => {
       expect(mockedSlsOperations.deleteProject).toHaveBeenCalledWith('test-sls');
     });
 
-    it('should log error and continue when dependent resource deletion fails', async () => {
+    it('should propagate dependent resource deletion failure and keep state', async () => {
       const stateWithDeps: StateFile = {
         ...initialState,
         resources: {
@@ -1868,16 +1906,13 @@ describe('Fc3Resource', () => {
       mockedSlsOperations.deleteProject.mockResolvedValue(undefined);
       mockedStateManager.removeResource.mockReturnValue(initialState);
 
-      const result = await deleteResource(
-        mockContext,
-        'test-function',
-        'functions.test_fn',
-        stateWithDeps,
-      );
+      await expect(
+        deleteResource(mockContext, 'test-function', 'functions.test_fn', stateWithDeps),
+      ).rejects.toThrow('role delete failed');
 
-      expect(mockedLogger.error).toHaveBeenCalledWith(expect.stringContaining('ALIYUN_RAM_ROLE'));
       expect(mockedSlsOperations.deleteProject).toHaveBeenCalled();
-      expect(result).toEqual(initialState);
+      expect(mockedRamOperations.deleteRole).toHaveBeenCalled();
+      expect(mockedStateManager.removeResource).not.toHaveBeenCalled();
     });
 
     it('should warn for unknown resource type during dependent deletion', async () => {
