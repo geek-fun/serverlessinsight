@@ -798,16 +798,30 @@ export const updateResource = async (
         });
       }
     } else {
-      logger.info(lang.__('CREATING_HTTP_TRIGGER', { triggerName, functionName: fn.name }));
-      await client.scf.createTrigger({
-        FunctionName: fn.name,
-        TriggerName: triggerName,
-        Type: 'http',
-        TriggerDesc: desiredTriggerDesc,
-        Qualifier: '$DEFAULT',
-        Enable: 'OPEN',
-      });
-      logger.info(lang.__('HTTP_TRIGGER_CREATED', { triggerName, functionName: fn.name }));
+      // No trigger recorded in state — but a leftover trigger may still exist
+      // in the provider (e.g. adopted function whose state lacked trigger
+      // records). Probe before creating to stay idempotent.
+      const probe = await client.scf.getFunction(fn.name);
+      const providerTriggerAttached = (probe?.Triggers ?? []).some(
+        (t) => t.TriggerName === triggerName && t.Type === 'http',
+      );
+
+      if (providerTriggerAttached) {
+        logger.info(
+          `HTTP trigger ${triggerName} already attached to ${fn.name}, skipping creation`,
+        );
+      } else {
+        logger.info(lang.__('CREATING_HTTP_TRIGGER', { triggerName, functionName: fn.name }));
+        await client.scf.createTrigger({
+          FunctionName: fn.name,
+          TriggerName: triggerName,
+          Type: 'http',
+          TriggerDesc: desiredTriggerDesc,
+          Qualifier: '$DEFAULT',
+          Enable: 'OPEN',
+        });
+        logger.info(lang.__('HTTP_TRIGGER_CREATED', { triggerName, functionName: fn.name }));
+      }
     }
   } else if (existingHttpTrigger) {
     const tName = existingHttpTrigger.triggerName as string;

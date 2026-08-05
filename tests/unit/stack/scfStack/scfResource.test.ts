@@ -1073,6 +1073,59 @@ describe('ScfResource', () => {
   });
 
   describe('updateResource', () => {
+    it('should skip createTrigger when state lacks trigger record but provider already has it', async () => {
+      const fnWithTrigger = {
+        ...testFunction,
+        triggers: { http: { auth_type: 'public' as const } },
+      };
+      (mockScfOperations.updateFunctionConfiguration as jest.Mock).mockResolvedValue(undefined);
+      (mockScfOperations.updateFunctionCode as jest.Mock).mockResolvedValue(undefined);
+      (stateManager.setResource as jest.Mock).mockReturnValue(initialState);
+      // State has NO trigger record (adopted function) → the else-branch probe
+      // must find the trigger already attached in the provider and skip create.
+      (stateManager.getResource as jest.Mock).mockReturnValue({
+        mode: 'managed',
+        region: 'ap-guangzhou',
+        definition: { ...mockDefinition },
+        instances: [],
+        lastUpdated: '2025-01-01T00:00:00Z',
+      });
+      (mockScfOperations.getFunction as jest.Mock).mockResolvedValue({
+        ...mockFunctionInfo,
+        Triggers: [{ TriggerName: 'test_fn-http-trigger', Type: 'http' }],
+      });
+
+      const result = await updateResource(mockContext, fnWithTrigger, initialState);
+
+      expect(mockScfOperations.createTrigger).not.toHaveBeenCalled();
+      expect(result).toEqual(initialState);
+    });
+
+    it('should createTrigger when state lacks trigger record and provider has none', async () => {
+      const fnWithTrigger = {
+        ...testFunction,
+        triggers: { http: { auth_type: 'public' as const } },
+      };
+      (mockScfOperations.updateFunctionConfiguration as jest.Mock).mockResolvedValue(undefined);
+      (mockScfOperations.updateFunctionCode as jest.Mock).mockResolvedValue(undefined);
+      (stateManager.setResource as jest.Mock).mockReturnValue(initialState);
+      (stateManager.getResource as jest.Mock).mockReturnValue({
+        mode: 'managed',
+        region: 'ap-guangzhou',
+        definition: { ...mockDefinition },
+        instances: [],
+        lastUpdated: '2025-01-01T00:00:00Z',
+      });
+      (mockScfOperations.getFunction as jest.Mock).mockResolvedValue({
+        ...mockFunctionInfo,
+        Triggers: [],
+      });
+
+      await updateResource(mockContext, fnWithTrigger, initialState);
+
+      expect(mockScfOperations.createTrigger).toHaveBeenCalledTimes(1);
+    });
+
     it('should update resource and refresh state from provider', async () => {
       const newState = {
         ...initialState,
