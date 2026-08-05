@@ -323,6 +323,12 @@ export const createResource = async (
 ): Promise<StateFile> => {
   const logicalId = `functions.${fn.key}`;
 
+  // Fail config validation BEFORE any cloud operation or tainted-state write,
+  // so an invalid trigger config can never strand a partially-created resource.
+  if (fn.triggers?.http && !fn.triggers.http.auth_type) {
+    throw new Error(lang.__('HTTP_TRIGGER_AUTH_TYPE_REQUIRED', { functionName: fn.name }));
+  }
+
   const existingResourceState = getResource(state, logicalId);
   const existingDependentInstances = (existingResourceState?.instances ?? []).filter(
     (i) => (i as ScfDependentInstance).type !== undefined,
@@ -429,10 +435,6 @@ export const createResource = async (
 
   // Create HTTP trigger if configured
   if (fn.triggers?.http) {
-    if (!fn.triggers.http.auth_type) {
-      throw new Error(lang.__('HTTP_TRIGGER_AUTH_TYPE_REQUIRED', { functionName: fn.name }));
-    }
-
     const authType = mapAuthType(ProviderEnum.TENCENT, fn.triggers.http.auth_type);
     const access = mapAccess(fn.triggers.http.access);
     const triggerName = `${fn.key}-http-trigger`;
@@ -525,7 +527,15 @@ export const createResource = async (
   }
 
   // Refresh state from provider to get all attributes (including triggers)
-  const functionInfo = await client.scf.getFunction(fn.name);
+  let functionInfo;
+  try {
+    functionInfo = await client.scf.getFunction(fn.name);
+  } catch (error) {
+    throw new PartialResourceError(
+      stateAfterDependents,
+      error instanceof Error ? error : new Error(String(error)),
+    );
+  }
   if (!functionInfo) {
     throw new PartialResourceError(
       stateAfterDependents,
