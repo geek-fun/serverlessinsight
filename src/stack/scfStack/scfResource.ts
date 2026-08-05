@@ -17,6 +17,7 @@ import { logger } from '../../common/logger';
 import { lang } from '../../lang';
 import type { IamStatement } from '../../common/iamStatements';
 import { OWNERSHIP_TAG_KEY, buildOwnershipTagValue, isOwnedByStack } from '../ownershipTag';
+import { isResourceAlreadyExistsError } from '../alreadyExists';
 
 /**
  * Build the Function URL trigger description for Tencent CreateTrigger
@@ -120,26 +121,6 @@ const isRecoverableCreateError = (error: unknown): boolean => {
     message.includes('socket hang up') ||
     message.includes('econnreset') ||
     message.includes('etimedout')
-  );
-};
-
-// Already-exists check for create errors (function or trigger). Tencent
-// reports ResourceInUse with a localized message "指定的Function已存在，请勿重复创建".
-// Deliberately does NOT match timeouts/network errors, which must propagate so
-// a missing resource is never silently swallowed.
-const isResourceAlreadyExistsError = (error: unknown): boolean => {
-  const code =
-    error && typeof error === 'object' && 'code' in error && typeof error.code === 'string'
-      ? error.code.toLowerCase()
-      : '';
-
-  const message =
-    error instanceof Error ? error.message.toLowerCase() : String(error).toLowerCase();
-
-  return (
-    code.includes('resourceinuse') ||
-    message.includes('已存在') ||
-    message.includes('already exist')
   );
 };
 
