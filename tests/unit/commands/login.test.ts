@@ -201,7 +201,7 @@ describe('login command', () => {
     const mockRes = { writeHead: jest.fn(), end: jest.fn() };
     await handler(
       {
-        url: '/callback?api_key=si_abcdef123456_0123456789abcdef0123456789abcdef01&org_id=org-1&org_name=Test%20Org&user_email=user%40test.com',
+        url: '/callback?api_key=si_abcdef123456_0123456789abcdef0123456789abcdef01&org_id=org-1&org_name=Test%20Org&user_email=user%40test.com&app_id=app-1',
       },
       mockRes,
     );
@@ -218,5 +218,41 @@ describe('login command', () => {
       orgName: 'Test Org',
       userEmail: 'user@test.com',
     });
+    // Success page redirects back to the Console API-keys panel
+    expect(mockRes.writeHead).toHaveBeenCalledWith(200, {
+      'Content-Type': 'text/html; charset=utf-8',
+    });
+    const html = mockRes.end.mock.calls[0][0] as string;
+    expect(html).toContain('https://console.console.test.com/app-1/membership/api-keys');
+  });
+
+  it('callback without app_id redirects to the Console root', async () => {
+    mockReadlineAnswer = '1';
+
+    const openMock = jest.requireMock('open') as jest.Mock;
+    openMock.mockImplementation(() => Promise.resolve());
+
+    const createServerMock = jest.requireMock('node:http').createServer as jest.Mock;
+    mockServer.listen.mockImplementationOnce((_port: unknown, _host: unknown, cb: () => void) => {
+      cb();
+      return mockServer;
+    });
+
+    const loginPromise = login({});
+    await new Promise((resolve) => setTimeout(resolve, 50));
+
+    const handler = createServerMock.mock.calls[0][0];
+    const mockRes = { writeHead: jest.fn(), end: jest.fn() };
+    await handler(
+      {
+        url: '/callback?api_key=si_abcdef123456_0123456789abcdef0123456789abcdef01&org_id=org-1',
+      },
+      mockRes,
+    );
+
+    await loginPromise;
+
+    const html = mockRes.end.mock.calls[0][0] as string;
+    expect(html).toContain('https://console.console.test.com"');
   });
 });

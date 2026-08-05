@@ -55,6 +55,7 @@ const loginWithBrowser = async (consoleUrl: string): Promise<boolean> => {
   logger.info(lang.__('LOGIN_STARTING_SERVER'));
 
   return new Promise<boolean>((resolve) => {
+    const uiUrl = resolveConsoleUiUrl({ consoleUrl });
     const server: Server = createServer(async (req, res) => {
       if (!req.url) return;
       const url = new URL(req.url, `http://127.0.0.1:${randomPort}`);
@@ -62,8 +63,32 @@ const loginWithBrowser = async (consoleUrl: string): Promise<boolean> => {
 
       if (key && url.pathname === '/callback') {
         apiKey = key;
-        res.writeHead(200, { 'Content-Type': 'text/plain' });
-        res.end('Authorization received. You may close this window.');
+        const appId = url.searchParams.get('app_id') ?? '';
+        const target = appId ? `${uiUrl}/${appId}/membership/api-keys` : uiUrl;
+        const escapedTarget = target
+          .replace(/&/g, '&amp;')
+          .replace(/"/g, '&quot;')
+          .replace(/</g, '&lt;')
+          .replace(/>/g, '&gt;');
+        res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
+        res.end(`<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>Authorization received</title>
+  <meta http-equiv="refresh" content="3; url=${escapedTarget}" />
+</head>
+<body style="font-family: system-ui, sans-serif; display: flex; align-items: center; justify-content: center; min-height: 100vh; margin: 0; background: #fafafa;">
+  <div style="text-align: center; padding: 24px;">
+    <h1 style="font-size: 20px; margin-bottom: 8px;">Authorization received ✅</h1>
+    <p style="color: #666; font-size: 14px;">You may close this window.</p>
+    <p style="color: #666; font-size: 13px; margin-top: 16px;">
+      Redirecting to Console in 3 seconds...
+      <a href="${escapedTarget}">Go now</a>
+    </p>
+  </div>
+</body>
+</html>`);
         clearTimeout(timeoutTimer);
         server.closeAllConnections();
         server.close();
@@ -82,7 +107,6 @@ const loginWithBrowser = async (consoleUrl: string): Promise<boolean> => {
     });
 
     server.listen(randomPort, '127.0.0.1', () => {
-      const uiUrl = resolveConsoleUiUrl({ consoleUrl });
       const redirectUri = `http://127.0.0.1:${randomPort}/callback`;
       const fullUrl = `${uiUrl}/cli/authorize?redirect_uri=${encodeURIComponent(redirectUri)}`;
 
