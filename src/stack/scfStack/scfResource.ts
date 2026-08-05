@@ -10,7 +10,7 @@ import { createTencentClient } from '../../common/tencentClient';
 import { readFileAsBase64 } from '../../common/fileUtils';
 import { functionToScfConfig, extractScfDefinition, ScfFunctionInfo } from './scfTypes';
 import { getResource, setResource, removeResource } from '../../common/stateManager';
-import { buildSid, attributesEqual, ProviderEnum, mapAuthType } from '../../common';
+import { buildSid, attributesEqual, ProviderEnum, mapAuthType, mapAccess } from '../../common';
 import { RAM_ROLE_PROPAGATION_DELAY_MS } from '../../common/constants';
 import { computeFileHash } from '../../common/hashUtils';
 import { logger } from '../../common/logger';
@@ -18,21 +18,23 @@ import { lang } from '../../lang';
 import type { IamStatement } from '../../common/iamStatements';
 
 /**
- * Build the API Gateway trigger description for Tencent CreateTrigger.
- * Format (official Trigger Configuration Description): { api: { authRequired,
- * requestConfig: { method }, isIntegratedResponse }, service: { serviceName },
- * release: { environmentName } }. authRequired is FALSE when mapAuthType
- * returned 'NONE' (public, no auth) and TRUE otherwise.
+ * Build the Function URL trigger description for Tencent CreateTrigger
+ * (Type: 'http'). Format per official docs (创建函数 URL / Creating a Function
+ * URL): { AuthType, NetConfig: { EnableIntranet, EnableExtranet } }.
+ * AuthType is the mapAuthType result ('NONE' = no auth, 'CAM' = CAM auth);
+ * the API Gateway trigger format ({ api/service/release }) is obsolete —
+ * Tencent shut down new API Gateway triggers on 2024-07-01.
  */
-const buildTencentTriggerDesc = (authType: string): string =>
+const buildTencentTriggerDesc = (
+  authType: string,
+  netConfig: { enableIntranet?: boolean; enableExtranet?: boolean },
+): string =>
   JSON.stringify({
-    api: {
-      authRequired: authType === 'NONE' ? 'FALSE' : 'TRUE',
-      requestConfig: { method: 'ANY' },
-      isIntegratedResponse: 'FALSE',
+    AuthType: authType,
+    NetConfig: {
+      EnableIntranet: netConfig.enableIntranet ?? false,
+      EnableExtranet: netConfig.enableExtranet ?? true,
     },
-    service: { serviceName: 'SCF_API_SERVICE' },
-    release: { environmentName: 'release' },
   });
 
 type ScfDependentInstance = {
@@ -470,9 +472,10 @@ export const createResource = async (
   // Create HTTP trigger if configured
   if (fn.triggers?.http) {
     const authType = mapAuthType(ProviderEnum.TENCENT, fn.triggers.http.auth_type);
+    const access = mapAccess(fn.triggers.http.access);
     const triggerName = `${fn.key}-http-trigger`;
 
-    const triggerDesc = buildTencentTriggerDesc(authType);
+    const triggerDesc = buildTencentTriggerDesc(authType, access);
 
     // Probe the provider for an already-attached trigger BEFORE attempting to
     // create it. A leftover trigger from a previous partial run (function exists
@@ -707,8 +710,9 @@ export const updateResource = async (
     }
 
     const authType = mapAuthType(ProviderEnum.TENCENT, desiredHttpConfig.auth_type);
+    const access = mapAccess(desiredHttpConfig.access);
     const triggerName = `${fn.key}-http-trigger`;
-    const desiredTriggerDesc = buildTencentTriggerDesc(authType);
+    const desiredTriggerDesc = buildTencentTriggerDesc(authType, access);
 
     if (existingHttpTrigger) {
       if (existingHttpTrigger.triggerDesc !== desiredTriggerDesc) {
