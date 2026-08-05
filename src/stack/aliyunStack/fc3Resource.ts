@@ -679,7 +679,10 @@ export const createResource = async (
 
   const functionInfo = await client.fc3.getFunction(fn.name);
   if (!functionInfo) {
-    throw new Error(`Failed to refresh state for function: ${fn.name}`);
+    throw new PartialResourceError(
+      stateAfterDependents,
+      new Error(`Failed to refresh state for function: ${fn.name}`),
+    );
   }
 
   const sid = buildSid('aliyun', 'fc3', context.stage, fn.name);
@@ -687,56 +690,63 @@ export const createResource = async (
   const fcInstance = buildFc3InstanceFromProvider(functionInfo, sid);
 
   const lifecycleInstances = [];
-  if (fn.triggers?.http) {
-    const triggerConfig = buildHttpTriggerConfig(fn.triggers.http);
+  try {
+    if (fn.triggers?.http) {
+      const triggerConfig = buildHttpTriggerConfig(fn.triggers.http);
 
-    logger.info(
-      lang.__('CREATING_HTTP_TRIGGER', { triggerName: 'http-trigger', functionName: fn.name }),
-    );
-    await client.fc3.createTrigger(fn.name, 'http-trigger', 'http', triggerConfig);
-    logger.info(
-      lang.__('HTTP_TRIGGER_CREATED', { triggerName: 'http-trigger', functionName: fn.name }),
-    );
+      logger.info(
+        lang.__('CREATING_HTTP_TRIGGER', { triggerName: 'http-trigger', functionName: fn.name }),
+      );
+      await client.fc3.createTrigger(fn.name, 'http-trigger', 'http', triggerConfig);
+      logger.info(
+        lang.__('HTTP_TRIGGER_CREATED', { triggerName: 'http-trigger', functionName: fn.name }),
+      );
 
-    lifecycleInstances.push({
-      type: 'ALIYUN_FC3_HTTP_TRIGGER',
-      id: 'http-trigger',
-      sid: buildSid('aliyun', 'fc3-http-trigger', context.stage, fn.name),
-      attributes: { ...triggerConfig } as unknown as Record<string, unknown>,
-    });
-  }
-
-  if (fn.domain) {
-    logger.info(lang.__('CREATING_CUSTOM_DOMAIN', { domainName: fn.domain.domain_name }));
-
-    let certConfig: { certName: string; certificate: string; privateKey: string } | undefined;
-    if (fn.domain.certificate_id) {
-      const certId = fn.domain.certificate_id;
-      const detail = await client.cas.getCertificate(certId);
-      if (!detail || !detail.cert || !detail.key) {
-        throw new Error(lang.__('CERT_REFERENCE_NOT_FOUND', { reference: certId }));
-      }
-      certConfig = {
-        certName: `${context.service}-${context.stage}-fc3-domain`,
-        certificate: detail.cert,
-        privateKey: detail.key,
-      };
+      lifecycleInstances.push({
+        type: 'ALIYUN_FC3_HTTP_TRIGGER',
+        id: 'http-trigger',
+        sid: buildSid('aliyun', 'fc3-http-trigger', context.stage, fn.name),
+        attributes: { ...triggerConfig } as unknown as Record<string, unknown>,
+      });
     }
 
-    await client.fc3.createCustomDomain(
-      fn.domain.domain_name,
-      fn.domain.protocol,
-      fn.name,
-      certConfig,
-    );
-    logger.info(lang.__('CUSTOM_DOMAIN_CREATED', { domainName: fn.domain.domain_name }));
+    if (fn.domain) {
+      logger.info(lang.__('CREATING_CUSTOM_DOMAIN', { domainName: fn.domain.domain_name }));
 
-    lifecycleInstances.push({
-      type: 'ALIYUN_FC3_CUSTOM_DOMAIN',
-      id: fn.domain.domain_name,
-      sid: buildSid('aliyun', 'fc3-custom-domain', context.stage, fn.domain.domain_name),
-      attributes: { protocol: fn.domain.protocol, certificate_id: fn.domain.certificate_id },
-    });
+      let certConfig: { certName: string; certificate: string; privateKey: string } | undefined;
+      if (fn.domain.certificate_id) {
+        const certId = fn.domain.certificate_id;
+        const detail = await client.cas.getCertificate(certId);
+        if (!detail || !detail.cert || !detail.key) {
+          throw new Error(lang.__('CERT_REFERENCE_NOT_FOUND', { reference: certId }));
+        }
+        certConfig = {
+          certName: `${context.service}-${context.stage}-fc3-domain`,
+          certificate: detail.cert,
+          privateKey: detail.key,
+        };
+      }
+
+      await client.fc3.createCustomDomain(
+        fn.domain.domain_name,
+        fn.domain.protocol,
+        fn.name,
+        certConfig,
+      );
+      logger.info(lang.__('CUSTOM_DOMAIN_CREATED', { domainName: fn.domain.domain_name }));
+
+      lifecycleInstances.push({
+        type: 'ALIYUN_FC3_CUSTOM_DOMAIN',
+        id: fn.domain.domain_name,
+        sid: buildSid('aliyun', 'fc3-custom-domain', context.stage, fn.domain.domain_name),
+        attributes: { protocol: fn.domain.protocol, certificate_id: fn.domain.certificate_id },
+      });
+    }
+  } catch (error) {
+    throw new PartialResourceError(
+      stateAfterDependents,
+      error instanceof Error ? error : new Error(String(error)),
+    );
   }
 
   const resourceState: ResourceState = {

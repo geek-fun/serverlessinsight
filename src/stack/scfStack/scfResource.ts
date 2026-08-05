@@ -472,7 +472,12 @@ export const createResource = async (
             `HTTP trigger ${triggerName} already exists on ${fn.name}, continuing: ${String(error)}`,
           );
         } else {
-          throw error;
+          // The function exists in the cloud but the trigger failed to attach —
+          // persist the tainted state so a re-run reconciles instead of losing it.
+          throw new PartialResourceError(
+            stateAfterDependents,
+            error instanceof Error ? error : new Error(String(error)),
+          );
         }
       }
     }
@@ -481,21 +486,28 @@ export const createResource = async (
   // Create custom domain if configured
   if (fn.domain) {
     logger.info(lang.__('CREATING_CUSTOM_DOMAIN', { domainName: fn.domain.domain_name }));
-    await client.scf.createCustomDomain({
-      Domain: fn.domain.domain_name,
-      Protocol: fn.domain.protocol,
-      EndpointsConfig: [
-        {
-          Namespace: 'default',
-          FunctionName: fn.name,
-          Qualifier: '$DEFAULT',
-          PathMatch: '/*',
-        },
-      ],
-      ...(fn.domain.certificate_id
-        ? { CertConfig: { CertificateId: fn.domain.certificate_id } }
-        : {}),
-    });
+    try {
+      await client.scf.createCustomDomain({
+        Domain: fn.domain.domain_name,
+        Protocol: fn.domain.protocol,
+        EndpointsConfig: [
+          {
+            Namespace: 'default',
+            FunctionName: fn.name,
+            Qualifier: '$DEFAULT',
+            PathMatch: '/*',
+          },
+        ],
+        ...(fn.domain.certificate_id
+          ? { CertConfig: { CertificateId: fn.domain.certificate_id } }
+          : {}),
+      });
+    } catch (error) {
+      throw new PartialResourceError(
+        stateAfterDependents,
+        error instanceof Error ? error : new Error(String(error)),
+      );
+    }
     logger.info(lang.__('CUSTOM_DOMAIN_CREATED', { domainName: fn.domain.domain_name }));
 
     const domainSid = buildSid(
@@ -515,7 +527,10 @@ export const createResource = async (
   // Refresh state from provider to get all attributes (including triggers)
   const functionInfo = await client.scf.getFunction(fn.name);
   if (!functionInfo) {
-    throw new Error(`Failed to refresh state for function: ${fn.name}`);
+    throw new PartialResourceError(
+      stateAfterDependents,
+      new Error(`Failed to refresh state for function: ${fn.name}`),
+    );
   }
 
   const sid = buildSid('tencent', 'scf', context.stage, fn.name);

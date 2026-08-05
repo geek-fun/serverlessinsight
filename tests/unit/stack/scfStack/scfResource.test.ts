@@ -413,6 +413,45 @@ describe('ScfResource', () => {
       await assertion;
     });
 
+    it('should throw PartialResourceError with tainted state when createTrigger fails', async () => {
+      const triggerError = new Error('Create trigger failed');
+      (mockScfOperations.createFunction as jest.Mock).mockResolvedValue(undefined);
+      (mockScfOperations.getFunction as jest.Mock).mockResolvedValue(mockFunctionInfo);
+      (mockScfOperations.createTrigger as jest.Mock).mockRejectedValue(triggerError);
+
+      const fnWithHttpTrigger = {
+        ...testFunction,
+        triggers: { http: { auth_type: 'public' as const } },
+      };
+
+      const taintedState = {
+        ...initialState,
+        resources: {
+          'functions.test_fn': {
+            mode: 'managed',
+            region: 'ap-guangzhou',
+            definition: mockDefinition,
+            instances: [],
+            lastUpdated: expect.any(String),
+            status: 'tainted',
+          },
+        },
+      };
+      (stateManager.setResource as jest.Mock).mockReturnValue(taintedState);
+
+      await expect(
+        createResource(mockContext, fnWithHttpTrigger, initialState),
+      ).rejects.toMatchObject({
+        name: 'PartialResourceError',
+        cause: { message: 'Create trigger failed' },
+        updatedState: expect.objectContaining({
+          resources: expect.objectContaining({
+            'functions.test_fn': expect.objectContaining({ status: 'tainted' }),
+          }),
+        }),
+      });
+    });
+
     it('should skip createFunction and refresh when state is tainted and cloud has function', async () => {
       const taintedState: StateFile = {
         ...initialState,
@@ -435,9 +474,9 @@ describe('ScfResource', () => {
             mode: 'managed',
             region: 'ap-guangzhou',
             definition: mockDefinition,
-            instances: expect.any(Array),
-            lastUpdated: expect.any(String),
-            status: 'ready',
+            instances: [],
+            lastUpdated: '2025-01-01T00:00:00Z',
+            status: 'tainted',
           },
         },
       };

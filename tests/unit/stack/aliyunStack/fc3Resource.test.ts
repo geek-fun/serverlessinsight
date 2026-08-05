@@ -655,6 +655,41 @@ describe('Fc3Resource', () => {
       );
     });
 
+    it('should throw PartialResourceError with tainted state when createTrigger fails', async () => {
+      const fnWithTrigger = {
+        ...testFunction,
+        triggers: { http: { auth_type: 'public' as const } },
+      };
+
+      const triggerError = new Error('Create trigger failed');
+      mockedFc3Operations.createTrigger.mockRejectedValue(triggerError);
+
+      const taintedState = {
+        ...initialState,
+        resources: {
+          'functions.test_fn': {
+            mode: 'managed',
+            region: 'cn-hangzhou',
+            definition: mockDefinition,
+            instances: [],
+            lastUpdated: expect.any(String),
+            status: 'tainted',
+          },
+        },
+      };
+      mockedStateManager.setResource.mockReturnValue(taintedState);
+
+      await expect(createResource(mockContext, fnWithTrigger, initialState)).rejects.toMatchObject({
+        name: 'PartialResourceError',
+        cause: { message: 'Create trigger failed' },
+        updatedState: expect.objectContaining({
+          resources: expect.objectContaining({
+            'functions.test_fn': expect.objectContaining({ status: 'tainted' }),
+          }),
+        }),
+      });
+    });
+
     it('should create custom domain when domain is configured', async () => {
       const fnWithDomain = {
         ...testFunction,
