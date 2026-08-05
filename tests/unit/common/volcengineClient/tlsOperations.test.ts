@@ -56,6 +56,52 @@ describe('tlsOperations', () => {
         }),
       );
     });
+
+    it('should tolerate ProjectAlreadyExists and adopt the existing project', async () => {
+      const alreadyExistsError = new Error('Already exists') as Error & { code: string };
+      alreadyExistsError.code = 'ProjectAlreadyExists';
+
+      mockClient.fetchOpenAPI
+        .mockRejectedValueOnce(alreadyExistsError) // CreateProject collides
+        .mockResolvedValueOnce({
+          Result: {
+            ProjectId: 'existing-project-id',
+            ProjectName: 'test-project',
+            Status: 'Active',
+          },
+        }); // GetProject adoption
+
+      const result = await operations.createProject({
+        projectName: 'test-project',
+        description: 'Test project',
+        region: 'cn-beijing',
+      });
+
+      expect(result.projectName).toBe('test-project');
+      expect(result.projectId).toBe('existing-project-id');
+      expect(mockClient.fetchOpenAPI).toHaveBeenCalledTimes(2);
+    });
+
+    it('should tolerate ResourceAlreadyExists on createProject', async () => {
+      const alreadyExistsError = new Error('Already exists') as Error & { code: string };
+      alreadyExistsError.code = 'ResourceAlreadyExists';
+
+      mockClient.fetchOpenAPI.mockRejectedValueOnce(alreadyExistsError).mockResolvedValueOnce({
+        Result: {
+          ProjectId: 'existing-project-id',
+          ProjectName: 'test-project',
+          Status: 'Active',
+        },
+      });
+
+      const result = await operations.createProject({
+        projectName: 'test-project',
+        description: 'Test project',
+        region: 'cn-beijing',
+      });
+
+      expect(result.projectId).toBe('existing-project-id');
+    });
   });
 
   describe('getProject', () => {
@@ -153,6 +199,33 @@ describe('tlsOperations', () => {
           Action: 'CreateTopic',
         }),
       );
+    });
+
+    it('should tolerate TopicAlreadyExists and adopt the existing topic', async () => {
+      const alreadyExistsError = new Error('Already exists') as Error & { code: string };
+      alreadyExistsError.code = 'TopicAlreadyExists';
+
+      mockClient.fetchOpenAPI
+        .mockRejectedValueOnce(alreadyExistsError) // CreateTopic collides
+        .mockResolvedValueOnce({
+          Result: {
+            TopicId: 'existing-topic-id',
+            TopicName: 'test-topic',
+            ProjectName: 'test-project',
+            Status: 'Active',
+          },
+        }); // GetTopic adoption
+
+      const result = await operations.createTopic({
+        projectName: 'test-project',
+        topicName: 'test-topic',
+        description: 'Test topic',
+        ttl: 30,
+      });
+
+      expect(result.topicName).toBe('test-topic');
+      expect(result.topicId).toBe('existing-topic-id');
+      expect(mockClient.fetchOpenAPI).toHaveBeenCalledTimes(2);
     });
   });
 
@@ -261,6 +334,24 @@ describe('tlsOperations', () => {
           Action: 'CreateIndex',
         }),
       );
+    });
+
+    it('should tolerate IndexAlreadyExists on createIndex', async () => {
+      const alreadyExistsError = new Error('Already exists') as Error & { code: string };
+      alreadyExistsError.code = 'IndexAlreadyExists';
+
+      mockClient.fetchOpenAPI.mockRejectedValueOnce(alreadyExistsError);
+
+      await expect(
+        operations.createIndex({
+          projectName: 'test-project',
+          topicName: 'test-topic',
+          fullTextIndex: {
+            delimiter: ' ,.?',
+            caseSensitive: false,
+          },
+        }),
+      ).resolves.toBeUndefined();
     });
   });
 

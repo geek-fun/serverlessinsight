@@ -770,6 +770,64 @@ describe('vefaasResource', () => {
       expect(mockVefaasClient.tls.createTopic).toHaveBeenCalled();
     });
 
+    it('should throw PartialResourceError with tainted state when TLS dependent creation fails partially', async () => {
+      const mockFunctionWithLog: FunctionDomain = {
+        ...mockFunction,
+        log: true,
+      };
+
+      const stateWithoutTls: StateFile = {
+        ...mockState,
+        resources: {
+          'functions.test_fn': {
+            mode: 'managed',
+            region: 'cn-beijing',
+            definition: {
+              functionName: 'test-function',
+              codeHash: 'test-hash-123',
+              runtime: 'nodejs16',
+              handler: 'index.handler',
+              memorySize: 128,
+              timeout: 30,
+            },
+            instances: [
+              {
+                type: 'VOLCENGINE_VEFAAS_FUNCTION',
+                sid: 'volcengine-test-service-dev-test-function',
+                id: 'test-function',
+                functionName: 'test-function',
+              },
+              {
+                type: 'VOLCENGINE_IAM_ROLE',
+                sid: 'volcengine-iam_role-dev-test-app-test-service-dev-role',
+                id: 'test-app-test-service-dev-role',
+                trn: 'trn:iam::123456:role/test-app-test-service-dev-role',
+              },
+            ],
+            lastUpdated: '2024-01-01T00:00:00Z',
+          },
+        },
+      };
+
+      (getResource as jest.Mock).mockReturnValue(stateWithoutTls.resources['functions.test_fn']);
+      (attributesEqual as jest.Mock).mockReturnValue(true);
+
+      // Project created in cloud, topic creation fails -> partial failure.
+      mockVefaasClient.tls.createProject.mockResolvedValue({ projectName: 'test-project' });
+      mockVefaasClient.tls.createTopic.mockRejectedValue(new Error('topic creation failed'));
+
+      const error = await updateResource(mockContext, mockFunctionWithLog, stateWithoutTls).catch(
+        (e: unknown) => e,
+      );
+
+      expect(error).toBeInstanceOf(PartialResourceError);
+      const partialError = error as PartialResourceError;
+      expect(partialError.updatedState.resources['functions.test_fn']).toMatchObject({
+        status: 'tainted',
+      });
+      expect(partialError.cause.message).toBe('topic creation failed');
+    });
+
     it('should create IAM role when not present in state', async () => {
       const stateWithoutIamRole: StateFile = {
         ...mockState,

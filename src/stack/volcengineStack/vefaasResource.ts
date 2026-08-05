@@ -456,15 +456,30 @@ export const updateResource = async (
   let role: { roleName: string; trn: string } | undefined;
 
   if (fn.log && !hasTlsResources && !isTainted) {
-    const deps = await createDependentResources(
-      context,
-      { ...fn, network: undefined, storage: { disk: undefined, nas: undefined } },
-      serviceName,
-    );
-    logConfig = deps.logConfig;
-    newDependentInstances.push(
-      ...deps.instances.filter((i) => i.type.startsWith('VOLCENGINE_TLS_')),
-    );
+    // Persist a tainted state BEFORE creating dependent TLS resources so a
+    // partial failure (e.g. project created but topic creation fails) leaves a
+    // tainted marker for the executor instead of orphaning cloud resources
+    // untracked. A retry then resumes with the tainted state.
+    const stateAfterDependents = setResource(state, logicalId, {
+      ...currentState,
+      status: 'tainted',
+    });
+    try {
+      const deps = await createDependentResources(
+        context,
+        { ...fn, network: undefined, storage: { disk: undefined, nas: undefined } },
+        serviceName,
+      );
+      logConfig = deps.logConfig;
+      newDependentInstances.push(
+        ...deps.instances.filter((i) => i.type.startsWith('VOLCENGINE_TLS_')),
+      );
+    } catch (error) {
+      throw new PartialResourceError(
+        stateAfterDependents,
+        error instanceof Error ? error : new Error(String(error)),
+      );
+    }
   } else if (hasTlsResources) {
     const tlsProjectInstance = existingInstances.find((i) => i.type === 'VOLCENGINE_TLS_PROJECT');
     const tlsTopicInstance = existingInstances.find((i) => i.type === 'VOLCENGINE_TLS_TOPIC');

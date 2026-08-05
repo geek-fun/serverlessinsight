@@ -85,6 +85,9 @@ export type MockAliyunClient = {
     createIndex: jest.Mock;
     waitForProject: jest.Mock;
     waitForLogstore: jest.Mock;
+    deleteIndex: jest.Mock;
+    deleteLogstore: jest.Mock;
+    deleteProject: jest.Mock;
   };
   dns: {
     addDomainRecord: jest.Mock;
@@ -206,6 +209,9 @@ export const createMockAliyunClient = (): MockAliyunClient => ({
     createIndex: jest.fn().mockResolvedValue({}),
     waitForProject: jest.fn().mockResolvedValue({}),
     waitForLogstore: jest.fn().mockResolvedValue({}),
+    deleteIndex: jest.fn().mockResolvedValue(undefined),
+    deleteLogstore: jest.fn().mockResolvedValue(undefined),
+    deleteProject: jest.fn().mockResolvedValue(undefined),
   },
   dns: {
     addDomainRecord: jest.fn().mockResolvedValue('record-123'),
