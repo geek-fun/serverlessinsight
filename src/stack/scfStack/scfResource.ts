@@ -16,6 +16,7 @@ import { computeFileHash } from '../../common/hashUtils';
 import { logger } from '../../common/logger';
 import { lang } from '../../lang';
 import type { IamStatement } from '../../common/iamStatements';
+import { OWNERSHIP_TAG_KEY, buildOwnershipTagValue, isOwnedByStack } from '../ownershipTag';
 
 /**
  * Build the Function URL trigger description for Tencent CreateTrigger
@@ -115,11 +116,11 @@ const isRecoverableCreateError = (error: unknown): boolean => {
   );
 };
 
-// Narrow already-exists check for trigger-create errors — used only as a
-// backstop when adopting a function whose triggers were not visible in the
-// provider refresh. Deliberately does NOT match timeouts/network errors, which
-// must propagate so a missing trigger is never silently swallowed.
-const isTriggerAlreadyExistsError = (error: unknown): boolean => {
+// Already-exists check for create errors (function or trigger). Tencent
+// reports ResourceInUse with a localized message "指定的Function已存在，请勿重复创建".
+// Deliberately does NOT match timeouts/network errors, which must propagate so
+// a missing resource is never silently swallowed.
+const isResourceAlreadyExistsError = (error: unknown): boolean => {
   const code =
     error && typeof error === 'object' && 'code' in error && typeof error.code === 'string'
       ? error.code.toLowerCase()
@@ -383,6 +384,7 @@ export const createResource = async (
   );
 
   let config = functionToScfConfig(fn);
+  config.Tags = [{ Key: OWNERSHIP_TAG_KEY, Value: buildOwnershipTagValue(context, logicalId) }];
 
   if (dependentResources.role) {
     config = {
@@ -464,6 +466,27 @@ export const createResource = async (
       } else {
         throw new PartialResourceError(stateAfterDependents, new Error(toErrorMessage(error)));
       }
+    } else if (isResourceAlreadyExistsError(error)) {
+      // Idempotent adoption: the function already exists in the provider.
+      // Adopt it ONLY if it carries our ownership tag (proves a previous run
+      // of THIS stack created it — e.g. state was reset). An untagged
+      // same-named function may belong to another project, so it must fail
+      // loudly rather than silently taking it over (destroy would then remove
+      // a resource that was never ours).
+      const probe = await client.scf.getFunction(fn.name);
+      if (probe && isOwnedByStack(context, logicalId, probe.Tags)) {
+        adoptedInfo = probe;
+        logger.info(
+          `Function ${fn.name} exists and carries ownership tag (${OWNERSHIP_TAG_KEY}), adopting idempotently`,
+        );
+      } else {
+        throw new PartialResourceError(
+          stateAfterDependents,
+          new Error(
+            `Function ${fn.name} already exists in provider but is not owned by this stack (missing ${OWNERSHIP_TAG_KEY} tag). Refusing to adopt — resolve manually.`,
+          ),
+        );
+      }
     } else {
       throw new PartialResourceError(stateAfterDependents, new Error(toErrorMessage(error)));
     }
@@ -512,7 +535,7 @@ export const createResource = async (
 
         logger.info(lang.__('HTTP_TRIGGER_CREATED', { triggerName, functionName: fn.name }));
       } catch (error) {
-        if (isTriggerAlreadyExistsError(error)) {
+        if (isResourceAlreadyExistsError(error)) {
           logger.warn(
             `HTTP trigger ${triggerName} already exists on ${fn.name}, continuing: ${String(error)}`,
           );

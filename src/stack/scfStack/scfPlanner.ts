@@ -10,6 +10,7 @@ import { createTencentClient } from '../../common/tencentClient';
 import { functionToScfConfig, extractScfDefinition } from './scfTypes';
 import { getAllResources, getResource } from '../../common/stateManager';
 import { attributesEqual, computeFileHash } from '../../common/hashUtils';
+import { OWNERSHIP_TAG_KEY, isOwnedByStack } from '../ownershipTag';
 
 const planFunctionDeletion = (logicalId: string, definition: ResourceAttributes): PlanItem => ({
   logicalId,
@@ -45,6 +46,18 @@ export const generateFunctionPlan = async (
       const desiredDefinition = extractScfDefinition(config, desiredCodeHash, fn.iam);
 
       if (!currentState || currentState.status === 'tainted') {
+        // No usable local state: probe the provider before planning create.
+        // If a same-named function already exists WITHOUT our ownership tag it
+        // may belong to another project — fail fast in the plan instead of
+        // letting the executor discover it mid-deploy.
+        const client = createTencentClient(context);
+        const remoteFunction = await client.scf.getFunction(fn.name);
+        if (remoteFunction && !isOwnedByStack(context, logicalId, remoteFunction.Tags)) {
+          throw new Error(
+            `Function ${fn.name} already exists in provider but is not owned by this stack (missing ${OWNERSHIP_TAG_KEY} tag). Refusing to create — resolve manually.`,
+          );
+        }
+
         return {
           logicalId,
           action: 'create',

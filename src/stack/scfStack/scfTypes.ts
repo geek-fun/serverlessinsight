@@ -30,6 +30,7 @@ export type ScfFunctionConfig = {
     ImageType?: string;
     ImageUri?: string;
   };
+  Tags?: Array<{ Key: string; Value: string }>;
 };
 
 export type ScfTrigger = {

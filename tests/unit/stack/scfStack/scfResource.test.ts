@@ -382,6 +382,42 @@ describe('ScfResource', () => {
       });
     });
 
+    it('should idempotently adopt an existing function that carries our ownership tag', async () => {
+      const existsError = Object.assign(new Error('指定的Function已存在，请勿重复创建。'), {
+        code: 'ResourceInUse',
+      });
+      (mockScfOperations.createFunction as jest.Mock).mockRejectedValue(existsError);
+      (mockScfOperations.getFunction as jest.Mock).mockResolvedValue({
+        ...mockFunctionInfo,
+        Tags: [{ Key: 'si-owned-by', Value: 'test-app-test-service:functions.test_fn' }],
+      });
+      (stateManager.setResource as jest.Mock).mockReturnValue(initialState);
+      (stateManager.getResource as jest.Mock).mockReturnValue(undefined);
+
+      const result = await createResource(mockContext, testFunction, initialState);
+
+      expect(mockScfOperations.createFunction).toHaveBeenCalledTimes(1);
+      expect(result).toBe(initialState);
+    });
+
+    it('should reject adoption when existing function lacks our ownership tag', async () => {
+      const existsError = Object.assign(new Error('指定的Function已存在，请勿重复创建。'), {
+        code: 'ResourceInUse',
+      });
+      (mockScfOperations.createFunction as jest.Mock).mockRejectedValue(existsError);
+      (mockScfOperations.getFunction as jest.Mock).mockResolvedValue({
+        ...mockFunctionInfo,
+        Tags: [{ Key: 'other-project-tag', Value: 'someone-else' }],
+      });
+      (stateManager.setResource as jest.Mock).mockReturnValue(initialState);
+      (stateManager.getResource as jest.Mock).mockReturnValue(undefined);
+
+      await expect(createResource(mockContext, testFunction, initialState)).rejects.toMatchObject({
+        name: 'PartialResourceError',
+        cause: { message: expect.stringContaining('not owned by this stack') },
+      });
+    });
+
     it('should persist tainted state via PartialResourceError on createFunction failure', async () => {
       jest.useFakeTimers();
 
@@ -541,12 +577,14 @@ describe('ScfResource', () => {
       );
     });
 
-    it('should throw PartialResourceError on already-exists when state not tainted', async () => {
+    it('should reject already-exists when state not tainted and function lacks ownership tag', async () => {
       const alreadyExistsError = {
         code: 'ResourceInUse',
         message: '指定的Function已存在，请勿重复创建',
       };
       (mockScfOperations.createFunction as jest.Mock).mockRejectedValue(alreadyExistsError);
+      // Provider probe returns an existing function WITHOUT our tag → refuse to adopt
+      (mockScfOperations.getFunction as jest.Mock).mockResolvedValue(mockFunctionInfo);
 
       const taintedState = {
         ...initialState,
@@ -565,6 +603,7 @@ describe('ScfResource', () => {
 
       await expect(createResource(mockContext, testFunction, initialState)).rejects.toMatchObject({
         name: 'PartialResourceError',
+        cause: { message: expect.stringContaining('not owned by this stack') },
         updatedState: expect.objectContaining({
           resources: expect.objectContaining({
             'functions.test_fn': expect.objectContaining({ status: 'tainted' }),
@@ -572,11 +611,10 @@ describe('ScfResource', () => {
         }),
       });
 
-      // Non-recoverable on the non-tainted path: no reconciliation getFunction is
-      // attempted and the state never reaches 'ready' — the already-exists must
-      // surface so the user resolves the collision manually.
+      // Ownership-tag check ran (probe happened) but the untagged function was
+      // not adopted — state never reaches 'ready'.
       expect(mockScfOperations.createFunction).toHaveBeenCalledTimes(1);
-      expect(mockScfOperations.getFunction).not.toHaveBeenCalled();
+      expect(mockScfOperations.getFunction).toHaveBeenCalled();
       expect(stateManager.setResource).not.toHaveBeenCalledWith(
         expect.anything(),
         'functions.test_fn',
@@ -584,8 +622,9 @@ describe('ScfResource', () => {
       );
     });
 
-    it('should throw PartialResourceError on already-exists when only the code matches (ResourceInUse)', async () => {
+    it('should reject already-exists when only the code matches (ResourceInUse) and no ownership tag', async () => {
       (mockScfOperations.createFunction as jest.Mock).mockRejectedValue({ code: 'ResourceInUse' });
+      (mockScfOperations.getFunction as jest.Mock).mockResolvedValue(mockFunctionInfo);
 
       const taintedState = {
         ...initialState,
@@ -604,6 +643,7 @@ describe('ScfResource', () => {
 
       await expect(createResource(mockContext, testFunction, initialState)).rejects.toMatchObject({
         name: 'PartialResourceError',
+        cause: { message: expect.stringContaining('not owned by this stack') },
         updatedState: expect.objectContaining({
           resources: expect.objectContaining({
             'functions.test_fn': expect.objectContaining({ status: 'tainted' }),
@@ -611,8 +651,9 @@ describe('ScfResource', () => {
         }),
       });
 
-      // The ResourceInUse code-level match was removed from isRecoverableCreateError.
-      expect(mockScfOperations.getFunction).not.toHaveBeenCalled();
+      // ResourceInUse still triggers the ownership-tag probe (idempotent
+      // adoption path), but an untagged function is refused.
+      expect(mockScfOperations.getFunction).toHaveBeenCalled();
     });
 
     it('should reconcile with provider after a recoverable Timeout create error (non-tainted)', async () => {

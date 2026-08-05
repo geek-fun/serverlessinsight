@@ -17,6 +17,7 @@ export type ScfFunctionConfig = {
       Value: string;
     }>;
   };
+  Tags?: Array<{ Key: string; Value: string }>;
 };
 
 export type ScfFunctionInfo = {

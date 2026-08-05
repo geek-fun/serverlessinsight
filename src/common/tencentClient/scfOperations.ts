@@ -38,6 +38,7 @@ export const createScfOperations = (scfClient: ScfSdkClient) => {
         Timeout: config.Timeout,
         ...(config.Role && { Role: config.Role }),
         ...(config.Environment && { Environment: config.Environment }),
+        ...(config.Tags && { Tags: config.Tags }),
       };
 
       await scfClient.CreateFunction(params);
