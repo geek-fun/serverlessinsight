@@ -65,6 +65,7 @@ const loginWithBrowser = async (consoleUrl: string): Promise<boolean> => {
         res.writeHead(200, { 'Content-Type': 'text/plain' });
         res.end('Authorization received. You may close this window.');
         clearTimeout(timeoutTimer);
+        server.closeAllConnections();
         server.close();
 
         const orgId = url.searchParams.get('org_id') || '';
@@ -97,6 +98,7 @@ const loginWithBrowser = async (consoleUrl: string): Promise<boolean> => {
 
     const timeoutTimer = setTimeout(() => {
       if (apiKey === null) {
+        server.closeAllConnections();
         server.close();
         logger.error(lang.__('LOGIN_TIMEOUT'));
         resolve(false);

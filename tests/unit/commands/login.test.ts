@@ -41,6 +41,7 @@ jest.mock('node:readline', () => ({
 const mockServer = {
   listen: jest.fn(),
   close: jest.fn(),
+  closeAllConnections: jest.fn(),
 };
 jest.mock('node:http', () => ({
   ...jest.requireActual('node:http'),
@@ -209,6 +210,7 @@ describe('login command', () => {
 
     expect(openMock).toHaveBeenCalledWith(expect.stringContaining('/cli/authorize'));
     expect(mockServer.close).toHaveBeenCalled();
+    expect(mockServer.closeAllConnections).toHaveBeenCalled();
     expect(mockSaveCredentials).toHaveBeenCalledWith({
       apiKey: 'si_abcdef123456_0123456789abcdef0123456789abcdef01',
       consoleUrl: 'https://api.console.test.com',
