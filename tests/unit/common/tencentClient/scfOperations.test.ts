@@ -229,7 +229,10 @@ describe('scfOperations', () => {
 
     it('should attach ownership tags via TagResources after create', async () => {
       mockScfClient.CreateFunction.mockResolvedValue({ FunctionName: 'test-function' });
-      mockCamClient.GetUserAppId.mockResolvedValue({ Uin: '100010232281' });
+      mockCamClient.GetUserAppId.mockResolvedValue({
+        Uin: '100045692098',
+        OwnerUin: '100010232281',
+      });
       mockTagClient.TagResources.mockResolvedValue({});
 
       const config = {

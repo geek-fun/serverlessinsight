@@ -20,11 +20,16 @@ export const createScfOperations = (scfClient: ScfSdkClient, deps: ScfOperations
   const { tag: tagClient, cam: camClient, region, namespace } = deps;
 
   const getAccountUin = async (): Promise<string> => {
+    // Tag-service ARNs address the resource by its owning account. For
+    // sub-account (CAM key) callers, Uin is the sub-account while OwnerUin is
+    // the main account that actually owns the resources — the tag service
+    // validates against OwnerUin (verified empirically).
     const res = await camClient.GetUserAppId(null);
-    if (!res?.Uin) {
+    const uin = res?.OwnerUin || res?.Uin;
+    if (!uin) {
       throw new Error('Failed to resolve Tencent Cloud account Uin for resource tagging');
     }
-    return res.Uin;
+    return uin;
   };
 
   const tagFunction = async (functionName: string, tags: Array<{ Key: string; Value: string }>) => {
