@@ -205,10 +205,26 @@ export const createSaasStateBackend = (context: SaasBackendContext): StateBacken
 
       try {
         const result = await fn();
-        // Complete with success
+        // If the caller returned a deployment summary ({ stateJson, plan,
+        // contentHash, resourceCount }), forward it so the console persists the
+        // plan + linked infra state (Changes / State JSON on deployment detail).
+        // Otherwise fall back to the legacy contract (result = fn's value).
+        const summary = (result ?? {}) as Record<string, unknown>;
+        const isSummary =
+          typeof result === 'object' &&
+          result !== null &&
+          ('stateJson' in summary || 'plan' in summary);
         await client.patch(`/api/v1/deployments/${currentDeploymentId}`, {
           phase: 'complete',
-          result,
+          result: isSummary ? (summary['result'] ?? null) : result,
+          ...(isSummary
+            ? {
+                stateJson: summary['stateJson'],
+                contentHash: summary['contentHash'],
+                resourceCount: summary['resourceCount'],
+                plan: summary['plan'],
+              }
+            : {}),
         });
         return result;
       } catch (err) {

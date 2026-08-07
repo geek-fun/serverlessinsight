@@ -90,6 +90,14 @@ const planAllNoop = { items: [{ action: 'noop', resource: 'test' }] };
 const mockBackend = {
   withLock: jest.fn((_: string, fn: () => Promise<void>) => fn()),
   getState: jest.fn(),
+  loadState: jest.fn().mockResolvedValue({
+    version: '1',
+    provider: 'tencent',
+    app: 'test',
+    service: 'test',
+    stages: {},
+    resources: {},
+  }),
   setState: jest.fn(),
 };
 
@@ -268,6 +276,14 @@ describe('unit test for deploy command', () => {
         ),
         releaseLock,
         getState: jest.fn(),
+        loadState: jest.fn().mockResolvedValue({
+          version: '1',
+          provider: 'tencent',
+          app: 'test',
+          service: 'test',
+          stages: {},
+          resources: {},
+        }),
         setState: jest.fn(),
       });
 
@@ -321,6 +337,14 @@ describe('unit test for deploy command', () => {
         withLock: jest.fn((_op: string, fn: () => Promise<unknown>) => fn()),
         releaseLock,
         getState: jest.fn(),
+        loadState: jest.fn().mockResolvedValue({
+          version: '1',
+          provider: 'tencent',
+          app: 'test',
+          service: 'test',
+          stages: {},
+          resources: {},
+        }),
         setState: jest.fn(),
       });
 

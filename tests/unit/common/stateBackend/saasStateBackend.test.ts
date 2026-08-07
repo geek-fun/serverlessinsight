@@ -309,6 +309,48 @@ describe('saasStateBackend', () => {
       expect(result).toBe('ok');
     });
 
+    it('should forward stateJson/plan/contentHash when fn returns a deployment summary', async () => {
+      mockApiClient.post.mockResolvedValueOnce({
+        id: 'deploy-1',
+        appId: 'app-1',
+        serviceId: 'svc-1',
+        status: 'active',
+        isNewApp: false,
+        isNewService: false,
+      });
+      mockApiClient.get.mockResolvedValueOnce({
+        stateJson: {
+          version: '3.0',
+          provider: 'aliyun',
+          app: 'myapp',
+          service: 'myservice',
+          stages: {},
+          resources: {},
+        },
+      });
+      mockApiClient.patch.mockResolvedValue({});
+
+      await backend.loadState('aliyun', 'myapp', 'myservice', 'dev');
+
+      const summary = {
+        plan: { items: [{ logicalId: 'functions.f', action: 'create' }] },
+        stateJson: { version: '3.0', resources: { 'functions.f': {} } },
+        contentHash: 'abc123',
+        resourceCount: 1,
+      };
+      const result = await backend.withLock('deploy', jest.fn().mockResolvedValue(summary));
+
+      expect(mockApiClient.patch).toHaveBeenLastCalledWith('/api/v1/deployments/deploy-1', {
+        phase: 'complete',
+        result: null,
+        stateJson: summary.stateJson,
+        contentHash: 'abc123',
+        resourceCount: 1,
+        plan: summary.plan,
+      });
+      expect(result).toBe(summary);
+    });
+
     it('should notify fail phase and rethrow when fn throws', async () => {
       mockApiClient.post.mockResolvedValueOnce({
         id: 'deploy-1',

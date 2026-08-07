@@ -1,4 +1,5 @@
 import * as readline from 'node:readline';
+import crypto from 'node:crypto';
 import { deployStack } from '../stack';
 import { getContext, getIacLocation, logger, setContext, setIac, ProviderEnum } from '../common';
 import { createStateBackend } from '../common/stateBackend';
@@ -122,6 +123,23 @@ export const deploy = async (options: {
       'deploy',
       async () => {
         await deployStack(iac, backend);
+        // Read back the final state so the deployment record can link it
+        // (console shows Changes + State JSON from the plan and state).
+        const finalState = await backend.loadState(
+          iac.provider.name,
+          iac.app,
+          iac.service,
+          options.stage ?? 'dev',
+        );
+        return {
+          plan: { items: planResult.items },
+          stateJson: finalState ?? {},
+          contentHash: crypto
+            .createHash('sha256')
+            .update(JSON.stringify(finalState ?? {}))
+            .digest('hex'),
+          resourceCount: Object.keys(finalState?.resources ?? {}).length,
+        };
       },
       {},
       (lockId) => {
