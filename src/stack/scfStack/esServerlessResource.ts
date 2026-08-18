@@ -33,6 +33,37 @@ const buildEsSpaceFromProvider = (info: TencentEsSpaceInfo, sid: string) => {
     indexCount: info.IndexCount ?? null,
     kibanaUrl: info.KibanaUrl ?? null,
     kibanaPrivateUrl: info.KibanaPrivateUrl ?? null,
+    indexAccessUrl: info.IndexAccessUrl ?? null,
+    kibanaPublicAcl: info.KibanaPublicAcl
+      ? {
+          blackIpList: info.KibanaPublicAcl.BlackIpList ?? [],
+          whiteIpList: info.KibanaPublicAcl.WhiteIpList ?? [],
+        }
+      : {},
+    kibanaEmbedUrl: info.KibanaEmbedUrl ?? null,
+    diDataList: info.DiDataList ?? [],
+    vpcInfo:
+      info.VpcInfo?.map((v) => ({
+        vpcId: v.VpcId ?? null,
+        subnetId: v.SubnetId ?? null,
+        vpcUid: v.VpcUid ?? null,
+        subnetUid: v.SubnetUid ?? null,
+        availableIpAddressCount: v.AvailableIpAddressCount ?? null,
+      })) ?? [],
+    region: info.Region ?? null,
+    zone: info.Zone ?? null,
+    enableKibanaPublicAccess: info.EnableKibanaPublicAccess ?? null,
+    enableKibanaPrivateAccess: info.EnableKibanaPrivateAccess ?? null,
+    appId: info.AppId ?? null,
+    kibanaLanguage: info.KibanaLanguage ?? null,
+    clusterType: info.ClusterType ?? null,
+    enableMcpAccess: info.EnableMcpAccess ?? null,
+    mcpAccess: info.McpAccess ?? null,
+    tags:
+      info.Tags?.map((t) => ({
+        key: t.Key,
+        value: t.Value,
+      })) ?? [],
   };
 };
 

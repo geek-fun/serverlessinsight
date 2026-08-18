@@ -24,6 +24,8 @@ export type TdsqlcClusterInfo = {
   ClusterId: string;
   ClusterName: string;
   Region: string;
+  Uin?: string;
+  AppId?: number;
   Zone?: string;
   PhysicalZone?: string;
   DbType: string;
@@ -61,6 +63,30 @@ export type TdsqlcClusterInfo = {
   AutoRenewFlag?: number;
   InstanceCount?: number;
   ProcessingTask?: string;
+  Tasks?: Array<{
+    TaskId?: number;
+    TaskType?: string;
+    TaskStatus?: string;
+    ObjectId?: string;
+    ObjectType?: string;
+  }>;
+  NetAddrs?: Array<{
+    Vip?: string;
+    Vport?: number;
+    WanDomain?: string;
+    WanPort?: number;
+    NetType?: string;
+    UniqSubnetId?: string;
+    UniqVpcId?: string;
+  }>;
+  HasSlaveZone?: string;
+  ResourcePackages?: Array<{
+    PackageId?: string;
+    PackageType?: string;
+    DeductionPriority?: number;
+  }>;
+  GdnId?: string;
+  GdnRole?: string;
   SupportedFeatures?: string[];
   RollbackSupport?: string;
   NetworkType?: string;
@@ -86,6 +112,7 @@ export type TdsqlcClusterInfo = {
     TagValue?: string;
   }>;
   CynosVersion?: string;
+  CynosVersionTag?: string;
   CynosVersionStatus?: string;
   IsLatestVersion?: boolean;
 };

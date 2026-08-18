@@ -89,8 +89,25 @@ export type ScfFunctionInfo = {
   ImageConfig?: unknown;
   ProtocolType?: string;
   ProtocolParams?: unknown;
+  InstanceConcurrencyConfig?: {
+    DynamicEnabled?: string;
+    MaxConcurrency?: number;
+    InstanceIsolationEnabled?: string;
+    Type?: string;
+    MixNodeConfig?: Array<{
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      [key: string]: any;
+    }>;
+    SessionConfig?: {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      [key: string]: any;
+    };
+  };
   DnsCache?: string;
-  IntranetConfig?: unknown;
+  IntranetConfig?: {
+    IpFixed?: string;
+    IpAddress?: string[];
+  };
 };
 
 export type CosBucketConfig = {
@@ -153,6 +170,45 @@ export type CosBucketInfo = {
     }>;
   };
   Tags?: Array<{ Key: string; Value: string }>;
+  CreationDate?: string;
+  LifecycleConfiguration?: {
+    rules?: Array<{
+      id?: string;
+      status?: string;
+      prefix?: string;
+      expiration?: {
+        days?: number;
+        date?: string;
+        expiredObjectDeleteMarker?: boolean;
+      };
+      transition?: {
+        days?: number;
+        date?: string;
+        storageClass?: string;
+      };
+    }>;
+  };
+  LoggingConfiguration?: {
+    targetBucket?: string;
+    targetPrefix?: string;
+  };
+  ReplicationConfiguration?: {
+    role?: string;
+    rules?: Array<{
+      id?: string;
+      status?: string;
+      prefix?: string;
+      destination?: {
+        bucket?: string;
+        storageClass?: string;
+      };
+    }>;
+  };
+  SseConfiguration?: {
+    sseAlgorithm?: string;
+    sseKmsMasterKeyId?: string;
+  };
+  Policy?: unknown;
 };
 
 export type TdsqlcClusterConfig = {
@@ -179,6 +235,8 @@ export type TdsqlcClusterInfo = {
   ClusterId: string;
   ClusterName: string;
   Region: string;
+  Uin?: string;
+  AppId?: number;
   Zone?: string;
   PhysicalZone?: string;
   DbType: string;
@@ -216,6 +274,30 @@ export type TdsqlcClusterInfo = {
   AutoRenewFlag?: number;
   InstanceCount?: number;
   ProcessingTask?: string;
+  Tasks?: Array<{
+    TaskId?: number;
+    TaskType?: string;
+    TaskStatus?: string;
+    ObjectId?: string;
+    ObjectType?: string;
+  }>;
+  NetAddrs?: Array<{
+    Vip?: string;
+    Vport?: number;
+    WanDomain?: string;
+    WanPort?: number;
+    NetType?: string;
+    UniqSubnetId?: string;
+    UniqVpcId?: string;
+  }>;
+  HasSlaveZone?: string;
+  ResourcePackages?: Array<{
+    PackageId?: string;
+    PackageType?: string;
+    DeductionPriority?: number;
+  }>;
+  GdnId?: string;
+  GdnRole?: string;
   SupportedFeatures?: string[];
   RollbackSupport?: string;
   NetworkType?: string;
@@ -238,6 +320,7 @@ export type TdsqlcClusterInfo = {
   };
   ResourceTags?: Array<{ TagKey?: string; TagValue?: string }>;
   CynosVersion?: string;
+  CynosVersionTag?: string;
   CynosVersionStatus?: string;
   IsLatestVersion?: boolean;
 };
@@ -284,6 +367,37 @@ export type TencentEsSpaceInfo = {
   IndexCount?: number;
   KibanaUrl?: string;
   KibanaPrivateUrl?: string;
+  IndexAccessUrl?: string;
+  KibanaPublicAcl?: {
+    BlackIpList?: string[];
+    WhiteIpList?: string[];
+  };
+  KibanaEmbedUrl?: string;
+  DiDataList?: Array<{
+    DiId?: string;
+    CreateTime?: string;
+    Status?: number;
+    DiDataSourceCvm?: unknown;
+    DiDataSourceTke?: unknown;
+    DiDataSinkServerless?: unknown;
+    DiDataSourceType?: string;
+  }>;
+  VpcInfo?: Array<{
+    VpcId?: string;
+    SubnetId?: string;
+    VpcUid?: number;
+    SubnetUid?: number;
+    AvailableIpAddressCount?: number;
+  }>;
+  Region?: string;
+  Zone?: string;
+  EnableKibanaPublicAccess?: number;
+  EnableKibanaPrivateAccess?: number;
+  AppId?: number;
+  KibanaLanguage?: string;
+  ClusterType?: number;
+  EnableMcpAccess?: number;
+  McpAccess?: string;
   Tags?: Array<{ Key: string; Value: string }>;
 };
 

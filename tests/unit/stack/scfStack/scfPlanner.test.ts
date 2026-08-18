@@ -29,7 +29,7 @@ jest.mock('../../../../src/common/tencentClient', () => ({
 
 jest.mock('../../../../src/common/hashUtils', () => ({
   ...jest.requireActual('../../../../src/common/hashUtils'),
-  computeFileHash: jest.fn().mockReturnValue('mock-code-hash'),
+  computeZipContentHash: jest.fn().mockResolvedValue('mock-code-hash'),
 }));
 
 describe('SCF Planner', () => {

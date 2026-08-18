@@ -12,7 +12,7 @@ import { functionToScfConfig, extractScfDefinition, ScfFunctionInfo } from './sc
 import { getResource, setResource, removeResource } from '../../common/stateManager';
 import { buildSid, attributesEqual, ProviderEnum, mapAuthType, mapAccess } from '../../common';
 import { RAM_ROLE_PROPAGATION_DELAY_MS } from '../../common/constants';
-import { computeFileHash } from '../../common/hashUtils';
+import { computeZipContentHash } from '../../common/hashUtils';
 import { logger } from '../../common/logger';
 import { lang } from '../../lang';
 import type { IamStatement } from '../../common/iamStatements';
@@ -156,6 +156,16 @@ const buildScfInstanceFromProvider = (info: ScfFunctionInfo, sid: string) => {
     layerName: l.LayerName ?? null,
     layerVersion: l.LayerVersion ?? null,
     compatibleRuntimes: l.CompatibleRuntimes ?? [],
+    addTime: l.AddTime ?? null,
+    description: l.Description ?? null,
+    licenseInfo: l.LicenseInfo ?? null,
+    status: l.Status ?? null,
+    stamp: l.Stamp ?? null,
+    tags:
+      l.Tags?.map((t) => ({
+        key: t.Key,
+        value: t.Value,
+      })) ?? [],
   }));
 
   return {
@@ -258,6 +268,12 @@ const buildScfInstanceFromProvider = (info: ScfFunctionInfo, sid: string) => {
       ? {
           imageType: info.ImageConfig.ImageType ?? null,
           imageUri: info.ImageConfig.ImageUri ?? null,
+          registryId: info.ImageConfig.RegistryId ?? null,
+          entryPoint: info.ImageConfig.EntryPoint ?? null,
+          command: info.ImageConfig.Command ?? null,
+          args: info.ImageConfig.Args ?? null,
+          containerImageAccelerate: info.ImageConfig.ContainerImageAccelerate ?? null,
+          imagePort: info.ImageConfig.ImagePort ?? null,
         }
       : {},
     protocolType: info.ProtocolType ?? null,
@@ -274,6 +290,17 @@ const buildScfInstanceFromProvider = (info: ScfFunctionInfo, sid: string) => {
     intranetConfig: info.IntranetConfig
       ? {
           ipFixed: info.IntranetConfig.IpFixed ?? null,
+          ipAddress: info.IntranetConfig.IpAddress ?? [],
+        }
+      : {},
+    instanceConcurrencyConfig: info.InstanceConcurrencyConfig
+      ? {
+          dynamicEnabled: info.InstanceConcurrencyConfig.DynamicEnabled ?? null,
+          maxConcurrency: info.InstanceConcurrencyConfig.MaxConcurrency ?? null,
+          instanceIsolationEnabled: info.InstanceConcurrencyConfig.InstanceIsolationEnabled ?? null,
+          type: info.InstanceConcurrencyConfig.Type ?? null,
+          mixNodeConfig: info.InstanceConcurrencyConfig.MixNodeConfig ?? [],
+          sessionConfig: info.InstanceConcurrencyConfig.SessionConfig ?? {},
         }
       : {},
   };
@@ -313,7 +340,7 @@ const createDependentResources = async (
   }
 
   // Create new CAM role
-  const trustedServices = ['scf.tencentcloudapi.com'];
+  const trustedServices = ['scf.qcloud.com'];
   logger.info(lang.__('CREATING_RAM_ROLE', { roleName }));
   const camRole = await client.cam.createRole(
     roleName,
@@ -383,7 +410,7 @@ export const createResource = async (
 
   const codePath = fn.code!.path;
   const codeBase64 = readFileAsBase64(codePath);
-  const codeHash = computeFileHash(codePath);
+  const codeHash = await computeZipContentHash(codePath);
   const definition = extractScfDefinition(config, codeHash, fn.iam);
 
   const dependentInstances: Array<ScfDependentInstance> = [];
@@ -699,7 +726,7 @@ export const updateResource = async (
 
   const codePath = fn.code!.path;
   const codeBase64 = readFileAsBase64(codePath);
-  const codeHash = computeFileHash(codePath);
+  const codeHash = await computeZipContentHash(codePath);
 
   // Only push configuration when the mutable config fields actually changed —
   // Tencent's UpdateFunctionConfiguration rejects Handler/Runtime (immutable at

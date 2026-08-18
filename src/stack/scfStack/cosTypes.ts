@@ -113,6 +113,12 @@ export type CosBucketInfo = {
       };
     }>;
   };
+  SseConfiguration?: {
+    sseAlgorithm?: string;
+    sseKmsMasterKeyId?: string;
+  };
+  Policy?: Record<string, unknown> | string;
+  Tags?: Array<{ Key: string; Value: string }>;
 };
 
 export const bucketToCosBucketConfig = (bucket: BucketDomain, region: string): CosBucketConfig => {

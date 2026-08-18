@@ -10,6 +10,8 @@ export const mapClusterToInfo = (cluster: SdkCluster, region: string): TdsqlcClu
     ClusterId: cluster.ClusterId || '',
     ClusterName: cluster.ClusterName || '',
     Region: cluster.Region || region,
+    Uin: cluster.Uin,
+    AppId: cluster.AppId,
     Zone: cluster.Zone,
     PhysicalZone: cluster.PhysicalZone,
     DbType: cluster.DbType || '',
@@ -37,7 +39,10 @@ export const mapClusterToInfo = (cluster: SdkCluster, region: string): TdsqlcClu
     Storage: cluster.Storage,
     StorageLimit: cluster.StorageLimit,
     StoragePayMode: cluster.StoragePayMode,
-    AutoPause: cluster.ServerlessStatus,
+    // DescribeClusters returns ServerlessStatus as 'resume'/'pause' — that is
+    // the cluster's running state, NOT the AutoPause idle-stall switch, so it
+    // must not be mis-mapped here (AutoPause comes from the create/update config).
+    AutoPause: undefined,
     AutoPauseDelay: undefined,
     CreateTime: cluster.CreateTime,
     UpdateTime: cluster.UpdateTime,
@@ -47,6 +52,12 @@ export const mapClusterToInfo = (cluster: SdkCluster, region: string): TdsqlcClu
     AutoRenewFlag: cluster.RenewFlag,
     InstanceCount: cluster.InstanceNum,
     ProcessingTask: cluster.ProcessingTask,
+    Tasks: cluster.Tasks,
+    NetAddrs: cluster.NetAddrs,
+    HasSlaveZone: cluster.HasSlaveZone,
+    ResourcePackages: cluster.ResourcePackages,
+    GdnId: cluster.GdnId,
+    GdnRole: cluster.GdnRole,
     SupportedFeatures: undefined,
     RollbackSupport: undefined,
     NetworkType: undefined,
@@ -64,6 +75,7 @@ export const mapClusterToInfo = (cluster: SdkCluster, region: string): TdsqlcClu
     Ability: cluster.Ability,
     ResourceTags: cluster.ResourceTags,
     CynosVersion: cluster.CynosVersion,
+    CynosVersionTag: cluster.CynosVersionTag,
     CynosVersionStatus: undefined,
     IsLatestVersion: undefined,
   };

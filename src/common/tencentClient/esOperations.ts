@@ -61,6 +61,26 @@ const toSpaceInfo = (space: {
   IndexCount?: number;
   KibanaUrl?: string;
   KibanaPrivateUrl?: string;
+  IndexAccessUrl?: string;
+  KibanaPublicAcl?: { BlackIpList?: string[]; WhiteIpList?: string[] };
+  KibanaEmbedUrl?: string;
+  DiDataList?: Array<Record<string, unknown>>;
+  VpcInfo?: Array<{
+    VpcId?: string;
+    SubnetId?: string;
+    VpcUid?: number;
+    SubnetUid?: number;
+    AvailableIpAddressCount?: number;
+  }>;
+  Region?: string;
+  Zone?: string;
+  EnableKibanaPublicAccess?: number;
+  EnableKibanaPrivateAccess?: number;
+  AppId?: number;
+  KibanaLanguage?: string;
+  ClusterType?: number;
+  EnableMcpAccess?: number;
+  McpAccess?: string;
   TagList?: Array<{ TagKey: string; TagValue: string }>;
 }): TencentEsSpaceInfo => ({
   SpaceId: space.SpaceId || '',
@@ -70,6 +90,20 @@ const toSpaceInfo = (space: {
   IndexCount: space.IndexCount,
   KibanaUrl: space.KibanaUrl,
   KibanaPrivateUrl: space.KibanaPrivateUrl,
+  IndexAccessUrl: space.IndexAccessUrl,
+  KibanaPublicAcl: space.KibanaPublicAcl,
+  KibanaEmbedUrl: space.KibanaEmbedUrl,
+  DiDataList: space.DiDataList,
+  VpcInfo: space.VpcInfo,
+  Region: space.Region,
+  Zone: space.Zone,
+  EnableKibanaPublicAccess: space.EnableKibanaPublicAccess,
+  EnableKibanaPrivateAccess: space.EnableKibanaPrivateAccess,
+  AppId: space.AppId,
+  KibanaLanguage: space.KibanaLanguage,
+  ClusterType: space.ClusterType,
+  EnableMcpAccess: space.EnableMcpAccess,
+  McpAccess: space.McpAccess,
   Tags: (space.TagList ?? []).map((t) => ({ Key: t.TagKey, Value: t.TagValue })),
 });
 
@@ -149,8 +183,18 @@ export const createTencentEsOperations = (esClient: EsClient, _context: Context)
 
         return space ? toSpaceInfo(space) : null;
       } catch (error) {
-        logger.error(lang.__('TENCENT_ES_SPACE_GET_FAILED', { error: String(error) }));
-        return null;
+        if (
+          error &&
+          typeof error === 'object' &&
+          'code' in error &&
+          typeof error.code === 'string' &&
+          (error.code.startsWith('ResourceNotFound') ||
+            error.code === 'InvalidParameterValue' ||
+            error.code === 'ResourceNotFound.ServerlessSpaceNotFound')
+        ) {
+          return null;
+        }
+        throw error;
       }
     },
 
@@ -168,8 +212,18 @@ export const createTencentEsOperations = (esClient: EsClient, _context: Context)
 
         return space ? toSpaceInfo(space) : null;
       } catch (error) {
-        logger.error(lang.__('TENCENT_ES_SPACE_GET_FAILED', { error: String(error) }));
-        return null;
+        if (
+          error &&
+          typeof error === 'object' &&
+          'code' in error &&
+          typeof error.code === 'string' &&
+          (error.code.startsWith('ResourceNotFound') ||
+            error.code === 'InvalidParameterValue' ||
+            error.code === 'ResourceNotFound.ServerlessSpaceNotFound')
+        ) {
+          return null;
+        }
+        throw error;
       }
     },
 

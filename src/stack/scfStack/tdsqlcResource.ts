@@ -90,7 +90,37 @@ const buildTdsqlcInstanceFromProvider = (info: TdsqlcClusterInfo, sid: string) =
         tagKey: t.TagKey ?? null,
         tagValue: t.TagValue ?? null,
       })) ?? [],
+    uin: info.Uin ?? null,
+    appId: info.AppId ?? null,
+    tasks:
+      info.Tasks?.map((t) => ({
+        taskId: t.TaskId ?? null,
+        taskType: t.TaskType ?? null,
+        taskStatus: t.TaskStatus ?? null,
+        objectId: t.ObjectId ?? null,
+        objectType: t.ObjectType ?? null,
+      })) ?? [],
+    netAddrs:
+      info.NetAddrs?.map((n) => ({
+        vip: n.Vip ?? null,
+        vport: n.Vport ?? null,
+        wanDomain: n.WanDomain ?? null,
+        wanPort: n.WanPort ?? null,
+        netType: n.NetType ?? null,
+        uniqSubnetId: n.UniqSubnetId ?? null,
+        uniqVpcId: n.UniqVpcId ?? null,
+      })) ?? [],
+    hasSlaveZone: info.HasSlaveZone ?? null,
+    resourcePackages:
+      info.ResourcePackages?.map((p) => ({
+        packageId: p.PackageId ?? null,
+        packageType: p.PackageType ?? null,
+        deductionPriority: p.DeductionPriority ?? null,
+      })) ?? [],
+    gdnId: info.GdnId ?? null,
+    gdnRole: info.GdnRole ?? null,
     cynosVersion: info.CynosVersion ?? null,
+    cynosVersionTag: info.CynosVersionTag ?? null,
     cynosVersionStatus: info.CynosVersionStatus ?? null,
     isLatestVersion: info.IsLatestVersion ?? null,
   };

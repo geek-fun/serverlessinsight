@@ -132,7 +132,7 @@ describe('ScfResource', () => {
     jest.useRealTimers();
     (scfTypes.functionToScfConfig as jest.Mock).mockReturnValue(mockConfig);
     (scfTypes.extractScfDefinition as jest.Mock).mockReturnValue(mockDefinition);
-    (hashUtils.computeFileHash as jest.Mock).mockReturnValue('mock-code-hash');
+    (hashUtils.computeZipContentHash as jest.Mock).mockResolvedValue('mock-code-hash');
     mockScfOperations.getFunction.mockResolvedValue(mockFunctionInfo);
     mockScfOperations.deleteTrigger.mockResolvedValue(undefined);
     mockScfOperations.createTrigger.mockResolvedValue(undefined);
@@ -184,7 +184,7 @@ describe('ScfResource', () => {
         'base64encodedcontent',
       );
       expect(mockScfOperations.getFunction).toHaveBeenCalledWith('test-function');
-      expect(hashUtils.computeFileHash).toHaveBeenCalledWith('test.zip');
+      expect(hashUtils.computeZipContentHash).toHaveBeenCalledWith('test.zip');
       expect(scfTypes.extractScfDefinition).toHaveBeenCalledWith(
         mockConfig,
         'mock-code-hash',
@@ -248,7 +248,7 @@ describe('ScfResource', () => {
       // Should create the CAM role
       expect(mockCamOperations.createRole).toHaveBeenCalledWith(
         'test-scf-role',
-        ['scf.tencentcloudapi.com'],
+        ['scf.qcloud.com'],
         expect.any(String),
         expect.arrayContaining([expect.objectContaining({ effect: 'Allow' })]),
         undefined,
@@ -1209,7 +1209,7 @@ describe('ScfResource', () => {
         'base64encodedcontent',
       );
       expect(mockScfOperations.getFunction).toHaveBeenCalledWith('test-function');
-      expect(hashUtils.computeFileHash).toHaveBeenCalledWith('test.zip');
+      expect(hashUtils.computeZipContentHash).toHaveBeenCalledWith('test.zip');
       expect(scfTypes.extractScfDefinition).toHaveBeenCalledWith(
         mockConfig,
         'mock-code-hash',
@@ -2770,6 +2770,12 @@ describe('ScfResource', () => {
           LayerName: 'my-layer',
           LayerVersion: 1,
           CompatibleRuntimes: ['nodejs18', 'nodejs16'],
+          AddTime: '2025-04-01',
+          Description: 'layer description',
+          LicenseInfo: 'MIT',
+          Status: 'Active',
+          Stamp: 'stamp-1',
+          Tags: [{ Key: 'layer-tag', Value: '1' }],
         },
       ],
       CodeSize: 1024,
@@ -2838,6 +2844,12 @@ describe('ScfResource', () => {
       ImageConfig: {
         ImageType: 'personal',
         ImageUri: 'image-uri-123',
+        RegistryId: 'registry-1',
+        EntryPoint: 'python',
+        Command: 'run.sh',
+        Args: '-u app.py',
+        ContainerImageAccelerate: true,
+        ImagePort: 9000,
       },
       ProtocolType: 'http',
       ProtocolParams: {
@@ -2848,6 +2860,15 @@ describe('ScfResource', () => {
       DnsCache: 'TRUE',
       IntranetConfig: {
         IpFixed: 'ENABLE',
+        IpAddress: ['10.0.0.10', '10.0.0.11'],
+      },
+      InstanceConcurrencyConfig: {
+        DynamicEnabled: 'TRUE',
+        MaxConcurrency: 5,
+        InstanceIsolationEnabled: 'FALSE',
+        Type: 'Session-Based',
+        MixNodeConfig: [],
+        SessionConfig: { SessionIdleTime: 60 },
       },
     };
 
@@ -2892,6 +2913,12 @@ describe('ScfResource', () => {
                   layerName: 'my-layer',
                   layerVersion: 1,
                   compatibleRuntimes: ['nodejs18', 'nodejs16'],
+                  addTime: '2025-04-01',
+                  description: 'layer description',
+                  licenseInfo: 'MIT',
+                  status: 'Active',
+                  stamp: 'stamp-1',
+                  tags: [{ key: 'layer-tag', value: '1' }],
                 }),
               ]),
               vpcConfig: expect.objectContaining({
@@ -2930,6 +2957,12 @@ describe('ScfResource', () => {
               imageConfig: expect.objectContaining({
                 imageType: 'personal',
                 imageUri: 'image-uri-123',
+                registryId: 'registry-1',
+                entryPoint: 'python',
+                command: 'run.sh',
+                args: '-u app.py',
+                containerImageAccelerate: true,
+                imagePort: 9000,
               }),
               protocolParams: expect.objectContaining({
                 wsParams: expect.objectContaining({
@@ -2938,6 +2971,15 @@ describe('ScfResource', () => {
               }),
               intranetConfig: expect.objectContaining({
                 ipFixed: 'ENABLE',
+                ipAddress: ['10.0.0.10', '10.0.0.11'],
+              }),
+              instanceConcurrencyConfig: expect.objectContaining({
+                dynamicEnabled: 'TRUE',
+                maxConcurrency: 5,
+                instanceIsolationEnabled: 'FALSE',
+                type: 'Session-Based',
+                mixNodeConfig: [],
+                sessionConfig: { SessionIdleTime: 60 },
               }),
               useGpu: 'FALSE',
               codeResult: 'Success',

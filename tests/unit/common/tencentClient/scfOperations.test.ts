@@ -467,6 +467,98 @@ describe('scfOperations', () => {
       expect(result?.Tags).toHaveLength(2);
       expect(result?.Tags?.[0]).toEqual({ Key: 'env', Value: 'prod' });
     });
+
+    it('should retain the full detail set (max-detail state)', async () => {
+      mockScfClient.GetFunction.mockResolvedValue({
+        FunctionName: 'test-function',
+        Runtime: 'nodejs18.x',
+        Handler: 'index.handler',
+        MemorySize: 256,
+        Timeout: 30,
+        ModTime: '2024-01-01T00:00:00Z',
+        CodeSize: 1024,
+        FunctionVersion: '$LATEST',
+        VpcConfig: { VpcId: 'vpc-123', SubnetId: 'subnet-456' },
+        UseGpu: 'FALSE',
+        Status: 'Active',
+        FunctionId: 'lam-funcid',
+        Tags: [{ Key: 'env', Value: 'prod' }],
+        Layers: [
+          {
+            LayerName: 'my-layer',
+            LayerVersion: 1,
+            CompatibleRuntimes: ['nodejs18'],
+            AddTime: '2024-01-01T00:00:00Z',
+            Description: 'layer desc',
+            LicenseInfo: 'MIT',
+            Status: 'Active',
+            Stamp: 'stamp-1',
+            Tags: [{ Key: 'layer-tag', Value: '1' }],
+          },
+        ],
+        ImageConfig: {
+          ImageType: 'personal',
+          ImageUri: 'image-uri-123',
+          RegistryId: 'registry-1',
+          EntryPoint: 'python',
+          Command: 'run.sh',
+          Args: '-u app.py',
+          ContainerImageAccelerate: true,
+          ImagePort: 9000,
+        },
+        IntranetConfig: {
+          IpFixed: 'ENABLE',
+          IpAddress: ['10.0.0.10', '10.0.0.11'],
+        },
+        InstanceConcurrencyConfig: {
+          DynamicEnabled: 'TRUE',
+          MaxConcurrency: 5,
+          InstanceIsolationEnabled: 'FALSE',
+          Type: 'Session-Based',
+          MixNodeConfig: [],
+          SessionConfig: { SessionIdleTime: 60 },
+        },
+      });
+
+      const result = await operations.getFunction('test-function');
+
+      expect(result?.InstanceConcurrencyConfig).toEqual({
+        DynamicEnabled: 'TRUE',
+        MaxConcurrency: 5,
+        InstanceIsolationEnabled: 'FALSE',
+        Type: 'Session-Based',
+        MixNodeConfig: [],
+        SessionConfig: { SessionIdleTime: 60 },
+      });
+      expect(result?.Layers?.[0]).toEqual(
+        expect.objectContaining({
+          LayerName: 'my-layer',
+          LayerVersion: 1,
+          AddTime: '2024-01-01T00:00:00Z',
+          Description: 'layer desc',
+          LicenseInfo: 'MIT',
+          Status: 'Active',
+          Stamp: 'stamp-1',
+          Tags: [{ Key: 'layer-tag', Value: '1' }],
+        }),
+      );
+      expect(result?.ImageConfig).toEqual(
+        expect.objectContaining({
+          RegistryId: 'registry-1',
+          EntryPoint: 'python',
+          Command: 'run.sh',
+          Args: '-u app.py',
+          ContainerImageAccelerate: true,
+          ImagePort: 9000,
+        }),
+      );
+      expect(result?.IntranetConfig).toEqual(
+        expect.objectContaining({
+          IpFixed: 'ENABLE',
+          IpAddress: ['10.0.0.10', '10.0.0.11'],
+        }),
+      );
+    });
   });
 
   describe('updateFunctionConfiguration', () => {

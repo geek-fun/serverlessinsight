@@ -182,6 +182,95 @@ describe('TdsqlcResource', () => {
       expect(result).toEqual(updatedState);
     });
 
+    it('should retain the full detail set in the state instance', async () => {
+      const clusterId = 'cynosdbmysql-test123';
+      const fullClusterInfo = {
+        ...mockClusterInfo,
+        Uin: '100000000001',
+        AppId: 1250000000,
+        ServerlessStatus: 'resume',
+        CynosVersion: '8.0.1',
+        CynosVersionTag: 'stable',
+        Tasks: [
+          {
+            TaskId: 1,
+            TaskType: 'create',
+            TaskStatus: 'success',
+            ObjectId: clusterId,
+            ObjectType: 'cluster',
+          },
+        ],
+        NetAddrs: [
+          {
+            Vip: '10.0.0.1',
+            Vport: 3306,
+            NetType: 'rw',
+            UniqSubnetId: 'subnet-456',
+            UniqVpcId: 'vpc-123',
+          },
+        ],
+        HasSlaveZone: '0',
+        ResourcePackages: [
+          {
+            PackageId: 'package-1',
+            PackageType: 'DISK',
+            DeductionPriority: 1,
+          },
+        ],
+        GdnId: 'gdn-123',
+        GdnRole: 'primary',
+      };
+
+      mockTdsqlcOperations.createCluster.mockResolvedValue(clusterId);
+      mockTdsqlcOperations.getCluster.mockResolvedValue(fullClusterInfo);
+      mockedStateManager.setResource.mockReturnValue(mockState);
+
+      await createDatabaseResource(mockContext, mockDatabase, mockState);
+
+      const setResourceCalls = mockedStateManager.setResource.mock.calls;
+      const state = setResourceCalls[setResourceCalls.length - 1][2] as Record<string, unknown>;
+      const clusterInstance = (state.instances as Array<Record<string, unknown>>)[0];
+
+      expect(clusterInstance).toEqual(
+        expect.objectContaining({
+          id: clusterId,
+          uin: '100000000001',
+          appId: 1250000000,
+          serverlessStatus: 'resume',
+          tasks: expect.arrayContaining([
+            expect.objectContaining({
+              taskId: 1,
+              taskType: 'create',
+              taskStatus: 'success',
+              objectId: clusterId,
+              objectType: 'cluster',
+            }),
+          ]),
+          netAddrs: expect.arrayContaining([
+            expect.objectContaining({
+              vip: '10.0.0.1',
+              vport: 3306,
+              netType: 'rw',
+              uniqSubnetId: 'subnet-456',
+              uniqVpcId: 'vpc-123',
+            }),
+          ]),
+          hasSlaveZone: '0',
+          resourcePackages: expect.arrayContaining([
+            expect.objectContaining({
+              packageId: 'package-1',
+              packageType: 'DISK',
+              deductionPriority: 1,
+            }),
+          ]),
+          gdnId: 'gdn-123',
+          gdnRole: 'primary',
+          cynosVersion: '8.0.1',
+          cynosVersionTag: 'stable',
+        }),
+      );
+    });
+
     it('should idempotently adopt an existing cluster that carries our ownership tag', async () => {
       const existsError = Object.assign(new Error('集群名称已存在'), { code: 'ResourceInUse' });
       mockTdsqlcOperations.createCluster.mockRejectedValue(existsError);

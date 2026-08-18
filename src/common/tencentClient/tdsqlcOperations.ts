@@ -151,8 +151,16 @@ export const createTdsqlcOperations = (cynosdbClient: CynosdbSdkClient, context:
 
         return mapClusterToInfo(response.ClusterSet[0], context.region);
       } catch (error) {
-        logger.error(`${lang.__('TDSQL_CLUSTER_GET_FAILED')}: ${error}`);
-        return null;
+        if (
+          error &&
+          typeof error === 'object' &&
+          'code' in error &&
+          typeof error.code === 'string' &&
+          error.code.startsWith('ResourceNotFound')
+        ) {
+          return null;
+        }
+        throw error;
       }
     },
 
@@ -173,8 +181,16 @@ export const createTdsqlcOperations = (cynosdbClient: CynosdbSdkClient, context:
         }
         return null;
       } catch (error) {
-        logger.error(`${lang.__('TDSQL_CLUSTER_GET_FAILED')}: ${error}`);
-        return null;
+        if (
+          error &&
+          typeof error === 'object' &&
+          'code' in error &&
+          typeof error.code === 'string' &&
+          error.code.startsWith('ResourceNotFound')
+        ) {
+          return null;
+        }
+        throw error;
       }
     },
 

@@ -6,6 +6,10 @@ import type {
   GetBucketWebsiteResult,
   GetBucketVersioningResult,
   GetBucketTaggingResult,
+  GetBucketLifecycleResult,
+  GetBucketLoggingResult,
+  GetBucketReplicationResult,
+  GetBucketEncryptionResult,
 } from 'cos-nodejs-sdk-v5';
 import { CosBucketConfig, CosBucketInfo } from './types';
 import { DnsOperations } from './dnspodOperations';
@@ -398,8 +402,10 @@ const createCosOperations = (cosClient: CosSdkClient, region: string, dnsOps?: D
 
     getBucket: async (bucketName: string, region: string): Promise<CosBucketInfo | null> => {
       try {
-        // Check if bucket exists
-        await new Promise<HeadBucketResult>((resolve, reject) => {
+        // Check if bucket exists. The HeadBucket response carries the bucket
+        // creation date in the x-cos-creation-date header — preserved so the
+        // state instance no longer reports creationDate: null.
+        const headBucketData = await new Promise<HeadBucketResult>((resolve, reject) => {
           cosClient.headBucket(
             {
               Bucket: bucketName,
@@ -414,6 +420,7 @@ const createCosOperations = (cosClient: CosSdkClient, region: string, dnsOps?: D
             },
           );
         });
+        const creationDate = headBucketData.headers?.['x-cos-creation-date'] as string | undefined;
 
         // Get ACL
         let acl: string | undefined;
@@ -572,13 +579,188 @@ const createCosOperations = (cosClient: CosSdkClient, region: string, dnsOps?: D
               value: t.Value,
             })),
           };
+        } catch (error: unknown) {
+          // A 404 or NoSuchTagSet means the bucket has no tagging config — not
+          // an error. Any other failure (auth, network) must surface loudly so
+          // it is not misread as "bucket not owned".
+          const err = error as { code?: string; statusCode?: number; message?: string };
+          const isNoTags =
+            err.statusCode === 404 ||
+            err.code === 'NoSuchTagSet' ||
+            String(err.message ?? '').includes('NoSuchTagSet');
+          if (!isNoTags) {
+            throw error;
+          }
+        }
+
+        // Get lifecycle configuration
+        let lifecycleConfiguration: CosBucketInfo['LifecycleConfiguration'];
+        try {
+          const lifecycleResult = await new Promise<GetBucketLifecycleResult>((resolve, reject) => {
+            cosClient.getBucketLifecycle(
+              {
+                Bucket: bucketName,
+                Region: region,
+              },
+              (err, data) => {
+                if (err) {
+                  reject(err);
+                } else {
+                  resolve(data);
+                }
+              },
+            );
+          });
+          lifecycleConfiguration = {
+            rules: lifecycleResult.Rules?.map((r) => ({
+              id: r.ID,
+              status: r.Status,
+              prefix: typeof r.Filter?.Prefix === 'string' ? r.Filter.Prefix : undefined,
+              expiration: {
+                days: r.Expiration?.Days,
+                date: r.Expiration?.Date,
+                expiredObjectDeleteMarker: r.Expiration?.ExpiredObjectDeleteMarker,
+              },
+              transition: {
+                days: r.Transition?.Days,
+                date: r.Transition?.Date,
+                storageClass: r.Transition?.StorageClass,
+              },
+            })),
+          };
         } catch {
-          // Tagging might not be configured
+          // Lifecycle might not be configured
+        }
+
+        // Get logging configuration
+        let loggingConfiguration: CosBucketInfo['LoggingConfiguration'];
+        try {
+          const loggingResult = await new Promise<GetBucketLoggingResult>((resolve, reject) => {
+            cosClient.getBucketLogging(
+              {
+                Bucket: bucketName,
+                Region: region,
+              },
+              (err, data) => {
+                if (err) {
+                  reject(err);
+                } else {
+                  resolve(data);
+                }
+              },
+            );
+          });
+          loggingConfiguration = {
+            targetBucket: loggingResult.BucketLoggingStatus?.LoggingEnabled?.TargetBucket,
+            targetPrefix: loggingResult.BucketLoggingStatus?.LoggingEnabled?.TargetPrefix,
+          };
+        } catch {
+          // Logging might not be configured
+        }
+
+        // Get replication configuration
+        let replicationConfiguration: CosBucketInfo['ReplicationConfiguration'];
+        try {
+          const replicationResult = await new Promise<GetBucketReplicationResult>(
+            (resolve, reject) => {
+              cosClient.getBucketReplication(
+                {
+                  Bucket: bucketName,
+                  Region: region,
+                },
+                (err, data) => {
+                  if (err) {
+                    reject(err);
+                  } else {
+                    resolve(data);
+                  }
+                },
+              );
+            },
+          );
+          replicationConfiguration = {
+            role: replicationResult.ReplicationConfiguration?.Role,
+            rules: replicationResult.ReplicationConfiguration?.Rules?.map((r) => ({
+              id: r.ID,
+              status: r.Status,
+              prefix: r.Prefix,
+              destination: {
+                bucket: r.Destination?.Bucket,
+                storageClass: r.Destination?.StorageClass,
+              },
+            })),
+          };
+        } catch {
+          // Replication might not be configured
+        }
+
+        // Get server-side encryption configuration
+        let sseConfiguration: CosBucketInfo['SseConfiguration'];
+        try {
+          const encryptionResult = await new Promise<GetBucketEncryptionResult>(
+            (resolve, reject) => {
+              cosClient.getBucketEncryption(
+                {
+                  Bucket: bucketName,
+                  Region: region,
+                },
+                (err, data) => {
+                  if (err) {
+                    reject(err);
+                  } else {
+                    resolve(data);
+                  }
+                },
+              );
+            },
+          );
+          const rule = encryptionResult.ServerSideEncryptionConfiguration?.Rule?.[0];
+          // SDK quirk: the type declares ApplySideEncryptionConfiguration, but the
+          // raw COS API returns ApplyServerSideEncryptionByDefault — read both.
+          const apply =
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            (rule as any)?.ApplyServerSideEncryptionByDefault ??
+            rule?.ApplySideEncryptionConfiguration;
+          sseConfiguration = {
+            sseAlgorithm: apply?.SSEAlgorithm,
+            sseKmsMasterKeyId: apply?.KMSMasterKeyID,
+          };
+        } catch {
+          // Encryption might not be configured
+        }
+
+        // Get bucket policy (cloud-effective, may differ from the definition)
+        let policy: CosBucketInfo['Policy'] = null;
+        try {
+          const policyResult = await new Promise<{ Policy?: string }>((resolve, reject) => {
+            cosClient.getBucketPolicy(
+              {
+                Bucket: bucketName,
+                Region: region,
+              },
+              (err: unknown, data: unknown) => {
+                if (err) reject(err);
+                else resolve(data as { Policy?: string });
+              },
+            );
+          });
+          if (policyResult.Policy) {
+            policy =
+              typeof policyResult.Policy === 'string'
+                ? JSON.parse(policyResult.Policy)
+                : policyResult.Policy;
+          }
+        } catch (err: unknown) {
+          const e = err as { statusCode?: number; code?: string };
+          if (e.statusCode !== 404 && e.statusCode !== 403 && e.code !== 'NoSuchBucketPolicy') {
+            throw err;
+          }
         }
 
         return {
           Name: bucketName,
           Location: region,
+          CreationDate: creationDate,
           ACL: acl,
           WebsiteConfiguration: websiteConfig,
           AccessControlPolicy: accessControlPolicy,
@@ -586,6 +768,11 @@ const createCosOperations = (cosClient: CosSdkClient, region: string, dnsOps?: D
           VersioningConfiguration: versioningConfig,
           TaggingConfiguration: taggingConfig,
           Tags: taggingConfig?.tags?.map((t) => ({ Key: t.key ?? '', Value: t.value ?? '' })),
+          LifecycleConfiguration: lifecycleConfiguration,
+          LoggingConfiguration: loggingConfiguration,
+          ReplicationConfiguration: replicationConfiguration,
+          SseConfiguration: sseConfiguration,
+          Policy: policy,
         };
       } catch (error: unknown) {
         if (error && typeof error === 'object' && 'statusCode' in error) {

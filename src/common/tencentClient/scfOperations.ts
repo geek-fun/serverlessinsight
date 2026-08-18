@@ -200,6 +200,7 @@ export const createScfOperations = (scfClient: ScfSdkClient, deps: ScfOperations
           ImageConfig: response.ImageConfig,
           ProtocolType: response.ProtocolType,
           ProtocolParams: response.ProtocolParams,
+          InstanceConcurrencyConfig: response.InstanceConcurrencyConfig,
           DnsCache: response.DnsCache,
           IntranetConfig: response.IntranetConfig,
         };

@@ -233,6 +233,65 @@ const buildCosInstanceFromProvider = (info: CosBucketInfo, sid: string) => {
             })) ?? [],
         }
       : {},
+    tags:
+      info.Tags?.map((t) => ({
+        key: t.Key,
+        value: t.Value,
+      })) ?? [],
+    lifecycleConfiguration: info.LifecycleConfiguration
+      ? {
+          rules:
+            info.LifecycleConfiguration.rules?.map((r) => ({
+              id: r.id ?? null,
+              status: r.status ?? null,
+              prefix: r.prefix ?? null,
+              expiration: r.expiration
+                ? {
+                    days: r.expiration.days ?? null,
+                    date: r.expiration.date ?? null,
+                    expiredObjectDeleteMarker: r.expiration.expiredObjectDeleteMarker ?? null,
+                  }
+                : {},
+              transition: r.transition
+                ? {
+                    days: r.transition.days ?? null,
+                    date: r.transition.date ?? null,
+                    storageClass: r.transition.storageClass ?? null,
+                  }
+                : {},
+            })) ?? [],
+        }
+      : {},
+    loggingConfiguration: info.LoggingConfiguration
+      ? {
+          targetBucket: info.LoggingConfiguration.targetBucket ?? null,
+          targetPrefix: info.LoggingConfiguration.targetPrefix ?? null,
+        }
+      : {},
+    replicationConfiguration: info.ReplicationConfiguration
+      ? {
+          role: info.ReplicationConfiguration.role ?? null,
+          rules:
+            info.ReplicationConfiguration.rules?.map((r) => ({
+              id: r.id ?? null,
+              status: r.status ?? null,
+              prefix: r.prefix ?? null,
+              destination: r.destination
+                ? {
+                    bucket: r.destination.bucket ?? null,
+                    storageClass: r.destination.storageClass ?? null,
+                  }
+                : {},
+            })) ?? [],
+        }
+      : {},
+    sseConfiguration: info.SseConfiguration
+      ? {
+          sseAlgorithm: info.SseConfiguration.sseAlgorithm ?? null,
+          sseKmsMasterKeyId: info.SseConfiguration.sseKmsMasterKeyId ?? null,
+        }
+      : {},
+    policy: info.Policy ?? null,
   };
 };
 

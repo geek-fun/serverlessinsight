@@ -207,8 +207,16 @@ describe('tdsqlcOperations', () => {
       expect(result).toBeNull();
     });
 
-    it('should return null on error', async () => {
+    it('should rethrow non-not-found errors', async () => {
       const error = new Error('API error');
+      mockCynosdbClient.DescribeClusters.mockRejectedValue(error);
+
+      await expect(operations.getCluster('cluster-123')).rejects.toThrow('API error');
+    });
+
+    it('should return null on ResourceNotFound', async () => {
+      const error = new Error('not found') as Error & { code: string };
+      error.code = 'ResourceNotFound.ClusterNotFoundError';
       mockCynosdbClient.DescribeClusters.mockRejectedValue(error);
 
       const result = await operations.getCluster('cluster-123');
@@ -223,16 +231,49 @@ describe('tdsqlcOperations', () => {
             ClusterId: 'cluster-123',
             ClusterName: 'test-cluster',
             Region: 'ap-guangzhou',
+            Uin: '100000000001',
+            AppId: 1250000000,
             Zone: 'ap-guangzhou-3',
             DbType: 'cynosdb',
             DbVersion: '5.7',
             Status: TdsqlcClusterStatus.RUNNING,
+            ServerlessStatus: 'resume',
             Vip: '10.0.0.1',
             Vport: 3306,
             MinStorageSize: 10,
             MaxStorageSize: 1000,
             Storage: 100,
             CreateTime: '2024-01-01T00:00:00Z',
+            CynosVersion: '5.7.1',
+            CynosVersionTag: 'stable',
+            Tasks: [
+              {
+                TaskId: 1,
+                TaskType: 'create',
+                TaskStatus: 'success',
+                ObjectId: 'cluster-123',
+                ObjectType: 'cluster',
+              },
+            ],
+            NetAddrs: [
+              {
+                Vip: '10.0.0.1',
+                Vport: 3306,
+                NetType: 'rw',
+                UniqSubnetId: 'subnet-456',
+                UniqVpcId: 'vpc-123',
+              },
+            ],
+            HasSlaveZone: '0',
+            ResourcePackages: [
+              {
+                PackageId: 'package-1',
+                PackageType: 'DISK',
+                DeductionPriority: 1,
+              },
+            ],
+            GdnId: 'gdn-123',
+            GdnRole: 'primary',
           },
         ],
       });
@@ -243,6 +284,41 @@ describe('tdsqlcOperations', () => {
       expect(result?.Vport).toBe(3306);
       expect(result?.MinStorageSize).toBe(10);
       expect(result?.MaxStorageSize).toBe(1000);
+      expect(result?.Uin).toBe('100000000001');
+      expect(result?.AppId).toBe(1250000000);
+      expect(result?.ServerlessStatus).toBe('resume');
+      expect(result?.Tasks).toEqual([
+        {
+          TaskId: 1,
+          TaskType: 'create',
+          TaskStatus: 'success',
+          ObjectId: 'cluster-123',
+          ObjectType: 'cluster',
+        },
+      ]);
+      expect(result?.NetAddrs).toEqual([
+        {
+          Vip: '10.0.0.1',
+          Vport: 3306,
+          NetType: 'rw',
+          UniqSubnetId: 'subnet-456',
+          UniqVpcId: 'vpc-123',
+        },
+      ]);
+      expect(result?.HasSlaveZone).toBe('0');
+      expect(result?.ResourcePackages).toEqual([
+        {
+          PackageId: 'package-1',
+          PackageType: 'DISK',
+          DeductionPriority: 1,
+        },
+      ]);
+      expect(result?.GdnId).toBe('gdn-123');
+      expect(result?.GdnRole).toBe('primary');
+      expect(result?.CynosVersionTag).toBe('stable');
+      // AutoPause is NOT derived from ServerlessStatus (resume/pause) — that
+      // is the cluster running state, not the idle-stall switch.
+      expect(result?.AutoPause).toBeUndefined();
     });
   });
 

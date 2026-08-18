@@ -9,7 +9,7 @@ import {
 import { createTencentClient } from '../../common/tencentClient';
 import { functionToScfConfig, extractScfDefinition } from './scfTypes';
 import { getAllResources, getResource } from '../../common/stateManager';
-import { attributesEqual, computeFileHash } from '../../common/hashUtils';
+import { attributesEqual, computeZipContentHash } from '../../common/hashUtils';
 import { OWNERSHIP_TAG_KEY, isOwnedByStack } from '../ownershipTag';
 
 const planFunctionDeletion = (logicalId: string, definition: ResourceAttributes): PlanItem => ({
@@ -42,7 +42,7 @@ export const generateFunctionPlan = async (
       const currentState = getResource(state, logicalId);
       const config = functionToScfConfig(fn);
       const codePath = fn.code!.path;
-      const desiredCodeHash = computeFileHash(codePath);
+      const desiredCodeHash = await computeZipContentHash(codePath);
       const desiredDefinition = extractScfDefinition(config, desiredCodeHash, fn.iam);
 
       if (!currentState || currentState.status === 'tainted') {
