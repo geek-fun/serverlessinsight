@@ -340,6 +340,259 @@ describe('fc3Operations', () => {
 
       await expect(operations.getFunction('test-function')).rejects.toThrow('InternalError');
     });
+
+    it('should retain the full GetFunction detail set (max-detail state)', async () => {
+      mockGetFunction.mockResolvedValue({
+        body: {
+          functionName: 'max-detail-fn',
+          functionArn: 'arn:aliyun:fc:cn-hangzhou:123:functions/max-detail-fn',
+          functionId: 'func-999',
+          runtime: 'custom.debian12',
+          handler: 'index.handler',
+          memorySize: 1024,
+          timeout: 60,
+          diskSize: 512,
+          cpu: 1,
+          environmentVariables: { NODE_ENV: 'production' },
+          vpcConfig: {
+            vpcId: 'vpc-123',
+            vSwitchIds: ['vsw-1'],
+            securityGroupId: 'sg-1',
+            role: 'acs:ram::123:role/fc-vpc',
+          },
+          logConfig: {
+            project: 'proj-1',
+            logstore: 'logstore-1',
+            enableRequestMetrics: true,
+            enableInstanceMetrics: true,
+            enableLlmMetrics: true,
+            logBeginRule: 'DefaultRegex',
+          },
+          customContainerConfig: {
+            image: 'registry.cn-hangzhou.aliyuncs.com/test/image:v1',
+            entrypoint: ['/app/start'],
+            command: ['--port', '9000'],
+            port: 9000,
+            accelerationType: 'Default',
+            accelerationInfo: { status: 'Ready' },
+            acrInstanceId: 'cri-123',
+            healthCheckConfig: {
+              failureThreshold: 3,
+              httpGetUrl: '/health',
+              initialDelaySeconds: 5,
+              periodSeconds: 10,
+              successThreshold: 1,
+              timeoutSeconds: 5,
+            },
+            registryConfig: { authConfig: { password: 'secret', userName: 'user' } },
+            resolvedImageUri: 'registry.cn-hangzhou.aliyuncs.com/test/image@sha256:abc',
+          },
+          customDNS: {
+            nameServers: ['8.8.8.8'],
+            searches: ['example.com'],
+            dnsOptions: [{ name: 'ndots', value: '2' }],
+          },
+          customRuntimeConfig: {
+            args: ['-c'],
+            command: ['/opt/run.sh'],
+            port: 8080,
+            healthCheckConfig: { httpGetUrl: '/', initialDelaySeconds: 1 },
+          },
+          disableInjectCredentials: 'Env',
+          disableOndemand: false,
+          enableLongLiving: true,
+          idleTimeout: 100,
+          instanceConcurrency: 3,
+          instanceIsolationMode: 'soft',
+          instanceLifecycleConfig: {
+            initializer: { handler: 'index.init', timeout: 10 },
+            preStop: { handler: 'index.shutdown', timeout: 5 },
+          },
+          invocationRestriction: {
+            disable: false,
+            reason: '',
+            lastModifiedTime: '2025-01-01T00:00:00Z',
+          },
+          juiceFsConfig: {
+            envs: { KEY: 'val' },
+            mountPoints: [
+              {
+                args: ['-o', 'ro'],
+                mountDir: '/mnt/juicefs',
+                remoteDir: '/',
+                token: 'tok',
+                volumeName: 'vol',
+              },
+            ],
+          },
+          layers: [{ arn: 'acs:fc:cn-hangzhou:123:layers/l1/versions/1', size: 100 }],
+          lockInfo: {
+            lockedBy: 'AgentRun',
+            lockedAt: '2025-04-05T10:00:00Z',
+            lockedResources: ['function'],
+          },
+          microSandboxConfig: {
+            osType: 'Linux',
+            readyCommand: '/bin/ready',
+            startCommand: '/bin/start',
+          },
+          ossMountConfig: {
+            mountPoints: [
+              {
+                bucketName: 'b1',
+                bucketPath: '/data',
+                endpoint: 'oss-cn-hangzhou.aliyuncs.com',
+                mountDir: '/mnt/oss',
+                readOnly: true,
+              },
+            ],
+          },
+          polarFsConfig: {
+            groupId: 1000,
+            userId: 1000,
+            mountPoints: [
+              { instanceId: 'polar-1', mountDir: '/mnt/polar', readOnly: true, remoteDir: '/' },
+            ],
+          },
+          resourceGroupId: 'rg-123',
+          sessionAffinity: 'MCP_SSE',
+          sessionAffinityConfig: '{"sseEndpointPath":"/sse"}',
+          tracingConfig: { type: 'Jaeger', params: { endpoint: 'http://jaeger:14268' } },
+          description: 'max-detail function',
+          internetAccess: true,
+          role: 'acs:ram::123:role/fc',
+          codeChecksum: 'abc123',
+          codeSize: 1024,
+          createdTime: '2025-01-01T00:00:00Z',
+          lastModifiedTime: '2025-01-02T00:00:00Z',
+          state: 'Active',
+          stateReason: '',
+          stateReasonCode: '',
+          lastUpdateStatus: 'Successful',
+          lastUpdateStatusReason: '',
+          lastUpdateStatusReasonCode: '',
+          tags: [{ key: 'si-owned-by', value: 'test-app-test-service:functions.test_fn' }],
+        },
+      });
+
+      const result = await operations.getFunction('max-detail-fn');
+
+      expect(result).toEqual(
+        expect.objectContaining({
+          functionArn: 'arn:aliyun:fc:cn-hangzhou:123:functions/max-detail-fn',
+          vpcConfig: {
+            vpcId: 'vpc-123',
+            vSwitchIds: ['vsw-1'],
+            securityGroupId: 'sg-1',
+            role: 'acs:ram::123:role/fc-vpc',
+          },
+          logConfig: {
+            project: 'proj-1',
+            logstore: 'logstore-1',
+            enableRequestMetrics: true,
+            enableInstanceMetrics: true,
+            enableLlmMetrics: true,
+            logBeginRule: 'DefaultRegex',
+          },
+          customContainerConfig: {
+            image: 'registry.cn-hangzhou.aliyuncs.com/test/image:v1',
+            entrypoint: ['/app/start'],
+            command: ['--port', '9000'],
+            port: 9000,
+            accelerationType: 'Default',
+            accelerationInfo: { status: 'Ready' },
+            acrInstanceId: 'cri-123',
+            healthCheckConfig: {
+              failureThreshold: 3,
+              httpGetUrl: '/health',
+              initialDelaySeconds: 5,
+              periodSeconds: 10,
+              successThreshold: 1,
+              timeoutSeconds: 5,
+            },
+            registryConfig: { authConfig: { password: 'secret', userName: 'user' } },
+            resolvedImageUri: 'registry.cn-hangzhou.aliyuncs.com/test/image@sha256:abc',
+          },
+          customDNS: {
+            nameServers: ['8.8.8.8'],
+            searches: ['example.com'],
+            dnsOptions: [{ name: 'ndots', value: '2' }],
+          },
+          customRuntimeConfig: {
+            args: ['-c'],
+            command: ['/opt/run.sh'],
+            port: 8080,
+            healthCheckConfig: { httpGetUrl: '/', initialDelaySeconds: 1 },
+          },
+          disableInjectCredentials: 'Env',
+          disableOndemand: false,
+          enableLongLiving: true,
+          idleTimeout: 100,
+          instanceConcurrency: 3,
+          instanceIsolationMode: 'soft',
+          instanceLifecycleConfig: {
+            initializer: { handler: 'index.init', timeout: 10 },
+            preStop: { handler: 'index.shutdown', timeout: 5 },
+          },
+          invocationRestriction: {
+            disable: false,
+            reason: '',
+            lastModifiedTime: '2025-01-01T00:00:00Z',
+          },
+          juiceFsConfig: {
+            envs: { KEY: 'val' },
+            mountPoints: [
+              {
+                args: ['-o', 'ro'],
+                mountDir: '/mnt/juicefs',
+                remoteDir: '/',
+                token: 'tok',
+                volumeName: 'vol',
+              },
+            ],
+          },
+          layers: [{ arn: 'acs:fc:cn-hangzhou:123:layers/l1/versions/1', size: 100 }],
+          lockInfo: {
+            lockedBy: 'AgentRun',
+            lockedAt: '2025-04-05T10:00:00Z',
+            lockedResources: ['function'],
+          },
+          microSandboxConfig: {
+            osType: 'Linux',
+            readyCommand: '/bin/ready',
+            startCommand: '/bin/start',
+          },
+          ossMountConfig: {
+            mountPoints: [
+              {
+                bucketName: 'b1',
+                bucketPath: '/data',
+                endpoint: 'oss-cn-hangzhou.aliyuncs.com',
+                mountDir: '/mnt/oss',
+                readOnly: true,
+              },
+            ],
+          },
+          polarFsConfig: {
+            groupId: 1000,
+            userId: 1000,
+            mountPoints: [
+              {
+                instanceId: 'polar-1',
+                mountDir: '/mnt/polar',
+                readOnly: true,
+                remoteDir: '/',
+              },
+            ],
+          },
+          resourceGroupId: 'rg-123',
+          sessionAffinity: 'MCP_SSE',
+          sessionAffinityConfig: '{"sseEndpointPath":"/sse"}',
+          tracingConfig: { type: 'Jaeger', params: { endpoint: 'http://jaeger:14268' } },
+          tags: [{ Key: 'si-owned-by', Value: 'test-app-test-service:functions.test_fn' }],
+        }),
+      );
+    });
   });
 
   describe('updateFunctionConfiguration', () => {

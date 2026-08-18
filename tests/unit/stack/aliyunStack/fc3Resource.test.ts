@@ -34,7 +34,7 @@ const mockedStateManager = {
   removeResource: jest.fn(),
 };
 const mockedHashUtils = {
-  computeFileHash: jest.fn(),
+  computeZipContentHash: jest.fn(),
 };
 const mockedSlsOperations = {
   createProject: jest.fn(),
@@ -113,7 +113,7 @@ jest.mock('../../../../src/common/stateManager', () => ({
 
 jest.mock('../../../../src/common/hashUtils', () => ({
   ...jest.requireActual('../../../../src/common/hashUtils'),
-  computeFileHash: (...args: unknown[]) => mockedHashUtils.computeFileHash(...args),
+  computeZipContentHash: (...args: unknown[]) => mockedHashUtils.computeZipContentHash(...args),
 }));
 
 const mockedStatSync = jest.fn();
@@ -211,7 +211,7 @@ describe('Fc3Resource', () => {
   beforeEach(() => {
     mockedFc3Types.functionToFc3Config.mockReturnValue(mockConfig);
     mockedFc3Types.extractFc3Definition.mockReturnValue(mockDefinition);
-    mockedHashUtils.computeFileHash.mockReturnValue('mock-code-hash');
+    mockedHashUtils.computeZipContentHash.mockResolvedValue('mock-code-hash');
     mockedFc3Operations.getFunction.mockResolvedValue(mockFunctionInfo);
     (context.getContext as jest.Mock).mockReturnValue(mockContext);
 
@@ -306,7 +306,7 @@ describe('Fc3Resource', () => {
         undefined,
       );
       expect(mockedFc3Operations.getFunction).toHaveBeenCalledWith('test-function');
-      expect(mockedHashUtils.computeFileHash).toHaveBeenCalledWith('test.zip');
+      expect(mockedHashUtils.computeZipContentHash).toHaveBeenCalledWith('test.zip');
       expect(mockedFc3Types.extractFc3Definition).toHaveBeenCalledWith(
         expect.objectContaining({
           ...mockConfig,
@@ -913,7 +913,7 @@ describe('Fc3Resource', () => {
         undefined,
       );
       expect(mockedFc3Operations.getFunction).toHaveBeenCalledWith('test-function');
-      expect(mockedHashUtils.computeFileHash).toHaveBeenCalledWith('test.zip');
+      expect(mockedHashUtils.computeZipContentHash).toHaveBeenCalledWith('test.zip');
       expect(mockedFc3Types.extractFc3Definition).toHaveBeenCalledWith(
         expect.objectContaining({
           ...mockConfig,
@@ -2527,6 +2527,7 @@ describe('Fc3Resource', () => {
         lastUpdateStatus: 'Successful',
         lastUpdateStatusReason: '',
         lastUpdateStatusReasonCode: '',
+        tags: [{ Key: 'si-owned-by', Value: 'test-app-test-service:functions.test_fn' }],
       };
 
       mockedFc3Operations.getFunction.mockResolvedValue(functionInfoWithAll);
@@ -2582,6 +2583,12 @@ describe('Fc3Resource', () => {
       expect(fcInstance.description).toBe('Test function');
       expect(fcInstance.internetAccess).toBe(true);
       expect(fcInstance.role).toBe('acs:ram::123456789012:role/test-role');
+      expect(fcInstance.functionArn).toBe(
+        'arn:acs:fc:cn-hangzhou:123456789012:function/test-function',
+      );
+      expect(fcInstance.tags).toEqual([
+        { key: 'si-owned-by', value: 'test-app-test-service:functions.test_fn' },
+      ]);
     });
 
     it('should handle nasConfig with undefined mountPoints', async () => {
@@ -2723,6 +2730,8 @@ describe('Fc3Resource', () => {
       expect(fcInstance.createdTime).toBeNull();
       expect(fcInstance.lastModifiedTime).toBeNull();
       expect(fcInstance.state).toBeNull();
+      expect(fcInstance.functionArn).toBeNull();
+      expect(fcInstance.tags).toBeUndefined();
     });
   });
 

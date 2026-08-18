@@ -1641,6 +1641,130 @@ describe('ossOperations getBucket additional branches', () => {
     expect(result?.lifecycleRules?.[0].expiration).toBeUndefined();
   });
 
+  it('should retain the full getBucket detail set (max-detail state)', async () => {
+    const mockOssClient2 = {
+      ...mockOssClient,
+      getBucketInfo: jest.fn().mockResolvedValue({
+        bucket: { Name: 'test-bucket', Location: 'oss-cn-hangzhou' },
+      }),
+      getBucketACL: jest.fn().mockResolvedValue({ acl: 'private' }),
+      getBucketWebsite: jest.fn().mockRejectedValue(new Error('No website')),
+      getBucketLogging: jest.fn().mockRejectedValue(new Error('No logging')),
+      getBucketCORS: jest.fn().mockRejectedValue(new Error('No CORS')),
+      getBucketLifecycle: jest.fn().mockResolvedValue({
+        rules: [
+          {
+            id: 'transition-rule',
+            status: 'Enabled',
+            prefix: 'temp/',
+            days: 30,
+            transition: {
+              days: 15,
+              storageClass: 'IA',
+            },
+            expiration: {
+              days: 30,
+              expiredObjectDeleteMarker: true,
+            },
+          },
+        ],
+      }),
+      getBucketTags: jest.fn().mockRejectedValue(new Error('No tags')),
+      getBucketVersioning: jest.fn().mockResolvedValue({ versionStatus: 'Enabled' }),
+      getBucketEncryption: jest.fn().mockResolvedValue({
+        encryption: {
+          SSEAlgorithm: 'KMS',
+          KMSMasterKeyID: 'kms-key-1',
+          KMSDataEncryption: 'SM4',
+        },
+      }),
+      getBucketPolicy: jest.fn().mockResolvedValue({
+        policy: JSON.stringify({
+          Version: '1',
+          Statement: [
+            {
+              Action: ['oss:GetObject'],
+              Effect: 'Allow',
+              Principal: ['*'],
+              Resource: ['acs:oss:*:*:test-bucket/*'],
+            },
+          ],
+        }),
+      }),
+    } as unknown as OSS;
+
+    mockRequest.mockResolvedValueOnce({
+      data: '<?xml version="1.0" encoding="UTF-8"?><TransferAccelerationConfiguration><Enabled>true</Enabled></TransferAccelerationConfiguration>',
+    });
+    mockRequest.mockResolvedValueOnce({
+      data: '<?xml version="1.0" encoding="UTF-8"?><ReplicationConfiguration><Rule><ID>rep-1</ID><Status>doing</Status><PrefixSet><Prefix>prefix-1</Prefix></PrefixSet><Destination><Bucket>dest-bucket</Bucket><StorageClass>Standard</StorageClass></Destination></Rule></ReplicationConfiguration>',
+    });
+
+    const ops = createOssOperations(mockOssClient2, 'cn-hangzhou');
+    const result = await ops.getBucket('test-bucket');
+
+    expect(result).toEqual(
+      expect.objectContaining({
+        versioningConfig: { status: 'Enabled' },
+        encryptionConfig: {
+          sseAlgorithm: 'KMS',
+          kmsMasterKeyId: 'kms-key-1',
+          kmsDataEncryption: 'SM4',
+        },
+        transferAccelerationStatus: 'Enabled',
+        replicationRules: [
+          {
+            id: 'rep-1',
+            status: 'doing',
+            prefix: 'prefix-1',
+            destination: { bucket: 'dest-bucket', storageClass: 'Standard' },
+          },
+        ],
+        lifecycleRules: [
+          {
+            id: 'transition-rule',
+            status: 'Enabled',
+            prefix: 'temp/',
+            expiration: { days: 30, expiredObjectDeleteMarker: true },
+            transition: { days: 15, storageClass: 'IA' },
+          },
+        ],
+        policy: JSON.stringify({
+          Version: '1',
+          Statement: [
+            {
+              Action: ['oss:GetObject'],
+              Effect: 'Allow',
+              Principal: ['*'],
+              Resource: ['acs:oss:*:*:test-bucket/*'],
+            },
+          ],
+        }),
+      }),
+    );
+  });
+
+  it('should default transferAccelerationStatus to Disabled when not configured', async () => {
+    const mockOssClient2 = {
+      ...mockOssClient,
+      getBucketInfo: jest.fn().mockResolvedValue({
+        bucket: { Name: 'test-bucket', Location: 'oss-cn-hangzhou' },
+      }),
+      getBucketACL: jest.fn().mockRejectedValue(new Error('No ACL')),
+      getBucketWebsite: jest.fn().mockRejectedValue(new Error('No website')),
+      getBucketLogging: jest.fn().mockRejectedValue(new Error('No logging')),
+      getBucketCORS: jest.fn().mockRejectedValue(new Error('No CORS')),
+      getBucketLifecycle: jest.fn().mockRejectedValue(new Error('No lifecycle')),
+    } as unknown as OSS;
+
+    mockRequest.mockResolvedValueOnce({ data: '' });
+
+    const ops = createOssOperations(mockOssClient2, 'cn-hangzhou');
+    const result = await ops.getBucket('test-bucket');
+
+    expect(result?.transferAccelerationStatus).toBe('Disabled');
+  });
+
   it('should handle CORS rules with string allowedOrigin and allowedMethod', async () => {
     const mockOssClient2 = {
       ...mockOssClient,

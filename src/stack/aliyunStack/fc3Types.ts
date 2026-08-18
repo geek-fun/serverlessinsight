@@ -5,6 +5,7 @@ export type Fc3VpcConfig = {
   vpcId?: string;
   vSwitchIds?: string[];
   securityGroupId?: string;
+  role?: string;
 };
 
 export type Fc3GpuConfig = {
@@ -29,7 +30,17 @@ export type Fc3LogConfig = {
   logstore?: string;
   enableRequestMetrics?: boolean;
   enableInstanceMetrics?: boolean;
+  enableLlmMetrics?: boolean;
   logBeginRule?: string;
+};
+
+export type Fc3CustomHealthCheckConfig = {
+  failureThreshold?: number;
+  httpGetUrl?: string;
+  initialDelaySeconds?: number;
+  periodSeconds?: number;
+  successThreshold?: number;
+  timeoutSeconds?: number;
 };
 
 export type Fc3CustomContainerConfig = {
@@ -38,6 +49,74 @@ export type Fc3CustomContainerConfig = {
   command?: string[];
   port?: number;
   accelerationType?: string;
+  accelerationInfo?: { status?: string };
+  acrInstanceId?: string;
+  healthCheckConfig?: Fc3CustomHealthCheckConfig;
+  registryConfig?: {
+    authConfig?: { password?: string; userName?: string };
+  };
+  resolvedImageUri?: string;
+};
+
+export type Fc3CustomDNS = {
+  nameServers?: string[];
+  searches?: string[];
+  dnsOptions?: Array<{ name?: string; value?: string }>;
+};
+
+export type Fc3CustomRuntimeConfig = {
+  args?: string[];
+  command?: string[];
+  port?: number;
+  healthCheckConfig?: Fc3CustomHealthCheckConfig;
+};
+
+export type Fc3InstanceLifecycleConfig = {
+  initializer?: { handler?: string; timeout?: number; command?: string[] };
+  preStop?: { handler?: string; timeout?: number; command?: string[] };
+};
+
+export type Fc3FunctionLayer = {
+  arn?: string;
+  size?: number;
+};
+
+export type Fc3LockInfo = {
+  lockedAt?: string;
+  lockedBy?: string;
+  lockedResources?: string[];
+};
+
+export type Fc3MicroSandboxConfig = {
+  osType?: string;
+  readyCommand?: string;
+  startCommand?: string;
+};
+
+export type Fc3OssMountConfig = {
+  mountPoints?: Array<{
+    bucketName?: string;
+    bucketPath?: string;
+    endpoint?: string;
+    mountDir?: string;
+    readOnly?: boolean;
+  }>;
+};
+
+export type Fc3PolarFsConfig = {
+  groupId?: number;
+  userId?: number;
+  mountPoints?: Array<{
+    instanceId?: string;
+    mountDir?: string;
+    readOnly?: boolean;
+    remoteDir?: string;
+  }>;
+};
+
+export type Fc3TracingConfig = {
+  type?: string;
+  params?: Record<string, string>;
 };
 
 export type Fc3FunctionConfig = {
@@ -88,6 +167,39 @@ export type Fc3FunctionInfo = {
   lastUpdateStatus?: string;
   lastUpdateStatusReason?: string;
   lastUpdateStatusReasonCode?: string;
+  tags?: Array<{ Key?: string; Value?: string }>;
+  // Maximum-detail fields — retained from GetFunction so state keeps the full
+  // cloud resource detail (runtime config, concurrency, lifecycle hooks,
+  // storage mounts, network/DNS, tracing, layers, resource group, tags).
+  customDNS?: Fc3CustomDNS;
+  customRuntimeConfig?: Fc3CustomRuntimeConfig;
+  disableInjectCredentials?: string;
+  disableOndemand?: boolean;
+  enableLongLiving?: boolean;
+  idleTimeout?: number;
+  instanceConcurrency?: number;
+  instanceIsolationMode?: string;
+  instanceLifecycleConfig?: Fc3InstanceLifecycleConfig;
+  invocationRestriction?: { disable?: boolean; lastModifiedTime?: string; reason?: string };
+  juiceFsConfig?: {
+    envs?: Record<string, string>;
+    mountPoints?: Array<{
+      args?: string[];
+      mountDir?: string;
+      remoteDir?: string;
+      token?: string;
+      volumeName?: string;
+    }>;
+  };
+  layers?: Fc3FunctionLayer[];
+  lockInfo?: Fc3LockInfo;
+  microSandboxConfig?: Fc3MicroSandboxConfig;
+  ossMountConfig?: Fc3OssMountConfig;
+  polarFsConfig?: Fc3PolarFsConfig;
+  resourceGroupId?: string;
+  sessionAffinity?: string;
+  sessionAffinityConfig?: string;
+  tracingConfig?: Fc3TracingConfig;
 };
 
 const gpuConfigMap: Record<FunctionGpuEnum, { gpuMemorySize: number; gpuType: string }> = {

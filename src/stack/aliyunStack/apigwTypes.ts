@@ -2,6 +2,15 @@ import { CdnConfig, Context, EventDomain, ResourceAttributes } from '../../types
 import { getIacDefinition, isFunctionDomain, getContext, logger } from '../../common';
 import { lang } from '../../lang';
 import { OWNERSHIP_TAG_KEY, buildOwnershipTagValue } from '../ownershipTag';
+// Re-export the info types from the shared client layer so there is a single
+// source of truth — the operations layer owns the cloud-returned field shape
+// and the stack layer consumes it (previous duplicated copies could drift).
+export type {
+  ApigwGroupInfo,
+  ApigwApiInfo,
+  ApigwCustomDomainItem,
+  ApigwRequestParameter,
+} from '../../common/aliyunClient/apigwOperations';
 
 // API Group types
 export type ApigwGroupConfig = {
@@ -10,24 +19,6 @@ export type ApigwGroupConfig = {
   basePath?: string;
   instanceId?: string;
   tags?: Array<{ key: string; value: string }>;
-};
-
-export type ApigwGroupInfo = {
-  groupId?: string;
-  groupName?: string;
-  description?: string;
-  basePath?: string;
-  subDomain?: string;
-  instanceId?: string;
-  instanceType?: string;
-  regionId?: string;
-  status?: string;
-  createdTime?: string;
-  modifiedTime?: string;
-  billingStatus?: string;
-  illegalStatus?: string;
-  trafficLimit?: number;
-  tags?: Array<{ Key?: string; Value?: string }>;
 };
 
 // API types
@@ -68,47 +59,6 @@ export type ApigwApiConfig = {
   resultSample?: string;
   failResultSample?: string;
   tags?: Array<{ key: string; value: string }>;
-};
-
-export type ApigwApiInfo = {
-  apiId?: string;
-  apiName?: string;
-  groupId?: string;
-  groupName?: string;
-  description?: string;
-  visibility?: string;
-  authType?: string;
-  requestConfig?: {
-    requestProtocol?: string;
-    requestHttpMethod?: string;
-    requestPath?: string;
-    requestMode?: string;
-    bodyFormat?: string;
-  };
-  serviceConfig?: {
-    serviceProtocol?: string;
-    serviceAddress?: string;
-    serviceHttpMethod?: string;
-    servicePath?: string;
-    serviceTimeout?: number;
-    functionComputeConfig?: {
-      fcRegionId?: string;
-      functionName?: string;
-      roleArn?: string;
-      fcVersion?: string;
-      method?: string;
-    };
-    mockResult?: string;
-  };
-  resultType?: string;
-  resultSample?: string;
-  createdTime?: string;
-  modifiedTime?: string;
-  deployedInfos?: Array<{
-    stageName?: string;
-    deployedStatus?: string;
-    effectiveVersion?: string;
-  }>;
 };
 
 // Deployment types
@@ -221,7 +171,8 @@ export const triggerToApigwApiConfig = (
 
   return {
     groupId,
-    apiName: `${event.name as string}-${stage}-agw-api-${apiKey}`.replace(/_/g, '-'),
+    // Aliyun CreateApi requires 4-50 chars of [A-Za-z0-9_] — no hyphens.
+    apiName: `${(event.name as string).replace(/-/g, '_')}_${stage}_agw_api_${apiKey}`.slice(0, 50),
     visibility: 'PRIVATE',
     authType: 'ANONYMOUS',
     requestConfig: {

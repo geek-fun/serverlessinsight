@@ -1,4 +1,4 @@
-import { attributesEqual, computeFileHash, getAllResources, getResource } from '../../common';
+import { attributesEqual, computeZipContentHash, getAllResources, getResource } from '../../common';
 import { createAliyunClient } from '../../common/aliyunClient';
 import {
   Context,
@@ -122,7 +122,7 @@ export const generateFunctionPlan = async (
       const rawConfig = functionToFc3Config(fn);
       const config = await resolveVpcConfigSecurityGroup(context, rawConfig);
       const codePath = fn.code!.path;
-      const desiredCodeHash = computeFileHash(codePath);
+      const desiredCodeHash = await computeZipContentHash(codePath);
       const baseDefinition = extractFc3Definition(config, desiredCodeHash);
       const desiredDefinition = fn.iam ? { ...baseDefinition, iam: fn.iam } : baseDefinition;
 

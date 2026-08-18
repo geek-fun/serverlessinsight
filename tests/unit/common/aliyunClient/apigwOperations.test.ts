@@ -23,6 +23,7 @@ const mockAbolishApi = jest.fn();
 const mockSetDomain = jest.fn();
 const mockSetDomainCertificate = jest.fn();
 const mockDeleteDomain = jest.fn();
+const mockListTagResources = jest.fn();
 
 const mockApigwClient = {
   createApiGroup: mockCreateApiGroup,
@@ -39,6 +40,7 @@ const mockApigwClient = {
   setDomain: mockSetDomain,
   setDomainCertificate: mockSetDomainCertificate,
   deleteDomain: mockDeleteDomain,
+  listTagResources: mockListTagResources,
 } as unknown as CloudApiClient;
 
 const mockAddDomainRecord = jest.fn();
@@ -682,6 +684,124 @@ describe('apigwOperations', () => {
 
       expect(result).toBeNull();
     });
+
+    it('should retain the full DescribeApiGroup detail set (max-detail state)', async () => {
+      mockDescribeApiGroup.mockResolvedValue({
+        body: {
+          groupId: 'group-999',
+          groupName: 'max-detail-group',
+          description: 'max detail',
+          basePath: '/v1',
+          subDomain: 'group-999-cn-hangzhou.alicloudapi.com',
+          instanceId: 'apigateway-cn-v6419k43xxxxx',
+          instanceType: 'VPC_SHARED',
+          regionId: 'cn-hangzhou',
+          status: 'NORMAL',
+          createdTime: '2025-01-01T00:00:00Z',
+          modifiedTime: '2025-01-02T00:00:00Z',
+          billingStatus: 'NORMAL',
+          illegalStatus: 'NORMAL',
+          trafficLimit: 500,
+          customDomains: {
+            domainItem: [
+              {
+                domainName: 'api.example.com',
+                bindStageName: 'RELEASE',
+                certificateId: 'cert-1',
+                certificateName: 'api-cert',
+                certificateValidEnd: 1773646400,
+                certificateValidStart: 1742110400,
+                customDomainType: 'INTERNET',
+                domainBindingStatus: 'BOUND',
+                domainCNAMEStatus: 'RESOLVED',
+                domainLegalStatus: 'NORMAL',
+                isHttpRedirectToHttps: true,
+                sslVerifyDepth: 3,
+                wildcardDomainPatterns: 'api.example.com',
+              },
+            ],
+          },
+          stageItems: {
+            stageInfo: [{ description: 'prod', stageId: 'stage-1', stageName: 'RELEASE' }],
+          },
+          defaultDomain: 'mkt.api.gaore.com',
+          vpcDomain: 'e4****-vpc.alicloudapi.com',
+          vpcSlbIntranetDomain:
+            '257e9d450e924d00b976b0ecfb7184c2-cn-beijing-intranet.alicloudapi.com',
+          httpsPolicy: 'HTTPS2_TLS1_0',
+          ipv6Status: 'UNBIND',
+          migrationStatus: 'Success',
+          migrationError: '',
+          passthroughHeaders: 'eagleeye-rpcid',
+          userLogConfig: '{"requestBody":true}',
+          customTraceConfig: '{"parameterName":"traceId"}',
+          customerConfigs: 'removeResponseServerHeader',
+          customAppCodeConfig: '{"location":"HEADER"}',
+          dedicatedInstanceType: 'normal',
+          disableInnerDomain: false,
+          cloudMarketCommodity: false,
+          cmsMonitorGroup: '217008423',
+          compatibleFlags: 'depart:dep1',
+        },
+      });
+      mockListTagResources.mockResolvedValue({
+        body: {
+          tagResources: {
+            tagResource: [
+              {
+                resourceId: 'group-999',
+                resourceType: 'apiGroup',
+                tagKey: 'si-owned-by',
+                tagValue: 'test-app-test-service:events.my_api',
+              },
+            ],
+          },
+        },
+      });
+
+      const result = await operations.getApiGroup('group-999');
+
+      expect(result).toEqual(
+        expect.objectContaining({
+          customDomains: [
+            {
+              domainName: 'api.example.com',
+              bindStageName: 'RELEASE',
+              certificateId: 'cert-1',
+              certificateName: 'api-cert',
+              certificateValidEnd: 1773646400,
+              certificateValidStart: 1742110400,
+              customDomainType: 'INTERNET',
+              domainBindingStatus: 'BOUND',
+              domainCNAMEStatus: 'RESOLVED',
+              domainLegalStatus: 'NORMAL',
+              isHttpRedirectToHttps: true,
+              sslVerifyDepth: 3,
+              wildcardDomainPatterns: 'api.example.com',
+            },
+          ],
+          stageItems: [{ description: 'prod', stageId: 'stage-1', stageName: 'RELEASE' }],
+          defaultDomain: 'mkt.api.gaore.com',
+          vpcDomain: 'e4****-vpc.alicloudapi.com',
+          vpcSlbIntranetDomain:
+            '257e9d450e924d00b976b0ecfb7184c2-cn-beijing-intranet.alicloudapi.com',
+          httpsPolicy: 'HTTPS2_TLS1_0',
+          ipv6Status: 'UNBIND',
+          migrationStatus: 'Success',
+          passthroughHeaders: 'eagleeye-rpcid',
+          userLogConfig: '{"requestBody":true}',
+          customTraceConfig: '{"parameterName":"traceId"}',
+          customerConfigs: 'removeResponseServerHeader',
+          customAppCodeConfig: '{"location":"HEADER"}',
+          dedicatedInstanceType: 'normal',
+          disableInnerDomain: false,
+          cloudMarketCommodity: false,
+          cmsMonitorGroup: '217008423',
+          compatibleFlags: 'depart:dep1',
+          tags: [{ Key: 'si-owned-by', Value: 'test-app-test-service:events.my_api' }],
+        }),
+      );
+    });
   });
 
   describe('getApi - additional branches', () => {
@@ -768,6 +888,262 @@ describe('apigwOperations', () => {
         code: 'InternalError',
         message: 'Server error',
       });
+    });
+
+    it('should retain the full DescribeApi detail set (max-detail state)', async () => {
+      mockDescribeApi.mockResolvedValue({
+        body: {
+          apiId: 'api-999',
+          apiName: 'max-detail-api',
+          groupId: 'group-999',
+          groupName: 'max-detail-group',
+          description: 'max detail',
+          visibility: 'PRIVATE',
+          authType: 'ANONYMOUS',
+          regionId: 'cn-hangzhou',
+          allowSignatureMethod: 'HmacSHA256',
+          appCodeAuthType: 'HEADER',
+          backendEnable: true,
+          backendConfig: {
+            backendId: 'backend-1',
+            backendName: 'backend-oss',
+            backendType: 'HTTP',
+          },
+          forceNonceCheck: true,
+          disableInternet: false,
+          webSocketApiType: 'COMMON',
+          failResultSample: '{"code":400}',
+          resultSample: '{"code":200}',
+          resultType: 'JSON',
+          resultBodyModel: '{}',
+          requestConfig: {
+            requestProtocol: 'HTTP,HTTPS',
+            requestHttpMethod: 'POST',
+            requestPath: '/api/order',
+            requestMode: 'MAPPING',
+            bodyFormat: 'STREAM',
+            bodyModel: 'https://apigateway.aliyun.com/models/m1',
+            escapePathParam: true,
+            postBodyDescription: 'order body',
+          },
+          serviceConfig: {
+            serviceProtocol: 'FunctionCompute',
+            serviceAddress: 'http://api.a.com:8080',
+            serviceHttpMethod: 'POST',
+            servicePath: '/order',
+            serviceTimeout: 10000,
+            serviceVpcEnable: 'TRUE',
+            aoneAppName: 'ib-blank',
+            contentTypeCatagory: 'DEFAULT',
+            contentTypeValue: 'application/json',
+            mock: 'FALSE',
+            mockStatusCode: 200,
+            vpcConfig: {
+              vpcId: 'vpc-123',
+              instanceId: 'i-bp1h497hkijewv2',
+              port: 8080,
+              name: 'vpc-auth',
+              vpcScheme: 'HTTP',
+            },
+            functionComputeConfig: {
+              fcRegionId: 'cn-hangzhou',
+              functionName: 'order-fn',
+              roleArn: 'acs:ram::123:role/fc-role',
+              fcVersion: '3.0',
+              method: 'POST',
+              contentTypeCatagory: 'DEFAULT',
+              contentTypeValue: 'application/json',
+              fcBaseUrl: 'https://1227.fc.aliyuncs.com/2016-08-15/proxy/test',
+              fcType: 'HttpTrigger',
+              onlyBusinessPath: false,
+              path: '/proxy',
+              qualifier: 'LATEST',
+              regionId: 'cn-hangzhou',
+              serviceName: 'order-service',
+              triggerName: 'http-trigger',
+            },
+          },
+          openIdConnectConfig: {
+            idTokenParamName: 'token',
+            openIdApiType: 'IDTOKEN',
+            publicKey: 'pub-key',
+            publicKeyId: 'pub-key-id',
+          },
+          requestParameters: {
+            requestParameter: [
+              {
+                apiParameterName: 'orderId',
+                location: 'QUERY',
+                parameterType: 'String',
+                required: 'REQUIRED',
+                defaultValue: '1',
+                docOrder: 1,
+              },
+            ],
+          },
+          serviceParameters: {
+            serviceParameter: [
+              { location: 'QUERY', parameterType: 'String', serviceParameterName: 'orderId' },
+            ],
+          },
+          serviceParametersMap: {
+            serviceParameterMap: [
+              { requestParameterName: 'orderId', serviceParameterName: 'orderId' },
+            ],
+          },
+          systemParameters: {
+            systemParameter: [
+              { parameterName: 'CaClientIp', location: 'HEADER', serviceParameterName: 'ip' },
+            ],
+          },
+          customSystemParameters: {
+            customSystemParameter: [
+              { parameterName: 'x-custom', location: 'HEADER', serviceParameterName: 'custom' },
+            ],
+          },
+          constantParameters: {
+            constantParameter: [
+              { constantValue: 'fixed', location: 'HEADER', serviceParameterName: 'const' },
+            ],
+          },
+          errorCodeSamples: {
+            errorCodeSample: [
+              { code: '400', message: 'bad request', description: 'invalid', model: 'Err' },
+            ],
+          },
+          tagList: {
+            tag: [{ tagKey: 'env', tagValue: 'prod' }],
+          },
+          createdTime: '2025-01-01T00:00:00Z',
+          modifiedTime: '2025-01-02T00:00:00Z',
+          deployedInfos: {
+            deployedInfo: [
+              { stageName: 'RELEASE', deployedStatus: 'DEPLOYED', effectiveVersion: '2' },
+            ],
+          },
+        },
+      });
+      mockListTagResources.mockResolvedValue({
+        body: {
+          tagResources: {
+            tagResource: [
+              {
+                resourceId: 'api-999',
+                resourceType: 'api',
+                tagKey: 'si-owned-by',
+                tagValue: 'test-app-test-service:events.my_api',
+              },
+            ],
+          },
+        },
+      });
+
+      const result = await operations.getApi('group-999', 'api-999');
+
+      expect(result).toEqual(
+        expect.objectContaining({
+          regionId: 'cn-hangzhou',
+          allowSignatureMethod: 'HmacSHA256',
+          appCodeAuthType: 'HEADER',
+          backendEnable: true,
+          backendConfig: {
+            backendId: 'backend-1',
+            backendName: 'backend-oss',
+            backendType: 'HTTP',
+          },
+          forceNonceCheck: true,
+          disableInternet: false,
+          webSocketApiType: 'COMMON',
+          failResultSample: '{"code":400}',
+          resultSample: '{"code":200}',
+          resultBodyModel: '{}',
+          requestConfig: {
+            requestProtocol: 'HTTP,HTTPS',
+            requestHttpMethod: 'POST',
+            requestPath: '/api/order',
+            requestMode: 'MAPPING',
+            bodyFormat: 'STREAM',
+            bodyModel: 'https://apigateway.aliyun.com/models/m1',
+            escapePathParam: true,
+            postBodyDescription: 'order body',
+          },
+          serviceConfig: {
+            serviceProtocol: 'FunctionCompute',
+            serviceAddress: 'http://api.a.com:8080',
+            serviceHttpMethod: 'POST',
+            servicePath: '/order',
+            serviceTimeout: 10000,
+            serviceVpcEnable: 'TRUE',
+            aoneAppName: 'ib-blank',
+            contentTypeCatagory: 'DEFAULT',
+            contentTypeValue: 'application/json',
+            mock: 'FALSE',
+            mockStatusCode: 200,
+            vpcConfig: {
+              vpcId: 'vpc-123',
+              instanceId: 'i-bp1h497hkijewv2',
+              port: 8080,
+              name: 'vpc-auth',
+              vpcScheme: 'HTTP',
+            },
+            functionComputeConfig: {
+              fcRegionId: 'cn-hangzhou',
+              functionName: 'order-fn',
+              roleArn: 'acs:ram::123:role/fc-role',
+              fcVersion: '3.0',
+              method: 'POST',
+              contentTypeCatagory: 'DEFAULT',
+              contentTypeValue: 'application/json',
+              fcBaseUrl: 'https://1227.fc.aliyuncs.com/2016-08-15/proxy/test',
+              fcType: 'HttpTrigger',
+              onlyBusinessPath: false,
+              path: '/proxy',
+              qualifier: 'LATEST',
+              regionId: 'cn-hangzhou',
+              serviceName: 'order-service',
+              triggerName: 'http-trigger',
+            },
+          },
+          openIdConnectConfig: {
+            idTokenParamName: 'token',
+            openIdApiType: 'IDTOKEN',
+            publicKey: 'pub-key',
+            publicKeyId: 'pub-key-id',
+          },
+          requestParameters: [
+            {
+              apiParameterName: 'orderId',
+              location: 'QUERY',
+              parameterType: 'String',
+              required: 'REQUIRED',
+              defaultValue: '1',
+              docOrder: 1,
+            },
+          ],
+          serviceParameters: [
+            { location: 'QUERY', parameterType: 'String', serviceParameterName: 'orderId' },
+          ],
+          serviceParametersMap: [
+            { requestParameterName: 'orderId', serviceParameterName: 'orderId' },
+          ],
+          systemParameters: [
+            { parameterName: 'CaClientIp', location: 'HEADER', serviceParameterName: 'ip' },
+          ],
+          customSystemParameters: [
+            { parameterName: 'x-custom', location: 'HEADER', serviceParameterName: 'custom' },
+          ],
+          constantParameters: [
+            { constantValue: 'fixed', location: 'HEADER', serviceParameterName: 'const' },
+          ],
+          errorCodeSamples: [
+            { code: '400', message: 'bad request', description: 'invalid', model: 'Err' },
+          ],
+          deployedInfos: [
+            { stageName: 'RELEASE', deployedStatus: 'DEPLOYED', effectiveVersion: '2' },
+          ],
+          tagList: [{ tagKey: 'env', tagValue: 'prod' }],
+        }),
+      );
     });
   });
 

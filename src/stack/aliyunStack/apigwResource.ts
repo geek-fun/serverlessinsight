@@ -370,12 +370,17 @@ const buildApigwGroupInstanceFromProvider = (
     subDomain: info.subDomain ?? null,
     instanceId: info.instanceId ?? null,
     instanceType: info.instanceType ?? null,
+    regionId: info.regionId ?? null,
     status: info.status ?? null,
     createdTime: info.createdTime ?? null,
     modifiedTime: info.modifiedTime ?? null,
     billingStatus: info.billingStatus ?? null,
     illegalStatus: info.illegalStatus ?? null,
     trafficLimit: info.trafficLimit ?? null,
+    tags: info.tags?.map((tag) => ({
+      key: tag.Key ?? null,
+      value: tag.Value ?? null,
+    })),
   };
 };
 
@@ -398,8 +403,10 @@ const buildApigwApiInstanceFromProvider = (
     requestConfig: info.requestConfig ?? null,
     serviceConfig: info.serviceConfig ?? null,
     resultType: info.resultType ?? null,
+    resultSample: info.resultSample ?? null,
     createdTime: info.createdTime ?? null,
     modifiedTime: info.modifiedTime ?? null,
+    deployedInfos: info.deployedInfos ?? null,
   };
 };
 
@@ -843,6 +850,11 @@ export const updateApigwResource = async (
       const cloudGroup = await client.apigw.findApiGroupByName(groupConfig.groupName);
       if (!cloudGroup?.groupId) {
         return findCloudGroupOrCreate();
+      }
+      if (!isOwnedByStack(context, logicalId, cloudGroup.tags)) {
+        throw new Error(
+          `API group ${groupConfig.groupName} already exists but is not owned by this stack (missing ${OWNERSHIP_TAG_KEY} tag). Refusing to adopt — resolve manually.`,
+        );
       }
       const cloudApis = await client.apigw.listApisByGroup(cloudGroup.groupId);
       const built = buildCloudInstance(cloudGroup, cloudApis);

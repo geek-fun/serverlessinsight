@@ -61,6 +61,36 @@ const buildRdsInstanceFromProvider = (info: RdsInfo, sid: string) => {
     regionId: info.regionId ?? null,
     securityIPList: info.securityIPList ?? null,
     multiAZ: info.multiAZ ?? null,
+    tags: info.tags
+      ? info.tags.map((t) => ({
+          key: t.key ?? null,
+          value: t.value ?? null,
+        }))
+      : [],
+    dbInstanceCpu: info.dbInstanceCpu ?? null,
+    dbInstanceMemory: info.dbInstanceMemory ?? null,
+    payType: info.payType ?? null,
+    expireTime: info.expireTime ?? null,
+    maintainTime: info.maintainTime ?? null,
+    maxConnections: info.maxConnections ?? null,
+    maxIOPS: info.maxIOPS ?? null,
+    resourceGroupId: info.resourceGroupId ?? null,
+    deletionProtection: info.deletionProtection ?? null,
+    lockMode: info.lockMode ?? null,
+    lockReason: info.lockReason ?? null,
+    connectionMode: info.connectionMode ?? null,
+    dbInstanceDiskUsed: info.dbInstanceDiskUsed ?? null,
+    dbInstanceType: info.dbInstanceType ?? null,
+    instanceNetworkType: info.instanceNetworkType ?? null,
+    timeZone: info.timeZone ?? null,
+    currentKernelVersion: info.currentKernelVersion ?? null,
+    latestKernelVersion: info.latestKernelVersion ?? null,
+    masterZone: info.masterZone ?? null,
+    masterInstanceId: info.masterInstanceId ?? null,
+    slaveZones: info.slaveZones?.map((z) => ({ zoneId: z.zoneId ?? null })) ?? [],
+    readOnlyDBInstanceIds: info.readOnlyDBInstanceIds ?? [],
+    burstingEnabled: info.burstingEnabled ?? null,
+    computeBurstEnabled: info.computeBurstEnabled ?? null,
   };
 };
 

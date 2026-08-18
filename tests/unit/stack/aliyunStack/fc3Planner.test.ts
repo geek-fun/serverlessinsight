@@ -24,7 +24,7 @@ jest.mock('../../../../src/common/aliyunClient', () => ({
 }));
 jest.mock('../../../../src/common/hashUtils', () => ({
   ...jest.requireActual('../../../../src/common/hashUtils'),
-  computeFileHash: jest.fn().mockReturnValue('mock-code-hash'),
+  computeZipContentHash: jest.fn().mockResolvedValue('mock-code-hash'),
 }));
 
 describe('FC3 Planner', () => {

@@ -67,6 +67,33 @@ export type RdsInfo = {
   securityIPList?: string;
   multiAZ?: boolean;
   tags?: Array<{ key?: string; value?: string }>;
+  // Maximum-detail fields — retained from DescribeDBInstanceAttribute so state
+  // keeps the full cloud resource detail (spec CPU/memory, billing, expiry,
+  // maintenance window, capacity limits, resource group, protection, topology).
+  dbInstanceCpu?: string;
+  dbInstanceMemory?: number;
+  payType?: string;
+  expireTime?: string;
+  maintainTime?: string;
+  maxConnections?: number;
+  maxIOPS?: number;
+  resourceGroupId?: string;
+  deletionProtection?: boolean;
+  lockMode?: string;
+  lockReason?: string;
+  connectionMode?: string;
+  dbInstanceDiskUsed?: string;
+  dbInstanceType?: string;
+  instanceNetworkType?: string;
+  timeZone?: string;
+  currentKernelVersion?: string;
+  latestKernelVersion?: string;
+  masterZone?: string;
+  masterInstanceId?: string;
+  slaveZones?: Array<{ zoneId?: string }>;
+  readOnlyDBInstanceIds?: string[];
+  burstingEnabled?: boolean;
+  computeBurstEnabled?: boolean;
 };
 
 const waitForRdsInstanceReady = async (
@@ -186,7 +213,7 @@ export const createRdsOperations = (rdsClient: RdsClient, context: Context) => {
 
         const instance = response.body.Items.DBInstanceAttribute[0];
 
-        return {
+        const info: RdsInfo = {
           dbInstanceId: instance.DBInstanceId,
           dbInstanceDescription: instance.DBInstanceDescription,
           engine: instance.Engine,
@@ -195,12 +222,14 @@ export const createRdsOperations = (rdsClient: RdsClient, context: Context) => {
           dbInstanceStorage: instance.DBInstanceStorage,
           category: instance.Category,
           dbInstanceStorageType: instance.DBInstanceStorageType,
-          serverlessConfig: instance.ServerlessConfig
+          serverlessConfig: instance.serverlessConfig
             ? {
-                minCapacity: instance.ServerlessConfig.MinCapacity,
-                maxCapacity: instance.ServerlessConfig.MaxCapacity,
-                autoPause: instance.ServerlessConfig.AutoPause,
-                switchForce: instance.ServerlessConfig.SwitchForce,
+                // DescribeDBInstanceAttribute returns scaleMin/scaleMax (not
+                // MinCapacity/MaxCapacity) — map the actual cloud field names.
+                minCapacity: instance.serverlessConfig.scaleMin,
+                maxCapacity: instance.serverlessConfig.scaleMax,
+                autoPause: instance.serverlessConfig.autoPause,
+                switchForce: instance.serverlessConfig.switchForce,
               }
             : undefined,
           masterUsername: instance.MasterUsername,
@@ -210,11 +239,55 @@ export const createRdsOperations = (rdsClient: RdsClient, context: Context) => {
           connectionString: instance.ConnectionString,
           port: instance.Port,
           dbInstanceStatus: instance.DBInstanceStatus,
-          createTime: instance.CreateTime,
+          createTime: instance.CreateTime ?? instance.CreationTime,
           regionId: instance.RegionId,
           securityIPList: instance.SecurityIPList,
           multiAZ: instance.MultiAZ === 'true',
+          // Maximum-detail fields — retain everything DescribeDBInstanceAttribute
+          // returns so state keeps the full cloud resource detail.
+          dbInstanceCpu: instance.DBInstanceCPU,
+          dbInstanceMemory: instance.DBInstanceMemory,
+          payType: instance.PayType,
+          expireTime: instance.ExpireTime,
+          maintainTime: instance.MaintainTime,
+          maxConnections: instance.MaxConnections,
+          maxIOPS: instance.MaxIOPS,
+          resourceGroupId: instance.ResourceGroupId,
+          deletionProtection: instance.DeletionProtection,
+          lockMode: instance.LockMode,
+          lockReason: instance.LockReason,
+          connectionMode: instance.ConnectionMode,
+          dbInstanceDiskUsed: instance.DBInstanceDiskUsed,
+          dbInstanceType: instance.DBInstanceType,
+          instanceNetworkType: instance.InstanceNetworkType,
+          timeZone: instance.TimeZone,
+          currentKernelVersion: instance.CurrentKernelVersion,
+          latestKernelVersion: instance.LatestKernelVersion,
+          masterZone: instance.MasterZone,
+          masterInstanceId: instance.MasterInstanceId,
+          slaveZones: (
+            instance.SlaveZones?.slaveZone as Array<{ zoneId?: string }> | undefined
+          )?.map((z) => ({ zoneId: z.zoneId })),
+          readOnlyDBInstanceIds: (
+            instance.ReadOnlyDBInstanceIds?.readOnlyDBInstanceId as
+              Array<{ DBInstanceId?: string }> | undefined
+          )
+            ?.map((r) => r.DBInstanceId)
+            .filter((id): id is string => !!id),
+          burstingEnabled: instance.BurstingEnabled,
+          computeBurstEnabled: instance.ComputeBurstEnabled,
         };
+
+        try {
+          const tags = await operations.getInstanceTags(instanceId);
+          if (tags.length > 0) {
+            info.tags = tags;
+          }
+        } catch {
+          // Tags are best-effort; instance detail is still returned without them.
+        }
+
+        return info;
       } catch (error) {
         logger.error(lang.__('RDS_INSTANCE_GET_FAILED', { error: String(error) }));
         return null;

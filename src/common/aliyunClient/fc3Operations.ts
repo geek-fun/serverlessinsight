@@ -180,6 +180,7 @@ const buildCodeLocation = (codePath: string, ossCode?: OssCodeLocation): fc.Inpu
                 vpcId: body.vpcConfig.vpcId,
                 vSwitchIds: body.vpcConfig.vSwitchIds,
                 securityGroupId: body.vpcConfig.securityGroupId,
+                role: body.vpcConfig.role,
               }
             : undefined,
           gpuConfig: body.gpuConfig
@@ -205,6 +206,7 @@ const buildCodeLocation = (codePath: string, ossCode?: OssCodeLocation): fc.Inpu
                 logstore: body.logConfig.logstore,
                 enableRequestMetrics: body.logConfig.enableRequestMetrics,
                 enableInstanceMetrics: body.logConfig.enableInstanceMetrics,
+                enableLlmMetrics: body.logConfig.enableLlmMetrics,
                 logBeginRule: body.logConfig.logBeginRule,
               }
             : undefined,
@@ -215,6 +217,34 @@ const buildCodeLocation = (codePath: string, ossCode?: OssCodeLocation): fc.Inpu
                 command: body.customContainerConfig.command,
                 port: body.customContainerConfig.port,
                 accelerationType: body.customContainerConfig.accelerationType,
+                accelerationInfo: body.customContainerConfig.accelerationInfo
+                  ? { status: body.customContainerConfig.accelerationInfo.status }
+                  : undefined,
+                acrInstanceId: body.customContainerConfig.acrInstanceId,
+                healthCheckConfig: body.customContainerConfig.healthCheckConfig
+                  ? {
+                      failureThreshold:
+                        body.customContainerConfig.healthCheckConfig.failureThreshold,
+                      httpGetUrl: body.customContainerConfig.healthCheckConfig.httpGetUrl,
+                      initialDelaySeconds:
+                        body.customContainerConfig.healthCheckConfig.initialDelaySeconds,
+                      periodSeconds: body.customContainerConfig.healthCheckConfig.periodSeconds,
+                      successThreshold:
+                        body.customContainerConfig.healthCheckConfig.successThreshold,
+                      timeoutSeconds: body.customContainerConfig.healthCheckConfig.timeoutSeconds,
+                    }
+                  : undefined,
+                registryConfig: body.customContainerConfig.registryConfig
+                  ? {
+                      authConfig: body.customContainerConfig.registryConfig.authConfig
+                        ? {
+                            password: body.customContainerConfig.registryConfig.authConfig.password,
+                            userName: body.customContainerConfig.registryConfig.authConfig.userName,
+                          }
+                        : undefined,
+                    }
+                  : undefined,
+                resolvedImageUri: body.customContainerConfig.resolvedImageUri,
               }
             : undefined,
           description: body.description,
@@ -231,6 +261,127 @@ const buildCodeLocation = (codePath: string, ossCode?: OssCodeLocation): fc.Inpu
           lastUpdateStatusReason: body.lastUpdateStatusReason,
           lastUpdateStatusReasonCode: body.lastUpdateStatusReasonCode,
           tags: body.tags?.map((t) => ({ Key: t.key, Value: t.value })),
+          // Maximum-detail fields — retain everything GetFunction returns so
+          // state keeps full resource detail (runtime config, concurrency,
+          // lifecycle hooks, storage mounts, network/DNS, tracing, layers).
+          customDNS: body.customDNS
+            ? {
+                nameServers: body.customDNS.nameServers,
+                searches: body.customDNS.searches,
+                dnsOptions: body.customDNS.dnsOptions?.map((o) => ({
+                  name: o.name,
+                  value: o.value,
+                })),
+              }
+            : undefined,
+          customRuntimeConfig: body.customRuntimeConfig
+            ? {
+                args: body.customRuntimeConfig.args,
+                command: body.customRuntimeConfig.command,
+                port: body.customRuntimeConfig.port,
+                healthCheckConfig: body.customRuntimeConfig.healthCheckConfig
+                  ? {
+                      failureThreshold: body.customRuntimeConfig.healthCheckConfig.failureThreshold,
+                      httpGetUrl: body.customRuntimeConfig.healthCheckConfig.httpGetUrl,
+                      initialDelaySeconds:
+                        body.customRuntimeConfig.healthCheckConfig.initialDelaySeconds,
+                      periodSeconds: body.customRuntimeConfig.healthCheckConfig.periodSeconds,
+                      successThreshold: body.customRuntimeConfig.healthCheckConfig.successThreshold,
+                      timeoutSeconds: body.customRuntimeConfig.healthCheckConfig.timeoutSeconds,
+                    }
+                  : undefined,
+              }
+            : undefined,
+          disableInjectCredentials: body.disableInjectCredentials,
+          disableOndemand: body.disableOndemand,
+          enableLongLiving: body.enableLongLiving,
+          idleTimeout: body.idleTimeout,
+          instanceConcurrency: body.instanceConcurrency,
+          instanceIsolationMode: body.instanceIsolationMode,
+          instanceLifecycleConfig: body.instanceLifecycleConfig
+            ? {
+                initializer: body.instanceLifecycleConfig.initializer
+                  ? {
+                      handler: body.instanceLifecycleConfig.initializer.handler,
+                      timeout: body.instanceLifecycleConfig.initializer.timeout,
+                      command: body.instanceLifecycleConfig.initializer.command,
+                    }
+                  : undefined,
+                preStop: body.instanceLifecycleConfig.preStop
+                  ? {
+                      handler: body.instanceLifecycleConfig.preStop.handler,
+                      timeout: body.instanceLifecycleConfig.preStop.timeout,
+                      command: body.instanceLifecycleConfig.preStop.command,
+                    }
+                  : undefined,
+              }
+            : undefined,
+          invocationRestriction: body.invocationRestriction
+            ? {
+                disable: body.invocationRestriction.disable,
+                lastModifiedTime: body.invocationRestriction.lastModifiedTime,
+                reason: body.invocationRestriction.reason,
+              }
+            : undefined,
+          juiceFsConfig: body.juiceFsConfig
+            ? {
+                envs: body.juiceFsConfig.envs,
+                mountPoints: body.juiceFsConfig.mountPoints?.map((m) => ({
+                  args: m.args,
+                  mountDir: m.mountDir,
+                  remoteDir: m.remoteDir,
+                  token: m.token,
+                  volumeName: m.volumeName,
+                })),
+              }
+            : undefined,
+          layers: body.layers?.map((l) => ({ arn: l.arn, size: l.size })),
+          lockInfo: body.lockInfo
+            ? {
+                lockedAt: body.lockInfo.lockedAt,
+                lockedBy: body.lockInfo.lockedBy,
+                lockedResources: body.lockInfo.lockedResources,
+              }
+            : undefined,
+          microSandboxConfig: body.microSandboxConfig
+            ? {
+                osType: body.microSandboxConfig.osType,
+                readyCommand: body.microSandboxConfig.readyCommand,
+                startCommand: body.microSandboxConfig.startCommand,
+              }
+            : undefined,
+          ossMountConfig: body.ossMountConfig
+            ? {
+                mountPoints: body.ossMountConfig.mountPoints?.map((m) => ({
+                  bucketName: m.bucketName,
+                  bucketPath: m.bucketPath,
+                  endpoint: m.endpoint,
+                  mountDir: m.mountDir,
+                  readOnly: m.readOnly,
+                })),
+              }
+            : undefined,
+          polarFsConfig: body.polarFsConfig
+            ? {
+                groupId: body.polarFsConfig.groupId,
+                userId: body.polarFsConfig.userId,
+                mountPoints: body.polarFsConfig.mountPoints?.map((m) => ({
+                  instanceId: m.instanceId,
+                  mountDir: m.mountDir,
+                  readOnly: m.readOnly,
+                  remoteDir: m.remoteDir,
+                })),
+              }
+            : undefined,
+          resourceGroupId: body.resourceGroupId,
+          sessionAffinity: body.sessionAffinity,
+          sessionAffinityConfig: body.sessionAffinityConfig,
+          tracingConfig: body.tracingConfig
+            ? {
+                type: body.tracingConfig.type,
+                params: body.tracingConfig.params,
+              }
+            : undefined,
         };
       } catch (error: unknown) {
         if (

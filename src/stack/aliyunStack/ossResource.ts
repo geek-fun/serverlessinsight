@@ -143,6 +143,7 @@ const buildOssInstanceFromProvider = (info: OssBucketInfo, sid: string): CommonB
       key: tag.key ?? null,
       value: tag.value ?? null,
     })),
+    policy: info.policy ?? null,
   };
 };
 

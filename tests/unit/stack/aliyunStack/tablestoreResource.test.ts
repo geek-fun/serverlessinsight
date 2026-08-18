@@ -299,6 +299,79 @@ describe('TablestoreResource', () => {
       expect(result).toEqual(expectedState);
     });
 
+    it('should retain max-detail table fields in the state instance', async () => {
+      const table = createTestTable('test_table');
+      const tableInfo = {
+        tableName: 'test-table',
+        primaryKey: [{ name: 'id', type: 'STRING' }],
+        tableStatus: 'ACTIVE',
+        definedColumn: [{ name: 'status', type: 'STRING' }],
+        indexMetas: [
+          {
+            name: 'idx-status',
+            primaryKey: ['status'],
+            definedColumn: ['id'],
+            indexUpdateMode: 'IUM_ASYNC_INDEX',
+            indexType: 'IT_GLOBAL_INDEX',
+            indexSyncPhase: 'ISP_INCR',
+          },
+        ],
+        shardSplits: ['shard-1'],
+        tableOptions: {
+          timeToLive: -1,
+          maxVersions: 1,
+          maxTimeDeviation: 86400,
+          allowUpdate: true,
+          bloomFilterType: 'BLOOM',
+          blockSize: 4096,
+        },
+        streamDetails: null,
+      };
+
+      mockTablestoreClient.createTable.mockResolvedValue(undefined);
+      mockTablestoreClient.waitForTableReady.mockResolvedValue(undefined);
+      mockTablestoreClient.getTable.mockResolvedValue(tableInfo);
+
+      let savedResourceState: unknown;
+      mockedStateManager.setResource.mockImplementation(
+        (_state: StateFile, _logicalId: string, resourceState: unknown) => {
+          savedResourceState = resourceState;
+          return { ...initialState };
+        },
+      );
+
+      await createTableResource(mockContext, table, initialState);
+
+      const resourceState = savedResourceState as {
+        instances?: Array<Record<string, unknown>>;
+      };
+      const tableInstance = resourceState.instances?.[0];
+
+      expect(tableInstance).toMatchObject({
+        tableStatus: 'ACTIVE',
+        definedColumn: [{ name: 'status', type: 'STRING' }],
+        indexMetas: [
+          {
+            name: 'idx-status',
+            primaryKey: ['status'],
+            definedColumn: ['id'],
+            indexUpdateMode: 'IUM_ASYNC_INDEX',
+            indexType: 'IT_GLOBAL_INDEX',
+            indexSyncPhase: 'ISP_INCR',
+          },
+        ],
+        shardSplits: ['shard-1'],
+        tableOptions: {
+          timeToLive: -1,
+          maxVersions: 1,
+          maxTimeDeviation: 86400,
+          allowUpdate: true,
+          bloomFilterType: 'BLOOM',
+          blockSize: 4096,
+        },
+      });
+    });
+
     it('should throw error when getTable returns null after create', async () => {
       const table = createTestTable('test_table');
 

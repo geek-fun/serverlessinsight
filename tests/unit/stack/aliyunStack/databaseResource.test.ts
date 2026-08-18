@@ -701,6 +701,72 @@ describe('DatabaseResource', () => {
       expect(result).toEqual(expectedState);
     });
 
+    it('should retain max-detail RDS fields including tags in the state instance', async () => {
+      const rdsDatabase = {
+        key: 'my_rds',
+        name: 'my-rds-mysql',
+        type: DatabaseEnum.RDS_MYSQL_SERVERLESS,
+        rds: {
+          engine: 'MySQL',
+          engineVersion: '8.0',
+        },
+      } as unknown as DatabaseDomain;
+
+      mockRdsOperations.createInstance.mockResolvedValue('rm-12345');
+      mockRdsOperations.getInstance.mockResolvedValue({
+        dbInstanceId: 'rm-12345',
+        engine: 'MySQL',
+        dbInstanceStatus: 'Running',
+        tags: [{ key: 'si-owned-by', value: 'test-app-test-service:databases.my_rds' }],
+        dbInstanceCpu: '1',
+        dbInstanceMemory: 2,
+        payType: 'Serverless',
+        expireTime: '2026-12-31T00:00:00Z',
+        maintainTime: '02:00Z-03:00Z',
+        maxConnections: 200,
+        maxIOPS: 2000,
+        resourceGroupId: 'rg-123',
+        deletionProtection: true,
+        dbInstanceType: 'Primary',
+        slaveZones: [{ zoneId: 'cn-hangzhou-c' }],
+        readOnlyDBInstanceIds: ['rm-ro-1'],
+        burstingEnabled: true,
+      });
+
+      let savedResourceState: unknown;
+      mockedStateManager.setResource.mockImplementation(
+        (state: StateFile, _logicalId: string, resourceState: unknown) => {
+          savedResourceState = resourceState;
+          return { ...state };
+        },
+      );
+
+      await createDatabaseResource(mockContext, rdsDatabase, initialState);
+
+      const resourceState = savedResourceState as {
+        instances?: Array<Record<string, unknown>>;
+      };
+      const rdsInstance = resourceState.instances?.[0];
+
+      expect(rdsInstance).toMatchObject({
+        dbInstanceId: 'rm-12345',
+        tags: [{ key: 'si-owned-by', value: 'test-app-test-service:databases.my_rds' }],
+        dbInstanceCpu: '1',
+        dbInstanceMemory: 2,
+        payType: 'Serverless',
+        expireTime: '2026-12-31T00:00:00Z',
+        maintainTime: '02:00Z-03:00Z',
+        maxConnections: 200,
+        maxIOPS: 2000,
+        resourceGroupId: 'rg-123',
+        deletionProtection: true,
+        dbInstanceType: 'Primary',
+        slaveZones: [{ zoneId: 'cn-hangzhou-c' }],
+        readOnlyDBInstanceIds: ['rm-ro-1'],
+        burstingEnabled: true,
+      });
+    });
+
     it('should handle ES with null/undefined fields', async () => {
       const esDatabase = {
         key: 'my_es',

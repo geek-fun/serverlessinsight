@@ -64,6 +64,8 @@ export type TableStoreTableInfo = {
     maxVersions?: number;
     maxTimeDeviation?: number;
     allowUpdate?: boolean;
+    bloomFilterType?: string;
+    blockSize?: number;
   };
   streamDetails?: {
     enableStream?: boolean;
@@ -71,6 +73,23 @@ export type TableStoreTableInfo = {
     expirationTime?: number;
     lastEnableTime?: string;
   };
+  // Maximum-detail fields — retained from DescribeTable so state keeps the
+  // full cloud resource detail (status, defined columns, secondary indexes,
+  // shard splits).
+  tableStatus?: string;
+  definedColumn?: Array<{
+    name: string;
+    type: string;
+  }>;
+  indexMetas?: Array<{
+    name?: string;
+    primaryKey?: string[];
+    definedColumn?: string[];
+    indexUpdateMode?: string;
+    indexType?: string;
+    indexSyncPhase?: string;
+  }>;
+  shardSplits?: string[];
 };
 
 const waitForTableReady = async (
@@ -172,6 +191,15 @@ export const createTablestoreOperations = (
               tableMeta?: {
                 tableName?: string;
                 primaryKey?: Array<{ name: string; type: string }>;
+                definedColumn?: Array<{ name: string; type: string }>;
+                indexMeta?: Array<{
+                  name?: string;
+                  primaryKey?: string[];
+                  definedColumn?: string[];
+                  indexUpdateMode?: string;
+                  indexType?: string;
+                  indexSyncPhase?: string;
+                }>;
               };
               reservedThroughputDetails?: {
                 capacityUnit?: { read?: number; write?: number };
@@ -183,6 +211,8 @@ export const createTablestoreOperations = (
                 maxVersions?: number;
                 maxTimeDeviation?: number;
                 allowUpdate?: boolean;
+                bloomFilterType?: string;
+                blockSize?: number;
               };
               streamDetails?: {
                 enableStream?: boolean;
@@ -190,6 +220,16 @@ export const createTablestoreOperations = (
                 expirationTime?: number;
                 lastEnableTime?: string;
               };
+              tableStatus?: string;
+              indexMetas?: Array<{
+                name?: string;
+                primaryKey?: string[];
+                definedColumn?: string[];
+                indexUpdateMode?: string;
+                indexType?: string;
+                indexSyncPhase?: string;
+              }>;
+              shardSplits?: string[];
             };
 
             if (!result.tableMeta) {
@@ -201,6 +241,11 @@ export const createTablestoreOperations = (
                 reservedThroughputDetails: result.reservedThroughputDetails,
                 tableOptions: result.tableOptions,
                 streamDetails: result.streamDetails,
+                // Maximum-detail fields — retain everything DescribeTable returns.
+                tableStatus: result.tableStatus,
+                definedColumn: result.tableMeta.definedColumn,
+                indexMetas: result.indexMetas ?? result.tableMeta.indexMeta,
+                shardSplits: result.shardSplits,
               });
             }
           }

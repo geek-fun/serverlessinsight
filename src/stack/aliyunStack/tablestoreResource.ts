@@ -30,6 +30,8 @@ export type TableStoreTableInstance = {
     maxVersions?: number | null;
     maxTimeDeviation?: number | null;
     allowUpdate?: boolean | null;
+    bloomFilterType?: string | null;
+    blockSize?: number | null;
   };
   streamDetails?: {
     enableStream?: boolean | null;
@@ -37,6 +39,20 @@ export type TableStoreTableInstance = {
     expirationTime?: number | null;
     lastEnableTime?: string | null;
   };
+  tableStatus?: string | null;
+  definedColumn?: Array<{
+    name: string;
+    type: string;
+  }>;
+  indexMetas?: Array<{
+    name?: string;
+    primaryKey?: string[];
+    definedColumn?: string[];
+    indexUpdateMode?: string;
+    indexType?: string;
+    indexSyncPhase?: string;
+  }>;
+  shardSplits?: string[];
 };
 
 const buildTableStoreInstanceFromProvider = (
@@ -66,6 +82,8 @@ const buildTableStoreInstanceFromProvider = (
           maxVersions: info.tableOptions.maxVersions ?? null,
           maxTimeDeviation: info.tableOptions.maxTimeDeviation ?? null,
           allowUpdate: info.tableOptions.allowUpdate ?? null,
+          bloomFilterType: info.tableOptions.bloomFilterType ?? null,
+          blockSize: info.tableOptions.blockSize ?? null,
         }
       : undefined,
     streamDetails: info.streamDetails
@@ -76,6 +94,10 @@ const buildTableStoreInstanceFromProvider = (
           lastEnableTime: info.streamDetails.lastEnableTime ?? null,
         }
       : undefined,
+    tableStatus: info.tableStatus ?? null,
+    definedColumn: info.definedColumn ?? [],
+    indexMetas: info.indexMetas ?? [],
+    shardSplits: info.shardSplits ?? [],
   };
 };
 

@@ -497,6 +497,64 @@ describe('ApigwResource', () => {
       expect(mockedApigwOperations.createApi).toHaveBeenCalledTimes(3);
       expect(mockedApigwOperations.deployApi).toHaveBeenCalledTimes(3);
     });
+
+    it('should retain max-detail group and api fields in the state instances', async () => {
+      mockedApigwOperations.findApiGroupByName.mockResolvedValue(null);
+      mockedApigwOperations.createApiGroup.mockResolvedValue('group-123');
+      mockedApigwOperations.getApiGroup.mockResolvedValue({
+        groupId: 'group-123',
+        groupName: 'test-api-group',
+        subDomain: 'group-123.apigw.aliyuncs.com',
+        regionId: 'cn-hangzhou',
+        tags: [{ Key: 'si-owned-by', Value: 'test-app-test-service:events.api_gateway' }],
+      });
+      mockedApigwOperations.createApi.mockResolvedValue('api-456');
+      mockedApigwOperations.getApi.mockResolvedValue({
+        apiId: 'api-456',
+        apiName: 'test-api',
+        groupId: 'group-123',
+        resultSample: '{"ok":true}',
+        deployedInfos: [
+          { stageName: 'RELEASE', deployedStatus: 'DEPLOYED', effectiveVersion: '1' },
+        ],
+      });
+      mockedApigwOperations.deployApi.mockResolvedValue(undefined);
+      mockedApigwTypes.eventToApigwGroupConfig.mockReturnValue({
+        groupName: 'test-api-group',
+      });
+      mockedApigwTypes.extractApigwGroupDefinition.mockReturnValue({});
+      mockedApigwTypes.triggerToApigwApiConfig.mockReturnValue({
+        apiName: 'test-api',
+      });
+      mockedApigwTypes.extractEventDomainDefinition.mockReturnValue(null);
+
+      let savedResourceState: unknown;
+      mockedStateManager.setResource.mockImplementation(
+        (state: StateFile, _logicalId: string, resourceState: unknown) => {
+          savedResourceState = resourceState;
+          return { ...state };
+        },
+      );
+
+      await createApigwResource(mockContext, testEvent, 'test-service', undefined, initialState);
+
+      const resourceState = savedResourceState as {
+        instances?: Array<Record<string, unknown>>;
+      };
+      const groupInstance = resourceState.instances?.find((i) => i.type === 'ALIYUN_APIGW_GROUP');
+      const apiInstance = resourceState.instances?.find((i) => i.type === 'ALIYUN_APIGW_API');
+
+      expect(groupInstance).toMatchObject({
+        regionId: 'cn-hangzhou',
+        tags: [{ key: 'si-owned-by', value: 'test-app-test-service:events.api_gateway' }],
+      });
+      expect(apiInstance).toMatchObject({
+        resultSample: '{"ok":true}',
+        deployedInfos: [
+          { stageName: 'RELEASE', deployedStatus: 'DEPLOYED', effectiveVersion: '1' },
+        ],
+      });
+    });
   });
 
   describe('readApigwResource', () => {
@@ -599,6 +657,7 @@ describe('ApigwResource', () => {
         groupId: 'group-drift',
         groupName: 'test-api-group',
         subDomain: 'group-drift.apigw.aliyuncs.com',
+        tags: [{ Key: 'si-owned-by', Value: 'test-app-test-service:events.api_gateway' }],
       });
       mockedApigwOperations.listApisByGroup.mockResolvedValue([
         { apiId: 'api-match', apiName: 'test-api' },
@@ -643,6 +702,7 @@ describe('ApigwResource', () => {
         groupId: 'group-drift',
         groupName: 'test-api-group',
         subDomain: 'group-drift.apigw.aliyuncs.com',
+        tags: [{ Key: 'si-owned-by', Value: 'test-app-test-service:events.api_gateway' }],
       });
       // Cloud has 2 APIs: one matching, one not
       mockedApigwOperations.listApisByGroup.mockResolvedValue([

@@ -11,6 +11,7 @@ const mockDescribeDBInstanceAttribute = jest.fn();
 const mockModifyDBInstanceSpec = jest.fn();
 const mockModifySecurityIps = jest.fn();
 const mockDeleteDBInstance = jest.fn();
+const mockListTagResources = jest.fn();
 
 const mockRdsClient = {
   createDBInstance: mockCreateDBInstance,
@@ -18,6 +19,7 @@ const mockRdsClient = {
   modifyDBInstanceSpec: mockModifyDBInstanceSpec,
   modifySecurityIps: mockModifySecurityIps,
   deleteDBInstance: mockDeleteDBInstance,
+  listTagResources: mockListTagResources,
 } as unknown as RdsClient;
 
 jest.mock('../../../../src/common/logger', () => ({
@@ -235,11 +237,11 @@ describe('rdsOperations', () => {
               {
                 DBInstanceId: 'rds-instance-123',
                 Engine: 'MySQL',
-                ServerlessConfig: {
-                  MinCapacity: 0.5,
-                  MaxCapacity: 1,
-                  AutoPause: true,
-                  SwitchForce: false,
+                serverlessConfig: {
+                  scaleMin: 0.5,
+                  scaleMax: 1,
+                  autoPause: true,
+                  switchForce: false,
                 },
               },
             ],
@@ -252,6 +254,98 @@ describe('rdsOperations', () => {
       expect(result?.serverlessConfig).toBeDefined();
       expect(result?.serverlessConfig?.minCapacity).toBe(0.5);
       expect(result?.serverlessConfig?.maxCapacity).toBe(1);
+    });
+
+    it('should retain the full DBInstanceAttribute detail set (max-detail state)', async () => {
+      mockDescribeDBInstanceAttribute.mockResolvedValue({
+        body: {
+          Items: {
+            DBInstanceAttribute: [
+              {
+                DBInstanceId: 'rm-999',
+                DBInstanceDescription: 'max-detail-rds',
+                Engine: 'MySQL',
+                EngineVersion: '8.0',
+                DBInstanceClass: 'mysql.n2.serverless.1c',
+                DBInstanceStorage: 20,
+                Category: 'Serverless',
+                DBInstanceStorageType: 'cloud_essd',
+                DBInstanceCPU: '1',
+                DBInstanceMemory: 2,
+                PayType: 'Serverless',
+                ExpireTime: '2026-12-31T00:00:00Z',
+                MaintainTime: '02:00Z-03:00Z',
+                MaxConnections: 200,
+                MaxIOPS: 2000,
+                ResourceGroupId: 'rg-123',
+                DeletionProtection: true,
+                LockMode: 'None',
+                LockReason: '',
+                ConnectionMode: 'Standard',
+                DBInstanceDiskUsed: '2.5',
+                DBInstanceType: 'Primary',
+                InstanceNetworkType: 'VPC',
+                TimeZone: 'Asia/Shanghai',
+                CurrentKernelVersion: '20240101',
+                LatestKernelVersion: '20241201',
+                MasterZone: 'cn-hangzhou-b',
+                MasterInstanceId: 'rm-999',
+                SlaveZones: { slaveZone: [{ zoneId: 'cn-hangzhou-c' }] },
+                ReadOnlyDBInstanceIds: {
+                  readOnlyDBInstanceId: [{ DBInstanceId: 'rm-ro-1' }],
+                },
+                BurstingEnabled: true,
+                ComputeBurstEnabled: false,
+                DBInstanceStatus: 'Running',
+                ConnectionString: 'rm-999.mysql.rds.aliyuncs.com',
+                Port: '3306',
+                MasterUsername: 'admin',
+              },
+            ],
+          },
+        },
+      });
+      mockListTagResources.mockResolvedValue({
+        body: {
+          tagResources: {
+            tagResource: [
+              { tagKey: 'si-owned-by', tagValue: 'test-app-test-service:databases.my_rds' },
+            ],
+          },
+        },
+      });
+
+      const result = await operations.getInstance('rm-999');
+
+      expect(result).toEqual(
+        expect.objectContaining({
+          dbInstanceId: 'rm-999',
+          dbInstanceCpu: '1',
+          dbInstanceMemory: 2,
+          payType: 'Serverless',
+          expireTime: '2026-12-31T00:00:00Z',
+          maintainTime: '02:00Z-03:00Z',
+          maxConnections: 200,
+          maxIOPS: 2000,
+          resourceGroupId: 'rg-123',
+          deletionProtection: true,
+          lockMode: 'None',
+          connectionMode: 'Standard',
+          dbInstanceDiskUsed: '2.5',
+          dbInstanceType: 'Primary',
+          instanceNetworkType: 'VPC',
+          timeZone: 'Asia/Shanghai',
+          currentKernelVersion: '20240101',
+          latestKernelVersion: '20241201',
+          masterZone: 'cn-hangzhou-b',
+          masterInstanceId: 'rm-999',
+          slaveZones: [{ zoneId: 'cn-hangzhou-c' }],
+          readOnlyDBInstanceIds: ['rm-ro-1'],
+          burstingEnabled: true,
+          computeBurstEnabled: false,
+          tags: [{ key: 'si-owned-by', value: 'test-app-test-service:databases.my_rds' }],
+        }),
+      );
     });
   });
 
