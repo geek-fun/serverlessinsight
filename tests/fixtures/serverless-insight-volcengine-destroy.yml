@@ -1,10 +1,10 @@
 version: 0.0.1
-app: insight-volc-app
+app: insight-volc-destroy-app
 provider:
   name: volcengine
   region: cn-beijing
 
-service: insight-volc
+service: insight-volc-destroy
 
 backend:
   state_manager:
