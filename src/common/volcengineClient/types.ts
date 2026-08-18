@@ -16,19 +16,15 @@ import type { IamStatement } from '../iamStatements';
  * Note: Python 3.8 runtime has been deprecated
  */
 export type VefaasRuntime =
-  | 'nodejs/v20'
-  | 'nodejs/v18'
-  | 'nodejs/v16'
-  | 'nodejs/v14'
-  | 'python/v3.12'
-  | 'python/v3.11'
-  | 'python/v3.10'
-  | 'python/v3.9'
   | 'golang/v1'
-  | 'java/v21'
-  | 'java/v17'
-  | 'java/v11'
-  | 'java/v8';
+  | 'native/v1'
+  | 'nativejava8/v1'
+  | 'node14/v1'
+  | 'node20/v1'
+  | 'nodeprime14/v1'
+  | 'python3.12/v1'
+  | 'python3.8/v1'
+  | 'python3.9/v1';
 
 /**
  * Configuration for creating/updating a veFaaS function
@@ -59,7 +55,74 @@ export type VefaasFunctionConfig = {
 };
 
 /**
- * Response from veFaaS getFunction API
+ * veFaaS VpcConfig as returned by GetFunction — includes the enable toggles
+ * that the create/update request shape omits.
+ * @see https://www.volcengine.com/docs/6662/1262130
+ */
+export type VefaasVpcConfigInfo = {
+  vpcId?: string;
+  subnetIds?: string[];
+  securityGroupIds?: string[];
+  enableVpc?: boolean;
+  enableSharedInternetAccess?: boolean;
+};
+
+/**
+ * veFaaS TLS (log) config as returned by GetFunction — toggles included.
+ */
+export type VefaasLogConfigInfo = {
+  project?: string;
+  topic?: string;
+  enableLog?: boolean;
+};
+
+/**
+ * veFaaS NAS storage config as returned by GetFunction.
+ */
+export type VefaasNasStorageInfo = {
+  enableNas?: boolean;
+  nasConfigs?: Array<{
+    gid?: number;
+    uid?: number;
+    remotePath?: string;
+    fileSystemId?: string;
+    mountPointId?: string;
+    localMountPath?: string;
+  }>;
+};
+
+/**
+ * veFaaS TOS mount config as returned by GetFunction.
+ */
+export type VefaasTosMountInfo = {
+  enableTos?: boolean;
+  mountPoints?: Array<{
+    endpoint?: string;
+    readOnly?: boolean;
+    bucketName?: string;
+    bucketPath?: string;
+    localMountPath?: string;
+  }>;
+};
+
+/**
+ * veFaaS async task config as returned by GetFunction.
+ */
+export type VefaasAsyncTaskInfo = {
+  enableAsyncTask?: boolean;
+  maxRetry?: number;
+  destinationConfig?: {
+    onSuccess?: { destination?: string };
+    onFailure?: { destination?: string };
+  };
+};
+
+/**
+ * Response from veFaaS getFunction API — retains the FULL set of fields the
+ * provider returns (including runtime toggles like CpuStrategy, ExclusiveMode,
+ * MaxConcurrency, APMplus, network/storage/log switches, async tasks and tags)
+ * so state keeps maximum resource detail.
+ * @see https://www.volcengine.com/docs/6662/1262130
  */
 export type VefaasFunctionInfo = {
   functionId?: string;
@@ -74,16 +137,30 @@ export type VefaasFunctionInfo = {
   createdTime?: string;
   lastModifiedTime?: string;
   role?: string;
-  vpcConfig?: {
-    vpcId?: string;
-    subnetIds?: string[];
-    securityGroupIds?: string[];
-  };
-  logConfig?: {
-    project?: string;
-    topic?: string;
-  };
+  vpcConfig?: VefaasVpcConfigInfo;
+  logConfig?: VefaasLogConfigInfo;
   Tags?: Array<{ Key?: string; Value?: string }>;
+  // --- Maximum-detail fields (retained verbatim from GetFunction) ---
+  exclusiveMode?: boolean;
+  maxConcurrency?: number;
+  codeSize?: number;
+  codeSizeLimit?: number;
+  sourceLocation?: string;
+  sourceType?: string;
+  owner?: string;
+  triggersCount?: number;
+  instanceType?: string;
+  initializerSec?: number;
+  command?: string;
+  port?: number;
+  cpuStrategy?: string;
+  projectName?: string;
+  functionType?: string;
+  cell?: string;
+  enableApmplus?: boolean;
+  nasStorage?: VefaasNasStorageInfo;
+  tosMountConfig?: VefaasTosMountInfo;
+  asyncTaskConfig?: VefaasAsyncTaskInfo;
 };
 
 // ============================================================================
@@ -136,6 +213,28 @@ export type TosBucketInfo = {
   acl?: TosAcl;
   websiteConfig?: TosWebsiteConfig;
   Tags?: Array<{ Key: string; Value: string }>;
+  // --- Maximum-detail fields (retained verbatim from GetBucketInfo) ---
+  owner?: {
+    id?: string;
+    displayName?: string;
+  };
+  projectName?: string;
+  type?: string;
+  azRedundancy?: string;
+  extranetS3Endpoint?: string;
+  intranetS3Endpoint?: string;
+  versioning?: string;
+  crossRegionReplication?: string;
+  transferAcceleration?: string;
+  accessMonitor?: string;
+  serverSideEncryptionConfiguration?: {
+    rule?: Array<{
+      applyServerSideEncryptionByDefault?: {
+        sseAlgorithm?: string;
+        kmsMasterKeyId?: string;
+      };
+    }>;
+  };
 };
 
 /**
@@ -264,64 +363,165 @@ export type TlsIndexConfig = {
 
 export type ApigwHttpMethod = 'GET' | 'POST' | 'PUT' | 'DELETE' | 'PATCH' | 'HEAD' | 'OPTIONS';
 
-export type ApigwGroupConfig = {
-  groupName: string;
+/**
+ * API 网关实例 (cloud-native: instance → service → upstream → route).
+ * A serverless-type gateway (Type: 'serverless') has no managed-instance fee and
+ * bills per API call (first 1M calls/month free). One per account per region.
+ */
+export type ApigwGatewayConfig = {
+  gatewayName: string;
+  type?: 'standard' | 'serverless';
+  network?: {
+    vpcId: string;
+    subnetIds: string[]; // >= 2 subnets in different AZs
+  };
   description?: string;
-  protocol?: 'HTTP' | 'HTTPS' | 'HTTP&HTTPS';
+  logConfig?: {
+    enable: boolean;
+    projectId: string;
+    topicId: string;
+  };
   Tags?: Array<{ Key: string; Value: string }>;
 };
 
-export type ApigwGroupInfo = {
+export type ApigwGatewayInfo = {
   gatewayId?: string;
   gatewayName?: string;
-  protocol?: string;
+  type?: string;
   status?: string;
   createdTime?: string;
   description?: string;
-  subDomain?: string;
+  message?: string;
   tags?: Array<{ Key: string; Value: string }>;
+  // --- Maximum-detail fields (retained verbatim from ListGateways) ---
+  region?: string;
+  version?: string;
+  projectName?: string;
+  networkSpec?: {
+    vpcId?: string;
+    subnetIds?: string[];
+  };
+  backendSpec?: {
+    isVkeWithFlannelCniSupported?: boolean;
+    vkePodCidr?: string;
+  };
+  monitorSpec?: {
+    enable?: boolean;
+    workspaceId?: string;
+  };
+  logSpec?: {
+    enable?: boolean;
+    projectId?: string;
+    topicId?: string;
+  };
+  resourceSpec?: {
+    replicas?: number;
+    instanceSpecCode?: string;
+    clbSpecCode?: string;
+    publicNetworkBillingType?: string;
+    publicNetworkBandwidth?: number;
+    networkType?: {
+      enablePublicNetwork?: boolean;
+      enablePrivateNetwork?: boolean;
+    };
+  };
 };
 
-export type ApigwApiConfig = {
+export type ApigwServiceConfig = {
   gatewayId: string;
+  serviceName: string;
+  protocol?: string[]; // e.g. ['HTTP']
+  description?: string;
+};
+
+export type ApigwServiceInfo = {
   serviceId?: string;
-  apiName: string;
+  serviceName?: string;
+  gatewayId?: string;
+  status?: string;
+  protocol?: string[];
+  createdTime?: string;
+  // --- Maximum-detail fields (retained verbatim from ListGatewayServices / GetGatewayService) ---
+  gatewayName?: string;
+  message?: string;
+  comments?: string;
+  authSpec?: {
+    enable?: boolean;
+  };
+  domains?: Array<{
+    domain?: string;
+    type?: string;
+  }>;
+  customDomains?: Array<{
+    id?: string;
+    domain?: string;
+  }>;
+};
+
+export type ApigwUpstreamConfig = {
+  gatewayId: string;
+  upstreamName: string;
+  sourceType: 'VeFaas';
+  functionId: string; // veFaaS function Id
+  protocol?: string;
+};
+
+export type ApigwUpstreamInfo = {
+  upstreamId?: string;
+  upstreamName?: string;
+  gatewayId?: string;
+  status?: string;
+  sourceType?: string;
+  protocol?: string;
+  functionId?: string;
+  createdTime?: string;
+  // --- Maximum-detail fields (retained verbatim from ListUpstreams) ---
+  comments?: string;
+  resourceType?: string;
+  updateTime?: string;
+  backendTargetList?: Array<{
+    ip?: string;
+    port?: number;
+    healthStatus?: string;
+  }>;
+};
+
+export type ApigwRouteConfig = {
+  serviceId: string;
+  routeName: string;
   method: ApigwHttpMethod;
   path: string;
-  backendFunctionName: string;
-  backendType: 'veFaaS';
-  requestTimeout?: number;
+  upstreamId: string;
 };
 
-export type ApigwApiInfo = {
-  apiId?: string;
-  apiName?: string;
-  gatewayId?: string;
+export type ApigwRouteInfo = {
+  routeId?: string;
+  routeName?: string;
   serviceId?: string;
   method?: string;
   path?: string;
-  description?: string;
-  backendType?: string;
-  backendId?: string;
-  backendFunctionName?: string;
+  upstreamIds?: string[];
+  // --- Maximum-detail fields (retained verbatim from GetRoute / ListRoutes) ---
   status?: string;
-  createdTime?: string;
+  enable?: boolean;
+  priority?: number;
+  matchRule?: {
+    method?: string[];
+    path?: {
+      matchType?: string;
+      matchContent?: string;
+    };
+  };
+  upstreamList?: Array<{
+    upstreamId?: string;
+    version?: string;
+    weight?: number;
+  }>;
 };
 
 export type ApigwDomainConfig = {
-  gatewayId: string;
-  serviceId?: string;
+  serviceId: string;
   domainName: string;
-  certificateId?: string;
-  certificateBody?: string;
-  certificatePrivateKey?: string;
-};
-
-export type ApigwDomainInfo = {
-  domainName?: string;
-  gatewayId?: string;
-  serviceId?: string;
-  status?: string;
   certificateId?: string;
 };
 
@@ -335,6 +535,10 @@ export type ApigwConfig = {
   gatewayName: string;
   protocol?: 'HTTP' | 'HTTPS' | 'HTTP&HTTPS';
   description?: string;
+  network?: {
+    vpcId: string;
+    subnetIds: string[];
+  };
   triggers: ApigwTriggerConfig[];
   domain?: {
     domainName: string;
@@ -366,11 +570,21 @@ export type ApigwInfo = {
  */
 export type VolcengineClient = {
   vefaas: {
-    createFunction: (config: VefaasFunctionConfig, codeBase64: string) => Promise<void>;
+    createFunction: (
+      config: VefaasFunctionConfig,
+      codeBase64: string,
+    ) => Promise<{ functionId: string; releaseRecordId?: string }>;
     getFunction: (functionName: string) => Promise<VefaasFunctionInfo | null>;
-    updateFunctionConfiguration: (config: VefaasFunctionConfig) => Promise<void>;
-    updateFunctionCode: (functionName: string, codeBase64: string) => Promise<void>;
-    deleteFunction: (functionName: string) => Promise<void>;
+    getFunctionById: (functionId: string) => Promise<VefaasFunctionInfo | null>;
+    updateFunctionConfiguration: (
+      functionId: string,
+      config: VefaasFunctionConfig,
+    ) => Promise<string | undefined>;
+    updateFunctionCode: (
+      functionId: string,
+      codeBase64: string,
+    ) => Promise<{ releaseRecordId?: string }>;
+    deleteFunction: (functionId: string) => Promise<void>;
     listFunctions: () => Promise<VefaasFunctionInfo[]>;
   };
   tos: {
@@ -418,18 +632,38 @@ export type VolcengineClient = {
     waitForTopic: (projectName: string, topicName: string) => Promise<void>;
   };
   apigw: {
-    createGateway: (config: ApigwGroupConfig) => Promise<ApigwGroupInfo>;
-    getGateway: (gatewayId: string) => Promise<ApigwGroupInfo | null>;
-    findGatewayByName: (gatewayName: string) => Promise<ApigwGroupInfo | null>;
-    updateGateway: (gatewayId: string, config: ApigwGroupConfig) => Promise<void>;
+    createGateway: (config: ApigwGatewayConfig) => Promise<ApigwGatewayInfo>;
+    getGateway: (gatewayId: string) => Promise<ApigwGatewayInfo | null>;
+    findGatewayByName: (gatewayName: string) => Promise<ApigwGatewayInfo | null>;
+    findServerlessGateway: () => Promise<ApigwGatewayInfo | null>;
+    waitForGatewayRunning: (gatewayId: string) => Promise<ApigwGatewayInfo>;
+    updateGateway: (gatewayId: string, config: ApigwGatewayConfig) => Promise<void>;
     deleteGateway: (gatewayId: string) => Promise<void>;
-    createApi: (config: ApigwApiConfig) => Promise<string>;
-    getApi: (gatewayId: string, apiId: string) => Promise<ApigwApiInfo | null>;
-    updateApi: (apiId: string, config: ApigwApiConfig) => Promise<void>;
-    deleteApi: (gatewayId: string, apiId: string) => Promise<void>;
-    deployApi: (gatewayId: string, apiId: string) => Promise<void>;
-    bindDomain: (config: ApigwDomainConfig) => Promise<void>;
-    unbindDomain: (gatewayId: string, domainName: string) => Promise<void>;
+    updateGatewayLog: (
+      gatewayId: string,
+      logConfig: NonNullable<ApigwGatewayConfig['logConfig']>,
+    ) => Promise<void>;
+    createService: (config: ApigwServiceConfig) => Promise<string>;
+    getService: (serviceId: string) => Promise<ApigwServiceInfo | null>;
+    findServiceByName: (gatewayId: string, serviceName: string) => Promise<ApigwServiceInfo | null>;
+    deleteService: (serviceId: string) => Promise<void>;
+    createUpstream: (config: ApigwUpstreamConfig) => Promise<string>;
+    getUpstream: (upstreamId: string) => Promise<ApigwUpstreamInfo | null>;
+    findUpstreamByName: (
+      gatewayId: string,
+      upstreamName: string,
+    ) => Promise<ApigwUpstreamInfo | null>;
+    deleteUpstream: (upstreamId: string) => Promise<void>;
+    createRoute: (config: ApigwRouteConfig) => Promise<string>;
+    getRoute: (routeId: string) => Promise<ApigwRouteInfo | null>;
+    findRouteByName: (serviceId: string, routeName: string) => Promise<ApigwRouteInfo | null>;
+    listRoutesByService: (serviceId: string) => Promise<ApigwRouteInfo[]>;
+    deleteRoute: (routeId: string) => Promise<void>;
+    createCustomDomain: (config: ApigwDomainConfig) => Promise<string>;
+    deleteCustomDomain: (domainId: string) => Promise<void>;
+  };
+  sts: {
+    getAccountId: () => Promise<string | undefined>;
   };
 };
 

@@ -1,90 +1,37 @@
-import { EventDomain, ResourceAttributes } from '../../types';
-import { getIacDefinition, isFunctionDomain, getContext, logger } from '../../common';
+import { getContext, getIacDefinition, isFunctionDomain, logger } from '../../common';
+import type {
+  ApigwGatewayConfig,
+  ApigwServiceConfig,
+  ApigwUpstreamConfig,
+  ApigwRouteConfig,
+} from '../../common/volcengineClient/types';
+import type { EventDomain, ResourceAttributes } from '../../types';
 import { lang } from '../../lang';
-import type { ApigwHttpMethod } from '../../common/volcengineClient/types';
-
-export type ApigwGroupConfig = {
-  groupName: string;
-  description?: string;
-  protocol?: 'HTTP' | 'HTTPS' | 'HTTP&HTTPS';
-};
-
-export type ApigwGroupInfo = {
-  gatewayId?: string;
-  gatewayName?: string;
-  protocol?: string;
-  status?: string;
-  createdTime?: string;
-  description?: string;
-  subDomain?: string;
-};
-
-export type ApigwApiConfig = {
-  gatewayId: string;
-  apiName: string;
-  method: ApigwHttpMethod;
-  path: string;
-  description?: string;
-  backendFunctionName: string;
-  backendType: 'veFaaS';
-  requestTimeout?: number;
-};
-
-export type ApigwApiInfo = {
-  apiId?: string;
-  apiName?: string;
-  gatewayId?: string;
-  method?: string;
-  path?: string;
-  description?: string;
-  backendType?: string;
-  backendId?: string;
-  backendFunctionName?: string;
-  status?: string;
-  createdTime?: string;
-};
-
-export type ApigwDomainConfig = {
-  gatewayId: string;
-  domainName: string;
-  certificateId?: string;
-  certificateBody?: string;
-  certificatePrivateKey?: string;
-};
-
-export type ApigwDomainInfo = {
-  domainName?: string;
-  gatewayId?: string;
-  status?: string;
-  certificateId?: string;
-};
 
 /**
- * Convert EventDomain to API Gateway group config
+ * Gateway instance name — reused for find-by-name adoption across deploys.
  */
-export const eventToApigwGroupConfig = (
+export const buildGatewayName = (serviceName: string, stage: string): string =>
+  `${serviceName}-${stage}-apigw`.replace(/_/g, '-');
+
+export const buildServiceName = (event: EventDomain, stage: string): string =>
+  `${event.name}-${stage}-service`.replace(/_/g, '-');
+
+export const buildUpstreamName = (
   event: EventDomain,
-  serviceName: string,
+  backendRef: string,
   stage: string,
-): ApigwGroupConfig => {
-  return {
-    groupName: `${serviceName}-${stage}-apigw`.replace(/_/g, '-'),
-    description: `API Gateway for ${serviceName}`,
-    protocol: (event.domain?.protocol as ApigwGroupConfig['protocol']) ?? 'HTTP',
-  };
+): string => {
+  const fnKey = resolveFunctionKey(backendRef);
+  return `${event.name}-${stage}-upstream-${fnKey.replace(/_/g, '-')}`;
 };
 
-/**
- * Generate a unique API key from method and path
- * Uses URL encoding to preserve path structure and avoid collisions
- */
-export const generateApiKey = (method: string, path: string): string => {
-  const sanitizedPath = path
-    .replace(/\//g, '__')
+export const buildRouteName = (event: EventDomain, method: string, path: string): string => {
+  const sanitized = path
+    .replace(/\//g, '_')
     .replace(/[^a-zA-Z0-9_]/g, '_')
-    .replace(/^__/, '')
-    .replace(/__$/, '');
-  return `${method}_${sanitizedPath}`;
+    .replace(/^_+|_+$/g, '');
+  return `${event.name}-${method}_${sanitized}`.replace(/_/g, '-').slice(0, 63);
 };
 
 /**
@@ -104,85 +51,113 @@ const resolveFunctionReference = (backendRef: string): string => {
     return backendRef;
   }
 
-  const functionName = functionDef.name;
-  logger.info(lang.__('RESOLVED_FUNCTION_REF', { backendRef, functionName }));
-  return functionName;
+  return functionDef.name;
 };
 
 /**
- * Convert EventDomain trigger to API Gateway API config
+ * Extracts the function key (e.g. 'api_function') from a ${functions.xxx} backend ref.
  */
-export const triggerToApigwApiConfig = (
-  event: EventDomain,
-  trigger: EventDomain['triggers'][0],
-  gatewayId: string,
-  _serviceName: string,
-  _region: string,
-  stage: string,
-): ApigwApiConfig => {
-  const method = trigger.method as ApigwHttpMethod;
-  const path = trigger.path as string;
-  const backend = trigger.backend as string;
-  const resolvedFunctionName = resolveFunctionReference(backend);
-  const apiKey = generateApiKey(method, path);
+export const resolveFunctionKey = (backendRef: string): string => {
+  const match = /^\$\{functions\.([\w.]+)}$/.exec(String(backendRef ?? ''));
+  return match?.[1] ?? backendRef;
+};
 
+export const eventToApigwGatewayConfig = (
+  event: EventDomain,
+  serviceName: string,
+  stage: string,
+  ownershipValue: string,
+): ApigwGatewayConfig => {
+  return {
+    gatewayName: buildGatewayName(serviceName, stage),
+    type: 'serverless',
+    ...(event.network && {
+      network: { vpcId: event.network.vpc_id, subnetIds: event.network.subnet_ids },
+    }),
+    logConfig: event.log ? { enable: true, projectId: '', topicId: '' } : undefined,
+    Tags: [{ Key: 'si-owned-by', Value: ownershipValue }],
+  };
+};
+
+export const eventToApigwServiceConfig = (
+  event: EventDomain,
+  serviceName: string,
+  stage: string,
+  gatewayId: string,
+): ApigwServiceConfig => {
   return {
     gatewayId,
-    apiName: `${event.name as string}-${stage}-api-${apiKey}`.replace(/_/g, '-'),
-    method,
-    path,
-    backendFunctionName: resolvedFunctionName,
-    backendType: 'veFaaS',
-    requestTimeout: 60,
+    serviceName: buildServiceName(event, stage),
+    protocol: ['HTTP'],
+    description: `API Gateway for ${serviceName}`,
   };
 };
 
-/**
- * Extract definition from API Gateway group config for state comparison
- */
-export const extractApigwGroupDefinition = (config: ApigwGroupConfig): ResourceAttributes => {
+export const triggerToApigwUpstreamConfig = (
+  event: EventDomain,
+  trigger: EventDomain['triggers'][0],
+  serviceName: string,
+  stage: string,
+  gatewayId: string,
+  functionId: string,
+): ApigwUpstreamConfig => {
   return {
-    groupName: config.groupName,
-    description: config.description ?? null,
-    protocol: config.protocol ?? null,
+    gatewayId,
+    upstreamName: buildUpstreamName(event, String(trigger.backend), stage),
+    sourceType: 'VeFaas',
+    functionId,
+    protocol: 'HTTP',
   };
 };
 
-/**
- * Extract definition from API Gateway API config for state comparison
- */
-export const extractApigwApiDefinition = (config: ApigwApiConfig): ResourceAttributes => {
+export const triggerToApigwRouteConfig = (
+  event: EventDomain,
+  trigger: EventDomain['triggers'][0],
+  serviceId: string,
+  upstreamId: string,
+): ApigwRouteConfig => {
   return {
-    apiName: config.apiName,
-    gatewayId: config.gatewayId,
-    method: config.method,
-    path: config.path,
-    backendFunctionName: config.backendFunctionName,
-    backendType: config.backendType,
+    serviceId,
+    routeName: buildRouteName(event, String(trigger.method), String(trigger.path)),
+    method: trigger.method as ApigwRouteConfig['method'],
+    path: String(trigger.path),
+    upstreamId,
   };
-};
-
-export type EventDomainDefinition = {
-  domainName: string;
-  wwwBindApex: boolean;
-  certificateId: string | null;
-  certificateBody: string | null;
-  certificatePrivateKey: string | null;
-  protocol: string | string[] | null;
 };
 
 export const extractEventDomainDefinition = (
-  domain: EventDomain['domain'],
-): EventDomainDefinition | null => {
-  if (!domain) {
-    return null;
-  }
+  event: EventDomain,
+): {
+  gatewayName: string;
+  network?: { vpcId: string; subnetIds: string[] };
+  logEnabled: boolean;
+  triggers: Array<{ method: string; path: string; backend: string }>;
+  domain?: { domainName?: string; certificateId?: string };
+} => {
   return {
-    domainName: domain.domain_name as string,
-    wwwBindApex: domain.www_bind_apex === true,
-    certificateId: (domain.certificate_id as string) ?? null,
-    certificateBody: (domain.certificate_body as string) ?? null,
-    certificatePrivateKey: domain.certificate_private_key ? '(managed)' : null,
-    protocol: (domain.protocol as string | string[] | null) ?? null,
+    gatewayName: event.name,
+    ...(event.network && {
+      network: { vpcId: event.network.vpc_id, subnetIds: event.network.subnet_ids },
+    }),
+    logEnabled: event.log === true || event.log === 'true',
+    triggers: event.triggers.map((t) => ({
+      method: String(t.method),
+      path: String(t.path),
+      backend: String(t.backend),
+    })),
+    domain: event.domain
+      ? {
+          domainName: event.domain.domain_name as string | undefined,
+          certificateId: event.domain.certificate_id as string | undefined,
+        }
+      : undefined,
   };
 };
+
+export type EventDomainDefinition = ReturnType<typeof extractEventDomainDefinition>;
+
+export const buildEventResourceDefinition = (event: EventDomain): ResourceAttributes => {
+  return extractEventDomainDefinition(event) as unknown as ResourceAttributes;
+};
+
+export { resolveFunctionReference };

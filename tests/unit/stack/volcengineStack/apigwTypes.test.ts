@@ -1,210 +1,100 @@
 import {
-  eventToApigwGroupConfig,
-  triggerToApigwApiConfig,
-  generateApiKey,
+  buildGatewayName,
+  buildServiceName,
+  buildUpstreamName,
+  buildRouteName,
+  resolveFunctionKey,
+  eventToApigwGatewayConfig,
+  eventToApigwServiceConfig,
+  triggerToApigwUpstreamConfig,
+  triggerToApigwRouteConfig,
   extractEventDomainDefinition,
 } from '../../../../src/stack/volcengineStack/apigwTypes';
-import { getContext } from '../../../../src/common';
 import type { EventDomain } from '../../../../src/types';
 
-jest.mock('../../../../src/common', () => ({
-  getContext: jest.fn(),
-  getIacDefinition: jest.fn(),
-  isFunctionDomain: jest.fn(),
-  logger: {
-    info: jest.fn(),
-    warn: jest.fn(),
-    error: jest.fn(),
-    debug: jest.fn(),
-  },
-}));
-
-jest.mock('../../../../src/lang', () => ({
-  lang: {
-    __: (key: string) => key,
-  },
-}));
-
-const mockGetIacDefinition = jest.requireMock('../../../../src/common').getIacDefinition;
-const mockIsFunctionDomain = jest.requireMock('../../../../src/common').isFunctionDomain;
+const mockEvent: EventDomain = {
+  key: 'api_gateway',
+  name: 'rest-api-app-volcengine-gw',
+  type: 'API_GATEWAY',
+  network: { vpc_id: 'vpc-123', subnet_ids: ['subnet-a', 'subnet-b'] },
+  triggers: [
+    { method: 'POST', path: '/graphql', backend: '${functions.api_function}' },
+    { method: 'GET', path: '/health', backend: '${functions.api_function}' },
+  ],
+};
 
 describe('apigwTypes', () => {
-  const mockEvent: EventDomain = {
-    key: 'api_gateway',
-    name: 'test-gateway',
-    type: 'API_GATEWAY',
-    triggers: [
-      {
-        method: 'GET',
-        path: '/api/test',
-        backend: '${functions.test_function}',
-      },
-    ],
-  };
-
-  beforeEach(() => {
-    jest.clearAllMocks();
+  it('should build gateway name from service + stage', () => {
+    expect(buildGatewayName('rest-api-volcengine', 'dev')).toBe('rest-api-volcengine-dev-apigw');
   });
 
-  describe('eventToApigwGroupConfig', () => {
-    it('should convert event to group config', () => {
-      const result = eventToApigwGroupConfig(mockEvent, 'test-service', 'dev');
-
-      expect(result.groupName).toBe('test-service-dev-apigw');
-      expect(result.description).toBe('API Gateway for test-service');
-    });
-
-    it('should use custom protocol from event domain', () => {
-      const eventWithProtocol: EventDomain = {
-        ...mockEvent,
-        domain: {
-          domain_name: 'api.example.com',
-          protocol: 'HTTPS',
-        },
-      };
-
-      const result = eventToApigwGroupConfig(eventWithProtocol, 'test-service', 'dev');
-
-      expect(result.protocol).toBe('HTTPS');
-    });
+  it('should build service name from event + stage', () => {
+    expect(buildServiceName(mockEvent, 'dev')).toBe('rest-api-app-volcengine-gw-dev-service');
   });
 
-  describe('triggerToApigwApiConfig', () => {
-    it('should convert trigger to API config', () => {
-      (getContext as jest.Mock).mockReturnValue({
-        iac: { functions: {} },
-      });
-      mockGetIacDefinition.mockReturnValue({ name: 'test-function' });
-      mockIsFunctionDomain.mockReturnValue(true);
-
-      const result = triggerToApigwApiConfig(
-        mockEvent,
-        mockEvent.triggers[0],
-        'gateway-123',
-        'test-service',
-        'cn-beijing',
-        'dev',
-      );
-
-      expect(result.gatewayId).toBe('gateway-123');
-      expect(result.method).toBe('GET');
-      expect(result.path).toBe('/api/test');
-      expect(result.backendFunctionName).toBe('test-function');
-    });
-
-    it('should return backend ref when context.iac is undefined', () => {
-      (getContext as jest.Mock).mockReturnValue({});
-
-      const result = triggerToApigwApiConfig(
-        mockEvent,
-        mockEvent.triggers[0],
-        'gateway-123',
-        'test-service',
-        'cn-beijing',
-        'dev',
-      );
-
-      expect(result.backendFunctionName).toBe('${functions.test_function}');
-    });
-
-    it('should return backend ref when function not found', () => {
-      (getContext as jest.Mock).mockReturnValue({
-        iac: { functions: {} },
-      });
-      mockGetIacDefinition.mockReturnValue(null);
-      mockIsFunctionDomain.mockReturnValue(false);
-
-      const result = triggerToApigwApiConfig(
-        mockEvent,
-        mockEvent.triggers[0],
-        'gateway-123',
-        'test-service',
-        'cn-beijing',
-        'dev',
-      );
-
-      expect(result.backendFunctionName).toBe('${functions.test_function}');
-    });
-
-    it('should return backend ref when function is not a function domain', () => {
-      (getContext as jest.Mock).mockReturnValue({
-        iac: { functions: {} },
-      });
-      mockGetIacDefinition.mockReturnValue({ name: 'test' });
-      mockIsFunctionDomain.mockReturnValue(false);
-
-      const result = triggerToApigwApiConfig(
-        mockEvent,
-        mockEvent.triggers[0],
-        'gateway-123',
-        'test-service',
-        'cn-beijing',
-        'dev',
-      );
-
-      expect(result.backendFunctionName).toBe('${functions.test_function}');
-    });
+  it('should build upstream name from backend ref', () => {
+    expect(buildUpstreamName(mockEvent, '${functions.api_function}', 'dev')).toBe(
+      'rest-api-app-volcengine-gw-dev-upstream-api-function',
+    );
   });
 
-  describe('generateApiKey', () => {
-    it('should generate API key from method and path', () => {
-      const result = generateApiKey('GET', '/api/test');
-
-      expect(result).toBe('GET_api__test');
-    });
-
-    it('should handle root path', () => {
-      const result = generateApiKey('GET', '/');
-
-      expect(result).toBe('GET_');
-    });
-
-    it('should handle path with parameters', () => {
-      const result = generateApiKey('POST', '/users/{id}');
-
-      expect(result).toContain('POST');
-      expect(result).toContain('users');
-    });
+  it('should build a route name from method + path', () => {
+    const name = buildRouteName(mockEvent, 'POST', '/graphql');
+    expect(name).toBe('rest-api-app-volcengine-gw-POST-graphql');
+    expect(name.length).toBeLessThanOrEqual(63);
   });
 
-  describe('extractEventDomainDefinition', () => {
-    it('should return null when domain is undefined', () => {
-      const result = extractEventDomainDefinition(undefined);
+  it('should resolve the function key from a backend ref', () => {
+    expect(resolveFunctionKey('${functions.api_function}')).toBe('api_function');
+    expect(resolveFunctionKey('${functions.probe}')).toBe('probe');
+  });
 
-      expect(result).toBeNull();
-    });
+  it('should build gateway config with serverless type and network', () => {
+    const config = eventToApigwGatewayConfig(mockEvent, 'rest-api-volcengine', 'dev', 'ownership');
+    expect(config.gatewayName).toBe('rest-api-volcengine-dev-apigw');
+    expect(config.type).toBe('serverless');
+    expect(config.network).toEqual({ vpcId: 'vpc-123', subnetIds: ['subnet-a', 'subnet-b'] });
+    expect(config.Tags).toEqual([{ Key: 'si-owned-by', Value: 'ownership' }]);
+  });
 
-    it('should extract domain definition', () => {
-      const domain = {
-        domain_name: 'api.example.com',
-        www_bind_apex: true,
-        certificate_id: 'cert-123',
-        protocol: 'HTTPS',
-      };
+  it('should build service config', () => {
+    const config = eventToApigwServiceConfig(mockEvent, 'rest-api-volcengine', 'dev', 'gw-1');
+    expect(config.gatewayId).toBe('gw-1');
+    expect(config.serviceName).toBe('rest-api-app-volcengine-gw-dev-service');
+    expect(config.protocol).toEqual(['HTTP']);
+  });
 
-      const result = extractEventDomainDefinition(domain);
+  it('should build upstream config with the veFaaS function id', () => {
+    const config = triggerToApigwUpstreamConfig(
+      mockEvent,
+      mockEvent.triggers[0],
+      'rest-api-volcengine',
+      'dev',
+      'gw-1',
+      'fn-abc',
+    );
+    expect(config.sourceType).toBe('VeFaas');
+    expect(config.functionId).toBe('fn-abc');
+    expect(config.gatewayId).toBe('gw-1');
+  });
 
-      expect(result).toEqual({
-        domainName: 'api.example.com',
-        wwwBindApex: true,
-        certificateId: 'cert-123',
-        certificateBody: null,
-        certificatePrivateKey: null,
-        protocol: 'HTTPS',
-      });
-    });
+  it('should build route config from a trigger', () => {
+    const config = triggerToApigwRouteConfig(mockEvent, mockEvent.triggers[0], 'svc-1', 'up-1');
+    expect(config.serviceId).toBe('svc-1');
+    expect(config.method).toBe('POST');
+    expect(config.path).toBe('/graphql');
+    expect(config.upstreamId).toBe('up-1');
+  });
 
-    it('should handle domain with certificate body', () => {
-      const domain = {
-        domain_name: 'api.example.com',
-        certificate_body: '-----BEGIN CERTIFICATE-----',
-        certificate_private_key: '-----BEGIN PRIVATE KEY-----',
-      };
-
-      const result = extractEventDomainDefinition(domain);
-
-      expect(result?.certificateBody).toBe('-----BEGIN CERTIFICATE-----');
-      expect(result?.certificatePrivateKey).toBe('(managed)');
+  it('should extract the event domain definition', () => {
+    const def = extractEventDomainDefinition(mockEvent);
+    expect(def.gatewayName).toBe('rest-api-app-volcengine-gw');
+    expect(def.network).toEqual({ vpcId: 'vpc-123', subnetIds: ['subnet-a', 'subnet-b'] });
+    expect(def.triggers).toHaveLength(2);
+    expect(def.triggers[0]).toEqual({
+      method: 'POST',
+      path: '/graphql',
+      backend: '${functions.api_function}',
     });
   });
 });
