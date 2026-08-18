@@ -65,6 +65,12 @@ export const deploy = async (options: {
 
   const backend = createStateBackend(iac.backend, { ...context, siApiKey: options.siApiKey });
 
+  // ADR-005: wire the backend's event reporter into the global context so
+  // executors can emit per-resource deployment events via context.reportEvent.
+  if (backend.reportEvent) {
+    context.reportEvent = backend.reportEvent;
+  }
+
   logger.info(lang.__('GENERATING_PLAN'));
   let planResult;
   if (iac.provider.name === ProviderEnum.TENCENT) {
@@ -109,7 +115,14 @@ export const deploy = async (options: {
         // best-effort release — ignore failures on the exit path
       });
     }
-    process.exit(130);
+    // ADR-005: drain any buffered deployment events before exiting so the
+    // console timeline is as complete as possible even on Ctrl+C.
+    const flushPromise = backend.flushEvents?.();
+    if (flushPromise) {
+      void flushPromise.finally(() => process.exit(130));
+    } else {
+      process.exit(130);
+    }
   };
 
   for (const sig of activeSignals) {
@@ -118,11 +131,38 @@ export const deploy = async (options: {
     signalHandlers.set(sig, handler);
   }
 
+  // ADR-005: replay event-queue files orphaned by a previous interrupted run.
+  await backend.replayOrphanedEvents?.();
+
   try {
     await backend.withLock(
       'deploy',
       async () => {
-        await deployStack(iac, backend);
+        try {
+          await deployStack(iac, backend);
+        } catch (err) {
+          // The deployment FAILED, but the console still needs the plan
+          // (what we attempted) + the partial state (what succeeded) to render
+          // a meaningful Changes / State JSON / error view. Attach them to the
+          // error; withLock's fail branch forwards them.
+          const failure = err as Error & {
+            plan?: { items: Array<unknown> };
+            stateJson?: Record<string, unknown>;
+          };
+          try {
+            const partialState = await backend.loadState(
+              iac.provider.name,
+              iac.app,
+              iac.service,
+              options.stage ?? 'dev',
+            );
+            failure.stateJson = partialState ?? {};
+          } catch {
+            // state may be unreadable mid-failure — plan alone is still useful
+          }
+          failure.plan = { items: planResult.items };
+          throw failure;
+        }
         // Read back the final state so the deployment record can link it
         // (console shows Changes + State JSON from the plan and state).
         const finalState = await backend.loadState(

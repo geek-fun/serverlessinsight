@@ -1,4 +1,5 @@
 import { StateFile, LockOptions, LockMetadata } from '../../types';
+import type { DeploymentEventRecord } from '../eventQueue';
 
 /**
  * Storage adapter interface for remote state backends.
@@ -28,6 +29,12 @@ export type StateBackend = {
     options?: LockOptions,
     onLockAcquired?: (lockId: string) => void,
   ) => Promise<T>;
+  /** ADR-005: report a typed deployment event (SaaS backend persists via API). */
+  reportEvent?: (event: DeploymentEventRecord) => void;
+  /** ADR-005: flush any buffered deployment events (used on exit / in tests). */
+  flushEvents?: () => Promise<void>;
+  /** ADR-005: replay event-queue files orphaned by a previous interrupted run. */
+  replayOrphanedEvents?: () => Promise<void>;
 };
 
 export type { LockMetadata };

@@ -1,5 +1,6 @@
 import { ProviderEnum } from '../../common';
 import { ServerlessIac } from '../index';
+import type { DeploymentEventRecord } from '../../common/eventQueue';
 
 export type Context = {
   region: string;
@@ -18,6 +19,8 @@ export type Context = {
   };
   tags?: Array<{ key: string; value: string }>;
   iac?: ServerlessIac;
+  /** ADR-005: emit a typed deployment event (executors call this per resource op). */
+  reportEvent?: (event: DeploymentEventRecord) => void;
 };
 
 export enum TemplateFormat {

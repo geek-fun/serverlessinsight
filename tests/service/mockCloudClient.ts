@@ -295,6 +295,7 @@ export type MockVolcengineClient = {
   vefaas: {
     createFunction: jest.Mock;
     getFunction: jest.Mock;
+    getFunctionById: jest.Mock;
     updateFunctionConfiguration: jest.Mock;
     updateFunctionCode: jest.Mock;
     deleteFunction: jest.Mock;
@@ -350,11 +351,20 @@ export type MockVolcengineClient = {
 
 export const createMockVolcengineClient = (): MockVolcengineClient => ({
   vefaas: {
-    createFunction: jest.fn().mockResolvedValue(undefined),
+    createFunction: jest.fn().mockResolvedValue('func-123'),
     getFunction: jest.fn().mockResolvedValue({
       functionId: 'func-123',
       functionName: 'test-function',
-      runtime: 'nodejs/v18',
+      runtime: 'node20/v1',
+      handler: 'index.handler',
+      memoryMb: 128,
+      requestTimeout: 30,
+      status: 'Active',
+    }),
+    getFunctionById: jest.fn().mockResolvedValue({
+      functionId: 'func-123',
+      functionName: 'test-function',
+      runtime: 'node20/v1',
       handler: 'index.handler',
       memoryMb: 128,
       requestTimeout: 30,

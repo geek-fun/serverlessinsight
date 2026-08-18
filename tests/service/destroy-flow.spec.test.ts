@@ -37,14 +37,14 @@ const mockCreateAliyunClient = require('../../src/common/aliyunClient')
 const STATE_FILE_PATH = path.join(
   process.cwd(),
   '.serverlessinsight',
-  'state-insight-poc-app-insight-poc.json',
+  'state-insight-poc-destroy-app-insight-poc-destroy.json',
 );
 
 const EXISTING_STATE = JSON.stringify({
   version: '3.0',
   provider: 'aliyun',
-  app: 'insight-poc-app',
-  service: 'insight-poc',
+  app: 'insight-poc-destroy-app',
+  service: 'insight-poc-destroy',
   stages: {
     dev: {
       resources: {
@@ -89,7 +89,7 @@ describe('Destroy Flow Service Test', () => {
   describe('Aliyun Destroy', () => {
     it('should destroy FC3 function and clean state', async () => {
       await destroyStack({
-        location: fixturesDir,
+        location: path.join(fixturesDir, 'serverless-insight-destroy.yml'),
         stage: 'dev',
         region: 'cn-hangzhou',
         provider: 'aliyun',
@@ -103,7 +103,7 @@ describe('Destroy Flow Service Test', () => {
       mockClient.fc3.deleteFunction.mockRejectedValueOnce({ code: 'FunctionNotFound' });
 
       await destroyStack({
-        location: fixturesDir,
+        location: path.join(fixturesDir, 'serverless-insight-destroy.yml'),
         stage: 'dev',
         region: 'cn-hangzhou',
         provider: 'aliyun',
@@ -117,7 +117,7 @@ describe('Destroy Flow Service Test', () => {
 
       await expect(
         destroyStack({
-          location: fixturesDir,
+          location: path.join(fixturesDir, 'serverless-insight-destroy.yml'),
           stage: 'dev',
           region: 'cn-hangzhou',
           provider: 'aliyun',

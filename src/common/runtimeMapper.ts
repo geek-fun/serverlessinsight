@@ -153,20 +153,19 @@ export const mapRuntime = (standardRuntime: string, provider: ProviderEnum): str
   return providerRuntime;
 };
 
+// Valid veFaaS runtimes per the official CreateFunction API reference:
+// golang/v1, native/v1, nativejava8/v1, node14/v1, node20/v1, nodeprime14/v1,
+// python3.12/v1, python3.8/v1, python3.9/v1
 const VOLCENGINE_NATIVE_RUNTIMES = [
-  'nodejs/v20',
-  'nodejs/v18',
-  'nodejs/v16',
-  'nodejs/v14',
-  'python/v3.12',
-  'python/v3.11',
-  'python/v3.10',
-  'python/v3.9',
   'golang/v1',
-  'java/v21',
-  'java/v17',
-  'java/v11',
-  'java/v8',
+  'native/v1',
+  'nativejava8/v1',
+  'node14/v1',
+  'node20/v1',
+  'nodeprime14/v1',
+  'python3.12/v1',
+  'python3.8/v1',
+  'python3.9/v1',
 ];
 
 export const isRuntimeSupported = (runtime: string, provider: ProviderEnum): boolean => {

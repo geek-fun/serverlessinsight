@@ -302,7 +302,7 @@ describe('saasStateBackend', () => {
         phase: 'start',
       });
       expect(fn).toHaveBeenCalled();
-      expect(mockApiClient.patch).toHaveBeenLastCalledWith(
+      expect(mockApiClient.patch).toHaveBeenCalledWith(
         '/api/v1/deployments/deploy-1',
         expect.objectContaining({ phase: 'complete', result: 'ok' }),
       );
@@ -340,7 +340,7 @@ describe('saasStateBackend', () => {
       };
       const result = await backend.withLock('deploy', jest.fn().mockResolvedValue(summary));
 
-      expect(mockApiClient.patch).toHaveBeenLastCalledWith('/api/v1/deployments/deploy-1', {
+      expect(mockApiClient.patch).toHaveBeenCalledWith('/api/v1/deployments/deploy-1', {
         phase: 'complete',
         result: null,
         stateJson: summary.stateJson,
@@ -378,9 +378,67 @@ describe('saasStateBackend', () => {
 
       await expect(backend.withLock('deploy', fn)).rejects.toThrow('boom');
 
-      expect(mockApiClient.patch).toHaveBeenLastCalledWith(
+      expect(mockApiClient.patch).toHaveBeenCalledWith(
         '/api/v1/deployments/deploy-1',
         expect.objectContaining({ phase: 'fail' }),
+      );
+    });
+
+    it('should forward plan/stateJson/contentHash when the failed fn attached them', async () => {
+      mockApiClient.post.mockResolvedValueOnce({
+        id: 'deploy-1',
+        appId: 'app-1',
+        serviceId: 'svc-1',
+        status: 'active',
+        isNewApp: false,
+        isNewService: false,
+      });
+      mockApiClient.get.mockResolvedValueOnce({
+        stateJson: {
+          version: '3.0',
+          provider: 'aliyun',
+          app: 'myapp',
+          service: 'myservice',
+          stages: {},
+          resources: { 'functions.fn': { mode: 'managed', instances: [] } },
+        },
+      });
+      mockApiClient.patch.mockResolvedValue({});
+
+      await backend.loadState('aliyun', 'myapp', 'myservice', 'dev');
+
+      const failure = new Error('CreateFunction failed') as Error & {
+        plan?: { items: Array<unknown> };
+        stateJson?: Record<string, unknown>;
+      };
+      failure.plan = { items: [{ logicalId: 'functions.fn', action: 'create' }] };
+      failure.stateJson = {
+        version: '3.0',
+        provider: 'aliyun',
+        app: 'myapp',
+        service: 'myservice',
+        stages: {},
+        resources: { 'functions.fn': { mode: 'managed', instances: [] } },
+      };
+
+      await expect(backend.withLock('deploy', () => Promise.reject(failure))).rejects.toThrow(
+        'CreateFunction failed',
+      );
+
+      const failCall = mockApiClient.patch.mock.calls.find(
+        (c) => (c[1] as { phase?: string }).phase === 'fail',
+      );
+      expect(failCall).toBeDefined();
+      const payload = failCall![1];
+      expect(payload).toEqual(
+        expect.objectContaining({
+          phase: 'fail',
+          error: { message: 'CreateFunction failed' },
+          plan: { items: [{ logicalId: 'functions.fn', action: 'create' }] },
+          stateJson: expect.any(Object),
+          contentHash: expect.any(String),
+          resourceCount: 1,
+        }),
       );
     });
 
@@ -389,6 +447,59 @@ describe('saasStateBackend', () => {
 
       await expect(backend.withLock('deploy', fn)).rejects.toThrow('call loadState() first');
       expect(fn).not.toHaveBeenCalled();
+    });
+
+    it('reportEvent sends a typed event via PATCH phase:event', async () => {
+      mockApiClient.post.mockResolvedValueOnce({
+        id: 'deploy-1',
+        appId: 'app-1',
+        serviceId: 'svc-1',
+        status: 'active',
+        isNewApp: false,
+        isNewService: false,
+      });
+      mockApiClient.get.mockResolvedValueOnce({
+        stateJson: {
+          version: '3.0',
+          provider: 'aliyun',
+          app: 'myapp',
+          service: 'myservice',
+          stages: {},
+          resources: {},
+        },
+      });
+      mockApiClient.patch.mockResolvedValue({});
+
+      await backend.loadState('aliyun', 'myapp', 'myservice', 'dev');
+
+      const report = (backend as StateBackend & { reportEvent?: (e: unknown) => Promise<void> })
+        .reportEvent;
+      expect(report).toBeDefined();
+      await report!({
+        type: 'resource_pre',
+        logicalId: 'functions.fn',
+        action: 'create',
+        sequence: 1,
+      });
+
+      // reportEvent is fire-and-forget (batch queue) — flush on exit drains it
+      const flush = (backend as StateBackend & { flushEvents?: () => Promise<void> }).flushEvents;
+      if (flush) await flush();
+
+      expect(mockApiClient.patch).toHaveBeenCalledWith(
+        '/api/v1/deployments/deploy-1',
+        expect.objectContaining({
+          phase: 'event',
+          events: expect.arrayContaining([
+            expect.objectContaining({
+              type: 'resource_pre',
+              logicalId: 'functions.fn',
+              action: 'create',
+              sequence: 1,
+            }),
+          ]),
+        }),
+      );
     });
   });
 });

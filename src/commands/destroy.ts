@@ -42,6 +42,12 @@ export const destroyStack = async (options: {
 
   const backend = createStateBackend(iac.backend, context);
 
+  // ADR-005: wire the backend's event reporter into the global context so
+  // executors can emit per-resource deployment events via context.reportEvent.
+  if (backend.reportEvent) {
+    context.reportEvent = backend.reportEvent;
+  }
+
   // Release the active lock on SIGINT/SIGTERM so Ctrl+C doesn't leave a stale
   // lock behind. Best-effort: the local backend release is synchronous (unlink)
   // and completes before exit; remote backends may be cut short, and their lock
@@ -59,7 +65,13 @@ export const destroyStack = async (options: {
         // best-effort release — ignore failures on the exit path
       });
     }
-    process.exit(130);
+    // ADR-005: drain buffered deployment events before exiting.
+    const flushPromise = backend.flushEvents?.();
+    if (flushPromise) {
+      void flushPromise.finally(() => process.exit(130));
+    } else {
+      process.exit(130);
+    }
   };
 
   for (const sig of activeSignals) {
@@ -67,6 +79,9 @@ export const destroyStack = async (options: {
     process.on(sig, handler);
     signalHandlers.set(sig, handler);
   }
+
+  // ADR-005: replay event-queue files orphaned by a previous interrupted run.
+  await backend.replayOrphanedEvents?.();
 
   try {
     await backend.withLock(

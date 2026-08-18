@@ -4,6 +4,7 @@ import { loadCredentials, getConsoleUrl } from '../credentialStore';
 import { StateBackend } from './types';
 import { StateFile, LockMetadata, LockOptions, CURRENT_STATE_VERSION } from '../../types';
 import { migrateState } from '../stateManager';
+import { EventQueue, DeploymentEventRecord } from '../eventQueue';
 import { lang } from '../../lang';
 import crypto from 'node:crypto';
 
@@ -56,6 +57,35 @@ export const createSaasStateBackend = (context: SaasBackendContext): StateBacken
   let resolvedAppId: string | null = null;
   let resolvedServiceId: string | null = null;
   let provisioned = false;
+  let eventQueue: EventQueue | null = null;
+  let sequenceCounter = 0;
+
+  /** ADR-005: enqueue a typed event for the active deployment (durable JSONL + batch flush). */
+  const reportEvent = (event: DeploymentEventRecord): void => {
+    ensureEventQueue();
+    if (!eventQueue || !currentDeploymentId) return;
+    sequenceCounter += 1;
+    eventQueue.report({
+      ...event,
+      deploymentId: currentDeploymentId,
+      sequence: event.sequence ?? sequenceCounter,
+    });
+  };
+
+  const ensureEventQueue = (): void => {
+    if (eventQueue || !currentDeploymentId) return;
+    eventQueue = new EventQueue({
+      deploymentId: currentDeploymentId,
+      sendBatch: async (events) => {
+        await client.patch(`/api/v1/deployments/${currentDeploymentId}`, {
+          phase: 'event',
+          events,
+          ...(resolvedAppId ? { appId: resolvedAppId } : {}),
+        });
+      },
+      flushOnExit: true,
+    });
+  };
 
   /**
    * Provision the deployment by calling the unified POST endpoint.
@@ -202,6 +232,8 @@ export const createSaasStateBackend = (context: SaasBackendContext): StateBacken
       // Acquire lock via phase:start (server checks for 409 conflicts)
       await client.patch(`/api/v1/deployments/${currentDeploymentId}`, { phase: 'start' });
       onLockAcquired?.(currentDeploymentId);
+      ensureEventQueue();
+      reportEvent({ type: 'deployment_started', message: `Deployment ${operation} started` });
 
       try {
         const result = await fn();
@@ -226,19 +258,65 @@ export const createSaasStateBackend = (context: SaasBackendContext): StateBacken
               }
             : {}),
         });
+        reportEvent({ type: 'deployment_completed', message: `Deployment ${operation} completed` });
+        await eventQueue?.flushOnExit();
         return result;
       } catch (err) {
-        // Fail with error
+        // Fail with error. If the caller attached plan/stateJson to the error
+        // (see commands/deploy.ts), forward them so the console can render
+        // Changes + State JSON even for a failed deployment.
+        const failure = err as Error & {
+          plan?: { items: Array<unknown> };
+          stateJson?: Record<string, unknown>;
+        };
         try {
-          await client.patch(`/api/v1/deployments/${currentDeploymentId}`, {
+          const payload: Record<string, unknown> = {
             phase: 'fail',
             error: { message: err instanceof Error ? err.message : String(err) },
-          });
+            ...(failure.plan ? { plan: failure.plan } : {}),
+          };
+          if (failure.stateJson) {
+            payload['stateJson'] = failure.stateJson;
+            payload['contentHash'] = crypto
+              .createHash('sha256')
+              .update(JSON.stringify(failure.stateJson))
+              .digest('hex');
+            payload['resourceCount'] = Object.keys(failure.stateJson.resources ?? {}).length;
+          }
+          await client.patch(`/api/v1/deployments/${currentDeploymentId}`, payload);
         } catch {
           // Best-effort fail notification
         }
+        reportEvent({
+          type: 'deployment_failed',
+          message: `Deployment ${operation} failed`,
+          error: { message: err instanceof Error ? err.message : String(err) },
+          severity: 'error',
+        });
+        await eventQueue?.flushOnExit();
         throw err;
       }
+    },
+
+    reportEvent,
+    flushEvents: async (): Promise<void> => {
+      await eventQueue?.flushOnExit();
+    },
+    replayOrphanedEvents: async (): Promise<void> => {
+      // Replays queue files from ANY previous run — each file carries its own
+      // deploymentId, and sendBatch targets the deployment embedded in the event.
+      const replayQueue = new EventQueue({
+        deploymentId: 'replay',
+        sendBatch: async (events) => {
+          const deploymentId = events[0]?.deploymentId as string | undefined;
+          if (!deploymentId) return;
+          await client.patch(`/api/v1/deployments/${deploymentId}`, {
+            phase: 'event',
+            events,
+          });
+        },
+      });
+      await replayQueue.replayOrphanedQueues();
     },
   };
 };

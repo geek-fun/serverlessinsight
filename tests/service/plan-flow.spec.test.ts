@@ -50,7 +50,7 @@ const mockCreateTencentClient = require('../../src/common/tencentClient')
 const STATE_FILE_PATH = path.join(
   process.cwd(),
   '.serverlessinsight',
-  'state-insight-poc-app-insight-poc.json',
+  'state-insight-poc-plan-app-insight-poc-plan.json',
 );
 
 const EXISTING_STATE = JSON.stringify({
@@ -106,7 +106,7 @@ describe('Plan Flow Service Test', () => {
   describe('Aliyun Plan Generation', () => {
     it('should generate plan for FC3 function', async () => {
       await plan({
-        location: fixturesDir,
+        location: path.join(fixturesDir, 'serverless-insight-plan.yml'),
         stage: 'dev',
         region: 'cn-hangzhou',
         provider: 'aliyun',
@@ -119,7 +119,7 @@ describe('Plan Flow Service Test', () => {
       mockClient.fc3.getFunction.mockRejectedValueOnce({ code: 'FunctionNotFound' });
 
       await plan({
-        location: fixturesDir,
+        location: path.join(fixturesDir, 'serverless-insight-plan.yml'),
         stage: 'dev',
         region: 'cn-hangzhou',
         provider: 'aliyun',
@@ -143,7 +143,7 @@ describe('Plan Flow Service Test', () => {
       });
 
       await plan({
-        location: fixturesDir,
+        location: path.join(fixturesDir, 'serverless-insight-plan.yml'),
         stage: 'dev',
         region: 'cn-hangzhou',
         provider: 'aliyun',
@@ -156,7 +156,7 @@ describe('Plan Flow Service Test', () => {
   describe('Multi-Provider Support', () => {
     it('should use Tencent planner for Tencent provider', async () => {
       await plan({
-        location: fixturesDir,
+        location: path.join(fixturesDir, 'serverless-insight-plan.yml'),
         stage: 'dev',
         region: 'ap-guangzhou',
         provider: 'tencent',

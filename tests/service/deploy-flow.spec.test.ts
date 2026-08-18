@@ -39,7 +39,7 @@ describe('Deploy Flow Service Test', () => {
   const stateFilePath = path.join(
     process.cwd(),
     '.serverlessinsight',
-    'state-insight-poc-app-insight-poc.json',
+    'state-insight-poc-deploy-app-insight-poc-deploy.json',
   );
   let mockClient: MockAliyunClient;
 
@@ -59,7 +59,7 @@ describe('Deploy Flow Service Test', () => {
   describe('Aliyun FC3 Deploy', () => {
     it('should deploy single FC3 function and save state', async () => {
       await deploy({
-        location: fixturesDir,
+        location: path.join(fixturesDir, 'serverless-insight-deploy.yml'),
         stage: 'dev',
         autoApprove: true,
         region: 'cn-hangzhou',
@@ -74,7 +74,7 @@ describe('Deploy Flow Service Test', () => {
 
       await expect(
         deploy({
-          location: fixturesDir,
+          location: path.join(fixturesDir, 'serverless-insight-deploy.yml'),
           stage: 'dev',
           autoApprove: true,
           region: 'cn-hangzhou',

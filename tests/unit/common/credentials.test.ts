@@ -53,6 +53,29 @@ describe('credentials', () => {
       });
     });
 
+    it('should read Volcengine credentials from environment variables', () => {
+      process.env.VOLCENGINE_ACCESS_KEY = 'volc-key-id';
+      process.env.VOLCENGINE_SECRET_KEY = 'volc-secret';
+
+      const result = getCredentials(undefined, ProviderEnum.VOLCENGINE);
+
+      expect(result).toEqual({
+        accessKeyId: 'volc-key-id',
+        accessKeySecret: 'volc-secret',
+        securityToken: undefined,
+      });
+    });
+
+    it('should fall back to legacy Volcengine env var names when the new ones are absent', () => {
+      process.env.VOLCSTACK_ACCESS_KEY_ID = 'legacy-key-id';
+      process.env.VOLCSTACK_SECRET_ACCESS_KEY = 'legacy-secret';
+
+      const result = getCredentials(undefined, ProviderEnum.VOLCENGINE);
+
+      expect(result.accessKeyId).toBe('legacy-key-id');
+      expect(result.accessKeySecret).toBe('legacy-secret');
+    });
+
     it('should read Huawei credentials from environment variables', () => {
       process.env.HUAWEICLOUD_ACCESS_KEY = 'huawei-key-id';
       process.env.HUAWEICLOUD_SECRET_KEY = 'huawei-secret';
@@ -89,6 +112,8 @@ describe('credentials', () => {
       process.env.TENCENTCLOUD_SECRET_KEY = 'tencent-secret';
       process.env.HUAWEICLOUD_ACCESS_KEY = 'huawei-key-id';
       process.env.HUAWEICLOUD_SECRET_KEY = 'huawei-secret';
+      process.env.VOLCENGINE_ACCESS_KEY = 'volc-key-id';
+      process.env.VOLCENGINE_SECRET_KEY = 'volc-secret';
 
       // Each provider should only use its own credentials
       const aliyunResult = getCredentials(undefined, ProviderEnum.ALIYUN);
@@ -102,6 +127,10 @@ describe('credentials', () => {
       const huaweiResult = getCredentials(undefined, ProviderEnum.HUAWEI);
       expect(huaweiResult.accessKeyId).toBe('huawei-key-id');
       expect(huaweiResult.accessKeySecret).toBe('huawei-secret');
+
+      const volcengineResult = getCredentials(undefined, ProviderEnum.VOLCENGINE);
+      expect(volcengineResult.accessKeyId).toBe('volc-key-id');
+      expect(volcengineResult.accessKeySecret).toBe('volc-secret');
     });
 
     it('should prefer explicit config over environment variables', () => {

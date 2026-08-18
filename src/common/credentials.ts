@@ -27,10 +27,12 @@ export const getCredentials = (
       return {
         accessKeyId:
           config?.accessKeyId ??
+          process.env.VOLCENGINE_ACCESS_KEY ??
           process.env.VOLCSTACK_ACCESS_KEY_ID ??
           process.env.VOLCENGINE_ACCESS_KEY_ID,
         accessKeySecret:
           config?.accessKeySecret ??
+          process.env.VOLCENGINE_SECRET_KEY ??
           process.env.VOLCSTACK_SECRET_ACCESS_KEY ??
           process.env.VOLCENGINE_ACCESS_KEY_SECRET,
         securityToken:
