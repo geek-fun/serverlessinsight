@@ -11,7 +11,7 @@ import { lang } from '../../lang';
 
 type IamSdkClient = Service;
 
-const DEFAULT_TRUST_POLICY_SERVICES = ['vefaas.volcengine.com'];
+const DEFAULT_TRUST_POLICY_SERVICES = ['vefaas'];
 
 const buildTrustPolicyDocument = (trustedServices: string[]): string => {
   return JSON.stringify({
@@ -85,10 +85,10 @@ export const createIamOperations = (iamClient: IamSdkClient) => {
     try {
       await iamClient.fetchOpenAPI({
         Action: 'CreatePolicy',
-        Version: '2024-01-01',
-        method: 'POST',
+        Version: '2018-01-01',
+        method: 'GET',
         headers: { 'content-type': 'application/json' },
-        data: {
+        query: {
           PolicyName: policyName,
           PolicyDocument: buildExecutionPolicy(customStatements),
           Description: `veFaaS execution policy for ${roleName}`,
@@ -96,7 +96,14 @@ export const createIamOperations = (iamClient: IamSdkClient) => {
       });
     } catch (error: unknown) {
       if (error && typeof error === 'object' && 'code' in error) {
-        if (error.code === 'PolicyAlreadyExists' || error.code === 'Conflict') {
+        const code = String(error.code);
+        // volcengine uses the singular PolicyAlreadyExist (observed live)
+        if (
+          code === 'PolicyAlreadyExists' ||
+          code === 'PolicyAlreadyExist' ||
+          code === 'Conflict' ||
+          code.startsWith('PolicyAlready')
+        ) {
           logger.info(lang.__('IAM_POLICY_ALREADY_EXISTS', { policyName }));
         } else {
           throw error;
@@ -109,10 +116,10 @@ export const createIamOperations = (iamClient: IamSdkClient) => {
     try {
       await iamClient.fetchOpenAPI({
         Action: 'AttachRolePolicy',
-        Version: '2024-01-01',
-        method: 'POST',
+        Version: '2018-01-01',
+        method: 'GET',
         headers: { 'content-type': 'application/json' },
-        data: {
+        query: {
           RoleName: roleName,
           PolicyName: policyName,
           PolicyType: 'Custom',
@@ -120,7 +127,14 @@ export const createIamOperations = (iamClient: IamSdkClient) => {
       });
     } catch (error: unknown) {
       if (error && typeof error === 'object' && 'code' in error) {
-        if (error.code === 'PolicyAlreadyAttached' || error.code === 'Conflict') {
+        const code = String(error.code);
+        // volcengine reports PolicyAttachConflict when the policy is already attached
+        if (
+          code === 'PolicyAlreadyAttached' ||
+          code === 'PolicyAttachConflict' ||
+          code === 'Conflict' ||
+          code.startsWith('PolicyAttach')
+        ) {
           logger.info(lang.__('IAM_POLICY_ALREADY_ATTACHED', { policyName, roleName }));
         } else {
           throw error;
@@ -139,10 +153,10 @@ export const createIamOperations = (iamClient: IamSdkClient) => {
     try {
       await iamClient.fetchOpenAPI({
         Action: 'DetachRolePolicy',
-        Version: '2024-01-01',
-        method: 'POST',
+        Version: '2018-01-01',
+        method: 'GET',
         headers: { 'content-type': 'application/json' },
-        data: {
+        query: {
           RoleName: roleName,
           PolicyName: policyName,
           PolicyType: 'Custom',
@@ -155,10 +169,10 @@ export const createIamOperations = (iamClient: IamSdkClient) => {
     try {
       await iamClient.fetchOpenAPI({
         Action: 'DeletePolicy',
-        Version: '2024-01-01',
-        method: 'POST',
+        Version: '2018-01-01',
+        method: 'GET',
         headers: { 'content-type': 'application/json' },
-        data: {
+        query: {
           PolicyName: policyName,
           PolicyType: 'Custom',
         },
@@ -176,10 +190,10 @@ export const createIamOperations = (iamClient: IamSdkClient) => {
     try {
       await iamClient.fetchOpenAPI({
         Action: 'AttachRolePolicy',
-        Version: '2024-01-01',
-        method: 'POST',
+        Version: '2018-01-01',
+        method: 'GET',
         headers: { 'content-type': 'application/json' },
-        data: {
+        query: {
           RoleName: roleName,
           PolicyName: policyName,
           PolicyType: policyType,
@@ -206,10 +220,10 @@ export const createIamOperations = (iamClient: IamSdkClient) => {
     try {
       await iamClient.fetchOpenAPI({
         Action: 'DetachRolePolicy',
-        Version: '2024-01-01',
-        method: 'POST',
+        Version: '2018-01-01',
+        method: 'GET',
         headers: { 'content-type': 'application/json' },
-        data: {
+        query: {
           RoleName: roleName,
           PolicyName: policyName,
           PolicyType: policyType,
@@ -236,14 +250,14 @@ export const createIamOperations = (iamClient: IamSdkClient) => {
     try {
       const response = await iamClient.fetchOpenAPI({
         Action: 'ListAttachedRolePolicies',
-        Version: '2024-01-01',
-        method: 'POST',
+        Version: '2018-01-01',
+        method: 'GET',
         headers: { 'content-type': 'application/json' },
-        data: { RoleName: roleName },
+        query: { RoleName: roleName },
       });
 
       const result = (response.Result || {}) as Record<string, unknown>;
-      const attachedPolicies = result.AttachedRolePolicies as
+      const attachedPolicies = result.AttachedPolicyMetadata as
         Array<{ PolicyName?: string }> | undefined;
 
       if (!attachedPolicies) {
@@ -267,10 +281,10 @@ export const createIamOperations = (iamClient: IamSdkClient) => {
       try {
         const response = await iamClient.fetchOpenAPI({
           Action: 'CreateRole',
-          Version: '2024-01-01',
-          method: 'POST',
+          Version: '2018-01-01',
+          method: 'GET',
           headers: { 'content-type': 'application/json' },
-          data: {
+          query: {
             RoleName: roleName,
             TrustPolicyDocument: trustPolicyDocument,
             DisplayName: config.displayName,
@@ -296,7 +310,7 @@ export const createIamOperations = (iamClient: IamSdkClient) => {
         return {
           roleName: roleData.RoleName as string | undefined,
           roleId: roleData.RoleId as string | undefined,
-          trn: roleData.TRN as string | undefined,
+          trn: (roleData.TRN ?? roleData.trn ?? roleData.Trn) as string | undefined,
           description: roleData.Description as string | undefined,
           createdTime: roleData.CreateTime as string | undefined,
           maxSessionDuration: roleData.MaxSessionDuration as number | undefined,
@@ -312,18 +326,18 @@ export const createIamOperations = (iamClient: IamSdkClient) => {
             try {
               const existingRole = await iamClient.fetchOpenAPI({
                 Action: 'GetRole',
-                Version: '2024-01-01',
-                method: 'POST',
+                Version: '2018-01-01',
+                method: 'GET',
                 headers: { 'content-type': 'application/json' },
-                data: { RoleName: roleName },
+                query: { RoleName: roleName },
               });
 
               await iamClient.fetchOpenAPI({
-                Action: 'UpdateTrustPolicy',
-                Version: '2024-01-01',
-                method: 'POST',
+                Action: 'UpdateRole',
+                Version: '2018-01-01',
+                method: 'GET',
                 headers: { 'content-type': 'application/json' },
-                data: {
+                query: {
                   RoleName: roleName,
                   TrustPolicyDocument: trustPolicyDocument,
                 },
@@ -343,7 +357,7 @@ export const createIamOperations = (iamClient: IamSdkClient) => {
               return {
                 roleName: roleData?.RoleName as string | undefined,
                 roleId: roleData?.RoleId as string | undefined,
-                trn: roleData?.TRN as string | undefined,
+                trn: (roleData?.TRN ?? roleData?.trn ?? roleData?.Trn) as string | undefined,
                 description: roleData?.Description as string | undefined,
                 createdTime: roleData?.CreateTime as string | undefined,
                 maxSessionDuration: roleData?.MaxSessionDuration as number | undefined,
@@ -371,10 +385,10 @@ export const createIamOperations = (iamClient: IamSdkClient) => {
       try {
         const response = await iamClient.fetchOpenAPI({
           Action: 'GetRole',
-          Version: '2024-01-01',
-          method: 'POST',
+          Version: '2018-01-01',
+          method: 'GET',
           headers: { 'content-type': 'application/json' },
-          data: { RoleName: roleName },
+          query: { RoleName: roleName },
         });
 
         const roleData = ((response.Result || {}) as Record<string, unknown>).Role as Record<
@@ -389,7 +403,7 @@ export const createIamOperations = (iamClient: IamSdkClient) => {
         return {
           roleName: roleData.RoleName as string | undefined,
           roleId: roleData.RoleId as string | undefined,
-          trn: roleData.TRN as string | undefined,
+          trn: (roleData.TRN ?? roleData.trn ?? roleData.Trn) as string | undefined,
           description: roleData.Description as string | undefined,
           createdTime: roleData.CreateTime as string | undefined,
           maxSessionDuration: roleData.MaxSessionDuration as number | undefined,
@@ -414,11 +428,11 @@ export const createIamOperations = (iamClient: IamSdkClient) => {
 
       try {
         await iamClient.fetchOpenAPI({
-          Action: 'UpdateTrustPolicy',
-          Version: '2024-01-01',
-          method: 'POST',
+          Action: 'UpdateRole',
+          Version: '2018-01-01',
+          method: 'GET',
           headers: { 'content-type': 'application/json' },
-          data: {
+          query: {
             RoleName: roleName,
             TrustPolicyDocument: trustPolicyDocument,
           },
@@ -448,10 +462,10 @@ export const createIamOperations = (iamClient: IamSdkClient) => {
       try {
         await iamClient.fetchOpenAPI({
           Action: 'DeleteRole',
-          Version: '2024-01-01',
-          method: 'POST',
+          Version: '2018-01-01',
+          method: 'GET',
           headers: { 'content-type': 'application/json' },
-          data: { RoleName: roleName },
+          query: { RoleName: roleName },
         });
 
         logger.info(lang.__('IAM_ROLE_DELETED', { roleName }));

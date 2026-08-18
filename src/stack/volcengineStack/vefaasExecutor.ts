@@ -11,6 +11,7 @@ import {
 import { createResource, deleteResource, updateResource } from './vefaasResource';
 import { logger } from '../../common';
 import { getResource } from '../../common/stateManager';
+import { reportResourceEvent } from '../../common/reportResourceEvent';
 import { lang } from '../../lang';
 
 const executeCreateAction = async (
@@ -107,18 +108,40 @@ export const executeFunctionPlan = async (
   let currentState = initialState;
 
   for (const item of plan.items) {
+    reportResourceEvent(context, {
+      type: 'resource_pre',
+      logicalId: item.logicalId,
+      resourceType: item.resourceType,
+      action: item.action,
+      ...(item.drifted ? { message: 'resource drifted' } : {}),
+    });
+    const startedAt = Date.now();
     try {
       const newState = await executeSingleItem(context, item, functionsMap, currentState);
 
       if (newState !== null) {
         currentState = newState;
         successfulItems.push(item);
+        reportResourceEvent(context, {
+          type: 'resource_complete',
+          logicalId: item.logicalId,
+          durationMs: Date.now() - startedAt,
+        });
 
         if (onStateChange) {
           await onStateChange(currentState);
         }
       }
     } catch (error) {
+      reportResourceEvent(context, {
+        type: 'resource_failed',
+        logicalId: item.logicalId,
+        severity: 'error',
+        durationMs: Date.now() - startedAt,
+        error: {
+          message: error instanceof Error ? error.message : String(error),
+        },
+      });
       if (error instanceof PartialResourceError) {
         const updatedState = error.updatedState;
         if (onStateChange) {

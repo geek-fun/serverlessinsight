@@ -11,7 +11,13 @@ jest.mock('@volcengine/openapi', () => {
         .fn()
         .mockImplementation(({ Action }: { Action: string }) =>
           Promise.resolve(
-            Action === 'GetFunction' ? { Result: { Status: 'Active' } } : { Result: {} },
+            Action === 'ListFunctions'
+              ? { Result: { Items: [{ Id: 'func-123', Name: 'test-fn' }] } }
+              : Action === 'GetFunction'
+                ? { Result: { Id: 'func-123', Name: 'test-fn', Status: 'Active' } }
+                : Action === 'CreateFunction'
+                  ? { Result: { Id: 'func-123' } }
+                  : { Result: {} },
           ),
         ),
     })),
@@ -87,13 +93,24 @@ describe('vefaasOperations code size validation', () => {
 
       const { logger } = jest.requireMock('../../../../src/common/logger');
 
-      const operations = createVefaasOperations(
-        new Service({ serviceName: 'vefaas' }) as jest.Mocked<Service>,
-      );
+      const mockService = new Service({ serviceName: 'vefaas' }) as jest.Mocked<Service>;
+      mockService.fetchOpenAPI = jest
+        .fn()
+        .mockImplementation(({ Action }: { Action: string }) =>
+          Promise.resolve(
+            Action === 'GetFunction' || Action === 'CreateFunction'
+              ? { Result: { Id: 'func-123', Name: 'test-fn', Status: 'Active' } }
+              : Action === 'GetReleaseStatus'
+                ? { Result: { Status: 'done' } }
+                : { Result: {} },
+          ),
+        );
+
+      const operations = createVefaasOperations(mockService);
       await operations.createFunction(
         {
           functionName: 'test-fn',
-          runtime: 'nodejs/v18',
+          runtime: 'node20/v1',
           handler: 'index.handler',
           memoryMb: 128,
           requestTimeout: 30,
@@ -120,7 +137,7 @@ describe('vefaasOperations code size validation', () => {
         operations.createFunction(
           {
             functionName: 'test-fn',
-            runtime: 'nodejs/v18',
+            runtime: 'node20/v1',
             handler: 'index.handler',
             memoryMb: 128,
             requestTimeout: 30,
@@ -141,7 +158,7 @@ describe('vefaasOperations code size validation', () => {
         operations.createFunction(
           {
             functionName: 'test-fn',
-            runtime: 'nodejs/v18',
+            runtime: 'node20/v1',
             handler: 'index.handler',
             memoryMb: 128,
             requestTimeout: 30,
@@ -173,7 +190,7 @@ describe('vefaasOperations code size validation', () => {
 
     const mockConfig: VefaasFunctionConfig = {
       functionName: 'test-function',
-      runtime: 'nodejs/v18',
+      runtime: 'node20/v1',
       handler: 'index.handler',
       memoryMb: 512,
       requestTimeout: 30,
@@ -188,15 +205,30 @@ describe('vefaasOperations code size validation', () => {
       }) as jest.Mocked<Service>;
       mockService.fetchOpenAPI = jest.fn().mockImplementation(({ Action }: { Action: string }) =>
         Promise.resolve(
-          Action === 'GetFunction'
+          Action === 'ListFunctions'
             ? {
-                Result: { Status: 'Active' },
+                Result: { Items: [{ Id: 'func-123', Name: 'test-function' }] },
                 ResponseMetadata: { RequestId: 'test-request-id', Service: 'vefaas' },
               }
-            : {
-                Result: {},
-                ResponseMetadata: { RequestId: 'test-request-id', Service: 'vefaas' },
-              },
+            : Action === 'GetFunction'
+              ? {
+                  Result: { Id: 'func-123', Name: 'test-function', Status: 'Active' },
+                  ResponseMetadata: { RequestId: 'test-request-id', Service: 'vefaas' },
+                }
+              : Action === 'CreateFunction'
+                ? {
+                    Result: { Id: 'func-123' },
+                    ResponseMetadata: { RequestId: 'test-request-id', Service: 'vefaas' },
+                  }
+                : Action === 'GetReleaseStatus'
+                  ? {
+                      Result: { Status: 'done' },
+                      ResponseMetadata: { RequestId: 'test-request-id', Service: 'vefaas' },
+                    }
+                  : {
+                      Result: {},
+                      ResponseMetadata: { RequestId: 'test-request-id', Service: 'vefaas' },
+                    },
         ),
       );
       operations = createVefaasOperations(mockService);
@@ -210,8 +242,18 @@ describe('vefaasOperations code size validation', () => {
           expect.objectContaining({
             Action: 'CreateFunction',
             data: expect.objectContaining({
-              FunctionName: 'test-function',
+              Name: 'test-function',
               SourceType: 'zip',
+            }),
+          }),
+        );
+
+        expect(mockService.fetchOpenAPI).toHaveBeenCalledWith(
+          expect.objectContaining({
+            Action: 'Release',
+            data: expect.objectContaining({
+              FunctionId: 'func-123',
+              RevisionNumber: 0,
             }),
           }),
         );
@@ -220,21 +262,26 @@ describe('vefaasOperations code size validation', () => {
 
     describe('getFunction', () => {
       it('should return function info when found', async () => {
-        mockService.fetchOpenAPI.mockResolvedValueOnce({
-          Result: {
-            FunctionId: 'func-123',
-            FunctionName: 'test-function',
-            Runtime: 'nodejs/v18',
-            Handler: 'index.handler',
-            MemoryMb: 512,
-            Status: 'Active',
-            Envs: [
-              { key: 'NODE_ENV', value: 'production' },
-              { key: 'DEBUG', value: 'false' },
-            ],
-          },
-          ResponseMetadata: { RequestId: 'test-request-id', Service: 'vefaas' },
-        });
+        mockService.fetchOpenAPI
+          .mockResolvedValueOnce({
+            Result: { Items: [{ Id: 'func-123', Name: 'test-function' }] },
+            ResponseMetadata: { RequestId: 'test-request-id', Service: 'vefaas' },
+          })
+          .mockResolvedValueOnce({
+            Result: {
+              Id: 'func-123',
+              Name: 'test-function',
+              Runtime: 'node20/v1',
+              Handler: 'index.handler',
+              MemoryMb: 512,
+              Status: 'Active',
+              Envs: [
+                { key: 'NODE_ENV', value: 'production' },
+                { key: 'DEBUG', value: 'false' },
+              ],
+            },
+            ResponseMetadata: { RequestId: 'test-request-id', Service: 'vefaas' },
+          });
 
         const result = await operations.getFunction('test-function');
 
@@ -242,38 +289,48 @@ describe('vefaasOperations code size validation', () => {
           expect.objectContaining({
             functionId: 'func-123',
             functionName: 'test-function',
-            runtime: 'nodejs/v18',
+            runtime: 'node20/v1',
             environmentVariables: { NODE_ENV: 'production', DEBUG: 'false' },
           }),
         );
       });
 
       it('should return function info with role and logConfig', async () => {
-        mockService.fetchOpenAPI.mockResolvedValueOnce({
-          Result: {
-            FunctionId: 'func-123',
-            FunctionName: 'test-function',
-            Runtime: 'nodejs/v18',
-            Handler: 'index.handler',
-            MemoryMb: 512,
-            Role: 'trn:iam::123456:role/test-role',
-            LogConfig: {
-              ProjectName: 'test-project',
-              TopicName: 'test-topic',
+        mockService.fetchOpenAPI
+          .mockResolvedValueOnce({
+            Result: { Items: [{ Id: 'func-123', Name: 'test-function' }] },
+            ResponseMetadata: { RequestId: 'test-request-id', Service: 'vefaas' },
+          })
+          .mockResolvedValueOnce({
+            Result: {
+              Id: 'func-123',
+              Name: 'test-function',
+              Runtime: 'node20/v1',
+              Handler: 'index.handler',
+              MemoryMb: 512,
+              Role: 'trn:iam::123456:role/test-role',
+              TlsConfig: {
+                EnableLog: true,
+                TlsProjectId: 'test-project',
+                TlsTopicId: 'test-topic',
+              },
+              VpcConfig: {
+                VpcId: 'vpc-123',
+                SubnetIds: ['subnet-1'],
+                SecurityGroupIds: ['sg-1'],
+              },
             },
-            VpcConfig: {
-              VpcId: 'vpc-123',
-              SubnetIds: ['subnet-1'],
-              SecurityGroupIds: ['sg-1'],
-            },
-          },
-          ResponseMetadata: { RequestId: 'test-request-id', Service: 'vefaas' },
-        });
+            ResponseMetadata: { RequestId: 'test-request-id', Service: 'vefaas' },
+          });
 
         const result = await operations.getFunction('test-function');
 
         expect(result?.role).toBe('trn:iam::123456:role/test-role');
-        expect(result?.logConfig).toEqual({ project: 'test-project', topic: 'test-topic' });
+        expect(result?.logConfig).toEqual({
+          project: 'test-project',
+          topic: 'test-topic',
+          enableLog: true,
+        });
         expect(result?.vpcConfig).toEqual({
           vpcId: 'vpc-123',
           subnetIds: ['subnet-1'],
@@ -288,33 +345,212 @@ describe('vefaasOperations code size validation', () => {
 
         expect(result).toBeNull();
       });
+
+      it('should retain the full GetFunction detail set (max-detail state)', async () => {
+        mockService.fetchOpenAPI
+          .mockResolvedValueOnce({
+            Result: { Items: [{ Id: 'func-999', Name: 'max-detail-fn' }] },
+            ResponseMetadata: { RequestId: 'test-request-id', Service: 'vefaas' },
+          })
+          .mockResolvedValueOnce({
+            Result: {
+              Id: 'func-999',
+              Name: 'max-detail-fn',
+              Runtime: 'node20/v1',
+              Handler: 'index.handler',
+              MemoryMb: 1024,
+              RequestTimeout: 30,
+              MaxConcurrency: 100,
+              ExclusiveMode: false,
+              CpuStrategy: 'always',
+              EnableApmplus: false,
+              Description: 'lightweight function',
+              Status: 'Active',
+              CreationTime: '2026-08-11 11:41:54',
+              LastUpdateTime: '2026-08-11 11:41:54',
+              Role: 'trn:iam::123456:role/test-role',
+              Owner: '22******',
+              TriggersCount: 2,
+              InstanceType: 'nvidia-tesla-l4',
+              InitializerSec: 30,
+              Command: './run.sh',
+              Port: 8000,
+              ProjectName: 'default',
+              FunctionType: 'sandbox',
+              Cell: '2',
+              CodeSize: 473,
+              CodeSizeLimit: 256,
+              SourceLocation: 'https://vefaas.tos-s3-cn.volces.com/template.zip',
+              SourceType: 'tos',
+              Envs: [{ key: 'NODE_ENV', value: 'production' }],
+              VpcConfig: {
+                VpcId: 'vpc-123',
+                EnableVpc: true,
+                SubnetIds: ['subnet-1'],
+                SecurityGroupIds: ['sg-1'],
+                EnableSharedInternetAccess: true,
+              },
+              TlsConfig: {
+                EnableLog: true,
+                TlsProjectId: 'proj-1',
+                TlsTopicId: 'topic-1',
+              },
+              Tags: [{ Key: 'si-owned-by', Value: 'rest-api-app' }],
+              NasStorage: {
+                EnableNas: false,
+                NasConfigs: [
+                  {
+                    Gid: 1000,
+                    Uid: 1000,
+                    RemotePath: '/',
+                    FileSystemId: 'enas-cns****',
+                    MountPointId: 'mount-63****',
+                    LocalMountPath: '/mnt/nas',
+                  },
+                ],
+              },
+              TosMountConfig: {
+                EnableTos: false,
+                MountPoints: [
+                  {
+                    Endpoint: 'http://tos-cn-beijing.ivolces.com',
+                    ReadOnly: true,
+                    BucketName: 'ai-model',
+                    BucketPath: '/',
+                    LocalMountPath: '/mnt/tos',
+                  },
+                ],
+              },
+              AsyncTaskConfig: {
+                EnableAsyncTask: true,
+                MaxRetry: 3,
+                DestinationConfig: {
+                  OnSuccess: { Destination: 'http://success.example.com' },
+                  OnFailure: { Destination: 'http://failure.example.com' },
+                },
+              },
+            },
+            ResponseMetadata: { RequestId: 'test-request-id', Service: 'vefaas' },
+          });
+
+        const result = await operations.getFunction('max-detail-fn');
+
+        expect(result).toEqual(
+          expect.objectContaining({
+            functionId: 'func-999',
+            functionName: 'max-detail-fn',
+            runtime: 'node20/v1',
+            memoryMb: 1024,
+            requestTimeout: 30,
+            maxConcurrency: 100,
+            exclusiveMode: false,
+            cpuStrategy: 'always',
+            enableApmplus: false,
+            owner: '22******',
+            triggersCount: 2,
+            instanceType: 'nvidia-tesla-l4',
+            initializerSec: 30,
+            command: './run.sh',
+            port: 8000,
+            projectName: 'default',
+            functionType: 'sandbox',
+            cell: '2',
+            codeSize: 473,
+            codeSizeLimit: 256,
+            sourceLocation: 'https://vefaas.tos-s3-cn.volces.com/template.zip',
+            sourceType: 'tos',
+            environmentVariables: { NODE_ENV: 'production' },
+            vpcConfig: {
+              vpcId: 'vpc-123',
+              enableVpc: true,
+              subnetIds: ['subnet-1'],
+              securityGroupIds: ['sg-1'],
+              enableSharedInternetAccess: true,
+            },
+            logConfig: {
+              project: 'proj-1',
+              topic: 'topic-1',
+              enableLog: true,
+            },
+            Tags: [{ Key: 'si-owned-by', Value: 'rest-api-app' }],
+            nasStorage: {
+              enableNas: false,
+              nasConfigs: [
+                {
+                  gid: 1000,
+                  uid: 1000,
+                  remotePath: '/',
+                  fileSystemId: 'enas-cns****',
+                  mountPointId: 'mount-63****',
+                  localMountPath: '/mnt/nas',
+                },
+              ],
+            },
+            tosMountConfig: {
+              enableTos: false,
+              mountPoints: [
+                {
+                  endpoint: 'http://tos-cn-beijing.ivolces.com',
+                  readOnly: true,
+                  bucketName: 'ai-model',
+                  bucketPath: '/',
+                  localMountPath: '/mnt/tos',
+                },
+              ],
+            },
+            asyncTaskConfig: {
+              enableAsyncTask: true,
+              maxRetry: 3,
+              destinationConfig: {
+                onSuccess: { destination: 'http://success.example.com' },
+                onFailure: { destination: 'http://failure.example.com' },
+              },
+            },
+          }),
+        );
+      });
     });
 
     describe('updateFunctionConfiguration', () => {
-      it('should update function configuration', async () => {
-        await operations.updateFunctionConfiguration(mockConfig);
+      it('should update function configuration and release the new revision', async () => {
+        mockService.fetchOpenAPI
+          .mockResolvedValueOnce({
+            Result: {},
+            ResponseMetadata: { RequestId: 'rel-1', Service: 'vefaas' },
+          })
+          .mockResolvedValueOnce({
+            Result: { Status: 'done' },
+            ResponseMetadata: { RequestId: 'rel-status', Service: 'vefaas' },
+          });
+
+        await operations.updateFunctionConfiguration('func-123', mockConfig);
 
         expect(mockService.fetchOpenAPI).toHaveBeenCalledWith(
           expect.objectContaining({
             Action: 'UpdateFunction',
             data: expect.objectContaining({
-              FunctionName: 'test-function',
+              Id: 'func-123',
               Handler: 'index.handler',
             }),
           }),
+        );
+        // A configuration change must publish (Release) so API Gateway
+        // invocations hit the updated revision — not an unpublished draft.
+        expect(mockService.fetchOpenAPI).toHaveBeenCalledWith(
+          expect.objectContaining({ Action: 'Release' }),
         );
       });
     });
 
     describe('updateFunctionCode with ZIP', () => {
       it('should update function code with ZIP source for small packages', async () => {
-        await operations.updateFunctionCode('test-function', smallZipPath);
+        await operations.updateFunctionCode('func-123', smallZipPath);
 
         expect(mockService.fetchOpenAPI).toHaveBeenCalledWith(
           expect.objectContaining({
             Action: 'UpdateFunction',
             data: expect.objectContaining({
-              FunctionName: 'test-function',
+              Id: 'func-123',
               SourceType: 'zip',
             }),
           }),
@@ -324,21 +560,20 @@ describe('vefaasOperations code size validation', () => {
 
     describe('deleteFunction', () => {
       it('should delete function', async () => {
-        // DeleteFunction succeeds, then waitForFunctionDeleted polls GetFunction
-        // until it returns null (FunctionNotFound) to confirm deletion.
+        // Queue: DeleteFunction -> getFunctionById rejects ResourceNotFound (gone)
         mockService.fetchOpenAPI
           .mockResolvedValueOnce({
             Result: {},
             ResponseMetadata: { RequestId: 'test-request-id', Service: 'vefaas' },
           })
-          .mockRejectedValueOnce({ code: 'FunctionNotFound' });
+          .mockRejectedValueOnce({ code: 'ResourceNotFound' });
 
-        await operations.deleteFunction('test-function');
+        await operations.deleteFunction('func-123');
 
         expect(mockService.fetchOpenAPI).toHaveBeenCalledWith(
           expect.objectContaining({
             Action: 'DeleteFunction',
-            data: { FunctionName: 'test-function' },
+            data: { Id: 'func-123' },
           }),
         );
       });
@@ -348,16 +583,16 @@ describe('vefaasOperations code size validation', () => {
       it('should list functions', async () => {
         mockService.fetchOpenAPI.mockResolvedValueOnce({
           Result: {
-            Functions: [
+            Items: [
               {
-                FunctionId: 'func-1',
-                FunctionName: 'func-1',
-                Runtime: 'nodejs/v18',
+                Id: 'func-1',
+                Name: 'func-1',
+                Runtime: 'node20/v1',
               },
               {
-                FunctionId: 'func-2',
-                FunctionName: 'func-2',
-                Runtime: 'python/v3.10',
+                Id: 'func-2',
+                Name: 'func-2',
+                Runtime: 'python3.8/v1',
               },
             ],
           },
@@ -370,7 +605,7 @@ describe('vefaasOperations code size validation', () => {
         expect(result[0]).toEqual(
           expect.objectContaining({
             functionId: 'func-1',
-            runtime: 'nodejs/v18',
+            runtime: 'node20/v1',
           }),
         );
       });
@@ -425,7 +660,17 @@ describe('vefaasOperations code size validation', () => {
           environmentVariables: { NODE_ENV: 'staging' },
         };
 
-        await operations.updateFunctionConfiguration(configWithEnv);
+        mockService.fetchOpenAPI
+          .mockResolvedValueOnce({
+            Result: {},
+            ResponseMetadata: { RequestId: 'rel-1', Service: 'vefaas' },
+          })
+          .mockResolvedValueOnce({
+            Result: { Status: 'done' },
+            ResponseMetadata: { RequestId: 'rel-status', Service: 'vefaas' },
+          });
+
+        await operations.updateFunctionConfiguration('func-123', configWithEnv);
 
         expect(mockService.fetchOpenAPI).toHaveBeenCalledWith(
           expect.objectContaining({
@@ -464,10 +709,10 @@ describe('vefaasOperations code size validation', () => {
         expect(mockService.fetchOpenAPI).toHaveBeenCalledWith(
           expect.objectContaining({
             data: expect.objectContaining({
-              LogConfig: {
+              TlsConfig: {
                 EnableLog: true,
-                ProjectName: 'test-project',
-                TopicName: 'test-topic',
+                TlsProjectId: 'test-project',
+                TlsTopicId: 'test-topic',
               },
             }),
           }),
@@ -480,7 +725,17 @@ describe('vefaasOperations code size validation', () => {
           role: 'trn:iam::123456:role/test-role',
         };
 
-        await operations.updateFunctionConfiguration(configWithRole);
+        mockService.fetchOpenAPI
+          .mockResolvedValueOnce({
+            Result: {},
+            ResponseMetadata: { RequestId: 'rel-1', Service: 'vefaas' },
+          })
+          .mockResolvedValueOnce({
+            Result: { Status: 'done' },
+            ResponseMetadata: { RequestId: 'rel-status', Service: 'vefaas' },
+          });
+
+        await operations.updateFunctionConfiguration('func-123', configWithRole);
 
         expect(mockService.fetchOpenAPI).toHaveBeenCalledWith(
           expect.objectContaining({
@@ -497,15 +752,25 @@ describe('vefaasOperations code size validation', () => {
           logConfig: { project: 'test-project', topic: 'test-topic' },
         };
 
-        await operations.updateFunctionConfiguration(configWithLog);
+        mockService.fetchOpenAPI
+          .mockResolvedValueOnce({
+            Result: {},
+            ResponseMetadata: { RequestId: 'rel-1', Service: 'vefaas' },
+          })
+          .mockResolvedValueOnce({
+            Result: { Status: 'done' },
+            ResponseMetadata: { RequestId: 'rel-status', Service: 'vefaas' },
+          });
+
+        await operations.updateFunctionConfiguration('func-123', configWithLog);
 
         expect(mockService.fetchOpenAPI).toHaveBeenCalledWith(
           expect.objectContaining({
             data: expect.objectContaining({
-              LogConfig: {
+              TlsConfig: {
                 EnableLog: true,
-                ProjectName: 'test-project',
-                TopicName: 'test-topic',
+                TlsProjectId: 'test-project',
+                TlsTopicId: 'test-topic',
               },
             }),
           }),

@@ -44,6 +44,60 @@ const getContentType = (filePath: string): string => {
 };
 
 export const createTosOperations = (client: TosSdkClient | null, _region: string) => {
+  // Map every field GetBucketInfo returns so state keeps maximum resource
+  // detail (owner, project, bucket type, AZ redundancy, S3 endpoints,
+  // versioning/acceleration toggles, server-side encryption config).
+  const mapBucketInfo = (
+    bucketName: string,
+    bucketData: Record<string, unknown>,
+  ): TosBucketInfo => {
+    const owner = bucketData.Owner as Record<string, unknown> | undefined;
+    const sse = bucketData.ServerSideEncryptionConfiguration as Record<string, unknown> | undefined;
+    const sseRules = sse?.Rule as Array<Record<string, unknown>> | undefined;
+    return {
+      name: bucketName,
+      location: bucketData.Location as string | undefined,
+      creationDate: bucketData.CreationDate as string | undefined,
+      storageClass: bucketData.StorageClass as TosBucketInfo['storageClass'],
+      extranetEndpoint: bucketData.ExtranetEndpoint as string | undefined,
+      intranetEndpoint: bucketData.IntranetEndpoint as string | undefined,
+      acl: bucketData.ACL as TosAcl | undefined,
+      owner: owner
+        ? {
+            id: owner.ID as string | undefined,
+            displayName: owner.DisplayName as string | undefined,
+          }
+        : undefined,
+      projectName: bucketData.ProjectName as string | undefined,
+      type: bucketData.Type as string | undefined,
+      azRedundancy: bucketData.AzRedundancy as string | undefined,
+      extranetS3Endpoint: bucketData.ExtranetS3Endpoint as string | undefined,
+      intranetS3Endpoint: bucketData.IntranetS3Endpoint as string | undefined,
+      versioning: bucketData.Versioning as string | undefined,
+      crossRegionReplication: bucketData.CrossRegionReplication as string | undefined,
+      transferAcceleration: bucketData.TransferAcceleration as string | undefined,
+      accessMonitor: bucketData.AccessMonitor as string | undefined,
+      serverSideEncryptionConfiguration: sseRules
+        ? {
+            rule: sseRules.map((rule) => {
+              const applyDefault = rule.ApplyServerSideEncryptionByDefault as
+                Record<string, unknown> | undefined;
+              return {
+                applyServerSideEncryptionByDefault: applyDefault
+                  ? {
+                      sseAlgorithm: applyDefault.SSEAlgorithm as string | undefined,
+                      kmsMasterKeyId:
+                        (applyDefault.KMSMasterKeyID as string | undefined) ??
+                        (applyDefault.KMSMasterKeyId as string | undefined),
+                    }
+                  : undefined,
+              };
+            }),
+          }
+        : undefined,
+    };
+  };
+
   return {
     createBucket: async (config: TosBucketConfig): Promise<TosBucketInfo> => {
       if (!client) {
@@ -121,15 +175,7 @@ export const createTosOperations = (client: TosSdkClient | null, _region: string
         const result = (response.Result || {}) as Record<string, unknown>;
         const bucketData = (result.BucketInfo || {}) as Record<string, unknown>;
 
-        return {
-          name: config.bucketName,
-          location: bucketData.Location as string | undefined,
-          creationDate: bucketData.CreationDate as string | undefined,
-          storageClass: bucketData.StorageClass as TosBucketInfo['storageClass'],
-          extranetEndpoint: bucketData.ExtranetEndpoint as string | undefined,
-          intranetEndpoint: bucketData.IntranetEndpoint as string | undefined,
-          acl: bucketData.ACL as TosAcl | undefined,
-        };
+        return mapBucketInfo(config.bucketName, bucketData);
       })();
 
       return bucketInfo;
@@ -199,13 +245,7 @@ export const createTosOperations = (client: TosSdkClient | null, _region: string
         }
 
         return {
-          name: bucketName,
-          location: bucketData.Location as string | undefined,
-          creationDate: bucketData.CreationDate as string | undefined,
-          storageClass: bucketData.StorageClass as TosBucketInfo['storageClass'],
-          extranetEndpoint: bucketData.ExtranetEndpoint as string | undefined,
-          intranetEndpoint: bucketData.IntranetEndpoint as string | undefined,
-          acl: bucketData.ACL as TosAcl | undefined,
+          ...mapBucketInfo(bucketName, bucketData),
           websiteConfig,
           Tags: tags,
         };

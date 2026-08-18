@@ -267,6 +267,55 @@ describe('tosOperations', () => {
         );
         expect(result.acl).toBe('public-read');
       });
+
+      it('should retain the full GetBucketInfo detail set on createBucket', async () => {
+        mockClient.fetchOpenAPI
+          .mockResolvedValueOnce({}) // CreateBucket
+          .mockResolvedValueOnce({
+            // GetBucketInfo
+            Result: {
+              BucketInfo: {
+                Name: 'test-bucket',
+                Location: 'cn-beijing',
+                CreationDate: '2024-01-01T00:00:00Z',
+                StorageClass: 'STANDARD',
+                ExtranetEndpoint: 'tos-cn-beijing.volces.com',
+                IntranetEndpoint: 'tos-cn-beijing.ivolces.com',
+                Owner: { ID: '2000000001', DisplayName: 'test-owner' },
+                ProjectName: 'default',
+                Type: 'normal',
+                AzRedundancy: 'single_az',
+                ExtranetS3Endpoint: 'tos-s3-cn-beijing.volces.com',
+                IntranetS3Endpoint: 'tos-s3-cn-beijing.internal.volces.com',
+                Versioning: 'Enabled',
+                CrossRegionReplication: 'Enabled',
+                TransferAcceleration: 'Enabled',
+                AccessMonitor: 'Disabled',
+              },
+            },
+          });
+
+        const result = await operations.createBucket(mockBucketConfig);
+
+        expect(result).toEqual(
+          expect.objectContaining({
+            name: 'test-bucket',
+            location: 'cn-beijing',
+            creationDate: '2024-01-01T00:00:00Z',
+            storageClass: 'STANDARD',
+            owner: { id: '2000000001', displayName: 'test-owner' },
+            projectName: 'default',
+            type: 'normal',
+            azRedundancy: 'single_az',
+            extranetS3Endpoint: 'tos-s3-cn-beijing.volces.com',
+            intranetS3Endpoint: 'tos-s3-cn-beijing.internal.volces.com',
+            versioning: 'Enabled',
+            crossRegionReplication: 'Enabled',
+            transferAcceleration: 'Enabled',
+            accessMonitor: 'Disabled',
+          }),
+        );
+      });
     });
 
     describe('getBucket', () => {
@@ -353,6 +402,79 @@ describe('tosOperations', () => {
           { Key: 'si-owned-by', Value: 'app-svc:buckets.test' },
           { Key: 'env', Value: 'prod' },
         ]);
+      });
+
+      it('should retain the full GetBucketInfo detail set (max-detail state)', async () => {
+        mockClient.fetchOpenAPI
+          .mockResolvedValueOnce({
+            // GetBucketInfo
+            Result: {
+              BucketInfo: {
+                Name: 'test-bucket',
+                Location: 'cn-beijing',
+                CreationDate: '2024-01-01T00:00:00Z',
+                StorageClass: 'STANDARD',
+                ExtranetEndpoint: 'tos-cn-beijing.volces.com',
+                IntranetEndpoint: 'tos-cn-beijing.ivolces.com',
+                Owner: { ID: '2000000001', DisplayName: 'test-owner' },
+                ProjectName: 'default',
+                Type: 'normal',
+                AzRedundancy: 'single_az',
+                ExtranetS3Endpoint: 'tos-s3-cn-beijing.volces.com',
+                IntranetS3Endpoint: 'tos-s3-cn-beijing.internal.volces.com',
+                Versioning: 'Enabled',
+                CrossRegionReplication: 'Enabled',
+                TransferAcceleration: 'Enabled',
+                AccessMonitor: 'Disabled',
+                ServerSideEncryptionConfiguration: {
+                  Rule: [
+                    {
+                      ApplyServerSideEncryptionByDefault: {
+                        SSEAlgorithm: 'AES256',
+                        KMSMasterKeyID: 'key-1',
+                      },
+                    },
+                  ],
+                },
+              },
+            },
+          })
+          .mockResolvedValueOnce({ Result: {} }) // GetBucketWebsite (none)
+          .mockResolvedValueOnce({ Result: {} }); // GetBucketTagging (none)
+
+        const result = await operations.getBucket('test-bucket');
+
+        expect(result).not.toBeNull();
+        expect(result).toEqual(
+          expect.objectContaining({
+            name: 'test-bucket',
+            location: 'cn-beijing',
+            creationDate: '2024-01-01T00:00:00Z',
+            storageClass: 'STANDARD',
+            extranetEndpoint: 'tos-cn-beijing.volces.com',
+            intranetEndpoint: 'tos-cn-beijing.ivolces.com',
+            owner: { id: '2000000001', displayName: 'test-owner' },
+            projectName: 'default',
+            type: 'normal',
+            azRedundancy: 'single_az',
+            extranetS3Endpoint: 'tos-s3-cn-beijing.volces.com',
+            intranetS3Endpoint: 'tos-s3-cn-beijing.internal.volces.com',
+            versioning: 'Enabled',
+            crossRegionReplication: 'Enabled',
+            transferAcceleration: 'Enabled',
+            accessMonitor: 'Disabled',
+            serverSideEncryptionConfiguration: {
+              rule: [
+                {
+                  applyServerSideEncryptionByDefault: {
+                    sseAlgorithm: 'AES256',
+                    kmsMasterKeyId: 'key-1',
+                  },
+                },
+              ],
+            },
+          }),
+        );
       });
 
       it('should return null when bucket does not exist (NoSuchBucket)', async () => {

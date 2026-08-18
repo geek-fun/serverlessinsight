@@ -20,11 +20,6 @@ export {
 export * from './tosPlanner';
 export * from './tosExecutor';
 export * from './apigwTypes';
-export {
-  createApigwResource,
-  readApigwResource,
-  updateApigwResource,
-  deleteApigwResource,
-} from './apigwResource';
+export { createApigwResource, updateApigwResource, deleteApigwResource } from './apigwResource';
 export * from './apigwPlanner';
 export * from './apigwExecutor';

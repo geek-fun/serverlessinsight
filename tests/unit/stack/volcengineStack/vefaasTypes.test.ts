@@ -26,7 +26,7 @@ describe('vefaasTypes', () => {
 
       const result = getTrustedServicesForFunction(mockFn, context as never);
 
-      expect(result).toEqual(['vefaas.volcengine.com']);
+      expect(result).toEqual(['vefaas']);
     });
 
     it('should return only vefaas service when context iac has no events', () => {
@@ -34,7 +34,7 @@ describe('vefaasTypes', () => {
 
       const result = getTrustedServicesForFunction(mockFn, context as never);
 
-      expect(result).toEqual(['vefaas.volcengine.com']);
+      expect(result).toEqual(['vefaas']);
     });
 
     it('should include apigateway service when a trigger backend matches', () => {
@@ -50,7 +50,7 @@ describe('vefaasTypes', () => {
 
       const result = getTrustedServicesForFunction(mockFn, context as never);
 
-      expect(result).toEqual(['vefaas.volcengine.com', 'apigateway.volcengine.com']);
+      expect(result).toEqual(['vefaas', 'apigateway']);
     });
 
     it('should return only vefaas when no trigger backend matches', () => {
@@ -66,7 +66,7 @@ describe('vefaasTypes', () => {
 
       const result = getTrustedServicesForFunction(mockFn, context as never);
 
-      expect(result).toEqual(['vefaas.volcengine.com']);
+      expect(result).toEqual(['vefaas']);
     });
   });
 
@@ -166,7 +166,7 @@ describe('vefaasTypes', () => {
 
   describe('buildDefaultTrustPolicy', () => {
     it('should build trust policy for given services', () => {
-      const services = ['vefaas.volcengine.com'];
+      const services = ['vefaas'];
       const result = buildDefaultTrustPolicy(services);
 
       expect(result.Statement[0].Effect).toBe('Allow');

@@ -71,7 +71,7 @@ describe('vefaasPlanner', () => {
     jest
       .spyOn(hashUtils, 'attributesEqual')
       .mockImplementation((a, b) => JSON.stringify(a) === JSON.stringify(b));
-    jest.spyOn(hashUtils, 'computeFileHash').mockReturnValue('test-hash');
+    jest.spyOn(hashUtils, 'computeZipContentHash').mockResolvedValue('test-hash');
   });
 
   afterEach(() => {
@@ -93,7 +93,7 @@ describe('vefaasPlanner', () => {
       jest
         .spyOn(hashUtils, 'attributesEqual')
         .mockImplementation((a, b) => JSON.stringify(a) === JSON.stringify(b));
-      jest.spyOn(hashUtils, 'computeFileHash').mockReturnValue('test-hash');
+      jest.spyOn(hashUtils, 'computeZipContentHash').mockResolvedValue('test-hash');
     });
 
     it('should not include non-function resources in delete plan', async () => {
@@ -182,7 +182,7 @@ describe('vefaasPlanner', () => {
     it('should fail fast when state is empty but remote function exists untagged', async () => {
       mockVefaasClient.vefaas.getFunction.mockResolvedValueOnce({
         functionName: 'test-function',
-        runtime: 'nodejs/v18',
+        runtime: 'node20/v1',
         handler: 'index.handler',
         memoryMb: 128,
         requestTimeout: 30,
@@ -197,7 +197,7 @@ describe('vefaasPlanner', () => {
     it('should plan create when state is empty but remote exists with our tag', async () => {
       mockVefaasClient.vefaas.getFunction.mockResolvedValueOnce({
         functionName: 'test-function',
-        runtime: 'nodejs/v18',
+        runtime: 'node20/v1',
         handler: 'index.handler',
         memoryMb: 128,
         requestTimeout: 30,
@@ -245,7 +245,7 @@ describe('vefaasPlanner', () => {
         .mockReturnValue(taintedState.resources['functions.test_fn']);
       mockVefaasClient.vefaas.getFunction.mockResolvedValueOnce({
         functionName: 'test-function',
-        runtime: 'nodejs/v18',
+        runtime: 'node20/v1',
         handler: 'index.handler',
         memoryMb: 128,
         requestTimeout: 30,
@@ -330,6 +330,107 @@ describe('vefaasPlanner', () => {
 
       expect(result.items).toHaveLength(1);
       expect(result.items[0].action).toBe('noop');
+    });
+
+    it('should inherit auto-created role trn from state when YAML omits iam', async () => {
+      const roleTrn = 'trn:iam::2130755970:role/rest-api-app-rest-api-volcengine-dev-role';
+      const stateWithRole: StateFile = {
+        ...mockState,
+        resources: {
+          'functions.test_fn': {
+            mode: 'managed',
+            region: 'cn-beijing',
+            definition: {
+              functionName: 'test-function',
+              memorySize: 128,
+              timeout: 30,
+              codeHash: 'test-hash',
+              runtime: 'nodejs16',
+              handler: 'index.handler',
+              environment: {},
+              role: roleTrn,
+            },
+            instances: [
+              { sid: 'test-sid', id: 'test-function', type: 'VOLCENGINE_VEFAAS_FUNCTION' },
+              {
+                sid: 'role-sid',
+                id: 'rest-api-app-rest-api-volcengine-dev-role',
+                type: 'VOLCENGINE_IAM_ROLE',
+                trn: roleTrn,
+              },
+            ],
+            lastUpdated: '2024-01-01T00:00:00Z',
+          },
+        },
+      };
+
+      mockVefaasClient.vefaas.getFunction.mockResolvedValueOnce({
+        functionName: 'test-function',
+        functionId: 'func-1',
+        runtime: 'nodejs16',
+        handler: 'index.handler',
+        memoryMb: 128,
+        requestTimeout: 30,
+        environmentVariables: {},
+        role: roleTrn,
+      });
+
+      jest
+        .spyOn(stateManager, 'getResource')
+        .mockReturnValue(stateWithRole.resources['functions.test_fn']);
+
+      const result = await generateFunctionPlan(mockContext, stateWithRole, [mockFunction]);
+
+      expect(result.items).toHaveLength(1);
+      const after = (result.items[0] as { changes?: { after?: { role?: string } } }).changes?.after;
+      expect(after?.role).toBe(roleTrn);
+    });
+
+    it('should plan update when the LIVE provider function drifted from desired', async () => {
+      const stateWithFunction: StateFile = {
+        ...mockState,
+        resources: {
+          'functions.test_fn': {
+            mode: 'managed',
+            region: 'cn-beijing',
+            definition: {
+              functionName: 'test-function',
+              memorySize: 128,
+              timeout: 30,
+              codeHash: 'test-hash',
+              runtime: 'nodejs16',
+              handler: 'index.handler',
+              environment: {},
+            },
+            instances: [
+              { sid: 'test-sid', id: 'test-function', type: 'VOLCENGINE_VEFAAS_FUNCTION' },
+            ],
+            lastUpdated: '2024-01-01T00:00:00Z',
+          },
+        },
+      };
+
+      // Local definition matches desired, but the LIVE function was edited in
+      // the console (memory 128 -> 256) — the planner must detect the drift.
+      mockVefaasClient.vefaas.getFunction.mockResolvedValueOnce({
+        functionName: 'test-function',
+        functionId: 'func-1',
+        runtime: 'nodejs16',
+        handler: 'index.handler',
+        memoryMb: 256,
+        requestTimeout: 30,
+        environmentVariables: {},
+      });
+
+      jest
+        .spyOn(stateManager, 'getResource')
+        .mockReturnValue(stateWithFunction.resources['functions.test_fn']);
+
+      const result = await generateFunctionPlan(mockContext, stateWithFunction, [mockFunction]);
+
+      expect(result.items).toHaveLength(1);
+      expect(result.items[0].action).toBe('update');
+      expect(result.items[0].drifted).toBe(true);
     });
 
     it('should generate delete plan for removed function', async () => {

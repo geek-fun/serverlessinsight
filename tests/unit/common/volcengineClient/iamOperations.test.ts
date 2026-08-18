@@ -42,7 +42,7 @@ describe('iamOperations', () => {
         {
           Effect: 'Allow',
           Action: ['sts:AssumeRole'],
-          Principal: { Service: ['vefaas.volcengine.com'] },
+          Principal: { Service: ['vefaas'] },
         },
       ],
     },
@@ -319,7 +319,7 @@ describe('iamOperations', () => {
 
       expect(mockClient.fetchOpenAPI).toHaveBeenCalledWith(
         expect.objectContaining({
-          Action: 'UpdateTrustPolicy',
+          Action: 'UpdateRole',
         }),
       );
     });
@@ -400,7 +400,7 @@ describe('iamOperations', () => {
       accessDeniedError.code = 'AccessDenied';
 
       mockClient.fetchOpenAPI
-        .mockResolvedValueOnce({ Result: { AttachedRolePolicies: [] } })
+        .mockResolvedValueOnce({ Result: { AttachedPolicyMetadata: [] } })
         .mockResolvedValueOnce({})
         .mockResolvedValueOnce({})
         .mockRejectedValueOnce(accessDeniedError);
@@ -521,7 +521,7 @@ describe('iamOperations', () => {
       expect(mockClient.fetchOpenAPI).toHaveBeenCalledWith(
         expect.objectContaining({
           Action: 'AttachRolePolicy',
-          data: expect.objectContaining({
+          query: expect.objectContaining({
             PolicyName: 'arn:policy:one',
             PolicyType: 'System',
           }),
@@ -530,7 +530,7 @@ describe('iamOperations', () => {
       expect(mockClient.fetchOpenAPI).toHaveBeenCalledWith(
         expect.objectContaining({
           Action: 'AttachRolePolicy',
-          data: expect.objectContaining({
+          query: expect.objectContaining({
             PolicyName: 'arn:policy:two',
             PolicyType: 'System',
           }),
@@ -568,7 +568,7 @@ describe('iamOperations', () => {
       expect(mockClient.fetchOpenAPI).toHaveBeenCalledWith(
         expect.objectContaining({
           Action: 'AttachRolePolicy',
-          data: expect.objectContaining({
+          query: expect.objectContaining({
             PolicyName: 'arn:policy:one',
             PolicyType: 'System',
           }),
@@ -608,7 +608,7 @@ describe('iamOperations', () => {
       mockClient.fetchOpenAPI
         .mockResolvedValueOnce({
           Result: {
-            AttachedRolePolicies: [
+            AttachedPolicyMetadata: [
               { PolicyName: 'arn:policy:one' },
               { PolicyName: 'arn:policy:two' },
             ],
@@ -632,7 +632,7 @@ describe('iamOperations', () => {
         2,
         expect.objectContaining({
           Action: 'DetachRolePolicy',
-          data: expect.objectContaining({
+          query: expect.objectContaining({
             PolicyName: 'arn:policy:one',
             PolicyType: 'System',
           }),
@@ -643,7 +643,7 @@ describe('iamOperations', () => {
         3,
         expect.objectContaining({
           Action: 'DetachRolePolicy',
-          data: expect.objectContaining({
+          query: expect.objectContaining({
             PolicyName: 'arn:policy:two',
             PolicyType: 'System',
           }),
@@ -654,7 +654,7 @@ describe('iamOperations', () => {
         4,
         expect.objectContaining({
           Action: 'DetachRolePolicy',
-          data: expect.objectContaining({
+          query: expect.objectContaining({
             PolicyType: 'Custom',
           }),
         }),
@@ -665,7 +665,7 @@ describe('iamOperations', () => {
       mockClient.fetchOpenAPI
         .mockResolvedValueOnce({
           Result: {
-            AttachedRolePolicies: [],
+            AttachedPolicyMetadata: [],
           },
         })
         .mockResolvedValueOnce({})
@@ -684,7 +684,7 @@ describe('iamOperations', () => {
     it('should return policy names from API response', async () => {
       mockClient.fetchOpenAPI.mockResolvedValueOnce({
         Result: {
-          AttachedRolePolicies: [
+          AttachedPolicyMetadata: [
             { PolicyName: 'arn:policy:one' },
             { PolicyName: 'arn:policy:two' },
           ],
@@ -726,7 +726,10 @@ describe('iamOperations', () => {
       mockClient.fetchOpenAPI
         .mockResolvedValueOnce({
           Result: {
-            AttachedRolePolicies: [{ PolicyName: 'arn:policy:a' }, { PolicyName: 'arn:policy:b' }],
+            AttachedPolicyMetadata: [
+              { PolicyName: 'arn:policy:a' },
+              { PolicyName: 'arn:policy:b' },
+            ],
           },
         })
         .mockResolvedValueOnce({})
@@ -742,7 +745,7 @@ describe('iamOperations', () => {
         2,
         expect.objectContaining({
           Action: 'DetachRolePolicy',
-          data: expect.objectContaining({
+          query: expect.objectContaining({
             PolicyName: 'arn:policy:a',
             PolicyType: 'System',
           }),
@@ -753,7 +756,7 @@ describe('iamOperations', () => {
         3,
         expect.objectContaining({
           Action: 'AttachRolePolicy',
-          data: expect.objectContaining({
+          query: expect.objectContaining({
             PolicyName: 'arn:policy:c',
             PolicyType: 'System',
           }),
@@ -764,7 +767,7 @@ describe('iamOperations', () => {
     it('should do nothing when current and desired are identical', async () => {
       mockClient.fetchOpenAPI.mockResolvedValueOnce({
         Result: {
-          AttachedRolePolicies: [{ PolicyName: 'arn:policy:a' }, { PolicyName: 'arn:policy:b' }],
+          AttachedPolicyMetadata: [{ PolicyName: 'arn:policy:a' }, { PolicyName: 'arn:policy:b' }],
         },
       });
 
@@ -778,7 +781,10 @@ describe('iamOperations', () => {
       mockClient.fetchOpenAPI
         .mockResolvedValueOnce({
           Result: {
-            AttachedRolePolicies: [{ PolicyName: 'arn:policy:a' }, { PolicyName: 'arn:policy:b' }],
+            AttachedPolicyMetadata: [
+              { PolicyName: 'arn:policy:a' },
+              { PolicyName: 'arn:policy:b' },
+            ],
           },
         })
         .mockResolvedValueOnce({})
@@ -794,14 +800,14 @@ describe('iamOperations', () => {
         2,
         expect.objectContaining({
           Action: 'DetachRolePolicy',
-          data: expect.objectContaining({ PolicyName: 'arn:policy:a' }),
+          query: expect.objectContaining({ PolicyName: 'arn:policy:a' }),
         }),
       );
       expect(mockClient.fetchOpenAPI).toHaveBeenNthCalledWith(
         3,
         expect.objectContaining({
           Action: 'DetachRolePolicy',
-          data: expect.objectContaining({ PolicyName: 'arn:policy:b' }),
+          query: expect.objectContaining({ PolicyName: 'arn:policy:b' }),
         }),
       );
     });

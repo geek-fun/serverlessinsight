@@ -1,4 +1,4 @@
-import { attributesEqual, computeFileHash, getResource } from '../../common';
+import { attributesEqual, computeZipContentHash, getResource } from '../../common';
 import { getAllResources } from '../../common/stateManager';
 import { createVolcengineClient } from '../../common/volcengineClient';
 import {
@@ -42,7 +42,21 @@ export const generateFunctionPlan = async (
       const currentState = getResource(state, logicalId);
       const config = functionToVefaasConfig(fn);
       const codePath = fn.code!.path;
-      const desiredCodeHash = computeFileHash(codePath);
+      const desiredCodeHash = await computeZipContentHash(codePath);
+      // Mirror the executor's auto-role behavior: when the YAML omits
+      // `iam.role`, the executor reuses the IAM role recorded in state
+      // (createDependentResources persists a VOLCENGINE_IAM_ROLE instance and
+      // reuses it on subsequent deploys). Deriving the same trn here keeps the
+      // plan's desired definition in sync with what the executor will apply —
+      // otherwise every plan shows a phantom `role: <trn> -> null` drift.
+      if (!fn.iam && currentState?.instances?.length) {
+        const roleInstance = currentState.instances.find(
+          (i) => (i as { type?: string }).type === 'VOLCENGINE_IAM_ROLE',
+        ) as { trn?: string } | undefined;
+        if (roleInstance?.trn) {
+          config.role = roleInstance.trn;
+        }
+      }
       const baseDefinition = extractVefaasDefinition(config, desiredCodeHash);
       const desiredDefinition = fn.iam ? { ...baseDefinition, iam: fn.iam } : baseDefinition;
 
@@ -87,7 +101,29 @@ export const generateFunctionPlan = async (
         const currentDefinition = currentState.definition || {};
         const definitionChanged = !attributesEqual(currentDefinition, desiredDefinition);
 
-        if (definitionChanged) {
+        // Drift detection against the LIVE provider: compare the remote
+        // function's actual attributes (runtime/handler/memory/timeout/env)
+        // against the desired definition. Console edits would otherwise go
+        // undetected — definitionChanged only sees local-vs-desired.
+        const remoteAttributes: ResourceAttributes = {
+          runtime: remoteFunction.runtime,
+          handler: remoteFunction.handler,
+          memorySize: remoteFunction.memoryMb,
+          timeout: remoteFunction.requestTimeout,
+          environment: remoteFunction.environmentVariables,
+          // Provider responses carry `null` for unset fields while the desired
+          // definition carries `undefined` — normalize null → undefined so the
+          // comparison ignores the representation difference.
+          description: remoteFunction.description ?? undefined,
+          role: remoteFunction.role ?? undefined,
+          vpcConfig: remoteFunction.vpcConfig ?? undefined,
+          logConfig: remoteFunction.logConfig
+            ? { project: remoteFunction.logConfig.project, topic: remoteFunction.logConfig.topic }
+            : undefined,
+        };
+        const remoteMatchesDesired = attributesEqual(remoteAttributes, desiredDefinition);
+
+        if (definitionChanged || !remoteMatchesDesired) {
           return {
             logicalId,
             action: 'update',
