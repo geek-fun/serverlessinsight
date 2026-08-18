@@ -1,4 +1,4 @@
-import { resolvableEnum } from './templateRefSchema';
+import { resolvableEnum, resolvableBoolean } from './templateRefSchema';
 
 const cdnSchema = {
   oneOf: [
@@ -29,6 +29,16 @@ export const eventSchema = {
       properties: {
         name: { type: 'string' },
         type: resolvableEnum(['API_GATEWAY']),
+        log: resolvableBoolean,
+        network: {
+          type: 'object',
+          additionalProperties: false,
+          required: ['vpc_id', 'subnet_ids'],
+          properties: {
+            vpc_id: { type: 'string' },
+            subnet_ids: { type: 'array', items: { type: 'string' }, minItems: 2 },
+          },
+        },
         triggers: {
           type: 'array',
           items: {

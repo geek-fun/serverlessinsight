@@ -264,6 +264,9 @@ export const en = {
 
   // API Gateway messages
   APIGW_GROUP_FOUND_REUSING: 'Found existing API Group: {{groupName}}, will reuse it',
+  APIGW_LOG_ENABLED: 'Access log enabled for API Gateway {{gatewayId}}',
+  APIGW_LOG_DISABLED: 'Access log disabled for API Gateway {{gatewayId}}',
+  APIGW_LOG_DISABLE_FAILED: 'Failed to disable access log for API Gateway {{gatewayId}}: {{error}}',
   APIGW_DOMAIN_BINDING_FAILED: 'Failed to bind custom domain: {{error}}',
   APIGW_DOMAIN_UNBIND_FAILED: 'Failed to unbind domain {{domain}}: {{error}}',
   APIGW_WWW_DOMAIN_UNBIND_FAILED: 'Failed to unbind www domain {{domain}}: {{error}}',
@@ -693,6 +696,8 @@ export const en = {
   VOLCENGINE_CREATING_APIGW: 'Creating Volcengine API Gateway {{gatewayName}}',
   VOLCENGINE_DELETING_APIGW: 'Deleting Volcengine API Gateway {{gatewayName}}',
   VOLCENGINE_APIGW_NOT_FOUND: 'Volcengine API Gateway {{gatewayName}} not found',
+  VOLCENGINE_APIGW_WAITING_RUNNING:
+    'Waiting for API Gateway {{gatewayName}} to be Running (status: {{status}}, attempt {{attempt}}/{{maxAttempts}})',
 
   // Additional Volcengine-specific messages
   RESOURCE_STATE_NOT_FOUND: 'Resource state not found for logical ID: {{logicalId}}',
@@ -720,6 +725,10 @@ export const en = {
     'Updating function {{functionName}} code with TOS ({{size}} MB) to {{bucket}}/{{key}}',
   FUNCTION_CODE_UPDATED: 'Function {{functionName}} code updated',
   FUNCTION_DELETED: 'Function {{functionName}} deleted',
+  FUNCTION_RELEASED: 'Function {{functionId}} released',
+  WAITING_FOR_FUNCTION_RELEASE:
+    'Waiting for function {{functionId}} release (status: {{status}}, attempt {{attempt}}/{{maxAttempts}})...',
+  FUNCTION_ALREADY_GONE: 'Function {{functionName}} already gone',
 
   // TOS Object Storage messages
   TOS_BUCKET_CREATED: 'TOS bucket {{bucketName}} created successfully',
@@ -934,6 +943,9 @@ export const en = {
   DELETING_CUSTOM_DOMAIN: "Deleting custom domain '{{domainName}}'...",
   CUSTOM_DOMAIN_DELETED: "Custom domain '{{domainName}}' deleted",
   DOMAIN_NOT_SUPPORTED_PROVIDER: "Custom domain is not supported for provider '{{provider}}'",
+  EVENT_FLUSH_FAILED:
+    'Failed to flush deployment events for {{deploymentId}} ({{count}} events): {{error}}',
+  EVENT_REPLAY_FAILED: 'Failed to replay event queue file {{file}}: {{error}}',
   INVALID_HTTP_TRIGGER_AUTH_TYPE:
     "Invalid HTTP trigger auth_type '{{authType}}'; must be 'public' or 'iam'",
 };

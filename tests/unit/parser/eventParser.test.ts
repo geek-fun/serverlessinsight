@@ -149,4 +149,48 @@ describe('parseEvent', () => {
     expect(result![1].key).toBe('event_b');
     expect(result![1].domain).toBeDefined();
   });
+
+  it('should parse log boolean true', () => {
+    const events: { [key: string]: EventRaw } = {
+      log_event: {
+        name: 'log-api',
+        type: EventTypes.API_GATEWAY,
+        triggers: [{ method: 'GET', path: '/api/hello', backend: '${functions.fn}' }],
+        log: true,
+      },
+    };
+
+    const result = parseEvent(events);
+
+    expect(result![0].log).toBe(true);
+  });
+
+  it('should parse log string true as boolean', () => {
+    const events: { [key: string]: EventRaw } = {
+      log_str: {
+        name: 'log-str-api',
+        type: EventTypes.API_GATEWAY,
+        triggers: [{ method: 'GET', path: '/api/hello', backend: '${functions.fn}' }],
+        log: 'true' as unknown as boolean,
+      },
+    };
+
+    const result = parseEvent(events);
+
+    expect(result![0].log).toBe(true);
+  });
+
+  it('should default log to false when not provided', () => {
+    const events: { [key: string]: EventRaw } = {
+      no_log: {
+        name: 'no-log-api',
+        type: EventTypes.API_GATEWAY,
+        triggers: [{ method: 'GET', path: '/api/hello', backend: '${functions.fn}' }],
+      },
+    };
+
+    const result = parseEvent(events);
+
+    expect(result![0].log).toBe(false);
+  });
 });

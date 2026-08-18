@@ -1,4 +1,4 @@
-import { Service } from '@volcengine/openapi';
+import { TlsService } from '@volcengine/openapi/lib/services/tls';
 import type {
   TlsProjectConfig,
   TlsProjectInfo,
@@ -10,7 +10,7 @@ import { logger } from '../logger';
 import { lang } from '../../lang';
 import { pollUntil, PollingTimeoutError } from '../polling';
 
-type TlsSdkClient = Service;
+type TlsSdkClient = TlsService;
 
 const WAIT_INTERVAL_MS = 5000;
 const MAX_WAIT_ATTEMPTS = 30;
@@ -57,12 +57,9 @@ const waitForTopicReady = async (
         if (!topic) {
           throw new Error(lang.__('TLS_TOPIC_NOT_FOUND', { topicName }));
         }
-        if (topic.status === 'Failed' || topic.status === 'Error') {
-          throw new Error(lang.__('TLS_TOPIC_FAILED', { topicName }));
-        }
         return topic;
       },
-      isDone: (topic) => topic?.status === 'Active',
+      isDone: (topic) => !!topic?.topicId,
       intervalMs: WAIT_INTERVAL_MS,
       maxAttempts: MAX_WAIT_ATTEMPTS,
     });
@@ -74,56 +71,75 @@ const waitForTopicReady = async (
   }
 };
 
+const extractErrorCode = (error: unknown): string | undefined => {
+  if (error && typeof error === 'object') {
+    const candidate = error as {
+      code?: string;
+      response?: { data?: { Error?: { Code?: string } } };
+    };
+    if (candidate.code) return candidate.code;
+    const nestedCode = candidate.response?.data?.Error?.Code;
+    if (nestedCode) return nestedCode;
+  }
+  return undefined;
+};
+
+const isAlreadyExistsError = (error: unknown): boolean => {
+  const code = extractErrorCode(error);
+  return (
+    code === 'ProjectAlreadyExists' ||
+    code === 'TopicAlreadyExists' ||
+    code === 'IndexAlreadyExists' ||
+    code === 'ResourceAlreadyExists' ||
+    code === 'AlreadyExists' ||
+    code === 'Conflict' ||
+    code === 'Duplicated'
+  );
+};
+
+const isNotFoundError = (error: unknown): boolean => {
+  const code = extractErrorCode(error);
+  return (
+    code === 'ProjectNotFound' ||
+    code === 'TopicNotFound' ||
+    code === 'IndexNotFound' ||
+    code === 'ResourceNotFound' ||
+    code === 'NotFound'
+  );
+};
+
 export const createTlsOperations = (tlsClient: TlsSdkClient) => {
   const operations = {
     createProject: async (config: TlsProjectConfig): Promise<TlsProjectInfo> => {
       try {
-        const response = await tlsClient.fetchOpenAPI({
-          Action: 'CreateProject',
-          Version: '2024-01-01',
-          method: 'POST',
-          headers: { 'content-type': 'application/json' },
-          data: {
-            ProjectName: config.projectName,
-            Description: config.description,
-            Region: config.region,
-          },
+        const response = await tlsClient.CreateProject({
+          ProjectName: config.projectName,
+          Description: config.description,
+          Region: config.region ?? '',
         });
-
-        const data = (response.Result || {}) as Record<string, unknown>;
 
         logger.info(lang.__('TLS_PROJECT_CREATED', { projectName: config.projectName }));
 
         return {
-          projectId: data.ProjectId as string | undefined,
+          projectId: response.ProjectId,
           projectName: config.projectName,
           description: config.description,
           region: config.region,
-          createTime: data.CreateTime as string | undefined,
-          status: data.Status as string | undefined,
+          status: 'Active',
         };
       } catch (error: unknown) {
-        if (error && typeof error === 'object' && 'code' in error) {
-          if (
-            error.code === 'ProjectAlreadyExists' ||
-            error.code === 'ResourceAlreadyExists' ||
-            error.code === 'AlreadyExists' ||
-            error.code === 'Conflict'
-          ) {
-            logger.warn(lang.__('TLS_PROJECT_ALREADY_EXISTS', { projectName: config.projectName }));
-            // Adopt the existing project so a retry after a partial failure
-            // does not collide on the project name.
-            const existing = await operations.getProject(config.projectName);
-            if (existing) {
-              return existing;
-            }
-            return {
-              projectName: config.projectName,
-              description: config.description,
-              region: config.region,
-              status: 'Active',
-            };
+        if (isAlreadyExistsError(error)) {
+          logger.warn(lang.__('TLS_PROJECT_ALREADY_EXISTS', { projectName: config.projectName }));
+          const existing = await operations.getProject(config.projectName);
+          if (existing) {
+            return existing;
           }
+          return {
+            projectName: config.projectName,
+            description: config.description,
+            region: config.region,
+            status: 'Active',
+          };
         }
         throw error;
       }
@@ -131,29 +147,24 @@ export const createTlsOperations = (tlsClient: TlsSdkClient) => {
 
     getProject: async (projectName: string): Promise<TlsProjectInfo | null> => {
       try {
-        const response = await tlsClient.fetchOpenAPI({
-          Action: 'GetProject',
-          Version: '2024-01-01',
-          method: 'POST',
-          headers: { 'content-type': 'application/json' },
-          data: { ProjectName: projectName },
-        });
+        const response = await tlsClient.DescribeProjects({ ProjectName: projectName });
 
-        const data = (response.Result || {}) as Record<string, unknown>;
+        const project = response.Projects?.find((p) => p.ProjectName === projectName);
+        if (!project) {
+          return null;
+        }
 
         return {
-          projectId: data.ProjectId as string | undefined,
-          projectName: data.ProjectName as string | undefined,
-          description: data.Description as string | undefined,
-          region: data.Region as string | undefined,
-          createTime: data.CreateTime as string | undefined,
-          status: data.Status as string | undefined,
+          projectId: project.ProjectId,
+          projectName: project.ProjectName,
+          description: project.Description,
+          region: undefined,
+          createTime: project.CreateTime,
+          status: 'Active',
         };
       } catch (error: unknown) {
-        if (error && typeof error === 'object' && 'code' in error) {
-          if (error.code === 'ProjectNotFound' || error.code === 'ResourceNotFound') {
-            return null;
-          }
+        if (isNotFoundError(error)) {
+          return null;
         }
         throw error;
       }
@@ -161,21 +172,18 @@ export const createTlsOperations = (tlsClient: TlsSdkClient) => {
 
     deleteProject: async (projectName: string): Promise<void> => {
       try {
-        await tlsClient.fetchOpenAPI({
-          Action: 'DeleteProject',
-          Version: '2024-01-01',
-          method: 'POST',
-          headers: { 'content-type': 'application/json' },
-          data: { ProjectName: projectName },
-        });
+        const existing = await operations.getProject(projectName);
+        if (!existing?.projectId) {
+          logger.warn(lang.__('TLS_PROJECT_NOT_FOUND', { projectName }));
+          return;
+        }
 
+        await tlsClient.DeleteProject({ ProjectId: existing.projectId });
         logger.info(lang.__('TLS_PROJECT_DELETED', { projectName }));
       } catch (error: unknown) {
-        if (error && typeof error === 'object' && 'code' in error) {
-          if (error.code === 'ProjectNotFound' || error.code === 'ResourceNotFound') {
-            logger.warn(lang.__('TLS_PROJECT_NOT_FOUND', { projectName }));
-            return;
-          }
+        if (isNotFoundError(error)) {
+          logger.warn(lang.__('TLS_PROJECT_NOT_FOUND', { projectName }));
+          return;
         }
         throw error;
       }
@@ -183,55 +191,43 @@ export const createTlsOperations = (tlsClient: TlsSdkClient) => {
 
     createTopic: async (config: TlsTopicConfig): Promise<TlsTopicInfo> => {
       try {
-        const response = await tlsClient.fetchOpenAPI({
-          Action: 'CreateTopic',
-          Version: '2024-01-01',
-          method: 'POST',
-          headers: { 'content-type': 'application/json' },
-          data: {
-            ProjectName: config.projectName,
-            TopicName: config.topicName,
-            Description: config.description,
-            TTL: config.ttl ?? 30,
-          },
-        });
+        const project = await operations.getProject(config.projectName);
+        if (!project?.projectId) {
+          throw new Error(lang.__('TLS_PROJECT_NOT_FOUND', { projectName: config.projectName }));
+        }
 
-        const data = (response.Result || {}) as Record<string, unknown>;
+        const response = await tlsClient.CreateTopic({
+          ProjectId: project.projectId,
+          TopicName: config.topicName,
+          Description: config.description,
+          Ttl: config.ttl ?? 30,
+          ShardCount: 1,
+        });
 
         logger.info(lang.__('TLS_TOPIC_CREATED', { topicName: config.topicName }));
 
         return {
-          topicId: data.TopicId as string | undefined,
+          topicId: response.TopicId,
           topicName: config.topicName,
           projectName: config.projectName,
           description: config.description,
-          ttl: config.ttl,
-          createTime: data.CreateTime as string | undefined,
-          status: data.Status as string | undefined,
+          ttl: config.ttl ?? 30,
+          status: 'Active',
         };
       } catch (error: unknown) {
-        if (error && typeof error === 'object' && 'code' in error) {
-          if (
-            error.code === 'TopicAlreadyExists' ||
-            error.code === 'ResourceAlreadyExists' ||
-            error.code === 'AlreadyExists' ||
-            error.code === 'Conflict'
-          ) {
-            logger.warn(lang.__('TLS_TOPIC_ALREADY_EXISTS', { topicName: config.topicName }));
-            // Adopt the existing topic so a retry after a partial failure
-            // does not collide on the topic name.
-            const existing = await operations.getTopic(config.projectName, config.topicName);
-            if (existing) {
-              return existing;
-            }
-            return {
-              topicName: config.topicName,
-              projectName: config.projectName,
-              description: config.description,
-              ttl: config.ttl,
-              status: 'Active',
-            };
+        if (isAlreadyExistsError(error)) {
+          logger.warn(lang.__('TLS_TOPIC_ALREADY_EXISTS', { topicName: config.topicName }));
+          const existing = await operations.getTopic(config.projectName, config.topicName);
+          if (existing) {
+            return existing;
           }
+          return {
+            topicName: config.topicName,
+            projectName: config.projectName,
+            description: config.description,
+            ttl: config.ttl ?? 30,
+            status: 'Active',
+          };
         }
         throw error;
       }
@@ -239,33 +235,33 @@ export const createTlsOperations = (tlsClient: TlsSdkClient) => {
 
     getTopic: async (projectName: string, topicName: string): Promise<TlsTopicInfo | null> => {
       try {
-        const response = await tlsClient.fetchOpenAPI({
-          Action: 'GetTopic',
-          Version: '2024-01-01',
-          method: 'POST',
-          headers: { 'content-type': 'application/json' },
-          data: {
-            ProjectName: projectName,
-            TopicName: topicName,
-          },
+        const project = await operations.getProject(projectName);
+        if (!project?.projectId) {
+          return null;
+        }
+
+        const response = await tlsClient.DescribeTopics({
+          ProjectId: project.projectId,
+          TopicName: topicName,
         });
 
-        const data = (response.Result || {}) as Record<string, unknown>;
+        const topic = response.Topics?.find((t) => t.TopicName === topicName);
+        if (!topic) {
+          return null;
+        }
 
         return {
-          topicId: data.TopicId as string | undefined,
-          topicName: data.TopicName as string | undefined,
-          projectName: data.ProjectName as string | undefined,
-          description: data.Description as string | undefined,
-          ttl: data.TTL as number | undefined,
-          createTime: data.CreateTime as string | undefined,
-          status: data.Status as string | undefined,
+          topicId: topic.TopicId,
+          topicName: topic.TopicName,
+          projectName,
+          description: topic.Description,
+          ttl: topic.Ttl,
+          createTime: topic.CreateTime,
+          status: 'Active',
         };
       } catch (error: unknown) {
-        if (error && typeof error === 'object' && 'code' in error) {
-          if (error.code === 'TopicNotFound' || error.code === 'ResourceNotFound') {
-            return null;
-          }
+        if (isNotFoundError(error)) {
+          return null;
         }
         throw error;
       }
@@ -273,24 +269,18 @@ export const createTlsOperations = (tlsClient: TlsSdkClient) => {
 
     deleteTopic: async (projectName: string, topicName: string): Promise<void> => {
       try {
-        await tlsClient.fetchOpenAPI({
-          Action: 'DeleteTopic',
-          Version: '2024-01-01',
-          method: 'POST',
-          headers: { 'content-type': 'application/json' },
-          data: {
-            ProjectName: projectName,
-            TopicName: topicName,
-          },
-        });
+        const existing = await operations.getTopic(projectName, topicName);
+        if (!existing?.topicId) {
+          logger.warn(lang.__('TLS_TOPIC_NOT_FOUND', { topicName }));
+          return;
+        }
 
+        await tlsClient.DeleteTopic({ TopicId: existing.topicId });
         logger.info(lang.__('TLS_TOPIC_DELETED', { topicName }));
       } catch (error: unknown) {
-        if (error && typeof error === 'object' && 'code' in error) {
-          if (error.code === 'TopicNotFound' || error.code === 'ResourceNotFound') {
-            logger.warn(lang.__('TLS_TOPIC_NOT_FOUND', { topicName }));
-            return;
-          }
+        if (isNotFoundError(error)) {
+          logger.warn(lang.__('TLS_TOPIC_NOT_FOUND', { topicName }));
+          return;
         }
         throw error;
       }
@@ -298,36 +288,30 @@ export const createTlsOperations = (tlsClient: TlsSdkClient) => {
 
     createIndex: async (config: TlsIndexConfig): Promise<void> => {
       try {
-        await tlsClient.fetchOpenAPI({
-          Action: 'CreateIndex',
-          Version: '2024-01-01',
-          method: 'POST',
-          headers: { 'content-type': 'application/json' },
-          data: {
-            ProjectName: config.projectName,
-            TopicName: config.topicName,
-            FullTextIndex: config.fullTextIndex
-              ? {
-                  Delimiter: config.fullTextIndex.delimiter ?? ' ,.?;!\n\t',
-                  CaseSensitive: config.fullTextIndex.caseSensitive ?? false,
-                }
-              : undefined,
-            KeyValueIndex: config.keyValueIndex,
-          },
+        const topic = await operations.getTopic(config.projectName, config.topicName);
+        if (!topic?.topicId) {
+          throw new Error(lang.__('TLS_TOPIC_NOT_FOUND', { topicName: config.topicName }));
+        }
+
+        await tlsClient.CreateIndex({
+          TopicId: topic.topicId,
+          FullText: config.fullTextIndex
+            ? {
+                Delimiter: config.fullTextIndex.delimiter ?? ' ,.?;!\n\t',
+                CaseSensitive: config.fullTextIndex.caseSensitive ?? false,
+              }
+            : undefined,
+          KeyValue: config.keyValueIndex?.map((kv) => ({
+            Key: kv.key,
+            Value: { ValueType: kv.type, SqlFlag: true },
+          })),
         });
 
         logger.info(lang.__('TLS_INDEX_CREATED', { topicName: config.topicName }));
       } catch (error: unknown) {
-        if (error && typeof error === 'object' && 'code' in error) {
-          if (
-            error.code === 'IndexAlreadyExists' ||
-            error.code === 'ResourceAlreadyExists' ||
-            error.code === 'AlreadyExists' ||
-            error.code === 'Conflict'
-          ) {
-            logger.warn(lang.__('TLS_INDEX_ALREADY_EXISTS', { topicName: config.topicName }));
-            return;
-          }
+        if (isAlreadyExistsError(error)) {
+          logger.warn(lang.__('TLS_INDEX_ALREADY_EXISTS', { topicName: config.topicName }));
+          return;
         }
         throw error;
       }
@@ -335,23 +319,16 @@ export const createTlsOperations = (tlsClient: TlsSdkClient) => {
 
     deleteIndex: async (projectName: string, topicName: string): Promise<void> => {
       try {
-        await tlsClient.fetchOpenAPI({
-          Action: 'DeleteIndex',
-          Version: '2024-01-01',
-          method: 'POST',
-          headers: { 'content-type': 'application/json' },
-          data: {
-            ProjectName: projectName,
-            TopicName: topicName,
-          },
-        });
+        const topic = await operations.getTopic(projectName, topicName);
+        if (!topic?.topicId) {
+          return;
+        }
 
+        await tlsClient.DeleteIndex({ TopicId: topic.topicId });
         logger.info(lang.__('TLS_INDEX_DELETED', { topicName }));
       } catch (error: unknown) {
-        if (error && typeof error === 'object' && 'code' in error) {
-          if (error.code === 'IndexNotFound' || error.code === 'ResourceNotFound') {
-            return;
-          }
+        if (isNotFoundError(error)) {
+          return;
         }
         throw error;
       }
