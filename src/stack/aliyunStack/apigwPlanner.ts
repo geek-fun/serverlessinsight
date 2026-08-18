@@ -59,23 +59,26 @@ export const generateApigwPlan = async (
         domain: extractEventDomainDefinition(event.domain),
       };
 
-      if (!currentState) {
-        // No state exists, check if resource exists remotely
-        try {
-          const remoteGroup = await client.apigw.findApiGroupByName(groupConfig.groupName);
-          if (remoteGroup) {
-            // Resource exists remotely but not in state - this is drift
-            // We should update (import) it rather than try to create again
-            return {
-              logicalId,
-              action: 'update',
-              resourceType: 'ALIYUN_APIGW',
-              changes: { after: desiredDefinition },
-              drifted: true,
-            };
+      if (!currentState || currentState.status === 'tainted') {
+        // Tainted = our own half-made resource, never import it as drift
+        if (!currentState) {
+          // No state exists, check if resource exists remotely
+          try {
+            const remoteGroup = await client.apigw.findApiGroupByName(groupConfig.groupName);
+            if (remoteGroup) {
+              // Resource exists remotely but not in state - this is drift
+              // We should update (import) it rather than try to create again
+              return {
+                logicalId,
+                action: 'update',
+                resourceType: 'ALIYUN_APIGW',
+                changes: { after: desiredDefinition },
+                drifted: true,
+              };
+            }
+          } catch {
+            // Ignore errors when checking remote
           }
-        } catch {
-          // Ignore errors when checking remote
         }
 
         return {

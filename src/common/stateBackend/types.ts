@@ -22,7 +22,12 @@ export type StateBackend = {
   releaseLock: (lockId: string) => Promise<void>;
   forceUnlock: (lockId: string) => Promise<boolean>;
   readLock: () => Promise<LockMetadata | null>;
-  withLock: <T>(operation: string, fn: () => Promise<T>, options?: LockOptions) => Promise<T>;
+  withLock: <T>(
+    operation: string,
+    fn: () => Promise<T>,
+    options?: LockOptions,
+    onLockAcquired?: (lockId: string) => void,
+  ) => Promise<T>;
 };
 
 export type { LockMetadata };

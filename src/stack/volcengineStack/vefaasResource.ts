@@ -256,47 +256,37 @@ const deleteDependentResources = async (
   const client = createVolcengineClient(context);
 
   for (const instance of [...instances].reverse()) {
-    try {
-      switch (instance.type) {
-        case 'VOLCENGINE_TLS_INDEX': {
-          const [projectName, topicName] = instance.id.split('/');
-          logger.info(lang.__('DELETING_TLS_INDEX', { id: instance.id }));
-          await client.tls.deleteIndex(projectName, topicName);
-          break;
-        }
-        case 'VOLCENGINE_TLS_TOPIC': {
-          const [projectName, topicName] = instance.id.split('/');
-          logger.info(lang.__('DELETING_TLS_TOPIC', { id: instance.id }));
-          await client.tls.deleteTopic(projectName, topicName);
-          break;
-        }
-        case 'VOLCENGINE_TLS_PROJECT':
-          logger.info(lang.__('DELETING_TLS_PROJECT', { id: instance.id }));
-          await client.tls.deleteProject(instance.id);
-          break;
-        case 'VOLCENGINE_IAM_ROLE': {
-          const attrs = instance.attributes as Record<string, unknown> | undefined;
-          if (attrs?.external === true) {
-            logger.info(
-              `Skipping deletion of external IAM role: ${instance.id} (managed externally)`,
-            );
-            break;
-          }
-          logger.info(lang.__('DELETING_IAM_ROLE', { id: instance.id }));
-          await client.iam.deleteRole(instance.id);
-          break;
-        }
-        default:
-          logger.warn(lang.__('UNKNOWN_RESOURCE_TYPE', { type: instance.type }));
+    switch (instance.type) {
+      case 'VOLCENGINE_TLS_INDEX': {
+        const [projectName, topicName] = instance.id.split('/');
+        logger.info(lang.__('DELETING_TLS_INDEX', { id: instance.id }));
+        await client.tls.deleteIndex(projectName, topicName);
+        break;
       }
-    } catch (err) {
-      logger.error(
-        lang.__('FAILED_TO_DELETE_RESOURCE', {
-          type: instance.type,
-          id: instance.id,
-          error: String(err),
-        }),
-      );
+      case 'VOLCENGINE_TLS_TOPIC': {
+        const [projectName, topicName] = instance.id.split('/');
+        logger.info(lang.__('DELETING_TLS_TOPIC', { id: instance.id }));
+        await client.tls.deleteTopic(projectName, topicName);
+        break;
+      }
+      case 'VOLCENGINE_TLS_PROJECT':
+        logger.info(lang.__('DELETING_TLS_PROJECT', { id: instance.id }));
+        await client.tls.deleteProject(instance.id);
+        break;
+      case 'VOLCENGINE_IAM_ROLE': {
+        const attrs = instance.attributes as Record<string, unknown> | undefined;
+        if (attrs?.external === true) {
+          logger.info(
+            `Skipping deletion of external IAM role: ${instance.id} (managed externally)`,
+          );
+          break;
+        }
+        logger.info(lang.__('DELETING_IAM_ROLE', { id: instance.id }));
+        await client.iam.deleteRole(instance.id);
+        break;
+      }
+      default:
+        logger.warn(lang.__('UNKNOWN_RESOURCE_TYPE', { type: instance.type }));
     }
   }
 };
@@ -466,15 +456,30 @@ export const updateResource = async (
   let role: { roleName: string; trn: string } | undefined;
 
   if (fn.log && !hasTlsResources && !isTainted) {
-    const deps = await createDependentResources(
-      context,
-      { ...fn, network: undefined, storage: { disk: undefined, nas: undefined } },
-      serviceName,
-    );
-    logConfig = deps.logConfig;
-    newDependentInstances.push(
-      ...deps.instances.filter((i) => i.type.startsWith('VOLCENGINE_TLS_')),
-    );
+    // Persist a tainted state BEFORE creating dependent TLS resources so a
+    // partial failure (e.g. project created but topic creation fails) leaves a
+    // tainted marker for the executor instead of orphaning cloud resources
+    // untracked. A retry then resumes with the tainted state.
+    const stateAfterDependents = setResource(state, logicalId, {
+      ...currentState,
+      status: 'tainted',
+    });
+    try {
+      const deps = await createDependentResources(
+        context,
+        { ...fn, network: undefined, storage: { disk: undefined, nas: undefined } },
+        serviceName,
+      );
+      logConfig = deps.logConfig;
+      newDependentInstances.push(
+        ...deps.instances.filter((i) => i.type.startsWith('VOLCENGINE_TLS_')),
+      );
+    } catch (error) {
+      throw new PartialResourceError(
+        stateAfterDependents,
+        error instanceof Error ? error : new Error(String(error)),
+      );
+    }
   } else if (hasTlsResources) {
     const tlsProjectInstance = existingInstances.find((i) => i.type === 'VOLCENGINE_TLS_PROJECT');
     const tlsTopicInstance = existingInstances.find((i) => i.type === 'VOLCENGINE_TLS_TOPIC');

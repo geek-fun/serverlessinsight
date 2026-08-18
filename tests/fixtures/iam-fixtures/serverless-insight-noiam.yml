@@ -6,6 +6,10 @@ provider:
 
 service: iam-test-service
 
+backend:
+  state_manager:
+    type: LOCAL
+
 functions:
   iam_fn:
     name: iam-test-fn

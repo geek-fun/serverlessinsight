@@ -10,6 +10,7 @@ import {
   Plan,
   ResourceState,
   PlanAction,
+  PartialResourceError,
   CURRENT_STATE_VERSION,
 } from '../../../../src/types';
 import { ProviderEnum } from '../../../../src/common';
@@ -494,6 +495,53 @@ describe('TdsqlcExecutor', () => {
       expect(tdsqlcResource.createDatabaseResource).toHaveBeenCalledTimes(2);
       expect(result.state).toBe(state2);
       expect(result.partialFailure).toBeUndefined();
+    });
+
+    it('should persist updatedState via onStateChange on PartialResourceError', async () => {
+      const plan: Plan = {
+        items: [
+          {
+            logicalId: 'databases.test_db',
+            action: 'create',
+            resourceType: 'TDSQL_C_SERVERLESS',
+            changes: { after: { name: 'test-tdsqlc' } },
+          },
+        ],
+      };
+
+      const taintedState: StateFile = {
+        ...mockState,
+        resources: {
+          'databases.test_db': {
+            mode: 'managed',
+            region: 'ap-guangzhou',
+            definition: { clusterName: 'test-tdsqlc' },
+            instances: [],
+            lastUpdated: new Date().toISOString(),
+          },
+        },
+      };
+
+      const causeErr = new Error('Create failed after partial provision');
+      jest
+        .spyOn(tdsqlcResource, 'createDatabaseResource')
+        .mockRejectedValue(new PartialResourceError(taintedState, causeErr));
+
+      const onStateChange = jest.fn();
+      const result = await executeDatabasePlan(
+        mockContext,
+        plan,
+        [mockDatabase],
+        mockState,
+        onStateChange,
+      );
+
+      expect(onStateChange).toHaveBeenCalledWith(taintedState);
+      expect(result.state).toEqual(taintedState);
+      expect(result.partialFailure).toBeDefined();
+      expect(result.partialFailure?.error).toBe(causeErr);
+      expect(result.partialFailure?.failedItem.logicalId).toBe('databases.test_db');
+      expect(result.partialFailure?.successfulItems).toEqual([]);
     });
 
     it('should call onStateChange callback after successful operation', async () => {

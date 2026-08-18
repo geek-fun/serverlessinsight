@@ -137,6 +137,37 @@ describe('DatabasePlanner', () => {
       );
     });
 
+    it('should plan create when existing state is tainted', async () => {
+      const database = createTestDatabase(DatabaseEnum.RDS_MYSQL_SERVERLESS, 'test_db');
+
+      const existingState = {
+        status: 'tainted',
+        metadata: { resourceType: 'ALIYUN_RDS_SERVERLESS' },
+        instances: [],
+        definition: { engine: 'mysql' },
+      };
+
+      mockedStateManager.getResource.mockReturnValue(existingState);
+      mockedRdsTypes.databaseToRdsConfig.mockReturnValue({
+        dbInstanceClass: 'serverless',
+      });
+      mockedRdsTypes.extractRdsDefinition.mockReturnValue({
+        engine: 'mysql',
+      });
+
+      const plan = await generateDatabasePlan(mockContext, initialState, [database]);
+
+      expect(plan.items).toHaveLength(1);
+      expect(plan.items[0]).toEqual(
+        expect.objectContaining({
+          logicalId: 'databases.test_db',
+          action: 'create',
+          resourceType: 'ALIYUN_RDS_SERVERLESS',
+        }),
+      );
+      expect(mockedRdsOperations.getInstance).not.toHaveBeenCalled();
+    });
+
     it('should plan creation of new Elasticsearch database', async () => {
       const database = createTestDatabase(DatabaseEnum.ELASTICSEARCH_SERVERLESS, 'test_es');
 

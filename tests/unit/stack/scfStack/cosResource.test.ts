@@ -134,6 +134,42 @@ describe('CosResource', () => {
       expect(mockedStateManager.setResource).toHaveBeenCalled();
     });
 
+    it('should persist tainted state via PartialResourceError on create failure', async () => {
+      const error = new Error('Create failed');
+      mockCosOperations.createBucket.mockRejectedValue(error);
+
+      const taintedState = {
+        ...initialState,
+        resources: {
+          'buckets.test_bucket': {
+            mode: 'managed',
+            region: 'ap-guangzhou',
+            definition: { bucket: 'test-bucket' },
+            instances: [],
+            lastUpdated: expect.any(String),
+            status: 'tainted',
+          },
+        },
+      };
+      mockedStateManager.setResource.mockReturnValue(taintedState);
+
+      await expect(
+        createBucketResource(
+          mockContext,
+          { key: 'test_bucket', name: 'test-bucket' },
+          initialState,
+        ),
+      ).rejects.toMatchObject({
+        name: 'PartialResourceError',
+        cause: { message: 'Create failed' },
+        updatedState: expect.objectContaining({
+          resources: expect.objectContaining({
+            'buckets.test_bucket': expect.objectContaining({ status: 'tainted' }),
+          }),
+        }),
+      });
+    });
+
     it('should deploy SSL certificate to COS after domain binding', async () => {
       mockCosOperations.createBucket.mockResolvedValue(undefined);
       mockCosOperations.getBucket.mockResolvedValue(mockBucketInfo);
@@ -492,6 +528,34 @@ describe('CosResource', () => {
       await expect(
         deleteBucketResource(mockContext, bucketName, region, logicalId, initialState),
       ).rejects.toThrow('Delete failed');
+    });
+
+    it('should propagate sub-delete policy errors and keep state', async () => {
+      const bucketName = 'test-bucket';
+      const region = 'ap-guangzhou';
+      const logicalId = 'buckets.test_bucket';
+      const stateWithBucket: StateFile = {
+        ...initialState,
+        resources: {
+          [logicalId]: {
+            mode: 'managed',
+            region: 'ap-guangzhou',
+            definition: {},
+            instances: [],
+            lastUpdated: new Date().toISOString(),
+          },
+        },
+      };
+
+      const policyError = new Error('Policy delete failed');
+      mockCosOperations.deleteBucketPolicy.mockRejectedValue(policyError);
+
+      await expect(
+        deleteBucketResource(mockContext, bucketName, region, logicalId, stateWithBucket),
+      ).rejects.toThrow('Policy delete failed');
+      expect(mockCosOperations.deleteBucket).not.toHaveBeenCalled();
+      expect(mockedStateManager.removeResource).not.toHaveBeenCalled();
+      mockCosOperations.deleteBucketPolicy.mockReset();
     });
 
     it('should delete DNS CNAME record when bucket has custom domain', async () => {

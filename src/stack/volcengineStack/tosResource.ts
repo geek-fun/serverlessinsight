@@ -1,6 +1,19 @@
 import { createVolcengineClient } from '../../common/volcengineClient';
-import { setResource, removeResource, buildSid, computeDirectoryHash } from '../../common';
-import { Context, BucketDomain, ResourceState, StateFile, ResourceInstance } from '../../types';
+import {
+  setResource,
+  removeResource,
+  buildSid,
+  computeDirectoryHash,
+  getResource,
+} from '../../common';
+import {
+  Context,
+  BucketDomain,
+  ResourceState,
+  StateFile,
+  ResourceInstance,
+  PartialResourceError,
+} from '../../types';
 import {
   bucketToTosConfig,
   extractTosBucketDefinition,
@@ -48,12 +61,8 @@ const deleteBucketPolicy = async (
   client: ReturnType<typeof createVolcengineClient>,
   bucketName: string,
 ): Promise<void> => {
-  try {
-    await client.tos.deleteBucketPolicy(bucketName);
-    logger.info(lang.__('BUCKET_POLICY_DELETED', { bucketName }));
-  } catch {
-    // Best effort cleanup
-  }
+  await client.tos.deleteBucketPolicy(bucketName);
+  logger.info(lang.__('BUCKET_POLICY_DELETED', { bucketName }));
 };
 
 export const createResource = async (
@@ -64,8 +73,6 @@ export const createResource = async (
   const config = bucketToTosConfig(bucket);
   const client = createVolcengineClient(context);
 
-  const bucketInfo = await client.tos.createBucket(config);
-
   const sid = buildSid('volcengine', 'tos', context.stage, bucket.name);
   const logicalId = `buckets.${bucket.key}`;
 
@@ -73,10 +80,43 @@ export const createResource = async (
     ? computeDirectoryHash(path.resolve(process.cwd(), bucket.website.code))
     : undefined;
 
-  const instances: Array<ResourceInstance> = [buildTosInstanceFromProvider(bucketInfo, sid)];
+  const existingResourceState = getResource(state, logicalId);
+  const isTainted = existingResourceState?.status === 'tainted';
+  const existingBucketOnRetry = isTainted ? await client.tos.getBucket(bucket.name) : null;
 
-  if (bucket.website?.code) {
-    try {
+  if (existingBucketOnRetry) {
+    logger.info(
+      `Bucket ${bucket.name} already exists in provider (tainted recovery), skipping create`,
+    );
+  }
+
+  const taintedResourceState: ResourceState = {
+    mode: 'managed',
+    region: context.region,
+    definition: extractTosBucketDefinition(config, websiteCodeHash),
+    instances: existingBucketOnRetry
+      ? [buildTosInstanceFromProvider(existingBucketOnRetry, sid)]
+      : [
+          {
+            type: 'VOLCENGINE_TOS_BUCKET',
+            sid,
+            id: bucket.name,
+            bucketName: bucket.name,
+            attributes: {},
+          },
+        ],
+    status: 'tainted',
+    lastUpdated: new Date().toISOString(),
+  };
+
+  const stateAfterDependents = setResource(state, logicalId, taintedResourceState);
+
+  try {
+    const bucketInfo = existingBucketOnRetry ?? (await client.tos.createBucket(config));
+
+    const instances: Array<ResourceInstance> = [buildTosInstanceFromProvider(bucketInfo, sid)];
+
+    if (bucket.website?.code) {
       const codePath = path.resolve(process.cwd(), bucket.website.code);
       await client.tos.uploadFiles(bucket.name, codePath);
 
@@ -84,28 +124,27 @@ export const createResource = async (
       if (refreshedInfo) {
         instances[0] = buildTosInstanceFromProvider(refreshedInfo, sid);
       }
-    } catch (error) {
-      logger.error(
-        lang.__('TOS_BUCKET_FILE_UPLOAD_FAILED_STATE_SAVED', {
-          error: error instanceof Error ? error.message : String(error),
-        }),
-      );
-      logger.info(lang.__('TOS_BUCKET_TRACKED_CAN_RETRY'));
     }
+
+    // Apply IAM bucket policy if configured
+    await applyBucketPolicy(client, bucket);
+
+    const resourceState: ResourceState = {
+      mode: 'managed',
+      region: context.region,
+      definition: extractTosBucketDefinition(config, websiteCodeHash),
+      instances,
+      status: 'ready',
+      lastUpdated: new Date().toISOString(),
+    };
+
+    return setResource(stateAfterDependents, logicalId, resourceState);
+  } catch (error) {
+    throw new PartialResourceError(
+      stateAfterDependents,
+      error instanceof Error ? error : new Error(String(error)),
+    );
   }
-
-  // Apply IAM bucket policy if configured
-  await applyBucketPolicy(client, bucket);
-
-  const resourceState: ResourceState = {
-    mode: 'managed',
-    region: context.region,
-    definition: extractTosBucketDefinition(config, websiteCodeHash),
-    instances,
-    lastUpdated: new Date().toISOString(),
-  };
-
-  return setResource(state, logicalId, resourceState);
 };
 
 export const readResource = async (context: Context, bucketName: string) => {

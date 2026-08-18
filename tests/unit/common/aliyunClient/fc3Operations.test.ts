@@ -54,6 +54,14 @@ describe('fc3Operations', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     operations = createFc3Operations(mockFc3Client);
+    // Default GetFunction to Active so waits (create/update polling) complete
+    // immediately; individual tests override for poll behavior.
+    mockGetFunction.mockResolvedValue({
+      body: {
+        functionName: 'test-function',
+        state: 'Active',
+      },
+    });
   });
 
   describe('createFunction', () => {
@@ -407,6 +415,9 @@ describe('fc3Operations', () => {
 
   describe('deleteFunction', () => {
     it('should delete function successfully', async () => {
+      // waitForFunctionDeleted polls until GetFunction returns null
+      mockGetFunction.mockResolvedValue(null);
+
       await operations.deleteFunction('test-function');
 
       expect(mockDeleteFunction).toHaveBeenCalledWith('test-function');

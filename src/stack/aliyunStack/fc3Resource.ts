@@ -462,75 +462,65 @@ const deleteDependentResources = async (
   const client = createAliyunClient(context);
 
   for (const instance of [...instances].reverse()) {
-    try {
-      switch (instance.type) {
-        case 'ALIYUN_NAS_MOUNT_TARGET': {
-          const [fileSystemId, mountTargetDomain] = instance.id.split('/');
-          logger.info(lang.__('DELETING_NAS_MOUNT_TARGET', { id: instance.id }));
-          await client.nas.deleteMountTarget(fileSystemId, mountTargetDomain);
-          break;
-        }
-        case 'ALIYUN_NAS_FILE_SYSTEM':
-          logger.info(lang.__('DELETING_NAS_FILE_SYSTEM', { id: instance.id }));
-          await client.nas.deleteFileSystem(instance.id);
-          break;
-        case 'ALIYUN_NAS_ACCESS_GROUP':
-          logger.info(lang.__('DELETING_NAS_ACCESS_GROUP', { id: instance.id }));
-          await client.nas.deleteAccessGroup(instance.id);
-          break;
-        case 'ALIYUN_ECS_SECURITY_GROUP':
-          logger.info(lang.__('DELETING_SECURITY_GROUP', { id: instance.id }));
-          await client.ecs.deleteSecurityGroup(instance.id);
-          break;
-        case 'ALIYUN_RAM_ROLE': {
-          const ramInstance = instance as unknown as {
-            external?: boolean;
-            managedPolicies?: string[];
-          };
-          if (ramInstance.external) break; // Skip external roles
-          const managedPolicies = ramInstance.managedPolicies;
-          logger.info(lang.__('DELETING_RAM_ROLE', { id: instance.id }));
-          await client.ram.deleteRole(instance.id, managedPolicies);
-          break;
-        }
-        case 'ALIYUN_SLS_INDEX': {
-          const [projectName, logstoreName] = instance.id.split('/');
-          logger.info(lang.__('DELETING_SLS_INDEX', { id: instance.id }));
-          await client.sls.deleteIndex(projectName, logstoreName);
-          break;
-        }
-        case 'ALIYUN_SLS_LOGSTORE': {
-          const [projectName, logstoreName] = instance.id.split('/');
-          logger.info(lang.__('DELETING_SLS_LOGSTORE', { id: instance.id }));
-          await client.sls.deleteLogstore(projectName, logstoreName);
-          break;
-        }
-        case 'ALIYUN_SLS_PROJECT':
-          logger.info(lang.__('DELETING_SLS_PROJECT', { id: instance.id }));
-          await client.sls.deleteProject(instance.id);
-          break;
-        case 'ALIYUN_FC3_HTTP_TRIGGER':
-          // HTTP trigger deletion requires functionName which is not available here.
-          // It is handled directly in deleteResource before calling this function.
-          logger.warn(
-            `HTTP trigger '${instance.id}' should be deleted before reaching dependent resource cleanup`,
-          );
-          break;
-        case 'ALIYUN_FC3_CUSTOM_DOMAIN':
-          logger.info(lang.__('DELETING_CUSTOM_DOMAIN', { domainName: instance.id }));
-          await client.fc3.deleteCustomDomain(instance.id);
-          break;
-        default:
-          logger.warn(lang.__('UNKNOWN_RESOURCE_TYPE', { type: instance.type }));
+    switch (instance.type) {
+      case 'ALIYUN_NAS_MOUNT_TARGET': {
+        const [fileSystemId, mountTargetDomain] = instance.id.split('/');
+        logger.info(lang.__('DELETING_NAS_MOUNT_TARGET', { id: instance.id }));
+        await client.nas.deleteMountTarget(fileSystemId, mountTargetDomain);
+        break;
       }
-    } catch (err) {
-      logger.error(
-        lang.__('FAILED_TO_DELETE_RESOURCE', {
-          type: instance.type,
-          id: instance.id,
-          error: String(err),
-        }),
-      );
+      case 'ALIYUN_NAS_FILE_SYSTEM':
+        logger.info(lang.__('DELETING_NAS_FILE_SYSTEM', { id: instance.id }));
+        await client.nas.deleteFileSystem(instance.id);
+        break;
+      case 'ALIYUN_NAS_ACCESS_GROUP':
+        logger.info(lang.__('DELETING_NAS_ACCESS_GROUP', { id: instance.id }));
+        await client.nas.deleteAccessGroup(instance.id);
+        break;
+      case 'ALIYUN_ECS_SECURITY_GROUP':
+        logger.info(lang.__('DELETING_SECURITY_GROUP', { id: instance.id }));
+        await client.ecs.deleteSecurityGroup(instance.id);
+        break;
+      case 'ALIYUN_RAM_ROLE': {
+        const ramInstance = instance as unknown as {
+          external?: boolean;
+          managedPolicies?: string[];
+        };
+        if (ramInstance.external) break; // Skip external roles
+        const managedPolicies = ramInstance.managedPolicies;
+        logger.info(lang.__('DELETING_RAM_ROLE', { id: instance.id }));
+        await client.ram.deleteRole(instance.id, managedPolicies);
+        break;
+      }
+      case 'ALIYUN_SLS_INDEX': {
+        const [projectName, logstoreName] = instance.id.split('/');
+        logger.info(lang.__('DELETING_SLS_INDEX', { id: instance.id }));
+        await client.sls.deleteIndex(projectName, logstoreName);
+        break;
+      }
+      case 'ALIYUN_SLS_LOGSTORE': {
+        const [projectName, logstoreName] = instance.id.split('/');
+        logger.info(lang.__('DELETING_SLS_LOGSTORE', { id: instance.id }));
+        await client.sls.deleteLogstore(projectName, logstoreName);
+        break;
+      }
+      case 'ALIYUN_SLS_PROJECT':
+        logger.info(lang.__('DELETING_SLS_PROJECT', { id: instance.id }));
+        await client.sls.deleteProject(instance.id);
+        break;
+      case 'ALIYUN_FC3_HTTP_TRIGGER':
+        // HTTP trigger deletion requires functionName which is not available here.
+        // It is handled directly in deleteResource before calling this function.
+        logger.warn(
+          `HTTP trigger '${instance.id}' should be deleted before reaching dependent resource cleanup`,
+        );
+        break;
+      case 'ALIYUN_FC3_CUSTOM_DOMAIN':
+        logger.info(lang.__('DELETING_CUSTOM_DOMAIN', { domainName: instance.id }));
+        await client.fc3.deleteCustomDomain(instance.id);
+        break;
+      default:
+        logger.warn(lang.__('UNKNOWN_RESOURCE_TYPE', { type: instance.type }));
     }
   }
 };
@@ -677,9 +667,20 @@ export const createResource = async (
     }
   }
 
-  const functionInfo = await client.fc3.getFunction(fn.name);
+  let functionInfo: Fc3FunctionInfo | null;
+  try {
+    functionInfo = await client.fc3.getFunction(fn.name);
+  } catch (error) {
+    throw new PartialResourceError(
+      stateAfterDependents,
+      error instanceof Error ? error : new Error(String(error)),
+    );
+  }
   if (!functionInfo) {
-    throw new Error(`Failed to refresh state for function: ${fn.name}`);
+    throw new PartialResourceError(
+      stateAfterDependents,
+      new Error(`Failed to refresh state for function: ${fn.name}`),
+    );
   }
 
   const sid = buildSid('aliyun', 'fc3', context.stage, fn.name);
@@ -687,56 +688,63 @@ export const createResource = async (
   const fcInstance = buildFc3InstanceFromProvider(functionInfo, sid);
 
   const lifecycleInstances = [];
-  if (fn.triggers?.http) {
-    const triggerConfig = buildHttpTriggerConfig(fn.triggers.http);
+  try {
+    if (fn.triggers?.http) {
+      const triggerConfig = buildHttpTriggerConfig(fn.triggers.http);
 
-    logger.info(
-      lang.__('CREATING_HTTP_TRIGGER', { triggerName: 'http-trigger', functionName: fn.name }),
-    );
-    await client.fc3.createTrigger(fn.name, 'http-trigger', 'http', triggerConfig);
-    logger.info(
-      lang.__('HTTP_TRIGGER_CREATED', { triggerName: 'http-trigger', functionName: fn.name }),
-    );
+      logger.info(
+        lang.__('CREATING_HTTP_TRIGGER', { triggerName: 'http-trigger', functionName: fn.name }),
+      );
+      await client.fc3.createTrigger(fn.name, 'http-trigger', 'http', triggerConfig);
+      logger.info(
+        lang.__('HTTP_TRIGGER_CREATED', { triggerName: 'http-trigger', functionName: fn.name }),
+      );
 
-    lifecycleInstances.push({
-      type: 'ALIYUN_FC3_HTTP_TRIGGER',
-      id: 'http-trigger',
-      sid: buildSid('aliyun', 'fc3-http-trigger', context.stage, fn.name),
-      attributes: { ...triggerConfig } as unknown as Record<string, unknown>,
-    });
-  }
-
-  if (fn.domain) {
-    logger.info(lang.__('CREATING_CUSTOM_DOMAIN', { domainName: fn.domain.domain_name }));
-
-    let certConfig: { certName: string; certificate: string; privateKey: string } | undefined;
-    if (fn.domain.certificate_id) {
-      const certId = fn.domain.certificate_id;
-      const detail = await client.cas.getCertificate(certId);
-      if (!detail || !detail.cert || !detail.key) {
-        throw new Error(lang.__('CERT_REFERENCE_NOT_FOUND', { reference: certId }));
-      }
-      certConfig = {
-        certName: `${context.service}-${context.stage}-fc3-domain`,
-        certificate: detail.cert,
-        privateKey: detail.key,
-      };
+      lifecycleInstances.push({
+        type: 'ALIYUN_FC3_HTTP_TRIGGER',
+        id: 'http-trigger',
+        sid: buildSid('aliyun', 'fc3-http-trigger', context.stage, fn.name),
+        attributes: { ...triggerConfig } as unknown as Record<string, unknown>,
+      });
     }
 
-    await client.fc3.createCustomDomain(
-      fn.domain.domain_name,
-      fn.domain.protocol,
-      fn.name,
-      certConfig,
-    );
-    logger.info(lang.__('CUSTOM_DOMAIN_CREATED', { domainName: fn.domain.domain_name }));
+    if (fn.domain) {
+      logger.info(lang.__('CREATING_CUSTOM_DOMAIN', { domainName: fn.domain.domain_name }));
 
-    lifecycleInstances.push({
-      type: 'ALIYUN_FC3_CUSTOM_DOMAIN',
-      id: fn.domain.domain_name,
-      sid: buildSid('aliyun', 'fc3-custom-domain', context.stage, fn.domain.domain_name),
-      attributes: { protocol: fn.domain.protocol, certificate_id: fn.domain.certificate_id },
-    });
+      let certConfig: { certName: string; certificate: string; privateKey: string } | undefined;
+      if (fn.domain.certificate_id) {
+        const certId = fn.domain.certificate_id;
+        const detail = await client.cas.getCertificate(certId);
+        if (!detail || !detail.cert || !detail.key) {
+          throw new Error(lang.__('CERT_REFERENCE_NOT_FOUND', { reference: certId }));
+        }
+        certConfig = {
+          certName: `${context.service}-${context.stage}-fc3-domain`,
+          certificate: detail.cert,
+          privateKey: detail.key,
+        };
+      }
+
+      await client.fc3.createCustomDomain(
+        fn.domain.domain_name,
+        fn.domain.protocol,
+        fn.name,
+        certConfig,
+      );
+      logger.info(lang.__('CUSTOM_DOMAIN_CREATED', { domainName: fn.domain.domain_name }));
+
+      lifecycleInstances.push({
+        type: 'ALIYUN_FC3_CUSTOM_DOMAIN',
+        id: fn.domain.domain_name,
+        sid: buildSid('aliyun', 'fc3-custom-domain', context.stage, fn.domain.domain_name),
+        attributes: { protocol: fn.domain.protocol, certificate_id: fn.domain.certificate_id },
+      });
+    }
+  } catch (error) {
+    throw new PartialResourceError(
+      stateAfterDependents,
+      error instanceof Error ? error : new Error(String(error)),
+    );
   }
 
   const resourceState: ResourceState = {

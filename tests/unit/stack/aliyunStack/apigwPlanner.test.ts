@@ -92,6 +92,42 @@ describe('Apigw Planner', () => {
       expect(plan.items[0].changes?.after).toBeDefined();
     });
 
+    it('should plan to create when existing state is tainted', async () => {
+      let state = loadState('aliyun', 'test-app', 'test-service', 'default', testDir);
+      state = setResource(state, 'events.test_api', {
+        mode: 'managed',
+        region: 'cn-hangzhou',
+        definition: {
+          groupName: 'test-service-default-agw-group',
+          description: 'API Gateway group for test-service',
+          basePath: null,
+          triggers: [{ method: 'GET', path: '/users', backend: 'userFunction' }],
+          domain: null,
+        },
+        instances: [
+          {
+            type: 'ALIYUN_APIGW_GROUP',
+            sid: 'si:aliyun:apigateway:default:group-123',
+            id: 'group-123',
+            groupName: 'test-service-default-agw-group',
+          },
+        ],
+        lastUpdated: new Date().toISOString(),
+        status: 'tainted',
+      });
+
+      const plan = await generateApigwPlan(mockContext, state, [testEvent], 'test-service');
+
+      expect(plan.items).toHaveLength(1);
+      expect(plan.items[0]).toMatchObject({
+        logicalId: 'events.test_api',
+        action: 'create',
+        resourceType: 'ALIYUN_APIGW',
+      });
+      expect(plan.items[0].changes?.after).toBeDefined();
+      expect(mockApigwOperations.findApiGroupByName).not.toHaveBeenCalled();
+    });
+
     it('should plan no changes when event exists and matches state', async () => {
       // Add event to state with matching definition
       let state = loadState('aliyun', 'test-app', 'test-service', 'default', testDir);

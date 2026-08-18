@@ -1,5 +1,6 @@
 import os from 'node:os';
 import { StateFile, LockOptions, LockMetadata, CURRENT_STATE_VERSION } from '../../types';
+import { migrateState } from '../stateManager';
 import { DEFAULT_LOCK_TIMEOUT, DEFAULT_LOCK_RETRY_DELAY } from '../constants';
 import { LockError, formatLockInfo } from '../lockManager';
 import { logger } from '../logger';
@@ -110,8 +111,9 @@ export const createRemoteStateBackend = (
     ): Promise<StateFile> => {
       const state = await adapter.read<StateFile>(config.key);
       if (state) {
-        const stageResources = state.stages?.[stage]?.resources ?? {};
-        return { ...state, resources: stageResources };
+        const migrated = migrateState(state);
+        const stageResources = migrated.stages?.[stage]?.resources ?? {};
+        return { ...migrated, resources: stageResources };
       }
       return { version: CURRENT_STATE_VERSION, provider, app, service, stages: {}, resources: {} };
     },
@@ -183,11 +185,13 @@ export const createRemoteStateBackend = (
       operation: string,
       fn: () => Promise<T>,
       options?: LockOptions,
+      onLockAcquired?: (lockId: string) => void,
     ): Promise<T> => {
       let lockId: string | null = null;
       try {
         const meta = await acquireLockObject(operation, options);
         lockId = meta.id;
+        onLockAcquired?.(lockId);
         return await fn();
       } finally {
         if (lockId) {

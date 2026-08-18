@@ -1,4 +1,10 @@
-import { Context, DatabaseDomain, ResourceState, StateFile } from '../../types';
+import {
+  Context,
+  DatabaseDomain,
+  PartialResourceError,
+  ResourceState,
+  StateFile,
+} from '../../types';
 import { createTencentClient } from '../../common/tencentClient';
 import {
   databaseToTencentEsConfig,
@@ -32,39 +38,59 @@ export const createEsResource = async (
   const config = databaseToTencentEsConfig(database);
 
   const client = createTencentClient(context);
-  const spaceId = await client.es.createSpace({
-    SpaceName: config.SpaceName,
-    VpcInfo:
-      config.VpcId && config.SubnetId
-        ? [{ VpcId: config.VpcId, SubnetId: config.SubnetId }]
-        : undefined,
-    Zone: config.Zone,
-    KibanaWhiteIpList: config.KibanaWhiteIpList,
-  });
-
-  // Refresh state from provider to get all attributes
-  const spaceInfo = await client.es.getSpace(spaceId);
-  if (!spaceInfo) {
-    throw new Error(`Failed to refresh state for ES space: ${spaceId}`);
-  }
 
   const definition = extractTencentEsDefinition(config);
-  const sid = buildSid('tencent', 'es', context.stage, spaceId);
-  const resourceState: ResourceState = {
+  const logicalId = `databases.${database.key}`;
+
+  const taintedResourceState: ResourceState = {
     mode: 'managed',
     region: context.region,
     definition,
-    instances: [buildEsSpaceFromProvider(spaceInfo as TencentEsSpaceInfo, sid)],
+    instances: [],
     lastUpdated: new Date().toISOString(),
-    metadata: {
-      spaceName: database.name,
-      spaceId,
-      resourceType: 'TENCENT_ES_SERVERLESS',
-    },
+    status: 'tainted',
   };
 
-  const logicalId = `databases.${database.key}`;
-  return setResource(state, logicalId, resourceState);
+  const stateAfterDependents = setResource(state, logicalId, taintedResourceState);
+
+  try {
+    const spaceId = await client.es.createSpace({
+      SpaceName: config.SpaceName,
+      VpcInfo:
+        config.VpcId && config.SubnetId
+          ? [{ VpcId: config.VpcId, SubnetId: config.SubnetId }]
+          : undefined,
+      Zone: config.Zone,
+      KibanaWhiteIpList: config.KibanaWhiteIpList,
+    });
+
+    // Refresh state from provider to get all attributes
+    const spaceInfo = await client.es.getSpace(spaceId);
+    if (!spaceInfo) {
+      throw new Error(`Failed to refresh state for ES space: ${spaceId}`);
+    }
+
+    const sid = buildSid('tencent', 'es', context.stage, spaceId);
+    const resourceState: ResourceState = {
+      mode: 'managed',
+      region: context.region,
+      definition,
+      instances: [buildEsSpaceFromProvider(spaceInfo as TencentEsSpaceInfo, sid)],
+      lastUpdated: new Date().toISOString(),
+      metadata: {
+        spaceName: database.name,
+        spaceId,
+        resourceType: 'TENCENT_ES_SERVERLESS',
+      },
+    };
+
+    return setResource(state, logicalId, resourceState);
+  } catch (error) {
+    throw new PartialResourceError(
+      stateAfterDependents,
+      error instanceof Error ? error : new Error(String(error)),
+    );
+  }
 };
 
 export const readEsResource = async (context: Context, spaceId: string) => {

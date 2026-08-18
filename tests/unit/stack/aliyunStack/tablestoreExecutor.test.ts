@@ -8,6 +8,7 @@ import {
   TableEnum,
   KeyTypeEnum,
   AttributeTypeEnum,
+  PartialResourceError,
   Plan,
   PlanAction,
 } from '../../../../src/types';
@@ -321,6 +322,52 @@ describe('TablestoreExecutor', () => {
       expect(result.partialFailure?.error).toBe(error);
       expect(result.partialFailure?.failedItem.logicalId).toBe('tables.table1');
       expect(result.partialFailure?.successfulItems).toEqual([]);
+    });
+
+    it('should persist tainted state via onStateChange when resource throws PartialResourceError', async () => {
+      const table = createTestTable('table1');
+      const plan: Plan = {
+        items: [
+          {
+            logicalId: 'tables.table1',
+            action: 'create',
+            resourceType: 'table',
+          },
+        ],
+      };
+
+      const updatedState: StateFile = {
+        ...initialState,
+        resources: {
+          'tables.table1': {
+            mode: 'managed',
+            region: 'cn-hangzhou',
+            definition: {},
+            instances: [],
+            lastUpdated: new Date().toISOString(),
+            status: 'tainted',
+          },
+        },
+      };
+      const cause = new Error('Create failed');
+      mockedTableResource.createTableResource.mockRejectedValue(
+        new PartialResourceError(updatedState, cause),
+      );
+
+      const onStateChange = jest.fn();
+      const result = await executeTablePlan(
+        mockContext,
+        plan,
+        [table],
+        initialState,
+        onStateChange,
+      );
+
+      expect(result.state).toEqual(updatedState);
+      expect(result.partialFailure).toBeDefined();
+      expect(result.partialFailure?.error).toBe(cause);
+      expect(result.partialFailure?.failedItem.logicalId).toBe('tables.table1');
+      expect(onStateChange).toHaveBeenCalledWith(updatedState);
     });
 
     it('should return partial failure when update action fails', async () => {

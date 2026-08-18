@@ -33,7 +33,7 @@ export const generateTablePlan = async (
       const config = tableToTableStoreConfig(table);
       const desiredDefinition = extractTableStoreDefinition(config);
 
-      if (!currentState) {
+      if (!currentState || currentState.status === 'tainted') {
         return {
           logicalId,
           action: 'create',

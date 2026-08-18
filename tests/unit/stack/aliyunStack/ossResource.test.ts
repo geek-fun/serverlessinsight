@@ -10,6 +10,7 @@ import {
   BucketDomain,
   Context,
   CURRENT_STATE_VERSION,
+  PartialResourceError,
   StateFile,
 } from '../../../../src/types';
 import { CommonBucketInstance } from '../../../../src/stack/bucketTypes';
@@ -86,6 +87,7 @@ jest.mock('../../../../src/common/stateManager', () => ({
   ...jest.requireActual('../../../../src/common/stateManager'),
   setResource: (...args: unknown[]) => mockedStateManager.setResource(...args),
   removeResource: (...args: unknown[]) => mockedStateManager.removeResource(...args),
+  getResource: (...args: unknown[]) => mockedStateManager.getResource(...args),
 }));
 
 jest.mock('../../../../src/common/logger', () => ({
@@ -121,6 +123,7 @@ describe('OssResource', () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
+    mockedStateManager.getResource.mockReturnValue(undefined);
   });
 
   describe('deleteBucketResource', () => {
@@ -290,6 +293,39 @@ describe('OssResource', () => {
       );
       expect(mockOssOperations.deleteBucket).toHaveBeenCalledWith(bucketName);
       expect(result).toEqual(initialState);
+    });
+
+    it('should propagate CDN delete failure and not remove resource from state', async () => {
+      const bucketName = 'test-bucket';
+      const logicalId = 'buckets.test_bucket';
+      const stateWithCdn: StateFile = {
+        ...initialState,
+        resources: {
+          [logicalId]: {
+            mode: 'managed',
+            region: 'cn-hangzhou',
+            definition: {},
+            instances: [
+              { sid: 'oss-sid', id: bucketName, type: 'ALIYUN_OSS_BUCKET' },
+              {
+                sid: 'cdn-sid',
+                id: 'example.com',
+                type: 'ALIYUN_CDN_DISTRIBUTION',
+                domainName: 'example.com',
+              },
+            ],
+            lastUpdated: new Date().toISOString(),
+          },
+        },
+      };
+
+      mockCdnOperations.deleteCdnDomain.mockRejectedValue(new Error('CDN delete failed'));
+
+      await expect(
+        deleteBucketResource(mockContext, bucketName, logicalId, stateWithCdn),
+      ).rejects.toThrow('CDN delete failed');
+      expect(mockedStateManager.removeResource).not.toHaveBeenCalled();
+      expect(mockOssOperations.deleteBucket).not.toHaveBeenCalled();
     });
   });
 
@@ -968,6 +1004,34 @@ describe('OssResource', () => {
       );
     });
 
+    it('should throw PartialResourceError with tainted state when transfer acceleration fails after bucket creation', async () => {
+      const bucket: BucketDomain = {
+        ...baseBucket,
+        domain: { domain_name: 'accel.example.com', www_bind_apex: false, accelerate: true },
+      };
+
+      mockOssOperations.createBucket.mockResolvedValue(baseBucketInfo);
+      mockOssOperations.getBucket.mockResolvedValue(baseBucketInfo);
+      mockOssOperations.enableTransferAcceleration.mockRejectedValue(new Error('Create failed'));
+      mockedStateManager.setResource.mockImplementation(
+        (_state: StateFile, _logicalId: string, resourceState: unknown) => ({
+          ...initialState,
+          resources: { 'buckets.test_bucket': resourceState },
+        }),
+      );
+
+      const error = await createBucketResource(mockContext, bucket, initialState).catch(
+        (e: unknown) => e,
+      );
+
+      expect(error).toBeInstanceOf(PartialResourceError);
+      const partialError = error as PartialResourceError;
+      expect(partialError.updatedState.resources['buckets.test_bucket']).toMatchObject({
+        status: 'tainted',
+      });
+      expect(partialError.cause.message).toBe('Create failed');
+    });
+
     it('should bind www domain when www_bind_apex is true', async () => {
       const bucket: BucketDomain = {
         ...baseBucket,
@@ -1162,7 +1226,7 @@ describe('OssResource', () => {
       expect(mockOssOperations.getBucket).toHaveBeenCalledTimes(2);
     });
 
-    it('should handle upload failure gracefully and still return state', async () => {
+    it('should throw PartialResourceError with tainted state when upload fails', async () => {
       mockOssOperations.createBucket.mockResolvedValue(baseBucketInfo);
       mockOssOperations.getBucket.mockResolvedValue(baseBucketInfo);
       mockOssOperations.uploadFiles.mockRejectedValue(new Error('Upload network error'));
@@ -1173,12 +1237,80 @@ describe('OssResource', () => {
         }),
       );
 
+      const error = await createBucketResource(mockContext, baseBucket, initialState).catch(
+        (e: unknown) => e,
+      );
+
+      expect(error).toBeInstanceOf(PartialResourceError);
+      const partialError = error as PartialResourceError;
+      expect(partialError.updatedState.resources['buckets.test_bucket']).toMatchObject({
+        status: 'tainted',
+      });
+      // Bucket instance present in the tainted state so a retry can recover it
+      expect(partialError.updatedState.resources['buckets.test_bucket'].instances).toHaveLength(1);
+      expect(partialError.cause.message).toBe('Upload network error');
+      // The swallowed-upload path previously wrote a 'ready' state — never again
+      const readyCalls = mockedStateManager.setResource.mock.calls.filter(
+        ([, , resourceState]) => (resourceState as { status?: string }).status === 'ready',
+      );
+      expect(readyCalls).toHaveLength(0);
+    });
+
+    it('should skip createBucket and retry upload when tainted and bucket exists in provider', async () => {
+      mockOssOperations.getBucket.mockResolvedValue(baseBucketInfo);
+      mockOssOperations.uploadFiles.mockResolvedValue(undefined);
+      mockedStateManager.getResource.mockReturnValueOnce({
+        mode: 'managed',
+        region: 'cn-hangzhou',
+        definition: {},
+        instances: [],
+        lastUpdated: new Date().toISOString(),
+        status: 'tainted',
+      });
+      mockedStateManager.setResource.mockImplementation(
+        (_state: StateFile, _logicalId: string, resourceState: unknown) => ({
+          ...initialState,
+          resources: { 'buckets.test_bucket': resourceState },
+        }),
+      );
+
       const result = await createBucketResource(mockContext, baseBucket, initialState);
 
-      expect(mockedLogger.error).toHaveBeenCalledWith(
-        expect.stringContaining('Failed to upload files to bucket'),
+      expect(mockOssOperations.createBucket).not.toHaveBeenCalled();
+      expect(mockOssOperations.uploadFiles).toHaveBeenCalledWith(
+        'test-bucket',
+        expect.stringContaining('dist'),
       );
-      expect(result.resources['buckets.test_bucket']).toBeDefined();
+      expect(result.resources['buckets.test_bucket'].instances).toHaveLength(1);
+    });
+
+    it('should create bucket when tainted but bucket absent in provider', async () => {
+      mockOssOperations.getBucket
+        .mockResolvedValueOnce(null) // pre-flight: no existing bucket in provider
+        .mockResolvedValue(baseBucketInfo);
+      mockOssOperations.createBucket.mockResolvedValue(baseBucketInfo);
+      mockOssOperations.uploadFiles.mockResolvedValue(undefined);
+      mockedStateManager.getResource.mockReturnValueOnce({
+        mode: 'managed',
+        region: 'cn-hangzhou',
+        definition: {},
+        instances: [],
+        lastUpdated: new Date().toISOString(),
+        status: 'tainted',
+      });
+      mockedStateManager.setResource.mockImplementation(
+        (_state: StateFile, _logicalId: string, resourceState: unknown) => ({
+          ...initialState,
+          resources: { 'buckets.test_bucket': resourceState },
+        }),
+      );
+
+      const result = await createBucketResource(mockContext, baseBucket, initialState);
+
+      expect(mockOssOperations.createBucket).toHaveBeenCalledWith(
+        expect.objectContaining({ bucketName: 'test-bucket' }),
+      );
+      expect(result.resources['buckets.test_bucket'].instances).toHaveLength(1);
     });
 
     it('should handle upload success with null getBucket refresh', async () => {

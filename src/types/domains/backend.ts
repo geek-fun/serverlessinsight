@@ -1,6 +1,7 @@
 export enum StateBackendType {
   LOCAL = 'LOCAL',
   BUCKET_STORE = 'BUCKET_STORE',
+  SAAS = 'SAAS',
 }
 
 export type LocalBackendConfig = {
@@ -13,7 +14,12 @@ export type BucketStoreBackendConfig = {
   key: string;
 };
 
-export type BackendConfig = LocalBackendConfig | BucketStoreBackendConfig;
+export type SaasBackendConfig = {
+  type: StateBackendType.SAAS;
+  consoleUrl?: string;
+};
+
+export type BackendConfig = LocalBackendConfig | BucketStoreBackendConfig | SaasBackendConfig;
 
 export type StateManagerConfigRaw = {
   type: string;

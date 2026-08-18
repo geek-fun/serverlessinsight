@@ -99,6 +99,38 @@ describe('TableStore Planner', () => {
       expect(plan.items[0].changes?.after?.tableName).toBe('test-table');
     });
 
+    it('should plan to create when existing state is tainted', async () => {
+      const state = setResource(initialState, 'tables.test_table', {
+        mode: 'managed',
+        region: 'cn-hangzhou',
+        definition: {
+          instanceName: 'test-instance',
+          tableName: 'test-table',
+          clusterType: 'HYBRID',
+          description: null,
+          primaryKey: [{ name: 'id', type: 'INTEGER' }],
+          attributes: [{ name: 'id', type: 'INTEGER' }],
+          reservedThroughput: null,
+          onDemandThroughput: null,
+          tableOptions: null,
+          network: null,
+        },
+        instances: [],
+        lastUpdated: new Date().toISOString(),
+        status: 'tainted',
+      });
+
+      const plan = await generateTablePlan(mockContext, state, [testTable]);
+
+      expect(plan.items).toHaveLength(1);
+      expect(plan.items[0]).toMatchObject({
+        logicalId: 'tables.test_table',
+        action: 'create',
+        resourceType: 'ALIYUN_TABLESTORE_TABLE',
+      });
+      expect(mockTablestoreOperations.getTable).not.toHaveBeenCalled();
+    });
+
     it('should plan no changes when table exists and matches state', async () => {
       mockTablestoreOperations.getTable.mockResolvedValue({
         tableName: 'test-table',

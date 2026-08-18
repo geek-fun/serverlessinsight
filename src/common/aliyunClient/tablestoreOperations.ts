@@ -1,5 +1,6 @@
 import TableStore from 'tablestore';
 import { logger } from '../logger';
+import { pollUntil, PollingTimeoutError } from '../polling';
 
 export enum TableStoreInstanceStatus {
   RUNNING = 'RUNNING',
@@ -76,35 +77,28 @@ const waitForTableReady = async (
   describeTable: (tableName: string) => Promise<TableStoreTableInfo | null>,
   tableName: string,
 ): Promise<void> => {
-  const maxAttempts = 60;
-  let attempts = 0;
-
-  while (attempts < maxAttempts) {
-    try {
-      const table = await describeTable(tableName);
-
-      if (table) {
-        logger.info(`Table ${tableName} is ready`);
-        return;
-      }
-    } catch (error: unknown) {
-      // Table might not exist yet during creation
-      if (attempts < maxAttempts - 1) {
-        logger.info(
-          `Waiting for table ${tableName} to be ready... (attempt ${attempts + 1}/${maxAttempts})`,
-        );
-        await new Promise((resolve) => setTimeout(resolve, 5000));
-        attempts++;
-        continue;
-      }
-      throw error;
+  try {
+    await pollUntil({
+      description: `table ${tableName} to be ready`,
+      fetch: () => describeTable(tableName),
+      isDone: (table) => table !== null,
+      intervalMs: 5000,
+      maxAttempts: 60,
+      onProgress: (table, attempt, maxAttempts) => {
+        if (!table) {
+          logger.info(
+            `Waiting for table ${tableName} to be ready... (attempt ${attempt}/${maxAttempts})`,
+          );
+        }
+      },
+    });
+    logger.info(`Table ${tableName} is ready`);
+  } catch (e) {
+    if (e instanceof PollingTimeoutError) {
+      throw new Error(`Timeout waiting for table ${tableName} to be ready`, { cause: e });
     }
-
-    await new Promise((resolve) => setTimeout(resolve, 5000));
-    attempts++;
+    throw e;
   }
-
-  throw new Error(`Timeout waiting for table ${tableName} to be ready`);
 };
 
 export const createTablestoreOperations = (

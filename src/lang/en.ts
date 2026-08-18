@@ -244,6 +244,8 @@ export const en = {
     '\n⚠️  WARNING: Force unlocking can cause state corruption if another\noperation is still running!',
   FORCE_UNLOCK_CONFIRM: 'Are you absolutely sure? (yes/no): ',
   FORCE_UNLOCK_CANCELLED: 'Force unlock cancelled',
+  SAAS_FORCE_UNLOCK_NOT_SUPPORTED:
+    'Force unlock is not supported via CLI for SaaS state. Open {{consoleUrl}} in your browser and unlock the deployment from the Deployments page.',
   PLAN_COMMAND_NOT_SUPPORTED: 'Plan command is not supported for this provider',
 
   // Lock info formatting
@@ -787,13 +789,17 @@ export const en = {
   TLS_PROJECT_CREATED: 'TLS project {{projectName}} created successfully',
   TLS_PROJECT_DELETED: 'TLS project {{projectName}} deleted successfully',
   TLS_PROJECT_NOT_FOUND: 'TLS project {{projectName}} not found',
+  TLS_PROJECT_ALREADY_EXISTS:
+    'TLS project {{projectName}} already exists, adopting existing project',
   TLS_PROJECT_TIMEOUT: 'Timeout waiting for TLS project {{projectName}} to be ready',
   TLS_TOPIC_CREATED: 'TLS topic {{topicName}} created successfully',
   TLS_TOPIC_DELETED: 'TLS topic {{topicName}} deleted successfully',
   TLS_TOPIC_NOT_FOUND: 'TLS topic {{topicName}} not found',
+  TLS_TOPIC_ALREADY_EXISTS: 'TLS topic {{topicName}} already exists, adopting existing topic',
   TLS_TOPIC_TIMEOUT: 'Timeout waiting for TLS topic {{topicName}} to be ready',
   TLS_INDEX_CREATED: 'TLS index for topic {{topicName}} created successfully',
   TLS_INDEX_DELETED: 'TLS index for topic {{topicName}} deleted successfully',
+  TLS_INDEX_ALREADY_EXISTS: 'TLS index for topic {{topicName}} already exists, skipping creation',
   TLS_PROJECT_FAILED: 'TLS project {{projectName}} failed to create',
   TLS_TOPIC_FAILED: 'TLS topic {{topicName}} failed to create',
   CREATING_TLS_PROJECT: 'Creating TLS project: {{projectName}}',
@@ -844,6 +850,72 @@ export const en = {
   COS_BUCKET_POLICY_DELETED: 'COS bucket policy deleted for {{bucketName}}',
   TOS_BUCKET_POLICY_SET: 'TOS bucket policy set for {{bucketName}}',
   TOS_BUCKET_POLICY_DELETED: 'TOS bucket policy deleted for {{bucketName}}',
+
+  // Auth / Login / Logout / Whoami messages
+  LOGIN_ALREADY_LOGGED_IN:
+    'Already logged in as {{userEmail}} (Org: {{orgName}}). Re-authenticate? [y/N]',
+  LOGIN_REVOKING_OLD_KEY: 'Revoking old API key...',
+  LOGIN_CHOOSE_METHOD: 'How would you like to authenticate?',
+  LOGIN_OPTION_BROWSER: 'Login via Web Console (opens browser)',
+  LOGIN_OPTION_API_KEY: 'Input API Key (paste an existing key)',
+  LOGIN_SELECT_CHOICE: 'Enter choice (1): ',
+  LOGIN_ENTER_API_KEY: 'Enter your API Key: ',
+  LOGIN_VALIDATING_KEY: 'Validating API key...',
+  LOGIN_KEY_INVALID: 'Invalid API key. Please check and try again.',
+  LOGIN_KEY_FORMAT_INVALID: 'Invalid API key format. Expected: si_<prefix>_<secret>',
+  LOGIN_STARTING_SERVER: 'Starting local server for authentication callback...',
+  LOGIN_OPENING_BROWSER: 'Opening browser for Console authorization...',
+  LOGIN_BROWSER_UNAVAILABLE:
+    'Unable to open browser automatically.\nPlease visit the following URL in your browser:\n{{url}}',
+  LOGIN_SERVER_DONE: 'Authorization received. Completing login...',
+  LOGIN_SUCCESS: '✅ Logged in as {{userEmail}} · Org: {{orgName}}',
+  LOGIN_SUCCESS_KEY: '✅ Authenticated with API key · Org: {{orgName}}',
+  LOGIN_TIMEOUT: 'Login timed out. Please try again.',
+  LOGIN_SERVER_ERROR: 'Login server error: {{error}}',
+  LOGIN_CANCELLED: 'Login cancelled.',
+
+  LOGOUT_REVOKING: 'Revoking API key...',
+  LOGOUT_DELETING_CREDENTIALS: 'Deleting stored credentials...',
+  LOGOUT_SUCCESS: '✅ Logged out',
+  LOGOUT_NOT_LOGGED_IN: 'Not logged in.',
+  LOGOUT_REVOKE_FAILED: 'Failed to revoke API key: {{error}}',
+
+  WHOAMI_LOGGED_IN: 'Logged in as {{userEmail}}',
+  WHOAMI_ORG: 'Org: {{orgName}}',
+  WHOAMI_CONSOLE: 'Console: {{url}}',
+  WHOAMI_API_KEY: 'API Key: {{keyPrefix}}...',
+  WHOAMI_NOT_LOGGED_IN: 'Not logged in. Run `si login` to authenticate.',
+  WHOAMI_KEY_ACTIVE: 'active',
+
+  // Credential messages
+  CREDENTIAL_NOT_FOUND: 'No credentials found.',
+  CREDENTIAL_CORRUPTED: 'Credentials file is corrupted. Run `si login` again.',
+  CREDENTIAL_FILE_PERMISSION: 'Warning: credentials.json has permissions {{perms}}, recommend 0600',
+  CREDENTIAL_KEY_EXPIRED: 'Stored API key is expired. Run `si login` again.',
+  CREDENTIAL_KEY_REVOKED: 'API key revoked. Run `si login` or update SI_API_KEY.',
+  CREDENTIAL_KEY_DISABLED: 'API key disabled by administrator. Contact your admin.',
+  CREDENTIAL_NETWORK_ERROR: 'Unable to reach Console. Check your connection.',
+  CREDENTIAL_KEY_SCOPE: 'API key does not have {{permission}} permission for service {{service}}',
+
+  // SaaS backend messages
+  SAAS_BACKEND_LOADING_STATE: 'Loading state from Console...',
+  SAAS_BACKEND_SAVING_STATE: 'Saving state to Console...',
+  SAAS_BACKEND_DEPLOYMENT_STARTED: 'Starting deployment on Console...',
+  SAAS_BACKEND_DEPLOYMENT_EVENT: 'Deployment event: {{logicalId}} {{action}} {{status}}',
+  SAAS_BACKEND_DEPLOYMENT_COMPLETE: 'Deployment completed on Console.',
+  SAAS_BACKEND_DEPLOYMENT_FAILED: 'Deployment failed on Console: {{error}}',
+  SAAS_BACKEND_LOCK_CHECK: 'Checking deployment lock status...',
+  SAAS_BACKEND_NO_CREDENTIALS:
+    'SaaS state requires Console login.\nRun `si login`, or:\n- Set SI_API_KEY environment variable\n- Use --si-api-key flag\n- Configure a local or bucket backend in serverlessinsight.yml',
+  SAAS_BACKEND_CONSOLE_UNREACHABLE:
+    'Unable to reach Console. Deploy requires Console connectivity.',
+
+  // API error messages
+  API_ERROR_401: 'API key is invalid or expired. Run `si login` to update.',
+  API_ERROR_403: 'Access forbidden. Contact your administrator.',
+  API_ERROR_409: 'State conflict: {{message}}',
+  API_ERROR_NETWORK: 'Network error: {{message}}. Check your connection.',
+  API_ERROR_UNKNOWN: 'API error ({{status}}): {{message}}',
 
   // HTTP trigger messages
   HTTP_TRIGGER_AUTH_TYPE_REQUIRED:

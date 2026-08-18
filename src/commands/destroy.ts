@@ -41,15 +41,56 @@ export const destroyStack = async (options: {
   );
 
   const backend = createStateBackend(iac.backend, context);
-  await backend.withLock('destroy', async () => {
-    if (iac.provider.name === ProviderEnum.TENCENT) {
-      await destroyTencentStack(backend);
-    } else if (iac.provider.name === ProviderEnum.ALIYUN) {
-      await destroyAliyunStack(backend);
-    } else if (iac.provider.name === ProviderEnum.VOLCENGINE) {
-      await destroyVolcengineStack(backend);
-    } else {
-      throw new Error(`Unsupported provider: ${iac.provider.name}`);
+
+  // Release the active lock on SIGINT/SIGTERM so Ctrl+C doesn't leave a stale
+  // lock behind. Best-effort: the local backend release is synchronous (unlink)
+  // and completes before exit; remote backends may be cut short, and their lock
+  // is then recovered via the stale/dead-PID detection path.
+  const activeSignals: NodeJS.Signals[] = ['SIGINT', 'SIGTERM'];
+  const signalHandlers = new Map<NodeJS.Signals, () => void>();
+  let currentLockId: string | null = null;
+  let released = false;
+
+  const releaseOnSignal = (): void => {
+    if (released) return;
+    released = true;
+    if (currentLockId) {
+      void backend.releaseLock(currentLockId).catch(() => {
+        // best-effort release — ignore failures on the exit path
+      });
     }
-  });
+    process.exit(130);
+  };
+
+  for (const sig of activeSignals) {
+    const handler = (): void => releaseOnSignal();
+    process.on(sig, handler);
+    signalHandlers.set(sig, handler);
+  }
+
+  try {
+    await backend.withLock(
+      'destroy',
+      async () => {
+        if (iac.provider.name === ProviderEnum.TENCENT) {
+          await destroyTencentStack(backend);
+        } else if (iac.provider.name === ProviderEnum.ALIYUN) {
+          await destroyAliyunStack(backend);
+        } else if (iac.provider.name === ProviderEnum.VOLCENGINE) {
+          await destroyVolcengineStack(backend);
+        } else {
+          throw new Error(`Unsupported provider: ${iac.provider.name}`);
+        }
+      },
+      {},
+      (lockId) => {
+        currentLockId = lockId;
+      },
+    );
+  } finally {
+    for (const [sig, handler] of signalHandlers) {
+      process.removeListener(sig, handler);
+    }
+    signalHandlers.clear();
+  }
 };

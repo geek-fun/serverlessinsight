@@ -18,8 +18,8 @@ import { generateEsPlan } from './esServerlessPlanner';
 import { executeEsPlan } from './esServerlessExecutor';
 
 const createSaveStateFn =
-  (backend: StateBackend, iac: ServerlessIac, stage: string) => (state: StateFile) => {
-    backend.saveState(state, iac.app, iac.service, stage);
+  (backend: StateBackend, iac: ServerlessIac, stage: string) => async (state: StateFile) => {
+    await backend.saveState(state, iac.app, iac.service, stage);
   };
 
 const handlePartialFailure = (failure: PartialFailureError): never => {

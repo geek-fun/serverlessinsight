@@ -1,4 +1,10 @@
-import { Context, DatabaseDomain, ResourceState, StateFile } from '../../types';
+import {
+  Context,
+  DatabaseDomain,
+  PartialResourceError,
+  ResourceState,
+  StateFile,
+} from '../../types';
 import { createTencentClient } from '../../common/tencentClient';
 import { databaseToTdsqlcConfig, extractTdsqlcDefinition, TdsqlcClusterInfo } from './tdsqlcTypes';
 import { setResource, removeResource } from '../../common/stateManager';
@@ -91,31 +97,51 @@ export const createDatabaseResource = async (
   const config = databaseToTdsqlcConfig(database);
 
   const client = createTencentClient(context);
-  const clusterId = await client.tdsqlc.createCluster(config);
-
-  // Refresh state from provider to get all attributes
-  const clusterInfo = await client.tdsqlc.getCluster(clusterId);
-  if (!clusterInfo) {
-    throw new Error(`Failed to refresh state for cluster: ${clusterId}`);
-  }
 
   const definition = extractTdsqlcDefinition(config);
-  const sid = buildSid('tencent', 'cynosdb', context.stage, clusterId);
-  const resourceState: ResourceState = {
+  const logicalId = `databases.${database.key}`;
+
+  const taintedResourceState: ResourceState = {
     mode: 'managed',
     region: context.region,
     definition,
-    instances: [buildTdsqlcInstanceFromProvider(clusterInfo as TdsqlcClusterInfo, sid)],
+    instances: [],
     lastUpdated: new Date().toISOString(),
-    metadata: {
-      clusterName: database.name,
-      clusterId,
-      resourceType: 'TDSQL_C_SERVERLESS',
-    },
+    status: 'tainted',
   };
 
-  const logicalId = `databases.${database.key}`;
-  return setResource(state, logicalId, resourceState);
+  const stateAfterDependents = setResource(state, logicalId, taintedResourceState);
+
+  try {
+    const clusterId = await client.tdsqlc.createCluster(config);
+
+    // Refresh state from provider to get all attributes
+    const clusterInfo = await client.tdsqlc.getCluster(clusterId);
+    if (!clusterInfo) {
+      throw new Error(`Failed to refresh state for cluster: ${clusterId}`);
+    }
+
+    const sid = buildSid('tencent', 'cynosdb', context.stage, clusterId);
+    const resourceState: ResourceState = {
+      mode: 'managed',
+      region: context.region,
+      definition,
+      instances: [buildTdsqlcInstanceFromProvider(clusterInfo as TdsqlcClusterInfo, sid)],
+      lastUpdated: new Date().toISOString(),
+      metadata: {
+        clusterName: database.name,
+        clusterId,
+        resourceType: 'TDSQL_C_SERVERLESS',
+      },
+    };
+
+    return setResource(state, logicalId, resourceState);
+  } catch (error) {
+    throw new PartialResourceError(
+      stateAfterDependents,
+      error instanceof Error ? error : new Error(String(error)),
+    );
+  }
 };
 
 export const readDatabaseResource = async (context: Context, clusterId: string) => {

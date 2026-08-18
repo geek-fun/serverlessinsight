@@ -49,20 +49,22 @@ export const generateApigwPlan = async (
         domain: extractEventDomainDefinition(event.domain),
       };
 
-      if (!currentState) {
-        try {
-          const remoteGateway = await client.apigw.findGatewayByName(groupConfig.groupName);
-          if (remoteGateway) {
-            return {
-              logicalId,
-              action: 'update',
-              resourceType: 'VOLCENGINE_APIGW',
-              changes: { after: desiredDefinition },
-              drifted: true,
-            };
+      if (!currentState || currentState.status === 'tainted') {
+        if (!currentState) {
+          try {
+            const remoteGateway = await client.apigw.findGatewayByName(groupConfig.groupName);
+            if (remoteGateway) {
+              return {
+                logicalId,
+                action: 'update',
+                resourceType: 'VOLCENGINE_APIGW',
+                changes: { after: desiredDefinition },
+                drifted: true,
+              };
+            }
+          } catch {
+            // Ignore errors when checking remote
           }
-        } catch {
-          // Ignore errors when checking remote
         }
 
         return {

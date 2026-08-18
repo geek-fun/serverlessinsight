@@ -24,11 +24,12 @@ const validateExistence = (path: string) => {
 };
 
 const parseBackend = (raw: BackendConfigRaw | undefined): BackendConfig | undefined => {
-  if (!raw) return undefined;
+  // No backend config → default to SAAS
+  if (!raw || !raw.state_manager) {
+    return { type: StateBackendType.SAAS };
+  }
 
   const stateManager = raw.state_manager;
-  if (!stateManager) return undefined;
-
   const type = stateManager.type?.toUpperCase();
 
   if (type === StateBackendType.BUCKET_STORE) {
@@ -40,6 +41,10 @@ const parseBackend = (raw: BackendConfigRaw | undefined): BackendConfig | undefi
       bucket: stateManager.bucket,
       key: stateManager.key,
     };
+  }
+
+  if (type === StateBackendType.SAAS) {
+    return { type: StateBackendType.SAAS };
   }
 
   return { type: StateBackendType.LOCAL };

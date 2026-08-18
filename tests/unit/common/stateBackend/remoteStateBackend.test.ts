@@ -4,6 +4,7 @@ import { StorageAdapter } from '../../../../src/common/stateBackend/types';
 import {
   StateFile,
   LockMetadata,
+  StateVersionError,
   CURRENT_STATE_VERSION,
   ResourceState,
 } from '../../../../src/types';
@@ -91,6 +92,37 @@ describe('remoteStateBackend', () => {
       const result = await backend.loadState('aliyun', 'test-app', 'test-service', 'dev');
 
       expect(result.resources).toEqual({});
+    });
+
+    it('should throw StateVersionError for a newer unknown state version', async () => {
+      mockAdapter.read.mockResolvedValue({
+        version: '99.0',
+        provider: 'aliyun',
+        app: 'test-app',
+        service: 'test-service',
+        stages: {},
+        resources: {},
+      } as StateFile);
+
+      const backend = createRemoteStateBackend(mockAdapter, { key: 'state.json' });
+      await expect(backend.loadState('aliyun', 'test-app', 'test-service', 'dev')).rejects.toThrow(
+        StateVersionError,
+      );
+    });
+
+    it('should load a legacy state with an older version', async () => {
+      mockAdapter.read.mockResolvedValue({
+        version: '1.0.0',
+        provider: 'aliyun',
+        app: 'test-app',
+        service: 'test-service',
+        stages: {},
+        resources: {},
+      } as StateFile);
+
+      const backend = createRemoteStateBackend(mockAdapter, { key: 'state.json' });
+      const result = await backend.loadState('aliyun', 'test-app', 'test-service', 'dev');
+      expect(result.version).toBe('1.0.0');
     });
   });
 

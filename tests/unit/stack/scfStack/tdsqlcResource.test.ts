@@ -187,6 +187,38 @@ describe('TdsqlcResource', () => {
         `Failed to refresh state for cluster: ${clusterId}`,
       );
     });
+
+    it('should persist tainted state via PartialResourceError on create failure', async () => {
+      const error = new Error('Create failed');
+      mockTdsqlcOperations.createCluster.mockRejectedValue(error);
+
+      const taintedState = {
+        ...mockState,
+        resources: {
+          'databases.test_db': {
+            mode: 'managed',
+            region: 'ap-guangzhou',
+            definition: { clusterName: 'test-tdsqlc' },
+            instances: [],
+            lastUpdated: expect.any(String),
+            status: 'tainted',
+          },
+        },
+      };
+      mockedStateManager.setResource.mockReturnValue(taintedState);
+
+      await expect(
+        createDatabaseResource(mockContext, mockDatabase, mockState),
+      ).rejects.toMatchObject({
+        name: 'PartialResourceError',
+        cause: { message: 'Create failed' },
+        updatedState: expect.objectContaining({
+          resources: expect.objectContaining({
+            'databases.test_db': expect.objectContaining({ status: 'tainted' }),
+          }),
+        }),
+      });
+    });
   });
 
   describe('readDatabaseResource', () => {

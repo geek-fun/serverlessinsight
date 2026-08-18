@@ -1,6 +1,8 @@
 import SlsClient from '@alicloud/sls20201230';
 import * as sls from '@alicloud/sls20201230';
 import { SlsProjectInfo, SlsLogstoreInfo, SlsIndexInfo } from './types';
+import { logger } from '../logger';
+import { pollUntil, PollingTimeoutError } from '../polling';
 
 type SlsSdkClient = SlsClient;
 
@@ -8,20 +10,37 @@ const waitForSlsProject = async (
   getProject: (projectName: string) => Promise<SlsProjectInfo | null>,
   projectName: string,
 ): Promise<SlsProjectInfo> => {
-  let retries = 0;
-  while (retries < 30) {
-    try {
-      const project = await getProject(projectName);
-      if (project && project.status === 'Normal') {
-        return project;
-      }
-    } catch {
-      // Project not ready yet
+  try {
+    const project = await pollUntil<SlsProjectInfo>({
+      description: `SLS project ${projectName} to be ready`,
+      fetch: async () => {
+        try {
+          return await getProject(projectName);
+        } catch {
+          // Project not ready yet
+          return null;
+        }
+      },
+      isDone: (project) => project?.status === 'Normal',
+      intervalMs: 3000,
+      maxAttempts: 30,
+      onProgress: (project) => {
+        if (project) {
+          logger.info(
+            `Waiting for SLS project ${projectName} to be ready (current status: ${
+              project.status ?? 'unknown'
+            })`,
+          );
+        }
+      },
+    });
+    return project!;
+  } catch (e) {
+    if (e instanceof PollingTimeoutError) {
+      return { projectName };
     }
-    await new Promise((resolve) => setTimeout(resolve, 3000));
-    retries++;
+    throw e;
   }
-  return { projectName };
 };
 
 const waitForSlsLogstore = async (
@@ -30,20 +49,33 @@ const waitForSlsLogstore = async (
   logstoreName: string,
   ttl: number,
 ): Promise<SlsLogstoreInfo> => {
-  let retries = 0;
-  while (retries < 30) {
-    try {
-      const logstore = await getLogstore(projectName, logstoreName);
-      if (logstore) {
-        return logstore;
-      }
-    } catch {
-      // Logstore not ready yet
+  try {
+    const logstore = await pollUntil<SlsLogstoreInfo>({
+      description: `SLS logstore ${projectName}/${logstoreName} to be ready`,
+      fetch: async () => {
+        try {
+          return await getLogstore(projectName, logstoreName);
+        } catch {
+          // Logstore not ready yet
+          return null;
+        }
+      },
+      isDone: (logstore) => logstore != null,
+      intervalMs: 3000,
+      maxAttempts: 30,
+      onProgress: (logstore) => {
+        if (logstore) {
+          logger.info(`Waiting for SLS logstore ${projectName}/${logstoreName} to be ready...`);
+        }
+      },
+    });
+    return logstore!;
+  } catch (e) {
+    if (e instanceof PollingTimeoutError) {
+      return { logstoreName, projectName, ttl };
     }
-    await new Promise((resolve) => setTimeout(resolve, 3000));
-    retries++;
+    throw e;
   }
-  return { logstoreName, projectName, ttl };
 };
 
 export const createSlsOperations = (slsClient: SlsSdkClient) => {

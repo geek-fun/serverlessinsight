@@ -21,6 +21,10 @@ stages:
 
 service: insight-poc
 
+backend:
+  state_manager:
+    type: LOCAL
+
 tags:
   owner: geek-fun
 

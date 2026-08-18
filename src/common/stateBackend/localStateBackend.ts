@@ -56,7 +56,11 @@ export const createLocalStateBackend = (
       operation: string,
       fn: () => Promise<T>,
       options?: LockOptions,
+      onLockAcquired?: (lockId: string) => void,
     ): Promise<T> => {
+      if (onLockAcquired) {
+        return fsWithLock(statePath, operation, fn, options, onLockAcquired);
+      }
       return fsWithLock(statePath, operation, fn, options);
     },
   };

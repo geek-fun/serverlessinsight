@@ -1,7 +1,7 @@
 import { createAliyunClient } from '../../common/aliyunClient';
 import { TableStoreTableInfo } from '../../common/aliyunClient/tablestoreOperations';
 import { setResource, removeResource, buildSid } from '../../common';
-import { Context, TableDomain, ResourceState, StateFile } from '../../types';
+import { Context, TableDomain, PartialResourceError, ResourceState, StateFile } from '../../types';
 import { tableToTableStoreConfig, extractTableStoreDefinition } from './tablestoreTypes';
 import { logger } from '../../common/logger';
 
@@ -87,23 +87,7 @@ export const createTableResource = async (
   const client = createAliyunClient(context);
   const tablestoreClient = client.tablestore(config.instanceName);
 
-  // Create table
-  await tablestoreClient.createTable({
-    tableName: config.tableName,
-    primaryKey: config.primaryKey,
-    reservedThroughput: config.reservedThroughput,
-    tableOptions: config.tableOptions,
-  });
-
-  // Wait for table to be ready
-  await tablestoreClient.waitForTableReady(config.tableName);
-
-  // Refresh state from provider to get all attributes
-  const tableInfo = await tablestoreClient.getTable(config.tableName);
-  if (!tableInfo) {
-    throw new Error(`Failed to refresh state for table: ${config.tableName}`);
-  }
-
+  const logicalId = `tables.${table.key}`;
   const definition = extractTableStoreDefinition(config);
   const sid = buildSid(
     'aliyun',
@@ -111,18 +95,58 @@ export const createTableResource = async (
     context.stage,
     `${config.instanceName}/${config.tableName}`,
   );
-  const resourceState: ResourceState = {
+
+  const taintedResourceState: ResourceState = {
     mode: 'managed',
     region: context.region,
     definition,
-    instances: [
-      buildTableStoreInstanceFromProvider(tableInfo, sid, config.instanceName, config.clusterType),
-    ],
+    instances: [],
     lastUpdated: new Date().toISOString(),
+    status: 'tainted',
   };
 
-  const logicalId = `tables.${table.key}`;
-  return setResource(state, logicalId, resourceState);
+  const stateAfterDependents = setResource(state, logicalId, taintedResourceState);
+
+  try {
+    // Create table
+    await tablestoreClient.createTable({
+      tableName: config.tableName,
+      primaryKey: config.primaryKey,
+      reservedThroughput: config.reservedThroughput,
+      tableOptions: config.tableOptions,
+    });
+
+    // Wait for table to be ready
+    await tablestoreClient.waitForTableReady(config.tableName);
+
+    // Refresh state from provider to get all attributes
+    const tableInfo = await tablestoreClient.getTable(config.tableName);
+    if (!tableInfo) {
+      throw new Error(`Failed to refresh state for table: ${config.tableName}`);
+    }
+
+    const resourceState: ResourceState = {
+      mode: 'managed',
+      region: context.region,
+      definition,
+      instances: [
+        buildTableStoreInstanceFromProvider(
+          tableInfo,
+          sid,
+          config.instanceName,
+          config.clusterType,
+        ),
+      ],
+      lastUpdated: new Date().toISOString(),
+    };
+
+    return setResource(stateAfterDependents, logicalId, resourceState);
+  } catch (error) {
+    throw new PartialResourceError(
+      stateAfterDependents,
+      error instanceof Error ? error : new Error(String(error)),
+    );
+  }
 };
 
 export const readTableResource = async (

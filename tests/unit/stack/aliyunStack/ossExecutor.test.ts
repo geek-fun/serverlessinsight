@@ -6,6 +6,7 @@ import {
   StateFile,
   BucketDomain,
   BucketAccessEnum,
+  PartialResourceError,
   Plan,
 } from '../../../../src/types';
 
@@ -199,6 +200,52 @@ describe('OssExecutor', () => {
       expect(result.partialFailure).toBeDefined();
       expect(result.partialFailure?.error).toBe(error);
       expect(result.partialFailure?.failedItem.logicalId).toBe('buckets.bucket1');
+    });
+
+    it('should persist tainted state via onStateChange when resource throws PartialResourceError', async () => {
+      const bucket = createTestBucket('bucket1');
+      const plan: Plan = {
+        items: [
+          {
+            logicalId: 'buckets.bucket1',
+            action: 'create',
+            resourceType: 'ALIYUN_OSS_BUCKET',
+          },
+        ],
+      };
+
+      const updatedState: StateFile = {
+        ...initialState,
+        resources: {
+          'buckets.bucket1': {
+            mode: 'managed',
+            region: 'cn-hangzhou',
+            definition: {},
+            instances: [],
+            lastUpdated: new Date().toISOString(),
+            status: 'tainted',
+          },
+        },
+      };
+      const cause = new Error('Create failed');
+      mockedBucketResource.createBucketResource.mockRejectedValue(
+        new PartialResourceError(updatedState, cause),
+      );
+
+      const onStateChange = jest.fn();
+      const result = await executeBucketPlan(
+        mockContext,
+        plan,
+        [bucket],
+        initialState,
+        onStateChange,
+      );
+
+      expect(result.state).toEqual(updatedState);
+      expect(result.partialFailure).toBeDefined();
+      expect(result.partialFailure?.error).toBe(cause);
+      expect(result.partialFailure?.failedItem.logicalId).toBe('buckets.bucket1');
+      expect(onStateChange).toHaveBeenCalledWith(updatedState);
     });
 
     it('should handle update action failure', async () => {

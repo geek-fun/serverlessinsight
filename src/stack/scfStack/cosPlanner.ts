@@ -33,7 +33,7 @@ export const generateBucketPlan = async (
       const config = bucketToCosBucketConfig(bucket, context.region);
       const desiredDefinition = extractCosBucketDefinition(config);
 
-      if (!currentState) {
+      if (!currentState || currentState.status === 'tainted') {
         return {
           logicalId,
           action: 'create',

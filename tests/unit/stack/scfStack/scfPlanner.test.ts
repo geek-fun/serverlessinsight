@@ -82,6 +82,47 @@ describe('SCF Planner', () => {
       expect(plan.items[0].changes?.after).toBeDefined();
     });
 
+    it('should plan create when state status is tainted', async () => {
+      const state = setResource(initalState, 'functions.test_fn', {
+        mode: 'managed',
+        region: 'ap-guangzhou',
+        status: 'tainted',
+        definition: {
+          functionName: 'test-function',
+          runtime: 'Nodejs18.15',
+          handler: 'index.handler',
+          memorySize: 512,
+          timeout: 10,
+          environment: {},
+          codeHash: 'old-code-hash',
+          vpcConfig: null,
+          diskSize: null,
+          cfsConfig: null,
+          useGpu: null,
+          imageConfig: null,
+        },
+        instances: [
+          {
+            sid: 'si:tencent:scf:default:test-function',
+            id: 'test-function',
+            functionName: 'test-function',
+          },
+        ],
+        lastUpdated: new Date().toISOString(),
+      });
+
+      const plan = await generateFunctionPlan(mockContext, state, [testFunction]);
+
+      expect(plan.items).toHaveLength(1);
+      expect(plan.items[0]).toMatchObject({
+        logicalId: 'functions.test_fn',
+        action: 'create',
+        resourceType: 'SCF',
+      });
+      expect(plan.items[0].changes?.after).toBeDefined();
+      expect(plan.items[0].changes?.before).toBeUndefined();
+    });
+
     it('should plan no changes when function exists and matches state', async () => {
       mockScfOperations.getFunction.mockResolvedValue({
         FunctionName: 'test-function',

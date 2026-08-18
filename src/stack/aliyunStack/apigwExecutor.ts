@@ -6,6 +6,7 @@ import {
   SaveStateFn,
   ExecutionResult,
   PlanItem,
+  PartialResourceError,
 } from '../../types';
 import { createApigwResource, deleteApigwResource, updateApigwResource } from './apigwResource';
 import { logger } from '../../common';
@@ -128,7 +129,7 @@ export const executeApigwPlan = async (
         currentState = newState;
         successfulItems.push(item);
         if (onStateChange) {
-          onStateChange(currentState);
+          await onStateChange(currentState);
           logger.debug(
             lang.__('STATE_PERSISTED_AFTER_OPERATION', {
               action: item.action,
@@ -138,6 +139,20 @@ export const executeApigwPlan = async (
         }
       }
     } catch (error) {
+      if (error instanceof PartialResourceError) {
+        const updatedState = error.updatedState;
+        if (onStateChange) {
+          await onStateChange(updatedState);
+        }
+        return {
+          state: updatedState,
+          partialFailure: {
+            failedItem: item,
+            error: error.cause,
+            successfulItems,
+          },
+        };
+      }
       return {
         state: currentState,
         partialFailure: {

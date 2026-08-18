@@ -8,6 +8,7 @@ import {
 import {
   Context,
   CURRENT_STATE_VERSION,
+  PartialResourceError,
   StateFile,
   TableDomain,
   TableEnum,
@@ -308,6 +309,29 @@ describe('TablestoreResource', () => {
       await expect(createTableResource(mockContext, table, initialState)).rejects.toThrow(
         'Failed to refresh state for table: test-table',
       );
+    });
+
+    it('should throw PartialResourceError with tainted state when createTable fails', async () => {
+      const table = createTestTable('test_table');
+
+      mockTablestoreClient.createTable.mockRejectedValue(new Error('Create failed'));
+      mockedStateManager.setResource.mockImplementation(
+        (_state: StateFile, _logicalId: string, resourceState: unknown) => ({
+          ...initialState,
+          resources: { 'tables.test_table': resourceState },
+        }),
+      );
+
+      const error = await createTableResource(mockContext, table, initialState).catch(
+        (e: unknown) => e,
+      );
+
+      expect(error).toBeInstanceOf(PartialResourceError);
+      const partialError = error as PartialResourceError;
+      expect(partialError.updatedState.resources['tables.test_table']).toMatchObject({
+        status: 'tainted',
+      });
+      expect(partialError.cause.message).toBe('Create failed');
     });
 
     it('should handle table with null/undefined optional fields', async () => {

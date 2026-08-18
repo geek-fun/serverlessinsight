@@ -15,6 +15,7 @@ import {
   DatabaseVersionEnum,
   ResourceMode,
   ResourceInstance,
+  PartialResourceError,
 } from '../../../../src/types';
 
 jest.mock('../../../../src/stack/scfStack/esServerlessResource');
@@ -514,6 +515,53 @@ describe('esServerlessExecutor', () => {
       expect(result.partialFailure?.failedItem).toEqual(plan.items[0]);
       expect(result.partialFailure?.successfulItems).toEqual([]);
       expect(result.state).toEqual(initialState);
+    });
+
+    it('should persist updatedState via onStateChange on PartialResourceError', async () => {
+      const plan: Plan = {
+        items: [
+          {
+            logicalId: 'databases.test_db',
+            action: 'create',
+            resourceType: 'TENCENT_ES_SERVERLESS',
+            changes: { after: {} },
+          },
+        ],
+      };
+
+      const taintedState: StateFile = {
+        ...initialState,
+        resources: {
+          'databases.test_db': {
+            mode: 'managed',
+            region: 'ap-guangzhou',
+            definition: { name: 'test-db' },
+            instances: [],
+            lastUpdated: new Date().toISOString(),
+          },
+        },
+      };
+
+      const causeErr = new Error('Create failed after partial provision');
+      (esResource.createEsResource as jest.Mock).mockRejectedValue(
+        new PartialResourceError(taintedState, causeErr),
+      );
+
+      const onStateChange = jest.fn();
+      const result = await executeEsPlan(
+        mockContext,
+        plan,
+        [testDatabase],
+        initialState,
+        onStateChange,
+      );
+
+      expect(onStateChange).toHaveBeenCalledWith(taintedState);
+      expect(result.state).toEqual(taintedState);
+      expect(result.partialFailure).toBeDefined();
+      expect(result.partialFailure?.error).toBe(causeErr);
+      expect(result.partialFailure?.failedItem.logicalId).toBe('databases.test_db');
+      expect(result.partialFailure?.successfulItems).toEqual([]);
     });
 
     it('should handle multiple plan items and stop on first error', async () => {

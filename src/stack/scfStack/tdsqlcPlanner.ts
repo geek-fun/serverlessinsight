@@ -51,7 +51,7 @@ export const generateDatabasePlan = async (
       const config = databaseToTdsqlcConfig(database);
       const desiredDefinition = extractTdsqlcDefinition(config);
 
-      if (!currentState) {
+      if (!currentState || currentState.status === 'tainted') {
         return {
           logicalId,
           action: 'create',

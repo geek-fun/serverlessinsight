@@ -16,6 +16,9 @@ import { runLocal } from './local';
 import { plan } from './plan';
 import { forceUnlockCommand } from './forceUnlock';
 import { show } from './show';
+import { login } from './login';
+import { logout } from './logout';
+import { whoami } from './whoami';
 import { lang } from '../lang';
 import { parseYaml, revalYaml } from '../parser';
 
@@ -76,6 +79,34 @@ const actionWrapper = <T extends unknown[]>(
 const program = new Command();
 
 program.name('si').description('CLI for ServerlessInsight').version(getVersion());
+
+program
+  .command('login')
+  .description('authenticate with ServerlessInsight Console')
+  .option('--si-api-key <key>', 'authenticate with an existing API key')
+  .action(
+    actionWrapper('login', async ({ siApiKey }) => {
+      await login({ siApiKey });
+    }),
+  );
+
+program
+  .command('logout')
+  .description('revoke API key and clear local credentials')
+  .action(
+    actionWrapper('logout', async () => {
+      await logout();
+    }),
+  );
+
+program
+  .command('whoami')
+  .description('show current login status')
+  .action(
+    actionWrapper('whoami', async () => {
+      await whoami();
+    }),
+  );
 
 program
   .command('show')
@@ -150,6 +181,7 @@ program
   .option('-k, --accessKeyId <accessKeyId>', 'specify the AccessKeyId')
   .option('-x, --accessKeySecret <accessKeySecret>', 'specify the AccessKeySecret')
   .option('-n, --securityToken <securityToken>', 'specify the SecurityToken')
+  .option('--si-api-key <key>', 'ServerlessInsight API key (overrides SI_API_KEY env)')
   .option('-y, --auto-approve', 'skip interactive approval of plan before deploying')
   .option(
     '-p, --parameter <key=value>',
@@ -173,6 +205,7 @@ program
         accessKeyId,
         accessKeySecret,
         securityToken,
+        siApiKey,
         autoApprove,
       }) => {
         await deploy({
@@ -184,6 +217,7 @@ program
           accessKeyId,
           accessKeySecret,
           securityToken,
+          siApiKey,
           autoApprove,
         });
       },

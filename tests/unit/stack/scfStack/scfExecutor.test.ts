@@ -3,7 +3,13 @@ import * as scfResource from '../../../../src/stack/scfStack/scfResource';
 import { ProviderEnum } from '../../../../src/common';
 import { getResource } from '../../../../src/common/stateManager';
 import { logger } from '../../../../src/common/logger';
-import { Context, Plan, StateFile, CURRENT_STATE_VERSION } from '../../../../src/types';
+import {
+  Context,
+  Plan,
+  PartialResourceError,
+  StateFile,
+  CURRENT_STATE_VERSION,
+} from '../../../../src/types';
 
 // Mock dependencies
 jest.mock('../../../../src/stack/scfStack/scfResource');
@@ -362,10 +368,65 @@ describe('ScfExecutor', () => {
       const error = new Error('Test error');
       (scfResource.createResource as jest.Mock).mockRejectedValue(error);
 
-      const result = await executeFunctionPlan(mockContext, plan, [testFunction], initialState);
+      const onStateChange = jest.fn();
+      const result = await executeFunctionPlan(
+        mockContext,
+        plan,
+        [testFunction],
+        initialState,
+        onStateChange,
+      );
 
       expect(result.partialFailure).toBeDefined();
       expect(result.partialFailure?.error.message).toBe('Test error');
+      expect(result.partialFailure?.failedItem.logicalId).toBe('functions.test_fn');
+      expect(result.partialFailure?.successfulItems).toEqual([]);
+      expect(result.state).toEqual(initialState);
+      expect(onStateChange).not.toHaveBeenCalled();
+    });
+
+    it('should persist updatedState via onStateChange on PartialResourceError', async () => {
+      const plan: Plan = {
+        items: [
+          {
+            logicalId: 'functions.test_fn',
+            action: 'create',
+            resourceType: 'SCF',
+          },
+        ],
+      };
+
+      const taintedState: StateFile = {
+        ...initialState,
+        resources: {
+          'functions.test_fn': {
+            mode: 'managed',
+            region: 'ap-guangzhou',
+            definition: { functionName: 'test-function' },
+            instances: [{ sid: 'si:test:test:default:test', id: 'test-function' }],
+            lastUpdated: new Date().toISOString(),
+          },
+        },
+      };
+
+      const causeErr = new Error('Create failed after partial provision');
+      (scfResource.createResource as jest.Mock).mockRejectedValue(
+        new PartialResourceError(taintedState, causeErr),
+      );
+
+      const onStateChange = jest.fn();
+      const result = await executeFunctionPlan(
+        mockContext,
+        plan,
+        [testFunction],
+        initialState,
+        onStateChange,
+      );
+
+      expect(onStateChange).toHaveBeenCalledWith(taintedState);
+      expect(result.state).toEqual(taintedState);
+      expect(result.partialFailure).toBeDefined();
+      expect(result.partialFailure?.error).toBe(causeErr);
       expect(result.partialFailure?.failedItem.logicalId).toBe('functions.test_fn');
       expect(result.partialFailure?.successfulItems).toEqual([]);
     });
@@ -400,6 +461,65 @@ describe('ScfExecutor', () => {
       await executeFunctionPlan(mockContext, plan, [testFunction], initialState, onStateChange);
 
       expect(onStateChange).toHaveBeenCalledWith(newState);
+    });
+
+    it('should await onStateChange before resolving (no fire-and-forget saves)', async () => {
+      const plan: Plan = {
+        items: [
+          {
+            logicalId: 'functions.test_fn',
+            action: 'create',
+            resourceType: 'SCF',
+          },
+        ],
+      };
+
+      const newState = {
+        ...initialState,
+        resources: {
+          'functions.test_fn': {
+            mode: 'managed',
+            region: 'ap-guangzhou',
+            definition: { functionName: 'test-function' },
+            instances: [{ sid: 'si:test:test:default:test', id: 'test-function' }],
+            lastUpdated: new Date().toISOString(),
+          },
+        },
+      };
+
+      (scfResource.createResource as jest.Mock).mockResolvedValue(newState);
+
+      let resolveSave: (() => void) | undefined;
+      let saveStarted = false;
+      const onStateChange = jest.fn(() => {
+        saveStarted = true;
+        return new Promise<void>((resolve) => {
+          resolveSave = resolve;
+        });
+      });
+
+      let executorResolved = false;
+      const executorPromise = executeFunctionPlan(
+        mockContext,
+        plan,
+        [testFunction],
+        initialState,
+        onStateChange,
+      ).then((result) => {
+        executorResolved = true;
+        return result;
+      });
+
+      await new Promise((resolve) => setImmediate(resolve));
+
+      expect(saveStarted).toBe(true);
+      expect(executorResolved).toBe(false);
+
+      resolveSave!();
+      const result = await executorPromise;
+
+      expect(executorResolved).toBe(true);
+      expect(result.partialFailure).toBeUndefined();
     });
 
     it('should track successful items on partial failure', async () => {

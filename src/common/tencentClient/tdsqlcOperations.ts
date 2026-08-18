@@ -3,6 +3,7 @@ import { Context } from '../../types';
 import { TdsqlcClusterConfig, TdsqlcClusterInfo, TdsqlcClusterStatus } from './types';
 import { logger } from '../logger';
 import { lang } from '../../lang';
+import { pollUntil, PollingTimeoutError } from '../polling';
 
 type CynosdbClient = InstanceType<typeof cynosdb.cynosdb.v20190107.Client>;
 type CynosdbSdkClient = CynosdbClient;
@@ -12,67 +13,76 @@ const waitForClusterReady = async (
   getCluster: (clusterId: string) => Promise<TdsqlcClusterInfo | null>,
   clusterId: string,
 ): Promise<void> => {
-  const maxAttempts = 60;
-  let attempts = 0;
+  try {
+    await pollUntil({
+      description: `TDSQL-C cluster ${clusterId} to be ready`,
+      fetch: async () => {
+        const cluster = await getCluster(clusterId);
 
-  while (attempts < maxAttempts) {
-    const cluster = await getCluster(clusterId);
+        if (!cluster) {
+          throw new Error(lang.__('TDSQL_CLUSTER_NOT_FOUND', { clusterId }));
+        }
 
-    if (!cluster) {
-      throw new Error(lang.__('TDSQL_CLUSTER_NOT_FOUND', { clusterId }));
+        if (
+          cluster.Status === TdsqlcClusterStatus.ISOLATED ||
+          cluster.Status === TdsqlcClusterStatus.OFFLINE
+        ) {
+          throw new Error(lang.__('TDSQL_CLUSTER_ERROR_STATE', { status: cluster.Status }));
+        }
+
+        return cluster;
+      },
+      isDone: (cluster) => cluster?.Status === TdsqlcClusterStatus.RUNNING,
+      intervalMs: 10000,
+      maxAttempts: 60,
+      onProgress: (cluster) => {
+        if (cluster) {
+          logger.info(lang.__('TDSQL_CLUSTER_WAITING', { clusterId, status: cluster.Status }));
+        }
+      },
+    });
+    logger.info(lang.__('TDSQL_CLUSTER_READY', { clusterId }));
+  } catch (e) {
+    if (e instanceof PollingTimeoutError) {
+      throw new Error(lang.__('TDSQL_CLUSTER_TIMEOUT_READY', { clusterId }), { cause: e });
     }
-
-    if (cluster.Status === TdsqlcClusterStatus.RUNNING) {
-      logger.info(lang.__('TDSQL_CLUSTER_READY', { clusterId }));
-      return;
-    }
-
-    if (
-      cluster.Status === TdsqlcClusterStatus.ISOLATED ||
-      cluster.Status === TdsqlcClusterStatus.OFFLINE
-    ) {
-      throw new Error(lang.__('TDSQL_CLUSTER_ERROR_STATE', { status: cluster.Status }));
-    }
-
-    logger.info(lang.__('TDSQL_CLUSTER_WAITING', { clusterId, status: cluster.Status }));
-    await new Promise((resolve) => setTimeout(resolve, 10000));
-    attempts++;
+    throw e;
   }
-
-  throw new Error(lang.__('TDSQL_CLUSTER_TIMEOUT_READY', { clusterId }));
 };
 
 const waitForClusterDeleted = async (
   getCluster: (clusterId: string) => Promise<TdsqlcClusterInfo | null>,
   clusterId: string,
 ): Promise<void> => {
-  const maxAttempts = 60;
-  let attempts = 0;
-
-  while (attempts < maxAttempts) {
-    const cluster = await getCluster(clusterId);
-
-    if (!cluster) {
-      logger.info(lang.__('TDSQL_CLUSTER_DELETED', { clusterId }));
-      return;
+  try {
+    await pollUntil({
+      description: `TDSQL-C cluster ${clusterId} to be deleted`,
+      fetch: () => getCluster(clusterId),
+      isDone: (cluster) => cluster === null,
+      intervalMs: 10000,
+      maxAttempts: 60,
+      onProgress: (cluster) => {
+        if (cluster) {
+          if (
+            cluster.Status === TdsqlcClusterStatus.ISOLATED ||
+            cluster.Status === TdsqlcClusterStatus.OFFLINE
+          ) {
+            logger.info(lang.__('TDSQL_CLUSTER_BEING_DELETED', { clusterId }));
+          } else {
+            logger.info(
+              lang.__('TDSQL_CLUSTER_WAITING_DELETE', { clusterId, status: cluster.Status }),
+            );
+          }
+        }
+      },
+    });
+    logger.info(lang.__('TDSQL_CLUSTER_DELETED', { clusterId }));
+  } catch (e) {
+    if (e instanceof PollingTimeoutError) {
+      throw new Error(lang.__('TDSQL_CLUSTER_TIMEOUT_DELETE', { clusterId }), { cause: e });
     }
-
-    if (
-      cluster.Status === TdsqlcClusterStatus.ISOLATED ||
-      cluster.Status === TdsqlcClusterStatus.OFFLINE
-    ) {
-      logger.info(lang.__('TDSQL_CLUSTER_BEING_DELETED', { clusterId }));
-      await new Promise((resolve) => setTimeout(resolve, 10000));
-      attempts++;
-      continue;
-    }
-
-    logger.info(lang.__('TDSQL_CLUSTER_WAITING_DELETE', { clusterId, status: cluster.Status }));
-    await new Promise((resolve) => setTimeout(resolve, 10000));
-    attempts++;
+    throw e;
   }
-
-  throw new Error(lang.__('TDSQL_CLUSTER_TIMEOUT_DELETE', { clusterId }));
 };
 
 // TDSQL-C operations

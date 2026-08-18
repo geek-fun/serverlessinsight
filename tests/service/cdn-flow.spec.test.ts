@@ -215,6 +215,10 @@ stages:
 
 service: ${SERVICE_NAME}
 
+backend:
+  state_manager:
+    type: LOCAL
+
 buckets:
   site_bucket:
     name: ${BUCKET_NAME}

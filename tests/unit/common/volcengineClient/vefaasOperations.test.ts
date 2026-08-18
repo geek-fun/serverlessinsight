@@ -7,7 +7,13 @@ import type { VefaasFunctionConfig } from '../../../../src/common/volcengineClie
 jest.mock('@volcengine/openapi', () => {
   return {
     Service: jest.fn().mockImplementation(() => ({
-      fetchOpenAPI: jest.fn().mockResolvedValue({ Result: {} }),
+      fetchOpenAPI: jest
+        .fn()
+        .mockImplementation(({ Action }: { Action: string }) =>
+          Promise.resolve(
+            Action === 'GetFunction' ? { Result: { Status: 'Active' } } : { Result: {} },
+          ),
+        ),
     })),
   };
 });
@@ -180,10 +186,19 @@ describe('vefaasOperations code size validation', () => {
         secretKey: 'test-sk',
         region: 'cn-beijing',
       }) as jest.Mocked<Service>;
-      mockService.fetchOpenAPI = jest.fn().mockResolvedValue({
-        Result: {},
-        ResponseMetadata: { RequestId: 'test-request-id', Service: 'vefaas' },
-      });
+      mockService.fetchOpenAPI = jest.fn().mockImplementation(({ Action }: { Action: string }) =>
+        Promise.resolve(
+          Action === 'GetFunction'
+            ? {
+                Result: { Status: 'Active' },
+                ResponseMetadata: { RequestId: 'test-request-id', Service: 'vefaas' },
+              }
+            : {
+                Result: {},
+                ResponseMetadata: { RequestId: 'test-request-id', Service: 'vefaas' },
+              },
+        ),
+      );
       operations = createVefaasOperations(mockService);
     });
 
@@ -309,6 +324,15 @@ describe('vefaasOperations code size validation', () => {
 
     describe('deleteFunction', () => {
       it('should delete function', async () => {
+        // DeleteFunction succeeds, then waitForFunctionDeleted polls GetFunction
+        // until it returns null (FunctionNotFound) to confirm deletion.
+        mockService.fetchOpenAPI
+          .mockResolvedValueOnce({
+            Result: {},
+            ResponseMetadata: { RequestId: 'test-request-id', Service: 'vefaas' },
+          })
+          .mockRejectedValueOnce({ code: 'FunctionNotFound' });
+
         await operations.deleteFunction('test-function');
 
         expect(mockService.fetchOpenAPI).toHaveBeenCalledWith(

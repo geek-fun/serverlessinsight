@@ -9,8 +9,15 @@ import {
   removeResource,
   getAllResources,
   getRoleArnFromState,
+  registerStateMigration,
+  clearStateMigrations,
 } from '../../../src/common/stateManager';
-import { ResourceState, CURRENT_STATE_VERSION } from '../../../src/types';
+import {
+  ResourceState,
+  CURRENT_STATE_VERSION,
+  StateCorruptError,
+  StateVersionError,
+} from '../../../src/types';
 import fs from 'node:fs';
 import path from 'node:path';
 
@@ -117,6 +124,173 @@ describe('StateManager', () => {
       expect(state).toEqual({
         ...stateOnDisk,
         resources: { 'functions.test': resourceData },
+      });
+    });
+
+    describe('corrupt state handling (B2)', () => {
+      const goodState = {
+        version: CURRENT_STATE_VERSION,
+        provider: 'tencent',
+        app: 'test-app',
+        service: 'test-service',
+        stages: {
+          default: {
+            resources: {
+              'functions.test': {
+                mode: 'managed',
+                region: 'ap-guangzhou',
+                definition: { functionName: 'test-fn' },
+                instances: [{ sid: 'si:tencent:scf:default:test-fn', id: 'test-fn' }],
+                lastUpdated: '2025-01-01T00:00:00Z',
+              },
+            },
+          },
+        },
+      };
+
+      it('loadState throws StateCorruptError on corrupt state file', () => {
+        ensureStateDir(testDir);
+        fs.writeFileSync(statePath, '{{{ not valid json');
+
+        expect(() => loadState('tencent', 'test-app', 'test-service', 'default', testDir)).toThrow(
+          StateCorruptError,
+        );
+      });
+
+      it('loadState falls back to .backup when primary is corrupt', () => {
+        ensureStateDir(testDir);
+        fs.writeFileSync(`${statePath}.backup`, JSON.stringify(goodState, null, 2));
+        fs.writeFileSync(statePath, '{{{ not valid json');
+
+        const state = loadState('tencent', 'test-app', 'test-service', 'default', testDir);
+        expect(state.resources['functions.test']).toEqual(
+          goodState.stages.default.resources['functions.test'],
+        );
+      });
+
+      it('loadState throws when both primary and backup are corrupt', () => {
+        ensureStateDir(testDir);
+        fs.writeFileSync(statePath, '{{{ not valid json');
+        fs.writeFileSync(`${statePath}.backup`, 'also not valid json');
+
+        expect(() => loadState('tencent', 'test-app', 'test-service', 'default', testDir)).toThrow(
+          StateCorruptError,
+        );
+      });
+    });
+
+    describe('state version migration scaffold (P4)', () => {
+      const writeState = (body: Record<string, unknown>): void => {
+        ensureStateDir(testDir);
+        fs.writeFileSync(statePath, JSON.stringify(body));
+      };
+
+      it('loadState throws StateVersionError on a newer unknown state version', () => {
+        writeState({
+          version: '99.0',
+          provider: 'tencent',
+          app: 'test-app',
+          service: 'test-service',
+          stages: {},
+          resources: {},
+        });
+
+        expect(() => loadState('tencent', 'test-app', 'test-service', 'default', testDir)).toThrow(
+          StateVersionError,
+        );
+        expect(() => loadState('tencent', 'test-app', 'test-service', 'default', testDir)).toThrow(
+          /upgrade/i,
+        );
+      });
+
+      it('loadState loads state with version === CURRENT_STATE_VERSION without throwing', () => {
+        writeState({
+          version: CURRENT_STATE_VERSION,
+          provider: 'tencent',
+          app: 'test-app',
+          service: 'test-service',
+          stages: { default: { resources: {} } },
+          resources: {},
+        });
+
+        const state = loadState('tencent', 'test-app', 'test-service', 'default', testDir);
+        expect(state.version).toBe(CURRENT_STATE_VERSION);
+      });
+
+      it('loadState loads a legacy state with an older version field without throwing', () => {
+        writeState({
+          version: '1.0.0',
+          provider: 'tencent',
+          app: 'test-app',
+          service: 'test-service',
+          stages: { default: { resources: {} } },
+          resources: {},
+        });
+
+        const state = loadState('tencent', 'test-app', 'test-service', 'default', testDir);
+        expect(state.version).toBe('1.0.0');
+        expect(state.resources).toEqual({});
+      });
+
+      it('loadState loads a legacy state with a missing version field without throwing', () => {
+        writeState({
+          provider: 'tencent',
+          app: 'test-app',
+          service: 'test-service',
+          stages: { default: {} },
+          resources: {},
+        });
+
+        const state = loadState('tencent', 'test-app', 'test-service', 'default', testDir);
+        expect(state.version).toBeUndefined();
+        expect(state.resources).toEqual({});
+      });
+
+      it('applies a registered migration for an older state version', () => {
+        const migrateSpy = jest.fn((state: Record<string, unknown>) => ({
+          ...state,
+          version: CURRENT_STATE_VERSION,
+          migrated: true,
+        }));
+        registerStateMigration('0.5', migrateSpy);
+        try {
+          writeState({
+            version: '0.5',
+            provider: 'tencent',
+            app: 'test-app',
+            service: 'test-service',
+            stages: { default: { resources: {} } },
+            resources: {},
+          });
+
+          const state = loadState('tencent', 'test-app', 'test-service', 'default', testDir);
+
+          expect(migrateSpy).toHaveBeenCalledTimes(1);
+          expect(state.version).toBe(CURRENT_STATE_VERSION);
+          expect((state as { migrated?: boolean }).migrated).toBe(true);
+        } finally {
+          clearStateMigrations();
+        }
+      });
+
+      it('throws StateVersionError when a registered migration cannot reach CURRENT', () => {
+        registerStateMigration('0.5', (state) => ({ ...state, version: '1.0' }));
+        try {
+          writeState({
+            version: '0.5',
+            provider: 'tencent',
+            app: 'test-app',
+            service: 'test-service',
+            stages: {},
+            resources: {},
+          });
+
+          expect(() =>
+            loadState('tencent', 'test-app', 'test-service', 'default', testDir),
+          ).toThrow(StateVersionError);
+        } finally {
+          clearStateMigrations();
+        }
       });
     });
   });
@@ -273,6 +447,104 @@ describe('StateManager', () => {
       const state2 = loadState('tencent', 'test-app', 'test-service', 'default', testDir);
       expect(state2.version).toBe(CURRENT_STATE_VERSION);
       expect(getResource(state2, 'functions.test')).toEqual(resourceState);
+    });
+
+    describe('atomic persistence (B1)', () => {
+      const makeResourceState = (name: string): ResourceState => ({
+        mode: 'managed',
+        region: 'ap-guangzhou',
+        definition: { functionName: name },
+        instances: [{ sid: `si:tencent:scf:default:${name}`, id: name }],
+        lastUpdated: '2025-01-01T00:00:00Z',
+      });
+
+      it('saveState writes atomically via tmp+rename', () => {
+        const renameSpy = jest.spyOn(fs, 'renameSync');
+        try {
+          let state = loadState('tencent', 'test-app', 'test-service', 'default', testDir);
+          state = setResource(state, 'functions.test', makeResourceState('test-fn'));
+          saveState(state, 'test-app', 'test-service', 'default', testDir);
+          saveState(state, 'test-app', 'test-service', 'default', testDir);
+
+          expect(renameSpy).toHaveBeenCalled();
+          expect(fs.existsSync(`${statePath}.tmp`)).toBe(false);
+
+          const onDisk = JSON.parse(fs.readFileSync(statePath, 'utf-8'));
+          expect(onDisk.resources['functions.test']).toEqual(makeResourceState('test-fn'));
+        } finally {
+          renameSpy.mockRestore();
+        }
+      });
+
+      it('saveState keeps a .backup of the previous state', () => {
+        let state = loadState('tencent', 'test-app', 'test-service', 'default', testDir);
+        state = setResource(state, 'functions.test', makeResourceState('v1-fn'));
+        saveState(state, 'test-app', 'test-service', 'default', testDir);
+
+        state = setResource(state, 'functions.test', makeResourceState('v2-fn'));
+        saveState(state, 'test-app', 'test-service', 'default', testDir);
+
+        expect(fs.existsSync(`${statePath}.backup`)).toBe(true);
+        const backup = JSON.parse(fs.readFileSync(`${statePath}.backup`, 'utf-8'));
+        expect(backup.resources['functions.test']).toEqual(makeResourceState('v1-fn'));
+      });
+
+      it('saveState leaves original intact if write fails', () => {
+        let state = loadState('tencent', 'test-app', 'test-service', 'default', testDir);
+        state = setResource(state, 'functions.test', makeResourceState('v1-fn'));
+        saveState(state, 'test-app', 'test-service', 'default', testDir);
+        const originalContent = fs.readFileSync(statePath, 'utf-8');
+
+        state = setResource(state, 'functions.test', makeResourceState('v2-fn'));
+        const renameSpy = jest.spyOn(fs, 'renameSync').mockImplementationOnce(() => {
+          throw new Error('simulated rename failure');
+        });
+
+        try {
+          expect(() => saveState(state, 'test-app', 'test-service', 'default', testDir)).toThrow(
+            'simulated rename failure',
+          );
+        } finally {
+          renameSpy.mockRestore();
+        }
+
+        expect(fs.readFileSync(statePath, 'utf-8')).toBe(originalContent);
+        expect(fs.existsSync(`${statePath}.tmp`)).toBe(false);
+      });
+    });
+
+    describe('serial and lineage (B3)', () => {
+      const resourceState: ResourceState = {
+        mode: 'managed',
+        region: 'ap-guangzhou',
+        definition: { functionName: 'test-fn' },
+        instances: [{ sid: 'si:tencent:scf:default:test-fn', id: 'test-fn' }],
+        lastUpdated: '2025-01-01T00:00:00Z',
+      };
+
+      it('saveState increments serial across saves', () => {
+        let state = loadState('tencent', 'test-app', 'test-service', 'default', testDir);
+        state = setResource(state, 'functions.test', resourceState);
+        saveState(state, 'test-app', 'test-service', 'default', testDir);
+        const first = JSON.parse(fs.readFileSync(statePath, 'utf-8'));
+        saveState(state, 'test-app', 'test-service', 'default', testDir);
+        const second = JSON.parse(fs.readFileSync(statePath, 'utf-8'));
+
+        expect(first.serial).toBe(1);
+        expect(second.serial).toBe(first.serial + 1);
+      });
+
+      it('saveState keeps lineage stable across saves', () => {
+        let state = loadState('tencent', 'test-app', 'test-service', 'default', testDir);
+        state = setResource(state, 'functions.test', resourceState);
+        saveState(state, 'test-app', 'test-service', 'default', testDir);
+        const first = JSON.parse(fs.readFileSync(statePath, 'utf-8'));
+        saveState(state, 'test-app', 'test-service', 'default', testDir);
+        const second = JSON.parse(fs.readFileSync(statePath, 'utf-8'));
+
+        expect(first.lineage).toBeDefined();
+        expect(second.lineage).toBe(first.lineage);
+      });
     });
   });
 

@@ -1,5 +1,6 @@
 import { executeApigwPlan } from '../../../../src/stack/volcengineStack/apigwExecutor';
 import { getContext } from '../../../../src/common';
+import { PartialResourceError } from '../../../../src/types';
 import type { Context, EventDomain, StateFile, Plan, PlanItem } from '../../../../src/types';
 
 jest.mock('../../../../src/common', () => ({
@@ -210,6 +211,53 @@ describe('apigwExecutor', () => {
       expect(result.partialFailure).toBeDefined();
       expect(result.partialFailure?.failedItem.action).toBe('create');
       expect(result.partialFailure?.error.message).toBe('Create failed');
+    });
+
+    it('should persist updated state via onStateChange on PartialResourceError', async () => {
+      const { createApigwResource } = jest.requireMock(
+        '../../../../src/stack/volcengineStack/apigwResource',
+      );
+
+      const updatedState: StateFile = {
+        ...mockState,
+        resources: {
+          'events.api_gateway': {
+            mode: 'managed',
+            region: 'cn-beijing',
+            definition: { groupName: 'test-gateway' },
+            instances: [
+              {
+                type: 'VOLCENGINE_APIGW_GROUP',
+                sid: 'volcengine:apigw:dev:gateway-123',
+                id: 'gateway-123',
+              },
+            ],
+            status: 'tainted',
+            lastUpdated: '2024-01-01T00:00:00Z',
+          },
+        },
+      };
+      const causeError = new Error('Api create failed');
+      createApigwResource.mockRejectedValueOnce(new PartialResourceError(updatedState, causeError));
+
+      const onStateChange = jest.fn();
+      const plan: Plan = {
+        items: [createPlanItem('create', 'events.api_gateway')],
+      };
+
+      const result = await executeApigwPlan(
+        mockContext,
+        plan,
+        [mockEvent],
+        'test-service',
+        mockState,
+        onStateChange,
+      );
+
+      expect(onStateChange).toHaveBeenCalledWith(updatedState);
+      expect(result.state).toBe(updatedState);
+      expect(result.partialFailure).toBeDefined();
+      expect(result.partialFailure?.error).toBe(causeError);
     });
 
     it('should return partial failure on update error', async () => {

@@ -6,6 +6,7 @@ import {
   StateFile,
   SaveStateFn,
   ExecutionResult,
+  PartialResourceError,
 } from '../../types';
 import {
   createDatabaseResource,
@@ -187,7 +188,7 @@ export const executeDatabasePlan = async (
         currentState = newState;
         successfulItems.push(item);
         if (onStateChange) {
-          onStateChange(currentState);
+          await onStateChange(currentState);
           logger.debug(
             lang.__('STATE_PERSISTED_AFTER_OPERATION', {
               action: item.action,
@@ -197,6 +198,20 @@ export const executeDatabasePlan = async (
         }
       }
     } catch (error) {
+      if (error instanceof PartialResourceError) {
+        const updatedState = error.updatedState;
+        if (onStateChange) {
+          await onStateChange(updatedState);
+        }
+        return {
+          state: updatedState,
+          partialFailure: {
+            failedItem: item,
+            error: error.cause,
+            successfulItems,
+          },
+        };
+      }
       return {
         state: currentState,
         partialFailure: {
