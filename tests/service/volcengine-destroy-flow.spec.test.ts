@@ -37,14 +37,14 @@ const mockCreateVolcengineClient = require('../../src/common/volcengineClient')
 const STATE_FILE_PATH = path.join(
   process.cwd(),
   '.serverlessinsight',
-  'state-insight-poc-app-insight-poc.json',
+  'state-insight-volc-destroy-app-insight-volc-destroy.json',
 );
 
 const EXISTING_STATE = JSON.stringify({
   version: '3.0',
   provider: 'volcengine',
-  app: 'insight-poc-app',
-  service: 'insight-poc',
+  app: 'insight-volc-destroy-app',
+  service: 'insight-volc-destroy',
   stages: {
     dev: {
       resources: {
@@ -53,18 +53,23 @@ const EXISTING_STATE = JSON.stringify({
           region: 'cn-beijing',
           definition: {
             functionName: 'insight-poc-fn',
-            runtime: 'nodejs/v18',
+            runtime: 'node20/v1',
             handler: 'index.handler',
             memorySize: 128,
             timeout: 30,
           },
           instances: [
-            { sid: 'insight-poc-fn', id: 'insight-poc-fn', type: 'VOLCENGINE_VEFAAS_FUNCTION' },
+            {
+              sid: 'insight-poc-fn',
+              id: 'insight-poc-fn',
+              type: 'VOLCENGINE_VEFAAS_FUNCTION',
+              functionId: 'fn-123',
+            },
             {
               sid: 'iam-role-sid',
-              id: 'insight-poc-app-insight-poc-dev-role',
+              id: 'insight-volc-destroy-app-insight-volc-destroy-dev-role',
               type: 'VOLCENGINE_IAM_ROLE',
-              trn: 'trn:iam::123456789012:role/insight-poc-app-insight-poc-dev-role',
+              trn: 'trn:iam::123456789012:role/insight-volc-destroy-app-insight-volc-destroy-dev-role',
             },
           ],
           lastUpdated: '2024-01-01T00:00:00.000Z',
@@ -77,7 +82,7 @@ const EXISTING_STATE = JSON.stringify({
 });
 
 describe('Volcengine Destroy Flow Service Test', () => {
-  const fixtureFile = path.join(__dirname, '../fixtures/serverless-insight-volcengine.yml');
+  const fixtureFile = path.join(__dirname, '../fixtures/serverless-insight-volcengine-destroy.yml');
   let mockClient: MockVolcengineClient;
 
   beforeEach(async () => {

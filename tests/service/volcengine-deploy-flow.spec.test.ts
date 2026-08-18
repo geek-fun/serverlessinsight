@@ -39,7 +39,7 @@ describe('Volcengine Deploy Flow Service Test', () => {
   const stateFilePath = path.join(
     process.cwd(),
     '.serverlessinsight',
-    'state-insight-poc-app-insight-poc.json',
+    'state-insight-volc-app-insight-volc.json',
   );
   let mockClient: MockVolcengineClient;
 
@@ -63,13 +63,13 @@ describe('Volcengine Deploy Flow Service Test', () => {
       mockClient.vefaas.getFunction.mockResolvedValue({
         functionId: 'func-123',
         functionName: 'insight-poc-fn',
-        runtime: 'nodejs/v18',
+        runtime: 'node20/v1',
         handler: 'index.handler',
         memoryMb: 128,
         requestTimeout: 30,
         status: 'Active',
         Tags: [
-          { Key: 'si-owned-by', Value: 'insight-poc-app-insight-poc:functions.insight_poc_fn' },
+          { Key: 'si-owned-by', Value: 'insight-volc-app-insight-volc:functions.insight_poc_fn' },
         ],
       });
 
