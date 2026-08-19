@@ -41,7 +41,7 @@ const handleCommandError = (
     logger.error(
       lang.__('COMMAND_FAILED', {
         commandName,
-        error: error?.message || 'Unknown error occurred',
+        error: truncateErrorMessage(error?.message) || 'Unknown error occurred',
       }),
     );
   }
