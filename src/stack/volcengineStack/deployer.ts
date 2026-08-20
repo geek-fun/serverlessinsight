@@ -9,6 +9,30 @@ import { executeBucketPlan } from './tosExecutor';
 import { generateApigwPlan } from './apigwPlanner';
 import { executeApigwPlan } from './apigwExecutor';
 
+// Volcengine error responses can echo large request payloads (e.g. the base64
+// function code) in Error.Message — cap what reaches the user.
+const truncateMessage = (message: string | undefined, max = 2000): string => {
+  if (!message) return '';
+  return message.length > max
+    ? `${message.slice(0, max)}… (truncated ${message.length} chars)`
+    : message;
+};
+
+// Enrich cloud API errors with the action name + RequestId so users can open a
+// support ticket / debug against the console. The message itself is truncated
+// to avoid dumping base64 payloads, but the actionable bits are always shown.
+const formatApiError = (error: Error): string => {
+  const err = error as Error & { action?: string; requestId?: string };
+  const parts = [truncateMessage(error.message)];
+  if (err.action && !err.message.includes(err.action)) {
+    parts.unshift(`Action: ${err.action}`);
+  }
+  if (err.requestId) {
+    parts.push(`RequestId: ${err.requestId}`);
+  }
+  return parts.join(' | ');
+};
+
 export const deployVolcengineStack = async (iac: ServerlessIac, backend: StateBackend) => {
   const context = getContext();
   logger.info(lang.__('DEPLOYING_STACK'));
@@ -38,10 +62,14 @@ export const deployVolcengineStack = async (iac: ServerlessIac, backend: StateBa
     const error = bucketResult.partialFailure.error as Error & { isPartialFailure?: boolean };
     error.isPartialFailure = true;
     logger.error(
-      lang.__('PARTIAL_DEPLOYMENT_FAILURE', {
-        resourceType: 'Bucket',
-        name: bucketResult.partialFailure.failedItem.logicalId,
-      }),
+      `${lang.__('FAILED_TO_EXECUTE_ACTION', {
+        action: bucketResult.partialFailure.failedItem.action,
+        logicalId: bucketResult.partialFailure.failedItem.logicalId,
+        error: formatApiError(error),
+      })}\n\n${lang.__('PARTIAL_DEPLOYMENT_FAILURE', {
+        successCount: String(bucketResult.partialFailure.successfulItems.length),
+        failedResource: bucketResult.partialFailure.failedItem.logicalId,
+      })}`,
     );
     throw error;
   }
@@ -60,10 +88,14 @@ export const deployVolcengineStack = async (iac: ServerlessIac, backend: StateBa
     const error = functionResult.partialFailure.error as Error & { isPartialFailure?: boolean };
     error.isPartialFailure = true;
     logger.error(
-      lang.__('PARTIAL_DEPLOYMENT_FAILURE', {
-        resourceType: 'Function',
-        name: functionResult.partialFailure.failedItem.logicalId,
-      }),
+      `${lang.__('FAILED_TO_EXECUTE_ACTION', {
+        action: functionResult.partialFailure.failedItem.action,
+        logicalId: functionResult.partialFailure.failedItem.logicalId,
+        error: formatApiError(error),
+      })}\n\n${lang.__('PARTIAL_DEPLOYMENT_FAILURE', {
+        successCount: String(functionResult.partialFailure.successfulItems.length),
+        failedResource: functionResult.partialFailure.failedItem.logicalId,
+      })}`,
     );
     throw error;
   }
@@ -83,10 +115,14 @@ export const deployVolcengineStack = async (iac: ServerlessIac, backend: StateBa
     const error = apigwResult.partialFailure.error as Error & { isPartialFailure?: boolean };
     error.isPartialFailure = true;
     logger.error(
-      lang.__('PARTIAL_DEPLOYMENT_FAILURE', {
-        resourceType: 'API Gateway',
-        name: apigwResult.partialFailure.failedItem.logicalId,
-      }),
+      `${lang.__('FAILED_TO_EXECUTE_ACTION', {
+        action: apigwResult.partialFailure.failedItem.action,
+        logicalId: apigwResult.partialFailure.failedItem.logicalId,
+        error: formatApiError(error),
+      })}\n\n${lang.__('PARTIAL_DEPLOYMENT_FAILURE', {
+        successCount: String(apigwResult.partialFailure.successfulItems.length),
+        failedResource: apigwResult.partialFailure.failedItem.logicalId,
+      })}`,
     );
     throw error;
   }

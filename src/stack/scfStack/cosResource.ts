@@ -16,6 +16,8 @@ import { readPemContent, warnInlinePem } from '../../common/certUtils';
 import { logger } from '../../common/logger';
 import { lang } from '../../lang';
 import { deriveWwwDomain } from '../../common/domainUtils';
+import { OWNERSHIP_TAG_KEY, buildOwnershipTagValue, isOwnedByStack } from '../ownershipTag';
+import { isResourceAlreadyExistsError } from '../alreadyExists';
 
 const toCosStatement = (stmt: BucketIamStatement): Record<string, unknown> => {
   const s: Record<string, unknown> = {
@@ -231,6 +233,65 @@ const buildCosInstanceFromProvider = (info: CosBucketInfo, sid: string) => {
             })) ?? [],
         }
       : {},
+    tags:
+      info.Tags?.map((t) => ({
+        key: t.Key,
+        value: t.Value,
+      })) ?? [],
+    lifecycleConfiguration: info.LifecycleConfiguration
+      ? {
+          rules:
+            info.LifecycleConfiguration.rules?.map((r) => ({
+              id: r.id ?? null,
+              status: r.status ?? null,
+              prefix: r.prefix ?? null,
+              expiration: r.expiration
+                ? {
+                    days: r.expiration.days ?? null,
+                    date: r.expiration.date ?? null,
+                    expiredObjectDeleteMarker: r.expiration.expiredObjectDeleteMarker ?? null,
+                  }
+                : {},
+              transition: r.transition
+                ? {
+                    days: r.transition.days ?? null,
+                    date: r.transition.date ?? null,
+                    storageClass: r.transition.storageClass ?? null,
+                  }
+                : {},
+            })) ?? [],
+        }
+      : {},
+    loggingConfiguration: info.LoggingConfiguration
+      ? {
+          targetBucket: info.LoggingConfiguration.targetBucket ?? null,
+          targetPrefix: info.LoggingConfiguration.targetPrefix ?? null,
+        }
+      : {},
+    replicationConfiguration: info.ReplicationConfiguration
+      ? {
+          role: info.ReplicationConfiguration.role ?? null,
+          rules:
+            info.ReplicationConfiguration.rules?.map((r) => ({
+              id: r.id ?? null,
+              status: r.status ?? null,
+              prefix: r.prefix ?? null,
+              destination: r.destination
+                ? {
+                    bucket: r.destination.bucket ?? null,
+                    storageClass: r.destination.storageClass ?? null,
+                  }
+                : {},
+            })) ?? [],
+        }
+      : {},
+    sseConfiguration: info.SseConfiguration
+      ? {
+          sseAlgorithm: info.SseConfiguration.sseAlgorithm ?? null,
+          sseKmsMasterKeyId: info.SseConfiguration.sseKmsMasterKeyId ?? null,
+        }
+      : {},
+    policy: info.Policy ?? null,
   };
 };
 
@@ -246,6 +307,11 @@ export const createBucketResource = async (
   const definition = extractCosBucketDefinition(config);
   const logicalId = `buckets.${bucket.key}`;
 
+  // Stamp the ownership tag (sent as the x-cos-tagging header on PutBucket) so
+  // a later run can idempotently adopt this bucket, and an unrelated same-named
+  // bucket is never adopted.
+  config.Tags = [{ Key: OWNERSHIP_TAG_KEY, Value: buildOwnershipTagValue(context, logicalId) }];
+
   const taintedResourceState: ResourceState = {
     mode: 'managed',
     region: context.region,
@@ -258,11 +324,41 @@ export const createBucketResource = async (
   const stateAfterDependents = setResource(state, logicalId, taintedResourceState);
 
   try {
-    await client.cos.createBucket(config);
+    try {
+      await client.cos.createBucket(config);
+    } catch (error) {
+      // COS PutBucket is idempotent for the same region/owner, so a collision
+      // surfaces only for a different region/owner (BucketAlreadyExists /
+      // BucketAlreadyOwnedByYou) — treat it as non-fatal and fall through to
+      // the ownership probe below. Any other error propagates (outer catch
+      // persists the tainted state).
+      if (
+        !isResourceAlreadyExistsError(error, ['BucketAlreadyExists', 'BucketAlreadyOwnedByYou'])
+      ) {
+        throw error;
+      }
+      logger.info(
+        `Bucket ${bucket.name} already exists in provider, verifying ownership tag before adopting`,
+      );
+    }
 
     const bucketInfo = await client.cos.getBucket(bucket.name, context.region);
     if (!bucketInfo) {
       throw new Error(`Failed to refresh state for bucket: ${bucket.name}`);
+    }
+
+    // PutBucket succeeding does NOT prove the bucket is ours: a pre-existing
+    // bucket is returned idempotently. Only a bucket carrying our ownership tag
+    // (stamped at create time via x-cos-tagging) may be adopted; an untagged
+    // one may belong to another project and must fail loudly rather than be
+    // silently taken over (destroy would then remove a resource never ours).
+    if (!isOwnedByStack(context, logicalId, bucketInfo.Tags)) {
+      throw new PartialResourceError(
+        stateAfterDependents,
+        new Error(
+          `Bucket ${bucket.name} already exists in provider but is not owned by this stack (missing ${OWNERSHIP_TAG_KEY} tag). Refusing to adopt — resolve manually.`,
+        ),
+      );
     }
 
     const sid = buildSid('tencent', 'cos', context.stage, bucket.name);

@@ -15,6 +15,12 @@ import { setResource, removeResource } from '../../common/stateManager';
 import { buildSid } from '../../common';
 import { logger } from '../../common/logger';
 import { lang } from '../../lang';
+import { OWNERSHIP_TAG_KEY, buildOwnershipTagValue, isOwnedByStack } from '../ownershipTag';
+import { isResourceAlreadyExistsError } from '../alreadyExists';
+
+// CreateServerlessSpaceV2 reports a duplicate space name with this error code
+// (腾讯云官方文档: 空间名已存在).
+const ES_SPACE_NAME_EXISTS_CODE = 'InvalidParameter.SpaceNameExist';
 
 const buildEsSpaceFromProvider = (info: TencentEsSpaceInfo, sid: string) => {
   return {
@@ -27,6 +33,37 @@ const buildEsSpaceFromProvider = (info: TencentEsSpaceInfo, sid: string) => {
     indexCount: info.IndexCount ?? null,
     kibanaUrl: info.KibanaUrl ?? null,
     kibanaPrivateUrl: info.KibanaPrivateUrl ?? null,
+    indexAccessUrl: info.IndexAccessUrl ?? null,
+    kibanaPublicAcl: info.KibanaPublicAcl
+      ? {
+          blackIpList: info.KibanaPublicAcl.BlackIpList ?? [],
+          whiteIpList: info.KibanaPublicAcl.WhiteIpList ?? [],
+        }
+      : {},
+    kibanaEmbedUrl: info.KibanaEmbedUrl ?? null,
+    diDataList: info.DiDataList ?? [],
+    vpcInfo:
+      info.VpcInfo?.map((v) => ({
+        vpcId: v.VpcId ?? null,
+        subnetId: v.SubnetId ?? null,
+        vpcUid: v.VpcUid ?? null,
+        subnetUid: v.SubnetUid ?? null,
+        availableIpAddressCount: v.AvailableIpAddressCount ?? null,
+      })) ?? [],
+    region: info.Region ?? null,
+    zone: info.Zone ?? null,
+    enableKibanaPublicAccess: info.EnableKibanaPublicAccess ?? null,
+    enableKibanaPrivateAccess: info.EnableKibanaPrivateAccess ?? null,
+    appId: info.AppId ?? null,
+    kibanaLanguage: info.KibanaLanguage ?? null,
+    clusterType: info.ClusterType ?? null,
+    enableMcpAccess: info.EnableMcpAccess ?? null,
+    mcpAccess: info.McpAccess ?? null,
+    tags:
+      info.Tags?.map((t) => ({
+        key: t.Key,
+        value: t.Value,
+      })) ?? [],
   };
 };
 
@@ -53,6 +90,22 @@ export const createEsResource = async (
 
   const stateAfterDependents = setResource(state, logicalId, taintedResourceState);
 
+  const buildResourceState = (info: TencentEsSpaceInfo): ResourceState => {
+    const sid = buildSid('tencent', 'es', context.stage, info.SpaceId);
+    return {
+      mode: 'managed',
+      region: context.region,
+      definition,
+      instances: [buildEsSpaceFromProvider(info, sid)],
+      lastUpdated: new Date().toISOString(),
+      metadata: {
+        spaceName: database.name,
+        spaceId: info.SpaceId,
+        resourceType: 'TENCENT_ES_SERVERLESS',
+      },
+    };
+  };
+
   try {
     const spaceId = await client.es.createSpace({
       SpaceName: config.SpaceName,
@@ -62,6 +115,7 @@ export const createEsResource = async (
           : undefined,
       Zone: config.Zone,
       KibanaWhiteIpList: config.KibanaWhiteIpList,
+      Tags: [{ Key: OWNERSHIP_TAG_KEY, Value: buildOwnershipTagValue(context, logicalId) }],
     });
 
     // Refresh state from provider to get all attributes
@@ -70,22 +124,28 @@ export const createEsResource = async (
       throw new Error(`Failed to refresh state for ES space: ${spaceId}`);
     }
 
-    const sid = buildSid('tencent', 'es', context.stage, spaceId);
-    const resourceState: ResourceState = {
-      mode: 'managed',
-      region: context.region,
-      definition,
-      instances: [buildEsSpaceFromProvider(spaceInfo as TencentEsSpaceInfo, sid)],
-      lastUpdated: new Date().toISOString(),
-      metadata: {
-        spaceName: database.name,
-        spaceId,
-        resourceType: 'TENCENT_ES_SERVERLESS',
-      },
-    };
-
-    return setResource(state, logicalId, resourceState);
+    return setResource(state, logicalId, buildResourceState(spaceInfo));
   } catch (error) {
+    if (isResourceAlreadyExistsError(error, [ES_SPACE_NAME_EXISTS_CODE])) {
+      // Idempotent adoption: a space with this name already exists in the
+      // provider. Adopt it ONLY if it carries our ownership tag (proves a
+      // previous run of THIS stack created it — e.g. state was reset). An
+      // untagged same-named space may belong to another project, so it must
+      // fail loudly rather than silently taking it over.
+      const probe = await client.es.getSpaceByName(config.SpaceName);
+      if (probe && isOwnedByStack(context, logicalId, probe.Tags)) {
+        logger.info(
+          `ES space ${config.SpaceName} exists and carries ownership tag (${OWNERSHIP_TAG_KEY}), adopting idempotently`,
+        );
+        return setResource(state, logicalId, buildResourceState(probe));
+      }
+      throw new PartialResourceError(
+        stateAfterDependents,
+        new Error(
+          `ES space ${config.SpaceName} already exists in provider but is not owned by this stack (missing ${OWNERSHIP_TAG_KEY} tag). Refusing to adopt — resolve manually.`,
+        ),
+      );
+    }
     throw new PartialResourceError(
       stateAfterDependents,
       error instanceof Error ? error : new Error(String(error)),

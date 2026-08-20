@@ -15,6 +15,7 @@ import {
 
 const mockEsOperations = {
   getSpace: jest.fn(),
+  getSpaceByName: jest.fn(),
   createSpace: jest.fn(),
   updateSpace: jest.fn(),
   deleteSpace: jest.fn(),
@@ -170,6 +171,79 @@ describe('esServerlessPlanner', () => {
       });
       expect(plan.items[0].changes?.after).toBeDefined();
       expect(plan.items[0].changes?.before).toBeUndefined();
+    });
+
+    it('should fail fast when state is missing but remote space exists untagged', async () => {
+      (stateManager.getResource as jest.Mock).mockReturnValue(null);
+      (stateManager.getAllResources as jest.Mock).mockReturnValue({});
+      (mockEsOperations.getSpaceByName as jest.Mock).mockResolvedValue({
+        SpaceId: 'space-123',
+        SpaceName: 'test-db',
+        Status: 1,
+        Tags: [{ Key: 'env', Value: 'prod' }],
+      });
+
+      await expect(generateEsPlan(mockContext, initialState, [testDatabase])).rejects.toThrow(
+        'not owned by this stack',
+      );
+    });
+
+    it('should plan create when state is missing but remote exists with our tag', async () => {
+      (stateManager.getResource as jest.Mock).mockReturnValue(null);
+      (stateManager.getAllResources as jest.Mock).mockReturnValue({});
+      (mockEsOperations.getSpaceByName as jest.Mock).mockResolvedValue({
+        SpaceId: 'space-123',
+        SpaceName: 'test-db',
+        Status: 1,
+        Tags: [{ Key: 'si-owned-by', Value: 'test-app-test-service:databases.test_db' }],
+      });
+
+      const plan = await generateEsPlan(mockContext, initialState, [testDatabase]);
+
+      expect(plan.items).toHaveLength(1);
+      expect(plan.items[0]).toMatchObject({
+        logicalId: 'databases.test_db',
+        action: 'create',
+        resourceType: 'TENCENT_ES_SERVERLESS',
+      });
+    });
+
+    it('should plan create when state is missing and no remote space exists', async () => {
+      (stateManager.getResource as jest.Mock).mockReturnValue(null);
+      (stateManager.getAllResources as jest.Mock).mockReturnValue({});
+      (mockEsOperations.getSpaceByName as jest.Mock).mockResolvedValue(null);
+
+      const plan = await generateEsPlan(mockContext, initialState, [testDatabase]);
+
+      expect(plan.items).toHaveLength(1);
+      expect(plan.items[0]).toMatchObject({
+        logicalId: 'databases.test_db',
+        action: 'create',
+        resourceType: 'TENCENT_ES_SERVERLESS',
+      });
+    });
+
+    it('should fail fast when state is tainted and remote exists untagged', async () => {
+      (stateManager.getResource as jest.Mock).mockReturnValue({
+        mode: 'managed',
+        region: 'ap-guangzhou',
+        status: 'tainted',
+        definition: { name: 'test-db' },
+        instances: [],
+        lastUpdated: new Date().toISOString(),
+        metadata: { spaceId: 'space-123' },
+      });
+      (stateManager.getAllResources as jest.Mock).mockReturnValue({});
+      (mockEsOperations.getSpaceByName as jest.Mock).mockResolvedValue({
+        SpaceId: 'space-123',
+        SpaceName: 'test-db',
+        Status: 1,
+        Tags: [],
+      });
+
+      await expect(generateEsPlan(mockContext, initialState, [testDatabase])).rejects.toThrow(
+        'not owned by this stack',
+      );
     });
 
     it('should plan creation when ES database exists in state but not in cloud', async () => {
@@ -432,6 +506,7 @@ describe('esServerlessPlanner', () => {
       (mockEsOperations.getSpace as jest.Mock)
         .mockResolvedValueOnce({ SpaceName: 'test-db' })
         .mockResolvedValueOnce(null);
+      (mockEsOperations.getSpaceByName as jest.Mock).mockResolvedValue(null);
 
       const plan = await generateEsPlan(mockContext, stateWithDb, [testDatabase, db2]);
 

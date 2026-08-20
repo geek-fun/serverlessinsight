@@ -199,6 +199,96 @@ describe('tablestoreOperations', () => {
       });
     });
 
+    it('should retain the full DescribeTable detail set (max-detail state)', async () => {
+      const mockTableData = {
+        tableMeta: {
+          tableName: 'max-detail-table',
+          primaryKey: [{ name: 'id', type: 'STRING' }],
+          definedColumn: [
+            { name: 'status', type: 'STRING' },
+            { name: 'count', type: 'INTEGER' },
+          ],
+          indexMeta: [
+            {
+              name: 'idx-status',
+              primaryKey: ['status'],
+              definedColumn: ['id'],
+              indexUpdateMode: 'IUM_ASYNC_INDEX',
+              indexType: 'IT_GLOBAL_INDEX',
+              indexSyncPhase: 'ISP_INCR',
+            },
+          ],
+        },
+        reservedThroughputDetails: {
+          capacityUnit: { read: 100, write: 50 },
+          lastIncreaseTime: '2024-01-01',
+          lastDecreaseTime: '2024-01-02',
+        },
+        tableOptions: {
+          timeToLive: 86400,
+          maxVersions: 3,
+          maxTimeDeviation: 86400,
+          allowUpdate: true,
+          bloomFilterType: 'BLOOM',
+          blockSize: 4096,
+        },
+        tableStatus: 'ACTIVE',
+        streamDetails: {
+          enableStream: true,
+          streamId: 'stream-999',
+          expirationTime: 3600,
+          lastEnableTime: '2024-01-01',
+        },
+        indexMetas: [
+          {
+            name: 'idx-status',
+            primaryKey: ['status'],
+            definedColumn: ['id'],
+            indexUpdateMode: 'IUM_ASYNC_INDEX',
+            indexType: 'IT_GLOBAL_INDEX',
+            indexSyncPhase: 'ISP_INCR',
+          },
+        ],
+        shardSplits: ['shard-1', 'shard-2'],
+      };
+
+      mockDescribeTable.mockImplementation((_params, callback) => {
+        callback(null, mockTableData);
+      });
+
+      const result = await operations.getTable('max-detail-table');
+
+      expect(result).toEqual(
+        expect.objectContaining({
+          tableName: 'max-detail-table',
+          tableStatus: 'ACTIVE',
+          definedColumn: [
+            { name: 'status', type: 'STRING' },
+            { name: 'count', type: 'INTEGER' },
+          ],
+          tableOptions: {
+            timeToLive: 86400,
+            maxVersions: 3,
+            maxTimeDeviation: 86400,
+            allowUpdate: true,
+            bloomFilterType: 'BLOOM',
+            blockSize: 4096,
+          },
+          indexMetas: [
+            {
+              name: 'idx-status',
+              primaryKey: ['status'],
+              definedColumn: ['id'],
+              indexUpdateMode: 'IUM_ASYNC_INDEX',
+              indexType: 'IT_GLOBAL_INDEX',
+              indexSyncPhase: 'ISP_INCR',
+            },
+          ],
+          shardSplits: ['shard-1', 'shard-2'],
+        }),
+      );
+    });
+
     it('should return null when table does not exist (OTSObjectNotExist error)', async () => {
       const error = new Error('OTSObjectNotExist: Requested table does not exist');
       mockDescribeTable.mockImplementation((_params, callback) => {

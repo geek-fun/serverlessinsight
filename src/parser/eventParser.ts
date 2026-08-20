@@ -10,6 +10,8 @@ export const parseEvent = (events: { [key: string]: EventRaw }): Array<EventDoma
     name: event.name,
     type: event.type,
     triggers: event.triggers?.map((trigger) => ({ ...trigger, method: trigger.method ?? 'GET' })),
+    network: event.network,
+    log: parseBooleanWithDefault(event.log, false),
     domain: event.domain
       ? {
           ...event.domain,

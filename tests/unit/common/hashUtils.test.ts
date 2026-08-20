@@ -1,4 +1,9 @@
-import { computeFileHash, attributesEqual, diffAttributes } from '../../../src/common/hashUtils';
+import {
+  computeFileHash,
+  computeZipContentHash,
+  attributesEqual,
+  diffAttributes,
+} from '../../../src/common/hashUtils';
 import fs from 'node:fs';
 import path from 'node:path';
 
@@ -57,6 +62,69 @@ describe('HashUtils', () => {
     });
   });
 
+  describe('computeZipContentHash', () => {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const JSZip = require('jszip');
+
+    const writeZip = async (filePath: string, files: Record<string, string>): Promise<void> => {
+      const zip = new JSZip();
+      for (const [name, content] of Object.entries(files)) {
+        zip.file(name, content);
+      }
+      const data = await zip.generateAsync({ type: 'nodebuffer' });
+      fs.writeFileSync(filePath, data);
+    };
+
+    it('should be stable for identical zip content regardless of binary repack', async () => {
+      const zip1 = path.join(testDir, 'a.zip');
+      const zip2 = path.join(testDir, 'b.zip');
+      await writeZip(zip1, { 'index.js': 'module.exports = 1;' });
+      await writeZip(zip2, { 'index.js': 'module.exports = 1;' });
+
+      const hash1 = await computeZipContentHash(zip1);
+      const hash2 = await computeZipContentHash(zip2);
+
+      expect(hash1).toBe(hash2);
+      expect(hash1).toHaveLength(64);
+    });
+
+    it('should change when file content changes', async () => {
+      const zip1 = path.join(testDir, 'a.zip');
+      const zip2 = path.join(testDir, 'b.zip');
+      await writeZip(zip1, { 'index.js': 'module.exports = 1;' });
+      await writeZip(zip2, { 'index.js': 'module.exports = 2;' });
+
+      const hash1 = await computeZipContentHash(zip1);
+      const hash2 = await computeZipContentHash(zip2);
+
+      expect(hash1).not.toBe(hash2);
+    });
+
+    it('should be independent of entry ordering', async () => {
+      const zip1 = path.join(testDir, 'a.zip');
+      const zip2 = path.join(testDir, 'b.zip');
+      await writeZip(zip1, { 'b.js': 'b', 'a.js': 'a' });
+      await writeZip(zip2, { 'a.js': 'a', 'b.js': 'b' });
+
+      const hash1 = await computeZipContentHash(zip1);
+      const hash2 = await computeZipContentHash(zip2);
+
+      expect(hash1).toBe(hash2);
+    });
+
+    it('should change when a file is added or removed', async () => {
+      const zip1 = path.join(testDir, 'a.zip');
+      const zip2 = path.join(testDir, 'b.zip');
+      await writeZip(zip1, { 'index.js': 'x' });
+      await writeZip(zip2, { 'index.js': 'x', 'extra.js': 'y' });
+
+      const hash1 = await computeZipContentHash(zip1);
+      const hash2 = await computeZipContentHash(zip2);
+
+      expect(hash1).not.toBe(hash2);
+    });
+  });
+
   describe('attributesEqual', () => {
     it('should return true for empty objects', () => {
       expect(attributesEqual({}, {})).toBe(true);
@@ -78,6 +146,21 @@ describe('HashUtils', () => {
       const a = { name: 'test', count: 5 };
       const b = { name: 'test', total: 5 };
       expect(attributesEqual(a, b)).toBe(false);
+    });
+
+    it('should treat null and undefined as equal (provider vs desired)', () => {
+      const providerAttrs = { description: null, role: null, vpcConfig: null };
+      const desiredAttrs = { description: undefined, role: undefined, vpcConfig: undefined };
+      expect(attributesEqual(providerAttrs, desiredAttrs)).toBe(true);
+    });
+
+    it('should ignore keys dropped by JSON serialization (undefined round-trip)', () => {
+      // desired has description: undefined; JSON.stringify(state) drops the
+      // key, so the loaded state lacks it entirely. Both must compare equal.
+      const desired = { name: 'fn', description: undefined, role: undefined };
+      const stateAfterRoundTrip = JSON.parse(JSON.stringify(desired));
+      expect(stateAfterRoundTrip).toEqual({ name: 'fn' });
+      expect(attributesEqual(stateAfterRoundTrip, desired)).toBe(true);
     });
 
     it('should return false for different number of keys', () => {

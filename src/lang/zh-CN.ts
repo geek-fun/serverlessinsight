@@ -246,6 +246,9 @@ export const zhCN = {
 
   // API Gateway messages
   APIGW_GROUP_FOUND_REUSING: '找到现有 API 分组：{{groupName}}，将复用它',
+  APIGW_LOG_ENABLED: '已为 API 网关 {{gatewayId}} 开启访问日志',
+  APIGW_LOG_DISABLED: '已为 API 网关 {{gatewayId}} 关闭访问日志',
+  APIGW_LOG_DISABLE_FAILED: '关闭 API 网关 {{gatewayId}} 访问日志失败：{{error}}',
   APIGW_DOMAIN_BINDING_FAILED: '绑定自定义域名失败：{{error}}',
   APIGW_DOMAIN_UNBIND_FAILED: '解绑域名 {{domain}} 失败：{{error}}',
   APIGW_WWW_DOMAIN_UNBIND_FAILED: '解绑 www 域名 {{domain}} 失败：{{error}}',
@@ -630,6 +633,8 @@ export const zhCN = {
   VOLCENGINE_CREATING_APIGW: '正在创建火山引擎 API 网关 {{gatewayName}}',
   VOLCENGINE_DELETING_APIGW: '正在删除火山引擎 API 网关 {{gatewayName}}',
   VOLCENGINE_APIGW_NOT_FOUND: '火山引擎 API 网关 {{gatewayName}} 未找到',
+  VOLCENGINE_APIGW_WAITING_RUNNING:
+    '等待 API 网关 {{gatewayName}} 运行中（当前状态：{{status}}，第 {{attempt}}/{{maxAttempts}} 次尝试）',
 
   // Additional Volcengine-specific messages
   RESOURCE_STATE_NOT_FOUND: '未找到逻辑 ID 为 {{logicalId}} 的资源状态',
@@ -656,6 +661,10 @@ export const zhCN = {
     '正在更新函数 {{functionName}} 代码，使用 TOS ({{size}} MB) 到 {{bucket}}/{{key}}',
   FUNCTION_CODE_UPDATED: '函数 {{functionName}} 代码已更新',
   FUNCTION_DELETED: '函数 {{functionName}} 已删除',
+  FUNCTION_RELEASED: '函数 {{functionId}} 已发布',
+  WAITING_FOR_FUNCTION_RELEASE:
+    '等待函数 {{functionId}} 发布完成 (status: {{status}}, attempt {{attempt}}/{{maxAttempts}})...',
+  FUNCTION_ALREADY_GONE: '函数 {{functionName}} 已不存在',
 
   // TOS Object Storage messages
   TOS_BUCKET_CREATED: 'TOS 存储桶 {{bucketName}} 创建成功',
@@ -856,6 +865,8 @@ export const zhCN = {
   DELETING_CUSTOM_DOMAIN: "正在删除自定义域名 '{{domainName}}'...",
   CUSTOM_DOMAIN_DELETED: "自定义域名 '{{domainName}}' 已删除",
   DOMAIN_NOT_SUPPORTED_PROVIDER: "当前云平台 '{{provider}}' 不支持自定义域名",
+  EVENT_FLUSH_FAILED: '部署事件冲刷失败（部署 {{deploymentId}}，{{count}} 条）：{{error}}',
+  EVENT_REPLAY_FAILED: '事件队列文件 {{file}} 重放失败：{{error}}',
   INVALID_HTTP_TRIGGER_AUTH_TYPE:
     "无效的 HTTP 触发器 auth_type '{{authType}}'，必须为 'public' 或 'iam'",
 };

@@ -199,8 +199,16 @@ describe('esOperations', () => {
       expect(result).toBeNull();
     });
 
-    it('should return null on error', async () => {
+    it('should rethrow non-not-found errors', async () => {
       const error = new Error('API error');
+      mockEsClient.DescribeServerlessSpaces.mockRejectedValue(error);
+
+      await expect(operations.getSpace('space-123')).rejects.toThrow('API error');
+    });
+
+    it('should return null on ResourceNotFound', async () => {
+      const error = new Error('not found') as Error & { code: string };
+      error.code = 'ResourceNotFound.ServerlessSpaceNotFound';
       mockEsClient.DescribeServerlessSpaces.mockRejectedValue(error);
 
       const result = await operations.getSpace('space-123');
@@ -221,6 +229,95 @@ describe('esOperations', () => {
       const result = await operations.getSpace('space-123');
 
       expect(result?.Status).toBe(TencentEsSpaceStatus.CREATING);
+    });
+
+    it('should retain the full detail set (max-detail state)', async () => {
+      mockEsClient.DescribeServerlessSpaces.mockResolvedValue({
+        ServerlessSpaces: [
+          {
+            SpaceId: 'space-123',
+            SpaceName: 'test-space',
+            Status: TencentEsSpaceStatus.NORMAL,
+            CreateTime: '2024-01-01T00:00:00Z',
+            IndexCount: 5,
+            KibanaUrl: 'https://kibana.example.com',
+            KibanaPrivateUrl: 'https://kibana-private.example.com',
+            IndexAccessUrl: 'https://index-access.example.com',
+            KibanaPublicAcl: {
+              BlackIpList: ['203.0.113.1'],
+              WhiteIpList: ['198.51.100.1'],
+            },
+            KibanaEmbedUrl: 'https://embed.example.com',
+            DiDataList: [
+              {
+                DiId: 'di-1',
+                CreateTime: '2024-01-01T00:00:00Z',
+                Status: 1,
+                DiDataSourceType: 'CVM',
+              },
+            ],
+            VpcInfo: [
+              {
+                VpcId: 'vpc-123',
+                SubnetId: 'subnet-456',
+                VpcUid: 1000,
+                SubnetUid: 2000,
+                AvailableIpAddressCount: 10,
+              },
+            ],
+            Region: 'ap-guangzhou',
+            Zone: 'ap-guangzhou-3',
+            EnableKibanaPublicAccess: 1,
+            EnableKibanaPrivateAccess: 0,
+            AppId: 1250000000,
+            KibanaLanguage: 'zh-CN',
+            ClusterType: 0,
+            EnableMcpAccess: 1,
+            McpAccess: 'https://mcp.example.com',
+            TagList: [{ TagKey: 'env', TagValue: 'prod' }],
+          },
+        ],
+      });
+
+      const result = await operations.getSpace('space-123');
+
+      expect(result).toEqual(
+        expect.objectContaining({
+          IndexAccessUrl: 'https://index-access.example.com',
+          KibanaPublicAcl: {
+            BlackIpList: ['203.0.113.1'],
+            WhiteIpList: ['198.51.100.1'],
+          },
+          KibanaEmbedUrl: 'https://embed.example.com',
+          DiDataList: [
+            {
+              DiId: 'di-1',
+              CreateTime: '2024-01-01T00:00:00Z',
+              Status: 1,
+              DiDataSourceType: 'CVM',
+            },
+          ],
+          VpcInfo: [
+            {
+              VpcId: 'vpc-123',
+              SubnetId: 'subnet-456',
+              VpcUid: 1000,
+              SubnetUid: 2000,
+              AvailableIpAddressCount: 10,
+            },
+          ],
+          Region: 'ap-guangzhou',
+          Zone: 'ap-guangzhou-3',
+          EnableKibanaPublicAccess: 1,
+          EnableKibanaPrivateAccess: 0,
+          AppId: 1250000000,
+          KibanaLanguage: 'zh-CN',
+          ClusterType: 0,
+          EnableMcpAccess: 1,
+          McpAccess: 'https://mcp.example.com',
+          Tags: [{ Key: 'env', Value: 'prod' }],
+        }),
+      );
     });
   });
 

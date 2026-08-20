@@ -5,6 +5,7 @@ export type CosBucketConfig = {
   Region: string;
   IamPolicy?: BucketIam;
   ACL?: 'private' | 'public-read' | 'public-read-write';
+  Tags?: Array<{ Key: string; Value: string }>;
   WebsiteConfiguration?: {
     IndexDocument: {
       Suffix: string;
@@ -112,6 +113,12 @@ export type CosBucketInfo = {
       };
     }>;
   };
+  SseConfiguration?: {
+    sseAlgorithm?: string;
+    sseKmsMasterKeyId?: string;
+  };
+  Policy?: Record<string, unknown> | string;
+  Tags?: Array<{ Key: string; Value: string }>;
 };
 
 export const bucketToCosBucketConfig = (bucket: BucketDomain, region: string): CosBucketConfig => {

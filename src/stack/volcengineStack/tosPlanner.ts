@@ -4,6 +4,7 @@ import { createVolcengineClient } from '../../common/volcengineClient';
 import { bucketToTosConfig, extractTosBucketDefinition } from './tosTypes';
 import { getAllResources, getResource } from '../../common/stateManager';
 import { attributesEqual, computeDirectoryHash } from '../../common';
+import { OWNERSHIP_TAG_KEY, isOwnedByStack } from '../ownershipTag';
 
 const planBucketDeletion = (logicalId: string, definition: ResourceAttributes): PlanItem => ({
   logicalId,
@@ -43,6 +44,18 @@ export const generateBucketPlan = async (
       const desiredDefinition = extractTosBucketDefinition(config, websiteCodeHash);
 
       if (!currentState || currentState.status === 'tainted') {
+        // No usable local state: probe the provider before planning create.
+        // If a same-named bucket already exists WITHOUT our ownership tag it
+        // may belong to another project — fail fast in the plan instead of
+        // letting the executor discover it mid-deploy.
+        const client = createVolcengineClient(context);
+        const remoteBucket = await client.tos.getBucket(bucket.name);
+        if (remoteBucket && !isOwnedByStack(context, logicalId, remoteBucket.Tags)) {
+          throw new Error(
+            `Bucket ${bucket.name} already exists in provider but is not owned by this stack (missing ${OWNERSHIP_TAG_KEY} tag). Refusing to create — resolve manually.`,
+          );
+        }
+
         return {
           logicalId,
           action: 'create',

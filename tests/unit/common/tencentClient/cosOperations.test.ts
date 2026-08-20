@@ -18,6 +18,10 @@ const mockPutBucketWebsite = jest.fn();
 const mockGetBucketWebsite = jest.fn();
 const mockGetBucketVersioning = jest.fn();
 const mockGetBucketTagging = jest.fn();
+const mockGetBucketLifecycle = jest.fn();
+const mockGetBucketLogging = jest.fn();
+const mockGetBucketReplication = jest.fn();
+const mockGetBucketEncryption = jest.fn();
 
 const mockCosClient = {
   headBucket: mockHeadBucket,
@@ -37,6 +41,10 @@ const mockCosClient = {
   deleteBucketDomain: mockDeleteBucketDomain,
   putBucketPolicy: mockPutBucketPolicy,
   getBucketPolicy: mockGetBucketPolicy,
+  getBucketLifecycle: mockGetBucketLifecycle,
+  getBucketLogging: mockGetBucketLogging,
+  getBucketReplication: mockGetBucketReplication,
+  getBucketEncryption: mockGetBucketEncryption,
 } as unknown as COS;
 
 jest.mock('../../../../src/common/logger', () => ({
@@ -62,6 +70,16 @@ describe('cosOperations CORS', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     mockPutBucketDomain.mockImplementation((_params: unknown, cb: (err: null) => void) => cb(null));
+    // Default: auxiliary COS sub-configs are absent unless a test opts in.
+    const notConfigured = (_params: unknown, cb: (err: Error) => void) =>
+      cb(new Error('NoSuchConfiguration'));
+    mockGetBucketLifecycle.mockImplementation(notConfigured);
+    mockGetBucketLogging.mockImplementation(notConfigured);
+    mockGetBucketReplication.mockImplementation(notConfigured);
+    mockGetBucketEncryption.mockImplementation(notConfigured);
+    mockGetBucketPolicy.mockImplementation(
+      (_params: unknown, cb: (err: { statusCode: number }) => void) => cb({ statusCode: 404 }),
+    );
     operations = createCosOperations(mockCosClient, 'ap-guangzhou');
   });
 
@@ -235,6 +253,15 @@ describe('cosOperations bucket management', () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
+    const notConfigured = (_params: unknown, cb: (err: Error) => void) =>
+      cb(new Error('NoSuchConfiguration'));
+    mockGetBucketLifecycle.mockImplementation(notConfigured);
+    mockGetBucketLogging.mockImplementation(notConfigured);
+    mockGetBucketReplication.mockImplementation(notConfigured);
+    mockGetBucketEncryption.mockImplementation(notConfigured);
+    mockGetBucketPolicy.mockImplementation(
+      (_params: unknown, cb: (err: { statusCode: number }) => void) => cb({ statusCode: 404 }),
+    );
     operations = createCosOperations(mockCosClient, 'ap-guangzhou');
   });
 
@@ -318,6 +345,36 @@ describe('cosOperations bucket management', () => {
         }),
       ).rejects.toThrow('BucketAlreadyExists');
     });
+
+    it('should send tags as an x-cos-tagging header on putBucket', async () => {
+      mockPutBucket.mockImplementation((_params: unknown, cb: (err: null) => void) => cb(null));
+
+      await operations.createBucket({
+        Bucket: 'test-bucket',
+        Region: 'ap-guangzhou',
+        Tags: [{ Key: 'si-owned-by', Value: 'test-app-test-service:buckets.test_bucket' }],
+      });
+
+      expect(mockPutBucket).toHaveBeenCalledWith(
+        expect.objectContaining({
+          Bucket: 'test-bucket',
+          Region: 'ap-guangzhou',
+          Headers: {
+            'x-cos-tagging': 'si-owned-by=test-app-test-service%3Abuckets.test_bucket',
+          },
+        }),
+        expect.any(Function),
+      );
+    });
+
+    it('should omit the x-cos-tagging header when no tags are configured', async () => {
+      mockPutBucket.mockImplementation((_params: unknown, cb: (err: null) => void) => cb(null));
+
+      await operations.createBucket({ Bucket: 'test-bucket', Region: 'ap-guangzhou' });
+
+      const putParams = mockPutBucket.mock.calls[0][0] as { Headers?: Record<string, string> };
+      expect(putParams.Headers).toBeUndefined();
+    });
   });
 
   describe('getBucket', () => {
@@ -352,6 +409,7 @@ describe('cosOperations bucket management', () => {
       expect(result).toEqual({
         Name: 'test-bucket',
         Location: 'ap-guangzhou',
+        CreationDate: undefined,
         ACL: 'private',
         AccessControlPolicy: {
           owner: { id: 'owner-id', displayName: undefined },
@@ -361,6 +419,12 @@ describe('cosOperations bucket management', () => {
         CorsConfiguration: undefined,
         VersioningConfiguration: { status: 'Suspended' },
         TaggingConfiguration: undefined,
+        Tags: undefined,
+        LifecycleConfiguration: undefined,
+        LoggingConfiguration: undefined,
+        ReplicationConfiguration: undefined,
+        SseConfiguration: undefined,
+        Policy: null,
       });
     });
 
@@ -408,6 +472,136 @@ describe('cosOperations bucket management', () => {
         IndexDocument: { Suffix: 'index.html' },
         ErrorDocument: { Key: '404.html' },
       });
+    });
+
+    it('should retain the full detail set (max-detail state)', async () => {
+      mockHeadBucket.mockImplementation(
+        (_params: unknown, cb: (err: null, data: { headers: Record<string, string> }) => void) =>
+          cb(null, { headers: { 'x-cos-creation-date': '2024-01-01T00:00:00Z' } }),
+      );
+      mockGetBucketAcl.mockImplementation(
+        (_params: unknown, cb: (err: null, data: unknown) => void) =>
+          cb(null, { ACL: 'private', Owner: { ID: 'owner-id' }, Grants: [] }),
+      );
+      mockGetBucketCors.mockImplementation((_params: unknown, cb: (err: Error) => void) =>
+        cb(new Error('NoSuchCORSConfiguration')),
+      );
+      mockGetBucketWebsite.mockImplementation((_params: unknown, cb: (err: Error) => void) =>
+        cb(new Error('NoSuchWebsiteConfiguration')),
+      );
+      mockGetBucketVersioning.mockImplementation(
+        (_params: unknown, cb: (err: null, data: unknown) => void) =>
+          cb(null, { VersioningConfiguration: { Status: 'Enabled' } }),
+      );
+      mockGetBucketTagging.mockImplementation(
+        (_params: unknown, cb: (err: null, data: unknown) => void) =>
+          cb(null, {
+            Tags: [
+              { Key: 'env', Value: 'prod' },
+              { Key: 'team', Value: 'backend' },
+            ],
+          }),
+      );
+      mockGetBucketLifecycle.mockImplementation(
+        (_params: unknown, cb: (err: null, data: unknown) => void) =>
+          cb(null, {
+            Rules: [
+              {
+                ID: 'rule-1',
+                Status: 'Enabled',
+                Filter: { Prefix: 'logs/' },
+                Expiration: { Days: 30 },
+                Transition: { Days: 7, StorageClass: 'STANDARD_IA' },
+              },
+            ],
+          }),
+      );
+      mockGetBucketLogging.mockImplementation(
+        (_params: unknown, cb: (err: null, data: unknown) => void) =>
+          cb(null, {
+            BucketLoggingStatus: {
+              LoggingEnabled: { TargetBucket: 'log-bucket', TargetPrefix: 'logs/' },
+            },
+          }),
+      );
+      mockGetBucketReplication.mockImplementation(
+        (_params: unknown, cb: (err: null, data: unknown) => void) =>
+          cb(null, {
+            ReplicationConfiguration: {
+              Role: 'qcs::cam::uin/1:uin/2',
+              Rules: [
+                {
+                  ID: 'repl-1',
+                  Status: 'Enabled',
+                  Prefix: 'src/',
+                  Destination: { Bucket: 'dst-bucket', StorageClass: 'STANDARD' },
+                },
+              ],
+            },
+          }),
+      );
+      mockGetBucketEncryption.mockImplementation(
+        (_params: unknown, cb: (err: null, data: unknown) => void) =>
+          cb(null, {
+            ServerSideEncryptionConfiguration: {
+              Rule: [{ ApplyServerSideEncryptionByDefault: { SSEAlgorithm: 'AES256' } }],
+            },
+          }),
+      );
+      mockGetBucketPolicy.mockImplementation(
+        (_params: unknown, cb: (err: null, data: { Policy: string }) => void) =>
+          cb(null, { Policy: JSON.stringify({ version: '2.0', statement: [] }) }),
+      );
+
+      const result = await operations.getBucket('test-bucket', 'ap-guangzhou');
+
+      expect(result).toEqual(
+        expect.objectContaining({
+          CreationDate: '2024-01-01T00:00:00Z',
+          VersioningConfiguration: { status: 'Enabled' },
+          TaggingConfiguration: {
+            tags: [
+              { key: 'env', value: 'prod' },
+              { key: 'team', value: 'backend' },
+            ],
+          },
+          Tags: [
+            { Key: 'env', Value: 'prod' },
+            { Key: 'team', Value: 'backend' },
+          ],
+          LifecycleConfiguration: {
+            rules: [
+              {
+                id: 'rule-1',
+                status: 'Enabled',
+                prefix: 'logs/',
+                expiration: { days: 30, date: undefined, expiredObjectDeleteMarker: undefined },
+                transition: { days: 7, date: undefined, storageClass: 'STANDARD_IA' },
+              },
+            ],
+          },
+          LoggingConfiguration: {
+            targetBucket: 'log-bucket',
+            targetPrefix: 'logs/',
+          },
+          ReplicationConfiguration: {
+            role: 'qcs::cam::uin/1:uin/2',
+            rules: [
+              {
+                id: 'repl-1',
+                status: 'Enabled',
+                prefix: 'src/',
+                destination: { bucket: 'dst-bucket', storageClass: 'STANDARD' },
+              },
+            ],
+          },
+          SseConfiguration: {
+            sseAlgorithm: 'AES256',
+            sseKmsMasterKeyId: undefined,
+          },
+          Policy: { version: '2.0', statement: [] },
+        }),
+      );
     });
   });
 
@@ -699,6 +893,38 @@ describe('cosOperations bucket management', () => {
       });
     });
 
+    it('should return uppercase Tags for ownership verification when tagging is present', async () => {
+      mockHeadBucket.mockImplementation(
+        (_params: unknown, cb: (err: null, data: unknown) => void) => cb(null, {}),
+      );
+      mockGetBucketAcl.mockImplementation(
+        (_params: unknown, cb: (err: null, data: unknown) => void) =>
+          cb(null, { ACL: 'private', Owner: { ID: 'owner-id' }, Grants: [] }),
+      );
+      mockGetBucketCors.mockImplementation((_params: unknown, cb: (err: Error) => void) =>
+        cb(new Error('NoSuchCORSConfiguration')),
+      );
+      mockGetBucketWebsite.mockImplementation((_params: unknown, cb: (err: Error) => void) =>
+        cb(new Error('NoSuchWebsiteConfiguration')),
+      );
+      mockGetBucketVersioning.mockImplementation(
+        (_params: unknown, cb: (err: null, data: unknown) => void) =>
+          cb(null, { VersioningConfiguration: {} }),
+      );
+      mockGetBucketTagging.mockImplementation(
+        (_params: unknown, cb: (err: null, data: unknown) => void) =>
+          cb(null, {
+            Tags: [{ Key: 'si-owned-by', Value: 'test-app-test-service:buckets.test_bucket' }],
+          }),
+      );
+
+      const result = await operations.getBucket('test-bucket', 'ap-guangzhou');
+
+      expect(result?.Tags).toEqual([
+        { Key: 'si-owned-by', Value: 'test-app-test-service:buckets.test_bucket' },
+      ]);
+    });
+
     it('should handle ACL with Grantee containing URI (Group type)', async () => {
       mockHeadBucket.mockImplementation(
         (_params: unknown, cb: (err: null, data: unknown) => void) => cb(null, {}),
@@ -816,12 +1042,19 @@ describe('cosOperations bucket management', () => {
       expect(result).toEqual({
         Name: 'test-bucket',
         Location: 'ap-guangzhou',
+        CreationDate: undefined,
         ACL: undefined,
         AccessControlPolicy: undefined,
         CorsConfiguration: undefined,
         WebsiteConfiguration: undefined,
         VersioningConfiguration: undefined,
         TaggingConfiguration: undefined,
+        Tags: undefined,
+        LifecycleConfiguration: undefined,
+        LoggingConfiguration: undefined,
+        ReplicationConfiguration: undefined,
+        SseConfiguration: undefined,
+        Policy: null,
       });
     });
 

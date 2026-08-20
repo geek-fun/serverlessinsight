@@ -3,6 +3,7 @@ import { TableStoreTableInfo } from '../../common/aliyunClient/tablestoreOperati
 import { setResource, removeResource, buildSid } from '../../common';
 import { Context, TableDomain, PartialResourceError, ResourceState, StateFile } from '../../types';
 import { tableToTableStoreConfig, extractTableStoreDefinition } from './tablestoreTypes';
+import { isResourceAlreadyExistsError } from '../alreadyExists';
 import { logger } from '../../common/logger';
 
 export type TableStoreTableInstance = {
@@ -29,6 +30,8 @@ export type TableStoreTableInstance = {
     maxVersions?: number | null;
     maxTimeDeviation?: number | null;
     allowUpdate?: boolean | null;
+    bloomFilterType?: string | null;
+    blockSize?: number | null;
   };
   streamDetails?: {
     enableStream?: boolean | null;
@@ -36,6 +39,20 @@ export type TableStoreTableInstance = {
     expirationTime?: number | null;
     lastEnableTime?: string | null;
   };
+  tableStatus?: string | null;
+  definedColumn?: Array<{
+    name: string;
+    type: string;
+  }>;
+  indexMetas?: Array<{
+    name?: string;
+    primaryKey?: string[];
+    definedColumn?: string[];
+    indexUpdateMode?: string;
+    indexType?: string;
+    indexSyncPhase?: string;
+  }>;
+  shardSplits?: string[];
 };
 
 const buildTableStoreInstanceFromProvider = (
@@ -65,6 +82,8 @@ const buildTableStoreInstanceFromProvider = (
           maxVersions: info.tableOptions.maxVersions ?? null,
           maxTimeDeviation: info.tableOptions.maxTimeDeviation ?? null,
           allowUpdate: info.tableOptions.allowUpdate ?? null,
+          bloomFilterType: info.tableOptions.bloomFilterType ?? null,
+          blockSize: info.tableOptions.blockSize ?? null,
         }
       : undefined,
     streamDetails: info.streamDetails
@@ -75,6 +94,10 @@ const buildTableStoreInstanceFromProvider = (
           lastEnableTime: info.streamDetails.lastEnableTime ?? null,
         }
       : undefined,
+    tableStatus: info.tableStatus ?? null,
+    definedColumn: info.definedColumn ?? [],
+    indexMetas: info.indexMetas ?? [],
+    shardSplits: info.shardSplits ?? [],
   };
 };
 
@@ -142,6 +165,23 @@ export const createTableResource = async (
 
     return setResource(stateAfterDependents, logicalId, resourceState);
   } catch (error) {
+    // Aliyun Tablestore (OTS) does NOT support table-level tags — only
+    // instance-level. Without a tag, ownership of a pre-existing table cannot
+    // be verified, so tag-based idempotent adoption is IMPOSSIBLE. On a create
+    // collision we therefore ALWAYS refuse to adopt (never take over a table
+    // that may belong to another project): persist the tainted state and let
+    // the user resolve manually.
+    if (isResourceAlreadyExistsError(error, ['OTSObjectAlreadyExist', 'OTSInstanceAlreadyExist'])) {
+      const existingTable = await tablestoreClient.getTable(config.tableName);
+      if (existingTable) {
+        throw new PartialResourceError(
+          stateAfterDependents,
+          new Error(
+            `Table ${config.tableName} already exists in provider but ownership cannot be verified (Tablestore does not support table-level tags). Refusing to adopt — resolve manually.`,
+          ),
+        );
+      }
+    }
     throw new PartialResourceError(
       stateAfterDependents,
       error instanceof Error ? error : new Error(String(error)),

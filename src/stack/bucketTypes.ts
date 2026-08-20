@@ -151,6 +151,7 @@ export type CommonBucketInfo = {
   transferAccelerationStatus?: 'Enabled' | 'Disabled';
   replicationRules?: BucketReplicationRule[];
   tags?: BucketTag[];
+  policy?: string | null;
 };
 
 /**

@@ -8,9 +8,14 @@ import {
   ResourceAttributes,
 } from '../../types';
 import { createTencentClient } from '../../common/tencentClient';
-import { databaseToTdsqlcConfig, extractTdsqlcDefinition } from './tdsqlcTypes';
+import {
+  databaseToTdsqlcConfig,
+  extractTdsqlcDefinition,
+  tdsqlcTagsToOwnershipTags,
+} from './tdsqlcTypes';
 import { getAllResources, getResource } from '../../common/stateManager';
 import { attributesEqual } from '../../common/hashUtils';
+import { OWNERSHIP_TAG_KEY, isOwnedByStack } from '../ownershipTag';
 
 const planDatabaseDeletion = (logicalId: string, definition: ResourceAttributes): PlanItem => ({
   logicalId,
@@ -52,6 +57,21 @@ export const generateDatabasePlan = async (
       const desiredDefinition = extractTdsqlcDefinition(config);
 
       if (!currentState || currentState.status === 'tainted') {
+        // No usable local state: probe the provider before planning create. If a
+        // same-named cluster already exists WITHOUT our ownership tag it may
+        // belong to another project — fail fast in the plan instead of letting
+        // the executor discover it mid-deploy.
+        const client = createTencentClient(context);
+        const remoteCluster = await client.tdsqlc.getClusterByName(database.name);
+        if (
+          remoteCluster &&
+          !isOwnedByStack(context, logicalId, tdsqlcTagsToOwnershipTags(remoteCluster.ResourceTags))
+        ) {
+          throw new Error(
+            `Cluster ${database.name} already exists in provider but is not owned by this stack (missing ${OWNERSHIP_TAG_KEY} tag). Refusing to create — resolve manually.`,
+          );
+        }
+
         return {
           logicalId,
           action: 'create',

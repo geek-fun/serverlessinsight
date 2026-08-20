@@ -17,12 +17,15 @@ export type TdsqlcClusterConfig = {
   AutoPauseDelay?: number;
   StoragePayMode?: number;
   AdminPassword: string;
+  ResourceTags?: Array<{ TagKey: string; TagValue: string }>;
 };
 
 export type TdsqlcClusterInfo = {
   ClusterId: string;
   ClusterName: string;
   Region: string;
+  Uin?: string;
+  AppId?: number;
   Zone?: string;
   PhysicalZone?: string;
   DbType: string;
@@ -40,7 +43,7 @@ export type TdsqlcClusterInfo = {
   Vport?: number;
   WanDomain?: string;
   WanIP?: string;
-  WanPort?: string;
+  WanPort?: number;
   WanStatus?: string;
   MinCpu?: number;
   MaxCpu?: number;
@@ -60,8 +63,32 @@ export type TdsqlcClusterInfo = {
   AutoRenewFlag?: number;
   InstanceCount?: number;
   ProcessingTask?: string;
+  Tasks?: Array<{
+    TaskId?: number;
+    TaskType?: string;
+    TaskStatus?: string;
+    ObjectId?: string;
+    ObjectType?: string;
+  }>;
+  NetAddrs?: Array<{
+    Vip?: string;
+    Vport?: number;
+    WanDomain?: string;
+    WanPort?: number;
+    NetType?: string;
+    UniqSubnetId?: string;
+    UniqVpcId?: string;
+  }>;
+  HasSlaveZone?: string;
+  ResourcePackages?: Array<{
+    PackageId?: string;
+    PackageType?: string;
+    DeductionPriority?: number;
+  }>;
+  GdnId?: string;
+  GdnRole?: string;
   SupportedFeatures?: string[];
-  RollbackSupport?: number;
+  RollbackSupport?: string;
   NetworkType?: string;
   ResourcePackageId?: string;
   ResourcePackageType?: string;
@@ -85,9 +112,17 @@ export type TdsqlcClusterInfo = {
     TagValue?: string;
   }>;
   CynosVersion?: string;
+  CynosVersionTag?: string;
   CynosVersionStatus?: string;
-  IsLatestVersion?: string;
+  IsLatestVersion?: boolean;
 };
+
+// TDSQL-C tags are {TagKey,TagValue}; the ownership-tag matcher expects
+// {Key,Value}. Convert once at the probe site.
+export const tdsqlcTagsToOwnershipTags = (
+  tags: Array<{ TagKey?: string; TagValue?: string }> | undefined,
+): Array<{ Key?: string; Value?: string }> =>
+  (tags ?? []).map((t) => ({ Key: t.TagKey, Value: t.TagValue }));
 
 export const databaseToTdsqlcConfig = (database: DatabaseDomain): TdsqlcClusterConfig => {
   // Map version from enum to Tencent Cloud version format

@@ -14,6 +14,12 @@ export type EventRaw = {
     backend: Resolvable<string>;
   }>;
   domain?: EventDomainConfig;
+  /** Volcengine API 网关 instance network (VPC + subnets) — required for CreateGateway */
+  network?: {
+    vpc_id: string;
+    subnet_ids: string[];
+  };
+  log?: Resolvable<boolean>;
 };
 
 export type EventDomain = {

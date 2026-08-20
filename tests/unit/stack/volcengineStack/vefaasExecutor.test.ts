@@ -347,5 +347,65 @@ describe('vefaasExecutor', () => {
       expect(result.partialFailure).toBeDefined();
       expect(result.partialFailure?.error).toBe(causeError);
     });
+
+    it('should emit resource_pre and resource_complete events via context.reportEvent', async () => {
+      const reportEvent = jest.fn();
+      const ctx = { ...mockContext, reportEvent };
+      const plan: Plan = {
+        items: [
+          {
+            logicalId: 'functions.test_fn',
+            action: 'create',
+            resourceType: 'VOLCENGINE_VEFAAS',
+          },
+        ],
+      };
+      (createResource as jest.Mock).mockResolvedValueOnce({
+        ...mockState,
+        resources: { 'functions.test_fn': { mode: 'managed' } },
+      });
+
+      await executeFunctionPlan(ctx, plan, [mockFunction], mockState);
+
+      expect(reportEvent).toHaveBeenCalledWith(
+        expect.objectContaining({
+          type: 'resource_pre',
+          logicalId: 'functions.test_fn',
+          action: 'create',
+        }),
+      );
+      expect(reportEvent).toHaveBeenCalledWith(
+        expect.objectContaining({
+          type: 'resource_complete',
+          logicalId: 'functions.test_fn',
+        }),
+      );
+    });
+
+    it('should emit resource_failed event when the operation throws', async () => {
+      const reportEvent = jest.fn();
+      const ctx = { ...mockContext, reportEvent };
+      const plan: Plan = {
+        items: [
+          {
+            logicalId: 'functions.test_fn',
+            action: 'create',
+            resourceType: 'VOLCENGINE_VEFAAS',
+          },
+        ],
+      };
+      (createResource as jest.Mock).mockRejectedValueOnce(new Error('boom'));
+
+      const result = await executeFunctionPlan(ctx, plan, [mockFunction], mockState);
+
+      expect(result.partialFailure).toBeDefined();
+      expect(reportEvent).toHaveBeenCalledWith(
+        expect.objectContaining({
+          type: 'resource_failed',
+          logicalId: 'functions.test_fn',
+          error: expect.objectContaining({ message: 'boom' }),
+        }),
+      );
+    });
   });
 });

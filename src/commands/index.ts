@@ -22,6 +22,14 @@ import { whoami } from './whoami';
 import { lang } from '../lang';
 import { parseYaml, revalYaml } from '../parser';
 
+const MAX_ERROR_MESSAGE_LENGTH = 2000;
+const truncateErrorMessage = (message: string | undefined): string => {
+  if (!message) return '';
+  return message.length > MAX_ERROR_MESSAGE_LENGTH
+    ? `${message.slice(0, MAX_ERROR_MESSAGE_LENGTH)}… (truncated ${message.length} chars)`
+    : message;
+};
+
 // Global error handler
 const handleCommandError = (
   error: { message?: string; stack?: string; code?: number; isPartialFailure?: boolean },
@@ -33,7 +41,7 @@ const handleCommandError = (
     logger.error(
       lang.__('COMMAND_FAILED', {
         commandName,
-        error: error?.message || 'Unknown error occurred',
+        error: truncateErrorMessage(error?.message) || 'Unknown error occurred',
       }),
     );
   }

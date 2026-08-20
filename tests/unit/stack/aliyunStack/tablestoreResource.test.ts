@@ -299,6 +299,79 @@ describe('TablestoreResource', () => {
       expect(result).toEqual(expectedState);
     });
 
+    it('should retain max-detail table fields in the state instance', async () => {
+      const table = createTestTable('test_table');
+      const tableInfo = {
+        tableName: 'test-table',
+        primaryKey: [{ name: 'id', type: 'STRING' }],
+        tableStatus: 'ACTIVE',
+        definedColumn: [{ name: 'status', type: 'STRING' }],
+        indexMetas: [
+          {
+            name: 'idx-status',
+            primaryKey: ['status'],
+            definedColumn: ['id'],
+            indexUpdateMode: 'IUM_ASYNC_INDEX',
+            indexType: 'IT_GLOBAL_INDEX',
+            indexSyncPhase: 'ISP_INCR',
+          },
+        ],
+        shardSplits: ['shard-1'],
+        tableOptions: {
+          timeToLive: -1,
+          maxVersions: 1,
+          maxTimeDeviation: 86400,
+          allowUpdate: true,
+          bloomFilterType: 'BLOOM',
+          blockSize: 4096,
+        },
+        streamDetails: null,
+      };
+
+      mockTablestoreClient.createTable.mockResolvedValue(undefined);
+      mockTablestoreClient.waitForTableReady.mockResolvedValue(undefined);
+      mockTablestoreClient.getTable.mockResolvedValue(tableInfo);
+
+      let savedResourceState: unknown;
+      mockedStateManager.setResource.mockImplementation(
+        (_state: StateFile, _logicalId: string, resourceState: unknown) => {
+          savedResourceState = resourceState;
+          return { ...initialState };
+        },
+      );
+
+      await createTableResource(mockContext, table, initialState);
+
+      const resourceState = savedResourceState as {
+        instances?: Array<Record<string, unknown>>;
+      };
+      const tableInstance = resourceState.instances?.[0];
+
+      expect(tableInstance).toMatchObject({
+        tableStatus: 'ACTIVE',
+        definedColumn: [{ name: 'status', type: 'STRING' }],
+        indexMetas: [
+          {
+            name: 'idx-status',
+            primaryKey: ['status'],
+            definedColumn: ['id'],
+            indexUpdateMode: 'IUM_ASYNC_INDEX',
+            indexType: 'IT_GLOBAL_INDEX',
+            indexSyncPhase: 'ISP_INCR',
+          },
+        ],
+        shardSplits: ['shard-1'],
+        tableOptions: {
+          timeToLive: -1,
+          maxVersions: 1,
+          maxTimeDeviation: 86400,
+          allowUpdate: true,
+          bloomFilterType: 'BLOOM',
+          blockSize: 4096,
+        },
+      });
+    });
+
     it('should throw error when getTable returns null after create', async () => {
       const table = createTestTable('test_table');
 
@@ -332,6 +405,62 @@ describe('TablestoreResource', () => {
         status: 'tainted',
       });
       expect(partialError.cause.message).toBe('Create failed');
+    });
+
+    it('should refuse to adopt when create collides with an existing table (no table-level tags)', async () => {
+      const table = createTestTable('test_table');
+
+      const collisionError = new Error('OTSObjectAlreadyExist: Table already exists');
+      mockTablestoreClient.createTable.mockRejectedValue(collisionError);
+      mockTablestoreClient.getTable.mockResolvedValue({ tableName: 'test-table' });
+      mockedStateManager.setResource.mockImplementation(
+        (_state: StateFile, _logicalId: string, resourceState: unknown) => ({
+          ...initialState,
+          resources: { 'tables.test_table': resourceState },
+        }),
+      );
+
+      const error = await createTableResource(mockContext, table, initialState).catch(
+        (e: unknown) => e,
+      );
+
+      expect(error).toBeInstanceOf(PartialResourceError);
+      const partialError = error as PartialResourceError;
+      expect(partialError.updatedState.resources['tables.test_table']).toMatchObject({
+        status: 'tainted',
+      });
+      expect(partialError.cause.message).toContain('Refusing to adopt');
+      expect(partialError.cause.message).toContain('ownership cannot be verified');
+      expect(mockTablestoreClient.getTable).toHaveBeenCalledWith('test-table');
+    });
+
+    it('should create table and persist a non-tainted state on success', async () => {
+      const table = createTestTable('test_table');
+      const tableInfo = {
+        tableName: 'test-table',
+        primaryKey: [{ name: 'id', type: 'STRING' }],
+        reservedThroughputDetails: { capacityUnit: { read: 0, write: 0 } },
+        tableOptions: undefined,
+        streamDetails: undefined,
+      };
+
+      mockTablestoreClient.createTable.mockResolvedValue(undefined);
+      mockTablestoreClient.waitForTableReady.mockResolvedValue(undefined);
+      mockTablestoreClient.getTable.mockResolvedValue(tableInfo);
+      mockedStateManager.setResource.mockImplementation(
+        (_state: StateFile, _logicalId: string, resourceState: unknown) => ({
+          ...initialState,
+          resources: { 'tables.test_table': resourceState },
+        }),
+      );
+
+      const result = await createTableResource(mockContext, table, initialState);
+
+      const calls = (mockedStateManager.setResource as jest.Mock).mock.calls;
+      expect(calls).toHaveLength(2);
+      // First call is the tainted pre-write, second is the ready state.
+      expect((calls[1][2] as Record<string, unknown>).status).not.toBe('tainted');
+      expect(result.resources['tables.test_table'].status).not.toBe('tainted');
     });
 
     it('should handle table with null/undefined optional fields', async () => {

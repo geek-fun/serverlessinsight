@@ -100,6 +100,8 @@ describe('TableStore Planner', () => {
     });
 
     it('should plan to create when existing state is tainted', async () => {
+      mockTablestoreOperations.getTable.mockResolvedValue(null);
+
       const state = setResource(initialState, 'tables.test_table', {
         mode: 'managed',
         region: 'cn-hangzhou',
@@ -128,7 +130,49 @@ describe('TableStore Planner', () => {
         action: 'create',
         resourceType: 'ALIYUN_TABLESTORE_TABLE',
       });
-      expect(mockTablestoreOperations.getTable).not.toHaveBeenCalled();
+      expect(mockTablestoreOperations.getTable).toHaveBeenCalledWith('test-table');
+    });
+
+    it('should fail fast when state is empty but remote table already exists (no table-level tags)', async () => {
+      mockTablestoreOperations.getTable.mockResolvedValue({
+        tableName: 'test-table',
+        primaryKey: [{ name: 'id', type: 'INTEGER' }],
+      });
+
+      await expect(generateTablePlan(mockContext, initialState, [testTable])).rejects.toThrow(
+        'Refusing to adopt',
+      );
+    });
+
+    it('should fail fast when state is tainted and remote table already exists', async () => {
+      mockTablestoreOperations.getTable.mockResolvedValue({
+        tableName: 'test-table',
+        primaryKey: [{ name: 'id', type: 'INTEGER' }],
+      });
+
+      const state = setResource(initialState, 'tables.test_table', {
+        mode: 'managed',
+        region: 'cn-hangzhou',
+        definition: {
+          instanceName: 'test-instance',
+          tableName: 'test-table',
+          clusterType: 'HYBRID',
+          description: null,
+          primaryKey: [{ name: 'id', type: 'INTEGER' }],
+          attributes: [{ name: 'id', type: 'INTEGER' }],
+          reservedThroughput: null,
+          onDemandThroughput: null,
+          tableOptions: null,
+          network: null,
+        },
+        instances: [],
+        lastUpdated: new Date().toISOString(),
+        status: 'tainted',
+      });
+
+      await expect(generateTablePlan(mockContext, state, [testTable])).rejects.toThrow(
+        'Refusing to adopt',
+      );
     });
 
     it('should plan no changes when table exists and matches state', async () => {

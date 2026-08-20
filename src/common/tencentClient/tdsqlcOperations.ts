@@ -1,6 +1,7 @@
 import * as cynosdb from 'tencentcloud-sdk-nodejs-cynosdb';
 import { Context } from '../../types';
 import { TdsqlcClusterConfig, TdsqlcClusterInfo, TdsqlcClusterStatus } from './types';
+import { mapClusterToInfo } from './tdsqlcClusterMapper';
 import { logger } from '../logger';
 import { lang } from '../../lang';
 import { pollUntil, PollingTimeoutError } from '../polling';
@@ -107,6 +108,7 @@ export const createTdsqlcOperations = (cynosdbClient: CynosdbSdkClient, context:
         AutoPauseDelay: config.AutoPauseDelay,
         StoragePayMode: config.StoragePayMode,
         StorageLimit: config.MaxStorageSize,
+        ...(config.ResourceTags ? { ResourceTags: config.ResourceTags } : {}),
       };
 
       try {
@@ -147,72 +149,48 @@ export const createTdsqlcOperations = (cynosdbClient: CynosdbSdkClient, context:
           return null;
         }
 
-        const cluster = response.ClusterSet[0];
-
-        return {
-          ClusterId: cluster.ClusterId || '',
-          ClusterName: cluster.ClusterName || '',
-          Region: cluster.Region || context.region,
-          Zone: cluster.Zone,
-          PhysicalZone: cluster.PhysicalZone,
-          DbType: cluster.DbType || '',
-          DbVersion: cluster.DbVersion || '',
-          DbMode: cluster.DbMode,
-          Status: cluster.Status || '',
-          StatusDesc: cluster.StatusDesc,
-          ServerlessStatus: cluster.ServerlessStatus,
-          VpcId: cluster.VpcId,
-          VpcName: undefined,
-          SubnetId: cluster.SubnetId,
-          SubnetName: undefined,
-          Charset: undefined,
-          Vip: cluster.Vip,
-          Vport: cluster.Vport,
-          WanDomain: undefined,
-          WanIP: undefined,
-          WanPort: undefined,
-          WanStatus: undefined,
-          MinCpu: undefined,
-          MaxCpu: undefined,
-          MinStorageSize: cluster.MinStorageSize,
-          MaxStorageSize: cluster.MaxStorageSize,
-          StorageId: cluster.StorageId,
-          Storage: cluster.Storage,
-          StorageLimit: cluster.StorageLimit,
-          StoragePayMode: cluster.StoragePayMode,
-          AutoPause: cluster.ServerlessStatus,
-          AutoPauseDelay: undefined,
-          CreateTime: cluster.CreateTime,
-          UpdateTime: cluster.UpdateTime,
-          ProjectId: cluster.ProjectID,
-          PayMode: cluster.PayMode,
-          PeriodEndTime: cluster.PeriodEndTime,
-          AutoRenewFlag: cluster.RenewFlag,
-          InstanceCount: cluster.InstanceNum,
-          ProcessingTask: cluster.ProcessingTask,
-          SupportedFeatures: undefined,
-          RollbackSupport: undefined,
-          NetworkType: undefined,
-          ResourcePackageId: undefined,
-          ResourcePackageType: undefined,
-          ResourcePackageState: undefined,
-          PhysicalRegion: undefined,
-          ProxyStatus: undefined,
-          RwGroupId: undefined,
-          MasterZone: cluster.MasterZone,
-          SlaveZones: cluster.SlaveZones,
-          BusinessType: cluster.BusinessType,
-          IsFreeze: cluster.IsFreeze,
-          OrderSource: cluster.OrderSource,
-          Ability: cluster.Ability,
-          ResourceTags: cluster.ResourceTags,
-          CynosVersion: cluster.CynosVersion,
-          CynosVersionStatus: undefined,
-          IsLatestVersion: undefined,
-        };
+        return mapClusterToInfo(response.ClusterSet[0], context.region);
       } catch (error) {
-        logger.error(`${lang.__('TDSQL_CLUSTER_GET_FAILED')}: ${error}`);
+        if (
+          error &&
+          typeof error === 'object' &&
+          'code' in error &&
+          typeof error.code === 'string' &&
+          error.code.startsWith('ResourceNotFound')
+        ) {
+          return null;
+        }
+        throw error;
+      }
+    },
+
+    // DescribeClusters filters only support ClusterId/InstanceId/InstanceName
+    // (SDK QueryFilter docs), so a name probe lists clusters and matches by
+    // ClusterName client-side. Pages up to 500 clusters (5 requests).
+    getClusterByName: async (clusterName: string): Promise<TdsqlcClusterInfo | null> => {
+      try {
+        for (let offset = 0; offset < 500; offset += 100) {
+          const response = await cynosdbClient.DescribeClusters({ Limit: 100, Offset: offset });
+          const cluster = (response.ClusterSet ?? []).find((c) => c.ClusterName === clusterName);
+          if (cluster) {
+            return mapClusterToInfo(cluster, context.region);
+          }
+          if (!response.ClusterSet || response.ClusterSet.length < 100) {
+            break;
+          }
+        }
         return null;
+      } catch (error) {
+        if (
+          error &&
+          typeof error === 'object' &&
+          'code' in error &&
+          typeof error.code === 'string' &&
+          error.code.startsWith('ResourceNotFound')
+        ) {
+          return null;
+        }
+        throw error;
       }
     },
 

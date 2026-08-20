@@ -28,6 +28,28 @@ export type ApigwGroupConfig = {
   tags?: Array<{ key: string; value: string }>;
 };
 
+export type ApigwCustomDomainItem = {
+  bindStageAlias?: string;
+  bindStageName?: string;
+  certificateId?: string;
+  certificateName?: string;
+  certificateValidEnd?: number;
+  certificateValidStart?: number;
+  clientCertSDnPassThrough?: boolean;
+  customDomainType?: string;
+  domainBindingStatus?: string;
+  domainCNAMEStatus?: string;
+  domainLegalStatus?: string;
+  domainName?: string;
+  domainRemark?: string;
+  domainWebSocketStatus?: string;
+  isHttpRedirectToHttps?: boolean;
+  sslOcspCacheEnable?: boolean;
+  sslOcspEnable?: boolean;
+  sslVerifyDepth?: number;
+  wildcardDomainPatterns?: string;
+};
+
 export type ApigwGroupInfo = {
   groupId?: string;
   groupName?: string;
@@ -43,6 +65,29 @@ export type ApigwGroupInfo = {
   billingStatus?: string;
   illegalStatus?: string;
   trafficLimit?: number;
+  tags?: Array<{ Key?: string; Value?: string }>;
+  // Maximum-detail fields — retained from DescribeApiGroup so state keeps the
+  // full cloud group detail (custom domains/certs, stages, VPC domains, TLS
+  // policies, migration status, tracing/log config, feature flags).
+  customDomains?: ApigwCustomDomainItem[];
+  stageItems?: Array<{ description?: string; stageId?: string; stageName?: string }>;
+  defaultDomain?: string;
+  vpcDomain?: string;
+  vpcSlbIntranetDomain?: string;
+  httpsPolicy?: string;
+  ipv6Status?: string;
+  migrationStatus?: string;
+  migrationError?: string;
+  passthroughHeaders?: string;
+  userLogConfig?: string;
+  customTraceConfig?: string;
+  customerConfigs?: string;
+  customAppCodeConfig?: string;
+  dedicatedInstanceType?: string;
+  disableInnerDomain?: boolean;
+  cloudMarketCommodity?: boolean;
+  cmsMonitorGroup?: string;
+  compatibleFlags?: string;
 };
 
 export type ApigwApiConfig = {
@@ -84,6 +129,26 @@ export type ApigwApiConfig = {
   tags?: Array<{ key: string; value: string }>;
 };
 
+export type ApigwRequestParameter = {
+  apiParameterName?: string;
+  arrayItemsType?: string;
+  defaultValue?: string;
+  demoValue?: string;
+  description?: string;
+  docOrder?: number;
+  docShow?: string;
+  enumValue?: string;
+  jsonScheme?: string;
+  location?: string;
+  maxLength?: number;
+  maxValue?: number;
+  minLength?: number;
+  minValue?: number;
+  parameterType?: string;
+  regularExpression?: string;
+  required?: string;
+};
+
 export type ApigwApiInfo = {
   apiId?: string;
   apiName?: string;
@@ -98,6 +163,9 @@ export type ApigwApiInfo = {
     requestPath?: string;
     requestMode?: string;
     bodyFormat?: string;
+    bodyModel?: string;
+    escapePathParam?: boolean;
+    postBodyDescription?: string;
   };
   serviceConfig?: {
     serviceProtocol?: string;
@@ -105,17 +173,100 @@ export type ApigwApiInfo = {
     serviceHttpMethod?: string;
     servicePath?: string;
     serviceTimeout?: number;
+    aoneAppName?: string;
+    contentTypeCatagory?: string;
+    contentTypeValue?: string;
+    eventBridgeConfig?: {
+      eventBridgeRegionId?: string;
+      eventBus?: string;
+      eventSource?: string;
+      roleArn?: string;
+    };
+    mock?: string;
+    mockHeaders?: Array<{ headerName?: string; headerValue?: string }>;
+    mockStatusCode?: number;
+    ossConfig?: { action?: string; bucketName?: string; key?: string; ossRegionId?: string };
+    serviceVpcEnable?: string;
+    vpcConfig?: {
+      instanceId?: string;
+      name?: string;
+      port?: number;
+      vpcId?: string;
+      vpcScheme?: string;
+    };
     functionComputeConfig?: {
       fcRegionId?: string;
       functionName?: string;
       roleArn?: string;
       fcVersion?: string;
       method?: string;
+      contentTypeCatagory?: string;
+      contentTypeValue?: string;
+      fcBaseUrl?: string;
+      fcType?: string;
+      onlyBusinessPath?: boolean;
+      path?: string;
+      qualifier?: string;
+      regionId?: string;
+      serviceName?: string;
+      triggerName?: string;
     };
     mockResult?: string;
   };
   resultType?: string;
   resultSample?: string;
+  failResultSample?: string;
+  regionId?: string;
+  tagList?: Array<{ tagKey?: string; tagValue?: string }>;
+  backendConfig?: { backendId?: string; backendName?: string; backendType?: string };
+  backendEnable?: boolean;
+  openIdConnectConfig?: {
+    idTokenParamName?: string;
+    openIdApiType?: string;
+    publicKey?: string;
+    publicKeyId?: string;
+  };
+  requestParameters?: ApigwRequestParameter[];
+  serviceParameters?: Array<{
+    location?: string;
+    parameterType?: string;
+    serviceParameterName?: string;
+  }>;
+  serviceParametersMap?: Array<{ requestParameterName?: string; serviceParameterName?: string }>;
+  systemParameters?: Array<{
+    demoValue?: string;
+    description?: string;
+    location?: string;
+    parameterName?: string;
+    serviceParameterName?: string;
+  }>;
+  customSystemParameters?: Array<{
+    demoValue?: string;
+    description?: string;
+    location?: string;
+    parameterName?: string;
+    serviceParameterName?: string;
+  }>;
+  constantParameters?: Array<{
+    constantValue?: string;
+    description?: string;
+    location?: string;
+    serviceParameterName?: string;
+  }>;
+  errorCodeSamples?: Array<{
+    code?: string;
+    description?: string;
+    message?: string;
+    model?: string;
+  }>;
+  resultBodyModel?: string;
+  mock?: string;
+  mockResult?: string;
+  disableInternet?: boolean;
+  forceNonceCheck?: boolean;
+  allowSignatureMethod?: string;
+  appCodeAuthType?: string;
+  webSocketApiType?: string;
   createdTime?: string;
   modifiedTime?: string;
   deployedInfos?: Array<{
@@ -555,7 +706,7 @@ export const createApigwOperations = (
     );
   };
 
-  return {
+  const operations = {
     /**
      * Create an API Gateway group
      */
@@ -594,22 +745,103 @@ export const createApigwOperations = (
           return null;
         }
 
-        return {
-          groupId: response.body.groupId,
-          groupName: response.body.groupName,
-          description: response.body.description,
-          basePath: response.body.basePath,
-          subDomain: response.body.subDomain,
-          instanceId: response.body.instanceId,
-          instanceType: response.body.instanceType,
-          regionId: response.body.regionId,
-          status: response.body.status,
-          createdTime: response.body.createdTime,
-          modifiedTime: response.body.modifiedTime,
-          billingStatus: response.body.billingStatus,
-          illegalStatus: response.body.illegalStatus,
-          trafficLimit: response.body.trafficLimit,
+        const body = response.body;
+        const groupInfo: ApigwGroupInfo = {
+          groupId: body.groupId,
+          groupName: body.groupName,
+          description: body.description,
+          basePath: body.basePath,
+          subDomain: body.subDomain,
+          instanceId: body.instanceId,
+          instanceType: body.instanceType,
+          regionId: body.regionId,
+          status: body.status,
+          createdTime: body.createdTime,
+          modifiedTime: body.modifiedTime,
+          billingStatus: body.billingStatus,
+          illegalStatus: body.illegalStatus,
+          trafficLimit: body.trafficLimit,
+          // Maximum-detail fields — retain everything DescribeApiGroup returns.
+          customDomains: body.customDomains?.domainItem?.map((d) => ({
+            bindStageAlias: d.bindStageAlias,
+            bindStageName: d.bindStageName,
+            certificateId: d.certificateId,
+            certificateName: d.certificateName,
+            certificateValidEnd: d.certificateValidEnd,
+            certificateValidStart: d.certificateValidStart,
+            clientCertSDnPassThrough: d.clientCertSDnPassThrough,
+            customDomainType: d.customDomainType,
+            domainBindingStatus: d.domainBindingStatus,
+            domainCNAMEStatus: d.domainCNAMEStatus,
+            domainLegalStatus: d.domainLegalStatus,
+            domainName: d.domainName,
+            domainRemark: d.domainRemark,
+            domainWebSocketStatus: d.domainWebSocketStatus,
+            isHttpRedirectToHttps: d.isHttpRedirectToHttps,
+            sslOcspCacheEnable: d.sslOcspCacheEnable,
+            sslOcspEnable: d.sslOcspEnable,
+            sslVerifyDepth: d.sslVerifyDepth,
+            wildcardDomainPatterns: d.wildcardDomainPatterns,
+          })),
+          stageItems: body.stageItems?.stageInfo?.map((s) => ({
+            description: s.description,
+            stageId: s.stageId,
+            stageName: s.stageName,
+          })),
+          defaultDomain: body.defaultDomain,
+          vpcDomain: body.vpcDomain,
+          vpcSlbIntranetDomain: body.vpcSlbIntranetDomain,
+          httpsPolicy: body.httpsPolicy,
+          ipv6Status: body.ipv6Status,
+          migrationStatus: body.migrationStatus,
+          migrationError: body.migrationError,
+          passthroughHeaders: body.passthroughHeaders,
+          userLogConfig: body.userLogConfig,
+          customTraceConfig: body.customTraceConfig,
+          customerConfigs: body.customerConfigs,
+          customAppCodeConfig: body.customAppCodeConfig,
+          dedicatedInstanceType: body.dedicatedInstanceType,
+          disableInnerDomain: body.disableInnerDomain,
+          cloudMarketCommodity: body.cloudMarketCommodity,
+          cmsMonitorGroup: body.cmsMonitorGroup,
+          compatibleFlags: body.compatibleFlags,
         };
+
+        try {
+          const tags = await operations.getGroupTags(groupId);
+          if (tags) {
+            groupInfo.tags = tags;
+          }
+        } catch {
+          // Tags are best-effort; group detail is still returned without them.
+        }
+
+        return groupInfo;
+      } catch (error: unknown) {
+        if (isApigwNotFoundError(error)) {
+          return null;
+        }
+        throw error;
+      }
+    },
+
+    /**
+     * Fetch resource tags for an API group (ListTagResources).
+     */
+    getGroupTags: async (
+      groupId: string,
+    ): Promise<Array<{ Key?: string; Value?: string }> | null> => {
+      try {
+        const request = new cloudapi.ListTagResourcesRequest({
+          resourceType: 'apiGroup',
+          resourceId: [groupId],
+        });
+        const response = await apigwClient.listTagResources(request);
+        const tagResources = response.body?.tagResources?.tagResource ?? [];
+        if (tagResources.length === 0) {
+          return null;
+        }
+        return tagResources.map((t) => ({ Key: t.tagKey, Value: t.tagValue }));
       } catch (error: unknown) {
         if (isApigwNotFoundError(error)) {
           return null;
@@ -652,9 +884,13 @@ export const createApigwOperations = (
         instanceId: group.instanceId,
         instanceType: group.instanceType,
         regionId: group.regionId,
+        httpsPolicy: group.httpsPolicy,
+        createdTime: group.createdTime,
+        modifiedTime: group.modifiedTime,
         billingStatus: group.billingStatus,
         illegalStatus: group.illegalStatus,
         trafficLimit: group.trafficLimit,
+        tags: group.tags?.tagInfo?.map((t) => ({ Key: t.key, Value: t.value })),
       };
     },
 
@@ -781,8 +1017,7 @@ export const createApigwOperations = (
         }
 
         const body = response.body;
-
-        return {
+        const apiInfo: ApigwApiInfo = {
           apiId: body.apiId,
           apiName: body.apiName,
           groupId: body.groupId,
@@ -797,6 +1032,9 @@ export const createApigwOperations = (
                 requestPath: body.requestConfig.requestPath,
                 requestMode: body.requestConfig.requestMode,
                 bodyFormat: body.requestConfig.bodyFormat,
+                bodyModel: body.requestConfig.bodyModel,
+                escapePathParam: body.requestConfig.escapePathParam,
+                postBodyDescription: body.requestConfig.postBodyDescription,
               }
             : undefined,
           serviceConfig: body.serviceConfig
@@ -806,6 +1044,41 @@ export const createApigwOperations = (
                 serviceHttpMethod: body.serviceConfig.serviceHttpMethod,
                 servicePath: body.serviceConfig.servicePath,
                 serviceTimeout: body.serviceConfig.serviceTimeout,
+                aoneAppName: body.serviceConfig.aoneAppName,
+                contentTypeCatagory: body.serviceConfig.contentTypeCatagory,
+                contentTypeValue: body.serviceConfig.contentTypeValue,
+                eventBridgeConfig: body.serviceConfig.eventBridgeConfig
+                  ? {
+                      eventBridgeRegionId: body.serviceConfig.eventBridgeConfig.eventBridgeRegionId,
+                      eventBus: body.serviceConfig.eventBridgeConfig.eventBus,
+                      eventSource: body.serviceConfig.eventBridgeConfig.eventSource,
+                      roleArn: body.serviceConfig.eventBridgeConfig.roleArn,
+                    }
+                  : undefined,
+                mock: body.serviceConfig.mock,
+                mockHeaders: body.serviceConfig.mockHeaders?.mockHeader?.map((h) => ({
+                  headerName: h.headerName,
+                  headerValue: h.headerValue,
+                })),
+                mockStatusCode: body.serviceConfig.mockStatusCode,
+                ossConfig: body.serviceConfig.ossConfig
+                  ? {
+                      action: body.serviceConfig.ossConfig.action,
+                      bucketName: body.serviceConfig.ossConfig.bucketName,
+                      key: body.serviceConfig.ossConfig.key,
+                      ossRegionId: body.serviceConfig.ossConfig.ossRegionId,
+                    }
+                  : undefined,
+                serviceVpcEnable: body.serviceConfig.serviceVpcEnable,
+                vpcConfig: body.serviceConfig.vpcConfig
+                  ? {
+                      instanceId: body.serviceConfig.vpcConfig.instanceId,
+                      name: body.serviceConfig.vpcConfig.name,
+                      port: body.serviceConfig.vpcConfig.port,
+                      vpcId: body.serviceConfig.vpcConfig.vpcId,
+                      vpcScheme: body.serviceConfig.vpcConfig.vpcScheme,
+                    }
+                  : undefined,
                 functionComputeConfig: body.serviceConfig.functionComputeConfig
                   ? {
                       fcRegionId: body.serviceConfig.functionComputeConfig.fcRegionId,
@@ -813,6 +1086,17 @@ export const createApigwOperations = (
                       roleArn: body.serviceConfig.functionComputeConfig.roleArn,
                       fcVersion: body.serviceConfig.functionComputeConfig.fcVersion,
                       method: body.serviceConfig.functionComputeConfig.method,
+                      contentTypeCatagory:
+                        body.serviceConfig.functionComputeConfig.contentTypeCatagory,
+                      contentTypeValue: body.serviceConfig.functionComputeConfig.contentTypeValue,
+                      fcBaseUrl: body.serviceConfig.functionComputeConfig.fcBaseUrl,
+                      fcType: body.serviceConfig.functionComputeConfig.fcType,
+                      onlyBusinessPath: body.serviceConfig.functionComputeConfig.onlyBusinessPath,
+                      path: body.serviceConfig.functionComputeConfig.path,
+                      qualifier: body.serviceConfig.functionComputeConfig.qualifier,
+                      regionId: body.serviceConfig.functionComputeConfig.regionId,
+                      serviceName: body.serviceConfig.functionComputeConfig.serviceName,
+                      triggerName: body.serviceConfig.functionComputeConfig.triggerName,
                     }
                   : undefined,
                 mockResult: body.serviceConfig.mockResult,
@@ -820,6 +1104,87 @@ export const createApigwOperations = (
             : undefined,
           resultType: body.resultType,
           resultSample: body.resultSample,
+          failResultSample: body.failResultSample,
+          regionId: body.regionId,
+          tagList: body.tagList?.tag?.map((t) => ({ tagKey: t.tagKey, tagValue: t.tagValue })),
+          backendConfig: body.backendConfig
+            ? {
+                backendId: body.backendConfig.backendId,
+                backendName: body.backendConfig.backendName,
+                backendType: body.backendConfig.backendType,
+              }
+            : undefined,
+          backendEnable: body.backendEnable,
+          openIdConnectConfig: body.openIdConnectConfig
+            ? {
+                idTokenParamName: body.openIdConnectConfig.idTokenParamName,
+                openIdApiType: body.openIdConnectConfig.openIdApiType,
+                publicKey: body.openIdConnectConfig.publicKey,
+                publicKeyId: body.openIdConnectConfig.publicKeyId,
+              }
+            : undefined,
+          requestParameters: body.requestParameters?.requestParameter?.map((p) => ({
+            apiParameterName: p.apiParameterName,
+            arrayItemsType: p.arrayItemsType,
+            defaultValue: p.defaultValue,
+            demoValue: p.demoValue,
+            description: p.description,
+            docOrder: p.docOrder,
+            docShow: p.docShow,
+            enumValue: p.enumValue,
+            jsonScheme: p.jsonScheme,
+            location: p.location,
+            maxLength: p.maxLength,
+            maxValue: p.maxValue,
+            minLength: p.minLength,
+            minValue: p.minValue,
+            parameterType: p.parameterType,
+            regularExpression: p.regularExpression,
+            required: p.required,
+          })),
+          serviceParameters: body.serviceParameters?.serviceParameter?.map((p) => ({
+            location: p.location,
+            parameterType: p.parameterType,
+            serviceParameterName: p.serviceParameterName,
+          })),
+          serviceParametersMap: body.serviceParametersMap?.serviceParameterMap?.map((p) => ({
+            requestParameterName: p.requestParameterName,
+            serviceParameterName: p.serviceParameterName,
+          })),
+          systemParameters: body.systemParameters?.systemParameter?.map((p) => ({
+            demoValue: p.demoValue,
+            description: p.description,
+            location: p.location,
+            parameterName: p.parameterName,
+            serviceParameterName: p.serviceParameterName,
+          })),
+          customSystemParameters: body.customSystemParameters?.customSystemParameter?.map((p) => ({
+            demoValue: p.demoValue,
+            description: p.description,
+            location: p.location,
+            parameterName: p.parameterName,
+            serviceParameterName: p.serviceParameterName,
+          })),
+          constantParameters: body.constantParameters?.constantParameter?.map((p) => ({
+            constantValue: p.constantValue,
+            description: p.description,
+            location: p.location,
+            serviceParameterName: p.serviceParameterName,
+          })),
+          errorCodeSamples: body.errorCodeSamples?.errorCodeSample?.map((e) => ({
+            code: e.code,
+            description: e.description,
+            message: e.message,
+            model: e.model,
+          })),
+          resultBodyModel: body.resultBodyModel,
+          mock: body.mock,
+          mockResult: body.mockResult,
+          disableInternet: body.disableInternet,
+          forceNonceCheck: body.forceNonceCheck,
+          allowSignatureMethod: body.allowSignatureMethod,
+          appCodeAuthType: body.appCodeAuthType,
+          webSocketApiType: body.webSocketApiType,
           createdTime: body.createdTime,
           modifiedTime: body.modifiedTime,
           deployedInfos: body.deployedInfos?.deployedInfo?.map((info) => ({
@@ -828,6 +1193,45 @@ export const createApigwOperations = (
             effectiveVersion: info.effectiveVersion,
           })),
         };
+
+        if (!apiInfo.tagList || apiInfo.tagList.length === 0) {
+          try {
+            const tags = await operations.getApiTags(groupId, apiId);
+            if (tags) {
+              apiInfo.tagList = tags;
+            }
+          } catch {
+            // Tags are best-effort; API detail is still returned without them.
+          }
+        }
+
+        return apiInfo;
+      } catch (error: unknown) {
+        if (isApigwNotFoundError(error)) {
+          return null;
+        }
+        throw error;
+      }
+    },
+
+    /**
+     * Fetch resource tags for an API (ListTagResources).
+     */
+    getApiTags: async (
+      groupId: string,
+      apiId: string,
+    ): Promise<Array<{ tagKey?: string; tagValue?: string }> | null> => {
+      try {
+        const request = new cloudapi.ListTagResourcesRequest({
+          resourceType: 'api',
+          resourceId: [apiId],
+        });
+        const response = await apigwClient.listTagResources(request);
+        const tagResources = response.body?.tagResources?.tagResource ?? [];
+        if (tagResources.length === 0) {
+          return null;
+        }
+        return tagResources.map((t) => ({ tagKey: t.tagKey, tagValue: t.tagValue }));
       } catch (error: unknown) {
         if (isApigwNotFoundError(error)) {
           return null;
@@ -1181,4 +1585,6 @@ export const createApigwOperations = (
       }
     },
   };
+
+  return operations;
 };

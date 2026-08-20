@@ -17,6 +17,38 @@ export type TencentEsSpaceInfo = {
   IndexCount?: number;
   KibanaUrl?: string;
   KibanaPrivateUrl?: string;
+  IndexAccessUrl?: string;
+  KibanaPublicAcl?: {
+    BlackIpList?: string[];
+    WhiteIpList?: string[];
+  };
+  KibanaEmbedUrl?: string;
+  DiDataList?: Array<{
+    DiId?: string;
+    CreateTime?: string;
+    Status?: number;
+    DiDataSourceCvm?: unknown;
+    DiDataSourceTke?: unknown;
+    DiDataSinkServerless?: unknown;
+    DiDataSourceType?: string;
+  }>;
+  VpcInfo?: Array<{
+    VpcId?: string;
+    SubnetId?: string;
+    VpcUid?: number;
+    SubnetUid?: number;
+    AvailableIpAddressCount?: number;
+  }>;
+  Region?: string;
+  Zone?: string;
+  EnableKibanaPublicAccess?: number;
+  EnableKibanaPrivateAccess?: number;
+  AppId?: number;
+  KibanaLanguage?: string;
+  ClusterType?: number;
+  EnableMcpAccess?: number;
+  McpAccess?: string;
+  Tags?: Array<{ Key: string; Value: string }>;
 };
 
 // Map database versions to ES versions

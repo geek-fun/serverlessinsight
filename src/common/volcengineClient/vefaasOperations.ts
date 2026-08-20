@@ -13,6 +13,9 @@ const MAX_ZIP_SIZE_BYTES = MAX_ZIP_SIZE_MB * 1024 * 1024;
 const MAX_TOS_SIZE_MB = 500;
 const MAX_TOS_SIZE_BYTES = MAX_TOS_SIZE_MB * 1024 * 1024;
 
+const RELEASE_POLL_INTERVAL_MS = 2000;
+const RELEASE_POLL_MAX_ATTEMPTS = 60;
+
 const buildEnvVariables = (envs?: Record<string, string>) => {
   if (!envs) return undefined;
   return Object.entries(envs).map(([key, value]) => ({ key, value }));
@@ -127,48 +130,110 @@ export const createVefaasOperations = (client: VefaasSdkClient) => {
   const tosClient = new Service({
     serviceName: 'tos',
     defaultVersion: '2018-08-01',
-    protocol: 'https',
-    host: 'tos-cn-beijing.volces.com',
+    host: `tos-${(client as unknown as { region: string }).region}.volces.com`,
     accessKeyId: (client as unknown as { accessKeyId: string }).accessKeyId,
     secretKey: (client as unknown as { secretKey: string }).secretKey,
     region: (client as unknown as { region: string }).region,
   });
 
+  // veFaaS identifies functions by their generated Id (not Name) for
+  // GetFunction/Update/Delete; callers probe by name, so list + match on Name.
+  const listAllFunctions = async (): Promise<Array<Record<string, unknown>>> => {
+    const items: Array<Record<string, unknown>> = [];
+    let pageNumber = 1;
+    const pageSize = 100;
+    for (;;) {
+      const response = await client.fetchOpenAPI({
+        Action: 'ListFunctions',
+        Version: '2024-06-06',
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        data: { PageSize: pageSize, PageNumber: pageNumber },
+      });
+      const result = (response.Result || {}) as Record<string, unknown>;
+      const page = (result.Items || []) as Array<Record<string, unknown>>;
+      items.push(...page);
+      if (page.length < pageSize) break;
+      pageNumber += 1;
+    }
+    return items;
+  };
+
+  const resolveFunctionIdByName = async (functionName: string): Promise<string | null> => {
+    const functions = await listAllFunctions();
+    const match = functions.find((fn) => fn.Name === functionName);
+    return (match?.Id as string) ?? null;
+  };
+
   const operations = {
-    waitForFunctionActive: async (functionName: string): Promise<VefaasFunctionInfo | null> => {
-      try {
-        return await pollUntil({
-          description: `veFaaS function ${functionName} to become Active`,
-          fetch: () => operations.getFunction(functionName),
-          isDone: (info) => info?.status === 'Active',
-          intervalMs: SCF_STATUS_POLL_INTERVAL_MS,
-          maxAttempts: SCF_STATUS_POLL_MAX_ATTEMPTS,
-        });
-      } catch (e) {
-        if (e instanceof PollingTimeoutError) {
-          throw new Error(
-            `Timed out waiting for veFaaS function ${functionName} to become Active`,
-            {
-              cause: e,
-            },
+    // veFaaS 函数代码/配置更新后需发布（Release）才生效；API 网关上游
+    // 引用函数时要求函数已发布（OperationDenied.FunctionNotPublished）。
+    // RevisionNumber=0 表示发布 Latest 代码并创建新版本（官方 SDK 语义）。
+    // Release 是异步的：返回的 Status 可能仍是 inprogress，调用方（如
+    // CreateUpstream）必须等发布真正 done 才能引用函数，否则会拿到
+    // FunctionNotPublished。这里轮询 GetReleaseStatus 直到 done/failed。
+    releaseFunction: async (functionId: string): Promise<string | undefined> => {
+      const response = await client.fetchOpenAPI({
+        Action: 'Release',
+        Version: '2024-06-06',
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        data: {
+          FunctionId: functionId,
+          RevisionNumber: 0,
+        },
+      });
+      const result = (response.Result || {}) as Record<string, unknown>;
+      logger.info(lang.__('FUNCTION_RELEASED', { functionId }));
+      const releaseRecordId = (result.ReleaseRecordId as string | undefined) ?? undefined;
+
+      const releaseStatus = await pollUntil({
+        description: `veFaaS function ${functionId} release to finish`,
+        fetch: async () => {
+          const statusResponse = await client.fetchOpenAPI({
+            Action: 'GetReleaseStatus',
+            Version: '2024-06-06',
+            method: 'POST',
+            headers: { 'content-type': 'application/json' },
+            data: { FunctionId: functionId },
+          });
+          const statusResult = (statusResponse.Result || {}) as Record<string, unknown>;
+          return statusResult.Status as string | undefined;
+        },
+        isDone: (status) => status === 'done' || status === 'failed',
+        intervalMs: RELEASE_POLL_INTERVAL_MS,
+        maxAttempts: RELEASE_POLL_MAX_ATTEMPTS,
+        onProgress: (status, attempt, maxAttempts) => {
+          logger.info(
+            lang.__('WAITING_FOR_FUNCTION_RELEASE', {
+              functionId,
+              status: status ?? 'unknown',
+              attempt: String(attempt),
+              maxAttempts: String(maxAttempts),
+            }),
           );
-        }
-        throw e;
+        },
+      });
+
+      if (releaseStatus === 'failed') {
+        throw new Error(`veFaaS function ${functionId} release failed`);
       }
+
+      return releaseRecordId;
     },
 
-    waitForFunctionDeleted: async (functionName: string): Promise<void> => {
+    waitForFunctionDeleted: async (functionId: string): Promise<void> => {
       try {
         await pollUntil({
-          description: `veFaaS function ${functionName} to be deleted`,
-          fetch: () => operations.getFunction(functionName),
+          description: `veFaaS function ${functionId} to be deleted`,
+          fetch: () => operations.getFunctionById(functionId),
           isDone: (info) => info === null,
           intervalMs: SCF_STATUS_POLL_INTERVAL_MS,
           maxAttempts: SCF_STATUS_POLL_MAX_ATTEMPTS,
         });
       } catch (e) {
         if (e instanceof PollingTimeoutError) {
-          throw new Error(`Timed out waiting for veFaaS function ${functionName} to be deleted`, {
+          throw new Error(`Timed out waiting for veFaaS function ${functionId} to be deleted`, {
             cause: e,
           });
         }
@@ -176,7 +241,10 @@ export const createVefaasOperations = (client: VefaasSdkClient) => {
       }
     },
 
-    createFunction: async (config: VefaasFunctionConfig, codePath: string): Promise<void> => {
+    createFunction: async (
+      config: VefaasFunctionConfig,
+      codePath: string,
+    ): Promise<{ functionId: string; releaseRecordId?: string }> => {
       const { size, sizeMB } = await validateCodePackage(codePath);
 
       let codeSource:
@@ -224,16 +292,17 @@ export const createVefaasOperations = (client: VefaasSdkClient) => {
       }
 
       const params = {
-        FunctionName: config.functionName,
+        Name: config.functionName,
         Runtime: config.runtime,
         Handler: config.handler,
-        MemoryMb: config.memoryMb,
+        MemoryMB: config.memoryMb,
         RequestTimeout: config.requestTimeout,
         ...(config.description && { Description: config.description }),
         ...(config.environmentVariables && {
           Envs: buildEnvVariables(config.environmentVariables),
         }),
         ...(config.role && { Role: config.role }),
+        ...(config.Tags && { Tags: config.Tags }),
         ...codeSource,
         ...(config.vpcConfig && {
           VpcConfig: {
@@ -255,15 +324,15 @@ export const createVefaasOperations = (client: VefaasSdkClient) => {
           },
         }),
         ...(config.logConfig && {
-          LogConfig: {
+          TlsConfig: {
             EnableLog: true,
-            ProjectName: config.logConfig.project,
-            TopicName: config.logConfig.topic,
+            TlsProjectId: config.logConfig.project,
+            TlsTopicId: config.logConfig.topic,
           },
         }),
       };
 
-      await client.fetchOpenAPI({
+      const response = await client.fetchOpenAPI({
         Action: 'CreateFunction',
         Version: '2024-06-06',
         method: 'POST',
@@ -271,32 +340,54 @@ export const createVefaasOperations = (client: VefaasSdkClient) => {
         data: params,
       });
 
-      // CreateFunction is async on veFaaS — the function stays non-Active until
-      // the platform finishes provisioning. Follow-up calls (e.g. update or
-      // trigger setup) fail if issued too early, so poll until Active.
-      await operations.waitForFunctionActive(config.functionName);
+      const result = (response.Result || {}) as Record<string, unknown>;
+      const functionId = (result.Id as string) ?? (result.FunctionId as string | undefined);
+      if (!functionId) {
+        throw new Error(`CreateFunction did not return a function Id for ${config.functionName}`);
+      }
+
+      const releaseRecordId = await operations.releaseFunction(functionId);
 
       logger.info(lang.__('FUNCTION_CREATED', { functionName: config.functionName }));
+      return { functionId, releaseRecordId };
     },
 
     getFunction: async (functionName: string): Promise<VefaasFunctionInfo | null> => {
       try {
-        const response = await client.fetchOpenAPI({
+        const functionId = await resolveFunctionIdByName(functionName);
+        if (!functionId) {
+          return null;
+        }
+        return operations.getFunctionById(functionId);
+      } catch (error: unknown) {
+        if (error && typeof error === 'object' && 'code' in error) {
+          if (error.code === 'ResourceNotFound' || error.code === 'FunctionNotFound') {
+            return null;
+          }
+        }
+        throw error;
+      }
+    },
+
+    getFunctionById: async (functionId: string): Promise<VefaasFunctionInfo | null> => {
+      let response: Awaited<ReturnType<typeof client.fetchOpenAPI>>;
+      try {
+        response = await client.fetchOpenAPI({
           Action: 'GetFunction',
           Version: '2024-06-06',
           method: 'POST',
           headers: { 'content-type': 'application/json' },
-          data: { FunctionName: functionName },
+          data: { Id: functionId },
         });
 
         const data = (response.Result || {}) as Record<string, unknown>;
 
         return {
-          functionId: data.FunctionId as string | undefined,
-          functionName: data.FunctionName as string | undefined,
+          functionId: (data.Id as string) ?? (data.FunctionId as string | undefined),
+          functionName: (data.Name as string) ?? (data.FunctionName as string | undefined),
           runtime: data.Runtime as string | undefined,
           handler: data.Handler as string | undefined,
-          memoryMb: data.MemoryMb as number | undefined,
+          memoryMb: (data.MemoryMB as number | undefined) ?? (data.MemoryMb as number | undefined),
           requestTimeout: data.RequestTimeout as number | undefined,
           description: data.Description as string | undefined,
           environmentVariables: parseEnvVariables(
@@ -306,22 +397,105 @@ export const createVefaasOperations = (client: VefaasSdkClient) => {
           createdTime: data.CreationTime as string | undefined,
           lastModifiedTime: data.LastUpdateTime as string | undefined,
           role: data.Role as string | undefined,
-          vpcConfig: data.VpcConfig
-            ? {
-                vpcId: (data.VpcConfig as Record<string, unknown>).VpcId as string | undefined,
-                subnetIds: (data.VpcConfig as Record<string, unknown>).SubnetIds as
-                  string[] | undefined,
-                securityGroupIds: (data.VpcConfig as Record<string, unknown>).SecurityGroupIds as
-                  string[] | undefined,
-              }
-            : undefined,
-          logConfig: data.LogConfig
-            ? {
-                project: (data.LogConfig as Record<string, unknown>).ProjectName as
-                  string | undefined,
-                topic: (data.LogConfig as Record<string, unknown>).TopicName as string | undefined,
-              }
-            : undefined,
+          vpcConfig: (() => {
+            const raw = data.VpcConfig as Record<string, unknown> | undefined;
+            if (!raw || Object.keys(raw).length === 0) return undefined;
+            return {
+              vpcId: raw.VpcId as string | undefined,
+              subnetIds: raw.SubnetIds as string[] | undefined,
+              securityGroupIds: raw.SecurityGroupIds as string[] | undefined,
+              enableVpc: raw.EnableVpc as boolean | undefined,
+              enableSharedInternetAccess: raw.EnableSharedInternetAccess as boolean | undefined,
+            };
+          })(),
+          logConfig: (() => {
+            const raw =
+              (data.TlsConfig as Record<string, unknown> | undefined) ??
+              (data.LogConfig as Record<string, unknown> | undefined);
+            if (!raw || Object.keys(raw).length === 0) return undefined;
+            return {
+              project: raw.TlsProjectId as string | undefined,
+              topic: raw.TlsTopicId as string | undefined,
+              enableLog: raw.EnableLog as boolean | undefined,
+            };
+          })(),
+          Tags: (data.Tags as Array<{ Key?: string; Value?: string }> | undefined)?.map((t) => ({
+            Key: t.Key,
+            Value: t.Value,
+          })),
+          // Maximum-detail fields — retain everything GetFunction returns so
+          // state keeps full resource detail (CPU strategy, concurrency,
+          // network/storage/log toggles, async tasks, triggers count, tags).
+          exclusiveMode: data.ExclusiveMode as boolean | undefined,
+          maxConcurrency: data.MaxConcurrency as number | undefined,
+          codeSize: data.CodeSize as number | undefined,
+          codeSizeLimit: data.CodeSizeLimit as number | undefined,
+          sourceLocation: data.SourceLocation as string | undefined,
+          sourceType: data.SourceType as string | undefined,
+          owner: data.Owner as string | undefined,
+          triggersCount: data.TriggersCount as number | undefined,
+          instanceType: data.InstanceType as string | undefined,
+          initializerSec: data.InitializerSec as number | undefined,
+          command: data.Command as string | undefined,
+          port: data.Port as number | undefined,
+          cpuStrategy: data.CpuStrategy as string | undefined,
+          projectName: data.ProjectName as string | undefined,
+          functionType: data.FunctionType as string | undefined,
+          cell: data.Cell as string | undefined,
+          enableApmplus: data.EnableApmplus as boolean | undefined,
+          nasStorage: (() => {
+            const raw = data.NasStorage as Record<string, unknown> | undefined;
+            if (!raw || Object.keys(raw).length === 0) return undefined;
+            return {
+              enableNas: raw.EnableNas as boolean | undefined,
+              nasConfigs: (raw.NasConfigs as Array<Record<string, unknown>> | undefined)?.map(
+                (c) => ({
+                  gid: c.Gid as number | undefined,
+                  uid: c.Uid as number | undefined,
+                  remotePath: c.RemotePath as string | undefined,
+                  fileSystemId: c.FileSystemId as string | undefined,
+                  mountPointId: c.MountPointId as string | undefined,
+                  localMountPath: c.LocalMountPath as string | undefined,
+                }),
+              ),
+            };
+          })(),
+          tosMountConfig: (() => {
+            const raw = data.TosMountConfig as Record<string, unknown> | undefined;
+            if (!raw || Object.keys(raw).length === 0) return undefined;
+            return {
+              enableTos: raw.EnableTos as boolean | undefined,
+              mountPoints: (raw.MountPoints as Array<Record<string, unknown>> | undefined)?.map(
+                (m) => ({
+                  endpoint: m.Endpoint as string | undefined,
+                  readOnly: m.ReadOnly as boolean | undefined,
+                  bucketName: m.BucketName as string | undefined,
+                  bucketPath: m.BucketPath as string | undefined,
+                  localMountPath: m.LocalMountPath as string | undefined,
+                }),
+              ),
+            };
+          })(),
+          asyncTaskConfig: (() => {
+            const raw = data.AsyncTaskConfig as Record<string, unknown> | undefined;
+            if (!raw || Object.keys(raw).length === 0) return undefined;
+            const destination = raw.DestinationConfig as Record<string, unknown> | undefined;
+            const mapDestination = (d: unknown) => {
+              const obj = d as Record<string, unknown> | undefined;
+              if (!obj) return undefined;
+              return { destination: obj.Destination as string | undefined };
+            };
+            return {
+              enableAsyncTask: raw.EnableAsyncTask as boolean | undefined,
+              maxRetry: raw.MaxRetry as number | undefined,
+              destinationConfig: destination
+                ? {
+                    onSuccess: mapDestination(destination.OnSuccess),
+                    onFailure: mapDestination(destination.OnFailure),
+                  }
+                : undefined,
+            };
+          })(),
         };
       } catch (error: unknown) {
         if (error && typeof error === 'object' && 'code' in error) {
@@ -333,12 +507,15 @@ export const createVefaasOperations = (client: VefaasSdkClient) => {
       }
     },
 
-    updateFunctionConfiguration: async (config: VefaasFunctionConfig): Promise<void> => {
+    updateFunctionConfiguration: async (
+      functionId: string,
+      config: VefaasFunctionConfig,
+    ): Promise<string | undefined> => {
       const params = {
-        FunctionName: config.functionName,
+        Id: functionId,
         Handler: config.handler,
         Runtime: config.runtime,
-        MemoryMb: config.memoryMb,
+        MemoryMB: config.memoryMb,
         RequestTimeout: config.requestTimeout,
         ...(config.description !== undefined && { Description: config.description }),
         ...(config.environmentVariables && {
@@ -365,15 +542,14 @@ export const createVefaasOperations = (client: VefaasSdkClient) => {
           },
         }),
         ...(config.logConfig && {
-          LogConfig: {
+          TlsConfig: {
             EnableLog: true,
-            ProjectName: config.logConfig.project,
-            TopicName: config.logConfig.topic,
+            TlsProjectId: config.logConfig.project,
+            TlsTopicId: config.logConfig.topic,
           },
         }),
       };
 
-      await operations.waitForFunctionActive(config.functionName);
       await client.fetchOpenAPI({
         Action: 'UpdateFunction',
         Version: '2024-06-06',
@@ -382,10 +558,21 @@ export const createVefaasOperations = (client: VefaasSdkClient) => {
         data: params,
       });
 
+      // UpdateFunction only edits the draft config — veFaaS serves the last
+      // published revision until Release is called. Without it the function
+      // stays in an unpublished intermediate state and API Gateway invocations
+      // fail. Mirror the create/code-update paths and release after config
+      // changes too.
+      const releaseRecordId = await operations.releaseFunction(functionId);
+
       logger.info(lang.__('FUNCTION_CONFIGURATION_UPDATED', { functionName: config.functionName }));
+      return releaseRecordId;
     },
 
-    updateFunctionCode: async (functionName: string, codePath: string): Promise<void> => {
+    updateFunctionCode: async (
+      functionId: string,
+      codePath: string,
+    ): Promise<{ releaseRecordId?: string }> => {
       const { size, sizeMB } = await validateCodePackage(codePath);
 
       let codeSource:
@@ -398,7 +585,7 @@ export const createVefaasOperations = (client: VefaasSdkClient) => {
 
         logger.info(
           lang.__('UPDATING_FUNCTION_CODE_WITH_ZIP', {
-            functionName,
+            functionName: functionId,
             size: sizeMB,
           }),
         );
@@ -409,11 +596,11 @@ export const createVefaasOperations = (client: VefaasSdkClient) => {
         };
       } else {
         const tosBucket = `vefaas-codes-${(client as unknown as { region: string }).region || 'cn-beijing'}`;
-        const { bucket, key } = await uploadCodeToTos(tosClient, tosBucket, codePath, functionName);
+        const { bucket, key } = await uploadCodeToTos(tosClient, tosBucket, codePath, functionId);
 
         logger.info(
           lang.__('UPDATING_FUNCTION_CODE_WITH_TOS', {
-            functionName,
+            functionName: functionId,
             size: sizeMB,
             bucket,
             key,
@@ -427,55 +614,48 @@ export const createVefaasOperations = (client: VefaasSdkClient) => {
         };
       }
 
-      await operations.waitForFunctionActive(functionName);
       await client.fetchOpenAPI({
         Action: 'UpdateFunction',
         Version: '2024-06-06',
         method: 'POST',
         headers: { 'content-type': 'application/json' },
         data: {
-          FunctionName: functionName,
+          Id: functionId,
           ...codeSource,
         },
       });
 
-      logger.info(lang.__('FUNCTION_CODE_UPDATED', { functionName }));
+      const releaseRecordId = await operations.releaseFunction(functionId);
+
+      logger.info(lang.__('FUNCTION_CODE_UPDATED', { functionName: functionId }));
+      return { releaseRecordId };
     },
 
-    deleteFunction: async (functionName: string): Promise<void> => {
+    deleteFunction: async (functionId: string): Promise<void> => {
       await client.fetchOpenAPI({
         Action: 'DeleteFunction',
         Version: '2024-06-06',
         method: 'POST',
         headers: { 'content-type': 'application/json' },
-        data: { FunctionName: functionName },
+        data: { Id: functionId },
       });
 
       // DeleteFunction returns immediately — wait for the function to be gone so
       // a subsequent create (retry) does not collide with a still-deleting function.
-      await operations.waitForFunctionDeleted(functionName);
+      await operations.waitForFunctionDeleted(functionId);
 
-      logger.info(lang.__('FUNCTION_DELETED', { functionName }));
+      logger.info(lang.__('FUNCTION_DELETED', { functionName: functionId }));
     },
 
     listFunctions: async (): Promise<VefaasFunctionInfo[]> => {
-      const response = await client.fetchOpenAPI({
-        Action: 'ListFunctions',
-        Version: '2024-06-06',
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        data: {},
-      });
-
-      const result = (response.Result || {}) as Record<string, unknown>;
-      const functions = (result.Functions || []) as Array<Record<string, unknown>>;
+      const functions = await listAllFunctions();
 
       return functions.map((fn: Record<string, unknown>) => ({
-        functionId: fn.FunctionId as string | undefined,
-        functionName: fn.FunctionName as string | undefined,
+        functionId: (fn.Id as string) ?? (fn.FunctionId as string | undefined),
+        functionName: (fn.Name as string) ?? (fn.FunctionName as string | undefined),
         runtime: fn.Runtime as string | undefined,
         handler: fn.Handler as string | undefined,
-        memoryMb: fn.MemoryMb as number | undefined,
+        memoryMb: (fn.MemoryMB as number | undefined) ?? (fn.MemoryMb as number | undefined),
         requestTimeout: fn.RequestTimeout as number | undefined,
         description: fn.Description as string | undefined,
         status: fn.Status as string | undefined,

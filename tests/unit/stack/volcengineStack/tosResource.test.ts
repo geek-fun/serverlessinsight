@@ -94,6 +94,13 @@ describe('tosResource', () => {
     (createVolcengineClient as jest.Mock).mockReturnValue(mockTosClient);
   });
 
+  const ownershipTag = { Key: 'si-owned-by', Value: 'test-app-test-service:buckets.static_site' };
+  const ownedBucketInfo = {
+    name: 'test-bucket',
+    location: 'cn-beijing',
+    Tags: [ownershipTag],
+  };
+
   describe('createResource', () => {
     it('should create bucket without website', async () => {
       const bucket: BucketDomain = {
@@ -101,11 +108,8 @@ describe('tosResource', () => {
         name: 'test-bucket',
       };
 
-      mockTosClient.tos.createBucket.mockResolvedValueOnce({
-        name: 'test-bucket',
-        location: 'cn-beijing',
-        acl: 'private',
-      });
+      mockTosClient.tos.createBucket.mockResolvedValueOnce({});
+      mockTosClient.tos.getBucket.mockResolvedValueOnce(ownedBucketInfo);
 
       await createResource(mockContext, bucket, mockState);
 
@@ -114,6 +118,22 @@ describe('tosResource', () => {
       );
       expect(mockTosClient.tos.uploadFiles).not.toHaveBeenCalled();
       expect(setResource).toHaveBeenCalled();
+    });
+
+    it('should stamp the ownership tag on the createBucket config', async () => {
+      const bucket: BucketDomain = {
+        key: 'static_site',
+        name: 'test-bucket',
+      };
+
+      mockTosClient.tos.createBucket.mockResolvedValueOnce({});
+      mockTosClient.tos.getBucket.mockResolvedValueOnce(ownedBucketInfo);
+
+      await createResource(mockContext, bucket, mockState);
+
+      expect(mockTosClient.tos.createBucket).toHaveBeenCalledWith(
+        expect.objectContaining({ Tags: [ownershipTag] }),
+      );
     });
 
     it('should create bucket with website and upload files', async () => {
@@ -126,10 +146,8 @@ describe('tosResource', () => {
         },
       };
 
-      mockTosClient.tos.createBucket.mockResolvedValueOnce({
-        name: 'test-bucket',
-        location: 'cn-beijing',
-      });
+      mockTosClient.tos.createBucket.mockResolvedValueOnce({});
+      mockTosClient.tos.getBucket.mockResolvedValueOnce(ownedBucketInfo); // ownership probe
       mockTosClient.tos.uploadFiles.mockResolvedValueOnce(undefined);
       mockTosClient.tos.getBucket.mockResolvedValueOnce({
         name: 'test-bucket',
@@ -160,10 +178,8 @@ describe('tosResource', () => {
         },
       };
 
-      mockTosClient.tos.createBucket.mockResolvedValueOnce({
-        name: 'test-bucket',
-        location: 'cn-beijing',
-      });
+      mockTosClient.tos.createBucket.mockResolvedValueOnce({});
+      mockTosClient.tos.getBucket.mockResolvedValueOnce(ownedBucketInfo);
 
       await createResource(mockContext, bucket, mockState);
 
@@ -198,10 +214,8 @@ describe('tosResource', () => {
         },
       };
 
-      mockTosClient.tos.createBucket.mockResolvedValueOnce({
-        name: 'test-bucket',
-        location: 'cn-beijing',
-      });
+      mockTosClient.tos.createBucket.mockResolvedValueOnce({});
+      mockTosClient.tos.getBucket.mockResolvedValueOnce(ownedBucketInfo);
 
       await createResource(mockContext, bucket, mockState);
 
@@ -229,10 +243,8 @@ describe('tosResource', () => {
         },
       };
 
-      mockTosClient.tos.createBucket.mockResolvedValueOnce({
-        name: 'test-bucket',
-        location: 'cn-beijing',
-      });
+      mockTosClient.tos.createBucket.mockResolvedValueOnce({});
+      mockTosClient.tos.getBucket.mockResolvedValueOnce(ownedBucketInfo);
       mockTosClient.tos.deleteBucketPolicy.mockResolvedValueOnce(undefined);
 
       await createResource(mockContext, bucket, mockState);
@@ -250,10 +262,8 @@ describe('tosResource', () => {
         },
       };
 
-      mockTosClient.tos.createBucket.mockResolvedValueOnce({
-        name: 'test-bucket',
-        location: 'cn-beijing',
-      });
+      mockTosClient.tos.createBucket.mockResolvedValueOnce({});
+      mockTosClient.tos.getBucket.mockResolvedValueOnce(ownedBucketInfo); // ownership probe
       mockTosClient.tos.uploadFiles.mockRejectedValueOnce(new Error('Upload failed'));
 
       await expect(createResource(mockContext, bucket, mockState)).rejects.toMatchObject({
@@ -314,10 +324,8 @@ describe('tosResource', () => {
         status: 'tainted',
       });
       mockTosClient.tos.getBucket.mockResolvedValueOnce(null); // pre-flight: no existing bucket
-      mockTosClient.tos.createBucket.mockResolvedValueOnce({
-        name: 'test-bucket',
-        location: 'cn-beijing',
-      });
+      mockTosClient.tos.createBucket.mockResolvedValueOnce({});
+      mockTosClient.tos.getBucket.mockResolvedValueOnce(ownedBucketInfo); // ownership probe
 
       await createResource(mockContext, bucket, mockState);
 
@@ -366,10 +374,8 @@ describe('tosResource', () => {
         },
       };
 
-      mockTosClient.tos.createBucket.mockResolvedValueOnce({
-        name: 'test-bucket',
-        location: 'cn-beijing',
-      });
+      mockTosClient.tos.createBucket.mockResolvedValueOnce({});
+      mockTosClient.tos.getBucket.mockResolvedValueOnce(ownedBucketInfo); // ownership probe
       mockTosClient.tos.putBucketPolicy.mockRejectedValueOnce(new Error('Policy create failed'));
 
       await expect(createResource(mockContext, bucket, mockState)).rejects.toMatchObject({
@@ -384,11 +390,8 @@ describe('tosResource', () => {
         name: 'test-bucket',
       };
 
-      mockTosClient.tos.createBucket.mockResolvedValueOnce({
-        name: 'test-bucket',
-        location: 'cn-beijing',
-        acl: 'private',
-      });
+      mockTosClient.tos.createBucket.mockResolvedValueOnce({});
+      mockTosClient.tos.getBucket.mockResolvedValueOnce(ownedBucketInfo);
 
       await createResource(mockContext, bucket, mockState);
 
@@ -397,6 +400,157 @@ describe('tosResource', () => {
         'buckets.static_site',
         expect.objectContaining({ status: 'ready' }),
       );
+    });
+
+    it('should retain the full provider detail set on the bucket instance', async () => {
+      const bucket: BucketDomain = {
+        key: 'static_site',
+        name: 'test-bucket',
+      };
+
+      const fullBucketInfo = {
+        name: 'test-bucket',
+        location: 'cn-beijing',
+        creationDate: '2024-01-01T00:00:00Z',
+        storageClass: 'STANDARD',
+        extranetEndpoint: 'tos-cn-beijing.volces.com',
+        intranetEndpoint: 'tos-cn-beijing.ivolces.com',
+        acl: 'private',
+        websiteConfig: { indexDocument: 'index.html' },
+        Tags: [ownershipTag],
+        owner: { id: '2000000001', displayName: 'test-owner' },
+        projectName: 'default',
+        type: 'normal',
+        azRedundancy: 'single_az',
+        extranetS3Endpoint: 'tos-s3-cn-beijing.volces.com',
+        intranetS3Endpoint: 'tos-s3-cn-beijing.internal.volces.com',
+        versioning: 'Enabled',
+        crossRegionReplication: 'Enabled',
+        transferAcceleration: 'Enabled',
+        accessMonitor: 'Disabled',
+        serverSideEncryptionConfiguration: {
+          rule: [
+            {
+              applyServerSideEncryptionByDefault: {
+                sseAlgorithm: 'AES256',
+                kmsMasterKeyId: 'key-1',
+              },
+            },
+          ],
+        },
+      };
+
+      mockTosClient.tos.createBucket.mockResolvedValueOnce({});
+      mockTosClient.tos.getBucket.mockResolvedValueOnce(fullBucketInfo);
+
+      await createResource(mockContext, bucket, mockState);
+
+      expect(setResource).toHaveBeenCalledWith(
+        expect.anything(),
+        'buckets.static_site',
+        expect.objectContaining({
+          status: 'ready',
+          instances: [
+            expect.objectContaining({
+              type: 'VOLCENGINE_TOS_BUCKET',
+              bucketName: 'test-bucket',
+              location: 'cn-beijing',
+              creationDate: '2024-01-01T00:00:00Z',
+              storageClass: 'STANDARD',
+              extranetEndpoint: 'tos-cn-beijing.volces.com',
+              intranetEndpoint: 'tos-cn-beijing.ivolces.com',
+              acl: 'private',
+              websiteConfig: { indexDocument: 'index.html', errorDocument: null },
+              Tags: [ownershipTag],
+              owner: { id: '2000000001', displayName: 'test-owner' },
+              projectName: 'default',
+              bucketType: 'normal',
+              azRedundancy: 'single_az',
+              extranetS3Endpoint: 'tos-s3-cn-beijing.volces.com',
+              intranetS3Endpoint: 'tos-s3-cn-beijing.internal.volces.com',
+              versioning: 'Enabled',
+              crossRegionReplication: 'Enabled',
+              transferAcceleration: 'Enabled',
+              accessMonitor: 'Disabled',
+              serverSideEncryptionConfiguration: {
+                rule: [
+                  {
+                    applyServerSideEncryptionByDefault: {
+                      sseAlgorithm: 'AES256',
+                      kmsMasterKeyId: 'key-1',
+                    },
+                  },
+                ],
+              },
+            }),
+          ],
+        }),
+      );
+    });
+
+    it('should adopt idempotently when createBucket collides and existing bucket carries our ownership tag', async () => {
+      const bucket: BucketDomain = {
+        key: 'static_site',
+        name: 'test-bucket',
+      };
+
+      const collisionError = Object.assign(new Error('Bucket already exists'), {
+        code: 'BucketAlreadyExists',
+      });
+      mockTosClient.tos.createBucket.mockRejectedValueOnce(collisionError);
+      mockTosClient.tos.getBucket.mockResolvedValueOnce(ownedBucketInfo);
+
+      await createResource(mockContext, bucket, mockState);
+
+      expect(mockTosClient.tos.createBucket).toHaveBeenCalledWith(
+        expect.objectContaining({ Tags: [ownershipTag] }),
+      );
+      expect(setResource).toHaveBeenCalledWith(
+        expect.anything(),
+        'buckets.static_site',
+        expect.objectContaining({ status: 'ready' }),
+      );
+    });
+
+    it('should refuse adoption when createBucket collides but existing bucket lacks our ownership tag', async () => {
+      const bucket: BucketDomain = {
+        key: 'static_site',
+        name: 'test-bucket',
+      };
+
+      const collisionError = Object.assign(new Error('Bucket already exists'), {
+        code: 'BucketAlreadyExists',
+      });
+      mockTosClient.tos.createBucket.mockRejectedValueOnce(collisionError);
+      mockTosClient.tos.getBucket.mockResolvedValueOnce({
+        name: 'test-bucket',
+        location: 'cn-beijing',
+        Tags: [{ Key: 'other-project-tag', Value: 'someone-else' }],
+      });
+
+      await expect(createResource(mockContext, bucket, mockState)).rejects.toMatchObject({
+        name: 'PartialResourceError',
+        cause: { message: expect.stringContaining('not owned by this stack') },
+      });
+    });
+
+    it('should refuse adoption when createBucket succeeds idempotently but bucket lacks our ownership tag', async () => {
+      const bucket: BucketDomain = {
+        key: 'static_site',
+        name: 'test-bucket',
+      };
+
+      mockTosClient.tos.createBucket.mockResolvedValueOnce({});
+      mockTosClient.tos.getBucket.mockResolvedValueOnce({
+        name: 'test-bucket',
+        location: 'cn-beijing',
+        Tags: [],
+      });
+
+      await expect(createResource(mockContext, bucket, mockState)).rejects.toMatchObject({
+        name: 'PartialResourceError',
+        cause: { message: expect.stringContaining('not owned by this stack') },
+      });
     });
   });
 

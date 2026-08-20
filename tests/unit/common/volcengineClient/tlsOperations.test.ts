@@ -1,9 +1,23 @@
 import { createTlsOperations } from '../../../../src/common/volcengineClient/tlsOperations';
 
-type MockFetchOpenAPI = jest.Mock;
+type MockFn = jest.Mock;
+
+const createError = (code: string) => {
+  const error = new Error(`TLS ${code}`) as Error & { code?: string };
+  error.code = code;
+  return error;
+};
 
 const createMockClient = () => ({
-  fetchOpenAPI: jest.fn() as MockFetchOpenAPI,
+  CreateProject: jest.fn() as MockFn,
+  DescribeProjects: jest.fn() as MockFn,
+  DeleteProject: jest.fn() as MockFn,
+  CreateTopic: jest.fn() as MockFn,
+  DescribeTopics: jest.fn() as MockFn,
+  DeleteTopic: jest.fn() as MockFn,
+  CreateIndex: jest.fn() as MockFn,
+  DescribeIndex: jest.fn() as MockFn,
+  DeleteIndex: jest.fn() as MockFn,
 });
 
 jest.mock('../../../../src/common/logger', () => ({
@@ -35,13 +49,7 @@ describe('tlsOperations', () => {
 
   describe('createProject', () => {
     it('should create project successfully', async () => {
-      mockClient.fetchOpenAPI.mockResolvedValueOnce({
-        Result: {
-          ProjectId: 'project-123',
-          ProjectName: 'test-project',
-          Status: 'Active',
-        },
-      });
+      mockClient.CreateProject.mockResolvedValueOnce({ ProjectId: 'project-123' });
 
       const result = await operations.createProject({
         projectName: 'test-project',
@@ -50,26 +58,41 @@ describe('tlsOperations', () => {
       });
 
       expect(result.projectName).toBe('test-project');
-      expect(mockClient.fetchOpenAPI).toHaveBeenCalledWith(
-        expect.objectContaining({
-          Action: 'CreateProject',
-        }),
-      );
+      expect(result.projectId).toBe('project-123');
+      expect(mockClient.CreateProject).toHaveBeenCalledWith({
+        ProjectName: 'test-project',
+        Description: 'Test project',
+        Region: 'cn-beijing',
+      });
     });
 
     it('should tolerate ProjectAlreadyExists and adopt the existing project', async () => {
-      const alreadyExistsError = new Error('Already exists') as Error & { code: string };
-      alreadyExistsError.code = 'ProjectAlreadyExists';
-
-      mockClient.fetchOpenAPI
-        .mockRejectedValueOnce(alreadyExistsError) // CreateProject collides
-        .mockResolvedValueOnce({
-          Result: {
-            ProjectId: 'existing-project-id',
+      mockClient.CreateProject.mockRejectedValueOnce(createError('ProjectAlreadyExists'));
+      mockClient.DescribeProjects.mockResolvedValueOnce({
+        Projects: [
+          {
+            ProjectId: 'project-123',
             ProjectName: 'test-project',
-            Status: 'Active',
+            CreateTime: '',
+            Description: '',
+            TopicCount: 0,
           },
-        }); // GetProject adoption
+        ],
+        Total: 1,
+      });
+
+      const result = await operations.createProject({
+        projectName: 'test-project',
+        description: 'Test project',
+        region: 'cn-beijing',
+      });
+
+      expect(result.projectId).toBe('project-123');
+    });
+
+    it('should tolerate ResourceAlreadyExists on createProject', async () => {
+      mockClient.CreateProject.mockRejectedValueOnce(createError('ResourceAlreadyExists'));
+      mockClient.DescribeProjects.mockResolvedValueOnce({ Projects: [], Total: 0 });
 
       const result = await operations.createProject({
         projectName: 'test-project',
@@ -78,67 +101,43 @@ describe('tlsOperations', () => {
       });
 
       expect(result.projectName).toBe('test-project');
-      expect(result.projectId).toBe('existing-project-id');
-      expect(mockClient.fetchOpenAPI).toHaveBeenCalledTimes(2);
-    });
-
-    it('should tolerate ResourceAlreadyExists on createProject', async () => {
-      const alreadyExistsError = new Error('Already exists') as Error & { code: string };
-      alreadyExistsError.code = 'ResourceAlreadyExists';
-
-      mockClient.fetchOpenAPI.mockRejectedValueOnce(alreadyExistsError).mockResolvedValueOnce({
-        Result: {
-          ProjectId: 'existing-project-id',
-          ProjectName: 'test-project',
-          Status: 'Active',
-        },
-      });
-
-      const result = await operations.createProject({
-        projectName: 'test-project',
-        description: 'Test project',
-        region: 'cn-beijing',
-      });
-
-      expect(result.projectId).toBe('existing-project-id');
+      expect(result.status).toBe('Active');
     });
   });
 
   describe('getProject', () => {
     it('should return project info when found', async () => {
-      mockClient.fetchOpenAPI.mockResolvedValueOnce({
-        Result: {
-          ProjectId: 'project-123',
-          ProjectName: 'test-project',
-          Description: 'Test project',
-          Region: 'cn-beijing',
-          Status: 'Active',
-        },
+      mockClient.DescribeProjects.mockResolvedValueOnce({
+        Projects: [
+          {
+            ProjectId: 'project-123',
+            ProjectName: 'test-project',
+            CreateTime: '2024-01-01T00:00:00Z',
+            Description: 'Test project',
+            TopicCount: 0,
+          },
+        ],
+        Total: 1,
       });
 
       const result = await operations.getProject('test-project');
 
+      expect(result?.projectId).toBe('project-123');
       expect(result?.projectName).toBe('test-project');
     });
 
     it('should return null when project not found', async () => {
-      const notFoundError = new Error('Not found') as Error & { code: string };
-      notFoundError.code = 'ProjectNotFound';
+      mockClient.DescribeProjects.mockResolvedValueOnce({ Projects: [], Total: 0 });
 
-      mockClient.fetchOpenAPI.mockRejectedValueOnce(notFoundError);
-
-      const result = await operations.getProject('non-existent-project');
+      const result = await operations.getProject('missing-project');
 
       expect(result).toBeNull();
     });
 
     it('should return null for ResourceNotFound error code', async () => {
-      const notFoundError = new Error('Not found') as Error & { code: string };
-      notFoundError.code = 'ResourceNotFound';
+      mockClient.DescribeProjects.mockRejectedValueOnce(createError('ResourceNotFound'));
 
-      mockClient.fetchOpenAPI.mockRejectedValueOnce(notFoundError);
-
-      const result = await operations.getProject('non-existent-project');
+      const result = await operations.getProject('missing-project');
 
       expect(result).toBeNull();
     });
@@ -146,45 +145,54 @@ describe('tlsOperations', () => {
 
   describe('deleteProject', () => {
     it('should delete project successfully', async () => {
-      mockClient.fetchOpenAPI.mockResolvedValueOnce({});
+      mockClient.DescribeProjects.mockResolvedValueOnce({
+        Projects: [
+          {
+            ProjectId: 'project-123',
+            ProjectName: 'test-project',
+            CreateTime: '',
+            Description: '',
+            TopicCount: 0,
+          },
+        ],
+        Total: 1,
+      });
+      mockClient.DeleteProject.mockResolvedValueOnce({});
 
       await operations.deleteProject('test-project');
 
-      expect(mockClient.fetchOpenAPI).toHaveBeenCalledWith(
-        expect.objectContaining({
-          Action: 'DeleteProject',
-        }),
-      );
+      expect(mockClient.DeleteProject).toHaveBeenCalledWith({ ProjectId: 'project-123' });
     });
 
     it('should handle project not found gracefully', async () => {
-      const notFoundError = new Error('Not found') as Error & { code: string };
-      notFoundError.code = 'ProjectNotFound';
+      mockClient.DescribeProjects.mockResolvedValueOnce({ Projects: [], Total: 0 });
 
-      mockClient.fetchOpenAPI.mockRejectedValueOnce(notFoundError);
-
-      await operations.deleteProject('non-existent-project');
+      await expect(operations.deleteProject('missing-project')).resolves.toBeUndefined();
+      expect(mockClient.DeleteProject).not.toHaveBeenCalled();
     });
 
     it('should handle ResourceNotFound error code', async () => {
-      const notFoundError = new Error('Not found') as Error & { code: string };
-      notFoundError.code = 'ResourceNotFound';
+      mockClient.DescribeProjects.mockRejectedValueOnce(createError('ResourceNotFound'));
 
-      mockClient.fetchOpenAPI.mockRejectedValueOnce(notFoundError);
-
-      await operations.deleteProject('non-existent-project');
+      await expect(operations.deleteProject('missing-project')).resolves.toBeUndefined();
     });
   });
 
   describe('createTopic', () => {
     it('should create topic successfully', async () => {
-      mockClient.fetchOpenAPI.mockResolvedValueOnce({
-        Result: {
-          TopicId: 'topic-123',
-          TopicName: 'test-topic',
-          ProjectName: 'test-project',
-        },
+      mockClient.DescribeProjects.mockResolvedValueOnce({
+        Projects: [
+          {
+            ProjectId: 'project-123',
+            ProjectName: 'test-project',
+            CreateTime: '',
+            Description: '',
+            TopicCount: 0,
+          },
+        ],
+        Total: 1,
       });
+      mockClient.CreateTopic.mockResolvedValueOnce({ TopicId: 'topic-123' });
 
       const result = await operations.createTopic({
         projectName: 'test-project',
@@ -193,77 +201,140 @@ describe('tlsOperations', () => {
         ttl: 30,
       });
 
+      expect(result.topicId).toBe('topic-123');
       expect(result.topicName).toBe('test-topic');
-      expect(mockClient.fetchOpenAPI).toHaveBeenCalledWith(
-        expect.objectContaining({
-          Action: 'CreateTopic',
+      expect(mockClient.CreateTopic).toHaveBeenCalledWith({
+        ProjectId: 'project-123',
+        TopicName: 'test-topic',
+        Description: 'Test topic',
+        Ttl: 30,
+        ShardCount: 1,
+      });
+    });
+
+    it('should throw when the project does not exist', async () => {
+      mockClient.DescribeProjects.mockResolvedValueOnce({ Projects: [], Total: 0 });
+
+      await expect(
+        operations.createTopic({
+          projectName: 'missing-project',
+          topicName: 'test-topic',
         }),
-      );
+      ).rejects.toThrow('TLS_PROJECT_NOT_FOUND');
     });
 
     it('should tolerate TopicAlreadyExists and adopt the existing topic', async () => {
-      const alreadyExistsError = new Error('Already exists') as Error & { code: string };
-      alreadyExistsError.code = 'TopicAlreadyExists';
-
-      mockClient.fetchOpenAPI
-        .mockRejectedValueOnce(alreadyExistsError) // CreateTopic collides
-        .mockResolvedValueOnce({
-          Result: {
-            TopicId: 'existing-topic-id',
-            TopicName: 'test-topic',
+      mockClient.DescribeProjects.mockResolvedValue({
+        Projects: [
+          {
+            ProjectId: 'project-123',
             ProjectName: 'test-project',
-            Status: 'Active',
+            CreateTime: '',
+            Description: '',
+            TopicCount: 0,
           },
-        }); // GetTopic adoption
+        ],
+        Total: 1,
+      });
+      mockClient.CreateTopic.mockRejectedValueOnce(createError('TopicAlreadyExists'));
+      mockClient.DescribeTopics.mockResolvedValueOnce({
+        Topics: [
+          {
+            TopicId: 'topic-123',
+            TopicName: 'test-topic',
+            ProjectId: 'project-123',
+            CreateTime: '',
+            Description: '',
+            ModifyTime: '',
+            ShardCount: 1,
+            Ttl: 30,
+          },
+        ],
+        Total: 1,
+      });
 
       const result = await operations.createTopic({
         projectName: 'test-project',
         topicName: 'test-topic',
-        description: 'Test topic',
         ttl: 30,
       });
 
-      expect(result.topicName).toBe('test-topic');
-      expect(result.topicId).toBe('existing-topic-id');
-      expect(mockClient.fetchOpenAPI).toHaveBeenCalledTimes(2);
+      expect(result.topicId).toBe('topic-123');
     });
   });
 
   describe('getTopic', () => {
     it('should return topic info when found', async () => {
-      mockClient.fetchOpenAPI.mockResolvedValueOnce({
-        Result: {
-          TopicId: 'topic-123',
-          TopicName: 'test-topic',
-          ProjectName: 'test-project',
-          TTL: 30,
-          Status: 'Active',
-        },
+      mockClient.DescribeProjects.mockResolvedValueOnce({
+        Projects: [
+          {
+            ProjectId: 'project-123',
+            ProjectName: 'test-project',
+            CreateTime: '',
+            Description: '',
+            TopicCount: 0,
+          },
+        ],
+        Total: 1,
+      });
+      mockClient.DescribeTopics.mockResolvedValueOnce({
+        Topics: [
+          {
+            TopicId: 'topic-123',
+            TopicName: 'test-topic',
+            ProjectId: 'project-123',
+            CreateTime: '2024-01-01T00:00:00Z',
+            Description: 'Test topic',
+            ModifyTime: '',
+            ShardCount: 1,
+            Ttl: 30,
+          },
+        ],
+        Total: 1,
       });
 
       const result = await operations.getTopic('test-project', 'test-topic');
 
+      expect(result?.topicId).toBe('topic-123');
       expect(result?.topicName).toBe('test-topic');
     });
 
     it('should return null when topic not found', async () => {
-      const notFoundError = new Error('Not found') as Error & { code: string };
-      notFoundError.code = 'TopicNotFound';
+      mockClient.DescribeProjects.mockResolvedValueOnce({
+        Projects: [
+          {
+            ProjectId: 'project-123',
+            ProjectName: 'test-project',
+            CreateTime: '',
+            Description: '',
+            TopicCount: 0,
+          },
+        ],
+        Total: 1,
+      });
+      mockClient.DescribeTopics.mockResolvedValueOnce({ Topics: [], Total: 0 });
 
-      mockClient.fetchOpenAPI.mockRejectedValueOnce(notFoundError);
-
-      const result = await operations.getTopic('test-project', 'non-existent-topic');
+      const result = await operations.getTopic('test-project', 'missing-topic');
 
       expect(result).toBeNull();
     });
 
     it('should return null for ResourceNotFound error code', async () => {
-      const notFoundError = new Error('Not found') as Error & { code: string };
-      notFoundError.code = 'ResourceNotFound';
+      mockClient.DescribeProjects.mockResolvedValueOnce({
+        Projects: [
+          {
+            ProjectId: 'project-123',
+            ProjectName: 'test-project',
+            CreateTime: '',
+            Description: '',
+            TopicCount: 0,
+          },
+        ],
+        Total: 1,
+      });
+      mockClient.DescribeTopics.mockRejectedValueOnce(createError('ResourceNotFound'));
 
-      mockClient.fetchOpenAPI.mockRejectedValueOnce(notFoundError);
-
-      const result = await operations.getTopic('test-project', 'non-existent-topic');
+      const result = await operations.getTopic('test-project', 'test-topic');
 
       expect(result).toBeNull();
     });
@@ -271,85 +342,199 @@ describe('tlsOperations', () => {
 
   describe('deleteTopic', () => {
     it('should delete topic successfully', async () => {
-      mockClient.fetchOpenAPI.mockResolvedValueOnce({});
+      mockClient.DescribeProjects.mockResolvedValueOnce({
+        Projects: [
+          {
+            ProjectId: 'project-123',
+            ProjectName: 'test-project',
+            CreateTime: '',
+            Description: '',
+            TopicCount: 0,
+          },
+        ],
+        Total: 1,
+      });
+      mockClient.DescribeTopics.mockResolvedValueOnce({
+        Topics: [
+          {
+            TopicId: 'topic-123',
+            TopicName: 'test-topic',
+            ProjectId: 'project-123',
+            CreateTime: '',
+            Description: '',
+            ModifyTime: '',
+            ShardCount: 1,
+            Ttl: 30,
+          },
+        ],
+        Total: 1,
+      });
+      mockClient.DeleteTopic.mockResolvedValueOnce({});
 
       await operations.deleteTopic('test-project', 'test-topic');
 
-      expect(mockClient.fetchOpenAPI).toHaveBeenCalledWith(
-        expect.objectContaining({
-          Action: 'DeleteTopic',
-        }),
-      );
+      expect(mockClient.DeleteTopic).toHaveBeenCalledWith({ TopicId: 'topic-123' });
     });
 
     it('should handle topic not found gracefully', async () => {
-      const notFoundError = new Error('Not found') as Error & { code: string };
-      notFoundError.code = 'TopicNotFound';
+      mockClient.DescribeProjects.mockResolvedValueOnce({
+        Projects: [
+          {
+            ProjectId: 'project-123',
+            ProjectName: 'test-project',
+            CreateTime: '',
+            Description: '',
+            TopicCount: 0,
+          },
+        ],
+        Total: 1,
+      });
+      mockClient.DescribeTopics.mockResolvedValueOnce({ Topics: [], Total: 0 });
 
-      mockClient.fetchOpenAPI.mockRejectedValueOnce(notFoundError);
-
-      await operations.deleteTopic('test-project', 'non-existent-topic');
+      await expect(
+        operations.deleteTopic('test-project', 'missing-topic'),
+      ).resolves.toBeUndefined();
+      expect(mockClient.DeleteTopic).not.toHaveBeenCalled();
     });
 
     it('should handle ResourceNotFound error code', async () => {
-      const notFoundError = new Error('Not found') as Error & { code: string };
-      notFoundError.code = 'ResourceNotFound';
+      mockClient.DescribeProjects.mockResolvedValueOnce({
+        Projects: [
+          {
+            ProjectId: 'project-123',
+            ProjectName: 'test-project',
+            CreateTime: '',
+            Description: '',
+            TopicCount: 0,
+          },
+        ],
+        Total: 1,
+      });
+      mockClient.DescribeTopics.mockRejectedValueOnce(createError('ResourceNotFound'));
 
-      mockClient.fetchOpenAPI.mockRejectedValueOnce(notFoundError);
-
-      await operations.deleteTopic('test-project', 'non-existent-topic');
+      await expect(operations.deleteTopic('test-project', 'test-topic')).resolves.toBeUndefined();
     });
   });
 
   describe('createIndex', () => {
     it('should create index successfully', async () => {
-      mockClient.fetchOpenAPI.mockResolvedValueOnce({});
+      mockClient.DescribeProjects.mockResolvedValueOnce({
+        Projects: [
+          {
+            ProjectId: 'project-123',
+            ProjectName: 'test-project',
+            CreateTime: '',
+            Description: '',
+            TopicCount: 0,
+          },
+        ],
+        Total: 1,
+      });
+      mockClient.DescribeTopics.mockResolvedValueOnce({
+        Topics: [
+          {
+            TopicId: 'topic-123',
+            TopicName: 'test-topic',
+            ProjectId: 'project-123',
+            CreateTime: '',
+            Description: '',
+            ModifyTime: '',
+            ShardCount: 1,
+            Ttl: 30,
+          },
+        ],
+        Total: 1,
+      });
+      mockClient.CreateIndex.mockResolvedValueOnce({ TopicId: 'topic-123' });
 
       await operations.createIndex({
         projectName: 'test-project',
         topicName: 'test-topic',
-        fullTextIndex: {
-          delimiter: ' ,.?',
-          caseSensitive: false,
-        },
+        fullTextIndex: { delimiter: ' ,.?;!\n\t', caseSensitive: false },
       });
 
-      expect(mockClient.fetchOpenAPI).toHaveBeenCalledWith(
+      expect(mockClient.CreateIndex).toHaveBeenCalledWith(
         expect.objectContaining({
-          Action: 'CreateIndex',
+          TopicId: 'topic-123',
+          FullText: { Delimiter: ' ,.?;!\n\t', CaseSensitive: false },
         }),
       );
     });
 
     it('should create index without fullTextIndex', async () => {
-      mockClient.fetchOpenAPI.mockResolvedValueOnce({});
+      mockClient.DescribeProjects.mockResolvedValueOnce({
+        Projects: [
+          {
+            ProjectId: 'project-123',
+            ProjectName: 'test-project',
+            CreateTime: '',
+            Description: '',
+            TopicCount: 0,
+          },
+        ],
+        Total: 1,
+      });
+      mockClient.DescribeTopics.mockResolvedValueOnce({
+        Topics: [
+          {
+            TopicId: 'topic-123',
+            TopicName: 'test-topic',
+            ProjectId: 'project-123',
+            CreateTime: '',
+            Description: '',
+            ModifyTime: '',
+            ShardCount: 1,
+            Ttl: 30,
+          },
+        ],
+        Total: 1,
+      });
+      mockClient.CreateIndex.mockResolvedValueOnce({ TopicId: 'topic-123' });
 
       await operations.createIndex({
         projectName: 'test-project',
         topicName: 'test-topic',
       });
 
-      expect(mockClient.fetchOpenAPI).toHaveBeenCalledWith(
-        expect.objectContaining({
-          Action: 'CreateIndex',
-        }),
+      expect(mockClient.CreateIndex).toHaveBeenCalledWith(
+        expect.objectContaining({ TopicId: 'topic-123', FullText: undefined }),
       );
     });
 
     it('should tolerate IndexAlreadyExists on createIndex', async () => {
-      const alreadyExistsError = new Error('Already exists') as Error & { code: string };
-      alreadyExistsError.code = 'IndexAlreadyExists';
-
-      mockClient.fetchOpenAPI.mockRejectedValueOnce(alreadyExistsError);
+      mockClient.DescribeProjects.mockResolvedValueOnce({
+        Projects: [
+          {
+            ProjectId: 'project-123',
+            ProjectName: 'test-project',
+            CreateTime: '',
+            Description: '',
+            TopicCount: 0,
+          },
+        ],
+        Total: 1,
+      });
+      mockClient.DescribeTopics.mockResolvedValueOnce({
+        Topics: [
+          {
+            TopicId: 'topic-123',
+            TopicName: 'test-topic',
+            ProjectId: 'project-123',
+            CreateTime: '',
+            Description: '',
+            ModifyTime: '',
+            ShardCount: 1,
+            Ttl: 30,
+          },
+        ],
+        Total: 1,
+      });
+      mockClient.CreateIndex.mockRejectedValueOnce(createError('IndexAlreadyExists'));
 
       await expect(
         operations.createIndex({
           projectName: 'test-project',
           topicName: 'test-topic',
-          fullTextIndex: {
-            delimiter: ' ,.?',
-            caseSensitive: false,
-          },
         }),
       ).resolves.toBeUndefined();
     });
@@ -357,118 +542,148 @@ describe('tlsOperations', () => {
 
   describe('deleteIndex', () => {
     it('should delete index successfully', async () => {
-      mockClient.fetchOpenAPI.mockResolvedValueOnce({});
+      mockClient.DescribeProjects.mockResolvedValueOnce({
+        Projects: [
+          {
+            ProjectId: 'project-123',
+            ProjectName: 'test-project',
+            CreateTime: '',
+            Description: '',
+            TopicCount: 0,
+          },
+        ],
+        Total: 1,
+      });
+      mockClient.DescribeTopics.mockResolvedValueOnce({
+        Topics: [
+          {
+            TopicId: 'topic-123',
+            TopicName: 'test-topic',
+            ProjectId: 'project-123',
+            CreateTime: '',
+            Description: '',
+            ModifyTime: '',
+            ShardCount: 1,
+            Ttl: 30,
+          },
+        ],
+        Total: 1,
+      });
+      mockClient.DeleteIndex.mockResolvedValueOnce({});
 
       await operations.deleteIndex('test-project', 'test-topic');
 
-      expect(mockClient.fetchOpenAPI).toHaveBeenCalledWith(
-        expect.objectContaining({
-          Action: 'DeleteIndex',
-        }),
-      );
+      expect(mockClient.DeleteIndex).toHaveBeenCalledWith({ TopicId: 'topic-123' });
     });
 
     it('should handle index not found gracefully', async () => {
-      const notFoundError = new Error('Not found') as Error & { code: string };
-      notFoundError.code = 'IndexNotFound';
+      mockClient.DescribeProjects.mockResolvedValueOnce({
+        Projects: [
+          {
+            ProjectId: 'project-123',
+            ProjectName: 'test-project',
+            CreateTime: '',
+            Description: '',
+            TopicCount: 0,
+          },
+        ],
+        Total: 1,
+      });
+      mockClient.DescribeTopics.mockResolvedValueOnce({ Topics: [], Total: 0 });
 
-      mockClient.fetchOpenAPI.mockRejectedValueOnce(notFoundError);
-
-      await operations.deleteIndex('test-project', 'test-topic');
+      await expect(
+        operations.deleteIndex('test-project', 'missing-topic'),
+      ).resolves.toBeUndefined();
+      expect(mockClient.DeleteIndex).not.toHaveBeenCalled();
     });
   });
 
   describe('waitForProject', () => {
     it('should return when project is active', async () => {
-      mockClient.fetchOpenAPI.mockResolvedValue({
-        Result: {
-          ProjectName: 'test-project',
-          Status: 'Active',
-        },
+      mockClient.DescribeProjects.mockResolvedValue({
+        Projects: [
+          {
+            ProjectId: 'project-123',
+            ProjectName: 'test-project',
+            CreateTime: '',
+            Description: '',
+            TopicCount: 0,
+          },
+        ],
+        Total: 1,
       });
 
-      await operations.waitForProject('test-project');
-
-      expect(mockClient.fetchOpenAPI).toHaveBeenCalled();
+      await expect(operations.waitForProject('test-project')).resolves.toBeUndefined();
     });
 
-    it('should wait until project is active', async () => {
-      mockClient.fetchOpenAPI
-        .mockResolvedValueOnce({
-          Result: {
-            ProjectName: 'test-project',
-            Status: 'Creating',
-          },
-        })
-        .mockResolvedValueOnce({
-          Result: {
-            ProjectName: 'test-project',
-            Status: 'Active',
-          },
-        });
+    it('should throw when project is not found', async () => {
+      mockClient.DescribeProjects.mockResolvedValue({ Projects: [], Total: 0 });
 
-      await operations.waitForProject('test-project');
-
-      expect(mockClient.fetchOpenAPI).toHaveBeenCalledTimes(2);
+      await expect(operations.waitForProject('missing-project')).rejects.toThrow(
+        'TLS_PROJECT_NOT_FOUND',
+      );
     });
 
     it('should throw when project fails', async () => {
-      mockClient.fetchOpenAPI.mockResolvedValue({
-        Result: {
-          ProjectName: 'test-project',
-          Status: 'Failed',
-        },
-      });
+      mockClient.DescribeProjects.mockRejectedValueOnce(createError('ProjectNotFound'));
 
-      await expect(operations.waitForProject('test-project')).rejects.toThrow();
-    });
-
-    it('should throw when project has error status', async () => {
-      mockClient.fetchOpenAPI.mockResolvedValue({
-        Result: {
-          ProjectName: 'test-project',
-          Status: 'Error',
-        },
-      });
-
-      await expect(operations.waitForProject('test-project')).rejects.toThrow();
+      await expect(operations.waitForProject('missing-project')).rejects.toThrow(
+        'TLS_PROJECT_NOT_FOUND',
+      );
     });
   });
 
   describe('waitForTopic', () => {
     it('should return when topic is active', async () => {
-      mockClient.fetchOpenAPI.mockResolvedValue({
-        Result: {
-          TopicName: 'test-topic',
-          Status: 'Active',
-        },
+      mockClient.DescribeProjects.mockResolvedValue({
+        Projects: [
+          {
+            ProjectId: 'project-123',
+            ProjectName: 'test-project',
+            CreateTime: '',
+            Description: '',
+            TopicCount: 0,
+          },
+        ],
+        Total: 1,
+      });
+      mockClient.DescribeTopics.mockResolvedValue({
+        Topics: [
+          {
+            TopicId: 'topic-123',
+            TopicName: 'test-topic',
+            ProjectId: 'project-123',
+            CreateTime: '',
+            Description: '',
+            ModifyTime: '',
+            ShardCount: 1,
+            Ttl: 30,
+          },
+        ],
+        Total: 1,
       });
 
-      await operations.waitForTopic('test-project', 'test-topic');
-
-      expect(mockClient.fetchOpenAPI).toHaveBeenCalled();
+      await expect(operations.waitForTopic('test-project', 'test-topic')).resolves.toBeUndefined();
     });
 
-    it('should throw when topic fails', async () => {
-      mockClient.fetchOpenAPI.mockResolvedValue({
-        Result: {
-          TopicName: 'test-topic',
-          Status: 'Failed',
-        },
+    it('should throw when topic not found', async () => {
+      mockClient.DescribeProjects.mockResolvedValue({
+        Projects: [
+          {
+            ProjectId: 'project-123',
+            ProjectName: 'test-project',
+            CreateTime: '',
+            Description: '',
+            TopicCount: 0,
+          },
+        ],
+        Total: 1,
       });
+      mockClient.DescribeTopics.mockResolvedValue({ Topics: [], Total: 0 });
 
-      await expect(operations.waitForTopic('test-project', 'test-topic')).rejects.toThrow();
-    });
-
-    it('should throw when topic has error status', async () => {
-      mockClient.fetchOpenAPI.mockResolvedValue({
-        Result: {
-          TopicName: 'test-topic',
-          Status: 'Error',
-        },
-      });
-
-      await expect(operations.waitForTopic('test-project', 'test-topic')).rejects.toThrow();
+      await expect(operations.waitForTopic('test-project', 'missing-topic')).rejects.toThrow(
+        'TLS_TOPIC_NOT_FOUND',
+      );
     });
   });
 });

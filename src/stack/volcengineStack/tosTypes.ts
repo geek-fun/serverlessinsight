@@ -1,6 +1,7 @@
 import { BucketDomain, BucketIam, ResourceAttributes } from '../../types';
 import type {
   TosAcl,
+  TosBucketInfo,
   TosStorageClass,
   TosWebsiteConfig,
 } from '../../common/volcengineClient/types';
@@ -27,6 +28,7 @@ export const bucketToTosConfig = (bucket: BucketDomain) => {
     storageClass?: TosStorageClass;
     websiteConfig?: TosWebsiteConfig;
     iam?: BucketIam;
+    Tags?: Array<{ Key: string; Value: string }>;
   } = {
     bucketName: bucket.name,
   };
@@ -77,19 +79,7 @@ export const extractTosBucketDefinition = (
   };
 };
 
-export const buildTosInstanceFromProvider = (
-  info: {
-    name: string;
-    location?: string;
-    creationDate?: string;
-    storageClass?: TosStorageClass;
-    extranetEndpoint?: string;
-    intranetEndpoint?: string;
-    acl?: TosAcl;
-    websiteConfig?: TosWebsiteConfig;
-  },
-  sid: string,
-) => {
+export const buildTosInstanceFromProvider = (info: TosBucketInfo, sid: string) => {
   return {
     type: 'VOLCENGINE_TOS_BUCKET',
     sid,
@@ -107,5 +97,17 @@ export const buildTosInstanceFromProvider = (
           errorDocument: info.websiteConfig.errorDocument ?? null,
         }
       : null,
+    Tags: info.Tags ?? null,
+    owner: info.owner ?? null,
+    projectName: info.projectName ?? null,
+    bucketType: info.type ?? null,
+    azRedundancy: info.azRedundancy ?? null,
+    extranetS3Endpoint: info.extranetS3Endpoint ?? null,
+    intranetS3Endpoint: info.intranetS3Endpoint ?? null,
+    versioning: info.versioning ?? null,
+    crossRegionReplication: info.crossRegionReplication ?? null,
+    transferAcceleration: info.transferAcceleration ?? null,
+    accessMonitor: info.accessMonitor ?? null,
+    serverSideEncryptionConfiguration: info.serverSideEncryptionConfiguration ?? null,
   };
 };

@@ -7,7 +7,7 @@ import {
   getResource,
   removeResource,
   setResource,
-  computeFileHash,
+  computeZipContentHash,
   getContext,
   buildSid,
   attributesEqual,
@@ -33,6 +33,8 @@ import { extractFc3Definition, Fc3FunctionInfo, functionToFc3Config } from './fc
 import { logger } from '../../common/logger';
 import type { IamStatement } from '../../common/iamStatements';
 import { lang } from '../../lang';
+import { OWNERSHIP_TAG_KEY, buildOwnershipTagValue, isOwnedByStack } from '../ownershipTag';
+import { isResourceAlreadyExistsError } from '../alreadyExists';
 
 type DependentInstance = {
   type: string;
@@ -103,7 +105,7 @@ const ensureOssCodeUpload = async (
     await client.oss.createBucket({ bucketName });
   }
 
-  const codeHash = computeFileHash(codePath);
+  const codeHash = await computeZipContentHash(codePath);
   const ossObjectName = `fc3-code/${functionName}/${codeHash}.zip`;
 
   await client.oss.putFile(bucketName, ossObjectName, codePath);
@@ -118,6 +120,7 @@ const buildFc3InstanceFromProvider = (info: Fc3FunctionInfo, sid: string) => {
     sid,
     id: info.functionName ?? '',
     functionName: info.functionName ?? null,
+    functionArn: info.functionArn ?? null,
     functionId: info.functionId ?? null,
     runtime: info.runtime ?? null,
     handler: info.handler ?? null,
@@ -182,6 +185,10 @@ const buildFc3InstanceFromProvider = (info: Fc3FunctionInfo, sid: string) => {
     lastUpdateStatus: info.lastUpdateStatus ?? null,
     lastUpdateStatusReason: info.lastUpdateStatusReason ?? null,
     lastUpdateStatusReasonCode: info.lastUpdateStatusReasonCode ?? null,
+    tags: info.tags?.map((tag) => ({
+      key: tag.Key ?? null,
+      value: tag.Value ?? null,
+    })),
   };
 };
 
@@ -547,6 +554,10 @@ export const createResource = async (
   );
 
   let config = functionToFc3Config(fn);
+  config = {
+    ...config,
+    tags: [{ key: OWNERSHIP_TAG_KEY, value: buildOwnershipTagValue(context, logicalId) }],
+  };
 
   if (dependentResources.logConfig) {
     config = {
@@ -593,7 +604,7 @@ export const createResource = async (
   }
 
   const codePath = fn.code!.path;
-  const codeHash = computeFileHash(codePath);
+  const codeHash = await computeZipContentHash(codePath);
   const baseDefinition = extractFc3Definition(config, codeHash);
   const definition = fn.iam ? { ...baseDefinition, iam: fn.iam } : baseDefinition;
 
@@ -642,6 +653,14 @@ export const createResource = async (
 
       const functionAfterError = await client.fc3.getFunction(fn.name);
       if (functionAfterError) {
+        if (functionAfterError.state === 'Failed') {
+          throw new PartialResourceError(
+            stateAfterDependents,
+            new Error(
+              `FC3 function ${fn.name} is in Failed state after create (reason: ${functionAfterError.stateReason ?? 'unknown'})`,
+            ),
+          );
+        }
         logger.info(
           `Function ${fn.name} found after create error reconciliation, continuing deployment flow`,
         );
@@ -649,6 +668,14 @@ export const createResource = async (
         await delay(RECOVERY_GET_FUNCTION_DELAY_MS);
         const functionAfterDelay = await client.fc3.getFunction(fn.name);
         if (functionAfterDelay) {
+          if (functionAfterDelay.state === 'Failed') {
+            throw new PartialResourceError(
+              stateAfterDependents,
+              new Error(
+                `FC3 function ${fn.name} is in Failed state after create (reason: ${functionAfterDelay.stateReason ?? 'unknown'})`,
+              ),
+            );
+          }
           logger.info(
             `Function ${fn.name} found after delayed reconciliation, continuing deployment flow`,
           );
@@ -658,6 +685,26 @@ export const createResource = async (
             error instanceof Error ? error : new Error(String(error)),
           );
         }
+      }
+    } else if (isResourceAlreadyExistsError(error, ['FunctionAlreadyExists'])) {
+      // Idempotent adoption: the function already exists in the provider.
+      // Adopt it ONLY if it carries our ownership tag (proves a previous run
+      // of THIS stack created it — e.g. state was reset). An untagged
+      // same-named function may belong to another project, so it must fail
+      // loudly rather than silently taking it over (destroy would then remove
+      // a resource that was never ours).
+      const probe = await client.fc3.getFunction(fn.name);
+      if (probe && isOwnedByStack(context, logicalId, probe.tags)) {
+        logger.info(
+          `Function ${fn.name} exists and carries ownership tag (${OWNERSHIP_TAG_KEY}), adopting idempotently`,
+        );
+      } else {
+        throw new PartialResourceError(
+          stateAfterDependents,
+          new Error(
+            `Function ${fn.name} already exists in provider but is not owned by this stack (missing ${OWNERSHIP_TAG_KEY} tag). Refusing to adopt — resolve manually.`,
+          ),
+        );
       }
     } else {
       throw new PartialResourceError(
@@ -680,6 +727,14 @@ export const createResource = async (
     throw new PartialResourceError(
       stateAfterDependents,
       new Error(`Failed to refresh state for function: ${fn.name}`),
+    );
+  }
+  if (functionInfo.state === 'Failed') {
+    throw new PartialResourceError(
+      stateAfterDependents,
+      new Error(
+        `FC3 function ${fn.name} is in Failed state (reason: ${functionInfo.stateReason ?? 'unknown'})`,
+      ),
     );
   }
 
@@ -965,7 +1020,7 @@ export const updateResource = async (
 
   const codePath = fn.code!.path;
   const currentCodeHash = existingState?.definition?.codeHash as string | undefined;
-  const desiredCodeHash = computeFileHash(codePath);
+  const desiredCodeHash = await computeZipContentHash(codePath);
   const codeChanged = currentCodeHash !== desiredCodeHash;
 
   const existingConfig = existingState?.definition as ResourceAttributes | undefined;
@@ -1125,7 +1180,7 @@ export const updateResource = async (
     throw new Error(`Failed to refresh state for function: ${fn.name}`);
   }
 
-  const codeHash = computeFileHash(codePath);
+  const codeHash = await computeZipContentHash(codePath);
   const baseDefinition = extractFc3Definition(config, codeHash);
   const definition = fn.iam ? { ...baseDefinition, iam: fn.iam } : baseDefinition;
   const sid = buildSid('aliyun', 'fc3', context.stage, fn.name);

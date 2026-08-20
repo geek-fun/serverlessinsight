@@ -1,6 +1,7 @@
 import {
   bucketToTosConfig,
   extractTosBucketDefinition,
+  buildTosInstanceFromProvider,
 } from '../../../../src/stack/volcengineStack/tosTypes';
 import type { BucketDomain } from '../../../../src/types';
 
@@ -108,6 +109,110 @@ describe('tosTypes', () => {
 
       const def = extractTosBucketDefinition(config, 'abc123');
       expect(def.websiteCodeHash).toBe('abc123');
+    });
+  });
+
+  describe('buildTosInstanceFromProvider', () => {
+    it('should retain the full provider detail set', () => {
+      const instance = buildTosInstanceFromProvider(
+        {
+          name: 'test-bucket',
+          location: 'cn-beijing',
+          creationDate: '2024-01-01T00:00:00Z',
+          storageClass: 'STANDARD',
+          extranetEndpoint: 'tos-cn-beijing.volces.com',
+          intranetEndpoint: 'tos-cn-beijing.ivolces.com',
+          acl: 'private',
+          websiteConfig: { indexDocument: 'index.html', errorDocument: '404.html' },
+          Tags: [{ Key: 'si-owned-by', Value: 'v' }],
+          owner: { id: '2000000001', displayName: 'test-owner' },
+          projectName: 'default',
+          type: 'normal',
+          azRedundancy: 'single_az',
+          extranetS3Endpoint: 'tos-s3-cn-beijing.volces.com',
+          intranetS3Endpoint: 'tos-s3-cn-beijing.internal.volces.com',
+          versioning: 'Enabled',
+          crossRegionReplication: 'Enabled',
+          transferAcceleration: 'Enabled',
+          accessMonitor: 'Disabled',
+          serverSideEncryptionConfiguration: {
+            rule: [
+              {
+                applyServerSideEncryptionByDefault: {
+                  sseAlgorithm: 'AES256',
+                  kmsMasterKeyId: 'key-1',
+                },
+              },
+            ],
+          },
+        },
+        'sid-1',
+      );
+
+      expect(instance).toEqual({
+        type: 'VOLCENGINE_TOS_BUCKET',
+        sid: 'sid-1',
+        id: 'test-bucket',
+        bucketName: 'test-bucket',
+        location: 'cn-beijing',
+        creationDate: '2024-01-01T00:00:00Z',
+        storageClass: 'STANDARD',
+        extranetEndpoint: 'tos-cn-beijing.volces.com',
+        intranetEndpoint: 'tos-cn-beijing.ivolces.com',
+        acl: 'private',
+        websiteConfig: { indexDocument: 'index.html', errorDocument: '404.html' },
+        Tags: [{ Key: 'si-owned-by', Value: 'v' }],
+        owner: { id: '2000000001', displayName: 'test-owner' },
+        projectName: 'default',
+        bucketType: 'normal',
+        azRedundancy: 'single_az',
+        extranetS3Endpoint: 'tos-s3-cn-beijing.volces.com',
+        intranetS3Endpoint: 'tos-s3-cn-beijing.internal.volces.com',
+        versioning: 'Enabled',
+        crossRegionReplication: 'Enabled',
+        transferAcceleration: 'Enabled',
+        accessMonitor: 'Disabled',
+        serverSideEncryptionConfiguration: {
+          rule: [
+            {
+              applyServerSideEncryptionByDefault: {
+                sseAlgorithm: 'AES256',
+                kmsMasterKeyId: 'key-1',
+              },
+            },
+          ],
+        },
+      });
+    });
+
+    it('should default absent optional fields to null', () => {
+      const instance = buildTosInstanceFromProvider({ name: 'test-bucket' }, 'sid-1');
+
+      expect(instance).toEqual({
+        type: 'VOLCENGINE_TOS_BUCKET',
+        sid: 'sid-1',
+        id: 'test-bucket',
+        bucketName: 'test-bucket',
+        location: null,
+        creationDate: null,
+        storageClass: null,
+        extranetEndpoint: null,
+        intranetEndpoint: null,
+        acl: null,
+        websiteConfig: null,
+        Tags: null,
+        owner: null,
+        projectName: null,
+        bucketType: null,
+        azRedundancy: null,
+        extranetS3Endpoint: null,
+        intranetS3Endpoint: null,
+        versioning: null,
+        crossRegionReplication: null,
+        transferAcceleration: null,
+        accessMonitor: null,
+        serverSideEncryptionConfiguration: null,
+      });
     });
   });
 });

@@ -43,10 +43,60 @@ export type VefaasFunctionInfo = {
     vpcId?: string;
     subnetIds?: string[];
     securityGroupIds?: string[];
+    enableVpc?: boolean;
+    enableSharedInternetAccess?: boolean;
   };
   logConfig?: {
     project?: string;
     topic?: string;
+    enableLog?: boolean;
+  };
+  Tags?: Array<{ Key?: string; Value?: string }>;
+  exclusiveMode?: boolean;
+  maxConcurrency?: number;
+  codeSize?: number;
+  codeSizeLimit?: number;
+  sourceLocation?: string;
+  sourceType?: string;
+  owner?: string;
+  triggersCount?: number;
+  instanceType?: string;
+  initializerSec?: number;
+  command?: string;
+  port?: number;
+  cpuStrategy?: string;
+  projectName?: string;
+  functionType?: string;
+  cell?: string;
+  enableApmplus?: boolean;
+  nasStorage?: {
+    enableNas?: boolean;
+    nasConfigs?: Array<{
+      gid?: number;
+      uid?: number;
+      remotePath?: string;
+      fileSystemId?: string;
+      mountPointId?: string;
+      localMountPath?: string;
+    }>;
+  };
+  tosMountConfig?: {
+    enableTos?: boolean;
+    mountPoints?: Array<{
+      endpoint?: string;
+      readOnly?: boolean;
+      bucketName?: string;
+      bucketPath?: string;
+      localMountPath?: string;
+    }>;
+  };
+  asyncTaskConfig?: {
+    enableAsyncTask?: boolean;
+    maxRetry?: number;
+    destinationConfig?: {
+      onSuccess?: { destination?: string };
+      onFailure?: { destination?: string };
+    };
   };
 };
 
@@ -67,9 +117,7 @@ const getTrustedServicesForFunction = (
   const hasApiGateway = context.iac?.events?.some((event) =>
     event.triggers?.some((trigger) => String(trigger.backend) === expectedBackendRef),
   );
-  return hasApiGateway
-    ? ['vefaas.volcengine.com', 'apigateway.volcengine.com']
-    : ['vefaas.volcengine.com'];
+  return hasApiGateway ? ['vefaas', 'apigateway'] : ['vefaas'];
 };
 
 export const functionToVefaasConfig = (

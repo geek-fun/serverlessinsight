@@ -6,11 +6,18 @@ import {
   StateFile,
 } from '../../types';
 import { createTencentClient } from '../../common/tencentClient';
-import { databaseToTdsqlcConfig, extractTdsqlcDefinition, TdsqlcClusterInfo } from './tdsqlcTypes';
+import {
+  databaseToTdsqlcConfig,
+  extractTdsqlcDefinition,
+  tdsqlcTagsToOwnershipTags,
+  TdsqlcClusterInfo,
+} from './tdsqlcTypes';
 import { setResource, removeResource } from '../../common/stateManager';
 import { buildSid } from '../../common';
 import { logger } from '../../common/logger';
 import { lang } from '../../lang';
+import { OWNERSHIP_TAG_KEY, buildOwnershipTagValue, isOwnedByStack } from '../ownershipTag';
+import { isResourceAlreadyExistsError } from '../alreadyExists';
 
 const buildTdsqlcInstanceFromProvider = (info: TdsqlcClusterInfo, sid: string) => {
   return {
@@ -83,7 +90,37 @@ const buildTdsqlcInstanceFromProvider = (info: TdsqlcClusterInfo, sid: string) =
         tagKey: t.TagKey ?? null,
         tagValue: t.TagValue ?? null,
       })) ?? [],
+    uin: info.Uin ?? null,
+    appId: info.AppId ?? null,
+    tasks:
+      info.Tasks?.map((t) => ({
+        taskId: t.TaskId ?? null,
+        taskType: t.TaskType ?? null,
+        taskStatus: t.TaskStatus ?? null,
+        objectId: t.ObjectId ?? null,
+        objectType: t.ObjectType ?? null,
+      })) ?? [],
+    netAddrs:
+      info.NetAddrs?.map((n) => ({
+        vip: n.Vip ?? null,
+        vport: n.Vport ?? null,
+        wanDomain: n.WanDomain ?? null,
+        wanPort: n.WanPort ?? null,
+        netType: n.NetType ?? null,
+        uniqSubnetId: n.UniqSubnetId ?? null,
+        uniqVpcId: n.UniqVpcId ?? null,
+      })) ?? [],
+    hasSlaveZone: info.HasSlaveZone ?? null,
+    resourcePackages:
+      info.ResourcePackages?.map((p) => ({
+        packageId: p.PackageId ?? null,
+        packageType: p.PackageType ?? null,
+        deductionPriority: p.DeductionPriority ?? null,
+      })) ?? [],
+    gdnId: info.GdnId ?? null,
+    gdnRole: info.GdnRole ?? null,
     cynosVersion: info.CynosVersion ?? null,
+    cynosVersionTag: info.CynosVersionTag ?? null,
     cynosVersionStatus: info.CynosVersionStatus ?? null,
     isLatestVersion: info.IsLatestVersion ?? null,
   };
@@ -94,12 +131,15 @@ export const createDatabaseResource = async (
   database: DatabaseDomain,
   state: StateFile,
 ): Promise<StateFile> => {
+  const logicalId = `databases.${database.key}`;
   const config = databaseToTdsqlcConfig(database);
+  config.ResourceTags = [
+    { TagKey: OWNERSHIP_TAG_KEY, TagValue: buildOwnershipTagValue(context, logicalId) },
+  ];
 
   const client = createTencentClient(context);
 
   const definition = extractTdsqlcDefinition(config);
-  const logicalId = `databases.${database.key}`;
 
   const taintedResourceState: ResourceState = {
     mode: 'managed',
@@ -113,12 +153,48 @@ export const createDatabaseResource = async (
   const stateAfterDependents = setResource(state, logicalId, taintedResourceState);
 
   try {
-    const clusterId = await client.tdsqlc.createCluster(config);
+    let clusterId: string;
+    let clusterInfo: TdsqlcClusterInfo | null = null;
 
-    // Refresh state from provider to get all attributes
-    const clusterInfo = await client.tdsqlc.getCluster(clusterId);
+    try {
+      clusterId = await client.tdsqlc.createCluster(config);
+    } catch (error) {
+      if (isResourceAlreadyExistsError(error, ['ResourceInUse'])) {
+        // Idempotent adoption: a cluster with this name already exists in the
+        // provider. Adopt it ONLY if it carries our ownership tag (proves a
+        // previous run of THIS stack created it — e.g. state was reset). An
+        // untagged same-named cluster may belong to another project, so it must
+        // fail loudly rather than silently taking it over (destroy would then
+        // remove a resource that was never ours).
+        const probe = await client.tdsqlc.getClusterByName(database.name);
+        if (
+          probe &&
+          isOwnedByStack(context, logicalId, tdsqlcTagsToOwnershipTags(probe.ResourceTags))
+        ) {
+          logger.info(
+            `Cluster ${database.name} exists and carries ownership tag (${OWNERSHIP_TAG_KEY}), adopting idempotently`,
+          );
+          clusterId = probe.ClusterId;
+          clusterInfo = probe;
+        } else {
+          throw new PartialResourceError(
+            stateAfterDependents,
+            new Error(
+              `Cluster ${database.name} already exists in provider but is not owned by this stack (missing ${OWNERSHIP_TAG_KEY} tag). Refusing to adopt — resolve manually.`,
+            ),
+          );
+        }
+      } else {
+        throw error;
+      }
+    }
+
+    // Adopt path already has the probe info; fresh creates refresh via getCluster.
     if (!clusterInfo) {
-      throw new Error(`Failed to refresh state for cluster: ${clusterId}`);
+      clusterInfo = await client.tdsqlc.getCluster(clusterId);
+      if (!clusterInfo) {
+        throw new Error(`Failed to refresh state for cluster: ${clusterId}`);
+      }
     }
 
     const sid = buildSid('tencent', 'cynosdb', context.stage, clusterId);
@@ -126,7 +202,7 @@ export const createDatabaseResource = async (
       mode: 'managed',
       region: context.region,
       definition,
-      instances: [buildTdsqlcInstanceFromProvider(clusterInfo as TdsqlcClusterInfo, sid)],
+      instances: [buildTdsqlcInstanceFromProvider(clusterInfo, sid)],
       lastUpdated: new Date().toISOString(),
       metadata: {
         clusterName: database.name,
@@ -137,6 +213,9 @@ export const createDatabaseResource = async (
 
     return setResource(state, logicalId, resourceState);
   } catch (error) {
+    if (error instanceof PartialResourceError) {
+      throw error;
+    }
     throw new PartialResourceError(
       stateAfterDependents,
       error instanceof Error ? error : new Error(String(error)),

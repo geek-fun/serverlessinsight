@@ -30,6 +30,7 @@ export type ScfFunctionConfig = {
     ImageType?: string;
     ImageUri?: string;
   };
+  Tags?: Array<{ Key: string; Value: string }>;
 };
 
 export type ScfTrigger = {
@@ -97,6 +98,12 @@ export type ScfFunctionInfo = {
     LayerName?: string;
     LayerVersion?: number;
     CompatibleRuntimes?: string[];
+    AddTime?: string;
+    Description?: string;
+    LicenseInfo?: string;
+    Status?: string;
+    Stamp?: string;
+    Tags?: Array<{ Key: string; Value: string }>;
   }>;
   DeadLetterConfig?: {
     Type?: string;
@@ -137,6 +144,12 @@ export type ScfFunctionInfo = {
   ImageConfig?: {
     ImageType?: string;
     ImageUri?: string;
+    RegistryId?: string;
+    EntryPoint?: string;
+    Command?: string;
+    Args?: string;
+    ContainerImageAccelerate?: boolean;
+    ImagePort?: number;
   };
   ProtocolType?: string;
   ProtocolParams?: {
@@ -147,6 +160,21 @@ export type ScfFunctionInfo = {
   DnsCache?: string;
   IntranetConfig?: {
     IpFixed?: string;
+    IpAddress?: string[];
+  };
+  InstanceConcurrencyConfig?: {
+    DynamicEnabled?: string;
+    MaxConcurrency?: number;
+    InstanceIsolationEnabled?: string;
+    Type?: string;
+    MixNodeConfig?: Array<{
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      [key: string]: any;
+    }>;
+    SessionConfig?: {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      [key: string]: any;
+    };
   };
 };
 

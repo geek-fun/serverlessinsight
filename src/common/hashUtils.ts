@@ -8,6 +8,31 @@ export const computeFileHash = (filePath: string): string => {
   return crypto.createHash('sha256').update(fileBuffer).digest('hex');
 };
 
+/**
+ * Content-based hash of a ZIP archive: hashes each entry's path + bytes in
+ * sorted order, ignoring the archive binary itself. ZIP binaries embed file
+ * timestamps and ordering, so hashing the raw file yields a different value
+ * every time the same sources are repackaged — which makes every deploy plan
+ * show a phantom code update. Entry paths are sorted so archive ordering does
+ * not affect the result either.
+ */
+export const computeZipContentHash = async (zipPath: string): Promise<string> => {
+  const { default: JSZip } = await import('jszip');
+  const data = await fs.promises.readFile(zipPath);
+  const zip = await JSZip.loadAsync(data);
+  const entries = Object.values(zip.files)
+    .filter((entry) => !entry.dir)
+    .map((entry) => ({ path: entry.name, content: entry.async('nodebuffer') }));
+  entries.sort((a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0));
+
+  const hash = crypto.createHash('sha256');
+  for (const entry of entries) {
+    hash.update(entry.path);
+    hash.update(await entry.content);
+  }
+  return hash.digest('hex');
+};
+
 /* istanbul ignore next */
 export const computeDirectoryHash = (dirPath: string): string => {
   const files: string[] = [];
@@ -45,7 +70,22 @@ export const computeDirectoryHash = (dirPath: string): string => {
  * @param b - Second value
  * @returns True if values are deeply equal, false otherwise
  */
-const deepEqual = (a: unknown, b: unknown): boolean => {
+const deepEqual = (
+  a: unknown,
+  b: unknown,
+  options?: { nullEqualsUndefined?: boolean },
+): boolean => {
+  const { nullEqualsUndefined = false } = options ?? {};
+
+  // null and undefined both represent "unset" — treat them as equal when
+  // requested. Resource attribute comparison (plans, drift detection) relies
+  // on this because provider APIs return `null` for unset fields while
+  // desired definitions carry `undefined`.
+  if (nullEqualsUndefined) {
+    if (a === null && b === undefined) return true;
+    if (a === undefined && b === null) return true;
+  }
+
   // Handle primitives and null/undefined
   if (a === b) {
     return true;
@@ -76,7 +116,7 @@ const deepEqual = (a: unknown, b: unknown): boolean => {
       return false;
     }
     for (let i = 0; i < objA.length; i++) {
-      if (!deepEqual(objA[i], objB[i])) {
+      if (!deepEqual(objA[i], objB[i], options)) {
         return false;
       }
     }
@@ -88,9 +128,14 @@ const deepEqual = (a: unknown, b: unknown): boolean => {
     return false;
   }
 
-  // Compare object keys
-  const keysA = Object.keys(objA);
-  const keysB = Object.keys(objB);
+  // Compare object keys. With nullEqualsUndefined, keys whose value is
+  // undefined (or null, which the option treats as equivalent) are treated as
+  // absent — JSON serialization drops undefined keys, so a state round-trip
+  // would otherwise look like a phantom added/removed.
+  const normalizeKey = (key: string, obj: Record<string, unknown>): boolean =>
+    nullEqualsUndefined && (obj[key] === undefined || obj[key] === null);
+  const keysA = Object.keys(objA).filter((k) => !normalizeKey(k, objA));
+  const keysB = Object.keys(objB).filter((k) => !normalizeKey(k, objB));
 
   if (keysA.length !== keysB.length) {
     return false;
@@ -101,7 +146,7 @@ const deepEqual = (a: unknown, b: unknown): boolean => {
     if (!Object.prototype.hasOwnProperty.call(objB, key)) {
       return false;
     }
-    if (!deepEqual(objA[key], objB[key])) {
+    if (!deepEqual(objA[key], objB[key], options)) {
       return false;
     }
   }
@@ -121,7 +166,7 @@ export const attributesEqual = (
   a: Record<string, unknown>,
   b: Record<string, unknown>,
 ): boolean => {
-  return deepEqual(a, b);
+  return deepEqual(a, b, { nullEqualsUndefined: true });
 };
 
 /**
@@ -151,12 +196,14 @@ export const diffAttributes = (
     const afterVal = after[key];
 
     if (!(key in before)) {
-      added[key] = afterVal;
+      // JSON serialization drops undefined keys — a key absent on one side
+      // whose counterpart is undefined/null is not a real difference.
+      if (afterVal !== undefined && afterVal !== null) added[key] = afterVal;
     } else if (!(key in after)) {
-      removed[key] = beforeVal;
+      if (beforeVal !== undefined && beforeVal !== null) removed[key] = beforeVal;
     } else {
       // Both exist - check if they're different using deep equality
-      if (!deepEqual(beforeVal, afterVal)) {
+      if (!deepEqual(beforeVal, afterVal, { nullEqualsUndefined: true })) {
         changed[key] = { before: beforeVal, after: afterVal };
       }
     }

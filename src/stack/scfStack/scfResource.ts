@@ -12,10 +12,12 @@ import { functionToScfConfig, extractScfDefinition, ScfFunctionInfo } from './sc
 import { getResource, setResource, removeResource } from '../../common/stateManager';
 import { buildSid, attributesEqual, ProviderEnum, mapAuthType, mapAccess } from '../../common';
 import { RAM_ROLE_PROPAGATION_DELAY_MS } from '../../common/constants';
-import { computeFileHash } from '../../common/hashUtils';
+import { computeZipContentHash } from '../../common/hashUtils';
 import { logger } from '../../common/logger';
 import { lang } from '../../lang';
 import type { IamStatement } from '../../common/iamStatements';
+import { OWNERSHIP_TAG_KEY, buildOwnershipTagValue, isOwnedByStack } from '../ownershipTag';
+import { isResourceAlreadyExistsError } from '../alreadyExists';
 
 /**
  * Build the Function URL trigger description for Tencent CreateTrigger
@@ -36,6 +38,13 @@ const buildTencentTriggerDesc = (
       EnableExtranet: netConfig.enableExtranet ?? true,
     },
   });
+
+// Tencent names Function URL triggers with a random id (e.g. "5obtzwwxw1"), not
+// our ${fn.key}-http-trigger, so name-based matching never finds them. A
+// Function URL trigger is identified by Type 'http' + a TriggerDesc carrying
+// the NetConfig field (the API Gateway flavor uses api/service/release instead).
+const isFunctionUrlTrigger = (t: { TriggerName?: string; Type?: string; TriggerDesc?: string }) =>
+  t.Type === 'http' && typeof t.TriggerDesc === 'string' && t.TriggerDesc.includes('NetConfig');
 
 type ScfDependentInstance = {
   type: string;
@@ -115,26 +124,6 @@ const isRecoverableCreateError = (error: unknown): boolean => {
   );
 };
 
-// Narrow already-exists check for trigger-create errors — used only as a
-// backstop when adopting a function whose triggers were not visible in the
-// provider refresh. Deliberately does NOT match timeouts/network errors, which
-// must propagate so a missing trigger is never silently swallowed.
-const isTriggerAlreadyExistsError = (error: unknown): boolean => {
-  const code =
-    error && typeof error === 'object' && 'code' in error && typeof error.code === 'string'
-      ? error.code.toLowerCase()
-      : '';
-
-  const message =
-    error instanceof Error ? error.message.toLowerCase() : String(error).toLowerCase();
-
-  return (
-    code.includes('resourceinuse') ||
-    message.includes('已存在') ||
-    message.includes('already exist')
-  );
-};
-
 const buildScfInstanceFromProvider = (info: ScfFunctionInfo, sid: string) => {
   const envMap: Record<string, string> =
     info.Environment?.Variables?.reduce(
@@ -167,6 +156,16 @@ const buildScfInstanceFromProvider = (info: ScfFunctionInfo, sid: string) => {
     layerName: l.LayerName ?? null,
     layerVersion: l.LayerVersion ?? null,
     compatibleRuntimes: l.CompatibleRuntimes ?? [],
+    addTime: l.AddTime ?? null,
+    description: l.Description ?? null,
+    licenseInfo: l.LicenseInfo ?? null,
+    status: l.Status ?? null,
+    stamp: l.Stamp ?? null,
+    tags:
+      l.Tags?.map((t) => ({
+        key: t.Key,
+        value: t.Value,
+      })) ?? [],
   }));
 
   return {
@@ -269,6 +268,12 @@ const buildScfInstanceFromProvider = (info: ScfFunctionInfo, sid: string) => {
       ? {
           imageType: info.ImageConfig.ImageType ?? null,
           imageUri: info.ImageConfig.ImageUri ?? null,
+          registryId: info.ImageConfig.RegistryId ?? null,
+          entryPoint: info.ImageConfig.EntryPoint ?? null,
+          command: info.ImageConfig.Command ?? null,
+          args: info.ImageConfig.Args ?? null,
+          containerImageAccelerate: info.ImageConfig.ContainerImageAccelerate ?? null,
+          imagePort: info.ImageConfig.ImagePort ?? null,
         }
       : {},
     protocolType: info.ProtocolType ?? null,
@@ -285,6 +290,17 @@ const buildScfInstanceFromProvider = (info: ScfFunctionInfo, sid: string) => {
     intranetConfig: info.IntranetConfig
       ? {
           ipFixed: info.IntranetConfig.IpFixed ?? null,
+          ipAddress: info.IntranetConfig.IpAddress ?? [],
+        }
+      : {},
+    instanceConcurrencyConfig: info.InstanceConcurrencyConfig
+      ? {
+          dynamicEnabled: info.InstanceConcurrencyConfig.DynamicEnabled ?? null,
+          maxConcurrency: info.InstanceConcurrencyConfig.MaxConcurrency ?? null,
+          instanceIsolationEnabled: info.InstanceConcurrencyConfig.InstanceIsolationEnabled ?? null,
+          type: info.InstanceConcurrencyConfig.Type ?? null,
+          mixNodeConfig: info.InstanceConcurrencyConfig.MixNodeConfig ?? [],
+          sessionConfig: info.InstanceConcurrencyConfig.SessionConfig ?? {},
         }
       : {},
   };
@@ -324,7 +340,7 @@ const createDependentResources = async (
   }
 
   // Create new CAM role
-  const trustedServices = ['scf.tencentcloudapi.com'];
+  const trustedServices = ['scf.qcloud.com'];
   logger.info(lang.__('CREATING_RAM_ROLE', { roleName }));
   const camRole = await client.cam.createRole(
     roleName,
@@ -383,6 +399,7 @@ export const createResource = async (
   );
 
   let config = functionToScfConfig(fn);
+  config.Tags = [{ Key: OWNERSHIP_TAG_KEY, Value: buildOwnershipTagValue(context, logicalId) }];
 
   if (dependentResources.role) {
     config = {
@@ -393,7 +410,7 @@ export const createResource = async (
 
   const codePath = fn.code!.path;
   const codeBase64 = readFileAsBase64(codePath);
-  const codeHash = computeFileHash(codePath);
+  const codeHash = await computeZipContentHash(codePath);
   const definition = extractScfDefinition(config, codeHash, fn.iam);
 
   const dependentInstances: Array<ScfDependentInstance> = [];
@@ -464,6 +481,27 @@ export const createResource = async (
       } else {
         throw new PartialResourceError(stateAfterDependents, new Error(toErrorMessage(error)));
       }
+    } else if (isResourceAlreadyExistsError(error)) {
+      // Idempotent adoption: the function already exists in the provider.
+      // Adopt it ONLY if it carries our ownership tag (proves a previous run
+      // of THIS stack created it — e.g. state was reset). An untagged
+      // same-named function may belong to another project, so it must fail
+      // loudly rather than silently taking it over (destroy would then remove
+      // a resource that was never ours).
+      const probe = await client.scf.getFunction(fn.name);
+      if (probe && isOwnedByStack(context, logicalId, probe.Tags)) {
+        adoptedInfo = probe;
+        logger.info(
+          `Function ${fn.name} exists and carries ownership tag (${OWNERSHIP_TAG_KEY}), adopting idempotently`,
+        );
+      } else {
+        throw new PartialResourceError(
+          stateAfterDependents,
+          new Error(
+            `Function ${fn.name} already exists in provider but is not owned by this stack (missing ${OWNERSHIP_TAG_KEY} tag). Refusing to adopt — resolve manually.`,
+          ),
+        );
+      }
     } else {
       throw new PartialResourceError(stateAfterDependents, new Error(toErrorMessage(error)));
     }
@@ -491,9 +529,7 @@ export const createResource = async (
       }
     }
 
-    const triggerAlreadyAttached = providerTriggers.some(
-      (t) => t.TriggerName === triggerName && t.Type === 'http',
-    );
+    const triggerAlreadyAttached = providerTriggers.some(isFunctionUrlTrigger);
 
     if (triggerAlreadyAttached) {
       logger.info(`HTTP trigger ${triggerName} already attached to ${fn.name}, skipping creation`);
@@ -512,7 +548,7 @@ export const createResource = async (
 
         logger.info(lang.__('HTTP_TRIGGER_CREATED', { triggerName, functionName: fn.name }));
       } catch (error) {
-        if (isTriggerAlreadyExistsError(error)) {
+        if (isResourceAlreadyExistsError(error)) {
           logger.warn(
             `HTTP trigger ${triggerName} already exists on ${fn.name}, continuing: ${String(error)}`,
           );
@@ -690,7 +726,7 @@ export const updateResource = async (
 
   const codePath = fn.code!.path;
   const codeBase64 = readFileAsBase64(codePath);
-  const codeHash = computeFileHash(codePath);
+  const codeHash = await computeZipContentHash(codePath);
 
   // Only push configuration when the mutable config fields actually changed —
   // Tencent's UpdateFunctionConfiguration rejects Handler/Runtime (immutable at
@@ -775,16 +811,38 @@ export const updateResource = async (
         });
       }
     } else {
-      logger.info(lang.__('CREATING_HTTP_TRIGGER', { triggerName, functionName: fn.name }));
-      await client.scf.createTrigger({
-        FunctionName: fn.name,
-        TriggerName: triggerName,
-        Type: 'http',
-        TriggerDesc: desiredTriggerDesc,
-        Qualifier: '$DEFAULT',
-        Enable: 'OPEN',
-      });
-      logger.info(lang.__('HTTP_TRIGGER_CREATED', { triggerName, functionName: fn.name }));
+      // No trigger recorded in state — but a leftover trigger may still exist
+      // in the provider (e.g. adopted function whose state lacked trigger
+      // records). Probe before creating to stay idempotent.
+      const probe = await client.scf.getFunction(fn.name);
+      const providerTriggerAttached = (probe?.Triggers ?? []).some(isFunctionUrlTrigger);
+
+      if (providerTriggerAttached) {
+        logger.info(
+          `HTTP trigger ${triggerName} already attached to ${fn.name}, skipping creation`,
+        );
+      } else {
+        logger.info(lang.__('CREATING_HTTP_TRIGGER', { triggerName, functionName: fn.name }));
+        try {
+          await client.scf.createTrigger({
+            FunctionName: fn.name,
+            TriggerName: triggerName,
+            Type: 'http',
+            TriggerDesc: desiredTriggerDesc,
+            Qualifier: '$DEFAULT',
+            Enable: 'OPEN',
+          });
+          logger.info(lang.__('HTTP_TRIGGER_CREATED', { triggerName, functionName: fn.name }));
+        } catch (error) {
+          if (isResourceAlreadyExistsError(error)) {
+            logger.warn(
+              `HTTP trigger ${triggerName} already exists on ${fn.name}, continuing: ${String(error)}`,
+            );
+          } else {
+            throw error;
+          }
+        }
+      }
     }
   } else if (existingHttpTrigger) {
     const tName = existingHttpTrigger.triggerName as string;

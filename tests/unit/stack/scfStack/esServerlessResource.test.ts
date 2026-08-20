@@ -17,6 +17,7 @@ import {
 const mockEsOperations = {
   createSpace: jest.fn(),
   getSpace: jest.fn(),
+  getSpaceByName: jest.fn(),
   updateSpace: jest.fn(),
   deleteSpace: jest.fn(),
 };
@@ -338,6 +339,163 @@ describe('EsServerlessResource', () => {
           VpcInfo: [{ VpcId: 'vpc-123', SubnetId: 'subnet-456' }],
         }),
       );
+    });
+
+    it('should retain the full detail set in the state instance', async () => {
+      const database = createTestDatabase('test_es');
+      const spaceId = 'es-space-test123';
+      const spaceInfo = {
+        SpaceId: spaceId,
+        SpaceName: 'test-es-space',
+        Status: 1,
+        CreateTime: '2024-01-01T00:00:00Z',
+        IndexCount: 5,
+        KibanaUrl: 'https://kibana.example.com',
+        KibanaPrivateUrl: 'https://kibana-private.example.com',
+        IndexAccessUrl: 'https://index-access.example.com',
+        KibanaPublicAcl: {
+          BlackIpList: ['203.0.113.1'],
+          WhiteIpList: ['198.51.100.1'],
+        },
+        KibanaEmbedUrl: 'https://embed.example.com',
+        DiDataList: [{ DiId: 'di-1', CreateTime: '2024-01-01T00:00:00Z', Status: 1 }],
+        VpcInfo: [
+          {
+            VpcId: 'vpc-123',
+            SubnetId: 'subnet-456',
+            VpcUid: 1000,
+            SubnetUid: 2000,
+            AvailableIpAddressCount: 10,
+          },
+        ],
+        Region: 'ap-guangzhou',
+        Zone: 'ap-guangzhou-3',
+        EnableKibanaPublicAccess: 1,
+        EnableKibanaPrivateAccess: 0,
+        AppId: 1250000000,
+        KibanaLanguage: 'zh-CN',
+        ClusterType: 0,
+        EnableMcpAccess: 1,
+        McpAccess: 'https://mcp.example.com',
+        Tags: [{ Key: 'si-owned-by', Value: 'test-app-test-service:databases.test_es' }],
+      };
+
+      mockEsOperations.createSpace.mockResolvedValue(spaceId);
+      mockEsOperations.getSpace.mockResolvedValue(spaceInfo);
+      mockedStateManager.setResource.mockReturnValue(initialState);
+
+      await createEsResource(mockContext, database, initialState);
+
+      const setResourceCalls = mockedStateManager.setResource.mock.calls;
+      const state = setResourceCalls[setResourceCalls.length - 1][2] as Record<string, unknown>;
+      const esInstance = (state.instances as Array<Record<string, unknown>>)[0];
+
+      expect(esInstance).toEqual(
+        expect.objectContaining({
+          spaceId,
+          spaceName: 'test-es-space',
+          indexCount: 5,
+          kibanaUrl: 'https://kibana.example.com',
+          kibanaPrivateUrl: 'https://kibana-private.example.com',
+          indexAccessUrl: 'https://index-access.example.com',
+          kibanaPublicAcl: {
+            blackIpList: ['203.0.113.1'],
+            whiteIpList: ['198.51.100.1'],
+          },
+          kibanaEmbedUrl: 'https://embed.example.com',
+          diDataList: [{ DiId: 'di-1', CreateTime: '2024-01-01T00:00:00Z', Status: 1 }],
+          vpcInfo: [
+            {
+              vpcId: 'vpc-123',
+              subnetId: 'subnet-456',
+              vpcUid: 1000,
+              subnetUid: 2000,
+              availableIpAddressCount: 10,
+            },
+          ],
+          region: 'ap-guangzhou',
+          zone: 'ap-guangzhou-3',
+          enableKibanaPublicAccess: 1,
+          enableKibanaPrivateAccess: 0,
+          appId: 1250000000,
+          kibanaLanguage: 'zh-CN',
+          clusterType: 0,
+          enableMcpAccess: 1,
+          mcpAccess: 'https://mcp.example.com',
+          tags: [{ key: 'si-owned-by', value: 'test-app-test-service:databases.test_es' }],
+        }),
+      );
+    });
+
+    it('should stamp the ownership tag on the createSpace call', async () => {
+      const database = createTestDatabase('test_es');
+      const spaceId = 'es-space-test123';
+
+      mockEsOperations.createSpace.mockResolvedValue(spaceId);
+      mockEsOperations.getSpace.mockResolvedValue({
+        SpaceId: spaceId,
+        SpaceName: 'test-es-space',
+        Status: 1,
+      });
+      mockedStateManager.setResource.mockReturnValue(initialState);
+
+      await createEsResource(mockContext, database, initialState);
+
+      expect(mockEsOperations.createSpace).toHaveBeenCalledWith(
+        expect.objectContaining({
+          SpaceName: 'test-es-space',
+          Tags: [{ Key: 'si-owned-by', Value: 'test-app-test-service:databases.test_es' }],
+        }),
+      );
+    });
+
+    it('should idempotently adopt an existing space that carries our ownership tag', async () => {
+      const database = createTestDatabase('test_es');
+      const existsError = Object.assign(new Error('空间名已存在。'), {
+        code: 'InvalidParameter.SpaceNameExist',
+      });
+      mockEsOperations.createSpace.mockRejectedValue(existsError);
+      mockEsOperations.getSpaceByName.mockResolvedValue({
+        SpaceId: 'es-space-test123',
+        SpaceName: 'test-es-space',
+        Status: 1,
+        Tags: [{ Key: 'si-owned-by', Value: 'test-app-test-service:databases.test_es' }],
+      });
+      mockedStateManager.setResource.mockReturnValue(initialState);
+
+      const result = await createEsResource(mockContext, database, initialState);
+
+      expect(mockEsOperations.createSpace).toHaveBeenCalledTimes(1);
+      expect(mockEsOperations.getSpaceByName).toHaveBeenCalledWith('test-es-space');
+      expect(mockedStateManager.setResource).toHaveBeenLastCalledWith(
+        initialState,
+        'databases.test_es',
+        expect.objectContaining({
+          instances: expect.arrayContaining([expect.objectContaining({ id: 'es-space-test123' })]),
+        }),
+      );
+      expect(result).toBe(initialState);
+    });
+
+    it('should reject adoption when existing space lacks our ownership tag', async () => {
+      const existsError = Object.assign(new Error('空间名已存在。'), {
+        code: 'InvalidParameter.SpaceNameExist',
+      });
+      mockEsOperations.createSpace.mockRejectedValue(existsError);
+      mockEsOperations.getSpaceByName.mockResolvedValue({
+        SpaceId: 'es-space-test123',
+        SpaceName: 'test-es-space',
+        Status: 1,
+        Tags: [{ Key: 'other-project-tag', Value: 'someone-else' }],
+      });
+      mockedStateManager.setResource.mockReturnValue(initialState);
+
+      await expect(
+        createEsResource(mockContext, createTestDatabase('test_es'), initialState),
+      ).rejects.toMatchObject({
+        name: 'PartialResourceError',
+        cause: { message: expect.stringContaining('not owned by this stack') },
+      });
     });
   });
 

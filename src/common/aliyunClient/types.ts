@@ -1,3 +1,80 @@
+export type Fc3LogConfig = {
+  project?: string;
+  logstore?: string;
+  enableRequestMetrics?: boolean;
+  enableInstanceMetrics?: boolean;
+  enableLlmMetrics?: boolean;
+  logBeginRule?: string;
+};
+
+export type Fc3CustomHealthCheckConfig = {
+  failureThreshold?: number;
+  httpGetUrl?: string;
+  initialDelaySeconds?: number;
+  periodSeconds?: number;
+  successThreshold?: number;
+  timeoutSeconds?: number;
+};
+
+export type Fc3CustomContainerConfig = {
+  image?: string;
+  entrypoint?: string[];
+  command?: string[];
+  port?: number;
+  accelerationType?: string;
+  accelerationInfo?: { status?: string };
+  acrInstanceId?: string;
+  healthCheckConfig?: Fc3CustomHealthCheckConfig;
+  registryConfig?: {
+    authConfig?: { password?: string; userName?: string };
+  };
+  resolvedImageUri?: string;
+};
+
+export type Fc3CustomDNS = {
+  nameServers?: string[];
+  searches?: string[];
+  dnsOptions?: Array<{ name?: string; value?: string }>;
+};
+
+export type Fc3CustomRuntimeConfig = {
+  args?: string[];
+  command?: string[];
+  port?: number;
+  healthCheckConfig?: Fc3CustomHealthCheckConfig;
+};
+
+export type Fc3InstanceLifecycleConfig = {
+  initializer?: { handler?: string; timeout?: number; command?: string[] };
+  preStop?: { handler?: string; timeout?: number; command?: string[] };
+};
+
+export type Fc3OssMountConfig = {
+  mountPoints?: Array<{
+    bucketName?: string;
+    bucketPath?: string;
+    endpoint?: string;
+    mountDir?: string;
+    readOnly?: boolean;
+  }>;
+};
+
+export type Fc3PolarFsConfig = {
+  groupId?: number;
+  userId?: number;
+  mountPoints?: Array<{
+    instanceId?: string;
+    mountDir?: string;
+    readOnly?: boolean;
+    remoteDir?: string;
+  }>;
+};
+
+export type Fc3TracingConfig = {
+  type?: string;
+  params?: Record<string, string>;
+};
+
 export type Fc3FunctionConfig = {
   functionName: string;
   runtime: string;
@@ -14,6 +91,7 @@ export type Fc3FunctionConfig = {
     vpcId?: string;
     vSwitchIds?: string[];
     securityGroupId?: string;
+    role?: string;
   };
   nasConfig?: {
     userId?: number;
@@ -24,23 +102,12 @@ export type Fc3FunctionConfig = {
       enableTls?: boolean;
     }>;
   };
-  logConfig?: {
-    project?: string;
-    logstore?: string;
-    enableRequestMetrics?: boolean;
-    enableInstanceMetrics?: boolean;
-    logBeginRule?: string;
-  };
-  customContainerConfig?: {
-    image?: string;
-    entrypoint?: string[];
-    command?: string[];
-    port?: number;
-    accelerationType?: string;
-  };
+  logConfig?: Fc3LogConfig;
+  customContainerConfig?: Fc3CustomContainerConfig;
   description?: string;
   internetAccess?: boolean;
   role?: string;
+  tags?: Array<{ key: string; value: string }>;
 };
 
 export type Fc3FunctionInfo = {
@@ -58,6 +125,7 @@ export type Fc3FunctionInfo = {
     vpcId?: string;
     vSwitchIds?: string[];
     securityGroupId?: string;
+    role?: string;
   };
   gpuConfig?: {
     gpuMemorySize?: number;
@@ -72,20 +140,8 @@ export type Fc3FunctionInfo = {
       enableTls?: boolean;
     }>;
   };
-  logConfig?: {
-    project?: string;
-    logstore?: string;
-    enableRequestMetrics?: boolean;
-    enableInstanceMetrics?: boolean;
-    logBeginRule?: string;
-  };
-  customContainerConfig?: {
-    image?: string;
-    entrypoint?: string[];
-    command?: string[];
-    port?: number;
-    accelerationType?: string;
-  };
+  logConfig?: Fc3LogConfig;
+  customContainerConfig?: Fc3CustomContainerConfig;
   description?: string;
   internetAccess?: boolean;
   role?: string;
@@ -99,6 +155,39 @@ export type Fc3FunctionInfo = {
   lastUpdateStatus?: string;
   lastUpdateStatusReason?: string;
   lastUpdateStatusReasonCode?: string;
+  tags?: Array<{ Key?: string; Value?: string }>;
+  // Maximum-detail fields — retained from GetFunction so state keeps the full
+  // cloud resource detail (runtime config, concurrency, lifecycle hooks,
+  // storage mounts, network/DNS, tracing, layers, resource group, tags).
+  customDNS?: Fc3CustomDNS;
+  customRuntimeConfig?: Fc3CustomRuntimeConfig;
+  disableInjectCredentials?: string;
+  disableOndemand?: boolean;
+  enableLongLiving?: boolean;
+  idleTimeout?: number;
+  instanceConcurrency?: number;
+  instanceIsolationMode?: string;
+  instanceLifecycleConfig?: Fc3InstanceLifecycleConfig;
+  invocationRestriction?: { disable?: boolean; lastModifiedTime?: string; reason?: string };
+  juiceFsConfig?: {
+    envs?: Record<string, string>;
+    mountPoints?: Array<{
+      args?: string[];
+      mountDir?: string;
+      remoteDir?: string;
+      token?: string;
+      volumeName?: string;
+    }>;
+  };
+  layers?: Array<{ arn?: string; size?: number }>;
+  lockInfo?: { lockedAt?: string; lockedBy?: string; lockedResources?: string[] };
+  microSandboxConfig?: { osType?: string; readyCommand?: string; startCommand?: string };
+  ossMountConfig?: Fc3OssMountConfig;
+  polarFsConfig?: Fc3PolarFsConfig;
+  resourceGroupId?: string;
+  sessionAffinity?: string;
+  sessionAffinityConfig?: string;
+  tracingConfig?: Fc3TracingConfig;
 };
 
 export type SlsProjectInfo = {

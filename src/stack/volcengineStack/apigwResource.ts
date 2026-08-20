@@ -8,76 +8,214 @@ import {
 } from '../../types';
 import { createVolcengineClient } from '../../common/volcengineClient';
 import type {
-  ApigwGroupInfo,
-  ApigwApiInfo,
-  ApigwDomainConfig,
+  ApigwGatewayConfig,
+  ApigwGatewayInfo,
+  ApigwRouteInfo,
+  ApigwServiceConfig,
+  ApigwServiceInfo,
+  ApigwUpstreamInfo,
 } from '../../common/volcengineClient/types';
 import {
-  eventToApigwGroupConfig,
-  triggerToApigwApiConfig,
-  extractApigwGroupDefinition,
-  extractEventDomainDefinition,
-  generateApiKey,
+  eventToApigwGatewayConfig,
+  eventToApigwServiceConfig,
+  triggerToApigwUpstreamConfig,
+  triggerToApigwRouteConfig,
+  buildEventResourceDefinition,
+  resolveFunctionKey,
 } from './apigwTypes';
 import { setResource, removeResource, getResource } from '../../common/stateManager';
 import { buildSid } from '../../common';
 import { logger } from '../../common/logger';
 import { lang } from '../../lang';
+import { OWNERSHIP_TAG_KEY, buildOwnershipTagValue, isOwnedByStack } from '../ownershipTag';
+import { isResourceAlreadyExistsError } from '../alreadyExists';
 
-const buildApigwGroupInstanceFromProvider = (
-  info: ApigwGroupInfo,
-  stage: string,
-): ResourceInstance => {
+const buildGatewayInstance = (info: ApigwGatewayInfo, stage: string): ResourceInstance => ({
+  type: 'VOLCENGINE_APIGW_GATEWAY',
+  sid: buildSid('volcengine', 'apigw', stage, info.gatewayId ?? ''),
+  id: info.gatewayId ?? '',
+  gatewayId: info.gatewayId ?? null,
+  gatewayName: info.gatewayName ?? null,
+  status: info.status ?? null,
+  gatewayType: info.type ?? null,
+  createdTime: info.createdTime ?? null,
+  description: info.description ?? null,
+  message: info.message ?? null,
+  tags: info.tags ?? null,
+  region: info.region ?? null,
+  version: info.version ?? null,
+  projectName: info.projectName ?? null,
+  networkSpec: info.networkSpec ?? null,
+  backendSpec: info.backendSpec ?? null,
+  monitorSpec: info.monitorSpec ?? null,
+  logSpec: info.logSpec ?? null,
+  resourceSpec: info.resourceSpec ?? null,
+});
+
+const ensureApigwLogResources = async (
+  context: Context,
+  serviceName: string,
+  existingInstances: Array<ResourceInstance>,
+): Promise<{
+  projectId: string;
+  topicId: string;
+  instances: Array<ResourceInstance>;
+}> => {
+  const client = createVolcengineClient(context);
+
+  const tlsProjectInstance = existingInstances.find((i) => i.type === 'VOLCENGINE_TLS_PROJECT');
+  const tlsTopicInstance = existingInstances.find((i) => i.type === 'VOLCENGINE_TLS_TOPIC');
+
+  if (tlsProjectInstance && tlsTopicInstance) {
+    return {
+      projectId: (tlsProjectInstance.projectId as string) ?? '',
+      topicId: (tlsTopicInstance.topicId as string) ?? '',
+      instances: existingInstances.filter((i) => (i.type as string).startsWith('VOLCENGINE_TLS_')),
+    };
+  }
+
+  const projectName = `${serviceName}-${context.stage}-apigw-tls`;
+  const topicName = `${serviceName}-${context.stage}-apigw-logs`;
+
+  logger.info(lang.__('CREATING_TLS_PROJECT', { projectName }));
+  const project = await client.tls.createProject({
+    projectName,
+    description: `API Gateway access logs for ${serviceName}`,
+    region: context.region,
+  });
+
+  logger.info(lang.__('CREATING_TLS_TOPIC', { topicName }));
+  const topic = await client.tls.createTopic({
+    projectName,
+    topicName,
+    description: `API Gateway access logs for ${serviceName}`,
+    ttl: 30,
+  });
+
+  logger.info(lang.__('CREATING_TLS_INDEX', { topicName }));
+  await client.tls.createIndex({
+    projectName,
+    topicName,
+    fullTextIndex: {
+      delimiter: ' ,.?;!\n\t',
+      caseSensitive: false,
+    },
+  });
+
+  logger.info(lang.__('WAITING_FOR_TLS_RESOURCES', { projectName, topicName }));
+  await client.tls.waitForProject(projectName);
+  await client.tls.waitForTopic(projectName, topicName);
+
   return {
-    type: 'VOLCENGINE_APIGW_GROUP',
-    sid: buildSid('volcengine', 'apigw', stage, info.gatewayId ?? ''),
-    id: info.gatewayId ?? '',
-    gatewayId: info.gatewayId ?? null,
-    gatewayName: info.gatewayName ?? null,
-    description: info.description ?? null,
-    protocol: info.protocol ?? null,
-    status: info.status ?? null,
-    createdTime: info.createdTime ?? null,
-    subDomain: info.subDomain ?? null,
+    projectId: project.projectId ?? '',
+    topicId: topic.topicId ?? '',
+    instances: [
+      {
+        type: 'VOLCENGINE_TLS_PROJECT',
+        sid: buildSid('volcengine', 'tls', context.stage, projectName),
+        id: projectName,
+        projectId: project.projectId ?? '',
+        ...project,
+      },
+      {
+        type: 'VOLCENGINE_TLS_TOPIC',
+        sid: buildSid('volcengine', 'tls', context.stage, `${projectName}/${topicName}`),
+        id: `${projectName}/${topicName}`,
+        projectId: project.projectId ?? '',
+        topicId: topic.topicId ?? '',
+        ...topic,
+      },
+    ],
   };
 };
 
-const buildApigwApiInstanceFromProvider = (
-  info: ApigwApiInfo,
-  stage: string,
+const buildServiceInstance = (
+  serviceId: string,
+  serviceName: string,
   gatewayId: string,
-): ResourceInstance => {
-  return {
-    type: 'VOLCENGINE_APIGW_API',
-    sid: buildSid('volcengine', 'apigw', stage, `${gatewayId}/${info.apiId}`),
-    id: info.apiId ?? '',
-    apiId: info.apiId ?? null,
-    apiName: info.apiName ?? null,
-    gatewayId: info.gatewayId ?? null,
-    method: info.method ?? null,
-    path: info.path ?? null,
-    description: info.description ?? null,
-    backendType: info.backendType ?? null,
-    backendFunctionName: info.backendFunctionName ?? null,
-    status: info.status ?? null,
-    createdTime: info.createdTime ?? null,
-  };
-};
+  stage: string,
+  info?: ApigwServiceInfo,
+): ResourceInstance => ({
+  type: 'VOLCENGINE_APIGW_SERVICE',
+  sid: buildSid('volcengine', 'apigw', stage, serviceId),
+  id: serviceId,
+  serviceId,
+  serviceName,
+  gatewayId,
+  ...(info?.status && { status: info.status }),
+  ...(info?.protocol && { protocol: info.protocol }),
+  ...(info?.createdTime && { createdTime: info.createdTime }),
+  ...(info?.gatewayName && { gatewayName: info.gatewayName }),
+  ...(info?.message && { message: info.message }),
+  ...(info?.comments && { comments: info.comments }),
+  ...(info?.authSpec && { authSpec: info.authSpec }),
+  ...(info?.domains && { domains: info.domains }),
+  ...(info?.customDomains && { customDomains: info.customDomains }),
+});
 
-const buildApigwDeploymentInstance = (
+const buildUpstreamInstance = (
+  upstreamId: string,
+  upstreamName: string,
   gatewayId: string,
-  apiId: string,
-  stageName: string,
+  functionId: string,
   stage: string,
-): ResourceInstance => {
-  return {
-    type: 'VOLCENGINE_APIGW_DEPLOYMENT',
-    sid: buildSid('volcengine', 'apigw', stage, `${gatewayId}/${apiId}/${stageName}`),
-    id: `${gatewayId}/${apiId}/${stageName}`,
-    gatewayId,
-    apiId,
-    stageName,
-  };
+  info?: ApigwUpstreamInfo,
+): ResourceInstance => ({
+  type: 'VOLCENGINE_APIGW_UPSTREAM',
+  sid: buildSid('volcengine', 'apigw', stage, upstreamId),
+  id: upstreamId,
+  upstreamId,
+  upstreamName,
+  gatewayId,
+  functionId,
+  ...(info?.sourceType && { sourceType: info.sourceType }),
+  ...(info?.protocol && { protocol: info.protocol }),
+  ...(info?.status && { status: info.status }),
+  ...(info?.createdTime && { createdTime: info.createdTime }),
+  ...(info?.comments && { comments: info.comments }),
+  ...(info?.resourceType && { resourceType: info.resourceType }),
+  ...(info?.updateTime && { updateTime: info.updateTime }),
+  ...(info?.backendTargetList && { backendTargetList: info.backendTargetList }),
+});
+
+const buildRouteInstance = (
+  routeId: string,
+  routeName: string,
+  serviceId: string,
+  stage: string,
+  info?: ApigwRouteInfo,
+): ResourceInstance => ({
+  type: 'VOLCENGINE_APIGW_ROUTE',
+  sid: buildSid('volcengine', 'apigw', stage, routeId),
+  id: routeId,
+  routeId,
+  routeName,
+  serviceId,
+  ...(info?.method && { method: info.method }),
+  ...(info?.path && { path: info.path }),
+  ...(info?.upstreamIds && { upstreamIds: info.upstreamIds }),
+  ...(info?.status && { status: info.status }),
+  ...(info?.enable !== undefined && { enable: info.enable }),
+  ...(info?.priority !== undefined && { priority: info.priority }),
+  ...(info?.matchRule && { matchRule: info.matchRule }),
+  ...(info?.upstreamList && { upstreamList: info.upstreamList }),
+});
+
+/**
+ * Resolve the veFaaS function Id for a ${functions.xxx} backend ref from state.
+ * The function resource must already be deployed (functions deploy before events).
+ */
+const resolveFunctionIdFromState = (state: StateFile, backendRef: string): string => {
+  const fnKey = resolveFunctionKey(backendRef);
+  const fnState = getResource(state, `functions.${fnKey}`);
+  const instance = fnState?.instances?.find((i) => i.type === 'VOLCENGINE_VEFAAS_FUNCTION');
+  const functionId = (instance as { functionId?: string | null } | undefined)?.functionId;
+  if (!functionId) {
+    throw new Error(
+      `Cannot resolve veFaaS function Id for backend ${backendRef} (functions.${fnKey} has no functionId in state). Deploy the function first.`,
+    );
+  }
+  return functionId;
 };
 
 export const createApigwResource = async (
@@ -89,46 +227,111 @@ export const createApigwResource = async (
   const logicalId = `events.${event.key}`;
   const client = createVolcengineClient(context);
 
-  const groupConfig = eventToApigwGroupConfig(event, serviceName, context.stage);
-  let gatewayId: string;
+  const gatewayConfig: ApigwGatewayConfig = eventToApigwGatewayConfig(
+    event,
+    serviceName,
+    context.stage,
+    buildOwnershipTagValue(context, logicalId),
+  );
 
-  try {
-    const existingGateway = await client.apigw.findGatewayByName(groupConfig.groupName);
-    if (existingGateway?.gatewayId) {
-      logger.info(lang.__('APIGW_GROUP_FOUND_REUSING', { groupName: groupConfig.groupName }));
-      gatewayId = existingGateway.gatewayId;
-    } else {
-      const gatewayInfo = await client.apigw.createGateway(groupConfig);
-      gatewayId = gatewayInfo.gatewayId!;
+  // The serverless gateway is account-scoped (one per account per region) —
+  // reuse an existing one (ours or already present) instead of creating another.
+  let gatewayInfo: ApigwGatewayInfo | null = await client.apigw.findServerlessGateway();
+  if (!gatewayInfo?.gatewayId) {
+    const existingByName = await client.apigw.findGatewayByName(gatewayConfig.gatewayName);
+    if (existingByName?.gatewayId && isOwnedByStack(context, logicalId, existingByName.tags)) {
+      gatewayInfo = existingByName;
     }
-  } catch (error) {
-    logger.debug(`Could not find existing gateway, creating new: ${error}`);
-    const gatewayInfo = await client.apigw.createGateway(groupConfig);
-    gatewayId = gatewayInfo.gatewayId!;
   }
 
-  const gatewayInfo = await client.apigw.getGateway(gatewayId);
-  if (!gatewayInfo) {
-    throw new Error(`Failed to get API Gateway info after creation: ${gatewayId}`);
+  if (!gatewayInfo?.gatewayId) {
+    // NetworkSpec (vpc_id + subnet_ids) is required by CreateGateway for all
+    // types — verified live: omitting it returns "missing NetworkSpec".
+    if (!gatewayConfig.network) {
+      throw new Error(
+        `events.${event.key}: network (vpc_id + subnet_ids) is required to create the API Gateway instance — add it to the event config`,
+      );
+    }
+    try {
+      gatewayInfo = await client.apigw.createGateway(gatewayConfig);
+    } catch (error) {
+      if (isResourceAlreadyExistsError(error)) {
+        const probe =
+          (await client.apigw.findGatewayByName(gatewayConfig.gatewayName)) ??
+          (await client.apigw.findServerlessGateway());
+        if (probe?.gatewayId && isOwnedByStack(context, logicalId, probe.tags)) {
+          gatewayInfo = probe;
+        } else {
+          throw new PartialResourceError(
+            state,
+            new Error(
+              `API Gateway ${gatewayConfig.gatewayName} already exists but is not owned by this stack (missing ${OWNERSHIP_TAG_KEY} tag). Refusing to adopt — resolve manually.`,
+            ),
+          );
+        }
+      } else {
+        throw error;
+      }
+    }
   }
 
-  const instances: Array<ResourceInstance> = [
-    buildApigwGroupInstanceFromProvider(gatewayInfo, context.stage),
-  ];
+  if (!gatewayInfo?.gatewayId) {
+    throw new Error('Failed to create or reuse an API Gateway instance');
+  }
+  const gatewayId = gatewayInfo.gatewayId;
 
-  const groupDefinition = extractApigwGroupDefinition(groupConfig);
+  // Gateway creation is async — service/upstream/route calls are rejected
+  // until the instance reaches Running.
+  gatewayInfo = await client.apigw.waitForGatewayRunning(gatewayId);
+
+  const instances: Array<ResourceInstance> = [buildGatewayInstance(gatewayInfo, context.stage)];
+
+  if (event.log) {
+    const logResources = await ensureApigwLogResources(context, serviceName, []);
+    await client.apigw.updateGatewayLog(gatewayId, {
+      enable: true,
+      projectId: logResources.projectId,
+      topicId: logResources.topicId,
+    });
+    instances.push(...logResources.instances);
+  }
+
+  const serviceConfig: ApigwServiceConfig = eventToApigwServiceConfig(
+    event,
+    serviceName,
+    context.stage,
+    gatewayId,
+  );
+
+  let serviceId: string;
+  const existingService = await client.apigw.findServiceByName(
+    gatewayId,
+    serviceConfig.serviceName,
+  );
+  if (existingService?.serviceId) {
+    serviceId = existingService.serviceId;
+  } else {
+    serviceId = await client.apigw.createService(serviceConfig);
+  }
+  // Refresh the full service record — the create response carries only the Id
+  // and findServiceByName may return a partial read; getService returns the
+  // complete provider detail (status/protocol/createdTime/…).
+  const serviceInfo =
+    (await client.apigw.getService(serviceId).catch(() => null)) ?? existingService ?? null;
+  instances.push(
+    buildServiceInstance(
+      serviceId,
+      serviceConfig.serviceName,
+      gatewayId,
+      context.stage,
+      serviceInfo ?? undefined,
+    ),
+  );
+
   const partialResourceState: ResourceState = {
     mode: 'managed',
     region: context.region,
-    definition: {
-      ...groupDefinition,
-      triggers: event.triggers.map((t) => ({
-        method: t.method,
-        path: t.path,
-        backend: t.backend,
-      })),
-      domain: extractEventDomainDefinition(event.domain),
-    },
+    definition: buildEventResourceDefinition(event),
     instances,
     status: 'tainted',
     lastUpdated: new Date().toISOString(),
@@ -137,44 +340,79 @@ export const createApigwResource = async (
   const stateAfterDependents = setResource(state, logicalId, partialResourceState);
 
   try {
+    // One upstream per backend function (triggers sharing a function reuse it).
+    const upstreamByFunction = new Map<string, string>();
     for (const trigger of event.triggers) {
-      const apiConfig = triggerToApigwApiConfig(
-        event,
-        trigger,
-        gatewayId,
-        serviceName,
-        context.region,
-        context.stage,
-      );
+      const backendRef = String(trigger.backend);
+      const fnKey = resolveFunctionKey(backendRef);
 
-      const apiId = await client.apigw.createApi(apiConfig);
-
-      const apiInfo = await client.apigw.getApi(gatewayId, apiId);
-      if (apiInfo) {
-        instances.push(buildApigwApiInstanceFromProvider(apiInfo, context.stage, gatewayId));
+      let upstreamId = upstreamByFunction.get(fnKey);
+      if (!upstreamId) {
+        const functionId = resolveFunctionIdFromState(state, backendRef);
+        const upstreamName = `${event.name}-${context.stage}-upstream-${fnKey.replace(/_/g, '-')}`;
+        const existingUpstream = await client.apigw.findUpstreamByName(gatewayId, upstreamName);
+        if (existingUpstream?.upstreamId) {
+          upstreamId = existingUpstream.upstreamId;
+        } else {
+          const upstreamConfig = triggerToApigwUpstreamConfig(
+            event,
+            trigger,
+            serviceName,
+            context.stage,
+            gatewayId,
+            functionId,
+          );
+          upstreamId = await client.apigw.createUpstream(upstreamConfig);
+        }
+        upstreamByFunction.set(fnKey, upstreamId);
+        // Refresh the full upstream record — the create response carries only
+        // the Id; getUpstream returns status/sourceType/protocol/createdTime/…
+        // for both the create and adopt paths.
+        const upstreamInfo =
+          (await client.apigw.getUpstream(upstreamId).catch(() => null)) ??
+          existingUpstream ??
+          null;
+        instances.push(
+          buildUpstreamInstance(
+            upstreamId,
+            upstreamName,
+            gatewayId,
+            functionId,
+            context.stage,
+            upstreamInfo ?? undefined,
+          ),
+        );
       }
 
-      await client.apigw.deployApi(gatewayId, apiId);
-      instances.push(buildApigwDeploymentInstance(gatewayId, apiId, 'RELEASE', context.stage));
+      const routeConfig = triggerToApigwRouteConfig(event, trigger, serviceId, upstreamId);
+      const routeId = await client.apigw.createRoute(routeConfig);
+      const routeInfo: ApigwRouteInfo = {
+        routeId,
+        routeName: routeConfig.routeName,
+        serviceId,
+        method: routeConfig.method,
+        path: routeConfig.path,
+        upstreamIds: [routeConfig.upstreamId],
+      };
+      instances.push(
+        buildRouteInstance(routeId, routeConfig.routeName, serviceId, context.stage, routeInfo),
+      );
     }
 
     if (event.domain) {
-      try {
-        const domainConfig: ApigwDomainConfig = {
-          gatewayId,
-          domainName: event.domain.domain_name as string,
-          certificateId: event.domain.certificate_id as string | undefined,
-        };
-        await client.apigw.bindDomain(domainConfig);
-      } catch (error) {
-        logger.error(lang.__('APIGW_DOMAIN_BINDING_FAILED', { error: String(error) }));
-        logger.info(lang.__('APIGW_GROUP_APIS_CREATED_DOMAIN_FAILED'));
-        logger.info(lang.__('APIGW_STATE_SAVED_RETRY'));
-        throw new PartialResourceError(
-          stateAfterDependents,
-          error instanceof Error ? error : new Error(String(error)),
-        );
-      }
+      const domainName = event.domain.domain_name as string;
+      const domainId = await client.apigw.createCustomDomain({
+        serviceId,
+        domainName,
+        certificateId: event.domain.certificate_id as string | undefined,
+      });
+      instances.push({
+        type: 'VOLCENGINE_APIGW_DOMAIN',
+        sid: buildSid('volcengine', 'apigw', context.stage, domainId || domainName),
+        id: domainId || domainName,
+        domainName,
+        serviceId,
+      });
     }
   } catch (error) {
     if (error instanceof PartialResourceError) {
@@ -189,15 +427,7 @@ export const createApigwResource = async (
   const finalResourceState: ResourceState = {
     mode: 'managed',
     region: context.region,
-    definition: {
-      ...groupDefinition,
-      triggers: event.triggers.map((t) => ({
-        method: t.method,
-        path: t.path,
-        backend: t.backend,
-      })),
-      domain: extractEventDomainDefinition(event.domain),
-    },
+    definition: buildEventResourceDefinition(event),
     instances,
     status: 'ready',
     lastUpdated: new Date().toISOString(),
@@ -206,151 +436,145 @@ export const createApigwResource = async (
   return setResource(stateAfterDependents, logicalId, finalResourceState);
 };
 
-export const readApigwResource = async (context: Context, gatewayId: string) => {
-  const client = createVolcengineClient(context);
-  return await client.apigw.getGateway(gatewayId);
-};
-
-export const readApigwResourceByName = async (context: Context, gatewayName: string) => {
-  const client = createVolcengineClient(context);
-  return await client.apigw.findGatewayByName(gatewayName);
-};
-
 export const updateApigwResource = async (
   context: Context,
   event: EventDomain,
   serviceName: string,
   state: StateFile,
 ): Promise<StateFile> => {
-  const logicalId = `events.${event.key}`;
-  const existingState = getResource(state, logicalId);
-  const client = createVolcengineClient(context);
-
+  const existingState = getResource(state, `events.${event.key}`);
   if (!existingState) {
     return createApigwResource(context, event, serviceName, state);
   }
 
-  const existingInstances = existingState.instances;
-
-  const groupInstance = existingInstances.find((i) => i.type === 'VOLCENGINE_APIGW_GROUP');
-  if (!groupInstance) {
+  const client = createVolcengineClient(context);
+  const serviceInstance = existingState.instances.find(
+    (i) => i.type === 'VOLCENGINE_APIGW_SERVICE',
+  );
+  if (!serviceInstance) {
     return createApigwResource(context, event, serviceName, state);
   }
+  const serviceId = serviceInstance.id;
 
-  const gatewayId = groupInstance.id;
+  const existingRoutes = existingState.instances.filter((i) => i.type === 'VOLCENGINE_APIGW_ROUTE');
+  const existingUpstreams = existingState.instances.filter(
+    (i) => i.type === 'VOLCENGINE_APIGW_UPSTREAM',
+  );
 
-  const groupConfig = eventToApigwGroupConfig(event, serviceName, context.stage);
-  await client.apigw.updateGateway(gatewayId, groupConfig);
+  const neededRouteIds = new Set<string>();
+  const instances: Array<ResourceInstance> = existingState.instances.filter(
+    (i) =>
+      i.type === 'VOLCENGINE_APIGW_GATEWAY' ||
+      i.type === 'VOLCENGINE_APIGW_SERVICE' ||
+      i.type === 'VOLCENGINE_APIGW_UPSTREAM' ||
+      (i.type as string).startsWith('VOLCENGINE_TLS_'),
+  );
 
-  const gatewayInfo = await client.apigw.getGateway(gatewayId);
-  if (!gatewayInfo) {
-    throw new Error(`Failed to get API Gateway info after update: ${gatewayId}`);
-  }
-
-  const instances: Array<ResourceInstance> = [
-    buildApigwGroupInstanceFromProvider(gatewayInfo, context.stage),
-  ];
-
-  const existingApis = existingInstances.filter((i) => i.type === 'VOLCENGINE_APIGW_API');
-
-  const neededApiKeys = new Set<string>();
-
-  for (const trigger of event.triggers) {
-    const apiConfig = triggerToApigwApiConfig(
-      event,
-      trigger,
-      gatewayId,
-      serviceName,
-      context.region,
-      context.stage,
-    );
-
-    const apiKey = generateApiKey(trigger.method as string, trigger.path as string);
-    neededApiKeys.add(apiKey);
-
-    const existingApi = existingApis.find((a) => {
-      return a.id && a.apiName === apiConfig.apiName;
-    });
-
-    let apiId: string;
-
-    if (existingApi) {
-      apiId = existingApi.id;
-      await client.apigw.updateApi(apiId, apiConfig);
-    } else {
-      apiId = await client.apigw.createApi(apiConfig);
-    }
-
-    const apiInfo = await client.apigw.getApi(gatewayId, apiId);
-    if (apiInfo) {
-      instances.push(buildApigwApiInstanceFromProvider(apiInfo, context.stage, gatewayId));
-    }
-
-    await client.apigw.deployApi(gatewayId, apiId);
-    instances.push(buildApigwDeploymentInstance(gatewayId, apiId, 'RELEASE', context.stage));
-  }
-
-  for (const existingApi of existingApis) {
-    const apiInfo = await client.apigw.getApi(gatewayId, existingApi.id);
-    if (apiInfo) {
-      const isNeeded = event.triggers.some((t) => {
-        const expectedName = triggerToApigwApiConfig(
-          event,
-          t,
-          gatewayId,
-          serviceName,
-          context.region,
-          context.stage,
-        ).apiName;
-        return apiInfo.apiName === expectedName;
+  try {
+    if (event.log) {
+      const logResources = await ensureApigwLogResources(
+        context,
+        serviceName,
+        existingState.instances,
+      );
+      await client.apigw.updateGatewayLog(serviceInstance.gatewayId as string, {
+        enable: true,
+        projectId: logResources.projectId,
+        topicId: logResources.topicId,
       });
-
-      if (!isNeeded) {
-        await client.apigw.deleteApi(gatewayId, existingApi.id);
+      instances.push(...logResources.instances);
+    } else {
+      const existingLogResources = existingState.instances.filter((i) =>
+        (i.type as string).startsWith('VOLCENGINE_TLS_'),
+      );
+      if (existingLogResources.length > 0) {
+        await client.apigw.updateGatewayLog(serviceInstance.gatewayId as string, {
+          enable: false,
+          projectId: '',
+          topicId: '',
+        });
       }
     }
-  }
 
-  if (event.domain) {
-    const domainConfig: ApigwDomainConfig = {
-      gatewayId,
-      domainName: event.domain.domain_name as string,
-      certificateId: event.domain.certificate_id as string | undefined,
-    };
-    await client.apigw.bindDomain(domainConfig);
-  } else {
-    const existingDomain = existingState.definition?.domain as
-      Record<string, unknown> | null | undefined;
-    if (existingDomain?.domainName) {
-      const previousDomain = existingDomain.domainName as string;
-      try {
-        await client.apigw.unbindDomain(gatewayId, previousDomain);
-      } catch (error) {
-        logger.warn(
-          lang.__('APIGW_DOMAIN_UNBIND_FAILED', { domain: previousDomain, error: String(error) }),
+    const upstreamByFunction = new Map<string, string>();
+    for (const upstream of existingUpstreams) {
+      const fnKey = (upstream as { functionId?: string }).functionId
+        ? String((upstream as { functionId?: string | null }).functionId)
+        : '';
+      if (fnKey) upstreamByFunction.set(fnKey, upstream.id);
+    }
+
+    for (const trigger of event.triggers) {
+      const backendRef = String(trigger.backend);
+      const fnKey = resolveFunctionKey(backendRef);
+      const functionId = resolveFunctionIdFromState(state, backendRef);
+
+      let upstreamId = upstreamByFunction.get(functionId);
+      if (!upstreamId) {
+        const upstreamName = `${event.name}-${context.stage}-upstream-${fnKey.replace(/_/g, '-')}`;
+        const existing = await client.apigw.findUpstreamByName(
+          serviceInstance.gatewayId as string,
+          upstreamName,
         );
+        if (existing?.upstreamId) {
+          upstreamId = existing.upstreamId;
+        } else {
+          const upstreamConfig = triggerToApigwUpstreamConfig(
+            event,
+            trigger,
+            serviceName,
+            context.stage,
+            serviceInstance.gatewayId as string,
+            functionId,
+          );
+          upstreamId = await client.apigw.createUpstream(upstreamConfig);
+        }
+        upstreamByFunction.set(functionId, upstreamId);
+      }
+
+      const routeConfig = triggerToApigwRouteConfig(event, trigger, serviceId, upstreamId);
+      // Routes are not idempotent on the provider: CreateRoute with an
+      // existing Name fails with DuplicatedResource.Route. Mirror the upstream
+      // adopt-or-create pattern — reuse a same-named remote route when present
+      // so re-running a deploy (or resuming after a partial failure) converges.
+      const existing = await client.apigw.findRouteByName(serviceId, routeConfig.routeName);
+      const routeId = existing?.routeId ?? (await client.apigw.createRoute(routeConfig));
+      neededRouteIds.add(routeId);
+      const routeInfo: ApigwRouteInfo = existing ?? {
+        routeId,
+        routeName: routeConfig.routeName,
+        serviceId,
+        method: routeConfig.method,
+        path: routeConfig.path,
+        upstreamIds: [routeConfig.upstreamId],
+      };
+      instances.push(
+        buildRouteInstance(routeId, routeConfig.routeName, serviceId, context.stage, routeInfo),
+      );
+    }
+
+    // Remove routes no longer in the desired set.
+    for (const existingRoute of existingRoutes) {
+      if (!neededRouteIds.has(existingRoute.id)) {
+        await client.apigw.deleteRoute(existingRoute.id);
       }
     }
+  } catch (error) {
+    throw new PartialResourceError(
+      state,
+      error instanceof Error ? error : new Error(String(error)),
+    );
   }
 
-  const groupDefinition = extractApigwGroupDefinition(groupConfig);
   const resourceState: ResourceState = {
     mode: 'managed',
     region: context.region,
-    definition: {
-      ...groupDefinition,
-      triggers: event.triggers.map((t) => ({
-        method: t.method,
-        path: t.path,
-        backend: t.backend,
-      })),
-      domain: extractEventDomainDefinition(event.domain),
-    },
+    definition: buildEventResourceDefinition(event),
     instances,
     lastUpdated: new Date().toISOString(),
   };
 
-  return setResource(state, logicalId, resourceState);
+  return setResource(state, `events.${event.key}`, resourceState);
 };
 
 export const deleteApigwResource = async (
@@ -359,34 +583,95 @@ export const deleteApigwResource = async (
   state: StateFile,
 ): Promise<StateFile> => {
   const existingState = getResource(state, logicalId);
-  const client = createVolcengineClient(context);
-
   if (!existingState) {
     return state;
   }
+  const client = createVolcengineClient(context);
 
-  const existingInstances = existingState.instances;
+  const serviceInstance = existingState.instances.find(
+    (i) => i.type === 'VOLCENGINE_APIGW_SERVICE',
+  );
 
-  const groupInstance = existingInstances.find((i) => i.type === 'VOLCENGINE_APIGW_GROUP');
-  if (!groupInstance) {
-    return removeResource(state, logicalId);
+  const tlsInstances = existingState.instances.filter((i) =>
+    (i.type as string).startsWith('VOLCENGINE_TLS_'),
+  );
+  if (tlsInstances.length > 0 && serviceInstance?.gatewayId) {
+    try {
+      await client.apigw.updateGatewayLog(serviceInstance.gatewayId as string, {
+        enable: false,
+        projectId: '',
+        topicId: '',
+      });
+    } catch (error) {
+      logger.warn(
+        lang.__('APIGW_LOG_DISABLE_FAILED', {
+          gatewayId: String(serviceInstance.gatewayId),
+          error: String(error),
+        }),
+      );
+    }
+
+    for (const instance of [...tlsInstances].reverse()) {
+      try {
+        if (instance.type === 'VOLCENGINE_TLS_TOPIC') {
+          const [projectName, topicName] = instance.id.split('/');
+          logger.info(lang.__('DELETING_TLS_TOPIC', { id: instance.id }));
+          await client.tls.deleteTopic(projectName, topicName);
+        } else if (instance.type === 'VOLCENGINE_TLS_PROJECT') {
+          logger.info(lang.__('DELETING_TLS_PROJECT', { id: instance.id }));
+          await client.tls.deleteProject(instance.id);
+        }
+      } catch (error) {
+        logger.warn(
+          lang.__('FAILED_TO_DELETE_RESOURCE', {
+            type: String(instance.type),
+            id: instance.id,
+            error: String(error),
+          }),
+        );
+      }
+    }
   }
 
-  const gatewayId = groupInstance.id;
+  if (serviceInstance) {
+    const routes = existingState.instances.filter((i) => i.type === 'VOLCENGINE_APIGW_ROUTE');
+    for (const route of routes) {
+      try {
+        await client.apigw.deleteRoute(route.id);
+      } catch (error) {
+        const err = error as { code?: string };
+        if (err.code !== 'NotFound' && err.code !== 'RouteNotFound') throw error;
+      }
+    }
 
-  const existingDomain = existingState.definition?.domain as
-    Record<string, unknown> | null | undefined;
-  if (existingDomain?.domainName) {
-    const primaryDomain = existingDomain.domainName as string;
-    await client.apigw.unbindDomain(gatewayId, primaryDomain);
+    const upstreams = existingState.instances.filter((i) => i.type === 'VOLCENGINE_APIGW_UPSTREAM');
+    for (const upstream of upstreams) {
+      try {
+        await client.apigw.deleteUpstream(upstream.id);
+      } catch (error) {
+        const err = error as { code?: string };
+        if (err.code !== 'NotFound' && err.code !== 'UpstreamNotFound') throw error;
+      }
+    }
+
+    try {
+      await client.apigw.deleteService(serviceInstance.id);
+    } catch (error) {
+      const err = error as { code?: string };
+      if (err.code !== 'NotFound' && err.code !== 'ServiceNotFound') throw error;
+    }
   }
 
-  const apis = existingInstances.filter((i) => i.type === 'VOLCENGINE_APIGW_API');
-  for (const api of apis) {
-    await client.apigw.deleteApi(gatewayId, api.id);
+  const domainInstance = existingState.instances.find((i) => i.type === 'VOLCENGINE_APIGW_DOMAIN');
+  if (domainInstance?.id) {
+    try {
+      await client.apigw.deleteCustomDomain(domainInstance.id);
+    } catch (error) {
+      const err = error as { code?: string };
+      if (err.code !== 'NotFound' && err.code !== 'DomainNotFound') throw error;
+    }
   }
 
-  await client.apigw.deleteGateway(gatewayId);
-
+  // The serverless gateway is account-scoped (one per region) — leave it in place.
   return removeResource(state, logicalId);
 };

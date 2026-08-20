@@ -10,6 +10,7 @@ import {
 } from '../../types';
 import { createApigwResource, deleteApigwResource, updateApigwResource } from './apigwResource';
 import { logger } from '../../common';
+import { reportResourceEvent } from '../../common/reportResourceEvent';
 import { getResource } from '../../common/stateManager';
 import { lang } from '../../lang';
 
@@ -116,6 +117,14 @@ export const executeApigwPlan = async (
   let currentState = initialState;
 
   for (const item of plan.items) {
+    reportResourceEvent(context, {
+      type: 'resource_pre',
+      logicalId: item.logicalId,
+      resourceType: item.resourceType,
+      action: item.action,
+      ...(item.drifted ? { message: 'resource drifted' } : {}),
+    });
+    const __siStartedAt = Date.now();
     try {
       const newState = await executeSingleItem(
         context,
@@ -128,6 +137,11 @@ export const executeApigwPlan = async (
       if (newState !== null) {
         currentState = newState;
         successfulItems.push(item);
+        reportResourceEvent(context, {
+          type: 'resource_complete',
+          logicalId: item.logicalId,
+          durationMs: Date.now() - __siStartedAt,
+        });
         if (onStateChange) {
           await onStateChange(currentState);
           logger.debug(
@@ -139,6 +153,15 @@ export const executeApigwPlan = async (
         }
       }
     } catch (error) {
+      reportResourceEvent(context, {
+        type: 'resource_failed',
+        logicalId: item.logicalId,
+        severity: 'error',
+        durationMs: Date.now() - __siStartedAt,
+        error: {
+          message: error instanceof Error ? error.message : String(error),
+        },
+      });
       if (error instanceof PartialResourceError) {
         const updatedState = error.updatedState;
         if (onStateChange) {

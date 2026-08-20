@@ -3,7 +3,7 @@ import {
   getResource,
   removeResource,
   setResource,
-  computeFileHash,
+  computeZipContentHash,
   buildSid,
   attributesEqual,
 } from '../../common';
@@ -25,6 +25,8 @@ import {
 import type { IamStatement } from '../../common/iamStatements';
 import { logger } from '../../common/logger';
 import { lang } from '../../lang';
+import { OWNERSHIP_TAG_KEY, buildOwnershipTagValue, isOwnedByStack } from '../ownershipTag';
+import { isResourceAlreadyExistsError } from '../alreadyExists';
 
 type DependentInstance = {
   type: string;
@@ -35,7 +37,27 @@ type DependentInstance = {
 };
 
 const RECOVERY_GET_FUNCTION_DELAY_MS = 1500;
+
+// volcengine role TRN format: trn:iam::{accountId}:role/{roleName}. Prefer the
+// stored TRN; else construct from the known accountId, else fetch it via STS.
+const resolveRoleTrn = async (
+  client: ReturnType<typeof createVolcengineClient>,
+  context: Context,
+  roleName: string,
+  storedTrn?: string | null,
+): Promise<string | undefined> => {
+  if (storedTrn) return storedTrn;
+  if (context.accountId) return `trn:iam::${context.accountId}:role/${roleName}`;
+  const accountId = await client.sts.getAccountId();
+  return accountId ? `trn:iam::${accountId}:role/${roleName}` : undefined;
+};
+
 const IAM_ROLE_PROPAGATION_DELAY_MS = 3000;
+
+// Volcengine SDK surfaces "resource already exists" collisions with code
+// `Conflict` (the shared isResourceAlreadyExistsError also matches the message
+// "already exists" / "已存在" for the veFaaS flavor of the error).
+const VEFAAS_ALREADY_EXISTS_CODES = ['Conflict'];
 
 const delay = async (ms: number): Promise<void> => {
   await new Promise((resolve) => {
@@ -66,7 +88,57 @@ const isRecoverableCreateError = (error: unknown): boolean => {
   );
 };
 
-const buildVefaasInstanceFromProvider = (info: VefaasFunctionInfo, sid: string) => {
+const buildVefaasInstanceFromProvider = (
+  info: VefaasFunctionInfo,
+  sid: string,
+): {
+  type: string;
+  sid: string;
+  id: string;
+  functionName: string | null;
+  functionId: string | null;
+  runtime: string | null;
+  handler: string | null;
+  memorySize: number | null;
+  timeout: number | null;
+  environment: Record<string, string>;
+  description: string | null | undefined;
+  status: string | null;
+  createdTime: string | null;
+  lastUpdateTime: string | null;
+  role: string | null | undefined;
+  vpcConfig: Record<string, unknown> | undefined;
+  logConfig:
+    | {
+        project: string | null | undefined;
+        topic: string | null | undefined;
+        enableLog: boolean | undefined;
+      }
+    | null
+    | undefined;
+  releaseRecordId?: string;
+  Tags?: Array<{ Key?: string; Value?: string }>;
+  exclusiveMode?: boolean;
+  maxConcurrency?: number;
+  codeSize?: number;
+  codeSizeLimit?: number;
+  sourceLocation?: string;
+  sourceType?: string;
+  owner?: string;
+  triggersCount?: number;
+  instanceType?: string;
+  initializerSec?: number;
+  command?: string;
+  port?: number;
+  cpuStrategy?: string;
+  projectName?: string;
+  functionType?: string;
+  cell?: string;
+  enableApmplus?: boolean;
+  nasStorage?: Record<string, unknown>;
+  tosMountConfig?: Record<string, unknown>;
+  asyncTaskConfig?: Record<string, unknown>;
+} => {
   return {
     type: 'VOLCENGINE_VEFAAS_FUNCTION',
     sid,
@@ -78,24 +150,48 @@ const buildVefaasInstanceFromProvider = (info: VefaasFunctionInfo, sid: string) 
     memorySize: info.memoryMb ?? null,
     timeout: info.requestTimeout ?? null,
     environment: info.environmentVariables ?? {},
-    description: info.description ?? null,
+    description: info.description ?? undefined,
     status: info.status ?? null,
     createdTime: info.createdTime ?? null,
     lastUpdateTime: info.lastModifiedTime ?? null,
-    role: info.role ?? null,
+    role: info.role ?? undefined,
     vpcConfig: info.vpcConfig
       ? {
-          vpcId: info.vpcConfig.vpcId ?? null,
+          vpcId: info.vpcConfig.vpcId ?? undefined,
           subnetIds: info.vpcConfig.subnetIds ?? [],
           securityGroupIds: info.vpcConfig.securityGroupIds ?? [],
+          enableVpc: info.vpcConfig.enableVpc ?? undefined,
+          enableSharedInternetAccess: info.vpcConfig.enableSharedInternetAccess ?? undefined,
         }
-      : {},
+      : undefined,
     logConfig: info.logConfig
       ? {
-          project: info.logConfig.project ?? null,
-          topic: info.logConfig.topic ?? null,
+          project: info.logConfig.project ?? undefined,
+          topic: info.logConfig.topic ?? undefined,
+          enableLog: info.logConfig.enableLog ?? undefined,
         }
-      : null,
+      : undefined,
+    Tags: info.Tags,
+    exclusiveMode: info.exclusiveMode,
+    maxConcurrency: info.maxConcurrency,
+    codeSize: info.codeSize,
+    codeSizeLimit: info.codeSizeLimit,
+    sourceLocation: info.sourceLocation,
+    sourceType: info.sourceType,
+    owner: info.owner,
+    triggersCount: info.triggersCount,
+    instanceType: info.instanceType,
+    initializerSec: info.initializerSec,
+    command: info.command,
+    port: info.port,
+    cpuStrategy: info.cpuStrategy,
+    projectName: info.projectName,
+    functionType: info.functionType,
+    cell: info.cell,
+    enableApmplus: info.enableApmplus,
+    nasStorage: info.nasStorage,
+    tosMountConfig: info.tosMountConfig,
+    asyncTaskConfig: info.asyncTaskConfig,
   };
 };
 
@@ -225,9 +321,7 @@ const createDependentResources = async (
     throw new Error(lang.__('IAM_ROLE_INSTANCE_NOT_FOUND', { roleName }));
   }
 
-  const trn =
-    iamRoleInstance.trn ??
-    (context.accountId ? `trn:iam::${context.accountId}:role/${iamRoleInstance.id}` : undefined);
+  const trn = await resolveRoleTrn(client, context, iamRoleInstance.id, iamRoleInstance.trn);
 
   if (!trn) {
     throw new Error(lang.__('IAM_ROLE_TRN_MISSING', { roleName }));
@@ -328,9 +422,10 @@ export const createResource = async (
         }
       : undefined,
   });
+  config.Tags = [{ Key: OWNERSHIP_TAG_KEY, Value: buildOwnershipTagValue(context, logicalId) }];
 
   const codePath = fn.code!.path;
-  const codeHash = computeFileHash(codePath);
+  const codeHash = await computeZipContentHash(codePath);
   const resourceAttributes = extractVefaasDefinition(config, codeHash);
   const definition = fn.iam ? { ...resourceAttributes, iam: fn.iam } : resourceAttributes;
 
@@ -379,11 +474,14 @@ export const createResource = async (
     logger.info(lang.__('VEFAAS_FUNCTION_EXISTS_RECOVERY', { functionName: fn.name }));
   }
 
+  let createdFunctionId: string | undefined;
+  let releaseRecordId: string | undefined;
   try {
     if (!existingFunctionOnRetry) {
-      const codeContent = await import('node:fs').then((fs) => fs.readFileSync(codePath));
-      const codeBase64 = codeContent.toString('base64');
-      await client.vefaas.createFunction(config, codeBase64);
+      // createFunction validates + base64-encodes the zip at codePath itself.
+      const created = await client.vefaas.createFunction(config, codePath);
+      createdFunctionId = created.functionId;
+      releaseRecordId = created.releaseRecordId;
     }
   } catch (error) {
     if (isRecoverableCreateError(error)) {
@@ -392,18 +490,43 @@ export const createResource = async (
       if (!functionAfterError) {
         throw new PartialResourceError(stateAfterDependents, error as Error);
       }
+    } else if (isResourceAlreadyExistsError(error, VEFAAS_ALREADY_EXISTS_CODES)) {
+      // Idempotent adoption: the function already exists in the provider.
+      // Adopt it ONLY if it carries our ownership tag (proves a previous run
+      // of THIS stack created it — e.g. state was reset). An untagged
+      // same-named function may belong to another project, so it must fail
+      // loudly rather than silently taking it over (destroy would then remove
+      // a resource that was never ours).
+      const probe = await client.vefaas.getFunction(fn.name);
+      if (probe && isOwnedByStack(context, logicalId, probe.Tags)) {
+        logger.info(
+          `Function ${fn.name} exists and carries ownership tag (${OWNERSHIP_TAG_KEY}), adopting idempotently`,
+        );
+      } else {
+        throw new PartialResourceError(
+          stateAfterDependents,
+          new Error(
+            `Function ${fn.name} already exists in provider but is not owned by this stack (missing ${OWNERSHIP_TAG_KEY} tag). Refusing to adopt — resolve manually.`,
+          ),
+        );
+      }
     } else {
       throw new PartialResourceError(stateAfterDependents, error as Error);
     }
   }
 
-  const functionInfo = await client.vefaas.getFunction(fn.name);
+  const functionInfo = createdFunctionId
+    ? await client.vefaas.getFunctionById(createdFunctionId)
+    : await client.vefaas.getFunction(fn.name);
   if (!functionInfo) {
     throw new Error(
       lang.__('RESOURCE_NOT_FOUND_PROVIDER', { resourceType: 'Function', name: fn.name }),
     );
   }
   const vefaasInstance = buildVefaasInstanceFromProvider(functionInfo, sid);
+  if (releaseRecordId) {
+    vefaasInstance.releaseRecordId = releaseRecordId;
+  }
 
   const resourceState: ResourceState = {
     mode: 'managed',
@@ -511,11 +634,7 @@ export const updateResource = async (
   } else {
     const iamRoleInstance = existingInstances.find((i) => i.type === 'VOLCENGINE_IAM_ROLE');
     if (iamRoleInstance) {
-      const trn =
-        iamRoleInstance.trn ??
-        (context.accountId
-          ? `trn:iam::${context.accountId}:role/${iamRoleInstance.id}`
-          : undefined);
+      const trn = await resolveRoleTrn(client, context, iamRoleInstance.id, iamRoleInstance.trn);
 
       if (!trn) {
         throw new Error(lang.__('IAM_ROLE_TRN_MISSING', { roleName: iamRoleInstance.id }));
@@ -576,7 +695,7 @@ export const updateResource = async (
   });
 
   const codePath = fn.code!.path;
-  const desiredCodeHash = computeFileHash(codePath);
+  const desiredCodeHash = await computeZipContentHash(codePath);
   const baseDefinition = extractVefaasDefinition(config, desiredCodeHash);
   const desiredDefinition = fn.iam ? { ...baseDefinition, iam: fn.iam } : baseDefinition;
 
@@ -612,17 +731,28 @@ export const updateResource = async (
 
   const configChanged = !attributesEqual(existingConfigOnly, desiredConfigOnly);
 
+  // The instance in state carries the provider function Id — use it directly
+  // for all follow-up calls instead of re-resolving the name every time.
+  const currentFunctionId = (currentInstance as { functionId?: string | null }).functionId;
+
+  let lastReleaseRecordId: string | undefined;
+
   if (configChanged) {
-    await client.vefaas.updateFunctionConfiguration(config);
+    const released = await client.vefaas.updateFunctionConfiguration(
+      currentFunctionId ?? fn.name,
+      config,
+    );
+    if (released) lastReleaseRecordId = released;
   }
 
   if (codeChanged) {
-    const codeContent = await import('node:fs').then((fs) => fs.readFileSync(codePath));
-    const codeBase64 = codeContent.toString('base64');
-    await client.vefaas.updateFunctionCode(fn.name, codeBase64);
+    const updated = await client.vefaas.updateFunctionCode(currentFunctionId ?? fn.name, codePath);
+    lastReleaseRecordId = updated.releaseRecordId;
   }
 
-  const functionInfo = await client.vefaas.getFunction(fn.name);
+  const functionInfo = currentFunctionId
+    ? await client.vefaas.getFunctionById(currentFunctionId)
+    : await client.vefaas.getFunction(fn.name);
   if (!functionInfo) {
     throw new Error(
       lang.__('RESOURCE_NOT_FOUND_PROVIDER', { resourceType: 'Function', name: fn.name }),
@@ -631,6 +761,16 @@ export const updateResource = async (
   const sid =
     currentInstance.sid ?? buildSid('volcengine', context.service, context.stage, fn.name);
   const vefaasInstance = buildVefaasInstanceFromProvider(functionInfo, sid);
+  if (lastReleaseRecordId) {
+    vefaasInstance.releaseRecordId = lastReleaseRecordId;
+  } else if (!codeChanged && !configChanged) {
+    // Preserve the previously recorded release id when nothing changed.
+    const previousRelease = (currentInstance as { releaseRecordId?: string | null })
+      .releaseRecordId;
+    if (previousRelease) {
+      vefaasInstance.releaseRecordId = previousRelease;
+    }
+  }
 
   const existingDependentInstances = existingInstances
     .filter((i) => i.type !== 'VOLCENGINE_VEFAAS_FUNCTION')
@@ -685,12 +825,13 @@ export const deleteResource = async (
   const existingState = getResource(state, logicalId);
   const existingInstances = (existingState?.instances ?? []) as Array<DependentInstance>;
 
-  const hasVefaasFunction = existingInstances.some((i) => i.type === 'VOLCENGINE_VEFAAS_FUNCTION');
+  const vefaasInstance = existingInstances.find((i) => i.type === 'VOLCENGINE_VEFAAS_FUNCTION');
+  const functionId = (vefaasInstance as { functionId?: string | null } | undefined)?.functionId;
 
   const client = createVolcengineClient(context);
-  if (hasVefaasFunction) {
+  if (functionId) {
     try {
-      await client.vefaas.deleteFunction(functionName);
+      await client.vefaas.deleteFunction(functionId);
     } catch (err) {
       const errorCode = (err as { code?: string })?.code;
       if (errorCode === 'FunctionNotFound' || errorCode === 'ResourceNotFound') {

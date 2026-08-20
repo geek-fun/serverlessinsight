@@ -25,7 +25,7 @@ jest.mock('../../../../src/common', () => ({
     ),
   })),
   getResource: jest.fn(),
-  computeFileHash: jest.fn(() => 'test-hash-123'),
+  computeZipContentHash: jest.fn().mockResolvedValue('test-hash-123'),
   buildSid: jest.fn((provider, service, stage, name) => `${provider}-${service}-${stage}-${name}`),
   attributesEqual: jest.fn((a, b) => JSON.stringify(a) === JSON.stringify(b)),
 }));
@@ -87,6 +87,7 @@ describe('vefaasResource', () => {
     vefaas: {
       createFunction: jest.fn(),
       getFunction: jest.fn(),
+      getFunctionById: jest.fn(),
       updateFunctionConfiguration: jest.fn(),
       updateFunctionCode: jest.fn(),
       deleteFunction: jest.fn(),
@@ -117,9 +118,37 @@ describe('vefaasResource', () => {
   };
 
   beforeEach(() => {
+    // mockReset (not clearAllMocks) also drains any unconsumed mockResolvedValueOnce
+    // queues left over from the previous test — clearAllMocks leaves them behind,
+    // leaking across tests and causing spurious failures.
+    Object.values(mockVefaasClient).forEach((group) => {
+      Object.values(group).forEach((fn) => {
+        if (typeof fn === 'function' && 'mockReset' in fn) {
+          fn.mockReset();
+        }
+      });
+    });
     jest.clearAllMocks();
     (getResource as jest.Mock).mockReset();
     (createVolcengineClient as jest.Mock).mockReturnValue(mockVefaasClient);
+    mockVefaasClient.vefaas.getFunctionById.mockResolvedValue({
+      functionName: 'test-function',
+      functionId: 'func-123',
+      runtime: 'nodejs18',
+      handler: 'index.handler',
+      memoryMb: 128,
+      requestTimeout: 30,
+      status: 'Active',
+    });
+    mockVefaasClient.vefaas.getFunction.mockResolvedValue({
+      functionName: 'test-function',
+      functionId: 'func-123',
+      runtime: 'nodejs18',
+      handler: 'index.handler',
+      memoryMb: 128,
+      requestTimeout: 30,
+      status: 'Active',
+    });
     mockVefaasClient.iam.createRole.mockResolvedValue({
       roleName: 'test-app-test-service-dev-role',
       trn: 'trn:iam::123456:role/test-app-test-service-dev-role',
@@ -136,7 +165,7 @@ describe('vefaasResource', () => {
 
   describe('createResource', () => {
     it('should create function successfully', async () => {
-      mockVefaasClient.vefaas.createFunction.mockResolvedValueOnce(undefined);
+      mockVefaasClient.vefaas.createFunction.mockResolvedValueOnce({ functionId: 'func-123' });
       mockVefaasClient.vefaas.getFunction.mockResolvedValueOnce({
         functionName: 'test-function',
         functionId: 'func-123',
@@ -153,13 +182,93 @@ describe('vefaasResource', () => {
       expect(setResource).toHaveBeenCalled();
     });
 
+    it('should stamp ownership tag into the createFunction config', async () => {
+      mockVefaasClient.vefaas.createFunction.mockReset();
+      mockVefaasClient.vefaas.getFunction.mockReset();
+      mockVefaasClient.vefaas.createFunction.mockResolvedValueOnce({ functionId: 'func-123' });
+      mockVefaasClient.vefaas.getFunction.mockResolvedValueOnce({
+        functionName: 'test-function',
+        functionId: 'func-123',
+        runtime: 'nodejs16',
+        handler: 'index.handler',
+        memoryMb: 128,
+        requestTimeout: 30,
+      });
+
+      await createResource(mockContext, mockFunction, mockState);
+
+      expect(mockVefaasClient.vefaas.createFunction).toHaveBeenCalledWith(
+        expect.objectContaining({
+          Tags: [{ Key: 'si-owned-by', Value: 'test-app-test-service:functions.test_fn' }],
+        }),
+        expect.any(String),
+      );
+    });
+
+    it('should idempotently adopt an existing function that carries our ownership tag', async () => {
+      mockVefaasClient.vefaas.createFunction.mockReset();
+      mockVefaasClient.vefaas.getFunction.mockReset();
+      const existsError = Object.assign(new Error('Function already exists'), { code: 'Conflict' });
+      mockVefaasClient.vefaas.createFunction.mockRejectedValueOnce(existsError);
+      mockVefaasClient.vefaas.getFunction
+        .mockResolvedValueOnce({
+          functionName: 'test-function',
+          functionId: 'func-123',
+          runtime: 'nodejs16',
+          handler: 'index.handler',
+          memoryMb: 128,
+          requestTimeout: 30,
+          Tags: [{ Key: 'si-owned-by', Value: 'test-app-test-service:functions.test_fn' }],
+        })
+        .mockResolvedValueOnce({
+          functionName: 'test-function',
+          functionId: 'func-123',
+          runtime: 'nodejs16',
+          handler: 'index.handler',
+          memoryMb: 128,
+          requestTimeout: 30,
+        });
+
+      const result = await createResource(mockContext, mockFunction, mockState);
+
+      expect(mockVefaasClient.vefaas.createFunction).toHaveBeenCalledTimes(1);
+      expect(mockVefaasClient.vefaas.getFunction).toHaveBeenCalled();
+      expect(setResource).toHaveBeenCalledWith(
+        expect.anything(),
+        'functions.test_fn',
+        expect.objectContaining({ status: 'ready' }),
+      );
+      expect(result).toBeDefined();
+    });
+
+    it('should refuse adoption when existing function lacks our ownership tag', async () => {
+      mockVefaasClient.vefaas.createFunction.mockReset();
+      mockVefaasClient.vefaas.getFunction.mockReset();
+      const existsError = Object.assign(new Error('Function already exists'), { code: 'Conflict' });
+      mockVefaasClient.vefaas.createFunction.mockRejectedValueOnce(existsError);
+      mockVefaasClient.vefaas.getFunction.mockResolvedValueOnce({
+        functionName: 'test-function',
+        functionId: 'func-123',
+        runtime: 'nodejs16',
+        handler: 'index.handler',
+        memoryMb: 128,
+        requestTimeout: 30,
+        Tags: [{ Key: 'other-project-tag', Value: 'someone-else' }],
+      });
+
+      await expect(createResource(mockContext, mockFunction, mockState)).rejects.toMatchObject({
+        name: 'PartialResourceError',
+        cause: { message: expect.stringContaining('not owned by this stack') },
+      });
+    });
+
     it('should create function with TLS logging enabled', async () => {
       const mockFunctionWithLog: FunctionDomain = {
         ...mockFunction,
         log: true,
       };
 
-      mockVefaasClient.vefaas.createFunction.mockResolvedValueOnce(undefined);
+      mockVefaasClient.vefaas.createFunction.mockResolvedValueOnce({ functionId: 'func-123' });
       mockVefaasClient.vefaas.getFunction.mockResolvedValueOnce({
         functionName: 'test-function',
         functionId: 'func-123',
@@ -228,7 +337,7 @@ describe('vefaasResource', () => {
 
       (getResource as jest.Mock).mockReturnValue(stateWithTls.resources['functions.test_fn']);
 
-      mockVefaasClient.vefaas.createFunction.mockResolvedValueOnce(undefined);
+      mockVefaasClient.vefaas.createFunction.mockResolvedValueOnce({ functionId: 'func-123' });
       mockVefaasClient.vefaas.getFunction.mockResolvedValueOnce({
         functionName: 'test-function',
         functionId: 'func-123',
@@ -268,8 +377,8 @@ describe('vefaasResource', () => {
 
       (getResource as jest.Mock).mockReturnValue(stateWithIamRole.resources['functions.test_fn']);
 
-      mockVefaasClient.iam.updateRoleTrustPolicy.mockResolvedValueOnce(undefined);
-      mockVefaasClient.vefaas.createFunction.mockResolvedValueOnce(undefined);
+      mockVefaasClient.iam.updateRoleTrustPolicy.mockResolvedValueOnce({ functionId: 'func-123' });
+      mockVefaasClient.vefaas.createFunction.mockResolvedValueOnce({ functionId: 'func-123' });
       mockVefaasClient.vefaas.getFunction.mockResolvedValueOnce({
         functionName: 'test-function',
         functionId: 'func-123',
@@ -299,7 +408,7 @@ describe('vefaasResource', () => {
         },
       };
 
-      mockVefaasClient.vefaas.createFunction.mockResolvedValueOnce(undefined);
+      mockVefaasClient.vefaas.createFunction.mockResolvedValueOnce({ functionId: 'func-123' });
       mockVefaasClient.vefaas.getFunction.mockResolvedValueOnce({
         functionName: 'test-function',
         functionId: 'func-123',
@@ -368,10 +477,82 @@ describe('vefaasResource', () => {
     });
 
     it('should throw error when function not found after creation', async () => {
-      mockVefaasClient.vefaas.createFunction.mockResolvedValueOnce(undefined);
-      mockVefaasClient.vefaas.getFunction.mockResolvedValueOnce(null);
+      mockVefaasClient.vefaas.createFunction.mockResolvedValueOnce({ functionId: 'func-123' });
+      mockVefaasClient.vefaas.getFunctionById.mockResolvedValueOnce(null);
 
       await expect(createResource(mockContext, mockFunction, mockState)).rejects.toThrow();
+    });
+
+    it('should persist the full GetFunction detail set into state instances', async () => {
+      mockVefaasClient.vefaas.createFunction.mockResolvedValueOnce({ functionId: 'func-123' });
+      mockVefaasClient.vefaas.getFunctionById.mockResolvedValueOnce({
+        functionName: 'test-function',
+        functionId: 'func-123',
+        runtime: 'nodejs16',
+        handler: 'index.handler',
+        memoryMb: 128,
+        requestTimeout: 30,
+        status: 'Active',
+        maxConcurrency: 100,
+        exclusiveMode: false,
+        cpuStrategy: 'always',
+        enableApmplus: false,
+        triggersCount: 2,
+        instanceType: 'nvidia-tesla-l4',
+        projectName: 'default',
+        functionType: 'sandbox',
+        cell: '2',
+        Tags: [{ Key: 'si-owned-by', Value: 'test-app-test-service:functions.test_fn' }],
+        vpcConfig: {
+          vpcId: 'vpc-123',
+          subnetIds: ['subnet-1'],
+          securityGroupIds: ['sg-1'],
+          enableVpc: true,
+          enableSharedInternetAccess: true,
+        },
+        logConfig: {
+          project: 'proj-1',
+          topic: 'topic-1',
+          enableLog: true,
+        },
+        asyncTaskConfig: {
+          enableAsyncTask: true,
+          maxRetry: 3,
+        },
+      });
+
+      await createResource(mockContext, mockFunction, mockState);
+
+      expect(setResource).toHaveBeenLastCalledWith(
+        expect.anything(),
+        'functions.test_fn',
+        expect.objectContaining({
+          instances: expect.arrayContaining([
+            expect.objectContaining({
+              type: 'VOLCENGINE_VEFAAS_FUNCTION',
+              maxConcurrency: 100,
+              exclusiveMode: false,
+              cpuStrategy: 'always',
+              enableApmplus: false,
+              triggersCount: 2,
+              instanceType: 'nvidia-tesla-l4',
+              projectName: 'default',
+              functionType: 'sandbox',
+              cell: '2',
+              Tags: [{ Key: 'si-owned-by', Value: 'test-app-test-service:functions.test_fn' }],
+              vpcConfig: expect.objectContaining({
+                enableVpc: true,
+                enableSharedInternetAccess: true,
+              }),
+              logConfig: expect.objectContaining({ enableLog: true }),
+              asyncTaskConfig: expect.objectContaining({
+                enableAsyncTask: true,
+                maxRetry: 3,
+              }),
+            }),
+          ]),
+        }),
+      );
     });
 
     it('should skip createFunction when tainted state has existing function on provider', async () => {
@@ -439,7 +620,7 @@ describe('vefaasResource', () => {
         },
       };
 
-      mockVefaasClient.vefaas.createFunction.mockResolvedValueOnce(undefined);
+      mockVefaasClient.vefaas.createFunction.mockResolvedValueOnce({ functionId: 'func-123' });
       mockVefaasClient.vefaas.getFunction.mockResolvedValueOnce({
         functionName: 'test-function',
         functionId: 'func-123',
@@ -478,7 +659,7 @@ describe('vefaasResource', () => {
         },
       };
 
-      mockVefaasClient.vefaas.createFunction.mockResolvedValueOnce(undefined);
+      mockVefaasClient.vefaas.createFunction.mockResolvedValueOnce({ functionId: 'func-123' });
       mockVefaasClient.vefaas.getFunction.mockResolvedValueOnce({
         functionName: 'test-function',
         functionId: 'func-123',
@@ -514,7 +695,7 @@ describe('vefaasResource', () => {
         },
       };
 
-      mockVefaasClient.vefaas.createFunction.mockResolvedValueOnce(undefined);
+      mockVefaasClient.vefaas.createFunction.mockResolvedValueOnce({ functionId: 'func-123' });
       mockVefaasClient.vefaas.getFunction.mockResolvedValueOnce({
         functionName: 'test-function',
         functionId: 'func-123',
@@ -581,6 +762,7 @@ describe('vefaasResource', () => {
               sid: 'volcengine-test-service-dev-test-function',
               id: 'test-function',
               functionName: 'test-function',
+              functionId: 'func-123',
             },
             {
               type: 'VOLCENGINE_IAM_ROLE',
@@ -598,7 +780,10 @@ describe('vefaasResource', () => {
       (getResource as jest.Mock).mockReturnValue(stateWithFunction.resources['functions.test_fn']);
       (attributesEqual as jest.Mock).mockReturnValue(false);
 
-      mockVefaasClient.vefaas.updateFunctionConfiguration.mockResolvedValueOnce(undefined);
+      mockVefaasClient.vefaas.updateFunctionConfiguration.mockResolvedValueOnce('rel-config-1');
+      mockVefaasClient.vefaas.updateFunctionCode.mockResolvedValueOnce({
+        releaseRecordId: 'rel-1',
+      });
       mockVefaasClient.vefaas.getFunction.mockResolvedValueOnce({
         functionName: 'test-function',
         functionId: 'func-123',
@@ -617,7 +802,9 @@ describe('vefaasResource', () => {
       (getResource as jest.Mock).mockReturnValue(stateWithFunction.resources['functions.test_fn']);
       (attributesEqual as jest.Mock).mockReturnValue(true);
 
-      mockVefaasClient.vefaas.updateFunctionCode.mockResolvedValueOnce(undefined);
+      mockVefaasClient.vefaas.updateFunctionCode.mockResolvedValueOnce({
+        releaseRecordId: 'rel-1',
+      });
       mockVefaasClient.vefaas.getFunction.mockResolvedValueOnce({
         functionName: 'test-function',
         functionId: 'func-123',
@@ -651,8 +838,8 @@ describe('vefaasResource', () => {
       (getResource as jest.Mock).mockReturnValue(stateWithFunction.resources['functions.test_fn']);
       (attributesEqual as jest.Mock).mockReturnValue(true);
 
-      mockVefaasClient.vefaas.getFunction.mockReset();
-      mockVefaasClient.vefaas.getFunction.mockResolvedValueOnce(null);
+      mockVefaasClient.vefaas.getFunctionById.mockReset();
+      mockVefaasClient.vefaas.getFunctionById.mockResolvedValueOnce(null);
 
       await expect(updateResource(mockContext, mockFunction, stateWithFunction)).rejects.toThrow();
     });
@@ -683,6 +870,7 @@ describe('vefaasResource', () => {
                 sid: 'volcengine-test-service-dev-test-function',
                 id: 'test-function',
                 functionName: 'test-function',
+                functionId: 'func-123',
               },
               {
                 type: 'VOLCENGINE_IAM_ROLE',
@@ -739,6 +927,7 @@ describe('vefaasResource', () => {
                 sid: 'volcengine-test-service-dev-test-function',
                 id: 'test-function',
                 functionName: 'test-function',
+                functionId: 'func-123',
               },
               {
                 type: 'VOLCENGINE_IAM_ROLE',
@@ -796,6 +985,7 @@ describe('vefaasResource', () => {
                 sid: 'volcengine-test-service-dev-test-function',
                 id: 'test-function',
                 functionName: 'test-function',
+                functionId: 'func-123',
               },
               {
                 type: 'VOLCENGINE_IAM_ROLE',
@@ -849,6 +1039,7 @@ describe('vefaasResource', () => {
                 sid: 'volcengine-test-service-dev-test-function',
                 id: 'test-function',
                 functionName: 'test-function',
+                functionId: 'func-123',
               },
             ],
             lastUpdated: '2024-01-01T00:00:00Z',
@@ -901,6 +1092,7 @@ describe('vefaasResource', () => {
                 sid: 'volcengine-test-service-dev-test-function',
                 id: 'test-function',
                 functionName: 'test-function',
+                functionId: 'func-123',
               },
               {
                 type: 'VOLCENGINE_IAM_ROLE',
@@ -977,6 +1169,7 @@ describe('vefaasResource', () => {
                 sid: 'volcengine-test-service-dev-test-function',
                 id: 'test-function',
                 functionName: 'test-function',
+                functionId: 'func-123',
               },
               {
                 type: 'VOLCENGINE_IAM_ROLE',
@@ -1046,6 +1239,7 @@ describe('vefaasResource', () => {
                 sid: 'volcengine-test-service-dev-test-function',
                 id: 'test-function',
                 functionName: 'test-function',
+                functionId: 'func-123',
               },
             ],
             lastUpdated: '2024-01-01T00:00:00Z',
@@ -1100,6 +1294,7 @@ describe('vefaasResource', () => {
               sid: 'volcengine-test-service-dev-test-function',
               id: 'test-function',
               functionName: 'test-function',
+              functionId: 'func-123',
             },
             {
               type: 'VOLCENGINE_IAM_ROLE',
@@ -1113,12 +1308,12 @@ describe('vefaasResource', () => {
     };
 
     it('should delete function successfully', async () => {
-      mockVefaasClient.vefaas.deleteFunction.mockResolvedValueOnce(undefined);
+      mockVefaasClient.vefaas.deleteFunction.mockResolvedValueOnce({ functionId: 'func-123' });
       (getResource as jest.Mock).mockReturnValue(stateWithFunction.resources['functions.test_fn']);
 
       await deleteResource(mockContext, 'test-function', 'functions.test_fn', stateWithFunction);
 
-      expect(mockVefaasClient.vefaas.deleteFunction).toHaveBeenCalledWith('test-function');
+      expect(mockVefaasClient.vefaas.deleteFunction).toHaveBeenCalledWith('func-123');
       expect(mockVefaasClient.iam.deleteRole).toHaveBeenCalled();
       expect(removeResource).toHaveBeenCalled();
     });
@@ -1140,6 +1335,7 @@ describe('vefaasResource', () => {
                 sid: 'volcengine-test-service-dev-test-function',
                 id: 'test-function',
                 functionName: 'test-function',
+                functionId: 'func-123',
               },
               {
                 type: 'VOLCENGINE_IAM_ROLE',
@@ -1167,16 +1363,16 @@ describe('vefaasResource', () => {
         },
       };
 
-      mockVefaasClient.vefaas.deleteFunction.mockResolvedValueOnce(undefined);
-      mockVefaasClient.tls.deleteIndex.mockResolvedValueOnce(undefined);
-      mockVefaasClient.tls.deleteTopic.mockResolvedValueOnce(undefined);
-      mockVefaasClient.tls.deleteProject.mockResolvedValueOnce(undefined);
-      mockVefaasClient.iam.deleteRole.mockResolvedValueOnce(undefined);
+      mockVefaasClient.vefaas.deleteFunction.mockResolvedValueOnce({ functionId: 'func-123' });
+      mockVefaasClient.tls.deleteIndex.mockResolvedValueOnce({ functionId: 'func-123' });
+      mockVefaasClient.tls.deleteTopic.mockResolvedValueOnce({ functionId: 'func-123' });
+      mockVefaasClient.tls.deleteProject.mockResolvedValueOnce({ functionId: 'func-123' });
+      mockVefaasClient.iam.deleteRole.mockResolvedValueOnce({ functionId: 'func-123' });
       (getResource as jest.Mock).mockReturnValue(stateWithTls.resources['functions.test_fn']);
 
       await deleteResource(mockContext, 'test-function', 'functions.test_fn', stateWithTls);
 
-      expect(mockVefaasClient.vefaas.deleteFunction).toHaveBeenCalledWith('test-function');
+      expect(mockVefaasClient.vefaas.deleteFunction).toHaveBeenCalledWith('func-123');
       expect(mockVefaasClient.tls.deleteIndex).toHaveBeenCalled();
       expect(mockVefaasClient.tls.deleteTopic).toHaveBeenCalled();
       expect(mockVefaasClient.tls.deleteProject).toHaveBeenCalled();
@@ -1223,7 +1419,6 @@ describe('vefaasResource', () => {
         },
       };
 
-      mockVefaasClient.vefaas.deleteFunction.mockResolvedValueOnce(undefined);
       (getResource as jest.Mock).mockReturnValue(stateWithUnknown.resources['functions.test_fn']);
 
       const { logger } = jest.requireMock('../../../../src/common/logger');
@@ -1262,7 +1457,6 @@ describe('vefaasResource', () => {
         },
       };
 
-      mockVefaasClient.vefaas.deleteFunction.mockResolvedValueOnce(undefined);
       mockVefaasClient.iam.deleteRole.mockRejectedValueOnce(new Error('IAM delete failed'));
       (getResource as jest.Mock).mockReturnValue(stateWithIamRole.resources['functions.test_fn']);
 
@@ -1298,6 +1492,7 @@ describe('vefaasResource', () => {
                 sid: 'volcengine-test-service-dev-test-function',
                 id: 'test-function',
                 functionName: 'test-function',
+                functionId: 'func-123',
               },
               {
                 type: 'VOLCENGINE_IAM_ROLE',
@@ -1311,7 +1506,7 @@ describe('vefaasResource', () => {
         },
       };
 
-      mockVefaasClient.vefaas.deleteFunction.mockResolvedValueOnce(undefined);
+      mockVefaasClient.vefaas.deleteFunction.mockResolvedValueOnce({ functionId: 'func-123' });
       (getResource as jest.Mock).mockReturnValue(
         stateWithExternalRole.resources['functions.test_fn'],
       );

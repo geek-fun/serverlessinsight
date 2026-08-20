@@ -132,7 +132,7 @@ describe('ScfResource', () => {
     jest.useRealTimers();
     (scfTypes.functionToScfConfig as jest.Mock).mockReturnValue(mockConfig);
     (scfTypes.extractScfDefinition as jest.Mock).mockReturnValue(mockDefinition);
-    (hashUtils.computeFileHash as jest.Mock).mockReturnValue('mock-code-hash');
+    (hashUtils.computeZipContentHash as jest.Mock).mockResolvedValue('mock-code-hash');
     mockScfOperations.getFunction.mockResolvedValue(mockFunctionInfo);
     mockScfOperations.deleteTrigger.mockResolvedValue(undefined);
     mockScfOperations.createTrigger.mockResolvedValue(undefined);
@@ -184,7 +184,7 @@ describe('ScfResource', () => {
         'base64encodedcontent',
       );
       expect(mockScfOperations.getFunction).toHaveBeenCalledWith('test-function');
-      expect(hashUtils.computeFileHash).toHaveBeenCalledWith('test.zip');
+      expect(hashUtils.computeZipContentHash).toHaveBeenCalledWith('test.zip');
       expect(scfTypes.extractScfDefinition).toHaveBeenCalledWith(
         mockConfig,
         'mock-code-hash',
@@ -248,7 +248,7 @@ describe('ScfResource', () => {
       // Should create the CAM role
       expect(mockCamOperations.createRole).toHaveBeenCalledWith(
         'test-scf-role',
-        ['scf.tencentcloudapi.com'],
+        ['scf.qcloud.com'],
         expect.any(String),
         expect.arrayContaining([expect.objectContaining({ effect: 'Allow' })]),
         undefined,
@@ -379,6 +379,42 @@ describe('ScfResource', () => {
             'functions.test_fn': expect.objectContaining({ status: 'tainted' }),
           }),
         }),
+      });
+    });
+
+    it('should idempotently adopt an existing function that carries our ownership tag', async () => {
+      const existsError = Object.assign(new Error('指定的Function已存在，请勿重复创建。'), {
+        code: 'ResourceInUse',
+      });
+      (mockScfOperations.createFunction as jest.Mock).mockRejectedValue(existsError);
+      (mockScfOperations.getFunction as jest.Mock).mockResolvedValue({
+        ...mockFunctionInfo,
+        Tags: [{ Key: 'si-owned-by', Value: 'test-app-test-service:functions.test_fn' }],
+      });
+      (stateManager.setResource as jest.Mock).mockReturnValue(initialState);
+      (stateManager.getResource as jest.Mock).mockReturnValue(undefined);
+
+      const result = await createResource(mockContext, testFunction, initialState);
+
+      expect(mockScfOperations.createFunction).toHaveBeenCalledTimes(1);
+      expect(result).toBe(initialState);
+    });
+
+    it('should reject adoption when existing function lacks our ownership tag', async () => {
+      const existsError = Object.assign(new Error('指定的Function已存在，请勿重复创建。'), {
+        code: 'ResourceInUse',
+      });
+      (mockScfOperations.createFunction as jest.Mock).mockRejectedValue(existsError);
+      (mockScfOperations.getFunction as jest.Mock).mockResolvedValue({
+        ...mockFunctionInfo,
+        Tags: [{ Key: 'other-project-tag', Value: 'someone-else' }],
+      });
+      (stateManager.setResource as jest.Mock).mockReturnValue(initialState);
+      (stateManager.getResource as jest.Mock).mockReturnValue(undefined);
+
+      await expect(createResource(mockContext, testFunction, initialState)).rejects.toMatchObject({
+        name: 'PartialResourceError',
+        cause: { message: expect.stringContaining('not owned by this stack') },
       });
     });
 
@@ -541,12 +577,14 @@ describe('ScfResource', () => {
       );
     });
 
-    it('should throw PartialResourceError on already-exists when state not tainted', async () => {
+    it('should reject already-exists when state not tainted and function lacks ownership tag', async () => {
       const alreadyExistsError = {
         code: 'ResourceInUse',
         message: '指定的Function已存在，请勿重复创建',
       };
       (mockScfOperations.createFunction as jest.Mock).mockRejectedValue(alreadyExistsError);
+      // Provider probe returns an existing function WITHOUT our tag → refuse to adopt
+      (mockScfOperations.getFunction as jest.Mock).mockResolvedValue(mockFunctionInfo);
 
       const taintedState = {
         ...initialState,
@@ -565,6 +603,7 @@ describe('ScfResource', () => {
 
       await expect(createResource(mockContext, testFunction, initialState)).rejects.toMatchObject({
         name: 'PartialResourceError',
+        cause: { message: expect.stringContaining('not owned by this stack') },
         updatedState: expect.objectContaining({
           resources: expect.objectContaining({
             'functions.test_fn': expect.objectContaining({ status: 'tainted' }),
@@ -572,11 +611,10 @@ describe('ScfResource', () => {
         }),
       });
 
-      // Non-recoverable on the non-tainted path: no reconciliation getFunction is
-      // attempted and the state never reaches 'ready' — the already-exists must
-      // surface so the user resolves the collision manually.
+      // Ownership-tag check ran (probe happened) but the untagged function was
+      // not adopted — state never reaches 'ready'.
       expect(mockScfOperations.createFunction).toHaveBeenCalledTimes(1);
-      expect(mockScfOperations.getFunction).not.toHaveBeenCalled();
+      expect(mockScfOperations.getFunction).toHaveBeenCalled();
       expect(stateManager.setResource).not.toHaveBeenCalledWith(
         expect.anything(),
         'functions.test_fn',
@@ -584,8 +622,9 @@ describe('ScfResource', () => {
       );
     });
 
-    it('should throw PartialResourceError on already-exists when only the code matches (ResourceInUse)', async () => {
+    it('should reject already-exists when only the code matches (ResourceInUse) and no ownership tag', async () => {
       (mockScfOperations.createFunction as jest.Mock).mockRejectedValue({ code: 'ResourceInUse' });
+      (mockScfOperations.getFunction as jest.Mock).mockResolvedValue(mockFunctionInfo);
 
       const taintedState = {
         ...initialState,
@@ -604,6 +643,7 @@ describe('ScfResource', () => {
 
       await expect(createResource(mockContext, testFunction, initialState)).rejects.toMatchObject({
         name: 'PartialResourceError',
+        cause: { message: expect.stringContaining('not owned by this stack') },
         updatedState: expect.objectContaining({
           resources: expect.objectContaining({
             'functions.test_fn': expect.objectContaining({ status: 'tainted' }),
@@ -611,8 +651,9 @@ describe('ScfResource', () => {
         }),
       });
 
-      // The ResourceInUse code-level match was removed from isRecoverableCreateError.
-      expect(mockScfOperations.getFunction).not.toHaveBeenCalled();
+      // ResourceInUse still triggers the ownership-tag probe (idempotent
+      // adoption path), but an untagged function is refused.
+      expect(mockScfOperations.getFunction).toHaveBeenCalled();
     });
 
     it('should reconcile with provider after a recoverable Timeout create error (non-tainted)', async () => {
@@ -684,7 +725,7 @@ describe('ScfResource', () => {
           {
             ModTime: '2025-01-01',
             Type: 'http',
-            TriggerDesc: JSON.stringify({ authType: 'NONE' }),
+            TriggerDesc: JSON.stringify({ AuthType: 'NONE', NetConfig: { EnableExtranet: true } }),
             TriggerName: 'test_fn-http-trigger',
             AddTime: '2025-01-01',
             Enable: 1,
@@ -749,7 +790,7 @@ describe('ScfResource', () => {
           {
             ModTime: '2025-01-01',
             Type: 'http',
-            TriggerDesc: JSON.stringify({ authType: 'NONE' }),
+            TriggerDesc: JSON.stringify({ AuthType: 'NONE', NetConfig: { EnableExtranet: true } }),
             TriggerName: 'test_fn-http-trigger',
             AddTime: '2025-01-01',
             Enable: 1,
@@ -1032,6 +1073,104 @@ describe('ScfResource', () => {
   });
 
   describe('updateResource', () => {
+    it('should skip createTrigger when state lacks trigger record but provider already has it', async () => {
+      const fnWithTrigger = {
+        ...testFunction,
+        triggers: { http: { auth_type: 'public' as const } },
+      };
+      (mockScfOperations.updateFunctionConfiguration as jest.Mock).mockResolvedValue(undefined);
+      (mockScfOperations.updateFunctionCode as jest.Mock).mockResolvedValue(undefined);
+      (stateManager.setResource as jest.Mock).mockReturnValue(initialState);
+      // State has NO trigger record (adopted function) → the else-branch probe
+      // must find the trigger already attached in the provider and skip create.
+      (stateManager.getResource as jest.Mock).mockReturnValue({
+        mode: 'managed',
+        region: 'ap-guangzhou',
+        definition: { ...mockDefinition },
+        instances: [],
+        lastUpdated: '2025-01-01T00:00:00Z',
+      });
+      (mockScfOperations.getFunction as jest.Mock).mockResolvedValue({
+        ...mockFunctionInfo,
+        Triggers: [
+          {
+            TriggerName: 'test_fn-http-trigger',
+            Type: 'http',
+            TriggerDesc: JSON.stringify({
+              AuthType: 'NONE',
+              NetConfig: { EnableExtranet: true },
+            }),
+          },
+        ],
+      });
+
+      const result = await updateResource(mockContext, fnWithTrigger, initialState);
+
+      expect(mockScfOperations.createTrigger).not.toHaveBeenCalled();
+      expect(result).toEqual(initialState);
+    });
+
+    it('should createTrigger when state lacks trigger record and provider has none', async () => {
+      const fnWithTrigger = {
+        ...testFunction,
+        triggers: { http: { auth_type: 'public' as const } },
+      };
+      (mockScfOperations.updateFunctionConfiguration as jest.Mock).mockResolvedValue(undefined);
+      (mockScfOperations.updateFunctionCode as jest.Mock).mockResolvedValue(undefined);
+      (stateManager.setResource as jest.Mock).mockReturnValue(initialState);
+      (stateManager.getResource as jest.Mock).mockReturnValue({
+        mode: 'managed',
+        region: 'ap-guangzhou',
+        definition: { ...mockDefinition },
+        instances: [],
+        lastUpdated: '2025-01-01T00:00:00Z',
+      });
+      (mockScfOperations.getFunction as jest.Mock).mockResolvedValue({
+        ...mockFunctionInfo,
+        Triggers: [],
+      });
+
+      await updateResource(mockContext, fnWithTrigger, initialState);
+
+      expect(mockScfOperations.createTrigger).toHaveBeenCalledTimes(1);
+    });
+
+    it('should skip createTrigger when provider trigger has a random name (Function URL style)', async () => {
+      // Tencent names Function URL triggers with a random id, not our
+      // ${fn.key}-http-trigger — name matching would never find it.
+      const fnWithTrigger = {
+        ...testFunction,
+        triggers: { http: { auth_type: 'public' as const } },
+      };
+      (mockScfOperations.updateFunctionConfiguration as jest.Mock).mockResolvedValue(undefined);
+      (mockScfOperations.updateFunctionCode as jest.Mock).mockResolvedValue(undefined);
+      (stateManager.setResource as jest.Mock).mockReturnValue(initialState);
+      (stateManager.getResource as jest.Mock).mockReturnValue({
+        mode: 'managed',
+        region: 'ap-guangzhou',
+        definition: { ...mockDefinition },
+        instances: [],
+        lastUpdated: '2025-01-01T00:00:00Z',
+      });
+      (mockScfOperations.getFunction as jest.Mock).mockResolvedValue({
+        ...mockFunctionInfo,
+        Triggers: [
+          {
+            TriggerName: '5obtzwwxw1',
+            Type: 'http',
+            TriggerDesc: JSON.stringify({
+              AuthType: 'NONE',
+              NetConfig: { EnableExtranet: true },
+            }),
+          },
+        ],
+      });
+
+      await updateResource(mockContext, fnWithTrigger, initialState);
+
+      expect(mockScfOperations.createTrigger).not.toHaveBeenCalled();
+    });
+
     it('should update resource and refresh state from provider', async () => {
       const newState = {
         ...initialState,
@@ -1070,7 +1209,7 @@ describe('ScfResource', () => {
         'base64encodedcontent',
       );
       expect(mockScfOperations.getFunction).toHaveBeenCalledWith('test-function');
-      expect(hashUtils.computeFileHash).toHaveBeenCalledWith('test.zip');
+      expect(hashUtils.computeZipContentHash).toHaveBeenCalledWith('test.zip');
       expect(scfTypes.extractScfDefinition).toHaveBeenCalledWith(
         mockConfig,
         'mock-code-hash',
@@ -2631,6 +2770,12 @@ describe('ScfResource', () => {
           LayerName: 'my-layer',
           LayerVersion: 1,
           CompatibleRuntimes: ['nodejs18', 'nodejs16'],
+          AddTime: '2025-04-01',
+          Description: 'layer description',
+          LicenseInfo: 'MIT',
+          Status: 'Active',
+          Stamp: 'stamp-1',
+          Tags: [{ Key: 'layer-tag', Value: '1' }],
         },
       ],
       CodeSize: 1024,
@@ -2699,6 +2844,12 @@ describe('ScfResource', () => {
       ImageConfig: {
         ImageType: 'personal',
         ImageUri: 'image-uri-123',
+        RegistryId: 'registry-1',
+        EntryPoint: 'python',
+        Command: 'run.sh',
+        Args: '-u app.py',
+        ContainerImageAccelerate: true,
+        ImagePort: 9000,
       },
       ProtocolType: 'http',
       ProtocolParams: {
@@ -2709,6 +2860,15 @@ describe('ScfResource', () => {
       DnsCache: 'TRUE',
       IntranetConfig: {
         IpFixed: 'ENABLE',
+        IpAddress: ['10.0.0.10', '10.0.0.11'],
+      },
+      InstanceConcurrencyConfig: {
+        DynamicEnabled: 'TRUE',
+        MaxConcurrency: 5,
+        InstanceIsolationEnabled: 'FALSE',
+        Type: 'Session-Based',
+        MixNodeConfig: [],
+        SessionConfig: { SessionIdleTime: 60 },
       },
     };
 
@@ -2753,6 +2913,12 @@ describe('ScfResource', () => {
                   layerName: 'my-layer',
                   layerVersion: 1,
                   compatibleRuntimes: ['nodejs18', 'nodejs16'],
+                  addTime: '2025-04-01',
+                  description: 'layer description',
+                  licenseInfo: 'MIT',
+                  status: 'Active',
+                  stamp: 'stamp-1',
+                  tags: [{ key: 'layer-tag', value: '1' }],
                 }),
               ]),
               vpcConfig: expect.objectContaining({
@@ -2791,6 +2957,12 @@ describe('ScfResource', () => {
               imageConfig: expect.objectContaining({
                 imageType: 'personal',
                 imageUri: 'image-uri-123',
+                registryId: 'registry-1',
+                entryPoint: 'python',
+                command: 'run.sh',
+                args: '-u app.py',
+                containerImageAccelerate: true,
+                imagePort: 9000,
               }),
               protocolParams: expect.objectContaining({
                 wsParams: expect.objectContaining({
@@ -2799,6 +2971,15 @@ describe('ScfResource', () => {
               }),
               intranetConfig: expect.objectContaining({
                 ipFixed: 'ENABLE',
+                ipAddress: ['10.0.0.10', '10.0.0.11'],
+              }),
+              instanceConcurrencyConfig: expect.objectContaining({
+                dynamicEnabled: 'TRUE',
+                maxConcurrency: 5,
+                instanceIsolationEnabled: 'FALSE',
+                type: 'Session-Based',
+                mixNodeConfig: [],
+                sessionConfig: { SessionIdleTime: 60 },
               }),
               useGpu: 'FALSE',
               codeResult: 'Success',

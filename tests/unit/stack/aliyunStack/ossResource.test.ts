@@ -31,6 +31,16 @@ const mockOssOperations = {
   deleteBucketPolicy: jest.fn(),
 };
 
+// getBucket mocks for createBucketResource must return a bucket carrying our
+// ownership tag, or the after-create ownership verification refuses it.
+const taggedBucketInfo = (
+  info: Record<string, unknown>,
+  logicalId: string,
+): Record<string, unknown> => ({
+  ...info,
+  tags: [{ key: 'si-owned-by', value: `test-app-test-service:${logicalId}` }],
+});
+
 const mockCasOperations = {
   getCertificate: jest.fn(),
   uploadCertificate: jest.fn(),
@@ -828,11 +838,14 @@ describe('OssResource', () => {
   });
 
   describe('createBucketResource', () => {
+    // A bucket created by THIS stack carries the ownership tag, so fresh-create
+    // verification (getBucket after an idempotent PutBucket) passes.
     const baseBucketInfo = {
       name: 'test-bucket',
       location: 'oss-cn-hangzhou',
       acl: 'private',
       storageClass: 'Standard',
+      tags: [{ key: 'si-owned-by', value: 'test-app-test-service:buckets.test_bucket' }],
     };
 
     const baseBucket: BucketDomain = {
@@ -1367,6 +1380,92 @@ describe('OssResource', () => {
           dnsRecordId: 'record-abc',
         }),
       );
+    });
+
+    it('should stamp the ownership tag into the create bucket config', async () => {
+      mockOssOperations.createBucket.mockResolvedValue(baseBucketInfo);
+      mockOssOperations.getBucket.mockResolvedValue(baseBucketInfo);
+      mockedStateManager.setResource.mockImplementation(
+        (_state: StateFile, _logicalId: string, resourceState: unknown) => ({
+          ...initialState,
+          resources: { 'buckets.test_bucket': resourceState },
+        }),
+      );
+
+      await createBucketResource(mockContext, baseBucket, initialState);
+
+      expect(mockOssOperations.createBucket).toHaveBeenCalledWith(
+        expect.objectContaining({
+          Tags: [{ Key: 'si-owned-by', Value: 'test-app-test-service:buckets.test_bucket' }],
+        }),
+      );
+    });
+
+    it('should idempotently adopt an existing bucket that carries our ownership tag on collision', async () => {
+      const existsError = Object.assign(new Error('The specified bucket already exists.'), {
+        code: 'BucketAlreadyExists',
+      });
+      mockOssOperations.createBucket.mockRejectedValue(existsError);
+      // Collision probe returns the tagged bucket → adopted, flow continues
+      mockOssOperations.getBucket.mockResolvedValue(baseBucketInfo);
+      mockedStateManager.setResource.mockImplementation(
+        (_state: StateFile, _logicalId: string, resourceState: unknown) => ({
+          ...initialState,
+          resources: { 'buckets.test_bucket': resourceState },
+        }),
+      );
+
+      const result = await createBucketResource(mockContext, baseBucket, initialState);
+
+      expect(mockOssOperations.createBucket).toHaveBeenCalledTimes(1);
+      expect(result.resources['buckets.test_bucket']).toBeDefined();
+    });
+
+    it('should reject adoption on collision when existing bucket lacks our ownership tag', async () => {
+      const existsError = Object.assign(new Error('The specified bucket already exists.'), {
+        code: 'BucketAlreadyExists',
+      });
+      mockOssOperations.createBucket.mockRejectedValue(existsError);
+      mockOssOperations.getBucket.mockResolvedValue({
+        ...baseBucketInfo,
+        tags: [{ key: 'other-project-tag', value: 'someone-else' }],
+      });
+      mockedStateManager.setResource.mockImplementation(
+        (_state: StateFile, _logicalId: string, resourceState: unknown) => ({
+          ...initialState,
+          resources: { 'buckets.test_bucket': resourceState },
+        }),
+      );
+
+      await expect(
+        createBucketResource(mockContext, baseBucket, initialState),
+      ).rejects.toMatchObject({
+        name: 'PartialResourceError',
+        cause: { message: expect.stringContaining('not owned by this stack') },
+      });
+    });
+
+    it('should refuse a bucket that pre-existed untagged even when createBucket succeeds idempotently', async () => {
+      mockOssOperations.createBucket.mockResolvedValue(baseBucketInfo);
+      // PutBucket is idempotent within region/account, so success does not prove
+      // we created it — an untagged bucket read back afterwards is refused.
+      mockOssOperations.getBucket.mockResolvedValue({
+        ...baseBucketInfo,
+        tags: [],
+      });
+      mockedStateManager.setResource.mockImplementation(
+        (_state: StateFile, _logicalId: string, resourceState: unknown) => ({
+          ...initialState,
+          resources: { 'buckets.test_bucket': resourceState },
+        }),
+      );
+
+      await expect(
+        createBucketResource(mockContext, baseBucket, initialState),
+      ).rejects.toMatchObject({
+        name: 'PartialResourceError',
+        cause: { message: expect.stringContaining('not owned by this stack') },
+      });
     });
   });
 
@@ -1987,7 +2086,9 @@ describe('OssResource', () => {
       mockCdnOperations.applyHttpsRedirect.mockResolvedValue({});
       mockCdnOperations.modifyCdnDomain.mockResolvedValue({});
       mockOssOperations.createBucket.mockResolvedValue({ name: 'tb', location: 'oss-cn-hangzhou' });
-      mockOssOperations.getBucket.mockResolvedValue({ name: 'tb', location: 'oss-cn-hangzhou' });
+      mockOssOperations.getBucket.mockResolvedValue(
+        taggedBucketInfo({ name: 'tb', location: 'oss-cn-hangzhou' }, 'buckets.b'),
+      );
       mockOssOperations.bindCustomDomain.mockResolvedValue({
         domain: 'x.com',
         cname: 'bkt.oss.com',
@@ -2098,7 +2199,7 @@ describe('OssResource', () => {
       mockCdnOperations.deleteCdnDomain.mockResolvedValue({});
       mockCdnOperations.setDomainServerCertificate.mockResolvedValue({});
       mockOssOperations.createBucket.mockResolvedValue(baseInfo);
-      mockOssOperations.getBucket.mockResolvedValue(baseInfo);
+      mockOssOperations.getBucket.mockResolvedValue(taggedBucketInfo(baseInfo, 'buckets.b'));
       mockOssOperations.bindCustomDomain.mockResolvedValue({
         domain: 'x.com',
         cname: 'b.oss.com',
@@ -2197,7 +2298,9 @@ describe('OssResource', () => {
       mockCdnOperations.setDomainServerCertificate.mockResolvedValue({});
       mockCdnOperations.deleteCdnDomain.mockResolvedValue({});
       mockOssOperations.createBucket.mockResolvedValue({ name: 'tb', location: 'oss-cn-hangzhou' });
-      mockOssOperations.getBucket.mockResolvedValue({ name: 'tb', location: 'oss-cn-hangzhou' });
+      mockOssOperations.getBucket.mockResolvedValue(
+        taggedBucketInfo({ name: 'tb', location: 'oss-cn-hangzhou' }, 'buckets.b'),
+      );
       mockOssOperations.bindCustomDomain.mockResolvedValue({
         domain: 'x.c',
         cname: 'bkt.o.c',
@@ -2261,7 +2364,9 @@ describe('OssResource', () => {
       mockCdnOperations.setDomainServerCertificate.mockResolvedValue({});
       mockCdnOperations.deleteCdnDomain.mockResolvedValue({});
       mockOssOperations.createBucket.mockResolvedValue({ name: 'tb', location: 'oss-cn-hangzhou' });
-      mockOssOperations.getBucket.mockResolvedValue({ name: 'tb', location: 'oss-cn-hangzhou' });
+      mockOssOperations.getBucket.mockResolvedValue(
+        taggedBucketInfo({ name: 'tb', location: 'oss-cn-hangzhou' }, 'buckets.b'),
+      );
       mockOssOperations.bindCustomDomain.mockResolvedValue({
         domain: 'x.c',
         cname: 'bkt.oss.c',
@@ -2385,7 +2490,9 @@ describe('OssResource', () => {
       mockCdnOperations.setDomainServerCertificate.mockResolvedValue({});
       mockCdnOperations.deleteCdnDomain.mockResolvedValue({});
       mockOssOperations.createBucket.mockResolvedValue({ name: 'tb', location: 'oss-cn-hangzhou' });
-      mockOssOperations.getBucket.mockResolvedValue({ name: 'tb', location: 'oss-cn-hangzhou' });
+      mockOssOperations.getBucket.mockResolvedValue(
+        taggedBucketInfo({ name: 'tb', location: 'oss-cn-hangzhou' }, 'buckets.b'),
+      );
       mockOssOperations.bindCustomDomain.mockResolvedValue({
         domain: 'x.c',
         cname: 'bkt.oss.c',
@@ -2451,13 +2558,18 @@ describe('OssResource', () => {
           },
         };
 
-        mockOssOperations.getBucket.mockResolvedValue({
-          name: 'test-bucket',
-          location: 'oss-cn-hangzhou',
-          acl: 'private',
-          storageClass: 'Standard',
-          creationDate: '2024-01-01',
-        });
+        mockOssOperations.getBucket.mockResolvedValue(
+          taggedBucketInfo(
+            {
+              name: 'test-bucket',
+              location: 'oss-cn-hangzhou',
+              acl: 'private',
+              storageClass: 'Standard',
+              creationDate: '2024-01-01',
+            },
+            'buckets.test_bucket',
+          ),
+        );
         mockOssOperations.putBucketPolicy.mockResolvedValue(undefined);
         mockedStateManager.setResource.mockImplementation(
           (_state: StateFile, _logicalId: string, resourceState: unknown) => ({
@@ -2488,13 +2600,18 @@ describe('OssResource', () => {
           name: 'test-bucket',
         };
 
-        mockOssOperations.getBucket.mockResolvedValue({
-          name: 'test-bucket',
-          location: 'oss-cn-hangzhou',
-          acl: 'private',
-          storageClass: 'Standard',
-          creationDate: '2024-01-01',
-        });
+        mockOssOperations.getBucket.mockResolvedValue(
+          taggedBucketInfo(
+            {
+              name: 'test-bucket',
+              location: 'oss-cn-hangzhou',
+              acl: 'private',
+              storageClass: 'Standard',
+              creationDate: '2024-01-01',
+            },
+            'buckets.test_bucket',
+          ),
+        );
         mockedStateManager.setResource.mockImplementation(
           (_state: StateFile, _logicalId: string, resourceState: unknown) => ({
             ...initialState,

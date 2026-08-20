@@ -24,6 +24,7 @@ const mockEsOperations = {
 const mockRdsOperations = {
   createInstance: jest.fn(),
   getInstance: jest.fn(),
+  getInstanceByName: jest.fn(),
   updateInstance: jest.fn(),
   deleteInstance: jest.fn(),
 };
@@ -119,6 +120,7 @@ describe('DatabaseResource', () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
+    mockRdsOperations.getInstanceByName.mockReset();
   });
 
   describe('createDatabaseResource', () => {
@@ -449,6 +451,207 @@ describe('DatabaseResource', () => {
       expect(result).toEqual(expectedState);
     });
 
+    it('should stamp ownership tag on ES createApp config', async () => {
+      const esDatabase = {
+        key: 'my_es',
+        name: 'my-es-app',
+        type: DatabaseEnum.ELASTICSEARCH_SERVERLESS,
+        esServerless: {
+          appName: 'my-es-app',
+          appVersion: 'test_version',
+          chargeType: 'PostPaid',
+          authentication: { basicAuth: [] },
+          network: [],
+          privateNetwork: [],
+        },
+      } as unknown as DatabaseDomain;
+
+      mockEsOperations.createApp.mockResolvedValue('es-app-12345');
+      mockEsOperations.getApp.mockResolvedValue({
+        appId: 'es-app-12345',
+        appName: 'my-es-app',
+        status: 'active',
+      });
+      mockedStateManager.setResource.mockReturnValue({ ...initialState, updated: true });
+
+      await createDatabaseResource(mockContext, esDatabase, initialState);
+
+      expect(mockEsOperations.createApp).toHaveBeenCalledWith(
+        expect.objectContaining({
+          tags: [{ key: 'si-owned-by', value: 'test-app-test-service:databases.my_es' }],
+        }),
+      );
+    });
+
+    it('should stamp ownership tag on RDS createInstance config', async () => {
+      const rdsDatabase = {
+        key: 'my_rds',
+        name: 'my-rds-mysql',
+        type: DatabaseEnum.RDS_MYSQL_SERVERLESS,
+        rds: {
+          engine: 'MySQL',
+          engineVersion: '8.0',
+          dbInstanceClass: 'mysql.n2.serverless.1c',
+        },
+      } as unknown as DatabaseDomain;
+
+      mockRdsOperations.createInstance.mockResolvedValue('rm-12345');
+      mockRdsOperations.getInstance.mockResolvedValue({
+        dbInstanceId: 'rm-12345',
+        engine: 'MySQL',
+        dbInstanceStatus: 'Running',
+      });
+      mockedStateManager.setResource.mockReturnValue({ ...initialState, updated: true });
+
+      await createDatabaseResource(mockContext, rdsDatabase, initialState);
+
+      expect(mockRdsOperations.createInstance).toHaveBeenCalledWith(
+        expect.objectContaining({
+          tags: [{ key: 'si-owned-by', value: 'test-app-test-service:databases.my_rds' }],
+        }),
+      );
+    });
+
+    it('should idempotently adopt an existing ES app that carries our ownership tag', async () => {
+      const esDatabase = {
+        key: 'my_es',
+        name: 'my-es-app',
+        type: DatabaseEnum.ELASTICSEARCH_SERVERLESS,
+        esServerless: {
+          appName: 'my-es-app',
+          appVersion: 'test_version',
+          chargeType: 'PostPaid',
+          authentication: { basicAuth: [] },
+          network: [],
+          privateNetwork: [],
+        },
+      } as unknown as DatabaseDomain;
+
+      const existsError = Object.assign(new Error('app already exists'), {
+        code: 'DuplicateResource',
+      });
+      mockEsOperations.createApp.mockRejectedValue(existsError);
+      mockEsOperations.getApp.mockResolvedValue({
+        appId: 'es-app-12345',
+        appName: 'my-es-app',
+        status: 'active',
+        tags: [{ key: 'si-owned-by', value: 'test-app-test-service:databases.my_es' }],
+      });
+      const expectedState = { ...initialState, updated: true };
+      mockedStateManager.setResource.mockReturnValue(expectedState);
+
+      const result = await createDatabaseResource(mockContext, esDatabase, initialState);
+
+      expect(mockEsOperations.createApp).toHaveBeenCalledTimes(1);
+      expect(mockEsOperations.getApp).toHaveBeenCalledWith('test-es');
+      expect(mockedStateManager.setResource).toHaveBeenCalled();
+      expect(result).toEqual(expectedState);
+    });
+
+    it('should reject adoption when existing ES app lacks our ownership tag', async () => {
+      const esDatabase = {
+        key: 'my_es',
+        name: 'my-es-app',
+        type: DatabaseEnum.ELASTICSEARCH_SERVERLESS,
+        esServerless: {
+          appName: 'my-es-app',
+          appVersion: 'test_version',
+          chargeType: 'PostPaid',
+          authentication: { basicAuth: [] },
+          network: [],
+          privateNetwork: [],
+        },
+      } as unknown as DatabaseDomain;
+
+      const existsError = Object.assign(new Error('app already exists'), {
+        code: 'DuplicateResource',
+      });
+      mockEsOperations.createApp.mockRejectedValue(existsError);
+      mockEsOperations.getApp.mockResolvedValue({
+        appId: 'es-app-12345',
+        appName: 'my-es-app',
+        tags: [{ key: 'other-project-tag', value: 'someone-else' }],
+      });
+      mockedStateManager.setResource.mockReturnValue({ ...initialState, updated: true });
+
+      await expect(
+        createDatabaseResource(mockContext, esDatabase, initialState),
+      ).rejects.toMatchObject({
+        name: 'PartialResourceError',
+        cause: { message: expect.stringContaining('not owned by this stack') },
+      });
+    });
+
+    it('should idempotently adopt an existing RDS instance that carries our ownership tag', async () => {
+      const rdsDatabase = {
+        key: 'my_rds',
+        name: 'my-rds-mysql',
+        type: DatabaseEnum.RDS_MYSQL_SERVERLESS,
+        rds: {
+          engine: 'MySQL',
+          engineVersion: '8.0',
+          dbInstanceClass: 'mysql.n2.serverless.1c',
+        },
+      } as unknown as DatabaseDomain;
+
+      const existsError = Object.assign(new Error('DB instance name already exists'), {
+        code: 'InvalidDBInstanceName.Duplicate',
+      });
+      mockRdsOperations.createInstance.mockRejectedValue(existsError);
+      mockRdsOperations.getInstanceByName.mockResolvedValue({
+        dbInstanceId: 'rm-12345',
+        engine: 'MySQL',
+        dbInstanceStatus: 'Running',
+        tags: [{ key: 'si-owned-by', value: 'test-app-test-service:databases.my_rds' }],
+      });
+      mockRdsOperations.getInstance.mockResolvedValue({
+        dbInstanceId: 'rm-12345',
+        engine: 'MySQL',
+        dbInstanceStatus: 'Running',
+      });
+      const expectedState = { ...initialState, updated: true };
+      mockedStateManager.setResource.mockReturnValue(expectedState);
+
+      const result = await createDatabaseResource(mockContext, rdsDatabase, initialState);
+
+      expect(mockRdsOperations.createInstance).toHaveBeenCalledTimes(1);
+      expect(mockRdsOperations.getInstanceByName).toHaveBeenCalledWith('test-rds');
+      expect(mockRdsOperations.getInstance).toHaveBeenCalledWith('rm-12345');
+      expect(mockedStateManager.setResource).toHaveBeenCalled();
+      expect(result).toEqual(expectedState);
+    });
+
+    it('should reject adoption when existing RDS instance lacks our ownership tag', async () => {
+      const rdsDatabase = {
+        key: 'my_rds',
+        name: 'my-rds-mysql',
+        type: DatabaseEnum.RDS_MYSQL_SERVERLESS,
+        rds: {
+          engine: 'MySQL',
+          engineVersion: '8.0',
+          dbInstanceClass: 'mysql.n2.serverless.1c',
+        },
+      } as unknown as DatabaseDomain;
+
+      const existsError = Object.assign(new Error('DB instance name already exists'), {
+        code: 'InvalidDBInstanceName.Duplicate',
+      });
+      mockRdsOperations.createInstance.mockRejectedValue(existsError);
+      mockRdsOperations.getInstanceByName.mockResolvedValue({
+        dbInstanceId: 'rm-12345',
+        engine: 'MySQL',
+        tags: [],
+      });
+      mockedStateManager.setResource.mockReturnValue({ ...initialState, updated: true });
+
+      await expect(
+        createDatabaseResource(mockContext, rdsDatabase, initialState),
+      ).rejects.toMatchObject({
+        name: 'PartialResourceError',
+        cause: { message: expect.stringContaining('not owned by this stack') },
+      });
+    });
+
     it('should handle RDS with null/undefined fields', async () => {
       const rdsDatabase = {
         key: 'my_rds',
@@ -496,6 +699,72 @@ describe('DatabaseResource', () => {
       const result = await createDatabaseResource(mockContext, rdsDatabase, initialState);
 
       expect(result).toEqual(expectedState);
+    });
+
+    it('should retain max-detail RDS fields including tags in the state instance', async () => {
+      const rdsDatabase = {
+        key: 'my_rds',
+        name: 'my-rds-mysql',
+        type: DatabaseEnum.RDS_MYSQL_SERVERLESS,
+        rds: {
+          engine: 'MySQL',
+          engineVersion: '8.0',
+        },
+      } as unknown as DatabaseDomain;
+
+      mockRdsOperations.createInstance.mockResolvedValue('rm-12345');
+      mockRdsOperations.getInstance.mockResolvedValue({
+        dbInstanceId: 'rm-12345',
+        engine: 'MySQL',
+        dbInstanceStatus: 'Running',
+        tags: [{ key: 'si-owned-by', value: 'test-app-test-service:databases.my_rds' }],
+        dbInstanceCpu: '1',
+        dbInstanceMemory: 2,
+        payType: 'Serverless',
+        expireTime: '2026-12-31T00:00:00Z',
+        maintainTime: '02:00Z-03:00Z',
+        maxConnections: 200,
+        maxIOPS: 2000,
+        resourceGroupId: 'rg-123',
+        deletionProtection: true,
+        dbInstanceType: 'Primary',
+        slaveZones: [{ zoneId: 'cn-hangzhou-c' }],
+        readOnlyDBInstanceIds: ['rm-ro-1'],
+        burstingEnabled: true,
+      });
+
+      let savedResourceState: unknown;
+      mockedStateManager.setResource.mockImplementation(
+        (state: StateFile, _logicalId: string, resourceState: unknown) => {
+          savedResourceState = resourceState;
+          return { ...state };
+        },
+      );
+
+      await createDatabaseResource(mockContext, rdsDatabase, initialState);
+
+      const resourceState = savedResourceState as {
+        instances?: Array<Record<string, unknown>>;
+      };
+      const rdsInstance = resourceState.instances?.[0];
+
+      expect(rdsInstance).toMatchObject({
+        dbInstanceId: 'rm-12345',
+        tags: [{ key: 'si-owned-by', value: 'test-app-test-service:databases.my_rds' }],
+        dbInstanceCpu: '1',
+        dbInstanceMemory: 2,
+        payType: 'Serverless',
+        expireTime: '2026-12-31T00:00:00Z',
+        maintainTime: '02:00Z-03:00Z',
+        maxConnections: 200,
+        maxIOPS: 2000,
+        resourceGroupId: 'rg-123',
+        deletionProtection: true,
+        dbInstanceType: 'Primary',
+        slaveZones: [{ zoneId: 'cn-hangzhou-c' }],
+        readOnlyDBInstanceIds: ['rm-ro-1'],
+        burstingEnabled: true,
+      });
     });
 
     it('should handle ES with null/undefined fields', async () => {
