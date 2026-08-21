@@ -52,6 +52,7 @@ jest.mock('../../../src/lang', () => ({
 
 describe('destroy command', () => {
   const mockBackend = {
+    loadState: jest.fn().mockResolvedValue({}),
     withLock: jest.fn((_: string, fn: () => Promise<void>) => fn()),
   };
 
@@ -140,6 +141,31 @@ describe('destroy command', () => {
     ).toHaveBeenCalledWith(mockBackend);
   });
 
+  it('loads state before acquiring the destroy lock', async () => {
+    const calls: Array<string> = [];
+    const backend = {
+      loadState: jest.fn(async () => {
+        calls.push('loadState');
+        return {};
+      }),
+      withLock: jest.fn(async (_operation: string, fn: () => Promise<void>) => {
+        calls.push('withLock');
+        await fn();
+      }),
+    };
+    (createStateBackend as jest.Mock).mockReturnValue(backend);
+
+    await destroyStack({ location: '/test/path' });
+
+    expect(calls).toEqual(['loadState', 'withLock']);
+    expect(backend.loadState).toHaveBeenCalledWith(
+      ProviderEnum.ALIYUN,
+      'test-app',
+      'test-service',
+      'dev',
+    );
+  });
+
   it('should throw error for unsupported provider', async () => {
     (parseYaml as jest.Mock).mockReturnValue({
       app: 'test-app',
@@ -184,6 +210,7 @@ describe('destroy command', () => {
   it('should release the active lock and exit(130) when SIGINT is received', async () => {
     const releaseLock = jest.fn().mockResolvedValue(undefined);
     (createStateBackend as jest.Mock).mockReturnValue({
+      loadState: jest.fn().mockResolvedValue({}),
       withLock: jest.fn(
         (
           _op: string,
