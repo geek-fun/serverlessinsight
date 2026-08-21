@@ -24,7 +24,7 @@ export const destroyVolcengineStack = async (backend: StateBackend) => {
     ([logicalId, resourceState]) =>
       logicalId.startsWith('events.') &&
       resourceState.instances?.some(
-        (i) => i.type === 'VOLCENGINE_APIGW_GROUP' || i.type === 'VOLCENGINE_APIGW_API',
+        (i) => typeof i.type === 'string' && i.type.startsWith('VOLCENGINE_APIGW_'),
       ),
   );
 

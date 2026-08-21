@@ -186,6 +186,52 @@ describe('volcengineStack destroyer', () => {
       );
     });
 
+    it('should delete API Gateway resources before functions', async () => {
+      const stateWithGatewayAndFunction: StateFile = {
+        ...mockState,
+        resources: {
+          'events.api_gateway': {
+            mode: 'managed',
+            region: 'cn-beijing',
+            definition: {},
+            instances: [{ sid: 'gateway-sid', id: 'gateway-id', type: 'VOLCENGINE_APIGW_GATEWAY' }],
+            lastUpdated: '2024-01-01T00:00:00Z',
+          },
+          'functions.test_fn': {
+            mode: 'managed',
+            region: 'cn-beijing',
+            definition: { functionName: 'test-function' },
+            instances: [
+              { sid: 'function-sid', id: 'test-function', type: 'VOLCENGINE_VEFAAS_FUNCTION' },
+            ],
+            lastUpdated: '2024-01-01T00:00:00Z',
+          },
+        },
+      };
+      mockBackend.loadState = jest.fn().mockResolvedValue(stateWithGatewayAndFunction);
+      const { getAllResources } = jest.requireMock('../../../../src/common/stateManager');
+      const { deleteApigwResource } = jest.requireMock(
+        '../../../../src/stack/volcengineStack/apigwResource',
+      );
+      const { deleteResource } = jest.requireMock(
+        '../../../../src/stack/volcengineStack/vefaasResource',
+      );
+      const calls: Array<string> = [];
+      getAllResources.mockReturnValue(stateWithGatewayAndFunction.resources);
+      deleteApigwResource.mockImplementation(async () => {
+        calls.push('gateway');
+        return stateWithGatewayAndFunction;
+      });
+      deleteResource.mockImplementation(async () => {
+        calls.push('function');
+        return stateWithGatewayAndFunction;
+      });
+
+      await destroyVolcengineStack(mockBackend);
+
+      expect(calls).toEqual(['gateway', 'function']);
+    });
+
     it('should handle bucket deletion error', async () => {
       const stateWithBucket: StateFile = {
         ...mockState,
