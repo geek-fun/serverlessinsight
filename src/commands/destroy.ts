@@ -42,6 +42,10 @@ export const destroyStack = async (options: {
 
   const backend = createStateBackend(iac.backend, context);
 
+  // Initialize backend stage/deployment context before withLock. SaaS backends
+  // need loadState() to provision the deployment and set the active stage.
+  await backend.loadState(iac.provider.name, context.app, context.service, context.stage);
+
   // ADR-005: wire the backend's event reporter into the global context so
   // executors can emit per-resource deployment events via context.reportEvent.
   if (backend.reportEvent) {
