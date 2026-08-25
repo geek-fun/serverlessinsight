@@ -385,6 +385,53 @@ describe('apigwResource', () => {
       expect(mockClient.tls.createProject).not.toHaveBeenCalled();
       expect(mockClient.apigw.updateGatewayLog).not.toHaveBeenCalled();
     });
+
+    it('adopts an owned gateway after an already-exists create conflict', async () => {
+      mockClient.apigw.createGateway.mockRejectedValue(new Error('gateway already exists'));
+      mockClient.apigw.findGatewayByName.mockResolvedValueOnce(null).mockResolvedValueOnce({
+        gatewayId: 'gw-owned',
+        gatewayName: 'test-service-dev-apigw',
+        type: 'serverless',
+        tags: [{ Key: 'si-owned-by', Value: 'test-app-test-service:events.api_gateway' }],
+      });
+
+      const result = await createApigwResource(
+        mockContext,
+        mockEvent,
+        'test-service',
+        stateWithFunction,
+      );
+
+      expect(mockClient.apigw.waitForGatewayRunning).toHaveBeenCalledWith('gw-owned');
+      expect(mockClient.apigw.createService).toHaveBeenCalledWith(
+        expect.objectContaining({ gatewayId: 'gw-owned' }),
+      );
+      expect(result.resources['events.api_gateway'].status).toBe('ready');
+    });
+
+    it('refuses to adopt a foreign gateway after an already-exists create conflict', async () => {
+      mockClient.apigw.createGateway.mockRejectedValue(new Error('gateway already exists'));
+      mockClient.apigw.findGatewayByName.mockResolvedValueOnce(null).mockResolvedValueOnce({
+        gatewayId: 'gw-foreign',
+        gatewayName: 'test-service-dev-apigw',
+        type: 'serverless',
+        tags: [],
+      });
+
+      await expect(
+        createApigwResource(mockContext, mockEvent, 'test-service', stateWithFunction),
+      ).rejects.toThrow('not owned by this stack');
+      expect(mockClient.apigw.waitForGatewayRunning).not.toHaveBeenCalled();
+    });
+
+    it('propagates non-conflict gateway creation failures', async () => {
+      mockClient.apigw.createGateway.mockRejectedValue(new Error('network unavailable'));
+
+      await expect(
+        createApigwResource(mockContext, mockEvent, 'test-service', stateWithFunction),
+      ).rejects.toThrow('network unavailable');
+      expect(mockClient.apigw.findGatewayByName).toHaveBeenCalledTimes(1);
+    });
   });
 
   describe('updateApigwResource', () => {
@@ -468,6 +515,186 @@ describe('apigwResource', () => {
       expect(mockClient.apigw.createRoute).not.toHaveBeenCalled();
       expect(mockClient.apigw.findRouteByName).toHaveBeenCalled();
       expect(result.resources['events.api_gateway'].instances).toHaveLength(5);
+    });
+
+    it('creates the resource when local event state is missing', async () => {
+      (getResource as jest.Mock).mockImplementation((state: StateFile, logicalId: string) =>
+        logicalId === 'events.api_gateway' ? null : state.resources?.[logicalId] || null,
+      );
+
+      const result = await updateApigwResource(
+        mockContext,
+        mockEvent,
+        'test-service',
+        stateWithFunction,
+      );
+
+      expect(mockClient.apigw.createGateway).toHaveBeenCalled();
+      expect(result.resources['events.api_gateway'].status).toBe('ready');
+    });
+
+    it('creates the resource when local event state has no service instance', async () => {
+      const stateWithoutService: StateFile = {
+        ...stateWithEvent,
+        resources: {
+          ...stateWithEvent.resources,
+          'events.api_gateway': {
+            ...stateWithEvent.resources['events.api_gateway'],
+            instances: [
+              { type: 'VOLCENGINE_APIGW_GATEWAY', sid: 's', id: 'gw-1', gatewayId: 'gw-1' },
+            ],
+          },
+        },
+      };
+      (getResource as jest.Mock).mockImplementation(
+        (state: StateFile, logicalId: string) => state.resources?.[logicalId] || null,
+      );
+
+      const result = await updateApigwResource(
+        mockContext,
+        mockEvent,
+        'test-service',
+        stateWithoutService,
+      );
+
+      expect(mockClient.apigw.createGateway).toHaveBeenCalled();
+      expect(result.resources['events.api_gateway'].status).toBe('ready');
+    });
+
+    it('reuses existing TLS resources when logs remain enabled', async () => {
+      const eventWithLog: EventDomain = { ...mockEvent, log: true };
+      const stateWithLogs: StateFile = {
+        ...stateWithEvent,
+        resources: {
+          ...stateWithEvent.resources,
+          'events.api_gateway': {
+            ...stateWithEvent.resources['events.api_gateway'],
+            instances: [
+              ...stateWithEvent.resources['events.api_gateway'].instances,
+              {
+                type: 'VOLCENGINE_TLS_PROJECT',
+                sid: 's',
+                id: 'test-service-dev-apigw-tls',
+                projectId: 'proj-existing',
+              },
+              {
+                type: 'VOLCENGINE_TLS_TOPIC',
+                sid: 's',
+                id: 'test-service-dev-apigw-tls/test-service-dev-apigw-logs',
+                topicId: 'topic-existing',
+              },
+            ],
+          },
+        },
+      };
+      (getResource as jest.Mock).mockImplementation(
+        (state: StateFile, logicalId: string) => state.resources?.[logicalId] || null,
+      );
+      mockClient.apigw.findUpstreamByName.mockResolvedValue({
+        upstreamId: 'up-1',
+        upstreamName: 'u',
+      });
+      mockClient.apigw.findRouteByName.mockResolvedValue({ routeId: 'route-1', routeName: 'r' });
+
+      const result = await updateApigwResource(
+        mockContext,
+        eventWithLog,
+        'test-service',
+        stateWithLogs,
+      );
+
+      expect(mockClient.tls.createProject).not.toHaveBeenCalled();
+      expect(mockClient.apigw.updateGatewayLog).toHaveBeenCalledWith('gw-1', {
+        enable: true,
+        projectId: 'proj-existing',
+        topicId: 'topic-existing',
+      });
+      expect(result.resources['events.api_gateway'].instances).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ type: 'VOLCENGINE_TLS_PROJECT', projectId: 'proj-existing' }),
+          expect.objectContaining({ type: 'VOLCENGINE_TLS_TOPIC', topicId: 'topic-existing' }),
+        ]),
+      );
+    });
+
+    it('disables gateway logging when TLS resources remain in state but log is removed', async () => {
+      const stateWithLogs: StateFile = {
+        ...stateWithEvent,
+        resources: {
+          ...stateWithEvent.resources,
+          'events.api_gateway': {
+            ...stateWithEvent.resources['events.api_gateway'],
+            instances: [
+              ...stateWithEvent.resources['events.api_gateway'].instances,
+              {
+                type: 'VOLCENGINE_TLS_PROJECT',
+                sid: 's',
+                id: 'test-service-dev-apigw-tls',
+                projectId: 'proj-existing',
+              },
+            ],
+          },
+        },
+      };
+      (getResource as jest.Mock).mockImplementation(
+        (state: StateFile, logicalId: string) => state.resources?.[logicalId] || null,
+      );
+      mockClient.apigw.findUpstreamByName.mockResolvedValue({
+        upstreamId: 'up-1',
+        upstreamName: 'u',
+      });
+      mockClient.apigw.findRouteByName.mockResolvedValue({ routeId: 'route-1', routeName: 'r' });
+
+      await updateApigwResource(mockContext, mockEvent, 'test-service', stateWithLogs);
+
+      expect(mockClient.apigw.updateGatewayLog).toHaveBeenCalledWith('gw-1', {
+        enable: false,
+        projectId: '',
+        topicId: '',
+      });
+    });
+
+    it('adopts a remote upstream and creates routes for it', async () => {
+      const stateWithoutUpstream: StateFile = {
+        ...stateWithEvent,
+        resources: {
+          ...stateWithEvent.resources,
+          'events.api_gateway': {
+            ...stateWithEvent.resources['events.api_gateway'],
+            instances: stateWithEvent.resources['events.api_gateway'].instances.filter(
+              (instance) => instance.type !== 'VOLCENGINE_APIGW_UPSTREAM',
+            ),
+          },
+        },
+      };
+      (getResource as jest.Mock).mockImplementation(
+        (state: StateFile, logicalId: string) => state.resources?.[logicalId] || null,
+      );
+      mockClient.apigw.findUpstreamByName.mockResolvedValue({
+        upstreamId: 'up-adopted',
+        upstreamName: 'test-gw-dev-upstream-api-function',
+      });
+      mockClient.apigw.findRouteByName.mockResolvedValue(null);
+      mockClient.apigw.createRoute
+        .mockResolvedValueOnce('route-2')
+        .mockResolvedValueOnce('route-3');
+
+      const result = await updateApigwResource(
+        mockContext,
+        mockEvent,
+        'test-service',
+        stateWithoutUpstream,
+      );
+
+      expect(mockClient.apigw.createUpstream).not.toHaveBeenCalled();
+      expect(mockClient.apigw.createRoute).toHaveBeenCalledWith(
+        expect.objectContaining({ upstreamId: 'up-adopted' }),
+      );
+      expect(result.resources['events.api_gateway'].instances).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ type: 'VOLCENGINE_APIGW_ROUTE', routeId: 'route-2' }),
+        ]),
+      );
     });
   });
 
@@ -562,6 +789,89 @@ describe('apigwResource', () => {
       );
       expect(mockClient.tls.deleteProject).toHaveBeenCalledWith('test-service-dev-apigw-tls');
       expect(removeResource).toHaveBeenCalled();
+    });
+
+    it('returns unchanged state when the event resource is already absent', async () => {
+      (getResource as jest.Mock).mockReturnValue(null);
+
+      const result = await deleteApigwResource(mockContext, 'events.missing', stateWithFunction);
+
+      expect(result).toBe(stateWithFunction);
+      expect(removeResource).not.toHaveBeenCalled();
+    });
+
+    it('ignores provider not-found errors while deleting all dependent resources', async () => {
+      const stateWithDependents: StateFile = {
+        ...stateWithFunction,
+        resources: {
+          ...stateWithFunction.resources,
+          'events.api_gateway': {
+            mode: 'managed',
+            region: 'cn-beijing',
+            definition: {},
+            instances: [
+              {
+                type: 'VOLCENGINE_APIGW_SERVICE',
+                sid: 's',
+                id: 'svc-1',
+                serviceId: 'svc-1',
+                gatewayId: 'gw-1',
+              },
+              { type: 'VOLCENGINE_APIGW_ROUTE', sid: 's', id: 'route-1', routeId: 'route-1' },
+              { type: 'VOLCENGINE_APIGW_UPSTREAM', sid: 's', id: 'up-1', upstreamId: 'up-1' },
+              { type: 'VOLCENGINE_APIGW_DOMAIN', sid: 's', id: 'domain-1' },
+            ],
+            lastUpdated: '2024-01-01T00:00:00Z',
+          },
+        },
+      };
+      (getResource as jest.Mock).mockImplementation(
+        (state: StateFile, logicalId: string) => state.resources?.[logicalId] || null,
+      );
+      mockClient.apigw.deleteRoute.mockRejectedValue({ code: 'RouteNotFound' });
+      mockClient.apigw.deleteUpstream.mockRejectedValue({ code: 'UpstreamNotFound' });
+      mockClient.apigw.deleteService.mockRejectedValue({ code: 'ServiceNotFound' });
+      mockClient.apigw.deleteCustomDomain.mockRejectedValue({ code: 'DomainNotFound' });
+
+      await expect(
+        deleteApigwResource(mockContext, 'events.api_gateway', stateWithDependents),
+      ).resolves.toEqual(expect.not.objectContaining({ events: expect.anything() }));
+
+      expect(mockClient.apigw.deleteCustomDomain).toHaveBeenCalledWith('domain-1');
+      expect(removeResource).toHaveBeenCalled();
+    });
+
+    it('propagates unexpected route deletion errors without removing state', async () => {
+      const stateWithRoute: StateFile = {
+        ...stateWithFunction,
+        resources: {
+          ...stateWithFunction.resources,
+          'events.api_gateway': {
+            mode: 'managed',
+            region: 'cn-beijing',
+            definition: {},
+            instances: [
+              {
+                type: 'VOLCENGINE_APIGW_SERVICE',
+                sid: 's',
+                id: 'svc-1',
+                gatewayId: 'gw-1',
+              },
+              { type: 'VOLCENGINE_APIGW_ROUTE', sid: 's', id: 'route-1' },
+            ],
+            lastUpdated: '2024-01-01T00:00:00Z',
+          },
+        },
+      };
+      (getResource as jest.Mock).mockImplementation(
+        (state: StateFile, logicalId: string) => state.resources?.[logicalId] || null,
+      );
+      mockClient.apigw.deleteRoute.mockRejectedValue({ code: 'PermissionDenied' });
+
+      await expect(
+        deleteApigwResource(mockContext, 'events.api_gateway', stateWithRoute),
+      ).rejects.toEqual({ code: 'PermissionDenied' });
+      expect(removeResource).not.toHaveBeenCalled();
     });
   });
 });

@@ -166,4 +166,120 @@ describe('apigwPlanner', () => {
       action: 'delete',
     });
   });
+
+  it('plans a drifted create when the recorded service is missing remotely', async () => {
+    const stateWithEvent: StateFile = {
+      ...emptyState,
+      resources: {
+        'events.api_gateway': {
+          mode: 'managed',
+          region: 'cn-beijing',
+          definition: { gatewayName: 'test-gw' },
+          instances: [
+            {
+              type: 'VOLCENGINE_APIGW_SERVICE',
+              sid: 's',
+              id: 'svc-missing',
+              serviceId: 'svc-missing',
+              gatewayId: 'gw-1',
+            },
+          ],
+          lastUpdated: '2024-01-01T00:00:00Z',
+          status: 'ready',
+        },
+      },
+    };
+    mockClient.apigw.getService.mockResolvedValue(null);
+
+    const plan = await generateApigwPlan(mockContext, stateWithEvent, [mockEvent], 'test-service');
+
+    expect(plan.items[0]).toMatchObject({
+      logicalId: 'events.api_gateway',
+      action: 'create',
+      drifted: true,
+      changes: { before: { gatewayName: 'test-gw' } },
+    });
+  });
+
+  it('plans update when the desired event definition changed', async () => {
+    const stateWithEvent: StateFile = {
+      ...emptyState,
+      resources: {
+        'events.api_gateway': {
+          mode: 'managed',
+          region: 'cn-beijing',
+          definition: { gatewayName: 'old-gateway' },
+          instances: [],
+          lastUpdated: '2024-01-01T00:00:00Z',
+          status: 'ready',
+        },
+      },
+    };
+    const { attributesEqual } = jest.requireMock('../../../../src/common/hashUtils');
+    (attributesEqual as jest.Mock).mockReturnValue(false);
+
+    const plan = await generateApigwPlan(mockContext, stateWithEvent, [mockEvent], 'test-service');
+
+    expect(plan.items[0]).toMatchObject({
+      logicalId: 'events.api_gateway',
+      action: 'update',
+      changes: {
+        before: { gatewayName: 'old-gateway' },
+        after: { gatewayName: 'test-gw' },
+      },
+    });
+  });
+
+  it('deletes stale events while excluding non-event resources', async () => {
+    const stateWithMixedResources: StateFile = {
+      ...emptyState,
+      resources: {
+        'events.api_gateway': {
+          mode: 'managed',
+          region: 'cn-beijing',
+          definition: { gatewayName: 'test-gw' },
+          instances: [],
+          lastUpdated: '2024-01-01T00:00:00Z',
+          status: 'ready',
+        },
+        'events.old_event': {
+          mode: 'managed',
+          region: 'cn-beijing',
+          definition: { gatewayName: 'old-gw' },
+          instances: [],
+          lastUpdated: '2024-01-01T00:00:00Z',
+          status: 'ready',
+        },
+        'functions.api_function': {
+          mode: 'managed',
+          region: 'cn-beijing',
+          definition: { functionName: 'test-fn' },
+          instances: [],
+          lastUpdated: '2024-01-01T00:00:00Z',
+          status: 'ready',
+        },
+      },
+    };
+    const { attributesEqual } = jest.requireMock('../../../../src/common/hashUtils');
+    (attributesEqual as jest.Mock).mockReturnValue(true);
+
+    const plan = await generateApigwPlan(
+      mockContext,
+      stateWithMixedResources,
+      [mockEvent],
+      'test-service',
+    );
+
+    expect(plan.items).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ logicalId: 'events.api_gateway', action: 'noop' }),
+        expect.objectContaining({
+          logicalId: 'events.old_event',
+          action: 'delete',
+          changes: { before: { gatewayName: 'old-gw' } },
+        }),
+      ]),
+    );
+    expect(plan.items).toHaveLength(2);
+  });
 });
