@@ -153,3 +153,126 @@ describe('EventQueue', () => {
     expect(mockSendBatch.mock.calls[0][0]).toHaveLength(1);
   });
 });
+
+jest.mock('../../../src/common/retryUtils', () => ({
+  sleep: jest.fn().mockResolvedValue(undefined),
+}));
+
+describe('EventQueue uncovered paths', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+    fs.rmSync(queueDir, { recursive: true, force: true });
+  });
+
+  it('removes empty orphan files without sending a batch', async () => {
+    fs.mkdirSync(queueDir, { recursive: true });
+    const emptyFile = path.join(queueDir, 'empty.jsonl');
+    fs.writeFileSync(emptyFile, '\n');
+    const queue = new EventQueue({ deploymentId: 'dep-empty', queueDir, sendBatch: mockSendBatch });
+
+    await queue.replayOrphanedQueues();
+
+    expect(fs.existsSync(emptyFile)).toBe(false);
+    expect(mockSendBatch).not.toHaveBeenCalled();
+  });
+
+  it('logs a warning and retains an orphan file when replay fails', async () => {
+    fs.mkdirSync(queueDir, { recursive: true });
+    const orphanFile = path.join(queueDir, 'failed.jsonl');
+    fs.writeFileSync(orphanFile, `${JSON.stringify({ type: 'failed' })}\n`);
+    mockSendBatch.mockRejectedValue(new Error('replay failed'));
+    const queue = new EventQueue({
+      deploymentId: 'dep-failed',
+      queueDir,
+      sendBatch: mockSendBatch,
+      maxRetries: 1,
+    });
+
+    await queue.replayOrphanedQueues();
+
+    const mockedLogger = jest.requireMock('../../../src/common/logger') as {
+      logger: { warn: jest.Mock };
+    };
+    expect(fs.existsSync(orphanFile)).toBe(true);
+    expect(mockedLogger.logger.warn).toHaveBeenCalledWith('EVENT_REPLAY_FAILED');
+  });
+
+  it('rewrites unsent JSONL entries after a partial flush', async () => {
+    fs.mkdirSync(queueDir, { recursive: true });
+    const file = path.join(queueDir, 'dep-partial.jsonl');
+    fs.writeFileSync(file, `${JSON.stringify({ type: 'old' })}\n`);
+    mockSendBatch.mockResolvedValue(undefined);
+    const queue = new EventQueue({
+      deploymentId: 'dep-partial',
+      queueDir,
+      sendBatch: mockSendBatch,
+      batchSize: 10,
+    });
+
+    queue.report({ type: 'new' });
+    await queue.flush();
+
+    expect(fs.readFileSync(file, 'utf8')).toBe(`${JSON.stringify({ type: 'old' })}\n`);
+  });
+
+  it('flushes pending events when the interval elapses', async () => {
+    jest.useFakeTimers();
+    mockSendBatch.mockResolvedValue(undefined);
+    const queue = new EventQueue({
+      deploymentId: 'dep-interval',
+      queueDir,
+      sendBatch: mockSendBatch,
+      batchSize: 10,
+      flushIntervalMs: 100,
+    });
+    queue.report({ type: 'interval' });
+
+    await jest.advanceTimersByTimeAsync(100);
+
+    expect(mockSendBatch).toHaveBeenCalledWith([{ type: 'interval' }]);
+    jest.useRealTimers();
+  });
+
+  it('retries failed sends with bounded backoff before succeeding', async () => {
+    mockSendBatch.mockRejectedValueOnce(new Error('temporary')).mockResolvedValueOnce(undefined);
+    const queue = new EventQueue({
+      deploymentId: 'dep-retry',
+      queueDir,
+      sendBatch: mockSendBatch,
+      batchSize: 10,
+      baseRetryMs: 25,
+      maxRetries: 2,
+    });
+    queue.report({ type: 'retry' });
+
+    await queue.flush();
+
+    expect(mockSendBatch).toHaveBeenCalledTimes(2);
+    expect(queue.pendingCount).toBe(0);
+  });
+
+  it('registers signal handlers that initiate the final flush', async () => {
+    const onceSpy = jest.spyOn(process, 'once');
+    mockSendBatch.mockResolvedValue(undefined);
+    const queue = new EventQueue({
+      deploymentId: 'dep-signal',
+      queueDir,
+      sendBatch: mockSendBatch,
+      batchSize: 10,
+      flushOnExit: true,
+    });
+    queue.report({ type: 'signal' });
+
+    const signalRegistration = onceSpy.mock.calls.find(([signal]) => signal === 'SIGINT');
+    const handler = signalRegistration?.[1];
+    expect(typeof handler).toBe('function');
+    if (typeof handler === 'function') {
+      handler();
+      await Promise.resolve();
+      await Promise.resolve();
+    }
+
+    expect(mockSendBatch).toHaveBeenCalledWith([{ type: 'signal' }]);
+    onceSpy.mockRestore();
+  });
+});

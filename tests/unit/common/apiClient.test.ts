@@ -29,6 +29,20 @@ describe('apiClient', () => {
   });
 
   describe('createApiClient', () => {
+    it('adds the organization header when orgId is provided', async () => {
+      client = createApiClient({ apiKey: testApiKey, baseUrl: testBaseUrl, orgId: 'org-123' });
+      mockFetch.mockResolvedValue(new Response(JSON.stringify({ ok: true }), { status: 200 }));
+
+      await client.get('/organization');
+
+      expect(mockFetch).toHaveBeenCalledWith(
+        `${testBaseUrl}/organization`,
+        expect.objectContaining({
+          headers: expect.objectContaining({ 'X-Org-Id': 'org-123' }),
+        }),
+      );
+    });
+
     it('should send the auth header and content type on every request', async () => {
       mockFetch.mockResolvedValue(new Response(JSON.stringify({ data: 'ok' }), { status: 200 }));
 

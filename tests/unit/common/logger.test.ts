@@ -504,3 +504,64 @@ describe('Logger Module', () => {
     });
   });
 });
+
+describe('Logger isolated branch coverage', () => {
+  it('detects a Windows code page from chcp output during initialization', () => {
+    const originalPlatform = process.platform;
+    Object.defineProperty(process, 'platform', { configurable: true, value: 'win32' });
+    execSync.mockReturnValue('Active code page: 936\n');
+
+    try {
+      jest.isolateModules(() => {
+        const { logger: isolatedLogger } = require('../../../src/common/logger');
+        expect(() => isolatedLogger.info('windows initialization')).not.toThrow();
+      });
+    } finally {
+      Object.defineProperty(process, 'platform', { configurable: true, value: originalPlatform });
+    }
+
+    expect(execSync).toHaveBeenCalledWith('chcp', {
+      encoding: 'utf8',
+      stdio: ['pipe', 'pipe', 'pipe'],
+    });
+  });
+
+  it('passes formatting errors to the writable stream callback', () => {
+    type CapturedStream = {
+      _write: (
+        chunk: string | Buffer,
+        encoding: string,
+        callback: (error?: Error | null) => void,
+      ) => void;
+    };
+    let capturedStream: CapturedStream | undefined;
+    const mockPino = jest.fn((_options: unknown, destination: unknown) => {
+      capturedStream = destination as CapturedStream;
+      return {
+        info: jest.fn(),
+        warn: jest.fn(),
+        error: jest.fn(),
+        debug: jest.fn(),
+      };
+    });
+    const formatError = new Error('format failed');
+
+    jest.isolateModules(() => {
+      jest.doMock('pino', () => ({ __esModule: true, default: mockPino }));
+      jest.doMock('pino-pretty', () => ({
+        __esModule: true,
+        default: {
+          prettyFactory: () => () => {
+            throw formatError;
+          },
+        },
+      }));
+      require('../../../src/common/logger');
+    });
+
+    const callback = jest.fn();
+    capturedStream?._write('chunk', 'utf8', callback);
+
+    expect(callback).toHaveBeenCalledWith(formatError);
+  });
+});
