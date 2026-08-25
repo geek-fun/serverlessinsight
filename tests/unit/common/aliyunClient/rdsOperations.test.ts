@@ -12,6 +12,7 @@ const mockModifyDBInstanceSpec = jest.fn();
 const mockModifySecurityIps = jest.fn();
 const mockDeleteDBInstance = jest.fn();
 const mockListTagResources = jest.fn();
+const mockDescribeDBInstances = jest.fn();
 
 const mockRdsClient = {
   createDBInstance: mockCreateDBInstance,
@@ -20,6 +21,7 @@ const mockRdsClient = {
   modifySecurityIps: mockModifySecurityIps,
   deleteDBInstance: mockDeleteDBInstance,
   listTagResources: mockListTagResources,
+  describeDBInstances: mockDescribeDBInstances,
 } as unknown as RdsClient;
 
 jest.mock('../../../../src/common/logger', () => ({
@@ -171,6 +173,46 @@ describe('rdsOperations', () => {
 
       const result = await operations.createInstance(config);
       expect(result).toBe('rds-instance-123');
+    });
+
+    it('should fail when the instance disappears while waiting', async () => {
+      mockCreateDBInstance.mockResolvedValue({ body: { DBInstanceId: 'rds-instance-123' } });
+      mockDescribeDBInstanceAttribute.mockResolvedValue({
+        body: { Items: { DBInstanceAttribute: [] } },
+      });
+
+      await expect(
+        operations.createInstance({
+          dbInstanceDescription: 'Test RDS',
+          engine: 'MySQL',
+          engineVersion: '5.7',
+          dbInstanceClass: 'mysql.n2.medium.1',
+          dbInstanceStorage: 20,
+          category: 'HighAvailability',
+          dbInstanceStorageType: 'cloud_ssd',
+        }),
+      ).rejects.toThrow('RDS_INSTANCE_NOT_FOUND');
+    });
+
+    it('should fail when the instance reaches a deleted state while waiting', async () => {
+      mockCreateDBInstance.mockResolvedValue({ body: { DBInstanceId: 'rds-instance-123' } });
+      mockDescribeDBInstanceAttribute.mockResolvedValue({
+        body: {
+          Items: { DBInstanceAttribute: [{ DBInstanceStatus: RdsInstanceStatus.DELETED }] },
+        },
+      });
+
+      await expect(
+        operations.createInstance({
+          dbInstanceDescription: 'Test RDS',
+          engine: 'MySQL',
+          engineVersion: '5.7',
+          dbInstanceClass: 'mysql.n2.medium.1',
+          dbInstanceStorage: 20,
+          category: 'HighAvailability',
+          dbInstanceStorageType: 'cloud_ssd',
+        }),
+      ).rejects.toThrow('RDS_INSTANCE_ERROR_STATE');
     });
   });
 
@@ -445,6 +487,76 @@ describe('rdsOperations', () => {
         'InvalidDBInstanceState',
       );
     });
+
+    it('should translate a readiness polling timeout', async () => {
+      mockDescribeDBInstanceAttribute.mockResolvedValue({
+        body: {
+          Items: { DBInstanceAttribute: [{ DBInstanceStatus: RdsInstanceStatus.CREATING }] },
+        },
+      });
+
+      const updatePromise = operations.updateInstance('rds-instance-123', {
+        dbInstanceDescription: 'Updated RDS',
+        engine: 'MySQL',
+        engineVersion: '5.7',
+        dbInstanceClass: 'mysql.n2.medium.1',
+        dbInstanceStorage: 20,
+        category: 'HighAvailability',
+        dbInstanceStorageType: 'cloud_ssd',
+      });
+      const rejection = expect(updatePromise).rejects.toThrow('RDS_INSTANCE_TIMEOUT_READY');
+      await jest.runAllTimersAsync();
+
+      await rejection;
+    });
+  });
+
+  describe('getInstanceByName', () => {
+    it('should return the exact description match with tags', async () => {
+      mockDescribeDBInstances.mockResolvedValue({
+        body: {
+          items: {
+            DBInstance: [
+              { DBInstanceId: 'wrong', DBInstanceDescription: 'other-name' },
+              { DBInstanceId: 'matching', DBInstanceDescription: 'target-name' },
+            ],
+          },
+        },
+      });
+      mockDescribeDBInstanceAttribute.mockResolvedValue({
+        body: {
+          Items: {
+            DBInstanceAttribute: [{ DBInstanceId: 'matching', DBInstanceStatus: 'Running' }],
+          },
+        },
+      });
+      mockListTagResources.mockResolvedValue({
+        body: { tagResources: { tagResource: [{ tagKey: 'owner', tagValue: 'stack' }] } },
+      });
+
+      await expect(operations.getInstanceByName('target-name')).resolves.toEqual(
+        expect.objectContaining({
+          dbInstanceId: 'matching',
+          tags: [{ key: 'owner', value: 'stack' }],
+        }),
+      );
+    });
+
+    it('should return null when no exact description match exists', async () => {
+      mockDescribeDBInstances.mockResolvedValue({
+        body: {
+          items: { DBInstance: [{ DBInstanceId: 'wrong', DBInstanceDescription: 'other-name' }] },
+        },
+      });
+
+      await expect(operations.getInstanceByName('target-name')).resolves.toBeNull();
+    });
+
+    it('should return null when listing instances fails', async () => {
+      mockDescribeDBInstances.mockRejectedValue(new Error('describe failed'));
+
+      await expect(operations.getInstanceByName('target-name')).resolves.toBeNull();
+    });
   });
 
   describe('deleteInstance', () => {
@@ -473,6 +585,19 @@ describe('rdsOperations', () => {
       mockDeleteDBInstance.mockRejectedValue(new Error('AccessDenied'));
 
       await expect(operations.deleteInstance('rds-instance-123')).rejects.toThrow('AccessDenied');
+    });
+
+    it('should translate a deletion polling timeout', async () => {
+      mockDeleteDBInstance.mockResolvedValue({});
+      mockDescribeDBInstanceAttribute.mockResolvedValue({
+        body: { Items: { DBInstanceAttribute: [{ DBInstanceStatus: RdsInstanceStatus.RUNNING }] } },
+      });
+
+      const deletePromise = operations.deleteInstance('rds-instance-123');
+      const rejection = expect(deletePromise).rejects.toThrow('RDS_INSTANCE_TIMEOUT_DELETE');
+      await jest.runAllTimersAsync();
+
+      await rejection;
     });
   });
 });

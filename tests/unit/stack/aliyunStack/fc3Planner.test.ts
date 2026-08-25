@@ -18,9 +18,12 @@ const mockFc3Operations = {
   updateFunctionCode: jest.fn(),
   deleteFunction: jest.fn(),
 };
+const mockEcsOperations = {
+  getSecurityGroupByName: jest.fn(),
+};
 
 jest.mock('../../../../src/common/aliyunClient', () => ({
-  createAliyunClient: () => ({ fc3: mockFc3Operations }),
+  createAliyunClient: () => ({ fc3: mockFc3Operations, ecs: mockEcsOperations }),
 }));
 jest.mock('../../../../src/common/hashUtils', () => ({
   ...jest.requireActual('../../../../src/common/hashUtils'),
@@ -63,6 +66,50 @@ describe('FC3 Planner', () => {
   });
 
   describe('generateFunctionPlan', () => {
+    it('should resolve a named security group before planning', async () => {
+      mockEcsOperations.getSecurityGroupByName.mockResolvedValue({
+        securityGroupId: 'sg-resolved',
+      });
+      mockFc3Operations.getFunction.mockResolvedValue(null);
+
+      const functionWithNamedSecurityGroup: FunctionDomain = {
+        ...testFunction,
+        network: {
+          vpc_id: 'vpc-123',
+          subnet_ids: ['vsw-123'],
+          security_group: { name: 'app-sg', ingress: [], egress: [] },
+        },
+      };
+
+      const plan = await generateFunctionPlan(mockContext, initalState, [
+        functionWithNamedSecurityGroup,
+      ]);
+
+      expect(mockEcsOperations.getSecurityGroupByName).toHaveBeenCalledWith('app-sg', 'vpc-123');
+      expect(plan.items[0]?.changes?.after).toEqual(
+        expect.objectContaining({
+          vpcConfig: expect.objectContaining({ securityGroupId: 'sg-resolved' }),
+        }),
+      );
+    });
+
+    it('should fail when a named security group cannot be resolved', async () => {
+      mockEcsOperations.getSecurityGroupByName.mockResolvedValue(null);
+
+      const functionWithNamedSecurityGroup: FunctionDomain = {
+        ...testFunction,
+        network: {
+          vpc_id: 'vpc-123',
+          subnet_ids: ['vsw-123'],
+          security_group: { name: 'missing-sg', ingress: [], egress: [] },
+        },
+      };
+
+      await expect(
+        generateFunctionPlan(mockContext, initalState, [functionWithNamedSecurityGroup]),
+      ).rejects.toThrow('not found');
+    });
+
     it('should plan to create a new function when state is empty', async () => {
       mockFc3Operations.getFunction.mockResolvedValue(null);
 
