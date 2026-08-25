@@ -13,6 +13,7 @@ export const getIamInfo = async (context: Context) => {
     accessKeyId: context.accessKeyId,
     accessKeySecret: context.accessKeySecret,
     regionId: context.region,
+    endpoint: 'ims.aliyuncs.com',
   });
   imsConfig.connectTimeout = ALIYUN_FC3_CONNECT_TIMEOUT_MS;
   imsConfig.readTimeout = ALIYUN_FC3_READ_TIMEOUT_MS;

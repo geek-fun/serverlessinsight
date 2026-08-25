@@ -122,5 +122,27 @@ describe('imsClient', () => {
         }),
       );
     });
+
+    it('should use global IMS endpoint instead of regionalized host', async () => {
+      // eslint-disable-next-line @typescript-eslint/no-require-imports
+      const mockConfig = require('@alicloud/openapi-client').Config;
+      mockGetUser.mockResolvedValue({
+        body: {
+          user: {
+            userPrincipalName: 'test@123456.onaliyun.com',
+          },
+        },
+      });
+
+      const context = mockContext(ProviderEnum.ALIYUN);
+      await getIamInfo(context);
+
+      expect(mockConfig).toHaveBeenCalledWith(
+        expect.objectContaining({
+          regionId: 'cn-hangzhou',
+          endpoint: 'ims.aliyuncs.com',
+        }),
+      );
+    });
   });
 });
