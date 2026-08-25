@@ -847,6 +847,131 @@ describe('vefaasOperations code size validation', () => {
           }),
         );
       });
+
+      it('should throw when the package exceeds the TOS limit', async () => {
+        const stat = jest.spyOn(fs.promises, 'stat').mockResolvedValue({
+          size: 501 * 1024 * 1024,
+        } as fs.Stats);
+
+        await expect(operations.createFunction(mockConfig, smallZipPath)).rejects.toThrow(
+          'CODE_PACKAGE_TOO_LARGE',
+        );
+        stat.mockRestore();
+      });
+
+      it('should upload packages larger than the ZIP limit to TOS', async () => {
+        const stat = jest.spyOn(fs.promises, 'stat').mockResolvedValue({
+          size: 51 * 1024 * 1024,
+        } as fs.Stats);
+        const readFile = jest
+          .spyOn(fs.promises, 'readFile')
+          .mockResolvedValue(fs.readFileSync(smallZipPath));
+
+        await operations.createFunction(mockConfig, smallZipPath);
+
+        expect(mockService.fetchOpenAPI).toHaveBeenCalledWith(
+          expect.objectContaining({
+            Action: 'CreateFunction',
+            data: expect.objectContaining({
+              SourceType: 'tos',
+              TosBucket: 'vefaas-codes-cn-beijing',
+            }),
+          }),
+        );
+        stat.mockRestore();
+        readFile.mockRestore();
+      });
+
+      it('should throw when CreateFunction does not return an ID', async () => {
+        mockService.fetchOpenAPI.mockImplementation(({ Action }: { Action: string }) =>
+          Promise.resolve(
+            Action === 'CreateFunction'
+              ? { Result: {}, ResponseMetadata: { RequestId: 'request', Service: 'vefaas' } }
+              : Action === 'GetReleaseStatus'
+                ? {
+                    Result: { Status: 'done' },
+                    ResponseMetadata: { RequestId: 'request', Service: 'vefaas' },
+                  }
+                : { Result: {}, ResponseMetadata: { RequestId: 'request', Service: 'vefaas' } },
+          ),
+        );
+
+        await expect(operations.createFunction(mockConfig, smallZipPath)).rejects.toThrow(
+          'did not return a function Id',
+        );
+      });
+
+      it('should return null when no function matches the requested name', async () => {
+        mockService.fetchOpenAPI.mockResolvedValueOnce({
+          Result: { Items: [] },
+          ResponseMetadata: { RequestId: 'request', Service: 'vefaas' },
+        });
+
+        await expect(operations.getFunction('missing-function')).resolves.toBeNull();
+      });
+
+      it('should rethrow unexpected getFunctionById errors', async () => {
+        const error = { code: 'AccessDenied', message: 'denied' };
+        mockService.fetchOpenAPI.mockRejectedValueOnce(error);
+
+        await expect(operations.getFunctionById('func-123')).rejects.toBe(error);
+      });
+
+      it('should throw when a release reports failure', async () => {
+        mockService.fetchOpenAPI
+          .mockResolvedValueOnce({
+            Result: { ReleaseRecordId: 'release-1' },
+            ResponseMetadata: { RequestId: 'request', Service: 'vefaas' },
+          })
+          .mockResolvedValueOnce({
+            Result: { Status: 'failed' },
+            ResponseMetadata: { RequestId: 'request', Service: 'vefaas' },
+          });
+
+        await expect(operations.releaseFunction('func-123')).rejects.toThrow('release failed');
+      });
+
+      it('should translate function deletion polling timeouts', async () => {
+        jest.useFakeTimers();
+        mockService.fetchOpenAPI.mockResolvedValue({
+          Result: { Id: 'func-123', Name: 'test-function', Status: 'Active' },
+          ResponseMetadata: { RequestId: 'request', Service: 'vefaas' },
+        });
+        const promise = operations.waitForFunctionDeleted('func-123');
+        const outcome = promise.catch((error: unknown) => error);
+        await jest.runAllTimersAsync();
+
+        await expect(outcome).resolves.toEqual(
+          expect.objectContaining({
+            message: 'Timed out waiting for veFaaS function func-123 to be deleted',
+          }),
+        );
+        jest.useRealTimers();
+      });
+
+      it('should update function code through TOS for large packages', async () => {
+        const stat = jest.spyOn(fs.promises, 'stat').mockResolvedValue({
+          size: 51 * 1024 * 1024,
+        } as fs.Stats);
+        const readFile = jest
+          .spyOn(fs.promises, 'readFile')
+          .mockResolvedValue(fs.readFileSync(smallZipPath));
+
+        await operations.updateFunctionCode('func-123', smallZipPath);
+
+        expect(mockService.fetchOpenAPI).toHaveBeenCalledWith(
+          expect.objectContaining({
+            Action: 'UpdateFunction',
+            data: expect.objectContaining({
+              Id: 'func-123',
+              SourceType: 'tos',
+              TosBucket: 'vefaas-codes-cn-beijing',
+            }),
+          }),
+        );
+        stat.mockRestore();
+        readFile.mockRestore();
+      });
     });
   });
 });

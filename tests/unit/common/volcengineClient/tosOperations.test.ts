@@ -1,6 +1,17 @@
+import * as fs from 'node:fs';
 import { Service } from '@volcengine/openapi';
 import { createTosOperations } from '../../../../src/common/volcengineClient/tosOperations';
 import type { TosBucketConfig } from '../../../../src/common/volcengineClient/types';
+
+jest.mock('node:fs', () => {
+  const actual = jest.requireActual<typeof import('node:fs')>('node:fs');
+  return {
+    ...actual,
+    readdirSync: jest.fn(actual.readdirSync),
+    readFileSync: jest.fn(actual.readFileSync),
+    statSync: jest.fn(actual.statSync),
+  };
+});
 
 jest.mock('../../../../src/common/logger', () => ({
   logger: {
@@ -869,6 +880,30 @@ describe('tosOperations', () => {
         );
       });
 
+      it('should parse a string policy document', async () => {
+        mockClient.fetchOpenAPI.mockResolvedValueOnce({
+          Result: { Policy: JSON.stringify({ Version: '1', Statement: [] }) },
+        });
+
+        await expect(operations.getBucketPolicy('test-bucket')).resolves.toEqual({
+          Version: '1',
+          Statement: [],
+        });
+      });
+
+      it('should return null when the policy result is empty', async () => {
+        mockClient.fetchOpenAPI.mockResolvedValueOnce({ Result: {} });
+
+        await expect(operations.getBucketPolicy('test-bucket')).resolves.toBeNull();
+      });
+
+      it('should rethrow unexpected policy errors', async () => {
+        const error = new Error('Access denied');
+        mockClient.fetchOpenAPI.mockRejectedValueOnce(error);
+
+        await expect(operations.getBucketPolicy('test-bucket')).rejects.toBe(error);
+      });
+
       it('should return null when policy does not exist (NoSuchBucketPolicy)', async () => {
         const error = new Error('Not found') as Error & { code: string };
         error.code = 'NoSuchBucketPolicy';
@@ -917,11 +952,93 @@ describe('tosOperations', () => {
         await expect(operations.deleteBucketPolicy('test-bucket')).resolves.toBeUndefined();
       });
 
+      it('should rethrow unexpected delete policy errors', async () => {
+        const error = new Error('Access denied');
+        mockClient.fetchOpenAPI.mockRejectedValueOnce(error);
+
+        await expect(operations.deleteBucketPolicy('test-bucket')).rejects.toBe(error);
+      });
+
       it('should throw error with null client', async () => {
         const nullClientOperations = createTosOperations(null, 'cn-beijing');
 
         await expect(nullClientOperations.deleteBucketPolicy('test-bucket')).rejects.toThrow(
           'VOLCENGINE_TOS_CLIENT_NOT_INITIALIZED',
+        );
+      });
+    });
+    describe('uploadFiles with a client', () => {
+      it('should upload a single file with its basename and content type', async () => {
+        const statSync = fs.statSync as jest.Mock;
+        statSync.mockReturnValue({
+          isDirectory: () => false,
+        } as fs.Stats);
+        const readFileSync = fs.readFileSync as jest.Mock;
+        readFileSync.mockReturnValue(Buffer.from('data'));
+        mockClient.fetchOpenAPI.mockResolvedValueOnce({});
+
+        await operations.uploadFiles('test-bucket', '/tmp/index.html');
+
+        expect(mockClient.fetchOpenAPI).toHaveBeenCalledWith(
+          expect.objectContaining({
+            Action: 'PutObject',
+            headers: { 'content-type': 'text/html' },
+            query: { Bucket: 'test-bucket', Key: 'index.html' },
+            data: Buffer.from('data'),
+          }),
+        );
+        statSync.mockImplementation(
+          jest.requireActual<typeof import('node:fs')>('node:fs').statSync,
+        );
+        readFileSync.mockImplementation(
+          jest.requireActual<typeof import('node:fs')>('node:fs').readFileSync,
+        );
+      });
+
+      it('should recursively upload files in a directory and ignore unsupported entries', async () => {
+        const directoryEntry = {
+          name: 'nested',
+          isDirectory: () => true,
+          isFile: () => false,
+        };
+        const fileEntry = {
+          name: 'app.js',
+          isDirectory: () => false,
+          isFile: () => true,
+        };
+        const ignoredEntry = {
+          name: 'link',
+          isDirectory: () => false,
+          isFile: () => false,
+        };
+        const readdirSync = fs.readdirSync as jest.Mock;
+        readdirSync.mockImplementation((dirPath: fs.PathLike) =>
+          dirPath === '/tmp/site' ? [directoryEntry, ignoredEntry] : [fileEntry],
+        );
+        const statSync = fs.statSync as jest.Mock;
+        statSync.mockReturnValue({
+          isDirectory: () => true,
+        } as fs.Stats);
+        (fs.readFileSync as jest.Mock).mockReturnValue(Buffer.from('js'));
+        mockClient.fetchOpenAPI.mockResolvedValue({});
+
+        await operations.uploadFiles('test-bucket', '/tmp/site');
+
+        expect(mockClient.fetchOpenAPI).toHaveBeenCalledWith(
+          expect.objectContaining({
+            Action: 'PutObject',
+            query: { Bucket: 'test-bucket', Key: 'nested/app.js' },
+          }),
+        );
+        expect(mockClient.fetchOpenAPI).toHaveBeenCalledTimes(1);
+        readdirSync.mockImplementation(
+          jest.requireActual<typeof import('node:fs')>('node:fs').readdirSync,
+        );
+        statSync.mockImplementation(
+          jest.requireActual<typeof import('node:fs')>('node:fs').statSync,
+        );
+        (fs.readFileSync as jest.Mock).mockImplementation(
+          jest.requireActual<typeof import('node:fs')>('node:fs').readFileSync,
         );
       });
     });
