@@ -268,4 +268,18 @@ describe('HashUtils', () => {
       });
     });
   });
+
+  describe('deep equality edge cases', () => {
+    it('returns false for values with different primitive types', () => {
+      expect(attributesEqual({ value: 1 }, { value: '1' })).toBe(false);
+    });
+
+    it('returns false when one value is null and the other is non-null', () => {
+      expect(attributesEqual({ value: null }, { value: {} })).toBe(false);
+    });
+
+    it('returns false when one value is an array and the other is an object', () => {
+      expect(attributesEqual({ value: [] }, { value: {} })).toBe(false);
+    });
+  });
 });
