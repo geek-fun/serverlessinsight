@@ -264,6 +264,34 @@ describe('show command', () => {
         expect.stringContaining('Failed to load state from remote backend'),
       );
     });
+
+    it('should warn with SaaS wording when the default remote backend fails', async () => {
+      (createStateBackend as jest.Mock).mockImplementation(() => {
+        throw new Error('SaaS unavailable');
+      });
+
+      process.chdir(testDir);
+      const stateDir = path.join(testDir, '.serverlessinsight');
+      fs.mkdirSync(stateDir, { recursive: true });
+      const statePath = path.join(stateDir, 'state-test-app-test-service.json');
+      fs.writeFileSync(
+        statePath,
+        JSON.stringify({
+          version: '1.0.0',
+          provider: 'aliyun',
+          app: 'test-app',
+          service: 'test-service',
+          stages: { default: { resources: {} } },
+          resources: {},
+        }),
+      );
+
+      await show({ stage: 'default', location: testDir });
+
+      expect(mockLoggerWarn).toHaveBeenCalledWith(
+        expect.stringContaining('SaaS backend unavailable'),
+      );
+    });
   });
 
   describe('with empty state', () => {

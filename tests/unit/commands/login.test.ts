@@ -255,4 +255,69 @@ describe('login command', () => {
     const html = mockRes.end.mock.calls[0][0] as string;
     expect(html).toContain('https://console.console.test.com"');
   });
+
+  it('waits for authorization on non-callback requests', async () => {
+    mockReadlineAnswer = '1';
+    const openMock = jest.requireMock('open') as jest.Mock;
+    openMock.mockImplementation(() => Promise.resolve());
+    const createServerMock = jest.requireMock('node:http').createServer as jest.Mock;
+    mockServer.listen.mockImplementationOnce((_port: unknown, _host: unknown, cb: () => void) => {
+      cb();
+      return mockServer;
+    });
+
+    const loginPromise = login({});
+    await new Promise((resolve) => setTimeout(resolve, 50));
+
+    const handler = createServerMock.mock.calls[0][0];
+    const mockRes = { writeHead: jest.fn(), end: jest.fn() };
+    await handler({ url: '/waiting' }, mockRes);
+
+    expect(mockRes.writeHead).toHaveBeenCalledWith(200, { 'Content-Type': 'text/plain' });
+    expect(mockRes.end).toHaveBeenCalledWith('Waiting for authorization...');
+
+    await handler({ url: '/callback?api_key=key' }, mockRes);
+    await loginPromise;
+  });
+
+  it('warns when the browser opener rejects', async () => {
+    mockReadlineAnswer = '1';
+    const openMock = jest.requireMock('open') as jest.Mock;
+    openMock.mockRejectedValue(new Error('browser unavailable'));
+    const createServerMock = jest.requireMock('node:http').createServer as jest.Mock;
+    mockServer.listen.mockImplementationOnce((_port: unknown, _host: unknown, cb: () => void) => {
+      cb();
+      return mockServer;
+    });
+
+    const loginPromise = login({});
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    const handler = createServerMock.mock.calls[0][0];
+    await handler({ url: '/callback?api_key=key' }, { writeHead: jest.fn(), end: jest.fn() });
+    await loginPromise;
+    await Promise.resolve();
+
+    expect(logger.warn).toHaveBeenCalledWith('LOGIN_BROWSER_UNAVAILABLE');
+  });
+
+  it('warns when the browser opener throws synchronously', async () => {
+    mockReadlineAnswer = '1';
+    const openMock = jest.requireMock('open') as jest.Mock;
+    openMock.mockImplementation(() => {
+      throw new Error('browser unavailable');
+    });
+    const createServerMock = jest.requireMock('node:http').createServer as jest.Mock;
+    mockServer.listen.mockImplementationOnce((_port: unknown, _host: unknown, cb: () => void) => {
+      cb();
+      return mockServer;
+    });
+
+    const loginPromise = login({});
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    const handler = createServerMock.mock.calls[0][0];
+    await handler({ url: '/callback?api_key=key' }, { writeHead: jest.fn(), end: jest.fn() });
+    await loginPromise;
+
+    expect(logger.warn).toHaveBeenCalledWith('LOGIN_BROWSER_UNAVAILABLE');
+  });
 });

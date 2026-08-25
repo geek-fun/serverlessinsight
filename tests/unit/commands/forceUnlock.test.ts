@@ -5,6 +5,13 @@ import { LOCK_FILE_SUFFIX } from '../../../src/common/constants';
 import fs from 'node:fs';
 import path from 'node:path';
 
+const mockCreateStateBackend = jest.fn();
+
+jest.mock('../../../src/common/stateBackend', () => ({
+  ...jest.requireActual('../../../src/common/stateBackend'),
+  createStateBackend: (...args: unknown[]) => mockCreateStateBackend(...args),
+}));
+
 jest.mock('node:readline', () => ({
   createInterface: jest.fn(() => ({
     question: jest.fn((_question: string, callback: (answer: string) => void) => {
@@ -146,5 +153,68 @@ describe('forceUnlockCommand', () => {
     await forceUnlockCommand('any-lock-id', { location: ymlPath });
 
     loggerInfo.mockRestore();
+  });
+
+  it('should throw when a configured backend has no lock', async () => {
+    mockCreateStateBackend.mockReturnValue({
+      readLock: jest.fn().mockResolvedValue(null),
+    });
+
+    const ymlPath = path.join(testDir, 'local.yml');
+    fs.writeFileSync(
+      ymlPath,
+      [
+        'version: 0.1.0',
+        'provider:',
+        '  name: aliyun',
+        '  region: cn-hongkong',
+        'app: test-app',
+        'service: test-service',
+        'backend:',
+        '  state_manager:',
+        '    type: LOCAL',
+      ].join('\n'),
+    );
+
+    await expect(forceUnlockCommand('missing-lock', { location: ymlPath })).rejects.toThrow(
+      'No lock found',
+    );
+    expect(mockCreateStateBackend).toHaveBeenCalled();
+  });
+
+  it('should throw when the configured backend cannot release the lock', async () => {
+    const lock = {
+      id: 'lock-id',
+      user: 'test@example.com',
+      processId: 123,
+      hostname: 'test-host',
+      operation: 'deploy',
+      acquiredAt: new Date().toISOString(),
+      path: '/test/path',
+    };
+    mockCreateStateBackend.mockReturnValue({
+      readLock: jest.fn().mockResolvedValue(lock),
+      forceUnlock: jest.fn().mockResolvedValue(false),
+    });
+
+    const ymlPath = path.join(testDir, 'local.yml');
+    fs.writeFileSync(
+      ymlPath,
+      [
+        'version: 0.1.0',
+        'provider:',
+        '  name: aliyun',
+        '  region: cn-hongkong',
+        'app: test-app',
+        'service: test-service',
+        'backend:',
+        '  state_manager:',
+        '    type: LOCAL',
+      ].join('\n'),
+    );
+
+    await expect(forceUnlockCommand('lock-id', { location: ymlPath })).rejects.toThrow(
+      'Failed to release lock',
+    );
   });
 });
