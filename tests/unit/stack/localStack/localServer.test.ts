@@ -52,6 +52,48 @@ describe('localServer routing', () => {
 
       expect(res.statusCode).toBe(404);
     });
+
+    it('returns 404 when a recognized route has no registered handler', async () => {
+      const res = await makeRequest(
+        `http://localhost:${SI_LOCALSTACK_SERVER_PORT}/si_events/missing`,
+      );
+
+      expect(res.statusCode).toBe(404);
+      expect(res.data).toContain('Handler for SI_EVENTS not registered');
+    });
+
+    it('returns 404 when the request has no route segment', async () => {
+      const res = await makeRequest(`http://localhost:${SI_LOCALSTACK_SERVER_PORT}/`);
+
+      expect(res.statusCode).toBe(404);
+      expect(res.data).toContain('Route not found');
+    });
+
+    it('returns 204 when a handler has no response', async () => {
+      handlers.push({ kind: RouteKind.SI_EVENTS, handler: async () => undefined });
+      const res = await makeRequest(`http://localhost:${SI_LOCALSTACK_SERVER_PORT}/si_events/`);
+
+      expect(res.statusCode).toBe(204);
+    });
+
+    it('returns 500 when a handler throws', async () => {
+      handlers.push({
+        kind: RouteKind.SI_WEBSITE_BUCKETS,
+        handler: async () => {
+          throw new Error('boom');
+        },
+      });
+      const res = await makeRequest(
+        `http://localhost:${SI_LOCALSTACK_SERVER_PORT}/si_website_buckets/`,
+      );
+
+      expect(res.statusCode).toBe(500);
+      expect(res.data).toContain('Local gateway failure');
+    });
+
+    it('does not start a second server when one is already running', async () => {
+      await expect(servLocal(handlers, iac)).resolves.toBeUndefined();
+    });
   });
 
   describe('Raw HTML responses', () => {
