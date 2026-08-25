@@ -200,6 +200,12 @@ describe('saasStateBackend', () => {
     });
   });
 
+  describe('acquireLock', () => {
+    it('should return the SaaS lock placeholder', async () => {
+      await expect(backend.acquireLock('deploy')).resolves.toBe('saas-lock-placeholder');
+    });
+  });
+
   describe('readLock', () => {
     it('should return null before any loadState', async () => {
       const result = await backend.readLock();
@@ -268,6 +274,32 @@ describe('saasStateBackend', () => {
       const lock = await backend.readLock();
 
       expect(lock).toBeNull();
+    });
+
+    it('should return null when the active deployment lookup fails', async () => {
+      mockApiClient.post.mockResolvedValueOnce({
+        id: 'deploy-1',
+        appId: 'app-1',
+        serviceId: 'svc-1',
+        status: 'active',
+        isNewApp: false,
+        isNewService: false,
+      });
+      mockApiClient.get.mockResolvedValueOnce({
+        stateJson: {
+          version: '3.0',
+          provider: 'aliyun',
+          app: 'myapp',
+          service: 'myservice',
+          stages: {},
+          resources: {},
+        },
+      });
+      mockApiClient.get.mockRejectedValueOnce(new Error('service unavailable'));
+
+      await backend.loadState('aliyun', 'myapp', 'myservice', 'dev');
+
+      await expect(backend.readLock()).resolves.toBeNull();
     });
   });
 
@@ -449,6 +481,33 @@ describe('saasStateBackend', () => {
       expect(fn).not.toHaveBeenCalled();
     });
 
+    it('should throw when provisioning did not produce a deployment', async () => {
+      mockApiClient.post.mockResolvedValueOnce({
+        id: '',
+        appId: 'app-1',
+        serviceId: 'svc-1',
+        status: 'active',
+        isNewApp: false,
+        isNewService: false,
+      });
+      mockApiClient.get.mockResolvedValueOnce({
+        stateJson: {
+          version: '3.0',
+          provider: 'aliyun',
+          app: 'myapp',
+          service: 'myservice',
+          stages: {},
+          resources: {},
+        },
+      });
+
+      await backend.loadState('aliyun', 'myapp', 'myservice', 'dev');
+
+      await expect(backend.withLock('deploy', jest.fn())).rejects.toThrow(
+        'no deployment available',
+      );
+    });
+
     it('reportEvent sends a typed event via PATCH phase:event', async () => {
       mockApiClient.post.mockResolvedValueOnce({
         id: 'deploy-1',
@@ -500,6 +559,10 @@ describe('saasStateBackend', () => {
           ]),
         }),
       );
+    });
+
+    it('should replay orphaned event queues without throwing', async () => {
+      await expect(backend.replayOrphanedEvents?.()).resolves.toBeUndefined();
     });
   });
 });

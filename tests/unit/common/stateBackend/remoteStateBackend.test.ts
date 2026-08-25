@@ -1,4 +1,5 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
+import os from 'node:os';
 import { createRemoteStateBackend } from '../../../../src/common/stateBackend/remoteStateBackend';
 import { StorageAdapter } from '../../../../src/common/stateBackend/types';
 import {
@@ -12,7 +13,14 @@ import { LockError } from '../../../../src/common/lockManager';
 import * as lockUtils from '../../../../src/common/stateBackend/lockUtils';
 
 jest.mock('../../../../src/common/stateBackend/lockUtils');
-jest.mock('../../../../src/common/logger');
+jest.mock('../../../../src/common/logger', () => ({
+  logger: {
+    info: jest.fn(),
+    warn: jest.fn(),
+    error: jest.fn(),
+    debug: jest.fn(),
+  },
+}));
 
 describe('remoteStateBackend', () => {
   let mockAdapter: jest.Mocked<StorageAdapter>;
@@ -237,6 +245,72 @@ describe('remoteStateBackend', () => {
       const backend = createRemoteStateBackend(mockAdapter, { key: 'state.json' });
 
       await expect(backend.acquireLock('deploy')).rejects.toThrow(LockError);
+    });
+
+    it('should release a lock owned by a dead process and retry acquisition', async () => {
+      const deadLock: LockMetadata = {
+        id: 'dead-lock',
+        user: 'user@host',
+        processId: 1234,
+        hostname: os.hostname(),
+        operation: 'deploy',
+        acquiredAt: new Date().toISOString(),
+        path: '/path',
+      };
+      const acquiredLock: LockMetadata = {
+        ...deadLock,
+        id: 'test-lock-id',
+      };
+      mockLockUtils.isProcessAlive.mockReturnValue(false);
+      mockAdapter.read
+        .mockResolvedValueOnce(deadLock)
+        .mockResolvedValueOnce(null)
+        .mockResolvedValueOnce(acquiredLock);
+
+      const backend = createRemoteStateBackend(mockAdapter, { key: 'state.json' });
+
+      await expect(backend.acquireLock('deploy', { maxRetries: 1, retryDelay: 0 })).resolves.toBe(
+        'test-lock-id',
+      );
+      expect(mockAdapter.delete).toHaveBeenCalledWith('state.json.si-lock');
+    });
+
+    it('should fail immediately when the lock timeout has elapsed', async () => {
+      const lock: LockMetadata = {
+        id: 'current-lock',
+        user: 'user@host',
+        processId: 1234,
+        hostname: 'other-host',
+        operation: 'deploy',
+        acquiredAt: new Date().toISOString(),
+        path: '/path',
+      };
+      mockAdapter.read.mockResolvedValue(lock);
+
+      const backend = createRemoteStateBackend(mockAdapter, { key: 'state.json' });
+
+      await expect(backend.acquireLock('deploy', { timeout: 0, maxRetries: 0 })).rejects.toThrow(
+        'Failed to acquire lock after 0 seconds',
+      );
+    });
+
+    it('should fail after exhausting lock retries', async () => {
+      const lock: LockMetadata = {
+        id: 'current-lock',
+        user: 'user@host',
+        processId: 1234,
+        hostname: 'other-host',
+        operation: 'deploy',
+        acquiredAt: new Date().toISOString(),
+        path: '/path',
+      };
+      mockAdapter.read.mockResolvedValue(lock);
+
+      const backend = createRemoteStateBackend(mockAdapter, { key: 'state.json' });
+
+      await expect(
+        backend.acquireLock('deploy', { timeout: 100000, maxRetries: 0, retryDelay: 0 }),
+      ).rejects.toThrow('Failed to acquire lock');
     });
   });
 
