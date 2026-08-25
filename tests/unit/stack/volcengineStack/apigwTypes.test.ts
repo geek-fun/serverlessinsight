@@ -9,8 +9,21 @@ import {
   triggerToApigwUpstreamConfig,
   triggerToApigwRouteConfig,
   extractEventDomainDefinition,
+  resolveFunctionReference,
 } from '../../../../src/stack/volcengineStack/apigwTypes';
 import type { EventDomain } from '../../../../src/types';
+import { getContext, getIacDefinition, isFunctionDomain, logger } from '../../../../src/common';
+
+jest.mock('../../../../src/common', () => ({
+  getContext: jest.fn(),
+  getIacDefinition: jest.fn(),
+  isFunctionDomain: jest.fn(),
+  logger: { info: jest.fn(), warn: jest.fn(), error: jest.fn(), debug: jest.fn() },
+}));
+
+jest.mock('../../../../src/lang', () => ({
+  lang: { __: (key: string) => key },
+}));
 
 const mockEvent: EventDomain = {
   key: 'api_gateway',
@@ -24,6 +37,10 @@ const mockEvent: EventDomain = {
 };
 
 describe('apigwTypes', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+  });
+
   it('should build gateway name from service + stage', () => {
     expect(buildGatewayName('rest-api-volcengine', 'dev')).toBe('rest-api-volcengine-dev-apigw');
   });
@@ -96,5 +113,41 @@ describe('apigwTypes', () => {
       path: '/graphql',
       backend: '${functions.api_function}',
     });
+  });
+
+  it('should retain the backend reference when IaC context is unavailable', () => {
+    (getContext as jest.Mock).mockReturnValue({ iac: undefined });
+
+    const result = resolveFunctionReference('${functions.api_function}');
+
+    expect(result).toBe('${functions.api_function}');
+    expect(logger.warn).toHaveBeenCalledWith('CANNOT_RESOLVE_FUNCTION_REF');
+    expect(getIacDefinition).not.toHaveBeenCalled();
+  });
+
+  it('should retain the backend reference when the definition is not a function', () => {
+    const iac = { functions: {} };
+    (getContext as jest.Mock).mockReturnValue({ iac });
+    (getIacDefinition as jest.Mock).mockReturnValue({ type: 'API_GATEWAY' });
+    (isFunctionDomain as unknown as jest.Mock).mockReturnValue(false);
+
+    const result = resolveFunctionReference('${functions.api_function}');
+
+    expect(result).toBe('${functions.api_function}');
+    expect(getIacDefinition).toHaveBeenCalledWith(iac, '${functions.api_function}');
+    expect(logger.warn).toHaveBeenCalledWith('FUNCTION_REF_NOT_RESOLVED');
+  });
+
+  it('should return the resolved function name for a valid function definition', () => {
+    const iac = { functions: {} };
+    const functionDefinition = { name: 'resolved-function' };
+    (getContext as jest.Mock).mockReturnValue({ iac });
+    (getIacDefinition as jest.Mock).mockReturnValue(functionDefinition);
+    (isFunctionDomain as unknown as jest.Mock).mockReturnValue(true);
+
+    const result = resolveFunctionReference('${functions.api_function}');
+
+    expect(result).toBe('resolved-function');
+    expect(logger.warn).not.toHaveBeenCalled();
   });
 });

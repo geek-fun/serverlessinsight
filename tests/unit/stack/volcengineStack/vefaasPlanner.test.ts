@@ -520,5 +520,64 @@ describe('vefaasPlanner', () => {
       expect(result.items).toHaveLength(1);
       expect(result.items[0].action).toBe('create');
     });
+
+    it('should reuse TLS topic names from state when function logging is enabled', async () => {
+      const functionWithLog: FunctionDomain = { ...mockFunction, log: true };
+      const stateWithTlsTopic: StateFile = {
+        ...mockState,
+        resources: {
+          'functions.test_fn': {
+            mode: 'managed',
+            region: 'cn-beijing',
+            definition: { functionName: 'test-function' },
+            instances: [
+              { sid: 'test-sid', id: 'test-function', type: 'VOLCENGINE_VEFAAS_FUNCTION' },
+              {
+                sid: 'topic-sid',
+                id: 'existing-project/existing-topic',
+                type: 'VOLCENGINE_TLS_TOPIC',
+              },
+            ],
+            status: 'tainted',
+            lastUpdated: '2024-01-01T00:00:00Z',
+          },
+        },
+      };
+      jest
+        .spyOn(stateManager, 'getResource')
+        .mockReturnValue(stateWithTlsTopic.resources['functions.test_fn']);
+      mockVefaasClient.vefaas.getFunction.mockResolvedValueOnce({
+        functionName: 'test-function',
+        Tags: [{ Key: 'si-owned-by', Value: 'test-app-test-service:functions.test_fn' }],
+      });
+
+      const result = await generateFunctionPlan(mockContext, stateWithTlsTopic, [functionWithLog]);
+
+      expect(result.items[0]).toMatchObject({
+        action: 'create',
+        changes: {
+          after: { logConfig: { project: 'existing-project', topic: 'existing-topic' } },
+        },
+      });
+    });
+
+    it('should derive deterministic TLS names when logging is enabled without TLS state', async () => {
+      const functionWithLog: FunctionDomain = { ...mockFunction, log: true };
+      mockVefaasClient.vefaas.getFunction.mockResolvedValueOnce(null);
+
+      const result = await generateFunctionPlan(mockContext, mockState, [functionWithLog]);
+
+      expect(result.items[0]).toMatchObject({
+        action: 'create',
+        changes: {
+          after: {
+            logConfig: {
+              project: 'test-app-test-service-dev-tls',
+              topic: 'test-app-test-service-dev-logs',
+            },
+          },
+        },
+      });
+    });
   });
 });
