@@ -103,6 +103,13 @@ describe('tlsOperations', () => {
       expect(result.projectName).toBe('test-project');
       expect(result.status).toBe('Active');
     });
+
+    it('should rethrow unexpected create errors', async () => {
+      const error = createError('AccessDenied');
+      mockClient.CreateProject.mockRejectedValueOnce(error);
+
+      await expect(operations.createProject({ projectName: 'test-project' })).rejects.toBe(error);
+    });
   });
 
   describe('getProject', () => {
@@ -141,6 +148,13 @@ describe('tlsOperations', () => {
 
       expect(result).toBeNull();
     });
+
+    it('should rethrow unexpected get errors', async () => {
+      const error = createError('AccessDenied');
+      mockClient.DescribeProjects.mockRejectedValueOnce(error);
+
+      await expect(operations.getProject('test-project')).rejects.toBe(error);
+    });
   });
 
   describe('deleteProject', () => {
@@ -175,6 +189,15 @@ describe('tlsOperations', () => {
       mockClient.DescribeProjects.mockRejectedValueOnce(createError('ResourceNotFound'));
 
       await expect(operations.deleteProject('missing-project')).resolves.toBeUndefined();
+    });
+
+    it('should tolerate a not-found response from DeleteProject', async () => {
+      mockClient.DescribeProjects.mockResolvedValueOnce({
+        Projects: [{ ProjectId: 'project-123', ProjectName: 'test-project' }],
+      });
+      mockClient.DeleteProject.mockRejectedValueOnce(createError('ProjectNotFound'));
+
+      await expect(operations.deleteProject('test-project')).resolves.toBeUndefined();
     });
   });
 
@@ -261,6 +284,22 @@ describe('tlsOperations', () => {
 
       expect(result.topicId).toBe('topic-123');
     });
+
+    it('should tolerate TopicAlreadyExists when the topic is already absent', async () => {
+      mockClient.DescribeProjects.mockResolvedValue({
+        Projects: [{ ProjectId: 'project-123', ProjectName: 'test-project' }],
+      });
+      mockClient.CreateTopic.mockRejectedValueOnce(createError('TopicAlreadyExists'));
+      mockClient.DescribeTopics.mockResolvedValueOnce({ Topics: [] });
+
+      const result = await operations.createTopic({
+        projectName: 'test-project',
+        topicName: 'test-topic',
+      });
+
+      expect(result.topicId).toBeUndefined();
+      expect(result.status).toBe('Active');
+    });
   });
 
   describe('getTopic', () => {
@@ -338,6 +377,13 @@ describe('tlsOperations', () => {
 
       expect(result).toBeNull();
     });
+
+    it('should return null when the project is missing', async () => {
+      mockClient.DescribeProjects.mockResolvedValueOnce({ Projects: [] });
+
+      await expect(operations.getTopic('missing-project', 'test-topic')).resolves.toBeNull();
+      expect(mockClient.DescribeTopics).not.toHaveBeenCalled();
+    });
   });
 
   describe('deleteTopic', () => {
@@ -411,6 +457,18 @@ describe('tlsOperations', () => {
         Total: 1,
       });
       mockClient.DescribeTopics.mockRejectedValueOnce(createError('ResourceNotFound'));
+
+      await expect(operations.deleteTopic('test-project', 'test-topic')).resolves.toBeUndefined();
+    });
+
+    it('should tolerate a not-found response from DeleteTopic', async () => {
+      mockClient.DescribeProjects.mockResolvedValueOnce({
+        Projects: [{ ProjectId: 'project-123', ProjectName: 'test-project' }],
+      });
+      mockClient.DescribeTopics.mockResolvedValueOnce({
+        Topics: [{ TopicId: 'topic-123', TopicName: 'test-topic' }],
+      });
+      mockClient.DeleteTopic.mockRejectedValueOnce(createError('TopicNotFound'));
 
       await expect(operations.deleteTopic('test-project', 'test-topic')).resolves.toBeUndefined();
     });
@@ -538,6 +596,32 @@ describe('tlsOperations', () => {
         }),
       ).resolves.toBeUndefined();
     });
+
+    it('should throw when the topic does not exist', async () => {
+      mockClient.DescribeProjects.mockResolvedValueOnce({
+        Projects: [{ ProjectId: 'project-123', ProjectName: 'test-project' }],
+      });
+      mockClient.DescribeTopics.mockResolvedValueOnce({ Topics: [] });
+
+      await expect(
+        operations.createIndex({ projectName: 'test-project', topicName: 'missing-topic' }),
+      ).rejects.toThrow('TLS_TOPIC_NOT_FOUND');
+    });
+
+    it('should rethrow unexpected createIndex errors', async () => {
+      mockClient.DescribeProjects.mockResolvedValueOnce({
+        Projects: [{ ProjectId: 'project-123', ProjectName: 'test-project' }],
+      });
+      mockClient.DescribeTopics.mockResolvedValueOnce({
+        Topics: [{ TopicId: 'topic-123', TopicName: 'test-topic' }],
+      });
+      const error = createError('AccessDenied');
+      mockClient.CreateIndex.mockRejectedValueOnce(error);
+
+      await expect(
+        operations.createIndex({ projectName: 'test-project', topicName: 'test-topic' }),
+      ).rejects.toBe(error);
+    });
   });
 
   describe('deleteIndex', () => {
@@ -596,6 +680,18 @@ describe('tlsOperations', () => {
       ).resolves.toBeUndefined();
       expect(mockClient.DeleteIndex).not.toHaveBeenCalled();
     });
+
+    it('should tolerate a not-found response from DeleteIndex', async () => {
+      mockClient.DescribeProjects.mockResolvedValueOnce({
+        Projects: [{ ProjectId: 'project-123', ProjectName: 'test-project' }],
+      });
+      mockClient.DescribeTopics.mockResolvedValueOnce({
+        Topics: [{ TopicId: 'topic-123', TopicName: 'test-topic' }],
+      });
+      mockClient.DeleteIndex.mockRejectedValueOnce(createError('IndexNotFound'));
+
+      await expect(operations.deleteIndex('test-project', 'test-topic')).resolves.toBeUndefined();
+    });
   });
 
   describe('waitForProject', () => {
@@ -625,11 +721,12 @@ describe('tlsOperations', () => {
     });
 
     it('should throw when project fails', async () => {
-      mockClient.DescribeProjects.mockRejectedValueOnce(createError('ProjectNotFound'));
+      jest.spyOn(operations, 'getProject').mockResolvedValueOnce({
+        projectName: 'test-project',
+        status: 'Failed',
+      });
 
-      await expect(operations.waitForProject('missing-project')).rejects.toThrow(
-        'TLS_PROJECT_NOT_FOUND',
-      );
+      await expect(operations.waitForProject('test-project')).rejects.toThrow('TLS_PROJECT_FAILED');
     });
   });
 
