@@ -3148,4 +3148,129 @@ describe('ApigwResource', () => {
       );
     });
   });
+
+  describe('additional branch coverage', () => {
+    it('should reject an already-existing unowned group after create conflict', async () => {
+      mockedApigwOperations.findApiGroupByName
+        .mockResolvedValueOnce(null)
+        .mockResolvedValueOnce({ groupId: 'group-foreign', groupName: 'test-api-group', tags: [] });
+      mockedApigwOperations.createApiGroup.mockRejectedValue(
+        Object.assign(new Error('already exists'), { code: 'RepeatedCommit' }),
+      );
+      mockedApigwTypes.eventToApigwGroupConfig.mockReturnValue({ groupName: 'test-api-group' });
+      mockedApigwTypes.extractApigwGroupDefinition.mockReturnValue({});
+      mockedApigwTypes.triggerToApigwApiConfig.mockReturnValue({ apiName: 'test-api' });
+      mockedApigwTypes.extractEventDomainDefinition.mockReturnValue(null);
+
+      await expect(
+        createApigwResource(mockContext, testEvent, 'test-service', undefined, initialState),
+      ).rejects.toBeInstanceOf(PartialResourceError);
+      expect(mockedApigwOperations.createApi).not.toHaveBeenCalled();
+    });
+
+    it('should recover an existing state without a group instance from the cloud', async () => {
+      const existingState = {
+        instances: [{ type: 'ALIYUN_APIGW_API', id: 'api-456', apiName: 'test-api' }],
+        definition: {},
+      };
+      mockedStateManager.getResource.mockReturnValue(existingState);
+      mockedApigwOperations.findApiGroupByName.mockResolvedValue({
+        groupId: 'group-cloud',
+        groupName: 'test-api-group',
+        tags: [{ Key: 'si-owned-by', Value: 'test-app-test-service:events.api_gateway' }],
+      });
+      mockedApigwOperations.listApisByGroup.mockResolvedValue([
+        { apiId: 'api-cloud', apiName: 'test-api' },
+      ]);
+      mockedApigwOperations.updateApiGroup.mockResolvedValue(undefined);
+      mockedApigwOperations.getApiGroup.mockResolvedValue({
+        groupId: 'group-cloud',
+        groupName: 'test-api-group',
+      });
+      mockedApigwOperations.getApi.mockResolvedValue({ apiId: 'api-cloud', apiName: 'test-api' });
+      mockedApigwOperations.updateApi.mockResolvedValue(undefined);
+      mockedApigwOperations.deployApi.mockResolvedValue(undefined);
+      mockedApigwTypes.eventToApigwGroupConfig.mockReturnValue({ groupName: 'test-api-group' });
+      mockedApigwTypes.extractApigwGroupDefinition.mockReturnValue({});
+      mockedApigwTypes.triggerToApigwApiConfig.mockReturnValue({ apiName: 'test-api' });
+      mockedApigwTypes.generateApiKey.mockReturnValue('GET_/api/hello');
+      mockedApigwTypes.extractEventDomainDefinition.mockReturnValue(null);
+
+      await updateApigwResource(mockContext, testEvent, 'test-service', undefined, initialState);
+
+      expect(mockedApigwOperations.listApisByGroup).toHaveBeenCalledWith('group-cloud');
+      expect(mockedStateManager.setResource).toHaveBeenCalled();
+    });
+
+    it('should propagate a non-not-found CDN DNS cleanup failure', async () => {
+      const existingState = {
+        instances: [
+          { type: 'ALIYUN_APIGW_GROUP', id: 'group-123' },
+          { type: 'ALIYUN_CDN_DNS_CNAME', id: 'dns-123', dnsRecordId: 'dns-123' },
+        ],
+        definition: { domain: { domainName: 'example.com', cdnEnabled: true } },
+      };
+      mockedStateManager.getResource.mockReturnValue(existingState);
+      mockedCdnOperations.deleteCdnDomain.mockResolvedValue(undefined);
+      mockedDnsOperations.deleteDomainRecord.mockRejectedValue(new Error('DNS access denied'));
+
+      await expect(
+        deleteApigwResource(mockContext, 'events.api_gateway', initialState),
+      ).rejects.toThrow('DNS access denied');
+    });
+
+    it('should tolerate not-found domain and deployment cleanup errors', async () => {
+      const existingState = {
+        instances: [
+          { type: 'ALIYUN_APIGW_GROUP', id: 'group-123' },
+          {
+            type: 'ALIYUN_APIGW_DEPLOYMENT',
+            groupId: 'group-123',
+            apiId: 'api-456',
+            stageName: 'RELEASE',
+          },
+        ],
+        definition: {
+          domain: { domainName: 'example.com', wwwBindApex: true },
+        },
+      };
+      mockedStateManager.getResource.mockReturnValue(existingState);
+      mockedApigwOperations.unbindCustomDomain.mockRejectedValue({ code: 'NotFoundDomain' });
+      mockedApigwOperations.abolishApi.mockRejectedValue({ code: 'NotFoundDeployment' });
+      mockedApigwOperations.deleteApiGroup.mockResolvedValue(undefined);
+
+      await deleteApigwResource(mockContext, 'events.api_gateway', initialState);
+
+      expect(mockedStateManager.removeResource).toHaveBeenCalled();
+    });
+
+    it('should delete additional domain-specific DNS state keys', async () => {
+      const existingState = {
+        instances: [{ type: 'ALIYUN_APIGW_GROUP', id: 'group-123' }],
+        definition: {},
+      };
+      mockedStateManager.getResource
+        .mockReturnValueOnce(existingState)
+        .mockReturnValueOnce(null)
+        .mockReturnValueOnce(null)
+        .mockReturnValueOnce({ instances: [{ id: 'dns-extra' }], definition: {} });
+      mockedDnsOperations.deleteDomainRecord.mockResolvedValue(undefined);
+      mockedApigwOperations.deleteApiGroup.mockResolvedValue(undefined);
+
+      await deleteApigwResource(mockContext, 'events.api_gateway', {
+        ...initialState,
+        resources: {
+          'events.api_gateway.dns_custom.example.com': {
+            mode: 'managed',
+            region: 'cn-hangzhou',
+            definition: {},
+            instances: [{ id: 'dns-extra', sid: 'dns-extra' }],
+            lastUpdated: new Date().toISOString(),
+          },
+        },
+      });
+
+      expect(mockedDnsOperations.deleteDomainRecord).toHaveBeenCalledWith('dns-extra');
+    });
+  });
 });

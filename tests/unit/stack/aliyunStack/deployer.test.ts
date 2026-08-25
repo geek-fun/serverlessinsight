@@ -7,6 +7,7 @@ const mockedLogger = {
   info: jest.fn(),
   error: jest.fn(),
   warn: jest.fn(),
+  debug: jest.fn(),
 };
 
 const createMockStateBackend = (): StateBackend => ({
@@ -42,6 +43,7 @@ jest.mock('../../../../src/common/logger', () => ({
     info: (...args: unknown[]) => mockedLogger.info(...args),
     error: (...args: unknown[]) => mockedLogger.error(...args),
     warn: (...args: unknown[]) => mockedLogger.warn(...args),
+    debug: (...args: unknown[]) => mockedLogger.debug(...args),
   },
 }));
 
@@ -95,7 +97,7 @@ jest.mock('../../../../src/common/context', () => ({
   }),
   setIac: jest.fn(),
   getRoleArnFromState: jest.fn(() => 'arn:aws:iam::123456789012:role/test-role'),
-  getDependencyInfo: jest.fn(() => ({ cycleError: null })),
+  getDependencyInfo: jest.fn(() => ({ cycleError: null, order: [], graph: {} })),
   toDotFormat: jest.fn(() => 'digraph { }'),
 }));
 
@@ -152,6 +154,119 @@ describe('Deployer Integration', () => {
       expect(mockedPlanner.generateDatabasePlan).toHaveBeenCalled();
       expect(mockedPlanner.generateTablePlan).toHaveBeenCalled();
       expect(mockedPlanner.generateApigwPlan).toHaveBeenCalled();
+    });
+
+    it('should report bucket partial failures with prior successful items', async () => {
+      const { deployAliyunStack } = require('../../../../src/stack/aliyunStack/deployer');
+      const iac: ServerlessIac = {
+        version: '1.0',
+        app: 'test-app',
+        service: 'test-service',
+        provider: { name: ProviderEnum.ALIYUN, region: 'cn-hangzhou' },
+      };
+      const failure = {
+        error: new Error('bucket failed'),
+        failedItem: { action: 'create', logicalId: 'buckets.assets', resourceType: 'ALIYUN_OSS' },
+        successfulItems: [],
+      };
+      (mockedStateBackend.withLock as jest.Mock).mockImplementation(
+        async (_name: string, callback: () => Promise<unknown>) => callback(),
+      );
+      mockedExecutor.executeBucketPlan.mockResolvedValue({
+        state: initialState,
+        partialFailure: failure,
+      });
+
+      await expect(deployAliyunStack(iac, mockedStateBackend)).rejects.toMatchObject({
+        message: 'bucket failed',
+        isPartialFailure: true,
+      });
+      expect(mockedLogger.error).toHaveBeenCalled();
+    });
+
+    it('should report database partial failures with prior successful items', async () => {
+      const { deployAliyunStack } = require('../../../../src/stack/aliyunStack/deployer');
+      const iac: ServerlessIac = {
+        version: '1.0',
+        app: 'test-app',
+        service: 'test-service',
+        provider: { name: ProviderEnum.ALIYUN, region: 'cn-hangzhou' },
+      };
+      const failure = {
+        error: new Error('database failed'),
+        failedItem: { action: 'update', logicalId: 'databases.main', resourceType: 'ALIYUN_RDS' },
+        successfulItems: [],
+      };
+      (mockedStateBackend.withLock as jest.Mock).mockImplementation(
+        async (_name: string, callback: () => Promise<unknown>) => callback(),
+      );
+      mockedExecutor.executeDatabasePlan.mockResolvedValue({
+        state: initialState,
+        partialFailure: failure,
+      });
+
+      await expect(deployAliyunStack(iac, mockedStateBackend)).rejects.toMatchObject({
+        message: 'database failed',
+        isPartialFailure: true,
+      });
+    });
+
+    it('should report table partial failures with prior successful items', async () => {
+      const { deployAliyunStack } = require('../../../../src/stack/aliyunStack/deployer');
+      const iac: ServerlessIac = {
+        version: '1.0',
+        app: 'test-app',
+        service: 'test-service',
+        provider: { name: ProviderEnum.ALIYUN, region: 'cn-hangzhou' },
+      };
+      const failure = {
+        error: new Error('table failed'),
+        failedItem: {
+          action: 'delete',
+          logicalId: 'tables.audit',
+          resourceType: 'ALIYUN_TABLESTORE',
+        },
+        successfulItems: [],
+      };
+      (mockedStateBackend.withLock as jest.Mock).mockImplementation(
+        async (_name: string, callback: () => Promise<unknown>) => callback(),
+      );
+      mockedExecutor.executeTablePlan.mockResolvedValue({
+        state: initialState,
+        partialFailure: failure,
+      });
+
+      await expect(deployAliyunStack(iac, mockedStateBackend)).rejects.toMatchObject({
+        message: 'table failed',
+        isPartialFailure: true,
+      });
+    });
+
+    it('should report API Gateway partial failures with prior successful items', async () => {
+      const { deployAliyunStack } = require('../../../../src/stack/aliyunStack/deployer');
+      const iac: ServerlessIac = {
+        version: '1.0',
+        app: 'test-app',
+        service: 'test-service',
+        provider: { name: ProviderEnum.ALIYUN, region: 'cn-hangzhou' },
+      };
+      const failure = {
+        error: new Error('api gateway failed'),
+        failedItem: { action: 'create', logicalId: 'events.api', resourceType: 'ALIYUN_APIGW' },
+        successfulItems: [],
+      };
+      (mockedStateBackend.withLock as jest.Mock).mockImplementation(
+        async (_name: string, callback: () => Promise<unknown>) => callback(),
+      );
+      mockedExecutor.executeApigwPlan.mockResolvedValue({
+        state: initialState,
+        partialFailure: failure,
+      });
+
+      await expect(deployAliyunStack(iac, mockedStateBackend)).rejects.toMatchObject({
+        message: 'api gateway failed',
+        isPartialFailure: true,
+      });
     });
   });
 });
