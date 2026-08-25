@@ -392,5 +392,71 @@ describe('unit test for deploy command', () => {
       expect(process.listenerCount('SIGINT')).toBe(baselineSigint);
       expect(process.listenerCount('SIGTERM')).toBe(baselineSigterm);
     });
+
+    it('should wire the backend event reporter into context', async () => {
+      setupAliyunMocks();
+      const context = { provider: 'aliyun', region: 'cn-hangzhou' };
+      const reportEvent = jest.fn();
+      mockedGetContext.mockReturnValue(context);
+      mockedCreateStateBackend.mockReturnValue({
+        ...mockBackend,
+        reportEvent,
+        replayOrphanedEvents: jest.fn().mockResolvedValue(undefined),
+      });
+
+      await deploy(baseOptions);
+
+      expect(context).toHaveProperty('reportEvent', reportEvent);
+    });
+
+    it('should flush buffered events before exiting after a signal', async () => {
+      setupAliyunMocks();
+      const releaseLock = jest.fn().mockResolvedValue(undefined);
+      const flushEvents = jest.fn().mockResolvedValue(undefined);
+      mockedCreateStateBackend.mockReturnValue({
+        withLock: jest.fn(
+          (
+            _op: string,
+            fn: () => Promise<unknown>,
+            _options?: unknown,
+            onLockAcquired?: (id: string) => void,
+          ) => {
+            onLockAcquired?.('deploy-lock-id');
+            return fn();
+          },
+        ),
+        releaseLock,
+        flushEvents,
+        loadState: jest.fn().mockResolvedValue({ resources: {} }),
+        replayOrphanedEvents: jest.fn().mockResolvedValue(undefined),
+      });
+      const exitSpy = jest.spyOn(process, 'exit').mockImplementation(() => undefined as never);
+      let releaseDeploy: (() => void) | undefined;
+      mockedDeployStack.mockImplementation(
+        () =>
+          new Promise<void>((resolve) => {
+            releaseDeploy = resolve;
+          }),
+      );
+
+      const deployPromise = deploy(baseOptions);
+      await new Promise<void>((resolve) => {
+        const timer = setInterval(() => {
+          if (releaseDeploy) {
+            clearInterval(timer);
+            resolve();
+          }
+        }, 5);
+      });
+
+      process.emit('SIGTERM');
+      await Promise.resolve();
+      expect(flushEvents).toHaveBeenCalled();
+      expect(exitSpy).toHaveBeenCalledWith(130);
+
+      releaseDeploy?.();
+      await deployPromise;
+      exitSpy.mockRestore();
+    });
   });
 });

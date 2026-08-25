@@ -266,4 +266,72 @@ describe('destroy command', () => {
 
     exitSpy.mockRestore();
   });
+
+  it('should wire the backend event reporter into context', async () => {
+    const reportEvent = jest.fn();
+    const context = { ...mockContext };
+    (getContext as jest.Mock).mockReturnValue(context);
+    (
+      jest.requireMock('../../../src/stack/aliyunStack').destroyAliyunStack as jest.Mock
+    ).mockResolvedValue(undefined);
+    (createStateBackend as jest.Mock).mockReturnValue({
+      ...mockBackend,
+      reportEvent,
+      replayOrphanedEvents: jest.fn().mockResolvedValue(undefined),
+    });
+
+    await destroyStack({ location: '/test/path' });
+
+    expect(context).toHaveProperty('reportEvent', reportEvent);
+  });
+
+  it('should flush buffered events before exiting after a signal', async () => {
+    const releaseLock = jest.fn().mockResolvedValue(undefined);
+    const flushEvents = jest.fn().mockResolvedValue(undefined);
+    (createStateBackend as jest.Mock).mockReturnValue({
+      loadState: jest.fn().mockResolvedValue({}),
+      withLock: jest.fn(
+        (
+          _op: string,
+          fn: () => Promise<unknown>,
+          _options?: unknown,
+          onLockAcquired?: (id: string) => void,
+        ) => {
+          onLockAcquired?.('destroy-lock-id');
+          return fn();
+        },
+      ),
+      releaseLock,
+      flushEvents,
+    });
+    const exitSpy = jest.spyOn(process, 'exit').mockImplementation(() => undefined as never);
+    let releaseDestroy: (() => void) | undefined;
+    (
+      jest.requireMock('../../../src/stack/aliyunStack').destroyAliyunStack as jest.Mock
+    ).mockImplementation(
+      () =>
+        new Promise<void>((resolve) => {
+          releaseDestroy = resolve;
+        }),
+    );
+
+    const destroyPromise = destroyStack({ location: '/test/path' });
+    await new Promise<void>((resolve) => {
+      const timer = setInterval(() => {
+        if (releaseDestroy) {
+          clearInterval(timer);
+          resolve();
+        }
+      }, 5);
+    });
+
+    process.emit('SIGTERM');
+    await Promise.resolve();
+    expect(flushEvents).toHaveBeenCalled();
+    expect(exitSpy).toHaveBeenCalledWith(130);
+
+    releaseDestroy?.();
+    await destroyPromise;
+    exitSpy.mockRestore();
+  });
 });

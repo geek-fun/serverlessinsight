@@ -7,6 +7,8 @@ import fs from 'node:fs';
 
 const mockedGetContext = jest.fn();
 const mockedDeployAliyunStack = jest.fn();
+const mockedDeployTencentStack = jest.fn();
+const mockedDeployVolcengineStack = jest.fn();
 
 jest.mock('../../../src/common/context', () => ({
   ...jest.requireActual('../../../src/common/context'),
@@ -21,6 +23,14 @@ jest.mock('../../../src/common', () => ({
 
 jest.mock('../../../src/stack/aliyunStack', () => ({
   deployAliyunStack: (...args: unknown[]) => mockedDeployAliyunStack(...args),
+}));
+
+jest.mock('../../../src/stack/scfStack', () => ({
+  deployTencentStack: (...args: unknown[]) => mockedDeployTencentStack(...args),
+}));
+
+jest.mock('../../../src/stack/volcengineStack', () => ({
+  deployVolcengineStack: (...args: unknown[]) => mockedDeployVolcengineStack(...args),
 }));
 
 const createMockContext = (stage = 'default', additionalFields?: Partial<Context>): Context => ({
@@ -58,6 +68,8 @@ describe('Unit tests for Aliyun stack deployment', () => {
     fs.mkdirSync(testDir, { recursive: true });
 
     mockedDeployAliyunStack.mockResolvedValue(undefined);
+    mockedDeployTencentStack.mockResolvedValue(undefined);
+    mockedDeployVolcengineStack.mockResolvedValue(undefined);
     jest.clearAllMocks();
   });
 
@@ -89,5 +101,27 @@ describe('Unit tests for Aliyun stack deployment', () => {
     await deployStack(oneFcIac, mockBackend);
 
     expect(mockedDeployAliyunStack).toHaveBeenCalledWith(oneFcIac, mockBackend);
+  });
+
+  it('should dispatch Tencent deployments to the Tencent stack', async () => {
+    const tencentIac = {
+      ...minimumIac,
+      provider: { ...minimumIac.provider, name: ProviderEnum.TENCENT },
+    };
+
+    await deployStack(tencentIac, mockBackend);
+
+    expect(mockedDeployTencentStack).toHaveBeenCalledWith(tencentIac, mockBackend);
+  });
+
+  it('should report that Huawei deployment is not implemented', async () => {
+    const huaweiIac = {
+      ...minimumIac,
+      provider: { ...minimumIac.provider, name: ProviderEnum.HUAWEI },
+    };
+
+    await expect(deployStack(huaweiIac, mockBackend)).rejects.toThrow(
+      'Huawei deployment is not yet implemented',
+    );
   });
 });
