@@ -1,5 +1,6 @@
 import { createTencentEsOperations } from '../../../../src/common/tencentClient/esOperations';
 import { TencentEsSpaceStatus } from '../../../../src/common/tencentClient/types';
+import * as polling from '../../../../src/common/polling';
 
 jest.mock('../../../../src/common/logger', () => ({
   logger: {
@@ -138,6 +139,26 @@ describe('esOperations', () => {
       );
     });
 
+    it('should include white-listed IPs and tags when provided', async () => {
+      mockEsClient.CreateServerlessSpaceV2.mockResolvedValue({ SpaceId: 'space-tags' });
+      mockEsClient.DescribeServerlessSpaces.mockResolvedValue({
+        ServerlessSpaces: [{ SpaceId: 'space-tags', Status: TencentEsSpaceStatus.NORMAL }],
+      });
+
+      await operations.createSpace({
+        SpaceName: 'tagged-space',
+        KibanaWhiteIpList: ['1.2.3.4'],
+        Tags: [{ Key: 'env', Value: 'test' }],
+      });
+
+      expect(mockEsClient.CreateServerlessSpaceV2).toHaveBeenCalledWith(
+        expect.objectContaining({
+          KibanaWhiteIpList: ['1.2.3.4'],
+          TagList: [{ TagKey: 'env', TagValue: 'test' }],
+        }),
+      );
+    });
+
     it('should throw error when no SpaceId returned', async () => {
       mockEsClient.CreateServerlessSpaceV2.mockResolvedValue({});
 
@@ -148,6 +169,36 @@ describe('esOperations', () => {
       await expect(operations.createSpace(config)).rejects.toThrow(
         'TENCENT_ES_SPACE_NO_ID_RETURNED',
       );
+    });
+
+    it('should reject when the space reaches a deleted state while creating', async () => {
+      mockEsClient.CreateServerlessSpaceV2.mockResolvedValue({ SpaceId: 'space-123' });
+      mockEsClient.DescribeServerlessSpaces.mockResolvedValue({
+        ServerlessSpaces: [{ SpaceId: 'space-123', Status: TencentEsSpaceStatus.DELETED }],
+      });
+
+      await expect(operations.createSpace({ SpaceName: 'test-space' })).rejects.toThrow(
+        'TENCENT_ES_SPACE_ERROR_STATE',
+      );
+    });
+
+    it('should translate a readiness polling timeout', async () => {
+      mockEsClient.CreateServerlessSpaceV2.mockResolvedValue({ SpaceId: 'space-123' });
+      const pollSpy = jest.spyOn(polling, 'pollUntil').mockRejectedValueOnce(
+        new polling.PollingTimeoutError({
+          description: 'ready',
+          lastValue: null,
+          attempts: 60,
+          maxAttempts: 60,
+          intervalMs: 10000,
+        }),
+      );
+
+      await expect(operations.createSpace({ SpaceName: 'test-space' })).rejects.toThrow(
+        'TENCENT_ES_SPACE_TIMEOUT_READY',
+      );
+
+      pollSpy.mockRestore();
     });
 
     it('should handle creation errors', async () => {
@@ -229,6 +280,12 @@ describe('esOperations', () => {
       const result = await operations.getSpace('space-123');
 
       expect(result?.Status).toBe(TencentEsSpaceStatus.CREATING);
+    });
+
+    it('should return null when the API reports an invalid parameter', async () => {
+      mockEsClient.DescribeServerlessSpaces.mockRejectedValue({ code: 'InvalidParameterValue' });
+
+      await expect(operations.getSpace('space-123')).resolves.toBeNull();
     });
 
     it('should retain the full detail set (max-detail state)', async () => {
@@ -388,6 +445,45 @@ describe('esOperations', () => {
     });
   });
 
+  describe('getSpaceByName', () => {
+    it('should return the matching space and map its tags', async () => {
+      mockEsClient.DescribeServerlessSpaces.mockResolvedValue({
+        ServerlessSpaces: [
+          { SpaceName: 'other' },
+          {
+            SpaceId: 'space-123',
+            SpaceName: 'target',
+            TagList: [{ TagKey: 'team', TagValue: 'core' }],
+          },
+        ],
+      });
+
+      await expect(operations.getSpaceByName('target')).resolves.toEqual(
+        expect.objectContaining({ SpaceId: 'space-123', Tags: [{ Key: 'team', Value: 'core' }] }),
+      );
+    });
+
+    it('should return null when no space matches by name', async () => {
+      mockEsClient.DescribeServerlessSpaces.mockResolvedValue({
+        ServerlessSpaces: [{ SpaceName: 'other' }],
+      });
+
+      await expect(operations.getSpaceByName('target')).resolves.toBeNull();
+    });
+
+    it('should return null for a not-found name lookup error', async () => {
+      mockEsClient.DescribeServerlessSpaces.mockRejectedValue({ code: 'InvalidParameterValue' });
+
+      await expect(operations.getSpaceByName('target')).resolves.toBeNull();
+    });
+
+    it('should rethrow unexpected name lookup errors', async () => {
+      mockEsClient.DescribeServerlessSpaces.mockRejectedValue(new Error('permission denied'));
+
+      await expect(operations.getSpaceByName('target')).rejects.toThrow('permission denied');
+    });
+  });
+
   describe('deleteSpace', () => {
     it('should delete space and all instances', async () => {
       mockEsClient.DescribeServerlessInstances.mockResolvedValue({
@@ -460,6 +556,38 @@ describe('esOperations', () => {
       await operations.deleteSpace('space-123');
 
       expect(mockEsClient.DeleteServerlessInstance).toHaveBeenCalledTimes(2);
+    });
+
+    it('should finish deletion when the space is observed in deleted state', async () => {
+      mockEsClient.DescribeServerlessInstances.mockResolvedValue({ Instances: [] });
+      mockEsClient.DescribeServerlessSpaces.mockResolvedValue({
+        ServerlessSpaces: [{ SpaceId: 'space-123', Status: TencentEsSpaceStatus.DELETED }],
+      });
+
+      await operations.deleteSpace('space-123');
+
+      expect(mockEsClient.DescribeServerlessSpaces).toHaveBeenCalledWith({
+        SpaceIds: ['space-123'],
+      });
+    });
+
+    it('should translate a deletion polling timeout', async () => {
+      mockEsClient.DescribeServerlessInstances.mockResolvedValue({ Instances: [] });
+      const pollSpy = jest.spyOn(polling, 'pollUntil').mockRejectedValueOnce(
+        new polling.PollingTimeoutError({
+          description: 'deleted',
+          lastValue: null,
+          attempts: 60,
+          maxAttempts: 60,
+          intervalMs: 10000,
+        }),
+      );
+
+      await expect(operations.deleteSpace('space-123')).rejects.toThrow(
+        'TENCENT_ES_SPACE_TIMEOUT_DELETE',
+      );
+
+      pollSpy.mockRestore();
     });
   });
 });
