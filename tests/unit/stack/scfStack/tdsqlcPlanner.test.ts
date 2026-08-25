@@ -300,6 +300,45 @@ describe('TdsqlcPlanner', () => {
       });
     });
 
+    it('should generate a drifted create plan when the stored cluster is missing remotely', async () => {
+      const existingState: ResourceState = {
+        mode: 'managed',
+        region: 'ap-guangzhou',
+        definition: expectedDefinition,
+        instances: [{ sid: 'sid', id: 'cynosdbmysql-test123', clusterName: 'test-tdsqlc' }],
+        lastUpdated: '2024-01-01T00:00:00Z',
+        metadata: { clusterId: 'cynosdbmysql-test123' },
+      };
+      jest.spyOn(stateManager, 'getResource').mockReturnValue(existingState);
+      jest.spyOn(stateManager, 'getAllResources').mockReturnValue({});
+      mockTdsqlcOperations.getCluster.mockResolvedValue(null);
+
+      const result = await generateDatabasePlan(mockContext, mockState, [mockDatabase]);
+
+      expect(result.items[0]).toMatchObject({ action: 'create', drifted: true });
+      expect(result.items[0].changes?.before).toEqual(expectedDefinition);
+    });
+
+    it('should fall back to create when the remote cluster probe fails', async () => {
+      const existingState: ResourceState = {
+        mode: 'managed',
+        region: 'ap-guangzhou',
+        definition: expectedDefinition,
+        instances: [{ sid: 'sid', id: 'cynosdbmysql-test123', clusterName: 'test-tdsqlc' }],
+        lastUpdated: '2024-01-01T00:00:00Z',
+        metadata: { clusterId: 'cynosdbmysql-test123' },
+      };
+      jest.spyOn(stateManager, 'getResource').mockReturnValue(existingState);
+      jest.spyOn(stateManager, 'getAllResources').mockReturnValue({});
+      mockTdsqlcOperations.getCluster.mockRejectedValue(new Error('probe failed'));
+
+      const result = await generateDatabasePlan(mockContext, mockState, [mockDatabase]);
+
+      expect(result.items[0]).toMatchObject({ action: 'create' });
+      expect(result.items[0]).not.toHaveProperty('drifted');
+      expect(result.items[0].changes?.before).toEqual(expectedDefinition);
+    });
+
     it('should generate delete plan for removed databases', async () => {
       const existingResources: Record<string, ResourceState> = {
         'databases.test_db': {
@@ -328,6 +367,51 @@ describe('TdsqlcPlanner', () => {
         action: 'delete',
         resourceType: 'TDSQL_C_SERVERLESS',
       });
+    });
+
+    it('should delete legacy and typed stale database states while ignoring unrelated states', async () => {
+      const existingResources: Record<string, ResourceState> = {
+        'databases.legacy': {
+          mode: 'managed',
+          region: 'ap-guangzhou',
+          definition: expectedDefinition,
+          instances: [],
+          lastUpdated: '2024-01-01T00:00:00Z',
+          metadata: {},
+        },
+        'databases.typed': {
+          mode: 'managed',
+          region: 'ap-guangzhou',
+          definition: expectedDefinition,
+          instances: [],
+          lastUpdated: '2024-01-01T00:00:00Z',
+          metadata: { resourceType: 'TDSQL_C_SERVERLESS' },
+        },
+        'databases.other': {
+          mode: 'managed',
+          region: 'ap-guangzhou',
+          definition: expectedDefinition,
+          instances: [],
+          lastUpdated: '2024-01-01T00:00:00Z',
+          metadata: { resourceType: 'OTHER' },
+        },
+        'functions.keep': {
+          mode: 'managed',
+          region: 'ap-guangzhou',
+          definition: expectedDefinition,
+          instances: [],
+          lastUpdated: '2024-01-01T00:00:00Z',
+          metadata: {},
+        },
+      };
+      jest.spyOn(stateManager, 'getAllResources').mockReturnValue(existingResources);
+
+      const result = await generateDatabasePlan(mockContext, mockState, [mockDatabase]);
+
+      expect(result.items.map((item) => item.logicalId)).toEqual(
+        expect.arrayContaining(['databases.legacy', 'databases.typed']),
+      );
+      expect(result.items).toHaveLength(3);
     });
 
     it('should handle undefined databases', async () => {

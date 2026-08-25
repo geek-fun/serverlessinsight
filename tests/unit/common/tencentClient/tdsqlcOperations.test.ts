@@ -1,5 +1,6 @@
 import { createTdsqlcOperations } from '../../../../src/common/tencentClient/tdsqlcOperations';
 import { TdsqlcClusterStatus } from '../../../../src/common/tencentClient/types';
+import * as polling from '../../../../src/common/polling';
 
 jest.mock('../../../../src/common/logger', () => ({
   logger: {
@@ -320,6 +321,89 @@ describe('tdsqlcOperations', () => {
       // is the cluster running state, not the idle-stall switch.
       expect(result?.AutoPause).toBeUndefined();
     });
+
+    it('should reject creation when the created cluster cannot be found', async () => {
+      mockCynosdbClient.CreateClusters.mockResolvedValue({ ClusterIds: ['cluster-123'] });
+      mockCynosdbClient.DescribeClusters.mockResolvedValue({ ClusterSet: [] });
+
+      await expect(
+        operations.createCluster({
+          ClusterName: 'test-cluster',
+          DbType: 'cynosdb',
+          DbVersion: '5.7',
+          DbMode: 'serverless',
+          AdminPassword: 'password123',
+          MinCpu: 0.5,
+          MaxCpu: 1,
+        }),
+      ).rejects.toThrow('TDSQL_CLUSTER_NOT_FOUND');
+    });
+
+    it('should translate a readiness polling timeout', async () => {
+      mockCynosdbClient.CreateClusters.mockResolvedValue({ ClusterIds: ['cluster-123'] });
+      const pollSpy = jest.spyOn(polling, 'pollUntil').mockRejectedValueOnce(
+        new polling.PollingTimeoutError({
+          description: 'ready',
+          lastValue: null,
+          attempts: 60,
+          maxAttempts: 60,
+          intervalMs: 10000,
+        }),
+      );
+
+      await expect(
+        operations.createCluster({
+          ClusterName: 'test-cluster',
+          DbType: 'cynosdb',
+          DbVersion: '5.7',
+          DbMode: 'serverless',
+          AdminPassword: 'password123',
+          MinCpu: 0.5,
+          MaxCpu: 1,
+        }),
+      ).rejects.toThrow('TDSQL_CLUSTER_TIMEOUT_READY');
+
+      pollSpy.mockRestore();
+    });
+
+    it('should find a cluster by name on a later full page', async () => {
+      mockCynosdbClient.DescribeClusters.mockResolvedValueOnce({
+        ClusterSet: Array.from({ length: 100 }, () => ({ ClusterName: 'other' })),
+      }).mockResolvedValueOnce({
+        ClusterSet: [{ ClusterId: 'cluster-123', ClusterName: 'target', Status: 'running' }],
+      });
+
+      const result = await operations.getClusterByName('target');
+
+      expect(result).toEqual(
+        expect.objectContaining({ ClusterId: 'cluster-123', ClusterName: 'target' }),
+      );
+      expect(mockCynosdbClient.DescribeClusters).toHaveBeenNthCalledWith(2, {
+        Limit: 100,
+        Offset: 100,
+      });
+    });
+
+    it('should stop a name probe at a short page when no cluster matches', async () => {
+      mockCynosdbClient.DescribeClusters.mockResolvedValue({
+        ClusterSet: [{ ClusterName: 'other' }],
+      });
+
+      await expect(operations.getClusterByName('target')).resolves.toBeNull();
+      expect(mockCynosdbClient.DescribeClusters).toHaveBeenCalledTimes(1);
+    });
+
+    it('should return null when a name probe reports ResourceNotFound', async () => {
+      mockCynosdbClient.DescribeClusters.mockRejectedValue({ code: 'ResourceNotFound.Cluster' });
+
+      await expect(operations.getClusterByName('target')).resolves.toBeNull();
+    });
+
+    it('should rethrow unexpected name probe errors', async () => {
+      mockCynosdbClient.DescribeClusters.mockRejectedValue(new Error('permission denied'));
+
+      await expect(operations.getClusterByName('target')).rejects.toThrow('permission denied');
+    });
   });
 
   describe('updateCluster', () => {
@@ -395,13 +479,49 @@ describe('tdsqlcOperations', () => {
 
     it('should wait through OFFLINE status', async () => {
       mockCynosdbClient.OfflineCluster.mockResolvedValue({});
-      mockCynosdbClient.DescribeClusters.mockResolvedValue({ ClusterSet: [] });
+      mockCynosdbClient.DescribeClusters.mockResolvedValueOnce({
+        ClusterSet: [{ Status: TdsqlcClusterStatus.OFFLINE }],
+      }).mockResolvedValueOnce({ ClusterSet: [] });
 
-      await operations.deleteCluster('cluster-123');
+      const deletion = operations.deleteCluster('cluster-123');
+      await jest.advanceTimersByTimeAsync(10000);
+      await deletion;
 
       expect(mockCynosdbClient.OfflineCluster).toHaveBeenCalledWith({
         ClusterId: 'cluster-123',
       });
+    });
+
+    it('should wait through a non-terminal cluster status during deletion', async () => {
+      mockCynosdbClient.OfflineCluster.mockResolvedValue({});
+      mockCynosdbClient.DescribeClusters.mockResolvedValueOnce({
+        ClusterSet: [{ Status: TdsqlcClusterStatus.RUNNING }],
+      }).mockResolvedValueOnce({ ClusterSet: [] });
+
+      const deletion = operations.deleteCluster('cluster-123');
+      await jest.advanceTimersByTimeAsync(10000);
+      await deletion;
+
+      expect(mockCynosdbClient.DescribeClusters).toHaveBeenCalledTimes(2);
+    });
+
+    it('should translate a deletion polling timeout', async () => {
+      mockCynosdbClient.OfflineCluster.mockResolvedValue({});
+      const pollSpy = jest.spyOn(polling, 'pollUntil').mockRejectedValueOnce(
+        new polling.PollingTimeoutError({
+          description: 'deleted',
+          lastValue: null,
+          attempts: 60,
+          maxAttempts: 60,
+          intervalMs: 10000,
+        }),
+      );
+
+      await expect(operations.deleteCluster('cluster-123')).rejects.toThrow(
+        'TDSQL_CLUSTER_TIMEOUT_DELETE',
+      );
+
+      pollSpy.mockRestore();
     });
   });
 });
