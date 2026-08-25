@@ -57,6 +57,34 @@ export const generateFunctionPlan = async (
           config.role = roleInstance.trn;
         }
       }
+      // Mirror the executor's TLS log-resource behavior: functionToVefaasConfig(fn)
+      // never sets logConfig on its own (it's only populated via the second
+      // `options` argument), so without this the diff below always compares
+      // desiredDefinition.logConfig === undefined regardless of `fn.log` in the
+      // YAML — meaning `log: true` could never be detected as drift and the
+      // planner would report `noop` forever, so `UpdateFunction`'s `TlsConfig`
+      // never gets sent. Derive the same project/topic names
+      // createDependentResources would use (existing TLS instances in state
+      // take priority; otherwise the deterministic `{service}-{stage}-tls` /
+      // `{service}-{stage}-logs` names) so the diff can see the field change.
+      if (fn.log) {
+        if (currentState?.instances?.length) {
+          const tlsTopicInstance = currentState.instances.find(
+            (i) => (i as { type?: string }).type === 'VOLCENGINE_TLS_TOPIC',
+          ) as { id?: string } | undefined;
+          if (tlsTopicInstance?.id) {
+            const [projectName, topicName] = tlsTopicInstance.id.split('/');
+            config.logConfig = { project: projectName, topic: topicName };
+          }
+        }
+        if (!config.logConfig) {
+          const serviceName = `${context.app}-${context.service}`;
+          config.logConfig = {
+            project: `${serviceName}-${context.stage}-tls`,
+            topic: `${serviceName}-${context.stage}-logs`,
+          };
+        }
+      }
       const baseDefinition = extractVefaasDefinition(config, desiredCodeHash);
       const desiredDefinition = fn.iam ? { ...baseDefinition, iam: fn.iam } : baseDefinition;
 
