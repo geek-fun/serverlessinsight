@@ -26,6 +26,8 @@ export type MockAliyunClient = {
     abolishApi: jest.Mock;
     bindCustomDomain: jest.Mock;
     unbindCustomDomain: jest.Mock;
+    describeGatewayLogConfig: jest.Mock;
+    createGatewayLogConfig: jest.Mock;
   };
   oss: {
     createBucket: jest.Mock;
@@ -82,7 +84,12 @@ export type MockAliyunClient = {
   };
   sls: {
     createProject: jest.Mock;
+    getProject: jest.Mock;
+    addTags: jest.Mock;
+    removeTags: jest.Mock;
+    listLogStores: jest.Mock;
     createLogstore: jest.Mock;
+    getLogstore: jest.Mock;
     createIndex: jest.Mock;
     waitForProject: jest.Mock;
     waitForLogstore: jest.Mock;
@@ -143,6 +150,8 @@ export const createMockAliyunClient = (): MockAliyunClient => {
       abolishApi: jest.fn().mockResolvedValue({}),
       bindCustomDomain: jest.fn().mockResolvedValue({}),
       unbindCustomDomain: jest.fn().mockResolvedValue({}),
+      describeGatewayLogConfig: jest.fn().mockResolvedValue(null),
+      createGatewayLogConfig: jest.fn().mockResolvedValue({}),
     },
     oss: {
       createBucket: jest.fn().mockResolvedValue({}),
@@ -219,7 +228,12 @@ export const createMockAliyunClient = (): MockAliyunClient => {
     },
     sls: {
       createProject: jest.fn().mockResolvedValue({ projectName: 'test-project' }),
+      getProject: jest.fn().mockResolvedValue({ projectName: 'test-project' }),
+      addTags: jest.fn().mockResolvedValue(undefined),
+      removeTags: jest.fn().mockResolvedValue(undefined),
+      listLogStores: jest.fn().mockResolvedValue([]),
       createLogstore: jest.fn().mockResolvedValue({ logstoreName: 'test-logstore' }),
+      getLogstore: jest.fn().mockResolvedValue(null),
       createIndex: jest.fn().mockResolvedValue({}),
       waitForProject: jest.fn().mockResolvedValue({}),
       waitForLogstore: jest.fn().mockResolvedValue({}),
@@ -254,6 +268,16 @@ export type MockTencentClient = {
     GetCustomDomain: jest.Mock;
     DeleteCustomDomain: jest.Mock;
   };
+  cls: {
+    CreateLogset: jest.Mock;
+    DescribeLogsets: jest.Mock;
+    DeleteLogset: jest.Mock;
+    CreateTopic: jest.Mock;
+    DescribeTopics: jest.Mock;
+    ModifyTopic: jest.Mock;
+    DeleteTopic: jest.Mock;
+    CreateIndex: jest.Mock;
+  };
   cos: {
     putBucket: jest.Mock;
     getBucket: jest.Mock;
@@ -278,6 +302,16 @@ export const createMockTencentClient = (): MockTencentClient => ({
     CreateCustomDomain: jest.fn().mockResolvedValue({}),
     GetCustomDomain: jest.fn().mockResolvedValue(null),
     DeleteCustomDomain: jest.fn().mockResolvedValue({}),
+  },
+  cls: {
+    CreateLogset: jest.fn().mockResolvedValue({ LogsetId: 'logset-1' }),
+    DescribeLogsets: jest.fn().mockResolvedValue({ Logsets: [], TotalCount: 0 }),
+    DeleteLogset: jest.fn().mockResolvedValue({}),
+    CreateTopic: jest.fn().mockResolvedValue({ TopicId: 'topic-1' }),
+    DescribeTopics: jest.fn().mockResolvedValue({ Topics: [], TotalCount: 0 }),
+    ModifyTopic: jest.fn().mockResolvedValue({}),
+    DeleteTopic: jest.fn().mockResolvedValue({}),
+    CreateIndex: jest.fn().mockResolvedValue({}),
   },
   cos: {
     putBucket: jest.fn().mockResolvedValue({}),
@@ -332,6 +366,9 @@ export type MockVolcengineClient = {
     deleteIndex: jest.Mock;
     waitForProject: jest.Mock;
     waitForTopic: jest.Mock;
+    addTags: jest.Mock;
+    removeTags: jest.Mock;
+    listTopics: jest.Mock;
   };
   apigw: {
     createGateway: jest.Mock;
@@ -351,7 +388,7 @@ export type MockVolcengineClient = {
 
 export const createMockVolcengineClient = (): MockVolcengineClient => ({
   vefaas: {
-    createFunction: jest.fn().mockResolvedValue('func-123'),
+    createFunction: jest.fn().mockResolvedValue({ functionId: 'func-123' }),
     getFunction: jest.fn().mockResolvedValue({
       functionId: 'func-123',
       functionName: 'test-function',
@@ -438,6 +475,9 @@ export const createMockVolcengineClient = (): MockVolcengineClient => ({
     deleteIndex: jest.fn().mockResolvedValue(undefined),
     waitForProject: jest.fn().mockResolvedValue(undefined),
     waitForTopic: jest.fn().mockResolvedValue(undefined),
+    addTags: jest.fn().mockResolvedValue(undefined),
+    removeTags: jest.fn().mockResolvedValue(undefined),
+    listTopics: jest.fn().mockResolvedValue([]),
   },
   apigw: {
     createGateway: jest.fn().mockResolvedValue({
