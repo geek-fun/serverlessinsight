@@ -8,6 +8,10 @@ export type ScfFunctionConfig = {
   MemorySize: number;
   Timeout: number;
   Role?: string;
+  ClsLogsetId?: string;
+  ClsTopicId?: string;
+  ClsLogsetName?: string;
+  ClsTopicName?: string;
   Environment?: {
     Variables: Array<{ Key: string; Value: string }>;
   };
@@ -241,6 +245,13 @@ export const extractScfDefinition = (
       {} as Record<string, string>,
     ) ?? {};
 
+  // The CLS destination is diffed by stable names (not raw ids) so planner
+  // drift detection survives logset/topic id churn across re-deploys.
+  const logConfig =
+    config.ClsLogsetName && config.ClsTopicName
+      ? { logset: config.ClsLogsetName, topic: config.ClsTopicName }
+      : undefined;
+
   const baseDefinition: ResourceAttributes = {
     functionName: config.FunctionName,
     runtime: config.Runtime,
@@ -254,6 +265,7 @@ export const extractScfDefinition = (
     cfsConfig: config.CfsConfig ?? null,
     useGpu: config.UseGpu ?? null,
     imageConfig: config.ImageConfig ?? null,
+    ...(logConfig ? { logConfig } : {}),
   };
 
   return iam ? { ...baseDefinition, iam } : baseDefinition;

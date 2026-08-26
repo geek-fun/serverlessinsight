@@ -275,6 +275,64 @@ describe('SCF Planner', () => {
       });
     });
 
+    it('treats CLS destination change as configuration drift', async () => {
+      mockScfOperations.getFunction.mockResolvedValue({
+        FunctionName: 'test-function',
+        Runtime: 'Nodejs18.15',
+        Handler: 'index.handler',
+        MemorySize: 512,
+        Timeout: 10,
+        Environment: {
+          Variables: [{ Key: 'NODE_ENV', Value: 'production' }],
+        },
+      });
+
+      const fnWithLog = { ...testFunction, log: true };
+
+      const state = setResource(initalState, 'functions.test_fn', {
+        mode: 'managed',
+        region: 'ap-guangzhou',
+        definition: {
+          functionName: 'test-function',
+          runtime: 'Nodejs18.15',
+          handler: 'index.handler',
+          memorySize: 512,
+          timeout: 10,
+          environment: { NODE_ENV: 'production' },
+          codeHash: 'mock-code-hash',
+          vpcConfig: null,
+          diskSize: null,
+          cfsConfig: null,
+          useGpu: null,
+          imageConfig: null,
+          logConfig: { logset: 'old-logset', topic: 'old-topic' },
+        },
+        instances: [
+          {
+            sid: 'si:tencent:scf:default:test-function',
+            id: 'test-function',
+            functionName: 'test-function',
+          },
+        ],
+        lastUpdated: new Date().toISOString(),
+      });
+
+      const plan = await generateFunctionPlan(mockContext, state, [fnWithLog]);
+
+      expect(plan.items).toHaveLength(1);
+      expect(plan.items[0]).toMatchObject({
+        logicalId: 'functions.test_fn',
+        action: 'update',
+        resourceType: 'SCF',
+        drifted: true,
+      });
+      expect(plan.items[0].changes?.after).toEqual(
+        expect.objectContaining({
+          logConfig: { logset: 'test-app-default-cls', topic: 'test-service-default-fn-logs' },
+        }),
+      );
+    });
+
     it('should plan to delete function when removed from config', async () => {
       mockScfOperations.getFunction.mockResolvedValue(null);
 

@@ -11,6 +11,7 @@ import { functionToScfConfig, extractScfDefinition } from './scfTypes';
 import { getAllResources, getResource } from '../../common/stateManager';
 import { attributesEqual, computeZipContentHash } from '../../common/hashUtils';
 import { OWNERSHIP_TAG_KEY, isOwnedByStack } from '../ownershipTag';
+import { buildSharedLogsetName, buildFunctionTopicName } from './sharedLogset';
 
 const planFunctionDeletion = (logicalId: string, definition: ResourceAttributes): PlanItem => ({
   logicalId,
@@ -40,7 +41,14 @@ export const generateFunctionPlan = async (
     functions.map(async (fn): Promise<PlanItem> => {
       const logicalId = `functions.${fn.key}`;
       const currentState = getResource(state, logicalId);
-      const config = functionToScfConfig(fn);
+      let config = functionToScfConfig(fn);
+      if (fn.log) {
+        config = {
+          ...config,
+          ClsLogsetName: buildSharedLogsetName(context.app, context.stage),
+          ClsTopicName: buildFunctionTopicName(context),
+        };
+      }
       const codePath = fn.code!.path;
       const desiredCodeHash = await computeZipContentHash(codePath);
       const desiredDefinition = extractScfDefinition(config, desiredCodeHash, fn.iam);
