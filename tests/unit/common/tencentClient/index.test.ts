@@ -52,6 +52,21 @@ jest.mock('../../../../src/common/tencentClient/sslOperations', () => ({
   })),
 }));
 
+jest.mock('../../../../src/common/tencentClient/clsOperations', () => ({
+  createClsOperations: jest.fn((client) => ({
+    _mock: 'cls',
+    client,
+  })),
+}));
+
+jest.mock('tencentcloud-sdk-nodejs-cls', () => ({
+  cls: {
+    v20201016: {
+      Client: jest.fn(() => ({ _mock: 'clsClient' })),
+    },
+  },
+}));
+
 jest.mock('tencentcloud-sdk-nodejs-scf', () => ({
   scf: {
     v20180416: {
@@ -109,6 +124,7 @@ describe('tencentClient index', () => {
       expect(client).toHaveProperty('es');
       expect(client).toHaveProperty('ssl');
       expect(client).toHaveProperty('dns');
+      expect(client).toHaveProperty('cls');
     });
 
     it('should initialize SCF client with correct config', () => {
@@ -239,6 +255,31 @@ describe('tencentClient index', () => {
       expect(createSslOperations).toHaveBeenCalled();
     });
 
+    it('creates CLS client with the regional endpoint', () => {
+      createTencentClient(mockContext as any);
+
+      const ClsClient = require('tencentcloud-sdk-nodejs-cls').cls.v20201016.Client;
+      expect(ClsClient).toHaveBeenCalledWith(
+        expect.objectContaining({
+          credential: {
+            secretId: 'test-key-id',
+            secretKey: 'test-key-secret',
+          },
+          region: 'ap-guangzhou',
+          profile: {
+            httpProfile: {
+              endpoint: 'cls.tencentcloudapi.com',
+            },
+          },
+        }),
+      );
+
+      const { createClsOperations } = require('../../../../src/common/tencentClient/clsOperations');
+      expect(createClsOperations).toHaveBeenCalledWith(
+        expect.objectContaining({ _mock: 'clsClient' }),
+      );
+    });
+
     it('should set correct endpoint for each service', () => {
       createTencentClient(mockContext as any);
 
@@ -297,6 +338,7 @@ describe('tencentClient index', () => {
       expect(typeof client.es).toBe('object');
       expect(typeof client.ssl).toBe('object');
       expect(typeof client.dns).toBe('object');
+      expect(typeof client.cls).toBe('object');
     });
   });
 });

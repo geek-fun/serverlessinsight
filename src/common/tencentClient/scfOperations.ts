@@ -73,6 +73,8 @@ export const createScfOperations = (scfClient: ScfSdkClient, deps: ScfOperations
         MemorySize: config.MemorySize,
         Timeout: config.Timeout,
         ...(config.Role && { Role: config.Role }),
+        ...(config.ClsLogsetId && { ClsLogsetId: config.ClsLogsetId }),
+        ...(config.ClsTopicId && { ClsTopicId: config.ClsTopicId }),
         ...(config.Environment && { Environment: config.Environment }),
       };
 
@@ -222,11 +224,17 @@ export const createScfOperations = (scfClient: ScfSdkClient, deps: ScfOperations
       // Handler and Runtime are set at creation time and CANNOT be changed via
       // UpdateFunctionConfiguration (Tencent rejects them with
       // InvalidParameterValue.Handler / .Runtime) — omit them here.
+      //
+      // Tencent requires Role whenever the Cls* destination changes, else
+      // UpdateFunctionConfiguration fails with InvalidParameterValue.ClsRole —
+      // so Role is forwarded here whenever an si-managed role is present.
       const params = {
         FunctionName: config.FunctionName,
         MemorySize: config.MemorySize,
         Timeout: config.Timeout,
         ...(config.Role && { Role: config.Role }),
+        ...(config.ClsLogsetId && { ClsLogsetId: config.ClsLogsetId }),
+        ...(config.ClsTopicId && { ClsTopicId: config.ClsTopicId }),
         ...(config.Environment && { Environment: config.Environment }),
       };
 

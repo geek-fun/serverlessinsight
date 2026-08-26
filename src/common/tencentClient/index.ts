@@ -4,6 +4,7 @@ import * as tencentCam from 'tencentcloud-sdk-nodejs-cam';
 import * as tencentEs from 'tencentcloud-sdk-nodejs-es';
 import * as tencentSsl from 'tencentcloud-sdk-nodejs-ssl';
 import * as tencentTag from 'tencentcloud-sdk-nodejs-tag';
+import * as tencentCls from 'tencentcloud-sdk-nodejs-cls';
 import COS from 'cos-nodejs-sdk-v5';
 import { Context } from '../../types';
 import { createScfOperations } from './scfOperations';
@@ -13,8 +14,10 @@ import { createTdsqlcOperations } from './tdsqlcOperations';
 import { createTencentEsOperations } from './esOperations';
 import { createDnsOperations, createDnsClient } from './dnspodOperations';
 import { createSslOperations } from './sslOperations';
+import { createClsOperations } from './clsOperations';
 
 export * from './types';
+export { createClsOperations } from './clsOperations';
 
 const ScfClient = tencentcloud.scf.v20180416.Client;
 const CynosdbClient = cynosdb.cynosdb.v20190107.Client;
@@ -22,6 +25,7 @@ const CamClient = tencentCam.cam.v20190116.Client;
 const EsClient = tencentEs.es.v20180416.Client;
 const SslClient = tencentSsl.ssl.v20191205.Client;
 const TagClient = tencentTag.tag.v20180813.Client;
+const ClsClient = tencentCls.cls.v20201016.Client;
 
 // Initialize SDK clients (internal)
 const initializeSdkClients = (context: Context) => {
@@ -120,6 +124,21 @@ const initializeSdkClients = (context: Context) => {
 
   const tagClient = new TagClient(tagClientConfig);
 
+  const clsClientConfig = {
+    credential: {
+      secretId: context.accessKeyId,
+      secretKey: context.accessKeySecret,
+    },
+    region: context.region,
+    profile: {
+      httpProfile: {
+        endpoint: 'cls.tencentcloudapi.com',
+      },
+    },
+  };
+
+  const clsClient = new ClsClient(clsClientConfig);
+
   return {
     scf: scfClient,
     cos: cosClient,
@@ -129,6 +148,7 @@ const initializeSdkClients = (context: Context) => {
     dns: createDnsClient(context),
     cam: camClient,
     tag: tagClient,
+    cls: clsClient,
   };
 };
 
@@ -148,6 +168,7 @@ export const createTencentClient = (context: Context) => {
     tdsqlc: createTdsqlcOperations(sdkClients.cynosdb, context),
     es: createTencentEsOperations(sdkClients.es, context),
     ssl: createSslOperations(sdkClients.ssl),
+    cls: createClsOperations(sdkClients.cls),
     dns: dnsOps,
   };
 };

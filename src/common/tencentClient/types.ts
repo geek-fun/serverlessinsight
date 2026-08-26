@@ -11,6 +11,8 @@ export type ScfFunctionConfig = {
   MemorySize?: number;
   Timeout?: number;
   Role?: string;
+  ClsLogsetId?: string;
+  ClsTopicId?: string;
   Environment?: {
     Variables?: Array<{
       Key: string;
