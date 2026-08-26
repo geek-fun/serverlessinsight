@@ -144,6 +144,50 @@ describe('scfOperations', () => {
       );
     });
 
+    it('forwards CLS IDs during SCF function creation', async () => {
+      mockScfClient.CreateFunction.mockResolvedValue({});
+
+      const config = {
+        FunctionName: 'test-function',
+        Handler: 'index.handler',
+        Runtime: 'nodejs18.x',
+        MemorySize: 256,
+        Timeout: 30,
+        ClsLogsetId: 'logset-1',
+        ClsTopicId: 'topic-1',
+      };
+
+      await operations.createFunction(config, 'BASE64_CODE');
+
+      expect(mockScfClient.CreateFunction).toHaveBeenCalledWith(
+        expect.objectContaining({
+          ClsLogsetId: 'logset-1',
+          ClsTopicId: 'topic-1',
+        }),
+      );
+    });
+
+    it('should omit CLS IDs when not provided on create', async () => {
+      mockScfClient.CreateFunction.mockResolvedValue({});
+
+      const config = {
+        FunctionName: 'test-function',
+        Handler: 'index.handler',
+        Runtime: 'nodejs18.x',
+        MemorySize: 256,
+        Timeout: 30,
+      };
+
+      await operations.createFunction(config, 'BASE64_CODE');
+
+      expect(mockScfClient.CreateFunction).toHaveBeenCalledWith(
+        expect.not.objectContaining({
+          ClsLogsetId: expect.anything(),
+          ClsTopicId: expect.anything(),
+        }),
+      );
+    });
+
     it('should handle SDK errors during creation', async () => {
       const error = new Error('CreateFunction failed');
       mockScfClient.CreateFunction.mockRejectedValue(error);
@@ -622,6 +666,31 @@ describe('scfOperations', () => {
       expect(mockScfClient.UpdateFunctionConfiguration).toHaveBeenCalledWith(
         expect.objectContaining({
           Role: 'role-id-123',
+        }),
+      );
+    });
+
+    it('forwards CLS IDs and Role during SCF configuration update', async () => {
+      mockScfClient.UpdateFunctionConfiguration.mockResolvedValue({});
+
+      const config = {
+        FunctionName: 'test-function',
+        Handler: 'index.handler',
+        Runtime: 'nodejs18.x',
+        MemorySize: 512,
+        Timeout: 60,
+        Role: 'role-id-123',
+        ClsLogsetId: 'logset-1',
+        ClsTopicId: 'topic-1',
+      };
+
+      await operations.updateFunctionConfiguration(config);
+
+      expect(mockScfClient.UpdateFunctionConfiguration).toHaveBeenCalledWith(
+        expect.objectContaining({
+          Role: 'role-id-123',
+          ClsLogsetId: 'logset-1',
+          ClsTopicId: 'topic-1',
         }),
       );
     });

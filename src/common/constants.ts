@@ -39,3 +39,8 @@ export const RAM_ROLE_PROPAGATION_DELAY_MS = 5000; // 5 seconds
 // fail with "Status is Creating, unsupport operate" if issued too early)
 export const SCF_STATUS_POLL_INTERVAL_MS = 3000; // 3 seconds
 export const SCF_STATUS_POLL_MAX_ATTEMPTS = 20; // up to 60 seconds
+
+// CLS topic visibility polling (CreateTopic is async — the topic is not
+// queryable via DescribeTopics until the platform finishes provisioning)
+export const CLS_TOPIC_POLL_INTERVAL_MS = 3000; // 3 seconds
+export const CLS_TOPIC_POLL_MAX_ATTEMPTS = 20; // up to 60 seconds
