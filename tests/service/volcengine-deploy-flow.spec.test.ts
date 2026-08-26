@@ -98,4 +98,54 @@ describe('Volcengine Deploy Flow Service Test', () => {
       ).rejects.toThrow();
     });
   });
+
+  describe('Volcengine Shared TLS Log Deploy', () => {
+    const logFixtureFile = path.join(
+      __dirname,
+      '../fixtures/serverless-insight-volcengine-log.yml',
+    );
+
+    it('creates a shared app-scoped TLS project and a nested function topic', async () => {
+      // Fresh probe: no remote function and no remote topic yet.
+      mockClient.vefaas.getFunction.mockResolvedValue(null);
+      mockClient.tls.getTopic.mockResolvedValue(null);
+
+      await deploy({
+        location: logFixtureFile,
+        stage: 'dev',
+        autoApprove: true,
+        region: 'cn-beijing',
+        provider: 'volcengine',
+      });
+
+      expect(mockClient.tls.createProject).toHaveBeenCalledWith(
+        expect.objectContaining({ projectName: 'insight-volc-app-dev-tls' }),
+      );
+      expect(mockClient.tls.createTopic).toHaveBeenCalledWith(
+        expect.objectContaining({
+          projectName: 'insight-volc-app-dev-tls',
+          topicName: 'insight-volc-dev-fn-logs',
+        }),
+      );
+      expect(mockClient.tls.addTags).toHaveBeenCalledWith(
+        expect.objectContaining({
+          resourceType: 'project',
+          resourcesList: ['proj-123'],
+          tags: [{ key: 'si-owned-by', value: 'insight-volc-app:shared:logs.project' }],
+        }),
+      );
+
+      const saved = JSON.parse(await fs.readFile(stateFilePath, 'utf-8'));
+      expect(saved.stages.dev.shared['logs.project']).toMatchObject({
+        definition: { projectName: 'insight-volc-app-dev-tls' },
+        instances: [
+          expect.objectContaining({
+            type: 'VOLCENGINE_TLS_PROJECT',
+            id: 'insight-volc-app-dev-tls',
+            projectId: 'proj-123',
+          }),
+        ],
+      });
+    });
+  });
 });
