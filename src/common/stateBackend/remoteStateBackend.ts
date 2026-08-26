@@ -146,7 +146,10 @@ export const createRemoteStateBackend = (
         provider: state.provider,
         stages: {
           ...existing.stages,
-          [stage]: { resources: state.resources },
+          [stage]: {
+            resources: state.resources,
+            shared: state.stages?.[stage]?.shared ?? existing.stages?.[stage]?.shared ?? {},
+          },
         },
         resources: state.resources,
       };

@@ -11,6 +11,10 @@ import {
   getRoleArnFromState,
   registerStateMigration,
   clearStateMigrations,
+  setSharedResource,
+  getSharedResource,
+  removeSharedResource,
+  getAllSharedResources,
 } from '../../../src/common/stateManager';
 import {
   ResourceState,
@@ -545,6 +549,171 @@ describe('StateManager', () => {
         expect(first.lineage).toBeDefined();
         expect(second.lineage).toBe(first.lineage);
       });
+    });
+
+    it('preserves shared resources during local save round trip', () => {
+      const sharedLog: ResourceState = {
+        mode: 'managed',
+        region: 'cn-hangzhou',
+        definition: { logProject: 'logs', logstore: 'app-logs' },
+        instances: [],
+        lastUpdated: '2025-01-01T00:00:00Z',
+      };
+      const fnResource: ResourceState = {
+        mode: 'managed',
+        region: 'cn-hangzhou',
+        definition: { functionName: 'test-fn' },
+        instances: [{ sid: 'si:aliyun:fc3:default:test-fn', id: 'test-fn' }],
+        lastUpdated: '2025-01-01T00:00:00Z',
+      };
+      const stateOnDisk = {
+        version: CURRENT_STATE_VERSION,
+        provider: 'aliyun',
+        app: 'test-app',
+        service: 'test-service',
+        stages: {
+          dev: {
+            resources: {},
+            shared: { logs: sharedLog },
+          },
+        },
+      };
+
+      ensureStateDir(testDir);
+      fs.writeFileSync(statePath, JSON.stringify(stateOnDisk, null, 2));
+
+      let state = loadState('aliyun', 'test-app', 'test-service', 'dev', testDir);
+      state = setResource(state, 'functions.test', fnResource);
+      saveState(state, 'test-app', 'test-service', 'dev', testDir);
+
+      const reloaded = loadState('aliyun', 'test-app', 'test-service', 'dev', testDir);
+      expect(reloaded.stages.dev.shared?.logs).toEqual(sharedLog);
+      expect(reloaded.stages.dev.shared?.logs?.definition).toEqual(sharedLog.definition);
+      expect(reloaded.resources['functions.test']).toEqual(fnResource);
+    });
+
+    it('preserves legacy stages without shared metadata', () => {
+      const legacyResource: ResourceState = {
+        mode: 'managed',
+        region: 'ap-guangzhou',
+        definition: { functionName: 'legacy-fn' },
+        instances: [{ sid: 'si:tencent:scf:default:legacy-fn', id: 'legacy-fn' }],
+        lastUpdated: '2025-01-01T00:00:00Z',
+      };
+      const prodResource: ResourceState = {
+        mode: 'managed',
+        region: 'ap-guangzhou',
+        definition: { functionName: 'prod-fn' },
+        instances: [{ sid: 'si:tencent:scf:default:prod-fn', id: 'prod-fn' }],
+        lastUpdated: '2025-01-01T00:00:00Z',
+      };
+      const stateOnDisk = {
+        version: CURRENT_STATE_VERSION,
+        provider: 'tencent',
+        app: 'test-app',
+        service: 'test-service',
+        stages: {
+          dev: { resources: { 'functions.legacy': legacyResource } },
+          prod: { resources: { 'functions.prod': prodResource } },
+        },
+      };
+
+      ensureStateDir(testDir);
+      fs.writeFileSync(statePath, JSON.stringify(stateOnDisk, null, 2));
+
+      const state = loadState('tencent', 'test-app', 'test-service', 'dev', testDir);
+      saveState(state, 'test-app', 'test-service', 'dev', testDir);
+      const reloaded = loadState('tencent', 'test-app', 'test-service', 'dev', testDir);
+
+      expect(reloaded.stages.dev.resources['functions.legacy']).toEqual(legacyResource);
+      expect(reloaded.stages.prod.resources['functions.prod']).toEqual(prodResource);
+      expect(reloaded.stages.dev.shared).toEqual({});
+    });
+
+    it('does not copy shared resources between stages', () => {
+      const sharedLog: ResourceState = {
+        mode: 'managed',
+        region: 'cn-hangzhou',
+        definition: { logProject: 'logs' },
+        instances: [],
+        lastUpdated: '2025-01-01T00:00:00Z',
+      };
+      const stateOnDisk = {
+        version: CURRENT_STATE_VERSION,
+        provider: 'aliyun',
+        app: 'test-app',
+        service: 'test-service',
+        stages: {
+          dev: { resources: {}, shared: { logs: sharedLog } },
+          prod: { resources: {} },
+        },
+      };
+
+      ensureStateDir(testDir);
+      fs.writeFileSync(statePath, JSON.stringify(stateOnDisk, null, 2));
+
+      const state = loadState('aliyun', 'test-app', 'test-service', 'prod', testDir);
+      saveState(state, 'test-app', 'test-service', 'prod', testDir);
+      const reloaded = loadState('aliyun', 'test-app', 'test-service', 'prod', testDir);
+
+      expect(reloaded.stages.prod.shared).toEqual({});
+      expect(reloaded.stages.dev.shared?.logs).toEqual(sharedLog);
+    });
+  });
+
+  describe('shared resource helpers', () => {
+    const makeSharedLog = (): ResourceState => ({
+      mode: 'managed',
+      region: 'cn-hangzhou',
+      definition: { logProject: 'logs' },
+      instances: [],
+      lastUpdated: '2025-01-01T00:00:00Z',
+    });
+
+    it('setSharedResource adds without touching resources', () => {
+      const fnResource: ResourceState = {
+        mode: 'managed',
+        region: 'cn-hangzhou',
+        definition: { functionName: 'test-fn' },
+        instances: [{ sid: 'si:aliyun:fc3:default:test-fn', id: 'test-fn' }],
+        lastUpdated: '2025-01-01T00:00:00Z',
+      };
+      let state = loadState('aliyun', 'test-app', 'test-service', 'dev', testDir);
+      state = setResource(state, 'functions.test', fnResource);
+      const shared = makeSharedLog();
+
+      const updated = setSharedResource(state, 'dev', 'logs', shared);
+
+      expect(getAllSharedResources(updated, 'dev')).toEqual({ logs: shared });
+      expect(getResource(updated, 'functions.test')).toEqual(fnResource);
+    });
+
+    it('getSharedResource returns undefined when absent', () => {
+      const state = loadState('aliyun', 'test-app', 'test-service', 'dev', testDir);
+      expect(getSharedResource(state, 'dev', 'logs')).toBeUndefined();
+    });
+
+    it('removeSharedResource returns state unchanged when shared absent', () => {
+      const state = loadState('aliyun', 'test-app', 'test-service', 'dev', testDir);
+      const updated = removeSharedResource(state, 'dev', 'logs');
+      expect(updated).toBe(state);
+    });
+
+    it('removeSharedResource deletes key and deletion persists through save/load', () => {
+      let state = loadState('aliyun', 'test-app', 'test-service', 'dev', testDir);
+      const shared = makeSharedLog();
+      state = setSharedResource(state, 'dev', 'logs', shared);
+      state = setSharedResource(state, 'dev', 'metrics', shared);
+      saveState(state, 'test-app', 'test-service', 'dev', testDir);
+
+      let reloaded = loadState('aliyun', 'test-app', 'test-service', 'dev', testDir);
+      reloaded = removeSharedResource(reloaded, 'dev', 'logs');
+      expect(getSharedResource(reloaded, 'dev', 'logs')).toBeUndefined();
+      saveState(reloaded, 'test-app', 'test-service', 'dev', testDir);
+
+      const final = loadState('aliyun', 'test-app', 'test-service', 'dev', testDir);
+      expect(getSharedResource(final, 'dev', 'logs')).toBeUndefined();
+      expect(getSharedResource(final, 'dev', 'metrics')).toEqual(shared);
     });
   });
 

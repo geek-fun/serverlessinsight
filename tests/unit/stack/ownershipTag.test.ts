@@ -1,7 +1,9 @@
 import {
   OWNERSHIP_TAG_KEY,
   buildOwnershipTagValue,
+  buildSharedOwnershipTagValue,
   parseOwnershipTagValue,
+  isOwnedByApp,
   isOwnedByStack,
 } from '../../../src/stack/ownershipTag';
 
@@ -50,5 +52,43 @@ describe('ownershipTag', () => {
 
   it('returns false for unrelated tags', () => {
     expect(isOwnedByStack(context, 'functions.probe', [{ Key: 'env', Value: 'prod' }])).toBe(false);
+  });
+
+  describe('shared app-scoped ownership', () => {
+    it('builds an app-scoped shared ownership value', () => {
+      expect(buildSharedOwnershipTagValue('my-app', 'logs.project')).toBe(
+        'my-app:shared:logs.project',
+      );
+    });
+
+    it('returns true when shared tag matches app and logical id', () => {
+      const tags = [
+        { Key: OWNERSHIP_TAG_KEY, Value: buildSharedOwnershipTagValue('my-app', 'logs.project') },
+      ];
+      expect(isOwnedByApp('my-app', 'logs.project', tags)).toBe(true);
+    });
+
+    it('returns false when another app owns the shared resource', () => {
+      const tags = [
+        {
+          Key: OWNERSHIP_TAG_KEY,
+          Value: buildSharedOwnershipTagValue('other-app', 'logs.project'),
+        },
+      ];
+      expect(isOwnedByApp('my-app', 'logs.project', tags)).toBe(false);
+    });
+
+    it('returns false when the logical id differs for the same app', () => {
+      const tags = [
+        { Key: OWNERSHIP_TAG_KEY, Value: buildSharedOwnershipTagValue('my-app', 'logs.other') },
+      ];
+      expect(isOwnedByApp('my-app', 'logs.project', tags)).toBe(false);
+    });
+
+    it('returns false when tags are missing or the key is unrelated', () => {
+      expect(isOwnedByApp('my-app', 'logs.project', undefined)).toBe(false);
+      expect(isOwnedByApp('my-app', 'logs.project', [])).toBe(false);
+      expect(isOwnedByApp('my-app', 'logs.project', [{ Key: 'env', Value: 'prod' }])).toBe(false);
+    });
   });
 });
