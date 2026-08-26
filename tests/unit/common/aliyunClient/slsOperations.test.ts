@@ -9,6 +9,9 @@ const mockDeleteLogStore = jest.fn();
 const mockCreateIndex = jest.fn();
 const mockGetIndex = jest.fn();
 const mockDeleteIndex = jest.fn();
+const mockTagResources = jest.fn();
+const mockUntagResources = jest.fn();
+const mockListLogStores = jest.fn();
 
 const mockSlsClient = {
   createProject: mockCreateProject,
@@ -20,6 +23,9 @@ const mockSlsClient = {
   createIndex: mockCreateIndex,
   getIndex: mockGetIndex,
   deleteIndex: mockDeleteIndex,
+  tagResources: mockTagResources,
+  untagResources: mockUntagResources,
+  listLogStores: mockListLogStores,
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
 } as any;
 
@@ -308,12 +314,12 @@ describe('slsOperations', () => {
       expect(result.ttl).toBe(30);
     });
 
-    it('should create logstore with default ttl of 7', async () => {
+    it('defaults logstore retention to thirty days', async () => {
       mockCreateLogStore.mockResolvedValue({});
       mockGetLogStore.mockResolvedValue({
         body: {
           logstoreName: 'default-logstore',
-          ttl: 7,
+          ttl: 30,
         },
       });
 
@@ -324,7 +330,7 @@ describe('slsOperations', () => {
       expect(mockCreateLogStore).toHaveBeenCalledWith(
         'test-project',
         expect.objectContaining({
-          ttl: 7,
+          ttl: 30,
         }),
       );
     });
@@ -465,11 +471,11 @@ describe('slsOperations', () => {
       expect(result.ttl).toBe(30);
     });
 
-    it('should wait for logstore with default ttl of 7', async () => {
+    it('should wait for logstore with default ttl of 30', async () => {
       mockGetLogStore.mockResolvedValue({
         body: {
           logstoreName: 'test-logstore',
-          ttl: 7,
+          ttl: 30,
         },
       });
 
@@ -477,7 +483,69 @@ describe('slsOperations', () => {
       await jest.runAllTimersAsync();
       const result = await promise;
 
-      expect(result.ttl).toBe(7);
+      expect(result.ttl).toBe(30);
+    });
+  });
+
+  describe('listLogStores', () => {
+    it('lists the logstore names in a project for emptiness checks', async () => {
+      mockListLogStores.mockResolvedValue({ body: { logstores: ['fn-logs', 'apigw-logs'] } });
+
+      const result = await operations.listLogStores('test-project');
+
+      expect(result).toEqual(['fn-logs', 'apigw-logs']);
+      expect(mockListLogStores).toHaveBeenCalledWith(
+        'test-project',
+        expect.objectContaining({ size: 500 }),
+      );
+    });
+
+    it('returns an empty array when no logstores exist', async () => {
+      mockListLogStores.mockResolvedValue({ body: { logstores: [] } });
+
+      const result = await operations.listLogStores('test-project');
+
+      expect(result).toEqual([]);
+    });
+  });
+
+  describe('addTags', () => {
+    it('tags an SLS project with ownership metadata', async () => {
+      mockTagResources.mockResolvedValue({});
+
+      await operations.addTags({
+        resourceType: 'project',
+        resourceId: 'proj',
+        tags: [{ key: 'si-owned-by', value: 'v' }],
+      });
+
+      expect(mockTagResources).toHaveBeenCalledWith(
+        expect.objectContaining({
+          resourceId: ['proj'],
+          resourceType: 'project',
+          tags: [{ key: 'si-owned-by', value: 'v' }],
+        }),
+      );
+    });
+  });
+
+  describe('removeTags', () => {
+    it('untags an SLS resource by key', async () => {
+      mockUntagResources.mockResolvedValue({});
+
+      await operations.removeTags({
+        resourceType: 'project',
+        resourceId: 'proj',
+        tagKeys: ['si-owned-by'],
+      });
+
+      expect(mockUntagResources).toHaveBeenCalledWith(
+        expect.objectContaining({
+          resourceId: ['proj'],
+          resourceType: 'project',
+          tags: ['si-owned-by'],
+        }),
+      );
     });
   });
 });

@@ -24,6 +24,8 @@ const mockSetDomain = jest.fn();
 const mockSetDomainCertificate = jest.fn();
 const mockDeleteDomain = jest.fn();
 const mockListTagResources = jest.fn();
+const mockCreateLogConfig = jest.fn();
+const mockDescribeLogConfig = jest.fn();
 
 const mockApigwClient = {
   createApiGroup: mockCreateApiGroup,
@@ -41,6 +43,8 @@ const mockApigwClient = {
   setDomainCertificate: mockSetDomainCertificate,
   deleteDomain: mockDeleteDomain,
   listTagResources: mockListTagResources,
+  createLogConfig: mockCreateLogConfig,
+  describeLogConfig: mockDescribeLogConfig,
 } as unknown as CloudApiClient;
 
 const mockAddDomainRecord = jest.fn();
@@ -1703,6 +1707,66 @@ describe('apigwOperations', () => {
       await operations.unbindCustomDomain('group-123', 'api.example.com');
 
       expect(mockDeleteDomain).toHaveBeenCalled();
+    });
+  });
+
+  describe('gateway log config', () => {
+    it('returns the PROVIDER gateway log configuration', async () => {
+      mockDescribeLogConfig.mockResolvedValue({
+        body: {
+          logInfos: {
+            logInfo: [
+              {
+                logType: 'PROVIDER',
+                regionId: 'cn-hangzhou',
+                slsProject: 'si-logs',
+                slsLogStore: 'api-gateway',
+              },
+            ],
+          },
+        },
+      });
+
+      const result = await operations.describeGatewayLogConfig();
+
+      expect(result).toEqual({
+        logType: 'PROVIDER',
+        regionId: 'cn-hangzhou',
+        slsProject: 'si-logs',
+        slsLogStore: 'api-gateway',
+      });
+    });
+
+    it('returns null when no gateway log configuration exists', async () => {
+      mockDescribeLogConfig.mockResolvedValue({
+        body: {
+          logInfos: {
+            logInfo: [],
+          },
+        },
+      });
+
+      const result = await operations.describeGatewayLogConfig();
+
+      expect(result).toBeNull();
+    });
+
+    it('creates a PROVIDER gateway log configuration', async () => {
+      mockCreateLogConfig.mockResolvedValue({});
+
+      await operations.createGatewayLogConfig({
+        slsProject: 'si-logs',
+        slsLogStore: 'api-gateway',
+      });
+
+      expect(mockCreateLogConfig).toHaveBeenCalledWith(
+        expect.objectContaining({
+          logType: 'PROVIDER',
+          slsProject: 'si-logs',
+          slsLogStore: 'api-gateway',
+          createSlr: true,
+        }),
+      );
     });
   });
 });

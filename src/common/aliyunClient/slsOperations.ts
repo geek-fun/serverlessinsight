@@ -128,7 +128,7 @@ export const createSlsOperations = (slsClient: SlsSdkClient) => {
     createLogstore: async (
       projectName: string,
       logstoreName: string,
-      ttl: number = 7,
+      ttl: number = 30,
     ): Promise<SlsLogstoreInfo> => {
       const request = new sls.CreateLogStoreRequest({
         logstoreName,
@@ -176,6 +176,12 @@ export const createSlsOperations = (slsClient: SlsSdkClient) => {
 
     deleteLogstore: async (projectName: string, logstoreName: string): Promise<void> => {
       await slsClient.deleteLogStore(projectName, logstoreName);
+    },
+
+    listLogStores: async (projectName: string): Promise<string[]> => {
+      const request = new sls.ListLogStoresRequest({ size: 500 });
+      const response = await slsClient.listLogStores(projectName, request);
+      return response.body?.logstores ?? [];
     },
 
     createIndex: async (projectName: string, logstoreName: string): Promise<SlsIndexInfo> => {
@@ -253,9 +259,35 @@ export const createSlsOperations = (slsClient: SlsSdkClient) => {
     waitForLogstore: async (
       projectName: string,
       logstoreName: string,
-      ttl: number = 7,
+      ttl: number = 30,
     ): Promise<SlsLogstoreInfo> => {
       return waitForSlsLogstore(operations.getLogstore, projectName, logstoreName, ttl);
+    },
+
+    addTags: async (config: {
+      resourceType: 'project' | 'logstore';
+      resourceId: string;
+      tags: Array<{ key: string; value: string }>;
+    }): Promise<void> => {
+      const request = new sls.TagResourcesRequest({
+        resourceId: [config.resourceId],
+        resourceType: config.resourceType,
+        tags: config.tags,
+      });
+      await slsClient.tagResources(request);
+    },
+
+    removeTags: async (config: {
+      resourceType: 'project' | 'logstore';
+      resourceId: string;
+      tagKeys: string[];
+    }): Promise<void> => {
+      const request = new sls.UntagResourcesRequest({
+        resourceId: [config.resourceId],
+        resourceType: config.resourceType,
+        tags: config.tagKeys,
+      });
+      await slsClient.untagResources(request);
     },
   };
 

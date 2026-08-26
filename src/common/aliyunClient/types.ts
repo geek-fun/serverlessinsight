@@ -207,6 +207,13 @@ export type SlsLogstoreInfo = {
   lastModifyTime?: number;
 };
 
+export type ApigwLogConfigInfo = {
+  logType?: string;
+  regionId?: string;
+  slsProject?: string;
+  slsLogStore?: string;
+};
+
 export type SlsIndexInfo = {
   projectName: string;
   logstoreName: string;
