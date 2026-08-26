@@ -22,8 +22,15 @@ import {
   extractEventDomainDefinition,
   generateApiKey,
   inferProtocolConfig,
+  buildEventLogSnapshot,
 } from './apigwTypes';
-import { setResource, removeResource, getResource } from '../../common/stateManager';
+import {
+  setResource,
+  removeResource,
+  getResource,
+  getSharedResource,
+  setSharedResource,
+} from '../../common/stateManager';
 import { buildSid } from '../../common';
 import { readPemContent, warnInlinePem } from '../../common/certUtils';
 import { logger } from '../../common/logger';
@@ -32,6 +39,14 @@ import { deriveWwwDomain, extractHostRecord, extractMainDomain } from '../../com
 import { attributesEqual } from '../../common/hashUtils';
 import { OWNERSHIP_TAG_KEY, buildOwnershipTagValue, isOwnedByStack } from '../ownershipTag';
 import { isResourceAlreadyExistsError } from '../alreadyExists';
+import {
+  SHARED_LOG_PROJECT_KEY,
+  adoptSharedSlsProjectState,
+  buildSharedProjectName,
+  ensureSharedSlsProject,
+  ensureGatewayLogstore,
+  buildSharedProjectResourceState,
+} from './sharedLogProject';
 
 type ApigwCdnInstance = ResourceInstance & {
   type: 'ALIYUN_CDN_DISTRIBUTION';
@@ -426,6 +441,91 @@ const buildApigwDeploymentInstance = (
   };
 };
 
+const buildLogConfigInstance = (
+  context: Context,
+  slsProject: string,
+  slsLogStore: string,
+): ResourceInstance => ({
+  sid: buildSid('aliyun', 'apigw-log-config', context.stage, `${context.region}:PROVIDER`),
+  type: 'ALIYUN_APIGW_LOG_CONFIG',
+  id: `${context.region}:PROVIDER`,
+  attributes: { slsProject, slsLogStore },
+});
+
+const ensureGatewayLogConfig = async (
+  context: Context,
+  client: ReturnType<typeof createAliyunClient>,
+  state: StateFile,
+): Promise<{ instance?: ResourceInstance; sharedProject?: ResourceState }> => {
+  const slsLogStore = `${context.service}-${context.stage}-apigw-logs`;
+  const ours = { slsProject: buildSharedProjectName(context.app, context.stage), slsLogStore };
+
+  const existing = await client.apigw.describeGatewayLogConfig();
+
+  if (
+    existing &&
+    existing.slsProject === ours.slsProject &&
+    existing.slsLogStore === ours.slsLogStore
+  ) {
+    const known = getSharedResource(state, context.stage, SHARED_LOG_PROJECT_KEY);
+    const shared = known ?? adoptSharedSlsProjectState(context, ours.slsProject);
+    return {
+      instance: buildLogConfigInstance(context, ours.slsProject, ours.slsLogStore),
+      sharedProject: shared,
+    };
+  }
+
+  if (existing) {
+    logger.warn(
+      lang.__('SLS_LOG_CONFIG_FOREIGN', {
+        slsProject: existing.slsProject ?? '',
+        slsLogStore: existing.slsLogStore ?? '',
+      }),
+    );
+    return {};
+  }
+
+  const shared = await ensureSharedSlsProject(context, client, state);
+  const sharedProject = buildSharedProjectResourceState(context, shared);
+  await ensureGatewayLogstore(context, client, shared.projectName);
+  await client.apigw.createGatewayLogConfig({
+    slsProject: shared.projectName,
+    slsLogStore,
+  });
+  return {
+    instance: buildLogConfigInstance(context, shared.projectName, slsLogStore),
+    sharedProject,
+  };
+};
+
+const releaseGatewayLogstoreIfNeeded = async (
+  client: ReturnType<typeof createAliyunClient>,
+  attrs?: { slsProject?: string; slsLogStore?: string } | unknown,
+): Promise<void> => {
+  const { slsProject, slsLogStore } = (attrs ?? {}) as {
+    slsProject?: string;
+    slsLogStore?: string;
+  };
+  if (!slsProject || !slsLogStore) {
+    return;
+  }
+  const currentConfig = await client.apigw.describeGatewayLogConfig();
+  if (currentConfig?.slsLogStore === slsLogStore && currentConfig?.slsProject === slsProject) {
+    logger.warn(lang.__('APIGW_LOG_CONFIG_STILL_REFERENCES_STORE', { slsLogStore }));
+    return;
+  }
+  try {
+    await client.sls.deleteIndex(slsProject, slsLogStore);
+  } catch {
+    // logstore already gone — index deletion is best-effort
+  }
+  try {
+    await client.sls.deleteLogstore(slsProject, slsLogStore);
+  } catch {
+    // logstore already gone
+  }
+};
+
 const resolveDomainCertificate = async (
   domain: NonNullable<EventDomain['domain']>,
   serviceName: string,
@@ -509,6 +609,8 @@ export const createApigwResource = async (
   const groupDefinition = extractApigwGroupDefinition(groupConfig);
   let groupId: string;
 
+  const logSnapshot = buildEventLogSnapshot(event, context);
+
   const buildResourceDefinition = (): Record<string, unknown> => ({
     ...groupDefinition,
     triggers: event.triggers.map((t) => ({
@@ -517,6 +619,7 @@ export const createApigwResource = async (
       backend: t.backend,
     })),
     domain: extractEventDomainDefinition(event.domain),
+    ...(logSnapshot ? { log: logSnapshot } : {}),
   });
 
   // Persist a tainted state BEFORE any cloud side-effect so a group created
@@ -591,6 +694,22 @@ export const createApigwResource = async (
       status: 'tainted',
     });
     let currentState = stateAfterDependents;
+
+    if (event.log) {
+      const logResult = await ensureGatewayLogConfig(context, client, stateAfterDependents);
+      if (logResult?.sharedProject) {
+        stateAfterDependents = setSharedResource(
+          stateAfterDependents,
+          context.stage,
+          SHARED_LOG_PROJECT_KEY,
+          logResult.sharedProject,
+        );
+      }
+      if (logResult?.instance) {
+        instances.push(logResult.instance);
+      }
+    }
+
     // Create APIs and deployments for each trigger
     for (const trigger of event.triggers) {
       const apiConfig = triggerToApigwApiConfig(
@@ -633,6 +752,7 @@ export const createApigwResource = async (
             backend: t.backend,
           })),
           domain: extractEventDomainDefinition(event.domain),
+          ...(logSnapshot ? { log: logSnapshot } : {}),
         },
         instances,
         lastUpdated: new Date().toISOString(),
@@ -732,6 +852,7 @@ export const createApigwResource = async (
           backend: t.backend,
         })),
         domain: extractEventDomainDefinition(event.domain),
+        ...(logSnapshot ? { log: logSnapshot } : {}),
       },
       instances,
       lastUpdated: new Date().toISOString(),
@@ -958,6 +1079,25 @@ export const updateApigwResource = async (
     }
   }
 
+  const logSnapshot = buildEventLogSnapshot(event, context);
+  let sharedProjectState: ResourceState | undefined;
+  if (event.log) {
+    const logResult = await ensureGatewayLogConfig(context, client, state);
+    if (logResult?.sharedProject) {
+      sharedProjectState = logResult.sharedProject;
+    }
+    if (logResult?.instance) {
+      instances.push(logResult.instance);
+    }
+  } else {
+    const previousLogInstance = (existingState?.instances ?? []).find(
+      (i) => i.type === 'ALIYUN_APIGW_LOG_CONFIG',
+    );
+    if (previousLogInstance) {
+      await releaseGatewayLogstoreIfNeeded(client, previousLogInstance.attributes);
+    }
+  }
+
   if (event.domain) {
     const desiredDomainDef = extractEventDomainDefinition(event.domain);
     const previousDomainDef = existingState?.definition?.domain as
@@ -1169,12 +1309,17 @@ export const updateApigwResource = async (
         backend: t.backend,
       })),
       domain: extractEventDomainDefinition(event.domain),
+      ...(logSnapshot ? { log: logSnapshot } : {}),
     },
     instances,
     lastUpdated: new Date().toISOString(),
   };
 
-  return setResource(state, logicalId, resourceState);
+  const finalState = sharedProjectState
+    ? setSharedResource(state, context.stage, SHARED_LOG_PROJECT_KEY, sharedProjectState)
+    : state;
+
+  return setResource(finalState, logicalId, resourceState);
 };
 
 export const deleteApigwResource = async (
@@ -1291,6 +1436,14 @@ export const deleteApigwResource = async (
         name: groupId,
       }),
     );
+  }
+
+  // The PROVIDER log configuration is a regional singleton — never deleted.
+  // Tear down the per-service gateway logstore only when the singleton no
+  // longer references it; otherwise it must be retained.
+  const logConfigInstance = existingInstances.find((i) => i.type === 'ALIYUN_APIGW_LOG_CONFIG');
+  if (logConfigInstance) {
+    await releaseGatewayLogstoreIfNeeded(client, logConfigInstance.attributes);
   }
 
   return removeResource(state, logicalId);

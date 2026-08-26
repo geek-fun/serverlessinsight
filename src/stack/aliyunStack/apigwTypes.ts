@@ -331,6 +331,32 @@ export type EventDomainDefinition = {
   cdnForceRedirectHttps?: boolean;
 };
 
+export type EventLogSnapshot = {
+  logEnabled: boolean;
+  logConfig: { project: string; logstore: string };
+};
+
+/**
+ * Snapshot of the event-level access-log wiring (issue #214): the app-scoped
+ * shared SLS project plus the service-scoped gateway logstore. Omitted when the
+ * event does not opt into logging so existing state definitions stay identical.
+ */
+export const buildEventLogSnapshot = (
+  event: EventDomain,
+  context: Pick<Context, 'app' | 'service' | 'stage'>,
+): EventLogSnapshot | undefined => {
+  if (!event.log) {
+    return undefined;
+  }
+  return {
+    logEnabled: event.log === true || event.log === 'true',
+    logConfig: {
+      project: `${context.app}-${context.stage}-sls`,
+      logstore: `${context.service}-${context.stage}-apigw-logs`,
+    },
+  };
+};
+
 export const extractEventDomainDefinition = (
   domain: EventDomain['domain'],
 ): EventDomainDefinition | null => {

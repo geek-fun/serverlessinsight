@@ -7,6 +7,7 @@ import {
   getResource,
   removeResource,
   setResource,
+  setSharedResource,
   computeZipContentHash,
   getContext,
   buildSid,
@@ -35,6 +36,12 @@ import type { IamStatement } from '../../common/iamStatements';
 import { lang } from '../../lang';
 import { OWNERSHIP_TAG_KEY, buildOwnershipTagValue, isOwnedByStack } from '../ownershipTag';
 import { isResourceAlreadyExistsError } from '../alreadyExists';
+import {
+  SHARED_LOG_PROJECT_KEY,
+  ensureSharedSlsProject,
+  ensureFunctionLogstore,
+  buildSharedProjectResourceState,
+} from './sharedLogProject';
 
 type DependentInstance = {
   type: string;
@@ -209,6 +216,7 @@ const createDependentResources = async (
   fn: FunctionDomain,
   serviceName: string,
   existingInstances: Array<DependentInstance> = [],
+  state?: StateFile,
 ): Promise<{
   logConfig?: { project: string; logstore: string };
   role?: { roleName: string; arn: string };
@@ -222,11 +230,13 @@ const createDependentResources = async (
       accessGroupName: string;
     }>;
   };
+  sharedProject?: ResourceState;
   instances: Array<DependentInstance>;
 }> => {
   const client = createAliyunClient(context);
   const instances: Array<DependentInstance> = [];
   let logConfig: { project: string; logstore: string } | undefined;
+  let sharedProject: ResourceState | undefined;
   let securityGroup: { securityGroupId: string } | undefined;
   let nasConfig:
     | {
@@ -255,36 +265,21 @@ const createDependentResources = async (
         instances.push(...existingInstances.filter((i) => i.type.startsWith('ALIYUN_SLS_')));
       }
     } else {
-      const projectName = `${serviceName}-${context.stage}-sls`;
-      const logstoreName = `${serviceName}-${context.stage}-sls-logstore`;
-
-      logger.info(lang.__('CREATING_SLS_PROJECT', { projectName }));
-      const project = await client.sls.createProject(projectName);
-      instances.push({ type: 'ALIYUN_SLS_PROJECT', id: projectName, attributes: { ...project } });
-
-      logger.info(lang.__('CREATING_SLS_LOGSTORE', { logstoreName }));
-      const logstore = await client.sls.createLogstore(projectName, logstoreName);
+      const shared = await ensureSharedSlsProject(context, client, state);
+      const logstore = await ensureFunctionLogstore(context, client, shared.projectName);
       instances.push({
         type: 'ALIYUN_SLS_LOGSTORE',
-        id: `${projectName}/${logstoreName}`,
-        attributes: { ...logstore },
+        id: `${shared.projectName}/${logstore.logstoreName}`,
+        attributes: { logstoreName: logstore.logstoreName },
       });
-
-      logger.info(lang.__('CREATING_SLS_INDEX', { logstoreName }));
-      const index = await client.sls.createIndex(projectName, logstoreName);
       instances.push({
         type: 'ALIYUN_SLS_INDEX',
-        id: `${projectName}/${logstoreName}/index`,
-        attributes: { ...index },
+        id: `${shared.projectName}/${logstore.logstoreName}/index`,
+        attributes: { projectName: shared.projectName, logstoreName: logstore.logstoreName },
       });
 
-      logger.info(
-        `Waiting for SLS project and logstore to be ready: ${projectName}/${logstoreName}`,
-      );
-      await client.sls.waitForProject(projectName);
-      await client.sls.waitForLogstore(projectName, logstoreName);
-
-      logConfig = { project: projectName, logstore: logstoreName };
+      logConfig = { project: shared.projectName, logstore: logstore.logstoreName };
+      sharedProject = buildSharedProjectResourceState(context, shared);
     }
   }
 
@@ -454,6 +449,7 @@ const createDependentResources = async (
     role,
     securityGroup,
     nasConfig,
+    sharedProject,
     instances,
   };
 };
@@ -512,8 +508,9 @@ const deleteDependentResources = async (
         break;
       }
       case 'ALIYUN_SLS_PROJECT':
-        logger.info(lang.__('DELETING_SLS_PROJECT', { id: instance.id }));
-        await client.sls.deleteProject(instance.id);
+        // Shared/legacy SLS projects are never deleted at resource level — the
+        // destroyer releases the shared project once unused (legacy orphans are
+        // manual cleanup, see issue #214).
         break;
       case 'ALIYUN_FC3_HTTP_TRIGGER':
         // HTTP trigger deletion requires functionName which is not available here.
@@ -551,7 +548,17 @@ export const createResource = async (
     fn,
     serviceName,
     existingDependentInstances,
+    state,
   );
+
+  const stateWithSharedProject = dependentResources.sharedProject
+    ? setSharedResource(
+        state,
+        context.stage,
+        SHARED_LOG_PROJECT_KEY,
+        dependentResources.sharedProject,
+      )
+    : state;
 
   let config = functionToFc3Config(fn);
   config = {
@@ -628,7 +635,7 @@ export const createResource = async (
     status: 'tainted',
   };
 
-  const stateAfterDependents = setResource(state, logicalId, taintedResourceState);
+  const stateAfterDependents = setResource(stateWithSharedProject, logicalId, taintedResourceState);
 
   const client = createAliyunClient(context);
 
@@ -839,6 +846,7 @@ export const updateResource = async (
   const client = createAliyunClient(context);
   const newDependentInstances: Array<DependentInstance> = [];
   let logConfig: { project: string; logstore: string } | undefined;
+  let sharedProjectState: ResourceState | undefined;
   let role: { roleName: string; arn: string } | undefined;
   let securityGroup: { securityGroupId: string } | undefined;
   let nasConfig:
@@ -855,9 +863,14 @@ export const updateResource = async (
       context,
       { ...fn, network: undefined, storage: { ...fn.storage, nas: undefined } },
       serviceName,
+      undefined,
+      state,
     );
     logConfig = deps.logConfig;
     newDependentInstances.push(...deps.instances.filter((i) => i.type.startsWith('ALIYUN_SLS_')));
+    if (deps.sharedProject) {
+      sharedProjectState = deps.sharedProject;
+    }
   } else if (hasSlsResources) {
     const slsProjectInstance = existingInstances.find((i) => i.type === 'ALIYUN_SLS_PROJECT');
     const slsLogstoreInstance = existingInstances.find((i) => i.type === 'ALIYUN_SLS_LOGSTORE');
@@ -877,6 +890,8 @@ export const updateResource = async (
       context,
       { ...fn, log: false, network: undefined, storage: { ...fn.storage, nas: undefined } },
       serviceName,
+      undefined,
+      state,
     );
     role = deps.role;
     newDependentInstances.push(...deps.instances.filter((i) => i.type === 'ALIYUN_RAM_ROLE'));
@@ -944,6 +959,8 @@ export const updateResource = async (
       context,
       { ...fn, log: false, storage: { ...fn.storage, nas: undefined } },
       serviceName,
+      undefined,
+      state,
     );
     securityGroup = deps.securityGroup;
     newDependentInstances.push(
@@ -957,7 +974,13 @@ export const updateResource = async (
   }
 
   if (fn.storage?.nas && fn.storage.nas.length > 0 && fn.network && !hasNasResources) {
-    const deps = await createDependentResources(context, { ...fn, log: false }, serviceName);
+    const deps = await createDependentResources(
+      context,
+      { ...fn, log: false },
+      serviceName,
+      undefined,
+      state,
+    );
     nasConfig = deps.nasConfig;
     newDependentInstances.push(...deps.instances.filter((i) => i.type.startsWith('ALIYUN_NAS_')));
   } else if (hasNasResources) {
@@ -1250,7 +1273,11 @@ export const updateResource = async (
     lastUpdated: new Date().toISOString(),
   };
 
-  return setResource(state, logicalId, resourceState);
+  const finalState = sharedProjectState
+    ? setSharedResource(state, context.stage, SHARED_LOG_PROJECT_KEY, sharedProjectState)
+    : state;
+
+  return setResource(finalState, logicalId, resourceState);
 };
 
 export const deleteResource = async (

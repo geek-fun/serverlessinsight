@@ -1,5 +1,7 @@
 import { getContext, logger, ProviderEnum, getRoleArnFromState, setIac } from '../../common';
 import { StateBackend } from '../../common/stateBackend';
+import { getSharedResource, removeSharedResource } from '../../common/stateManager';
+import { createAliyunClient } from '../../common/aliyunClient';
 import { lang } from '../../lang';
 import { generateFunctionPlan } from './fc3Planner';
 import { executeFunctionPlan } from './fc3Executor';
@@ -11,6 +13,11 @@ import { generateTablePlan } from './tablestorePlanner';
 import { executeTablePlan } from './tablestoreExecutor';
 import { generateApigwPlan } from './apigwPlanner';
 import { executeApigwPlan } from './apigwExecutor';
+import {
+  SHARED_LOG_PROJECT_KEY,
+  releaseSharedSlsProjectIfUnused,
+  resolveSharedProjectName,
+} from './sharedLogProject';
 import { ExecutionResult, PartialFailureError, PlanItem, StateFile } from '../../types';
 
 const createSaveStateFn =
@@ -159,6 +166,35 @@ export const destroyAliyunStack = async (backend: StateBackend): Promise<void> =
         ...tableResult.partialFailure.successfulItems,
       ],
     });
+  }
+
+  // Release the shared SLS project once nothing references it anymore. The
+  // per-resource teardowns above deleted their own logstores; the shared
+  // project is retained while the regional PROVIDER gateway log config (or a
+  // retained ALIYUN_APIGW_LOG_CONFIG instance) still points at it.
+  const shared = getSharedResource(state, context.stage, SHARED_LOG_PROJECT_KEY);
+  if (shared) {
+    const sharedName = resolveSharedProjectName(shared);
+    const client = createAliyunClient(context);
+    const gatewayConfig = await client.apigw.describeGatewayLogConfig();
+    const retainedByGateway = Boolean(sharedName && gatewayConfig?.slsProject === sharedName);
+    const retainedByApigwState = Object.values(state.resources ?? {}).some((resourceState) =>
+      resourceState.instances?.some(
+        (instance) =>
+          instance.type === 'ALIYUN_APIGW_LOG_CONFIG' &&
+          (instance.attributes as { slsProject?: string } | undefined)?.slsProject === sharedName,
+      ),
+    );
+    if (retainedByGateway || retainedByApigwState) {
+      logger.info(
+        lang.__('SHARED_SLS_PROJECT_IN_USE', { projectName: sharedName ?? '', count: '1' }),
+      );
+    } else {
+      const releaseResult = await releaseSharedSlsProjectIfUnused(context, client, shared);
+      if (releaseResult === 'deleted') {
+        state = removeSharedResource(state, context.stage, SHARED_LOG_PROJECT_KEY);
+      }
+    }
   }
 
   await backend.saveState(state, context.app, context.service, context.stage);
