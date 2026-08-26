@@ -202,6 +202,53 @@ describe('remoteStateBackend', () => {
       expect(savedState.stages.prod.resources).toEqual({ existing: existingResource });
       expect(savedState.stages.dev.resources).toEqual({ func2: newResource });
     });
+
+    it('merges shared resources during remote save', async () => {
+      const sharedLog: ResourceState = {
+        mode: 'managed',
+        region: 'cn-hangzhou',
+        definition: { logProject: 'logs' },
+        instances: [],
+        lastUpdated: new Date().toISOString(),
+      };
+
+      mockAdapter.read.mockResolvedValueOnce({
+        version: CURRENT_STATE_VERSION,
+        provider: 'aliyun',
+        app: 'test-app',
+        service: 'test-service',
+        stages: { dev: { resources: {} } },
+        resources: {},
+      } as StateFile);
+
+      const stateWithShared: StateFile = {
+        version: CURRENT_STATE_VERSION,
+        provider: 'aliyun',
+        app: 'test-app',
+        service: 'test-service',
+        stages: { dev: { resources: {}, shared: { logs: sharedLog } } },
+        resources: {},
+      };
+      const backend = createRemoteStateBackend(mockAdapter, { key: 'state.json' });
+      await backend.saveState(stateWithShared, 'test-app', 'test-service', 'dev');
+
+      let written = (mockAdapter.write as jest.Mock).mock.calls[0][1] as StateFile;
+      expect(written.stages.dev.shared).toEqual({ logs: sharedLog });
+
+      mockAdapter.read.mockResolvedValueOnce(written);
+      const stateSharedCleared: StateFile = {
+        version: CURRENT_STATE_VERSION,
+        provider: 'aliyun',
+        app: 'test-app',
+        service: 'test-service',
+        stages: { dev: { resources: {}, shared: {} } },
+        resources: {},
+      };
+      await backend.saveState(stateSharedCleared, 'test-app', 'test-service', 'dev');
+
+      written = (mockAdapter.write as jest.Mock).mock.calls[1][1] as StateFile;
+      expect(written.stages.dev.shared).toEqual({});
+    });
   });
 
   describe('acquireLock', () => {

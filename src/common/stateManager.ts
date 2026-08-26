@@ -207,7 +207,10 @@ export const saveState = (
     provider: state.provider,
     stages: {
       ...existing.stages,
-      [stage]: { resources: state.resources },
+      [stage]: {
+        resources: state.resources,
+        shared: state.stages?.[stage]?.shared ?? existing.stages?.[stage]?.shared ?? {},
+      },
     },
     resources: state.resources,
   };
@@ -294,6 +297,65 @@ export const removeResource = (state: StateFile, resourceId: string): StateFile 
 /* istanbul ignore next */
 export const getAllResources = (state: StateFile): Record<string, ResourceState> => {
   return state.resources;
+};
+
+/* istanbul ignore next */
+export const getAllSharedResources = (
+  state: StateFile,
+  stage: string,
+): Record<string, ResourceState> => {
+  return state.stages?.[stage]?.shared ?? {};
+};
+
+/* istanbul ignore next */
+export const getSharedResource = (
+  state: StateFile,
+  stage: string,
+  key: string,
+): ResourceState | undefined => {
+  return state.stages?.[stage]?.shared?.[key];
+};
+
+/* istanbul ignore next */
+export const setSharedResource = (
+  state: StateFile,
+  stage: string,
+  key: string,
+  resourceState: ResourceState,
+): StateFile => {
+  return {
+    ...state,
+    stages: {
+      ...state.stages,
+      [stage]: {
+        ...state.stages?.[stage],
+        resources: state.stages?.[stage]?.resources ?? {},
+        shared: {
+          ...state.stages?.[stage]?.shared,
+          [key]: resourceState,
+        },
+      },
+    },
+  };
+};
+
+/* istanbul ignore next */
+export const removeSharedResource = (state: StateFile, stage: string, key: string): StateFile => {
+  const existingShared = state.stages?.[stage]?.shared;
+  if (!existingShared) {
+    return state;
+  }
+  const { [key]: _removed, ...remainingShared } = existingShared;
+  return {
+    ...state,
+    stages: {
+      ...state.stages,
+      [stage]: {
+        ...state.stages[stage],
+        shared: remainingShared,
+      },
+    },
+  };
 };
 
 /**

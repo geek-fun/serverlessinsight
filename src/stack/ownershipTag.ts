@@ -41,3 +41,25 @@ export const isOwnedByStack = (
   if (!parsed) return false;
   return parsed.stack === `${context.app}-${context.service}` && parsed.logicalId === logicalId;
 };
+
+/**
+ * App-scoped ownership for resources shared across services of one app
+ * (issue #214 unified log container). Exact full-value match by design:
+ * per-service stacks have no claim on shared resources, so only the
+ * owning app may adopt them.
+ */
+export const SHARED_SCOPE = 'shared';
+
+export const buildSharedOwnershipTagValue = (app: string, logicalId: string): string =>
+  `${app}:${SHARED_SCOPE}:${logicalId}`;
+
+export const isOwnedByApp = (
+  app: string,
+  logicalId: string,
+  tags: Array<{ Key?: string; Value?: string }> | undefined,
+): boolean => {
+  if (!tags) return false;
+  const tag = tags.find((t) => t.Key === OWNERSHIP_TAG_KEY);
+  if (!tag?.Value) return false;
+  return tag.Value === buildSharedOwnershipTagValue(app, logicalId);
+};
