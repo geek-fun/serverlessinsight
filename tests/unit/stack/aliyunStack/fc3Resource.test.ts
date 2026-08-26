@@ -38,6 +38,7 @@ const mockedHashUtils = {
 };
 const mockedSlsOperations = {
   createProject: jest.fn(),
+  getLogstore: jest.fn(),
   createLogstore: jest.fn(),
   createIndex: jest.fn(),
   deleteProject: jest.fn(),
@@ -45,6 +46,7 @@ const mockedSlsOperations = {
   deleteIndex: jest.fn(),
   waitForProject: jest.fn(),
   waitForLogstore: jest.fn(),
+  addTags: jest.fn(),
 };
 const mockedRamOperations = {
   createRole: jest.fn(),
@@ -228,11 +230,13 @@ describe('Fc3Resource', () => {
     mockedRamOperations.updateManagedPolicies.mockResolvedValue(undefined);
     mockedRamOperations.deleteRole.mockResolvedValue(undefined);
     mockedSlsOperations.createProject.mockResolvedValue({ projectName: 'test-sls' });
+    mockedSlsOperations.getLogstore.mockResolvedValue(null);
     mockedSlsOperations.createLogstore.mockResolvedValue({ logstoreName: 'test-logstore' });
     mockedSlsOperations.createIndex.mockResolvedValue({});
     mockedSlsOperations.deleteProject.mockResolvedValue(undefined);
     mockedSlsOperations.deleteLogstore.mockResolvedValue(undefined);
     mockedSlsOperations.deleteIndex.mockResolvedValue(undefined);
+    mockedSlsOperations.addTags.mockResolvedValue(undefined);
     mockedSlsOperations.waitForProject.mockResolvedValue({
       projectName: 'test-sls',
       status: 'Normal',
@@ -1927,7 +1931,7 @@ describe('Fc3Resource', () => {
       expect(mockedRamOperations.deleteRole).toHaveBeenCalledWith('test-role', undefined);
       expect(mockedSlsOperations.deleteIndex).toHaveBeenCalledWith('test-sls', 'test-logstore');
       expect(mockedSlsOperations.deleteLogstore).toHaveBeenCalledWith('test-sls', 'test-logstore');
-      expect(mockedSlsOperations.deleteProject).toHaveBeenCalledWith('test-sls');
+      expect(mockedSlsOperations.deleteProject).not.toHaveBeenCalled();
     });
 
     it('should propagate dependent resource deletion failure and keep state', async () => {
@@ -1969,7 +1973,7 @@ describe('Fc3Resource', () => {
         deleteResource(mockContext, 'test-function', 'functions.test_fn', stateWithDeps),
       ).rejects.toThrow('role delete failed');
 
-      expect(mockedSlsOperations.deleteProject).toHaveBeenCalled();
+      expect(mockedSlsOperations.deleteProject).not.toHaveBeenCalled();
       expect(mockedRamOperations.deleteRole).toHaveBeenCalled();
       expect(mockedStateManager.removeResource).not.toHaveBeenCalled();
     });
@@ -2306,18 +2310,15 @@ describe('Fc3Resource', () => {
 
       await createResource(mockContext, fnWithLog, initialState);
 
-      expect(mockedSlsOperations.createProject).toHaveBeenCalledWith(
-        'test-app-test-service-default-sls',
-      );
+      expect(mockedSlsOperations.createProject).toHaveBeenCalledWith('test-app-default-sls');
       expect(mockedSlsOperations.createLogstore).toHaveBeenCalledWith(
-        'test-app-test-service-default-sls',
-        'test-app-test-service-default-sls-logstore',
+        'test-app-default-sls',
+        'test-service-default-fn-logs',
       );
       expect(mockedSlsOperations.createIndex).toHaveBeenCalledWith(
-        'test-app-test-service-default-sls',
-        'test-app-test-service-default-sls-logstore',
+        'test-app-default-sls',
+        'test-service-default-fn-logs',
       );
-      expect(mockedSlsOperations.waitForProject).toHaveBeenCalled();
       expect(mockedSlsOperations.waitForLogstore).toHaveBeenCalled();
       expect(mockedFc3Types.functionToFc3Config).toHaveBeenCalled();
     });
@@ -2357,6 +2358,74 @@ describe('Fc3Resource', () => {
 
       expect(mockedSlsOperations.createProject).not.toHaveBeenCalled();
       expect(mockedSlsOperations.createLogstore).not.toHaveBeenCalled();
+    });
+
+    it('creates function logstore under the shared project on fresh deploy', async () => {
+      mockedFc3Operations.getFunction.mockResolvedValueOnce(mockFunctionInfo);
+      mockedFc3Operations.createFunction.mockResolvedValue(undefined);
+      const realStateManager = jest.requireActual('../../../../src/common/stateManager');
+      mockedStateManager.setResource.mockImplementation(
+        (state: StateFile, logicalId: string, resourceState: unknown) =>
+          realStateManager.setResource(state, logicalId, resourceState),
+      );
+
+      const result = await createResource(mockContext, fnWithLog, initialState);
+
+      expect(mockedSlsOperations.createProject).toHaveBeenCalledWith('test-app-default-sls');
+      expect(mockedSlsOperations.createLogstore).toHaveBeenCalledWith(
+        'test-app-default-sls',
+        'test-service-default-fn-logs',
+      );
+      const fnResource = result.resources['functions.test_fn'];
+      const instanceTypes = fnResource.instances.map((i) => i.type as string);
+      expect(instanceTypes).not.toContain('ALIYUN_SLS_PROJECT');
+      expect(instanceTypes).toContain('ALIYUN_SLS_LOGSTORE');
+      expect(instanceTypes).toContain('ALIYUN_SLS_INDEX');
+      expect(result.stages?.default?.shared?.['logs.project']).toBeDefined();
+    });
+
+    it('preserves legacy SLS project and logstore instances on redeploy', async () => {
+      const stateWithLegacySls: StateFile = {
+        ...initialState,
+        resources: {
+          'functions.test_fn': {
+            mode: 'managed',
+            region: 'cn-hangzhou',
+            definition: mockDefinition,
+            instances: [
+              {
+                sid: 'si:aliyun:sls_project:default:legacy-project',
+                id: 'legacy-project',
+                type: 'ALIYUN_SLS_PROJECT',
+              },
+              {
+                sid: 'si:aliyun:sls_logstore:default:legacy-project/legacy-logstore',
+                id: 'legacy-project/legacy-logstore',
+                type: 'ALIYUN_SLS_LOGSTORE',
+              },
+            ],
+            lastUpdated: '2025-01-01T00:00:00Z',
+            status: 'tainted',
+          },
+        },
+      };
+
+      mockedFc3Operations.getFunction.mockResolvedValue(mockFunctionInfo);
+      mockedFc3Operations.createFunction.mockResolvedValue(undefined);
+      const realStateManager = jest.requireActual('../../../../src/common/stateManager');
+      mockedStateManager.setResource.mockImplementation(
+        (state: StateFile, logicalId: string, resourceState: unknown) =>
+          realStateManager.setResource(state, logicalId, resourceState),
+      );
+
+      const result = await createResource(mockContext, fnWithLog, stateWithLegacySls);
+
+      expect(mockedSlsOperations.createProject).not.toHaveBeenCalled();
+      expect(mockedSlsOperations.createLogstore).not.toHaveBeenCalled();
+      const fnResource = result.resources['functions.test_fn'];
+      const instanceTypes = fnResource.instances.map((i) => i.type as string);
+      expect(instanceTypes).toContain('ALIYUN_SLS_PROJECT');
+      expect(instanceTypes).toContain('ALIYUN_SLS_LOGSTORE');
     });
 
     it('should create security group when function has network config', async () => {

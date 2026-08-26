@@ -4,6 +4,7 @@ import {
   eventToApigwGroupConfig,
   extractApigwGroupDefinition,
   extractEventDomainDefinition,
+  buildEventLogSnapshot,
 } from './apigwTypes';
 import { getAllResources, getResource } from '../../common/stateManager';
 import { attributesEqual } from '../../common/hashUtils';
@@ -50,6 +51,7 @@ export const generateApigwPlan = async (
       const client = createAliyunClient(context);
 
       // Build desired definition including triggers
+      const logSnapshot = buildEventLogSnapshot(event, context);
       const desiredDefinition = {
         ...groupDefinition,
         triggers: event.triggers.map((t) => ({
@@ -58,6 +60,7 @@ export const generateApigwPlan = async (
           backend: t.backend,
         })),
         domain: extractEventDomainDefinition(event.domain),
+        ...(logSnapshot ? { log: logSnapshot } : {}),
       };
 
       if (!currentState || currentState.status === 'tainted') {
