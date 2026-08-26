@@ -75,6 +75,23 @@ const buildExecutionPolicy = (customStatements?: IamStatement[]): string => {
   return buildPolicyDocument(merged);
 };
 
+// TagResources expects flat numbered query params (ResourceIds.1, Tags.1.Key, ...).
+// ResourceIds.1 carries the ROLE NAME (consistent with DeleteRole using RoleName).
+const buildTagResourceQuery = (
+  roleName: string,
+  tags: Array<{ key: string; value: string }>,
+): Record<string, string> => {
+  return tags.reduce<Record<string, string>>(
+    (query, tag, index) => {
+      const n = index + 1;
+      query[`Tags.${n}.Key`] = tag.key;
+      query[`Tags.${n}.Value`] = tag.value;
+      return query;
+    },
+    { ResourceType: 'role', 'ResourceIds.1': roleName },
+  );
+};
+
 export const createIamOperations = (iamClient: IamSdkClient) => {
   const createAndAttachPolicy = async (
     roleName: string,
@@ -524,6 +541,34 @@ export const createIamOperations = (iamClient: IamSdkClient) => {
         logger.info(lang.__('ATTACHING_MANAGED_POLICY', { policyArn: policyName, roleName }));
         await attachRolePolicyImpl(roleName, policyName, 'System');
         logger.info(lang.__('MANAGED_POLICY_ATTACHED', { policyArn: policyName, roleName }));
+      }
+    },
+
+    tagRole: async (
+      roleName: string,
+      tags: Array<{ key: string; value: string }>,
+    ): Promise<void> => {
+      try {
+        await iamClient.fetchOpenAPI({
+          Action: 'TagResources',
+          Version: '2018-01-01',
+          method: 'GET',
+          headers: { 'content-type': 'application/json' },
+          query: buildTagResourceQuery(roleName, tags),
+        });
+      } catch (error: unknown) {
+        if (error && typeof error === 'object' && 'code' in error) {
+          const code = String(error.code);
+          if (
+            code.startsWith('ResourceNotFound.Role') ||
+            code === 'RoleNotFound' ||
+            code === 'NoSuchEntity'
+          ) {
+            logger.warn(lang.__('VOLCENGINE_ROLE_NOT_FOUND_FOR_TAG', { roleName }));
+            return;
+          }
+        }
+        throw error;
       }
     },
   };

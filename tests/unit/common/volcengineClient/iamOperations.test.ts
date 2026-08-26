@@ -835,4 +835,54 @@ describe('iamOperations', () => {
       await expect(operations.createRole(mockConfig)).rejects.toBe('plain string attach error');
     });
   });
+
+  describe('tagRole', () => {
+    it('tags IAM roles using numbered query parameters', async () => {
+      mockClient.fetchOpenAPI.mockResolvedValueOnce({});
+
+      await operations.tagRole('role-a', [
+        { key: 'k', value: 'v' },
+        { key: 'k2', value: 'v2' },
+      ]);
+
+      expect(mockClient.fetchOpenAPI).toHaveBeenCalledWith(
+        expect.objectContaining({
+          Action: 'TagResources',
+          Version: '2018-01-01',
+          method: 'GET',
+          query: expect.objectContaining({
+            ResourceType: 'role',
+            'ResourceIds.1': 'role-a',
+            'Tags.1.Key': 'k',
+            'Tags.1.Value': 'v',
+            'Tags.2.Key': 'k2',
+            'Tags.2.Value': 'v2',
+          }),
+        }),
+      );
+    });
+
+    it('ignores missing IAM roles during tagging', async () => {
+      const notFoundError = new Error('Not found') as Error & { code: string };
+      notFoundError.code = 'ResourceNotFound.Role';
+      mockClient.fetchOpenAPI.mockRejectedValueOnce(notFoundError);
+      const { logger } = jest.requireMock('../../../../src/common/logger');
+
+      await expect(
+        operations.tagRole('missing-role', [{ key: 'k', value: 'v' }]),
+      ).resolves.toBeUndefined();
+
+      expect(logger.warn).toHaveBeenCalledWith('VOLCENGINE_ROLE_NOT_FOUND_FOR_TAG');
+    });
+
+    it('rethrows unexpected IAM tagging failures', async () => {
+      const accessDeniedError = new Error('Access denied') as Error & { code: string };
+      accessDeniedError.code = 'AccessDenied';
+      mockClient.fetchOpenAPI.mockRejectedValueOnce(accessDeniedError);
+
+      await expect(operations.tagRole('role-a', [{ key: 'k', value: 'v' }])).rejects.toBe(
+        accessDeniedError,
+      );
+    });
+  });
 });

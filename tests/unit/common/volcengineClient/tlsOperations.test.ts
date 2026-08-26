@@ -18,6 +18,9 @@ const createMockClient = () => ({
   CreateIndex: jest.fn() as MockFn,
   DescribeIndex: jest.fn() as MockFn,
   DeleteIndex: jest.fn() as MockFn,
+  AddTagsToResource: jest.fn() as MockFn,
+  RemoveTagsFromResource: jest.fn() as MockFn,
+  ListTagsForResources: jest.fn() as MockFn,
 });
 
 jest.mock('../../../../src/common/logger', () => ({
@@ -45,6 +48,7 @@ describe('tlsOperations', () => {
       mockClient as unknown as Parameters<typeof createTlsOperations>[0],
     );
     jest.clearAllMocks();
+    mockClient.ListTagsForResources.mockResolvedValue({ ResourceTags: [], NextToken: '' });
   });
 
   describe('createProject', () => {
@@ -383,6 +387,124 @@ describe('tlsOperations', () => {
 
       await expect(operations.getTopic('missing-project', 'test-topic')).resolves.toBeNull();
       expect(mockClient.DescribeTopics).not.toHaveBeenCalled();
+    });
+
+    it('should return topic ownership tags when present', async () => {
+      mockClient.DescribeProjects.mockResolvedValueOnce({
+        Projects: [
+          {
+            ProjectId: 'project-123',
+            ProjectName: 'test-project',
+            CreateTime: '',
+            Description: '',
+            TopicCount: 0,
+          },
+        ],
+        Total: 1,
+      });
+      mockClient.DescribeTopics.mockResolvedValueOnce({
+        Topics: [
+          {
+            TopicId: 'topic-123',
+            TopicName: 'test-topic',
+            ProjectId: 'project-123',
+            CreateTime: '',
+            Description: '',
+            ModifyTime: '',
+            ShardCount: 1,
+            Ttl: 30,
+          },
+        ],
+        Total: 1,
+      });
+      mockClient.ListTagsForResources.mockResolvedValueOnce({
+        ResourceTags: [
+          {
+            ResourceType: 'topic',
+            ResourceId: 'topic-123',
+            TagKey: 'si-owned-by',
+            TagValue: 'app-service:functions.test_fn',
+          },
+        ],
+        NextToken: '',
+      });
+
+      const result = await operations.getTopic('test-project', 'test-topic');
+
+      expect(result?.tags).toEqual([
+        { Key: 'si-owned-by', Value: 'app-service:functions.test_fn' },
+      ]);
+      expect(mockClient.ListTagsForResources).toHaveBeenCalledWith({
+        ResourceType: 'topic',
+        ResourcesIds: ['topic-123'],
+        MaxResults: 50,
+      });
+    });
+  });
+
+  describe('listTopics', () => {
+    it('lists topics for a shared TLS project', async () => {
+      mockClient.DescribeProjects.mockResolvedValueOnce({
+        Projects: [
+          {
+            ProjectId: 'project-123',
+            ProjectName: 'test-project',
+            CreateTime: '',
+            Description: '',
+            TopicCount: 0,
+          },
+        ],
+        Total: 1,
+      });
+      mockClient.DescribeTopics.mockResolvedValueOnce({
+        Topics: [
+          {
+            TopicId: 'topic-1',
+            TopicName: 'fn-logs',
+            ProjectId: 'project-123',
+            CreateTime: '',
+            Description: '',
+            ModifyTime: '',
+            ShardCount: 1,
+            Ttl: 30,
+          },
+          {
+            TopicId: 'topic-2',
+            TopicName: 'apigw-logs',
+            ProjectId: 'project-123',
+            CreateTime: '',
+            Description: '',
+            ModifyTime: '',
+            ShardCount: 1,
+            Ttl: 30,
+          },
+        ],
+        Total: 2,
+      });
+
+      const result = await operations.listTopics('test-project');
+
+      expect(result).toHaveLength(2);
+      expect(result[0]).toMatchObject({ topicId: 'topic-1', topicName: 'fn-logs' });
+      expect(result[1]).toMatchObject({ topicId: 'topic-2', topicName: 'apigw-logs' });
+      expect(mockClient.DescribeTopics).toHaveBeenCalledWith({ ProjectId: 'project-123' });
+    });
+
+    it('returns an empty array when the shared TLS project is missing', async () => {
+      mockClient.DescribeProjects.mockResolvedValueOnce({ Projects: [], Total: 0 });
+
+      const result = await operations.listTopics('missing-project');
+
+      expect(result).toEqual([]);
+      expect(mockClient.DescribeTopics).not.toHaveBeenCalled();
+    });
+
+    it('returns an empty array when project listing fails with ResourceNotFound', async () => {
+      mockClient.DescribeProjects.mockRejectedValueOnce(createError('ResourceNotFound'));
+
+      const result = await operations.listTopics('missing-project');
+
+      expect(result).toEqual([]);
     });
   });
 
@@ -781,6 +903,98 @@ describe('tlsOperations', () => {
       await expect(operations.waitForTopic('test-project', 'missing-topic')).rejects.toThrow(
         'TLS_TOPIC_NOT_FOUND',
       );
+    });
+  });
+
+  describe('addTags', () => {
+    it('adds ownership tags to TLS project resources', async () => {
+      mockClient.AddTagsToResource.mockResolvedValueOnce({});
+
+      await operations.addTags({
+        resourceType: 'project',
+        resourcesList: ['p1'],
+        tags: [{ key: 'si-owned-by', value: 'v' }],
+      });
+
+      expect(mockClient.AddTagsToResource).toHaveBeenCalledWith({
+        ResourceType: 'project',
+        ResourcesList: ['p1'],
+        Tags: [{ Key: 'si-owned-by', Value: 'v' }],
+      });
+    });
+
+    it('ignores missing TLS resources during tagging', async () => {
+      mockClient.AddTagsToResource.mockRejectedValueOnce(createError('ResourceNotFound'));
+      const { logger } = jest.requireMock('../../../../src/common/logger');
+
+      await expect(
+        operations.addTags({
+          resourceType: 'topic',
+          resourcesList: ['missing'],
+          tags: [{ key: 'si-owned-by', value: 'v' }],
+        }),
+      ).resolves.toBeUndefined();
+
+      expect(logger.warn).toHaveBeenCalledWith('TLS_TAG_TARGET_NOT_FOUND');
+    });
+
+    it('rethrows unexpected TLS tagging failures', async () => {
+      const error = createError('InternalError');
+      mockClient.AddTagsToResource.mockRejectedValueOnce(error);
+
+      await expect(
+        operations.addTags({
+          resourceType: 'topic',
+          resourcesList: ['t1'],
+          tags: [{ key: 'si-owned-by', value: 'v' }],
+        }),
+      ).rejects.toBe(error);
+    });
+  });
+
+  describe('removeTags', () => {
+    it('removes ownership tags from TLS resources', async () => {
+      mockClient.RemoveTagsFromResource.mockResolvedValueOnce({});
+
+      await operations.removeTags({
+        resourceType: 'topic',
+        resourcesList: ['t1'],
+        tagKeys: ['si-owned-by'],
+      });
+
+      expect(mockClient.RemoveTagsFromResource).toHaveBeenCalledWith({
+        ResourceType: 'topic',
+        ResourcesList: ['t1'],
+        TagKeyList: ['si-owned-by'],
+      });
+    });
+
+    it('ignores missing TLS resources during tag removal', async () => {
+      mockClient.RemoveTagsFromResource.mockRejectedValueOnce(createError('TopicNotFound'));
+      const { logger } = jest.requireMock('../../../../src/common/logger');
+
+      await expect(
+        operations.removeTags({
+          resourceType: 'topic',
+          resourcesList: ['missing'],
+          tagKeys: ['si-owned-by'],
+        }),
+      ).resolves.toBeUndefined();
+
+      expect(logger.warn).toHaveBeenCalledWith('TLS_TAG_TARGET_NOT_FOUND');
+    });
+
+    it('rethrows unexpected TLS tag removal failures', async () => {
+      const error = createError('InternalError');
+      mockClient.RemoveTagsFromResource.mockRejectedValueOnce(error);
+
+      await expect(
+        operations.removeTags({
+          resourceType: 'topic',
+          resourcesList: ['t1'],
+          tagKeys: ['si-owned-by'],
+        }),
+      ).rejects.toBe(error);
     });
   });
 });
