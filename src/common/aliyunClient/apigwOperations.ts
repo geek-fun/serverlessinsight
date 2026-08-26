@@ -3,6 +3,7 @@ import * as cloudapi from '@alicloud/cloudapi20160714';
 import DnsClient from '@alicloud/alidns20150109';
 import { promises as dnsPromises } from 'node:dns';
 import { Context, StateFile, ResourceState } from '../../types';
+import { ApigwLogConfigInfo } from './types';
 import { createDnsOperations } from './dnsOperations';
 import { logger } from '../logger';
 import { lang } from '../../lang';
@@ -1583,6 +1584,52 @@ export const createApigwOperations = (
         }
         throw error;
       }
+    },
+
+    /**
+     * Describe the region-wide PROVIDER gateway log configuration (createLogConfig
+     * is a regional singleton: one PROVIDER config per region, not per group).
+     * Returns null when no PROVIDER config exists.
+     */
+    describeGatewayLogConfig: async (): Promise<ApigwLogConfigInfo | null> => {
+      const request = new cloudapi.DescribeLogConfigRequest({
+        logType: 'PROVIDER',
+      });
+
+      const response = await apigwClient.describeLogConfig(request);
+
+      const logInfos = response.body?.logInfos?.logInfo ?? [];
+      const provider = logInfos.find((info) => info.logType === 'PROVIDER');
+
+      if (!provider) {
+        return null;
+      }
+
+      return {
+        logType: provider.logType,
+        regionId: provider.regionId,
+        slsProject: provider.slsProject,
+        slsLogStore: provider.slsLogStore,
+      };
+    },
+
+    /**
+     * Create the region-wide PROVIDER gateway log configuration. Intentionally no
+     * modify/delete wrappers: a foreign PROVIDER config must never be mutated or
+     * removed by ServerlessInsight — higher-level code decides via describe.
+     */
+    createGatewayLogConfig: async (config: {
+      slsProject: string;
+      slsLogStore: string;
+    }): Promise<void> => {
+      const request = new cloudapi.CreateLogConfigRequest({
+        logType: 'PROVIDER',
+        slsProject: config.slsProject,
+        slsLogStore: config.slsLogStore,
+        createSlr: true,
+      });
+
+      await apigwClient.createLogConfig(request);
     },
   };
 
