@@ -1,10 +1,16 @@
 import { getContext, logger, ProviderEnum } from '../../common';
+import { createVolcengineClient } from '../../common/volcengineClient';
 import { StateBackend } from '../../common/stateBackend';
-import { getAllResources } from '../../common/stateManager';
+import {
+  getAllResources,
+  getSharedResource,
+  removeSharedResource,
+} from '../../common/stateManager';
 import { lang } from '../../lang';
 import { deleteResource } from './tosResource';
 import { deleteResource as deleteFunctionResource } from './vefaasResource';
 import { deleteApigwResource } from './apigwResource';
+import { releaseSharedLogProjectIfUnused } from './sharedLogProject';
 
 export const destroyVolcengineStack = async (backend: StateBackend) => {
   const context = getContext();
@@ -88,6 +94,21 @@ export const destroyVolcengineStack = async (backend: StateBackend) => {
           }),
         );
       }
+    }
+  }
+
+  // Release the shared TLS project once no topics reference it anymore. The
+  // per-resource teardowns above deleted their own topics, so a project with
+  // zero remaining topics is safe to delete.
+  const sharedProject = getSharedResource(state, context.stage, 'logs.project');
+  if (sharedProject) {
+    const releaseResult = await releaseSharedLogProjectIfUnused(
+      context,
+      createVolcengineClient(context),
+      sharedProject,
+    );
+    if (releaseResult === 'deleted') {
+      state = removeSharedResource(state, context.stage, 'logs.project');
     }
   }
 

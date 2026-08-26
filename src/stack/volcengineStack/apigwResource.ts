@@ -23,12 +23,22 @@ import {
   buildEventResourceDefinition,
   resolveFunctionKey,
 } from './apigwTypes';
-import { setResource, removeResource, getResource } from '../../common/stateManager';
+import {
+  setResource,
+  removeResource,
+  getResource,
+  setSharedResource,
+} from '../../common/stateManager';
 import { buildSid } from '../../common';
 import { logger } from '../../common/logger';
 import { lang } from '../../lang';
 import { OWNERSHIP_TAG_KEY, buildOwnershipTagValue, isOwnedByStack } from '../ownershipTag';
 import { isResourceAlreadyExistsError } from '../alreadyExists';
+import {
+  ensureSharedLogProject,
+  buildSharedProjectResourceState,
+  ensureOwnedTopic,
+} from './sharedLogProject';
 
 const buildGatewayInstance = (info: ApigwGatewayInfo, stage: string): ResourceInstance => ({
   type: 'VOLCENGINE_APIGW_GATEWAY',
@@ -54,12 +64,14 @@ const buildGatewayInstance = (info: ApigwGatewayInfo, stage: string): ResourceIn
 
 const ensureApigwLogResources = async (
   context: Context,
-  serviceName: string,
   existingInstances: Array<ResourceInstance>,
+  state: StateFile,
+  logicalId: string,
 ): Promise<{
   projectId: string;
   topicId: string;
   instances: Array<ResourceInstance>;
+  sharedInstance?: ResourceState;
 }> => {
   const client = createVolcengineClient(context);
 
@@ -67,6 +79,7 @@ const ensureApigwLogResources = async (
   const tlsTopicInstance = existingInstances.find((i) => i.type === 'VOLCENGINE_TLS_TOPIC');
 
   if (tlsProjectInstance && tlsTopicInstance) {
+    // Legacy own project+topic → reuse exactly as before.
     return {
       projectId: (tlsProjectInstance.projectId as string) ?? '',
       topicId: (tlsTopicInstance.topicId as string) ?? '',
@@ -74,58 +87,44 @@ const ensureApigwLogResources = async (
     };
   }
 
-  const projectName = `${serviceName}-${context.stage}-apigw-tls`;
-  const topicName = `${serviceName}-${context.stage}-apigw-logs`;
-
-  logger.info(lang.__('CREATING_TLS_PROJECT', { projectName }));
-  const project = await client.tls.createProject({
-    projectName,
-    description: `API Gateway access logs for ${serviceName}`,
-    region: context.region,
-  });
-
-  logger.info(lang.__('CREATING_TLS_TOPIC', { topicName }));
-  const topic = await client.tls.createTopic({
-    projectName,
+  // Shared app-scoped TLS project (#214) with a per-event topic nested under it.
+  const shared = await ensureSharedLogProject(context, client, state);
+  const sharedInstance = buildSharedProjectResourceState(context, shared);
+  const topicName = `${context.service}-${context.stage}-apigw-logs`;
+  const topic = await ensureOwnedTopic(context, client, {
+    projectName: shared.projectName,
     topicName,
-    description: `API Gateway access logs for ${serviceName}`,
-    ttl: 30,
+    logicalId,
   });
-
-  logger.info(lang.__('CREATING_TLS_INDEX', { topicName }));
-  await client.tls.createIndex({
-    projectName,
-    topicName,
-    fullTextIndex: {
-      delimiter: ' ,.?;!\n\t',
-      caseSensitive: false,
-    },
-  });
-
-  logger.info(lang.__('WAITING_FOR_TLS_RESOURCES', { projectName, topicName }));
-  await client.tls.waitForProject(projectName);
-  await client.tls.waitForTopic(projectName, topicName);
 
   return {
-    projectId: project.projectId ?? '',
-    topicId: topic.topicId ?? '',
+    projectId: shared.projectId,
+    topicId: topic.topicId,
     instances: [
       {
-        type: 'VOLCENGINE_TLS_PROJECT',
-        sid: buildSid('volcengine', 'tls', context.stage, projectName),
-        id: projectName,
-        projectId: project.projectId ?? '',
-        ...project,
+        type: 'VOLCENGINE_TLS_TOPIC',
+        sid: buildSid(
+          'volcengine',
+          'tls',
+          context.stage,
+          `${shared.projectName}/${topic.topicName}`,
+        ),
+        id: `${shared.projectName}/${topic.topicName}`,
+        projectId: shared.projectId,
+        topicId: topic.topicId,
       },
       {
-        type: 'VOLCENGINE_TLS_TOPIC',
-        sid: buildSid('volcengine', 'tls', context.stage, `${projectName}/${topicName}`),
-        id: `${projectName}/${topicName}`,
-        projectId: project.projectId ?? '',
-        topicId: topic.topicId ?? '',
-        ...topic,
+        type: 'VOLCENGINE_TLS_INDEX',
+        sid: buildSid(
+          'volcengine',
+          'tls',
+          context.stage,
+          `${shared.projectName}/${topic.topicName}/index`,
+        ),
+        id: `${shared.projectName}/${topic.topicName}/index`,
       },
     ],
+    sharedInstance,
   };
 };
 
@@ -287,7 +286,17 @@ export const createApigwResource = async (
   const instances: Array<ResourceInstance> = [buildGatewayInstance(gatewayInfo, context.stage)];
 
   if (event.log) {
-    const logResources = await ensureApigwLogResources(context, serviceName, []);
+    const existingEventState = getResource(state, logicalId);
+    const existingInstances = existingEventState?.instances ?? [];
+    const logResources = await ensureApigwLogResources(
+      context,
+      existingInstances,
+      state,
+      logicalId,
+    );
+    if (logResources.sharedInstance) {
+      state = setSharedResource(state, context.stage, 'logs.project', logResources.sharedInstance);
+    }
     await client.apigw.updateGatewayLog(gatewayId, {
       enable: true,
       projectId: logResources.projectId,
@@ -466,17 +475,25 @@ export const updateApigwResource = async (
     (i) =>
       i.type === 'VOLCENGINE_APIGW_GATEWAY' ||
       i.type === 'VOLCENGINE_APIGW_SERVICE' ||
-      i.type === 'VOLCENGINE_APIGW_UPSTREAM' ||
-      (i.type as string).startsWith('VOLCENGINE_TLS_'),
+      i.type === 'VOLCENGINE_APIGW_UPSTREAM',
   );
 
   try {
     if (event.log) {
       const logResources = await ensureApigwLogResources(
         context,
-        serviceName,
         existingState.instances,
+        state,
+        `events.${event.key}`,
       );
+      if (logResources.sharedInstance) {
+        state = setSharedResource(
+          state,
+          context.stage,
+          'logs.project',
+          logResources.sharedInstance,
+        );
+      }
       await client.apigw.updateGatewayLog(serviceInstance.gatewayId as string, {
         enable: true,
         projectId: logResources.projectId,
@@ -493,6 +510,7 @@ export const updateApigwResource = async (
           projectId: '',
           topicId: '',
         });
+        instances.push(...existingLogResources);
       }
     }
 
@@ -613,13 +631,14 @@ export const deleteApigwResource = async (
 
     for (const instance of [...tlsInstances].reverse()) {
       try {
-        if (instance.type === 'VOLCENGINE_TLS_TOPIC') {
+        if (instance.type === 'VOLCENGINE_TLS_INDEX') {
+          const [projectName, topicName] = instance.id.split('/');
+          logger.info(lang.__('DELETING_TLS_INDEX', { id: instance.id }));
+          await client.tls.deleteIndex(projectName, topicName);
+        } else if (instance.type === 'VOLCENGINE_TLS_TOPIC') {
           const [projectName, topicName] = instance.id.split('/');
           logger.info(lang.__('DELETING_TLS_TOPIC', { id: instance.id }));
           await client.tls.deleteTopic(projectName, topicName);
-        } else if (instance.type === 'VOLCENGINE_TLS_PROJECT') {
-          logger.info(lang.__('DELETING_TLS_PROJECT', { id: instance.id }));
-          await client.tls.deleteProject(instance.id);
         }
       } catch (error) {
         logger.warn(
