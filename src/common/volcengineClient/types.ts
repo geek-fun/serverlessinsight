@@ -338,6 +338,7 @@ export type TlsTopicInfo = {
   ttl?: number;
   createTime?: string;
   status?: string;
+  tags?: Array<{ Key?: string; Value?: string }>;
 };
 
 /**
@@ -355,6 +356,24 @@ export type TlsIndexConfig = {
     value: string;
     type: string;
   }>;
+};
+
+/**
+ * Configuration for adding ownership tags to TLS resources
+ */
+export type TlsTagConfig = {
+  resourceType: 'project' | 'topic';
+  resourcesList: string[];
+  tags: Array<{ key: string; value: string }>;
+};
+
+/**
+ * Configuration for removing ownership tags from TLS resources
+ */
+export type TlsRemoveTagsConfig = {
+  resourceType: 'project' | 'topic';
+  resourcesList: string[];
+  tagKeys: string[];
 };
 
 // ============================================================================
@@ -618,6 +637,7 @@ export type VolcengineClient = {
     updateRolePolicy: (roleName: string, customStatements?: IamStatement[]) => Promise<void>;
     updateManagedPolicies: (roleName: string, desiredPolicies: string[]) => Promise<void>;
     listAttachedRolePolicies: (roleName: string) => Promise<string[]>;
+    tagRole: (roleName: string, tags: Array<{ key: string; value: string }>) => Promise<void>;
   };
   tls: {
     createProject: (config: TlsProjectConfig) => Promise<TlsProjectInfo>;
@@ -625,11 +645,14 @@ export type VolcengineClient = {
     deleteProject: (projectName: string) => Promise<void>;
     createTopic: (config: TlsTopicConfig) => Promise<TlsTopicInfo>;
     getTopic: (projectName: string, topicName: string) => Promise<TlsTopicInfo | null>;
+    listTopics: (projectName: string) => Promise<TlsTopicInfo[]>;
     deleteTopic: (projectName: string, topicName: string) => Promise<void>;
     createIndex: (config: TlsIndexConfig) => Promise<void>;
     deleteIndex: (projectName: string, topicName: string) => Promise<void>;
     waitForProject: (projectName: string) => Promise<void>;
     waitForTopic: (projectName: string, topicName: string) => Promise<void>;
+    addTags: (config: TlsTagConfig) => Promise<void>;
+    removeTags: (config: TlsRemoveTagsConfig) => Promise<void>;
   };
   apigw: {
     createGateway: (config: ApigwGatewayConfig) => Promise<ApigwGatewayInfo>;

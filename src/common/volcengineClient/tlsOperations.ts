@@ -5,6 +5,8 @@ import type {
   TlsTopicConfig,
   TlsTopicInfo,
   TlsIndexConfig,
+  TlsTagConfig,
+  TlsRemoveTagsConfig,
 } from './types';
 import { logger } from '../logger';
 import { lang } from '../../lang';
@@ -106,6 +108,26 @@ const isNotFoundError = (error: unknown): boolean => {
     code === 'ResourceNotFound' ||
     code === 'NotFound'
   );
+};
+
+const listTagsForResource = async (
+  tlsClient: TlsSdkClient,
+  resourceType: 'project' | 'topic',
+  resourceId: string,
+): Promise<Array<{ Key?: string; Value?: string }>> => {
+  try {
+    const response = await tlsClient.ListTagsForResources({
+      ResourceType: resourceType,
+      ResourcesIds: [resourceId],
+      MaxResults: 50,
+    });
+    return (response.ResourceTags ?? []).map((rt) => ({ Key: rt.TagKey, Value: rt.TagValue }));
+  } catch (error: unknown) {
+    if (isNotFoundError(error)) {
+      return [];
+    }
+    throw error;
+  }
 };
 
 export const createTlsOperations = (tlsClient: TlsSdkClient) => {
@@ -250,6 +272,8 @@ export const createTlsOperations = (tlsClient: TlsSdkClient) => {
           return null;
         }
 
+        const tags = await listTagsForResource(tlsClient, 'topic', topic.TopicId);
+
         return {
           topicId: topic.TopicId,
           topicName: topic.TopicName,
@@ -258,10 +282,37 @@ export const createTlsOperations = (tlsClient: TlsSdkClient) => {
           ttl: topic.Ttl,
           createTime: topic.CreateTime,
           status: 'Active',
+          tags,
         };
       } catch (error: unknown) {
         if (isNotFoundError(error)) {
           return null;
+        }
+        throw error;
+      }
+    },
+
+    listTopics: async (projectName: string): Promise<TlsTopicInfo[]> => {
+      try {
+        const project = await operations.getProject(projectName);
+        if (!project?.projectId) {
+          return [];
+        }
+
+        const response = await tlsClient.DescribeTopics({ ProjectId: project.projectId });
+
+        return (response.Topics ?? []).map((topic) => ({
+          topicId: topic.TopicId,
+          topicName: topic.TopicName,
+          projectName,
+          description: topic.Description,
+          ttl: topic.Ttl,
+          createTime: topic.CreateTime,
+          status: 'Active',
+        }));
+      } catch (error: unknown) {
+        if (isNotFoundError(error)) {
+          return [];
         }
         throw error;
       }
@@ -340,6 +391,38 @@ export const createTlsOperations = (tlsClient: TlsSdkClient) => {
 
     waitForTopic: async (projectName: string, topicName: string): Promise<void> => {
       await waitForTopicReady(operations.getTopic, projectName, topicName);
+    },
+
+    addTags: async (config: TlsTagConfig): Promise<void> => {
+      try {
+        await tlsClient.AddTagsToResource({
+          ResourceType: config.resourceType,
+          ResourcesList: config.resourcesList,
+          Tags: config.tags.map((tag) => ({ Key: tag.key, Value: tag.value })),
+        });
+      } catch (error: unknown) {
+        if (isNotFoundError(error)) {
+          logger.warn(lang.__('TLS_TAG_TARGET_NOT_FOUND', { resourceType: config.resourceType }));
+          return;
+        }
+        throw error;
+      }
+    },
+
+    removeTags: async (config: TlsRemoveTagsConfig): Promise<void> => {
+      try {
+        await tlsClient.RemoveTagsFromResource({
+          ResourceType: config.resourceType,
+          ResourcesList: config.resourcesList,
+          TagKeyList: config.tagKeys,
+        });
+      } catch (error: unknown) {
+        if (isNotFoundError(error)) {
+          logger.warn(lang.__('TLS_TAG_TARGET_NOT_FOUND', { resourceType: config.resourceType }));
+          return;
+        }
+        throw error;
+      }
     },
   };
 
