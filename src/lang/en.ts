@@ -267,6 +267,13 @@ export const en = {
   APIGW_LOG_ENABLED: 'Access log enabled for API Gateway {{gatewayId}}',
   APIGW_LOG_DISABLED: 'Access log disabled for API Gateway {{gatewayId}}',
   APIGW_LOG_DISABLE_FAILED: 'Failed to disable access log for API Gateway {{gatewayId}}: {{error}}',
+  SLS_LOG_CONFIG_FOREIGN:
+    'Existing PROVIDER gateway log configuration points to {{slsProject}}/{{slsLogStore}}; leaving it untouched',
+  SLS_LOGSTORE_WAITING: 'Waiting for SLS logstore {{project}}/{{logstore}} to be ready...',
+  SHARED_SLS_PROJECT_IN_USE:
+    '{{count}} logstore(s) still reference shared SLS project {{projectName}}; retaining it',
+  APIGW_LOG_CONFIG_STILL_REFERENCES_STORE:
+    'Regional PROVIDER gateway log config still references {{slsLogStore}}; retaining logstore',
   APIGW_DOMAIN_BINDING_FAILED: 'Failed to bind custom domain: {{error}}',
   APIGW_DOMAIN_UNBIND_FAILED: 'Failed to unbind domain {{domain}}: {{error}}',
   APIGW_WWW_DOMAIN_UNBIND_FAILED: 'Failed to unbind www domain {{domain}}: {{error}}',
@@ -475,7 +482,6 @@ export const en = {
   DELETING_RAM_ROLE: 'Deleting RAM role: {{id}}',
   DELETING_SLS_INDEX: 'Deleting SLS index: {{id}}',
   DELETING_SLS_LOGSTORE: 'Deleting SLS logstore: {{id}}',
-  DELETING_SLS_PROJECT: 'Deleting SLS project: {{id}}',
   UNKNOWN_RESOURCE_TYPE: 'Unknown resource type: {{type}}',
   FAILED_TO_DELETE_RESOURCE: 'Failed to delete resource {{type}}:{{id}}: {{error}}',
 
@@ -804,6 +810,16 @@ export const en = {
   TLS_TOPIC_CREATED: 'TLS topic {{topicName}} created successfully',
   TLS_TOPIC_DELETED: 'TLS topic {{topicName}} deleted successfully',
   TLS_TOPIC_NOT_FOUND: 'TLS topic {{topicName}} not found',
+  TLS_TAG_TARGET_NOT_FOUND: 'TLS {{resourceType}} not found while applying tags; skipping',
+  VOLCENGINE_ROLE_NOT_FOUND_FOR_TAG:
+    'IAM role {{roleName}} not found while applying tags; skipping',
+  SHARED_TLS_PROJECT_IN_USE:
+    '{{count}} topic(s) still reference shared TLS project {{projectName}}; retaining it',
+  SHARED_TLS_PROJECT_DELETED: 'Deleted unused shared TLS project {{projectName}}',
+  SHARED_TLS_PROJECT_LEGACY_SKIPPED:
+    'Skipping legacy TLS project {{id}}; projects are released by the destroyer once unused',
+  TLS_TOPIC_FOREIGN_OWNED:
+    'TLS topic {{topicName}} exists but is owned by another stack; refusing to adopt',
   TLS_TOPIC_ALREADY_EXISTS: 'TLS topic {{topicName}} already exists, adopting existing topic',
   TLS_TOPIC_TIMEOUT: 'Timeout waiting for TLS topic {{topicName}} to be ready',
   TLS_INDEX_CREATED: 'TLS index for topic {{topicName}} created successfully',
@@ -818,6 +834,17 @@ export const en = {
   DELETING_TLS_TOPIC: 'Deleting TLS topic: {{id}}',
   DELETING_TLS_INDEX: 'Deleting TLS index: {{id}}',
   WAITING_FOR_TLS_RESOURCES: 'Waiting for TLS resources to be ready: {{projectName}}/{{topicName}}',
+
+  // Tencent CLS (Cloud Log Service) messages
+  SHARED_CLS_LOGSET_IN_USE:
+    '{{count}} topic(s) still reference shared CLS logset {{logsetName}}; retaining it',
+  SHARED_CLS_LOGSET_DELETED: 'Deleted unused shared CLS logset {{logsetName}}',
+  CLS_TOPIC_FOREIGN_OWNED:
+    'CLS topic {{topicName}} exists but is owned by another stack; refusing to adopt',
+  CREATING_CLS_LOGSET: 'Creating CLS logset: {{logsetName}}',
+  CREATING_CLS_TOPIC: 'Creating CLS topic: {{topicName}}',
+  CREATING_CLS_INDEX: 'Creating CLS index for topic: {{topicName}}',
+  DELETING_CLS_TOPIC: 'Deleting CLS topic: {{id}}',
 
   // Volcengine veFaaS dependent resources
   VEFAAS_DEPENDENT_RESOURCES_TRACKED: 'Dependent resources (TLS, IAM) are tracked in state',

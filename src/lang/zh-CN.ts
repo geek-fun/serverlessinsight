@@ -249,6 +249,12 @@ export const zhCN = {
   APIGW_LOG_ENABLED: '已为 API 网关 {{gatewayId}} 开启访问日志',
   APIGW_LOG_DISABLED: '已为 API 网关 {{gatewayId}} 关闭访问日志',
   APIGW_LOG_DISABLE_FAILED: '关闭 API 网关 {{gatewayId}} 访问日志失败：{{error}}',
+  SLS_LOG_CONFIG_FOREIGN:
+    '已存在的 PROVIDER 网关日志配置指向 {{slsProject}}/{{slsLogStore}}，保持不变',
+  SLS_LOGSTORE_WAITING: '等待 SLS 日志库 {{project}}/{{logstore}} 就绪...',
+  SHARED_SLS_PROJECT_IN_USE: '仍有 {{count}} 个日志库引用共享 SLS 项目 {{projectName}}，予以保留',
+  APIGW_LOG_CONFIG_STILL_REFERENCES_STORE:
+    '区域级 PROVIDER 网关日志配置仍引用 {{slsLogStore}}，保留该日志库',
   APIGW_DOMAIN_BINDING_FAILED: '绑定自定义域名失败：{{error}}',
   APIGW_DOMAIN_UNBIND_FAILED: '解绑域名 {{domain}} 失败：{{error}}',
   APIGW_WWW_DOMAIN_UNBIND_FAILED: '解绑 www 域名 {{domain}} 失败：{{error}}',
@@ -426,7 +432,6 @@ export const zhCN = {
   DELETING_RAM_ROLE: '正在删除 RAM 角色: {{id}}',
   DELETING_SLS_INDEX: '正在删除 SLS 索引: {{id}}',
   DELETING_SLS_LOGSTORE: '正在删除 SLS 日志库: {{id}}',
-  DELETING_SLS_PROJECT: '正在删除 SLS 项目: {{id}}',
   UNKNOWN_RESOURCE_TYPE: '未知资源类型: {{type}}',
   FAILED_TO_DELETE_RESOURCE: '删除资源 {{type}}:{{id}} 失败: {{error}}',
 
@@ -735,6 +740,12 @@ export const zhCN = {
   TLS_TOPIC_CREATED: 'TLS 主题 {{topicName}} 创建成功',
   TLS_TOPIC_DELETED: 'TLS 主题 {{topicName}} 删除成功',
   TLS_TOPIC_NOT_FOUND: 'TLS 主题 {{topicName}} 未找到',
+  TLS_TAG_TARGET_NOT_FOUND: '应用标签时未找到 TLS {{resourceType}}，已跳过',
+  VOLCENGINE_ROLE_NOT_FOUND_FOR_TAG: '应用标签时未找到 IAM 角色 {{roleName}}，已跳过',
+  SHARED_TLS_PROJECT_IN_USE: '仍有 {{count}} 个主题引用共享 TLS 项目 {{projectName}}，予以保留',
+  SHARED_TLS_PROJECT_DELETED: '已删除未使用的共享 TLS 项目 {{projectName}}',
+  SHARED_TLS_PROJECT_LEGACY_SKIPPED: '跳过遗留 TLS 项目 {{id}}；项目将由销毁流程在无引用时释放',
+  TLS_TOPIC_FOREIGN_OWNED: 'TLS 主题 {{topicName}} 已存在但属于其他栈，拒绝采用',
   TLS_TOPIC_ALREADY_EXISTS: 'TLS 主题 {{topicName}} 已存在，复用现有主题',
   TLS_TOPIC_TIMEOUT: '等待 TLS 主题 {{topicName}} 就绪超时',
   TLS_INDEX_CREATED: 'TLS 主题 {{topicName}} 索引创建成功',
@@ -749,6 +760,15 @@ export const zhCN = {
   DELETING_TLS_TOPIC: '正在删除 TLS 主题：{{id}}',
   DELETING_TLS_INDEX: '正在删除 TLS 索引：{{id}}',
   WAITING_FOR_TLS_RESOURCES: '等待 TLS 资源就绪：{{projectName}}/{{topicName}}',
+
+  // Tencent CLS（云日志服务）消息
+  SHARED_CLS_LOGSET_IN_USE: '仍有 {{count}} 个主题引用共享 CLS 日志集 {{logsetName}}，予以保留',
+  SHARED_CLS_LOGSET_DELETED: '已删除未使用的共享 CLS 日志集 {{logsetName}}',
+  CLS_TOPIC_FOREIGN_OWNED: 'CLS 主题 {{topicName}} 已存在但属于其他栈，拒绝采用',
+  CREATING_CLS_LOGSET: '正在创建 CLS 日志集：{{logsetName}}',
+  CREATING_CLS_TOPIC: '正在创建 CLS 主题：{{topicName}}',
+  CREATING_CLS_INDEX: '正在为 CLS 主题创建索引：{{topicName}}',
+  DELETING_CLS_TOPIC: '正在删除 CLS 主题：{{id}}',
 
   // Volcengine veFaaS dependent resources
   VEFAAS_DEPENDENT_RESOURCES_TRACKED: '依赖资源（TLS、IAM）已在状态中跟踪',
