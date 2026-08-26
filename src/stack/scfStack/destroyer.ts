@@ -9,6 +9,9 @@ import { generateDatabasePlan } from './tdsqlcPlanner';
 import { executeDatabasePlan } from './tdsqlcExecutor';
 import { generateEsPlan } from './esServerlessPlanner';
 import { executeEsPlan } from './esServerlessExecutor';
+import { createTencentClient } from '../../common/tencentClient';
+import { getSharedResource, removeSharedResource } from '../../common/stateManager';
+import { SHARED_LOGSET_KEY, releaseSharedLogsetIfUnused } from './sharedLogset';
 import { ExecutionResult, PartialFailureError, PlanItem, StateFile } from '../../types';
 
 const createSaveStateFn =
@@ -120,6 +123,21 @@ export const destroyTencentStack = async (backend: StateBackend): Promise<void> 
         ...esResult.partialFailure.successfulItems,
       ],
     });
+  }
+
+  // Release the shared CLS logset once no topics reference it anymore. The
+  // per-function teardowns above deleted their own topics, so a logset with
+  // zero remaining topics is safe to delete.
+  const sharedLogset = getSharedResource(state, context.stage, SHARED_LOGSET_KEY);
+  if (sharedLogset) {
+    const releaseResult = await releaseSharedLogsetIfUnused(
+      context,
+      createTencentClient(context),
+      sharedLogset,
+    );
+    if (releaseResult === 'deleted') {
+      state = removeSharedResource(state, context.stage, SHARED_LOGSET_KEY);
+    }
   }
 
   await backend.saveState(state, context.app, context.service, context.stage);

@@ -36,6 +36,18 @@ const mockCamOperations = {
   updateManagedPolicies: jest.fn(),
 };
 
+const mockClsOperations = {
+  createLogset: jest.fn(),
+  getLogsetByName: jest.fn(),
+  listTopicsByLogset: jest.fn(),
+  getTopicByName: jest.fn(),
+  createTopic: jest.fn(),
+  deleteTopic: jest.fn(),
+  deleteLogset: jest.fn(),
+  createFulltextIndex: jest.fn(),
+  waitForTopic: jest.fn(),
+};
+
 jest.mock('../../../../src/stack/scfStack/scfTypes');
 jest.mock('../../../../src/common/stateManager');
 jest.mock('../../../../src/common/hashUtils');
@@ -44,6 +56,7 @@ jest.mock('../../../../src/common/tencentClient', () => ({
   createTencentClient: () => ({
     scf: mockScfOperations,
     cam: mockCamOperations,
+    cls: mockClsOperations,
     cos: {},
     tdsqlc: {},
   }),
@@ -1043,6 +1056,46 @@ describe('ScfResource', () => {
         }),
       );
     });
+
+    it('binds CLS ids on create when log enabled', async () => {
+      const fnWithLog = { ...testFunction, log: true };
+
+      (mockScfOperations.createFunction as jest.Mock).mockResolvedValue(undefined);
+      (mockClsOperations.createLogset as jest.Mock).mockResolvedValue({ logsetId: 'logset-1' });
+      (mockClsOperations.getTopicByName as jest.Mock).mockResolvedValue(null);
+      (mockClsOperations.createTopic as jest.Mock).mockResolvedValue({ topicId: 'topic-1' });
+      (mockClsOperations.createFulltextIndex as jest.Mock).mockResolvedValue(undefined);
+      (stateManager.setResource as jest.Mock).mockReturnValue(initialState);
+
+      await createResource(mockContext, fnWithLog, initialState);
+
+      expect(mockClsOperations.createLogset).toHaveBeenCalledWith('test-app-default-cls', [
+        { key: 'si-owned-by', value: 'test-app:shared:logs.project' },
+      ]);
+      expect(mockClsOperations.createTopic).toHaveBeenCalledWith(
+        'logset-1',
+        'test-service-default-fn-logs',
+        expect.objectContaining({
+          period: 30,
+          storageType: 'hot',
+          tags: [{ key: 'si-owned-by', value: 'test-app-test-service:functions.test_fn' }],
+        }),
+      );
+      expect(mockClsOperations.createFulltextIndex).toHaveBeenCalledWith('topic-1');
+      expect(stateManager.setSharedResource).toHaveBeenCalledWith(
+        expect.anything(),
+        'default',
+        'logs.project',
+        expect.objectContaining({ mode: 'managed' }),
+      );
+      expect(mockScfOperations.createFunction).toHaveBeenCalledWith(
+        expect.objectContaining({
+          ClsLogsetId: 'logset-1',
+          ClsTopicId: 'topic-1',
+        }),
+        'base64encodedcontent',
+      );
+    });
   });
 
   describe('readResource', () => {
@@ -1257,6 +1310,54 @@ describe('ScfResource', () => {
       // Immutable Handler/Runtime stripping happens inside scfOperations
       // (covered by scfOperations.test.ts) — the resource layer passes config
       // through as-is.
+    });
+
+    it('triggers configuration update when only CLS destination changed', async () => {
+      const fnWithLog = { ...testFunction, log: true };
+
+      (scfTypes.functionToScfConfig as jest.Mock).mockReturnValue({
+        ...mockConfig,
+        ClsLogsetId: 'logset-1',
+        ClsTopicId: 'topic-1',
+        ClsLogsetName: 'test-app-default-cls',
+        ClsTopicName: 'test-service-default-fn-logs',
+      });
+      (scfTypes.extractScfDefinition as jest.Mock).mockReturnValue({
+        ...mockDefinition,
+        logConfig: { logset: 'test-app-default-cls', topic: 'test-service-default-fn-logs' },
+      });
+      (mockScfOperations.updateFunctionConfiguration as jest.Mock).mockResolvedValue(undefined);
+      (mockScfOperations.updateFunctionCode as jest.Mock).mockResolvedValue(undefined);
+      (mockClsOperations.createLogset as jest.Mock).mockResolvedValue({ logsetId: 'logset-1' });
+      (mockClsOperations.getTopicByName as jest.Mock).mockResolvedValue(null);
+      (mockClsOperations.createTopic as jest.Mock).mockResolvedValue({ topicId: 'topic-1' });
+      (mockClsOperations.createFulltextIndex as jest.Mock).mockResolvedValue(undefined);
+      (stateManager.setResource as jest.Mock).mockReturnValue(initialState);
+      (stateManager.getResource as jest.Mock).mockReturnValue({
+        mode: 'managed',
+        region: 'ap-guangzhou',
+        definition: { ...mockDefinition },
+        instances: [
+          {
+            sid: 'si:tencent:scf:default:test-function',
+            id: 'test-function',
+            functionName: 'test-function',
+          },
+        ],
+        lastUpdated: '2025-01-01T00:00:00Z',
+      });
+
+      await updateResource(mockContext, fnWithLog, initialState);
+
+      expect(mockClsOperations.createLogset).toHaveBeenCalled();
+      expect(mockScfOperations.updateFunctionConfiguration).toHaveBeenCalledTimes(1);
+      expect(mockScfOperations.updateFunctionConfiguration).toHaveBeenCalledWith(
+        expect.objectContaining({
+          FunctionName: 'test-function',
+          ClsLogsetId: 'logset-1',
+          ClsTopicId: 'topic-1',
+        }),
+      );
     });
 
     it('should throw a clear error when Handler changes on update', async () => {
@@ -2411,6 +2512,45 @@ describe('ScfResource', () => {
         'functions.test_fn',
       );
       expect(result).toEqual(initialState);
+    });
+
+    it('deletes bound topic after function deletion', async () => {
+      const stateWithTopic: StateFile = {
+        ...initialState,
+        resources: {
+          'functions.test_fn': {
+            mode: 'managed',
+            region: 'ap-guangzhou',
+            definition: mockDefinition,
+            instances: [
+              {
+                sid: 'si:tencent:scf:default:test-function',
+                id: 'test-function',
+                functionName: 'test-function',
+              },
+              {
+                sid: 'si:tencent:cls-topic:default:test-service-default-fn-logs',
+                type: 'TENCENT_CLS_TOPIC',
+                id: 'topic-1',
+                topicName: 'test-service-default-fn-logs',
+              },
+            ],
+            lastUpdated: '2025-01-01T00:00:00Z',
+          },
+        },
+      };
+
+      (stateManager.getResource as jest.Mock).mockReturnValue(
+        stateWithTopic.resources['functions.test_fn'],
+      );
+      (mockScfOperations.deleteFunction as jest.Mock).mockResolvedValue(undefined);
+      (mockClsOperations.deleteTopic as jest.Mock).mockResolvedValue(undefined);
+      (stateManager.removeResource as jest.Mock).mockReturnValue(initialState);
+
+      await deleteResource(mockContext, 'test-function', 'functions.test_fn', stateWithTopic);
+
+      expect(mockScfOperations.deleteFunction).toHaveBeenCalledWith('test-function');
+      expect(mockClsOperations.deleteTopic).toHaveBeenCalledWith('topic-1');
     });
 
     it('should skip role deletion for external roles', async () => {

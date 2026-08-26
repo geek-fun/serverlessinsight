@@ -9,9 +9,19 @@ import * as cosExecutor from '../../../../src/stack/scfStack/cosExecutor';
 import * as tdsqlcExecutor from '../../../../src/stack/scfStack/tdsqlcExecutor';
 import * as esExecutor from '../../../../src/stack/scfStack/esServerlessExecutor';
 import * as common from '../../../../src/common';
+import * as sharedLogset from '../../../../src/stack/scfStack/sharedLogset';
 import { StateBackend } from '../../../../src/common/stateBackend';
 import { ProviderEnum } from '../../../../src/common';
 import { StateFile, CURRENT_STATE_VERSION, Plan } from '../../../../src/types';
+
+jest.mock('../../../../src/stack/scfStack/sharedLogset', () => ({
+  SHARED_LOGSET_KEY: 'logs.project',
+  releaseSharedLogsetIfUnused: jest.fn(),
+}));
+
+jest.mock('../../../../src/common/tencentClient', () => ({
+  createTencentClient: jest.fn(() => ({ cls: {} })),
+}));
 
 jest.mock('../../../../src/stack/scfStack/scfPlanner');
 jest.mock('../../../../src/stack/scfStack/cosPlanner');
@@ -155,6 +165,55 @@ describe('destroyer', () => {
 
       expect(mockBackend.saveState).toHaveBeenCalledWith(
         expect.objectContaining({ resources: {} }),
+        'test-app',
+        'test-service',
+        'dev',
+      );
+    });
+
+    it('releases and removes the shared CLS logset when no topics remain', async () => {
+      const sharedResourceState = {
+        mode: 'managed' as const,
+        region: 'ap-guangzhou',
+        definition: { logsetName: 'test-app-dev-cls' },
+        instances: [
+          {
+            sid: 'si:tencent:cls-logset:dev:test-app-dev-cls',
+            type: 'TENCENT_CLS_LOGSET',
+            id: 'test-app-dev-cls',
+            logsetId: 'logset-1',
+          },
+        ],
+        lastUpdated: '2025-01-01T00:00:00Z',
+      };
+      const stateWithShared: StateFile = {
+        ...initialState,
+        stages: {
+          dev: { resources: {}, shared: { 'logs.project': sharedResourceState } },
+        },
+      };
+
+      mockBackend.loadState.mockResolvedValue(stateWithShared);
+      (scfExecutor.executeFunctionPlan as jest.Mock).mockResolvedValue({ state: stateWithShared });
+      (cosExecutor.executeBucketPlan as jest.Mock).mockResolvedValue({ state: stateWithShared });
+      (tdsqlcExecutor.executeDatabasePlan as jest.Mock).mockResolvedValue({
+        state: stateWithShared,
+      });
+      (esExecutor.executeEsPlan as jest.Mock).mockResolvedValue({ state: stateWithShared });
+      (sharedLogset.releaseSharedLogsetIfUnused as jest.Mock).mockResolvedValue('deleted');
+
+      await destroyTencentStack(mockBackend);
+
+      expect(sharedLogset.releaseSharedLogsetIfUnused).toHaveBeenCalled();
+      expect(mockBackend.saveState).toHaveBeenCalledWith(
+        expect.objectContaining({
+          stages: {
+            dev: {
+              resources: {},
+              shared: {},
+            },
+          },
+        }),
         'test-app',
         'test-service',
         'dev',

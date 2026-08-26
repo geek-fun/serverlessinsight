@@ -9,7 +9,13 @@ import {
 import { createTencentClient } from '../../common/tencentClient';
 import { readFileAsBase64 } from '../../common/fileUtils';
 import { functionToScfConfig, extractScfDefinition, ScfFunctionInfo } from './scfTypes';
-import { getResource, setResource, removeResource } from '../../common/stateManager';
+import {
+  getResource,
+  setResource,
+  removeResource,
+  getSharedResource,
+  setSharedResource,
+} from '../../common/stateManager';
 import { buildSid, attributesEqual, ProviderEnum, mapAuthType, mapAccess } from '../../common';
 import { RAM_ROLE_PROPAGATION_DELAY_MS } from '../../common/constants';
 import { computeZipContentHash } from '../../common/hashUtils';
@@ -18,6 +24,14 @@ import { lang } from '../../lang';
 import type { IamStatement } from '../../common/iamStatements';
 import { OWNERSHIP_TAG_KEY, buildOwnershipTagValue, isOwnedByStack } from '../ownershipTag';
 import { isResourceAlreadyExistsError } from '../alreadyExists';
+import {
+  SHARED_LOGSET_KEY,
+  buildSharedLogsetName,
+  buildFunctionTopicName,
+  ensureSharedLogset,
+  buildSharedLogsetResourceState,
+  ensureFunctionTopic,
+} from './sharedLogset';
 
 /**
  * Build the Function URL trigger description for Tencent CreateTrigger
@@ -53,6 +67,8 @@ type ScfDependentInstance = {
   roleArn?: string;
   external?: boolean;
   protocol?: string;
+  logsetId?: string;
+  topicName?: string;
 };
 
 /**
@@ -121,6 +137,23 @@ const isRecoverableCreateError = (error: unknown): boolean => {
     message.includes('socket hang up') ||
     message.includes('econnreset') ||
     message.includes('etimedout')
+  );
+};
+
+// CLS destination drift is only meaningful when the desired config carries one —
+// a log-enabled function whose stable destination names differ from state must
+// re-push configuration so UpdateFunctionConfiguration rebinds the function.
+const isLogConfigChanged = (
+  desiredDefinition: Record<string, unknown>,
+  existingDefinition: Record<string, unknown>,
+): boolean => {
+  const desiredLogConfig = desiredDefinition.logConfig as Record<string, unknown> | undefined;
+  if (!desiredLogConfig) {
+    return false;
+  }
+  return !attributesEqual(
+    desiredLogConfig,
+    (existingDefinition.logConfig as Record<string, unknown> | undefined) ?? {},
   );
 };
 
@@ -310,13 +343,84 @@ const createDependentResources = async (
   context: Context,
   fn: FunctionDomain,
   existingInstances: Array<Record<string, unknown>> = [],
-): Promise<{ role?: { roleName?: string; arn?: string } }> => {
+  state?: StateFile,
+): Promise<{
+  role?: { roleName?: string; arn?: string };
+  clsConfig?: { logsetId: string; logsetName: string; topicId: string; topicName: string };
+  clsInstances: Array<ScfDependentInstance>;
+  sharedInstance?: ResourceState;
+}> => {
   const client = createTencentClient(context);
+  const clsInstances: Array<ScfDependentInstance> = [];
+  let clsConfig:
+    { logsetId: string; logsetName: string; topicId: string; topicName: string } | undefined;
+  let sharedInstance: ResourceState | undefined;
+
+  if (fn.log) {
+    const topicInstance = existingInstances.find(
+      (i) => (i as ScfDependentInstance).type === ResourceTypeEnum.TENCENT_CLS_TOPIC,
+    ) as ScfDependentInstance | undefined;
+    const logsetInstance = existingInstances.find(
+      (i) => (i as ScfDependentInstance).type === ResourceTypeEnum.TENCENT_CLS_LOGSET,
+    ) as ScfDependentInstance | undefined;
+
+    if (topicInstance && logsetInstance) {
+      clsConfig = {
+        logsetId: (logsetInstance as { logsetId?: string }).logsetId ?? '',
+        logsetName: logsetInstance.id,
+        topicId: topicInstance.id,
+        topicName: (topicInstance as { topicName?: string }).topicName ?? topicInstance.id,
+      };
+      clsInstances.push(logsetInstance, topicInstance);
+    } else {
+      const legacyFn = existingInstances.find(
+        (i) => (i as ScfDependentInstance).type === undefined,
+      ) as { clsLogsetId?: string; clsTopicId?: string } | undefined;
+      if (legacyFn?.clsLogsetId && legacyFn?.clsTopicId) {
+        clsConfig = {
+          logsetId: legacyFn.clsLogsetId,
+          logsetName: buildSharedLogsetName(context.app, context.stage),
+          topicId: legacyFn.clsTopicId,
+          topicName: buildFunctionTopicName(context),
+        };
+      } else {
+        const shared = await ensureSharedLogset(context, client, state);
+        sharedInstance = buildSharedLogsetResourceState(context, shared);
+        const topic = await ensureFunctionTopic(context, client, {
+          logsetId: shared.logsetId,
+          logsetName: shared.logsetName,
+          topicName: buildFunctionTopicName(context),
+          logicalId: `functions.${fn.key}`,
+        });
+        clsInstances.push(
+          {
+            sid: buildSid('tencent', 'cls-logset', context.stage, shared.logsetName),
+            type: ResourceTypeEnum.TENCENT_CLS_LOGSET,
+            id: shared.logsetName,
+            logsetId: shared.logsetId,
+          },
+          {
+            sid: buildSid('tencent', 'cls-topic', context.stage, topic.topicName),
+            type: ResourceTypeEnum.TENCENT_CLS_TOPIC,
+            id: topic.topicId,
+            topicName: topic.topicName,
+          },
+        );
+        clsConfig = {
+          logsetId: shared.logsetId,
+          logsetName: shared.logsetName,
+          topicId: topic.topicId,
+          topicName: topic.topicName,
+        };
+      }
+    }
+  }
+
   const iamConfig = fn.iam?.role;
 
   // No IAM role configured - skip
   if (!iamConfig) {
-    return {};
+    return { clsConfig, clsInstances, sharedInstance };
   }
 
   const statements = iamConfig && typeof iamConfig !== 'string' ? iamConfig.statements : undefined;
@@ -326,7 +430,7 @@ const createDependentResources = async (
 
   // External role (string) - skip creation, use ARN directly
   if (typeof iamConfig === 'string') {
-    return { role: { roleName: '', arn: iamConfig } };
+    return { role: { roleName: '', arn: iamConfig }, clsConfig, clsInstances, sharedInstance };
   }
 
   const hasCamRole = existingInstances.some((i) => i.type === 'TENCENT_SCF_ROLE');
@@ -336,7 +440,7 @@ const createDependentResources = async (
 
   if (hasCamRole) {
     // Role already exists - reuse it
-    return { role: { roleName, arn: roleName } };
+    return { role: { roleName, arn: roleName }, clsConfig, clsInstances, sharedInstance };
   }
 
   // Create new CAM role
@@ -352,7 +456,12 @@ const createDependentResources = async (
 
   await delay(RAM_ROLE_PROPAGATION_DELAY_MS);
 
-  return { role: { roleName: camRole.roleName, arn: camRole.roleArn ?? roleName } };
+  return {
+    role: { roleName: camRole.roleName, arn: camRole.roleArn ?? roleName },
+    clsConfig,
+    clsInstances,
+    sharedInstance,
+  };
 };
 
 const deleteDependentResources = async (
@@ -366,6 +475,15 @@ const deleteDependentResources = async (
         if (instance.external) break; // Skip external roles
         logger.info(lang.__('DELETING_RAM_ROLE', { id: instance.id }));
         await client.cam.deleteRole(instance.id);
+        break;
+      }
+      case ResourceTypeEnum.TENCENT_CLS_TOPIC: {
+        logger.info(lang.__('DELETING_CLS_TOPIC', { id: instance.id }));
+        await client.cls.deleteTopic(instance.id);
+        break;
+      }
+      case ResourceTypeEnum.TENCENT_CLS_LOGSET: {
+        // The shared CLS logset is released by the destroyer once no topics remain.
         break;
       }
       default:
@@ -388,14 +506,12 @@ export const createResource = async (
   }
 
   const existingResourceState = getResource(state, logicalId);
-  const existingDependentInstances = (existingResourceState?.instances ?? []).filter(
-    (i) => (i as ScfDependentInstance).type !== undefined,
-  ) as Array<Record<string, unknown>>;
 
   const dependentResources = await createDependentResources(
     context,
     fn,
-    existingDependentInstances,
+    existingResourceState?.instances ?? [],
+    state,
   );
 
   let config = functionToScfConfig(fn);
@@ -408,12 +524,22 @@ export const createResource = async (
     };
   }
 
+  if (dependentResources.clsConfig) {
+    config = {
+      ...config,
+      ClsLogsetId: dependentResources.clsConfig.logsetId,
+      ClsTopicId: dependentResources.clsConfig.topicId,
+      ClsLogsetName: dependentResources.clsConfig.logsetName,
+      ClsTopicName: dependentResources.clsConfig.topicName,
+    };
+  }
+
   const codePath = fn.code!.path;
   const codeBase64 = readFileAsBase64(codePath);
   const codeHash = await computeZipContentHash(codePath);
   const definition = extractScfDefinition(config, codeHash, fn.iam);
 
-  const dependentInstances: Array<ScfDependentInstance> = [];
+  const dependentInstances: Array<ScfDependentInstance> = [...dependentResources.clsInstances];
   if (dependentResources.role) {
     const iamConfig = fn.iam?.role;
     const isExternalRole = typeof iamConfig === 'string';
@@ -441,7 +567,10 @@ export const createResource = async (
     status: 'tainted',
   };
 
-  const stateAfterDependents = setResource(state, logicalId, taintedResourceState);
+  const stateWithShared = dependentResources.sharedInstance
+    ? setSharedResource(state, context.stage, SHARED_LOGSET_KEY, dependentResources.sharedInstance)
+    : state;
+  const stateAfterDependents = setResource(stateWithShared, logicalId, taintedResourceState);
 
   const client = createTencentClient(context);
 
@@ -724,6 +853,58 @@ export const updateResource = async (
     };
   }
 
+  let clsConfig:
+    { logsetId: string; logsetName: string; topicId: string; topicName: string } | undefined;
+  let clsTopicInstance: ScfDependentInstance | undefined;
+  let clsSharedInstance: ResourceState | undefined;
+
+  if (fn.log) {
+    const legacyLogsetId = existingFnInstance?.clsLogsetId as string | undefined;
+    const legacyTopicId = existingFnInstance?.clsTopicId as string | undefined;
+    if (legacyLogsetId && legacyTopicId) {
+      clsConfig = {
+        logsetId: legacyLogsetId,
+        logsetName: buildSharedLogsetName(context.app, context.stage),
+        topicId: legacyTopicId,
+        topicName: buildFunctionTopicName(context),
+      };
+    } else {
+      const sharedBefore = getSharedResource(state, context.stage, SHARED_LOGSET_KEY);
+      const logset = await ensureSharedLogset(context, client, state);
+      if (!sharedBefore) {
+        clsSharedInstance = buildSharedLogsetResourceState(context, logset);
+      }
+      const topic = await ensureFunctionTopic(context, client, {
+        logsetId: logset.logsetId,
+        logsetName: logset.logsetName,
+        topicName: buildFunctionTopicName(context),
+        logicalId,
+      });
+      clsConfig = {
+        logsetId: logset.logsetId,
+        logsetName: logset.logsetName,
+        topicId: topic.topicId,
+        topicName: topic.topicName,
+      };
+      clsTopicInstance = {
+        sid: buildSid('tencent', 'cls-topic', context.stage, topic.topicName),
+        type: ResourceTypeEnum.TENCENT_CLS_TOPIC,
+        id: topic.topicId,
+        topicName: topic.topicName,
+      };
+    }
+  }
+
+  if (clsConfig) {
+    config = {
+      ...config,
+      ClsLogsetId: clsConfig.logsetId,
+      ClsTopicId: clsConfig.topicId,
+      ClsLogsetName: clsConfig.logsetName,
+      ClsTopicName: clsConfig.topicName,
+    };
+  }
+
   const codePath = fn.code!.path;
   const codeBase64 = readFileAsBase64(codePath);
   const codeHash = await computeZipContentHash(codePath);
@@ -760,9 +941,10 @@ export const updateResource = async (
     );
   }
 
-  const configChanged = mutableKeys.some(
-    (k) => desiredDefinition[k as keyof typeof desiredDefinition] !== existingDefinition[k],
-  );
+  const configChanged =
+    mutableKeys.some(
+      (k) => desiredDefinition[k as keyof typeof desiredDefinition] !== existingDefinition[k],
+    ) || isLogConfigChanged(desiredDefinition, existingDefinition);
   if (configChanged) {
     await client.scf.updateFunctionConfiguration(config);
   }
@@ -945,7 +1127,12 @@ export const updateResource = async (
     .filter(
       (i) =>
         (i as ScfDependentInstance).type !== undefined &&
-        (i as ScfDependentInstance).type !== 'TENCENT_SCF_CUSTOM_DOMAIN',
+        (i as ScfDependentInstance).type !== 'TENCENT_SCF_CUSTOM_DOMAIN' &&
+        !(
+          clsTopicInstance &&
+          ((i as ScfDependentInstance).type === ResourceTypeEnum.TENCENT_CLS_TOPIC ||
+            (i as ScfDependentInstance).type === ResourceTypeEnum.TENCENT_CLS_LOGSET)
+        ),
     )
     .map((i) => {
       const { type, id, sid, roleArn, external } = i as ScfDependentInstance;
@@ -984,6 +1171,10 @@ export const updateResource = async (
     });
   }
 
+  if (clsTopicInstance) {
+    newDependentInstances.push(clsTopicInstance);
+  }
+
   const resourceState: ResourceState = {
     mode: 'managed',
     region: context.region,
@@ -996,7 +1187,11 @@ export const updateResource = async (
     lastUpdated: new Date().toISOString(),
   };
 
-  return setResource(state, logicalId, resourceState);
+  const stateWithShared = clsSharedInstance
+    ? setSharedResource(state, context.stage, SHARED_LOGSET_KEY, clsSharedInstance)
+    : state;
+
+  return setResource(stateWithShared, logicalId, resourceState);
 };
 
 export const deleteResource = async (
