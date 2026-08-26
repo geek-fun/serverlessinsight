@@ -131,15 +131,25 @@ export const extractEventDomainDefinition = (
   gatewayName: string;
   network?: { vpcId: string; subnetIds: string[] };
   logEnabled: boolean;
+  logConfig?: { project: string; topic: string };
   triggers: Array<{ method: string; path: string; backend: string }>;
   domain?: { domainName?: string; certificateId?: string };
 } => {
+  const context = getContext();
   return {
     gatewayName: event.name,
     ...(event.network && {
       network: { vpcId: event.network.vpc_id, subnetIds: event.network.subnet_ids },
     }),
     logEnabled: event.log === true || event.log === 'true',
+    ...(event.log && context
+      ? {
+          logConfig: {
+            project: `${context.app}-${context.stage}-tls`,
+            topic: `${context.service}-${context.stage}-apigw-logs`,
+          },
+        }
+      : {}),
     triggers: event.triggers.map((t) => ({
       method: String(t.method),
       path: String(t.path),

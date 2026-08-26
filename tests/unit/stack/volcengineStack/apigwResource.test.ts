@@ -5,13 +5,23 @@ import {
 } from '../../../../src/stack/volcengineStack/apigwResource';
 import { ProviderEnum } from '../../../../src/common';
 import type { Context, EventDomain, StateFile } from '../../../../src/types';
-import { setResource, getResource, removeResource } from '../../../../src/common/stateManager';
+import {
+  setResource,
+  getResource,
+  removeResource,
+  setSharedResource,
+} from '../../../../src/common/stateManager';
 
 jest.mock('../../../../src/common', () => {
   const actual = jest.requireActual('../../../../src/common');
   return {
     ...actual,
     buildSid: jest.fn((provider, resource, stage, id) => `${provider}-${resource}-${stage}-${id}`),
+    getContext: jest.fn(() => ({
+      app: 'test-app',
+      service: 'test-service',
+      stage: 'dev',
+    })),
   };
 });
 
@@ -46,11 +56,16 @@ const mockClient = {
   tls: {
     createProject: jest.fn(),
     createTopic: jest.fn(),
+    getTopic: jest.fn(),
     createIndex: jest.fn(),
     waitForProject: jest.fn(),
     waitForTopic: jest.fn(),
     deleteTopic: jest.fn(),
+    deleteIndex: jest.fn(),
     deleteProject: jest.fn(),
+    addTags: jest.fn(),
+    removeTags: jest.fn(),
+    listTopics: jest.fn(),
   },
 };
 
@@ -70,6 +85,18 @@ jest.mock('../../../../src/common/stateManager', () => ({
     return { ...state, resources: newResources };
   }),
   getAllResources: jest.fn((state) => state.resources || {}),
+  setSharedResource: jest.fn((state, stage, key, resourceState) => ({
+    ...state,
+    stages: {
+      ...state.stages,
+      [stage]: {
+        ...state.stages?.[stage],
+        resources: state.stages?.[stage]?.resources ?? {},
+        shared: { ...state.stages?.[stage]?.shared, [key]: resourceState },
+      },
+    },
+  })),
+  getSharedResource: jest.fn((state, stage, key) => state.stages?.[stage]?.shared?.[key]),
 }));
 
 jest.mock('../../../../src/lang', () => ({
@@ -346,12 +373,13 @@ describe('apigwResource', () => {
     it('creates TLS resources and enables access log when log is true', async () => {
       mockClient.tls.createProject.mockResolvedValue({
         projectId: 'proj-1',
-        projectName: 'test-service-dev-apigw-tls',
+        projectName: 'test-app-dev-tls',
       });
       mockClient.tls.createTopic.mockResolvedValue({
         topicId: 'topic-1',
         topicName: 'test-service-dev-apigw-logs',
       });
+      mockClient.tls.getTopic.mockResolvedValue(null);
 
       const eventWithLog: EventDomain = { ...mockEvent, log: true };
       const result = await createApigwResource(
@@ -362,28 +390,138 @@ describe('apigwResource', () => {
       );
 
       expect(mockClient.tls.createProject).toHaveBeenCalledWith(
-        expect.objectContaining({ projectName: 'test-service-dev-apigw-tls' }),
+        expect.objectContaining({ projectName: 'test-app-dev-tls' }),
       );
       expect(mockClient.tls.createTopic).toHaveBeenCalledWith(
-        expect.objectContaining({ topicName: 'test-service-dev-apigw-logs' }),
+        expect.objectContaining({
+          projectName: 'test-app-dev-tls',
+          topicName: 'test-service-dev-apigw-logs',
+        }),
       );
       expect(mockClient.apigw.updateGatewayLog).toHaveBeenCalledWith('gw-1', {
         enable: true,
         projectId: 'proj-1',
         topicId: 'topic-1',
       });
+      // The shared project is tracked in the stage shared slot, not the event.
+      expect(setSharedResource).toHaveBeenCalledWith(
+        expect.anything(),
+        'dev',
+        'logs.project',
+        expect.objectContaining({
+          instances: [
+            expect.objectContaining({
+              type: 'VOLCENGINE_TLS_PROJECT',
+              id: 'test-app-dev-tls',
+              projectId: 'proj-1',
+            }),
+          ],
+        }),
+      );
 
       const saved = result.resources['events.api_gateway'];
-      expect(saved.instances.some((i) => (i.type as string) === 'VOLCENGINE_TLS_PROJECT')).toBe(
-        true,
-      );
       expect(saved.instances.some((i) => (i.type as string) === 'VOLCENGINE_TLS_TOPIC')).toBe(true);
+      expect(saved.instances.some((i) => (i.type as string) === 'VOLCENGINE_TLS_PROJECT')).toBe(
+        false,
+      );
     });
 
     it('does not create TLS resources when log is not set', async () => {
       await createApigwResource(mockContext, mockEvent, 'test-service', stateWithFunction);
       expect(mockClient.tls.createProject).not.toHaveBeenCalled();
       expect(mockClient.apigw.updateGatewayLog).not.toHaveBeenCalled();
+    });
+
+    it('passes existing gateway log instances into ensure on create', async () => {
+      const eventWithLog: EventDomain = { ...mockEvent, log: true };
+      const stateWithExistingLogs: StateFile = {
+        ...stateWithFunction,
+        resources: {
+          ...stateWithFunction.resources,
+          'events.api_gateway': {
+            mode: 'managed',
+            region: 'cn-beijing',
+            definition: {},
+            instances: [
+              {
+                type: 'VOLCENGINE_TLS_PROJECT',
+                sid: 's',
+                id: 'legacy-project',
+                projectId: 'proj-legacy',
+              },
+              {
+                type: 'VOLCENGINE_TLS_TOPIC',
+                sid: 's',
+                id: 'legacy-project/legacy-topic',
+                topicId: 'topic-legacy',
+              },
+            ],
+            lastUpdated: '2024-01-01T00:00:00Z',
+            status: 'ready',
+          },
+        },
+      };
+
+      mockClient.tls.createProject.mockResolvedValue({
+        projectId: 'proj-1',
+        projectName: 'test-app-dev-tls',
+      });
+      mockClient.tls.createTopic.mockResolvedValue({
+        topicId: 'topic-1',
+        topicName: 'test-service-dev-apigw-logs',
+      });
+
+      await createApigwResource(mockContext, eventWithLog, 'test-service', stateWithExistingLogs);
+
+      expect(mockClient.tls.createProject).not.toHaveBeenCalled();
+      expect(mockClient.tls.createTopic).not.toHaveBeenCalled();
+      expect(setSharedResource).not.toHaveBeenCalled();
+      expect(mockClient.apigw.updateGatewayLog).toHaveBeenCalledWith('gw-1', {
+        enable: true,
+        projectId: 'proj-legacy',
+        topicId: 'topic-legacy',
+      });
+    });
+
+    it('creates gateway topic under the shared project', async () => {
+      mockClient.tls.createProject.mockResolvedValue({
+        projectId: 'proj-1',
+        projectName: 'test-app-dev-tls',
+      });
+      mockClient.tls.createTopic.mockResolvedValue({
+        topicId: 'topic-1',
+        topicName: 'test-service-dev-apigw-logs',
+      });
+      mockClient.tls.getTopic.mockResolvedValue(null);
+
+      const eventWithLog: EventDomain = { ...mockEvent, log: true };
+      const result = await createApigwResource(
+        mockContext,
+        eventWithLog,
+        'test-service',
+        stateWithFunction,
+      );
+
+      expect(mockClient.tls.createTopic).toHaveBeenCalledWith(
+        expect.objectContaining({
+          projectName: 'test-app-dev-tls',
+          topicName: 'test-service-dev-apigw-logs',
+        }),
+      );
+      expect(mockClient.tls.addTags).toHaveBeenCalledWith(
+        expect.objectContaining({
+          resourceType: 'topic',
+          resourcesList: ['topic-1'],
+          tags: [{ key: 'si-owned-by', value: 'test-app-test-service:events.api_gateway' }],
+        }),
+      );
+      const saved = result.resources['events.api_gateway'];
+      const topic = saved.instances.find((i) => (i.type as string) === 'VOLCENGINE_TLS_TOPIC');
+      expect(topic).toMatchObject({
+        id: 'test-app-dev-tls/test-service-dev-apigw-logs',
+        topicId: 'topic-1',
+        projectId: 'proj-1',
+      });
     });
 
     it('adopts an owned gateway after an already-exists create conflict', async () => {
@@ -737,7 +875,7 @@ describe('apigwResource', () => {
       expect(removeResource).toHaveBeenCalled();
     });
 
-    it('disables access log and deletes TLS resources on delete', async () => {
+    it('disables access log and deletes TLS index/topic but never the project on delete', async () => {
       const stateWithEvent: StateFile = {
         ...stateWithFunction,
         resources: {
@@ -756,16 +894,21 @@ describe('apigwResource', () => {
                 gatewayId: 'gw-1',
               },
               {
-                type: 'VOLCENGINE_TLS_PROJECT',
-                sid: 's',
-                id: 'test-service-dev-apigw-tls',
-                projectId: 'proj-1',
-              },
-              {
                 type: 'VOLCENGINE_TLS_TOPIC',
                 sid: 's',
-                id: 'test-service-dev-apigw-tls/test-service-dev-apigw-logs',
+                id: 'test-app-dev-tls/test-service-dev-apigw-logs',
                 topicId: 'topic-1',
+              },
+              {
+                type: 'VOLCENGINE_TLS_INDEX',
+                sid: 's',
+                id: 'test-app-dev-tls/test-service-dev-apigw-logs/index',
+              },
+              {
+                type: 'VOLCENGINE_TLS_PROJECT',
+                sid: 's',
+                id: 'test-app-dev-tls',
+                projectId: 'proj-1',
               },
             ],
             lastUpdated: '2024-01-01T00:00:00Z',
@@ -783,11 +926,17 @@ describe('apigwResource', () => {
         projectId: '',
         topicId: '',
       });
-      expect(mockClient.tls.deleteTopic).toHaveBeenCalledWith(
-        'test-service-dev-apigw-tls',
+      expect(mockClient.tls.deleteIndex).toHaveBeenCalledWith(
+        'test-app-dev-tls',
         'test-service-dev-apigw-logs',
       );
-      expect(mockClient.tls.deleteProject).toHaveBeenCalledWith('test-service-dev-apigw-tls');
+      expect(mockClient.tls.deleteTopic).toHaveBeenCalledWith(
+        'test-app-dev-tls',
+        'test-service-dev-apigw-logs',
+      );
+      // Never delete projects at resource level — the destroyer releases the
+      // shared project once no topics reference it.
+      expect(mockClient.tls.deleteProject).not.toHaveBeenCalled();
       expect(removeResource).toHaveBeenCalled();
     });
 

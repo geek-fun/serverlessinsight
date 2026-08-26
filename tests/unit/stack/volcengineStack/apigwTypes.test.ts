@@ -115,6 +115,22 @@ describe('apigwTypes', () => {
     });
   });
 
+  it('should snapshot the shared logConfig when log is enabled', () => {
+    (getContext as jest.Mock).mockReturnValue({
+      app: 'test-app',
+      service: 'test-service',
+      stage: 'dev',
+    });
+
+    const def = extractEventDomainDefinition({ ...mockEvent, log: true });
+
+    expect(def.logEnabled).toBe(true);
+    expect(def.logConfig).toEqual({
+      project: 'test-app-dev-tls',
+      topic: 'test-service-dev-apigw-logs',
+    });
+  });
+
   it('should retain the backend reference when IaC context is unavailable', () => {
     (getContext as jest.Mock).mockReturnValue({ iac: undefined });
 

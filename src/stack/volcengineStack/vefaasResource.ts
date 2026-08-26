@@ -3,6 +3,7 @@ import {
   getResource,
   removeResource,
   setResource,
+  setSharedResource,
   computeZipContentHash,
   buildSid,
   attributesEqual,
@@ -27,6 +28,11 @@ import { logger } from '../../common/logger';
 import { lang } from '../../lang';
 import { OWNERSHIP_TAG_KEY, buildOwnershipTagValue, isOwnedByStack } from '../ownershipTag';
 import { isResourceAlreadyExistsError } from '../alreadyExists';
+import {
+  ensureSharedLogProject,
+  buildSharedProjectResourceState,
+  ensureOwnedTopic,
+} from './sharedLogProject';
 
 type DependentInstance = {
   type: string;
@@ -200,14 +206,17 @@ const createDependentResources = async (
   fn: FunctionDomain,
   serviceName: string,
   existingInstances: Array<DependentInstance> = [],
+  state?: StateFile,
 ): Promise<{
   logConfig?: { project: string; topic: string };
   role?: { roleName: string; trn: string };
   instances: Array<DependentInstance>;
+  sharedInstance?: ResourceState;
 }> => {
   const client = createVolcengineClient(context);
   const instances: Array<DependentInstance> = [];
   let logConfig: { project: string; topic: string } | undefined;
+  let sharedInstance: ResourceState | undefined;
 
   const hasTlsProject = existingInstances.some((i) => i.type === 'VOLCENGINE_TLS_PROJECT');
   const hasIamRole = existingInstances.some((i) => i.type === 'VOLCENGINE_IAM_ROLE');
@@ -222,54 +231,29 @@ const createDependentResources = async (
         instances.push(...existingInstances.filter((i) => i.type.startsWith('VOLCENGINE_TLS_')));
       }
     } else {
-      const projectName = `${serviceName}-${context.stage}-tls`;
-      const topicName = `${serviceName}-${context.stage}-logs`;
+      // Shared app-scoped TLS project (#214): the project is tracked in the
+      // stage shared slot, the function's topic stays nested under the function.
+      const shared = await ensureSharedLogProject(context, client, state);
+      sharedInstance = buildSharedProjectResourceState(context, shared);
 
-      logger.info(lang.__('CREATING_TLS_PROJECT', { projectName }));
-      const project = await client.tls.createProject({
-        projectName,
-        description: `veFaaS logs for ${serviceName}`,
-        region: context.region,
-      });
-      instances.push({
-        type: 'VOLCENGINE_TLS_PROJECT',
-        id: projectName,
-        attributes: { ...project },
-      });
-
-      logger.info(lang.__('CREATING_TLS_TOPIC', { topicName }));
-      const topic = await client.tls.createTopic({
-        projectName,
+      const topicName = `${context.service}-${context.stage}-fn-logs`;
+      const topic = await ensureOwnedTopic(context, client, {
+        projectName: shared.projectName,
         topicName,
-        description: `Function logs for ${serviceName}`,
-        ttl: 30,
+        logicalId: `functions.${fn.key}`,
       });
       instances.push({
         type: 'VOLCENGINE_TLS_TOPIC',
-        id: `${projectName}/${topicName}`,
+        id: `${shared.projectName}/${topic.topicName}`,
         attributes: { ...topic },
-      });
-
-      logger.info(lang.__('CREATING_TLS_INDEX', { topicName }));
-      await client.tls.createIndex({
-        projectName,
-        topicName,
-        fullTextIndex: {
-          delimiter: ' ,.?;!\n\t',
-          caseSensitive: false,
-        },
       });
       instances.push({
         type: 'VOLCENGINE_TLS_INDEX',
-        id: `${projectName}/${topicName}/index`,
+        id: `${shared.projectName}/${topic.topicName}/index`,
         attributes: {},
       });
 
-      logger.info(lang.__('WAITING_FOR_TLS_RESOURCES', { projectName, topicName }));
-      await client.tls.waitForProject(projectName);
-      await client.tls.waitForTopic(projectName, topicName);
-
-      logConfig = { project: projectName, topic: topicName };
+      logConfig = { project: shared.projectName, topic: topic.topicName };
     }
   }
 
@@ -336,6 +320,7 @@ const createDependentResources = async (
     logConfig,
     role,
     instances,
+    sharedInstance,
   };
 };
 
@@ -348,6 +333,13 @@ const deleteDependentResources = async (
   }>,
 ): Promise<void> => {
   const client = createVolcengineClient(context);
+
+  const legacyProjectInstance = instances.find(
+    (instance) => instance.type === 'VOLCENGINE_TLS_PROJECT',
+  );
+  if (legacyProjectInstance) {
+    logger.info(lang.__('SHARED_TLS_PROJECT_LEGACY_SKIPPED', { id: legacyProjectInstance.id }));
+  }
 
   for (const instance of [...instances].reverse()) {
     switch (instance.type) {
@@ -363,10 +355,6 @@ const deleteDependentResources = async (
         await client.tls.deleteTopic(projectName, topicName);
         break;
       }
-      case 'VOLCENGINE_TLS_PROJECT':
-        logger.info(lang.__('DELETING_TLS_PROJECT', { id: instance.id }));
-        await client.tls.deleteProject(instance.id);
-        break;
       case 'VOLCENGINE_IAM_ROLE': {
         const attrs = instance.attributes as Record<string, unknown> | undefined;
         if (attrs?.external === true) {
@@ -403,6 +391,7 @@ export const createResource = async (
     fn,
     serviceName,
     existingDependentInstances,
+    state,
   );
 
   const config = functionToVefaasConfig(fn, {
@@ -464,7 +453,10 @@ export const createResource = async (
     lastUpdated: new Date().toISOString(),
   };
 
-  const stateAfterDependents = setResource(state, logicalId, taintedResourceState);
+  const stateWithShared = dependentResources.sharedInstance
+    ? setSharedResource(state, context.stage, 'logs.project', dependentResources.sharedInstance)
+    : state;
+  const stateAfterDependents = setResource(stateWithShared, logicalId, taintedResourceState);
 
   const client = createVolcengineClient(context);
 
@@ -570,45 +562,52 @@ export const updateResource = async (
   const existingInstances = (currentState.instances ?? []) as Array<DependentInstance>;
   const isTainted = currentState.status === 'tainted';
 
-  const hasTlsResources = existingInstances.some((i) => i.type === 'VOLCENGINE_TLS_PROJECT');
   const hasIamRole = existingInstances.some((i) => i.type === 'VOLCENGINE_IAM_ROLE');
 
   const client = createVolcengineClient(context);
   const newDependentInstances: Array<DependentInstance> = [];
   let logConfig: { project: string; topic: string } | undefined;
   let role: { roleName: string; trn: string } | undefined;
+  let logState: StateFile | undefined;
 
-  if (fn.log && !hasTlsResources && !isTainted) {
-    // Persist a tainted state BEFORE creating dependent TLS resources so a
-    // partial failure (e.g. project created but topic creation fails) leaves a
-    // tainted marker for the executor instead of orphaning cloud resources
-    // untracked. A retry then resumes with the tainted state.
-    const stateAfterDependents = setResource(state, logicalId, {
-      ...currentState,
-      status: 'tainted',
-    });
-    try {
-      const deps = await createDependentResources(
-        context,
-        { ...fn, network: undefined, storage: { disk: undefined, nas: undefined } },
-        serviceName,
-      );
-      logConfig = deps.logConfig;
-      newDependentInstances.push(
-        ...deps.instances.filter((i) => i.type.startsWith('VOLCENGINE_TLS_')),
-      );
-    } catch (error) {
-      throw new PartialResourceError(
-        stateAfterDependents,
-        error instanceof Error ? error : new Error(String(error)),
-      );
-    }
-  } else if (hasTlsResources) {
-    const tlsProjectInstance = existingInstances.find((i) => i.type === 'VOLCENGINE_TLS_PROJECT');
+  if (fn.log) {
     const tlsTopicInstance = existingInstances.find((i) => i.type === 'VOLCENGINE_TLS_TOPIC');
-    if (tlsProjectInstance && tlsTopicInstance) {
+
+    if (tlsTopicInstance) {
+      // Reuse the tracked topic — legacy own-project/topic instances behave
+      // exactly as before; shared-scheme topics live under the shared project.
       const [projectName, topicName] = tlsTopicInstance.id.split('/');
       logConfig = { project: projectName, topic: topicName };
+    } else if (!isTainted) {
+      // Persist a tainted state BEFORE creating dependent TLS resources so a
+      // partial failure (e.g. project created but topic creation fails) leaves a
+      // tainted marker for the executor instead of orphaning cloud resources
+      // untracked. A retry then resumes with the tainted state.
+      const tainted = setResource(state, logicalId, {
+        ...currentState,
+        status: 'tainted',
+      });
+      try {
+        const deps = await createDependentResources(
+          context,
+          { ...fn, network: undefined, storage: { disk: undefined, nas: undefined } },
+          serviceName,
+          [],
+          tainted,
+        );
+        logState = deps.sharedInstance
+          ? setSharedResource(tainted, context.stage, 'logs.project', deps.sharedInstance)
+          : tainted;
+        logConfig = deps.logConfig;
+        newDependentInstances.push(
+          ...deps.instances.filter((i) => i.type.startsWith('VOLCENGINE_TLS_')),
+        );
+      } catch (error) {
+        throw new PartialResourceError(
+          logState ?? tainted,
+          error instanceof Error ? error : new Error(String(error)),
+        );
+      }
     }
   }
 
@@ -813,7 +812,7 @@ export const updateResource = async (
     lastUpdated: new Date().toISOString(),
   };
 
-  return setResource(state, logicalId, resourceState);
+  return setResource(logState ?? state, logicalId, resourceState);
 };
 
 export const deleteResource = async (

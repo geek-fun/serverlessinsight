@@ -1,5 +1,5 @@
 import { attributesEqual, computeZipContentHash, getResource } from '../../common';
-import { getAllResources } from '../../common/stateManager';
+import { getAllResources, getSharedResource } from '../../common/stateManager';
 import { createVolcengineClient } from '../../common/volcengineClient';
 import {
   Context,
@@ -63,25 +63,31 @@ export const generateFunctionPlan = async (
       // desiredDefinition.logConfig === undefined regardless of `fn.log` in the
       // YAML — meaning `log: true` could never be detected as drift and the
       // planner would report `noop` forever, so `UpdateFunction`'s `TlsConfig`
-      // never gets sent. Derive the same project/topic names
-      // createDependentResources would use (existing TLS instances in state
-      // take priority; otherwise the deterministic `{service}-{stage}-tls` /
-      // `{service}-{stage}-logs` names) so the diff can see the field change.
+      // never gets sent. Derive the same project/topic names the executor
+      // would use (shared stage slot → tracked topic instance → deterministic
+      // shared names `${app}-${stage}-tls` / `${service}-${stage}-fn-logs`) so
+      // the diff can see the field change without phantom drift.
       if (fn.log) {
-        if (currentState?.instances?.length) {
-          const tlsTopicInstance = currentState.instances.find(
-            (i) => (i as { type?: string }).type === 'VOLCENGINE_TLS_TOPIC',
-          ) as { id?: string } | undefined;
-          if (tlsTopicInstance?.id) {
-            const [projectName, topicName] = tlsTopicInstance.id.split('/');
-            config.logConfig = { project: projectName, topic: topicName };
+        const tlsTopicInstance = currentState?.instances?.find(
+          (i) => (i as { type?: string }).type === 'VOLCENGINE_TLS_TOPIC',
+        ) as { id?: string } | undefined;
+        const shared = getSharedResource(state, context.stage, 'logs.project');
+
+        if (tlsTopicInstance?.id) {
+          const [projectName, topicName] = tlsTopicInstance.id.split('/');
+          config.logConfig = { project: projectName, topic: topicName };
+        } else if (shared) {
+          const projectName = (shared.instances?.[0] as { id?: string } | undefined)?.id;
+          if (projectName) {
+            config.logConfig = {
+              project: projectName,
+              topic: `${context.service}-${context.stage}-fn-logs`,
+            };
           }
-        }
-        if (!config.logConfig) {
-          const serviceName = `${context.app}-${context.service}`;
+        } else {
           config.logConfig = {
-            project: `${serviceName}-${context.stage}-tls`,
-            topic: `${serviceName}-${context.stage}-logs`,
+            project: `${context.app}-${context.stage}-tls`,
+            topic: `${context.service}-${context.stage}-fn-logs`,
           };
         }
       }

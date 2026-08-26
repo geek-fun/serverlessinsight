@@ -43,6 +43,8 @@ jest.mock('../../../../src/stack/volcengineStack/apigwResource', () => ({
 
 jest.mock('../../../../src/common/stateManager', () => ({
   getAllResources: jest.fn(),
+  getSharedResource: jest.fn(() => undefined),
+  removeSharedResource: jest.fn((state) => state),
 }));
 
 describe('volcengineStack destroyer', () => {

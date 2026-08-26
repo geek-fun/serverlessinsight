@@ -5,7 +5,13 @@ import {
   deleteResource,
 } from '../../../../src/stack/volcengineStack/vefaasResource';
 import { createVolcengineClient } from '../../../../src/common/volcengineClient';
-import { setResource, removeResource, getResource, attributesEqual } from '../../../../src/common';
+import {
+  setResource,
+  removeResource,
+  getResource,
+  setSharedResource,
+  attributesEqual,
+} from '../../../../src/common';
 import type { FunctionDomain, Context, StateFile } from '../../../../src/types';
 import { PartialResourceError } from '../../../../src/types';
 
@@ -25,6 +31,18 @@ jest.mock('../../../../src/common', () => ({
     ),
   })),
   getResource: jest.fn(),
+  setSharedResource: jest.fn((state, stage, key, resourceState) => ({
+    ...state,
+    stages: {
+      ...state.stages,
+      [stage]: {
+        ...state.stages?.[stage],
+        resources: state.stages?.[stage]?.resources ?? {},
+        shared: { ...state.stages?.[stage]?.shared, [key]: resourceState },
+      },
+    },
+  })),
+  getSharedResource: jest.fn((state, stage, key) => state.stages?.[stage]?.shared?.[key]),
   computeZipContentHash: jest.fn().mockResolvedValue('test-hash-123'),
   buildSid: jest.fn((provider, service, stage, name) => `${provider}-${service}-${stage}-${name}`),
   attributesEqual: jest.fn((a, b) => JSON.stringify(a) === JSON.stringify(b)),
@@ -114,6 +132,9 @@ describe('vefaasResource', () => {
       deleteIndex: jest.fn(),
       waitForProject: jest.fn(),
       waitForTopic: jest.fn(),
+      addTags: jest.fn(),
+      removeTags: jest.fn(),
+      listTopics: jest.fn(),
     },
   };
 
@@ -350,6 +371,197 @@ describe('vefaasResource', () => {
       await createResource(mockContext, mockFunctionWithLog, stateWithTls);
 
       expect(mockVefaasClient.tls.createProject).not.toHaveBeenCalled();
+    });
+
+    it('creates function topic under the shared project with canonical name', async () => {
+      const mockFunctionWithLog: FunctionDomain = {
+        ...mockFunction,
+        log: true,
+      };
+
+      mockVefaasClient.tls.createProject.mockResolvedValue({
+        projectId: 'proj-1',
+        projectName: 'test-app-dev-tls',
+      });
+      mockVefaasClient.tls.createTopic.mockResolvedValue({
+        topicId: 'topic-1',
+        topicName: 'test-service-dev-fn-logs',
+      });
+      mockVefaasClient.tls.getTopic.mockResolvedValue(null);
+      mockVefaasClient.vefaas.createFunction.mockResolvedValueOnce({ functionId: 'func-123' });
+      mockVefaasClient.vefaas.getFunction.mockResolvedValueOnce({
+        functionName: 'test-function',
+        functionId: 'func-123',
+        runtime: 'nodejs16',
+        handler: 'index.handler',
+        memoryMb: 128,
+        requestTimeout: 30,
+      });
+
+      const result = await createResource(mockContext, mockFunctionWithLog, mockState);
+
+      expect(mockVefaasClient.tls.createProject).toHaveBeenCalledWith(
+        expect.objectContaining({ projectName: 'test-app-dev-tls' }),
+      );
+      expect(mockVefaasClient.tls.createTopic).toHaveBeenCalledWith(
+        expect.objectContaining({
+          projectName: 'test-app-dev-tls',
+          topicName: 'test-service-dev-fn-logs',
+        }),
+      );
+      expect(mockVefaasClient.tls.addTags).toHaveBeenCalledWith(
+        expect.objectContaining({
+          resourceType: 'project',
+          resourcesList: ['proj-1'],
+          tags: [{ key: 'si-owned-by', value: 'test-app:shared:logs.project' }],
+        }),
+      );
+      // The shared project is persisted into the stage shared slot, not the function.
+      expect(setSharedResource).toHaveBeenCalledWith(
+        expect.anything(),
+        'dev',
+        'logs.project',
+        expect.objectContaining({
+          definition: { projectName: 'test-app-dev-tls', region: 'cn-beijing', stage: 'dev' },
+          instances: [
+            expect.objectContaining({
+              type: 'VOLCENGINE_TLS_PROJECT',
+              id: 'test-app-dev-tls',
+              projectId: 'proj-1',
+            }),
+          ],
+        }),
+      );
+      const saved = result.resources['functions.test_fn'];
+      expect(saved.instances.some((i) => i.type === 'VOLCENGINE_TLS_PROJECT')).toBe(false);
+      expect(saved.instances.some((i) => i.type === 'VOLCENGINE_TLS_TOPIC')).toBe(true);
+      expect(mockVefaasClient.vefaas.createFunction).toHaveBeenCalledWith(
+        expect.objectContaining({
+          logConfig: { project: 'test-app-dev-tls', topic: 'test-service-dev-fn-logs' },
+        }),
+        expect.any(String),
+      );
+    });
+
+    it('preserves legacy TLS project and topic instances on redeploy', async () => {
+      const mockFunctionWithLog: FunctionDomain = {
+        ...mockFunction,
+        log: true,
+      };
+
+      const stateWithLegacyTls: StateFile = {
+        ...mockState,
+        resources: {
+          'functions.test_fn': {
+            mode: 'managed',
+            region: 'cn-beijing',
+            definition: {},
+            instances: [
+              {
+                type: 'VOLCENGINE_TLS_PROJECT',
+                sid: 'sid-tls-project',
+                id: 'legacy-project',
+                attributes: {},
+              },
+              {
+                type: 'VOLCENGINE_TLS_TOPIC',
+                sid: 'sid-tls-topic',
+                id: 'legacy-project/legacy-topic',
+                attributes: {},
+              },
+              {
+                type: 'VOLCENGINE_TLS_INDEX',
+                sid: 'sid-tls-index',
+                id: 'legacy-project/legacy-topic/index',
+                attributes: {},
+              },
+            ],
+            status: 'ready',
+            lastUpdated: '2024-01-01T00:00:00Z',
+          },
+        },
+      };
+
+      (getResource as jest.Mock).mockReturnValue(stateWithLegacyTls.resources['functions.test_fn']);
+      mockVefaasClient.vefaas.createFunction.mockResolvedValueOnce({ functionId: 'func-123' });
+      mockVefaasClient.vefaas.getFunction.mockResolvedValueOnce({
+        functionName: 'test-function',
+        functionId: 'func-123',
+        runtime: 'nodejs16',
+        handler: 'index.handler',
+        memoryMb: 128,
+        requestTimeout: 30,
+      });
+
+      const result = await createResource(mockContext, mockFunctionWithLog, stateWithLegacyTls);
+
+      expect(mockVefaasClient.tls.createProject).not.toHaveBeenCalled();
+      expect(mockVefaasClient.tls.createTopic).not.toHaveBeenCalled();
+      expect(setSharedResource).not.toHaveBeenCalled();
+      const saved = result.resources['functions.test_fn'];
+      expect(saved.instances).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ type: 'VOLCENGINE_TLS_PROJECT', id: 'legacy-project' }),
+          expect.objectContaining({
+            type: 'VOLCENGINE_TLS_TOPIC',
+            id: 'legacy-project/legacy-topic',
+          }),
+          expect.objectContaining({
+            type: 'VOLCENGINE_TLS_INDEX',
+            id: 'legacy-project/legacy-topic/index',
+          }),
+        ]),
+      );
+    });
+
+    it('does not duplicate a shared project across two functions', async () => {
+      const fnA: FunctionDomain = {
+        ...mockFunction,
+        key: 'test_fn',
+        name: 'test-function',
+        log: true,
+      };
+      const fnB: FunctionDomain = {
+        ...mockFunction,
+        key: 'test_fn2',
+        name: 'test-function-2',
+        log: true,
+      };
+
+      mockVefaasClient.tls.createProject.mockResolvedValue({
+        projectId: 'proj-1',
+        projectName: 'test-app-dev-tls',
+      });
+      mockVefaasClient.tls.createTopic.mockResolvedValue({
+        topicId: 'topic-1',
+        topicName: 'test-service-dev-fn-logs',
+      });
+      mockVefaasClient.tls.getTopic.mockResolvedValue(null);
+      mockVefaasClient.vefaas.createFunction.mockResolvedValue({ functionId: 'func-123' });
+      mockVefaasClient.vefaas.getFunction.mockResolvedValue({
+        functionName: 'test-function',
+        functionId: 'func-123',
+        runtime: 'nodejs16',
+        handler: 'index.handler',
+        memoryMb: 128,
+        requestTimeout: 30,
+      });
+      (getResource as jest.Mock).mockReturnValue(undefined);
+
+      const stateAfterA = await createResource(mockContext, fnA, mockState);
+
+      // Second function reuses the shared project slot and adopts the shared topic.
+      mockVefaasClient.tls.getTopic.mockResolvedValue({
+        topicName: 'test-service-dev-fn-logs',
+        topicId: 'topic-1',
+        tags: [{ Key: 'si-owned-by', Value: 'test-app-test-service:functions.test_fn' }],
+      });
+      (getResource as jest.Mock).mockReturnValue(undefined);
+      await createResource(mockContext, fnB, stateAfterA);
+
+      expect(mockVefaasClient.tls.createProject).toHaveBeenCalledTimes(1);
+      expect(mockVefaasClient.tls.createTopic).toHaveBeenCalledTimes(1);
+      expect(mockVefaasClient.tls.addTags).toHaveBeenCalledTimes(2);
     });
 
     it('should reuse existing IAM role and call updateRoleTrustPolicy when hasIamRole=true', async () => {
@@ -1366,7 +1578,6 @@ describe('vefaasResource', () => {
       mockVefaasClient.vefaas.deleteFunction.mockResolvedValueOnce({ functionId: 'func-123' });
       mockVefaasClient.tls.deleteIndex.mockResolvedValueOnce({ functionId: 'func-123' });
       mockVefaasClient.tls.deleteTopic.mockResolvedValueOnce({ functionId: 'func-123' });
-      mockVefaasClient.tls.deleteProject.mockResolvedValueOnce({ functionId: 'func-123' });
       mockVefaasClient.iam.deleteRole.mockResolvedValueOnce({ functionId: 'func-123' });
       (getResource as jest.Mock).mockReturnValue(stateWithTls.resources['functions.test_fn']);
 
@@ -1375,7 +1586,10 @@ describe('vefaasResource', () => {
       expect(mockVefaasClient.vefaas.deleteFunction).toHaveBeenCalledWith('func-123');
       expect(mockVefaasClient.tls.deleteIndex).toHaveBeenCalled();
       expect(mockVefaasClient.tls.deleteTopic).toHaveBeenCalled();
-      expect(mockVefaasClient.tls.deleteProject).toHaveBeenCalled();
+      // Projects are never deleted at resource level — the destroyer releases
+      // the shared project only once no topics reference it. Legacy orphaned
+      // projects are manual cleanup.
+      expect(mockVefaasClient.tls.deleteProject).not.toHaveBeenCalled();
       expect(mockVefaasClient.iam.deleteRole).toHaveBeenCalled();
     });
 

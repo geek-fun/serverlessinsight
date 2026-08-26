@@ -561,7 +561,7 @@ describe('vefaasPlanner', () => {
       });
     });
 
-    it('should derive deterministic TLS names when logging is enabled without TLS state', async () => {
+    it('derives shared naming for fresh plans', async () => {
       const functionWithLog: FunctionDomain = { ...mockFunction, log: true };
       mockVefaasClient.vefaas.getFunction.mockResolvedValueOnce(null);
 
@@ -572,9 +572,105 @@ describe('vefaasPlanner', () => {
         changes: {
           after: {
             logConfig: {
-              project: 'test-app-test-service-dev-tls',
-              topic: 'test-app-test-service-dev-logs',
+              project: 'test-app-dev-tls',
+              topic: 'test-service-dev-fn-logs',
             },
+          },
+        },
+      });
+    });
+
+    it('does not report phantom TLS drift for legacy state', async () => {
+      const functionWithLog: FunctionDomain = { ...mockFunction, log: true };
+      const stateWithLegacy: StateFile = {
+        ...mockState,
+        resources: {
+          'functions.test_fn': {
+            mode: 'managed',
+            region: 'cn-beijing',
+            definition: {
+              functionName: 'test-function',
+              codeHash: 'test-hash',
+              runtime: 'nodejs16',
+              handler: 'index.handler',
+              memorySize: 128,
+              timeout: 30,
+              environment: {},
+              logConfig: { project: 'legacy-project', topic: 'legacy-topic' },
+            },
+            instances: [
+              { sid: 'test-sid', id: 'test-function', type: 'VOLCENGINE_VEFAAS_FUNCTION' },
+              {
+                sid: 'topic-sid',
+                id: 'legacy-project/legacy-topic',
+                type: 'VOLCENGINE_TLS_TOPIC',
+              },
+            ],
+            status: 'ready',
+            lastUpdated: '2024-01-01T00:00:00Z',
+          },
+        },
+      };
+      jest
+        .spyOn(stateManager, 'getResource')
+        .mockReturnValue(stateWithLegacy.resources['functions.test_fn']);
+      mockVefaasClient.vefaas.getFunction.mockResolvedValueOnce({
+        functionName: 'test-function',
+        runtime: 'nodejs16',
+        handler: 'index.handler',
+        memoryMb: 128,
+        requestTimeout: 30,
+        environmentVariables: {},
+        logConfig: { project: 'legacy-project', topic: 'legacy-topic', enableLog: true },
+        Tags: [{ Key: 'si-owned-by', Value: 'test-app-test-service:functions.test_fn' }],
+      });
+
+      const result = await generateFunctionPlan(mockContext, stateWithLegacy, [functionWithLog]);
+
+      // The planner must mirror the legacy own-instance reuse — the desired
+      // logConfig derives from the tracked legacy topic, never the new shared
+      // canonical names, so no phantom TLS drift is reported.
+      expect(result.items[0].changes?.after).toMatchObject({
+        logConfig: { project: 'legacy-project', topic: 'legacy-topic' },
+      });
+    });
+
+    it('prefers the shared project slot when deriving logConfig', async () => {
+      const functionWithLog: FunctionDomain = { ...mockFunction, log: true };
+      const stateWithShared: StateFile = {
+        ...mockState,
+        stages: {
+          dev: {
+            resources: {},
+            shared: {
+              'logs.project': {
+                mode: 'managed',
+                region: 'cn-beijing',
+                definition: { projectName: 'test-app-dev-tls', region: 'cn-beijing', stage: 'dev' },
+                instances: [
+                  {
+                    sid: 's',
+                    type: 'VOLCENGINE_TLS_PROJECT',
+                    id: 'test-app-dev-tls',
+                    projectId: 'proj-1',
+                  },
+                ],
+                lastUpdated: '2024-01-01T00:00:00Z',
+              },
+            },
+          },
+        },
+        resources: {},
+      };
+      mockVefaasClient.vefaas.getFunction.mockResolvedValueOnce(null);
+
+      const result = await generateFunctionPlan(mockContext, stateWithShared, [functionWithLog]);
+
+      expect(result.items[0]).toMatchObject({
+        action: 'create',
+        changes: {
+          after: {
+            logConfig: { project: 'test-app-dev-tls', topic: 'test-service-dev-fn-logs' },
           },
         },
       });
