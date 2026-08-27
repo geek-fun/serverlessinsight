@@ -16,6 +16,7 @@ import { validateYaml } from '../validator';
 import { parseBucket } from './bucketParser';
 import { parseTable } from './tableParser';
 import { calcValue } from '../common';
+import { lang } from '../lang';
 
 const validateExistence = (path: string) => {
   if (!existsSync(path)) {
@@ -34,7 +35,7 @@ const parseBackend = (raw: BackendConfigRaw | undefined): BackendConfig | undefi
 
   if (type === StateBackendType.BUCKET_STORE) {
     if (!stateManager.bucket || !stateManager.key) {
-      throw new Error('Backend type BUCKET_STORE requires both "bucket" and "key" fields');
+      throw new Error(lang.__('PARSE_BACKEND_BUCKET_STORE_FIELDS_REQUIRED'));
     }
     return {
       type: StateBackendType.BUCKET_STORE,
