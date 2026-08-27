@@ -1107,6 +1107,39 @@ describe('unit test for validate', () => {
       expect(() => validateYaml(invalidYaml)).toThrow(/must match the pattern|Invalid yaml/);
     });
 
+    it('accepts dotted bucket names within the provider length limit', () => {
+      const config = {
+        ...jsonIac,
+        buckets: { my_bucket: { name: 'my.bucket.name' } },
+      } as unknown as ServerlessIacRaw;
+      expect(validateYaml(config)).toBe(true);
+    });
+
+    it('accepts whole template references as bucket names (resolved post-validation)', () => {
+      const config = {
+        ...jsonIac,
+        buckets: { my_bucket: { name: '${vars.bucket_name}' } },
+      } as unknown as ServerlessIacRaw;
+      expect(validateYaml(config)).toBe(true);
+    });
+
+    it('rejects dotted bucket names exceeding 63 chars', () => {
+      const overLong = `${'a'.repeat(55)}.example.com`;
+      const config = {
+        ...jsonIac,
+        buckets: { my_bucket: { name: overLong } },
+      } as unknown as ServerlessIacRaw;
+      expect(() => validateYaml(config)).toThrow('Invalid yaml');
+    });
+
+    it('rejects hyphen-terminated labels in dotted bucket names', () => {
+      const config = {
+        ...jsonIac,
+        buckets: { my_bucket: { name: 'foo-.example.com' } },
+      } as unknown as ServerlessIacRaw;
+      expect(() => validateYaml(config)).toThrow('Invalid yaml');
+    });
+
     it('enforces provider-specific function name lengths via if/then (aliyun 64)', () => {
       const overLong = 'a'.repeat(65);
       const config = {
@@ -1158,6 +1191,7 @@ describe('unit test for validate', () => {
                 backend: 'fn',
               },
               { method: 'GET', path: '/dup', backend: 'fn' },
+              { method: 'GET', path: '/dup/', backend: 'fn' },
             ],
           },
         },
