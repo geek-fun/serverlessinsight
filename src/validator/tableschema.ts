@@ -15,12 +15,14 @@ export const tableSchema = {
           type: 'object',
           properties: {
             type: resolvableEnum(['PUBLIC', 'PRIVATE']),
+            vpc_id: { type: 'string' },
             ingress_rules: {
               type: 'array',
               items: { type: 'string' },
             },
           },
           required: ['type'],
+          additionalProperties: false,
         },
         throughput: {
           type: 'object',

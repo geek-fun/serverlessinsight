@@ -1,4 +1,10 @@
-import { resolvableBoolean, resolvableEnum } from './templateRefSchema';
+import {
+  resolvableBoolean,
+  resolvableEnum,
+  resolvableConstrained,
+  HOST_NAME_PATTERN,
+  BUCKET_NAME_PATTERN,
+} from './templateRefSchema';
 
 const cdnSchema = {
   oneOf: [
@@ -26,7 +32,7 @@ const bucketDomainSchema = {
     {
       type: 'object',
       properties: {
-        domain_name: { type: 'string' },
+        domain_name: resolvableConstrained({ pattern: HOST_NAME_PATTERN }),
         certificate_id: { type: 'string' },
         certificate_body: { type: 'string' },
         certificate_private_key: { type: 'string' },
@@ -78,7 +84,7 @@ const bucketWebsiteDomainSchema = {
     {
       type: 'object',
       properties: {
-        domain_name: { type: 'string' },
+        domain_name: resolvableConstrained({ pattern: HOST_NAME_PATTERN }),
         certificate_id: { type: 'string' },
         certificate_body: { type: 'string' },
         certificate_private_key: { type: 'string' },
@@ -178,9 +184,7 @@ export const bucketSchema = {
     '.*': {
       type: 'object',
       properties: {
-        name: {
-          type: 'string',
-        },
+        name: resolvableConstrained({ pattern: BUCKET_NAME_PATTERN }),
         storage: {
           type: 'object',
           properties: {

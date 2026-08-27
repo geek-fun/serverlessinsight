@@ -1,4 +1,10 @@
-import { resolvableNumber, resolvableBoolean, resolvableEnum } from './templateRefSchema';
+import {
+  resolvableNumber,
+  resolvableBoolean,
+  resolvableEnum,
+  resolvableConstrained,
+  HOST_NAME_PATTERN,
+} from './templateRefSchema';
 
 const securityGroupRulePattern =
   '^[A-Za-z]+:\\d{1,3}(?:\\.\\d{1,3}){3}\\/\\d{1,2}:(?:ALL|\\d{1,5}(?:\\/\\d{1,5})?)$';
@@ -52,8 +58,9 @@ export const functionSchema = {
               'node20/v1',
               'nodeprime14/v1',
               'python3.12/v1',
-              'python3.8/v1',
               'python3.9/v1',
+              'native-python3.12/v1',
+              'native-node20/v1',
             ]),
             handler: { type: 'string' },
             path: { type: 'string' },
@@ -179,7 +186,7 @@ export const functionSchema = {
           required: ['domain_name'],
           additionalProperties: false,
           properties: {
-            domain_name: { type: 'string' },
+            domain_name: resolvableConstrained({ pattern: HOST_NAME_PATTERN }),
             certificate_id: { type: 'string' },
             protocol: resolvableEnum(['HTTP', 'HTTPS']),
           },
