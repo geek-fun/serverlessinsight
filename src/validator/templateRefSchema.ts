@@ -4,7 +4,7 @@
 const templateRefPattern = '^\\$\\{(vars|stages|ctx|functions|certificates)\\.[\\w.]+\\}$';
 
 // Schema definition for a template reference string
-const templateRefSchema = {
+export const templateRefSchema = {
   type: 'string',
   pattern: templateRefPattern,
 };
@@ -22,3 +22,28 @@ export const resolvableBoolean = withTemplateRef({ type: 'boolean' });
 // Helper for enum types that can also be template refs
 export const resolvableEnum = (enumValues: string[]) =>
   withTemplateRef({ type: 'string', enum: enumValues });
+
+/**
+ * String field accepting either a whole template reference (`${vars.x}`) or a
+ * literal satisfying the given JSON-Schema string constraints. Partial
+ * interpolations deliberately fail so unresolved values never reach deploy.
+ */
+export const resolvableConstrained = (constraints: {
+  pattern?: string;
+  minLength?: number;
+  maxLength?: number;
+}): Record<string, unknown> =>
+  withTemplateRef({
+    type: 'string',
+    ...(constraints.pattern !== undefined ? { pattern: constraints.pattern } : {}),
+    ...(constraints.minLength !== undefined ? { minLength: constraints.minLength } : {}),
+    ...(constraints.maxLength !== undefined ? { maxLength: constraints.maxLength } : {}),
+  });
+
+/** Hostname optionally prefixed with a wildcard label (`*.example.com`). */
+export const HOST_NAME_PATTERN =
+  '^(?:\\*\\.)?(?:[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?\\.)+[A-Za-z]{2,63}$';
+
+/** Resource-style bucket name: lowercase labels (dotted forms permitted), 3–63 chars. */
+export const BUCKET_NAME_PATTERN =
+  '^(?:[a-z0-9](?:[a-z0-9-]{1,61}[a-z0-9])?|(?:[a-z0-9][a-z0-9-]*\\.)+[a-z0-9-]{1,61}[a-z0-9])$';
