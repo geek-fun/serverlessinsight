@@ -85,6 +85,7 @@ export type MockAliyunClient = {
   sls: {
     createProject: jest.Mock;
     getProject: jest.Mock;
+    getProjectTags: jest.Mock;
     addTags: jest.Mock;
     removeTags: jest.Mock;
     listLogStores: jest.Mock;
@@ -228,7 +229,8 @@ export const createMockAliyunClient = (): MockAliyunClient => {
     },
     sls: {
       createProject: jest.fn().mockResolvedValue({ projectName: 'test-project' }),
-      getProject: jest.fn().mockResolvedValue({ projectName: 'test-project' }),
+      getProject: jest.fn().mockResolvedValue(null),
+      getProjectTags: jest.fn().mockResolvedValue([]),
       addTags: jest.fn().mockResolvedValue(undefined),
       removeTags: jest.fn().mockResolvedValue(undefined),
       listLogStores: jest.fn().mockResolvedValue([]),
@@ -358,6 +360,7 @@ export type MockVolcengineClient = {
   tls: {
     createProject: jest.Mock;
     getProject: jest.Mock;
+    getProjectTags: jest.Mock;
     deleteProject: jest.Mock;
     createTopic: jest.Mock;
     getTopic: jest.Mock;
@@ -453,12 +456,14 @@ export const createMockVolcengineClient = (): MockVolcengineClient => ({
       projectId: 'proj-123',
       projectName: 'test-project',
       status: 'Running',
+      created: true,
     }),
     getProject: jest.fn().mockResolvedValue({
       projectId: 'proj-123',
       projectName: 'test-project',
       status: 'Running',
     }),
+    getProjectTags: jest.fn().mockResolvedValue([]),
     deleteProject: jest.fn().mockResolvedValue(undefined),
     createTopic: jest.fn().mockResolvedValue({
       topicId: 'topic-123',

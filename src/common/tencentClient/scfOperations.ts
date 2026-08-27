@@ -228,13 +228,16 @@ export const createScfOperations = (scfClient: ScfSdkClient, deps: ScfOperations
       // Tencent requires Role whenever the Cls* destination changes, else
       // UpdateFunctionConfiguration fails with InvalidParameterValue.ClsRole —
       // so Role is forwarded here whenever an si-managed role is present.
+      //
+      // Cls ids are forwarded whenever present — including '' — because
+      // passing ClsLogsetId/ClsTopicId as '' is Tencent's unbind contract.
       const params = {
         FunctionName: config.FunctionName,
         MemorySize: config.MemorySize,
         Timeout: config.Timeout,
         ...(config.Role && { Role: config.Role }),
-        ...(config.ClsLogsetId && { ClsLogsetId: config.ClsLogsetId }),
-        ...(config.ClsTopicId && { ClsTopicId: config.ClsTopicId }),
+        ...(config.ClsLogsetId !== undefined ? { ClsLogsetId: config.ClsLogsetId } : {}),
+        ...(config.ClsTopicId !== undefined ? { ClsTopicId: config.ClsTopicId } : {}),
         ...(config.Environment && { Environment: config.Environment }),
       };
 

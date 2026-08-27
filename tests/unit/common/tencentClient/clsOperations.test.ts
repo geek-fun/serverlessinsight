@@ -26,6 +26,7 @@ const mockClsClient = {
   ModifyTopic: jest.fn(),
   DeleteTopic: jest.fn(),
   CreateIndex: jest.fn(),
+  DeleteIndex: jest.fn(),
 };
 
 describe('clsOperations', () => {
@@ -82,6 +83,27 @@ describe('clsOperations', () => {
       const result = await operations.getLogsetByName('missing-logset');
 
       expect(result).toBeNull();
+    });
+
+    it('preserves the provider tags for ownership verification', async () => {
+      mockClsClient.DescribeLogsets.mockResolvedValue({
+        Logsets: [
+          {
+            LogsetId: 'logset-1',
+            LogsetName: 'test-app-dev-cls',
+            Tags: [{ Key: 'si-owned-by', Value: 'test-app:shared:logs.project' }],
+          },
+        ],
+        TotalCount: 1,
+      });
+
+      const result = await operations.getLogsetByName('test-app-dev-cls');
+
+      expect(result).toEqual({
+        LogsetId: 'logset-1',
+        LogsetName: 'test-app-dev-cls',
+        Tags: [{ Key: 'si-owned-by', Value: 'test-app:shared:logs.project' }],
+      });
     });
   });
 
@@ -312,6 +334,30 @@ describe('clsOperations', () => {
       mockClsClient.CreateIndex.mockRejectedValue({ code: 500, message: 123 });
 
       await expect(operations.createFulltextIndex('topic-1')).rejects.toMatchObject({ code: 500 });
+    });
+  });
+
+  describe('deleteIndex', () => {
+    it('deletes the index for a topic', async () => {
+      mockClsClient.DeleteIndex.mockResolvedValue({});
+
+      await operations.deleteIndex('topic-1');
+
+      expect(mockClsClient.DeleteIndex).toHaveBeenCalledWith({ TopicId: 'topic-1' });
+    });
+
+    it('swallows ResourceNotFound.IndexNotExist during delete', async () => {
+      mockClsClient.DeleteIndex.mockRejectedValue(
+        Object.assign(new Error('index not found'), { code: 'ResourceNotFound.IndexNotExist' }),
+      );
+
+      await expect(operations.deleteIndex('topic-1')).resolves.toBeUndefined();
+    });
+
+    it('rethrows non-not-found errors during index delete', async () => {
+      mockClsClient.DeleteIndex.mockRejectedValue(new Error('delete failed'));
+
+      await expect(operations.deleteIndex('topic-1')).rejects.toThrow('delete failed');
     });
   });
 });

@@ -148,19 +148,21 @@ export const createTlsOperations = (tlsClient: TlsSdkClient) => {
           description: config.description,
           region: config.region,
           status: 'Active',
+          created: true,
         };
       } catch (error: unknown) {
         if (isAlreadyExistsError(error)) {
           logger.warn(lang.__('TLS_PROJECT_ALREADY_EXISTS', { projectName: config.projectName }));
           const existing = await operations.getProject(config.projectName);
           if (existing) {
-            return existing;
+            return { ...existing, created: false };
           }
           return {
             projectName: config.projectName,
             description: config.description,
             region: config.region,
             status: 'Active',
+            created: false,
           };
         }
         throw error;
@@ -190,6 +192,16 @@ export const createTlsOperations = (tlsClient: TlsSdkClient) => {
         }
         throw error;
       }
+    },
+
+    getProjectTags: async (
+      projectName: string,
+    ): Promise<Array<{ Key?: string; Value?: string }>> => {
+      const project = await operations.getProject(projectName);
+      if (!project?.projectId) {
+        return [];
+      }
+      return listTagsForResource(tlsClient, 'project', project.projectId);
     },
 
     deleteProject: async (projectName: string): Promise<void> => {

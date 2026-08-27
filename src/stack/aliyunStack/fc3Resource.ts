@@ -8,6 +8,8 @@ import {
   removeResource,
   setResource,
   setSharedResource,
+  getSharedResource,
+  removeSharedResource,
   computeZipContentHash,
   getContext,
   buildSid,
@@ -41,6 +43,7 @@ import {
   ensureSharedSlsProject,
   ensureFunctionLogstore,
   buildSharedProjectResourceState,
+  releaseSharedSlsProjectIfUnused,
 } from './sharedLogProject';
 
 type DependentInstance = {
@@ -838,7 +841,12 @@ export const updateResource = async (
   const existingState = getResource(state, logicalId);
   const existingInstances = (existingState?.instances ?? []) as Array<DependentInstance>;
 
-  const hasSlsResources = existingInstances.some((i) => i.type === 'ALIYUN_SLS_PROJECT');
+  const hasSlsResources = existingInstances.some(
+    (i) =>
+      i.type === 'ALIYUN_SLS_PROJECT' ||
+      i.type === 'ALIYUN_SLS_LOGSTORE' ||
+      i.type === 'ALIYUN_SLS_INDEX',
+  );
   const hasRamRole = existingInstances.some((i) => i.type === 'ALIYUN_RAM_ROLE');
   const hasSecurityGroup = existingInstances.some((i) => i.type === 'ALIYUN_ECS_SECURITY_GROUP');
   const hasNasResources = existingInstances.some((i) => i.type === 'ALIYUN_NAS_FILE_SYSTEM');
@@ -858,6 +866,13 @@ export const updateResource = async (
       }
     | undefined;
 
+  // SLS dependent-instance types to drop from the resulting state when
+  // function logging is disabled (true -> false).
+  const droppedSlsDependentTypes: Array<string> = [];
+  // Set when the shared project is released (deleted or gone) so its stale
+  // shared-state entry is removed from the returned state.
+  let releasedSharedProject = false;
+
   if (fn.log && !hasSlsResources) {
     const deps = await createDependentResources(
       context,
@@ -872,11 +887,22 @@ export const updateResource = async (
       sharedProjectState = deps.sharedProject;
     }
   } else if (hasSlsResources) {
-    const slsProjectInstance = existingInstances.find((i) => i.type === 'ALIYUN_SLS_PROJECT');
     const slsLogstoreInstance = existingInstances.find((i) => i.type === 'ALIYUN_SLS_LOGSTORE');
-    if (slsProjectInstance && slsLogstoreInstance) {
-      const [projectName, logstoreName] = slsLogstoreInstance.id.split('/');
-      logConfig = { project: projectName, logstore: logstoreName };
+    if (fn.log) {
+      if (slsLogstoreInstance) {
+        const [projectName, logstoreName] = slsLogstoreInstance.id.split('/');
+        logConfig = { project: projectName, logstore: logstoreName };
+      }
+    } else {
+      // Logging disabled: the owned index + logstore are deleted from the
+      // provider after the function log config is cleared, and the SLS
+      // instances are dropped from state. The shared project is released by
+      // the destroyer once no logstores remain (issue #214).
+      droppedSlsDependentTypes.push(
+        'ALIYUN_SLS_INDEX',
+        'ALIYUN_SLS_LOGSTORE',
+        'ALIYUN_SLS_PROJECT',
+      );
     }
   }
 
@@ -1066,6 +1092,35 @@ export const updateResource = async (
     await client.fc3.updateFunctionCode(fn.name, codePath, ossCode);
   }
 
+  if (droppedSlsDependentTypes.length > 0) {
+    const slsLogstoreInstance = existingInstances.find((i) => i.type === 'ALIYUN_SLS_LOGSTORE');
+    if (slsLogstoreInstance) {
+      const [projectName, logstoreName] = slsLogstoreInstance.id.split('/');
+      logger.info(lang.__('DELETING_SLS_INDEX', { id: `${projectName}/${logstoreName}` }));
+      try {
+        await client.sls.deleteIndex(projectName, logstoreName);
+      } catch {
+        // index already gone — best-effort
+      }
+      logger.info(lang.__('DELETING_SLS_LOGSTORE', { id: `${projectName}/${logstoreName}` }));
+      try {
+        await client.sls.deleteLogstore(projectName, logstoreName);
+      } catch {
+        // logstore already gone — best-effort
+      }
+    }
+    // Release the shared project once no logstores remain in the provider; it
+    // is retained (with its state entry) while another service or the gateway
+    // still references it.
+    const shared = getSharedResource(state, context.stage, SHARED_LOG_PROJECT_KEY);
+    if (shared) {
+      const releaseResult = await releaseSharedSlsProjectIfUnused(context, client, shared);
+      if (releaseResult !== 'retained') {
+        releasedSharedProject = true;
+      }
+    }
+  }
+
   if (!configChanged && !codeChanged) {
     logger.warn(
       lang.__('UPDATING_RESOURCE_WITH_NO_CHANGES', { resourceType: 'function', name: fn.name }),
@@ -1234,6 +1289,7 @@ export const updateResource = async (
     .filter((i) => i.type !== 'ALIYUN_FC3_HTTP_TRIGGER')
     .filter((i) => i.type !== 'ALIYUN_FC3_CUSTOM_DOMAIN')
     .filter((i) => !(typeof fn.iam?.role === 'string' && i.type === 'ALIYUN_RAM_ROLE'))
+    .filter((i) => !droppedSlsDependentTypes.includes(i.type))
     .map((i) => {
       const { sid: existingSid, id: existingId, ...rest } = i;
       return {
@@ -1273,9 +1329,19 @@ export const updateResource = async (
     lastUpdated: new Date().toISOString(),
   };
 
-  const finalState = sharedProjectState
-    ? setSharedResource(state, context.stage, SHARED_LOG_PROJECT_KEY, sharedProjectState)
-    : state;
+  let finalState: StateFile;
+  if (sharedProjectState) {
+    finalState = setSharedResource(
+      state,
+      context.stage,
+      SHARED_LOG_PROJECT_KEY,
+      sharedProjectState,
+    );
+  } else if (releasedSharedProject) {
+    finalState = removeSharedResource(state, context.stage, SHARED_LOG_PROJECT_KEY);
+  } else {
+    finalState = state;
+  }
 
   return setResource(finalState, logicalId, resourceState);
 };

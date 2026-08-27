@@ -15,6 +15,7 @@ import {
   removeResource,
   getSharedResource,
   setSharedResource,
+  removeSharedResource,
 } from '../../common/stateManager';
 import { buildSid, attributesEqual, ProviderEnum, mapAuthType, mapAccess } from '../../common';
 import { RAM_ROLE_PROPAGATION_DELAY_MS } from '../../common/constants';
@@ -31,6 +32,7 @@ import {
   ensureSharedLogset,
   buildSharedLogsetResourceState,
   ensureFunctionTopic,
+  releaseSharedLogsetIfUnused,
 } from './sharedLogset';
 
 /**
@@ -777,6 +779,19 @@ export const updateResource = async (
     (i) => (i as ScfDependentInstance).type === undefined,
   ) as Record<string, unknown> | undefined;
 
+  const existingClsTopicInstance = existingInstances.find(
+    (i) => (i as ScfDependentInstance).type === ResourceTypeEnum.TENCENT_CLS_TOPIC,
+  ) as ScfDependentInstance | undefined;
+
+  const existingDefinition = (existingState?.definition ?? {}) as Record<string, unknown>;
+  const legacyLogsetId = existingFnInstance?.clsLogsetId as string | undefined;
+  const legacyTopicId = existingFnInstance?.clsTopicId as string | undefined;
+  // Log is bound via the unified flow (definition.logConfig) or legacy CLS ids
+  // stored directly on the function instance.
+  const wasLogEnabled = Boolean(
+    (existingDefinition.logConfig as Record<string, unknown> | undefined)?.logset ||
+    (legacyLogsetId && legacyTopicId),
+  );
   const hasCamRole = existingInstances.some((i) => i.type === ResourceTypeEnum.TENCENT_SCF_ROLE);
   const client = createTencentClient(context);
 
@@ -857,10 +872,12 @@ export const updateResource = async (
     { logsetId: string; logsetName: string; topicId: string; topicName: string } | undefined;
   let clsTopicInstance: ScfDependentInstance | undefined;
   let clsSharedInstance: ResourceState | undefined;
+  const disableLog = !fn.log && wasLogEnabled;
+  let topicToDelete: string | undefined;
+  let topicNameToDelete: string | undefined;
+  let sharedLogsetReleased = false;
 
   if (fn.log) {
-    const legacyLogsetId = existingFnInstance?.clsLogsetId as string | undefined;
-    const legacyTopicId = existingFnInstance?.clsTopicId as string | undefined;
     if (legacyLogsetId && legacyTopicId) {
       clsConfig = {
         logsetId: legacyLogsetId,
@@ -893,6 +910,17 @@ export const updateResource = async (
         topicName: topic.topicName,
       };
     }
+  } else if (disableLog) {
+    // Log was enabled and is now disabled: clear the CLS binding so
+    // UpdateFunctionConfiguration unbinds the function, and tear down the
+    // function's CLS topic (index first, then topic) below.
+    config = {
+      ...config,
+      ClsLogsetId: '',
+      ClsTopicId: '',
+    };
+    topicToDelete = existingClsTopicInstance?.id ?? legacyTopicId;
+    topicNameToDelete = existingClsTopicInstance?.topicName ?? buildFunctionTopicName(context);
   }
 
   if (clsConfig) {
@@ -914,7 +942,6 @@ export const updateResource = async (
   // creation) and we don't want to re-send unchanged values. Handler/Runtime
   // changes are a hard error: the platform cannot apply them on update.
   const desiredDefinition = extractScfDefinition(config, codeHash, fn.iam);
-  const existingDefinition = (existingState?.definition ?? {}) as Record<string, unknown>;
   const CONFIG_DIFF_KEYS = ['runtime', 'handler', 'memorySize', 'timeout', 'environment', 'role'];
   const mutableKeys = CONFIG_DIFF_KEYS.filter((k) => k !== 'runtime' && k !== 'handler');
 
@@ -944,9 +971,32 @@ export const updateResource = async (
   const configChanged =
     mutableKeys.some(
       (k) => desiredDefinition[k as keyof typeof desiredDefinition] !== existingDefinition[k],
-    ) || isLogConfigChanged(desiredDefinition, existingDefinition);
+    ) ||
+    isLogConfigChanged(desiredDefinition, existingDefinition) ||
+    // Disabling log always re-pushes config so the empty Cls ids reach the
+    // UpdateFunctionConfiguration unbind contract.
+    disableLog;
   if (configChanged) {
     await client.scf.updateFunctionConfiguration(config);
+  }
+
+  if (disableLog) {
+    // Unbind (above), then delete index before topic so the logset releases.
+    if (topicToDelete) {
+      logger.info(lang.__('DELETING_CLS_INDEX', { topicName: topicNameToDelete ?? topicToDelete }));
+      await client.cls.deleteIndex(topicToDelete);
+      logger.info(lang.__('DELETING_CLS_TOPIC', { id: topicToDelete }));
+      await client.cls.deleteTopic(topicToDelete);
+    }
+
+    const sharedBefore = getSharedResource(state, context.stage, SHARED_LOGSET_KEY);
+    if (sharedBefore) {
+      const release = await releaseSharedLogsetIfUnused(context, client, sharedBefore);
+      if (release === 'deleted') {
+        sharedLogsetReleased = true;
+      }
+    }
+    logger.info(lang.__('CLS_LOG_DISABLED', { functionName: fn.name }));
   }
 
   // Update code
@@ -1129,7 +1179,7 @@ export const updateResource = async (
         (i as ScfDependentInstance).type !== undefined &&
         (i as ScfDependentInstance).type !== 'TENCENT_SCF_CUSTOM_DOMAIN' &&
         !(
-          clsTopicInstance &&
+          (clsTopicInstance || disableLog) &&
           ((i as ScfDependentInstance).type === ResourceTypeEnum.TENCENT_CLS_TOPIC ||
             (i as ScfDependentInstance).type === ResourceTypeEnum.TENCENT_CLS_LOGSET)
         ),
@@ -1189,7 +1239,9 @@ export const updateResource = async (
 
   const stateWithShared = clsSharedInstance
     ? setSharedResource(state, context.stage, SHARED_LOGSET_KEY, clsSharedInstance)
-    : state;
+    : sharedLogsetReleased
+      ? removeSharedResource(state, context.stage, SHARED_LOGSET_KEY)
+      : state;
 
   return setResource(stateWithShared, logicalId, resourceState);
 };

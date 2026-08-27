@@ -7,6 +7,7 @@ import {
 import * as scfTypes from '../../../../src/stack/scfStack/scfTypes';
 import * as stateManager from '../../../../src/common/stateManager';
 import * as hashUtils from '../../../../src/common/hashUtils';
+import { SHARED_LOGSET_KEY } from '../../../../src/stack/scfStack/sharedLogset';
 import { ProviderEnum } from '../../../../src/common';
 import {
   Context,
@@ -45,6 +46,7 @@ const mockClsOperations = {
   deleteTopic: jest.fn(),
   deleteLogset: jest.fn(),
   createFulltextIndex: jest.fn(),
+  deleteIndex: jest.fn(),
   waitForTopic: jest.fn(),
 };
 
@@ -1358,6 +1360,234 @@ describe('ScfResource', () => {
           ClsTopicId: 'topic-1',
         }),
       );
+    });
+
+    it('unbinds CLS, deletes index+topic, and releases the shared logset when log goes false', async () => {
+      const sharedLogsetState = {
+        mode: 'managed' as const,
+        region: 'ap-guangzhou',
+        definition: {
+          logsetName: 'test-app-default-cls',
+          region: 'ap-guangzhou',
+          stage: 'default',
+        },
+        instances: [
+          {
+            sid: 'si:tencent:cls-logset:default:test-app-default-cls',
+            type: 'TENCENT_CLS_LOGSET',
+            id: 'test-app-default-cls',
+            logsetId: 'logset-1',
+          },
+        ],
+        lastUpdated: '2025-01-01T00:00:00Z',
+      };
+      const stateWithCls: StateFile = {
+        ...initialState,
+        stages: {
+          default: { resources: {}, shared: { [SHARED_LOGSET_KEY]: sharedLogsetState } },
+        },
+      };
+
+      (stateManager.getResource as jest.Mock).mockReturnValue({
+        mode: 'managed',
+        region: 'ap-guangzhou',
+        definition: {
+          ...mockDefinition,
+          logConfig: { logset: 'test-app-default-cls', topic: 'test-service-default-fn-logs' },
+        },
+        instances: [
+          {
+            sid: 'si:tencent:scf:default:test-function',
+            id: 'test-function',
+            functionName: 'test-function',
+          },
+          {
+            sid: 'si:tencent:cls-topic:default:test-service-default-fn-logs',
+            type: 'TENCENT_CLS_TOPIC',
+            id: 'topic-1',
+            topicName: 'test-service-default-fn-logs',
+          },
+          {
+            sid: 'si:tencent:cls-logset:default:test-app-default-cls',
+            type: 'TENCENT_CLS_LOGSET',
+            id: 'test-app-default-cls',
+            logsetId: 'logset-1',
+          },
+        ],
+        lastUpdated: '2025-01-01T00:00:00Z',
+      });
+      (mockScfOperations.updateFunctionConfiguration as jest.Mock).mockResolvedValue(undefined);
+      (mockScfOperations.updateFunctionCode as jest.Mock).mockResolvedValue(undefined);
+      (mockClsOperations.deleteIndex as jest.Mock).mockResolvedValue(undefined);
+      (mockClsOperations.deleteTopic as jest.Mock).mockResolvedValue(undefined);
+      (mockClsOperations.getLogsetByName as jest.Mock).mockResolvedValue({
+        LogsetId: 'logset-1',
+        LogsetName: 'test-app-default-cls',
+      });
+      (mockClsOperations.listTopicsByLogset as jest.Mock).mockResolvedValue([]);
+      (stateManager.getSharedResource as jest.Mock).mockReturnValue(sharedLogsetState);
+      (stateManager.removeSharedResource as jest.Mock).mockReturnValue(stateWithCls);
+      (stateManager.setResource as jest.Mock).mockReturnValue(stateWithCls);
+
+      await updateResource(mockContext, testFunction, stateWithCls);
+
+      expect(mockScfOperations.updateFunctionConfiguration).toHaveBeenCalledWith(
+        expect.objectContaining({ ClsLogsetId: '', ClsTopicId: '' }),
+      );
+      expect(mockClsOperations.deleteIndex).toHaveBeenCalledWith('topic-1');
+      expect(mockClsOperations.deleteTopic).toHaveBeenCalledWith('topic-1');
+      expect(stateManager.removeSharedResource).toHaveBeenCalledWith(
+        stateWithCls,
+        'default',
+        SHARED_LOGSET_KEY,
+      );
+      expect(stateManager.setResource).toHaveBeenCalledWith(
+        expect.anything(),
+        'functions.test_fn',
+        expect.objectContaining({
+          instances: expect.not.arrayContaining([
+            expect.objectContaining({ type: 'TENCENT_CLS_TOPIC' }),
+            expect.objectContaining({ type: 'TENCENT_CLS_LOGSET' }),
+          ]),
+        }),
+      );
+    });
+
+    it('retains the shared logset when other topics remain after disabling log', async () => {
+      const sharedLogsetState = {
+        mode: 'managed' as const,
+        region: 'ap-guangzhou',
+        definition: {
+          logsetName: 'test-app-default-cls',
+          region: 'ap-guangzhou',
+          stage: 'default',
+        },
+        instances: [
+          {
+            sid: 'si:tencent:cls-logset:default:test-app-default-cls',
+            type: 'TENCENT_CLS_LOGSET',
+            id: 'test-app-default-cls',
+            logsetId: 'logset-1',
+          },
+        ],
+        lastUpdated: '2025-01-01T00:00:00Z',
+      };
+      const stateWithCls: StateFile = {
+        ...initialState,
+        stages: {
+          default: { resources: {}, shared: { [SHARED_LOGSET_KEY]: sharedLogsetState } },
+        },
+      };
+
+      (stateManager.getResource as jest.Mock).mockReturnValue({
+        mode: 'managed',
+        region: 'ap-guangzhou',
+        definition: {
+          ...mockDefinition,
+          logConfig: { logset: 'test-app-default-cls', topic: 'test-service-default-fn-logs' },
+        },
+        instances: [
+          {
+            sid: 'si:tencent:scf:default:test-function',
+            id: 'test-function',
+            functionName: 'test-function',
+          },
+          {
+            sid: 'si:tencent:cls-topic:default:test-service-default-fn-logs',
+            type: 'TENCENT_CLS_TOPIC',
+            id: 'topic-1',
+            topicName: 'test-service-default-fn-logs',
+          },
+        ],
+        lastUpdated: '2025-01-01T00:00:00Z',
+      });
+      (mockScfOperations.updateFunctionConfiguration as jest.Mock).mockResolvedValue(undefined);
+      (mockScfOperations.updateFunctionCode as jest.Mock).mockResolvedValue(undefined);
+      (mockClsOperations.deleteIndex as jest.Mock).mockResolvedValue(undefined);
+      (mockClsOperations.deleteTopic as jest.Mock).mockResolvedValue(undefined);
+      (mockClsOperations.getLogsetByName as jest.Mock).mockResolvedValue({
+        LogsetId: 'logset-1',
+        LogsetName: 'test-app-default-cls',
+      });
+      (mockClsOperations.listTopicsByLogset as jest.Mock).mockResolvedValue([
+        { TopicId: 'topic-other', TopicName: 'other-service-fn-logs' },
+      ]);
+      (stateManager.getSharedResource as jest.Mock).mockReturnValue(sharedLogsetState);
+      (stateManager.setResource as jest.Mock).mockReturnValue(stateWithCls);
+
+      await updateResource(mockContext, testFunction, stateWithCls);
+
+      expect(mockScfOperations.updateFunctionConfiguration).toHaveBeenCalledWith(
+        expect.objectContaining({ ClsLogsetId: '', ClsTopicId: '' }),
+      );
+      expect(mockClsOperations.deleteTopic).toHaveBeenCalledWith('topic-1');
+      expect(stateManager.removeSharedResource).not.toHaveBeenCalled();
+    });
+
+    it('does not unbind or delete CLS resources when log was never enabled', async () => {
+      const stateWithoutLog: StateFile = {
+        ...initialState,
+        resources: {
+          'functions.test_fn': {
+            mode: 'managed',
+            region: 'ap-guangzhou',
+            definition: mockDefinition,
+            instances: [
+              {
+                sid: 'si:tencent:scf:default:test-function',
+                id: 'test-function',
+                functionName: 'test-function',
+              },
+            ],
+            lastUpdated: '2025-01-01T00:00:00Z',
+          },
+        },
+      };
+
+      (stateManager.getResource as jest.Mock).mockReturnValue(
+        stateWithoutLog.resources['functions.test_fn'],
+      );
+      (mockScfOperations.updateFunctionCode as jest.Mock).mockResolvedValue(undefined);
+      (stateManager.setResource as jest.Mock).mockReturnValue(stateWithoutLog);
+
+      await updateResource(mockContext, testFunction, stateWithoutLog);
+
+      expect(mockScfOperations.updateFunctionConfiguration).not.toHaveBeenCalled();
+      expect(mockClsOperations.deleteIndex).not.toHaveBeenCalled();
+      expect(mockClsOperations.deleteTopic).not.toHaveBeenCalled();
+      expect(stateManager.removeSharedResource).not.toHaveBeenCalled();
+    });
+
+    it('disables log delivery for a legacy function that stored CLS ids on the instance', async () => {
+      (stateManager.getResource as jest.Mock).mockReturnValue({
+        mode: 'managed',
+        region: 'ap-guangzhou',
+        definition: { ...mockDefinition },
+        instances: [
+          {
+            sid: 'si:tencent:scf:default:test-function',
+            id: 'test-function',
+            functionName: 'test-function',
+            clsLogsetId: 'legacy-logset',
+            clsTopicId: 'legacy-topic',
+          },
+        ],
+        lastUpdated: '2025-01-01T00:00:00Z',
+      });
+      (mockScfOperations.updateFunctionConfiguration as jest.Mock).mockResolvedValue(undefined);
+      (mockScfOperations.updateFunctionCode as jest.Mock).mockResolvedValue(undefined);
+      (mockClsOperations.deleteIndex as jest.Mock).mockResolvedValue(undefined);
+      (mockClsOperations.deleteTopic as jest.Mock).mockResolvedValue(undefined);
+      (mockClsOperations.getLogsetByName as jest.Mock).mockResolvedValue(null);
+      (stateManager.setResource as jest.Mock).mockReturnValue(initialState);
+
+      await updateResource(mockContext, testFunction, initialState);
+
+      expect(mockScfOperations.updateFunctionConfiguration).toHaveBeenCalledWith(
+        expect.objectContaining({ ClsLogsetId: '', ClsTopicId: '' }),
+      );
+      expect(mockClsOperations.deleteIndex).toHaveBeenCalledWith('legacy-topic');
+      expect(mockClsOperations.deleteTopic).toHaveBeenCalledWith('legacy-topic');
     });
 
     it('should throw a clear error when Handler changes on update', async () => {

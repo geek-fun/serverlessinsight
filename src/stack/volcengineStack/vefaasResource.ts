@@ -4,6 +4,8 @@ import {
   removeResource,
   setResource,
   setSharedResource,
+  getSharedResource,
+  removeSharedResource,
   computeZipContentHash,
   buildSid,
   attributesEqual,
@@ -32,6 +34,9 @@ import {
   ensureSharedLogProject,
   buildSharedProjectResourceState,
   ensureOwnedTopic,
+  deleteTlsLogResources,
+  releaseSharedLogProjectIfUnused,
+  SHARED_LOG_PROJECT_KEY,
 } from './sharedLogProject';
 
 type DependentInstance = {
@@ -265,7 +270,9 @@ const createDependentResources = async (
 
   if (iamConfig && typeof iamConfig === 'string') {
     const role = { roleName: iamConfig, trn: iamConfig };
-    return { logConfig, role, instances: [] };
+    // External role: never create/manage it, but keep TLS instances and the
+    // sharedInstance so log resources are tracked and torn down correctly.
+    return { logConfig, role, instances, sharedInstance };
   }
 
   const roleName = customRoleName ?? `${serviceName}-${context.stage}-role`;
@@ -334,27 +341,16 @@ const deleteDependentResources = async (
 ): Promise<void> => {
   const client = createVolcengineClient(context);
 
-  const legacyProjectInstance = instances.find(
-    (instance) => instance.type === 'VOLCENGINE_TLS_PROJECT',
-  );
-  if (legacyProjectInstance) {
-    logger.info(lang.__('SHARED_TLS_PROJECT_LEGACY_SKIPPED', { id: legacyProjectInstance.id }));
-  }
+  // TLS children (index → topic) then any legacy per-resource own-project are
+  // deleted in dependency order; the stage-shared project is never touched.
+  await deleteTlsLogResources(context, client, instances);
 
-  for (const instance of [...instances].reverse()) {
+  for (const instance of instances) {
     switch (instance.type) {
-      case 'VOLCENGINE_TLS_INDEX': {
-        const [projectName, topicName] = instance.id.split('/');
-        logger.info(lang.__('DELETING_TLS_INDEX', { id: instance.id }));
-        await client.tls.deleteIndex(projectName, topicName);
+      case 'VOLCENGINE_TLS_INDEX':
+      case 'VOLCENGINE_TLS_TOPIC':
+      case 'VOLCENGINE_TLS_PROJECT':
         break;
-      }
-      case 'VOLCENGINE_TLS_TOPIC': {
-        const [projectName, topicName] = instance.id.split('/');
-        logger.info(lang.__('DELETING_TLS_TOPIC', { id: instance.id }));
-        await client.tls.deleteTopic(projectName, topicName);
-        break;
-      }
       case 'VOLCENGINE_IAM_ROLE': {
         const attrs = instance.attributes as Record<string, unknown> | undefined;
         if (attrs?.external === true) {
@@ -609,6 +605,25 @@ export const updateResource = async (
         );
       }
     }
+  } else {
+    const tlsToRemove = existingInstances.filter((i) => i.type.startsWith('VOLCENGINE_TLS_'));
+    if (tlsToRemove.length > 0) {
+      try {
+        await deleteTlsLogResources(context, client, tlsToRemove);
+        // Release the shared project when this was its last topic; keep the
+        // stage slot when other topics still reference it.
+        const shared = getSharedResource(state, context.stage, SHARED_LOG_PROJECT_KEY);
+        const releaseResult = await releaseSharedLogProjectIfUnused(context, client, shared);
+        if (releaseResult === 'deleted') {
+          logState = removeSharedResource(state, context.stage, SHARED_LOG_PROJECT_KEY);
+        }
+      } catch (error) {
+        throw new PartialResourceError(
+          state,
+          error instanceof Error ? error : new Error(String(error)),
+        );
+      }
+    }
   }
 
   // Determine if the current role is external (string TRN)
@@ -772,7 +787,11 @@ export const updateResource = async (
   }
 
   const existingDependentInstances = existingInstances
-    .filter((i) => i.type !== 'VOLCENGINE_VEFAAS_FUNCTION')
+    .filter(
+      (i) =>
+        i.type !== 'VOLCENGINE_VEFAAS_FUNCTION' &&
+        (!!fn.log || !i.type.startsWith('VOLCENGINE_TLS_')),
+    )
     .map((i) => {
       const { sid: existingSid, id: existingId, ...rest } = i;
       return {

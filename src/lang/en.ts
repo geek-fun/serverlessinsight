@@ -272,6 +272,10 @@ export const en = {
   SLS_LOGSTORE_WAITING: 'Waiting for SLS logstore {{project}}/{{logstore}} to be ready...',
   SHARED_SLS_PROJECT_IN_USE:
     '{{count}} logstore(s) still reference shared SLS project {{projectName}}; retaining it',
+  SHARED_SLS_PROJECT_ADOPTED:
+    'Adopting existing shared SLS project {{projectName}} owned by this app',
+  SLS_PROJECT_FOREIGN_OWNED:
+    'SLS project {{projectName}} exists but is not owned by this app; refusing to adopt',
   APIGW_LOG_CONFIG_STILL_REFERENCES_STORE:
     'Regional PROVIDER gateway log config still references {{slsLogStore}}; retaining logstore',
   APIGW_DOMAIN_BINDING_FAILED: 'Failed to bind custom domain: {{error}}',
@@ -816,8 +820,8 @@ export const en = {
   SHARED_TLS_PROJECT_IN_USE:
     '{{count}} topic(s) still reference shared TLS project {{projectName}}; retaining it',
   SHARED_TLS_PROJECT_DELETED: 'Deleted unused shared TLS project {{projectName}}',
-  SHARED_TLS_PROJECT_LEGACY_SKIPPED:
-    'Skipping legacy TLS project {{id}}; projects are released by the destroyer once unused',
+  TLS_SHARED_PROJECT_NOT_OWNED:
+    'Shared TLS project {{projectName}} exists but is not owned by this app (missing or foreign ownership tag); refusing to adopt or delete it',
   TLS_TOPIC_FOREIGN_OWNED:
     'TLS topic {{topicName}} exists but is owned by another stack; refusing to adopt',
   TLS_TOPIC_ALREADY_EXISTS: 'TLS topic {{topicName}} already exists, adopting existing topic',
@@ -841,10 +845,14 @@ export const en = {
   SHARED_CLS_LOGSET_DELETED: 'Deleted unused shared CLS logset {{logsetName}}',
   CLS_TOPIC_FOREIGN_OWNED:
     'CLS topic {{topicName}} exists but is owned by another stack; refusing to adopt',
+  CLS_LOGSET_FOREIGN_OWNED:
+    'CLS logset {{logsetName}} exists but is not owned by this app; refusing to adopt',
   CREATING_CLS_LOGSET: 'Creating CLS logset: {{logsetName}}',
   CREATING_CLS_TOPIC: 'Creating CLS topic: {{topicName}}',
   CREATING_CLS_INDEX: 'Creating CLS index for topic: {{topicName}}',
   DELETING_CLS_TOPIC: 'Deleting CLS topic: {{id}}',
+  DELETING_CLS_INDEX: 'Deleting CLS index for topic: {{topicName}}',
+  CLS_LOG_DISABLED: 'Disabled CLS log delivery for function {{functionName}}',
 
   // Volcengine veFaaS dependent resources
   VEFAAS_DEPENDENT_RESOURCES_TRACKED: 'Dependent resources (TLS, IAM) are tracked in state',

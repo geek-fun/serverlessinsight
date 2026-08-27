@@ -63,6 +63,7 @@ describe('tlsOperations', () => {
 
       expect(result.projectName).toBe('test-project');
       expect(result.projectId).toBe('project-123');
+      expect(result.created).toBe(true);
       expect(mockClient.CreateProject).toHaveBeenCalledWith({
         ProjectName: 'test-project',
         Description: 'Test project',
@@ -92,6 +93,7 @@ describe('tlsOperations', () => {
       });
 
       expect(result.projectId).toBe('project-123');
+      expect(result.created).toBe(false);
     });
 
     it('should tolerate ResourceAlreadyExists on createProject', async () => {
@@ -106,6 +108,7 @@ describe('tlsOperations', () => {
 
       expect(result.projectName).toBe('test-project');
       expect(result.status).toBe('Active');
+      expect(result.created).toBe(false);
     });
 
     it('should rethrow unexpected create errors', async () => {
@@ -158,6 +161,43 @@ describe('tlsOperations', () => {
       mockClient.DescribeProjects.mockRejectedValueOnce(error);
 
       await expect(operations.getProject('test-project')).rejects.toBe(error);
+    });
+  });
+
+  describe('getProjectTags', () => {
+    it('should return the tags of an existing project', async () => {
+      mockClient.DescribeProjects.mockResolvedValueOnce({
+        Projects: [{ ProjectId: 'project-123', ProjectName: 'test-project' }],
+        Total: 1,
+      });
+      mockClient.ListTagsForResources.mockResolvedValueOnce({
+        ResourceTags: [
+          { TagKey: 'si-owned-by', TagValue: 'test-app:shared:logs.project' },
+          { TagKey: 'env', TagValue: 'dev' },
+        ],
+        NextToken: '',
+      });
+
+      const result = await operations.getProjectTags('test-project');
+
+      expect(result).toEqual([
+        { Key: 'si-owned-by', Value: 'test-app:shared:logs.project' },
+        { Key: 'env', Value: 'dev' },
+      ]);
+      expect(mockClient.ListTagsForResources).toHaveBeenCalledWith({
+        ResourceType: 'project',
+        ResourcesIds: ['project-123'],
+        MaxResults: 50,
+      });
+    });
+
+    it('should return an empty list when the project does not exist', async () => {
+      mockClient.DescribeProjects.mockResolvedValueOnce({ Projects: [], Total: 0 });
+
+      const result = await operations.getProjectTags('missing-project');
+
+      expect(result).toEqual([]);
+      expect(mockClient.ListTagsForResources).not.toHaveBeenCalled();
     });
   });
 

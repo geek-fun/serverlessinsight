@@ -253,6 +253,8 @@ export const zhCN = {
     '已存在的 PROVIDER 网关日志配置指向 {{slsProject}}/{{slsLogStore}}，保持不变',
   SLS_LOGSTORE_WAITING: '等待 SLS 日志库 {{project}}/{{logstore}} 就绪...',
   SHARED_SLS_PROJECT_IN_USE: '仍有 {{count}} 个日志库引用共享 SLS 项目 {{projectName}}，予以保留',
+  SHARED_SLS_PROJECT_ADOPTED: '采用当前应用已有的共享 SLS 项目 {{projectName}}',
+  SLS_PROJECT_FOREIGN_OWNED: 'SLS 项目 {{projectName}} 已存在但不属于当前应用，拒绝采用',
   APIGW_LOG_CONFIG_STILL_REFERENCES_STORE:
     '区域级 PROVIDER 网关日志配置仍引用 {{slsLogStore}}，保留该日志库',
   APIGW_DOMAIN_BINDING_FAILED: '绑定自定义域名失败：{{error}}',
@@ -744,7 +746,8 @@ export const zhCN = {
   VOLCENGINE_ROLE_NOT_FOUND_FOR_TAG: '应用标签时未找到 IAM 角色 {{roleName}}，已跳过',
   SHARED_TLS_PROJECT_IN_USE: '仍有 {{count}} 个主题引用共享 TLS 项目 {{projectName}}，予以保留',
   SHARED_TLS_PROJECT_DELETED: '已删除未使用的共享 TLS 项目 {{projectName}}',
-  SHARED_TLS_PROJECT_LEGACY_SKIPPED: '跳过遗留 TLS 项目 {{id}}；项目将由销毁流程在无引用时释放',
+  TLS_SHARED_PROJECT_NOT_OWNED:
+    '共享 TLS 项目 {{projectName}} 已存在但不属于当前应用（缺少或持有非本应用的所有权标签），拒绝采用或删除',
   TLS_TOPIC_FOREIGN_OWNED: 'TLS 主题 {{topicName}} 已存在但属于其他栈，拒绝采用',
   TLS_TOPIC_ALREADY_EXISTS: 'TLS 主题 {{topicName}} 已存在，复用现有主题',
   TLS_TOPIC_TIMEOUT: '等待 TLS 主题 {{topicName}} 就绪超时',
@@ -765,10 +768,13 @@ export const zhCN = {
   SHARED_CLS_LOGSET_IN_USE: '仍有 {{count}} 个主题引用共享 CLS 日志集 {{logsetName}}，予以保留',
   SHARED_CLS_LOGSET_DELETED: '已删除未使用的共享 CLS 日志集 {{logsetName}}',
   CLS_TOPIC_FOREIGN_OWNED: 'CLS 主题 {{topicName}} 已存在但属于其他栈，拒绝采用',
+  CLS_LOGSET_FOREIGN_OWNED: 'CLS 日志集 {{logsetName}} 已存在但不属于本应用，拒绝采用',
   CREATING_CLS_LOGSET: '正在创建 CLS 日志集：{{logsetName}}',
   CREATING_CLS_TOPIC: '正在创建 CLS 主题：{{topicName}}',
   CREATING_CLS_INDEX: '正在为 CLS 主题创建索引：{{topicName}}',
   DELETING_CLS_TOPIC: '正在删除 CLS 主题：{{id}}',
+  DELETING_CLS_INDEX: '正在删除 CLS 主题索引：{{topicName}}',
+  CLS_LOG_DISABLED: '已为函数 {{functionName}} 关闭 CLS 日志投递',
 
   // Volcengine veFaaS dependent resources
   VEFAAS_DEPENDENT_RESOURCES_TRACKED: '依赖资源（TLS、IAM）已在状态中跟踪',

@@ -3,7 +3,7 @@ import { getSharedResource, buildSid } from '../../common';
 import type { Context, ResourceState, StateFile } from '../../types';
 import { logger } from '../../common/logger';
 import { lang } from '../../lang';
-import { OWNERSHIP_TAG_KEY, buildSharedOwnershipTagValue } from '../ownershipTag';
+import { OWNERSHIP_TAG_KEY, buildSharedOwnershipTagValue, isOwnedByApp } from '../ownershipTag';
 
 type AliyunClient = ReturnType<typeof createAliyunClient>;
 
@@ -32,11 +32,23 @@ export const ensureSharedSlsProject = async (
     ? getSharedResource(state, context.stage, SHARED_LOG_PROJECT_KEY)
     : undefined;
   const existingName = shared ? resolveSharedProjectName(shared) : undefined;
-  if (existingName) {
-    return { projectName: existingName };
+  const projectName = existingName ?? buildSharedProjectName(context.app, context.stage);
+
+  // A local shared-state entry is never trusted blindly: the provider must
+  // confirm the project exists and carries this app's shared ownership tag
+  // before it is reused. A foreign or untagged project is refused; a stale
+  // entry (project gone from provider) falls through to creation.
+  const existingProject = await client.sls.getProject(projectName);
+  if (existingProject) {
+    if (await isSharedProjectOwnedByApp(context, client, projectName)) {
+      if (!existingName) {
+        logger.info(lang.__('SHARED_SLS_PROJECT_ADOPTED', { projectName }));
+      }
+      return { projectName };
+    }
+    throw new Error(lang.__('SLS_PROJECT_FOREIGN_OWNED', { projectName }));
   }
 
-  const projectName = buildSharedProjectName(context.app, context.stage);
   logger.info(lang.__('CREATING_SLS_PROJECT', { projectName }));
   await client.sls.createProject(projectName);
   await client.sls.addTags({
@@ -77,6 +89,24 @@ export const buildSharedProjectResourceState = (
 export const adoptSharedSlsProjectState = (context: Context, projectName: string): ResourceState =>
   buildSharedProjectResourceState(context, { projectName });
 
+/**
+ * Exact app-scope ownership check for an SLS project. The caller must verify
+ * the project exists (getProject) before reading its tags; a foreign or
+ * untagged project is never adopted (issue #214).
+ */
+export const isSharedProjectOwnedByApp = async (
+  context: Context,
+  client: AliyunClient,
+  projectName: string,
+): Promise<boolean> => {
+  const tags = await client.sls.getProjectTags(projectName);
+  return isOwnedByApp(
+    context.app,
+    SHARED_LOG_PROJECT_KEY,
+    tags.map((t) => ({ Key: t.key, Value: t.value })),
+  );
+};
+
 export const releaseSharedSlsProjectIfUnused = async (
   context: Context,
   client: AliyunClient,
@@ -93,6 +123,12 @@ export const releaseSharedSlsProjectIfUnused = async (
   const project = await client.sls.getProject(projectName);
   if (!project) {
     return 'absent';
+  }
+
+  // Only ever delete a project we own. A foreign or untagged project is
+  // retained — the tracked entry may be stale and must not be torn down.
+  if (!(await isSharedProjectOwnedByApp(context, client, projectName))) {
+    return 'retained';
   }
 
   const logstores = await client.sls.listLogStores(projectName);

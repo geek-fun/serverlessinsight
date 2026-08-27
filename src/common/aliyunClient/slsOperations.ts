@@ -125,6 +125,18 @@ export const createSlsOperations = (slsClient: SlsSdkClient) => {
       await slsClient.deleteProject(projectName, request);
     },
 
+    getProjectTags: async (projectName: string): Promise<Array<{ key: string; value: string }>> => {
+      const request = new sls.ListTagResourcesRequest({
+        resourceId: [projectName],
+        resourceType: 'project',
+      });
+      const response = await slsClient.listTagResources(request);
+      return (response.body?.tagResources ?? []).map((tagResource) => ({
+        key: tagResource.tagKey ?? '',
+        value: tagResource.tagValue ?? '',
+      }));
+    },
+
     createLogstore: async (
       projectName: string,
       logstoreName: string,

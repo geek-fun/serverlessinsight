@@ -41,6 +41,10 @@ jest.mock('../../../../src/stack/volcengineStack/apigwResource', () => ({
   deleteApigwResource: jest.fn(),
 }));
 
+jest.mock('../../../../src/common/volcengineClient', () => ({
+  createVolcengineClient: jest.fn(),
+}));
+
 jest.mock('../../../../src/common/stateManager', () => ({
   getAllResources: jest.fn(),
   getSharedResource: jest.fn(() => undefined),
@@ -57,6 +61,21 @@ describe('volcengineStack destroyer', () => {
     accessKeyId: 'test-ak',
     accessKeySecret: 'test-sk',
     iacLocation: '/test/path',
+  };
+
+  const mockTlsClient = {
+    getProject: jest.fn(),
+    getProjectTags: jest.fn(),
+    listTopics: jest.fn(),
+    deleteProject: jest.fn(),
+  };
+  const mockVolcengineClient = {
+    tls: mockTlsClient,
+    vefaas: {},
+    tos: {},
+    iam: {},
+    apigw: {},
+    sts: {},
   };
 
   const mockState: StateFile = {
@@ -562,6 +581,108 @@ describe('volcengineStack destroyer', () => {
       await destroyVolcengineStack(mockBackend);
 
       expect(mockBackend.saveState).toHaveBeenCalled();
+    });
+
+    it('releases an unused app-owned shared TLS project from the shared slot', async () => {
+      const sharedProjectState: StateFile = {
+        ...mockState,
+        stages: {
+          dev: {
+            resources: {},
+            shared: {
+              'logs.project': {
+                mode: 'managed',
+                region: 'cn-beijing',
+                definition: { projectName: 'test-app-dev-tls' },
+                instances: [
+                  {
+                    sid: 'si:volcengine:tls:dev:test-app-dev-tls',
+                    type: 'VOLCENGINE_TLS_PROJECT',
+                    id: 'test-app-dev-tls',
+                    projectId: 'proj-1',
+                  },
+                ],
+                lastUpdated: '2024-01-01T00:00:00Z',
+              },
+            },
+          },
+        },
+      };
+      const { getAllResources, getSharedResource, removeSharedResource } = jest.requireMock(
+        '../../../../src/common/stateManager',
+      );
+      const { createVolcengineClient } = jest.requireMock(
+        '../../../../src/common/volcengineClient',
+      );
+      getAllResources.mockReturnValue({});
+      getSharedResource.mockReturnValue(sharedProjectState.stages.dev.shared!['logs.project']);
+      createVolcengineClient.mockReturnValue(mockVolcengineClient);
+      mockTlsClient.getProject.mockResolvedValue({
+        projectId: 'proj-1',
+        projectName: 'test-app-dev-tls',
+        status: 'Active',
+      });
+      mockTlsClient.getProjectTags.mockResolvedValue([
+        { Key: 'si-owned-by', Value: 'test-app:shared:logs.project' },
+      ]);
+      mockTlsClient.listTopics.mockResolvedValue([]);
+      mockTlsClient.deleteProject.mockResolvedValue(undefined);
+
+      await destroyVolcengineStack(mockBackend);
+
+      expect(mockTlsClient.listTopics).toHaveBeenCalledWith('test-app-dev-tls');
+      expect(mockTlsClient.deleteProject).toHaveBeenCalledWith('test-app-dev-tls');
+      expect(removeSharedResource).toHaveBeenCalledWith(expect.anything(), 'dev', 'logs.project');
+    });
+
+    it('retains the shared TLS project when it is not app-owned', async () => {
+      const sharedProjectState: StateFile = {
+        ...mockState,
+        stages: {
+          dev: {
+            resources: {},
+            shared: {
+              'logs.project': {
+                mode: 'managed',
+                region: 'cn-beijing',
+                definition: { projectName: 'test-app-dev-tls' },
+                instances: [
+                  {
+                    sid: 'si:volcengine:tls:dev:test-app-dev-tls',
+                    type: 'VOLCENGINE_TLS_PROJECT',
+                    id: 'test-app-dev-tls',
+                    projectId: 'proj-1',
+                  },
+                ],
+                lastUpdated: '2024-01-01T00:00:00Z',
+              },
+            },
+          },
+        },
+      };
+      const { getAllResources, getSharedResource, removeSharedResource } = jest.requireMock(
+        '../../../../src/common/stateManager',
+      );
+      const { createVolcengineClient } = jest.requireMock(
+        '../../../../src/common/volcengineClient',
+      );
+      getAllResources.mockReturnValue({});
+      getSharedResource.mockReturnValue(sharedProjectState.stages.dev.shared!['logs.project']);
+      createVolcengineClient.mockReturnValue(mockVolcengineClient);
+      mockTlsClient.getProject.mockResolvedValue({
+        projectId: 'proj-1',
+        projectName: 'test-app-dev-tls',
+        status: 'Active',
+      });
+      mockTlsClient.getProjectTags.mockResolvedValue([
+        { Key: 'si-owned-by', Value: 'another-app:shared:logs.project' },
+      ]);
+
+      await destroyVolcengineStack(mockBackend);
+
+      expect(mockTlsClient.listTopics).not.toHaveBeenCalled();
+      expect(mockTlsClient.deleteProject).not.toHaveBeenCalled();
+      expect(removeSharedResource).not.toHaveBeenCalled();
     });
   });
 });

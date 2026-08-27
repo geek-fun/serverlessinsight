@@ -6,6 +6,7 @@ import {
   releaseSharedSlsProjectIfUnused,
   ensureFunctionLogstore,
   ensureGatewayLogstore,
+  isSharedProjectOwnedByApp,
 } from '../../../../src/stack/aliyunStack/sharedLogProject';
 import type { Context, StateFile, ResourceState } from '../../../../src/types';
 
@@ -40,6 +41,7 @@ describe('sharedLogProject (aliyun)', () => {
     sls: {
       createProject: jest.fn(),
       getProject: jest.fn(),
+      getProjectTags: jest.fn(),
       deleteProject: jest.fn(),
       listLogStores: jest.fn(),
       getLogstore: jest.fn(),
@@ -80,6 +82,7 @@ describe('sharedLogProject (aliyun)', () => {
       projectName: 'test-app-dev-sls',
       status: 'Normal',
     });
+    mockClient.sls.getProjectTags.mockResolvedValue([]);
     mockClient.sls.listLogStores.mockResolvedValue([]);
     mockClient.sls.getLogstore.mockResolvedValue(null);
     mockClient.sls.createLogstore.mockResolvedValue({
@@ -102,6 +105,9 @@ describe('sharedLogProject (aliyun)', () => {
           dev: { resources: {}, shared: { [SHARED_LOG_PROJECT_KEY]: sharedResourceState } },
         },
       };
+      mockClient.sls.getProjectTags.mockResolvedValue([
+        { key: 'si-owned-by', value: 'test-app:shared:logs.project' },
+      ]);
 
       const result = await ensureSharedSlsProject(
         mockContext,
@@ -114,7 +120,46 @@ describe('sharedLogProject (aliyun)', () => {
       expect(mockClient.sls.addTags).not.toHaveBeenCalled();
     });
 
+    it('refuses a local shared-state entry when the provider project is not app-owned', async () => {
+      const stateWithShared: StateFile = {
+        ...emptyState,
+        stages: {
+          dev: { resources: {}, shared: { [SHARED_LOG_PROJECT_KEY]: sharedResourceState } },
+        },
+      };
+      mockClient.sls.getProjectTags.mockResolvedValue([
+        { key: 'si-owned-by', value: 'other-app:shared:logs.project' },
+      ]);
+
+      await expect(
+        ensureSharedSlsProject(mockContext, mockClient as never, stateWithShared),
+      ).rejects.toThrow('SLS_PROJECT_FOREIGN_OWNED');
+      expect(mockClient.sls.createProject).not.toHaveBeenCalled();
+    });
+
+    it('recreates the shared project when the local entry is stale (project gone from provider)', async () => {
+      const stateWithShared: StateFile = {
+        ...emptyState,
+        stages: {
+          dev: { resources: {}, shared: { [SHARED_LOG_PROJECT_KEY]: sharedResourceState } },
+        },
+      };
+      mockClient.sls.getProject.mockResolvedValue(null);
+
+      const result = await ensureSharedSlsProject(
+        mockContext,
+        mockClient as never,
+        stateWithShared,
+      );
+
+      expect(result).toEqual({ projectName: 'test-app-dev-sls' });
+      expect(mockClient.sls.createProject).toHaveBeenCalledWith('test-app-dev-sls');
+      expect(mockClient.sls.addTags).toHaveBeenCalled();
+    });
+
     it('creates and tags a new app-scoped SLS project', async () => {
+      mockClient.sls.getProject.mockResolvedValue(null);
+
       const result = await ensureSharedSlsProject(mockContext, mockClient as never, emptyState);
 
       expect(result).toEqual({ projectName: 'test-app-dev-sls' });
@@ -124,6 +169,87 @@ describe('sharedLogProject (aliyun)', () => {
         resourceId: 'test-app-dev-sls',
         tags: [{ key: 'si-owned-by', value: 'test-app:shared:logs.project' }],
       });
+    });
+
+    it('adopts an existing project owned by this app (cross-service convergence)', async () => {
+      mockClient.sls.getProject.mockResolvedValue({
+        projectName: 'test-app-dev-sls',
+        status: 'Normal',
+      });
+      mockClient.sls.getProjectTags.mockResolvedValue([
+        { key: 'si-owned-by', value: 'test-app:shared:logs.project' },
+      ]);
+
+      const result = await ensureSharedSlsProject(mockContext, mockClient as never, emptyState);
+
+      expect(result).toEqual({ projectName: 'test-app-dev-sls' });
+      expect(mockClient.sls.createProject).not.toHaveBeenCalled();
+      expect(mockClient.sls.addTags).not.toHaveBeenCalled();
+    });
+
+    it('refuses an existing project that is not owned by this app', async () => {
+      mockClient.sls.getProject.mockResolvedValue({
+        projectName: 'test-app-dev-sls',
+        status: 'Normal',
+      });
+      mockClient.sls.getProjectTags.mockResolvedValue([
+        { key: 'si-owned-by', value: 'other-app:shared:logs.project' },
+      ]);
+
+      await expect(
+        ensureSharedSlsProject(mockContext, mockClient as never, emptyState),
+      ).rejects.toThrow('SLS_PROJECT_FOREIGN_OWNED');
+      expect(mockClient.sls.createProject).not.toHaveBeenCalled();
+    });
+
+    it('refuses an existing project with no ownership tag', async () => {
+      mockClient.sls.getProject.mockResolvedValue({
+        projectName: 'test-app-dev-sls',
+        status: 'Normal',
+      });
+      mockClient.sls.getProjectTags.mockResolvedValue([]);
+
+      await expect(
+        ensureSharedSlsProject(mockContext, mockClient as never, emptyState),
+      ).rejects.toThrow('SLS_PROJECT_FOREIGN_OWNED');
+      expect(mockClient.sls.createProject).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('isSharedProjectOwnedByApp', () => {
+    it('returns true when the project carries this app shared-scope tag', async () => {
+      mockClient.sls.getProjectTags.mockResolvedValue([
+        { key: 'si-owned-by', value: 'test-app:shared:logs.project' },
+      ]);
+
+      const result = await isSharedProjectOwnedByApp(
+        mockContext,
+        mockClient as never,
+        'test-app-dev-sls',
+      );
+
+      expect(result).toBe(true);
+    });
+
+    it('returns false when the project is untagged or foreign-owned', async () => {
+      mockClient.sls.getProjectTags.mockResolvedValue([]);
+
+      const untagged = await isSharedProjectOwnedByApp(
+        mockContext,
+        mockClient as never,
+        'test-app-dev-sls',
+      );
+      expect(untagged).toBe(false);
+
+      mockClient.sls.getProjectTags.mockResolvedValue([
+        { key: 'si-owned-by', value: 'other-app:shared:logs.project' },
+      ]);
+      const foreign = await isSharedProjectOwnedByApp(
+        mockContext,
+        mockClient as never,
+        'test-app-dev-sls',
+      );
+      expect(foreign).toBe(false);
     });
   });
 
@@ -144,6 +270,9 @@ describe('sharedLogProject (aliyun)', () => {
 
   describe('releaseSharedSlsProjectIfUnused', () => {
     it('retains shared SLS project when logstores remain', async () => {
+      mockClient.sls.getProjectTags.mockResolvedValue([
+        { key: 'si-owned-by', value: 'test-app:shared:logs.project' },
+      ]);
       mockClient.sls.listLogStores.mockResolvedValue(['fn-logs', 'apigw-logs']);
 
       const result = await releaseSharedSlsProjectIfUnused(
@@ -157,6 +286,10 @@ describe('sharedLogProject (aliyun)', () => {
     });
 
     it('deletes shared SLS project only when no logstores remain', async () => {
+      mockClient.sls.getProjectTags.mockResolvedValue([
+        { key: 'si-owned-by', value: 'test-app:shared:logs.project' },
+      ]);
+
       const result = await releaseSharedSlsProjectIfUnused(
         mockContext,
         mockClient as never,
@@ -166,6 +299,18 @@ describe('sharedLogProject (aliyun)', () => {
       expect(result).toBe('deleted');
       expect(mockClient.sls.listLogStores).toHaveBeenCalledWith('test-app-dev-sls');
       expect(mockClient.sls.deleteProject).toHaveBeenCalledWith('test-app-dev-sls');
+    });
+
+    it('retains a foreign or untagged project without deleting it', async () => {
+      const result = await releaseSharedSlsProjectIfUnused(
+        mockContext,
+        mockClient as never,
+        sharedResourceState,
+      );
+
+      expect(result).toBe('retained');
+      expect(mockClient.sls.deleteProject).not.toHaveBeenCalled();
+      expect(mockClient.sls.listLogStores).not.toHaveBeenCalled();
     });
 
     it('returns absent when the project no longer exists in the provider', async () => {
