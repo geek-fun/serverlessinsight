@@ -13,7 +13,7 @@ tags:
 tables:
   insight_poc_table:
     collection: insight-poc-collection
-    description: Insight POC Table for testing purposes
+    desc: Insight POC Table for testing purposes
     name: insightPocTable
     type: TABLE_STORE_H
     network:
