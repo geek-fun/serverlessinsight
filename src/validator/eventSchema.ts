@@ -1,4 +1,9 @@
-import { resolvableEnum, resolvableBoolean } from './templateRefSchema';
+import {
+  resolvableEnum,
+  resolvableBoolean,
+  resolvableConstrained,
+  HOST_NAME_PATTERN,
+} from './templateRefSchema';
 
 const cdnSchema = {
   oneOf: [
@@ -42,9 +47,12 @@ export const eventSchema = {
         triggers: {
           type: 'array',
           items: {
-            method: resolvableEnum(['GET', 'POST', 'PUT', 'DELETE', 'ANY']),
-            path: { type: 'string' },
-            backend: { type: 'string' },
+            type: 'object',
+            properties: {
+              method: resolvableEnum(['GET', 'POST', 'PUT', 'DELETE', 'ANY']),
+              path: resolvableConstrained({ pattern: '^/\\S*$' }),
+              backend: { type: 'string' },
+            },
             required: ['method', 'path', 'backend'],
           },
         },
@@ -53,7 +61,7 @@ export const eventSchema = {
           additionalProperties: false,
           required: ['domain_name'],
           properties: {
-            domain_name: { type: 'string' },
+            domain_name: resolvableConstrained({ pattern: HOST_NAME_PATTERN }),
             certificate_id: { type: 'string' },
             certificate_body: { type: 'string' },
             certificate_private_key: { type: 'string' },
