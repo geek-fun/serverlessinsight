@@ -15,6 +15,7 @@ import type { EventDomain } from '../../../../src/types';
 import { getContext, getIacDefinition, isFunctionDomain, logger } from '../../../../src/common';
 
 jest.mock('../../../../src/common', () => ({
+  ...jest.requireActual('../../../../src/common'),
   getContext: jest.fn(),
   getIacDefinition: jest.fn(),
   isFunctionDomain: jest.fn(),
@@ -59,6 +60,21 @@ describe('apigwTypes', () => {
     const name = buildRouteName(mockEvent, 'POST', '/graphql');
     expect(name).toBe('rest-api-app-volcengine-gw-POST-graphql');
     expect(name.length).toBeLessThanOrEqual(63);
+  });
+
+  it('should keep route names distinct when a long event name truncates them (issue #221)', () => {
+    const longEvent: EventDomain = {
+      ...mockEvent,
+      name: 'console-serverlessinsight-api-gateway-volcengine-extended',
+    };
+    const routeNames = [
+      buildRouteName(longEvent, 'ANY', '/api/*'),
+      buildRouteName(longEvent, 'ANY', '/'),
+      buildRouteName(longEvent, 'GET', '/healthz'),
+    ];
+
+    expect(new Set(routeNames).size).toBe(routeNames.length);
+    routeNames.forEach((route) => expect(route.length).toBeLessThanOrEqual(63));
   });
 
   it('should resolve the function key from a backend ref', () => {

@@ -1,4 +1,10 @@
-import { getContext, getIacDefinition, isFunctionDomain, logger } from '../../common';
+import {
+  buildVolcengineRouteName,
+  getContext,
+  getIacDefinition,
+  isFunctionDomain,
+  logger,
+} from '../../common';
 import type {
   ApigwGatewayConfig,
   ApigwServiceConfig,
@@ -26,13 +32,8 @@ export const buildUpstreamName = (
   return `${event.name}-${stage}-upstream-${fnKey.replace(/_/g, '-')}`;
 };
 
-export const buildRouteName = (event: EventDomain, method: string, path: string): string => {
-  const sanitized = path
-    .replace(/\//g, '_')
-    .replace(/[^a-zA-Z0-9_]/g, '_')
-    .replace(/^_+|_+$/g, '');
-  return `${event.name}-${method}_${sanitized}`.replace(/_/g, '-').slice(0, 63);
-};
+export const buildRouteName = (event: EventDomain, method: string, path: string): string =>
+  buildVolcengineRouteName(event.name, method, path);
 
 /**
  * Resolves a function reference like ${functions.xxx} to the actual function name
