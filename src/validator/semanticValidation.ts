@@ -56,11 +56,11 @@ export const validateSemantics = (iacJson: ServerlessIacRaw): Array<ErrorObject>
       const path = typeof trigger.path === 'string' ? trigger.path : '';
       const instancePath = `/events/${eventKey}/triggers/${index}`;
 
+      let isDuplicateTrigger = false;
       if (method.length > 0 && path.length > 0) {
         const triggerKey = `${method}:${path}`;
-        const firstPath = seenTriggerKeys.get(triggerKey);
-
-        if (firstPath !== undefined) {
+        if (seenTriggerKeys.has(triggerKey)) {
+          isDuplicateTrigger = true;
           errors.push({
             instancePath,
             schemaPath: '#/semantic/duplicateTrigger',
@@ -91,48 +91,52 @@ export const validateSemantics = (iacJson: ServerlessIacRaw): Array<ErrorObject>
         });
       }
 
-      if (method.length > 0 && path.length > 0) {
-        if (providerName === 'aliyun') {
-          const apiKey = generateApiKey(method, path);
-          const apiName = buildAliyunApigwApiName(eventName, STAGE_PLACEHOLDER, apiKey);
-          const firstPath = seenApiNames.get(apiName);
+      // Generated names derive from method+path, so a duplicate trigger would
+      // only re-report the duplicateTrigger error — skip name collision checks.
+      if (isDuplicateTrigger || method.length === 0 || path.length === 0) {
+        return;
+      }
 
-          if (firstPath) {
-            errors.push({
-              instancePath,
-              schemaPath: '#/semantic/duplicateGeneratedApiName',
-              keyword: 'duplicateGeneratedApiName',
-              params: {},
-              message: lang.__('SEMANTIC_DUPLICATE_GENERATED_API_NAME', {
-                apiName,
-                firstPath,
-                secondPath: path,
-              }),
-            });
-          } else {
-            seenApiNames.set(apiName, path);
-          }
+      if (providerName === 'aliyun') {
+        const apiKey = generateApiKey(method, path);
+        const apiName = buildAliyunApigwApiName(eventName, STAGE_PLACEHOLDER, apiKey);
+        const firstPath = seenApiNames.get(apiName);
+
+        if (firstPath !== undefined) {
+          errors.push({
+            instancePath,
+            schemaPath: '#/semantic/duplicateGeneratedApiName',
+            keyword: 'duplicateGeneratedApiName',
+            params: {},
+            message: lang.__('SEMANTIC_DUPLICATE_GENERATED_API_NAME', {
+              apiName,
+              firstPath,
+              secondPath: path,
+            }),
+          });
+        } else {
+          seenApiNames.set(apiName, path);
         }
+      }
 
-        if (providerName === 'volcengine') {
-          const routeName = buildVolcengineRouteName(eventName, method, path);
-          const firstPath = seenRouteNames.get(routeName);
+      if (providerName === 'volcengine') {
+        const routeName = buildVolcengineRouteName(eventName, method, path);
+        const firstPath = seenRouteNames.get(routeName);
 
-          if (firstPath) {
-            errors.push({
-              instancePath,
-              schemaPath: '#/semantic/duplicateRouteName',
-              keyword: 'duplicateRouteName',
-              params: {},
-              message: lang.__('SEMANTIC_DUPLICATE_ROUTE_NAME', {
-                routeName,
-                firstPath,
-                secondPath: path,
-              }),
-            });
-          } else {
-            seenRouteNames.set(routeName, path);
-          }
+        if (firstPath !== undefined) {
+          errors.push({
+            instancePath,
+            schemaPath: '#/semantic/duplicateRouteName',
+            keyword: 'duplicateRouteName',
+            params: {},
+            message: lang.__('SEMANTIC_DUPLICATE_ROUTE_NAME', {
+              routeName,
+              firstPath,
+              secondPath: path,
+            }),
+          });
+        } else {
+          seenRouteNames.set(routeName, path);
         }
       }
     });
