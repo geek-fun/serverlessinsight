@@ -52,5 +52,5 @@ functions:
       OLLAMA_NOHISTORY: false
       OLLAMA_NOPRUNE: false
       OLLAMA_NUM_PARALLEL: 1
-      OLLAMA_ORIGINS: [ * http://localhost https://localhost http://localhost:* https://localhost:* http://127.0.0.1 https://127.0.0.1 http://127.0.0.1:* https://127.0.0.1:* http://0.0.0.0 https://0.0.0.0 http://0.0.0.0:* https://0.0.0.0:* app://* file://* tauri://* vscode-webview://* ]
-      OLLAMA_SCHED_SPREAD: fals
+      OLLAMA_ORIGINS: 'http://localhost,https://localhost,http://localhost:*,https://localhost:*,http://127.0.0.1,https://127.0.0.1,http://127.0.0.1:*,https://127.0.0.1:*,http://0.0.0.0,https://0.0.0.0,http://0.0.0.0:*,https://0.0.0.0:*,app://*,file://*,tauri://*,vscode-webview://*'
+      OLLAMA_SCHED_SPREAD: false

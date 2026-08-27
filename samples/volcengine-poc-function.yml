@@ -10,7 +10,7 @@ functions:
   hello_function:
     name: insight-poc-hello-fn
     code:
-      runtime: nodejs/v18
+      runtime: node20/v1
       handler: index.handler
       path: ./artifacts/function.zip
     memory: 128
