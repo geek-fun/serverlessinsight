@@ -98,7 +98,7 @@ describe('Apigw Planner', () => {
         mode: 'managed',
         region: 'cn-hangzhou',
         definition: {
-          groupName: 'test-service-default-agw-group',
+          groupName: 'test-service-default-test-api-agw-group',
           description: 'API Gateway group for test-service',
           basePath: null,
           triggers: [{ method: 'GET', path: '/users', backend: 'userFunction' }],
@@ -109,7 +109,7 @@ describe('Apigw Planner', () => {
             type: 'ALIYUN_APIGW_GROUP',
             sid: 'si:aliyun:apigateway:default:group-123',
             id: 'group-123',
-            groupName: 'test-service-default-agw-group',
+            groupName: 'test-service-default-test-api-agw-group',
           },
         ],
         lastUpdated: new Date().toISOString(),
@@ -135,7 +135,7 @@ describe('Apigw Planner', () => {
         mode: 'managed',
         region: 'cn-hangzhou',
         definition: {
-          groupName: 'test-service-default-agw-group',
+          groupName: 'test-service-default-test-api-agw-group',
           description: 'API Gateway group for test-service',
           basePath: null,
           triggers: [{ method: 'GET', path: '/users', backend: 'userFunction' }],
@@ -147,7 +147,7 @@ describe('Apigw Planner', () => {
       });
       mockApigwOperations.findApiGroupByName.mockResolvedValue({
         groupId: 'group-123',
-        groupName: 'test-service-default-agw-group',
+        groupName: 'test-service-default-test-api-agw-group',
         tags: [{ Key: 'si-owned-by', Value: 'test-app-test-service:events.test_api' }],
       });
 
@@ -168,7 +168,7 @@ describe('Apigw Planner', () => {
         mode: 'managed',
         region: 'cn-hangzhou',
         definition: {
-          groupName: 'test-service-default-agw-group',
+          groupName: 'test-service-default-test-api-agw-group',
           description: 'API Gateway group for test-service',
           basePath: null,
           triggers: [{ method: 'GET', path: '/users', backend: 'userFunction' }],
@@ -180,7 +180,7 @@ describe('Apigw Planner', () => {
       });
       mockApigwOperations.findApiGroupByName.mockResolvedValue({
         groupId: 'group-123',
-        groupName: 'test-service-default-agw-group',
+        groupName: 'test-service-default-test-api-agw-group',
         tags: [{ Key: 'env', Value: 'prod' }],
       });
 
@@ -193,7 +193,7 @@ describe('Apigw Planner', () => {
       const state = loadState('aliyun', 'test-app', 'test-service', 'default', testDir);
       mockApigwOperations.findApiGroupByName.mockResolvedValue({
         groupId: 'group-123',
-        groupName: 'test-service-default-agw-group',
+        groupName: 'test-service-default-test-api-agw-group',
       });
 
       await expect(
@@ -205,7 +205,7 @@ describe('Apigw Planner', () => {
       const state = loadState('aliyun', 'test-app', 'test-service', 'default', testDir);
       mockApigwOperations.findApiGroupByName.mockResolvedValue({
         groupId: 'group-123',
-        groupName: 'test-service-default-agw-group',
+        groupName: 'test-service-default-test-api-agw-group',
         tags: [{ Key: 'si-owned-by', Value: 'test-app-test-service:events.test_api' }],
       });
 
@@ -227,7 +227,7 @@ describe('Apigw Planner', () => {
         mode: 'managed',
         region: 'cn-hangzhou',
         definition: {
-          groupName: 'test-service-default-agw-group',
+          groupName: 'test-service-default-test-api-agw-group',
           description: 'API Gateway group for test-service',
           basePath: null,
           triggers: [
@@ -244,7 +244,7 @@ describe('Apigw Planner', () => {
             type: 'ALIYUN_APIGW_GROUP',
             sid: 'si:aliyun:apigateway:default:group-123',
             id: 'group-123',
-            groupName: 'test-service-default-agw-group',
+            groupName: 'test-service-default-test-api-agw-group',
           },
         ],
         lastUpdated: new Date().toISOString(),
@@ -253,7 +253,7 @@ describe('Apigw Planner', () => {
       // Mock getApiGroup to return matching group
       mockApigwOperations.getApiGroup.mockResolvedValue({
         groupId: 'group-123',
-        groupName: 'test-service-default-agw-group',
+        groupName: 'test-service-default-test-api-agw-group',
         description: 'API Gateway group for test-service',
       });
 
@@ -274,7 +274,7 @@ describe('Apigw Planner', () => {
         mode: 'managed',
         region: 'cn-hangzhou',
         definition: {
-          groupName: 'test-service-default-agw-group',
+          groupName: 'test-service-default-test-api-agw-group',
           description: 'API Gateway group for test-service',
           basePath: null,
           triggers: [
@@ -291,7 +291,7 @@ describe('Apigw Planner', () => {
             type: 'ALIYUN_APIGW_GROUP',
             sid: 'si:aliyun:apigateway:default:group-123',
             id: 'group-123',
-            groupName: 'test-service-default-agw-group',
+            groupName: 'test-service-default-test-api-agw-group',
           },
         ],
         lastUpdated: new Date().toISOString(),
@@ -300,7 +300,7 @@ describe('Apigw Planner', () => {
       // Mock getApiGroup to return existing group
       mockApigwOperations.getApiGroup.mockResolvedValue({
         groupId: 'group-123',
-        groupName: 'test-service-default-agw-group',
+        groupName: 'test-service-default-test-api-agw-group',
       });
 
       const plan = await generateApigwPlan(mockContext, state, [testEvent], 'test-service');
@@ -363,7 +363,7 @@ describe('Apigw Planner', () => {
         mode: 'managed',
         region: 'cn-hangzhou',
         definition: {
-          groupName: 'test-service-default-agw-group',
+          groupName: 'test-service-default-test-api-agw-group',
           description: 'API Gateway group for test-service',
           basePath: null,
           triggers: [{ method: 'GET', path: '/users', backend: 'userFunction' }],
@@ -381,7 +381,7 @@ describe('Apigw Planner', () => {
             type: 'ALIYUN_APIGW_GROUP',
             sid: 'si:aliyun:apigateway:default:group-123',
             id: 'group-123',
-            groupName: 'test-service-default-agw-group',
+            groupName: 'test-service-default-test-api-agw-group',
           },
         ],
         lastUpdated: new Date().toISOString(),
@@ -389,7 +389,7 @@ describe('Apigw Planner', () => {
 
       mockApigwOperations.getApiGroup.mockResolvedValue({
         groupId: 'group-123',
-        groupName: 'test-service-default-agw-group',
+        groupName: 'test-service-default-test-api-agw-group',
         description: 'API Gateway group for test-service',
       });
 
@@ -418,7 +418,7 @@ describe('Apigw Planner', () => {
         mode: 'managed',
         region: 'cn-hangzhou',
         definition: {
-          groupName: 'test-service-default-agw-group',
+          groupName: 'test-service-default-test-api-agw-group',
           description: 'API Gateway group for test-service',
           basePath: null,
           triggers: [{ method: 'GET', path: '/users', backend: 'userFunction' }],
@@ -435,7 +435,7 @@ describe('Apigw Planner', () => {
             type: 'ALIYUN_APIGW_GROUP',
             sid: 'si:aliyun:apigateway:default:group-123',
             id: 'group-123',
-            groupName: 'test-service-default-agw-group',
+            groupName: 'test-service-default-test-api-agw-group',
           },
         ],
         lastUpdated: new Date().toISOString(),
@@ -443,7 +443,7 @@ describe('Apigw Planner', () => {
 
       mockApigwOperations.getApiGroup.mockResolvedValue({
         groupId: 'group-123',
-        groupName: 'test-service-default-agw-group',
+        groupName: 'test-service-default-test-api-agw-group',
       });
 
       const plan = await generateApigwPlan(mockContext, state, [eventWithHttps], 'test-service');
@@ -465,7 +465,7 @@ describe('Apigw Planner', () => {
         mode: 'managed',
         region: 'cn-hangzhou',
         definition: {
-          groupName: 'test-service-default-agw-group',
+          groupName: 'test-service-default-test-api-agw-group',
           description: 'API Gateway group for test-service',
           basePath: null,
           triggers: [
@@ -482,7 +482,7 @@ describe('Apigw Planner', () => {
             type: 'ALIYUN_APIGW_GROUP',
             sid: 'si:aliyun:apigateway:default:group-123',
             id: 'group-123',
-            groupName: 'test-service-default-agw-group',
+            groupName: 'test-service-default-test-api-agw-group',
           },
         ],
         lastUpdated: new Date().toISOString(),

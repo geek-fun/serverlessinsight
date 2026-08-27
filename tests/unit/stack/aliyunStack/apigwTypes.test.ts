@@ -81,17 +81,26 @@ describe('Apigw Types', () => {
   });
 
   describe('eventToApigwGroupConfig', () => {
-    it('should convert EventDomain to ApigwGroupConfig', () => {
+    it('should convert EventDomain to ApigwGroupConfig with a per-event group name', () => {
       const config = eventToApigwGroupConfig(testEvent, 'my-service', 'default');
 
-      expect(config.groupName).toBe('my-service-default-agw-group');
+      expect(config.groupName).toBe('my-service-default-test-api-agw-group');
       expect(config.description).toBe('API Gateway group for my-service');
     });
 
     it('should handle service names with underscores', () => {
       const config = eventToApigwGroupConfig(testEvent, 'my_test_service', 'default');
 
-      expect(config.groupName).toBe('my-test-service-default-agw-group');
+      expect(config.groupName).toBe('my-test-service-default-test-api-agw-group');
+    });
+
+    it('should keep distinct group names for two events sharing one service+stage', () => {
+      const secondEvent: EventDomain = { ...testEvent, key: 'admin_api' };
+      const first = eventToApigwGroupConfig(testEvent, 'my-service', 'default');
+      const second = eventToApigwGroupConfig(secondEvent, 'my-service', 'default');
+
+      expect(first.groupName).not.toBe(second.groupName);
+      expect(second.groupName).toBe('my-service-default-admin-api-agw-group');
     });
   });
 
@@ -108,7 +117,7 @@ describe('Apigw Types', () => {
       );
 
       expect(config.groupId).toBe('group-123');
-      expect(config.apiName).toBe('Test API Gateway_default_agw_api_GET_users');
+      expect(config.apiName).toBe('Test_API_Gateway_default_agw_api_GET_users');
       expect(config.visibility).toBe('PRIVATE');
       expect(config.authType).toBe('ANONYMOUS');
       expect(config.requestConfig.requestHttpMethod).toBe('GET');
@@ -183,6 +192,37 @@ describe('Apigw Types', () => {
       );
 
       expect(config.requestConfig.requestProtocol).toBe('HTTP');
+    });
+
+    it('should keep generated apiNames distinct when a long event name truncates the discriminator (issue #221)', () => {
+      const longNameEvent: EventDomain = {
+        ...testEvent,
+        name: 'console-serverlessinsight-api-gateway',
+        triggers: [
+          { method: 'GET', path: '/healthz', backend: 'userFunction' },
+          { method: 'ANY', path: '/api/*', backend: 'userFunction' },
+          { method: 'ANY', path: '/*', backend: 'userFunction' },
+        ],
+      };
+
+      const apiNames = longNameEvent.triggers.map(
+        (trigger) =>
+          triggerToApigwApiConfig(
+            longNameEvent,
+            trigger,
+            'group-123',
+            'my-service',
+            'cn-hangzhou',
+            'prod',
+          ).apiName,
+      );
+
+      expect(new Set(apiNames).size).toBe(apiNames.length);
+      apiNames.forEach((name) => {
+        expect(name.length).toBeLessThanOrEqual(50);
+        expect(name).toMatch(/^[A-Za-z0-9_]+$/);
+      });
+      expect(apiNames[0]).toContain('_GET_healthz_');
     });
   });
 

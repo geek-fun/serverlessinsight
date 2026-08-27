@@ -1,5 +1,14 @@
 import { CdnConfig, Context, EventDomain, ResourceAttributes } from '../../types';
-import { getIacDefinition, isFunctionDomain, getContext, logger } from '../../common';
+import {
+  buildAliyunApigwApiName,
+  buildConstrainedName,
+  CONSTRAINT_NAME_LIMITS,
+  getIacDefinition,
+  generateApiKey,
+  isFunctionDomain,
+  getContext,
+  logger,
+} from '../../common';
 import { lang } from '../../lang';
 import { OWNERSHIP_TAG_KEY, buildOwnershipTagValue } from '../ownershipTag';
 // Re-export the info types from the shared client layer so there is a single
@@ -11,6 +20,7 @@ export type {
   ApigwCustomDomainItem,
   ApigwRequestParameter,
 } from '../../common/aliyunClient/apigwOperations';
+export { buildAliyunApigwApiName, generateApiKey } from '../../common';
 
 // API Group types
 export type ApigwGroupConfig = {
@@ -97,7 +107,14 @@ export const eventToApigwGroupConfig = (
   logicalId?: string,
 ): ApigwGroupConfig => {
   const groupConfig: ApigwGroupConfig = {
-    groupName: `${serviceName}-${stage}-agw-group`.replace(/_/g, '-'),
+    // Per-event group: each API_GATEWAY event owns its group so the
+    // single-owner adoption tag stays exact. 4-50 chars per Aliyun
+    // ALIYUN::ApiGateway::Group docs; charset proven in this repo (hyphens).
+    groupName: buildConstrainedName({
+      parts: [serviceName, stage, event.key ?? '', 'agw_group'],
+      maxLength: CONSTRAINT_NAME_LIMITS.ALIYUN_API_GROUP_NAME,
+      charset: 'hyphen',
+    }),
     description: `API Gateway group for ${serviceName}`,
   };
   if (context && logicalId) {
@@ -106,21 +123,6 @@ export const eventToApigwGroupConfig = (
     ];
   }
   return groupConfig;
-};
-
-/**
- * Generate a unique API key from method and path
- * Uses URL encoding to preserve path structure and avoid collisions
- */
-export const generateApiKey = (method: string, path: string): string => {
-  // Replace slashes with double underscores to preserve path structure
-  // Replace other non-alphanumeric chars with single underscore
-  const sanitizedPath = path
-    .replace(/\//g, '__')
-    .replace(/[^a-zA-Z0-9_]/g, '_')
-    .replace(/^__/, '') // Remove leading double underscore
-    .replace(/__$/, ''); // Remove trailing double underscore
-  return `${method}_${sanitizedPath}`;
 };
 
 /**
@@ -171,8 +173,7 @@ export const triggerToApigwApiConfig = (
 
   return {
     groupId,
-    // Aliyun CreateApi requires 4-50 chars of [A-Za-z0-9_] — no hyphens.
-    apiName: `${(event.name as string).replace(/-/g, '_')}_${stage}_agw_api_${apiKey}`.slice(0, 50),
+    apiName: buildAliyunApigwApiName(event.name as string, stage, apiKey),
     visibility: 'PRIVATE',
     authType: 'ANONYMOUS',
     requestConfig: {
