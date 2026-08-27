@@ -44,6 +44,10 @@ export const resolvableConstrained = (constraints: {
 export const HOST_NAME_PATTERN =
   '^(?:\\*\\.)?(?:[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?\\.)+[A-Za-z]{2,63}$';
 
-/** Resource-style bucket name: lowercase labels (dotted forms permitted), 3–63 chars. */
+/**
+ * Resource-style bucket name: lowercase labels (dotted forms permitted), 3–63
+ * chars total. Both branches share the total-length lookahead; dotted labels
+ * each follow the hyphen rules (no leading/trailing hyphen per label).
+ */
 export const BUCKET_NAME_PATTERN =
-  '^(?:[a-z0-9](?:[a-z0-9-]{1,61}[a-z0-9])?|(?:[a-z0-9][a-z0-9-]*\\.)+[a-z0-9-]{1,61}[a-z0-9])$';
+  '^(?=.{3,63}$)(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?|(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\\.)+[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)$';
