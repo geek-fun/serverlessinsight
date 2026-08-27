@@ -46,6 +46,7 @@ import {
   ensureSharedSlsProject,
   ensureGatewayLogstore,
   buildSharedProjectResourceState,
+  isSharedProjectOwnedByApp,
 } from './sharedLogProject';
 
 type ApigwCdnInstance = ResourceInstance & {
@@ -462,20 +463,28 @@ const ensureGatewayLogConfig = async (
 
   const existing = await client.apigw.describeGatewayLogConfig();
 
-  if (
+  const matchesOurs =
     existing &&
     existing.slsProject === ours.slsProject &&
-    existing.slsLogStore === ours.slsLogStore
-  ) {
-    const known = getSharedResource(state, context.stage, SHARED_LOG_PROJECT_KEY);
-    const shared = known ?? adoptSharedSlsProjectState(context, ours.slsProject);
-    return {
-      instance: buildLogConfigInstance(context, ours.slsProject, ours.slsLogStore),
-      sharedProject: shared,
-    };
-  }
+    existing.slsLogStore === ours.slsLogStore;
 
-  if (existing) {
+  if (matchesOurs) {
+    // The PROVIDER singleton already targets our shared project. Enforce the
+    // app-ownership invariant on both the tracked and untracked paths: only an
+    // app-owned project is reused or adopted; a foreign/untagged one is refused
+    // and a missing project (stale config) falls through to (re)creation.
+    const project = await client.sls.getProject(ours.slsProject);
+    if (project) {
+      if (!(await isSharedProjectOwnedByApp(context, client, ours.slsProject))) {
+        throw new Error(lang.__('SLS_PROJECT_FOREIGN_OWNED', { projectName: ours.slsProject }));
+      }
+      const known = getSharedResource(state, context.stage, SHARED_LOG_PROJECT_KEY);
+      return {
+        instance: buildLogConfigInstance(context, ours.slsProject, ours.slsLogStore),
+        sharedProject: known ?? adoptSharedSlsProjectState(context, ours.slsProject),
+      };
+    }
+  } else if (existing) {
     logger.warn(
       lang.__('SLS_LOG_CONFIG_FOREIGN', {
         slsProject: existing.slsProject ?? '',
@@ -704,6 +713,9 @@ export const createApigwResource = async (
           SHARED_LOG_PROJECT_KEY,
           logResult.sharedProject,
         );
+        // Keep currentState in sync so the shared project survives into the
+        // final returned state (the create path returns from currentState).
+        currentState = stateAfterDependents;
       }
       if (logResult?.instance) {
         instances.push(logResult.instance);

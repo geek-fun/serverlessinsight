@@ -11,6 +11,7 @@ const mockGetIndex = jest.fn();
 const mockDeleteIndex = jest.fn();
 const mockTagResources = jest.fn();
 const mockUntagResources = jest.fn();
+const mockListTagResources = jest.fn();
 const mockListLogStores = jest.fn();
 
 const mockSlsClient = {
@@ -25,6 +26,7 @@ const mockSlsClient = {
   deleteIndex: mockDeleteIndex,
   tagResources: mockTagResources,
   untagResources: mockUntagResources,
+  listTagResources: mockListTagResources,
   listLogStores: mockListLogStores,
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
 } as any;
@@ -546,6 +548,50 @@ describe('slsOperations', () => {
           tags: ['si-owned-by'],
         }),
       );
+    });
+  });
+
+  describe('getProjectTags', () => {
+    it('returns the tags of an SLS project for ownership checks', async () => {
+      mockListTagResources.mockResolvedValue({
+        body: {
+          tagResources: [
+            {
+              resourceId: 'proj',
+              resourceType: 'project',
+              tagKey: 'si-owned-by',
+              tagValue: 'app:shared:logs.project',
+            },
+            { resourceId: 'proj', resourceType: 'project', tagKey: 'env', tagValue: 'dev' },
+          ],
+        },
+      });
+
+      const result = await operations.getProjectTags('proj');
+
+      expect(result).toEqual([
+        { key: 'si-owned-by', value: 'app:shared:logs.project' },
+        { key: 'env', value: 'dev' },
+      ]);
+      expect(mockListTagResources).toHaveBeenCalledWith(
+        expect.objectContaining({ resourceId: ['proj'], resourceType: 'project' }),
+      );
+    });
+
+    it('returns an empty array when the project has no tags', async () => {
+      mockListTagResources.mockResolvedValue({ body: { tagResources: [] } });
+
+      const result = await operations.getProjectTags('untagged');
+
+      expect(result).toEqual([]);
+    });
+
+    it('returns an empty array when the response has no body', async () => {
+      mockListTagResources.mockResolvedValue({});
+
+      const result = await operations.getProjectTags('proj');
+
+      expect(result).toEqual([]);
     });
   });
 });

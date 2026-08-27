@@ -38,12 +38,15 @@ const mockedHashUtils = {
 };
 const mockedSlsOperations = {
   createProject: jest.fn(),
+  getProject: jest.fn(),
+  getProjectTags: jest.fn(),
   getLogstore: jest.fn(),
   createLogstore: jest.fn(),
   createIndex: jest.fn(),
   deleteProject: jest.fn(),
   deleteLogstore: jest.fn(),
   deleteIndex: jest.fn(),
+  listLogStores: jest.fn(),
   waitForProject: jest.fn(),
   waitForLogstore: jest.fn(),
   addTags: jest.fn(),
@@ -230,6 +233,8 @@ describe('Fc3Resource', () => {
     mockedRamOperations.updateManagedPolicies.mockResolvedValue(undefined);
     mockedRamOperations.deleteRole.mockResolvedValue(undefined);
     mockedSlsOperations.createProject.mockResolvedValue({ projectName: 'test-sls' });
+    mockedSlsOperations.getProject.mockResolvedValue(null);
+    mockedSlsOperations.getProjectTags.mockResolvedValue([]);
     mockedSlsOperations.getLogstore.mockResolvedValue(null);
     mockedSlsOperations.createLogstore.mockResolvedValue({ logstoreName: 'test-logstore' });
     mockedSlsOperations.createIndex.mockResolvedValue({});
@@ -2895,6 +2900,168 @@ describe('Fc3Resource', () => {
       await updateResource(mockContext, fnWithLog, stateWithSls);
 
       expect(mockedSlsOperations.createProject).not.toHaveBeenCalled();
+    });
+
+    it('cleans up owned SLS resources when log changes from true to false', async () => {
+      const stateWithSls: StateFile = {
+        ...initialState,
+        resources: {
+          'functions.test_fn': {
+            mode: 'managed',
+            region: 'cn-hangzhou',
+            definition: {
+              ...mockDefinition,
+              logConfig: {
+                project: 'test-sls',
+                logstore: 'test-logstore',
+                enableRequestMetrics: true,
+                enableInstanceMetrics: true,
+              },
+            },
+            instances: [
+              {
+                sid: 'si:aliyun:sls_logstore:default:test-sls/test-logstore',
+                id: 'test-sls/test-logstore',
+                type: 'ALIYUN_SLS_LOGSTORE',
+              },
+              {
+                sid: 'si:aliyun:sls_index:default:test-sls/test-logstore/index',
+                id: 'test-sls/test-logstore/index',
+                type: 'ALIYUN_SLS_INDEX',
+              },
+              {
+                sid: 'si:aliyun:fc3:default:test-function',
+                id: 'test-function',
+                type: 'ALIYUN_FC3_FUNCTION',
+              },
+            ],
+            lastUpdated: '2025-01-01T00:00:00Z',
+          },
+        },
+      };
+
+      mockedFc3Operations.updateFunctionConfiguration.mockResolvedValue(undefined);
+      mockedFc3Operations.updateFunctionCode.mockResolvedValue(undefined);
+      mockedStateManager.setResource.mockImplementation((s: StateFile) => s);
+
+      await updateResource(mockContext, { ...testFunction, log: false }, stateWithSls);
+
+      // Function log config is cleared through the config update path.
+      expect(mockedFc3Operations.updateFunctionConfiguration).toHaveBeenCalled();
+      // Owned index + logstore are deleted from the provider.
+      expect(mockedSlsOperations.deleteIndex).toHaveBeenCalledWith('test-sls', 'test-logstore');
+      expect(mockedSlsOperations.deleteLogstore).toHaveBeenCalledWith('test-sls', 'test-logstore');
+      // SLS instances are dropped from the resulting state.
+      const [, , resourceState] = mockedStateManager.setResource.mock.calls.at(-1) ?? [];
+      const instanceTypes = (resourceState as { instances: Array<{ type: string }> }).instances.map(
+        (i) => i.type,
+      );
+      expect(instanceTypes).not.toContain('ALIYUN_SLS_LOGSTORE');
+      expect(instanceTypes).not.toContain('ALIYUN_SLS_INDEX');
+      expect(instanceTypes).not.toContain('ALIYUN_SLS_PROJECT');
+    });
+
+    const stateWithSharedSls = (): StateFile => ({
+      ...initialState,
+      stages: {
+        default: {
+          resources: {},
+          shared: {
+            'logs.project': {
+              mode: 'managed',
+              region: 'cn-hangzhou',
+              definition: { projectName: 'test-sls', region: 'cn-hangzhou', stage: 'default' },
+              instances: [
+                {
+                  sid: 'si:aliyun:sls_project:default:test-sls',
+                  type: 'ALIYUN_SLS_PROJECT',
+                  id: 'test-sls',
+                },
+              ],
+              lastUpdated: '2025-01-01T00:00:00Z',
+            },
+          },
+        },
+      },
+      resources: {
+        'functions.test_fn': {
+          mode: 'managed',
+          region: 'cn-hangzhou',
+          definition: {
+            ...mockDefinition,
+            logConfig: { project: 'test-sls', logstore: 'test-logstore' },
+          },
+          instances: [
+            {
+              sid: 'si:aliyun:sls_logstore:default:test-sls/test-logstore',
+              id: 'test-sls/test-logstore',
+              type: 'ALIYUN_SLS_LOGSTORE',
+            },
+            {
+              sid: 'si:aliyun:sls_index:default:test-sls/test-logstore/index',
+              id: 'test-sls/test-logstore/index',
+              type: 'ALIYUN_SLS_INDEX',
+            },
+            {
+              sid: 'si:aliyun:fc3:default:test-function',
+              id: 'test-function',
+              type: 'ALIYUN_FC3_FUNCTION',
+            },
+          ],
+          lastUpdated: '2025-01-01T00:00:00Z',
+        },
+      },
+    });
+
+    it('releases the shared SLS project when disabling log leaves no provider logstores', async () => {
+      mockedFc3Operations.updateFunctionConfiguration.mockResolvedValue(undefined);
+      mockedFc3Operations.updateFunctionCode.mockResolvedValue(undefined);
+      mockedSlsOperations.getProject.mockResolvedValue({
+        projectName: 'test-sls',
+        status: 'Normal',
+      });
+      mockedSlsOperations.getProjectTags.mockResolvedValue([
+        { key: 'si-owned-by', value: 'test-app:shared:logs.project' },
+      ]);
+      mockedSlsOperations.listLogStores.mockResolvedValue([]);
+      mockedStateManager.setResource.mockImplementation((s: StateFile) => s);
+
+      const result = await updateResource(
+        mockContext,
+        { ...testFunction, log: false },
+        stateWithSharedSls(),
+      );
+
+      expect(mockedSlsOperations.deleteLogstore).toHaveBeenCalledWith('test-sls', 'test-logstore');
+      // Provider-side zero-logstore rule: project deleted and shared entry
+      // removed from the returned state.
+      expect(mockedSlsOperations.deleteProject).toHaveBeenCalledWith('test-sls');
+      expect(result.stages?.default?.shared?.['logs.project']).toBeUndefined();
+    });
+
+    it('retains the shared SLS project when other logstores remain after disabling log', async () => {
+      mockedFc3Operations.updateFunctionConfiguration.mockResolvedValue(undefined);
+      mockedFc3Operations.updateFunctionCode.mockResolvedValue(undefined);
+      mockedSlsOperations.getProject.mockResolvedValue({
+        projectName: 'test-sls',
+        status: 'Normal',
+      });
+      mockedSlsOperations.getProjectTags.mockResolvedValue([
+        { key: 'si-owned-by', value: 'test-app:shared:logs.project' },
+      ]);
+      mockedSlsOperations.listLogStores.mockResolvedValue(['apigw-logs']);
+      mockedStateManager.setResource.mockImplementation((s: StateFile) => s);
+
+      const result = await updateResource(
+        mockContext,
+        { ...testFunction, log: false },
+        stateWithSharedSls(),
+      );
+
+      expect(mockedSlsOperations.deleteLogstore).toHaveBeenCalledWith('test-sls', 'test-logstore');
+      // Another service/gateway still references the shared project.
+      expect(mockedSlsOperations.deleteProject).not.toHaveBeenCalled();
+      expect(result.stages?.default?.shared?.['logs.project']).toBeDefined();
     });
 
     it('should create new security group during update when network exists but no existing SG', async () => {

@@ -36,6 +36,8 @@ const mockedApigwOperations = {
 
 const mockedSlsOperations = {
   createProject: jest.fn(),
+  getProject: jest.fn(),
+  getProjectTags: jest.fn(),
   getLogstore: jest.fn(),
   createLogstore: jest.fn(),
   createIndex: jest.fn(),
@@ -190,6 +192,8 @@ describe('ApigwResource', () => {
     mockedApigwOperations.describeGatewayLogConfig.mockResolvedValue(null);
     mockedApigwOperations.createGatewayLogConfig.mockResolvedValue(undefined);
     mockedSlsOperations.createProject.mockResolvedValue({ projectName: 'test-app-dev-sls' });
+    mockedSlsOperations.getProject.mockResolvedValue(null);
+    mockedSlsOperations.getProjectTags.mockResolvedValue([]);
     mockedSlsOperations.getLogstore.mockResolvedValue(null);
     mockedSlsOperations.createLogstore.mockResolvedValue({
       logstoreName: 'test-service-dev-apigw-logs',
@@ -300,8 +304,15 @@ describe('ApigwResource', () => {
         slsProject: 'test-app-dev-sls',
         slsLogStore: 'test-service-dev-apigw-logs',
       });
+      mockedSlsOperations.getProject.mockResolvedValue({
+        projectName: 'test-app-dev-sls',
+        status: 'Normal',
+      });
+      mockedSlsOperations.getProjectTags.mockResolvedValue([
+        { key: 'si-owned-by', value: 'test-app:shared:logs.project' },
+      ]);
 
-      await createApigwResource(
+      const result = await createApigwResource(
         mockContext,
         testEventWithLog,
         'test-service',
@@ -311,6 +322,140 @@ describe('ApigwResource', () => {
 
       expect(mockedApigwOperations.createGatewayLogConfig).not.toHaveBeenCalled();
       expect(mockedSlsOperations.createLogstore).not.toHaveBeenCalled();
+      // The shared project is adopted and preserved in the returned state.
+      expect(result.stages?.dev?.shared?.['logs.project']?.instances?.[0]?.id).toBe(
+        'test-app-dev-sls',
+      );
+    });
+
+    it('refuses to adopt a foreign-owned shared project that the PROVIDER config points at', async () => {
+      mockedApigwOperations.findApiGroupByName.mockResolvedValue(null);
+      mockedApigwOperations.createApiGroup.mockResolvedValue('group-123');
+      mockedApigwOperations.getApiGroup.mockResolvedValue({
+        groupId: 'group-123',
+        groupName: 'test-api-group',
+        subDomain: 'group-123.apigw.aliyuncs.com',
+      });
+      mockedApigwTypes.eventToApigwGroupConfig.mockReturnValue({ groupName: 'test-api-group' });
+      mockedApigwTypes.extractApigwGroupDefinition.mockReturnValue({});
+      mockedApigwTypes.triggerToApigwApiConfig.mockReturnValue({ apiName: 'test-api' });
+      mockedApigwTypes.extractEventDomainDefinition.mockReturnValue(null);
+      mockedApigwOperations.describeGatewayLogConfig.mockResolvedValue({
+        slsProject: 'test-app-dev-sls',
+        slsLogStore: 'test-service-dev-apigw-logs',
+      });
+      mockedSlsOperations.getProject.mockResolvedValue({
+        projectName: 'test-app-dev-sls',
+        status: 'Normal',
+      });
+      mockedSlsOperations.getProjectTags.mockResolvedValue([
+        { key: 'si-owned-by', value: 'other-app:shared:logs.project' },
+      ]);
+
+      await expect(
+        createApigwResource(mockContext, testEventWithLog, 'test-service', undefined, initialState),
+      ).rejects.toThrow(/test-app-dev-sls/);
+      expect(mockedApigwOperations.createGatewayLogConfig).not.toHaveBeenCalled();
+      expect(mockedSlsOperations.addTags).not.toHaveBeenCalled();
+    });
+
+    it('refuses a tracked shared project when the provider project is not app-owned', async () => {
+      const stateWithKnownShared: StateFile = {
+        ...initialState,
+        stages: {
+          dev: {
+            resources: {},
+            shared: {
+              'logs.project': {
+                mode: 'managed',
+                region: 'cn-hangzhou',
+                definition: {
+                  projectName: 'test-app-dev-sls',
+                  region: 'cn-hangzhou',
+                  stage: 'dev',
+                },
+                instances: [
+                  {
+                    sid: 'si:aliyun:sls_project:dev:test-app-dev-sls',
+                    type: 'ALIYUN_SLS_PROJECT',
+                    id: 'test-app-dev-sls',
+                  },
+                ],
+                lastUpdated: '2025-01-01T00:00:00Z',
+              },
+            },
+          },
+        },
+      };
+
+      mockedApigwOperations.findApiGroupByName.mockResolvedValue(null);
+      mockedApigwOperations.createApiGroup.mockResolvedValue('group-123');
+      mockedApigwOperations.getApiGroup.mockResolvedValue({
+        groupId: 'group-123',
+        groupName: 'test-api-group',
+        subDomain: 'group-123.apigw.aliyuncs.com',
+      });
+      mockedApigwTypes.eventToApigwGroupConfig.mockReturnValue({ groupName: 'test-api-group' });
+      mockedApigwTypes.extractApigwGroupDefinition.mockReturnValue({});
+      mockedApigwTypes.triggerToApigwApiConfig.mockReturnValue({ apiName: 'test-api' });
+      mockedApigwTypes.extractEventDomainDefinition.mockReturnValue(null);
+      mockedApigwOperations.describeGatewayLogConfig.mockResolvedValue({
+        slsProject: 'test-app-dev-sls',
+        slsLogStore: 'test-service-dev-apigw-logs',
+      });
+      mockedSlsOperations.getProject.mockResolvedValue({
+        projectName: 'test-app-dev-sls',
+        status: 'Normal',
+      });
+      mockedSlsOperations.getProjectTags.mockResolvedValue([
+        { key: 'si-owned-by', value: 'other-app:shared:logs.project' },
+      ]);
+
+      await expect(
+        createApigwResource(
+          mockContext,
+          testEventWithLog,
+          'test-service',
+          undefined,
+          stateWithKnownShared,
+        ),
+      ).rejects.toThrow(/test-app-dev-sls/);
+      expect(mockedApigwOperations.createGatewayLogConfig).not.toHaveBeenCalled();
+    });
+
+    it('persists the shared SLS project in the returned state when enabling gateway log', async () => {
+      mockedApigwOperations.findApiGroupByName.mockResolvedValue(null);
+      mockedApigwOperations.createApiGroup.mockResolvedValue('group-123');
+      mockedApigwOperations.getApiGroup.mockResolvedValue({
+        groupId: 'group-123',
+        groupName: 'test-api-group',
+        subDomain: 'group-123.apigw.aliyuncs.com',
+      });
+      mockedApigwOperations.createApi.mockResolvedValue('api-456');
+      mockedApigwOperations.getApi.mockResolvedValue({
+        apiId: 'api-456',
+        apiName: 'test-api',
+      });
+      mockedApigwOperations.deployApi.mockResolvedValue(undefined);
+      mockedApigwTypes.eventToApigwGroupConfig.mockReturnValue({ groupName: 'test-api-group' });
+      mockedApigwTypes.extractApigwGroupDefinition.mockReturnValue({});
+      mockedApigwTypes.triggerToApigwApiConfig.mockReturnValue({ apiName: 'test-api' });
+      mockedApigwTypes.extractEventDomainDefinition.mockReturnValue(null);
+      mockedApigwOperations.describeGatewayLogConfig.mockResolvedValue(null);
+
+      const result = await createApigwResource(
+        mockContext,
+        testEventWithLog,
+        'test-service',
+        undefined,
+        initialState,
+      );
+
+      expect(result.stages?.dev?.shared?.['logs.project']).toBeDefined();
+      expect(result.stages?.dev?.shared?.['logs.project']?.instances?.[0]?.id).toBe(
+        'test-app-dev-sls',
+      );
+      expect(mockedApigwOperations.createGatewayLogConfig).toHaveBeenCalled();
     });
 
     it('warns and retains foreign PROVIDER gateway log configuration', async () => {

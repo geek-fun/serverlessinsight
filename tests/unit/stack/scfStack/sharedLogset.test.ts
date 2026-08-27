@@ -45,6 +45,7 @@ describe('sharedLogset', () => {
     deleteTopic: jest.fn(),
     deleteLogset: jest.fn(),
     createFulltextIndex: jest.fn(),
+    deleteIndex: jest.fn(),
     waitForTopic: jest.fn(),
   };
 
@@ -77,10 +78,8 @@ describe('sharedLogset', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     mockClsOperations.createLogset.mockResolvedValue({ logsetId: 'logset-1' });
-    mockClsOperations.getLogsetByName.mockResolvedValue({
-      LogsetId: 'logset-1',
-      LogsetName: 'test-app-dev-cls',
-    });
+    // No same-named provider logset by default → ensureSharedLogset creates one.
+    mockClsOperations.getLogsetByName.mockResolvedValue(null);
     mockClsOperations.listTopicsByLogset.mockResolvedValue([]);
     mockClsOperations.getTopicByName.mockResolvedValue(null);
     mockClsOperations.createTopic.mockResolvedValue({ topicId: 'topic-1' });
@@ -187,6 +186,58 @@ describe('sharedLogset', () => {
       expect(result).toEqual({ logsetName: 'test-app-dev-cls', logsetId: 'logset-attr' });
       expect(mockClsOperations.createLogset).not.toHaveBeenCalled();
     });
+
+    it('adopts a same-named provider logset owned by this app when local state is absent', async () => {
+      mockClsOperations.getLogsetByName.mockResolvedValue({
+        LogsetId: 'logset-1',
+        LogsetName: 'test-app-dev-cls',
+        Tags: [{ Key: 'si-owned-by', Value: 'test-app:shared:logs.project' }],
+      });
+
+      const result = await ensureSharedLogset(mockContext, mockClient as never, emptyState);
+
+      expect(result).toEqual({ logsetName: 'test-app-dev-cls', logsetId: 'logset-1' });
+      expect(mockClsOperations.getLogsetByName).toHaveBeenCalledWith('test-app-dev-cls');
+      expect(mockClsOperations.createLogset).not.toHaveBeenCalled();
+    });
+
+    it('refuses a same-named provider logset owned by a foreign app', async () => {
+      mockClsOperations.getLogsetByName.mockResolvedValue({
+        LogsetId: 'logset-foreign',
+        LogsetName: 'test-app-dev-cls',
+        Tags: [{ Key: 'si-owned-by', Value: 'other-app:shared:logs.project' }],
+      });
+
+      await expect(
+        ensureSharedLogset(mockContext, mockClient as never, emptyState),
+      ).rejects.toThrow('CLS_LOGSET_FOREIGN_OWNED');
+      expect(mockClsOperations.createLogset).not.toHaveBeenCalled();
+    });
+
+    it('refuses a same-named provider logset that is untagged', async () => {
+      mockClsOperations.getLogsetByName.mockResolvedValue({
+        LogsetId: 'logset-foreign',
+        LogsetName: 'test-app-dev-cls',
+        Tags: [],
+      });
+
+      await expect(
+        ensureSharedLogset(mockContext, mockClient as never, emptyState),
+      ).rejects.toThrow('CLS_LOGSET_FOREIGN_OWNED');
+      expect(mockClsOperations.createLogset).not.toHaveBeenCalled();
+    });
+
+    it('creates a new logset when no same-named provider logset exists', async () => {
+      mockClsOperations.getLogsetByName.mockResolvedValue(null);
+
+      const result = await ensureSharedLogset(mockContext, mockClient as never, emptyState);
+
+      expect(result).toEqual({ logsetName: 'test-app-dev-cls', logsetId: 'logset-1' });
+      expect(mockClsOperations.getLogsetByName).toHaveBeenCalledWith('test-app-dev-cls');
+      expect(mockClsOperations.createLogset).toHaveBeenCalledWith('test-app-dev-cls', [
+        { key: 'si-owned-by', value: 'test-app:shared:logs.project' },
+      ]);
+    });
   });
 
   describe('buildSharedLogsetResourceState', () => {
@@ -214,6 +265,10 @@ describe('sharedLogset', () => {
 
   describe('releaseSharedLogsetIfUnused', () => {
     it('retains shared CLS logset when topics remain', async () => {
+      mockClsOperations.getLogsetByName.mockResolvedValue({
+        LogsetId: 'logset-1',
+        LogsetName: 'test-app-dev-cls',
+      });
       mockClsOperations.listTopicsByLogset.mockResolvedValue([
         { TopicId: 't1', TopicName: 'fn-logs' },
       ]);
@@ -229,6 +284,10 @@ describe('sharedLogset', () => {
     });
 
     it('deletes shared CLS logset only when no topics remain', async () => {
+      mockClsOperations.getLogsetByName.mockResolvedValue({
+        LogsetId: 'logset-1',
+        LogsetName: 'test-app-dev-cls',
+      });
       mockClsOperations.listTopicsByLogset.mockResolvedValue([]);
 
       const result = await releaseSharedLogsetIfUnused(

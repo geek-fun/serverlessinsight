@@ -8,6 +8,7 @@ import {
   OWNERSHIP_TAG_KEY,
   buildOwnershipTagValue,
   buildSharedOwnershipTagValue,
+  isOwnedByApp,
   parseOwnershipTagValue,
 } from '../ownershipTag';
 
@@ -52,6 +53,19 @@ export const ensureSharedLogset = async (
   }
 
   const logsetName = buildSharedLogsetName(context.app, context.stage);
+
+  // Local shared state is absent (state reset, or a sibling service of this app
+  // already created the logset): probe the provider for a same-named logset and
+  // adopt it ONLY on an exact app-scope ownership-tag match. A foreign or
+  // untagged logset is refused rather than silently taken over or retagged.
+  const existing = await client.cls.getLogsetByName(logsetName);
+  if (existing?.LogsetId) {
+    if (!isOwnedByApp(context.app, SHARED_LOGSET_KEY, existing.Tags)) {
+      throw new Error(lang.__('CLS_LOGSET_FOREIGN_OWNED', { logsetName }));
+    }
+    return { logsetName, logsetId: existing.LogsetId };
+  }
+
   logger.info(lang.__('CREATING_CLS_LOGSET', { logsetName }));
   const created = await client.cls.createLogset(logsetName, [
     { key: OWNERSHIP_TAG_KEY, value: buildSharedOwnershipTagValue(context.app, SHARED_LOGSET_KEY) },

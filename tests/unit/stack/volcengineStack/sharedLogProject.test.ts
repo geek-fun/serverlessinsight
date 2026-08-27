@@ -3,6 +3,7 @@ import {
   buildSharedProjectResourceState,
   releaseSharedLogProjectIfUnused,
   ensureOwnedTopic,
+  deleteTlsLogResources,
 } from '../../../../src/stack/volcengineStack/sharedLogProject';
 import type { Context, StateFile, ResourceState } from '../../../../src/types';
 import type { VolcengineClient } from '../../../../src/common/volcengineClient/types';
@@ -38,11 +39,14 @@ describe('sharedLogProject', () => {
     tls: {
       createProject: jest.fn(),
       getProject: jest.fn(),
+      getProjectTags: jest.fn(),
       deleteProject: jest.fn(),
       listTopics: jest.fn(),
       createTopic: jest.fn(),
       getTopic: jest.fn(),
+      deleteTopic: jest.fn(),
       createIndex: jest.fn(),
+      deleteIndex: jest.fn(),
       waitForProject: jest.fn(),
       waitForTopic: jest.fn(),
       addTags: jest.fn(),
@@ -85,6 +89,8 @@ describe('sharedLogProject', () => {
       projectName: 'test-app-dev-tls',
       status: 'Active',
     });
+    // Freshly created projects are untagged until ensureSharedLogProject stamps them.
+    mockClient.tls.getProjectTags.mockResolvedValue([]);
     mockClient.tls.listTopics.mockResolvedValue([]);
     mockClient.tls.waitForProject.mockResolvedValue(undefined);
     mockClient.tls.createTopic.mockResolvedValue({
@@ -97,13 +103,16 @@ describe('sharedLogProject', () => {
   });
 
   describe('ensureSharedLogProject', () => {
-    it('reuses the shared TLS project from stage shared state', async () => {
+    it('reuses the shared TLS project from stage shared state when provider-owned', async () => {
       const stateWithShared: StateFile = {
         ...emptyState,
         stages: {
           dev: { resources: {}, shared: { 'logs.project': sharedResourceState } },
         },
       };
+      mockClient.tls.getProjectTags.mockResolvedValue([
+        { Key: 'si-owned-by', Value: 'test-app:shared:logs.project' },
+      ]);
 
       const result = await ensureSharedLogProject(
         mockContext,
@@ -112,11 +121,12 @@ describe('sharedLogProject', () => {
       );
 
       expect(result).toEqual({ projectName: 'test-app-dev-tls', projectId: 'proj-1' });
+      expect(mockClient.tls.getProject).toHaveBeenCalledWith('test-app-dev-tls');
       expect(mockClient.tls.createProject).not.toHaveBeenCalled();
       expect(mockClient.tls.addTags).not.toHaveBeenCalled();
     });
 
-    it('falls back to the stored projectId on the shared resource attributes', async () => {
+    it('verifies provider ownership and returns the provider projectId', async () => {
       const stateWithShared: StateFile = {
         ...emptyState,
         stages: {
@@ -130,7 +140,7 @@ describe('sharedLogProject', () => {
                     sid: 'si:volcengine:tls:dev:test-app-dev-tls',
                     type: 'VOLCENGINE_TLS_PROJECT',
                     id: 'test-app-dev-tls',
-                    attributes: { projectId: 'proj-attr' },
+                    attributes: { projectId: 'proj-stale' },
                   },
                 ],
               },
@@ -138,6 +148,9 @@ describe('sharedLogProject', () => {
           },
         },
       };
+      mockClient.tls.getProjectTags.mockResolvedValue([
+        { Key: 'si-owned-by', Value: 'test-app:shared:logs.project' },
+      ]);
 
       const result = await ensureSharedLogProject(
         mockContext,
@@ -145,10 +158,37 @@ describe('sharedLogProject', () => {
         stateWithShared,
       );
 
-      expect(result).toEqual({ projectName: 'test-app-dev-tls', projectId: 'proj-attr' });
+      expect(result).toEqual({ projectName: 'test-app-dev-tls', projectId: 'proj-1' });
+    });
+
+    it('refuses to reuse a tracked project that is not app-owned', async () => {
+      const stateWithShared: StateFile = {
+        ...emptyState,
+        stages: {
+          dev: { resources: {}, shared: { 'logs.project': sharedResourceState } },
+        },
+      };
+      mockClient.tls.getProjectTags.mockResolvedValue([
+        { Key: 'si-owned-by', Value: 'another-app:shared:logs.project' },
+      ]);
+
+      await expect(
+        ensureSharedLogProject(
+          mockContext,
+          mockClient as unknown as VolcengineClient,
+          stateWithShared,
+        ),
+      ).rejects.toThrow('TLS_SHARED_PROJECT_NOT_OWNED');
+      expect(mockClient.tls.addTags).not.toHaveBeenCalled();
     });
 
     it('creates and tags a new app-scoped TLS project', async () => {
+      mockClient.tls.createProject.mockResolvedValue({
+        projectId: 'proj-1',
+        projectName: 'test-app-dev-tls',
+        created: true,
+      });
+
       const result = await ensureSharedLogProject(
         mockContext,
         mockClient as unknown as VolcengineClient,
@@ -168,6 +208,46 @@ describe('sharedLogProject', () => {
         resourcesList: ['proj-1'],
         tags: [{ key: 'si-owned-by', value: 'test-app:shared:logs.project' }],
       });
+    });
+
+    it('refuses to adopt an untagged same-named project on a create race', async () => {
+      mockClient.tls.createProject.mockResolvedValue({
+        projectId: 'proj-foreign',
+        projectName: 'test-app-dev-tls',
+        created: false,
+      });
+      mockClient.tls.getProjectTags.mockResolvedValue([]);
+
+      await expect(
+        ensureSharedLogProject(mockContext, mockClient as unknown as VolcengineClient, emptyState),
+      ).rejects.toThrow('TLS_SHARED_PROJECT_NOT_OWNED');
+      expect(mockClient.tls.addTags).not.toHaveBeenCalled();
+    });
+
+    it('adopts a same-named app-owned project on a create race without re-tagging', async () => {
+      mockClient.tls.getProjectTags.mockResolvedValue([
+        { Key: 'si-owned-by', Value: 'test-app:shared:logs.project' },
+      ]);
+
+      const result = await ensureSharedLogProject(
+        mockContext,
+        mockClient as unknown as VolcengineClient,
+        emptyState,
+      );
+
+      expect(result).toEqual({ projectName: 'test-app-dev-tls', projectId: 'proj-1' });
+      expect(mockClient.tls.addTags).not.toHaveBeenCalled();
+    });
+
+    it('refuses to tag a same-named project that carries foreign tags on a create race', async () => {
+      mockClient.tls.getProjectTags.mockResolvedValue([
+        { Key: 'si-owned-by', Value: 'another-app:shared:logs.project' },
+      ]);
+
+      await expect(
+        ensureSharedLogProject(mockContext, mockClient as unknown as VolcengineClient, emptyState),
+      ).rejects.toThrow('TLS_SHARED_PROJECT_NOT_OWNED');
+      expect(mockClient.tls.addTags).not.toHaveBeenCalled();
     });
   });
 
@@ -196,6 +276,9 @@ describe('sharedLogProject', () => {
 
   describe('releaseSharedLogProjectIfUnused', () => {
     it('retains shared TLS project when topics remain', async () => {
+      mockClient.tls.getProjectTags.mockResolvedValue([
+        { Key: 'si-owned-by', Value: 'test-app:shared:logs.project' },
+      ]);
       mockClient.tls.listTopics.mockResolvedValue([
         { topicId: 't1', topicName: 'fn-logs' },
         { topicId: 't2', topicName: 'apigw-logs' },
@@ -212,6 +295,9 @@ describe('sharedLogProject', () => {
     });
 
     it('deletes shared TLS project only when no topics remain', async () => {
+      mockClient.tls.getProjectTags.mockResolvedValue([
+        { Key: 'si-owned-by', Value: 'test-app:shared:logs.project' },
+      ]);
       mockClient.tls.listTopics.mockResolvedValue([]);
 
       const result = await releaseSharedLogProjectIfUnused(
@@ -223,6 +309,22 @@ describe('sharedLogProject', () => {
       expect(result).toBe('deleted');
       expect(mockClient.tls.listTopics).toHaveBeenCalledWith('test-app-dev-tls');
       expect(mockClient.tls.deleteProject).toHaveBeenCalledWith('test-app-dev-tls');
+    });
+
+    it('retains a shared project that is not app-owned', async () => {
+      mockClient.tls.getProjectTags.mockResolvedValue([
+        { Key: 'si-owned-by', Value: 'another-app:shared:logs.project' },
+      ]);
+
+      const result = await releaseSharedLogProjectIfUnused(
+        mockContext,
+        mockClient as unknown as VolcengineClient,
+        sharedResourceState,
+      );
+
+      expect(result).toBe('retained');
+      expect(mockClient.tls.listTopics).not.toHaveBeenCalled();
+      expect(mockClient.tls.deleteProject).not.toHaveBeenCalled();
     });
 
     it('returns absent when the project no longer exists in the provider', async () => {
@@ -323,6 +425,32 @@ describe('sharedLogProject', () => {
         }),
       ).rejects.toThrow('TLS_TOPIC_FOREIGN_OWNED');
       expect(mockClient.tls.createTopic).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('deleteTlsLogResources', () => {
+    it('deletes index before topic and then the legacy own-project', async () => {
+      await deleteTlsLogResources(mockContext, mockClient as unknown as VolcengineClient, [
+        { type: 'VOLCENGINE_TLS_PROJECT', id: 'legacy-project' },
+        { type: 'VOLCENGINE_TLS_TOPIC', id: 'legacy-project/topic' },
+        { type: 'VOLCENGINE_TLS_INDEX', id: 'legacy-project/topic/index' },
+      ]);
+
+      expect(mockClient.tls.deleteIndex).toHaveBeenCalledWith('legacy-project', 'topic');
+      expect(mockClient.tls.deleteTopic).toHaveBeenCalledWith('legacy-project', 'topic');
+      expect(mockClient.tls.deleteProject).toHaveBeenCalledWith('legacy-project');
+    });
+
+    it('never deletes the stage-shared project', async () => {
+      await deleteTlsLogResources(mockContext, mockClient as unknown as VolcengineClient, [
+        { type: 'VOLCENGINE_TLS_PROJECT', id: 'test-app-dev-tls' },
+        { type: 'VOLCENGINE_TLS_TOPIC', id: 'test-app-dev-tls/topic' },
+        { type: 'VOLCENGINE_TLS_INDEX', id: 'test-app-dev-tls/topic/index' },
+      ]);
+
+      expect(mockClient.tls.deleteIndex).toHaveBeenCalledWith('test-app-dev-tls', 'topic');
+      expect(mockClient.tls.deleteTopic).toHaveBeenCalledWith('test-app-dev-tls', 'topic');
+      expect(mockClient.tls.deleteProject).not.toHaveBeenCalled();
     });
   });
 });

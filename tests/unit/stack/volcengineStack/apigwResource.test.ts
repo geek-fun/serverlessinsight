@@ -10,6 +10,7 @@ import {
   getResource,
   removeResource,
   setSharedResource,
+  removeSharedResource,
 } from '../../../../src/common/stateManager';
 
 jest.mock('../../../../src/common', () => {
@@ -55,6 +56,8 @@ const mockClient = {
   },
   tls: {
     createProject: jest.fn(),
+    getProject: jest.fn(),
+    getProjectTags: jest.fn(),
     createTopic: jest.fn(),
     getTopic: jest.fn(),
     createIndex: jest.fn(),
@@ -97,6 +100,18 @@ jest.mock('../../../../src/common/stateManager', () => ({
     },
   })),
   getSharedResource: jest.fn((state, stage, key) => state.stages?.[stage]?.shared?.[key]),
+  removeSharedResource: jest.fn((state, stage, key) => ({
+    ...state,
+    stages: {
+      ...state.stages,
+      [stage]: {
+        ...state.stages?.[stage],
+        shared: Object.fromEntries(
+          Object.entries(state.stages?.[stage]?.shared ?? {}).filter(([k]) => k !== key),
+        ),
+      },
+    },
+  })),
 }));
 
 jest.mock('../../../../src/lang', () => ({
@@ -164,6 +179,7 @@ describe('apigwResource', () => {
     // default happy path
     mockClient.apigw.findServerlessGateway.mockResolvedValue(null);
     mockClient.apigw.findGatewayByName.mockResolvedValue(null);
+    mockClient.tls.getProjectTags.mockResolvedValue([]);
     mockClient.apigw.createGateway.mockResolvedValue({
       gatewayId: 'gw-1',
       gatewayName: 'test-gw-dev-apigw',
@@ -374,6 +390,7 @@ describe('apigwResource', () => {
       mockClient.tls.createProject.mockResolvedValue({
         projectId: 'proj-1',
         projectName: 'test-app-dev-tls',
+        created: true,
       });
       mockClient.tls.createTopic.mockResolvedValue({
         topicId: 'topic-1',
@@ -487,6 +504,7 @@ describe('apigwResource', () => {
       mockClient.tls.createProject.mockResolvedValue({
         projectId: 'proj-1',
         projectName: 'test-app-dev-tls',
+        created: true,
       });
       mockClient.tls.createTopic.mockResolvedValue({
         topicId: 'topic-1',
@@ -755,7 +773,7 @@ describe('apigwResource', () => {
       );
     });
 
-    it('disables gateway logging when TLS resources remain in state but log is removed', async () => {
+    it('disables gateway logging, tears down TLS and drops stale instances when log is removed', async () => {
       const stateWithLogs: StateFile = {
         ...stateWithEvent,
         resources: {
@@ -770,6 +788,17 @@ describe('apigwResource', () => {
                 id: 'test-service-dev-apigw-tls',
                 projectId: 'proj-existing',
               },
+              {
+                type: 'VOLCENGINE_TLS_TOPIC',
+                sid: 's',
+                id: 'test-service-dev-apigw-tls/test-service-dev-apigw-logs',
+                topicId: 'topic-existing',
+              },
+              {
+                type: 'VOLCENGINE_TLS_INDEX',
+                sid: 's',
+                id: 'test-service-dev-apigw-tls/test-service-dev-apigw-logs/index',
+              },
             ],
           },
         },
@@ -783,13 +812,185 @@ describe('apigwResource', () => {
       });
       mockClient.apigw.findRouteByName.mockResolvedValue({ routeId: 'route-1', routeName: 'r' });
 
-      await updateApigwResource(mockContext, mockEvent, 'test-service', stateWithLogs);
+      const result = await updateApigwResource(
+        mockContext,
+        mockEvent,
+        'test-service',
+        stateWithLogs,
+      );
 
       expect(mockClient.apigw.updateGatewayLog).toHaveBeenCalledWith('gw-1', {
         enable: false,
         projectId: '',
         topicId: '',
       });
+      // Index deleted before topic; the legacy own-project after its children.
+      expect(mockClient.tls.deleteIndex).toHaveBeenCalledWith(
+        'test-service-dev-apigw-tls',
+        'test-service-dev-apigw-logs',
+      );
+      expect(mockClient.tls.deleteTopic).toHaveBeenCalledWith(
+        'test-service-dev-apigw-tls',
+        'test-service-dev-apigw-logs',
+      );
+      expect(mockClient.tls.deleteProject).toHaveBeenCalledWith('test-service-dev-apigw-tls');
+      // Stale TLS instances are removed from the resource state.
+      expect(
+        result.resources['events.api_gateway'].instances.some((i) =>
+          String(i.type).startsWith('VOLCENGINE_TLS_'),
+        ),
+      ).toBe(false);
+    });
+
+    it('releases the shared project slot when disabling gateway log empties the project', async () => {
+      const stateWithSharedLogs: StateFile = {
+        ...stateWithEvent,
+        stages: {
+          dev: {
+            resources: {},
+            shared: {
+              'logs.project': {
+                mode: 'managed',
+                region: 'cn-beijing',
+                definition: { projectName: 'test-app-dev-tls' },
+                instances: [
+                  {
+                    sid: 's',
+                    type: 'VOLCENGINE_TLS_PROJECT',
+                    id: 'test-app-dev-tls',
+                    projectId: 'proj-1',
+                  },
+                ],
+                lastUpdated: '2024-01-01T00:00:00Z',
+              },
+            },
+          },
+        },
+        resources: {
+          ...stateWithEvent.resources,
+          'events.api_gateway': {
+            ...stateWithEvent.resources['events.api_gateway'],
+            instances: [
+              ...stateWithEvent.resources['events.api_gateway'].instances,
+              {
+                type: 'VOLCENGINE_TLS_TOPIC',
+                sid: 's',
+                id: 'test-app-dev-tls/test-service-dev-apigw-logs',
+                topicId: 'topic-1',
+              },
+              {
+                type: 'VOLCENGINE_TLS_INDEX',
+                sid: 's',
+                id: 'test-app-dev-tls/test-service-dev-apigw-logs/index',
+              },
+            ],
+          },
+        },
+      };
+      (getResource as jest.Mock).mockImplementation(
+        (state: StateFile, logicalId: string) => state.resources?.[logicalId] || null,
+      );
+      mockClient.apigw.findUpstreamByName.mockResolvedValue({
+        upstreamId: 'up-1',
+        upstreamName: 'u',
+      });
+      mockClient.apigw.findRouteByName.mockResolvedValue({ routeId: 'route-1', routeName: 'r' });
+      mockClient.tls.getProjectTags.mockResolvedValue([
+        { Key: 'si-owned-by', Value: 'test-app:shared:logs.project' },
+      ]);
+      mockClient.tls.getProject.mockResolvedValue({
+        projectId: 'proj-1',
+        projectName: 'test-app-dev-tls',
+        status: 'Active',
+      });
+      mockClient.tls.listTopics.mockResolvedValue([]);
+      mockClient.tls.deleteProject.mockResolvedValue(undefined);
+
+      const result = await updateApigwResource(
+        mockContext,
+        mockEvent,
+        'test-service',
+        stateWithSharedLogs,
+      );
+
+      expect(mockClient.tls.deleteProject).toHaveBeenCalledWith('test-app-dev-tls');
+      expect(removeSharedResource).toHaveBeenCalledWith(expect.anything(), 'dev', 'logs.project');
+      expect(result.stages.dev.shared?.['logs.project']).toBeUndefined();
+    });
+
+    it('retains the shared project slot when disabling gateway log and other topics remain', async () => {
+      const stateWithSharedLogs: StateFile = {
+        ...stateWithEvent,
+        stages: {
+          dev: {
+            resources: {},
+            shared: {
+              'logs.project': {
+                mode: 'managed',
+                region: 'cn-beijing',
+                definition: { projectName: 'test-app-dev-tls' },
+                instances: [
+                  {
+                    sid: 's',
+                    type: 'VOLCENGINE_TLS_PROJECT',
+                    id: 'test-app-dev-tls',
+                    projectId: 'proj-1',
+                  },
+                ],
+                lastUpdated: '2024-01-01T00:00:00Z',
+              },
+            },
+          },
+        },
+        resources: {
+          ...stateWithEvent.resources,
+          'events.api_gateway': {
+            ...stateWithEvent.resources['events.api_gateway'],
+            instances: [
+              ...stateWithEvent.resources['events.api_gateway'].instances,
+              {
+                type: 'VOLCENGINE_TLS_TOPIC',
+                sid: 's',
+                id: 'test-app-dev-tls/test-service-dev-apigw-logs',
+                topicId: 'topic-1',
+              },
+              {
+                type: 'VOLCENGINE_TLS_INDEX',
+                sid: 's',
+                id: 'test-app-dev-tls/test-service-dev-apigw-logs/index',
+              },
+            ],
+          },
+        },
+      };
+      (getResource as jest.Mock).mockImplementation(
+        (state: StateFile, logicalId: string) => state.resources?.[logicalId] || null,
+      );
+      mockClient.apigw.findUpstreamByName.mockResolvedValue({
+        upstreamId: 'up-1',
+        upstreamName: 'u',
+      });
+      mockClient.apigw.findRouteByName.mockResolvedValue({ routeId: 'route-1', routeName: 'r' });
+      mockClient.tls.getProjectTags.mockResolvedValue([
+        { Key: 'si-owned-by', Value: 'test-app:shared:logs.project' },
+      ]);
+      mockClient.tls.getProject.mockResolvedValue({
+        projectId: 'proj-1',
+        projectName: 'test-app-dev-tls',
+        status: 'Active',
+      });
+      mockClient.tls.listTopics.mockResolvedValue([{ topicId: 't2', topicName: 'other' }]);
+
+      const result = await updateApigwResource(
+        mockContext,
+        mockEvent,
+        'test-service',
+        stateWithSharedLogs,
+      );
+
+      expect(mockClient.tls.deleteProject).not.toHaveBeenCalled();
+      expect(removeSharedResource).not.toHaveBeenCalled();
+      expect(result.stages.dev.shared?.['logs.project']).toBeDefined();
     });
 
     it('adopts a remote upstream and creates routes for it', async () => {
@@ -875,7 +1076,7 @@ describe('apigwResource', () => {
       expect(removeResource).toHaveBeenCalled();
     });
 
-    it('disables access log and deletes TLS index/topic but never the project on delete', async () => {
+    it('disables access log, deletes TLS index/topic, never deletes the stage-shared project on delete', async () => {
       const stateWithEvent: StateFile = {
         ...stateWithFunction,
         resources: {
@@ -934,9 +1135,60 @@ describe('apigwResource', () => {
         'test-app-dev-tls',
         'test-service-dev-apigw-logs',
       );
-      // Never delete projects at resource level — the destroyer releases the
-      // shared project once no topics reference it.
+      // The stage-shared project is destroyer-owned — never deleted at resource level.
       expect(mockClient.tls.deleteProject).not.toHaveBeenCalled();
+      expect(removeResource).toHaveBeenCalled();
+    });
+
+    it('deletes a legacy per-resource TLS project after its children on delete', async () => {
+      const stateWithLegacy: StateFile = {
+        ...stateWithFunction,
+        resources: {
+          ...stateWithFunction.resources,
+          'events.api_gateway': {
+            mode: 'managed',
+            region: 'cn-beijing',
+            definition: {},
+            instances: [
+              { type: 'VOLCENGINE_APIGW_GATEWAY', sid: 's', id: 'gw-1', gatewayId: 'gw-1' },
+              {
+                type: 'VOLCENGINE_APIGW_SERVICE',
+                sid: 's',
+                id: 'svc-1',
+                serviceId: 'svc-1',
+                gatewayId: 'gw-1',
+              },
+              {
+                type: 'VOLCENGINE_TLS_TOPIC',
+                sid: 's',
+                id: 'legacy-project/legacy-topic',
+                topicId: 'topic-legacy',
+              },
+              {
+                type: 'VOLCENGINE_TLS_INDEX',
+                sid: 's',
+                id: 'legacy-project/legacy-topic/index',
+              },
+              {
+                type: 'VOLCENGINE_TLS_PROJECT',
+                sid: 's',
+                id: 'legacy-project',
+                projectId: 'proj-legacy',
+              },
+            ],
+            lastUpdated: '2024-01-01T00:00:00Z',
+          },
+        },
+      };
+      (getResource as jest.Mock).mockImplementation(
+        (state: StateFile, logicalId: string) => state.resources?.[logicalId] || null,
+      );
+
+      await deleteApigwResource(mockContext, 'events.api_gateway', stateWithLegacy);
+
+      expect(mockClient.tls.deleteIndex).toHaveBeenCalledWith('legacy-project', 'legacy-topic');
+      expect(mockClient.tls.deleteTopic).toHaveBeenCalledWith('legacy-project', 'legacy-topic');
+      expect(mockClient.tls.deleteProject).toHaveBeenCalledWith('legacy-project');
       expect(removeResource).toHaveBeenCalled();
     });
 

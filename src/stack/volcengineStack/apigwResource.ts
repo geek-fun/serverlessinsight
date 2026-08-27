@@ -28,6 +28,8 @@ import {
   removeResource,
   getResource,
   setSharedResource,
+  getSharedResource,
+  removeSharedResource,
 } from '../../common/stateManager';
 import { buildSid } from '../../common';
 import { logger } from '../../common/logger';
@@ -38,6 +40,10 @@ import {
   ensureSharedLogProject,
   buildSharedProjectResourceState,
   ensureOwnedTopic,
+  deleteTlsLogResources,
+  buildSharedProjectName,
+  releaseSharedLogProjectIfUnused,
+  SHARED_LOG_PROJECT_KEY,
 } from './sharedLogProject';
 
 const buildGatewayInstance = (info: ApigwGatewayInfo, stage: string): ResourceInstance => ({
@@ -510,7 +516,14 @@ export const updateApigwResource = async (
           projectId: '',
           topicId: '',
         });
-        instances.push(...existingLogResources);
+        await deleteTlsLogResources(context, client, existingLogResources);
+        // Release the shared project when this was its last topic; keep the
+        // stage slot when other topics still reference it.
+        const shared = getSharedResource(state, context.stage, SHARED_LOG_PROJECT_KEY);
+        const releaseResult = await releaseSharedLogProjectIfUnused(context, client, shared);
+        if (releaseResult === 'deleted') {
+          state = removeSharedResource(state, context.stage, SHARED_LOG_PROJECT_KEY);
+        }
       }
     }
 
@@ -645,6 +658,28 @@ export const deleteApigwResource = async (
           lang.__('FAILED_TO_DELETE_RESOURCE', {
             type: String(instance.type),
             id: instance.id,
+            error: String(error),
+          }),
+        );
+      }
+    }
+
+    // Legacy per-resource own-projects (pre-#214 scheme) are deleted after
+    // their children; the stage-shared project is destroyer-owned and never
+    // deleted at resource level.
+    const sharedProjectName = buildSharedProjectName(context.app, context.stage);
+    const legacyProject = tlsInstances.find(
+      (i) => i.type === 'VOLCENGINE_TLS_PROJECT' && i.id !== sharedProjectName,
+    );
+    if (legacyProject) {
+      try {
+        logger.info(lang.__('DELETING_TLS_PROJECT', { id: legacyProject.id }));
+        await client.tls.deleteProject(legacyProject.id);
+      } catch (error) {
+        logger.warn(
+          lang.__('FAILED_TO_DELETE_RESOURCE', {
+            type: String(legacyProject.type),
+            id: legacyProject.id,
             error: String(error),
           }),
         );

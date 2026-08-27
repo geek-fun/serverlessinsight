@@ -45,11 +45,24 @@ export const createClsOperations = (clsClient: ClsSdkClient) => {
 
     getLogsetByName: async (
       logsetName: string,
-    ): Promise<{ LogsetId?: string; LogsetName?: string } | null> => {
+    ): Promise<{
+      LogsetId?: string;
+      LogsetName?: string;
+      Tags?: Array<{ Key?: string; Value?: string }>;
+    } | null> => {
       const response = await clsClient.DescribeLogsets({
         Filters: [{ Key: 'logsetName', Values: [logsetName] }],
       });
-      return response?.Logsets?.find((l) => l.LogsetName === logsetName) ?? null;
+      // Preserve Tags so adopters can verify app-scope ownership of the logset.
+      const found = response?.Logsets?.find((l) => l.LogsetName === logsetName) ?? null;
+      if (!found) {
+        return null;
+      }
+      return {
+        LogsetId: found.LogsetId,
+        LogsetName: found.LogsetName,
+        Tags: found.Tags,
+      };
     },
 
     listTopicsByLogset: async (
@@ -140,6 +153,17 @@ export const createClsOperations = (clsClient: ClsSdkClient) => {
         });
       } catch (error) {
         if (isResourceNotFound(error) || isAlreadyExists(error)) {
+          return;
+        }
+        throw error;
+      }
+    },
+
+    deleteIndex: async (topicId: string): Promise<void> => {
+      try {
+        await clsClient.DeleteIndex({ TopicId: topicId });
+      } catch (error) {
+        if (isResourceNotFound(error)) {
           return;
         }
         throw error;

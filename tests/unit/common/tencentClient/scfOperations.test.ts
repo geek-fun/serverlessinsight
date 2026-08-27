@@ -695,6 +695,29 @@ describe('scfOperations', () => {
       );
     });
 
+    it('forwards empty CLS ids to unbind log delivery', async () => {
+      mockScfClient.UpdateFunctionConfiguration.mockResolvedValue({});
+
+      const config = {
+        FunctionName: 'test-function',
+        Handler: 'index.handler',
+        Runtime: 'nodejs18.x',
+        MemorySize: 512,
+        Timeout: 60,
+        ClsLogsetId: '',
+        ClsTopicId: '',
+      };
+
+      await operations.updateFunctionConfiguration(config);
+
+      expect(mockScfClient.UpdateFunctionConfiguration).toHaveBeenCalledWith(
+        expect.objectContaining({
+          ClsLogsetId: '',
+          ClsTopicId: '',
+        }),
+      );
+    });
+
     it('should handle update errors', async () => {
       const error = new Error('update failed');
       mockScfClient.UpdateFunctionConfiguration.mockRejectedValue(error);

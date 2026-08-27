@@ -10,6 +10,7 @@ import {
   removeResource,
   getResource,
   setSharedResource,
+  removeSharedResource,
   attributesEqual,
 } from '../../../../src/common';
 import type { FunctionDomain, Context, StateFile } from '../../../../src/types';
@@ -43,6 +44,18 @@ jest.mock('../../../../src/common', () => ({
     },
   })),
   getSharedResource: jest.fn((state, stage, key) => state.stages?.[stage]?.shared?.[key]),
+  removeSharedResource: jest.fn((state, stage, key) => ({
+    ...state,
+    stages: {
+      ...state.stages,
+      [stage]: {
+        ...state.stages?.[stage],
+        shared: Object.fromEntries(
+          Object.entries(state.stages?.[stage]?.shared ?? {}).filter(([k]) => k !== key),
+        ),
+      },
+    },
+  })),
   computeZipContentHash: jest.fn().mockResolvedValue('test-hash-123'),
   buildSid: jest.fn((provider, service, stage, name) => `${provider}-${service}-${stage}-${name}`),
   attributesEqual: jest.fn((a, b) => JSON.stringify(a) === JSON.stringify(b)),
@@ -124,6 +137,7 @@ describe('vefaasResource', () => {
     tls: {
       createProject: jest.fn(),
       getProject: jest.fn(),
+      getProjectTags: jest.fn(),
       deleteProject: jest.fn(),
       createTopic: jest.fn(),
       getTopic: jest.fn(),
@@ -177,6 +191,12 @@ describe('vefaasResource', () => {
     mockVefaasClient.tls.createProject.mockResolvedValue({
       projectName: 'test-project',
     });
+    mockVefaasClient.tls.getProject.mockResolvedValue({
+      projectId: 'proj-1',
+      projectName: 'test-project',
+      status: 'Active',
+    });
+    mockVefaasClient.tls.getProjectTags.mockResolvedValue([]);
     mockVefaasClient.tls.createTopic.mockResolvedValue({
       topicName: 'test-topic',
     });
@@ -382,6 +402,7 @@ describe('vefaasResource', () => {
       mockVefaasClient.tls.createProject.mockResolvedValue({
         projectId: 'proj-1',
         projectName: 'test-app-dev-tls',
+        created: true,
       });
       mockVefaasClient.tls.createTopic.mockResolvedValue({
         topicId: 'topic-1',
@@ -531,6 +552,7 @@ describe('vefaasResource', () => {
       mockVefaasClient.tls.createProject.mockResolvedValue({
         projectId: 'proj-1',
         projectName: 'test-app-dev-tls',
+        created: true,
       });
       mockVefaasClient.tls.createTopic.mockResolvedValue({
         topicId: 'topic-1',
@@ -550,7 +572,11 @@ describe('vefaasResource', () => {
 
       const stateAfterA = await createResource(mockContext, fnA, mockState);
 
-      // Second function reuses the shared project slot and adopts the shared topic.
+      // Second function reuses the shared project slot (app-owned) and adopts
+      // the shared topic.
+      mockVefaasClient.tls.getProjectTags.mockResolvedValue([
+        { Key: 'si-owned-by', Value: 'test-app:shared:logs.project' },
+      ]);
       mockVefaasClient.tls.getTopic.mockResolvedValue({
         topicName: 'test-service-dev-fn-logs',
         topicId: 'topic-1',
@@ -851,6 +877,52 @@ describe('vefaasResource', () => {
           role: 'trn:iam::123456:role/existing-role',
         }),
         expect.any(String),
+      );
+    });
+
+    it('retains TLS instances and the sharedInstance with an external IAM role', async () => {
+      const mockFunctionWithExternalRoleAndLog: FunctionDomain = {
+        ...mockFunction,
+        log: true,
+        iam: {
+          role: 'trn:iam::123456:role/existing-role',
+        },
+      };
+
+      mockVefaasClient.vefaas.createFunction.mockResolvedValueOnce({ functionId: 'func-123' });
+      mockVefaasClient.vefaas.getFunction.mockResolvedValueOnce({
+        functionName: 'test-function',
+        functionId: 'func-123',
+        runtime: 'nodejs16',
+        handler: 'index.handler',
+        memoryMb: 128,
+        requestTimeout: 30,
+      });
+      mockVefaasClient.tls.createTopic.mockResolvedValue({
+        topicId: 'topic-1',
+        topicName: 'test-service-dev-fn-logs',
+      });
+      mockVefaasClient.tls.getTopic.mockResolvedValue(null);
+
+      await createResource(mockContext, mockFunctionWithExternalRoleAndLog, mockState);
+
+      expect(mockVefaasClient.iam.createRole).not.toHaveBeenCalled();
+      // TLS topic/index created and retained despite the external role.
+      expect(mockVefaasClient.tls.createTopic).toHaveBeenCalled();
+      expect(mockVefaasClient.tls.createIndex).toHaveBeenCalled();
+      const saved = (setResource as jest.Mock).mock.calls.find(
+        ([, logicalId]) => logicalId === 'functions.test_fn',
+      )?.[2] as { instances: Array<{ type: string }> };
+      expect(saved.instances.some((i) => i.type === 'VOLCENGINE_TLS_TOPIC')).toBe(true);
+      expect(saved.instances.some((i) => i.type === 'VOLCENGINE_TLS_INDEX')).toBe(true);
+      // Shared project tracked in the stage shared slot.
+      expect(setSharedResource).toHaveBeenCalledWith(
+        expect.anything(),
+        'dev',
+        'logs.project',
+        expect.objectContaining({
+          instances: [expect.objectContaining({ type: 'VOLCENGINE_TLS_PROJECT' })],
+        }),
       );
     });
 
@@ -1230,6 +1302,236 @@ describe('vefaasResource', () => {
       expect(partialError.cause.message).toBe('topic creation failed');
     });
 
+    it('should delete TLS index/topic and drop them from state when log is disabled', async () => {
+      const stateWithTls: StateFile = {
+        ...mockState,
+        resources: {
+          'functions.test_fn': {
+            mode: 'managed',
+            region: 'cn-beijing',
+            definition: {
+              functionName: 'test-function',
+              codeHash: 'test-hash-123',
+              runtime: 'nodejs16',
+              handler: 'index.handler',
+              memorySize: 128,
+              timeout: 30,
+            },
+            instances: [
+              {
+                type: 'VOLCENGINE_VEFAAS_FUNCTION',
+                sid: 'volcengine-test-service-dev-test-function',
+                id: 'test-function',
+                functionName: 'test-function',
+                functionId: 'func-123',
+              },
+              {
+                type: 'VOLCENGINE_IAM_ROLE',
+                sid: 'volcengine-iam_role-dev-test-app-test-service-dev-role',
+                id: 'test-app-test-service-dev-role',
+                trn: 'trn:iam::123456:role/test-app-test-service-dev-role',
+              },
+              {
+                type: 'VOLCENGINE_TLS_TOPIC',
+                sid: 'volcengine-tls_topic-dev-test-topic',
+                id: 'test-app-dev-tls/test-service-dev-fn-logs',
+                topicId: 'topic-1',
+              },
+              {
+                type: 'VOLCENGINE_TLS_INDEX',
+                sid: 'volcengine-tls_index-dev-test-index',
+                id: 'test-app-dev-tls/test-service-dev-fn-logs/index',
+              },
+            ],
+            lastUpdated: '2024-01-01T00:00:00Z',
+          },
+        },
+      };
+
+      (getResource as jest.Mock).mockReturnValue(stateWithTls.resources['functions.test_fn']);
+      (attributesEqual as jest.Mock).mockReturnValue(false);
+      mockVefaasClient.vefaas.getFunctionById.mockResolvedValue({
+        functionName: 'test-function',
+        functionId: 'func-123',
+        runtime: 'nodejs16',
+        handler: 'index.handler',
+        memoryMb: 128,
+        requestTimeout: 30,
+      });
+
+      const result = await updateResource(mockContext, mockFunction, stateWithTls);
+
+      // Index deleted before topic.
+      expect(mockVefaasClient.tls.deleteIndex).toHaveBeenCalledWith(
+        'test-app-dev-tls',
+        'test-service-dev-fn-logs',
+      );
+      expect(mockVefaasClient.tls.deleteTopic).toHaveBeenCalledWith(
+        'test-app-dev-tls',
+        'test-service-dev-fn-logs',
+      );
+      // The shared project is destroyer-owned — never deleted per resource.
+      expect(mockVefaasClient.tls.deleteProject).not.toHaveBeenCalled();
+      const saved = result.resources['functions.test_fn'];
+      expect(saved.instances.some((i) => (i.type as string).startsWith('VOLCENGINE_TLS_'))).toBe(
+        false,
+      );
+      expect(saved.instances.some((i) => i.type === 'VOLCENGINE_IAM_ROLE')).toBe(true);
+    });
+
+    it('removes the shared project slot when disabling log empties the shared project', async () => {
+      const stateWithSharedTls: StateFile = {
+        ...mockState,
+        stages: {
+          dev: {
+            resources: {},
+            shared: {
+              'logs.project': {
+                mode: 'managed',
+                region: 'cn-beijing',
+                definition: { projectName: 'test-app-dev-tls' },
+                instances: [
+                  {
+                    sid: 'si:volcengine:tls:dev:test-app-dev-tls',
+                    type: 'VOLCENGINE_TLS_PROJECT',
+                    id: 'test-app-dev-tls',
+                    projectId: 'proj-1',
+                  },
+                ],
+                lastUpdated: '2024-01-01T00:00:00Z',
+              },
+            },
+          },
+        },
+        resources: {
+          'functions.test_fn': {
+            mode: 'managed',
+            region: 'cn-beijing',
+            definition: { functionName: 'test-function', codeHash: 'test-hash-123' },
+            instances: [
+              {
+                type: 'VOLCENGINE_VEFAAS_FUNCTION',
+                sid: 'volcengine-test-service-dev-test-function',
+                id: 'test-function',
+                functionName: 'test-function',
+                functionId: 'func-123',
+              },
+              {
+                type: 'VOLCENGINE_TLS_TOPIC',
+                sid: 'volcengine-tls_topic-dev-test-topic',
+                id: 'test-app-dev-tls/test-service-dev-fn-logs',
+                topicId: 'topic-1',
+              },
+              {
+                type: 'VOLCENGINE_TLS_INDEX',
+                sid: 'volcengine-tls_index-dev-test-index',
+                id: 'test-app-dev-tls/test-service-dev-fn-logs/index',
+              },
+            ],
+            lastUpdated: '2024-01-01T00:00:00Z',
+          },
+        },
+      };
+
+      (getResource as jest.Mock).mockReturnValue(stateWithSharedTls.resources['functions.test_fn']);
+      (attributesEqual as jest.Mock).mockReturnValue(false);
+      mockVefaasClient.vefaas.getFunctionById.mockResolvedValue({
+        functionName: 'test-function',
+        functionId: 'func-123',
+        runtime: 'nodejs16',
+        handler: 'index.handler',
+        memoryMb: 128,
+        requestTimeout: 30,
+      });
+      mockVefaasClient.tls.getProjectTags.mockResolvedValue([
+        { Key: 'si-owned-by', Value: 'test-app:shared:logs.project' },
+      ]);
+      mockVefaasClient.tls.listTopics.mockResolvedValue([]);
+      mockVefaasClient.tls.deleteProject.mockResolvedValue(undefined);
+
+      const result = await updateResource(mockContext, mockFunction, stateWithSharedTls);
+
+      expect(mockVefaasClient.tls.deleteProject).toHaveBeenCalledWith('test-app-dev-tls');
+      expect(removeSharedResource).toHaveBeenCalledWith(expect.anything(), 'dev', 'logs.project');
+      expect(result.stages.dev.shared?.['logs.project']).toBeUndefined();
+    });
+
+    it('retains the shared project slot when disabling log and other topics remain', async () => {
+      const stateWithSharedTls: StateFile = {
+        ...mockState,
+        stages: {
+          dev: {
+            resources: {},
+            shared: {
+              'logs.project': {
+                mode: 'managed',
+                region: 'cn-beijing',
+                definition: { projectName: 'test-app-dev-tls' },
+                instances: [
+                  {
+                    sid: 'si:volcengine:tls:dev:test-app-dev-tls',
+                    type: 'VOLCENGINE_TLS_PROJECT',
+                    id: 'test-app-dev-tls',
+                    projectId: 'proj-1',
+                  },
+                ],
+                lastUpdated: '2024-01-01T00:00:00Z',
+              },
+            },
+          },
+        },
+        resources: {
+          'functions.test_fn': {
+            mode: 'managed',
+            region: 'cn-beijing',
+            definition: { functionName: 'test-function', codeHash: 'test-hash-123' },
+            instances: [
+              {
+                type: 'VOLCENGINE_VEFAAS_FUNCTION',
+                sid: 'volcengine-test-service-dev-test-function',
+                id: 'test-function',
+                functionName: 'test-function',
+                functionId: 'func-123',
+              },
+              {
+                type: 'VOLCENGINE_TLS_TOPIC',
+                sid: 'volcengine-tls_topic-dev-test-topic',
+                id: 'test-app-dev-tls/test-service-dev-fn-logs',
+                topicId: 'topic-1',
+              },
+              {
+                type: 'VOLCENGINE_TLS_INDEX',
+                sid: 'volcengine-tls_index-dev-test-index',
+                id: 'test-app-dev-tls/test-service-dev-fn-logs/index',
+              },
+            ],
+            lastUpdated: '2024-01-01T00:00:00Z',
+          },
+        },
+      };
+
+      (getResource as jest.Mock).mockReturnValue(stateWithSharedTls.resources['functions.test_fn']);
+      (attributesEqual as jest.Mock).mockReturnValue(false);
+      mockVefaasClient.vefaas.getFunctionById.mockResolvedValue({
+        functionName: 'test-function',
+        functionId: 'func-123',
+        runtime: 'nodejs16',
+        handler: 'index.handler',
+        memoryMb: 128,
+        requestTimeout: 30,
+      });
+      mockVefaasClient.tls.getProjectTags.mockResolvedValue([
+        { Key: 'si-owned-by', Value: 'test-app:shared:logs.project' },
+      ]);
+      mockVefaasClient.tls.listTopics.mockResolvedValue([{ topicId: 't2', topicName: 'other' }]);
+
+      const result = await updateResource(mockContext, mockFunction, stateWithSharedTls);
+
+      expect(mockVefaasClient.tls.deleteProject).not.toHaveBeenCalled();
+      expect(removeSharedResource).not.toHaveBeenCalled();
+      expect(result.stages.dev.shared?.['logs.project']).toBeDefined();
+    });
+
     it('should create IAM role when not present in state', async () => {
       const stateWithoutIamRole: StateFile = {
         ...mockState,
@@ -1578,6 +1880,7 @@ describe('vefaasResource', () => {
       mockVefaasClient.vefaas.deleteFunction.mockResolvedValueOnce({ functionId: 'func-123' });
       mockVefaasClient.tls.deleteIndex.mockResolvedValueOnce({ functionId: 'func-123' });
       mockVefaasClient.tls.deleteTopic.mockResolvedValueOnce({ functionId: 'func-123' });
+      mockVefaasClient.tls.deleteProject.mockResolvedValueOnce({ functionId: 'func-123' });
       mockVefaasClient.iam.deleteRole.mockResolvedValueOnce({ functionId: 'func-123' });
       (getResource as jest.Mock).mockReturnValue(stateWithTls.resources['functions.test_fn']);
 
@@ -1586,11 +1889,72 @@ describe('vefaasResource', () => {
       expect(mockVefaasClient.vefaas.deleteFunction).toHaveBeenCalledWith('func-123');
       expect(mockVefaasClient.tls.deleteIndex).toHaveBeenCalled();
       expect(mockVefaasClient.tls.deleteTopic).toHaveBeenCalled();
-      // Projects are never deleted at resource level — the destroyer releases
-      // the shared project only once no topics reference it. Legacy orphaned
-      // projects are manual cleanup.
-      expect(mockVefaasClient.tls.deleteProject).not.toHaveBeenCalled();
+      // Legacy per-resource own-projects are deleted after their children.
+      expect(mockVefaasClient.tls.deleteProject).toHaveBeenCalledWith('test-project');
       expect(mockVefaasClient.iam.deleteRole).toHaveBeenCalled();
+    });
+
+    it('does not delete the stage-shared project from per-resource cleanup', async () => {
+      const stateWithSharedProject: StateFile = {
+        ...mockState,
+        resources: {
+          'functions.test_fn': {
+            mode: 'managed',
+            region: 'cn-beijing',
+            definition: { functionName: 'test-function', codeHash: 'old-hash' },
+            instances: [
+              {
+                type: 'VOLCENGINE_VEFAAS_FUNCTION',
+                sid: 'volcengine-test-service-dev-test-function',
+                id: 'test-function',
+                functionName: 'test-function',
+                functionId: 'func-123',
+              },
+              {
+                type: 'VOLCENGINE_TLS_PROJECT',
+                sid: 'volcengine-tls_project-dev-test-app-dev-tls',
+                id: 'test-app-dev-tls',
+              },
+              {
+                type: 'VOLCENGINE_TLS_TOPIC',
+                sid: 'volcengine-tls_topic-dev-test-topic',
+                id: 'test-app-dev-tls/test-topic',
+              },
+              {
+                type: 'VOLCENGINE_TLS_INDEX',
+                sid: 'volcengine-tls_index-dev-test-index',
+                id: 'test-app-dev-tls/test-topic/index',
+              },
+            ],
+            lastUpdated: '2024-01-01T00:00:00Z',
+          },
+        },
+      };
+
+      mockVefaasClient.vefaas.deleteFunction.mockResolvedValueOnce({ functionId: 'func-123' });
+      mockVefaasClient.tls.deleteIndex.mockResolvedValueOnce({ functionId: 'func-123' });
+      mockVefaasClient.tls.deleteTopic.mockResolvedValueOnce({ functionId: 'func-123' });
+      (getResource as jest.Mock).mockReturnValue(
+        stateWithSharedProject.resources['functions.test_fn'],
+      );
+
+      await deleteResource(
+        mockContext,
+        'test-function',
+        'functions.test_fn',
+        stateWithSharedProject,
+      );
+
+      expect(mockVefaasClient.tls.deleteIndex).toHaveBeenCalledWith(
+        'test-app-dev-tls',
+        'test-topic',
+      );
+      expect(mockVefaasClient.tls.deleteTopic).toHaveBeenCalledWith(
+        'test-app-dev-tls',
+        'test-topic',
+      );
+      // The stage-shared project is destroyer-owned and never deleted per resource.
+      expect(mockVefaasClient.tls.deleteProject).not.toHaveBeenCalled();
     });
 
     it('should handle FunctionNotFound error', async () => {

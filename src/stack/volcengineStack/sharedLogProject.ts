@@ -8,6 +8,7 @@ import {
   buildOwnershipTagValue,
   buildSharedOwnershipTagValue,
   parseOwnershipTagValue,
+  isOwnedByApp,
 } from '../ownershipTag';
 
 /**
@@ -26,12 +27,6 @@ const resolveSharedProjectName = (shared: ResourceState): string | undefined => 
   return instanceId ?? (shared.definition as { projectName?: string } | undefined)?.projectName;
 };
 
-const resolveSharedProjectId = (shared: ResourceState): string =>
-  (shared.instances?.[0] as { projectId?: string } | undefined)?.projectId ??
-  (shared.instances?.[0] as { attributes?: { projectId?: string } } | undefined)?.attributes
-    ?.projectId ??
-  '';
-
 export const ensureSharedLogProject = async (
   context: Context,
   client: VolcengineClient,
@@ -43,7 +38,14 @@ export const ensureSharedLogProject = async (
   if (shared) {
     const projectName = resolveSharedProjectName(shared);
     if (projectName) {
-      return { projectName, projectId: resolveSharedProjectId(shared) };
+      const existing = await client.tls.getProject(projectName);
+      if (existing?.projectId) {
+        const tags = await client.tls.getProjectTags(projectName);
+        if (isOwnedByApp(context.app, SHARED_LOG_PROJECT_KEY, tags)) {
+          return { projectName, projectId: existing.projectId };
+        }
+        throw new Error(lang.__('TLS_SHARED_PROJECT_NOT_OWNED', { projectName }));
+      }
     }
   }
 
@@ -57,16 +59,26 @@ export const ensureSharedLogProject = async (
   await client.tls.waitForProject(projectName);
 
   if (project.projectId) {
-    await client.tls.addTags({
-      resourceType: 'project',
-      resourcesList: [project.projectId],
-      tags: [
-        {
-          key: OWNERSHIP_TAG_KEY,
-          value: buildSharedOwnershipTagValue(context.app, SHARED_LOG_PROJECT_KEY),
-        },
-      ],
-    });
+    if (project.created === true) {
+      await client.tls.addTags({
+        resourceType: 'project',
+        resourcesList: [project.projectId],
+        tags: [
+          {
+            key: OWNERSHIP_TAG_KEY,
+            value: buildSharedOwnershipTagValue(context.app, SHARED_LOG_PROJECT_KEY),
+          },
+        ],
+      });
+    } else {
+      // A same-named project already existed (create race). Re-read and verify
+      // ownership before adopting — an untagged or foreign project must not be
+      // silently taken over.
+      const tags = await client.tls.getProjectTags(projectName);
+      if (!isOwnedByApp(context.app, SHARED_LOG_PROJECT_KEY, tags)) {
+        throw new Error(lang.__('TLS_SHARED_PROJECT_NOT_OWNED', { projectName }));
+      }
+    }
   }
 
   return { projectName, projectId: project.projectId ?? '' };
@@ -112,6 +124,14 @@ export const releaseSharedLogProjectIfUnused = async (
     return 'absent';
   }
 
+  // Never delete a project that is not provably this app's — the ownership tag
+  // proves the shared container belongs to us before teardown.
+  const tags = await client.tls.getProjectTags(projectName);
+  if (!isOwnedByApp(context.app, SHARED_LOG_PROJECT_KEY, tags)) {
+    logger.warn(lang.__('TLS_SHARED_PROJECT_NOT_OWNED', { projectName }));
+    return 'retained';
+  }
+
   const topics = await client.tls.listTopics(projectName);
   if (topics.length > 0) {
     logger.info(
@@ -142,6 +162,8 @@ export const ensureOwnedTopic = async (
 
   const existing = await client.tls.getTopic(projectName, topicName);
   if (existing) {
+    // Service-scoped topics are shared across a service's functions/events, so
+    // ownership is verified at the owning-stack level, not per logical id.
     const tag = (existing.tags ?? []).find((t) => t.Key === OWNERSHIP_TAG_KEY);
     const parsed = parseOwnershipTagValue(tag?.Value);
     if (parsed?.stack === `${context.app}-${context.service}`) {
@@ -176,4 +198,37 @@ export const ensureOwnedTopic = async (
   await client.tls.waitForTopic(projectName, topicName);
 
   return { topicName, topicId: topic.topicId ?? '' };
+};
+
+/**
+ * Delete per-resource TLS children (index then topic) and any legacy
+ * per-resource own-project. The stage-shared project is never deleted here.
+ */
+export const deleteTlsLogResources = async (
+  context: Context,
+  client: VolcengineClient,
+  instances: Array<{ type?: string; id: string }>,
+): Promise<void> => {
+  const children = instances.filter(
+    (i) => i.type === 'VOLCENGINE_TLS_TOPIC' || i.type === 'VOLCENGINE_TLS_INDEX',
+  );
+  for (const instance of [...children].reverse()) {
+    const [projectName, topicName] = instance.id.split('/');
+    if (instance.type === 'VOLCENGINE_TLS_INDEX') {
+      logger.info(lang.__('DELETING_TLS_INDEX', { id: instance.id }));
+      await client.tls.deleteIndex(projectName, topicName);
+    } else {
+      logger.info(lang.__('DELETING_TLS_TOPIC', { id: instance.id }));
+      await client.tls.deleteTopic(projectName, topicName);
+    }
+  }
+
+  const sharedProjectName = buildSharedProjectName(context.app, context.stage);
+  const legacyProject = instances.find(
+    (i) => i.type === 'VOLCENGINE_TLS_PROJECT' && i.id !== sharedProjectName,
+  );
+  if (legacyProject) {
+    logger.info(lang.__('DELETING_TLS_PROJECT', { id: legacyProject.id }));
+    await client.tls.deleteProject(legacyProject.id);
+  }
 };

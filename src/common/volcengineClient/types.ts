@@ -315,6 +315,12 @@ export type TlsProjectInfo = {
   region?: string;
   createTime?: string;
   status?: string;
+  /**
+   * True when this run's CreateProject created the project; false (or absent)
+   * when an already-existing project was returned (AlreadyExists race). Lets
+   * callers distinguish a fresh create from an adoption of a pre-existing one.
+   */
+  created?: boolean;
 };
 
 /**
@@ -642,6 +648,7 @@ export type VolcengineClient = {
   tls: {
     createProject: (config: TlsProjectConfig) => Promise<TlsProjectInfo>;
     getProject: (projectName: string) => Promise<TlsProjectInfo | null>;
+    getProjectTags: (projectName: string) => Promise<Array<{ Key?: string; Value?: string }>>;
     deleteProject: (projectName: string) => Promise<void>;
     createTopic: (config: TlsTopicConfig) => Promise<TlsTopicInfo>;
     getTopic: (projectName: string, topicName: string) => Promise<TlsTopicInfo | null>;
