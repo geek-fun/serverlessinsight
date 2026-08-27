@@ -111,7 +111,7 @@ describe('ApigwExecutor', () => {
           'events.test_api': {
             mode: 'managed',
             region: 'cn-hangzhou',
-            definition: { groupName: 'test-service-default-agw-group' },
+            definition: { groupName: 'test-service-default-test-api-agw-group' },
             instances: [{ sid: 'si:test:test:default:test', id: 'test-group' }],
             lastUpdated: new Date().toISOString(),
           },
@@ -161,7 +161,7 @@ describe('ApigwExecutor', () => {
           'events.test_api': {
             mode: 'managed',
             region: 'cn-hangzhou',
-            definition: { groupName: 'test-service-default-agw-group' },
+            definition: { groupName: 'test-service-default-test-api-agw-group' },
             instances: [{ sid: 'si:test:test:default:test', id: 'test-group' }],
             lastUpdated: new Date().toISOString(),
           },
@@ -201,7 +201,7 @@ describe('ApigwExecutor', () => {
           'events.test_api': {
             mode: 'managed' as const,
             region: 'cn-hangzhou',
-            definition: { groupName: 'test-service-default-agw-group' },
+            definition: { groupName: 'test-service-default-test-api-agw-group' },
             instances: [{ sid: 'si:test:test:default:test', id: 'test-group' }],
             lastUpdated: new Date().toISOString(),
           },
@@ -423,7 +423,7 @@ describe('ApigwExecutor', () => {
           'events.test_api': {
             mode: 'managed' as const,
             region: 'cn-hangzhou',
-            definition: { groupName: 'test-service-default-agw-group' },
+            definition: { groupName: 'test-service-default-test-api-agw-group' },
             instances: [{ sid: 'si:test:test:default:test', id: 'test-group' }],
             lastUpdated: new Date().toISOString(),
           },
@@ -470,7 +470,7 @@ describe('ApigwExecutor', () => {
           'events.test_api': {
             mode: 'managed' as const,
             region: 'cn-hangzhou',
-            definition: { groupName: 'test-service-default-agw-group' },
+            definition: { groupName: 'test-service-default-test-api-agw-group' },
             instances: [{ sid: 'si:test:test:default:test', id: 'test-group' }],
             lastUpdated: new Date().toISOString(),
           },
