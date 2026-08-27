@@ -44,26 +44,32 @@ const runtimeMappings: Record<StandardRuntime, RuntimeMapping> = {
   [StandardRuntime.NODEJS20]: {
     [ProviderEnum.ALIYUN]: 'nodejs20',
     [ProviderEnum.AWS]: 'nodejs20.x',
+    [ProviderEnum.HUAWEI]: 'nodejs20.15',
   },
   [StandardRuntime.NODEJS18]: {
     [ProviderEnum.ALIYUN]: 'nodejs18',
     [ProviderEnum.TENCENT]: 'Nodejs18.15',
+    [ProviderEnum.HUAWEI]: 'nodejs18.15',
   },
   [StandardRuntime.NODEJS16]: {
     [ProviderEnum.ALIYUN]: 'nodejs16',
     [ProviderEnum.TENCENT]: 'Nodejs16.13',
+    [ProviderEnum.HUAWEI]: 'nodejs16.17',
   },
   [StandardRuntime.NODEJS14]: {
     [ProviderEnum.ALIYUN]: 'nodejs14',
     [ProviderEnum.TENCENT]: 'Nodejs14.18',
+    [ProviderEnum.HUAWEI]: 'nodejs14.18',
   },
   [StandardRuntime.NODEJS12]: {
     [ProviderEnum.ALIYUN]: 'nodejs12',
     [ProviderEnum.TENCENT]: 'Nodejs12.16',
+    [ProviderEnum.HUAWEI]: 'nodejs12.13',
   },
   [StandardRuntime.NODEJS10]: {
     [ProviderEnum.ALIYUN]: 'nodejs10',
     [ProviderEnum.TENCENT]: 'Nodejs10.15',
+    [ProviderEnum.HUAWEI]: 'nodejs10.16',
   },
   [StandardRuntime.PYTHON3_14]: {
     [ProviderEnum.AWS]: 'python3.14',
@@ -74,6 +80,7 @@ const runtimeMappings: Record<StandardRuntime, RuntimeMapping> = {
   [StandardRuntime.PYTHON3_12]: {
     [ProviderEnum.ALIYUN]: 'python3.12',
     [ProviderEnum.AWS]: 'python3.12',
+    [ProviderEnum.HUAWEI]: 'python3.12',
   },
   [StandardRuntime.PYTHON3_11]: {
     [ProviderEnum.AWS]: 'python3.11',
@@ -82,10 +89,12 @@ const runtimeMappings: Record<StandardRuntime, RuntimeMapping> = {
     [ProviderEnum.ALIYUN]: 'python3.10',
     [ProviderEnum.TENCENT]: 'Python3.10',
     [ProviderEnum.AWS]: 'python3.10',
+    [ProviderEnum.HUAWEI]: 'python3.10',
   },
   [StandardRuntime.PYTHON3_9]: {
     [ProviderEnum.ALIYUN]: 'python3.9',
     [ProviderEnum.TENCENT]: 'Python3.9',
+    [ProviderEnum.HUAWEI]: 'python3.9',
   },
   [StandardRuntime.PYTHON3_7]: {
     [ProviderEnum.TENCENT]: 'Python3.7',
@@ -93,24 +102,30 @@ const runtimeMappings: Record<StandardRuntime, RuntimeMapping> = {
   [StandardRuntime.PYTHON3_6]: {
     [ProviderEnum.ALIYUN]: 'python3.6',
     [ProviderEnum.TENCENT]: 'Python3.6',
+    [ProviderEnum.HUAWEI]: 'python3.6',
   },
   [StandardRuntime.JAVA25]: {
     [ProviderEnum.AWS]: 'java25',
   },
   [StandardRuntime.JAVA21]: {
     [ProviderEnum.AWS]: 'java21',
+    // Huawei java21 is regional (ME-Riyadh, TR-Istanbul) per FunctionGraph docs.
+    [ProviderEnum.HUAWEI]: 'java21',
   },
   [StandardRuntime.JAVA17]: {
     [ProviderEnum.AWS]: 'java17',
+    [ProviderEnum.HUAWEI]: 'java17',
   },
   [StandardRuntime.JAVA11]: {
     [ProviderEnum.ALIYUN]: 'java11',
     [ProviderEnum.AWS]: 'java11',
+    [ProviderEnum.HUAWEI]: 'java11',
   },
   [StandardRuntime.JAVA8]: {
     [ProviderEnum.ALIYUN]: 'java8',
     [ProviderEnum.TENCENT]: 'Java8',
     [ProviderEnum.AWS]: 'java8.al2',
+    [ProviderEnum.HUAWEI]: 'java8',
   },
   [StandardRuntime.PHP8_0]: {
     [ProviderEnum.TENCENT]: 'Php8.0',
@@ -128,9 +143,11 @@ const runtimeMappings: Record<StandardRuntime, RuntimeMapping> = {
   [StandardRuntime.GO1]: {
     [ProviderEnum.ALIYUN]: 'go 1.x',
     [ProviderEnum.TENCENT]: 'Go1',
+    [ProviderEnum.HUAWEI]: 'go1.x',
   },
   [StandardRuntime.DOTNET_CORE3_1]: {
     [ProviderEnum.ALIYUN]: '.NET Core 3.1',
+    [ProviderEnum.HUAWEI]: 'dotnetcore3.1',
   },
 };
 
@@ -153,9 +170,12 @@ export const mapRuntime = (standardRuntime: string, provider: ProviderEnum): str
   return providerRuntime;
 };
 
-// Valid veFaaS runtimes per the official CreateFunction API reference:
-// golang/v1, native/v1, nativejava8/v1, node14/v1, node20/v1, nodeprime14/v1,
-// python3.12/v1, python3.8/v1, python3.9/v1
+// Valid veFaaS runtimes per the official CreateFunction API reference, adjusted
+// for product notices: python3.8/v1 retired (volcengine notice 2121844) and the
+// native-family ids added from Volcengine-maintained tooling (mcp-server / veadk).
+// Verified 2026-08: golang/v1, native/v1, nativejava8/v1, node14/v1, node20/v1,
+// nodeprime14/v1, python3.12/v1, python3.9/v1, native-python3.12/v1,
+// native-node20/v1
 const VOLCENGINE_NATIVE_RUNTIMES = [
   'golang/v1',
   'native/v1',
@@ -164,8 +184,9 @@ const VOLCENGINE_NATIVE_RUNTIMES = [
   'node20/v1',
   'nodeprime14/v1',
   'python3.12/v1',
-  'python3.8/v1',
   'python3.9/v1',
+  'native-python3.12/v1',
+  'native-node20/v1',
 ];
 
 export const isRuntimeSupported = (runtime: string, provider: ProviderEnum): boolean => {
