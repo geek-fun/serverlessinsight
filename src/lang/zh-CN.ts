@@ -451,6 +451,18 @@ export const zhCN = {
   FUNCTION_REF_NOT_RESOLVED: '无法从 IAC 解析函数引用 {{backendRef}}',
   RESOLVED_FUNCTION_REF: '已将函数引用 {{backendRef}} 解析为函数名: {{functionName}}',
 
+  // Pre-deploy semantic validation (issue #222)
+  PARSE_BACKEND_BUCKET_STORE_FIELDS_REQUIRED:
+    '后端类型 BUCKET_STORE 需要同时提供 "bucket" 和 "key" 字段',
+  SEMANTIC_DUPLICATE_TRIGGER:
+    '事件 "{{eventKey}}" 中存在重复触发器: {{method}} {{path}} 定义了不止一次',
+  SEMANTIC_DUPLICATE_GENERATED_API_NAME:
+    '生成的 API Gateway apiName "{{apiName}}" 在 "{{firstPath}}" 与 "{{secondPath}}" 之间发生冲突；请缩短事件名称或区分触发器的 method/path',
+  SEMANTIC_DUPLICATE_ROUTE_NAME:
+    '生成的 API Gateway route name "{{routeName}}" 在 "{{firstPath}}" 与 "{{secondPath}}" 之间发生冲突；请缩短事件名称或区分触发器的 method/path',
+  SEMANTIC_UNRESOLVED_FUNCTION_BACKEND:
+    '事件 "{{eventKey}}" 的触发器后端 "{{reference}}" 未匹配到配置中的任何函数定义',
+
   // Show command messages
   LOADING_STATE_FOR: '正在加载应用 {{app}}、服务 {{service}}、阶段 {{stage}} 的状态...',
   NO_RESOURCES_FOUND: '状态中未找到资源。',

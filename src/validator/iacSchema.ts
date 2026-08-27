@@ -8,6 +8,7 @@ import { functionSchema } from './functionSchema';
 import { bucketSchema } from './bucketSchema';
 import { tableSchema } from './tableschema';
 import { lang } from '../lang';
+import { validateSemantics } from './semanticValidation';
 
 type IacSchemaError = {
   instancePath: string;
@@ -37,7 +38,7 @@ class IacSchemaErrors extends Error {
           `  Type: ${error.type}`,
           `  Message: ${error.message}`,
         ];
-        if (error.allowedValues) {
+        if (error.allowedValues && error.allowedValues.length > 0) {
           parts.push(`  Allowed values: ${error.allowedValues.join(', ')}`);
         }
         return parts.join('\n');
@@ -105,9 +106,17 @@ const validateRuntimeCompatibility = (iacJson: ServerlessIacRaw) => {
 
 export const validateYaml = (iacJson: ServerlessIacRaw) => {
   const valid = validate(iacJson);
-  if (!valid) {
-    logger.debug(lang.__('INVALID_YAML', { errors: JSON.stringify(validate.errors) }));
-    throw new IacSchemaErrors(validate.errors as Array<ErrorObject>);
+  const semanticErrors = validateSemantics(iacJson);
+  if (!valid || semanticErrors.length > 0) {
+    logger.debug(
+      lang.__('INVALID_YAML', {
+        errors: JSON.stringify([...(validate.errors ?? []), ...semanticErrors]),
+      }),
+    );
+    throw new IacSchemaErrors([
+      ...((validate.errors ?? []) as Array<ErrorObject>),
+      ...semanticErrors,
+    ]);
   }
 
   validateRuntimeCompatibility(iacJson);

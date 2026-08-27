@@ -162,6 +162,7 @@ describe('unit test for validate', () => {
     const invalidYaml = {
       ...jsonIac,
       functions: {
+        insight_poc_fn: jsonIac.functions.insight_poc_fn,
         test_fn: {
           name: 'test-fn',
           code: {
@@ -189,6 +190,7 @@ describe('unit test for validate', () => {
     const validYaml = {
       ...jsonIac,
       functions: {
+        insight_poc_fn: jsonIac.functions.insight_poc_fn,
         test_fn: {
           name: 'test-fn',
           code: {
@@ -216,6 +218,7 @@ describe('unit test for validate', () => {
     const validYaml = {
       ...jsonIac,
       functions: {
+        insight_poc_fn: jsonIac.functions.insight_poc_fn,
         test_fn: {
           name: 'test-fn',
           code: {
@@ -272,6 +275,7 @@ describe('unit test for validate', () => {
       const yamlWithTemplateRef = {
         ...jsonIac,
         functions: {
+          insight_poc_fn: jsonIac.functions.insight_poc_fn,
           test_fn: {
             name: 'test-fn',
             code: {
@@ -291,6 +295,7 @@ describe('unit test for validate', () => {
       const yamlWithTemplateRef = {
         ...jsonIac,
         functions: {
+          insight_poc_fn: jsonIac.functions.insight_poc_fn,
           test_fn: {
             name: 'test-fn',
             code: {
@@ -310,6 +315,7 @@ describe('unit test for validate', () => {
       const yamlWithTemplateRef = {
         ...jsonIac,
         functions: {
+          insight_poc_fn: jsonIac.functions.insight_poc_fn,
           test_fn: {
             name: 'test-fn',
             code: {
@@ -328,6 +334,7 @@ describe('unit test for validate', () => {
       const yamlWithTemplateRef = {
         ...jsonIac,
         functions: {
+          insight_poc_fn: jsonIac.functions.insight_poc_fn,
           test_fn: {
             name: 'test-fn',
             code: {
@@ -346,6 +353,7 @@ describe('unit test for validate', () => {
       const yamlWithTemplateRef = {
         ...jsonIac,
         functions: {
+          insight_poc_fn: jsonIac.functions.insight_poc_fn,
           test_fn: {
             name: 'test-fn',
             code: {
@@ -363,6 +371,7 @@ describe('unit test for validate', () => {
       const yamlWithInvalidRef = {
         ...jsonIac,
         functions: {
+          insight_poc_fn: jsonIac.functions.insight_poc_fn,
           test_fn: {
             name: 'test-fn',
             code: {
@@ -381,6 +390,7 @@ describe('unit test for validate', () => {
       const yamlWithInvalidRef = {
         ...jsonIac,
         functions: {
+          insight_poc_fn: jsonIac.functions.insight_poc_fn,
           test_fn: {
             name: 'test-fn',
             code: {
@@ -401,6 +411,7 @@ describe('unit test for validate', () => {
       const validYaml = {
         ...jsonIac,
         functions: {
+          insight_poc_fn: jsonIac.functions.insight_poc_fn,
           test_fn: {
             name: 'test-fn',
             code: {
@@ -422,6 +433,7 @@ describe('unit test for validate', () => {
           region: 'cn-hangzhou',
         },
         functions: {
+          insight_poc_fn: jsonIac.functions.insight_poc_fn,
           test_fn: {
             name: 'test-fn',
             code: {
@@ -446,6 +458,7 @@ describe('unit test for validate', () => {
           region: 'ap-guangzhou',
         },
         functions: {
+          insight_poc_fn: jsonIac.functions.insight_poc_fn,
           test_fn: {
             name: 'test-fn',
             code: {
@@ -470,6 +483,7 @@ describe('unit test for validate', () => {
           region: 'us-east-1',
         },
         functions: {
+          insight_poc_fn: jsonIac.functions.insight_poc_fn,
           test_fn: {
             name: 'test-fn',
             code: {
@@ -490,6 +504,7 @@ describe('unit test for validate', () => {
       const validYaml = {
         ...jsonIac,
         functions: {
+          insight_poc_fn: jsonIac.functions.insight_poc_fn,
           test_fn: {
             name: 'test-fn',
             code: {
@@ -511,6 +526,7 @@ describe('unit test for validate', () => {
           region: 'cn-hangzhou',
         },
         functions: {
+          insight_poc_fn: jsonIac.functions.insight_poc_fn,
           test_fn1: {
             name: 'test-fn1',
             code: {
@@ -543,6 +559,7 @@ describe('unit test for validate', () => {
           region: 'cn-hangzhou',
         },
         functions: {
+          insight_poc_fn: jsonIac.functions.insight_poc_fn,
           test_fn: {
             name: 'test-fn',
             code: {
@@ -564,6 +581,11 @@ describe('unit test for validate', () => {
           region: 'cn-hangzhou',
         },
         functions: {
+          // insight_poc_fn carried over for resolvable backend refs; runtime kept AWS/Tencent-compatible.
+          insight_poc_fn: {
+            ...jsonIac.functions.insight_poc_fn,
+            code: { ...jsonIac.functions.insight_poc_fn.code, runtime: '${vars.function_runtime}' },
+          },
           test_fn: {
             name: 'test-fn',
             code: {
@@ -573,7 +595,7 @@ describe('unit test for validate', () => {
             },
           },
         },
-      };
+      } as unknown as ServerlessIacRaw;
       expect(validateYaml(aliyunYaml)).toBe(true);
 
       const tencentYaml = {
@@ -794,6 +816,7 @@ describe('unit test for validate', () => {
         const validYaml = {
           ...jsonIac,
           functions: {
+            insight_poc_fn: jsonIac.functions.insight_poc_fn,
             test_fn: {
               name: 'test-fn',
               code: {
@@ -814,6 +837,7 @@ describe('unit test for validate', () => {
         const validYaml = {
           ...jsonIac,
           functions: {
+            insight_poc_fn: jsonIac.functions.insight_poc_fn,
             test_fn: {
               name: 'test-fn',
               code: {
@@ -836,6 +860,7 @@ describe('unit test for validate', () => {
         const validYaml = {
           ...jsonIac,
           functions: {
+            insight_poc_fn: jsonIac.functions.insight_poc_fn,
             test_fn: {
               name: 'test-fn',
               code: {
@@ -858,6 +883,7 @@ describe('unit test for validate', () => {
         const validYaml = {
           ...jsonIac,
           functions: {
+            insight_poc_fn: jsonIac.functions.insight_poc_fn,
             test_fn: {
               name: 'test-fn',
               code: {
@@ -886,6 +912,7 @@ describe('unit test for validate', () => {
         const validYaml = {
           ...jsonIac,
           functions: {
+            insight_poc_fn: jsonIac.functions.insight_poc_fn,
             test_fn: {
               name: 'test-fn',
               code: {
@@ -922,6 +949,7 @@ describe('unit test for validate', () => {
         const validYaml = {
           ...jsonIac,
           functions: {
+            insight_poc_fn: jsonIac.functions.insight_poc_fn,
             test_fn: {
               name: 'test-fn',
               code: {
@@ -939,6 +967,7 @@ describe('unit test for validate', () => {
         const invalidYaml = {
           ...jsonIac,
           functions: {
+            insight_poc_fn: jsonIac.functions.insight_poc_fn,
             test_fn: {
               name: 'test-fn',
               code: {
@@ -965,6 +994,7 @@ describe('unit test for validate', () => {
         const invalidYaml = {
           ...jsonIac,
           functions: {
+            insight_poc_fn: jsonIac.functions.insight_poc_fn,
             test_fn: {
               name: 'test-fn',
               code: {
@@ -990,6 +1020,7 @@ describe('unit test for validate', () => {
         const invalidYaml = {
           ...jsonIac,
           functions: {
+            insight_poc_fn: jsonIac.functions.insight_poc_fn,
             test_fn: {
               name: 'test-fn',
               code: {
@@ -1029,6 +1060,122 @@ describe('unit test for validate', () => {
         },
       } as unknown as ServerlessIacRaw;
       expect(() => validateYaml(invalidYaml)).toThrow('Invalid yaml');
+    });
+  });
+
+  describe('identifier constraints (issue #222)', () => {
+    const overrideTrigger = (trigger: Record<string, unknown>) =>
+      ({
+        ...jsonIac,
+        events: {
+          gateway_event: {
+            ...jsonIac.events.gateway_event,
+            triggers: [trigger],
+          },
+        },
+      }) as unknown as ServerlessIacRaw;
+
+    it('accepts trigger paths starting with a slash including wildcards', () => {
+      expect(validateYaml(overrideTrigger({ method: 'ANY', path: '/api/*', backend: 'fn' }))).toBe(
+        true,
+      );
+    });
+
+    it('rejects trigger paths without a leading slash', () => {
+      expect(() =>
+        validateYaml(overrideTrigger({ method: 'GET', path: 'api/hello', backend: 'fn' })),
+      ).toThrow('Invalid yaml');
+    });
+
+    it('accepts whole template references in constrained string fields', () => {
+      expect(
+        validateYaml(overrideTrigger({ method: 'GET', path: '${vars.base_path}', backend: 'fn' })),
+      ).toBe(true);
+    });
+
+    it('rejects invalid hostnames in event domain', () => {
+      const invalidYaml = {
+        ...jsonIac,
+        events: {
+          gateway_event: {
+            ...jsonIac.events.gateway_event,
+            triggers: [{ method: 'GET', path: '/api/hello', backend: 'fn' }],
+            domain: { domain_name: '-bad-host-.example.com' },
+          },
+        },
+      } as unknown as ServerlessIacRaw;
+      expect(() => validateYaml(invalidYaml)).toThrow(/must match the pattern|Invalid yaml/);
+    });
+
+    it('enforces provider-specific function name lengths via if/then (aliyun 64)', () => {
+      const overLong = 'a'.repeat(65);
+      const config = {
+        ...jsonIac,
+        provider: { name: 'aliyun', region: 'cn-hangzhou' },
+        functions: {
+          insight_poc_fn: { ...jsonIac.functions.insight_poc_fn, name: overLong },
+        },
+        events: {},
+      } as unknown as ServerlessIacRaw;
+
+      let thrownError: unknown;
+      try {
+        validateYaml(config);
+      } catch (error) {
+        thrownError = error;
+      }
+      expect((thrownError as Error).message).toContain('must NOT have more than 64 characters');
+    });
+
+    it('does not enforce function name limits for providers without a defined limit', () => {
+      const longName = 'a'.repeat(100);
+      const config = {
+        ...jsonIac,
+        provider: { name: 'aws', region: 'us-east-1' },
+        functions: {
+          insight_poc_fn: {
+            ...jsonIac.functions.insight_poc_fn,
+            name: longName,
+            code: { ...jsonIac.functions.insight_poc_fn.code, runtime: '${vars.function_runtime}' },
+          },
+        },
+        events: {},
+      } as unknown as ServerlessIacRaw;
+      expect(validateYaml(config)).toBe(true);
+    });
+
+    it('accumulates multiple constraint violations into one error set', () => {
+      const config = {
+        ...jsonIac,
+        events: {
+          gateway_event: {
+            ...jsonIac.events.gateway_event,
+            triggers: [
+              { method: 'GET', path: 'no-leading-slash', backend: 'fn' },
+              {
+                method: 'GET',
+                path: '/dup',
+                backend: 'fn',
+              },
+              { method: 'GET', path: '/dup', backend: 'fn' },
+            ],
+          },
+        },
+      } as unknown as ServerlessIacRaw;
+
+      let thrownError: unknown;
+      try {
+        validateYaml(config);
+      } catch (error) {
+        thrownError = error;
+      }
+
+      const keywords = JSON.stringify(
+        (thrownError as { errors?: Array<{ keyword?: string }> }).errors ?? [],
+      );
+      expect(keywords).toContain('pattern');
+      expect(keywords).toContain('duplicateTrigger');
+      expect(keywords).toContain('duplicateGeneratedApiName');
     });
   });
 });
