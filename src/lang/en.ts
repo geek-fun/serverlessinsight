@@ -505,6 +505,18 @@ export const en = {
   RESOLVED_FUNCTION_REF:
     'Resolved function reference {{backendRef}} to function name: {{functionName}}',
 
+  // Pre-deploy semantic validation (issue #222)
+  PARSE_BACKEND_BUCKET_STORE_FIELDS_REQUIRED:
+    'Backend type BUCKET_STORE requires both "bucket" and "key" fields',
+  SEMANTIC_DUPLICATE_TRIGGER:
+    'Duplicate trigger in event "{{eventKey}}": {{method}} {{path}} is defined more than once',
+  SEMANTIC_DUPLICATE_GENERATED_API_NAME:
+    'Generated API Gateway apiName "{{apiName}}" collides between "{{firstPath}}" and "{{secondPath}}" in this deployment; shorten the event name or differentiate trigger method/path',
+  SEMANTIC_DUPLICATE_ROUTE_NAME:
+    'Generated API Gateway route name "{{routeName}}" collides between "{{firstPath}}" and "{{secondPath}}" in this deployment; shorten the event name or differentiate trigger method/path',
+  SEMANTIC_UNRESOLVED_FUNCTION_BACKEND:
+    'Trigger backend "{{reference}}" in event "{{eventKey}}" does not match any function definition in the configuration',
+
   // Show command messages
   LOADING_STATE_FOR: 'Loading state for app: {{app}}, service: {{service}}, stage: {{stage}}...',
   NO_RESOURCES_FOUND: 'No resources found in state.',
