@@ -134,7 +134,7 @@ describe('validateSemantics', () => {
       ).toHaveLength(0);
     });
 
-    it('surfaces generated-name duplicates together with trigger duplicates', () => {
+    it('reports duplicate triggers without repeating generated-name collisions', () => {
       const errors = validateSemantics(
         buildIac({
           gateway: {
@@ -147,9 +147,7 @@ describe('validateSemantics', () => {
         }) as ServerlessIacRaw,
       );
 
-      const keywords = errors.map((error) => error.keyword);
-      expect(keywords).toContain('duplicateTrigger');
-      expect(keywords).toContain('duplicateGeneratedApiName');
+      expect(errors.map((error) => error.keyword)).toEqual(['duplicateTrigger']);
     });
 
     it('scopes volcengine route checks to single events', () => {
