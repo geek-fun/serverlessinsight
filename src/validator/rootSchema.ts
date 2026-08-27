@@ -1,3 +1,32 @@
+import { templateRefSchema } from './templateRefSchema';
+
+// Provider-enforced function-name maximums (audit of issue #222)
+const FUNCTION_NAME_MAX_LENGTH: Record<string, number> = {
+  aliyun: 64,
+  tencent: 60,
+};
+
+const functionNameLimitBranch = (provider: string, maxLength: number): Record<string, unknown> => ({
+  if: {
+    properties: { provider: { properties: { name: { const: provider } }, required: ['name'] } },
+    required: ['provider'],
+  },
+  then: {
+    properties: {
+      functions: {
+        patternProperties: {
+          '.*': {
+            properties: {
+              // Whole-value template references bypass the literal limit.
+              name: { anyOf: [{ type: 'string', maxLength }, templateRefSchema] },
+            },
+          },
+        },
+      },
+    },
+  },
+});
+
 export const rootSchema = {
   $id: 'https://serverlessinsight.geekfun.club/schemas/schema.json',
   type: 'object',
@@ -115,4 +144,7 @@ export const rootSchema = {
   },
   required: ['version', 'provider', 'app', 'service'],
   additionalProperties: false,
+  allOf: Object.entries(FUNCTION_NAME_MAX_LENGTH).map(([provider, maxLength]) =>
+    functionNameLimitBranch(provider, maxLength),
+  ),
 };
