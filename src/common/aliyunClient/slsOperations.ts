@@ -94,7 +94,7 @@ export const createSlsOperations = (slsClient: SlsSdkClient) => {
 
     getProject: async (projectName: string): Promise<SlsProjectInfo | null> => {
       try {
-        const response = await slsClient.getProject(projectName);
+        const response = await slsClient.getProject(projectName, new sls.GetProjectRequest({}));
 
         if (!response || !response.body) {
           return null;

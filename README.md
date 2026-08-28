@@ -23,7 +23,7 @@
   <img src="https://img.shields.io/badge/AWS-232F3E&logo=amazonwebservices&logoColor=white"/>
 </p>
 
-[npm i -g @geek-fun/serverlessinsight](https://www.npmjs.com/package/@geek-fun/serverlessinsight) · [Docs](https://serverlessinsight.geekfun.club) · [Website](https://serverlessinsight.geekfun.club) · [GitHub](https://github.com/geek-fun/serverlessinsight)
+[npm](https://www.npmjs.com/package/@geek-fun/serverlessinsight) · [Docs](https://serverlessinsight.geekfun.club) · [Website](https://serverlessinsight.geekfun.club) · [GitHub](https://github.com/geek-fun/serverlessinsight)
 
 English · [简体中文](README.zh-CN.md)
 
