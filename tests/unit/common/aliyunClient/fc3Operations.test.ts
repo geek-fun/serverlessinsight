@@ -610,15 +610,22 @@ describe('fc3Operations', () => {
       jest.useRealTimers();
     });
 
-    it('resolves immediately for built-in runtimes whose state stays Pending (issue #219)', async () => {
-      mockGetFunction.mockResolvedValue({
-        body: { functionName: 'test-function', runtime: 'nodejs20', state: 'Pending' },
-      });
+    it('holds while a built-in runtime is mid-transition and passes once its state clears (issue #219)', async () => {
+      jest.useFakeTimers();
+      mockGetFunction
+        .mockResolvedValueOnce({
+          body: { functionName: 'test-function', runtime: 'nodejs20', state: 'Pending' },
+        })
+        .mockResolvedValue({
+          body: { functionName: 'test-function', runtime: 'nodejs20', state: null },
+        });
 
-      const result = await operations.waitForFunctionActive('test-function');
+      const promise = operations.waitForFunctionActive('test-function');
+      await jest.advanceTimersByTimeAsync(SCF_STATUS_POLL_INTERVAL_MS + 1);
+      const result = await promise;
 
-      expect(result?.state).toBe('Pending');
-      expect(mockGetFunction).toHaveBeenCalledTimes(1);
+      expect(result?.state).toBeNull();
+      expect(mockGetFunction).toHaveBeenCalledTimes(2);
     });
 
     it('keeps polling custom-container functions until Active', async () => {

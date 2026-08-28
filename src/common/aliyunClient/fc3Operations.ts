@@ -39,12 +39,12 @@ const buildCodeLocation = (codePath: string, ossCode?: OssCodeLocation): fc.Inpu
                 })`,
               );
             }
-            // Built-in runtimes (zip code) have no Active state machine: the
-            // FC3 API keeps their state at Pending permanently (issue #219),
-            // so a successful fetch means ready. Only custom-container
-            // functions transition Pending → Active.
+            // Built-in runtimes (zip code) never reach Active (issue #219):
+            // they hold Pending while a create/update transition is in flight
+            // and report null once stable. Only custom-container functions
+            // transition Pending → Active.
             if (info && !info.customContainerConfig) {
-              return true;
+              return info.state !== 'Pending';
             }
             return info?.state === 'Active';
           },
