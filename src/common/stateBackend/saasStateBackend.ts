@@ -3,7 +3,7 @@ import type { ApiClient } from '../apiClient';
 import { loadCredentials, getConsoleUrl } from '../credentialStore';
 import { StateBackend } from './types';
 import { StateFile, LockMetadata, LockOptions, CURRENT_STATE_VERSION } from '../../types';
-import { migrateState } from '../stateManager';
+import { migrateState, toPersistedState } from '../stateManager';
 import { EventQueue, DeploymentEventRecord } from '../eventQueue';
 import { lang } from '../../lang';
 import crypto from 'node:crypto';
@@ -129,9 +129,20 @@ export const createSaasStateBackend = (context: SaasBackendContext): StateBacken
         const state = await client.get<{ stateJson: StateFile }>(
           `/api/v1/apps/${resolvedAppId}/services/${resolvedServiceId}/state/current?stage=${encodeURIComponent(stage)}`,
         );
+        const migrated = migrateState(state.stateJson);
+        // Legacy Console states hold fresh resources only in the top-level
+        // field (pre-stage-syncing saves) — prefer the stage store, fall back.
+        const stageResources = migrated.stages?.[stage]?.resources;
+        const resources =
+          stageResources && Object.keys(stageResources).length > 0
+            ? stageResources
+            : migrated.resources && Object.keys(migrated.resources).length > 0
+              ? migrated.resources
+              : {};
         // Attach console metadata so subsequent deploys have the UUIDs
         return {
-          ...migrateState(state.stateJson),
+          ...migrated,
+          resources,
           orgId,
           appId: resolvedAppId!,
           serviceId: resolvedServiceId!,
@@ -156,15 +167,26 @@ export const createSaasStateBackend = (context: SaasBackendContext): StateBacken
       // If not provisioned yet, use the state's provider for provisioning
       await ensureProvisioned(state.provider, stage);
 
-      // The backend persists the full state file under state_json — send the whole
-      // StateFile (not just resources) so loadState round-trips it unchanged.
+      // Sync the runtime projection into the stage store before stripping, so
+      // stages[stage].resources carries the fresh working set (mirrors the fs
+      // and remote backends' save contract)
+      const stateJson = toPersistedState({
+        ...state,
+        stages: {
+          ...state.stages,
+          [stage]: {
+            ...state.stages?.[stage],
+            resources: state.resources,
+          },
+        },
+      });
       const body = {
         appName: app,
         serviceName: service,
         provider: state.provider,
         stage,
-        stateJson: state,
-        contentHash: crypto.createHash('sha256').update(JSON.stringify(state)).digest('hex'),
+        stateJson,
+        contentHash: crypto.createHash('sha256').update(JSON.stringify(stateJson)).digest('hex'),
         resourceCount: Object.keys(state.resources).length,
       };
       await client.post(
