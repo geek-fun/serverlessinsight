@@ -159,6 +159,7 @@ describe('remoteStateBackend', () => {
       expect(mockAdapter.write).toHaveBeenCalled();
       const savedState = (mockAdapter.write as jest.Mock).mock.calls[0][1] as StateFile;
       expect(savedState.stages.dev.resources).toEqual({ func1: resource });
+      expect(savedState.resources).toBeUndefined();
     });
 
     it('should merge with existing stages', async () => {
