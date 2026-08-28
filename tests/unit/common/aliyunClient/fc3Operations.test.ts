@@ -3,6 +3,7 @@ import {
   OssCodeLocation,
 } from '../../../../src/common/aliyunClient/fc3Operations';
 import { Fc3FunctionConfig } from '../../../../src/common/aliyunClient/types';
+import { SCF_STATUS_POLL_INTERVAL_MS } from '../../../../src/common/constants';
 import type Fc3Client from '@alicloud/fc20230330';
 import fs from 'node:fs';
 
@@ -591,6 +592,55 @@ describe('fc3Operations', () => {
           tracingConfig: { type: 'Jaeger', params: { endpoint: 'http://jaeger:14268' } },
           tags: [{ Key: 'si-owned-by', Value: 'test-app-test-service:functions.test_fn' }],
         }),
+      );
+    });
+  });
+
+  describe('waitForFunctionActive', () => {
+    const containerBody = (state: string) => ({
+      body: {
+        functionName: 'test-function',
+        state,
+        stateReason: state === 'Failed' ? 'ImagePullBackOff' : undefined,
+        customContainerConfig: { image: 'registry.example.com/app:v1' },
+      },
+    });
+
+    afterEach(() => {
+      jest.useRealTimers();
+    });
+
+    it('resolves immediately for built-in runtimes whose state stays Pending (issue #219)', async () => {
+      mockGetFunction.mockResolvedValue({
+        body: { functionName: 'test-function', runtime: 'nodejs20', state: 'Pending' },
+      });
+
+      const result = await operations.waitForFunctionActive('test-function');
+
+      expect(result?.state).toBe('Pending');
+      expect(mockGetFunction).toHaveBeenCalledTimes(1);
+    });
+
+    it('keeps polling custom-container functions until Active', async () => {
+      jest.useFakeTimers();
+      mockGetFunction
+        .mockResolvedValueOnce(containerBody('Pending'))
+        .mockResolvedValueOnce(containerBody('Pending'))
+        .mockResolvedValue(containerBody('Active'));
+
+      const promise = operations.waitForFunctionActive('test-function');
+      await jest.advanceTimersByTimeAsync(SCF_STATUS_POLL_INTERVAL_MS * 2 + 1);
+      const result = await promise;
+
+      expect(result?.state).toBe('Active');
+      expect(mockGetFunction).toHaveBeenCalledTimes(3);
+    });
+
+    it('throws for custom-container functions in Failed state', async () => {
+      mockGetFunction.mockResolvedValue(containerBody('Failed'));
+
+      await expect(operations.waitForFunctionActive('test-function')).rejects.toThrow(
+        'is in Failed state',
       );
     });
   });
