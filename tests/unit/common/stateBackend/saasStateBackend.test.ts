@@ -99,6 +99,91 @@ describe('saasStateBackend', () => {
       );
     });
 
+    it('should hydrate the resources projection from stages[stage]', async () => {
+      mockApiClient.post.mockResolvedValueOnce({
+        id: 'deploy-1',
+        appId: 'app-1',
+        serviceId: 'svc-1',
+        status: 'active',
+        isNewApp: false,
+        isNewService: false,
+      });
+      mockApiClient.get.mockResolvedValueOnce({
+        stateJson: {
+          version: '3.0',
+          provider: 'aliyun',
+          app: 'myapp',
+          service: 'myservice',
+          stages: {
+            dev: {
+              resources: {
+                func1: {
+                  mode: 'managed',
+                  region: 'cn-hk',
+                  definition: {},
+                  instances: [],
+                  lastUpdated: '',
+                },
+              },
+            },
+          },
+        },
+      });
+
+      const result = await backend.loadState('aliyun', 'myapp', 'myservice', 'dev');
+
+      expect(result.resources).toEqual({
+        func1: {
+          mode: 'managed',
+          region: 'cn-hk',
+          definition: {},
+          instances: [],
+          lastUpdated: '',
+        },
+      });
+    });
+
+    it('should fall back to the legacy top-level resources when stages is empty', async () => {
+      mockApiClient.post.mockResolvedValueOnce({
+        id: 'deploy-1',
+        appId: 'app-1',
+        serviceId: 'svc-1',
+        status: 'active',
+        isNewApp: false,
+        isNewService: false,
+      });
+      mockApiClient.get.mockResolvedValueOnce({
+        stateJson: {
+          version: '3.0',
+          provider: 'aliyun',
+          app: 'myapp',
+          service: 'myservice',
+          stages: {},
+          resources: {
+            func1: {
+              mode: 'managed',
+              region: 'cn-hk',
+              definition: {},
+              instances: [],
+              lastUpdated: '',
+            },
+          },
+        },
+      });
+
+      const result = await backend.loadState('aliyun', 'myapp', 'myservice', 'dev');
+
+      expect(result.resources).toEqual({
+        func1: {
+          mode: 'managed',
+          region: 'cn-hk',
+          definition: {},
+          instances: [],
+          lastUpdated: '',
+        },
+      });
+    });
+
     it('should return default state when Console state fetch fails', async () => {
       mockApiClient.post.mockResolvedValueOnce({
         id: 'deploy-1',
@@ -188,6 +273,14 @@ describe('saasStateBackend', () => {
           resourceCount: 1,
         }),
       );
+
+      const syncPayload = mockApiClient.post.mock.calls.find(
+        (call) => call[0] === '/api/v1/apps/app-1/services/svc-1/state/sync',
+      )?.[1] as { stateJson: Record<string, unknown> };
+      expect(syncPayload.stateJson.resources).toBeUndefined();
+      expect(syncPayload.stateJson.stages).toEqual({
+        dev: { resources: state.resources },
+      });
     });
   });
 

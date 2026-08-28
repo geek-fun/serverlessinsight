@@ -1,7 +1,15 @@
 import * as readline from 'node:readline';
 import crypto from 'node:crypto';
 import { deployStack } from '../stack';
-import { getContext, getIacLocation, logger, setContext, setIac, ProviderEnum } from '../common';
+import {
+  getContext,
+  getIacLocation,
+  logger,
+  setContext,
+  setIac,
+  ProviderEnum,
+  toPersistedState,
+} from '../common';
 import { createStateBackend } from '../common/stateBackend';
 import { parseYaml, revalYaml } from '../parser';
 import { generateTencentPlan, displayPlan } from '../stack/scfStack';
@@ -156,7 +164,7 @@ export const deploy = async (options: {
               iac.service,
               options.stage ?? 'dev',
             );
-            failure.stateJson = partialState ?? {};
+            failure.stateJson = partialState ? toPersistedState(partialState) : {};
           } catch {
             // state may be unreadable mid-failure — plan alone is still useful
           }
@@ -171,13 +179,11 @@ export const deploy = async (options: {
           iac.service,
           options.stage ?? 'dev',
         );
+        const stateJson = finalState ? toPersistedState(finalState) : {};
         return {
           plan: { items: planResult.items },
-          stateJson: finalState ?? {},
-          contentHash: crypto
-            .createHash('sha256')
-            .update(JSON.stringify(finalState ?? {}))
-            .digest('hex'),
+          stateJson,
+          contentHash: crypto.createHash('sha256').update(JSON.stringify(stateJson)).digest('hex'),
           resourceCount: Object.keys(finalState?.resources ?? {}).length,
         };
       },
