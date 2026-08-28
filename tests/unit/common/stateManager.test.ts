@@ -453,6 +453,61 @@ describe('StateManager', () => {
       expect(getResource(state2, 'functions.test')).toEqual(resourceState);
     });
 
+    describe('persisted shape (issue #225)', () => {
+      const makeResourceState = (name: string): ResourceState => ({
+        mode: 'managed',
+        region: 'ap-guangzhou',
+        definition: { functionName: name },
+        instances: [{ sid: `si:tencent:scf:default:${name}`, id: name }],
+        lastUpdated: '2025-01-01T00:00:00Z',
+      });
+
+      it('saveState does not persist the top-level resources projection', () => {
+        let state = loadState('tencent', 'test-app', 'test-service', 'default', testDir);
+        state = setResource(state, 'functions.test', makeResourceState('test-fn'));
+        saveState(state, 'test-app', 'test-service', 'default', testDir);
+
+        const onDisk = JSON.parse(fs.readFileSync(statePath, 'utf-8'));
+        expect(onDisk.resources).toBeUndefined();
+        expect(onDisk.stages.default.resources['functions.test']).toEqual(
+          makeResourceState('test-fn'),
+        );
+      });
+
+      it('saveState drops a stale top-level resources field left by an older CLI', () => {
+        const legacyOnDisk = {
+          version: CURRENT_STATE_VERSION,
+          provider: 'tencent',
+          app: 'test-app',
+          service: 'test-service',
+          stages: {
+            default: { resources: { 'functions.current': makeResourceState('current-fn') } },
+          },
+          resources: { 'functions.stale': makeResourceState('stale-fn') },
+        };
+        ensureStateDir(testDir);
+        fs.writeFileSync(statePath, JSON.stringify(legacyOnDisk, null, 2));
+
+        const state = loadState('tencent', 'test-app', 'test-service', 'default', testDir);
+        saveState(state, 'test-app', 'test-service', 'default', testDir);
+
+        const onDisk = JSON.parse(fs.readFileSync(statePath, 'utf-8'));
+        expect(onDisk.resources).toBeUndefined();
+        expect(onDisk.stages.default.resources['functions.current']).toEqual(
+          makeResourceState('current-fn'),
+        );
+      });
+
+      it('round-trips resources through stages for the same stage', () => {
+        let state = loadState('tencent', 'test-app', 'test-service', 'default', testDir);
+        state = setResource(state, 'functions.test', makeResourceState('round-trip-fn'));
+        saveState(state, 'test-app', 'test-service', 'default', testDir);
+
+        const reloaded = loadState('tencent', 'test-app', 'test-service', 'default', testDir);
+        expect(getResource(reloaded, 'functions.test')).toEqual(makeResourceState('round-trip-fn'));
+      });
+    });
+
     describe('atomic persistence (B1)', () => {
       const makeResourceState = (name: string): ResourceState => ({
         mode: 'managed',
@@ -474,7 +529,10 @@ describe('StateManager', () => {
           expect(fs.existsSync(`${statePath}.tmp`)).toBe(false);
 
           const onDisk = JSON.parse(fs.readFileSync(statePath, 'utf-8'));
-          expect(onDisk.resources['functions.test']).toEqual(makeResourceState('test-fn'));
+          expect(onDisk.resources).toBeUndefined();
+          expect(onDisk.stages.default.resources['functions.test']).toEqual(
+            makeResourceState('test-fn'),
+          );
         } finally {
           renameSpy.mockRestore();
         }
@@ -490,7 +548,9 @@ describe('StateManager', () => {
 
         expect(fs.existsSync(`${statePath}.backup`)).toBe(true);
         const backup = JSON.parse(fs.readFileSync(`${statePath}.backup`, 'utf-8'));
-        expect(backup.resources['functions.test']).toEqual(makeResourceState('v1-fn'));
+        expect(backup.stages.default.resources['functions.test']).toEqual(
+          makeResourceState('v1-fn'),
+        );
       });
 
       it('saveState leaves original intact if write fails', () => {

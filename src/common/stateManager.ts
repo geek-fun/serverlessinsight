@@ -4,6 +4,7 @@ import crypto from 'node:crypto';
 import {
   ResourceState,
   StateFile,
+  PersistedStateFile,
   StateCorruptError,
   StateVersionError,
   CURRENT_STATE_VERSION,
@@ -110,6 +111,12 @@ export const migrateState = (raw: StateFile): StateFile => {
   return migrated as unknown as StateFile;
 };
 
+/** Strip the runtime-only `resources` projection — `stages` is the authoritative store (issue #225). */
+export const toPersistedState = (state: StateFile): PersistedStateFile => {
+  const { resources: _projection, ...persisted } = state;
+  return persisted;
+};
+
 /**
  * Load state file, scoped to the given stage.
  * The returned StateFile has `resources` populated from `stages[stage].resources`.
@@ -179,25 +186,24 @@ export const saveState = (
   const backupPath = `${statePath}.backup`;
 
   // Read the existing file to preserve other stages
-  let existing: StateFile = {
+  let existing: PersistedStateFile = {
     version: CURRENT_STATE_VERSION,
     provider: state.provider,
     app,
     service,
     stages: {},
-    resources: {},
   };
   try {
     if (fs.existsSync(statePath)) {
       const content = fs.readFileSync(statePath, 'utf-8');
-      existing = JSON.parse(content) as StateFile;
+      existing = toPersistedState(JSON.parse(content) as StateFile);
     }
   } catch {
     // use default
   }
 
   // Write updated stage resources, preserve all other stages
-  const stateToSave: StateFile = {
+  const stateToSave: PersistedStateFile = {
     ...existing,
     version: CURRENT_STATE_VERSION,
     lineage: existing.lineage || crypto.randomUUID(),
@@ -212,7 +218,6 @@ export const saveState = (
         shared: state.stages?.[stage]?.shared ?? existing.stages?.[stage]?.shared ?? {},
       },
     },
-    resources: state.resources,
   };
 
   // Atomic write: back up the previous state, then write tmp + fsync + rename
