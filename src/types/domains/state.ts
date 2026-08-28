@@ -84,6 +84,14 @@ export type StateFile = {
   resources: Record<string, ResourceState>;
 };
 
+/**
+ * Persisted shape of a state file (disk / remote storage / API payloads).
+ * `StateFile.resources` is a runtime-only projection of `stages[stage].resources`
+ * (hydrated by loadState) and is never serialized — `stages` is the single
+ * authoritative store. See issue #225.
+ */
+export type PersistedStateFile = Omit<StateFile, 'resources'>;
+
 export type PlanAction = 'create' | 'update' | 'delete' | 'noop' | 'refresh';
 
 export type PlanItem = {
