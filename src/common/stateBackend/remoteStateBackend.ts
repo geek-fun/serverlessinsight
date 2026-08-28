@@ -1,6 +1,12 @@
 import os from 'node:os';
-import { StateFile, LockOptions, LockMetadata, CURRENT_STATE_VERSION } from '../../types';
-import { migrateState } from '../stateManager';
+import {
+  StateFile,
+  PersistedStateFile,
+  LockOptions,
+  LockMetadata,
+  CURRENT_STATE_VERSION,
+} from '../../types';
+import { migrateState, toPersistedState } from '../stateManager';
 import { DEFAULT_LOCK_TIMEOUT, DEFAULT_LOCK_RETRY_DELAY } from '../constants';
 import { LockError, formatLockInfo } from '../lockManager';
 import { logger } from '../logger';
@@ -124,21 +130,20 @@ export const createRemoteStateBackend = (
       service: string,
       stage: string,
     ): Promise<void> => {
-      let existing: StateFile = {
+      let existing: PersistedStateFile = {
         version: CURRENT_STATE_VERSION,
         provider: state.provider,
         app,
         service,
         stages: {},
-        resources: {},
       };
       try {
         const raw = await adapter.read<StateFile>(config.key);
-        if (raw) existing = raw;
+        if (raw) existing = toPersistedState(raw);
       } catch {
         // noop
       }
-      const stateToSave: StateFile = {
+      const stateToSave: PersistedStateFile = {
         ...existing,
         version: CURRENT_STATE_VERSION,
         app,
@@ -151,7 +156,6 @@ export const createRemoteStateBackend = (
             shared: state.stages?.[stage]?.shared ?? existing.stages?.[stage]?.shared ?? {},
           },
         },
-        resources: state.resources,
       };
       await adapter.write(config.key, stateToSave);
     },
