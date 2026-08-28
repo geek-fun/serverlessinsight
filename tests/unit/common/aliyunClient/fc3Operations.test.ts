@@ -628,6 +628,22 @@ describe('fc3Operations', () => {
       expect(mockGetFunction).toHaveBeenCalledTimes(2);
     });
 
+    it('passes immediately for built-in runtimes already reporting a null state (issue #219)', async () => {
+      mockGetFunction.mockResolvedValue({
+        body: {
+          functionName: 'test-function',
+          runtime: 'nodejs20',
+          state: null,
+          customContainerConfig: null,
+        },
+      });
+
+      const result = await operations.waitForFunctionActive('test-function');
+
+      expect(result?.state).toBeNull();
+      expect(mockGetFunction).toHaveBeenCalledTimes(1);
+    });
+
     it('keeps polling custom-container functions until Active', async () => {
       jest.useFakeTimers();
       mockGetFunction
