@@ -6,5 +6,7 @@ coverage/
 .DS_Store
 artifacts/
 .serverlessinsight/
+
 .omo/
 .codegraph/
+.playwright-mcp/
