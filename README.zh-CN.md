@@ -1,116 +1,180 @@
-# ServerlessInsight
-
 <div align="center">
 
-[![Node.js CI](https://github.com/geek-fun/serverlessinsight/actions/workflows/node.yml/badge.svg)](https://github.com/geek-fun/serverlessinsight/actions/workflows/node.yml)
-[![release](https://github.com/geek-fun/serverlessinsight/actions/workflows/release.yml/badge.svg)](https://github.com/geek-fun/serverlessinsight/actions/workflows/release.yml)
-[![npm version](https://badge.fury.io/js/@geek-fun%2Fserverlessinsight.svg)](https://badge.fury.io/js/@geek-fun%2Fserverlessinsight)
-[![Known Vulnerabilities](https://snyk.io/test/github/geek-fun/serverlessinsight/badge.svg)](https://snyk.io/test/github/geek-fun/serverlessinsight)
-[![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
-[![codecov](https://codecov.io/gh/geek-fun/serverlessinsight/graph/badge.svg?token=ISW7MFuSlf)](https://codecov.io/gh/geek-fun/serverlessinsight)
+# ServerlessInsight
 
-**描述你的应用，剩下的交给我们。**
+**全生命周期跨云服务商的 Serverless 管理 —— 描述你的应用，其余交给我们。**
 
-*为快速增长的业务提供全生命周期跨云服务商的 Serverless 应用管理*
+**开源。多云。基础设施即代码。**
 
-[官方网站](https://serverlessinsight.geekfun.club) • [文档](https://serverlessinsight.geekfun.club) • [示例](./samples) • [English](./README.md)
+**面向阿里云 · 腾讯云 · 华为云 · 火山引擎的 Serverless 命令行工具。**
+
+[![Release](https://img.shields.io/github/v/release/geek-fun/serverlessinsight?color=orange&label=release&logo=github)](https://github.com/geek-fun/serverlessinsight/releases)
+[![npm version](https://img.shields.io/npm/v/@geek-fun/serverlessinsight?color=orange&logo=npm)](https://www.npmjs.com/package/@geek-fun/serverlessinsight)
+[![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg&logo=apache)](LICENSE)
+[![Stars](https://img.shields.io/github/stars/geek-fun/serverlessinsight&logo=github)](https://github.com/geek-fun/serverlessinsight/stargazers)
+[![CI](https://github.com/geek-fun/serverlessinsight/actions/workflows/node.yml/badge.svg)](https://github.com/geek-fun/serverlessinsight/actions/workflows/node.yml)
+
+<p>
+  <img src="https://img.shields.io/badge/Node.js-339933&logo=nodedotjs&logoColor=white"/>
+  <img src="https://img.shields.io/badge/TypeScript-3178C6&logo=typescript&logoColor=white"/>
+  <img src="https://img.shields.io/badge/Alibaba%20Cloud-FF6A00&logo=alibabacloud&logoColor=white"/>
+  <img src="https://img.shields.io/badge/Tencent%20Cloud-0A9AED&logo=tencentqq&logoColor=white"/>
+  <img src="https://img.shields.io/badge/Huawei%20Cloud-FF0000&logo=hauwei&logoColor=white"/>
+  <img src="https://img.shields.io/badge/AWS-232F3E&logo=amazonwebservices&logoColor=white"/>
+</p>
+
+[npm](https://www.npmjs.com/package/@geek-fun/serverlessinsight) · [文档](https://serverlessinsight.geekfun.club) · [官网](https://serverlessinsight.geekfun.club) · [GitHub](https://github.com/geek-fun/serverlessinsight)
+
+简体中文 · [English](README.md)
 
 </div>
 
 ---
 
-ServerlessInsight 是一个强大的 Serverless 框架，用于跨多个云服务商管理 Serverless 应用。它提供了统一的接口来部署、管理和调试 Serverless 函数和资源，使用基础设施即代码（IaC）原则。
+ServerlessInsight 是一个**跨云服务商的 Serverless 框架**——它用统一的单一工具替代各家云厂商专属的 CLI、Web 控制台和 DIY 脚本。用 YAML 定义一次你的 Serverless 基础设施，即可部署到阿里云、腾讯云、华为云等。可将其视为面向 Serverless 的 Terraform，专为函数、API 网关、存储和数据库而打造。
 
-无论您是在 AWS、阿里云、华为云还是其他服务商上构建应用，ServerlessInsight 都能简化您的开发工作流程：
+<p align="center">
+  <img src="https://img.shields.io/badge/Alibaba%20Cloud-FF6A00?logo=alibabacloud&logoColor=white" />
+  <img src="https://img.shields.io/badge/Tencent%20Cloud-0A9AED?logo=tencentqq&logoColor=white" />
+  <img src="https://img.shields.io/badge/Huawei%20Cloud-FF0000?logo=huawei&logoColor=white" />
+  <img src="https://img.shields.io/badge/Volcengine-1677FF?logoColor=white" />
+  <img src="https://img.shields.io/badge/AWS-232F3E?logo=amazonwebservices&logoColor=white" />
+  <img src="https://img.shields.io/badge/Azure-0078D4?logo=microsoftazure&logoColor=white" />
+  <img src="https://img.shields.io/badge/GCP-4285F4?logo=googlecloud&logoColor=white" />
+</p>
 
-- **多云支持** - 使用单一工具与多个云服务商协作
-- **基础设施即代码** - 使用 YAML 定义您的 Serverless 基础设施
-- **本地开发** - 在部署前本地测试您的函数
-- **类型安全模板** - 在部署前验证您的配置
+## 安装
 
----
+```bash
+npm install -g @geek-fun/serverlessinsight
+si --version
+```
 
-## ✨ 特性
+## 核心特性
 
-- 🌍 **多云服务商支持** - 部署到阿里云、华为云等多个平台
-- 📦 **统一配置** - 所有服务商使用单一 YAML 格式
-- 🚀 **快速部署** - 使用单个命令部署 Serverless 应用
-- 🔍 **模板验证** - 在部署前验证您的 IaC 模板
-- 🏠 **本地测试** - 在本地运行和调试 Serverless 函数
-- 🔄 **模板生成** - 生成特定云服务商的 IaC 模板
-- 🌐 **API 网关集成** - 为您的函数配置 HTTP 端点
-- 🌐 **自定义域名绑定** - 支持 OSS 和 API 网关的自动域名绑定与 DNS 验证
-- 💾 **资源管理** - 管理存储、数据库和其他云资源
-- 🔐 **安全优先** - 内置验证和安全最佳实践
-- 📊 **全面的日志记录** - 调试和监控您的应用
+### 多云支持，统一配置
 
----
+使用 YAML 一次性定义你的基础设施，即可部署到阿里云、腾讯云、华为云和火山引擎——AWS、Azure 和 GCP 已在路线图中。不再需要为每个云厂商疲于应付专属 CLI 或 Terraform 模块。
 
-## ☁️ 支持的云服务商
-
-ServerlessInsight 支持以下云服务商：
+- **统一配置** —— 所有云服务商共用单一 `serverless.yml` 格式
+- **云厂商专属模板生成** —— 根据配置生成原生 IaC 模板
+- **跨云感知** —— 同一套抽象可在不同云之间通用
 
 | 云服务商         | 函数             | API 网关    | 存储        | 数据库           | 状态   |
 | ---------------- | ---------------- | ----------- | ----------- | ---------------- | ------ |
 | **阿里云**       | ✅ FC3           | ✅ API 网关 | ✅ OSS      | ✅ RDS, OTS, ESS | 稳定   |
 | **腾讯云**       | ✅ SCF           | 🚧 即将推出 | ✅ COS      | ✅ TDSQL-C       | 稳定   |
+| **火山引擎**     | ✅ veFaaS        | ✅ API 网关 | ✅ TOS      | —                | 稳定   |
 | **华为云**       | ✅ FunctionGraph | 🚧 即将推出 | 🚧 即将推出 | 🚧 即将推出      | 测试版 |
 | **AWS**          | 🔜 计划中        | 🔜 计划中   | 🔜 计划中   | 🔜 计划中        | 计划中 |
 | **Azure**        | 🔜 计划中        | 🔜 计划中   | 🔜 计划中   | 🔜 计划中        | 计划中 |
 | **Google Cloud** | 🔜 计划中        | 🔜 计划中   | 🔜 计划中   | 🔜 计划中        | 计划中 |
 
----
+### 基础设施即代码
 
-## 🚀 快速开始
+声明式 YAML 配置，内置校验、计划与状态管理——遵循成熟的 IaC 实践。
 
-### 前置要求
+- **部署前预览** —— `si plan` 在实际变更前精确展示将要发生的改动
+- **状态追踪** —— 基于本地状态文件的增量部署与漂移检测
+- **配置校验** —— 类型安全的模板校验在配置触达云端前捕获错误
+- **部分失败恢复** —— 即使部分资源失败，已成功部署的资源仍会被保存；重试即可继续
 
-- **Node.js** 16.x 或更高版本
-- 云服务商凭证（阿里云 AccessKey、华为云凭证等）
-
-### 安装
-
-使用 npm 全局安装 ServerlessInsight：
+### 快速部署
 
 ```bash
-npm install -g @geek-fun/serverlessinsight
-```
-
-验证安装：
-
-```bash
-si --version
-```
-
----
-
-## 📚 使用方法
-
-```bash
-# 验证您的 Serverless 配置
+# 校验你的配置
 si validate -f serverless.yml
 
-# 生成部署计划（查看将要发生的变更）
+# 预览变更
 si plan -f serverless.yml
 
-# 部署您的 Serverless 应用
-si deploy -f serverless.yml -s dev
+# 部署到生产环境
+si deploy -f serverless.yml -s prod
 
-# 本地运行您的应用进行调试
-si local -f serverless.yml -s local
-
-# 显示已部署资源信息
-si show -f serverless.yml
-
-# 销毁已部署的堆栈
+# 完成后销毁
 si destroy -f serverless.yml
 ```
 
----
+### 本地开发
 
-## 💡 示例
+无需部署到云端，即可本地运行和调试你的 Serverless 函数。
 
-ServerlessInsight 使用简单的 YAML 格式来定义您的 Serverless 基础设施：
+- **LocalStack 服务** —— 在本地测试函数、存储桶和 API 端点
+- **存储桶文件服务** —— 通过 HTTP 访问本地存储文件，加速迭代
+- **同一配置，不同目标** —— `si local -f serverless.yml -s local` 复用你现有的配置
+
+### API 网关与自定义域名
+
+配置 HTTP 端点并绑定自定义域名，附带自动 DNS 验证。
+
+- **API 网关集成** —— 使用 HTTP 方法和路径定义触发器
+- **自定义域名绑定** —— 为 OSS 和 API 网关自动完成 CNAME + DNS TXT 所有权验证
+- **CDN 加速** —— 为静态站点提供边缘缓存与全球内容分发
+- **OSS 传输加速** —— 通过阿里云骨干网进行跨区域数据传输
+
+### 资源管理
+
+不止于函数——管理包含存储、数据库等在内的完整 Serverless 技术栈。
+
+- **对象存储** —— OSS（阿里云）、COS（腾讯云）、TOS（火山引擎）
+- **数据库** —— RDS、OTS、ESS、TDSQL-C，更多陆续支持
+- **Elasticsearch Serverless** —— 部署并管理 ES 集群
+- **GPU 函数** —— 部署支持 GPU 的 Serverless 函数
+
+### 架构
+
+ServerlessInsight 采用**函数式客户端架构**，将云厂商 SDK 与业务逻辑清晰分离：
+
+```
+┌─────────────────────────────────────────┐
+│   Resource / Planner / Executor Layer   │  ← 与云厂商无关的业务逻辑
+│   (纯函数，不引入 SDK)                    │
+└─────────────────────────────────────────┘
+                    ↓
+┌─────────────────────────────────────────┐
+│         Functional Client Layer          │  ← 封装的 SDK 操作
+│   (aliyunClient.ts, tencentClient.ts)   │
+└─────────────────────────────────────────┘
+                    ↓
+┌─────────────────────────────────────────┐
+│      Cloud Provider SDKs                 │  ← @alicloud/*, tencentcloud-*
+└─────────────────────────────────────────┘
+```
+
+- **函数式且纯粹** —— 业务逻辑使用不可变数据的纯函数
+- **SDK 封装** —— 云厂商 SDK 仅能通过客户端模块访问
+- **无类** —— 优先使用 `type` 而非 `interface`，优先采用函数式模式而非类
+
+## 开发
+
+ServerlessInsight 基于 [Node.js](https://nodejs.org/) + [TypeScript](https://www.typescriptlang.org/)、[Commander.js](https://github.com/tj/commander.js/) CLI 构建，采用纯函数式架构。
+
+### 前置要求
+
+- **Node.js** >= 16
+
+### 快速开始
+
+```bash
+git clone https://github.com/geek-fun/serverlessinsight.git
+cd serverlessinsight
+npm install
+npm run build
+npm link
+```
+
+### 脚本
+
+| 命令               | 说明                 |
+| ------------------ | -------------------- |
+| `npm run build`    | TypeScript 编译      |
+| `npm test`         | 运行全部测试（含覆盖率） |
+| `npm run test:unit`    | 仅单元测试        |
+| `npm run test:service` | 仅服务测试        |
+| `npm run lint:check`  | ESLint 检查        |
+| `npm run lint:fix`    | 自动修复 lint 问题  |
+
+### 示例配置
 
 ```yaml
 version: 0.0.1
@@ -129,8 +193,6 @@ functions:
       path: ./src
     memory: 512
     timeout: 10
-    environment:
-      NODE_ENV: production
 
 events:
   api_gateway:
@@ -142,207 +204,12 @@ events:
         backend: ${functions.hello_function}
 ```
 
-更多示例请查看 [samples](./samples) 目录：
+更多示例见 [samples](./samples) 目录。
 
-- [API 网关示例](./samples/aliyun-poc-api.yml) - 部署带 HTTP 端点的函数
-- [存储示例](./samples/aliyun-poc-bucket.yml) - 配置 OSS 存储桶
-- [自定义域名示例](./samples/aliyun-poc-domain.yml) - 配置 OSS 静态网站托管与自定义域名绑定
-- [数据库示例](./samples/aliyun-poc-rds.yml) - 设置 RDS 数据库
-- [表格存储示例](./samples/aliyun-poc-table.yml) - 配置 OTS 表格存储
-- [Elasticsearch 示例](./samples/aliyun-poc-es.yml) - 部署 Elasticsearch Serverless
-- [GPU 函数示例](./samples/aliyun-poc-fc-gpu.yml) - 部署支持 GPU 的函数
-- [华为云示例](./samples/huawei-poc-fc.yml) - 部署到华为云 FunctionGraph
-
----
-
-## 🔧 本地开发
-
-```bash
-# 克隆和设置
-git clone https://github.com/geek-fun/serverlessinsight.git
-cd serverlessinsight
-npm install
-
-# 构建并链接用于开发
-npm run build
-npm link
-
-# 运行本地开发服务器
-si local -f serverless.yml -s local
-
-# 运行测试
-npm test
-
-# 检查代码规范
-npm run lint:check
-```
-
----
-
-## 🌐 自定义域名绑定
-
-ServerlessInsight 为 OSS 存储桶和 API 网关提供自动化的自定义域名绑定，内置 DNS 验证功能。
-
-### OSS 自定义域名绑定
-
-当您为 OSS 存储桶（静态网站托管）配置自定义域名时，ServerlessInsight 会自动：
-
-1. **绑定域名**到您的 OSS 存储桶
-2. **创建 DNS CNAME 记录**，指向正确的 OSS Endpoint
-3. **处理域名所有权验证**，通过 DNS TXT 记录完成云服务商要求的验证
-4. **管理重试逻辑**，通过 DNS 传播轮询确保绑定可靠
-
-```yaml
-buckets:
-  my_website:
-    name: my-website-bucket
-    security:
-      acl: PUBLIC_READ
-    website:
-      code: ./dist
-      domain: www.example.com # 自定义域名绑定
-      index: index.html
-      error_page: 404.html
-```
-
-### 域名所有权验证流程
-
-当绑定需要所有权验证的自定义域名时：
-
-```
-┌─────────────────────────────────────────────────────────────────┐
-│                    OSS 自定义域名绑定流程                         │
-└─────────────────────────────────────────────────────────────────┘
-                               │
-                               ▼
-                   ┌───────────────────────┐
-                   │   PutCname (首次尝试)   │
-                   └───────────────────────┘
-                               │
-           ┌───────────────────┴───────────────────┐
-           │                                       │
-           ▼                                       ▼
-   ┌───────────────┐                    ┌─────────────────┐
-   │   绑定成功     │                    │ 需要域名所有权   │
-   └───────────────┘                    │     验证        │
-                                        └─────────────────┘
-                                                  │
-                                                  ▼
-                                    ┌─────────────────────────┐
-                                    │  CreateCnameToken API   │
-                                    │  (获取 TXT 记录值)       │
-                                    └─────────────────────────┘
-                                                  │
-                                                  ▼
-                                    ┌─────────────────────────┐
-                                    │  检查现有 TXT 记录       │
-                                    │  (避免重复创建)          │
-                                    └─────────────────────────┘
-                                                  │
-                                                  ▼
-                                    ┌─────────────────────────┐
-                                    │  添加 DNS TXT 记录       │
-                                    │  (_dnsauth.domain)      │
-                                    └─────────────────────────┘
-                                                  │
-                                                  ▼
-                                    ┌─────────────────────────┐
-                                    │  轮询 DNS 传播状态       │
-                                    │  (最多 10 次 × 1 分钟)   │
-                                    └─────────────────────────┘
-                                                  │
-                                                  ▼
-                                    ┌─────────────────────────┐
-                                    │  重试 PutCname          │
-                                    │  (最多 5 次 × 30 秒)     │
-                                    └─────────────────────────┘
-```
-
-### 支持的域名类型
-
-对于 OSS 静态网站托管，ServerlessInsight 支持：
-
-| 域名类型       | CNAME 目标                       | 使用场景                    |
-| -------------- | -------------------------------- | --------------------------- |
-| 根域名 (`@`)   | `bucket.region.taihangcda.cn`    | 绕过根域名的 DNS CNAME 限制 |
-| 子域名 (`www`) | `bucket.oss-region.aliyuncs.com` | 标准 OSS Endpoint           |
-
-详细配置请参考 [OSS 自定义域名绑定指南](./docs/oss-custom-domain-binding.md)。
-
----
-
-## 📘 文档
-
-完整文档请访问 [serverlessinsight.geekfun.club](https://serverlessinsight.geekfun.club)
-
-其他资源：
-
-- [快速开始指南](https://serverlessinsight.geekfun.club)
-- [配置参考](https://serverlessinsight.geekfun.club)
-- [API 文档](https://serverlessinsight.geekfun.club)
-- [最佳实践](https://serverlessinsight.geekfun.club)
-
----
-
-## 🗄️ 状态管理
-
-ServerlessInsight 使用基于状态的部署模型，在本地状态文件 (`.serverlessinsight/state.json`) 中跟踪所有已部署的资源。这使得：
-
-- **增量部署** - 只有更改的资源才会被更新
-- **漂移检测** - 识别本地状态与云资源之间的差异
-- **安全销毁** - 知道要清理哪些资源
-
-### 部分失败恢复
-
-当部署多个资源时，如果其中一个失败，ServerlessInsight 确保：
-
-1. **成功部署的资源始终保存到状态** - 即使后续资源失败，您的状态文件也将包含所有成功创建/更新/删除的资源
-2. **清晰的错误报告** - 您将看到哪些资源成功，哪些资源失败
-3. **轻松重试** - 只需再次运行 `deploy` 即可从中断的地方继续
-
-部分失败输出示例：
-
-```
-⚠️  部署部分失败: 2 个资源成功，但 functions.api_handler 失败。
-已成功部署的资源状态已保存。再次运行 deploy 以重试失败的资源。
-后续步骤: 1) 查看上面的错误, 2) 修复配置问题, 3) 再次运行 deploy 继续。
-```
-
-### 状态文件位置
-
-状态文件存储在项目目录的 `.serverlessinsight/state.json` 中。此文件：
-
-- 应提交到版本控制以便团队协作
-- 包含资源元数据和标识符
-- 在每次成功操作后自动更新
-
-### 状态恢复
-
-如果遇到状态漂移（云资源存在但不在状态文件中）：
-
-1. **手动导入** - 目前，资源必须手动添加到状态文件
-2. **重新开始** - 删除状态文件和云中的资源，然后重新部署
-
-> 💡 **提示**：在进行手动修改之前，请始终备份您的状态文件。
-
----
-
-## 🤝 贡献
-
-我们欢迎社区的贡献！以下是您可以帮助的方式：
-
-1. **Fork 仓库**
-2. **创建功能分支** (`git checkout -b feature/amazing-feature`)
-3. **提交您的更改** (`git commit -m 'Add amazing feature'`)
-4. **推送到分支** (`git push origin feature/amazing-feature`)
-5. **打开 Pull Request**
-
----
-
-## 👥 社区
+## 社区
 
 <p align="center">
-  <img src="https://www.geekfun.club/wechat-group.jpg" width="140" alt="微信群">
+  <img src="https://www.geekfun.club/wechat-group.jpg" width="140" alt="WeChat Group">
 </p>
 
 <p align="center">
@@ -355,33 +222,26 @@ ServerlessInsight 使用基于状态的部署模型，在本地状态文件 (`.s
   <a href="https://github.com/geek-fun"><img src="https://img.shields.io/badge/GitHub-关注-181717?logo=github&logoColor=white" alt="GitHub" /></a>
 </p>
 
-## Sponsor
+## 贡献
+
+欢迎贡献！提交 Issue 或 Pull Request 即可。编码规范请参见 [AGENTS.md](AGENTS.md)。
+
+## 赞助
 
 <p align="center">
   <a href="https://github.com/sponsors/geek-fun"><img src="https://img.shields.io/badge/GitHub_Sponsors-%E2%9D%A4_支持-EA4AAA?logo=githubsponsors&logoColor=white" alt="GitHub Sponsors" /></a>
 </p>
 
-## 📄 许可证
+## Star 历史
 
-本项目采用 Apache License 2.0 许可证 - 详见 [LICENSE](LICENSE) 文件。
+<a href="https://www.star-history.com/?repos=geek-fun/serverlessinsight&type=date">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/chart?repos=geek-fun/serverlessinsight&type=date&theme=dark" />
+    <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/chart?repos=geek-fun/serverlessinsight&type=date" />
+    <img alt="Star History Chart" src="https://api.star-history.com/chart?repos=geek-fun/serverlessinsight&type=date" />
+  </picture>
+</a>
 
----
+## 许可证
 
-## 🙏 致谢
-
-ServerlessInsight 使用以下优秀技术构建：
-
-- [Node.js](https://nodejs.org/) - JavaScript 运行时
-- [TypeScript](https://www.typescriptlang.org/) - 类型安全的 JavaScript
-- [Commander.js](https://github.com/tj/commander.js/) - CLI 框架
-- [阿里云 ROS CDK](https://github.com/aliyun/Resource-Orchestration-Service-Cloud-Development-Kit) - 云基础设施 SDK
-
----
-
-<div align="center">
-
-**由 [geek-fun](https://github.com/geek-fun) 团队用 ❤️ 制作**
-
-[⬆ 回到顶部](#serverlessinsight)
-
-</div>
+[Apache 2.0](LICENSE) © GEEKFUN

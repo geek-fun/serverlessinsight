@@ -45,18 +45,6 @@ ServerlessInsight is a **cross-provider serverless framework** — it replaces c
 
 ## Installation
 
-<a href="https://www.npmjs.com/package/@geek-fun/serverlessinsight">
-  <img src="https://img.shields.io/badge/npm_install-g_--g_@geek--fun/serverlessinsight-CB3837&logo=npm&logoColor=white" alt="npm install">
-</a>
-&nbsp;
-<a href="https://github.com/geek-fun/serverlessinsight/releases">
-  <img src="https://img.shields.io/badge/Releases-GitHub-lightgrey&logo=github" alt="Releases">
-</a>
-&nbsp;
-<a href="https://serverlessinsight.geekfun.club">
-  <img src="https://img.shields.io/badge/Docs-serverlessinsight.geekfun.club-blue&logo=gitbook&logoColor=white" alt="Docs">
-</a>
-
 ```bash
 npm install -g @geek-fun/serverlessinsight
 si --version
