@@ -1,0 +1,58 @@
+version: 0.0.1
+app: insight-poc-deploy-app
+provider:
+  name: aliyun
+  region: cn-chengdu
+
+vars:
+  region: cn-hangzhou
+  testv: testVarValue
+  handler: index.handler
+
+stages:
+  default:
+    region: ${vars.region}
+    node_env: default
+  dev:
+    region: ${vars.region}
+    node_env: development
+  prod:
+    region: cn-shanghai
+
+service: insight-poc-deploy
+
+backend:
+  state_manager:
+    type: LOCAL
+
+tags:
+  owner: geek-fun
+
+functions:
+  insight_poc_fn:
+    name: insight-poc-fn
+    code:
+      runtime: nodejs18
+      handler: ${vars.handler}
+      path: tests/fixtures/artifacts/artifact.zip
+    memory: 512
+    timeout: 10
+    log: true
+    environment:
+      NODE_ENV: ${stages.node_env}
+      TEST_VAR: ${vars.testv}
+      TEST_VAR_EXTRA: abcds-${vars.testv}-andyou
+
+events:
+  gateway_event:
+    type: API_GATEWAY
+    name: insight-poc-gateway
+    triggers:
+      - method: GET
+        path: /api/hello
+        backend: insight-poc-fn
+#    custom_domain:
+#      domain_name: test.com
+#      certificate_name: test
+#      certificate_private_key: test
+#      certificate_body: test

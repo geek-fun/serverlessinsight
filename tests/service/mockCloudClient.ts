@@ -184,8 +184,17 @@ export const createMockAliyunClient = (): MockAliyunClient => {
       applyHttpsRedirect: jest.fn().mockResolvedValue({}),
     },
     ram: {
-      createRole: jest.fn().mockResolvedValue({ body: { Role: { RoleName: 'test-role' } } }),
-      getRole: jest.fn().mockResolvedValue({ body: { Role: { RoleName: 'test-role' } } }),
+      createRole: jest.fn().mockResolvedValue({
+        roleName: 'test-role',
+        roleId: 'role-123',
+        arn: 'acs:ram::123456789012:role/test-role',
+        policyName: 'test-role-policy',
+      }),
+      getRole: jest.fn().mockResolvedValue({
+        roleName: 'test-role',
+        roleId: 'role-123',
+        arn: 'acs:ram::123456789012:role/test-role',
+      }),
       deleteRole: jest.fn().mockResolvedValue({}),
       createPolicy: jest
         .fn()
