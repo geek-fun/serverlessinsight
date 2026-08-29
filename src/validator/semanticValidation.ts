@@ -140,6 +140,19 @@ export const validateSemantics = (iacJson: ServerlessIacRaw): Array<ErrorObject>
               eventKey,
             }),
           });
+        } else if (providerName === 'volcengine') {
+          // Volcengine upstreams require a si-managed functionId from state —
+          // external deployed functions cannot be wired as backends there.
+          errors.push({
+            instancePath,
+            schemaPath: '#/semantic/externalBackendUnsupported',
+            keyword: 'externalBackendUnsupported',
+            params: {},
+            message: lang.__('SEMANTIC_EXTERNAL_BACKEND_VOLCENGINE', {
+              backend: bareBackend,
+              eventKey,
+            }),
+          });
         }
       }
 

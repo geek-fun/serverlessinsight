@@ -101,6 +101,45 @@ describe('iamOperations', () => {
       expect(result.roleName).toBe('test-role');
     });
 
+    it('rebuilds the policy with baseline and custom statements in the RoleAlreadyExists recovery', async () => {
+      const existingError = new Error('Role exists') as Error & { code: string };
+      existingError.code = 'RoleAlreadyExists';
+
+      mockClient.fetchOpenAPI
+        .mockRejectedValueOnce(existingError)
+        .mockResolvedValueOnce({
+          Result: {
+            Role: {
+              RoleName: 'test-role',
+              RoleId: 'role-123',
+              TRN: 'trn:iam::123456:role/test-role',
+            },
+          },
+        })
+        .mockResolvedValue({})
+        .mockResolvedValue({})
+        .mockResolvedValue({});
+
+      await operations.createRole({
+        ...mockConfig,
+        executionStatements: [{ effect: 'Allow', action: ['vefaas:*'], resource: ['*'] }],
+        customStatements: [
+          { effect: 'Allow', action: ['oss:GetObject'], resource: ['trn:tos:::my-bucket/*'] },
+        ],
+      });
+
+      const createPolicyCall = mockClient.fetchOpenAPI.mock.calls.find(
+        (call) => call[0]?.Action === 'CreatePolicy',
+      );
+      expect(createPolicyCall).toBeDefined();
+      const policyDocument = JSON.parse(createPolicyCall![0].query.PolicyDocument) as {
+        Statement: Array<{ Action: string[] }>;
+      };
+      const actions = policyDocument.Statement.flatMap((statement) => statement.Action);
+      expect(actions).toContain('vefaas:*');
+      expect(actions).toContain('oss:GetObject');
+    });
+
     it('should handle existing role with Conflict code', async () => {
       const conflictError = new Error('Conflict') as Error & { code: string };
       conflictError.code = 'Conflict';

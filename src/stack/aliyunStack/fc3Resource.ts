@@ -4,6 +4,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 
 import {
+  getAllResources,
   getResource,
   removeResource,
   setResource,
@@ -35,7 +36,7 @@ import {
 } from '../../types';
 import { extractFc3Definition, Fc3FunctionInfo, functionToFc3Config } from './fc3Types';
 import { logger } from '../../common/logger';
-import type { IamStatement } from '../../common/iamStatements';
+import { unionPolicyStatements, type IamStatement } from '../../common/iamStatements';
 import { buildFc3ExecutionPolicyDocument } from '../../common/aliyunClient/ramOperations';
 import { lang } from '../../lang';
 import { OWNERSHIP_TAG_KEY, buildOwnershipTagValue, isOwnedByStack } from '../ownershipTag';
@@ -110,6 +111,66 @@ const buildDefaultRoleName = buildFunctionRoleName;
 
 const buildFc3CertName = (service: string, stage: string): string =>
   `${service}-${stage}-fc3-domain`;
+
+type RolePeer = { fn: FunctionDomain; logConfig?: { project: string; logstore: string } };
+
+const collectRolePeers = (state: StateFile, context: Context, roleId: string): RolePeer[] => {
+  const peers: RolePeer[] = [];
+  for (const [logicalId, resourceState] of Object.entries(getAllResources(state))) {
+    if (!logicalId.startsWith('functions.')) continue;
+    const roleInstance = resourceState.instances?.find(
+      (i) => (i as { type?: string }).type === 'ALIYUN_RAM_ROLE',
+    ) as { id?: string } | undefined;
+    if (roleInstance?.id !== roleId) continue;
+    const fn = context.iac?.functions?.find(
+      (candidate) => candidate.key === logicalId.slice('functions.'.length),
+    );
+    if (!fn) continue;
+    const logstoreInstance = resourceState.instances?.find(
+      (i) => (i as { type?: string }).type === 'ALIYUN_SLS_LOGSTORE',
+    ) as { id?: string } | undefined;
+    const [project, logstore] = logstoreInstance?.id?.split('/') ?? [];
+    peers.push({ fn, ...(project && logstore ? { logConfig: { project, logstore } } : {}) });
+  }
+  return peers;
+};
+
+const unionTrustedServices = (serviceLists: string[][]): string[] => [
+  ...new Set(serviceLists.flat()),
+];
+
+/**
+ * Legacy shared roles serve every function that recorded them, so their trust
+ * and derived policy must be the union across those functions — a single
+ * function's update would otherwise strip another function's requirements.
+ */
+const resolveRoleGrant = (
+  context: Context,
+  state: StateFile | undefined,
+  fn: FunctionDomain,
+  logConfig: { project: string; logstore: string } | undefined,
+  roleId: string,
+): { trustedServices: string[]; executionStatements: IamStatement[] } => {
+  const storedPeers = state ? collectRolePeers(state, context, roleId) : [];
+  const currentStored = storedPeers.find((peer) => peer.fn.key === fn.key);
+  const peers: RolePeer[] = currentStored
+    ? [...storedPeers]
+    : [{ fn, ...(logConfig ? { logConfig } : {}) }, ...storedPeers];
+  if (peers.length <= 1) {
+    return {
+      trustedServices: getTrustedServicesForFunction(context, fn),
+      executionStatements: deriveFc3ExecutionStatements(fn, context, logConfig),
+    };
+  }
+  return {
+    trustedServices: unionTrustedServices(
+      peers.map((peer) => getTrustedServicesForFunction(context, peer.fn)),
+    ),
+    executionStatements: unionPolicyStatements(
+      peers.map((peer) => deriveFc3ExecutionStatements(peer.fn, context, peer.logConfig)),
+    ),
+  };
+};
 
 export const deriveFc3ExecutionStatements = (
   fn: FunctionDomain,
@@ -388,10 +449,11 @@ const createDependentResources = async (
     const ramRoleInstance = existingInstances.find((i) => i.type === 'ALIYUN_RAM_ROLE');
     if (ramRoleInstance) {
       instances.push(ramRoleInstance);
-      await client.ram.updateRoleTrustPolicy(ramRoleInstance.id, trustedServices);
+      const roleGrant = resolveRoleGrant(context, state, fn, logConfig, ramRoleInstance.id);
+      await client.ram.updateRoleTrustPolicy(ramRoleInstance.id, roleGrant.trustedServices);
       await client.ram.updateExecutionPolicyDocument(
         ramRoleInstance.id,
-        buildFc3ExecutionPolicyDocument(executionStatements, statements),
+        buildFc3ExecutionPolicyDocument(roleGrant.executionStatements, statements),
       );
     }
   } else {
@@ -1016,11 +1078,11 @@ export const updateResource = async (
         arn: ramRoleInstance.roleArn ?? `acs:ram::${context.accountId}:role/${ramRoleInstance.id}`,
       };
 
-      const trustedServices = getTrustedServicesForFunction(context, fn);
-      await client.ram.updateRoleTrustPolicy(ramRoleInstance.id, trustedServices);
+      const roleGrant = resolveRoleGrant(context, state, fn, logConfig, ramRoleInstance.id);
+      await client.ram.updateRoleTrustPolicy(ramRoleInstance.id, roleGrant.trustedServices);
       await client.ram.updateExecutionPolicyDocument(
         ramRoleInstance.id,
-        buildFc3ExecutionPolicyDocument(executionStatements, customStatements),
+        buildFc3ExecutionPolicyDocument(roleGrant.executionStatements, customStatements),
       );
 
       const existingIam = existingState?.definition?.iam as Record<string, unknown> | undefined;

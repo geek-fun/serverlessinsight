@@ -368,7 +368,11 @@ export const createIamOperations = (iamClient: IamSdkClient) => {
                 },
               });
 
-              const policyName = await createAndAttachPolicy(roleName, config.executionStatements);
+              const policyName = await createAndAttachPolicy(
+                roleName,
+                config.executionStatements,
+                config.customStatements,
+              );
 
               if (config.managedPolicies && config.managedPolicies.length > 0) {
                 for (const policyArn of config.managedPolicies) {

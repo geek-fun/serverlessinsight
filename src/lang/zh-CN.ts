@@ -466,6 +466,8 @@ export const zhCN = {
     '事件 "{{eventKey}}" 的触发器后端 "{{backend}}" 匹配的是函数 key "{{key}}"，但裸值必须是已部署函数名。模板函数请使用引用形式 "${functions.{{key}}}"',
   SEMANTIC_BACKEND_BARE_NAME:
     '事件 "{{eventKey}}" 的触发器后端 "{{backend}}" 按名称解析为模板函数 "{{key}}"，建议使用引用形式 "${functions.{{key}}}"',
+  SEMANTIC_EXTERNAL_BACKEND_VOLCENGINE:
+    '事件 "{{eventKey}}" 的触发器后端 "{{backend}}" 不是本模板中的函数。Volcengine API Gateway 上游要求使用模板管理的函数——请使用引用形式 "${functions.{{key}}}" 或在本模板中定义该函数',
   EXTERNAL_FUNCTION_BACKEND: '后端 "{{backendRef}}" 未在当前模板中定义，将按外部已部署函数名处理',
 
   // Show command messages
