@@ -462,6 +462,11 @@ export const zhCN = {
     '生成的 API Gateway route name "{{routeName}}" 在 "{{firstPath}}" 与 "{{secondPath}}" 之间发生冲突；请缩短事件名称或区分触发器的 method/path',
   SEMANTIC_UNRESOLVED_FUNCTION_BACKEND:
     '事件 "{{eventKey}}" 的触发器后端 "{{reference}}" 未匹配到配置中的任何函数定义',
+  SEMANTIC_BACKEND_BARE_KEY:
+    '事件 "{{eventKey}}" 的触发器后端 "{{backend}}" 匹配的是函数 key "{{key}}"，但裸值必须是已部署函数名。模板函数请使用引用形式 "${functions.{{key}}}"',
+  SEMANTIC_BACKEND_BARE_NAME:
+    '事件 "{{eventKey}}" 的触发器后端 "{{backend}}" 按名称解析为模板函数 "{{key}}"，建议使用引用形式 "${functions.{{key}}}"',
+  EXTERNAL_FUNCTION_BACKEND: '后端 "{{backendRef}}" 未在当前模板中定义，将按外部已部署函数名处理',
 
   // Show command messages
   LOADING_STATE_FOR: '正在加载应用 {{app}}、服务 {{service}}、阶段 {{stage}} 的状态...',
@@ -552,6 +557,8 @@ export const zhCN = {
     'RAM 角色 "{{roleName}}" 状态漂移恢复失败：{{error}}。' +
     '角色在云端存在但恢复操作失败。' +
     '修复方法：在云控制台手动确认角色状态，从状态中移除该角色并重新部署。',
+  RAM_POLICY_VERSION_PRUNE_FAILED:
+    '策略 "{{policyName}}" 旧版本清理失败：{{error}}。' + '下次更新时策略版本数可能超出上限。',
 
   // 证书消息
   CERT_INVALID_CONFIGURATION:

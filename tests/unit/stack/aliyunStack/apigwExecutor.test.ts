@@ -144,6 +144,54 @@ describe('ApigwExecutor', () => {
       );
     });
 
+    it('should pass a roleArn resolver through to createApigwResource', async () => {
+      const plan: Plan = {
+        items: [
+          {
+            logicalId: 'events.test_api',
+            action: 'create',
+            resourceType: 'ALIYUN_APIGW',
+          },
+        ],
+      };
+
+      const newState = {
+        ...initialState,
+        resources: {
+          'events.test_api': {
+            mode: 'managed',
+            region: 'cn-hangzhou',
+            definition: { groupName: 'test-service-default-test-api-agw-group' },
+            instances: [{ sid: 'si:test:test:default:test', id: 'test-group' }],
+            lastUpdated: new Date().toISOString(),
+          },
+        },
+      };
+
+      const resolver = (backend: string) =>
+        backend === 'userFunction' ? 'arn:fn-a' : 'arn:fallback';
+      (apigwResource.createApigwResource as jest.Mock).mockResolvedValue(newState);
+
+      const result = await executeApigwPlan(
+        mockContext,
+        plan,
+        [testEvent],
+        serviceName,
+        resolver,
+        initialState,
+      );
+
+      expect(result.state).toEqual(newState);
+      expect(result.partialFailure).toBeUndefined();
+      expect(apigwResource.createApigwResource).toHaveBeenCalledWith(
+        mockContext,
+        testEvent,
+        serviceName,
+        resolver,
+        initialState,
+      );
+    });
+
     it('should execute update action successfully', async () => {
       const plan: Plan = {
         items: [

@@ -101,4 +101,16 @@ export const CONSTRAINT_NAME_LIMITS = {
   ALIYUN_CREATE_API_NAME: 50,
   ALIYUN_API_GROUP_NAME: 50,
   VOLCENGINE_ROUTE_NAME: 63,
+  FUNCTION_ROLE_NAME: 64,
 } as const;
+
+/** Single source of truth for per-function execution role names across all providers. */
+export const buildFunctionRoleName = (serviceName: string, stage: string, fnKey: string): string =>
+  buildConstrainedName({
+    parts: [serviceName, stage, fnKey, 'role'],
+    maxLength: CONSTRAINT_NAME_LIMITS.FUNCTION_ROLE_NAME,
+    charset: 'hyphen',
+  });
+
+/** Single source of truth for the execution policy name attached to a role. */
+export const buildRolePolicyName = (roleName: string): string => `${roleName}-policy`;

@@ -269,4 +269,83 @@ describe('Deployer Integration', () => {
       });
     });
   });
+
+  describe('buildRoleArnResolver', () => {
+    const fnA = { key: 'fn_a', name: 'fn-a-name', storage: {} };
+    const fnB = { key: 'fn_b', name: 'fn-b-name', storage: {} };
+
+    const stateWithRoles: StateFile = {
+      ...initialState,
+      resources: {
+        'functions.fn_a': {
+          mode: 'managed',
+          region: 'cn-hangzhou',
+          definition: {},
+          instances: [
+            { sid: 's', id: 'role-fn-a', type: 'ALIYUN_RAM_ROLE', roleArn: 'arn:role-fn-a' },
+          ],
+          lastUpdated: '',
+        },
+        'functions.fn_b': {
+          mode: 'managed',
+          region: 'cn-hangzhou',
+          definition: {},
+          instances: [
+            { sid: 's', id: 'role-fn-b', type: 'ALIYUN_RAM_ROLE', roleArn: 'arn:role-fn-b' },
+          ],
+          lastUpdated: '',
+        },
+      },
+    };
+
+    it('resolves a template reference backend to that function role', () => {
+      const { buildRoleArnResolver } = require('../../../../src/stack/aliyunStack/deployer');
+      const resolver = buildRoleArnResolver(stateWithRoles, [fnA, fnB]);
+
+      expect(resolver('${functions.fn_a}')).toBe('arn:role-fn-a');
+      expect(resolver('${functions.fn_b}')).toBe('arn:role-fn-b');
+    });
+
+    it('resolves a bare backend matching a template function name to that function role', () => {
+      const { buildRoleArnResolver } = require('../../../../src/stack/aliyunStack/deployer');
+      const resolver = buildRoleArnResolver(stateWithRoles, [fnA, fnB]);
+
+      expect(resolver('fn-b-name')).toBe('arn:role-fn-b');
+    });
+
+    it('falls back to the first managed role for an external backend', () => {
+      const { buildRoleArnResolver } = require('../../../../src/stack/aliyunStack/deployer');
+      const resolver = buildRoleArnResolver(stateWithRoles, [fnA, fnB]);
+
+      expect(resolver('external-deployed-fn')).toBe('arn:role-fn-a');
+    });
+
+    it('falls back to the first managed role when the referenced function has no role', () => {
+      const { buildRoleArnResolver } = require('../../../../src/stack/aliyunStack/deployer');
+      const stateWithRolelessFn: StateFile = {
+        ...initialState,
+        resources: {
+          'functions.fn_a': {
+            mode: 'managed',
+            region: 'cn-hangzhou',
+            definition: {},
+            instances: [],
+            lastUpdated: '',
+          },
+          'functions.fn_b': {
+            mode: 'managed',
+            region: 'cn-hangzhou',
+            definition: {},
+            instances: [
+              { sid: 's', id: 'role-fn-b', type: 'ALIYUN_RAM_ROLE', roleArn: 'arn:role-fn-b' },
+            ],
+            lastUpdated: '',
+          },
+        },
+      };
+      const resolver = buildRoleArnResolver(stateWithRolelessFn, [fnA, fnB]);
+
+      expect(resolver('${functions.fn_a}')).toBe('arn:role-fn-b');
+    });
+  });
 });

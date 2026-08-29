@@ -1,4 +1,5 @@
 import { createCamOperations } from '../../../../src/common/tencentClient/camOperations';
+import type { IamStatement } from '../../../../src/common/iamStatements';
 
 jest.mock('../../../../src/common/logger', () => ({
   logger: {
@@ -332,6 +333,62 @@ describe('camOperations', () => {
         expect.arrayContaining([expect.objectContaining({ Sid: 'MyCustomSid' })]),
       );
     });
+
+    it('should use executionStatements as the policy baseline when provided', async () => {
+      mockCamClient.CreateRole.mockResolvedValue({ RoleId: 'role-123' });
+      mockCamClient.GetRole.mockResolvedValue({
+        RoleInfo: { RoleId: 'role-123', RoleName: 'baseline-role', RoleArn: '' },
+      });
+      mockCamClient.CreatePolicy.mockResolvedValue({ PolicyId: 1 });
+      mockCamClient.AttachRolePolicy.mockResolvedValue({});
+
+      const baseline: IamStatement[] = [
+        { effect: 'Allow', action: ['scf:InvokeFunction'], resource: ['*'] },
+      ];
+      await operations.createRole(
+        'baseline-role',
+        ['scf.qcloud.com'],
+        undefined,
+        [{ effect: 'Allow', action: ['cos:PutObject'], resource: ['qcs::cos:::*'] }],
+        undefined,
+        baseline,
+      );
+
+      const policyDocCall = mockCamClient.CreatePolicy.mock.calls[0][0];
+      const parsedDoc = JSON.parse(policyDocCall.PolicyDocument);
+      // Derived baseline first, then custom statements.
+      expect(parsedDoc.Statement).toHaveLength(2);
+      expect(parsedDoc.Statement[0].Action).toEqual(['scf:InvokeFunction']);
+      expect(parsedDoc.Statement[1].Action).toEqual(['cos:PutObject']);
+      // The static SCF default (cls/cos baseline) must NOT leak in.
+      expect(JSON.stringify(parsedDoc)).not.toContain('cls:logset');
+    });
+
+    it('should use executionStatements baseline in RoleAlreadyExist recovery', async () => {
+      const alreadyExists = Object.assign(new Error('RoleAlreadyExist'), {
+        code: 'InvalidParameter.RoleAlreadyExist',
+      });
+      mockCamClient.CreateRole.mockRejectedValueOnce(alreadyExists);
+      mockCamClient.GetRole.mockResolvedValue({
+        RoleInfo: { RoleId: 'role-123', RoleName: 'recover-role', RoleArn: '' },
+      });
+      mockCamClient.CreatePolicy.mockResolvedValue({ PolicyId: 1 });
+      mockCamClient.AttachRolePolicy.mockResolvedValue({});
+
+      await operations.createRole(
+        'recover-role',
+        ['scf.qcloud.com'],
+        undefined,
+        undefined,
+        undefined,
+        [{ effect: 'Allow', action: ['scf:InvokeFunction'], resource: ['*'] }],
+      );
+
+      const policyDocCall = mockCamClient.CreatePolicy.mock.calls[0][0];
+      const parsedDoc = JSON.parse(policyDocCall.PolicyDocument);
+      expect(parsedDoc.Statement).toHaveLength(1);
+      expect(parsedDoc.Statement[0].Action).toEqual(['scf:InvokeFunction']);
+    });
   });
 
   describe('getRole', () => {
@@ -513,6 +570,25 @@ describe('camOperations', () => {
       mockCamClient.CreatePolicy.mockRejectedValue(new Error('CreatePolicyFailed'));
 
       await expect(operations.updateRolePolicy('test-role')).rejects.toThrow('CreatePolicyFailed');
+    });
+
+    it('should use executionStatements baseline in updateRolePolicy', async () => {
+      mockCamClient.DetachRolePolicy.mockResolvedValue({});
+      mockCamClient.ListPolicies.mockResolvedValue({ List: [] });
+      mockCamClient.CreatePolicy.mockResolvedValue({ PolicyId: 2 });
+      mockCamClient.AttachRolePolicy.mockResolvedValue({});
+
+      await operations.updateRolePolicy(
+        'test-role',
+        [{ effect: 'Allow', action: ['cos:DeleteObject'], resource: ['*'] }],
+        [{ effect: 'Allow', action: ['scf:InvokeFunction'], resource: ['*'] }],
+      );
+
+      const policyDocCall = mockCamClient.CreatePolicy.mock.calls[0][0];
+      const parsedDoc = JSON.parse(policyDocCall.PolicyDocument);
+      expect(parsedDoc.Statement).toHaveLength(2);
+      expect(parsedDoc.Statement[0].Action).toEqual(['scf:InvokeFunction']);
+      expect(parsedDoc.Statement[1].Action).toEqual(['cos:DeleteObject']);
     });
   });
 

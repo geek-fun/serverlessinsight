@@ -2,6 +2,7 @@ import { ProviderEnum } from '../../../../src/common';
 import {
   createResource,
   deleteResource,
+  deriveFc3ExecutionStatements,
   readResource,
   updateResource,
 } from '../../../../src/stack/aliyunStack/fc3Resource';
@@ -55,6 +56,7 @@ const mockedRamOperations = {
   createRole: jest.fn(),
   updateRoleTrustPolicy: jest.fn(),
   updateRolePolicy: jest.fn(),
+  updateExecutionPolicyDocument: jest.fn(),
   updateManagedPolicies: jest.fn(),
   deleteRole: jest.fn(),
 };
@@ -230,6 +232,7 @@ describe('Fc3Resource', () => {
       arn: 'acs:ram::123456789012:role/test-role',
     });
     mockedRamOperations.updateRolePolicy.mockResolvedValue(undefined);
+    mockedRamOperations.updateExecutionPolicyDocument.mockResolvedValue(undefined);
     mockedRamOperations.updateManagedPolicies.mockResolvedValue(undefined);
     mockedRamOperations.deleteRole.mockResolvedValue(undefined);
     mockedSlsOperations.createProject.mockResolvedValue({ projectName: 'test-sls' });
@@ -1108,6 +1111,138 @@ describe('Fc3Resource', () => {
       expect(mockedRamOperations.updateRoleTrustPolicy).toHaveBeenCalledWith(
         'test-app-test-service-default-fc-role',
         ['fc.aliyuncs.com'],
+      );
+    });
+
+    it('should add apigateway trust when a bare backend equals the function deployed name (issue #227)', async () => {
+      const stateWithRamRole: StateFile = {
+        ...initialState,
+        resources: {
+          'functions.test_fn': {
+            mode: 'managed',
+            region: 'cn-hangzhou',
+            definition: mockDefinition,
+            instances: [
+              {
+                sid: 'si:aliyun:ram:default:test-app-test-service-default-fc-role',
+                roleArn: 'acs:ram::123456789012:role/test-app-test-service-default-fc-role',
+                id: 'test-app-test-service-default-fc-role',
+                type: 'ALIYUN_RAM_ROLE',
+              },
+              {
+                sid: 'si:aliyun:fc3:default:test-function',
+                id: 'test-function',
+                type: 'ALIYUN_FC3_FUNCTION',
+              },
+            ],
+            lastUpdated: '2025-01-01T00:00:00Z',
+          },
+        },
+      };
+
+      const contextWithBareNameBackend: Context = {
+        ...mockContext,
+        iac: {
+          version: '0.0.1',
+          app: 'test-app',
+          provider: {
+            name: ProviderEnum.ALIYUN,
+            region: 'cn-hangzhou',
+          },
+          service: 'test-service',
+          events: [
+            {
+              key: 'api_gateway',
+              name: 'test-api',
+              type: 'API_GATEWAY',
+              triggers: [
+                {
+                  method: 'GET',
+                  path: '/api/test',
+                  backend: 'test-function',
+                },
+              ],
+            },
+          ],
+        },
+      };
+
+      mockedFc3Operations.updateFunctionConfiguration.mockResolvedValue(undefined);
+      mockedFc3Operations.updateFunctionCode.mockResolvedValue(undefined);
+      const newState = { ...stateWithRamRole, _updated: true };
+      mockedStateManager.setResource.mockReturnValue(newState);
+
+      await updateResource(contextWithBareNameBackend, testFunction, stateWithRamRole);
+
+      expect(mockedRamOperations.updateRoleTrustPolicy).toHaveBeenCalledWith(
+        'test-app-test-service-default-fc-role',
+        ['fc.aliyuncs.com', 'apigateway.aliyuncs.com'],
+      );
+    });
+
+    it('should add apigateway trust for an external bare backend (gateway assumes the managed role, issue #227)', async () => {
+      const stateWithRamRole: StateFile = {
+        ...initialState,
+        resources: {
+          'functions.test_fn': {
+            mode: 'managed',
+            region: 'cn-hangzhou',
+            definition: mockDefinition,
+            instances: [
+              {
+                sid: 'si:aliyun:ram:default:test-app-test-service-default-fc-role',
+                roleArn: 'acs:ram::123456789012:role/test-app-test-service-default-fc-role',
+                id: 'test-app-test-service-default-fc-role',
+                type: 'ALIYUN_RAM_ROLE',
+              },
+              {
+                sid: 'si:aliyun:fc3:default:test-function',
+                id: 'test-function',
+                type: 'ALIYUN_FC3_FUNCTION',
+              },
+            ],
+            lastUpdated: '2025-01-01T00:00:00Z',
+          },
+        },
+      };
+
+      const contextWithExternalBackend: Context = {
+        ...mockContext,
+        iac: {
+          version: '0.0.1',
+          app: 'test-app',
+          provider: {
+            name: ProviderEnum.ALIYUN,
+            region: 'cn-hangzhou',
+          },
+          service: 'test-service',
+          events: [
+            {
+              key: 'api_gateway',
+              name: 'test-api',
+              type: 'API_GATEWAY',
+              triggers: [
+                {
+                  method: 'GET',
+                  path: '/api/test',
+                  backend: 'external-deployed-fn',
+                },
+              ],
+            },
+          ],
+        },
+      };
+
+      mockedFc3Operations.updateFunctionConfiguration.mockResolvedValue(undefined);
+      mockedFc3Operations.updateFunctionCode.mockResolvedValue(undefined);
+      const newState = { ...stateWithRamRole, _updated: true };
+      mockedStateManager.setResource.mockReturnValue(newState);
+
+      await updateResource(contextWithExternalBackend, testFunction, stateWithRamRole);
+
+      expect(mockedRamOperations.updateRoleTrustPolicy).toHaveBeenCalledWith(
+        'test-app-test-service-default-fc-role',
+        ['fc.aliyuncs.com', 'apigateway.aliyuncs.com'],
       );
     });
 
@@ -2318,11 +2453,11 @@ describe('Fc3Resource', () => {
       expect(mockedSlsOperations.createProject).toHaveBeenCalledWith('test-app-default-sls');
       expect(mockedSlsOperations.createLogstore).toHaveBeenCalledWith(
         'test-app-default-sls',
-        'test-service-default-fn-logs',
+        'test-service-default-test-fn-fn-logs',
       );
       expect(mockedSlsOperations.createIndex).toHaveBeenCalledWith(
         'test-app-default-sls',
-        'test-service-default-fn-logs',
+        'test-service-default-test-fn-fn-logs',
       );
       expect(mockedSlsOperations.waitForLogstore).toHaveBeenCalled();
       expect(mockedFc3Types.functionToFc3Config).toHaveBeenCalled();
@@ -2379,7 +2514,7 @@ describe('Fc3Resource', () => {
       expect(mockedSlsOperations.createProject).toHaveBeenCalledWith('test-app-default-sls');
       expect(mockedSlsOperations.createLogstore).toHaveBeenCalledWith(
         'test-app-default-sls',
-        'test-service-default-fn-logs',
+        'test-service-default-test-fn-fn-logs',
       );
       const fnResource = result.resources['functions.test_fn'];
       const instanceTypes = fnResource.instances.map((i) => i.type as string);
@@ -3330,6 +3465,7 @@ describe('Fc3Resource', () => {
         undefined,
         fnWithCustomRole.iam.role.statements,
         ['AliyunOSSFullAccess', 'AliyunLogFullAccess'],
+        expect.any(Array),
       );
       expect(mockedFc3Operations.createFunction).toHaveBeenCalledWith(
         expect.objectContaining({
@@ -3357,19 +3493,20 @@ describe('Fc3Resource', () => {
       };
 
       mockedRamOperations.createRole.mockResolvedValueOnce({
-        roleName: 'test-app-test-service-default-fc-role',
-        arn: 'acs:ram::123456789012:role/test-app-test-service-default-fc-role',
-        policyName: 'test-app-test-service-default-fc-role-policy',
+        roleName: 'test-app-test-service-default-test-fn-role',
+        arn: 'acs:ram::123456789012:role/test-app-test-service-default-test-fn-role',
+        policyName: 'test-app-test-service-default-test-fn-role-policy',
       });
 
       await createResource(mockContext, fnWithDefaultRole, initialState);
 
       expect(mockedRamOperations.createRole).toHaveBeenCalledWith(
-        'test-app-test-service-default-fc-role',
+        'test-app-test-service-default-test-fn-role',
         ['fc.aliyuncs.com'],
         undefined,
         fnWithDefaultRole.iam.role.statements,
         undefined,
+        expect.any(Array),
       );
     });
 
@@ -3514,6 +3651,7 @@ describe('Fc3Resource', () => {
       expect(mockedRamOperations.updateRolePolicy).toHaveBeenCalledWith(
         'test-app-test-service-default-fc-role',
         fnWithUpdatedStatements.iam.role.statements,
+        expect.any(Array),
       );
     });
 
@@ -3620,6 +3758,217 @@ describe('Fc3Resource', () => {
       // External role should NOT be deleted
       expect(mockedRamOperations.deleteRole).not.toHaveBeenCalled();
       expect(result).toEqual(initialState);
+    });
+  });
+
+  describe('deriveFc3ExecutionStatements', () => {
+    it('yields only fc+log statements for a bare function', () => {
+      const statements = deriveFc3ExecutionStatements(testFunction, mockContext);
+
+      expect(statements).toHaveLength(2);
+      expect(statements[0]).toEqual({
+        effect: 'Allow',
+        action: ['fc:InvokeFunction'],
+        resource: ['*'],
+      });
+      expect(statements[1].effect).toBe('Allow');
+      expect(statements[1].action).toEqual([
+        'log:PostLogStoreLogs',
+        'log:CreateLogStore',
+        'log:GetLogStore',
+        'log:ListShards',
+        'log:GetCursorOrData',
+      ]);
+      expect(statements[1].resource).toEqual(['*']);
+    });
+
+    it('scopes the log resource when logConfig and accountId are known', () => {
+      const statements = deriveFc3ExecutionStatements(testFunction, mockContext, {
+        project: 'test-sls',
+        logstore: 'test-logstore',
+      });
+
+      expect(statements[1].resource).toEqual([
+        'acs:log:cn-hangzhou:123456789012:project/test-sls/logstore/test-logstore',
+      ]);
+    });
+
+    it('adds ecs/vpc statements when fn.network is present', () => {
+      const fnWithNetwork = {
+        ...testFunction,
+        network: {
+          vpc_id: 'vpc-123',
+          subnet_ids: ['vsw-123'],
+          security_group: { name: 'sg', ingress: [] as string[], egress: [] as string[] },
+        },
+      };
+
+      const statements = deriveFc3ExecutionStatements(fnWithNetwork, mockContext);
+      const actions = statements.flatMap((s) => s.action);
+
+      expect(actions).toContain('ecs:CreateNetworkInterface');
+      expect(actions).toContain('ecs:DeleteNetworkInterface');
+      expect(actions).toContain('ecs:DescribeNetworkInterfaces');
+      expect(actions).toContain('ecs:CreateNetworkInterfacePermission');
+      expect(actions).toContain('ecs:DescribeNetworkInterfacePermissions');
+      expect(actions).toContain('ecs:DeleteNetworkInterfacePermission');
+      expect(actions).toContain('vpc:DescribeVSwitchAttributes');
+    });
+
+    it('adds nas statements when fn.storage.nas is present', () => {
+      const fnWithNas = {
+        ...testFunction,
+        network: {
+          vpc_id: 'vpc-123',
+          subnet_ids: ['vsw-123'],
+          security_group: { name: 'sg', ingress: [] as string[], egress: [] as string[] },
+        },
+        storage: {
+          nas: [
+            {
+              storage_class: NasStorageClassEnum.STANDARD_CAPACITY,
+              mount_path: '/mnt/data',
+            },
+          ],
+        },
+      };
+
+      const statements = deriveFc3ExecutionStatements(fnWithNas, mockContext);
+
+      expect(statements.some((s) => s.action.includes('nas:*'))).toBe(true);
+    });
+  });
+
+  describe('per-function execution role naming', () => {
+    it('creates a per-function role named with the function key on new deployment', async () => {
+      mockedFc3Operations.getFunction.mockResolvedValueOnce(mockFunctionInfo);
+      mockedFc3Operations.createFunction.mockResolvedValue(undefined);
+      const readyState = { ...initialState, _ready: true };
+      mockedStateManager.setResource.mockReturnValue(readyState);
+      mockedRamOperations.createRole.mockResolvedValue({
+        roleName: 'test-app-test-service-default-test-fn-role',
+        arn: 'acs:ram::123456789012:role/test-app-test-service-default-test-fn-role',
+      });
+
+      await createResource(mockContext, testFunction, initialState);
+
+      expect(mockedRamOperations.createRole).toHaveBeenCalledWith(
+        'test-app-test-service-default-test-fn-role',
+        ['fc.aliyuncs.com'],
+        undefined,
+        undefined,
+        undefined,
+        expect.any(Array),
+      );
+      expect(mockedFc3Operations.createFunction).toHaveBeenCalledWith(
+        expect.objectContaining({
+          role: 'acs:ram::123456789012:role/test-app-test-service-default-test-fn-role',
+        }),
+        'test.zip',
+        undefined,
+      );
+    });
+
+    it('reuses the existing role id on redeploy without recreating the role', async () => {
+      const taintedStateWithLegacyRole: StateFile = {
+        ...initialState,
+        resources: {
+          'functions.test_fn': {
+            mode: 'managed',
+            region: 'cn-hangzhou',
+            definition: mockDefinition,
+            instances: [
+              {
+                sid: 'si:aliyun:ram:default:test-app-test-service-default-fc-role',
+                roleArn: 'acs:ram::123456789012:role/test-app-test-service-default-fc-role',
+                id: 'test-app-test-service-default-fc-role',
+                type: 'ALIYUN_RAM_ROLE',
+                roleName: 'test-app-test-service-default-fc-role',
+              },
+            ],
+            lastUpdated: '2025-01-01T00:00:00Z',
+            status: 'tainted',
+          },
+        },
+      };
+      mockedFc3Operations.createFunction.mockResolvedValue(undefined);
+      mockedStateManager.setResource.mockReturnValue(taintedStateWithLegacyRole);
+
+      await createResource(mockContext, testFunction, taintedStateWithLegacyRole);
+
+      expect(mockedRamOperations.createRole).not.toHaveBeenCalled();
+      expect(mockedRamOperations.updateRoleTrustPolicy).toHaveBeenCalledWith(
+        'test-app-test-service-default-fc-role',
+        ['fc.aliyuncs.com'],
+      );
+      expect(mockedRamOperations.updateExecutionPolicyDocument).toHaveBeenCalledWith(
+        'test-app-test-service-default-fc-role',
+        expect.stringContaining('fc:InvokeFunction'),
+      );
+    });
+  });
+
+  describe('updateResource policy propagation', () => {
+    const stateWithRamRole = (): StateFile => ({
+      ...initialState,
+      resources: {
+        'functions.test_fn': {
+          mode: 'managed',
+          region: 'cn-hangzhou',
+          definition: mockDefinition,
+          instances: [
+            {
+              sid: 'si:aliyun:ram:default:test-app-test-service-default-fc-role',
+              roleArn: 'acs:ram::123456789012:role/test-app-test-service-default-fc-role',
+              id: 'test-app-test-service-default-fc-role',
+              type: 'ALIYUN_RAM_ROLE',
+            },
+            {
+              sid: 'si:aliyun:fc3:default:test-function',
+              id: 'test-function',
+              type: 'ALIYUN_FC3_FUNCTION',
+            },
+          ],
+          lastUpdated: '2025-01-01T00:00:00Z',
+        },
+      },
+    });
+
+    it('propagates the derived execution policy document on redeploy', async () => {
+      mockedFc3Operations.updateFunctionConfiguration.mockResolvedValue(undefined);
+      mockedFc3Operations.updateFunctionCode.mockResolvedValue(undefined);
+      mockedStateManager.setResource.mockReturnValue({ ...stateWithRamRole(), _updated: true });
+
+      await updateResource(mockContext, testFunction, stateWithRamRole());
+
+      expect(mockedRamOperations.updateRoleTrustPolicy).toHaveBeenCalledWith(
+        'test-app-test-service-default-fc-role',
+        ['fc.aliyuncs.com'],
+      );
+      expect(mockedRamOperations.updateExecutionPolicyDocument).toHaveBeenCalledWith(
+        'test-app-test-service-default-fc-role',
+        expect.stringContaining('fc:InvokeFunction'),
+      );
+    });
+
+    it('merges custom statements after the derived baseline in the propagated document', async () => {
+      const fnWithCustomStatements = {
+        ...testFunction,
+        iam: {
+          role: {
+            statements: [{ effect: 'Allow' as const, action: ['oss:GetObject'], resource: ['*'] }],
+          },
+        },
+      };
+      mockedFc3Operations.updateFunctionConfiguration.mockResolvedValue(undefined);
+      mockedFc3Operations.updateFunctionCode.mockResolvedValue(undefined);
+      mockedStateManager.setResource.mockReturnValue({ ...stateWithRamRole(), _updated: true });
+
+      await updateResource(mockContext, fnWithCustomStatements, stateWithRamRole());
+
+      const docArg = mockedRamOperations.updateExecutionPolicyDocument.mock.calls[0][1] as string;
+      const parsed = JSON.parse(docArg) as { Statement: Array<{ Action: string[] }> };
+      expect(parsed.Statement.some((s) => s.Action.includes('oss:GetObject'))).toBe(true);
     });
   });
 });

@@ -339,35 +339,36 @@ describe('sharedLogProject (aliyun)', () => {
   });
 
   describe('ensureFunctionLogstore', () => {
-    it('creates service-scoped function logstore in shared project', async () => {
+    it('creates a per-function logstore in the shared project', async () => {
       const result = await ensureFunctionLogstore(
         mockContext,
         mockClient as never,
         'test-app-dev-sls',
+        'test_fn',
       );
 
-      expect(result).toEqual({ logstoreName: 'test-service-dev-fn-logs' });
+      expect(result).toEqual({ logstoreName: 'test-service-dev-test-fn-fn-logs' });
       expect(mockClient.sls.getLogstore).toHaveBeenCalledWith(
         'test-app-dev-sls',
-        'test-service-dev-fn-logs',
+        'test-service-dev-test-fn-fn-logs',
       );
       expect(mockClient.sls.createLogstore).toHaveBeenCalledWith(
         'test-app-dev-sls',
-        'test-service-dev-fn-logs',
+        'test-service-dev-test-fn-fn-logs',
       );
       expect(mockClient.sls.createIndex).toHaveBeenCalledWith(
         'test-app-dev-sls',
-        'test-service-dev-fn-logs',
+        'test-service-dev-test-fn-fn-logs',
       );
       expect(mockClient.sls.waitForLogstore).toHaveBeenCalledWith(
         'test-app-dev-sls',
-        'test-service-dev-fn-logs',
+        'test-service-dev-test-fn-fn-logs',
       );
     });
 
     it('reuses an existing function logstore without re-creating it', async () => {
       mockClient.sls.getLogstore.mockResolvedValue({
-        logstoreName: 'test-service-dev-fn-logs',
+        logstoreName: 'test-service-dev-test-fn-fn-logs',
         projectName: 'test-app-dev-sls',
       });
 
@@ -375,9 +376,10 @@ describe('sharedLogProject (aliyun)', () => {
         mockContext,
         mockClient as never,
         'test-app-dev-sls',
+        'test_fn',
       );
 
-      expect(result).toEqual({ logstoreName: 'test-service-dev-fn-logs' });
+      expect(result).toEqual({ logstoreName: 'test-service-dev-test-fn-fn-logs' });
       expect(mockClient.sls.createLogstore).not.toHaveBeenCalled();
       expect(mockClient.sls.createIndex).not.toHaveBeenCalled();
     });

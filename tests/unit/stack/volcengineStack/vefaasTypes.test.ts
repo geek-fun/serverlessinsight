@@ -3,8 +3,10 @@ import {
   functionToVefaasConfig,
   extractVefaasDefinition,
   buildDefaultTrustPolicy,
+  deriveVefaasExecutionStatements,
 } from '../../../../src/stack/volcengineStack/vefaasTypes';
 import type { FunctionDomain } from '../../../../src/types';
+import { NasStorageClassEnum } from '../../../../src/types';
 
 describe('vefaasTypes', () => {
   const mockFn: FunctionDomain = {
@@ -59,6 +61,56 @@ describe('vefaasTypes', () => {
           events: [
             {
               triggers: [{ backend: '${functions.other_fn}' }],
+            },
+          ],
+        },
+      };
+
+      const result = getTrustedServicesForFunction(mockFn, context as never);
+
+      expect(result).toEqual(['vefaas']);
+    });
+
+    it('should include apigateway when a bare backend equals the function deployed name (issue #227)', () => {
+      const context = {
+        iac: {
+          events: [
+            {
+              triggers: [{ backend: 'test-function' }],
+            },
+          ],
+        },
+      };
+
+      const result = getTrustedServicesForFunction(mockFn, context as never);
+
+      expect(result).toEqual(['vefaas', 'apigateway']);
+    });
+
+    it('should include apigateway for an external bare backend that matches no template function (issue #227)', () => {
+      const context = {
+        iac: {
+          functions: [{ key: 'other_fn', name: 'other-function' }],
+          events: [
+            {
+              triggers: [{ backend: 'external-deployed-fn' }],
+            },
+          ],
+        },
+      };
+
+      const result = getTrustedServicesForFunction(mockFn, context as never);
+
+      expect(result).toEqual(['vefaas', 'apigateway']);
+    });
+
+    it('should not treat a bare value matching another template function key as this function trigger', () => {
+      const context = {
+        iac: {
+          functions: [{ key: 'other_fn', name: 'other-function' }],
+          events: [
+            {
+              triggers: [{ backend: 'other_fn' }],
             },
           ],
         },
@@ -172,6 +224,112 @@ describe('vefaasTypes', () => {
       expect(result.Statement[0].Effect).toBe('Allow');
       expect(result.Statement[0].Principal.Service).toEqual(services);
       expect(result.Statement[0].Action).toContain('sts:AssumeRole');
+    });
+  });
+
+  describe('deriveVefaasExecutionStatements', () => {
+    const context = {} as never;
+
+    it('returns only vefaas and tls baseline for a bare function', () => {
+      const result = deriveVefaasExecutionStatements(mockFn, context);
+
+      expect(result).toEqual([
+        { effect: 'Allow', action: ['vefaas:*'], resource: ['*'] },
+        {
+          effect: 'Allow',
+          action: ['tls:CreateProject', 'tls:CreateTopic', 'tls:PutLogs'],
+          resource: ['*'],
+        },
+      ]);
+    });
+
+    it('adds vpc describe statements when network is configured', () => {
+      const fnWithNetwork: FunctionDomain = {
+        ...mockFn,
+        network: {
+          vpc_id: 'vpc-123',
+          subnet_ids: ['subnet-1'],
+          security_group: { name: 'sg-1', ingress: [], egress: [] },
+        },
+      };
+
+      const result = deriveVefaasExecutionStatements(fnWithNetwork, context);
+
+      expect(result).toHaveLength(3);
+      expect(result).toEqual(
+        expect.arrayContaining([
+          {
+            effect: 'Allow',
+            action: ['vpc:DescribeVpcs', 'vpc:DescribeSubnets', 'vpc:DescribeSecurityGroups'],
+            resource: ['*'],
+          },
+        ]),
+      );
+    });
+
+    it('adds tos object statements when a TOS mount is configured', () => {
+      const fnWithTos: FunctionDomain = {
+        ...mockFn,
+        storage: {
+          nas: [
+            { mount_path: '/mnt/tos', storage_class: NasStorageClassEnum.STANDARD_PERFORMANCE },
+          ],
+        },
+      };
+
+      const result = deriveVefaasExecutionStatements(fnWithTos, context);
+
+      expect(result).toHaveLength(3);
+      expect(result).toEqual(
+        expect.arrayContaining([
+          {
+            effect: 'Allow',
+            action: ['tos:GetObject', 'tos:PutObject', 'tos:DeleteObject', 'tos:ListBucket'],
+            resource: ['*'],
+          },
+        ]),
+      );
+    });
+
+    it('includes vpc and tos statements when both are configured', () => {
+      const fnWithBoth: FunctionDomain = {
+        ...mockFn,
+        network: {
+          vpc_id: 'vpc-123',
+          subnet_ids: ['subnet-1'],
+          security_group: { name: 'sg-1', ingress: [], egress: [] },
+        },
+        storage: {
+          nas: [
+            { mount_path: '/mnt/tos', storage_class: NasStorageClassEnum.STANDARD_PERFORMANCE },
+          ],
+        },
+      };
+
+      const result = deriveVefaasExecutionStatements(fnWithBoth, context);
+
+      expect(result).toHaveLength(4);
+      expect(result.map((s) => s.action[0])).toEqual([
+        'vefaas:*',
+        'tls:CreateProject',
+        'vpc:DescribeVpcs',
+        'tos:GetObject',
+      ]);
+    });
+
+    it('does not include custom iam statements in the derived baseline', () => {
+      const fnWithIam: FunctionDomain = {
+        ...mockFn,
+        iam: {
+          role: {
+            statements: [{ effect: 'Allow', action: ['ecs:DescribeInstances'], resource: ['*'] }],
+          },
+        },
+      };
+
+      const result = deriveVefaasExecutionStatements(fnWithIam, context);
+
+      expect(result).toHaveLength(2);
     });
   });
 });

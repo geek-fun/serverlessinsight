@@ -328,7 +328,10 @@ describe('SCF Planner', () => {
       });
       expect(plan.items[0].changes?.after).toEqual(
         expect.objectContaining({
-          logConfig: { logset: 'test-app-default-cls', topic: 'test-service-default-fn-logs' },
+          logConfig: {
+            logset: 'test-app-default-cls',
+            topic: 'test-service-default-test_fn-fn-logs',
+          },
         }),
       );
     });

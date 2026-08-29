@@ -118,7 +118,9 @@ export const getIacDefinition = (
     return iac.functions?.find((fc) => fc.key === matchFn[1]);
   }
 
-  return iac.functions?.find((fc) => fc.key === rawValue);
+  // Bare values are the function's deployed NAME, never its key — resolving by
+  // key here would reintroduce the issue #227 trust-policy incident.
+  return iac.functions?.find((fc) => fc.name === rawValue);
 };
 
 /* istanbul ignore next */

@@ -9,6 +9,7 @@ import {
   PartialResourceError,
 } from '../../types';
 import { createApigwResource, deleteApigwResource, updateApigwResource } from './apigwResource';
+import { RoleArnParam } from './apigwTypes';
 import { logger } from '../../common';
 import { reportResourceEvent } from '../../common/reportResourceEvent';
 import { getResource } from '../../common/stateManager';
@@ -19,7 +20,7 @@ const executeSingleItem = async (
   item: PlanItem,
   eventsMap: Map<string, EventDomain>,
   serviceName: string,
-  roleArn: string | undefined,
+  resolveRoleArn: RoleArnParam,
   currentState: StateFile,
 ): Promise<StateFile | null> => {
   switch (item.action) {
@@ -39,7 +40,7 @@ const executeSingleItem = async (
         context,
         event,
         serviceName,
-        roleArn,
+        resolveRoleArn,
         currentState,
       );
       logger.info(
@@ -60,7 +61,7 @@ const executeSingleItem = async (
         context,
         event,
         serviceName,
-        roleArn,
+        resolveRoleArn,
         currentState,
       );
       logger.info(
@@ -107,7 +108,7 @@ export const executeApigwPlan = async (
   plan: Plan,
   events: Array<EventDomain> | undefined,
   serviceName: string,
-  roleArn: string | undefined,
+  resolveRoleArn: RoleArnParam,
   initialState: StateFile,
   onStateChange?: SaveStateFn,
 ): Promise<ExecutionResult> => {
@@ -131,7 +132,7 @@ export const executeApigwPlan = async (
         item,
         eventsMap,
         serviceName,
-        roleArn,
+        resolveRoleArn,
         currentState,
       );
       if (newState !== null) {

@@ -10,6 +10,11 @@ const mockDetachPolicyFromRole = jest.fn();
 const mockDeletePolicy = jest.fn();
 const mockDeleteRole = jest.fn();
 const mockListPoliciesForRole = jest.fn();
+const mockGetPolicy = jest.fn();
+const mockGetPolicyVersion = jest.fn();
+const mockCreatePolicyVersion = jest.fn();
+const mockListPolicyVersions = jest.fn();
+const mockDeletePolicyVersion = jest.fn();
 
 const mockRamClient = {
   createPolicy: mockCreatePolicy,
@@ -21,6 +26,11 @@ const mockRamClient = {
   deletePolicy: mockDeletePolicy,
   deleteRole: mockDeleteRole,
   listPoliciesForRole: mockListPoliciesForRole,
+  getPolicy: mockGetPolicy,
+  getPolicyVersion: mockGetPolicyVersion,
+  createPolicyVersion: mockCreatePolicyVersion,
+  listPolicyVersions: mockListPolicyVersions,
+  deletePolicyVersion: mockDeletePolicyVersion,
 } as unknown as RamClient;
 
 jest.mock('../../../../src/common/logger', () => ({
@@ -115,7 +125,18 @@ describe('ramOperations', () => {
       });
 
       mockUpdateRole.mockResolvedValue({});
-      mockCreatePolicy.mockResolvedValue({});
+      mockGetPolicy.mockResolvedValue({
+        body: {
+          policy: { policyName: 'fc-execution-role-policy', defaultVersion: 'v1' },
+        },
+      });
+      mockGetPolicyVersion.mockResolvedValue({
+        body: { policyVersion: { versionId: 'v1', policyDocument: '{"stale":true}' } },
+      });
+      mockListPolicyVersions.mockResolvedValue({
+        body: { policyVersions: { policyVersion: [] } },
+      });
+      mockCreatePolicyVersion.mockResolvedValue({});
       mockAttachPolicyToRole.mockResolvedValue({});
 
       const result = await operations.createRole('fc-execution-role', ['fc.aliyuncs.com']);
@@ -123,6 +144,7 @@ describe('ramOperations', () => {
       expect(result.roleName).toBe('fc-execution-role');
       expect(mockGetRole).toHaveBeenCalled();
       expect(mockUpdateRole).toHaveBeenCalled();
+      expect(mockCreatePolicyVersion).toHaveBeenCalled();
     });
 
     it('should throw on role creation failure', async () => {
@@ -538,6 +560,153 @@ describe('ramOperations', () => {
       expect(customStmt.Sid).toBeUndefined();
       expect(customStmt.Effect).toBe('Deny');
       expect(customStmt.Action).toEqual(['ram:DeleteRole']);
+    });
+  });
+
+  describe('createRole with executionStatements', () => {
+    it('should use the provided execution statements as the policy baseline', async () => {
+      mockCreateRole.mockResolvedValue({
+        body: {
+          role: {
+            roleName: 'fc-execution-role',
+            roleId: 'role-123',
+            arn: 'arn:aliyun:ram::123456789:role/fc-execution-role',
+          },
+        },
+      });
+      mockCreatePolicy.mockResolvedValue({});
+      mockAttachPolicyToRole.mockResolvedValue({});
+
+      const baseline = [
+        { effect: 'Allow' as const, action: ['fc:InvokeFunction'], resource: ['*'] },
+      ];
+      const custom = [{ effect: 'Allow' as const, action: ['oss:GetObject'], resource: ['*'] }];
+
+      await operations.createRole(
+        'fc-execution-role',
+        ['fc.aliyuncs.com'],
+        undefined,
+        custom,
+        undefined,
+        baseline,
+      );
+
+      const policyDoc = JSON.parse(mockCreatePolicy.mock.calls[0][0].policyDocument);
+      expect(policyDoc.Statement).toHaveLength(2);
+      expect(policyDoc.Statement[0].Action).toEqual(['fc:InvokeFunction']);
+      expect(policyDoc.Statement[1].Action).toEqual(['oss:GetObject']);
+    });
+  });
+
+  describe('updateExecutionPolicyDocument', () => {
+    const desiredDoc = JSON.stringify({
+      Version: '1',
+      Statement: [
+        { Effect: 'Allow', Action: ['fc:InvokeFunction'], Resource: '*' },
+        { Effect: 'Allow', Action: ['log:GetLogStore'], Resource: '*' },
+      ],
+    });
+    const existingDoc = JSON.stringify({
+      Version: '1',
+      Statement: [{ Effect: 'Allow', Action: ['log:GetLogStore'], Resource: '*' }],
+    });
+
+    beforeEach(() => {
+      mockGetPolicy.mockResolvedValue({
+        body: {
+          policy: { policyName: 'fc-execution-role-policy', defaultVersion: 'v1' },
+        },
+      });
+      mockGetPolicyVersion.mockResolvedValue({
+        body: { policyVersion: { versionId: 'v1', policyDocument: existingDoc } },
+      });
+      mockListPolicyVersions.mockResolvedValue({
+        body: { policyVersions: { policyVersion: [] } },
+      });
+      mockCreatePolicyVersion.mockResolvedValue({});
+      mockDeletePolicyVersion.mockResolvedValue({});
+      mockAttachPolicyToRole.mockResolvedValue({});
+    });
+
+    it('should not create a new version when the document is identical', async () => {
+      await operations.updateExecutionPolicyDocument('fc-execution-role', existingDoc);
+
+      expect(mockGetPolicy).toHaveBeenCalledWith(
+        expect.objectContaining({ policyName: 'fc-execution-role-policy', policyType: 'Custom' }),
+      );
+      expect(mockCreatePolicyVersion).not.toHaveBeenCalled();
+      expect(mockAttachPolicyToRole).not.toHaveBeenCalled();
+    });
+
+    it('should create a new version and ensure attachment when the document changed', async () => {
+      await operations.updateExecutionPolicyDocument('fc-execution-role', desiredDoc);
+
+      expect(mockCreatePolicyVersion).toHaveBeenCalledWith(
+        expect.objectContaining({
+          policyName: 'fc-execution-role-policy',
+          policyDocument: desiredDoc,
+          setAsDefault: true,
+        }),
+      );
+      expect(mockAttachPolicyToRole).toHaveBeenCalledWith(
+        expect.objectContaining({
+          policyType: 'Custom',
+          policyName: 'fc-execution-role-policy',
+          roleName: 'fc-execution-role',
+        }),
+      );
+    });
+
+    it('should create the policy when it does not exist yet', async () => {
+      const notFound = new Error('EntityNotExist.Policy');
+      Object.assign(notFound, { code: 'EntityNotExist.Policy' });
+      mockGetPolicy.mockRejectedValue(notFound);
+
+      await operations.updateExecutionPolicyDocument('fc-execution-role', desiredDoc);
+
+      expect(mockCreatePolicy).toHaveBeenCalledWith(
+        expect.objectContaining({
+          policyName: 'fc-execution-role-policy',
+          policyDocument: desiredDoc,
+        }),
+      );
+      expect(mockCreatePolicyVersion).not.toHaveBeenCalled();
+      expect(mockAttachPolicyToRole).toHaveBeenCalled();
+    });
+
+    it('should prune the oldest non-default version when at the version limit', async () => {
+      mockListPolicyVersions.mockResolvedValue({
+        body: {
+          policyVersions: {
+            policyVersion: [
+              { versionId: 'v1', isDefaultVersion: true, createDate: '2023-01-01T00:00:00Z' },
+              { versionId: 'v2', isDefaultVersion: false, createDate: '2023-01-02T00:00:00Z' },
+              { versionId: 'v3', isDefaultVersion: false, createDate: '2023-01-03T00:00:00Z' },
+              { versionId: 'v4', isDefaultVersion: false, createDate: '2023-01-04T00:00:00Z' },
+              { versionId: 'v5', isDefaultVersion: false, createDate: '2023-01-05T00:00:00Z' },
+            ],
+          },
+        },
+      });
+
+      await operations.updateExecutionPolicyDocument('fc-execution-role', desiredDoc);
+
+      expect(mockDeletePolicyVersion).toHaveBeenCalledWith(
+        expect.objectContaining({ policyName: 'fc-execution-role-policy', versionId: 'v2' }),
+      );
+      expect(mockCreatePolicyVersion).toHaveBeenCalledWith(
+        expect.objectContaining({ policyName: 'fc-execution-role-policy', setAsDefault: true }),
+      );
+    });
+
+    it('should ignore an already-attached error when ensuring attachment', async () => {
+      const alreadyAttached = new Error('EntityAlreadyExists.Role.Policy');
+      Object.assign(alreadyAttached, { code: 'EntityAlreadyExists.Role.Policy' });
+      mockAttachPolicyToRole.mockRejectedValue(alreadyAttached);
+
+      await expect(
+        operations.updateExecutionPolicyDocument('fc-execution-role', desiredDoc),
+      ).resolves.toBeUndefined();
     });
   });
 

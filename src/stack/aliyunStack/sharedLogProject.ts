@@ -1,5 +1,5 @@
 import { createAliyunClient } from '../../common/aliyunClient';
-import { getSharedResource, buildSid } from '../../common';
+import { getSharedResource, buildSid, buildConstrainedName } from '../../common';
 import type { Context, ResourceState, StateFile } from '../../types';
 import { logger } from '../../common/logger';
 import { lang } from '../../lang';
@@ -16,7 +16,28 @@ type AliyunClient = ReturnType<typeof createAliyunClient>;
  */
 export const SHARED_LOG_PROJECT_KEY = 'logs.project';
 
-export const buildSharedProjectName = (app: string, stage: string): string => `${app}-${stage}-sls`;
+const SLS_NAME_MAX_LENGTH = 63;
+
+export const buildSharedProjectName = (app: string, stage: string): string =>
+  buildConstrainedName({
+    parts: [app, stage, 'sls'],
+    maxLength: SLS_NAME_MAX_LENGTH,
+    charset: 'hyphen',
+  });
+
+export const buildFunctionLogstoreName = (service: string, stage: string, fnKey: string): string =>
+  buildConstrainedName({
+    parts: [service, stage, fnKey, 'fn-logs'],
+    maxLength: SLS_NAME_MAX_LENGTH,
+    charset: 'hyphen',
+  });
+
+export const buildGatewayLogstoreName = (service: string, stage: string): string =>
+  buildConstrainedName({
+    parts: [service, stage, 'apigw-logs'],
+    maxLength: SLS_NAME_MAX_LENGTH,
+    charset: 'hyphen',
+  });
 
 export const resolveSharedProjectName = (shared: ResourceState): string | undefined => {
   const instanceId = (shared.instances?.[0] as { id?: string } | undefined)?.id;
@@ -171,12 +192,13 @@ export const ensureFunctionLogstore = async (
   context: Context,
   client: AliyunClient,
   projectName: string,
+  fnKey: string,
 ): Promise<{ logstoreName: string }> => {
   return ensureLogstoreInSharedProject(
     context,
     client,
     projectName,
-    `${context.service}-${context.stage}-fn-logs`,
+    buildFunctionLogstoreName(context.service, context.stage, fnKey),
   );
 };
 
@@ -189,6 +211,6 @@ export const ensureGatewayLogstore = async (
     context,
     client,
     projectName,
-    `${context.service}-${context.stage}-apigw-logs`,
+    buildGatewayLogstoreName(context.service, context.stage),
   );
 };

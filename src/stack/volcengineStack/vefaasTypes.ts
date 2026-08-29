@@ -1,5 +1,8 @@
-import { FunctionDomain } from '../../types';
+import { Context, FunctionDomain } from '../../types';
 import type { VefaasFunctionConfig, VefaasRuntime } from '../../common/volcengineClient/types';
+import type { IamStatement } from '../../common/iamStatements';
+
+const TEMPLATE_REF_PATTERN = /^\$\{[^}]+\}$/;
 
 export type VefaasFunctionDefinition = {
   functionName: string;
@@ -103,19 +106,41 @@ export type VefaasFunctionInfo = {
 /**
  * Determines which Volcengine services should be trusted to assume the function's IAM role.
  *
- * IMPORTANT: `trigger.backend` is expected to be an *unresolved* YAML reference string in the
- * form `${functions.<functionKey>}` (e.g. `${functions.my_fn}`). This function compares against
- * that raw string — NOT against a resolved function name or ARN. If the backend value has already
- * been resolved to a function name, this check will silently return false and `apigateway` will
- * NOT be added to the trust policy, breaking API Gateway invocation.
+ * Backend semantics (issue #227): `${functions.<key>}` references a template function
+ * by key; a bare value is the function's *deployed name* — either a template function
+ * referenced by name or an external function defined outside this template. External
+ * backends still need apigateway trust: the gateway assumes this managed role as its
+ * invocation identity.
  */
 const getTrustedServicesForFunction = (
   fn: FunctionDomain,
-  context: { iac?: { events?: Array<{ triggers?: Array<{ backend?: string }> }> } },
+  context: {
+    iac?: {
+      events?: Array<{ triggers?: Array<{ backend?: string }> }>;
+      functions?: Array<{ key: string; name?: string }>;
+    };
+  },
 ): string[] => {
+  const templateFunctions = context.iac?.functions ?? [];
+  const templateKeys = new Set(templateFunctions.map((templateFn) => templateFn.key));
+  const templateNames = new Set(
+    templateFunctions
+      .map((templateFn) => templateFn.name)
+      .filter((name): name is string => name !== undefined),
+  );
   const expectedBackendRef = `\${functions.${fn.key}}`;
   const hasApiGateway = context.iac?.events?.some((event) =>
-    event.triggers?.some((trigger) => String(trigger.backend) === expectedBackendRef),
+    event.triggers?.some((trigger) => {
+      const backend = String(trigger.backend);
+      if (backend === expectedBackendRef || backend === fn.name) {
+        return true;
+      }
+      return (
+        !TEMPLATE_REF_PATTERN.test(backend) &&
+        !templateKeys.has(backend) &&
+        !templateNames.has(backend)
+      );
+    }),
   );
   return hasApiGateway ? ['vefaas', 'apigateway'] : ['vefaas'];
 };
@@ -197,6 +222,44 @@ export const buildDefaultTrustPolicy = (
       },
     ],
   };
+};
+
+/**
+ * Derive the least-privilege execution policy statements for a veFaaS function.
+ *
+ * The baseline is always the platform runtime (vefaas) plus the function
+ * logging (tls) statement sets; VPC-describe statements are only added when
+ * the function configures a network, and TOS-object statements only when it
+ * mounts TOS storage. Conditions mirror the truthiness used when mapping the
+ * function into a VefaasFunctionConfig (see vefaasResource).
+ */
+export const deriveVefaasExecutionStatements = (
+  fn: FunctionDomain,
+  _context: Context,
+): IamStatement[] => {
+  const vefaasBaseline: IamStatement[] = [
+    { effect: 'Allow', action: ['vefaas:*'], resource: ['*'] },
+    {
+      effect: 'Allow',
+      action: ['tls:CreateProject', 'tls:CreateTopic', 'tls:PutLogs'],
+      resource: ['*'],
+    },
+  ];
+  const vpcStatement: IamStatement = {
+    effect: 'Allow',
+    action: ['vpc:DescribeVpcs', 'vpc:DescribeSubnets', 'vpc:DescribeSecurityGroups'],
+    resource: ['*'],
+  };
+  const tosStatement: IamStatement = {
+    effect: 'Allow',
+    action: ['tos:GetObject', 'tos:PutObject', 'tos:DeleteObject', 'tos:ListBucket'],
+    resource: ['*'],
+  };
+  return [
+    ...vefaasBaseline,
+    ...(fn.network ? [vpcStatement] : []),
+    ...(fn.storage?.nas?.[0] ? [tosStatement] : []),
+  ];
 };
 
 export { getTrustedServicesForFunction };

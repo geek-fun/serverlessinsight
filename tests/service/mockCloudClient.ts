@@ -61,6 +61,7 @@ export type MockAliyunClient = {
     detachPolicyFromRole: jest.Mock;
     updateRolePolicy: jest.Mock;
     updateRoleTrustPolicy: jest.Mock;
+    updateExecutionPolicyDocument: jest.Mock;
   };
   nas: {
     createFileSystem: jest.Mock;
@@ -196,6 +197,7 @@ export const createMockAliyunClient = (): MockAliyunClient => {
       updateRoleTrustPolicy: jest
         .fn()
         .mockResolvedValue({ body: { Role: { RoleName: 'test-role' } } }),
+      updateExecutionPolicyDocument: jest.fn().mockResolvedValue(undefined),
     },
     nas: {
       createFileSystem: jest.fn().mockResolvedValue({ body: { fileSystemId: 'fs-123' } }),
@@ -280,6 +282,13 @@ export type MockTencentClient = {
     DeleteTopic: jest.Mock;
     CreateIndex: jest.Mock;
   };
+  cam: {
+    createRole: jest.Mock;
+    getRole: jest.Mock;
+    deleteRole: jest.Mock;
+    updateRolePolicy: jest.Mock;
+    updateManagedPolicies: jest.Mock;
+  };
   cos: {
     putBucket: jest.Mock;
     getBucket: jest.Mock;
@@ -314,6 +323,22 @@ export const createMockTencentClient = (): MockTencentClient => ({
     ModifyTopic: jest.fn().mockResolvedValue({}),
     DeleteTopic: jest.fn().mockResolvedValue({}),
     CreateIndex: jest.fn().mockResolvedValue({}),
+  },
+  cam: {
+    createRole: jest.fn().mockResolvedValue({
+      roleName: 'test-role',
+      roleId: 'role-123',
+      roleArn: 'test-role',
+      policyName: 'test-role-policy',
+    }),
+    getRole: jest.fn().mockResolvedValue({
+      roleName: 'test-role',
+      roleId: 'role-123',
+      roleArn: 'test-role',
+    }),
+    deleteRole: jest.fn().mockResolvedValue(undefined),
+    updateRolePolicy: jest.fn().mockResolvedValue(undefined),
+    updateManagedPolicies: jest.fn().mockResolvedValue(undefined),
   },
   cos: {
     putBucket: jest.fn().mockResolvedValue({}),

@@ -20,46 +20,76 @@ jest.mock('../../../../src/common/volcengineClient', () => ({
   createVolcengineClient: jest.fn(),
 }));
 
-jest.mock('../../../../src/common', () => ({
-  setResource: jest.fn((state, logicalId, resourceState) => ({
-    ...state,
-    resources: { ...state.resources, [logicalId]: resourceState },
-  })),
-  removeResource: jest.fn((state, logicalId) => ({
-    ...state,
-    resources: Object.fromEntries(
-      Object.entries(state.resources).filter(([key]) => key !== logicalId),
+jest.mock('../../../../src/common', () => {
+  const constrainedName = ({
+    parts,
+    maxLength,
+    charset,
+  }: {
+    parts: string[];
+    maxLength: number;
+    charset: string;
+  }) => {
+    const separator = charset === 'underscore' ? '_' : '-';
+    const invalid = charset === 'underscore' ? /[^A-Za-z0-9_]/g : /[^A-Za-z0-9-]/g;
+    const joined = parts
+      .map((part) => part.replace(invalid, separator))
+      .filter((part) => part.length > 0)
+      .join(separator);
+    return joined.length <= maxLength ? joined : joined.slice(0, maxLength);
+  };
+
+  return {
+    setResource: jest.fn((state, logicalId, resourceState) => ({
+      ...state,
+      resources: { ...state.resources, [logicalId]: resourceState },
+    })),
+    removeResource: jest.fn((state, logicalId) => ({
+      ...state,
+      resources: Object.fromEntries(
+        Object.entries(state.resources).filter(([key]) => key !== logicalId),
+      ),
+    })),
+    getResource: jest.fn(),
+    setSharedResource: jest.fn((state, stage, key, resourceState) => ({
+      ...state,
+      stages: {
+        ...state.stages,
+        [stage]: {
+          ...state.stages?.[stage],
+          resources: state.stages?.[stage]?.resources ?? {},
+          shared: { ...state.stages?.[stage]?.shared, [key]: resourceState },
+        },
+      },
+    })),
+    getSharedResource: jest.fn((state, stage, key) => state.stages?.[stage]?.shared?.[key]),
+    removeSharedResource: jest.fn((state, stage, key) => ({
+      ...state,
+      stages: {
+        ...state.stages,
+        [stage]: {
+          ...state.stages?.[stage],
+          shared: Object.fromEntries(
+            Object.entries(state.stages?.[stage]?.shared ?? {}).filter(([k]) => k !== key),
+          ),
+        },
+      },
+    })),
+    computeZipContentHash: jest.fn().mockResolvedValue('test-hash-123'),
+    buildSid: jest.fn(
+      (provider, service, stage, name) => `${provider}-${service}-${stage}-${name}`,
     ),
-  })),
-  getResource: jest.fn(),
-  setSharedResource: jest.fn((state, stage, key, resourceState) => ({
-    ...state,
-    stages: {
-      ...state.stages,
-      [stage]: {
-        ...state.stages?.[stage],
-        resources: state.stages?.[stage]?.resources ?? {},
-        shared: { ...state.stages?.[stage]?.shared, [key]: resourceState },
-      },
-    },
-  })),
-  getSharedResource: jest.fn((state, stage, key) => state.stages?.[stage]?.shared?.[key]),
-  removeSharedResource: jest.fn((state, stage, key) => ({
-    ...state,
-    stages: {
-      ...state.stages,
-      [stage]: {
-        ...state.stages?.[stage],
-        shared: Object.fromEntries(
-          Object.entries(state.stages?.[stage]?.shared ?? {}).filter(([k]) => k !== key),
-        ),
-      },
-    },
-  })),
-  computeZipContentHash: jest.fn().mockResolvedValue('test-hash-123'),
-  buildSid: jest.fn((provider, service, stage, name) => `${provider}-${service}-${stage}-${name}`),
-  attributesEqual: jest.fn((a, b) => JSON.stringify(a) === JSON.stringify(b)),
-}));
+    attributesEqual: jest.fn((a, b) => JSON.stringify(a) === JSON.stringify(b)),
+    buildConstrainedName: jest.fn(constrainedName),
+    buildFunctionRoleName: jest.fn((serviceName: string, stage: string, fnKey: string) =>
+      constrainedName({
+        parts: [serviceName, stage, fnKey, 'role'],
+        maxLength: 64,
+        charset: 'hyphen',
+      }),
+    ),
+  };
+});
 
 jest.mock('../../../../src/common/logger', () => ({
   logger: {
@@ -406,7 +436,7 @@ describe('vefaasResource', () => {
       });
       mockVefaasClient.tls.createTopic.mockResolvedValue({
         topicId: 'topic-1',
-        topicName: 'test-service-dev-fn-logs',
+        topicName: 'test-service-dev-test_fn-fn-logs',
       });
       mockVefaasClient.tls.getTopic.mockResolvedValue(null);
       mockVefaasClient.vefaas.createFunction.mockResolvedValueOnce({ functionId: 'func-123' });
@@ -427,7 +457,7 @@ describe('vefaasResource', () => {
       expect(mockVefaasClient.tls.createTopic).toHaveBeenCalledWith(
         expect.objectContaining({
           projectName: 'test-app-dev-tls',
-          topicName: 'test-service-dev-fn-logs',
+          topicName: 'test-service-dev-test_fn-fn-logs',
         }),
       );
       expect(mockVefaasClient.tls.addTags).toHaveBeenCalledWith(
@@ -458,7 +488,7 @@ describe('vefaasResource', () => {
       expect(saved.instances.some((i) => i.type === 'VOLCENGINE_TLS_TOPIC')).toBe(true);
       expect(mockVefaasClient.vefaas.createFunction).toHaveBeenCalledWith(
         expect.objectContaining({
-          logConfig: { project: 'test-app-dev-tls', topic: 'test-service-dev-fn-logs' },
+          logConfig: { project: 'test-app-dev-tls', topic: 'test-service-dev-test_fn-fn-logs' },
         }),
         expect.any(String),
       );
@@ -993,8 +1023,60 @@ describe('vefaasResource', () => {
 
       expect(mockVefaasClient.iam.createRole).toHaveBeenCalledWith(
         expect.objectContaining({
-          roleName: 'test-app-test-service-dev-role',
+          roleName: 'test-app-test-service-dev-test-fn-role',
           managedPolicies: ['AdministratorAccess', 'ReadOnlyAccess'],
+        }),
+      );
+    });
+
+    it('creates a per-function role name including fn.key for new deployments', async () => {
+      mockVefaasClient.vefaas.createFunction.mockResolvedValueOnce({ functionId: 'func-123' });
+      mockVefaasClient.vefaas.getFunction.mockResolvedValueOnce({
+        functionName: 'test-function',
+        functionId: 'func-123',
+        runtime: 'nodejs16',
+        handler: 'index.handler',
+        memoryMb: 128,
+        requestTimeout: 30,
+      });
+
+      await createResource(mockContext, mockFunction, mockState);
+
+      expect(mockVefaasClient.iam.createRole).toHaveBeenCalledWith(
+        expect.objectContaining({ roleName: 'test-app-test-service-dev-test-fn-role' }),
+      );
+    });
+
+    it('passes the derived execution baseline to createRole', async () => {
+      const fnWithNetwork: FunctionDomain = {
+        ...mockFunction,
+        network: {
+          vpc_id: 'vpc-123',
+          subnet_ids: ['subnet-1'],
+          security_group: { name: 'sg-1', ingress: [], egress: [] },
+        },
+      };
+
+      mockVefaasClient.vefaas.createFunction.mockResolvedValueOnce({ functionId: 'func-123' });
+      mockVefaasClient.vefaas.getFunction.mockResolvedValueOnce({
+        functionName: 'test-function',
+        functionId: 'func-123',
+        runtime: 'nodejs16',
+        handler: 'index.handler',
+        memoryMb: 128,
+        requestTimeout: 30,
+      });
+
+      await createResource(mockContext, fnWithNetwork, mockState);
+
+      expect(mockVefaasClient.iam.createRole).toHaveBeenCalledWith(
+        expect.objectContaining({
+          roleName: 'test-app-test-service-dev-test-fn-role',
+          executionStatements: expect.arrayContaining([
+            expect.objectContaining({
+              action: ['vpc:DescribeVpcs', 'vpc:DescribeSubnets', 'vpc:DescribeSecurityGroups'],
+            }),
+          ]),
         }),
       );
     });
@@ -1788,6 +1870,207 @@ describe('vefaasResource', () => {
       expect(mockVefaasClient.iam.updateRolePolicy).not.toHaveBeenCalled();
       expect(mockVefaasClient.iam.updateManagedPolicies).not.toHaveBeenCalled();
       expect(mockVefaasClient.iam.createRole).not.toHaveBeenCalled();
+    });
+
+    it('skips updateRolePolicy when neither derived inputs nor custom statements changed', async () => {
+      const stateWithRole: StateFile = {
+        ...mockState,
+        resources: {
+          'functions.test_fn': {
+            mode: 'managed',
+            region: 'cn-beijing',
+            definition: {
+              functionName: 'test-function',
+              codeHash: 'test-hash-123',
+              runtime: 'nodejs16',
+              handler: 'index.handler',
+              memorySize: 128,
+              timeout: 30,
+            },
+            instances: [
+              {
+                type: 'VOLCENGINE_VEFAAS_FUNCTION',
+                sid: 'volcengine-test-service-dev-test-function',
+                id: 'test-function',
+                functionName: 'test-function',
+                functionId: 'func-123',
+              },
+              {
+                type: 'VOLCENGINE_IAM_ROLE',
+                sid: 'volcengine-iam_role-dev-role',
+                id: 'test-app-test-service-dev-role',
+                trn: 'trn:iam::123456:role/test-app-test-service-dev-role',
+              },
+            ],
+            lastUpdated: '2024-01-01T00:00:00Z',
+          },
+        },
+      };
+
+      (getResource as jest.Mock).mockReturnValue(stateWithRole.resources['functions.test_fn']);
+      (attributesEqual as jest.Mock).mockReturnValue(true);
+
+      mockVefaasClient.vefaas.getFunctionById.mockResolvedValue({
+        functionName: 'test-function',
+        functionId: 'func-123',
+        runtime: 'nodejs16',
+        handler: 'index.handler',
+        memoryMb: 128,
+        requestTimeout: 30,
+      });
+
+      await updateResource(mockContext, mockFunction, stateWithRole);
+
+      expect(mockVefaasClient.iam.updateRolePolicy).not.toHaveBeenCalled();
+    });
+
+    it('calls updateRolePolicy with the derived baseline when network is added', async () => {
+      const fnWithNetwork: FunctionDomain = {
+        ...mockFunction,
+        network: {
+          vpc_id: 'vpc-123',
+          subnet_ids: ['subnet-1'],
+          security_group: { name: 'sg-1', ingress: [], egress: [] },
+        },
+      };
+
+      const stateWithoutVpc: StateFile = {
+        ...mockState,
+        resources: {
+          'functions.test_fn': {
+            mode: 'managed',
+            region: 'cn-beijing',
+            definition: {
+              functionName: 'test-function',
+              codeHash: 'test-hash-123',
+              runtime: 'nodejs16',
+              handler: 'index.handler',
+              memorySize: 128,
+              timeout: 30,
+            },
+            instances: [
+              {
+                type: 'VOLCENGINE_VEFAAS_FUNCTION',
+                sid: 'volcengine-test-service-dev-test-function',
+                id: 'test-function',
+                functionName: 'test-function',
+                functionId: 'func-123',
+              },
+              {
+                type: 'VOLCENGINE_IAM_ROLE',
+                sid: 'volcengine-iam_role-dev-role',
+                id: 'test-app-test-service-dev-role',
+                trn: 'trn:iam::123456:role/test-app-test-service-dev-role',
+              },
+            ],
+            lastUpdated: '2024-01-01T00:00:00Z',
+          },
+        },
+      };
+
+      (getResource as jest.Mock).mockReturnValue(stateWithoutVpc.resources['functions.test_fn']);
+      (attributesEqual as jest.Mock).mockReturnValue(true);
+
+      mockVefaasClient.vefaas.getFunctionById.mockResolvedValue({
+        functionName: 'test-function',
+        functionId: 'func-123',
+        runtime: 'nodejs16',
+        handler: 'index.handler',
+        memoryMb: 128,
+        requestTimeout: 30,
+      });
+
+      await updateResource(mockContext, fnWithNetwork, stateWithoutVpc);
+
+      expect(mockVefaasClient.iam.updateRolePolicy).toHaveBeenCalledWith(
+        'test-app-test-service-dev-role',
+        expect.arrayContaining([
+          expect.objectContaining({
+            action: ['vpc:DescribeVpcs', 'vpc:DescribeSubnets', 'vpc:DescribeSecurityGroups'],
+          }),
+        ]),
+        undefined,
+      );
+    });
+
+    it('calls updateRolePolicy when custom statements change', async () => {
+      const fnWithCustomStatements: FunctionDomain = {
+        ...mockFunction,
+        iam: {
+          role: {
+            statements: [
+              { effect: 'Allow', action: ['ecs:DescribeInstances'], resource: ['*'] },
+              { effect: 'Allow', action: ['oss:ListBuckets'], resource: ['*'] },
+            ],
+          },
+        },
+      };
+
+      const stateWithOldStatements: StateFile = {
+        ...mockState,
+        resources: {
+          'functions.test_fn': {
+            mode: 'managed',
+            region: 'cn-beijing',
+            definition: {
+              functionName: 'test-function',
+              codeHash: 'test-hash-123',
+              runtime: 'nodejs16',
+              handler: 'index.handler',
+              memorySize: 128,
+              timeout: 30,
+              iam: {
+                role: {
+                  statements: [
+                    { effect: 'Allow', action: ['ecs:DescribeInstances'], resource: ['*'] },
+                  ],
+                },
+              },
+            },
+            instances: [
+              {
+                type: 'VOLCENGINE_VEFAAS_FUNCTION',
+                sid: 'volcengine-test-service-dev-test-function',
+                id: 'test-function',
+                functionName: 'test-function',
+                functionId: 'func-123',
+              },
+              {
+                type: 'VOLCENGINE_IAM_ROLE',
+                sid: 'volcengine-iam_role-dev-role',
+                id: 'test-app-test-service-dev-role',
+                trn: 'trn:iam::123456:role/test-app-test-service-dev-role',
+              },
+            ],
+            lastUpdated: '2024-01-01T00:00:00Z',
+          },
+        },
+      };
+
+      (getResource as jest.Mock).mockReturnValue(
+        stateWithOldStatements.resources['functions.test_fn'],
+      );
+      (attributesEqual as jest.Mock).mockReturnValue(true);
+
+      mockVefaasClient.vefaas.getFunctionById.mockResolvedValue({
+        functionName: 'test-function',
+        functionId: 'func-123',
+        runtime: 'nodejs16',
+        handler: 'index.handler',
+        memoryMb: 128,
+        requestTimeout: 30,
+      });
+
+      await updateResource(mockContext, fnWithCustomStatements, stateWithOldStatements);
+
+      expect(mockVefaasClient.iam.updateRolePolicy).toHaveBeenCalledWith(
+        'test-app-test-service-dev-role',
+        expect.arrayContaining([expect.objectContaining({ action: ['vefaas:*'] })]),
+        [
+          { effect: 'Allow', action: ['ecs:DescribeInstances'], resource: ['*'] },
+          { effect: 'Allow', action: ['oss:ListBuckets'], resource: ['*'] },
+        ],
+      );
     });
   });
 

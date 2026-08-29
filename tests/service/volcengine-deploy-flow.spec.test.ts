@@ -124,7 +124,7 @@ describe('Volcengine Deploy Flow Service Test', () => {
       expect(mockClient.tls.createTopic).toHaveBeenCalledWith(
         expect.objectContaining({
           projectName: 'insight-volc-app-dev-tls',
-          topicName: 'insight-volc-dev-fn-logs',
+          topicName: 'insight-volc-dev-insight_poc_fn-fn-logs',
         }),
       );
       expect(mockClient.tls.addTags).toHaveBeenCalledWith(

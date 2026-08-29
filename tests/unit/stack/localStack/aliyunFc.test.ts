@@ -38,12 +38,12 @@ describe('Aliyun FC LocalStack', () => {
           {
             method: 'GET',
             path: '/api/v1/hello',
-            backend: 'aliyun_fc_fn',
+            backend: 'aliyun-fc-function',
           },
           {
             method: 'POST',
             path: '/api/v1/hello',
-            backend: 'aliyun_fc_fn',
+            backend: 'aliyun-fc-function',
           },
         ],
       },
@@ -165,12 +165,12 @@ describe('Aliyun FC LocalStack - HTML serving', () => {
           {
             method: 'GET',
             path: '/map/map.html',
-            backend: 'html_fn',
+            backend: 'html-serving-function',
           },
           {
             method: 'GET',
             path: '/static/style.css',
-            backend: 'css_fn',
+            backend: 'css-serving-function',
           },
         ],
       },

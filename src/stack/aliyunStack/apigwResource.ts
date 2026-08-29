@@ -23,6 +23,8 @@ import {
   generateApiKey,
   inferProtocolConfig,
   buildEventLogSnapshot,
+  normalizeRoleArnResolver,
+  RoleArnParam,
 } from './apigwTypes';
 import {
   setResource,
@@ -43,6 +45,7 @@ import {
   SHARED_LOG_PROJECT_KEY,
   adoptSharedSlsProjectState,
   buildSharedProjectName,
+  buildGatewayLogstoreName,
   ensureSharedSlsProject,
   ensureGatewayLogstore,
   buildSharedProjectResourceState,
@@ -458,7 +461,7 @@ const ensureGatewayLogConfig = async (
   client: ReturnType<typeof createAliyunClient>,
   state: StateFile,
 ): Promise<{ instance?: ResourceInstance; sharedProject?: ResourceState }> => {
-  const slsLogStore = `${context.service}-${context.stage}-apigw-logs`;
+  const slsLogStore = buildGatewayLogstoreName(context.service, context.stage);
   const ours = { slsProject: buildSharedProjectName(context.app, context.stage), slsLogStore };
 
   const existing = await client.apigw.describeGatewayLogConfig();
@@ -596,11 +599,12 @@ export const createApigwResource = async (
   context: Context,
   event: EventDomain,
   serviceName: string,
-  roleArn: string | undefined,
+  resolveRoleArn: RoleArnParam,
   state: StateFile,
 ): Promise<StateFile> => {
   const logicalId = `events.${event.key}`;
   const client = createAliyunClient(context);
+  const roleArnFor = normalizeRoleArnResolver(resolveRoleArn);
 
   const groupConfig = eventToApigwGroupConfig(
     event,
@@ -731,7 +735,7 @@ export const createApigwResource = async (
         serviceName,
         context.region,
         context.stage,
-        roleArn,
+        roleArnFor(String(trigger.backend)),
       );
 
       const apiId = await client.apigw.createApi(apiConfig);
@@ -893,12 +897,13 @@ export const updateApigwResource = async (
   context: Context,
   event: EventDomain,
   serviceName: string,
-  roleArn: string | undefined,
+  resolveRoleArn: RoleArnParam,
   state: StateFile,
 ): Promise<StateFile> => {
   const logicalId = `events.${event.key}`;
   const existingState = getResource(state, logicalId);
   const client = createAliyunClient(context);
+  const roleArnFor = normalizeRoleArnResolver(resolveRoleArn);
   let existingInstances: Array<ResourceInstance>;
   let groupId: string;
 
@@ -912,7 +917,7 @@ export const updateApigwResource = async (
         serviceName,
         context.region,
         context.stage,
-        roleArn,
+        roleArnFor(String(trigger.backend)),
       );
       return apiConfig.apiName;
     }),
@@ -947,7 +952,7 @@ export const updateApigwResource = async (
   // Shared helper: try to find the group from cloud. On any error (or not found),
   // fall back to full creation since there's nothing to update.
   const findCloudGroupOrCreate = async (): Promise<never> => {
-    return createApigwResource(context, event, serviceName, roleArn, state) as never;
+    return createApigwResource(context, event, serviceName, resolveRoleArn, state) as never;
   };
 
   if (existingState) {
@@ -1029,7 +1034,7 @@ export const updateApigwResource = async (
       serviceName,
       context.region,
       context.stage,
-      roleArn,
+      roleArnFor(String(trigger.backend)),
     );
 
     const apiKey = generateApiKey(trigger.method as string, trigger.path as string);
@@ -1075,7 +1080,7 @@ export const updateApigwResource = async (
           serviceName,
           context.region,
           context.stage,
-          roleArn,
+          roleArnFor(String(t.backend)),
         ).apiName;
         return apiInfo.apiName === expectedName;
       });

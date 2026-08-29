@@ -11,6 +11,7 @@ import {
 } from '../../common';
 import { lang } from '../../lang';
 import { OWNERSHIP_TAG_KEY, buildOwnershipTagValue } from '../ownershipTag';
+import { buildSharedProjectName, buildGatewayLogstoreName } from './sharedLogProject';
 // Re-export the info types from the shared client layer so there is a single
 // source of truth — the operations layer owns the cloud-returned field shape
 // and the stack layer consumes it (previous duplicated copies could drift).
@@ -79,6 +80,18 @@ export type ApigwDeploymentConfig = {
   description?: string;
 };
 
+/** @public Resolves a trigger backend to its execution role ARN; accepts a closure or a legacy fixed ARN. */
+export type RoleArnResolver = (backend: string) => string | undefined;
+
+export type RoleArnParam = string | undefined | RoleArnResolver;
+
+export const normalizeRoleArnResolver = (param: RoleArnParam): RoleArnResolver => {
+  if (typeof param === 'function') {
+    return param;
+  }
+  return () => param;
+};
+
 // Custom domain types
 export type ApigwCustomDomainConfig = {
   groupId: string;
@@ -128,6 +141,8 @@ export const eventToApigwGroupConfig = (
 /**
  * Resolves a function reference like ${functions.xxx} to the actual function name
  */
+const FUNCTION_REF_PATTERN = /^\$\{functions\.[\w.]+\}$/;
+
 const resolveFunctionReference = (backendRef: string): string => {
   // Get IAC from context
   const context = getContext();
@@ -140,8 +155,13 @@ const resolveFunctionReference = (backendRef: string): string => {
   const functionDef = getIacDefinition(context.iac, backendRef);
 
   if (!functionDef || !isFunctionDomain(functionDef)) {
-    // Not a function reference or function not found, return as is
-    logger.warn(lang.__('FUNCTION_REF_NOT_RESOLVED', { backendRef }));
+    // Dangling template refs fail semantic validation; a bare value that matches
+    // no template function is an external deployed function name (issue #227).
+    if (FUNCTION_REF_PATTERN.test(backendRef)) {
+      logger.warn(lang.__('FUNCTION_REF_NOT_RESOLVED', { backendRef }));
+    } else {
+      logger.info(lang.__('EXTERNAL_FUNCTION_BACKEND', { backendRef }));
+    }
     return backendRef;
   }
 
@@ -352,8 +372,8 @@ export const buildEventLogSnapshot = (
   return {
     logEnabled: event.log === true || event.log === 'true',
     logConfig: {
-      project: `${context.app}-${context.stage}-sls`,
-      logstore: `${context.service}-${context.stage}-apigw-logs`,
+      project: buildSharedProjectName(context.app, context.stage),
+      logstore: buildGatewayLogstoreName(context.service, context.stage),
     },
   };
 };

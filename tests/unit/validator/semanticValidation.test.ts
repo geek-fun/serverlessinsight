@@ -2,12 +2,21 @@ import { validateSemantics } from '../../../src/validator/semanticValidation';
 import { validateYaml } from '../../../src/validator/iacSchema';
 import { ServerlessIacRaw } from '../../../src/types';
 import { ProviderEnum } from '../../../src/common';
+import { logger } from '../../../src/common/logger';
+
+jest.mock('../../../src/common/logger', () => ({
+  logger: { info: jest.fn(), warn: jest.fn(), error: jest.fn(), debug: jest.fn() },
+}));
 
 jest.mock('../../../src/lang', () => ({
   lang: { __: (key: string) => key },
 }));
 
 describe('validateSemantics', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+  });
+
   const baseEvent = {
     type: 'API_GATEWAY',
     name: 'test-gateway',
@@ -108,6 +117,60 @@ describe('validateSemantics', () => {
       );
 
       expect(errors).toHaveLength(0);
+    });
+
+    it('rejects a bare value that equals a template function key (issue #227)', () => {
+      const errors = validateSemantics(
+        buildIac(
+          {
+            gateway: {
+              ...baseEvent,
+              triggers: [{ method: 'GET', path: '/api', backend: 'known_fn' }],
+            },
+          },
+          { known_fn: { name: 'known-function' } },
+        ) as ServerlessIacRaw,
+      );
+
+      const bareKeyErrors = errors.filter((error) => error.keyword === 'bareBackendKey');
+      expect(bareKeyErrors).toHaveLength(1);
+      expect(bareKeyErrors[0].instancePath).toBe('/events/gateway/triggers/0');
+    });
+
+    it('passes a bare value that equals a template function name and warns to prefer the reference form', () => {
+      const errors = validateSemantics(
+        buildIac(
+          {
+            gateway: {
+              ...baseEvent,
+              triggers: [{ method: 'GET', path: '/api', backend: 'known-function' }],
+            },
+          },
+          { known_fn: { name: 'known-function' } },
+        ) as ServerlessIacRaw,
+      );
+
+      expect(errors).toHaveLength(0);
+      expect(logger.warn).toHaveBeenCalledWith(
+        expect.stringContaining('SEMANTIC_BACKEND_BARE_NAME'),
+      );
+    });
+
+    it('skips backend values that are non-functions template refs (e.g. ${vars.x})', () => {
+      const errors = validateSemantics(
+        buildIac(
+          {
+            gateway: {
+              ...baseEvent,
+              triggers: [{ method: 'GET', path: '/api', backend: '${vars.backend_fn}' }],
+            },
+          },
+          { known_fn: { name: 'known-function' } },
+        ) as ServerlessIacRaw,
+      );
+
+      expect(errors).toHaveLength(0);
+      expect(logger.warn).not.toHaveBeenCalled();
     });
   });
 

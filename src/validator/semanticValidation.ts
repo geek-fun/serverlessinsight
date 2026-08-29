@@ -1,6 +1,7 @@
 import { ErrorObject } from 'ajv';
 import type { ServerlessIacRaw } from '../types';
 import { lang } from '../lang';
+import { logger } from '../common/logger';
 // Direct leaf import on purpose: routing through the src/common barrel would
 // drag stateManager/lockManager/fs surfaces into the validator graph and
 // recreate an import cycle with src/parser. These helpers are pure.
@@ -17,6 +18,7 @@ type EventTriggerRaw = {
 };
 
 const FUNCTION_BACKEND_PATTERN = /^\$\{functions\.([\w.]+)\}$/;
+const TEMPLATE_REF_PATTERN = /^\$\{[^}]+\}$/;
 
 /**
  * Stage is intentionally empty here: it is identical for every generated name
@@ -37,6 +39,15 @@ export const validateSemantics = (iacJson: ServerlessIacRaw): Array<ErrorObject>
   const functionDefinitions = (iacJson.functions ?? {}) as Record<string, unknown>;
 
   const definedFunctionKeys = new Set(Object.keys(functionDefinitions));
+  const definedFunctionNames = new Set(
+    Object.values(functionDefinitions)
+      .map((fn) =>
+        fn && typeof fn === 'object' && typeof (fn as { name?: unknown }).name === 'string'
+          ? (fn as { name: string }).name
+          : undefined,
+      )
+      .filter((name): name is string => name !== undefined),
+  );
 
   Object.entries(events).forEach(([eventKey, rawEvent]) => {
     const triggers = Array.isArray(rawEvent.triggers)
@@ -89,6 +100,47 @@ export const validateSemantics = (iacJson: ServerlessIacRaw): Array<ErrorObject>
             eventKey,
           }),
         });
+      }
+
+      // Bare backend semantics (issue #227): a bare value must be a function's
+      // deployed name. A value equal to a template function's KEY is the exact
+      // misconfiguration that broke the API Gateway trust policy — reject it;
+      // a value matching a template function's name passes with a preference
+      // warning; anything else is an external function (statically unverifiable).
+      const bareBackend =
+        typeof trigger.backend === 'string' &&
+        !backendRef &&
+        !TEMPLATE_REF_PATTERN.test(trigger.backend)
+          ? trigger.backend
+          : undefined;
+
+      if (bareBackend) {
+        if (definedFunctionNames.has(bareBackend)) {
+          const matchedKey = Object.keys(functionDefinitions).find(
+            (key) =>
+              typeof (functionDefinitions[key] as { name?: unknown })?.name === 'string' &&
+              (functionDefinitions[key] as { name: string }).name === bareBackend,
+          );
+          logger.warn(
+            lang.__('SEMANTIC_BACKEND_BARE_NAME', {
+              backend: bareBackend,
+              key: matchedKey ?? bareBackend,
+              eventKey,
+            }),
+          );
+        } else if (definedFunctionKeys.has(bareBackend)) {
+          errors.push({
+            instancePath,
+            schemaPath: '#/semantic/bareBackendKey',
+            keyword: 'bareBackendKey',
+            params: {},
+            message: lang.__('SEMANTIC_BACKEND_BARE_KEY', {
+              backend: bareBackend,
+              key: bareBackend,
+              eventKey,
+            }),
+          });
+        }
       }
 
       // Generated names derive from method+path, so a duplicate trigger would

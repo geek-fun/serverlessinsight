@@ -13,6 +13,8 @@ import type {
 } from '../../common/volcengineClient/types';
 import type { EventDomain, ResourceAttributes } from '../../types';
 import { lang } from '../../lang';
+import { OWNERSHIP_TAG_KEY } from '../ownershipTag';
+import { buildSharedProjectName, buildApigwLogTopicName } from './sharedLogProject';
 
 /**
  * Gateway instance name — reused for find-by-name adoption across deploys.
@@ -38,6 +40,8 @@ export const buildRouteName = (event: EventDomain, method: string, path: string)
 /**
  * Resolves a function reference like ${functions.xxx} to the actual function name
  */
+const FUNCTION_REF_PATTERN = /^\$\{functions\.[\w.]+\}$/;
+
 const resolveFunctionReference = (backendRef: string): string => {
   const context = getContext();
   if (!context.iac) {
@@ -48,7 +52,13 @@ const resolveFunctionReference = (backendRef: string): string => {
   const functionDef = getIacDefinition(context.iac, backendRef);
 
   if (!functionDef || !isFunctionDomain(functionDef)) {
-    logger.warn(lang.__('FUNCTION_REF_NOT_RESOLVED', { backendRef }));
+    // Dangling template refs fail semantic validation; a bare value that matches
+    // no template function is an external deployed function name (issue #227).
+    if (FUNCTION_REF_PATTERN.test(backendRef)) {
+      logger.warn(lang.__('FUNCTION_REF_NOT_RESOLVED', { backendRef }));
+    } else {
+      logger.info(lang.__('EXTERNAL_FUNCTION_BACKEND', { backendRef }));
+    }
     return backendRef;
   }
 
@@ -76,7 +86,7 @@ export const eventToApigwGatewayConfig = (
       network: { vpcId: event.network.vpc_id, subnetIds: event.network.subnet_ids },
     }),
     logConfig: event.log ? { enable: true, projectId: '', topicId: '' } : undefined,
-    Tags: [{ Key: 'si-owned-by', Value: ownershipValue }],
+    Tags: [{ Key: OWNERSHIP_TAG_KEY, Value: ownershipValue }],
   };
 };
 
@@ -146,8 +156,8 @@ export const extractEventDomainDefinition = (
     ...(event.log && context
       ? {
           logConfig: {
-            project: `${context.app}-${context.stage}-tls`,
-            topic: `${context.service}-${context.stage}-apigw-logs`,
+            project: buildSharedProjectName(context.app, context.stage),
+            topic: buildApigwLogTopicName(context.service, context.stage),
           },
         }
       : {}),
