@@ -69,6 +69,37 @@ describe('Deploy Flow Service Test', () => {
       expect(mockClient.fc3.createFunction).toHaveBeenCalled();
     });
 
+    it('should deploy a bare function-name backend end to end (issue #227)', async () => {
+      await deploy({
+        location: path.join(fixturesDir, 'serverless-insight-deploy-bare-name.yml'),
+        stage: 'dev',
+        autoApprove: true,
+        region: 'cn-hangzhou',
+        provider: 'aliyun',
+      });
+
+      expect(mockClient.fc3.createFunction).toHaveBeenCalled();
+
+      // The managed role must trust apigateway so the gateway can assume it.
+      expect(mockClient.ram.createRole).toHaveBeenCalled();
+      expect(mockClient.ram.createRole.mock.calls[0][1]).toEqual([
+        'fc.aliyuncs.com',
+        'apigateway.aliyuncs.com',
+      ]);
+
+      // The API must target the resolved function name with the managed role.
+      expect(mockClient.apigw.createApi).toHaveBeenCalledWith(
+        expect.objectContaining({
+          serviceConfig: expect.objectContaining({
+            functionComputeConfig: expect.objectContaining({
+              functionName: 'insight-poc-fn',
+              roleArn: expect.any(String),
+            }),
+          }),
+        }),
+      );
+    });
+
     it('should handle deploy error when cloud SDK fails', async () => {
       mockClient.fc3.createFunction.mockRejectedValueOnce(new Error('FunctionAlreadyExists'));
 
