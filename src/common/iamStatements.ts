@@ -31,6 +31,25 @@ export const mergePolicyStatements = <S extends Record<string, unknown>>(
 };
 
 /**
+ * Union statement lists (e.g. the derived baselines of several functions
+ * sharing one legacy role), deduplicating identical statements. Returns a NEW
+ * array — the inputs are never mutated.
+ */
+export const unionPolicyStatements = <S>(statementLists: S[][]): S[] => {
+  const seen = new Set<string>();
+  const merged: S[] = [];
+  for (const list of statementLists) {
+    for (const statement of list) {
+      const fingerprint = JSON.stringify(statement);
+      if (seen.has(fingerprint)) continue;
+      seen.add(fingerprint);
+      merged.push(statement);
+    }
+  }
+  return merged;
+};
+
+/**
  * Parse a provider's built-in policy JSON string into its raw Statement array.
  * Returns an empty array when the JSON is invalid or has no Statement field.
  */

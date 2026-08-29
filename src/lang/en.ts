@@ -520,6 +520,8 @@ export const en = {
     'Trigger backend "{{backend}}" in event "{{eventKey}}" matches function key "{{key}}", but bare backend values must be deployed function names. For template functions use the reference form "${functions.{{key}}}"',
   SEMANTIC_BACKEND_BARE_NAME:
     'Trigger backend "{{backend}}" in event "{{eventKey}}" resolves to template function "{{key}}" by name; prefer the reference form "${functions.{{key}}}"',
+  SEMANTIC_EXTERNAL_BACKEND_VOLCENGINE:
+    'Trigger backend "{{backend}}" in event "{{eventKey}}" is not a function in this template. Volcengine API Gateway upstreams require a template-managed function — use the reference form "${functions.key}" or define the function in this template',
   EXTERNAL_FUNCTION_BACKEND:
     'Backend "{{backendRef}}" is not defined in this template; treating it as an external deployed function name',
 

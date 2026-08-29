@@ -1,5 +1,6 @@
 import { createVolcengineClient } from '../../common/volcengineClient';
 import {
+  getAllResources,
   getResource,
   removeResource,
   setResource,
@@ -11,6 +12,7 @@ import {
   attributesEqual,
   buildFunctionRoleName,
 } from '../../common';
+import { unionPolicyStatements } from '../../common/iamStatements';
 import {
   Context,
   FunctionDomain,
@@ -209,6 +211,78 @@ const buildVefaasInstanceFromProvider = (
   };
 };
 
+type RolePeer = { fn: FunctionDomain; hadVpc: boolean; hadTosMount: boolean };
+
+const collectRolePeers = (state: StateFile, context: Context, roleId: string): RolePeer[] => {
+  const peers: RolePeer[] = [];
+  for (const [logicalId, resourceState] of Object.entries(getAllResources(state))) {
+    if (!logicalId.startsWith('functions.')) continue;
+    const roleInstance = resourceState.instances?.find(
+      (i) => (i as { type?: string }).type === 'VOLCENGINE_IAM_ROLE',
+    ) as { id?: string } | undefined;
+    if (roleInstance?.id !== roleId) continue;
+    const fn = context.iac?.functions?.find(
+      (candidate) => candidate.key === logicalId.slice('functions.'.length),
+    );
+    if (!fn) continue;
+    const definition = (resourceState.definition ?? {}) as {
+      vpcConfig?: unknown;
+      tosMountConfig?: unknown;
+    };
+    peers.push({
+      fn,
+      hadVpc: Boolean(definition.vpcConfig),
+      hadTosMount: Boolean(definition.tosMountConfig),
+    });
+  }
+  return peers;
+};
+
+/**
+ * Legacy shared roles serve every function that recorded them, so their trust
+ * and derived policy must be the union across those functions — a single
+ * function's update would otherwise strip another function's requirements.
+ */
+const resolveRoleGrant = (
+  context: Context,
+  state: StateFile | undefined,
+  fn: FunctionDomain,
+  roleId: string,
+): {
+  trustedServices: string[];
+  executionStatements: IamStatement[];
+  derivedBaselineChanged: boolean;
+} => {
+  const storedPeers = state ? collectRolePeers(state, context, roleId) : [];
+  const currentStored = storedPeers.find((peer) => peer.fn.key === fn.key);
+  const peers: RolePeer[] = currentStored
+    ? [...storedPeers]
+    : [{ fn, hadVpc: false, hadTosMount: false }, ...storedPeers];
+
+  const desiredVpc = peers.some((peer) => Boolean(peer.fn.network));
+  const desiredTos = peers.some((peer) => Boolean(peer.fn.storage?.nas?.[0]));
+  const derivedBaselineChanged =
+    desiredVpc !== peers.some((peer) => peer.hadVpc) ||
+    desiredTos !== peers.some((peer) => peer.hadTosMount);
+
+  if (peers.length <= 1) {
+    return {
+      trustedServices: getTrustedServicesForFunction(fn, context),
+      executionStatements: deriveVefaasExecutionStatements(fn, context),
+      derivedBaselineChanged,
+    };
+  }
+  return {
+    trustedServices: [
+      ...new Set(peers.map((peer) => getTrustedServicesForFunction(peer.fn, context)).flat()),
+    ],
+    executionStatements: unionPolicyStatements(
+      peers.map((peer) => deriveVefaasExecutionStatements(peer.fn, context)),
+    ),
+    derivedBaselineChanged,
+  };
+};
+
 const createDependentResources = async (
   context: Context,
   fn: FunctionDomain,
@@ -286,9 +360,15 @@ const createDependentResources = async (
     const iamRoleInstance = existingInstances.find((i) => i.type === 'VOLCENGINE_IAM_ROLE');
     if (iamRoleInstance) {
       instances.push(iamRoleInstance);
+      const roleGrant = resolveRoleGrant(context, state, fn, iamRoleInstance.id);
       await client.iam.updateRoleTrustPolicy(
         iamRoleInstance.id,
-        buildDefaultTrustPolicy(trustedServices),
+        buildDefaultTrustPolicy(roleGrant.trustedServices),
+      );
+      await client.iam.updateRolePolicy(
+        iamRoleInstance.id,
+        roleGrant.executionStatements,
+        statements as IamStatement[] | undefined,
       );
     }
   } else {
@@ -651,7 +731,10 @@ export const updateResource = async (
     newDependentInstances.push(...deps.instances.filter((i) => i.type === 'VOLCENGINE_IAM_ROLE'));
   } else {
     const iamRoleInstance = existingInstances.find((i) => i.type === 'VOLCENGINE_IAM_ROLE');
-    if (iamRoleInstance) {
+    const roleGrant = iamRoleInstance
+      ? resolveRoleGrant(context, state, fn, iamRoleInstance.id)
+      : undefined;
+    if (iamRoleInstance && roleGrant) {
       const trn = await resolveRoleTrn(client, context, iamRoleInstance.id, iamRoleInstance.trn);
 
       if (!trn) {
@@ -663,10 +746,9 @@ export const updateResource = async (
         trn,
       };
 
-      const trustedServices = getTrustedServicesForFunction(fn, context);
       await client.iam.updateRoleTrustPolicy(
         iamRoleInstance.id,
-        buildDefaultTrustPolicy(trustedServices),
+        buildDefaultTrustPolicy(roleGrant.trustedServices),
       );
     }
 
@@ -681,17 +763,17 @@ export const updateResource = async (
     const customStatementsChanged =
       JSON.stringify(currentStatementList) !== JSON.stringify(desiredIamStatements);
 
-    // The derived execution baseline depends only on whether the function
-    // configures a network / TOS mount. The last deployed state records those
-    // as vpcConfig / tosMountConfig, so presence comparison detects drift.
-    const existingDefinition = currentState.definition ?? {};
-    const derivedBaselineChanged =
-      Boolean(fn.network) !== Boolean(existingDefinition.vpcConfig) ||
-      Boolean(fn.storage?.nas?.[0]) !== Boolean(existingDefinition.tosMountConfig);
+    // The derived execution baseline is the union across all functions sharing
+    // the role: drift is detected by comparing desired peer signals (network /
+    // TOS mount) against those recorded in each stored definition.
+    const derivedBaselineChanged = roleGrant?.derivedBaselineChanged ?? false;
 
     if ((derivedBaselineChanged || customStatementsChanged) && iamRoleInstance) {
-      const baseline = deriveVefaasExecutionStatements(fn, context);
-      await client.iam.updateRolePolicy(iamRoleInstance.id, baseline, desiredIamStatements);
+      await client.iam.updateRolePolicy(
+        iamRoleInstance.id,
+        roleGrant?.executionStatements ?? deriveVefaasExecutionStatements(fn, context),
+        desiredIamStatements,
+      );
     }
 
     // Check managed policy changes

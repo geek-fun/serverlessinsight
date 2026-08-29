@@ -172,6 +172,36 @@ describe('validateSemantics', () => {
       expect(errors).toHaveLength(0);
       expect(logger.warn).not.toHaveBeenCalled();
     });
+
+    it('rejects external bare backends on volcengine (upstreams need a managed function)', () => {
+      const errors = validateSemantics({
+        ...buildIac({
+          gateway: {
+            ...baseEvent,
+            triggers: [{ method: 'GET', path: '/api', backend: 'external-fn' }],
+          },
+        }),
+        provider: { name: ProviderEnum.VOLCENGINE, region: 'cn-beijing' },
+      } as unknown as ServerlessIacRaw);
+
+      const external = errors.filter((error) => error.keyword === 'externalBackendUnsupported');
+      expect(external).toHaveLength(1);
+      expect(external[0].instancePath).toBe('/events/gateway/triggers/0');
+    });
+
+    it('allows external bare backends on aliyun (gateway assumes the managed role)', () => {
+      const errors = validateSemantics({
+        ...buildIac({
+          gateway: {
+            ...baseEvent,
+            triggers: [{ method: 'GET', path: '/api', backend: 'external-fn' }],
+          },
+        }),
+        provider: { name: ProviderEnum.ALIYUN, region: 'cn-hangzhou' },
+      } as unknown as ServerlessIacRaw);
+
+      expect(errors).toHaveLength(0);
+    });
   });
 
   describe('generated gateway names', () => {
@@ -217,15 +247,15 @@ describe('validateSemantics', () => {
       const volcEvents = {
         first_gateway: {
           ...baseEvent,
-          triggers: [{ method: 'GET', path: '/shared', backend: 'fn' }],
+          triggers: [{ method: 'GET', path: '/shared', backend: '${functions.fn}' }],
         },
         second_gateway: {
           ...baseEvent,
-          triggers: [{ method: 'GET', path: '/shared', backend: 'fn' }],
+          triggers: [{ method: 'GET', path: '/shared', backend: '${functions.fn}' }],
         },
       };
       const volcIac = {
-        ...buildIac(volcEvents),
+        ...buildIac(volcEvents, { fn: { name: 'fn' } }),
         provider: { name: ProviderEnum.VOLCENGINE, region: 'cn-beijing' },
       } as ServerlessIacRaw;
 

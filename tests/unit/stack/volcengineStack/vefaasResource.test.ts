@@ -51,6 +51,9 @@ jest.mock('../../../../src/common', () => {
       ),
     })),
     getResource: jest.fn(),
+    getAllResources: jest.fn(
+      (state?: { resources?: Record<string, unknown> }) => state?.resources ?? {},
+    ),
     setSharedResource: jest.fn((state, stage, key, resourceState) => ({
       ...state,
       stages: {
@@ -1922,6 +1925,98 @@ describe('vefaasResource', () => {
       await updateResource(mockContext, mockFunction, stateWithRole);
 
       expect(mockVefaasClient.iam.updateRolePolicy).not.toHaveBeenCalled();
+    });
+
+    it('unions trust and baseline across functions sharing a legacy role (issue #229 review)', async () => {
+      const peerFn: FunctionDomain = {
+        ...mockFunction,
+        key: 'other_fn',
+        name: 'other-function',
+        network: {
+          vpc_id: 'vpc-123',
+          subnet_ids: ['subnet-1', 'subnet-2'],
+          security_group: { name: 'sg-1', ingress: [], egress: [] },
+        },
+      };
+      const contextWithIac = {
+        ...mockContext,
+        iac: {
+          functions: [mockFunction, peerFn],
+          events: [
+            {
+              key: 'gateway_event',
+              triggers: [{ backend: '${functions.other_fn}' }],
+            },
+          ],
+        },
+      } as unknown as Context;
+
+      const legacyRoleInstances = [
+        {
+          type: 'VOLCENGINE_VEFAAS_FUNCTION',
+          sid: 'volcengine-test-service-dev-test-function',
+          id: 'test-function',
+          functionName: 'test-function',
+          functionId: 'func-123',
+        },
+        {
+          type: 'VOLCENGINE_IAM_ROLE',
+          sid: 'volcengine-iam_role-dev-role',
+          id: 'test-app-test-service-dev-role',
+          trn: 'trn:iam::123456:role/test-app-test-service-dev-role',
+        },
+      ];
+      const sharedRoleState: StateFile = {
+        ...mockState,
+        resources: {
+          'functions.test_fn': {
+            mode: 'managed',
+            region: 'cn-beijing',
+            definition: { functionName: 'test-function', codeHash: 'test-hash-123' },
+            instances: legacyRoleInstances,
+            lastUpdated: '2024-01-01T00:00:00Z',
+          },
+          'functions.other_fn': {
+            mode: 'managed',
+            region: 'cn-beijing',
+            definition: { functionName: 'other-function', codeHash: 'test-hash-123' },
+            instances: legacyRoleInstances,
+            lastUpdated: '2024-01-01T00:00:00Z',
+          },
+        },
+      };
+
+      (getResource as jest.Mock).mockReturnValue(sharedRoleState.resources['functions.test_fn']);
+      (attributesEqual as jest.Mock).mockReturnValue(true);
+
+      mockVefaasClient.vefaas.getFunctionById.mockResolvedValue({
+        functionName: 'test-function',
+        functionId: 'func-123',
+        runtime: 'nodejs16',
+        handler: 'index.handler',
+        memoryMb: 128,
+        requestTimeout: 30,
+      });
+
+      await updateResource(contextWithIac, mockFunction, sharedRoleState);
+
+      expect(mockVefaasClient.iam.updateRoleTrustPolicy).toHaveBeenCalledWith(
+        'test-app-test-service-dev-role',
+        expect.objectContaining({
+          Statement: [
+            expect.objectContaining({
+              Principal: { Service: ['vefaas', 'apigateway'] },
+            }),
+          ],
+        }),
+      );
+      expect(mockVefaasClient.iam.updateRolePolicy).toHaveBeenCalledWith(
+        'test-app-test-service-dev-role',
+        expect.arrayContaining([
+          expect.objectContaining({ action: expect.arrayContaining(['vpc:DescribeVpcs']) }),
+        ]),
+        undefined,
+      );
     });
 
     it('calls updateRolePolicy with the derived baseline when network is added', async () => {

@@ -7,6 +7,7 @@ import {
   PartialResourceError,
 } from '../../types';
 import { createVolcengineClient } from '../../common/volcengineClient';
+import { getContext } from '../../common';
 import type {
   ApigwGatewayConfig,
   ApigwGatewayInfo,
@@ -218,17 +219,24 @@ const buildRouteInstance = (
 });
 
 /**
- * Resolve the veFaaS function Id for a ${functions.xxx} backend ref from state.
- * The function resource must already be deployed (functions deploy before events).
+ * Resolve the veFaaS function Id for a backend ref from state. Template refs
+ * carry the key directly; bare values are the deployed function name and are
+ * mapped to the template key first. The function resource must already be
+ * deployed (functions deploy before events).
  */
 const resolveFunctionIdFromState = (state: StateFile, backendRef: string): string => {
-  const fnKey = resolveFunctionKey(backendRef);
-  const fnState = getResource(state, `functions.${fnKey}`);
+  const context = getContext();
+  const refMatch = /^\$\{functions\.([\w.]+)\}$/.exec(String(backendRef ?? ''));
+  const fnKey =
+    refMatch?.[1] ?? context.iac?.functions?.find((f) => f.name === String(backendRef))?.key;
+  const fnState = fnKey ? getResource(state, `functions.${fnKey}`) : undefined;
   const instance = fnState?.instances?.find((i) => i.type === 'VOLCENGINE_VEFAAS_FUNCTION');
   const functionId = (instance as { functionId?: string | null } | undefined)?.functionId;
   if (!functionId) {
     throw new Error(
-      `Cannot resolve veFaaS function Id for backend ${backendRef} (functions.${fnKey} has no functionId in state). Deploy the function first.`,
+      `Cannot resolve veFaaS function Id for backend ${backendRef}${
+        fnKey ? ` (functions.${fnKey})` : ''
+      } — no functionId in state. Deploy the function first. External functions (not defined in this template) are not supported for volcengine API Gateway backends.`,
     );
   }
   return functionId;

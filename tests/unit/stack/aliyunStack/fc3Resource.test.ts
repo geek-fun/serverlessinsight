@@ -9,6 +9,7 @@ import {
 import {
   Context,
   CURRENT_STATE_VERSION,
+  FunctionDomain,
   NasStorageClassEnum,
   PartialResourceError,
   StateFile,
@@ -1112,6 +1113,99 @@ describe('Fc3Resource', () => {
         'test-app-test-service-default-fc-role',
         ['fc.aliyuncs.com'],
       );
+    });
+
+    it('unions trust and baseline across functions sharing a legacy role (issue #229 review)', async () => {
+      const peerFunction: FunctionDomain = {
+        ...testFunction,
+        key: 'other_fn',
+        name: 'other-function',
+        network: {
+          vpc_id: 'vpc-123',
+          subnet_ids: ['subnet-1', 'subnet-2'],
+          security_group: { name: 'sg-1', ingress: [], egress: [] },
+        },
+      };
+      const contextWithPeer: Context = {
+        ...mockContext,
+        iac: {
+          version: '0.0.1',
+          app: 'test-app',
+          provider: {
+            name: ProviderEnum.ALIYUN,
+            region: 'cn-hangzhou',
+          },
+          service: 'test-service',
+          functions: [testFunction, peerFunction],
+          events: [
+            {
+              key: 'api_gateway',
+              name: 'test-api',
+              type: 'API_GATEWAY',
+              triggers: [
+                {
+                  method: 'GET',
+                  path: '/api/test',
+                  backend: '${functions.other_fn}',
+                },
+              ],
+            },
+          ],
+        },
+      };
+
+      const legacyRoleInstance = {
+        sid: 'si:aliyun:ram:default:test-app-test-service-default-fc-role',
+        roleArn: 'acs:ram::123456789012:role/test-app-test-service-default-fc-role',
+        id: 'test-app-test-service-default-fc-role',
+        type: 'ALIYUN_RAM_ROLE',
+      };
+      const sharedRoleState: StateFile = {
+        ...initialState,
+        resources: {
+          'functions.test_fn': {
+            mode: 'managed',
+            region: 'cn-hangzhou',
+            definition: mockDefinition,
+            instances: [
+              legacyRoleInstance,
+              {
+                sid: 'si:aliyun:fc3:default:test-function',
+                id: 'test-function',
+                type: 'ALIYUN_FC3_FUNCTION',
+              },
+            ],
+            lastUpdated: '2025-01-01T00:00:00Z',
+          },
+          'functions.other_fn': {
+            mode: 'managed',
+            region: 'cn-hangzhou',
+            definition: mockDefinition,
+            instances: [legacyRoleInstance],
+            lastUpdated: '2025-01-01T00:00:00Z',
+          },
+        },
+      };
+
+      mockedFc3Operations.updateFunctionConfiguration.mockResolvedValue(undefined);
+      mockedFc3Operations.updateFunctionCode.mockResolvedValue(undefined);
+      const newState = { ...sharedRoleState, _updated: true };
+      mockedStateManager.setResource.mockReturnValue(newState);
+
+      await updateResource(contextWithPeer, testFunction, sharedRoleState);
+
+      expect(mockedRamOperations.updateRoleTrustPolicy).toHaveBeenCalledWith(
+        'test-app-test-service-default-fc-role',
+        ['fc.aliyuncs.com', 'apigateway.aliyuncs.com'],
+      );
+
+      const policyDocumentCall = mockedRamOperations.updateExecutionPolicyDocument.mock.calls[0];
+      const policyDocument = JSON.parse(policyDocumentCall[1]) as {
+        Statement: Array<{ Action: string[] }>;
+      };
+      const actions = policyDocument.Statement.flatMap((statement) => statement.Action);
+      expect(actions).toContain('ecs:CreateNetworkInterface');
+      expect(actions).not.toContain('nas:*');
     });
 
     it('should add apigateway trust when a bare backend equals the function deployed name (issue #227)', async () => {
