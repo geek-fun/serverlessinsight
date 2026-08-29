@@ -7,6 +7,7 @@ import {
   parseBuiltInStatements,
   buildPolicyDocument,
 } from '../iamStatements';
+import { buildRolePolicyName } from '../nameBuilder';
 import type { IamStatement } from '../iamStatements';
 import { RamRoleInfo } from './types';
 
@@ -89,27 +90,36 @@ const mapToAliyunStatement = (stmt: IamStatement): Record<string, unknown> => {
   return result;
 };
 
-const buildExecutionPolicy = (customStatements?: IamStatement[]): string => {
-  const merged = mergePolicyStatements(
-    FC_EXECUTION_STATEMENTS,
-    customStatements,
-    mapToAliyunStatement,
-  );
+/** @public Exec policy document from a derived baseline; falls back to the static FC_EXECUTION_STATEMENTS when omitted. */
+export const buildFc3ExecutionPolicyDocument = (
+  executionStatements?: IamStatement[],
+  customStatements?: IamStatement[],
+): string => {
+  const nativeBaseline = executionStatements
+    ? executionStatements.map(mapToAliyunStatement)
+    : FC_EXECUTION_STATEMENTS;
+  const merged = mergePolicyStatements(nativeBaseline, customStatements, mapToAliyunStatement);
   return buildPolicyDocument(merged, { version: '1' });
 };
+
+const buildExecutionPolicy = (
+  executionStatements?: IamStatement[],
+  customStatements?: IamStatement[],
+): string => buildFc3ExecutionPolicyDocument(executionStatements, customStatements);
 
 /* istanbul ignore next */ export const createRamOperations = (ramClient: RamSdkClient) => {
   const attachRolePolicyForFc = async (
     roleName: string,
     customStatements?: IamStatement[],
+    executionStatements?: IamStatement[],
   ): Promise<string> => {
-    const policyName = `${roleName}-policy`;
+    const policyName = buildRolePolicyName(roleName);
 
     // Create policy
     try {
       const createPolicyRequest = new ram.CreatePolicyRequest({
         policyName,
-        policyDocument: buildExecutionPolicy(customStatements),
+        policyDocument: buildExecutionPolicy(executionStatements, customStatements),
         description: `FC execution policy for ${roleName}`,
       });
       await ramClient.createPolicy(createPolicyRequest);
@@ -211,6 +221,112 @@ const buildExecutionPolicy = (customStatements?: IamStatement[]): string => {
     }
   };
 
+  const updateExecutionPolicyDocumentFn = async (
+    roleName: string,
+    policyDocument: string,
+  ): Promise<void> => {
+    const policyName = buildRolePolicyName(roleName);
+
+    const ensureAttached = async (): Promise<void> => {
+      try {
+        await ramClient.attachPolicyToRole(
+          new ram.AttachPolicyToRoleRequest({ policyType: 'Custom', policyName, roleName }),
+        );
+      } catch (error: unknown) {
+        if (!(
+          error &&
+          typeof error === 'object' &&
+          'code' in error &&
+          error.code === 'EntityAlreadyExists.Role.Policy'
+        )) {
+          throw error;
+        }
+      }
+    };
+
+    let currentDocument: string | undefined;
+    try {
+      const getPolicyResponse = await ramClient.getPolicy(
+        new ram.GetPolicyRequest({ policyName, policyType: 'Custom' }),
+      );
+      const defaultVersionId = getPolicyResponse.body?.policy?.defaultVersion;
+      if (defaultVersionId) {
+        const versionResponse = await ramClient.getPolicyVersion(
+          new ram.GetPolicyVersionRequest({
+            policyName,
+            policyType: 'Custom',
+            versionId: defaultVersionId,
+          }),
+        );
+        currentDocument = versionResponse.body?.policyVersion?.policyDocument;
+      }
+    } catch (error: unknown) {
+      if (!(
+        error &&
+        typeof error === 'object' &&
+        'code' in error &&
+        error.code === 'EntityNotExist.Policy'
+      )) {
+        throw error;
+      }
+      try {
+        await ramClient.createPolicy(
+          new ram.CreatePolicyRequest({
+            policyName,
+            policyDocument,
+            description: `FC execution policy for ${roleName}`,
+          }),
+        );
+      } catch (error2: unknown) {
+        if (!(
+          error2 &&
+          typeof error2 === 'object' &&
+          'code' in error2 &&
+          error2.code === 'EntityAlreadyExists.Policy'
+        )) {
+          throw error2;
+        }
+      }
+      await ensureAttached();
+      return;
+    }
+
+    if (currentDocument === policyDocument) {
+      return;
+    }
+
+    try {
+      const listResponse = await ramClient.listPolicyVersions(
+        new ram.ListPolicyVersionsRequest({ policyName, policyType: 'Custom' }),
+      );
+      const versions = listResponse.body?.policyVersions?.policyVersion ?? [];
+      const keepBeforeCreate = 4;
+      const toDelete = versions
+        .filter((v) => !v.isDefaultVersion)
+        .sort((a, b) => (a.createDate ?? '').localeCompare(b.createDate ?? ''))
+        .slice(0, Math.max(0, versions.length - keepBeforeCreate));
+      for (const version of toDelete) {
+        if (version.versionId) {
+          await ramClient.deletePolicyVersion(
+            new ram.DeletePolicyVersionRequest({ policyName, versionId: version.versionId }),
+          );
+        }
+      }
+    } catch (error: unknown) {
+      logger.warn(lang.__('RAM_POLICY_VERSION_PRUNE_FAILED', { policyName, error: String(error) }));
+    }
+
+    await ramClient.createPolicyVersion(
+      new ram.CreatePolicyVersionRequest({
+        policyName,
+        policyDocument,
+        setAsDefault: true,
+      }),
+    );
+
+    await ensureAttached();
+  };
+
   return {
     createRole: async (
       roleName: string,
@@ -218,6 +334,7 @@ const buildExecutionPolicy = (customStatements?: IamStatement[]): string => {
       description?: string,
       customStatements?: IamStatement[],
       managedPolicies?: string[],
+      executionStatements?: IamStatement[],
     ): Promise<RamRoleInfo> => {
       const assumeRolePolicy = buildAssumeRolePolicy(trustedServices);
 
@@ -241,7 +358,11 @@ const buildExecutionPolicy = (customStatements?: IamStatement[]): string => {
           assumeRolePolicyDocument: assumeRolePolicy,
         };
 
-        const policyName = await attachRolePolicyForFc(roleName, customStatements);
+        const policyName = await attachRolePolicyForFc(
+          roleName,
+          customStatements,
+          executionStatements,
+        );
 
         if (managedPolicies && managedPolicies.length > 0) {
           await attachManagedPoliciesFn(roleName, managedPolicies);
@@ -267,7 +388,11 @@ const buildExecutionPolicy = (customStatements?: IamStatement[]): string => {
             });
             await ramClient.updateRole(updateRequest);
 
-            const policyName = await attachRolePolicyForFc(roleName, customStatements);
+            const policyName = buildRolePolicyName(roleName);
+            await updateExecutionPolicyDocumentFn(
+              roleName,
+              buildFc3ExecutionPolicyDocument(executionStatements, customStatements),
+            );
 
             if (managedPolicies && managedPolicies.length > 0) {
               await attachManagedPoliciesFn(roleName, managedPolicies);
@@ -319,7 +444,7 @@ const buildExecutionPolicy = (customStatements?: IamStatement[]): string => {
           updateDate: getResponse.body?.role?.updateDate,
           maxSessionDuration: getResponse.body?.role?.maxSessionDuration,
           assumeRolePolicyDocument: assumeRolePolicy,
-          policyName: `${roleName}-policy`,
+          policyName: buildRolePolicyName(roleName),
         };
 
         const updateRequest = new ram.UpdateRoleRequest({
@@ -346,8 +471,9 @@ const buildExecutionPolicy = (customStatements?: IamStatement[]): string => {
     updateRolePolicy: async (
       roleName: string,
       customStatements?: IamStatement[],
+      executionStatements?: IamStatement[],
     ): Promise<void> => {
-      const policyName = `${roleName}-policy`;
+      const policyName = buildRolePolicyName(roleName);
       try {
         await ramClient.detachPolicyFromRole(
           new ram.DetachPolicyFromRoleRequest({ policyType: 'Custom', policyName, roleName }),
@@ -364,7 +490,7 @@ const buildExecutionPolicy = (customStatements?: IamStatement[]): string => {
         await ramClient.createPolicy(
           new ram.CreatePolicyRequest({
             policyName,
-            policyDocument: buildExecutionPolicy(customStatements),
+            policyDocument: buildExecutionPolicy(executionStatements, customStatements),
             description: `FC execution policy for ${roleName}`,
           }),
         );
@@ -394,6 +520,8 @@ const buildExecutionPolicy = (customStatements?: IamStatement[]): string => {
       }
     },
 
+    updateExecutionPolicyDocument: updateExecutionPolicyDocumentFn,
+
     getRole: async (roleName: string): Promise<RamRoleInfo | null> => {
       try {
         const request = new ram.GetRoleRequest({
@@ -414,7 +542,7 @@ const buildExecutionPolicy = (customStatements?: IamStatement[]): string => {
           updateDate: response.body.role.updateDate,
           maxSessionDuration: response.body.role.maxSessionDuration,
           assumeRolePolicyDocument: response.body.role.assumeRolePolicyDocument,
-          policyName: `${roleName}-policy`,
+          policyName: buildRolePolicyName(roleName),
         };
       } catch (error: unknown) {
         if (
@@ -430,7 +558,7 @@ const buildExecutionPolicy = (customStatements?: IamStatement[]): string => {
     },
 
     deleteRole: async (roleName: string, managedPolicies?: string[]): Promise<void> => {
-      const policyName = `${roleName}-policy`;
+      const policyName = buildRolePolicyName(roleName);
 
       if (managedPolicies && managedPolicies.length > 0) {
         await detachManagedPoliciesFn(roleName, managedPolicies);

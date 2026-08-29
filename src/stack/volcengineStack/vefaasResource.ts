@@ -9,6 +9,7 @@ import {
   computeZipContentHash,
   buildSid,
   attributesEqual,
+  buildFunctionRoleName,
 } from '../../common';
 import {
   Context,
@@ -23,6 +24,7 @@ import {
   functionToVefaasConfig,
   getTrustedServicesForFunction,
   buildDefaultTrustPolicy,
+  deriveVefaasExecutionStatements,
   VefaasFunctionInfo,
 } from './vefaasTypes';
 import type { IamStatement } from '../../common/iamStatements';
@@ -37,6 +39,7 @@ import {
   deleteTlsLogResources,
   releaseSharedLogProjectIfUnused,
   SHARED_LOG_PROJECT_KEY,
+  buildFunctionLogTopicName,
 } from './sharedLogProject';
 
 type DependentInstance = {
@@ -241,7 +244,7 @@ const createDependentResources = async (
       const shared = await ensureSharedLogProject(context, client, state);
       sharedInstance = buildSharedProjectResourceState(context, shared);
 
-      const topicName = `${context.service}-${context.stage}-fn-logs`;
+      const topicName = buildFunctionLogTopicName(context.service, context.stage, fn.key);
       const topic = await ensureOwnedTopic(context, client, {
         projectName: shared.projectName,
         topicName,
@@ -275,8 +278,9 @@ const createDependentResources = async (
     return { logConfig, role, instances, sharedInstance };
   }
 
-  const roleName = customRoleName ?? `${serviceName}-${context.stage}-role`;
+  const roleName = customRoleName ?? buildFunctionRoleName(serviceName, context.stage, fn.key);
   const trustedServices = getTrustedServicesForFunction(fn, context);
+  const executionStatements = deriveVefaasExecutionStatements(fn, context);
 
   if (hasIamRole) {
     const iamRoleInstance = existingInstances.find((i) => i.type === 'VOLCENGINE_IAM_ROLE');
@@ -294,6 +298,7 @@ const createDependentResources = async (
       displayName: roleName,
       description: `veFaaS execution role for ${serviceName}`,
       trustPolicy: buildDefaultTrustPolicy(trustedServices),
+      executionStatements,
       customStatements: statements as IamStatement[] | undefined,
       managedPolicies,
     });
@@ -638,11 +643,10 @@ export const updateResource = async (
     // External role - skip role management, use TRN directly
     role = { roleName: currentIam.role as string, trn: currentIam.role as string };
   } else if (!hasIamRole && !isTainted) {
-    const deps = await createDependentResources(
-      context,
-      { ...fn, log: false, network: undefined, storage: { disk: undefined, nas: undefined } },
-      serviceName,
-    );
+    // Role creation only: skip TLS so existing log resources are untouched,
+    // but keep network/storage so the derived execution baseline matches the
+    // function's actual VPC/TOS usage.
+    const deps = await createDependentResources(context, { ...fn, log: false }, serviceName);
     role = deps.role;
     newDependentInstances.push(...deps.instances.filter((i) => i.type === 'VOLCENGINE_IAM_ROLE'));
   } else {
@@ -674,10 +678,20 @@ export const updateResource = async (
 
     const desiredIamStatements = desiredRoleConfig?.statements as IamStatement[] | undefined;
     const currentStatementList = currentRoleConfig?.statements as IamStatement[] | undefined;
-    const iamChanged =
+    const customStatementsChanged =
       JSON.stringify(currentStatementList) !== JSON.stringify(desiredIamStatements);
-    if (iamChanged && iamRoleInstance) {
-      await client.iam.updateRolePolicy(iamRoleInstance.id, desiredIamStatements);
+
+    // The derived execution baseline depends only on whether the function
+    // configures a network / TOS mount. The last deployed state records those
+    // as vpcConfig / tosMountConfig, so presence comparison detects drift.
+    const existingDefinition = currentState.definition ?? {};
+    const derivedBaselineChanged =
+      Boolean(fn.network) !== Boolean(existingDefinition.vpcConfig) ||
+      Boolean(fn.storage?.nas?.[0]) !== Boolean(existingDefinition.tosMountConfig);
+
+    if ((derivedBaselineChanged || customStatementsChanged) && iamRoleInstance) {
+      const baseline = deriveVefaasExecutionStatements(fn, context);
+      await client.iam.updateRolePolicy(iamRoleInstance.id, baseline, desiredIamStatements);
     }
 
     // Check managed policy changes

@@ -46,7 +46,7 @@ export const generateFunctionPlan = async (
         config = {
           ...config,
           ClsLogsetName: buildSharedLogsetName(context.app, context.stage),
-          ClsTopicName: buildFunctionTopicName(context),
+          ClsTopicName: buildFunctionTopicName(context, fn.key),
         };
       }
       const codePath = fn.code!.path;

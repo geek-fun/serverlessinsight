@@ -3,6 +3,7 @@ import {
   readResource,
   updateResource,
   deleteResource,
+  deriveScfExecutionStatements,
 } from '../../../../src/stack/scfStack/scfResource';
 import * as scfTypes from '../../../../src/stack/scfStack/scfTypes';
 import * as stateManager from '../../../../src/common/stateManager';
@@ -52,7 +53,10 @@ const mockClsOperations = {
 
 jest.mock('../../../../src/stack/scfStack/scfTypes');
 jest.mock('../../../../src/common/stateManager');
-jest.mock('../../../../src/common/hashUtils');
+jest.mock('../../../../src/common/hashUtils', () => ({
+  ...jest.requireActual('../../../../src/common/hashUtils'),
+  computeZipContentHash: jest.fn(),
+}));
 
 jest.mock('../../../../src/common/tencentClient', () => ({
   createTencentClient: () => ({
@@ -267,6 +271,7 @@ describe('ScfResource', () => {
         expect.any(String),
         expect.arrayContaining([expect.objectContaining({ effect: 'Allow' })]),
         undefined,
+        deriveScfExecutionStatements(fnWithIam, mockContext),
       );
 
       // Should pass role to SCF config
@@ -364,6 +369,262 @@ describe('ScfResource', () => {
       expect(mockScfOperations.createFunction).toHaveBeenCalledWith(
         expectedConfig,
         'base64encodedcontent',
+      );
+    });
+
+    it('should create a per-function CAM role with derived name and baseline on new deploy', async () => {
+      jest.useFakeTimers();
+
+      const fnWithIam = {
+        ...testFunction,
+        iam: { role: {} },
+      };
+
+      const derivedName = 'test-app-test-service-default-test-fn-role';
+      (mockCamOperations.createRole as jest.Mock).mockResolvedValue({
+        roleName: derivedName,
+        roleId: 'role-id',
+        roleArn: derivedName,
+        policyName: `${derivedName}-policy`,
+      });
+      (mockScfOperations.createFunction as jest.Mock).mockResolvedValue(undefined);
+      (stateManager.setResource as jest.Mock).mockReturnValue(initialState);
+
+      const createPromise = createResource(mockContext, fnWithIam, initialState);
+      await jest.advanceTimersByTimeAsync(5000);
+      await createPromise;
+
+      expect(mockCamOperations.createRole).toHaveBeenCalledWith(
+        derivedName,
+        ['scf.qcloud.com'],
+        expect.any(String),
+        undefined,
+        undefined,
+        deriveScfExecutionStatements(fnWithIam, mockContext),
+      );
+      expect(mockScfOperations.createFunction).toHaveBeenCalledWith(
+        expect.objectContaining({ Role: derivedName }),
+        'base64encodedcontent',
+      );
+    });
+
+    it('should prefer custom iam.role.name over the derived per-function name', async () => {
+      jest.useFakeTimers();
+
+      const fnWithIam = {
+        ...testFunction,
+        iam: { role: { name: 'my-custom-role' } },
+      };
+
+      (mockCamOperations.createRole as jest.Mock).mockResolvedValue({
+        roleName: 'my-custom-role',
+        roleId: 'role-id',
+        roleArn: 'my-custom-role',
+        policyName: 'my-custom-role-policy',
+      });
+      (mockScfOperations.createFunction as jest.Mock).mockResolvedValue(undefined);
+      (stateManager.setResource as jest.Mock).mockReturnValue(initialState);
+
+      const createPromise = createResource(mockContext, fnWithIam, initialState);
+      await jest.advanceTimersByTimeAsync(5000);
+      await createPromise;
+
+      expect(mockCamOperations.createRole).toHaveBeenCalledWith(
+        'my-custom-role',
+        expect.any(Array),
+        expect.any(String),
+        undefined,
+        undefined,
+        deriveScfExecutionStatements(fnWithIam, mockContext),
+      );
+    });
+
+    it('should reuse the existing role id (migration) instead of the derived per-function name', async () => {
+      const legacyRoleId = 'test-app-test-service-default-scf-role';
+      const stateWithLegacyRole: StateFile = {
+        ...initialState,
+        resources: {
+          'functions.test_fn': {
+            mode: 'managed',
+            region: 'ap-guangzhou',
+            definition: mockDefinition,
+            instances: [
+              {
+                sid: 'si:tencent:scf:default:test-function',
+                id: 'test-function',
+                functionName: 'test-function',
+              },
+              {
+                sid: `si:tencent:scf-role:default:${legacyRoleId}`,
+                type: ResourceTypeEnum.TENCENT_SCF_ROLE,
+                id: legacyRoleId,
+                roleArn: legacyRoleId,
+              },
+            ],
+            lastUpdated: '2025-01-01T00:00:00Z',
+          },
+        },
+      };
+
+      const fnWithIam = { ...testFunction, iam: { role: {} } };
+
+      (stateManager.getResource as jest.Mock).mockReturnValue(
+        stateWithLegacyRole.resources['functions.test_fn'],
+      );
+      (mockScfOperations.createFunction as jest.Mock).mockResolvedValue(undefined);
+      (stateManager.setResource as jest.Mock).mockReturnValue(initialState);
+
+      await createResource(mockContext, fnWithIam, stateWithLegacyRole);
+
+      expect(mockCamOperations.createRole).not.toHaveBeenCalled();
+      expect(mockScfOperations.createFunction).toHaveBeenCalledWith(
+        expect.objectContaining({ Role: legacyRoleId }),
+        'base64encodedcontent',
+      );
+    });
+
+    it('derives the least-privilege execution baseline for a bare function', () => {
+      expect(deriveScfExecutionStatements(testFunction, mockContext)).toEqual([
+        { effect: 'Allow', action: ['scf:InvokeFunction'], resource: ['*'] },
+        {
+          effect: 'Allow',
+          action: ['cls:logset:putlog', 'cls:logset:create*', 'cls:logset:get*'],
+          resource: ['*'],
+        },
+        {
+          effect: 'Allow',
+          action: ['cos:GetObject', 'cos:PutObject', 'cos:DeleteObject', 'cos:ListBucket'],
+          resource: ['*'],
+        },
+      ]);
+    });
+
+    it('does not re-propagate the policy when iam statements are unchanged on reuse', async () => {
+      const stateWithRole: StateFile = {
+        ...initialState,
+        resources: {
+          'functions.test_fn': {
+            mode: 'managed',
+            region: 'ap-guangzhou',
+            definition: {
+              ...mockDefinition,
+              iam: {
+                role: {
+                  name: 'existing-role',
+                  statements: [
+                    { effect: 'Allow', action: ['scf:InvokeFunction'], resource: ['*'] },
+                  ],
+                },
+              },
+            },
+            instances: [
+              {
+                sid: 'si:tencent:scf:default:test-function',
+                id: 'test-function',
+                functionName: 'test-function',
+              },
+              {
+                sid: 'si:tencent:scf-role:default:existing-role',
+                type: ResourceTypeEnum.TENCENT_SCF_ROLE,
+                id: 'existing-role',
+                roleArn: 'existing-role',
+              },
+            ],
+            lastUpdated: '2025-01-01T00:00:00Z',
+          },
+        },
+      };
+
+      const fnWithIam = {
+        ...testFunction,
+        iam: {
+          role: {
+            name: 'existing-role',
+            statements: [
+              { effect: 'Allow' as const, action: ['scf:InvokeFunction'], resource: ['*'] },
+            ],
+          },
+        },
+      };
+
+      (stateManager.getResource as jest.Mock).mockReturnValue(
+        stateWithRole.resources['functions.test_fn'],
+      );
+      (mockScfOperations.createFunction as jest.Mock).mockResolvedValue(undefined);
+      (stateManager.setResource as jest.Mock).mockReturnValue(initialState);
+
+      await createResource(mockContext, fnWithIam, stateWithRole);
+
+      expect(mockCamOperations.createRole).not.toHaveBeenCalled();
+      expect(mockCamOperations.updateRolePolicy).not.toHaveBeenCalled();
+      expect(mockScfOperations.createFunction).toHaveBeenCalledWith(
+        expect.objectContaining({ Role: 'existing-role' }),
+        'base64encodedcontent',
+      );
+    });
+
+    it('propagates the policy with derived baseline when iam statements change on reuse', async () => {
+      const stateWithRole: StateFile = {
+        ...initialState,
+        resources: {
+          'functions.test_fn': {
+            mode: 'managed',
+            region: 'ap-guangzhou',
+            definition: {
+              ...mockDefinition,
+              iam: {
+                role: {
+                  name: 'existing-role',
+                  statements: [
+                    { effect: 'Allow', action: ['scf:InvokeFunction'], resource: ['*'] },
+                  ],
+                },
+              },
+            },
+            instances: [
+              {
+                sid: 'si:tencent:scf:default:test-function',
+                id: 'test-function',
+                functionName: 'test-function',
+              },
+              {
+                sid: 'si:tencent:scf-role:default:existing-role',
+                type: ResourceTypeEnum.TENCENT_SCF_ROLE,
+                id: 'existing-role',
+                roleArn: 'existing-role',
+              },
+            ],
+            lastUpdated: '2025-01-01T00:00:00Z',
+          },
+        },
+      };
+
+      const fnWithChangedStatements = {
+        ...testFunction,
+        iam: {
+          role: {
+            name: 'existing-role',
+            statements: [
+              { effect: 'Allow' as const, action: ['scf:InvokeFunction'], resource: ['*'] },
+              { effect: 'Allow' as const, action: ['cos:PutObject'], resource: ['*'] },
+            ],
+          },
+        },
+      };
+
+      (stateManager.getResource as jest.Mock).mockReturnValue(
+        stateWithRole.resources['functions.test_fn'],
+      );
+      (mockCamOperations.updateRolePolicy as jest.Mock).mockResolvedValue(undefined);
+      (mockScfOperations.createFunction as jest.Mock).mockResolvedValue(undefined);
+      (stateManager.setResource as jest.Mock).mockReturnValue(initialState);
+
+      await createResource(mockContext, fnWithChangedStatements, stateWithRole);
+
+      expect(mockCamOperations.updateRolePolicy).toHaveBeenCalledWith(
+        'existing-role',
+        fnWithChangedStatements.iam.role.statements,
+        deriveScfExecutionStatements(fnWithChangedStatements, mockContext),
       );
     });
 
@@ -1076,7 +1337,7 @@ describe('ScfResource', () => {
       ]);
       expect(mockClsOperations.createTopic).toHaveBeenCalledWith(
         'logset-1',
-        'test-service-default-fn-logs',
+        'test-service-default-test_fn-fn-logs',
         expect.objectContaining({
           period: 30,
           storageType: 'hot',
@@ -1659,6 +1920,7 @@ describe('ScfResource', () => {
             name: 'existing-role',
             statements: [
               { effect: 'Allow' as const, action: ['scf:InvokeFunction'], resource: ['*'] },
+              { effect: 'Allow' as const, action: ['cos:GetObject'], resource: ['*'] },
             ],
             managed_policies: ['QcloudSCFFullAccess'],
           },

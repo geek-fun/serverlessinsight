@@ -1,5 +1,6 @@
 import { createIamOperations } from '../../../../src/common/volcengineClient/iamOperations';
 import type { IamRoleConfig } from '../../../../src/common/volcengineClient/types';
+import type { IamStatement } from '../../../../src/common/iamStatements';
 
 type MockFetchOpenAPI = jest.Mock;
 
@@ -810,6 +811,121 @@ describe('iamOperations', () => {
           query: expect.objectContaining({ PolicyName: 'arn:policy:b' }),
         }),
       );
+    });
+  });
+
+  describe('createRole - execution statements', () => {
+    it('builds the execution policy from executionStatements when provided', async () => {
+      const configWithBaseline: IamRoleConfig = {
+        ...mockConfig,
+        executionStatements: [
+          { effect: 'Allow', action: ['vefaas:*'], resource: ['*'] },
+          {
+            effect: 'Allow',
+            action: ['vpc:DescribeVpcs', 'vpc:DescribeSubnets', 'vpc:DescribeSecurityGroups'],
+            resource: ['*'],
+          },
+        ],
+        customStatements: [{ effect: 'Allow', action: ['ecs:DescribeInstances'], resource: ['*'] }],
+      };
+
+      mockClient.fetchOpenAPI
+        .mockResolvedValueOnce({
+          Result: { Role: { RoleName: 'test-role', RoleId: 'role-123' } },
+        })
+        .mockResolvedValueOnce({})
+        .mockResolvedValueOnce({});
+
+      await operations.createRole(configWithBaseline);
+
+      const createPolicyCall = mockClient.fetchOpenAPI.mock.calls.find(
+        ([call]) => call.Action === 'CreatePolicy',
+      )?.[0];
+      const policyDocument = JSON.parse(createPolicyCall.query.PolicyDocument as string);
+      expect(policyDocument.Statement.map((s: { Action: string[] }) => s.Action)).toEqual([
+        ['vefaas:*'],
+        ['vpc:DescribeVpcs', 'vpc:DescribeSubnets', 'vpc:DescribeSecurityGroups'],
+        ['ecs:DescribeInstances'],
+      ]);
+    });
+
+    it('uses the static execution policy when no executionStatements are provided', async () => {
+      mockClient.fetchOpenAPI
+        .mockResolvedValueOnce({
+          Result: { Role: { RoleName: 'test-role', RoleId: 'role-123' } },
+        })
+        .mockResolvedValueOnce({})
+        .mockResolvedValueOnce({});
+
+      await operations.createRole(mockConfig);
+
+      const createPolicyCall = mockClient.fetchOpenAPI.mock.calls.find(
+        ([call]) => call.Action === 'CreatePolicy',
+      )?.[0];
+      const policyDocument = JSON.parse(createPolicyCall.query.PolicyDocument as string);
+      expect(policyDocument.Statement).toHaveLength(4);
+    });
+
+    it('uses executionStatements in the RoleAlreadyExists recovery branch', async () => {
+      const configWithBaseline: IamRoleConfig = {
+        ...mockConfig,
+        executionStatements: [{ effect: 'Allow', action: ['vefaas:*'], resource: ['*'] }],
+      };
+
+      const existingError = new Error('Role exists') as Error & { code: string };
+      existingError.code = 'RoleAlreadyExists';
+
+      mockClient.fetchOpenAPI
+        .mockRejectedValueOnce(existingError)
+        .mockResolvedValueOnce({
+          Result: { Role: { RoleName: 'test-role', RoleId: 'role-123' } },
+        })
+        .mockResolvedValueOnce({})
+        .mockResolvedValueOnce({})
+        .mockResolvedValueOnce({});
+
+      await operations.createRole(configWithBaseline);
+
+      const createPolicyCall = mockClient.fetchOpenAPI.mock.calls.find(
+        ([call]) => call.Action === 'CreatePolicy',
+      )?.[0];
+      const policyDocument = JSON.parse(createPolicyCall.query.PolicyDocument as string);
+      expect(policyDocument.Statement).toEqual([expect.objectContaining({ Action: ['vefaas:*'] })]);
+    });
+  });
+
+  describe('updateRolePolicy', () => {
+    it('rebuilds the full policy from baseline and custom statements', async () => {
+      const baseline: IamStatement[] = [
+        { effect: 'Allow', action: ['vefaas:*'], resource: ['*'] },
+        {
+          effect: 'Allow',
+          action: ['vpc:DescribeVpcs', 'vpc:DescribeSubnets', 'vpc:DescribeSecurityGroups'],
+          resource: ['*'],
+        },
+      ];
+      const custom: IamStatement[] = [
+        { effect: 'Allow', action: ['ecs:DescribeInstances'], resource: ['*'] },
+      ];
+
+      mockClient.fetchOpenAPI
+        .mockResolvedValueOnce({})
+        .mockResolvedValueOnce({})
+        .mockResolvedValueOnce({})
+        .mockResolvedValueOnce({});
+
+      await operations.updateRolePolicy('test-role', baseline, custom);
+
+      const createPolicyCall = mockClient.fetchOpenAPI.mock.calls.find(
+        ([call]) => call.Action === 'CreatePolicy',
+      )?.[0];
+      const policyDocument = JSON.parse(createPolicyCall.query.PolicyDocument as string);
+      expect(policyDocument.Statement).toHaveLength(3);
+      expect(policyDocument.Statement.map((s: { Action: string[] }) => s.Action)).toEqual([
+        ['vefaas:*'],
+        ['vpc:DescribeVpcs', 'vpc:DescribeSubnets', 'vpc:DescribeSecurityGroups'],
+        ['ecs:DescribeInstances'],
+      ]);
     });
   });
 

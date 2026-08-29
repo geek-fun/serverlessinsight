@@ -5,14 +5,7 @@ import {
   PlanItem,
   StateFile,
 } from '../../types';
-import {
-  getContext,
-  logger,
-  getRoleArnFromState,
-  setIac,
-  getDependencyInfo,
-  toDotFormat,
-} from '../../common';
+import { getContext, logger, setIac, getDependencyInfo, toDotFormat } from '../../common';
 import { StateBackend } from '../../common/stateBackend';
 import { lang } from '../../lang';
 import { generateFunctionPlan } from './fc3Planner';
@@ -64,6 +57,42 @@ const logDependencyGraph = (orderedItems: Array<PlanItem>, dotGraph: string): vo
     );
   });
   logger.debug(`${lang.__('DOT_GRAPH_OUTPUT')}:\n${dotGraph}`);
+};
+
+const TEMPLATE_FUNCTION_REF_PATTERN = /^\$\{functions\.([\w.]+)\}$/;
+
+const findFirstManagedRoleArn = (state: StateFile): string | undefined => {
+  for (const [logicalId, resourceState] of Object.entries(state.resources ?? {})) {
+    if (logicalId.startsWith('functions.')) {
+      const ramRoleInstance = resourceState.instances?.find((i) => i.type === 'ALIYUN_RAM_ROLE');
+      if (ramRoleInstance?.roleArn) {
+        return ramRoleInstance.roleArn as string;
+      }
+    }
+  }
+  return undefined;
+};
+
+/** @public Resolves a trigger backend to its role ARN; template refs and bare names map to that function's role, else first managed role. */
+export const buildRoleArnResolver = (
+  state: StateFile,
+  functions: ServerlessIac['functions'],
+): ((backend: string) => string | undefined) => {
+  const fallbackArn = findFirstManagedRoleArn(state);
+  const keyByName = new Map((functions ?? []).map((f) => [f.name, f.key]));
+
+  return (backend: string): string | undefined => {
+    const refMatch = backend.match(TEMPLATE_FUNCTION_REF_PATTERN);
+    const fnKey = refMatch ? refMatch[1] : keyByName.get(backend);
+    if (fnKey) {
+      const resourceState = state.resources?.[`functions.${fnKey}`];
+      const ramRoleInstance = resourceState?.instances?.find((i) => i.type === 'ALIYUN_RAM_ROLE');
+      if (ramRoleInstance?.roleArn) {
+        return ramRoleInstance.roleArn as string;
+      }
+    }
+    return fallbackArn;
+  };
 };
 
 export const deployAliyunStack = async (
@@ -185,13 +214,13 @@ export const deployAliyunStack = async (
   }
 
   // Execute event plan after functions are created (events depend on functions)
-  const roleArn = getRoleArnFromState(state);
+  const resolveRoleArn = buildRoleArnResolver(state, iac.functions);
   const eventResult = await executeApigwPlan(
     context,
     eventPlan,
     iac.events,
     iac.service,
-    roleArn,
+    resolveRoleArn,
     state,
     onStateChange,
   );

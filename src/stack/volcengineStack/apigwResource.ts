@@ -21,6 +21,7 @@ import {
   triggerToApigwUpstreamConfig,
   triggerToApigwRouteConfig,
   buildEventResourceDefinition,
+  buildUpstreamName,
   resolveFunctionKey,
 } from './apigwTypes';
 import {
@@ -42,6 +43,7 @@ import {
   ensureOwnedTopic,
   deleteTlsLogResources,
   buildSharedProjectName,
+  buildApigwLogTopicName,
   releaseSharedLogProjectIfUnused,
   SHARED_LOG_PROJECT_KEY,
 } from './sharedLogProject';
@@ -96,7 +98,7 @@ const ensureApigwLogResources = async (
   // Shared app-scoped TLS project (#214) with a per-event topic nested under it.
   const shared = await ensureSharedLogProject(context, client, state);
   const sharedInstance = buildSharedProjectResourceState(context, shared);
-  const topicName = `${context.service}-${context.stage}-apigw-logs`;
+  const topicName = buildApigwLogTopicName(context.service, context.stage);
   const topic = await ensureOwnedTopic(context, client, {
     projectName: shared.projectName,
     topicName,
@@ -364,7 +366,7 @@ export const createApigwResource = async (
       let upstreamId = upstreamByFunction.get(fnKey);
       if (!upstreamId) {
         const functionId = resolveFunctionIdFromState(state, backendRef);
-        const upstreamName = `${event.name}-${context.stage}-upstream-${fnKey.replace(/_/g, '-')}`;
+        const upstreamName = buildUpstreamName(event, backendRef, context.stage);
         const existingUpstream = await client.apigw.findUpstreamByName(gatewayId, upstreamName);
         if (existingUpstream?.upstreamId) {
           upstreamId = existingUpstream.upstreamId;
@@ -537,12 +539,11 @@ export const updateApigwResource = async (
 
     for (const trigger of event.triggers) {
       const backendRef = String(trigger.backend);
-      const fnKey = resolveFunctionKey(backendRef);
       const functionId = resolveFunctionIdFromState(state, backendRef);
 
       let upstreamId = upstreamByFunction.get(functionId);
       if (!upstreamId) {
-        const upstreamName = `${event.name}-${context.stage}-upstream-${fnKey.replace(/_/g, '-')}`;
+        const upstreamName = buildUpstreamName(event, backendRef, context.stage);
         const existing = await client.apigw.findUpstreamByName(
           serviceInstance.gatewayId as string,
           upstreamName,

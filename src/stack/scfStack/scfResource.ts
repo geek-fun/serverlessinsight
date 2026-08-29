@@ -17,7 +17,14 @@ import {
   setSharedResource,
   removeSharedResource,
 } from '../../common/stateManager';
-import { buildSid, attributesEqual, ProviderEnum, mapAuthType, mapAccess } from '../../common';
+import {
+  buildSid,
+  attributesEqual,
+  ProviderEnum,
+  mapAuthType,
+  mapAccess,
+  buildFunctionRoleName,
+} from '../../common';
 import { RAM_ROLE_PROPAGATION_DELAY_MS } from '../../common/constants';
 import { computeZipContentHash } from '../../common/hashUtils';
 import { logger } from '../../common/logger';
@@ -341,11 +348,44 @@ const buildScfInstanceFromProvider = (info: ScfFunctionInfo, sid: string) => {
   };
 };
 
+/**
+ * Least-privilege SCF execution statements for a function's CAM role.
+ *
+ * Tencent SCF resolves its code package from COS, writes function logs to CLS,
+ * and invokes other functions via the role, so the scf/CLS/COS-GetObject
+ * actions are unconditional. The tencent FunctionDomain.storage shape carries
+ * only disk/nas — no function-level signal proves COS runtime usage — so the
+ * remaining COS actions stay alongside GetObject rather than being gated (no
+ * invented signals). The fn/context parameters are reserved for per-function
+ * derivation (e.g. COS gating) once such a signal exists.
+ */
+export const deriveScfExecutionStatements = (
+  fn: FunctionDomain,
+  context: Context,
+): IamStatement[] => {
+  void fn;
+  void context;
+  return [
+    { effect: 'Allow', action: ['scf:InvokeFunction'], resource: ['*'] },
+    {
+      effect: 'Allow',
+      action: ['cls:logset:putlog', 'cls:logset:create*', 'cls:logset:get*'],
+      resource: ['*'],
+    },
+    {
+      effect: 'Allow',
+      action: ['cos:GetObject', 'cos:PutObject', 'cos:DeleteObject', 'cos:ListBucket'],
+      resource: ['*'],
+    },
+  ];
+};
+
 const createDependentResources = async (
   context: Context,
   fn: FunctionDomain,
   existingInstances: Array<Record<string, unknown>> = [],
   state?: StateFile,
+  existingDefinition?: Record<string, unknown>,
 ): Promise<{
   role?: { roleName?: string; arn?: string };
   clsConfig?: { logsetId: string; logsetName: string; topicId: string; topicName: string };
@@ -391,7 +431,7 @@ const createDependentResources = async (
         const topic = await ensureFunctionTopic(context, client, {
           logsetId: shared.logsetId,
           logsetName: shared.logsetName,
-          topicName: buildFunctionTopicName(context),
+          topicName: buildFunctionTopicName(context, fn.key),
           logicalId: `functions.${fn.key}`,
         });
         clsInstances.push(
@@ -437,12 +477,42 @@ const createDependentResources = async (
 
   const hasCamRole = existingInstances.some((i) => i.type === 'TENCENT_SCF_ROLE');
   const serviceName = `${context.app}-${context.service}`;
-  const defaultRoleName = `${serviceName}-${context.stage}-scf-role`;
+  const defaultRoleName = buildFunctionRoleName(serviceName, context.stage, fn.key);
   const roleName = customRoleName ?? defaultRoleName;
+  const executionStatements = deriveScfExecutionStatements(fn, context);
 
   if (hasCamRole) {
-    // Role already exists - reuse it
-    return { role: { roleName, arn: roleName }, clsConfig, clsInstances, sharedInstance };
+    // Role already exists - reuse it. Keyed on the TENCENT_SCF_ROLE instance
+    // type (not the desired name), so pre-existing deployments keep the role
+    // they were created with even though the default name now includes fn.key.
+    const existingRoleInstance = existingInstances.find(
+      (i) => i.type === ResourceTypeEnum.TENCENT_SCF_ROLE && !(i as ScfDependentInstance).external,
+    ) as ScfDependentInstance | undefined;
+    const reusedRoleName = existingRoleInstance?.id ?? roleName;
+
+    // Propagate the inline policy (derived baseline + custom statements) only
+    // when the custom statements drifted from the last stored definition.
+    const desiredStatements = statements as IamStatement[] | undefined;
+    const existingRole = existingDefinition?.iam as Record<string, unknown> | undefined;
+    const existingStatements =
+      existingRole && existingRole.role && typeof existingRole.role !== 'string'
+        ? (existingRole.role as Record<string, unknown>).statements
+        : undefined;
+    if (
+      !attributesEqual(
+        (existingStatements ?? []) as unknown as Record<string, unknown>,
+        (desiredStatements ?? []) as unknown as Record<string, unknown>,
+      )
+    ) {
+      await client.cam.updateRolePolicy(reusedRoleName, desiredStatements, executionStatements);
+    }
+
+    return {
+      role: { roleName: reusedRoleName, arn: reusedRoleName },
+      clsConfig,
+      clsInstances,
+      sharedInstance,
+    };
   }
 
   // Create new CAM role
@@ -454,6 +524,7 @@ const createDependentResources = async (
     `ServerlessInsight SCF execution role for ${serviceName}`,
     statements as IamStatement[] | undefined,
     managedPolicies,
+    executionStatements,
   );
 
   await delay(RAM_ROLE_PROPAGATION_DELAY_MS);
@@ -514,6 +585,7 @@ export const createResource = async (
     fn,
     existingResourceState?.instances ?? [],
     state,
+    existingResourceState?.definition as Record<string, unknown> | undefined,
   );
 
   let config = functionToScfConfig(fn);
@@ -835,6 +907,7 @@ export const updateResource = async (
           await client.cam.updateRolePolicy(
             ramRoleInstance.id,
             desiredStatements as IamStatement[] | undefined,
+            deriveScfExecutionStatements(fn, context),
           );
         }
 
@@ -894,7 +967,7 @@ export const updateResource = async (
       const topic = await ensureFunctionTopic(context, client, {
         logsetId: logset.logsetId,
         logsetName: logset.logsetName,
-        topicName: buildFunctionTopicName(context),
+        topicName: buildFunctionTopicName(context, fn.key),
         logicalId,
       });
       clsConfig = {

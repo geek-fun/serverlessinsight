@@ -516,6 +516,12 @@ export const en = {
     'Generated API Gateway route name "{{routeName}}" collides between "{{firstPath}}" and "{{secondPath}}" in this deployment; shorten the event name or differentiate trigger method/path',
   SEMANTIC_UNRESOLVED_FUNCTION_BACKEND:
     'Trigger backend "{{reference}}" in event "{{eventKey}}" does not match any function definition in the configuration',
+  SEMANTIC_BACKEND_BARE_KEY:
+    'Trigger backend "{{backend}}" in event "{{eventKey}}" matches function key "{{key}}", but bare backend values must be deployed function names. For template functions use the reference form "${functions.{{key}}}"',
+  SEMANTIC_BACKEND_BARE_NAME:
+    'Trigger backend "{{backend}}" in event "{{eventKey}}" resolves to template function "{{key}}" by name; prefer the reference form "${functions.{{key}}}"',
+  EXTERNAL_FUNCTION_BACKEND:
+    'Backend "{{backendRef}}" is not defined in this template; treating it as an external deployed function name',
 
   // Show command messages
   LOADING_STATE_FOR: 'Loading state for app: {{app}}, service: {{service}}, stage: {{stage}}...',
@@ -609,6 +615,9 @@ export const en = {
     'Failed to recover from RAM role state drift for "{{roleName}}": {{error}}. ' +
     'The role existed in the cloud but recovery operations failed. ' +
     'To fix: manually verify the role in the cloud console, remove it from state, and redeploy.',
+  RAM_POLICY_VERSION_PRUNE_FAILED:
+    'Failed to prune old policy versions for "{{policyName}}": {{error}}. ' +
+    'The policy may exceed the version limit on the next update.',
 
   // Certificate messages
   CERT_INVALID_CONFIGURATION:

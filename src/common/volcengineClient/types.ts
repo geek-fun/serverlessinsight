@@ -273,6 +273,7 @@ export type IamRoleConfig = {
     Statement: IamTrustPolicyStatement[];
   };
   maxSessionDuration?: number;
+  executionStatements?: IamStatement[];
   customStatements?: IamStatement[];
   managedPolicies?: string[];
 };
@@ -640,7 +641,11 @@ export type VolcengineClient = {
       policyType: 'System' | 'Custom',
     ) => Promise<void>;
     detachRolePolicy: (roleName: string, policyName: string) => Promise<void>;
-    updateRolePolicy: (roleName: string, customStatements?: IamStatement[]) => Promise<void>;
+    updateRolePolicy: (
+      roleName: string,
+      baseline?: IamStatement[],
+      customStatements?: IamStatement[],
+    ) => Promise<void>;
     updateManagedPolicies: (roleName: string, desiredPolicies: string[]) => Promise<void>;
     listAttachedRolePolicies: (roleName: string) => Promise<string[]>;
     tagRole: (roleName: string, tags: Array<{ key: string; value: string }>) => Promise<void>;

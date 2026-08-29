@@ -4,6 +4,7 @@ import {
   parseBuiltInStatements,
   buildPolicyDocument,
 } from '../iamStatements';
+import { buildRolePolicyName } from '../nameBuilder';
 import type { IamStatement } from '../iamStatements';
 import { logger } from '../logger';
 import { lang } from '../../lang';
@@ -47,12 +48,12 @@ const mapToCamStatement = (stmt: IamStatement): Record<string, unknown> => {
   return result;
 };
 
-const buildExecutionPolicy = (customStatements?: IamStatement[]): string => {
-  const merged = mergePolicyStatements(
-    SCF_EXECUTION_STATEMENTS,
-    customStatements,
-    mapToCamStatement,
-  );
+const buildExecutionPolicy = (
+  customStatements?: IamStatement[],
+  executionStatements?: IamStatement[],
+): string => {
+  const baseline = executionStatements?.map(mapToCamStatement) ?? SCF_EXECUTION_STATEMENTS;
+  const merged = mergePolicyStatements(baseline, customStatements, mapToCamStatement);
   return buildPolicyDocument(merged, { version: '2.0' });
 };
 
@@ -129,6 +130,7 @@ export const createCamOperations = (camClient: CamSdkClient) => {
       description?: string,
       customStatements?: IamStatement[],
       managedPolicies?: string[],
+      executionStatements?: IamStatement[],
     ): Promise<CamRoleInfo> => {
       const assumeRolePolicy = buildAssumeRolePolicy(trustedServices);
       try {
@@ -156,11 +158,11 @@ export const createCamOperations = (camClient: CamSdkClient) => {
         };
 
         // Attach inline policy with built-in + custom statements
-        const policyName = `${roleName}-policy`;
+        const policyName = buildRolePolicyName(roleName);
         try {
           await camClient.CreatePolicy({
             PolicyName: policyName,
-            PolicyDocument: buildExecutionPolicy(customStatements),
+            PolicyDocument: buildExecutionPolicy(customStatements, executionStatements),
             Description: `SCF execution policy for ${roleName}`,
           });
           await attachPolicy(roleName, policyName);
@@ -195,12 +197,12 @@ export const createCamOperations = (camClient: CamSdkClient) => {
             try {
               const getResponse = await camClient.GetRole({ RoleName: roleName });
               const roleData = getResponse.RoleInfo;
-              const policyName = `${roleName}-policy`;
+              const policyName = buildRolePolicyName(roleName);
               // Re-attach built-in policy (idempotent)
               try {
                 await camClient.CreatePolicy({
                   PolicyName: policyName,
-                  PolicyDocument: buildExecutionPolicy(customStatements),
+                  PolicyDocument: buildExecutionPolicy(customStatements, executionStatements),
                   Description: `SCF execution policy for ${roleName}`,
                 });
                 await attachPolicy(roleName, policyName);
@@ -245,7 +247,7 @@ export const createCamOperations = (camClient: CamSdkClient) => {
           roleId: roleData.RoleId,
           roleArn: roleData.RoleArn,
           description: roleData.Description,
-          policyName: `${roleName}-policy`,
+          policyName: buildRolePolicyName(roleName),
         };
       } catch (error: unknown) {
         if (error && typeof error === 'object' && 'code' in error) {
@@ -257,7 +259,7 @@ export const createCamOperations = (camClient: CamSdkClient) => {
     },
 
     deleteRole: async (roleName: string, managedPolicies?: string[]): Promise<void> => {
-      const policyName = `${roleName}-policy`;
+      const policyName = buildRolePolicyName(roleName);
 
       // Detach managed policies first (don't delete them)
       if (managedPolicies && managedPolicies.length > 0) {
@@ -286,8 +288,9 @@ export const createCamOperations = (camClient: CamSdkClient) => {
     updateRolePolicy: async (
       roleName: string,
       customStatements?: IamStatement[],
+      executionStatements?: IamStatement[],
     ): Promise<void> => {
-      const policyName = `${roleName}-policy`;
+      const policyName = buildRolePolicyName(roleName);
       // Detach + delete old
       await detachPolicy(roleName, policyName);
       await deletePolicyByName(camClient, policyName);
@@ -295,7 +298,7 @@ export const createCamOperations = (camClient: CamSdkClient) => {
       try {
         await camClient.CreatePolicy({
           PolicyName: policyName,
-          PolicyDocument: buildExecutionPolicy(customStatements),
+          PolicyDocument: buildExecutionPolicy(customStatements, executionStatements),
           Description: `SCF execution policy for ${roleName}`,
         });
       } catch (error: unknown) {

@@ -13,6 +13,7 @@ import {
   computeZipContentHash,
   getContext,
   buildSid,
+  buildFunctionRoleName,
   attributesEqual,
   mapAuthType,
   mapAliyunAccess,
@@ -35,6 +36,7 @@ import {
 import { extractFc3Definition, Fc3FunctionInfo, functionToFc3Config } from './fc3Types';
 import { logger } from '../../common/logger';
 import type { IamStatement } from '../../common/iamStatements';
+import { buildFc3ExecutionPolicyDocument } from '../../common/aliyunClient/ramOperations';
 import { lang } from '../../lang';
 import { OWNERSHIP_TAG_KEY, buildOwnershipTagValue, isOwnedByStack } from '../ownershipTag';
 import { isResourceAlreadyExistsError } from '../alreadyExists';
@@ -63,11 +65,84 @@ const delay = async (ms: number): Promise<void> => {
   });
 };
 
-const getTrustedServicesForFunction = (context: Context, fnKey: string): string[] => {
+const TEMPLATE_REF_PATTERN = /^\$\{[^}]+\}$/;
+
+const getTrustedServicesForFunction = (context: Context, fn: FunctionDomain): string[] => {
+  const templateFunctions = context.iac?.functions ?? [];
+  const templateKeys = new Set(templateFunctions.map((templateFn) => templateFn.key));
+  const templateNames = new Set(templateFunctions.map((templateFn) => templateFn.name));
   const fnHasApiGateway = context.iac?.events?.some((event) =>
-    event.triggers?.some((trigger) => String(trigger.backend) === `\${functions.${fnKey}}`),
+    event.triggers?.some((trigger) => {
+      const backend = String(trigger.backend);
+      if (backend === `\${functions.${fn.key}}` || backend === fn.name) {
+        return true;
+      }
+      // External backend (issue #227): the gateway assumes this managed role as
+      // its invocation identity, so bare external names still require apigateway trust.
+      return (
+        !TEMPLATE_REF_PATTERN.test(backend) &&
+        !templateKeys.has(backend) &&
+        !templateNames.has(backend)
+      );
+    }),
   );
   return fnHasApiGateway ? ['fc.aliyuncs.com', 'apigateway.aliyuncs.com'] : ['fc.aliyuncs.com'];
+};
+
+const FC3_LOG_ACTIONS = [
+  'log:PostLogStoreLogs',
+  'log:CreateLogStore',
+  'log:GetLogStore',
+  'log:ListShards',
+  'log:GetCursorOrData',
+];
+
+const FC3_ENI_ACTIONS = [
+  'ecs:CreateNetworkInterface',
+  'ecs:DeleteNetworkInterface',
+  'ecs:DescribeNetworkInterfaces',
+  'ecs:CreateNetworkInterfacePermission',
+  'ecs:DescribeNetworkInterfacePermissions',
+  'ecs:DeleteNetworkInterfacePermission',
+];
+
+const buildDefaultRoleName = buildFunctionRoleName;
+
+const buildFc3CertName = (service: string, stage: string): string =>
+  `${service}-${stage}-fc3-domain`;
+
+export const deriveFc3ExecutionStatements = (
+  fn: FunctionDomain,
+  context: Context,
+  logConfig?: { project: string; logstore: string },
+): IamStatement[] => {
+  const statements: IamStatement[] = [
+    // Broad on purpose: the API gateway assumes this role as its invocation identity.
+    { effect: 'Allow', action: ['fc:InvokeFunction'], resource: ['*'] },
+    {
+      effect: 'Allow',
+      action: FC3_LOG_ACTIONS,
+      resource:
+        logConfig && context.accountId
+          ? [
+              `acs:log:${context.region}:${context.accountId}:project/${logConfig.project}/logstore/${logConfig.logstore}`,
+            ]
+          : ['*'],
+    },
+  ];
+
+  if (fn.network) {
+    statements.push(
+      { effect: 'Allow', action: FC3_ENI_ACTIONS, resource: ['*'] },
+      { effect: 'Allow', action: ['vpc:DescribeVSwitchAttributes'], resource: ['*'] },
+    );
+  }
+
+  if (fn.storage?.nas && fn.storage.nas.length > 0) {
+    statements.push({ effect: 'Allow', action: ['nas:*'], resource: ['*'] });
+  }
+
+  return statements;
 };
 
 const isRecoverableCreateError = (error: unknown): boolean => {
@@ -220,6 +295,7 @@ const createDependentResources = async (
   serviceName: string,
   existingInstances: Array<DependentInstance> = [],
   state?: StateFile,
+  executionStatementsOverride?: IamStatement[],
 ): Promise<{
   logConfig?: { project: string; logstore: string };
   role?: { roleName: string; arn: string };
@@ -269,7 +345,7 @@ const createDependentResources = async (
       }
     } else {
       const shared = await ensureSharedSlsProject(context, client, state);
-      const logstore = await ensureFunctionLogstore(context, client, shared.projectName);
+      const logstore = await ensureFunctionLogstore(context, client, shared.projectName, fn.key);
       instances.push({
         type: 'ALIYUN_SLS_LOGSTORE',
         id: `${shared.projectName}/${logstore.logstoreName}`,
@@ -291,9 +367,11 @@ const createDependentResources = async (
   const managedPolicies =
     iamConfig && typeof iamConfig !== 'string' ? iamConfig.managed_policies : undefined;
   const customRoleName = iamConfig && typeof iamConfig !== 'string' ? iamConfig.name : undefined;
-  const defaultRoleName = `${serviceName}-${context.stage}-fc-role`;
+  const defaultRoleName = buildDefaultRoleName(serviceName, context.stage, fn.key);
 
-  const trustedServices = getTrustedServicesForFunction(context, fn.key);
+  const trustedServices = getTrustedServicesForFunction(context, fn);
+  const executionStatements =
+    executionStatementsOverride ?? deriveFc3ExecutionStatements(fn, context, logConfig);
 
   const isExternalRole = typeof iamConfig === 'string';
 
@@ -311,6 +389,10 @@ const createDependentResources = async (
     if (ramRoleInstance) {
       instances.push(ramRoleInstance);
       await client.ram.updateRoleTrustPolicy(ramRoleInstance.id, trustedServices);
+      await client.ram.updateExecutionPolicyDocument(
+        ramRoleInstance.id,
+        buildFc3ExecutionPolicyDocument(executionStatements, statements),
+      );
     }
   } else {
     const roleName = customRoleName ?? defaultRoleName;
@@ -321,6 +403,7 @@ const createDependentResources = async (
       undefined,
       statements,
       managedPolicies,
+      executionStatements,
     );
     instances.push({
       type: 'ALIYUN_RAM_ROLE',
@@ -784,7 +867,7 @@ export const createResource = async (
           throw new Error(lang.__('CERT_REFERENCE_NOT_FOUND', { reference: certId }));
         }
         certConfig = {
-          certName: `${context.service}-${context.stage}-fc3-domain`,
+          certName: buildFc3CertName(context.service, context.stage),
           certificate: detail.cert,
           privateKey: detail.key,
         };
@@ -907,6 +990,9 @@ export const updateResource = async (
   }
 
   const newIamRole = fn.iam?.role;
+  const executionStatements = deriveFc3ExecutionStatements(fn, context, logConfig);
+  const customStatements =
+    newIamRole && typeof newIamRole !== 'string' ? newIamRole.statements : undefined;
 
   if (typeof newIamRole === 'string') {
     // External role - use ARN directly, skip management
@@ -918,6 +1004,7 @@ export const updateResource = async (
       serviceName,
       undefined,
       state,
+      executionStatements,
     );
     role = deps.role;
     newDependentInstances.push(...deps.instances.filter((i) => i.type === 'ALIYUN_RAM_ROLE'));
@@ -929,8 +1016,12 @@ export const updateResource = async (
         arn: ramRoleInstance.roleArn ?? `acs:ram::${context.accountId}:role/${ramRoleInstance.id}`,
       };
 
-      const trustedServices = getTrustedServicesForFunction(context, fn.key);
+      const trustedServices = getTrustedServicesForFunction(context, fn);
       await client.ram.updateRoleTrustPolicy(ramRoleInstance.id, trustedServices);
+      await client.ram.updateExecutionPolicyDocument(
+        ramRoleInstance.id,
+        buildFc3ExecutionPolicyDocument(executionStatements, customStatements),
+      );
 
       const existingIam = existingState?.definition?.iam as Record<string, unknown> | undefined;
       const desiredIam = fn.iam;
@@ -953,6 +1044,7 @@ export const updateResource = async (
           await client.ram.updateRolePolicy(
             ramRoleInstance.id,
             desiredStatements as IamStatement[] | undefined,
+            executionStatements,
           );
         }
 
@@ -987,6 +1079,7 @@ export const updateResource = async (
       serviceName,
       undefined,
       state,
+      executionStatements,
     );
     securityGroup = deps.securityGroup;
     newDependentInstances.push(
@@ -1006,6 +1099,7 @@ export const updateResource = async (
       serviceName,
       undefined,
       state,
+      executionStatements,
     );
     nasConfig = deps.nasConfig;
     newDependentInstances.push(...deps.instances.filter((i) => i.type.startsWith('ALIYUN_NAS_')));
@@ -1187,7 +1281,7 @@ export const updateResource = async (
         throw new Error(lang.__('CERT_REFERENCE_NOT_FOUND', { reference: certId }));
       }
       certConfig = {
-        certName: `${context.service}-${context.stage}-fc3-domain`,
+        certName: buildFc3CertName(context.service, context.stage),
         certificate: detail.cert,
         privateKey: detail.key,
       };
@@ -1231,7 +1325,7 @@ export const updateResource = async (
           throw new Error(lang.__('CERT_REFERENCE_NOT_FOUND', { reference: certId }));
         }
         certConfig = {
-          certName: `${context.service}-${context.stage}-fc3-domain`,
+          certName: buildFc3CertName(context.service, context.stage),
           certificate: detail.cert,
           privateKey: detail.key,
         };

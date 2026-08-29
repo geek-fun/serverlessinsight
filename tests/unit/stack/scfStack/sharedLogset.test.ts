@@ -95,7 +95,13 @@ describe('sharedLogset', () => {
   });
 
   describe('buildFunctionTopicName', () => {
-    it('builds the canonical function topic name', () => {
+    it('builds the canonical per-function topic name', () => {
+      expect(buildFunctionTopicName(mockContext, 'test_fn')).toBe(
+        'test-service-dev-test_fn-fn-logs',
+      );
+    });
+
+    it('builds the legacy service-scoped shape when no function key is given', () => {
       expect(buildFunctionTopicName(mockContext)).toBe('test-service-dev-fn-logs');
     });
   });

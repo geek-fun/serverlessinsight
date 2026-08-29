@@ -573,7 +573,7 @@ describe('vefaasPlanner', () => {
           after: {
             logConfig: {
               project: 'test-app-dev-tls',
-              topic: 'test-service-dev-fn-logs',
+              topic: 'test-service-dev-test_fn-fn-logs',
             },
           },
         },
@@ -670,7 +670,7 @@ describe('vefaasPlanner', () => {
         action: 'create',
         changes: {
           after: {
-            logConfig: { project: 'test-app-dev-tls', topic: 'test-service-dev-fn-logs' },
+            logConfig: { project: 'test-app-dev-tls', topic: 'test-service-dev-test_fn-fn-logs' },
           },
         },
       });

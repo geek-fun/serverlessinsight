@@ -5,6 +5,7 @@ import {
   parseBuiltInStatements,
   buildPolicyDocument,
 } from '../iamStatements';
+import { buildRolePolicyName } from '../nameBuilder';
 import type { IamStatement } from '../iamStatements';
 import { logger } from '../logger';
 import { lang } from '../../lang';
@@ -66,12 +67,14 @@ const mapToVolcengineStatement = (stmt: IamStatement): Record<string, unknown> =
   return result;
 };
 
-const buildExecutionPolicy = (customStatements?: IamStatement[]): string => {
-  const merged = mergePolicyStatements(
-    VEFAAS_EXECUTION_STATEMENTS,
-    customStatements,
-    mapToVolcengineStatement,
-  );
+const buildExecutionPolicy = (
+  baseline?: IamStatement[],
+  customStatements?: IamStatement[],
+): string => {
+  const nativeBaseline = baseline
+    ? baseline.map(mapToVolcengineStatement)
+    : VEFAAS_EXECUTION_STATEMENTS;
+  const merged = mergePolicyStatements(nativeBaseline, customStatements, mapToVolcengineStatement);
   return buildPolicyDocument(merged);
 };
 
@@ -95,9 +98,10 @@ const buildTagResourceQuery = (
 export const createIamOperations = (iamClient: IamSdkClient) => {
   const createAndAttachPolicy = async (
     roleName: string,
+    baseline?: IamStatement[],
     customStatements?: IamStatement[],
   ): Promise<string> => {
-    const policyName = `${roleName}-policy`;
+    const policyName = buildRolePolicyName(roleName);
 
     try {
       await iamClient.fetchOpenAPI({
@@ -107,7 +111,7 @@ export const createIamOperations = (iamClient: IamSdkClient) => {
         headers: { 'content-type': 'application/json' },
         query: {
           PolicyName: policyName,
-          PolicyDocument: buildExecutionPolicy(customStatements),
+          PolicyDocument: buildExecutionPolicy(baseline, customStatements),
           Description: `veFaaS execution policy for ${roleName}`,
         },
       });
@@ -165,7 +169,7 @@ export const createIamOperations = (iamClient: IamSdkClient) => {
   };
 
   const detachAndDeletePolicy = async (roleName: string): Promise<void> => {
-    const policyName = `${roleName}-policy`;
+    const policyName = buildRolePolicyName(roleName);
 
     try {
       await iamClient.fetchOpenAPI({
@@ -314,7 +318,11 @@ export const createIamOperations = (iamClient: IamSdkClient) => {
         const data = (response.Result || {}) as Record<string, unknown>;
         const roleData = (data.Role || {}) as Record<string, unknown>;
 
-        const policyName = await createAndAttachPolicy(roleName, customStatements);
+        const policyName = await createAndAttachPolicy(
+          roleName,
+          config.executionStatements,
+          customStatements,
+        );
 
         if (config.managedPolicies && config.managedPolicies.length > 0) {
           for (const policyArn of config.managedPolicies) {
@@ -360,7 +368,7 @@ export const createIamOperations = (iamClient: IamSdkClient) => {
                 },
               });
 
-              const policyName = await createAndAttachPolicy(roleName);
+              const policyName = await createAndAttachPolicy(roleName, config.executionStatements);
 
               if (config.managedPolicies && config.managedPolicies.length > 0) {
                 for (const policyArn of config.managedPolicies) {
@@ -425,7 +433,7 @@ export const createIamOperations = (iamClient: IamSdkClient) => {
           createdTime: roleData.CreateTime as string | undefined,
           maxSessionDuration: roleData.MaxSessionDuration as number | undefined,
           trustPolicyDocument: roleData.TrustPolicyDocument as string | undefined,
-          policyName: `${roleName}-policy`,
+          policyName: buildRolePolicyName(roleName),
         };
       } catch (error: unknown) {
         if (error && typeof error === 'object' && 'code' in error) {
@@ -511,10 +519,11 @@ export const createIamOperations = (iamClient: IamSdkClient) => {
 
     updateRolePolicy: async (
       roleName: string,
+      baseline?: IamStatement[],
       customStatements?: IamStatement[],
     ): Promise<void> => {
       await detachAndDeletePolicy(roleName);
-      await createAndAttachPolicy(roleName, customStatements);
+      await createAndAttachPolicy(roleName, baseline, customStatements);
       logger.info(lang.__('IAM_ROLE_POLICY_UPDATED', { roleName }));
     },
 

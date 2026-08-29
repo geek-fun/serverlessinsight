@@ -22,6 +22,13 @@ export const SHARED_LOG_PROJECT_KEY = 'logs.project';
 
 export const buildSharedProjectName = (app: string, stage: string): string => `${app}-${stage}-tls`;
 
+/** Per-function fn-logs topic (#214 per-owner teardown): the function key is part of the name. */
+export const buildFunctionLogTopicName = (service: string, stage: string, fnKey: string): string =>
+  `${service}-${stage}-${fnKey}-fn-logs`;
+
+export const buildApigwLogTopicName = (service: string, stage: string): string =>
+  `${service}-${stage}-apigw-logs`;
+
 const resolveSharedProjectName = (shared: ResourceState): string | undefined => {
   const instanceId = (shared.instances?.[0] as { id?: string } | undefined)?.id;
   return instanceId ?? (shared.definition as { projectName?: string } | undefined)?.projectName;
@@ -162,8 +169,8 @@ export const ensureOwnedTopic = async (
 
   const existing = await client.tls.getTopic(projectName, topicName);
   if (existing) {
-    // Service-scoped topics are shared across a service's functions/events, so
-    // ownership is verified at the owning-stack level, not per logical id.
+    // fn-logs topics are per-function (the key is in the name); the apigw topic
+    // stays service-scoped. Adoption verifies the owning stack either way.
     const tag = (existing.tags ?? []).find((t) => t.Key === OWNERSHIP_TAG_KEY);
     const parsed = parseOwnershipTagValue(tag?.Value);
     if (parsed?.stack === `${context.app}-${context.service}`) {

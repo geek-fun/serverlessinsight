@@ -10,6 +10,7 @@ import {
   StateFile,
 } from '../../types';
 import { extractVefaasDefinition, functionToVefaasConfig } from './vefaasTypes';
+import { buildSharedProjectName, buildFunctionLogTopicName } from './sharedLogProject';
 import { OWNERSHIP_TAG_KEY, isOwnedByStack } from '../ownershipTag';
 
 const planFunctionDeletion = (logicalId: string, definition: ResourceAttributes): PlanItem => ({
@@ -65,7 +66,7 @@ export const generateFunctionPlan = async (
       // planner would report `noop` forever, so `UpdateFunction`'s `TlsConfig`
       // never gets sent. Derive the same project/topic names the executor
       // would use (shared stage slot → tracked topic instance → deterministic
-      // shared names `${app}-${stage}-tls` / `${service}-${stage}-fn-logs`) so
+      // names `${app}-${stage}-tls` / `${service}-${stage}-${fn.key}-fn-logs`) so
       // the diff can see the field change without phantom drift.
       if (fn.log) {
         const tlsTopicInstance = currentState?.instances?.find(
@@ -81,13 +82,13 @@ export const generateFunctionPlan = async (
           if (projectName) {
             config.logConfig = {
               project: projectName,
-              topic: `${context.service}-${context.stage}-fn-logs`,
+              topic: buildFunctionLogTopicName(context.service, context.stage, fn.key),
             };
           }
         } else {
           config.logConfig = {
-            project: `${context.app}-${context.stage}-tls`,
-            topic: `${context.service}-${context.stage}-fn-logs`,
+            project: buildSharedProjectName(context.app, context.stage),
+            topic: buildFunctionLogTopicName(context.service, context.stage, fn.key),
           };
         }
       }

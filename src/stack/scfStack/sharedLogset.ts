@@ -25,8 +25,16 @@ export const SHARED_LOGSET_KEY = 'logs.project';
 
 export const buildSharedLogsetName = (app: string, stage: string): string => `${app}-${stage}-cls`;
 
-export const buildFunctionTopicName = (context: Context): string =>
-  `${context.service}-${context.stage}-fn-logs`;
+/**
+ * Topic names are per-function (#214 per-owner teardown): the function key is
+ * part of the name. The fnKey-less legacy shape only matches topics created
+ * before per-function naming — used by legacy-state branches and delete
+ * fallbacks where the actual topic predates this scheme.
+ */
+export const buildFunctionTopicName = (context: Context, fnKey?: string): string =>
+  fnKey
+    ? `${context.service}-${context.stage}-${fnKey}-fn-logs`
+    : `${context.service}-${context.stage}-fn-logs`;
 
 const resolveSharedLogsetName = (shared: ResourceState): string | undefined => {
   const instanceId = (shared.instances?.[0] as { id?: string } | undefined)?.id;

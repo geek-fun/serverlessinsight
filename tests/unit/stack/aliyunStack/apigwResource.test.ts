@@ -123,6 +123,12 @@ jest.mock('../../../../src/stack/aliyunStack/apigwTypes', () => ({
   generateApiKey: (...args: unknown[]) => mockedApigwTypes.generateApiKey(...args),
   inferProtocolConfig: (...args: unknown[]) => mockedApigwTypes.inferProtocolConfig(...args),
   buildEventLogSnapshot: (...args: unknown[]) => mockedApigwTypes.buildEventLogSnapshot(...args),
+  normalizeRoleArnResolver: (param: unknown) => {
+    if (typeof param === 'function') {
+      return param;
+    }
+    return () => param;
+  },
 }));
 
 jest.mock('../../../../src/common/stateManager', () => ({
@@ -238,6 +244,67 @@ describe('ApigwResource', () => {
       expect(mockedApigwOperations.createApi).toHaveBeenCalled();
       expect(mockedApigwOperations.deployApi).toHaveBeenCalled();
       expect(mockedStateManager.setResource).toHaveBeenCalled();
+    });
+
+    it('resolves a per-trigger roleArn from the backend via the resolver', async () => {
+      mockedApigwOperations.findApiGroupByName.mockResolvedValue(null);
+      mockedApigwOperations.createApiGroup.mockResolvedValue('group-123');
+      mockedApigwOperations.getApiGroup.mockResolvedValue({
+        groupId: 'group-123',
+        groupName: 'test-api-group',
+        subDomain: 'group-123.apigw.aliyuncs.com',
+      });
+      mockedApigwOperations.createApi.mockResolvedValue('api-456');
+      mockedApigwOperations.getApi.mockResolvedValue({ apiId: 'api-456', apiName: 'test-api' });
+      mockedApigwOperations.deployApi.mockResolvedValue(undefined);
+      mockedApigwTypes.eventToApigwGroupConfig.mockReturnValue({ groupName: 'test-api-group' });
+      mockedApigwTypes.extractApigwGroupDefinition.mockReturnValue({});
+      mockedApigwTypes.triggerToApigwApiConfig.mockReturnValue({ apiName: 'test-api' });
+      mockedApigwTypes.extractEventDomainDefinition.mockReturnValue(null);
+
+      const resolver = (backend: string) =>
+        backend === 'functions.hello_function' ? 'arn:fn-a' : 'arn:fallback';
+
+      await createApigwResource(mockContext, testEvent, 'test-service', resolver, initialState);
+
+      expect(mockedApigwTypes.triggerToApigwApiConfig).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.objectContaining({ backend: 'functions.hello_function' }),
+        expect.anything(),
+        expect.anything(),
+        expect.anything(),
+        expect.anything(),
+        'arn:fn-a',
+      );
+    });
+
+    it('resolves undefined roleArn when no resolver is provided', async () => {
+      mockedApigwOperations.findApiGroupByName.mockResolvedValue(null);
+      mockedApigwOperations.createApiGroup.mockResolvedValue('group-123');
+      mockedApigwOperations.getApiGroup.mockResolvedValue({
+        groupId: 'group-123',
+        groupName: 'test-api-group',
+        subDomain: 'group-123.apigw.aliyuncs.com',
+      });
+      mockedApigwOperations.createApi.mockResolvedValue('api-456');
+      mockedApigwOperations.getApi.mockResolvedValue({ apiId: 'api-456', apiName: 'test-api' });
+      mockedApigwOperations.deployApi.mockResolvedValue(undefined);
+      mockedApigwTypes.eventToApigwGroupConfig.mockReturnValue({ groupName: 'test-api-group' });
+      mockedApigwTypes.extractApigwGroupDefinition.mockReturnValue({});
+      mockedApigwTypes.triggerToApigwApiConfig.mockReturnValue({ apiName: 'test-api' });
+      mockedApigwTypes.extractEventDomainDefinition.mockReturnValue(null);
+
+      await createApigwResource(mockContext, testEvent, 'test-service', undefined, initialState);
+
+      expect(mockedApigwTypes.triggerToApigwApiConfig).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.objectContaining({ backend: 'functions.hello_function' }),
+        expect.anything(),
+        expect.anything(),
+        expect.anything(),
+        expect.anything(),
+        undefined,
+      );
     });
 
     it('creates missing PROVIDER gateway log configuration on create', async () => {
