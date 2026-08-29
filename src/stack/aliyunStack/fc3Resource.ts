@@ -172,14 +172,51 @@ const resolveRoleGrant = (
   };
 };
 
+const buildFcFunctionArn = (context: Context, functionName: string): string | undefined =>
+  context.accountId
+    ? `acs:fc:${context.region}:${context.accountId}:functions/${functionName}`
+    : undefined;
+
+const isTemplateFunctionBackend = (context: Context, backend: string): boolean => {
+  if (/^\$\{functions\./.test(backend)) return true;
+  return (context.iac?.functions ?? []).some(
+    (candidate) => candidate.key === backend || candidate.name === backend,
+  );
+};
+
+/**
+ * Strict invoke scope (issue #228): this role may invoke its own function plus
+ * the service's external backend functions (the gateway may assume any managed
+ * role as the fallback identity for external APIs). Falls back to '*' only
+ * when the account Id is unknown — never wrong-permissions.
+ */
+const resolveFc3InvokeResources = (fn: FunctionDomain, context: Context): string[] => {
+  const ownArn = buildFcFunctionArn(context, fn.name);
+  if (!ownArn) return ['*'];
+
+  const resources = new Set<string>([ownArn]);
+  for (const event of context.iac?.events ?? []) {
+    for (const trigger of event.triggers ?? []) {
+      const backend = String(trigger.backend ?? '');
+      if (!backend || isTemplateFunctionBackend(context, backend)) continue;
+      const externalArn = buildFcFunctionArn(context, backend);
+      if (externalArn) resources.add(externalArn);
+    }
+  }
+  return [...resources];
+};
+
 export const deriveFc3ExecutionStatements = (
   fn: FunctionDomain,
   context: Context,
   logConfig?: { project: string; logstore: string },
 ): IamStatement[] => {
   const statements: IamStatement[] = [
-    // Broad on purpose: the API gateway assumes this role as its invocation identity.
-    { effect: 'Allow', action: ['fc:InvokeFunction'], resource: ['*'] },
+    {
+      effect: 'Allow',
+      action: ['fc:InvokeFunction'],
+      resource: resolveFc3InvokeResources(fn, context),
+    },
     {
       effect: 'Allow',
       action: FC3_LOG_ACTIONS,
