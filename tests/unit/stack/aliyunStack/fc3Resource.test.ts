@@ -3863,7 +3863,7 @@ describe('Fc3Resource', () => {
       expect(statements[0]).toEqual({
         effect: 'Allow',
         action: ['fc:InvokeFunction'],
-        resource: ['*'],
+        resource: ['acs:fc:cn-hangzhou:123456789012:functions/test-function'],
       });
       expect(statements[1].effect).toBe('Allow');
       expect(statements[1].action).toEqual([
@@ -3885,6 +3885,44 @@ describe('Fc3Resource', () => {
       expect(statements[1].resource).toEqual([
         'acs:log:cn-hangzhou:123456789012:project/test-sls/logstore/test-logstore',
       ]);
+    });
+
+    it('scopes fc:InvokeFunction to the function ARN plus external backend ARNs (issue #228)', () => {
+      const contextWithExternals: Context = {
+        ...mockContext,
+        iac: {
+          ...(mockContext.iac ?? {}),
+          functions: [testFunction],
+          events: [
+            {
+              key: 'api_gateway',
+              name: 'test-api',
+              type: 'API_GATEWAY',
+              triggers: [
+                { method: 'GET', path: '/own', backend: '${functions.test_fn}' },
+                { method: 'POST', path: '/ext1', backend: 'external-deployed-fn' },
+                { method: 'PUT', path: '/ext2', backend: 'another-external-fn' },
+              ],
+            },
+          ],
+        },
+      } as Context;
+
+      const statements = deriveFc3ExecutionStatements(testFunction, contextWithExternals);
+
+      expect(statements[0].resource).toEqual([
+        'acs:fc:cn-hangzhou:123456789012:functions/test-function',
+        'acs:fc:cn-hangzhou:123456789012:functions/external-deployed-fn',
+        'acs:fc:cn-hangzhou:123456789012:functions/another-external-fn',
+      ]);
+    });
+
+    it('falls back to resource * for fc:InvokeFunction when accountId is unknown', () => {
+      const contextWithoutAccount: Context = { ...mockContext, accountId: undefined };
+
+      const statements = deriveFc3ExecutionStatements(testFunction, contextWithoutAccount);
+
+      expect(statements[0].resource).toEqual(['*']);
     });
 
     it('adds ecs/vpc statements when fn.network is present', () => {
