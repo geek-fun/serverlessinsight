@@ -143,7 +143,7 @@ describe('apigwTypes', () => {
     expect(def.logEnabled).toBe(true);
     expect(def.logConfig).toEqual({
       project: 'test-app-dev-tls',
-      topic: 'test-service-dev-apigw-logs',
+      topic: 'test-service-dev-api_gateway-apigw-logs',
     });
   });
 

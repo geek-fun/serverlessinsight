@@ -138,6 +138,7 @@ export const triggerToApigwRouteConfig = (
 
 export const extractEventDomainDefinition = (
   event: EventDomain,
+  logTopicOverride?: string,
 ): {
   gatewayName: string;
   network?: { vpcId: string; subnetIds: string[] };
@@ -157,7 +158,9 @@ export const extractEventDomainDefinition = (
       ? {
           logConfig: {
             project: buildSharedProjectName(context.app, context.stage),
-            topic: buildApigwLogTopicName(context.service, context.stage),
+            topic:
+              logTopicOverride ??
+              buildApigwLogTopicName(context.service, context.stage, String(event.key)),
           },
         }
       : {}),
@@ -177,8 +180,11 @@ export const extractEventDomainDefinition = (
 
 export type EventDomainDefinition = ReturnType<typeof extractEventDomainDefinition>;
 
-export const buildEventResourceDefinition = (event: EventDomain): ResourceAttributes => {
-  return extractEventDomainDefinition(event) as unknown as ResourceAttributes;
+export const buildEventResourceDefinition = (
+  event: EventDomain,
+  logTopicOverride?: string,
+): ResourceAttributes => {
+  return extractEventDomainDefinition(event, logTopicOverride) as unknown as ResourceAttributes;
 };
 
 export { resolveFunctionReference };

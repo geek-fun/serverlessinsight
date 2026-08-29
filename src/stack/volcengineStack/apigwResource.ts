@@ -70,11 +70,20 @@ const buildGatewayInstance = (info: ApigwGatewayInfo, stage: string): ResourceIn
   resourceSpec: info.resourceSpec ?? null,
 });
 
+const resolveTlsTopicNameFromInstances = (
+  instances: Array<ResourceInstance>,
+): string | undefined => {
+  const tlsTopic = instances.find((i) => i.type === 'VOLCENGINE_TLS_TOPIC') as
+    { id?: string } | undefined;
+  return tlsTopic?.id?.split('/')[1];
+};
+
 const ensureApigwLogResources = async (
   context: Context,
   existingInstances: Array<ResourceInstance>,
   state: StateFile,
   logicalId: string,
+  eventKey: string,
 ): Promise<{
   projectId: string;
   topicId: string;
@@ -98,7 +107,7 @@ const ensureApigwLogResources = async (
   // Shared app-scoped TLS project (#214) with a per-event topic nested under it.
   const shared = await ensureSharedLogProject(context, client, state);
   const sharedInstance = buildSharedProjectResourceState(context, shared);
-  const topicName = buildApigwLogTopicName(context.service, context.stage);
+  const topicName = buildApigwLogTopicName(context.service, context.stage, eventKey);
   const topic = await ensureOwnedTopic(context, client, {
     projectName: shared.projectName,
     topicName,
@@ -301,6 +310,7 @@ export const createApigwResource = async (
       existingInstances,
       state,
       logicalId,
+      event.key,
     );
     if (logResources.sharedInstance) {
       state = setSharedResource(state, context.stage, 'logs.project', logResources.sharedInstance);
@@ -348,7 +358,7 @@ export const createApigwResource = async (
   const partialResourceState: ResourceState = {
     mode: 'managed',
     region: context.region,
-    definition: buildEventResourceDefinition(event),
+    definition: buildEventResourceDefinition(event, resolveTlsTopicNameFromInstances(instances)),
     instances,
     status: 'tainted',
     lastUpdated: new Date().toISOString(),
@@ -444,7 +454,7 @@ export const createApigwResource = async (
   const finalResourceState: ResourceState = {
     mode: 'managed',
     region: context.region,
-    definition: buildEventResourceDefinition(event),
+    definition: buildEventResourceDefinition(event, resolveTlsTopicNameFromInstances(instances)),
     instances,
     status: 'ready',
     lastUpdated: new Date().toISOString(),
@@ -493,6 +503,7 @@ export const updateApigwResource = async (
         existingState.instances,
         state,
         `events.${event.key}`,
+        event.key,
       );
       if (logResources.sharedInstance) {
         state = setSharedResource(
@@ -601,7 +612,7 @@ export const updateApigwResource = async (
   const resourceState: ResourceState = {
     mode: 'managed',
     region: context.region,
-    definition: buildEventResourceDefinition(event),
+    definition: buildEventResourceDefinition(event, resolveTlsTopicNameFromInstances(instances)),
     instances,
     lastUpdated: new Date().toISOString(),
   };

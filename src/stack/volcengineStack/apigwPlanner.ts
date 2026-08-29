@@ -34,7 +34,14 @@ export const generateApigwPlan = async (
       const currentState = getResource(state, logicalId);
       const client = createVolcengineClient(context);
 
-      const desiredDefinition = buildEventResourceDefinition(event);
+      // Stored-first: an existing event keeps its recorded topic name so the
+      // desired definition never phantom-drifts against legacy state.
+      const storedTlsTopic = currentState?.instances?.find(
+        (i) => (i as { type?: string }).type === 'VOLCENGINE_TLS_TOPIC',
+      ) as { id?: string } | undefined;
+      const storedTopicName = storedTlsTopic?.id?.split('/')[1];
+
+      const desiredDefinition = buildEventResourceDefinition(event, storedTopicName);
 
       if (!currentState || currentState.status === 'tainted') {
         // No usable local state: probe the provider before planning create.
