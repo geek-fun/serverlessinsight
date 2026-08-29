@@ -54,6 +54,10 @@ const mockClient = {
     deleteCustomDomain: jest.fn(),
     updateGatewayLog: jest.fn(),
   },
+  vefaas: {
+    getFunction: jest.fn(),
+    getFunctionById: jest.fn(),
+  },
   tls: {
     createProject: jest.fn(),
     getProject: jest.fn(),
@@ -247,6 +251,39 @@ describe('apigwResource', () => {
       expect(types).toContain('VOLCENGINE_APIGW_SERVICE');
       expect(types).toContain('VOLCENGINE_APIGW_UPSTREAM');
       expect(types).toContain('VOLCENGINE_APIGW_ROUTE');
+    });
+
+    it('resolves an external bare backend function Id from the provider (issue #227)', async () => {
+      const externalEvent: EventDomain = {
+        ...mockEvent,
+        triggers: [
+          { method: 'POST', path: '/graphql', backend: 'external-deployed-fn' },
+          { method: 'GET', path: '/health', backend: 'external-deployed-fn' },
+        ],
+      };
+      mockClient.vefaas.getFunction.mockResolvedValue({
+        functionId: 'ext-fn-1',
+        functionName: 'external-deployed-fn',
+      });
+
+      const result = await createApigwResource(
+        mockContext,
+        externalEvent,
+        'test-service',
+        stateWithFunction,
+      );
+
+      expect(mockClient.vefaas.getFunction).toHaveBeenCalledWith('external-deployed-fn');
+      expect(mockClient.apigw.createUpstream).toHaveBeenCalledWith(
+        expect.objectContaining({
+          gatewayId: 'gw-1',
+          sourceType: 'VeFaas',
+          functionId: 'ext-fn-1',
+        }),
+      );
+      const saved = result.resources['events.api_gateway'];
+      const types = saved.instances.map((i) => (i as unknown as { type: string }).type);
+      expect(types).toContain('VOLCENGINE_APIGW_UPSTREAM');
     });
 
     it('retains the full provider detail set on gateway/service/upstream/route instances', async () => {

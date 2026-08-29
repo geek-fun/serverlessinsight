@@ -7,6 +7,7 @@ import {
   PartialResourceError,
 } from '../../types';
 import { createVolcengineClient } from '../../common/volcengineClient';
+import type { VolcengineClient } from '../../common/volcengineClient/types';
 import { getContext } from '../../common';
 import type {
   ApigwGatewayConfig,
@@ -219,27 +220,47 @@ const buildRouteInstance = (
 });
 
 /**
- * Resolve the veFaaS function Id for a backend ref from state. Template refs
- * carry the key directly; bare values are the deployed function name and are
- * mapped to the template key first. The function resource must already be
- * deployed (functions deploy before events).
+ * Resolve the veFaaS function Id for a backend ref. Template refs carry the
+ * key directly; bare values are the deployed function name — mapped to the
+ * template key first, then resolved from state. A bare name matching no
+ * template function is an EXTERNAL deployed function: its Id is resolved
+ * from the provider by name (same account/region, function must exist).
  */
-const resolveFunctionIdFromState = (state: StateFile, backendRef: string): string => {
+const resolveFunctionIdFromState = async (
+  state: StateFile,
+  backendRef: string,
+  client: VolcengineClient,
+): Promise<string> => {
   const context = getContext();
   const refMatch = /^\$\{functions\.([\w.]+)\}$/.exec(String(backendRef ?? ''));
+  const templateKey = refMatch?.[1];
   const fnKey =
-    refMatch?.[1] ?? context.iac?.functions?.find((f) => f.name === String(backendRef))?.key;
-  const fnState = fnKey ? getResource(state, `functions.${fnKey}`) : undefined;
-  const instance = fnState?.instances?.find((i) => i.type === 'VOLCENGINE_VEFAAS_FUNCTION');
-  const functionId = (instance as { functionId?: string | null } | undefined)?.functionId;
-  if (!functionId) {
+    templateKey ?? context.iac?.functions?.find((f) => f.name === String(backendRef))?.key;
+
+  if (fnKey) {
+    const fnState = getResource(state, `functions.${fnKey}`);
+    const instance = fnState?.instances?.find((i) => i.type === 'VOLCENGINE_VEFAAS_FUNCTION');
+    const functionId = (instance as { functionId?: string | null } | undefined)?.functionId;
+    if (functionId) {
+      return functionId;
+    }
+    if (templateKey) {
+      // Template function with no state Id: deploy failed or state is stale —
+      // do not mask it by adopting a same-named foreign function.
+      throw new Error(
+        `Cannot resolve veFaaS function Id for backend ${backendRef} (functions.${fnKey} has no functionId in state). Deploy the function first.`,
+      );
+    }
+  }
+
+  const external = await client.vefaas.getFunction(String(backendRef ?? ''));
+  const externalId = external?.functionId;
+  if (!externalId) {
     throw new Error(
-      `Cannot resolve veFaaS function Id for backend ${backendRef}${
-        fnKey ? ` (functions.${fnKey})` : ''
-      } — no functionId in state. Deploy the function first. External functions (not defined in this template) are not supported for volcengine API Gateway backends.`,
+      lang.__('EXTERNAL_FUNCTION_NOT_FOUND_VOLCENGINE', { backendRef: String(backendRef ?? '') }),
     );
   }
-  return functionId;
+  return externalId;
 };
 
 export const createApigwResource = async (
@@ -383,7 +404,7 @@ export const createApigwResource = async (
 
       let upstreamId = upstreamByFunction.get(fnKey);
       if (!upstreamId) {
-        const functionId = resolveFunctionIdFromState(state, backendRef);
+        const functionId = await resolveFunctionIdFromState(state, backendRef, client);
         const upstreamName = buildUpstreamName(event, backendRef, context.stage);
         const existingUpstream = await client.apigw.findUpstreamByName(gatewayId, upstreamName);
         if (existingUpstream?.upstreamId) {
@@ -558,7 +579,7 @@ export const updateApigwResource = async (
 
     for (const trigger of event.triggers) {
       const backendRef = String(trigger.backend);
-      const functionId = resolveFunctionIdFromState(state, backendRef);
+      const functionId = await resolveFunctionIdFromState(state, backendRef, client);
 
       let upstreamId = upstreamByFunction.get(functionId);
       if (!upstreamId) {

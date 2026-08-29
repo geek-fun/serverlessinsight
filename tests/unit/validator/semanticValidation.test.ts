@@ -173,7 +173,7 @@ describe('validateSemantics', () => {
       expect(logger.warn).not.toHaveBeenCalled();
     });
 
-    it('rejects external bare backends on volcengine (upstreams need a managed function)', () => {
+    it('allows external bare backends on volcengine (provider lookup resolves the function Id)', () => {
       const errors = validateSemantics({
         ...buildIac({
           gateway: {
@@ -184,9 +184,7 @@ describe('validateSemantics', () => {
         provider: { name: ProviderEnum.VOLCENGINE, region: 'cn-beijing' },
       } as unknown as ServerlessIacRaw);
 
-      const external = errors.filter((error) => error.keyword === 'externalBackendUnsupported');
-      expect(external).toHaveLength(1);
-      expect(external[0].instancePath).toBe('/events/gateway/triggers/0');
+      expect(errors).toHaveLength(0);
     });
 
     it('allows external bare backends on aliyun (gateway assumes the managed role)', () => {
