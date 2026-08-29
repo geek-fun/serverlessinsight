@@ -171,6 +171,35 @@ import { createRamOperations } from '../../common/aliyunClient/ramOperations';
 - Keep abstractions provider-agnostic
 - Clean separation of concerns between providers
 
+## Resource Naming (Cross-Platform) - MANDATORY
+
+All si-generated cloud resource names MUST come from shared builders — never inline name templates. One name template appearing in more than one place (planner / executor / validator) is a defect: duplicated templates drift.
+
+### Canonical Builders
+
+| Resource | Builder (single source of truth) | Shape |
+|---|---|---|
+| Function execution role | `buildFunctionRoleName` (`src/common/nameBuilder.ts`) | `${app}-${service}-${stage}-${fn.key}-role` — identical on every provider |
+| Role execution policy | `buildRolePolicyName` (`src/common/nameBuilder.ts`) | `${roleName}-policy` |
+| Function log topic/logstore | per-provider shared-log module (`buildFunctionLogTopicName` / `buildFunctionLogstoreName`) | `${service}-${stage}-${fn.key}-fn-logs` |
+| Shared log project/logset | `buildSharedProjectName` / `buildSharedLogsetName` | `${app}-${stage}-sls` / `-tls` / `-cls` |
+| Length-limited names | `buildConstrainedName` with the provider's cloud limit | truncate + hash deterministically |
+
+```typescript
+// GOOD
+const policyName = buildRolePolicyName(roleName);
+
+// AVOID - duplicated template, drifts from the other call sites
+const policyName = `${roleName}-policy`;
+```
+
+### Rules
+
+1. **Per-owner teardown**: a log container owned by a function/event includes that owner's key in its name (issue #214), so removing one owner never deletes a container another owner still uses. Provider-level singletons (e.g. the aliyun gateway log config, instance id `${region}:PROVIDER`) are the exception: service-scoped, with deletion guarded by active-reference checks.
+2. **Stored-first on rename**: when a name derivation changes, executors and planners MUST read the recorded name from state instances first and apply the new derivation only to fresh creates (see `resolveTlsTopicNameFromInstances` in volcengine `apigwResource.ts`). Otherwise existing deployments phantom-drift and orphan containers.
+3. **In-place migration**: reuse branches key on instance type — existing deployments keep their recorded role/container and get trust/policy updated in place; new names apply only to newly created resources. Never recreate a role or container just to change its name.
+4. **SIDs are per-provider**: `si:<provider>:<service>:<stage>:<id>` — intentionally NOT unified cross-provider; a SID's lifecycle is bound to its physical resource.
+
 ## Code Style
 
 ### TypeScript
