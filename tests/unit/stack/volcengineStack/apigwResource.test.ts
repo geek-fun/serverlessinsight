@@ -394,7 +394,7 @@ describe('apigwResource', () => {
       });
       mockClient.tls.createTopic.mockResolvedValue({
         topicId: 'topic-1',
-        topicName: 'test-service-dev-apigw-logs',
+        topicName: 'test-service-dev-api_gateway-apigw-logs',
       });
       mockClient.tls.getTopic.mockResolvedValue(null);
 
@@ -412,7 +412,7 @@ describe('apigwResource', () => {
       expect(mockClient.tls.createTopic).toHaveBeenCalledWith(
         expect.objectContaining({
           projectName: 'test-app-dev-tls',
-          topicName: 'test-service-dev-apigw-logs',
+          topicName: 'test-service-dev-api_gateway-apigw-logs',
         }),
       );
       expect(mockClient.apigw.updateGatewayLog).toHaveBeenCalledWith('gw-1', {
@@ -485,7 +485,7 @@ describe('apigwResource', () => {
       });
       mockClient.tls.createTopic.mockResolvedValue({
         topicId: 'topic-1',
-        topicName: 'test-service-dev-apigw-logs',
+        topicName: 'test-service-dev-api_gateway-apigw-logs',
       });
 
       await createApigwResource(mockContext, eventWithLog, 'test-service', stateWithExistingLogs);
@@ -508,7 +508,7 @@ describe('apigwResource', () => {
       });
       mockClient.tls.createTopic.mockResolvedValue({
         topicId: 'topic-1',
-        topicName: 'test-service-dev-apigw-logs',
+        topicName: 'test-service-dev-api_gateway-apigw-logs',
       });
       mockClient.tls.getTopic.mockResolvedValue(null);
 
@@ -523,7 +523,7 @@ describe('apigwResource', () => {
       expect(mockClient.tls.createTopic).toHaveBeenCalledWith(
         expect.objectContaining({
           projectName: 'test-app-dev-tls',
-          topicName: 'test-service-dev-apigw-logs',
+          topicName: 'test-service-dev-api_gateway-apigw-logs',
         }),
       );
       expect(mockClient.tls.addTags).toHaveBeenCalledWith(
@@ -536,7 +536,7 @@ describe('apigwResource', () => {
       const saved = result.resources['events.api_gateway'];
       const topic = saved.instances.find((i) => (i.type as string) === 'VOLCENGINE_TLS_TOPIC');
       expect(topic).toMatchObject({
-        id: 'test-app-dev-tls/test-service-dev-apigw-logs',
+        id: 'test-app-dev-tls/test-service-dev-api_gateway-apigw-logs',
         topicId: 'topic-1',
         projectId: 'proj-1',
       });
@@ -736,7 +736,7 @@ describe('apigwResource', () => {
               {
                 type: 'VOLCENGINE_TLS_TOPIC',
                 sid: 's',
-                id: 'test-service-dev-apigw-tls/test-service-dev-apigw-logs',
+                id: 'test-service-dev-apigw-tls/test-service-dev-api_gateway-apigw-logs',
                 topicId: 'topic-existing',
               },
             ],
@@ -791,13 +791,13 @@ describe('apigwResource', () => {
               {
                 type: 'VOLCENGINE_TLS_TOPIC',
                 sid: 's',
-                id: 'test-service-dev-apigw-tls/test-service-dev-apigw-logs',
+                id: 'test-service-dev-apigw-tls/test-service-dev-api_gateway-apigw-logs',
                 topicId: 'topic-existing',
               },
               {
                 type: 'VOLCENGINE_TLS_INDEX',
                 sid: 's',
-                id: 'test-service-dev-apigw-tls/test-service-dev-apigw-logs/index',
+                id: 'test-service-dev-apigw-tls/test-service-dev-api_gateway-apigw-logs/index',
               },
             ],
           },
@@ -827,11 +827,11 @@ describe('apigwResource', () => {
       // Index deleted before topic; the legacy own-project after its children.
       expect(mockClient.tls.deleteIndex).toHaveBeenCalledWith(
         'test-service-dev-apigw-tls',
-        'test-service-dev-apigw-logs',
+        'test-service-dev-api_gateway-apigw-logs',
       );
       expect(mockClient.tls.deleteTopic).toHaveBeenCalledWith(
         'test-service-dev-apigw-tls',
-        'test-service-dev-apigw-logs',
+        'test-service-dev-api_gateway-apigw-logs',
       );
       expect(mockClient.tls.deleteProject).toHaveBeenCalledWith('test-service-dev-apigw-tls');
       // Stale TLS instances are removed from the resource state.
@@ -875,13 +875,13 @@ describe('apigwResource', () => {
               {
                 type: 'VOLCENGINE_TLS_TOPIC',
                 sid: 's',
-                id: 'test-app-dev-tls/test-service-dev-apigw-logs',
+                id: 'test-app-dev-tls/test-service-dev-api_gateway-apigw-logs',
                 topicId: 'topic-1',
               },
               {
                 type: 'VOLCENGINE_TLS_INDEX',
                 sid: 's',
-                id: 'test-app-dev-tls/test-service-dev-apigw-logs/index',
+                id: 'test-app-dev-tls/test-service-dev-api_gateway-apigw-logs/index',
               },
             ],
           },
@@ -951,13 +951,13 @@ describe('apigwResource', () => {
               {
                 type: 'VOLCENGINE_TLS_TOPIC',
                 sid: 's',
-                id: 'test-app-dev-tls/test-service-dev-apigw-logs',
+                id: 'test-app-dev-tls/test-service-dev-api_gateway-apigw-logs',
                 topicId: 'topic-1',
               },
               {
                 type: 'VOLCENGINE_TLS_INDEX',
                 sid: 's',
-                id: 'test-app-dev-tls/test-service-dev-apigw-logs/index',
+                id: 'test-app-dev-tls/test-service-dev-api_gateway-apigw-logs/index',
               },
             ],
           },
@@ -1097,13 +1097,13 @@ describe('apigwResource', () => {
               {
                 type: 'VOLCENGINE_TLS_TOPIC',
                 sid: 's',
-                id: 'test-app-dev-tls/test-service-dev-apigw-logs',
+                id: 'test-app-dev-tls/test-service-dev-api_gateway-apigw-logs',
                 topicId: 'topic-1',
               },
               {
                 type: 'VOLCENGINE_TLS_INDEX',
                 sid: 's',
-                id: 'test-app-dev-tls/test-service-dev-apigw-logs/index',
+                id: 'test-app-dev-tls/test-service-dev-api_gateway-apigw-logs/index',
               },
               {
                 type: 'VOLCENGINE_TLS_PROJECT',
@@ -1129,11 +1129,11 @@ describe('apigwResource', () => {
       });
       expect(mockClient.tls.deleteIndex).toHaveBeenCalledWith(
         'test-app-dev-tls',
-        'test-service-dev-apigw-logs',
+        'test-service-dev-api_gateway-apigw-logs',
       );
       expect(mockClient.tls.deleteTopic).toHaveBeenCalledWith(
         'test-app-dev-tls',
-        'test-service-dev-apigw-logs',
+        'test-service-dev-api_gateway-apigw-logs',
       );
       // The stage-shared project is destroyer-owned — never deleted at resource level.
       expect(mockClient.tls.deleteProject).not.toHaveBeenCalled();

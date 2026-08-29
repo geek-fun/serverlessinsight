@@ -26,8 +26,9 @@ export const buildSharedProjectName = (app: string, stage: string): string => `$
 export const buildFunctionLogTopicName = (service: string, stage: string, fnKey: string): string =>
   `${service}-${stage}-${fnKey}-fn-logs`;
 
-export const buildApigwLogTopicName = (service: string, stage: string): string =>
-  `${service}-${stage}-apigw-logs`;
+/** Per-event apigw-logs topic (#214 per-owner teardown): the event key is part of the name. */
+export const buildApigwLogTopicName = (service: string, stage: string, eventKey: string): string =>
+  `${service}-${stage}-${eventKey}-apigw-logs`;
 
 const resolveSharedProjectName = (shared: ResourceState): string | undefined => {
   const instanceId = (shared.instances?.[0] as { id?: string } | undefined)?.id;
