@@ -227,18 +227,23 @@ export const buildDefaultTrustPolicy = (
 /**
  * Derive the least-privilege execution policy statements for a veFaaS function.
  *
- * The baseline is always the platform runtime (vefaas) plus the function
- * logging (tls) statement sets; VPC-describe statements are only added when
- * the function configures a network, and TOS-object statements only when it
- * mounts TOS storage. Conditions mirror the truthiness used when mapping the
- * function into a VefaasFunctionConfig (see vefaasResource).
+ * Verified model (volcengine docs "通过 IAM 角色授予实例访问云服务的权限",
+ * 2025-10 + the ServiceRoleForVeFaaS policy, user-provided 2026-08): the
+ * function role is an STS credential source for USER CODE — the platform
+ * injects AK/SK/SessionToken into the request, and no vefaas:* action is
+ * required for the platform to run the function (vefaas management actions
+ * like CreateFunction/Release/Sandbox belong to the service-linked role).
+ * The baseline is therefore the function-logging (tls) convenience grant;
+ * VPC-describe statements are only added when the function configures a
+ * network, and TOS-object statements only when it mounts TOS storage.
+ * Conditions mirror the truthiness used when mapping the function into a
+ * VefaasFunctionConfig (see vefaasResource).
  */
 export const deriveVefaasExecutionStatements = (
   fn: FunctionDomain,
   _context: Context,
 ): IamStatement[] => {
   const vefaasBaseline: IamStatement[] = [
-    { effect: 'Allow', action: ['vefaas:*'], resource: ['*'] },
     {
       effect: 'Allow',
       action: ['tls:CreateProject', 'tls:CreateTopic', 'tls:PutLogs'],

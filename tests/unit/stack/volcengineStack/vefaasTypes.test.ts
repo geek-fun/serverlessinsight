@@ -230,11 +230,10 @@ describe('vefaasTypes', () => {
   describe('deriveVefaasExecutionStatements', () => {
     const context = {} as never;
 
-    it('returns only vefaas and tls baseline for a bare function', () => {
+    it('returns only the tls baseline for a bare function', () => {
       const result = deriveVefaasExecutionStatements(mockFn, context);
 
       expect(result).toEqual([
-        { effect: 'Allow', action: ['vefaas:*'], resource: ['*'] },
         {
           effect: 'Allow',
           action: ['tls:CreateProject', 'tls:CreateTopic', 'tls:PutLogs'],
@@ -255,7 +254,7 @@ describe('vefaasTypes', () => {
 
       const result = deriveVefaasExecutionStatements(fnWithNetwork, context);
 
-      expect(result).toHaveLength(3);
+      expect(result).toHaveLength(2);
       expect(result).toEqual(
         expect.arrayContaining([
           {
@@ -279,7 +278,7 @@ describe('vefaasTypes', () => {
 
       const result = deriveVefaasExecutionStatements(fnWithTos, context);
 
-      expect(result).toHaveLength(3);
+      expect(result).toHaveLength(2);
       expect(result).toEqual(
         expect.arrayContaining([
           {
@@ -308,9 +307,8 @@ describe('vefaasTypes', () => {
 
       const result = deriveVefaasExecutionStatements(fnWithBoth, context);
 
-      expect(result).toHaveLength(4);
+      expect(result).toHaveLength(3);
       expect(result.map((s) => s.action[0])).toEqual([
-        'vefaas:*',
         'tls:CreateProject',
         'vpc:DescribeVpcs',
         'tos:GetObject',
@@ -329,7 +327,7 @@ describe('vefaasTypes', () => {
 
       const result = deriveVefaasExecutionStatements(fnWithIam, context);
 
-      expect(result).toHaveLength(2);
+      expect(result).toHaveLength(1);
     });
   });
 });
