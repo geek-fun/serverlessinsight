@@ -124,6 +124,16 @@ export const createCamOperations = (camClient: CamSdkClient) => {
   };
 
   return {
+    getOwnerUin: async (): Promise<string | undefined> => {
+      try {
+        const response = await camClient.GetUserAppId(undefined);
+        return response.OwnerUin ?? response.Uin ?? undefined;
+      } catch (error: unknown) {
+        logger.warn(lang.__('TENCENT_UIN_FETCH_FAILED', { error: String(error) }));
+        return undefined;
+      }
+    },
+
     createRole: async (
       roleName: string,
       trustedServices: string[],
