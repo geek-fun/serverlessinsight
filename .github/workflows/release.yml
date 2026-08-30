@@ -25,38 +25,46 @@ jobs:
         if: matrix.os == 'ubuntu-latest'
         with:
           fetch-depth: 0 # Fetch all history including tags for version checking
+      - name: Check for version change
+        id: version_check
+        run: ./scripts/check-version.sh . v
       - name: Use Node.js ${{ matrix.node-version }}
+        if: steps.version_check.outputs.should_release == 'true'
         uses: actions/setup-node@v4
         with:
           node-version: ${{ matrix.node-version }}
           registry-url: 'https://registry.npmjs.org'
       - name: Install dependencies
+        if: steps.version_check.outputs.should_release == 'true'
         run: npm ci
-      - run: npm run lint:check
-      - run: npm audit --audit-level=critical
-      - run: npm run build
-      - run: npm run test:ci
+      - name: Lint
+        if: steps.version_check.outputs.should_release == 'true'
+        run: npm run lint:check
+      - name: Audit dependencies
+        if: steps.version_check.outputs.should_release == 'true'
+        run: npm audit --audit-level=critical
+      - name: build 🔧
+        if: steps.version_check.outputs.should_release == 'true'
+        run: npm run build
+      - name: Test
+        if: steps.version_check.outputs.should_release == 'true'
+        run: npm run test:ci
       - name: Upload coverage reports to Codecov
+        if: steps.version_check.outputs.should_release == 'true'
         uses: codecov/codecov-action@v4
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
           verbose: true
           fail_ci_if_error: true
-      - name: build 🔧
-        run: npm run build
       - name: Generate changelog
+        if: steps.version_check.outputs.should_release == 'true'
         uses: jaywcjlove/changelog-generator@main
         id: changelog
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
-      - name: Check for version change
-        id: version_check
-        run: ./scripts/check-version.sh . v
-
       - name: Publish package on NPM 📦
         if: steps.version_check.outputs.should_release == 'true'
         run: npm publish
-
       - name: Create GitHub Release
         if: steps.version_check.outputs.should_release == 'true'
         uses: softprops/action-gh-release@v1
