@@ -2160,7 +2160,11 @@ describe('vefaasResource', () => {
 
       expect(mockVefaasClient.iam.updateRolePolicy).toHaveBeenCalledWith(
         'test-app-test-service-dev-role',
-        expect.arrayContaining([expect.objectContaining({ action: ['vefaas:*'] })]),
+        expect.arrayContaining([
+          expect.objectContaining({
+            action: ['tls:CreateProject', 'tls:CreateTopic', 'tls:PutLogs'],
+          }),
+        ]),
         [
           { effect: 'Allow', action: ['ecs:DescribeInstances'], resource: ['*'] },
           { effect: 'Allow', action: ['oss:ListBuckets'], resource: ['*'] },
