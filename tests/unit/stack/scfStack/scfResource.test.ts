@@ -36,6 +36,7 @@ const mockCamOperations = {
   deleteRole: jest.fn(),
   updateRolePolicy: jest.fn(),
   updateManagedPolicies: jest.fn(),
+  getOwnerUin: jest.fn(),
 };
 
 const mockClsOperations = {
@@ -486,15 +487,50 @@ describe('ScfResource', () => {
     it('derives the least-privilege execution baseline for a bare function', () => {
       expect(deriveScfExecutionStatements(testFunction, mockContext)).toEqual([
         { effect: 'Allow', action: ['scf:InvokeFunction'], resource: ['*'] },
+      ]);
+    });
+
+    it('scopes scf:InvokeFunction to the function QCS resource when the UIN is known', () => {
+      const contextWithNamespace = {
+        ...mockContext,
+        parameters: [{ key: 'namespace', value: 'prod' }],
+      } as Context;
+
+      const statements = deriveScfExecutionStatements(
+        testFunction,
+        contextWithNamespace,
+        '123456789',
+      );
+
+      expect(statements).toEqual([
         {
           effect: 'Allow',
-          action: ['cls:logset:putlog', 'cls:logset:create*', 'cls:logset:get*'],
-          resource: ['*'],
+          action: ['scf:InvokeFunction'],
+          resource: ['qcs::scf:ap-guangzhou:uin/123456789:namespace/prod/function/test-function'],
+        },
+      ]);
+    });
+
+    it('grants cls:UploadLog on the function topic when the topic Id is known', () => {
+      const statements = deriveScfExecutionStatements(
+        testFunction,
+        mockContext,
+        '123456789',
+        'topic-abc-123',
+      );
+
+      expect(statements).toEqual([
+        {
+          effect: 'Allow',
+          action: ['scf:InvokeFunction'],
+          resource: [
+            'qcs::scf:ap-guangzhou:uin/123456789:namespace/default/function/test-function',
+          ],
         },
         {
           effect: 'Allow',
-          action: ['cos:GetObject', 'cos:PutObject', 'cos:DeleteObject', 'cos:ListBucket'],
-          resource: ['*'],
+          action: ['cls:UploadLog'],
+          resource: ['qcs::cls:ap-guangzhou:uin/123456789:topic/topic-abc-123'],
         },
       ]);
     });

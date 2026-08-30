@@ -349,35 +349,55 @@ const buildScfInstanceFromProvider = (info: ScfFunctionInfo, sid: string) => {
 };
 
 /**
- * Least-privilege SCF execution statements for a function's CAM role.
+ * Least-privilege SCF execution statements for a function's CAM role
+ * (verified against Tencent docs: product/583/38176 role split, 38177 policy
+ * syntax — 2026-08).
  *
- * Tencent SCF resolves its code package from COS, writes function logs to CLS,
- * and invokes other functions via the role, so the scf/CLS/COS-GetObject
- * actions are unconditional. The tencent FunctionDomain.storage shape carries
- * only disk/nas — no function-level signal proves COS runtime usage — so the
- * remaining COS actions stay alongside GetObject rather than being gated (no
- * invented signals). The fn/context parameters are reserved for per-function
- * derivation (e.g. COS gating) once such a signal exists.
+ * - COS actions are REMOVED: deployment-package access belongs to the
+ *   configuration role (SCF_QcsRole), not the execution role. Functions whose
+ *   code uses COS declare it via iam.role.statements.
+ * - CLS: the legacy `cls:logset:*` action names are not documented CAM forms
+ *   (the documented actions are flat, e.g. cls:UploadLog) — the old statement
+ *   matched no real permission. One conservative grant remains:
+ *   cls:UploadLog on this function's own topic (si creates it and knows the
+ *   Id), covering the documented upload action in case SCF's platform log
+ *   delivery is gated via the execution role.
+ * - scf:InvokeFunction is scoped to the function's QCS resource
+ *   qcs::scf:<region>:uin/<uin>:namespace/<ns>/function/<name> (name-based;
+ *   the namespace is part of the path) when the UIN is resolvable via CAM
+ *   GetUserAppId, else falls back to '*' (never wrong-permissions).
  */
 export const deriveScfExecutionStatements = (
   fn: FunctionDomain,
   context: Context,
+  uin?: string,
+  clsTopicId?: string,
 ): IamStatement[] => {
-  void fn;
-  void context;
-  return [
-    { effect: 'Allow', action: ['scf:InvokeFunction'], resource: ['*'] },
-    {
-      effect: 'Allow',
-      action: ['cls:logset:putlog', 'cls:logset:create*', 'cls:logset:get*'],
-      resource: ['*'],
-    },
-    {
-      effect: 'Allow',
-      action: ['cos:GetObject', 'cos:PutObject', 'cos:DeleteObject', 'cos:ListBucket'],
-      resource: ['*'],
-    },
+  const namespace =
+    context.parameters?.find((parameter) => parameter.key === 'namespace')?.value ?? 'default';
+  const invokeResource =
+    uin && context.region
+      ? [`qcs::scf:${context.region}:uin/${uin}:namespace/${namespace}/function/${fn.name}`]
+      : ['*'];
+
+  const statements: IamStatement[] = [
+    { effect: 'Allow', action: ['scf:InvokeFunction'], resource: invokeResource },
   ];
+
+  // Verified CLS facts: CAM actions are flat (cls:UploadLog targets the TOPIC
+  // resource; CreateLogset/CreateTopic are operation-level -> Resource "*"),
+  // and whether SCF's platform log delivery is gated via the execution role is
+  // not documented. Keep one conservative statement: UploadLog on this
+  // function's own topic (si creates it and knows the Id).
+  if (uin && context.region && clsTopicId) {
+    statements.push({
+      effect: 'Allow',
+      action: ['cls:UploadLog'],
+      resource: [`qcs::cls:${context.region}:uin/${uin}:topic/${clsTopicId}`],
+    });
+  }
+
+  return statements;
 };
 
 const createDependentResources = async (
@@ -479,7 +499,12 @@ const createDependentResources = async (
   const serviceName = `${context.app}-${context.service}`;
   const defaultRoleName = buildFunctionRoleName(serviceName, context.stage, fn.key);
   const roleName = customRoleName ?? defaultRoleName;
-  const executionStatements = deriveScfExecutionStatements(fn, context);
+  const executionStatements = deriveScfExecutionStatements(
+    fn,
+    context,
+    await client.cam.getOwnerUin(),
+    clsConfig?.topicId,
+  );
 
   if (hasCamRole) {
     // Role already exists - reuse it. Keyed on the TENCENT_SCF_ROLE instance
@@ -907,7 +932,12 @@ export const updateResource = async (
           await client.cam.updateRolePolicy(
             ramRoleInstance.id,
             desiredStatements as IamStatement[] | undefined,
-            deriveScfExecutionStatements(fn, context),
+            deriveScfExecutionStatements(
+              fn,
+              context,
+              await client.cam.getOwnerUin(),
+              (existingClsTopicInstance as { topicId?: string } | undefined)?.topicId,
+            ),
           );
         }
 

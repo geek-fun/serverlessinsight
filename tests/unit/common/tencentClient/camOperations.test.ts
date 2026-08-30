@@ -29,6 +29,7 @@ const mockCamClient = {
   DeletePolicy: jest.fn(),
   ListPolicies: jest.fn(),
   ListAttachedRolePolicies: jest.fn(),
+  GetUserAppId: jest.fn(),
 };
 
 describe('camOperations', () => {
@@ -640,6 +641,24 @@ describe('camOperations', () => {
       await expect(operations.updateManagedPolicies('test-role', ['QCS::Admin'])).rejects.toThrow(
         'AccessDenied',
       );
+    });
+  });
+
+  describe('getOwnerUin', () => {
+    it('returns the owner uin for qcs resource scoping', async () => {
+      mockCamClient.GetUserAppId.mockResolvedValue({
+        Uin: '100000719530',
+        OwnerUin: '100000719530',
+        AppId: 1250000000,
+      });
+
+      await expect(operations.getOwnerUin()).resolves.toBe('100000719530');
+    });
+
+    it('returns undefined when the fetch fails so invoke scoping falls back to a wildcard', async () => {
+      mockCamClient.GetUserAppId.mockRejectedValue(new Error('AccessDenied'));
+
+      await expect(operations.getOwnerUin()).resolves.toBeUndefined();
     });
   });
 });

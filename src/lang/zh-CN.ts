@@ -749,6 +749,7 @@ export const zhCN = {
   TENCENT_CAM_ROLE_DELETED: '腾讯云 CAM 角色 {{roleName}} 删除成功',
   TENCENT_CAM_ROLE_NOT_FOUND: '腾讯云 CAM 角色 {{roleName}} 在云服务商中未找到',
   TENCENT_CAM_ROLE_ALREADY_EXISTS: '腾讯云 CAM 角色 {{roleName}} 已存在',
+  TENCENT_UIN_FETCH_FAILED: '获取腾讯云 UIN 失败，函数调用权限将回退为资源通配: {{error}}',
   TENCENT_CAM_ROLE_DRIFT_RECOVERY_FAILED:
     '腾讯云 CAM 角色 {{roleName}} 状态漂移恢复失败：{{error}}',
   TENCENT_CAM_POLICY_ALREADY_ATTACHED: 'CAM 角色 {{roleName}} 已附加该策略',

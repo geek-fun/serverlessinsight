@@ -292,6 +292,7 @@ export type MockTencentClient = {
     CreateIndex: jest.Mock;
   };
   cam: {
+    getOwnerUin: jest.Mock;
     createRole: jest.Mock;
     getRole: jest.Mock;
     deleteRole: jest.Mock;
@@ -334,6 +335,7 @@ export const createMockTencentClient = (): MockTencentClient => ({
     CreateIndex: jest.fn().mockResolvedValue({}),
   },
   cam: {
+    getOwnerUin: jest.fn().mockResolvedValue('123456789'),
     createRole: jest.fn().mockResolvedValue({
       roleName: 'test-role',
       roleId: 'role-123',

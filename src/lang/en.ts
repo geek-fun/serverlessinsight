@@ -822,6 +822,8 @@ export const en = {
   TENCENT_CAM_ROLE_DELETED: 'Tencent CAM role {{roleName}} deleted',
   TENCENT_CAM_ROLE_NOT_FOUND: 'Tencent CAM role {{roleName}} not found in cloud provider',
   TENCENT_CAM_ROLE_ALREADY_EXISTS: 'Tencent CAM role {{roleName}} already exists',
+  TENCENT_UIN_FETCH_FAILED:
+    'Failed to fetch the Tencent UIN; function invoke permissions fall back to a wildcard resource: {{error}}',
   TENCENT_CAM_ROLE_DRIFT_RECOVERY_FAILED:
     'Tencent CAM role drift recovery failed for {{roleName}}: {{error}}',
   TENCENT_CAM_POLICY_ALREADY_ATTACHED: 'Policy already attached to CAM role {{roleName}}',
