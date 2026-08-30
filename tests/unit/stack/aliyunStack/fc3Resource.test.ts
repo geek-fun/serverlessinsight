@@ -59,6 +59,7 @@ const mockedRamOperations = {
   updateRolePolicy: jest.fn(),
   updateExecutionPolicyDocument: jest.fn(),
   updateManagedPolicies: jest.fn(),
+  attachManagedPolicies: jest.fn(),
   deleteRole: jest.fn(),
 };
 const mockedEcsOperations = {
@@ -1125,6 +1126,11 @@ describe('Fc3Resource', () => {
           subnet_ids: ['subnet-1', 'subnet-2'],
           security_group: { name: 'sg-1', ingress: [], egress: [] },
         },
+        iam: {
+          role: {
+            statements: [{ effect: 'Allow' as const, action: ['kafka:GetTopic'], resource: ['*'] }],
+          },
+        },
       };
       const contextWithPeer: Context = {
         ...mockContext,
@@ -1205,7 +1211,56 @@ describe('Fc3Resource', () => {
       };
       const actions = policyDocument.Statement.flatMap((statement) => statement.Action);
       expect(actions).toContain('ecs:CreateNetworkInterface');
+      expect(actions).toContain('kafka:GetTopic');
       expect(actions).not.toContain('nas:*');
+    });
+
+    it('attaches managed policies when a new function joins an existing legacy role', async () => {
+      const stateWithLegacyRole: StateFile = {
+        ...initialState,
+        resources: {
+          'functions.test_fn': {
+            mode: 'managed',
+            region: 'cn-hangzhou',
+            definition: mockDefinition,
+            instances: [
+              {
+                sid: 'si:aliyun:ram:default:test-app-test-service-default-fc-role',
+                roleArn: 'acs:ram::123456789012:role/test-app-test-service-default-fc-role',
+                id: 'test-app-test-service-default-fc-role',
+                type: 'ALIYUN_RAM_ROLE',
+              },
+              {
+                sid: 'si:aliyun:fc3:default:test-function',
+                id: 'test-function',
+                type: 'ALIYUN_FC3_FUNCTION',
+              },
+            ],
+            lastUpdated: '2025-01-01T00:00:00Z',
+          },
+        },
+      };
+      const fnWithManagedPolicies: FunctionDomain = {
+        ...testFunction,
+        iam: {
+          role: {
+            managed_policies: ['AliyunOSSFullAccess'],
+          },
+        },
+      };
+
+      mockedFc3Operations.createFunction.mockResolvedValue({
+        body: { functionName: 'test-function', functionArn: 'arn:test' },
+      });
+      const newState = { ...stateWithLegacyRole, _updated: true };
+      mockedStateManager.setResource.mockReturnValue(newState);
+
+      await createResource(mockContext, fnWithManagedPolicies, stateWithLegacyRole);
+
+      expect(mockedRamOperations.attachManagedPolicies).toHaveBeenCalledWith(
+        'test-app-test-service-default-fc-role',
+        ['AliyunOSSFullAccess'],
+      );
     });
 
     it('should add apigateway trust when a bare backend equals the function deployed name (issue #227)', async () => {

@@ -140,9 +140,10 @@ const unionTrustedServices = (serviceLists: string[][]): string[] => [
 ];
 
 /**
- * Legacy shared roles serve every function that recorded them, so their trust
- * and derived policy must be the union across those functions — a single
- * function's update would otherwise strip another function's requirements.
+ * Legacy shared roles serve every function that recorded them, so their trust,
+ * derived policy and CUSTOM statements must be the union across those
+ * functions — a single function's update would otherwise strip another
+ * function's requirements.
  */
 const resolveRoleGrant = (
   context: Context,
@@ -150,16 +151,37 @@ const resolveRoleGrant = (
   fn: FunctionDomain,
   logConfig: { project: string; logstore: string } | undefined,
   roleId: string,
-): { trustedServices: string[]; executionStatements: IamStatement[] } => {
+): {
+  trustedServices: string[];
+  executionStatements: IamStatement[];
+  customStatements: IamStatement[] | undefined;
+} => {
   const storedPeers = state ? collectRolePeers(state, context, roleId) : [];
   const currentStored = storedPeers.find((peer) => peer.fn.key === fn.key);
   const peers: RolePeer[] = currentStored
     ? [...storedPeers]
     : [{ fn, ...(logConfig ? { logConfig } : {}) }, ...storedPeers];
-  if (peers.length <= 1) {
+
+  const ownCustoms =
+    fn.iam?.role && typeof fn.iam.role !== 'string' ? fn.iam.role.statements : undefined;
+  const peerCustoms = peers
+    .filter((peer) => peer.fn.key !== fn.key)
+    .map((peer) =>
+      peer.fn.iam?.role && typeof peer.fn.iam.role !== 'string'
+        ? peer.fn.iam.role.statements
+        : undefined,
+    )
+    .filter((statements): statements is IamStatement[] => Boolean(statements?.length));
+  const sharedRole = peers.length > 1;
+  const customStatements = sharedRole
+    ? unionPolicyStatements([ownCustoms ?? [], ...peerCustoms])
+    : ownCustoms;
+
+  if (!sharedRole) {
     return {
       trustedServices: getTrustedServicesForFunction(context, fn),
       executionStatements: deriveFc3ExecutionStatements(fn, context, logConfig),
+      customStatements,
     };
   }
   return {
@@ -169,6 +191,7 @@ const resolveRoleGrant = (
     executionStatements: unionPolicyStatements(
       peers.map((peer) => deriveFc3ExecutionStatements(peer.fn, context, peer.logConfig)),
     ),
+    customStatements,
   };
 };
 
@@ -453,8 +476,11 @@ const createDependentResources = async (
       await client.ram.updateRoleTrustPolicy(ramRoleInstance.id, roleGrant.trustedServices);
       await client.ram.updateExecutionPolicyDocument(
         ramRoleInstance.id,
-        buildFc3ExecutionPolicyDocument(roleGrant.executionStatements, statements),
+        buildFc3ExecutionPolicyDocument(roleGrant.executionStatements, roleGrant.customStatements),
       );
+      if (managedPolicies?.length) {
+        await client.ram.attachManagedPolicies(ramRoleInstance.id, managedPolicies);
+      }
     }
   } else {
     const roleName = customRoleName ?? defaultRoleName;
@@ -1053,8 +1079,6 @@ export const updateResource = async (
 
   const newIamRole = fn.iam?.role;
   const executionStatements = deriveFc3ExecutionStatements(fn, context, logConfig);
-  const customStatements =
-    newIamRole && typeof newIamRole !== 'string' ? newIamRole.statements : undefined;
 
   if (typeof newIamRole === 'string') {
     // External role - use ARN directly, skip management
@@ -1082,7 +1106,7 @@ export const updateResource = async (
       await client.ram.updateRoleTrustPolicy(ramRoleInstance.id, roleGrant.trustedServices);
       await client.ram.updateExecutionPolicyDocument(
         ramRoleInstance.id,
-        buildFc3ExecutionPolicyDocument(roleGrant.executionStatements, customStatements),
+        buildFc3ExecutionPolicyDocument(roleGrant.executionStatements, roleGrant.customStatements),
       );
 
       const existingIam = existingState?.definition?.iam as Record<string, unknown> | undefined;
