@@ -7,7 +7,9 @@ import {
   logger,
 } from '../../common';
 import { createAliyunClient } from '../../common/aliyunClient';
+import { buildFc3ExecutionPolicyDocument } from '../../common/aliyunClient/ramOperations';
 import { cachedRefreshRead } from '../../common/refreshCache';
+import { remoteDiffersFromDesired } from '../../common/planCompare';
 import { PLAN_READ_CONCURRENCY, mapWithConcurrency } from '../../common/concurrency';
 import {
   Context,
@@ -18,7 +20,13 @@ import {
   ResourceState,
   StateFile,
 } from '../../types';
-import { extractFc3Definition, Fc3FunctionConfig, functionToFc3Config } from './fc3Types';
+import {
+  cloudFc3ToDefinition,
+  extractFc3Definition,
+  Fc3FunctionConfig,
+  functionToFc3Config,
+} from './fc3Types';
+import { resolveRoleGrant } from './fc3Resource';
 import { lang } from '../../lang';
 import { OWNERSHIP_TAG_KEY, isOwnedByStack } from '../ownershipTag';
 
@@ -141,6 +149,153 @@ const resolveManagedRoleProbe = (
   return undefined;
 };
 
+/**
+ * Parse a cloud RAM trust/policy document. Aliyun returns these URL-encoded
+ * (GetRole / GetPolicyVersion) while mocks return plain JSON — accept both.
+ * Unparseable/absent yields `undefined` so the caller treats the dimension as
+ * unreadable instead of phantom-drifting on garbage.
+ */
+const parseRolePolicyDocument = (raw: string | undefined): Record<string, unknown> | undefined => {
+  if (!raw) {
+    return undefined;
+  }
+  const tryParse = (candidate: string): Record<string, unknown> | undefined => {
+    try {
+      const parsed: unknown = JSON.parse(candidate);
+      return parsed && typeof parsed === 'object' ? (parsed as Record<string, unknown>) : undefined;
+    } catch {
+      return undefined;
+    }
+  };
+  return tryParse(raw) ?? tryParse(decodeURIComponent(raw));
+};
+
+/**
+ * Live RAM role policy drift against the grant the executor would write via
+ * resolveRoleGrant (the very call updateResource uses), so the planner never
+ * diverges from the executor. Scoped to avoid false drift:
+ * - Only functions declaring a managed `iam.role` object: legacy recorded roles
+ *   without one carry older si-written documents whose baseline differs from
+ *   today's derivation — flagging them would fabricate drift with no console
+ *   edit behind them (the existence probe still covers them).
+ * - Only single-owner roles; shared roles need an executor peer-union the
+ *   planner cannot reproduce → probe-only (coverage gap accepted).
+ * - logConfig must be derivable from state: with logging on but no recorded
+ *   logstore instance the executor creates one during update and derives the
+ *   grant from that new logstore, which the planner cannot know → skip.
+ */
+const detectRolePolicyDrift = async (
+  context: Context,
+  state: StateFile,
+  fn: FunctionDomain,
+  currentState: ResourceState,
+  roleName: string,
+  cloudRole: { assumeRolePolicyDocument?: string } | null,
+): Promise<boolean> => {
+  const client = createAliyunClient(context);
+  const logicalId = `functions.${fn.key}`;
+
+  const iamRole = fn.iam?.role;
+  if (!iamRole || typeof iamRole === 'string') {
+    return false;
+  }
+
+  const roleInstance = currentState.instances?.find(
+    (i) =>
+      (i as { type?: string }).type === 'ALIYUN_RAM_ROLE' &&
+      (i as { id?: string }).id === roleName &&
+      !(i as { external?: boolean }).external,
+  );
+  if (!roleInstance) {
+    return false;
+  }
+
+  // Conservative ownership scan (mirrors collectRolePeers semantics without
+  // requiring context.iac): any OTHER function in state recording the same
+  // managed role instance makes the role shared → executor uses a peer union.
+  const sharedRole = Object.entries(getAllResources(state)).some(
+    ([peerLogicalId, peerState]) =>
+      peerLogicalId !== logicalId &&
+      peerLogicalId.startsWith('functions.') &&
+      (peerState.instances ?? []).some(
+        (i) =>
+          (i as { type?: string }).type === 'ALIYUN_RAM_ROLE' &&
+          (i as { id?: string }).id === roleName &&
+          !(i as { external?: boolean }).external,
+      ),
+  );
+  if (sharedRole) {
+    return false;
+  }
+
+  let logConfig: { project: string; logstore: string } | undefined;
+  if (fn.log) {
+    const logstoreInstance = currentState.instances?.find(
+      (i) => (i as { type?: string }).type === 'ALIYUN_SLS_LOGSTORE',
+    ) as { id?: string } | undefined;
+    if (!logstoreInstance?.id) {
+      return false;
+    }
+    const [project, logstore] = logstoreInstance.id.split('/');
+    logConfig = { project, logstore };
+  }
+
+  const roleGrant = resolveRoleGrant(context, state, fn, logConfig, roleName);
+
+  // a. trust policy — console edits to the assume-role principals.
+  const cloudTrust = parseRolePolicyDocument(cloudRole?.assumeRolePolicyDocument);
+  const desiredTrust: Record<string, unknown> = {
+    Version: '1',
+    Statement: [
+      {
+        Action: 'sts:AssumeRole',
+        Effect: 'Allow',
+        Principal: { Service: [...roleGrant.trustedServices] },
+      },
+    ],
+  };
+  if (cloudTrust && !attributesEqual(cloudTrust, desiredTrust)) {
+    return true;
+  }
+
+  // b. execution + custom policy (the `<roleName>-policy` custom document). An
+  // absent/unreadable cloud document is drift: the executor recreates it on
+  // update, so leaving it unread would mask a deleted policy.
+  const cloudPolicyDocument = await cachedRefreshRead(
+    context,
+    `ram.getExecutionPolicyDocument:${roleName}`,
+    () => client.ram.getExecutionPolicyDocument(roleName),
+  );
+  const cloudPolicy = parseRolePolicyDocument(cloudPolicyDocument);
+  const desiredPolicyDocument = parseRolePolicyDocument(
+    buildFc3ExecutionPolicyDocument(roleGrant.executionStatements, roleGrant.customStatements),
+  );
+  if (
+    !cloudPolicy ||
+    !desiredPolicyDocument ||
+    !attributesEqual(cloudPolicy, desiredPolicyDocument)
+  ) {
+    return true;
+  }
+
+  // c. managed (system) policies as sorted name sets; desired ARNs strip the
+  // `acs:ram::<uid>:policy/` prefix.
+  const desiredManagedNames = (iamRole.managed_policies ?? []).map(
+    (policyArn) => policyArn.split('/').pop() ?? '',
+  );
+  const cloudManagedNames = await cachedRefreshRead(
+    context,
+    `ram.listAttachedRolePolicies:${roleName}`,
+    () => client.ram.listAttachedRolePolicies(roleName),
+  );
+  const asSortedSetKey = (names: string[]): string => [...names].sort().join(',');
+  if (asSortedSetKey(desiredManagedNames) !== asSortedSetKey(cloudManagedNames ?? [])) {
+    return true;
+  }
+
+  return false;
+};
+
 export const generateFunctionPlan = async (
   context: Context,
   state: StateFile,
@@ -218,7 +373,15 @@ export const generateFunctionPlan = async (
         const normalizedDesired = normalizeDefinitionForComparison(desiredDefinition);
         const definitionChanged = !attributesEqual(normalizedCurrent, normalizedDesired);
 
-        if (definitionChanged) {
+        // Issue #234 phase 1: live attribute drift. The stored definition can
+        // be untouched while the console edited the deployed function
+        // (memory/timeout/env/...). One-directional: only mapper-emitted keys
+        // the desired definition declares are compared, so cloud-only extras
+        // the config never asked for are ignored (desired-declared contract).
+        const remoteAttributes = cloudFc3ToDefinition(remoteFunction);
+        const remoteDiffers = remoteDiffersFromDesired(remoteAttributes, desiredDefinition);
+
+        if (definitionChanged || remoteDiffers) {
           return {
             logicalId,
             action: 'update',
@@ -242,6 +405,23 @@ export const generateFunctionPlan = async (
                 functionName: fn.name,
               }),
             );
+            return {
+              logicalId,
+              action: 'update',
+              resourceType: 'ALIYUN_FC3',
+              changes: { before: normalizedCurrent, after: normalizedDesired },
+              drifted: true,
+            };
+          }
+          const rolePolicyDrifted = await detectRolePolicyDrift(
+            context,
+            state,
+            fn,
+            currentState,
+            roleProbe.roleName,
+            cloudRole,
+          );
+          if (rolePolicyDrifted) {
             return {
               logicalId,
               action: 'update',

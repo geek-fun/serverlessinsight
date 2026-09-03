@@ -145,7 +145,7 @@ const unionTrustedServices = (serviceLists: string[][]): string[] => [
  * functions — a single function's update would otherwise strip another
  * function's requirements.
  */
-const resolveRoleGrant = (
+export const resolveRoleGrant = (
   context: Context,
   state: StateFile | undefined,
   fn: FunctionDomain,
