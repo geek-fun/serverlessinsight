@@ -3412,6 +3412,19 @@ describe('Fc3Resource', () => {
       expect(mockedNasOperations.createMountTarget).toHaveBeenCalled();
     });
 
+    it('does not create duplicate security group or role when NAS resources are missing', async () => {
+      mockedFc3Operations.updateFunctionConfiguration.mockResolvedValue(undefined);
+      mockedFc3Operations.updateFunctionCode.mockResolvedValue(undefined);
+      const newState = { ...initialState, _updated: true };
+      mockedStateManager.setResource.mockReturnValue(newState);
+
+      await updateResource(mockContext, fnWithNas, initialState);
+
+      expect(mockedEcsOperations.createSecurityGroup).toHaveBeenCalledTimes(1);
+      expect(mockedRamOperations.createRole).toHaveBeenCalledTimes(1);
+      expect(mockedNasOperations.createFileSystem).toHaveBeenCalledTimes(1);
+    });
+
     it('should reuse existing NAS mount targets during update', async () => {
       const stateWithNas: StateFile = {
         ...initialState,
@@ -3735,6 +3748,7 @@ describe('Fc3Resource', () => {
       await updateResource(mockContext, fnWithExternalRole, stateWithRamRole);
 
       // Should NOT manage existing role policy or trust policy
+      expect(mockedRamOperations.getRole).not.toHaveBeenCalled();
       expect(mockedRamOperations.updateRoleTrustPolicy).not.toHaveBeenCalled();
       expect(mockedRamOperations.updateRolePolicy).not.toHaveBeenCalled();
       expect(mockedRamOperations.updateManagedPolicies).not.toHaveBeenCalled();
@@ -3743,6 +3757,49 @@ describe('Fc3Resource', () => {
         expect.objectContaining({
           role: 'acs:ram::123456789012:role/external-role',
         }),
+        'mock-code-hash',
+      );
+    });
+
+    it('should not probe RAM with the recorded ARN when redeploying an unchanged external role', async () => {
+      const externalArn = 'acs:ram::123456789012:role/external-role';
+      const stateWithExternalRole: StateFile = {
+        ...initialState,
+        resources: {
+          'functions.test_fn': {
+            mode: 'managed',
+            region: 'cn-hangzhou',
+            definition: { ...mockDefinition, iam: { role: externalArn } },
+            instances: [
+              {
+                sid: 'si:aliyun:ram:default:external',
+                id: externalArn,
+                roleArn: externalArn,
+                type: 'ALIYUN_RAM_ROLE',
+                external: true,
+              },
+              {
+                sid: 'si:aliyun:fc3:default:test-function',
+                id: 'test-function',
+                type: 'ALIYUN_FC3_FUNCTION',
+              },
+            ],
+            lastUpdated: '2025-01-01T00:00:00Z',
+          },
+        },
+      };
+
+      mockedFc3Operations.updateFunctionConfiguration.mockResolvedValue(undefined);
+      mockedFc3Operations.updateFunctionCode.mockResolvedValue(undefined);
+      mockedStateManager.setResource.mockReturnValue({ ...stateWithExternalRole, _updated: true });
+
+      const fnWithExternal = { ...testFunction, iam: { role: externalArn } };
+      await updateResource(mockContext, fnWithExternal, stateWithExternalRole);
+
+      expect(mockedRamOperations.getRole).not.toHaveBeenCalled();
+      expect(mockedRamOperations.createRole).not.toHaveBeenCalled();
+      expect(mockedFc3Types.extractFc3Definition).toHaveBeenCalledWith(
+        expect.objectContaining({ role: externalArn }),
         'mock-code-hash',
       );
     });
@@ -4265,6 +4322,37 @@ describe('Fc3Resource', () => {
       );
       expect(savedRamInstances).toHaveLength(1);
       expect(savedRamInstances[0]).toMatchObject({ id: roleName });
+    });
+
+    it('recreates the lost role exactly once even when other dependents are missing too', async () => {
+      const recordedRole = roleInstance('legacy-role');
+      const state = readyResourceState({ instances: [recordedRole] });
+      const fnWithNetwork = {
+        ...testFunction,
+        network: {
+          vpc_id: 'vpc-123',
+          subnet_ids: ['vsw-123'],
+          security_group: {
+            name: 'test-sg',
+            ingress: [] as string[],
+            egress: [] as string[],
+          },
+        },
+      };
+      mockedRamOperations.getRole.mockResolvedValue(null);
+      mockedRamOperations.createRole.mockResolvedValue({
+        roleName: 'legacy-role',
+        arn: 'acs:ram::123456789012:role/legacy-role',
+      });
+      mockedStateManager.setResource.mockReturnValue({ ...initialState, _saved: true });
+
+      await updateResource(mockContext, fnWithNetwork, state);
+
+      expect(mockedRamOperations.createRole).toHaveBeenCalledTimes(1);
+      expect(mockedEcsOperations.createSecurityGroup).toHaveBeenCalledTimes(1);
+      expect(mockedFc3Operations.updateFunctionConfiguration).toHaveBeenCalledWith(
+        expect.objectContaining({ role: 'acs:ram::123456789012:role/legacy-role' }),
+      );
     });
   });
 

@@ -416,6 +416,7 @@ const createDependentResources = async (
   serviceName: string,
   existingInstances: Array<DependentInstance> = [],
   state?: StateFile,
+  options?: { skipRole?: boolean },
 ): Promise<{
   logConfig?: { project: string; logstore: string };
   role?: { roleName: string; arn: string };
@@ -453,6 +454,10 @@ const createDependentResources = async (
   const hasRamRole = existingInstances.some((i) => i.type === 'ALIYUN_RAM_ROLE');
   const hasSecurityGroup = existingInstances.some((i) => i.type === 'ALIYUN_ECS_SECURITY_GROUP');
   const hasNasResources = existingInstances.some((i) => i.type === 'ALIYUN_NAS_FILE_SYSTEM');
+  // Callers that reconcile the role themselves (updateResource) opt out so the
+  // helper neither re-creates a just-repaired role nor rewrites the execution
+  // policy from a grant derived without the caller's logConfig.
+  const skipRole = options?.skipRole === true;
 
   if (fn.log) {
     if (hasSlsProject) {
@@ -490,7 +495,7 @@ const createDependentResources = async (
 
   const isExternalRole = typeof iamConfig === 'string';
 
-  if (isExternalRole) {
+  if (isExternalRole && !skipRole) {
     // External role - use ARN directly, skip creation and management
     instances.push({
       type: 'ALIYUN_RAM_ROLE',
@@ -499,7 +504,7 @@ const createDependentResources = async (
       external: true,
       attributes: {} as Record<string, unknown>,
     });
-  } else if (hasRamRole) {
+  } else if (!skipRole && hasRamRole) {
     const ramRoleInstance = existingInstances.find((i) => i.type === 'ALIYUN_RAM_ROLE');
     if (ramRoleInstance) {
       const cloudRole = await client.ram.getRole(ramRoleInstance.id);
@@ -539,7 +544,7 @@ const createDependentResources = async (
         }
       }
     }
-  } else {
+  } else if (!skipRole) {
     const roleName = customRoleName ?? defaultRoleName;
     const roleGrant = resolveRoleGrant(context, state, fn, logConfig, roleName);
     logger.info(lang.__('CREATING_RAM_ROLE', { roleName }));
@@ -561,14 +566,17 @@ const createDependentResources = async (
   }
 
   const ramRoleInstance = instances.find((i) => i.type === 'ALIYUN_RAM_ROLE');
-  const role = isExternalRole
-    ? { roleName: '', arn: iamConfig }
-    : {
-        roleName: customRoleName ?? defaultRoleName,
-        arn:
-          ramRoleInstance?.roleArn ??
-          `acs:ram::${context.accountId}:role/${customRoleName ?? defaultRoleName}`,
-      };
+  let role: { roleName: string; arn: string } | undefined;
+  if (isExternalRole) {
+    role = { roleName: '', arn: iamConfig };
+  } else if (!skipRole) {
+    role = {
+      roleName: customRoleName ?? defaultRoleName,
+      arn:
+        ramRoleInstance?.roleArn ??
+        `acs:ram::${context.accountId}:role/${customRoleName ?? defaultRoleName}`,
+    };
+  }
 
   if (fn.network) {
     if (hasSecurityGroup) {
@@ -1108,6 +1116,7 @@ export const updateResource = async (
       serviceName,
       undefined,
       state,
+      { skipRole: true },
     );
     logConfig = deps.logConfig;
     newDependentInstances.push(...deps.instances.filter((i) => i.type.startsWith('ALIYUN_SLS_')));
@@ -1144,21 +1153,25 @@ export const updateResource = async (
   let roleBindingChanged = false;
   const droppedRamRoleIds = new Set<string>();
 
-  const ramRoleInstance = existingInstances.find((i) => i.type === 'ALIYUN_RAM_ROLE') as
-    { id: string; roleArn?: string } | undefined;
+  const ramRoleInstance = existingInstances.find((i) => i.type === 'ALIYUN_RAM_ROLE');
   // Issue #234 dual check: a recorded instance is not trusted on its own — when
   // the provider role is gone, the create path below rebuilds it with
   // peer-union grants and drops the stale instance from the resulting state.
-  const cloudRoleExists = ramRoleInstance
-    ? Boolean(await client.ram.getRole(ramRoleInstance.id))
-    : false;
+  // External roles are recorded with the ARN as the instance id, which is not a
+  // valid GetRole roleName input, and the external branch below never consults
+  // the probe — so only recorded managed roles are probed.
+  const isRecordedRoleExternal = Boolean(ramRoleInstance?.external);
+  const cloudRoleExists =
+    ramRoleInstance && !isRecordedRoleExternal && typeof newIamRole !== 'string'
+      ? Boolean(await client.ram.getRole(ramRoleInstance.id))
+      : false;
 
   if (typeof newIamRole === 'string') {
     // External role - use ARN directly, skip management
     role = { roleName: '', arn: newIamRole };
-  } else if (!ramRoleInstance || !cloudRoleExists) {
+  } else if (!ramRoleInstance || isRecordedRoleExternal || !cloudRoleExists) {
     const roleName =
-      ramRoleInstance?.id ??
+      (isRecordedRoleExternal ? undefined : ramRoleInstance?.id) ??
       customRoleName ??
       buildDefaultRoleName(serviceName, context.stage, fn.key);
     const roleGrant = resolveRoleGrant(context, state, fn, logConfig, roleName);
@@ -1256,6 +1269,7 @@ export const updateResource = async (
       serviceName,
       undefined,
       state,
+      { skipRole: true },
     );
     securityGroup = deps.securityGroup;
     newDependentInstances.push(
@@ -1269,12 +1283,24 @@ export const updateResource = async (
   }
 
   if (fn.storage?.nas && fn.storage.nas.length > 0 && fn.network && !hasNasResources) {
+    // The SG branch above already created/reused the security group — pass it
+    // so the helper reuses it instead of creating an untracked duplicate.
+    const sgExistingInstances = securityGroup
+      ? [
+          {
+            type: 'ALIYUN_ECS_SECURITY_GROUP',
+            id: securityGroup.securityGroupId,
+            attributes: {} as Record<string, unknown>,
+          },
+        ]
+      : [];
     const deps = await createDependentResources(
       context,
       { ...fn, log: false },
       serviceName,
-      undefined,
+      sgExistingInstances,
       state,
+      { skipRole: true },
     );
     nasConfig = deps.nasConfig;
     newDependentInstances.push(...deps.instances.filter((i) => i.type.startsWith('ALIYUN_NAS_')));
