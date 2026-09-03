@@ -2,7 +2,12 @@ import { Context, TableDomain, Plan, PlanItem, StateFile, ResourceAttributes } f
 import { createAliyunClient } from '../../common/aliyunClient';
 import { cachedRefreshRead } from '../../common/refreshCache';
 import { PLAN_READ_CONCURRENCY, mapWithConcurrency } from '../../common/concurrency';
-import { tableToTableStoreConfig, extractTableStoreDefinition } from './tablestoreTypes';
+import {
+  tableToTableStoreConfig,
+  extractTableStoreDefinition,
+  cloudTableStoreToDefinition,
+} from './tablestoreTypes';
+import { remoteDiffersFromDesired } from '../../common/planCompare';
 import { getAllResources, getResource } from '../../common/stateManager';
 import { attributesEqual } from '../../common/hashUtils';
 
@@ -84,10 +89,13 @@ export const generateTablePlan = async (
           };
         }
 
+        const remoteAttributes = cloudTableStoreToDefinition(remoteTable);
+        const remoteDiffers = remoteDiffersFromDesired(remoteAttributes, desiredDefinition);
+
         const currentDefinition = currentState.definition || {};
         const definitionChanged = !attributesEqual(currentDefinition, desiredDefinition);
 
-        if (definitionChanged) {
+        if (definitionChanged || remoteDiffers) {
           // Check if primary keys changed (not updatable in TableStore)
           const currentPrimaryKey = JSON.stringify(currentDefinition.primaryKey || []);
           const desiredPrimaryKey = JSON.stringify(desiredDefinition.primaryKey || []);

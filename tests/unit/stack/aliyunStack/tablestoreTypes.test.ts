@@ -1,7 +1,9 @@
 import {
   tableToTableStoreConfig,
+  cloudTableStoreToDefinition,
   extractTableStoreDefinition,
 } from '../../../../src/stack/aliyunStack/tablestoreTypes';
+import type { TableStoreTableInfo } from '../../../../src/common/aliyunClient/tablestoreOperations';
 import { TableDomain, TableEnum, AttributeTypeEnum, KeyTypeEnum } from '../../../../src/types';
 
 describe('TableStoreTypes', () => {
@@ -339,6 +341,74 @@ describe('TableStoreTypes', () => {
         type: 'PRIVATE',
         ingressRules: ['10.0.0.0/8'],
       });
+    });
+  });
+
+  describe('cloudTableStoreToDefinition', () => {
+    it('maps the reproducible cloud attributes with exact provider value shapes', () => {
+      const info: TableStoreTableInfo = {
+        tableName: 'orders',
+        primaryKey: [
+          { name: 'tenantId', type: 'STRING' },
+          { name: 'createdAt', type: 'INTEGER' },
+        ],
+        reservedThroughputDetails: {
+          capacityUnit: { read: 12, write: 7 },
+          lastIncreaseTime: '2026-09-03T00:00:00Z',
+          lastDecreaseTime: '2026-09-02T00:00:00Z',
+        },
+        tableOptions: {
+          timeToLive: 86400,
+          maxVersions: 3,
+          maxTimeDeviation: 60,
+          allowUpdate: true,
+          bloomFilterType: 'ROW',
+          blockSize: 4096,
+        },
+      };
+
+      expect(cloudTableStoreToDefinition(info)).toEqual({
+        tableName: 'orders',
+        primaryKey: [
+          { name: 'tenantId', type: 'STRING' },
+          { name: 'createdAt', type: 'INTEGER' },
+        ],
+        reservedThroughput: {
+          capacityUnit: { read: 12, write: 7 },
+        },
+        tableOptions: { timeToLive: 86400, maxVersions: 3 },
+      });
+    });
+
+    it('emits only tableName when cloud details are unavailable', () => {
+      const definition = cloudTableStoreToDefinition({ tableName: 'orders' });
+
+      expect(definition).toEqual({ tableName: 'orders' });
+      expect(definition).not.toHaveProperty('instanceName');
+      expect(definition).not.toHaveProperty('clusterType');
+      expect(definition).not.toHaveProperty('description');
+      expect(definition).not.toHaveProperty('attributes');
+      expect(definition).not.toHaveProperty('onDemandThroughput');
+      expect(definition).not.toHaveProperty('network');
+    });
+
+    it('omits reservedThroughput when provider details have no capacity unit', () => {
+      const definition = cloudTableStoreToDefinition({
+        tableName: 'orders',
+        reservedThroughputDetails: {},
+      });
+
+      expect(definition).toEqual({ tableName: 'orders' });
+      expect(definition).not.toHaveProperty('reservedThroughput');
+    });
+
+    it('preserves the provider primary key type casing', () => {
+      const definition = cloudTableStoreToDefinition({
+        tableName: 'binary-table',
+        primaryKey: [{ name: 'key', type: 'BINARY' }],
+      });
+
+      expect(definition.primaryKey).toEqual([{ name: 'key', type: 'BINARY' }]);
     });
   });
 });
