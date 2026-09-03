@@ -307,3 +307,53 @@ export const extractFunctionDomainDefinition = (
   const config = functionToFc3Config(fn);
   return extractFc3Definition(config, codeHash);
 };
+
+export const cloudFc3ToDefinition = (info: Fc3FunctionInfo): ResourceAttributes => {
+  return {
+    functionName: info.functionName ?? null,
+    runtime: info.runtime ?? null,
+    handler: info.handler ?? null,
+    memorySize: info.memorySize ?? null,
+    timeout: info.timeout ?? null,
+    diskSize: info.diskSize ?? null,
+    environment: info.environmentVariables ?? {},
+    vpcConfig: info.vpcConfig
+      ? {
+          vpcId: info.vpcConfig.vpcId ?? null,
+          vSwitchIds: info.vpcConfig.vSwitchIds ?? [],
+          securityGroupId: info.vpcConfig.securityGroupId ?? null,
+        }
+      : null,
+    gpuConfig: info.gpuConfig
+      ? {
+          gpuMemorySize: info.gpuConfig.gpuMemorySize ?? null,
+          gpuType: info.gpuConfig.gpuType ?? null,
+        }
+      : null,
+    customContainerConfig: info.customContainerConfig
+      ? {
+          image: info.customContainerConfig.image ?? null,
+          entrypoint: info.customContainerConfig.entrypoint ?? [],
+          command: info.customContainerConfig.command ?? [],
+          port: info.customContainerConfig.port ?? null,
+          accelerationType: info.customContainerConfig.accelerationType ?? null,
+        }
+      : null,
+    nasConfig: info.nasConfig
+      ? {
+          userId: info.nasConfig.userId ?? null,
+          groupId: info.nasConfig.groupId ?? null,
+          mountPoints: (info.nasConfig.mountPoints ?? []).map((mp) => ({
+            serverAddr: mp.serverAddr ?? null,
+            mountDir: mp.mountDir ?? null,
+          })),
+        }
+      : null,
+    logConfig: info.logConfig
+      ? {
+          enableRequestMetrics: info.logConfig.enableRequestMetrics ?? null,
+          enableInstanceMetrics: info.logConfig.enableInstanceMetrics ?? null,
+        }
+      : null,
+  };
+};
