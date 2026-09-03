@@ -710,6 +710,66 @@ describe('ramOperations', () => {
     });
   });
 
+  describe('getExecutionPolicyDocument', () => {
+    const policyDocument = JSON.stringify({
+      Version: '1',
+      Statement: [{ Effect: 'Allow', Action: ['fc:InvokeFunction'], Resource: '*' }],
+    });
+
+    it('should return the default policy document when policy and version exist', async () => {
+      mockGetPolicy.mockResolvedValue({
+        body: { policy: { policyName: 'fc-execution-role-policy', defaultVersion: 'v1' } },
+      });
+      mockGetPolicyVersion.mockResolvedValue({
+        body: { policyVersion: { versionId: 'v1', policyDocument } },
+      });
+
+      const result = await operations.getExecutionPolicyDocument('fc-execution-role');
+
+      expect(result).toBe(policyDocument);
+      expect(mockGetPolicy).toHaveBeenCalledWith(
+        expect.objectContaining({ policyName: 'fc-execution-role-policy', policyType: 'Custom' }),
+      );
+      expect(mockGetPolicyVersion).toHaveBeenCalledWith(
+        expect.objectContaining({
+          policyName: 'fc-execution-role-policy',
+          policyType: 'Custom',
+          versionId: 'v1',
+        }),
+      );
+    });
+
+    it('should return undefined when getPolicy throws EntityNotExist.Policy', async () => {
+      const notFound = new Error('EntityNotExist.Policy');
+      Object.assign(notFound, { code: 'EntityNotExist.Policy' });
+      mockGetPolicy.mockRejectedValue(notFound);
+
+      const result = await operations.getExecutionPolicyDocument('fc-execution-role');
+
+      expect(result).toBeUndefined();
+      expect(mockGetPolicyVersion).not.toHaveBeenCalled();
+    });
+
+    it('should rethrow non-not-found errors from getPolicy', async () => {
+      mockGetPolicy.mockRejectedValue(new Error('AccessDenied'));
+
+      await expect(operations.getExecutionPolicyDocument('fc-execution-role')).rejects.toThrow(
+        'AccessDenied',
+      );
+    });
+
+    it('should return undefined when the policy has no default version (role without policy)', async () => {
+      mockGetPolicy.mockResolvedValue({
+        body: { policy: { policyName: 'fc-execution-role-policy' } },
+      });
+
+      const result = await operations.getExecutionPolicyDocument('fc-execution-role');
+
+      expect(result).toBeUndefined();
+      expect(mockGetPolicyVersion).not.toHaveBeenCalled();
+    });
+  });
+
   describe('attachManagedPolicies', () => {
     it('should attach multiple managed policies', async () => {
       mockAttachPolicyToRole.mockResolvedValue({});

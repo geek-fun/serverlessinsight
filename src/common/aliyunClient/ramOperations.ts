@@ -221,6 +221,38 @@ const buildExecutionPolicy = (
     }
   };
 
+  const readExecutionPolicyDocument = async (
+    policyName: string,
+  ): Promise<{ found: boolean; document?: string }> => {
+    try {
+      const getPolicyResponse = await ramClient.getPolicy(
+        new ram.GetPolicyRequest({ policyName, policyType: 'Custom' }),
+      );
+      const defaultVersionId = getPolicyResponse.body?.policy?.defaultVersion;
+      if (!defaultVersionId) {
+        return { found: true };
+      }
+      const versionResponse = await ramClient.getPolicyVersion(
+        new ram.GetPolicyVersionRequest({
+          policyName,
+          policyType: 'Custom',
+          versionId: defaultVersionId,
+        }),
+      );
+      return { found: true, document: versionResponse.body?.policyVersion?.policyDocument };
+    } catch (error: unknown) {
+      if (
+        error &&
+        typeof error === 'object' &&
+        'code' in error &&
+        error.code === 'EntityNotExist.Policy'
+      ) {
+        return { found: false };
+      }
+      throw error;
+    }
+  };
+
   const updateExecutionPolicyDocumentFn = async (
     roleName: string,
     policyDocument: string,
@@ -244,31 +276,8 @@ const buildExecutionPolicy = (
       }
     };
 
-    let currentDocument: string | undefined;
-    try {
-      const getPolicyResponse = await ramClient.getPolicy(
-        new ram.GetPolicyRequest({ policyName, policyType: 'Custom' }),
-      );
-      const defaultVersionId = getPolicyResponse.body?.policy?.defaultVersion;
-      if (defaultVersionId) {
-        const versionResponse = await ramClient.getPolicyVersion(
-          new ram.GetPolicyVersionRequest({
-            policyName,
-            policyType: 'Custom',
-            versionId: defaultVersionId,
-          }),
-        );
-        currentDocument = versionResponse.body?.policyVersion?.policyDocument;
-      }
-    } catch (error: unknown) {
-      if (!(
-        error &&
-        typeof error === 'object' &&
-        'code' in error &&
-        error.code === 'EntityNotExist.Policy'
-      )) {
-        throw error;
-      }
+    const readResult = await readExecutionPolicyDocument(policyName);
+    if (!readResult.found) {
       try {
         await ramClient.createPolicy(
           new ram.CreatePolicyRequest({
@@ -291,6 +300,7 @@ const buildExecutionPolicy = (
       return;
     }
 
+    const currentDocument = readResult.document;
     if (currentDocument === policyDocument) {
       return;
     }
@@ -521,6 +531,12 @@ const buildExecutionPolicy = (
     },
 
     updateExecutionPolicyDocument: updateExecutionPolicyDocumentFn,
+
+    getExecutionPolicyDocument: async (roleName: string): Promise<string | undefined> => {
+      const policyName = buildRolePolicyName(roleName);
+      const readResult = await readExecutionPolicyDocument(policyName);
+      return readResult.found ? readResult.document : undefined;
+    },
 
     getRole: async (roleName: string): Promise<RamRoleInfo | null> => {
       try {
