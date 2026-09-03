@@ -321,8 +321,7 @@ export const generateFunctionPlan = async (
       const currentState = getResource(state, logicalId);
       const rawConfig = functionToFc3Config(fn);
       const config = await resolveVpcConfigSecurityGroup(context, rawConfig);
-      const codePath = fn.code!.path;
-      const desiredCodeHash = await computeZipContentHash(codePath);
+      const desiredCodeHash = fn.code ? await computeZipContentHash(fn.code.path) : null;
       const baseDefinition = extractFc3Definition(config, desiredCodeHash);
       const desiredDefinition = fn.iam ? { ...baseDefinition, iam: fn.iam } : baseDefinition;
 
@@ -393,42 +392,52 @@ export const generateFunctionPlan = async (
 
         const roleProbe = resolveManagedRoleProbe(context, fn, currentState);
         if (roleProbe) {
-          const cloudRole = await cachedRefreshRead(
-            context,
-            `ram.getRole:${roleProbe.roleName}`,
-            () => client.ram.getRole(roleProbe.roleName),
-          );
-          if (!cloudRole) {
+          try {
+            const cloudRole = await cachedRefreshRead(
+              context,
+              `ram.getRole:${roleProbe.roleName}`,
+              () => client.ram.getRole(roleProbe.roleName),
+            );
+            if (!cloudRole) {
+              logger.warn(
+                lang.__('PLAN_FUNCTION_ROLE_MISSING', {
+                  roleName: roleProbe.roleName,
+                  functionName: fn.name,
+                }),
+              );
+              return {
+                logicalId,
+                action: 'update',
+                resourceType: 'ALIYUN_FC3',
+                changes: { before: normalizedCurrent, after: normalizedDesired },
+                drifted: true,
+              };
+            }
+            const rolePolicyDrifted = await detectRolePolicyDrift(
+              context,
+              state,
+              fn,
+              currentState,
+              roleProbe.roleName,
+              cloudRole,
+            );
+            if (rolePolicyDrifted) {
+              return {
+                logicalId,
+                action: 'update',
+                resourceType: 'ALIYUN_FC3',
+                changes: { before: normalizedCurrent, after: normalizedDesired },
+                drifted: true,
+              };
+            }
+          } catch (error: unknown) {
             logger.warn(
-              lang.__('PLAN_FUNCTION_ROLE_MISSING', {
+              lang.__('PLAN_FUNCTION_ROLE_PROBE_FAILED', {
                 roleName: roleProbe.roleName,
                 functionName: fn.name,
+                error: String(error),
               }),
             );
-            return {
-              logicalId,
-              action: 'update',
-              resourceType: 'ALIYUN_FC3',
-              changes: { before: normalizedCurrent, after: normalizedDesired },
-              drifted: true,
-            };
-          }
-          const rolePolicyDrifted = await detectRolePolicyDrift(
-            context,
-            state,
-            fn,
-            currentState,
-            roleProbe.roleName,
-            cloudRole,
-          );
-          if (rolePolicyDrifted) {
-            return {
-              logicalId,
-              action: 'update',
-              resourceType: 'ALIYUN_FC3',
-              changes: { before: normalizedCurrent, after: normalizedDesired },
-              drifted: true,
-            };
           }
         }
 
