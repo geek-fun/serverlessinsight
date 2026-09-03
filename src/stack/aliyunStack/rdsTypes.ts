@@ -236,4 +236,41 @@ export const extractRdsDefinition = (config: RdsConfig): ResourceAttributes => {
   };
 };
 
+export const cloudRdsToDefinition = (info: RdsInfo): ResourceAttributes => ({
+  ...(info.dbInstanceDescription === undefined
+    ? {}
+    : { dbInstanceDescription: info.dbInstanceDescription }),
+  ...(info.engine === undefined ? {} : { engine: info.engine }),
+  ...(info.engineVersion === undefined ? {} : { engineVersion: info.engineVersion }),
+  ...(info.dbInstanceClass === undefined ? {} : { dbInstanceClass: info.dbInstanceClass }),
+  ...(info.dbInstanceStorage === undefined ? {} : { dbInstanceStorage: info.dbInstanceStorage }),
+  ...(info.category === undefined ? {} : { category: info.category }),
+  ...(info.dbInstanceStorageType === undefined
+    ? {}
+    : { dbInstanceStorageType: info.dbInstanceStorageType }),
+  ...(info.burstingEnabled === undefined ? {} : { burstingEnabled: info.burstingEnabled }),
+  ...(info.serverlessConfig === undefined
+    ? {}
+    : {
+        serverlessConfig: {
+          ...(info.serverlessConfig.minCapacity === undefined
+            ? {}
+            : { minCapacity: info.serverlessConfig.minCapacity }),
+          ...(info.serverlessConfig.maxCapacity === undefined
+            ? {}
+            : { maxCapacity: info.serverlessConfig.maxCapacity }),
+          ...(info.serverlessConfig.autoPause === undefined
+            ? {}
+            : { autoPause: info.serverlessConfig.autoPause }),
+          ...(info.serverlessConfig.switchForce === undefined
+            ? {}
+            : { switchForce: info.serverlessConfig.switchForce }),
+        },
+      }),
+  ...(info.multiAZ === undefined ? {} : { multiAZ: info.multiAZ }),
+  ...(info.securityIPList === undefined ? {} : { securityIPList: info.securityIPList }),
+  ...(info.vpcId === undefined ? {} : { vpcId: info.vpcId }),
+  ...(info.vSwitchId === undefined ? {} : { vSwitchId: info.vSwitchId }),
+});
+
 export { RdsConfig, RdsInfo };

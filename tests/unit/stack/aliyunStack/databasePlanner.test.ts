@@ -21,11 +21,13 @@ const mockedEsOperations = {
 const mockedRdsTypes = {
   databaseToRdsConfig: jest.fn(),
   extractRdsDefinition: jest.fn(),
+  cloudRdsToDefinition: jest.fn(),
 };
 
 const mockedEsTypes = {
   databaseToEsConfig: jest.fn(),
   extractEsDefinition: jest.fn(),
+  cloudEsToDefinition: jest.fn(),
 };
 
 const mockedStateManager = {
@@ -47,11 +49,13 @@ jest.mock('../../../../src/common/aliyunClient', () => ({
 jest.mock('../../../../src/stack/aliyunStack/rdsTypes', () => ({
   databaseToRdsConfig: (...args: unknown[]) => mockedRdsTypes.databaseToRdsConfig(...args),
   extractRdsDefinition: (...args: unknown[]) => mockedRdsTypes.extractRdsDefinition(...args),
+  cloudRdsToDefinition: (...args: unknown[]) => mockedRdsTypes.cloudRdsToDefinition(...args),
 }));
 
 jest.mock('../../../../src/stack/aliyunStack/esServerlessTypes', () => ({
   databaseToEsConfig: (...args: unknown[]) => mockedEsTypes.databaseToEsConfig(...args),
   extractEsDefinition: (...args: unknown[]) => mockedEsTypes.extractEsDefinition(...args),
+  cloudEsToDefinition: (...args: unknown[]) => mockedEsTypes.cloudEsToDefinition(...args),
 }));
 
 jest.mock('../../../../src/common/stateManager', () => ({
@@ -91,8 +95,14 @@ describe('DatabasePlanner', () => {
     jest.clearAllMocks();
     mockedRdsOperations.getInstanceByName.mockReset();
     mockedEsOperations.getApp.mockReset();
+    mockedRdsTypes.cloudRdsToDefinition.mockReset();
+    mockedEsTypes.cloudEsToDefinition.mockReset();
     mockedStateManager.getAllResources.mockReturnValue({});
     mockedStateManager.getResource.mockReturnValue(null);
+    // Default the live-attribute mappers to empty so unrelated state-exists
+    // tests keep the local definitionChanged-only behavior.
+    mockedRdsTypes.cloudRdsToDefinition.mockReturnValue({});
+    mockedEsTypes.cloudEsToDefinition.mockReturnValue({});
   });
 
   const createTestDatabase = (
@@ -393,6 +403,162 @@ describe('DatabasePlanner', () => {
           resourceType: 'ALIYUN_RDS_SERVERLESS',
         }),
       );
+    });
+
+    it('should plan RDS live drift when cloud attributes differ from desired', async () => {
+      const database = createTestDatabase(DatabaseEnum.RDS_MYSQL_SERVERLESS, 'test_db');
+      const desiredDefinition = {
+        dbInstanceClass: 'serverless',
+        dbInstanceStorage: 100,
+        serverlessConfig: { minCapacity: 1 },
+      };
+      const existingState = {
+        metadata: { instanceId: 'db-instance-123', resourceType: 'ALIYUN_RDS_SERVERLESS' },
+        instances: [{ id: 'db-instance-123' }],
+        definition: desiredDefinition,
+      };
+
+      mockedStateManager.getResource.mockReturnValue(existingState);
+      mockedRdsOperations.getInstance.mockResolvedValue({
+        dbInstanceId: 'db-instance-123',
+        dbInstanceClass: 'serverless',
+        dbInstanceStorage: 200,
+        serverlessConfig: { minCapacity: 2, maxCapacity: 8, autoPause: true },
+        connectionString: 'ignored-rich-cloud-field',
+      });
+      mockedRdsTypes.databaseToRdsConfig.mockReturnValue({});
+      mockedRdsTypes.extractRdsDefinition.mockReturnValue(desiredDefinition);
+      mockedRdsTypes.cloudRdsToDefinition.mockReturnValue({
+        dbInstanceClass: 'serverless',
+        dbInstanceStorage: 200,
+        serverlessConfig: { minCapacity: 2 },
+      });
+      const realAttributesEqual = jest.requireActual('../../../../src/common/hashUtils')
+        .attributesEqual as (a: unknown, b: unknown) => boolean;
+      mockedHashUtils.attributesEqual.mockImplementation(realAttributesEqual);
+
+      const plan = await generateDatabasePlan(mockContext, initialState, [database]);
+
+      expect(plan.items[0]).toEqual(expect.objectContaining({ action: 'update', drifted: true }));
+    });
+
+    it('should plan no-op for matching RDS cloud attributes including omitted fields', async () => {
+      const database = createTestDatabase(DatabaseEnum.RDS_MYSQL_SERVERLESS, 'test_db');
+      const desiredDefinition = {
+        dbInstanceClass: 'serverless',
+        dbInstanceStorage: 100,
+        serverlessConfig: { minCapacity: 1 },
+        connectionStringType: 'Standard',
+      };
+      const existingState = {
+        metadata: { instanceId: 'db-instance-123', resourceType: 'ALIYUN_RDS_SERVERLESS' },
+        instances: [{ id: 'db-instance-123' }],
+        definition: desiredDefinition,
+      };
+
+      mockedStateManager.getResource.mockReturnValue(existingState);
+      mockedRdsOperations.getInstance.mockResolvedValue({
+        dbInstanceId: 'db-instance-123',
+        dbInstanceClass: 'serverless',
+        dbInstanceStorage: 100,
+        serverlessConfig: { minCapacity: 1, maxCapacity: 8, autoPause: true },
+        connectionString: 'ignored-rich-cloud-field',
+      });
+      mockedRdsTypes.databaseToRdsConfig.mockReturnValue({});
+      mockedRdsTypes.extractRdsDefinition.mockReturnValue(desiredDefinition);
+      mockedRdsTypes.cloudRdsToDefinition.mockReturnValue({
+        dbInstanceClass: 'serverless',
+        dbInstanceStorage: 100,
+        serverlessConfig: { minCapacity: 1 },
+      });
+      const realAttributesEqual = jest.requireActual('../../../../src/common/hashUtils')
+        .attributesEqual as (a: unknown, b: unknown) => boolean;
+      mockedHashUtils.attributesEqual.mockImplementation(realAttributesEqual);
+
+      const plan = await generateDatabasePlan(mockContext, initialState, [database]);
+
+      expect(plan.items[0]).toEqual(expect.objectContaining({ action: 'noop' }));
+    });
+
+    it('should plan ES live drift when cloud app metadata or network differs', async () => {
+      const database = createTestDatabase(DatabaseEnum.ELASTICSEARCH_SERVERLESS, 'test_es');
+      const desiredDefinition = {
+        appName: 'test-es-app',
+        appVersion: '7.10',
+        description: 'desired',
+        network: [{ type: 'PUBLIC', whiteIpGroup: [{ groupName: 'default', ips: ['10.0.0.1'] }] }],
+      };
+      const existingState = {
+        metadata: { instanceId: 'es-app-123', resourceType: 'ALIYUN_ES_SERVERLESS' },
+        instances: [{ id: 'es-app-123' }],
+        definition: desiredDefinition,
+      };
+
+      mockedStateManager.getResource.mockReturnValue(existingState);
+      mockedEsOperations.getApp.mockResolvedValue({
+        appId: 'es-app-123',
+        appName: 'test-es-app',
+        version: '7.10',
+        description: 'cloud-edited',
+        network: [{ type: 'PUBLIC', whiteIpGroup: [{ groupName: 'default', ips: ['10.0.0.2'] }] }],
+        quotaInfo: { cu: 4 },
+      });
+      mockedEsTypes.databaseToEsConfig.mockReturnValue({});
+      mockedEsTypes.extractEsDefinition.mockReturnValue(desiredDefinition);
+      mockedEsTypes.cloudEsToDefinition.mockReturnValue({
+        appName: 'test-es-app',
+        appVersion: '7.10',
+        description: 'cloud-edited',
+        network: [{ type: 'PUBLIC', whiteIpGroup: [{ groupName: 'default', ips: ['10.0.0.2'] }] }],
+      });
+      const realAttributesEqual = jest.requireActual('../../../../src/common/hashUtils')
+        .attributesEqual as (a: unknown, b: unknown) => boolean;
+      mockedHashUtils.attributesEqual.mockImplementation(realAttributesEqual);
+
+      const plan = await generateDatabasePlan(mockContext, initialState, [database]);
+
+      expect(plan.items[0]).toEqual(expect.objectContaining({ action: 'update', drifted: true }));
+    });
+
+    it('should plan no-op for matching ES cloud attributes including omitted fields', async () => {
+      const database = createTestDatabase(DatabaseEnum.ELASTICSEARCH_SERVERLESS, 'test_es');
+      const desiredDefinition = {
+        appName: 'test-es-app',
+        appVersion: '7.10',
+        description: 'same',
+        network: [{ type: 'PUBLIC', whiteIpGroup: [{ groupName: 'default', ips: ['10.0.0.1'] }] }],
+        authentication: { basicAuth: [{ username: 'desired-user' }] },
+      };
+      const existingState = {
+        metadata: { instanceId: 'es-app-123', resourceType: 'ALIYUN_ES_SERVERLESS' },
+        instances: [{ id: 'es-app-123' }],
+        definition: desiredDefinition,
+      };
+
+      mockedStateManager.getResource.mockReturnValue(existingState);
+      mockedEsOperations.getApp.mockResolvedValue({
+        appId: 'es-app-123',
+        appName: 'test-es-app',
+        version: '7.10',
+        description: 'same',
+        network: [{ type: 'PUBLIC', whiteIpGroup: [{ groupName: 'default', ips: ['10.0.0.1'] }] }],
+        authentication: { basicAuth: [{ username: 'cloud-user' }] },
+      });
+      mockedEsTypes.databaseToEsConfig.mockReturnValue({});
+      mockedEsTypes.extractEsDefinition.mockReturnValue(desiredDefinition);
+      mockedEsTypes.cloudEsToDefinition.mockReturnValue({
+        appName: 'test-es-app',
+        appVersion: '7.10',
+        description: 'same',
+        network: [{ type: 'PUBLIC', whiteIpGroup: [{ groupName: 'default', ips: ['10.0.0.1'] }] }],
+      });
+      const realAttributesEqual = jest.requireActual('../../../../src/common/hashUtils')
+        .attributesEqual as (a: unknown, b: unknown) => boolean;
+      mockedHashUtils.attributesEqual.mockImplementation(realAttributesEqual);
+
+      const plan = await generateDatabasePlan(mockContext, initialState, [database]);
+
+      expect(plan.items[0]).toEqual(expect.objectContaining({ action: 'noop' }));
     });
 
     it('should plan deletion of unused database', async () => {

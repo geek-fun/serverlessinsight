@@ -154,4 +154,53 @@ export const extractEsDefinition = (config: EsConfig): ResourceAttributes => {
   };
 };
 
+export const cloudEsToDefinition = (info: EsInfo): ResourceAttributes => ({
+  ...(info.appName === undefined ? {} : { appName: info.appName }),
+  ...(info.version === undefined ? {} : { appVersion: info.version }),
+  ...(info.description === undefined ? {} : { description: info.description }),
+  ...(info.chargeType === undefined ? {} : { chargeType: info.chargeType }),
+  ...(info.network === undefined
+    ? {}
+    : {
+        network: info.network.map((network) => ({
+          type: network.type ?? null,
+          enabled: network.enabled ?? null,
+          domain: network.domain ?? null,
+          port: network.port ?? null,
+          whiteIpGroup: network.whiteIpGroup
+            ? network.whiteIpGroup.map((group) => ({
+                groupName: group.groupName ?? null,
+                ips: group.ips ?? [],
+              }))
+            : null,
+        })),
+      }),
+  ...(info.privateNetwork === undefined
+    ? {}
+    : {
+        privateNetwork: info.privateNetwork.map((network) => ({
+          type: network.type ?? null,
+          enabled: network.enabled ?? null,
+          domain: network.domain ?? null,
+          port: network.port ?? null,
+          vpcId: network.vpcId ?? null,
+          pvlEndpointId: network.pvlEndpointId ?? null,
+          whiteIpGroup: network.whiteIpGroup
+            ? network.whiteIpGroup.map((group) => ({
+                groupName: group.groupName ?? null,
+                ips: group.ips ?? [],
+              }))
+            : null,
+        })),
+      }),
+  ...(info.tags === undefined
+    ? {}
+    : {
+        tags: info.tags.map((tag) => ({
+          key: tag.key ?? null,
+          value: tag.value ?? null,
+        })),
+      }),
+});
+
 export { EsConfig, EsInfo };

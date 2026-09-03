@@ -1,7 +1,9 @@
 import {
+  cloudEsToDefinition,
   databaseToEsConfig,
   extractEsDefinition,
 } from '../../../../src/stack/aliyunStack/esServerlessTypes';
+import type { EsInfo } from '../../../../src/common/aliyunClient/esOperations';
 import { DatabaseDomain, DatabaseEnum, DatabaseVersionEnum } from '../../../../src/types';
 
 describe('EsServerlessTypes', () => {
@@ -345,6 +347,90 @@ describe('EsServerlessTypes', () => {
       const definition = extractEsDefinition(config);
 
       expect(definition.authentication).toBeNull();
+    });
+  });
+
+  describe('cloudEsToDefinition', () => {
+    it('maps network, private network, tags, and readable ES attributes', () => {
+      const info: EsInfo = {
+        appName: 'orders-search',
+        appType: 'STANDARD',
+        description: 'Elasticsearch serverless app: orders-search',
+        chargeType: 'POSTPAY',
+        version: '7.10',
+        network: [
+          {
+            type: 'PUBLIC_ES',
+            enabled: true,
+            domain: 'orders.es.aliyuncs.com',
+            port: 9200,
+            whiteIpGroup: [{ groupName: 'default', ips: ['10.0.0.0/8'] }],
+          },
+        ],
+        privateNetwork: [
+          {
+            type: 'PRIVATE_ES',
+            enabled: true,
+            domain: 'orders.private.aliyuncs.com',
+            port: 9200,
+            vpcId: 'vpc-123',
+            pvlEndpointId: 'ep-456',
+            whiteIpGroup: [{ groupName: 'private', ips: ['192.168.0.0/16'] }],
+          },
+        ],
+        tags: [{ key: 'env', value: 'prod' }],
+      };
+
+      expect(cloudEsToDefinition(info)).toEqual({
+        appName: 'orders-search',
+        appVersion: '7.10',
+        description: 'Elasticsearch serverless app: orders-search',
+        chargeType: 'POSTPAY',
+        network: [
+          {
+            type: 'PUBLIC_ES',
+            enabled: true,
+            domain: 'orders.es.aliyuncs.com',
+            port: 9200,
+            whiteIpGroup: [{ groupName: 'default', ips: ['10.0.0.0/8'] }],
+          },
+        ],
+        privateNetwork: [
+          {
+            type: 'PRIVATE_ES',
+            enabled: true,
+            domain: 'orders.private.aliyuncs.com',
+            port: 9200,
+            vpcId: 'vpc-123',
+            pvlEndpointId: 'ep-456',
+            whiteIpGroup: [{ groupName: 'private', ips: ['192.168.0.0/16'] }],
+          },
+        ],
+        tags: [{ key: 'env', value: 'prod' }],
+      });
+    });
+
+    it('omits config-only and unreadable attributes from minimal cloud info', () => {
+      const definition = cloudEsToDefinition({ appId: 'app-1' });
+
+      expect(definition).toEqual({});
+      expect(definition).not.toHaveProperty('appVersion');
+      expect(definition).not.toHaveProperty('authentication');
+      expect(definition).not.toHaveProperty('quotaInfo');
+      expect(definition).not.toHaveProperty('cu');
+      expect(definition).not.toHaveProperty('storage');
+    });
+
+    it('omits absent network collections and preserves empty white IP groups', () => {
+      const definition = cloudEsToDefinition({
+        network: [{ type: 'PUBLIC_ES', whiteIpGroup: [] }],
+        privateNetwork: undefined,
+      });
+
+      expect(definition.network).toEqual([
+        { type: 'PUBLIC_ES', enabled: null, domain: null, port: null, whiteIpGroup: [] },
+      ]);
+      expect(definition).not.toHaveProperty('privateNetwork');
     });
   });
 });
