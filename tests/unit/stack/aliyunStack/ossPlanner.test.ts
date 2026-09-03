@@ -63,6 +63,33 @@ describe('OSS Planner', () => {
     },
   };
 
+  const stateForDefinition = (definition: Record<string, unknown>) =>
+    setResource(initialState, 'buckets.test_bucket', {
+      mode: 'managed',
+      region: 'cn-hangzhou',
+      definition,
+      instances: [],
+      lastUpdated: new Date().toISOString(),
+    });
+
+  const baseDefinition = {
+    bucketName: 'test-bucket',
+    acl: 'private',
+    websiteConfiguration: { indexDocument: 'index.html', errorDocument: 'index.html' },
+    websiteCodeHash: 'mock-website-hash',
+    storageClass: null,
+    domain: null,
+    wwwBindApex: false,
+    domainCertificateId: null,
+    domainCertificateBody: null,
+    domainCertificatePrivateKey: null,
+    domainProtocol: null,
+    policy: null,
+    versioningStatus: null,
+    sseAlgorithm: null,
+    sseKmsMasterKeyId: null,
+  };
+
   afterEach(() => {
     jest.clearAllMocks();
   });
@@ -202,6 +229,10 @@ describe('OSS Planner', () => {
           indexDocument: 'index.html',
           errorDocument: 'index.html',
         },
+        tags: [{ key: 'environment', value: 'production' }],
+        location: 'oss-cn-hangzhou',
+        transferAccelerationStatus: 'Disabled',
+        domain: 'console.example.com',
       });
 
       const state = setResource(initialState, 'buckets.test_bucket', {
@@ -245,6 +276,59 @@ describe('OSS Planner', () => {
         action: 'noop',
         resourceType: 'ALIYUN_OSS_BUCKET',
       });
+    });
+
+    it('should plan live ACL drift as an update', async () => {
+      mockOssOperations.getBucket.mockResolvedValue({
+        name: 'test-bucket',
+        acl: 'public-read',
+      });
+
+      const desiredBucket = {
+        ...testBucket,
+        security: { acl: BucketAccessEnum.PRIVATE, force_delete: false },
+      };
+
+      const plan = await generateBucketPlan(mockContext, stateForDefinition(baseDefinition), [
+        desiredBucket,
+      ]);
+
+      expect(plan.items[0]).toMatchObject({ action: 'update', drifted: true });
+    });
+
+    it('should plan live website configuration drift as an update', async () => {
+      mockOssOperations.getBucket.mockResolvedValue({
+        name: 'test-bucket',
+        websiteConfig: { indexDocument: 'console.html', errorDocument: 'index.html' },
+      });
+
+      const plan = await generateBucketPlan(mockContext, stateForDefinition(baseDefinition), [
+        testBucket,
+      ]);
+
+      expect(plan.items[0]).toMatchObject({ action: 'update', drifted: true });
+    });
+
+    it('should plan live versioning drift as an update', async () => {
+      mockOssOperations.getBucket.mockResolvedValue({
+        name: 'test-bucket',
+        versioningConfig: { status: 'Suspended' },
+      });
+
+      const desiredBucket: BucketDomain = {
+        ...testBucket,
+        versioning: { status: 'Enabled' },
+      };
+      const desiredDefinition = {
+        ...baseDefinition,
+        versioningStatus: 'Enabled',
+      };
+
+      const plan = await generateBucketPlan(mockContext, stateForDefinition(desiredDefinition), [
+        desiredBucket,
+      ]);
+
+      expect(plan.items[0]).toMatchObject({ action: 'update', drifted: true });
     });
 
     it('should plan to update when domain binding previously failed (domainBound: false)', async () => {

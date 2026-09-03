@@ -3,9 +3,14 @@ import { Context, BucketDomain, Plan, PlanItem, StateFile, ResourceAttributes } 
 import { createAliyunClient } from '../../common/aliyunClient';
 import { cachedRefreshRead } from '../../common/refreshCache';
 import { PLAN_READ_CONCURRENCY, mapWithConcurrency } from '../../common/concurrency';
-import { bucketToOssBucketConfig, extractOssBucketDefinition } from './ossTypes';
+import {
+  bucketToOssBucketConfig,
+  cloudOssToDefinition,
+  extractOssBucketDefinition,
+} from './ossTypes';
 import { getAllResources, getResource } from '../../common/stateManager';
 import { attributesEqual, computeDirectoryHash } from '../../common/hashUtils';
+import { remoteDiffersFromDesired } from '../../common/planCompare';
 import { OWNERSHIP_TAG_KEY, isOwnedByStack } from '../ownershipTag';
 
 const planBucketDeletion = (logicalId: string, definition: ResourceAttributes): PlanItem => ({
@@ -109,15 +114,17 @@ export const generateBucketPlan = async (
         const normalizedDesired = normalizeDefinitionForDisplay(desiredDefinition);
         const { domainBound } = currentDefinition as { domainBound?: boolean | null };
         const definitionChanged = !attributesEqual(normalizedCurrent, normalizedDesired);
+        const remoteAttributes = cloudOssToDefinition(remoteBucket);
+        const remoteDiffers = remoteDiffersFromDesired(remoteAttributes, desiredDefinition);
         const domainBindingPending = domainBound === false;
 
-        if (definitionChanged || domainBindingPending) {
+        if (definitionChanged || remoteDiffers || domainBindingPending) {
           return {
             logicalId,
             action: 'update',
             resourceType: 'ALIYUN_OSS_BUCKET',
             changes: { before: normalizedCurrent, after: normalizedDesired },
-            ...(definitionChanged ? { drifted: true } : {}),
+            ...(definitionChanged || remoteDiffers ? { drifted: true } : {}),
           };
         }
 
