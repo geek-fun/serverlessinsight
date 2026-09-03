@@ -1,4 +1,5 @@
 import { BucketAccessEnum, BucketDomain, BucketIam, ResourceAttributes } from '../../types';
+import type { OssBucketInfo } from '../../common/aliyunClient/ossOperations';
 import { BucketACL, CommonBucketConfig } from '../bucketTypes';
 
 export type OssBucketConfig = CommonBucketConfig & {
@@ -160,3 +161,27 @@ export const extractOssBucketDefinition = (
 
   return def;
 };
+
+export const cloudOssToDefinition = (info: OssBucketInfo): ResourceAttributes => ({
+  bucketName: info.name,
+  ...(info.acl !== undefined ? { acl: info.acl } : {}),
+  ...(info.websiteConfig
+    ? {
+        websiteConfiguration: {
+          indexDocument: info.websiteConfig.indexDocument,
+          errorDocument: info.websiteConfig.errorDocument ?? null,
+        },
+      }
+    : {}),
+  ...(info.storageClass !== undefined ? { storageClass: info.storageClass } : {}),
+  ...(info.versioningConfig?.status !== undefined
+    ? { versioningStatus: info.versioningConfig.status }
+    : {}),
+  ...(info.encryptionConfig?.sseAlgorithm !== undefined
+    ? { sseAlgorithm: info.encryptionConfig.sseAlgorithm }
+    : {}),
+  ...(info.policy !== undefined ? { policy: info.policy } : {}),
+  ...(typeof info.transferAccelerationStatus === 'boolean'
+    ? { accelerateEnabled: info.transferAccelerationStatus }
+    : {}),
+});

@@ -1,7 +1,9 @@
 import {
   bucketToOssBucketConfig,
+  cloudOssToDefinition,
   extractOssBucketDefinition,
 } from '../../../../src/stack/aliyunStack/ossTypes';
+import type { OssBucketInfo } from '../../../../src/common/aliyunClient/ossOperations';
 import { BucketDomain, BucketAccessEnum } from '../../../../src/types';
 import { BucketACL } from '../../../../src/stack/bucketTypes';
 
@@ -306,6 +308,100 @@ describe('OssTypes', () => {
       expect(definition.versioningStatus).toBeNull();
       expect(definition.sseAlgorithm).toBeNull();
       expect(definition.sseKmsMasterKeyId).toBeNull();
+    });
+  });
+
+  describe('cloudOssToDefinition', () => {
+    it('maps reconciliable attributes from a complete cloud bucket response', () => {
+      // Given: a cloud response with every attribute this mapper can compare
+      const info: OssBucketInfo = {
+        name: 'production-assets',
+        acl: 'public-read',
+        websiteConfig: {
+          indexDocument: 'index.html',
+          errorDocument: '404.html',
+        },
+        storageClass: 'Standard',
+        versioningConfig: { status: 'Enabled' },
+        encryptionConfig: { sseAlgorithm: 'AES256' },
+        transferAccelerationStatus: 'Enabled',
+        policy: '{"Version":"1"}',
+      };
+
+      // When: the cloud response is converted to a definition
+      const definition = cloudOssToDefinition(info);
+
+      // Then: only reconcilable definition keys are emitted
+      expect(definition).toEqual({
+        bucketName: 'production-assets',
+        acl: 'public-read',
+        websiteConfiguration: {
+          indexDocument: 'index.html',
+          errorDocument: '404.html',
+        },
+        storageClass: 'Standard',
+        versioningStatus: 'Enabled',
+        sseAlgorithm: 'AES256',
+        policy: '{"Version":"1"}',
+      });
+    });
+
+    it('maps only bucket name and ACL for a minimal response', () => {
+      // Given: a response with only the bucket identity and ACL
+      const info: OssBucketInfo = { name: 'minimal-bucket', acl: 'private' };
+
+      // When: the response is converted
+      const definition = cloudOssToDefinition(info);
+
+      // Then: unreadable and config-only attributes are absent
+      expect(definition).toEqual({ bucketName: 'minimal-bucket', acl: 'private' });
+      expect(definition).not.toHaveProperty('websiteConfiguration');
+      expect(definition).not.toHaveProperty('storageClass');
+      expect(definition).not.toHaveProperty('versioningStatus');
+      expect(definition).not.toHaveProperty('sseAlgorithm');
+      expect(definition).not.toHaveProperty('policy');
+      expect(definition).not.toHaveProperty('websiteCodeHash');
+      expect(definition).not.toHaveProperty('domain');
+      expect(definition).not.toHaveProperty('domainBound');
+      expect(definition).not.toHaveProperty('cdnEnabled');
+    });
+
+    it('omits website configuration when the cloud response has none', () => {
+      // Given: a bucket without website configuration
+      const info: OssBucketInfo = { name: 'api-bucket', acl: 'private' };
+
+      // When: the response is converted
+      const definition = cloudOssToDefinition(info);
+
+      // Then: website configuration is not treated as an empty desired value
+      expect(definition).not.toHaveProperty('websiteConfiguration');
+    });
+
+    it('omits versioning and encryption attributes when cloud data is absent', () => {
+      // Given: a bucket without versioning or encryption configuration
+      const info: OssBucketInfo = { name: 'plain-bucket', acl: 'private' };
+
+      // When: the response is converted
+      const definition = cloudOssToDefinition(info);
+
+      // Then: absent cloud values do not create drift candidates
+      expect(definition).not.toHaveProperty('versioningStatus');
+      expect(definition).not.toHaveProperty('sseAlgorithm');
+    });
+
+    it('does not include cloud tags in the definition', () => {
+      // Given: a bucket response containing provider tags
+      const info: OssBucketInfo = {
+        name: 'tagged-bucket',
+        acl: 'private',
+        tags: [{ key: 'environment', value: 'production' }],
+      };
+
+      // When: the response is converted
+      const definition = cloudOssToDefinition(info);
+
+      // Then: tags remain outside the definition comparison contract
+      expect(definition).not.toHaveProperty('tags');
     });
   });
 });
