@@ -1,10 +1,13 @@
 import { ProviderEnum, buildFunctionRoleName, setResource } from '../../../../src/common';
+import { computeZipContentHash } from '../../../../src/common/hashUtils';
 import { createRefreshCache } from '../../../../src/common/refreshCache';
 import { generateFunctionPlan } from '../../../../src/stack/aliyunStack/fc3Planner';
+import { extractFunctionDomainDefinition } from '../../../../src/stack/aliyunStack/fc3Types';
 import {
   Context,
   CURRENT_STATE_VERSION,
   FunctionDomain,
+  NasStorageClassEnum,
   ResourceInstance,
   StateFile,
 } from '../../../../src/types';
@@ -938,6 +941,24 @@ describe('FC3 Planner', () => {
       expect(mockRamOperations.listAttachedRolePolicies).toHaveBeenCalledWith('test-managed-role');
     });
 
+    it('stays noop (never create) when the role probe read fails transiently', async () => {
+      const fn: FunctionDomain = {
+        ...testFunction,
+        iam: { role: { name: 'test-managed-role' } },
+      };
+      const state = buildState(fn, [fc3Instance, roleInstance]);
+      mockFc3Operations.getFunction.mockResolvedValue(remoteFunctionMatch);
+      mockRamOperations.getRole.mockRejectedValue(new Error('RAM request throttled'));
+
+      const plan = await generateFunctionPlan(mockContext, state, [fn]);
+
+      expect(plan.items[0]).toMatchObject({
+        logicalId: 'functions.test_fn',
+        action: 'noop',
+        resourceType: 'ALIYUN_FC3',
+      });
+    });
+
     it('skips role-policy compare when the role is shared across functions (noop)', async () => {
       const fn: FunctionDomain = {
         ...testFunction,
@@ -1012,6 +1033,185 @@ describe('FC3 Planner', () => {
       });
       expect(mockRamOperations.getExecutionPolicyDocument).not.toHaveBeenCalled();
       expect(mockRamOperations.listAttachedRolePolicies).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('live drift shape parity for container & nas functions (issue #234)', () => {
+    // State definitions are built with the same extractor the planner uses, so
+    // any shape drift between cloudFc3ToDefinition and the desired definition
+    // surfaces here as a failed noop expectation.
+    const buildStateFromDefinition = async (fn: FunctionDomain): Promise<StateFile> => {
+      const codeHash = fn.code ? await computeZipContentHash(fn.code.path) : null;
+      const definition = extractFunctionDomainDefinition(fn, codeHash);
+      return setResource(initalState, `functions.${fn.key}`, {
+        mode: 'managed',
+        region: 'cn-hangzhou',
+        definition,
+        instances: [
+          {
+            sid: 'si:aliyun:fc3:default:test-function',
+            id: 'test-function',
+            functionName: 'test-function',
+          },
+        ],
+        lastUpdated: new Date().toISOString(),
+      });
+    };
+
+    it('stays noop for a container function without cmd even when the cloud reports image defaults', async () => {
+      const containerFn: FunctionDomain = {
+        key: 'test_fn',
+        name: 'test-function',
+        container: { image: 'registry.example.com/app:latest', port: 8080 },
+        memory: 512,
+        timeout: 60,
+        storage: {},
+      };
+      mockFc3Operations.getFunction.mockResolvedValue({
+        functionName: 'test-function',
+        runtime: 'custom-container',
+        handler: 'index.handler',
+        memorySize: 512,
+        timeout: 60,
+        customContainerConfig: {
+          image: 'registry.example.com/app:latest',
+          port: 8080,
+          entrypoint: ['/bin/sh'],
+          accelerationType: 'Default',
+        },
+      });
+
+      const plan = await generateFunctionPlan(
+        mockContext,
+        await buildStateFromDefinition(containerFn),
+        [containerFn],
+      );
+
+      expect(plan.items[0]).toMatchObject({
+        logicalId: 'functions.test_fn',
+        action: 'noop',
+        resourceType: 'ALIYUN_FC3',
+      });
+    });
+
+    it('flags update+drifted for a container function whose image or port changed live', async () => {
+      const containerFn: FunctionDomain = {
+        key: 'test_fn',
+        name: 'test-function',
+        container: { image: 'registry.example.com/app:latest', port: 8080 },
+        memory: 512,
+        timeout: 60,
+        storage: {},
+      };
+      mockFc3Operations.getFunction.mockResolvedValue({
+        functionName: 'test-function',
+        runtime: 'custom-container',
+        handler: 'index.handler',
+        memorySize: 512,
+        timeout: 60,
+        customContainerConfig: {
+          image: 'registry.example.com/app:v2',
+          port: 9090,
+        },
+      });
+
+      const plan = await generateFunctionPlan(
+        mockContext,
+        await buildStateFromDefinition(containerFn),
+        [containerFn],
+      );
+
+      expect(plan.items[0]).toMatchObject({
+        logicalId: 'functions.test_fn',
+        action: 'update',
+        drifted: true,
+      });
+    });
+
+    it('stays noop for a nas function when the cloud mirrors the declared mount points', async () => {
+      const nasFn: FunctionDomain = {
+        ...testFunction,
+        storage: {
+          nas: [
+            {
+              storage_class: NasStorageClassEnum.STANDARD_CAPACITY,
+              mount_path: '/mnt/data',
+            },
+          ],
+        },
+      };
+      mockFc3Operations.getFunction.mockResolvedValue({
+        functionName: 'test-function',
+        runtime: 'nodejs20',
+        handler: 'index.handler',
+        memorySize: 512,
+        timeout: 10,
+        environmentVariables: { NODE_ENV: 'production' },
+        nasConfig: {
+          userId: 10003,
+          groupId: 10003,
+          mountPoints: [
+            {
+              serverAddr: NasStorageClassEnum.STANDARD_CAPACITY,
+              mountDir: '/mnt/data',
+              enableTls: false,
+            },
+          ],
+        },
+      });
+
+      const plan = await generateFunctionPlan(mockContext, await buildStateFromDefinition(nasFn), [
+        nasFn,
+      ]);
+
+      expect(plan.items[0]).toMatchObject({
+        logicalId: 'functions.test_fn',
+        action: 'noop',
+        resourceType: 'ALIYUN_FC3',
+      });
+    });
+
+    it('flags update+drifted for a nas function whose mount points changed live', async () => {
+      const nasFn: FunctionDomain = {
+        ...testFunction,
+        storage: {
+          nas: [
+            {
+              storage_class: NasStorageClassEnum.STANDARD_CAPACITY,
+              mount_path: '/mnt/data',
+            },
+          ],
+        },
+      };
+      mockFc3Operations.getFunction.mockResolvedValue({
+        functionName: 'test-function',
+        runtime: 'nodejs20',
+        handler: 'index.handler',
+        memorySize: 512,
+        timeout: 10,
+        environmentVariables: { NODE_ENV: 'production' },
+        nasConfig: {
+          userId: 10003,
+          groupId: 10003,
+          mountPoints: [
+            {
+              serverAddr: NasStorageClassEnum.STANDARD_CAPACITY,
+              mountDir: '/mnt/other',
+              enableTls: false,
+            },
+          ],
+        },
+      });
+
+      const plan = await generateFunctionPlan(mockContext, await buildStateFromDefinition(nasFn), [
+        nasFn,
+      ]);
+
+      expect(plan.items[0]).toMatchObject({
+        logicalId: 'functions.test_fn',
+        action: 'update',
+        drifted: true,
+      });
     });
   });
 });

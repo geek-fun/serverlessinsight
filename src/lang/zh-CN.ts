@@ -257,6 +257,8 @@ export const zhCN = {
   REFRESH_CACHE_HIT: '刷新读缓存命中：{{key}}',
   PLAN_FUNCTION_ROLE_MISSING:
     '函数 {{functionName}} 的角色 {{roleName}} 在云端不存在；部署时将重建并重新绑定',
+  PLAN_FUNCTION_ROLE_PROBE_FAILED:
+    '函数 {{functionName}}（角色 {{roleName}}）的实时角色策略检查失败：{{error}}；本次计划跳过角色漂移检测',
   RAM_ROLE_MISSING_RECREATE:
     'RAM 角色 {{roleName}} 在云端不存在；将以共享该角色的所有函数的并集权限重建',
   SLS_PROJECT_FOREIGN_OWNED: 'SLS 项目 {{projectName}} 已存在但不属于当前应用，拒绝采用',
