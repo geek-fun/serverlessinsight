@@ -274,6 +274,11 @@ export const en = {
     '{{count}} logstore(s) still reference shared SLS project {{projectName}}; retaining it',
   SHARED_SLS_PROJECT_ADOPTED:
     'Adopting existing shared SLS project {{projectName}} owned by this app',
+  REFRESH_CACHE_HIT: 'Refresh read cache hit: {{key}}',
+  PLAN_FUNCTION_ROLE_MISSING:
+    'Function {{functionName}} role {{roleName}} is missing in the provider; it will be recreated and rebound on deploy',
+  RAM_ROLE_MISSING_RECREATE:
+    'RAM role {{roleName}} is missing in the provider; recreating it with the union of all functions that share it',
   SLS_PROJECT_FOREIGN_OWNED:
     'SLS project {{projectName}} exists but is not owned by this app; refusing to adopt',
   APIGW_LOG_CONFIG_STILL_REFERENCES_STORE:

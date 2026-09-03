@@ -8,6 +8,8 @@ import {
   ResourceAttributes,
 } from '../../types';
 import { createTencentClient } from '../../common/tencentClient';
+import { cachedRefreshRead } from '../../common/refreshCache';
+import { PLAN_READ_CONCURRENCY, mapWithConcurrency } from '../../common/concurrency';
 import { databaseToTencentEsConfig, extractTencentEsDefinition } from './esServerlessTypes';
 import { getAllResources, getResource } from '../../common/stateManager';
 import { attributesEqual } from '../../common/hashUtils';
@@ -40,8 +42,10 @@ export const generateEsPlan = async (
 
   const desiredLogicalIds = new Set(esDatabases.map((db) => `databases.${db.key}`));
 
-  const databaseItems = await Promise.all(
-    esDatabases.map(async (database): Promise<PlanItem> => {
+  const databaseItems = await mapWithConcurrency(
+    esDatabases,
+    PLAN_READ_CONCURRENCY,
+    async (database): Promise<PlanItem> => {
       const logicalId = `databases.${database.key}`;
       const currentState = getResource(state, logicalId);
       const config = databaseToTencentEsConfig(database);
@@ -53,7 +57,11 @@ export const generateEsPlan = async (
         // belong to another project — fail fast in the plan instead of letting
         // the executor discover it mid-deploy.
         const client = createTencentClient(context);
-        const remoteSpace = await client.es.getSpaceByName(config.SpaceName);
+        const remoteSpace = await cachedRefreshRead(
+          context,
+          `es.getSpaceByName:${config.SpaceName}`,
+          () => client.es.getSpaceByName(config.SpaceName),
+        );
         if (remoteSpace && !isOwnedByStack(context, logicalId, remoteSpace.Tags)) {
           throw new Error(
             `ES space ${config.SpaceName} already exists in provider but is not owned by this stack (missing ${OWNERSHIP_TAG_KEY} tag). Refusing to create — resolve manually.`,
@@ -73,7 +81,11 @@ export const generateEsPlan = async (
 
       try {
         const client = createTencentClient(context);
-        const remoteSpace = spaceId ? await client.es.getSpace(spaceId) : null;
+        const remoteSpace = spaceId
+          ? await cachedRefreshRead(context, `es.getSpace:${spaceId}`, () =>
+              client.es.getSpace(spaceId),
+            )
+          : null;
 
         if (!remoteSpace) {
           return {
@@ -107,7 +119,7 @@ export const generateEsPlan = async (
           changes: { before: currentState.definition, after: desiredDefinition },
         };
       }
-    }),
+    },
   );
 
   const allStates = getAllResources(state);

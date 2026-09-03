@@ -254,6 +254,11 @@ export const zhCN = {
   SLS_LOGSTORE_WAITING: '等待 SLS 日志库 {{project}}/{{logstore}} 就绪...',
   SHARED_SLS_PROJECT_IN_USE: '仍有 {{count}} 个日志库引用共享 SLS 项目 {{projectName}}，予以保留',
   SHARED_SLS_PROJECT_ADOPTED: '采用当前应用已有的共享 SLS 项目 {{projectName}}',
+  REFRESH_CACHE_HIT: '刷新读缓存命中：{{key}}',
+  PLAN_FUNCTION_ROLE_MISSING:
+    '函数 {{functionName}} 的角色 {{roleName}} 在云端不存在；部署时将重建并重新绑定',
+  RAM_ROLE_MISSING_RECREATE:
+    'RAM 角色 {{roleName}} 在云端不存在；将以共享该角色的所有函数的并集权限重建',
   SLS_PROJECT_FOREIGN_OWNED: 'SLS 项目 {{projectName}} 已存在但不属于当前应用，拒绝采用',
   APIGW_LOG_CONFIG_STILL_REFERENCES_STORE:
     '区域级 PROVIDER 网关日志配置仍引用 {{slsLogStore}}，保留该日志库',

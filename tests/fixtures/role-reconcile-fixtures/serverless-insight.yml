@@ -1,0 +1,31 @@
+version: 0.0.1
+app: role-reconcile-test-app
+provider:
+  name: aliyun
+  region: cn-hangzhou
+
+service: role-reconcile-test-service
+
+backend:
+  state_manager:
+    type: LOCAL
+
+functions:
+  role_reconcile_fn:
+    name: role-reconcile-fn
+    code:
+      runtime: nodejs18
+      handler: index.handler
+      path: tests/fixtures/artifacts/artifact.zip
+    memory: 128
+    timeout: 10
+    log: true
+    iam:
+      role:
+        statements:
+          - sid: OSSRead
+            effect: Allow
+            action:
+              - oss:GetObject
+            resource:
+              - acs:oss:*:*:my-bucket/*

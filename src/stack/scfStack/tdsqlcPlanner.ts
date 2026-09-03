@@ -8,6 +8,8 @@ import {
   ResourceAttributes,
 } from '../../types';
 import { createTencentClient } from '../../common/tencentClient';
+import { cachedRefreshRead } from '../../common/refreshCache';
+import { PLAN_READ_CONCURRENCY, mapWithConcurrency } from '../../common/concurrency';
 import {
   databaseToTdsqlcConfig,
   extractTdsqlcDefinition,
@@ -49,8 +51,10 @@ export const generateDatabasePlan = async (
 
   const desiredLogicalIds = new Set(tdsqlcDatabases.map((db) => `databases.${db.key}`));
 
-  const databaseItems = await Promise.all(
-    tdsqlcDatabases.map(async (database): Promise<PlanItem> => {
+  const databaseItems = await mapWithConcurrency(
+    tdsqlcDatabases,
+    PLAN_READ_CONCURRENCY,
+    async (database): Promise<PlanItem> => {
       const logicalId = `databases.${database.key}`;
       const currentState = getResource(state, logicalId);
       const config = databaseToTdsqlcConfig(database);
@@ -62,7 +66,11 @@ export const generateDatabasePlan = async (
         // belong to another project — fail fast in the plan instead of letting
         // the executor discover it mid-deploy.
         const client = createTencentClient(context);
-        const remoteCluster = await client.tdsqlc.getClusterByName(database.name);
+        const remoteCluster = await cachedRefreshRead(
+          context,
+          `tdsqlc.getClusterByName:${database.name}`,
+          () => client.tdsqlc.getClusterByName(database.name),
+        );
         if (
           remoteCluster &&
           !isOwnedByStack(context, logicalId, tdsqlcTagsToOwnershipTags(remoteCluster.ResourceTags))
@@ -85,7 +93,11 @@ export const generateDatabasePlan = async (
 
       try {
         const client = createTencentClient(context);
-        const remoteCluster = clusterId ? await client.tdsqlc.getCluster(clusterId) : null;
+        const remoteCluster = clusterId
+          ? await cachedRefreshRead(context, `tdsqlc.getCluster:${clusterId}`, () =>
+              client.tdsqlc.getCluster(clusterId),
+            )
+          : null;
 
         if (!remoteCluster) {
           return {
@@ -119,7 +131,7 @@ export const generateDatabasePlan = async (
           changes: { before: currentState.definition, after: desiredDefinition },
         };
       }
-    }),
+    },
   );
 
   const allStates = getAllResources(state);

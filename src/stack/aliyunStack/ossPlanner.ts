@@ -1,6 +1,8 @@
 import path from 'node:path';
 import { Context, BucketDomain, Plan, PlanItem, StateFile, ResourceAttributes } from '../../types';
 import { createAliyunClient } from '../../common/aliyunClient';
+import { cachedRefreshRead } from '../../common/refreshCache';
+import { PLAN_READ_CONCURRENCY, mapWithConcurrency } from '../../common/concurrency';
 import { bucketToOssBucketConfig, extractOssBucketDefinition } from './ossTypes';
 import { getAllResources, getResource } from '../../common/stateManager';
 import { attributesEqual, computeDirectoryHash } from '../../common/hashUtils';
@@ -40,8 +42,10 @@ export const generateBucketPlan = async (
 
   const desiredLogicalIds = new Set(buckets.map((bucket) => `buckets.${bucket.key}`));
 
-  const bucketItems = await Promise.all(
-    buckets.map(async (bucket): Promise<PlanItem> => {
+  const bucketItems = await mapWithConcurrency(
+    buckets,
+    PLAN_READ_CONCURRENCY,
+    async (bucket): Promise<PlanItem> => {
       const logicalId = `buckets.${bucket.key}`;
       const currentState = getResource(state, logicalId);
       const config = bucketToOssBucketConfig(bucket);
@@ -61,7 +65,9 @@ export const generateBucketPlan = async (
         // may belong to another project — fail fast in the plan instead of
         // letting the executor discover it mid-deploy.
         const client = createAliyunClient(context);
-        const remoteBucket = await client.oss.getBucket(bucket.name);
+        const remoteBucket = await cachedRefreshRead(context, `oss.getBucket:${bucket.name}`, () =>
+          client.oss.getBucket(bucket.name),
+        );
         if (
           remoteBucket &&
           !isOwnedByStack(context, logicalId, toOwnershipTags(remoteBucket.tags))
@@ -81,7 +87,9 @@ export const generateBucketPlan = async (
 
       try {
         const client = createAliyunClient(context);
-        const remoteBucket = await client.oss.getBucket(bucket.name);
+        const remoteBucket = await cachedRefreshRead(context, `oss.getBucket:${bucket.name}`, () =>
+          client.oss.getBucket(bucket.name),
+        );
 
         if (!remoteBucket) {
           return {
@@ -125,7 +133,7 @@ export const generateBucketPlan = async (
           },
         };
       }
-    }),
+    },
   );
 
   const allStates = getAllResources(state);

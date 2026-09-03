@@ -1,6 +1,8 @@
 import { attributesEqual, computeZipContentHash, getResource } from '../../common';
 import { getAllResources, getSharedResource } from '../../common/stateManager';
 import { createVolcengineClient } from '../../common/volcengineClient';
+import { cachedRefreshRead } from '../../common/refreshCache';
+import { PLAN_READ_CONCURRENCY, mapWithConcurrency } from '../../common/concurrency';
 import {
   Context,
   FunctionDomain,
@@ -37,8 +39,10 @@ export const generateFunctionPlan = async (
 
   const desiredLogicalIds = new Set(functions.map((fn) => `functions.${fn.key}`));
 
-  const functionItems = await Promise.all(
-    functions.map(async (fn): Promise<PlanItem> => {
+  const functionItems = await mapWithConcurrency(
+    functions,
+    PLAN_READ_CONCURRENCY,
+    async (fn): Promise<PlanItem> => {
       const logicalId = `functions.${fn.key}`;
       const currentState = getResource(state, logicalId);
       const config = functionToVefaasConfig(fn);
@@ -101,7 +105,11 @@ export const generateFunctionPlan = async (
         // may belong to another project — fail fast in the plan instead of
         // letting the executor discover it mid-deploy.
         const client = createVolcengineClient(context);
-        const remoteFunction = await client.vefaas.getFunction(fn.name);
+        const remoteFunction = await cachedRefreshRead(
+          context,
+          `vefaas.getFunction:${fn.name}`,
+          () => client.vefaas.getFunction(fn.name),
+        );
         if (remoteFunction && !isOwnedByStack(context, logicalId, remoteFunction.Tags)) {
           throw new Error(
             `Function ${fn.name} already exists in provider but is not owned by this stack (missing ${OWNERSHIP_TAG_KEY} tag). Refusing to create — resolve manually.`,
@@ -118,7 +126,11 @@ export const generateFunctionPlan = async (
 
       try {
         const client = createVolcengineClient(context);
-        const remoteFunction = await client.vefaas.getFunction(fn.name);
+        const remoteFunction = await cachedRefreshRead(
+          context,
+          `vefaas.getFunction:${fn.name}`,
+          () => client.vefaas.getFunction(fn.name),
+        );
 
         if (!remoteFunction) {
           return {
@@ -180,7 +192,7 @@ export const generateFunctionPlan = async (
           },
         };
       }
-    }),
+    },
   );
 
   const allStates = getAllResources(state);

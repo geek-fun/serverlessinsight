@@ -416,7 +416,6 @@ const createDependentResources = async (
   serviceName: string,
   existingInstances: Array<DependentInstance> = [],
   state?: StateFile,
-  executionStatementsOverride?: IamStatement[],
 ): Promise<{
   logConfig?: { project: string; logstore: string };
   role?: { roleName: string; arn: string };
@@ -484,15 +483,10 @@ const createDependentResources = async (
   }
 
   const iamConfig = fn.iam?.role;
-  const statements = iamConfig && typeof iamConfig !== 'string' ? iamConfig.statements : undefined;
   const managedPolicies =
     iamConfig && typeof iamConfig !== 'string' ? iamConfig.managed_policies : undefined;
   const customRoleName = iamConfig && typeof iamConfig !== 'string' ? iamConfig.name : undefined;
   const defaultRoleName = buildDefaultRoleName(serviceName, context.stage, fn.key);
-
-  const trustedServices = getTrustedServicesForFunction(context, fn);
-  const executionStatements =
-    executionStatementsOverride ?? deriveFc3ExecutionStatements(fn, context, logConfig);
 
   const isExternalRole = typeof iamConfig === 'string';
 
@@ -508,27 +502,54 @@ const createDependentResources = async (
   } else if (hasRamRole) {
     const ramRoleInstance = existingInstances.find((i) => i.type === 'ALIYUN_RAM_ROLE');
     if (ramRoleInstance) {
-      instances.push(ramRoleInstance);
-      const roleGrant = resolveRoleGrant(context, state, fn, logConfig, ramRoleInstance.id);
-      await client.ram.updateRoleTrustPolicy(ramRoleInstance.id, roleGrant.trustedServices);
-      await client.ram.updateExecutionPolicyDocument(
-        ramRoleInstance.id,
-        buildFc3ExecutionPolicyDocument(roleGrant.executionStatements, roleGrant.customStatements),
-      );
-      if (managedPolicies?.length) {
-        await client.ram.attachManagedPolicies(ramRoleInstance.id, managedPolicies);
+      const cloudRole = await client.ram.getRole(ramRoleInstance.id);
+      if (!cloudRole) {
+        // Issue #234: recorded instance but provider role gone — rebuild with
+        // peer-union grants instead of failing on the trust-policy update.
+        logger.warn(lang.__('RAM_ROLE_MISSING_RECREATE', { roleName: ramRoleInstance.id }));
+        const roleGrant = resolveRoleGrant(context, state, fn, logConfig, ramRoleInstance.id);
+        const ramRole = await client.ram.createRole(
+          ramRoleInstance.id,
+          roleGrant.trustedServices,
+          undefined,
+          roleGrant.customStatements,
+          managedPolicies,
+          roleGrant.executionStatements,
+        );
+        instances.push({
+          type: 'ALIYUN_RAM_ROLE',
+          id: ramRoleInstance.id,
+          roleArn: ramRole.arn,
+          attributes: { ...ramRole },
+        });
+        await delay(RAM_ROLE_PROPAGATION_DELAY_MS);
+      } else {
+        instances.push(ramRoleInstance);
+        const roleGrant = resolveRoleGrant(context, state, fn, logConfig, ramRoleInstance.id);
+        await client.ram.updateRoleTrustPolicy(ramRoleInstance.id, roleGrant.trustedServices);
+        await client.ram.updateExecutionPolicyDocument(
+          ramRoleInstance.id,
+          buildFc3ExecutionPolicyDocument(
+            roleGrant.executionStatements,
+            roleGrant.customStatements,
+          ),
+        );
+        if (managedPolicies?.length) {
+          await client.ram.attachManagedPolicies(ramRoleInstance.id, managedPolicies);
+        }
       }
     }
   } else {
     const roleName = customRoleName ?? defaultRoleName;
+    const roleGrant = resolveRoleGrant(context, state, fn, logConfig, roleName);
     logger.info(lang.__('CREATING_RAM_ROLE', { roleName }));
     const ramRole = await client.ram.createRole(
       roleName,
-      trustedServices,
+      roleGrant.trustedServices,
       undefined,
-      statements,
+      roleGrant.customStatements,
       managedPolicies,
-      executionStatements,
+      roleGrant.executionStatements,
     );
     instances.push({
       type: 'ALIYUN_RAM_ROLE',
@@ -1055,7 +1076,6 @@ export const updateResource = async (
       i.type === 'ALIYUN_SLS_LOGSTORE' ||
       i.type === 'ALIYUN_SLS_INDEX',
   );
-  const hasRamRole = existingInstances.some((i) => i.type === 'ALIYUN_RAM_ROLE');
   const hasSecurityGroup = existingInstances.some((i) => i.type === 'ALIYUN_ECS_SECURITY_GROUP');
   const hasNasResources = existingInstances.some((i) => i.type === 'ALIYUN_NAS_FILE_SYSTEM');
 
@@ -1116,23 +1136,57 @@ export const updateResource = async (
 
   const newIamRole = fn.iam?.role;
   const executionStatements = deriveFc3ExecutionStatements(fn, context, logConfig);
+  const iamRoleConfig = newIamRole && typeof newIamRole !== 'string' ? newIamRole : undefined;
+  const customRoleName = iamRoleConfig?.name;
+  const desiredManagedPolicies = iamRoleConfig?.managed_policies;
+  // A role created/recreated in this run must rebind the function even when the
+  // compared definition is unchanged — role is not part of extractFc3Definition.
+  let roleBindingChanged = false;
+  const droppedRamRoleIds = new Set<string>();
+
+  const ramRoleInstance = existingInstances.find((i) => i.type === 'ALIYUN_RAM_ROLE') as
+    { id: string; roleArn?: string } | undefined;
+  // Issue #234 dual check: a recorded instance is not trusted on its own — when
+  // the provider role is gone, the create path below rebuilds it with
+  // peer-union grants and drops the stale instance from the resulting state.
+  const cloudRoleExists = ramRoleInstance
+    ? Boolean(await client.ram.getRole(ramRoleInstance.id))
+    : false;
 
   if (typeof newIamRole === 'string') {
     // External role - use ARN directly, skip management
     role = { roleName: '', arn: newIamRole };
-  } else if (!hasRamRole) {
-    const deps = await createDependentResources(
-      context,
-      { ...fn, log: false, network: undefined, storage: { ...fn.storage, nas: undefined } },
-      serviceName,
+  } else if (!ramRoleInstance || !cloudRoleExists) {
+    const roleName =
+      ramRoleInstance?.id ??
+      customRoleName ??
+      buildDefaultRoleName(serviceName, context.stage, fn.key);
+    const roleGrant = resolveRoleGrant(context, state, fn, logConfig, roleName);
+    logger.info(lang.__('CREATING_RAM_ROLE', { roleName }));
+    const ramRole = await client.ram.createRole(
+      roleName,
+      roleGrant.trustedServices,
       undefined,
-      state,
-      executionStatements,
+      roleGrant.customStatements,
+      desiredManagedPolicies,
+      roleGrant.executionStatements,
     );
-    role = deps.role;
-    newDependentInstances.push(...deps.instances.filter((i) => i.type === 'ALIYUN_RAM_ROLE'));
+    role = {
+      roleName,
+      arn: ramRole.arn ?? `acs:ram::${context.accountId}:role/${roleName}`,
+    };
+    if (ramRoleInstance) {
+      droppedRamRoleIds.add(ramRoleInstance.id);
+    }
+    newDependentInstances.push({
+      type: 'ALIYUN_RAM_ROLE',
+      id: roleName,
+      roleArn: role.arn,
+      attributes: { ...ramRole },
+    });
+    await delay(RAM_ROLE_PROPAGATION_DELAY_MS);
+    roleBindingChanged = true;
   } else {
-    const ramRoleInstance = existingInstances.find((i) => i.type === 'ALIYUN_RAM_ROLE');
     if (ramRoleInstance) {
       role = {
         roleName: ramRoleInstance.id,
@@ -1202,7 +1256,6 @@ export const updateResource = async (
       serviceName,
       undefined,
       state,
-      executionStatements,
     );
     securityGroup = deps.securityGroup;
     newDependentInstances.push(
@@ -1222,7 +1275,6 @@ export const updateResource = async (
       serviceName,
       undefined,
       state,
-      executionStatements,
     );
     nasConfig = deps.nasConfig;
     newDependentInstances.push(...deps.instances.filter((i) => i.type.startsWith('ALIYUN_NAS_')));
@@ -1300,7 +1352,7 @@ export const updateResource = async (
   const { codeHash: _desiredCodeHash, ...desiredConfigOnly } = desiredDefinition;
   const configChanged = !attributesEqual(existingConfigOnly, desiredConfigOnly);
 
-  if (configChanged) {
+  if (configChanged || roleBindingChanged) {
     await client.fc3.updateFunctionConfiguration(config);
   }
 
@@ -1506,6 +1558,7 @@ export const updateResource = async (
     .filter((i) => i.type !== 'ALIYUN_FC3_HTTP_TRIGGER')
     .filter((i) => i.type !== 'ALIYUN_FC3_CUSTOM_DOMAIN')
     .filter((i) => !(typeof fn.iam?.role === 'string' && i.type === 'ALIYUN_RAM_ROLE'))
+    .filter((i) => !(i.type === 'ALIYUN_RAM_ROLE' && droppedRamRoleIds.has(i.id)))
     .filter((i) => !droppedSlsDependentTypes.includes(i.type))
     .map((i) => {
       const { sid: existingSid, id: existingId, ...rest } = i;

@@ -1,11 +1,21 @@
-import { attributesEqual, computeZipContentHash, getAllResources, getResource } from '../../common';
+import {
+  attributesEqual,
+  buildFunctionRoleName,
+  computeZipContentHash,
+  getAllResources,
+  getResource,
+  logger,
+} from '../../common';
 import { createAliyunClient } from '../../common/aliyunClient';
+import { cachedRefreshRead } from '../../common/refreshCache';
+import { PLAN_READ_CONCURRENCY, mapWithConcurrency } from '../../common/concurrency';
 import {
   Context,
   FunctionDomain,
   Plan,
   PlanItem,
   ResourceAttributes,
+  ResourceState,
   StateFile,
 } from '../../types';
 import { extractFc3Definition, Fc3FunctionConfig, functionToFc3Config } from './fc3Types';
@@ -59,7 +69,11 @@ const resolveSecurityGroupId = async (
   }
 
   const client = createAliyunClient(context);
-  const sg = await client.ecs.getSecurityGroupByName(securityGroupName, vpcId);
+  const sg = await cachedRefreshRead(
+    context,
+    `ecs.getSecurityGroupByName:${securityGroupName}:${vpcId ?? ''}`,
+    () => client.ecs.getSecurityGroupByName(securityGroupName, vpcId),
+  );
   if (!sg) {
     throw new Error(
       lang.__('SECURITY_GROUP_NOT_FOUND', { sgName: securityGroupName, vpcId: vpcId ?? 'default' }),
@@ -98,6 +112,35 @@ const planFunctionDeletion = (logicalId: string, definition: ResourceAttributes)
   changes: { before: normalizeDefinitionForComparison(definition) },
 });
 
+type ManagedRoleProbe = { roleName: string };
+
+// Issue #234: recorded role instance governs (stored-first); explicit managed
+// iam.role derives the executor's name. External (string) roles and functions
+// without role config are deliberately not probed.
+const resolveManagedRoleProbe = (
+  context: Context,
+  fn: FunctionDomain,
+  currentState: ResourceState | undefined,
+): ManagedRoleProbe | undefined => {
+  const iamRole = fn.iam?.role;
+  if (typeof iamRole === 'string') {
+    return undefined;
+  }
+  const roleInstance = currentState?.instances?.find(
+    (i) => (i as { type?: string }).type === 'ALIYUN_RAM_ROLE',
+  ) as { id?: string } | undefined;
+  if (roleInstance?.id) {
+    return { roleName: roleInstance.id };
+  }
+  if (iamRole && typeof iamRole === 'object') {
+    const serviceName = `${context.app}-${context.service}`;
+    return {
+      roleName: iamRole.name ?? buildFunctionRoleName(serviceName, context.stage, fn.key),
+    };
+  }
+  return undefined;
+};
+
 export const generateFunctionPlan = async (
   context: Context,
   state: StateFile,
@@ -115,8 +158,10 @@ export const generateFunctionPlan = async (
 
   const desiredLogicalIds = new Set(functions.map((fn) => `functions.${fn.key}`));
 
-  const functionItems = await Promise.all(
-    functions.map(async (fn): Promise<PlanItem> => {
+  const functionItems = await mapWithConcurrency(
+    functions,
+    PLAN_READ_CONCURRENCY,
+    async (fn): Promise<PlanItem> => {
       const logicalId = `functions.${fn.key}`;
       const currentState = getResource(state, logicalId);
       const rawConfig = functionToFc3Config(fn);
@@ -132,7 +177,9 @@ export const generateFunctionPlan = async (
         // may belong to another project — fail fast in the plan instead of
         // letting the executor discover it mid-deploy.
         const client = createAliyunClient(context);
-        const remoteFunction = await client.fc3.getFunction(fn.name);
+        const remoteFunction = await cachedRefreshRead(context, `fc3.getFunction:${fn.name}`, () =>
+          client.fc3.getFunction(fn.name),
+        );
         if (remoteFunction && !isOwnedByStack(context, logicalId, remoteFunction.tags)) {
           throw new Error(
             `Function ${fn.name} already exists in provider but is not owned by this stack (missing ${OWNERSHIP_TAG_KEY} tag). Refusing to create — resolve manually.`,
@@ -149,7 +196,9 @@ export const generateFunctionPlan = async (
 
       try {
         const client = createAliyunClient(context);
-        const remoteFunction = await client.fc3.getFunction(fn.name);
+        const remoteFunction = await cachedRefreshRead(context, `fc3.getFunction:${fn.name}`, () =>
+          client.fc3.getFunction(fn.name),
+        );
 
         if (!remoteFunction) {
           return {
@@ -179,6 +228,30 @@ export const generateFunctionPlan = async (
           };
         }
 
+        const roleProbe = resolveManagedRoleProbe(context, fn, currentState);
+        if (roleProbe) {
+          const cloudRole = await cachedRefreshRead(
+            context,
+            `ram.getRole:${roleProbe.roleName}`,
+            () => client.ram.getRole(roleProbe.roleName),
+          );
+          if (!cloudRole) {
+            logger.warn(
+              lang.__('PLAN_FUNCTION_ROLE_MISSING', {
+                roleName: roleProbe.roleName,
+                functionName: fn.name,
+              }),
+            );
+            return {
+              logicalId,
+              action: 'update',
+              resourceType: 'ALIYUN_FC3',
+              changes: { before: normalizedCurrent, after: normalizedDesired },
+              drifted: true,
+            };
+          }
+        }
+
         return { logicalId, action: 'noop', resourceType: 'ALIYUN_FC3' };
       } catch {
         return {
@@ -191,7 +264,7 @@ export const generateFunctionPlan = async (
           },
         };
       }
-    }),
+    },
   );
 
   const allStates = getAllResources(state);
