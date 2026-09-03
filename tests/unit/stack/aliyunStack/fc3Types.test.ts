@@ -1,10 +1,12 @@
 import {
   functionToFc3Config,
   extractFc3Definition,
+  extractFunctionDomainDefinition,
   cloudFc3ToDefinition,
 } from '../../../../src/stack/aliyunStack/fc3Types';
 import type { Fc3FunctionInfo } from '../../../../src/stack/aliyunStack/fc3Types';
-import { FunctionDomain, FunctionGpuEnum } from '../../../../src/types';
+import { remoteDiffersFromDesired } from '../../../../src/common/planCompare';
+import { FunctionDomain, FunctionGpuEnum, NasStorageClassEnum } from '../../../../src/types';
 
 describe('FC3 Types', () => {
   describe('functionToFc3Config', () => {
@@ -289,10 +291,8 @@ describe('FC3 Types', () => {
         gpuConfig: { gpuMemorySize: 8192, gpuType: 'fc.gpu.tesla.1' },
         customContainerConfig: {
           image: 'registry.example.com/app:latest',
-          entrypoint: ['/bin/sh'],
-          command: ['-c', 'start'],
           port: 8080,
-          accelerationType: 'Default',
+          command: ['-c', 'start'],
         },
         nasConfig: {
           userId: 10003,
@@ -301,10 +301,55 @@ describe('FC3 Types', () => {
             {
               serverAddr: '0123456789-abc.cn-hangzhou.nas.aliyuncs.com:/data',
               mountDir: '/mnt/data',
+              enableTls: false,
             },
           ],
         },
         logConfig: { enableRequestMetrics: true, enableInstanceMetrics: false },
+      });
+    });
+
+    it('never emits executor-unmanaged container keys (entrypoint, accelerationType)', () => {
+      const info: Fc3FunctionInfo = {
+        functionName: 'container-fn',
+        runtime: 'custom-container',
+        handler: 'index.handler',
+        memorySize: 512,
+        timeout: 60,
+        customContainerConfig: {
+          image: 'registry.example.com/app:latest',
+          entrypoint: ['/bin/sh'],
+          port: 8080,
+          accelerationType: 'Default',
+        },
+      };
+
+      const attrs = cloudFc3ToDefinition(info);
+
+      expect(attrs.customContainerConfig).toEqual({
+        image: 'registry.example.com/app:latest',
+        port: 8080,
+      });
+      expect(attrs.customContainerConfig).not.toHaveProperty('entrypoint');
+      expect(attrs.customContainerConfig).not.toHaveProperty('accelerationType');
+    });
+
+    it('omits container command when the cloud does not report it', () => {
+      const info: Fc3FunctionInfo = {
+        functionName: 'container-fn',
+        runtime: 'custom-container',
+        handler: 'index.handler',
+        memorySize: 512,
+        timeout: 60,
+        customContainerConfig: {
+          image: 'registry.example.com/app:latest',
+          port: 8080,
+        },
+      };
+
+      expect(cloudFc3ToDefinition(info).customContainerConfig).toEqual({
+        image: 'registry.example.com/app:latest',
+        port: 8080,
       });
     });
 
@@ -389,6 +434,96 @@ describe('FC3 Types', () => {
           'vpcConfig',
         ].sort(),
       );
+    });
+  });
+
+  describe('cloudFc3ToDefinition roundtrip vs desired definition (issue #234)', () => {
+    // functionToFc3Config field names align with Fc3FunctionInfo, so its output
+    // is a faithful "cloud as the executor wrote it" simulation. This guard
+    // keeps cloudFc3ToDefinition and functionToFc3Config shape-compatible.
+    const expectNoRoundtripDrift = (fn: FunctionDomain): void => {
+      const desired = extractFunctionDomainDefinition(fn, 'abc123');
+      const cloudInfo = functionToFc3Config(fn) as unknown as Fc3FunctionInfo;
+
+      expect(remoteDiffersFromDesired(cloudFc3ToDefinition(cloudInfo), desired)).toBe(false);
+    };
+
+    it('plain code function', () => {
+      expectNoRoundtripDrift({
+        key: 'test_fn',
+        name: 'code-fn',
+        code: { runtime: 'nodejs20', handler: 'index.handler', path: 'test.zip' },
+        memory: 512,
+        timeout: 10,
+        environment: { NODE_ENV: 'production' },
+        storage: {},
+      });
+    });
+
+    it('code function with vpc, gpu, nas and log config', () => {
+      expectNoRoundtripDrift({
+        key: 'test_fn',
+        name: 'full-fn',
+        code: { runtime: 'nodejs20', handler: 'index.handler', path: 'test.zip' },
+        memory: 512,
+        timeout: 10,
+        environment: { NODE_ENV: 'production' },
+        gpu: FunctionGpuEnum.TESLA_8,
+        network: {
+          vpc_id: 'vpc-12345',
+          subnet_ids: ['vsw-123', 'vsw-456'],
+          security_group: { name: 'sg-12345', ingress: [], egress: [] },
+        },
+        storage: {
+          nas: [
+            {
+              storage_class: NasStorageClassEnum.STANDARD_CAPACITY,
+              mount_path: '/mnt/data',
+            },
+          ],
+        },
+        log: true,
+      });
+    });
+
+    it('container function with cmd declared', () => {
+      expectNoRoundtripDrift({
+        key: 'test_fn',
+        name: 'container-fn',
+        container: {
+          image: 'registry.example.com/app:latest',
+          cmd: 'python app.py',
+          port: 8080,
+        },
+        memory: 512,
+        timeout: 60,
+        storage: {},
+      });
+    });
+
+    it('container function without cmd declared', () => {
+      expectNoRoundtripDrift({
+        key: 'test_fn',
+        name: 'container-no-cmd-fn',
+        container: {
+          image: 'registry.example.com/app:latest',
+          port: 8080,
+        },
+        memory: 512,
+        timeout: 60,
+        storage: {},
+      });
+    });
+
+    it('function without environment declared (desired env {} vs cloud env {}) stays noop', () => {
+      expectNoRoundtripDrift({
+        key: 'test_fn',
+        name: 'envless-fn',
+        code: { runtime: 'nodejs20', handler: 'index.handler', path: 'test.zip' },
+        memory: 128,
+        timeout: 60,
+        storage: {},
+      });
     });
   });
 });
