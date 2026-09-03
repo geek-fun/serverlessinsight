@@ -8,6 +8,8 @@ import {
   ResourceAttributes,
 } from '../../types';
 import { createAliyunClient } from '../../common/aliyunClient';
+import { cachedRefreshRead } from '../../common/refreshCache';
+import { PLAN_READ_CONCURRENCY, mapWithConcurrency } from '../../common/concurrency';
 import { databaseToRdsConfig, extractRdsDefinition } from './rdsTypes';
 import { databaseToEsConfig, extractEsDefinition } from './esServerlessTypes';
 import { getAllResources, getResource } from '../../common/stateManager';
@@ -100,8 +102,10 @@ export const generateDatabasePlan = async (
 
   const client = createAliyunClient(context);
 
-  const databaseItems = await Promise.all(
-    aliyunDatabases.map(async (database): Promise<PlanItem> => {
+  const databaseItems = await mapWithConcurrency(
+    aliyunDatabases,
+    PLAN_READ_CONCURRENCY,
+    async (database): Promise<PlanItem> => {
       const logicalId = `databases.${database.key}`;
       const currentState = getResource(state, logicalId);
       const resourceType = getResourceType(database);
@@ -114,8 +118,12 @@ export const generateDatabasePlan = async (
         // letting the executor discover it mid-deploy.
         const remote =
           resourceType === 'ALIYUN_ES_SERVERLESS'
-            ? await client.es.getApp(database.name)
-            : await client.rds.getInstanceByName(database.name);
+            ? await cachedRefreshRead(context, `es.getApp:${database.name}`, () =>
+                client.es.getApp(database.name),
+              )
+            : await cachedRefreshRead(context, `rds.getInstanceByName:${database.name}`, () =>
+                client.rds.getInstanceByName(database.name),
+              );
         if (remote && !isOwnedByStack(context, logicalId, toOwnershipTagShape(remote.tags))) {
           throw new Error(
             `${resourceType} ${database.name} already exists in provider but is not owned by this stack (missing ${OWNERSHIP_TAG_KEY} tag). Refusing to create — resolve manually.`,
@@ -139,9 +147,17 @@ export const generateDatabasePlan = async (
         let remoteInstance: any = null;
 
         if (resourceType === 'ALIYUN_ES_SERVERLESS') {
-          remoteInstance = instanceId ? await client.es.getApp(instanceId) : null;
+          remoteInstance = instanceId
+            ? await cachedRefreshRead(context, `es.getApp:${instanceId}`, () =>
+                client.es.getApp(instanceId),
+              )
+            : null;
         } else if (resourceType === 'ALIYUN_RDS_SERVERLESS') {
-          remoteInstance = instanceId ? await client.rds.getInstance(instanceId) : null;
+          remoteInstance = instanceId
+            ? await cachedRefreshRead(context, `rds.getInstance:${instanceId}`, () =>
+                client.rds.getInstance(instanceId),
+              )
+            : null;
         }
 
         if (!remoteInstance) {
@@ -176,7 +192,7 @@ export const generateDatabasePlan = async (
           changes: { before: currentState.definition, after: desiredDefinition },
         };
       }
-    }),
+    },
   );
 
   const allStates = getAllResources(state);

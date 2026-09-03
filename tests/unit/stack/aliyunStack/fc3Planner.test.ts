@@ -1,4 +1,5 @@
-import { ProviderEnum, setResource } from '../../../../src/common';
+import { ProviderEnum, buildFunctionRoleName, setResource } from '../../../../src/common';
+import { createRefreshCache } from '../../../../src/common/refreshCache';
 import { generateFunctionPlan } from '../../../../src/stack/aliyunStack/fc3Planner';
 import { Context, CURRENT_STATE_VERSION, FunctionDomain } from '../../../../src/types';
 
@@ -21,9 +22,16 @@ const mockFc3Operations = {
 const mockEcsOperations = {
   getSecurityGroupByName: jest.fn(),
 };
+const mockRamOperations = {
+  getRole: jest.fn(),
+};
 
 jest.mock('../../../../src/common/aliyunClient', () => ({
-  createAliyunClient: () => ({ fc3: mockFc3Operations, ecs: mockEcsOperations }),
+  createAliyunClient: () => ({
+    fc3: mockFc3Operations,
+    ecs: mockEcsOperations,
+    ram: mockRamOperations,
+  }),
 }));
 jest.mock('../../../../src/common/hashUtils', () => ({
   ...jest.requireActual('../../../../src/common/hashUtils'),
@@ -486,6 +494,175 @@ describe('FC3 Planner', () => {
         action: 'update',
         resourceType: 'ALIYUN_FC3',
       });
+    });
+
+    it('should reuse cached provider reads across plan passes within one command lifecycle', async () => {
+      const cachedContext: Context = { ...mockContext, refreshCache: createRefreshCache() };
+      mockFc3Operations.getFunction.mockResolvedValue(null);
+
+      const firstPlan = await generateFunctionPlan(cachedContext, initalState, [testFunction]);
+      const secondPlan = await generateFunctionPlan(cachedContext, initalState, [testFunction]);
+
+      expect(firstPlan.items[0]).toMatchObject({ action: 'create' });
+      expect(secondPlan.items[0]).toMatchObject({ action: 'create' });
+      expect(mockFc3Operations.getFunction).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  describe('managed role reconciliation (issue #234)', () => {
+    const remoteFunctionExists = {
+      functionName: 'test-function',
+      runtime: 'nodejs20',
+      handler: 'index.handler',
+      memorySize: 512,
+      timeout: 10,
+      environmentVariables: { NODE_ENV: 'production' },
+      tags: [{ key: 'si:owner', value: 'test-app:test-service:functions.test_fn' }],
+    };
+
+    const stateWithDefinition = (definition: Record<string, unknown>): unknown =>
+      setResource(initalState, 'functions.test_fn', {
+        mode: 'managed',
+        region: 'cn-hangzhou',
+        definition,
+        instances: [],
+        lastUpdated: new Date().toISOString(),
+      });
+
+    const remoteFc3Instance = {
+      sid: 'si:aliyun:fc3:default:test-function',
+      id: 'test-function',
+      functionName: 'test-function',
+    };
+
+    it('plans update when iam.role is declared, no instance recorded, and the role is absent in the provider', async () => {
+      const statements = [{ effect: 'Allow' as const, action: ['oss:PutObject'], resource: ['*'] }];
+      const fnWithIam: FunctionDomain = { ...testFunction, iam: { role: { statements } } };
+      const state = stateWithDefinition({
+        functionName: 'test-function',
+        runtime: 'nodejs20',
+        handler: 'index.handler',
+        memorySize: 512,
+        timeout: 10,
+        environment: { NODE_ENV: 'production' },
+        codeHash: 'mock-code-hash',
+        iam: { role: { statements } },
+      });
+      mockFc3Operations.getFunction.mockResolvedValue(remoteFunctionExists);
+      mockRamOperations.getRole.mockResolvedValue(null);
+
+      const plan = await generateFunctionPlan(mockContext, state as never, [fnWithIam]);
+
+      expect(plan.items[0]).toMatchObject({
+        logicalId: 'functions.test_fn',
+        action: 'update',
+        drifted: true,
+      });
+      expect(mockRamOperations.getRole).toHaveBeenCalledWith(
+        buildFunctionRoleName('test-app-test-service', 'default', 'test_fn'),
+      );
+    });
+
+    it('plans update when the recorded role instance is gone from the provider', async () => {
+      const state = setResource(initalState, 'functions.test_fn', {
+        mode: 'managed',
+        region: 'cn-hangzhou',
+        definition: {
+          functionName: 'test-function',
+          runtime: 'nodejs20',
+          handler: 'index.handler',
+          memorySize: 512,
+          timeout: 10,
+          environment: { NODE_ENV: 'production' },
+          codeHash: 'mock-code-hash',
+        },
+        instances: [
+          remoteFc3Instance,
+          {
+            sid: 'si:aliyun:ram:default:legacy-role',
+            id: 'legacy-role',
+            type: 'ALIYUN_RAM_ROLE',
+            roleArn: 'acs:ram::123456789012:role/legacy-role',
+          },
+        ],
+        lastUpdated: new Date().toISOString(),
+      });
+      mockFc3Operations.getFunction.mockResolvedValue(remoteFunctionExists);
+      mockRamOperations.getRole.mockResolvedValue(null);
+
+      const plan = await generateFunctionPlan(mockContext, state, [testFunction]);
+
+      expect(plan.items[0]).toMatchObject({
+        logicalId: 'functions.test_fn',
+        action: 'update',
+        drifted: true,
+      });
+      expect(mockRamOperations.getRole).toHaveBeenCalledWith('legacy-role');
+    });
+
+    it('stays noop when the recorded role still exists in the provider', async () => {
+      const state = setResource(initalState, 'functions.test_fn', {
+        mode: 'managed',
+        region: 'cn-hangzhou',
+        definition: {
+          functionName: 'test-function',
+          runtime: 'nodejs20',
+          handler: 'index.handler',
+          memorySize: 512,
+          timeout: 10,
+          environment: { NODE_ENV: 'production' },
+          codeHash: 'mock-code-hash',
+        },
+        instances: [
+          remoteFc3Instance,
+          {
+            sid: 'si:aliyun:ram:default:legacy-role',
+            id: 'legacy-role',
+            type: 'ALIYUN_RAM_ROLE',
+            roleArn: 'acs:ram::123456789012:role/legacy-role',
+          },
+        ],
+        lastUpdated: new Date().toISOString(),
+      });
+      mockFc3Operations.getFunction.mockResolvedValue(remoteFunctionExists);
+      mockRamOperations.getRole.mockResolvedValue({
+        roleName: 'legacy-role',
+        arn: 'acs:ram::123456789012:role/legacy-role',
+      });
+
+      const plan = await generateFunctionPlan(mockContext, state, [testFunction]);
+
+      expect(plan.items[0]).toMatchObject({ action: 'noop' });
+    });
+
+    it('skips the role probe for external (string) roles', async () => {
+      const externalRoleArn = 'acs:ram::123456789012:role/someone-elses-role';
+      const state = setResource(initalState, 'functions.test_fn', {
+        mode: 'managed',
+        region: 'cn-hangzhou',
+        definition: {
+          functionName: 'test-function',
+          runtime: 'nodejs20',
+          handler: 'index.handler',
+          memorySize: 512,
+          timeout: 10,
+          environment: { NODE_ENV: 'production' },
+          codeHash: 'mock-code-hash',
+          iam: { role: externalRoleArn },
+        },
+        instances: [remoteFc3Instance],
+        lastUpdated: new Date().toISOString(),
+      });
+      const fnWithExternalRole: FunctionDomain = {
+        ...testFunction,
+        iam: { role: externalRoleArn },
+      };
+      mockFc3Operations.getFunction.mockResolvedValue(remoteFunctionExists);
+
+      const plan = await generateFunctionPlan(mockContext, state, [fnWithExternalRole]);
+
+      expect(plan.items[0]).toMatchObject({ action: 'noop' });
+      expect(mockRamOperations.getRole).not.toHaveBeenCalled();
     });
   });
 });

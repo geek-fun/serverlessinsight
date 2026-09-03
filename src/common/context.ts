@@ -4,6 +4,7 @@ import { Context, ServerlessIac } from '../types';
 import { getCredentials } from './credentials';
 import { getIamInfo } from './imsClient';
 import { ProviderEnum } from './providerEnum';
+import { createRefreshCache } from './refreshCache';
 
 let context: Context | undefined;
 
@@ -119,6 +120,7 @@ export const setContext = async (
       }),
       {},
     ),
+    refreshCache: createRefreshCache(),
   };
 
   if (reaValToken) {

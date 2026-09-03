@@ -7,6 +7,8 @@ import {
   ResourceAttributes,
 } from '../../types';
 import { createTencentClient } from '../../common/tencentClient';
+import { cachedRefreshRead } from '../../common/refreshCache';
+import { PLAN_READ_CONCURRENCY, mapWithConcurrency } from '../../common/concurrency';
 import { functionToScfConfig, extractScfDefinition } from './scfTypes';
 import { getAllResources, getResource } from '../../common/stateManager';
 import { attributesEqual, computeZipContentHash } from '../../common/hashUtils';
@@ -37,8 +39,10 @@ export const generateFunctionPlan = async (
 
   const desiredLogicalIds = new Set(functions.map((fn) => `functions.${fn.key}`));
 
-  const functionItems = await Promise.all(
-    functions.map(async (fn): Promise<PlanItem> => {
+  const functionItems = await mapWithConcurrency(
+    functions,
+    PLAN_READ_CONCURRENCY,
+    async (fn): Promise<PlanItem> => {
       const logicalId = `functions.${fn.key}`;
       const currentState = getResource(state, logicalId);
       let config = functionToScfConfig(fn);
@@ -59,7 +63,9 @@ export const generateFunctionPlan = async (
         // may belong to another project — fail fast in the plan instead of
         // letting the executor discover it mid-deploy.
         const client = createTencentClient(context);
-        const remoteFunction = await client.scf.getFunction(fn.name);
+        const remoteFunction = await cachedRefreshRead(context, `scf.getFunction:${fn.name}`, () =>
+          client.scf.getFunction(fn.name),
+        );
         if (remoteFunction && !isOwnedByStack(context, logicalId, remoteFunction.Tags)) {
           throw new Error(
             `Function ${fn.name} already exists in provider but is not owned by this stack (missing ${OWNERSHIP_TAG_KEY} tag). Refusing to create — resolve manually.`,
@@ -76,7 +82,9 @@ export const generateFunctionPlan = async (
 
       try {
         const client = createTencentClient(context);
-        const remoteFunction = await client.scf.getFunction(fn.name);
+        const remoteFunction = await cachedRefreshRead(context, `scf.getFunction:${fn.name}`, () =>
+          client.scf.getFunction(fn.name),
+        );
 
         if (!remoteFunction) {
           return {
@@ -110,7 +118,7 @@ export const generateFunctionPlan = async (
           changes: { before: currentState.definition, after: desiredDefinition },
         };
       }
-    }),
+    },
   );
 
   const allStates = getAllResources(state);

@@ -1,5 +1,7 @@
 import { Context, TableDomain, Plan, PlanItem, StateFile, ResourceAttributes } from '../../types';
 import { createAliyunClient } from '../../common/aliyunClient';
+import { cachedRefreshRead } from '../../common/refreshCache';
+import { PLAN_READ_CONCURRENCY, mapWithConcurrency } from '../../common/concurrency';
 import { tableToTableStoreConfig, extractTableStoreDefinition } from './tablestoreTypes';
 import { getAllResources, getResource } from '../../common/stateManager';
 import { attributesEqual } from '../../common/hashUtils';
@@ -26,8 +28,10 @@ export const generateTablePlan = async (
 
   const desiredLogicalIds = new Set(tables.map((table) => `tables.${table.key}`));
 
-  const tableItems = await Promise.all(
-    tables.map(async (table): Promise<PlanItem> => {
+  const tableItems = await mapWithConcurrency(
+    tables,
+    PLAN_READ_CONCURRENCY,
+    async (table): Promise<PlanItem> => {
       const logicalId = `tables.${table.key}`;
       const currentState = getResource(state, logicalId);
       const config = tableToTableStoreConfig(table);
@@ -42,7 +46,11 @@ export const generateTablePlan = async (
         // discover the collision mid-deploy.
         const client = createAliyunClient(context);
         const tablestoreClient = client.tablestore(config.instanceName);
-        const remoteTable = await tablestoreClient.getTable(config.tableName);
+        const remoteTable = await cachedRefreshRead(
+          context,
+          `tablestore.getTable:${config.instanceName}:${config.tableName}`,
+          () => tablestoreClient.getTable(config.tableName),
+        );
         if (remoteTable) {
           throw new Error(
             `Table ${config.tableName} already exists in provider but ownership cannot be verified (no table-level tags). Refusing to adopt — resolve manually.`,
@@ -60,7 +68,11 @@ export const generateTablePlan = async (
       try {
         const client = createAliyunClient(context);
         const tablestoreClient = client.tablestore(config.instanceName);
-        const remoteTable = await tablestoreClient.getTable(config.tableName);
+        const remoteTable = await cachedRefreshRead(
+          context,
+          `tablestore.getTable:${config.instanceName}:${config.tableName}`,
+          () => tablestoreClient.getTable(config.tableName),
+        );
 
         if (!remoteTable) {
           return {
@@ -113,7 +125,7 @@ export const generateTablePlan = async (
           changes: { before: currentState.definition, after: desiredDefinition },
         };
       }
-    }),
+    },
   );
 
   const allStates = getAllResources(state);

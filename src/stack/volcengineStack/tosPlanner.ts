@@ -1,6 +1,8 @@
 import path from 'node:path';
 import { Context, BucketDomain, Plan, PlanItem, StateFile, ResourceAttributes } from '../../types';
 import { createVolcengineClient } from '../../common/volcengineClient';
+import { cachedRefreshRead } from '../../common/refreshCache';
+import { PLAN_READ_CONCURRENCY, mapWithConcurrency } from '../../common/concurrency';
 import { bucketToTosConfig, extractTosBucketDefinition } from './tosTypes';
 import { getAllResources, getResource } from '../../common/stateManager';
 import { attributesEqual, computeDirectoryHash } from '../../common';
@@ -28,8 +30,10 @@ export const generateBucketPlan = async (
 
   const desiredLogicalIds = new Set(buckets.map((bucket) => `buckets.${bucket.key}`));
 
-  const bucketItems = await Promise.all(
-    buckets.map(async (bucket): Promise<PlanItem> => {
+  const bucketItems = await mapWithConcurrency(
+    buckets,
+    PLAN_READ_CONCURRENCY,
+    async (bucket): Promise<PlanItem> => {
       const logicalId = `buckets.${bucket.key}`;
       const currentState = getResource(state, logicalId);
       const config = bucketToTosConfig(bucket);
@@ -49,7 +53,9 @@ export const generateBucketPlan = async (
         // may belong to another project — fail fast in the plan instead of
         // letting the executor discover it mid-deploy.
         const client = createVolcengineClient(context);
-        const remoteBucket = await client.tos.getBucket(bucket.name);
+        const remoteBucket = await cachedRefreshRead(context, `tos.getBucket:${bucket.name}`, () =>
+          client.tos.getBucket(bucket.name),
+        );
         if (remoteBucket && !isOwnedByStack(context, logicalId, remoteBucket.Tags)) {
           throw new Error(
             `Bucket ${bucket.name} already exists in provider but is not owned by this stack (missing ${OWNERSHIP_TAG_KEY} tag). Refusing to create — resolve manually.`,
@@ -66,7 +72,9 @@ export const generateBucketPlan = async (
 
       try {
         const client = createVolcengineClient(context);
-        const remoteBucket = await client.tos.getBucket(bucket.name);
+        const remoteBucket = await cachedRefreshRead(context, `tos.getBucket:${bucket.name}`, () =>
+          client.tos.getBucket(bucket.name),
+        );
 
         if (!remoteBucket) {
           return {
@@ -106,7 +114,7 @@ export const generateBucketPlan = async (
           },
         };
       }
-    }),
+    },
   );
 
   const allStates = getAllResources(state);

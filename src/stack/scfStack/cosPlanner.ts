@@ -1,5 +1,7 @@
 import { Context, BucketDomain, Plan, PlanItem, StateFile, ResourceAttributes } from '../../types';
 import { createTencentClient } from '../../common/tencentClient';
+import { cachedRefreshRead } from '../../common/refreshCache';
+import { PLAN_READ_CONCURRENCY, mapWithConcurrency } from '../../common/concurrency';
 import { bucketToCosBucketConfig, extractCosBucketDefinition } from './cosTypes';
 import { getAllResources, getResource } from '../../common/stateManager';
 import { attributesEqual } from '../../common/hashUtils';
@@ -27,8 +29,10 @@ export const generateBucketPlan = async (
 
   const desiredLogicalIds = new Set(buckets.map((bucket) => `buckets.${bucket.key}`));
 
-  const bucketItems = await Promise.all(
-    buckets.map(async (bucket): Promise<PlanItem> => {
+  const bucketItems = await mapWithConcurrency(
+    buckets,
+    PLAN_READ_CONCURRENCY,
+    async (bucket): Promise<PlanItem> => {
       const logicalId = `buckets.${bucket.key}`;
       const currentState = getResource(state, logicalId);
       const config = bucketToCosBucketConfig(bucket, context.region);
@@ -40,7 +44,11 @@ export const generateBucketPlan = async (
         // may belong to another project — fail fast in the plan instead of
         // letting the executor discover it mid-deploy.
         const client = createTencentClient(context);
-        const remoteBucket = await client.cos.getBucket(bucket.name, context.region);
+        const remoteBucket = await cachedRefreshRead(
+          context,
+          `cos.getBucket:${context.region}:${bucket.name}`,
+          () => client.cos.getBucket(bucket.name, context.region),
+        );
         if (remoteBucket && !isOwnedByStack(context, logicalId, remoteBucket.Tags)) {
           throw new Error(
             `Bucket ${bucket.name} already exists in provider but is not owned by this stack (missing ${OWNERSHIP_TAG_KEY} tag). Refusing to create — resolve manually.`,
@@ -57,7 +65,11 @@ export const generateBucketPlan = async (
 
       try {
         const client = createTencentClient(context);
-        const remoteBucket = await client.cos.getBucket(bucket.name, context.region);
+        const remoteBucket = await cachedRefreshRead(
+          context,
+          `cos.getBucket:${context.region}:${bucket.name}`,
+          () => client.cos.getBucket(bucket.name, context.region),
+        );
 
         if (!remoteBucket) {
           return {
@@ -91,7 +103,7 @@ export const generateBucketPlan = async (
           changes: { before: currentState.definition, after: desiredDefinition },
         };
       }
-    }),
+    },
   );
 
   const allStates = getAllResources(state);

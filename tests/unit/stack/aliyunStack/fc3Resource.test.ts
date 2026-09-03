@@ -1,4 +1,4 @@
-import { ProviderEnum } from '../../../../src/common';
+import { ProviderEnum, buildFunctionRoleName } from '../../../../src/common';
 import {
   createResource,
   deleteResource,
@@ -55,6 +55,7 @@ const mockedSlsOperations = {
 };
 const mockedRamOperations = {
   createRole: jest.fn(),
+  getRole: jest.fn(),
   updateRoleTrustPolicy: jest.fn(),
   updateRolePolicy: jest.fn(),
   updateExecutionPolicyDocument: jest.fn(),
@@ -226,6 +227,10 @@ describe('Fc3Resource', () => {
 
     // Mock dependent resource operations
     mockedRamOperations.createRole.mockResolvedValue({
+      roleName: 'test-role',
+      arn: 'acs:ram::123456789012:role/test-role',
+    });
+    mockedRamOperations.getRole.mockResolvedValue({
       roleName: 'test-role',
       arn: 'acs:ram::123456789012:role/test-role',
     });
@@ -3536,6 +3541,12 @@ describe('Fc3Resource', () => {
                 id: 'test-function',
                 type: 'ALIYUN_FC3_FUNCTION',
               },
+              {
+                sid: 'si:aliyun:ram:default:test-role',
+                id: 'test-role',
+                type: 'ALIYUN_RAM_ROLE',
+                roleArn: 'acs:ram::123456789012:role/test-role',
+              },
             ],
             lastUpdated: '2025-01-01T00:00:00Z',
           },
@@ -4156,6 +4167,146 @@ describe('Fc3Resource', () => {
       const docArg = mockedRamOperations.updateExecutionPolicyDocument.mock.calls[0][1] as string;
       const parsed = JSON.parse(docArg) as { Statement: Array<{ Action: string[] }> };
       expect(parsed.Statement.some((s) => s.Action.includes('oss:GetObject'))).toBe(true);
+    });
+  });
+
+  describe('role reconciliation on update (issue #234)', () => {
+    const readyResourceState = (overrides: {
+      definition?: Record<string, unknown>;
+      instances?: Array<{ sid: string; id: string; type: string; roleArn?: string }>;
+      status?: 'ready' | 'tainted';
+    }): StateFile => ({
+      ...initialState,
+      resources: {
+        'functions.test_fn': {
+          mode: 'managed',
+          region: 'cn-hangzhou',
+          definition: overrides.definition ?? mockDefinition,
+          instances: overrides.instances ?? [],
+          lastUpdated: '2025-01-01T00:00:00Z',
+          status: overrides.status ?? 'ready',
+        },
+      },
+    });
+
+    const roleInstance = (id: string, roleArn?: string) => ({
+      sid: `si:aliyun:ram:default:${id}`,
+      id,
+      type: 'ALIYUN_RAM_ROLE',
+      roleArn: roleArn ?? `acs:ram::123456789012:role/${id}`,
+    });
+
+    it('recreates the recorded role when the provider lost it and rebinds the function', async () => {
+      const recordedRole = roleInstance('legacy-role');
+      const state = readyResourceState({ instances: [recordedRole] });
+      mockedRamOperations.getRole.mockResolvedValue(null);
+      mockedRamOperations.createRole.mockResolvedValue({
+        roleName: 'legacy-role',
+        arn: 'acs:ram::123456789012:role/legacy-role',
+      });
+      mockedStateManager.setResource.mockReturnValue({ ...initialState, _saved: true });
+
+      await updateResource(mockContext, testFunction, state);
+
+      expect(mockedRamOperations.createRole).toHaveBeenCalledWith(
+        'legacy-role',
+        ['fc.aliyuncs.com'],
+        undefined,
+        undefined,
+        undefined,
+        expect.any(Array),
+      );
+      // role is not part of extractFc3Definition — recreation must force the binding update
+      expect(mockedFc3Operations.updateFunctionConfiguration).toHaveBeenCalledWith(
+        expect.objectContaining({ role: 'acs:ram::123456789012:role/legacy-role' }),
+      );
+      const savedResourceState = (mockedStateManager.setResource as jest.Mock).mock.calls.at(
+        -1,
+      )?.[2];
+      const savedRamInstances = (savedResourceState?.instances ?? []).filter(
+        (i: { type?: string }) => i.type === 'ALIYUN_RAM_ROLE',
+      );
+      expect(savedRamInstances).toHaveLength(1);
+      expect(savedRamInstances[0]).toMatchObject({ id: 'legacy-role' });
+    });
+
+    it('creates and binds the managed role when iam.role is declared but no instance is recorded', async () => {
+      const statements = [{ effect: 'Allow' as const, action: ['oss:PutObject'], resource: ['*'] }];
+      const fnWithIam: FunctionDomain = { ...testFunction, iam: { role: { statements } } };
+      const state = readyResourceState({
+        definition: { ...mockDefinition, iam: { role: { statements } } },
+        instances: [],
+      });
+      const roleName = buildFunctionRoleName('test-app-test-service', 'default', 'test_fn');
+      mockedRamOperations.createRole.mockResolvedValue({
+        roleName,
+        arn: `acs:ram::123456789012:role/${roleName}`,
+      });
+      mockedStateManager.setResource.mockReturnValue({ ...initialState, _saved: true });
+
+      await updateResource(mockContext, fnWithIam, state);
+
+      expect(mockedRamOperations.createRole).toHaveBeenCalledWith(
+        roleName,
+        ['fc.aliyuncs.com'],
+        undefined,
+        statements,
+        undefined,
+        expect.any(Array),
+      );
+      expect(mockedFc3Operations.updateFunctionConfiguration).toHaveBeenCalledWith(
+        expect.objectContaining({ role: `acs:ram::123456789012:role/${roleName}` }),
+      );
+      const savedResourceState = (mockedStateManager.setResource as jest.Mock).mock.calls.at(
+        -1,
+      )?.[2];
+      const savedRamInstances = (savedResourceState?.instances ?? []).filter(
+        (i: { type?: string }) => i.type === 'ALIYUN_RAM_ROLE',
+      );
+      expect(savedRamInstances).toHaveLength(1);
+      expect(savedRamInstances[0]).toMatchObject({ id: roleName });
+    });
+  });
+
+  describe('role reconciliation during createResource retry (issue #234)', () => {
+    it('recreates a recorded role that the provider lost instead of failing on trust updates', async () => {
+      const recordedRole = {
+        sid: 'si:aliyun:ram:default:legacy-role',
+        id: 'legacy-role',
+        type: 'ALIYUN_RAM_ROLE',
+        roleArn: 'acs:ram::123456789012:role/legacy-role',
+      };
+      const taintedState: StateFile = {
+        ...initialState,
+        resources: {
+          'functions.test_fn': {
+            mode: 'managed',
+            region: 'cn-hangzhou',
+            definition: mockDefinition,
+            instances: [recordedRole],
+            lastUpdated: '2025-01-01T00:00:00Z',
+            status: 'tainted',
+          },
+        },
+      };
+      mockedRamOperations.getRole.mockResolvedValue(null);
+      mockedRamOperations.createRole.mockResolvedValue({
+        roleName: 'legacy-role',
+        arn: 'acs:ram::123456789012:role/legacy-role',
+      });
+      mockedStateManager.setResource.mockReturnValue({ ...taintedState, _saved: true });
+
+      await createResource(mockContext, testFunction, taintedState);
+
+      expect(mockedRamOperations.createRole).toHaveBeenCalledWith(
+        'legacy-role',
+        ['fc.aliyuncs.com'],
+        undefined,
+        undefined,
+        undefined,
+        expect.any(Array),
+      );
+      expect(mockedRamOperations.updateRoleTrustPolicy).not.toHaveBeenCalled();
     });
   });
 });
