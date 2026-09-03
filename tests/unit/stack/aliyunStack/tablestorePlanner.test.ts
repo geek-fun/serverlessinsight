@@ -115,7 +115,7 @@ describe('TableStore Planner', () => {
           reservedThroughput: null,
           onDemandThroughput: null,
           tableOptions: null,
-          network: null,
+          network: { type: 'PUBLIC', ingressRules: [] },
         },
         instances: [],
         lastUpdated: new Date().toISOString(),
@@ -163,7 +163,7 @@ describe('TableStore Planner', () => {
           reservedThroughput: null,
           onDemandThroughput: null,
           tableOptions: null,
-          network: null,
+          network: { type: 'PUBLIC', ingressRules: [] },
         },
         instances: [],
         lastUpdated: new Date().toISOString(),
@@ -185,6 +185,18 @@ describe('TableStore Planner', () => {
             write: 5,
           },
         },
+        tableOptions: {
+          timeToLive: -1,
+          maxVersions: 1,
+          maxTimeDeviation: 86400,
+          allowUpdate: true,
+        },
+        streamDetails: {
+          enableStream: true,
+          streamId: 'stream-id',
+          expirationTime: 1234567890,
+        },
+        definedColumn: [{ name: 'id', type: 'INTEGER' }],
       });
 
       const state = setResource(initialState, 'tables.test_table', {
@@ -234,6 +246,144 @@ describe('TableStore Planner', () => {
         logicalId: 'tables.test_table',
         action: 'noop',
         resourceType: 'ALIYUN_TABLESTORE_TABLE',
+      });
+    });
+
+    it('should plan update with drifted when the live cloud table differs from desired', async () => {
+      mockTablestoreOperations.getTable.mockResolvedValue({
+        tableName: 'test-table',
+        primaryKey: [{ name: 'id', type: 'INTEGER' }],
+        reservedThroughputDetails: {
+          capacityUnit: {
+            read: 20,
+            write: 10,
+          },
+        },
+        tableOptions: {
+          timeToLive: -1,
+          maxVersions: 1,
+        },
+      });
+
+      const state = setResource(initialState, 'tables.test_table', {
+        mode: 'managed',
+        region: 'cn-hangzhou',
+        definition: {
+          instanceName: 'test-instance',
+          tableName: 'test-table',
+          clusterType: 'HYBRID',
+          description: null,
+          primaryKey: [{ name: 'id', type: 'INTEGER' }],
+          attributes: [{ name: 'id', type: 'INTEGER' }],
+          reservedThroughput: {
+            capacityUnit: {
+              read: 10,
+              write: 5,
+            },
+          },
+          onDemandThroughput: null,
+          tableOptions: {
+            timeToLive: -1,
+            maxVersions: 1,
+          },
+          network: {
+            type: 'PUBLIC',
+            ingressRules: [],
+          },
+        },
+        instances: [
+          {
+            type: 'ALIYUN_TABLESTORE_TABLE',
+            sid: 'si:aliyun:ots:default:test-instance/test-table',
+            id: 'test-instance/test-table',
+            instanceName: 'test-instance',
+            tableName: 'test-table',
+            clusterType: 'HYBRID',
+            primaryKey: [{ name: 'id', type: 'INTEGER' }],
+          },
+        ],
+        lastUpdated: new Date().toISOString(),
+      });
+
+      const plan = await generateTablePlan(mockContext, state, [testTable]);
+
+      expect(plan.items[0]).toMatchObject({
+        logicalId: 'tables.test_table',
+        action: 'update',
+        resourceType: 'ALIYUN_TABLESTORE_TABLE',
+        drifted: true,
+      });
+    });
+
+    it('should plan noop when the live cloud table matches desired', async () => {
+      mockTablestoreOperations.getTable.mockResolvedValue({
+        tableName: 'test-table',
+        primaryKey: [{ name: 'id', type: 'INTEGER' }],
+        reservedThroughputDetails: {
+          capacityUnit: {
+            read: 10,
+            write: 5,
+          },
+        },
+        tableOptions: {
+          timeToLive: -1,
+          maxVersions: 1,
+          maxTimeDeviation: 86400,
+          allowUpdate: true,
+        },
+        streamDetails: {
+          enableStream: true,
+          streamId: 'stream-id',
+          expirationTime: 1234567890,
+        },
+        definedColumn: [{ name: 'id', type: 'INTEGER' }],
+      });
+
+      const state = setResource(initialState, 'tables.test_table', {
+        mode: 'managed',
+        region: 'cn-hangzhou',
+        definition: {
+          instanceName: 'test-instance',
+          tableName: 'test-table',
+          clusterType: 'HYBRID',
+          description: null,
+          primaryKey: [{ name: 'id', type: 'INTEGER' }],
+          attributes: [{ name: 'id', type: 'INTEGER' }],
+          reservedThroughput: {
+            capacityUnit: {
+              read: 10,
+              write: 5,
+            },
+          },
+          onDemandThroughput: null,
+          tableOptions: {
+            timeToLive: -1,
+            maxVersions: 1,
+          },
+          network: {
+            type: 'PUBLIC',
+            ingressRules: [],
+          },
+        },
+        instances: [
+          {
+            type: 'ALIYUN_TABLESTORE_TABLE',
+            sid: 'si:aliyun:ots:default:test-instance/test-table',
+            id: 'test-instance/test-table',
+            instanceName: 'test-instance',
+            tableName: 'test-table',
+            clusterType: 'HYBRID',
+            primaryKey: [{ name: 'id', type: 'INTEGER' }],
+          },
+        ],
+        lastUpdated: new Date().toISOString(),
+      });
+
+      const plan = await generateTablePlan(mockContext, state, [testTable]);
+
+      expect(plan.items[0]).toMatchObject({
+        logicalId: 'tables.test_table',
+        action: 'noop',
       });
     });
 
@@ -299,6 +449,86 @@ describe('TableStore Planner', () => {
       });
       expect(plan.items[0].changes?.before).toBeDefined();
       expect(plan.items[0].changes?.after).toBeDefined();
+    });
+
+    it('should plan to update when live reserved throughput drifts from desired', async () => {
+      mockTablestoreOperations.getTable.mockResolvedValue({
+        tableName: 'test-table',
+        primaryKey: [{ name: 'id', type: 'INTEGER' }],
+        reservedThroughputDetails: {
+          capacityUnit: {
+            read: 20,
+            write: 8,
+          },
+        },
+        tableOptions: { timeToLive: -1, maxVersions: 1 },
+      });
+
+      const state = setResource(initialState, 'tables.test_table', {
+        mode: 'managed',
+        region: 'cn-hangzhou',
+        definition: {
+          instanceName: 'test-instance',
+          tableName: 'test-table',
+          clusterType: 'HYBRID',
+          description: null,
+          primaryKey: [{ name: 'id', type: 'INTEGER' }],
+          attributes: [{ name: 'id', type: 'INTEGER' }],
+          reservedThroughput: { capacityUnit: { read: 10, write: 5 } },
+          onDemandThroughput: null,
+          tableOptions: { timeToLive: -1, maxVersions: 1 },
+          network: null,
+        },
+        instances: [],
+        lastUpdated: new Date().toISOString(),
+      });
+
+      const plan = await generateTablePlan(mockContext, state, [testTable]);
+
+      expect(plan.items[0]).toMatchObject({
+        action: 'update',
+        drifted: true,
+      });
+    });
+
+    it('should plan to update when live table options drift from desired', async () => {
+      mockTablestoreOperations.getTable.mockResolvedValue({
+        tableName: 'test-table',
+        primaryKey: [{ name: 'id', type: 'INTEGER' }],
+        reservedThroughputDetails: {
+          capacityUnit: {
+            read: 10,
+            write: 5,
+          },
+        },
+        tableOptions: { timeToLive: 3600, maxVersions: 3 },
+      });
+
+      const state = setResource(initialState, 'tables.test_table', {
+        mode: 'managed',
+        region: 'cn-hangzhou',
+        definition: {
+          instanceName: 'test-instance',
+          tableName: 'test-table',
+          clusterType: 'HYBRID',
+          description: null,
+          primaryKey: [{ name: 'id', type: 'INTEGER' }],
+          attributes: [{ name: 'id', type: 'INTEGER' }],
+          reservedThroughput: { capacityUnit: { read: 10, write: 5 } },
+          onDemandThroughput: null,
+          tableOptions: { timeToLive: -1, maxVersions: 1 },
+          network: null,
+        },
+        instances: [],
+        lastUpdated: new Date().toISOString(),
+      });
+
+      const plan = await generateTablePlan(mockContext, state, [testTable]);
+
+      expect(plan.items[0]).toMatchObject({
+        action: 'update',
+        drifted: true,
+      });
     });
 
     it('should plan to create when remote table does not exist', async () => {

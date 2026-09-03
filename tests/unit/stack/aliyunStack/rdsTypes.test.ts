@@ -1,7 +1,9 @@
 import {
+  cloudRdsToDefinition,
   databaseToRdsConfig,
   extractRdsDefinition,
 } from '../../../../src/stack/aliyunStack/rdsTypes';
+import type { RdsInfo } from '../../../../src/common/aliyunClient/rdsOperations';
 import { DatabaseDomain, DatabaseEnum, DatabaseVersionEnum } from '../../../../src/types';
 
 describe('RdsTypes', () => {
@@ -277,6 +279,57 @@ describe('RdsTypes', () => {
 
       expect(definition).not.toHaveProperty('masterUserPassword');
       expect(definition).not.toHaveProperty('MasterUserPassword');
+    });
+  });
+
+  describe('cloudRdsToDefinition', () => {
+    it('maps the reconciled RDS attributes from a full cloud response', () => {
+      const info: RdsInfo = {
+        dbInstanceDescription: 'orders-db',
+        engine: 'MySQL',
+        engineVersion: '8.0',
+        dbInstanceClass: 'mysql.n2.serverless.1c',
+        dbInstanceStorage: 20,
+        category: 'serverless_basic',
+        dbInstanceStorageType: 'general_essd',
+        burstingEnabled: true,
+        serverlessConfig: { minCapacity: 0, maxCapacity: 16, autoPause: true, switchForce: false },
+        multiAZ: false,
+        securityIPList: '10.0.0.0/8,192.168.0.0/16',
+        vpcId: 'vpc-123',
+        vSwitchId: 'vsw-456',
+      };
+
+      expect(cloudRdsToDefinition(info)).toEqual({
+        dbInstanceDescription: 'orders-db',
+        engine: 'MySQL',
+        engineVersion: '8.0',
+        dbInstanceClass: 'mysql.n2.serverless.1c',
+        dbInstanceStorage: 20,
+        category: 'serverless_basic',
+        dbInstanceStorageType: 'general_essd',
+        burstingEnabled: true,
+        serverlessConfig: { minCapacity: 0, maxCapacity: 16, autoPause: true, switchForce: false },
+        multiAZ: false,
+        securityIPList: '10.0.0.0/8,192.168.0.0/16',
+        vpcId: 'vpc-123',
+        vSwitchId: 'vsw-456',
+      });
+    });
+
+    it('omits unavailable and absent attributes', () => {
+      const definition = cloudRdsToDefinition({ dbInstanceId: 'rds-1' });
+
+      expect(definition).toEqual({});
+      expect(definition).not.toHaveProperty('connectionStringType');
+      expect(definition).not.toHaveProperty('dbInstanceNetType');
+      expect(definition).not.toHaveProperty('serverlessConfig');
+    });
+
+    it('omits serverless config when the cloud response has null config', () => {
+      expect(cloudRdsToDefinition({ serverlessConfig: undefined })).not.toHaveProperty(
+        'serverlessConfig',
+      );
     });
   });
 });

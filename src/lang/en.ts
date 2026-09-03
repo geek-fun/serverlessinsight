@@ -277,6 +277,8 @@ export const en = {
   REFRESH_CACHE_HIT: 'Refresh read cache hit: {{key}}',
   PLAN_FUNCTION_ROLE_MISSING:
     'Function {{functionName}} role {{roleName}} is missing in the provider; it will be recreated and rebound on deploy',
+  PLAN_FUNCTION_ROLE_PROBE_FAILED:
+    'Live role policy check for function {{functionName}} (role {{roleName}}) failed: {{error}}; skipping role drift detection for this plan',
   RAM_ROLE_MISSING_RECREATE:
     'RAM role {{roleName}} is missing in the provider; recreating it with the union of all functions that share it',
   SLS_PROJECT_FOREIGN_OWNED:

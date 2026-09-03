@@ -5,6 +5,10 @@ import {
   extractApigwApiDefinition,
   extractApigwDeploymentDefinition,
   inferProtocolConfig,
+  cloudApigwGroupToDefinition,
+  cloudApigwApiToTriggerAttributes,
+  cloudApigwCustomDomainToDefinition,
+  cloudGatewayLogToLogConfig,
 } from '../../../../src/stack/aliyunStack/apigwTypes';
 import { EventDomain, EventTypes, ServerlessIac } from '../../../../src/types';
 import { ProviderEnum, setContext, setIac } from '../../../../src/common';
@@ -334,5 +338,135 @@ describe('Apigw Types', () => {
       expect(result.requestProtocol).toBe('HTTP');
       expect(result.isHttpRedirectToHttps).toBeUndefined();
     });
+  });
+});
+
+describe('cloudApigwGroupToDefinition', () => {
+  it('maps a full cloud group to the extract shape (groupName/description/basePath)', () => {
+    const definition = cloudApigwGroupToDefinition({
+      groupId: 'group-123',
+      groupName: 'test-service-default-test-api-agw-group',
+      description: 'API Gateway group for test-service',
+      basePath: '/api/v1',
+      subDomain: 'group-123.apigw.aliyuncs.com',
+      status: 'NORMAL',
+    });
+
+    expect(definition).toEqual({
+      groupName: 'test-service-default-test-api-agw-group',
+      description: 'API Gateway group for test-service',
+      basePath: '/api/v1',
+    });
+  });
+
+  it('maps null for optional fields the cloud does not report', () => {
+    const definition = cloudApigwGroupToDefinition({
+      groupId: 'group-123',
+      groupName: 'test-service-default-test-api-agw-group',
+    });
+
+    expect(definition).toEqual({
+      groupName: 'test-service-default-test-api-agw-group',
+      description: null,
+      basePath: null,
+    });
+  });
+});
+
+describe('cloudApigwApiToTriggerAttributes', () => {
+  it('maps apiName, request method/path and the FunctionCompute backend', () => {
+    const attributes = cloudApigwApiToTriggerAttributes({
+      apiId: 'api-456',
+      apiName: 'Test_API_Gateway_default_agw_api_GET_users',
+      groupId: 'group-123',
+      requestConfig: {
+        requestHttpMethod: 'GET',
+        requestPath: '/users',
+      },
+      serviceConfig: {
+        serviceProtocol: 'FunctionCompute',
+        functionComputeConfig: {
+          functionName: 'userFunction',
+        },
+      },
+    });
+
+    expect(attributes).toEqual({
+      apiName: 'Test_API_Gateway_default_agw_api_GET_users',
+      method: 'GET',
+      path: '/users',
+      backend: 'userFunction',
+    });
+  });
+
+  it('keeps optional fields undefined when the cloud does not report them', () => {
+    const attributes = cloudApigwApiToTriggerAttributes({
+      apiId: 'api-789',
+      apiName: 'bare-api',
+    });
+
+    expect(attributes.apiName).toBe('bare-api');
+    expect(attributes.method).toBeUndefined();
+    expect(attributes.path).toBeUndefined();
+    expect(attributes.backend).toBeUndefined();
+  });
+});
+
+describe('cloudApigwCustomDomainToDefinition', () => {
+  it('emits only the domain keys the cloud can reproduce (domainName + certificateId)', () => {
+    const definition = cloudApigwCustomDomainToDefinition({
+      domainName: 'api.example.com',
+      certificateId: 'cert-123',
+      bindStageName: 'RELEASE',
+      domainBindingStatus: 'BINDING',
+      isHttpRedirectToHttps: true,
+    });
+
+    expect(definition).toEqual({
+      domainName: 'api.example.com',
+      certificateId: 'cert-123',
+    });
+  });
+
+  it('maps certificateId to null when the cloud has none', () => {
+    const definition = cloudApigwCustomDomainToDefinition({
+      domainName: 'api.example.com',
+    });
+
+    expect(definition).toEqual({
+      domainName: 'api.example.com',
+      certificateId: null,
+    });
+  });
+
+  it('returns undefined when the domain item has no domainName', () => {
+    expect(cloudApigwCustomDomainToDefinition({ bindStageName: 'RELEASE' })).toBeUndefined();
+  });
+});
+
+describe('cloudGatewayLogToLogConfig', () => {
+  it('maps a PROVIDER gateway log config to the snapshot shape', () => {
+    const snapshot = cloudGatewayLogToLogConfig({
+      logType: 'PROVIDER',
+      regionId: 'cn-hangzhou',
+      slsProject: 'test-app-dev-sls',
+      slsLogStore: 'test-service-dev-apigw-logs',
+    });
+
+    expect(snapshot).toEqual({
+      logEnabled: true,
+      logConfig: {
+        project: 'test-app-dev-sls',
+        logstore: 'test-service-dev-apigw-logs',
+      },
+    });
+  });
+
+  it('returns undefined when no gateway log config exists', () => {
+    expect(cloudGatewayLogToLogConfig(null)).toBeUndefined();
+  });
+
+  it('returns undefined when the config carries no logType', () => {
+    expect(cloudGatewayLogToLogConfig({ slsProject: 'p', slsLogStore: 's' })).toBeUndefined();
   });
 });

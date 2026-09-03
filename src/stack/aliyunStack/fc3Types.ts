@@ -281,7 +281,7 @@ export const functionToFc3Config = (fn: FunctionDomain): Fc3FunctionConfig => {
 
 export const extractFc3Definition = (
   config: Fc3FunctionConfig,
-  codeHash: string,
+  codeHash: string | null,
 ): ResourceAttributes => {
   return {
     functionName: config.functionName,
@@ -302,8 +302,68 @@ export const extractFc3Definition = (
 
 export const extractFunctionDomainDefinition = (
   fn: FunctionDomain,
-  codeHash: string,
+  codeHash: string | null,
 ): ResourceAttributes => {
   const config = functionToFc3Config(fn);
   return extractFc3Definition(config, codeHash);
+};
+
+/**
+ * Cloud-side counterpart of extractFc3Definition (issue #234 live drift): maps
+ * a GetFunction response back to the desired-definition shape. Must mirror the
+ * executor's write shape (`functionToFc3Config`) key-for-key — keys the
+ * executor never writes (customContainerConfig entrypoint/accelerationType)
+ * are omitted entirely, and command/enableTls are emitted only when the cloud
+ * reports them, so image-level or provider-defaulted values can never
+ * phantom-drift against a config that does not declare them.
+ */
+export const cloudFc3ToDefinition = (info: Fc3FunctionInfo): ResourceAttributes => {
+  return {
+    functionName: info.functionName ?? null,
+    runtime: info.runtime ?? null,
+    handler: info.handler ?? null,
+    memorySize: info.memorySize ?? null,
+    timeout: info.timeout ?? null,
+    diskSize: info.diskSize ?? null,
+    environment: info.environmentVariables ?? {},
+    vpcConfig: info.vpcConfig
+      ? {
+          vpcId: info.vpcConfig.vpcId ?? null,
+          vSwitchIds: info.vpcConfig.vSwitchIds ?? [],
+          securityGroupId: info.vpcConfig.securityGroupId ?? null,
+        }
+      : null,
+    gpuConfig: info.gpuConfig
+      ? {
+          gpuMemorySize: info.gpuConfig.gpuMemorySize ?? null,
+          gpuType: info.gpuConfig.gpuType ?? null,
+        }
+      : null,
+    customContainerConfig: info.customContainerConfig
+      ? {
+          image: info.customContainerConfig.image ?? null,
+          port: info.customContainerConfig.port ?? null,
+          ...(info.customContainerConfig.command !== undefined
+            ? { command: info.customContainerConfig.command }
+            : {}),
+        }
+      : null,
+    nasConfig: info.nasConfig
+      ? {
+          userId: info.nasConfig.userId ?? null,
+          groupId: info.nasConfig.groupId ?? null,
+          mountPoints: (info.nasConfig.mountPoints ?? []).map((mp) => ({
+            serverAddr: mp.serverAddr ?? null,
+            mountDir: mp.mountDir ?? null,
+            enableTls: mp.enableTls ?? null,
+          })),
+        }
+      : null,
+    logConfig: info.logConfig
+      ? {
+          enableRequestMetrics: info.logConfig.enableRequestMetrics ?? null,
+          enableInstanceMetrics: info.logConfig.enableInstanceMetrics ?? null,
+        }
+      : null,
+  };
 };

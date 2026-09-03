@@ -1,13 +1,14 @@
 import { generateApigwPlan } from '../../../../src/stack/aliyunStack/apigwPlanner';
 import { loadState, setResource } from '../../../../src/common/stateManager';
 import { Context, EventDomain, EventTypes } from '../../../../src/types';
-import { ProviderEnum } from '../../../../src/common';
+import { ProviderEnum, buildAliyunApigwApiName, generateApiKey } from '../../../../src/common';
 import fs from 'node:fs';
 
 // Create mock apigw operations
 const mockApigwOperations = {
   findApiGroupByName: jest.fn(),
   getApiGroup: jest.fn(),
+  listApisByGroup: jest.fn(),
   createApiGroup: jest.fn(),
   updateApiGroup: jest.fn(),
   deleteApiGroup: jest.fn(),
@@ -56,6 +57,71 @@ describe('Apigw Planner', () => {
         backend: 'userFunction',
       },
     ],
+  };
+
+  const derivedApiName = (method: string, path: string): string =>
+    buildAliyunApigwApiName('Test API Gateway', 'default', generateApiKey(method, path));
+
+  const matchingGroup = {
+    groupId: 'group-123',
+    groupName: 'test-service-default-test-api-agw-group',
+    description: 'API Gateway group for test-service',
+    basePath: null,
+  };
+
+  const cloudApiDetail = (
+    overrides: { apiName?: string; method?: string; path?: string; backend?: string } = {},
+  ) => ({
+    apiId: 'api-1',
+    apiName: overrides.apiName ?? derivedApiName('GET', '/users'),
+    groupId: 'group-123',
+    requestConfig: {
+      requestProtocol: 'HTTP',
+      requestHttpMethod: overrides.method ?? 'GET',
+      requestPath: overrides.path ?? '/users',
+      requestMode: 'PASSTHROUGH',
+    },
+    serviceConfig: {
+      serviceProtocol: 'FunctionCompute',
+      functionComputeConfig: {
+        fcRegionId: 'cn-hangzhou',
+        functionName: overrides.backend ?? 'userFunction',
+        fcVersion: '3.0',
+        method: 'GET',
+      },
+    },
+  });
+
+  const buildMatchingState = () => {
+    let state = loadState('aliyun', 'test-app', 'test-service', 'default', testDir);
+    state = setResource(state, 'events.test_api', {
+      mode: 'managed',
+      region: 'cn-hangzhou',
+      definition: {
+        groupName: 'test-service-default-test-api-agw-group',
+        description: 'API Gateway group for test-service',
+        basePath: null,
+        triggers: [{ method: 'GET', path: '/users', backend: 'userFunction' }],
+        domain: null,
+      },
+      instances: [
+        {
+          type: 'ALIYUN_APIGW_GROUP',
+          sid: 'si:aliyun:apigateway:default:group-123',
+          id: 'group-123',
+          groupName: 'test-service-default-test-api-agw-group',
+        },
+      ],
+      lastUpdated: new Date().toISOString(),
+    });
+    return state;
+  };
+
+  const mockMatchingApis = () => {
+    mockApigwOperations.listApisByGroup.mockResolvedValue([
+      { apiId: 'api-1', apiName: derivedApiName('GET', '/users') },
+    ]);
+    mockApigwOperations.getApi.mockResolvedValue(cloudApiDetail());
   };
 
   beforeEach(() => {
@@ -256,6 +322,7 @@ describe('Apigw Planner', () => {
         groupName: 'test-service-default-test-api-agw-group',
         description: 'API Gateway group for test-service',
       });
+      mockMatchingApis();
 
       const plan = await generateApigwPlan(mockContext, state, [testEvent], 'test-service');
 
@@ -392,6 +459,7 @@ describe('Apigw Planner', () => {
         groupName: 'test-service-default-test-api-agw-group',
         description: 'API Gateway group for test-service',
       });
+      mockMatchingApis();
 
       const plan = await generateApigwPlan(mockContext, state, [eventWithHttps], 'test-service');
 
@@ -501,6 +569,124 @@ describe('Apigw Planner', () => {
         drifted: true,
       });
       expect(plan.items[0].changes?.after).toBeDefined();
+    });
+
+    it('should plan update+drifted when the live group description drifted from the config', async () => {
+      const state = buildMatchingState();
+      mockApigwOperations.getApiGroup.mockResolvedValue({
+        ...matchingGroup,
+        description: 'Edited in the console',
+      });
+      mockMatchingApis();
+
+      const plan = await generateApigwPlan(mockContext, state, [testEvent], 'test-service');
+
+      expect(plan.items).toHaveLength(1);
+      expect(plan.items[0]).toMatchObject({
+        logicalId: 'events.test_api',
+        action: 'update',
+        resourceType: 'ALIYUN_APIGW',
+        drifted: true,
+      });
+    });
+
+    it('should plan update+drifted when the live group name drifted from the config', async () => {
+      const state = buildMatchingState();
+      mockApigwOperations.getApiGroup.mockResolvedValue({
+        ...matchingGroup,
+        groupName: 'renamed-in-console-group',
+      });
+      mockMatchingApis();
+
+      const plan = await generateApigwPlan(mockContext, state, [testEvent], 'test-service');
+
+      expect(plan.items[0]).toMatchObject({ action: 'update', drifted: true });
+    });
+
+    it.each([
+      ['method', { method: 'POST' }],
+      ['path', { path: '/admin' }],
+      ['backend', { backend: 'another-function' }],
+    ] as const)(
+      'should plan update+drifted when the cloud trigger %s drifted from the config',
+      async (_field, overrides) => {
+        const state = buildMatchingState();
+        mockApigwOperations.getApiGroup.mockResolvedValue(matchingGroup);
+        mockApigwOperations.listApisByGroup.mockResolvedValue([
+          { apiId: 'api-1', apiName: derivedApiName('GET', '/users') },
+        ]);
+        mockApigwOperations.getApi.mockResolvedValue(cloudApiDetail(overrides));
+
+        const plan = await generateApigwPlan(mockContext, state, [testEvent], 'test-service');
+
+        expect(plan.items[0]).toMatchObject({ action: 'update', drifted: true });
+      },
+    );
+
+    it('should plan update+drifted when a desired trigger has no matching cloud API', async () => {
+      const state = buildMatchingState();
+      mockApigwOperations.getApiGroup.mockResolvedValue(matchingGroup);
+      mockApigwOperations.listApisByGroup.mockResolvedValue([]);
+
+      const plan = await generateApigwPlan(mockContext, state, [testEvent], 'test-service');
+
+      expect(plan.items[0]).toMatchObject({ action: 'update', drifted: true });
+    });
+
+    it('should plan noop when an extra foreign cloud API exists (executor never deletes it)', async () => {
+      const state = buildMatchingState();
+      mockApigwOperations.getApiGroup.mockResolvedValue(matchingGroup);
+      mockApigwOperations.listApisByGroup.mockResolvedValue([
+        { apiId: 'api-1', apiName: derivedApiName('GET', '/users') },
+        { apiId: 'foreign-9', apiName: 'console_created_api' },
+      ]);
+      mockApigwOperations.getApi.mockResolvedValue(cloudApiDetail());
+
+      const plan = await generateApigwPlan(mockContext, state, [testEvent], 'test-service');
+
+      expect(plan.items[0]).toMatchObject({ action: 'noop', resourceType: 'ALIYUN_APIGW' });
+      expect(mockApigwOperations.getApi).toHaveBeenCalledTimes(1);
+    });
+
+    it('should plan noop when group and triggers match despite cloud noise', async () => {
+      const state = buildMatchingState();
+      mockApigwOperations.getApiGroup.mockResolvedValue({
+        ...matchingGroup,
+        tags: [
+          { Key: 'si-owned-by', Value: 'test-app-test-service:events.test_api' },
+          { Key: 'env', Value: 'prod' },
+        ],
+        customDomains: [{ domainName: 'api.example.com', certificateId: 'cert-1' }],
+        stageItems: [{ stageName: 'RELEASE' }],
+      });
+      mockApigwOperations.listApisByGroup.mockResolvedValue([
+        { apiId: 'api-1', apiName: derivedApiName('GET', '/users') },
+        { apiId: 'foreign-7', apiName: 'console_only_api' },
+      ]);
+      mockApigwOperations.getApi.mockResolvedValue(cloudApiDetail());
+
+      const plan = await generateApigwPlan(mockContext, state, [testEvent], 'test-service');
+
+      expect(plan.items[0]).toMatchObject({ action: 'noop', resourceType: 'ALIYUN_APIGW' });
+    });
+
+    it('should plan update with drifted:true on a local definition change', async () => {
+      const changedEvent: EventDomain = {
+        ...testEvent,
+        triggers: [{ method: 'GET', path: '/v2/users', backend: 'userFunction' }],
+      };
+      const state = buildMatchingState();
+      mockApigwOperations.getApiGroup.mockResolvedValue(matchingGroup);
+      mockApigwOperations.listApisByGroup.mockResolvedValue([
+        { apiId: 'api-1', apiName: derivedApiName('GET', '/v2/users') },
+      ]);
+      mockApigwOperations.getApi.mockResolvedValue(
+        cloudApiDetail({ apiName: derivedApiName('GET', '/v2/users'), path: '/v2/users' }),
+      );
+
+      const plan = await generateApigwPlan(mockContext, state, [changedEvent], 'test-service');
+
+      expect(plan.items[0]).toMatchObject({ action: 'update', drifted: true });
     });
   });
 });

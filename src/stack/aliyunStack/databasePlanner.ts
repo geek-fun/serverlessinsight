@@ -10,8 +10,9 @@ import {
 import { createAliyunClient } from '../../common/aliyunClient';
 import { cachedRefreshRead } from '../../common/refreshCache';
 import { PLAN_READ_CONCURRENCY, mapWithConcurrency } from '../../common/concurrency';
-import { databaseToRdsConfig, extractRdsDefinition } from './rdsTypes';
-import { databaseToEsConfig, extractEsDefinition } from './esServerlessTypes';
+import { databaseToRdsConfig, extractRdsDefinition, cloudRdsToDefinition } from './rdsTypes';
+import { databaseToEsConfig, extractEsDefinition, cloudEsToDefinition } from './esServerlessTypes';
+import { remoteDiffersFromDesired } from '../../common/planCompare';
 import { getAllResources, getResource } from '../../common/stateManager';
 import { attributesEqual } from '../../common/hashUtils';
 import { OWNERSHIP_TAG_KEY, isOwnedByStack } from '../ownershipTag';
@@ -170,10 +171,16 @@ export const generateDatabasePlan = async (
           };
         }
 
+        const remoteAttributes =
+          resourceType === 'ALIYUN_ES_SERVERLESS'
+            ? cloudEsToDefinition(remoteInstance)
+            : cloudRdsToDefinition(remoteInstance);
+        const remoteDiffers = remoteDiffersFromDesired(remoteAttributes, desiredDefinition);
+
         const currentDefinition = currentState.definition || {};
         const definitionChanged = !attributesEqual(currentDefinition, desiredDefinition);
 
-        if (definitionChanged) {
+        if (definitionChanged || remoteDiffers) {
           return {
             logicalId,
             action: 'update',

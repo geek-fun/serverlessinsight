@@ -1,4 +1,5 @@
 import { TableDomain, TableEnum, AttributeTypeEnum, ResourceAttributes } from '../../types';
+import type { TableStoreTableInfo } from '../../common/aliyunClient/tablestoreOperations';
 
 export type TableStoreConfig = {
   instanceName: string;
@@ -128,5 +129,38 @@ export const extractTableStoreDefinition = (config: TableStoreConfig): ResourceA
     onDemandThroughput: config.onDemandThroughput ?? null,
     tableOptions: config.tableOptions ?? null,
     network: config.network ?? null,
+  };
+};
+
+export const cloudTableStoreToDefinition = (info: TableStoreTableInfo): ResourceAttributes => {
+  const capacityUnit = info.reservedThroughputDetails?.capacityUnit;
+  const tableOptions = info.tableOptions;
+
+  return {
+    tableName: info.tableName,
+    ...(info.primaryKey ? { primaryKey: info.primaryKey } : {}),
+    ...(capacityUnit?.read !== undefined && capacityUnit.write !== undefined
+      ? {
+          reservedThroughput: {
+            capacityUnit: {
+              read: capacityUnit.read,
+              write: capacityUnit.write,
+            },
+          },
+        }
+      : {}),
+    ...(tableOptions &&
+    (tableOptions.timeToLive !== undefined || tableOptions.maxVersions !== undefined)
+      ? {
+          tableOptions: {
+            ...(tableOptions.timeToLive !== undefined
+              ? { timeToLive: tableOptions.timeToLive }
+              : {}),
+            ...(tableOptions.maxVersions !== undefined
+              ? { maxVersions: tableOptions.maxVersions }
+              : {}),
+          },
+        }
+      : {}),
   };
 };
