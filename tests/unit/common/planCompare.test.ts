@@ -49,4 +49,28 @@ describe('remoteDiffersFromDesired', () => {
 
     expect(remoteDiffersFromDesired(remote, desired)).toBe(true);
   });
+
+  it('ignores remote values behind a desired empty plain object (executor omits the field)', () => {
+    const remote = {
+      environment: { CONSOLE_ADDED: '1' },
+      websiteConfiguration: { indexDocument: 'index.html' },
+    };
+    const desired = { environment: {}, websiteConfiguration: {} };
+
+    expect(remoteDiffersFromDesired(remote, desired)).toBe(false);
+  });
+
+  it('still flags drift when the desired empty object is replaced by a declared one', () => {
+    const remote = { environment: {} };
+    const desired = { environment: { NODE_ENV: 'production' } };
+
+    expect(remoteDiffersFromDesired(remote, desired)).toBe(true);
+  });
+
+  it('does not treat empty arrays or empty strings as undeclared', () => {
+    const remote = { mountPoints: [{ serverAddr: 'addr' }], handler: '' };
+    const desired = { mountPoints: [], handler: '' };
+
+    expect(remoteDiffersFromDesired(remote, desired)).toBe(true);
+  });
 });
