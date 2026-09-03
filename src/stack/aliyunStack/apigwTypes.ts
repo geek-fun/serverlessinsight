@@ -12,15 +12,19 @@ import {
 import { lang } from '../../lang';
 import { OWNERSHIP_TAG_KEY, buildOwnershipTagValue } from '../ownershipTag';
 import { buildSharedProjectName, buildGatewayLogstoreName } from './sharedLogProject';
-// Re-export the info types from the shared client layer so there is a single
-// source of truth — the operations layer owns the cloud-returned field shape
-// and the stack layer consumes it (previous duplicated copies could drift).
-export type {
+// The cloud-returned info types are imported locally (the normalizers below
+// consume them) and re-exported so there is a single source of truth — the
+// operations layer owns the cloud-returned field shape and the stack layer
+// consumes it (previous duplicated copies could drift).
+import type {
   ApigwGroupInfo,
   ApigwApiInfo,
   ApigwCustomDomainItem,
   ApigwRequestParameter,
 } from '../../common/aliyunClient/apigwOperations';
+import type { ApigwLogConfigInfo } from '../../common/aliyunClient/types';
+
+export type { ApigwGroupInfo, ApigwApiInfo, ApigwCustomDomainItem, ApigwRequestParameter };
 export { buildAliyunApigwApiName, generateApiKey } from '../../common';
 
 // API Group types
@@ -421,4 +425,77 @@ export const extractEventDomainDefinition = (
   }
 
   return definition;
+};
+
+// Cloud response normalizers (issue #234): pure field mappings from already
+// fetched cloud objects back to the desired/config extract shapes. Never call a
+// client API; Wave C diffs these against the desired definitions and only
+// compares keys both sides declare, so omitting config-only or unreadable keys
+// here prevents phantom drift.
+
+/**
+ * Cloud-side counterpart of extractApigwGroupDefinition: maps an ApigwGroupInfo
+ * to the same {groupName, description, basePath} shape the planner diffs.
+ */
+export const cloudApigwGroupToDefinition = (group: ApigwGroupInfo): ResourceAttributes => {
+  return {
+    groupName: group.groupName ?? null,
+    description: group.description ?? null,
+    basePath: group.basePath ?? null,
+  };
+};
+
+/**
+ * Cloud-side counterpart of a desired trigger {method, path, backend}: the API's
+ * recorded apiName plus the request method/path and the FunctionCompute backend
+ * name. Fields with no clear cloud value stay undefined (never invented).
+ */
+export const cloudApigwApiToTriggerAttributes = (
+  api: ApigwApiInfo,
+): { apiName: string; method?: string; path?: string; backend?: string } => {
+  return {
+    apiName: api.apiName ?? '',
+    method: api.requestConfig?.requestHttpMethod,
+    path: api.requestConfig?.requestPath,
+    backend: api.serviceConfig?.functionComputeConfig?.functionName,
+  };
+};
+
+/**
+ * Cloud-side counterpart of extractEventDomainDefinition restricted to the keys
+ * the cloud reliably reports (domainName + certificateId). wwwBindApex,
+ * protocol, certificate bodies and cdn* have no cloud source and are omitted so
+ * they can never trigger phantom drift. Undefined when the item has no
+ * domainName to key on.
+ */
+export const cloudApigwCustomDomainToDefinition = (
+  domain: ApigwCustomDomainItem,
+): ResourceAttributes | undefined => {
+  if (!domain.domainName) {
+    return undefined;
+  }
+  return {
+    domainName: domain.domainName,
+    certificateId: domain.certificateId ?? null,
+  };
+};
+
+/**
+ * Cloud-side counterpart of buildEventLogSnapshot: maps the region-wide PROVIDER
+ * gateway log config into the snapshot shape. Undefined when no PROVIDER config
+ * exists (describeGatewayLogConfig returned null or an empty config).
+ */
+export const cloudGatewayLogToLogConfig = (
+  log: ApigwLogConfigInfo | null,
+): EventLogSnapshot | undefined => {
+  if (!log || log.logType == null || log.logType === '') {
+    return undefined;
+  }
+  return {
+    logEnabled: log.logType === 'PROVIDER',
+    logConfig: {
+      project: log.slsProject ?? '',
+      logstore: log.slsLogStore ?? '',
+    },
+  };
 };
