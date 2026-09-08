@@ -1,4 +1,4 @@
-import { attributesEqual, computeZipContentHash, getResource } from '../../common';
+import { attributesEqual, computeZipContentHash, getResource, logger } from '../../common';
 import { getAllResources, getSharedResource } from '../../common/stateManager';
 import { createVolcengineClient } from '../../common/volcengineClient';
 import { cachedRefreshRead } from '../../common/refreshCache';
@@ -11,9 +11,16 @@ import {
   ResourceAttributes,
   StateFile,
 } from '../../types';
-import { extractVefaasDefinition, functionToVefaasConfig } from './vefaasTypes';
+import {
+  buildDefaultTrustPolicy,
+  extractVefaasDefinition,
+  functionToVefaasConfig,
+} from './vefaasTypes';
+import { resolveRoleGrant } from './vefaasResource';
+import { buildRolePolicyName } from '../../common/nameBuilder';
 import { buildSharedProjectName, buildFunctionLogTopicName } from './sharedLogProject';
 import { OWNERSHIP_TAG_KEY, isOwnedByStack } from '../ownershipTag';
+import { lang } from '../../lang';
 
 const planFunctionDeletion = (logicalId: string, definition: ResourceAttributes): PlanItem => ({
   logicalId,
@@ -195,6 +202,82 @@ export const generateFunctionPlan = async (
             changes: { before: currentDefinition, after: desiredDefinition },
             drifted: true,
           };
+        }
+
+        // Issue #234 phase 3: live role drift — trust policy and attached
+        // managed policies. The custom <role>-policy DOCUMENT has no read API
+        // (volcengine IAM has no GetPolicy), so it stays executor-reconciled.
+        const iamRoleInstance = currentState.instances.find(
+          (i) => (i as { type?: string }).type === 'VOLCENGINE_IAM_ROLE',
+        ) as { id?: string } | undefined;
+        if (iamRoleInstance?.id) {
+          try {
+            const roleId = iamRoleInstance.id;
+            const roleGrant = resolveRoleGrant(context, state, fn, roleId);
+            const cloudRole = await cachedRefreshRead(context, `iam.getRole:${roleId}`, () =>
+              client.iam.getRole(roleId),
+            );
+            if (!cloudRole) {
+              return {
+                logicalId,
+                action: 'update',
+                resourceType: 'VOLCENGINE_VEFAAS',
+                changes: { before: currentDefinition, after: desiredDefinition },
+                drifted: true,
+              };
+            }
+            let cloudTrust: unknown;
+            try {
+              cloudTrust = JSON.parse(cloudRole.trustPolicyDocument ?? '');
+            } catch {
+              cloudTrust = undefined;
+            }
+            if (
+              cloudTrust &&
+              !attributesEqual(
+                cloudTrust as Record<string, unknown>,
+                buildDefaultTrustPolicy(roleGrant.trustedServices) as unknown as Record<
+                  string,
+                  unknown
+                >,
+              )
+            ) {
+              return {
+                logicalId,
+                action: 'update',
+                resourceType: 'VOLCENGINE_VEFAAS',
+                changes: { before: currentDefinition, after: desiredDefinition },
+                drifted: true,
+              };
+            }
+            const desiredManaged = (
+              (fn.iam?.role as { managed_policies?: string[] } | undefined)?.managed_policies ?? []
+            ).map((arn) => arn.split('/').pop() ?? '');
+            const asSetKey = (names: string[]): string => [...names].sort().join(',');
+            const cloudManaged = await cachedRefreshRead(
+              context,
+              `iam.listAttachedRolePolicies:${roleId}`,
+              () => client.iam.listAttachedRolePolicies(roleId),
+            );
+            const desiredNames = asSetKey([...desiredManaged, buildRolePolicyName(roleId)]);
+            if (desiredNames !== asSetKey(cloudManaged ?? [])) {
+              return {
+                logicalId,
+                action: 'update',
+                resourceType: 'VOLCENGINE_VEFAAS',
+                changes: { before: currentDefinition, after: desiredDefinition },
+                drifted: true,
+              };
+            }
+          } catch (error: unknown) {
+            logger.warn(
+              lang.__('PLAN_FUNCTION_ROLE_PROBE_FAILED', {
+                roleName: iamRoleInstance.id,
+                functionName: fn.name,
+                error: String(error),
+              }),
+            );
+          }
         }
 
         return { logicalId, action: 'noop', resourceType: 'VOLCENGINE_VEFAAS' };
