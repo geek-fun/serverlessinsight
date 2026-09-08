@@ -1421,6 +1421,29 @@ export const updateResource = async (
       (i) => i.type === 'ALIYUN_NAS_MOUNT_TARGET',
     );
     const nasStorageItems = fn.storage?.nas ?? [];
+
+    // Issue #234 M4: nested repair — only on a drifted plan item (force): a
+    // file system with no live mount targets gets its mount target recreated
+    // (console deletions); extra mount targets are left alone — deleting
+    // shared infrastructure on a reconcile is never safe.
+    if (options?.force && fn.network) {
+      const fsInstances = existingInstances.filter((i) => i.type === 'ALIYUN_NAS_FILE_SYSTEM');
+      for (const fs of fsInstances) {
+        const liveTargets = await client.nas.listMountTargets(fs.id);
+        if (!liveTargets || liveTargets.length === 0) {
+          const mountPath = nasStorageItems[0]?.mount_path ?? '/mnt/nas';
+          const accessGroupName = `${fn.name}-${context.stage}-nas-access-${mountPath}`;
+          await client.nas.createMountTarget(
+            fs.id,
+            accessGroupName,
+            fn.network.vpc_id,
+            fn.network.subnet_ids[0],
+          );
+          logger.warn(lang.__('NESTED_MOUNT_TARGET_RECREATED', { fileSystemId: fs.id }));
+        }
+      }
+    }
+
     if (mountTargetInstances.length > 0 && nasStorageItems.length > 0) {
       nasConfig = {
         mountPoints: mountTargetInstances.map((mt, idx) => ({

@@ -1,4 +1,5 @@
 import NasClient from '@alicloud/nas20170626';
+import { logger } from '../logger';
 import * as nas from '@alicloud/nas20170626';
 import { NasStorageClassEnum } from '../../types';
 import {
@@ -223,6 +224,27 @@ export const createNasOperations = (nasClient: NasSdkClient) => {
         vSwitchId,
         accessGroupName,
       };
+    },
+
+    listMountTargets: async (fileSystemId: string): Promise<NasMountTargetInfo[]> => {
+      try {
+        const request = new nas.DescribeMountTargetsRequest({
+          fileSystemId,
+        });
+        const response = await nasClient.describeMountTargets(request);
+        const raw =
+          (response?.body?.mountTargets?.mountTarget as Array<Record<string, unknown>>) ?? [];
+        return raw
+          .filter((mt) => mt.mountTargetDomain)
+          .map((mt) => ({
+            fileSystemId,
+            mountTargetDomain: mt.mountTargetDomain as string,
+            status: mt.status as string | undefined,
+          }));
+      } catch (error: unknown) {
+        logger.debug(`Failed to list mount targets: ${String(error)}`);
+        return [];
+      }
     },
 
     getMountTarget: async (

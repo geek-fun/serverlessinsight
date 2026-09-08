@@ -44,6 +44,10 @@ const mockSlsOperations = {
   createIndex: jest.fn(),
   createLogstore: jest.fn(),
 };
+const mockNasOperations = {
+  listMountTargets: jest.fn(),
+  createMountTarget: jest.fn(),
+};
 
 jest.mock('../../../../src/common/aliyunClient', () => ({
   createAliyunClient: () => ({
@@ -51,6 +55,7 @@ jest.mock('../../../../src/common/aliyunClient', () => ({
     ecs: mockEcsOperations,
     ram: mockRamOperations,
     sls: mockSlsOperations,
+    nas: mockNasOperations,
   }),
 }));
 jest.mock('../../../../src/common/hashUtils', () => ({
@@ -1149,6 +1154,117 @@ describe('FC3 Planner', () => {
         mockEcsOperations.getSecurityGroupRules.mockRejectedValue(new Error('ecs throttled'));
 
         const plan = await generateFunctionPlan(mockContext, buildNetworkState(), [fnWithNetwork]);
+
+        expect(plan.items[0]).toMatchObject({ action: 'noop' });
+      });
+    });
+
+    describe('nested NAS drift (issue #234 M4)', () => {
+      const fnWithNas: FunctionDomain = {
+        ...testFunction,
+        network: {
+          vpc_id: 'vpc-123',
+          subnet_ids: ['vsw-123'],
+          security_group: { name: 'app-sg', ingress: [], egress: [] },
+        },
+        storage: {
+          nas: [{ storage_class: NasStorageClassEnum.STANDARD_CAPACITY, mount_path: '/mnt/data' }],
+        },
+      };
+      const fsInstance = {
+        sid: 'si:aliyun:nas:default:fs-1',
+        id: 'fs-1',
+        type: 'ALIYUN_NAS_FILE_SYSTEM',
+      };
+
+      const buildNasState = (): StateFile =>
+        setResource(initalState, 'functions.test_fn', {
+          mode: 'managed',
+          region: 'cn-hangzhou',
+          definition: {
+            functionName: 'test-function',
+            runtime: 'nodejs20',
+            handler: 'index.handler',
+            memorySize: 512,
+            timeout: 10,
+            diskSize: null,
+            environment: { NODE_ENV: 'production' },
+            vpcConfig: {
+              vpcId: 'vpc-123',
+              vSwitchIds: ['vsw-123'],
+              securityGroupId: 'sg-resolved',
+            },
+            gpuConfig: null,
+            customContainerConfig: null,
+            nasConfig: {
+              userId: 10003,
+              groupId: 10003,
+              mountPoints: [
+                {
+                  serverAddr: NasStorageClassEnum.STANDARD_CAPACITY,
+                  mountDir: '/mnt/data',
+                  enableTls: false,
+                },
+              ],
+            },
+            logConfig: null,
+            codeHash: 'mock-code-hash',
+          },
+          instances: [
+            fc3Instance,
+            fsInstance,
+            { sid: 's2', id: 'fs-1/mt-domain', type: 'ALIYUN_NAS_MOUNT_TARGET' },
+          ],
+          lastUpdated: new Date().toISOString(),
+        });
+
+      beforeEach(() => {
+        mockFc3Operations.getFunction.mockResolvedValue({
+          ...remoteFunctionMatch,
+          vpcConfig: { vpcId: 'vpc-123', vSwitchIds: ['vsw-123'], securityGroupId: 'sg-resolved' },
+          nasConfig: {
+            userId: 10003,
+            groupId: 10003,
+            mountPoints: [
+              {
+                serverAddr: NasStorageClassEnum.STANDARD_CAPACITY,
+                mountDir: '/mnt/data',
+                enableTls: false,
+              },
+            ],
+          },
+        });
+        mockEcsOperations.getSecurityGroupByName.mockResolvedValue({
+          securityGroupId: 'sg-resolved',
+        });
+        mockEcsOperations.getSecurityGroupRules.mockResolvedValue({
+          ingressRules: [],
+          egressRules: [],
+        });
+      });
+
+      it('stays noop when the live mount targets match', async () => {
+        mockNasOperations.listMountTargets.mockResolvedValue([
+          { fileSystemId: 'fs-1', mountTargetDomain: 'mt-domain', status: 'Active' },
+        ]);
+
+        const plan = await generateFunctionPlan(mockContext, buildNasState(), [fnWithNas]);
+
+        expect(plan.items[0]).toMatchObject({ action: 'noop' });
+      });
+
+      it('flags update+drifted when the mount target was deleted out-of-band', async () => {
+        mockNasOperations.listMountTargets.mockResolvedValue([]);
+
+        const plan = await generateFunctionPlan(mockContext, buildNasState(), [fnWithNas]);
+
+        expect(plan.items[0]).toMatchObject({ action: 'update', drifted: true });
+      });
+
+      it('warns and stays noop when the NAS probe fails', async () => {
+        mockNasOperations.listMountTargets.mockRejectedValue(new Error('nas throttled'));
+
+        const plan = await generateFunctionPlan(mockContext, buildNasState(), [fnWithNas]);
 
         expect(plan.items[0]).toMatchObject({ action: 'noop' });
       });

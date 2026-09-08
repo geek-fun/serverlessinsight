@@ -17,6 +17,7 @@ import {
   functionToVefaasConfig,
 } from './vefaasTypes';
 import { resolveRoleGrant } from './vefaasResource';
+import { TLS_TOPIC_TTL } from '../../common/volcengineClient/tlsOperations';
 import { buildRolePolicyName } from '../../common/nameBuilder';
 import { buildSharedProjectName, buildFunctionLogTopicName } from './sharedLogProject';
 import { OWNERSHIP_TAG_KEY, isOwnedByStack } from '../ownershipTag';
@@ -277,6 +278,43 @@ export const generateFunctionPlan = async (
                 error: String(error),
               }),
             );
+          }
+        }
+
+        // Issue #234 M5: nested topic drift — ttl is the only ModifyTopic
+        // field si manages; probed only when logging is declared (the
+        // --no-refresh early return above already guarantees refresh is on).
+        if (fn.log) {
+          const tlsTopicInstance = currentState.instances.find(
+            (i) => (i as { type?: string }).type === 'VOLCENGINE_TLS_TOPIC',
+          ) as { id?: string } | undefined;
+          if (tlsTopicInstance?.id) {
+            try {
+              const [topicProject, topicName] = tlsTopicInstance.id.split('/');
+              if (topicProject && topicName) {
+                const liveTopic = await cachedRefreshRead(
+                  context,
+                  `tls.getTopic:${topicProject}:${topicName}`,
+                  () => client.tls.getTopic(topicProject, topicName),
+                );
+                if (!liveTopic || (liveTopic.ttl ?? TLS_TOPIC_TTL) !== TLS_TOPIC_TTL) {
+                  return {
+                    logicalId,
+                    action: 'update',
+                    resourceType: 'VOLCENGINE_VEFAAS',
+                    changes: { before: currentDefinition, after: desiredDefinition },
+                    drifted: true,
+                  };
+                }
+              }
+            } catch (error: unknown) {
+              logger.warn(
+                lang.__('PLAN_FUNCTION_NESTED_PROBE_FAILED', {
+                  functionName: fn.name,
+                  error: String(error),
+                }),
+              );
+            }
           }
         }
 

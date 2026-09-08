@@ -17,6 +17,12 @@ type TlsSdkClient = TlsService;
 const WAIT_INTERVAL_MS = 5000;
 const MAX_WAIT_ATTEMPTS = 30;
 
+// The topic attributes si creates with (issue #234 M5): `fn.log` is a
+// boolean — these are stack constants, so live values differing from them are
+// out-of-band drift. ModifyTopic cannot change shard count (create-only).
+export const TLS_TOPIC_TTL = 30;
+export const TLS_TOPIC_SHARDS = 1;
+
 const waitForProjectReady = async (
   getProject: (projectName: string) => Promise<TlsProjectInfo | null>,
   projectName: string,
@@ -234,8 +240,8 @@ export const createTlsOperations = (tlsClient: TlsSdkClient) => {
           ProjectId: project.projectId,
           TopicName: config.topicName,
           Description: config.description,
-          Ttl: config.ttl ?? 30,
-          ShardCount: 1,
+          Ttl: config.ttl ?? TLS_TOPIC_TTL,
+          ShardCount: TLS_TOPIC_SHARDS,
         });
 
         logger.info(lang.__('TLS_TOPIC_CREATED', { topicName: config.topicName }));
@@ -245,7 +251,7 @@ export const createTlsOperations = (tlsClient: TlsSdkClient) => {
           topicName: config.topicName,
           projectName: config.projectName,
           description: config.description,
-          ttl: config.ttl ?? 30,
+          ttl: config.ttl ?? TLS_TOPIC_TTL,
           status: 'Active',
         };
       } catch (error: unknown) {
@@ -302,6 +308,10 @@ export const createTlsOperations = (tlsClient: TlsSdkClient) => {
         }
         throw error;
       }
+    },
+
+    modifyTopic: async (topicId: string, ttl: number): Promise<void> => {
+      await tlsClient.ModifyTopic({ TopicId: topicId, Ttl: ttl });
     },
 
     listTopics: async (projectName: string): Promise<TlsTopicInfo[]> => {

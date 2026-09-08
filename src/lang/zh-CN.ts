@@ -265,6 +265,8 @@ export const zhCN = {
     '函数 {{functionName}} 的嵌套资源探测失败：{{error}}；本次计划跳过嵌套漂移检测',
   NESTED_LOGSTORE_RECREATED: '日志库 {{logstoreName}} 被带外删除，正在重建',
   NESTED_LOGSTORE_UPDATED: '日志库 {{logstoreName}} 属性已漂移，正在按 si 默认值更新',
+  NESTED_TLS_TOPIC_UPDATED: 'TLS 日志主题 {{topicId}} 的 ttl 已漂移，正在按 si 默认值更新',
+  NESTED_MOUNT_TARGET_RECREATED: '文件系统 {{fileSystemId}} 的 NAS 挂载点被带外删除，正在重建',
   NESTED_TOPIC_RECREATED: '日志主题 {{topicId}} 被带外删除，正在共享日志集下重建',
   NESTED_TOPIC_UPDATED: '日志主题 {{topicId}} 属性已漂移，正在按 si 默认值更新',
   NESTED_SG_RULES_REPAIRED:
