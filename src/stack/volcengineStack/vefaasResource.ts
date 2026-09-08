@@ -243,7 +243,7 @@ const collectRolePeers = (state: StateFile, context: Context, roleId: string): R
  * and derived policy must be the union across those functions — a single
  * function's update would otherwise strip another function's requirements.
  */
-const resolveRoleGrant = (
+export const resolveRoleGrant = (
   context: Context,
   state: StateFile | undefined,
   fn: FunctionDomain,
