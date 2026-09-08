@@ -42,3 +42,24 @@ export const remoteDiffersFromDesired = (
     }
     return !attributesEqual({ [key]: remote[key] }, { [key]: desiredValue });
   });
+
+/**
+ * Canonical JSON document compare (issue #234 phase 3): providers return
+ * policy documents as parsed objects (or re-serialized strings) whose key
+ * order and formatting differ from what the config serialized, so byte-level
+ * string comparison false-drifts. Parses both sides and compares
+ * key-order-insensitively. Undeclared (null) desired or unreadable cloud
+ * values are not drift — only a parseable pair with different content is.
+ */
+export const jsonDocumentDiffers = (desired: string | null, cloud: unknown): boolean => {
+  if (desired === null || cloud === undefined || cloud === null) {
+    return false;
+  }
+  try {
+    const desiredObj = JSON.parse(desired) as unknown;
+    const cloudObj = typeof cloud === 'string' ? (JSON.parse(cloud) as unknown) : cloud;
+    return !attributesEqual({ doc: cloudObj }, { doc: desiredObj });
+  } catch {
+    return false;
+  }
+};

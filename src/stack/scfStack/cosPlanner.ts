@@ -9,6 +9,7 @@ import {
 } from './cosTypes';
 import { getAllResources, getResource } from '../../common/stateManager';
 import { planRefreshedResource } from '../../common/refreshPlanner';
+import { jsonDocumentDiffers } from '../../common/planCompare';
 import { OWNERSHIP_TAG_KEY, isOwnedByStack } from '../ownershipTag';
 
 const planBucketDeletion = (logicalId: string, definition: ResourceAttributes): PlanItem => ({
@@ -43,22 +44,37 @@ export const generateBucketPlan = async (
       const desiredDefinition = extractCosBucketDefinition(config);
 
       const client = createTencentClient(context);
+      const readBucket = () =>
+        cachedRefreshRead(context, `cos.getBucket:${context.region}:${bucket.name}`, () =>
+          client.cos.getBucket(bucket.name, context.region),
+        );
 
       return planRefreshedResource({
         logicalId,
         resourceType: 'COS_BUCKET',
         currentState,
         desiredDefinition,
-        read: () =>
-          cachedRefreshRead(context, `cos.getBucket:${context.region}:${bucket.name}`, () =>
-            client.cos.getBucket(bucket.name, context.region),
-          ),
+        read: readBucket,
         isOwned: (remote) => isOwnedByStack(context, logicalId, remote.Tags),
         foreignError: () =>
           new Error(
             `Bucket ${bucket.name} already exists in provider but is not owned by this stack (missing ${OWNERSHIP_TAG_KEY} tag). Refusing to create — resolve manually.`,
           ),
         cloudToDefinition: cloudCosToDefinition,
+        extraUpdate: async () => {
+          // Policy needs a canonical compare: the cloud returns a parsed
+          // object while the config serializes it — see jsonDocumentDiffers.
+          const desiredPolicy = (desiredDefinition as { policy?: string | null }).policy ?? null;
+          if (desiredPolicy === null) {
+            return { update: false, drifted: false };
+          }
+          const remote = await readBucket();
+          const cloudPolicy = (remote as { Policy?: unknown } | null)?.Policy;
+          return {
+            update: jsonDocumentDiffers(desiredPolicy, cloudPolicy),
+            drifted: true,
+          };
+        },
         refresh: context.refresh,
       });
     },
