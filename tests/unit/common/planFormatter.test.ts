@@ -277,5 +277,73 @@ describe('planFormatter', () => {
       expect(aIndex).toBeGreaterThan(-1);
       expect(bIndex).toBeGreaterThan(-1);
     });
+
+    it('marks drifted updates with the drift marker line', () => {
+      const items: PlanItem[] = [
+        {
+          logicalId: 'functions.a',
+          action: 'update',
+          resourceType: 'ALIYUN_FC3',
+          drifted: true,
+          changes: { before: { memory: 128 }, after: { memory: 256 } },
+        },
+      ];
+
+      const output = formatPlanItem(items[0], config);
+
+      expect(output).toContain('cloud changed outside of this config');
+    });
+
+    it('does not mark undrifted updates with the drift marker', () => {
+      const items: PlanItem[] = [
+        {
+          logicalId: 'functions.a',
+          action: 'update',
+          resourceType: 'ALIYUN_FC3',
+          changes: { before: { memory: 128 }, after: { memory: 256 } },
+        },
+      ];
+
+      const output = formatPlanItem(items[0], config);
+
+      expect(output).not.toContain('cloud changed outside of this config');
+    });
+
+    it('summarizes drifted resources when any item drifted', () => {
+      const items: PlanItem[] = [
+        {
+          logicalId: 'functions.a',
+          action: 'update',
+          resourceType: 'ALIYUN_FC3',
+          drifted: true,
+          changes: { before: { memory: 128 }, after: { memory: 256 } },
+        },
+        {
+          logicalId: 'functions.b',
+          action: 'create',
+          resourceType: 'ALIYUN_FC3',
+          changes: { after: { name: 'b' } },
+        },
+      ];
+
+      const output = formatPlan(items, config);
+
+      expect(output).toContain('Drift: 1 resource(s)');
+    });
+
+    it('omits the drift summary when nothing drifted', () => {
+      const items: PlanItem[] = [
+        {
+          logicalId: 'functions.b',
+          action: 'create',
+          resourceType: 'ALIYUN_FC3',
+          changes: { after: { name: 'b' } },
+        },
+      ];
+
+      const output = formatPlan(items, config);
+
+      expect(output).not.toContain('Drift:');
+    });
   });
 });

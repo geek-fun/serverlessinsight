@@ -133,6 +133,9 @@ export const en = {
     'Plan: {{createCount}} to add, {{updateCount}} to change, {{deleteCount}} to destroy.',
   PLAN_UNCHANGED_ATTRS: '({{count}} unchanged attributes hidden)',
   PLAN_COMPUTED_VALUE: '(known after deploy)',
+  PLAN_DRIFTED_MARKER: '(drifted — cloud changed outside of this config, will be reconciled)',
+  PLAN_DRIFTED_SUMMARY:
+    'Drift: {{driftedCount}} resource(s) changed in the cloud outside of this config.',
 
   // TDSQL-C database messages
   TDSQL_CLUSTER_CREATION_INITIATED: 'TDSQL-C cluster creation initiated',
