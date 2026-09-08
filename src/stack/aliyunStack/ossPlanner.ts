@@ -9,8 +9,8 @@ import {
   extractOssBucketDefinition,
 } from './ossTypes';
 import { getAllResources, getResource } from '../../common/stateManager';
-import { attributesEqual, computeDirectoryHash } from '../../common/hashUtils';
-import { remoteDiffersFromDesired } from '../../common/planCompare';
+import { computeDirectoryHash } from '../../common/hashUtils';
+import { planRefreshedResource } from '../../common/refreshPlanner';
 import { OWNERSHIP_TAG_KEY, isOwnedByStack } from '../ownershipTag';
 
 const planBucketDeletion = (logicalId: string, definition: ResourceAttributes): PlanItem => ({
@@ -63,83 +63,29 @@ export const generateBucketPlan = async (
         }
       })();
       const desiredDefinition = extractOssBucketDefinition(config, websiteCodeHash);
+      const client = createAliyunClient(context);
+      const domainBindingPending =
+        (currentState?.definition as { domainBound?: boolean | null } | undefined)?.domainBound ===
+        false;
 
-      if (!currentState || currentState.status === 'tainted') {
-        // No usable local state: probe the provider before planning create.
-        // If a same-named bucket already exists WITHOUT our ownership tag it
-        // may belong to another project — fail fast in the plan instead of
-        // letting the executor discover it mid-deploy.
-        const client = createAliyunClient(context);
-        const remoteBucket = await cachedRefreshRead(context, `oss.getBucket:${bucket.name}`, () =>
-          client.oss.getBucket(bucket.name),
-        );
-        if (
-          remoteBucket &&
-          !isOwnedByStack(context, logicalId, toOwnershipTags(remoteBucket.tags))
-        ) {
-          throw new Error(
+      return planRefreshedResource({
+        logicalId,
+        resourceType: 'ALIYUN_OSS_BUCKET',
+        currentState,
+        desiredDefinition,
+        read: () =>
+          cachedRefreshRead(context, `oss.getBucket:${bucket.name}`, () =>
+            client.oss.getBucket(bucket.name),
+          ),
+        isOwned: (remote) => isOwnedByStack(context, logicalId, toOwnershipTags(remote.tags)),
+        foreignError: () =>
+          new Error(
             `Bucket ${bucket.name} already exists in provider but is not owned by this stack (missing ${OWNERSHIP_TAG_KEY} tag). Refusing to create — resolve manually.`,
-          );
-        }
-
-        return {
-          logicalId,
-          action: 'create',
-          resourceType: 'ALIYUN_OSS_BUCKET',
-          changes: { after: desiredDefinition },
-        };
-      }
-
-      try {
-        const client = createAliyunClient(context);
-        const remoteBucket = await cachedRefreshRead(context, `oss.getBucket:${bucket.name}`, () =>
-          client.oss.getBucket(bucket.name),
-        );
-
-        if (!remoteBucket) {
-          return {
-            logicalId,
-            action: 'create',
-            resourceType: 'ALIYUN_OSS_BUCKET',
-            changes: {
-              before: normalizeDefinitionForDisplay(currentState.definition),
-              after: desiredDefinition,
-            },
-            drifted: true,
-          };
-        }
-
-        const currentDefinition = currentState.definition || {};
-        const normalizedCurrent = normalizeDefinitionForDisplay(currentDefinition);
-        const normalizedDesired = normalizeDefinitionForDisplay(desiredDefinition);
-        const { domainBound } = currentDefinition as { domainBound?: boolean | null };
-        const definitionChanged = !attributesEqual(normalizedCurrent, normalizedDesired);
-        const remoteAttributes = cloudOssToDefinition(remoteBucket);
-        const remoteDiffers = remoteDiffersFromDesired(remoteAttributes, desiredDefinition);
-        const domainBindingPending = domainBound === false;
-
-        if (definitionChanged || remoteDiffers || domainBindingPending) {
-          return {
-            logicalId,
-            action: 'update',
-            resourceType: 'ALIYUN_OSS_BUCKET',
-            changes: { before: normalizedCurrent, after: normalizedDesired },
-            ...(definitionChanged || remoteDiffers ? { drifted: true } : {}),
-          };
-        }
-
-        return { logicalId, action: 'noop', resourceType: 'ALIYUN_OSS_BUCKET' };
-      } catch {
-        return {
-          logicalId,
-          action: 'create',
-          resourceType: 'ALIYUN_OSS_BUCKET',
-          changes: {
-            before: normalizeDefinitionForDisplay(currentState.definition),
-            after: desiredDefinition,
-          },
-        };
-      }
+          ),
+        cloudToDefinition: cloudOssToDefinition,
+        normalizeForDisplay: normalizeDefinitionForDisplay,
+        extraUpdate: () => Promise.resolve({ update: domainBindingPending, drifted: false }),
+      });
     },
   );
 

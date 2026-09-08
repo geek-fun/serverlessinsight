@@ -25,3 +25,5 @@ export * from './providerNames';
 export * from './refreshCache';
 export * from './concurrency';
 export * from './throttleRetry';
+export * from './planCompare';
+export * from './refreshPlanner';

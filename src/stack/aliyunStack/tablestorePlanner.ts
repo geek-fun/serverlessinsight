@@ -7,9 +7,8 @@ import {
   extractTableStoreDefinition,
   cloudTableStoreToDefinition,
 } from './tablestoreTypes';
-import { remoteDiffersFromDesired } from '../../common/planCompare';
+import { planRefreshedResource } from '../../common/refreshPlanner';
 import { getAllResources, getResource } from '../../common/stateManager';
-import { attributesEqual } from '../../common/hashUtils';
 
 const planTableDeletion = (logicalId: string, definition: ResourceAttributes): PlanItem => ({
   logicalId,
@@ -42,97 +41,29 @@ export const generateTablePlan = async (
       const config = tableToTableStoreConfig(table);
       const desiredDefinition = extractTableStoreDefinition(config);
 
-      if (!currentState || currentState.status === 'tainted') {
-        // No usable local state: probe the provider before planning create.
-        // Aliyun Tablestore (OTS) supports only instance-level tags — table
-        // ownership cannot be verified, so tag-based adoption is IMPOSSIBLE.
-        // If a same-named table already exists it may belong to another
-        // project: fail fast in the plan instead of letting the executor
-        // discover the collision mid-deploy.
-        const client = createAliyunClient(context);
-        const tablestoreClient = client.tablestore(config.instanceName);
-        const remoteTable = await cachedRefreshRead(
-          context,
-          `tablestore.getTable:${config.instanceName}:${config.tableName}`,
-          () => tablestoreClient.getTable(config.tableName),
-        );
-        if (remoteTable) {
-          throw new Error(
+      const client = createAliyunClient(context);
+      const tablestoreClient = client.tablestore(config.instanceName);
+
+      return planRefreshedResource({
+        logicalId,
+        resourceType: 'ALIYUN_TABLESTORE_TABLE',
+        currentState,
+        desiredDefinition,
+        read: () =>
+          cachedRefreshRead(
+            context,
+            `tablestore.getTable:${config.instanceName}:${config.tableName}`,
+            () => tablestoreClient.getTable(config.tableName),
+          ),
+        // TableStore has no table-level tags: an existing same-named table can
+        // never be verified as ours, so it is always refused on the probe path.
+        isOwned: () => false,
+        foreignError: () =>
+          new Error(
             `Table ${config.tableName} already exists in provider but ownership cannot be verified (no table-level tags). Refusing to adopt — resolve manually.`,
-          );
-        }
-
-        return {
-          logicalId,
-          action: 'create',
-          resourceType: 'ALIYUN_TABLESTORE_TABLE',
-          changes: { after: desiredDefinition },
-        };
-      }
-
-      try {
-        const client = createAliyunClient(context);
-        const tablestoreClient = client.tablestore(config.instanceName);
-        const remoteTable = await cachedRefreshRead(
-          context,
-          `tablestore.getTable:${config.instanceName}:${config.tableName}`,
-          () => tablestoreClient.getTable(config.tableName),
-        );
-
-        if (!remoteTable) {
-          return {
-            logicalId,
-            action: 'create',
-            resourceType: 'ALIYUN_TABLESTORE_TABLE',
-            changes: { before: currentState.definition, after: desiredDefinition },
-            drifted: true,
-          };
-        }
-
-        const remoteAttributes = cloudTableStoreToDefinition(remoteTable);
-        const remoteDiffers = remoteDiffersFromDesired(remoteAttributes, desiredDefinition);
-
-        const currentDefinition = currentState.definition || {};
-        const definitionChanged = !attributesEqual(currentDefinition, desiredDefinition);
-
-        if (definitionChanged || remoteDiffers) {
-          // Check if primary keys changed (not updatable in TableStore)
-          const currentPrimaryKey = JSON.stringify(currentDefinition.primaryKey || []);
-          const desiredPrimaryKey = JSON.stringify(desiredDefinition.primaryKey || []);
-
-          if (currentPrimaryKey !== desiredPrimaryKey) {
-            // Primary key changes require table recreation (delete + create)
-            // For now, we plan it as an update action with drift detection
-            // The user should manually recreate the table if primary keys need to change
-            return {
-              logicalId,
-              action: 'update',
-              resourceType: 'ALIYUN_TABLESTORE_TABLE',
-              changes: { before: currentDefinition, after: desiredDefinition },
-              drifted: true,
-            };
-          }
-
-          // Only throughput and table options changes can be applied via update
-          return {
-            logicalId,
-            action: 'update',
-            resourceType: 'ALIYUN_TABLESTORE_TABLE',
-            changes: { before: currentDefinition, after: desiredDefinition },
-            drifted: true,
-          };
-        }
-
-        return { logicalId, action: 'noop', resourceType: 'ALIYUN_TABLESTORE_TABLE' };
-      } catch {
-        // If we can't check remote state, assume we need to create
-        return {
-          logicalId,
-          action: 'create',
-          resourceType: 'ALIYUN_TABLESTORE_TABLE',
-          changes: { before: currentState.definition, after: desiredDefinition },
-        };
-      }
+          ),
+        cloudToDefinition: cloudTableStoreToDefinition,
+      });
     },
   );
 

@@ -12,9 +12,8 @@ import { cachedRefreshRead } from '../../common/refreshCache';
 import { PLAN_READ_CONCURRENCY, mapWithConcurrency } from '../../common/concurrency';
 import { databaseToRdsConfig, extractRdsDefinition, cloudRdsToDefinition } from './rdsTypes';
 import { databaseToEsConfig, extractEsDefinition, cloudEsToDefinition } from './esServerlessTypes';
-import { remoteDiffersFromDesired } from '../../common/planCompare';
 import { getAllResources, getResource } from '../../common/stateManager';
-import { attributesEqual } from '../../common/hashUtils';
+import { planRefreshedResource } from '../../common/refreshPlanner';
 import { OWNERSHIP_TAG_KEY, isOwnedByStack } from '../ownershipTag';
 
 const toOwnershipTagShape = (
@@ -112,93 +111,42 @@ export const generateDatabasePlan = async (
       const resourceType = getResourceType(database);
       const desiredDefinition = getDesiredDefinition(database);
 
-      if (!currentState || currentState.status === 'tainted') {
-        // No usable local state: probe the provider before planning create.
-        // If a same-named resource already exists WITHOUT our ownership tag it
-        // may belong to another project — fail fast in the plan instead of
-        // letting the executor discover it mid-deploy.
-        const remote =
-          resourceType === 'ALIYUN_ES_SERVERLESS'
-            ? await cachedRefreshRead(context, `es.getApp:${database.name}`, () =>
+      const instanceId =
+        (currentState?.metadata?.instanceId as string | undefined) ||
+        currentState?.instances?.[0]?.id;
+      const isEs = resourceType === 'ALIYUN_ES_SERVERLESS';
+
+      return planRefreshedResource({
+        logicalId,
+        resourceType,
+        currentState,
+        desiredDefinition,
+        probeRead: () =>
+          isEs
+            ? cachedRefreshRead(context, `es.getApp:${database.name}`, () =>
                 client.es.getApp(database.name),
               )
-            : await cachedRefreshRead(context, `rds.getInstanceByName:${database.name}`, () =>
+            : cachedRefreshRead(context, `rds.getInstanceByName:${database.name}`, () =>
                 client.rds.getInstanceByName(database.name),
-              );
-        if (remote && !isOwnedByStack(context, logicalId, toOwnershipTagShape(remote.tags))) {
-          throw new Error(
+              ),
+        read: () =>
+          !instanceId
+            ? Promise.resolve(null)
+            : isEs
+              ? cachedRefreshRead(context, `es.getApp:${instanceId}`, () =>
+                  client.es.getApp(instanceId),
+                )
+              : cachedRefreshRead(context, `rds.getInstance:${instanceId}`, () =>
+                  client.rds.getInstance(instanceId),
+                ),
+        isOwned: (remote) => isOwnedByStack(context, logicalId, toOwnershipTagShape(remote.tags)),
+        foreignError: () =>
+          new Error(
             `${resourceType} ${database.name} already exists in provider but is not owned by this stack (missing ${OWNERSHIP_TAG_KEY} tag). Refusing to create — resolve manually.`,
-          );
-        }
-
-        return {
-          logicalId,
-          action: 'create',
-          resourceType,
-          changes: { after: desiredDefinition },
-        };
-      }
-
-      const instanceId =
-        (currentState.metadata?.instanceId as string | undefined) ||
-        currentState.instances?.[0]?.id;
-
-      try {
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        let remoteInstance: any = null;
-
-        if (resourceType === 'ALIYUN_ES_SERVERLESS') {
-          remoteInstance = instanceId
-            ? await cachedRefreshRead(context, `es.getApp:${instanceId}`, () =>
-                client.es.getApp(instanceId),
-              )
-            : null;
-        } else if (resourceType === 'ALIYUN_RDS_SERVERLESS') {
-          remoteInstance = instanceId
-            ? await cachedRefreshRead(context, `rds.getInstance:${instanceId}`, () =>
-                client.rds.getInstance(instanceId),
-              )
-            : null;
-        }
-
-        if (!remoteInstance) {
-          return {
-            logicalId,
-            action: 'create',
-            resourceType,
-            changes: { before: currentState.definition, after: desiredDefinition },
-            drifted: true,
-          };
-        }
-
-        const remoteAttributes =
-          resourceType === 'ALIYUN_ES_SERVERLESS'
-            ? cloudEsToDefinition(remoteInstance)
-            : cloudRdsToDefinition(remoteInstance);
-        const remoteDiffers = remoteDiffersFromDesired(remoteAttributes, desiredDefinition);
-
-        const currentDefinition = currentState.definition || {};
-        const definitionChanged = !attributesEqual(currentDefinition, desiredDefinition);
-
-        if (definitionChanged || remoteDiffers) {
-          return {
-            logicalId,
-            action: 'update',
-            resourceType,
-            changes: { before: currentDefinition, after: desiredDefinition },
-            drifted: true,
-          };
-        }
-
-        return { logicalId, action: 'noop', resourceType };
-      } catch {
-        return {
-          logicalId,
-          action: 'create',
-          resourceType,
-          changes: { before: currentState.definition, after: desiredDefinition },
-        };
-      }
+          ),
+        cloudToDefinition: (remote) =>
+          isEs ? cloudEsToDefinition(remote) : cloudRdsToDefinition(remote),
+      });
     },
   );
 
