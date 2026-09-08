@@ -8,8 +8,7 @@ import {
   extractCosBucketDefinition,
 } from './cosTypes';
 import { getAllResources, getResource } from '../../common/stateManager';
-import { attributesEqual } from '../../common/hashUtils';
-import { remoteDiffersFromDesired } from '../../common/planCompare';
+import { planRefreshedResource } from '../../common/refreshPlanner';
 import { OWNERSHIP_TAG_KEY, isOwnedByStack } from '../ownershipTag';
 
 const planBucketDeletion = (logicalId: string, definition: ResourceAttributes): PlanItem => ({
@@ -43,79 +42,24 @@ export const generateBucketPlan = async (
       const config = bucketToCosBucketConfig(bucket, context.region);
       const desiredDefinition = extractCosBucketDefinition(config);
 
-      if (!currentState || currentState.status === 'tainted') {
-        // No usable local state: probe the provider before planning create.
-        // If a same-named bucket already exists WITHOUT our ownership tag it
-        // may belong to another project — fail fast in the plan instead of
-        // letting the executor discover it mid-deploy.
-        const client = createTencentClient(context);
-        const remoteBucket = await cachedRefreshRead(
-          context,
-          `cos.getBucket:${context.region}:${bucket.name}`,
-          () => client.cos.getBucket(bucket.name, context.region),
-        );
-        if (remoteBucket && !isOwnedByStack(context, logicalId, remoteBucket.Tags)) {
-          throw new Error(
+      const client = createTencentClient(context);
+
+      return planRefreshedResource({
+        logicalId,
+        resourceType: 'COS_BUCKET',
+        currentState,
+        desiredDefinition,
+        read: () =>
+          cachedRefreshRead(context, `cos.getBucket:${context.region}:${bucket.name}`, () =>
+            client.cos.getBucket(bucket.name, context.region),
+          ),
+        isOwned: (remote) => isOwnedByStack(context, logicalId, remote.Tags),
+        foreignError: () =>
+          new Error(
             `Bucket ${bucket.name} already exists in provider but is not owned by this stack (missing ${OWNERSHIP_TAG_KEY} tag). Refusing to create — resolve manually.`,
-          );
-        }
-
-        return {
-          logicalId,
-          action: 'create',
-          resourceType: 'COS_BUCKET',
-          changes: { after: desiredDefinition },
-        };
-      }
-
-      try {
-        const client = createTencentClient(context);
-        const remoteBucket = await cachedRefreshRead(
-          context,
-          `cos.getBucket:${context.region}:${bucket.name}`,
-          () => client.cos.getBucket(bucket.name, context.region),
-        );
-
-        if (!remoteBucket) {
-          return {
-            logicalId,
-            action: 'create',
-            resourceType: 'COS_BUCKET',
-            changes: { before: currentState.definition, after: desiredDefinition },
-            drifted: true,
-          };
-        }
-
-        const currentDefinition = currentState.definition || {};
-        const definitionChanged = !attributesEqual(currentDefinition, desiredDefinition);
-
-        // Issue #234 phase 2: live attribute drift (console edits to
-        // acl/website/versioning/encryption). One-directional: only
-        // mapper-emitted keys the desired definition declares are compared.
-        const remoteDiffers = remoteDiffersFromDesired(
-          cloudCosToDefinition(remoteBucket),
-          desiredDefinition,
-        );
-
-        if (definitionChanged || remoteDiffers) {
-          return {
-            logicalId,
-            action: 'update',
-            resourceType: 'COS_BUCKET',
-            changes: { before: currentDefinition, after: desiredDefinition },
-            drifted: true,
-          };
-        }
-
-        return { logicalId, action: 'noop', resourceType: 'COS_BUCKET' };
-      } catch {
-        return {
-          logicalId,
-          action: 'create',
-          resourceType: 'COS_BUCKET',
-          changes: { before: currentState.definition, after: desiredDefinition },
-        };
-      }
+          ),
+        cloudToDefinition: cloudCosToDefinition,
+      });
     },
   );
 

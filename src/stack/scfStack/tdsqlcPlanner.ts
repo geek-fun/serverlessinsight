@@ -17,8 +17,7 @@ import {
   cloudTdsqlcToDefinition,
 } from './tdsqlcTypes';
 import { getAllResources, getResource } from '../../common/stateManager';
-import { attributesEqual } from '../../common/hashUtils';
-import { remoteDiffersFromDesired } from '../../common/planCompare';
+import { planRefreshedResource } from '../../common/refreshPlanner';
 import { OWNERSHIP_TAG_KEY, isOwnedByStack } from '../ownershipTag';
 
 const planDatabaseDeletion = (logicalId: string, definition: ResourceAttributes): PlanItem => ({
@@ -62,85 +61,34 @@ export const generateDatabasePlan = async (
       const config = databaseToTdsqlcConfig(database);
       const desiredDefinition = extractTdsqlcDefinition(config);
 
-      if (!currentState || currentState.status === 'tainted') {
-        // No usable local state: probe the provider before planning create. If a
-        // same-named cluster already exists WITHOUT our ownership tag it may
-        // belong to another project — fail fast in the plan instead of letting
-        // the executor discover it mid-deploy.
-        const client = createTencentClient(context);
-        const remoteCluster = await cachedRefreshRead(
-          context,
-          `tdsqlc.getClusterByName:${database.name}`,
-          () => client.tdsqlc.getClusterByName(database.name),
-        );
-        if (
-          remoteCluster &&
-          !isOwnedByStack(context, logicalId, tdsqlcTagsToOwnershipTags(remoteCluster.ResourceTags))
-        ) {
-          throw new Error(
-            `Cluster ${database.name} already exists in provider but is not owned by this stack (missing ${OWNERSHIP_TAG_KEY} tag). Refusing to create — resolve manually.`,
-          );
-        }
-
-        return {
-          logicalId,
-          action: 'create',
-          resourceType: 'TDSQL_C_SERVERLESS',
-          changes: { after: desiredDefinition },
-        };
-      }
-
+      const client = createTencentClient(context);
       const clusterId =
-        (currentState.metadata?.clusterId as string | undefined) || currentState.instances?.[0]?.id;
+        (currentState?.metadata?.clusterId as string | undefined) ||
+        currentState?.instances?.[0]?.id;
 
-      try {
-        const client = createTencentClient(context);
-        const remoteCluster = clusterId
-          ? await cachedRefreshRead(context, `tdsqlc.getCluster:${clusterId}`, () =>
-              client.tdsqlc.getCluster(clusterId),
-            )
-          : null;
-
-        if (!remoteCluster) {
-          return {
-            logicalId,
-            action: 'create',
-            resourceType: 'TDSQL_C_SERVERLESS',
-            changes: { before: currentState.definition, after: desiredDefinition },
-            drifted: true,
-          };
-        }
-
-        const currentDefinition = currentState.definition || {};
-        const definitionChanged = !attributesEqual(currentDefinition, desiredDefinition);
-
-        // Issue #234 phase 2: live attribute drift (console edits to
-        // cu/version/storage/network). One-directional: only mapper-emitted
-        // keys the desired definition declares are compared.
-        const remoteDiffers = remoteDiffersFromDesired(
-          cloudTdsqlcToDefinition(remoteCluster),
-          desiredDefinition,
-        );
-
-        if (definitionChanged || remoteDiffers) {
-          return {
-            logicalId,
-            action: 'update',
-            resourceType: 'TDSQL_C_SERVERLESS',
-            changes: { before: currentDefinition, after: desiredDefinition },
-            drifted: true,
-          };
-        }
-
-        return { logicalId, action: 'noop', resourceType: 'TDSQL_C_SERVERLESS' };
-      } catch {
-        return {
-          logicalId,
-          action: 'create',
-          resourceType: 'TDSQL_C_SERVERLESS',
-          changes: { before: currentState.definition, after: desiredDefinition },
-        };
-      }
+      return planRefreshedResource({
+        logicalId,
+        resourceType: 'TDSQL_C_SERVERLESS',
+        currentState,
+        desiredDefinition,
+        probeRead: () =>
+          cachedRefreshRead(context, `tdsqlc.getClusterByName:${database.name}`, () =>
+            client.tdsqlc.getClusterByName(database.name),
+          ),
+        read: () =>
+          clusterId
+            ? cachedRefreshRead(context, `tdsqlc.getCluster:${clusterId}`, () =>
+                client.tdsqlc.getCluster(clusterId),
+              )
+            : Promise.resolve(null),
+        isOwned: (remote) =>
+          isOwnedByStack(context, logicalId, tdsqlcTagsToOwnershipTags(remote.ResourceTags)),
+        foreignError: () =>
+          new Error(
+            `Cluster ${database.name} already exists in provider but is not owned by this stack (missing ${OWNERSHIP_TAG_KEY} tag). Refusing to create — resolve manually.`,
+          ),
+        cloudToDefinition: cloudTdsqlcToDefinition,
+      });
     },
   );
 

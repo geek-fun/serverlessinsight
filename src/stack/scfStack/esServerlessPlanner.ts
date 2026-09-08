@@ -16,8 +16,7 @@ import {
   cloudTencentEsToDefinition,
 } from './esServerlessTypes';
 import { getAllResources, getResource } from '../../common/stateManager';
-import { attributesEqual } from '../../common/hashUtils';
-import { remoteDiffersFromDesired } from '../../common/planCompare';
+import { planRefreshedResource } from '../../common/refreshPlanner';
 import { OWNERSHIP_TAG_KEY, isOwnedByStack } from '../ownershipTag';
 
 const planEsDeletion = (logicalId: string, definition: ResourceAttributes): PlanItem => ({
@@ -56,82 +55,32 @@ export const generateEsPlan = async (
       const config = databaseToTencentEsConfig(database);
       const desiredDefinition = extractTencentEsDefinition(config);
 
-      if (!currentState || currentState.status === 'tainted') {
-        // No usable local state: probe the provider before planning create.
-        // If a same-named space already exists WITHOUT our ownership tag it may
-        // belong to another project — fail fast in the plan instead of letting
-        // the executor discover it mid-deploy.
-        const client = createTencentClient(context);
-        const remoteSpace = await cachedRefreshRead(
-          context,
-          `es.getSpaceByName:${config.SpaceName}`,
-          () => client.es.getSpaceByName(config.SpaceName),
-        );
-        if (remoteSpace && !isOwnedByStack(context, logicalId, remoteSpace.Tags)) {
-          throw new Error(
-            `ES space ${config.SpaceName} already exists in provider but is not owned by this stack (missing ${OWNERSHIP_TAG_KEY} tag). Refusing to create — resolve manually.`,
-          );
-        }
-
-        return {
-          logicalId,
-          action: 'create',
-          resourceType: 'TENCENT_ES_SERVERLESS',
-          changes: { after: desiredDefinition },
-        };
-      }
-
+      const client = createTencentClient(context);
       const spaceId =
-        (currentState.metadata?.spaceId as string | undefined) || currentState.instances?.[0]?.id;
+        (currentState?.metadata?.spaceId as string | undefined) || currentState?.instances?.[0]?.id;
 
-      try {
-        const client = createTencentClient(context);
-        const remoteSpace = spaceId
-          ? await cachedRefreshRead(context, `es.getSpace:${spaceId}`, () =>
-              client.es.getSpace(spaceId),
-            )
-          : null;
-
-        if (!remoteSpace) {
-          return {
-            logicalId,
-            action: 'create',
-            resourceType: 'TENCENT_ES_SERVERLESS',
-            changes: { before: currentState.definition, after: desiredDefinition },
-            drifted: true,
-          };
-        }
-
-        const currentDefinition = currentState.definition || {};
-        const definitionChanged = !attributesEqual(currentDefinition, desiredDefinition);
-
-        // Issue #234 phase 2: live attribute drift (console edits to
-        // network/whitelist). One-directional: only mapper-emitted keys the
-        // desired definition declares are compared.
-        const remoteDiffers = remoteDiffersFromDesired(
-          cloudTencentEsToDefinition(remoteSpace),
-          desiredDefinition,
-        );
-
-        if (definitionChanged || remoteDiffers) {
-          return {
-            logicalId,
-            action: 'update',
-            resourceType: 'TENCENT_ES_SERVERLESS',
-            changes: { before: currentDefinition, after: desiredDefinition },
-            drifted: true,
-          };
-        }
-
-        return { logicalId, action: 'noop', resourceType: 'TENCENT_ES_SERVERLESS' };
-      } catch {
-        return {
-          logicalId,
-          action: 'create',
-          resourceType: 'TENCENT_ES_SERVERLESS',
-          changes: { before: currentState.definition, after: desiredDefinition },
-        };
-      }
+      return planRefreshedResource({
+        logicalId,
+        resourceType: 'TENCENT_ES_SERVERLESS',
+        currentState,
+        desiredDefinition,
+        probeRead: () =>
+          cachedRefreshRead(context, `es.getSpaceByName:${config.SpaceName}`, () =>
+            client.es.getSpaceByName(config.SpaceName),
+          ),
+        read: () =>
+          spaceId
+            ? cachedRefreshRead(context, `es.getSpace:${spaceId}`, () =>
+                client.es.getSpace(spaceId),
+              )
+            : Promise.resolve(null),
+        isOwned: (remote) => isOwnedByStack(context, logicalId, remote.Tags),
+        foreignError: () =>
+          new Error(
+            `ES space ${config.SpaceName} already exists in provider but is not owned by this stack (missing ${OWNERSHIP_TAG_KEY} tag). Refusing to create — resolve manually.`,
+          ),
+        cloudToDefinition: cloudTencentEsToDefinition,
+      });
     },
   );
 

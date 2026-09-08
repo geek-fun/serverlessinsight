@@ -3,10 +3,10 @@ import { Context, BucketDomain, Plan, PlanItem, StateFile, ResourceAttributes } 
 import { createVolcengineClient } from '../../common/volcengineClient';
 import { cachedRefreshRead } from '../../common/refreshCache';
 import { PLAN_READ_CONCURRENCY, mapWithConcurrency } from '../../common/concurrency';
+import { planRefreshedResource } from '../../common/refreshPlanner';
 import { bucketToTosConfig, cloudTosToDefinition, extractTosBucketDefinition } from './tosTypes';
 import { getAllResources, getResource } from '../../common/stateManager';
-import { attributesEqual, computeDirectoryHash } from '../../common';
-import { remoteDiffersFromDesired } from '../../common/planCompare';
+import { computeDirectoryHash } from '../../common';
 import { OWNERSHIP_TAG_KEY, isOwnedByStack } from '../ownershipTag';
 
 const planBucketDeletion = (logicalId: string, definition: ResourceAttributes): PlanItem => ({
@@ -47,82 +47,24 @@ export const generateBucketPlan = async (
         }
       })();
       const desiredDefinition = extractTosBucketDefinition(config, websiteCodeHash);
+      const client = createVolcengineClient(context);
 
-      if (!currentState || currentState.status === 'tainted') {
-        // No usable local state: probe the provider before planning create.
-        // If a same-named bucket already exists WITHOUT our ownership tag it
-        // may belong to another project — fail fast in the plan instead of
-        // letting the executor discover it mid-deploy.
-        const client = createVolcengineClient(context);
-        const remoteBucket = await cachedRefreshRead(context, `tos.getBucket:${bucket.name}`, () =>
-          client.tos.getBucket(bucket.name),
-        );
-        if (remoteBucket && !isOwnedByStack(context, logicalId, remoteBucket.Tags)) {
-          throw new Error(
+      return planRefreshedResource({
+        logicalId,
+        resourceType: 'VOLCENGINE_TOS_BUCKET',
+        currentState,
+        desiredDefinition,
+        read: () =>
+          cachedRefreshRead(context, `tos.getBucket:${bucket.name}`, () =>
+            client.tos.getBucket(bucket.name),
+          ),
+        isOwned: (remote) => isOwnedByStack(context, logicalId, remote.Tags),
+        foreignError: () =>
+          new Error(
             `Bucket ${bucket.name} already exists in provider but is not owned by this stack (missing ${OWNERSHIP_TAG_KEY} tag). Refusing to create — resolve manually.`,
-          );
-        }
-
-        return {
-          logicalId,
-          action: 'create',
-          resourceType: 'VOLCENGINE_TOS_BUCKET',
-          changes: { after: desiredDefinition },
-        };
-      }
-
-      try {
-        const client = createVolcengineClient(context);
-        const remoteBucket = await cachedRefreshRead(context, `tos.getBucket:${bucket.name}`, () =>
-          client.tos.getBucket(bucket.name),
-        );
-
-        if (!remoteBucket) {
-          return {
-            logicalId,
-            action: 'create',
-            resourceType: 'VOLCENGINE_TOS_BUCKET',
-            changes: {
-              before: currentState.definition,
-              after: desiredDefinition,
-            },
-            drifted: true,
-          };
-        }
-
-        const currentDefinition = currentState.definition || {};
-        const definitionChanged = !attributesEqual(currentDefinition, desiredDefinition);
-
-        // Issue #234 phase 2: live attribute drift (console edits to
-        // acl/storage-class/website). One-directional: only mapper-emitted keys
-        // the desired definition declares are compared.
-        const remoteDiffers = remoteDiffersFromDesired(
-          cloudTosToDefinition(remoteBucket),
-          desiredDefinition,
-        );
-
-        if (definitionChanged || remoteDiffers) {
-          return {
-            logicalId,
-            action: 'update',
-            resourceType: 'VOLCENGINE_TOS_BUCKET',
-            changes: { before: currentDefinition, after: desiredDefinition },
-            drifted: true,
-          };
-        }
-
-        return { logicalId, action: 'noop', resourceType: 'VOLCENGINE_TOS_BUCKET' };
-      } catch {
-        return {
-          logicalId,
-          action: 'create',
-          resourceType: 'VOLCENGINE_TOS_BUCKET',
-          changes: {
-            before: currentState.definition,
-            after: desiredDefinition,
-          },
-        };
-      }
+          ),
+        cloudToDefinition: cloudTosToDefinition,
+      });
     },
   );
 
