@@ -96,6 +96,8 @@ export type MockAliyunClient = {
     listLogStores: jest.Mock;
     createLogstore: jest.Mock;
     getLogstore: jest.Mock;
+    updateLogstore: jest.Mock;
+    getIndex: jest.Mock;
     createIndex: jest.Mock;
     waitForProject: jest.Mock;
     waitForLogstore: jest.Mock;
@@ -293,7 +295,12 @@ export const createMockAliyunClient = (): MockAliyunClient => {
       removeTags: jest.fn().mockResolvedValue(undefined),
       listLogStores: jest.fn().mockResolvedValue([]),
       createLogstore: jest.fn().mockResolvedValue({ logstoreName: 'test-logstore' }),
-      getLogstore: jest.fn().mockResolvedValue(null),
+      // Healthy echo: a created logstore reports si's constants (issue #234 M1).
+      getLogstore: jest
+        .fn()
+        .mockResolvedValue({ logstoreName: 'test-logstore', ttl: 30, shardCount: 2 }),
+      updateLogstore: jest.fn().mockResolvedValue(undefined),
+      getIndex: jest.fn().mockResolvedValue({ indexMode: 'line' }),
       createIndex: jest.fn().mockResolvedValue({}),
       waitForProject: jest.fn().mockResolvedValue({}),
       waitForLogstore: jest.fn().mockResolvedValue({}),

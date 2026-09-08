@@ -6,6 +6,12 @@ import { pollUntil, PollingTimeoutError } from '../polling';
 
 type SlsSdkClient = SlsClient;
 
+// The logstore attributes si creates with (issue #234 M1): `fn.log` is a
+// boolean — these are stack constants, so live values differing from them are
+// out-of-band drift.
+export const SLS_LOGSTORE_TTL = 30;
+export const SLS_LOGSTORE_SHARDS = 2;
+
 const waitForSlsProject = async (
   getProject: (projectName: string) => Promise<SlsProjectInfo | null>,
   projectName: string,
@@ -140,12 +146,12 @@ export const createSlsOperations = (slsClient: SlsSdkClient) => {
     createLogstore: async (
       projectName: string,
       logstoreName: string,
-      ttl: number = 30,
+      ttl: number = SLS_LOGSTORE_TTL,
     ): Promise<SlsLogstoreInfo> => {
       const request = new sls.CreateLogStoreRequest({
         logstoreName,
         ttl,
-        shardCount: 2,
+        shardCount: SLS_LOGSTORE_SHARDS,
       });
 
       await slsClient.createLogStore(projectName, request);
@@ -184,6 +190,20 @@ export const createSlsOperations = (slsClient: SlsSdkClient) => {
         }
         throw error;
       }
+    },
+
+    updateLogstore: async (
+      projectName: string,
+      logstoreName: string,
+      ttl: number,
+      shardCount: number,
+    ): Promise<void> => {
+      const request = new sls.UpdateLogStoreRequest({
+        logstoreName,
+        ttl,
+        shardCount,
+      });
+      await slsClient.updateLogStore(projectName, logstoreName, request);
     },
 
     deleteLogstore: async (projectName: string, logstoreName: string): Promise<void> => {

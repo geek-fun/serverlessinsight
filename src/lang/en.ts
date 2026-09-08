@@ -282,6 +282,12 @@ export const en = {
     'Function {{functionName}} role {{roleName}} is missing in the provider; it will be recreated and rebound on deploy',
   PLAN_FUNCTION_ROLE_PROBE_FAILED:
     'Live role policy check for function {{functionName}} (role {{roleName}}) failed: {{error}}; skipping role drift detection for this plan',
+  PLAN_FUNCTION_NESTED_PROBE_FAILED:
+    'Nested resource probe for function {{functionName}} failed: {{error}}; skipping nested drift detection for this plan',
+  NESTED_LOGSTORE_RECREATED: 'Logstore {{logstoreName}} was deleted out-of-band; recreating it',
+  NESTED_LOGSTORE_UPDATED:
+    'Logstore {{logstoreName}} attributes drifted; updating to match si defaults',
+  NESTED_INDEX_RECREATED: 'Logstore index {{logstoreName}} was deleted out-of-band; recreating it',
   PLAN_EVENT_TRIGGER_PROBE_FAILED:
     'Live trigger check for API Gateway {{eventName}} failed: {{error}}; skipping trigger drift detection for this plan',
   RAM_ROLE_MISSING_RECREATE:

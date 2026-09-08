@@ -8,6 +8,7 @@ import {
 } from '../../common';
 import { createAliyunClient } from '../../common/aliyunClient';
 import { buildFc3ExecutionPolicyDocument } from '../../common/aliyunClient/ramOperations';
+import { SLS_LOGSTORE_SHARDS, SLS_LOGSTORE_TTL } from '../../common/aliyunClient/slsOperations';
 import { cachedRefreshRead } from '../../common/refreshCache';
 import { remoteDiffersFromDesired } from '../../common/planCompare';
 import { PLAN_READ_CONCURRENCY, mapWithConcurrency } from '../../common/concurrency';
@@ -296,6 +297,55 @@ const detectRolePolicyDrift = async (
   return false;
 };
 
+/**
+ * Issue #234 M1: nested log-drift probe — logstore ttl/shards and index
+ * presence for functions that declare logging. The logstore is per-function
+ * (buildFunctionLogstoreName), so this lives in the function flow. Aliyun
+ * cannot shrink shards, so only a shard deficit counts as drift.
+ */
+const detectFunctionNestedLogDrift = async (
+  context: Context,
+  client: ReturnType<typeof createAliyunClient>,
+  fn: FunctionDomain,
+  currentState: ResourceState,
+): Promise<boolean> => {
+  const slsLogstoreInstance = currentState.instances?.find(
+    (i) => (i as { type?: string }).type === 'ALIYUN_SLS_LOGSTORE',
+  ) as { id?: string } | undefined;
+  if (!slsLogstoreInstance?.id) {
+    return false; // nothing recorded — the executor creates it on update
+  }
+  const [projectName, logstoreName] = slsLogstoreInstance.id.split('/');
+  if (!projectName || !logstoreName) {
+    return false;
+  }
+
+  const logstore = await cachedRefreshRead(
+    context,
+    `sls.getLogstore:${projectName}:${logstoreName}`,
+    () => client.sls.getLogstore(projectName, logstoreName),
+  );
+  if (!logstore) {
+    return true; // logstore deleted out-of-band
+  }
+  if (logstore.ttl !== SLS_LOGSTORE_TTL) {
+    return true;
+  }
+  if ((logstore.shardCount ?? 0) < SLS_LOGSTORE_SHARDS) {
+    return true;
+  }
+
+  const index = await cachedRefreshRead(
+    context,
+    `sls.getIndex:${projectName}:${logstoreName}`,
+    () => client.sls.getIndex(projectName, logstoreName),
+  );
+  if (!index) {
+    return true; // index deleted out-of-band
+  }
+  return false;
+};
+
 export const generateFunctionPlan = async (
   context: Context,
   state: StateFile,
@@ -446,6 +496,35 @@ export const generateFunctionPlan = async (
             logger.warn(
               lang.__('PLAN_FUNCTION_ROLE_PROBE_FAILED', {
                 roleName: roleProbe.roleName,
+                functionName: fn.name,
+                error: String(error),
+              }),
+            );
+          }
+        }
+
+        // Issue #234 M1: nested log drift — probed only when logging is
+        // declared in config.
+        if (fn.log) {
+          try {
+            const nestedDrifted = await detectFunctionNestedLogDrift(
+              context,
+              client,
+              fn,
+              currentState,
+            );
+            if (nestedDrifted) {
+              return {
+                logicalId,
+                action: 'update',
+                resourceType: 'ALIYUN_FC3',
+                changes: { before: normalizedCurrent, after: normalizedDesired },
+                drifted: true,
+              };
+            }
+          } catch (error: unknown) {
+            logger.warn(
+              lang.__('PLAN_FUNCTION_NESTED_PROBE_FAILED', {
                 functionName: fn.name,
                 error: String(error),
               }),

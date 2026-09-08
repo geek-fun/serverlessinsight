@@ -36,12 +36,20 @@ const mockRamOperations = {
   getExecutionPolicyDocument: jest.fn(),
   listAttachedRolePolicies: jest.fn(),
 };
+const mockSlsOperations = {
+  getLogstore: jest.fn(),
+  updateLogstore: jest.fn(),
+  getIndex: jest.fn(),
+  createIndex: jest.fn(),
+  createLogstore: jest.fn(),
+};
 
 jest.mock('../../../../src/common/aliyunClient', () => ({
   createAliyunClient: () => ({
     fc3: mockFc3Operations,
     ecs: mockEcsOperations,
     ram: mockRamOperations,
+    sls: mockSlsOperations,
   }),
 }));
 jest.mock('../../../../src/common/hashUtils', () => ({
@@ -956,6 +964,89 @@ describe('FC3 Planner', () => {
         logicalId: 'functions.test_fn',
         action: 'noop',
         resourceType: 'ALIYUN_FC3',
+      });
+    });
+
+    describe('nested log drift (issue #234 M1)', () => {
+      const fnWithLog: FunctionDomain = { ...testFunction, log: true };
+      const slsLogstoreInstance = {
+        sid: 'si:aliyun:sls:default:test-project',
+        id: 'test-project/test-function-fn-logs',
+        type: 'ALIYUN_SLS_LOGSTORE',
+      };
+
+      const buildLogState = (): StateFile =>
+        setResource(initalState, 'functions.test_fn', {
+          mode: 'managed',
+          region: 'cn-hangzhou',
+          definition: {
+            functionName: 'test-function',
+            runtime: 'nodejs20',
+            handler: 'index.handler',
+            memorySize: 512,
+            timeout: 10,
+            diskSize: null,
+            environment: { NODE_ENV: 'production' },
+            vpcConfig: null,
+            gpuConfig: null,
+            customContainerConfig: null,
+            nasConfig: null,
+            logConfig: { enableRequestMetrics: true, enableInstanceMetrics: true },
+            codeHash: 'mock-code-hash',
+          },
+          instances: [fc3Instance, slsLogstoreInstance],
+          lastUpdated: new Date().toISOString(),
+        });
+
+      beforeEach(() => {
+        // A log-enabled function's GetFunction response carries logConfig —
+        // without it the desired-declared logConfig would false-drift.
+        mockFc3Operations.getFunction.mockResolvedValue({
+          ...remoteFunctionMatch,
+          logConfig: { enableRequestMetrics: true, enableInstanceMetrics: true },
+        });
+        mockSlsOperations.getIndex.mockResolvedValue({ indexMode: 'line' });
+      });
+
+      it('flags update+drifted when the live logstore ttl drifted', async () => {
+        mockSlsOperations.getLogstore.mockResolvedValue({ ttl: 999, shardCount: 2 });
+
+        const plan = await generateFunctionPlan(mockContext, buildLogState(), [fnWithLog]);
+
+        expect(plan.items[0]).toMatchObject({ action: 'update', drifted: true });
+      });
+
+      it('ignores shard growth (aliyun cannot shrink shards)', async () => {
+        mockSlsOperations.getLogstore.mockResolvedValue({ ttl: 30, shardCount: 5 });
+
+        const plan = await generateFunctionPlan(mockContext, buildLogState(), [fnWithLog]);
+
+        expect(plan.items[0]).toMatchObject({ action: 'noop' });
+      });
+
+      it('flags update+drifted when the index was deleted out-of-band', async () => {
+        mockSlsOperations.getLogstore.mockResolvedValue({ ttl: 30, shardCount: 2 });
+        mockSlsOperations.getIndex.mockResolvedValue(null);
+
+        const plan = await generateFunctionPlan(mockContext, buildLogState(), [fnWithLog]);
+
+        expect(plan.items[0]).toMatchObject({ action: 'update', drifted: true });
+      });
+
+      it('stays noop when logstore and index match', async () => {
+        mockSlsOperations.getLogstore.mockResolvedValue({ ttl: 30, shardCount: 2 });
+
+        const plan = await generateFunctionPlan(mockContext, buildLogState(), [fnWithLog]);
+
+        expect(plan.items[0]).toMatchObject({ action: 'noop' });
+      });
+
+      it('warns and stays noop when the nested probe fails', async () => {
+        mockSlsOperations.getLogstore.mockRejectedValue(new Error('sls throttled'));
+
+        const plan = await generateFunctionPlan(mockContext, buildLogState(), [fnWithLog]);
+
+        expect(plan.items[0]).toMatchObject({ action: 'noop' });
       });
     });
 
