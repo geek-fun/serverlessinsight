@@ -4,6 +4,7 @@ import { ResourceTypeEnum } from '../../types';
 import { logger } from '../../common/logger';
 import { lang } from '../../lang';
 import { createClsOperations } from '../../common/tencentClient';
+import { CLS_TOPIC_PERIOD, CLS_TOPIC_STORAGE_TYPE } from '../../common/tencentClient/clsOperations';
 import {
   OWNERSHIP_TAG_KEY,
   buildOwnershipTagValue,
@@ -162,8 +163,8 @@ export const ensureFunctionTopic = async (
 
   logger.info(lang.__('CREATING_CLS_TOPIC', { topicName }));
   const topic = await client.cls.createTopic(logsetId, topicName, {
-    period: 30,
-    storageType: 'hot',
+    period: CLS_TOPIC_PERIOD,
+    storageType: CLS_TOPIC_STORAGE_TYPE,
     tags: [{ key: OWNERSHIP_TAG_KEY, value: buildOwnershipTagValue(context, logicalId) }],
   });
 

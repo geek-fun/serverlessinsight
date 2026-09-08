@@ -1,6 +1,6 @@
 import { ProviderEnum, setResource } from '../../../../src/common';
 import { generateFunctionPlan } from '../../../../src/stack/scfStack/scfPlanner';
-import { Context, FunctionDomain } from '../../../../src/types';
+import { Context, FunctionDomain, StateFile } from '../../../../src/types';
 
 const initalState = {
   version: '1.0.0',
@@ -22,6 +22,8 @@ const mockScfOperations = {
 const mockClsOperations = {
   getLogsetNameById: jest.fn(),
   listTopicsByLogset: jest.fn(),
+  getTopicById: jest.fn(),
+  modifyTopic: jest.fn(),
 };
 
 jest.mock('../../../../src/common/tencentClient', () => ({
@@ -340,6 +342,108 @@ describe('SCF Planner', () => {
           },
         }),
       );
+    });
+
+    describe('nested topic drift (issue #234 M3)', () => {
+      const fnWithLog = { ...testFunction, log: true };
+      const topicInstance = {
+        sid: 'si:tencent:cls:default:topic-1',
+        id: 'topic-1',
+        type: 'TENCENT_CLS_TOPIC',
+        topicName: 'test-service-default-test_fn-fn-logs',
+      };
+
+      const buildLogState = (): StateFile =>
+        setResource(initalState, 'functions.test_fn', {
+          mode: 'managed',
+          region: 'ap-guangzhou',
+          definition: {
+            functionName: 'test-function',
+            runtime: 'Nodejs18.15',
+            handler: 'index.handler',
+            memorySize: 512,
+            timeout: 10,
+            environment: { NODE_ENV: 'production' },
+            codeHash: 'mock-code-hash',
+            vpcConfig: null,
+            diskSize: null,
+            cfsConfig: null,
+            useGpu: null,
+            imageConfig: null,
+            logConfig: {
+              logset: 'test-app-default-cls',
+              topic: 'test-service-default-test_fn-fn-logs',
+            },
+          },
+          instances: [
+            {
+              sid: 'si:tencent:scf:default:test-function',
+              id: 'test-function',
+              functionName: 'test-function',
+            },
+            topicInstance,
+          ],
+          lastUpdated: new Date().toISOString(),
+        });
+
+      const buildClient = (): void => {
+        mockScfOperations.getFunction.mockResolvedValue({
+          FunctionName: 'test-function',
+          Runtime: 'Nodejs18.15',
+          Handler: 'index.handler',
+          MemorySize: 512,
+          Timeout: 10,
+          Environment: {
+            Variables: [{ Key: 'NODE_ENV', Value: 'production' }],
+          },
+          ClsLogsetId: 'cls-1',
+          ClsTopicId: 'topic-1',
+        });
+      };
+
+      beforeEach(() => {
+        buildClient();
+      });
+
+      it('stays noop when the live topic attributes match', async () => {
+        mockClsOperations.getTopicById.mockResolvedValue({
+          TopicId: 'topic-1',
+          StorageType: 'hot',
+          Period: 30,
+        });
+
+        const plan = await generateFunctionPlan(mockContext, buildLogState(), [fnWithLog]);
+
+        expect(plan.items[0]).toMatchObject({ action: 'noop' });
+      });
+
+      it('flags update+drifted when the topic storage class drifted', async () => {
+        mockClsOperations.getTopicById.mockResolvedValue({
+          TopicId: 'topic-1',
+          StorageType: 'cold',
+          Period: 30,
+        });
+
+        const plan = await generateFunctionPlan(mockContext, buildLogState(), [fnWithLog]);
+
+        expect(plan.items[0]).toMatchObject({ action: 'update', drifted: true });
+      });
+
+      it('flags update+drifted when the topic was deleted out-of-band', async () => {
+        mockClsOperations.getTopicById.mockResolvedValue(null);
+
+        const plan = await generateFunctionPlan(mockContext, buildLogState(), [fnWithLog]);
+
+        expect(plan.items[0]).toMatchObject({ action: 'update', drifted: true });
+      });
+
+      it('warns and stays noop when the topic probe fails', async () => {
+        mockClsOperations.getTopicById.mockRejectedValue(new Error('cls throttled'));
+
+        const plan = await generateFunctionPlan(mockContext, buildLogState(), [fnWithLog]);
+
+        expect(plan.items[0]).toMatchObject({ action: 'noop' });
+      });
     });
 
     it('resolves live CLS ids to names and stays noop when they match (issue #234 phase 3)', async () => {

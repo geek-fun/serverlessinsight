@@ -30,6 +30,12 @@ const isAlreadyExists = (error: unknown): boolean => {
 
 export type ClsTag = { key: string; value: string };
 
+// The topic attributes si creates with (issue #234 M3): `fn.log` is a
+// boolean — these are stack constants, so live values differing from them are
+// out-of-band drift.
+export const CLS_TOPIC_PERIOD = 30;
+export const CLS_TOPIC_STORAGE_TYPE = 'hot';
+
 export const createClsOperations = (clsClient: ClsSdkClient) => {
   const operations = {
     createLogset: async (
@@ -100,6 +106,31 @@ export const createClsOperations = (clsClient: ClsSdkClient) => {
       return response?.Topics?.find((t) => t.TopicName === topicName) ?? null;
     },
 
+    getTopicById: async (
+      topicId: string,
+    ): Promise<{
+      TopicId?: string;
+      TopicName?: string;
+      StorageType?: string;
+      Period?: number;
+    } | null> => {
+      const response = await clsClient.DescribeTopics({
+        Filters: [{ Key: 'topicId', Values: [topicId] }],
+      });
+      return response?.Topics?.find((t) => t.TopicId === topicId) ?? null;
+    },
+
+    modifyTopic: async (
+      topicId: string,
+      opts: { period: number; storageType: string },
+    ): Promise<void> => {
+      await clsClient.ModifyTopic({
+        TopicId: topicId,
+        Period: opts.period,
+        StorageType: opts.storageType,
+      });
+    },
+
     waitForTopic: async (
       logsetId: string,
       topicName: string,
@@ -122,8 +153,8 @@ export const createClsOperations = (clsClient: ClsSdkClient) => {
       await clsClient.CreateTopic({
         LogsetId: logsetId,
         TopicName: topicName,
-        StorageType: opts.storageType ?? 'hot',
-        Period: opts.period ?? 30,
+        StorageType: opts.storageType ?? CLS_TOPIC_STORAGE_TYPE,
+        Period: opts.period ?? CLS_TOPIC_PERIOD,
         Tags: opts.tags.map((t) => ({ Key: t.key, Value: t.value })),
       });
       const topic = await operations.waitForTopic(logsetId, topicName);

@@ -287,6 +287,9 @@ export const en = {
   NESTED_LOGSTORE_RECREATED: 'Logstore {{logstoreName}} was deleted out-of-band; recreating it',
   NESTED_LOGSTORE_UPDATED:
     'Logstore {{logstoreName}} attributes drifted; updating to match si defaults',
+  NESTED_TOPIC_RECREATED:
+    'CLS topic {{topicId}} was deleted out-of-band; recreating it under the shared logset',
+  NESTED_TOPIC_UPDATED: 'CLS topic {{topicId}} attributes drifted; updating to match si defaults',
   NESTED_SG_RULES_REPAIRED:
     'Security group {{securityGroupId}} rule set drifted; authorizing {{added}} and revoking {{removed}} rules',
   NESTED_INDEX_RECREATED: 'Logstore index {{logstoreName}} was deleted out-of-band; recreating it',
