@@ -281,6 +281,8 @@ describe('TdsqlcPlanner', () => {
 
       jest.spyOn(stateManager, 'getResource').mockReturnValue(existingState);
       jest.spyOn(stateManager, 'getAllResources').mockReturnValue({});
+      // Full read response: DescribeClusters reports every attribute the
+      // desired definition declares, so live-diff stays noop.
       jest.spyOn(mockTdsqlcOperations, 'getCluster').mockResolvedValue({
         ClusterId: 'cynosdbmysql-test123',
         ClusterName: 'test-tdsqlc',
@@ -288,6 +290,14 @@ describe('TdsqlcPlanner', () => {
         Region: 'ap-guangzhou',
         DbType: 'MYSQL' as const,
         DbVersion: '8.0',
+        DbMode: 'SERVERLESS',
+        MinCpu: 1,
+        MaxCpu: 8,
+        StoragePayMode: 0,
+        VpcId: 'vpc-12345',
+        SubnetId: 'subnet-67890',
+        MinStorageSize: 10,
+        MaxStorageSize: 1000,
       });
 
       const result = await generateDatabasePlan(mockContext, mockState, [mockDatabase]);
@@ -298,6 +308,46 @@ describe('TdsqlcPlanner', () => {
         action: 'noop',
         resourceType: 'TDSQL_C_SERVERLESS',
       });
+    });
+
+    it('flags update+drifted when the live maxCpu drifted from config (issue #234 phase 2)', async () => {
+      const existingState: ResourceState = {
+        mode: 'managed',
+        region: 'ap-guangzhou',
+        definition: expectedDefinition,
+        instances: [
+          {
+            sid: 'si:tencent:cynosdb:default:cynosdbmysql-test123',
+            id: 'cynosdbmysql-test123',
+            clusterName: 'test-tdsqlc',
+          },
+        ],
+        lastUpdated: '2024-01-01T00:00:00Z',
+        metadata: { clusterId: 'cynosdbmysql-test123' },
+      };
+
+      jest.spyOn(stateManager, 'getResource').mockReturnValue(existingState);
+      jest.spyOn(stateManager, 'getAllResources').mockReturnValue({});
+      jest.spyOn(mockTdsqlcOperations, 'getCluster').mockResolvedValue({
+        ClusterId: 'cynosdbmysql-test123',
+        ClusterName: 'test-tdsqlc',
+        Status: 'running',
+        Region: 'ap-guangzhou',
+        DbType: 'MYSQL' as const,
+        DbVersion: '8.0',
+        DbMode: 'SERVERLESS',
+        MinCpu: 1,
+        MaxCpu: 16,
+        StoragePayMode: 0,
+        VpcId: 'vpc-12345',
+        SubnetId: 'subnet-67890',
+        MinStorageSize: 10,
+        MaxStorageSize: 1000,
+      });
+
+      const result = await generateDatabasePlan(mockContext, mockState, [mockDatabase]);
+
+      expect(result.items[0]).toMatchObject({ action: 'update', drifted: true });
     });
 
     it('should generate a drifted create plan when the stored cluster is missing remotely', async () => {
