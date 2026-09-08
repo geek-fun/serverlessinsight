@@ -45,6 +45,8 @@ const mockedSlsOperations = {
   getLogstore: jest.fn(),
   createLogstore: jest.fn(),
   createIndex: jest.fn(),
+  updateLogstore: jest.fn(),
+  getIndex: jest.fn(),
   deleteProject: jest.fn(),
   deleteLogstore: jest.fn(),
   deleteIndex: jest.fn(),
@@ -66,12 +68,16 @@ const mockedRamOperations = {
 const mockedEcsOperations = {
   createSecurityGroup: jest.fn(),
   deleteSecurityGroup: jest.fn(),
+  getSecurityGroupRules: jest.fn(),
+  authorizeSecurityGroupRules: jest.fn(),
+  revokeSecurityGroupRules: jest.fn(),
 };
 const mockedNasOperations = {
   createAccessGroup: jest.fn(),
   createAccessRule: jest.fn(),
   createFileSystem: jest.fn(),
   createMountTarget: jest.fn(),
+  listMountTargets: jest.fn(),
   deleteAccessGroup: jest.fn(),
   deleteFileSystem: jest.fn(),
   deleteMountTarget: jest.fn(),
@@ -941,6 +947,178 @@ describe('Fc3Resource', () => {
         'mock-code-hash',
       );
       expect(result).toEqual(newState);
+    });
+
+    it('reconciles drifted nested log resources on force (issue #234 M1)', async () => {
+      const forceOptions = { force: true };
+      const logFn: FunctionDomain = { ...testFunction, log: true };
+      const stateWithSls = {
+        ...initialState,
+        resources: {
+          'functions.test_fn': {
+            mode: 'managed',
+            region: 'cn-hangzhou',
+            definition: mockDefinition,
+            instances: [
+              { sid: 's-fn', id: 'test-function', functionName: 'test-function' },
+              {
+                sid: 's-sls',
+                id: 'test-project/test-function-fn-logs',
+                type: 'ALIYUN_SLS_LOGSTORE',
+              },
+            ],
+            lastUpdated: new Date().toISOString(),
+          },
+        },
+      };
+
+      mockedSlsOperations.getLogstore.mockResolvedValue({ ttl: 999, shardCount: 2 });
+      mockedSlsOperations.updateLogstore.mockResolvedValue(undefined);
+      mockedSlsOperations.getIndex.mockResolvedValue(null);
+      mockedSlsOperations.createIndex.mockResolvedValue({});
+      mockedFc3Types.functionToFc3Config.mockReturnValue(mockConfig);
+      mockedFc3Types.extractFc3Definition.mockReturnValue(mockDefinition);
+      mockedFc3Operations.updateFunctionConfiguration.mockResolvedValue(undefined);
+      mockedStateManager.setResource.mockReturnValue(stateWithSls as unknown as StateFile);
+
+      const result = await updateResource(
+        mockContext,
+        logFn,
+        stateWithSls as StateFile,
+        forceOptions,
+      );
+
+      expect(mockedSlsOperations.updateLogstore).toHaveBeenCalledWith(
+        'test-project',
+        'test-function-fn-logs',
+        30,
+        2,
+      );
+      expect(mockedSlsOperations.createIndex).toHaveBeenCalledWith(
+        'test-project',
+        'test-function-fn-logs',
+      );
+      expect(result).toEqual(stateWithSls as unknown as StateFile);
+    });
+
+    it('reconciles drifted SG rules on force (issue #234 M2)', async () => {
+      const networkFn: FunctionDomain = {
+        ...testFunction,
+        network: {
+          vpc_id: 'vpc-123',
+          subnet_ids: ['vsw-123'],
+          security_group: { name: 'app-sg', ingress: ['tcp:0.0.0.0/0:8080'], egress: [] },
+        },
+      };
+      const stateWithSg = {
+        ...initialState,
+        resources: {
+          'functions.test_fn': {
+            mode: 'managed',
+            region: 'cn-hangzhou',
+            definition: mockDefinition,
+            instances: [
+              { sid: 's-fn', id: 'test-function', functionName: 'test-function' },
+              { sid: 's-sg', id: 'sg-resolved', type: 'ALIYUN_ECS_SECURITY_GROUP' },
+            ],
+            lastUpdated: new Date().toISOString(),
+          },
+        },
+      };
+
+      mockedEcsOperations.getSecurityGroupRules.mockResolvedValue({
+        ingressRules: [
+          { ipProtocol: 'TCP', portRange: '8080/8080', sourceCidrIp: '0.0.0.0/0' },
+          { ipProtocol: 'TCP', portRange: '22/22', sourceCidrIp: '10.0.0.0/8' },
+        ],
+        egressRules: [],
+      });
+
+      await updateResource(mockContext, networkFn, stateWithSg as StateFile, { force: true });
+
+      expect(mockedEcsOperations.revokeSecurityGroupRules).toHaveBeenCalledWith(
+        'sg-resolved',
+        'ingress',
+        [expect.objectContaining({ cidr: '10.0.0.0/8' })],
+      );
+      expect(mockedEcsOperations.authorizeSecurityGroupRules).not.toHaveBeenCalled();
+    });
+
+    it('recreates deleted NAS mount targets on force (issue #234 M4)', async () => {
+      const nasFn: FunctionDomain = {
+        ...testFunction,
+        network: {
+          vpc_id: 'vpc-123',
+          subnet_ids: ['vsw-123'],
+          security_group: { name: 'app-sg', ingress: [], egress: [] },
+        },
+        storage: {
+          nas: [{ storage_class: 'STANDARD_CAPACITY' as never, mount_path: '/mnt/data' }],
+        },
+      };
+      const stateWithNas = {
+        ...initialState,
+        resources: {
+          'functions.test_fn': {
+            mode: 'managed',
+            region: 'cn-hangzhou',
+            definition: mockDefinition,
+            instances: [
+              { sid: 's-fn', id: 'test-function', functionName: 'test-function' },
+              { sid: 's-fs', id: 'fs-1', type: 'ALIYUN_NAS_FILE_SYSTEM' },
+            ],
+            lastUpdated: new Date().toISOString(),
+          },
+        },
+      };
+
+      mockedNasOperations.listMountTargets.mockResolvedValue([]);
+      mockedNasOperations.createMountTarget.mockResolvedValue({
+        mountTargetDomain: 'mt-domain',
+        status: 'Active',
+      });
+
+      await updateResource(mockContext, nasFn, stateWithNas as StateFile, { force: true });
+
+      expect(mockedNasOperations.createMountTarget).toHaveBeenCalledWith(
+        'fs-1',
+        'test-function-default-nas-access-/mnt/data',
+        'vpc-123',
+        'vsw-123',
+      );
+    });
+
+    it('skips nested log reconcile without force (issue #234 M1)', async () => {
+      const logFn: FunctionDomain = { ...testFunction, log: true };
+      const stateWithSls = {
+        ...initialState,
+        resources: {
+          'functions.test_fn': {
+            mode: 'managed',
+            region: 'cn-hangzhou',
+            definition: mockDefinition,
+            instances: [
+              { sid: 's-fn', id: 'test-function', functionName: 'test-function' },
+              {
+                sid: 's-sls',
+                id: 'test-project/test-function-fn-logs',
+                type: 'ALIYUN_SLS_LOGSTORE',
+              },
+            ],
+            lastUpdated: new Date().toISOString(),
+          },
+        },
+      };
+
+      mockedSlsOperations.getLogstore.mockResolvedValue({ ttl: 999, shardCount: 2 });
+      mockedFc3Types.functionToFc3Config.mockReturnValue(mockConfig);
+      mockedFc3Types.extractFc3Definition.mockReturnValue(mockDefinition);
+      mockedFc3Operations.updateFunctionConfiguration.mockResolvedValue(undefined);
+      mockedStateManager.setResource.mockReturnValue(stateWithSls as unknown as StateFile);
+
+      await updateResource(mockContext, logFn, stateWithSls as StateFile);
+
+      expect(mockedSlsOperations.updateLogstore).not.toHaveBeenCalled();
     });
 
     it('should propagate errors from updateFc3FunctionConfiguration', async () => {

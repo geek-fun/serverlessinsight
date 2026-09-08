@@ -174,6 +174,7 @@ describe('vefaasResource', () => {
       deleteProject: jest.fn(),
       createTopic: jest.fn(),
       getTopic: jest.fn(),
+      modifyTopic: jest.fn(),
       deleteTopic: jest.fn(),
       createIndex: jest.fn(),
       deleteIndex: jest.fn(),
@@ -1165,6 +1166,76 @@ describe('vefaasResource', () => {
       await updateResource(mockContext, mockFunction, stateWithFunction);
 
       expect(mockVefaasClient.vefaas.updateFunctionConfiguration).toHaveBeenCalled();
+    });
+
+    it('reconciles drifted TLS topic ttl on force (issue #234 M5)', async () => {
+      const stateWithLogTls: StateFile = {
+        ...mockState,
+        resources: {
+          'functions.test_fn': {
+            mode: 'managed',
+            region: 'cn-beijing',
+            definition: {
+              functionName: 'test-function',
+              codeHash: 'old-hash',
+              runtime: 'nodejs16',
+              handler: 'index.handler',
+              memorySize: 128,
+              timeout: 30,
+              logConfig: {
+                project: 'test-app-test-service-dev-tls',
+                topic: 'test-service-dev-test_fn-fn-logs',
+              },
+            },
+            instances: [
+              {
+                type: 'VOLCENGINE_VEFAAS_FUNCTION',
+                sid: 's-fn',
+                id: 'test-function',
+                functionName: 'test-function',
+                functionId: 'func-123',
+              },
+              {
+                type: 'VOLCENGINE_TLS_TOPIC',
+                sid: 's-tls',
+                id: 'test-app-test-service-dev-tls/test-service-dev-test_fn-fn-logs',
+              },
+            ],
+            lastUpdated: '2024-01-01T00:00:00Z',
+          },
+        },
+      };
+
+      (getResource as jest.Mock).mockReturnValue(stateWithLogTls.resources['functions.test_fn']);
+      (attributesEqual as jest.Mock).mockReturnValue(true);
+      mockVefaasClient.vefaas.getFunction.mockResolvedValue({
+        functionName: 'test-function',
+        functionId: 'func-123',
+        runtime: 'nodejs18',
+        handler: 'index.handler',
+        memoryMb: 128,
+        requestTimeout: 30,
+        logConfig: {
+          project: 'test-app-test-service-dev-tls',
+          topic: 'test-service-dev-test_fn-fn-logs',
+        },
+      });
+      mockVefaasClient.tls.getTopic.mockResolvedValue({
+        topicId: 't-1',
+        topicName: 'test-service-dev-test_fn-fn-logs',
+        ttl: 999,
+      });
+      mockVefaasClient.tls.modifyTopic.mockResolvedValue(undefined);
+      mockVefaasClient.vefaas.updateFunctionCode.mockResolvedValue({
+        releaseRecordId: 'rel-code-1',
+      });
+      mockVefaasClient.vefaas.updateFunctionConfiguration.mockResolvedValue('rel-config-1');
+
+      await updateResource(mockContext, { ...mockFunction, log: true }, stateWithLogTls, {
+        force: true,
+      });
+
+      expect(mockVefaasClient.tls.modifyTopic).toHaveBeenCalledWith('t-1', 30);
     });
 
     it('should update function code when code changed', async () => {

@@ -287,6 +287,44 @@ describe('clsOperations', () => {
     });
   });
 
+  describe('getTopicById', () => {
+    it('returns the matching topic for the id filter', async () => {
+      mockClsClient.DescribeTopics.mockResolvedValue({
+        Topics: [
+          { TopicId: 'topic-2', TopicName: 'other' },
+          { TopicId: 'topic-1', TopicName: 'fn-logs', StorageType: 'hot', Period: 30 },
+        ],
+      });
+
+      const result = await operations.getTopicById('topic-1');
+
+      expect(mockClsClient.DescribeTopics).toHaveBeenCalledWith(
+        expect.objectContaining({
+          Filters: [{ Key: 'topicId', Values: ['topic-1'] }],
+        }),
+      );
+      expect(result).toMatchObject({ TopicId: 'topic-1', StorageType: 'hot' });
+    });
+
+    it('returns null when the topic id is not found', async () => {
+      mockClsClient.DescribeTopics.mockResolvedValue({ Topics: [] });
+
+      expect(await operations.getTopicById('topic-x')).toBeNull();
+    });
+  });
+
+  describe('modifyTopic', () => {
+    it('sends the attribute update', async () => {
+      await operations.modifyTopic('topic-1', { period: 30, storageType: 'hot' });
+
+      expect(mockClsClient.ModifyTopic).toHaveBeenCalledWith({
+        TopicId: 'topic-1',
+        Period: 30,
+        StorageType: 'hot',
+      });
+    });
+  });
+
   describe('createFulltextIndex', () => {
     it('creates a full-text index for the topic', async () => {
       mockClsClient.CreateIndex.mockResolvedValue({});

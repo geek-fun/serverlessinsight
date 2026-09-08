@@ -44,6 +44,8 @@ const mockClsOperations = {
   getLogsetByName: jest.fn(),
   listTopicsByLogset: jest.fn(),
   getTopicByName: jest.fn(),
+  getTopicById: jest.fn(),
+  modifyTopic: jest.fn(),
   createTopic: jest.fn(),
   deleteTopic: jest.fn(),
   deleteLogset: jest.fn(),
@@ -1425,6 +1427,38 @@ describe('ScfResource', () => {
   });
 
   describe('updateResource', () => {
+    it('reconciles drifted CLS topic attributes on force (issue #234 M3)', async () => {
+      (mockScfOperations.updateFunctionConfiguration as jest.Mock).mockResolvedValue(undefined);
+      (mockScfOperations.updateFunctionCode as jest.Mock).mockResolvedValue(undefined);
+      (stateManager.setResource as jest.Mock).mockReturnValue(initialState);
+      (stateManager.getResource as jest.Mock).mockReturnValue({
+        mode: 'managed',
+        region: 'ap-guangzhou',
+        definition: { ...mockDefinition, logConfig: { logset: 'ls-1', topic: 'tp-1' } },
+        instances: [
+          { sid: 's-fn', id: 'test-function', functionName: 'test-function' },
+          { sid: 's-topic', id: 'topic-1', type: 'TENCENT_CLS_TOPIC', topicName: 'tp-1' },
+        ],
+        lastUpdated: '2025-01-01T00:00:00Z',
+      });
+      (mockScfOperations.getFunction as jest.Mock).mockResolvedValue(mockFunctionInfo);
+      (mockClsOperations.getTopicById as jest.Mock).mockResolvedValue({
+        TopicId: 'topic-1',
+        StorageType: 'cold',
+        Period: 10,
+      });
+      (mockClsOperations.modifyTopic as jest.Mock).mockResolvedValue(undefined);
+
+      const logFn = { ...testFunction, log: true };
+
+      await updateResource(mockContext, logFn, initialState, { force: true });
+
+      expect(mockClsOperations.modifyTopic).toHaveBeenCalledWith('topic-1', {
+        period: 30,
+        storageType: 'hot',
+      });
+    });
+
     it('should skip createTrigger when state lacks trigger record but provider already has it', async () => {
       const fnWithTrigger = {
         ...testFunction,

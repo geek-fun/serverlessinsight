@@ -13,6 +13,7 @@ const createMockClient = () => ({
   DescribeProjects: jest.fn() as MockFn,
   DeleteProject: jest.fn() as MockFn,
   CreateTopic: jest.fn() as MockFn,
+  ModifyTopic: jest.fn() as MockFn,
   DescribeTopics: jest.fn() as MockFn,
   DeleteTopic: jest.fn() as MockFn,
   CreateIndex: jest.fn() as MockFn,
@@ -943,6 +944,19 @@ describe('tlsOperations', () => {
       await expect(operations.waitForTopic('test-project', 'missing-topic')).rejects.toThrow(
         'TLS_TOPIC_NOT_FOUND',
       );
+    });
+  });
+
+  describe('modifyTopic', () => {
+    it('sends the ttl update', async () => {
+      mockClient.ModifyTopic.mockResolvedValueOnce({});
+
+      await operations.modifyTopic('topic-1', 30);
+
+      expect(mockClient.ModifyTopic).toHaveBeenCalledWith({
+        TopicId: 'topic-1',
+        Ttl: 30,
+      });
     });
   });
 
