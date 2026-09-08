@@ -83,7 +83,10 @@ export const generateApigwPlan = async (
         (i) => i.type === 'VOLCENGINE_APIGW_SERVICE',
       );
 
-      if (serviceInstance) {
+      // --no-refresh: no live reads, no drift claims — intent-diff only.
+      const refreshEnabled = context.refresh !== false;
+
+      if (refreshEnabled && serviceInstance) {
         // Keep the not-found swallow OUTSIDE the cached read: a cached rejection
         // evicts its key so the next plan pass retries against the provider.
         const remoteService = await cachedRefreshRead(
@@ -112,7 +115,7 @@ export const generateApigwPlan = async (
       // writes; a probe failure stays noop (best-effort detection) instead of
       // fabricating drift from a transient read error.
       let triggersDiffer = false;
-      if (!definitionChanged && serviceInstance && event.triggers.length > 0) {
+      if (refreshEnabled && !definitionChanged && serviceInstance && event.triggers.length > 0) {
         try {
           const desiredTriggers = buildDesiredTriggerMap(event, context.stage);
           const cloudRoutes = await cachedRefreshRead(

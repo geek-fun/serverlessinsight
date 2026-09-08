@@ -64,6 +64,12 @@ export type PlanRefreshedResourceArgs<T> = {
   /** applied to both sides before the intent diff and in changes display */
   normalizeForDisplay?: (definition: ResourceAttributes) => ResourceAttributes;
   extraUpdate?: () => Promise<{ update: boolean; drifted: boolean }>;
+  /**
+   * When false (CLI --no-refresh): skip the live read and the attribute-drift
+   * leg entirely — the decision degenerates to intent-diff only, with no
+   * drifted claims. The probe-create path still runs (ownership safety).
+   */
+  refresh?: boolean;
 };
 
 /**
@@ -98,8 +104,22 @@ export const planRefreshedResource = async <T>(
   const normalizedCurrent = normalize(currentDefinition);
   const normalizedDesired = normalize(desiredDefinition);
   const definitionChanged = !attributesEqual(normalizedCurrent, normalizedDesired);
+  const refreshEnabled = args.refresh ?? true;
 
   try {
+    // --no-refresh: no cloud knowledge, so no drift claims — intent-diff only.
+    if (!refreshEnabled) {
+      if (!definitionChanged) {
+        return { logicalId, action: 'noop', resourceType };
+      }
+      return {
+        logicalId,
+        action: 'update',
+        resourceType,
+        changes: { before: normalizedCurrent, after: normalizedDesired },
+      };
+    }
+
     const decision = await decideRefreshedExistsAction<T>({
       read: args.read,
       cloudToDefinition: args.cloudToDefinition,

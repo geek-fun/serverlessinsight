@@ -162,10 +162,23 @@ program
   .option('-k, --accessKeyId <accessKeyId>', 'specify the AccessKeyId')
   .option('-x, --accessKeySecret <accessKeySecret>', 'specify the AccessKeySecret')
   .option('-n, --securityToken <securityToken>', 'specify the SecurityToken')
+  .option(
+    '--no-refresh',
+    'skip live cloud probing; diff config against state only (no drift detection)',
+  )
   .action(
     actionWrapper(
       'plan',
-      async ({ stage, file, region, provider, accessKeyId, accessKeySecret, securityToken }) => {
+      async ({
+        stage,
+        file,
+        region,
+        provider,
+        accessKeyId,
+        accessKeySecret,
+        securityToken,
+        refresh,
+      }) => {
         await plan({
           stage,
           location: file,
@@ -174,6 +187,7 @@ program
           accessKeyId,
           accessKeySecret,
           securityToken,
+          refresh,
         });
       },
     ),
@@ -191,6 +205,10 @@ program
   .option('-n, --securityToken <securityToken>', 'specify the SecurityToken')
   .option('--si-api-key <key>', 'ServerlessInsight API key (overrides SI_API_KEY env)')
   .option('-y, --auto-approve', 'skip interactive approval of plan before deploying')
+  .option(
+    '--no-refresh',
+    'skip live cloud probing; diff config against state only (no drift detection)',
+  )
   .option(
     '-p, --parameter <key=value>',
     'override parameters',
@@ -215,6 +233,7 @@ program
         securityToken,
         siApiKey,
         autoApprove,
+        refresh,
       }) => {
         await deploy({
           stage,
@@ -227,6 +246,7 @@ program
           securityToken,
           siApiKey,
           autoApprove,
+          refresh,
         });
       },
     ),

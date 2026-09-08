@@ -49,6 +49,7 @@ export const deploy = async (options: {
   securityToken?: string;
   autoApprove?: boolean;
   siApiKey?: string;
+  refresh?: boolean;
 }) => {
   logger.info(lang.__('VALIDATING_YAML'));
   const iacLocation = getIacLocation(options.location);
@@ -62,6 +63,7 @@ export const deploy = async (options: {
       service: rawIac.service,
       iacProvider: rawIac.provider,
       stages: rawIac.stages,
+      refresh: options.refresh ?? true,
     },
     true,
   );

@@ -14,6 +14,7 @@ export const plan = async (options: {
   accessKeyId?: string;
   accessKeySecret?: string;
   securityToken?: string;
+  refresh?: boolean;
 }) => {
   logger.info(lang.__('VALIDATING_YAML'));
   const iacLocation = getIacLocation(options.location);
@@ -27,6 +28,7 @@ export const plan = async (options: {
       service: rawIac.service,
       iacProvider: rawIac.provider,
       stages: rawIac.stages,
+      refresh: options.refresh ?? true,
     },
     true,
   );

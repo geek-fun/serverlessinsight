@@ -146,6 +146,7 @@ export const generateDatabasePlan = async (
           ),
         cloudToDefinition: (remote) =>
           isEs ? cloudEsToDefinition(remote) : cloudRdsToDefinition(remote),
+        refresh: context.refresh,
       });
     },
   );
