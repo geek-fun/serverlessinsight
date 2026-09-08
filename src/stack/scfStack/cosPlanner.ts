@@ -2,9 +2,14 @@ import { Context, BucketDomain, Plan, PlanItem, StateFile, ResourceAttributes } 
 import { createTencentClient } from '../../common/tencentClient';
 import { cachedRefreshRead } from '../../common/refreshCache';
 import { PLAN_READ_CONCURRENCY, mapWithConcurrency } from '../../common/concurrency';
-import { bucketToCosBucketConfig, extractCosBucketDefinition } from './cosTypes';
+import {
+  bucketToCosBucketConfig,
+  cloudCosToDefinition,
+  extractCosBucketDefinition,
+} from './cosTypes';
 import { getAllResources, getResource } from '../../common/stateManager';
 import { attributesEqual } from '../../common/hashUtils';
+import { remoteDiffersFromDesired } from '../../common/planCompare';
 import { OWNERSHIP_TAG_KEY, isOwnedByStack } from '../ownershipTag';
 
 const planBucketDeletion = (logicalId: string, definition: ResourceAttributes): PlanItem => ({
@@ -84,7 +89,15 @@ export const generateBucketPlan = async (
         const currentDefinition = currentState.definition || {};
         const definitionChanged = !attributesEqual(currentDefinition, desiredDefinition);
 
-        if (definitionChanged) {
+        // Issue #234 phase 2: live attribute drift (console edits to
+        // acl/website/versioning/encryption). One-directional: only
+        // mapper-emitted keys the desired definition declares are compared.
+        const remoteDiffers = remoteDiffersFromDesired(
+          cloudCosToDefinition(remoteBucket),
+          desiredDefinition,
+        );
+
+        if (definitionChanged || remoteDiffers) {
           return {
             logicalId,
             action: 'update',
