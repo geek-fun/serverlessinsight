@@ -265,6 +265,8 @@ export const zhCN = {
     '函数 {{functionName}} 的嵌套资源探测失败：{{error}}；本次计划跳过嵌套漂移检测',
   NESTED_LOGSTORE_RECREATED: '日志库 {{logstoreName}} 被带外删除，正在重建',
   NESTED_LOGSTORE_UPDATED: '日志库 {{logstoreName}} 属性已漂移，正在按 si 默认值更新',
+  NESTED_SG_RULES_REPAIRED:
+    '安全组 {{securityGroupId}} 规则集已漂移；新增 {{added}} 条、撤销 {{removed}} 条',
   NESTED_INDEX_RECREATED: '日志库 {{logstoreName}} 的索引被带外删除，正在重建',
   PLAN_EVENT_TRIGGER_PROBE_FAILED:
     'API 网关 {{eventName}} 的实时触发器检查失败：{{error}}；本次计划跳过触发器漂移检测',

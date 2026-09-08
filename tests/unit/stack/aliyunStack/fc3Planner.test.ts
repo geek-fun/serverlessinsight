@@ -30,6 +30,7 @@ const mockFc3Operations = {
 };
 const mockEcsOperations = {
   getSecurityGroupByName: jest.fn(),
+  getSecurityGroupRules: jest.fn(),
 };
 const mockRamOperations = {
   getRole: jest.fn(),
@@ -1045,6 +1046,109 @@ describe('FC3 Planner', () => {
         mockSlsOperations.getLogstore.mockRejectedValue(new Error('sls throttled'));
 
         const plan = await generateFunctionPlan(mockContext, buildLogState(), [fnWithLog]);
+
+        expect(plan.items[0]).toMatchObject({ action: 'noop' });
+      });
+    });
+
+    describe('nested SG rule drift (issue #234 M2)', () => {
+      const fnWithNetwork: FunctionDomain = {
+        ...testFunction,
+        network: {
+          vpc_id: 'vpc-123',
+          subnet_ids: ['vsw-123'],
+          security_group: {
+            name: 'app-sg',
+            ingress: ['tcp:0.0.0.0/0:8080'],
+            egress: [],
+          },
+        },
+      };
+      const sgInstance = {
+        sid: 'si:aliyun:ecs:default:sg-resolved',
+        id: 'sg-resolved',
+        type: 'ALIYUN_ECS_SECURITY_GROUP',
+      };
+
+      const buildNetworkState = (): StateFile =>
+        setResource(initalState, 'functions.test_fn', {
+          mode: 'managed',
+          region: 'cn-hangzhou',
+          definition: {
+            functionName: 'test-function',
+            runtime: 'nodejs20',
+            handler: 'index.handler',
+            memorySize: 512,
+            timeout: 10,
+            diskSize: null,
+            environment: { NODE_ENV: 'production' },
+            vpcConfig: {
+              vpcId: 'vpc-123',
+              vSwitchIds: ['vsw-123'],
+              securityGroupId: 'sg-resolved',
+            },
+            gpuConfig: null,
+            customContainerConfig: null,
+            nasConfig: null,
+            logConfig: null,
+            codeHash: 'mock-code-hash',
+          },
+          instances: [fc3Instance, sgInstance],
+          lastUpdated: new Date().toISOString(),
+        });
+
+      beforeEach(() => {
+        // A networked function's GetFunction response carries the vpcConfig —
+        // without it the desired-declared vpcConfig would false-drift.
+        mockFc3Operations.getFunction.mockResolvedValue({
+          ...remoteFunctionMatch,
+          vpcConfig: { vpcId: 'vpc-123', vSwitchIds: ['vsw-123'], securityGroupId: 'sg-resolved' },
+        });
+        mockEcsOperations.getSecurityGroupByName.mockResolvedValue({
+          securityGroupId: 'sg-resolved',
+        });
+      });
+
+      it('stays noop when live SG rules match the declared set', async () => {
+        mockEcsOperations.getSecurityGroupRules.mockResolvedValue({
+          ingressRules: [{ ipProtocol: 'TCP', portRange: '8080/8080', sourceCidrIp: '0.0.0.0/0' }],
+          egressRules: [],
+        });
+
+        const plan = await generateFunctionPlan(mockContext, buildNetworkState(), [fnWithNetwork]);
+
+        expect(plan.items[0]).toMatchObject({ action: 'noop' });
+      });
+
+      it('flags update+drifted when a live SG rule is not declared (console-added)', async () => {
+        mockEcsOperations.getSecurityGroupRules.mockResolvedValue({
+          ingressRules: [
+            { ipProtocol: 'TCP', portRange: '8080/8080', sourceCidrIp: '0.0.0.0/0' },
+            { ipProtocol: 'TCP', portRange: '22/22', sourceCidrIp: '0.0.0.0/0' },
+          ],
+          egressRules: [],
+        });
+
+        const plan = await generateFunctionPlan(mockContext, buildNetworkState(), [fnWithNetwork]);
+
+        expect(plan.items[0]).toMatchObject({ action: 'update', drifted: true });
+      });
+
+      it('flags update+drifted when a declared SG rule is missing live', async () => {
+        mockEcsOperations.getSecurityGroupRules.mockResolvedValue({
+          ingressRules: [],
+          egressRules: [],
+        });
+
+        const plan = await generateFunctionPlan(mockContext, buildNetworkState(), [fnWithNetwork]);
+
+        expect(plan.items[0]).toMatchObject({ action: 'update', drifted: true });
+      });
+
+      it('warns and stays noop when the SG probe fails', async () => {
+        mockEcsOperations.getSecurityGroupRules.mockRejectedValue(new Error('ecs throttled'));
+
+        const plan = await generateFunctionPlan(mockContext, buildNetworkState(), [fnWithNetwork]);
 
         expect(plan.items[0]).toMatchObject({ action: 'noop' });
       });

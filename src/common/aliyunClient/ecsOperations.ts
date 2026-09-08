@@ -24,6 +24,18 @@ const transformPortRange = (protocol: string, portRange: string): string => {
 
 const normalizeProtocol = (protocol: string): string => protocol.trim().toUpperCase();
 
+/**
+ * Canonical rule key for config-vs-live comparison (issue #234 M2): protocol
+ * normalized, ports in Aliyun wire format, CIDR verbatim — the exact tuple an
+ * AuthorizeSecurityGroup call writes and DescribeSecurityGroupAttribute
+ * returns.
+ */
+/* istanbul ignore next */ export const canonicalSecurityGroupRule = (
+  protocol: string,
+  portRange: string,
+  cidr: string,
+): string => `${protocol.toUpperCase()}|${transformPortRange(protocol, portRange)}|${cidr}`;
+
 /* istanbul ignore next */ export const parseSecurityGroupRule = (
   rule: string,
 ): { protocol: string; cidr: string; portRange: string } => {
@@ -154,6 +166,77 @@ const isDuplicateSecurityGroupRuleError = (error: unknown): boolean => {
         };
       }
       return sg;
+    },
+
+    authorizeSecurityGroupRules: async (
+      securityGroupId: string,
+      direction: 'ingress' | 'egress',
+      rules: Array<{ protocol: string; cidr: string; portRange: string }>,
+    ): Promise<void> => {
+      for (const parsed of rules) {
+        try {
+          if (direction === 'ingress') {
+            const request = new ecs.AuthorizeSecurityGroupRequest({
+              regionId: context.region,
+              securityGroupId,
+              ipProtocol: parsed.protocol.toLowerCase(),
+              sourceCidrIp: parsed.cidr,
+              portRange: transformPortRange(parsed.protocol, parsed.portRange),
+            });
+            await ecsClient.authorizeSecurityGroup(request);
+          } else {
+            const request = new ecs.AuthorizeSecurityGroupEgressRequest({
+              regionId: context.region,
+              securityGroupId,
+              ipProtocol: parsed.protocol.toLowerCase(),
+              destCidrIp: parsed.cidr,
+              portRange: transformPortRange(parsed.protocol, parsed.portRange),
+            });
+            await ecsClient.authorizeSecurityGroupEgress(request);
+          }
+        } catch (error) {
+          if (isDuplicateSecurityGroupRuleError(error)) {
+            continue;
+          }
+          logger.warn(
+            `Failed to authorize ${direction} rule for ${securityGroupId}: ${String(error)}`,
+          );
+        }
+      }
+    },
+
+    revokeSecurityGroupRules: async (
+      securityGroupId: string,
+      direction: 'ingress' | 'egress',
+      rules: Array<{ protocol: string; cidr: string; portRange: string }>,
+    ): Promise<void> => {
+      for (const parsed of rules) {
+        try {
+          if (direction === 'ingress') {
+            const request = new ecs.RevokeSecurityGroupRequest({
+              regionId: context.region,
+              securityGroupId,
+              ipProtocol: parsed.protocol.toLowerCase(),
+              sourceCidrIp: parsed.cidr,
+              portRange: transformPortRange(parsed.protocol, parsed.portRange),
+            });
+            await ecsClient.revokeSecurityGroup(request);
+          } else {
+            const request = new ecs.RevokeSecurityGroupEgressRequest({
+              regionId: context.region,
+              securityGroupId,
+              ipProtocol: parsed.protocol.toLowerCase(),
+              destCidrIp: parsed.cidr,
+              portRange: transformPortRange(parsed.protocol, parsed.portRange),
+            });
+            await ecsClient.revokeSecurityGroupEgress(request);
+          }
+        } catch (error) {
+          logger.warn(
+            `Failed to revoke ${direction} rule for ${securityGroupId}: ${String(error)}`,
+          );
+        }
+      }
     },
 
     getSecurityGroupRules: async (

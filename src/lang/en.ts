@@ -287,6 +287,8 @@ export const en = {
   NESTED_LOGSTORE_RECREATED: 'Logstore {{logstoreName}} was deleted out-of-band; recreating it',
   NESTED_LOGSTORE_UPDATED:
     'Logstore {{logstoreName}} attributes drifted; updating to match si defaults',
+  NESTED_SG_RULES_REPAIRED:
+    'Security group {{securityGroupId}} rule set drifted; authorizing {{added}} and revoking {{removed}} rules',
   NESTED_INDEX_RECREATED: 'Logstore index {{logstoreName}} was deleted out-of-band; recreating it',
   PLAN_EVENT_TRIGGER_PROBE_FAILED:
     'Live trigger check for API Gateway {{eventName}} failed: {{error}}; skipping trigger drift detection for this plan',
