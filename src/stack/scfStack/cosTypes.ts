@@ -1,4 +1,5 @@
 import { BucketDomain, BucketIam, ResourceAttributes } from '../../types';
+import type { CosBucketInfo as TencentCosBucketInfo } from '../../common/tencentClient/types';
 
 export type CosBucketConfig = {
   Bucket: string;
@@ -214,3 +215,31 @@ export const extractCosBucketDefinition = (config: CosBucketConfig): ResourceAtt
     policy: serializeBucketPolicy(config.IamPolicy),
   };
 };
+
+// issue #234 phase 2: cloud-side counterpart of extractCosBucketDefinition.
+// Mirrors the executor write shape key-for-key. Not refreshable (omitted so
+// they can never phantom-drift): region (cloud Location uses a different
+// format), domain/wwwBindApex/domainCertificate*/domainProtocol (GetBucket
+// returns none of these), policy (cloud returns a policy object; byte-order
+// comparison against the serialized desired document would false-drift).
+export const cloudCosToDefinition = (info: TencentCosBucketInfo): ResourceAttributes => ({
+  bucket: info.Name,
+  ...(info.ACL !== undefined ? { acl: info.ACL } : {}),
+  ...(info.WebsiteConfiguration
+    ? {
+        websiteConfiguration: {
+          indexDocument: info.WebsiteConfiguration.IndexDocument?.Suffix ?? null,
+          errorDocument: info.WebsiteConfiguration.ErrorDocument?.Key ?? null,
+        },
+      }
+    : {}),
+  ...(info.VersioningConfiguration?.status !== undefined
+    ? { versioningStatus: info.VersioningConfiguration.status }
+    : {}),
+  ...(info.SseConfiguration?.sseAlgorithm !== undefined
+    ? { sseAlgorithm: info.SseConfiguration.sseAlgorithm }
+    : {}),
+  ...(info.SseConfiguration?.sseKmsMasterKeyId !== undefined
+    ? { sseKmsMasterKeyId: info.SseConfiguration.sseKmsMasterKeyId }
+    : {}),
+});

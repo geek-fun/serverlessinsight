@@ -1,7 +1,10 @@
 import {
   bucketToCosBucketConfig,
   extractCosBucketDefinition,
+  cloudCosToDefinition,
 } from '../../../../src/stack/scfStack/cosTypes';
+import { remoteDiffersFromDesired } from '../../../../src/common/planCompare';
+import type { CosBucketInfo as TencentCosBucketInfo } from '../../../../src/common/tencentClient/types';
 import { BucketDomain, BucketAccessEnum } from '../../../../src/types';
 
 describe('CosTypes', () => {
@@ -363,6 +366,88 @@ describe('CosTypes', () => {
       const definition = extractCosBucketDefinition(config);
 
       expect(definition.policy).toBeNull();
+    });
+  });
+
+  describe('cloudCosToDefinition (issue #234 phase 2)', () => {
+    it('maps acl/website/versioning/encryption and omits non-refreshable keys', () => {
+      const attrs = cloudCosToDefinition({
+        Name: 'test-bucket',
+        Location: 'ap-guangzhou',
+        ACL: 'public-read',
+        WebsiteConfiguration: {
+          IndexDocument: { Suffix: 'index.html' },
+          ErrorDocument: { Key: 'error.html' },
+        },
+        VersioningConfiguration: { status: 'Enabled' },
+        SseConfiguration: { sseAlgorithm: 'AES256' },
+      });
+
+      expect(attrs).toEqual({
+        bucket: 'test-bucket',
+        acl: 'public-read',
+        websiteConfiguration: {
+          indexDocument: 'index.html',
+          errorDocument: 'error.html',
+        },
+        versioningStatus: 'Enabled',
+        sseAlgorithm: 'AES256',
+      });
+      expect(attrs).not.toHaveProperty('region');
+      expect(attrs).not.toHaveProperty('policy');
+      expect(attrs).not.toHaveProperty('domain');
+    });
+
+    it('drifts only when a declared website differs from the live one', () => {
+      expect(cloudCosToDefinition({ Name: 'test-bucket', Location: 'ap-guangzhou' })).toEqual({
+        bucket: 'test-bucket',
+      });
+      // Matching index + null errorDocument on both sides normalizes equal.
+      expect(
+        remoteDiffersFromDesired(
+          cloudCosToDefinition({
+            Name: 'test-bucket',
+            Location: 'ap-guangzhou',
+            WebsiteConfiguration: { IndexDocument: { Suffix: 'index.html' } },
+          }),
+          {
+            bucket: 'test-bucket',
+            websiteConfiguration: { indexDocument: 'index.html', errorDocument: null },
+          },
+        ),
+      ).toBe(false);
+      expect(
+        remoteDiffersFromDesired(
+          cloudCosToDefinition({
+            Name: 'test-bucket',
+            Location: 'ap-guangzhou',
+            WebsiteConfiguration: { IndexDocument: { Suffix: 'console.html' } },
+          }),
+          {
+            bucket: 'test-bucket',
+            websiteConfiguration: { indexDocument: 'index.html', errorDocument: null },
+          },
+        ),
+      ).toBe(true);
+    });
+
+    // Deployed-then-untouched must never drift: cloud side simulated as what
+    // the executor wrote (CosBucketConfig field names align with the info).
+    it('never drifts against its own config (roundtrip guard)', () => {
+      const bucket: BucketDomain = {
+        key: 'test_bucket',
+        name: 'test-bucket',
+        security: { acl: BucketAccessEnum.PUBLIC_READ, force_delete: false },
+      };
+
+      const desired = extractCosBucketDefinition(bucketToCosBucketConfig(bucket, 'ap-guangzhou'));
+      const cloudInfo: TencentCosBucketInfo = {
+        Name: 'test-bucket',
+        Location: 'ap-guangzhou',
+        ACL: 'public-read',
+      };
+
+      expect(remoteDiffersFromDesired(cloudCosToDefinition(cloudInfo), desired)).toBe(false);
     });
   });
 });

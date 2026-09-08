@@ -74,6 +74,9 @@ describe('cosPlanner', () => {
     (cosTypes.extractCosBucketDefinition as jest.Mock).mockReturnValue({
       bucket: 'test-bucket',
     });
+    // Default: the live-probe mapper reports no comparable attributes, so the
+    // pre-existing intent-diff tests keep their semantics.
+    (cosTypes.cloudCosToDefinition as jest.Mock).mockReturnValue({});
     (hashUtils.attributesEqual as jest.Mock).mockReturnValue(true);
   });
 
@@ -231,6 +234,42 @@ describe('cosPlanner', () => {
 
       expect(plan.items).toHaveLength(1);
       expect(plan.items[0].action).toBe('noop');
+    });
+
+    it('flags update+drifted when the live acl drifted from config (issue #234 phase 2)', async () => {
+      const stateWithBucket: StateFile = {
+        ...initialState,
+        resources: {
+          'buckets.test_bucket': {
+            mode: 'managed' as ResourceMode,
+            region: 'ap-guangzhou',
+            definition: {
+              bucket: 'test-bucket',
+              acl: 'public-read',
+            },
+            instances: [],
+            lastUpdated: new Date().toISOString(),
+          },
+        },
+      };
+
+      (stateManager.getResource as jest.Mock).mockReturnValue({
+        definition: { bucket: 'test-bucket', acl: 'public-read' },
+      });
+      (stateManager.getAllResources as jest.Mock).mockReturnValue({});
+      (cosTypes.extractCosBucketDefinition as jest.Mock).mockReturnValue({
+        bucket: 'test-bucket',
+        acl: 'public-read',
+      });
+      (cosTypes.cloudCosToDefinition as jest.Mock).mockReturnValue({
+        bucket: 'test-bucket',
+        acl: 'private',
+      });
+      (hashUtils.attributesEqual as jest.Mock).mockReturnValue(false);
+
+      const plan = await generateBucketPlan(mockContext, stateWithBucket, [testBucket]);
+
+      expect(plan.items[0]).toMatchObject({ action: 'update', drifted: true });
     });
 
     it('should handle error when getting bucket from cloud', async () => {
