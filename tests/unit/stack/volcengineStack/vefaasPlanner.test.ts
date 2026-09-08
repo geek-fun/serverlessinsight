@@ -48,6 +48,10 @@ describe('vefaasPlanner', () => {
     vefaas: {
       getFunction: jest.fn(),
     },
+    tls: {
+      getTopic: jest.fn(),
+      modifyTopic: jest.fn(),
+    },
   };
 
   const mockFunction: FunctionDomain = {
@@ -79,17 +83,28 @@ describe('vefaasPlanner', () => {
   });
 
   describe('generateFunctionPlan', () => {
-    let mockVefaasClient: { vefaas: { getFunction: jest.Mock } };
+    let mockVefaasClient: {
+      vefaas: { getFunction: jest.Mock };
+      tls: { getTopic: jest.Mock; modifyTopic: jest.Mock };
+    };
 
     beforeEach(() => {
       mockVefaasClient = {
         vefaas: {
           getFunction: jest.fn(),
         },
+        tls: {
+          getTopic: jest.fn(),
+          modifyTopic: jest.fn(),
+        },
       };
       (createVolcengineClient as jest.Mock).mockReturnValue(mockVefaasClient);
-      jest.spyOn(stateManager, 'getResource').mockReturnValue(undefined);
-      jest.spyOn(stateManager, 'getAllResources').mockReturnValue({});
+      jest
+        .spyOn(stateManager, 'getResource')
+        .mockImplementation((state, logicalId) => state.resources?.[logicalId] as never);
+      jest
+        .spyOn(stateManager, 'getAllResources')
+        .mockImplementation((state) => state.resources ?? {});
       jest
         .spyOn(hashUtils, 'attributesEqual')
         .mockImplementation((a, b) => JSON.stringify(a) === JSON.stringify(b));
@@ -674,6 +689,104 @@ describe('vefaasPlanner', () => {
           },
         },
       });
+    });
+
+    it('flags update+drifted when the live TLS topic ttl drifted (issue #234 M5)', async () => {
+      jest.spyOn(hashUtils, 'attributesEqual').mockReturnValue(true);
+
+      const stateWithLog: StateFile = {
+        ...mockState,
+        resources: {
+          'functions.test_fn': {
+            mode: 'managed',
+            region: 'cn-beijing',
+            definition: {
+              functionName: 'test-function',
+              runtime: 'node20/v1',
+              handler: 'index.handler',
+              memorySize: 128,
+              timeout: 30,
+              logConfig: { project: 'test-app-dev-tls', topic: 'test-service-dev-test_fn-fn-logs' },
+            },
+            instances: [
+              {
+                type: 'VOLCENGINE_TLS_TOPIC',
+                sid: 's',
+                id: 'test-app-dev-tls/test-service-dev-test_fn-fn-logs',
+              },
+            ],
+            lastUpdated: '2024-01-01T00:00:00Z',
+            status: 'ready',
+          },
+        },
+      };
+      mockVefaasClient.vefaas.getFunction.mockResolvedValue({
+        runtime: 'node20/v1',
+        handler: 'index.handler',
+        memoryMb: 128,
+        requestTimeout: 30,
+        logConfig: { project: 'test-app-dev-tls', topic: 'test-service-dev-test_fn-fn-logs' },
+      });
+      mockVefaasClient.tls.getTopic.mockResolvedValue({
+        topicId: 't-1',
+        topicName: 'test-service-dev-test_fn-fn-logs',
+        ttl: 999,
+      });
+
+      const plan = await generateFunctionPlan(mockContext, stateWithLog, [
+        { ...mockFunction, log: true },
+      ]);
+
+      expect(plan.items[0]).toMatchObject({ action: 'update', drifted: true });
+    });
+
+    it('stays noop when the live TLS topic ttl matches (issue #234 M5)', async () => {
+      jest.spyOn(hashUtils, 'attributesEqual').mockReturnValue(true);
+
+      const stateWithLog: StateFile = {
+        ...mockState,
+        resources: {
+          'functions.test_fn': {
+            mode: 'managed',
+            region: 'cn-beijing',
+            definition: {
+              functionName: 'test-function',
+              runtime: 'node20/v1',
+              handler: 'index.handler',
+              memorySize: 128,
+              timeout: 30,
+              logConfig: { project: 'test-app-dev-tls', topic: 'test-service-dev-test_fn-fn-logs' },
+            },
+            instances: [
+              {
+                type: 'VOLCENGINE_TLS_TOPIC',
+                sid: 's',
+                id: 'test-app-dev-tls/test-service-dev-test_fn-fn-logs',
+              },
+            ],
+            lastUpdated: '2024-01-01T00:00:00Z',
+            status: 'ready',
+          },
+        },
+      };
+      mockVefaasClient.vefaas.getFunction.mockResolvedValue({
+        runtime: 'node20/v1',
+        handler: 'index.handler',
+        memoryMb: 128,
+        requestTimeout: 30,
+        logConfig: { project: 'test-app-dev-tls', topic: 'test-service-dev-test_fn-fn-logs' },
+      });
+      mockVefaasClient.tls.getTopic.mockResolvedValue({
+        topicId: 't-1',
+        topicName: 'test-service-dev-test_fn-fn-logs',
+        ttl: 30,
+      });
+
+      const plan = await generateFunctionPlan(mockContext, stateWithLog, [
+        { ...mockFunction, log: true },
+      ]);
+
+      expect(plan.items[0]).toMatchObject({ action: 'noop' });
     });
   });
 });

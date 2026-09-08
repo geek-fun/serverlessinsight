@@ -658,6 +658,7 @@ export type VolcengineClient = {
     createTopic: (config: TlsTopicConfig) => Promise<TlsTopicInfo>;
     getTopic: (projectName: string, topicName: string) => Promise<TlsTopicInfo | null>;
     listTopics: (projectName: string) => Promise<TlsTopicInfo[]>;
+    modifyTopic: (topicId: string, ttl: number) => Promise<void>;
     deleteTopic: (projectName: string, topicName: string) => Promise<void>;
     createIndex: (config: TlsIndexConfig) => Promise<void>;
     deleteIndex: (projectName: string, topicName: string) => Promise<void>;

@@ -287,6 +287,9 @@ export const en = {
   NESTED_LOGSTORE_RECREATED: 'Logstore {{logstoreName}} was deleted out-of-band; recreating it',
   NESTED_LOGSTORE_UPDATED:
     'Logstore {{logstoreName}} attributes drifted; updating to match si defaults',
+  NESTED_TLS_TOPIC_UPDATED: 'TLS topic {{topicId}} ttl drifted; updating to match si defaults',
+  NESTED_MOUNT_TARGET_RECREATED:
+    'NAS mount target for file system {{fileSystemId}} was deleted out-of-band; recreating it',
   NESTED_TOPIC_RECREATED:
     'CLS topic {{topicId}} was deleted out-of-band; recreating it under the shared logset',
   NESTED_TOPIC_UPDATED: 'CLS topic {{topicId}} attributes drifted; updating to match si defaults',

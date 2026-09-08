@@ -399,6 +399,26 @@ const detectFunctionNestedDrift = async (
     }
   }
 
+  // Issue #234 M4: NAS mount targets are function-owned — a file system with
+  // no live mount targets means the console deleted it out-of-band.
+  if (fn.storage?.nas && fn.storage.nas.length > 0 && fn.network) {
+    const fsInstances = currentState.instances?.filter(
+      (i) => (i as { type?: string }).type === 'ALIYUN_NAS_FILE_SYSTEM',
+    ) as { id?: string }[];
+    for (const fs of fsInstances) {
+      const fsId = fs.id;
+      if (!fsId) {
+        continue;
+      }
+      const targets = await cachedRefreshRead(context, `nas.listMountTargets:${fsId}`, () =>
+        client.nas.listMountTargets(fsId),
+      );
+      if (!targets || targets.length === 0) {
+        return true; // mount target deleted out-of-band
+      }
+    }
+  }
+
   return false;
 };
 
