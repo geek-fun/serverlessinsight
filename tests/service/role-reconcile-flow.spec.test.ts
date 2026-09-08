@@ -123,6 +123,46 @@ describe('Role Reconciliation Deploy Flow (issue #234)', () => {
     expect(healedRoles).toHaveLength(1);
   });
 
+  it('repairs drifted nested log resources on the next deploy (issue #234 M1)', async () => {
+    await deploy(deployOptions);
+
+    // Console drift: logstore ttl changed and the index was deleted out-of-band.
+    mockClient.sls.getLogstore.mockResolvedValue({
+      logstoreName: 'role-reconcile-test-service-dev-role-reconcile-fn-fn-logs',
+      ttl: 999,
+      shardCount: 2,
+    });
+    mockClient.sls.getIndex.mockResolvedValue(null);
+    mockClient.sls.updateLogstore.mockClear();
+    mockClient.sls.createIndex.mockClear();
+    mockClient.fc3.updateFunctionConfiguration.mockClear();
+
+    await deploy(deployOptions);
+
+    expect(mockClient.sls.updateLogstore).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.anything(),
+      30,
+      2,
+    );
+    expect(mockClient.sls.createIndex).toHaveBeenCalled();
+
+    // Healthy again → noop (no further repair writes).
+    mockClient.sls.getLogstore.mockResolvedValue({
+      logstoreName: 'role-reconcile-test-service-dev-role-reconcile-fn-fn-logs',
+      ttl: 30,
+      shardCount: 2,
+    });
+    mockClient.sls.getIndex.mockResolvedValue({ indexMode: 'line' });
+    mockClient.sls.updateLogstore.mockClear();
+    mockClient.sls.createIndex.mockClear();
+
+    await deploy(deployOptions);
+
+    expect(mockClient.sls.updateLogstore).not.toHaveBeenCalled();
+    expect(mockClient.sls.createIndex).not.toHaveBeenCalled();
+  });
+
   it('stays noop on redeploy when the role still exists in the provider', async () => {
     await deploy(deployOptions);
     mockClient.ram.createRole.mockClear();

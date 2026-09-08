@@ -261,6 +261,11 @@ export const zhCN = {
     '函数 {{functionName}} 的角色 {{roleName}} 在云端不存在；部署时将重建并重新绑定',
   PLAN_FUNCTION_ROLE_PROBE_FAILED:
     '函数 {{functionName}}（角色 {{roleName}}）的实时角色策略检查失败：{{error}}；本次计划跳过角色漂移检测',
+  PLAN_FUNCTION_NESTED_PROBE_FAILED:
+    '函数 {{functionName}} 的嵌套资源探测失败：{{error}}；本次计划跳过嵌套漂移检测',
+  NESTED_LOGSTORE_RECREATED: '日志库 {{logstoreName}} 被带外删除，正在重建',
+  NESTED_LOGSTORE_UPDATED: '日志库 {{logstoreName}} 属性已漂移，正在按 si 默认值更新',
+  NESTED_INDEX_RECREATED: '日志库 {{logstoreName}} 的索引被带外删除，正在重建',
   PLAN_EVENT_TRIGGER_PROBE_FAILED:
     'API 网关 {{eventName}} 的实时触发器检查失败：{{error}}；本次计划跳过触发器漂移检测',
   RAM_ROLE_MISSING_RECREATE:

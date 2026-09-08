@@ -35,6 +35,7 @@ import {
   StateFile,
 } from '../../types';
 import { extractFc3Definition, Fc3FunctionInfo, functionToFc3Config } from './fc3Types';
+import { SLS_LOGSTORE_SHARDS, SLS_LOGSTORE_TTL } from '../../common/aliyunClient/slsOperations';
 import { logger } from '../../common/logger';
 import { unionPolicyStatements, type IamStatement } from '../../common/iamStatements';
 import { buildFc3ExecutionPolicyDocument } from '../../common/aliyunClient/ramOperations';
@@ -1130,6 +1131,33 @@ export const updateResource = async (
       if (slsLogstoreInstance) {
         const [projectName, logstoreName] = slsLogstoreInstance.id.split('/');
         logConfig = { project: projectName, logstore: logstoreName };
+
+        // Issue #234 M1: nested repair — only on a drifted plan item (force):
+        // reconcile logstore ttl/shards and index presence against what si
+        // creates. Shard deficits are repaired upward; Aliyun cannot shrink.
+        if (options?.force) {
+          const liveLogstore = await client.sls.getLogstore(projectName, logstoreName);
+          if (!liveLogstore) {
+            logger.warn(lang.__('NESTED_LOGSTORE_RECREATED', { logstoreName }));
+            await client.sls.createLogstore(projectName, logstoreName);
+          } else if (
+            liveLogstore.ttl !== SLS_LOGSTORE_TTL ||
+            (liveLogstore.shardCount ?? 0) < SLS_LOGSTORE_SHARDS
+          ) {
+            await client.sls.updateLogstore(
+              projectName,
+              logstoreName,
+              SLS_LOGSTORE_TTL,
+              Math.max(liveLogstore.shardCount ?? 0, SLS_LOGSTORE_SHARDS),
+            );
+            logger.info(lang.__('NESTED_LOGSTORE_UPDATED', { logstoreName }));
+          }
+          const liveIndex = await client.sls.getIndex(projectName, logstoreName);
+          if (!liveIndex) {
+            logger.warn(lang.__('NESTED_INDEX_RECREATED', { logstoreName }));
+            await client.sls.createIndex(projectName, logstoreName);
+          }
+        }
       }
     } else {
       // Logging disabled: the owned index + logstore are deleted from the
