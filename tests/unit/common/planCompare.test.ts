@@ -1,4 +1,4 @@
-import { remoteDiffersFromDesired } from '../../../src/common/planCompare';
+import { remoteDiffersFromDesired, jsonDocumentDiffers } from '../../../src/common/planCompare';
 
 describe('remoteDiffersFromDesired', () => {
   it('returns false when every declared desired value matches the remote', () => {
@@ -72,5 +72,26 @@ describe('remoteDiffersFromDesired', () => {
     const desired = { mountPoints: [], handler: '' };
 
     expect(remoteDiffersFromDesired(remote, desired)).toBe(true);
+  });
+});
+
+describe('jsonDocumentDiffers', () => {
+  it('ignores key order and formatting between parsed objects and strings', () => {
+    expect(jsonDocumentDiffers('{"b":2,"a":1}', '{"a":1, "b": 2}')).toBe(false);
+    expect(jsonDocumentDiffers('{"a":1}', { a: 1 })).toBe(false);
+  });
+
+  it('flags real content differences', () => {
+    expect(jsonDocumentDiffers('{"a":1}', { a: 2 })).toBe(true);
+  });
+
+  it('treats undeclared desired or unreadable cloud values as not drift', () => {
+    expect(jsonDocumentDiffers(null, { a: 1 })).toBe(false);
+    expect(jsonDocumentDiffers('{"a":1}', undefined)).toBe(false);
+    expect(jsonDocumentDiffers('{"a":1}', null)).toBe(false);
+  });
+
+  it('returns false on unparseable input instead of fabricating drift', () => {
+    expect(jsonDocumentDiffers('not-json', { a: 1 })).toBe(false);
   });
 });

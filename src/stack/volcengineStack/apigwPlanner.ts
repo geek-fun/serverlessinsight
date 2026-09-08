@@ -86,16 +86,17 @@ export const generateApigwPlan = async (
       // --no-refresh: no live reads, no drift claims — intent-diff only.
       const refreshEnabled = context.refresh !== false;
 
+      let cloudService: Awaited<ReturnType<typeof client.apigw.getService>> = null;
       if (refreshEnabled && serviceInstance) {
         // Keep the not-found swallow OUTSIDE the cached read: a cached rejection
         // evicts its key so the next plan pass retries against the provider.
-        const remoteService = await cachedRefreshRead(
+        cloudService = await cachedRefreshRead(
           context,
           `apigw.getService:${serviceInstance.id}`,
           () => client.apigw.getService(serviceInstance.id),
         ).catch(() => null);
 
-        if (!remoteService) {
+        if (!cloudService) {
           return {
             logicalId,
             action: 'create',
@@ -149,7 +150,17 @@ export const generateApigwPlan = async (
         }
       }
 
-      if (definitionChanged || triggersDiffer) {
+      // Issue #234 phase 3: declared custom-domain drift — the service read
+      // already carries customDomains, so this costs no extra API call.
+      const desiredDomainName = (desiredDefinition as { domain?: { domainName?: string } }).domain
+        ?.domainName;
+      let domainDiffers = false;
+      if (refreshEnabled && desiredDomainName) {
+        const cloudDomains = cloudService?.customDomains ?? [];
+        domainDiffers = !cloudDomains.some((d) => d.domain === desiredDomainName);
+      }
+
+      if (definitionChanged || triggersDiffer || domainDiffers) {
         return {
           logicalId,
           action: 'update',
