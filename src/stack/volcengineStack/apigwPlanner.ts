@@ -2,9 +2,16 @@ import { Context, EventDomain, Plan, PlanItem, StateFile } from '../../types';
 import { createVolcengineClient } from '../../common/volcengineClient';
 import { cachedRefreshRead } from '../../common/refreshCache';
 import { PLAN_READ_CONCURRENCY, mapWithConcurrency } from '../../common/concurrency';
-import { buildEventResourceDefinition, buildGatewayName } from './apigwTypes';
+import {
+  buildDesiredTriggerMap,
+  buildGatewayName,
+  buildEventResourceDefinition,
+  cloudTriggerDiffers,
+} from './apigwTypes';
 import { getAllResources, getResource } from '../../common/stateManager';
 import { attributesEqual } from '../../common/hashUtils';
+import { logger } from '../../common';
+import { lang } from '../../lang';
 import { OWNERSHIP_TAG_KEY, isOwnedByStack } from '../ownershipTag';
 
 const planEventDeletion = (logicalId: string, definition: Record<string, unknown>): PlanItem => ({
@@ -99,12 +106,53 @@ export const generateApigwPlan = async (
       const currentDefinition = currentState.definition || {};
       const definitionChanged = !attributesEqual(currentDefinition, desiredDefinition);
 
-      if (definitionChanged) {
+      // Issue #234 phase 2: live trigger drift. The service record alone can be
+      // untouched while console edits reroute a trigger (method/path/upstream).
+      // Routes and upstreams are matched by the derived names the executor
+      // writes; a probe failure stays noop (best-effort detection) instead of
+      // fabricating drift from a transient read error.
+      let triggersDiffer = false;
+      if (!definitionChanged && serviceInstance && event.triggers.length > 0) {
+        try {
+          const desiredTriggers = buildDesiredTriggerMap(event, context.stage);
+          const cloudRoutes = await cachedRefreshRead(
+            context,
+            `apigw.listRoutesByService:${serviceInstance.id}`,
+            () => client.apigw.listRoutesByService(serviceInstance.id),
+          );
+          const matched = (cloudRoutes ?? []).filter(
+            (route) => route.routeName && desiredTriggers.has(route.routeName),
+          );
+          const upstreamNameById = new Map<string, string | undefined>();
+          for (const route of matched) {
+            const upstreamId = route.upstreamIds?.[0];
+            if (upstreamId && !upstreamNameById.has(upstreamId)) {
+              const upstream = await cachedRefreshRead(
+                context,
+                `apigw.getUpstream:${upstreamId}`,
+                () => client.apigw.getUpstream(upstreamId),
+              );
+              upstreamNameById.set(upstreamId, upstream?.upstreamName);
+            }
+          }
+          triggersDiffer = cloudTriggerDiffers(matched, upstreamNameById, desiredTriggers);
+        } catch (error: unknown) {
+          logger.warn(
+            lang.__('PLAN_EVENT_TRIGGER_PROBE_FAILED', {
+              eventName: event.name,
+              error: String(error),
+            }),
+          );
+        }
+      }
+
+      if (definitionChanged || triggersDiffer) {
         return {
           logicalId,
           action: 'update',
           resourceType: 'VOLCENGINE_APIGW',
           changes: { before: currentDefinition, after: desiredDefinition },
+          drifted: true,
         };
       }
 
