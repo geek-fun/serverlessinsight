@@ -88,6 +88,25 @@ export const generateDatabasePlan = async (
             `Cluster ${database.name} already exists in provider but is not owned by this stack (missing ${OWNERSHIP_TAG_KEY} tag). Refusing to create — resolve manually.`,
           ),
         cloudToDefinition: cloudTdsqlcToDefinition,
+        extraUpdate: async () => {
+          // AutoPause needs a dedicated read: DescribeClusters reports the
+          // running serverless state, not the configured idle-pause switch —
+          // DescribeServerlessStrategy does. Unreadable strategy is not drift.
+          const desiredAutoPause = (desiredDefinition as { autoPause?: boolean | null }).autoPause;
+          if (typeof desiredAutoPause !== 'boolean' || !clusterId) {
+            return { update: false, drifted: false };
+          }
+          const strategy = await cachedRefreshRead(
+            context,
+            `tdsqlc.getServerlessStrategy:${clusterId}`,
+            () => client.tdsqlc.getServerlessStrategy(clusterId),
+          );
+          if (!strategy || strategy.autoPause === undefined) {
+            return { update: false, drifted: false };
+          }
+          const drifted = strategy.autoPause !== desiredAutoPause;
+          return { update: drifted, drifted };
+        },
         refresh: context.refresh,
       });
     },

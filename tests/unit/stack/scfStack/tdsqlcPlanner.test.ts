@@ -15,6 +15,7 @@ const mockTdsqlcOperations = {
   createCluster: jest.fn(),
   getCluster: jest.fn(),
   getClusterByName: jest.fn(),
+  getServerlessStrategy: jest.fn().mockResolvedValue(null),
   updateCluster: jest.fn(),
   deleteCluster: jest.fn(),
 };
@@ -343,6 +344,51 @@ describe('TdsqlcPlanner', () => {
         SubnetId: 'subnet-67890',
         MinStorageSize: 10,
         MaxStorageSize: 1000,
+      });
+
+      const result = await generateDatabasePlan(mockContext, mockState, [mockDatabase]);
+
+      expect(result.items[0]).toMatchObject({ action: 'update', drifted: true });
+    });
+
+    it('flags update+drifted when the configured autoPause drifted (issue #234 phase 3)', async () => {
+      const existingState: ResourceState = {
+        mode: 'managed',
+        region: 'ap-guangzhou',
+        definition: expectedDefinition,
+        instances: [
+          {
+            sid: 'si:tencent:cynosdb:default:cynosdbmysql-test123',
+            id: 'cynosdbmysql-test123',
+            clusterName: 'test-tdsqlc',
+          },
+        ],
+        lastUpdated: '2024-01-01T00:00:00Z',
+        metadata: { clusterId: 'cynosdbmysql-test123' },
+      };
+
+      jest.spyOn(stateManager, 'getResource').mockReturnValue(existingState);
+      jest.spyOn(stateManager, 'getAllResources').mockReturnValue({});
+      jest.spyOn(mockTdsqlcOperations, 'getCluster').mockResolvedValue({
+        ClusterId: 'cynosdbmysql-test123',
+        ClusterName: 'test-tdsqlc',
+        Status: 'running',
+        Region: 'ap-guangzhou',
+        DbType: 'MYSQL' as const,
+        DbVersion: '8.0',
+        DbMode: 'SERVERLESS',
+        MinCpu: 1,
+        MaxCpu: 8,
+        StoragePayMode: 0,
+        VpcId: 'vpc-12345',
+        SubnetId: 'subnet-67890',
+        MinStorageSize: 10,
+        MaxStorageSize: 1000,
+      });
+      // The console enabled the idle-pause switch; config declares it off.
+      jest.spyOn(mockTdsqlcOperations, 'getServerlessStrategy').mockResolvedValue({
+        autoPause: true,
+        autoPauseDelay: 600,
       });
 
       const result = await generateDatabasePlan(mockContext, mockState, [mockDatabase]);

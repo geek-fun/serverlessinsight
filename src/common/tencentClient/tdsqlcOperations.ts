@@ -194,6 +194,34 @@ export const createTdsqlcOperations = (cynosdbClient: CynosdbSdkClient, context:
       }
     },
 
+    getServerlessStrategy: async (
+      clusterId: string,
+    ): Promise<{ autoPause?: boolean; autoPauseDelay?: number } | null> => {
+      // DescribeServerlessStrategy reports the CONFIGURED idle-pause switch
+      // (DescribeClusters only reports the running state). The dedicated API
+      // is recent — guard on SDK support and treat absence as "not readable".
+      const sdk = cynosdbClient as unknown as {
+        DescribeServerlessStrategy?: (params: {
+          ClusterId: string;
+        }) => Promise<{ AutoPause?: string; AutoPauseDelay?: number }>;
+      };
+      if (typeof sdk.DescribeServerlessStrategy !== 'function') {
+        return null;
+      }
+      try {
+        const response = await sdk.DescribeServerlessStrategy({ ClusterId: clusterId });
+        if (!response) {
+          return null;
+        }
+        return {
+          autoPause: response.AutoPause === undefined ? undefined : response.AutoPause === 'yes',
+          autoPauseDelay: response.AutoPauseDelay,
+        };
+      } catch {
+        return null;
+      }
+    },
+
     updateCluster: async (clusterId: string, config: TdsqlcClusterConfig): Promise<void> => {
       const params = {
         ClusterId: clusterId,
