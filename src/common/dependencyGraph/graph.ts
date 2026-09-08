@@ -22,6 +22,11 @@ const RESOURCE_TYPE_PREFIX_MAP: Record<string, string> = {
   SCF: 'functions',
   COS_BUCKET: 'buckets',
   TDSQL_C_SERVERLESS: 'databases',
+  TENCENT_ES_SERVERLESS: 'databases',
+  // Volcengine resource types (as emitted by planners)
+  VOLCENGINE_VEFAAS: 'functions',
+  VOLCENGINE_TOS_BUCKET: 'buckets',
+  VOLCENGINE_APIGW: 'events',
 };
 
 const RESOURCE_DEPENDENCY_ORDER: Record<string, number> = {
