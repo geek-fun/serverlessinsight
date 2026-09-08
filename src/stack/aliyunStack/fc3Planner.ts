@@ -9,6 +9,10 @@ import {
 import { createAliyunClient } from '../../common/aliyunClient';
 import { buildFc3ExecutionPolicyDocument } from '../../common/aliyunClient/ramOperations';
 import { SLS_LOGSTORE_SHARDS, SLS_LOGSTORE_TTL } from '../../common/aliyunClient/slsOperations';
+import {
+  canonicalSecurityGroupRule,
+  parseSecurityGroupRule,
+} from '../../common/aliyunClient/ecsOperations';
 import { cachedRefreshRead } from '../../common/refreshCache';
 import { remoteDiffersFromDesired } from '../../common/planCompare';
 import { PLAN_READ_CONCURRENCY, mapWithConcurrency } from '../../common/concurrency';
@@ -303,46 +307,98 @@ const detectRolePolicyDrift = async (
  * (buildFunctionLogstoreName), so this lives in the function flow. Aliyun
  * cannot shrink shards, so only a shard deficit counts as drift.
  */
-const detectFunctionNestedLogDrift = async (
+const detectFunctionNestedDrift = async (
   context: Context,
   client: ReturnType<typeof createAliyunClient>,
   fn: FunctionDomain,
   currentState: ResourceState,
 ): Promise<boolean> => {
-  const slsLogstoreInstance = currentState.instances?.find(
-    (i) => (i as { type?: string }).type === 'ALIYUN_SLS_LOGSTORE',
-  ) as { id?: string } | undefined;
-  if (!slsLogstoreInstance?.id) {
-    return false; // nothing recorded — the executor creates it on update
-  }
-  const [projectName, logstoreName] = slsLogstoreInstance.id.split('/');
-  if (!projectName || !logstoreName) {
-    return false;
+  // Each declared dimension contributes its own probe; undeclared dimensions
+  // fall through so later dimensions still run.
+  if (fn.log) {
+    const slsLogstoreInstance = currentState.instances?.find(
+      (i) => (i as { type?: string }).type === 'ALIYUN_SLS_LOGSTORE',
+    ) as { id?: string } | undefined;
+    if (slsLogstoreInstance?.id) {
+      const [projectName, logstoreName] = slsLogstoreInstance.id.split('/');
+      if (projectName && logstoreName) {
+        const logstore = await cachedRefreshRead(
+          context,
+          `sls.getLogstore:${projectName}:${logstoreName}`,
+          () => client.sls.getLogstore(projectName, logstoreName),
+        );
+        if (!logstore) {
+          return true; // logstore deleted out-of-band
+        }
+        if (logstore.ttl !== SLS_LOGSTORE_TTL) {
+          return true;
+        }
+        // Aliyun cannot shrink shards — only a deficit counts as drift.
+        if ((logstore.shardCount ?? 0) < SLS_LOGSTORE_SHARDS) {
+          return true;
+        }
+
+        const index = await cachedRefreshRead(
+          context,
+          `sls.getIndex:${projectName}:${logstoreName}`,
+          () => client.sls.getIndex(projectName, logstoreName),
+        );
+        if (!index) {
+          return true; // index deleted out-of-band
+        }
+      }
+    }
   }
 
-  const logstore = await cachedRefreshRead(
-    context,
-    `sls.getLogstore:${projectName}:${logstoreName}`,
-    () => client.sls.getLogstore(projectName, logstoreName),
-  );
-  if (!logstore) {
-    return true; // logstore deleted out-of-band
-  }
-  if (logstore.ttl !== SLS_LOGSTORE_TTL) {
-    return true;
-  }
-  if ((logstore.shardCount ?? 0) < SLS_LOGSTORE_SHARDS) {
-    return true;
+  // SG rules are function-owned (created from fn.network.security_group) —
+  // console edits to the rule set are function drift (issue #234 M2).
+  if (fn.network) {
+    const sgInstance = currentState.instances?.find(
+      (i) => (i as { type?: string }).type === 'ALIYUN_ECS_SECURITY_GROUP',
+    ) as { id?: string } | undefined;
+    if (sgInstance?.id) {
+      const sgId = sgInstance.id;
+      const live = await cachedRefreshRead(context, `ecs.getSecurityGroupRules:${sgId}`, () =>
+        client.ecs.getSecurityGroupRules(sgId),
+      );
+      const desiredRules = (
+        ingress: string[],
+        egress: string[],
+      ): { ingress: string[]; egress: string[] } => {
+        const parse = (rule: string): string | null => {
+          try {
+            const parsed = parseSecurityGroupRule(rule);
+            return canonicalSecurityGroupRule(parsed.protocol, parsed.portRange, parsed.cidr);
+          } catch {
+            return null; // invalid rules are skipped at create time too
+          }
+        };
+        return {
+          ingress: (ingress ?? []).map(parse).filter((r): r is string => Boolean(r)),
+          egress: (egress ?? []).map(parse).filter((r): r is string => Boolean(r)),
+        };
+      };
+      const desired = desiredRules(
+        fn.network.security_group.ingress ?? [],
+        fn.network.security_group.egress ?? [],
+      );
+      const liveIngress = (live?.ingressRules ?? []).map((r) =>
+        canonicalSecurityGroupRule(r.ipProtocol ?? '', r.portRange ?? '', r.sourceCidrIp ?? ''),
+      );
+      const liveEgress = (live?.egressRules ?? []).map((r) =>
+        canonicalSecurityGroupRule(r.ipProtocol ?? '', r.portRange ?? '', r.destCidrIp ?? ''),
+      );
+      if (
+        desired.ingress.some((d) => !liveIngress.includes(d)) ||
+        liveIngress.some((l) => !desired.ingress.includes(l)) ||
+        desired.egress.some((d) => !liveEgress.includes(d)) ||
+        liveEgress.some((l) => !desired.egress.includes(l))
+      ) {
+        return true;
+      }
+    }
   }
 
-  const index = await cachedRefreshRead(
-    context,
-    `sls.getIndex:${projectName}:${logstoreName}`,
-    () => client.sls.getIndex(projectName, logstoreName),
-  );
-  if (!index) {
-    return true; // index deleted out-of-band
-  }
   return false;
 };
 
@@ -503,33 +559,26 @@ export const generateFunctionPlan = async (
           }
         }
 
-        // Issue #234 M1: nested log drift — probed only when logging is
-        // declared in config.
-        if (fn.log) {
-          try {
-            const nestedDrifted = await detectFunctionNestedLogDrift(
-              context,
-              client,
-              fn,
-              currentState,
-            );
-            if (nestedDrifted) {
-              return {
-                logicalId,
-                action: 'update',
-                resourceType: 'ALIYUN_FC3',
-                changes: { before: normalizedCurrent, after: normalizedDesired },
-                drifted: true,
-              };
-            }
-          } catch (error: unknown) {
-            logger.warn(
-              lang.__('PLAN_FUNCTION_NESTED_PROBE_FAILED', {
-                functionName: fn.name,
-                error: String(error),
-              }),
-            );
+        // Issue #234 M1/M2: nested drift probe — the probe itself skips
+        // dimensions the config does not declare.
+        try {
+          const nestedDrifted = await detectFunctionNestedDrift(context, client, fn, currentState);
+          if (nestedDrifted) {
+            return {
+              logicalId,
+              action: 'update',
+              resourceType: 'ALIYUN_FC3',
+              changes: { before: normalizedCurrent, after: normalizedDesired },
+              drifted: true,
+            };
           }
+        } catch (error: unknown) {
+          logger.warn(
+            lang.__('PLAN_FUNCTION_NESTED_PROBE_FAILED', {
+              functionName: fn.name,
+              error: String(error),
+            }),
+          );
         }
 
         return { logicalId, action: 'noop', resourceType: 'ALIYUN_FC3' };

@@ -36,6 +36,10 @@ import {
 } from '../../types';
 import { extractFc3Definition, Fc3FunctionInfo, functionToFc3Config } from './fc3Types';
 import { SLS_LOGSTORE_SHARDS, SLS_LOGSTORE_TTL } from '../../common/aliyunClient/slsOperations';
+import {
+  canonicalSecurityGroupRule,
+  parseSecurityGroupRule,
+} from '../../common/aliyunClient/ecsOperations';
 import { logger } from '../../common/logger';
 import { unionPolicyStatements, type IamStatement } from '../../common/iamStatements';
 import { buildFc3ExecutionPolicyDocument } from '../../common/aliyunClient/ramOperations';
@@ -1308,6 +1312,85 @@ export const updateResource = async (
     const sgInstance = existingInstances.find((i) => i.type === 'ALIYUN_ECS_SECURITY_GROUP');
     if (sgInstance) {
       securityGroup = { securityGroupId: sgInstance.id };
+
+      // Issue #234 M2: SG rule reconcile — only on a drifted plan item
+      // (force): authorize rules missing from the live set, revoke rules the
+      // config no longer declares. Invalid config rules are skipped at create
+      // time too.
+      if (options?.force && fn.network) {
+        const parseRule = (rule: string) => {
+          try {
+            return parseSecurityGroupRule(rule);
+          } catch {
+            return null;
+          }
+        };
+        const desiredIngress = (fn.network.security_group.ingress ?? [])
+          .map(parseRule)
+          .filter((r): r is NonNullable<ReturnType<typeof parseRule>> => Boolean(r));
+        const desiredEgress = (fn.network.security_group.egress ?? [])
+          .map(parseRule)
+          .filter((r): r is NonNullable<ReturnType<typeof parseRule>> => Boolean(r));
+        const live = await client.ecs.getSecurityGroupRules(sgInstance.id);
+        const liveIngressKeys = (live?.ingressRules ?? []).map((r) =>
+          canonicalSecurityGroupRule(r.ipProtocol ?? '', r.portRange ?? '', r.sourceCidrIp ?? ''),
+        );
+        const liveEgressKeys = (live?.egressRules ?? []).map((r) =>
+          canonicalSecurityGroupRule(r.ipProtocol ?? '', r.portRange ?? '', r.destCidrIp ?? ''),
+        );
+        const missingIngress = desiredIngress.filter(
+          (d) =>
+            !liveIngressKeys.includes(canonicalSecurityGroupRule(d.protocol, d.portRange, d.cidr)),
+        );
+        const missingEgress = desiredEgress.filter(
+          (d) =>
+            !liveEgressKeys.includes(canonicalSecurityGroupRule(d.protocol, d.portRange, d.cidr)),
+        );
+        const extraIngress = (live?.ingressRules ?? [])
+          .map((r) => ({
+            protocol: r.ipProtocol ?? '',
+            portRange: (r.portRange ?? '').split('/')[0] ?? '',
+            cidr: r.sourceCidrIp ?? '',
+          }))
+          .filter(
+            (r) =>
+              !desiredIngress.some(
+                (d) =>
+                  canonicalSecurityGroupRule(d.protocol, d.portRange, d.cidr) ===
+                  canonicalSecurityGroupRule(r.protocol, r.portRange, r.cidr),
+              ),
+          );
+        const extraEgress = (live?.egressRules ?? [])
+          .map((r) => ({
+            protocol: r.ipProtocol ?? '',
+            portRange: (r.portRange ?? '').split('/')[0] ?? '',
+            cidr: r.destCidrIp ?? '',
+          }))
+          .filter(
+            (r) =>
+              !desiredEgress.some(
+                (d) =>
+                  canonicalSecurityGroupRule(d.protocol, d.portRange, d.cidr) ===
+                  canonicalSecurityGroupRule(r.protocol, r.portRange, r.cidr),
+              ),
+          );
+
+        if (missingIngress.length > 0 || missingEgress.length > 0) {
+          await client.ecs.authorizeSecurityGroupRules(sgInstance.id, 'ingress', missingIngress);
+          await client.ecs.authorizeSecurityGroupRules(sgInstance.id, 'egress', missingEgress);
+        }
+        if (extraIngress.length > 0 || extraEgress.length > 0) {
+          await client.ecs.revokeSecurityGroupRules(sgInstance.id, 'ingress', extraIngress);
+          await client.ecs.revokeSecurityGroupRules(sgInstance.id, 'egress', extraEgress);
+        }
+        logger.info(
+          lang.__('NESTED_SG_RULES_REPAIRED', {
+            securityGroupId: sgInstance.id,
+            added: String(missingIngress.length + missingEgress.length),
+            removed: String(extraIngress.length + extraEgress.length),
+          }),
+        );
+      }
     }
   }
 
