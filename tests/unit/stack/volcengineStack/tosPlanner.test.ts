@@ -316,6 +316,95 @@ describe('tosPlanner', () => {
       expect(result.items[0].action).toBe('noop');
     });
 
+    it('flags update+drifted when the live acl drifted from config (issue #234 phase 2)', async () => {
+      const buckets: Array<BucketDomain> = [
+        {
+          key: 'static_site',
+          name: 'test-bucket',
+          security: { acl: BucketAccessEnum.PUBLIC_READ, force_delete: false },
+        },
+      ];
+
+      const stateWithBucket: StateFile = {
+        ...mockState,
+        resources: {
+          'buckets.static_site': {
+            mode: 'managed',
+            region: 'cn-beijing',
+            definition: {
+              bucketName: 'test-bucket',
+              acl: 'public-read',
+              storageClass: null,
+              websiteConfiguration: null,
+              websiteCodeHash: null,
+              policy: null,
+            },
+            instances: [{ sid: 'test-sid', id: 'test-bucket', type: 'VOLCENGINE_TOS_BUCKET' }],
+            lastUpdated: '2024-01-01T00:00:00Z',
+          },
+        },
+      };
+
+      mockTosClient.tos.getBucket.mockResolvedValueOnce({
+        name: 'test-bucket',
+        acl: 'private',
+      });
+
+      jest
+        .spyOn(stateManager, 'getResource')
+        .mockReturnValue(stateWithBucket.resources['buckets.static_site']);
+
+      const result = await generateBucketPlan(mockContext, stateWithBucket, buckets);
+
+      expect(result.items[0]).toMatchObject({ action: 'update', drifted: true });
+    });
+
+    it('stays noop when live bucket matches config despite cloud-only detail fields', async () => {
+      const buckets: Array<BucketDomain> = [
+        {
+          key: 'static_site',
+          name: 'test-bucket',
+        },
+      ];
+
+      const stateWithBucket: StateFile = {
+        ...mockState,
+        resources: {
+          'buckets.static_site': {
+            mode: 'managed',
+            region: 'cn-beijing',
+            definition: {
+              bucketName: 'test-bucket',
+              acl: null,
+              storageClass: null,
+              websiteConfiguration: null,
+              websiteCodeHash: null,
+              policy: null,
+            },
+            instances: [{ sid: 'test-sid', id: 'test-bucket', type: 'VOLCENGINE_TOS_BUCKET' }],
+            lastUpdated: '2024-01-01T00:00:00Z',
+          },
+        },
+      };
+
+      mockTosClient.tos.getBucket.mockResolvedValueOnce({
+        name: 'test-bucket',
+        location: 'cn-beijing',
+        creationDate: '2024-01-01T00:00:00Z',
+        owner: { id: 'u', displayName: 'u' },
+        extranetEndpoint: 'tos-cn-beijing.volces.com',
+        Tags: [{ Key: 'si-owned-by', Value: 'test-app-test-service:buckets.static_site' }],
+      });
+
+      jest
+        .spyOn(stateManager, 'getResource')
+        .mockReturnValue(stateWithBucket.resources['buckets.static_site']);
+
+      const result = await generateBucketPlan(mockContext, stateWithBucket, buckets);
+
+      expect(result.items[0]).toMatchObject({ action: 'noop' });
+    });
+
     it('should generate delete plan for removed bucket', async () => {
       const stateWithBucket: StateFile = {
         ...mockState,
