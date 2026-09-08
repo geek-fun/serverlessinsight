@@ -107,3 +107,15 @@ export const extractTencentEsDefinition = (config: TencentEsConfig): ResourceAtt
     kibanaWhiteIpList: config.KibanaWhiteIpList ?? null,
   };
 };
+
+// issue #234 phase 2: cloud-side counterpart of extractTencentEsDefinition.
+// Mirrors the executor write shape key-for-key. Not refreshable (omitted so it
+// can never phantom-drift): version (DescribeServerlessSpaceVCU / getSpace
+// does not report the configured engine version).
+export const cloudTencentEsToDefinition = (info: TencentEsSpaceInfo): ResourceAttributes => ({
+  spaceName: info.SpaceName,
+  vpcId: info.VpcInfo?.[0]?.VpcId ?? null,
+  subnetId: info.VpcInfo?.[0]?.SubnetId ?? null,
+  zone: info.Zone ?? null,
+  kibanaWhiteIpList: info.KibanaPublicAcl?.WhiteIpList ?? null,
+});

@@ -81,6 +81,9 @@ describe('esServerlessPlanner', () => {
     (esTypes.extractTencentEsDefinition as jest.Mock).mockReturnValue({
       name: 'test-db',
     });
+    // Default: the live-probe mapper reports no comparable attributes, so the
+    // pre-existing intent-diff tests keep their semantics.
+    (esTypes.cloudTencentEsToDefinition as jest.Mock).mockReturnValue({});
     (hashUtils.attributesEqual as jest.Mock).mockReturnValue(true);
   });
 
@@ -335,6 +338,49 @@ describe('esServerlessPlanner', () => {
 
       expect(plan.items).toHaveLength(1);
       expect(plan.items[0].action).toBe('noop');
+    });
+
+    it('flags update+drifted when the live vpc drifted from config (issue #234 phase 2)', async () => {
+      const stateWithDb: StateFile = {
+        ...initialState,
+        resources: {
+          'databases.test_db': {
+            mode: 'managed' as ResourceMode,
+            region: 'ap-guangzhou',
+            definition: { name: 'test-db', vpcId: 'vpc-123', subnetId: 'subnet-123' },
+            instances: [{ sid: 'si:tencent:es', id: 'space-123' }],
+            lastUpdated: new Date().toISOString(),
+            metadata: { spaceId: 'space-123' },
+          },
+        },
+      };
+
+      (stateManager.getResource as jest.Mock).mockReturnValue({
+        definition: { name: 'test-db', vpcId: 'vpc-123', subnetId: 'subnet-123' },
+        metadata: { spaceId: 'space-123' },
+      });
+      (stateManager.getAllResources as jest.Mock).mockReturnValue({});
+      (mockEsOperations.getSpace as jest.Mock).mockResolvedValue({ SpaceName: 'test-db' });
+      (esTypes.cloudTencentEsToDefinition as jest.Mock).mockReturnValue({
+        spaceName: 'test-db',
+        vpcId: 'vpc-other',
+        subnetId: 'subnet-123',
+        zone: null,
+        kibanaWhiteIpList: null,
+      });
+      (esTypes.extractTencentEsDefinition as jest.Mock).mockReturnValue({
+        name: 'test-db',
+        vpcId: 'vpc-123',
+        subnetId: 'subnet-123',
+      });
+      (hashUtils.attributesEqual as jest.Mock).mockImplementation(
+        (a: unknown, b: unknown) => JSON.stringify(a) === JSON.stringify(b),
+      );
+
+      const plan = await generateEsPlan(mockContext, stateWithDb, [testDatabase]);
+
+      expect(plan.items).toHaveLength(1);
+      expect(plan.items[0]).toMatchObject({ action: 'update', drifted: true });
     });
 
     it('should handle error when getting ES space from cloud', async () => {

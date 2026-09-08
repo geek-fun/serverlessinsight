@@ -1,7 +1,9 @@
 import {
   databaseToTencentEsConfig,
   extractTencentEsDefinition,
+  cloudTencentEsToDefinition,
 } from '../../../../src/stack/scfStack/esServerlessTypes';
+import { remoteDiffersFromDesired } from '../../../../src/common/planCompare';
 import { DatabaseDomain, DatabaseEnum, DatabaseVersionEnum } from '../../../../src/types';
 
 describe('TencentEsServerlessTypes', () => {
@@ -255,6 +257,53 @@ describe('TencentEsServerlessTypes', () => {
 
       expect(definition).not.toHaveProperty('password');
       expect(definition).not.toHaveProperty('Password');
+    });
+  });
+
+  describe('cloudTencentEsToDefinition (issue #234 phase 2)', () => {
+    it('maps network/whitelist from the space info and omits non-refreshable version', () => {
+      const attrs = cloudTencentEsToDefinition({
+        SpaceId: 'space-123',
+        SpaceName: 'test-db',
+        Status: 2,
+        VpcInfo: [{ VpcId: 'vpc-123', SubnetId: 'subnet-123' }],
+        Zone: 'ap-guangzhou-1',
+        KibanaPublicAcl: { WhiteIpList: ['0.0.0.0/0'] },
+      });
+
+      expect(attrs).toEqual({
+        spaceName: 'test-db',
+        vpcId: 'vpc-123',
+        subnetId: 'subnet-123',
+        zone: 'ap-guangzhou-1',
+        kibanaWhiteIpList: ['0.0.0.0/0'],
+      });
+      expect(attrs).not.toHaveProperty('version');
+    });
+
+    // Deployed-then-untouched must never drift: cloud side simulated as what
+    // the executor wrote, with the fields the read API reports back.
+    it('never drifts against its own config (roundtrip guard)', () => {
+      const database: DatabaseDomain = {
+        key: 'test_db',
+        name: 'test-db',
+        type: DatabaseEnum.ELASTICSEARCH_SERVERLESS,
+        version: DatabaseVersionEnum['ES_SEARCH_7.10'],
+        security: { basicAuth: { password: 'test-password' } },
+        network: { type: 'PRIVATE', ingressRules: [], vpcId: 'vpc-123', subnetId: 'subnet-123' },
+        cu: { min: 2, max: 2 },
+        storage: { min: 20 },
+      };
+
+      const desired = extractTencentEsDefinition(databaseToTencentEsConfig(database));
+      const cloudInfo = {
+        SpaceId: 'space-123',
+        SpaceName: 'test-db',
+        Status: 2,
+        VpcInfo: [{ VpcId: 'vpc-123', SubnetId: 'subnet-123' }],
+      };
+
+      expect(remoteDiffersFromDesired(cloudTencentEsToDefinition(cloudInfo), desired)).toBe(false);
     });
   });
 });
