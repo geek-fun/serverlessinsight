@@ -7,7 +7,10 @@ import {
   ResourceAttributes,
 } from '../../types';
 import { createTencentClient } from '../../common/tencentClient';
+import { logger } from '../../common/logger';
+import { lang } from '../../lang';
 import { cachedRefreshRead } from '../../common/refreshCache';
+import { CLS_TOPIC_PERIOD, CLS_TOPIC_STORAGE_TYPE } from '../../common/tencentClient/clsOperations';
 import { PLAN_READ_CONCURRENCY, mapWithConcurrency } from '../../common/concurrency';
 import { functionToScfConfig, extractScfDefinition, cloudScfToDefinition } from './scfTypes';
 import { getAllResources, getResource } from '../../common/stateManager';
@@ -59,6 +62,47 @@ export const generateFunctionPlan = async (
       const desiredDefinition = extractScfDefinition(config, desiredCodeHash, fn.iam);
 
       const client = createTencentClient(context);
+
+      // Issue #234 M3: nested topic drift — probed only when logging is
+      // declared; unresolvable/unreadable topics are not drift.
+      if (
+        currentState &&
+        currentState.status !== 'tainted' &&
+        fn.log &&
+        context.refresh !== false
+      ) {
+        const topicInstance = currentState.instances?.find(
+          (i) => (i as { type?: string }).type === 'TENCENT_CLS_TOPIC',
+        ) as { id?: string } | undefined;
+        if (topicInstance?.id) {
+          const topicId = topicInstance.id;
+          try {
+            const liveTopic = await cachedRefreshRead(context, `cls.getTopicById:${topicId}`, () =>
+              client.cls.getTopicById(topicId),
+            );
+            const topicDrifted =
+              !liveTopic ||
+              liveTopic.StorageType !== CLS_TOPIC_STORAGE_TYPE ||
+              liveTopic.Period !== CLS_TOPIC_PERIOD;
+            if (topicDrifted) {
+              return {
+                logicalId,
+                action: 'update',
+                resourceType: 'SCF',
+                changes: { before: currentState.definition || {}, after: desiredDefinition },
+                drifted: true,
+              };
+            }
+          } catch (error: unknown) {
+            logger.warn(
+              lang.__('PLAN_FUNCTION_NESTED_PROBE_FAILED', {
+                functionName: fn.name,
+                error: String(error),
+              }),
+            );
+          }
+        }
+      }
 
       return planRefreshedResource({
         logicalId,

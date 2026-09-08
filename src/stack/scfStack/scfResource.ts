@@ -41,6 +41,7 @@ import {
   ensureFunctionTopic,
   releaseSharedLogsetIfUnused,
 } from './sharedLogset';
+import { CLS_TOPIC_PERIOD, CLS_TOPIC_STORAGE_TYPE } from '../../common/tencentClient/clsOperations';
 
 /**
  * Build the Function URL trigger description for Tencent CreateTrigger
@@ -892,6 +893,46 @@ export const updateResource = async (
   );
   const hasCamRole = existingInstances.some((i) => i.type === ResourceTypeEnum.TENCENT_SCF_ROLE);
   const client = createTencentClient(context);
+
+  // Issue #234 M3: nested repair — only on a drifted plan item (force):
+  // reconcile topic attributes against si's creation defaults; a deleted
+  // topic is recreated under the shared logset when it is still recorded.
+  if (options?.force && fn.log && existingClsTopicInstance) {
+    const liveTopic = await client.cls.getTopicById(existingClsTopicInstance.id).catch(() => null);
+    if (!liveTopic) {
+      const sharedBefore = getSharedResource(state, context.stage, SHARED_LOGSET_KEY);
+      const sharedLogsetId =
+        (sharedBefore?.instances?.[0] as { id?: string } | undefined)?.id ??
+        (existingClsTopicInstance as { logsetId?: string }).logsetId;
+      if (sharedLogsetId) {
+        logger.warn(lang.__('NESTED_TOPIC_RECREATED', { topicId: existingClsTopicInstance.id }));
+        await client.cls.createTopic(
+          sharedLogsetId,
+          (existingFnInstance?.functionName as string) ??
+            existingClsTopicInstance.topicName ??
+            'fn-logs',
+          {
+            tags: [
+              {
+                key: OWNERSHIP_TAG_KEY,
+                value: buildOwnershipTagValue(context, `functions.${fn.key}`),
+              },
+            ],
+          },
+        );
+        await client.cls.createFulltextIndex(existingClsTopicInstance.id);
+      }
+    } else if (
+      liveTopic.StorageType !== CLS_TOPIC_STORAGE_TYPE ||
+      liveTopic.Period !== CLS_TOPIC_PERIOD
+    ) {
+      await client.cls.modifyTopic(existingClsTopicInstance.id, {
+        period: CLS_TOPIC_PERIOD,
+        storageType: CLS_TOPIC_STORAGE_TYPE,
+      });
+      logger.info(lang.__('NESTED_TOPIC_UPDATED', { topicId: existingClsTopicInstance.id }));
+    }
+  }
 
   const newIamRole = fn.iam?.role;
   let role: { roleName?: string; arn?: string } | undefined;
