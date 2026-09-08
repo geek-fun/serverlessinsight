@@ -3,9 +3,10 @@ import { Context, BucketDomain, Plan, PlanItem, StateFile, ResourceAttributes } 
 import { createVolcengineClient } from '../../common/volcengineClient';
 import { cachedRefreshRead } from '../../common/refreshCache';
 import { PLAN_READ_CONCURRENCY, mapWithConcurrency } from '../../common/concurrency';
-import { bucketToTosConfig, extractTosBucketDefinition } from './tosTypes';
+import { bucketToTosConfig, cloudTosToDefinition, extractTosBucketDefinition } from './tosTypes';
 import { getAllResources, getResource } from '../../common/stateManager';
 import { attributesEqual, computeDirectoryHash } from '../../common';
+import { remoteDiffersFromDesired } from '../../common/planCompare';
 import { OWNERSHIP_TAG_KEY, isOwnedByStack } from '../ownershipTag';
 
 const planBucketDeletion = (logicalId: string, definition: ResourceAttributes): PlanItem => ({
@@ -92,7 +93,15 @@ export const generateBucketPlan = async (
         const currentDefinition = currentState.definition || {};
         const definitionChanged = !attributesEqual(currentDefinition, desiredDefinition);
 
-        if (definitionChanged) {
+        // Issue #234 phase 2: live attribute drift (console edits to
+        // acl/storage-class/website). One-directional: only mapper-emitted keys
+        // the desired definition declares are compared.
+        const remoteDiffers = remoteDiffersFromDesired(
+          cloudTosToDefinition(remoteBucket),
+          desiredDefinition,
+        );
+
+        if (definitionChanged || remoteDiffers) {
           return {
             logicalId,
             action: 'update',

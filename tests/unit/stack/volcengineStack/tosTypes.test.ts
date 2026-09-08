@@ -2,8 +2,11 @@ import {
   bucketToTosConfig,
   extractTosBucketDefinition,
   buildTosInstanceFromProvider,
+  cloudTosToDefinition,
 } from '../../../../src/stack/volcengineStack/tosTypes';
+import { remoteDiffersFromDesired } from '../../../../src/common/planCompare';
 import type { BucketDomain } from '../../../../src/types';
+import type { TosBucketInfo } from '../../../../src/common/volcengineClient/types';
 
 describe('tosTypes', () => {
   describe('bucketToTosConfig', () => {
@@ -213,6 +216,55 @@ describe('tosTypes', () => {
         accessMonitor: null,
         serverSideEncryptionConfiguration: null,
       });
+    });
+  });
+
+  describe('cloudTosToDefinition (issue #234 phase 2)', () => {
+    it('maps acl/storageClass/website and omits non-refreshable keys', () => {
+      expect(
+        cloudTosToDefinition({
+          name: 'test-bucket',
+          acl: 'public-read',
+          storageClass: 'STANDARD',
+          websiteConfig: { indexDocument: 'index.html', errorDocument: 'error.html' },
+        }),
+      ).toEqual({
+        bucketName: 'test-bucket',
+        acl: 'public-read',
+        storageClass: 'STANDARD',
+        websiteConfiguration: {
+          indexDocument: 'index.html',
+          errorDocument: 'error.html',
+        },
+      });
+
+      const attrs = cloudTosToDefinition({ name: 'test-bucket' });
+      expect(attrs).toEqual({
+        bucketName: 'test-bucket',
+        acl: null,
+        storageClass: null,
+        websiteConfiguration: null,
+      });
+      expect(attrs).not.toHaveProperty('policy');
+      expect(attrs).not.toHaveProperty('websiteCodeHash');
+    });
+
+    // Deployed-then-untouched must never drift: cloud side simulated as what
+    // the executor wrote (bucketToTosConfig field names align with the info).
+    it('never drifts against its own config (roundtrip guard)', () => {
+      const bucket: BucketDomain = {
+        key: 'static_site',
+        name: 'test-bucket',
+        security: { acl: 'PUBLIC_READ' as never, force_delete: false },
+      };
+
+      const desired = extractTosBucketDefinition(bucketToTosConfig(bucket));
+      const cloudInfo: TosBucketInfo = {
+        name: 'test-bucket',
+        acl: 'public-read',
+      };
+
+      expect(remoteDiffersFromDesired(cloudTosToDefinition(cloudInfo), desired)).toBe(false);
     });
   });
 });

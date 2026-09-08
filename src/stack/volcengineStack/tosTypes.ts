@@ -79,6 +79,23 @@ export const extractTosBucketDefinition = (
   };
 };
 
+// issue #234 phase 2: cloud-side counterpart of extractTosBucketDefinition.
+// Mirrors the executor write shape key-for-key: acl/storageClass/websiteConfig
+// are compared live; policy (GetBucket returns no bucket-policy document) and
+// websiteCodeHash (local-only) are not refreshable and stay omitted so they can
+// never trigger phantom drift.
+export const cloudTosToDefinition = (info: TosBucketInfo): ResourceAttributes => ({
+  bucketName: info.name,
+  acl: info.acl ?? null,
+  storageClass: info.storageClass ?? null,
+  websiteConfiguration: info.websiteConfig
+    ? {
+        indexDocument: info.websiteConfig.indexDocument ?? null,
+        errorDocument: info.websiteConfig.errorDocument ?? null,
+      }
+    : null,
+});
+
 export const buildTosInstanceFromProvider = (info: TosBucketInfo, sid: string) => {
   return {
     type: 'VOLCENGINE_TOS_BUCKET',
