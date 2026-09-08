@@ -906,20 +906,14 @@ export const updateResource = async (
         (existingClsTopicInstance as { logsetId?: string }).logsetId;
       if (sharedLogsetId) {
         logger.warn(lang.__('NESTED_TOPIC_RECREATED', { topicId: existingClsTopicInstance.id }));
-        await client.cls.createTopic(
-          sharedLogsetId,
-          (existingFnInstance?.functionName as string) ??
-            existingClsTopicInstance.topicName ??
-            'fn-logs',
-          {
-            tags: [
-              {
-                key: OWNERSHIP_TAG_KEY,
-                value: buildOwnershipTagValue(context, `functions.${fn.key}`),
-              },
-            ],
-          },
-        );
+        await client.cls.createTopic(sharedLogsetId, buildFunctionTopicName(context, fn.key), {
+          tags: [
+            {
+              key: OWNERSHIP_TAG_KEY,
+              value: buildOwnershipTagValue(context, `functions.${fn.key}`),
+            },
+          ],
+        });
         await client.cls.createFulltextIndex(existingClsTopicInstance.id);
       }
     } else if (
