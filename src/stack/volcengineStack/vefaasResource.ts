@@ -622,6 +622,7 @@ export const updateResource = async (
   context: Context,
   fn: FunctionDomain,
   state: StateFile,
+  options?: { force?: boolean },
 ): Promise<StateFile> => {
   const serviceName = `${context.app}-${context.service}`;
   const logicalId = `functions.${fn.key}`;
@@ -847,7 +848,10 @@ export const updateResource = async (
 
   let lastReleaseRecordId: string | undefined;
 
-  if (configChanged) {
+  // `force` carries the plan's drifted flag: a live-drift update (state
+  // matches config, cloud edited in console) must re-push the config even
+  // though state-vs-desired sees no change.
+  if (configChanged || options?.force) {
     const released = await client.vefaas.updateFunctionConfiguration(
       currentFunctionId ?? fn.name,
       config,
