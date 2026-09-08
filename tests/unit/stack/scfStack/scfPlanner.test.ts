@@ -466,5 +466,99 @@ describe('SCF Planner', () => {
         resourceType: 'SCF',
       });
     });
+
+    it('flags update+drifted when the live memorySize drifted from config (issue #234 phase 2)', async () => {
+      mockScfOperations.getFunction.mockResolvedValue({
+        FunctionName: 'test-function',
+        Runtime: 'Nodejs18.15',
+        Handler: 'index.handler',
+        MemorySize: 256,
+        Timeout: 10,
+        Environment: {
+          Variables: [{ Key: 'NODE_ENV', Value: 'production' }],
+        },
+      });
+
+      const state = setResource(initalState, 'functions.test_fn', {
+        mode: 'managed',
+        region: 'ap-guangzhou',
+        definition: {
+          functionName: 'test-function',
+          runtime: 'Nodejs18.15',
+          handler: 'index.handler',
+          memorySize: 512,
+          timeout: 10,
+          environment: { NODE_ENV: 'production' },
+          codeHash: 'mock-code-hash',
+          vpcConfig: null,
+          diskSize: null,
+          cfsConfig: null,
+          useGpu: null,
+          imageConfig: null,
+        },
+        instances: [
+          {
+            sid: 'si:tencent:scf:default:test-function',
+            id: 'test-function',
+            functionName: 'test-function',
+          },
+        ],
+        lastUpdated: new Date().toISOString(),
+      });
+
+      const plan = await generateFunctionPlan(mockContext, state, [testFunction]);
+
+      expect(plan.items[0]).toMatchObject({ action: 'update', drifted: true });
+    });
+
+    it('stays noop when live function matches config despite cloud-only detail fields', async () => {
+      mockScfOperations.getFunction.mockResolvedValue({
+        FunctionName: 'test-function',
+        Runtime: 'Nodejs18.15',
+        Handler: 'index.handler',
+        MemorySize: 512,
+        Timeout: 10,
+        Environment: {
+          Variables: [{ Key: 'NODE_ENV', Value: 'production' }],
+        },
+        Status: 'Active',
+        CodeSize: 1024,
+        FunctionId: 'ln-abc',
+        ModTime: '2024-01-01T00:00:00Z',
+        Tags: [{ Key: 'x', Value: 'y' }],
+        Role: 'some-role',
+      });
+
+      const state = setResource(initalState, 'functions.test_fn', {
+        mode: 'managed',
+        region: 'ap-guangzhou',
+        definition: {
+          functionName: 'test-function',
+          runtime: 'Nodejs18.15',
+          handler: 'index.handler',
+          memorySize: 512,
+          timeout: 10,
+          environment: { NODE_ENV: 'production' },
+          codeHash: 'mock-code-hash',
+          vpcConfig: null,
+          diskSize: null,
+          cfsConfig: null,
+          useGpu: null,
+          imageConfig: null,
+        },
+        instances: [
+          {
+            sid: 'si:tencent:scf:default:test-function',
+            id: 'test-function',
+            functionName: 'test-function',
+          },
+        ],
+        lastUpdated: new Date().toISOString(),
+      });
+
+      const plan = await generateFunctionPlan(mockContext, state, [testFunction]);
+
+      expect(plan.items[0]).toMatchObject({ action: 'noop' });
+    });
   });
 });

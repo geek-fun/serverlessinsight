@@ -1,5 +1,6 @@
 import type { FunctionDomain, ResourceAttributes } from '../../types';
 import { mapRuntime, ProviderEnum } from '../../common';
+import type { ScfFunctionInfo as TencentScfFunctionInfo } from '../../common/tencentClient/types';
 
 export type ScfFunctionConfig = {
   FunctionName: string;
@@ -277,4 +278,45 @@ export const extractFunctionDomainDefinition = (
 ): ResourceAttributes => {
   const config = functionToScfConfig(fn);
   return extractScfDefinition(config, codeHash, fn.iam);
+};
+
+// issue #234 phase 2: cloud-side counterpart of extractScfDefinition. Mirrors
+// the executor write shape key-for-key. Not refreshable (omitted so they can
+// never phantom-drift): logConfig (GetFunction returns ClsLogsetId/ClsTopicId
+// ids while the desired definition uses stable logset/topic names — ids churn
+// across redeploys), diskSize (GetFunction does not report it), iam/role
+// (planner-side role grant not reproduced for tencent in this phase).
+export const cloudScfToDefinition = (info: TencentScfFunctionInfo): ResourceAttributes => {
+  const envMap: Record<string, string> =
+    info.Environment?.Variables?.reduce<Record<string, string>>(
+      (acc, v) => ({ ...acc, [v.Key]: v.Value }),
+      {},
+    ) ?? {};
+
+  const cloudVpcConfig = info.VpcConfig as { VpcId?: string; SubnetId?: string } | undefined;
+  const cloudCfsConfig = info.CfsConfig as
+    { CfsInsList?: Array<{ LocalMountDir?: string; RemoteMountDir?: string }> } | undefined;
+  const cloudImageConfig = info.ImageConfig as { ImageUri?: string } | undefined;
+
+  return {
+    functionName: info.FunctionName ?? null,
+    runtime: info.Runtime ?? null,
+    handler: info.Handler ?? null,
+    memorySize: info.MemorySize ?? null,
+    timeout: info.Timeout ?? null,
+    environment: envMap,
+    vpcConfig: cloudVpcConfig
+      ? { VpcId: cloudVpcConfig.VpcId ?? null, SubnetId: cloudVpcConfig.SubnetId ?? null }
+      : null,
+    cfsConfig: cloudCfsConfig?.CfsInsList
+      ? {
+          CfsInsList: cloudCfsConfig.CfsInsList.map((i) => ({
+            LocalMountDir: i.LocalMountDir ?? null,
+            RemoteMountDir: i.RemoteMountDir ?? null,
+          })),
+        }
+      : null,
+    useGpu: info.UseGpu ?? null,
+    imageConfig: cloudImageConfig ? { ImageUri: cloudImageConfig.ImageUri ?? null } : null,
+  };
 };
