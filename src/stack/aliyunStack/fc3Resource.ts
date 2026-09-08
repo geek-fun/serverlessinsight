@@ -1070,6 +1070,7 @@ export const updateResource = async (
   context: Context,
   fn: FunctionDomain,
   state: StateFile,
+  options?: { force?: boolean },
 ): Promise<StateFile> => {
   const ctx = getContext();
   const serviceName = `${ctx.app}-${ctx.service}`;
@@ -1378,7 +1379,10 @@ export const updateResource = async (
   const { codeHash: _desiredCodeHash, ...desiredConfigOnly } = desiredDefinition;
   const configChanged = !attributesEqual(existingConfigOnly, desiredConfigOnly);
 
-  if (configChanged || roleBindingChanged) {
+  // `force` carries the plan's drifted flag: a live-drift update (state
+  // matches config, cloud edited in console) must re-push the config even
+  // though state-vs-desired sees no change.
+  if (configChanged || roleBindingChanged || options?.force) {
     await client.fc3.updateFunctionConfiguration(config);
   }
 

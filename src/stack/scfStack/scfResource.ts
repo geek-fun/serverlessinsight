@@ -866,6 +866,7 @@ export const updateResource = async (
   context: Context,
   fn: FunctionDomain,
   state: StateFile,
+  options?: { force?: boolean },
 ): Promise<StateFile> => {
   const logicalId = `functions.${fn.key}`;
 
@@ -1079,7 +1080,10 @@ export const updateResource = async (
     // Disabling log always re-pushes config so the empty Cls ids reach the
     // UpdateFunctionConfiguration unbind contract.
     disableLog;
-  if (configChanged) {
+  // `force` carries the plan's drifted flag: a live-drift update (state
+  // matches config, cloud edited in console) must re-push the config even
+  // though state-vs-desired sees no change.
+  if (configChanged || options?.force) {
     await client.scf.updateFunctionConfiguration(config);
   }
 

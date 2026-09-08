@@ -175,11 +175,37 @@ describe('Fc3Executor', () => {
         mockContext,
         testFunction,
         initialState,
+        { force: false },
       );
       expect(logger.info).toHaveBeenCalledWith('Updating function: test-function');
       expect(logger.info).toHaveBeenCalledWith('Successfully updated function: test-function');
       expect(result.state).toEqual(newState);
       expect(result.partialFailure).toBeUndefined();
+    });
+
+    it('should force the config re-push when the plan item is drifted', async () => {
+      const plan: Plan = {
+        items: [
+          {
+            logicalId: 'functions.test_fn',
+            action: 'update',
+            resourceType: 'ALIYUN_FC3',
+            drifted: true,
+          },
+        ],
+      };
+
+      const newState = { ...initialState, resources: { 'functions.test_fn': {} } };
+      (fc3Resource.updateResource as jest.Mock).mockResolvedValue(newState);
+
+      await executeFunctionPlan(mockContext, plan, [testFunction], initialState);
+
+      expect(fc3Resource.updateResource).toHaveBeenCalledWith(
+        mockContext,
+        testFunction,
+        initialState,
+        { force: true },
+      );
     });
 
     it('should execute delete action successfully', async () => {

@@ -113,7 +113,33 @@ describe('vefaasExecutor', () => {
 
       await executeFunctionPlan(mockContext, plan, [mockFunction], mockState);
 
-      expect(updateResource).toHaveBeenCalledWith(mockContext, mockFunction, mockState);
+      expect(updateResource).toHaveBeenCalledWith(mockContext, mockFunction, mockState, {
+        force: false,
+      });
+    });
+
+    it('should force the config re-push when the plan item is drifted', async () => {
+      const plan: Plan = {
+        items: [
+          {
+            logicalId: 'functions.test_fn',
+            action: 'update',
+            resourceType: 'VOLCENGINE_VEFAAS',
+            drifted: true,
+          },
+        ],
+      };
+
+      (updateResource as jest.Mock).mockResolvedValueOnce({
+        ...mockState,
+        resources: { 'functions.test_fn': {} },
+      });
+
+      await executeFunctionPlan(mockContext, plan, [mockFunction], mockState);
+
+      expect(updateResource).toHaveBeenCalledWith(mockContext, mockFunction, mockState, {
+        force: true,
+      });
     });
 
     it('should execute delete action', async () => {

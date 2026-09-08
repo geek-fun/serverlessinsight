@@ -174,11 +174,37 @@ describe('ScfExecutor', () => {
         mockContext,
         testFunction,
         initialState,
+        { force: false },
       );
       expect(logger.info).toHaveBeenCalledWith('Updating function: test-function');
       expect(logger.info).toHaveBeenCalledWith('Successfully updated function: test-function');
       expect(result.state).toEqual(newState);
       expect(result.partialFailure).toBeUndefined();
+    });
+
+    it('should force the config re-push when the plan item is drifted', async () => {
+      const plan: Plan = {
+        items: [
+          {
+            logicalId: 'functions.test_fn',
+            action: 'update',
+            resourceType: 'SCF',
+            drifted: true,
+          },
+        ],
+      };
+
+      const newState = { ...initialState, resources: { 'functions.test_fn': {} } };
+      (scfResource.updateResource as jest.Mock).mockResolvedValue(newState);
+
+      await executeFunctionPlan(mockContext, plan, [testFunction], initialState);
+
+      expect(scfResource.updateResource).toHaveBeenCalledWith(
+        mockContext,
+        testFunction,
+        initialState,
+        { force: true },
+      );
     });
 
     it('should return partial failure if function not found for update action', async () => {
