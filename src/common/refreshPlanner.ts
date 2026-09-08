@@ -16,6 +16,10 @@ export type RefreshExistsDecision =
 export type RefreshExistsArgs<T> = {
   read: () => Promise<T | null>;
   cloudToDefinition: (remote: T) => ResourceAttributes;
+  enrichRemoteAttributes?: (
+    remote: T,
+    attributes: ResourceAttributes,
+  ) => Promise<ResourceAttributes>;
   desiredDefinition: ResourceAttributes;
   /** intent diff — computed by the caller (normalization differs per planner) */
   definitionChanged: boolean;
@@ -34,10 +38,11 @@ export const decideRefreshedExistsAction = async <T>(
   if (!remote) {
     return { action: 'create', drifted: true };
   }
-  const remoteDiffers = remoteDiffersFromDesired(
-    args.cloudToDefinition(remote),
-    args.desiredDefinition,
-  );
+  let attributes = args.cloudToDefinition(remote);
+  if (args.enrichRemoteAttributes) {
+    attributes = await args.enrichRemoteAttributes(remote, attributes);
+  }
+  const remoteDiffers = remoteDiffersFromDesired(attributes, args.desiredDefinition);
   if (args.definitionChanged || remoteDiffers) {
     return { action: 'update', drifted: true };
   }
@@ -61,6 +66,11 @@ export type PlanRefreshedResourceArgs<T> = {
   /** thrown on the probe path when a same-named remote exists unowned */
   foreignError: (remote: T) => Error;
   cloudToDefinition: (remote: T) => ResourceAttributes;
+  /** Post-process mapped remote attributes with extra live reads (e.g. resolve cloud log-config ids to names). */
+  enrichRemoteAttributes?: (
+    remote: T,
+    attributes: ResourceAttributes,
+  ) => Promise<ResourceAttributes>;
   /** applied to both sides before the intent diff and in changes display */
   normalizeForDisplay?: (definition: ResourceAttributes) => ResourceAttributes;
   extraUpdate?: () => Promise<{ update: boolean; drifted: boolean }>;
@@ -123,6 +133,7 @@ export const planRefreshedResource = async <T>(
     const decision = await decideRefreshedExistsAction<T>({
       read: args.read,
       cloudToDefinition: args.cloudToDefinition,
+      enrichRemoteAttributes: args.enrichRemoteAttributes,
       desiredDefinition,
       definitionChanged,
       extraUpdate: args.extraUpdate,

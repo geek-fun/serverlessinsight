@@ -11,8 +11,8 @@ import { cachedRefreshRead } from '../../common/refreshCache';
 import { PLAN_READ_CONCURRENCY, mapWithConcurrency } from '../../common/concurrency';
 import { functionToScfConfig, extractScfDefinition, cloudScfToDefinition } from './scfTypes';
 import { getAllResources, getResource } from '../../common/stateManager';
-import { attributesEqual, computeZipContentHash } from '../../common/hashUtils';
-import { remoteDiffersFromDesired } from '../../common/planCompare';
+import { computeZipContentHash } from '../../common/hashUtils';
+import { planRefreshedResource } from '../../common/refreshPlanner';
 import { OWNERSHIP_TAG_KEY, isOwnedByStack } from '../ownershipTag';
 import { buildSharedLogsetName, buildFunctionTopicName } from './sharedLogset';
 
@@ -58,75 +58,54 @@ export const generateFunctionPlan = async (
       const desiredCodeHash = await computeZipContentHash(codePath);
       const desiredDefinition = extractScfDefinition(config, desiredCodeHash, fn.iam);
 
-      if (!currentState || currentState.status === 'tainted') {
-        // No usable local state: probe the provider before planning create.
-        // If a same-named function already exists WITHOUT our ownership tag it
-        // may belong to another project — fail fast in the plan instead of
-        // letting the executor discover it mid-deploy.
-        const client = createTencentClient(context);
-        const remoteFunction = await cachedRefreshRead(context, `scf.getFunction:${fn.name}`, () =>
-          client.scf.getFunction(fn.name),
-        );
-        if (remoteFunction && !isOwnedByStack(context, logicalId, remoteFunction.Tags)) {
-          throw new Error(
+      const client = createTencentClient(context);
+
+      return planRefreshedResource({
+        logicalId,
+        resourceType: 'SCF',
+        currentState,
+        desiredDefinition,
+        read: () =>
+          cachedRefreshRead(context, `scf.getFunction:${fn.name}`, () =>
+            client.scf.getFunction(fn.name),
+          ),
+        isOwned: (remote) => isOwnedByStack(context, logicalId, remote.Tags),
+        foreignError: () =>
+          new Error(
             `Function ${fn.name} already exists in provider but is not owned by this stack (missing ${OWNERSHIP_TAG_KEY} tag). Refusing to create — resolve manually.`,
-          );
-        }
-
-        return {
-          logicalId,
-          action: 'create',
-          resourceType: 'SCF',
-          changes: { after: desiredDefinition },
-        };
-      }
-
-      try {
-        const client = createTencentClient(context);
-        const remoteFunction = await cachedRefreshRead(context, `scf.getFunction:${fn.name}`, () =>
-          client.scf.getFunction(fn.name),
-        );
-
-        if (!remoteFunction) {
-          return {
-            logicalId,
-            action: 'create',
-            resourceType: 'SCF',
-            changes: { before: currentState.definition, after: desiredDefinition },
-            drifted: true,
-          };
-        }
-
-        const currentDefinition = currentState.definition || {};
-        const definitionChanged = !attributesEqual(currentDefinition, desiredDefinition);
-
-        // Issue #234 phase 2: live attribute drift (console edits to
-        // memory/timeout/env/vpc...). One-directional: only mapper-emitted keys
-        // the desired definition declares are compared.
-        const remoteDiffers = remoteDiffersFromDesired(
-          cloudScfToDefinition(remoteFunction),
-          desiredDefinition,
-        );
-
-        if (definitionChanged || remoteDiffers) {
-          return {
-            logicalId,
-            action: 'update',
-            resourceType: 'SCF',
-            changes: { before: currentDefinition, after: desiredDefinition },
-            drifted: true,
-          };
-        }
-
-        return { logicalId, action: 'noop', resourceType: 'SCF' };
-      } catch {
-        return {
-          logicalId,
-          action: 'create',
-          resourceType: 'SCF',
-          changes: { before: currentState.definition, after: desiredDefinition },
-        };
-      }
+          ),
+        cloudToDefinition: cloudScfToDefinition,
+        enrichRemoteAttributes: async (remote, attributes) => {
+          // Resolve cloud CLS ids back to the stable names the desired
+          // definition uses; unresolvable ids are skipped, not fabricated into
+          // drift.
+          const desiredLog = desiredDefinition.logConfig as
+            { logset: string; topic: string } | undefined;
+          if (!desiredLog || !remote.ClsLogsetId || !remote.ClsTopicId) {
+            return attributes;
+          }
+          try {
+            const logsetName = await cachedRefreshRead(
+              context,
+              `cls.getLogsetNameById:${remote.ClsLogsetId}`,
+              () => client.cls.getLogsetNameById(remote.ClsLogsetId as string),
+            );
+            const topics = await cachedRefreshRead(
+              context,
+              `cls.listTopicsByLogset:${remote.ClsLogsetId}`,
+              () => client.cls.listTopicsByLogset(remote.ClsLogsetId as string),
+            );
+            const topicName = topics?.find((t) => t.TopicId === remote.ClsTopicId)?.TopicName;
+            if (!logsetName || !topicName) {
+              return attributes;
+            }
+            return { ...attributes, logConfig: { logset: logsetName, topic: topicName } };
+          } catch {
+            return attributes;
+          }
+        },
+        refresh: context.refresh,
+      });
     },
   );
 

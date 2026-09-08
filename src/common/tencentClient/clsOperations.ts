@@ -65,6 +65,13 @@ export const createClsOperations = (clsClient: ClsSdkClient) => {
       };
     },
 
+    getLogsetNameById: async (logsetId: string): Promise<string | null> => {
+      const response = await clsClient.DescribeLogsets({
+        Filters: [{ Key: 'logsetId', Values: [logsetId] }],
+      });
+      return response?.Logsets?.find((l) => l.LogsetId === logsetId)?.LogsetName ?? null;
+    },
+
     listTopicsByLogset: async (
       logsetId: string,
     ): Promise<Array<{ TopicId?: string; TopicName?: string }>> => {
