@@ -187,4 +187,55 @@ export const buildEventResourceDefinition = (
   return extractEventDomainDefinition(event, logTopicOverride) as unknown as ResourceAttributes;
 };
 
+// issue #234 phase 2: live trigger drift against derived names. Routes and
+// upstreams are keyed by the deterministic names the executor writes
+// (buildRouteName / buildUpstreamName), so foreign or console-added routes are
+// ignored and only si-declared triggers are compared.
+export type DesiredTriggerKey = {
+  method: string;
+  path: string;
+  upstreamName: string;
+};
+
+export const buildDesiredTriggerMap = (
+  event: EventDomain,
+  stage: string,
+): Map<string, DesiredTriggerKey> =>
+  new Map(
+    event.triggers.map((trigger) => {
+      const method = String(trigger.method);
+      const path = String(trigger.path);
+      return [
+        buildRouteName(event, method, path),
+        { method, path, upstreamName: buildUpstreamName(event, String(trigger.backend), stage) },
+      ] as [string, DesiredTriggerKey];
+    }),
+  );
+
+export const cloudTriggerDiffers = (
+  cloudRoutes: Array<{
+    routeName?: string;
+    method?: string;
+    path?: string;
+    upstreamIds?: string[];
+  }>,
+  upstreamNameById: Map<string, string | undefined>,
+  desiredTriggers: Map<string, DesiredTriggerKey>,
+): boolean =>
+  [...desiredTriggers.keys()].some((routeName) => {
+    const desired = desiredTriggers.get(routeName);
+    const route = cloudRoutes.find((r) => r.routeName === routeName);
+    if (!desired || !route) {
+      return true;
+    }
+    if (desired.method !== route.method || desired.path !== route.path) {
+      return true;
+    }
+    const upstreamId = route.upstreamIds?.[0];
+    if (!upstreamId) {
+      return true;
+    }
+    return desired.upstreamName !== upstreamNameById.get(upstreamId);
+  });
+
 export { resolveFunctionReference };
