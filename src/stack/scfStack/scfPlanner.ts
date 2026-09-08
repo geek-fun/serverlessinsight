@@ -9,9 +9,10 @@ import {
 import { createTencentClient } from '../../common/tencentClient';
 import { cachedRefreshRead } from '../../common/refreshCache';
 import { PLAN_READ_CONCURRENCY, mapWithConcurrency } from '../../common/concurrency';
-import { functionToScfConfig, extractScfDefinition } from './scfTypes';
+import { functionToScfConfig, extractScfDefinition, cloudScfToDefinition } from './scfTypes';
 import { getAllResources, getResource } from '../../common/stateManager';
 import { attributesEqual, computeZipContentHash } from '../../common/hashUtils';
+import { remoteDiffersFromDesired } from '../../common/planCompare';
 import { OWNERSHIP_TAG_KEY, isOwnedByStack } from '../ownershipTag';
 import { buildSharedLogsetName, buildFunctionTopicName } from './sharedLogset';
 
@@ -99,7 +100,15 @@ export const generateFunctionPlan = async (
         const currentDefinition = currentState.definition || {};
         const definitionChanged = !attributesEqual(currentDefinition, desiredDefinition);
 
-        if (definitionChanged) {
+        // Issue #234 phase 2: live attribute drift (console edits to
+        // memory/timeout/env/vpc...). One-directional: only mapper-emitted keys
+        // the desired definition declares are compared.
+        const remoteDiffers = remoteDiffersFromDesired(
+          cloudScfToDefinition(remoteFunction),
+          desiredDefinition,
+        );
+
+        if (definitionChanged || remoteDiffers) {
           return {
             logicalId,
             action: 'update',

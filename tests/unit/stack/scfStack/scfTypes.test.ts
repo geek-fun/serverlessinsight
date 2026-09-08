@@ -2,7 +2,9 @@ import {
   functionToScfConfig,
   extractFunctionDomainDefinition,
   extractScfDefinition,
+  cloudScfToDefinition,
 } from '../../../../src/stack/scfStack/scfTypes';
+import { remoteDiffersFromDesired } from '../../../../src/common/planCompare';
 import { FunctionDomain, FunctionGpuEnum, NasStorageClassEnum } from '../../../../src/types';
 
 describe('SCF Types', () => {
@@ -223,6 +225,54 @@ describe('SCF Types', () => {
           iam: { role: 'role-123' },
         }),
       );
+    });
+  });
+
+  describe('cloudScfToDefinition (issue #234 phase 2)', () => {
+    // functionToScfConfig field names align with the GetFunction info shape, so
+    // its output simulates the cloud as the executor wrote it. Deployed-then-
+    // untouched functions must never live-drift against their own config.
+    const expectNoRoundtripDrift = (fn: FunctionDomain): void => {
+      const desired = extractFunctionDomainDefinition(fn, 'hash-123');
+      const cloudInfo = functionToScfConfig(fn);
+
+      expect(remoteDiffersFromDesired(cloudScfToDefinition(cloudInfo), desired)).toBe(false);
+    };
+
+    it('plain code function', () => {
+      expectNoRoundtripDrift({
+        key: 'test_fn',
+        name: 'code-fn',
+        code: { runtime: 'nodejs18', handler: 'index.handler', path: 'test.zip' },
+        memory: 512,
+        timeout: 10,
+        environment: { NODE_ENV: 'production' },
+        storage: {},
+      });
+    });
+
+    it('code function with vpc, nas and gpu', () => {
+      expectNoRoundtripDrift({
+        key: 'test_fn',
+        name: 'full-fn',
+        code: { runtime: 'nodejs18', handler: 'index.handler', path: 'test.zip' },
+        memory: 512,
+        timeout: 10,
+        gpu: FunctionGpuEnum.TESLA_8,
+        network: {
+          vpc_id: 'vpc-12345',
+          subnet_ids: ['vsw-123', 'vsw-456'],
+          security_group: { name: 'sg-12345', ingress: [], egress: [] },
+        },
+        storage: {
+          nas: [
+            {
+              storage_class: NasStorageClassEnum.STANDARD_CAPACITY,
+              mount_path: '/mnt/data',
+            },
+          ],
+        },
+      });
     });
   });
 });
