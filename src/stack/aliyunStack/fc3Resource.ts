@@ -1346,42 +1346,51 @@ export const updateResource = async (
           (d) =>
             !liveEgressKeys.includes(canonicalSecurityGroupRule(d.protocol, d.portRange, d.cidr)),
         );
-        const extraIngress = (live?.ingressRules ?? [])
-          .map((r) => ({
-            protocol: r.ipProtocol ?? '',
-            portRange: (r.portRange ?? '').split('/')[0] ?? '',
-            cidr: r.sourceCidrIp ?? '',
-          }))
-          .filter(
-            (r) =>
-              !desiredIngress.some(
-                (d) =>
-                  canonicalSecurityGroupRule(d.protocol, d.portRange, d.cidr) ===
-                  canonicalSecurityGroupRule(r.protocol, r.portRange, r.cidr),
-              ),
-          );
-        const extraEgress = (live?.egressRules ?? [])
-          .map((r) => ({
-            protocol: r.ipProtocol ?? '',
-            portRange: (r.portRange ?? '').split('/')[0] ?? '',
-            cidr: r.destCidrIp ?? '',
-          }))
-          .filter(
-            (r) =>
-              !desiredEgress.some(
-                (d) =>
-                  canonicalSecurityGroupRule(d.protocol, d.portRange, d.cidr) ===
-                  canonicalSecurityGroupRule(r.protocol, r.portRange, r.cidr),
-              ),
-          );
-
+        // The extra check reuses the raw live canonical keys — the same space
+        // the missing check uses. Reconstructing a parsed rule here would
+        // collapse port ranges (80/443 -> 80) and wrongly revoke matching
+        // range rules.
+        const desiredIngressKeys = desiredIngress.map((d) =>
+          canonicalSecurityGroupRule(d.protocol, d.portRange, d.cidr),
+        );
+        const desiredEgressKeys = desiredEgress.map((d) =>
+          canonicalSecurityGroupRule(d.protocol, d.portRange, d.cidr),
+        );
+        const extraIngress = (live?.ingressRules ?? []).filter((r, i) => {
+          const key = liveIngressKeys[i];
+          return !key || !desiredIngressKeys.includes(key);
+        });
+        const extraEgress = (live?.egressRules ?? []).filter((r, i) => {
+          const key = liveEgressKeys[i];
+          return !key || !desiredEgressKeys.includes(key);
+        });
         if (missingIngress.length > 0 || missingEgress.length > 0) {
           await client.ecs.authorizeSecurityGroupRules(sgInstance.id, 'ingress', missingIngress);
           await client.ecs.authorizeSecurityGroupRules(sgInstance.id, 'egress', missingEgress);
         }
         if (extraIngress.length > 0 || extraEgress.length > 0) {
-          await client.ecs.revokeSecurityGroupRules(sgInstance.id, 'ingress', extraIngress);
-          await client.ecs.revokeSecurityGroupRules(sgInstance.id, 'egress', extraEgress);
+          const toParsed = (r: {
+            ipProtocol?: string;
+            portRange?: string;
+            sourceCidrIp?: string;
+            destCidrIp?: string;
+          }): { protocol: string; cidr: string; portRange: string } => ({
+            // Live portRange is already in Aliyun wire format — pass verbatim
+            // so the revoke matches the rule exactly (ranges included).
+            protocol: r.ipProtocol ?? '',
+            cidr: r.sourceCidrIp ?? r.destCidrIp ?? '',
+            portRange: r.portRange ?? '',
+          });
+          await client.ecs.revokeSecurityGroupRules(
+            sgInstance.id,
+            'ingress',
+            extraIngress.map(toParsed),
+          );
+          await client.ecs.revokeSecurityGroupRules(
+            sgInstance.id,
+            'egress',
+            extraEgress.map(toParsed),
+          );
         }
         logger.info(
           lang.__('NESTED_SG_RULES_REPAIRED', {
