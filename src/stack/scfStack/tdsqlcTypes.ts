@@ -189,9 +189,10 @@ export const extractTdsqlcDefinition = (config: TdsqlcClusterConfig): ResourceAt
 
 // issue #234 phase 2: cloud-side counterpart of extractTdsqlcDefinition.
 // Mirrors the executor write shape key-for-key. Not refreshable (omitted so
-// they can never phantom-drift): autoPause/autoPauseDelay (DescribeClusters
-// does not report the configured idle-pause switch — the cloud field reflects
-// running state, see tdsqlcClusterMapper), port/projectId (not returned).
+// they can never phantom-drift): autoPause/autoPauseDelay — DescribeClusters
+// reports only the running serverless state; the configured switch is compared
+// separately in the planner via DescribeServerlessStrategy (extraUpdate).
+// port/projectId are not returned by any read API.
 export const cloudTdsqlcToDefinition = (info: TdsqlcClusterInfo): ResourceAttributes => ({
   clusterName: info.ClusterName,
   dbType: info.DbType ?? null,
