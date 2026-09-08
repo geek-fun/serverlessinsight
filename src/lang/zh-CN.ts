@@ -129,6 +129,8 @@ export const zhCN = {
   PLAN_SUMMARY: '计划: 新增 {{createCount}} 个，变更 {{updateCount}} 个，销毁 {{deleteCount}} 个。',
   PLAN_UNCHANGED_ATTRS: '({{count}} 个未变更属性已隐藏)',
   PLAN_COMPUTED_VALUE: '(部署后可知)',
+  PLAN_DRIFTED_MARKER: '（云端已漂移——与本配置不一致，将按配置纠正）',
+  PLAN_DRIFTED_SUMMARY: '漂移: {{driftedCount}} 个资源在云端被本配置之外的变更修改。',
 
   // TDSQL-C 数据库消息
   TDSQL_CLUSTER_CREATION_INITIATED: 'TDSQL-C 集群创建已启动',

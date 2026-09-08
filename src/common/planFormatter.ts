@@ -267,8 +267,15 @@ export const formatPlanItem = (
   const symbolColor = ACTION_COLOR[item.action] ?? 'RESET';
   const resourceLine = colorize(`  ${symbol} ${item.logicalId}:`, symbolColor, config.colorize);
 
+  // A drifted update is caused by an out-of-config cloud edit — surface that
+  // so it doesn't read like an ordinary config change.
+  const driftedLine =
+    item.drifted && item.action !== 'delete'
+      ? [colorize(`      # ${lang.__('PLAN_DRIFTED_MARKER')}`, 'CYAN', config.colorize)]
+      : [];
+
   if (!item.changes) {
-    return [headerLine, resourceLine].join('\n');
+    return [headerLine, resourceLine, ...driftedLine].join('\n');
   }
 
   const { diffs, unchangedCount } = computeAttributeDiffs(item.changes.before, item.changes.after);
@@ -290,7 +297,7 @@ export const formatPlanItem = (
         ]
       : [];
 
-  return [headerLine, resourceLine, ...attrLines, ...hiddenLine].join('\n');
+  return [headerLine, resourceLine, ...driftedLine, ...attrLines, ...hiddenLine].join('\n');
 };
 
 /* istanbul ignore next */
@@ -326,13 +333,26 @@ export const formatPlan = (
 
   const itemLines = actionItems.flatMap((item) => [formatPlanItem(item, config), '']);
 
+  const driftedCount = items.filter((i) => i.drifted && i.action !== 'delete').length;
+  const driftedSummary =
+    driftedCount > 0
+      ? [
+          colorize(
+            lang.__('PLAN_DRIFTED_SUMMARY', { driftedCount: String(driftedCount) }),
+            'CYAN',
+            config.colorize,
+          ),
+          '',
+        ]
+      : [];
+
   const summary = lang.__('PLAN_SUMMARY', {
     createCount: String(createItems.length),
     updateCount: String(updateItems.length),
     deleteCount: String(deleteItems.length),
   });
 
-  return [...header, ...itemLines, summary].join('\n');
+  return [...header, ...itemLines, ...driftedSummary, summary].join('\n');
 };
 
 /* istanbul ignore next */
