@@ -1,5 +1,7 @@
 import type { Context } from '../../src/types';
 import { ProviderEnum } from '../../src/common/providerEnum';
+import { buildFc3ExecutionPolicyDocument } from '../../src/common/aliyunClient/ramOperations';
+import type { IamStatement } from '../../src/common/iamStatements';
 
 export type MockAliyunClient = {
   fc3: {
@@ -62,6 +64,8 @@ export type MockAliyunClient = {
     updateRolePolicy: jest.Mock;
     updateRoleTrustPolicy: jest.Mock;
     updateExecutionPolicyDocument: jest.Mock;
+    getExecutionPolicyDocument: jest.Mock;
+    listAttachedRolePolicies: jest.Mock;
   };
   nas: {
     createFileSystem: jest.Mock;
@@ -112,24 +116,39 @@ export type MockAliyunClient = {
 
 export const createMockAliyunClient = (): MockAliyunClient => {
   const fc3GetFunction = jest.fn().mockResolvedValue(null);
+  // Echo contract: role-policy drift detection reads back what the executor
+  // last wrote via updateExecutionPolicyDocument (issue #234).
+  let lastExecutionPolicyDocument: string | undefined;
+  // Echo contract: after create/update, GetFunction returns the config the
+  // executor sent (a real provider echoes it back), so live attribute drift
+  // detection compares like-for-like instead of against a stale payload.
+  let fc3EchoedConfig: Record<string, unknown> | null = null;
+
+  const fc3EchoGetFunction = (config: Record<string, unknown>): void => {
+    fc3EchoedConfig = {
+      ...(fc3EchoedConfig ?? {}),
+      ...config,
+      state: 'Running',
+    };
+    fc3GetFunction.mockResolvedValue(fc3EchoedConfig);
+  };
 
   return {
     fc3: {
-      createFunction: jest.fn().mockImplementation(async () => {
-        // Simulate a real create: once created, the function is queryable, so the
-        // executor's post-create refresh (getFunction) sees it. The planner probe
-        // (before create) still sees null (nothing exists yet).
-        fc3GetFunction.mockResolvedValue({
-          functionName: 'test-function',
-          runtime: 'nodejs18',
-          handler: 'index.handler',
-          memorySize: 128,
-          timeout: 60,
-          state: 'Running',
-        });
+      createFunction: jest.fn().mockImplementation(async (config: Record<string, unknown>) => {
+        // Simulate a real create: once created, the function is queryable with
+        // the exact config the executor sent. The planner probe (before
+        // create) still sees null (nothing exists yet).
+        fc3EchoedConfig = null;
+        fc3EchoGetFunction(config);
       }),
       getFunction: fc3GetFunction,
-      updateFunctionConfiguration: jest.fn().mockResolvedValue({}),
+      updateFunctionConfiguration: jest
+        .fn()
+        .mockImplementation(async (config: Record<string, unknown>) => {
+          fc3EchoGetFunction(config);
+          return {};
+        }),
       updateFunctionCode: jest.fn().mockResolvedValue({}),
       deleteFunction: jest.fn().mockResolvedValue({}),
       createTrigger: jest.fn().mockResolvedValue({ body: { triggerName: 'http-trigger' } }),
@@ -184,12 +203,35 @@ export const createMockAliyunClient = (): MockAliyunClient => {
       applyHttpsRedirect: jest.fn().mockResolvedValue({}),
     },
     ram: {
-      createRole: jest.fn().mockResolvedValue({
-        roleName: 'test-role',
-        roleId: 'role-123',
-        arn: 'acs:ram::123456789012:role/test-role',
-        policyName: 'test-role-policy',
-      }),
+      // Simulate the real createRole: it writes the `<role>-policy` custom
+      // document from the granted statements (attachRolePolicyForFc), which
+      // role-policy drift detection later reads back.
+      createRole: jest
+        .fn()
+        .mockImplementation(
+          async (
+            roleName: string,
+            trustedServices: string[],
+            description?: string,
+            customStatements?: IamStatement[],
+            managedPolicies?: string[],
+            executionStatements?: IamStatement[],
+          ) => {
+            lastExecutionPolicyDocument = buildFc3ExecutionPolicyDocument(
+              executionStatements ?? [],
+              customStatements ?? [],
+            );
+            return {
+              roleName,
+              roleId: 'role-123',
+              arn: `acs:ram::123456789012:role/${roleName}`,
+              policyName: `${roleName}-policy`,
+              description,
+              managedPolicies,
+              trustedServices,
+            };
+          },
+        ),
       getRole: jest.fn().mockResolvedValue({
         roleName: 'test-role',
         roleId: 'role-123',
@@ -206,7 +248,12 @@ export const createMockAliyunClient = (): MockAliyunClient => {
       updateRoleTrustPolicy: jest
         .fn()
         .mockResolvedValue({ body: { Role: { RoleName: 'test-role' } } }),
-      updateExecutionPolicyDocument: jest.fn().mockResolvedValue(undefined),
+      updateExecutionPolicyDocument: jest.fn(async (_roleName: string, document: string) => {
+        lastExecutionPolicyDocument = document;
+        return undefined;
+      }),
+      getExecutionPolicyDocument: jest.fn(async () => lastExecutionPolicyDocument),
+      listAttachedRolePolicies: jest.fn().mockResolvedValue([]),
     },
     nas: {
       createFileSystem: jest.fn().mockResolvedValue({ body: { fileSystemId: 'fs-123' } }),

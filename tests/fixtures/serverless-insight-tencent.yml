@@ -11,6 +11,10 @@ stages:
   default:
     region: ${vars.region}
 
+backend:
+  state_manager:
+    type: LOCAL
+
 service: insight-poc-tencent
 
 functions:

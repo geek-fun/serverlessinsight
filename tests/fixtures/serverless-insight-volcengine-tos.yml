@@ -1,0 +1,17 @@
+version: 0.0.1
+app: insight-volc-app
+provider:
+  name: volcengine
+  region: cn-beijing
+
+service: insight-volc
+
+backend:
+  state_manager:
+    type: LOCAL
+
+buckets:
+  static_site:
+    name: insight-volc-static-bucket
+    security:
+      acl: PUBLIC_READ
