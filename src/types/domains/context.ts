@@ -24,6 +24,13 @@ export type Context = {
   reportEvent?: (event: DeploymentEventRecord) => void;
   /** Command-lifecycle cache for planning/refresh reads (created by setContext); executor reads must not use it. */
   refreshCache?: RefreshCache;
+  /**
+   * When false (CLI `--no-refresh`), planners skip live attribute probing and
+   * diff intent-only — no drift claims. The no-state ownership probe still
+   * runs: it is a safety check against adopting foreign resources, not drift
+   * detection.
+   */
+  refresh?: boolean;
 };
 
 export enum TemplateFormat {

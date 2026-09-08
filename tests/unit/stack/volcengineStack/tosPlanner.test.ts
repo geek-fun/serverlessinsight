@@ -359,6 +359,80 @@ describe('tosPlanner', () => {
       expect(result.items[0]).toMatchObject({ action: 'update', drifted: true });
     });
 
+    it('skips the live read and drops drift claims under --no-refresh (issue #234 phase 3)', async () => {
+      const buckets: Array<BucketDomain> = [
+        {
+          key: 'static_site',
+          name: 'test-bucket',
+          security: { acl: BucketAccessEnum.PUBLIC_READ, force_delete: false },
+        },
+      ];
+
+      const stateWithBucket: StateFile = {
+        ...mockState,
+        resources: {
+          'buckets.static_site': {
+            mode: 'managed',
+            region: 'cn-beijing',
+            definition: {
+              bucketName: 'test-bucket',
+              acl: 'public-read',
+              storageClass: null,
+              websiteConfiguration: null,
+              websiteCodeHash: null,
+              policy: null,
+            },
+            instances: [{ sid: 'test-sid', id: 'test-bucket', type: 'VOLCENGINE_TOS_BUCKET' }],
+            lastUpdated: '2024-01-01T00:00:00Z',
+          },
+        },
+      };
+
+      // The live value is drifted on purpose: --no-refresh must never read it.
+      mockTosClient.tos.getBucket.mockResolvedValueOnce({
+        name: 'test-bucket',
+        acl: 'private',
+      });
+
+      jest
+        .spyOn(stateManager, 'getResource')
+        .mockReturnValue(stateWithBucket.resources['buckets.static_site']);
+
+      const result = await generateBucketPlan(
+        { ...mockContext, refresh: false },
+        stateWithBucket,
+        buckets,
+      );
+
+      expect(mockTosClient.tos.getBucket).not.toHaveBeenCalled();
+      expect(result.items[0]).toMatchObject({ action: 'noop' });
+
+      const changedState: StateFile = {
+        ...stateWithBucket,
+        resources: {
+          'buckets.static_site': {
+            ...stateWithBucket.resources['buckets.static_site'],
+            definition: {
+              ...stateWithBucket.resources['buckets.static_site'].definition,
+              acl: 'private',
+            },
+          },
+        },
+      };
+      jest
+        .spyOn(stateManager, 'getResource')
+        .mockReturnValue(changedState.resources['buckets.static_site']);
+
+      const changedResult = await generateBucketPlan(
+        { ...mockContext, refresh: false },
+        changedState,
+        buckets,
+      );
+
+      expect(changedResult.items[0]).toMatchObject({ action: 'update' });
+      expect(changedResult.items[0]).not.toHaveProperty('drifted');
+    });
+
     it('stays noop when live bucket matches config despite cloud-only detail fields', async () => {
       const buckets: Array<BucketDomain> = [
         {

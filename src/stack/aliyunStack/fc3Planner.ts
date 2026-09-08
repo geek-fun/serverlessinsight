@@ -350,6 +350,23 @@ export const generateFunctionPlan = async (
 
       try {
         const client = createAliyunClient(context);
+        const normalizedCurrent = normalizeDefinitionForComparison(currentState.definition || {});
+        const normalizedDesired = normalizeDefinitionForComparison(desiredDefinition);
+        const definitionChanged = !attributesEqual(normalizedCurrent, normalizedDesired);
+
+        // --no-refresh: no live read, no drift claims — intent-diff only.
+        if (context.refresh === false) {
+          if (!definitionChanged) {
+            return { logicalId, action: 'noop', resourceType: 'ALIYUN_FC3' };
+          }
+          return {
+            logicalId,
+            action: 'update',
+            resourceType: 'ALIYUN_FC3',
+            changes: { before: normalizedCurrent, after: normalizedDesired },
+          };
+        }
+
         const remoteFunction = await cachedRefreshRead(context, `fc3.getFunction:${fn.name}`, () =>
           client.fc3.getFunction(fn.name),
         );
@@ -366,11 +383,6 @@ export const generateFunctionPlan = async (
             drifted: true,
           };
         }
-
-        const currentDefinition = currentState.definition || {};
-        const normalizedCurrent = normalizeDefinitionForComparison(currentDefinition);
-        const normalizedDesired = normalizeDefinitionForComparison(desiredDefinition);
-        const definitionChanged = !attributesEqual(normalizedCurrent, normalizedDesired);
 
         // Issue #234 phase 1: live attribute drift. The stored definition can
         // be untouched while the console edited the deployed function

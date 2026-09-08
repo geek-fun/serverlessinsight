@@ -85,6 +85,7 @@ export const generateBucketPlan = async (
         cloudToDefinition: cloudOssToDefinition,
         normalizeForDisplay: normalizeDefinitionForDisplay,
         extraUpdate: () => Promise.resolve({ update: domainBindingPending, drifted: false }),
+        refresh: context.refresh,
       });
     },
   );

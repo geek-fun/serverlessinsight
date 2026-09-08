@@ -64,6 +64,7 @@ export const generateBucketPlan = async (
             `Bucket ${bucket.name} already exists in provider but is not owned by this stack (missing ${OWNERSHIP_TAG_KEY} tag). Refusing to create — resolve manually.`,
           ),
         cloudToDefinition: cloudTosToDefinition,
+        refresh: context.refresh,
       });
     },
   );

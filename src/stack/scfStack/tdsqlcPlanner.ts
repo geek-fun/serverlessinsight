@@ -88,6 +88,7 @@ export const generateDatabasePlan = async (
             `Cluster ${database.name} already exists in provider but is not owned by this stack (missing ${OWNERSHIP_TAG_KEY} tag). Refusing to create — resolve manually.`,
           ),
         cloudToDefinition: cloudTdsqlcToDefinition,
+        refresh: context.refresh,
       });
     },
   );

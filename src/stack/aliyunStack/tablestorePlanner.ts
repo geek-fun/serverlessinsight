@@ -63,6 +63,7 @@ export const generateTablePlan = async (
             `Table ${config.tableName} already exists in provider but ownership cannot be verified (no table-level tags). Refusing to adopt — resolve manually.`,
           ),
         cloudToDefinition: cloudTableStoreToDefinition,
+        refresh: context.refresh,
       });
     },
   );

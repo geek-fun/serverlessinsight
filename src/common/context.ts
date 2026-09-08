@@ -73,6 +73,7 @@ export const setContext = async (
     parameters?: { [key: string]: string };
     iacProvider?: ServerlessIac['provider'];
     stages?: ServerlessIac['stages'];
+    refresh?: boolean;
   },
   reaValToken = false,
 ): Promise<void> => {
@@ -121,6 +122,7 @@ export const setContext = async (
       {},
     ),
     refreshCache: createRefreshCache(),
+    refresh: config.refresh ?? true,
   };
 
   if (reaValToken) {

@@ -126,6 +126,22 @@ export const generateFunctionPlan = async (
 
       try {
         const client = createVolcengineClient(context);
+        const currentDefinition = currentState.definition || {};
+        const definitionChanged = !attributesEqual(currentDefinition, desiredDefinition);
+
+        // --no-refresh: no live read, no drift claims — intent-diff only.
+        if (context.refresh === false) {
+          if (!definitionChanged) {
+            return { logicalId, action: 'noop', resourceType: 'VOLCENGINE_VEFAAS' };
+          }
+          return {
+            logicalId,
+            action: 'update',
+            resourceType: 'VOLCENGINE_VEFAAS',
+            changes: { before: currentDefinition, after: desiredDefinition },
+          };
+        }
+
         const remoteFunction = await cachedRefreshRead(
           context,
           `vefaas.getFunction:${fn.name}`,
@@ -144,9 +160,6 @@ export const generateFunctionPlan = async (
             drifted: true,
           };
         }
-
-        const currentDefinition = currentState.definition || {};
-        const definitionChanged = !attributesEqual(currentDefinition, desiredDefinition);
 
         // Drift detection against the LIVE provider: compare the remote
         // function's actual attributes (runtime/handler/memory/timeout/env)

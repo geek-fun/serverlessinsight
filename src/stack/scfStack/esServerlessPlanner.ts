@@ -80,6 +80,7 @@ export const generateEsPlan = async (
             `ES space ${config.SpaceName} already exists in provider but is not owned by this stack (missing ${OWNERSHIP_TAG_KEY} tag). Refusing to create — resolve manually.`,
           ),
         cloudToDefinition: cloudTencentEsToDefinition,
+        refresh: context.refresh,
       });
     },
   );
