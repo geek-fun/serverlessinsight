@@ -152,6 +152,10 @@ export const generateFunctionPlan = async (
         // function's actual attributes (runtime/handler/memory/timeout/env)
         // against the desired definition. Console edits would otherwise go
         // undetected — definitionChanged only sees local-vs-desired.
+        // Not refreshable (issue #234 phase 2): the IAM custom policy document
+        // (volcengine IAM has no GetPolicy read) and dependent TLS topics
+        // (existence-only by design decision 5) stay covered by the executor's
+        // reconcile path instead of live plan comparison.
         const remoteAttributes: ResourceAttributes = {
           runtime: remoteFunction.runtime,
           handler: remoteFunction.handler,
