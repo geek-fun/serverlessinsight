@@ -236,6 +236,40 @@ describe('cosPlanner', () => {
       expect(plan.items[0].action).toBe('noop');
     });
 
+    it('compares the live bucket policy canonically (issue #234 phase 3)', async () => {
+      const stateWithBucket: StateFile = {
+        ...initialState,
+        resources: {
+          'buckets.test_bucket': {
+            mode: 'managed' as ResourceMode,
+            region: 'ap-guangzhou',
+            definition: { bucket: 'test-bucket' },
+            instances: [],
+            lastUpdated: new Date().toISOString(),
+          },
+        },
+      };
+      (stateManager.getResource as jest.Mock).mockReturnValue({
+        definition: { bucket: 'test-bucket', policy: '{"statement":[{"a":1}]}' },
+      });
+      (stateManager.getAllResources as jest.Mock).mockReturnValue({});
+      (cosTypes.extractCosBucketDefinition as jest.Mock).mockReturnValue({
+        bucket: 'test-bucket',
+        policy: '{"statement":[{"a":1}]}',
+      });
+      (cosTypes.cloudCosToDefinition as jest.Mock).mockReturnValue({});
+      // Cloud policy is key-order-reversed but semantically identical.
+      (mockCosOperations.getBucket as jest.Mock).mockResolvedValue({
+        Bucket: 'test-bucket',
+        Policy: { statement: [{ a: 1 }] },
+      });
+      (hashUtils.attributesEqual as jest.Mock).mockReturnValue(true);
+
+      const result = await generateBucketPlan(mockContext, stateWithBucket, [testBucket]);
+
+      expect(result.items[0]).toMatchObject({ action: 'noop' });
+    });
+
     it('flags update+drifted when the live acl drifted from config (issue #234 phase 2)', async () => {
       const stateWithBucket: StateFile = {
         ...initialState,

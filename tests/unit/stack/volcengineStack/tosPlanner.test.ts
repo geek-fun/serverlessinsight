@@ -46,12 +46,13 @@ describe('tosPlanner', () => {
     resources: {},
   };
 
-  let mockTosClient: { tos: { getBucket: jest.Mock } };
+  let mockTosClient: { tos: { getBucket: jest.Mock; getBucketPolicy: jest.Mock } };
 
   beforeEach(() => {
     mockTosClient = {
       tos: {
         getBucket: jest.fn(),
+        getBucketPolicy: jest.fn(),
       },
     };
     (createVolcengineClient as jest.Mock).mockReturnValue(mockTosClient);
@@ -357,6 +358,72 @@ describe('tosPlanner', () => {
       const result = await generateBucketPlan(mockContext, stateWithBucket, buckets);
 
       expect(result.items[0]).toMatchObject({ action: 'update', drifted: true });
+    });
+
+    it('compares the live bucket policy canonically (issue #234 phase 3)', async () => {
+      const buckets: Array<BucketDomain> = [
+        {
+          key: 'static_site',
+          name: 'test-bucket',
+          iam: {
+            resource: {
+              statements: [
+                {
+                  effect: 'Allow',
+                  principal: { AWS: ['*'] },
+                  action: ['tos:Get*'],
+                  resource: ['trn:tos:::*'],
+                },
+              ],
+            },
+          },
+        },
+      ];
+
+      const stateWithBucket: StateFile = {
+        ...mockState,
+        resources: {
+          'buckets.static_site': {
+            mode: 'managed',
+            region: 'cn-beijing',
+            definition: {
+              bucketName: 'test-bucket',
+              acl: null,
+              storageClass: null,
+              websiteConfiguration: null,
+              websiteCodeHash: null,
+              policy:
+                '{"resource":{"statements":[{"effect":"Allow","principal":{"AWS":["*"]},"action":["tos:Get*"],"resource":["trn:tos:::*"]}]}}',
+            },
+            instances: [{ sid: 'test-sid', id: 'test-bucket', type: 'VOLCENGINE_TOS_BUCKET' }],
+            lastUpdated: '2024-01-01T00:00:00Z',
+          },
+        },
+      };
+
+      // Cloud returns the same policy parsed as an object with reversed key
+      // order — canonical compare must treat it as equal.
+      mockTosClient.tos.getBucket.mockResolvedValueOnce({ name: 'test-bucket' });
+      mockTosClient.tos.getBucketPolicy.mockResolvedValueOnce({
+        resource: {
+          statements: [
+            {
+              effect: 'Allow',
+              principal: { AWS: ['*'] },
+              action: ['tos:Get*'],
+              resource: ['trn:tos:::*'],
+            },
+          ],
+        },
+      });
+
+      jest
+        .spyOn(stateManager, 'getResource')
+        .mockReturnValue(stateWithBucket.resources['buckets.static_site']);
+
+      const result = await generateBucketPlan(mockContext, stateWithBucket, buckets);
+
+      expect(result.items[0]).toMatchObject({ action: 'noop' });
     });
 
     it('skips the live read and drops drift claims under --no-refresh (issue #234 phase 3)', async () => {
