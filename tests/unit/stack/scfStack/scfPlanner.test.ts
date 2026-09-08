@@ -19,11 +19,17 @@ const mockScfOperations = {
   deleteFunction: jest.fn(),
 };
 
+const mockClsOperations = {
+  getLogsetNameById: jest.fn(),
+  listTopicsByLogset: jest.fn(),
+};
+
 jest.mock('../../../../src/common/tencentClient', () => ({
   createTencentClient: () => ({
     scf: mockScfOperations,
     cos: {},
     tdsqlc: {},
+    cls: mockClsOperations,
   }),
 }));
 
@@ -334,6 +340,120 @@ describe('SCF Planner', () => {
           },
         }),
       );
+    });
+
+    it('resolves live CLS ids to names and stays noop when they match (issue #234 phase 3)', async () => {
+      mockClsOperations.getLogsetNameById.mockResolvedValue('test-app-default-cls');
+      mockClsOperations.listTopicsByLogset.mockResolvedValue([
+        { TopicId: 'topic-1', TopicName: 'test-service-default-test_fn-fn-logs' },
+      ]);
+
+      mockScfOperations.getFunction.mockResolvedValue({
+        FunctionName: 'test-function',
+        Runtime: 'Nodejs18.15',
+        Handler: 'index.handler',
+        MemorySize: 512,
+        Timeout: 10,
+        Environment: {
+          Variables: [{ Key: 'NODE_ENV', Value: 'production' }],
+        },
+        ClsLogsetId: 'cls-1',
+        ClsTopicId: 'topic-1',
+      });
+
+      const fnWithLog = { ...testFunction, log: true };
+
+      const state = setResource(initalState, 'functions.test_fn', {
+        mode: 'managed',
+        region: 'ap-guangzhou',
+        definition: {
+          functionName: 'test-function',
+          runtime: 'Nodejs18.15',
+          handler: 'index.handler',
+          memorySize: 512,
+          timeout: 10,
+          environment: { NODE_ENV: 'production' },
+          codeHash: 'mock-code-hash',
+          vpcConfig: null,
+          diskSize: null,
+          cfsConfig: null,
+          useGpu: null,
+          imageConfig: null,
+          logConfig: {
+            logset: 'test-app-default-cls',
+            topic: 'test-service-default-test_fn-fn-logs',
+          },
+        },
+        instances: [
+          {
+            sid: 'si:tencent:scf:default:test-function',
+            id: 'test-function',
+            functionName: 'test-function',
+          },
+        ],
+        lastUpdated: new Date().toISOString(),
+      });
+
+      const plan = await generateFunctionPlan(mockContext, state, [fnWithLog]);
+
+      expect(plan.items[0]).toMatchObject({ action: 'noop' });
+    });
+
+    it('flags update+drifted when the live topic id resolves to a different name (issue #234 phase 3)', async () => {
+      mockClsOperations.getLogsetNameById.mockResolvedValue('test-app-default-cls');
+      mockClsOperations.listTopicsByLogset.mockResolvedValue([
+        { TopicId: 'topic-1', TopicName: 'console-renamed-topic' },
+      ]);
+
+      mockScfOperations.getFunction.mockResolvedValue({
+        FunctionName: 'test-function',
+        Runtime: 'Nodejs18.15',
+        Handler: 'index.handler',
+        MemorySize: 512,
+        Timeout: 10,
+        Environment: {
+          Variables: [{ Key: 'NODE_ENV', Value: 'production' }],
+        },
+        ClsLogsetId: 'cls-1',
+        ClsTopicId: 'topic-1',
+      });
+
+      const fnWithLog = { ...testFunction, log: true };
+
+      const state = setResource(initalState, 'functions.test_fn', {
+        mode: 'managed',
+        region: 'ap-guangzhou',
+        definition: {
+          functionName: 'test-function',
+          runtime: 'Nodejs18.15',
+          handler: 'index.handler',
+          memorySize: 512,
+          timeout: 10,
+          environment: { NODE_ENV: 'production' },
+          codeHash: 'mock-code-hash',
+          vpcConfig: null,
+          diskSize: null,
+          cfsConfig: null,
+          useGpu: null,
+          imageConfig: null,
+          logConfig: {
+            logset: 'test-app-default-cls',
+            topic: 'test-service-default-test_fn-fn-logs',
+          },
+        },
+        instances: [
+          {
+            sid: 'si:tencent:scf:default:test-function',
+            id: 'test-function',
+            functionName: 'test-function',
+          },
+        ],
+        lastUpdated: new Date().toISOString(),
+      });
+
+      const plan = await generateFunctionPlan(mockContext, state, [fnWithLog]);
+
+      expect(plan.items[0]).toMatchObject({ action: 'update', drifted: true });
     });
 
     it('should plan to delete function when removed from config', async () => {
