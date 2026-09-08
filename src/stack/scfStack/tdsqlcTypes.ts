@@ -186,3 +186,22 @@ export const extractTdsqlcDefinition = (config: TdsqlcClusterConfig): ResourceAt
     maxStorageSize: config.MaxStorageSize ?? null,
   };
 };
+
+// issue #234 phase 2: cloud-side counterpart of extractTdsqlcDefinition.
+// Mirrors the executor write shape key-for-key. Not refreshable (omitted so
+// they can never phantom-drift): autoPause/autoPauseDelay (DescribeClusters
+// does not report the configured idle-pause switch — the cloud field reflects
+// running state, see tdsqlcClusterMapper), port/projectId (not returned).
+export const cloudTdsqlcToDefinition = (info: TdsqlcClusterInfo): ResourceAttributes => ({
+  clusterName: info.ClusterName,
+  dbType: info.DbType ?? null,
+  dbVersion: info.DbVersion ?? null,
+  dbMode: info.DbMode ?? null,
+  minCpu: info.MinCpu ?? null,
+  maxCpu: info.MaxCpu ?? null,
+  storagePayMode: info.StoragePayMode ?? null,
+  vpcId: info.VpcId ?? null,
+  subnetId: info.SubnetId ?? null,
+  minStorageSize: info.MinStorageSize ?? null,
+  maxStorageSize: info.MaxStorageSize ?? null,
+});

@@ -14,9 +14,11 @@ import {
   databaseToTdsqlcConfig,
   extractTdsqlcDefinition,
   tdsqlcTagsToOwnershipTags,
+  cloudTdsqlcToDefinition,
 } from './tdsqlcTypes';
 import { getAllResources, getResource } from '../../common/stateManager';
 import { attributesEqual } from '../../common/hashUtils';
+import { remoteDiffersFromDesired } from '../../common/planCompare';
 import { OWNERSHIP_TAG_KEY, isOwnedByStack } from '../ownershipTag';
 
 const planDatabaseDeletion = (logicalId: string, definition: ResourceAttributes): PlanItem => ({
@@ -112,7 +114,15 @@ export const generateDatabasePlan = async (
         const currentDefinition = currentState.definition || {};
         const definitionChanged = !attributesEqual(currentDefinition, desiredDefinition);
 
-        if (definitionChanged) {
+        // Issue #234 phase 2: live attribute drift (console edits to
+        // cu/version/storage/network). One-directional: only mapper-emitted
+        // keys the desired definition declares are compared.
+        const remoteDiffers = remoteDiffersFromDesired(
+          cloudTdsqlcToDefinition(remoteCluster),
+          desiredDefinition,
+        );
+
+        if (definitionChanged || remoteDiffers) {
           return {
             logicalId,
             action: 'update',
