@@ -806,6 +806,24 @@ export const updateResource = async (
     }
   }
 
+  // Issue #234 M5: nested repair — only on a drifted plan item (force):
+  // reconcile topic ttl via ModifyTopic (the only mutable field si manages).
+  if (options?.force && fn.log) {
+    const tlsTopicInstance = existingInstances.find(
+      (i) => (i as { type?: string }).type === 'VOLCENGINE_TLS_TOPIC',
+    ) as { id?: string } | undefined;
+    if (tlsTopicInstance?.id) {
+      const [topicProject, topicName] = tlsTopicInstance.id.split('/');
+      if (topicProject && topicName) {
+        const liveTopic = await client.tls.getTopic(topicProject, topicName);
+        if (liveTopic && (liveTopic.ttl ?? TLS_TOPIC_TTL) !== TLS_TOPIC_TTL) {
+          await client.tls.modifyTopic(liveTopic.topicId ?? '', TLS_TOPIC_TTL);
+          logger.info(lang.__('NESTED_TLS_TOPIC_UPDATED', { topicId: liveTopic.topicId ?? '' }));
+        }
+      }
+    }
+  }
+
   const config = functionToVefaasConfig(fn, {
     role: role?.trn,
     logConfig,

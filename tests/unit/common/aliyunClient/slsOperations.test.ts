@@ -6,6 +6,7 @@ const mockDeleteProject = jest.fn();
 const mockCreateLogStore = jest.fn();
 const mockGetLogStore = jest.fn();
 const mockDeleteLogStore = jest.fn();
+const mockUpdateLogStore = jest.fn();
 const mockCreateIndex = jest.fn();
 const mockGetIndex = jest.fn();
 const mockDeleteIndex = jest.fn();
@@ -20,6 +21,7 @@ const mockSlsClient = {
   deleteProject: mockDeleteProject,
   createLogStore: mockCreateLogStore,
   getLogStore: mockGetLogStore,
+  updateLogStore: mockUpdateLogStore,
   deleteLogStore: mockDeleteLogStore,
   createIndex: mockCreateIndex,
   getIndex: mockGetIndex,
@@ -527,6 +529,18 @@ describe('slsOperations', () => {
           resourceType: 'project',
           tags: [{ key: 'si-owned-by', value: 'v' }],
         }),
+      );
+    });
+  });
+
+  describe('updateLogstore', () => {
+    it('sends the ttl/shard update', async () => {
+      await operations.updateLogstore('proj', 'store', 30, 2);
+
+      expect(mockUpdateLogStore).toHaveBeenCalledWith(
+        'proj',
+        'store',
+        expect.objectContaining({ ttl: 30, shardCount: 2 }),
       );
     });
   });

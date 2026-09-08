@@ -482,6 +482,42 @@ describe('nasOperations', () => {
     });
   });
 
+  describe('listMountTargets', () => {
+    it('lists mount targets for a file system', async () => {
+      mockDescribeMountTargets.mockResolvedValue({
+        body: {
+          mountTargets: {
+            mountTarget: [
+              { mountTargetDomain: 'mt-1.example.com', status: 'Active' },
+              { mountTargetDomain: 'mt-2.example.com', status: 'Pending' },
+            ],
+          },
+        },
+      });
+
+      const result = await operations.listMountTargets('fs-1');
+
+      expect(result).toHaveLength(2);
+      expect(result[0]).toMatchObject({
+        fileSystemId: 'fs-1',
+        mountTargetDomain: 'mt-1.example.com',
+        status: 'Active',
+      });
+    });
+
+    it('returns an empty list when the response has no mount targets', async () => {
+      mockDescribeMountTargets.mockResolvedValue({ body: { mountTargets: { mountTarget: [] } } });
+
+      expect(await operations.listMountTargets('fs-1')).toEqual([]);
+    });
+
+    it('returns an empty list on error instead of throwing', async () => {
+      mockDescribeMountTargets.mockRejectedValue(new Error('nas throttled'));
+
+      expect(await operations.listMountTargets('fs-1')).toEqual([]);
+    });
+  });
+
   describe('deleteMountTarget', () => {
     it('should delete mount target', async () => {
       mockDeleteMountTarget.mockResolvedValue({});
