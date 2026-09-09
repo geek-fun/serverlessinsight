@@ -536,6 +536,10 @@ export const en = {
     'Backend type BUCKET_STORE requires both "bucket" and "key" fields',
   SEMANTIC_DUPLICATE_TRIGGER:
     'Duplicate trigger in event "{{eventKey}}": {{method}} {{path}} is defined more than once',
+  SEMANTIC_CONTAINER_CODE_CONFLICT:
+    'Function "{{fnKey}}" cannot define both "container" and "code" — they are mutually exclusive sources',
+  SEMANTIC_FUNCTION_SOURCE_REQUIRED:
+    'Function "{{fnKey}}" must define either "code" or "container"',
   SEMANTIC_DUPLICATE_GENERATED_API_NAME:
     'Generated API Gateway apiName "{{apiName}}" collides between "{{firstPath}}" and "{{secondPath}}" in this deployment; shorten the event name or differentiate trigger method/path',
   SEMANTIC_DUPLICATE_ROUTE_NAME:

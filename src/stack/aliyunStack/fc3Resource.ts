@@ -855,8 +855,10 @@ export const createResource = async (
     };
   }
 
-  const codePath = fn.code!.path;
-  const codeHash = await computeZipContentHash(codePath);
+  // Container-only functions have no code block — mirror the planner's null
+  // codeHash (PR #237); the image lives in customContainerConfig, no zip push.
+  const codePath = fn.code?.path;
+  const codeHash = codePath ? await computeZipContentHash(codePath) : null;
   const baseDefinition = extractFc3Definition(config, codeHash);
   const definition = fn.iam ? { ...baseDefinition, iam: fn.iam } : baseDefinition;
 
@@ -894,7 +896,9 @@ export const createResource = async (
 
   try {
     if (!existingFunctionOnRetry) {
-      const ossCode = await ensureOssCodeUpload(client, codePath, context.region, fn.name);
+      const ossCode = codePath
+        ? await ensureOssCodeUpload(client, codePath, context.region, fn.name)
+        : undefined;
       await client.fc3.createFunction(config, codePath, ossCode);
     }
   } catch (error) {
@@ -1532,10 +1536,10 @@ export const updateResource = async (
     };
   }
 
-  const codePath = fn.code!.path;
+  const codePath = fn.code?.path;
   const currentCodeHash = existingState?.definition?.codeHash as string | undefined;
-  const desiredCodeHash = await computeZipContentHash(codePath);
-  const codeChanged = currentCodeHash !== desiredCodeHash;
+  const desiredCodeHash = codePath ? await computeZipContentHash(codePath) : null;
+  const codeChanged = codePath ? currentCodeHash !== desiredCodeHash : false;
 
   const existingConfig = existingState?.definition as ResourceAttributes | undefined;
   const desiredDefinition = extractFc3Definition(config, desiredCodeHash);
@@ -1555,7 +1559,7 @@ export const updateResource = async (
     await client.fc3.updateFunctionConfiguration(config);
   }
 
-  if (codeChanged) {
+  if (codeChanged && codePath) {
     const ossCode = await ensureOssCodeUpload(client, codePath, context.region, fn.name);
     await client.fc3.updateFunctionCode(fn.name, codePath, ossCode);
   }
@@ -1726,7 +1730,7 @@ export const updateResource = async (
     throw new Error(`Failed to refresh state for function: ${fn.name}`);
   }
 
-  const codeHash = await computeZipContentHash(codePath);
+  const codeHash = codePath ? await computeZipContentHash(codePath) : null;
   const baseDefinition = extractFc3Definition(config, codeHash);
   const definition = fn.iam ? { ...baseDefinition, iam: fn.iam } : baseDefinition;
   const sid = buildSid('aliyun', 'fc3', context.stage, fn.name);

@@ -36,6 +36,62 @@ describe('validateSemantics', () => {
       functions,
     }) as unknown as ServerlessIacRaw;
 
+  describe('function source (container vs code)', () => {
+    it('rejects functions defining both container and code', () => {
+      const errors = validateSemantics(
+        buildIac(
+          {},
+          {
+            fn: {
+              name: 'fn',
+              code: { runtime: 'nodejs20', handler: 'index.handler', path: 'code.zip' },
+              container: { image: 'registry.example.com/img:1', port: 9000 },
+            },
+          },
+        ) as ServerlessIacRaw,
+      );
+
+      const conflicts = errors.filter((error) => error.keyword === 'containerCodeConflict');
+      expect(conflicts).toHaveLength(1);
+      expect(conflicts[0].instancePath).toBe('/functions/fn');
+    });
+
+    it('rejects functions defining neither container nor code', () => {
+      const errors = validateSemantics(
+        buildIac({}, { fn: { name: 'fn', memory: 512 } }) as ServerlessIacRaw,
+      );
+
+      const missing = errors.filter((error) => error.keyword === 'functionSourceRequired');
+      expect(missing).toHaveLength(1);
+      expect(missing[0].instancePath).toBe('/functions/fn');
+    });
+
+    it('accepts code-only and container-only functions', () => {
+      const errors = validateSemantics(
+        buildIac(
+          {},
+          {
+            zipFn: {
+              name: 'zip-fn',
+              code: { runtime: 'nodejs20', handler: 'index.handler', path: 'code.zip' },
+            },
+            containerFn: {
+              name: 'container-fn',
+              container: { image: 'registry.example.com/img:1', port: 9000 },
+            },
+          },
+        ) as ServerlessIacRaw,
+      );
+
+      expect(
+        errors.filter(
+          (error) =>
+            error.keyword === 'containerCodeConflict' || error.keyword === 'functionSourceRequired',
+        ),
+      ).toHaveLength(0);
+    });
+  });
+
   describe('trigger duplication', () => {
     it('reports repeated method+path pairs inside one event', () => {
       const errors = validateSemantics(
@@ -97,7 +153,12 @@ describe('validateSemantics', () => {
               triggers: [{ method: 'GET', path: '/api', backend: '${functions.known_fn}' }],
             },
           },
-          { known_fn: { name: 'known-function' } },
+          {
+            known_fn: {
+              name: 'known-function',
+              code: { runtime: 'nodejs20', handler: 'index.handler', path: 'code.zip' },
+            },
+          },
         ) as ServerlessIacRaw,
       );
 
@@ -128,7 +189,12 @@ describe('validateSemantics', () => {
               triggers: [{ method: 'GET', path: '/api', backend: 'known_fn' }],
             },
           },
-          { known_fn: { name: 'known-function' } },
+          {
+            known_fn: {
+              name: 'known-function',
+              code: { runtime: 'nodejs20', handler: 'index.handler', path: 'code.zip' },
+            },
+          },
         ) as ServerlessIacRaw,
       );
 
@@ -146,7 +212,12 @@ describe('validateSemantics', () => {
               triggers: [{ method: 'GET', path: '/api', backend: 'known-function' }],
             },
           },
-          { known_fn: { name: 'known-function' } },
+          {
+            known_fn: {
+              name: 'known-function',
+              code: { runtime: 'nodejs20', handler: 'index.handler', path: 'code.zip' },
+            },
+          },
         ) as ServerlessIacRaw,
       );
 
@@ -165,7 +236,12 @@ describe('validateSemantics', () => {
               triggers: [{ method: 'GET', path: '/api', backend: '${vars.backend_fn}' }],
             },
           },
-          { known_fn: { name: 'known-function' } },
+          {
+            known_fn: {
+              name: 'known-function',
+              code: { runtime: 'nodejs20', handler: 'index.handler', path: 'code.zip' },
+            },
+          },
         ) as ServerlessIacRaw,
       );
 
@@ -253,7 +329,12 @@ describe('validateSemantics', () => {
         },
       };
       const volcIac = {
-        ...buildIac(volcEvents, { fn: { name: 'fn' } }),
+        ...buildIac(volcEvents, {
+          fn: {
+            name: 'fn',
+            code: { runtime: 'nodejs20', handler: 'index.handler', path: 'code.zip' },
+          },
+        }),
         provider: { name: ProviderEnum.VOLCENGINE, region: 'cn-beijing' },
       } as ServerlessIacRaw;
 
