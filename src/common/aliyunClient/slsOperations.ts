@@ -1,21 +1,10 @@
 import SlsClient from '@alicloud/sls20201230';
 import * as sls from '@alicloud/sls20201230';
-import { RuntimeOptions } from '@darabonba/typescript';
 import { SlsProjectInfo, SlsLogstoreInfo, SlsIndexInfo } from './types';
 import { logger } from '../logger';
 import { pollUntil, PollingTimeoutError } from '../polling';
 
 type SlsSdkClient = SlsClient;
-
-// Repair-path reads (issue #234 M1) run against regional SLS endpoints whose
-// SDK default 3s read timeout is too tight for cold cross-network connects —
-// a transient timeout there fails whole function deploys. Resilient runtime:
-// longer read window + automatic retries.
-const SLS_READ_RUNTIME = new RuntimeOptions({
-  readTimeout: 10000,
-  autoretry: true,
-  maxAttempts: 3,
-});
 
 // The logstore attributes si creates with (issue #234 M1): `fn.log` is a
 // boolean — these are stack constants, so live values differing from them are
@@ -266,12 +255,7 @@ export const createSlsOperations = (slsClient: SlsSdkClient) => {
 
     getIndex: async (projectName: string, logstoreName: string): Promise<SlsIndexInfo | null> => {
       try {
-        const response = await slsClient.getIndexWithOptions(
-          projectName,
-          logstoreName,
-          {},
-          SLS_READ_RUNTIME,
-        );
+        const response = await slsClient.getIndex(projectName, logstoreName);
 
         if (!response || !response.body) {
           return null;
