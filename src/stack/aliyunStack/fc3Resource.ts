@@ -1465,7 +1465,11 @@ export const updateResource = async (
           failingFsId = fsEntry.id;
           const liveTargets = await client.nas.listMountTargets(fsEntry.id);
           if (!liveTargets || liveTargets.length === 0) {
-            const mountPath = nasStorageItems[0]?.mount_path ?? '/mnt/nas';
+            // Same derivation as the create path — a raw mount path would bind
+            // the recreated target to an access group that was never created.
+            const mountPath = (nasStorageItems[0]?.mount_path ?? '/mnt/nas')
+              .replace(/\//g, '-')
+              .replace(/^-/, '');
             const accessGroupName = `${fn.name}-${context.stage}-nas-access-${mountPath}`;
             await client.nas.createMountTarget(
               fsEntry.id,
