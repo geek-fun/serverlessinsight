@@ -12,7 +12,12 @@ import CdnClient from '@alicloud/cdn20180510';
 import * as $OpenApi from '@alicloud/openapi-client';
 import OSS from 'ali-oss';
 import { Context } from '../../types';
-import { ALIYUN_FC3_CONNECT_TIMEOUT_MS, ALIYUN_FC3_READ_TIMEOUT_MS } from '../constants';
+import {
+  ALIYUN_FC3_CONNECT_TIMEOUT_MS,
+  ALIYUN_FC3_READ_TIMEOUT_MS,
+  ALIYUN_QUERY_CONNECT_TIMEOUT_MS,
+  ALIYUN_QUERY_READ_TIMEOUT_MS,
+} from '../constants';
 import { createFc3Operations } from './fc3Operations';
 import { createSlsOperations } from './slsOperations';
 import { createRamOperations } from './ramOperations';
@@ -37,14 +42,13 @@ export * from './dnsOperations';
 export * from './casOperations';
 export * from './cdnOperations';
 
-// All aliyun management-plane clients share the same timeout budget (issue
-// #234: the SLS client ran on the SDK default 3s read timeout while fc3/ims
-// used the shared constants — a cold SLS read then aborted whole deploys).
-// Reuses ALIYUN_FC3_* constants — semantically the aliyun management-plane
-// timeout budget (imsClient already reuses them the same way).
-const applyAliyunTimeouts = (config: $OpenApi.Config): $OpenApi.Config => {
-  config.connectTimeout = ALIYUN_FC3_CONNECT_TIMEOUT_MS;
-  config.readTimeout = ALIYUN_FC3_READ_TIMEOUT_MS;
+// Non-fc3 aliyun clients are synchronous management-plane RPCs — they share
+// the short query-tier timeout budget (issue #234: sls ran on the SDK default
+// 3s read timeout and a cold read aborted whole deploys; the deploy-tier
+// budget would instead let a hung call stall a deploy for minutes).
+const applyAliyunQueryTimeouts = (config: $OpenApi.Config): $OpenApi.Config => {
+  config.connectTimeout = ALIYUN_QUERY_CONNECT_TIMEOUT_MS;
+  config.readTimeout = ALIYUN_QUERY_READ_TIMEOUT_MS;
   return config;
 };
 
@@ -57,15 +61,15 @@ const initializeSdkClients = (context: Context) => {
   };
 
   const fc3Client = new Fc3Client(
-    applyAliyunTimeouts(
-      Object.assign(new $OpenApi.Config(baseConfig), {
-        endpoint: `${context.accountId}.${context.region}.fc.aliyuncs.com`,
-      }),
-    ),
+    Object.assign(new $OpenApi.Config(baseConfig), {
+      endpoint: `${context.accountId}.${context.region}.fc.aliyuncs.com`,
+      connectTimeout: ALIYUN_FC3_CONNECT_TIMEOUT_MS,
+      readTimeout: ALIYUN_FC3_READ_TIMEOUT_MS,
+    }),
   );
 
   const slsClient = new SlsClient(
-    applyAliyunTimeouts(
+    applyAliyunQueryTimeouts(
       Object.assign(new $OpenApi.Config(baseConfig), {
         endpoint: `${context.region}.log.aliyuncs.com`,
       }),
@@ -73,7 +77,7 @@ const initializeSdkClients = (context: Context) => {
   );
 
   const ramClient = new RamClient(
-    applyAliyunTimeouts(
+    applyAliyunQueryTimeouts(
       Object.assign(new $OpenApi.Config(baseConfig), {
         endpoint: 'ram.aliyuncs.com',
       }),
@@ -81,7 +85,7 @@ const initializeSdkClients = (context: Context) => {
   );
 
   const ecsClient = new EcsClient(
-    applyAliyunTimeouts(
+    applyAliyunQueryTimeouts(
       Object.assign(new $OpenApi.Config(baseConfig), {
         endpoint: `ecs.${context.region}.aliyuncs.com`,
       }),
@@ -89,7 +93,7 @@ const initializeSdkClients = (context: Context) => {
   );
 
   const nasClient = new NasClient(
-    applyAliyunTimeouts(
+    applyAliyunQueryTimeouts(
       Object.assign(new $OpenApi.Config(baseConfig), {
         endpoint: `nas.${context.region}.aliyuncs.com`,
       }),
@@ -104,7 +108,7 @@ const initializeSdkClients = (context: Context) => {
   });
 
   const apigwClient = new CloudApiClient(
-    applyAliyunTimeouts(
+    applyAliyunQueryTimeouts(
       Object.assign(new $OpenApi.Config(baseConfig), {
         endpoint: `apigateway.${context.region}.aliyuncs.com`,
       }),
@@ -112,7 +116,7 @@ const initializeSdkClients = (context: Context) => {
   );
 
   const rdsClient = new RdsClient(
-    applyAliyunTimeouts(
+    applyAliyunQueryTimeouts(
       Object.assign(new $OpenApi.Config(baseConfig), {
         endpoint: `rds.aliyuncs.com`,
       }),
@@ -120,7 +124,7 @@ const initializeSdkClients = (context: Context) => {
   );
 
   const esClient = new EsServerlessClient(
-    applyAliyunTimeouts(
+    applyAliyunQueryTimeouts(
       Object.assign(new $OpenApi.Config(baseConfig), {
         endpoint: `elasticsearch-serverless.${context.region}.aliyuncs.com`,
       }),
@@ -128,7 +132,7 @@ const initializeSdkClients = (context: Context) => {
   );
 
   const dnsClient = new DnsClient(
-    applyAliyunTimeouts(
+    applyAliyunQueryTimeouts(
       Object.assign(new $OpenApi.Config(baseConfig), {
         endpoint: `alidns.aliyuncs.com`,
       }),
@@ -136,7 +140,7 @@ const initializeSdkClients = (context: Context) => {
   );
 
   const casClient = new CasClient(
-    applyAliyunTimeouts(
+    applyAliyunQueryTimeouts(
       Object.assign(new $OpenApi.Config(baseConfig), {
         endpoint: `cas.aliyuncs.com`,
       }),
@@ -144,7 +148,7 @@ const initializeSdkClients = (context: Context) => {
   );
 
   const cdnClient = new CdnClient(
-    applyAliyunTimeouts(
+    applyAliyunQueryTimeouts(
       Object.assign(new $OpenApi.Config(baseConfig), {
         endpoint: `cdn.aliyuncs.com`,
       }),
