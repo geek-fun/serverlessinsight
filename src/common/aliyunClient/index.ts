@@ -37,6 +37,17 @@ export * from './dnsOperations';
 export * from './casOperations';
 export * from './cdnOperations';
 
+// All aliyun management-plane clients share the same timeout budget (issue
+// #234: the SLS client ran on the SDK default 3s read timeout while fc3/ims
+// used the shared constants — a cold SLS read then aborted whole deploys).
+// Reuses ALIYUN_FC3_* constants — semantically the aliyun management-plane
+// timeout budget (imsClient already reuses them the same way).
+const applyAliyunTimeouts = (config: $OpenApi.Config): $OpenApi.Config => {
+  config.connectTimeout = ALIYUN_FC3_CONNECT_TIMEOUT_MS;
+  config.readTimeout = ALIYUN_FC3_READ_TIMEOUT_MS;
+  return config;
+};
+
 const initializeSdkClients = (context: Context) => {
   const baseConfig = {
     accessKeyId: context.accessKeyId,
@@ -45,27 +56,45 @@ const initializeSdkClients = (context: Context) => {
     securityToken: context.securityToken,
   };
 
-  const fc3Config = new $OpenApi.Config(baseConfig);
-  fc3Config.endpoint = `${context.accountId}.${context.region}.fc.aliyuncs.com`;
-  fc3Config.connectTimeout = ALIYUN_FC3_CONNECT_TIMEOUT_MS;
-  fc3Config.readTimeout = ALIYUN_FC3_READ_TIMEOUT_MS;
-  const fc3Client = new Fc3Client(fc3Config);
+  const fc3Client = new Fc3Client(
+    applyAliyunTimeouts(
+      Object.assign(new $OpenApi.Config(baseConfig), {
+        endpoint: `${context.accountId}.${context.region}.fc.aliyuncs.com`,
+      }),
+    ),
+  );
 
-  const slsConfig = new $OpenApi.Config(baseConfig);
-  slsConfig.endpoint = `${context.region}.log.aliyuncs.com`;
-  const slsClient = new SlsClient(slsConfig);
+  const slsClient = new SlsClient(
+    applyAliyunTimeouts(
+      Object.assign(new $OpenApi.Config(baseConfig), {
+        endpoint: `${context.region}.log.aliyuncs.com`,
+      }),
+    ),
+  );
 
-  const ramConfig = new $OpenApi.Config(baseConfig);
-  ramConfig.endpoint = 'ram.aliyuncs.com';
-  const ramClient = new RamClient(ramConfig);
+  const ramClient = new RamClient(
+    applyAliyunTimeouts(
+      Object.assign(new $OpenApi.Config(baseConfig), {
+        endpoint: 'ram.aliyuncs.com',
+      }),
+    ),
+  );
 
-  const ecsConfig = new $OpenApi.Config(baseConfig);
-  ecsConfig.endpoint = `ecs.${context.region}.aliyuncs.com`;
-  const ecsClient = new EcsClient(ecsConfig);
+  const ecsClient = new EcsClient(
+    applyAliyunTimeouts(
+      Object.assign(new $OpenApi.Config(baseConfig), {
+        endpoint: `ecs.${context.region}.aliyuncs.com`,
+      }),
+    ),
+  );
 
-  const nasConfig = new $OpenApi.Config(baseConfig);
-  nasConfig.endpoint = `nas.${context.region}.aliyuncs.com`;
-  const nasClient = new NasClient(nasConfig);
+  const nasClient = new NasClient(
+    applyAliyunTimeouts(
+      Object.assign(new $OpenApi.Config(baseConfig), {
+        endpoint: `nas.${context.region}.aliyuncs.com`,
+      }),
+    ),
+  );
 
   const ossClient = new OSS({
     accessKeyId: context.accessKeyId,
@@ -74,29 +103,53 @@ const initializeSdkClients = (context: Context) => {
     stsToken: context.securityToken,
   });
 
-  const apigwConfig = new $OpenApi.Config(baseConfig);
-  apigwConfig.endpoint = `apigateway.${context.region}.aliyuncs.com`;
-  const apigwClient = new CloudApiClient(apigwConfig);
+  const apigwClient = new CloudApiClient(
+    applyAliyunTimeouts(
+      Object.assign(new $OpenApi.Config(baseConfig), {
+        endpoint: `apigateway.${context.region}.aliyuncs.com`,
+      }),
+    ),
+  );
 
-  const rdsConfig = new $OpenApi.Config(baseConfig);
-  rdsConfig.endpoint = `rds.aliyuncs.com`;
-  const rdsClient = new RdsClient(rdsConfig);
+  const rdsClient = new RdsClient(
+    applyAliyunTimeouts(
+      Object.assign(new $OpenApi.Config(baseConfig), {
+        endpoint: `rds.aliyuncs.com`,
+      }),
+    ),
+  );
 
-  const esConfig = new $OpenApi.Config(baseConfig);
-  esConfig.endpoint = `elasticsearch-serverless.${context.region}.aliyuncs.com`;
-  const esClient = new EsServerlessClient(esConfig);
+  const esClient = new EsServerlessClient(
+    applyAliyunTimeouts(
+      Object.assign(new $OpenApi.Config(baseConfig), {
+        endpoint: `elasticsearch-serverless.${context.region}.aliyuncs.com`,
+      }),
+    ),
+  );
 
-  const dnsConfig = new $OpenApi.Config(baseConfig);
-  dnsConfig.endpoint = `alidns.aliyuncs.com`;
-  const dnsClient = new DnsClient(dnsConfig);
+  const dnsClient = new DnsClient(
+    applyAliyunTimeouts(
+      Object.assign(new $OpenApi.Config(baseConfig), {
+        endpoint: `alidns.aliyuncs.com`,
+      }),
+    ),
+  );
 
-  const casConfig = new $OpenApi.Config(baseConfig);
-  casConfig.endpoint = `cas.aliyuncs.com`;
-  const casClient = new CasClient(casConfig);
+  const casClient = new CasClient(
+    applyAliyunTimeouts(
+      Object.assign(new $OpenApi.Config(baseConfig), {
+        endpoint: `cas.aliyuncs.com`,
+      }),
+    ),
+  );
 
-  const cdnConfig = new $OpenApi.Config(baseConfig);
-  cdnConfig.endpoint = `cdn.aliyuncs.com`;
-  const cdnClient = new CdnClient(cdnConfig);
+  const cdnClient = new CdnClient(
+    applyAliyunTimeouts(
+      Object.assign(new $OpenApi.Config(baseConfig), {
+        endpoint: `cdn.aliyuncs.com`,
+      }),
+    ),
+  );
 
   return {
     fc3: fc3Client,
