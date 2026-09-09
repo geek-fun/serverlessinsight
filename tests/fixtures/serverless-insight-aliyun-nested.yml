@@ -1,0 +1,35 @@
+version: 0.0.1
+app: nested-drift-app
+provider:
+  name: aliyun
+  region: cn-hangzhou
+
+service: nested-drift-service
+
+backend:
+  state_manager:
+    type: LOCAL
+
+functions:
+  nested_fn:
+    name: nested-drift-fn
+    code:
+      runtime: nodejs18
+      handler: index.handler
+      path: tests/fixtures/artifacts/artifact.zip
+    memory: 128
+    timeout: 10
+    network:
+      vpc_id: vpc-123
+      subnet_ids:
+        - vsw-123
+      security_group:
+        name: nested-drift-sg
+        ingress:
+          - tcp:0.0.0.0/0:8080
+        egress:
+          - tcp:0.0.0.0/0:443
+    storage:
+      nas:
+        - mount_path: /mnt/data
+          storage_class: STANDARD_PERFORMANCE

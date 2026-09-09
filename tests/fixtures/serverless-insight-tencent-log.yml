@@ -1,0 +1,29 @@
+version: 0.0.1
+app: insight-poc-app-log
+provider:
+  name: tencent
+  region: ap-guangzhou
+
+vars:
+  region: ap-guangzhou
+
+stages:
+  default:
+    region: ${vars.region}
+
+backend:
+  state_manager:
+    type: LOCAL
+
+service: insight-poc-tencent-log
+
+functions:
+  log_fn:
+    name: test-log-fn
+    code:
+      runtime: nodejs18
+      handler: index.handler
+      path: tests/fixtures/artifacts/artifact.zip
+    memory: 512
+    timeout: 10
+    log: true

@@ -75,6 +75,8 @@ export type MockAliyunClient = {
     deleteMountTarget: jest.Mock;
     createAccessGroup: jest.Mock;
     deleteAccessGroup: jest.Mock;
+    createAccessRule: jest.Mock;
+    listMountTargets: jest.Mock;
   };
   rds: {
     createDBInstance: jest.Mock;
@@ -86,6 +88,9 @@ export type MockAliyunClient = {
     describeSecurityGroups: jest.Mock;
     deleteSecurityGroup: jest.Mock;
     getSecurityGroupByName: jest.Mock;
+    getSecurityGroupRules: jest.Mock;
+    authorizeSecurityGroupRules: jest.Mock;
+    revokeSecurityGroupRules: jest.Mock;
   };
   sls: {
     createProject: jest.Mock;
@@ -267,6 +272,11 @@ export const createMockAliyunClient = (): MockAliyunClient => {
       deleteMountTarget: jest.fn().mockResolvedValue({}),
       createAccessGroup: jest.fn().mockResolvedValue({}),
       deleteAccessGroup: jest.fn().mockResolvedValue({}),
+      createAccessRule: jest.fn().mockResolvedValue({}),
+      // Healthy echo: the mount target created during deploy (issue #234 M4).
+      listMountTargets: jest
+        .fn()
+        .mockResolvedValue([{ mountTargetDomain: 'fs-123.cn-hangzhou.nas.aliyuncs.com' }]),
     },
     rds: {
       createDBInstance: jest.fn().mockResolvedValue({ body: { DBInstanceId: 'rds-123' } }),
@@ -286,6 +296,10 @@ export const createMockAliyunClient = (): MockAliyunClient => {
         .mockResolvedValue({ body: { SecurityGroups: { SecurityGroup: [] } } }),
       deleteSecurityGroup: jest.fn().mockResolvedValue({}),
       getSecurityGroupByName: jest.fn().mockResolvedValue({ securityGroupId: 'sg-123' }),
+      // Healthy echo: the desired rule set from the function config (issue #234 M2).
+      getSecurityGroupRules: jest.fn().mockResolvedValue({ ingressRules: [], egressRules: [] }),
+      authorizeSecurityGroupRules: jest.fn().mockResolvedValue(undefined),
+      revokeSecurityGroupRules: jest.fn().mockResolvedValue(undefined),
     },
     sls: {
       createProject: jest.fn().mockResolvedValue({ projectName: 'test-project' }),
@@ -454,6 +468,7 @@ export type MockVolcengineClient = {
     deleteProject: jest.Mock;
     createTopic: jest.Mock;
     getTopic: jest.Mock;
+    modifyTopic: jest.Mock;
     deleteTopic: jest.Mock;
     createIndex: jest.Mock;
     deleteIndex: jest.Mock;
@@ -565,6 +580,7 @@ export const createMockVolcengineClient = (): MockVolcengineClient => ({
       topicName: 'test-topic',
       status: 'Running',
     }),
+    modifyTopic: jest.fn().mockResolvedValue(undefined),
     deleteTopic: jest.fn().mockResolvedValue(undefined),
     createIndex: jest.fn().mockResolvedValue(undefined),
     deleteIndex: jest.fn().mockResolvedValue(undefined),
