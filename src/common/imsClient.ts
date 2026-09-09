@@ -2,7 +2,7 @@ import Ims20190815, * as ims20190815 from '@alicloud/ims20190815';
 import * as openApi from '@alicloud/openapi-client';
 import { Context } from '../types';
 import { ProviderEnum } from './providerEnum';
-import { ALIYUN_FC3_CONNECT_TIMEOUT_MS, ALIYUN_FC3_READ_TIMEOUT_MS } from './constants';
+import { ALIYUN_QUERY_CONNECT_TIMEOUT_MS, ALIYUN_QUERY_READ_TIMEOUT_MS } from './constants';
 
 export const getIamInfo = async (context: Context) => {
   if (context.provider !== ProviderEnum.ALIYUN) {
@@ -15,8 +15,8 @@ export const getIamInfo = async (context: Context) => {
     regionId: context.region,
     endpoint: 'ims.aliyuncs.com',
   });
-  imsConfig.connectTimeout = ALIYUN_FC3_CONNECT_TIMEOUT_MS;
-  imsConfig.readTimeout = ALIYUN_FC3_READ_TIMEOUT_MS;
+  imsConfig.connectTimeout = ALIYUN_QUERY_CONNECT_TIMEOUT_MS;
+  imsConfig.readTimeout = ALIYUN_QUERY_READ_TIMEOUT_MS;
   const imsClient = new Ims20190815(imsConfig);
   const { body } = await imsClient.getUser(
     new ims20190815.GetUserRequest({ userAccessKeyId: context.accessKeyId }),

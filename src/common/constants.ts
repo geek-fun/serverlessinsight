@@ -5,6 +5,10 @@ export const SI_BOOTSTRAP_BUCKET_PREFIX = 'si-bootstrap-artifacts';
 export const SI_LOCALSTACK_SERVER_PORT = 4567;
 export const ALIYUN_FC3_CONNECT_TIMEOUT_MS = 120000;
 export const ALIYUN_FC3_READ_TIMEOUT_MS = 600000;
+// Query-tier budget for synchronous management-plane RPCs (all non-fc3 aliyun
+// clients): fast fail beats long hang — long waits are polling loops, not calls.
+export const ALIYUN_QUERY_CONNECT_TIMEOUT_MS = 10000; // 10 seconds
+export const ALIYUN_QUERY_READ_TIMEOUT_MS = 30000; // 30 seconds
 export const FC3_CODE_INLINE_SIZE_LIMIT = 70 * 1024 * 1024; // 70MB threshold for OSS upload
 
 // OSS state backend timeouts
