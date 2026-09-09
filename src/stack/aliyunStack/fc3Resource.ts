@@ -1140,26 +1140,34 @@ export const updateResource = async (
         // reconcile logstore ttl/shards and index presence against what si
         // creates. Shard deficits are repaired upward; Aliyun cannot shrink.
         if (options?.force) {
-          const liveLogstore = await client.sls.getLogstore(projectName, logstoreName);
-          if (!liveLogstore) {
-            logger.warn(lang.__('NESTED_LOGSTORE_RECREATED', { logstoreName }));
-            await client.sls.createLogstore(projectName, logstoreName);
-          } else if (
-            liveLogstore.ttl !== SLS_LOGSTORE_TTL ||
-            (liveLogstore.shardCount ?? 0) < SLS_LOGSTORE_SHARDS
-          ) {
-            await client.sls.updateLogstore(
-              projectName,
-              logstoreName,
-              SLS_LOGSTORE_TTL,
-              Math.max(liveLogstore.shardCount ?? 0, SLS_LOGSTORE_SHARDS),
+          // Nested repair is best-effort: a transient read/write failure here
+          // must not fail the function update itself (SLS ReadTimeout in prod).
+          try {
+            const liveLogstore = await client.sls.getLogstore(projectName, logstoreName);
+            if (!liveLogstore) {
+              logger.warn(lang.__('NESTED_LOGSTORE_RECREATED', { logstoreName }));
+              await client.sls.createLogstore(projectName, logstoreName);
+            } else if (
+              liveLogstore.ttl !== SLS_LOGSTORE_TTL ||
+              (liveLogstore.shardCount ?? 0) < SLS_LOGSTORE_SHARDS
+            ) {
+              await client.sls.updateLogstore(
+                projectName,
+                logstoreName,
+                SLS_LOGSTORE_TTL,
+                Math.max(liveLogstore.shardCount ?? 0, SLS_LOGSTORE_SHARDS),
+              );
+              logger.info(lang.__('NESTED_LOGSTORE_UPDATED', { logstoreName }));
+            }
+            const liveIndex = await client.sls.getIndex(projectName, logstoreName);
+            if (!liveIndex) {
+              logger.warn(lang.__('NESTED_INDEX_RECREATED', { logstoreName }));
+              await client.sls.createIndex(projectName, logstoreName);
+            }
+          } catch (error: unknown) {
+            logger.warn(
+              lang.__('NESTED_REPAIR_FAILED', { resource: logstoreName, error: String(error) }),
             );
-            logger.info(lang.__('NESTED_LOGSTORE_UPDATED', { logstoreName }));
-          }
-          const liveIndex = await client.sls.getIndex(projectName, logstoreName);
-          if (!liveIndex) {
-            logger.warn(lang.__('NESTED_INDEX_RECREATED', { logstoreName }));
-            await client.sls.createIndex(projectName, logstoreName);
           }
         }
       }
@@ -1318,87 +1326,96 @@ export const updateResource = async (
       // config no longer declares. Invalid config rules are skipped at create
       // time too.
       if (options?.force && fn.network) {
-        const parseRule = (rule: string) => {
-          try {
-            return parseSecurityGroupRule(rule);
-          } catch {
-            return null;
-          }
-        };
-        const desiredIngress = (fn.network.security_group.ingress ?? [])
-          .map(parseRule)
-          .filter((r): r is NonNullable<ReturnType<typeof parseRule>> => Boolean(r));
-        const desiredEgress = (fn.network.security_group.egress ?? [])
-          .map(parseRule)
-          .filter((r): r is NonNullable<ReturnType<typeof parseRule>> => Boolean(r));
-        const live = await client.ecs.getSecurityGroupRules(sgInstance.id);
-        const liveIngressKeys = (live?.ingressRules ?? []).map((r) =>
-          canonicalSecurityGroupRule(r.ipProtocol ?? '', r.portRange ?? '', r.sourceCidrIp ?? ''),
-        );
-        const liveEgressKeys = (live?.egressRules ?? []).map((r) =>
-          canonicalSecurityGroupRule(r.ipProtocol ?? '', r.portRange ?? '', r.destCidrIp ?? ''),
-        );
-        const missingIngress = desiredIngress.filter(
-          (d) =>
-            !liveIngressKeys.includes(canonicalSecurityGroupRule(d.protocol, d.portRange, d.cidr)),
-        );
-        const missingEgress = desiredEgress.filter(
-          (d) =>
-            !liveEgressKeys.includes(canonicalSecurityGroupRule(d.protocol, d.portRange, d.cidr)),
-        );
-        // The extra check reuses the raw live canonical keys — the same space
-        // the missing check uses. Reconstructing a parsed rule here would
-        // collapse port ranges (80/443 -> 80) and wrongly revoke matching
-        // range rules.
-        const desiredIngressKeys = desiredIngress.map((d) =>
-          canonicalSecurityGroupRule(d.protocol, d.portRange, d.cidr),
-        );
-        const desiredEgressKeys = desiredEgress.map((d) =>
-          canonicalSecurityGroupRule(d.protocol, d.portRange, d.cidr),
-        );
-        const extraIngress = (live?.ingressRules ?? []).filter((r, i) => {
-          const key = liveIngressKeys[i];
-          return !key || !desiredIngressKeys.includes(key);
-        });
-        const extraEgress = (live?.egressRules ?? []).filter((r, i) => {
-          const key = liveEgressKeys[i];
-          return !key || !desiredEgressKeys.includes(key);
-        });
-        if (missingIngress.length > 0 || missingEgress.length > 0) {
-          await client.ecs.authorizeSecurityGroupRules(sgInstance.id, 'ingress', missingIngress);
-          await client.ecs.authorizeSecurityGroupRules(sgInstance.id, 'egress', missingEgress);
-        }
-        if (extraIngress.length > 0 || extraEgress.length > 0) {
-          const toParsed = (r: {
-            ipProtocol?: string;
-            portRange?: string;
-            sourceCidrIp?: string;
-            destCidrIp?: string;
-          }): { protocol: string; cidr: string; portRange: string } => ({
-            // Live portRange is already in Aliyun wire format — pass verbatim
-            // so the revoke matches the rule exactly (ranges included).
-            protocol: r.ipProtocol ?? '',
-            cidr: r.sourceCidrIp ?? r.destCidrIp ?? '',
-            portRange: r.portRange ?? '',
+        // Best-effort: a transient SG read failure must not fail the update.
+        try {
+          const parseRule = (rule: string) => {
+            try {
+              return parseSecurityGroupRule(rule);
+            } catch {
+              return null;
+            }
+          };
+          const desiredIngress = (fn.network.security_group.ingress ?? [])
+            .map(parseRule)
+            .filter((r): r is NonNullable<ReturnType<typeof parseRule>> => Boolean(r));
+          const desiredEgress = (fn.network.security_group.egress ?? [])
+            .map(parseRule)
+            .filter((r): r is NonNullable<ReturnType<typeof parseRule>> => Boolean(r));
+          const live = await client.ecs.getSecurityGroupRules(sgInstance.id);
+          const liveIngressKeys = (live?.ingressRules ?? []).map((r) =>
+            canonicalSecurityGroupRule(r.ipProtocol ?? '', r.portRange ?? '', r.sourceCidrIp ?? ''),
+          );
+          const liveEgressKeys = (live?.egressRules ?? []).map((r) =>
+            canonicalSecurityGroupRule(r.ipProtocol ?? '', r.portRange ?? '', r.destCidrIp ?? ''),
+          );
+          const missingIngress = desiredIngress.filter(
+            (d) =>
+              !liveIngressKeys.includes(
+                canonicalSecurityGroupRule(d.protocol, d.portRange, d.cidr),
+              ),
+          );
+          const missingEgress = desiredEgress.filter(
+            (d) =>
+              !liveEgressKeys.includes(canonicalSecurityGroupRule(d.protocol, d.portRange, d.cidr)),
+          );
+          // The extra check reuses the raw live canonical keys — the same space
+          // the missing check uses. Reconstructing a parsed rule here would
+          // collapse port ranges (80/443 -> 80) and wrongly revoke matching
+          // range rules.
+          const desiredIngressKeys = desiredIngress.map((d) =>
+            canonicalSecurityGroupRule(d.protocol, d.portRange, d.cidr),
+          );
+          const desiredEgressKeys = desiredEgress.map((d) =>
+            canonicalSecurityGroupRule(d.protocol, d.portRange, d.cidr),
+          );
+          const extraIngress = (live?.ingressRules ?? []).filter((r, i) => {
+            const key = liveIngressKeys[i];
+            return !key || !desiredIngressKeys.includes(key);
           });
-          await client.ecs.revokeSecurityGroupRules(
-            sgInstance.id,
-            'ingress',
-            extraIngress.map(toParsed),
+          const extraEgress = (live?.egressRules ?? []).filter((r, i) => {
+            const key = liveEgressKeys[i];
+            return !key || !desiredEgressKeys.includes(key);
+          });
+          if (missingIngress.length > 0 || missingEgress.length > 0) {
+            await client.ecs.authorizeSecurityGroupRules(sgInstance.id, 'ingress', missingIngress);
+            await client.ecs.authorizeSecurityGroupRules(sgInstance.id, 'egress', missingEgress);
+          }
+          if (extraIngress.length > 0 || extraEgress.length > 0) {
+            const toParsed = (r: {
+              ipProtocol?: string;
+              portRange?: string;
+              sourceCidrIp?: string;
+              destCidrIp?: string;
+            }): { protocol: string; cidr: string; portRange: string } => ({
+              // Live portRange is already in Aliyun wire format — pass verbatim
+              // so the revoke matches the rule exactly (ranges included).
+              protocol: r.ipProtocol ?? '',
+              cidr: r.sourceCidrIp ?? r.destCidrIp ?? '',
+              portRange: r.portRange ?? '',
+            });
+            await client.ecs.revokeSecurityGroupRules(
+              sgInstance.id,
+              'ingress',
+              extraIngress.map(toParsed),
+            );
+            await client.ecs.revokeSecurityGroupRules(
+              sgInstance.id,
+              'egress',
+              extraEgress.map(toParsed),
+            );
+          }
+          logger.info(
+            lang.__('NESTED_SG_RULES_REPAIRED', {
+              securityGroupId: sgInstance.id,
+              added: String(missingIngress.length + missingEgress.length),
+              removed: String(extraIngress.length + extraEgress.length),
+            }),
           );
-          await client.ecs.revokeSecurityGroupRules(
-            sgInstance.id,
-            'egress',
-            extraEgress.map(toParsed),
+        } catch (error: unknown) {
+          logger.warn(
+            lang.__('NESTED_REPAIR_FAILED', { resource: sgInstance.id, error: String(error) }),
           );
         }
-        logger.info(
-          lang.__('NESTED_SG_RULES_REPAIRED', {
-            securityGroupId: sgInstance.id,
-            added: String(missingIngress.length + missingEgress.length),
-            removed: String(extraIngress.length + extraEgress.length),
-          }),
-        );
       }
     }
   }
@@ -1436,20 +1453,29 @@ export const updateResource = async (
     // (console deletions); extra mount targets are left alone — deleting
     // shared infrastructure on a reconcile is never safe.
     if (options?.force && fn.network) {
-      const fsInstances = existingInstances.filter((i) => i.type === 'ALIYUN_NAS_FILE_SYSTEM');
-      for (const fs of fsInstances) {
-        const liveTargets = await client.nas.listMountTargets(fs.id);
-        if (!liveTargets || liveTargets.length === 0) {
-          const mountPath = nasStorageItems[0]?.mount_path ?? '/mnt/nas';
-          const accessGroupName = `${fn.name}-${context.stage}-nas-access-${mountPath}`;
-          await client.nas.createMountTarget(
-            fs.id,
-            accessGroupName,
-            fn.network.vpc_id,
-            fn.network.subnet_ids[0],
-          );
-          logger.warn(lang.__('NESTED_MOUNT_TARGET_RECREATED', { fileSystemId: fs.id }));
+      // Best-effort: a transient NAS read failure must not fail the update.
+      let failingFsId: string | undefined;
+      try {
+        const fsInstances = existingInstances.filter((i) => i.type === 'ALIYUN_NAS_FILE_SYSTEM');
+        for (const fsEntry of fsInstances) {
+          failingFsId = fsEntry.id;
+          const liveTargets = await client.nas.listMountTargets(fsEntry.id);
+          if (!liveTargets || liveTargets.length === 0) {
+            const mountPath = nasStorageItems[0]?.mount_path ?? '/mnt/nas';
+            const accessGroupName = `${fn.name}-${context.stage}-nas-access-${mountPath}`;
+            await client.nas.createMountTarget(
+              fsEntry.id,
+              accessGroupName,
+              fn.network.vpc_id,
+              fn.network.subnet_ids[0],
+            );
+            logger.warn(lang.__('NESTED_MOUNT_TARGET_RECREATED', { fileSystemId: fsEntry.id }));
+          }
         }
+      } catch (error: unknown) {
+        logger.warn(
+          lang.__('NESTED_REPAIR_FAILED', { resource: failingFsId ?? 'nas', error: String(error) }),
+        );
       }
     }
 
