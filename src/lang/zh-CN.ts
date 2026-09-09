@@ -478,6 +478,8 @@ export const zhCN = {
     '后端类型 BUCKET_STORE 需要同时提供 "bucket" 和 "key" 字段',
   SEMANTIC_DUPLICATE_TRIGGER:
     '事件 "{{eventKey}}" 中存在重复触发器: {{method}} {{path}} 定义了不止一次',
+  SEMANTIC_CONTAINER_CODE_CONFLICT: '函数 "{{fnKey}}" 不能同时定义 "container" 与 "code"——两者互斥',
+  SEMANTIC_FUNCTION_SOURCE_REQUIRED: '函数 "{{fnKey}}" 必须定义 "code" 或 "container" 之一',
   SEMANTIC_DUPLICATE_GENERATED_API_NAME:
     '生成的 API Gateway apiName "{{apiName}}" 在 "{{firstPath}}" 与 "{{secondPath}}" 之间发生冲突；请缩短事件名称或区分触发器的 method/path',
   SEMANTIC_DUPLICATE_ROUTE_NAME:

@@ -49,6 +49,29 @@ export const validateSemantics = (iacJson: ServerlessIacRaw): Array<ErrorObject>
       .filter((name): name is string => name !== undefined),
   );
 
+  Object.entries(functionDefinitions).forEach(([fnKey, rawFn]) => {
+    if (!rawFn || typeof rawFn !== 'object') return;
+    const fn = rawFn as { code?: unknown; container?: unknown };
+    const instancePath = `/functions/${fnKey}`;
+    if (fn.container && fn.code) {
+      errors.push({
+        instancePath,
+        schemaPath: '#/semantic/containerCodeConflict',
+        keyword: 'containerCodeConflict',
+        params: {},
+        message: lang.__('SEMANTIC_CONTAINER_CODE_CONFLICT', { fnKey }),
+      });
+    } else if (!fn.container && !fn.code) {
+      errors.push({
+        instancePath,
+        schemaPath: '#/semantic/functionSourceRequired',
+        keyword: 'functionSourceRequired',
+        params: {},
+        message: lang.__('SEMANTIC_FUNCTION_SOURCE_REQUIRED', { fnKey }),
+      });
+    }
+  });
+
   Object.entries(events).forEach(([eventKey, rawEvent]) => {
     const triggers = Array.isArray(rawEvent.triggers)
       ? (rawEvent.triggers as Array<EventTriggerRaw>)

@@ -428,6 +428,55 @@ describe('Fc3Resource', () => {
       expect(firstCall[2]).toMatchObject({ status: 'tainted' });
     });
 
+    it('creates container-only functions without a code payload (issue #239)', async () => {
+      const containerFn: FunctionDomain = {
+        ...testFunction,
+        code: undefined,
+        container: {
+          image: 'registry.cn-hangzhou.aliyuncs.com/test/image:v1',
+          port: 9000,
+        },
+      };
+      const containerConfig = {
+        ...mockConfig,
+        runtime: 'custom-container',
+        handler: '',
+        customContainerConfig: {
+          image: containerFn.container?.image,
+          port: containerFn.container?.port,
+        },
+      };
+      const newState = {
+        ...initialState,
+        resources: {
+          'functions.test_fn': {
+            mode: 'managed',
+            region: 'cn-hangzhou',
+            definition: mockDefinition,
+            instances: expect.any(Array),
+            lastUpdated: expect.any(String),
+          },
+        },
+      };
+      mockedFc3Types.functionToFc3Config.mockReturnValueOnce(containerConfig);
+      mockedFc3Operations.getFunction.mockResolvedValueOnce(mockFunctionInfo);
+      mockedFc3Operations.createFunction.mockResolvedValue(undefined);
+      mockedStateManager.setResource.mockReturnValue(newState);
+
+      const result = await createResource(mockContext, containerFn, initialState);
+
+      expect(mockedFc3Types.functionToFc3Config).toHaveBeenCalledWith(containerFn);
+      expect(mockedFc3Operations.createFunction).toHaveBeenCalledWith(
+        expect.objectContaining(containerConfig),
+        undefined,
+        undefined,
+      );
+      expect(mockedHashUtils.computeZipContentHash).not.toHaveBeenCalled();
+      expect(mockedOssOperations.getBucket).not.toHaveBeenCalled();
+      expect(mockedFc3Types.extractFc3Definition).toHaveBeenCalledWith(expect.anything(), null);
+      expect(result).toEqual(newState);
+    });
+
     it('should update trust policy for existing role on tainted resource retry', async () => {
       const taintedStateWithDependents: StateFile = {
         ...initialState,
@@ -946,6 +995,52 @@ describe('Fc3Resource', () => {
         }),
         'mock-code-hash',
       );
+      expect(result).toEqual(newState);
+    });
+
+    it('updates container-only functions without touching code (issue #239)', async () => {
+      const containerFn: FunctionDomain = {
+        ...testFunction,
+        code: undefined,
+        container: {
+          image: 'registry.cn-hangzhou.aliyuncs.com/test/image:v1',
+          port: 9000,
+        },
+      };
+      const containerConfig = {
+        ...mockConfig,
+        runtime: 'custom-container',
+        handler: '',
+        customContainerConfig: {
+          image: containerFn.container?.image,
+          port: containerFn.container?.port,
+        },
+      };
+      const newState = {
+        ...initialState,
+        resources: {
+          'functions.test_fn': {
+            mode: 'managed',
+            region: 'cn-hangzhou',
+            definition: mockDefinition,
+            instances: expect.any(Array),
+            lastUpdated: expect.any(String),
+          },
+        },
+      };
+      mockedFc3Types.functionToFc3Config.mockReturnValueOnce(containerConfig);
+      mockedFc3Operations.updateFunctionConfiguration.mockResolvedValue(undefined);
+      mockedFc3Operations.updateFunctionCode.mockResolvedValue(undefined);
+      mockedStateManager.setResource.mockReturnValue(newState);
+
+      const result = await updateResource(mockContext, containerFn, initialState);
+
+      expect(mockedFc3Operations.updateFunctionConfiguration).toHaveBeenCalledWith(
+        expect.objectContaining(containerConfig),
+      );
+      expect(mockedFc3Operations.updateFunctionCode).not.toHaveBeenCalled();
+      expect(mockedHashUtils.computeZipContentHash).not.toHaveBeenCalled();
+      expect(mockedOssOperations.getBucket).not.toHaveBeenCalled();
       expect(result).toEqual(newState);
     });
 

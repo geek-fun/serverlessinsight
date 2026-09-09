@@ -12,12 +12,20 @@ type Fc3SdkClient = Fc3Client;
   ossObjectName: string;
 };
 
-const buildCodeLocation = (codePath: string, ossCode?: OssCodeLocation): fc.InputCodeLocation => {
+const buildCodeLocation = (
+  codePath?: string,
+  ossCode?: OssCodeLocation,
+): fc.InputCodeLocation | undefined => {
   if (ossCode) {
     return new fc.InputCodeLocation({
       ossBucketName: ossCode.ossBucketName,
       ossObjectName: ossCode.ossObjectName,
     });
+  }
+  if (!codePath) {
+    // Container-only functions take no zip — the image lives in
+    // customContainerConfig; FC 3.0 rejects a code payload for them.
+    return undefined;
   }
   const codeBuffer = fs.readFileSync(codePath);
   const codeBase64 = codeBuffer.toString('base64');
@@ -82,7 +90,7 @@ const buildCodeLocation = (codePath: string, ossCode?: OssCodeLocation): fc.Inpu
 
     createFunction: async (
       config: Fc3FunctionConfig,
-      codePath: string,
+      codePath?: string,
       ossCode?: OssCodeLocation,
     ): Promise<void> => {
       const createFunctionInput = new fc.CreateFunctionInput({
@@ -473,7 +481,7 @@ const buildCodeLocation = (codePath: string, ossCode?: OssCodeLocation): fc.Inpu
 
     updateFunctionCode: async (
       functionName: string,
-      codePath: string,
+      codePath?: string,
       ossCode?: OssCodeLocation,
     ): Promise<void> => {
       const updateFunctionInput = new fc.UpdateFunctionInput({
