@@ -1177,7 +1177,7 @@ describe('Fc3Resource', () => {
 
       expect(mockedNasOperations.createMountTarget).toHaveBeenCalledWith(
         'fs-1',
-        'test-function-default-nas-access-/mnt/data',
+        'test-function-default-nas-access-mnt-data',
         'vpc-123',
         'vsw-123',
       );
