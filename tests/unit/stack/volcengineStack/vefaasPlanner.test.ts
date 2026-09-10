@@ -52,6 +52,10 @@ describe('vefaasPlanner', () => {
       getTopic: jest.fn(),
       modifyTopic: jest.fn(),
     },
+    iam: {
+      getRole: jest.fn(),
+      listAttachedRolePolicies: jest.fn(),
+    },
   };
 
   const mockFunction: FunctionDomain = {
@@ -86,6 +90,7 @@ describe('vefaasPlanner', () => {
     let mockVefaasClient: {
       vefaas: { getFunction: jest.Mock };
       tls: { getTopic: jest.Mock; modifyTopic: jest.Mock };
+      iam: { getRole: jest.Mock; listAttachedRolePolicies: jest.Mock };
     };
 
     beforeEach(() => {
@@ -96,6 +101,10 @@ describe('vefaasPlanner', () => {
         tls: {
           getTopic: jest.fn(),
           modifyTopic: jest.fn(),
+        },
+        iam: {
+          getRole: jest.fn(),
+          listAttachedRolePolicies: jest.fn(),
         },
       };
       (createVolcengineClient as jest.Mock).mockReturnValue(mockVefaasClient);
@@ -742,6 +751,99 @@ describe('vefaasPlanner', () => {
             logConfig: { project: 'test-app-dev-tls', topic: 'test-service-dev-test_fn-fn-logs' },
           },
         },
+      });
+    });
+
+    // Issue #246: live role drift surfaces as a drift reason, not a bare flag.
+    const buildRoleState = (): StateFile => ({
+      ...mockState,
+      resources: {
+        'functions.test_fn': {
+          mode: 'managed',
+          region: 'cn-beijing',
+          definition: {
+            functionName: 'test-function',
+            runtime: 'nodejs16',
+            handler: 'index.handler',
+            memorySize: 128,
+            timeout: 30,
+            environment: {},
+            codeHash: 'test-hash',
+          },
+          instances: [
+            { sid: 'test-sid', id: 'test-function', type: 'VOLCENGINE_VEFAAS_FUNCTION' },
+            { sid: 'role-sid', id: 'role-1', type: 'VOLCENGINE_IAM_ROLE' },
+          ],
+          lastUpdated: '2024-01-01T00:00:00Z',
+        },
+      },
+    });
+
+    const matchingRemote = (): void => {
+      mockVefaasClient.vefaas.getFunction.mockResolvedValue({
+        functionName: 'test-function',
+        runtime: 'nodejs16',
+        handler: 'index.handler',
+        memoryMb: 128,
+        requestTimeout: 30,
+        environmentVariables: null,
+      });
+    };
+
+    it('flags the role-missing drift reason when the cloud role is gone', async () => {
+      jest
+        .spyOn(hashUtils, 'attributesEqual')
+        .mockImplementation((a, b) => JSON.stringify(a) === JSON.stringify(b));
+      const state = buildRoleState();
+      matchingRemote();
+      mockVefaasClient.iam.getRole.mockResolvedValue(null);
+
+      const plan = await generateFunctionPlan(mockContext, state, [mockFunction]);
+
+      expect(plan.items[0]).toMatchObject({
+        action: 'update',
+        drifted: true,
+        driftReasons: ['PLAN_DRIFT_ROLE_MISSING'],
+      });
+    });
+
+    it('flags the role-policy drift reason when the trust policy drifted', async () => {
+      jest
+        .spyOn(hashUtils, 'attributesEqual')
+        .mockImplementation((a, b) => JSON.stringify(a) === JSON.stringify(b));
+      const state = buildRoleState();
+      matchingRemote();
+      mockVefaasClient.iam.getRole.mockResolvedValue({
+        roleId: 'role-1',
+        trustPolicyDocument: '{"Statement":[{"Effect":"Deny"}]}',
+      });
+
+      const plan = await generateFunctionPlan(mockContext, state, [mockFunction]);
+
+      expect(plan.items[0]).toMatchObject({
+        action: 'update',
+        drifted: true,
+        driftReasons: ['PLAN_DRIFT_ROLE_POLICY'],
+      });
+    });
+
+    it('flags the role-policy drift reason when attached managed policies drifted', async () => {
+      jest
+        .spyOn(hashUtils, 'attributesEqual')
+        .mockImplementation((a, b) => JSON.stringify(a) === JSON.stringify(b));
+      const state = buildRoleState();
+      matchingRemote();
+      // No trustPolicyDocument → trust check skipped; managed policy set
+      // mismatch drives the drift.
+      mockVefaasClient.iam.getRole.mockResolvedValue({ roleId: 'role-1' });
+      mockVefaasClient.iam.listAttachedRolePolicies.mockResolvedValue(['unrelated-policy']);
+
+      const plan = await generateFunctionPlan(mockContext, state, [mockFunction]);
+
+      expect(plan.items[0]).toMatchObject({
+        action: 'update',
+        drifted: true,
+        driftReasons: ['PLAN_DRIFT_ROLE_POLICY'],
       });
     });
 

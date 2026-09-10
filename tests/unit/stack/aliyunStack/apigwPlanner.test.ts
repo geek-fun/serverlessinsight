@@ -334,6 +334,57 @@ describe('Apigw Planner', () => {
       });
     });
 
+    it('skips non-event resources in the deletion scan while events match', async () => {
+      // Issue #246 patch coverage: the deletion filter's early `return false`
+      // for logicalIds outside the events.* namespace.
+      let state = loadState('aliyun', 'test-app', 'test-service', 'default', testDir);
+      state = setResource(state, 'functions.userFunction', {
+        mode: 'managed',
+        region: 'cn-hangzhou',
+        definition: { functionName: 'user-function' },
+        instances: [
+          {
+            type: 'ALIYUN_FC3_FUNCTION',
+            sid: 'si:aliyun:fc3:default:user-function',
+            id: 'user-function',
+          },
+        ],
+        lastUpdated: new Date().toISOString(),
+      });
+      state = setResource(state, 'events.test_api', {
+        mode: 'managed',
+        region: 'cn-hangzhou',
+        definition: {
+          groupName: 'test-service-default-test-api-agw-group',
+          description: 'API Gateway group for test-service',
+          basePath: null,
+          triggers: [{ method: 'GET', path: '/users', backend: 'userFunction' }],
+          domain: null,
+        },
+        instances: [
+          {
+            type: 'ALIYUN_APIGW_GROUP',
+            sid: 'si:aliyun:apigateway:default:group-123',
+            id: 'group-123',
+            groupName: 'test-service-default-test-api-agw-group',
+          },
+        ],
+        lastUpdated: new Date().toISOString(),
+      });
+
+      mockApigwOperations.getApiGroup.mockResolvedValue({
+        groupId: 'group-123',
+        groupName: 'test-service-default-test-api-agw-group',
+        description: 'API Gateway group for test-service',
+      });
+      mockMatchingApis();
+
+      const plan = await generateApigwPlan(mockContext, state, [testEvent], 'test-service');
+
+      expect(plan.items).toHaveLength(1);
+      expect(plan.items[0]).toMatchObject({ logicalId: 'events.test_api', action: 'noop' });
+    });
+
     it('should plan to update when definition changes', async () => {
       // Add event to state with different definition
       let state = loadState('aliyun', 'test-app', 'test-service', 'default', testDir);
@@ -569,6 +620,39 @@ describe('Apigw Planner', () => {
         drifted: true,
       });
       expect(plan.items[0].changes?.after).toBeDefined();
+    });
+
+    it('degrades to a drifted create when the live group read fails', async () => {
+      // Issue #246: a failed live read must warn and fall back honestly
+      // (drifted create), not silently look like a routine plan.
+      let state = loadState('aliyun', 'test-app', 'test-service', 'default', testDir);
+      state = setResource(state, 'events.test_api', {
+        mode: 'managed',
+        region: 'cn-hangzhou',
+        definition: {
+          groupName: 'test-service-default-test-api-agw-group',
+          description: 'API Gateway group for test-service',
+          basePath: null,
+          triggers: [{ method: 'GET', path: '/users', backend: 'userFunction' }],
+          domain: null,
+        },
+        instances: [
+          {
+            type: 'ALIYUN_APIGW_GROUP',
+            sid: 'si:aliyun:apigateway:default:group-123',
+            id: 'group-123',
+            groupName: 'test-service-default-test-api-agw-group',
+          },
+        ],
+        lastUpdated: new Date().toISOString(),
+      });
+
+      mockApigwOperations.getApiGroup.mockRejectedValue(new Error('apigw throttled'));
+
+      const plan = await generateApigwPlan(mockContext, state, [testEvent], 'test-service');
+
+      expect(plan.items).toHaveLength(1);
+      expect(plan.items[0]).toMatchObject({ action: 'create', drifted: true });
     });
 
     it('should plan update+drifted when the live group description drifted from the config', async () => {

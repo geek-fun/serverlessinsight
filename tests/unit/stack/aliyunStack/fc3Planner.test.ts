@@ -955,6 +955,29 @@ describe('FC3 Planner', () => {
       expect(mockRamOperations.listAttachedRolePolicies).toHaveBeenCalledWith('test-managed-role');
     });
 
+    it('skips role-policy compare when no managed role instance is recorded in state', async () => {
+      // resolveManagedRoleProbe still probes by the derived name, but
+      // detectRolePolicyDrift returns early without a recorded role instance
+      // (issue #246 patch coverage: early-return path).
+      const fn: FunctionDomain = {
+        ...testFunction,
+        iam: { role: { name: 'test-managed-role' } },
+      };
+      const state = buildState(fn, [fc3Instance]);
+      mockFc3Operations.getFunction.mockResolvedValue(remoteFunctionMatch);
+      mockRamOperations.getRole.mockResolvedValue({
+        roleName: 'test-managed-role',
+        assumeRolePolicyDocument: FC_TRUST_FC_ONLY,
+      });
+      mockRamOperations.getExecutionPolicyDocument.mockResolvedValue(EXEC_BASELINE_DOC);
+      mockRamOperations.listAttachedRolePolicies.mockResolvedValue([]);
+
+      const plan = await generateFunctionPlan(mockContext, state, [fn]);
+
+      expect(plan.items[0]).toMatchObject({ action: 'noop', resourceType: 'ALIYUN_FC3' });
+      expect(mockRamOperations.getExecutionPolicyDocument).not.toHaveBeenCalled();
+    });
+
     it('stays noop (never create) when the role probe read fails transiently', async () => {
       const fn: FunctionDomain = {
         ...testFunction,
@@ -1020,6 +1043,30 @@ describe('FC3 Planner', () => {
         const plan = await generateFunctionPlan(mockContext, buildLogState(), [fnWithLog]);
 
         expect(plan.items[0]).toMatchObject({ action: 'update', drifted: true });
+      });
+
+      it('flags the logstore drift reason when the logstore was deleted out-of-band', async () => {
+        mockSlsOperations.getLogstore.mockResolvedValue(null);
+
+        const plan = await generateFunctionPlan(mockContext, buildLogState(), [fnWithLog]);
+
+        expect(plan.items[0]).toMatchObject({
+          action: 'update',
+          drifted: true,
+          driftReasons: ['PLAN_DRIFT_LOGSTORE'],
+        });
+      });
+
+      it('flags update+drifted when live shards fall below the baseline (deficit)', async () => {
+        mockSlsOperations.getLogstore.mockResolvedValue({ ttl: 30, shardCount: 1 });
+
+        const plan = await generateFunctionPlan(mockContext, buildLogState(), [fnWithLog]);
+
+        expect(plan.items[0]).toMatchObject({
+          action: 'update',
+          drifted: true,
+          driftReasons: ['PLAN_DRIFT_LOGSTORE'],
+        });
       });
 
       it('ignores shard growth (aliyun cannot shrink shards)', async () => {
