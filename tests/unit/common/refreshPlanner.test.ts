@@ -99,6 +99,18 @@ describe('planRefreshedResource', () => {
     expect(item).toMatchObject({ action: 'create', drifted: true });
   });
 
+  it('stringifies non-Error read failures in the degradation warning', async () => {
+    const warnSpy = jest.spyOn(logger, 'warn').mockImplementation(() => {});
+    const read = jest.fn().mockRejectedValue('raw provider failure');
+    const item = await planRefreshedResource(args({ read }));
+
+    expect(item).toMatchObject({ action: 'create', drifted: true });
+    expect(warnSpy).toHaveBeenCalledWith(
+      expect.stringContaining('Failed to read live state for buckets.test'),
+    );
+    warnSpy.mockRestore();
+  });
+
   it('degrades a failed live read to a drifted create with a warning', async () => {
     const warnSpy = jest.spyOn(logger, 'warn').mockImplementation(() => {});
     const read = jest.fn().mockRejectedValue(new Error('throttled'));

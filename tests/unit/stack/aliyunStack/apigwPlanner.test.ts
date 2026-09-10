@@ -622,6 +622,62 @@ describe('Apigw Planner', () => {
       expect(plan.items[0].changes?.after).toBeDefined();
     });
 
+    it('degrades to a drifted create when the live group read rejects with a non-Error', async () => {
+      let state = loadState('aliyun', 'test-app', 'test-service', 'default', testDir);
+      state = setResource(state, 'events.test_api', {
+        mode: 'managed',
+        region: 'cn-hangzhou',
+        definition: {
+          groupName: 'test-service-default-test-api-agw-group',
+          description: 'API Gateway group for test-service',
+          basePath: null,
+          triggers: [{ method: 'GET', path: '/users', backend: 'userFunction' }],
+          domain: null,
+        },
+        instances: [
+          {
+            type: 'ALIYUN_APIGW_GROUP',
+            sid: 'si:aliyun:apigateway:default:group-123',
+            id: 'group-123',
+            groupName: 'test-service-default-test-api-agw-group',
+          },
+        ],
+        lastUpdated: new Date().toISOString(),
+      });
+
+      mockApigwOperations.getApiGroup.mockRejectedValue('apigw exploded');
+
+      const plan = await generateApigwPlan(mockContext, state, [testEvent], 'test-service');
+
+      expect(plan.items).toHaveLength(1);
+      expect(plan.items[0]).toMatchObject({ action: 'create', drifted: true });
+    });
+
+    it('uses the stored definition as before when no group instance is recorded', async () => {
+      // definitionChanged with no group instance: the live baseline is
+      // unavailable, so changes.before falls back to the stored definition.
+      let state = loadState('aliyun', 'test-app', 'test-service', 'default', testDir);
+      state = setResource(state, 'events.test_api', {
+        mode: 'managed',
+        region: 'cn-hangzhou',
+        definition: {
+          groupName: 'test-service-default-test-api-agw-group',
+          description: 'older description',
+          basePath: null,
+          triggers: [{ method: 'GET', path: '/users', backend: 'userFunction' }],
+          domain: null,
+        },
+        instances: [],
+        lastUpdated: new Date().toISOString(),
+      });
+
+      const plan = await generateApigwPlan(mockContext, state, [testEvent], 'test-service');
+
+      expect(plan.items).toHaveLength(1);
+      expect(plan.items[0]).toMatchObject({ action: 'update' });
+      expect(plan.items[0].changes?.before).toMatchObject({ description: 'older description' });
+    });
+
     it('degrades to a drifted create when the live group read fails', async () => {
       // Issue #246: a failed live read must warn and fall back honestly
       // (drifted create), not silently look like a routine plan.

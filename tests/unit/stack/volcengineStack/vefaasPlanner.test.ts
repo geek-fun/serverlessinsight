@@ -790,6 +790,69 @@ describe('vefaasPlanner', () => {
       });
     };
 
+    it('omits revertKeys when the config itself changed the drifted field', async () => {
+      // stored 128 -> desired 256 -> live 128: intent-driven, nothing to mark.
+      jest
+        .spyOn(hashUtils, 'attributesEqual')
+        .mockImplementation((a, b) => JSON.stringify(a) === JSON.stringify(b));
+      const desiredFn = { ...mockFunction, memory: 256 };
+      const state = buildRoleState();
+      state.resources['functions.test_fn'].definition = {
+        ...state.resources['functions.test_fn'].definition,
+        memorySize: 128,
+      } as never;
+      mockVefaasClient.vefaas.getFunction.mockResolvedValue({
+        functionName: 'test-function',
+        runtime: 'nodejs16',
+        handler: 'index.handler',
+        memoryMb: 128,
+        requestTimeout: 30,
+        environmentVariables: null,
+      });
+
+      const plan = await generateFunctionPlan(mockContext, state, [desiredFn]);
+
+      expect(plan.items[0]).toMatchObject({ action: 'update', drifted: true });
+      expect(plan.items[0].revertKeys).toBeUndefined();
+    });
+
+    it('normalizes a remote vpcConfig with null subfields without phantom drift', async () => {
+      jest
+        .spyOn(hashUtils, 'attributesEqual')
+        .mockImplementation((a, b) => JSON.stringify(a) === JSON.stringify(b));
+      const state = buildRoleState();
+      mockVefaasClient.vefaas.getFunction.mockResolvedValue({
+        functionName: 'test-function',
+        runtime: 'nodejs16',
+        handler: 'index.handler',
+        memoryMb: 128,
+        requestTimeout: 30,
+        environmentVariables: null,
+        vpcConfig: {
+          vpcId: null,
+          subnetIds: null,
+          securityGroupIds: null,
+          enableVpc: true,
+        },
+      });
+      // The recorded role instance triggers the role probe — satisfy it.
+      mockVefaasClient.iam.getRole.mockResolvedValue({ roleId: 'role-1' });
+      mockVefaasClient.iam.listAttachedRolePolicies.mockResolvedValue(['role-1-policy']);
+
+      const plan = await generateFunctionPlan(mockContext, state, [mockFunction]);
+
+      expect(plan.items[0]).toMatchObject({ action: 'noop' });
+    });
+
+    it('degrades to a drifted create when the live read rejects with a non-Error', async () => {
+      const state = buildRoleState();
+      mockVefaasClient.vefaas.getFunction.mockRejectedValue('vefaas exploded');
+
+      const plan = await generateFunctionPlan(mockContext, state, [mockFunction]);
+
+      expect(plan.items[0]).toMatchObject({ action: 'create', drifted: true });
+    });
+
     it('flags the role-missing drift reason when the cloud role is gone', async () => {
       jest
         .spyOn(hashUtils, 'attributesEqual')
