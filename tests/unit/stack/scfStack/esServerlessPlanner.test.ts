@@ -187,7 +187,7 @@ describe('esServerlessPlanner', () => {
       });
 
       await expect(generateEsPlan(mockContext, initialState, [testDatabase])).rejects.toThrow(
-        'not owned by this stack',
+        'RESOURCE_EXISTS_NOT_OWNED',
       );
     });
 
@@ -245,7 +245,7 @@ describe('esServerlessPlanner', () => {
       });
 
       await expect(generateEsPlan(mockContext, initialState, [testDatabase])).rejects.toThrow(
-        'not owned by this stack',
+        'RESOURCE_EXISTS_NOT_OWNED',
       );
     });
 

@@ -1,4 +1,9 @@
-import { remoteDiffersFromDesired, jsonDocumentDiffers } from '../../../src/common/planCompare';
+import {
+  remoteDiffersFromDesired,
+  jsonDocumentDiffers,
+  mergeLiveBefore,
+  computeRevertKeys,
+} from '../../../src/common/planCompare';
 
 describe('remoteDiffersFromDesired', () => {
   it('returns false when every declared desired value matches the remote', () => {
@@ -93,5 +98,46 @@ describe('jsonDocumentDiffers', () => {
 
   it('returns false on unparseable input instead of fabricating drift', () => {
     expect(jsonDocumentDiffers('not-json', { a: 1 })).toBe(false);
+  });
+});
+
+describe('mergeLiveBefore (issue #246)', () => {
+  it('lets live values win over stored ones', () => {
+    expect(mergeLiveBefore({ memory: 128, codeHash: 'old' }, { memory: 64 })).toEqual({
+      memory: 64,
+      codeHash: 'old',
+    });
+  });
+
+  it('keeps a live null so the diff shows the cloud cleared the field', () => {
+    expect(mergeLiveBefore({ logConfig: { a: 1 } }, { logConfig: null })).toEqual({
+      logConfig: null,
+    });
+  });
+});
+
+describe('computeRevertKeys (issue #246)', () => {
+  it('marks keys where stored matches desired but live diverged', () => {
+    const stored = { memory: 256, timeout: 30 };
+    const live = { memory: 128, timeout: 30 };
+    const desired = { memory: 256, timeout: 30 };
+
+    expect(computeRevertKeys(stored, live, desired)).toEqual(['memory']);
+  });
+
+  it('does not mark keys the config itself changed', () => {
+    const stored = { memory: 256 };
+    const live = { memory: 128 };
+    const desired = { memory: 512 };
+
+    expect(computeRevertKeys(stored, live, desired)).toEqual([]);
+  });
+
+  it('treats null and undefined as equal representations of unset', () => {
+    const stored = { vpcConfig: null };
+    const live = { vpcConfig: { vpcId: 'vpc-1' } };
+    const desired = { vpcConfig: undefined };
+
+    expect(computeRevertKeys(stored, live, desired)).toEqual(['vpcConfig']);
   });
 });

@@ -2,6 +2,11 @@ import { attributesEqual, computeZipContentHash, getResource, logger } from '../
 import { getAllResources, getSharedResource } from '../../common/stateManager';
 import { createVolcengineClient } from '../../common/volcengineClient';
 import { cachedRefreshRead } from '../../common/refreshCache';
+import {
+  computeRevertKeys,
+  mergeLiveBefore,
+  remoteDiffersFromDesired,
+} from '../../common/planCompare';
 import { PLAN_READ_CONCURRENCY, mapWithConcurrency } from '../../common/concurrency';
 import {
   Context,
@@ -120,7 +125,11 @@ export const generateFunctionPlan = async (
         );
         if (remoteFunction && !isOwnedByStack(context, logicalId, remoteFunction.Tags)) {
           throw new Error(
-            `Function ${fn.name} already exists in provider but is not owned by this stack (missing ${OWNERSHIP_TAG_KEY} tag). Refusing to create — resolve manually.`,
+            lang.__('RESOURCE_EXISTS_NOT_OWNED', {
+              resourceType: 'Function',
+              resourceName: fn.name,
+              tagKey: OWNERSHIP_TAG_KEY,
+            }),
           );
         }
 
@@ -173,6 +182,11 @@ export const generateFunctionPlan = async (
         // function's actual attributes (runtime/handler/memory/timeout/env)
         // against the desired definition. Console edits would otherwise go
         // undetected — definitionChanged only sees local-vs-desired.
+        // One-directional desired-declared contract (issue #246 fix: this
+        // planner previously used a full two-directional equality, so
+        // cloud-only values within mapped keys phantom-drifted every plan).
+        // Mapper-emitted shapes are subset-normalized to the definition the
+        // config writes, so nested comparisons stay apples-to-apples.
         // Not refreshable (issue #234 phase 2): the IAM custom policy document
         // (volcengine IAM has no GetPolicy read) and dependent TLS topics
         // (existence-only by design decision 5) stay covered by the executor's
@@ -182,26 +196,39 @@ export const generateFunctionPlan = async (
           handler: remoteFunction.handler,
           memorySize: remoteFunction.memoryMb,
           timeout: remoteFunction.requestTimeout,
-          environment: remoteFunction.environmentVariables,
+          environment: remoteFunction.environmentVariables ?? {},
           // Provider responses carry `null` for unset fields while the desired
           // definition carries `undefined` — normalize null → undefined so the
           // comparison ignores the representation difference.
           description: remoteFunction.description ?? undefined,
           role: remoteFunction.role ?? undefined,
-          vpcConfig: remoteFunction.vpcConfig ?? undefined,
+          vpcConfig: remoteFunction.vpcConfig
+            ? {
+                vpcId: remoteFunction.vpcConfig.vpcId ?? undefined,
+                subnetIds: remoteFunction.vpcConfig.subnetIds ?? [],
+                securityGroupIds: remoteFunction.vpcConfig.securityGroupIds ?? [],
+              }
+            : undefined,
           logConfig: remoteFunction.logConfig
             ? { project: remoteFunction.logConfig.project, topic: remoteFunction.logConfig.topic }
             : undefined,
         };
-        const remoteMatchesDesired = attributesEqual(remoteAttributes, desiredDefinition);
+        const remoteDiffers = remoteDiffersFromDesired(remoteAttributes, desiredDefinition);
+        const liveBefore = mergeLiveBefore(currentDefinition, remoteAttributes);
+        const revertKeys = computeRevertKeys(
+          currentDefinition,
+          remoteAttributes,
+          desiredDefinition,
+        );
 
-        if (definitionChanged || !remoteMatchesDesired) {
+        if (definitionChanged || remoteDiffers) {
           return {
             logicalId,
             action: 'update',
             resourceType: 'VOLCENGINE_VEFAAS',
-            changes: { before: currentDefinition, after: desiredDefinition },
+            changes: { before: liveBefore, after: desiredDefinition },
             drifted: true,
+            ...(revertKeys.length ? { revertKeys } : {}),
           };
         }
 
@@ -223,8 +250,9 @@ export const generateFunctionPlan = async (
                 logicalId,
                 action: 'update',
                 resourceType: 'VOLCENGINE_VEFAAS',
-                changes: { before: currentDefinition, after: desiredDefinition },
+                changes: { before: liveBefore, after: desiredDefinition },
                 drifted: true,
+                driftReasons: ['PLAN_DRIFT_ROLE_MISSING'],
               };
             }
             let cloudTrust: unknown;
@@ -247,8 +275,9 @@ export const generateFunctionPlan = async (
                 logicalId,
                 action: 'update',
                 resourceType: 'VOLCENGINE_VEFAAS',
-                changes: { before: currentDefinition, after: desiredDefinition },
+                changes: { before: liveBefore, after: desiredDefinition },
                 drifted: true,
+                driftReasons: ['PLAN_DRIFT_ROLE_POLICY'],
               };
             }
             const desiredManaged = (
@@ -266,8 +295,9 @@ export const generateFunctionPlan = async (
                 logicalId,
                 action: 'update',
                 resourceType: 'VOLCENGINE_VEFAAS',
-                changes: { before: currentDefinition, after: desiredDefinition },
+                changes: { before: liveBefore, after: desiredDefinition },
                 drifted: true,
+                driftReasons: ['PLAN_DRIFT_ROLE_POLICY'],
               };
             }
           } catch (error: unknown) {
@@ -302,8 +332,9 @@ export const generateFunctionPlan = async (
                     logicalId,
                     action: 'update',
                     resourceType: 'VOLCENGINE_VEFAAS',
-                    changes: { before: currentDefinition, after: desiredDefinition },
+                    changes: { before: liveBefore, after: desiredDefinition },
                     drifted: true,
+                    driftReasons: ['PLAN_DRIFT_TLS_TOPIC'],
                   };
                 }
               }
@@ -319,7 +350,13 @@ export const generateFunctionPlan = async (
         }
 
         return { logicalId, action: 'noop', resourceType: 'VOLCENGINE_VEFAAS' };
-      } catch {
+      } catch (error: unknown) {
+        logger.warn(
+          lang.__('PLAN_LIVE_READ_FAILED', {
+            logicalId,
+            error: error instanceof Error ? error.message : String(error),
+          }),
+        );
         return {
           logicalId,
           action: 'create',
@@ -328,6 +365,7 @@ export const generateFunctionPlan = async (
             before: currentState.definition,
             after: desiredDefinition,
           },
+          drifted: true,
         };
       }
     },

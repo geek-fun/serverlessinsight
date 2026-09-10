@@ -1,4 +1,5 @@
 import path from 'node:path';
+import { lang } from '../../lang';
 import { Context, BucketDomain, Plan, PlanItem, StateFile, ResourceAttributes } from '../../types';
 import { createVolcengineClient } from '../../common/volcengineClient';
 import { cachedRefreshRead } from '../../common/refreshCache';
@@ -62,7 +63,11 @@ export const generateBucketPlan = async (
         isOwned: (remote) => isOwnedByStack(context, logicalId, remote.Tags),
         foreignError: () =>
           new Error(
-            `Bucket ${bucket.name} already exists in provider but is not owned by this stack (missing ${OWNERSHIP_TAG_KEY} tag). Refusing to create — resolve manually.`,
+            lang.__('RESOURCE_EXISTS_NOT_OWNED', {
+              resourceType: 'Bucket',
+              resourceName: bucket.name,
+              tagKey: OWNERSHIP_TAG_KEY,
+            }),
           ),
         cloudToDefinition: cloudTosToDefinition,
         extraUpdate: async () => {

@@ -431,7 +431,9 @@ describe('TdsqlcPlanner', () => {
       const result = await generateDatabasePlan(mockContext, mockState, [mockDatabase]);
 
       expect(result.items[0]).toMatchObject({ action: 'create' });
-      expect(result.items[0]).not.toHaveProperty('drifted');
+      // Issue #246: a read-failure fallback create is honest about not
+      // knowing the cloud state — it carries the drifted flag.
+      expect(result.items[0]).toHaveProperty('drifted', true);
       expect(result.items[0].changes?.before).toEqual(expectedDefinition);
     });
 

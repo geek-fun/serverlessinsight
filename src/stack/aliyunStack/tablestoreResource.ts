@@ -1,4 +1,5 @@
 import { createAliyunClient } from '../../common/aliyunClient';
+import { lang } from '../../lang';
 import { TableStoreTableInfo } from '../../common/aliyunClient/tablestoreOperations';
 import { setResource, removeResource, buildSid } from '../../common';
 import { Context, TableDomain, PartialResourceError, ResourceState, StateFile } from '../../types';
@@ -176,9 +177,7 @@ export const createTableResource = async (
       if (existingTable) {
         throw new PartialResourceError(
           stateAfterDependents,
-          new Error(
-            `Table ${config.tableName} already exists in provider but ownership cannot be verified (Tablestore does not support table-level tags). Refusing to adopt — resolve manually.`,
-          ),
+          new Error(lang.__('TABLESTORE_EXISTS_UNVERIFIABLE', { tableName: config.tableName })),
         );
       }
     }

@@ -205,7 +205,7 @@ describe('vefaasPlanner', () => {
       });
 
       await expect(generateFunctionPlan(mockContext, mockState, [mockFunction])).rejects.toThrow(
-        'not owned by this stack',
+        'RESOURCE_EXISTS_NOT_OWNED',
       );
     });
 
@@ -268,7 +268,7 @@ describe('vefaasPlanner', () => {
       });
 
       await expect(generateFunctionPlan(mockContext, taintedState, [mockFunction])).rejects.toThrow(
-        'not owned by this stack',
+        'RESOURCE_EXISTS_NOT_OWNED',
       );
     });
 
@@ -305,6 +305,60 @@ describe('vefaasPlanner', () => {
 
       expect(result.items).toHaveLength(1);
       expect(result.items[0].action).toBe('update');
+    });
+
+    // Issue #246 regression: the cloud returns null environmentVariables and
+    // vpcConfig objects carrying provider-only fields (enableVpc, ...) — the
+    // one-directional desired-declared compare must not phantom-drift on them
+    // (the old two-directional attributesEqual did, on every plan).
+    it('stays noop when the cloud returns null env vars and provider-only vpc fields', async () => {
+      const stateWithFunction: StateFile = {
+        ...mockState,
+        resources: {
+          'functions.test_fn': {
+            mode: 'managed',
+            region: 'cn-beijing',
+            definition: {
+              functionName: 'test-function',
+              runtime: 'nodejs16',
+              handler: 'index.handler',
+              memorySize: 128,
+              timeout: 30,
+              environment: {},
+              codeHash: 'test-hash',
+            },
+            instances: [
+              { sid: 'test-sid', id: 'test-function', type: 'VOLCENGINE_VEFAAS_FUNCTION' },
+            ],
+            lastUpdated: '2024-01-01T00:00:00Z',
+          },
+        },
+      };
+
+      mockVefaasClient.vefaas.getFunction.mockResolvedValueOnce({
+        functionName: 'test-function',
+        runtime: 'nodejs16',
+        handler: 'index.handler',
+        memoryMb: 128,
+        requestTimeout: 30,
+        environmentVariables: null,
+        vpcConfig: {
+          vpcId: 'vpc-1',
+          subnetIds: ['subnet-1'],
+          securityGroupIds: [],
+          enableVpc: true,
+          enableSharedInternetAccess: false,
+        },
+      });
+
+      jest
+        .spyOn(stateManager, 'getResource')
+        .mockReturnValue(stateWithFunction.resources['functions.test_fn']);
+
+      const result = await generateFunctionPlan(mockContext, stateWithFunction, [mockFunction]);
+
+      expect(result.items).toHaveLength(1);
+      expect(result.items[0].action).toBe('noop');
     });
 
     it('should generate noop plan when function unchanged', async () => {

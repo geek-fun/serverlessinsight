@@ -407,3 +407,17 @@ A `si import --plan` mode that shows what would be imported without actually imp
 - [Terraform Refresh Documentation](https://developer.hashicorp.com/terraform/cli/commands/refresh)
 - [Terraform State Management](https://developer.hashicorp.com/terraform/language/state)
 - [ADR-001: SSL/HTTPS Certificate Management](./001-ssl-certificate-management.md)
+
+## Update (2026-09, issue #246): refresh 命令裁撤，两态模型
+
+本 ADR 原规划 Phase 3 交付独立 `si refresh` 命令（`src/commands/refresh.ts`）。#246 复核后裁决**裁撤**该命令，理由与替代设计如下：
+
+### 决策
+
+1. **两态模型**：用户心智中只有 `desired`（YAML 配置）与 `live`（云端现状）两个状态。state 文件降级为实现细节——`ResourceState.definition` 的语义重释为「上次同步的云端快照」（字段名不变，避免 state 文件迁移），不再是用户需要理解的概念。
+2. **读 live 是 diff 的隐式默认行为**：`si plan` / `si deploy` 每次都探测云端并以 live 为 diff 的 `before` 基线（`mergeLiveBefore`：live 值优先，cloud mapper 不产出的键由 stored 快照补齐）。漂移不再是独立"模式"——它就是 live 与 desired 的差异本身，漂移字段以 `revertKeys` 逐字段标注。
+3. **`si refresh` 命令不做**：config 是唯一事实源，"接受云端改动"的正确动作是修改 YAML 后重新 diff。原 `PlanAction 'refresh'` 预留已删除。原 Phase 3 的「读云端 → 写回 state」需求由 deploy 执行后的 state 回写天然覆盖。
+4. **`--no-refresh` 保留**：现命令名与语义（跳过云端探测、基于快照比较、不做漂移判断）自解释，供 CI 加速场景使用，不改名、不加额外离线声明。
+5. **plan 一次执行一次**：`si deploy` 将展示并确认的 plan 直传 deployer（按 resourceType 分区执行），消除展示与执行两次计算可能产生的偏差。
+
+实现落点：`src/common/planCompare.ts`（`mergeLiveBefore`/`computeRevertKeys`）、`src/common/refreshPlanner.ts`（live 基线）、`src/common/planFormatter.ts`（资源范式显示）、各 provider planner。

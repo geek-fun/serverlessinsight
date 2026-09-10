@@ -1,5 +1,6 @@
 import { planRefreshedResource } from '../../../src/common/refreshPlanner';
 import type { PlanRefreshedResourceArgs } from '../../../src/common/refreshPlanner';
+import { logger } from '../../../src/common/logger';
 import type { ResourceState } from '../../../src/types';
 
 type Remote = { name: string; memory: number };
@@ -42,11 +43,70 @@ describe('planRefreshedResource', () => {
     expect(item).toMatchObject({ action: 'update', drifted: true });
   });
 
+  // Issue #246: the diff baseline for a drift update is cloud reality.
+  it('uses the live attributes as changes.before and marks revert keys', async () => {
+    const read = jest.fn().mockResolvedValue({ name: 'test', memory: 64 });
+    const item = await planRefreshedResource(args({ read }));
+
+    expect(item.changes?.before).toEqual({ name: 'test', memory: 64 });
+    expect(item.changes?.after).toEqual({ name: 'test', memory: 128 });
+    expect(item.revertKeys).toEqual(['memory']);
+  });
+
+  it('does not mark revert keys when the config itself changed the field', async () => {
+    const read = jest.fn().mockResolvedValue({ name: 'test', memory: 64 });
+    const item = await planRefreshedResource(
+      args({ read, desiredDefinition: { name: 'test', memory: 256 } }),
+    );
+
+    expect(item.changes?.before).toEqual({ name: 'test', memory: 64 });
+    expect(item.revertKeys).toBeUndefined();
+  });
+
+  it('carries stored keys the cloud mapper never emits into the diff baseline', async () => {
+    const storedWithHash: ResourceState = {
+      ...currentState,
+      definition: { name: 'test', memory: 128, codeHash: 'old-hash' },
+    };
+    const read = jest.fn().mockResolvedValue({ name: 'test', memory: 128 });
+    const item = await planRefreshedResource(
+      args({
+        currentState: storedWithHash,
+        read,
+        desiredDefinition: { name: 'test', memory: 256 },
+      }),
+    );
+
+    // live memory (128) wins over stored memory for the diff baseline, while
+    // the stored codeHash fills the dimension the cloud mapper never emits.
+    expect(item.changes?.before).toEqual({ name: 'test', memory: 128, codeHash: 'old-hash' });
+  });
+
+  it('surfaces probe-level drift reasons from extraUpdate', async () => {
+    const item = await planRefreshedResource(
+      args({
+        extraUpdate: () => Promise.resolve({ update: true, drifted: true, reason: 'PLAN_DRIFT_X' }),
+      }),
+    );
+
+    expect(item).toMatchObject({ action: 'update', drifted: true, driftReasons: ['PLAN_DRIFT_X'] });
+  });
+
   it('flags create+drifted when the remote is gone', async () => {
     const read = jest.fn().mockResolvedValue(null);
     const item = await planRefreshedResource(args({ read }));
 
     expect(item).toMatchObject({ action: 'create', drifted: true });
+  });
+
+  it('degrades a failed live read to a drifted create with a warning', async () => {
+    const warnSpy = jest.spyOn(logger, 'warn').mockImplementation(() => {});
+    const read = jest.fn().mockRejectedValue(new Error('throttled'));
+    const item = await planRefreshedResource(args({ read }));
+
+    expect(item).toMatchObject({ action: 'create', drifted: true });
+    expect(warnSpy).toHaveBeenCalled();
+    warnSpy.mockRestore();
   });
 
   it('throws on the probe path when a foreign same-named remote exists', async () => {

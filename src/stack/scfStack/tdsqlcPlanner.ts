@@ -7,6 +7,7 @@ import {
   StateFile,
   ResourceAttributes,
 } from '../../types';
+import { lang } from '../../lang';
 import { createTencentClient } from '../../common/tencentClient';
 import { cachedRefreshRead } from '../../common/refreshCache';
 import { PLAN_READ_CONCURRENCY, mapWithConcurrency } from '../../common/concurrency';
@@ -85,7 +86,11 @@ export const generateDatabasePlan = async (
           isOwnedByStack(context, logicalId, tdsqlcTagsToOwnershipTags(remote.ResourceTags)),
         foreignError: () =>
           new Error(
-            `Cluster ${database.name} already exists in provider but is not owned by this stack (missing ${OWNERSHIP_TAG_KEY} tag). Refusing to create — resolve manually.`,
+            lang.__('RESOURCE_EXISTS_NOT_OWNED', {
+              resourceType: 'Cluster',
+              resourceName: database.name,
+              tagKey: OWNERSHIP_TAG_KEY,
+            }),
           ),
         cloudToDefinition: cloudTdsqlcToDefinition,
         extraUpdate: async () => {

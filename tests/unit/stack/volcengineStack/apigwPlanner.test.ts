@@ -136,7 +136,7 @@ describe('apigwPlanner', () => {
 
     await expect(
       generateApigwPlan(mockContext, emptyState, [mockEvent], 'test-service'),
-    ).rejects.toThrow('not owned by this stack');
+    ).rejects.toThrow('RESOURCE_EXISTS_NOT_OWNED');
   });
 
   it('plans noop when state matches the desired definition', async () => {

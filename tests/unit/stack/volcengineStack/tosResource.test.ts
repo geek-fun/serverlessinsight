@@ -530,7 +530,7 @@ describe('tosResource', () => {
 
       await expect(createResource(mockContext, bucket, mockState)).rejects.toMatchObject({
         name: 'PartialResourceError',
-        cause: { message: expect.stringContaining('not owned by this stack') },
+        cause: { message: expect.stringContaining('RESOURCE_EXISTS_NOT_OWNED_ADOPT') },
       });
     });
 
@@ -549,7 +549,7 @@ describe('tosResource', () => {
 
       await expect(createResource(mockContext, bucket, mockState)).rejects.toMatchObject({
         name: 'PartialResourceError',
-        cause: { message: expect.stringContaining('not owned by this stack') },
+        cause: { message: expect.stringContaining('RESOURCE_EXISTS_NOT_OWNED_ADOPT') },
       });
     });
   });

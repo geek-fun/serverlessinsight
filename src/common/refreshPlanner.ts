@@ -1,17 +1,30 @@
 import { PlanItem, ResourceAttributes, ResourceState } from '../types';
 import { attributesEqual } from './hashUtils';
-import { remoteDiffersFromDesired } from './planCompare';
+import { computeRevertKeys, mergeLiveBefore, remoteDiffersFromDesired } from './planCompare';
+import { logger } from './logger';
+import { lang } from '../lang';
 
 /**
- * Exists-path decision for attribute-refresh planners (issue #234 Phase 3):
- * remote missing → create+drifted; intent-diff or live-attribute drift →
- * update+drifted; extra bookkeeping conditions → update (drifted per flag);
- * otherwise noop. Read failures propagate — callers keep their catch → create
- * fallback. Item construction stays with the caller: before/after
+ * Exists-path decision for attribute-refresh planners (issue #234 Phase 3,
+ * display contract reworked by issue #246): remote missing → create+drifted;
+ * intent-diff or live-attribute drift → update+drifted with the live
+ * attributes carried out so `changes.before` can be cloud reality; extra
+ * bookkeeping conditions → update (drifted per flag, optional probe reason);
+ * otherwise noop. Read failures propagate — callers keep their catch →
+ * create fallback. Item construction stays with the caller: before/after
  * normalization and resource-specific details differ per planner.
  */
 export type RefreshExistsDecision =
-  { action: 'create'; drifted: true } | { action: 'update'; drifted: boolean } | { action: 'noop' };
+  | { action: 'create'; drifted: true }
+  | {
+      action: 'update';
+      drifted: boolean;
+      /** live cloud attributes (post cloudToDefinition + enrich) for the diff baseline */
+      liveAttributes: ResourceAttributes;
+      /** probe-level drift sources (i18n keys) when the update is reason-driven */
+      driftReasons?: string[];
+    }
+  | { action: 'noop' };
 
 export type RefreshExistsArgs<T> = {
   read: () => Promise<T | null>;
@@ -25,10 +38,11 @@ export type RefreshExistsArgs<T> = {
   definitionChanged: boolean;
   /**
    * Extra update sources beyond the two standard diffs (e.g. pending domain
-   * binding). `drifted` controls the flag: intent/live drift set it,
-   * bookkeeping-only conditions do not.
+   * binding, nested topic drift). `drifted` controls the flag: intent/live
+   * drift set it, bookkeeping-only conditions do not. `reason` (an i18n key)
+   * marks probe-level drift that has no attribute-level diff to show.
    */
-  extraUpdate?: () => Promise<{ update: boolean; drifted: boolean }>;
+  extraUpdate?: () => Promise<{ update: boolean; drifted: boolean; reason?: string }>;
 };
 
 export const decideRefreshedExistsAction = async <T>(
@@ -44,11 +58,16 @@ export const decideRefreshedExistsAction = async <T>(
   }
   const remoteDiffers = remoteDiffersFromDesired(attributes, args.desiredDefinition);
   if (args.definitionChanged || remoteDiffers) {
-    return { action: 'update', drifted: true };
+    return { action: 'update', drifted: true, liveAttributes: attributes };
   }
   const extra = await args.extraUpdate?.();
   if (extra?.update) {
-    return { action: 'update', drifted: extra.drifted };
+    return {
+      action: 'update',
+      drifted: extra.drifted,
+      liveAttributes: attributes,
+      ...(extra.reason ? { driftReasons: [extra.reason] } : {}),
+    };
   }
   return { action: 'noop' };
 };
@@ -73,7 +92,7 @@ export type PlanRefreshedResourceArgs<T> = {
   ) => Promise<ResourceAttributes>;
   /** applied to both sides before the intent diff and in changes display */
   normalizeForDisplay?: (definition: ResourceAttributes) => ResourceAttributes;
-  extraUpdate?: () => Promise<{ update: boolean; drifted: boolean }>;
+  extraUpdate?: () => Promise<{ update: boolean; drifted: boolean; reason?: string }>;
   /**
    * When false (CLI --no-refresh): skip the live read and the attribute-drift
    * leg entirely — the decision degenerates to intent-diff only, with no
@@ -87,8 +106,12 @@ export type PlanRefreshedResourceArgs<T> = {
  * no-state-probe / exists-refresh decision chain of the simple planners
  * (buckets, tables, databases). Function and gateway planners keep their
  * custom flows (role probes, trigger reconciliation, config normalization).
- * Read failures on the exists path degrade to a create plan — the pre-existing
- * planner behavior, preserved verbatim.
+ *
+ * Issue #246 display contract: a drift/intent update's `changes.before` is
+ * always cloud reality — live attributes merged over the stored definition
+ * (stored fills the keys the cloud mapper never emits) — so every update
+ * renders a complete live→desired field diff, and `revertKeys` marks the
+ * fields whose difference is purely an out-of-config cloud edit.
  */
 export const planRefreshedResource = async <T>(
   args: PlanRefreshedResourceArgs<T>,
@@ -148,24 +171,38 @@ export const planRefreshedResource = async <T>(
         logicalId,
         action: 'create',
         resourceType,
-        changes: { before: normalize(currentDefinition), after: desiredDefinition },
+        changes: { before: normalizedCurrent, after: desiredDefinition },
         drifted: true,
       };
     }
 
+    const normalizedLive = normalize(decision.liveAttributes);
+    const revertKeys = computeRevertKeys(normalizedCurrent, normalizedLive, normalizedDesired);
     return {
       logicalId,
       action: 'update',
       resourceType,
-      changes: { before: normalizedCurrent, after: normalizedDesired },
+      changes: {
+        before: normalize(mergeLiveBefore(currentDefinition, normalizedLive)),
+        after: normalizedDesired,
+      },
       ...(decision.drifted ? { drifted: true } : {}),
+      ...(revertKeys.length ? { revertKeys } : {}),
+      ...(decision.driftReasons?.length ? { driftReasons: decision.driftReasons } : {}),
     };
-  } catch {
+  } catch (error: unknown) {
+    logger.warn(
+      lang.__('PLAN_LIVE_READ_FAILED', {
+        logicalId,
+        error: error instanceof Error ? error.message : String(error),
+      }),
+    );
     return {
       logicalId,
       action: 'create',
       resourceType,
-      changes: { before: normalize(currentDefinition), after: desiredDefinition },
+      changes: { before: normalizedCurrent, after: normalizedDesired },
+      drifted: true,
     };
   }
 };

@@ -209,7 +209,11 @@ export const createDatabaseResource = async (
             );
           } else {
             throw new Error(
-              `ES app ${config.appName} already exists in provider but is not owned by this stack (missing ${OWNERSHIP_TAG_KEY} tag). Refusing to adopt — resolve manually.`,
+              lang.__('RESOURCE_EXISTS_NOT_OWNED_ADOPT', {
+                resourceType: 'ES app',
+                resourceName: config.appName,
+                tagKey: OWNERSHIP_TAG_KEY,
+              }),
               { cause: error },
             );
           }
@@ -245,7 +249,11 @@ export const createDatabaseResource = async (
             );
           } else {
             throw new Error(
-              `RDS instance ${config.dbInstanceDescription} already exists in provider but is not owned by this stack (missing ${OWNERSHIP_TAG_KEY} tag). Refusing to adopt — resolve manually.`,
+              lang.__('RESOURCE_EXISTS_NOT_OWNED_ADOPT', {
+                resourceType: 'RDS instance',
+                resourceName: config.dbInstanceDescription,
+                tagKey: OWNERSHIP_TAG_KEY,
+              }),
               { cause: error },
             );
           }

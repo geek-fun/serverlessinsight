@@ -29,8 +29,6 @@ const DEFAULT_CONFIG: PlanDisplayConfig = {
   colorize: true,
   indentSize: 4,
   keyAlignWidth: 12,
-  showUnchangedAttributes: false,
-  maxUnchangedHidden: 5,
 };
 
 const isObject = (val: unknown): boolean =>
@@ -174,9 +172,20 @@ const formatAttributeLines = (
   indent: number,
   config: PlanDisplayConfig,
   keyWidth: number,
+  revertKeys?: ReadonlySet<string>,
 ): string[] => {
   const spaces = ' '.repeat(indent);
   const alignedKey = (diff.key + ':').padEnd(keyWidth);
+  // Issue #246: a field whose stored value already matched the config while
+  // the cloud diverged is annotated at the line level — the resource block
+  // stays in place, only this line explains why it appears. Applies to every
+  // leaf action: a cloud-side key deletion shows up as add/remove too.
+  const suffix = (line: string): string =>
+    diff.children && diff.children.length > 0
+      ? line
+      : revertKeys?.has(diff.key)
+        ? `${line} ${colorize(lang.__('PLAN_REVERT_ANNOTATION'), 'CYAN', config.colorize)}`
+        : line;
 
   switch (diff.action) {
     case 'add': {
@@ -192,7 +201,7 @@ const formatAttributeLines = (
       const value = diff.isComputed
         ? colorize(lang.__('PLAN_COMPUTED_VALUE'), 'CYAN', config.colorize)
         : formatValue(diff.after);
-      return [colorize(`${spaces}${alignedKey} ${value}`, 'GREEN', config.colorize)];
+      return [suffix(colorize(`${spaces}${alignedKey} ${value}`, 'GREEN', config.colorize))];
     }
 
     case 'remove': {
@@ -206,7 +215,9 @@ const formatAttributeLines = (
         ];
       }
       return [
-        colorize(`${spaces}${alignedKey} ${formatValue(diff.before)}`, 'RED', config.colorize),
+        suffix(
+          colorize(`${spaces}${alignedKey} ${formatValue(diff.before)}`, 'RED', config.colorize),
+        ),
       ];
     }
 
@@ -223,7 +234,9 @@ const formatAttributeLines = (
       const beforeStr = formatValue(diff.before);
       const afterStr = formatValue(diff.after);
       return [
-        colorize(`${spaces}${alignedKey} ${beforeStr} -> ${afterStr}`, 'YELLOW', config.colorize),
+        suffix(
+          colorize(`${spaces}${alignedKey} ${beforeStr} -> ${afterStr}`, 'YELLOW', config.colorize),
+        ),
       ];
     }
   }
@@ -234,60 +247,76 @@ const ACTION_DESC: Record<string, string> = {
   update: 'PLAN_WILL_UPDATE',
   delete: 'PLAN_WILL_DESTROY',
   noop: 'PLAN_NO_CHANGES',
-  refresh: 'PLAN_WILL_REFRESH',
 };
 
 const ACTION_SYMBOL: Record<string, string> = {
   create: '+',
   update: '~',
   delete: '-',
-  refresh: '↻',
 };
 
 const ACTION_COLOR: Record<string, keyof typeof COLOR> = {
   create: 'GREEN',
   update: 'YELLOW',
   delete: 'RED',
-  refresh: 'CYAN',
 };
+
+/**
+ * A create plan for a resource that also has a recorded `before` is a
+ * recreation (the cloud copy disappeared or was tainted) — rendered as a
+ * single `-/+` block showing the old→new fields, never as two separate
+ * add/remove blocks (issue #246 resource-paradigm invariant).
+ */
+const isRecreate = (item: PlanItem): boolean => item.action === 'create' && !!item.changes?.before;
 
 /* istanbul ignore next */
 export const formatPlanItem = (
   item: PlanItem,
   config: PlanDisplayConfig = DEFAULT_CONFIG,
 ): string => {
-  const descKey = ACTION_DESC[item.action] ?? 'PLAN_NO_CHANGES';
-  const headerLine = `  # ${item.logicalId} ${lang.__(descKey as keyof typeof ACTION_DESC)}`;
-
   if (item.action === 'noop') {
-    return headerLine;
+    // Unchanged resources are not rendered as blocks — they only surface in
+    // the plan summary count (issue #246 display spec).
+    return '';
   }
 
-  const symbol = ACTION_SYMBOL[item.action] ?? ' ';
-  const symbolColor = ACTION_COLOR[item.action] ?? 'RESET';
+  const recreate = isRecreate(item);
+  const descKey = recreate ? 'PLAN_WILL_RECREATE' : (ACTION_DESC[item.action] ?? 'PLAN_NO_CHANGES');
+  const headerLine = `  # ${item.logicalId} ${lang.__(descKey as keyof typeof ACTION_DESC)}`;
+
+  const symbol = recreate ? '-/+' : (ACTION_SYMBOL[item.action] ?? ' ');
+  const symbolColor = recreate ? 'YELLOW' : (ACTION_COLOR[item.action] ?? 'RESET');
   const resourceLine = colorize(`  ${symbol} ${item.logicalId}:`, symbolColor, config.colorize);
 
-  // A drifted update is caused by an out-of-config cloud edit — surface that
-  // so it doesn't read like an ordinary config change.
-  const driftedLine =
-    item.drifted && item.action !== 'delete'
-      ? [colorize(`      # ${lang.__('PLAN_DRIFTED_MARKER')}`, 'CYAN', config.colorize)]
-      : [];
+  // Probe-level drift (role policy, logstore, ...) has no attribute-level
+  // diff to show — each reason becomes its own explanatory line.
+  const reasonLines = (item.driftReasons ?? []).map((reason) =>
+    colorize(`      # ${lang.__(reason as keyof typeof ACTION_DESC)}`, 'CYAN', config.colorize),
+  );
 
   if (!item.changes) {
-    return [headerLine, resourceLine, ...driftedLine].join('\n');
+    // No changes payload at all: the drift marker is the only explanation
+    // available (fallback — planners normally attach changes or reasons).
+    const driftedLine =
+      item.drifted && reasonLines.length === 0
+        ? [colorize(`      # ${lang.__('PLAN_DRIFTED_MARKER')}`, 'CYAN', config.colorize)]
+        : [];
+    return [headerLine, resourceLine, ...reasonLines, ...driftedLine].join('\n');
   }
 
   const { diffs, unchangedCount } = computeAttributeDiffs(item.changes.before, item.changes.after);
   const keyWidth = Math.max(config.keyAlignWidth, computeMaxKeyWidth(diffs, config.indentSize));
+  const revertKeys = new Set(item.revertKeys ?? []);
 
   const attrLines =
     diffs.length > 0
-      ? diffs.flatMap((diff) => formatAttributeLines(diff, config.indentSize, config, keyWidth))
+      ? diffs.flatMap((diff) =>
+          formatAttributeLines(diff, config.indentSize, config, keyWidth, revertKeys),
+        )
       : [];
 
   const hiddenLine =
-    unchangedCount > 0 && !config.showUnchangedAttributes
+    unchangedCount > 0
       ? [
           colorize(
             `      # ${lang.__('PLAN_UNCHANGED_ATTRS', { count: String(unchangedCount) })}`,
@@ -297,7 +326,17 @@ export const formatPlanItem = (
         ]
       : [];
 
-  return [headerLine, resourceLine, ...driftedLine, ...attrLines, ...hiddenLine].join('\n');
+  // Invariant backstop (issue #246): a drifted item must always explain
+  // itself — attribute lines, reasons, or as a last resort the generic
+  // marker. Planners attach at least one of these for every drifted item.
+  const driftedFallback =
+    item.drifted && attrLines.length === 0 && reasonLines.length === 0
+      ? [colorize(`      # ${lang.__('PLAN_DRIFTED_MARKER')}`, 'CYAN', config.colorize)]
+      : [];
+
+  return [headerLine, resourceLine, ...reasonLines, ...attrLines, ...hiddenLine, ...driftedFallback]
+    .filter((line) => line.length > 0)
+    .join('\n');
 };
 
 /* istanbul ignore next */
@@ -309,50 +348,33 @@ export const formatPlan = (
     return lang.__('NO_CHANGES_INFRASTRUCTURE_UP_TO_DATE');
   }
 
-  const createItems = items.filter((i) => i.action === 'create');
-  const updateItems = items.filter((i) => i.action === 'update');
-  const deleteItems = items.filter((i) => i.action === 'delete');
-  const refreshItems = items.filter((i) => i.action === 'refresh');
-  const noopItems = items.filter((i) => i.action === 'noop');
+  // Resource paradigm (issue #246): render blocks in the planner's domain
+  // order, one block per resource, never regrouped by action. Unchanged
+  // resources only surface in the summary count.
+  const unchangedCount = items.filter((i) => i.action === 'noop').length;
+  const itemLines = items
+    .filter((i) => i.action !== 'noop')
+    .flatMap((item) => {
+      const block = formatPlanItem(item, config);
+      return block ? [block, ''] : [];
+    });
 
-  const actionItems = [
-    ...createItems,
-    ...updateItems,
-    ...deleteItems,
-    ...refreshItems,
-    ...noopItems,
-  ];
+  const recreateCount = items.filter(isRecreate).length;
+  const addCount = items.filter((i) => i.action === 'create' && !isRecreate(i)).length;
+  const modifyCount = items.filter((i) => i.action === 'update').length;
+  const removeCount = items.filter((i) => i.action === 'delete').length;
 
-  const header = [
-    `${lang.__('PLAN_HEADER')}\n`,
-    colorize(lang.__('PLAN_LEGEND_CREATE'), 'GREEN', config.colorize),
-    colorize(lang.__('PLAN_LEGEND_UPDATE'), 'YELLOW', config.colorize),
-    colorize(lang.__('PLAN_LEGEND_DESTROY'), 'RED', config.colorize),
-    '',
-  ];
-
-  const itemLines = actionItems.flatMap((item) => [formatPlanItem(item, config), '']);
-
-  const driftedCount = items.filter((i) => i.drifted && i.action !== 'delete').length;
-  const driftedSummary =
-    driftedCount > 0
-      ? [
-          colorize(
-            lang.__('PLAN_DRIFTED_SUMMARY', { driftedCount: String(driftedCount) }),
-            'CYAN',
-            config.colorize,
-          ),
-          '',
-        ]
-      : [];
+  const header = [`${lang.__('PLAN_HEADER')}\n`];
 
   const summary = lang.__('PLAN_SUMMARY', {
-    createCount: String(createItems.length),
-    updateCount: String(updateItems.length),
-    deleteCount: String(deleteItems.length),
+    addCount: String(addCount),
+    modifyCount: String(modifyCount),
+    removeCount: String(removeCount),
+    recreateCount: String(recreateCount),
+    unchangedCount: String(unchangedCount),
   });
 
-  return [...header, ...itemLines, ...driftedSummary, summary].join('\n');
+  return [...header, ...itemLines, summary].join('\n');
 };
 
 /* istanbul ignore next */

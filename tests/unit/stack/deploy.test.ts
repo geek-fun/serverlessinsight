@@ -84,7 +84,7 @@ describe('Unit tests for Aliyun stack deployment', () => {
 
     await deployStack(minimumIac, mockBackend);
 
-    expect(mockedDeployAliyunStack).toHaveBeenCalledWith(minimumIac, mockBackend);
+    expect(mockedDeployAliyunStack).toHaveBeenCalledWith(minimumIac, mockBackend, undefined);
   });
 
   it('should generate and execute function plan for FC functions', async () => {
@@ -92,7 +92,7 @@ describe('Unit tests for Aliyun stack deployment', () => {
 
     await deployStack(oneFcIac, mockBackend);
 
-    expect(mockedDeployAliyunStack).toHaveBeenCalledWith(oneFcIac, mockBackend);
+    expect(mockedDeployAliyunStack).toHaveBeenCalledWith(oneFcIac, mockBackend, undefined);
   });
 
   it('should save state after execution', async () => {
@@ -100,7 +100,7 @@ describe('Unit tests for Aliyun stack deployment', () => {
 
     await deployStack(oneFcIac, mockBackend);
 
-    expect(mockedDeployAliyunStack).toHaveBeenCalledWith(oneFcIac, mockBackend);
+    expect(mockedDeployAliyunStack).toHaveBeenCalledWith(oneFcIac, mockBackend, undefined);
   });
 
   it('should dispatch Tencent deployments to the Tencent stack', async () => {
@@ -111,7 +111,7 @@ describe('Unit tests for Aliyun stack deployment', () => {
 
     await deployStack(tencentIac, mockBackend);
 
-    expect(mockedDeployTencentStack).toHaveBeenCalledWith(tencentIac, mockBackend);
+    expect(mockedDeployTencentStack).toHaveBeenCalledWith(tencentIac, mockBackend, undefined);
   });
 
   it('should report that Huawei deployment is not implemented', async () => {

@@ -1,4 +1,4 @@
-import { ServerlessIac } from '../types';
+import { ServerlessIac, Plan } from '../types';
 import { ProviderEnum } from '../common';
 import { StateBackend } from '../common/stateBackend';
 import { deployTencentStack } from './scfStack';
@@ -13,14 +13,20 @@ const deployHuawei = async (): Promise<void> => {
   );
 };
 
-export const deployStack = async (iac: ServerlessIac, backend: StateBackend) => {
+/**
+ * `plan` (issue #246): the exact plan shown to the user for approval is the
+ * plan executed — deployers partition its items by resourceType instead of
+ * re-probing the cloud and re-deciding. Omit it to fall back to per-provider
+ * plan generation (legacy path kept for direct deployer callers).
+ */
+export const deployStack = async (iac: ServerlessIac, backend: StateBackend, plan?: Plan) => {
   if (iac.provider.name === ProviderEnum.TENCENT) {
-    await deployTencentStack(iac, backend);
+    await deployTencentStack(iac, backend, plan);
   } else if (iac.provider.name === ProviderEnum.ALIYUN) {
-    await deployAliyunStack(iac, backend);
+    await deployAliyunStack(iac, backend, plan);
   } else if (iac.provider.name === ProviderEnum.HUAWEI) {
     await deployHuawei();
   } else if (iac.provider.name === ProviderEnum.VOLCENGINE) {
-    await deployVolcengineStack(iac, backend);
+    await deployVolcengineStack(iac, backend, plan);
   }
 };

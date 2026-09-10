@@ -2,6 +2,7 @@ import {
   ServerlessIac,
   ExecutionResult,
   PartialFailureError,
+  Plan,
   PlanItem,
   StateFile,
 } from '../../types';
@@ -95,9 +96,16 @@ export const buildRoleArnResolver = (
   };
 };
 
+// Issue #246: when the approved plan is passed through, the executor runs
+// exactly the displayed items — partitioned by resourceType, no re-probe.
+const partitionPlan = (plan: Plan, types: string[]): Plan => ({
+  items: plan.items.filter((item) => types.includes(item.resourceType)),
+});
+
 export const deployAliyunStack = async (
   iac: ServerlessIac,
   backend: StateBackend,
+  approvedPlan?: Plan,
 ): Promise<void> => {
   const context = getContext();
   // Cache IAC for access throughout the deployment
@@ -108,19 +116,31 @@ export const deployAliyunStack = async (
   const onStateChange = createSaveStateFn(backend, iac, context.stage);
 
   logger.info(lang.__('GENERATING_PLAN'));
-  const functionPlan = await generateFunctionPlan(context, state, iac.functions);
-  const bucketPlan = await generateBucketPlan(context, state, iac.buckets);
-  const databasePlan = await generateDatabasePlan(context, state, iac.databases);
-  const tablePlan = await generateTablePlan(context, state, iac.tables);
-  const eventPlan = await generateApigwPlan(context, state, iac.events, iac.service);
+  const functionPlan = approvedPlan
+    ? partitionPlan(approvedPlan, ['ALIYUN_FC3'])
+    : await generateFunctionPlan(context, state, iac.functions);
+  const bucketPlan = approvedPlan
+    ? partitionPlan(approvedPlan, ['ALIYUN_OSS_BUCKET'])
+    : await generateBucketPlan(context, state, iac.buckets);
+  const databasePlan = approvedPlan
+    ? partitionPlan(approvedPlan, ['ALIYUN_RDS_SERVERLESS', 'ALIYUN_ES_SERVERLESS'])
+    : await generateDatabasePlan(context, state, iac.databases);
+  const tablePlan = approvedPlan
+    ? partitionPlan(approvedPlan, ['ALIYUN_TABLESTORE_TABLE'])
+    : await generateTablePlan(context, state, iac.tables);
+  const eventPlan = approvedPlan
+    ? partitionPlan(approvedPlan, ['ALIYUN_APIGW'])
+    : await generateApigwPlan(context, state, iac.events, iac.service);
 
-  const allItems = [
-    ...functionPlan.items,
-    ...bucketPlan.items,
-    ...databasePlan.items,
-    ...tablePlan.items,
-    ...eventPlan.items,
-  ];
+  const allItems = approvedPlan
+    ? [...approvedPlan.items]
+    : [
+        ...functionPlan.items,
+        ...bucketPlan.items,
+        ...databasePlan.items,
+        ...tablePlan.items,
+        ...eventPlan.items,
+      ];
 
   // Build dependency graph for validation (e.g. cycle detection) and logging
   const dependencyInfo = getDependencyInfo(allItems);

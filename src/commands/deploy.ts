@@ -149,7 +149,9 @@ export const deploy = async (options: {
       'deploy',
       async () => {
         try {
-          await deployStack(iac, backend);
+          // Issue #246: execute exactly the plan that was displayed and
+          // approved above — no second plan computation mid-deploy.
+          await deployStack(iac, backend, { items: planResult.items });
         } catch (err) {
           // The deployment FAILED, but the console still needs the plan
           // (what we attempted) + the partial state (what succeeded) to render

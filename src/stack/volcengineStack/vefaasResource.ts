@@ -580,7 +580,11 @@ export const createResource = async (
         throw new PartialResourceError(
           stateAfterDependents,
           new Error(
-            `Function ${fn.name} already exists in provider but is not owned by this stack (missing ${OWNERSHIP_TAG_KEY} tag). Refusing to adopt — resolve manually.`,
+            lang.__('RESOURCE_EXISTS_NOT_OWNED_ADOPT', {
+              resourceType: 'Function',
+              resourceName: fn.name,
+              tagKey: OWNERSHIP_TAG_KEY,
+            }),
           ),
         );
       }

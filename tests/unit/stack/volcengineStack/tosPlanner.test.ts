@@ -117,7 +117,7 @@ describe('tosPlanner', () => {
       });
 
       await expect(generateBucketPlan(mockContext, mockState, buckets)).rejects.toThrow(
-        'not owned by this stack',
+        'RESOURCE_EXISTS_NOT_OWNED',
       );
     });
 
@@ -192,7 +192,7 @@ describe('tosPlanner', () => {
       });
 
       await expect(generateBucketPlan(mockContext, stateWithTainted, buckets)).rejects.toThrow(
-        'not owned by this stack',
+        'RESOURCE_EXISTS_NOT_OWNED',
       );
     });
 

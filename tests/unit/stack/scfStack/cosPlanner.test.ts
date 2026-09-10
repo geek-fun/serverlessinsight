@@ -427,7 +427,7 @@ describe('cosPlanner', () => {
       });
 
       await expect(generateBucketPlan(mockContext, initialState, [testBucket])).rejects.toThrow(
-        'not owned by this stack',
+        'RESOURCE_EXISTS_NOT_OWNED',
       );
     });
 
@@ -472,7 +472,7 @@ describe('cosPlanner', () => {
       });
 
       await expect(generateBucketPlan(mockContext, initialState, [testBucket])).rejects.toThrow(
-        'not owned by this stack',
+        'RESOURCE_EXISTS_NOT_OWNED',
       );
     });
   });

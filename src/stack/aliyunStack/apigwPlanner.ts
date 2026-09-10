@@ -1,5 +1,6 @@
 import { Context, EventDomain, Plan, PlanItem, StateFile } from '../../types';
 import { createAliyunClient } from '../../common/aliyunClient';
+import { logger } from '../../common/logger';
 import {
   buildAliyunApigwApiName,
   buildEventLogSnapshot,
@@ -13,10 +14,11 @@ import {
 import { getAllResources, getResource } from '../../common/stateManager';
 import { attributesEqual } from '../../common/hashUtils';
 import { getIacDefinition, isFunctionDomain } from '../../common/iacHelper';
-import { remoteDiffersFromDesired } from '../../common/planCompare';
+import { mergeLiveBefore, remoteDiffersFromDesired } from '../../common/planCompare';
 import { cachedRefreshRead } from '../../common/refreshCache';
 import { PLAN_READ_CONCURRENCY, mapWithConcurrency } from '../../common/concurrency';
 import { OWNERSHIP_TAG_KEY, isOwnedByStack } from '../ownershipTag';
+import { lang } from '../../lang';
 
 const DNS_SUB_RESOURCE_SUFFIXES = ['.dns_verification', '.dns_txt_verification'];
 
@@ -108,7 +110,11 @@ export const generateApigwPlan = async (
         if (remoteGroup?.groupId) {
           if (!isOwnedByStack(context, logicalId, remoteGroup.tags)) {
             throw new Error(
-              `API group ${groupConfig.groupName} already exists in provider but is not owned by this stack (missing ${OWNERSHIP_TAG_KEY} tag). Refusing to create — resolve manually.`,
+              lang.__('RESOURCE_EXISTS_NOT_OWNED', {
+                resourceType: 'API group',
+                resourceName: groupConfig.groupName,
+                tagKey: OWNERSHIP_TAG_KEY,
+              }),
             );
           }
           if (!currentState) {
@@ -141,6 +147,10 @@ export const generateApigwPlan = async (
 
         let groupRemoteDiffers = false;
         let triggersDiffer = false;
+        // Issue #246: live group attributes become the diff baseline when the
+        // group was readable; trigger-level drift has no attribute mapping and
+        // is surfaced as a drift reason instead.
+        let liveGroupAttrs: Record<string, unknown> | undefined;
 
         if (groupInstance) {
           const remoteGroup = await cachedRefreshRead(
@@ -165,9 +175,9 @@ export const generateApigwPlan = async (
           // to the group/trigger then surfaces as update + drifted, and a read
           // failure cannot degrade a config-driven update into a create.
           // Domain/log stay existence-only in Phase 0-2 — never compared live.
+          liveGroupAttrs = cloudApigwGroupToDefinition(remoteGroup);
           if (!definitionChanged) {
-            const remoteGroupAttrs = cloudApigwGroupToDefinition(remoteGroup);
-            groupRemoteDiffers = remoteDiffersFromDesired(remoteGroupAttrs, desiredDefinition);
+            groupRemoteDiffers = remoteDiffersFromDesired(liveGroupAttrs, desiredDefinition);
 
             if (event.triggers.length > 0) {
               const desiredApis = new Map<
@@ -239,18 +249,31 @@ export const generateApigwPlan = async (
             logicalId,
             action: 'update',
             resourceType: 'ALIYUN_APIGW',
-            changes: { before: currentDefinition, after: desiredDefinition },
+            changes: {
+              before: liveGroupAttrs
+                ? mergeLiveBefore(currentDefinition, liveGroupAttrs)
+                : currentDefinition,
+              after: desiredDefinition,
+            },
             drifted: true,
+            ...(triggersDiffer ? { driftReasons: ['PLAN_DRIFT_TRIGGERS'] } : {}),
           };
         }
 
         return { logicalId, action: 'noop', resourceType: 'ALIYUN_APIGW' };
-      } catch {
+      } catch (error: unknown) {
+        logger.warn(
+          lang.__('PLAN_LIVE_READ_FAILED', {
+            logicalId,
+            error: error instanceof Error ? error.message : String(error),
+          }),
+        );
         return {
           logicalId,
           action: 'create',
           resourceType: 'ALIYUN_APIGW',
           changes: { before: currentState.definition, after: desiredDefinition },
+          drifted: true,
         };
       }
     },
