@@ -1,4 +1,5 @@
 import { Context, TableDomain, Plan, PlanItem, StateFile, ResourceAttributes } from '../../types';
+import { lang } from '../../lang';
 import { createAliyunClient } from '../../common/aliyunClient';
 import { cachedRefreshRead } from '../../common/refreshCache';
 import { PLAN_READ_CONCURRENCY, mapWithConcurrency } from '../../common/concurrency';
@@ -60,7 +61,7 @@ export const generateTablePlan = async (
         isOwned: () => false,
         foreignError: () =>
           new Error(
-            `Table ${config.tableName} already exists in provider but ownership cannot be verified (no table-level tags). Refusing to adopt — resolve manually.`,
+            lang.__('TABLESTORE_EXISTS_UNVERIFIABLE_PROBE', { tableName: config.tableName }),
           ),
         cloudToDefinition: cloudTableStoreToDefinition,
         refresh: context.refresh,

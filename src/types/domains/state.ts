@@ -92,7 +92,7 @@ export type StateFile = {
  */
 export type PersistedStateFile = Omit<StateFile, 'resources'>;
 
-export type PlanAction = 'create' | 'update' | 'delete' | 'noop' | 'refresh';
+export type PlanAction = 'create' | 'update' | 'delete' | 'noop';
 
 export type PlanItem = {
   logicalId: string;
@@ -103,6 +103,18 @@ export type PlanItem = {
     after?: Record<string, unknown>;
   };
   drifted?: boolean;
+  /**
+   * Top-level keys whose stored value already matches the desired definition
+   * while the live cloud value does not — the field-level signature of an
+   * out-of-config cloud edit. Rendered as a per-field revert annotation.
+   */
+  revertKeys?: string[];
+  /**
+   * Probe-level drift sources that cannot map to attributes (role policy,
+   * logstore, security-group rules, ...). Values are i18n message keys,
+   * resolved at display time.
+   */
+  driftReasons?: string[];
 };
 
 export type Plan = {
@@ -122,8 +134,6 @@ export type PlanDisplayConfig = {
   colorize: boolean;
   indentSize: number;
   keyAlignWidth: number;
-  showUnchangedAttributes: boolean;
-  maxUnchangedHidden: number;
 };
 
 export type SaveStateFn = (state: StateFile) => Promise<void>;

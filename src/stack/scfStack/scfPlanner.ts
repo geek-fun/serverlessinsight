@@ -63,47 +63,6 @@ export const generateFunctionPlan = async (
 
       const client = createTencentClient(context);
 
-      // Issue #234 M3: nested topic drift — probed only when logging is
-      // declared; unresolvable/unreadable topics are not drift.
-      if (
-        currentState &&
-        currentState.status !== 'tainted' &&
-        fn.log &&
-        context.refresh !== false
-      ) {
-        const topicInstance = currentState.instances?.find(
-          (i) => (i as { type?: string }).type === 'TENCENT_CLS_TOPIC',
-        ) as { id?: string } | undefined;
-        if (topicInstance?.id) {
-          const topicId = topicInstance.id;
-          try {
-            const liveTopic = await cachedRefreshRead(context, `cls.getTopicById:${topicId}`, () =>
-              client.cls.getTopicById(topicId),
-            );
-            const topicDrifted =
-              !liveTopic ||
-              liveTopic.StorageType !== CLS_TOPIC_STORAGE_TYPE ||
-              liveTopic.Period !== CLS_TOPIC_PERIOD;
-            if (topicDrifted) {
-              return {
-                logicalId,
-                action: 'update',
-                resourceType: 'SCF',
-                changes: { before: currentState.definition || {}, after: desiredDefinition },
-                drifted: true,
-              };
-            }
-          } catch (error: unknown) {
-            logger.warn(
-              lang.__('PLAN_FUNCTION_NESTED_PROBE_FAILED', {
-                functionName: fn.name,
-                error: String(error),
-              }),
-            );
-          }
-        }
-      }
-
       return planRefreshedResource({
         logicalId,
         resourceType: 'SCF',
@@ -116,8 +75,45 @@ export const generateFunctionPlan = async (
         isOwned: (remote) => isOwnedByStack(context, logicalId, remote.Tags),
         foreignError: () =>
           new Error(
-            `Function ${fn.name} already exists in provider but is not owned by this stack (missing ${OWNERSHIP_TAG_KEY} tag). Refusing to create — resolve manually.`,
+            lang.__('RESOURCE_EXISTS_NOT_OWNED', {
+              resourceType: 'Function',
+              resourceName: fn.name,
+              tagKey: OWNERSHIP_TAG_KEY,
+            }),
           ),
+        extraUpdate: async () => {
+          // Issue #234 M3: nested topic drift — probed only when logging is
+          // declared; unresolvable/unreadable topics are not drift. Runs via
+          // the skeleton's extraUpdate hook (issue #246) so a topic-only
+          // drift gets the live→desired diff baseline too.
+          const topicInstance = currentState?.instances?.find(
+            (i) => (i as { type?: string }).type === 'TENCENT_CLS_TOPIC',
+          ) as { id?: string } | undefined;
+          if (!fn.log || !topicInstance?.id) {
+            return { update: false, drifted: false };
+          }
+          const topicId = topicInstance.id;
+          try {
+            const liveTopic = await cachedRefreshRead(context, `cls.getTopicById:${topicId}`, () =>
+              client.cls.getTopicById(topicId),
+            );
+            const topicDrifted =
+              !liveTopic ||
+              liveTopic.StorageType !== CLS_TOPIC_STORAGE_TYPE ||
+              liveTopic.Period !== CLS_TOPIC_PERIOD;
+            return topicDrifted
+              ? { update: true, drifted: true, reason: 'PLAN_DRIFT_CLS_TOPIC' }
+              : { update: false, drifted: false };
+          } catch (error: unknown) {
+            logger.warn(
+              lang.__('PLAN_FUNCTION_NESTED_PROBE_FAILED', {
+                functionName: fn.name,
+                error: String(error),
+              }),
+            );
+            return { update: false, drifted: false };
+          }
+        },
         cloudToDefinition: cloudScfToDefinition,
         enrichRemoteAttributes: async (remote, attributes) => {
           // Resolve cloud CLS ids back to the stable names the desired

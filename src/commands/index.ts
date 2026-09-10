@@ -193,6 +193,49 @@ program
     ),
   );
 
+// Issue #246: `diff` is the primary verb users say — it runs the same plan
+// flow; `plan` stays for compatibility.
+program
+  .command('diff')
+  .description('show changes between your config and the live cloud (alias of plan)')
+  .option('-f, --file <path>', 'specify the yaml file')
+  .option('-s, --stage <stage>', 'specify the stage')
+  .option('-r, --region <region>', 'specify the region')
+  .option('-v, --provider <provider>', 'specify the provider')
+  .option('-k, --accessKeyId <accessKeyId>', 'specify the AccessKeyId')
+  .option('-x, --accessKeySecret <accessKeySecret>', 'specify the AccessKeySecret')
+  .option('-n, --securityToken <securityToken>', 'specify the SecurityToken')
+  .option(
+    '--no-refresh',
+    'skip live cloud probing; diff config against state only (no drift detection)',
+  )
+  .action(
+    actionWrapper(
+      'diff',
+      async ({
+        stage,
+        file,
+        region,
+        provider,
+        accessKeyId,
+        accessKeySecret,
+        securityToken,
+        refresh,
+      }) => {
+        await plan({
+          stage,
+          location: file,
+          region,
+          provider,
+          accessKeyId,
+          accessKeySecret,
+          securityToken,
+          refresh,
+        });
+      },
+    ),
+  );
+
 program
   .command('deploy')
   .description('deploy serverless Iac yaml')

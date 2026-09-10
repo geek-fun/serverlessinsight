@@ -7,6 +7,7 @@ import {
   StateFile,
   ResourceAttributes,
 } from '../../types';
+import { lang } from '../../lang';
 import { createAliyunClient } from '../../common/aliyunClient';
 import { cachedRefreshRead } from '../../common/refreshCache';
 import { PLAN_READ_CONCURRENCY, mapWithConcurrency } from '../../common/concurrency';
@@ -142,7 +143,11 @@ export const generateDatabasePlan = async (
         isOwned: (remote) => isOwnedByStack(context, logicalId, toOwnershipTagShape(remote.tags)),
         foreignError: () =>
           new Error(
-            `${resourceType} ${database.name} already exists in provider but is not owned by this stack (missing ${OWNERSHIP_TAG_KEY} tag). Refusing to create — resolve manually.`,
+            lang.__('RESOURCE_EXISTS_NOT_OWNED', {
+              resourceType,
+              resourceName: database.name,
+              tagKey: OWNERSHIP_TAG_KEY,
+            }),
           ),
         cloudToDefinition: (remote) =>
           isEs ? cloudEsToDefinition(remote) : cloudRdsToDefinition(remote),

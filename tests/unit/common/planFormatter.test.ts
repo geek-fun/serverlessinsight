@@ -93,8 +93,6 @@ describe('planFormatter', () => {
       colorize: false,
       indentSize: 4,
       keyAlignWidth: 12,
-      showUnchangedAttributes: false,
-      maxUnchangedHidden: 5,
     };
 
     it('should format create action', () => {
@@ -179,17 +177,14 @@ describe('planFormatter', () => {
       expect(output).toContain('- functions.old:');
     });
 
-    it('should format noop action', () => {
+    it('renders unchanged resources as empty (count-only summary)', () => {
       const item: PlanItem = {
         logicalId: 'functions.unchanged',
         action: 'noop',
         resourceType: 'ALIYUN_FC3_FUNCTION',
       };
 
-      const output = formatPlanItem(item, config);
-
-      expect(output).toContain('# functions.unchanged no changes');
-      expect(output).not.toContain('functions.unchanged:');
+      expect(formatPlanItem(item, config)).toBe('');
     });
 
     it('should show unchanged count', () => {
@@ -207,6 +202,145 @@ describe('planFormatter', () => {
 
       expect(output).toContain('(4 unchanged attributes hidden)');
     });
+
+    it('renders a mixed Modify block with field-level add/change/remove markers', () => {
+      const item: PlanItem = {
+        logicalId: 'functions.order',
+        action: 'update',
+        resourceType: 'ALIYUN_FC3',
+        changes: {
+          before: { memory: 512, description: 'legacy order service' },
+          after: { memory: 2048, tags: { team: 'pay' } },
+        },
+      };
+
+      const output = formatPlanItem(item, config);
+
+      expect(output).toContain('~ functions.order:');
+      expect(output).toContain('memory:      512 -> 2048');
+      expect(output).toContain('tags:');
+      expect(output).toContain('description:');
+    });
+
+    it('annotates revert fields with the cloud-changed marker', () => {
+      const item: PlanItem = {
+        logicalId: 'functions.notify',
+        action: 'update',
+        resourceType: 'ALIYUN_FC3',
+        drifted: true,
+        revertKeys: ['logTtl'],
+        changes: {
+          before: { logTtl: 7 },
+          after: { logTtl: 30 },
+        },
+      };
+
+      const output = formatPlanItem(item, config);
+
+      expect(output).toContain('logTtl:      7 -> 30');
+      expect(output).toContain('(changed in the cloud, will be restored to config)');
+    });
+
+    it('annotates revert fields that surface as added keys (cloud deleted them)', () => {
+      const item: PlanItem = {
+        logicalId: 'functions.notify',
+        action: 'update',
+        resourceType: 'ALIYUN_FC3',
+        drifted: true,
+        revertKeys: ['logConfig'],
+        changes: {
+          before: { memory: 512 },
+          after: { memory: 512, logConfig: { enabled: true } },
+        },
+      };
+
+      const output = formatPlanItem(item, config);
+
+      expect(output).toContain('logConfig:');
+      expect(output).toContain('(changed in the cloud, will be restored to config)');
+    });
+
+    it('renders a recreate (create with recorded before) as a single -/+ block', () => {
+      const item: PlanItem = {
+        logicalId: 'databases.order-db',
+        action: 'create',
+        resourceType: 'ALIYUN_RDS_SERVERLESS',
+        drifted: true,
+        changes: {
+          before: { instanceName: 'old-name' },
+          after: { instanceName: 'new-name' },
+        },
+      };
+
+      const output = formatPlanItem(item, config);
+
+      expect(output).toContain('# databases.order-db will be recreated');
+      expect(output).toContain('-/+ databases.order-db:');
+      expect(output).toContain('instanceName: "old-name" -> "new-name"');
+    });
+
+    it('renders pure adds (no before) with the plain + symbol', () => {
+      const item: PlanItem = {
+        logicalId: 'functions.pay',
+        action: 'create',
+        resourceType: 'ALIYUN_FC3',
+        changes: {
+          after: { runtime: 'nodejs20', codeHash: 'abc' },
+        },
+      };
+
+      const output = formatPlanItem(item, config);
+
+      expect(output).toContain('+ functions.pay:');
+      expect(output).not.toContain('-/+');
+      expect(output).toContain('(known after deploy)');
+    });
+
+    it('renders drift reasons as explanatory lines', () => {
+      const item: PlanItem = {
+        logicalId: 'functions.notify',
+        action: 'update',
+        resourceType: 'ALIYUN_FC3',
+        drifted: true,
+        driftReasons: ['PLAN_DRIFT_ROLE_POLICY'],
+        changes: {
+          before: { memory: 512 },
+          after: { memory: 512 },
+        },
+      };
+
+      const output = formatPlanItem(item, config);
+
+      expect(output).toContain('# IAM role policy changed in the cloud');
+      expect(output).not.toContain('cloud changed outside of this config');
+    });
+
+    it('falls back to the generic drift marker when a drifted item has no other explanation', () => {
+      const item: PlanItem = {
+        logicalId: 'functions.mystery',
+        action: 'update',
+        resourceType: 'ALIYUN_FC3',
+        drifted: true,
+        changes: { before: { memory: 512 }, after: { memory: 512 } },
+      };
+
+      const output = formatPlanItem(item, config);
+
+      expect(output).toContain('cloud changed outside of this config');
+    });
+
+    it('does not mark undrifted updates with the drift marker', () => {
+      const item: PlanItem = {
+        logicalId: 'functions.a',
+        action: 'update',
+        resourceType: 'ALIYUN_FC3',
+        changes: { before: { memory: 128 }, after: { memory: 256 } },
+      };
+
+      const output = formatPlanItem(item, config);
+
+      expect(output).not.toContain('cloud changed outside of this config');
+    });
   });
 
   describe('formatPlan', () => {
@@ -214,8 +348,6 @@ describe('planFormatter', () => {
       colorize: false,
       indentSize: 4,
       keyAlignWidth: 12,
-      showUnchangedAttributes: false,
-      maxUnchangedHidden: 5,
     };
 
     it('should return no changes message for empty items', () => {
@@ -223,7 +355,7 @@ describe('planFormatter', () => {
       expect(output).toBe('No changes. Infrastructure is up to date.');
     });
 
-    it('should format multiple items with summary', () => {
+    it('should format multiple items with a full summary', () => {
       const items: PlanItem[] = [
         {
           logicalId: 'functions.hello',
@@ -248,91 +380,69 @@ describe('planFormatter', () => {
       const output = formatPlan(items, config);
 
       expect(output).toContain('ServerlessInsight will perform the following actions');
-      expect(output).toContain('+ create');
-      expect(output).toContain('~ update in-place');
-      expect(output).toContain('- destroy');
-      expect(output).toContain('Plan: 1 to add, 1 to change, 1 to destroy.');
+      expect(output).toContain('+ functions.hello:');
+      expect(output).toContain('~ functions.api:');
+      expect(output).toContain('- functions.old:');
+      expect(output).toContain('Plan: 1 add, 1 modify, 1 remove, 0 recreate, 0 unchanged.');
     });
 
-    it('should group items by action type', () => {
+    it('preserves the given (domain) order instead of regrouping by action', () => {
       const items: PlanItem[] = [
         {
-          logicalId: 'functions.b',
-          action: 'create',
-          resourceType: 'ALIYUN_FC3_FUNCTION',
-          changes: { after: { name: 'b' } },
+          logicalId: 'buckets.assets',
+          action: 'delete',
+          resourceType: 'ALIYUN_OSS_BUCKET',
+          changes: { before: { bucketName: 'assets' } },
         },
         {
           logicalId: 'functions.a',
           action: 'create',
-          resourceType: 'ALIYUN_FC3_FUNCTION',
+          resourceType: 'ALIYUN_FC3',
           changes: { after: { name: 'a' } },
         },
       ];
 
       const output = formatPlan(items, config);
 
-      const aIndex = output.indexOf('functions.a');
-      const bIndex = output.indexOf('functions.b');
-      expect(aIndex).toBeGreaterThan(-1);
-      expect(bIndex).toBeGreaterThan(-1);
+      expect(output.indexOf('buckets.assets')).toBeLessThan(output.indexOf('functions.a'));
     });
 
-    it('marks drifted updates with the drift marker line', () => {
+    it('counts unchanged and recreate resources in the summary', () => {
       const items: PlanItem[] = [
         {
-          logicalId: 'functions.a',
-          action: 'update',
+          logicalId: 'functions.api',
+          action: 'noop',
           resourceType: 'ALIYUN_FC3',
-          drifted: true,
-          changes: { before: { memory: 128 }, after: { memory: 256 } },
-        },
-      ];
-
-      const output = formatPlanItem(items[0], config);
-
-      expect(output).toContain('cloud changed outside of this config');
-    });
-
-    it('does not mark undrifted updates with the drift marker', () => {
-      const items: PlanItem[] = [
-        {
-          logicalId: 'functions.a',
-          action: 'update',
-          resourceType: 'ALIYUN_FC3',
-          changes: { before: { memory: 128 }, after: { memory: 256 } },
-        },
-      ];
-
-      const output = formatPlanItem(items[0], config);
-
-      expect(output).not.toContain('cloud changed outside of this config');
-    });
-
-    it('summarizes drifted resources when any item drifted', () => {
-      const items: PlanItem[] = [
-        {
-          logicalId: 'functions.a',
-          action: 'update',
-          resourceType: 'ALIYUN_FC3',
-          drifted: true,
-          changes: { before: { memory: 128 }, after: { memory: 256 } },
         },
         {
-          logicalId: 'functions.b',
+          logicalId: 'buckets.static',
+          action: 'noop',
+          resourceType: 'ALIYUN_OSS_BUCKET',
+        },
+        {
+          logicalId: 'databases.order-db',
           action: 'create',
-          resourceType: 'ALIYUN_FC3',
-          changes: { after: { name: 'b' } },
+          resourceType: 'ALIYUN_RDS_SERVERLESS',
+          drifted: true,
+          changes: { before: { instanceName: 'old' }, after: { instanceName: 'new' } },
         },
       ];
 
       const output = formatPlan(items, config);
 
-      expect(output).toContain('Drift: 1 resource(s)');
+      expect(output).not.toContain('functions.api:');
+      expect(output).toContain('Plan: 0 add, 0 modify, 0 remove, 1 recreate, 2 unchanged.');
     });
 
-    it('omits the drift summary when nothing drifted', () => {
+    it('summarizes drifted resources without a separate drift section', () => {
       const items: PlanItem[] = [
+        {
+          logicalId: 'functions.a',
+          action: 'update',
+          resourceType: 'ALIYUN_FC3',
+          drifted: true,
+          changes: { before: { memory: 128 }, after: { memory: 256 } },
+        },
         {
           logicalId: 'functions.b',
           action: 'create',
@@ -344,6 +454,73 @@ describe('planFormatter', () => {
       const output = formatPlan(items, config);
 
       expect(output).not.toContain('Drift:');
+      expect(output).toContain('~ functions.a:');
+    });
+
+    // Issue #246 invariant: every non-unchanged plan item must render at
+    // least one attribute line or one explanation line under its resource
+    // header — an action block with nothing under it is the empty-drift-diff
+    // regression this issue fixes.
+    it('renders at least one field or explanation line for every non-noop item', () => {
+      const items: PlanItem[] = [
+        {
+          logicalId: 'functions.create',
+          action: 'create',
+          resourceType: 'ALIYUN_FC3',
+          changes: { after: { name: 'n' } },
+        },
+        {
+          logicalId: 'functions.recreate',
+          action: 'create',
+          resourceType: 'ALIYUN_FC3',
+          drifted: true,
+          changes: { before: { name: 'old' }, after: { name: 'new' } },
+        },
+        {
+          logicalId: 'functions.update',
+          action: 'update',
+          resourceType: 'ALIYUN_FC3',
+          drifted: true,
+          changes: { before: { memory: 1 }, after: { memory: 2 } },
+        },
+        {
+          logicalId: 'functions.reason-only',
+          action: 'update',
+          resourceType: 'ALIYUN_FC3',
+          drifted: true,
+          driftReasons: ['PLAN_DRIFT_LOGSTORE'],
+          changes: { before: { memory: 1 }, after: { memory: 1 } },
+        },
+        {
+          logicalId: 'functions.marker-fallback',
+          action: 'update',
+          resourceType: 'ALIYUN_FC3',
+          drifted: true,
+          changes: { before: { memory: 1 }, after: { memory: 1 } },
+        },
+        {
+          logicalId: 'buckets.gone',
+          action: 'delete',
+          resourceType: 'ALIYUN_OSS_BUCKET',
+          changes: { before: { bucketName: 'gone' } },
+        },
+        {
+          logicalId: 'functions.no-changes-payload',
+          action: 'update',
+          resourceType: 'ALIYUN_FC3',
+          drifted: true,
+        },
+      ];
+
+      for (const item of items) {
+        const lines = formatPlanItem(item, config)
+          .split('\n')
+          .map((line) => line.trim())
+          .filter(Boolean);
+        // lines[0] = `# logicalId ...`, lines[1] = `<symbol> logicalId:`
+        const bodyLines = lines.slice(2);
+        expect(bodyLines.length).toBeGreaterThan(0);
+      }
     });
   });
 });

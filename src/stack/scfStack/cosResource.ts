@@ -338,7 +338,7 @@ export const createBucketResource = async (
         throw error;
       }
       logger.info(
-        `Bucket ${bucket.name} already exists in provider, verifying ownership tag before adopting`,
+        lang.__('OWNERSHIP_VERIFYING', { resourceType: 'Bucket', resourceName: bucket.name }),
       );
     }
 
@@ -356,7 +356,11 @@ export const createBucketResource = async (
       throw new PartialResourceError(
         stateAfterDependents,
         new Error(
-          `Bucket ${bucket.name} already exists in provider but is not owned by this stack (missing ${OWNERSHIP_TAG_KEY} tag). Refusing to adopt — resolve manually.`,
+          lang.__('RESOURCE_EXISTS_NOT_OWNED_ADOPT', {
+            resourceType: 'Bucket',
+            resourceName: bucket.name,
+            tagKey: OWNERSHIP_TAG_KEY,
+          }),
         ),
       );
     }

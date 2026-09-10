@@ -494,7 +494,7 @@ describe('EsServerlessResource', () => {
         createEsResource(mockContext, createTestDatabase('test_es'), initialState),
       ).rejects.toMatchObject({
         name: 'PartialResourceError',
-        cause: { message: expect.stringContaining('not owned by this stack') },
+        cause: { message: expect.stringContaining('RESOURCE_EXISTS_NOT_OWNED_ADOPT') },
       });
     });
   });

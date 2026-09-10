@@ -120,17 +120,35 @@ export const zhCN = {
   PLAN_WILL_CREATE: '将被创建',
   PLAN_WILL_UPDATE: '将就地更新',
   PLAN_WILL_DESTROY: '将被销毁',
-  PLAN_WILL_REFRESH: '将被刷新',
+  PLAN_WILL_RECREATE: '将被重建',
   PLAN_NO_CHANGES: '无变更',
   PLAN_HEADER: 'ServerlessInsight 将执行以下操作:',
-  PLAN_LEGEND_CREATE: '  + 创建',
-  PLAN_LEGEND_UPDATE: '  ~ 就地更新',
-  PLAN_LEGEND_DESTROY: '  - 销毁',
-  PLAN_SUMMARY: '计划: 新增 {{createCount}} 个，变更 {{updateCount}} 个，销毁 {{deleteCount}} 个。',
+  PLAN_SUMMARY:
+    '计划: 新增 {{addCount}}，变更 {{modifyCount}}，移除 {{removeCount}}，重建 {{recreateCount}}，无变更 {{unchangedCount}}。',
   PLAN_UNCHANGED_ATTRS: '({{count}} 个未变更属性已隐藏)',
   PLAN_COMPUTED_VALUE: '(部署后可知)',
+  PLAN_REVERT_ANNOTATION: '(云端已改，将按配置恢复)',
   PLAN_DRIFTED_MARKER: '（云端已漂移——与本配置不一致，将按配置纠正）',
-  PLAN_DRIFTED_SUMMARY: '漂移: {{driftedCount}} 个资源在云端被本配置之外的变更修改。',
+  PLAN_LIVE_READ_FAILED: '读取 {{logicalId}} 云端状态失败，降级为创建计划: {{error}}',
+  PLAN_DRIFT_ROLE_MISSING: '云端 IAM 角色缺失',
+  PLAN_DRIFT_ROLE_POLICY: '云端 IAM 角色策略被修改',
+  PLAN_DRIFT_LOGSTORE: '云端函数日志资源被修改',
+  PLAN_DRIFT_SG_RULES: '云端安全组规则被修改',
+  PLAN_DRIFT_NAS_MOUNT: '云端 NAS 挂载点被删除',
+  PLAN_DRIFT_TLS_TOPIC: '云端日志主题配置被修改',
+  PLAN_DRIFT_CLS_TOPIC: '云端日志主题配置被修改',
+  PLAN_DRIFT_TRIGGERS: '云端 API 触发器被修改',
+  RESOURCE_EXISTS_NOT_OWNED:
+    '{{resourceType}} {{resourceName}} 已存在于云端但归属本 stack（缺少 {{tagKey}} 标签），拒绝创建——请手动处理。',
+  RESOURCE_EXISTS_NOT_OWNED_ADOPT:
+    '{{resourceType}} {{resourceName}} 已存在于云端但归属本 stack（缺少 {{tagKey}} 标签），拒绝收养——请手动处理。',
+  TABLESTORE_EXISTS_UNVERIFIABLE:
+    '表 {{tableName}} 已存在于云端但无法校验归属（Tablestore 不支持表级标签），拒绝收养——请手动处理。',
+  TABLESTORE_EXISTS_UNVERIFIABLE_PROBE:
+    '表 {{tableName}} 已存在于云端但无法校验归属（无表级标签），拒绝收养——请手动处理。',
+  TAINTED_RECOVERY_SKIP_CREATE:
+    '{{resourceType}} {{resourceName}} 已存在（tainted 恢复），跳过创建并刷新状态',
+  OWNERSHIP_VERIFYING: '{{resourceType}} {{resourceName}} 已存在，正在校验归属标签后收养',
 
   // TDSQL-C 数据库消息
   TDSQL_CLUSTER_CREATION_INITIATED: 'TDSQL-C 集群创建已启动',

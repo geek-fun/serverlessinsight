@@ -578,7 +578,7 @@ describe('DatabaseResource', () => {
         createDatabaseResource(mockContext, esDatabase, initialState),
       ).rejects.toMatchObject({
         name: 'PartialResourceError',
-        cause: { message: expect.stringContaining('not owned by this stack') },
+        cause: { message: expect.stringContaining('RESOURCE_EXISTS_NOT_OWNED_ADOPT') },
       });
     });
 
@@ -648,7 +648,7 @@ describe('DatabaseResource', () => {
         createDatabaseResource(mockContext, rdsDatabase, initialState),
       ).rejects.toMatchObject({
         name: 'PartialResourceError',
-        cause: { message: expect.stringContaining('not owned by this stack') },
+        cause: { message: expect.stringContaining('RESOURCE_EXISTS_NOT_OWNED_ADOPT') },
       });
     });
 

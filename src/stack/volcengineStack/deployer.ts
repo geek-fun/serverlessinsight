@@ -1,4 +1,4 @@
-import { ServerlessIac } from '../../types';
+import { ServerlessIac, Plan } from '../../types';
 import { getContext, logger } from '../../common';
 import { StateBackend } from '../../common/stateBackend';
 import { lang } from '../../lang';
@@ -33,7 +33,17 @@ const formatApiError = (error: Error): string => {
   return parts.join(' | ');
 };
 
-export const deployVolcengineStack = async (iac: ServerlessIac, backend: StateBackend) => {
+// Issue #246: when the approved plan is passed through, the executor runs
+// exactly the displayed items — partitioned by resourceType, no re-probe.
+const partitionPlan = (plan: Plan, types: string[]): Plan => ({
+  items: plan.items.filter((item) => types.includes(item.resourceType)),
+});
+
+export const deployVolcengineStack = async (
+  iac: ServerlessIac,
+  backend: StateBackend,
+  approvedPlan?: Plan,
+) => {
   const context = getContext();
   logger.info(lang.__('DEPLOYING_STACK'));
 
@@ -46,9 +56,15 @@ export const deployVolcengineStack = async (iac: ServerlessIac, backend: StateBa
 
   logger.info(lang.__('GENERATING_PLAN'));
 
-  const functionPlan = await generateFunctionPlan(context, state, iac.functions);
-  const bucketPlan = await generateBucketPlan(context, state, iac.buckets);
-  const apigwPlan = await generateApigwPlan(context, state, iac.events, iac.service);
+  const functionPlan = approvedPlan
+    ? partitionPlan(approvedPlan, ['VOLCENGINE_VEFAAS'])
+    : await generateFunctionPlan(context, state, iac.functions);
+  const bucketPlan = approvedPlan
+    ? partitionPlan(approvedPlan, ['VOLCENGINE_TOS_BUCKET'])
+    : await generateBucketPlan(context, state, iac.buckets);
+  const apigwPlan = approvedPlan
+    ? partitionPlan(approvedPlan, ['VOLCENGINE_APIGW'])
+    : await generateApigwPlan(context, state, iac.events, iac.service);
 
   const bucketResult = await executeBucketPlan(
     context,

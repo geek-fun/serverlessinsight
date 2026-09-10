@@ -14,7 +14,11 @@ import {
   parseSecurityGroupRule,
 } from '../../common/aliyunClient/ecsOperations';
 import { cachedRefreshRead } from '../../common/refreshCache';
-import { remoteDiffersFromDesired } from '../../common/planCompare';
+import {
+  computeRevertKeys,
+  mergeLiveBefore,
+  remoteDiffersFromDesired,
+} from '../../common/planCompare';
 import { PLAN_READ_CONCURRENCY, mapWithConcurrency } from '../../common/concurrency';
 import {
   Context,
@@ -188,6 +192,8 @@ const parseRolePolicyDocument = (raw: string | undefined): Record<string, unknow
  * - logConfig must be derivable from state: with logging on but no recorded
  *   logstore instance the executor creates one during update and derives the
  *   grant from that new logstore, which the planner cannot know → skip.
+ * Returns an i18n drift-reason key (issue #246) instead of a boolean so the
+ * plan can say WHICH dimension drifted; null means no drift.
  */
 const detectRolePolicyDrift = async (
   context: Context,
@@ -196,13 +202,13 @@ const detectRolePolicyDrift = async (
   currentState: ResourceState,
   roleName: string,
   cloudRole: { assumeRolePolicyDocument?: string } | null,
-): Promise<boolean> => {
+): Promise<string | null> => {
   const client = createAliyunClient(context);
   const logicalId = `functions.${fn.key}`;
 
   const iamRole = fn.iam?.role;
   if (!iamRole || typeof iamRole === 'string') {
-    return false;
+    return null;
   }
 
   const roleInstance = currentState.instances?.find(
@@ -212,7 +218,7 @@ const detectRolePolicyDrift = async (
       !(i as { external?: boolean }).external,
   );
   if (!roleInstance) {
-    return false;
+    return null;
   }
 
   // Conservative ownership scan (mirrors collectRolePeers semantics without
@@ -230,7 +236,7 @@ const detectRolePolicyDrift = async (
       ),
   );
   if (sharedRole) {
-    return false;
+    return null;
   }
 
   let logConfig: { project: string; logstore: string } | undefined;
@@ -239,7 +245,7 @@ const detectRolePolicyDrift = async (
       (i) => (i as { type?: string }).type === 'ALIYUN_SLS_LOGSTORE',
     ) as { id?: string } | undefined;
     if (!logstoreInstance?.id) {
-      return false;
+      return null;
     }
     const [project, logstore] = logstoreInstance.id.split('/');
     logConfig = { project, logstore };
@@ -260,7 +266,7 @@ const detectRolePolicyDrift = async (
     ],
   };
   if (cloudTrust && !attributesEqual(cloudTrust, desiredTrust)) {
-    return true;
+    return 'PLAN_DRIFT_ROLE_POLICY';
   }
 
   // b. execution + custom policy (the `<roleName>-policy` custom document). An
@@ -280,7 +286,7 @@ const detectRolePolicyDrift = async (
     !desiredPolicyDocument ||
     !attributesEqual(cloudPolicy, desiredPolicyDocument)
   ) {
-    return true;
+    return 'PLAN_DRIFT_ROLE_POLICY';
   }
 
   // c. managed (system) policies as sorted name sets; desired ARNs strip the
@@ -295,10 +301,10 @@ const detectRolePolicyDrift = async (
   );
   const asSortedSetKey = (names: string[]): string => [...names].sort().join(',');
   if (asSortedSetKey(desiredManagedNames) !== asSortedSetKey(cloudManagedNames ?? [])) {
-    return true;
+    return 'PLAN_DRIFT_ROLE_POLICY';
   }
 
-  return false;
+  return null;
 };
 
 /**
@@ -306,13 +312,14 @@ const detectRolePolicyDrift = async (
  * presence for functions that declare logging. The logstore is per-function
  * (buildFunctionLogstoreName), so this lives in the function flow. Aliyun
  * cannot shrink shards, so only a shard deficit counts as drift.
+ * Returns an i18n drift-reason key (issue #246); null means no drift.
  */
 const detectFunctionNestedDrift = async (
   context: Context,
   client: ReturnType<typeof createAliyunClient>,
   fn: FunctionDomain,
   currentState: ResourceState,
-): Promise<boolean> => {
+): Promise<string | null> => {
   // Each declared dimension contributes its own probe; undeclared dimensions
   // fall through so later dimensions still run.
   if (fn.log) {
@@ -328,14 +335,14 @@ const detectFunctionNestedDrift = async (
           () => client.sls.getLogstore(projectName, logstoreName),
         );
         if (!logstore) {
-          return true; // logstore deleted out-of-band
+          return 'PLAN_DRIFT_LOGSTORE'; // logstore deleted out-of-band
         }
         if (logstore.ttl !== SLS_LOGSTORE_TTL) {
-          return true;
+          return 'PLAN_DRIFT_LOGSTORE';
         }
         // Aliyun cannot shrink shards — only a deficit counts as drift.
         if ((logstore.shardCount ?? 0) < SLS_LOGSTORE_SHARDS) {
-          return true;
+          return 'PLAN_DRIFT_LOGSTORE';
         }
 
         const index = await cachedRefreshRead(
@@ -344,7 +351,7 @@ const detectFunctionNestedDrift = async (
           () => client.sls.getIndex(projectName, logstoreName),
         );
         if (!index) {
-          return true; // index deleted out-of-band
+          return 'PLAN_DRIFT_LOGSTORE'; // index deleted out-of-band
         }
       }
     }
@@ -394,7 +401,7 @@ const detectFunctionNestedDrift = async (
         desired.egress.some((d) => !liveEgress.includes(d)) ||
         liveEgress.some((l) => !desired.egress.includes(l))
       ) {
-        return true;
+        return 'PLAN_DRIFT_SG_RULES';
       }
     }
   }
@@ -414,12 +421,12 @@ const detectFunctionNestedDrift = async (
         client.nas.listMountTargets(fsId),
       );
       if (!targets || targets.length === 0) {
-        return true; // mount target deleted out-of-band
+        return 'PLAN_DRIFT_NAS_MOUNT'; // mount target deleted out-of-band
       }
     }
   }
 
-  return false;
+  return null;
 };
 
 export const generateFunctionPlan = async (
@@ -462,7 +469,11 @@ export const generateFunctionPlan = async (
         );
         if (remoteFunction && !isOwnedByStack(context, logicalId, remoteFunction.tags)) {
           throw new Error(
-            `Function ${fn.name} already exists in provider but is not owned by this stack (missing ${OWNERSHIP_TAG_KEY} tag). Refusing to create — resolve manually.`,
+            lang.__('RESOURCE_EXISTS_NOT_OWNED', {
+              resourceType: 'Function',
+              resourceName: fn.name,
+              tagKey: OWNERSHIP_TAG_KEY,
+            }),
           );
         }
 
@@ -515,16 +526,28 @@ export const generateFunctionPlan = async (
         // (memory/timeout/env/...). One-directional: only mapper-emitted keys
         // the desired definition declares are compared, so cloud-only extras
         // the config never asked for are ignored (desired-declared contract).
+        // Issue #246: the diff baseline is cloud reality — live attributes
+        // merged over the stored definition — and revertKeys marks the fields
+        // whose difference is purely an out-of-config cloud edit.
         const remoteAttributes = cloudFc3ToDefinition(remoteFunction);
         const remoteDiffers = remoteDiffersFromDesired(remoteAttributes, desiredDefinition);
+        const liveBefore = normalizeDefinitionForComparison(
+          mergeLiveBefore(currentState.definition || {}, remoteAttributes),
+        );
+        const revertKeys = computeRevertKeys(
+          normalizedCurrent,
+          normalizeDefinitionForComparison(remoteAttributes),
+          normalizedDesired,
+        );
 
         if (definitionChanged || remoteDiffers) {
           return {
             logicalId,
             action: 'update',
             resourceType: 'ALIYUN_FC3',
-            changes: { before: normalizedCurrent, after: normalizedDesired },
+            changes: { before: liveBefore, after: normalizedDesired },
             drifted: true,
+            ...(revertKeys.length ? { revertKeys } : {}),
           };
         }
 
@@ -547,11 +570,12 @@ export const generateFunctionPlan = async (
                 logicalId,
                 action: 'update',
                 resourceType: 'ALIYUN_FC3',
-                changes: { before: normalizedCurrent, after: normalizedDesired },
+                changes: { before: liveBefore, after: normalizedDesired },
                 drifted: true,
+                driftReasons: ['PLAN_DRIFT_ROLE_MISSING'],
               };
             }
-            const rolePolicyDrifted = await detectRolePolicyDrift(
+            const roleDriftReason = await detectRolePolicyDrift(
               context,
               state,
               fn,
@@ -559,13 +583,14 @@ export const generateFunctionPlan = async (
               roleProbe.roleName,
               cloudRole,
             );
-            if (rolePolicyDrifted) {
+            if (roleDriftReason) {
               return {
                 logicalId,
                 action: 'update',
                 resourceType: 'ALIYUN_FC3',
-                changes: { before: normalizedCurrent, after: normalizedDesired },
+                changes: { before: liveBefore, after: normalizedDesired },
                 drifted: true,
+                driftReasons: [roleDriftReason],
               };
             }
           } catch (error: unknown) {
@@ -582,14 +607,20 @@ export const generateFunctionPlan = async (
         // Issue #234 M1/M2: nested drift probe — the probe itself skips
         // dimensions the config does not declare.
         try {
-          const nestedDrifted = await detectFunctionNestedDrift(context, client, fn, currentState);
-          if (nestedDrifted) {
+          const nestedDriftReason = await detectFunctionNestedDrift(
+            context,
+            client,
+            fn,
+            currentState,
+          );
+          if (nestedDriftReason) {
             return {
               logicalId,
               action: 'update',
               resourceType: 'ALIYUN_FC3',
-              changes: { before: normalizedCurrent, after: normalizedDesired },
+              changes: { before: liveBefore, after: normalizedDesired },
               drifted: true,
+              driftReasons: [nestedDriftReason],
             };
           }
         } catch (error: unknown) {
@@ -602,7 +633,13 @@ export const generateFunctionPlan = async (
         }
 
         return { logicalId, action: 'noop', resourceType: 'ALIYUN_FC3' };
-      } catch {
+      } catch (error: unknown) {
+        logger.warn(
+          lang.__('PLAN_LIVE_READ_FAILED', {
+            logicalId,
+            error: error instanceof Error ? error.message : String(error),
+          }),
+        );
         return {
           logicalId,
           action: 'create',
@@ -611,6 +648,7 @@ export const generateFunctionPlan = async (
             before: normalizeDefinitionForComparison(currentState.definition),
             after: normalizeDefinitionForComparison(desiredDefinition),
           },
+          drifted: true,
         };
       }
     },

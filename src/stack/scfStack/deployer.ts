@@ -2,6 +2,7 @@ import {
   ServerlessIac,
   ExecutionResult,
   PartialFailureError,
+  Plan,
   PlanItem,
   StateFile,
 } from '../../types';
@@ -41,9 +42,16 @@ const handlePartialFailure = (failure: PartialFailureError): never => {
 const collectSuccessfulItems = (results: Array<ExecutionResult>): Array<PlanItem> =>
   results.flatMap((result) => result.partialFailure?.successfulItems ?? []);
 
+// Issue #246: when the approved plan is passed through, the executor runs
+// exactly the displayed items — partitioned by resourceType, no re-probe.
+const partitionPlan = (plan: Plan, types: string[]): Plan => ({
+  items: plan.items.filter((item) => types.includes(item.resourceType)),
+});
+
 export const deployTencentStack = async (
   iac: ServerlessIac,
   backend: StateBackend,
+  approvedPlan?: Plan,
 ): Promise<void> => {
   const context = getContext();
   logger.info(lang.__('DEPLOYING_STACK_PUBLISHING_ASSETS'));
@@ -52,13 +60,23 @@ export const deployTencentStack = async (
   const onStateChange = createSaveStateFn(backend, iac, context.stage);
 
   logger.info(lang.__('GENERATING_PLAN'));
-  const functionPlan = await generateFunctionPlan(context, state, iac.functions);
-  const bucketPlan = await generateBucketPlan(context, state, iac.buckets);
-  const databasePlan = await generateDatabasePlan(context, state, iac.databases);
-  const esPlan = await generateEsPlan(context, state, iac.databases);
+  const functionPlan = approvedPlan
+    ? partitionPlan(approvedPlan, ['SCF'])
+    : await generateFunctionPlan(context, state, iac.functions);
+  const bucketPlan = approvedPlan
+    ? partitionPlan(approvedPlan, ['COS_BUCKET'])
+    : await generateBucketPlan(context, state, iac.buckets);
+  const databasePlan = approvedPlan
+    ? partitionPlan(approvedPlan, ['TDSQL_C_SERVERLESS'])
+    : await generateDatabasePlan(context, state, iac.databases);
+  const esPlan = approvedPlan
+    ? partitionPlan(approvedPlan, ['TENCENT_ES_SERVERLESS'])
+    : await generateEsPlan(context, state, iac.databases);
 
   const combinedPlan = {
-    items: [...functionPlan.items, ...bucketPlan.items, ...databasePlan.items, ...esPlan.items],
+    items: approvedPlan
+      ? [...approvedPlan.items]
+      : [...functionPlan.items, ...bucketPlan.items, ...databasePlan.items, ...esPlan.items],
   };
 
   logger.info(`${lang.__('PLAN_GENERATED')}: ${combinedPlan.items.length} ${lang.__('ACTIONS')}`);

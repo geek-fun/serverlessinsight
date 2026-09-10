@@ -261,7 +261,10 @@ export const createBucketResource = async (
 
   if (existingBucketOnRetry) {
     logger.info(
-      `Bucket ${config.bucketName} already exists in provider (tainted recovery), skipping create`,
+      lang.__('TAINTED_RECOVERY_SKIP_CREATE', {
+        resourceType: 'Bucket',
+        resourceName: config.bucketName,
+      }),
     );
   }
 
@@ -290,7 +293,11 @@ export const createBucketResource = async (
 
   const refuseAdoptionError = (): Error =>
     new Error(
-      `Bucket ${config.bucketName} already exists in provider but is not owned by this stack (missing ${OWNERSHIP_TAG_KEY} tag). Refusing to adopt — resolve manually.`,
+      lang.__('RESOURCE_EXISTS_NOT_OWNED_ADOPT', {
+        resourceType: 'Bucket',
+        resourceName: config.bucketName,
+        tagKey: OWNERSHIP_TAG_KEY,
+      }),
     );
 
   try {

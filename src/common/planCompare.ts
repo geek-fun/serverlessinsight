@@ -63,3 +63,38 @@ export const jsonDocumentDiffers = (desired: string | null, cloud: unknown): boo
     return false;
   }
 };
+
+/**
+ * Best-known "current live" display baseline (issue #246): the plan diff's
+ * `before` must always be cloud reality, not the stored intent. Live mapper
+ * output covers only the attributes the cloud API exposes, so stored
+ * definition keys the mapper never emits (codeHash, iam, ...) are carried
+ * over from the stored definition — live values win where readable, stored
+ * values fill the unreadable rest.
+ */
+export const mergeLiveBefore = (
+  stored: Record<string, unknown>,
+  live: Record<string, unknown>,
+): Record<string, unknown> => ({ ...stored, ...live });
+
+/**
+ * Field-level drift signature (issue #246): top-level keys where the stored
+ * definition already matches the desired one while the live value does not —
+ * i.e. the difference on that key is entirely a cloud-side edit the config
+ * never asked for. All three sides should be passed through the same
+ * normalization the display uses, so keys line up with the rendered diff.
+ */
+export const computeRevertKeys = (
+  stored: Record<string, unknown>,
+  live: Record<string, unknown>,
+  desired: Record<string, unknown>,
+): string[] => {
+  const allKeys = new Set([...Object.keys(live), ...Object.keys(desired)]);
+  return [...allKeys]
+    .filter((key) => {
+      const storedMatchesDesired = attributesEqual({ [key]: stored[key] }, { [key]: desired[key] });
+      const liveMatchesDesired = attributesEqual({ [key]: live[key] }, { [key]: desired[key] });
+      return storedMatchesDesired && !liveMatchesDesired;
+    })
+    .sort((a, b) => a.localeCompare(b));
+};

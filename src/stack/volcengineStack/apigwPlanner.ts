@@ -67,7 +67,11 @@ export const generateApigwPlan = async (
         );
         if (remoteGateway?.gatewayId && !isOwnedByStack(context, logicalId, remoteGateway.tags)) {
           throw new Error(
-            `API Gateway ${buildGatewayName(serviceName, context.stage)} already exists in provider but is not owned by this stack (missing ${OWNERSHIP_TAG_KEY} tag). Refusing to create — resolve manually.`,
+            lang.__('RESOURCE_EXISTS_NOT_OWNED', {
+              resourceType: 'API Gateway',
+              resourceName: buildGatewayName(serviceName, context.stage),
+              tagKey: OWNERSHIP_TAG_KEY,
+            }),
           );
         }
 

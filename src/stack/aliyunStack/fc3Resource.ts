@@ -890,7 +890,7 @@ export const createResource = async (
   const existingFunctionOnRetry = isTainted ? await client.fc3.getFunction(fn.name) : null;
   if (existingFunctionOnRetry) {
     logger.info(
-      `Function ${fn.name} already exists in provider (tainted recovery), skipping create and refreshing state`,
+      lang.__('TAINTED_RECOVERY_SKIP_CREATE', { resourceType: 'Function', resourceName: fn.name }),
     );
   }
 
@@ -958,7 +958,11 @@ export const createResource = async (
         throw new PartialResourceError(
           stateAfterDependents,
           new Error(
-            `Function ${fn.name} already exists in provider but is not owned by this stack (missing ${OWNERSHIP_TAG_KEY} tag). Refusing to adopt — resolve manually.`,
+            lang.__('RESOURCE_EXISTS_NOT_OWNED_ADOPT', {
+              resourceType: 'Function',
+              resourceName: fn.name,
+              tagKey: OWNERSHIP_TAG_KEY,
+            }),
           ),
         );
       }

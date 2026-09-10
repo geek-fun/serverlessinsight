@@ -123,19 +123,37 @@ export const en = {
   PLAN_WILL_CREATE: 'will be created',
   PLAN_WILL_UPDATE: 'will be updated in-place',
   PLAN_WILL_DESTROY: 'will be destroyed',
-  PLAN_WILL_REFRESH: 'will be refreshed',
+  PLAN_WILL_RECREATE: 'will be recreated',
   PLAN_NO_CHANGES: 'no changes',
   PLAN_HEADER: 'ServerlessInsight will perform the following actions:',
-  PLAN_LEGEND_CREATE: '  + create',
-  PLAN_LEGEND_UPDATE: '  ~ update in-place',
-  PLAN_LEGEND_DESTROY: '  - destroy',
   PLAN_SUMMARY:
-    'Plan: {{createCount}} to add, {{updateCount}} to change, {{deleteCount}} to destroy.',
+    'Plan: {{addCount}} add, {{modifyCount}} modify, {{removeCount}} remove, {{recreateCount}} recreate, {{unchangedCount}} unchanged.',
   PLAN_UNCHANGED_ATTRS: '({{count}} unchanged attributes hidden)',
   PLAN_COMPUTED_VALUE: '(known after deploy)',
+  PLAN_REVERT_ANNOTATION: '(changed in the cloud, will be restored to config)',
   PLAN_DRIFTED_MARKER: '(drifted — cloud changed outside of this config, will be reconciled)',
-  PLAN_DRIFTED_SUMMARY:
-    'Drift: {{driftedCount}} resource(s) changed in the cloud outside of this config.',
+  PLAN_LIVE_READ_FAILED:
+    'Failed to read live state for {{logicalId}}; planning a create instead: {{error}}',
+  PLAN_DRIFT_ROLE_MISSING: 'IAM role missing in the cloud',
+  PLAN_DRIFT_ROLE_POLICY: 'IAM role policy changed in the cloud',
+  PLAN_DRIFT_LOGSTORE: 'function log resources changed in the cloud',
+  PLAN_DRIFT_SG_RULES: 'security group rules changed in the cloud',
+  PLAN_DRIFT_NAS_MOUNT: 'NAS mount target deleted in the cloud',
+  PLAN_DRIFT_TLS_TOPIC: 'log topic configuration changed in the cloud',
+  PLAN_DRIFT_CLS_TOPIC: 'log topic configuration changed in the cloud',
+  PLAN_DRIFT_TRIGGERS: 'API triggers changed in the cloud',
+  RESOURCE_EXISTS_NOT_OWNED:
+    '{{resourceType}} {{resourceName}} already exists in provider but is not owned by this stack (missing {{tagKey}} tag). Refusing to create — resolve manually.',
+  RESOURCE_EXISTS_NOT_OWNED_ADOPT:
+    '{{resourceType}} {{resourceName}} already exists in provider but is not owned by this stack (missing {{tagKey}} tag). Refusing to adopt — resolve manually.',
+  TABLESTORE_EXISTS_UNVERIFIABLE:
+    'Table {{tableName}} already exists in provider but ownership cannot be verified (Tablestore does not support table-level tags). Refusing to adopt — resolve manually.',
+  TABLESTORE_EXISTS_UNVERIFIABLE_PROBE:
+    'Table {{tableName}} already exists in provider but ownership cannot be verified (no table-level tags). Refusing to adopt — resolve manually.',
+  TAINTED_RECOVERY_SKIP_CREATE:
+    '{{resourceType}} {{resourceName}} already exists in provider (tainted recovery), skipping create and refreshing state',
+  OWNERSHIP_VERIFYING:
+    '{{resourceType}} {{resourceName}} already exists in provider, verifying ownership tag before adopting',
 
   // TDSQL-C database messages
   TDSQL_CLUSTER_CREATION_INITIATED: 'TDSQL-C cluster creation initiated',

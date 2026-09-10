@@ -142,7 +142,11 @@ export const createEsResource = async (
       throw new PartialResourceError(
         stateAfterDependents,
         new Error(
-          `ES space ${config.SpaceName} already exists in provider but is not owned by this stack (missing ${OWNERSHIP_TAG_KEY} tag). Refusing to adopt — resolve manually.`,
+          lang.__('RESOURCE_EXISTS_NOT_OWNED_ADOPT', {
+            resourceType: 'ES space',
+            resourceName: config.SpaceName,
+            tagKey: OWNERSHIP_TAG_KEY,
+          }),
         ),
       );
     }
