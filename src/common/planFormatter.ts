@@ -178,14 +178,13 @@ const formatAttributeLines = (
   const alignedKey = (diff.key + ':').padEnd(keyWidth);
   // Issue #246: a field whose stored value already matched the config while
   // the cloud diverged is annotated at the line level — the resource block
-  // stays in place, only this line explains why it appears. Applies to every
-  // leaf action: a cloud-side key deletion shows up as add/remove too.
+  // stays in place, only this line explains why it appears. Only leaf lines
+  // reach suffix (parent cases early-return on children), so a revert key
+  // with nested children never carries the annotation.
   const suffix = (line: string): string =>
-    diff.children && diff.children.length > 0
-      ? line
-      : revertKeys?.has(diff.key)
-        ? `${line} ${colorize(lang.__('PLAN_REVERT_ANNOTATION'), 'CYAN', config.colorize)}`
-        : line;
+    revertKeys?.has(diff.key)
+      ? `${line} ${colorize(lang.__('PLAN_REVERT_ANNOTATION'), 'CYAN', config.colorize)}`
+      : line;
 
   switch (diff.action) {
     case 'add': {

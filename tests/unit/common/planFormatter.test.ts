@@ -260,6 +260,46 @@ describe('planFormatter', () => {
       expect(output).toContain('(changed in the cloud, will be restored to config)');
     });
 
+    it('expands non-simple revert keys into children without a parent annotation', () => {
+      const item: PlanItem = {
+        logicalId: 'functions.notify',
+        action: 'update',
+        resourceType: 'ALIYUN_FC3',
+        drifted: true,
+        revertKeys: ['vpcConfig'],
+        changes: {
+          before: { vpcConfig: { vSwitchIds: ['vsw-1'] } },
+          after: { vpcConfig: { vSwitchIds: ['vsw-2'] } },
+        },
+      };
+
+      const output = formatPlanItem(item, config);
+
+      expect(output).toContain('vpcConfig:');
+      expect(output).toContain('vSwitchIds: ["vsw-1"] -> ["vsw-2"]');
+      expect(output).not.toContain('(changed in the cloud, will be restored to config)');
+    });
+
+    it('does not annotate a revert key whose diff expands into children', () => {
+      const item: PlanItem = {
+        logicalId: 'functions.notify',
+        action: 'update',
+        resourceType: 'ALIYUN_FC3',
+        drifted: true,
+        revertKeys: ['environment'],
+        changes: {
+          before: { environment: { LOG_LEVEL: 'info' } },
+          after: { environment: { LOG_LEVEL: 'debug' } },
+        },
+      };
+
+      const output = formatPlanItem(item, config);
+
+      expect(output).toContain('environment:');
+      expect(output).toContain('LOG_LEVEL: "info" -> "debug"');
+      expect(output).not.toContain('(changed in the cloud, will be restored to config)');
+    });
+
     it('renders a recreate (create with recorded before) as a single -/+ block', () => {
       const item: PlanItem = {
         logicalId: 'databases.order-db',

@@ -802,6 +802,54 @@ describe('FC3 Planner', () => {
       });
     });
 
+    it('omits revertKeys when the config itself changed the drifted field', async () => {
+      // stored 256 -> desired 512 -> live 256: the difference is intent, not
+      // a cloud-side revert, so no field is annotated.
+      const fn = { ...testFunction, memory: 512 };
+      const state = buildState({ ...fn, memory: 256 }, [fc3Instance]);
+      mockFc3Operations.getFunction.mockResolvedValue({ ...remoteFunctionMatch, memorySize: 256 });
+
+      const plan = await generateFunctionPlan(mockContext, state, [fn]);
+
+      expect(plan.items[0]).toMatchObject({ action: 'update', drifted: true });
+      expect(plan.items[0].revertKeys).toBeUndefined();
+    });
+
+    it('falls back to an empty stored baseline when the state definition is missing', async () => {
+      const fn = testFunction;
+      const resource = buildState(fn, [fc3Instance]).resources['functions.test_fn'];
+      const state = setResource(initalState, 'functions.test_fn', {
+        ...resource,
+        definition: undefined as unknown as Record<string, unknown>,
+      });
+      mockFc3Operations.getFunction.mockResolvedValue({ ...remoteFunctionMatch, memorySize: 256 });
+
+      const plan = await generateFunctionPlan(mockContext, state, [fn]);
+
+      expect(plan.items[0]).toMatchObject({ action: 'update', drifted: true });
+      expect(plan.items[0].changes?.before).toBeDefined();
+    });
+
+    it('degrades to a drifted create when the live read fails with an Error', async () => {
+      const fn = testFunction;
+      const state = buildState(fn, [fc3Instance]);
+      mockFc3Operations.getFunction.mockRejectedValue(new Error('fc3 throttled'));
+
+      const plan = await generateFunctionPlan(mockContext, state, [fn]);
+
+      expect(plan.items[0]).toMatchObject({ action: 'create', drifted: true });
+    });
+
+    it('degrades to a drifted create when the live read rejects with a non-Error', async () => {
+      const fn = testFunction;
+      const state = buildState(fn, [fc3Instance]);
+      mockFc3Operations.getFunction.mockRejectedValue('fc3 api exploded');
+
+      const plan = await generateFunctionPlan(mockContext, state, [fn]);
+
+      expect(plan.items[0]).toMatchObject({ action: 'create', drifted: true });
+    });
+
     it('flags update+drifted when the live timeout/environment drifted', async () => {
       const fn = testFunction;
       const state = buildState(fn, [fc3Instance]);

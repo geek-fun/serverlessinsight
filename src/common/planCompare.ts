@@ -89,8 +89,10 @@ export const computeRevertKeys = (
   live: Record<string, unknown>,
   desired: Record<string, unknown>,
 ): string[] => {
-  const allKeys = new Set([...Object.keys(live), ...Object.keys(desired)]);
-  return [...allKeys]
+  // Only keys the live read actually carries can claim a cloud-side edit —
+  // a desired-declared key the mapper never emits (codeHash, iam, ...) is an
+  // unreadable dimension, not a revert.
+  return Object.keys(live)
     .filter((key) => {
       const storedMatchesDesired = attributesEqual({ [key]: stored[key] }, { [key]: desired[key] });
       const liveMatchesDesired = attributesEqual({ [key]: live[key] }, { [key]: desired[key] });
