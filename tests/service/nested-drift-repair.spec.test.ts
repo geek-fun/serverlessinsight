@@ -58,7 +58,10 @@ const stateFilePathFor = (app: string, service: string): string =>
 
 const NESTED_STATE_FILE = stateFilePathFor('nested-drift-app', 'nested-drift-service');
 const TENCENT_LOG_STATE_FILE = stateFilePathFor('insight-poc-app-log', 'insight-poc-tencent-log');
-const VOLC_LOG_STATE_FILE = stateFilePathFor('insight-volc-app', 'insight-volc');
+// Dedicated app/service identity: the state file must not be shared with other
+// volcengine suites — jest runs suites in parallel workers and a shared file
+// makes deploys observe each other's state mid-flight.
+const VOLC_LOG_STATE_FILE = stateFilePathFor('insight-volc-nested-app', 'insight-volc-nested');
 
 // Healthy live SG rule echo: the exact canonical tuples si's create writes
 // (issue #234 M2). Single ports appear in Aliyun wire format `n/n`.
@@ -375,7 +378,7 @@ describe('Nested drift repair deploy flows (issue #234 M2-M5)', () => {
 
   describe('volcengine veFaaS TLS topic ttl (M5)', () => {
     const deployOptions = {
-      location: path.join(__dirname, '../fixtures/serverless-insight-volcengine-log.yml'),
+      location: path.join(__dirname, '../fixtures/serverless-insight-volcengine-nested.yml'),
       stage: 'dev',
       autoApprove: true,
       region: 'cn-beijing',
@@ -385,7 +388,7 @@ describe('Nested drift repair deploy flows (issue #234 M2-M5)', () => {
 
     const healthyTopic = (): Record<string, unknown> => ({
       topicId: 'topic-123',
-      topicName: 'insight-volc-dev-insight_poc_fn-fn-logs',
+      topicName: 'insight-volc-nested-dev-insight_poc_fn-fn-logs',
       status: 'Running',
       ttl: 30,
     });
