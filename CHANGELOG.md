@@ -60,6 +60,35 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Localized the BUCKET_STORE backend error message to the i18n system
   ([#222](https://github.com/geek-fun/serverlessinsight/issues/222)).
 
+## [0.9.0] - 2026-09-11
+
+### Added
+
+- `si plan` — also available as the new `si diff` alias — now diffs against
+  **live cloud state**: every update renders a complete live→desired,
+  field-level comparison with per-field Add/Modify/Remove annotations, so
+  out-of-config drift and pure-drift updates are explained instead of shown as
+  empty ([#246](https://github.com/geek-fun/serverlessinsight/issues/246)).
+- Drifted resources report a probe-level reason for the drift, and a failed
+  live read now surfaces a warning and degrades to a drifted create instead of
+  silently passing.
+
+### Fixed
+
+- Aliyun: deploy container-only functions that define no code payload — the
+  code zip/OSS upload is skipped for container-image functions, and configs
+  that define both container and code (or neither) are rejected during
+  validation ([#239](https://github.com/geek-fun/serverlessinsight/issues/239)).
+- Aliyun: recreated NAS mount targets bind to the normalized access-group name
+  (`mnt-data`, not `/mnt/data`) and are tracked with their live domain after
+  repair, so the repair succeeds on real providers and later deploys/destroys
+  follow the target that actually exists
+  ([#234](https://github.com/geek-fun/serverlessinsight/issues/234)).
+
+### Documentation
+
+- Added ADR-004 describing the plugin architecture for resource providers.
+
 ## [0.7.2] - 2026-06-26
 
 ### Fixed
