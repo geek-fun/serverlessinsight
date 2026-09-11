@@ -76,6 +76,7 @@ const healthySecurityGroupRules = (): {
 });
 
 const MOUNT_TARGET_DOMAIN = 'fs-123.cn-hangzhou.nas.aliyuncs.com';
+const REPAIRED_MOUNT_TARGET_DOMAIN = 'fs-123.repaired.cn-hangzhou.nas.aliyuncs.com';
 
 describe('Nested drift repair deploy flows (issue #234 M2-M5)', () => {
   describe('aliyun FC3 security-group rules and NAS mount target (M2 + M4)', () => {
@@ -155,8 +156,12 @@ describe('Nested drift repair deploy flows (issue #234 M2-M5)', () => {
       await deploy(deployOptions);
       expect(mockClient.nas.createMountTarget).toHaveBeenCalledTimes(1);
 
-      // Console drift: the mount target was deleted out-of-band.
+      // Console drift: the mount target was deleted out-of-band. The provider
+      // assigns a NEW domain to the recreated target.
       mockClient.nas.listMountTargets.mockResolvedValue([]);
+      mockClient.nas.createMountTarget.mockResolvedValue({
+        mountTargetDomain: REPAIRED_MOUNT_TARGET_DOMAIN,
+      });
       mockClient.nas.createMountTarget.mockClear();
 
       await deploy(deployOptions);
@@ -168,15 +173,53 @@ describe('Nested drift repair deploy flows (issue #234 M2-M5)', () => {
         'vsw-123',
       );
 
-      // Healthy again → noop (no further repair writes).
+      // The function mounts the recreated target, not the stale recorded one.
+      expect(mockClient.fc3.updateFunctionConfiguration).toHaveBeenCalledWith(
+        expect.objectContaining({
+          nasConfig: {
+            userId: -1,
+            groupId: -1,
+            mountPoints: [
+              { serverAddr: `${REPAIRED_MOUNT_TARGET_DOMAIN}:/`, mountDir: '/mnt/data' },
+            ],
+          },
+        }),
+      );
+
+      // The recreated target replaces the stale instance in state, so later
+      // deploys and destroy track the target that actually exists.
+      const savedState = JSON.parse(await fs.readFile(NESTED_STATE_FILE, 'utf-8')) as {
+        stages: Record<
+          string,
+          { resources: Record<string, { instances: Array<{ type: string; id: string }> }> }
+        >;
+      };
+      const mountTargetInstance = savedState.stages.dev.resources[
+        'functions.nested_fn'
+      ].instances.find((i) => i.type === 'ALIYUN_NAS_MOUNT_TARGET');
+      expect(mountTargetInstance?.id).toBe(`fs-123/${REPAIRED_MOUNT_TARGET_DOMAIN}`);
+
+      // Healthy again (the repaired target exists) → no repair writes. The
+      // planner may still force a config push (unrelated probes flag drift in
+      // this mock environment), but it must converge on the repaired domain —
+      // never reverting to the stale deleted one.
       mockClient.nas.listMountTargets.mockResolvedValue([
-        { mountTargetDomain: MOUNT_TARGET_DOMAIN },
+        { mountTargetDomain: REPAIRED_MOUNT_TARGET_DOMAIN },
       ]);
       mockClient.nas.createMountTarget.mockClear();
+      mockClient.fc3.updateFunctionConfiguration.mockClear();
 
       await deploy(deployOptions);
 
       expect(mockClient.nas.createMountTarget).not.toHaveBeenCalled();
+      const healthyConfigCalls = mockClient.fc3.updateFunctionConfiguration.mock.calls as Array<
+        Array<{ nasConfig?: { mountPoints?: Array<{ serverAddr?: string }> } }>
+      >;
+      for (const [config] of healthyConfigCalls) {
+        expect(config.nasConfig?.mountPoints?.[0]?.serverAddr).toBe(
+          `${REPAIRED_MOUNT_TARGET_DOMAIN}:/`,
+        );
+      }
     });
   });
 

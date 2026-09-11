@@ -1,4 +1,8 @@
-import { buildConstrainedName, CONSTRAINT_NAME_LIMITS } from '../../../src/common/nameBuilder';
+import {
+  buildConstrainedName,
+  buildNasAccessGroupName,
+  CONSTRAINT_NAME_LIMITS,
+} from '../../../src/common/nameBuilder';
 import { buildAliyunApigwApiName, generateApiKey } from '../../../src/common/providerNames';
 
 describe('buildConstrainedName', () => {
@@ -115,5 +119,29 @@ describe('providerNames', () => {
       expect(name.length).toBeLessThanOrEqual(CONSTRAINT_NAME_LIMITS.ALIYUN_CREATE_API_NAME);
       expect(name).toMatch(/^[A-Za-z0-9_]+$/);
     });
+  });
+});
+
+describe('buildNasAccessGroupName', () => {
+  it('derives the same group name the create path always produced', () => {
+    expect(buildNasAccessGroupName('test-function', 'default', '/mnt/data')).toBe(
+      'test-function-default-nas-access-mnt-data',
+    );
+  });
+
+  it('flattens deeply nested mount paths and trims the leading dash', () => {
+    expect(buildNasAccessGroupName('fn', 'dev', '/mnt/nas/data/v2')).toBe(
+      'fn-dev-nas-access-mnt-nas-data-v2',
+    );
+  });
+
+  it('keeps an already-flat path verbatim', () => {
+    expect(buildNasAccessGroupName('fn', 'dev', 'mnt')).toBe('fn-dev-nas-access-mnt');
+  });
+
+  it('is stable for repeated derivations (create vs repair)', () => {
+    const first = buildNasAccessGroupName('svc-fn', 'prod', '/data');
+    const second = buildNasAccessGroupName('svc-fn', 'prod', '/data');
+    expect(first).toBe(second);
   });
 });

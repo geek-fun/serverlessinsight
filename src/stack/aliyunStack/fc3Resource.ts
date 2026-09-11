@@ -15,6 +15,7 @@ import {
   getContext,
   buildSid,
   buildFunctionRoleName,
+  buildNasAccessGroupName,
   attributesEqual,
   mapAuthType,
   mapAliyunAccess,
@@ -638,8 +639,7 @@ const createDependentResources = async (
       }> = [];
 
       for (const nasItem of fn.storage.nas) {
-        const mountPath = nasItem.mount_path.replace(/\//g, '-').replace(/^-/, '');
-        const accessGroupName = `${fn.name}-${context.stage}-nas-access-${mountPath}`;
+        const accessGroupName = buildNasAccessGroupName(fn.name, context.stage, nasItem.mount_path);
 
         logger.info(lang.__('CREATING_NAS_ACCESS_GROUP', { accessGroupName }));
         const accessGroup = await client.nas.createAccessGroup(accessGroupName);
@@ -1075,6 +1075,22 @@ export const readResource = async (context: Context, functionName: string) => {
   return await client.fc3.getFunction(functionName);
 };
 
+/** Rewrite mount-target instance ids recorded before the M4 repair recreated
+ * their targets, so the returned state (and later destroy) tracks the live
+ * domains. */
+const withRecreatedMountTargets = <T extends { type: string; id: string }>(
+  instances: Array<T>,
+  recreated: Record<string, string>,
+): Array<T> =>
+  instances.map((instance) => {
+    if (instance.type !== 'ALIYUN_NAS_MOUNT_TARGET') {
+      return instance;
+    }
+    const fileSystemId = instance.id.split('/')[0];
+    const liveDomain = recreated[fileSystemId];
+    return liveDomain ? { ...instance, id: `${fileSystemId}/${liveDomain}` } : instance;
+  });
+
 export const updateResource = async (
   context: Context,
   fn: FunctionDomain,
@@ -1111,6 +1127,11 @@ export const updateResource = async (
         }>;
       }
     | undefined;
+
+  // File system id -> live mount target domain, captured by the M4 nested
+  // repair below; applied to the function config and the returned state so
+  // both track the target that actually exists after recreation.
+  const recreatedMountTargets: Record<string, string> = {};
 
   // SLS dependent-instance types to drop from the resulting state when
   // function logging is disabled (true -> false).
@@ -1465,18 +1486,19 @@ export const updateResource = async (
           failingFsId = fsEntry.id;
           const liveTargets = await client.nas.listMountTargets(fsEntry.id);
           if (!liveTargets || liveTargets.length === 0) {
-            // Same derivation as the create path — a raw mount path would bind
-            // the recreated target to an access group that was never created.
-            const mountPath = (nasStorageItems[0]?.mount_path ?? '/mnt/nas')
-              .replace(/\//g, '-')
-              .replace(/^-/, '');
-            const accessGroupName = `${fn.name}-${context.stage}-nas-access-${mountPath}`;
-            await client.nas.createMountTarget(
+            const mountTarget = await client.nas.createMountTarget(
               fsEntry.id,
-              accessGroupName,
+              buildNasAccessGroupName(
+                fn.name,
+                context.stage,
+                nasStorageItems[0]?.mount_path ?? '/mnt/nas',
+              ),
               fn.network.vpc_id,
               fn.network.subnet_ids[0],
             );
+            if (mountTarget?.mountTargetDomain) {
+              recreatedMountTargets[fsEntry.id] = mountTarget.mountTargetDomain;
+            }
             logger.warn(lang.__('NESTED_MOUNT_TARGET_RECREATED', { fileSystemId: fsEntry.id }));
           }
         }
@@ -1489,10 +1511,16 @@ export const updateResource = async (
 
     if (mountTargetInstances.length > 0 && nasStorageItems.length > 0) {
       nasConfig = {
-        mountPoints: mountTargetInstances.map((mt, idx) => ({
-          serverAddr: `${mt.id.split('/')[1]}:/`,
-          mountDir: nasStorageItems[idx]?.mount_path ?? '/mnt/nas',
-        })),
+        mountPoints: mountTargetInstances.map((mt, idx) => {
+          const [fileSystemId, recordedDomain] = mt.id.split('/');
+          // Mount the target that now exists — a just-recreated domain replaces
+          // the stale one recorded in state.
+          const liveDomain = recreatedMountTargets[fileSystemId] ?? recordedDomain;
+          return {
+            serverAddr: `${liveDomain}:/`,
+            mountDir: nasStorageItems[idx]?.mount_path ?? '/mnt/nas',
+          };
+        }),
       };
     }
   }
@@ -1800,7 +1828,7 @@ export const updateResource = async (
     instances: [
       fcInstance,
       ...lifecycleInstances,
-      ...existingDependentInstances,
+      ...withRecreatedMountTargets(existingDependentInstances, recreatedMountTargets),
       ...newDependentInstancesMapped,
     ],
     lastUpdated: new Date().toISOString(),
