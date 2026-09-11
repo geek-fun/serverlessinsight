@@ -114,3 +114,16 @@ export const buildFunctionRoleName = (serviceName: string, stage: string, fnKey:
 
 /** Single source of truth for the execution policy name attached to a role. */
 export const buildRolePolicyName = (roleName: string): string => `${roleName}-policy`;
+
+/**
+ * Single source of truth for function-owned NAS access-group names. The raw
+ * mount path is flattened (slashes folded, leading dash trimmed) so every
+ * derivation site — create and update/repair alike — produces the identical
+ * group for the same config; deriving it inline is what caused the recreated
+ * target to bind to a never-created group (issue #234 M4).
+ *
+ * Deliberately not routed through buildConstrainedName: existing deployments
+ * must keep byte-identical names (stored-first on rename).
+ */
+export const buildNasAccessGroupName = (fnName: string, stage: string, mountPath: string): string =>
+  `${fnName}-${stage}-nas-access-${mountPath.replace(/\//g, '-').replace(/^-/, '')}`;
