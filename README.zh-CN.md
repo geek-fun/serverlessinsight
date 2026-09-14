@@ -19,7 +19,7 @@
   <img src="https://img.shields.io/badge/TypeScript-3178C6&logo=typescript&logoColor=white"/>
   <img src="https://img.shields.io/badge/Alibaba%20Cloud-FF6A00&logo=alibabacloud&logoColor=white"/>
   <img src="https://img.shields.io/badge/Tencent%20Cloud-0A9AED&logo=tencentqq&logoColor=white"/>
-  <img src="https://img.shields.io/badge/Huawei%20Cloud-FF0000&logo=hauwei&logoColor=white"/>
+  <img src="https://img.shields.io/badge/Huawei%20Cloud-FF0000?logo=huawei&logoColor=white"/>
   <img src="https://img.shields.io/badge/AWS-232F3E&logo=amazonwebservices&logoColor=white"/>
 </p>
 
@@ -65,7 +65,7 @@ si --version
 | **阿里云**       | ✅ FC3           | ✅ API 网关 | ✅ OSS      | ✅ RDS, OTS, ESS | 稳定   |
 | **腾讯云**       | ✅ SCF           | 🚧 即将推出 | ✅ COS      | ✅ TDSQL-C       | 稳定   |
 | **火山引擎**     | ✅ veFaaS        | ✅ API 网关 | ✅ TOS      | —                | 稳定   |
-| **华为云**       | ✅ FunctionGraph | 🚧 即将推出 | 🚧 即将推出 | 🚧 即将推出      | 测试版 |
+| **华为云**       | 🚧 即将推出      | 🚧 即将推出 | 🚧 即将推出 | 🚧 即将推出      | 计划中 |
 | **AWS**          | 🔜 计划中        | 🔜 计划中   | 🔜 计划中   | 🔜 计划中        | 计划中 |
 | **Azure**        | 🔜 计划中        | 🔜 计划中   | 🔜 计划中   | 🔜 计划中        | 计划中 |
 | **Google Cloud** | 🔜 计划中        | 🔜 计划中   | 🔜 计划中   | 🔜 计划中        | 计划中 |
