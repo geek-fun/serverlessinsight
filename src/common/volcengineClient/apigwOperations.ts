@@ -208,7 +208,7 @@ type ApigwSdkClient = Service;
             const reason = info.message
               ? `: ${info.message}`
               : ` (status ${info.status}) — check the Volcengine console for the gateway instance`;
-            throw new Error(`API Gateway ${gatewayId} creation failed${reason}`);
+            throw new Error(lang.__('VOLC_APIGW_CREATE_FAILED', { gatewayId, reason }));
           }
           return info;
         },
@@ -227,7 +227,7 @@ type ApigwSdkClient = Service;
         },
       });
       if (!gateway) {
-        throw new Error(`API Gateway ${gatewayId} disappeared while waiting for Running`);
+        throw new Error(lang.__('VOLC_APIGW_DISAPPEARED', { gatewayId }));
       }
       return gateway;
     },

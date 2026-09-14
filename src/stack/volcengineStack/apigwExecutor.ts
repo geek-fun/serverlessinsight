@@ -29,7 +29,7 @@ const executeSingleItem = async (
     case 'create': {
       const event = eventsMap.get(item.logicalId);
       if (!event) {
-        throw new Error(`Event not found for logical ID: ${item.logicalId}`);
+        throw new Error(lang.__('RESOURCE_EVENT_NOT_FOUND', { logicalId: item.logicalId }));
       }
       logger.info(
         lang.__('CREATING_RESOURCE', { resourceType: 'API Gateway resources', name: event.name }),
@@ -44,7 +44,7 @@ const executeSingleItem = async (
     case 'update': {
       const event = eventsMap.get(item.logicalId);
       if (!event) {
-        throw new Error(`Event not found for logical ID: ${item.logicalId}`);
+        throw new Error(lang.__('RESOURCE_EVENT_NOT_FOUND', { logicalId: item.logicalId }));
       }
       logger.info(
         lang.__('UPDATING_RESOURCE', { resourceType: 'API Gateway resources', name: event.name }),

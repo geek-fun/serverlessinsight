@@ -62,7 +62,7 @@ const executeSingleItem = async (
     case 'create': {
       const bucket = bucketsMap.get(item.logicalId);
       if (!bucket) {
-        throw new Error(`Bucket not found for logical ID: ${item.logicalId}`);
+        throw new Error(lang.__('RESOURCE_BUCKET_NOT_FOUND', { logicalId: item.logicalId }));
       }
       return executeCreateAction(context, bucket, currentState);
     }
@@ -70,7 +70,7 @@ const executeSingleItem = async (
     case 'update': {
       const bucket = bucketsMap.get(item.logicalId);
       if (!bucket) {
-        throw new Error(`Bucket not found for logical ID: ${item.logicalId}`);
+        throw new Error(lang.__('RESOURCE_BUCKET_NOT_FOUND', { logicalId: item.logicalId }));
       }
       return executeUpdateAction(context, bucket, currentState);
     }

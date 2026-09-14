@@ -679,7 +679,7 @@ const parseReplicationRules = (xml: string): BucketReplicationRule[] => {
       return { domain, cname: ossEndpoint, dnsRecordId: recordId, bucketCnameBound };
     } catch (error) {
       logger.warn(lang.__('OSS_DNS_DOMAIN_NOT_MANAGED', { domain, cname: ossEndpoint }));
-      logger.debug(`DNS error: ${error}`);
+      logger.debug(lang.__('DNS_OPERATION_ERROR', { error: String(error) }));
       return { domain, cname: ossEndpoint, bucketCnameBound };
     }
   };

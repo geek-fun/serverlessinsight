@@ -1,6 +1,7 @@
 import TableStore from 'tablestore';
 import { logger } from '../logger';
 import { pollUntil, PollingTimeoutError } from '../polling';
+import { lang } from '../../lang';
 
 export enum TableStoreInstanceStatus {
   RUNNING = 'RUNNING',
@@ -106,15 +107,19 @@ const waitForTableReady = async (
       onProgress: (table, attempt, maxAttempts) => {
         if (!table) {
           logger.info(
-            `Waiting for table ${tableName} to be ready... (attempt ${attempt}/${maxAttempts})`,
+            lang.__('OTS_WAITING_TABLE', {
+              tableName,
+              attempt: String(attempt),
+              maxAttempts: String(maxAttempts),
+            }),
           );
         }
       },
     });
-    logger.info(`Table ${tableName} is ready`);
+    logger.info(lang.__('OTS_TABLE_READY', { tableName }));
   } catch (e) {
     if (e instanceof PollingTimeoutError) {
-      throw new Error(`Timeout waiting for table ${tableName} to be ready`, { cause: e });
+      throw new Error(lang.__('OTS_TABLE_TIMEOUT', { tableName }), { cause: e });
     }
     throw e;
   }
@@ -158,10 +163,15 @@ export const createTablestoreOperations = (
       return new Promise((resolve, reject) => {
         client.createTable(params, (err: Error | null) => {
           if (err) {
-            logger.error(`Failed to create table ${config.tableName}: ${err.message}`);
+            logger.error(
+              lang.__('OTS_CREATE_TABLE_FAILED', {
+                tableName: config.tableName,
+                error: err.message,
+              }),
+            );
             reject(err);
           } else {
-            logger.info(`Successfully created table ${config.tableName}`);
+            logger.info(lang.__('OTS_TABLE_CREATED', { tableName: config.tableName }));
             resolve();
           }
         });
@@ -183,7 +193,9 @@ export const createTablestoreOperations = (
             ) {
               resolve(null);
             } else {
-              logger.error(`Failed to describe table ${tableName}: ${errorMessage}`);
+              logger.error(
+                lang.__('OTS_DESCRIBE_TABLE_FAILED', { tableName, error: errorMessage }),
+              );
               reject(err);
             }
           } else {
@@ -268,10 +280,15 @@ export const createTablestoreOperations = (
       return new Promise((resolve, reject) => {
         client.updateTable(params, (err: Error | null) => {
           if (err) {
-            logger.error(`Failed to update table ${config.tableName}: ${err.message}`);
+            logger.error(
+              lang.__('OTS_UPDATE_TABLE_FAILED', {
+                tableName: config.tableName,
+                error: err.message,
+              }),
+            );
             reject(err);
           } else {
-            logger.info(`Successfully updated table ${config.tableName}`);
+            logger.info(lang.__('OTS_TABLE_UPDATED', { tableName: config.tableName }));
             resolve();
           }
         });
@@ -292,14 +309,14 @@ export const createTablestoreOperations = (
               errorMessage.includes('OTSObjectNotExist') ||
               errorMessage.includes('does not exist')
             ) {
-              logger.info(`Table ${tableName} already deleted or does not exist`);
+              logger.info(lang.__('OTS_TABLE_ALREADY_DELETED', { tableName }));
               resolve();
             } else {
-              logger.error(`Failed to delete table ${tableName}: ${errorMessage}`);
+              logger.error(lang.__('OTS_DELETE_TABLE_FAILED', { tableName, error: errorMessage }));
               reject(err);
             }
           } else {
-            logger.info(`Successfully deleted table ${tableName}`);
+            logger.info(lang.__('OTS_TABLE_DELETED', { tableName }));
             resolve();
           }
         });

@@ -5,6 +5,7 @@ import { getCredentials } from './credentials';
 import { getIamInfo } from './imsClient';
 import { ProviderEnum } from './providerEnum';
 import { createRefreshCache } from './refreshCache';
+import { lang } from '../lang';
 
 let context: Context | undefined;
 
@@ -56,7 +57,7 @@ export const getIacLocation = (location?: string): string => {
   const attemptedList = Array.from(attempted)
     .map((n) => `'${n}'`)
     .join(', ');
-  throw new Error(`No IaC file found. Tried: ${attemptedList}`);
+  throw new Error(lang.__('CONTEXT_NO_IAC_FILE', { attemptedList }));
 };
 
 export const setContext = async (
@@ -85,9 +86,7 @@ export const setContext = async (
     'cn-hangzhou';
 
   if (process.env.ROS_REGION_ID && !process.env.SI_REGION) {
-    console.warn(
-      'Warning: ROS_REGION_ID environment variable is deprecated. Please use SI_REGION instead.',
-    );
+    console.warn(lang.__('CONTEXT_REGION_DEPRECATED'));
   }
 
   const provider = (config.provider ??
@@ -134,14 +133,14 @@ export const setContext = async (
 
 export const getContext = (): Context => {
   if (!context) {
-    throw new Error('No context found');
+    throw new Error(lang.__('CONTEXT_NOT_FOUND'));
   }
   return context;
 };
 
 export const setIac = (iac: ServerlessIac): void => {
   if (!context) {
-    throw new Error('Context must be set before setting IAC');
+    throw new Error(lang.__('CONTEXT_IAC_REQUIRES_CONTEXT'));
   }
   context.iac = iac;
 };

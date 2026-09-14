@@ -1,5 +1,6 @@
 import { DatabaseDomain, DatabaseEnum, DatabaseVersionEnum, ResourceAttributes } from '../../types';
 import { EsConfig, EsInfo } from '../../common/aliyunClient/esOperations';
+import { lang } from '../../lang';
 
 // Map database versions to ES versions
 const esVersionMap = new Map<
@@ -32,7 +33,9 @@ export const databaseToEsConfig = (database: DatabaseDomain): EsConfig => {
   const engineConfig = esVersionMap.get(`${database.type}-${database.version}`);
 
   if (!engineConfig) {
-    throw new Error(`Unsupported ES database type/version: ${database.type}-${database.version}`);
+    throw new Error(
+      lang.__('ES_DB_TYPE_VERSION_UNSUPPORTED', { type: database.type, version: database.version }),
+    );
   }
 
   const { version, category } = engineConfig;

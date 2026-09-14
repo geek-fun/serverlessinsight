@@ -344,7 +344,7 @@ export const createBucketResource = async (
 
     const bucketInfo = await client.cos.getBucket(bucket.name, context.region);
     if (!bucketInfo) {
-      throw new Error(`Failed to refresh state for bucket: ${bucket.name}`);
+      throw new Error(lang.__('REFRESH_STATE_BUCKET', { name: bucket.name }));
     }
 
     // PutBucket succeeding does NOT prove the bucket is ours: a pre-existing
@@ -493,7 +493,7 @@ export const updateBucketResource = async (
 
   const bucketInfo = await client.cos.getBucket(bucket.name, context.region);
   if (!bucketInfo) {
-    throw new Error(`Failed to refresh state for bucket: ${bucket.name}`);
+    throw new Error(lang.__('REFRESH_STATE_BUCKET', { name: bucket.name }));
   }
 
   const definition = extractCosBucketDefinition(config);

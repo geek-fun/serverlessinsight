@@ -3,6 +3,7 @@ import * as sls from '@alicloud/sls20201230';
 import { SlsProjectInfo, SlsLogstoreInfo, SlsIndexInfo } from './types';
 import { logger } from '../logger';
 import { pollUntil, PollingTimeoutError } from '../polling';
+import { lang } from '../../lang';
 
 type SlsSdkClient = SlsClient;
 
@@ -33,9 +34,7 @@ const waitForSlsProject = async (
       onProgress: (project) => {
         if (project) {
           logger.info(
-            `Waiting for SLS project ${projectName} to be ready (current status: ${
-              project.status ?? 'unknown'
-            })`,
+            lang.__('SLS_WAITING_PROJECT', { projectName, status: project.status ?? 'unknown' }),
           );
         }
       },
@@ -71,7 +70,7 @@ const waitForSlsLogstore = async (
       maxAttempts: 30,
       onProgress: (logstore) => {
         if (logstore) {
-          logger.info(`Waiting for SLS logstore ${projectName}/${logstoreName} to be ready...`);
+          logger.info(lang.__('SLS_WAITING_LOGSTORE', { projectName, logstoreName }));
         }
       },
     });

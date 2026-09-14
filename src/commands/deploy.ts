@@ -19,10 +19,7 @@ import { lang } from '../lang';
 
 const askConfirmation = async (): Promise<boolean> => {
   if (!process.stdin.isTTY) {
-    throw new Error(
-      'Interactive confirmation required but stdin is not a TTY. ' +
-        'Use --auto-approve (-y) to skip confirmation in non-interactive environments.',
-    );
+    throw new Error(lang.__('CONFIRMATION_STDIN_NOT_TTY'));
   }
 
   const rl = readline.createInterface({

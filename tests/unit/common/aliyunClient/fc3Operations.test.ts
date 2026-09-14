@@ -663,7 +663,7 @@ describe('fc3Operations', () => {
       mockGetFunction.mockResolvedValue(containerBody('Failed'));
 
       await expect(operations.waitForFunctionActive('test-function')).rejects.toThrow(
-        'is in Failed state',
+        'FC3_FUNCTION_FAILED_STATE',
       );
     });
   });

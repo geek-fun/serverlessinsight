@@ -1,5 +1,6 @@
 import { DatabaseDomain, DatabaseEnum, DatabaseVersionEnum, ResourceAttributes } from '../../types';
 import { RdsConfig, RdsInfo } from '../../common/aliyunClient/rdsOperations';
+import { lang } from '../../lang';
 
 // Map database versions to RDS engine versions
 const rdsEngineMap = new Map<
@@ -165,7 +166,12 @@ export const databaseToRdsConfig = (database: DatabaseDomain): RdsConfig => {
   const engineConfig = rdsEngineMap.get(`${database.type}-${database.version}`);
 
   if (!engineConfig) {
-    throw new Error(`Unsupported RDS database type/version: ${database.type}-${database.version}`);
+    throw new Error(
+      lang.__('RDS_DB_TYPE_VERSION_UNSUPPORTED', {
+        type: database.type,
+        version: database.version,
+      }),
+    );
   }
 
   const { engine, version, category, dbInstanceClass, quota, storage } = engineConfig;

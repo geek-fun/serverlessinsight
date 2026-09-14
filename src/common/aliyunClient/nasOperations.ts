@@ -8,6 +8,7 @@ import {
   NasAccessGroupInfo,
   NasAccessRuleInfo,
 } from './types';
+import { lang } from '../../lang';
 
 type NasSdkClient = NasClient;
 
@@ -119,7 +120,7 @@ export const createNasOperations = (nasClient: NasSdkClient) => {
       const fileSystemId = response.body?.fileSystemId;
 
       if (!fileSystemId) {
-        throw new Error('Failed to create NAS file system');
+        throw new Error(lang.__('NAS_CREATE_FS_FAILED'));
       }
 
       // Wait for file system to be ready
@@ -203,7 +204,7 @@ export const createNasOperations = (nasClient: NasSdkClient) => {
       const mountTargetDomain = response.body?.mountTargetDomain;
 
       if (!mountTargetDomain) {
-        throw new Error('Failed to create NAS mount target');
+        throw new Error(lang.__('NAS_CREATE_MOUNT_TARGET_FAILED'));
       }
 
       // Wait for mount target to be ready
@@ -242,7 +243,7 @@ export const createNasOperations = (nasClient: NasSdkClient) => {
             status: mt.status as string | undefined,
           }));
       } catch (error: unknown) {
-        logger.debug(`Failed to list mount targets: ${String(error)}`);
+        logger.debug(lang.__('NAS_LIST_MOUNT_TARGETS_FAILED', { error: String(error) }));
         return [];
       }
     },

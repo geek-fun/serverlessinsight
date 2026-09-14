@@ -148,7 +148,7 @@ export const createResource = async (
       // fail loudly rather than be silently taken over.
       const probe = await client.tos.getBucket(bucket.name);
       if (!probe) {
-        throw new Error(`Failed to refresh state for bucket: ${bucket.name}`);
+        throw new Error(lang.__('REFRESH_STATE_BUCKET', { name: bucket.name }));
       }
       if (!isOwnedByStack(context, logicalId, probe.Tags)) {
         throw new PartialResourceError(

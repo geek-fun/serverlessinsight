@@ -440,9 +440,7 @@ const deleteDependentResources = async (
       case 'VOLCENGINE_IAM_ROLE': {
         const attrs = instance.attributes as Record<string, unknown> | undefined;
         if (attrs?.external === true) {
-          logger.info(
-            `Skipping deletion of external IAM role: ${instance.id} (managed externally)`,
-          );
+          logger.info(lang.__('VOLC_EXTERNAL_ROLE_SKIP_DELETE', { roleName: instance.id }));
           break;
         }
         logger.info(lang.__('DELETING_IAM_ROLE', { id: instance.id }));
@@ -574,7 +572,11 @@ export const createResource = async (
       const probe = await client.vefaas.getFunction(fn.name);
       if (probe && isOwnedByStack(context, logicalId, probe.Tags)) {
         logger.info(
-          `Function ${fn.name} exists and carries ownership tag (${OWNERSHIP_TAG_KEY}), adopting idempotently`,
+          lang.__('RESOURCE_OWNERSHIP_TAG_ADOPT', {
+            resourceType: 'Function',
+            name: fn.name,
+            tag: OWNERSHIP_TAG_KEY,
+          }),
         );
       } else {
         throw new PartialResourceError(

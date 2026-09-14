@@ -175,7 +175,7 @@ describe('tosExecutor', () => {
       const result = await executeBucketPlan(mockContext, plan, [], mockState);
 
       expect(result.partialFailure).toBeDefined();
-      expect(result.partialFailure?.error.message).toContain('Bucket not found');
+      expect(result.partialFailure?.error.message).toContain('RESOURCE_BUCKET_NOT_FOUND');
     });
 
     it('should handle partial failure', async () => {
@@ -231,7 +231,7 @@ describe('tosExecutor', () => {
       const result = await executeBucketPlan(mockContext, plan, [], mockState);
 
       expect(result.partialFailure).toBeDefined();
-      expect(result.partialFailure?.error.message).toContain('Bucket not found');
+      expect(result.partialFailure?.error.message).toContain('RESOURCE_BUCKET_NOT_FOUND');
     });
 
     it('should skip delete when state not found', async () => {

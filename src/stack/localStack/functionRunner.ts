@@ -1,6 +1,7 @@
 import { existsSync } from 'node:fs';
 import path, { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
+import { lang } from '../../lang';
 import type { MessagePort } from 'node:worker_threads';
 import { MessageChannel, Worker, isMainThread, parentPort, workerData } from 'node:worker_threads';
 import { FunctionOptions } from '../../types/localStack';
@@ -59,7 +60,7 @@ const getHandlerFunction = (
   const handlerFn = handlerModule[handlerMethod] as HandlerFunction;
 
   if (typeof handlerFn !== 'function') {
-    throw new Error(`Handler "${handlerMethod}" not found or is not a function in ${handlerPath}`);
+    throw new Error(lang.__('LOCAL_HANDLER_NOT_FOUND', { handlerMethod, handlerPath }));
   }
 
   return handlerFn;
@@ -90,7 +91,9 @@ const createTimeoutHandler = (
   timeoutMs: number,
 ): { timeoutId: NodeJS.Timeout; clearTimer: () => void } => {
   const timeoutId = setTimeout(() => {
-    port.postMessage(new Error(`Function execution timed out after ${timeoutMs}ms`));
+    port.postMessage(
+      new Error(lang.__('LOCAL_EXECUTION_TIMEOUT', { timeoutMs: String(timeoutMs) })),
+    );
     port.close();
   }, timeoutMs);
 
@@ -237,7 +240,7 @@ const createMessageHandler = (
   const handleClose = () => {
     if (resolved) return;
     resolved = true;
-    reject(new Error('Port closed before receiving response'));
+    reject(new Error(lang.__('LOCAL_PORT_CLOSED')));
   };
 
   port.on('message', handleMessage).on('error', handleError).on('close', handleClose);
@@ -283,7 +286,7 @@ export const runFunction = (funOptions: FunctionOptions, env: Record<string, str
       const handleWorkerExit = (code: number) => {
         if (code !== 0) {
           cleanup();
-          reject(new Error(`Worker stopped with exit code ${code}`));
+          reject(new Error(lang.__('LOCAL_WORKER_EXITED', { code: String(code) })));
         }
       };
 

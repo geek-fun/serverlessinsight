@@ -178,7 +178,7 @@ describe('unit test for deploy command', () => {
     Object.defineProperty(process.stdin, 'isTTY', { value: false, configurable: true });
 
     await expect(deploy({ ...baseOptions, autoApprove: false })).rejects.toThrow(
-      'Interactive confirmation required',
+      'CONFIRMATION_STDIN_NOT_TTY',
     );
 
     Object.defineProperty(process.stdin, 'isTTY', { value: originalIsTTY, configurable: true });

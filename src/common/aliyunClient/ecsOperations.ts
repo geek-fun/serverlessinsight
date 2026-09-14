@@ -3,6 +3,7 @@ import * as ecs from '@alicloud/ecs20140526';
 import { Context } from '../../types';
 import { SecurityGroupInfo, SecurityGroupRule } from './types';
 import { logger } from '../logger';
+import { lang } from '../../lang';
 
 type EcsSdkClient = EcsClient;
 
@@ -42,7 +43,7 @@ const normalizeProtocol = (protocol: string): string => protocol.trim().toUpperC
   const [rawProtocol, second, third, ...rest] = rule.split(':');
 
   if (rest.length > 0 || !rawProtocol || !second || !third) {
-    throw new Error(`Invalid security group rule format: ${rule}`);
+    throw new Error(lang.__('SG_INVALID_RULE_FORMAT', { rule }));
   }
 
   const protocol = normalizeProtocol(rawProtocol);
@@ -50,7 +51,7 @@ const normalizeProtocol = (protocol: string): string => protocol.trim().toUpperC
   const thirdTrimmed = third.trim();
 
   if (!secondTrimmed || !thirdTrimmed) {
-    throw new Error(`Invalid security group rule format: ${rule}`);
+    throw new Error(lang.__('SG_INVALID_RULE_FORMAT', { rule }));
   }
 
   return { protocol, cidr: secondTrimmed, portRange: thirdTrimmed };
@@ -97,7 +98,7 @@ const isDuplicateSecurityGroupRuleError = (error: unknown): boolean => {
       const securityGroupId = response.body?.securityGroupId;
 
       if (!securityGroupId) {
-        throw new Error('Failed to create security group');
+        throw new Error(lang.__('SG_CREATE_FAILED'));
       }
 
       // Add ingress rules
@@ -106,7 +107,7 @@ const isDuplicateSecurityGroupRuleError = (error: unknown): boolean => {
         try {
           parsedRule = parseSecurityGroupRule(rule);
         } catch (error) {
-          logger.warn(`Skipping invalid ingress rule: ${rule}. ${String(error)}`);
+          logger.warn(lang.__('SG_SKIP_INVALID_INGRESS', { rule, error: String(error) }));
           continue;
         }
 
@@ -121,10 +122,10 @@ const isDuplicateSecurityGroupRuleError = (error: unknown): boolean => {
           await ecsClient.authorizeSecurityGroup(ingressRequest);
         } catch (error) {
           if (isDuplicateSecurityGroupRuleError(error)) {
-            logger.debug(`Ingress rule already exists, skipping: ${rule}`);
+            logger.debug(lang.__('SG_INGRESS_ALREADY_EXISTS', { rule }));
             continue;
           }
-          logger.warn(`Failed to add ingress rule: ${rule}. ${String(error)}`);
+          logger.warn(lang.__('SG_ADD_INGRESS_FAILED', { rule, error: String(error) }));
         }
       }
 
@@ -134,7 +135,7 @@ const isDuplicateSecurityGroupRuleError = (error: unknown): boolean => {
         try {
           parsedRule = parseSecurityGroupRule(rule);
         } catch (error) {
-          logger.warn(`Skipping invalid egress rule: ${rule}. ${String(error)}`);
+          logger.warn(lang.__('SG_SKIP_INVALID_EGRESS', { rule, error: String(error) }));
           continue;
         }
 
@@ -149,10 +150,10 @@ const isDuplicateSecurityGroupRuleError = (error: unknown): boolean => {
           await ecsClient.authorizeSecurityGroupEgress(egressRequest);
         } catch (error) {
           if (isDuplicateSecurityGroupRuleError(error)) {
-            logger.debug(`Egress rule already exists, skipping: ${rule}`);
+            logger.debug(lang.__('SG_EGRESS_ALREADY_EXISTS', { rule }));
             continue;
           }
-          logger.warn(`Failed to add egress rule: ${rule}. ${String(error)}`);
+          logger.warn(lang.__('SG_ADD_EGRESS_FAILED', { rule, error: String(error) }));
         }
       }
 
@@ -199,7 +200,11 @@ const isDuplicateSecurityGroupRuleError = (error: unknown): boolean => {
             continue;
           }
           logger.warn(
-            `Failed to authorize ${direction} rule for ${securityGroupId}: ${String(error)}`,
+            lang.__('SG_AUTHORIZE_RULE_FAILED', {
+              ruleType: direction,
+              target: securityGroupId,
+              error: String(error),
+            }),
           );
         }
       }
@@ -233,7 +238,11 @@ const isDuplicateSecurityGroupRuleError = (error: unknown): boolean => {
           }
         } catch (error) {
           logger.warn(
-            `Failed to revoke ${direction} rule for ${securityGroupId}: ${String(error)}`,
+            lang.__('SG_REVOKE_RULE_FAILED', {
+              ruleType: direction,
+              target: securityGroupId,
+              error: String(error),
+            }),
           );
         }
       }
@@ -268,7 +277,7 @@ const isDuplicateSecurityGroupRuleError = (error: unknown): boolean => {
           }
         }
       } catch (error) {
-        logger.debug(`Failed to get ingress rules: ${String(error)}`);
+        logger.debug(lang.__('SG_GET_INGRESS_FAILED', { error: String(error) }));
       }
 
       try {
@@ -294,7 +303,7 @@ const isDuplicateSecurityGroupRuleError = (error: unknown): boolean => {
           }
         }
       } catch (error) {
-        logger.debug(`Failed to get egress rules: ${String(error)}`);
+        logger.debug(lang.__('SG_GET_EGRESS_FAILED', { error: String(error) }));
       }
 
       return { ingressRules, egressRules };

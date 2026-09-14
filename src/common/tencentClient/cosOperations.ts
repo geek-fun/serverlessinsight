@@ -233,7 +233,7 @@ const createCosOperations = (cosClient: CosSdkClient, region: string, dnsOps?: D
       return { domain, cname: cosEndpoint, dnsRecordId: recordId, bucketDomainBound };
     } catch (error) {
       logger.warn(lang.__('COS_DNS_DOMAIN_NOT_MANAGED', { domain, cname: cosEndpoint }));
-      logger.debug(`DNS error: ${error}`);
+      logger.debug(lang.__('DNS_OPERATION_ERROR', { error: String(error) }));
       return { domain, cname: cosEndpoint, bucketDomainBound };
     }
   };

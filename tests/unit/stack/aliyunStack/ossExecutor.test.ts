@@ -308,7 +308,7 @@ describe('OssExecutor', () => {
       const result = await executeBucketPlan(mockContext, plan, [], initialState);
 
       expect(result.partialFailure).toBeDefined();
-      expect(result.partialFailure?.error.message).toContain('Bucket not found');
+      expect(result.partialFailure?.error.message).toContain('RESOURCE_BUCKET_NOT_FOUND');
     });
 
     it('should handle missing bucket in map for update', async () => {
@@ -325,7 +325,7 @@ describe('OssExecutor', () => {
       const result = await executeBucketPlan(mockContext, plan, [], initialState);
 
       expect(result.partialFailure).toBeDefined();
-      expect(result.partialFailure?.error.message).toContain('Bucket not found');
+      expect(result.partialFailure?.error.message).toContain('RESOURCE_BUCKET_NOT_FOUND');
     });
 
     it('should handle missing state for delete', async () => {

@@ -4,6 +4,7 @@ import fs from 'node:fs';
 import { Fc3FunctionConfig, Fc3FunctionInfo } from './types';
 import { pollUntil, PollingTimeoutError } from '../polling';
 import { SCF_STATUS_POLL_INTERVAL_MS, SCF_STATUS_POLL_MAX_ATTEMPTS } from '../constants';
+import { lang } from '../../lang';
 
 type Fc3SdkClient = Fc3Client;
 
@@ -42,9 +43,10 @@ const buildCodeLocation = (
           isDone: (info) => {
             if (info?.state === 'Failed') {
               throw new Error(
-                `FC3 function ${functionName} is in Failed state (reason: ${
-                  info.stateReason ?? 'unknown'
-                })`,
+                lang.__('FC3_FUNCTION_FAILED_STATE', {
+                  functionName,
+                  reason: info.stateReason ?? 'unknown',
+                }),
               );
             }
             // Built-in runtimes (zip code) never reach Active (issue #219):
@@ -61,7 +63,7 @@ const buildCodeLocation = (
         });
       } catch (e) {
         if (e instanceof PollingTimeoutError) {
-          throw new Error(`Timed out waiting for FC3 function ${functionName} to become Active`, {
+          throw new Error(lang.__('FC3_TIMEOUT_ACTIVE', { functionName }), {
             cause: e,
           });
         }
@@ -80,7 +82,7 @@ const buildCodeLocation = (
         });
       } catch (e) {
         if (e instanceof PollingTimeoutError) {
-          throw new Error(`Timed out waiting for FC3 function ${functionName} to be deleted`, {
+          throw new Error(lang.__('FC3_TIMEOUT_DELETED', { functionName }), {
             cause: e,
           });
         }

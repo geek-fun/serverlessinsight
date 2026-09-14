@@ -308,7 +308,11 @@ const ensureOssCodeUpload = async (
 
   const bucketName = `${SI_BOOTSTRAP_BUCKET_PREFIX}-${region}`;
   logger.info(
-    `Code package ${path.basename(codePath)} is ${(fileSize / (1024 * 1024)).toFixed(1)}MB, uploading to OSS bucket ${bucketName}`,
+    lang.__('FC3_UPLOADING_CODE', {
+      zipPath: path.basename(codePath),
+      size: (fileSize / (1024 * 1024)).toFixed(1),
+      bucketName,
+    }),
   );
 
   const existingBucket = await client.oss.getBucket(bucketName);
@@ -760,9 +764,7 @@ const deleteDependentResources = async (
       case 'ALIYUN_FC3_HTTP_TRIGGER':
         // HTTP trigger deletion requires functionName which is not available here.
         // It is handled directly in deleteResource before calling this function.
-        logger.warn(
-          `HTTP trigger '${instance.id}' should be deleted before reaching dependent resource cleanup`,
-        );
+        logger.warn(lang.__('FC3_HTTP_TRIGGER_DEPENDENT_CLEANUP', { triggerName: instance.id }));
         break;
       case 'ALIYUN_FC3_CUSTOM_DOMAIN':
         logger.info(lang.__('DELETING_CUSTOM_DOMAIN', { domainName: instance.id }));
@@ -904,7 +906,10 @@ export const createResource = async (
   } catch (error) {
     if (isRecoverableCreateError(error)) {
       logger.warn(
-        `Create function returned recoverable error for ${fn.name}, reconciling with provider state: ${String(error)}`,
+        lang.__('FC3_CREATE_RECOVERABLE_RECONCILE', {
+          functionName: fn.name,
+          error: String(error),
+        }),
       );
 
       const functionAfterError = await client.fc3.getFunction(fn.name);
@@ -913,13 +918,14 @@ export const createResource = async (
           throw new PartialResourceError(
             stateAfterDependents,
             new Error(
-              `FC3 function ${fn.name} is in Failed state after create (reason: ${functionAfterError.stateReason ?? 'unknown'})`,
+              lang.__('FC3_FAILED_AFTER_CREATE', {
+                functionName: fn.name,
+                reason: functionAfterError.stateReason ?? 'unknown',
+              }),
             ),
           );
         }
-        logger.info(
-          `Function ${fn.name} found after create error reconciliation, continuing deployment flow`,
-        );
+        logger.info(lang.__('FC3_FOUND_AFTER_CREATE_RECONCILE', { functionName: fn.name }));
       } else {
         await delay(RECOVERY_GET_FUNCTION_DELAY_MS);
         const functionAfterDelay = await client.fc3.getFunction(fn.name);
@@ -928,13 +934,14 @@ export const createResource = async (
             throw new PartialResourceError(
               stateAfterDependents,
               new Error(
-                `FC3 function ${fn.name} is in Failed state after create (reason: ${functionAfterDelay.stateReason ?? 'unknown'})`,
+                lang.__('FC3_FAILED_AFTER_CREATE', {
+                  functionName: fn.name,
+                  reason: functionAfterDelay.stateReason ?? 'unknown',
+                }),
               ),
             );
           }
-          logger.info(
-            `Function ${fn.name} found after delayed reconciliation, continuing deployment flow`,
-          );
+          logger.info(lang.__('FC3_FOUND_AFTER_DELAYED_RECONCILE', { functionName: fn.name }));
         } else {
           throw new PartialResourceError(
             stateAfterDependents,
@@ -952,7 +959,11 @@ export const createResource = async (
       const probe = await client.fc3.getFunction(fn.name);
       if (probe && isOwnedByStack(context, logicalId, probe.tags)) {
         logger.info(
-          `Function ${fn.name} exists and carries ownership tag (${OWNERSHIP_TAG_KEY}), adopting idempotently`,
+          lang.__('RESOURCE_OWNERSHIP_TAG_ADOPT', {
+            resourceType: 'Function',
+            name: fn.name,
+            tag: OWNERSHIP_TAG_KEY,
+          }),
         );
       } else {
         throw new PartialResourceError(
@@ -986,14 +997,17 @@ export const createResource = async (
   if (!functionInfo) {
     throw new PartialResourceError(
       stateAfterDependents,
-      new Error(`Failed to refresh state for function: ${fn.name}`),
+      new Error(lang.__('REFRESH_STATE_FUNCTION', { name: fn.name })),
     );
   }
   if (functionInfo.state === 'Failed') {
     throw new PartialResourceError(
       stateAfterDependents,
       new Error(
-        `FC3 function ${fn.name} is in Failed state (reason: ${functionInfo.stateReason ?? 'unknown'})`,
+        lang.__('FC3_FUNCTION_FAILED_STATE', {
+          functionName: fn.name,
+          reason: functionInfo.stateReason ?? 'unknown',
+        }),
       ),
     );
   }
@@ -1763,7 +1777,7 @@ export const updateResource = async (
 
   const functionInfo = await client.fc3.getFunction(fn.name);
   if (!functionInfo) {
-    throw new Error(`Failed to refresh state for function: ${fn.name}`);
+    throw new Error(lang.__('REFRESH_STATE_FUNCTION', { name: fn.name }));
   }
 
   const codeHash = codePath ? await computeZipContentHash(codePath) : null;

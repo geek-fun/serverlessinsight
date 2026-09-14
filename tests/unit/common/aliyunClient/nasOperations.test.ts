@@ -256,7 +256,7 @@ describe('nasOperations', () => {
 
       await expect(
         operations.createFileSystem(NasStorageClassEnum.STANDARD_CAPACITY, 'test-function'),
-      ).rejects.toThrow('Failed to create NAS file system');
+      ).rejects.toThrow('NAS_CREATE_FS_FAILED');
     });
 
     it('should wait for file system to be running', async () => {
@@ -397,7 +397,7 @@ describe('nasOperations', () => {
 
       await expect(
         operations.createMountTarget('fs-123', 'test-ag', 'vpc-123', 'vsw-456'),
-      ).rejects.toThrow('Failed to create NAS mount target');
+      ).rejects.toThrow('NAS_CREATE_MOUNT_TARGET_FAILED');
     });
 
     it('should wait for mount target to be active', async () => {

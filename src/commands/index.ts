@@ -86,12 +86,12 @@ const actionWrapper = <T extends unknown[]>(
 
 const program = new Command();
 
-program.name('si').description('CLI for ServerlessInsight').version(getVersion());
+program.name('si').description(lang.__('CMD_ROOT_DESC')).version(getVersion());
 
 program
   .command('login')
-  .description('authenticate with ServerlessInsight Console')
-  .option('--si-api-key <key>', 'authenticate with an existing API key')
+  .description(lang.__('CMD_LOGIN_DESC'))
+  .option('--si-api-key <key>', lang.__('OPT_SI_API_KEY_EXISTING'))
   .action(
     actionWrapper('login', async ({ siApiKey }) => {
       await login({ siApiKey });
@@ -100,7 +100,7 @@ program
 
 program
   .command('logout')
-  .description('revoke API key and clear local credentials')
+  .description(lang.__('CMD_LOGOUT_DESC'))
   .action(
     actionWrapper('logout', async () => {
       await logout();
@@ -109,7 +109,7 @@ program
 
 program
   .command('whoami')
-  .description('show current login status')
+  .description(lang.__('CMD_WHOAMI_DESC'))
   .action(
     actionWrapper('whoami', async () => {
       await whoami();
@@ -118,9 +118,9 @@ program
 
 program
   .command('show')
-  .description('show deployed resources from state')
-  .option('-f, --file <path>', 'specify the yaml file')
-  .option('-s, --stage <stage>', 'specify the stage')
+  .description(lang.__('CMD_SHOW_DESC'))
+  .option('-f, --file <path>', lang.__('OPT_FILE'))
+  .option('-s, --stage <stage>', lang.__('OPT_STAGE'))
   .action(
     actionWrapper('show', async ({ file, stage }) => {
       const iacLocation = getIacLocation(file);
@@ -142,9 +142,9 @@ program
 
 program
   .command('validate')
-  .description('validate serverless Iac yaml')
-  .option('-f, --file <path>', 'specify the yaml file')
-  .option('-s, --stage <stage>', 'specify the stage')
+  .description(lang.__('CMD_VALIDATE_DESC'))
+  .option('-f, --file <path>', lang.__('OPT_FILE'))
+  .option('-s, --stage <stage>', lang.__('OPT_STAGE'))
   .action(
     actionWrapper('validate', async ({ file, stage }) => {
       logger.debug(lang.__('LOG_COMMAND_INFO'));
@@ -154,18 +154,15 @@ program
 
 program
   .command('plan')
-  .description('generate and show deployment plan')
-  .option('-f, --file <path>', 'specify the yaml file')
-  .option('-s, --stage <stage>', 'specify the stage')
-  .option('-r, --region <region>', 'specify the region')
-  .option('-v, --provider <provider>', 'specify the provider')
-  .option('-k, --accessKeyId <accessKeyId>', 'specify the AccessKeyId')
-  .option('-x, --accessKeySecret <accessKeySecret>', 'specify the AccessKeySecret')
-  .option('-n, --securityToken <securityToken>', 'specify the SecurityToken')
-  .option(
-    '--no-refresh',
-    'skip live cloud probing; diff config against state only (no drift detection)',
-  )
+  .description(lang.__('CMD_PLAN_DESC'))
+  .option('-f, --file <path>', lang.__('OPT_FILE'))
+  .option('-s, --stage <stage>', lang.__('OPT_STAGE'))
+  .option('-r, --region <region>', lang.__('OPT_REGION'))
+  .option('-v, --provider <provider>', lang.__('OPT_PROVIDER'))
+  .option('-k, --accessKeyId <accessKeyId>', lang.__('OPT_ACCESS_KEY_ID'))
+  .option('-x, --accessKeySecret <accessKeySecret>', lang.__('OPT_ACCESS_KEY_SECRET'))
+  .option('-n, --securityToken <securityToken>', lang.__('OPT_SECURITY_TOKEN'))
+  .option('--no-refresh', lang.__('OPT_NO_REFRESH'))
   .action(
     actionWrapper(
       'plan',
@@ -197,18 +194,15 @@ program
 // flow; `plan` stays for compatibility.
 program
   .command('diff')
-  .description('show changes between your config and the live cloud (alias of plan)')
-  .option('-f, --file <path>', 'specify the yaml file')
-  .option('-s, --stage <stage>', 'specify the stage')
-  .option('-r, --region <region>', 'specify the region')
-  .option('-v, --provider <provider>', 'specify the provider')
-  .option('-k, --accessKeyId <accessKeyId>', 'specify the AccessKeyId')
-  .option('-x, --accessKeySecret <accessKeySecret>', 'specify the AccessKeySecret')
-  .option('-n, --securityToken <securityToken>', 'specify the SecurityToken')
-  .option(
-    '--no-refresh',
-    'skip live cloud probing; diff config against state only (no drift detection)',
-  )
+  .description(lang.__('CMD_DIFF_DESC'))
+  .option('-f, --file <path>', lang.__('OPT_FILE'))
+  .option('-s, --stage <stage>', lang.__('OPT_STAGE'))
+  .option('-r, --region <region>', lang.__('OPT_REGION'))
+  .option('-v, --provider <provider>', lang.__('OPT_PROVIDER'))
+  .option('-k, --accessKeyId <accessKeyId>', lang.__('OPT_ACCESS_KEY_ID'))
+  .option('-x, --accessKeySecret <accessKeySecret>', lang.__('OPT_ACCESS_KEY_SECRET'))
+  .option('-n, --securityToken <securityToken>', lang.__('OPT_SECURITY_TOKEN'))
+  .option('--no-refresh', lang.__('OPT_NO_REFRESH'))
   .action(
     actionWrapper(
       'diff',
@@ -238,23 +232,20 @@ program
 
 program
   .command('deploy')
-  .description('deploy serverless Iac yaml')
-  .option('-f, --file <path>', 'specify the yaml file')
-  .option('-s, --stage <stage>', 'specify the stage')
-  .option('-r, --region <region>', 'specify the region')
-  .option('-v, --provider <provider>', 'specify the provider')
-  .option('-k, --accessKeyId <accessKeyId>', 'specify the AccessKeyId')
-  .option('-x, --accessKeySecret <accessKeySecret>', 'specify the AccessKeySecret')
-  .option('-n, --securityToken <securityToken>', 'specify the SecurityToken')
-  .option('--si-api-key <key>', 'ServerlessInsight API key (overrides SI_API_KEY env)')
-  .option('-y, --auto-approve', 'skip interactive approval of plan before deploying')
-  .option(
-    '--no-refresh',
-    'skip live cloud probing; diff config against state only (no drift detection)',
-  )
+  .description(lang.__('CMD_DEPLOY_DESC'))
+  .option('-f, --file <path>', lang.__('OPT_FILE'))
+  .option('-s, --stage <stage>', lang.__('OPT_STAGE'))
+  .option('-r, --region <region>', lang.__('OPT_REGION'))
+  .option('-v, --provider <provider>', lang.__('OPT_PROVIDER'))
+  .option('-k, --accessKeyId <accessKeyId>', lang.__('OPT_ACCESS_KEY_ID'))
+  .option('-x, --accessKeySecret <accessKeySecret>', lang.__('OPT_ACCESS_KEY_SECRET'))
+  .option('-n, --securityToken <securityToken>', lang.__('OPT_SECURITY_TOKEN'))
+  .option('--si-api-key <key>', lang.__('OPT_SI_API_KEY'))
+  .option('-y, --auto-approve', lang.__('OPT_AUTO_APPROVE'))
+  .option('--no-refresh', lang.__('OPT_NO_REFRESH'))
   .option(
     '-p, --parameter <key=value>',
-    'override parameters',
+    lang.__('OPT_PARAMETER'),
     (value, previous: { [key: string]: string }) => {
       const [key, val] = value.split('=');
       previous[key] = val;
@@ -297,14 +288,14 @@ program
 
 program
   .command('destroy')
-  .option('-f, --file <path>', 'specify the yaml file')
-  .option('-s, --stage <stage>', 'specify the stage')
-  .option('-r, --region <region>', 'specify the region')
-  .option('-v, --provider <provider>', 'specify the provider')
-  .option('-k, --accessKeyId <accessKeyId>', 'specify the AccessKeyId')
-  .option('-x, --accessKeySecret <accessKeySecret>', 'specify the AccessKeySecret')
-  .option('-n, --securityToken <securityToken>', 'specify the SecurityToken')
-  .description('destroy serverless stack')
+  .option('-f, --file <path>', lang.__('OPT_FILE'))
+  .option('-s, --stage <stage>', lang.__('OPT_STAGE'))
+  .option('-r, --region <region>', lang.__('OPT_REGION'))
+  .option('-v, --provider <provider>', lang.__('OPT_PROVIDER'))
+  .option('-k, --accessKeyId <accessKeyId>', lang.__('OPT_ACCESS_KEY_ID'))
+  .option('-x, --accessKeySecret <accessKeySecret>', lang.__('OPT_ACCESS_KEY_SECRET'))
+  .option('-n, --securityToken <securityToken>', lang.__('OPT_SECURITY_TOKEN'))
+  .description(lang.__('CMD_DESTROY_DESC'))
   .action(
     actionWrapper(
       'destroy',
@@ -324,11 +315,11 @@ program
 
 program
   .command('local')
-  .description('run Serverless application locally for debugging')
-  .option('-f, --file <path>', 'specify the yaml file')
-  .option('-s, --stage <stage>', 'specify the stage', 'default')
-  .option('-d, --debug', 'enable debug mode')
-  .option('-w, --watch', 'enable file watch', true)
+  .description(lang.__('CMD_LOCAL_DESC'))
+  .option('-f, --file <path>', lang.__('OPT_FILE'))
+  .option('-s, --stage <stage>', lang.__('OPT_STAGE'), 'default')
+  .option('-d, --debug', lang.__('OPT_DEBUG'))
+  .option('-w, --watch', lang.__('OPT_WATCH'), true)
   .action(
     actionWrapper('local', async ({ stage, debug, watch, file }) => {
       await runLocal({
@@ -342,14 +333,14 @@ program
 
 program
   .command('force-unlock <lockId>')
-  .description('manually remove a stuck lock (use with caution)')
-  .option('-f, --file <path>', 'specify the yaml file (required for remote backends)')
-  .option('-s, --stage <stage>', 'specify the stage')
-  .option('-r, --region <region>', 'specify the region')
-  .option('-v, --provider <provider>', 'specify the provider')
-  .option('-k, --accessKeyId <accessKeyId>', 'specify the AccessKeyId')
-  .option('-x, --accessKeySecret <accessKeySecret>', 'specify the AccessKeySecret')
-  .option('-n, --securityToken <securityToken>', 'specify the SecurityToken')
+  .description(lang.__('CMD_FORCE_UNLOCK_DESC'))
+  .option('-f, --file <path>', lang.__('OPT_FILE_REMOTE_REQUIRED'))
+  .option('-s, --stage <stage>', lang.__('OPT_STAGE'))
+  .option('-r, --region <region>', lang.__('OPT_REGION'))
+  .option('-v, --provider <provider>', lang.__('OPT_PROVIDER'))
+  .option('-k, --accessKeyId <accessKeyId>', lang.__('OPT_ACCESS_KEY_ID'))
+  .option('-x, --accessKeySecret <accessKeySecret>', lang.__('OPT_ACCESS_KEY_SECRET'))
+  .option('-n, --securityToken <securityToken>', lang.__('OPT_SECURITY_TOKEN'))
   .action(
     actionWrapper(
       'force-unlock',

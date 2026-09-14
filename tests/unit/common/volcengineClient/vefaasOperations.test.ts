@@ -897,7 +897,7 @@ describe('vefaasOperations code size validation', () => {
         );
 
         await expect(operations.createFunction(mockConfig, smallZipPath)).rejects.toThrow(
-          'did not return a function Id',
+          'VEFAAS_CREATE_NO_ID',
         );
       });
 
@@ -928,7 +928,9 @@ describe('vefaasOperations code size validation', () => {
             ResponseMetadata: { RequestId: 'request', Service: 'vefaas' },
           });
 
-        await expect(operations.releaseFunction('func-123')).rejects.toThrow('release failed');
+        await expect(operations.releaseFunction('func-123')).rejects.toThrow(
+          'VEFAAS_RELEASE_FAILED',
+        );
       });
 
       it('should translate function deletion polling timeouts', async () => {
@@ -943,7 +945,7 @@ describe('vefaasOperations code size validation', () => {
 
         await expect(outcome).resolves.toEqual(
           expect.objectContaining({
-            message: 'Timed out waiting for veFaaS function func-123 to be deleted',
+            message: 'VEFAAS_TIMEOUT_DELETED',
           }),
         );
         jest.useRealTimers();

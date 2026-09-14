@@ -45,7 +45,7 @@ const getResourceType = (database: DatabaseDomain): string => {
   ) {
     return 'ALIYUN_RDS_SERVERLESS';
   }
-  throw new Error(`Unsupported database type: ${database.type}`);
+  throw new Error(lang.__('DATABASE_TYPE_UNSUPPORTED', { type: database.type }));
 };
 
 const getDesiredDefinition = (database: DatabaseDomain): ResourceAttributes => {
@@ -62,7 +62,7 @@ const getDesiredDefinition = (database: DatabaseDomain): ResourceAttributes => {
     const config = databaseToRdsConfig(database);
     return extractRdsDefinition(config);
   }
-  throw new Error(`Unsupported database type: ${database.type}`);
+  throw new Error(lang.__('DATABASE_TYPE_UNSUPPORTED', { type: database.type }));
 };
 
 export const generateDatabasePlan = async (

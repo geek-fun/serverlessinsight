@@ -349,7 +349,7 @@ describe('apigwExecutor', () => {
       );
 
       expect(result.partialFailure).toBeDefined();
-      expect(result.partialFailure?.error.message).toContain('Event not found');
+      expect(result.partialFailure?.error.message).toContain('RESOURCE_EVENT_NOT_FOUND');
     });
 
     it('should skip delete when state not found', async () => {

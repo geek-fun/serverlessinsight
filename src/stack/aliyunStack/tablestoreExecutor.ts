@@ -97,7 +97,7 @@ const executeSingleItem = async (
     case 'create': {
       const table = tablesMap.get(item.logicalId);
       if (!table) {
-        throw new Error(`Table not found for logical ID: ${item.logicalId}`);
+        throw new Error(lang.__('RESOURCE_TABLE_NOT_FOUND', { logicalId: item.logicalId }));
       }
       return executeCreateAction(context, table, currentState);
     }
@@ -105,7 +105,7 @@ const executeSingleItem = async (
     case 'update': {
       const table = tablesMap.get(item.logicalId);
       if (!table) {
-        throw new Error(`Table not found for logical ID: ${item.logicalId}`);
+        throw new Error(lang.__('RESOURCE_TABLE_NOT_FOUND', { logicalId: item.logicalId }));
       }
       return executeUpdateAction(context, table, currentState);
     }

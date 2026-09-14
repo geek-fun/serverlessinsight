@@ -2553,7 +2553,7 @@ describe('vefaasResource', () => {
 
       expect(mockVefaasClient.iam.deleteRole).not.toHaveBeenCalled();
       expect(logger.info).toHaveBeenCalledWith(
-        expect.stringContaining('Skipping deletion of external IAM role'),
+        expect.stringContaining('VOLC_EXTERNAL_ROLE_SKIP_DELETE'),
       );
     });
   });

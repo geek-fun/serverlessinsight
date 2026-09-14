@@ -86,19 +86,19 @@ export const forceUnlockCommand = async (
       readLock: async () => readLockFileForCommand(statePath),
       forceUnlock: async (id: string) => fsForceUnlock(statePath, id),
       loadState: async () => {
-        throw new Error('Not supported in no-location mode');
+        throw new Error(lang.__('FORCE_UNLOCK_NO_LOCATION_MODE'));
       },
       saveState: async () => {
-        throw new Error('Not supported in no-location mode');
+        throw new Error(lang.__('FORCE_UNLOCK_NO_LOCATION_MODE'));
       },
       acquireLock: async () => {
-        throw new Error('Not supported in no-location mode');
+        throw new Error(lang.__('FORCE_UNLOCK_NO_LOCATION_MODE'));
       },
       releaseLock: async () => {
-        throw new Error('Not supported in no-location mode');
+        throw new Error(lang.__('FORCE_UNLOCK_NO_LOCATION_MODE'));
       },
       withLock: async () => {
-        throw new Error('Not supported in no-location mode');
+        throw new Error(lang.__('FORCE_UNLOCK_NO_LOCATION_MODE'));
       },
     };
   }

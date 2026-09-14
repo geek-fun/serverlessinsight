@@ -298,7 +298,7 @@ describe('apigwOperations', () => {
         operations.createApiGroup({
           groupName: 'my-api-group',
         }),
-      ).rejects.toThrow('Failed to create API Gateway group');
+      ).rejects.toThrow('APIGW_GROUP_CREATE_NO_ID');
     });
 
     it('should create API group with all options', async () => {
@@ -490,7 +490,7 @@ describe('apigwOperations', () => {
             serviceProtocol: 'MOCK',
           },
         }),
-      ).rejects.toThrow('Failed to create API');
+      ).rejects.toThrow('APIGW_API_CREATE_NO_ID');
     });
   });
 

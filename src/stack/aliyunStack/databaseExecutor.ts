@@ -122,7 +122,7 @@ const executeSingleItem = async (
     case 'create': {
       const database = databasesMap.get(item.logicalId);
       if (!database) {
-        throw new Error(`Database not found for logical ID: ${item.logicalId}`);
+        throw new Error(lang.__('RESOURCE_DATABASE_NOT_FOUND', { logicalId: item.logicalId }));
       }
       return executeCreateAction(context, database, item.resourceType, currentState);
     }
@@ -130,17 +130,17 @@ const executeSingleItem = async (
     case 'update': {
       const database = databasesMap.get(item.logicalId);
       if (!database) {
-        throw new Error(`Database not found for logical ID: ${item.logicalId}`);
+        throw new Error(lang.__('RESOURCE_DATABASE_NOT_FOUND', { logicalId: item.logicalId }));
       }
       const state = getResource(currentState, item.logicalId);
       if (!state) {
-        throw new Error(`State not found for ${item.logicalId}`);
+        throw new Error(lang.__('EXECUTOR_STATE_NOT_FOUND', { logicalId: item.logicalId }));
       }
       const instanceId =
         (state.metadata?.instanceId as string | undefined) || state.instances?.[0]?.id;
       const resourceType = (state.metadata?.resourceType as string) || item.resourceType;
       if (!instanceId) {
-        throw new Error(`Instance ID not found in state for ${item.logicalId}`);
+        throw new Error(lang.__('RESOURCE_INSTANCE_ID_NOT_FOUND', { logicalId: item.logicalId }));
       }
       return executeUpdateAction(context, database, instanceId, resourceType, currentState);
     }
@@ -155,7 +155,7 @@ const executeSingleItem = async (
         (state.metadata?.instanceId as string | undefined) || state.instances?.[0]?.id;
       const resourceType = (state.metadata?.resourceType as string) || item.resourceType;
       if (!instanceId) {
-        throw new Error(`Instance ID not found in state for ${item.logicalId}`);
+        throw new Error(lang.__('RESOURCE_INSTANCE_ID_NOT_FOUND', { logicalId: item.logicalId }));
       }
       return executeDeleteAction(context, instanceId, resourceType, item.logicalId, currentState);
     }

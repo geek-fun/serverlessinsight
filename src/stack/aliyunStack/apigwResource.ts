@@ -651,13 +651,16 @@ export const createApigwResource = async (
     if (existingGroup?.groupId) {
       if (isOwnedByStack(context, logicalId, existingGroup.tags)) {
         logger.info(lang.__('APIGW_GROUP_FOUND_REUSING', { groupName: groupConfig.groupName }));
-        logger.info(`API group ${groupConfig.groupName} found and owned by this stack, reusing`);
+        logger.info(lang.__('APIGW_GROUP_OWNED_REUSE', { groupName: groupConfig.groupName }));
         groupId = existingGroup.groupId;
       } else {
         throw new PartialResourceError(
           stateAfterDependents,
           new Error(
-            `API group ${groupConfig.groupName} already exists but is not owned by this stack (missing ${OWNERSHIP_TAG_KEY} tag). Refusing to adopt — resolve manually.`,
+            lang.__('APIGW_GROUP_ADOPT_REFUSED', {
+              groupName: groupConfig.groupName,
+              tag: OWNERSHIP_TAG_KEY,
+            }),
           ),
         );
       }
@@ -670,13 +673,19 @@ export const createApigwResource = async (
           if (probe?.groupId && isOwnedByStack(context, logicalId, probe.tags)) {
             groupId = probe.groupId;
             logger.info(
-              `API group ${groupConfig.groupName} exists after create conflict and carries ownership tag (${OWNERSHIP_TAG_KEY}), adopting idempotently`,
+              lang.__('APIGW_GROUP_CONFLICT_ADOPT', {
+                groupName: groupConfig.groupName,
+                tag: OWNERSHIP_TAG_KEY,
+              }),
             );
           } else {
             throw new PartialResourceError(
               stateAfterDependents,
               new Error(
-                `API group ${groupConfig.groupName} already exists but is not owned by this stack (missing ${OWNERSHIP_TAG_KEY} tag). Refusing to adopt — resolve manually.`,
+                lang.__('APIGW_GROUP_ADOPT_REFUSED', {
+                  groupName: groupConfig.groupName,
+                  tag: OWNERSHIP_TAG_KEY,
+                }),
               ),
             );
           }
@@ -689,7 +698,7 @@ export const createApigwResource = async (
     // Get group info for state
     const groupInfo = await client.apigw.getApiGroup(groupId);
     if (!groupInfo) {
-      throw new Error(`Failed to get API group info after creation: ${groupId}`);
+      throw new Error(lang.__('APIGW_GROUP_INFO_AFTER_CREATE_FAILED', { error: groupId }));
     }
 
     const instances: Array<ResourceInstance> = [
@@ -784,7 +793,7 @@ export const createApigwResource = async (
         const originDomain = groupInfo.subDomain;
 
         if (!originDomain) {
-          throw new Error(`API Gateway group ${groupId} has no subDomain for CDN origin`);
+          throw new Error(lang.__('APIGW_GROUP_NO_SUBDOMAIN_CDN', { groupName: groupId }));
         }
 
         const domainConfig = await buildDomainBindingConfig(
@@ -991,7 +1000,10 @@ export const updateApigwResource = async (
       }
       if (!isOwnedByStack(context, logicalId, cloudGroup.tags)) {
         throw new Error(
-          `API group ${groupConfig.groupName} already exists but is not owned by this stack (missing ${OWNERSHIP_TAG_KEY} tag). Refusing to adopt — resolve manually.`,
+          lang.__('APIGW_GROUP_ADOPT_REFUSED', {
+            groupName: groupConfig.groupName,
+            tag: OWNERSHIP_TAG_KEY,
+          }),
         );
       }
       const cloudApis = await client.apigw.listApisByGroup(cloudGroup.groupId);
@@ -1015,7 +1027,7 @@ export const updateApigwResource = async (
 
   const groupInfo = await client.apigw.getApiGroup(groupId);
   if (!groupInfo) {
-    throw new Error(`Failed to get API group info after update: ${groupId}`);
+    throw new Error(lang.__('APIGW_GROUP_INFO_AFTER_UPDATE_FAILED', { error: groupId }));
   }
 
   const instances: Array<ResourceInstance> = [
@@ -1141,7 +1153,7 @@ export const updateApigwResource = async (
       hasBoundDomains &&
       attributesEqual(previousDomainDef, desiredDomainDef as Record<string, unknown>)
     ) {
-      logger.info('Domain configuration unchanged and previously bound, skipping DNS verification');
+      logger.info(lang.__('APIGW_DOMAIN_UNCHANGED_SKIP'));
       // Still include existing domain instances for state consistency
       const existingDomainInstances =
         existingState?.instances?.filter(
@@ -1171,7 +1183,7 @@ export const updateApigwResource = async (
     const originDomain = groupInfo.subDomain;
 
     if (isCdnEnabled && !originDomain) {
-      throw new Error(`API Gateway group ${groupId} has no subDomain for CDN origin`);
+      throw new Error(lang.__('APIGW_GROUP_NO_SUBDOMAIN_CDN', { groupName: groupId }));
     }
 
     const domainConfig = await buildDomainBindingConfig(

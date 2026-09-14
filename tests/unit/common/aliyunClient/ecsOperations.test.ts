@@ -90,12 +90,12 @@ describe('ecsOperations', () => {
     });
 
     it('should throw on invalid format', () => {
-      expect(() => parseSecurityGroupRule('INVALID')).toThrow('Invalid security group rule format');
+      expect(() => parseSecurityGroupRule('INVALID')).toThrow('SG_INVALID_RULE_FORMAT');
     });
 
     it('should throw with too many colons', () => {
       expect(() => parseSecurityGroupRule('TCP:192.168.1.0/24:80/80:extra')).toThrow(
-        'Invalid security group rule format',
+        'SG_INVALID_RULE_FORMAT',
       );
     });
   });
@@ -151,7 +151,7 @@ describe('ecsOperations', () => {
       mockCreateSecurityGroup.mockResolvedValue({ body: {} });
 
       await expect(operations.createSecurityGroup('test-sg', 'vpc-123', [], [])).rejects.toThrow(
-        'Failed to create security group',
+        'SG_CREATE_FAILED',
       );
     });
 

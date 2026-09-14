@@ -248,7 +248,7 @@ const resolveFunctionIdFromState = async (
       // Template function with no state Id: deploy failed or state is stale —
       // do not mask it by adopting a same-named foreign function.
       throw new Error(
-        `Cannot resolve veFaaS function Id for backend ${backendRef} (functions.${fnKey} has no functionId in state). Deploy the function first.`,
+        lang.__('VOLC_BACKEND_FUNCTION_ID_UNRESOLVED', { backend: backendRef, functionKey: fnKey }),
       );
     }
   }
@@ -293,9 +293,7 @@ export const createApigwResource = async (
     // NetworkSpec (vpc_id + subnet_ids) is required by CreateGateway for all
     // types — verified live: omitting it returns "missing NetworkSpec".
     if (!gatewayConfig.network) {
-      throw new Error(
-        `events.${event.key}: network (vpc_id + subnet_ids) is required to create the API Gateway instance — add it to the event config`,
-      );
+      throw new Error(lang.__('VOLC_APIGW_NETWORK_REQUIRED', { eventKey: event.key }));
     }
     try {
       gatewayInfo = await client.apigw.createGateway(gatewayConfig);
@@ -310,7 +308,10 @@ export const createApigwResource = async (
           throw new PartialResourceError(
             state,
             new Error(
-              `API Gateway ${gatewayConfig.gatewayName} already exists but is not owned by this stack (missing ${OWNERSHIP_TAG_KEY} tag). Refusing to adopt — resolve manually.`,
+              lang.__('VOLC_APIGW_ADOPT_REFUSED', {
+                gatewayName: gatewayConfig.gatewayName,
+                tag: OWNERSHIP_TAG_KEY,
+              }),
             ),
           );
         }
@@ -321,7 +322,7 @@ export const createApigwResource = async (
   }
 
   if (!gatewayInfo?.gatewayId) {
-    throw new Error('Failed to create or reuse an API Gateway instance');
+    throw new Error(lang.__('VOLC_APIGW_CREATE_OR_REUSE_FAILED'));
   }
   const gatewayId = gatewayInfo.gatewayId;
 

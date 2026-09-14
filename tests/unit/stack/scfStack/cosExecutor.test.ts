@@ -250,7 +250,7 @@ describe('cosExecutor', () => {
       const result = await executeBucketPlan(mockContext, plan, [testBucket], initialState);
 
       expect(result.partialFailure).toBeDefined();
-      expect(result.partialFailure?.error.message).toContain('Bucket not found for logical ID');
+      expect(result.partialFailure?.error.message).toContain('RESOURCE_BUCKET_NOT_FOUND');
     });
 
     it('should handle missing bucket not found for update', async () => {
@@ -268,7 +268,7 @@ describe('cosExecutor', () => {
       const result = await executeBucketPlan(mockContext, plan, [testBucket], initialState);
 
       expect(result.partialFailure).toBeDefined();
-      expect(result.partialFailure?.error.message).toContain('Bucket not found for logical ID');
+      expect(result.partialFailure?.error.message).toContain('RESOURCE_BUCKET_NOT_FOUND');
     });
 
     it('should handle state not found for delete', async () => {

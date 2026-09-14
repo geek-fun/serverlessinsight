@@ -20,7 +20,7 @@ import { lang } from '../lang';
 
 const validateExistence = (path: string) => {
   if (!existsSync(path)) {
-    throw new Error(`File does not exist at path: ${path}`);
+    throw new Error(lang.__('IAC_FILE_NOT_FOUND', { path }));
   }
 };
 

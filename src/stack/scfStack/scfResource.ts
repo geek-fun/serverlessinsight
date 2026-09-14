@@ -697,16 +697,17 @@ export const createResource = async (
   } catch (error) {
     if (isRecoverableCreateError(error)) {
       logger.warn(
-        `Create function returned recoverable error for ${fn.name}, reconciling with provider state: ${String(error)}`,
+        lang.__('FC3_CREATE_RECOVERABLE_RECONCILE', {
+          functionName: fn.name,
+          error: String(error),
+        }),
       );
 
       await delay(RECOVERY_GET_FUNCTION_DELAY_MS);
       const afterError = await client.scf.getFunction(fn.name);
       if (afterError) {
         adoptedInfo = afterError;
-        logger.info(
-          `Function ${fn.name} found after create error reconciliation, continuing deployment flow`,
-        );
+        logger.info(lang.__('FC3_FOUND_AFTER_CREATE_RECONCILE', { functionName: fn.name }));
       } else {
         throw new PartialResourceError(stateAfterDependents, new Error(toErrorMessage(error)));
       }
@@ -721,7 +722,11 @@ export const createResource = async (
       if (probe && isOwnedByStack(context, logicalId, probe.Tags)) {
         adoptedInfo = probe;
         logger.info(
-          `Function ${fn.name} exists and carries ownership tag (${OWNERSHIP_TAG_KEY}), adopting idempotently`,
+          lang.__('RESOURCE_OWNERSHIP_TAG_ADOPT', {
+            resourceType: 'Function',
+            name: fn.name,
+            tag: OWNERSHIP_TAG_KEY,
+          }),
         );
       } else {
         throw new PartialResourceError(
@@ -765,7 +770,9 @@ export const createResource = async (
     const triggerAlreadyAttached = providerTriggers.some(isFunctionUrlTrigger);
 
     if (triggerAlreadyAttached) {
-      logger.info(`HTTP trigger ${triggerName} already attached to ${fn.name}, skipping creation`);
+      logger.info(
+        lang.__('SCF_HTTP_TRIGGER_ALREADY_ATTACHED', { triggerName, functionName: fn.name }),
+      );
     } else {
       logger.info(lang.__('CREATING_HTTP_TRIGGER', { triggerName, functionName: fn.name }));
 
@@ -783,7 +790,11 @@ export const createResource = async (
       } catch (error) {
         if (isResourceAlreadyExistsError(error)) {
           logger.warn(
-            `HTTP trigger ${triggerName} already exists on ${fn.name}, continuing: ${String(error)}`,
+            lang.__('SCF_HTTP_TRIGGER_ALREADY_EXISTS', {
+              triggerName,
+              functionName: fn.name,
+              error: String(error),
+            }),
           );
         } else {
           // The function exists in the cloud but the trigger failed to attach —
@@ -842,7 +853,7 @@ export const createResource = async (
   if (!functionInfo) {
     throw new PartialResourceError(
       stateAfterDependents,
-      new Error(`Failed to refresh state for function: ${fn.name}`),
+      new Error(lang.__('REFRESH_STATE_FUNCTION', { name: fn.name })),
     );
   }
 
@@ -1094,9 +1105,10 @@ export const updateResource = async (
     desiredDefinition.handler !== existingDefinition.handler
   ) {
     throw new Error(
-      `Handler is immutable in Tencent SCF and cannot be changed on update (${String(
-        existingDefinition.handler,
-      )} -> ${String(desiredDefinition.handler)}). Delete and recreate the function instead.`,
+      lang.__('SCF_HANDLER_IMMUTABLE', {
+        oldHandler: String(existingDefinition.handler),
+        newHandler: String(desiredDefinition.handler),
+      }),
     );
   }
   if (
@@ -1105,9 +1117,10 @@ export const updateResource = async (
     desiredDefinition.runtime !== existingDefinition.runtime
   ) {
     throw new Error(
-      `Runtime is immutable in Tencent SCF and cannot be changed on update (${String(
-        existingDefinition.runtime,
-      )} -> ${String(desiredDefinition.runtime)}). Delete and recreate the function instead.`,
+      lang.__('SCF_RUNTIME_IMMUTABLE', {
+        oldRuntime: String(existingDefinition.runtime),
+        newRuntime: String(desiredDefinition.runtime),
+      }),
     );
   }
 
@@ -1197,7 +1210,7 @@ export const updateResource = async (
 
       if (providerTriggerAttached) {
         logger.info(
-          `HTTP trigger ${triggerName} already attached to ${fn.name}, skipping creation`,
+          lang.__('SCF_HTTP_TRIGGER_ALREADY_ATTACHED', { triggerName, functionName: fn.name }),
         );
       } else {
         logger.info(lang.__('CREATING_HTTP_TRIGGER', { triggerName, functionName: fn.name }));
@@ -1214,7 +1227,11 @@ export const updateResource = async (
         } catch (error) {
           if (isResourceAlreadyExistsError(error)) {
             logger.warn(
-              `HTTP trigger ${triggerName} already exists on ${fn.name}, continuing: ${String(error)}`,
+              lang.__('SCF_HTTP_TRIGGER_ALREADY_EXISTS', {
+                triggerName,
+                functionName: fn.name,
+                error: String(error),
+              }),
             );
           } else {
             throw error;
@@ -1313,7 +1330,7 @@ export const updateResource = async (
   // Refresh state from provider to get all attributes (including triggers)
   const functionInfo = await client.scf.getFunction(fn.name);
   if (!functionInfo) {
-    throw new Error(`Failed to refresh state for function: ${fn.name}`);
+    throw new Error(lang.__('REFRESH_STATE_FUNCTION', { name: fn.name }));
   }
 
   const definition = extractScfDefinition(config, codeHash, fn.iam);

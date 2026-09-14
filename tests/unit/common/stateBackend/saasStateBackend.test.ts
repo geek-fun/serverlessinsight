@@ -570,7 +570,7 @@ describe('saasStateBackend', () => {
     it('should throw when loadState was never called', async () => {
       const fn = jest.fn().mockResolvedValue('ok');
 
-      await expect(backend.withLock('deploy', fn)).rejects.toThrow('call loadState() first');
+      await expect(backend.withLock('deploy', fn)).rejects.toThrow('SAAS_BACKEND_SET_STAGE_FIRST');
       expect(fn).not.toHaveBeenCalled();
     });
 
@@ -597,7 +597,7 @@ describe('saasStateBackend', () => {
       await backend.loadState('aliyun', 'myapp', 'myservice', 'dev');
 
       await expect(backend.withLock('deploy', jest.fn())).rejects.toThrow(
-        'no deployment available',
+        'SAAS_BACKEND_NO_DEPLOYMENT',
       );
     });
 

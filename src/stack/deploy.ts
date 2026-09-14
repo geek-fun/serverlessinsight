@@ -1,4 +1,5 @@
 import { ServerlessIac, Plan } from '../types';
+import { lang } from '../lang';
 import { ProviderEnum } from '../common';
 import { StateBackend } from '../common/stateBackend';
 import { deployTencentStack } from './scfStack';
@@ -6,11 +7,7 @@ import { deployAliyunStack } from './aliyunStack';
 import { deployVolcengineStack } from './volcengineStack';
 
 const deployHuawei = async (): Promise<void> => {
-  throw new Error(
-    'Huawei deployment is not yet implemented. ' +
-      'The provider currently generates HCL templates but does not deploy them. ' +
-      'Please use Aliyun or Tencent providers, or contribute Huawei deployment support.',
-  );
+  throw new Error(lang.__('HUAWEI_DEPLOY_NOT_IMPLEMENTED'));
 };
 
 /**
