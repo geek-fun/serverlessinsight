@@ -4,6 +4,7 @@ import * as camTencentcloud from 'tencentcloud-sdk-nodejs-cam';
 import { ScfFunctionConfig, ScfFunctionInfo } from './types';
 import { pollUntil } from '../polling';
 import { SCF_STATUS_POLL_INTERVAL_MS, SCF_STATUS_POLL_MAX_ATTEMPTS } from '../constants';
+import { lang } from '../../lang';
 
 type ScfSdkClient = InstanceType<typeof tencentcloud.scf.v20180416.Client>;
 type TagSdkClient = InstanceType<typeof tagTencentcloud.tag.v20180813.Client>;
@@ -27,7 +28,7 @@ export const createScfOperations = (scfClient: ScfSdkClient, deps: ScfOperations
     const res = await camClient.GetUserAppId(null);
     const uin = res?.OwnerUin || res?.Uin;
     if (!uin) {
-      throw new Error('Failed to resolve Tencent Cloud account Uin for resource tagging');
+      throw new Error(lang.__('SCF_RESOLVE_UIN_FAILED'));
     }
     return uin;
   };

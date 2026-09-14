@@ -98,7 +98,7 @@ export const destroyStack = async (options: {
         } else if (iac.provider.name === ProviderEnum.VOLCENGINE) {
           await destroyVolcengineStack(backend);
         } else {
-          throw new Error(`Unsupported provider: ${iac.provider.name}`);
+          throw new Error(lang.__('UNSUPPORTED_PROVIDER', { provider: iac.provider.name }));
         }
       },
       {},

@@ -274,7 +274,7 @@ describe('EsServerlessResource', () => {
       mockEsOperations.getSpace.mockResolvedValue(null);
 
       await expect(createEsResource(mockContext, database, initialState)).rejects.toThrow(
-        'Failed to refresh state for ES space: es-space-test123',
+        'REFRESH_STATE_ES_SPACE',
       );
     });
 
@@ -577,7 +577,7 @@ describe('EsServerlessResource', () => {
       mockEsOperations.getSpace.mockResolvedValue(null);
 
       await expect(updateEsResource(mockContext, database, spaceId, initialState)).rejects.toThrow(
-        'Failed to refresh state for ES space: es-space-test123',
+        'REFRESH_STATE_ES_SPACE',
       );
     });
   });

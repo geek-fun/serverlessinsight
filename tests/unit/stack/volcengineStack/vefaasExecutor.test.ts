@@ -209,7 +209,7 @@ describe('vefaasExecutor', () => {
       const result = await executeFunctionPlan(mockContext, plan, [], mockState);
 
       expect(result.partialFailure).toBeDefined();
-      expect(result.partialFailure?.error.message).toContain('Function not found');
+      expect(result.partialFailure?.error.message).toContain('RESOURCE_FUNCTION_NOT_FOUND');
     });
 
     it('should handle partial failure', async () => {
@@ -303,7 +303,7 @@ describe('vefaasExecutor', () => {
       const result = await executeFunctionPlan(mockContext, plan, [], mockState);
 
       expect(result.partialFailure).toBeDefined();
-      expect(result.partialFailure?.error.message).toContain('Function not found');
+      expect(result.partialFailure?.error.message).toContain('RESOURCE_FUNCTION_NOT_FOUND');
     });
 
     it('should handle PartialResourceError with updatedState', async () => {

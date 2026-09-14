@@ -216,7 +216,7 @@ export const createVefaasOperations = (client: VefaasSdkClient) => {
       });
 
       if (releaseStatus === 'failed') {
-        throw new Error(`veFaaS function ${functionId} release failed`);
+        throw new Error(lang.__('VEFAAS_RELEASE_FAILED', { functionId }));
       }
 
       return releaseRecordId;
@@ -233,7 +233,7 @@ export const createVefaasOperations = (client: VefaasSdkClient) => {
         });
       } catch (e) {
         if (e instanceof PollingTimeoutError) {
-          throw new Error(`Timed out waiting for veFaaS function ${functionId} to be deleted`, {
+          throw new Error(lang.__('VEFAAS_TIMEOUT_DELETED', { functionId }), {
             cause: e,
           });
         }
@@ -343,7 +343,7 @@ export const createVefaasOperations = (client: VefaasSdkClient) => {
       const result = (response.Result || {}) as Record<string, unknown>;
       const functionId = (result.Id as string) ?? (result.FunctionId as string | undefined);
       if (!functionId) {
-        throw new Error(`CreateFunction did not return a function Id for ${config.functionName}`);
+        throw new Error(lang.__('VEFAAS_CREATE_NO_ID', { functionName: config.functionName }));
       }
 
       const releaseRecordId = await operations.releaseFunction(functionId);

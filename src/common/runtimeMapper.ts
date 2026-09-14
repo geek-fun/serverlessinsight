@@ -1,4 +1,5 @@
 import { ProviderEnum } from './providerEnum';
+import { lang } from '../lang';
 
 export enum StandardRuntime {
   NODEJS24 = 'nodejs24',
@@ -155,15 +156,18 @@ export const mapRuntime = (standardRuntime: string, provider: ProviderEnum): str
   const mapping = runtimeMappings[standardRuntime as StandardRuntime];
 
   if (!mapping) {
-    throw new Error(`Unsupported standard runtime: ${standardRuntime}`);
+    throw new Error(lang.__('RUNTIME_UNSUPPORTED_STANDARD', { standardRuntime }));
   }
 
   const providerRuntime = mapping[provider];
 
   if (!providerRuntime) {
     throw new Error(
-      `Runtime ${standardRuntime} is not supported for provider ${provider}. ` +
-        `Supported providers for this runtime: ${Object.keys(mapping).join(', ')}`,
+      lang.__('RUNTIME_NOT_SUPPORTED_FOR_PROVIDER', {
+        runtime: standardRuntime,
+        provider,
+        supportedProviders: Object.keys(mapping).join(', '),
+      }),
     );
   }
 

@@ -245,10 +245,10 @@ export const createSaasStateBackend = (context: SaasBackendContext): StateBacken
       onLockAcquired?: (lockId: string) => void,
     ): Promise<T> => {
       if (!currentStage) {
-        throw new Error('SaaS state backend: call loadState() first to set stage');
+        throw new Error(lang.__('SAAS_BACKEND_SET_STAGE_FIRST'));
       }
       if (!currentDeploymentId) {
-        throw new Error('SaaS state backend: no deployment available, call loadState() first');
+        throw new Error(lang.__('SAAS_BACKEND_NO_DEPLOYMENT'));
       }
 
       // Acquire lock via phase:start (server checks for 409 conflicts)

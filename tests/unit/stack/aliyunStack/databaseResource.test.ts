@@ -865,7 +865,7 @@ describe('DatabaseResource', () => {
       mockEsOperations.getApp.mockResolvedValue(null);
 
       await expect(createDatabaseResource(mockContext, esDatabase, initialState)).rejects.toThrow(
-        `Failed to refresh state for ES app: ${esAppId}`,
+        'REFRESH_STATE_ES_APP',
       );
     });
 
@@ -887,7 +887,7 @@ describe('DatabaseResource', () => {
       mockRdsOperations.getInstance.mockResolvedValue(null);
 
       await expect(createDatabaseResource(mockContext, rdsDatabase, initialState)).rejects.toThrow(
-        `Failed to refresh state for RDS instance: ${rdsInstanceId}`,
+        'REFRESH_STATE_RDS_INSTANCE',
       );
     });
 
@@ -900,7 +900,7 @@ describe('DatabaseResource', () => {
 
       await expect(
         createDatabaseResource(mockContext, unsupportedDatabase, initialState),
-      ).rejects.toThrow('Unsupported database type: UNSUPPORTED_DB');
+      ).rejects.toThrow('DATABASE_TYPE_UNSUPPORTED');
     });
 
     it('should throw PartialResourceError with tainted state when create fails', async () => {
@@ -973,7 +973,7 @@ describe('DatabaseResource', () => {
 
       await expect(
         readDatabaseResource(mockContext, instanceId, 'UNSUPPORTED_TYPE'),
-      ).rejects.toThrow('Unsupported resource type: UNSUPPORTED_TYPE');
+      ).rejects.toThrow('RESOURCE_TYPE_UNSUPPORTED');
     });
   });
 
@@ -1081,7 +1081,7 @@ describe('DatabaseResource', () => {
           'ALIYUN_ES_SERVERLESS',
           initialState,
         ),
-      ).rejects.toThrow(`Failed to refresh state for ES app: ${instanceId}`);
+      ).rejects.toThrow('REFRESH_STATE_ES_APP');
     });
 
     it('should throw if RDS instance refresh fails during update', async () => {
@@ -1108,7 +1108,7 @@ describe('DatabaseResource', () => {
           'ALIYUN_RDS_SERVERLESS',
           initialState,
         ),
-      ).rejects.toThrow(`Failed to refresh state for RDS instance: ${instanceId}`);
+      ).rejects.toThrow('REFRESH_STATE_RDS_INSTANCE');
     });
 
     it('should throw for unsupported resource type in update', async () => {
@@ -1120,7 +1120,7 @@ describe('DatabaseResource', () => {
 
       await expect(
         updateDatabaseResource(mockContext, database, 'id-123', 'UNSUPPORTED_TYPE', initialState),
-      ).rejects.toThrow('Unsupported resource type: UNSUPPORTED_TYPE');
+      ).rejects.toThrow('RESOURCE_TYPE_UNSUPPORTED');
     });
   });
 
@@ -1295,7 +1295,7 @@ describe('DatabaseResource', () => {
           logicalId,
           initialState,
         ),
-      ).rejects.toThrow('Unsupported resource type: UNKNOWN');
+      ).rejects.toThrow('RESOURCE_TYPE_UNSUPPORTED');
     });
 
     it('should handle NotFound error code gracefully', async () => {

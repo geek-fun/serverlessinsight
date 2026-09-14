@@ -166,7 +166,7 @@ export const createDatabaseResource = async (
   ].includes(database.type);
 
   if (!isEs && !isRds) {
-    throw new Error(`Unsupported database type: ${database.type}`);
+    throw new Error(lang.__('DATABASE_TYPE_UNSUPPORTED', { type: database.type }));
   }
 
   const resourceType = isEs ? 'ALIYUN_ES_SERVERLESS' : 'ALIYUN_RDS_SERVERLESS';
@@ -205,7 +205,11 @@ export const createDatabaseResource = async (
           if (probe && isOwnedByStack(context, logicalId, toOwnershipTagShape(probe.tags))) {
             instanceId = probe.appId ?? config.appName;
             logger.info(
-              `ES app ${config.appName} exists and carries ownership tag (${OWNERSHIP_TAG_KEY}), adopting idempotently`,
+              lang.__('RESOURCE_OWNERSHIP_TAG_ADOPT', {
+                resourceType: 'ES app',
+                name: config.appName,
+                tag: OWNERSHIP_TAG_KEY,
+              }),
             );
           } else {
             throw new Error(
@@ -225,7 +229,7 @@ export const createDatabaseResource = async (
       // Refresh state from provider to get all attributes
       const appInfo = await client.es.getApp(instanceId);
       if (!appInfo) {
-        throw new Error(`Failed to refresh state for ES app: ${instanceId}`);
+        throw new Error(lang.__('REFRESH_STATE_ES_APP', { appId: instanceId }));
       }
 
       const sid = buildSid('aliyun', 'es', context.stage, instanceId);
@@ -245,7 +249,11 @@ export const createDatabaseResource = async (
           ) {
             instanceId = probe.dbInstanceId;
             logger.info(
-              `RDS instance ${config.dbInstanceDescription} exists and carries ownership tag (${OWNERSHIP_TAG_KEY}), adopting idempotently`,
+              lang.__('RESOURCE_OWNERSHIP_TAG_ADOPT', {
+                resourceType: 'RDS instance',
+                name: config.dbInstanceDescription,
+                tag: OWNERSHIP_TAG_KEY,
+              }),
             );
           } else {
             throw new Error(
@@ -265,7 +273,7 @@ export const createDatabaseResource = async (
       // Refresh state from provider to get all attributes
       const rdsInfo = await client.rds.getInstance(instanceId);
       if (!rdsInfo) {
-        throw new Error(`Failed to refresh state for RDS instance: ${instanceId}`);
+        throw new Error(lang.__('REFRESH_STATE_RDS_INSTANCE', { instanceId }));
       }
 
       const sid = buildSid('aliyun', 'rds', context.stage, instanceId);
@@ -308,7 +316,7 @@ export const readDatabaseResource = async (
     return await client.rds.getInstance(instanceId);
   }
 
-  throw new Error(`Unsupported resource type: ${resourceType}`);
+  throw new Error(lang.__('RESOURCE_TYPE_UNSUPPORTED', { type: resourceType }));
 };
 
 export const updateDatabaseResource = async (
@@ -330,7 +338,7 @@ export const updateDatabaseResource = async (
     // Refresh state from provider to get all attributes
     const appInfo = await client.es.getApp(instanceId);
     if (!appInfo) {
-      throw new Error(`Failed to refresh state for ES app: ${instanceId}`);
+      throw new Error(lang.__('REFRESH_STATE_ES_APP', { appId: instanceId }));
     }
 
     definition = extractEsDefinition(config);
@@ -343,14 +351,14 @@ export const updateDatabaseResource = async (
     // Refresh state from provider to get all attributes
     const rdsInfo = await client.rds.getInstance(instanceId);
     if (!rdsInfo) {
-      throw new Error(`Failed to refresh state for RDS instance: ${instanceId}`);
+      throw new Error(lang.__('REFRESH_STATE_RDS_INSTANCE', { instanceId }));
     }
 
     definition = extractRdsDefinition(config);
     const sid = buildSid('aliyun', 'rds', context.stage, instanceId);
     instance = buildRdsInstanceFromProvider(rdsInfo, sid);
   } else {
-    throw new Error(`Unsupported resource type: ${resourceType}`);
+    throw new Error(lang.__('RESOURCE_TYPE_UNSUPPORTED', { type: resourceType }));
   }
 
   const resourceState: ResourceState = {
@@ -386,7 +394,7 @@ export const deleteDatabaseResource = async (
     } else if (resourceType === 'ALIYUN_RDS_SERVERLESS') {
       await client.rds.deleteInstance(instanceId);
     } else {
-      throw new Error(`Unsupported resource type: ${resourceType}`);
+      throw new Error(lang.__('RESOURCE_TYPE_UNSUPPORTED', { type: resourceType }));
     }
   } catch (err) {
     const errorCode = (err as { code?: string })?.code;

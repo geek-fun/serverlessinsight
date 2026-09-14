@@ -176,9 +176,7 @@ export const createRemoteStateBackend = (
       const existing = await readLockObject();
       if (!existing) return false;
       if (existing.id !== lockId) {
-        throw new Error(
-          `Lock ID mismatch. Current lock ID is ${existing.id}, but you provided ${lockId}`,
-        );
+        throw new Error(lang.__('LOCK_ID_MISMATCH', { actualId: existing.id, providedId: lockId }));
       }
       await adapter.delete(lockKey);
       return true;

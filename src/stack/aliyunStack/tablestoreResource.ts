@@ -146,7 +146,7 @@ export const createTableResource = async (
     // Refresh state from provider to get all attributes
     const tableInfo = await tablestoreClient.getTable(config.tableName);
     if (!tableInfo) {
-      throw new Error(`Failed to refresh state for table: ${config.tableName}`);
+      throw new Error(lang.__('REFRESH_STATE_TABLE', { tableName: config.tableName }));
     }
 
     const resourceState: ResourceState = {
@@ -222,7 +222,7 @@ export const updateTableResource = async (
   // Refresh state from provider to get all attributes
   const tableInfo = await tablestoreClient.getTable(config.tableName);
   if (!tableInfo) {
-    throw new Error(`Failed to refresh state for table: ${config.tableName}`);
+    throw new Error(lang.__('REFRESH_STATE_TABLE', { tableName: config.tableName }));
   }
 
   const definition = extractTableStoreDefinition(config);
@@ -261,7 +261,7 @@ export const deleteTableResource = async (
     const errorMessage = (err as { message?: string })?.message ?? '';
     if (errorMessage.includes('OTSObjectNotExist') || errorMessage.includes('does not exist')) {
       logger.warn(
-        `Table ${tableName} in instance ${instanceName} not found in provider, skipping deletion`,
+        lang.__('OTS_TABLE_MISSING_SKIP_DELETE', { tableName, instanceId: instanceName }),
       );
     } else {
       throw err;

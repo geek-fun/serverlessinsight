@@ -91,7 +91,7 @@ const executeSingleItem = async (
     case 'create': {
       const database = databasesMap.get(item.logicalId);
       if (!database) {
-        throw new Error(`Database not found for logical ID: ${item.logicalId}`);
+        throw new Error(lang.__('RESOURCE_DATABASE_NOT_FOUND', { logicalId: item.logicalId }));
       }
       return executeCreateAction(context, database, currentState);
     }
@@ -99,15 +99,15 @@ const executeSingleItem = async (
     case 'update': {
       const database = databasesMap.get(item.logicalId);
       if (!database) {
-        throw new Error(`Database not found for logical ID: ${item.logicalId}`);
+        throw new Error(lang.__('RESOURCE_DATABASE_NOT_FOUND', { logicalId: item.logicalId }));
       }
       const state = getResource(currentState, item.logicalId);
       if (!state) {
-        throw new Error(`State not found for ${item.logicalId}`);
+        throw new Error(lang.__('EXECUTOR_STATE_NOT_FOUND', { logicalId: item.logicalId }));
       }
       const spaceId = (state.metadata?.spaceId as string | undefined) || state.instances?.[0]?.id;
       if (!spaceId) {
-        throw new Error(`Space ID not found in state for ${item.logicalId}`);
+        throw new Error(lang.__('RESOURCE_SPACE_ID_NOT_FOUND', { logicalId: item.logicalId }));
       }
       return executeUpdateAction(context, database, spaceId, currentState);
     }
@@ -120,7 +120,7 @@ const executeSingleItem = async (
       }
       const spaceId = (state.metadata?.spaceId as string | undefined) || state.instances?.[0]?.id;
       if (!spaceId) {
-        throw new Error(`Space ID not found in state for ${item.logicalId}`);
+        throw new Error(lang.__('RESOURCE_SPACE_ID_NOT_FOUND', { logicalId: item.logicalId }));
       }
       return executeDeleteAction(context, spaceId, item.logicalId, currentState);
     }

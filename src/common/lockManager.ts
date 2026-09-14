@@ -264,9 +264,7 @@ export const forceUnlock = (statePath: string, lockId: string): boolean => {
   }
 
   if (existingLock.id !== lockId) {
-    throw new Error(
-      `Lock ID mismatch. Current lock ID is ${existingLock.id}, but you provided ${lockId}`,
-    );
+    throw new Error(lang.__('LOCK_ID_MISMATCH', { actualId: existingLock.id, providedId: lockId }));
   }
 
   removeLockFile(lockPath);

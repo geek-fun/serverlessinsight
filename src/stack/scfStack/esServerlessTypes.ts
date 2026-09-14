@@ -1,4 +1,5 @@
 import { DatabaseDomain, DatabaseEnum, DatabaseVersionEnum, ResourceAttributes } from '../../types';
+import { lang } from '../../lang';
 
 export type TencentEsConfig = {
   SpaceName: string;
@@ -72,7 +73,9 @@ export const databaseToTencentEsConfig = (database: DatabaseDomain): TencentEsCo
   const engineConfig = esVersionMap.get(`${database.type}-${database.version}`);
 
   if (!engineConfig) {
-    throw new Error(`Unsupported ES database type/version: ${database.type}-${database.version}`);
+    throw new Error(
+      lang.__('ES_DB_TYPE_VERSION_UNSUPPORTED', { type: database.type, version: database.version }),
+    );
   }
 
   const config: TencentEsConfig = {

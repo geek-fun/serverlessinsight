@@ -377,7 +377,7 @@ export const createApigwOperations = (
     };
 
     if (!shouldLoop) {
-      logger.info('Checking DNS record status...');
+      logger.info(lang.__('APIGW_CHECKING_DNS_STATUS'));
       return await checkPropagation();
     }
 
@@ -725,7 +725,7 @@ export const createApigwOperations = (
       const response = await apigwClient.createApiGroup(request);
 
       if (!response.body?.groupId) {
-        throw new Error('Failed to create API Gateway group: no groupId returned');
+        throw new Error(lang.__('APIGW_GROUP_CREATE_NO_ID'));
       }
 
       return response.body.groupId;
@@ -995,7 +995,7 @@ export const createApigwOperations = (
       const response = await apigwClient.createApi(request);
 
       if (!response.body?.apiId) {
-        throw new Error('Failed to create API: no apiId returned');
+        throw new Error(lang.__('APIGW_API_CREATE_NO_ID'));
       }
 
       return response.body.apiId;
@@ -1400,9 +1400,7 @@ export const createApigwOperations = (
       const groupId = groupInfo.body?.groupId || config.groupId;
 
       if (!groupSubdomain) {
-        throw new Error(
-          `API group ${config.groupId} has no subDomain — cannot configure domain binding`,
-        );
+        throw new Error(lang.__('APIGW_GROUP_NO_SUBDOMAIN', { groupName: config.groupId }));
       }
 
       if (!skipDns) {

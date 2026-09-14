@@ -1,4 +1,5 @@
 import { TableDomain, TableEnum, AttributeTypeEnum, ResourceAttributes } from '../../types';
+import { lang } from '../../lang';
 import type { TableStoreTableInfo } from '../../common/aliyunClient/tablestoreOperations';
 
 export type TableStoreConfig = {
@@ -62,14 +63,14 @@ const attributeTypeToTableStoreType = (
 export const tableToTableStoreConfig = (table: TableDomain): TableStoreConfig => {
   const clusterType = clusterTypeMap.get(table.type);
   if (!clusterType) {
-    throw new Error(`Unsupported table type: ${table.type}`);
+    throw new Error(lang.__('OTS_TABLE_TYPE_UNSUPPORTED', { type: table.type }));
   }
 
   // Extract primary keys from keySchema
   const primaryKey = table.keySchema.map((key) => {
     const attribute = table.attributes.find((attr) => attr.name === key.name);
     if (!attribute) {
-      throw new Error(`Attribute not found for key: ${key.name}`);
+      throw new Error(lang.__('OTS_ATTRIBUTE_NOT_FOUND', { key: key.name }));
     }
 
     return {

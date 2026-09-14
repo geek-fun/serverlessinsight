@@ -288,7 +288,7 @@ describe('esServerlessExecutor', () => {
       const result = await executeEsPlan(mockContext, plan, [testDatabase], initialState);
 
       expect(result.partialFailure).toBeDefined();
-      expect(result.partialFailure?.error.message).toContain('Database not found for logical ID');
+      expect(result.partialFailure?.error.message).toContain('RESOURCE_DATABASE_NOT_FOUND');
     });
 
     it('should handle missing database for update', async () => {
@@ -306,7 +306,7 @@ describe('esServerlessExecutor', () => {
       const result = await executeEsPlan(mockContext, plan, [testDatabase], initialState);
 
       expect(result.partialFailure).toBeDefined();
-      expect(result.partialFailure?.error.message).toContain('Database not found for logical ID');
+      expect(result.partialFailure?.error.message).toContain('RESOURCE_DATABASE_NOT_FOUND');
     });
 
     it('should handle state not found for update', async () => {
@@ -326,7 +326,7 @@ describe('esServerlessExecutor', () => {
       const result = await executeEsPlan(mockContext, plan, [testDatabase], initialState);
 
       expect(result.partialFailure).toBeDefined();
-      expect(result.partialFailure?.error.message).toContain('State not found');
+      expect(result.partialFailure?.error.message).toContain('EXECUTOR_STATE_NOT_FOUND');
     });
 
     it('should handle missing spaceId for update', async () => {
@@ -350,7 +350,7 @@ describe('esServerlessExecutor', () => {
       const result = await executeEsPlan(mockContext, plan, [testDatabase], initialState);
 
       expect(result.partialFailure).toBeDefined();
-      expect(result.partialFailure?.error.message).toContain('Space ID not found');
+      expect(result.partialFailure?.error.message).toContain('RESOURCE_SPACE_ID_NOT_FOUND');
     });
 
     it('should handle state not found for delete', async () => {
@@ -394,7 +394,7 @@ describe('esServerlessExecutor', () => {
       const result = await executeEsPlan(mockContext, plan, [testDatabase], initialState);
 
       expect(result.partialFailure).toBeDefined();
-      expect(result.partialFailure?.error.message).toContain('Space ID not found');
+      expect(result.partialFailure?.error.message).toContain('RESOURCE_SPACE_ID_NOT_FOUND');
     });
 
     it('should get spaceId from instances when metadata missing', async () => {

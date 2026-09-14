@@ -324,7 +324,11 @@ export const createBucketResource = async (
           if (probe && isOwnedByStack(context, logicalId, toOwnershipTags(probe.tags))) {
             existingBucketOnRetry = probe;
             logger.info(
-              `Bucket ${config.bucketName} exists and carries ownership tag (${OWNERSHIP_TAG_KEY}), adopting idempotently`,
+              lang.__('RESOURCE_OWNERSHIP_TAG_ADOPT', {
+                resourceType: 'Bucket',
+                name: config.bucketName,
+                tag: OWNERSHIP_TAG_KEY,
+              }),
             );
           } else {
             throw new PartialResourceError(stateAfterDependents, refuseAdoptionError());

@@ -182,9 +182,7 @@ describe('destroy command', () => {
       provider: 'unsupported',
     });
 
-    await expect(destroyStack({ location: '/test/path' })).rejects.toThrow(
-      'Unsupported provider: unsupported',
-    );
+    await expect(destroyStack({ location: '/test/path' })).rejects.toThrow('UNSUPPORTED_PROVIDER');
   });
 
   it('should pass options to setContext', async () => {

@@ -335,7 +335,7 @@ describe('DatabaseExecutor', () => {
       const result = await executeDatabasePlan(mockContext, plan, [], initialState);
 
       expect(result.partialFailure).toBeDefined();
-      expect(result.partialFailure?.error.message).toContain('Database not found');
+      expect(result.partialFailure?.error.message).toContain('RESOURCE_DATABASE_NOT_FOUND');
     });
 
     it('should handle missing state for update', async () => {
@@ -355,7 +355,7 @@ describe('DatabaseExecutor', () => {
       const result = await executeDatabasePlan(mockContext, plan, [database], initialState);
 
       expect(result.partialFailure).toBeDefined();
-      expect(result.partialFailure?.error.message).toContain('State not found');
+      expect(result.partialFailure?.error.message).toContain('EXECUTOR_STATE_NOT_FOUND');
     });
 
     it('should handle missing state for delete', async () => {

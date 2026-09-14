@@ -65,7 +65,7 @@ const executeSingleItem = async (
     case 'create': {
       const fn = functionsMap.get(item.logicalId);
       if (!fn) {
-        throw new Error(`Function not found for logical ID: ${item.logicalId}`);
+        throw new Error(lang.__('RESOURCE_FUNCTION_NOT_FOUND', { logicalId: item.logicalId }));
       }
       return executeCreateAction(context, fn, currentState);
     }
@@ -73,7 +73,7 @@ const executeSingleItem = async (
     case 'update': {
       const fn = functionsMap.get(item.logicalId);
       if (!fn) {
-        throw new Error(`Function not found for logical ID: ${item.logicalId}`);
+        throw new Error(lang.__('RESOURCE_FUNCTION_NOT_FOUND', { logicalId: item.logicalId }));
       }
       return executeUpdateAction(context, fn, currentState, item.drifted);
     }

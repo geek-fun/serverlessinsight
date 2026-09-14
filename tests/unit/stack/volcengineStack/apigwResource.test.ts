@@ -396,11 +396,11 @@ describe('apigwResource', () => {
       expect(result.resources['events.api_gateway'].status).toBe('ready');
     });
 
-    it('throws when creating the gateway without network config', async () => {
+    it('VOLC_APIGW_NETWORK_REQUIRED', async () => {
       const eventNoNetwork = { ...mockEvent, network: undefined };
       await expect(
         createApigwResource(mockContext, eventNoNetwork, 'test-service', stateWithFunction),
-      ).rejects.toThrow('network');
+      ).rejects.toThrow('VOLC_APIGW_NETWORK_REQUIRED');
     });
 
     it('throws when the backend function is not deployed yet', async () => {
@@ -409,7 +409,7 @@ describe('apigwResource', () => {
           ...stateWithFunction,
           resources: {},
         }),
-      ).rejects.toThrow('functionId');
+      ).rejects.toThrow('VOLC_BACKEND_FUNCTION_ID_UNRESOLVED');
     });
 
     it('binds the custom domain when configured', async () => {
@@ -613,7 +613,7 @@ describe('apigwResource', () => {
 
       await expect(
         createApigwResource(mockContext, mockEvent, 'test-service', stateWithFunction),
-      ).rejects.toThrow('not owned by this stack');
+      ).rejects.toThrow('VOLC_APIGW_ADOPT_REFUSED');
       expect(mockClient.apigw.waitForGatewayRunning).not.toHaveBeenCalled();
     });
 

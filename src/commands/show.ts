@@ -5,6 +5,7 @@ import { readLockFileForCommand } from '../common/lockManager';
 import { createStateBackend } from '../common/stateBackend';
 import { logger } from '../common/logger';
 import { StateBackend, LockMetadata } from '../common/stateBackend/types';
+import { lang } from '../lang';
 
 type ShowOptions = {
   stage?: string;
@@ -20,10 +21,10 @@ const formatTimeAgo = (dateStr: string): string => {
   const diffHours = Math.floor(diffMs / 3600000);
   const diffDays = Math.floor(diffMs / 86400000);
 
-  if (diffDays > 0) return `${diffDays} day(s) ago`;
-  if (diffHours > 0) return `${diffHours} hour(s) ago`;
-  if (diffMins > 0) return `${diffMins} minute(s) ago`;
-  return 'just now';
+  if (diffDays > 0) return lang.__('SHOW_TIME_DAYS_AGO', { count: String(diffDays) });
+  if (diffHours > 0) return lang.__('SHOW_TIME_HOURS_AGO', { count: String(diffHours) });
+  if (diffMins > 0) return lang.__('SHOW_TIME_MINUTES_AGO', { count: String(diffMins) });
+  return lang.__('SHOW_TIME_JUST_NOW');
 };
 
 const formatFunctionOutput = (logicalId: string, resource: ResourceState): string[] => {
@@ -219,9 +220,7 @@ export const show = async (options: ShowOptions): Promise<void> => {
   const stage = options.stage ?? context.stage;
   const baseDir = options.location ?? process.cwd();
 
-  logger.info(
-    `Loading state for app: ${context.app}, service: ${context.service}, stage: ${stage}...`,
-  );
+  logger.info(lang.__('SHOW_LOADING_STATE', { app: context.app, service: context.service, stage }));
 
   let state;
   let lockInfo: LockMetadata | null;
@@ -246,9 +245,9 @@ export const show = async (options: ShowOptions): Promise<void> => {
           : getBackendLocationString(options.iac!.backend);
     } catch (error) {
       if (backendType === StateBackendType.SAAS || !backendType) {
-        logger.warn(`SaaS backend unavailable: ${error}. Using local state.`);
+        logger.warn(lang.__('SHOW_SAAS_BACKEND_FALLBACK', { error: String(error) }));
       } else {
-        logger.warn(`Failed to load state from remote backend: ${error}. Using local state.`);
+        logger.warn(lang.__('SHOW_REMOTE_BACKEND_FALLBACK', { error: String(error) }));
       }
       state = loadLocalState(context.provider, context.app, context.service, stage, baseDir);
       lockInfo = readLocalLock(context.app, context.service, baseDir);
@@ -264,20 +263,20 @@ export const show = async (options: ShowOptions): Promise<void> => {
   const resourceCount = Object.keys(resources).length;
 
   if (resourceCount === 0) {
-    logger.info('No resources found in state.');
+    logger.info(lang.__('SHOW_NO_RESOURCES'));
     logger.info('');
-    logger.info(`State location: ${stateLocation}`);
+    logger.info(lang.__('SHOW_STATE_LOCATION', { stateLocation }));
     if (usingRemoteBackend) {
-      logger.info('Backend: Remote');
+      logger.info(lang.__('SHOW_BACKEND_REMOTE'));
     }
     logger.info('');
-    logger.info('To deploy resources, run: si deploy');
+    logger.info(lang.__('SHOW_DEPLOY_HINT'));
     return;
   }
 
   logger.info('');
   logger.info('═'.repeat(60));
-  logger.info('DEPLOYED RESOURCES');
+  logger.info(lang.__('SHOW_HEADER_DEPLOYED'));
   logger.info('═'.repeat(60));
 
   const groupedResources: Record<string, Array<[string, ResourceState]>> = {};
@@ -321,7 +320,7 @@ export const show = async (options: ShowOptions): Promise<void> => {
     if (!resourcesInCategory || resourcesInCategory.length === 0) continue;
 
     logger.info('');
-    logger.info(`📦 ${categoryLabels[category]}`);
+    logger.info(lang.__('SHOW_CATEGORY_HEADER', { label: categoryLabels[category] }));
     logger.info('─'.repeat(40));
 
     for (const [logicalId, resource] of resourcesInCategory) {
@@ -334,14 +333,14 @@ export const show = async (options: ShowOptions): Promise<void> => {
 
   logger.info('');
   logger.info('═'.repeat(60));
-  logger.info('SUMMARY');
+  logger.info(lang.__('SHOW_HEADER_SUMMARY'));
   logger.info('═'.repeat(60));
   logger.info('');
-  logger.info(`  Provider:     ${state.provider}`);
-  logger.info(`  App:          ${state.app}`);
-  logger.info(`  Service:      ${state.service}`);
-  logger.info(`  Stage:        ${stage}`);
-  logger.info(`  Resources:    ${resourceCount}`);
+  logger.info(lang.__('SHOW_SUMMARY_PROVIDER', { value: state.provider }));
+  logger.info(lang.__('SHOW_SUMMARY_APP', { value: state.app }));
+  logger.info(lang.__('SHOW_SUMMARY_SERVICE', { value: state.service }));
+  logger.info(lang.__('SHOW_SUMMARY_STAGE', { value: stage }));
+  logger.info(lang.__('SHOW_SUMMARY_RESOURCES', { value: String(resourceCount) }));
 
   if (Object.keys(resources).length > 0) {
     const lastUpdated = Object.values(resources).reduce<string | undefined>((latest, r) => {
@@ -350,19 +349,19 @@ export const show = async (options: ShowOptions): Promise<void> => {
       return r.lastUpdated > latest ? r.lastUpdated : latest;
     }, undefined);
     if (lastUpdated) {
-      logger.info(`  Last Updated: ${formatTimeAgo(lastUpdated)}`);
+      logger.info(lang.__('SHOW_SUMMARY_LAST_UPDATED', { value: formatTimeAgo(lastUpdated) }));
     }
   }
 
   logger.info('');
-  logger.info(`State location: ${stateLocation}`);
+  logger.info(lang.__('SHOW_STATE_LOCATION', { stateLocation }));
   if (usingRemoteBackend) {
-    logger.info('Backend: Remote');
+    logger.info(lang.__('SHOW_BACKEND_REMOTE'));
   }
 
   if (lockInfo) {
-    logger.info(`Lock Status: LOCKED by ${lockInfo.user || 'unknown'}`);
+    logger.info(lang.__('SHOW_LOCKED_BY', { user: lockInfo.user || 'unknown' }));
   } else {
-    logger.info('Lock Status: UNLOCKED');
+    logger.info(lang.__('SHOW_UNLOCKED'));
   }
 };

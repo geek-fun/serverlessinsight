@@ -1,4 +1,5 @@
 import { Service } from '@volcengine/openapi';
+import { lang } from '../../lang';
 import { TlsService } from '@volcengine/openapi/lib/services/tls';
 import type { OpenApiResponse } from '@volcengine/openapi/lib/base/types';
 import type { Context } from '../../types';
@@ -33,8 +34,11 @@ const wrapService = <T extends Service>(service: T): T => {
       const requestId = response?.ResponseMetadata?.RequestId;
       const action = params.Action || '';
       const error = new Error(
-        `Volcengine ${action} failed: ${apiError.Code}: ${apiError.Message ?? ''}` +
-          (requestId ? ` (RequestId: ${requestId})` : ''),
+        lang.__('VOLC_API_FAILED', {
+          service: action,
+          code: apiError.Code,
+          message: apiError.Message ?? '',
+        }) + (requestId ? lang.__('VOLC_API_REQUEST_ID', { requestId }) : ''),
       ) as Error & {
         code?: string;
         requestId?: string;

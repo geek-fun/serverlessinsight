@@ -172,7 +172,11 @@ export const createDatabaseResource = async (
           isOwnedByStack(context, logicalId, tdsqlcTagsToOwnershipTags(probe.ResourceTags))
         ) {
           logger.info(
-            `Cluster ${database.name} exists and carries ownership tag (${OWNERSHIP_TAG_KEY}), adopting idempotently`,
+            lang.__('RESOURCE_OWNERSHIP_TAG_ADOPT', {
+              resourceType: 'Cluster',
+              name: database.name,
+              tag: OWNERSHIP_TAG_KEY,
+            }),
           );
           clusterId = probe.ClusterId;
           clusterInfo = probe;
@@ -197,7 +201,7 @@ export const createDatabaseResource = async (
     if (!clusterInfo) {
       clusterInfo = await client.tdsqlc.getCluster(clusterId);
       if (!clusterInfo) {
-        throw new Error(`Failed to refresh state for cluster: ${clusterId}`);
+        throw new Error(lang.__('REFRESH_STATE_CLUSTER', { clusterId }));
       }
     }
 
@@ -246,7 +250,7 @@ export const updateDatabaseResource = async (
   // Refresh state from provider to get all attributes
   const clusterInfo = await client.tdsqlc.getCluster(clusterId);
   if (!clusterInfo) {
-    throw new Error(`Failed to refresh state for cluster: ${clusterId}`);
+    throw new Error(lang.__('REFRESH_STATE_CLUSTER', { clusterId }));
   }
 
   const definition = extractTdsqlcDefinition(config);

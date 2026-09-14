@@ -121,7 +121,7 @@ export const createEsResource = async (
     // Refresh state from provider to get all attributes
     const spaceInfo = await client.es.getSpace(spaceId);
     if (!spaceInfo) {
-      throw new Error(`Failed to refresh state for ES space: ${spaceId}`);
+      throw new Error(lang.__('REFRESH_STATE_ES_SPACE', { spaceId }));
     }
 
     return setResource(state, logicalId, buildResourceState(spaceInfo));
@@ -135,7 +135,11 @@ export const createEsResource = async (
       const probe = await client.es.getSpaceByName(config.SpaceName);
       if (probe && isOwnedByStack(context, logicalId, probe.Tags)) {
         logger.info(
-          `ES space ${config.SpaceName} exists and carries ownership tag (${OWNERSHIP_TAG_KEY}), adopting idempotently`,
+          lang.__('RESOURCE_OWNERSHIP_TAG_ADOPT', {
+            resourceType: 'ES space',
+            name: config.SpaceName,
+            tag: OWNERSHIP_TAG_KEY,
+          }),
         );
         return setResource(state, logicalId, buildResourceState(probe));
       }
@@ -179,7 +183,7 @@ export const updateEsResource = async (
   // Refresh state from provider to get all attributes
   const spaceInfo = await client.es.getSpace(spaceId);
   if (!spaceInfo) {
-    throw new Error(`Failed to refresh state for ES space: ${spaceId}`);
+    throw new Error(lang.__('REFRESH_STATE_ES_SPACE', { spaceId }));
   }
 
   const definition = extractTencentEsDefinition(config);

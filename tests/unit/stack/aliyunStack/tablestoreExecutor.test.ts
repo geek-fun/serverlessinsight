@@ -258,7 +258,7 @@ describe('TablestoreExecutor', () => {
       const result = await executeTablePlan(mockContext, plan, [], initialState);
 
       expect(result.partialFailure).toBeDefined();
-      expect(result.partialFailure?.error.message).toContain('Table not found for logical ID');
+      expect(result.partialFailure?.error.message).toContain('RESOURCE_TABLE_NOT_FOUND');
       expect(result.partialFailure?.failedItem.logicalId).toBe('tables.missing_table');
     });
 
@@ -276,7 +276,7 @@ describe('TablestoreExecutor', () => {
       const result = await executeTablePlan(mockContext, plan, [], initialState);
 
       expect(result.partialFailure).toBeDefined();
-      expect(result.partialFailure?.error.message).toContain('Table not found for logical ID');
+      expect(result.partialFailure?.error.message).toContain('RESOURCE_TABLE_NOT_FOUND');
       expect(result.partialFailure?.failedItem.logicalId).toBe('tables.missing_table');
     });
 
