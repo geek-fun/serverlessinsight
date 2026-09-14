@@ -19,7 +19,7 @@
   <img src="https://img.shields.io/badge/TypeScript-3178C6&logo=typescript&logoColor=white"/>
   <img src="https://img.shields.io/badge/Alibaba%20Cloud-FF6A00&logo=alibabacloud&logoColor=white"/>
   <img src="https://img.shields.io/badge/Tencent%20Cloud-0A9AED&logo=tencentqq&logoColor=white"/>
-  <img src="https://img.shields.io/badge/Huawei%20Cloud-FF0000&logo=hauwei&logoColor=white"/>
+  <img src="https://img.shields.io/badge/Huawei%20Cloud-FF0000?logo=huawei&logoColor=white"/>
   <img src="https://img.shields.io/badge/AWS-232F3E&logo=amazonwebservices&logoColor=white"/>
 </p>
 
@@ -65,7 +65,7 @@ Define your infrastructure once in YAML and deploy across Alibaba Cloud, Tencent
 | **Alibaba Cloud** | ✅ FC3           | ✅ API Gateway | ✅ OSS         | ✅ RDS, OTS, ESS | Stable  |
 | **Tencent Cloud** | ✅ SCF           | 🚧 Coming Soon | ✅ COS         | ✅ TDSQL-C       | Stable  |
 | **Volcengine**    | ✅ veFaaS        | ✅ API Gateway | ✅ TOS         | —                | Stable  |
-| **Huawei Cloud**  | ✅ FunctionGraph | 🚧 Coming Soon | 🚧 Coming Soon | 🚧 Coming Soon   | Beta    |
+| **Huawei Cloud**  | 🚧 Coming Soon   | 🚧 Coming Soon | 🚧 Coming Soon | 🚧 Coming Soon   | Planned |
 | **AWS**           | 🔜 Planned       | 🔜 Planned     | 🔜 Planned     | 🔜 Planned       | Planned |
 | **Azure**         | 🔜 Planned       | 🔜 Planned     | 🔜 Planned     | 🔜 Planned       | Planned |
 | **Google Cloud**  | 🔜 Planned       | 🔜 Planned     | 🔜 Planned     | 🔜 Planned       | Planned |
