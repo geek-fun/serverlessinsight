@@ -114,25 +114,40 @@ export const createSaasStateBackend = (
   };
 
   /**
-   * D-6: resolve the API key's org slug. Credentials written before the slug
-   * field existed lack it — fetch it from the validate endpoint once and heal
-   * the stored file so later commands check locally. Unresolvable (network /
-   * version skew) degrades to skipping the check: the key still only ever
-   * writes to its own org.
+   * D-6: resolve the API key's org identity (id + slug). Credentials written
+   * before the slug field existed lack it — fetch it from the validate endpoint
+   * once, cache it for this backend instance and heal the stored file so later
+   * commands check locally. Unresolvable (network / version skew) degrades to
+   * skipping the checks: the key still only ever writes to its own org.
    */
-  const resolveKeyOrgSlug = async (): Promise<string | undefined> => {
-    if (creds?.orgSlug) {
-      return creds.orgSlug;
+  let resolvedIdentity: { orgId?: string; orgSlug?: string } | null = null;
+  const resolveKeyOrgIdentity = async (): Promise<{ orgId?: string; orgSlug?: string }> => {
+    if (resolvedIdentity) {
+      return resolvedIdentity;
+    }
+    const local: { orgId?: string; orgSlug?: string } = {
+      orgId: creds?.orgId || undefined,
+      orgSlug: creds?.orgSlug,
+    };
+    if (local.orgId && local.orgSlug) {
+      resolvedIdentity = local;
+      return local;
     }
     try {
-      const identity = await client.get<{ orgSlug?: string }>('/api/v1/auth/api-keys/validate');
-      if (identity.orgSlug && creds) {
-        saveCredentials({ ...creds, orgSlug: identity.orgSlug });
+      const fetched = await client.get<{ orgId?: string; orgSlug?: string }>(
+        '/api/v1/auth/api-keys/validate',
+      );
+      if (fetched.orgSlug && creds) {
+        saveCredentials({ ...creds, orgSlug: fetched.orgSlug });
       }
-      return identity.orgSlug;
+      resolvedIdentity = {
+        orgId: local.orgId ?? fetched.orgId,
+        orgSlug: local.orgSlug ?? fetched.orgSlug,
+      };
     } catch {
-      return undefined;
+      resolvedIdentity = local;
     }
+    return resolvedIdentity;
   };
 
   /**
@@ -143,12 +158,12 @@ export const createSaasStateBackend = (
     // D-6: the org declaration must match the key's org BEFORE provisioning —
     // this POST is what auto-creates app/service, i.e. the wrong-org write.
     if (context.declaredOrg) {
-      const keyOrgSlug = await resolveKeyOrgSlug();
-      if (keyOrgSlug && keyOrgSlug !== context.declaredOrg) {
+      const { orgSlug } = await resolveKeyOrgIdentity();
+      if (orgSlug && orgSlug !== context.declaredOrg) {
         throw new Error(
           lang.__('SAAS_ORG_MISMATCH', {
             declared: context.declaredOrg,
-            actual: keyOrgSlug,
+            actual: orgSlug,
           }),
         );
       }
@@ -191,6 +206,22 @@ export const createSaasStateBackend = (
           `/api/v1/apps/${resolvedAppId}/services/${resolvedServiceId}/state/current?stage=${encodeURIComponent(stage)}`,
         );
         const migrated = migrateState(state.stateJson);
+        // D-6 identity anchor: the state records the org id that owns this
+        // service (persisted on every SaaS save / migrate backfill). A mismatch
+        // with the current key's org means a wrong key — or an org deleted and
+        // recreated under the same slug (name matches, identity does not).
+        // Refuse before anything downstream reads or writes this state.
+        if (migrated.orgId) {
+          const { orgId: keyOrgId } = await resolveKeyOrgIdentity();
+          if (keyOrgId && migrated.orgId !== keyOrgId) {
+            throw new Error(
+              lang.__('SAAS_STATE_ORG_MISMATCH', {
+                stateOrgId: migrated.orgId,
+                keyOrgId,
+              }),
+            );
+          }
+        }
         // Legacy Console states hold fresh resources only in the top-level
         // field (pre-stage-syncing saves) — prefer the stage store, fall back.
         const stageResources = migrated.stages?.[stage]?.resources;

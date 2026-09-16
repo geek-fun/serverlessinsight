@@ -1030,6 +1030,8 @@ export const en = {
     'The org "{{declared}}" declared in your YAML does not match the org "{{actual}}" of the current API key.\nVerify your credentials (run `si login` again) or fix the org declaration in the YAML. Nothing was written.',
   SAAS_ORG_FROM_CREDENTIALS:
     'Target org: {{orgName}} (from credentials; declare a top-level `org` in the YAML to pin it explicitly)',
+  SAAS_STATE_ORG_MISMATCH:
+    'The org recorded in state ({{stateOrgId}}) does not match the org of the current credentials ({{keyOrgId}}) — either the wrong API key is in use, or the organization was deleted and recreated under the same name.\nVerify your credentials (`si login`) or the organization state before retrying; nothing was written.',
 
   // API error messages
   API_ERROR_401: 'API key is invalid or expired. Run `si login` to update.',

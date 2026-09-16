@@ -936,6 +936,8 @@ export const zhCN = {
     'YAML 声明的 org "{{declared}}" 与当前 API key 所属的 org "{{actual}}" 不一致。\n请确认使用的凭据（可运行 `si login` 重新登录，或修正 YAML 中的 org 声明）。未写入任何数据。',
   SAAS_ORG_FROM_CREDENTIALS:
     '目标 org：{{orgName}}（来自凭据；可在 YAML 顶层声明 org 以显式固定目标组织）',
+  SAAS_STATE_ORG_MISMATCH:
+    'state 记录的归属 org（{{stateOrgId}}）与当前凭据所属 org（{{keyOrgId}}）不一致——可能是拿错了 API key，或该组织被删除后以同名重建。\n请核对凭据（`si login`）或组织状态后再试；未写入任何数据。',
 
   // API 错误消息
   API_ERROR_401: 'API 密钥无效或已过期，请运行 `si login` 更新。',

@@ -185,6 +185,73 @@ describe('saasStateBackend', () => {
       expect(mockApiClient.get).not.toHaveBeenCalledWith('/api/v1/auth/api-keys/validate');
       expect(mockApiClient.post).toHaveBeenCalled();
     });
+
+    it('should refuse state whose recorded org id differs from the key org (identity anchor)', async () => {
+      // Slug-based local identity so no validate roundtrip is needed
+      (loadCredentials as jest.Mock).mockReturnValue({
+        apiKey: 'si_test_testkey123456789012345678901234',
+        consoleUrl: 'https://api.test.com',
+        orgId: 'org-1',
+        orgSlug: 'wentsen',
+      });
+      const local = createSaasStateBackend({ app: 'myapp', service: 'myservice' });
+      mockApiClient.post.mockResolvedValueOnce({
+        id: 'deploy-1',
+        appId: 'app-1',
+        serviceId: 'svc-1',
+        status: 'active',
+        isNewApp: false,
+        isNewService: false,
+      });
+      mockApiClient.get.mockResolvedValueOnce({
+        stateJson: {
+          version: '3.0',
+          provider: 'aliyun',
+          app: 'myapp',
+          service: 'myservice',
+          orgId: 'org-2',
+          stages: { dev: { resources: {} } },
+          resources: {},
+        },
+      });
+
+      await expect(local.loadState('aliyun', 'myapp', 'myservice', 'dev')).rejects.toThrow(
+        'SAAS_STATE_ORG_MISMATCH',
+      );
+    });
+
+    it('should load state whose recorded org id matches the key org', async () => {
+      (loadCredentials as jest.Mock).mockReturnValue({
+        apiKey: 'si_test_testkey123456789012345678901234',
+        consoleUrl: 'https://api.test.com',
+        orgId: 'org-1',
+        orgSlug: 'wentsen',
+      });
+      const local = createSaasStateBackend({ app: 'myapp', service: 'myservice' });
+      mockApiClient.post.mockResolvedValueOnce({
+        id: 'deploy-1',
+        appId: 'app-1',
+        serviceId: 'svc-1',
+        status: 'active',
+        isNewApp: false,
+        isNewService: false,
+      });
+      mockApiClient.get.mockResolvedValueOnce({
+        stateJson: {
+          version: '3.0',
+          provider: 'aliyun',
+          app: 'myapp',
+          service: 'myservice',
+          orgId: 'org-1',
+          stages: { dev: { resources: {} } },
+          resources: {},
+        },
+      });
+
+      const result = await local.loadState('aliyun', 'myapp', 'myservice', 'dev');
+
+      expect(result.orgId).toBe('org-1');
+    });
   });
 
   describe('loadState', () => {
