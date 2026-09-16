@@ -74,6 +74,7 @@ export const deploy = async (options: {
   // fail closed here and route the user to the Console backend.
   const backend = createStateBackend(iac.backend, {
     ...context,
+    declaredOrg: iac.org,
     siApiKey: options.siApiKey,
     migrationMarker: 'refuse',
   });

@@ -87,6 +87,10 @@ export const rootSchema = {
       ],
     },
     service: { type: 'string', pattern: '^[a-z][a-z0-9-]*$' },
+    // Target Console org (organizations.slug). Optional — required only when an
+    // explicit SaaS state backend is declared (allOf branch below); with
+    // LOCAL/BUCKET_STORE backends it is allowed but inert (decision D-6).
+    org: { type: 'string', pattern: '^[a-z0-9][a-z0-9-]*$' },
     vars: {
       type: 'object',
       additionalProperties: {
@@ -144,7 +148,30 @@ export const rootSchema = {
   },
   required: ['version', 'provider', 'app', 'service'],
   additionalProperties: false,
-  allOf: Object.entries(FUNCTION_NAME_MAX_LENGTH).map(([provider, maxLength]) =>
-    functionNameLimitBranch(provider, maxLength),
-  ),
+  allOf: [
+    // Explicit SaaS state backend must declare the target org at top level.
+    // A missing backend block stays org-free (zero-config quick start — the
+    // API key decides the org there); every nested level needs its own
+    // `required` so the `if` can't match vacuously.
+    {
+      if: {
+        properties: {
+          backend: {
+            properties: {
+              state_manager: {
+                properties: { type: { const: 'SAAS' } },
+                required: ['type'],
+              },
+            },
+            required: ['state_manager'],
+          },
+        },
+        required: ['backend'],
+      },
+      then: { required: ['org'] },
+    },
+    ...Object.entries(FUNCTION_NAME_MAX_LENGTH).map(([provider, maxLength]) =>
+      functionNameLimitBranch(provider, maxLength),
+    ),
+  ],
 };

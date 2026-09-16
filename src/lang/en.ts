@@ -1026,6 +1026,10 @@ export const en = {
     'SaaS state requires Console login.\nRun `si login`, or:\n- Set SI_API_KEY environment variable\n- Use --si-api-key flag\n- Configure a local or bucket backend in serverlessinsight.yml',
   SAAS_BACKEND_CONSOLE_UNREACHABLE:
     'Unable to reach Console. Deploy requires Console connectivity.',
+  SAAS_ORG_MISMATCH:
+    'The org "{{declared}}" declared in your YAML does not match the org "{{actual}}" of the current API key.\nVerify your credentials (run `si login` again) or fix the org declaration in the YAML. Nothing was written.',
+  SAAS_ORG_FROM_CREDENTIALS:
+    'Target org: {{orgName}} (from credentials; declare a top-level `org` in the YAML to pin it explicitly)',
 
   // API error messages
   API_ERROR_401: 'API key is invalid or expired. Run `si login` to update.',
@@ -1093,9 +1097,9 @@ export const en = {
   MIGRATE_ROLLBACK_DONE_HINT:
     'If you already removed the backend.state_manager block from your YAML, restore it before deploying via the legacy backend.',
   MIGRATE_CUTOVER_STEPS:
-    'Cutover checklist:\n  1. Remove the backend.state_manager block from serverlessinsight.yml and merge\n  2. Run `si plan` — it MUST report no changes (that is the proof of a lossless migration)\n  3. Resume deploys; the Console now owns the deployment timeline',
+    'Cutover checklist:\n  1. Remove the backend.state_manager block from serverlessinsight.yml, add a top-level org declaration (org: <slug> — see your org settings in Console), and merge\n  2. Run `si plan` — it MUST report no changes (that is the proof of a lossless migration)\n  3. Resume deploys; the Console now owns the deployment timeline',
   MIGRATION_MARKER_REFUSED:
-    'This state has been migrated to the ServerlessInsight Console (managedBy=saas) and the legacy backend is closed for changes.\n  • To continue with the Console: remove the backend.state_manager block from your YAML, then deploy again.\n  • To deliberately use the legacy backend: run `si migrate --rollback` to clear the marker.',
+    'This state has been migrated to the ServerlessInsight Console (managedBy=saas) and the legacy backend is closed for changes.\n  • To continue with the Console: remove the backend.state_manager block from your YAML, declare a top-level org: <slug>, then deploy again.\n  • To deliberately use the legacy backend: run `si migrate --rollback` to clear the marker.',
   MIGRATION_MARKER_WARN:
     'This state has been migrated to the Console (managedBy=saas) — the copy shown here is read-only and may be stale. Do not deploy from this backend.',
 

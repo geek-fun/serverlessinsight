@@ -16,6 +16,8 @@ export type ApiClient = {
 export type ValidateResult = {
   readonly orgId: string;
   readonly orgName: string;
+  /** Stable unique org identifier — what yamls declare as top-level `org:` (D-6). */
+  readonly orgSlug?: string;
   readonly userEmail: string;
   readonly scopes: readonly string[];
 };
@@ -144,6 +146,7 @@ export const validateApiKey = async (apiKey: string, baseUrl: string): Promise<V
     valid: boolean;
     orgId: string;
     orgName: string;
+    orgSlug?: string;
     userEmail?: string;
     user?: { email?: string };
     scopes: string[];
@@ -151,6 +154,7 @@ export const validateApiKey = async (apiKey: string, baseUrl: string): Promise<V
   return {
     orgId: result.orgId ?? '',
     orgName: result.orgName ?? '',
+    orgSlug: result.orgSlug,
     userEmail: result.userEmail ?? result.user?.email ?? '',
     scopes: result.scopes ?? [],
   };

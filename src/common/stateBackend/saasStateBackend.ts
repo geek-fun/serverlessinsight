@@ -1,6 +1,7 @@
 import { createApiClient, ApiError } from '../apiClient';
 import type { ApiClient } from '../apiClient';
-import { loadCredentials, getConsoleUrl } from '../credentialStore';
+import { loadCredentials, saveCredentials, getConsoleUrl } from '../credentialStore';
+import { logger } from '../logger';
 import { StateBackend } from './types';
 import { StateFile, LockMetadata, LockOptions, CURRENT_STATE_VERSION } from '../../types';
 import { migrateState, toPersistedState } from '../stateManager';
@@ -11,6 +12,9 @@ import crypto from 'node:crypto';
 export type SaasBackendContext = {
   readonly app: string;
   readonly service: string;
+  /** Org slug declared as top-level `org:` in the yaml (D-6). When present it
+   * must match the API key's org — checked before any provisioning write. */
+  readonly declaredOrg?: string;
 };
 
 type DeploymentInitResponse = {
@@ -52,6 +56,20 @@ export const createSaasStateBackend = (
 
   if (!apiKey) {
     throw new Error(lang.__('SAAS_BACKEND_NO_CREDENTIALS'));
+  }
+
+  // D-6 fast path: when both the yaml declaration and the stored slug are
+  // known, fail before touching the network at all.
+  if (context.declaredOrg && creds?.orgSlug && context.declaredOrg !== creds.orgSlug) {
+    throw new Error(
+      lang.__('SAAS_ORG_MISMATCH', {
+        declared: context.declaredOrg,
+        actual: creds.orgSlug,
+      }),
+    );
+  }
+  if (!context.declaredOrg && creds?.orgName) {
+    logger.info(lang.__('SAAS_ORG_FROM_CREDENTIALS', { orgName: creds.orgName }));
   }
 
   const client: ApiClient = createApiClient({
@@ -96,10 +114,45 @@ export const createSaasStateBackend = (
   };
 
   /**
+   * D-6: resolve the API key's org slug. Credentials written before the slug
+   * field existed lack it — fetch it from the validate endpoint once and heal
+   * the stored file so later commands check locally. Unresolvable (network /
+   * version skew) degrades to skipping the check: the key still only ever
+   * writes to its own org.
+   */
+  const resolveKeyOrgSlug = async (): Promise<string | undefined> => {
+    if (creds?.orgSlug) {
+      return creds.orgSlug;
+    }
+    try {
+      const identity = await client.get<{ orgSlug?: string }>('/api/v1/auth/api-keys/validate');
+      if (identity.orgSlug && creds) {
+        saveCredentials({ ...creds, orgSlug: identity.orgSlug });
+      }
+      return identity.orgSlug;
+    } catch {
+      return undefined;
+    }
+  };
+
+  /**
    * Provision the deployment by calling the unified POST endpoint.
    * This resolves YAML names to Console UUIDs and caches them.
    */
   const provision = async (provider: string, stage: string): Promise<void> => {
+    // D-6: the org declaration must match the key's org BEFORE provisioning —
+    // this POST is what auto-creates app/service, i.e. the wrong-org write.
+    if (context.declaredOrg) {
+      const keyOrgSlug = await resolveKeyOrgSlug();
+      if (keyOrgSlug && keyOrgSlug !== context.declaredOrg) {
+        throw new Error(
+          lang.__('SAAS_ORG_MISMATCH', {
+            declared: context.declaredOrg,
+            actual: keyOrgSlug,
+          }),
+        );
+      }
+    }
     const result = await client.post<DeploymentInitResponse>('/api/v1/deployments/', {
       appName: context.app,
       serviceName: context.service,

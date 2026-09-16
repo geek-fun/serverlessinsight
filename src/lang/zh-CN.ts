@@ -932,6 +932,10 @@ export const zhCN = {
   SAAS_BACKEND_NO_CREDENTIALS:
     'SaaS 状态后端需要登录 Console。\n请运行 `si login`，或：\n- 设置 SI_API_KEY 环境变量\n- 使用 --si-api-key 参数\n- 在 serverlessinsight.yml 中配置本地或存储桶后端',
   SAAS_BACKEND_CONSOLE_UNREACHABLE: '无法连接到控制台。部署需要控制台连接。',
+  SAAS_ORG_MISMATCH:
+    'YAML 声明的 org "{{declared}}" 与当前 API key 所属的 org "{{actual}}" 不一致。\n请确认使用的凭据（可运行 `si login` 重新登录，或修正 YAML 中的 org 声明）。未写入任何数据。',
+  SAAS_ORG_FROM_CREDENTIALS:
+    '目标 org：{{orgName}}（来自凭据；可在 YAML 顶层声明 org 以显式固定目标组织）',
 
   // API 错误消息
   API_ERROR_401: 'API 密钥无效或已过期，请运行 `si login` 更新。',
@@ -990,9 +994,9 @@ export const zhCN = {
   MIGRATE_ROLLBACK_DONE_HINT:
     '如果已从 YAML 中删除 backend.state_manager 段，经旧后端部署前请先恢复该段。',
   MIGRATE_CUTOVER_STEPS:
-    'cutover 清单：\n  1. 从 serverlessinsight.yml 删除 backend.state_manager 段并合并\n  2. 运行 `si plan`——必须显示无变更（这是迁移无损的证明）\n  3. 恢复部署；此后部署时间线由 Console 接管',
+    'cutover 清单：\n  1. 从 serverlessinsight.yml 删除 backend.state_manager 段，并在顶层添加 org 声明（org: <slug>，slug 见 Console 组织设置）后合并\n  2. 运行 `si plan`——必须显示无变更（这是迁移无损的证明）\n  3. 恢复部署；此后部署时间线由 Console 接管',
   MIGRATION_MARKER_REFUSED:
-    '该状态已迁移至 ServerlessInsight Console（managedBy=saas），旧后端已关闭变更。\n  • 继续使用 Console：从 YAML 中删除 backend.state_manager 段后重新部署。\n  • 确需经旧后端操作：运行 `si migrate --rollback` 清除标记。',
+    '该状态已迁移至 ServerlessInsight Console（managedBy=saas），旧后端已关闭变更。\n  • 继续使用 Console：从 YAML 中删除 backend.state_manager 段并在顶层声明 org: <slug> 后重新部署。\n  • 确需经旧后端操作：运行 `si migrate --rollback` 清除标记。',
   MIGRATION_MARKER_WARN:
     '该状态已迁移至 Console（managedBy=saas）——此处展示的是只读副本，可能已过期。请勿从该后端部署。',
 

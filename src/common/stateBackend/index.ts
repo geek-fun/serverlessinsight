@@ -24,6 +24,12 @@ export type BackendContext = {
   baseDir?: string;
   app: string;
   service: string;
+  /**
+   * Org slug declared as top-level `org:` in the yaml (D-6). Only consumed by
+   * the SaaS backend, which hard-fails when it differs from the API key's org;
+   * LOCAL/BUCKET_STORE backends ignore it.
+   */
+  declaredOrg?: string;
   /** Optional: Console API key (flag > env > credentials file) */
   siApiKey?: string;
   /**
@@ -44,6 +50,7 @@ export const createStateBackend = (
       {
         app: context.app,
         service: context.service,
+        declaredOrg: context.declaredOrg,
       },
       { apiKey: context.siApiKey },
     );
