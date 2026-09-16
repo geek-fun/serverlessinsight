@@ -239,6 +239,7 @@ export const show = async (options: ShowOptions): Promise<void> => {
       // Read-only command: a migrated state only warns here.
       const backend: StateBackend = createStateBackend(options.iac!.backend, {
         ...context,
+        declaredOrg: options.iac!.org,
         migrationMarker: 'warn',
       });
       state = await backend.loadState(context.provider, context.app, context.service, stage);

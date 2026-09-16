@@ -37,6 +37,7 @@ const loginWithKey = async (apiKey: string, consoleUrl: string): Promise<boolean
       consoleUrl,
       orgId: result.orgId,
       orgName: result.orgName,
+      orgSlug: result.orgSlug,
       userEmail: result.userEmail,
     });
     logger.info(lang.__('LOGIN_SUCCESS_KEY', { orgName: result.orgName }));
@@ -97,7 +98,17 @@ const loginWithBrowser = async (consoleUrl: string): Promise<boolean> => {
         const orgName = url.searchParams.get('org_name') || '';
         const userEmail = url.searchParams.get('user_email') || '';
 
-        saveCredentials({ apiKey, consoleUrl, orgId, orgName, userEmail });
+        // The authorize callback doesn't carry the org slug; fetch the full
+        // identity once so the yml `org:` cross-check works out of the box.
+        // Degrade to the callback params if the validate roundtrip fails.
+        let orgSlug: string | undefined;
+        try {
+          orgSlug = (await validateApiKey(apiKey, consoleUrl)).orgSlug;
+        } catch {
+          orgSlug = undefined;
+        }
+
+        saveCredentials({ apiKey, consoleUrl, orgId, orgName, orgSlug, userEmail });
         logger.info(lang.__('LOGIN_SUCCESS', { userEmail, orgName }));
         resolve(true);
       } else {

@@ -49,6 +49,65 @@ describe('unit test for validate', () => {
     expect(validateYaml(validYaml)).toBe(true);
   });
 
+  // D-6: top-level org — optional overall, required for an explicit SaaS
+  // backend, inert (allowed) with LOCAL/BUCKET_STORE, and the no-backend
+  // quick start stays org-free (the fixture itself has neither).
+  it('should throw error when an explicit SAAS backend lacks the top-level org', () => {
+    const invalidYaml = {
+      ...jsonIac,
+      backend: {
+        state_manager: {
+          type: 'SAAS',
+        },
+      },
+    } as unknown as ServerlessIacRaw;
+    expect(() => validateYaml(invalidYaml)).toThrow('Invalid yaml');
+  });
+
+  it('should pass validation when an explicit SAAS backend declares the top-level org', () => {
+    const validYaml = {
+      ...jsonIac,
+      org: 'wentsen',
+      backend: {
+        state_manager: {
+          type: 'SAAS',
+        },
+      },
+    } as unknown as ServerlessIacRaw;
+    expect(validateYaml(validYaml)).toBe(true);
+  });
+
+  it('should allow the top-level org with a BUCKET_STORE backend (inert, no check)', () => {
+    const validYaml = {
+      ...jsonIac,
+      org: 'wentsen',
+      backend: {
+        state_manager: {
+          type: 'BUCKET_STORE',
+          bucket: 'my-bucket',
+          key: 'state.json',
+        },
+      },
+    } as unknown as ServerlessIacRaw;
+    expect(validateYaml(validYaml)).toBe(true);
+  });
+
+  it('should pass validation when the top-level org is declared without any backend block', () => {
+    const validYaml = {
+      ...jsonIac,
+      org: 'wentsen',
+    } as unknown as ServerlessIacRaw;
+    expect(validateYaml(validYaml)).toBe(true);
+  });
+
+  it('should throw error when the top-level org is not a slug', () => {
+    const invalidYaml = {
+      ...jsonIac,
+      org: 'Wentsen Org',
+    } as unknown as ServerlessIacRaw;
+    expect(() => validateYaml(invalidYaml)).toThrow('Invalid yaml');
+  });
+
   it('should throw error when given provider in yaml config is invalid', () => {
     const invalidYaml = {
       ...jsonIac,

@@ -14,6 +14,10 @@ export type ConsoleCredentials = {
   readonly orgId: string;
   readonly userEmail?: string;
   readonly orgName?: string;
+  /** Stable unique org identifier for the yml `org:` cross-check (D-6). Absent
+   * in credentials written before the field existed — the SaaS backend
+   * re-fetches it from /auth/api-keys/validate and heals the file. */
+  readonly orgSlug?: string;
 };
 
 export type ResolveApiKeyParams = {

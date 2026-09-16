@@ -32,10 +32,15 @@ jest.mock('../../../../src/common/apiClient', () => {
 jest.mock('../../../../src/common/credentialStore', () => ({
   loadCredentials: jest.fn(),
   getConsoleUrl: jest.fn(),
+  saveCredentials: jest.fn(),
 }));
 
 import { createSaasStateBackend } from '../../../../src/common/stateBackend/saasStateBackend';
-import { loadCredentials, getConsoleUrl } from '../../../../src/common/credentialStore';
+import {
+  loadCredentials,
+  saveCredentials,
+  getConsoleUrl,
+} from '../../../../src/common/credentialStore';
 import { ApiError } from '../../../../src/common/apiClient';
 import type { StateBackend } from '../../../../src/common/stateBackend/types';
 import type { StateFile } from '../../../../src/types';
@@ -65,6 +70,120 @@ describe('saasStateBackend', () => {
       (loadCredentials as jest.Mock).mockReturnValue(null);
 
       expect(() => createBackend()).toThrow('SAAS_BACKEND_NO_CREDENTIALS');
+    });
+  });
+
+  describe('org declaration cross-check (D-6)', () => {
+    const provisionOnce = () => {
+      mockApiClient.post.mockResolvedValueOnce({
+        id: 'deploy-1',
+        appId: 'app-1',
+        serviceId: 'svc-1',
+        status: 'active',
+        isNewApp: false,
+        isNewService: false,
+      });
+      mockApiClient.get.mockResolvedValueOnce({
+        stateJson: {
+          version: '3.0',
+          provider: 'aliyun',
+          app: 'myapp',
+          service: 'myservice',
+          stages: { dev: { resources: {} } },
+          resources: {},
+        },
+      });
+    };
+
+    it('should fail at creation when the declared org differs from the stored key org slug', () => {
+      (loadCredentials as jest.Mock).mockReturnValue({
+        apiKey: 'si_test_testkey123456789012345678901234',
+        consoleUrl: 'https://api.test.com',
+        orgId: 'org-1',
+        orgSlug: 'other-org',
+      });
+
+      expect(() =>
+        createSaasStateBackend({ app: 'myapp', service: 'myservice', declaredOrg: 'wentsen' }),
+      ).toThrow('SAAS_ORG_MISMATCH');
+    });
+
+    it('should allow provisioning when the declared org matches the stored slug', async () => {
+      (loadCredentials as jest.Mock).mockReturnValue({
+        apiKey: 'si_test_testkey123456789012345678901234',
+        consoleUrl: 'https://api.test.com',
+        orgId: 'org-1',
+        orgSlug: 'wentsen',
+      });
+      const local = createSaasStateBackend({
+        app: 'myapp',
+        service: 'myservice',
+        declaredOrg: 'wentsen',
+      });
+      provisionOnce();
+
+      await local.loadState('aliyun', 'myapp', 'myservice', 'dev');
+
+      expect(mockApiClient.post).toHaveBeenCalledWith('/api/v1/deployments/', {
+        appName: 'myapp',
+        serviceName: 'myservice',
+        provider: 'aliyun',
+        stage: 'dev',
+        spec: { operation: 'init' },
+        source: 'cli',
+      });
+    });
+
+    it('should fetch the slug once and heal the credentials file when the stored creds predate it', async () => {
+      (loadCredentials as jest.Mock).mockReturnValue({
+        apiKey: 'si_test_testkey123456789012345678901234',
+        consoleUrl: 'https://api.test.com',
+        orgId: 'org-1',
+      });
+      const local = createSaasStateBackend({
+        app: 'myapp',
+        service: 'myservice',
+        declaredOrg: 'wentsen',
+      });
+      // Call order: provision's validate roundtrip first, then state/current
+      mockApiClient.get.mockResolvedValueOnce({ orgSlug: 'wentsen' });
+      provisionOnce();
+
+      await local.loadState('aliyun', 'myapp', 'myservice', 'dev');
+
+      expect(mockApiClient.get).toHaveBeenCalledWith('/api/v1/auth/api-keys/validate');
+      expect(saveCredentials).toHaveBeenCalledWith(
+        expect.objectContaining({ orgId: 'org-1', orgSlug: 'wentsen' }),
+      );
+      expect(mockApiClient.post).toHaveBeenCalled();
+    });
+
+    it('should refuse provisioning when the validate roundtrip reveals a different org', async () => {
+      (loadCredentials as jest.Mock).mockReturnValue({
+        apiKey: 'si_test_testkey123456789012345678901234',
+        consoleUrl: 'https://api.test.com',
+        orgId: 'org-1',
+      });
+      const local = createSaasStateBackend({
+        app: 'myapp',
+        service: 'myservice',
+        declaredOrg: 'wentsen',
+      });
+      mockApiClient.get.mockResolvedValueOnce({ orgSlug: 'other-org' });
+
+      await expect(local.loadState('aliyun', 'myapp', 'myservice', 'dev')).rejects.toThrow(
+        'SAAS_ORG_MISMATCH',
+      );
+      expect(mockApiClient.post).not.toHaveBeenCalled();
+    });
+
+    it('should not consult the org at all when no org is declared', async () => {
+      provisionOnce();
+
+      await backend.loadState('aliyun', 'myapp', 'myservice', 'dev');
+
+      expect(mockApiClient.get).not.toHaveBeenCalledWith('/api/v1/auth/api-keys/validate');
+      expect(mockApiClient.post).toHaveBeenCalled();
     });
   });
 

@@ -25,6 +25,8 @@ export * from './assets';
 export type ServerlessIacRaw = {
   version: string;
   app: string;
+  /** Target Console org (organizations.slug) — required for SaaS state backend (D-6). */
+  org?: string;
   provider: Provider;
   vars: Vars;
   stages: Stages;
@@ -41,6 +43,8 @@ export type ServerlessIacRaw = {
 export type ServerlessIac = {
   version: string;
   app: string;
+  /** Target Console org (organizations.slug) — checked against the API key's org on SaaS backends (D-6); inert with LOCAL/BUCKET_STORE. */
+  org?: string;
   provider: Provider;
   service: string;
   vars?: Vars;

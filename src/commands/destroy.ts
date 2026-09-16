@@ -42,7 +42,11 @@ export const destroyStack = async (options: {
 
   // D-4: destroy mutates state — a migrated (managedBy=saas) legacy state must
   // fail closed here and route the user to the Console backend.
-  const backend = createStateBackend(iac.backend, { ...context, migrationMarker: 'refuse' });
+  const backend = createStateBackend(iac.backend, {
+    ...context,
+    declaredOrg: iac.org,
+    migrationMarker: 'refuse',
+  });
 
   // Initialize backend stage/deployment context before withLock. SaaS backends
   // need loadState() to provision the deployment and set the active stage.
