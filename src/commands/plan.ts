@@ -44,7 +44,9 @@ export const plan = async (options: {
       : lang.__('PROVIDER_TENCENT');
   logger.info(lang.__('GENERATING_PLAN_FOR_PROVIDER', { provider: providerDisplayName }));
 
-  const backend = createStateBackend(iac.backend, context);
+  // Read-only command: a migrated state only warns here (window-period
+  // reconciliation still needs plan against the legacy copy).
+  const backend = createStateBackend(iac.backend, { ...context, migrationMarker: 'warn' });
   let planResult;
 
   if (iac.provider.name === ProviderEnum.TENCENT) {

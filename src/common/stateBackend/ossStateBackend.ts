@@ -1,6 +1,7 @@
 import OSS from 'ali-oss';
 import { StateBackend, StorageAdapter } from './types';
 import { createRemoteStateBackend } from './remoteStateBackend';
+import { MigrationMarkerAction } from '../migrationMarker';
 import { OSS_STATE_CONNECT_TIMEOUT_MS, OSS_STATE_REQUEST_TIMEOUT_MS } from '../constants';
 
 type OssBackendConfig = {
@@ -10,6 +11,7 @@ type OssBackendConfig = {
   accessKeyId: string;
   accessKeySecret: string;
   securityToken?: string;
+  markerAction?: MigrationMarkerAction;
 };
 
 const createOssStorageAdapter = (config: OssBackendConfig): StorageAdapter => {
@@ -59,5 +61,5 @@ const createOssStorageAdapter = (config: OssBackendConfig): StorageAdapter => {
 
 export const createOssStateBackend = (config: OssBackendConfig): StateBackend => {
   const adapter = createOssStorageAdapter(config);
-  return createRemoteStateBackend(adapter, { key: config.key });
+  return createRemoteStateBackend(adapter, { key: config.key, markerAction: config.markerAction });
 };

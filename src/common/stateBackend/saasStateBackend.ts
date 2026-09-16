@@ -1,4 +1,4 @@
-import { createApiClient } from '../apiClient';
+import { createApiClient, ApiError } from '../apiClient';
 import type { ApiClient } from '../apiClient';
 import { loadCredentials, getConsoleUrl } from '../credentialStore';
 import { StateBackend } from './types';
@@ -36,9 +36,17 @@ const getDefaultState = (provider: string, app: string, service: string): StateF
   resources: {},
 });
 
-export const createSaasStateBackend = (context: SaasBackendContext): StateBackend => {
+export type SaasBackendOptions = {
+  /** Explicit API key (--si-api-key / env) taking precedence over the credentials file. */
+  readonly apiKey?: string;
+};
+
+export const createSaasStateBackend = (
+  context: SaasBackendContext,
+  options?: SaasBackendOptions,
+): StateBackend => {
   const creds = loadCredentials();
-  const apiKey = creds?.apiKey;
+  const apiKey = options?.apiKey || creds?.apiKey;
   const consoleUrl = getConsoleUrl();
   const orgId = creds?.orgId ?? '';
 
@@ -147,7 +155,13 @@ export const createSaasStateBackend = (context: SaasBackendContext): StateBacken
           appId: resolvedAppId!,
           serviceId: resolvedServiceId!,
         };
-      } catch {
+      } catch (error) {
+        // Only a genuine 404 ("no state yet for this service+stage") may start
+        // from an empty state. Network/5xx failures must surface — treating
+        // them as empty would make the next plan propose full re-creation.
+        if (!(error instanceof ApiError && error.status === 404)) {
+          throw error;
+        }
         const defaultState = getDefaultState(provider, app, service);
         return {
           ...defaultState,

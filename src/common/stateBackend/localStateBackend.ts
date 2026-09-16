@@ -1,5 +1,11 @@
 import { StateFile, LockOptions } from '../../types';
-import { loadState as fsLoadState, saveState as fsSaveState, getStatePath } from '../stateManager';
+import {
+  loadState as fsLoadState,
+  saveState as fsSaveState,
+  patchPersistedState as fsPatchPersistedState,
+  getStatePath,
+} from '../stateManager';
+import { enforceMigrationMarker, MigrationMarkerAction } from '../migrationMarker';
 import {
   withLock as fsWithLock,
   forceUnlock as fsForceUnlock,
@@ -13,6 +19,7 @@ export const createLocalStateBackend = (
   app: string,
   service: string,
   baseDir: string = process.cwd(),
+  markerAction: MigrationMarkerAction = 'off',
 ): StateBackend => {
   const statePath = getStatePath(app, service, baseDir);
 
@@ -23,7 +30,9 @@ export const createLocalStateBackend = (
       loadService: string,
       stage: string,
     ): Promise<StateFile> => {
-      return fsLoadState(provider, loadApp, loadService, stage, baseDir);
+      const state = fsLoadState(provider, loadApp, loadService, stage, baseDir);
+      enforceMigrationMarker(state, markerAction);
+      return state;
     },
 
     saveState: async (
@@ -33,6 +42,10 @@ export const createLocalStateBackend = (
       stage: string,
     ): Promise<void> => {
       fsSaveState(state, saveApp, saveService, stage, baseDir);
+    },
+
+    patchPersisted: async (patch: Record<string, unknown | undefined>): Promise<void> => {
+      fsPatchPersistedState(app, service, patch, baseDir);
     },
 
     acquireLock: async (operation: string, options?: LockOptions): Promise<string> => {

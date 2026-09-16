@@ -19,6 +19,7 @@ import { show } from './show';
 import { login } from './login';
 import { logout } from './logout';
 import { whoami } from './whoami';
+import { migrate } from './migrate';
 import { lang } from '../lang';
 import { parseYaml, revalYaml } from '../parser';
 
@@ -281,6 +282,61 @@ program
           siApiKey,
           autoApprove,
           refresh,
+        });
+      },
+    ),
+  );
+
+program
+  .command('migrate')
+  .description(lang.__('CMD_MIGRATE_DESC'))
+  .option('-f, --file <path>', lang.__('OPT_FILE'))
+  .option('-s, --stage <stage>', lang.__('OPT_STAGE'))
+  .option('-r, --region <region>', lang.__('OPT_REGION'))
+  .option('-v, --provider <provider>', lang.__('OPT_PROVIDER'))
+  .option('-k, --accessKeyId <accessKeyId>', lang.__('OPT_ACCESS_KEY_ID'))
+  .option('-x, --accessKeySecret <accessKeySecret>', lang.__('OPT_ACCESS_KEY_SECRET'))
+  .option('-n, --securityToken <securityToken>', lang.__('OPT_SECURITY_TOKEN'))
+  .option('--si-api-key <key>', lang.__('OPT_SI_API_KEY'))
+  .option('-y, --auto-approve', lang.__('OPT_AUTO_APPROVE'))
+  .option('--force', lang.__('OPT_FORCE'))
+  .option('--no-marker', lang.__('OPT_NO_MARKER'))
+  .option('--dry-run', lang.__('OPT_DRY_RUN'))
+  .option('--rollback', lang.__('OPT_ROLLBACK'))
+  .action(
+    actionWrapper(
+      'migrate',
+      async ({
+        stage,
+        file,
+        region,
+        provider,
+        accessKeyId,
+        accessKeySecret,
+        securityToken,
+        siApiKey,
+        autoApprove,
+        force,
+        marker,
+        dryRun,
+        rollback,
+      }) => {
+        await migrate({
+          stage,
+          location: file,
+          region,
+          provider,
+          accessKeyId,
+          accessKeySecret,
+          securityToken,
+          siApiKey,
+          autoApprove,
+          force,
+          // Commander models `--no-marker` as the negation of an implicit
+          // `marker` boolean (default true).
+          noMarker: marker === false,
+          dryRun,
+          rollback,
         });
       },
     ),

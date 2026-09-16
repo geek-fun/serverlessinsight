@@ -1,6 +1,7 @@
 import COS from 'cos-nodejs-sdk-v5';
 import { StateBackend, StorageAdapter } from './types';
 import { createRemoteStateBackend } from './remoteStateBackend';
+import { MigrationMarkerAction } from '../migrationMarker';
 import { OSS_STATE_REQUEST_TIMEOUT_MS } from '../constants';
 
 type CosBackendConfig = {
@@ -10,6 +11,7 @@ type CosBackendConfig = {
   accessKeyId: string;
   accessKeySecret: string;
   securityToken?: string;
+  markerAction?: MigrationMarkerAction;
 };
 
 const promisifyGet = (
@@ -97,5 +99,5 @@ const createCosStorageAdapter = (config: CosBackendConfig): StorageAdapter => {
 
 export const createCosStateBackend = (config: CosBackendConfig): StateBackend => {
   const adapter = createCosStorageAdapter(config);
-  return createRemoteStateBackend(adapter, { key: config.key });
+  return createRemoteStateBackend(adapter, { key: config.key, markerAction: config.markerAction });
 };

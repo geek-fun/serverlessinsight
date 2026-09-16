@@ -182,8 +182,6 @@ export const saveState = (
 ): void => {
   ensureStateDir(baseDir);
   const statePath = getStatePath(app, service, baseDir);
-  const tmpPath = `${statePath}.tmp`;
-  const backupPath = `${statePath}.backup`;
 
   // Read the existing file to preserve other stages
   let existing: PersistedStateFile = {
@@ -221,13 +219,23 @@ export const saveState = (
   };
 
   // Atomic write: back up the previous state, then write tmp + fsync + rename
+  writeStateFileAtomically(statePath, JSON.stringify(stateToSave, null, 2));
+};
+
+/**
+ * Back up the previous state file, then write tmp + fsync + rename. Shared by
+ * saveState and patchPersistedState.
+ */
+export const writeStateFileAtomically = (statePath: string, content: string): void => {
+  const tmpPath = `${statePath}.tmp`;
+  const backupPath = `${statePath}.backup`;
   try {
     if (fs.existsSync(statePath)) {
       fs.copyFileSync(statePath, backupPath);
     }
     const fd = fs.openSync(tmpPath, 'w');
     try {
-      fs.writeFileSync(fd, JSON.stringify(stateToSave, null, 2), 'utf-8');
+      fs.writeFileSync(fd, content, 'utf-8');
       fs.fsyncSync(fd);
     } finally {
       fs.closeSync(fd);
@@ -243,6 +251,56 @@ export const saveState = (
     }
     throw error;
   }
+};
+
+/**
+ * Merge top-level fields into the persisted state file without touching
+ * stages/resources. A patch value of `undefined` deletes the key. Written as
+ * a new persisted version (serial+1, previous file backed up). Used by
+ * `si migrate` for the console-UUID backfill and the migration marker.
+ */
+/* istanbul ignore next */
+export const patchPersistedState = (
+  app: string,
+  service: string,
+  patch: Record<string, unknown | undefined>,
+  baseDir: string = process.cwd(),
+): void => {
+  ensureStateDir(baseDir);
+  const statePath = getStatePath(app, service, baseDir);
+
+  let existing: PersistedStateFile = {
+    version: CURRENT_STATE_VERSION,
+    provider: '',
+    app,
+    service,
+    stages: {},
+  };
+  try {
+    if (fs.existsSync(statePath)) {
+      const content = fs.readFileSync(statePath, 'utf-8');
+      existing = toPersistedState(JSON.parse(content) as StateFile);
+    }
+  } catch {
+    // use default
+  }
+
+  const patched: Record<string, unknown> = { ...existing };
+  for (const [key, value] of Object.entries(patch)) {
+    if (value === undefined) {
+      delete patched[key];
+    } else {
+      patched[key] = value;
+    }
+  }
+
+  const stateToSave = {
+    ...patched,
+    version: CURRENT_STATE_VERSION,
+    serial: (existing.serial ?? 0) + 1,
+  } as unknown as PersistedStateFile;
+
+  writeStateFileAtomically(statePath, JSON.stringify(stateToSave, null, 2));
 };
 
 /**

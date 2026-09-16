@@ -202,7 +202,11 @@ describe('show command', () => {
 
       await show({ stage: 'default', location: testDir, iac: mockIac });
 
-      expect(createStateBackend).toHaveBeenCalledWith(mockIac.backend, mockContext);
+      // show is read-only: it wires the migration marker in 'warn' mode (D-4)
+      expect(createStateBackend).toHaveBeenCalledWith(mockIac.backend, {
+        ...mockContext,
+        migrationMarker: 'warn',
+      });
       expect(mockStateBackend.loadState).toHaveBeenCalled();
       expect(mockStateBackend.readLock).toHaveBeenCalled();
       expect(mockLoggerInfo).toHaveBeenCalledWith(expect.stringContaining('Backend: Remote'));

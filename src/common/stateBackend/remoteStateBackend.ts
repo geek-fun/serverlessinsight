@@ -7,6 +7,7 @@ import {
   CURRENT_STATE_VERSION,
 } from '../../types';
 import { migrateState, toPersistedState } from '../stateManager';
+import { enforceMigrationMarker, MigrationMarkerAction } from '../migrationMarker';
 import { DEFAULT_LOCK_TIMEOUT, DEFAULT_LOCK_RETRY_DELAY } from '../constants';
 import { LockError, formatLockInfo } from '../lockManager';
 import { logger } from '../logger';
@@ -22,6 +23,8 @@ import {
 
 export type RemoteBackendConfig = {
   key: string;
+  /** Migration ownership marker behavior on load (decision D-4). Defaults to 'off'. */
+  markerAction?: MigrationMarkerAction;
 };
 
 export const createRemoteStateBackend = (
@@ -29,6 +32,7 @@ export const createRemoteStateBackend = (
   config: RemoteBackendConfig,
 ): StateBackend => {
   const lockKey = `${config.key}${LOCK_KEY_SUFFIX}`;
+  const markerAction: MigrationMarkerAction = config.markerAction ?? 'off';
 
   const readLockObject = async (): Promise<LockMetadata | null> => {
     return adapter.read<LockMetadata>(lockKey);
@@ -119,9 +123,24 @@ export const createRemoteStateBackend = (
       if (state) {
         const migrated = migrateState(state);
         const stageResources = migrated.stages?.[stage]?.resources ?? {};
-        return { ...migrated, resources: stageResources };
+        const loaded = { ...migrated, resources: stageResources };
+        enforceMigrationMarker(loaded, markerAction);
+        return loaded;
       }
       return { version: CURRENT_STATE_VERSION, provider, app, service, stages: {}, resources: {} };
+    },
+
+    patchPersisted: async (patch: Record<string, unknown | undefined>): Promise<void> => {
+      const raw = await adapter.read<StateFile>(config.key);
+      const merged: Record<string, unknown> = raw ? { ...toPersistedState(raw) } : {};
+      for (const [key, value] of Object.entries(patch)) {
+        if (value === undefined) {
+          delete merged[key];
+        } else {
+          merged[key] = value;
+        }
+      }
+      await adapter.write(config.key, merged);
     },
 
     saveState: async (

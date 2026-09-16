@@ -19,6 +19,14 @@ export type StorageAdapter = {
 export type StateBackend = {
   loadState: (provider: string, app: string, service: string, stage: string) => Promise<StateFile>;
   saveState: (state: StateFile, app: string, service: string, stage: string) => Promise<void>;
+  /**
+   * Merge top-level fields into the persisted state; a value of `undefined`
+   * deletes the key. Written as a new persisted version (the backend's usual
+   * backup/atomicity rules apply). Used by `si migrate` for the console-UUID
+   * backfill and the migration marker. Backends without a persisted legacy
+   * state (SaaS) omit it.
+   */
+  patchPersisted?: (patch: Record<string, unknown | undefined>) => Promise<void>;
   acquireLock: (operation: string, options?: LockOptions) => Promise<string>;
   releaseLock: (lockId: string) => Promise<void>;
   forceUnlock: (lockId: string) => Promise<boolean>;
