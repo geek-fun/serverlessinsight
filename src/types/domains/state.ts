@@ -80,6 +80,12 @@ export type StateFile = {
   serviceId?: string;
   serial?: number;
   lineage?: string;
+  /**
+   * Migration ownership marker (docs/state-migration-saas.md §6.3): set to
+   * 'saas' by `si migrate` after the state has been imported into the Console.
+   * Legacy backends then refuse mutations on this state (decision D-4).
+   */
+  managedBy?: string;
   stages: Record<string, StageState>;
   resources: Record<string, ResourceState>;
 };

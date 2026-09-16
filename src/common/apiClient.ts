@@ -20,6 +20,21 @@ export type ValidateResult = {
   readonly scopes: readonly string[];
 };
 
+/**
+ * API error carrying the HTTP status so callers can distinguish "not found"
+ * (legitimate empty state on first deploy) from network/5xx failures, which
+ * must never be mistaken for an empty state.
+ */
+export class ApiError extends Error {
+  readonly status: number;
+
+  constructor(message: string, status: number) {
+    super(message);
+    this.name = 'ApiError';
+    this.status = status;
+  }
+}
+
 type HttpMethod = 'get' | 'post' | 'patch' | 'delete';
 
 // Opaque JSONB payloads from the Console API — their internal keys must NOT be case-converted
@@ -50,13 +65,15 @@ const camelizeKeys = (value: unknown): unknown => {
 
 const handleHttpError = (response: Response): never => {
   const status = response.status;
-  if (status === 401) throw new Error(lang.__('API_ERROR_401'));
-  if (status === 403) throw new Error(lang.__('API_ERROR_403'));
+  if (status === 401) throw new ApiError(lang.__('API_ERROR_401'), 401);
+  if (status === 403) throw new ApiError(lang.__('API_ERROR_403'), 403);
+  if (status === 404) throw new ApiError(lang.__('API_ERROR_404'), 404);
   if (status === 409) {
-    throw new Error(lang.__('API_ERROR_409', { message: `HTTP Error ${status}` }));
+    throw new ApiError(lang.__('API_ERROR_409', { message: `HTTP Error ${status}` }), 409);
   }
-  throw new Error(
+  throw new ApiError(
     lang.__('API_ERROR_UNKNOWN', { status: String(status), message: `HTTP Error ${status}` }),
+    status,
   );
 };
 

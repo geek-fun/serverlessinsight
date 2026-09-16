@@ -13,9 +13,21 @@ const mockApiClient = {
   delete: jest.fn(),
 };
 
-jest.mock('../../../../src/common/apiClient', () => ({
-  createApiClient: jest.fn(() => mockApiClient),
-}));
+jest.mock('../../../../src/common/apiClient', () => {
+  class MockApiError extends Error {
+    status: number;
+
+    constructor(message: string, status: number) {
+      super(message);
+      this.name = 'ApiError';
+      this.status = status;
+    }
+  }
+  return {
+    createApiClient: jest.fn(() => mockApiClient),
+    ApiError: MockApiError,
+  };
+});
 
 jest.mock('../../../../src/common/credentialStore', () => ({
   loadCredentials: jest.fn(),
@@ -24,6 +36,7 @@ jest.mock('../../../../src/common/credentialStore', () => ({
 
 import { createSaasStateBackend } from '../../../../src/common/stateBackend/saasStateBackend';
 import { loadCredentials, getConsoleUrl } from '../../../../src/common/credentialStore';
+import { ApiError } from '../../../../src/common/apiClient';
 import type { StateBackend } from '../../../../src/common/stateBackend/types';
 import type { StateFile } from '../../../../src/types';
 
@@ -184,7 +197,7 @@ describe('saasStateBackend', () => {
       });
     });
 
-    it('should return default state when Console state fetch fails', async () => {
+    it('returns default state only when Console reports 404 (no state yet)', async () => {
       mockApiClient.post.mockResolvedValueOnce({
         id: 'deploy-1',
         appId: 'app-1',
@@ -193,7 +206,7 @@ describe('saasStateBackend', () => {
         isNewApp: false,
         isNewService: false,
       });
-      mockApiClient.get.mockRejectedValueOnce(new Error('not found'));
+      mockApiClient.get.mockRejectedValueOnce(new ApiError('not found', 404));
 
       const result = await backend.loadState('aliyun', 'myapp', 'myservice', 'dev');
 
@@ -203,6 +216,24 @@ describe('saasStateBackend', () => {
           appId: 'app-1',
           serviceId: 'svc-1',
         }),
+      );
+    });
+
+    it('surfaces non-404 fetch failures instead of assuming an empty state', async () => {
+      mockApiClient.post.mockResolvedValueOnce({
+        id: 'deploy-1',
+        appId: 'app-1',
+        serviceId: 'svc-1',
+        status: 'active',
+        isNewApp: false,
+        isNewService: false,
+      });
+      mockApiClient.get.mockRejectedValueOnce(new ApiError('upstream exploded', 500));
+
+      // Treating network/5xx failures as "empty state" would make the next
+      // plan propose full re-creation of live resources — it must throw.
+      await expect(backend.loadState('aliyun', 'myapp', 'myservice', 'dev')).rejects.toThrow(
+        'upstream exploded',
       );
     });
 

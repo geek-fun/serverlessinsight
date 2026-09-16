@@ -70,7 +70,13 @@ export const deploy = async (options: {
 
   setIac(iac);
 
-  const backend = createStateBackend(iac.backend, { ...context, siApiKey: options.siApiKey });
+  // D-4: deploy mutates state — a migrated (managedBy=saas) legacy state must
+  // fail closed here and route the user to the Console backend.
+  const backend = createStateBackend(iac.backend, {
+    ...context,
+    siApiKey: options.siApiKey,
+    migrationMarker: 'refuse',
+  });
 
   // ADR-005: wire the backend's event reporter into the global context so
   // executors can emit per-resource deployment events via context.reportEvent.

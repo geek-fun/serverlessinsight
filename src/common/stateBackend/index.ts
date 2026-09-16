@@ -1,5 +1,6 @@
 import { BackendConfig, StateBackendType, BucketStoreBackendConfig } from '../../types';
 import { ProviderEnum } from '../providerEnum';
+import { MigrationMarkerAction } from '../migrationMarker';
 import { StateBackend } from './types';
 import { createLocalStateBackend } from './localStateBackend';
 import { createOssStateBackend } from './ossStateBackend';
@@ -25,6 +26,12 @@ export type BackendContext = {
   service: string;
   /** Optional: Console API key (flag > env > credentials file) */
   siApiKey?: string;
+  /**
+   * Migration ownership marker behavior (decision D-4): mutating commands pass
+   * 'refuse', read-only commands 'warn'; defaults to 'off'. Ignored by the
+   * SaaS backend (Console states carry no legacy marker).
+   */
+  migrationMarker?: MigrationMarkerAction;
 };
 
 export const createStateBackend = (
@@ -33,14 +40,22 @@ export const createStateBackend = (
 ): StateBackend => {
   // SaaS (default) — requires API key
   if (!backendConfig || backendConfig.type === StateBackendType.SAAS) {
-    return createSaasStateBackend({
-      app: context.app,
-      service: context.service,
-    });
+    return createSaasStateBackend(
+      {
+        app: context.app,
+        service: context.service,
+      },
+      { apiKey: context.siApiKey },
+    );
   }
 
   if (backendConfig.type === StateBackendType.LOCAL) {
-    return createLocalStateBackend(context.app, context.service, context.baseDir);
+    return createLocalStateBackend(
+      context.app,
+      context.service,
+      context.baseDir,
+      context.migrationMarker,
+    );
   }
 
   const bucketConfig = backendConfig as BucketStoreBackendConfig;
@@ -57,6 +72,7 @@ export const createStateBackend = (
       accessKeyId,
       accessKeySecret,
       securityToken,
+      markerAction: context.migrationMarker,
     });
   }
 
@@ -67,5 +83,6 @@ export const createStateBackend = (
     accessKeyId,
     accessKeySecret,
     securityToken,
+    markerAction: context.migrationMarker,
   });
 };

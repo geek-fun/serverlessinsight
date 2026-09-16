@@ -936,9 +936,65 @@ export const zhCN = {
   // API 错误消息
   API_ERROR_401: 'API 密钥无效或已过期，请运行 `si login` 更新。',
   API_ERROR_403: '访问被拒绝，请联系管理员。',
+  API_ERROR_404: '资源不存在。如果预期存在状态，请检查 app/service/stage 名称。',
   API_ERROR_409: '状态冲突：{{message}}',
   API_ERROR_NETWORK: '网络错误：{{message}}。请检查网络连接。',
   API_ERROR_UNKNOWN: 'API 错误 ({{status}})：{{message}}',
+
+  // ===== `si migrate`——旧 state 迁移到 Console（docs/state-migration-saas.md）=====
+  CMD_MIGRATE_DESC: '将 local/bucket 状态迁移到 Console（一次性操作；请先升级所有写入者的 CLI）',
+  OPT_FORCE: '即使目标 stage 在 Console 已有状态，也作为新版本导入（保留历史）',
+  OPT_NO_MARKER: '不在旧 state 中写入迁移标记（不推荐：cutover 完成前旧后端仍可写入）',
+  OPT_DRY_RUN: '仅展示迁移映射与影响，不写任何一端',
+  OPT_ROLLBACK: '清除旧 state 中的迁移标记（显式回退）',
+  MIGRATE_NO_BACKEND_SOURCE:
+    '没有可迁移的旧状态：该 stack 未配置 backend.state_manager（默认已走 Console），或已显式配置为 SAAS。',
+  MIGRATE_NEED_CREDENTIALS: '需要 Console 凭据。请先运行 `si login`，或传入 --si-api-key。',
+  MIGRATE_PREFLIGHT_OK: 'Console 身份确认：org {{orgName}}（{{orgId}}）',
+  MIGRATE_WRITER_CONFIRMATION:
+    '所有写入者（全部 CI 镜像与同事本机）是否都已升级到本版 CLI？旧版 CLI 无法识别迁移标记。确认后继续 (y/N)',
+  MIGRATE_CONFIRMATION: '按上述计划执行迁移？(y/N)',
+  MIGRATE_DRY_RUN_NOTICE: 'Dry run——未写任何一端（未上传 Console，未写标记）。',
+  MIGRATE_TARGETS_HEADER: '迁移目标（org：{{orgName}}）——已存在的目标按名称映射，其余将自动创建：',
+  MIGRATE_TARGET_APP_EXISTS: '  app "{{app}}" → 已存在，按名映射（{{appId}}）',
+  MIGRATE_TARGET_APP_CREATE: '  app "{{app}}" → 将自动创建',
+  MIGRATE_TARGET_SERVICE_EXISTS:
+    '  service "{{service}}" → 已存在，按名映射（{{serviceId}}，provider {{provider}}）',
+  MIGRATE_TARGET_SERVICE_CREATE: '  service "{{service}}" → 将自动创建（provider {{provider}}）',
+  MIGRATE_TARGET_STAGE_NEW: '  stage {{stage}}：{{count}} 个资源 → 将注册 stage，导入为 v1',
+  MIGRATE_TARGET_STAGE_EMPTY: '  stage {{stage}}：{{count}} 个资源 → 导入为 v1',
+  MIGRATE_TARGET_STAGE_EXISTS:
+    '  stage {{stage}}：{{count}} 个资源 → Console 已有 v{{version}}；--force 将作为新版本导入，否则该 stage 失败',
+  MIGRATE_TARGETS_HINT:
+    '目标按名称匹配。如需控制迁移去向（成员、命名等），可先在 Console 手动创建 app/service——si migrate 会映射到同名目标，不会重复创建。',
+  MIGRATE_PROVIDER_MISMATCH_TARGET:
+    'service "{{service}}" 已存在且 provider 为 "{{existingProvider}}"，与 YAML 的 "{{ymlProvider}}" 不一致——不支持向其导入 {{ymlProvider}} 状态。',
+  MIGRATE_NOTHING_TO_MIGRATE: '旧状态中没有任何已部署资源可迁移。',
+  MIGRATE_STAGE_NOT_FOUND: '旧状态中不存在 stage "{{stage}}"。',
+  MIGRATE_PROVIDER_MISMATCH:
+    'provider 不一致：state 为 "{{stateProvider}}"，YAML 为 "{{ymlProvider}}"。',
+  MIGRATE_ALREADY_MARKED: '旧状态已带迁移标记——继续执行（重复上传会被幂等去重）。',
+  MIGRATE_UPLOADING: '正在上传 stage {{stage}} 到 Console...',
+  MIGRATE_UPLOADED:
+    '  ✓ stage {{stage}} → 版本 {{version}}{{deduped}}（app {{appId}}，service {{serviceId}}）',
+  MIGRATE_UPLOADED_DEDUPLICATED: '（内容未变，已去重）',
+  MIGRATE_VERIFY_FAILED:
+    'stage {{stage}} 回读校验失败——未写迁移标记。请对比 Console 状态版本与旧状态后重新执行 `si migrate`。',
+  MIGRATE_CONFLICT:
+    '目标 stage 在 Console 已有状态。如确认覆盖采纳，请加 --force（将作为新版本导入，历史保留）。',
+  MIGRATE_MARKER_WRITTEN: '已写迁移标记：旧状态转为只读（managedBy=saas）。',
+  MIGRATE_MARKER_SKIPPED:
+    '警告：使用了 --no-marker。cutover 完成前旧后端仍可写入——请立即完成 YAML 切换。',
+  MIGRATE_ROLLBACK_NO_MARKER: '旧状态没有迁移标记——无需回滚。',
+  MIGRATE_ROLLBACK_DONE: '已清除迁移标记，旧后端恢复可写。',
+  MIGRATE_ROLLBACK_DONE_HINT:
+    '如果已从 YAML 中删除 backend.state_manager 段，经旧后端部署前请先恢复该段。',
+  MIGRATE_CUTOVER_STEPS:
+    'cutover 清单：\n  1. 从 serverlessinsight.yml 删除 backend.state_manager 段并合并\n  2. 运行 `si plan`——必须显示无变更（这是迁移无损的证明）\n  3. 恢复部署；此后部署时间线由 Console 接管',
+  MIGRATION_MARKER_REFUSED:
+    '该状态已迁移至 ServerlessInsight Console（managedBy=saas），旧后端已关闭变更。\n  • 继续使用 Console：从 YAML 中删除 backend.state_manager 段后重新部署。\n  • 确需经旧后端操作：运行 `si migrate --rollback` 清除标记。',
+  MIGRATION_MARKER_WARN:
+    '该状态已迁移至 Console（managedBy=saas）——此处展示的是只读副本，可能已过期。请勿从该后端部署。',
 
   // HTTP trigger messages
   HTTP_TRIGGER_AUTH_TYPE_REQUIRED:

@@ -131,7 +131,7 @@ export const rootSchema = {
         state_manager: {
           type: 'object',
           properties: {
-            type: { type: 'string', enum: ['LOCAL', 'BUCKET_STORE'] },
+            type: { type: 'string', enum: ['LOCAL', 'BUCKET_STORE', 'SAAS'] },
             bucket: { type: 'string' },
             key: { type: 'string' },
           },

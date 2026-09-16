@@ -1030,9 +1030,74 @@ export const en = {
   // API error messages
   API_ERROR_401: 'API key is invalid or expired. Run `si login` to update.',
   API_ERROR_403: 'Access forbidden. Contact your administrator.',
+  API_ERROR_404: 'Not found. If you expected existing state, check the app/service/stage names.',
   API_ERROR_409: 'State conflict: {{message}}',
   API_ERROR_NETWORK: 'Network error: {{message}}. Check your connection.',
   API_ERROR_UNKNOWN: 'API error ({{status}}): {{message}}',
+
+  // ===== `si migrate` — legacy state → Console (docs/state-migration-saas.md) =====
+  CMD_MIGRATE_DESC:
+    'Migrate a local/bucket state to the Console (one-time; run AFTER upgrading every writer CLI)',
+  OPT_FORCE: 'Import as a new version even when the target stage already has Console state',
+  OPT_NO_MARKER:
+    'Skip writing the migration marker into the legacy state (NOT recommended: the legacy path stays writable until cutover)',
+  OPT_DRY_RUN: 'Show the migration mapping and impact without writing anything',
+  OPT_ROLLBACK: 'Clear the migration marker from the legacy state (explicit undo)',
+  MIGRATE_NO_BACKEND_SOURCE:
+    'No legacy state to migrate: this stack has no backend.state_manager block (it already uses the Console by default), or it is explicitly SAAS.',
+  MIGRATE_NEED_CREDENTIALS:
+    'Console credentials required. Run `si login` first, or pass --si-api-key.',
+  MIGRATE_PREFLIGHT_OK: 'Console identity OK: org {{orgName}} ({{orgId}})',
+  MIGRATE_WRITER_CONFIRMATION:
+    'Have ALL writers already upgraded to this CLI version (every CI image and teammate machine)? The marker is invisible to older CLIs. Confirm to continue (y/N)',
+  MIGRATE_CONFIRMATION: 'Proceed with the migration above? (y/N)',
+  MIGRATE_DRY_RUN_NOTICE: 'Dry run — nothing was written (no Console upload, no marker).',
+  MIGRATE_TARGETS_HEADER:
+    'Migration targets (org: {{orgName}}) — existing targets are mapped by name, the rest will be auto-created:',
+  MIGRATE_TARGET_APP_EXISTS: '  app "{{app}}" → exists, mapped by name ({{appId}})',
+  MIGRATE_TARGET_APP_CREATE: '  app "{{app}}" → will be auto-created',
+  MIGRATE_TARGET_SERVICE_EXISTS:
+    '  service "{{service}}" → exists, mapped by name ({{serviceId}}, provider {{provider}})',
+  MIGRATE_TARGET_SERVICE_CREATE:
+    '  service "{{service}}" → will be auto-created (provider {{provider}})',
+  MIGRATE_TARGET_STAGE_NEW:
+    '  stage {{stage}}: {{count}} resource(s) → stage will be registered, import as v1',
+  MIGRATE_TARGET_STAGE_EMPTY: '  stage {{stage}}: {{count}} resource(s) → import as v1',
+  MIGRATE_TARGET_STAGE_EXISTS:
+    '  stage {{stage}}: {{count}} resource(s) → Console already has v{{version}}; --force imports as a new version, otherwise this stage fails',
+  MIGRATE_TARGETS_HINT:
+    'Targets are matched by name. To control the destination (members, naming, …), pre-create the app/service in the Console first — si migrate maps onto them instead of creating new ones.',
+  MIGRATE_PROVIDER_MISMATCH_TARGET:
+    'Service "{{service}}" already exists with provider "{{existingProvider}}", but the YAML declares "{{ymlProvider}}" — importing {{ymlProvider}} state into it is not supported.',
+  MIGRATE_NOTHING_TO_MIGRATE: 'The legacy state has no deployed resources to migrate.',
+  MIGRATE_STAGE_NOT_FOUND: 'Stage "{{stage}}" does not exist in the legacy state.',
+  MIGRATE_PROVIDER_MISMATCH:
+    'Provider mismatch: state says "{{stateProvider}}" but YAML says "{{ymlProvider}}".',
+  MIGRATE_ALREADY_MARKED:
+    'Legacy state already carries the migration marker — continuing (re-upload is idempotent).',
+  MIGRATE_UPLOADING: 'Uploading stage {{stage}} to Console...',
+  MIGRATE_UPLOADED:
+    '  ✓ stage {{stage}} → version {{version}}{{deduped}} (app {{appId}}, service {{serviceId}})',
+  MIGRATE_UPLOADED_DEDUPLICATED: ' (unchanged, deduplicated)',
+  MIGRATE_VERIFY_FAILED:
+    'Read-back verification FAILED for stage {{stage}} — the migration marker was NOT written. Compare the Console state version with your legacy state, then re-run `si migrate`.',
+  MIGRATE_CONFLICT:
+    'The target stage already has Console state. Re-run with --force to adopt it as a new imported version (history is kept).',
+  MIGRATE_MARKER_WRITTEN:
+    'Migration marker written: the legacy state is now read-only (managedBy=saas).',
+  MIGRATE_MARKER_SKIPPED:
+    'WARNING: --no-marker was set. The legacy backend stays writable until cutover — complete the YAML cutover immediately.',
+  MIGRATE_ROLLBACK_NO_MARKER:
+    'No migration marker found on the legacy state — nothing to roll back.',
+  MIGRATE_ROLLBACK_DONE: 'Migration marker cleared. The legacy backend is writable again.',
+  MIGRATE_ROLLBACK_DONE_HINT:
+    'If you already removed the backend.state_manager block from your YAML, restore it before deploying via the legacy backend.',
+  MIGRATE_CUTOVER_STEPS:
+    'Cutover checklist:\n  1. Remove the backend.state_manager block from serverlessinsight.yml and merge\n  2. Run `si plan` — it MUST report no changes (that is the proof of a lossless migration)\n  3. Resume deploys; the Console now owns the deployment timeline',
+  MIGRATION_MARKER_REFUSED:
+    'This state has been migrated to the ServerlessInsight Console (managedBy=saas) and the legacy backend is closed for changes.\n  • To continue with the Console: remove the backend.state_manager block from your YAML, then deploy again.\n  • To deliberately use the legacy backend: run `si migrate --rollback` to clear the marker.',
+  MIGRATION_MARKER_WARN:
+    'This state has been migrated to the Console (managedBy=saas) — the copy shown here is read-only and may be stale. Do not deploy from this backend.',
 
   // HTTP trigger messages
   HTTP_TRIGGER_AUTH_TYPE_REQUIRED:

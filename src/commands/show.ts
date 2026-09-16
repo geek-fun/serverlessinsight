@@ -3,6 +3,7 @@ import { StateBackendType } from '../types/domains/backend';
 import { getStatePath, loadState, getContext } from '../common';
 import { readLockFileForCommand } from '../common/lockManager';
 import { createStateBackend } from '../common/stateBackend';
+import { isMigratedToSaas } from '../common/migrationMarker';
 import { logger } from '../common/logger';
 import { StateBackend, LockMetadata } from '../common/stateBackend/types';
 import { lang } from '../lang';
@@ -235,7 +236,11 @@ export const show = async (options: ShowOptions): Promise<void> => {
 
   if (shouldUseRemoteBackend) {
     try {
-      const backend: StateBackend = createStateBackend(options.iac!.backend, context);
+      // Read-only command: a migrated state only warns here.
+      const backend: StateBackend = createStateBackend(options.iac!.backend, {
+        ...context,
+        migrationMarker: 'warn',
+      });
       state = await backend.loadState(context.provider, context.app, context.service, stage);
       lockInfo = await backend.readLock();
       usingRemoteBackend = true;
@@ -250,6 +255,11 @@ export const show = async (options: ShowOptions): Promise<void> => {
         logger.warn(lang.__('SHOW_REMOTE_BACKEND_FALLBACK', { error: String(error) }));
       }
       state = loadLocalState(context.provider, context.app, context.service, stage, baseDir);
+      // A local copy of a MIGRATED state is stale by definition — showing it
+      // after a remote failure would mislead the user (decision D-3/D-4).
+      if (isMigratedToSaas(state)) {
+        throw new Error(lang.__('MIGRATION_MARKER_REFUSED'), { cause: error });
+      }
       lockInfo = readLocalLock(context.app, context.service, baseDir);
       stateLocation = getStatePath(context.app, context.service, baseDir);
     }
