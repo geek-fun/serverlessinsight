@@ -258,8 +258,11 @@ export const migrate = async (options: {
       }
     }
 
-    // ⑥ upload — same full-persisted-state contract as the SaaS backend save
-    const persisted = toPersistedState(state);
+    // ⑥ upload — same full-persisted-state contract as the SaaS backend save.
+    // The imported version carries the owning org id immediately (D-6 identity
+    // anchor), so the first post-cutover loadState can verify it without
+    // waiting for a fresh deploy save.
+    const persisted = { ...toPersistedState(state), orgId };
     const contentHash = crypto.createHash('sha256').update(JSON.stringify(persisted)).digest('hex');
 
     const results: MigrateStageResult[] = [];
