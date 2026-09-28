@@ -16,11 +16,13 @@ import { runLocal } from './local';
 import { plan } from './plan';
 import { forceUnlockCommand } from './forceUnlock';
 import { show } from './show';
+import { schema } from './schema';
 import { login } from './login';
 import { logout } from './logout';
 import { whoami } from './whoami';
 import { migrate } from './migrate';
-import { lang } from '../lang';
+import { lang, hasLangKey, lookupErrorCode } from '../lang';
+import { isJsonMode, setJsonMode, writeJson } from '../common/jsonOutput';
 import { parseYaml, revalYaml } from '../parser';
 
 const MAX_ERROR_MESSAGE_LENGTH = 2000;
@@ -31,11 +33,34 @@ const truncateErrorMessage = (message: string | undefined): string => {
     : message;
 };
 
+/**
+ * Issue #250: a thrown error's stable machine code is the i18n key behind its
+ * message. Errors may already carry a `code` (an i18n key); otherwise the
+ * message is mapped back through the catalogs — locale-independent, so the
+ * code is identical under LANG=zh_CN and LANG=en_US.
+ */
+const resolveErrorCode = (error: { code?: unknown; message?: string }): string | undefined => {
+  if (typeof error?.code === 'string' && hasLangKey(error.code)) {
+    return error.code;
+  }
+  const fromMessage = lookupErrorCode(error?.message);
+  if (fromMessage) {
+    return fromMessage;
+  }
+  return typeof error?.code === 'string' ? error.code : undefined;
+};
+
+// Let queued stdout writes flush (async on macOS pipes) before the process
+// ends, so a piped `si ... --json | jq` never sees a truncated document.
+const flushStdoutAndExit = (exitCode: number): void => {
+  process.stdout.write('', () => process.exit(exitCode));
+};
+
 // Global error handler
 const handleCommandError = (
   error: { message?: string; stack?: string; code?: number; isPartialFailure?: boolean },
   commandName: string,
-): never => {
+): void => {
   // Skip logging if already logged by handlePartialFailure
   if (!error?.isPartialFailure) {
     // Log error message as string to preserve newlines
@@ -47,27 +72,25 @@ const handleCommandError = (
     );
   }
 
+  const errorCode = resolveErrorCode(error);
+  if (errorCode) {
+    logger.error(lang.__('ERROR_CODE', { code: errorCode }));
+  }
+
   if (error?.stack && process.env.DEBUG) {
     logger.debug(lang.__('STACK_TRACE', { stack: error.stack }));
   }
 
-  let exitCode = 1;
-
-  if (error?.code) {
-    if (typeof error.code === 'number') {
-      exitCode = error.code;
-    } else if (typeof error.code === 'string') {
-      const errorCodeMap: Record<string, number> = {
-        ENOENT: 2,
-        EACCES: 3,
-        VALIDATION: 4,
-        NETWORK: 5,
-      };
-      exitCode = errorCodeMap[error.code] || 1;
-    }
+  if (isJsonMode()) {
+    writeJson({
+      error: {
+        code: errorCode ?? 'UNKNOWN',
+        message: truncateErrorMessage(error?.message) || 'Unknown error occurred',
+      },
+    });
   }
 
-  process.exit(exitCode);
+  flushStdoutAndExit(1);
 };
 
 const actionWrapper = <T extends unknown[]>(
@@ -77,6 +100,7 @@ const actionWrapper = <T extends unknown[]>(
   // Reset context before each command execution
   clearContext();
   return async (...args: T) => {
+    setJsonMode(false);
     try {
       await handler(...args);
     } catch (error) {
@@ -118,12 +142,24 @@ program
   );
 
 program
+  .command('schema')
+  .description(lang.__('CMD_SCHEMA_DESC'))
+  .option('-o, --output <path>', lang.__('OPT_SCHEMA_OUTPUT'))
+  .action(
+    actionWrapper('schema', async ({ output }) => {
+      await schema({ output });
+    }),
+  );
+
+program
   .command('show')
   .description(lang.__('CMD_SHOW_DESC'))
   .option('-f, --file <path>', lang.__('OPT_FILE'))
   .option('-s, --stage <stage>', lang.__('OPT_STAGE'))
+  .option('--json', lang.__('OPT_JSON'))
   .action(
-    actionWrapper('show', async ({ file, stage }) => {
+    actionWrapper('show', async ({ file, stage, json }) => {
+      setJsonMode(!!json);
       const iacLocation = getIacLocation(file);
       const rawIac = parseYaml(iacLocation);
       await setContext({
@@ -137,7 +173,7 @@ program
       const context = getContext();
       const iac = revalYaml(iacLocation, context);
       setIac(iac);
-      await show({ stage, location: file, iac });
+      await show({ stage, location: file, iac, json: !!json });
     }),
   );
 
@@ -146,10 +182,16 @@ program
   .description(lang.__('CMD_VALIDATE_DESC'))
   .option('-f, --file <path>', lang.__('OPT_FILE'))
   .option('-s, --stage <stage>', lang.__('OPT_STAGE'))
+  .option('--json', lang.__('OPT_JSON'))
   .action(
-    actionWrapper('validate', async ({ file, stage }) => {
+    actionWrapper('validate', async ({ file, stage, json }) => {
+      setJsonMode(!!json);
       logger.debug(lang.__('LOG_COMMAND_INFO'));
-      await validate({ stage, location: file });
+      const result = await validate({ stage, location: file, json: !!json });
+      // Issue #250 exit-code convention: 0 = valid, 1 = validation failed.
+      if (!result.valid) {
+        process.exitCode = 1;
+      }
     }),
   );
 
@@ -164,6 +206,8 @@ program
   .option('-x, --accessKeySecret <accessKeySecret>', lang.__('OPT_ACCESS_KEY_SECRET'))
   .option('-n, --securityToken <securityToken>', lang.__('OPT_SECURITY_TOKEN'))
   .option('--no-refresh', lang.__('OPT_NO_REFRESH'))
+  .option('--json', lang.__('OPT_JSON'))
+  .option('--no-color', lang.__('OPT_NO_COLOR'))
   .action(
     actionWrapper(
       'plan',
@@ -176,8 +220,10 @@ program
         accessKeySecret,
         securityToken,
         refresh,
+        json,
+        color,
       }) => {
-        await plan({
+        const result = await plan({
           stage,
           location: file,
           region,
@@ -186,7 +232,14 @@ program
           accessKeySecret,
           securityToken,
           refresh,
+          json: !!json,
+          noColor: color === false,
         });
+        // Issue #250 exit-code convention (terraform-compatible):
+        // 0 = no changes, 2 = changes present, 1 = execution error (handler).
+        if (result.hasChanges) {
+          process.exitCode = 2;
+        }
       },
     ),
   );
@@ -204,6 +257,8 @@ program
   .option('-x, --accessKeySecret <accessKeySecret>', lang.__('OPT_ACCESS_KEY_SECRET'))
   .option('-n, --securityToken <securityToken>', lang.__('OPT_SECURITY_TOKEN'))
   .option('--no-refresh', lang.__('OPT_NO_REFRESH'))
+  .option('--json', lang.__('OPT_JSON'))
+  .option('--no-color', lang.__('OPT_NO_COLOR'))
   .action(
     actionWrapper(
       'diff',
@@ -216,8 +271,10 @@ program
         accessKeySecret,
         securityToken,
         refresh,
+        json,
+        color,
       }) => {
-        await plan({
+        const result = await plan({
           stage,
           location: file,
           region,
@@ -226,7 +283,12 @@ program
           accessKeySecret,
           securityToken,
           refresh,
+          json: !!json,
+          noColor: color === false,
         });
+        if (result.hasChanges) {
+          process.exitCode = 2;
+        }
       },
     ),
   );

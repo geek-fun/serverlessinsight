@@ -1,1 +1,2 @@
-export { validateYaml } from './iacSchema';
+export { validateYaml, IacSchemaErrors } from './iacSchema';
+export { exportIacJsonSchema } from './schemaExport';

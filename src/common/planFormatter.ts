@@ -2,6 +2,7 @@ import type { PlanItem, AttributeDiff, PlanDisplayConfig } from '../types';
 import { diffAttributes } from './hashUtils';
 import { lang } from '../lang';
 import { logger } from './logger';
+import { isNoColorEnabled } from './noColor';
 
 const COLOR = {
   RESET: '\x1b[0m',
@@ -266,7 +267,8 @@ const ACTION_COLOR: Record<string, keyof typeof COLOR> = {
  * single `-/+` block showing the old→new fields, never as two separate
  * add/remove blocks (issue #246 resource-paradigm invariant).
  */
-const isRecreate = (item: PlanItem): boolean => item.action === 'create' && !!item.changes?.before;
+export const isRecreate = (item: PlanItem): boolean =>
+  item.action === 'create' && !!item.changes?.before;
 
 /* istanbul ignore next */
 export const formatPlanItem = (
@@ -377,7 +379,14 @@ export const formatPlan = (
 };
 
 /* istanbul ignore next */
-export const displayPlan = (planResult: { items: PlanItem[] }): void => {
-  const output = formatPlan(planResult.items);
+export const displayPlan = (
+  planResult: { items: PlanItem[] },
+  config?: PlanDisplayConfig,
+): void => {
+  const output = formatPlan(planResult.items, {
+    ...DEFAULT_CONFIG,
+    colorize: !isNoColorEnabled(),
+    ...config,
+  });
   logger.info(output);
 };

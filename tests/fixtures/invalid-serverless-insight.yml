@@ -1,0 +1,16 @@
+version: 0.0.1
+app: invalid-poc-app
+provider:
+  name: aliyun
+  region: cn-hangzhou
+
+service: invalid-poc
+
+functions:
+  invalid_fn:
+    name: invalid-fn
+    code:
+      runtime: nodejs18
+      handler: index.handler
+      path: tests/fixtures/artifacts/artifact.zip
+    memory: not-a-number-or-ref

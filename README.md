@@ -95,6 +95,46 @@ si deploy -f serverless.yml -s prod
 si destroy -f serverless.yml
 ```
 
+### Using si with AI agents & scripts
+
+The CLI is built to be driven by agents and shell scripts: logs always go to
+**stderr** while result data goes to **stdout**, so piping stdout into `jq`
+always yields a single parseable JSON document.
+
+```bash
+si plan --json -f serverless.yml | jq '.summary'
+si validate --json -f serverless.yml | jq '.valid'
+si show --json -f serverless.yml | jq '.resourceCount'
+si schema | jq '.$id'   # self-contained draft-07 JSON Schema of the IaC format
+```
+
+**Stable output envelopes** (each carries a version field, so shapes only ever
+change under a new version):
+
+- `si plan --json` → `{ planVersion: 1, provider, app, service, stage,
+  changes: [{ logicalId, type, action: "create|update|destroy|recreate",
+  attributes, drifted?, driftReasons? }], summary: { create, update, destroy,
+  recreate, unchanged } }`
+- `si validate --json` → `{ validateVersion: 1, valid, errors: [{ path,
+  keyword, message, allowedValues? }] }`
+- `si show --json` → `{ showVersion: 1, provider, app, service, stage,
+  stateLocation, backend: "saas|bucket_store|local", locked, lock, resources,
+  resourceCount, ... }`
+- failures (in `--json` mode) → `{ error: { code, message } }` on stdout
+
+**Exit codes**: `si plan` exits `0` when there are no changes, `2` when
+changes are present (terraform convention), `1` on errors. `si validate`
+exits `0` when valid, `1` when validation fails.
+
+**Stable error codes**: error `code`s are the i18n message keys behind the
+translated message (e.g. `RAM_ROLE_NOT_FOUND_IN_CLOUD`) — they are identical
+under every locale, so agents can map codes to self-healing actions regardless
+of `LANG`.
+
+**Colors**: ANSI color is disabled when the `NO_COLOR` environment variable is
+set ([no-color.org](https://no-color.org)) or `--no-color` is passed, keeping
+piped output clean in non-TTY environments.
+
 ### Local Development
 
 Run and debug your serverless functions locally without deploying to the cloud.

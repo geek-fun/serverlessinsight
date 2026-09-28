@@ -95,6 +95,41 @@ si deploy -f serverless.yml -s prod
 si destroy -f serverless.yml
 ```
 
+### 在 AI agent 与脚本中使用 si
+
+CLI 专为 agent 与脚本驱动而设计：日志始终输出到 **stderr**，结果数据输出到
+**stdout**，因此将 stdout 管道给 `jq` 总能得到单个可解析的 JSON 文档。
+
+```bash
+si plan --json -f serverless.yml | jq '.summary'
+si validate --json -f serverless.yml | jq '.valid'
+si show --json -f serverless.yml | jq '.resourceCount'
+si schema | jq '.$id'   # IaC 格式的自包含 draft-07 JSON Schema
+```
+
+**稳定的输出 envelope**（每个都带版本号字段，结构只会在新版本号下变化）：
+
+- `si plan --json` → `{ planVersion: 1, provider, app, service, stage,
+  changes: [{ logicalId, type, action: "create|update|destroy|recreate",
+  attributes, drifted?, driftReasons? }], summary: { create, update, destroy,
+  recreate, unchanged } }`
+- `si validate --json` → `{ validateVersion: 1, valid, errors: [{ path,
+  keyword, message, allowedValues? }] }`
+- `si show --json` → `{ showVersion: 1, provider, app, service, stage,
+  stateLocation, backend: "saas|bucket_store|local", locked, lock, resources,
+  resourceCount, ... }`
+- 失败时（`--json` 模式）→ stdout 输出 `{ error: { code, message } }`
+
+**退出码**：`si plan` 无变更时退出 `0`，有变更时退出 `2`（terraform
+惯例），出错时退出 `1`。`si validate` 校验通过退出 `0`，校验失败退出 `1`。
+
+**稳定错误码**：错误 `code` 是翻译消息背后的 i18n key（例如
+`RAM_ROLE_NOT_FOUND_IN_CLOUD`）——在所有语言环境下保持一致，agent
+可以据此映射自愈动作，不受 `LANG` 影响。
+
+**颜色**：设置 `NO_COLOR` 环境变量（[no-color.org](https://no-color.org)）或传入
+`--no-color` 时禁用 ANSI 颜色，保证非 TTY 环境下管道输出干净。
+
 ### 本地开发
 
 无需部署到云端，即可本地运行和调试你的 Serverless 函数。

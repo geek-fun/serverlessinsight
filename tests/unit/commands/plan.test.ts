@@ -4,6 +4,7 @@ import { parseYaml, revalYaml } from '../../../src/parser';
 import { createStateBackend } from '../../../src/common/stateBackend';
 import { generateTencentPlan, displayPlan } from '../../../src/stack/scfStack';
 import { generateAliyunPlan } from '../../../src/stack/aliyunStack';
+import { setJsonMode } from '../../../src/common/jsonOutput';
 
 jest.mock('../../../src/common', () => ({
   getIacLocation: jest.fn(),
@@ -94,7 +95,10 @@ describe('plan command', () => {
     expect(setContext).toHaveBeenCalled();
     expect(setIac).toHaveBeenCalled();
     expect(generateAliyunPlan).toHaveBeenCalled();
-    expect(displayPlan).toHaveBeenCalledWith(mockPlanResult);
+    expect(displayPlan).toHaveBeenCalledWith(
+      mockPlanResult,
+      expect.objectContaining({ colorize: true }),
+    );
   });
 
   it('should generate plan for Tencent provider', async () => {
@@ -118,7 +122,7 @@ describe('plan command', () => {
     await plan({ location: '/test/path' });
 
     expect(generateTencentPlan).toHaveBeenCalled();
-    expect(displayPlan).toHaveBeenCalledWith(mockPlanResult);
+    expect(displayPlan).toHaveBeenCalledWith(mockPlanResult, expect.anything());
   });
 
   it('should throw error for unsupported provider', async () => {
@@ -162,5 +166,89 @@ describe('plan command', () => {
       }),
       true,
     );
+  });
+
+  describe('--json output (issue #250)', () => {
+    const stdoutSpy = () => jest.spyOn(process.stdout, 'write').mockImplementation(() => true);
+
+    afterEach(() => {
+      setJsonMode(false);
+    });
+
+    it('writes the versioned plan envelope to stdout and skips human rendering', async () => {
+      const spy = stdoutSpy();
+
+      const result = await plan({ location: '/test/path', json: true });
+
+      expect(displayPlan).not.toHaveBeenCalled();
+      expect(spy).toHaveBeenCalledTimes(1);
+      const payload = JSON.parse(spy.mock.calls[0][0] as string);
+      expect(payload.planVersion).toBe(1);
+      expect(payload.provider).toBe('aliyun');
+      expect(payload.app).toBe('test-app');
+      expect(payload.service).toBe('test-service');
+      expect(payload.stage).toBe('dev');
+      expect(payload.changes).toEqual([]);
+      expect(payload.summary).toEqual({
+        create: 0,
+        update: 0,
+        destroy: 0,
+        recreate: 0,
+        unchanged: 0,
+      });
+      expect(result).toEqual({ hasChanges: false });
+      spy.mockRestore();
+    });
+
+    it('reports hasChanges for a plan containing change items', async () => {
+      (generateAliyunPlan as jest.Mock).mockResolvedValue({
+        items: [
+          { logicalId: 'functions.hello', action: 'create', resourceType: 'ALIYUN_FC3_FUNCTION' },
+          { logicalId: 'functions.idle', action: 'noop', resourceType: 'ALIYUN_FC3_FUNCTION' },
+        ],
+      });
+      const spy = stdoutSpy();
+
+      const result = await plan({ location: '/test/path', json: true });
+
+      const payload = JSON.parse(spy.mock.calls[0][0] as string);
+      expect(payload.changes).toHaveLength(1);
+      expect(payload.changes[0].logicalId).toBe('functions.hello');
+      expect(payload.summary).toEqual({
+        create: 1,
+        update: 0,
+        destroy: 0,
+        recreate: 0,
+        unchanged: 1,
+      });
+      expect(result).toEqual({ hasChanges: true });
+      spy.mockRestore();
+    });
+
+    it('renders the human plan when --json is absent', async () => {
+      await plan({ location: '/test/path' });
+
+      expect(displayPlan).toHaveBeenCalled();
+    });
+  });
+
+  describe('--no-color (issue #250)', () => {
+    it('disables colorize for the human plan', async () => {
+      await plan({ location: '/test/path', noColor: true });
+
+      expect(displayPlan).toHaveBeenCalledWith(
+        mockPlanResult,
+        expect.objectContaining({ colorize: false }),
+      );
+    });
+
+    it('keeps colorize enabled by default', async () => {
+      await plan({ location: '/test/path' });
+
+      expect(displayPlan).toHaveBeenCalledWith(
+        mockPlanResult,
+        expect.objectContaining({ colorize: true }),
+      );
+    });
   });
 });

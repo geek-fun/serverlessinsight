@@ -14,6 +14,15 @@ const withTemplateRef = (schema: Record<string, unknown>) => ({
   oneOf: [schema, templateRefSchema],
 });
 
+/**
+ * Scalar map values (string | number | boolean). Expressed as `anyOf` rather
+ * than a union `type` array so the schema stays clean under Ajv strict mode
+ * while remaining standard draft-07 (issue #250 schema export).
+ */
+export const scalarValue = {
+  anyOf: [{ type: 'string' }, { type: 'number' }, { type: 'boolean' }],
+};
+
 // Common resolvable type schemas
 export const resolvableNumber = withTemplateRef({ type: 'number' });
 export const resolvableInteger = withTemplateRef({ type: 'integer' });

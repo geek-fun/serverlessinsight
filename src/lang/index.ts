@@ -42,4 +42,51 @@ const lang = new I18n({
   objectNotation: true,
 });
 
+/**
+ * Issue #250: i18n keys double as stable machine error codes. Errors are
+ * thrown with an already-translated message, so the CLI boundary maps a
+ * message back to its key — locale-independent by construction (both catalogs
+ * are indexed, and a code resolved under zh-CN equals the one under en-US).
+ */
+type MessageTemplate = { key: string; segments: Array<string> };
+
+let templateIndex: Array<MessageTemplate> | null = null;
+
+const buildTemplateIndex = (): Array<MessageTemplate> =>
+  [...Object.entries(en), ...Object.entries(zhCN)].flatMap<MessageTemplate>(([key, value]) =>
+    typeof value === 'string' ? [{ key, segments: value.split(/{{[^}]*}}/g) }] : [],
+  );
+
+const matchTemplate = (message: string, segments: Array<string>): boolean => {
+  if (segments.length === 1) {
+    return message === segments[0];
+  }
+  let rest = message;
+  for (let i = 0; i < segments.length; i++) {
+    const segment = segments[i];
+    if (i === 0) {
+      if (!rest.startsWith(segment)) return false;
+      rest = rest.slice(segment.length);
+      continue;
+    }
+    if (i === segments.length - 1) {
+      return rest.endsWith(segment);
+    }
+    const at = rest.indexOf(segment);
+    if (at < 0) return false;
+    rest = rest.slice(at + segment.length);
+  }
+  return true;
+};
+
+const langKeySet = (): Set<string> => new Set(Object.keys({ ...en, ...zhCN }));
+
+export const hasLangKey = (key: string): boolean => langKeySet().has(key);
+
+export const lookupErrorCode = (message: string | undefined): string | undefined => {
+  if (!message) return undefined;
+  templateIndex = templateIndex ?? buildTemplateIndex();
+  return templateIndex.find((template) => matchTemplate(message, template.segments))?.key;
+};
+
 export { lang };
