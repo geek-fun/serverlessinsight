@@ -41,6 +41,7 @@ import {
   saveCredentials,
   getConsoleUrl,
 } from '../../../../src/common/credentialStore';
+import { logger } from '../../../../src/common/logger';
 import { ApiError } from '../../../../src/common/apiClient';
 import type { StateBackend } from '../../../../src/common/stateBackend/types';
 import type { StateFile } from '../../../../src/types';
@@ -251,6 +252,75 @@ describe('saasStateBackend', () => {
       const result = await local.loadState('aliyun', 'myapp', 'myservice', 'dev');
 
       expect(result.orgId).toBe('org-1');
+    });
+
+    it('should degrade open when the identity fetch fails (guardrail, not a gate)', async () => {
+      (loadCredentials as jest.Mock).mockReturnValue({
+        apiKey: 'si_test_testkey123456789012345678901234',
+        consoleUrl: 'https://api.test.com',
+        orgId: 'org-1',
+      });
+      const local = createSaasStateBackend({
+        app: 'myapp',
+        service: 'myservice',
+        declaredOrg: 'wentsen',
+      });
+      mockApiClient.get.mockRejectedValueOnce(new Error('validate unreachable'));
+      provisionOnce();
+
+      await local.loadState('aliyun', 'myapp', 'myservice', 'dev');
+
+      // Unverifiable declaration → proceeds; the key still only writes its own org
+      expect(mockApiClient.post).toHaveBeenCalled();
+      expect(saveCredentials).not.toHaveBeenCalled();
+    });
+
+    it('should resolve the identity from validate when only an API key is available (no credentials file)', async () => {
+      (loadCredentials as jest.Mock).mockReturnValue(null);
+      const local = createSaasStateBackend(
+        { app: 'myapp', service: 'myservice', declaredOrg: 'wentsen' },
+        { apiKey: 'si_test_testkey123456789012345678901234' },
+      );
+      // provision's validate roundtrip, then state/current (state carries the
+      // org id so the anchor check reuses the cached identity)
+      mockApiClient.get.mockResolvedValueOnce({ orgId: 'org-1', orgSlug: 'wentsen' });
+      mockApiClient.post.mockResolvedValueOnce({
+        id: 'deploy-1',
+        appId: 'app-1',
+        serviceId: 'svc-1',
+        status: 'active',
+        isNewApp: false,
+        isNewService: false,
+      });
+      mockApiClient.get.mockResolvedValueOnce({
+        stateJson: {
+          version: '3.0',
+          provider: 'aliyun',
+          app: 'myapp',
+          service: 'myservice',
+          orgId: 'org-1',
+          stages: { dev: { resources: {} } },
+          resources: {},
+        },
+      });
+
+      const result = await local.loadState('aliyun', 'myapp', 'myservice', 'dev');
+
+      expect(saveCredentials).not.toHaveBeenCalled();
+      expect(mockApiClient.post).toHaveBeenCalled();
+      expect(result.orgId).toBe('org-1');
+    });
+
+    it('should announce the credentials org when no org is declared', async () => {
+      (loadCredentials as jest.Mock).mockReturnValue({
+        apiKey: 'si_test_testkey123456789012345678901234',
+        consoleUrl: 'https://api.test.com',
+        orgId: 'org-1',
+        orgName: 'Wentsen',
+      });
+      createSaasStateBackend({ app: 'myapp', service: 'myservice' });
+
+      expect(logger.info).toHaveBeenCalledWith('SAAS_ORG_FROM_CREDENTIALS');
     });
   });
 

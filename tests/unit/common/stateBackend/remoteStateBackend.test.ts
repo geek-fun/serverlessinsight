@@ -22,6 +22,11 @@ jest.mock('../../../../src/common/logger', () => ({
   },
 }));
 
+const mockEnforceMigrationMarker = jest.fn();
+jest.mock('../../../../src/common/migrationMarker', () => ({
+  enforceMigrationMarker: (...args: unknown[]) => mockEnforceMigrationMarker(...args),
+}));
+
 describe('remoteStateBackend', () => {
   let mockAdapter: jest.Mocked<StorageAdapter>;
   const mockLockUtils = lockUtils as any;
@@ -46,6 +51,96 @@ describe('remoteStateBackend', () => {
       acquiredAt: new Date().toISOString(),
       path,
     }));
+  });
+
+  describe('migration marker wiring (D-4)', () => {
+    const markedState: StateFile = {
+      version: CURRENT_STATE_VERSION,
+      provider: 'aliyun',
+      app: 'test-app',
+      service: 'test-service',
+      managedBy: 'saas',
+      stages: { dev: { resources: {} } },
+      resources: {},
+    } as StateFile;
+
+    it('passes the configured markerAction to enforceMigrationMarker on load', async () => {
+      mockAdapter.read.mockResolvedValue(markedState);
+      const backend = createRemoteStateBackend(mockAdapter, {
+        key: 'state.json',
+        markerAction: 'refuse',
+      });
+
+      await backend.loadState('aliyun', 'test-app', 'test-service', 'dev');
+
+      expect(mockEnforceMigrationMarker).toHaveBeenCalledWith(
+        expect.objectContaining({ managedBy: 'saas' }),
+        'refuse',
+      );
+    });
+
+    it('defaults to marker off when no markerAction is configured', async () => {
+      mockAdapter.read.mockResolvedValue(markedState);
+      const backend = createRemoteStateBackend(mockAdapter, { key: 'state.json' });
+
+      await backend.loadState('aliyun', 'test-app', 'test-service', 'dev');
+
+      expect(mockEnforceMigrationMarker).toHaveBeenCalledWith(
+        expect.objectContaining({ managedBy: 'saas' }),
+        'off',
+      );
+    });
+  });
+
+  describe('patchPersisted', () => {
+    it('merges the patch into the persisted state and writes it back', async () => {
+      mockAdapter.read.mockResolvedValue({
+        version: CURRENT_STATE_VERSION,
+        provider: 'aliyun',
+        app: 'test-app',
+        service: 'test-service',
+        stages: { dev: { resources: {} } },
+      });
+      const backend = createRemoteStateBackend(mockAdapter, { key: 'state.json' });
+
+      await backend.patchPersisted!({ orgId: 'org-1', managedBy: 'saas' });
+
+      expect(mockAdapter.write).toHaveBeenCalledWith(
+        'state.json',
+        expect.objectContaining({
+          version: CURRENT_STATE_VERSION,
+          provider: 'aliyun',
+          orgId: 'org-1',
+          managedBy: 'saas',
+        }),
+      );
+    });
+
+    it('deletes keys patched with undefined', async () => {
+      mockAdapter.read.mockResolvedValue({
+        version: CURRENT_STATE_VERSION,
+        provider: 'aliyun',
+        app: 'test-app',
+        service: 'test-service',
+        managedBy: 'saas',
+        stages: {},
+      });
+      const backend = createRemoteStateBackend(mockAdapter, { key: 'state.json' });
+
+      await backend.patchPersisted!({ managedBy: undefined });
+
+      const written = mockAdapter.write.mock.calls[0][1] as Record<string, unknown>;
+      expect(written).not.toHaveProperty('managedBy');
+    });
+
+    it('writes the patch alone when the remote state does not exist yet', async () => {
+      mockAdapter.read.mockResolvedValue(undefined);
+      const backend = createRemoteStateBackend(mockAdapter, { key: 'state.json' });
+
+      await backend.patchPersisted!({ managedBy: 'saas' });
+
+      expect(mockAdapter.write).toHaveBeenCalledWith('state.json', { managedBy: 'saas' });
+    });
   });
 
   describe('loadState', () => {

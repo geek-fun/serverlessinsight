@@ -296,6 +296,34 @@ describe('show command', () => {
         expect.stringContaining('SaaS backend unavailable'),
       );
     });
+
+    it('should refuse to fall back to a local copy of a migrated state (D-3/D-4)', async () => {
+      (mockStateBackend.loadState as jest.Mock).mockRejectedValue(new Error('Network error'));
+
+      process.chdir(testDir);
+      const stateDir = path.join(testDir, '.serverlessinsight');
+      fs.mkdirSync(stateDir, { recursive: true });
+      const statePath = path.join(stateDir, 'state-test-app-test-service.json');
+      fs.writeFileSync(
+        statePath,
+        JSON.stringify({
+          version: '1.0.0',
+          provider: 'aliyun',
+          app: 'test-app',
+          service: 'test-service',
+          managedBy: 'saas',
+          stages: { default: { resources: {} } },
+          resources: {},
+        }),
+      );
+
+      const mockIac = createMockIac('BUCKET_STORE', 'test-bucket', 'state.json');
+
+      // A stale local copy of a migrated state must never be presented as live
+      await expect(show({ stage: 'default', location: testDir, iac: mockIac })).rejects.toThrow(
+        /managedBy=saas/,
+      );
+    });
   });
 
   describe('with empty state', () => {
