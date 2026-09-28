@@ -412,7 +412,12 @@ export const en = {
     'After DNS CNAME is configured, register {{domain}} in OSS console: ' +
     'https://oss.console.aliyun.com/bucket/oss-{{region}}/{{bucket}}/domain/cname',
   OSS_BUCKET_CNAME_BOUND: 'Bound custom domain to bucket: {{domain}}',
-  OSS_BUCKET_CNAME_EXISTS: 'Custom domain already bound to bucket: {{domain}}',
+  OSS_BUCKET_CNAME_EXISTS:
+    'Custom domain already bound to bucket (verified via ListCname): {{domain}}',
+  OSS_BUCKET_CNAME_CONFLICT:
+    'Failed to bind custom domain {{domain}} to bucket {{bucketName}}: the domain is already ' +
+    'bound to another bucket or used as an image-processing domain ({{error}}). ' +
+    'Remove the conflicting binding before retrying.',
   OSS_BUCKET_CNAME_UNBOUND: 'Unbound custom domain from bucket: {{domain}}',
   OSS_BUCKET_CNAME_BIND_FAILED: 'Failed to bind bucket CNAME: {{error}}',
   OSS_BUCKET_CNAME_UNBIND_FAILED: 'Failed to unbind bucket CNAME: {{error}}',

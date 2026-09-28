@@ -1,5 +1,6 @@
 import { createOssOperations } from '../../../../src/common/aliyunClient/ossOperations';
 import { BucketACL } from '../../../../src/stack/bucketTypes';
+import { logger } from '../../../../src/common/logger';
 import type OSS from 'ali-oss';
 
 const mockRequest = jest.fn();
@@ -311,12 +312,47 @@ describe('ossOperations putBucketCname', () => {
       expect(result.domain).toBe('cdn.example.com');
     });
 
-    it('should still tolerate CnameAlreadyExists when certificate is present', async () => {
+    it('should tolerate CnameAlreadyExists when ListCname confirms domain bound to this bucket', async () => {
       const cnameExistsError = Object.assign(new Error('CnameAlreadyExists'), {
         code: 'CnameAlreadyExists',
         status: 409,
       });
-      mockRequest.mockRejectedValue(cnameExistsError);
+      mockRequest.mockRejectedValueOnce(cnameExistsError);
+      mockRequest.mockResolvedValueOnce({
+        data:
+          '<?xml version="1.0" encoding="UTF-8"?><ListCnameResult>' +
+          '<Bucket>test-bucket</Bucket><Owner>owner</Owner>' +
+          '<Cname><Domain>cdn.example.com</Domain><Status>Enabled</Status>' +
+          '<Certificate><CertId>1</CertId></Certificate></Cname>' +
+          '</ListCnameResult>',
+      });
+      mockGetBucketCORS.mockRejectedValue(new Error('NoSuchCORSConfiguration'));
+      mockPutBucketCORS.mockResolvedValue({});
+
+      await operations.bindCustomDomain('test-bucket', 'cdn.example.com');
+
+      expect(mockRequest).toHaveBeenCalledWith(
+        expect.objectContaining({ method: 'GET', subres: { cname: '' } }),
+      );
+      const certBoundLog = (logger.info as jest.Mock).mock.calls.some(
+        ([message]) => typeof message === 'string' && message.startsWith('OSS_BUCKET_CNAME_EXISTS'),
+      );
+      expect(certBoundLog).toBe(true);
+    });
+
+    it('should throw on CnameAlreadyExists when ListCname shows domain not bound to this bucket', async () => {
+      const cnameExistsError = Object.assign(new Error('CnameAlreadyExists'), {
+        code: 'CnameAlreadyExists',
+        status: 409,
+      });
+      mockRequest.mockRejectedValueOnce(cnameExistsError);
+      mockRequest.mockResolvedValueOnce({
+        data:
+          '<?xml version="1.0" encoding="UTF-8"?><ListCnameResult>' +
+          '<Bucket>test-bucket</Bucket><Owner>owner</Owner>' +
+          '<Cname><Domain>other.example.com</Domain><Status>Enabled</Status></Cname>' +
+          '</ListCnameResult>',
+      });
       mockGetBucketCORS.mockRejectedValue(new Error('NoSuchCORSConfiguration'));
 
       const cert = {
@@ -325,10 +361,56 @@ describe('ossOperations putBucketCname', () => {
           '-----BEGIN RSA PRIVATE KEY-----\nKEY\n-----END RSA PRIVATE KEY-----',
       };
 
-      const result = await operations.bindCustomDomain('test-bucket', 'cdn.example.com', cert);
+      await expect(
+        operations.bindCustomDomain('test-bucket', 'cdn.example.com', cert),
+      ).rejects.toThrow();
+    });
 
-      expect(result).toBeDefined();
-      expect(result.domain).toBe('cdn.example.com');
+    it('should only log cert bound when PutCname actually returns 200 with certificate', async () => {
+      mockRequest.mockResolvedValue({});
+      mockGetBucketCORS.mockRejectedValue(new Error('NoSuchCORSConfiguration'));
+
+      const cert = {
+        certificateBody: '-----BEGIN CERTIFICATE-----\nMOCK\n-----END CERTIFICATE-----',
+        certificatePrivateKey:
+          '-----BEGIN RSA PRIVATE KEY-----\nKEY\n-----END RSA PRIVATE KEY-----',
+      };
+
+      await operations.bindCustomDomain('test-bucket', 'cdn.example.com', cert);
+
+      const certBoundLog = (logger.info as jest.Mock).mock.calls.some(
+        ([message]) => typeof message === 'string' && message.startsWith('OSS_BUCKET_CERT_BOUND'),
+      );
+      expect(certBoundLog).toBe(true);
+    });
+
+    it('should not log cert bound when CnameAlreadyExists was tolerated via ListCname', async () => {
+      const cnameExistsError = Object.assign(new Error('CnameAlreadyExists'), {
+        code: 'CnameAlreadyExists',
+        status: 409,
+      });
+      mockRequest.mockRejectedValueOnce(cnameExistsError);
+      mockRequest.mockResolvedValueOnce({
+        data:
+          '<?xml version="1.0" encoding="UTF-8"?><ListCnameResult>' +
+          '<Bucket>test-bucket</Bucket><Owner>owner</Owner>' +
+          '<Cname><Domain>cdn.example.com</Domain><Status>Enabled</Status></Cname>' +
+          '</ListCnameResult>',
+      });
+      mockGetBucketCORS.mockRejectedValue(new Error('NoSuchCORSConfiguration'));
+
+      const cert = {
+        certificateBody: '-----BEGIN CERTIFICATE-----\nMOCK\n-----END CERTIFICATE-----',
+        certificatePrivateKey:
+          '-----BEGIN RSA PRIVATE KEY-----\nKEY\n-----END RSA PRIVATE KEY-----',
+      };
+
+      await operations.bindCustomDomain('test-bucket', 'cdn.example.com', cert);
+
+      const certBoundLog = (logger.info as jest.Mock).mock.calls.some(
+        ([message]) => typeof message === 'string' && message.startsWith('OSS_BUCKET_CERT_BOUND'),
+      );
+      expect(certBoundLog).toBe(false);
     });
 
     it('should throw when NeedVerifyDomainOwnership and no DNS operations available', async () => {
