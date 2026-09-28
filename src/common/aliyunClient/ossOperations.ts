@@ -68,6 +68,7 @@ const ossRequest = (ossClient: OSS, params: unknown): Promise<unknown> => {
 type PutCnameResult = {
   success: boolean;
   needVerification: boolean;
+  certBound: boolean;
 };
 
 type VerificationResult = PutCnameResult & {
@@ -85,6 +86,12 @@ type TxtRecordResult = {
 };
 
 type OssSdkClient = OSS;
+
+type OssCnameEntry = {
+  domain: string;
+  status: string;
+  certBound: boolean;
+};
 
 const escapeXmlText = (text: string): string =>
   text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
@@ -214,6 +221,45 @@ const parseReplicationRules = (xml: string): BucketReplicationRule[] => {
     };
   };
 
+  // ListCname (GET /?cname) → the CNAME entries bound to THIS bucket with their
+  // certificate info. Used to verify desired state after a 409 CnameAlreadyExists,
+  // since that error only means "bound elsewhere or image-processing domain"
+  // per the PutCname docs — it never guarantees the bind landed on this bucket.
+  const listBucketCnames = async (bucketName: string): Promise<OssCnameEntry[]> => {
+    useBucket(bucketName);
+    const response = await ossRequest(ossClient, {
+      method: 'GET',
+      bucket: bucketName,
+      subres: { cname: '' },
+      successStatuses: [200],
+    });
+    const xml = (response as { data?: string }).data || '';
+    const entries: OssCnameEntry[] = [];
+    const cnameRegex = /<Cname>([\s\S]*?)<\/Cname>/g;
+    let match: RegExpExecArray | null;
+    while ((match = cnameRegex.exec(xml)) !== null) {
+      const cnameXml = match[1];
+      const read = (tag: string): string | undefined => {
+        const m = new RegExp(`<${tag}>([\\s\\S]*?)<\\/${tag}>`).exec(cnameXml);
+        return m ? m[1].trim() : undefined;
+      };
+      const hasCertificate = /<Certificate>[\s\S]*?<\/Certificate>/.test(cnameXml);
+      entries.push({
+        domain: read('Domain') ?? '',
+        status: read('Status') ?? '',
+        certBound: hasCertificate,
+      });
+    }
+    return entries;
+  };
+
+  const verifyCnameBoundToBucket = async (bucketName: string, domain: string): Promise<boolean> => {
+    const entries = await listBucketCnames(bucketName);
+    return entries.some(
+      (entry) => entry.domain === domain && (entry.status === 'Enabled' || entry.status === ''),
+    );
+  };
+
   const putBucketCname = async (
     bucketName: string,
     domain: string,
@@ -242,23 +288,34 @@ const parseReplicationRules = (xml: string): BucketReplicationRule[] => {
       };
       await (ossClient as unknown as { request: (p: unknown) => Promise<unknown> }).request(params);
       logger.info(lang.__('OSS_BUCKET_CNAME_BOUND', { domain }));
-      return { success: true, needVerification: false };
+      return { success: true, needVerification: false, certBound: Boolean(certificate) };
     } catch (error) {
       const err = error as { code?: string; message?: string; status?: number };
       if (err.code === 'CnameAlreadyExists' || err.status === 409) {
-        logger.info(lang.__('OSS_BUCKET_CNAME_EXISTS', { domain }));
-        return { success: true, needVerification: false };
+        // Per the PutCname docs, 409 CnameAlreadyExists fires when the domain is
+        // bound to ANOTHER bucket (or is an image-processing domain) — a rebind
+        // to the same bucket is idempotent 200. So never trust the 409 alone:
+        // cross-check via ListCname whether the domain is actually bound here.
+        const boundToThisBucket = await verifyCnameBoundToBucket(bucketName, domain);
+        if (boundToThisBucket) {
+          logger.info(lang.__('OSS_BUCKET_CNAME_EXISTS', { domain }));
+          return { success: true, needVerification: false, certBound: false };
+        }
+        // eslint-disable-next-line preserve-caught-error
+        throw new Error(
+          lang.__('OSS_BUCKET_CNAME_CONFLICT', { domain, bucketName, error: String(error) }),
+        );
       }
       if (err.code === 'NeedVerifyDomainOwnership') {
         logger.warn(lang.__('OSS_BUCKET_CNAME_NEED_VERIFY', { domain }));
-        return { success: false, needVerification: true };
+        return { success: false, needVerification: true, certBound: false };
       }
       if (certificate) {
         // eslint-disable-next-line preserve-caught-error
         throw new Error(lang.__('OSS_BUCKET_CNAME_BIND_FAILED', { error: String(error) }));
       }
       logger.warn(lang.__('OSS_BUCKET_CNAME_BIND_FAILED', { error: String(error) }));
-      return { success: false, needVerification: false };
+      return { success: false, needVerification: false, certBound: false };
     }
   };
 
@@ -398,7 +455,7 @@ const parseReplicationRules = (xml: string): BucketReplicationRule[] => {
     }
 
     const bucketCnameBound = cnameResult.success;
-    if (certificate && bucketCnameBound) {
+    if (certificate && cnameResult.certBound) {
       logger.info(lang.__('OSS_BUCKET_CERT_BOUND', { domain: normalizedDomain }));
     }
     await addCorsRuleForDomain(bucketName, normalizedDomain);
@@ -640,7 +697,7 @@ const parseReplicationRules = (xml: string): BucketReplicationRule[] => {
       }),
     );
 
-    return { success: false, needVerification: true };
+    return { success: false, needVerification: true, certBound: false };
   };
 
   const createOrFindDnsCnameRecord = async (

@@ -368,7 +368,10 @@ export const zhCN = {
     'DNS CNAME 配置后，请在 OSS 控制台注册 {{domain}}: ' +
     'https://oss.console.aliyun.com/bucket/oss-{{region}}/{{bucket}}/domain/cname',
   OSS_BUCKET_CNAME_BOUND: '已绑定自定义域名到存储桶: {{domain}}',
-  OSS_BUCKET_CNAME_EXISTS: '自定义域名已绑定到存储桶: {{domain}}',
+  OSS_BUCKET_CNAME_EXISTS: '自定义域名已绑定到存储桶（经 ListCname 核实）: {{domain}}',
+  OSS_BUCKET_CNAME_CONFLICT:
+    '绑定自定义域名 {{domain}} 到存储桶 {{bucketName}} 失败: 该域名已绑定到其他存储桶或被用作图片处理域名（{{error}}）。' +
+    '请先解除冲突的绑定后重试。',
   OSS_BUCKET_CNAME_UNBOUND: '已解绑存储桶自定义域名: {{domain}}',
   OSS_BUCKET_CNAME_BIND_FAILED: '绑定存储桶 CNAME 失败: {{error}}',
   OSS_BUCKET_CNAME_UNBIND_FAILED: '解绑存储桶 CNAME 失败: {{error}}',

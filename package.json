@@ -1,7 +1,7 @@
 {
   "name": "@geek-fun/serverlessinsight",
   "version": "0.9.0",
-  "description": "Full life cycle cross providers serverless application management for your fast-growing business.",
+  "description": "Full-lifecycle serverless IaC — one open-source platform to develop, deploy and operate serverless across clouds.",
   "homepage": "https://serverlessinsight.com",
   "main": "dist/src/index.js",
   "types": "dist/src/index.d.ts",
