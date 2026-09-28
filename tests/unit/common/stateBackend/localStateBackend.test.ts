@@ -43,6 +43,21 @@ describe('localStateBackend', () => {
     });
   });
 
+  describe('patchPersisted', () => {
+    it('delegates to patchPersistedState with the app/service/baseDir scope', async () => {
+      const backend = createLocalStateBackend(testApp, testService, testBaseDir);
+
+      await backend.patchPersisted!({ managedBy: 'saas' });
+
+      expect(mockStateManager.patchPersistedState).toHaveBeenCalledWith(
+        testApp,
+        testService,
+        { managedBy: 'saas' },
+        testBaseDir,
+      );
+    });
+  });
+
   describe('loadState', () => {
     it('should delegate to stateManager.loadState with correct parameters', async () => {
       const mockState: StateFile = {

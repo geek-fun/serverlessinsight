@@ -52,7 +52,7 @@ export const createSaasStateBackend = (
   const creds = loadCredentials();
   const apiKey = options?.apiKey || creds?.apiKey;
   const consoleUrl = getConsoleUrl();
-  const orgId = creds?.orgId ?? '';
+  let knownOrgId = creds?.orgId ?? '';
 
   if (!apiKey) {
     throw new Error(lang.__('SAAS_BACKEND_NO_CREDENTIALS'));
@@ -75,7 +75,7 @@ export const createSaasStateBackend = (
   const client: ApiClient = createApiClient({
     apiKey,
     baseUrl: consoleUrl,
-    orgId,
+    orgId: knownOrgId,
   });
 
   let currentDeploymentId: string | null = null;
@@ -144,6 +144,7 @@ export const createSaasStateBackend = (
         orgId: local.orgId ?? fetched.orgId,
         orgSlug: local.orgSlug ?? fetched.orgSlug,
       };
+      knownOrgId = resolvedIdentity.orgId ?? knownOrgId;
     } catch {
       resolvedIdentity = local;
     }
@@ -235,7 +236,7 @@ export const createSaasStateBackend = (
         return {
           ...migrated,
           resources,
-          orgId,
+          orgId: knownOrgId,
           appId: resolvedAppId!,
           serviceId: resolvedServiceId!,
         };
@@ -249,7 +250,7 @@ export const createSaasStateBackend = (
         const defaultState = getDefaultState(provider, app, service);
         return {
           ...defaultState,
-          orgId,
+          orgId: knownOrgId,
           appId: resolvedAppId!,
           serviceId: resolvedServiceId!,
         };
