@@ -3,6 +3,7 @@ import {
   resolvableBoolean,
   resolvableEnum,
   resolvableConstrained,
+  scalarValue,
   HOST_NAME_PATTERN,
 } from './templateRefSchema';
 
@@ -92,7 +93,7 @@ export const functionSchema = {
         environment: {
           type: 'object',
           additionalProperties: {
-            type: ['string', 'number', 'boolean'],
+            ...scalarValue,
           },
         },
         network: {

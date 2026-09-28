@@ -1,9 +1,12 @@
+import fs from 'node:fs';
+import path from 'node:path';
 import { ResourceState, ResourceTypeEnum, ServerlessIac } from '../types';
 import { StateBackendType } from '../types/domains/backend';
 import { getStatePath, loadState, getContext } from '../common';
 import { readLockFileForCommand } from '../common/lockManager';
 import { createStateBackend } from '../common/stateBackend';
 import { isMigratedToSaas } from '../common/migrationMarker';
+import { SHOW_JSON_VERSION, ShowJsonPayload, writeJson } from '../common/jsonOutput';
 import { logger } from '../common/logger';
 import { StateBackend, LockMetadata } from '../common/stateBackend/types';
 import { lang } from '../lang';
@@ -12,6 +15,25 @@ type ShowOptions = {
   stage?: string;
   location?: string;
   iac?: ServerlessIac;
+  json?: boolean;
+};
+
+/**
+ * The CLI passes the yaml file path as `location`; the state directory lives
+ * next to that file, not underneath it. A directory (or cwd) stays as-is.
+ */
+const resolveBaseDir = (location?: string): string => {
+  if (!location) {
+    return process.cwd();
+  }
+  try {
+    if (fs.statSync(location).isFile()) {
+      return path.dirname(location);
+    }
+  } catch {
+    // not an existing file — treat as a directory
+  }
+  return location;
 };
 
 const formatTimeAgo = (dateStr: string): string => {
@@ -216,16 +238,19 @@ const getBackendLocationString = (backendConfig: ServerlessIac['backend']): stri
   return `bucket://${config.bucket}/${config.key}`;
 };
 
+const SAAS_STATE_LOCATION = 'saas';
+
 export const show = async (options: ShowOptions): Promise<void> => {
   const context = getContext();
   const stage = options.stage ?? context.stage;
-  const baseDir = options.location ?? process.cwd();
+  const baseDir = resolveBaseDir(options.location);
 
   logger.info(lang.__('SHOW_LOADING_STATE', { app: context.app, service: context.service, stage }));
 
   let state;
   let lockInfo: LockMetadata | null;
   let stateLocation: string;
+  let stateLocationDisplay: string;
   let usingRemoteBackend = false;
 
   const backendType = options.iac?.backend?.type;
@@ -247,7 +272,7 @@ export const show = async (options: ShowOptions): Promise<void> => {
       usingRemoteBackend = true;
       stateLocation =
         backendType === StateBackendType.SAAS || !backendType
-          ? 'Console (SaaS state)'
+          ? SAAS_STATE_LOCATION
           : getBackendLocationString(options.iac!.backend);
     } catch (error) {
       if (backendType === StateBackendType.SAAS || !backendType) {
@@ -264,19 +289,48 @@ export const show = async (options: ShowOptions): Promise<void> => {
       lockInfo = readLocalLock(context.app, context.service, baseDir);
       stateLocation = getStatePath(context.app, context.service, baseDir);
     }
+    stateLocationDisplay =
+      stateLocation === SAAS_STATE_LOCATION ? lang.__('SHOW_BACKEND_SAAS') : stateLocation;
   } else {
     state = loadLocalState(context.provider, context.app, context.service, stage, baseDir);
     lockInfo = readLocalLock(context.app, context.service, baseDir);
     stateLocation = getStatePath(context.app, context.service, baseDir);
+    stateLocationDisplay = stateLocation;
   }
 
   const resources = state.resources;
   const resourceCount = Object.keys(resources).length;
 
+  if (options.json) {
+    const backendKind: ShowJsonPayload['backend'] = !usingRemoteBackend
+      ? 'local'
+      : backendType === StateBackendType.BUCKET_STORE
+        ? 'bucket_store'
+        : 'saas';
+    const payload: ShowJsonPayload = {
+      showVersion: SHOW_JSON_VERSION,
+      provider: state.provider,
+      app: state.app,
+      service: state.service,
+      stage,
+      ...(state.serial !== undefined ? { serial: state.serial } : {}),
+      ...(state.lineage !== undefined ? { lineage: state.lineage } : {}),
+      ...(state.managedBy !== undefined ? { managedBy: state.managedBy } : {}),
+      stateLocation,
+      backend: backendKind,
+      locked: !!lockInfo,
+      lock: lockInfo ? { ...lockInfo } : null,
+      resources: resources as Record<string, unknown>,
+      resourceCount,
+    };
+    writeJson(payload);
+    return;
+  }
+
   if (resourceCount === 0) {
     logger.info(lang.__('SHOW_NO_RESOURCES'));
     logger.info('');
-    logger.info(lang.__('SHOW_STATE_LOCATION', { stateLocation }));
+    logger.info(lang.__('SHOW_STATE_LOCATION', { stateLocation: stateLocationDisplay }));
     if (usingRemoteBackend) {
       logger.info(lang.__('SHOW_BACKEND_REMOTE'));
     }
@@ -318,12 +372,12 @@ export const show = async (options: ShowOptions): Promise<void> => {
 
   const categoryOrder = ['functions', 'apiGateway', 'storage', 'databases', 'dns', 'other'];
   const categoryLabels: Record<string, string> = {
-    functions: 'Functions',
-    apiGateway: 'API Gateway',
-    storage: 'Storage',
-    databases: 'Databases',
-    dns: 'DNS Records',
-    other: 'Other Resources',
+    functions: lang.__('SHOW_CAT_FUNCTIONS'),
+    apiGateway: lang.__('SHOW_CAT_API_GATEWAY'),
+    storage: lang.__('SHOW_CAT_STORAGE'),
+    databases: lang.__('SHOW_CAT_DATABASES'),
+    dns: lang.__('SHOW_CAT_DNS'),
+    other: lang.__('SHOW_CAT_OTHER'),
   };
 
   for (const category of categoryOrder) {
@@ -365,7 +419,7 @@ export const show = async (options: ShowOptions): Promise<void> => {
   }
 
   logger.info('');
-  logger.info(lang.__('SHOW_STATE_LOCATION', { stateLocation }));
+  logger.info(lang.__('SHOW_STATE_LOCATION', { stateLocation: stateLocationDisplay }));
   if (usingRemoteBackend) {
     logger.info(lang.__('SHOW_BACKEND_REMOTE'));
   }

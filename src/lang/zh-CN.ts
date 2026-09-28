@@ -1034,6 +1034,7 @@ export const zhCN = {
   SHOW_NO_RESOURCES: '状态中没有任何资源。',
   SHOW_STATE_LOCATION: '状态文件位置：{{stateLocation}}',
   SHOW_BACKEND_REMOTE: '后端：远端',
+  SHOW_BACKEND_SAAS: 'Console（SaaS 状态存储）',
   SHOW_DEPLOY_HINT: '要部署资源，请执行：si deploy',
   SHOW_HEADER_DEPLOYED: '已部署资源',
   SHOW_CATEGORY_HEADER: '📦 {{label}}',
@@ -1205,4 +1206,12 @@ export const zhCN = {
   OPT_PARAMETER: '覆盖参数',
   OPT_DEBUG: '开启调试模式',
   OPT_WATCH: '开启文件监听',
+
+  // ===== Issue #250: agent-friendly CLI surface =====
+  CMD_SCHEMA_DESC: '导出用于校验的 IaC JSON Schema（draft-07，自包含）',
+  OPT_SCHEMA_OUTPUT: '将 JSON Schema 写入指定文件而不是 stdout',
+  OPT_JSON: '将结果以机器可读 JSON 输出到 stdout（日志保持在 stderr）',
+  OPT_NO_COLOR: '禁用彩色输出（同时遵循 NO_COLOR 环境变量）',
+  SCHEMA_WRITTEN_TO: 'JSON Schema 已写入：{{path}}',
+  ERROR_CODE: '错误码：{{code}}',
 };

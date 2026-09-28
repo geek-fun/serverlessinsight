@@ -3,6 +3,7 @@ import pinoPretty from 'pino-pretty';
 import { execSync } from 'child_process';
 import iconv from 'iconv-lite';
 import { Writable } from 'stream';
+import { isNoColorEnabled } from './noColor';
 
 const CODE_PAGE_TO_ENCODING: Record<number, string> = {
   932: 'shift_jis', // Japanese
@@ -74,7 +75,7 @@ class EncodingTransformStream extends Writable {
     this.encoding = encoding;
 
     this.formatLog = pinoPretty.prettyFactory({
-      colorize: true,
+      colorize: !isNoColorEnabled(),
       translateTime: 'HH:MM:ss',
       ignore: 'pid,hostname',
       messageFormat: '{msg}',
@@ -86,10 +87,12 @@ class EncodingTransformStream extends Writable {
       const stringChunk = typeof chunk === 'string' ? chunk : chunk.toString();
       const formattedChunk = this.formatLog(stringChunk);
 
+      // Issue #250: logs go to stderr — stdout carries only command result
+      // data (--json payloads), so agents can pipe stdout straight to jq.
       if (this.encoding !== 'utf8' && iconv.encodingExists(this.encoding)) {
-        process.stdout.write(iconv.toEncoding(formattedChunk, 'utf8'));
+        process.stderr.write(iconv.toEncoding(formattedChunk, 'utf8'));
       } else {
-        process.stdout.write(formattedChunk);
+        process.stderr.write(formattedChunk);
       }
 
       callback();

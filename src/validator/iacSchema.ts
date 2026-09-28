@@ -18,7 +18,7 @@ type IacSchemaError = {
   type: string;
 };
 
-class IacSchemaErrors extends Error {
+export class IacSchemaErrors extends Error {
   private schemaErrors: Array<IacSchemaError>;
 
   constructor(errors: Array<ErrorObject>) {

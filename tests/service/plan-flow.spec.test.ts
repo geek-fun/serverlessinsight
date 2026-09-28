@@ -163,4 +163,73 @@ describe('Plan Flow Service Test', () => {
       });
     });
   });
+
+  describe('Plan JSON output (issue #250)', () => {
+    const captureStdout = async (run: () => Promise<{ hasChanges: boolean }>) => {
+      const stdoutSpy = jest.spyOn(process.stdout, 'write').mockImplementation(() => true);
+      try {
+        const result = await run();
+        const text = stdoutSpy.mock.calls.map((call) => call[0] as string).join('');
+        return { result, text };
+      } finally {
+        stdoutSpy.mockRestore();
+      }
+    };
+
+    it('emits the versioned plan envelope to stdout', async () => {
+      mockClient.fc3.getFunction.mockRejectedValueOnce({ code: 'FunctionNotFound' });
+
+      const { result, text } = await captureStdout(() =>
+        plan({
+          location: path.join(fixturesDir, 'serverless-insight-plan.yml'),
+          stage: 'dev',
+          region: 'cn-hangzhou',
+          provider: 'aliyun',
+          json: true,
+        }),
+      );
+
+      const payload = JSON.parse(text);
+      expect(payload.planVersion).toBe(1);
+      expect(payload.provider).toBe('aliyun');
+      expect(payload.app).toBe('insight-poc-plan-app');
+      expect(payload.service).toBe('insight-poc-plan');
+      expect(payload.stage).toBe('dev');
+      expect(payload.summary.create).toBeGreaterThan(0);
+      expect(payload.changes.length).toBe(
+        payload.summary.create +
+          payload.summary.update +
+          payload.summary.destroy +
+          payload.summary.recreate,
+      );
+      const created = payload.changes.find(
+        (change: { action: string }) => change.action === 'create',
+      );
+      expect(created).toBeDefined();
+      expect(created.type).toBeDefined();
+      expect(Array.isArray(created.attributes)).toBe(true);
+      expect(result.hasChanges).toBe(true);
+    });
+
+    it('reports drift against the cloud as an update with attribute diffs', async () => {
+      mockClient.fc3.getFunction.mockRejectedValueOnce({ code: 'FunctionNotFound' });
+
+      const { text } = await captureStdout(() =>
+        plan({
+          location: path.join(fixturesDir, 'serverless-insight-plan.yml'),
+          stage: 'dev',
+          region: 'cn-hangzhou',
+          provider: 'aliyun',
+          json: true,
+        }),
+      );
+
+      const payload = JSON.parse(text);
+      const fnChange = payload.changes.find((change: { logicalId: string }) =>
+        change.logicalId.includes('insight_poc_fn'),
+      );
+      expect(fnChange).toBeDefined();
+      expect(fnChange.attributes.length).toBeGreaterThan(0);
+    });
+  });
 });

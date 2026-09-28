@@ -1383,5 +1383,121 @@ describe('show command', () => {
       expect(mockLoggerInfo).toHaveBeenCalledWith('No resources found in state.');
       expect(mockLoggerInfo).toHaveBeenCalledWith(expect.stringContaining('State location:'));
     });
+
+    it('resolves the state directory from a file location (CLI passes the yaml path)', async () => {
+      const filePath = path.join(testDir, 'serverless.yml');
+      fs.writeFileSync(filePath, 'version: 0.0.1\n');
+
+      await show({ stage: 'default', location: filePath, iac: createMockIac('LOCAL') });
+
+      expect(mockLoggerInfo).toHaveBeenCalledWith(
+        expect.stringContaining(path.join(testDir, '.serverlessinsight')),
+      );
+    });
+  });
+
+  describe('--json output (issue #250)', () => {
+    beforeEach(() => {
+      process.chdir(testDir);
+
+      const stateDir = path.join(testDir, '.serverlessinsight');
+      fs.mkdirSync(stateDir, { recursive: true });
+
+      const statePath = path.join(stateDir, 'state-test-app-test-service.json');
+      const stateData = {
+        version: '1.0.0',
+        provider: 'aliyun',
+        app: 'test-app',
+        service: 'test-service',
+        stages: {
+          default: {
+            resources: {
+              'functions.test_fn': {
+                mode: 'managed',
+                region: 'cn-hangzhou',
+                definition: {},
+                instances: [
+                  {
+                    type: 'ALIYUN_FC3_FUNCTION',
+                    sid: 'fc-sid',
+                    id: 'test-function',
+                    functionName: 'test-function',
+                  },
+                ],
+                lastUpdated: new Date().toISOString(),
+              },
+            },
+          },
+        },
+        resources: {},
+      };
+      fs.writeFileSync(statePath, JSON.stringify(stateData, null, 2));
+    });
+
+    it('emits the versioned show envelope to stdout instead of human text', async () => {
+      const stdoutSpy = jest.spyOn(process.stdout, 'write').mockImplementation(() => true);
+
+      await show({ stage: 'default', location: testDir, iac: createMockIac('LOCAL'), json: true });
+
+      expect(stdoutSpy).toHaveBeenCalledTimes(1);
+      const payload = JSON.parse(stdoutSpy.mock.calls[0][0] as string);
+      expect(payload.showVersion).toBe(1);
+      expect(payload.provider).toBe('aliyun');
+      expect(payload.app).toBe('test-app');
+      expect(payload.service).toBe('test-service');
+      expect(payload.stage).toBe('default');
+      expect(payload.backend).toBe('local');
+      expect(payload.locked).toBe(false);
+      expect(payload.lock).toBeNull();
+      expect(payload.resourceCount).toBe(1);
+      expect(Object.keys(payload.resources)).toEqual(['functions.test_fn']);
+      expect(payload.stateLocation).toContain('state-test-app-test-service.json');
+      stdoutSpy.mockRestore();
+    });
+
+    it('reports lock status in the envelope when a lock exists', async () => {
+      const lock = {
+        id: 'lock-1',
+        user: 'tester',
+        processId: 123,
+        hostname: 'localhost',
+        operation: 'deploy',
+        acquiredAt: new Date().toISOString(),
+        path: '/tmp/lock',
+      };
+      (readLockFileForCommand as jest.Mock).mockReturnValue(lock);
+      const stdoutSpy = jest.spyOn(process.stdout, 'write').mockImplementation(() => true);
+
+      await show({ stage: 'default', location: testDir, iac: createMockIac('LOCAL'), json: true });
+
+      const payload = JSON.parse(stdoutSpy.mock.calls[0][0] as string);
+      expect(payload.locked).toBe(true);
+      expect(payload.lock).toMatchObject({ id: 'lock-1', user: 'tester' });
+      stdoutSpy.mockRestore();
+    });
+
+    it('uses the saas backend marker for the default (SaaS) backend', async () => {
+      (mockStateBackend.loadState as jest.Mock).mockResolvedValue({
+        version: '1.0.0',
+        provider: 'aliyun',
+        app: 'test-app',
+        service: 'test-service',
+        stages: { default: { resources: {} } },
+        resources: {},
+      });
+      (mockStateBackend.readLock as jest.Mock).mockResolvedValue(null);
+      const saasIac = {
+        ...createMockIac('LOCAL'),
+        backend: { type: 'SAAS' as const },
+      } as ServerlessIac;
+      const stdoutSpy = jest.spyOn(process.stdout, 'write').mockImplementation(() => true);
+
+      await show({ stage: 'default', location: testDir, iac: saasIac, json: true });
+
+      const payload = JSON.parse(stdoutSpy.mock.calls[0][0] as string);
+      expect(payload.backend).toBe('saas');
+      expect(payload.stateLocation).toBe('saas');
+      stdoutSpy.mockRestore();
+    });
   });
 });

@@ -1143,6 +1143,7 @@ export const en = {
   SHOW_NO_RESOURCES: 'No resources found in state.',
   SHOW_STATE_LOCATION: 'State location: {{stateLocation}}',
   SHOW_BACKEND_REMOTE: 'Backend: Remote',
+  SHOW_BACKEND_SAAS: 'Console (SaaS state)',
   SHOW_DEPLOY_HINT: 'To deploy resources, run: si deploy',
   SHOW_HEADER_DEPLOYED: 'DEPLOYED RESOURCES',
   SHOW_CATEGORY_HEADER: '📦 {{label}}',
@@ -1327,4 +1328,12 @@ export const en = {
   OPT_PARAMETER: 'override parameters',
   OPT_DEBUG: 'enable debug mode',
   OPT_WATCH: 'enable file watch',
+
+  // ===== Issue #250: agent-friendly CLI surface =====
+  CMD_SCHEMA_DESC: 'export the IaC JSON Schema used for validation (draft-07, self-contained)',
+  OPT_SCHEMA_OUTPUT: 'write the JSON Schema to a file instead of stdout',
+  OPT_JSON: 'output the result as machine-readable JSON to stdout (logs stay on stderr)',
+  OPT_NO_COLOR: 'disable colored output (also honors the NO_COLOR environment variable)',
+  SCHEMA_WRITTEN_TO: 'JSON Schema written to: {{path}}',
+  ERROR_CODE: 'Error code: {{code}}',
 };
