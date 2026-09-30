@@ -311,6 +311,29 @@ describe('saasStateBackend', () => {
       expect(result.orgId).toBe('org-1');
     });
 
+    it('should keep the pre-existing org id when validate resolves a slug but no org id', async () => {
+      (loadCredentials as jest.Mock).mockReturnValue({
+        apiKey: 'si_test_testkey123456789012345678901234',
+        consoleUrl: 'https://api.test.com',
+      });
+      const local = createSaasStateBackend({
+        app: 'myapp',
+        service: 'myservice',
+        declaredOrg: 'wentsen',
+      });
+      // Call order: provision's validate roundtrip first, then state/current
+      mockApiClient.get.mockResolvedValueOnce({ orgSlug: 'wentsen' });
+      provisionOnce();
+
+      const result = await local.loadState('aliyun', 'myapp', 'myservice', 'dev');
+
+      // The slug heals into the credentials file, but the state must not claim
+      // an org id that was never verified — the D-6 anchor stays honest.
+      expect(saveCredentials).toHaveBeenCalledWith(expect.objectContaining({ orgSlug: 'wentsen' }));
+      expect(mockApiClient.post).toHaveBeenCalled();
+      expect(result.orgId).toBe('');
+    });
+
     it('should announce the credentials org when no org is declared', async () => {
       (loadCredentials as jest.Mock).mockReturnValue({
         apiKey: 'si_test_testkey123456789012345678901234',
