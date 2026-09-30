@@ -142,6 +142,25 @@ const uploadResponse = {
   deduped: false,
 };
 
+const MIGRATE_TEST_CREDENTIALS = {
+  apiKey: 'si_test_testkey123456789012345678901234',
+  consoleUrl: 'https://api.test.com',
+  orgId: 'org-1',
+};
+
+const MIGRATE_TEST_IDENTITY = {
+  orgId: 'org-1',
+  orgName: 'Wentsen',
+  orgSlug: 'wentsen',
+};
+
+/** Mirror of the command's hash: sha256(JSON.stringify({...state, orgId})) with the mocked toPersistedState. */
+const expectedHash = (state: Record<string, unknown>): string =>
+  crypto
+    .createHash('sha256')
+    .update(JSON.stringify({ ...state, orgId: 'org-1' }))
+    .digest('hex');
+
 const makeSourceBackend = (state: Record<string, unknown> | Error) => ({
   loadState: jest.fn(
     state instanceof Error
@@ -152,9 +171,59 @@ const makeSourceBackend = (state: Record<string, unknown> | Error) => ({
   withLock: jest.fn(async (_op: string, fn: () => Promise<unknown>) => fn()),
 });
 
+type MigrationRunOptions = {
+  /** Legacy state returned by the source backend (default: a dev-stage aliyun state). */
+  state?: Record<string, unknown>;
+  /** Override the /state/migrate/targets response. */
+  targets?: Record<string, unknown>;
+  /** Override the read-back verification response (default: echo of the uploaded hash). */
+  verify?: Record<string, unknown>;
+  /** Queue only the targets fetch — for runs that must stop before the upload. */
+  planOnly?: boolean;
+  /** Reject the upload with this error instead of resolving. */
+  uploadError?: unknown;
+  /** Simulate a legacy backend that cannot persist the marker. */
+  patchable?: boolean;
+};
+
+/**
+ * Full Console-side migration setup, queued in the order the command consumes
+ * it: targets → upload → read-back verify. Returns the source backend.
+ */
+const setupMigrationRun = (options: MigrationRunOptions = {}) => {
+  const state = options.state ?? legacyState();
+  const backend = makeSourceBackend(state);
+  mockedCreateStateBackend.mockReturnValue(
+    options.patchable === false ? { ...backend, patchPersisted: undefined } : backend,
+  );
+  mockedLoadCredentials.mockReturnValue(MIGRATE_TEST_CREDENTIALS);
+  mockedValidateApiKey.mockResolvedValue(MIGRATE_TEST_IDENTITY);
+  mockApiClient.get.mockResolvedValueOnce(options.targets ?? targetsResponse);
+  if (options.planOnly) {
+    return backend;
+  }
+  if (options.uploadError) {
+    mockApiClient.post.mockRejectedValueOnce(options.uploadError);
+    return backend;
+  }
+  mockApiClient.post.mockResolvedValueOnce(uploadResponse);
+  mockApiClient.get.mockResolvedValueOnce(
+    options.verify ?? {
+      contentHash: expectedHash(state),
+      versionNumber: 1,
+      resourceCount: 1,
+    },
+  );
+  return backend;
+};
+
 describe('migrate command', () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    // clearAllMocks keeps leftover once-implementations; tests consume
+    // different prefixes of the get/post queues, so reset them fully.
+    mockApiClient.get.mockReset();
+    mockApiClient.post.mockReset();
     mockedGetConsoleUrl.mockReturnValue('https://api.test.com');
     mockedParseYaml.mockReturnValue(rawIac);
     mockedRevalYaml.mockReturnValue(bucketIac);
@@ -223,27 +292,7 @@ describe('migrate command', () => {
 
   describe('migration run', () => {
     it('uploads every non-empty stage, verifies read-back and writes the marker', async () => {
-      const state = legacyState();
-      const backend = makeSourceBackend(state);
-      mockedCreateStateBackend.mockReturnValue(backend);
-      mockedLoadCredentials.mockReturnValue({
-        apiKey: 'si_test_testkey123456789012345678901234',
-        consoleUrl: 'https://api.test.com',
-        orgId: 'org-1',
-      });
-      mockedValidateApiKey.mockResolvedValue({
-        orgId: 'org-1',
-        orgName: 'Wentsen',
-        orgSlug: 'wentsen',
-        userEmail: 'u@t.com',
-        scopes: [],
-      });
-      mockApiClient.get.mockResolvedValueOnce(targetsResponse).mockResolvedValueOnce({
-        contentHash: expectedHash(state),
-        versionNumber: 1,
-        resourceCount: 1,
-      });
-      mockApiClient.post.mockResolvedValueOnce(uploadResponse);
+      const backend = setupMigrationRun();
 
       await migrate({ location: 'stack.yml', autoApprove: true });
 
@@ -273,26 +322,7 @@ describe('migrate command', () => {
     });
 
     it('shows the resolved targets with exists/create markers before confirming', async () => {
-      const state = legacyState();
-      const backend = makeSourceBackend(state);
-      mockedCreateStateBackend.mockReturnValue(backend);
-      mockedLoadCredentials.mockReturnValue({
-        apiKey: 'si_test_testkey123456789012345678901234',
-        consoleUrl: 'https://api.test.com',
-        orgId: 'org-1',
-      });
-      mockedValidateApiKey.mockResolvedValue({
-        orgId: 'org-1',
-        orgName: 'Wentsen',
-        orgSlug: 'wentsen',
-      });
-      mockApiClient.get.mockResolvedValueOnce(targetsResponse);
-      mockApiClient.post.mockResolvedValueOnce(uploadResponse);
-      mockApiClient.get.mockResolvedValueOnce({
-        contentHash: expectedHash(state),
-        versionNumber: 1,
-        resourceCount: 1,
-      });
+      setupMigrationRun();
 
       await migrate({ location: 'stack.yml', autoApprove: true });
 
@@ -312,28 +342,11 @@ describe('migrate command', () => {
     });
 
     it('uploads with conflict=overwrite when --force is passed', async () => {
-      const state = legacyState();
-      const backend = makeSourceBackend(state);
-      mockedCreateStateBackend.mockReturnValue(backend);
-      mockedLoadCredentials.mockReturnValue({
-        apiKey: 'si_test_testkey123456789012345678901234',
-        consoleUrl: 'https://api.test.com',
-        orgId: 'org-1',
-      });
-      mockedValidateApiKey.mockResolvedValue({
-        orgId: 'org-1',
-        orgName: 'Wentsen',
-        orgSlug: 'wentsen',
-      });
-      mockApiClient.get.mockResolvedValueOnce({
-        ...targetsResponse,
-        stages: [{ name: 'dev', registered: true, hasState: true, latestVersion: 3 }],
-      });
-      mockApiClient.post.mockResolvedValueOnce(uploadResponse);
-      mockApiClient.get.mockResolvedValueOnce({
-        contentHash: expectedHash(state),
-        versionNumber: 1,
-        resourceCount: 1,
+      setupMigrationRun({
+        targets: {
+          ...targetsResponse,
+          stages: [{ name: 'dev', registered: true, hasState: true, latestVersion: 3 }],
+        },
       });
 
       await migrate({ location: 'stack.yml', autoApprove: true, force: true });
@@ -348,19 +361,7 @@ describe('migrate command', () => {
     });
 
     it('stops at the plan in dry-run mode and writes nothing to either side', async () => {
-      const backend = makeSourceBackend(legacyState());
-      mockedCreateStateBackend.mockReturnValue(backend);
-      mockedLoadCredentials.mockReturnValue({
-        apiKey: 'si_test_testkey123456789012345678901234',
-        consoleUrl: 'https://api.test.com',
-        orgId: 'org-1',
-      });
-      mockedValidateApiKey.mockResolvedValue({
-        orgId: 'org-1',
-        orgName: 'Wentsen',
-        orgSlug: 'wentsen',
-      });
-      mockApiClient.get.mockResolvedValueOnce(targetsResponse);
+      const backend = setupMigrationRun({ planOnly: true });
 
       await migrate({ location: 'stack.yml', autoApprove: true, dryRun: true });
 
@@ -370,30 +371,13 @@ describe('migrate command', () => {
     });
 
     it('skips stages without resources', async () => {
-      const state = legacyState({
-        stages: {
-          dev: { resources: { 'functions.hello': { mode: 'managed' } } },
-          prod: { resources: {} },
-        },
-      });
-      const backend = makeSourceBackend(state);
-      mockedCreateStateBackend.mockReturnValue(backend);
-      mockedLoadCredentials.mockReturnValue({
-        apiKey: 'si_test_testkey123456789012345678901234',
-        consoleUrl: 'https://api.test.com',
-        orgId: 'org-1',
-      });
-      mockedValidateApiKey.mockResolvedValue({
-        orgId: 'org-1',
-        orgName: 'Wentsen',
-        orgSlug: 'wentsen',
-      });
-      mockApiClient.get.mockResolvedValueOnce(targetsResponse);
-      mockApiClient.post.mockResolvedValueOnce(uploadResponse);
-      mockApiClient.get.mockResolvedValueOnce({
-        contentHash: expectedHash(state),
-        versionNumber: 1,
-        resourceCount: 1,
+      setupMigrationRun({
+        state: legacyState({
+          stages: {
+            dev: { resources: { 'functions.hello': { mode: 'managed' } } },
+            prod: { resources: {} },
+          },
+        }),
       });
 
       await migrate({ location: 'stack.yml', autoApprove: true });
@@ -404,20 +388,7 @@ describe('migrate command', () => {
     });
 
     it('survives a 409 conflict with a dedicated message and no marker', async () => {
-      const backend = makeSourceBackend(legacyState());
-      mockedCreateStateBackend.mockReturnValue(backend);
-      mockedLoadCredentials.mockReturnValue({
-        apiKey: 'si_test_testkey123456789012345678901234',
-        consoleUrl: 'https://api.test.com',
-        orgId: 'org-1',
-      });
-      mockedValidateApiKey.mockResolvedValue({
-        orgId: 'org-1',
-        orgName: 'Wentsen',
-        orgSlug: 'wentsen',
-      });
-      mockApiClient.get.mockResolvedValueOnce(targetsResponse);
-      mockApiClient.post.mockRejectedValueOnce(new ApiError('conflict', 409));
+      const backend = setupMigrationRun({ uploadError: new ApiError('conflict', 409) });
 
       await expect(migrate({ location: 'stack.yml', autoApprove: true })).rejects.toThrow(
         'MIGRATE_CONFLICT',
@@ -426,24 +397,8 @@ describe('migrate command', () => {
     });
 
     it('fails when the read-back does not match what was uploaded', async () => {
-      const backend = makeSourceBackend(legacyState());
-      mockedCreateStateBackend.mockReturnValue(backend);
-      mockedLoadCredentials.mockReturnValue({
-        apiKey: 'si_test_testkey123456789012345678901234',
-        consoleUrl: 'https://api.test.com',
-        orgId: 'org-1',
-      });
-      mockedValidateApiKey.mockResolvedValue({
-        orgId: 'org-1',
-        orgName: 'Wentsen',
-        orgSlug: 'wentsen',
-      });
-      mockApiClient.get.mockResolvedValueOnce(targetsResponse);
-      mockApiClient.post.mockResolvedValueOnce(uploadResponse);
-      mockApiClient.get.mockResolvedValueOnce({
-        contentHash: 'tampered',
-        versionNumber: 1,
-        resourceCount: 1,
+      const backend = setupMigrationRun({
+        verify: { contentHash: 'tampered', versionNumber: 1, resourceCount: 1 },
       });
 
       await expect(migrate({ location: 'stack.yml', autoApprove: true })).rejects.toThrow(
@@ -453,18 +408,7 @@ describe('migrate command', () => {
     });
 
     it('rejects when the legacy state belongs to a different provider', async () => {
-      const backend = makeSourceBackend(legacyState({ provider: 'tencent' }));
-      mockedCreateStateBackend.mockReturnValue(backend);
-      mockedLoadCredentials.mockReturnValue({
-        apiKey: 'si_test_testkey123456789012345678901234',
-        consoleUrl: 'https://api.test.com',
-        orgId: 'org-1',
-      });
-      mockedValidateApiKey.mockResolvedValue({
-        orgId: 'org-1',
-        orgName: 'Wentsen',
-        orgSlug: 'wentsen',
-      });
+      setupMigrationRun({ state: legacyState({ provider: 'tencent' }), planOnly: true });
 
       await expect(migrate({ location: 'stack.yml', autoApprove: true })).rejects.toThrow(
         'MIGRATE_PROVIDER_MISMATCH',
@@ -472,21 +416,12 @@ describe('migrate command', () => {
     });
 
     it('rejects when an existing console service runs a different provider', async () => {
-      const backend = makeSourceBackend(legacyState());
-      mockedCreateStateBackend.mockReturnValue(backend);
-      mockedLoadCredentials.mockReturnValue({
-        apiKey: 'si_test_testkey123456789012345678901234',
-        consoleUrl: 'https://api.test.com',
-        orgId: 'org-1',
-      });
-      mockedValidateApiKey.mockResolvedValue({
-        orgId: 'org-1',
-        orgName: 'Wentsen',
-        orgSlug: 'wentsen',
-      });
-      mockApiClient.get.mockResolvedValueOnce({
-        ...targetsResponse,
-        service: { name: 'myservice', exists: true, id: 'svc-1', provider: 'tencent' },
+      setupMigrationRun({
+        planOnly: true,
+        targets: {
+          ...targetsResponse,
+          service: { name: 'myservice', exists: true, id: 'svc-1', provider: 'tencent' },
+        },
       });
 
       await expect(migrate({ location: 'stack.yml', autoApprove: true })).rejects.toThrow(
@@ -495,17 +430,9 @@ describe('migrate command', () => {
     });
 
     it('reports nothing to migrate when no stage holds resources', async () => {
-      const backend = makeSourceBackend(legacyState({ stages: { dev: { resources: {} } } }));
-      mockedCreateStateBackend.mockReturnValue(backend);
-      mockedLoadCredentials.mockReturnValue({
-        apiKey: 'si_test_testkey123456789012345678901234',
-        consoleUrl: 'https://api.test.com',
-        orgId: 'org-1',
-      });
-      mockedValidateApiKey.mockResolvedValue({
-        orgId: 'org-1',
-        orgName: 'Wentsen',
-        orgSlug: 'wentsen',
+      setupMigrationRun({
+        state: legacyState({ stages: { dev: { resources: {} } } }),
+        planOnly: true,
       });
 
       await expect(migrate({ location: 'stack.yml', autoApprove: true })).rejects.toThrow(
@@ -514,18 +441,7 @@ describe('migrate command', () => {
     });
 
     it('rejects an explicit stage that the legacy state does not know', async () => {
-      const backend = makeSourceBackend(legacyState());
-      mockedCreateStateBackend.mockReturnValue(backend);
-      mockedLoadCredentials.mockReturnValue({
-        apiKey: 'si_test_testkey123456789012345678901234',
-        consoleUrl: 'https://api.test.com',
-        orgId: 'org-1',
-      });
-      mockedValidateApiKey.mockResolvedValue({
-        orgId: 'org-1',
-        orgName: 'Wentsen',
-        orgSlug: 'wentsen',
-      });
+      setupMigrationRun({ planOnly: true });
 
       await expect(
         migrate({ location: 'stack.yml', stage: 'staging', autoApprove: true }),
@@ -533,26 +449,7 @@ describe('migrate command', () => {
     });
 
     it('skips the marker when --no-marker is passed', async () => {
-      const state = legacyState();
-      const backend = makeSourceBackend(state);
-      mockedCreateStateBackend.mockReturnValue(backend);
-      mockedLoadCredentials.mockReturnValue({
-        apiKey: 'si_test_testkey123456789012345678901234',
-        consoleUrl: 'https://api.test.com',
-        orgId: 'org-1',
-      });
-      mockedValidateApiKey.mockResolvedValue({
-        orgId: 'org-1',
-        orgName: 'Wentsen',
-        orgSlug: 'wentsen',
-      });
-      mockApiClient.get.mockResolvedValueOnce(targetsResponse);
-      mockApiClient.post.mockResolvedValueOnce(uploadResponse);
-      mockApiClient.get.mockResolvedValueOnce({
-        contentHash: expectedHash(state),
-        versionNumber: 1,
-        resourceCount: 1,
-      });
+      const backend = setupMigrationRun();
 
       await migrate({ location: 'stack.yml', autoApprove: true, noMarker: true });
 
@@ -561,27 +458,8 @@ describe('migrate command', () => {
     });
 
     it('uploads origin=local for a LOCAL backend', async () => {
-      const state = legacyState();
-      const backend = makeSourceBackend(state);
-      mockedCreateStateBackend.mockReturnValue(backend);
       mockedRevalYaml.mockReturnValue({ ...rawIac, backend: { type: 'LOCAL' } });
-      mockedLoadCredentials.mockReturnValue({
-        apiKey: 'si_test_testkey123456789012345678901234',
-        consoleUrl: 'https://api.test.com',
-        orgId: 'org-1',
-      });
-      mockedValidateApiKey.mockResolvedValue({
-        orgId: 'org-1',
-        orgName: 'Wentsen',
-        orgSlug: 'wentsen',
-      });
-      mockApiClient.get.mockResolvedValueOnce(targetsResponse);
-      mockApiClient.post.mockResolvedValueOnce(uploadResponse);
-      mockApiClient.get.mockResolvedValueOnce({
-        contentHash: expectedHash(state),
-        versionNumber: 1,
-        resourceCount: 1,
-      });
+      setupMigrationRun();
 
       await migrate({ location: 'stack.yml', autoApprove: true });
 
@@ -592,29 +470,12 @@ describe('migrate command', () => {
     });
 
     it('renders create-plan lines for targets that do not exist yet', async () => {
-      const state = legacyState();
-      const backend = makeSourceBackend(state);
-      mockedCreateStateBackend.mockReturnValue(backend);
-      mockedLoadCredentials.mockReturnValue({
-        apiKey: 'si_test_testkey123456789012345678901234',
-        consoleUrl: 'https://api.test.com',
-        orgId: 'org-1',
-      });
-      mockedValidateApiKey.mockResolvedValue({
-        orgId: 'org-1',
-        orgName: 'Wentsen',
-        orgSlug: 'wentsen',
-      });
-      mockApiClient.get.mockResolvedValueOnce({
-        app: { name: 'myapp', exists: false, id: null },
-        service: { name: 'myservice', exists: false, id: null, provider: null },
-        stages: [{ name: 'dev', registered: false, hasState: false, latestVersion: null }],
-      });
-      mockApiClient.post.mockResolvedValueOnce(uploadResponse);
-      mockApiClient.get.mockResolvedValueOnce({
-        contentHash: expectedHash(state),
-        versionNumber: 1,
-        resourceCount: 1,
+      setupMigrationRun({
+        targets: {
+          app: { name: 'myapp', exists: false, id: null },
+          service: { name: 'myservice', exists: false, id: null, provider: null },
+          stages: [{ name: 'dev', registered: false, hasState: false, latestVersion: null }],
+        },
       });
 
       await migrate({ location: 'stack.yml', autoApprove: true });
@@ -631,26 +492,7 @@ describe('migrate command', () => {
     });
 
     it('warns but continues when the legacy state is already marked (idempotent re-run)', async () => {
-      const state = legacyState({ managedBy: 'saas' });
-      const backend = makeSourceBackend(state);
-      mockedCreateStateBackend.mockReturnValue(backend);
-      mockedLoadCredentials.mockReturnValue({
-        apiKey: 'si_test_testkey123456789012345678901234',
-        consoleUrl: 'https://api.test.com',
-        orgId: 'org-1',
-      });
-      mockedValidateApiKey.mockResolvedValue({
-        orgId: 'org-1',
-        orgName: 'Wentsen',
-        orgSlug: 'wentsen',
-      });
-      mockApiClient.get.mockResolvedValueOnce(targetsResponse);
-      mockApiClient.post.mockResolvedValueOnce(uploadResponse);
-      mockApiClient.get.mockResolvedValueOnce({
-        contentHash: expectedHash(state),
-        versionNumber: 1,
-        resourceCount: 1,
-      });
+      const backend = setupMigrationRun({ state: legacyState({ managedBy: 'saas' }) });
 
       await migrate({ location: 'stack.yml', autoApprove: true });
 
@@ -659,44 +501,13 @@ describe('migrate command', () => {
     });
 
     it('rethrows non-conflict upload errors untouched', async () => {
-      const backend = makeSourceBackend(legacyState());
-      mockedCreateStateBackend.mockReturnValue(backend);
-      mockedLoadCredentials.mockReturnValue({
-        apiKey: 'si_test_testkey123456789012345678901234',
-        consoleUrl: 'https://api.test.com',
-        orgId: 'org-1',
-      });
-      mockedValidateApiKey.mockResolvedValue({
-        orgId: 'org-1',
-        orgName: 'Wentsen',
-        orgSlug: 'wentsen',
-      });
-      mockApiClient.get.mockResolvedValueOnce(targetsResponse);
-      mockApiClient.post.mockRejectedValueOnce(new ApiError('boom', 500));
+      setupMigrationRun({ uploadError: new ApiError('boom', 500) });
 
       await expect(migrate({ location: 'stack.yml', autoApprove: true })).rejects.toThrow('boom');
     });
 
     it('requires a patchable source backend to write the marker', async () => {
-      const backend = { ...makeSourceBackend(legacyState()), patchPersisted: undefined };
-      mockedCreateStateBackend.mockReturnValue(backend);
-      mockedLoadCredentials.mockReturnValue({
-        apiKey: 'si_test_testkey123456789012345678901234',
-        consoleUrl: 'https://api.test.com',
-        orgId: 'org-1',
-      });
-      mockedValidateApiKey.mockResolvedValue({
-        orgId: 'org-1',
-        orgName: 'Wentsen',
-        orgSlug: 'wentsen',
-      });
-      mockApiClient.get.mockResolvedValueOnce(targetsResponse);
-      mockApiClient.post.mockResolvedValueOnce(uploadResponse);
-      mockApiClient.get.mockResolvedValueOnce({
-        contentHash: expectedHash(legacyState()),
-        versionNumber: 1,
-        resourceCount: 1,
-      });
+      setupMigrationRun({ patchable: false });
 
       await expect(migrate({ location: 'stack.yml', autoApprove: true })).rejects.toThrow(
         'MIGRATE_NO_BACKEND_SOURCE',
@@ -711,13 +522,6 @@ describe('migrate command', () => {
       Object.defineProperty(process.stdin, 'isTTY', { value, configurable: true });
     };
 
-    beforeEach(() => {
-      // The outer clearAllMocks keeps leftover once-implementations; tests in
-      // here consume different prefixes of the queue, so start clean.
-      mockApiClient.get.mockReset();
-      mockApiClient.post.mockReset();
-    });
-
     afterEach(() => {
       try {
         delete (process.stdin as { isTTY?: boolean }).isTTY;
@@ -727,32 +531,9 @@ describe('migrate command', () => {
       mockReadlineAnswers.length = 0;
     });
 
-    const setupHappyPath = () => {
-      const state = legacyState();
-      const backend = makeSourceBackend(state);
-      mockedCreateStateBackend.mockReturnValue(backend);
-      mockedLoadCredentials.mockReturnValue({
-        apiKey: 'si_test_testkey123456789012345678901234',
-        consoleUrl: 'https://api.test.com',
-        orgId: 'org-1',
-      });
-      mockedValidateApiKey.mockResolvedValue({
-        orgId: 'org-1',
-        orgName: 'Wentsen',
-        orgSlug: 'wentsen',
-      });
-      mockApiClient.get.mockResolvedValueOnce(targetsResponse).mockResolvedValueOnce({
-        contentHash: expectedHash(state),
-        versionNumber: 1,
-        resourceCount: 1,
-      });
-      mockApiClient.post.mockResolvedValueOnce(uploadResponse);
-      return backend;
-    };
-
     it('refuses to prompt when stdin is not a TTY', async () => {
       setStdinTty(false);
-      setupHappyPath();
+      setupMigrationRun();
 
       await expect(migrate({ location: 'stack.yml' })).rejects.toThrow(
         'CONFIRMATION_STDIN_NOT_TTY',
@@ -762,7 +543,7 @@ describe('migrate command', () => {
     it('proceeds when both confirmations are accepted', async () => {
       setStdinTty(true);
       mockReadlineAnswers.push('y', 'y');
-      const backend = setupHappyPath();
+      const backend = setupMigrationRun();
 
       await migrate({ location: 'stack.yml' });
 
@@ -775,7 +556,7 @@ describe('migrate command', () => {
     it('aborts before the upload when the writer confirmation is declined', async () => {
       setStdinTty(true);
       mockReadlineAnswers.push('n');
-      const backend = setupHappyPath();
+      const backend = setupMigrationRun();
 
       await migrate({ location: 'stack.yml' });
 
@@ -786,7 +567,7 @@ describe('migrate command', () => {
     it('aborts before the upload when the plan confirmation is declined', async () => {
       setStdinTty(true);
       mockReadlineAnswers.push('y', 'nope');
-      const backend = setupHappyPath();
+      const backend = setupMigrationRun();
 
       await migrate({ location: 'stack.yml' });
 
@@ -795,11 +576,3 @@ describe('migrate command', () => {
     });
   });
 });
-
-/** Mirror of the command's hash: sha256(JSON.stringify({...state, orgId})) with the mocked toPersistedState. */
-function expectedHash(state: Record<string, unknown>): string {
-  return crypto
-    .createHash('sha256')
-    .update(JSON.stringify({ ...state, orgId: 'org-1' }))
-    .digest('hex');
-}
