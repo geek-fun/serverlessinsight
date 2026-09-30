@@ -54,6 +54,41 @@ import { logger } from '../../../src/common/logger';
 
 const mockValidateApiKey = validateApiKey as jest.Mock;
 
+type BrowserCallbackHandler = (req: { url?: string }, res: unknown) => Promise<void>;
+
+/**
+ * Point `open` at the given implementation and make the mocked server "listen"
+ * immediately, the way every browser-flow test needs it.
+ */
+const setupBrowserLogin = (
+  openImplementation: () => unknown = () => Promise.resolve(),
+): jest.Mock => {
+  const openMock = jest.requireMock('open') as jest.Mock;
+  openMock.mockImplementation(openImplementation);
+  mockServer.listen.mockImplementationOnce((_port: unknown, _host: unknown, cb: () => void) => {
+    cb();
+    return mockServer;
+  });
+  return openMock;
+};
+
+/**
+ * Resolve the callback-server handler as soon as login() registers it — polls
+ * the observable condition instead of sleeping a fixed 50ms, so slow machines
+ * never race the registration and fast ones never waste the wait.
+ */
+const waitForCallbackServer = async (): Promise<BrowserCallbackHandler> => {
+  const createServerMock = jest.requireMock('node:http').createServer as jest.Mock;
+  const deadline = Date.now() + 5_000;
+  while (createServerMock.mock.calls.length === 0) {
+    if (Date.now() > deadline) {
+      throw new Error('login did not start the callback server within 5s');
+    }
+    await new Promise((resolve) => setTimeout(resolve, 10));
+  }
+  return createServerMock.mock.calls[0][0] as BrowserCallbackHandler;
+};
+
 describe('login command', () => {
   const ORIGINAL_ENV = { ...process.env };
   const validKey = 'si_abcdef123456_0123456789abcdef0123456789abcdef01';
@@ -184,20 +219,11 @@ describe('login command', () => {
 
   it('completes the browser callback flow and saves credentials', async () => {
     mockReadlineAnswer = '1';
-
-    const openMock = jest.requireMock('open') as jest.Mock;
-    openMock.mockImplementation(() => Promise.resolve());
-
-    const createServerMock = jest.requireMock('node:http').createServer as jest.Mock;
-    mockServer.listen.mockImplementationOnce((_port: unknown, _host: unknown, cb: () => void) => {
-      cb();
-      return mockServer;
-    });
+    const openMock = setupBrowserLogin();
 
     const loginPromise = login({});
-    await new Promise((resolve) => setTimeout(resolve, 50));
+    const handler = await waitForCallbackServer();
 
-    const handler = createServerMock.mock.calls[0][0];
     const mockRes = { writeHead: jest.fn(), end: jest.fn() };
     await handler(
       {
@@ -234,20 +260,11 @@ describe('login command', () => {
       orgSlug: 'test-org',
       userEmail: 'user@test.com',
     });
-
-    const openMock = jest.requireMock('open') as jest.Mock;
-    openMock.mockImplementation(() => Promise.resolve());
-
-    const createServerMock = jest.requireMock('node:http').createServer as jest.Mock;
-    mockServer.listen.mockImplementationOnce((_port: unknown, _host: unknown, cb: () => void) => {
-      cb();
-      return mockServer;
-    });
+    setupBrowserLogin();
 
     const loginPromise = login({});
-    await new Promise((resolve) => setTimeout(resolve, 50));
+    const handler = await waitForCallbackServer();
 
-    const handler = createServerMock.mock.calls[0][0];
     const mockRes = { writeHead: jest.fn(), end: jest.fn() };
     await handler(
       {
@@ -271,20 +288,11 @@ describe('login command', () => {
   it('keeps saving credentials when the callback enrich call fails', async () => {
     mockReadlineAnswer = '1';
     mockValidateApiKey.mockRejectedValueOnce(new Error('validate down'));
-
-    const openMock = jest.requireMock('open') as jest.Mock;
-    openMock.mockImplementation(() => Promise.resolve());
-
-    const createServerMock = jest.requireMock('node:http').createServer as jest.Mock;
-    mockServer.listen.mockImplementationOnce((_port: unknown, _host: unknown, cb: () => void) => {
-      cb();
-      return mockServer;
-    });
+    setupBrowserLogin();
 
     const loginPromise = login({});
-    await new Promise((resolve) => setTimeout(resolve, 50));
+    const handler = await waitForCallbackServer();
 
-    const handler = createServerMock.mock.calls[0][0];
     const mockRes = { writeHead: jest.fn(), end: jest.fn() };
     await handler(
       {
@@ -302,20 +310,11 @@ describe('login command', () => {
 
   it('callback without app_id redirects to the Console root', async () => {
     mockReadlineAnswer = '1';
-
-    const openMock = jest.requireMock('open') as jest.Mock;
-    openMock.mockImplementation(() => Promise.resolve());
-
-    const createServerMock = jest.requireMock('node:http').createServer as jest.Mock;
-    mockServer.listen.mockImplementationOnce((_port: unknown, _host: unknown, cb: () => void) => {
-      cb();
-      return mockServer;
-    });
+    setupBrowserLogin();
 
     const loginPromise = login({});
-    await new Promise((resolve) => setTimeout(resolve, 50));
+    const handler = await waitForCallbackServer();
 
-    const handler = createServerMock.mock.calls[0][0];
     const mockRes = { writeHead: jest.fn(), end: jest.fn() };
     await handler(
       {
@@ -332,18 +331,11 @@ describe('login command', () => {
 
   it('waits for authorization on non-callback requests', async () => {
     mockReadlineAnswer = '1';
-    const openMock = jest.requireMock('open') as jest.Mock;
-    openMock.mockImplementation(() => Promise.resolve());
-    const createServerMock = jest.requireMock('node:http').createServer as jest.Mock;
-    mockServer.listen.mockImplementationOnce((_port: unknown, _host: unknown, cb: () => void) => {
-      cb();
-      return mockServer;
-    });
+    setupBrowserLogin();
 
     const loginPromise = login({});
-    await new Promise((resolve) => setTimeout(resolve, 50));
+    const handler = await waitForCallbackServer();
 
-    const handler = createServerMock.mock.calls[0][0];
     const mockRes = { writeHead: jest.fn(), end: jest.fn() };
     await handler({ url: '/waiting' }, mockRes);
 
@@ -356,17 +348,10 @@ describe('login command', () => {
 
   it('warns when the browser opener rejects', async () => {
     mockReadlineAnswer = '1';
-    const openMock = jest.requireMock('open') as jest.Mock;
-    openMock.mockRejectedValue(new Error('browser unavailable'));
-    const createServerMock = jest.requireMock('node:http').createServer as jest.Mock;
-    mockServer.listen.mockImplementationOnce((_port: unknown, _host: unknown, cb: () => void) => {
-      cb();
-      return mockServer;
-    });
+    setupBrowserLogin(() => Promise.reject(new Error('browser unavailable')));
 
     const loginPromise = login({});
-    await new Promise((resolve) => setTimeout(resolve, 50));
-    const handler = createServerMock.mock.calls[0][0];
+    const handler = await waitForCallbackServer();
     await handler({ url: '/callback?api_key=key' }, { writeHead: jest.fn(), end: jest.fn() });
     await loginPromise;
     await Promise.resolve();
@@ -376,19 +361,12 @@ describe('login command', () => {
 
   it('warns when the browser opener throws synchronously', async () => {
     mockReadlineAnswer = '1';
-    const openMock = jest.requireMock('open') as jest.Mock;
-    openMock.mockImplementation(() => {
+    setupBrowserLogin(() => {
       throw new Error('browser unavailable');
-    });
-    const createServerMock = jest.requireMock('node:http').createServer as jest.Mock;
-    mockServer.listen.mockImplementationOnce((_port: unknown, _host: unknown, cb: () => void) => {
-      cb();
-      return mockServer;
     });
 
     const loginPromise = login({});
-    await new Promise((resolve) => setTimeout(resolve, 50));
-    const handler = createServerMock.mock.calls[0][0];
+    const handler = await waitForCallbackServer();
     await handler({ url: '/callback?api_key=key' }, { writeHead: jest.fn(), end: jest.fn() });
     await loginPromise;
 
