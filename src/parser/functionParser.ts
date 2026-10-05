@@ -59,12 +59,17 @@ const parseTimerTriggers = (
     if (!TEMPLATE_REF_PATTERN.test(cron)) {
       validateSiCron(cron);
     }
+    // empty strings normalize to unset — the provider reconcile treats '' and
+    // absent as the same, so keeping '' here would recreate the trigger on
+    // every deploy
+    const payload = item.payload !== undefined ? String(item.payload) : undefined;
+    const description = item.description !== undefined ? String(item.description) : undefined;
     return {
       name,
       cron,
-      ...(item.payload !== undefined ? { payload: String(item.payload) } : {}),
+      ...(payload ? { payload } : {}),
       enable: parseBooleanWithDefault(item.enable, true),
-      ...(item.description !== undefined ? { description: String(item.description) } : {}),
+      ...(description ? { description } : {}),
     };
   });
 

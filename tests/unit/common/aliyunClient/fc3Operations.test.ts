@@ -14,6 +14,7 @@ const mockGetFunction = jest.fn();
 const mockUpdateFunction = jest.fn();
 const mockDeleteFunction = jest.fn();
 const mockCreateTrigger = jest.fn();
+const mockListTriggers = jest.fn();
 const mockDeleteTrigger = jest.fn();
 const mockCreateCustomDomain = jest.fn();
 const mockGetCustomDomain = jest.fn();
@@ -25,6 +26,7 @@ const mockFc3Client = {
   updateFunction: mockUpdateFunction,
   deleteFunction: mockDeleteFunction,
   createTrigger: mockCreateTrigger,
+  listTriggers: mockListTriggers,
   deleteTrigger: mockDeleteTrigger,
   createCustomDomain: mockCreateCustomDomain,
   getCustomDomain: mockGetCustomDomain,
@@ -794,6 +796,71 @@ describe('fc3Operations', () => {
       await expect(
         operations.createTrigger('test-function', 'http-trigger', 'http', {}),
       ).rejects.toThrow('TriggerAlreadyExists');
+    });
+  });
+
+  describe('listTriggers', () => {
+    it('should normalize triggerConfig JSON strings to objects', async () => {
+      mockListTriggers.mockResolvedValue({
+        body: {
+          nextToken: undefined,
+          triggers: [
+            {
+              triggerName: 'timer-1',
+              triggerType: 'timer',
+              triggerConfig: JSON.stringify({ cronExpression: '0 0 * * * *', enable: true }),
+              description: 'd',
+            },
+            { triggerName: 'http', triggerType: 'http', triggerConfig: { authType: 'anonymous' } },
+          ],
+        },
+      });
+
+      const triggers = await operations.listTriggers('test-function');
+
+      expect(triggers).toHaveLength(2);
+      expect(triggers[0].triggerConfig).toEqual({
+        cronExpression: '0 0 * * * *',
+        enable: true,
+      });
+      // objects pass through untouched
+      expect(triggers[1].triggerConfig).toEqual({ authType: 'anonymous' });
+      expect(mockListTriggers).toHaveBeenCalledTimes(1);
+    });
+
+    it('should follow nextToken until the last page', async () => {
+      mockListTriggers
+        .mockResolvedValueOnce({
+          body: {
+            nextToken: 'page-2',
+            triggers: [{ triggerName: 't1', triggerType: 'timer', triggerConfig: '{}' }],
+          },
+        })
+        .mockResolvedValueOnce({
+          body: {
+            nextToken: 'page-3',
+            triggers: [{ triggerName: 't2', triggerType: 'timer', triggerConfig: '{}' }],
+          },
+        })
+        .mockResolvedValueOnce({ body: { triggers: [] } });
+
+      const triggers = await operations.listTriggers('test-function');
+
+      expect(triggers.map((trigger) => trigger.triggerName)).toEqual(['t1', 't2']);
+      expect(mockListTriggers).toHaveBeenCalledTimes(3);
+      expect(mockListTriggers.mock.calls[1][1].nextToken).toBe('page-2');
+    });
+
+    it('should keep malformed triggerConfig as the raw string', async () => {
+      mockListTriggers.mockResolvedValue({
+        body: {
+          triggers: [{ triggerName: 'bad', triggerType: 'timer', triggerConfig: '{broken' }],
+        },
+      });
+
+      const triggers = await operations.listTriggers('test-function');
+
+      expect(triggers[0].triggerConfig).toBe('{broken');
     });
   });
 

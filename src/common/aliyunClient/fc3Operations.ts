@@ -537,8 +537,33 @@ const buildCodeLocation = (
         description?: string;
       }>
     > => {
-      const response = await fc3Client.listTriggers(functionName, new fc.ListTriggersRequest({}));
-      const triggers = response.body?.triggers ?? [];
+      // follow nextToken — a partial page would make the trigger reconcile
+      // treat every page-2 trigger as stale and delete it
+      const triggers: Array<{
+        triggerName?: string;
+        triggerType?: string;
+        triggerConfig?: string;
+        description?: string;
+      }> = [];
+      let nextToken: string | undefined;
+      do {
+        const response = await fc3Client.listTriggers(
+          functionName,
+          new fc.ListTriggersRequest(nextToken ? { nextToken } : {}),
+        );
+        const body = (response.body ?? {}) as {
+          triggers?: Array<{
+            triggerName?: string;
+            triggerType?: string;
+            triggerConfig?: string;
+            description?: string;
+          }>;
+          nextToken?: string;
+        };
+        triggers.push(...(body.triggers ?? []));
+        nextToken = body.nextToken;
+      } while (nextToken);
+
       // the SDK models triggerConfig as a JSON string — normalize to an object
       const parseConfig = (raw: string | undefined): unknown => {
         if (typeof raw !== 'string') {

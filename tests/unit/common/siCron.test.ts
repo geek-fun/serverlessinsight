@@ -40,6 +40,15 @@ describe('parseSiCron', () => {
     }
   });
 
+  it('stops stepped ranges at their end without wrapping (vixie semantics)', () => {
+    // regression: 5-20/4 must be {5,9,13,17} — the wrap walk used to collect
+    // every step around the whole domain
+    const parsed = parseSiCron('5-20/4 0 * * *');
+    if (parsed.kind === 'cron') {
+      expect(parsed.fields.minute.values).toEqual([5, 9, 13, 17]);
+    }
+  });
+
   it('wraps cyclic ranges (FRI-MON) and normalizes Sunday aliases', () => {
     const parsed = parseSiCron('0 0 * * FRI-MON');
     if (parsed.kind === 'cron') {
@@ -114,6 +123,12 @@ describe('translateSiCron → aliyun (6-field, UTC+8)', () => {
     expect(() => translateSiCron('0 20 31 * *', 'aliyun')).toThrow('SI_CRON_SHIFT_UNSUPPORTED');
     // both day fields restricted + crossing is inexpressible
     expect(() => translateSiCron('0 20 15 * MON', 'aliyun')).toThrow('SI_CRON_SHIFT_UNSUPPORTED');
+  });
+
+  it('does not invent extra firing hours for stepped ranges that cross midnight', () => {
+    // regression: 10-20/8 = {10,18} UTC → {18,2} UTC+8 — the wrap bug used to
+    // add a phantom 10:00 UTC+8 firing hour
+    expect(translateSiCron('0 10-20/8 * * *', 'aliyun')).toBe('0 0 2,18 * * *');
   });
 
   it('compresses shifted hour lists into runs', () => {
