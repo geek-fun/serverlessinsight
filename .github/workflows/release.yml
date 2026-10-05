@@ -49,13 +49,24 @@ jobs:
       - name: Test
         if: steps.version_check.outputs.should_release == 'true'
         run: npm run test:ci
+      # Same transient-failure policy as node.yml: one soft attempt, then a
+      # strict retry — a persistent upload failure still fails the release.
       - name: Upload coverage reports to Codecov
         if: steps.version_check.outputs.should_release == 'true'
+        uses: codecov/codecov-action@v5
+        id: codecov_upload
+        continue-on-error: true
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}
+          verbose: true
+          fail_ci_if_error: true
+      - name: Retry coverage upload to Codecov
+        if: steps.version_check.outputs.should_release == 'true' && steps.codecov_upload.outcome == 'failure'
         uses: codecov/codecov-action@v5
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
           verbose: true
-          fail_ci_if_error: false
+          fail_ci_if_error: true
       - name: Generate changelog
         if: steps.version_check.outputs.should_release == 'true'
         uses: jaywcjlove/changelog-generator@main
