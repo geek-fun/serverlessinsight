@@ -1214,6 +1214,133 @@ describe('vefaasResource', () => {
       });
     });
 
+    it('falls back to state as the baseline when the trigger probe fails', async () => {
+      (getResource as jest.Mock).mockReturnValue({
+        mode: 'managed',
+        region: 'cn-beijing',
+        definition: {},
+        instances: [
+          {
+            type: 'VOLCENGINE_VEFAAS_FUNCTION',
+            id: 'test-function',
+            functionId: 'func-123',
+          },
+          {
+            type: 'VOLCENGINE_VEFAAS_TIMER_TRIGGER',
+            id: 'billing-run',
+            sid: 'si:volcengine:vefaas-timer-trigger:default:test-function.billing-run',
+            attributes: { cron: '0 23 3 * * *', enable: true },
+          },
+        ],
+      });
+      mockVefaasClient.vefaas.listTriggers.mockRejectedValue(new Error('ListTriggers down'));
+      mockVefaasClient.vefaas.updateFunctionConfiguration.mockResolvedValue(undefined);
+      mockVefaasClient.vefaas.updateFunctionCode.mockResolvedValue({});
+
+      await updateResource(mockContext, fnWithTimer, mockState);
+
+      // state baseline matches desired → no churn despite the failed probe
+      expect(mockVefaasClient.vefaas.createTrigger).not.toHaveBeenCalled();
+      expect(mockVefaasClient.vefaas.deleteTrigger).not.toHaveBeenCalled();
+    });
+
+    it('tolerates ResourceNotFound when recreating a drifted timer', async () => {
+      (getResource as jest.Mock).mockReturnValue({
+        mode: 'managed',
+        region: 'cn-beijing',
+        definition: {},
+        instances: [
+          {
+            type: 'VOLCENGINE_VEFAAS_FUNCTION',
+            id: 'test-function',
+            functionId: 'func-123',
+          },
+        ],
+      });
+      mockVefaasClient.vefaas.listTriggers.mockResolvedValue([
+        {
+          id: 'trig-1',
+          name: 'billing-run',
+          sourceType: 'Timer',
+          source: JSON.stringify({ cron: '23 23 * * *', enable: true }),
+        },
+      ]);
+      mockVefaasClient.vefaas.deleteTrigger.mockRejectedValue({ code: 'ResourceNotFound' });
+      mockVefaasClient.vefaas.updateFunctionConfiguration.mockResolvedValue(undefined);
+      mockVefaasClient.vefaas.updateFunctionCode.mockResolvedValue({});
+
+      await updateResource(mockContext, fnWithTimer, mockState);
+
+      expect(mockVefaasClient.vefaas.createTrigger).toHaveBeenCalledWith({
+        functionId: 'func-123',
+        name: 'billing-run',
+        source: { cron: '23 11 * * *', enable: true },
+      });
+    });
+
+    it('warns instead of failing when createTrigger reports the trigger already attached', async () => {
+      mockVefaasClient.vefaas.createFunction.mockResolvedValueOnce({ functionId: 'func-123' });
+      mockVefaasClient.vefaas.getFunction.mockResolvedValueOnce({
+        functionName: 'test-function',
+        functionId: 'func-123',
+        runtime: 'nodejs16',
+      });
+      mockVefaasClient.vefaas.createTrigger.mockRejectedValue(
+        Object.assign(new Error('trigger already exist'), { code: 'Conflict' }),
+      );
+
+      await createResource(mockContext, fnWithTimer, mockState);
+
+      expect(mockVefaasClient.vefaas.createTrigger).toHaveBeenCalled();
+    });
+
+    it('deletes extra live timers even when the delete reports ResourceNotFound', async () => {
+      // a recorded timer instance is what makes the reconcile probe at all
+      const stateWithGhostRecord: StateFile = {
+        ...mockState,
+        resources: {
+          'functions.test_fn': {
+            mode: 'managed',
+            region: 'cn-beijing',
+            definition: {},
+            instances: [
+              {
+                type: 'VOLCENGINE_VEFAAS_FUNCTION',
+                id: 'test-function',
+                functionId: 'func-123',
+              },
+              {
+                type: 'VOLCENGINE_VEFAAS_TIMER_TRIGGER',
+                id: 'ghost',
+                sid: 'si:volcengine:vefaas-timer-trigger:default:test-function.ghost',
+                attributes: { cron: '0 8 * * *', enable: true },
+              },
+            ],
+            lastUpdated: '2024-01-01T00:00:00Z',
+            status: 'ready',
+          },
+        },
+      } as unknown as StateFile;
+      (getResource as jest.Mock).mockReturnValue(
+        stateWithGhostRecord.resources['functions.test_fn'],
+      );
+      mockVefaasClient.vefaas.listTriggers.mockResolvedValue([
+        {
+          id: 'trig-2',
+          name: 'ghost',
+          sourceType: 'Timer',
+          source: JSON.stringify({ cron: '0 8 * * *', enable: true }),
+        },
+      ]);
+      mockVefaasClient.vefaas.deleteTrigger.mockRejectedValue({ code: 'ResourceNotFound' });
+      mockVefaasClient.vefaas.updateFunctionConfiguration.mockResolvedValue(undefined);
+      mockVefaasClient.vefaas.updateFunctionCode.mockResolvedValue({});
+
+      await updateResource(mockContext, mockFunction, stateWithGhostRecord);
+
+      expect(mockVefaasClient.vefaas.deleteTrigger).toHaveBeenCalledWith('func-123', 'trig-2');
+    });
+
     it('should delete timer triggers before the function', async () => {
       const stateWithFunctionAndTimer = {
         ...mockState,

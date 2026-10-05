@@ -49,6 +49,26 @@ describe('parseSiCron', () => {
     }
   });
 
+  it('stops cyclic ranges when the step wraps back to start', () => {
+    // gcd(6,12)=6: 1,7 then wraps to 1 — end 12 is never landed on
+    const parsed = parseSiCron('0 0 * 1-12/6 *');
+    if (parsed.kind === 'cron') {
+      expect(parsed.fields.month.values).toEqual([1, 7]);
+    }
+  });
+
+  it('collects the full cycle for cyclic ranges with steps that skip the end', () => {
+    // 5-1/2: wrap walk lands past end mid-cycle — collects until it hits end
+    const parsed = parseSiCron('0 0 * * 5-1/2');
+    if (parsed.kind === 'cron') {
+      expect(parsed.fields.dayOfWeek.values).toEqual([0, 1, 2, 4, 5, 6]);
+    }
+  });
+
+  it('rejects elements with an empty step part', () => {
+    expect(() => parseSiCron('5/ * * * *')).toThrow('SI_CRON_FIELD_INVALID');
+  });
+
   it('wraps cyclic ranges (FRI-MON) and normalizes Sunday aliases', () => {
     const parsed = parseSiCron('0 0 * * FRI-MON');
     if (parsed.kind === 'cron') {
@@ -158,6 +178,12 @@ describe('translateSiCron → volcengine (5-field crontab, UTC+8)', () => {
     );
   });
 
+  it('re-encodes a dow field containing 7 as a canonical list', () => {
+    // 0-7 covers the full weekly cycle → renders as * on providers that cap at 6
+    expect(translateSiCron('0 0 * * 0-7', 'aliyun')).toBe('0 0 8 * * *');
+    expect(translateSiCron('0 0 * * 0-7', 'volcengine')).toBe('0 8 * * *');
+  });
+
   it('normalizes the Sunday alias 7 to 0', () => {
     expect(translateSiCron('0 0 * * 7', 'volcengine')).toBe('0 8 * * 0');
   });
@@ -184,6 +210,10 @@ describe('translateSiCron @every durations', () => {
     expect(() => translateSiCron('@every 90m', 'aliyun')).toThrow('SI_CRON_EVERY_NOT_EXPRESSIBLE');
     expect(() => translateSiCron('@every 5h', 'aliyun')).toThrow('SI_CRON_EVERY_NOT_EXPRESSIBLE');
     expect(() => translateSiCron('@every 1h30m', 'aliyun')).toThrow(
+      'SI_CRON_EVERY_NOT_EXPRESSIBLE',
+    );
+    expect(() => translateSiCron('@every 90s', 'aliyun')).toThrow('SI_CRON_EVERY_NOT_EXPRESSIBLE');
+    expect(() => translateSiCron('@every 90m', 'volcengine')).toThrow(
       'SI_CRON_EVERY_NOT_EXPRESSIBLE',
     );
   });

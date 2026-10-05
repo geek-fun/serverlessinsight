@@ -776,6 +776,41 @@ describe('scfOperations', () => {
   });
 
   describe('createTrigger', () => {
+    it('should forward CustomArgument and Description for timer triggers', async () => {
+      mockScfClient.CreateTrigger.mockResolvedValue({});
+
+      await operations.createTrigger({
+        FunctionName: 'test-function',
+        TriggerName: 'billing-run',
+        Type: 'timer',
+        TriggerDesc: '0 23 11 * * * *',
+        CustomArgument: '{"job":"billing"}',
+        Description: 'daily billing',
+        Enable: 'OPEN',
+      });
+
+      expect(mockScfClient.CreateTrigger).toHaveBeenCalledWith(
+        expect.objectContaining({
+          CustomArgument: '{"job":"billing"}',
+          Description: 'daily billing',
+        }),
+      );
+    });
+
+    it('should omit CustomArgument and Description when unset', async () => {
+      mockScfClient.CreateTrigger.mockResolvedValue({});
+
+      await operations.createTrigger({
+        FunctionName: 'test-function',
+        TriggerName: 'billing-run',
+        Type: 'timer',
+      });
+
+      const sent = mockScfClient.CreateTrigger.mock.calls.at(-1)[0];
+      expect(sent).not.toHaveProperty('CustomArgument');
+      expect(sent).not.toHaveProperty('Description');
+    });
+
     it('should create trigger with all params', async () => {
       mockScfClient.CreateTrigger.mockResolvedValue({});
 

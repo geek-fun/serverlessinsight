@@ -152,6 +152,115 @@ describe('localStack timer simulation (issue #258)', () => {
       expect(mockedInvokeFunction).not.toHaveBeenCalled();
     });
 
+    it('fires cron-kind schedules with per-minute dedup and second-precision support', async () => {
+      jest.setSystemTime(new Date(Date.UTC(2026, 9, 5, 11, 7, 30)));
+      startLocalTimers(buildIac([{ name: 'cronned', cron: '* * * * *' }]));
+
+      await jest.advanceTimersByTimeAsync(1000);
+      expect(mockedInvokeFunction).toHaveBeenCalledTimes(1);
+
+      // same minute → deduped; the next minute → fires again
+      await jest.advanceTimersByTimeAsync(2000);
+      expect(mockedInvokeFunction).toHaveBeenCalledTimes(1);
+      await jest.advanceTimersByTimeAsync(30000);
+      expect(mockedInvokeFunction).toHaveBeenCalledTimes(2);
+    });
+
+    it('evaluates 6-field schedules against the seconds field', async () => {
+      // tick lands on :00 — the interval's first fire is 1s after scheduling
+      jest.setSystemTime(new Date(Date.UTC(2026, 9, 5, 11, 7, 59)));
+      startLocalTimers(buildIac([{ name: 'sub', cron: '0 * * * * *' }]));
+
+      await jest.advanceTimersByTimeAsync(1000);
+      expect(mockedInvokeFunction).toHaveBeenCalledTimes(1);
+
+      // only the next minute boundary satisfies the 0-second field again
+      await jest.advanceTimersByTimeAsync(60000);
+      expect(mockedInvokeFunction).toHaveBeenCalledTimes(2);
+    });
+
+    it('skips a tick while a previous invocation is still running', async () => {
+      jest.setSystemTime(new Date(Date.UTC(2026, 9, 5, 11, 7, 0)));
+      let release: () => void = () => {};
+      const gate = new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      mockedInvokeFunction.mockImplementationOnce(() => gate);
+
+      startLocalTimers(buildIac([{ name: 'sub', cron: '* * * * * *' }]));
+      await jest.advanceTimersByTimeAsync(1000);
+      expect(mockedInvokeFunction).toHaveBeenCalledTimes(1);
+
+      // still running → the next matching tick is skipped, not queued
+      await jest.advanceTimersByTimeAsync(1000);
+      expect(mockedInvokeFunction).toHaveBeenCalledTimes(1);
+
+      release();
+      await jest.advanceTimersByTimeAsync(1000);
+      expect(mockedInvokeFunction).toHaveBeenCalledTimes(2);
+    });
+
+    it('warns and skips invalid cron instead of scheduling', async () => {
+      startLocalTimers(buildIac([{ name: 'broken', cron: 'not a cron' }]));
+
+      await jest.advanceTimersByTimeAsync(3000);
+
+      expect(mockedInvokeFunction).not.toHaveBeenCalled();
+    });
+
+    it('skips firing when the function has no code block', async () => {
+      const iac = buildIac([{ name: 'tick', cron: '@every 1s' }]);
+      (iac.functions![0] as { code?: unknown }).code = undefined;
+      startLocalTimers(iac);
+
+      await jest.advanceTimersByTimeAsync(2000);
+
+      expect(mockedInvokeFunction).not.toHaveBeenCalled();
+    });
+
+    it('logs invocation failures instead of throwing', async () => {
+      mockedInvokeFunction.mockRejectedValueOnce(new Error('handler blew up'));
+      startLocalTimers(buildIac([{ name: 'tick', cron: '@every 1s' }]));
+
+      await jest.advanceTimersByTimeAsync(1500);
+
+      expect(mockedInvokeFunction).toHaveBeenCalledTimes(1);
+    });
+
+    it('builds the tencent Timer event shape for non-aliyun providers', async () => {
+      const iac = buildIac([{ name: 'tick', cron: '@every 1s', payload: 'msg' }]);
+      (iac.provider as { name: string }).name = 'tencent';
+      startLocalTimers(iac);
+
+      await jest.advanceTimersByTimeAsync(1500);
+
+      const event = mockedInvokeFunction.mock.calls[0][2];
+      expect(event).toEqual({
+        Type: 'Timer',
+        TriggerName: 'tick',
+        Time: expect.any(String),
+        Message: 'msg',
+      });
+    });
+
+    it('cleans up extracted temp dirs after firing', async () => {
+      const { resolveCodeDir } = jest.requireMock('../../../../src/stack/localStack/utils') as {
+        resolveCodeDir: jest.Mock;
+      };
+      resolveCodeDir.mockResolvedValue({ codeDir: '/tmp/code', tempDir: '/tmp/si-function-xyz' });
+      const fsActual = jest.requireActual('node:fs');
+      const rmSpy = jest.spyOn(fsActual, 'rmSync').mockImplementation(() => undefined);
+      const existsSpy = jest.spyOn(fsActual, 'existsSync').mockReturnValue(true);
+
+      startLocalTimers(buildIac([{ name: 'tick', cron: '@every 1s' }]));
+      await jest.advanceTimersByTimeAsync(1500);
+
+      expect(rmSpy).toHaveBeenCalledWith('/tmp/si-function-xyz', expect.anything());
+      rmSpy.mockRestore();
+      existsSpy.mockRestore();
+      resolveCodeDir.mockResolvedValue({ codeDir: '/tmp/code', tempDir: null });
+    });
+
     it('replaces previous schedules on restart', async () => {
       startLocalTimers(buildIac([{ name: 'a', cron: '@every 1s' }]));
       startLocalTimers(buildIac([{ name: 'b', cron: '@every 1s' }]));
