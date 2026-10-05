@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.9.2] - 2026-10-05
+
 ### ⚠️ Breaking change
 
 - **Generated API Gateway resource names are now collision-safe.** Aliyun apiNames
@@ -34,6 +36,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Schedule functions with `functions.*.triggers.timer`: a provider-agnostic si-cron
+  expression (5-field, 6-field with seconds, or `@every <duration>`, interpreted in
+  UTC) is translated to each provider's cron dialect (Aliyun FC3, Tencent SCF,
+  Volcengine veFaaS), validated before deploy — including per-provider capability
+  limits (Tencent allows at most 10 timers per function) — registered by trigger
+  name in state, and drift-checked so console-side edits or deletions are detected
+  and repaired on the next deploy
+  ([#259](https://github.com/geek-fun/serverlessinsight/pull/259)).
+- `si local` now fires `triggers.timer` schedules locally and invokes your handler
+  with the provider's timer event shape, so timer-driven code can be debugged
+  without deploying
+  ([#259](https://github.com/geek-fun/serverlessinsight/pull/259)).
+- Agent- and script-friendly CLI foundation: `--json` outputs, exported JSON Schema,
+  and documented exit/error code conventions
+  ([#256](https://github.com/geek-fun/serverlessinsight/pull/256)).
 - Huawei Cloud FunctionGraph is now first-class in runtime compatibility checks:
   standard runtime ids map to the officially supported FunctionGraph runtimes
   (Node.js 10–20, Python 3.6/3.9/3.10/3.12, Java 8/11/17/21, Go 1.x, .NET Core 3.1),
