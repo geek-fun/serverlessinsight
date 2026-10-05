@@ -2,7 +2,15 @@ export const CODE_ZIP_SIZE_LIMIT = 300 * 1000; // 300 KB - code package size lim
 export const OSS_DEPLOYMENT_TIMEOUT = 3000; // in seconds
 export const SI_BOOTSTRAP_FC_PREFIX = 'si-bootstrap-api';
 export const SI_BOOTSTRAP_BUCKET_PREFIX = 'si-bootstrap-artifacts';
-export const SI_LOCALSTACK_SERVER_PORT = 4567;
+// Local dev server port. Under jest, each worker shifts its base port so
+// parallel test files binding the server never collide on one fixed port
+// (pre-existing flake: localServer/index/aliyunFc suites all bind 4567).
+const SI_LOCALSTACK_TEST_WORKER_PORT =
+  process.env.JEST_WORKER_ID && Number.isInteger(Number(process.env.JEST_WORKER_ID))
+    ? 4570 + Number(process.env.JEST_WORKER_ID)
+    : undefined;
+export const SI_LOCALSTACK_SERVER_PORT =
+  Number(process.env.SI_LOCALSTACK_SERVER_PORT) || SI_LOCALSTACK_TEST_WORKER_PORT || 4567;
 export const ALIYUN_FC3_CONNECT_TIMEOUT_MS = 120000;
 export const ALIYUN_FC3_READ_TIMEOUT_MS = 600000;
 // Query-tier budget for synchronous management-plane RPCs (all non-fc3 aliyun

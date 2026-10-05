@@ -31,3 +31,24 @@ export const extractZipFile = async (zipPath: string): Promise<string> => {
 
   return tempDir;
 };
+
+/**
+ * Resolve the handler directory from a function's configured code path:
+ * a zip artifact is extracted to a temp dir, a directory is used as-is,
+ * anything else falls back to its parent directory. Returns the temp dir
+ * so callers can clean it up after execution.
+ */
+export const resolveCodeDir = async (
+  codePath: string,
+): Promise<{ codeDir: string; tempDir: string | null }> => {
+  const resolved = path.resolve(process.cwd(), codePath);
+
+  if (resolved.endsWith('.zip') && fs.existsSync(resolved)) {
+    const tempDir = await extractZipFile(resolved);
+    return { codeDir: tempDir, tempDir };
+  }
+  if (fs.existsSync(resolved) && fs.statSync(resolved).isDirectory()) {
+    return { codeDir: resolved, tempDir: null };
+  }
+  return { codeDir: path.dirname(resolved), tempDir: null };
+};

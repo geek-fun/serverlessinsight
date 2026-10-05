@@ -52,6 +52,11 @@ export const zhCN = {
   LOCAL_GATEWAY_ERROR: '本地网关错误',
   ERROR_STOPPING_LOCAL_SERVER: '停止本地服务器时出错',
   RUN_LOCAL_STARTING: '启动本地运行: stage={{stage}} debug={{debug}} watch={{watch}}',
+  LOCAL_TIMER_SCHEDULED:
+    "本地定时器 '{{triggerName}}' 已为函数 '{{functionName}}' 调度（cron: {{cron}}，UTC）",
+  LOCAL_TIMER_FIRED: "本地定时器 '{{triggerName}}' 正在触发函数 '{{functionName}}'...",
+  LOCAL_TIMER_DISABLED: "本地定时器 '{{triggerName}}' 已停用（enable: false），跳过调度",
+  LOCAL_TIMER_INVALID_CRON: "本地定时器 '{{triggerName}}' 的 cron '{{cron}}' 非法，跳过调度",
 
   // Function execution
   FUNCTION_REQUEST_RECEIVED: '本地服务器收到函数请求 -> {{method}} {{identifier}} ',
@@ -1063,6 +1068,9 @@ export const zhCN = {
   SI_CRON_SHIFT_UNSUPPORTED:
     "cron '{{cron}}' 平移到 UTC+8 后会改变触发日期；请避免日/星期维度与 UTC 16 点及以后的整点组合跨月边界",
   SI_CRON_SECONDS_UNSUPPORTED: "cron '{{cron}}' 含非零秒位，5 段 crontab 云平台不支持",
+
+  // Nested live-repair failures (issue #234 executor reconciles)
+  NESTED_REPAIR_FAILED: "修复嵌套资源 '{{resource}}' 失败：{{error}}",
 
   // ===== Issue #251: previously hardcoded messages (now i18n) =====
   UNSUPPORTED_PROVIDER: '不支持的 provider：{{provider}}',

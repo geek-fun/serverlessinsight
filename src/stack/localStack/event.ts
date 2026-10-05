@@ -12,10 +12,9 @@ import {
   createAliyunContextSerializable,
 } from './aliyunFc';
 import { invokeFunction } from './functionRunner';
-import path from 'node:path';
 import fs from 'node:fs';
 import { FunctionOptions } from '../../types/localStack';
-import { extractZipFile } from './utils';
+import { resolveCodeDir } from './utils';
 import { lang } from '../../lang';
 
 const matchTrigger = (
@@ -108,17 +107,8 @@ const servEvent = async (
       try {
         const { event: aliyunEvent } = await transformToAliyunEvent(req, parsed.url, parsed.query);
 
-        const codePath = path.resolve(process.cwd(), backendDef.code.path);
-        let codeDir: string;
-
-        if (codePath.endsWith('.zip') && fs.existsSync(codePath)) {
-          tempDir = await extractZipFile(codePath);
-          codeDir = tempDir;
-        } else if (fs.existsSync(codePath) && fs.statSync(codePath).isDirectory()) {
-          codeDir = codePath;
-        } else {
-          codeDir = path.dirname(codePath);
-        }
+        const { codeDir, tempDir: resolvedTempDir } = await resolveCodeDir(backendDef.code.path);
+        tempDir = resolvedTempDir;
 
         const funOptions: FunctionOptions = {
           codeDir,
