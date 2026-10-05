@@ -32,9 +32,12 @@ import {
   HttpTrigger,
   PartialResourceError,
   ResourceAttributes,
+  ResourceInstance,
   ResourceState,
   StateFile,
+  TimerTrigger,
 } from '../../types';
+import { translateSiCron } from '../../common/siCron';
 import { extractFc3Definition, Fc3FunctionInfo, functionToFc3Config } from './fc3Types';
 import { SLS_LOGSTORE_SHARDS, SLS_LOGSTORE_TTL } from '../../common/aliyunClient/slsOperations';
 import {
@@ -418,6 +421,186 @@ const buildHttpTriggerConfig = (
     methods: ['GET', 'POST', 'PUT', 'DELETE', 'HEAD', 'PATCH'],
     ...(disableURLInternet !== undefined ? { disableURLInternet } : {}),
   };
+};
+
+const TIMER_TRIGGER_INSTANCE_TYPE = 'ALIYUN_FC3_TIMER_TRIGGER';
+
+type Fc3TimerTriggerConfig = {
+  payload: string;
+  cronExpression: string;
+  enable: boolean;
+  description?: string;
+};
+
+/** FC3 timer dialect: 6-field cron (UTC+8), payload passthrough, enable flag. */
+const buildFc3TimerTriggerConfig = (timer: TimerTrigger): Fc3TimerTriggerConfig => ({
+  payload: timer.payload ?? '',
+  cronExpression: translateSiCron(timer.cron, 'aliyun'),
+  enable: timer.enable,
+  ...(timer.description !== undefined ? { description: timer.description } : {}),
+});
+
+const normalizeLiveTimerConfig = (
+  config: Record<string, unknown> | undefined,
+  description: string | undefined,
+): Fc3TimerTriggerConfig => ({
+  payload: typeof config?.payload === 'string' ? config.payload : '',
+  cronExpression: typeof config?.cronExpression === 'string' ? config.cronExpression : '',
+  enable: config?.enable === true || config?.enable === 'true',
+  ...(description ? { description } : {}),
+});
+
+const timerConfigFromAttributes = (
+  attrs: Record<string, unknown>,
+): Fc3TimerTriggerConfig | null => {
+  const cron = typeof attrs.cron === 'string' ? attrs.cron : undefined;
+  if (!cron) {
+    return null;
+  }
+  try {
+    return {
+      payload: typeof attrs.payload === 'string' ? attrs.payload : '',
+      cronExpression: translateSiCron(cron, 'aliyun'),
+      enable: attrs.enable !== false,
+      ...(typeof attrs.description === 'string' ? { description: attrs.description } : {}),
+    };
+  } catch {
+    return null;
+  }
+};
+
+const buildTimerTriggerAttributes = (timer: TimerTrigger): Record<string, unknown> => ({
+  cron: timer.cron,
+  ...(timer.payload !== undefined ? { payload: timer.payload } : {}),
+  enable: timer.enable,
+  ...(timer.description !== undefined ? { description: timer.description } : {}),
+});
+
+const buildTimerTriggerInstance = (
+  context: Context,
+  fn: FunctionDomain,
+  timer: TimerTrigger,
+): DependentInstance => ({
+  type: TIMER_TRIGGER_INSTANCE_TYPE,
+  id: timer.name,
+  sid: buildSid('aliyun', 'fc3-timer-trigger', context.stage, `${fn.name}.${timer.name}`),
+  attributes: buildTimerTriggerAttributes(timer),
+});
+
+const isTriggerNotFound = (error: unknown): boolean =>
+  (error as { code?: string })?.code === 'TriggerNotFound';
+
+/**
+ * Reconcile the function's timer triggers against the provider (issue #258).
+ *
+ * The live trigger list is the reconcile baseline, so cloud-side edits
+ * (console cron change, manual delete, extra triggers) converge on every
+ * deploy — not just when local state disagrees. When the probe fails the
+ * state-recorded instances take over as the baseline. Name is the drift key:
+ * si-cron stays the stored form and is translated only at the edge.
+ */
+const reconcileFc3TimerTriggers = async (
+  context: Context,
+  fn: FunctionDomain,
+  previousInstances: Array<DependentInstance>,
+  client: ReturnType<typeof createAliyunClient>,
+): Promise<Array<DependentInstance>> => {
+  const desiredTimers = fn.triggers?.timer ?? [];
+  const previousTimers = previousInstances.filter((i) => i.type === TIMER_TRIGGER_INSTANCE_TYPE);
+
+  if (desiredTimers.length === 0 && previousTimers.length === 0) {
+    return [];
+  }
+
+  let liveTimers: Array<{ name: string; config: Fc3TimerTriggerConfig }> = [];
+  let liveAvailable = true;
+  try {
+    liveTimers = (await client.fc3.listTriggers(fn.name))
+      .filter((trigger) => trigger.triggerType === 'timer' && trigger.triggerName)
+      .map((trigger) => ({
+        name: trigger.triggerName as string,
+        config: normalizeLiveTimerConfig(
+          (trigger.triggerConfig ?? {}) as Record<string, unknown>,
+          trigger.description || undefined,
+        ),
+      }));
+  } catch (error) {
+    liveAvailable = false;
+    logger.warn(
+      lang.__('PLAN_TIMER_TRIGGER_PROBE_FAILED', { functionName: fn.name, error: String(error) }),
+    );
+  }
+
+  const baseline = liveAvailable
+    ? liveTimers
+    : previousTimers.flatMap((instance) => {
+        const config = timerConfigFromAttributes(instance.attributes ?? {});
+        return config ? [{ name: instance.id, config }] : [];
+      });
+
+  const resultingInstances: Array<DependentInstance> = [];
+  for (const timer of desiredTimers) {
+    const desiredConfig = buildFc3TimerTriggerConfig(timer);
+    const live = baseline.find((entry) => entry.name === timer.name);
+
+    if (!live) {
+      logger.info(
+        lang.__('CREATING_TIMER_TRIGGER', { triggerName: timer.name, functionName: fn.name }),
+      );
+    } else if (!attributesEqual(live.config, desiredConfig)) {
+      logger.info(
+        lang.__('UPDATING_TIMER_TRIGGER', { triggerName: timer.name, functionName: fn.name }),
+      );
+      try {
+        await client.fc3.deleteTrigger(fn.name, timer.name);
+      } catch (error) {
+        if (!isTriggerNotFound(error)) throw error;
+      }
+    } else {
+      resultingInstances.push(buildTimerTriggerInstance(context, fn, timer));
+      continue;
+    }
+
+    try {
+      await client.fc3.createTrigger(
+        fn.name,
+        timer.name,
+        'timer',
+        desiredConfig,
+        undefined,
+        timer.description,
+      );
+    } catch (error) {
+      // a leftover trigger from an adopted function may already carry the name
+      if (!isResourceAlreadyExistsError(error)) throw error;
+      logger.warn(
+        lang.__('TIMER_TRIGGER_ALREADY_ATTACHED', {
+          triggerName: timer.name,
+          functionName: fn.name,
+        }),
+      );
+    }
+    logger.info(
+      lang.__('TIMER_TRIGGER_CREATED', { triggerName: timer.name, functionName: fn.name }),
+    );
+    resultingInstances.push(buildTimerTriggerInstance(context, fn, timer));
+  }
+
+  const desiredNames = new Set(desiredTimers.map((timer) => timer.name));
+  for (const stale of baseline.filter((entry) => !desiredNames.has(entry.name))) {
+    logger.info(
+      lang.__('DELETING_TIMER_TRIGGER', { triggerName: stale.name, functionName: fn.name }),
+    );
+    try {
+      await client.fc3.deleteTrigger(fn.name, stale.name);
+      logger.info(lang.__('TIMER_TRIGGER_DELETED', { triggerName: stale.name }));
+    } catch (error) {
+      if (!isTriggerNotFound(error)) throw error;
+      logger.warn(lang.__('TIMER_TRIGGER_NOT_FOUND', { triggerName: stale.name }));
+    }
+  }
+
+  return resultingInstances;
 };
 
 const createDependentResources = async (
@@ -1016,7 +1199,7 @@ export const createResource = async (
 
   const fcInstance = buildFc3InstanceFromProvider(functionInfo, sid);
 
-  const lifecycleInstances = [];
+  const lifecycleInstances: Array<DependentInstance> = [];
   try {
     if (fn.triggers?.http) {
       const triggerConfig = buildHttpTriggerConfig(fn.triggers.http);
@@ -1036,6 +1219,8 @@ export const createResource = async (
         attributes: { ...triggerConfig } as unknown as Record<string, unknown>,
       });
     }
+
+    lifecycleInstances.push(...(await reconcileFc3TimerTriggers(context, fn, [], client)));
 
     if (fn.domain) {
       logger.info(lang.__('CREATING_CUSTOM_DOMAIN', { domainName: fn.domain.domain_name }));
@@ -1080,7 +1265,13 @@ export const createResource = async (
     mode: 'managed',
     region: context.region,
     definition,
-    instances: [fcInstance, ...lifecycleInstances, ...dependentInstances],
+    // DependentInstance's optional sid is always filled by construction here —
+    // widened to ResourceInstance at the state boundary
+    instances: [
+      fcInstance,
+      ...lifecycleInstances,
+      ...dependentInstances,
+    ] as Array<ResourceInstance>,
     lastUpdated: new Date().toISOString(),
     status: 'ready',
   };
@@ -1698,6 +1889,8 @@ export const updateResource = async (
   ) as DependentInstance | undefined;
   const desiredDomain = fn.domain;
 
+  const timerInstances = await reconcileFc3TimerTriggers(context, fn, existingInstances, client);
+
   if (desiredDomain && !existingCustomDomain) {
     logger.info(lang.__('CREATING_CUSTOM_DOMAIN', { domainName: desiredDomain.domain_name }));
 
@@ -1787,7 +1980,7 @@ export const updateResource = async (
 
   const fcInstance = buildFc3InstanceFromProvider(functionInfo, sid);
 
-  const lifecycleInstances = [];
+  const lifecycleInstances: Array<DependentInstance> = [];
   if (fn.triggers?.http) {
     const triggerConfig = buildHttpTriggerConfig(fn.triggers.http);
     lifecycleInstances.push({
@@ -1797,6 +1990,7 @@ export const updateResource = async (
       attributes: { ...triggerConfig } as unknown as Record<string, unknown>,
     });
   }
+  lifecycleInstances.push(...timerInstances);
   if (fn.domain) {
     lifecycleInstances.push({
       type: 'ALIYUN_FC3_CUSTOM_DOMAIN',
@@ -1809,6 +2003,7 @@ export const updateResource = async (
   const existingDependentInstances = existingInstances
     .filter((i) => i.type !== 'ALIYUN_FC3_FUNCTION')
     .filter((i) => i.type !== 'ALIYUN_FC3_HTTP_TRIGGER')
+    .filter((i) => i.type !== TIMER_TRIGGER_INSTANCE_TYPE)
     .filter((i) => i.type !== 'ALIYUN_FC3_CUSTOM_DOMAIN')
     .filter((i) => !(typeof fn.iam?.role === 'string' && i.type === 'ALIYUN_RAM_ROLE'))
     .filter((i) => !(i.type === 'ALIYUN_RAM_ROLE' && droppedRamRoleIds.has(i.id)))
@@ -1848,7 +2043,7 @@ export const updateResource = async (
       ...lifecycleInstances,
       ...withRecreatedMountTargets(existingDependentInstances, recreatedMountTargets),
       ...newDependentInstancesMapped,
-    ],
+    ] as Array<ResourceInstance>,
     lastUpdated: new Date().toISOString(),
   };
 
@@ -1880,7 +2075,26 @@ export const deleteResource = async (
 
   const client = createAliyunClient(context);
 
-  // Delete HTTP trigger and custom domain before function (they depend on it)
+  // Delete timers, HTTP trigger and custom domain before function (they depend on it)
+  const timerTriggerInstances = existingInstances.filter(
+    (i) => i.type === TIMER_TRIGGER_INSTANCE_TYPE,
+  );
+  for (const timerInstance of timerTriggerInstances) {
+    logger.info(
+      lang.__('DELETING_TIMER_TRIGGER', {
+        triggerName: timerInstance.id,
+        functionName,
+      }),
+    );
+    try {
+      await client.fc3.deleteTrigger(functionName, timerInstance.id);
+      logger.info(lang.__('TIMER_TRIGGER_DELETED', { triggerName: timerInstance.id }));
+    } catch (err) {
+      if (!isTriggerNotFound(err)) throw err;
+      logger.warn(lang.__('TIMER_TRIGGER_NOT_FOUND', { triggerName: timerInstance.id }));
+    }
+  }
+
   const httpTriggerInstance = existingInstances.find((i) => i.type === 'ALIYUN_FC3_HTTP_TRIGGER');
   if (httpTriggerInstance) {
     logger.info(

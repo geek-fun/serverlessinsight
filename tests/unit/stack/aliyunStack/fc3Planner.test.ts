@@ -27,6 +27,7 @@ const mockFc3Operations = {
   updateFunctionConfiguration: jest.fn(),
   updateFunctionCode: jest.fn(),
   deleteFunction: jest.fn(),
+  listTriggers: jest.fn(),
 };
 const mockEcsOperations = {
   getSecurityGroupByName: jest.fn(),
@@ -1041,6 +1042,113 @@ describe('FC3 Planner', () => {
         logicalId: 'functions.test_fn',
         action: 'noop',
         resourceType: 'ALIYUN_FC3',
+      });
+    });
+
+    describe('timer trigger drift (issue #258)', () => {
+      const fnWithTimer: FunctionDomain = {
+        ...testFunction,
+        triggers: { timer: [{ name: 'billing-run', cron: '0 23 3 * * *', enable: true }] },
+      };
+      const timerInstance = {
+        sid: 'si:aliyun:fc3-timer-trigger:default:test-function.billing-run',
+        id: 'billing-run',
+        type: 'ALIYUN_FC3_TIMER_TRIGGER',
+        attributes: { cron: '0 23 3 * * *', enable: true },
+      };
+
+      const buildTimerState = (): StateFile =>
+        setResource(initalState, 'functions.test_fn', {
+          mode: 'managed',
+          region: 'cn-hangzhou',
+          definition: {
+            functionName: 'test-function',
+            runtime: 'nodejs20',
+            handler: 'index.handler',
+            memorySize: 512,
+            timeout: 10,
+            diskSize: null,
+            environment: { NODE_ENV: 'production' },
+            vpcConfig: null,
+            gpuConfig: null,
+            customContainerConfig: null,
+            nasConfig: null,
+            logConfig: null,
+            codeHash: 'mock-code-hash',
+          },
+          instances: [fc3Instance, timerInstance],
+          lastUpdated: new Date().toISOString(),
+        });
+
+      it('flags the timer drift reason when the trigger was deleted in the cloud', async () => {
+        mockFc3Operations.getFunction.mockResolvedValue(remoteFunctionMatch);
+        mockFc3Operations.listTriggers.mockResolvedValue([]);
+
+        const plan = await generateFunctionPlan(mockContext, buildTimerState(), [fnWithTimer]);
+
+        expect(plan.items[0]).toMatchObject({
+          action: 'update',
+          drifted: true,
+          driftReasons: ['PLAN_DRIFT_TIMER_TRIGGER'],
+        });
+      });
+
+      it('flags the timer drift reason when the console edited the cron', async () => {
+        mockFc3Operations.getFunction.mockResolvedValue(remoteFunctionMatch);
+        mockFc3Operations.listTriggers.mockResolvedValue([
+          {
+            triggerName: 'billing-run',
+            triggerType: 'timer',
+            triggerConfig: { cronExpression: '0 23 12 * * *', payload: '', enable: true },
+          },
+        ]);
+
+        const plan = await generateFunctionPlan(mockContext, buildTimerState(), [fnWithTimer]);
+
+        expect(plan.items[0]).toMatchObject({
+          action: 'update',
+          drifted: true,
+          driftReasons: ['PLAN_DRIFT_TIMER_TRIGGER'],
+        });
+      });
+
+      it('stays noop when live timers match the translated config', async () => {
+        mockFc3Operations.getFunction.mockResolvedValue(remoteFunctionMatch);
+        mockFc3Operations.listTriggers.mockResolvedValue([
+          {
+            triggerName: 'billing-run',
+            triggerType: 'timer',
+            triggerConfig: { cronExpression: '0 23 11 * * *', payload: '', enable: true },
+          },
+        ]);
+
+        const plan = await generateFunctionPlan(mockContext, buildTimerState(), [fnWithTimer]);
+
+        expect(plan.items[0]).toMatchObject({ action: 'noop' });
+      });
+
+      it('flags extra undeclared timers as drift', async () => {
+        mockFc3Operations.getFunction.mockResolvedValue(remoteFunctionMatch);
+        mockFc3Operations.listTriggers.mockResolvedValue([
+          {
+            triggerName: 'billing-run',
+            triggerType: 'timer',
+            triggerConfig: { cronExpression: '0 23 11 * * *', payload: '', enable: true },
+          },
+          {
+            triggerName: 'ghost',
+            triggerType: 'timer',
+            triggerConfig: { cronExpression: '0 0 * * * *', enable: true },
+          },
+        ]);
+
+        const plan = await generateFunctionPlan(mockContext, buildTimerState(), [fnWithTimer]);
+
+        expect(plan.items[0]).toMatchObject({
+          action: 'update',
+          drifted: true,
+          driftReasons: ['PLAN_DRIFT_TIMER_TRIGGER'],
+        });
       });
     });
 

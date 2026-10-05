@@ -152,6 +152,41 @@ Configure HTTP endpoints and bind custom domains with automatic DNS verification
 - **CDN acceleration** — edge caching and global content delivery for static sites
 - **OSS Transfer Acceleration** — cross-region data transfers through Alibaba backbone
 
+### Timer Triggers
+
+Schedule functions with a provider-agnostic `si-cron` expression under `functions.*.triggers.timer`:
+
+```yaml
+functions:
+  my_fn:
+    triggers:
+      timer:
+        - name: billing-run            # required — drift detection is name-keyed
+          cron: '0 23 3 * * *'         # required — si-cron, interpreted in UTC
+          payload: '{"job":"billing-run"}'  # optional, passed through verbatim
+          enable: true                 # optional, default true
+          description: daily billing   # optional
+        - name: report-hourly
+          cron: '@every 1h'
+```
+
+`cron` accepts a standard 5-field expression (`minute hour day month weekday`),
+a 6-field expression with a seconds prefix, or `@every <duration>` (`30s`,
+`5m`, `1h`, `1d`, …). si-cron is always **UTC** — the synthesis layer
+translates it into each provider's dialect (Aliyun FC3 6-field, Tencent SCF
+7-field with year, Volcengine veFaaS 5-field crontab) including the UTC+8
+field shift, so the same YAML fires at the same instant everywhere. Invalid
+expressions and provider capability limits (Tencent SCF allows at most 10
+timers per function) fail at `si validate`, before any deploy.
+
+**`functions.*.triggers` vs top-level `events`**: `triggers` (http, timer)
+are things that *invoke this function* — they are function-owned, die with
+the function, and have no independent configuration surface. Top-level
+`events` (e.g. `API_GATEWAY`) are infrastructure resources with their own
+config face — custom domains, certificates, route tables — that keep living
+when a backend function is removed. Rule of thumb: independent
+configuration surface → `events`; pure scheduling/event binding → `triggers`.
+
 ### Resource Management
 
 Beyond functions — manage the full serverless stack including storage, databases, and more.

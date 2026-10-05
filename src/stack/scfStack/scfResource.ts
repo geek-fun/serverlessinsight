@@ -5,7 +5,9 @@ import {
   ResourceState,
   StateFile,
   ResourceTypeEnum,
+  TimerTrigger,
 } from '../../types';
+import { translateSiCron } from '../../common/siCron';
 import { createTencentClient } from '../../common/tencentClient';
 import { readFileAsBase64 } from '../../common/fileUtils';
 import { functionToScfConfig, extractScfDefinition, ScfFunctionInfo } from './scfTypes';
@@ -69,6 +71,210 @@ const buildTencentTriggerDesc = (
 // the NetConfig field (the API Gateway flavor uses api/service/release instead).
 const isFunctionUrlTrigger = (t: { TriggerName?: string; Type?: string; TriggerDesc?: string }) =>
   t.Type === 'http' && typeof t.TriggerDesc === 'string' && t.TriggerDesc.includes('NetConfig');
+
+const TIMER_TRIGGER_INSTANCE_TYPE = 'TENCENT_SCF_TIMER_TRIGGER';
+
+type ScfTimerTriggerConfig = {
+  /** 7-field Tencent cron dialect (si-cron translated, TriggerDesc) */
+  cron: string;
+  /** CustomArgument passthrough */
+  payload?: string;
+  /** OPEN/CLOSE at the API edge */
+  enable: boolean;
+  description?: string;
+};
+
+/** Tencent timer dialect: 7-field cron (UTC+8, `*` year), payload → CustomArgument. */
+const buildScfTimerTriggerConfig = (timer: TimerTrigger): ScfTimerTriggerConfig => ({
+  cron: translateSiCron(timer.cron, 'tencent'),
+  ...(timer.payload !== undefined ? { payload: timer.payload } : {}),
+  enable: timer.enable,
+  ...(timer.description !== undefined ? { description: timer.description } : {}),
+});
+
+type ScfLiveTimerTrigger = {
+  TriggerName?: string;
+  Type?: string;
+  TriggerDesc?: string;
+  CustomArgument?: string;
+  Enable?: number | string;
+  Description?: string;
+};
+
+const normalizeScfLiveTimerConfig = (trigger: ScfLiveTimerTrigger): ScfTimerTriggerConfig => ({
+  cron: trigger.TriggerDesc ?? '',
+  ...(trigger.CustomArgument !== undefined && trigger.CustomArgument !== ''
+    ? { payload: trigger.CustomArgument }
+    : {}),
+  enable: trigger.Enable === 1 || trigger.Enable === 'OPEN',
+  ...(trigger.Description ? { description: trigger.Description } : {}),
+});
+
+const scfTimerConfigFromAttributes = (
+  attrs: Record<string, unknown>,
+): ScfTimerTriggerConfig | null => {
+  const cron = typeof attrs.cron === 'string' ? attrs.cron : undefined;
+  if (!cron) {
+    return null;
+  }
+  try {
+    return {
+      cron: translateSiCron(cron, 'tencent'),
+      ...(attrs.payload !== undefined ? { payload: String(attrs.payload) } : {}),
+      enable: attrs.enable !== false,
+      ...(attrs.description !== undefined ? { description: String(attrs.description) } : {}),
+    };
+  } catch {
+    return null;
+  }
+};
+
+const buildScfTimerTriggerInstance = (
+  context: Context,
+  fn: FunctionDomain,
+  timer: TimerTrigger,
+): ScfDependentInstance =>
+  ({
+    sid: buildSid('tencent', 'scf-timer-trigger', context.stage, `${fn.name}.${timer.name}`),
+    type: TIMER_TRIGGER_INSTANCE_TYPE,
+    id: timer.name,
+    cron: timer.cron,
+    ...(timer.payload !== undefined ? { payload: timer.payload } : {}),
+    enable: timer.enable,
+    ...(timer.description !== undefined ? { description: timer.description } : {}),
+  }) as ScfDependentInstance;
+
+const deleteScfTimerTrigger = async (
+  fnName: string,
+  triggerName: string,
+  client: ReturnType<typeof createTencentClient>,
+): Promise<boolean> => {
+  try {
+    await client.scf.deleteTrigger({
+      FunctionName: fnName,
+      TriggerName: triggerName,
+      Type: 'timer',
+    });
+    logger.info(lang.__('TIMER_TRIGGER_DELETED', { triggerName }));
+    return true;
+  } catch (err) {
+    const errorCode = (err as { code?: string })?.code;
+    if (errorCode === 'ResourceNotFound.TriggerName' || errorCode === 'ResourceNotFound') {
+      logger.warn(lang.__('TIMER_TRIGGER_NOT_FOUND', { triggerName }));
+      return true;
+    }
+    throw err;
+  }
+};
+
+/**
+ * Reconcile the function's timer triggers against the provider (issue #258).
+ *
+ * The live trigger list from GetFunction is the reconcile baseline, so
+ * console-side cron edits, manual deletions and extra triggers converge on
+ * every deploy. When the probe fails the state-recorded instances take over.
+ * Name is the drift key; si-cron stays stored and is translated only here.
+ */
+const reconcileScfTimerTriggers = async (
+  context: Context,
+  fn: FunctionDomain,
+  previousInstances: Array<Record<string, unknown>>,
+  client: ReturnType<typeof createTencentClient>,
+): Promise<Array<ScfDependentInstance>> => {
+  const desiredTimers = fn.triggers?.timer ?? [];
+  const previousTimers = previousInstances.filter(
+    (i) => (i as ScfDependentInstance).type === TIMER_TRIGGER_INSTANCE_TYPE,
+  ) as Array<Record<string, unknown>>;
+
+  if (desiredTimers.length === 0 && previousTimers.length === 0) {
+    return [];
+  }
+
+  let liveTimers: Array<{ name: string; config: ScfTimerTriggerConfig }> = [];
+  let liveAvailable = true;
+  try {
+    const probe = await client.scf.getFunction(fn.name);
+    liveTimers = (probe?.Triggers ?? [])
+      .filter((trigger) => trigger.Type === 'timer' && trigger.TriggerName)
+      .map((trigger) => ({
+        name: trigger.TriggerName as string,
+        config: normalizeScfLiveTimerConfig(trigger),
+      }));
+  } catch (error) {
+    liveAvailable = false;
+    logger.warn(
+      lang.__('PLAN_TIMER_TRIGGER_PROBE_FAILED', { functionName: fn.name, error: String(error) }),
+    );
+  }
+
+  const baseline = liveAvailable
+    ? liveTimers
+    : previousTimers.flatMap((instance) => {
+        const config = scfTimerConfigFromAttributes(instance);
+        return config ? [{ name: String(instance.id), config }] : [];
+      });
+
+  const resultingInstances: Array<ScfDependentInstance> = [];
+  for (const timer of desiredTimers) {
+    const desiredConfig = buildScfTimerTriggerConfig(timer);
+    const live = baseline.find((entry) => entry.name === timer.name);
+
+    if (!live) {
+      logger.info(
+        lang.__('CREATING_TIMER_TRIGGER', { triggerName: timer.name, functionName: fn.name }),
+      );
+    } else if (
+      !attributesEqual(
+        live.config as unknown as Record<string, unknown>,
+        desiredConfig as unknown as Record<string, unknown>,
+      )
+    ) {
+      logger.info(
+        lang.__('UPDATING_TIMER_TRIGGER', { triggerName: timer.name, functionName: fn.name }),
+      );
+      await deleteScfTimerTrigger(fn.name, timer.name, client);
+    } else {
+      resultingInstances.push(buildScfTimerTriggerInstance(context, fn, timer));
+      continue;
+    }
+
+    try {
+      await client.scf.createTrigger({
+        FunctionName: fn.name,
+        TriggerName: timer.name,
+        Type: 'timer',
+        TriggerDesc: desiredConfig.cron,
+        ...(desiredConfig.payload !== undefined ? { CustomArgument: desiredConfig.payload } : {}),
+        Qualifier: '$DEFAULT',
+        Enable: desiredConfig.enable ? 'OPEN' : 'CLOSE',
+        ...(desiredConfig.description ? { Description: desiredConfig.description } : {}),
+      });
+    } catch (error) {
+      // a leftover trigger from an adopted function may already carry the name
+      if (!isResourceAlreadyExistsError(error)) throw error;
+      logger.warn(
+        lang.__('TIMER_TRIGGER_ALREADY_ATTACHED', {
+          triggerName: timer.name,
+          functionName: fn.name,
+        }),
+      );
+    }
+    logger.info(
+      lang.__('TIMER_TRIGGER_CREATED', { triggerName: timer.name, functionName: fn.name }),
+    );
+    resultingInstances.push(buildScfTimerTriggerInstance(context, fn, timer));
+  }
+
+  const desiredNames = new Set(desiredTimers.map((timer) => timer.name));
+  for (const stale of baseline.filter((entry) => !desiredNames.has(entry.name))) {
+    logger.info(
+      lang.__('DELETING_TIMER_TRIGGER', { triggerName: stale.name, functionName: fn.name }),
+    );
+    await deleteScfTimerTrigger(fn.name, stale.name, client);
+  }
+
+  return resultingInstances;
+};
 
 type ScfDependentInstance = {
   type: string;
@@ -805,6 +1011,17 @@ export const createResource = async (
     }
   }
 
+  // Create timer triggers if configured — a failure mid-way persists the
+  // tainted state so a re-run reconciles instead of duplicating triggers.
+  if (fn.triggers?.timer) {
+    try {
+      dependentInstances.push(...(await reconcileScfTimerTriggers(context, fn, [], client)));
+    } catch (error) {
+      if (error instanceof PartialResourceError) throw error;
+      throw new PartialResourceError(stateAfterDependents, new Error(toErrorMessage(error)));
+    }
+  }
+
   // Create custom domain if configured
   if (fn.domain) {
     logger.info(lang.__('CREATING_CUSTOM_DOMAIN', { domainName: fn.domain.domain_name }));
@@ -1259,6 +1476,10 @@ export const updateResource = async (
     }
   }
 
+  // Reconcile timer triggers against the provider (issue #258) — the live
+  // GetFunction trigger list is the baseline so console edits converge.
+  const timerInstances = await reconcileScfTimerTriggers(context, fn, existingInstances, client);
+
   // Reconcile custom domain
   const existingCustomDomain = existingInstances.find(
     (i) => (i as ScfDependentInstance).type === 'TENCENT_SCF_CUSTOM_DOMAIN',
@@ -1341,6 +1562,8 @@ export const updateResource = async (
       (i) =>
         (i as ScfDependentInstance).type !== undefined &&
         (i as ScfDependentInstance).type !== 'TENCENT_SCF_CUSTOM_DOMAIN' &&
+        // timers are fully rebuilt from the reconcile result below
+        (i as ScfDependentInstance).type !== TIMER_TRIGGER_INSTANCE_TYPE &&
         !(
           (clsTopicInstance || disableLog) &&
           ((i as ScfDependentInstance).type === ResourceTypeEnum.TENCENT_CLS_TOPIC ||
@@ -1396,6 +1619,7 @@ export const updateResource = async (
       buildScfInstanceFromProvider(functionInfo as ScfFunctionInfo, sid),
       ...existingDependentInstances,
       ...newDependentInstances,
+      ...timerInstances,
     ],
     lastUpdated: new Date().toISOString(),
   };
@@ -1451,6 +1675,15 @@ export const deleteResource = async (
     }
   }
 
+  // Delete timer triggers before deleting function
+  const timerTriggerInstances = existingInstances.filter(
+    (i) => (i as ScfDependentInstance).type === TIMER_TRIGGER_INSTANCE_TYPE,
+  ) as Array<ScfDependentInstance>;
+  for (const timerInstance of timerTriggerInstances) {
+    logger.info(lang.__('DELETING_TIMER_TRIGGER', { triggerName: timerInstance.id, functionName }));
+    await deleteScfTimerTrigger(functionName, timerInstance.id, client);
+  }
+
   // Delete custom domain before deleting function
   const existingCustomDomain = existingInstances.find(
     (i) => (i as ScfDependentInstance).type === 'TENCENT_SCF_CUSTOM_DOMAIN',
@@ -1495,7 +1728,9 @@ export const deleteResource = async (
   const dependentInstances = existingInstances.filter(
     (i) =>
       (i as ScfDependentInstance).type !== undefined &&
-      (i as ScfDependentInstance).type !== 'TENCENT_SCF_CUSTOM_DOMAIN',
+      (i as ScfDependentInstance).type !== 'TENCENT_SCF_CUSTOM_DOMAIN' &&
+      // timers were deleted explicitly above
+      (i as ScfDependentInstance).type !== TIMER_TRIGGER_INSTANCE_TYPE,
   ) as Array<{ type: string; id: string; external?: boolean }>;
   if (dependentInstances.length > 0) {
     await deleteDependentResources(context, dependentInstances);

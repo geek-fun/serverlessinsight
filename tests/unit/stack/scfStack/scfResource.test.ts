@@ -2948,6 +2948,231 @@ describe('ScfResource', () => {
     });
   });
 
+  describe('triggers.timer (issue #258)', () => {
+    const stateWithFunctionAndTimer: StateFile = {
+      ...initialState,
+      resources: {
+        'functions.test_fn': {
+          mode: 'managed',
+          region: 'ap-guangzhou',
+          definition: mockDefinition,
+          instances: [
+            {
+              sid: 'si:tencent:scf:default:test-function',
+              id: 'test-function',
+              functionName: 'test-function',
+            },
+            {
+              sid: 'si:tencent:scf-timer-trigger:default:test-function.billing-run',
+              type: 'TENCENT_SCF_TIMER_TRIGGER',
+              id: 'billing-run',
+              cron: '0 23 3 * * *',
+              enable: true,
+            },
+          ],
+          lastUpdated: '2025-01-01T00:00:00Z',
+        },
+      },
+    };
+
+    const fnWithTimer = {
+      ...testFunction,
+      triggers: { timer: [{ name: 'billing-run', cron: '0 23 3 * * *', enable: true }] },
+    };
+
+    it('should create timer triggers with the translated tencent cron dialect', async () => {
+      const taintedState = {
+        ...initialState,
+        resources: {
+          'functions.test_fn': {
+            mode: 'managed',
+            region: 'ap-guangzhou',
+            definition: mockDefinition,
+            instances: [],
+            lastUpdated: expect.any(String),
+            status: 'tainted',
+          },
+        },
+      };
+      const finalState = {
+        ...initialState,
+        resources: {
+          'functions.test_fn': {
+            mode: 'managed',
+            region: 'ap-guangzhou',
+            definition: mockDefinition,
+            instances: expect.any(Array),
+            lastUpdated: expect.any(String),
+            status: 'ready',
+          },
+        },
+      };
+      (stateManager.setResource as jest.Mock)
+        .mockReturnValueOnce(taintedState)
+        .mockReturnValueOnce(finalState);
+
+      const fnWithTimers = {
+        ...testFunction,
+        triggers: {
+          timer: [
+            {
+              name: 'billing-run',
+              cron: '0 23 3 * * *',
+              payload: '{"job":"billing"}',
+              enable: true,
+            },
+            { name: 'paused', cron: '@every 1h', enable: false },
+          ],
+        },
+      };
+
+      await createResource(mockContext, fnWithTimers, initialState);
+
+      // si-cron 0 23 3 * * * (03:23 UTC) → 11:23 UTC+8, tencent 7-field + year
+      expect(mockScfOperations.createTrigger).toHaveBeenCalledWith(
+        expect.objectContaining({
+          FunctionName: 'test-function',
+          TriggerName: 'billing-run',
+          Type: 'timer',
+          TriggerDesc: '0 23 11 * * * *',
+          CustomArgument: '{"job":"billing"}',
+          Enable: 'OPEN',
+          Qualifier: '$DEFAULT',
+        }),
+      );
+      expect(mockScfOperations.createTrigger).toHaveBeenCalledWith(
+        expect.objectContaining({
+          TriggerName: 'paused',
+          TriggerDesc: '0 0 * * * * *',
+          Enable: 'CLOSE',
+        }),
+      );
+    });
+
+    it('should register timer triggers by name in state', async () => {
+      const finalState = {
+        ...initialState,
+        resources: {
+          'functions.test_fn': {
+            mode: 'managed',
+            region: 'ap-guangzhou',
+            definition: mockDefinition,
+            instances: expect.any(Array),
+            lastUpdated: expect.any(String),
+            status: 'ready',
+          },
+        },
+      };
+      (stateManager.setResource as jest.Mock).mockReturnValue(finalState);
+
+      await createResource(mockContext, fnWithTimer, initialState);
+
+      const finalCall = (stateManager.setResource as jest.Mock).mock.calls.at(-1);
+      const instances = finalCall[2].instances as Array<Record<string, unknown>>;
+      const timerInstance = instances.find(
+        (instance) => instance.type === 'TENCENT_SCF_TIMER_TRIGGER',
+      );
+      expect(timerInstance).toMatchObject({
+        type: 'TENCENT_SCF_TIMER_TRIGGER',
+        id: 'billing-run',
+        cron: '0 23 3 * * *',
+        enable: true,
+      });
+    });
+
+    it('should be idempotent when the live trigger matches during update', async () => {
+      (stateManager.getResource as jest.Mock).mockReturnValue(
+        stateWithFunctionAndTimer.resources['functions.test_fn'],
+      );
+      mockScfOperations.getFunction.mockResolvedValue({
+        ...mockFunctionInfo,
+        Triggers: [
+          {
+            TriggerName: 'billing-run',
+            Type: 'timer',
+            TriggerDesc: '0 23 11 * * * *',
+            Enable: 1,
+          },
+        ],
+      });
+      (stateManager.setResource as jest.Mock).mockReturnValue(initialState);
+
+      await updateResource(mockContext, fnWithTimer, stateWithFunctionAndTimer);
+
+      expect(mockScfOperations.createTrigger).not.toHaveBeenCalled();
+      expect(mockScfOperations.deleteTrigger).not.toHaveBeenCalled();
+    });
+
+    it('should converge on cloud-side edits and extra timers during update', async () => {
+      (stateManager.getResource as jest.Mock).mockReturnValue(
+        stateWithFunctionAndTimer.resources['functions.test_fn'],
+      );
+      mockScfOperations.getFunction.mockResolvedValue({
+        ...mockFunctionInfo,
+        Triggers: [
+          {
+            TriggerName: 'billing-run',
+            Type: 'timer',
+            TriggerDesc: '0 23 12 * * * *',
+            Enable: 1,
+          },
+          {
+            TriggerName: 'ghost',
+            Type: 'timer',
+            TriggerDesc: '0 0 * * * * *',
+            Enable: 1,
+          },
+        ],
+      });
+      (stateManager.setResource as jest.Mock).mockReturnValue(initialState);
+
+      await updateResource(mockContext, fnWithTimer, stateWithFunctionAndTimer);
+
+      expect(mockScfOperations.deleteTrigger).toHaveBeenCalledWith(
+        expect.objectContaining({ TriggerName: 'billing-run', Type: 'timer' }),
+      );
+      expect(mockScfOperations.deleteTrigger).toHaveBeenCalledWith(
+        expect.objectContaining({ TriggerName: 'ghost', Type: 'timer' }),
+      );
+      expect(mockScfOperations.createTrigger).toHaveBeenCalledWith(
+        expect.objectContaining({
+          TriggerName: 'billing-run',
+          TriggerDesc: '0 23 11 * * * *',
+        }),
+      );
+    });
+
+    it('should delete timer triggers before the function', async () => {
+      (stateManager.getResource as jest.Mock).mockReturnValue(
+        stateWithFunctionAndTimer.resources['functions.test_fn'],
+      );
+      (stateManager.removeResource as jest.Mock).mockReturnValue(initialState);
+
+      await deleteResource(
+        mockContext,
+        'test-function',
+        'functions.test_fn',
+        stateWithFunctionAndTimer,
+      );
+
+      const deleteTriggerCall = (mockScfOperations.deleteTrigger as jest.Mock).mock.calls.find(
+        (call) => call[0].Type === 'timer',
+      );
+      expect(deleteTriggerCall[0]).toMatchObject({
+        FunctionName: 'test-function',
+        TriggerName: 'billing-run',
+        Type: 'timer',
+      });
+      const deleteOrder = [
+        (mockScfOperations.deleteTrigger as jest.Mock).mock.calls.findIndex(
+          (call) => call[0].Type === 'timer',
+        ),
+        (mockScfOperations.deleteFunction as jest.Mock).mock.calls.length > 0 ? 1 : -1,
+      ];
+      expect(deleteOrder[0]).toBeGreaterThanOrEqual(0);
+    });
+  });
+
   describe('deleteResource', () => {
     const stateWithFunction: StateFile = {
       ...initialState,

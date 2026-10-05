@@ -10,6 +10,27 @@ export type HttpTrigger = {
   access?: Array<'public' | 'internal'>;
 };
 
+/**
+ * si-cron normalized timer trigger (issue #258). `cron` is si-cron syntax
+ * (5/6-field or `@every <duration>`, UTC semantics) — provider dialects only
+ * exist in the synthesis layer (src/common/siCron.ts).
+ */
+export type TimerTriggerRaw = {
+  name: Resolvable<string>;
+  cron: Resolvable<string>;
+  payload?: Resolvable<string>;
+  enable?: Resolvable<boolean>;
+  description?: Resolvable<string>;
+};
+
+export type TimerTrigger = {
+  name: string;
+  cron: string;
+  payload?: string;
+  enable: boolean;
+  description?: string;
+};
+
 export type FunctionDomainConfigRaw = {
   domain_name: Resolvable<string>;
   certificate_id?: Resolvable<string>;
@@ -66,6 +87,7 @@ export type FunctionRaw = {
   };
   triggers?: {
     http?: HttpTriggerRaw;
+    timer?: Array<TimerTriggerRaw>;
   };
   domain?: FunctionDomainConfigRaw;
   storage?: {
@@ -122,6 +144,7 @@ export type FunctionDomain = {
   };
   triggers?: {
     http?: HttpTrigger;
+    timer?: Array<TimerTrigger>;
   };
   domain?: FunctionDomainConfigParsed;
   storage: {

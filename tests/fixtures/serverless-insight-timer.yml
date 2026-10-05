@@ -1,0 +1,42 @@
+version: 0.0.1
+app: insight-poc-timer-app
+provider:
+  name: aliyun
+  region: cn-chengdu
+
+vars:
+  region: cn-hangzhou
+  handler: index.handler
+
+stages:
+  default:
+    region: ${vars.region}
+    node_env: default
+  dev:
+    region: ${vars.region}
+    node_env: development
+
+service: insight-poc-timer
+
+backend:
+  state_manager:
+    type: LOCAL
+
+functions:
+  insight_poc_fn:
+    name: insight-poc-timer-fn
+    code:
+      runtime: nodejs18
+      handler: ${vars.handler}
+      path: tests/fixtures/artifacts/artifact.zip
+    memory: 512
+    timeout: 10
+    triggers:
+      timer:
+        - name: billing-run
+          cron: '0 23 3 * * *'
+          payload: '{"job":"billing-run"}'
+          description: daily billing run
+        - name: report-hourly
+          cron: '@every 1h'
+          enable: false

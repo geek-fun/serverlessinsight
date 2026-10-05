@@ -1133,6 +1133,52 @@ export const en = {
   INVALID_HTTP_TRIGGER_AUTH_TYPE:
     "Invalid HTTP trigger auth_type '{{authType}}'; must be 'public' or 'iam'",
 
+  // Timer trigger messages (issue #258)
+  TIMER_TRIGGER_NAME_REQUIRED: "Timer trigger on function '{{functionName}}' requires 'name'",
+  TIMER_TRIGGER_CRON_REQUIRED: "Timer trigger '{{name}}' requires 'cron'",
+  TIMER_TRIGGER_DUPLICATE_NAME:
+    "Duplicate timer trigger name '{{name}}' on function '{{functionName}}'",
+  TIMER_TRIGGER_LIMIT_EXCEEDED:
+    "Function '{{functionName}}' has {{count}} timer triggers; provider {{provider}} allows at most {{max}}",
+  SEMANTIC_TIMER_CRON_INVALID:
+    "Timer trigger '{{name}}' on function '{{functionName}}' has invalid cron '{{cron}}': {{reason}}",
+  TIMER_TRIGGER_NOT_SUPPORTED_PROVIDER:
+    "Timer triggers are not supported for provider '{{provider}}'",
+  TIMER_TRIGGER_PAYLOAD_NOT_SUPPORTED:
+    "Timer trigger '{{name}}' on provider {{provider}} does not support 'payload'",
+  CREATING_TIMER_TRIGGER:
+    "Creating timer trigger '{{triggerName}}' for function '{{functionName}}'...",
+  TIMER_TRIGGER_CREATED: "Timer trigger '{{triggerName}}' created for function '{{functionName}}'",
+  UPDATING_TIMER_TRIGGER:
+    "Recreating timer trigger '{{triggerName}}' for function '{{functionName}}'...",
+  DELETING_TIMER_TRIGGER:
+    "Deleting timer trigger '{{triggerName}}' for function '{{functionName}}'...",
+  TIMER_TRIGGER_DELETED: "Timer trigger '{{triggerName}}' deleted",
+  TIMER_TRIGGER_NOT_FOUND: "Timer trigger '{{triggerName}}' not found in provider, skipping delete",
+  TIMER_TRIGGER_ALREADY_ATTACHED:
+    "Timer trigger '{{triggerName}}' is already attached to function '{{functionName}}', skipping create",
+  PLAN_DRIFT_TIMER_TRIGGER: 'Timer triggers changed in the cloud',
+  PLAN_TIMER_TRIGGER_PROBE_FAILED:
+    "Failed to probe timer triggers for function '{{functionName}}': {{error}}",
+
+  // si-cron messages (issue #258)
+  SI_CRON_EMPTY: 'si-cron expression is empty',
+  SI_CRON_WRONG_FIELD_COUNT:
+    'expects 5 fields (minute hour day month weekday), 6 fields with a seconds prefix, or @every <duration>; got {{count}}',
+  SI_CRON_FIELD_INVALID: "field '{{field}}' has invalid value '{{value}}'",
+  SI_CRON_FIELD_EMPTY: "field '{{field}}' is empty",
+  SI_CRON_FIELD_RANGE: "field '{{field}}' value '{{value}}' out of range {{min}}-{{max}}",
+  SI_CRON_STEP_INVALID: "field '{{field}}' has invalid step '{{step}}'",
+  SI_CRON_RANGE_DESCENDING: "field '{{field}}' has descending range '{{range}}'",
+  SI_CRON_EVERY_INVALID:
+    "'@every {{duration}}' is not a valid duration; use forms like '30s', '5m', '1h', '1d'",
+  SI_CRON_EVERY_NOT_EXPRESSIBLE:
+    'this @every interval cannot be expressed as a {{dialect}} cron; use durations that divide evenly (15s, 30s, 1m, 5m, 15m, 30m, 1h, 2h, 6h, 12h, 1d)',
+  SI_CRON_SHIFT_UNSUPPORTED:
+    "cron '{{cron}}' cannot be shifted to UTC+8 without changing which dates fire; avoid day-of-month/day-of-week schedules with UTC hours >= 16 that cross a month boundary",
+  SI_CRON_SECONDS_UNSUPPORTED:
+    "cron '{{cron}}' has non-zero seconds which a 5-field crontab provider does not support",
+
   // ===== Issue #251: previously hardcoded messages (now i18n) =====
   UNSUPPORTED_PROVIDER: 'Unsupported provider: {{provider}}',
   FORCE_UNLOCK_NO_LOCATION_MODE: 'Not supported in no-location mode',

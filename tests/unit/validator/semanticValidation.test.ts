@@ -9,7 +9,11 @@ jest.mock('../../../src/common/logger', () => ({
 }));
 
 jest.mock('../../../src/lang', () => ({
-  lang: { __: (key: string) => key },
+  lang: {
+    // append the params so tests can assert on nested i18n keys (reasons)
+    __: (key: string, params?: Record<string, unknown>) =>
+      params ? `${key}:${JSON.stringify(params)}` : key,
+  },
 }));
 
 describe('validateSemantics', () => {
@@ -89,6 +93,104 @@ describe('validateSemantics', () => {
             error.keyword === 'containerCodeConflict' || error.keyword === 'functionSourceRequired',
         ),
       ).toHaveLength(0);
+    });
+  });
+
+  describe('timer triggers (issue #258)', () => {
+    const timerIac = (
+      provider: ProviderEnum,
+      timers: Array<Record<string, unknown>>,
+    ): ServerlessIacRaw =>
+      ({
+        ...buildIac(
+          {},
+          {
+            fn: {
+              name: 'timer-fn',
+              code: { runtime: 'nodejs20', handler: 'index.handler', path: 'code.zip' },
+              triggers: { timer: timers },
+            },
+          },
+        ),
+        provider: { name: provider, region: 'cn-hangzhou' },
+      }) as ServerlessIacRaw;
+
+    it('rejects an invalid si-cron with the provider dialect reason', () => {
+      const errors = validateSemantics(
+        timerIac(ProviderEnum.ALIYUN, [{ name: 'bad', cron: 'not a cron' }]),
+      );
+      const invalid = errors.filter((error) => error.keyword === 'invalidSiCron');
+      expect(invalid).toHaveLength(1);
+      expect(invalid[0].instancePath).toBe('/functions/fn/triggers/timer/0');
+      expect(invalid[0].message).toContain('SI_CRON_WRONG_FIELD_COUNT');
+    });
+
+    it('rejects a timer missing name and a timer missing cron', () => {
+      const errors = validateSemantics(
+        timerIac(ProviderEnum.ALIYUN, [{ cron: '0 0 * * *' }, { name: 'no-cron' }]),
+      );
+      expect(errors.filter((error) => error.keyword === 'timerNameRequired')).toHaveLength(1);
+      expect(errors.filter((error) => error.keyword === 'timerCronRequired')).toHaveLength(1);
+    });
+
+    it('rejects duplicate timer names', () => {
+      const errors = validateSemantics(
+        timerIac(ProviderEnum.ALIYUN, [
+          { name: 'dup', cron: '0 0 * * *' },
+          { name: 'dup', cron: '@every 1h' },
+        ]),
+      );
+      const duplicates = errors.filter((error) => error.keyword === 'duplicateTimerName');
+      expect(duplicates).toHaveLength(1);
+      expect(duplicates[0].instancePath).toBe('/functions/fn/triggers/timer/1');
+    });
+
+    it('rejects a volcengine timer with non-zero seconds', () => {
+      const errors = validateSemantics(
+        timerIac(ProviderEnum.VOLCENGINE, [{ name: 'sub', cron: '30 0 12 * * *' }]),
+      );
+      const invalid = errors.filter((error) => error.keyword === 'invalidSiCron');
+      expect(invalid).toHaveLength(1);
+      expect(invalid[0].message).toContain('SI_CRON_SECONDS_UNSUPPORTED');
+    });
+
+    it('accepts the same cron on aliyun (6-field dialect supports seconds)', () => {
+      const errors = validateSemantics(
+        timerIac(ProviderEnum.ALIYUN, [{ name: 'sub', cron: '30 0 12 * * *' }]),
+      );
+      expect(errors.filter((error) => error.keyword === 'invalidSiCron')).toHaveLength(0);
+    });
+
+    it('rejects more than 10 timers on tencent only', () => {
+      const timers = Array.from({ length: 11 }, (_, index) => ({
+        name: `timer-${index}`,
+        cron: '0 0 * * *',
+      }));
+      const tencentErrors = validateSemantics(timerIac(ProviderEnum.TENCENT, timers));
+      expect(tencentErrors.filter((error) => error.keyword === 'timerTriggerLimit')).toHaveLength(
+        1,
+      );
+
+      const aliyunErrors = validateSemantics(
+        timerIac(ProviderEnum.ALIYUN, timers) as ServerlessIacRaw,
+      );
+      expect(aliyunErrors.filter((error) => error.keyword === 'timerTriggerLimit')).toHaveLength(0);
+    });
+
+    it('rejects timers on unsupported providers (huawei)', () => {
+      const errors = validateSemantics(
+        timerIac(ProviderEnum.HUAWEI, [{ name: 'one', cron: '0 0 * * *' }]),
+      );
+      const invalid = errors.filter((error) => error.keyword === 'invalidSiCron');
+      expect(invalid).toHaveLength(1);
+      expect(invalid[0].message).toContain('TIMER_TRIGGER_NOT_SUPPORTED_PROVIDER');
+    });
+
+    it('skips grammar checks for template-ref crons', () => {
+      const errors = validateSemantics(
+        timerIac(ProviderEnum.ALIYUN, [{ name: 'one', cron: '${vars.cron}' }]),
+      );
+      expect(errors.filter((error) => error.keyword === 'invalidSiCron')).toHaveLength(0);
     });
   });
 
