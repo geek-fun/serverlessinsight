@@ -53,6 +53,13 @@ export const en = {
   LOCAL_GATEWAY_ERROR: 'Local gateway error',
   ERROR_STOPPING_LOCAL_SERVER: 'Error stopping localServer',
   RUN_LOCAL_STARTING: 'run-local starting: stage={{stage}} debug={{debug}} watch={{watch}}',
+  LOCAL_TIMER_SCHEDULED:
+    "Local timer '{{triggerName}}' scheduled for function '{{functionName}}' (cron: {{cron}}, UTC)",
+  LOCAL_TIMER_FIRED: "Local timer '{{triggerName}}' firing function '{{functionName}}'...",
+  LOCAL_TIMER_DISABLED:
+    "Local timer '{{triggerName}}' is disabled (enable: false), skipping schedule",
+  LOCAL_TIMER_INVALID_CRON:
+    "Local timer '{{triggerName}}' has invalid cron '{{cron}}', skipping schedule",
 
   // Function execution
   FUNCTION_REQUEST_RECEIVED:
@@ -1178,6 +1185,9 @@ export const en = {
     "cron '{{cron}}' cannot be shifted to UTC+8 without changing which dates fire; avoid day-of-month/day-of-week schedules with UTC hours >= 16 that cross a month boundary",
   SI_CRON_SECONDS_UNSUPPORTED:
     "cron '{{cron}}' has non-zero seconds which a 5-field crontab provider does not support",
+
+  // Nested live-repair failures (issue #234 executor reconciles)
+  NESTED_REPAIR_FAILED: "Failed to repair nested resource '{{resource}}': {{error}}",
 
   // ===== Issue #251: previously hardcoded messages (now i18n) =====
   UNSUPPORTED_PROVIDER: 'Unsupported provider: {{provider}}',

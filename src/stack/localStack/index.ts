@@ -1,8 +1,9 @@
 import { RouteHandler, RouteKind } from '../../types/localStack';
-import { servLocal, stopLocal } from './localServer';
+import { servLocal, stopLocal as stopLocalServer } from './localServer';
 import { eventsHandler } from './event';
 import { functionsHandler } from './function';
 import { bucketsHandler } from './bucket';
+import { startLocalTimers, stopLocalTimers } from './timer';
 import { ServerlessIac } from '../../types';
 
 export * from './event';
@@ -16,4 +17,11 @@ const handlers: Array<{ kind: RouteKind; handler: RouteHandler }> = [
 
 export const startLocalStack = async (iac: ServerlessIac) => {
   await servLocal(handlers, iac);
+  // functions.*.triggers.timer fire locally too (issue #258)
+  startLocalTimers(iac);
+};
+
+const stopLocal = async (): Promise<void> => {
+  stopLocalTimers();
+  await stopLocalServer();
 };

@@ -135,6 +135,7 @@ si schema | jq '.$id'   # IaC 格式的自包含 draft-07 JSON Schema
 无需部署到云端，即可本地运行和调试你的 Serverless 函数。
 
 - **LocalStack 服务** —— 在本地测试函数、存储桶和 API 端点
+- **定时触发器本地触发** —— `functions.*.triggers.timer` 调度按 UTC 墙钟执行（`@every` 自服务启动起算），以对应云平台的 timer 事件形状调用你的处理函数
 - **存储桶文件服务** —— 通过 HTTP 访问本地存储文件，加速迭代
 - **同一配置，不同目标** —— `si local -f serverless.yml -s local` 复用你现有的配置
 

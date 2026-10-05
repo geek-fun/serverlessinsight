@@ -141,11 +141,11 @@ export const generateFunctionPlan = async (
                 if (!liveTimer) {
                   return true;
                 }
+                // GetFunction reports Enable as 1/0
                 return (
                   liveTimer.TriggerDesc !== translateSiCron(timer.cron, 'tencent') ||
                   (liveTimer.CustomArgument ?? undefined) !== timer.payload ||
-                  (liveTimer.Enable === 1 || liveTimer.Enable === ('OPEN' as unknown as number)) !==
-                    timer.enable
+                  (liveTimer.Enable === 1) !== timer.enable
                 );
               });
               if (extraTimer || desiredChanged) {

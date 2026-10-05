@@ -140,6 +140,7 @@ piped output clean in non-TTY environments.
 Run and debug your serverless functions locally without deploying to the cloud.
 
 - **LocalStack server** — test functions, buckets, and API endpoints locally
+- **Timer triggers fire locally** — `functions.*.triggers.timer` schedules run against UTC wall-clock (`@every` from server start) and invoke your handler with the provider's timer event shape
 - **Bucket file serving** — access local storage files via HTTP for rapid iteration
 - **Same config, different target** — `si local -f serverless.yml -s local` uses your existing config
 

@@ -3,7 +3,6 @@ import { ServerlessIac } from '../../types';
 import { FunctionOptions, ParsedRequest, RouteResponse } from '../../types/localStack';
 import { logger, readRequestBody, ProviderEnum } from '../../common';
 import { invokeFunction } from './functionRunner';
-import path from 'node:path';
 import fs from 'node:fs';
 import {
   transformToAliyunEvent,
@@ -11,7 +10,7 @@ import {
   transformFCResponse,
   generateRequestId,
 } from './aliyunFc';
-import { extractZipFile } from './utils';
+import { resolveCodeDir } from './utils';
 import { lang } from '../../lang';
 
 export const functionsHandler = async (
@@ -44,18 +43,8 @@ export const functionsHandler = async (
   let tempDir: string | null = null;
 
   try {
-    const codePath = path.resolve(process.cwd(), fcDef.code.path);
-
-    let codeDir: string;
-
-    if (codePath.endsWith('.zip') && fs.existsSync(codePath)) {
-      tempDir = await extractZipFile(codePath);
-      codeDir = tempDir;
-    } else if (fs.existsSync(codePath) && fs.statSync(codePath).isDirectory()) {
-      codeDir = codePath;
-    } else {
-      codeDir = path.dirname(codePath);
-    }
+    const { codeDir, tempDir: resolvedTempDir } = await resolveCodeDir(fcDef.code.path);
+    tempDir = resolvedTempDir;
 
     const funOptions: FunctionOptions = {
       codeDir,
