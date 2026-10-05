@@ -30,17 +30,26 @@ jobs:
       - run: npm audit --audit-level=critical
       - run: npm run build
       - run: npm run test:ci
-      # Coverage upload is reporting infrastructure, not a product gate — the
-      # gates themselves are lint/build/test above. An upload-side TLS blip
-      # (codecov handshake failures are transient) must not turn the run red,
-      # so: retry once on the next attempt instead of failing the job.
+      # The codecov endpoint occasionally drops TLS handshakes (transient
+      # EPROTO failures). The upload must still gate the job when it
+      # persistently fails (fail_ci_if_error: true), so: first attempt is
+      # soft, and an explicit retry re-runs the upload with strict failure —
+      # only a persistent failure turns the run red.
       - name: Upload coverage reports to Codecov
         if: matrix.os == 'ubuntu-latest'
         uses: codecov/codecov-action@v5
-        id: codecov
+        id: codecov_upload
+        continue-on-error: true
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
           verbose: true
-          fail_ci_if_error: false
+          fail_ci_if_error: true
+      - name: Retry coverage upload to Codecov
+        if: matrix.os == 'ubuntu-latest' && steps.codecov_upload.outcome == 'failure'
+        uses: codecov/codecov-action@v5
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}
+          verbose: true
+          fail_ci_if_error: true
 
       - run: npm run build
