@@ -977,3 +977,87 @@ describe('vefaasOperations code size validation', () => {
     });
   });
 });
+
+describe('vefaasOperations trigger operations (issue #258)', () => {
+  let operations: ReturnType<typeof createVefaasOperations>;
+  let mockedFetch: jest.Mock;
+
+  beforeEach(() => {
+    const ServiceMock = Service as unknown as jest.Mock;
+    const client = new ServiceMock();
+    mockedFetch = client.fetchOpenAPI as jest.Mock;
+    operations = createVefaasOperations(client);
+  });
+
+  it('createTrigger sends FunctionId/Name/SourceType Timer with JSON Source', async () => {
+    await operations.createTrigger({
+      functionId: 'func-123',
+      name: 'billing-run',
+      source: { cron: '23 11 * * *', enable: true },
+    });
+
+    expect(mockedFetch).toHaveBeenCalledWith(
+      expect.objectContaining({
+        Action: 'CreateTrigger',
+        Version: '2024-06-06',
+        method: 'POST',
+        data: {
+          FunctionId: 'func-123',
+          Name: 'billing-run',
+          SourceType: 'Timer',
+          Source: JSON.stringify({ cron: '23 11 * * *', enable: true }),
+        },
+      }),
+    );
+  });
+
+  it('listTriggers normalizes Result.Triggers entries', async () => {
+    mockedFetch.mockResolvedValue({
+      Result: {
+        Triggers: [
+          { Id: 't-1', Name: 'billing-run', SourceType: 'Timer', Source: '{"cron":"23 11 * * *"}' },
+          { Id: 't-2', Name: 'ghost', SourceType: 'Timer' },
+        ],
+      },
+    });
+
+    const triggers = await operations.listTriggers('func-123');
+
+    expect(triggers).toEqual([
+      { id: 't-1', name: 'billing-run', sourceType: 'Timer', source: '{"cron":"23 11 * * *"}' },
+      { id: 't-2', name: 'ghost', sourceType: 'Timer', source: undefined },
+    ]);
+  });
+
+  it('listTriggers falls back to Result.Items and TriggerId/TriggerName aliases', async () => {
+    mockedFetch.mockResolvedValue({
+      Result: {
+        Items: [{ TriggerId: 't-9', TriggerName: 'alias' }],
+      },
+    });
+
+    const triggers = await operations.listTriggers('func-123');
+
+    expect(triggers).toEqual([
+      { id: 't-9', name: 'alias', sourceType: undefined, source: undefined },
+    ]);
+  });
+
+  it('listTriggers tolerates an empty Result', async () => {
+    mockedFetch.mockResolvedValue({});
+
+    expect(await operations.listTriggers('func-123')).toEqual([]);
+  });
+
+  it('deleteTrigger sends FunctionId and TriggerId', async () => {
+    await operations.deleteTrigger('func-123', 't-1');
+
+    expect(mockedFetch).toHaveBeenCalledWith(
+      expect.objectContaining({
+        Action: 'DeleteTrigger',
+        Version: '2024-06-06',
+        data: { FunctionId: 'func-123', TriggerId: 't-1' },
+      }),
+    );
+  });
+});

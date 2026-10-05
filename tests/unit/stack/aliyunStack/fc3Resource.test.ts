@@ -1030,6 +1030,202 @@ describe('Fc3Resource', () => {
       expect(deleteOrder).toEqual(['trigger:billing-run', 'function']);
     });
 
+    it('falls back to state as the baseline when the live trigger probe fails', async () => {
+      mockedFc3Operations.listTriggers.mockRejectedValue(new Error('ListTriggers throttled'));
+
+      const stateWithTimer: StateFile = {
+        ...initialState,
+        resources: {
+          'functions.test_fn': {
+            mode: 'managed',
+            region: 'cn-hangzhou',
+            definition: mockDefinition,
+            instances: [
+              {
+                sid: 'si:aliyun:fc3:default:test-function',
+                id: 'test-function',
+                type: 'ALIYUN_FC3_FUNCTION',
+              },
+              {
+                sid: 'si:aliyun:fc3-timer-trigger:default:test-function.billing-run',
+                id: 'billing-run',
+                type: 'ALIYUN_FC3_TIMER_TRIGGER',
+                attributes: { cron: '0 23 3 * * *', enable: true },
+              },
+            ],
+            lastUpdated: '2025-01-01T00:00:00Z',
+          },
+        },
+      };
+      const fnWithTimer = {
+        ...testFunction,
+        triggers: { timer: [{ name: 'billing-run', cron: '0 23 3 * * *', enable: true }] },
+      };
+      mockedStateManager.setResource.mockReturnValue(initialState);
+
+      await updateResource(mockContext, fnWithTimer, stateWithTimer);
+
+      // baseline from state matches desired → no churn
+      expect(mockedFc3Operations.createTrigger).not.toHaveBeenCalled();
+      expect(mockedFc3Operations.deleteTrigger).not.toHaveBeenCalled();
+    });
+
+    it('deletes stale state-recorded timers when the probe fails and the yml dropped them', async () => {
+      mockedFc3Operations.listTriggers.mockRejectedValue(new Error('ListTriggers throttled'));
+
+      const stateWithStaleTimer: StateFile = {
+        ...initialState,
+        resources: {
+          'functions.test_fn': {
+            mode: 'managed',
+            region: 'cn-hangzhou',
+            definition: mockDefinition,
+            instances: [
+              {
+                sid: 'si:aliyun:fc3:default:test-function',
+                id: 'test-function',
+                type: 'ALIYUN_FC3_FUNCTION',
+              },
+              {
+                sid: 'si:aliyun:fc3-timer-trigger:default:test-function.ghost',
+                id: 'ghost',
+                type: 'ALIYUN_FC3_TIMER_TRIGGER',
+                attributes: { cron: '0 0 * * *', enable: true },
+              },
+            ],
+            lastUpdated: '2025-01-01T00:00:00Z',
+          },
+        },
+      };
+      mockedStateManager.setResource.mockReturnValue(initialState);
+
+      await updateResource(mockContext, testFunction, stateWithStaleTimer);
+
+      expect(mockedFc3Operations.deleteTrigger).toHaveBeenCalledWith('test-function', 'ghost');
+    });
+
+    it('warns and registers when createTrigger reports the trigger already attached', async () => {
+      const stateNoTimers: StateFile = {
+        ...initialState,
+        resources: {
+          'functions.test_fn': {
+            mode: 'managed',
+            region: 'cn-hangzhou',
+            definition: mockDefinition,
+            instances: [
+              {
+                sid: 'si:aliyun:fc3:default:test-function',
+                id: 'test-function',
+                type: 'ALIYUN_FC3_FUNCTION',
+              },
+            ],
+            lastUpdated: '2025-01-01T00:00:00Z',
+          },
+        },
+      };
+      // probe sees nothing, create hits a leftover trigger from an adopted fn
+      mockedFc3Operations.listTriggers.mockResolvedValue([]);
+      const alreadyExists = new Error('trigger already exist');
+      mockedFc3Operations.createTrigger.mockRejectedValue(alreadyExists);
+      mockedStateManager.setResource.mockReturnValue(initialState);
+
+      const fnWithTimer = {
+        ...testFunction,
+        triggers: { timer: [{ name: 'billing-run', cron: '0 23 3 * * *', enable: true }] },
+      };
+
+      await updateResource(mockContext, fnWithTimer, stateNoTimers);
+
+      expect(mockedLogger.warn).toHaveBeenCalled();
+    });
+
+    it('recreates the timer when the delete of the old one reports TriggerNotFound', async () => {
+      mockedFc3Operations.listTriggers.mockResolvedValue([
+        {
+          triggerName: 'billing-run',
+          triggerType: 'timer',
+          triggerConfig: { cronExpression: '0 23 12 * * *', payload: '', enable: true },
+        },
+      ]);
+      mockedFc3Operations.deleteTrigger.mockRejectedValue({ code: 'TriggerNotFound' });
+      mockedFc3Operations.createTrigger.mockResolvedValue(undefined);
+
+      const stateWithTimer: StateFile = {
+        ...initialState,
+        resources: {
+          'functions.test_fn': {
+            mode: 'managed',
+            region: 'cn-hangzhou',
+            definition: mockDefinition,
+            instances: [
+              {
+                sid: 'si:aliyun:fc3:default:test-function',
+                id: 'test-function',
+                type: 'ALIYUN_FC3_FUNCTION',
+              },
+              {
+                sid: 'si:aliyun:fc3-timer-trigger:default:test-function.billing-run',
+                id: 'billing-run',
+                type: 'ALIYUN_FC3_TIMER_TRIGGER',
+                attributes: { cron: '0 23 3 * * *', enable: true },
+              },
+            ],
+            lastUpdated: '2025-01-01T00:00:00Z',
+          },
+        },
+      };
+      const fnWithTimer = {
+        ...testFunction,
+        triggers: { timer: [{ name: 'billing-run', cron: '0 23 3 * * *', enable: true }] },
+      };
+      mockedStateManager.setResource.mockReturnValue(initialState);
+
+      await updateResource(mockContext, fnWithTimer, stateWithTimer);
+
+      expect(mockedFc3Operations.createTrigger).toHaveBeenCalledWith(
+        'test-function',
+        'billing-run',
+        'timer',
+        expect.anything(),
+        undefined,
+        undefined,
+      );
+    });
+
+    it('warns and continues when deleting a timer reports TriggerNotFound during deleteResource', async () => {
+      const stateWithTimer: StateFile = {
+        ...initialState,
+        resources: {
+          'functions.test_fn': {
+            mode: 'managed',
+            region: 'cn-hangzhou',
+            definition: mockDefinition,
+            instances: [
+              {
+                sid: 'si:aliyun:fc3:default:test-function',
+                id: 'test-function',
+                type: 'ALIYUN_FC3_FUNCTION',
+              },
+              {
+                sid: 'si:aliyun:fc3-timer-trigger:default:test-function.billing-run',
+                id: 'billing-run',
+                type: 'ALIYUN_FC3_TIMER_TRIGGER',
+                attributes: { cron: '0 23 3 * * *', enable: true },
+              },
+            ],
+            lastUpdated: '2025-01-01T00:00:00Z',
+          },
+        },
+      };
+      mockedFc3Operations.deleteTrigger.mockRejectedValue({ code: 'TriggerNotFound' });
+      mockedFc3Operations.deleteFunction.mockResolvedValue(undefined);
+      mockedStateManager.removeResource.mockReturnValue(initialState);
+
+      await deleteResource(mockContext, 'test-function', 'functions.test_fn', stateWithTimer);
+
+      expect(mockedFc3Operations.deleteFunction).toHaveBeenCalled();
+    });
+
     it('should create custom domain when domain is configured', async () => {
       const fnWithDomain = {
         ...testFunction,

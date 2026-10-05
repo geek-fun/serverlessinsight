@@ -1041,6 +1041,33 @@ describe('vefaasPlanner', () => {
         });
       });
 
+      it('flags the timer drift reason when a live source config is malformed', async () => {
+        mockVefaasClient.vefaas.listTriggers = jest.fn().mockResolvedValue([
+          {
+            id: 'trig-1',
+            name: 'billing-run',
+            sourceType: 'Timer',
+            source: '{broken json',
+          },
+        ]);
+
+        const plan = await generateFunctionPlan(mockContext, buildTimerState(), [fnWithTimer]);
+
+        expect(plan.items[0]).toMatchObject({
+          action: 'update',
+          drifted: true,
+          driftReasons: ['PLAN_DRIFT_TIMER_TRIGGER'],
+        });
+      });
+
+      it('warns and stays noop when the trigger probe fails', async () => {
+        mockVefaasClient.vefaas.listTriggers = jest.fn().mockRejectedValue(new Error('down'));
+
+        const plan = await generateFunctionPlan(mockContext, buildTimerState(), [fnWithTimer]);
+
+        expect(plan.items[0]).toMatchObject({ action: 'noop' });
+      });
+
       it('flags the timer drift reason when the console edited the cron', async () => {
         mockVefaasClient.vefaas.listTriggers = jest.fn().mockResolvedValue([
           {

@@ -3142,6 +3142,109 @@ describe('ScfResource', () => {
       );
     });
 
+    it('wraps reconcile failures into PartialResourceError on create', async () => {
+      const taintedState = {
+        ...initialState,
+        resources: {
+          'functions.test_fn': {
+            mode: 'managed',
+            region: 'ap-guangzhou',
+            definition: mockDefinition,
+            instances: [],
+            lastUpdated: expect.any(String),
+            status: 'tainted',
+          },
+        },
+      };
+      (stateManager.setResource as jest.Mock).mockReturnValue(taintedState);
+      // timer reconcile's probe fails AND create fails with a non-recoverable error
+      mockScfOperations.getFunction
+        .mockRejectedValueOnce(new Error('GetFunction down'))
+        .mockRejectedValue(new Error('GetFunction down'));
+      mockScfOperations.createTrigger.mockRejectedValue(new Error('CreateTrigger exploded'));
+
+      await expect(createResource(mockContext, fnWithTimer, initialState)).rejects.toMatchObject({
+        name: 'PartialResourceError',
+      });
+    });
+
+    it('warns and registers when createTrigger reports the trigger already attached', async () => {
+      const finalState = {
+        ...initialState,
+        resources: {
+          'functions.test_fn': {
+            mode: 'managed',
+            region: 'ap-guangzhou',
+            definition: mockDefinition,
+            instances: expect.any(Array),
+            lastUpdated: expect.any(String),
+            status: 'ready',
+          },
+        },
+      };
+      (stateManager.setResource as jest.Mock).mockReturnValue(finalState);
+      mockScfOperations.getFunction.mockResolvedValue({
+        ...mockFunctionInfo,
+        Triggers: [],
+      });
+      mockScfOperations.createTrigger.mockRejectedValue(new Error('trigger already exist'));
+
+      await createResource(mockContext, fnWithTimer, initialState);
+
+      expect(mockScfOperations.createTrigger).toHaveBeenCalled();
+      const finalCall = (stateManager.setResource as jest.Mock).mock.calls.at(-1);
+      const instances = finalCall[2].instances as Array<Record<string, unknown>>;
+      expect(instances.some((instance) => instance.type === 'TENCENT_SCF_TIMER_TRIGGER')).toBe(
+        true,
+      );
+    });
+
+    it('rethrows non-already-exists createTrigger failures during update', async () => {
+      (stateManager.getResource as jest.Mock).mockReturnValue(
+        stateWithFunctionAndTimer.resources['functions.test_fn'],
+      );
+      mockScfOperations.getFunction
+        .mockResolvedValueOnce({
+          ...mockFunctionInfo,
+          Triggers: [
+            {
+              TriggerName: 'billing-run',
+              Type: 'timer',
+              TriggerDesc: '0 23 12 * * * *',
+              Enable: 1,
+            },
+          ],
+        })
+        .mockResolvedValue({ ...mockFunctionInfo });
+      mockScfOperations.deleteTrigger.mockResolvedValue(undefined);
+      mockScfOperations.createTrigger.mockRejectedValue(new Error('CreateTrigger exploded'));
+
+      await expect(
+        updateResource(mockContext, fnWithTimer, stateWithFunctionAndTimer),
+      ).rejects.toThrow('CreateTrigger exploded');
+    });
+
+    it('tolerates ResourceNotFound when deleting timers during deleteResource', async () => {
+      (stateManager.getResource as jest.Mock).mockReturnValue(
+        stateWithFunctionAndTimer.resources['functions.test_fn'],
+      );
+      mockScfOperations.deleteTrigger.mockRejectedValue({
+        code: 'ResourceNotFound.TriggerName',
+      });
+      (stateManager.removeResource as jest.Mock).mockReturnValue(initialState);
+
+      await deleteResource(
+        mockContext,
+        'test-function',
+        'functions.test_fn',
+        stateWithFunctionAndTimer,
+      );
+
+      expect(mockScfOperations.deleteTrigger).toHaveBeenCalledWith(
+        expect.objectContaining({ Type: 'timer' }),
+      );
+    });
+
     it('should delete timer triggers before the function', async () => {
       (stateManager.getResource as jest.Mock).mockReturnValue(
         stateWithFunctionAndTimer.resources['functions.test_fn'],
