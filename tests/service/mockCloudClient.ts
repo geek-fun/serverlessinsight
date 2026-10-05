@@ -12,6 +12,7 @@ export type MockAliyunClient = {
     deleteFunction: jest.Mock;
     createTrigger: jest.Mock;
     deleteTrigger: jest.Mock;
+    listTriggers: jest.Mock;
     createCustomDomain: jest.Mock;
     getCustomDomain: jest.Mock;
     deleteCustomDomain: jest.Mock;
@@ -160,6 +161,9 @@ export const createMockAliyunClient = (): MockAliyunClient => {
       deleteFunction: jest.fn().mockResolvedValue({}),
       createTrigger: jest.fn().mockResolvedValue({ body: { triggerName: 'http-trigger' } }),
       deleteTrigger: jest.fn().mockResolvedValue({}),
+      // No timer triggers exist until a test's createTrigger implementation
+      // registers one — the executor/planner reconcile reads this baseline.
+      listTriggers: jest.fn().mockResolvedValue([]),
       createCustomDomain: jest.fn().mockResolvedValue({ body: { domainName: 'api.example.com' } }),
       getCustomDomain: jest.fn().mockResolvedValue(null),
       deleteCustomDomain: jest.fn().mockResolvedValue({}),
@@ -440,6 +444,9 @@ export type MockVolcengineClient = {
     updateFunctionCode: jest.Mock;
     deleteFunction: jest.Mock;
     listFunctions: jest.Mock;
+    createTrigger: jest.Mock;
+    listTriggers: jest.Mock;
+    deleteTrigger: jest.Mock;
   };
   tos: {
     createBucket: jest.Mock;
@@ -519,6 +526,10 @@ export const createMockVolcengineClient = (): MockVolcengineClient => ({
     updateFunctionCode: jest.fn().mockResolvedValue(undefined),
     deleteFunction: jest.fn().mockResolvedValue(undefined),
     listFunctions: jest.fn().mockResolvedValue([]),
+    createTrigger: jest.fn().mockResolvedValue(undefined),
+    // Empty timer baseline — tests override to simulate existing triggers.
+    listTriggers: jest.fn().mockResolvedValue([]),
+    deleteTrigger: jest.fn().mockResolvedValue(undefined),
   },
   tos: {
     createBucket: jest.fn().mockResolvedValue({

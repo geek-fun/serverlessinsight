@@ -6,15 +6,19 @@ import {
   HttpTrigger,
   HttpTriggerRaw,
   NasStorageClassEnum,
+  TimerTrigger,
+  TimerTriggerRaw,
 } from '../types';
 import { isEmpty } from 'lodash';
 import {
   parseBoolean,
+  parseBooleanWithDefault,
   parseNumber,
   parseNumberWithDefault,
   parseStringWithDefault,
 } from './parseUtils';
 import { lang } from '../lang';
+import { validateSiCron } from '../common/siCron';
 
 const parseHttpTrigger = (
   raw: HttpTriggerRaw | undefined,
@@ -32,6 +36,47 @@ const parseHttpTrigger = (
     auth_type: authType as 'public' | 'iam',
     access: raw.access?.map(String) as Array<'public' | 'internal'> | undefined,
   };
+};
+
+const parseTimerTriggers = (
+  raw: Array<TimerTriggerRaw> | undefined,
+  fnKey: string,
+): Array<TimerTrigger> | undefined => {
+  if (!raw || raw.length === 0) {
+    return undefined;
+  }
+  // template refs (${vars.cron}) resolve at runtime — grammar is checked after
+  const TEMPLATE_REF_PATTERN = /^\$\{[^}]+\}$/;
+  const timers = raw.map((item) => {
+    if (item.name === undefined || String(item.name).trim() === '') {
+      throw new Error(lang.__('TIMER_TRIGGER_NAME_REQUIRED', { functionName: fnKey }));
+    }
+    const name = String(item.name);
+    if (item.cron === undefined || String(item.cron).trim() === '') {
+      throw new Error(lang.__('TIMER_TRIGGER_CRON_REQUIRED', { name }));
+    }
+    const cron = String(item.cron);
+    if (!TEMPLATE_REF_PATTERN.test(cron)) {
+      validateSiCron(cron);
+    }
+    return {
+      name,
+      cron,
+      ...(item.payload !== undefined ? { payload: String(item.payload) } : {}),
+      enable: parseBooleanWithDefault(item.enable, true),
+      ...(item.description !== undefined ? { description: String(item.description) } : {}),
+    };
+  });
+
+  const duplicate = timers.find(
+    (timer, index) => timers.findIndex((peer) => peer.name === timer.name) !== index,
+  );
+  if (duplicate) {
+    throw new Error(
+      lang.__('TIMER_TRIGGER_DUPLICATE_NAME', { name: duplicate.name, functionName: fnKey }),
+    );
+  }
+  return timers;
 };
 
 const parseDomain = (
@@ -53,6 +98,7 @@ export const parseFunction = (functions?: {
   }
   return Object.entries(functions).map(([key, func]) => {
     const httpTrigger = parseHttpTrigger(func.triggers?.http, key);
+    const timerTriggers = parseTimerTriggers(func.triggers?.timer, key);
     const domain = parseDomain(func.domain);
 
     return {
@@ -120,7 +166,14 @@ export const parseFunction = (functions?: {
           storage_class: nasItem.storage_class as NasStorageClassEnum,
         })),
       },
-      ...(httpTrigger ? { triggers: { http: httpTrigger } } : {}),
+      ...(httpTrigger || timerTriggers
+        ? {
+            triggers: {
+              ...(httpTrigger ? { http: httpTrigger } : {}),
+              ...(timerTriggers ? { timer: timerTriggers } : {}),
+            },
+          }
+        : {}),
       ...(domain ? { domain } : {}),
     };
   });

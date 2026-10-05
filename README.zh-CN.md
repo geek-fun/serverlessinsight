@@ -147,6 +147,37 @@ si schema | jq '.$id'   # IaC 格式的自包含 draft-07 JSON Schema
 - **CDN 加速** —— 为静态站点提供边缘缓存与全球内容分发
 - **OSS 传输加速** —— 通过阿里云骨干网进行跨区域数据传输
 
+### 定时触发器
+
+在 `functions.*.triggers.timer` 下使用 provider 无关的 `si-cron` 表达式调度函数：
+
+```yaml
+functions:
+  my_fn:
+    triggers:
+      timer:
+        - name: billing-run            # 必填 —— 漂移检测按 name 定位
+          cron: '0 23 3 * * *'         # 必填 —— si-cron，按 UTC 解释
+          payload: '{"job":"billing-run"}'  # 可选，原样透传
+          enable: true                 # 可选，默认 true
+          description: 每日出账       # 可选
+        - name: report-hourly
+          cron: '@every 1h'
+```
+
+`cron` 支持标准 5 段表达式（`分 时 日 月 周`）、带秒前缀的 6 段，或
+`@every <时长>`（`30s`、`5m`、`1h`、`1d` 等）。si-cron 一律按 **UTC** 解释——
+合成层负责翻译成各家方言（阿里云 FC3 六段、腾讯云 SCF 含年的七段、火山引擎
+veFaaS 五段 crontab），并完成 UTC+8 字段平移，因此同一份 YAML 在所有云平台
+触发时刻一致。非法表达式与平台能力上限（腾讯云 SCF 单函数最多 10 个定时触发器）
+在 `si validate` 阶段即报错，不会进入部署。
+
+**`functions.*.triggers` 与顶层 `events` 的区分**：`triggers`（http、timer）
+是「调用本函数的东西」——函数级归属、随函数级联删除、没有独立配置面。顶层
+`events`（如 `API_GATEWAY`）是拥有独立配置面的基础设施资源——自定义域名、
+证书、路由表——删除后端函数后它们依然存在。经验法则：有独立配置面 →
+`events`；纯调度/事件绑定 → `triggers`。
+
 ### 资源管理
 
 不止于函数——管理包含存储、数据库等在内的完整 Serverless 技术栈。

@@ -401,6 +401,124 @@ describe('parseFunction', () => {
     });
   });
 
+  describe('triggers.timer', () => {
+    it('should parse timer triggers with defaults (enable true)', () => {
+      const result = parseFunction({
+        fn: {
+          name: 'timer-fn',
+          triggers: {
+            timer: [{ name: 'billing-run', cron: '0 23 3 * * *' }],
+          },
+        },
+      });
+
+      expect(result![0].triggers?.timer).toEqual([
+        { name: 'billing-run', cron: '0 23 3 * * *', enable: true },
+      ]);
+    });
+
+    it('should parse payload, enable and description', () => {
+      const result = parseFunction({
+        fn: {
+          name: 'timer-fn',
+          triggers: {
+            timer: [
+              {
+                name: 'billing-run',
+                cron: '@every 1h',
+                payload: '{"job":"billing-run"}',
+                enable: false,
+                description: 'hourly billing',
+              },
+            ],
+          },
+        },
+      });
+
+      expect(result![0].triggers?.timer).toEqual([
+        {
+          name: 'billing-run',
+          cron: '@every 1h',
+          payload: '{"job":"billing-run"}',
+          enable: false,
+          description: 'hourly billing',
+        },
+      ]);
+    });
+
+    it('should parse multiple named timers and http together', () => {
+      const result = parseFunction({
+        fn: {
+          name: 'timer-fn',
+          triggers: {
+            http: { auth_type: 'public' as const },
+            timer: [
+              { name: 'one', cron: '0 0 * * *' },
+              { name: 'two', cron: '@every 30m' },
+            ],
+          },
+        },
+      });
+
+      expect(result![0].triggers?.http).toBeDefined();
+      expect(result![0].triggers?.timer).toHaveLength(2);
+    });
+
+    it('should skip si-cron validation for template-ref cron', () => {
+      const result = parseFunction({
+        fn: {
+          name: 'timer-fn',
+          triggers: { timer: [{ name: 'one', cron: '${vars.cron}' }] },
+        },
+      });
+
+      expect(result![0].triggers?.timer?.[0].cron).toBe('${vars.cron}');
+    });
+
+    it('should throw when name is missing', () => {
+      expect(() =>
+        parseFunction({
+          fn: {
+            name: 'timer-fn',
+            triggers: { timer: [{ cron: '0 0 * * *' } as never] },
+          },
+        }),
+      ).toThrow('TIMER_TRIGGER_NAME_REQUIRED');
+    });
+
+    it('should throw when cron is missing', () => {
+      expect(() =>
+        parseFunction({
+          fn: { name: 'timer-fn', triggers: { timer: [{ name: 'one' } as never] } },
+        }),
+      ).toThrow('TIMER_TRIGGER_CRON_REQUIRED');
+    });
+
+    it('should throw on invalid si-cron', () => {
+      expect(() =>
+        parseFunction({
+          fn: { name: 'timer-fn', triggers: { timer: [{ name: 'one', cron: 'not a cron' }] } },
+        }),
+      ).toThrow();
+    });
+
+    it('should throw on duplicate timer names', () => {
+      expect(() =>
+        parseFunction({
+          fn: {
+            name: 'timer-fn',
+            triggers: {
+              timer: [
+                { name: 'dup', cron: '0 0 * * *' },
+                { name: 'dup', cron: '@every 1h' },
+              ],
+            },
+          },
+        }),
+      ).toThrow('TIMER_TRIGGER_DUPLICATE_NAME');
+    });
+  });
+
   describe('domain', () => {
     it('should parse domain with domain_name only', () => {
       const result = parseFunction({

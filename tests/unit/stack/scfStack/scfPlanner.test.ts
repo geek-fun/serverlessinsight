@@ -344,6 +344,125 @@ describe('SCF Planner', () => {
       );
     });
 
+    describe('timer trigger drift (issue #258)', () => {
+      const fnWithTimer = {
+        ...testFunction,
+        triggers: { timer: [{ name: 'billing-run', cron: '0 23 3 * * *', enable: true }] },
+      };
+
+      const buildTimerState = (): StateFile =>
+        setResource(initalState, 'functions.test_fn', {
+          mode: 'managed',
+          region: 'ap-guangzhou',
+          definition: {
+            functionName: 'test-function',
+            runtime: 'Nodejs18.15',
+            handler: 'index.handler',
+            memorySize: 512,
+            timeout: 10,
+            environment: { NODE_ENV: 'production' },
+            codeHash: 'mock-code-hash',
+            vpcConfig: null,
+            diskSize: null,
+            cfsConfig: null,
+            useGpu: null,
+            imageConfig: null,
+          },
+          instances: [
+            {
+              sid: 'si:tencent:scf:default:test-function',
+              id: 'test-function',
+              functionName: 'test-function',
+            },
+            {
+              sid: 'si:tencent:scf-timer-trigger:default:test-function.billing-run',
+              id: 'billing-run',
+              type: 'TENCENT_SCF_TIMER_TRIGGER',
+              cron: '0 23 3 * * *',
+              enable: true,
+            },
+          ],
+          lastUpdated: new Date().toISOString(),
+        });
+
+      beforeEach(() => {
+        mockScfOperations.getFunction.mockResolvedValue({
+          FunctionName: 'test-function',
+          Runtime: 'Nodejs18.15',
+          Handler: 'index.handler',
+          MemorySize: 512,
+          Timeout: 10,
+          Environment: {
+            Variables: [{ Key: 'NODE_ENV', Value: 'production' }],
+          },
+        });
+      });
+
+      it('stays noop when live timers match the translated cron', async () => {
+        mockScfOperations.getFunction.mockResolvedValue({
+          FunctionName: 'test-function',
+          Runtime: 'Nodejs18.15',
+          Handler: 'index.handler',
+          MemorySize: 512,
+          Timeout: 10,
+          Environment: {
+            Variables: [{ Key: 'NODE_ENV', Value: 'production' }],
+          },
+          Triggers: [
+            {
+              TriggerName: 'billing-run',
+              Type: 'timer',
+              TriggerDesc: '0 23 11 * * * *',
+              Enable: 1,
+            },
+          ],
+        });
+
+        const plan = await generateFunctionPlan(mockContext, buildTimerState(), [fnWithTimer]);
+
+        expect(plan.items[0]).toMatchObject({ action: 'noop' });
+      });
+
+      it('flags the timer drift reason when the trigger was deleted in the cloud', async () => {
+        const plan = await generateFunctionPlan(mockContext, buildTimerState(), [fnWithTimer]);
+
+        expect(plan.items[0]).toMatchObject({
+          action: 'update',
+          drifted: true,
+          driftReasons: ['PLAN_DRIFT_TIMER_TRIGGER'],
+        });
+      });
+
+      it('flags the timer drift reason when the console edited the cron', async () => {
+        mockScfOperations.getFunction.mockResolvedValue({
+          FunctionName: 'test-function',
+          Runtime: 'Nodejs18.15',
+          Handler: 'index.handler',
+          MemorySize: 512,
+          Timeout: 10,
+          Environment: {
+            Variables: [{ Key: 'NODE_ENV', Value: 'production' }],
+          },
+          Triggers: [
+            {
+              TriggerName: 'billing-run',
+              Type: 'timer',
+              TriggerDesc: '0 23 12 * * * *',
+              Enable: 1,
+            },
+          ],
+        });
+
+        const plan = await generateFunctionPlan(mockContext, buildTimerState(), [fnWithTimer]);
+
+        expect(plan.items[0]).toMatchObject({
+          action: 'update',
+          drifted: true,
+          driftReasons: ['PLAN_DRIFT_TIMER_TRIGGER'],
+        });
+      });
+    });
+
     describe('nested topic drift (issue #234 M3)', () => {
       const fnWithLog = { ...testFunction, log: true };
       const topicInstance = {

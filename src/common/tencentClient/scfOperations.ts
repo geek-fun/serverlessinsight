@@ -263,6 +263,8 @@ export const createScfOperations = (scfClient: ScfSdkClient, deps: ScfOperations
       TriggerDesc?: string;
       Qualifier?: string;
       Enable?: string;
+      CustomArgument?: string;
+      Description?: string;
     }): Promise<void> => {
       await scfClient.CreateTrigger({
         FunctionName: params.FunctionName,
@@ -271,6 +273,8 @@ export const createScfOperations = (scfClient: ScfSdkClient, deps: ScfOperations
         ...(params.TriggerDesc ? { TriggerDesc: params.TriggerDesc } : {}),
         ...(params.Qualifier ? { Qualifier: params.Qualifier } : {}),
         ...(params.Enable ? { Enable: params.Enable } : {}),
+        ...(params.CustomArgument !== undefined ? { CustomArgument: params.CustomArgument } : {}),
+        ...(params.Description ? { Description: params.Description } : {}),
       });
     },
 

@@ -8,6 +8,7 @@ import {
   remoteDiffersFromDesired,
 } from '../../common/planCompare';
 import { PLAN_READ_CONCURRENCY, mapWithConcurrency } from '../../common/concurrency';
+import { translateSiCron } from '../../common/siCron';
 import {
   Context,
   FunctionDomain,
@@ -346,6 +347,69 @@ export const generateFunctionPlan = async (
                 }),
               );
             }
+          }
+        }
+
+        // Issue #258: timer trigger drift — the live trigger list is compared
+        // against the desired timers (name-keyed). A trigger missing from the
+        // cloud (manual delete), an edited source config, or an extra
+        // undeclared timer all count as drift.
+        const timerStateInstances = currentState.instances.filter(
+          (i) => (i as { type?: string }).type === 'VOLCENGINE_VEFAAS_TIMER_TRIGGER',
+        );
+        const desiredTimers = fn.triggers?.timer ?? [];
+        if (
+          (desiredTimers.length > 0 || timerStateInstances.length > 0) &&
+          remoteFunction.functionId
+        ) {
+          try {
+            const liveTriggers = await cachedRefreshRead(
+              context,
+              `vefaas.listTriggers:${remoteFunction.functionId}`,
+              () => client.vefaas.listTriggers(remoteFunction.functionId as string),
+            );
+            const liveTimers = liveTriggers.filter(
+              (trigger) => trigger.sourceType?.toLowerCase() === 'timer',
+            );
+            const desiredNames = new Set(desiredTimers.map((timer) => timer.name));
+            const extraTimer = liveTimers.some(
+              (trigger) => !trigger.name || !desiredNames.has(trigger.name),
+            );
+            const desiredChanged = desiredTimers.some((timer) => {
+              const live = liveTimers.find((trigger) => trigger.name === timer.name);
+              if (!live) {
+                return true;
+              }
+              let source: Record<string, unknown>;
+              try {
+                source = JSON.parse(live.source ?? '{}') as Record<string, unknown>;
+              } catch {
+                return true;
+              }
+              return (
+                source.cron !== translateSiCron(timer.cron, 'volcengine') ||
+                source.enable !== timer.enable ||
+                (source.payload ?? undefined) !== timer.payload ||
+                (source.description ?? undefined) !== timer.description
+              );
+            });
+            if (extraTimer || desiredChanged) {
+              return {
+                logicalId,
+                action: 'update',
+                resourceType: 'VOLCENGINE_VEFAAS',
+                changes: { before: liveBefore, after: desiredDefinition },
+                drifted: true,
+                driftReasons: ['PLAN_DRIFT_TIMER_TRIGGER'],
+              };
+            }
+          } catch (error: unknown) {
+            logger.warn(
+              lang.__('PLAN_TIMER_TRIGGER_PROBE_FAILED', {
+                functionName: fn.name,
+                error: String(error),
+              }),
+            );
           }
         }
 

@@ -612,6 +612,15 @@ export type VolcengineClient = {
     ) => Promise<{ releaseRecordId?: string }>;
     deleteFunction: (functionId: string) => Promise<void>;
     listFunctions: () => Promise<VefaasFunctionInfo[]>;
+    createTrigger: (params: {
+      functionId: string;
+      name: string;
+      source: Record<string, unknown>;
+    }) => Promise<void>;
+    listTriggers: (
+      functionId: string,
+    ) => Promise<Array<{ id?: string; name?: string; sourceType?: string; source?: string }>>;
+    deleteTrigger: (functionId: string, triggerId: string) => Promise<void>;
   };
   tos: {
     createBucket: (config: TosBucketConfig) => Promise<TosBucketInfo>;

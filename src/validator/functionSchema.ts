@@ -10,6 +10,13 @@ import {
 const securityGroupRulePattern =
   '^[A-Za-z]+:\\d{1,3}(?:\\.\\d{1,3}){3}\\/\\d{1,2}:(?:ALL|\\d{1,5}(?:\\/\\d{1,5})?)$';
 
+/**
+ * Timer trigger names become physical cloud trigger names (FC3 triggerName,
+ * SCF TriggerName, veFaaS Name) — all three accept letters/digits/`-`/`_`
+ * with a 60-char budget on the strictest provider (Tencent).
+ */
+export const TIMER_TRIGGER_NAME_PATTERN = '^[A-Za-z][A-Za-z0-9_-]{0,59}$';
+
 export const functionSchema = {
   $id: 'https://serverlessinsight.geekfun.club/schemas/functionschema.json',
   type: 'object',
@@ -177,6 +184,23 @@ export const functionSchema = {
                   type: 'array',
                   items: resolvableEnum(['public', 'internal']),
                   minItems: 1,
+                },
+              },
+            },
+            timer: {
+              type: 'array',
+              items: {
+                type: 'object',
+                required: ['name', 'cron'],
+                additionalProperties: false,
+                properties: {
+                  name: resolvableConstrained({ pattern: TIMER_TRIGGER_NAME_PATTERN }),
+                  // si-cron syntax (issue #258); full grammar validation runs
+                  // in semantic validation where errors can carry the reason
+                  cron: resolvableConstrained({ pattern: '.+' }),
+                  payload: { type: 'string' },
+                  enable: resolvableBoolean,
+                  description: { type: 'string' },
                 },
               },
             },

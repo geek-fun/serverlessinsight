@@ -47,6 +47,7 @@ describe('vefaasPlanner', () => {
   const mockVefaasClient = {
     vefaas: {
       getFunction: jest.fn(),
+      listTriggers: jest.fn(),
     },
     tls: {
       getTopic: jest.fn(),
@@ -88,7 +89,7 @@ describe('vefaasPlanner', () => {
 
   describe('generateFunctionPlan', () => {
     let mockVefaasClient: {
-      vefaas: { getFunction: jest.Mock };
+      vefaas: { getFunction: jest.Mock; listTriggers: jest.Mock };
       tls: { getTopic: jest.Mock; modifyTopic: jest.Mock };
       iam: { getRole: jest.Mock; listAttachedRolePolicies: jest.Mock };
     };
@@ -97,6 +98,7 @@ describe('vefaasPlanner', () => {
       mockVefaasClient = {
         vefaas: {
           getFunction: jest.fn(),
+          listTriggers: jest.fn(),
         },
         tls: {
           getTopic: jest.fn(),
@@ -957,6 +959,106 @@ describe('vefaasPlanner', () => {
       ]);
 
       expect(plan.items[0]).toMatchObject({ action: 'update', drifted: true });
+    });
+
+    describe('timer trigger drift (issue #258)', () => {
+      const fnWithTimer = {
+        ...mockFunction,
+        triggers: { timer: [{ name: 'billing-run', cron: '0 23 3 * * *', enable: true }] },
+      } as FunctionDomain;
+
+      const buildTimerState = (): StateFile =>
+        ({
+          ...mockState,
+          resources: {
+            'functions.test_fn': {
+              mode: 'managed',
+              region: 'cn-beijing',
+              definition: {
+                functionName: 'test-function',
+                runtime: 'node20/v1',
+                handler: 'index.handler',
+                memorySize: 128,
+                timeout: 30,
+              },
+              instances: [
+                {
+                  type: 'VOLCENGINE_VEFAAS_FUNCTION',
+                  sid: 's',
+                  id: 'test-function',
+                  functionId: 'func-123',
+                },
+                {
+                  type: 'VOLCENGINE_VEFAAS_TIMER_TRIGGER',
+                  sid: 's2',
+                  id: 'billing-run',
+                  attributes: { cron: '0 23 3 * * *', enable: true },
+                },
+              ],
+              lastUpdated: '2024-01-01T00:00:00Z',
+              status: 'ready',
+            },
+          },
+        }) as StateFile;
+
+      beforeEach(() => {
+        // definition equality is not under test here — the function attribute
+        // diff is covered by its own describe block
+        jest.spyOn(hashUtils, 'attributesEqual').mockReturnValue(true);
+        mockVefaasClient.vefaas.getFunction.mockResolvedValue({
+          functionId: 'func-123',
+          runtime: 'node20/v1',
+          handler: 'index.handler',
+          memoryMb: 128,
+          requestTimeout: 30,
+        });
+      });
+
+      it('stays noop when the live timer config matches the translation', async () => {
+        mockVefaasClient.vefaas.listTriggers = jest.fn().mockResolvedValue([
+          {
+            id: 'trig-1',
+            name: 'billing-run',
+            sourceType: 'Timer',
+            source: JSON.stringify({ cron: '23 11 * * *', enable: true }),
+          },
+        ]);
+
+        const plan = await generateFunctionPlan(mockContext, buildTimerState(), [fnWithTimer]);
+
+        expect(plan.items[0]).toMatchObject({ action: 'noop' });
+      });
+
+      it('flags the timer drift reason when the trigger was deleted in the cloud', async () => {
+        mockVefaasClient.vefaas.listTriggers = jest.fn().mockResolvedValue([]);
+
+        const plan = await generateFunctionPlan(mockContext, buildTimerState(), [fnWithTimer]);
+
+        expect(plan.items[0]).toMatchObject({
+          action: 'update',
+          drifted: true,
+          driftReasons: ['PLAN_DRIFT_TIMER_TRIGGER'],
+        });
+      });
+
+      it('flags the timer drift reason when the console edited the cron', async () => {
+        mockVefaasClient.vefaas.listTriggers = jest.fn().mockResolvedValue([
+          {
+            id: 'trig-1',
+            name: 'billing-run',
+            sourceType: 'Timer',
+            source: JSON.stringify({ cron: '23 23 * * *', enable: true }),
+          },
+        ]);
+
+        const plan = await generateFunctionPlan(mockContext, buildTimerState(), [fnWithTimer]);
+
+        expect(plan.items[0]).toMatchObject({
+          action: 'update',
+          drifted: true,
+          driftReasons: ['PLAN_DRIFT_TIMER_TRIGGER'],
+        });
+      });
     });
 
     it('stays noop when the live TLS topic ttl matches (issue #234 M5)', async () => {

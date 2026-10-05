@@ -10,6 +10,7 @@ import {
   buildVolcengineRouteName,
   generateApiKey,
 } from '../common/providerNames';
+import { checkSiCronForProvider } from '../common/siCron';
 
 type EventTriggerRaw = {
   method?: unknown;
@@ -17,8 +18,17 @@ type EventTriggerRaw = {
   backend?: unknown;
 };
 
+type TimerTriggerRaw = {
+  name?: unknown;
+  cron?: unknown;
+  payload?: unknown;
+};
+
 const FUNCTION_BACKEND_PATTERN = /^\$\{functions\.([\w.]+)\}$/;
 const TEMPLATE_REF_PATTERN = /^\$\{[^}]+\}$/;
+
+/** Tencent SCF allows at most 10 same-type triggers per function (#212 matrix). */
+const TENCENT_TIMER_TRIGGER_LIMIT = 10;
 
 /**
  * Stage is intentionally empty here: it is identical for every generated name
@@ -51,7 +61,7 @@ export const validateSemantics = (iacJson: ServerlessIacRaw): Array<ErrorObject>
 
   Object.entries(functionDefinitions).forEach(([fnKey, rawFn]) => {
     if (!rawFn || typeof rawFn !== 'object') return;
-    const fn = rawFn as { code?: unknown; container?: unknown };
+    const fn = rawFn as { code?: unknown; container?: unknown; triggers?: unknown };
     const instancePath = `/functions/${fnKey}`;
     if (fn.container && fn.code) {
       errors.push({
@@ -68,6 +78,85 @@ export const validateSemantics = (iacJson: ServerlessIacRaw): Array<ErrorObject>
         keyword: 'functionSourceRequired',
         params: {},
         message: lang.__('SEMANTIC_FUNCTION_SOURCE_REQUIRED', { fnKey }),
+      });
+    }
+
+    // Timer triggers (issue #258): si-cron validity + provider capability
+    // matrix surface here so `si validate` fails before any deploy runs.
+    const triggers = fn.triggers as { timer?: unknown } | undefined;
+    const timers = Array.isArray(triggers?.timer)
+      ? (triggers?.timer as Array<TimerTriggerRaw>)
+      : [];
+
+    const seenTimerNames = new Set<string>();
+    timers.forEach((timer, index) => {
+      const timerPath = `${instancePath}/triggers/timer/${index}`;
+      const name = typeof timer.name === 'string' ? timer.name : '';
+      const cron = typeof timer.cron === 'string' ? timer.cron : '';
+
+      if (name.length === 0) {
+        errors.push({
+          instancePath: timerPath,
+          schemaPath: '#/semantic/timerNameRequired',
+          keyword: 'timerNameRequired',
+          params: {},
+          message: lang.__('TIMER_TRIGGER_NAME_REQUIRED', { functionName: fnKey }),
+        });
+      } else if (seenTimerNames.has(name)) {
+        errors.push({
+          instancePath: timerPath,
+          schemaPath: '#/semantic/duplicateTimerName',
+          keyword: 'duplicateTimerName',
+          params: {},
+          message: lang.__('TIMER_TRIGGER_DUPLICATE_NAME', { name, functionName: fnKey }),
+        });
+      } else {
+        seenTimerNames.add(name);
+      }
+
+      if (cron.length === 0) {
+        errors.push({
+          instancePath: timerPath,
+          schemaPath: '#/semantic/timerCronRequired',
+          keyword: 'timerCronRequired',
+          params: {},
+          message: lang.__('TIMER_TRIGGER_CRON_REQUIRED', { name: name || fnKey }),
+        });
+        return;
+      }
+      // template refs resolve at runtime — grammar is checked post-resolution
+      if (TEMPLATE_REF_PATTERN.test(cron)) {
+        return;
+      }
+      const cronProblem = checkSiCronForProvider(cron, providerName);
+      if (cronProblem) {
+        errors.push({
+          instancePath: timerPath,
+          schemaPath: '#/semantic/invalidSiCron',
+          keyword: 'invalidSiCron',
+          params: {},
+          message: lang.__('SEMANTIC_TIMER_CRON_INVALID', {
+            name: name || fnKey,
+            functionName: fnKey,
+            cron,
+            reason: cronProblem,
+          }),
+        });
+      }
+    });
+
+    if (providerName === 'tencent' && timers.length > TENCENT_TIMER_TRIGGER_LIMIT) {
+      errors.push({
+        instancePath: `${instancePath}/triggers/timer`,
+        schemaPath: '#/semantic/timerTriggerLimit',
+        keyword: 'timerTriggerLimit',
+        params: {},
+        message: lang.__('TIMER_TRIGGER_LIMIT_EXCEEDED', {
+          functionName: fnKey,
+          count: String(timers.length),
+          provider: providerName,
+          max: String(TENCENT_TIMER_TRIGGER_LIMIT),
+        }),
       });
     }
   });

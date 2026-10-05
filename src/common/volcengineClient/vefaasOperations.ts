@@ -663,6 +663,60 @@ export const createVefaasOperations = (client: VefaasSdkClient) => {
         lastModifiedTime: fn.LastUpdateTime as string | undefined,
       }));
     },
+
+    // veFaaS timer triggers (issue #258): CreateTrigger/ListTriggers/
+    // DeleteTrigger of the veFaaS OpenAPI (Version 2024-06-06). A timer
+    // trigger binds one function via FunctionId; the config travels as a JSON
+    // `Source` string with SourceType 'Timer' — unix 5-field crontab
+    // (translation handled in common/siCron, which rejects non-zero seconds).
+    createTrigger: async (params: {
+      functionId: string;
+      name: string;
+      source: Record<string, unknown>;
+    }): Promise<void> => {
+      await client.fetchOpenAPI({
+        Action: 'CreateTrigger',
+        Version: '2024-06-06',
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        data: {
+          FunctionId: params.functionId,
+          Name: params.name,
+          SourceType: 'Timer',
+          Source: JSON.stringify(params.source),
+        },
+      });
+    },
+
+    listTriggers: async (
+      functionId: string,
+    ): Promise<Array<{ id?: string; name?: string; sourceType?: string; source?: string }>> => {
+      const response = await client.fetchOpenAPI({
+        Action: 'ListTriggers',
+        Version: '2024-06-06',
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        data: { FunctionId: functionId },
+      });
+      const result = (response.Result || {}) as Record<string, unknown>;
+      const items = (result.Triggers ?? result.Items ?? []) as Array<Record<string, unknown>>;
+      return items.map((item) => ({
+        id: (item.Id as string) ?? (item.TriggerId as string | undefined),
+        name: (item.Name as string) ?? (item.TriggerName as string | undefined),
+        sourceType: item.SourceType as string | undefined,
+        source: item.Source as string | undefined,
+      }));
+    },
+
+    deleteTrigger: async (functionId: string, triggerId: string): Promise<void> => {
+      await client.fetchOpenAPI({
+        Action: 'DeleteTrigger',
+        Version: '2024-06-06',
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        data: { FunctionId: functionId, TriggerId: triggerId },
+      });
+    },
   };
 
   return operations;

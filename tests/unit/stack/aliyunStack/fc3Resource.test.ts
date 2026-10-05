@@ -12,6 +12,7 @@ import {
   FunctionDomain,
   NasStorageClassEnum,
   PartialResourceError,
+  ResourceState,
   StateFile,
 } from '../../../../src/types';
 
@@ -24,6 +25,7 @@ const mockedFc3Operations = {
   deleteFunction: jest.fn(),
   createTrigger: jest.fn(),
   deleteTrigger: jest.fn(),
+  listTriggers: jest.fn(),
   createCustomDomain: jest.fn(),
   deleteCustomDomain: jest.fn(),
 };
@@ -289,6 +291,7 @@ describe('Fc3Resource', () => {
     // Trigger/domain operations default to success to avoid cross-test contamination
     mockedFc3Operations.createTrigger.mockResolvedValue(undefined);
     mockedFc3Operations.deleteTrigger.mockResolvedValue(undefined);
+    mockedFc3Operations.listTriggers.mockResolvedValue([]);
     mockedFc3Operations.createCustomDomain.mockResolvedValue(undefined);
     mockedFc3Operations.deleteCustomDomain.mockResolvedValue(undefined);
 
@@ -800,6 +803,231 @@ describe('Fc3Resource', () => {
           }),
         }),
       });
+    });
+
+    it('should create timer triggers with the translated aliyun cron dialect', async () => {
+      const fnWithTimers = {
+        ...testFunction,
+        triggers: {
+          timer: [
+            {
+              name: 'billing-run',
+              cron: '0 23 3 * * *',
+              payload: '{"job":"billing"}',
+              enable: true,
+            },
+            { name: 'report-hourly', cron: '@every 1h', enable: false },
+          ],
+        },
+      };
+
+      const readyState = {
+        ...initialState,
+        resources: { 'functions.test_fn': expect.anything() },
+      };
+      mockedStateManager.setResource.mockReturnValue(readyState);
+
+      await createResource(mockContext, fnWithTimers, initialState);
+
+      // si-cron 0 23 3 * * * (03:23 UTC) → 11:23 UTC+8
+      expect(mockedFc3Operations.createTrigger).toHaveBeenCalledWith(
+        'test-function',
+        'billing-run',
+        'timer',
+        expect.objectContaining({
+          cronExpression: '0 23 11 * * *',
+          payload: '{"job":"billing"}',
+          enable: true,
+        }),
+        undefined,
+        undefined,
+      );
+      expect(mockedFc3Operations.createTrigger).toHaveBeenCalledWith(
+        'test-function',
+        'report-hourly',
+        'timer',
+        expect.objectContaining({ cronExpression: '0 0 * * * *', enable: false }),
+        undefined,
+        undefined,
+      );
+    });
+
+    it('should register timer triggers by name in state with si-cron attributes', async () => {
+      const fnWithTimers = {
+        ...testFunction,
+        triggers: { timer: [{ name: 'billing-run', cron: '0 23 3 * * *', enable: true }] },
+      };
+
+      let capturedInstances: Array<Record<string, unknown>> = [];
+      mockedStateManager.setResource.mockImplementation(
+        (_state: StateFile, _logicalId: string, resourceState: ResourceState) => {
+          capturedInstances = resourceState.instances as Array<Record<string, unknown>>;
+          return initialState;
+        },
+      );
+
+      await createResource(mockContext, fnWithTimers, initialState);
+
+      const timerInstance = capturedInstances.find(
+        (instance) => instance.type === 'ALIYUN_FC3_TIMER_TRIGGER',
+      );
+      expect(timerInstance).toMatchObject({
+        type: 'ALIYUN_FC3_TIMER_TRIGGER',
+        id: 'billing-run',
+        attributes: { cron: '0 23 3 * * *', enable: true },
+      });
+    });
+
+    it('should converge on live timer drift during update (extra + edited triggers)', async () => {
+      // cloud reality: billing-run was edited in the console, ghost was added
+      mockedFc3Operations.listTriggers.mockResolvedValue([
+        {
+          triggerName: 'billing-run',
+          triggerType: 'timer',
+          triggerConfig: { cronExpression: '0 23 12 * * *', payload: '', enable: true },
+        },
+        {
+          triggerName: 'ghost',
+          triggerType: 'timer',
+          triggerConfig: { cronExpression: '0 0 * * * *', enable: true },
+        },
+      ]);
+
+      const stateWithTimer: StateFile = {
+        ...initialState,
+        resources: {
+          'functions.test_fn': {
+            mode: 'managed',
+            region: 'cn-hangzhou',
+            definition: mockDefinition,
+            instances: [
+              {
+                sid: 'si:aliyun:fc3:default:test-function',
+                id: 'test-function',
+                type: 'ALIYUN_FC3_FUNCTION',
+              },
+              {
+                sid: 'si:aliyun:fc3-timer-trigger:default:test-function.billing-run',
+                id: 'billing-run',
+                type: 'ALIYUN_FC3_TIMER_TRIGGER',
+                attributes: { cron: '0 23 3 * * *', enable: true },
+              },
+            ],
+            lastUpdated: '2025-01-01T00:00:00Z',
+          },
+        },
+      };
+
+      const fnWithTimer = {
+        ...testFunction,
+        triggers: { timer: [{ name: 'billing-run', cron: '0 23 3 * * *', enable: true }] },
+      };
+      mockedStateManager.setResource.mockReturnValue(initialState);
+
+      await updateResource(mockContext, fnWithTimer, stateWithTimer);
+
+      // edited cron → recreate; extra trigger → removed
+      expect(mockedFc3Operations.deleteTrigger).toHaveBeenCalledWith(
+        'test-function',
+        'billing-run',
+      );
+      expect(mockedFc3Operations.deleteTrigger).toHaveBeenCalledWith('test-function', 'ghost');
+      expect(mockedFc3Operations.createTrigger).toHaveBeenCalledWith(
+        'test-function',
+        'billing-run',
+        'timer',
+        expect.objectContaining({ cronExpression: '0 23 11 * * *' }),
+        undefined,
+        undefined,
+      );
+    });
+
+    it('should be idempotent when live timers match the config during update', async () => {
+      mockedFc3Operations.listTriggers.mockResolvedValue([
+        {
+          triggerName: 'billing-run',
+          triggerType: 'timer',
+          triggerConfig: { cronExpression: '0 23 11 * * *', payload: '', enable: true },
+        },
+      ]);
+
+      const stateWithTimer: StateFile = {
+        ...initialState,
+        resources: {
+          'functions.test_fn': {
+            mode: 'managed',
+            region: 'cn-hangzhou',
+            definition: mockDefinition,
+            instances: [
+              {
+                sid: 'si:aliyun:fc3:default:test-function',
+                id: 'test-function',
+                type: 'ALIYUN_FC3_FUNCTION',
+              },
+              {
+                sid: 'si:aliyun:fc3-timer-trigger:default:test-function.billing-run',
+                id: 'billing-run',
+                type: 'ALIYUN_FC3_TIMER_TRIGGER',
+                attributes: { cron: '0 23 3 * * *', enable: true },
+              },
+            ],
+            lastUpdated: '2025-01-01T00:00:00Z',
+          },
+        },
+      };
+
+      const fnWithTimer = {
+        ...testFunction,
+        triggers: { timer: [{ name: 'billing-run', cron: '0 23 3 * * *', enable: true }] },
+      };
+      mockedStateManager.setResource.mockReturnValue(initialState);
+
+      await updateResource(mockContext, fnWithTimer, stateWithTimer);
+
+      expect(mockedFc3Operations.createTrigger).not.toHaveBeenCalled();
+      expect(mockedFc3Operations.deleteTrigger).not.toHaveBeenCalled();
+    });
+
+    it('should delete timer triggers before the function during delete', async () => {
+      let deleteOrder: Array<string> = [];
+      mockedFc3Operations.deleteTrigger.mockImplementation(
+        async (_fnName: string, triggerName: string) => {
+          deleteOrder = [...deleteOrder, `trigger:${triggerName}`];
+        },
+      );
+      mockedFc3Operations.deleteFunction.mockImplementation(async () => {
+        deleteOrder = [...deleteOrder, 'function'];
+      });
+
+      const stateWithTimer: StateFile = {
+        ...initialState,
+        resources: {
+          'functions.test_fn': {
+            mode: 'managed',
+            region: 'cn-hangzhou',
+            definition: mockDefinition,
+            instances: [
+              {
+                sid: 'si:aliyun:fc3:default:test-function',
+                id: 'test-function',
+                type: 'ALIYUN_FC3_FUNCTION',
+              },
+              {
+                sid: 'si:aliyun:fc3-timer-trigger:default:test-function.billing-run',
+                id: 'billing-run',
+                type: 'ALIYUN_FC3_TIMER_TRIGGER',
+                attributes: { cron: '0 23 3 * * *', enable: true },
+              },
+            ],
+            lastUpdated: '2025-01-01T00:00:00Z',
+          },
+        },
+      };
+      mockedStateManager.removeResource.mockReturnValue(initialState);
+
+      await deleteResource(mockContext, 'test-function', 'functions.test_fn', stateWithTimer);
+
+      expect(deleteOrder).toEqual(['trigger:billing-run', 'function']);
     });
 
     it('should create custom domain when domain is configured', async () => {

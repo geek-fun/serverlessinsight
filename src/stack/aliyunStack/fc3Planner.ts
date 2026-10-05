@@ -20,6 +20,7 @@ import {
   remoteDiffersFromDesired,
 } from '../../common/planCompare';
 import { PLAN_READ_CONCURRENCY, mapWithConcurrency } from '../../common/concurrency';
+import { translateSiCron } from '../../common/siCron';
 import {
   Context,
   FunctionDomain,
@@ -423,6 +424,42 @@ const detectFunctionNestedDrift = async (
       if (!targets || targets.length === 0) {
         return 'PLAN_DRIFT_NAS_MOUNT'; // mount target deleted out-of-band
       }
+    }
+  }
+
+  // Issue #258: timer trigger drift — the live trigger list is compared
+  // against the desired timers (name-keyed). A trigger missing from the cloud
+  // (manual delete), an edited cron/payload/enable, or an extra undeclared
+  // timer all count as drift.
+  const timerStateInstances = currentState.instances?.filter(
+    (i) => (i as { type?: string }).type === 'ALIYUN_FC3_TIMER_TRIGGER',
+  ) as Array<{ id?: string }>;
+  const desiredTimers = fn.triggers?.timer ?? [];
+  if (desiredTimers.length > 0 || timerStateInstances.length > 0) {
+    const liveTriggerList = await cachedRefreshRead(context, `fc3.listTriggers:${fn.name}`, () =>
+      client.fc3.listTriggers(fn.name),
+    );
+    const liveTimers = (liveTriggerList ?? []).filter(
+      (trigger) => trigger.triggerType === 'timer' && trigger.triggerName,
+    );
+    const desiredNames = new Set(desiredTimers.map((timer) => timer.name));
+    const extraTimer = liveTimers.some(
+      (trigger) => !desiredNames.has(trigger.triggerName as string),
+    );
+    const desiredChanged = desiredTimers.some((timer) => {
+      const live = liveTimers.find((trigger) => trigger.triggerName === timer.name);
+      if (!live) {
+        return true;
+      }
+      const liveConfig = (live.triggerConfig ?? {}) as Record<string, unknown>;
+      return (
+        liveConfig.cronExpression !== translateSiCron(timer.cron, 'aliyun') ||
+        (liveConfig.payload ?? '') !== (timer.payload ?? '') ||
+        (liveConfig.enable === true || liveConfig.enable === 'true') !== timer.enable
+      );
+    });
+    if (extraTimer || desiredChanged) {
+      return 'PLAN_DRIFT_TIMER_TRIGGER';
     }
   }
 

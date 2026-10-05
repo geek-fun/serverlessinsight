@@ -1,0 +1,39 @@
+version: 0.1.0
+provider:
+  name: aliyun
+  region: cn-hangzhou
+
+vars:
+  handler: index.handler
+
+stages:
+  default:
+    region: ${vars.region}
+  dev:
+    region: ${vars.region}
+
+app: insight-poc
+service: insight-poc-timer
+
+functions:
+  insight_poc_fn:
+    name: insight-poc-timer-fn
+    code:
+      runtime: nodejs18
+      handler: ${vars.handler}
+      path: tests/fixtures/artifacts/artifact.zip
+    memory: 512
+    timeout: 10
+    triggers:
+      # functions.*.triggers = things that invoke THIS function
+      # (top-level events.* = infrastructure with its own config surface)
+      timer:
+        - name: billing-run
+          cron: '0 23 3 * * *' # si-cron, UTC — fires 03:23 UTC daily
+          payload: '{"job":"billing-run"}'
+          description: daily billing run
+        - name: report-hourly
+          cron: '@every 1h'
+        - name: weekly-cleanup
+          cron: '0 0 * * MON'
+          enable: false

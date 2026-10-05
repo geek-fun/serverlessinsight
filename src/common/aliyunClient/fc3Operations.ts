@@ -512,17 +512,50 @@ const buildCodeLocation = (
       triggerType: string,
       triggerConfig: Record<string, unknown>,
       qualifier?: string,
+      description?: string,
     ): Promise<void> => {
       const createTriggerInput = new fc.CreateTriggerInput({
         triggerName,
         triggerType,
         triggerConfig: JSON.stringify(triggerConfig),
         ...(qualifier ? { qualifier } : {}),
+        ...(description ? { description } : {}),
       });
       const request = new fc.CreateTriggerRequest({
         body: createTriggerInput,
       });
       await fc3Client.createTrigger(functionName, request);
+    },
+
+    listTriggers: async (
+      functionName: string,
+    ): Promise<
+      Array<{
+        triggerName?: string;
+        triggerType?: string;
+        triggerConfig?: unknown;
+        description?: string;
+      }>
+    > => {
+      const response = await fc3Client.listTriggers(functionName, new fc.ListTriggersRequest({}));
+      const triggers = response.body?.triggers ?? [];
+      // the SDK models triggerConfig as a JSON string — normalize to an object
+      const parseConfig = (raw: string | undefined): unknown => {
+        if (typeof raw !== 'string') {
+          return raw;
+        }
+        try {
+          return JSON.parse(raw);
+        } catch {
+          return raw;
+        }
+      };
+      return triggers.map((trigger) => ({
+        triggerName: trigger.triggerName,
+        triggerType: trigger.triggerType,
+        triggerConfig: parseConfig(trigger.triggerConfig),
+        description: trigger.description,
+      }));
     },
 
     deleteTrigger: async (functionName: string, triggerName: string): Promise<void> => {

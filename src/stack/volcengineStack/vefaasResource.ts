@@ -19,9 +19,12 @@ import {
   FunctionDomain,
   PartialResourceError,
   ResourceAttributes,
+  ResourceInstance,
   ResourceState,
   StateFile,
+  TimerTrigger,
 } from '../../types';
+import { translateSiCron } from '../../common/siCron';
 import {
   extractVefaasDefinition,
   functionToVefaasConfig,
@@ -51,6 +54,203 @@ type DependentInstance = {
   sid?: string;
   trn?: string;
   attributes: Record<string, unknown>;
+};
+
+const TIMER_TRIGGER_INSTANCE_TYPE = 'VOLCENGINE_VEFAAS_TIMER_TRIGGER';
+
+type VefaasTimerTriggerSource = {
+  /** unix 5-field crontab (si-cron translated, UTC+8) */
+  cron: string;
+  enable: boolean;
+  description?: string;
+  payload?: string;
+};
+
+/** veFaaS timer dialect: unix 5-field crontab; non-zero seconds never pass. */
+const buildVefaasTimerTriggerSource = (timer: TimerTrigger): VefaasTimerTriggerSource => ({
+  cron: translateSiCron(timer.cron, 'volcengine'),
+  enable: timer.enable,
+  ...(timer.description !== undefined ? { description: timer.description } : {}),
+  ...(timer.payload !== undefined ? { payload: timer.payload } : {}),
+});
+
+const parseVefaasTimerSource = (raw: string | undefined): VefaasTimerTriggerSource | null => {
+  if (!raw) {
+    return null;
+  }
+  try {
+    const parsed = JSON.parse(raw) as Record<string, unknown>;
+    if (typeof parsed.cron !== 'string') {
+      return null;
+    }
+    return {
+      cron: parsed.cron,
+      enable: parsed.enable === true,
+      ...(typeof parsed.description === 'string' && parsed.description.length > 0
+        ? { description: parsed.description }
+        : {}),
+      ...(typeof parsed.payload === 'string' ? { payload: parsed.payload } : {}),
+    };
+  } catch {
+    return null;
+  }
+};
+
+const vefaasTimerConfigFromAttributes = (
+  attrs: Record<string, unknown>,
+): VefaasTimerTriggerSource | null => {
+  const cron = typeof attrs.cron === 'string' ? attrs.cron : undefined;
+  if (!cron) {
+    return null;
+  }
+  try {
+    return {
+      cron: translateSiCron(cron, 'volcengine'),
+      enable: attrs.enable !== false,
+      ...(typeof attrs.description === 'string' ? { description: attrs.description } : {}),
+      ...(attrs.payload !== undefined ? { payload: String(attrs.payload) } : {}),
+    };
+  } catch {
+    return null;
+  }
+};
+
+const buildVefaasTimerTriggerInstance = (
+  context: Context,
+  fn: FunctionDomain,
+  timer: TimerTrigger,
+): DependentInstance => ({
+  type: TIMER_TRIGGER_INSTANCE_TYPE,
+  id: timer.name,
+  sid: buildSid('volcengine', 'vefaas-timer-trigger', context.stage, `${fn.name}.${timer.name}`),
+  attributes: {
+    cron: timer.cron,
+    ...(timer.payload !== undefined ? { payload: timer.payload } : {}),
+    enable: timer.enable,
+    ...(timer.description !== undefined ? { description: timer.description } : {}),
+  },
+});
+
+/**
+ * Reconcile the function's timer triggers against the provider (issue #258).
+ * The live trigger list is the baseline so console edits converge on every
+ * deploy; state-recorded instances take over when the probe fails. Name is
+ * the drift key; si-cron stays stored and is translated only here.
+ */
+const reconcileVefaasTimerTriggers = async (
+  context: Context,
+  fn: FunctionDomain,
+  functionId: string,
+  previousInstances: Array<DependentInstance>,
+  client: ReturnType<typeof createVolcengineClient>,
+): Promise<Array<DependentInstance>> => {
+  const desiredTimers = fn.triggers?.timer ?? [];
+  const previousTimers = previousInstances.filter((i) => i.type === TIMER_TRIGGER_INSTANCE_TYPE);
+
+  if (desiredTimers.length === 0 && previousTimers.length === 0) {
+    return [];
+  }
+
+  let liveTimers: Array<{ id?: string; name: string; config: VefaasTimerTriggerSource }> = [];
+  let liveAvailable = true;
+  try {
+    liveTimers = (await client.vefaas.listTriggers(functionId))
+      .filter(
+        (trigger) =>
+          trigger.sourceType?.toLowerCase() === 'timer' &&
+          trigger.name &&
+          parseVefaasTimerSource(trigger.source),
+      )
+      .map((trigger) => ({
+        id: trigger.id,
+        name: trigger.name as string,
+        config: parseVefaasTimerSource(trigger.source) as VefaasTimerTriggerSource,
+      }));
+  } catch (error) {
+    liveAvailable = false;
+    logger.warn(
+      lang.__('PLAN_TIMER_TRIGGER_PROBE_FAILED', { functionName: fn.name, error: String(error) }),
+    );
+  }
+
+  const baseline = liveAvailable
+    ? liveTimers
+    : previousTimers.flatMap((instance) => {
+        const config = vefaasTimerConfigFromAttributes(instance.attributes ?? {});
+        return config ? [{ id: undefined, name: instance.id, config }] : [];
+      });
+
+  const resultingInstances: Array<DependentInstance> = [];
+  for (const timer of desiredTimers) {
+    const desiredSource = buildVefaasTimerTriggerSource(timer);
+    const live = baseline.find((entry) => entry.name === timer.name);
+
+    if (!live) {
+      logger.info(
+        lang.__('CREATING_TIMER_TRIGGER', { triggerName: timer.name, functionName: fn.name }),
+      );
+    } else if (
+      !attributesEqual(
+        live.config as unknown as Record<string, unknown>,
+        desiredSource as unknown as Record<string, unknown>,
+      )
+    ) {
+      logger.info(
+        lang.__('UPDATING_TIMER_TRIGGER', { triggerName: timer.name, functionName: fn.name }),
+      );
+      if (live.id) {
+        try {
+          await client.vefaas.deleteTrigger(functionId, live.id);
+        } catch (error) {
+          const errorCode = (error as { code?: string })?.code;
+          if (errorCode !== 'FunctionNotFound' && errorCode !== 'ResourceNotFound') throw error;
+        }
+      }
+    } else {
+      resultingInstances.push(buildVefaasTimerTriggerInstance(context, fn, timer));
+      continue;
+    }
+
+    try {
+      await client.vefaas.createTrigger({
+        functionId,
+        name: timer.name,
+        source: desiredSource as unknown as Record<string, unknown>,
+      });
+    } catch (error) {
+      // a leftover trigger from an adopted function may already carry the name
+      if (!isResourceAlreadyExistsError(error, VEFAAS_ALREADY_EXISTS_CODES)) throw error;
+      logger.warn(
+        lang.__('TIMER_TRIGGER_ALREADY_ATTACHED', {
+          triggerName: timer.name,
+          functionName: fn.name,
+        }),
+      );
+    }
+    logger.info(
+      lang.__('TIMER_TRIGGER_CREATED', { triggerName: timer.name, functionName: fn.name }),
+    );
+    resultingInstances.push(buildVefaasTimerTriggerInstance(context, fn, timer));
+  }
+
+  const desiredNames = new Set(desiredTimers.map((timer) => timer.name));
+  for (const stale of baseline.filter((entry) => !desiredNames.has(entry.name))) {
+    logger.info(
+      lang.__('DELETING_TIMER_TRIGGER', { triggerName: stale.name, functionName: fn.name }),
+    );
+    if (stale.id) {
+      try {
+        await client.vefaas.deleteTrigger(functionId, stale.id);
+        logger.info(lang.__('TIMER_TRIGGER_DELETED', { triggerName: stale.name }));
+      } catch (error) {
+        const errorCode = (error as { code?: string })?.code;
+        if (errorCode !== 'FunctionNotFound' && errorCode !== 'ResourceNotFound') throw error;
+        logger.warn(lang.__('TIMER_TRIGGER_NOT_FOUND', { triggerName: stale.name }));
+      }
+    }
+  }
+
+  return resultingInstances;
 };
 
 const RECOVERY_GET_FUNCTION_DELAY_MS = 1500;
@@ -608,11 +808,22 @@ export const createResource = async (
     vefaasInstance.releaseRecordId = releaseRecordId;
   }
 
+  // Timer triggers bind to the function via FunctionId — reconcile after the
+  // function exists (fresh creates see an empty trigger list; adopted ones
+  // converge on leftovers).
+  const timerInstances = functionInfo.functionId
+    ? await reconcileVefaasTimerTriggers(context, fn, functionInfo.functionId, [], client)
+    : [];
+
   const resourceState: ResourceState = {
     mode: 'managed',
     region: context.region,
     definition,
-    instances: [vefaasInstance, ...dependentInstances],
+    instances: [
+      vefaasInstance,
+      ...dependentInstances,
+      ...timerInstances,
+    ] as Array<ResourceInstance>,
     status: 'ready',
     lastUpdated: new Date().toISOString(),
   };
@@ -933,6 +1144,8 @@ export const updateResource = async (
     .filter(
       (i) =>
         i.type !== 'VOLCENGINE_VEFAAS_FUNCTION' &&
+        // timers are fully rebuilt from the reconcile result below
+        i.type !== TIMER_TRIGGER_INSTANCE_TYPE &&
         (!!fn.log || !i.type.startsWith('VOLCENGINE_TLS_')),
     )
     .map((i) => {
@@ -965,11 +1178,28 @@ export const updateResource = async (
     ...dep.attributes,
   }));
 
+  // Timer triggers reconcile against the live trigger list (issue #258);
+  // functionInfo above already carries the resolved function Id.
+  const timerInstances = functionInfo.functionId
+    ? await reconcileVefaasTimerTriggers(
+        context,
+        fn,
+        functionInfo.functionId,
+        existingInstances,
+        client,
+      )
+    : [];
+
   const resourceState: ResourceState = {
     mode: 'managed',
     region: context.region,
     definition: desiredDefinition,
-    instances: [vefaasInstance, ...existingDependentInstances, ...newDependentInstancesMapped],
+    instances: [
+      vefaasInstance,
+      ...existingDependentInstances,
+      ...newDependentInstancesMapped,
+      ...timerInstances,
+    ] as Array<ResourceInstance>,
     status: 'ready',
     lastUpdated: new Date().toISOString(),
   };
@@ -990,6 +1220,43 @@ export const deleteResource = async (
   const functionId = (vefaasInstance as { functionId?: string | null } | undefined)?.functionId;
 
   const client = createVolcengineClient(context);
+
+  // Delete timer triggers before the function (they hang off its FunctionId;
+  // si owns every timer on its function, so state-recorded ones all go).
+  const timerInstances = existingInstances.filter((i) => i.type === TIMER_TRIGGER_INSTANCE_TYPE);
+  if (functionId && timerInstances.length > 0) {
+    let liveTimerIds: Array<{ id?: string; name?: string }> = [];
+    try {
+      liveTimerIds = await client.vefaas.listTriggers(functionId);
+    } catch {
+      // probe failure must not block teardown — fall back to name lookup below
+    }
+    for (const timerInstance of timerInstances) {
+      logger.info(
+        lang.__('DELETING_TIMER_TRIGGER', {
+          triggerName: timerInstance.id,
+          functionName,
+        }),
+      );
+      const liveId = liveTimerIds.find((t) => t.name === timerInstance.id)?.id ?? undefined;
+      if (!liveId) {
+        logger.warn(lang.__('TIMER_TRIGGER_NOT_FOUND', { triggerName: timerInstance.id }));
+        continue;
+      }
+      try {
+        await client.vefaas.deleteTrigger(functionId, liveId);
+        logger.info(lang.__('TIMER_TRIGGER_DELETED', { triggerName: timerInstance.id }));
+      } catch (err) {
+        const errorCode = (err as { code?: string })?.code;
+        if (errorCode === 'FunctionNotFound' || errorCode === 'ResourceNotFound') {
+          logger.warn(lang.__('TIMER_TRIGGER_NOT_FOUND', { triggerName: timerInstance.id }));
+        } else {
+          throw err;
+        }
+      }
+    }
+  }
+
   if (functionId) {
     try {
       await client.vefaas.deleteFunction(functionId);

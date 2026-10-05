@@ -12,6 +12,7 @@ import { lang } from '../../lang';
 import { cachedRefreshRead } from '../../common/refreshCache';
 import { CLS_TOPIC_PERIOD, CLS_TOPIC_STORAGE_TYPE } from '../../common/tencentClient/clsOperations';
 import { PLAN_READ_CONCURRENCY, mapWithConcurrency } from '../../common/concurrency';
+import { translateSiCron } from '../../common/siCron';
 import { functionToScfConfig, extractScfDefinition, cloudScfToDefinition } from './scfTypes';
 import { getAllResources, getResource } from '../../common/stateManager';
 import { computeZipContentHash } from '../../common/hashUtils';
@@ -89,30 +90,78 @@ export const generateFunctionPlan = async (
           const topicInstance = currentState?.instances?.find(
             (i) => (i as { type?: string }).type === 'TENCENT_CLS_TOPIC',
           ) as { id?: string } | undefined;
-          if (!fn.log || !topicInstance?.id) {
-            return { update: false, drifted: false };
+          if (fn.log && topicInstance?.id) {
+            const topicId = topicInstance.id;
+            try {
+              const liveTopic = await cachedRefreshRead(
+                context,
+                `cls.getTopicById:${topicId}`,
+                () => client.cls.getTopicById(topicId),
+              );
+              const topicDrifted =
+                !liveTopic ||
+                liveTopic.StorageType !== CLS_TOPIC_STORAGE_TYPE ||
+                liveTopic.Period !== CLS_TOPIC_PERIOD;
+              if (topicDrifted) {
+                return { update: true, drifted: true, reason: 'PLAN_DRIFT_CLS_TOPIC' };
+              }
+            } catch (error: unknown) {
+              logger.warn(
+                lang.__('PLAN_FUNCTION_NESTED_PROBE_FAILED', {
+                  functionName: fn.name,
+                  error: String(error),
+                }),
+              );
+            }
           }
-          const topicId = topicInstance.id;
-          try {
-            const liveTopic = await cachedRefreshRead(context, `cls.getTopicById:${topicId}`, () =>
-              client.cls.getTopicById(topicId),
-            );
-            const topicDrifted =
-              !liveTopic ||
-              liveTopic.StorageType !== CLS_TOPIC_STORAGE_TYPE ||
-              liveTopic.Period !== CLS_TOPIC_PERIOD;
-            return topicDrifted
-              ? { update: true, drifted: true, reason: 'PLAN_DRIFT_CLS_TOPIC' }
-              : { update: false, drifted: false };
-          } catch (error: unknown) {
-            logger.warn(
-              lang.__('PLAN_FUNCTION_NESTED_PROBE_FAILED', {
-                functionName: fn.name,
-                error: String(error),
-              }),
-            );
-            return { update: false, drifted: false };
+
+          // Issue #258: timer trigger drift — the live GetFunction trigger
+          // list is compared against the desired timers (name-keyed). The
+          // read is refresh-cached, so this reuses the fetch the skeleton
+          // already made. Manual deletes, console cron edits and extra
+          // triggers all mark the function drifted.
+          const timerStateInstances = (currentState?.instances ?? []).filter(
+            (i) => (i as { type?: string }).type === 'TENCENT_SCF_TIMER_TRIGGER',
+          );
+          const desiredTimers = fn.triggers?.timer ?? [];
+          if (desiredTimers.length > 0 || timerStateInstances.length > 0) {
+            try {
+              const live = await cachedRefreshRead(context, `scf.getFunction:${fn.name}`, () =>
+                client.scf.getFunction(fn.name),
+              );
+              const liveTimers = (live?.Triggers ?? []).filter(
+                (trigger) => trigger.Type === 'timer' && trigger.TriggerName,
+              );
+              const desiredNames = new Set(desiredTimers.map((timer) => timer.name));
+              const extraTimer = liveTimers.some(
+                (trigger) => !desiredNames.has(trigger.TriggerName),
+              );
+              const desiredChanged = desiredTimers.some((timer) => {
+                const liveTimer = liveTimers.find((trigger) => trigger.TriggerName === timer.name);
+                if (!liveTimer) {
+                  return true;
+                }
+                return (
+                  liveTimer.TriggerDesc !== translateSiCron(timer.cron, 'tencent') ||
+                  (liveTimer.CustomArgument ?? undefined) !== timer.payload ||
+                  (liveTimer.Enable === 1 || liveTimer.Enable === ('OPEN' as unknown as number)) !==
+                    timer.enable
+                );
+              });
+              if (extraTimer || desiredChanged) {
+                return { update: true, drifted: true, reason: 'PLAN_DRIFT_TIMER_TRIGGER' };
+              }
+            } catch (error: unknown) {
+              logger.warn(
+                lang.__('PLAN_TIMER_TRIGGER_PROBE_FAILED', {
+                  functionName: fn.name,
+                  error: String(error),
+                }),
+              );
+            }
           }
+
+          return { update: false, drifted: false };
         },
         cloudToDefinition: cloudScfToDefinition,
         enrichRemoteAttributes: async (remote, attributes) => {

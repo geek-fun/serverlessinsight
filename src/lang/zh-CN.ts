@@ -1025,6 +1025,45 @@ export const zhCN = {
   INVALID_HTTP_TRIGGER_AUTH_TYPE:
     "无效的 HTTP 触发器 auth_type '{{authType}}'，必须为 'public' 或 'iam'",
 
+  // Timer trigger messages (issue #258)
+  TIMER_TRIGGER_NAME_REQUIRED: "函数 '{{functionName}}' 的定时触发器缺少必填字段 'name'",
+  TIMER_TRIGGER_CRON_REQUIRED: "定时触发器 '{{name}}' 缺少必填字段 'cron'",
+  TIMER_TRIGGER_DUPLICATE_NAME: "函数 '{{functionName}}' 存在重名的定时触发器 '{{name}}'",
+  TIMER_TRIGGER_LIMIT_EXCEEDED:
+    "函数 '{{functionName}}' 配置了 {{count}} 个定时触发器，云平台 {{provider}} 同函数上限为 {{max}} 个",
+  SEMANTIC_TIMER_CRON_INVALID:
+    "函数 '{{functionName}}' 的定时触发器 '{{name}}' cron 表达式 '{{cron}}' 非法：{{reason}}",
+  TIMER_TRIGGER_NOT_SUPPORTED_PROVIDER: "当前云平台 '{{provider}}' 暂不支持定时触发器",
+  TIMER_TRIGGER_PAYLOAD_NOT_SUPPORTED:
+    "定时触发器 '{{name}}' 在云平台 {{provider}} 上不支持 'payload' 字段",
+  CREATING_TIMER_TRIGGER: "正在为函数 '{{functionName}}' 创建定时触发器 '{{triggerName}}'...",
+  TIMER_TRIGGER_CREATED: "定时触发器 '{{triggerName}}' 已为函数 '{{functionName}}' 创建成功",
+  UPDATING_TIMER_TRIGGER: "正在重新创建函数 '{{functionName}}' 的定时触发器 '{{triggerName}}'...",
+  DELETING_TIMER_TRIGGER: "正在删除函数 '{{functionName}}' 的定时触发器 '{{triggerName}}'...",
+  TIMER_TRIGGER_DELETED: "定时触发器 '{{triggerName}}' 已删除",
+  TIMER_TRIGGER_NOT_FOUND: "定时触发器 '{{triggerName}}' 在云平台中不存在，跳过删除",
+  TIMER_TRIGGER_ALREADY_ATTACHED:
+    "定时触发器 '{{triggerName}}' 已挂在函数 '{{functionName}}' 上，跳过创建",
+  PLAN_DRIFT_TIMER_TRIGGER: '云端定时触发器被修改',
+  PLAN_TIMER_TRIGGER_PROBE_FAILED: "探测函数 '{{functionName}}' 的定时触发器失败：{{error}}",
+
+  // si-cron messages (issue #258)
+  SI_CRON_EMPTY: 'si-cron 表达式为空',
+  SI_CRON_WRONG_FIELD_COUNT:
+    '应为 5 段（分 时 日 月 周）、带秒前缀的 6 段，或 @every <时长>；实际 {{count}} 段',
+  SI_CRON_FIELD_INVALID: "字段 '{{field}}' 存在非法值 '{{value}}'",
+  SI_CRON_FIELD_EMPTY: "字段 '{{field}}' 为空",
+  SI_CRON_FIELD_RANGE: "字段 '{{field}}' 的值 '{{value}}' 超出范围 {{min}}-{{max}}",
+  SI_CRON_STEP_INVALID: "字段 '{{field}}' 的步长 '{{step}}' 非法",
+  SI_CRON_RANGE_DESCENDING: "字段 '{{field}}' 的区间 '{{range}}' 起止倒置",
+  SI_CRON_EVERY_INVALID:
+    "'@every {{duration}}' 不是合法时长；请使用形如 '30s'、'5m'、'1h'、'1d' 的写法",
+  SI_CRON_EVERY_NOT_EXPRESSIBLE:
+    '该 @every 间隔无法表达为 {{dialect}} 的 cron；请使用能整除的时长（15s、30s、1m、5m、15m、30m、1h、2h、6h、12h、1d）',
+  SI_CRON_SHIFT_UNSUPPORTED:
+    "cron '{{cron}}' 平移到 UTC+8 后会改变触发日期；请避免日/星期维度与 UTC 16 点及以后的整点组合跨月边界",
+  SI_CRON_SECONDS_UNSUPPORTED: "cron '{{cron}}' 含非零秒位，5 段 crontab 云平台不支持",
+
   // ===== Issue #251: previously hardcoded messages (now i18n) =====
   UNSUPPORTED_PROVIDER: '不支持的 provider：{{provider}}',
   FORCE_UNLOCK_NO_LOCATION_MODE: '无 location 模式不支持该操作',
