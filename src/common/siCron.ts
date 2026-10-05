@@ -153,6 +153,14 @@ const wrapValue = (value: number, spec: FieldSpec): number => {
 
 const expandRange = (start: number, end: number, step: number, spec: FieldSpec): Array<number> => {
   const values: Array<number> = [];
+  // non-cyclic fields walk monotonically — stepping past `end` must stop,
+  // never wrap around the domain (vixie semantics: 10-20/8 = {10, 18})
+  if (!spec.cyclic) {
+    for (let value = start; value <= end; value += step) {
+      values.push(value);
+    }
+    return values;
+  }
   const span = spec.domainMax - spec.min + 1;
   let current = start;
   for (let guard = 0; guard < span; guard += 1) {

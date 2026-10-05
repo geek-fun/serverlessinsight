@@ -475,6 +475,25 @@ describe('parseFunction', () => {
       expect(result![0].triggers?.timer?.[0].cron).toBe('${vars.cron}');
     });
 
+    it('should normalize empty-string payload and description to unset', () => {
+      const result = parseFunction({
+        fn: {
+          name: 'timer-fn',
+          triggers: {
+            timer: [{ name: 'one', cron: '0 0 * * *', payload: '', description: '' }],
+          },
+        },
+      });
+
+      // the provider reconcile treats '' and absent as the same — keeping ''
+      // here would recreate the trigger on every deploy
+      expect(result![0].triggers?.timer?.[0]).toEqual({
+        name: 'one',
+        cron: '0 0 * * *',
+        enable: true,
+      });
+    });
+
     it('should throw when name is missing', () => {
       expect(() =>
         parseFunction({
