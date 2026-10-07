@@ -67,12 +67,16 @@ jobs:
           token: ${{ secrets.CODECOV_TOKEN }}
           verbose: true
           fail_ci_if_error: true
-      - name: Generate changelog
+      - name: Build Release Notes
         if: steps.version_check.outputs.should_release == 'true'
-        uses: jaywcjlove/changelog-generator@main
-        id: changelog
-        with:
-          token: ${{ secrets.GITHUB_TOKEN }}
+        id: release_notes
+        run: |
+          bash scripts/build-release-notes.sh
+          {
+            echo 'release_body<<EOF'
+            cat release-notes.md
+            echo EOF
+          } >> $GITHUB_OUTPUT
       - name: Publish package on NPM 📦
         if: steps.version_check.outputs.should_release == 'true'
         run: npm publish
@@ -82,7 +86,4 @@ jobs:
         with:
           tag_name: ${{ steps.version_check.outputs.tag_name }}
           name: ServerlessInsight ${{ steps.version_check.outputs.version }}
-          body: |
-            ${{ steps.changelog.outputs.compareurl }}
-
-            ${{ steps.changelog.outputs.changelog }}
+          body: ${{ steps.release_notes.outputs.release_body }}
