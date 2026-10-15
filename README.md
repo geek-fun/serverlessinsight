@@ -1,5 +1,7 @@
 <div align="center">
 
+<img src="docs/brand/brand.jpg" alt="ServerlessInsight" width="420" />
+
 # ServerlessInsight
 
 **Full life cycle cross-provider serverless management — describe your app, we handle the rest.**
