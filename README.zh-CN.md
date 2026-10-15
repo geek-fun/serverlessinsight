@@ -1,5 +1,7 @@
 <div align="center">
 
+<img src="docs/brand/brand.jpg" alt="ServerlessInsight" width="420" />
+
 # ServerlessInsight
 
 **全生命周期跨云服务商的 Serverless 管理 —— 描述你的应用，其余交给我们。**
