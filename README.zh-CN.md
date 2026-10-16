@@ -296,6 +296,8 @@ events:
 ## 赞助
 
 <p align="center">
+  <img src="docs/images/wechat_ponsor.jpg" width="140" alt="微信赞赏码">
+  &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
   <a href="https://github.com/sponsors/geek-fun"><img src="https://img.shields.io/badge/GitHub_Sponsors-%E2%9D%A4_支持-EA4AAA?logo=githubsponsors&logoColor=white" alt="GitHub Sponsors" /></a>
 </p>
 

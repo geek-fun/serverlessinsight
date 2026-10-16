@@ -305,6 +305,8 @@ Contributions welcome! Open an issue or pull request. See the [AGENTS.md](AGENTS
 ## Sponsor
 
 <p align="center">
+  <img src="docs/images/wechat_ponsor.jpg" width="140" alt="WeChat Sponsor QR">
+  &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
   <a href="https://github.com/sponsors/geek-fun"><img src="https://img.shields.io/badge/GitHub_Sponsors-%E2%9D%A4_Support-EA4AAA?logo=githubsponsors&logoColor=white" alt="GitHub Sponsors" /></a>
 </p>
 
