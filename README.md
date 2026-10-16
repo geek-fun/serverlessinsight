@@ -287,12 +287,6 @@ More in the [samples](./samples) directory.
 ## Community
 
 <p align="center">
-  <img src="https://www.geekfun.club/wechat-group.jpg" width="140" alt="WeChat Group">
-</p>
-
-<p align="center">
-  <a href="https://discord.gg/5NSUyPK2E"><img src="https://img.shields.io/badge/Discord-Join-5865F2?logo=discord&logoColor=white" alt="Discord" /></a>
-  &nbsp;&nbsp;&nbsp;
   <a href="https://x.com/geekfun_club"><img src="https://img.shields.io/badge/X-Follow-000000?logo=x&logoColor=white" alt="X / Twitter" /></a>
   &nbsp;&nbsp;&nbsp;
   <a href="https://www.youtube.com/@geekfun-club"><img src="https://img.shields.io/badge/YouTube-Subscribe-FF0000?logo=youtube&logoColor=white" alt="YouTube" /></a>
@@ -309,16 +303,6 @@ Contributions welcome! Open an issue or pull request. See the [AGENTS.md](AGENTS
 <p align="center">
   <a href="https://github.com/sponsors/geek-fun"><img src="https://img.shields.io/badge/GitHub_Sponsors-%E2%9D%A4_Support-EA4AAA?logo=githubsponsors&logoColor=white" alt="GitHub Sponsors" /></a>
 </p>
-
-## Star History
-
-<a href="https://www.star-history.com/?repos=geek-fun/serverlessinsight&type=date">
-  <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/chart?repos=geek-fun/serverlessinsight&type=date&theme=dark" />
-    <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/chart?repos=geek-fun/serverlessinsight&type=date" />
-    <img alt="Star History Chart" src="https://api.star-history.com/chart?repos=geek-fun/serverlessinsight&type=date" />
-  </picture>
-</a>
 
 ## License
 
