@@ -278,6 +278,10 @@ events:
 ## 社区
 
 <p align="center">
+  <img src="docs/images/wechat_official.png" width="300" alt="微信公众号">
+</p>
+
+<p align="center">
   <a href="https://x.com/geekfun_club"><img src="https://img.shields.io/badge/X-关注-000000?logo=x&logoColor=white" alt="X / Twitter" /></a>
   &nbsp;&nbsp;&nbsp;
   <a href="https://www.youtube.com/@geekfun-club"><img src="https://img.shields.io/badge/YouTube-订阅-FF0000?logo=youtube&logoColor=white" alt="YouTube" /></a>
