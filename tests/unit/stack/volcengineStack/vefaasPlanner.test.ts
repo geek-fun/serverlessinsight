@@ -3,6 +3,8 @@ import { createVolcengineClient } from '../../../../src/common/volcengineClient'
 import type { FunctionDomain, Context, StateFile } from '../../../../src/types';
 import * as stateManager from '../../../../src/common/stateManager';
 import * as hashUtils from '../../../../src/common/hashUtils';
+import { NasStorageClassEnum } from '../../../../src/types';
+import { buildDefaultTrustPolicy } from '../../../../src/stack/volcengineStack/vefaasTypes';
 
 jest.mock('../../../../src/common/volcengineClient', () => ({
   createVolcengineClient: jest.fn(),
@@ -785,6 +787,212 @@ describe('vefaasPlanner', () => {
       });
     };
 
+    it.each([128, 256])('plans only intent with refresh disabled (memory %s)', async (memory) => {
+      const plan = await generateFunctionPlan(
+        { ...mockContext, refresh: false },
+        buildRoleState(),
+        [{ ...mockFunction, memory }],
+      );
+
+      expect(plan.items[0].action).toBe(memory === 128 ? 'noop' : 'update');
+      expect(plan.items[0].drifted).toBeUndefined();
+      expect(mockVefaasClient.vefaas.getFunction).not.toHaveBeenCalled();
+      expect(mockVefaasClient.iam.getRole).not.toHaveBeenCalled();
+    });
+
+    it('adopts changed intent without a cloud update when live memory already matches', async () => {
+      const state = buildRoleState();
+      state.resources['functions.test_fn'].instances = [];
+      mockVefaasClient.vefaas.getFunction.mockResolvedValue({
+        runtime: 'node20/v1',
+        handler: 'index.handler',
+        memoryMb: 256,
+        requestTimeout: 30,
+      });
+
+      const plan = await generateFunctionPlan(mockContext, state, [
+        { ...mockFunction, memory: 256 },
+      ]);
+
+      expect(plan.items[0]).toMatchObject({ action: 'noop', stateUpdate: { memorySize: 256 } });
+      expect(plan.items[0].drifted).toBeUndefined();
+    });
+
+    it('compares effective external roles, VPC memberships and TOS mount paths', async () => {
+      const fn: FunctionDomain = {
+        ...mockFunction,
+        iam: { role: 'trn:iam::sample:role/external' },
+        network: {
+          vpc_id: 'vpc-1',
+          subnet_ids: ['subnet-a', 'subnet-b'],
+          security_group: { name: 'sg-1', ingress: [], egress: [] },
+        },
+        storage: {
+          nas: [{ mount_path: '/data', storage_class: NasStorageClassEnum.STANDARD_CAPACITY }],
+        },
+      };
+      const state = buildRoleState();
+      state.resources['functions.test_fn'].instances = [];
+      state.resources['functions.test_fn'].definition = {
+        ...state.resources['functions.test_fn'].definition,
+        iam: fn.iam,
+        role: fn.iam!.role,
+        vpcConfig: {
+          vpcId: 'vpc-1',
+          subnetIds: ['subnet-a', 'subnet-b'],
+          securityGroupIds: ['sg-1'],
+        },
+        tosMountConfig: { bucketName: '', mountPath: '/data' },
+      };
+      const remote = {
+        runtime: 'node20/v1',
+        handler: 'index.handler',
+        memoryMb: 128,
+        requestTimeout: 30,
+        role: fn.iam!.role,
+        vpcConfig: {
+          vpcId: 'vpc-1',
+          subnetIds: ['subnet-b', 'subnet-a'],
+          securityGroupIds: ['sg-1'],
+        },
+        tosMountConfig: { mountPoints: [{ bucketName: '', localMountPath: '/data' }] },
+      };
+      mockVefaasClient.vefaas.getFunction.mockResolvedValue(remote);
+
+      const matching = await generateFunctionPlan(mockContext, state, [fn]);
+      expect(matching.items[0].action).toBe('noop');
+
+      mockVefaasClient.vefaas.getFunction.mockResolvedValue({
+        ...remote,
+        tosMountConfig: { mountPoints: [{ bucketName: '', localMountPath: '/wrong' }] },
+      });
+      const drifted = await generateFunctionPlan(mockContext, state, [fn]);
+      expect(drifted.items[0]).toMatchObject({ action: 'update', drifted: true });
+      expect(drifted.items[0].revertKeys).toContain('tosMountConfig.mountPath');
+    });
+
+    it.each(['role', 'managed policies'])(
+      'propagates a failed %s probe instead of advertising a successful plan',
+      async (probe) => {
+        matchingRemote();
+        const error = new Error('AccessDenied');
+        mockVefaasClient.iam.getRole.mockResolvedValue({ roleId: 'role-1' });
+        const read =
+          probe === 'role'
+            ? mockVefaasClient.iam.getRole
+            : mockVefaasClient.iam.listAttachedRolePolicies;
+        read.mockRejectedValue(error);
+
+        await expect(
+          generateFunctionPlan(mockContext, buildRoleState(), [mockFunction]),
+        ).rejects.toBe(error);
+      },
+    );
+
+    it.each([
+      { desired: undefined, attached: ['unmanaged-policy', 'role-1-policy'] },
+      { desired: [], attached: ['role-1-policy'] },
+      { desired: ['policy/B', 'policy/A'], attached: ['A', 'role-1-policy', 'B'] },
+    ])(
+      'preserves omitted policies and compares declared memberships as sets: %j',
+      async ({ desired, attached }) => {
+        const fn: FunctionDomain = {
+          ...mockFunction,
+          iam: { role: { managed_policies: desired } },
+        };
+        const state = buildRoleState();
+        state.resources['functions.test_fn'].definition.iam = fn.iam;
+        matchingRemote();
+        const trust = buildDefaultTrustPolicy(['vefaas']);
+        mockVefaasClient.iam.getRole.mockResolvedValue({
+          roleId: 'role-1',
+          trustPolicyDocument: JSON.stringify(trust),
+        });
+        mockVefaasClient.iam.listAttachedRolePolicies.mockResolvedValue(attached);
+
+        const plan = await generateFunctionPlan(mockContext, state, [fn]);
+
+        expect(plan.items[0].action).toBe('noop');
+      },
+    );
+
+    it.each(['missing', 'trust', 'managed'] as const)(
+      'preserves configuration revert paths alongside %s role drift',
+      async (dimension) => {
+        const state = buildRoleState();
+        mockVefaasClient.vefaas.getFunction.mockResolvedValue({
+          runtime: 'node20/v1',
+          handler: 'index.handler',
+          memoryMb: 64,
+          requestTimeout: 30,
+        });
+        mockVefaasClient.iam.getRole.mockResolvedValue(
+          dimension === 'missing'
+            ? null
+            : {
+                roleId: 'role-1',
+                trustPolicyDocument:
+                  dimension === 'trust' ? JSON.stringify({ Statement: [] }) : undefined,
+              },
+        );
+        mockVefaasClient.iam.listAttachedRolePolicies.mockResolvedValue([]);
+
+        const plan = await generateFunctionPlan(mockContext, state, [mockFunction]);
+
+        expect(plan.items[0]).toMatchObject({
+          action: 'update',
+          drifted: true,
+          revertKeys: ['memorySize'],
+        });
+        expect(plan.items[0].driftReasons).toEqual([
+          dimension === 'missing' ? 'PLAN_DRIFT_ROLE_MISSING' : 'PLAN_DRIFT_ROLE_POLICY',
+        ]);
+      },
+    );
+
+    it.each(['trust', 'managed'] as const)(
+      'labels a declared IAM change driving %s repair as intent',
+      async (dimension) => {
+        matchingRemote();
+        mockVefaasClient.iam.getRole.mockResolvedValue({
+          roleId: 'role-1',
+          trustPolicyDocument:
+            dimension === 'trust' ? JSON.stringify({ Statement: [] }) : undefined,
+        });
+        mockVefaasClient.iam.listAttachedRolePolicies.mockResolvedValue(['role-1-policy']);
+        const desired: FunctionDomain = {
+          ...mockFunction,
+          iam: { role: { managed_policies: ['policy/new'] } },
+        };
+
+        const plan = await generateFunctionPlan(mockContext, buildRoleState(), [desired]);
+
+        expect(plan.items[0]).toMatchObject({
+          action: 'update',
+          driftReasons: ['PLAN_DRIFT_ROLE_POLICY'],
+        });
+        expect(plan.items[0].drifted).toBeUndefined();
+      },
+    );
+
+    it('propagates a failed TLS probe', async () => {
+      const state = buildRoleState();
+      state.resources['functions.test_fn'].instances = [
+        { type: 'VOLCENGINE_TLS_TOPIC', id: 'project/topic', sid: 'topic-sid' },
+      ];
+      state.resources['functions.test_fn'].definition.logConfig = {
+        project: 'project',
+        topic: 'topic',
+      };
+      matchingRemote();
+      const error = new Error('TLS request timed out');
+      mockVefaasClient.tls.getTopic.mockRejectedValue(error);
+
+      await expect(
+        generateFunctionPlan(mockContext, state, [{ ...mockFunction, log: true }]),
+      ).rejects.toBe(error);
+    });
+
     it('omits revertKeys when the config itself changed the drifted field', async () => {
       // stored 128 -> desired 256 -> live 128: intent-driven, nothing to mark.
       const desiredFn = { ...mockFunction, memory: 256 };
@@ -992,6 +1200,69 @@ describe('vefaasPlanner', () => {
           handler: 'index.handler',
           memoryMb: 128,
           requestTimeout: 30,
+        });
+      });
+
+      it('treats a YAML timer description edit as intent and converges after repair', async () => {
+        const state = buildTimerState();
+        const desired: FunctionDomain = {
+          ...fnWithTimer,
+          triggers: {
+            timer: [{ ...fnWithTimer.triggers!.timer![0], description: 'daily billing' }],
+          },
+        };
+        mockVefaasClient.vefaas.listTriggers.mockResolvedValue([
+          {
+            id: 'trig-1',
+            name: 'billing-run',
+            sourceType: 'Timer',
+            source: JSON.stringify({ cron: '23 11 * * *', enable: true }),
+          },
+        ]);
+
+        const before = await generateFunctionPlan(mockContext, state, [desired]);
+
+        expect(before.items[0]).toMatchObject({
+          action: 'update',
+          driftReasons: ['PLAN_DRIFT_TIMER_TRIGGER'],
+        });
+        expect(before.items[0].drifted).toBeUndefined();
+        state.resources['functions.test_fn'].definition.timers = desired.triggers!.timer;
+        mockVefaasClient.vefaas.listTriggers.mockResolvedValue([
+          {
+            id: 'trig-1',
+            name: 'billing-run',
+            sourceType: 'Timer',
+            source: JSON.stringify({
+              cron: '23 11 * * *',
+              enable: true,
+              description: 'daily billing',
+            }),
+          },
+        ]);
+
+        const after = await generateFunctionPlan(mockContext, state, [desired]);
+        expect(after.items[0].action).toBe('noop');
+      });
+
+      it('keeps attribute revert paths on a timer repair', async () => {
+        const state = buildTimerState();
+        mockVefaasClient.vefaas.getFunction.mockResolvedValue({
+          functionId: 'func-123',
+          runtime: 'node20/v1',
+          handler: 'index.handler',
+          memoryMb: 64,
+          requestTimeout: 30,
+        });
+        mockVefaasClient.vefaas.listTriggers.mockResolvedValue([]);
+
+        const plan = await generateFunctionPlan(mockContext, state, [fnWithTimer]);
+
+        expect(plan.items[0]).toMatchObject({
+          action: 'update',
+          drifted: true,
+          revertKeys: ['memorySize'],
+          driftReasons: ['PLAN_DRIFT_TIMER_TRIGGER'],
         });
       });
 

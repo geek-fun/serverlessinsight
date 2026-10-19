@@ -2530,6 +2530,31 @@ describe('OssResource', () => {
       }));
 
     describe('createBucketResource - IAM policy', () => {
+      it('clears an existing owned bucket policy when creation explicitly declares an empty statement list', async () => {
+        const bucket: BucketDomain = {
+          key: 'test_bucket',
+          name: 'test-bucket',
+          iam: { resource: { statements: [] } },
+        };
+        mockOssOperations.getBucket.mockResolvedValue(
+          taggedBucketInfo(
+            {
+              name: 'test-bucket',
+              location: 'oss-cn-hangzhou',
+              acl: 'private',
+              storageClass: 'Standard',
+            },
+            'buckets.test_bucket',
+          ),
+        );
+        mockOssOperations.deleteBucketPolicy.mockResolvedValue(undefined);
+
+        await createBucketResource(mockContext, bucket, initialState);
+
+        expect(mockOssOperations.deleteBucketPolicy).toHaveBeenCalledWith('test-bucket');
+        expect(mockOssOperations.putBucketPolicy).not.toHaveBeenCalled();
+      });
+
       it('should apply bucket policy when iam is configured', async () => {
         const bucket: BucketDomain = {
           key: 'test_bucket',
