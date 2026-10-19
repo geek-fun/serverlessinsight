@@ -23,6 +23,7 @@ const mockCynosdbClient = {
   CreateClusters: jest.fn(),
   DescribeClusters: jest.fn(),
   ModifyServerlessStrategy: jest.fn(),
+  DescribeServerlessStrategy: jest.fn(),
   OfflineCluster: jest.fn(),
 };
 
@@ -404,6 +405,63 @@ describe('tdsqlcOperations', () => {
 
       await expect(operations.getClusterByName('target')).rejects.toThrow('permission denied');
     });
+  });
+
+  describe('getServerlessStrategy', () => {
+    beforeEach(() => mockCynosdbClient.DescribeServerlessStrategy.mockReset());
+
+    it.each([
+      ['yes', true],
+      ['no', false],
+      [undefined, undefined],
+    ])('reads configured AutoPause=%s without inferring running state', async (value, expected) => {
+      mockCynosdbClient.DescribeServerlessStrategy.mockResolvedValue({
+        AutoPause: value,
+        AutoPauseDelay: 600,
+      });
+
+      await expect(operations.getServerlessStrategy('cluster-123')).resolves.toEqual({
+        autoPause: expected,
+        autoPauseDelay: 600,
+      });
+      expect(mockCynosdbClient.DescribeServerlessStrategy).toHaveBeenCalledWith({
+        ClusterId: 'cluster-123',
+      });
+    });
+
+    it('keeps an omitted pause delay unreadable', async () => {
+      mockCynosdbClient.DescribeServerlessStrategy.mockResolvedValue({ AutoPause: 'no' });
+
+      await expect(operations.getServerlessStrategy('cluster-123')).resolves.toEqual({
+        autoPause: false,
+        autoPauseDelay: undefined,
+      });
+    });
+
+    it('returns an unreadable result for an empty SDK response', async () => {
+      mockCynosdbClient.DescribeServerlessStrategy.mockResolvedValue(null);
+
+      await expect(operations.getServerlessStrategy('cluster-123')).resolves.toBeNull();
+    });
+
+    it('returns an unreadable result when the installed SDK lacks the method', async () => {
+      const legacyOperations = createTdsqlcOperations(
+        {} as Parameters<typeof createTdsqlcOperations>[0],
+        mockContext as Parameters<typeof createTdsqlcOperations>[1],
+      );
+
+      await expect(legacyOperations.getServerlessStrategy('cluster-123')).resolves.toBeNull();
+    });
+
+    it.each(['AccessDenied', 'RequestTimeout'])(
+      'propagates %s instead of treating a failed read as unavailable',
+      async (message) => {
+        const error = new Error(message);
+        mockCynosdbClient.DescribeServerlessStrategy.mockRejectedValue(error);
+
+        await expect(operations.getServerlessStrategy('cluster-123')).rejects.toBe(error);
+      },
+    );
   });
 
   describe('updateCluster', () => {

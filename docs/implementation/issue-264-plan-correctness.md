@@ -72,7 +72,8 @@ The maintenance cost is a capability/builder update plus a round-trip and conver
 - Shared comparison, capability, redaction, formatter and JSON tests cover nested defaults, unsupported updates, sensitive changes, set versus sequence semantics, provenance and state-only reporting.
 - Provider planner/resource/client regressions cover read failures, ownership, physical identities, HTTP/domain/timer configuration, effective policy documents, strategy settings and no-refresh behavior.
 - Coverage thresholds remain unchanged at 85% for statements, branches, functions and lines.
-- Final validation passed on an unchanged source and test tree: 183 suites and 3,843 tests. Coverage is 96.63% statements, 86.25% branches, 97.68% functions and 97.02% lines. TypeScript build, ESLint and `git diff --check` also passed.
+- Final validation passed on an unchanged source and test tree: 184 suites and 3,968 tests. Coverage is 97.11% statements, 87.22% branches, 97.97% functions and 97.53% lines. TypeScript build, ESLint and `git diff --check` also passed.
+- The coverage follow-up adds 125 regression cases for optional configuration read failures, lifecycle comparisons and repairs, effective dependency settings, state-only adoption, and diff provenance. Production code and coverage settings are unchanged by that follow-up.
 
 ## Readability and migration limits
 

@@ -1,3 +1,4 @@
+import { stripVTControlCharacters } from 'node:util';
 import { lang } from '../../../src/lang';
 import {
   computeAttributeDiffs,
@@ -583,6 +584,31 @@ describe('field provenance without color (issue #264)', () => {
     expect(rendered).toMatch(/\+ ADDED:/);
     expect(rendered).toMatch(/- REMOVED:/);
   });
+
+  it.each([false, true])(
+    'expands nested removals and retains their revert annotations (color %s)',
+    (colorize) => {
+      const output = formatPlanItem(
+        {
+          logicalId: 'functions.fn',
+          resourceType: 'ALIYUN_FC3',
+          action: 'update',
+          changes: {
+            before: { vpcConfig: { nested: { subnet: 'old-subnet' } } },
+            after: {},
+          },
+          revertKeys: ['vpcConfig'],
+        },
+        { colorize, indentSize: 4, keyAlignWidth: 12 },
+      );
+      const plain = stripVTControlCharacters(output);
+
+      expect(plain).toMatch(/- vpcConfig:/);
+      expect(plain).toMatch(/- nested:/);
+      expect(plain).toMatch(/- nested:\s+\{ subnet: "old-subnet" \}/);
+      expect(plain).toContain(lang.__('PLAN_REVERT_ANNOTATION'));
+    },
+  );
 
   it('preserves nested revert paths and ancestor revert annotations', () => {
     const item = {

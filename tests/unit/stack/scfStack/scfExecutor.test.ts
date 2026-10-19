@@ -64,6 +64,41 @@ describe('ScfExecutor', () => {
   });
 
   describe('executeFunctionPlan', () => {
+    it.each([
+      [[], {}],
+      [['PLAN_DRIFT_HTTP_TRIGGER'], { repairHttp: true }],
+      [['PLAN_DRIFT_FUNCTION_DOMAIN'], { repairDomain: true }],
+      [
+        ['PLAN_DRIFT_HTTP_TRIGGER', 'PLAN_DRIFT_FUNCTION_DOMAIN'],
+        { repairHttp: true, repairDomain: true },
+      ],
+    ])(
+      'passes lifecycle repair reasons to the resource updater: %j',
+      async (driftReasons, repairs) => {
+        (scfResource.updateResource as jest.Mock).mockResolvedValue(initialState);
+        const plan: Plan = {
+          items: [
+            {
+              logicalId: 'functions.test_fn',
+              resourceType: 'SCF',
+              action: 'update',
+              driftReasons: driftReasons as string[],
+            },
+          ],
+        };
+
+        const result = await executeFunctionPlan(mockContext, plan, [testFunction], initialState);
+
+        expect(scfResource.updateResource).toHaveBeenCalledWith(
+          mockContext,
+          testFunction,
+          initialState,
+          { force: false, ...repairs },
+        );
+        expect(result.partialFailure).toBeUndefined();
+      },
+    );
+
     it('should handle noop action', async () => {
       const plan: Plan = {
         items: [

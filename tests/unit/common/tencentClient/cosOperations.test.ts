@@ -285,6 +285,77 @@ describe('cosOperations bucket management', () => {
     operations = createCosOperations(mockCosClient, 'ap-guangzhou');
   });
 
+  describe('optional configuration read failures', () => {
+    const optionalReads = [
+      ['ACL', mockGetBucketAcl, 'AccessControlPolicy'],
+      ['CORS', mockGetBucketCors, 'CorsConfiguration'],
+      ['website', mockGetBucketWebsite, 'WebsiteConfiguration'],
+      ['versioning', mockGetBucketVersioning, 'VersioningConfiguration'],
+      ['lifecycle', mockGetBucketLifecycle, 'LifecycleConfiguration'],
+      ['logging', mockGetBucketLogging, 'LoggingConfiguration'],
+      ['replication', mockGetBucketReplication, 'ReplicationConfiguration'],
+      ['encryption', mockGetBucketEncryption, 'SseConfiguration'],
+    ] as const;
+
+    beforeEach(() => {
+      mockHeadBucket.mockImplementation((_params, callback) => callback(null, {}));
+      optionalReads.forEach(([, read]) =>
+        read.mockImplementation((_params, callback) => callback(null, {})),
+      );
+      mockGetBucketTagging.mockImplementation((_params, callback) =>
+        callback(null, { Tags: [{ Key: 'si-owned-by', Value: 'sample-owner' }] }),
+      );
+    });
+
+    describe.each(optionalReads)('%s', (_name, read, field) => {
+      it.each([{ status: 404 }, { statusCode: 404 }, { code: 'NoSuchConfiguration' }])(
+        'keeps the bucket present when configuration is absent: %j',
+        async (details) => {
+          read.mockImplementation((_params, callback) =>
+            callback(Object.assign(new Error('configuration absent'), details)),
+          );
+
+          const result = await operations.getBucket('test-bucket', 'ap-guangzhou');
+
+          expect(result?.Name).toBe('test-bucket');
+          expect(result?.[field]).toBeUndefined();
+          expect(result?.Tags).toEqual([{ Key: 'si-owned-by', Value: 'sample-owner' }]);
+        },
+      );
+
+      it.each([
+        { statusCode: 403, code: 'AccessDenied' },
+        { statusCode: 503, code: 'ServiceUnavailable' },
+        { code: 'ECONNRESET' },
+        {},
+      ])('propagates an unreadable configuration: %j', async (details) => {
+        const error = Object.assign(new Error('configuration read failed'), details);
+        read.mockImplementation((_params, callback) => callback(error));
+
+        await expect(operations.getBucket('test-bucket', 'ap-guangzhou')).rejects.toBe(error);
+      });
+    });
+
+    it.each([{ statusCode: 404 }, { code: 'NoSuchBucketPolicy' }])(
+      'records a policy as known absent without discarding the bucket: %j',
+      async (details) => {
+        mockGetBucketPolicy.mockImplementation((_params, callback) => callback(details));
+
+        const result = await operations.getBucket('test-bucket', 'ap-guangzhou');
+
+        expect(result?.Name).toBe('test-bucket');
+        expect(result?.Policy).toBeNull();
+      },
+    );
+
+    it('propagates a nested policy permission error without classifying the bucket as absent', async () => {
+      const error = Object.assign(new Error('AccessDenied'), { statusCode: 403 });
+      mockGetBucketPolicy.mockImplementation((_params, callback) => callback(error));
+
+      await expect(operations.getBucket('test-bucket', 'ap-guangzhou')).rejects.toBe(error);
+    });
+  });
+
   describe('createBucket', () => {
     it('should create bucket successfully', async () => {
       mockPutBucket.mockImplementation((_params: unknown, cb: (err: null) => void) => cb(null));

@@ -36,6 +36,30 @@ describe('planRefreshedResource', () => {
     expect(overrides.read).toHaveBeenCalledTimes(1);
   });
 
+  it('rejects a changed resource type before making a provider read', async () => {
+    const read = jest.fn();
+
+    await expect(
+      planRefreshedResource(
+        args({
+          currentState: { ...currentState, metadata: { resourceType: 'PREVIOUS_RESOURCE' } },
+          read,
+        }),
+      ),
+    ).rejects.toThrow('replacement');
+    expect(read).not.toHaveBeenCalled();
+  });
+
+  it('accepts matching resource-type metadata', async () => {
+    const item = await planRefreshedResource(
+      args({
+        currentState: { ...currentState, metadata: { resourceType: 'TEST_RESOURCE' } },
+      }),
+    );
+
+    expect(item.action).toBe('noop');
+  });
+
   it('flags update+drifted when the live attributes drifted', async () => {
     const read = jest.fn().mockResolvedValue({ name: 'test', memory: 64 });
     const item = await planRefreshedResource(args({ read }));

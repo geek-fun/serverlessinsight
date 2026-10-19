@@ -1388,6 +1388,124 @@ describe('Fc3Resource', () => {
   });
 
   describe('updateResource', () => {
+    it.each(['logs', 'security group', 'NAS'] as const)(
+      'propagates failed %s repairs without saving completed state',
+      async (dimension) => {
+        const network = {
+          vpc_id: 'vpc-123',
+          subnet_ids: ['vsw-123'],
+          security_group: { name: 'app-sg', ingress: [], egress: [] },
+        };
+        const fn: FunctionDomain = {
+          ...testFunction,
+          ...(dimension === 'logs' ? { log: true } : { network }),
+          ...(dimension === 'NAS'
+            ? {
+                storage: {
+                  nas: [
+                    {
+                      storage_class: NasStorageClassEnum.STANDARD_CAPACITY,
+                      mount_path: '/mnt/data',
+                    },
+                  ],
+                },
+              }
+            : {}),
+        };
+        const dependent = {
+          logs: { type: 'ALIYUN_SLS_LOGSTORE', id: 'project/topic' },
+          'security group': { type: 'ALIYUN_ECS_SECURITY_GROUP', id: 'sg-1' },
+          NAS: { type: 'ALIYUN_NAS_FILE_SYSTEM', id: 'fs-1' },
+        }[dimension];
+        const state: StateFile = {
+          ...initialState,
+          resources: {
+            'functions.test_fn': {
+              mode: 'managed',
+              region: mockContext.region,
+              definition: mockDefinition,
+              instances: [{ ...dependent, sid: 'dependent' }],
+              lastUpdated: '2026-01-01T00:00:00Z',
+            },
+          },
+        };
+        const error = new Error('repair failed');
+        const read = {
+          logs: mockedSlsOperations.getLogstore,
+          'security group': mockedEcsOperations.getSecurityGroupRules,
+          NAS: mockedNasOperations.listMountTargets,
+        }[dimension];
+        read.mockRejectedValueOnce(error);
+
+        await expect(updateResource(mockContext, fn, state, { force: true })).rejects.toBe(error);
+        expect(mockedStateManager.setResource).not.toHaveBeenCalled();
+      },
+    );
+
+    it.each([false, true])(
+      'reconciles an existing HTTP trigger only when repair is requested (repair %s)',
+      async (repairHttp) => {
+        const fn: FunctionDomain = { ...testFunction, triggers: { http: { auth_type: 'public' } } };
+        const attributes = {
+          authType: 'anonymous',
+          methods: ['GET', 'POST', 'PUT', 'DELETE', 'HEAD', 'PATCH'],
+        };
+        const state: StateFile = {
+          ...initialState,
+          resources: {
+            'functions.test_fn': {
+              mode: 'managed',
+              region: mockContext.region,
+              definition: { ...mockDefinition, http: fn.triggers!.http },
+              instances: [
+                { type: 'ALIYUN_FC3_HTTP_TRIGGER', sid: 'http', id: 'http-trigger', attributes },
+              ],
+              lastUpdated: '2026-01-01T00:00:00Z',
+            },
+          },
+        };
+
+        await updateResource(mockContext, fn, state, { repairHttp });
+
+        expect(mockedFc3Operations.createTrigger).toHaveBeenCalledTimes(repairHttp ? 1 : 0);
+        expect(mockedFc3Operations.deleteTrigger).toHaveBeenCalledTimes(repairHttp ? 1 : 0);
+      },
+    );
+
+    it.each([false, true])(
+      'reconciles an existing domain only when repair is requested (repair %s)',
+      async (repairDomain) => {
+        const fn: FunctionDomain = {
+          ...testFunction,
+          domain: { domain_name: 'api.example.com', protocol: 'HTTP' },
+        };
+        const state: StateFile = {
+          ...initialState,
+          resources: {
+            'functions.test_fn': {
+              mode: 'managed',
+              region: mockContext.region,
+              definition: { ...mockDefinition, domain: fn.domain },
+              instances: [
+                {
+                  type: 'ALIYUN_FC3_CUSTOM_DOMAIN',
+                  sid: 'domain',
+                  id: 'api.example.com',
+                  attributes: { protocol: 'HTTP' },
+                },
+              ],
+              lastUpdated: '2026-01-01T00:00:00Z',
+            },
+          },
+        };
+
+        await updateResource(mockContext, fn, state, { repairDomain });
+
+        expect(mockedFc3Operations.createCustomDomain).toHaveBeenCalledTimes(repairDomain ? 1 : 0);
+        expect(mockedFc3Operations.deleteCustomDomain).toHaveBeenCalledTimes(repairDomain ? 1 : 0);
+      },
+    );
+
     it('should update resource and refresh state from provider', async () => {
       const newState = {
         ...initialState,

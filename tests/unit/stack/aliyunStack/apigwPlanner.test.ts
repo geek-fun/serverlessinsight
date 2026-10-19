@@ -142,6 +142,42 @@ describe('Apigw Planner', () => {
   });
 
   describe('generateApigwPlan', () => {
+    it.each([false, true])(
+      'skips live gateway probes with refresh disabled (intent changed %s)',
+      async (changed) => {
+        const state = buildMatchingState();
+        if (changed)
+          state.resources['events.test_api'].definition.description = 'previous description';
+
+        const plan = await generateApigwPlan(
+          { ...mockContext, refresh: false },
+          state,
+          [testEvent],
+          'test-service',
+        );
+
+        expect(plan.items[0].action).toBe(changed ? 'update' : 'noop');
+        expect(plan.items[0].drifted).toBeUndefined();
+        expect(mockApigwOperations.getApiGroup).not.toHaveBeenCalled();
+        expect(mockApigwOperations.listApisByGroup).not.toHaveBeenCalled();
+      },
+    );
+
+    it('adopts gateway intent when the live group already matches it', async () => {
+      const state = buildMatchingState();
+      state.resources['events.test_api'].definition.description = 'previous description';
+      mockApigwOperations.getApiGroup.mockResolvedValue(matchingGroup);
+      mockMatchingApis();
+
+      const plan = await generateApigwPlan(mockContext, state, [testEvent], 'test-service');
+
+      expect(plan.items[0]).toMatchObject({
+        action: 'noop',
+        stateUpdate: { description: matchingGroup.description },
+      });
+      expect(plan.items[0].drifted).toBeUndefined();
+    });
+
     it('should plan to create a new event when state is empty', async () => {
       // Mock findApiGroupByName to return null (group does not exist)
       mockApigwOperations.findApiGroupByName.mockResolvedValue(null);
