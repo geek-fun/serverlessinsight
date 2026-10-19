@@ -309,7 +309,7 @@ describe('OSS Planner', () => {
       expect(plan.items[0]).toMatchObject({ action: 'update', drifted: true });
     });
 
-    it('should plan live versioning drift as an update', async () => {
+    it('rejects unsupported change: should plan live versioning drift as an update', async () => {
       mockOssOperations.getBucket.mockResolvedValue({
         name: 'test-bucket',
         versioningConfig: { status: 'Suspended' },
@@ -324,11 +324,9 @@ describe('OSS Planner', () => {
         versioningStatus: 'Enabled',
       };
 
-      const plan = await generateBucketPlan(mockContext, stateForDefinition(desiredDefinition), [
-        desiredBucket,
-      ]);
-
-      expect(plan.items[0]).toMatchObject({ action: 'update', drifted: true });
+      await expect(
+        generateBucketPlan(mockContext, stateForDefinition(desiredDefinition), [desiredBucket]),
+      ).rejects.toThrow('versioningStatus');
     });
 
     it('should plan to update when domain binding previously failed (domainBound: false)', async () => {
@@ -630,7 +628,7 @@ describe('OSS Planner', () => {
       expect(plan.items[0].changes?.after).toBeDefined();
     });
 
-    it('should plan to update when website code hash changes', async () => {
+    it('should plan to update when website code hash changes without claiming live drift', async () => {
       mockOssOperations.getBucket.mockResolvedValue({
         name: 'test-bucket',
         acl: 'public-read',
@@ -674,7 +672,6 @@ describe('OSS Planner', () => {
         logicalId: 'buckets.test_bucket',
         action: 'update',
         resourceType: 'ALIYUN_OSS_BUCKET',
-        drifted: true,
       });
     });
 

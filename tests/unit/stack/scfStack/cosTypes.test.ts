@@ -207,7 +207,7 @@ describe('CosTypes', () => {
         acl: null,
         websiteConfiguration: {},
         domain: null,
-        wwwBindApex: false,
+        wwwBindApex: null,
         domainCertificateId: null,
         domainCertificateBody: null,
         domainCertificatePrivateKey: null,
@@ -325,20 +325,17 @@ describe('CosTypes', () => {
 
       const definition = extractCosBucketDefinition(config);
 
-      expect(definition.policy).toBe(
-        JSON.stringify({
-          resource: {
-            statements: [
-              {
-                effect: 'Allow',
-                principal: { qcs: 'qcs::cam::uin/123:role/my-role' },
-                action: ['name/cos:GetObject'],
-                resource: ['qcs::cos:ap-guangzhou:uid/123:test-bucket/*'],
-              },
-            ],
+      expect(JSON.parse(definition.policy as string)).toEqual({
+        version: '2.0',
+        statement: [
+          {
+            effect: 'allow',
+            principal: { qcs: 'qcs::cam::uin/123:role/my-role' },
+            action: ['name/cos:GetObject'],
+            resource: ['qcs::cos:ap-guangzhou:uid/123:test-bucket/*'],
           },
-        }),
-      );
+        ],
+      });
     });
 
     it('should set policy to null when IamPolicy is empty', () => {
@@ -354,7 +351,7 @@ describe('CosTypes', () => {
 
       const definition = extractCosBucketDefinition(config);
 
-      expect(definition.policy).toBeNull();
+      expect(definition.policy).toBe('null');
     });
 
     it('should set policy to null when IamPolicy not defined', () => {
@@ -385,6 +382,7 @@ describe('CosTypes', () => {
 
       expect(attrs).toEqual({
         bucket: 'test-bucket',
+        policy: null,
         acl: 'public-read',
         websiteConfiguration: {
           indexDocument: 'index.html',
@@ -392,15 +390,21 @@ describe('CosTypes', () => {
         },
         versioningStatus: 'Enabled',
         sseAlgorithm: 'AES256',
+        sseKmsMasterKeyId: null,
       });
       expect(attrs).not.toHaveProperty('region');
-      expect(attrs).not.toHaveProperty('policy');
+      expect(attrs).toHaveProperty('policy', null);
       expect(attrs).not.toHaveProperty('domain');
     });
 
     it('drifts only when a declared website differs from the live one', () => {
       expect(cloudCosToDefinition({ Name: 'test-bucket', Location: 'ap-guangzhou' })).toEqual({
         bucket: 'test-bucket',
+        policy: null,
+        websiteConfiguration: null,
+        versioningStatus: null,
+        sseAlgorithm: null,
+        sseKmsMasterKeyId: null,
       });
       // Matching index + null errorDocument on both sides normalizes equal.
       expect(
@@ -412,6 +416,7 @@ describe('CosTypes', () => {
           }),
           {
             bucket: 'test-bucket',
+            policy: null,
             websiteConfiguration: { indexDocument: 'index.html', errorDocument: null },
           },
         ),
@@ -425,6 +430,7 @@ describe('CosTypes', () => {
           }),
           {
             bucket: 'test-bucket',
+            policy: null,
             websiteConfiguration: { indexDocument: 'index.html', errorDocument: null },
           },
         ),

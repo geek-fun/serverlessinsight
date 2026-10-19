@@ -622,7 +622,7 @@ describe('Apigw Planner', () => {
       expect(plan.items[0].changes?.after).toBeDefined();
     });
 
-    it('degrades to a drifted create when the live group read rejects with a non-Error', async () => {
+    it('rejects provider read failure: degrades to a drifted create when the live group read rejects with a non-Error', async () => {
       let state = loadState('aliyun', 'test-app', 'test-service', 'default', testDir);
       state = setResource(state, 'events.test_api', {
         mode: 'managed',
@@ -647,10 +647,9 @@ describe('Apigw Planner', () => {
 
       mockApigwOperations.getApiGroup.mockRejectedValue('apigw exploded');
 
-      const plan = await generateApigwPlan(mockContext, state, [testEvent], 'test-service');
-
-      expect(plan.items).toHaveLength(1);
-      expect(plan.items[0]).toMatchObject({ action: 'create', drifted: true });
+      await expect(
+        generateApigwPlan(mockContext, state, [testEvent], 'test-service'),
+      ).rejects.toEqual('apigw exploded');
     });
 
     it('uses the stored definition as before when no group instance is recorded', async () => {
@@ -678,7 +677,7 @@ describe('Apigw Planner', () => {
       expect(plan.items[0].changes?.before).toMatchObject({ description: 'older description' });
     });
 
-    it('degrades to a drifted create when the live group read fails', async () => {
+    it('rejects provider read failure: degrades to a drifted create when the live group read fails', async () => {
       // Issue #246: a failed live read must warn and fall back honestly
       // (drifted create), not silently look like a routine plan.
       let state = loadState('aliyun', 'test-app', 'test-service', 'default', testDir);
@@ -705,10 +704,9 @@ describe('Apigw Planner', () => {
 
       mockApigwOperations.getApiGroup.mockRejectedValue(new Error('apigw throttled'));
 
-      const plan = await generateApigwPlan(mockContext, state, [testEvent], 'test-service');
-
-      expect(plan.items).toHaveLength(1);
-      expect(plan.items[0]).toMatchObject({ action: 'create', drifted: true });
+      await expect(
+        generateApigwPlan(mockContext, state, [testEvent], 'test-service'),
+      ).rejects.toEqual(new Error('apigw throttled'));
     });
 
     it('should plan update+drifted when the live group description drifted from the config', async () => {
@@ -810,7 +808,7 @@ describe('Apigw Planner', () => {
       expect(plan.items[0]).toMatchObject({ action: 'noop', resourceType: 'ALIYUN_APIGW' });
     });
 
-    it('should plan update with drifted:true on a local definition change', async () => {
+    it('should plan update with drifted:true on a local definition change without claiming live drift', async () => {
       const changedEvent: EventDomain = {
         ...testEvent,
         triggers: [{ method: 'GET', path: '/v2/users', backend: 'userFunction' }],
@@ -826,7 +824,7 @@ describe('Apigw Planner', () => {
 
       const plan = await generateApigwPlan(mockContext, state, [changedEvent], 'test-service');
 
-      expect(plan.items[0]).toMatchObject({ action: 'update', drifted: true });
+      expect(plan.items[0]).toMatchObject({ action: 'update' });
     });
   });
 });

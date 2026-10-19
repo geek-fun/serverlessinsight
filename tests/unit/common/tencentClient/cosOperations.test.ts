@@ -72,7 +72,12 @@ describe('cosOperations CORS', () => {
     mockPutBucketDomain.mockImplementation((_params: unknown, cb: (err: null) => void) => cb(null));
     // Default: auxiliary COS sub-configs are absent unless a test opts in.
     const notConfigured = (_params: unknown, cb: (err: Error) => void) =>
-      cb(new Error('NoSuchConfiguration'));
+      cb(
+        Object.assign(new Error('NoSuchConfiguration'), {
+          code: 'NoSuchConfiguration',
+          statusCode: 404,
+        }),
+      );
     mockGetBucketLifecycle.mockImplementation(notConfigured);
     mockGetBucketLogging.mockImplementation(notConfigured);
     mockGetBucketReplication.mockImplementation(notConfigured);
@@ -86,7 +91,12 @@ describe('cosOperations CORS', () => {
   describe('bindCustomDomain', () => {
     it('should add CORS rule after binding domain', async () => {
       mockGetBucketCors.mockImplementation((_params: unknown, cb: (err: Error) => void) =>
-        cb(new Error('NoSuchCORSConfiguration')),
+        cb(
+          Object.assign(new Error('NoSuchCORSConfiguration'), {
+            code: 'NoSuchCORSConfiguration',
+            statusCode: 404,
+          }),
+        ),
       );
       mockPutBucketCors.mockImplementation((_params: unknown, cb: (err: null) => void) => cb(null));
 
@@ -148,7 +158,12 @@ describe('cosOperations CORS', () => {
 
     it('should not fail bind if CORS addition fails', async () => {
       mockGetBucketCors.mockImplementation((_params: unknown, cb: (err: Error) => void) =>
-        cb(new Error('NoSuchCORSConfiguration')),
+        cb(
+          Object.assign(new Error('NoSuchCORSConfiguration'), {
+            code: 'NoSuchCORSConfiguration',
+            statusCode: 404,
+          }),
+        ),
       );
       mockPutBucketCors.mockImplementation((_params: unknown, cb: (err: Error) => void) =>
         cb(new Error('CORS write failed')),
@@ -254,7 +269,12 @@ describe('cosOperations bucket management', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     const notConfigured = (_params: unknown, cb: (err: Error) => void) =>
-      cb(new Error('NoSuchConfiguration'));
+      cb(
+        Object.assign(new Error('NoSuchConfiguration'), {
+          code: 'NoSuchConfiguration',
+          statusCode: 404,
+        }),
+      );
     mockGetBucketLifecycle.mockImplementation(notConfigured);
     mockGetBucketLogging.mockImplementation(notConfigured);
     mockGetBucketReplication.mockImplementation(notConfigured);
@@ -391,17 +411,27 @@ describe('cosOperations bucket management', () => {
           }),
       );
       mockGetBucketCors.mockImplementation((_params: unknown, cb: (err: Error) => void) =>
-        cb(new Error('NoSuchCORSConfiguration')),
+        cb(
+          Object.assign(new Error('NoSuchCORSConfiguration'), {
+            code: 'NoSuchCORSConfiguration',
+            statusCode: 404,
+          }),
+        ),
       );
       mockGetBucketWebsite.mockImplementation((_params: unknown, cb: (err: Error) => void) =>
-        cb(new Error('NoSuchWebsiteConfiguration')),
+        cb(
+          Object.assign(new Error('NoSuchWebsiteConfiguration'), {
+            code: 'NoSuchWebsiteConfiguration',
+            statusCode: 404,
+          }),
+        ),
       );
       mockGetBucketVersioning.mockImplementation(
         (_params: unknown, cb: (err: null, data: unknown) => void) =>
           cb(null, { VersioningConfiguration: { Status: 'Suspended' } }),
       );
       mockGetBucketTagging.mockImplementation((_params: unknown, cb: (err: Error) => void) =>
-        cb(new Error('NoSuchTagSet')),
+        cb(Object.assign(new Error('NoSuchTagSet'), { code: 'NoSuchTagSet', statusCode: 404 })),
       );
 
       const result = await operations.getBucket('test-bucket', 'ap-guangzhou');
@@ -447,7 +477,12 @@ describe('cosOperations bucket management', () => {
           cb(null, { ACL: 'private', Owner: { ID: 'owner-id' }, Grants: [] }),
       );
       mockGetBucketCors.mockImplementation((_params: unknown, cb: (err: Error) => void) =>
-        cb(new Error('NoSuchCORSConfiguration')),
+        cb(
+          Object.assign(new Error('NoSuchCORSConfiguration'), {
+            code: 'NoSuchCORSConfiguration',
+            statusCode: 404,
+          }),
+        ),
       );
       mockGetBucketWebsite.mockImplementation(
         (_params: unknown, cb: (err: null, data: unknown) => void) =>
@@ -463,7 +498,7 @@ describe('cosOperations bucket management', () => {
           cb(null, { VersioningConfiguration: {} }),
       );
       mockGetBucketTagging.mockImplementation((_params: unknown, cb: (err: Error) => void) =>
-        cb(new Error('NoSuchTagSet')),
+        cb(Object.assign(new Error('NoSuchTagSet'), { code: 'NoSuchTagSet', statusCode: 404 })),
       );
 
       const result = await operations.getBucket('test-bucket', 'ap-guangzhou');
@@ -484,10 +519,20 @@ describe('cosOperations bucket management', () => {
           cb(null, { ACL: 'private', Owner: { ID: 'owner-id' }, Grants: [] }),
       );
       mockGetBucketCors.mockImplementation((_params: unknown, cb: (err: Error) => void) =>
-        cb(new Error('NoSuchCORSConfiguration')),
+        cb(
+          Object.assign(new Error('NoSuchCORSConfiguration'), {
+            code: 'NoSuchCORSConfiguration',
+            statusCode: 404,
+          }),
+        ),
       );
       mockGetBucketWebsite.mockImplementation((_params: unknown, cb: (err: Error) => void) =>
-        cb(new Error('NoSuchWebsiteConfiguration')),
+        cb(
+          Object.assign(new Error('NoSuchWebsiteConfiguration'), {
+            code: 'NoSuchWebsiteConfiguration',
+            statusCode: 404,
+          }),
+        ),
       );
       mockGetBucketVersioning.mockImplementation(
         (_params: unknown, cb: (err: null, data: unknown) => void) =>
@@ -776,14 +821,14 @@ describe('cosOperations bucket management', () => {
       expect(result).toBeNull();
     });
 
-    it('should return null when policy does not exist (403)', async () => {
+    it('propagates policy permission failures', async () => {
       mockGetBucketPolicy.mockImplementation(
         (_params: unknown, cb: (err: { statusCode: number }) => void) => cb({ statusCode: 403 }),
       );
 
-      const result = await operations.getBucketPolicy('test-bucket', 'ap-guangzhou');
-
-      expect(result).toBeNull();
+      await expect(operations.getBucketPolicy('test-bucket', 'ap-guangzhou')).rejects.toMatchObject(
+        { statusCode: 403 },
+      );
     });
   });
 
@@ -831,14 +876,19 @@ describe('cosOperations bucket management', () => {
           }),
       );
       mockGetBucketWebsite.mockImplementation((_params: unknown, cb: (err: Error) => void) =>
-        cb(new Error('NoSuchWebsiteConfiguration')),
+        cb(
+          Object.assign(new Error('NoSuchWebsiteConfiguration'), {
+            code: 'NoSuchWebsiteConfiguration',
+            statusCode: 404,
+          }),
+        ),
       );
       mockGetBucketVersioning.mockImplementation(
         (_params: unknown, cb: (err: null, data: unknown) => void) =>
           cb(null, { VersioningConfiguration: {} }),
       );
       mockGetBucketTagging.mockImplementation((_params: unknown, cb: (err: Error) => void) =>
-        cb(new Error('NoSuchTagSet')),
+        cb(Object.assign(new Error('NoSuchTagSet'), { code: 'NoSuchTagSet', statusCode: 404 })),
       );
 
       const result = await operations.getBucket('test-bucket', 'ap-guangzhou');
@@ -864,10 +914,20 @@ describe('cosOperations bucket management', () => {
           cb(null, { ACL: 'private', Owner: { ID: 'owner-id' }, Grants: [] }),
       );
       mockGetBucketCors.mockImplementation((_params: unknown, cb: (err: Error) => void) =>
-        cb(new Error('NoSuchCORSConfiguration')),
+        cb(
+          Object.assign(new Error('NoSuchCORSConfiguration'), {
+            code: 'NoSuchCORSConfiguration',
+            statusCode: 404,
+          }),
+        ),
       );
       mockGetBucketWebsite.mockImplementation((_params: unknown, cb: (err: Error) => void) =>
-        cb(new Error('NoSuchWebsiteConfiguration')),
+        cb(
+          Object.assign(new Error('NoSuchWebsiteConfiguration'), {
+            code: 'NoSuchWebsiteConfiguration',
+            statusCode: 404,
+          }),
+        ),
       );
       mockGetBucketVersioning.mockImplementation(
         (_params: unknown, cb: (err: null, data: unknown) => void) =>
@@ -902,10 +962,20 @@ describe('cosOperations bucket management', () => {
           cb(null, { ACL: 'private', Owner: { ID: 'owner-id' }, Grants: [] }),
       );
       mockGetBucketCors.mockImplementation((_params: unknown, cb: (err: Error) => void) =>
-        cb(new Error('NoSuchCORSConfiguration')),
+        cb(
+          Object.assign(new Error('NoSuchCORSConfiguration'), {
+            code: 'NoSuchCORSConfiguration',
+            statusCode: 404,
+          }),
+        ),
       );
       mockGetBucketWebsite.mockImplementation((_params: unknown, cb: (err: Error) => void) =>
-        cb(new Error('NoSuchWebsiteConfiguration')),
+        cb(
+          Object.assign(new Error('NoSuchWebsiteConfiguration'), {
+            code: 'NoSuchWebsiteConfiguration',
+            statusCode: 404,
+          }),
+        ),
       );
       mockGetBucketVersioning.mockImplementation(
         (_params: unknown, cb: (err: null, data: unknown) => void) =>
@@ -943,17 +1013,27 @@ describe('cosOperations bucket management', () => {
           }),
       );
       mockGetBucketCors.mockImplementation((_params: unknown, cb: (err: Error) => void) =>
-        cb(new Error('NoSuchCORSConfiguration')),
+        cb(
+          Object.assign(new Error('NoSuchCORSConfiguration'), {
+            code: 'NoSuchCORSConfiguration',
+            statusCode: 404,
+          }),
+        ),
       );
       mockGetBucketWebsite.mockImplementation((_params: unknown, cb: (err: Error) => void) =>
-        cb(new Error('NoSuchWebsiteConfiguration')),
+        cb(
+          Object.assign(new Error('NoSuchWebsiteConfiguration'), {
+            code: 'NoSuchWebsiteConfiguration',
+            statusCode: 404,
+          }),
+        ),
       );
       mockGetBucketVersioning.mockImplementation(
         (_params: unknown, cb: (err: null, data: unknown) => void) =>
           cb(null, { VersioningConfiguration: {} }),
       );
       mockGetBucketTagging.mockImplementation((_params: unknown, cb: (err: Error) => void) =>
-        cb(new Error('NoSuchTagSet')),
+        cb(Object.assign(new Error('NoSuchTagSet'), { code: 'NoSuchTagSet', statusCode: 404 })),
       );
 
       const result = await operations.getBucket('test-bucket', 'ap-guangzhou');
@@ -989,17 +1069,27 @@ describe('cosOperations bucket management', () => {
           }),
       );
       mockGetBucketCors.mockImplementation((_params: unknown, cb: (err: Error) => void) =>
-        cb(new Error('NoSuchCORSConfiguration')),
+        cb(
+          Object.assign(new Error('NoSuchCORSConfiguration'), {
+            code: 'NoSuchCORSConfiguration',
+            statusCode: 404,
+          }),
+        ),
       );
       mockGetBucketWebsite.mockImplementation((_params: unknown, cb: (err: Error) => void) =>
-        cb(new Error('NoSuchWebsiteConfiguration')),
+        cb(
+          Object.assign(new Error('NoSuchWebsiteConfiguration'), {
+            code: 'NoSuchWebsiteConfiguration',
+            statusCode: 404,
+          }),
+        ),
       );
       mockGetBucketVersioning.mockImplementation(
         (_params: unknown, cb: (err: null, data: unknown) => void) =>
           cb(null, { VersioningConfiguration: {} }),
       );
       mockGetBucketTagging.mockImplementation((_params: unknown, cb: (err: Error) => void) =>
-        cb(new Error('NoSuchTagSet')),
+        cb(Object.assign(new Error('NoSuchTagSet'), { code: 'NoSuchTagSet', statusCode: 404 })),
       );
 
       const result = await operations.getBucket('test-bucket', 'ap-guangzhou');
@@ -1017,7 +1107,7 @@ describe('cosOperations bucket management', () => {
       ]);
     });
 
-    it('should handle ACL error gracefully', async () => {
+    it('propagates ACL permission failures', async () => {
       mockHeadBucket.mockImplementation(
         (_params: unknown, cb: (err: null, data: unknown) => void) => cb(null, {}),
       );
@@ -1025,37 +1115,31 @@ describe('cosOperations bucket management', () => {
         cb(new Error('AccessDenied')),
       );
       mockGetBucketCors.mockImplementation((_params: unknown, cb: (err: Error) => void) =>
-        cb(new Error('NoSuchCORSConfiguration')),
+        cb(
+          Object.assign(new Error('NoSuchCORSConfiguration'), {
+            code: 'NoSuchCORSConfiguration',
+            statusCode: 404,
+          }),
+        ),
       );
       mockGetBucketWebsite.mockImplementation((_params: unknown, cb: (err: Error) => void) =>
-        cb(new Error('NoSuchWebsiteConfiguration')),
+        cb(
+          Object.assign(new Error('NoSuchWebsiteConfiguration'), {
+            code: 'NoSuchWebsiteConfiguration',
+            statusCode: 404,
+          }),
+        ),
       );
       mockGetBucketVersioning.mockImplementation((_params: unknown, cb: (err: Error) => void) =>
         cb(new Error('AccessDenied')),
       );
       mockGetBucketTagging.mockImplementation((_params: unknown, cb: (err: Error) => void) =>
-        cb(new Error('NoSuchTagSet')),
+        cb(Object.assign(new Error('NoSuchTagSet'), { code: 'NoSuchTagSet', statusCode: 404 })),
       );
 
-      const result = await operations.getBucket('test-bucket', 'ap-guangzhou');
-
-      expect(result).toEqual({
-        Name: 'test-bucket',
-        Location: 'ap-guangzhou',
-        CreationDate: undefined,
-        ACL: undefined,
-        AccessControlPolicy: undefined,
-        CorsConfiguration: undefined,
-        WebsiteConfiguration: undefined,
-        VersioningConfiguration: undefined,
-        TaggingConfiguration: undefined,
-        Tags: undefined,
-        LifecycleConfiguration: undefined,
-        LoggingConfiguration: undefined,
-        ReplicationConfiguration: undefined,
-        SseConfiguration: undefined,
-        Policy: null,
-      });
+      await expect(operations.getBucket('test-bucket', 'ap-guangzhou')).rejects.toThrow(
+        'AccessDenied',
+      );
     });
 
     it('should throw non-404 errors from headBucket', async () => {
@@ -1091,17 +1175,27 @@ describe('cosOperations bucket management', () => {
           }),
       );
       mockGetBucketCors.mockImplementation((_params: unknown, cb: (err: Error) => void) =>
-        cb(new Error('NoSuchCORSConfiguration')),
+        cb(
+          Object.assign(new Error('NoSuchCORSConfiguration'), {
+            code: 'NoSuchCORSConfiguration',
+            statusCode: 404,
+          }),
+        ),
       );
       mockGetBucketWebsite.mockImplementation((_params: unknown, cb: (err: Error) => void) =>
-        cb(new Error('NoSuchWebsiteConfiguration')),
+        cb(
+          Object.assign(new Error('NoSuchWebsiteConfiguration'), {
+            code: 'NoSuchWebsiteConfiguration',
+            statusCode: 404,
+          }),
+        ),
       );
       mockGetBucketVersioning.mockImplementation(
         (_params: unknown, cb: (err: null, data: unknown) => void) =>
           cb(null, { VersioningConfiguration: {} }),
       );
       mockGetBucketTagging.mockImplementation((_params: unknown, cb: (err: Error) => void) =>
-        cb(new Error('NoSuchTagSet')),
+        cb(Object.assign(new Error('NoSuchTagSet'), { code: 'NoSuchTagSet', statusCode: 404 })),
       );
 
       const result = await operations.getBucket('test-bucket', 'ap-guangzhou');
@@ -1126,17 +1220,27 @@ describe('cosOperations bucket management', () => {
           }),
       );
       mockGetBucketCors.mockImplementation((_params: unknown, cb: (err: Error) => void) =>
-        cb(new Error('NoSuchCORSConfiguration')),
+        cb(
+          Object.assign(new Error('NoSuchCORSConfiguration'), {
+            code: 'NoSuchCORSConfiguration',
+            statusCode: 404,
+          }),
+        ),
       );
       mockGetBucketWebsite.mockImplementation((_params: unknown, cb: (err: Error) => void) =>
-        cb(new Error('NoSuchWebsiteConfiguration')),
+        cb(
+          Object.assign(new Error('NoSuchWebsiteConfiguration'), {
+            code: 'NoSuchWebsiteConfiguration',
+            statusCode: 404,
+          }),
+        ),
       );
       mockGetBucketVersioning.mockImplementation(
         (_params: unknown, cb: (err: null, data: unknown) => void) =>
           cb(null, { VersioningConfiguration: {} }),
       );
       mockGetBucketTagging.mockImplementation((_params: unknown, cb: (err: Error) => void) =>
-        cb(new Error('NoSuchTagSet')),
+        cb(Object.assign(new Error('NoSuchTagSet'), { code: 'NoSuchTagSet', statusCode: 404 })),
       );
 
       const result = await operations.getBucket('test-bucket', 'ap-guangzhou');
@@ -1160,7 +1264,12 @@ describe('cosOperations with dnsOps', () => {
     jest.clearAllMocks();
     mockPutBucketDomain.mockImplementation((_params: unknown, cb: (err: null) => void) => cb(null));
     mockGetBucketCors.mockImplementation((_params: unknown, cb: (err: Error) => void) =>
-      cb(new Error('NoSuchCORSConfiguration')),
+      cb(
+        Object.assign(new Error('NoSuchCORSConfiguration'), {
+          code: 'NoSuchCORSConfiguration',
+          statusCode: 404,
+        }),
+      ),
     );
     mockPutBucketCors.mockImplementation((_params: unknown, cb: (err: null) => void) => cb(null));
     operations = createCosOperations(mockCosClient, 'ap-guangzhou', mockDnsOps);
@@ -1232,7 +1341,12 @@ describe('cosOperations with dnsOps', () => {
   describe('unbindCustomDomain with dnsOps', () => {
     beforeEach(() => {
       mockGetBucketCors.mockImplementation((_params: unknown, cb: (err: Error) => void) =>
-        cb(new Error('NoSuchCORSConfiguration')),
+        cb(
+          Object.assign(new Error('NoSuchCORSConfiguration'), {
+            code: 'NoSuchCORSConfiguration',
+            statusCode: 404,
+          }),
+        ),
       );
     });
 

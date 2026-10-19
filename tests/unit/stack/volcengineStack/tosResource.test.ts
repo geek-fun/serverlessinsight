@@ -644,7 +644,7 @@ describe('tosResource', () => {
       );
     });
 
-    it('should remove policy when iam is removed', async () => {
+    it('clears a policy only when the statement list is explicitly empty', async () => {
       const stateWithPolicy: StateFile = {
         ...mockState,
         resources: {
@@ -669,6 +669,7 @@ describe('tosResource', () => {
       mockTosClient.tos.deleteBucketPolicy.mockResolvedValueOnce(undefined);
 
       const bucket: BucketDomain = {
+        iam: { resource: { statements: [] } },
         key: 'test_bucket',
         name: 'test-bucket',
       };
@@ -678,7 +679,7 @@ describe('tosResource', () => {
       expect(mockTosClient.tos.deleteBucketPolicy).toHaveBeenCalledWith('test-bucket');
     });
 
-    it('should not call policy functions when iam is unchanged', async () => {
+    it('reapplies a declared policy during a selected repair even when saved intent is unchanged', async () => {
       const stateWithPolicy: StateFile = {
         ...mockState,
         resources: {
@@ -730,7 +731,7 @@ describe('tosResource', () => {
 
       await updateResource(mockContext, bucket, stateWithPolicy);
 
-      expect(mockTosClient.tos.putBucketPolicy).not.toHaveBeenCalled();
+      expect(mockTosClient.tos.putBucketPolicy).toHaveBeenCalled();
       expect(mockTosClient.tos.deleteBucketPolicy).not.toHaveBeenCalled();
     });
   });

@@ -1846,7 +1846,7 @@ describe('OssResource', () => {
       );
     });
 
-    it('should unbind all DNS when domain is removed entirely', async () => {
+    it('preserves omitted domains and their tracked DNS records', async () => {
       const stateWithDnsInstances: StateFile = {
         ...initialState,
         resources: {
@@ -1904,19 +1904,9 @@ describe('OssResource', () => {
 
       await updateBucketResource(mockContext, bucketNoDomain, stateWithDnsInstances);
 
-      expect(mockOssOperations.unbindCustomDomain).toHaveBeenCalledTimes(2);
-      expect(mockOssOperations.unbindCustomDomain).toHaveBeenCalledWith(
-        'test-bucket',
-        'example.com',
-        'dns-1',
-        undefined,
-      );
-      expect(mockOssOperations.unbindCustomDomain).toHaveBeenCalledWith(
-        'test-bucket',
-        'www.example.com',
-        'dns-2',
-        'txt-2',
-      );
+      expect(mockOssOperations.unbindCustomDomain).not.toHaveBeenCalled();
+      expect(mockOssOperations.unbindCustomDomain).not.toHaveBeenCalled();
+      expect(mockOssOperations.unbindCustomDomain).not.toHaveBeenCalled();
       expect(mockOssOperations.bindCustomDomain).not.toHaveBeenCalled();
     });
 
@@ -2693,7 +2683,7 @@ describe('OssResource', () => {
         );
       });
 
-      it('should remove policy when iam is removed', async () => {
+      it('clears a policy only when the statement list is explicitly empty', async () => {
         const stateWithPolicy: StateFile = {
           ...initialState,
           resources: {
@@ -2722,6 +2712,7 @@ describe('OssResource', () => {
         };
 
         const bucket: BucketDomain = {
+          iam: { resource: { statements: [] } },
           key: 'test_bucket',
           name: 'test-bucket',
         };
@@ -2745,7 +2736,7 @@ describe('OssResource', () => {
         expect(mockOssOperations.deleteBucketPolicy).toHaveBeenCalledWith('test-bucket');
       });
 
-      it('should not call policy functions when iam is unchanged', async () => {
+      it('reapplies a declared policy during a selected repair even when saved intent is unchanged', async () => {
         const existingIam = {
           resource: {
             statements: [
@@ -2794,7 +2785,7 @@ describe('OssResource', () => {
           stateWithPolicy,
         );
 
-        expect(mockOssOperations.putBucketPolicy).not.toHaveBeenCalled();
+        expect(mockOssOperations.putBucketPolicy).toHaveBeenCalled();
         expect(mockOssOperations.deleteBucketPolicy).not.toHaveBeenCalled();
       });
     });

@@ -1,3 +1,4 @@
+import { redactAttributeDiffs } from './planRedaction';
 import type { AttributeDiff, PlanItem } from '../types';
 import { computeAttributeDiffs, isRecreate } from './planFormatter';
 
@@ -35,6 +36,7 @@ export type PlanJsonChange = {
   type: string;
   action: PlanJsonAction;
   attributes: AttributeDiff[];
+  revertKeys?: string[];
   drifted?: boolean;
   driftReasons?: string[];
 };
@@ -58,6 +60,7 @@ export type PlanJsonPayload = PlanIdentity & {
   planVersion: number;
   changes: PlanJsonChange[];
   summary: PlanJsonSummary;
+  stateUpdates?: string[];
 };
 
 export const buildPlanSummary = (items: PlanItem[]): PlanJsonSummary =>
@@ -94,7 +97,8 @@ export const buildPlanChange = (item: PlanItem): PlanJsonChange => {
     logicalId: item.logicalId,
     type: item.resourceType,
     action: toPlanJsonAction(item),
-    attributes,
+    attributes: redactAttributeDiffs(attributes),
+    ...(item.revertKeys?.length ? { revertKeys: item.revertKeys } : {}),
     ...(item.drifted ? { drifted: true } : {}),
     ...(item.driftReasons && item.driftReasons.length > 0
       ? { driftReasons: item.driftReasons }
@@ -109,6 +113,9 @@ export const buildPlanJson = (
   const items = planResult.items ?? [];
 
   return {
+    ...(items.some((item) => item.stateUpdate)
+      ? { stateUpdates: items.filter((item) => item.stateUpdate).map((item) => item.logicalId) }
+      : {}),
     planVersion: PLAN_JSON_VERSION,
     ...identity,
     changes: items.filter((item) => item.action !== 'noop').map(buildPlanChange),

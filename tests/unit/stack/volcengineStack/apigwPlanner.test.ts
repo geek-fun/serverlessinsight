@@ -41,7 +41,7 @@ jest.mock('../../../../src/common/stateManager', () => ({
 }));
 
 jest.mock('../../../../src/common/hashUtils', () => ({
-  attributesEqual: jest.fn(() => false),
+  attributesEqual: jest.fn(jest.requireActual('../../../../src/common/hashUtils').attributesEqual),
 }));
 
 jest.mock('../../../../src/lang', () => ({
@@ -170,7 +170,9 @@ describe('apigwPlanner', () => {
     mockClient.apigw.getService.mockResolvedValue({ serviceId: 'svc-1', serviceName: 's' });
     // definition comparison — use the actual equality (triggers match => noop)
     const { attributesEqual } = jest.requireMock('../../../../src/common/hashUtils');
-    (attributesEqual as jest.Mock).mockReturnValue(true);
+    (attributesEqual as jest.Mock).mockImplementation(
+      jest.requireActual('../../../../src/common/hashUtils').attributesEqual,
+    );
 
     const plan = await generateApigwPlan(mockContext, stateWithEvent, [mockEvent], 'test-service');
 
@@ -235,7 +237,7 @@ describe('apigwPlanner', () => {
     });
   });
 
-  it('plans update when the desired event definition changed', async () => {
+  it('rejects gateway identity replacement before any cloud write', async () => {
     const stateWithEvent: StateFile = {
       ...emptyState,
       resources: {
@@ -250,19 +252,12 @@ describe('apigwPlanner', () => {
       },
     };
     const { attributesEqual } = jest.requireMock('../../../../src/common/hashUtils');
-    (attributesEqual as jest.Mock).mockReturnValue(false);
-
-    const plan = await generateApigwPlan(mockContext, stateWithEvent, [mockEvent], 'test-service');
-
-    expect(plan.items[0]).toMatchObject({
-      logicalId: 'events.api_gateway',
-      action: 'update',
-      drifted: true,
-      changes: {
-        before: { gatewayName: 'old-gateway' },
-        after: { gatewayName: 'test-gw' },
-      },
-    });
+    (attributesEqual as jest.Mock).mockImplementation(
+      jest.requireActual('../../../../src/common/hashUtils').attributesEqual,
+    );
+    await expect(
+      generateApigwPlan(mockContext, stateWithEvent, [mockEvent], 'test-service'),
+    ).rejects.toThrow('PLAN_REPLACEMENT_REQUIRED');
   });
 
   it('plans update+drifted when a live trigger route drifted (issue #234 phase 2)', async () => {
@@ -294,7 +289,9 @@ describe('apigwPlanner', () => {
       },
     };
     const { attributesEqual } = jest.requireMock('../../../../src/common/hashUtils');
-    (attributesEqual as jest.Mock).mockReturnValue(true);
+    (attributesEqual as jest.Mock).mockImplementation(
+      jest.requireActual('../../../../src/common/hashUtils').attributesEqual,
+    );
 
     const desired = buildDesiredTriggerMap(mockEvent, mockContext.stage);
     const [postRouteName, getRouteName] = [...desired.keys()];
@@ -356,7 +353,9 @@ describe('apigwPlanner', () => {
       },
     };
     const { attributesEqual } = jest.requireMock('../../../../src/common/hashUtils');
-    (attributesEqual as jest.Mock).mockReturnValue(true);
+    (attributesEqual as jest.Mock).mockImplementation(
+      jest.requireActual('../../../../src/common/hashUtils').attributesEqual,
+    );
 
     const desired = buildDesiredTriggerMap(mockEvent, mockContext.stage);
     const [postRouteName] = [...desired.keys()];
@@ -410,7 +409,9 @@ describe('apigwPlanner', () => {
       },
     };
     const { attributesEqual } = jest.requireMock('../../../../src/common/hashUtils');
-    (attributesEqual as jest.Mock).mockReturnValue(true);
+    (attributesEqual as jest.Mock).mockImplementation(
+      jest.requireActual('../../../../src/common/hashUtils').attributesEqual,
+    );
 
     const desired = buildDesiredTriggerMap(mockEvent, mockContext.stage);
     const [postRouteName, getRouteName] = [...desired.keys()];
@@ -443,7 +444,7 @@ describe('apigwPlanner', () => {
     expect(plan.items[0]).toMatchObject({ action: 'noop' });
   });
 
-  it('stays noop when the live trigger probe fails transiently (best-effort detection)', async () => {
+  it('propagates gateway trigger read failures', async () => {
     const stateWithEvent: StateFile = {
       ...emptyState,
       resources: {
@@ -469,12 +470,13 @@ describe('apigwPlanner', () => {
       },
     };
     const { attributesEqual } = jest.requireMock('../../../../src/common/hashUtils');
-    (attributesEqual as jest.Mock).mockReturnValue(true);
+    (attributesEqual as jest.Mock).mockImplementation(
+      jest.requireActual('../../../../src/common/hashUtils').attributesEqual,
+    );
     mockClient.apigw.listRoutesByService.mockRejectedValue(new Error('FlowLimitExceeded'));
-
-    const plan = await generateApigwPlan(mockContext, stateWithEvent, [mockEvent], 'test-service');
-
-    expect(plan.items[0]).toMatchObject({ action: 'noop' });
+    await expect(
+      generateApigwPlan(mockContext, stateWithEvent, [mockEvent], 'test-service'),
+    ).rejects.toEqual(new Error('FlowLimitExceeded'));
   });
 
   it('deletes stale events while excluding non-event resources', async () => {
@@ -484,7 +486,7 @@ describe('apigwPlanner', () => {
         'events.api_gateway': {
           mode: 'managed',
           region: 'cn-beijing',
-          definition: { gatewayName: 'test-gw' },
+          definition: { gatewayName: 'test-gw', triggers: mockEvent.triggers },
           instances: [],
           lastUpdated: '2024-01-01T00:00:00Z',
           status: 'ready',
@@ -508,7 +510,9 @@ describe('apigwPlanner', () => {
       },
     };
     const { attributesEqual } = jest.requireMock('../../../../src/common/hashUtils');
-    (attributesEqual as jest.Mock).mockReturnValue(true);
+    (attributesEqual as jest.Mock).mockImplementation(
+      jest.requireActual('../../../../src/common/hashUtils').attributesEqual,
+    );
 
     const plan = await generateApigwPlan(
       mockContext,

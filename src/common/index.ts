@@ -27,3 +27,7 @@ export * from './concurrency';
 export * from './throttleRetry';
 export * from './planCompare';
 export * from './refreshPlanner';
+export * from './planCapabilities';
+export * from './bucketPolicy';
+export * from './functionDefinition';
+export * from './planRedaction';

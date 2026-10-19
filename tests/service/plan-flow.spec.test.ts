@@ -116,7 +116,7 @@ describe('Plan Flow Service Test', () => {
     });
 
     it('should mark resources as create when no state exists', async () => {
-      mockClient.fc3.getFunction.mockRejectedValueOnce({ code: 'FunctionNotFound' });
+      mockClient.fc3.getFunction.mockResolvedValueOnce(null);
 
       await plan({
         location: path.join(fixturesDir, 'serverless-insight-plan.yml'),
@@ -177,7 +177,7 @@ describe('Plan Flow Service Test', () => {
     };
 
     it('emits the versioned plan envelope to stdout', async () => {
-      mockClient.fc3.getFunction.mockRejectedValueOnce({ code: 'FunctionNotFound' });
+      mockClient.fc3.getFunction.mockResolvedValueOnce(null);
 
       const { result, text } = await captureStdout(() =>
         plan({
@@ -211,8 +211,8 @@ describe('Plan Flow Service Test', () => {
       expect(result.hasChanges).toBe(true);
     });
 
-    it('reports drift against the cloud as an update with attribute diffs', async () => {
-      mockClient.fc3.getFunction.mockRejectedValueOnce({ code: 'FunctionNotFound' });
+    it('reports confirmed absence with create attribute diffs', async () => {
+      mockClient.fc3.getFunction.mockResolvedValueOnce(null);
 
       const { text } = await captureStdout(() =>
         plan({

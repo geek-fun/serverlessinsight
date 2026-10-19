@@ -1,3 +1,4 @@
+import { serializeBucketPolicy } from '../../common/bucketPolicy';
 import { BucketAccessEnum, BucketDomain, BucketIam, ResourceAttributes } from '../../types';
 import type { OssBucketInfo } from '../../common/aliyunClient/ossOperations';
 import { BucketACL, CommonBucketConfig } from '../bucketTypes';
@@ -111,10 +112,6 @@ export const bucketToOssBucketConfig = (bucket: BucketDomain): OssBucketConfig =
 };
 
 /* istanbul ignore next */
-const serializeBucketPolicy = (iam?: BucketIam): string | null => {
-  if (!iam?.resource?.statements || iam.resource.statements.length === 0) return null;
-  return JSON.stringify(iam);
-};
 
 export const extractOssBucketDefinition = (
   config: OssBucketConfig,
@@ -132,7 +129,7 @@ export const extractOssBucketDefinition = (
     websiteCodeHash: websiteCodeHash ?? null,
     storageClass: config.storageClass ?? null,
     domain: config.domain ?? null,
-    wwwBindApex: config.wwwBindApex ?? false,
+    wwwBindApex: config.wwwBindApex ?? null,
     domainCertificateId: config.domainCertificateId ?? null,
     domainCertificateBody: config.domainCertificateBody ?? null,
     domainCertificatePrivateKey: config.domainCertificatePrivateKey ? '(managed)' : null,
@@ -140,12 +137,12 @@ export const extractOssBucketDefinition = (
     versioningStatus: config.versioningStatus ?? null,
     sseAlgorithm: config.sseAlgorithm ?? null,
     sseKmsMasterKeyId: config.sseKmsMasterKeyId ?? null,
-    policy: serializeBucketPolicy(config.iam),
+    policy: serializeBucketPolicy(config.iam, 'aliyun'),
   };
 
   // Only include CDN/accelerate fields when they're actually enabled
-  if (config.cdnEnabled) {
-    def.cdnEnabled = true;
+  if (config.cdnEnabled !== undefined) {
+    def.cdnEnabled = config.cdnEnabled;
     if (config.cdnType) def.cdnType = config.cdnType;
     if (config.cdnScope) def.cdnScope = config.cdnScope;
     if (config.cdnCacheTtl != null) def.cdnCacheTtl = config.cdnCacheTtl;
@@ -155,8 +152,8 @@ export const extractOssBucketDefinition = (
     if (config.cdnForceRedirectHttps != null)
       def.cdnForceRedirectHttps = config.cdnForceRedirectHttps;
   }
-  if (config.accelerateEnabled) {
-    def.accelerateEnabled = true;
+  if (config.accelerateEnabled !== undefined) {
+    def.accelerateEnabled = config.accelerateEnabled;
   }
 
   return def;
@@ -172,15 +169,16 @@ export const cloudOssToDefinition = (info: OssBucketInfo): ResourceAttributes =>
           errorDocument: info.websiteConfig.errorDocument ?? null,
         },
       }
-    : {}),
+    : { websiteConfiguration: null }),
   ...(info.storageClass !== undefined ? { storageClass: info.storageClass } : {}),
   ...(info.versioningConfig?.status !== undefined
     ? { versioningStatus: info.versioningConfig.status }
-    : {}),
+    : { versioningStatus: null }),
   ...(info.encryptionConfig?.sseAlgorithm !== undefined
     ? { sseAlgorithm: info.encryptionConfig.sseAlgorithm }
-    : {}),
-  ...(info.policy !== undefined ? { policy: info.policy } : {}),
+    : { sseAlgorithm: null }),
+  sseKmsMasterKeyId: info.encryptionConfig?.kmsMasterKeyId ?? null,
+  policy: info.policy ?? null,
   ...(typeof info.transferAccelerationStatus === 'boolean'
     ? { accelerateEnabled: info.transferAccelerationStatus }
     : {}),

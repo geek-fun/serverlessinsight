@@ -1,4 +1,17 @@
 export const en = {
+  PLAN_SENSITIVE_VALUE: '(sensitive)',
+  PLAN_NAS_NETWORK_REQUIRED:
+    'NAS storage on {{logicalId}} needs a declared VPC network or recorded mount targets. Planning stopped before creating any resources.',
+  PLAN_DRIFT_HTTP_TRIGGER: 'HTTP trigger differs from the requested configuration or is missing',
+  PLAN_DRIFT_FUNCTION_DOMAIN:
+    'Function domain differs from the requested configuration or is missing',
+
+  PLAN_REPLACEMENT_REQUIRED:
+    'Changes to {{fields}} on {{logicalId}} require resource replacement. Automatic replacement is not supported; explicitly migrate or recreate the resource.',
+  PLAN_UPDATE_NOT_SUPPORTED:
+    'Cannot update {{fields}} on {{logicalId}}: the provider update implementation does not support these fields. No changes have been applied.',
+  PLAN_STATE_ONLY: '{{logicalId}} already matches the cloud; only saved intent will be updated.',
+
   // Validation messages
   VALIDATING_YAML: 'Validating yaml...',
   YAML_VALID: 'Yaml is valid! 🎉',
@@ -139,8 +152,7 @@ export const en = {
   PLAN_COMPUTED_VALUE: '(known after deploy)',
   PLAN_REVERT_ANNOTATION: '(changed in the cloud, will be restored to config)',
   PLAN_DRIFTED_MARKER: '(drifted — cloud changed outside of this config, will be reconciled)',
-  PLAN_LIVE_READ_FAILED:
-    'Failed to read live state for {{logicalId}}; planning a create instead: {{error}}',
+  PLAN_LIVE_READ_FAILED: 'Failed to read live state for {{logicalId}}; planning stopped: {{error}}',
   PLAN_DRIFT_ROLE_MISSING: 'IAM role missing in the cloud',
   PLAN_DRIFT_ROLE_POLICY: 'IAM role policy changed in the cloud',
   PLAN_DRIFT_LOGSTORE: 'function log resources changed in the cloud',
@@ -306,9 +318,9 @@ export const en = {
   PLAN_FUNCTION_ROLE_MISSING:
     'Function {{functionName}} role {{roleName}} is missing in the provider; it will be recreated and rebound on deploy',
   PLAN_FUNCTION_ROLE_PROBE_FAILED:
-    'Live role policy check for function {{functionName}} (role {{roleName}}) failed: {{error}}; skipping role drift detection for this plan',
+    'Live role policy check for function {{functionName}} (role {{roleName}}) failed: {{error}}; planning stopped',
   PLAN_FUNCTION_NESTED_PROBE_FAILED:
-    'Nested resource probe for function {{functionName}} failed: {{error}}; skipping nested drift detection for this plan',
+    'Nested resource probe for function {{functionName}} failed: {{error}}; planning stopped',
   NESTED_LOGSTORE_RECREATED: 'Logstore {{logstoreName}} was deleted out-of-band; recreating it',
   NESTED_LOGSTORE_UPDATED:
     'Logstore {{logstoreName}} attributes drifted; updating to match si defaults',
@@ -1164,7 +1176,7 @@ export const en = {
   TIMER_TRIGGER_NOT_FOUND: "Timer trigger '{{triggerName}}' not found in provider, skipping delete",
   TIMER_TRIGGER_ALREADY_ATTACHED:
     "Timer trigger '{{triggerName}}' is already attached to function '{{functionName}}', skipping create",
-  PLAN_DRIFT_TIMER_TRIGGER: 'Timer triggers changed in the cloud',
+  PLAN_DRIFT_TIMER_TRIGGER: 'Timer triggers differ from the requested configuration',
   PLAN_TIMER_TRIGGER_PROBE_FAILED:
     "Failed to probe timer triggers for function '{{functionName}}': {{error}}",
 

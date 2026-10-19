@@ -211,6 +211,7 @@ describe('ScfResource', () => {
         mockConfig,
         'mock-code-hash',
         undefined,
+        expect.any(Object),
       );
       // Check final setResource call (second call)
       expect(stateManager.setResource).toHaveBeenLastCalledWith(
@@ -1600,6 +1601,7 @@ describe('ScfResource', () => {
         mockConfig,
         'mock-code-hash',
         undefined,
+        expect.any(Object),
       );
       expect(stateManager.setResource).toHaveBeenCalledWith(
         initialState,
@@ -1760,7 +1762,7 @@ describe('ScfResource', () => {
       (stateManager.removeSharedResource as jest.Mock).mockReturnValue(stateWithCls);
       (stateManager.setResource as jest.Mock).mockReturnValue(stateWithCls);
 
-      await updateResource(mockContext, testFunction, stateWithCls);
+      await updateResource(mockContext, { ...testFunction, log: false }, stateWithCls);
 
       expect(mockScfOperations.updateFunctionConfiguration).toHaveBeenCalledWith(
         expect.objectContaining({ ClsLogsetId: '', ClsTopicId: '' }),
@@ -1846,7 +1848,7 @@ describe('ScfResource', () => {
       (stateManager.getSharedResource as jest.Mock).mockReturnValue(sharedLogsetState);
       (stateManager.setResource as jest.Mock).mockReturnValue(stateWithCls);
 
-      await updateResource(mockContext, testFunction, stateWithCls);
+      await updateResource(mockContext, { ...testFunction, log: false }, stateWithCls);
 
       expect(mockScfOperations.updateFunctionConfiguration).toHaveBeenCalledWith(
         expect.objectContaining({ ClsLogsetId: '', ClsTopicId: '' }),
@@ -1912,7 +1914,7 @@ describe('ScfResource', () => {
       (mockClsOperations.getLogsetByName as jest.Mock).mockResolvedValue(null);
       (stateManager.setResource as jest.Mock).mockReturnValue(initialState);
 
-      await updateResource(mockContext, testFunction, initialState);
+      await updateResource(mockContext, { ...testFunction, log: false }, initialState);
 
       expect(mockScfOperations.updateFunctionConfiguration).toHaveBeenCalledWith(
         expect.objectContaining({ ClsLogsetId: '', ClsTopicId: '' }),
@@ -2449,7 +2451,7 @@ describe('ScfResource', () => {
       expect(mockScfOperations.createTrigger).not.toHaveBeenCalled();
     });
 
-    it('should delete HTTP trigger when triggers.http is removed during update', async () => {
+    it('preserves omitted lifecycle configuration: should delete HTTP trigger when triggers.http is removed during update', async () => {
       const fnWithoutTrigger = { ...testFunction };
 
       const stateWithTrigger: StateFile = {
@@ -2487,15 +2489,10 @@ describe('ScfResource', () => {
 
       await updateResource(mockContext, fnWithoutTrigger, stateWithTrigger);
 
-      expect(mockScfOperations.deleteTrigger).toHaveBeenCalledWith(
-        expect.objectContaining({
-          FunctionName: 'test-function',
-          TriggerName: 'test_fn-http-trigger',
-        }),
-      );
+      expect(mockScfOperations.deleteTrigger).not.toHaveBeenCalled();
     });
 
-    it('should ignore ResourceNotFound when deleting HTTP trigger during update', async () => {
+    it('preserves omitted lifecycle configuration: should ignore ResourceNotFound when deleting HTTP trigger during update', async () => {
       const fnWithoutTrigger = { ...testFunction };
 
       const stateWithTrigger: StateFile = {
@@ -2536,15 +2533,10 @@ describe('ScfResource', () => {
 
       await updateResource(mockContext, fnWithoutTrigger, stateWithTrigger);
 
-      expect(mockScfOperations.deleteTrigger).toHaveBeenCalledWith(
-        expect.objectContaining({
-          FunctionName: 'test-function',
-          TriggerName: 'test_fn-http-trigger',
-        }),
-      );
+      expect(mockScfOperations.deleteTrigger).not.toHaveBeenCalled();
     });
 
-    it('should rethrow unexpected errors when deleting HTTP trigger during update', async () => {
+    it('preserves omitted lifecycle configuration: should rethrow unexpected errors when deleting HTTP trigger during update', async () => {
       const fnWithoutTrigger = { ...testFunction };
 
       const stateWithTrigger: StateFile = {
@@ -2581,12 +2573,11 @@ describe('ScfResource', () => {
       (mockScfOperations.deleteTrigger as jest.Mock).mockRejectedValue(new Error('delete failed'));
       (stateManager.setResource as jest.Mock).mockReturnValue(initialState);
 
-      await expect(updateResource(mockContext, fnWithoutTrigger, stateWithTrigger)).rejects.toThrow(
-        'delete failed',
-      );
+      await updateResource(mockContext, fnWithoutTrigger, stateWithTrigger);
+      expect(mockScfOperations.deleteTrigger).not.toHaveBeenCalled();
     });
 
-    it('should delete custom domain when domain is removed during update', async () => {
+    it('preserves omitted lifecycle configuration: should delete custom domain when domain is removed during update', async () => {
       const fnWithoutDomain = { ...testFunction };
 
       const stateWithDomain: StateFile = {
@@ -2622,10 +2613,10 @@ describe('ScfResource', () => {
 
       await updateResource(mockContext, fnWithoutDomain, stateWithDomain);
 
-      expect(mockScfOperations.deleteCustomDomain).toHaveBeenCalledWith('api.example.com');
+      expect(mockScfOperations.deleteCustomDomain).not.toHaveBeenCalled();
     });
 
-    it('should ignore ResourceNotFound when deleting custom domain during update', async () => {
+    it('preserves omitted lifecycle configuration: should ignore ResourceNotFound when deleting custom domain during update', async () => {
       const fnWithoutDomain = { ...testFunction };
 
       const stateWithDomain: StateFile = {
@@ -2664,10 +2655,10 @@ describe('ScfResource', () => {
 
       await updateResource(mockContext, fnWithoutDomain, stateWithDomain);
 
-      expect(mockScfOperations.deleteCustomDomain).toHaveBeenCalledWith('api.example.com');
+      expect(mockScfOperations.deleteCustomDomain).not.toHaveBeenCalled();
     });
 
-    it('should rethrow unexpected errors when deleting custom domain during update', async () => {
+    it('preserves omitted lifecycle configuration: should rethrow unexpected errors when deleting custom domain during update', async () => {
       const fnWithoutDomain = { ...testFunction };
 
       const stateWithDomain: StateFile = {
@@ -2704,9 +2695,8 @@ describe('ScfResource', () => {
       );
       (stateManager.setResource as jest.Mock).mockReturnValue(initialState);
 
-      await expect(updateResource(mockContext, fnWithoutDomain, stateWithDomain)).rejects.toThrow(
-        'delete failed',
-      );
+      await updateResource(mockContext, fnWithoutDomain, stateWithDomain);
+      expect(mockScfOperations.deleteCustomDomain).not.toHaveBeenCalled();
     });
 
     it('should recreate custom domain when domain name changes during update', async () => {
@@ -2861,7 +2851,7 @@ describe('ScfResource', () => {
           'functions.test_fn': {
             mode: 'managed',
             region: 'ap-guangzhou',
-            definition: mockDefinition,
+            definition: { ...mockDefinition, domain: fnWithSameDomain.domain },
             instances: [
               {
                 sid: 'si:tencent:scf:default:test-function',

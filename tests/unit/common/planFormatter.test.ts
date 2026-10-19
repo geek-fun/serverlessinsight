@@ -1,3 +1,4 @@
+import { lang } from '../../../src/lang';
 import {
   computeAttributeDiffs,
   formatPlanItem,
@@ -260,7 +261,7 @@ describe('planFormatter', () => {
       expect(output).toContain('(changed in the cloud, will be restored to config)');
     });
 
-    it('expands non-simple revert keys into children without a parent annotation', () => {
+    it('preserves revert annotations on expanded child fields', () => {
       const item: PlanItem = {
         logicalId: 'functions.notify',
         action: 'update',
@@ -277,10 +278,10 @@ describe('planFormatter', () => {
 
       expect(output).toContain('vpcConfig:');
       expect(output).toContain('vSwitchIds: ["vsw-1"] -> ["vsw-2"]');
-      expect(output).not.toContain('(changed in the cloud, will be restored to config)');
+      expect(output).toContain('(changed in the cloud, will be restored to config)');
     });
 
-    it('does not annotate a revert key whose diff expands into children', () => {
+    it('annotates a revert key whose diff expands into children', () => {
       const item: PlanItem = {
         logicalId: 'functions.notify',
         action: 'update',
@@ -297,7 +298,7 @@ describe('planFormatter', () => {
 
       expect(output).toContain('environment:');
       expect(output).toContain('LOG_LEVEL: "info" -> "debug"');
-      expect(output).not.toContain('(changed in the cloud, will be restored to config)');
+      expect(output).toContain('(changed in the cloud, will be restored to config)');
     });
 
     it('renders a recreate (create with recorded before) as a single -/+ block', () => {
@@ -562,5 +563,63 @@ describe('planFormatter', () => {
         expect(bodyLines.length).toBeGreaterThan(0);
       }
     });
+  });
+});
+
+describe('field provenance without color (issue #264)', () => {
+  it('marks additions and removals with textual actions', () => {
+    const rendered = formatPlanItem(
+      {
+        logicalId: 'functions.fn',
+        resourceType: 'ALIYUN_FC3',
+        action: 'update',
+        changes: {
+          before: { environment: { REMOVED: '1' } },
+          after: { environment: { ADDED: '1' } },
+        },
+      },
+      { colorize: false, indentSize: 4, keyAlignWidth: 12 },
+    );
+    expect(rendered).toMatch(/\+ ADDED:/);
+    expect(rendered).toMatch(/- REMOVED:/);
+  });
+
+  it('preserves nested revert paths and ancestor revert annotations', () => {
+    const item = {
+      logicalId: 'functions.fn',
+      resourceType: 'ALIYUN_FC3',
+      action: 'update' as const,
+      changes: {
+        before: { environment: { MODE: 'manual' } },
+        after: { environment: { MODE: 'desired' } },
+      },
+    };
+    const leaf = formatPlanItem(
+      { ...item, revertKeys: ['environment.MODE'] },
+      { colorize: false, indentSize: 4, keyAlignWidth: 12 },
+    );
+    const parent = formatPlanItem(
+      { ...item, revertKeys: ['environment'] },
+      { colorize: false, indentSize: 4, keyAlignWidth: 12 },
+    );
+    expect(leaf).toContain(lang.__('PLAN_REVERT_ANNOTATION'));
+    expect(parent).toContain(lang.__('PLAN_REVERT_ANNOTATION'));
+  });
+});
+
+describe('state-only presentation', () => {
+  it('shows verified adoption without advertising a cloud update', () => {
+    const output = formatPlanItem(
+      {
+        logicalId: 'functions.adopted',
+        resourceType: 'ALIYUN_FC3',
+        action: 'noop',
+        stateUpdate: { memory: 512 },
+      },
+      { colorize: false, indentSize: 2, keyAlignWidth: 0 },
+    );
+    expect(output).toContain('functions.adopted');
+    expect(output).toContain(lang.__('PLAN_STATE_ONLY', { logicalId: 'functions.adopted' }));
+    expect(output).not.toContain(lang.__('PLAN_WILL_UPDATE'));
   });
 });

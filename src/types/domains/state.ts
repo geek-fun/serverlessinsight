@@ -108,6 +108,8 @@ export type PlanItem = {
     before?: Record<string, unknown>;
     after?: Record<string, unknown>;
   };
+  /** No cloud mutation: adopt verified live values into saved intent. */
+  stateUpdate?: ResourceAttributes;
   drifted?: boolean;
   /**
    * Top-level keys whose stored value already matches the desired definition

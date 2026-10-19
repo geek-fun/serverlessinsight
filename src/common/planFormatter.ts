@@ -1,3 +1,4 @@
+import { redactAttributeDiffs } from './planRedaction';
 import type { PlanItem, AttributeDiff, PlanDisplayConfig } from '../types';
 import { diffAttributes } from './hashUtils';
 import { lang } from '../lang';
@@ -174,16 +175,21 @@ const formatAttributeLines = (
   config: PlanDisplayConfig,
   keyWidth: number,
   revertKeys?: ReadonlySet<string>,
+  parentPath = '',
+  inheritedRevert = false,
 ): string[] => {
   const spaces = ' '.repeat(indent);
   const alignedKey = (diff.key + ':').padEnd(keyWidth);
+  const fieldPath = parentPath ? `${parentPath}.${diff.key}` : diff.key;
+  const reverted = inheritedRevert || revertKeys?.has(fieldPath);
+  const marker = { add: '+', remove: '-', change: '~' }[diff.action];
   // Issue #246: a field whose stored value already matched the config while
   // the cloud diverged is annotated at the line level — the resource block
   // stays in place, only this line explains why it appears. Only leaf lines
   // reach suffix (parent cases early-return on children), so a revert key
   // with nested children never carries the annotation.
   const suffix = (line: string): string =>
-    revertKeys?.has(diff.key)
+    reverted
       ? `${line} ${colorize(lang.__('PLAN_REVERT_ANNOTATION'), 'CYAN', config.colorize)}`
       : line;
 
@@ -192,31 +198,53 @@ const formatAttributeLines = (
       if (diff.children && diff.children.length > 0) {
         const childKeyWidth = computeMaxKeyWidth(diff.children, indent);
         return [
-          colorize(`${spaces}${alignedKey}`, 'GREEN', config.colorize),
+          colorize(`${spaces}${marker} ${alignedKey}`, 'GREEN', config.colorize),
           ...diff.children.flatMap((child) =>
-            formatAttributeLines(child, indent + config.indentSize, config, childKeyWidth),
+            formatAttributeLines(
+              child,
+              indent + config.indentSize,
+              config,
+              childKeyWidth,
+              revertKeys,
+              fieldPath,
+              reverted,
+            ),
           ),
         ];
       }
       const value = diff.isComputed
         ? colorize(lang.__('PLAN_COMPUTED_VALUE'), 'CYAN', config.colorize)
         : formatValue(diff.after);
-      return [suffix(colorize(`${spaces}${alignedKey} ${value}`, 'GREEN', config.colorize))];
+      return [
+        suffix(colorize(`${spaces}${marker} ${alignedKey} ${value}`, 'GREEN', config.colorize)),
+      ];
     }
 
     case 'remove': {
       if (diff.children && diff.children.length > 0) {
         const childKeyWidth = computeMaxKeyWidth(diff.children, indent);
         return [
-          colorize(`${spaces}${alignedKey}`, 'RED', config.colorize),
+          colorize(`${spaces}${marker} ${alignedKey}`, 'RED', config.colorize),
           ...diff.children.flatMap((child) =>
-            formatAttributeLines(child, indent + config.indentSize, config, childKeyWidth),
+            formatAttributeLines(
+              child,
+              indent + config.indentSize,
+              config,
+              childKeyWidth,
+              revertKeys,
+              fieldPath,
+              reverted,
+            ),
           ),
         ];
       }
       return [
         suffix(
-          colorize(`${spaces}${alignedKey} ${formatValue(diff.before)}`, 'RED', config.colorize),
+          colorize(
+            `${spaces}${marker} ${alignedKey} ${formatValue(diff.before)}`,
+            'RED',
+            config.colorize,
+          ),
         ),
       ];
     }
@@ -225,9 +253,17 @@ const formatAttributeLines = (
       if (diff.children && diff.children.length > 0) {
         const childKeyWidth = computeMaxKeyWidth(diff.children, indent);
         return [
-          colorize(`${spaces}${alignedKey}`, 'YELLOW', config.colorize),
+          colorize(`${spaces}${marker} ${alignedKey}`, 'YELLOW', config.colorize),
           ...diff.children.flatMap((child) =>
-            formatAttributeLines(child, indent + config.indentSize, config, childKeyWidth),
+            formatAttributeLines(
+              child,
+              indent + config.indentSize,
+              config,
+              childKeyWidth,
+              revertKeys,
+              fieldPath,
+              reverted,
+            ),
           ),
         ];
       }
@@ -235,7 +271,11 @@ const formatAttributeLines = (
       const afterStr = formatValue(diff.after);
       return [
         suffix(
-          colorize(`${spaces}${alignedKey} ${beforeStr} -> ${afterStr}`, 'YELLOW', config.colorize),
+          colorize(
+            `${spaces}${marker} ${alignedKey} ${beforeStr} -> ${afterStr}`,
+            'YELLOW',
+            config.colorize,
+          ),
         ),
       ];
     }
@@ -278,7 +318,9 @@ export const formatPlanItem = (
   if (item.action === 'noop') {
     // Unchanged resources are not rendered as blocks — they only surface in
     // the plan summary count (issue #246 display spec).
-    return '';
+    return item.stateUpdate
+      ? `      # ${lang.__('PLAN_STATE_ONLY', { logicalId: item.logicalId })}`
+      : '';
   }
 
   const recreate = isRecreate(item);
@@ -311,7 +353,7 @@ export const formatPlanItem = (
 
   const attrLines =
     diffs.length > 0
-      ? diffs.flatMap((diff) =>
+      ? redactAttributeDiffs(diffs).flatMap((diff) =>
           formatAttributeLines(diff, config.indentSize, config, keyWidth, revertKeys),
         )
       : [];
@@ -354,7 +396,7 @@ export const formatPlan = (
   // resources only surface in the summary count.
   const unchangedCount = items.filter((i) => i.action === 'noop').length;
   const itemLines = items
-    .filter((i) => i.action !== 'noop')
+    .filter((i) => i.action !== 'noop' || i.stateUpdate)
     .flatMap((item) => {
       const block = formatPlanItem(item, config);
       return block ? [block, ''] : [];

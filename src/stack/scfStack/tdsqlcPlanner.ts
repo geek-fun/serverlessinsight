@@ -93,24 +93,20 @@ export const generateDatabasePlan = async (
             }),
           ),
         cloudToDefinition: cloudTdsqlcToDefinition,
-        extraUpdate: async () => {
-          // AutoPause needs a dedicated read: DescribeClusters reports the
-          // running serverless state, not the configured idle-pause switch —
-          // DescribeServerlessStrategy does. Unreadable strategy is not drift.
-          const desiredAutoPause = (desiredDefinition as { autoPause?: boolean | null }).autoPause;
-          if (typeof desiredAutoPause !== 'boolean' || !clusterId) {
-            return { update: false, drifted: false };
-          }
+        enrichRemoteAttributes: async (_remote, attributes) => {
+          if (!clusterId) return attributes;
           const strategy = await cachedRefreshRead(
             context,
             `tdsqlc.getServerlessStrategy:${clusterId}`,
             () => client.tdsqlc.getServerlessStrategy(clusterId),
           );
-          if (!strategy || strategy.autoPause === undefined) {
-            return { update: false, drifted: false };
-          }
-          const drifted = strategy.autoPause !== desiredAutoPause;
-          return { update: drifted, drifted };
+          return {
+            ...attributes,
+            ...(strategy?.autoPause !== undefined ? { autoPause: strategy.autoPause } : {}),
+            ...(strategy?.autoPauseDelay !== undefined
+              ? { autoPauseDelay: strategy.autoPauseDelay }
+              : {}),
+          };
         },
         refresh: context.refresh,
       });

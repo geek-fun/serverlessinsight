@@ -1,3 +1,5 @@
+import { lang } from '../../lang';
+import { withFunctionLifecycle } from '../../common/functionDefinition';
 import { FunctionDomain, FunctionGpuEnum, ResourceAttributes } from '../../types';
 import { mapRuntime, ProviderEnum } from '../../common';
 
@@ -257,18 +259,6 @@ export const functionToFc3Config = (fn: FunctionDomain): Fc3FunctionConfig => {
     };
   }
 
-  if (fn.storage?.nas && fn.storage.nas.length > 0) {
-    config.nasConfig = {
-      userId: 10003,
-      groupId: 10003,
-      mountPoints: fn.storage.nas.map((nas) => ({
-        serverAddr: nas.storage_class,
-        mountDir: nas.mount_path,
-        enableTls: false,
-      })),
-    };
-  }
-
   if (fn.log !== undefined) {
     config.logConfig = {
       enableRequestMetrics: fn.log,
@@ -282,22 +272,27 @@ export const functionToFc3Config = (fn: FunctionDomain): Fc3FunctionConfig => {
 export const extractFc3Definition = (
   config: Fc3FunctionConfig,
   codeHash: string | null,
+  fn?: FunctionDomain,
 ): ResourceAttributes => {
-  return {
-    functionName: config.functionName,
-    runtime: config.runtime,
-    handler: config.handler,
-    memorySize: config.memorySize,
-    timeout: config.timeout,
-    diskSize: config.diskSize ?? null,
-    environment: config.environmentVariables ?? {},
-    vpcConfig: config.vpcConfig ?? null,
-    gpuConfig: config.gpuConfig ?? null,
-    customContainerConfig: config.customContainerConfig ?? null,
-    nasConfig: config.nasConfig ?? null,
-    logConfig: config.logConfig ?? null,
-    codeHash,
-  };
+  return withFunctionLifecycle(
+    {
+      functionName: config.functionName,
+      runtime: config.runtime,
+      handler: config.handler,
+      memorySize: config.memorySize,
+      timeout: config.timeout,
+      diskSize: config.diskSize ?? null,
+      environment: config.environmentVariables ?? {},
+      vpcConfig: config.vpcConfig ?? null,
+      gpuConfig: config.gpuConfig ?? null,
+      customContainerConfig: config.customContainerConfig ?? null,
+      nasConfig: config.nasConfig ?? null,
+      ...(fn?.storage?.nas?.length ? { nasStorage: fn.storage.nas } : {}),
+      logConfig: config.logConfig ?? null,
+      codeHash,
+    },
+    fn,
+  );
 };
 
 export const extractFunctionDomainDefinition = (
@@ -305,7 +300,7 @@ export const extractFunctionDomainDefinition = (
   codeHash: string | null,
 ): ResourceAttributes => {
   const config = functionToFc3Config(fn);
-  return extractFc3Definition(config, codeHash);
+  return extractFc3Definition(config, codeHash, fn);
 };
 
 /**
@@ -365,5 +360,34 @@ export const cloudFc3ToDefinition = (info: Fc3FunctionInfo): ResourceAttributes 
           enableInstanceMetrics: info.logConfig.enableInstanceMetrics ?? null,
         }
       : null,
+  };
+};
+
+export const buildFc3NasConfig = (
+  mountPoints: Array<{ serverAddr: string; mountDir: string }>,
+): Fc3NasConfig => ({ userId: -1, groupId: -1, mountPoints });
+
+export const resolveRecordedFc3NasConfig = (
+  config: Fc3FunctionConfig,
+  fn: FunctionDomain,
+  instances: Array<{ id: string; type?: unknown }>,
+): Fc3FunctionConfig => {
+  if (!fn.storage?.nas?.length) return config;
+  const mounts = instances.filter((instance) => instance.type === 'ALIYUN_NAS_MOUNT_TARGET');
+  if (!fn.network && mounts.length === 0)
+    throw new Error(lang.__('PLAN_NAS_NETWORK_REQUIRED', { logicalId: `functions.${fn.key}` }));
+  const { nasConfig: _unresolvedNas, ...rest } = config;
+  return {
+    ...rest,
+    ...(mounts.length
+      ? {
+          nasConfig: buildFc3NasConfig(
+            mounts.map((mount, index) => ({
+              serverAddr: `${mount.id.split('/')[1]}:/`,
+              mountDir: fn.storage.nas![index]?.mount_path ?? '/mnt/nas',
+            })),
+          ),
+        }
+      : {}),
   };
 };

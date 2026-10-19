@@ -1,4 +1,16 @@
 export const zhCN = {
+  PLAN_SENSITIVE_VALUE: '(敏感值)',
+  PLAN_NAS_NETWORK_REQUIRED:
+    '{{logicalId}} 的 NAS 存储需要声明 VPC 网络或已有挂载目标记录。计划已停止，尚未创建任何资源。',
+  PLAN_DRIFT_HTTP_TRIGGER: 'HTTP 触发器与请求配置不同或已丢失',
+  PLAN_DRIFT_FUNCTION_DOMAIN: '函数域名与请求配置不同或已丢失',
+
+  PLAN_REPLACEMENT_REQUIRED:
+    '{{logicalId}} 的 {{fields}} 变更需要替换资源。暂不支持自动替换，请显式迁移或重建资源。',
+  PLAN_UPDATE_NOT_SUPPORTED:
+    '无法更新 {{logicalId}} 的 {{fields}}：当前云厂商更新实现不支持这些属性。尚未执行任何变更。',
+  PLAN_STATE_ONLY: '{{logicalId}} 已与云端一致，仅更新保存的配置意图。',
+
   // Validation messages
   VALIDATING_YAML: '正在验证 yaml...',
   YAML_VALID: 'Yaml 有效! 🎉',
@@ -134,7 +146,7 @@ export const zhCN = {
   PLAN_COMPUTED_VALUE: '(部署后可知)',
   PLAN_REVERT_ANNOTATION: '(云端已改，将按配置恢复)',
   PLAN_DRIFTED_MARKER: '（云端已漂移——与本配置不一致，将按配置纠正）',
-  PLAN_LIVE_READ_FAILED: '读取 {{logicalId}} 云端状态失败，降级为创建计划: {{error}}',
+  PLAN_LIVE_READ_FAILED: '读取 {{logicalId}} 云端状态失败，计划已停止: {{error}}',
   PLAN_DRIFT_ROLE_MISSING: '云端 IAM 角色缺失',
   PLAN_DRIFT_ROLE_POLICY: '云端 IAM 角色策略被修改',
   PLAN_DRIFT_LOGSTORE: '云端函数日志资源被修改',
@@ -283,9 +295,9 @@ export const zhCN = {
   PLAN_FUNCTION_ROLE_MISSING:
     '函数 {{functionName}} 的角色 {{roleName}} 在云端不存在；部署时将重建并重新绑定',
   PLAN_FUNCTION_ROLE_PROBE_FAILED:
-    '函数 {{functionName}}（角色 {{roleName}}）的实时角色策略检查失败：{{error}}；本次计划跳过角色漂移检测',
+    '函数 {{functionName}}（角色 {{roleName}}）的实时角色策略检查失败：{{error}}；计划已停止',
   PLAN_FUNCTION_NESTED_PROBE_FAILED:
-    '函数 {{functionName}} 的嵌套资源探测失败：{{error}}；本次计划跳过嵌套漂移检测',
+    '函数 {{functionName}} 的嵌套资源探测失败：{{error}}；计划已停止',
   NESTED_LOGSTORE_RECREATED: '日志库 {{logstoreName}} 被带外删除，正在重建',
   NESTED_LOGSTORE_UPDATED: '日志库 {{logstoreName}} 属性已漂移，正在按 si 默认值更新',
   NESTED_TLS_TOPIC_UPDATED: 'TLS 日志主题 {{topicId}} 的 ttl 已漂移，正在按 si 默认值更新',
@@ -1049,7 +1061,7 @@ export const zhCN = {
   TIMER_TRIGGER_NOT_FOUND: "定时触发器 '{{triggerName}}' 在云平台中不存在，跳过删除",
   TIMER_TRIGGER_ALREADY_ATTACHED:
     "定时触发器 '{{triggerName}}' 已挂在函数 '{{functionName}}' 上，跳过创建",
-  PLAN_DRIFT_TIMER_TRIGGER: '云端定时触发器被修改',
+  PLAN_DRIFT_TIMER_TRIGGER: '定时触发器与请求配置不同',
   PLAN_TIMER_TRIGGER_PROBE_FAILED: "探测函数 '{{functionName}}' 的定时触发器失败：{{error}}",
 
   // si-cron messages (issue #258)

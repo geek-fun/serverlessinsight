@@ -1,3 +1,4 @@
+import { applyPlanStateUpdates } from '../../common/refreshPlanner';
 import { ServerlessIac, Plan } from '../../types';
 import { getContext, logger } from '../../common';
 import { StateBackend } from '../../common/stateBackend';
@@ -65,6 +66,12 @@ export const deployVolcengineStack = async (
   const apigwPlan = approvedPlan
     ? partitionPlan(approvedPlan, ['VOLCENGINE_APIGW'])
     : await generateApigwPlan(context, state, iac.events, iac.service);
+
+  state = applyPlanStateUpdates(state, [
+    ...functionPlan.items,
+    ...bucketPlan.items,
+    ...apigwPlan.items,
+  ]);
 
   const bucketResult = await executeBucketPlan(
     context,

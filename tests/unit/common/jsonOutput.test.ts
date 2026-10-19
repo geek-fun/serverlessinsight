@@ -157,3 +157,29 @@ describe('jsonOutput', () => {
     });
   });
 });
+
+describe('plan provenance and state-only convergence', () => {
+  it('preserves nested revert paths and reports metadata updates separately from cloud changes', () => {
+    const update = makeItem({
+      action: 'update',
+      changes: {
+        before: { environment: { MODE: 'console' } },
+        after: { environment: { MODE: 'desired' } },
+      },
+      revertKeys: ['environment.MODE'],
+    });
+    const adoption = makeItem({
+      logicalId: 'functions.adopted',
+      action: 'noop',
+      stateUpdate: { memory: 512 },
+    });
+    const payload = buildPlanJson(
+      { items: [update, adoption] },
+      { provider: 'aliyun', app: 'example', service: 'example', stage: 'dev' },
+    );
+    expect(payload.changes[0].revertKeys).toEqual(['environment.MODE']);
+    expect(payload.stateUpdates).toEqual(['functions.adopted']);
+    expect(payload.changes).toHaveLength(1);
+    expect(payload.summary.update).toBe(1);
+  });
+});

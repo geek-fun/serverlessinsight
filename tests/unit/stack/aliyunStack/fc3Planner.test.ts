@@ -1,3 +1,4 @@
+import { buildAliyunHttpTriggerConfig } from '../../../../src/common/triggerMapper';
 import { ProviderEnum, buildFunctionRoleName, setResource } from '../../../../src/common';
 import { computeZipContentHash } from '../../../../src/common/hashUtils';
 import { createRefreshCache } from '../../../../src/common/refreshCache';
@@ -28,6 +29,7 @@ const mockFc3Operations = {
   updateFunctionCode: jest.fn(),
   deleteFunction: jest.fn(),
   listTriggers: jest.fn(),
+  getCustomDomain: jest.fn(),
 };
 const mockEcsOperations = {
   getSecurityGroupByName: jest.fn(),
@@ -777,6 +779,9 @@ describe('FC3 Planner', () => {
       logConfig: fn.log ? { enableRequestMetrics: true, enableInstanceMetrics: true } : null,
       codeHash: 'mock-code-hash',
       ...(fn.iam ? { iam: fn.iam } : {}),
+      ...(fn.triggers?.http ? { http: fn.triggers.http } : {}),
+      ...(fn.triggers?.timer !== undefined ? { timers: fn.triggers.timer } : {}),
+      ...(fn.domain ? { domain: fn.domain } : {}),
     });
 
     const buildState = (fn: FunctionDomain, instances: ResourceInstance[]): StateFile =>
@@ -787,6 +792,137 @@ describe('FC3 Planner', () => {
         instances,
         lastUpdated: new Date().toISOString(),
       });
+
+    describe('function lifecycle correctness', () => {
+      const withHttp: FunctionDomain = {
+        ...testFunction,
+        triggers: { http: { auth_type: 'public' } },
+      };
+      beforeEach(() => mockFc3Operations.getFunction.mockResolvedValue(remoteFunctionMatch));
+      it('ignores additional provider HTTP defaults when the declared settings match', async () => {
+        mockFc3Operations.listTriggers.mockResolvedValue([
+          {
+            triggerName: 'http-trigger',
+            triggerType: 'http',
+            triggerConfig: {
+              ...buildAliyunHttpTriggerConfig(withHttp.triggers!.http!),
+              providerDefault: true,
+            },
+          },
+        ]);
+        expect(
+          (await generateFunctionPlan(mockContext, buildState(withHttp, [fc3Instance]), [withHttp]))
+            .items[0].action,
+        ).toBe('noop');
+      });
+      it('repairs a missing declared HTTP trigger, but labels a newly declared trigger as intent', async () => {
+        mockFc3Operations.listTriggers.mockResolvedValue([]);
+        const missing = (
+          await generateFunctionPlan(mockContext, buildState(withHttp, [fc3Instance]), [withHttp])
+        ).items[0];
+        expect(missing).toMatchObject({
+          action: 'update',
+          drifted: true,
+          driftReasons: ['PLAN_DRIFT_HTTP_TRIGGER'],
+        });
+        const added = (
+          await generateFunctionPlan(mockContext, buildState(testFunction, [fc3Instance]), [
+            withHttp,
+          ])
+        ).items[0];
+        expect(added.action).toBe('update');
+        expect(added.drifted).toBeUndefined();
+      });
+      it('propagates lifecycle read errors rather than claiming equality', async () => {
+        mockFc3Operations.listTriggers.mockRejectedValueOnce(new Error('permission denied'));
+        await expect(
+          generateFunctionPlan(mockContext, buildState(withHttp, [fc3Instance]), [withHttp]),
+        ).rejects.toThrow('permission denied');
+      });
+      it.each([
+        null,
+        { protocol: 'HTTP' },
+        { protocol: 'HTTPS', certConfig: { certificateId: 'different' } },
+      ])('repairs missing or changed readable domain configuration: %j', async (remote) => {
+        const fn = {
+          ...testFunction,
+          domain: {
+            domain_name: 'api.example.com',
+            protocol: 'HTTPS',
+            certificate_id: 'certificate',
+          },
+        };
+        mockFc3Operations.getCustomDomain.mockResolvedValue(remote);
+        expect(
+          (await generateFunctionPlan(mockContext, buildState(fn, [fc3Instance]), [fn])).items[0],
+        ).toMatchObject({
+          action: 'update',
+          drifted: true,
+          driftReasons: ['PLAN_DRIFT_FUNCTION_DOMAIN'],
+        });
+      });
+      it('keeps certificate-only YAML edits visible even when certificates cannot be read', async () => {
+        const old = {
+          ...testFunction,
+          domain: { domain_name: 'api.example.com', protocol: 'HTTPS', certificate_id: 'old' },
+        };
+        const next = { ...old, domain: { ...old.domain, certificate_id: 'new' } };
+        mockFc3Operations.getCustomDomain.mockResolvedValue({ protocol: 'HTTPS' });
+        const item = (
+          await generateFunctionPlan(mockContext, buildState(old, [fc3Instance]), [next])
+        ).items[0];
+        expect(item.action).toBe('update');
+        expect(item.drifted).toBeUndefined();
+      });
+      it('treats a timer-description edit as intent and a cloud-only edit as drift', async () => {
+        const timer = {
+          name: 'billing',
+          cron: '0 0 3 * * *',
+          enable: true,
+          description: 'old description',
+        };
+        const old = { ...testFunction, triggers: { timer: [timer] } };
+        const next = {
+          ...old,
+          triggers: { timer: [{ ...timer, description: 'new description' }] },
+        };
+        mockFc3Operations.listTriggers.mockResolvedValue([
+          {
+            triggerName: 'billing',
+            triggerType: 'timer',
+            triggerConfig: { cronExpression: '0 0 11 * * *', enable: true },
+            description: timer.description,
+          },
+        ]);
+        const intent = (
+          await generateFunctionPlan(mockContext, buildState(old, [fc3Instance]), [next])
+        ).items[0];
+        expect(intent.action).toBe('update');
+        expect(intent.drifted).toBeUndefined();
+        const drift = (
+          await generateFunctionPlan(mockContext, buildState(next, [fc3Instance]), [next])
+        ).items[0];
+        expect(drift).toMatchObject({
+          action: 'update',
+          drifted: true,
+          driftReasons: ['PLAN_DRIFT_TIMER_TRIGGER'],
+        });
+      });
+      it('skips lifecycle and function reads under no-refresh', async () => {
+        mockFc3Operations.getFunction.mockClear();
+        mockFc3Operations.listTriggers.mockClear();
+        const item = (
+          await generateFunctionPlan(
+            { ...mockContext, refresh: false },
+            buildState(withHttp, [fc3Instance]),
+            [withHttp],
+          )
+        ).items[0];
+        expect(item.action).toBe('noop');
+        expect(mockFc3Operations.getFunction).not.toHaveBeenCalled();
+        expect(mockFc3Operations.listTriggers).not.toHaveBeenCalled();
+      });
+    });
 
     it('flags update+drifted when the live memorySize drifted from the stored definition', async () => {
       const fn = testFunction;
@@ -803,7 +939,7 @@ describe('FC3 Planner', () => {
       });
     });
 
-    it('omits revertKeys when the config itself changed the drifted field', async () => {
+    it('omits revertKeys when the config itself changed the drifted field without claiming live drift', async () => {
       // stored 256 -> desired 512 -> live 256: the difference is intent, not
       // a cloud-side revert, so no field is annotated.
       const fn = { ...testFunction, memory: 512 };
@@ -812,11 +948,11 @@ describe('FC3 Planner', () => {
 
       const plan = await generateFunctionPlan(mockContext, state, [fn]);
 
-      expect(plan.items[0]).toMatchObject({ action: 'update', drifted: true });
+      expect(plan.items[0]).toMatchObject({ action: 'update' });
       expect(plan.items[0].revertKeys).toBeUndefined();
     });
 
-    it('falls back to an empty stored baseline when the state definition is missing', async () => {
+    it('falls back to an empty stored baseline when the state definition is missing without claiming live drift', async () => {
       const fn = testFunction;
       const resource = buildState(fn, [fc3Instance]).resources['functions.test_fn'];
       const state = setResource(initalState, 'functions.test_fn', {
@@ -827,28 +963,28 @@ describe('FC3 Planner', () => {
 
       const plan = await generateFunctionPlan(mockContext, state, [fn]);
 
-      expect(plan.items[0]).toMatchObject({ action: 'update', drifted: true });
+      expect(plan.items[0]).toMatchObject({ action: 'update' });
       expect(plan.items[0].changes?.before).toBeDefined();
     });
 
-    it('degrades to a drifted create when the live read fails with an Error', async () => {
+    it('stops planning and preserves the provider error: degrades to a drifted create when the live read fails with an Error', async () => {
       const fn = testFunction;
       const state = buildState(fn, [fc3Instance]);
       mockFc3Operations.getFunction.mockRejectedValue(new Error('fc3 throttled'));
 
-      const plan = await generateFunctionPlan(mockContext, state, [fn]);
-
-      expect(plan.items[0]).toMatchObject({ action: 'create', drifted: true });
+      await expect(generateFunctionPlan(mockContext, state, [fn])).rejects.toEqual(
+        new Error('fc3 throttled'),
+      );
     });
 
-    it('degrades to a drifted create when the live read rejects with a non-Error', async () => {
+    it('stops planning and preserves the provider error: degrades to a drifted create when the live read rejects with a non-Error', async () => {
       const fn = testFunction;
       const state = buildState(fn, [fc3Instance]);
       mockFc3Operations.getFunction.mockRejectedValue('fc3 api exploded');
 
-      const plan = await generateFunctionPlan(mockContext, state, [fn]);
-
-      expect(plan.items[0]).toMatchObject({ action: 'create', drifted: true });
+      await expect(generateFunctionPlan(mockContext, state, [fn])).rejects.toEqual(
+        'fc3 api exploded',
+      );
     });
 
     it('flags update+drifted when the live timeout/environment drifted', async () => {
@@ -1027,7 +1163,7 @@ describe('FC3 Planner', () => {
       expect(mockRamOperations.getExecutionPolicyDocument).not.toHaveBeenCalled();
     });
 
-    it('stays noop (never create) when the role probe read fails transiently', async () => {
+    it('stops planning and preserves the provider error: stays noop (never create) when the role probe read fails transiently', async () => {
       const fn: FunctionDomain = {
         ...testFunction,
         iam: { role: { name: 'test-managed-role' } },
@@ -1036,13 +1172,9 @@ describe('FC3 Planner', () => {
       mockFc3Operations.getFunction.mockResolvedValue(remoteFunctionMatch);
       mockRamOperations.getRole.mockRejectedValue(new Error('RAM request throttled'));
 
-      const plan = await generateFunctionPlan(mockContext, state, [fn]);
-
-      expect(plan.items[0]).toMatchObject({
-        logicalId: 'functions.test_fn',
-        action: 'noop',
-        resourceType: 'ALIYUN_FC3',
-      });
+      await expect(generateFunctionPlan(mockContext, state, [fn])).rejects.toEqual(
+        new Error('RAM request throttled'),
+      );
     });
 
     describe('timer trigger drift (issue #258)', () => {
@@ -1062,6 +1194,7 @@ describe('FC3 Planner', () => {
           mode: 'managed',
           region: 'cn-hangzhou',
           definition: {
+            timers: fnWithTimer.triggers!.timer,
             functionName: 'test-function',
             runtime: 'nodejs20',
             handler: 'index.handler',
@@ -1250,12 +1383,12 @@ describe('FC3 Planner', () => {
         expect(plan.items[0]).toMatchObject({ action: 'noop' });
       });
 
-      it('warns and stays noop when the nested probe fails', async () => {
+      it('stops planning and preserves the provider error: warns and stays noop when the nested probe fails', async () => {
         mockSlsOperations.getLogstore.mockRejectedValue(new Error('sls throttled'));
 
-        const plan = await generateFunctionPlan(mockContext, buildLogState(), [fnWithLog]);
-
-        expect(plan.items[0]).toMatchObject({ action: 'noop' });
+        await expect(
+          generateFunctionPlan(mockContext, buildLogState(), [fnWithLog]),
+        ).rejects.toEqual(new Error('sls throttled'));
       });
     });
 
@@ -1353,12 +1486,12 @@ describe('FC3 Planner', () => {
         expect(plan.items[0]).toMatchObject({ action: 'update', drifted: true });
       });
 
-      it('warns and stays noop when the SG probe fails', async () => {
+      it('stops planning and preserves the provider error: warns and stays noop when the SG probe fails', async () => {
         mockEcsOperations.getSecurityGroupRules.mockRejectedValue(new Error('ecs throttled'));
 
-        const plan = await generateFunctionPlan(mockContext, buildNetworkState(), [fnWithNetwork]);
-
-        expect(plan.items[0]).toMatchObject({ action: 'noop' });
+        await expect(
+          generateFunctionPlan(mockContext, buildNetworkState(), [fnWithNetwork]),
+        ).rejects.toEqual(new Error('ecs throttled'));
       });
     });
 
@@ -1399,12 +1532,13 @@ describe('FC3 Planner', () => {
             },
             gpuConfig: null,
             customContainerConfig: null,
+            nasStorage: fnWithNas.storage.nas,
             nasConfig: {
-              userId: 10003,
-              groupId: 10003,
+              userId: -1,
+              groupId: -1,
               mountPoints: [
                 {
-                  serverAddr: NasStorageClassEnum.STANDARD_CAPACITY,
+                  serverAddr: 'mt-domain:/',
                   mountDir: '/mnt/data',
                   enableTls: false,
                 },
@@ -1426,11 +1560,11 @@ describe('FC3 Planner', () => {
           ...remoteFunctionMatch,
           vpcConfig: { vpcId: 'vpc-123', vSwitchIds: ['vsw-123'], securityGroupId: 'sg-resolved' },
           nasConfig: {
-            userId: 10003,
-            groupId: 10003,
+            userId: -1,
+            groupId: -1,
             mountPoints: [
               {
-                serverAddr: NasStorageClassEnum.STANDARD_CAPACITY,
+                serverAddr: 'mt-domain:/',
                 mountDir: '/mnt/data',
                 enableTls: false,
               },
@@ -1464,12 +1598,12 @@ describe('FC3 Planner', () => {
         expect(plan.items[0]).toMatchObject({ action: 'update', drifted: true });
       });
 
-      it('warns and stays noop when the NAS probe fails', async () => {
+      it('stops planning and preserves the provider error: warns and stays noop when the NAS probe fails', async () => {
         mockNasOperations.listMountTargets.mockRejectedValue(new Error('nas throttled'));
 
-        const plan = await generateFunctionPlan(mockContext, buildNasState(), [fnWithNas]);
-
-        expect(plan.items[0]).toMatchObject({ action: 'noop' });
+        await expect(
+          generateFunctionPlan(mockContext, buildNasState(), [fnWithNas]),
+        ).rejects.toEqual(new Error('nas throttled'));
       });
     });
 
@@ -1560,8 +1694,20 @@ describe('FC3 Planner', () => {
       return setResource(initalState, `functions.${fn.key}`, {
         mode: 'managed',
         region: 'cn-hangzhou',
-        definition,
+        definition: fn.storage.nas?.length
+          ? {
+              ...definition,
+              nasConfig: {
+                userId: -1,
+                groupId: -1,
+                mountPoints: [{ serverAddr: 'mt-domain:/', mountDir: '/mnt/data' }],
+              },
+            }
+          : definition,
         instances: [
+          ...(fn.storage.nas?.length
+            ? [{ id: 'fs-1/mt-domain', sid: 'mount', type: 'ALIYUN_NAS_MOUNT_TARGET' }]
+            : []),
           {
             sid: 'si:aliyun:fc3:default:test-function',
             id: 'test-function',
@@ -1662,11 +1808,11 @@ describe('FC3 Planner', () => {
         timeout: 10,
         environmentVariables: { NODE_ENV: 'production' },
         nasConfig: {
-          userId: 10003,
-          groupId: 10003,
+          userId: -1,
+          groupId: -1,
           mountPoints: [
             {
-              serverAddr: NasStorageClassEnum.STANDARD_CAPACITY,
+              serverAddr: 'mt-domain:/',
               mountDir: '/mnt/data',
               enableTls: false,
             },
@@ -1705,11 +1851,11 @@ describe('FC3 Planner', () => {
         timeout: 10,
         environmentVariables: { NODE_ENV: 'production' },
         nasConfig: {
-          userId: 10003,
-          groupId: 10003,
+          userId: -1,
+          groupId: -1,
           mountPoints: [
             {
-              serverAddr: NasStorageClassEnum.STANDARD_CAPACITY,
+              serverAddr: 'mt-domain:/',
               mountDir: '/mnt/other',
               enableTls: false,
             },

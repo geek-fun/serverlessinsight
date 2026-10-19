@@ -77,7 +77,9 @@ describe('cosPlanner', () => {
     // Default: the live-probe mapper reports no comparable attributes, so the
     // pre-existing intent-diff tests keep their semantics.
     (cosTypes.cloudCosToDefinition as jest.Mock).mockReturnValue({});
-    (hashUtils.attributesEqual as jest.Mock).mockReturnValue(true);
+    (hashUtils.attributesEqual as jest.Mock).mockImplementation(
+      jest.requireActual('../../../../src/common/hashUtils').attributesEqual,
+    );
   });
 
   describe('generateBucketPlan', () => {
@@ -198,13 +200,19 @@ describe('cosPlanner', () => {
       (mockCosOperations.getBucket as jest.Mock).mockResolvedValue({
         Bucket: 'test-bucket',
       });
-      (hashUtils.attributesEqual as jest.Mock).mockReturnValue(false);
+      (hashUtils.attributesEqual as jest.Mock).mockImplementation(
+        jest.requireActual('../../../../src/common/hashUtils').attributesEqual,
+      );
 
+      (cosTypes.extractCosBucketDefinition as jest.Mock).mockReturnValue({
+        bucket: 'test-bucket',
+        acl: 'public-read',
+      });
       const plan = await generateBucketPlan(mockContext, stateWithBucket, [testBucket]);
 
       expect(plan.items).toHaveLength(1);
       expect(plan.items[0].action).toBe('update');
-      expect(plan.items[0].drifted).toBe(true);
+      expect(plan.items[0].drifted).toBeUndefined();
     });
 
     it('should plan noop when bucket exists and definition unchanged', async () => {
@@ -228,7 +236,9 @@ describe('cosPlanner', () => {
       (mockCosOperations.getBucket as jest.Mock).mockResolvedValue({
         Bucket: 'test-bucket',
       });
-      (hashUtils.attributesEqual as jest.Mock).mockReturnValue(true);
+      (hashUtils.attributesEqual as jest.Mock).mockImplementation(
+        jest.requireActual('../../../../src/common/hashUtils').attributesEqual,
+      );
 
       const plan = await generateBucketPlan(mockContext, stateWithBucket, [testBucket]);
 
@@ -263,7 +273,9 @@ describe('cosPlanner', () => {
         Bucket: 'test-bucket',
         Policy: { statement: [{ a: 1 }] },
       });
-      (hashUtils.attributesEqual as jest.Mock).mockReturnValue(true);
+      (hashUtils.attributesEqual as jest.Mock).mockImplementation(
+        jest.requireActual('../../../../src/common/hashUtils').attributesEqual,
+      );
 
       const result = await generateBucketPlan(mockContext, stateWithBucket, [testBucket]);
 
@@ -299,14 +311,16 @@ describe('cosPlanner', () => {
         bucket: 'test-bucket',
         acl: 'private',
       });
-      (hashUtils.attributesEqual as jest.Mock).mockReturnValue(false);
+      (hashUtils.attributesEqual as jest.Mock).mockImplementation(
+        jest.requireActual('../../../../src/common/hashUtils').attributesEqual,
+      );
 
       const plan = await generateBucketPlan(mockContext, stateWithBucket, [testBucket]);
 
       expect(plan.items[0]).toMatchObject({ action: 'update', drifted: true });
     });
 
-    it('should handle error when getting bucket from cloud', async () => {
+    it('rejects provider read failure: should handle error when getting bucket from cloud', async () => {
       const stateWithBucket: StateFile = {
         ...initialState,
         resources: {
@@ -326,10 +340,9 @@ describe('cosPlanner', () => {
       (stateManager.getAllResources as jest.Mock).mockReturnValue({});
       (mockCosOperations.getBucket as jest.Mock).mockRejectedValue(new Error('Network error'));
 
-      const plan = await generateBucketPlan(mockContext, stateWithBucket, [testBucket]);
-
-      expect(plan.items).toHaveLength(1);
-      expect(plan.items[0].action).toBe('create');
+      await expect(generateBucketPlan(mockContext, stateWithBucket, [testBucket])).rejects.toEqual(
+        new Error('Network error'),
+      );
     });
 
     it('should handle empty buckets array', async () => {

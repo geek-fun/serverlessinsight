@@ -1,3 +1,4 @@
+import crypto from 'node:crypto';
 import { DatabaseDomain, DatabaseEnum, DatabaseVersionEnum, ResourceAttributes } from '../../types';
 import { EsConfig, EsInfo } from '../../common/aliyunClient/esOperations';
 import { lang } from '../../lang';
@@ -105,10 +106,10 @@ export const extractEsDefinition = (config: EsConfig): ResourceAttributes => {
     appVersion: config.appVersion,
     authentication: config.authentication
       ? {
-          basicAuth: config.authentication.basicAuth?.map(() => ({
-            password: '***',
-            username: '***',
-          })),
+          fingerprint: crypto
+            .createHash('sha256')
+            .update(JSON.stringify(config.authentication))
+            .digest('hex'),
         }
       : null,
     quotaInfo: config.quotaInfo

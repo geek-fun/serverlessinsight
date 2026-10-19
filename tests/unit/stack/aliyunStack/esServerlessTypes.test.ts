@@ -263,7 +263,7 @@ describe('EsServerlessTypes', () => {
         appName: 'test-es',
         appVersion: '7.10',
         authentication: {
-          basicAuth: [{ password: '***', username: '***' }],
+          fingerprint: expect.stringMatching(/^[a-f0-9]{64}$/),
         },
         quotaInfo: {
           appType: 'STANDARD',
@@ -309,7 +309,7 @@ describe('EsServerlessTypes', () => {
       });
     });
 
-    it('should mask passwords in definition', () => {
+    it('fingerprints passwords so rotations remain detectable without storing plaintext', () => {
       const config = {
         appName: 'test-es',
         appVersion: '7.10',
@@ -330,8 +330,14 @@ describe('EsServerlessTypes', () => {
       const definition = extractEsDefinition(config);
 
       expect(definition.authentication).toEqual({
-        basicAuth: [{ password: '***', username: '***' }],
+        fingerprint: expect.stringMatching(/^[a-f0-9]{64}$/),
       });
+      const rotated = extractEsDefinition({
+        ...config,
+        authentication: { basicAuth: [{ username: 'admin', password: 'RotatedSecret456!' }] },
+      });
+      expect(rotated.authentication).not.toEqual(definition.authentication);
+      expect(JSON.stringify(definition)).not.toContain('SuperSecret123!');
     });
 
     it('should handle undefined authentication', () => {
