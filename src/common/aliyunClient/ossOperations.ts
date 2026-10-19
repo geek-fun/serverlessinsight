@@ -874,8 +874,14 @@ const parseReplicationRules = (xml: string): BucketReplicationRule[] => {
         try {
           const aclResult = await ossClient.getBucketACL(bucketName);
           acl = aclResult.acl;
-        } catch {
-          // ACL might not be accessible
+        } catch (error: unknown) {
+          const details = error as { code?: string; status?: number; statusCode?: number };
+          if (
+            details.status !== 404 &&
+            details.statusCode !== 404 &&
+            !details.code?.startsWith('NoSuch')
+          )
+            throw error;
         }
 
         // Get website config
@@ -888,8 +894,14 @@ const parseReplicationRules = (xml: string): BucketReplicationRule[] => {
               errorDocument: websiteResult.error,
             };
           }
-        } catch {
-          // Website config might not exist
+        } catch (error: unknown) {
+          const details = error as { code?: string; status?: number; statusCode?: number };
+          if (
+            details.status !== 404 &&
+            details.statusCode !== 404 &&
+            !details.code?.startsWith('NoSuch')
+          )
+            throw error;
         }
 
         // Get logging config
@@ -901,8 +913,14 @@ const parseReplicationRules = (xml: string): BucketReplicationRule[] => {
               targetPrefix: loggingResult.prefix,
             };
           }
-        } catch {
-          // Logging config might not exist
+        } catch (error: unknown) {
+          const details = error as { code?: string; status?: number; statusCode?: number };
+          if (
+            details.status !== 404 &&
+            details.statusCode !== 404 &&
+            !details.code?.startsWith('NoSuch')
+          )
+            throw error;
         }
 
         // Get CORS rules
@@ -931,8 +949,14 @@ const parseReplicationRules = (xml: string): BucketReplicationRule[] => {
                 typeof rule.maxAgeSeconds === 'number' ? rule.maxAgeSeconds : undefined,
             }));
           }
-        } catch {
-          // CORS config might not exist
+        } catch (error: unknown) {
+          const details = error as { code?: string; status?: number; statusCode?: number };
+          if (
+            details.status !== 404 &&
+            details.statusCode !== 404 &&
+            !details.code?.startsWith('NoSuch')
+          )
+            throw error;
         }
 
         // Get lifecycle rules
@@ -994,8 +1018,14 @@ const parseReplicationRules = (xml: string): BucketReplicationRule[] => {
               };
             });
           }
-        } catch {
-          // Lifecycle config might not exist
+        } catch (error: unknown) {
+          const details = error as { code?: string; status?: number; statusCode?: number };
+          if (
+            details.status !== 404 &&
+            details.statusCode !== 404 &&
+            !details.code?.startsWith('NoSuch')
+          )
+            throw error;
         }
 
         // Get versioning status (GetBucketVersioning)
@@ -1012,8 +1042,14 @@ const parseReplicationRules = (xml: string): BucketReplicationRule[] => {
           ) {
             versioningConfig = { status: versioningResult.versionStatus };
           }
-        } catch {
-          // Versioning config might not exist
+        } catch (error: unknown) {
+          const details = error as { code?: string; status?: number; statusCode?: number };
+          if (
+            details.status !== 404 &&
+            details.statusCode !== 404 &&
+            !details.code?.startsWith('NoSuch')
+          )
+            throw error;
         }
 
         // Get server-side encryption (GetBucketEncryption)
@@ -1039,8 +1075,14 @@ const parseReplicationRules = (xml: string): BucketReplicationRule[] => {
                 enc.KMSDataEncryption as BucketEncryptionConfig['kmsDataEncryption'],
             };
           }
-        } catch {
-          // Encryption config might not exist
+        } catch (error: unknown) {
+          const details = error as { code?: string; status?: number; statusCode?: number };
+          if (
+            details.status !== 404 &&
+            details.statusCode !== 404 &&
+            !details.code?.startsWith('NoSuch')
+          )
+            throw error;
         }
 
         // Get transfer acceleration status (GetBucketTransferAcceleration)
@@ -1048,8 +1090,14 @@ const parseReplicationRules = (xml: string): BucketReplicationRule[] => {
         try {
           const enabled = await operations.getTransferAccelerationStatus(bucketName);
           transferAccelerationStatus = enabled ? 'Enabled' : 'Disabled';
-        } catch {
-          // Transfer acceleration might not be configured
+        } catch (error: unknown) {
+          const details = error as { code?: string; status?: number; statusCode?: number };
+          if (
+            details.status !== 404 &&
+            details.statusCode !== 404 &&
+            !details.code?.startsWith('NoSuch')
+          )
+            throw error;
         }
 
         // Get replication rules (GetBucketReplication)
@@ -1066,8 +1114,14 @@ const parseReplicationRules = (xml: string): BucketReplicationRule[] => {
           if (parsedRules.length > 0) {
             replicationRules = parsedRules;
           }
-        } catch {
-          // Replication config might not exist
+        } catch (error: unknown) {
+          const details = error as { code?: string; status?: number; statusCode?: number };
+          if (
+            details.status !== 404 &&
+            details.statusCode !== 404 &&
+            !details.code?.startsWith('NoSuch')
+          )
+            throw error;
         }
 
         // Get bucket policy (GetBucketPolicy)
@@ -1077,8 +1131,14 @@ const parseReplicationRules = (xml: string): BucketReplicationRule[] => {
           if (policyResult) {
             policy = JSON.stringify(policyResult);
           }
-        } catch {
-          // No bucket policy configured
+        } catch (error: unknown) {
+          const details = error as { code?: string; status?: number; statusCode?: number };
+          if (
+            details.status !== 404 &&
+            details.statusCode !== 404 &&
+            !details.code?.startsWith('NoSuch')
+          )
+            throw error;
         }
 
         // Get bucket tags
@@ -1092,8 +1152,14 @@ const parseReplicationRules = (xml: string): BucketReplicationRule[] => {
           if (tagsResult.tag) {
             tags = Object.entries(tagsResult.tag).map(([key, value]) => ({ key, value }));
           }
-        } catch {
-          // No bucket tags configured
+        } catch (error: unknown) {
+          const details = error as { code?: string; status?: number; statusCode?: number };
+          if (
+            details.status !== 404 &&
+            details.statusCode !== 404 &&
+            !details.code?.startsWith('NoSuch')
+          )
+            throw error;
         }
 
         // Build owner info

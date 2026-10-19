@@ -142,7 +142,7 @@ export const extractEventDomainDefinition = (
 ): {
   gatewayName: string;
   network?: { vpcId: string; subnetIds: string[] };
-  logEnabled: boolean;
+  logEnabled?: boolean;
   logConfig?: { project: string; topic: string };
   triggers: Array<{ method: string; path: string; backend: string }>;
   domain?: { domainName?: string; certificateId?: string };
@@ -153,7 +153,7 @@ export const extractEventDomainDefinition = (
     ...(event.network && {
       network: { vpcId: event.network.vpc_id, subnetIds: event.network.subnet_ids },
     }),
-    logEnabled: event.log === true || event.log === 'true',
+    ...(event.log !== undefined ? { logEnabled: event.log === true || event.log === 'true' } : {}),
     ...(event.log && context
       ? {
           logConfig: {

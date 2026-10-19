@@ -37,3 +37,25 @@ export const mapAliyunAccess = (access?: Array<AccessValue>): { disableURLIntern
     disableURLInternet: !access.includes('public') && access.includes('internal'),
   };
 };
+
+/** Exact FC3 HTTP trigger write shape, also used for live comparison. */
+export const buildAliyunHttpTriggerConfig = (trigger: {
+  auth_type: AuthType;
+  access?: AccessValue[];
+}): { authType: string; methods: string[]; disableURLInternet?: boolean } => ({
+  authType: mapAuthType(ProviderEnum.ALIYUN, trigger.auth_type),
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'HEAD', 'PATCH'],
+  ...mapAliyunAccess(trigger.access),
+});
+
+export const buildTencentHttpTriggerDesc = (
+  authType: string,
+  netConfig: { enableIntranet?: boolean; enableExtranet?: boolean },
+): string =>
+  JSON.stringify({
+    AuthType: authType,
+    NetConfig: {
+      EnableIntranet: netConfig.enableIntranet ?? false,
+      EnableExtranet: netConfig.enableExtranet ?? true,
+    },
+  });

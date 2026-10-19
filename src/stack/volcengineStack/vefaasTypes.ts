@@ -1,3 +1,5 @@
+import type { ResourceAttributes } from '../../types';
+import { withFunctionLifecycle } from '../../common/functionDefinition';
 import { Context, FunctionDomain } from '../../types';
 import type { VefaasFunctionConfig, VefaasRuntime } from '../../common/volcengineClient/types';
 import type { IamStatement } from '../../common/iamStatements';
@@ -185,21 +187,25 @@ export const functionToVefaasConfig = (
 export const extractVefaasDefinition = (
   config: VefaasFunctionConfig,
   codeHash: string,
-): VefaasFunctionDefinition => {
-  return {
-    functionName: config.functionName,
-    runtime: config.runtime,
-    handler: config.handler,
-    memorySize: config.memoryMb,
-    timeout: config.requestTimeout,
-    environment: config.environmentVariables || {},
-    codeHash,
-    description: config.description,
-    role: config.role,
-    vpcConfig: config.vpcConfig,
-    tosMountConfig: config.tosMountConfig,
-    logConfig: config.logConfig,
-  };
+  fn?: FunctionDomain,
+): ResourceAttributes => {
+  return withFunctionLifecycle(
+    {
+      functionName: config.functionName,
+      runtime: config.runtime,
+      handler: config.handler,
+      memorySize: config.memoryMb,
+      timeout: config.requestTimeout,
+      environment: config.environmentVariables || {},
+      codeHash,
+      description: config.description,
+      role: config.role,
+      vpcConfig: config.vpcConfig,
+      tosMountConfig: config.tosMountConfig,
+      logConfig: config.logConfig,
+    },
+    fn,
+  );
 };
 
 export const buildDefaultTrustPolicy = (

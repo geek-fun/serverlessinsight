@@ -84,7 +84,9 @@ describe('esServerlessPlanner', () => {
     // Default: the live-probe mapper reports no comparable attributes, so the
     // pre-existing intent-diff tests keep their semantics.
     (esTypes.cloudTencentEsToDefinition as jest.Mock).mockReturnValue({});
-    (hashUtils.attributesEqual as jest.Mock).mockReturnValue(true);
+    (hashUtils.attributesEqual as jest.Mock).mockImplementation(
+      jest.requireActual('../../../../src/common/hashUtils').attributesEqual,
+    );
   });
 
   describe('generateEsPlan', () => {
@@ -284,7 +286,7 @@ describe('esServerlessPlanner', () => {
           'databases.test_db': {
             mode: 'managed' as ResourceMode,
             region: 'ap-guangzhou',
-            definition: { name: 'test-db', version: '7.10' },
+            definition: { spaceName: 'old-db', version: '7.10' },
             instances: [{ sid: 'si:tencent:es', id: 'space-123' }],
             lastUpdated: new Date().toISOString(),
             metadata: { spaceId: 'space-123' },
@@ -293,20 +295,27 @@ describe('esServerlessPlanner', () => {
       };
 
       (stateManager.getResource as jest.Mock).mockReturnValue({
-        definition: { name: 'test-db', version: '7.10' },
+        definition: { spaceName: 'old-db', version: '7.10' },
         metadata: { spaceId: 'space-123' },
       });
       (stateManager.getAllResources as jest.Mock).mockReturnValue({});
       (mockEsOperations.getSpace as jest.Mock).mockResolvedValue({
-        SpaceName: 'test-db',
+        SpaceName: 'old-db',
       });
-      (hashUtils.attributesEqual as jest.Mock).mockReturnValue(false);
+      (hashUtils.attributesEqual as jest.Mock).mockImplementation(
+        jest.requireActual('../../../../src/common/hashUtils').attributesEqual,
+      );
 
+      (esTypes.extractTencentEsDefinition as jest.Mock).mockReturnValue({
+        spaceName: 'test-db',
+        version: '7.10',
+      });
+      (esTypes.cloudTencentEsToDefinition as jest.Mock).mockReturnValue({ spaceName: 'old-db' });
       const plan = await generateEsPlan(mockContext, stateWithDb, [testDatabase]);
 
       expect(plan.items).toHaveLength(1);
       expect(plan.items[0].action).toBe('update');
-      expect(plan.items[0].drifted).toBe(true);
+      expect(plan.items[0].drifted).toBeUndefined();
     });
 
     it('should plan noop when ES database exists and definition unchanged', async () => {
@@ -332,7 +341,9 @@ describe('esServerlessPlanner', () => {
       (mockEsOperations.getSpace as jest.Mock).mockResolvedValue({
         SpaceName: 'test-db',
       });
-      (hashUtils.attributesEqual as jest.Mock).mockReturnValue(true);
+      (hashUtils.attributesEqual as jest.Mock).mockImplementation(
+        jest.requireActual('../../../../src/common/hashUtils').attributesEqual,
+      );
 
       const plan = await generateEsPlan(mockContext, stateWithDb, [testDatabase]);
 
@@ -340,7 +351,7 @@ describe('esServerlessPlanner', () => {
       expect(plan.items[0].action).toBe('noop');
     });
 
-    it('flags update+drifted when the live vpc drifted from config (issue #234 phase 2)', async () => {
+    it('rejects unsupported change: flags update+drifted when the live vpc drifted from config (issue #234 phase 2)', async () => {
       const stateWithDb: StateFile = {
         ...initialState,
         resources: {
@@ -377,13 +388,12 @@ describe('esServerlessPlanner', () => {
         (a: unknown, b: unknown) => JSON.stringify(a) === JSON.stringify(b),
       );
 
-      const plan = await generateEsPlan(mockContext, stateWithDb, [testDatabase]);
-
-      expect(plan.items).toHaveLength(1);
-      expect(plan.items[0]).toMatchObject({ action: 'update', drifted: true });
+      await expect(generateEsPlan(mockContext, stateWithDb, [testDatabase])).rejects.toThrow(
+        'PLAN_UPDATE_NOT_SUPPORTED',
+      );
     });
 
-    it('should handle error when getting ES space from cloud', async () => {
+    it('rejects provider read failure: should handle error when getting ES space from cloud', async () => {
       const stateWithDb: StateFile = {
         ...initialState,
         resources: {
@@ -405,10 +415,9 @@ describe('esServerlessPlanner', () => {
       (stateManager.getAllResources as jest.Mock).mockReturnValue({});
       (mockEsOperations.getSpace as jest.Mock).mockRejectedValue(new Error('Network error'));
 
-      const plan = await generateEsPlan(mockContext, stateWithDb, [testDatabase]);
-
-      expect(plan.items).toHaveLength(1);
-      expect(plan.items[0].action).toBe('create');
+      await expect(generateEsPlan(mockContext, stateWithDb, [testDatabase])).rejects.toEqual(
+        new Error('Network error'),
+      );
     });
 
     it('should get spaceId from metadata', async () => {

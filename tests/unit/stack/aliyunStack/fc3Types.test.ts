@@ -1,5 +1,6 @@
 import {
   functionToFc3Config,
+  resolveRecordedFc3NasConfig,
   extractFc3Definition,
   extractFunctionDomainDefinition,
   cloudFc3ToDefinition,
@@ -524,6 +525,36 @@ describe('FC3 Types', () => {
         timeout: 60,
         storage: {},
       });
+    });
+  });
+  describe('resolved NAS configuration', () => {
+    const fn = {
+      key: 'fn',
+      name: 'fn',
+      code: { runtime: 'nodejs20', handler: 'index.handler', path: 'test.zip' },
+      memory: 128,
+      timeout: 30,
+      storage: {
+        nas: [{ storage_class: NasStorageClassEnum.STANDARD_CAPACITY, mount_path: '/data' }],
+      },
+    } as FunctionDomain;
+    it('never fabricates provider mount addresses and rejects unresolved new mounts without a network', () => {
+      const config = functionToFc3Config(fn);
+      expect(config.nasConfig).toBeUndefined();
+      expect(() => resolveRecordedFc3NasConfig(config, fn, [])).toThrow('VPC');
+    });
+    it('uses actual recorded targets and the same user/group IDs as deployment', () => {
+      const config = resolveRecordedFc3NasConfig(functionToFc3Config(fn), fn, [
+        { type: 'ALIYUN_NAS_MOUNT_TARGET', id: 'fs/actual.example.com' },
+      ]);
+      expect(config.nasConfig).toEqual({
+        userId: -1,
+        groupId: -1,
+        mountPoints: [{ serverAddr: 'actual.example.com:/', mountDir: '/data' }],
+      });
+      const noNas = { ...fn, storage: {} };
+      const plain = functionToFc3Config(noNas);
+      expect(resolveRecordedFc3NasConfig(plain, noNas, [])).toBe(plain);
     });
   });
 });

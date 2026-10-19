@@ -1,3 +1,4 @@
+import { withFunctionLifecycle } from '../../common/functionDefinition';
 import type { FunctionDomain, ResourceAttributes } from '../../types';
 import { mapRuntime, ProviderEnum } from '../../common';
 import type { ScfFunctionInfo as TencentScfFunctionInfo } from '../../common/tencentClient/types';
@@ -239,6 +240,7 @@ export const extractScfDefinition = (
   config: ScfFunctionConfig,
   codeHash: string,
   iam?: FunctionDomain['iam'],
+  fn?: FunctionDomain,
 ): ResourceAttributes => {
   const envMap: Record<string, string> =
     config.Environment?.Variables?.reduce(
@@ -269,7 +271,7 @@ export const extractScfDefinition = (
     ...(logConfig ? { logConfig } : {}),
   };
 
-  return iam ? { ...baseDefinition, iam } : baseDefinition;
+  return withFunctionLifecycle(iam ? { ...baseDefinition, iam } : baseDefinition, fn);
 };
 
 export const extractFunctionDomainDefinition = (
@@ -277,7 +279,7 @@ export const extractFunctionDomainDefinition = (
   codeHash: string,
 ): ResourceAttributes => {
   const config = functionToScfConfig(fn);
-  return extractScfDefinition(config, codeHash, fn.iam);
+  return extractScfDefinition(config, codeHash, fn.iam, fn);
 };
 
 // issue #234 phase 2: cloud-side counterpart of extractScfDefinition. Mirrors

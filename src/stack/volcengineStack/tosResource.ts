@@ -1,3 +1,5 @@
+import { mergeManagedIntent } from '../../common/planCompare';
+import { buildBucketPolicy } from '../../common/bucketPolicy';
 import { createVolcengineClient } from '../../common/volcengineClient';
 import type { TosBucketInfo } from '../../common/volcengineClient/types';
 import {
@@ -26,23 +28,8 @@ import path from 'node:path';
 import { OWNERSHIP_TAG_KEY, buildOwnershipTagValue, isOwnedByStack } from '../ownershipTag';
 import { isResourceAlreadyExistsError } from '../alreadyExists';
 
-const buildTosBucketPolicyJson = (iam: BucketDomain['iam']): Record<string, unknown> | null => {
-  if (!iam?.resource?.statements || iam.resource.statements.length === 0) return null;
-  return {
-    Statement: iam.resource.statements.map((stmt) => {
-      const s: Record<string, unknown> = {
-        Effect: stmt.effect,
-        Principal: stmt.principal,
-        Action: stmt.action,
-        Resource: stmt.resource,
-      };
-      if (stmt.condition) {
-        s.Condition = stmt.condition;
-      }
-      return s;
-    }),
-  };
-};
+const buildTosBucketPolicyJson = (iam: BucketDomain['iam']): Record<string, unknown> | null =>
+  buildBucketPolicy(iam, 'volcengine');
 
 const applyBucketPolicy = async (
   client: ReturnType<typeof createVolcengineClient>,
@@ -240,22 +227,17 @@ export const updateResource = async (
 
   const instances: Array<ResourceInstance> = [buildTosInstanceFromProvider(bucketInfo, sid)];
 
-  // Apply IAM bucket policy if configured (update or remove)
-  const existingDef = (state.resources[logicalId]?.definition ?? {}) as Record<string, unknown>;
-  const oldPolicyJson = existingDef.policy as string | undefined;
-  const newPolicyJson = bucket.iam ? JSON.stringify(bucket.iam) : null;
-  if (newPolicyJson !== (oldPolicyJson ?? null)) {
-    if (newPolicyJson) {
-      await applyBucketPolicy(client, bucket);
-    } else {
-      await deleteBucketPolicy(client, bucket.name);
-    }
+  if (bucket.iam?.resource?.statements !== undefined) {
+    await applyBucketPolicy(client, bucket);
   }
 
   const resourceState: ResourceState = {
     mode: 'managed',
     region: context.region,
-    definition: extractTosBucketDefinition(config, websiteCodeHash),
+    definition: mergeManagedIntent(
+      state.resources[logicalId]?.definition ?? {},
+      extractTosBucketDefinition(config, websiteCodeHash),
+    ),
     instances,
     lastUpdated: new Date().toISOString(),
   };

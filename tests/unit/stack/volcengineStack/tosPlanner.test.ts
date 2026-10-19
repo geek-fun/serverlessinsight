@@ -233,7 +233,7 @@ describe('tosPlanner', () => {
       expect(mockTosClient.tos.getBucket).toHaveBeenCalledWith('test-bucket');
     });
 
-    it('should generate update plan when bucket exists with changes', async () => {
+    it('should generate update plan when bucket exists with changes without claiming live drift', async () => {
       const buckets: Array<BucketDomain> = [
         {
           key: 'static_site',
@@ -271,7 +271,7 @@ describe('tosPlanner', () => {
 
       expect(result.items).toHaveLength(1);
       expect(result.items[0].action).toBe('update');
-      expect(result.items[0].drifted).toBe(true);
+      expect(result.items[0].drifted).toBeUndefined();
     });
 
     it('should generate noop plan when bucket unchanged', async () => {
@@ -308,8 +308,6 @@ describe('tosPlanner', () => {
       jest
         .spyOn(stateManager, 'getResource')
         .mockReturnValue(stateWithBucket.resources['buckets.static_site']);
-
-      jest.spyOn(hashUtils, 'attributesEqual').mockReturnValue(true);
 
       const result = await generateBucketPlan(mockContext, stateWithBucket, buckets);
 
@@ -405,16 +403,14 @@ describe('tosPlanner', () => {
       // order — canonical compare must treat it as equal.
       mockTosClient.tos.getBucket.mockResolvedValueOnce({ name: 'test-bucket' });
       mockTosClient.tos.getBucketPolicy.mockResolvedValueOnce({
-        resource: {
-          statements: [
-            {
-              effect: 'Allow',
-              principal: { AWS: ['*'] },
-              action: ['tos:Get*'],
-              resource: ['trn:tos:::*'],
-            },
-          ],
-        },
+        Statement: [
+          {
+            Effect: 'Allow',
+            Principal: { AWS: ['*'] },
+            Action: ['tos:Get*'],
+            Resource: ['trn:tos:::*'],
+          },
+        ],
       });
 
       jest
@@ -607,7 +603,7 @@ describe('tosPlanner', () => {
       expect(result.items[0].drifted).toBe(true);
     });
 
-    it('should handle error when checking remote bucket', async () => {
+    it('stops planning and preserves the provider error: should handle error when checking remote bucket', async () => {
       const buckets: Array<BucketDomain> = [
         {
           key: 'static_site',
@@ -636,10 +632,9 @@ describe('tosPlanner', () => {
         .spyOn(stateManager, 'getResource')
         .mockReturnValue(stateWithBucket.resources['buckets.static_site']);
 
-      const result = await generateBucketPlan(mockContext, stateWithBucket, buckets);
-
-      expect(result.items).toHaveLength(1);
-      expect(result.items[0].action).toBe('create');
+      await expect(generateBucketPlan(mockContext, stateWithBucket, buckets)).rejects.toEqual(
+        new Error('Network error'),
+      );
     });
 
     it('should return null websiteCodeHash when computeDirectoryHash throws', async () => {

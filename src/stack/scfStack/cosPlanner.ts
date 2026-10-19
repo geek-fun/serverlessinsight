@@ -1,3 +1,4 @@
+import { normalizeBucketPolicyDefinition } from '../../common/bucketPolicy';
 import { Context, BucketDomain, Plan, PlanItem, StateFile, ResourceAttributes } from '../../types';
 import { lang } from '../../lang';
 import { createTencentClient } from '../../common/tencentClient';
@@ -10,7 +11,6 @@ import {
 } from './cosTypes';
 import { getAllResources, getResource } from '../../common/stateManager';
 import { planRefreshedResource } from '../../common/refreshPlanner';
-import { jsonDocumentDiffers } from '../../common/planCompare';
 import { OWNERSHIP_TAG_KEY, isOwnedByStack } from '../ownershipTag';
 
 const planBucketDeletion = (logicalId: string, definition: ResourceAttributes): PlanItem => ({
@@ -65,21 +65,8 @@ export const generateBucketPlan = async (
               tagKey: OWNERSHIP_TAG_KEY,
             }),
           ),
+        normalizeForDisplay: (definition) => normalizeBucketPolicyDefinition(definition, 'tencent'),
         cloudToDefinition: cloudCosToDefinition,
-        extraUpdate: async () => {
-          // Policy needs a canonical compare: the cloud returns a parsed
-          // object while the config serializes it — see jsonDocumentDiffers.
-          const desiredPolicy = (desiredDefinition as { policy?: string | null }).policy ?? null;
-          if (desiredPolicy === null) {
-            return { update: false, drifted: false };
-          }
-          const remote = await readBucket();
-          const cloudPolicy = (remote as { Policy?: unknown } | null)?.Policy;
-          return {
-            update: jsonDocumentDiffers(desiredPolicy, cloudPolicy),
-            drifted: true,
-          };
-        },
         refresh: context.refresh,
       });
     },

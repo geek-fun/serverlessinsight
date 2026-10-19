@@ -283,7 +283,7 @@ describe('SCF Planner', () => {
       });
     });
 
-    it('treats CLS destination change as configuration drift', async () => {
+    it('treats CLS destination change as configuration drift without claiming live drift', async () => {
       mockScfOperations.getFunction.mockResolvedValue({
         FunctionName: 'test-function',
         Runtime: 'Nodejs18.15',
@@ -332,7 +332,6 @@ describe('SCF Planner', () => {
         logicalId: 'functions.test_fn',
         action: 'update',
         resourceType: 'SCF',
-        drifted: true,
       });
       expect(plan.items[0].changes?.after).toEqual(
         expect.objectContaining({
@@ -355,6 +354,7 @@ describe('SCF Planner', () => {
           mode: 'managed',
           region: 'ap-guangzhou',
           definition: {
+            timers: fnWithTimer.triggers!.timer,
             functionName: 'test-function',
             runtime: 'Nodejs18.15',
             handler: 'index.handler',
@@ -556,12 +556,12 @@ describe('SCF Planner', () => {
         expect(plan.items[0]).toMatchObject({ action: 'update', drifted: true });
       });
 
-      it('warns and stays noop when the topic probe fails', async () => {
+      it('stops planning and preserves the provider error: warns and stays noop when the topic probe fails', async () => {
         mockClsOperations.getTopicById.mockRejectedValue(new Error('cls throttled'));
 
-        const plan = await generateFunctionPlan(mockContext, buildLogState(), [fnWithLog]);
-
-        expect(plan.items[0]).toMatchObject({ action: 'noop' });
+        await expect(
+          generateFunctionPlan(mockContext, buildLogState(), [fnWithLog]),
+        ).rejects.toEqual(new Error('cls throttled'));
       });
     });
 

@@ -1,3 +1,4 @@
+import { applyPlanStateUpdates } from '../../common/refreshPlanner';
 import {
   ServerlessIac,
   ExecutionResult,
@@ -141,6 +142,8 @@ export const deployAliyunStack = async (
         ...tablePlan.items,
         ...eventPlan.items,
       ];
+
+  state = applyPlanStateUpdates(state, allItems);
 
   // Build dependency graph for validation (e.g. cycle detection) and logging
   const dependencyInfo = getDependencyInfo(allItems);

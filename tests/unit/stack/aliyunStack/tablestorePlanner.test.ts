@@ -477,7 +477,7 @@ describe('TableStore Planner', () => {
           reservedThroughput: { capacityUnit: { read: 10, write: 5 } },
           onDemandThroughput: null,
           tableOptions: { timeToLive: -1, maxVersions: 1 },
-          network: null,
+          network: { type: 'PUBLIC', ingressRules: [] },
         },
         instances: [],
         lastUpdated: new Date().toISOString(),
@@ -517,7 +517,7 @@ describe('TableStore Planner', () => {
           reservedThroughput: { capacityUnit: { read: 10, write: 5 } },
           onDemandThroughput: null,
           tableOptions: { timeToLive: -1, maxVersions: 1 },
-          network: null,
+          network: { type: 'PUBLIC', ingressRules: [] },
         },
         instances: [],
         lastUpdated: new Date().toISOString(),
@@ -547,7 +547,7 @@ describe('TableStore Planner', () => {
           reservedThroughput: null,
           onDemandThroughput: null,
           tableOptions: null,
-          network: null,
+          network: { type: 'PUBLIC', ingressRules: [] },
         },
         instances: [
           {
@@ -588,7 +588,7 @@ describe('TableStore Planner', () => {
           reservedThroughput: null,
           onDemandThroughput: null,
           tableOptions: null,
-          network: null,
+          network: { type: 'PUBLIC', ingressRules: [] },
         },
         instances: [
           {
@@ -638,7 +638,7 @@ describe('TableStore Planner', () => {
           reservedThroughput: null,
           onDemandThroughput: null,
           tableOptions: null,
-          network: null,
+          network: { type: 'PUBLIC', ingressRules: [] },
         },
         instances: [
           {
@@ -663,7 +663,7 @@ describe('TableStore Planner', () => {
       });
     });
 
-    it('should handle errors when checking remote state gracefully', async () => {
+    it('rejects provider read failure: should handle errors when checking remote state gracefully', async () => {
       mockTablestoreOperations.getTable.mockRejectedValue(new Error('Network error'));
 
       const state = setResource(initialState, 'tables.test_table', {
@@ -679,23 +679,18 @@ describe('TableStore Planner', () => {
           reservedThroughput: null,
           onDemandThroughput: null,
           tableOptions: null,
-          network: null,
+          network: { type: 'PUBLIC', ingressRules: [] },
         },
         instances: [],
         lastUpdated: new Date().toISOString(),
       });
 
-      const plan = await generateTablePlan(mockContext, state, [testTable]);
-
-      expect(plan.items).toHaveLength(1);
-      expect(plan.items[0]).toMatchObject({
-        logicalId: 'tables.test_table',
-        action: 'create',
-        resourceType: 'ALIYUN_TABLESTORE_TABLE',
-      });
+      await expect(generateTablePlan(mockContext, state, [testTable])).rejects.toEqual(
+        new Error('Network error'),
+      );
     });
 
-    it('should plan update with drift when primary key changes', async () => {
+    it('rejects unsupported change: should plan update with drift when primary key changes', async () => {
       mockTablestoreOperations.getTable.mockResolvedValue({
         tableName: 'test-table',
         primaryKey: [{ name: 'old_id', type: 'INTEGER' }],
@@ -730,18 +725,12 @@ describe('TableStore Planner', () => {
         lastUpdated: new Date().toISOString(),
       });
 
-      const plan = await generateTablePlan(mockContext, state, [testTable]);
-
-      expect(plan.items).toHaveLength(1);
-      expect(plan.items[0]).toMatchObject({
-        logicalId: 'tables.test_table',
-        action: 'update',
-        resourceType: 'ALIYUN_TABLESTORE_TABLE',
-        drifted: true,
-      });
+      await expect(generateTablePlan(mockContext, state, [testTable])).rejects.toThrow(
+        'primaryKey',
+      );
     });
 
-    it('should use empty object fallback when currentState.definition is null', async () => {
+    it('rejects unsupported change: should use empty object fallback when currentState.definition is null', async () => {
       mockTablestoreOperations.getTable.mockResolvedValue({
         tableName: 'test-table',
         primaryKey: [{ name: 'id', type: 'INTEGER' }],
@@ -765,14 +754,9 @@ describe('TableStore Planner', () => {
         lastUpdated: new Date().toISOString(),
       });
 
-      const plan = await generateTablePlan(mockContext, state, [testTable]);
-
-      expect(plan.items).toHaveLength(1);
-      expect(plan.items[0]).toMatchObject({
-        logicalId: 'tables.test_table',
-        action: 'update',
-        resourceType: 'ALIYUN_TABLESTORE_TABLE',
-      });
+      await expect(generateTablePlan(mockContext, state, [testTable])).rejects.toThrow(
+        'Cannot update',
+      );
     });
   });
 });

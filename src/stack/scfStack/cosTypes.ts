@@ -1,3 +1,4 @@
+import { serializeBucketPolicy } from '../../common/bucketPolicy';
 import { BucketDomain, BucketIam, ResourceAttributes } from '../../types';
 import type { CosBucketInfo as TencentCosBucketInfo } from '../../common/tencentClient/types';
 
@@ -187,11 +188,6 @@ export const bucketToCosBucketConfig = (bucket: BucketDomain, region: string): C
   return config;
 };
 
-const serializeBucketPolicy = (iam?: BucketIam): string | null => {
-  if (!iam?.resource?.statements || iam.resource.statements.length === 0) return null;
-  return JSON.stringify(iam);
-};
-
 export const extractCosBucketDefinition = (config: CosBucketConfig): ResourceAttributes => {
   return {
     bucket: config.Bucket,
@@ -204,7 +200,7 @@ export const extractCosBucketDefinition = (config: CosBucketConfig): ResourceAtt
         }
       : {},
     domain: config.Domain ?? null,
-    wwwBindApex: config.WwwBindApex ?? false,
+    wwwBindApex: config.WwwBindApex ?? null,
     domainCertificateId: config.DomainCertificateId ?? null,
     domainCertificateBody: config.DomainCertificateBody ?? null,
     domainCertificatePrivateKey: config.DomainCertificatePrivateKey ? '(managed)' : null,
@@ -212,7 +208,7 @@ export const extractCosBucketDefinition = (config: CosBucketConfig): ResourceAtt
     versioningStatus: config.VersioningStatus ?? null,
     sseAlgorithm: config.SseAlgorithm ?? null,
     sseKmsMasterKeyId: config.SseKmsMasterKeyId ?? null,
-    policy: serializeBucketPolicy(config.IamPolicy),
+    policy: serializeBucketPolicy(config.IamPolicy, 'tencent'),
   };
 };
 
@@ -220,10 +216,10 @@ export const extractCosBucketDefinition = (config: CosBucketConfig): ResourceAtt
 // Mirrors the executor write shape key-for-key. Not refreshable (omitted so
 // they can never phantom-drift): region (cloud Location uses a different
 // format), domain/wwwBindApex/domainCertificate*/domainProtocol (GetBucket
-// returns none of these), policy (cloud returns a policy object; byte-order
-// comparison against the serialized desired document would false-drift).
+// returns none of these). Policies use the shared canonical provider-document comparison.
 export const cloudCosToDefinition = (info: TencentCosBucketInfo): ResourceAttributes => ({
   bucket: info.Name,
+  policy: info.Policy ?? null,
   ...(info.ACL !== undefined ? { acl: info.ACL } : {}),
   ...(info.WebsiteConfiguration
     ? {
@@ -232,14 +228,14 @@ export const cloudCosToDefinition = (info: TencentCosBucketInfo): ResourceAttrib
           errorDocument: info.WebsiteConfiguration.ErrorDocument?.Key ?? null,
         },
       }
-    : {}),
+    : { websiteConfiguration: null }),
   ...(info.VersioningConfiguration?.status !== undefined
     ? { versioningStatus: info.VersioningConfiguration.status }
-    : {}),
+    : { versioningStatus: null }),
   ...(info.SseConfiguration?.sseAlgorithm !== undefined
     ? { sseAlgorithm: info.SseConfiguration.sseAlgorithm }
-    : {}),
+    : { sseAlgorithm: null }),
   ...(info.SseConfiguration?.sseKmsMasterKeyId !== undefined
     ? { sseKmsMasterKeyId: info.SseConfiguration.sseKmsMasterKeyId }
-    : {}),
+    : { sseKmsMasterKeyId: null }),
 });

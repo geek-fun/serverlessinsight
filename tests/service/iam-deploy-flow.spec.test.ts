@@ -122,7 +122,7 @@ describe('IAM Policy Deploy Flow Service Test', () => {
     }
   });
 
-  it('should call updateRolePolicy when iam is removed from config', async () => {
+  it('preserves IAM when it is omitted from config', async () => {
     await deploy({
       location: iamFixturesDir,
       stage: 'dev',
@@ -148,7 +148,7 @@ describe('IAM Policy Deploy Flow Service Test', () => {
         provider: 'aliyun',
       });
 
-      expect(mockClient.ram.updateRolePolicy).toHaveBeenCalled();
+      expect(mockClient.ram.updateRolePolicy).not.toHaveBeenCalled();
     } finally {
       await fs.writeFile(destPath, originalContent);
     }

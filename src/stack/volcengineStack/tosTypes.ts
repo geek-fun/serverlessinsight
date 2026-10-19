@@ -1,3 +1,4 @@
+import { serializeBucketPolicy } from '../../common/bucketPolicy';
 import { BucketDomain, BucketIam, ResourceAttributes } from '../../types';
 import type {
   TosAcl,
@@ -55,11 +56,6 @@ export const bucketToTosConfig = (bucket: BucketDomain) => {
   return config;
 };
 
-const serializeBucketPolicy = (iam?: BucketIam): string | null => {
-  if (!iam?.resource?.statements || iam.resource.statements.length === 0) return null;
-  return JSON.stringify(iam);
-};
-
 export const extractTosBucketDefinition = (
   config: ReturnType<typeof bucketToTosConfig>,
   websiteCodeHash?: string | null,
@@ -75,7 +71,7 @@ export const extractTosBucketDefinition = (
         }
       : null,
     websiteCodeHash: websiteCodeHash ?? null,
-    policy: serializeBucketPolicy(config.iam),
+    policy: serializeBucketPolicy(config.iam, 'volcengine'),
   };
 };
 

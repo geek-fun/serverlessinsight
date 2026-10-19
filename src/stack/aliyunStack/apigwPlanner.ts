@@ -1,3 +1,5 @@
+import { assertPlanIdentity } from '../../common/planCapabilities';
+import { definitionsDiffer, managedDefinition } from '../../common/planCompare';
 import { Context, EventDomain, Plan, PlanItem, StateFile } from '../../types';
 import { createAliyunClient } from '../../common/aliyunClient';
 import { logger } from '../../common/logger';
@@ -12,7 +14,6 @@ import {
   generateApiKey,
 } from './apigwTypes';
 import { getAllResources, getResource } from '../../common/stateManager';
-import { attributesEqual } from '../../common/hashUtils';
 import { getIacDefinition, isFunctionDomain } from '../../common/iacHelper';
 import { mergeLiveBefore, remoteDiffersFromDesired } from '../../common/planCompare';
 import { cachedRefreshRead } from '../../common/refreshCache';
@@ -97,6 +98,14 @@ export const generateApigwPlan = async (
         ...(logSnapshot ? { log: logSnapshot } : {}),
       };
 
+      if (currentState)
+        assertPlanIdentity(
+          logicalId,
+          'ALIYUN_APIGW',
+          currentState.definition || {},
+          desiredDefinition,
+        );
+
       if (!currentState || currentState.status === 'tainted') {
         // No usable local state: probe the provider before planning create.
         // If a same-named group already exists WITHOUT our ownership tag it
@@ -143,7 +152,20 @@ export const generateApigwPlan = async (
         const groupInstance = currentState.instances.find((i) => i.type === 'ALIYUN_APIGW_GROUP');
 
         const currentDefinition = currentState.definition || {};
-        const definitionChanged = !attributesEqual(currentDefinition, desiredDefinition);
+        const definitionChanged = definitionsDiffer(currentDefinition, desiredDefinition);
+        if (context.refresh === false) {
+          return definitionChanged
+            ? {
+                logicalId,
+                action: 'update',
+                resourceType: 'ALIYUN_APIGW',
+                changes: {
+                  before: managedDefinition(currentDefinition, desiredDefinition),
+                  after: managedDefinition(desiredDefinition),
+                },
+              }
+            : { logicalId, action: 'noop', resourceType: 'ALIYUN_APIGW' };
+        }
 
         let groupRemoteDiffers = false;
         let triggersDiffer = false;
@@ -176,7 +198,7 @@ export const generateApigwPlan = async (
           // failure cannot degrade a config-driven update into a create.
           // Domain/log stay existence-only in Phase 0-2 — never compared live.
           liveGroupAttrs = cloudApigwGroupToDefinition(remoteGroup);
-          if (!definitionChanged) {
+          {
             groupRemoteDiffers = remoteDiffersFromDesired(liveGroupAttrs, desiredDefinition);
 
             if (event.triggers.length > 0) {
@@ -244,18 +266,34 @@ export const generateApigwPlan = async (
           }
         }
 
-        if (definitionChanged || groupRemoteDiffers || triggersDiffer) {
+        const effectiveChanged = definitionsDiffer(
+          mergeLiveBefore(currentDefinition, liveGroupAttrs ?? {}, desiredDefinition),
+          desiredDefinition,
+        );
+        if (definitionChanged && !effectiveChanged && !triggersDiffer) {
+          return {
+            logicalId,
+            action: 'noop',
+            resourceType: 'ALIYUN_APIGW',
+            stateUpdate: desiredDefinition,
+          };
+        }
+        if (effectiveChanged || groupRemoteDiffers || triggersDiffer) {
           return {
             logicalId,
             action: 'update',
             resourceType: 'ALIYUN_APIGW',
             changes: {
               before: liveGroupAttrs
-                ? mergeLiveBefore(currentDefinition, liveGroupAttrs)
-                : currentDefinition,
-              after: desiredDefinition,
+                ? mergeLiveBefore(currentDefinition, liveGroupAttrs, desiredDefinition)
+                : managedDefinition(currentDefinition, desiredDefinition),
+              after: managedDefinition(desiredDefinition),
             },
-            drifted: true,
+            ...(remoteDiffersFromDesired(liveGroupAttrs ?? {}, currentDefinition) ||
+            (triggersDiffer &&
+              !definitionsDiffer(currentDefinition, { triggers: desiredDefinition.triggers }))
+              ? { drifted: true }
+              : {}),
             ...(triggersDiffer ? { driftReasons: ['PLAN_DRIFT_TRIGGERS'] } : {}),
           };
         }
@@ -268,13 +306,7 @@ export const generateApigwPlan = async (
             error: error instanceof Error ? error.message : String(error),
           }),
         );
-        return {
-          logicalId,
-          action: 'create',
-          resourceType: 'ALIYUN_APIGW',
-          changes: { before: currentState.definition, after: desiredDefinition },
-          drifted: true,
-        };
+        throw error;
       }
     },
   );

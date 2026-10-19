@@ -24,6 +24,7 @@ export type MockAliyunClient = {
     deleteApiGroup: jest.Mock;
     createApi: jest.Mock;
     getApi: jest.Mock;
+    listApisByGroup: jest.Mock;
     deleteApi: jest.Mock;
     deployApi: jest.Mock;
     abolishApi: jest.Mock;
@@ -35,6 +36,7 @@ export type MockAliyunClient = {
   oss: {
     createBucket: jest.Mock;
     getBucketInfo: jest.Mock;
+    deleteBucketPolicy: jest.Mock;
     deleteBucket: jest.Mock;
     putBucketWebsite: jest.Mock;
     deleteBucketWebsite: jest.Mock;
@@ -176,6 +178,7 @@ export const createMockAliyunClient = (): MockAliyunClient => {
       findApiGroupByName: jest.fn().mockResolvedValue(null),
       deleteApiGroup: jest.fn().mockResolvedValue({}),
       createApi: jest.fn().mockResolvedValue({ body: { apiId: 'api-123' } }),
+      listApisByGroup: jest.fn().mockResolvedValue([]),
       getApi: jest.fn().mockResolvedValue({ body: { apiId: 'api-123', apiName: 'test-api' } }),
       deleteApi: jest.fn().mockResolvedValue({}),
       deployApi: jest.fn().mockResolvedValue({}),
@@ -187,6 +190,7 @@ export const createMockAliyunClient = (): MockAliyunClient => {
     },
     oss: {
       createBucket: jest.fn().mockResolvedValue({}),
+      deleteBucketPolicy: jest.fn().mockResolvedValue(undefined),
       getBucketInfo: jest.fn().mockResolvedValue({ body: { BucketInfo: { Name: 'test-bucket' } } }),
       deleteBucket: jest.fn().mockResolvedValue({}),
       putBucketWebsite: jest.fn().mockResolvedValue({}),
@@ -462,6 +466,7 @@ export type MockVolcengineClient = {
   iam: {
     createRole: jest.Mock;
     getRole: jest.Mock;
+    listAttachedRolePolicies: jest.Mock;
     updateRoleTrustPolicy: jest.Mock;
     deleteRole: jest.Mock;
     attachRolePolicy: jest.Mock;
@@ -561,6 +566,7 @@ export const createMockVolcengineClient = (): MockVolcengineClient => ({
       roleId: 'role-123',
       trn: 'trn:iam::123456789012:role/test-role',
     }),
+    listAttachedRolePolicies: jest.fn().mockResolvedValue(['test-role-policy']),
     updateRoleTrustPolicy: jest.fn().mockResolvedValue(undefined),
     deleteRole: jest.fn().mockResolvedValue(undefined),
     attachRolePolicy: jest.fn().mockResolvedValue(undefined),

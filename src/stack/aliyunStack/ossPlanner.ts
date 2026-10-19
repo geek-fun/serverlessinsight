@@ -1,3 +1,4 @@
+import { normalizeBucketPolicyDefinition } from '../../common/bucketPolicy';
 import path from 'node:path';
 import { lang } from '../../lang';
 import { Context, BucketDomain, Plan, PlanItem, StateFile, ResourceAttributes } from '../../types';
@@ -30,7 +31,7 @@ const toOwnershipTags = (
 
 const normalizeDefinitionForDisplay = (definition: ResourceAttributes): ResourceAttributes => {
   const { domainBound: _domainBound, ...rest } = definition as { domainBound?: unknown };
-  return rest;
+  return normalizeBucketPolicyDefinition(rest, 'aliyun');
 };
 
 export const generateBucketPlan = async (

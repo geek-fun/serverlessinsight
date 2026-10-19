@@ -1,3 +1,5 @@
+import { definitionsDiffer, mergeManagedIntent } from '../../common/planCompare';
+import { buildBucketPolicy } from '../../common/bucketPolicy';
 import { createAliyunClient } from '../../common/aliyunClient';
 import {
   OssBucketInfo,
@@ -186,24 +188,8 @@ const getIsAccelerateEnabled = (bucket: BucketDomain): boolean => {
   return bucket.domain?.accelerate === true;
 };
 
-const buildOssBucketPolicyJson = (iam: BucketDomain['iam']): Record<string, unknown> | null => {
-  if (!iam?.resource?.statements || iam.resource.statements.length === 0) return null;
-  return {
-    Version: '1',
-    Statement: iam.resource.statements.map((stmt) => {
-      const s: Record<string, unknown> = {
-        Effect: stmt.effect,
-        Principal: stmt.principal,
-        Action: stmt.action,
-        Resource: stmt.resource,
-      };
-      if (stmt.condition) {
-        s.Condition = stmt.condition;
-      }
-      return s;
-    }),
-  };
-};
+const buildOssBucketPolicyJson = (iam: BucketDomain['iam']): Record<string, unknown> | null =>
+  buildBucketPolicy(iam, 'aliyun');
 
 const applyBucketPolicy = async (
   client: ReturnType<typeof createAliyunClient>,
@@ -211,7 +197,10 @@ const applyBucketPolicy = async (
 ): Promise<void> => {
   if (!bucket.iam) return;
   const policy = buildOssBucketPolicyJson(bucket.iam);
-  if (!policy) return;
+  if (!policy) {
+    if (bucket.iam.resource.statements.length === 0) await deleteBucketPolicy(client, bucket.name);
+    return;
+  }
   logger.info(lang.__('BUCKET_POLICY_APPLYING', { bucketName: bucket.name }));
   await client.oss.putBucketPolicy(bucket.name, policy);
   logger.info(lang.__('BUCKET_POLICY_APPLIED', { bucketName: bucket.name }));
@@ -221,12 +210,8 @@ const deleteBucketPolicy = async (
   client: ReturnType<typeof createAliyunClient>,
   bucketName: string,
 ): Promise<void> => {
-  try {
-    await client.oss.deleteBucketPolicy(bucketName);
-    logger.info(lang.__('BUCKET_POLICY_DELETED', { bucketName }));
-  } catch {
-    // Best effort cleanup
-  }
+  await client.oss.deleteBucketPolicy(bucketName);
+  logger.info(lang.__('BUCKET_POLICY_DELETED', { bucketName }));
 };
 
 const getDomainName = (bucket: BucketDomain): string | undefined => {
@@ -728,8 +713,9 @@ export const updateBucketResource = async (
 
   const existingState = state.resources[logicalId];
   const domName = getDomainName(bucket);
-  const isCdnEnabled = getIsCdnEnabled(bucket);
-  const isAccelerateEnabled = getIsAccelerateEnabled(bucket);
+  const isCdnEnabled = config.cdnEnabled ?? existingState?.definition.cdnEnabled === true;
+  const isAccelerateEnabled =
+    config.accelerateEnabled ?? existingState?.definition.accelerateEnabled === true;
 
   const existingCdnInstances = existingState?.instances?.filter(
     (i) => i.type === ResourceTypeEnum.ALIYUN_CDN_DISTRIBUTION,
@@ -749,7 +735,21 @@ export const updateBucketResource = async (
 
   let cnameInfo: OssCnameInfo | undefined;
 
-  if (domName) {
+  const desiredDomainFields = Object.fromEntries(
+    Object.entries(extractOssBucketDefinition(config)).filter(([key]) =>
+      /^(domain|www|cdn|accelerate)/.test(key),
+    ),
+  );
+  const domainConfigChanged = definitionsDiffer(
+    existingState?.definition ?? {},
+    desiredDomainFields,
+  );
+  if (
+    domName &&
+    (domainConfigChanged ||
+      !existingPrimaryDnsInstance ||
+      existingState?.definition.domainBound === false)
+  ) {
     const primaryDomain = domName;
     const wwwBindApex = bucket.domain?.www_bind_apex ?? bucket.website?.www_bind_apex ?? false;
     const domainChanged = existingPrimaryDnsInstance?.domain !== primaryDomain;
@@ -839,7 +839,16 @@ export const updateBucketResource = async (
         );
       }
 
-      const cdnConfig = typeof bucket.domain?.cdn === 'object' ? bucket.domain.cdn : undefined;
+      const cdnConfig = {
+        cdn_type: oldCdnType as 'web' | 'download' | 'video' | undefined,
+        scope: oldCdnScope as 'domestic' | 'overseas' | 'global' | undefined,
+        cache_ttl: oldCacheTtl,
+        ignore_query_string: oldIgnoreQS,
+        origin_protocol: oldOriginProto as 'http' | 'https' | 'follow' | undefined,
+        compression: oldCompression,
+        force_redirect_https: oldHttpsRedirect,
+        ...(typeof bucket.domain?.cdn === 'object' ? bucket.domain.cdn : {}),
+      };
       const resolvedCdnType = cdnConfig?.cdn_type ?? 'web';
       const resolvedScope = cdnConfig?.scope ?? 'global';
 
@@ -954,7 +963,7 @@ export const updateBucketResource = async (
         };
         instances.push(wwwDnsInstance);
       }
-    } else if (existingWwwDnsInstance && !wwwBindApex) {
+    } else if (existingWwwDnsInstance && config.wwwBindApex === false) {
       const wwwInstance = existingWwwDnsInstance as OssDnsInstance;
       await client.oss.unbindCustomDomain(
         config.bucketName,
@@ -968,33 +977,15 @@ export const updateBucketResource = async (
     if (refreshedInfo) {
       instances[0] = buildOssInstanceFromProvider(refreshedInfo, sid);
     }
-  } else if (existingDnsInstances) {
-    for (const instance of existingDnsInstances) {
-      const ossInstance = instance as OssDnsInstance;
-      await client.oss.unbindCustomDomain(
-        config.bucketName,
-        ossInstance.domain,
-        ossInstance.dnsRecordId,
-        ossInstance.txtRecordId,
-      );
-    }
+  } else {
+    instances.push(...(existingDnsInstances ?? []));
+    instances.push(...(existingCdnInstances ?? []));
   }
 
-  // Apply IAM bucket policy if configured (update or remove)
-  const existingDef = existingState?.definition as Record<string, unknown> | undefined;
-  const oldPolicyJson = existingDef?.policy as string | undefined;
-  const newPolicyJson = bucket.iam ? JSON.stringify(bucket.iam) : null;
-  if (newPolicyJson !== (oldPolicyJson ?? null)) {
-    if (newPolicyJson) {
-      logger.info(lang.__('BUCKET_POLICY_APPLYING', { bucketName: config.bucketName }));
-      const policyObj = buildOssBucketPolicyJson(bucket.iam);
-      if (policyObj) {
-        await client.oss.putBucketPolicy(config.bucketName, policyObj);
-        logger.info(lang.__('BUCKET_POLICY_APPLIED', { bucketName: config.bucketName }));
-      } else {
-        // iam exists but has no statements — delete any existing policy
-        await deleteBucketPolicy(client, config.bucketName);
-      }
+  if (bucket.iam?.resource?.statements !== undefined) {
+    const policy = buildOssBucketPolicyJson(bucket.iam);
+    if (policy) {
+      await client.oss.putBucketPolicy(config.bucketName, policy);
     } else {
       await deleteBucketPolicy(client, config.bucketName);
     }
@@ -1003,10 +994,10 @@ export const updateBucketResource = async (
   const resourceState: ResourceState = {
     mode: 'managed',
     region: context.region,
-    definition: {
+    definition: mergeManagedIntent(existingState?.definition ?? {}, {
       ...extractOssBucketDefinition(config, websiteCodeHash),
       ...(domName != null ? { domainBound: cnameInfo?.bucketCnameBound ?? null } : {}),
-    },
+    }),
     instances,
     lastUpdated: new Date().toISOString(),
   };

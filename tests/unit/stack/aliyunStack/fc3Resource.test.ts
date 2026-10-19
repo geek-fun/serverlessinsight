@@ -119,6 +119,7 @@ jest.mock('../../../../src/common/logger', () => ({
 }));
 
 jest.mock('../../../../src/stack/aliyunStack/fc3Types', () => ({
+  ...jest.requireActual('../../../../src/stack/aliyunStack/fc3Types'),
   functionToFc3Config: (...args: unknown[]) => mockedFc3Types.functionToFc3Config(...args),
   extractFc3Definition: (...args: unknown[]) => mockedFc3Types.extractFc3Definition(...args),
 }));
@@ -341,6 +342,7 @@ describe('Fc3Resource', () => {
           role: 'acs:ram::123456789012:role/test-role',
         }),
         'mock-code-hash',
+        expect.any(Object),
       );
       expect(mockedStateManager.setResource).toHaveBeenCalledTimes(2);
       expect(mockedStateManager.setResource).toHaveBeenLastCalledWith(
@@ -476,7 +478,11 @@ describe('Fc3Resource', () => {
       );
       expect(mockedHashUtils.computeZipContentHash).not.toHaveBeenCalled();
       expect(mockedOssOperations.getBucket).not.toHaveBeenCalled();
-      expect(mockedFc3Types.extractFc3Definition).toHaveBeenCalledWith(expect.anything(), null);
+      expect(mockedFc3Types.extractFc3Definition).toHaveBeenCalledWith(
+        expect.anything(),
+        null,
+        expect.any(Object),
+      );
       expect(result).toEqual(newState);
     });
 
@@ -1099,7 +1105,11 @@ describe('Fc3Resource', () => {
       };
       mockedStateManager.setResource.mockReturnValue(initialState);
 
-      await updateResource(mockContext, testFunction, stateWithStaleTimer);
+      await updateResource(
+        mockContext,
+        { ...testFunction, triggers: { timer: [] } },
+        stateWithStaleTimer,
+      );
 
       expect(mockedFc3Operations.deleteTrigger).toHaveBeenCalledWith('test-function', 'ghost');
     });
@@ -1418,6 +1428,7 @@ describe('Fc3Resource', () => {
           role: 'acs:ram::123456789012:role/test-role',
         }),
         'mock-code-hash',
+        expect.any(Object),
       );
       expect(result).toEqual(newState);
     });
@@ -2145,7 +2156,7 @@ describe('Fc3Resource', () => {
       );
     });
 
-    it('should delete HTTP trigger and custom domain when removed during update', async () => {
+    it('preserves omitted lifecycle configuration: should delete HTTP trigger and custom domain when removed during update', async () => {
       const fnWithoutLifecycle = { ...testFunction };
 
       const stateWithLifecycle: StateFile = {
@@ -2186,14 +2197,11 @@ describe('Fc3Resource', () => {
 
       await updateResource(mockContext, fnWithoutLifecycle, stateWithLifecycle);
 
-      expect(mockedFc3Operations.deleteTrigger).toHaveBeenCalledWith(
-        'test-function',
-        'http-trigger',
-      );
-      expect(mockedFc3Operations.deleteCustomDomain).toHaveBeenCalledWith('api.example.com');
+      expect(mockedFc3Operations.deleteTrigger).not.toHaveBeenCalled();
+      expect(mockedFc3Operations.deleteCustomDomain).not.toHaveBeenCalled();
     });
 
-    it('should ignore TriggerNotFound when deleting HTTP trigger during update', async () => {
+    it('preserves omitted lifecycle configuration: should ignore TriggerNotFound when deleting HTTP trigger during update', async () => {
       const fnWithoutLifecycle = { ...testFunction };
 
       const stateWithTrigger: StateFile = {
@@ -2227,14 +2235,11 @@ describe('Fc3Resource', () => {
 
       await updateResource(mockContext, fnWithoutLifecycle, stateWithTrigger);
 
-      expect(mockedFc3Operations.deleteTrigger).toHaveBeenCalledWith(
-        'test-function',
-        'http-trigger',
-      );
+      expect(mockedFc3Operations.deleteTrigger).not.toHaveBeenCalled();
       expect(mockedLogger.warn).toHaveBeenCalled();
     });
 
-    it('should rethrow unexpected errors when deleting HTTP trigger during update', async () => {
+    it('preserves omitted lifecycle configuration: should rethrow unexpected errors when deleting HTTP trigger during update', async () => {
       const fnWithoutLifecycle = { ...testFunction };
 
       const stateWithTrigger: StateFile = {
@@ -2267,9 +2272,8 @@ describe('Fc3Resource', () => {
         Object.assign(new Error('Forbidden'), { code: 'Forbidden' }),
       );
 
-      await expect(
-        updateResource(mockContext, fnWithoutLifecycle, stateWithTrigger),
-      ).rejects.toThrow('Forbidden');
+      await updateResource(mockContext, fnWithoutLifecycle, stateWithTrigger);
+      expect(mockedFc3Operations.deleteTrigger).not.toHaveBeenCalled();
     });
 
     it('should recreate HTTP trigger when trigger config changes during update', async () => {
@@ -2458,7 +2462,7 @@ describe('Fc3Resource', () => {
       expect(mockedFc3Operations.createCustomDomain).not.toHaveBeenCalled();
     });
 
-    it('should ignore CustomDomainNotFound when deleting custom domain during update', async () => {
+    it('preserves omitted lifecycle configuration: should ignore CustomDomainNotFound when deleting custom domain during update', async () => {
       const fnWithoutLifecycle = { ...testFunction };
 
       const stateWithDomain: StateFile = {
@@ -2493,7 +2497,7 @@ describe('Fc3Resource', () => {
 
       await updateResource(mockContext, fnWithoutLifecycle, stateWithDomain);
 
-      expect(mockedFc3Operations.deleteCustomDomain).toHaveBeenCalledWith('api.example.com');
+      expect(mockedFc3Operations.deleteCustomDomain).not.toHaveBeenCalled();
       expect(mockedLogger.warn).toHaveBeenCalled();
     });
 
@@ -4455,6 +4459,7 @@ describe('Fc3Resource', () => {
           role: 'acs:ram::123456789012:role/external-role',
         }),
         'mock-code-hash',
+        expect.any(Object),
       );
     });
 
@@ -4498,6 +4503,7 @@ describe('Fc3Resource', () => {
       expect(mockedFc3Types.extractFc3Definition).toHaveBeenCalledWith(
         expect.objectContaining({ role: externalArn }),
         'mock-code-hash',
+        expect.any(Object),
       );
     });
 

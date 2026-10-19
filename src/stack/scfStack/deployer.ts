@@ -1,3 +1,4 @@
+import { applyPlanStateUpdates } from '../../common/refreshPlanner';
 import {
   ServerlessIac,
   ExecutionResult,
@@ -78,6 +79,8 @@ export const deployTencentStack = async (
       ? [...approvedPlan.items]
       : [...functionPlan.items, ...bucketPlan.items, ...databasePlan.items, ...esPlan.items],
   };
+
+  state = applyPlanStateUpdates(state, combinedPlan.items);
 
   logger.info(`${lang.__('PLAN_GENERATED')}: ${combinedPlan.items.length} ${lang.__('ACTIONS')}`);
   combinedPlan.items.forEach((item) => {

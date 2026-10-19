@@ -1,10 +1,11 @@
+import { planRefreshedResource } from '../../common/refreshPlanner';
+import { resolveRecordedFc3NasConfig } from './fc3Types';
+import { buildAliyunHttpTriggerConfig } from '../../common/triggerMapper';
 import {
-  attributesEqual,
   buildFunctionRoleName,
   computeZipContentHash,
   getAllResources,
   getResource,
-  logger,
 } from '../../common';
 import { createAliyunClient } from '../../common/aliyunClient';
 import { buildFc3ExecutionPolicyDocument } from '../../common/aliyunClient/ramOperations';
@@ -14,11 +15,7 @@ import {
   parseSecurityGroupRule,
 } from '../../common/aliyunClient/ecsOperations';
 import { cachedRefreshRead } from '../../common/refreshCache';
-import {
-  computeRevertKeys,
-  mergeLiveBefore,
-  remoteDiffersFromDesired,
-} from '../../common/planCompare';
+import { definitionsDiffer, remoteDiffersFromDesired } from '../../common/planCompare';
 import { PLAN_READ_CONCURRENCY, mapWithConcurrency } from '../../common/concurrency';
 import { translateSiCron } from '../../common/siCron';
 import {
@@ -266,7 +263,13 @@ const detectRolePolicyDrift = async (
       },
     ],
   };
-  if (cloudTrust && !attributesEqual(cloudTrust, desiredTrust)) {
+  if (
+    cloudTrust &&
+    remoteDiffersFromDesired(
+      { policy: JSON.stringify(cloudTrust) },
+      { policy: JSON.stringify(desiredTrust) },
+    )
+  ) {
     return 'PLAN_DRIFT_ROLE_POLICY';
   }
 
@@ -285,7 +288,10 @@ const detectRolePolicyDrift = async (
   if (
     !cloudPolicy ||
     !desiredPolicyDocument ||
-    !attributesEqual(cloudPolicy, desiredPolicyDocument)
+    remoteDiffersFromDesired(
+      { policy: JSON.stringify(cloudPolicy) },
+      { policy: JSON.stringify(desiredPolicyDocument) },
+    )
   ) {
     return 'PLAN_DRIFT_ROLE_POLICY';
   }
@@ -301,7 +307,10 @@ const detectRolePolicyDrift = async (
     () => client.ram.listAttachedRolePolicies(roleName),
   );
   const asSortedSetKey = (names: string[]): string => [...names].sort().join(',');
-  if (asSortedSetKey(desiredManagedNames) !== asSortedSetKey(cloudManagedNames ?? [])) {
+  if (
+    iamRole.managed_policies !== undefined &&
+    asSortedSetKey(desiredManagedNames) !== asSortedSetKey(cloudManagedNames ?? [])
+  ) {
     return 'PLAN_DRIFT_ROLE_POLICY';
   }
 
@@ -315,12 +324,57 @@ const detectRolePolicyDrift = async (
  * cannot shrink shards, so only a shard deficit counts as drift.
  * Returns an i18n drift-reason key (issue #246); null means no drift.
  */
+const detectFunctionLifecycleDrift = async (
+  context: Context,
+  client: ReturnType<typeof createAliyunClient>,
+  fn: FunctionDomain,
+): Promise<string | null> => {
+  if (fn.triggers?.http) {
+    const triggers = await cachedRefreshRead(context, `fc3.listTriggers:${fn.name}`, () =>
+      client.fc3.listTriggers(fn.name),
+    );
+    const trigger = (triggers ?? []).find(
+      (entry) => entry.triggerType === 'http' && entry.triggerName === 'http-trigger',
+    );
+    if (
+      !trigger ||
+      remoteDiffersFromDesired(
+        { http: trigger.triggerConfig },
+        { http: buildAliyunHttpTriggerConfig(fn.triggers.http) },
+      )
+    ) {
+      return 'PLAN_DRIFT_HTTP_TRIGGER';
+    }
+  }
+  if (fn.domain) {
+    const domain = await cachedRefreshRead(
+      context,
+      `fc3.getCustomDomain:${fn.domain.domain_name}`,
+      () => client.fc3.getCustomDomain(fn.domain!.domain_name),
+    );
+    if (
+      !domain ||
+      (domain.protocol !== undefined && domain.protocol !== fn.domain.protocol) ||
+      (domain.certConfig?.certificateId !== undefined &&
+        fn.domain.certificate_id !== undefined &&
+        domain.certConfig.certificateId !== fn.domain.certificate_id)
+    ) {
+      return 'PLAN_DRIFT_FUNCTION_DOMAIN';
+    }
+  }
+
+  return null;
+};
+
 const detectFunctionNestedDrift = async (
   context: Context,
   client: ReturnType<typeof createAliyunClient>,
   fn: FunctionDomain,
   currentState: ResourceState,
 ): Promise<string | null> => {
+  const lifecycleReason = await detectFunctionLifecycleDrift(context, client, fn);
+  if (lifecycleReason) return lifecycleReason;
+
   // Each declared dimension contributes its own probe; undeclared dimensions
   // fall through so later dimensions still run.
   if (fn.log) {
@@ -431,11 +485,8 @@ const detectFunctionNestedDrift = async (
   // against the desired timers (name-keyed). A trigger missing from the cloud
   // (manual delete), an edited cron/payload/enable, or an extra undeclared
   // timer all count as drift.
-  const timerStateInstances = currentState.instances?.filter(
-    (i) => (i as { type?: string }).type === 'ALIYUN_FC3_TIMER_TRIGGER',
-  ) as Array<{ id?: string }>;
   const desiredTimers = fn.triggers?.timer ?? [];
-  if (desiredTimers.length > 0 || timerStateInstances.length > 0) {
+  if (fn.triggers?.timer !== undefined) {
     const liveTriggerList = await cachedRefreshRead(context, `fc3.listTriggers:${fn.name}`, () =>
       client.fc3.listTriggers(fn.name),
     );
@@ -455,6 +506,7 @@ const detectFunctionNestedDrift = async (
       return (
         liveConfig.cronExpression !== translateSiCron(timer.cron, 'aliyun') ||
         (liveConfig.payload ?? '') !== (timer.payload ?? '') ||
+        (live.description ?? undefined) !== timer.description ||
         (liveConfig.enable === true || liveConfig.enable === 'true') !== timer.enable
       );
     });
@@ -490,204 +542,98 @@ export const generateFunctionPlan = async (
       const logicalId = `functions.${fn.key}`;
       const currentState = getResource(state, logicalId);
       const rawConfig = functionToFc3Config(fn);
-      const config = await resolveVpcConfigSecurityGroup(context, rawConfig);
+      const config = resolveRecordedFc3NasConfig(
+        await resolveVpcConfigSecurityGroup(context, rawConfig),
+        fn,
+        currentState?.instances ?? [],
+      );
       const desiredCodeHash = fn.code ? await computeZipContentHash(fn.code.path) : null;
-      const baseDefinition = extractFc3Definition(config, desiredCodeHash);
+      const baseDefinition = extractFc3Definition(config, desiredCodeHash, fn);
       const desiredDefinition = fn.iam ? { ...baseDefinition, iam: fn.iam } : baseDefinition;
 
-      if (!currentState || currentState.status === 'tainted') {
-        // No usable local state: probe the provider before planning create.
-        // If a same-named function already exists WITHOUT our ownership tag it
-        // may belong to another project — fail fast in the plan instead of
-        // letting the executor discover it mid-deploy.
-        const client = createAliyunClient(context);
-        const remoteFunction = await cachedRefreshRead(context, `fc3.getFunction:${fn.name}`, () =>
-          client.fc3.getFunction(fn.name),
-        );
-        if (remoteFunction && !isOwnedByStack(context, logicalId, remoteFunction.tags)) {
-          throw new Error(
+      const client = createAliyunClient(context);
+      return planRefreshedResource({
+        logicalId,
+        resourceType: 'ALIYUN_FC3',
+        currentState,
+        desiredDefinition,
+        read: () =>
+          cachedRefreshRead(context, `fc3.getFunction:${fn.name}`, () =>
+            client.fc3.getFunction(fn.name),
+          ),
+        isOwned: (remote) => isOwnedByStack(context, logicalId, remote.tags),
+        foreignError: () =>
+          new Error(
             lang.__('RESOURCE_EXISTS_NOT_OWNED', {
               resourceType: 'Function',
               resourceName: fn.name,
               tagKey: OWNERSHIP_TAG_KEY,
             }),
-          );
-        }
-
-        return {
-          logicalId,
-          action: 'create',
-          resourceType: 'ALIYUN_FC3',
-          changes: { after: desiredDefinition },
-        };
-      }
-
-      try {
-        const client = createAliyunClient(context);
-        const normalizedCurrent = normalizeDefinitionForComparison(currentState.definition || {});
-        const normalizedDesired = normalizeDefinitionForComparison(desiredDefinition);
-        const definitionChanged = !attributesEqual(normalizedCurrent, normalizedDesired);
-
-        // --no-refresh: no live read, no drift claims — intent-diff only.
-        if (context.refresh === false) {
-          if (!definitionChanged) {
-            return { logicalId, action: 'noop', resourceType: 'ALIYUN_FC3' };
-          }
-          return {
-            logicalId,
-            action: 'update',
-            resourceType: 'ALIYUN_FC3',
-            changes: { before: normalizedCurrent, after: normalizedDesired },
-          };
-        }
-
-        const remoteFunction = await cachedRefreshRead(context, `fc3.getFunction:${fn.name}`, () =>
-          client.fc3.getFunction(fn.name),
-        );
-
-        if (!remoteFunction) {
-          return {
-            logicalId,
-            action: 'create',
-            resourceType: 'ALIYUN_FC3',
-            changes: {
-              before: normalizeDefinitionForComparison(currentState.definition),
-              after: normalizeDefinitionForComparison(desiredDefinition),
-            },
-            drifted: true,
-          };
-        }
-
-        // Issue #234 phase 1: live attribute drift. The stored definition can
-        // be untouched while the console edited the deployed function
-        // (memory/timeout/env/...). One-directional: only mapper-emitted keys
-        // the desired definition declares are compared, so cloud-only extras
-        // the config never asked for are ignored (desired-declared contract).
-        // Issue #246: the diff baseline is cloud reality — live attributes
-        // merged over the stored definition — and revertKeys marks the fields
-        // whose difference is purely an out-of-config cloud edit.
-        const remoteAttributes = cloudFc3ToDefinition(remoteFunction);
-        const remoteDiffers = remoteDiffersFromDesired(remoteAttributes, desiredDefinition);
-        const liveBefore = normalizeDefinitionForComparison(
-          mergeLiveBefore(currentState.definition || {}, remoteAttributes),
-        );
-        const revertKeys = computeRevertKeys(
-          normalizedCurrent,
-          normalizeDefinitionForComparison(remoteAttributes),
-          normalizedDesired,
-        );
-
-        if (definitionChanged || remoteDiffers) {
-          return {
-            logicalId,
-            action: 'update',
-            resourceType: 'ALIYUN_FC3',
-            changes: { before: liveBefore, after: normalizedDesired },
-            drifted: true,
-            ...(revertKeys.length ? { revertKeys } : {}),
-          };
-        }
-
-        const roleProbe = resolveManagedRoleProbe(context, fn, currentState);
-        if (roleProbe) {
-          try {
-            const cloudRole = await cachedRefreshRead(
-              context,
-              `ram.getRole:${roleProbe.roleName}`,
-              () => client.ram.getRole(roleProbe.roleName),
+          ),
+        cloudToDefinition: cloudFc3ToDefinition,
+        normalizeForDisplay: normalizeDefinitionForComparison,
+        extraUpdate: async () => {
+          if (!currentState) return { update: false, drifted: false };
+          const roleProbe = resolveManagedRoleProbe(context, fn, currentState);
+          if (roleProbe) {
+            const role = await cachedRefreshRead(context, `ram.getRole:${roleProbe.roleName}`, () =>
+              client.ram.getRole(roleProbe.roleName),
             );
-            if (!cloudRole) {
-              logger.warn(
-                lang.__('PLAN_FUNCTION_ROLE_MISSING', {
-                  roleName: roleProbe.roleName,
-                  functionName: fn.name,
-                }),
-              );
-              return {
-                logicalId,
-                action: 'update',
-                resourceType: 'ALIYUN_FC3',
-                changes: { before: liveBefore, after: normalizedDesired },
-                drifted: true,
-                driftReasons: ['PLAN_DRIFT_ROLE_MISSING'],
-              };
-            }
-            const roleDriftReason = await detectRolePolicyDrift(
+            if (!role) return { update: true, drifted: true, reason: 'PLAN_DRIFT_ROLE_MISSING' };
+            const reason = await detectRolePolicyDrift(
               context,
               state,
               fn,
               currentState,
               roleProbe.roleName,
-              cloudRole,
+              role,
             );
-            if (roleDriftReason) {
+            if (reason)
               return {
-                logicalId,
-                action: 'update',
-                resourceType: 'ALIYUN_FC3',
-                changes: { before: liveBefore, after: normalizedDesired },
-                drifted: true,
-                driftReasons: [roleDriftReason],
+                update: true,
+                drifted: !definitionsDiffer(currentState.definition ?? {}, {
+                  iam: desiredDefinition.iam,
+                  vpcConfig: desiredDefinition.vpcConfig,
+                  nasStorage: desiredDefinition.nasStorage,
+                  logConfig: desiredDefinition.logConfig,
+                }),
+                reason,
               };
-            }
-          } catch (error: unknown) {
-            logger.warn(
-              lang.__('PLAN_FUNCTION_ROLE_PROBE_FAILED', {
-                roleName: roleProbe.roleName,
-                functionName: fn.name,
-                error: String(error),
-              }),
-            );
           }
-        }
-
-        // Issue #234 M1/M2: nested drift probe — the probe itself skips
-        // dimensions the config does not declare.
-        try {
-          const nestedDriftReason = await detectFunctionNestedDrift(
-            context,
-            client,
-            fn,
-            currentState,
-          );
-          if (nestedDriftReason) {
-            return {
-              logicalId,
-              action: 'update',
-              resourceType: 'ALIYUN_FC3',
-              changes: { before: liveBefore, after: normalizedDesired },
-              drifted: true,
-              driftReasons: [nestedDriftReason],
-            };
-          }
-        } catch (error: unknown) {
-          logger.warn(
-            lang.__('PLAN_FUNCTION_NESTED_PROBE_FAILED', {
-              functionName: fn.name,
-              error: String(error),
-            }),
-          );
-        }
-
-        return { logicalId, action: 'noop', resourceType: 'ALIYUN_FC3' };
-      } catch (error: unknown) {
-        logger.warn(
-          lang.__('PLAN_LIVE_READ_FAILED', {
-            logicalId,
-            error: error instanceof Error ? error.message : String(error),
-          }),
-        );
-        return {
-          logicalId,
-          action: 'create',
-          resourceType: 'ALIYUN_FC3',
-          changes: {
-            before: normalizeDefinitionForComparison(currentState.definition),
-            after: normalizeDefinitionForComparison(desiredDefinition),
-          },
-          drifted: true,
-        };
-      }
+          const reason = await detectFunctionNestedDrift(context, client, fn, currentState);
+          const fields: Record<string, string> = {
+            PLAN_DRIFT_HTTP_TRIGGER: 'http',
+            PLAN_DRIFT_FUNCTION_DOMAIN: 'domain',
+            PLAN_DRIFT_TIMER_TRIGGER: 'timers',
+          };
+          const field = reason ? fields[reason] : undefined;
+          return reason
+            ? {
+                update: true,
+                drifted:
+                  !field ||
+                  !definitionsDiffer(currentState.definition ?? {}, {
+                    [field]: desiredDefinition[field],
+                  }),
+                reason,
+              }
+            : { update: false, drifted: false };
+        },
+        enrichRemoteAttributes: async (_remote, attributes) => {
+          // Lifecycle probes below verify these dimensions separately. Existing
+          // intent remains the baseline until those probes confirm equality.
+          const reason = currentState
+            ? await detectFunctionLifecycleDrift(context, client, fn)
+            : null;
+          return reason
+            ? attributes
+            : {
+                ...attributes,
+                ...(fn.triggers?.http ? { http: fn.triggers.http } : {}),
+              };
+        },
+        refresh: context.refresh,
+      });
     },
   );
 

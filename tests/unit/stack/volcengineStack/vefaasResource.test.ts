@@ -1336,7 +1336,11 @@ describe('vefaasResource', () => {
       mockVefaasClient.vefaas.updateFunctionConfiguration.mockResolvedValue(undefined);
       mockVefaasClient.vefaas.updateFunctionCode.mockResolvedValue({});
 
-      await updateResource(mockContext, mockFunction, stateWithGhostRecord);
+      await updateResource(
+        mockContext,
+        { ...mockFunction, triggers: { timer: [] } },
+        stateWithGhostRecord,
+      );
 
       expect(mockVefaasClient.vefaas.deleteTrigger).toHaveBeenCalledWith('func-123', 'trig-2');
     });
@@ -1814,7 +1818,11 @@ describe('vefaasResource', () => {
         requestTimeout: 30,
       });
 
-      const result = await updateResource(mockContext, mockFunction, stateWithTls);
+      const result = await updateResource(
+        mockContext,
+        { ...mockFunction, log: false },
+        stateWithTls,
+      );
 
       // Index deleted before topic.
       expect(mockVefaasClient.tls.deleteIndex).toHaveBeenCalledWith(
@@ -1904,7 +1912,11 @@ describe('vefaasResource', () => {
       mockVefaasClient.tls.listTopics.mockResolvedValue([]);
       mockVefaasClient.tls.deleteProject.mockResolvedValue(undefined);
 
-      const result = await updateResource(mockContext, mockFunction, stateWithSharedTls);
+      const result = await updateResource(
+        mockContext,
+        { ...mockFunction, log: false },
+        stateWithSharedTls,
+      );
 
       expect(mockVefaasClient.tls.deleteProject).toHaveBeenCalledWith('test-app-dev-tls');
       expect(removeSharedResource).toHaveBeenCalledWith(expect.anything(), 'dev', 'logs.project');

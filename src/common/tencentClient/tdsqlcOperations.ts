@@ -208,18 +208,14 @@ export const createTdsqlcOperations = (cynosdbClient: CynosdbSdkClient, context:
       if (typeof sdk.DescribeServerlessStrategy !== 'function') {
         return null;
       }
-      try {
-        const response = await sdk.DescribeServerlessStrategy({ ClusterId: clusterId });
-        if (!response) {
-          return null;
-        }
-        return {
-          autoPause: response.AutoPause === undefined ? undefined : response.AutoPause === 'yes',
-          autoPauseDelay: response.AutoPauseDelay,
-        };
-      } catch {
+      const response = await sdk.DescribeServerlessStrategy({ ClusterId: clusterId });
+      if (!response) {
         return null;
       }
+      return {
+        autoPause: response.AutoPause === undefined ? undefined : response.AutoPause === 'yes',
+        autoPauseDelay: response.AutoPauseDelay,
+      };
     },
 
     updateCluster: async (clusterId: string, config: TdsqlcClusterConfig): Promise<void> => {

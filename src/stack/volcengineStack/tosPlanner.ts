@@ -1,3 +1,4 @@
+import { normalizeBucketPolicyDefinition } from '../../common/bucketPolicy';
 import path from 'node:path';
 import { lang } from '../../lang';
 import { Context, BucketDomain, Plan, PlanItem, StateFile, ResourceAttributes } from '../../types';
@@ -5,7 +6,6 @@ import { createVolcengineClient } from '../../common/volcengineClient';
 import { cachedRefreshRead } from '../../common/refreshCache';
 import { PLAN_READ_CONCURRENCY, mapWithConcurrency } from '../../common/concurrency';
 import { planRefreshedResource } from '../../common/refreshPlanner';
-import { jsonDocumentDiffers } from '../../common/planCompare';
 import { bucketToTosConfig, cloudTosToDefinition, extractTosBucketDefinition } from './tosTypes';
 import { getAllResources, getResource } from '../../common/stateManager';
 import { computeDirectoryHash } from '../../common';
@@ -69,23 +69,17 @@ export const generateBucketPlan = async (
               tagKey: OWNERSHIP_TAG_KEY,
             }),
           ),
+        normalizeForDisplay: (definition) =>
+          normalizeBucketPolicyDefinition(definition, 'volcengine'),
         cloudToDefinition: cloudTosToDefinition,
-        extraUpdate: async () => {
-          // Policy needs a canonical compare: the cloud returns a parsed
-          // object while the config serializes it — see jsonDocumentDiffers.
-          const desiredPolicy = (desiredDefinition as { policy?: string | null }).policy ?? null;
-          if (desiredPolicy === null) {
-            return { update: false, drifted: false };
-          }
-          const cloudPolicy = await cachedRefreshRead(
+        enrichRemoteAttributes: async (_remote, attributes) => {
+          if (desiredDefinition.policy === null) return attributes;
+          const policy = await cachedRefreshRead(
             context,
             `tos.getBucketPolicy:${bucket.name}`,
             () => client.tos.getBucketPolicy(bucket.name),
           );
-          return {
-            update: jsonDocumentDiffers(desiredPolicy, cloudPolicy),
-            drifted: true,
-          };
+          return { ...attributes, policy };
         },
         refresh: context.refresh,
       });

@@ -1507,7 +1507,7 @@ describe('CosResource', () => {
       );
     });
 
-    it('should unbind all domains when domain is removed in update', async () => {
+    it('preserves omitted domains and their tracked DNS records', async () => {
       mockCosOperations.getBucket.mockResolvedValue(mockBucketInfoBase);
       mockCosOperations.unbindCustomDomain.mockResolvedValue(undefined);
 
@@ -1524,11 +1524,7 @@ describe('CosResource', () => {
         stateWithDomain,
       );
 
-      expect(mockCosOperations.unbindCustomDomain).toHaveBeenCalledWith(
-        'test-bucket',
-        'old.example.com',
-        'dns-old',
-      );
+      expect(mockCosOperations.unbindCustomDomain).not.toHaveBeenCalled();
     });
 
     it('should handle refreshedInfo returning null in update', async () => {
@@ -1806,11 +1802,12 @@ describe('CosResource', () => {
       );
     });
 
-    it('should remove policy when iam is removed', async () => {
+    it('clears a policy only when the statement list is explicitly empty', async () => {
       mockCosOperations.getBucket.mockResolvedValue(mockBucketInfoBase);
       mockCosOperations.deleteBucketPolicy.mockResolvedValue(undefined);
 
       const bucket = {
+        iam: { resource: { statements: [] } },
         key: 'test_bucket',
         name: 'test-bucket',
       };
@@ -1823,7 +1820,7 @@ describe('CosResource', () => {
       );
     });
 
-    it('should not call policy functions when iam is unchanged', async () => {
+    it('reapplies a declared policy during a selected repair even when saved intent is unchanged', async () => {
       mockCosOperations.getBucket.mockResolvedValue(mockBucketInfoBase);
 
       const existingIam = {
@@ -1861,7 +1858,7 @@ describe('CosResource', () => {
         stateWithMatchingPolicy,
       );
 
-      expect(mockCosOperations.putBucketPolicy).not.toHaveBeenCalled();
+      expect(mockCosOperations.putBucketPolicy).toHaveBeenCalled();
       expect(mockCosOperations.deleteBucketPolicy).not.toHaveBeenCalled();
     });
   });

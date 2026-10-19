@@ -97,6 +97,8 @@ describe('TdsqlcPlanner', () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
+    mockTdsqlcOperations.getCluster.mockReset();
+    mockTdsqlcOperations.getServerlessStrategy.mockResolvedValue(null);
   });
 
   describe('generateDatabasePlan', () => {
@@ -252,6 +254,14 @@ describe('TdsqlcPlanner', () => {
         Region: 'ap-guangzhou',
         DbType: 'MYSQL' as const,
         DbVersion: '8.0',
+        DbMode: 'SERVERLESS',
+        StoragePayMode: 0,
+        VpcId: 'vpc-12345',
+        SubnetId: 'subnet-67890',
+        MinStorageSize: 10,
+        MaxStorageSize: 1000,
+        MinCpu: 2,
+        MaxCpu: 8,
       });
 
       const result = await generateDatabasePlan(mockContext, mockState, [mockDatabase]);
@@ -412,10 +422,15 @@ describe('TdsqlcPlanner', () => {
       const result = await generateDatabasePlan(mockContext, mockState, [mockDatabase]);
 
       expect(result.items[0]).toMatchObject({ action: 'create', drifted: true });
-      expect(result.items[0].changes?.before).toEqual(expectedDefinition);
+      expect(result.items[0].changes?.before).toEqual(
+        expect.objectContaining({
+          clusterName: expectedDefinition.clusterName,
+          dbMode: expectedDefinition.dbMode,
+        }),
+      );
     });
 
-    it('should fall back to create when the remote cluster probe fails', async () => {
+    it('stops planning and preserves the provider error: should fall back to create when the remote cluster probe fails', async () => {
       const existingState: ResourceState = {
         mode: 'managed',
         region: 'ap-guangzhou',
@@ -428,13 +443,9 @@ describe('TdsqlcPlanner', () => {
       jest.spyOn(stateManager, 'getAllResources').mockReturnValue({});
       mockTdsqlcOperations.getCluster.mockRejectedValue(new Error('probe failed'));
 
-      const result = await generateDatabasePlan(mockContext, mockState, [mockDatabase]);
-
-      expect(result.items[0]).toMatchObject({ action: 'create' });
-      // Issue #246: a read-failure fallback create is honest about not
-      // knowing the cloud state — it carries the drifted flag.
-      expect(result.items[0]).toHaveProperty('drifted', true);
-      expect(result.items[0].changes?.before).toEqual(expectedDefinition);
+      await expect(generateDatabasePlan(mockContext, mockState, [mockDatabase])).rejects.toEqual(
+        new Error('probe failed'),
+      );
     });
 
     it('should generate delete plan for removed databases', async () => {

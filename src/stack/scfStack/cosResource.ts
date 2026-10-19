@@ -1,7 +1,8 @@
+import { mergeManagedIntent } from '../../common/planCompare';
+import { buildBucketPolicy } from '../../common/bucketPolicy';
 import {
   Context,
   BucketDomain,
-  BucketIamStatement,
   PartialResourceError,
   ResourceState,
   StateFile,
@@ -19,26 +20,8 @@ import { deriveWwwDomain } from '../../common/domainUtils';
 import { OWNERSHIP_TAG_KEY, buildOwnershipTagValue, isOwnedByStack } from '../ownershipTag';
 import { isResourceAlreadyExistsError } from '../alreadyExists';
 
-const toCosStatement = (stmt: BucketIamStatement): Record<string, unknown> => {
-  const s: Record<string, unknown> = {
-    effect: stmt.effect.toLowerCase(),
-    principal: stmt.principal,
-    action: stmt.action,
-    resource: stmt.resource,
-  };
-  if (stmt.condition) {
-    s.condition = stmt.condition;
-  }
-  return s;
-};
-
-const buildCosBucketPolicyJson = (iam: BucketDomain['iam']): Record<string, unknown> | null => {
-  if (!iam?.resource?.statements || iam.resource.statements.length === 0) return null;
-  return {
-    version: '2.0',
-    statement: iam.resource.statements.map(toCosStatement),
-  };
-};
+const buildCosBucketPolicyJson = (iam: BucketDomain['iam']): Record<string, unknown> | null =>
+  buildBucketPolicy(iam, 'tencent');
 
 const applyBucketPolicy = async (
   client: ReturnType<typeof createTencentClient>,
@@ -589,7 +572,7 @@ export const updateBucketResource = async (
           );
         }
       }
-    } else if (existingWwwDnsInstance && !wwwBindApex) {
+    } else if (existingWwwDnsInstance && bucket.website?.www_bind_apex === false) {
       await client.cos.unbindCustomDomain(
         bucket.name,
         existingWwwDnsInstance.domain,
@@ -601,28 +584,18 @@ export const updateBucketResource = async (
     if (refreshedInfo) {
       instances[0] = buildCosInstanceFromProvider(refreshedInfo as CosBucketInfo, sid);
     }
-  } else if (existingDnsInstances) {
-    for (const instance of existingDnsInstances) {
-      await client.cos.unbindCustomDomain(bucket.name, instance.domain, instance.dnsRecordId);
-    }
+  } else {
+    instances.push(...(existingDnsInstances ?? []));
   }
 
-  // Apply IAM bucket policy if configured (update or remove)
-  const existingDef = existingState?.definition as Record<string, unknown> | undefined;
-  const oldPolicyJson = existingDef?.policy as string | undefined;
-  const newPolicyJson = bucket.iam ? JSON.stringify(bucket.iam) : null;
-  if (newPolicyJson !== (oldPolicyJson ?? null)) {
-    if (newPolicyJson) {
-      await applyBucketPolicy(client, bucket, context.region);
-    } else {
-      await deleteBucketPolicy(client, config.Bucket, context.region);
-    }
+  if (bucket.iam?.resource?.statements !== undefined) {
+    await applyBucketPolicy(client, bucket, context.region);
   }
 
   const resourceState: ResourceState = {
     mode: 'managed',
     region: context.region,
-    definition,
+    definition: mergeManagedIntent(existingState?.definition ?? {}, definition),
     instances,
     lastUpdated: new Date().toISOString(),
   };

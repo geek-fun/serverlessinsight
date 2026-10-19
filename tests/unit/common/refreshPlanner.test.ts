@@ -18,7 +18,7 @@ describe('planRefreshedResource', () => {
     overrides?: Partial<PlanRefreshedResourceArgs<Remote>>,
   ): PlanRefreshedResourceArgs<Remote> => ({
     logicalId: 'buckets.test',
-    resourceType: 'ALIYUN_OSS_BUCKET',
+    resourceType: 'TEST_RESOURCE',
     currentState,
     desiredDefinition: { name: 'test', memory: 128 },
     read: jest.fn().mockResolvedValue({ name: 'test', memory: 128 }),
@@ -79,7 +79,7 @@ describe('planRefreshedResource', () => {
 
     // live memory (128) wins over stored memory for the diff baseline, while
     // the stored codeHash fills the dimension the cloud mapper never emits.
-    expect(item.changes?.before).toEqual({ name: 'test', memory: 128, codeHash: 'old-hash' });
+    expect(item.changes?.before).toEqual({ name: 'test', memory: 128 });
   });
 
   it('surfaces probe-level drift reasons from extraUpdate', async () => {
@@ -99,24 +99,22 @@ describe('planRefreshedResource', () => {
     expect(item).toMatchObject({ action: 'create', drifted: true });
   });
 
-  it('stringifies non-Error read failures in the degradation warning', async () => {
+  it('propagates non-Error read failures without inventing a create', async () => {
     const warnSpy = jest.spyOn(logger, 'warn').mockImplementation(() => {});
     const read = jest.fn().mockRejectedValue('raw provider failure');
-    const item = await planRefreshedResource(args({ read }));
+    await expect(planRefreshedResource(args({ read }))).rejects.toBe('raw provider failure');
 
-    expect(item).toMatchObject({ action: 'create', drifted: true });
     expect(warnSpy).toHaveBeenCalledWith(
       expect.stringContaining('Failed to read live state for buckets.test'),
     );
     warnSpy.mockRestore();
   });
 
-  it('degrades a failed live read to a drifted create with a warning', async () => {
+  it('propagates a failed live read instead of planning recreation', async () => {
     const warnSpy = jest.spyOn(logger, 'warn').mockImplementation(() => {});
     const read = jest.fn().mockRejectedValue(new Error('throttled'));
-    const item = await planRefreshedResource(args({ read }));
+    await expect(planRefreshedResource(args({ read }))).rejects.toThrow('throttled');
 
-    expect(item).toMatchObject({ action: 'create', drifted: true });
     expect(warnSpy).toHaveBeenCalled();
     warnSpy.mockRestore();
   });
@@ -156,5 +154,80 @@ describe('planRefreshedResource', () => {
       expect(item).toMatchObject({ action: 'update' });
       expect(item).not.toHaveProperty('drifted');
     });
+  });
+});
+
+describe('refresh safety and intent adoption (issue #264)', () => {
+  const resource: ResourceState = {
+    mode: 'managed',
+    region: 'test',
+    definition: { memory: 128 },
+    instances: [],
+    lastUpdated: 'now',
+  };
+  const base = {
+    logicalId: 'functions.test',
+    resourceType: 'TEST',
+    currentState: resource,
+    desiredDefinition: { memory: 256 },
+    read: async () => ({ memory: 128 }),
+    cloudToDefinition: (value: { memory: number }) => value,
+    isOwned: () => true,
+    foreignError: () => new Error('foreign'),
+  };
+
+  it('does not mark an ordinary configuration change as cloud drift', async () => {
+    const result = await planRefreshedResource(base);
+    expect(result.action).toBe('update');
+    expect(result.drifted).toBeUndefined();
+  });
+
+  it('adopts verified intent with no cloud mutation when cloud already matches', async () => {
+    const result = await planRefreshedResource({ ...base, read: async () => ({ memory: 256 }) });
+    expect(result).toMatchObject({ action: 'noop', stateUpdate: { memory: 256 } });
+    expect(result.changes).toBeUndefined();
+    expect(result.drifted).toBeUndefined();
+  });
+
+  it('runs nested repair probes even when intent changed', async () => {
+    const extraUpdate = jest
+      .fn()
+      .mockResolvedValue({ update: true, drifted: true, reason: 'NESTED' });
+    const result = await planRefreshedResource({ ...base, extraUpdate });
+    expect(extraUpdate).toHaveBeenCalledTimes(1);
+    expect(result).toMatchObject({ action: 'update', drifted: true, driftReasons: ['NESTED'] });
+  });
+
+  it('propagates enrichment and auxiliary read failures rather than creating', async () => {
+    await expect(
+      planRefreshedResource({
+        ...base,
+        enrichRemoteAttributes: async () => {
+          throw new Error('denied');
+        },
+      }),
+    ).rejects.toThrow('denied');
+    await expect(
+      planRefreshedResource({
+        ...base,
+        extraUpdate: async () => {
+          throw new Error('timeout');
+        },
+      }),
+    ).rejects.toThrow('timeout');
+  });
+
+  it('rejects physical renames before looking up the proposed new resource', async () => {
+    const read = jest.fn();
+    await expect(
+      planRefreshedResource({
+        ...base,
+        resourceType: 'ALIYUN_OSS_BUCKET',
+        currentState: { ...resource, definition: { bucketName: 'old' } },
+        desiredDefinition: { bucketName: 'new' },
+        read,
+      }),
+    ).rejects.toThrow('replacement');
+    expect(read).not.toHaveBeenCalled();
   });
 });

@@ -1,3 +1,7 @@
+import { withStoredFunctionIam } from '../../common/functionDefinition';
+import { definitionsDiffer, mergeManagedIntent } from '../../common/planCompare';
+import { buildFc3NasConfig } from './fc3Types';
+import { buildAliyunHttpTriggerConfig } from '../../common/triggerMapper';
 import { createAliyunClient } from '../../common/aliyunClient';
 import { OssCodeLocation } from '../../common/aliyunClient/fc3Operations';
 import fs from 'node:fs';
@@ -17,9 +21,6 @@ import {
   buildFunctionRoleName,
   buildNasAccessGroupName,
   attributesEqual,
-  mapAuthType,
-  mapAliyunAccess,
-  ProviderEnum,
 } from '../../common';
 import {
   FC3_CODE_INLINE_SIZE_LIMIT,
@@ -29,7 +30,6 @@ import {
 import {
   Context,
   FunctionDomain,
-  HttpTrigger,
   PartialResourceError,
   ResourceAttributes,
   ResourceInstance,
@@ -411,17 +411,7 @@ const buildFc3InstanceFromProvider = (info: Fc3FunctionInfo, sid: string) => {
   };
 };
 
-const buildHttpTriggerConfig = (
-  trigger: HttpTrigger,
-): { authType: string; methods: string[]; disableURLInternet?: boolean } => {
-  const authType = mapAuthType(ProviderEnum.ALIYUN, trigger.auth_type);
-  const { disableURLInternet } = mapAliyunAccess(trigger.access);
-  return {
-    authType,
-    methods: ['GET', 'POST', 'PUT', 'DELETE', 'HEAD', 'PATCH'],
-    ...(disableURLInternet !== undefined ? { disableURLInternet } : {}),
-  };
-};
+const buildHttpTriggerConfig = buildAliyunHttpTriggerConfig;
 
 const TIMER_TRIGGER_INSTANCE_TYPE = 'ALIYUN_FC3_TIMER_TRIGGER';
 
@@ -505,6 +495,9 @@ const reconcileFc3TimerTriggers = async (
   previousInstances: Array<DependentInstance>,
   client: ReturnType<typeof createAliyunClient>,
 ): Promise<Array<DependentInstance>> => {
+  if (fn.triggers?.timer === undefined) {
+    return previousInstances.filter((instance) => instance.type === TIMER_TRIGGER_INSTANCE_TYPE);
+  }
   const desiredTimers = fn.triggers?.timer ?? [];
   const previousTimers = previousInstances.filter((i) => i.type === TIMER_TRIGGER_INSTANCE_TYPE);
 
@@ -1029,14 +1022,12 @@ export const createResource = async (
   if (dependentResources.nasConfig) {
     config = {
       ...config,
-      nasConfig: {
-        userId: -1,
-        groupId: -1,
-        mountPoints: dependentResources.nasConfig.mountPoints.map((mp) => ({
+      nasConfig: buildFc3NasConfig(
+        dependentResources.nasConfig.mountPoints.map((mp) => ({
           serverAddr: mp.serverAddr,
           mountDir: mp.mountDir,
         })),
-      },
+      ),
     };
   }
 
@@ -1044,7 +1035,7 @@ export const createResource = async (
   // codeHash (PR #237); the image lives in customContainerConfig, no zip push.
   const codePath = fn.code?.path;
   const codeHash = codePath ? await computeZipContentHash(codePath) : null;
-  const baseDefinition = extractFc3Definition(config, codeHash);
+  const baseDefinition = extractFc3Definition(config, codeHash, fn);
   const definition = fn.iam ? { ...baseDefinition, iam: fn.iam } : baseDefinition;
 
   const dependentInstances = dependentResources.instances.map((dep) => ({
@@ -1302,15 +1293,16 @@ const withRecreatedMountTargets = <T extends { type: string; id: string }>(
 
 export const updateResource = async (
   context: Context,
-  fn: FunctionDomain,
+  providedFn: FunctionDomain,
   state: StateFile,
-  options?: { force?: boolean },
+  options?: { force?: boolean; repairHttp?: boolean; repairDomain?: boolean },
 ): Promise<StateFile> => {
   const ctx = getContext();
   const serviceName = `${ctx.app}-${ctx.service}`;
-  const logicalId = `functions.${fn.key}`;
+  const logicalId = `functions.${providedFn.key}`;
 
   const existingState = getResource(state, logicalId);
+  const fn = withStoredFunctionIam(providedFn, existingState?.definition);
   const existingInstances = (existingState?.instances ?? []) as Array<DependentInstance>;
 
   const hasSlsResources = existingInstances.some(
@@ -1365,7 +1357,7 @@ export const updateResource = async (
     }
   } else if (hasSlsResources) {
     const slsLogstoreInstance = existingInstances.find((i) => i.type === 'ALIYUN_SLS_LOGSTORE');
-    if (fn.log) {
+    if (fn.log !== false) {
       if (slsLogstoreInstance) {
         const [projectName, logstoreName] = slsLogstoreInstance.id.split('/');
         logConfig = { project: projectName, logstore: logstoreName };
@@ -1402,6 +1394,7 @@ export const updateResource = async (
             logger.warn(
               lang.__('NESTED_REPAIR_FAILED', { resource: logstoreName, error: String(error) }),
             );
+            throw error;
           }
         }
       }
@@ -1491,7 +1484,7 @@ export const updateResource = async (
       const existingIam = existingState?.definition?.iam as Record<string, unknown> | undefined;
       const desiredIam = fn.iam;
       const iamChanged = !attributesEqual(existingIam ?? {}, desiredIam ?? {});
-      if (iamChanged) {
+      if (iamChanged || options?.force) {
         // Check for statement changes
         const desiredStatements = newIamRole ? newIamRole.statements : undefined;
         const existingRole = existingIam?.role as Record<string, unknown> | undefined;
@@ -1527,7 +1520,11 @@ export const updateResource = async (
           string,
           unknown
         >;
-        if (!attributesEqual(existingManagedPoliciesVal, desiredManagedPoliciesVal)) {
+        if (
+          desiredManagedPolicies !== undefined &&
+          (options?.force ||
+            !attributesEqual(existingManagedPoliciesVal, desiredManagedPoliciesVal))
+        ) {
           await client.ram.updateManagedPolicies(
             ramRoleInstance.id,
             (desiredManagedPolicies as string[]) ?? [],
@@ -1649,6 +1646,7 @@ export const updateResource = async (
           logger.warn(
             lang.__('NESTED_REPAIR_FAILED', { resource: sgInstance.id, error: String(error) }),
           );
+          throw error;
         }
       }
     }
@@ -1715,6 +1713,7 @@ export const updateResource = async (
         logger.warn(
           lang.__('NESTED_REPAIR_FAILED', { resource: failingFsId ?? 'nas', error: String(error) }),
         );
+        throw error;
       }
     }
 
@@ -1769,11 +1768,7 @@ export const updateResource = async (
   if (nasConfig) {
     config = {
       ...config,
-      nasConfig: {
-        userId: -1,
-        groupId: -1,
-        mountPoints: nasConfig.mountPoints,
-      },
+      nasConfig: buildFc3NasConfig(nasConfig.mountPoints),
     };
   }
 
@@ -1783,15 +1778,24 @@ export const updateResource = async (
   const codeChanged = codePath ? currentCodeHash !== desiredCodeHash : false;
 
   const existingConfig = existingState?.definition as ResourceAttributes | undefined;
-  const desiredDefinition = extractFc3Definition(config, desiredCodeHash);
+  const desiredDefinition = extractFc3Definition(config, desiredCodeHash, fn);
 
   const {
     codeHash: _existingCodeHash,
     iam: _existingIam,
+    http: _existingHttp,
+    domain: _existingDomain,
+    timers: _existingTimers,
     ...existingConfigOnly
   } = existingConfig || {};
-  const { codeHash: _desiredCodeHash, ...desiredConfigOnly } = desiredDefinition;
-  const configChanged = !attributesEqual(existingConfigOnly, desiredConfigOnly);
+  const {
+    codeHash: _desiredCodeHash,
+    http: _desiredHttp,
+    domain: _desiredDomain,
+    timers: _desiredTimers,
+    ...desiredConfigOnly
+  } = desiredDefinition;
+  const configChanged = definitionsDiffer(existingConfigOnly, desiredConfigOnly);
 
   // `force` carries the plan's drifted flag: a live-drift update (state
   // matches config, cloud edited in console) must re-push the config even
@@ -1854,22 +1858,10 @@ export const updateResource = async (
     logger.info(
       lang.__('HTTP_TRIGGER_CREATED', { triggerName: 'http-trigger', functionName: fn.name }),
     );
-  } else if (!desiredHttpTrigger && existingHttpTrigger) {
-    logger.info(
-      lang.__('DELETING_HTTP_TRIGGER', { triggerName: 'http-trigger', functionName: fn.name }),
-    );
-    try {
-      await client.fc3.deleteTrigger(fn.name, 'http-trigger');
-      logger.info(lang.__('HTTP_TRIGGER_DELETED', { triggerName: 'http-trigger' }));
-    } catch (err) {
-      const errorCode = (err as { code?: string })?.code;
-      if (errorCode !== 'TriggerNotFound') throw err;
-      logger.warn(lang.__('HTTP_TRIGGER_NOT_FOUND', { triggerName: 'http-trigger' }));
-    }
   } else if (desiredHttpTrigger && existingHttpTrigger) {
     const desiredTriggerConfig = buildHttpTriggerConfig(desiredHttpTrigger);
     const existingAttrs = existingHttpTrigger.attributes ?? {};
-    if (!attributesEqual(desiredTriggerConfig, existingAttrs)) {
+    if (options?.repairHttp || !attributesEqual(desiredTriggerConfig, existingAttrs)) {
       logger.info(lang.__('UPDATING_HTTP_TRIGGER', { functionName: fn.name }));
       try {
         await client.fc3.deleteTrigger(fn.name, 'http-trigger');
@@ -1915,24 +1907,14 @@ export const updateResource = async (
       certConfig,
     );
     logger.info(lang.__('CUSTOM_DOMAIN_CREATED', { domainName: desiredDomain.domain_name }));
-  } else if (!desiredDomain && existingCustomDomain) {
-    logger.info(lang.__('DELETING_CUSTOM_DOMAIN', { domainName: existingCustomDomain.id }));
-    try {
-      await client.fc3.deleteCustomDomain(existingCustomDomain.id);
-      logger.info(lang.__('CUSTOM_DOMAIN_DELETED', { domainName: existingCustomDomain.id }));
-    } catch (err) {
-      const errorCode = (err as { code?: string })?.code;
-      if (errorCode !== 'CustomDomainNotFound') throw err;
-      logger.warn(
-        lang.__('RESOURCE_NOT_FOUND_PROVIDER', {
-          resourceType: 'Custom Domain',
-          name: existingCustomDomain.id,
-        }),
-      );
-    }
   } else if (desiredDomain && existingCustomDomain) {
     const existingProtocol = existingCustomDomain.attributes?.protocol as string | undefined;
     const domainChanged =
+      options?.repairDomain ||
+      !attributesEqual(
+        (existingState?.definition?.domain as Record<string, unknown>) ?? {},
+        desiredDomain as unknown as Record<string, unknown>,
+      ) ||
       desiredDomain.domain_name !== existingCustomDomain.id ||
       desiredDomain.protocol !== existingProtocol;
     if (domainChanged) {
@@ -1974,7 +1956,7 @@ export const updateResource = async (
   }
 
   const codeHash = codePath ? await computeZipContentHash(codePath) : null;
-  const baseDefinition = extractFc3Definition(config, codeHash);
+  const baseDefinition = extractFc3Definition(config, codeHash, fn);
   const definition = fn.iam ? { ...baseDefinition, iam: fn.iam } : baseDefinition;
   const sid = buildSid('aliyun', 'fc3', context.stage, fn.name);
 
@@ -1990,6 +1972,8 @@ export const updateResource = async (
       attributes: { ...triggerConfig } as unknown as Record<string, unknown>,
     });
   }
+  if (!fn.triggers?.http && existingHttpTrigger) lifecycleInstances.push(existingHttpTrigger);
+  if (!fn.domain && existingCustomDomain) lifecycleInstances.push(existingCustomDomain);
   lifecycleInstances.push(...timerInstances);
   if (fn.domain) {
     lifecycleInstances.push({
@@ -2037,7 +2021,7 @@ export const updateResource = async (
   const resourceState: ResourceState = {
     mode: 'managed',
     region: context.region,
-    definition,
+    definition: mergeManagedIntent(existingState?.definition ?? {}, definition),
     instances: [
       fcInstance,
       ...lifecycleInstances,

@@ -1,3 +1,5 @@
+import { assertPlanIdentity } from '../../common/planCapabilities';
+import { definitionsDiffer, managedDefinition } from '../../common/planCompare';
 import { Context, EventDomain, Plan, PlanItem, StateFile } from '../../types';
 import { createVolcengineClient } from '../../common/volcengineClient';
 import { cachedRefreshRead } from '../../common/refreshCache';
@@ -9,7 +11,6 @@ import {
   cloudTriggerDiffers,
 } from './apigwTypes';
 import { getAllResources, getResource } from '../../common/stateManager';
-import { attributesEqual } from '../../common/hashUtils';
 import { logger } from '../../common';
 import { lang } from '../../lang';
 import { OWNERSHIP_TAG_KEY, isOwnedByStack } from '../ownershipTag';
@@ -53,6 +54,14 @@ export const generateApigwPlan = async (
       const storedTopicName = storedTlsTopic?.id?.split('/')[1];
 
       const desiredDefinition = buildEventResourceDefinition(event, storedTopicName);
+
+      if (currentState)
+        assertPlanIdentity(
+          logicalId,
+          'VOLCENGINE_APIGW',
+          currentState.definition || {},
+          desiredDefinition,
+        );
 
       if (!currentState || currentState.status === 'tainted') {
         // No usable local state: probe the provider before planning create.
@@ -98,7 +107,7 @@ export const generateApigwPlan = async (
           context,
           `apigw.getService:${serviceInstance.id}`,
           () => client.apigw.getService(serviceInstance.id),
-        ).catch(() => null);
+        );
 
         if (!cloudService) {
           return {
@@ -112,7 +121,7 @@ export const generateApigwPlan = async (
       }
 
       const currentDefinition = currentState.definition || {};
-      const definitionChanged = !attributesEqual(currentDefinition, desiredDefinition);
+      const definitionChanged = definitionsDiffer(currentDefinition, desiredDefinition);
 
       // Issue #234 phase 2: live trigger drift. The service record alone can be
       // untouched while console edits reroute a trigger (method/path/upstream).
@@ -120,7 +129,7 @@ export const generateApigwPlan = async (
       // writes; a probe failure stays noop (best-effort detection) instead of
       // fabricating drift from a transient read error.
       let triggersDiffer = false;
-      if (refreshEnabled && !definitionChanged && serviceInstance && event.triggers.length > 0) {
+      if (refreshEnabled && serviceInstance && event.triggers.length > 0) {
         try {
           const desiredTriggers = buildDesiredTriggerMap(event, context.stage);
           const cloudRoutes = await cachedRefreshRead(
@@ -151,6 +160,7 @@ export const generateApigwPlan = async (
               error: String(error),
             }),
           );
+          throw error;
         }
       }
 
@@ -169,8 +179,11 @@ export const generateApigwPlan = async (
           logicalId,
           action: 'update',
           resourceType: 'VOLCENGINE_APIGW',
-          changes: { before: currentDefinition, after: desiredDefinition },
-          drifted: true,
+          changes: {
+            before: managedDefinition(currentDefinition, desiredDefinition),
+            after: managedDefinition(desiredDefinition),
+          },
+          ...(triggersDiffer || domainDiffers ? { drifted: true } : {}),
         };
       }
 

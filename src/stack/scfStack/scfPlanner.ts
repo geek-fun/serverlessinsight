@@ -1,3 +1,5 @@
+import { definitionsDiffer, remoteDiffersFromDesired } from '../../common/planCompare';
+import { buildTencentHttpTriggerDesc, mapAuthType, mapAccess } from '../../common/triggerMapper';
 import {
   Context,
   FunctionDomain,
@@ -60,7 +62,7 @@ export const generateFunctionPlan = async (
       }
       const codePath = fn.code!.path;
       const desiredCodeHash = await computeZipContentHash(codePath);
-      const desiredDefinition = extractScfDefinition(config, desiredCodeHash, fn.iam);
+      const desiredDefinition = extractScfDefinition(config, desiredCodeHash, fn.iam, fn);
 
       const client = createTencentClient(context);
 
@@ -83,6 +85,54 @@ export const generateFunctionPlan = async (
             }),
           ),
         extraUpdate: async () => {
+          if (fn.triggers?.http) {
+            const live = await cachedRefreshRead(context, `scf.getFunction:${fn.name}`, () =>
+              client.scf.getFunction(fn.name),
+            );
+            const trigger = (live?.Triggers ?? []).find(
+              (entry) => entry.Type === 'http' && entry.TriggerDesc?.includes('NetConfig'),
+            );
+            const desired = JSON.parse(
+              buildTencentHttpTriggerDesc(
+                mapAuthType(context.provider, fn.triggers.http.auth_type),
+                mapAccess(fn.triggers.http.access),
+              ),
+            ) as Record<string, unknown>;
+            let actual: Record<string, unknown> | null = null;
+            if (trigger?.TriggerDesc) {
+              try {
+                actual = JSON.parse(trigger.TriggerDesc) as Record<string, unknown>;
+              } catch {
+                actual = null;
+              }
+            }
+            if (!actual || remoteDiffersFromDesired({ http: actual }, { http: desired }))
+              return {
+                update: true,
+                drifted: !definitionsDiffer(currentState?.definition ?? {}, {
+                  http: desiredDefinition.http,
+                }),
+                reason: 'PLAN_DRIFT_HTTP_TRIGGER',
+              };
+          }
+          if (fn.domain) {
+            const domain = await cachedRefreshRead(
+              context,
+              `scf.getCustomDomain:${fn.domain.domain_name}`,
+              () => client.scf.getCustomDomain(fn.domain!.domain_name),
+            );
+            if (
+              !domain ||
+              (domain.Protocol !== undefined && domain.Protocol !== fn.domain.protocol)
+            )
+              return {
+                update: true,
+                drifted: !definitionsDiffer(currentState?.definition ?? {}, {
+                  domain: desiredDefinition.domain,
+                }),
+                reason: 'PLAN_DRIFT_FUNCTION_DOMAIN',
+              };
+          }
           // Issue #234 M3: nested topic drift — probed only when logging is
           // declared; unresolvable/unreadable topics are not drift. Runs via
           // the skeleton's extraUpdate hook (issue #246) so a topic-only
@@ -112,6 +162,7 @@ export const generateFunctionPlan = async (
                   error: String(error),
                 }),
               );
+              throw error;
             }
           }
 
@@ -120,11 +171,8 @@ export const generateFunctionPlan = async (
           // read is refresh-cached, so this reuses the fetch the skeleton
           // already made. Manual deletes, console cron edits and extra
           // triggers all mark the function drifted.
-          const timerStateInstances = (currentState?.instances ?? []).filter(
-            (i) => (i as { type?: string }).type === 'TENCENT_SCF_TIMER_TRIGGER',
-          );
           const desiredTimers = fn.triggers?.timer ?? [];
-          if (desiredTimers.length > 0 || timerStateInstances.length > 0) {
+          if (fn.triggers?.timer !== undefined) {
             try {
               const live = await cachedRefreshRead(context, `scf.getFunction:${fn.name}`, () =>
                 client.scf.getFunction(fn.name),
@@ -145,11 +193,18 @@ export const generateFunctionPlan = async (
                 return (
                   liveTimer.TriggerDesc !== translateSiCron(timer.cron, 'tencent') ||
                   (liveTimer.CustomArgument ?? undefined) !== timer.payload ||
+                  (liveTimer.Description ?? undefined) !== timer.description ||
                   (liveTimer.Enable === 1) !== timer.enable
                 );
               });
               if (extraTimer || desiredChanged) {
-                return { update: true, drifted: true, reason: 'PLAN_DRIFT_TIMER_TRIGGER' };
+                return {
+                  update: true,
+                  drifted: !definitionsDiffer(currentState?.definition ?? {}, {
+                    timers: desiredDefinition.timers,
+                  }),
+                  reason: 'PLAN_DRIFT_TIMER_TRIGGER',
+                };
               }
             } catch (error: unknown) {
               logger.warn(
@@ -158,6 +213,7 @@ export const generateFunctionPlan = async (
                   error: String(error),
                 }),
               );
+              throw error;
             }
           }
 
@@ -173,25 +229,21 @@ export const generateFunctionPlan = async (
           if (!desiredLog || !remote.ClsLogsetId || !remote.ClsTopicId) {
             return attributes;
           }
-          try {
-            const logsetName = await cachedRefreshRead(
-              context,
-              `cls.getLogsetNameById:${remote.ClsLogsetId}`,
-              () => client.cls.getLogsetNameById(remote.ClsLogsetId as string),
-            );
-            const topics = await cachedRefreshRead(
-              context,
-              `cls.listTopicsByLogset:${remote.ClsLogsetId}`,
-              () => client.cls.listTopicsByLogset(remote.ClsLogsetId as string),
-            );
-            const topicName = topics?.find((t) => t.TopicId === remote.ClsTopicId)?.TopicName;
-            if (!logsetName || !topicName) {
-              return attributes;
-            }
-            return { ...attributes, logConfig: { logset: logsetName, topic: topicName } };
-          } catch {
+          const logsetName = await cachedRefreshRead(
+            context,
+            `cls.getLogsetNameById:${remote.ClsLogsetId}`,
+            () => client.cls.getLogsetNameById(remote.ClsLogsetId as string),
+          );
+          const topics = await cachedRefreshRead(
+            context,
+            `cls.listTopicsByLogset:${remote.ClsLogsetId}`,
+            () => client.cls.listTopicsByLogset(remote.ClsLogsetId as string),
+          );
+          const topicName = topics?.find((t) => t.TopicId === remote.ClsTopicId)?.TopicName;
+          if (!logsetName || !topicName) {
             return attributes;
           }
+          return { ...attributes, logConfig: { logset: logsetName, topic: topicName } };
         },
         refresh: context.refresh,
       });

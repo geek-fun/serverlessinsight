@@ -93,6 +93,9 @@ describe('DatabasePlanner', () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
+    mockedHashUtils.attributesEqual.mockImplementation(
+      jest.requireActual('../../../../src/common/hashUtils').attributesEqual,
+    );
     mockedRdsOperations.getInstanceByName.mockReset();
     mockedEsOperations.getApp.mockReset();
     mockedRdsTypes.cloudRdsToDefinition.mockReset();
@@ -335,7 +338,7 @@ describe('DatabasePlanner', () => {
       );
     });
 
-    it('should plan update when definition changes', async () => {
+    it('should plan update when definition changes without claiming live drift', async () => {
       const database = createTestDatabase(DatabaseEnum.RDS_MYSQL_SERVERLESS, 'test_db');
 
       const existingState = {
@@ -354,9 +357,11 @@ describe('DatabasePlanner', () => {
       });
       mockedRdsTypes.extractRdsDefinition.mockReturnValue({
         engine: 'mysql',
-        newValue: 'new',
+        securityIPList: ['192.0.2.1'],
       });
-      mockedHashUtils.attributesEqual.mockReturnValue(false);
+      mockedHashUtils.attributesEqual.mockImplementation(
+        jest.requireActual('../../../../src/common/hashUtils').attributesEqual,
+      );
 
       const plan = await generateDatabasePlan(mockContext, initialState, [database]);
 
@@ -366,7 +371,6 @@ describe('DatabasePlanner', () => {
           logicalId: 'databases.test_db',
           action: 'update',
           resourceType: 'ALIYUN_RDS_SERVERLESS',
-          drifted: true,
         }),
       );
     });
@@ -391,7 +395,9 @@ describe('DatabasePlanner', () => {
       mockedRdsTypes.extractRdsDefinition.mockReturnValue({
         engine: 'mysql',
       });
-      mockedHashUtils.attributesEqual.mockReturnValue(true);
+      mockedHashUtils.attributesEqual.mockImplementation(
+        jest.requireActual('../../../../src/common/hashUtils').attributesEqual,
+      );
 
       const plan = await generateDatabasePlan(mockContext, initialState, [database]);
 
@@ -405,7 +411,7 @@ describe('DatabasePlanner', () => {
       );
     });
 
-    it('should plan RDS live drift when cloud attributes differ from desired', async () => {
+    it('rejects unsupported change: should plan RDS live drift when cloud attributes differ from desired', async () => {
       const database = createTestDatabase(DatabaseEnum.RDS_MYSQL_SERVERLESS, 'test_db');
       const desiredDefinition = {
         dbInstanceClass: 'serverless',
@@ -437,9 +443,9 @@ describe('DatabasePlanner', () => {
         .attributesEqual as (a: unknown, b: unknown) => boolean;
       mockedHashUtils.attributesEqual.mockImplementation(realAttributesEqual);
 
-      const plan = await generateDatabasePlan(mockContext, initialState, [database]);
-
-      expect(plan.items[0]).toEqual(expect.objectContaining({ action: 'update', drifted: true }));
+      await expect(generateDatabasePlan(mockContext, initialState, [database])).rejects.toThrow(
+        'dbInstanceStorage',
+      );
     });
 
     it('should plan no-op for matching RDS cloud attributes including omitted fields', async () => {
@@ -480,7 +486,7 @@ describe('DatabasePlanner', () => {
       expect(plan.items[0]).toEqual(expect.objectContaining({ action: 'noop' }));
     });
 
-    it('should plan ES live drift when cloud app metadata or network differs', async () => {
+    it('rejects unsupported change: should plan ES live drift when cloud app metadata or network differs', async () => {
       const database = createTestDatabase(DatabaseEnum.ELASTICSEARCH_SERVERLESS, 'test_es');
       const desiredDefinition = {
         appName: 'test-es-app',
@@ -515,9 +521,9 @@ describe('DatabasePlanner', () => {
         .attributesEqual as (a: unknown, b: unknown) => boolean;
       mockedHashUtils.attributesEqual.mockImplementation(realAttributesEqual);
 
-      const plan = await generateDatabasePlan(mockContext, initialState, [database]);
-
-      expect(plan.items[0]).toEqual(expect.objectContaining({ action: 'update', drifted: true }));
+      await expect(generateDatabasePlan(mockContext, initialState, [database])).rejects.toThrow(
+        'network',
+      );
     });
 
     it('should plan no-op for matching ES cloud attributes including omitted fields', async () => {
@@ -631,7 +637,7 @@ describe('DatabasePlanner', () => {
       );
     });
 
-    it('should handle provider error gracefully by planning recreation', async () => {
+    it('rejects provider read failure: should handle provider error gracefully by planning recreation', async () => {
       const database = createTestDatabase(DatabaseEnum.RDS_MYSQL_SERVERLESS, 'test_db');
 
       const existingState = {
@@ -649,14 +655,8 @@ describe('DatabasePlanner', () => {
         engine: 'mysql',
       });
 
-      const plan = await generateDatabasePlan(mockContext, initialState, [database]);
-
-      expect(plan.items).toHaveLength(1);
-      expect(plan.items[0]).toEqual(
-        expect.objectContaining({
-          logicalId: 'databases.test_db',
-          action: 'create',
-        }),
+      await expect(generateDatabasePlan(mockContext, initialState, [database])).rejects.toEqual(
+        new Error('Provider error'),
       );
     });
 
@@ -703,7 +703,7 @@ describe('DatabasePlanner', () => {
       expect(plan.items).toHaveLength(0);
     });
 
-    it('should plan update for Elasticsearch when definition changes', async () => {
+    it('rejects unsupported change: should plan update for Elasticsearch when definition changes', async () => {
       const database = createTestDatabase(DatabaseEnum.ELASTICSEARCH_SERVERLESS, 'test_es');
 
       const existingState = {
@@ -722,22 +722,15 @@ describe('DatabasePlanner', () => {
       });
       mockedEsTypes.extractEsDefinition.mockReturnValue({
         appName: 'test-es-app',
-        newValue: 'new',
+        securityIPList: ['192.0.2.1'],
       });
-      mockedHashUtils.attributesEqual.mockReturnValue(false);
-
-      const plan = await generateDatabasePlan(mockContext, initialState, [database]);
-
-      expect(plan.items).toHaveLength(1);
-      expect(plan.items[0]).toEqual(
-        expect.objectContaining({
-          logicalId: 'databases.test_es',
-          action: 'update',
-          resourceType: 'ALIYUN_ES_SERVERLESS',
-          drifted: true,
-        }),
+      mockedHashUtils.attributesEqual.mockImplementation(
+        jest.requireActual('../../../../src/common/hashUtils').attributesEqual,
       );
-      expect(mockedEsOperations.getApp).toHaveBeenCalledWith('es-app-123');
+
+      await expect(generateDatabasePlan(mockContext, initialState, [database])).rejects.toThrow(
+        'appName',
+      );
     });
 
     it('should plan drift recreation for Elasticsearch when remote instance missing', async () => {
@@ -746,7 +739,7 @@ describe('DatabasePlanner', () => {
       const existingState = {
         metadata: { instanceId: 'es-app-123', resourceType: 'ALIYUN_ES_SERVERLESS' },
         instances: [{ id: 'es-app-123' }],
-        definition: { appName: 'old-es-app' },
+        definition: { appName: 'test-es-app' },
       };
 
       mockedStateManager.getResource.mockReturnValue(existingState);
@@ -790,7 +783,9 @@ describe('DatabasePlanner', () => {
       mockedRdsTypes.extractRdsDefinition.mockReturnValue({
         engine: 'mysql',
       });
-      mockedHashUtils.attributesEqual.mockReturnValue(true);
+      mockedHashUtils.attributesEqual.mockImplementation(
+        jest.requireActual('../../../../src/common/hashUtils').attributesEqual,
+      );
 
       const plan = await generateDatabasePlan(mockContext, initialState, [database]);
 
@@ -978,7 +973,7 @@ describe('DatabasePlanner', () => {
       expect(mockedRdsOperations.getInstance).not.toHaveBeenCalled();
     });
 
-    it('should handle current definition being undefined', async () => {
+    it('rejects unsupported change: should handle current definition being undefined', async () => {
       const database = createTestDatabase(DatabaseEnum.RDS_MYSQL_SERVERLESS, 'test_db');
 
       const existingState = {
@@ -995,16 +990,12 @@ describe('DatabasePlanner', () => {
       mockedRdsTypes.extractRdsDefinition.mockReturnValue({
         engine: 'mysql',
       });
-      mockedHashUtils.attributesEqual.mockReturnValue(false);
+      mockedHashUtils.attributesEqual.mockImplementation(
+        jest.requireActual('../../../../src/common/hashUtils').attributesEqual,
+      );
 
-      const plan = await generateDatabasePlan(mockContext, initialState, [database]);
-
-      expect(plan.items).toHaveLength(1);
-      expect(plan.items[0]).toEqual(
-        expect.objectContaining({
-          action: 'update',
-          drifted: true,
-        }),
+      await expect(generateDatabasePlan(mockContext, initialState, [database])).rejects.toThrow(
+        'engine',
       );
     });
   });

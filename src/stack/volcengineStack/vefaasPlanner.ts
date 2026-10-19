@@ -1,4 +1,6 @@
-import { attributesEqual, computeZipContentHash, getResource, logger } from '../../common';
+import { assertPlanIdentity, assertSupportedPlanUpdate } from '../../common/planCapabilities';
+import { definitionsDiffer, managedDefinition } from '../../common/planCompare';
+import { computeZipContentHash, getResource, logger } from '../../common';
 import { getAllResources, getSharedResource } from '../../common/stateManager';
 import { createVolcengineClient } from '../../common/volcengineClient';
 import { cachedRefreshRead } from '../../common/refreshCache';
@@ -59,7 +61,28 @@ export const generateFunctionPlan = async (
     async (fn): Promise<PlanItem> => {
       const logicalId = `functions.${fn.key}`;
       const currentState = getResource(state, logicalId);
-      const config = functionToVefaasConfig(fn);
+      const recordedRole = currentState?.instances?.find(
+        (instance) => instance.type === 'VOLCENGINE_IAM_ROLE',
+      ) as { trn?: string } | undefined;
+      const config = functionToVefaasConfig(fn, {
+        role: typeof fn.iam?.role === 'string' ? fn.iam.role : recordedRole?.trn,
+        vpcConfig: fn.network
+          ? {
+              vpcId: fn.network.vpc_id,
+              subnetIds: fn.network.subnet_ids,
+              securityGroupIds: fn.network.security_group?.name
+                ? [fn.network.security_group.name]
+                : [],
+            }
+          : undefined,
+        tosMountConfig: fn.storage?.nas?.[0]
+          ? {
+              bucketName:
+                (fn.storage.nas[0] as unknown as { bucket_name?: string }).bucket_name ?? '',
+              mountPath: fn.storage.nas[0].mount_path,
+            }
+          : undefined,
+      });
       const codePath = fn.code!.path;
       const desiredCodeHash = await computeZipContentHash(codePath);
       // Mirror the executor's auto-role behavior: when the YAML omits
@@ -110,8 +133,16 @@ export const generateFunctionPlan = async (
           };
         }
       }
-      const baseDefinition = extractVefaasDefinition(config, desiredCodeHash);
+      const baseDefinition = extractVefaasDefinition(config, desiredCodeHash, fn);
       const desiredDefinition = fn.iam ? { ...baseDefinition, iam: fn.iam } : baseDefinition;
+
+      if (currentState)
+        assertPlanIdentity(
+          logicalId,
+          'VOLCENGINE_VEFAAS',
+          currentState.definition || {},
+          desiredDefinition,
+        );
 
       if (!currentState || currentState.status === 'tainted') {
         // No usable local state: probe the provider before planning create.
@@ -145,18 +176,27 @@ export const generateFunctionPlan = async (
       try {
         const client = createVolcengineClient(context);
         const currentDefinition = currentState.definition || {};
-        const definitionChanged = !attributesEqual(currentDefinition, desiredDefinition);
+        const definitionChanged = definitionsDiffer(currentDefinition, desiredDefinition);
 
         // --no-refresh: no live read, no drift claims — intent-diff only.
         if (context.refresh === false) {
           if (!definitionChanged) {
             return { logicalId, action: 'noop', resourceType: 'VOLCENGINE_VEFAAS' };
           }
+          assertSupportedPlanUpdate(
+            logicalId,
+            'VOLCENGINE_VEFAAS',
+            managedDefinition(currentDefinition, desiredDefinition),
+            desiredDefinition,
+          );
           return {
             logicalId,
             action: 'update',
             resourceType: 'VOLCENGINE_VEFAAS',
-            changes: { before: currentDefinition, after: desiredDefinition },
+            changes: {
+              before: managedDefinition(currentDefinition, desiredDefinition),
+              after: managedDefinition(desiredDefinition),
+            },
           };
         }
 
@@ -210,28 +250,23 @@ export const generateFunctionPlan = async (
                 securityGroupIds: remoteFunction.vpcConfig.securityGroupIds ?? [],
               }
             : undefined,
+          tosMountConfig: remoteFunction.tosMountConfig?.mountPoints?.[0]
+            ? {
+                bucketName: remoteFunction.tosMountConfig.mountPoints[0].bucketName,
+                mountPath: remoteFunction.tosMountConfig.mountPoints[0].localMountPath,
+              }
+            : null,
           logConfig: remoteFunction.logConfig
             ? { project: remoteFunction.logConfig.project, topic: remoteFunction.logConfig.topic }
             : undefined,
         };
         const remoteDiffers = remoteDiffersFromDesired(remoteAttributes, desiredDefinition);
-        const liveBefore = mergeLiveBefore(currentDefinition, remoteAttributes);
+        const liveBefore = mergeLiveBefore(currentDefinition, remoteAttributes, desiredDefinition);
         const revertKeys = computeRevertKeys(
           currentDefinition,
           remoteAttributes,
           desiredDefinition,
         );
-
-        if (definitionChanged || remoteDiffers) {
-          return {
-            logicalId,
-            action: 'update',
-            resourceType: 'VOLCENGINE_VEFAAS',
-            changes: { before: liveBefore, after: desiredDefinition },
-            drifted: true,
-            ...(revertKeys.length ? { revertKeys } : {}),
-          };
-        }
 
         // Issue #234 phase 3: live role drift — trust policy and attached
         // managed policies. The custom <role>-policy DOCUMENT has no read API
@@ -251,7 +286,8 @@ export const generateFunctionPlan = async (
                 logicalId,
                 action: 'update',
                 resourceType: 'VOLCENGINE_VEFAAS',
-                changes: { before: liveBefore, after: desiredDefinition },
+                changes: { before: liveBefore, after: managedDefinition(desiredDefinition) },
+                ...(revertKeys.length ? { revertKeys } : {}),
                 drifted: true,
                 driftReasons: ['PLAN_DRIFT_ROLE_MISSING'],
               };
@@ -264,20 +300,25 @@ export const generateFunctionPlan = async (
             }
             if (
               cloudTrust &&
-              !attributesEqual(
-                cloudTrust as Record<string, unknown>,
-                buildDefaultTrustPolicy(roleGrant.trustedServices) as unknown as Record<
-                  string,
-                  unknown
-                >,
+              remoteDiffersFromDesired(
+                { policy: JSON.stringify(cloudTrust) },
+                { policy: JSON.stringify(buildDefaultTrustPolicy(roleGrant.trustedServices)) },
               )
             ) {
               return {
                 logicalId,
                 action: 'update',
                 resourceType: 'VOLCENGINE_VEFAAS',
-                changes: { before: liveBefore, after: desiredDefinition },
-                drifted: true,
+                changes: { before: liveBefore, after: managedDefinition(desiredDefinition) },
+                ...(revertKeys.length ? { revertKeys } : {}),
+                ...(!definitionsDiffer(currentDefinition, {
+                  iam: desiredDefinition.iam,
+                  vpcConfig: desiredDefinition.vpcConfig,
+                  tosMountConfig: desiredDefinition.tosMountConfig,
+                  logConfig: desiredDefinition.logConfig,
+                })
+                  ? { drifted: true }
+                  : {}),
                 driftReasons: ['PLAN_DRIFT_ROLE_POLICY'],
               };
             }
@@ -291,13 +332,27 @@ export const generateFunctionPlan = async (
               () => client.iam.listAttachedRolePolicies(roleId),
             );
             const desiredNames = asSetKey([...desiredManaged, buildRolePolicyName(roleId)]);
-            if (desiredNames !== asSetKey(cloudManaged ?? [])) {
+            if (
+              fn.iam?.role &&
+              typeof fn.iam.role !== 'string' &&
+              fn.iam.role.managed_policies !== undefined
+                ? desiredNames !== asSetKey(cloudManaged ?? [])
+                : !(cloudManaged ?? []).includes(buildRolePolicyName(roleId))
+            ) {
               return {
                 logicalId,
                 action: 'update',
                 resourceType: 'VOLCENGINE_VEFAAS',
-                changes: { before: liveBefore, after: desiredDefinition },
-                drifted: true,
+                changes: { before: liveBefore, after: managedDefinition(desiredDefinition) },
+                ...(revertKeys.length ? { revertKeys } : {}),
+                ...(!definitionsDiffer(currentDefinition, {
+                  iam: desiredDefinition.iam,
+                  vpcConfig: desiredDefinition.vpcConfig,
+                  tosMountConfig: desiredDefinition.tosMountConfig,
+                  logConfig: desiredDefinition.logConfig,
+                })
+                  ? { drifted: true }
+                  : {}),
                 driftReasons: ['PLAN_DRIFT_ROLE_POLICY'],
               };
             }
@@ -309,6 +364,7 @@ export const generateFunctionPlan = async (
                 error: String(error),
               }),
             );
+            throw error;
           }
         }
 
@@ -333,7 +389,8 @@ export const generateFunctionPlan = async (
                     logicalId,
                     action: 'update',
                     resourceType: 'VOLCENGINE_VEFAAS',
-                    changes: { before: liveBefore, after: desiredDefinition },
+                    changes: { before: liveBefore, after: managedDefinition(desiredDefinition) },
+                    ...(revertKeys.length ? { revertKeys } : {}),
                     drifted: true,
                     driftReasons: ['PLAN_DRIFT_TLS_TOPIC'],
                   };
@@ -346,6 +403,7 @@ export const generateFunctionPlan = async (
                   error: String(error),
                 }),
               );
+              throw error;
             }
           }
         }
@@ -354,14 +412,8 @@ export const generateFunctionPlan = async (
         // against the desired timers (name-keyed). A trigger missing from the
         // cloud (manual delete), an edited source config, or an extra
         // undeclared timer all count as drift.
-        const timerStateInstances = currentState.instances.filter(
-          (i) => (i as { type?: string }).type === 'VOLCENGINE_VEFAAS_TIMER_TRIGGER',
-        );
         const desiredTimers = fn.triggers?.timer ?? [];
-        if (
-          (desiredTimers.length > 0 || timerStateInstances.length > 0) &&
-          remoteFunction.functionId
-        ) {
+        if (fn.triggers?.timer !== undefined && remoteFunction.functionId) {
           try {
             const liveTriggers = await cachedRefreshRead(
               context,
@@ -398,8 +450,11 @@ export const generateFunctionPlan = async (
                 logicalId,
                 action: 'update',
                 resourceType: 'VOLCENGINE_VEFAAS',
-                changes: { before: liveBefore, after: desiredDefinition },
-                drifted: true,
+                changes: { before: liveBefore, after: managedDefinition(desiredDefinition) },
+                ...(revertKeys.length ? { revertKeys } : {}),
+                ...(!definitionsDiffer(currentDefinition, { timers: desiredDefinition.timers })
+                  ? { drifted: true }
+                  : {}),
                 driftReasons: ['PLAN_DRIFT_TIMER_TRIGGER'],
               };
             }
@@ -410,8 +465,34 @@ export const generateFunctionPlan = async (
                 error: String(error),
               }),
             );
+            throw error;
           }
         }
+
+        assertSupportedPlanUpdate(logicalId, 'VOLCENGINE_VEFAAS', liveBefore, desiredDefinition);
+        if (definitionsDiffer(liveBefore, desiredDefinition)) {
+          return {
+            logicalId,
+            action: 'update',
+            resourceType: 'VOLCENGINE_VEFAAS',
+            changes: { before: liveBefore, after: managedDefinition(desiredDefinition) },
+            ...(revertKeys.length ? { revertKeys } : {}),
+            ...(remoteDiffersFromDesired(
+              remoteAttributes,
+              managedDefinition(currentDefinition, desiredDefinition),
+            )
+              ? { drifted: true }
+              : {}),
+          };
+        }
+
+        if (definitionChanged && !remoteDiffers)
+          return {
+            logicalId,
+            action: 'noop',
+            resourceType: 'VOLCENGINE_VEFAAS',
+            stateUpdate: desiredDefinition,
+          };
 
         return { logicalId, action: 'noop', resourceType: 'VOLCENGINE_VEFAAS' };
       } catch (error: unknown) {
@@ -421,16 +502,7 @@ export const generateFunctionPlan = async (
             error: error instanceof Error ? error.message : String(error),
           }),
         );
-        return {
-          logicalId,
-          action: 'create',
-          resourceType: 'VOLCENGINE_VEFAAS',
-          changes: {
-            before: currentState.definition,
-            after: desiredDefinition,
-          },
-          drifted: true,
-        };
+        throw error;
       }
     },
   );

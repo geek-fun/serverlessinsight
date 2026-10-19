@@ -28,10 +28,22 @@ const mockOssClient = {
   getBucketWebsite: jest.fn(),
   getBucketLogging: jest.fn(),
   getBucketLifecycle: jest.fn(),
+  getBucketVersioning: jest.fn().mockResolvedValue({}),
+  getBucketEncryption: jest.fn().mockResolvedValue({}),
+  getBucketPolicy: jest.fn().mockResolvedValue({}),
+  getBucketTags: jest.fn().mockResolvedValue({}),
   list: jest.fn(),
   deleteMulti: jest.fn(),
   put: jest.fn(),
 } as unknown as OSS;
+
+beforeEach(() => {
+  (mockOssClient.getBucketACL as jest.Mock).mockResolvedValue({});
+  (mockOssClient.getBucketWebsite as jest.Mock).mockResolvedValue({});
+  (mockOssClient.getBucketLogging as jest.Mock).mockResolvedValue({});
+  mockGetBucketCORS.mockResolvedValue({});
+  (mockOssClient.getBucketLifecycle as jest.Mock).mockResolvedValue({});
+});
 
 jest.mock('../../../../src/common/logger', () => ({
   logger: {
@@ -825,11 +837,30 @@ describe('ossOperations bucket operations', () => {
             Location: 'oss-cn-hangzhou',
           },
         }),
-        getBucketACL: jest.fn().mockRejectedValue(new Error('Not available')),
-        getBucketWebsite: jest.fn().mockRejectedValue(new Error('No website config')),
-        getBucketLogging: jest.fn().mockRejectedValue(new Error('No logging')),
-        getBucketCORS: jest.fn().mockRejectedValue(new Error('No CORS')),
-        getBucketLifecycle: jest.fn().mockRejectedValue(new Error('No lifecycle')),
+        getBucketACL: jest
+          .fn()
+          .mockRejectedValue(Object.assign(new Error('Not available'), { status: 404 })),
+        getBucketWebsite: jest.fn().mockRejectedValue(
+          Object.assign(new Error('No website config'), {
+            code: 'NoSuchConfiguration',
+            status: 404,
+          }),
+        ),
+        getBucketLogging: jest
+          .fn()
+          .mockRejectedValue(
+            Object.assign(new Error('No logging'), { code: 'NoSuchConfiguration', status: 404 }),
+          ),
+        getBucketCORS: jest
+          .fn()
+          .mockRejectedValue(
+            Object.assign(new Error('No CORS'), { code: 'NoSuchConfiguration', status: 404 }),
+          ),
+        getBucketLifecycle: jest
+          .fn()
+          .mockRejectedValue(
+            Object.assign(new Error('No lifecycle'), { code: 'NoSuchConfiguration', status: 404 }),
+          ),
       } as unknown as OSS;
 
       const ops = createOssOperations(mockOssClient2, 'cn-hangzhou');
@@ -1637,10 +1668,20 @@ describe('ossOperations getBucket additional branches', () => {
           Location: 'oss-cn-hangzhou',
         },
       }),
-      getBucketACL: jest.fn().mockRejectedValue(new Error('No ACL')),
-      getBucketWebsite: jest.fn().mockRejectedValue(new Error('No website')),
+      getBucketACL: jest
+        .fn()
+        .mockRejectedValue(Object.assign(new Error('No ACL'), { status: 404 })),
+      getBucketWebsite: jest
+        .fn()
+        .mockRejectedValue(
+          Object.assign(new Error('No website'), { code: 'NoSuchConfiguration', status: 404 }),
+        ),
       getBucketLogging: jest.fn().mockResolvedValue({ enable: false }),
-      getBucketCORS: jest.fn().mockRejectedValue(new Error('No CORS')),
+      getBucketCORS: jest
+        .fn()
+        .mockRejectedValue(
+          Object.assign(new Error('No CORS'), { code: 'NoSuchConfiguration', status: 404 }),
+        ),
       getBucketLifecycle: jest.fn().mockResolvedValue({
         rules: [
           {
@@ -1674,10 +1715,24 @@ describe('ossOperations getBucket additional branches', () => {
       getBucketInfo: jest.fn().mockResolvedValue({
         bucket: { Name: 'test-bucket', Location: 'oss-cn-hangzhou' },
       }),
-      getBucketACL: jest.fn().mockRejectedValue(new Error('No ACL')),
-      getBucketWebsite: jest.fn().mockRejectedValue(new Error('No website')),
-      getBucketLogging: jest.fn().mockRejectedValue(new Error('No logging')),
-      getBucketCORS: jest.fn().mockRejectedValue(new Error('No CORS')),
+      getBucketACL: jest
+        .fn()
+        .mockRejectedValue(Object.assign(new Error('No ACL'), { status: 404 })),
+      getBucketWebsite: jest
+        .fn()
+        .mockRejectedValue(
+          Object.assign(new Error('No website'), { code: 'NoSuchConfiguration', status: 404 }),
+        ),
+      getBucketLogging: jest
+        .fn()
+        .mockRejectedValue(
+          Object.assign(new Error('No logging'), { code: 'NoSuchConfiguration', status: 404 }),
+        ),
+      getBucketCORS: jest
+        .fn()
+        .mockRejectedValue(
+          Object.assign(new Error('No CORS'), { code: 'NoSuchConfiguration', status: 404 }),
+        ),
       getBucketLifecycle: jest.fn().mockResolvedValue({
         rules: [
           {
@@ -1702,10 +1757,24 @@ describe('ossOperations getBucket additional branches', () => {
       getBucketInfo: jest.fn().mockResolvedValue({
         bucket: { Name: 'test-bucket', Location: 'oss-cn-hangzhou' },
       }),
-      getBucketACL: jest.fn().mockRejectedValue(new Error('No ACL')),
-      getBucketWebsite: jest.fn().mockRejectedValue(new Error('No website')),
-      getBucketLogging: jest.fn().mockRejectedValue(new Error('No logging')),
-      getBucketCORS: jest.fn().mockRejectedValue(new Error('No CORS')),
+      getBucketACL: jest
+        .fn()
+        .mockRejectedValue(Object.assign(new Error('No ACL'), { status: 404 })),
+      getBucketWebsite: jest
+        .fn()
+        .mockRejectedValue(
+          Object.assign(new Error('No website'), { code: 'NoSuchConfiguration', status: 404 }),
+        ),
+      getBucketLogging: jest
+        .fn()
+        .mockRejectedValue(
+          Object.assign(new Error('No logging'), { code: 'NoSuchConfiguration', status: 404 }),
+        ),
+      getBucketCORS: jest
+        .fn()
+        .mockRejectedValue(
+          Object.assign(new Error('No CORS'), { code: 'NoSuchConfiguration', status: 404 }),
+        ),
       getBucketLifecycle: jest.fn().mockResolvedValue({
         rules: [
           {
@@ -1730,9 +1799,21 @@ describe('ossOperations getBucket additional branches', () => {
         bucket: { Name: 'test-bucket', Location: 'oss-cn-hangzhou' },
       }),
       getBucketACL: jest.fn().mockResolvedValue({ acl: 'private' }),
-      getBucketWebsite: jest.fn().mockRejectedValue(new Error('No website')),
-      getBucketLogging: jest.fn().mockRejectedValue(new Error('No logging')),
-      getBucketCORS: jest.fn().mockRejectedValue(new Error('No CORS')),
+      getBucketWebsite: jest
+        .fn()
+        .mockRejectedValue(
+          Object.assign(new Error('No website'), { code: 'NoSuchConfiguration', status: 404 }),
+        ),
+      getBucketLogging: jest
+        .fn()
+        .mockRejectedValue(
+          Object.assign(new Error('No logging'), { code: 'NoSuchConfiguration', status: 404 }),
+        ),
+      getBucketCORS: jest
+        .fn()
+        .mockRejectedValue(
+          Object.assign(new Error('No CORS'), { code: 'NoSuchConfiguration', status: 404 }),
+        ),
       getBucketLifecycle: jest.fn().mockResolvedValue({
         rules: [
           {
@@ -1751,7 +1832,11 @@ describe('ossOperations getBucket additional branches', () => {
           },
         ],
       }),
-      getBucketTags: jest.fn().mockRejectedValue(new Error('No tags')),
+      getBucketTags: jest
+        .fn()
+        .mockRejectedValue(
+          Object.assign(new Error('No tags'), { code: 'NoSuchConfiguration', status: 404 }),
+        ),
       getBucketVersioning: jest.fn().mockResolvedValue({ versionStatus: 'Enabled' }),
       getBucketEncryption: jest.fn().mockResolvedValue({
         encryption: {
@@ -1832,11 +1917,29 @@ describe('ossOperations getBucket additional branches', () => {
       getBucketInfo: jest.fn().mockResolvedValue({
         bucket: { Name: 'test-bucket', Location: 'oss-cn-hangzhou' },
       }),
-      getBucketACL: jest.fn().mockRejectedValue(new Error('No ACL')),
-      getBucketWebsite: jest.fn().mockRejectedValue(new Error('No website')),
-      getBucketLogging: jest.fn().mockRejectedValue(new Error('No logging')),
-      getBucketCORS: jest.fn().mockRejectedValue(new Error('No CORS')),
-      getBucketLifecycle: jest.fn().mockRejectedValue(new Error('No lifecycle')),
+      getBucketACL: jest
+        .fn()
+        .mockRejectedValue(Object.assign(new Error('No ACL'), { status: 404 })),
+      getBucketWebsite: jest
+        .fn()
+        .mockRejectedValue(
+          Object.assign(new Error('No website'), { code: 'NoSuchConfiguration', status: 404 }),
+        ),
+      getBucketLogging: jest
+        .fn()
+        .mockRejectedValue(
+          Object.assign(new Error('No logging'), { code: 'NoSuchConfiguration', status: 404 }),
+        ),
+      getBucketCORS: jest
+        .fn()
+        .mockRejectedValue(
+          Object.assign(new Error('No CORS'), { code: 'NoSuchConfiguration', status: 404 }),
+        ),
+      getBucketLifecycle: jest
+        .fn()
+        .mockRejectedValue(
+          Object.assign(new Error('No lifecycle'), { code: 'NoSuchConfiguration', status: 404 }),
+        ),
     } as unknown as OSS;
 
     mockRequest.mockResolvedValueOnce({ data: '' });
@@ -1853,9 +1956,19 @@ describe('ossOperations getBucket additional branches', () => {
       getBucketInfo: jest.fn().mockResolvedValue({
         bucket: { Name: 'test-bucket', Location: 'oss-cn-hangzhou' },
       }),
-      getBucketACL: jest.fn().mockRejectedValue(new Error('No ACL')),
-      getBucketWebsite: jest.fn().mockRejectedValue(new Error('No website')),
-      getBucketLogging: jest.fn().mockRejectedValue(new Error('No logging')),
+      getBucketACL: jest
+        .fn()
+        .mockRejectedValue(Object.assign(new Error('No ACL'), { status: 404 })),
+      getBucketWebsite: jest
+        .fn()
+        .mockRejectedValue(
+          Object.assign(new Error('No website'), { code: 'NoSuchConfiguration', status: 404 }),
+        ),
+      getBucketLogging: jest
+        .fn()
+        .mockRejectedValue(
+          Object.assign(new Error('No logging'), { code: 'NoSuchConfiguration', status: 404 }),
+        ),
       getBucketCORS: jest.fn().mockResolvedValue({
         rules: [
           {
@@ -1867,7 +1980,11 @@ describe('ossOperations getBucket additional branches', () => {
           },
         ],
       }),
-      getBucketLifecycle: jest.fn().mockRejectedValue(new Error('No lifecycle')),
+      getBucketLifecycle: jest
+        .fn()
+        .mockRejectedValue(
+          Object.assign(new Error('No lifecycle'), { code: 'NoSuchConfiguration', status: 404 }),
+        ),
     } as unknown as OSS;
 
     const ops = createOssOperations(mockOssClient2, 'cn-hangzhou');
@@ -1888,9 +2005,19 @@ describe('ossOperations getBucket additional branches', () => {
       getBucketInfo: jest.fn().mockResolvedValue({
         bucket: { Name: 'test-bucket', Location: 'oss-cn-hangzhou' },
       }),
-      getBucketACL: jest.fn().mockRejectedValue(new Error('No ACL')),
-      getBucketWebsite: jest.fn().mockRejectedValue(new Error('No website')),
-      getBucketLogging: jest.fn().mockRejectedValue(new Error('No logging')),
+      getBucketACL: jest
+        .fn()
+        .mockRejectedValue(Object.assign(new Error('No ACL'), { status: 404 })),
+      getBucketWebsite: jest
+        .fn()
+        .mockRejectedValue(
+          Object.assign(new Error('No website'), { code: 'NoSuchConfiguration', status: 404 }),
+        ),
+      getBucketLogging: jest
+        .fn()
+        .mockRejectedValue(
+          Object.assign(new Error('No logging'), { code: 'NoSuchConfiguration', status: 404 }),
+        ),
       getBucketCORS: jest.fn().mockResolvedValue({
         rules: [
           {
@@ -1900,7 +2027,11 @@ describe('ossOperations getBucket additional branches', () => {
           },
         ],
       }),
-      getBucketLifecycle: jest.fn().mockRejectedValue(new Error('No lifecycle')),
+      getBucketLifecycle: jest
+        .fn()
+        .mockRejectedValue(
+          Object.assign(new Error('No lifecycle'), { code: 'NoSuchConfiguration', status: 404 }),
+        ),
     } as unknown as OSS;
 
     const ops = createOssOperations(mockOssClient2, 'cn-hangzhou');
@@ -1915,9 +2046,19 @@ describe('ossOperations getBucket additional branches', () => {
       getBucketInfo: jest.fn().mockResolvedValue({
         bucket: { Name: 'test-bucket', Location: 'oss-cn-hangzhou' },
       }),
-      getBucketACL: jest.fn().mockRejectedValue(new Error('No ACL')),
-      getBucketWebsite: jest.fn().mockRejectedValue(new Error('No website')),
-      getBucketLogging: jest.fn().mockRejectedValue(new Error('No logging')),
+      getBucketACL: jest
+        .fn()
+        .mockRejectedValue(Object.assign(new Error('No ACL'), { status: 404 })),
+      getBucketWebsite: jest
+        .fn()
+        .mockRejectedValue(
+          Object.assign(new Error('No website'), { code: 'NoSuchConfiguration', status: 404 }),
+        ),
+      getBucketLogging: jest
+        .fn()
+        .mockRejectedValue(
+          Object.assign(new Error('No logging'), { code: 'NoSuchConfiguration', status: 404 }),
+        ),
       getBucketCORS: jest.fn().mockResolvedValue({
         rules: [
           {
@@ -1926,7 +2067,11 @@ describe('ossOperations getBucket additional branches', () => {
           },
         ],
       }),
-      getBucketLifecycle: jest.fn().mockRejectedValue(new Error('No lifecycle')),
+      getBucketLifecycle: jest
+        .fn()
+        .mockRejectedValue(
+          Object.assign(new Error('No lifecycle'), { code: 'NoSuchConfiguration', status: 404 }),
+        ),
     } as unknown as OSS;
 
     const ops = createOssOperations(mockOssClient2, 'cn-hangzhou');
@@ -1942,11 +2087,21 @@ describe('ossOperations getBucket additional branches', () => {
       getBucketInfo: jest.fn().mockResolvedValue({
         bucket: { Name: 'test-bucket', Location: 'oss-cn-hangzhou' },
       }),
-      getBucketACL: jest.fn().mockRejectedValue(new Error('No ACL')),
+      getBucketACL: jest
+        .fn()
+        .mockRejectedValue(Object.assign(new Error('No ACL'), { status: 404 })),
       getBucketWebsite: jest.fn().mockResolvedValue({ index: undefined }),
       getBucketLogging: jest.fn().mockResolvedValue({ enable: true, prefix: undefined }),
-      getBucketCORS: jest.fn().mockRejectedValue(new Error('No CORS')),
-      getBucketLifecycle: jest.fn().mockRejectedValue(new Error('No lifecycle')),
+      getBucketCORS: jest
+        .fn()
+        .mockRejectedValue(
+          Object.assign(new Error('No CORS'), { code: 'NoSuchConfiguration', status: 404 }),
+        ),
+      getBucketLifecycle: jest
+        .fn()
+        .mockRejectedValue(
+          Object.assign(new Error('No lifecycle'), { code: 'NoSuchConfiguration', status: 404 }),
+        ),
     } as unknown as OSS;
 
     const ops = createOssOperations(mockOssClient2, 'cn-hangzhou');

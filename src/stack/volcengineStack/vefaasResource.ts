@@ -1,3 +1,5 @@
+import { withStoredFunctionIam } from '../../common/functionDefinition';
+import { definitionsDiffer, mergeManagedIntent } from '../../common/planCompare';
 import { createVolcengineClient } from '../../common/volcengineClient';
 import {
   getAllResources,
@@ -144,6 +146,9 @@ const reconcileVefaasTimerTriggers = async (
   previousInstances: Array<DependentInstance>,
   client: ReturnType<typeof createVolcengineClient>,
 ): Promise<Array<DependentInstance>> => {
+  if (fn.triggers?.timer === undefined) {
+    return previousInstances.filter((instance) => instance.type === TIMER_TRIGGER_INSTANCE_TYPE);
+  }
   const desiredTimers = fn.triggers?.timer ?? [];
   const previousTimers = previousInstances.filter((i) => i.type === TIMER_TRIGGER_INSTANCE_TYPE);
 
@@ -695,7 +700,7 @@ export const createResource = async (
 
   const codePath = fn.code!.path;
   const codeHash = await computeZipContentHash(codePath);
-  const resourceAttributes = extractVefaasDefinition(config, codeHash);
+  const resourceAttributes = extractVefaasDefinition(config, codeHash, fn);
   const definition = fn.iam ? { ...resourceAttributes, iam: fn.iam } : resourceAttributes;
 
   const sid = buildSid('volcengine', context.service, context.stage, fn.name);
@@ -838,14 +843,15 @@ export const readResource = async (context: Context, functionName: string) => {
 
 export const updateResource = async (
   context: Context,
-  fn: FunctionDomain,
+  providedFn: FunctionDomain,
   state: StateFile,
   options?: { force?: boolean },
 ): Promise<StateFile> => {
   const serviceName = `${context.app}-${context.service}`;
-  const logicalId = `functions.${fn.key}`;
+  const logicalId = `functions.${providedFn.key}`;
 
   const currentState = getResource(state, logicalId);
+  const fn = withStoredFunctionIam(providedFn, currentState?.definition);
 
   if (!currentState) {
     throw new Error(lang.__('RESOURCE_STATE_NOT_FOUND', { logicalId }));
@@ -909,7 +915,7 @@ export const updateResource = async (
         );
       }
     }
-  } else {
+  } else if (fn.log === false) {
     const tlsToRemove = existingInstances.filter((i) => i.type.startsWith('VOLCENGINE_TLS_'));
     if (tlsToRemove.length > 0) {
       try {
@@ -936,11 +942,11 @@ export const updateResource = async (
         role?: string | { name?: string; managed_policies?: string[]; statements?: IamStatement[] };
       }
     | undefined;
-  const isExternalRole = currentIam?.role && typeof currentIam.role === 'string';
+  const isExternalRole = typeof fn.iam?.role === 'string';
 
   if (isExternalRole) {
     // External role - skip role management, use TRN directly
-    role = { roleName: currentIam.role as string, trn: currentIam.role as string };
+    role = { roleName: fn.iam!.role as string, trn: fn.iam!.role as string };
   } else if (!hasIamRole && !isTainted) {
     // Role creation only: skip TLS so existing log resources are untouched,
     // but keep network/storage so the derived execution baseline matches the
@@ -1005,7 +1011,7 @@ export const updateResource = async (
     // TOS mount) against those recorded in each stored definition.
     const derivedBaselineChanged = roleGrant?.derivedBaselineChanged ?? false;
 
-    if ((derivedBaselineChanged || customStatementsChanged) && iamRoleInstance) {
+    if ((options?.force || derivedBaselineChanged || customStatementsChanged) && iamRoleInstance) {
       await client.iam.updateRolePolicy(
         iamRoleInstance.id,
         roleGrant?.executionStatements ?? deriveVefaasExecutionStatements(fn, context),
@@ -1018,7 +1024,11 @@ export const updateResource = async (
     const currentManagedPoliciesList = currentRoleConfig?.managed_policies;
     const managedPoliciesChanged =
       JSON.stringify(currentManagedPoliciesList) !== JSON.stringify(desiredManagedPolicies);
-    if (managedPoliciesChanged && iamRoleInstance) {
+    if (
+      desiredManagedPolicies !== undefined &&
+      (options?.force || managedPoliciesChanged) &&
+      iamRoleInstance
+    ) {
       await client.iam.updateManagedPolicies(iamRoleInstance.id, desiredManagedPolicies ?? []);
     }
   }
@@ -1061,7 +1071,7 @@ export const updateResource = async (
 
   const codePath = fn.code!.path;
   const desiredCodeHash = await computeZipContentHash(codePath);
-  const baseDefinition = extractVefaasDefinition(config, desiredCodeHash);
+  const baseDefinition = extractVefaasDefinition(config, desiredCodeHash, fn);
   const desiredDefinition = fn.iam ? { ...baseDefinition, iam: fn.iam } : baseDefinition;
 
   const currentDefinition = currentState.definition || {};
@@ -1094,7 +1104,7 @@ export const updateResource = async (
     logConfig: desiredDefinition.logConfig,
   };
 
-  const configChanged = !attributesEqual(existingConfigOnly, desiredConfigOnly);
+  const configChanged = definitionsDiffer(existingConfigOnly, desiredConfigOnly);
 
   // The instance in state carries the provider function Id — use it directly
   // for all follow-up calls instead of re-resolving the name every time.
@@ -1146,7 +1156,7 @@ export const updateResource = async (
         i.type !== 'VOLCENGINE_VEFAAS_FUNCTION' &&
         // timers are fully rebuilt from the reconcile result below
         i.type !== TIMER_TRIGGER_INSTANCE_TYPE &&
-        (!!fn.log || !i.type.startsWith('VOLCENGINE_TLS_')),
+        (fn.log !== false || !i.type.startsWith('VOLCENGINE_TLS_')),
     )
     .map((i) => {
       const { sid: existingSid, id: existingId, ...rest } = i;
@@ -1193,7 +1203,7 @@ export const updateResource = async (
   const resourceState: ResourceState = {
     mode: 'managed',
     region: context.region,
-    definition: desiredDefinition,
+    definition: mergeManagedIntent(currentState.definition ?? {}, desiredDefinition),
     instances: [
       vefaasInstance,
       ...existingDependentInstances,

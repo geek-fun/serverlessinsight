@@ -30,11 +30,16 @@ const executeUpdateAction = async (
   fn: FunctionDomain,
   currentState: StateFile,
   drifted?: boolean,
+  driftReasons?: string[],
 ): Promise<StateFile> => {
   logger.info(lang.__('UPDATING_RESOURCE', { resourceType: 'function', name: fn.name }));
   // A drifted plan item means the cloud left the config: force the config
   // re-push even when state-vs-desired sees no change.
-  const newState = await updateResource(context, fn, currentState, { force: drifted === true });
+  const newState = await updateResource(context, fn, currentState, {
+    force: drifted === true,
+    ...(driftReasons?.includes('PLAN_DRIFT_HTTP_TRIGGER') ? { repairHttp: true } : {}),
+    ...(driftReasons?.includes('PLAN_DRIFT_FUNCTION_DOMAIN') ? { repairDomain: true } : {}),
+  });
   logger.info(lang.__('RESOURCE_UPDATED', { resourceType: 'function', name: fn.name }));
   return newState;
 };
@@ -75,7 +80,7 @@ const executeSingleItem = async (
       if (!fn) {
         throw new Error(lang.__('RESOURCE_FUNCTION_NOT_FOUND', { logicalId: item.logicalId }));
       }
-      return executeUpdateAction(context, fn, currentState, item.drifted);
+      return executeUpdateAction(context, fn, currentState, item.drifted, item.driftReasons);
     }
 
     case 'delete': {

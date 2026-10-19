@@ -65,7 +65,7 @@ describe('vefaasPlanner', () => {
     code: {
       path: '/test/code.zip',
       handler: 'index.handler',
-      runtime: 'nodejs16',
+      runtime: 'node20/v1',
     },
     memory: 128,
     timeout: 30,
@@ -77,9 +77,6 @@ describe('vefaasPlanner', () => {
     (createVolcengineClient as jest.Mock).mockReturnValue(mockVefaasClient);
     jest.spyOn(stateManager, 'getResource').mockReturnValue(undefined);
     jest.spyOn(stateManager, 'getAllResources').mockReturnValue({});
-    jest
-      .spyOn(hashUtils, 'attributesEqual')
-      .mockImplementation((a, b) => JSON.stringify(a) === JSON.stringify(b));
     jest.spyOn(hashUtils, 'computeZipContentHash').mockResolvedValue('test-hash');
   });
 
@@ -116,9 +113,6 @@ describe('vefaasPlanner', () => {
       jest
         .spyOn(stateManager, 'getAllResources')
         .mockImplementation((state) => state.resources ?? {});
-      jest
-        .spyOn(hashUtils, 'attributesEqual')
-        .mockImplementation((a, b) => JSON.stringify(a) === JSON.stringify(b));
       jest.spyOn(hashUtils, 'computeZipContentHash').mockResolvedValue('test-hash');
     });
 
@@ -331,7 +325,7 @@ describe('vefaasPlanner', () => {
             region: 'cn-beijing',
             definition: {
               functionName: 'test-function',
-              runtime: 'nodejs16',
+              runtime: 'node20/v1',
               handler: 'index.handler',
               memorySize: 128,
               timeout: 30,
@@ -348,7 +342,7 @@ describe('vefaasPlanner', () => {
 
       mockVefaasClient.vefaas.getFunction.mockResolvedValueOnce({
         functionName: 'test-function',
-        runtime: 'nodejs16',
+        runtime: 'node20/v1',
         handler: 'index.handler',
         memoryMb: 128,
         requestTimeout: 30,
@@ -384,7 +378,7 @@ describe('vefaasPlanner', () => {
               memorySize: 128,
               timeout: 30,
               codeHash: 'test-hash',
-              runtime: 'nodejs16',
+              runtime: 'node20/v1',
               handler: 'index.handler',
               environment: {},
             },
@@ -404,7 +398,6 @@ describe('vefaasPlanner', () => {
       jest
         .spyOn(stateManager, 'getResource')
         .mockReturnValue(stateWithFunction.resources['functions.test_fn']);
-      jest.spyOn(hashUtils, 'attributesEqual').mockReturnValue(true);
 
       const result = await generateFunctionPlan(mockContext, stateWithFunction, [mockFunction]);
 
@@ -425,7 +418,7 @@ describe('vefaasPlanner', () => {
               memorySize: 128,
               timeout: 30,
               codeHash: 'test-hash',
-              runtime: 'nodejs16',
+              runtime: 'node20/v1',
               handler: 'index.handler',
               environment: {},
               role: roleTrn,
@@ -447,7 +440,7 @@ describe('vefaasPlanner', () => {
       mockVefaasClient.vefaas.getFunction.mockResolvedValueOnce({
         functionName: 'test-function',
         functionId: 'func-1',
-        runtime: 'nodejs16',
+        runtime: 'node20/v1',
         handler: 'index.handler',
         memoryMb: 128,
         requestTimeout: 30,
@@ -478,7 +471,7 @@ describe('vefaasPlanner', () => {
               memorySize: 128,
               timeout: 30,
               codeHash: 'test-hash',
-              runtime: 'nodejs16',
+              runtime: 'node20/v1',
               handler: 'index.handler',
               environment: {},
             },
@@ -495,7 +488,7 @@ describe('vefaasPlanner', () => {
       mockVefaasClient.vefaas.getFunction.mockResolvedValueOnce({
         functionName: 'test-function',
         functionId: 'func-1',
-        runtime: 'nodejs16',
+        runtime: 'node20/v1',
         handler: 'index.handler',
         memoryMb: 256,
         requestTimeout: 30,
@@ -571,7 +564,7 @@ describe('vefaasPlanner', () => {
       expect(result.items[0].drifted).toBe(true);
     });
 
-    it('should handle error when checking remote function', async () => {
+    it('stops planning and preserves the provider error: should handle error when checking remote function', async () => {
       const stateWithFunction: StateFile = {
         ...mockState,
         resources: {
@@ -595,10 +588,9 @@ describe('vefaasPlanner', () => {
         .spyOn(stateManager, 'getResource')
         .mockReturnValue(stateWithFunction.resources['functions.test_fn']);
 
-      const result = await generateFunctionPlan(mockContext, stateWithFunction, [mockFunction]);
-
-      expect(result.items).toHaveLength(1);
-      expect(result.items[0].action).toBe('create');
+      await expect(
+        generateFunctionPlan(mockContext, stateWithFunction, [mockFunction]),
+      ).rejects.toEqual(new Error('Network error'));
     });
 
     it('should reuse TLS topic names from state when function logging is enabled', async () => {
@@ -671,7 +663,7 @@ describe('vefaasPlanner', () => {
             definition: {
               functionName: 'test-function',
               codeHash: 'test-hash',
-              runtime: 'nodejs16',
+              runtime: 'node20/v1',
               handler: 'index.handler',
               memorySize: 128,
               timeout: 30,
@@ -696,7 +688,7 @@ describe('vefaasPlanner', () => {
         .mockReturnValue(stateWithLegacy.resources['functions.test_fn']);
       mockVefaasClient.vefaas.getFunction.mockResolvedValueOnce({
         functionName: 'test-function',
-        runtime: 'nodejs16',
+        runtime: 'node20/v1',
         handler: 'index.handler',
         memoryMb: 128,
         requestTimeout: 30,
@@ -750,6 +742,7 @@ describe('vefaasPlanner', () => {
         action: 'create',
         changes: {
           after: {
+            codeHash: 'test-hash',
             logConfig: { project: 'test-app-dev-tls', topic: 'test-service-dev-test_fn-fn-logs' },
           },
         },
@@ -765,7 +758,7 @@ describe('vefaasPlanner', () => {
           region: 'cn-beijing',
           definition: {
             functionName: 'test-function',
-            runtime: 'nodejs16',
+            runtime: 'node20/v1',
             handler: 'index.handler',
             memorySize: 128,
             timeout: 30,
@@ -784,7 +777,7 @@ describe('vefaasPlanner', () => {
     const matchingRemote = (): void => {
       mockVefaasClient.vefaas.getFunction.mockResolvedValue({
         functionName: 'test-function',
-        runtime: 'nodejs16',
+        runtime: 'node20/v1',
         handler: 'index.handler',
         memoryMb: 128,
         requestTimeout: 30,
@@ -794,9 +787,6 @@ describe('vefaasPlanner', () => {
 
     it('omits revertKeys when the config itself changed the drifted field', async () => {
       // stored 128 -> desired 256 -> live 128: intent-driven, nothing to mark.
-      jest
-        .spyOn(hashUtils, 'attributesEqual')
-        .mockImplementation((a, b) => JSON.stringify(a) === JSON.stringify(b));
       const desiredFn = { ...mockFunction, memory: 256 };
       const state = buildRoleState();
       state.resources['functions.test_fn'].definition = {
@@ -805,7 +795,7 @@ describe('vefaasPlanner', () => {
       } as never;
       mockVefaasClient.vefaas.getFunction.mockResolvedValue({
         functionName: 'test-function',
-        runtime: 'nodejs16',
+        runtime: 'node20/v1',
         handler: 'index.handler',
         memoryMb: 128,
         requestTimeout: 30,
@@ -819,13 +809,10 @@ describe('vefaasPlanner', () => {
     });
 
     it('normalizes a remote vpcConfig with null subfields without phantom drift', async () => {
-      jest
-        .spyOn(hashUtils, 'attributesEqual')
-        .mockImplementation((a, b) => JSON.stringify(a) === JSON.stringify(b));
       const state = buildRoleState();
       mockVefaasClient.vefaas.getFunction.mockResolvedValue({
         functionName: 'test-function',
-        runtime: 'nodejs16',
+        runtime: 'node20/v1',
         handler: 'index.handler',
         memoryMb: 128,
         requestTimeout: 30,
@@ -846,19 +833,16 @@ describe('vefaasPlanner', () => {
       expect(plan.items[0]).toMatchObject({ action: 'noop' });
     });
 
-    it('degrades to a drifted create when the live read rejects with a non-Error', async () => {
+    it('stops planning and preserves the provider error: degrades to a drifted create when the live read rejects with a non-Error', async () => {
       const state = buildRoleState();
       mockVefaasClient.vefaas.getFunction.mockRejectedValue('vefaas exploded');
 
-      const plan = await generateFunctionPlan(mockContext, state, [mockFunction]);
-
-      expect(plan.items[0]).toMatchObject({ action: 'create', drifted: true });
+      await expect(generateFunctionPlan(mockContext, state, [mockFunction])).rejects.toEqual(
+        'vefaas exploded',
+      );
     });
 
     it('flags the role-missing drift reason when the cloud role is gone', async () => {
-      jest
-        .spyOn(hashUtils, 'attributesEqual')
-        .mockImplementation((a, b) => JSON.stringify(a) === JSON.stringify(b));
       const state = buildRoleState();
       matchingRemote();
       mockVefaasClient.iam.getRole.mockResolvedValue(null);
@@ -873,9 +857,6 @@ describe('vefaasPlanner', () => {
     });
 
     it('flags the role-policy drift reason when the trust policy drifted', async () => {
-      jest
-        .spyOn(hashUtils, 'attributesEqual')
-        .mockImplementation((a, b) => JSON.stringify(a) === JSON.stringify(b));
       const state = buildRoleState();
       matchingRemote();
       mockVefaasClient.iam.getRole.mockResolvedValue({
@@ -893,9 +874,6 @@ describe('vefaasPlanner', () => {
     });
 
     it('flags the role-policy drift reason when attached managed policies drifted', async () => {
-      jest
-        .spyOn(hashUtils, 'attributesEqual')
-        .mockImplementation((a, b) => JSON.stringify(a) === JSON.stringify(b));
       const state = buildRoleState();
       matchingRemote();
       // No trustPolicyDocument → trust check skipped; managed policy set
@@ -913,8 +891,6 @@ describe('vefaasPlanner', () => {
     });
 
     it('flags update+drifted when the live TLS topic ttl drifted (issue #234 M5)', async () => {
-      jest.spyOn(hashUtils, 'attributesEqual').mockReturnValue(true);
-
       const stateWithLog: StateFile = {
         ...mockState,
         resources: {
@@ -927,6 +903,8 @@ describe('vefaasPlanner', () => {
               handler: 'index.handler',
               memorySize: 128,
               timeout: 30,
+              codeHash: 'test-hash',
+              logEnabled: true,
               logConfig: { project: 'test-app-dev-tls', topic: 'test-service-dev-test_fn-fn-logs' },
             },
             instances: [
@@ -946,6 +924,8 @@ describe('vefaasPlanner', () => {
         handler: 'index.handler',
         memoryMb: 128,
         requestTimeout: 30,
+        codeHash: 'test-hash',
+        logEnabled: true,
         logConfig: { project: 'test-app-dev-tls', topic: 'test-service-dev-test_fn-fn-logs' },
       });
       mockVefaasClient.tls.getTopic.mockResolvedValue({
@@ -975,6 +955,8 @@ describe('vefaasPlanner', () => {
               mode: 'managed',
               region: 'cn-beijing',
               definition: {
+                codeHash: 'test-hash',
+                timers: fnWithTimer.triggers!.timer,
                 functionName: 'test-function',
                 runtime: 'node20/v1',
                 handler: 'index.handler',
@@ -1004,7 +986,6 @@ describe('vefaasPlanner', () => {
       beforeEach(() => {
         // definition equality is not under test here — the function attribute
         // diff is covered by its own describe block
-        jest.spyOn(hashUtils, 'attributesEqual').mockReturnValue(true);
         mockVefaasClient.vefaas.getFunction.mockResolvedValue({
           functionId: 'func-123',
           runtime: 'node20/v1',
@@ -1060,12 +1041,12 @@ describe('vefaasPlanner', () => {
         });
       });
 
-      it('warns and stays noop when the trigger probe fails', async () => {
+      it('stops planning and preserves the provider error: warns and stays noop when the trigger probe fails', async () => {
         mockVefaasClient.vefaas.listTriggers = jest.fn().mockRejectedValue(new Error('down'));
 
-        const plan = await generateFunctionPlan(mockContext, buildTimerState(), [fnWithTimer]);
-
-        expect(plan.items[0]).toMatchObject({ action: 'noop' });
+        await expect(
+          generateFunctionPlan(mockContext, buildTimerState(), [fnWithTimer]),
+        ).rejects.toEqual(new Error('down'));
       });
 
       it('flags the timer drift reason when the console edited the cron', async () => {
@@ -1089,8 +1070,6 @@ describe('vefaasPlanner', () => {
     });
 
     it('stays noop when the live TLS topic ttl matches (issue #234 M5)', async () => {
-      jest.spyOn(hashUtils, 'attributesEqual').mockReturnValue(true);
-
       const stateWithLog: StateFile = {
         ...mockState,
         resources: {
@@ -1103,6 +1082,8 @@ describe('vefaasPlanner', () => {
               handler: 'index.handler',
               memorySize: 128,
               timeout: 30,
+              codeHash: 'test-hash',
+              logEnabled: true,
               logConfig: { project: 'test-app-dev-tls', topic: 'test-service-dev-test_fn-fn-logs' },
             },
             instances: [
@@ -1122,6 +1103,8 @@ describe('vefaasPlanner', () => {
         handler: 'index.handler',
         memoryMb: 128,
         requestTimeout: 30,
+        codeHash: 'test-hash',
+        logEnabled: true,
         logConfig: { project: 'test-app-dev-tls', topic: 'test-service-dev-test_fn-fn-logs' },
       });
       mockVefaasClient.tls.getTopic.mockResolvedValue({

@@ -80,7 +80,16 @@ describe('tosTypes', () => {
       });
 
       const def = extractTosBucketDefinition(config);
-      expect(def.policy).toBe(JSON.stringify(iam));
+      expect(JSON.parse(def.policy as string)).toEqual({
+        Statement: [
+          {
+            Effect: 'Allow',
+            Principal: { Service: 'tos.volcengine.com' },
+            Action: ['tos:GetObject'],
+            Resource: ['trn:tos:::my-bucket/*'],
+          },
+        ],
+      });
     });
 
     it('should set null policy when iam is absent', () => {
@@ -101,7 +110,7 @@ describe('tosTypes', () => {
       });
 
       const def = extractTosBucketDefinition(config);
-      expect(def.policy).toBeNull();
+      expect(def.policy).toBe('null');
     });
 
     it('should include websiteCodeHash when provided', () => {

@@ -1,19 +1,19 @@
-import { PlanItem, ResourceAttributes, ResourceState } from '../types';
+import { PlanItem, ResourceAttributes, ResourceState, StateFile } from '../types';
 import { attributesEqual } from './hashUtils';
-import { computeRevertKeys, mergeLiveBefore, remoteDiffersFromDesired } from './planCompare';
+import { assertPlanIdentity, assertSupportedPlanUpdate } from './planCapabilities';
+import { getResource, setResource } from './stateManager';
+import {
+  computeRevertKeys,
+  definitionsDiffer,
+  managedDefinition,
+  mergeLiveBefore,
+  mergeManagedIntent,
+  remoteDiffersFromDesired,
+} from './planCompare';
 import { logger } from './logger';
 import { lang } from '../lang';
 
-/**
- * Exists-path decision for attribute-refresh planners (issue #234 Phase 3,
- * display contract reworked by issue #246): remote missing → create+drifted;
- * intent-diff or live-attribute drift → update+drifted with the live
- * attributes carried out so `changes.before` can be cloud reality; extra
- * bookkeeping conditions → update (drifted per flag, optional probe reason);
- * otherwise noop. Read failures propagate — callers keep their catch →
- * create fallback. Item construction stays with the caller: before/after
- * normalization and resource-specific details differ per planner.
- */
+/** Keep cloud writes, drift repairs and verified state-only adoption distinct. */
 export type RefreshExistsDecision =
   | { action: 'create'; drifted: true }
   | {
@@ -24,6 +24,7 @@ export type RefreshExistsDecision =
       /** probe-level drift sources (i18n keys) when the update is reason-driven */
       driftReasons?: string[];
     }
+  | { action: 'state'; liveAttributes: ResourceAttributes }
   | { action: 'noop' };
 
 export type RefreshExistsArgs<T> = {
@@ -34,12 +35,13 @@ export type RefreshExistsArgs<T> = {
     attributes: ResourceAttributes,
   ) => Promise<ResourceAttributes>;
   desiredDefinition: ResourceAttributes;
+  storedDefinition: ResourceAttributes;
   /** intent diff — computed by the caller (normalization differs per planner) */
   definitionChanged: boolean;
   /**
    * Extra update sources beyond the two standard diffs (e.g. pending domain
-   * binding, nested topic drift). `drifted` controls the flag: intent/live
-   * drift set it, bookkeeping-only conditions do not. `reason` (an i18n key)
+   * binding, nested topic drift). `drifted` controls the flag: live
+   * drift sets it, bookkeeping-only conditions do not. `reason` (an i18n key)
    * marks probe-level drift that has no attribute-level diff to show.
    */
   extraUpdate?: () => Promise<{ update: boolean; drifted: boolean; reason?: string }>;
@@ -57,17 +59,27 @@ export const decideRefreshedExistsAction = async <T>(
     attributes = await args.enrichRemoteAttributes(remote, attributes);
   }
   const remoteDiffers = remoteDiffersFromDesired(attributes, args.desiredDefinition);
-  if (args.definitionChanged || remoteDiffers) {
-    return { action: 'update', drifted: true, liveAttributes: attributes };
-  }
+  const effectiveChanged = definitionsDiffer(
+    mergeLiveBefore(args.storedDefinition, attributes, args.desiredDefinition),
+    args.desiredDefinition,
+  );
   const extra = await args.extraUpdate?.();
-  if (extra?.update) {
+  if (effectiveChanged || extra?.update) {
+    const drifted =
+      remoteDiffersFromDesired(
+        attributes,
+        managedDefinition(args.storedDefinition, args.desiredDefinition),
+      ) ||
+      (extra?.update === true && extra.drifted === true);
     return {
       action: 'update',
-      drifted: extra.drifted,
+      drifted,
       liveAttributes: attributes,
-      ...(extra.reason ? { driftReasons: [extra.reason] } : {}),
+      ...(extra?.reason ? { driftReasons: [extra.reason] } : {}),
     };
+  }
+  if (args.definitionChanged && !remoteDiffers) {
+    return { action: 'state', liveAttributes: attributes };
   }
   return { action: 'noop' };
 };
@@ -118,6 +130,16 @@ export const planRefreshedResource = async <T>(
 ): Promise<PlanItem> => {
   const { logicalId, resourceType, currentState, desiredDefinition } = args;
 
+  if (currentState) {
+    if (
+      currentState.metadata?.resourceType &&
+      currentState.metadata.resourceType !== resourceType
+    ) {
+      throw new Error(lang.__('PLAN_REPLACEMENT_REQUIRED', { logicalId, fields: 'resourceType' }));
+    }
+    assertPlanIdentity(logicalId, resourceType, currentState.definition || {}, desiredDefinition);
+  }
+
   if (!currentState || currentState.status === 'tainted') {
     const probeRead = args.probeRead ?? args.read;
     const remote = await probeRead();
@@ -134,8 +156,11 @@ export const planRefreshedResource = async <T>(
 
   const normalize = args.normalizeForDisplay ?? ((d) => d);
   const currentDefinition = currentState.definition || {};
-  const normalizedCurrent = normalize(currentDefinition);
-  const normalizedDesired = normalize(desiredDefinition);
+  const normalizedCurrent = managedDefinition(
+    normalize(currentDefinition),
+    normalize(desiredDefinition),
+  );
+  const normalizedDesired = managedDefinition(normalize(desiredDefinition));
   const definitionChanged = !attributesEqual(normalizedCurrent, normalizedDesired);
   const refreshEnabled = args.refresh ?? true;
 
@@ -145,6 +170,12 @@ export const planRefreshedResource = async <T>(
       if (!definitionChanged) {
         return { logicalId, action: 'noop', resourceType };
       }
+      assertSupportedPlanUpdate(
+        logicalId,
+        resourceType,
+        { ...currentDefinition, ...normalizedCurrent },
+        normalizedDesired,
+      );
       return {
         logicalId,
         action: 'update',
@@ -155,9 +186,10 @@ export const planRefreshedResource = async <T>(
 
     const decision = await decideRefreshedExistsAction<T>({
       read: args.read,
-      cloudToDefinition: args.cloudToDefinition,
+      cloudToDefinition: (remote) => normalize(args.cloudToDefinition(remote)),
       enrichRemoteAttributes: args.enrichRemoteAttributes,
-      desiredDefinition,
+      desiredDefinition: normalizedDesired,
+      storedDefinition: normalizedCurrent,
       definitionChanged,
       extraUpdate: args.extraUpdate,
     });
@@ -176,14 +208,25 @@ export const planRefreshedResource = async <T>(
       };
     }
 
+    if (decision.action === 'state') {
+      return { logicalId, action: 'noop', resourceType, stateUpdate: desiredDefinition };
+    }
+
     const normalizedLive = normalize(decision.liveAttributes);
+    const before = mergeLiveBefore(normalizedCurrent, normalizedLive, normalizedDesired);
+    assertSupportedPlanUpdate(
+      logicalId,
+      resourceType,
+      { ...currentDefinition, ...before },
+      normalizedDesired,
+    );
     const revertKeys = computeRevertKeys(normalizedCurrent, normalizedLive, normalizedDesired);
     return {
       logicalId,
       action: 'update',
       resourceType,
       changes: {
-        before: normalize(mergeLiveBefore(currentDefinition, normalizedLive)),
+        before,
         after: normalizedDesired,
       },
       ...(decision.drifted ? { drifted: true } : {}),
@@ -197,12 +240,17 @@ export const planRefreshedResource = async <T>(
         error: error instanceof Error ? error.message : String(error),
       }),
     );
-    return {
-      logicalId,
-      action: 'create',
-      resourceType,
-      changes: { before: normalizedCurrent, after: normalizedDesired },
-      drifted: true,
-    };
+    throw error;
   }
 };
+
+/** Applied only under the deployment lock, never by the read-only plan command. */
+export const applyPlanStateUpdates = (state: StateFile, items: PlanItem[]): StateFile =>
+  items.reduce((current, item) => {
+    const resource = getResource(current, item.logicalId);
+    if (item.action !== 'noop' || !item.stateUpdate || !resource) return current;
+    return setResource(current, item.logicalId, {
+      ...resource,
+      definition: mergeManagedIntent(resource.definition ?? {}, item.stateUpdate),
+    });
+  }, state);

@@ -61,12 +61,15 @@ describe('Timer Trigger Flow Service Test', () => {
         triggerName: string,
         triggerType: string,
         triggerConfig: Record<string, unknown>,
+        _invocationRole?: string,
+        description?: string,
       ) => {
         if (triggerType === 'timer') {
           timerStore.push({
             triggerName,
             triggerType,
             triggerConfig: { ...triggerConfig },
+            description,
           });
         }
         return { body: { triggerName } };
