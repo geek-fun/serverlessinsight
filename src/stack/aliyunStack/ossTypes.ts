@@ -3,6 +3,8 @@ import { BucketAccessEnum, BucketDomain, BucketIam, ResourceAttributes } from '.
 import type { OssBucketInfo } from '../../common/aliyunClient/ossOperations';
 import { BucketACL, CommonBucketConfig } from '../bucketTypes';
 
+export const OSS_BUCKET_POLICY_INSTANCE_TYPE = 'ALIYUN_OSS_BUCKET_POLICY';
+
 export type OssBucketConfig = CommonBucketConfig & {
   iam?: BucketIam;
   wwwBindApex?: boolean;

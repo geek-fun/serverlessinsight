@@ -48,7 +48,7 @@ describe('effective deployment plan convergence', () => {
     clearContext();
   });
 
-  it('repairs an effective bucket policy, preserves omissions, clears explicitly and converges', async () => {
+  it('repairs an effective bucket policy, removes an omitted owned policy, clears explicitly and converges', async () => {
     const yamlPath = path.join(directory, 'bucket.yml');
     await fs.writeFile(
       yamlPath,
@@ -110,18 +110,24 @@ describe('effective deployment plan convergence', () => {
     expect((await generateBucketPlan({ ...context }, state, [bucket])).items[0].action).toBe(
       'noop',
     );
-    expect(
-      (await generateBucketPlan({ ...context }, state, [{ ...bucket, iam: undefined }])).items[0]
-        .action,
-    ).toBe('noop');
+    const omitted = { ...bucket, iam: undefined };
+    expect((await generateBucketPlan({ ...context }, state, [omitted])).items[0].action).toBe(
+      'update',
+    );
     expect(oss.deleteBucketPolicy).not.toHaveBeenCalled();
+    state = await updateBucketResource(context, omitted, state);
+    expect(oss.deleteBucketPolicy).toHaveBeenCalledTimes(1);
+    expect((await generateBucketPlan({ ...context }, state, [omitted])).items[0].action).toBe(
+      'noop',
+    );
 
+    state = await updateBucketResource(context, bucket, state);
     const cleared = { ...bucket, iam: { resource: { statements: [] } } };
     expect((await generateBucketPlan({ ...context }, state, [cleared])).items[0].action).toBe(
       'update',
     );
     state = await updateBucketResource(context, cleared, state);
-    expect(oss.deleteBucketPolicy).toHaveBeenCalledTimes(1);
+    expect(oss.deleteBucketPolicy).toHaveBeenCalledTimes(2);
     expect((await generateBucketPlan({ ...context }, state, [cleared])).items[0].action).toBe(
       'noop',
     );

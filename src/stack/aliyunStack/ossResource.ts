@@ -1,5 +1,6 @@
 import { definitionsDiffer, mergeManagedIntent } from '../../common/planCompare';
-import { buildBucketPolicy } from '../../common/bucketPolicy';
+import { buildBucketPolicy, isOwnedBucketPolicy } from '../../common/bucketPolicy';
+import { withLifecycleIntent } from '../../common/functionDefinition';
 import { createAliyunClient } from '../../common/aliyunClient';
 import {
   OssBucketInfo,
@@ -23,7 +24,11 @@ import {
   ResourceTypeEnum,
   PartialResourceError,
 } from '../../types';
-import { bucketToOssBucketConfig, extractOssBucketDefinition } from './ossTypes';
+import {
+  OSS_BUCKET_POLICY_INSTANCE_TYPE,
+  bucketToOssBucketConfig,
+  extractOssBucketDefinition,
+} from './ossTypes';
 import { CommonBucketInstance } from '../bucketTypes';
 import { OWNERSHIP_TAG_KEY, buildOwnershipTagValue, isOwnedByStack } from '../ownershipTag';
 import { isResourceAlreadyExistsError } from '../alreadyExists';
@@ -190,6 +195,12 @@ const getIsAccelerateEnabled = (bucket: BucketDomain): boolean => {
 
 const buildOssBucketPolicyJson = (iam: BucketDomain['iam']): Record<string, unknown> | null =>
   buildBucketPolicy(iam, 'aliyun');
+
+const buildOssPolicyInstance = (context: Context, bucketName: string): ResourceInstance => ({
+  sid: buildSid('aliyun', 'oss-policy', context.stage, bucketName),
+  type: OSS_BUCKET_POLICY_INSTANCE_TYPE,
+  id: bucketName,
+});
 
 const applyBucketPolicy = async (
   client: ReturnType<typeof createAliyunClient>,
@@ -643,6 +654,9 @@ export const createBucketResource = async (
 
     // Apply IAM bucket policy if configured
     await applyBucketPolicy(client, bucket);
+    if (buildOssBucketPolicyJson(bucket.iam)) {
+      instances.push(buildOssPolicyInstance(context, bucket.name));
+    }
   } catch (error) {
     // Refusal/adoption errors already carry the tainted state — rethrow as-is
     // instead of wrapping a PartialResourceError inside another one.
@@ -978,26 +992,47 @@ export const updateBucketResource = async (
       instances[0] = buildOssInstanceFromProvider(refreshedInfo, sid);
     }
   } else {
-    instances.push(...(existingDnsInstances ?? []));
+    if (domName) {
+      instances.push(...(existingDnsInstances ?? []));
+    } else {
+      for (const instance of existingDnsInstances ?? []) {
+        const ossInstance = instance as OssDnsInstance;
+        await client.oss.unbindCustomDomain(
+          config.bucketName,
+          ossInstance.domain,
+          ossInstance.dnsRecordId,
+          ossInstance.txtRecordId,
+        );
+      }
+    }
     instances.push(...(existingCdnInstances ?? []));
   }
 
-  if (bucket.iam?.resource?.statements !== undefined) {
-    const policy = buildOssBucketPolicyJson(bucket.iam);
-    if (policy) {
-      await client.oss.putBucketPolicy(config.bucketName, policy);
-    } else {
-      await deleteBucketPolicy(client, config.bucketName);
-    }
+  const policy = buildOssBucketPolicyJson(bucket.iam);
+  const policyOwned = isOwnedBucketPolicy(
+    OSS_BUCKET_POLICY_INSTANCE_TYPE,
+    existingState?.instances,
+    existingState?.definition,
+  );
+  if (policy) {
+    await client.oss.putBucketPolicy(config.bucketName, policy);
+    instances.push(buildOssPolicyInstance(context, config.bucketName));
+  } else if (policyOwned || bucket.iam?.resource?.statements !== undefined) {
+    await deleteBucketPolicy(client, config.bucketName);
   }
 
+  const definitionIntent = {
+    ...extractOssBucketDefinition(config, websiteCodeHash),
+    ...(domName != null ? { domainBound: cnameInfo?.bucketCnameBound ?? null } : {}),
+  };
   const resourceState: ResourceState = {
     mode: 'managed',
     region: context.region,
-    definition: mergeManagedIntent(existingState?.definition ?? {}, {
-      ...extractOssBucketDefinition(config, websiteCodeHash),
-      ...(domName != null ? { domainBound: cnameInfo?.bucketCnameBound ?? null } : {}),
-    }),
+    definition: withLifecycleIntent(
+      mergeManagedIntent(existingState?.definition ?? {}, definitionIntent),
+      definitionIntent,
+      ['policy'],
+    ),
     instances,
     lastUpdated: new Date().toISOString(),
   };

@@ -90,6 +90,8 @@ export type PlanRefreshedResourceArgs<T> = {
   /** undefined or tainted routes to the probe-create path (planner semantics) */
   currentState: ResourceState | undefined;
   desiredDefinition: ResourceAttributes;
+  /** Dependents we created (recorded in state) that the desired definition no longer declares, keyed by field. */
+  removedDependents?: ResourceAttributes;
   /** no-state/tainted probe; defaults to `read` when both paths read alike */
   probeRead?: () => Promise<T | null>;
   read: () => Promise<T | null>;
@@ -125,7 +127,35 @@ export type PlanRefreshedResourceArgs<T> = {
  * renders a complete live→desired field diff, and `revertKeys` marks the
  * fields whose difference is purely an out-of-config cloud edit.
  */
+const withRemovedDependents = (
+  item: PlanItem,
+  removed: ResourceAttributes,
+  desired: ResourceAttributes,
+): PlanItem => {
+  if (Object.keys(removed).length === 0 || item.action === 'create' || item.action === 'delete') {
+    return item;
+  }
+  const { stateUpdate: _stateUpdate, ...rest } = item;
+  return {
+    ...rest,
+    action: 'update',
+    changes: {
+      before: { ...(item.changes?.before ?? {}), ...removed },
+      after: item.changes?.after ?? managedDefinition(desired),
+    },
+  };
+};
+
 export const planRefreshedResource = async <T>(
+  args: PlanRefreshedResourceArgs<T>,
+): Promise<PlanItem> =>
+  withRemovedDependents(
+    await planRefreshedResourceCore(args),
+    args.currentState ? (args.removedDependents ?? {}) : {},
+    args.desiredDefinition,
+  );
+
+const planRefreshedResourceCore = async <T>(
   args: PlanRefreshedResourceArgs<T>,
 ): Promise<PlanItem> => {
   const { logicalId, resourceType, currentState, desiredDefinition } = args;

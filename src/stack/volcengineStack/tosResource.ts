@@ -1,5 +1,6 @@
 import { mergeManagedIntent } from '../../common/planCompare';
-import { buildBucketPolicy } from '../../common/bucketPolicy';
+import { buildBucketPolicy, isOwnedBucketPolicy } from '../../common/bucketPolicy';
+import { withLifecycleIntent } from '../../common/functionDefinition';
 import { createVolcengineClient } from '../../common/volcengineClient';
 import type { TosBucketInfo } from '../../common/volcengineClient/types';
 import {
@@ -18,6 +19,7 @@ import {
   PartialResourceError,
 } from '../../types';
 import {
+  TOS_BUCKET_POLICY_INSTANCE_TYPE,
   bucketToTosConfig,
   extractTosBucketDefinition,
   buildTosInstanceFromProvider,
@@ -31,15 +33,22 @@ import { isResourceAlreadyExistsError } from '../alreadyExists';
 const buildTosBucketPolicyJson = (iam: BucketDomain['iam']): Record<string, unknown> | null =>
   buildBucketPolicy(iam, 'volcengine');
 
+const buildTosPolicyInstance = (context: Context, bucketName: string): ResourceInstance => ({
+  sid: buildSid('volcengine', 'tos-policy', context.stage, bucketName),
+  type: TOS_BUCKET_POLICY_INSTANCE_TYPE,
+  id: bucketName,
+});
+
 const applyBucketPolicy = async (
   client: ReturnType<typeof createVolcengineClient>,
   bucket: BucketDomain,
+  owned = false,
 ): Promise<void> => {
-  if (!bucket.iam) return;
   const policy = buildTosBucketPolicyJson(bucket.iam);
   if (!policy) {
-    // iam exists but has no statements — delete any existing policy
-    await deleteBucketPolicy(client, bucket.name);
+    if (owned || bucket.iam?.resource?.statements !== undefined) {
+      await deleteBucketPolicy(client, bucket.name);
+    }
     return;
   }
   logger.info(lang.__('BUCKET_POLICY_APPLYING', { bucketName: bucket.name }));
@@ -166,6 +175,9 @@ export const createResource = async (
 
     // Apply IAM bucket policy if configured
     await applyBucketPolicy(client, bucket);
+    if (buildTosBucketPolicyJson(bucket.iam)) {
+      instances.push(buildTosPolicyInstance(context, bucket.name));
+    }
 
     const resourceState: ResourceState = {
       mode: 'managed',
@@ -227,16 +239,24 @@ export const updateResource = async (
 
   const instances: Array<ResourceInstance> = [buildTosInstanceFromProvider(bucketInfo, sid)];
 
-  if (bucket.iam?.resource?.statements !== undefined) {
-    await applyBucketPolicy(client, bucket);
+  const policyOwned = isOwnedBucketPolicy(
+    TOS_BUCKET_POLICY_INSTANCE_TYPE,
+    state.resources[logicalId]?.instances,
+    state.resources[logicalId]?.definition,
+  );
+  await applyBucketPolicy(client, bucket, policyOwned);
+  if (buildTosBucketPolicyJson(bucket.iam)) {
+    instances.push(buildTosPolicyInstance(context, bucket.name));
   }
 
+  const tosDefinition = extractTosBucketDefinition(config, websiteCodeHash);
   const resourceState: ResourceState = {
     mode: 'managed',
     region: context.region,
-    definition: mergeManagedIntent(
-      state.resources[logicalId]?.definition ?? {},
-      extractTosBucketDefinition(config, websiteCodeHash),
+    definition: withLifecycleIntent(
+      mergeManagedIntent(state.resources[logicalId]?.definition ?? {}, tosDefinition),
+      tosDefinition,
+      ['policy'],
     ),
     instances,
     lastUpdated: new Date().toISOString(),

@@ -22,6 +22,8 @@ const aclMap: Record<string, TosAcl> = {
   PUBLIC_READ_WRITE: 'public-read-write',
 };
 
+export const TOS_BUCKET_POLICY_INSTANCE_TYPE = 'VOLCENGINE_TOS_BUCKET_POLICY';
+
 export const bucketToTosConfig = (bucket: BucketDomain) => {
   const config: {
     bucketName: string;

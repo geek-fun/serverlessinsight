@@ -2577,7 +2577,7 @@ describe('ScfResource', () => {
       expect(mockScfOperations.deleteTrigger).not.toHaveBeenCalled();
     });
 
-    it('preserves omitted lifecycle configuration: should delete custom domain when domain is removed during update', async () => {
+    it('deletes a custom domain recorded in state when removed from config', async () => {
       const fnWithoutDomain = { ...testFunction };
 
       const stateWithDomain: StateFile = {
@@ -2613,10 +2613,10 @@ describe('ScfResource', () => {
 
       await updateResource(mockContext, fnWithoutDomain, stateWithDomain);
 
-      expect(mockScfOperations.deleteCustomDomain).not.toHaveBeenCalled();
+      expect(mockScfOperations.deleteCustomDomain).toHaveBeenCalled();
     });
 
-    it('preserves omitted lifecycle configuration: should ignore ResourceNotFound when deleting custom domain during update', async () => {
+    it('ignores ResourceNotFound when deleting a removed custom domain during update', async () => {
       const fnWithoutDomain = { ...testFunction };
 
       const stateWithDomain: StateFile = {
@@ -2655,10 +2655,10 @@ describe('ScfResource', () => {
 
       await updateResource(mockContext, fnWithoutDomain, stateWithDomain);
 
-      expect(mockScfOperations.deleteCustomDomain).not.toHaveBeenCalled();
+      expect(mockScfOperations.deleteCustomDomain).toHaveBeenCalled();
     });
 
-    it('preserves omitted lifecycle configuration: should rethrow unexpected errors when deleting custom domain during update', async () => {
+    it('rethrows unexpected errors when deleting a removed custom domain during update', async () => {
       const fnWithoutDomain = { ...testFunction };
 
       const stateWithDomain: StateFile = {
@@ -2695,8 +2695,9 @@ describe('ScfResource', () => {
       );
       (stateManager.setResource as jest.Mock).mockReturnValue(initialState);
 
-      await updateResource(mockContext, fnWithoutDomain, stateWithDomain);
-      expect(mockScfOperations.deleteCustomDomain).not.toHaveBeenCalled();
+      await expect(updateResource(mockContext, fnWithoutDomain, stateWithDomain)).rejects.toThrow(
+        'delete failed',
+      );
     });
 
     it('should recreate custom domain when domain name changes during update', async () => {

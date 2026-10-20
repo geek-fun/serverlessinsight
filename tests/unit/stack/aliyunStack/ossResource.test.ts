@@ -1846,7 +1846,7 @@ describe('OssResource', () => {
       );
     });
 
-    it('preserves omitted domains and their tracked DNS records', async () => {
+    it('unbinds DNS records recorded in state when the domain is removed', async () => {
       const stateWithDnsInstances: StateFile = {
         ...initialState,
         resources: {
@@ -1904,9 +1904,13 @@ describe('OssResource', () => {
 
       await updateBucketResource(mockContext, bucketNoDomain, stateWithDnsInstances);
 
-      expect(mockOssOperations.unbindCustomDomain).not.toHaveBeenCalled();
-      expect(mockOssOperations.unbindCustomDomain).not.toHaveBeenCalled();
-      expect(mockOssOperations.unbindCustomDomain).not.toHaveBeenCalled();
+      expect(mockOssOperations.unbindCustomDomain).toHaveBeenCalledTimes(2);
+      expect(mockOssOperations.unbindCustomDomain).toHaveBeenCalledWith(
+        'test-bucket',
+        'example.com',
+        'dns-1',
+        undefined,
+      );
       expect(mockOssOperations.bindCustomDomain).not.toHaveBeenCalled();
     });
 

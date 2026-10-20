@@ -179,6 +179,58 @@ describe('planRefreshedResource', () => {
       expect(item).not.toHaveProperty('drifted');
     });
   });
+
+  describe('removedDependents', () => {
+    it('folds removed dependents into a noop and turns it into an update', async () => {
+      const item = await planRefreshedResource(
+        args({
+          removedDependents: { policy: '{"Version":"1"}' },
+        }),
+      );
+
+      expect(item).toMatchObject({
+        action: 'update',
+        changes: {
+          before: { policy: '{"Version":"1"}' },
+          after: { name: 'test', memory: 128 },
+        },
+      });
+    });
+
+    it('merges removed dependents into an already drifted update', async () => {
+      const item = await planRefreshedResource(
+        args({
+          desiredDefinition: { name: 'test', memory: 256 },
+          removedDependents: { domain: 'example.com' },
+        }),
+      );
+
+      expect(item.action).toBe('update');
+      expect(item.changes?.before).toMatchObject({ domain: 'example.com' });
+      expect(item.changes?.after).toMatchObject({ memory: 256 });
+    });
+
+    it('leaves create and delete items untouched', async () => {
+      await expect(
+        planRefreshedResource(
+          args({ currentState: undefined, removedDependents: { policy: 'x' } }),
+        ),
+      ).resolves.toMatchObject({ action: 'create' });
+      await expect(
+        planRefreshedResource(
+          args({
+            currentState: { ...currentState, status: 'tainted' as const },
+            removedDependents: { policy: 'x' },
+          }),
+        ),
+      ).resolves.toMatchObject({ action: 'create' });
+    });
+
+    it('ignores an empty removal map', async () => {
+      const item = await planRefreshedResource(args({ removedDependents: {} }));
+      expect(item.action).toBe('noop');
+    });
+  });
 });
 
 describe('refresh safety and intent adoption (issue #264)', () => {

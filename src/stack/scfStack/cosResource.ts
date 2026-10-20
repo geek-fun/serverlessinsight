@@ -1,5 +1,6 @@
 import { mergeManagedIntent } from '../../common/planCompare';
-import { buildBucketPolicy } from '../../common/bucketPolicy';
+import { buildBucketPolicy, isOwnedBucketPolicy } from '../../common/bucketPolicy';
+import { withLifecycleIntent } from '../../common/functionDefinition';
 import {
   Context,
   BucketDomain,
@@ -11,7 +12,12 @@ import {
 } from '../../types';
 import { createTencentClient } from '../../common/tencentClient';
 import { CosCnameInfo } from '../../common/tencentClient/cosOperations';
-import { bucketToCosBucketConfig, extractCosBucketDefinition, CosBucketInfo } from './cosTypes';
+import {
+  COS_BUCKET_POLICY_INSTANCE_TYPE,
+  bucketToCosBucketConfig,
+  extractCosBucketDefinition,
+  CosBucketInfo,
+} from './cosTypes';
 import { setResource, removeResource, buildSid } from '../../common';
 import { readPemContent, warnInlinePem } from '../../common/certUtils';
 import { logger } from '../../common/logger';
@@ -23,16 +29,23 @@ import { isResourceAlreadyExistsError } from '../alreadyExists';
 const buildCosBucketPolicyJson = (iam: BucketDomain['iam']): Record<string, unknown> | null =>
   buildBucketPolicy(iam, 'tencent');
 
+const buildCosPolicyInstance = (context: Context, bucketName: string): ResourceInstance => ({
+  sid: buildSid('tencent', 'cos-policy', context.stage, bucketName),
+  type: COS_BUCKET_POLICY_INSTANCE_TYPE,
+  id: bucketName,
+});
+
 const applyBucketPolicy = async (
   client: ReturnType<typeof createTencentClient>,
   bucket: BucketDomain,
   region: string,
+  owned = false,
 ): Promise<void> => {
-  if (!bucket.iam) return;
   const policy = buildCosBucketPolicyJson(bucket.iam);
   if (!policy) {
-    // iam exists but has no statements — delete any existing policy
-    await deleteBucketPolicy(client, bucket.name, region);
+    if (owned || bucket.iam?.resource?.statements !== undefined) {
+      await deleteBucketPolicy(client, bucket.name, region);
+    }
     return;
   }
   logger.info(lang.__('BUCKET_POLICY_APPLYING', { bucketName: bucket.name }));
@@ -435,6 +448,9 @@ export const createBucketResource = async (
 
     // Apply IAM bucket policy if configured
     await applyBucketPolicy(client, bucket, context.region);
+    if (buildCosBucketPolicyJson(bucket.iam)) {
+      instances.push(buildCosPolicyInstance(context, bucket.name));
+    }
 
     const resourceState: ResourceState = {
       mode: 'managed',
@@ -585,17 +601,29 @@ export const updateBucketResource = async (
       instances[0] = buildCosInstanceFromProvider(refreshedInfo as CosBucketInfo, sid);
     }
   } else {
-    instances.push(...(existingDnsInstances ?? []));
+    for (const instance of existingDnsInstances ?? []) {
+      await client.cos.unbindCustomDomain(bucket.name, instance.domain, instance.dnsRecordId);
+    }
   }
 
-  if (bucket.iam?.resource?.statements !== undefined) {
-    await applyBucketPolicy(client, bucket, context.region);
+  const policyOwned = isOwnedBucketPolicy(
+    COS_BUCKET_POLICY_INSTANCE_TYPE,
+    existingState?.instances,
+    existingState?.definition,
+  );
+  await applyBucketPolicy(client, bucket, context.region, policyOwned);
+  if (buildCosBucketPolicyJson(bucket.iam)) {
+    instances.push(buildCosPolicyInstance(context, bucket.name));
   }
 
   const resourceState: ResourceState = {
     mode: 'managed',
     region: context.region,
-    definition: mergeManagedIntent(existingState?.definition ?? {}, definition),
+    definition: withLifecycleIntent(
+      mergeManagedIntent(existingState?.definition ?? {}, definition),
+      definition,
+      ['policy'],
+    ),
     instances,
     lastUpdated: new Date().toISOString(),
   };

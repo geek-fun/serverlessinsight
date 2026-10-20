@@ -120,6 +120,23 @@ const resolveVpcConfigSecurityGroup = async (
   };
 };
 
+const removedFc3Dependents = (
+  fn: FunctionDomain,
+  currentState: ResourceState | undefined,
+): ResourceAttributes => {
+  const recorded = (type: string) => currentState?.instances?.find((i) => i.type === type);
+  const httpTrigger = recorded('ALIYUN_FC3_HTTP_TRIGGER');
+  const customDomain = recorded('ALIYUN_FC3_CUSTOM_DOMAIN');
+  return {
+    ...(!fn.triggers?.http && httpTrigger
+      ? { http: currentState?.definition?.http ?? httpTrigger.attributes ?? {} }
+      : {}),
+    ...(!fn.domain && customDomain
+      ? { domain: currentState?.definition?.domain ?? { domain_name: customDomain.id } }
+      : {}),
+  };
+};
+
 const planFunctionDeletion = (logicalId: string, definition: ResourceAttributes): PlanItem => ({
   logicalId,
   action: 'delete',
@@ -557,6 +574,7 @@ export const generateFunctionPlan = async (
         resourceType: 'ALIYUN_FC3',
         currentState,
         desiredDefinition,
+        removedDependents: removedFc3Dependents(fn, currentState),
         read: () =>
           cachedRefreshRead(context, `fc3.getFunction:${fn.name}`, () =>
             client.fc3.getFunction(fn.name),

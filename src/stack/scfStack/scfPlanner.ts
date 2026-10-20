@@ -66,11 +66,22 @@ export const generateFunctionPlan = async (
 
       const client = createTencentClient(context);
 
+      const recordedDomain = currentState?.instances?.find(
+        (i) => i.type === 'TENCENT_SCF_CUSTOM_DOMAIN',
+      );
       return planRefreshedResource({
         logicalId,
         resourceType: 'SCF',
         currentState,
         desiredDefinition,
+        removedDependents:
+          !fn.domain && recordedDomain
+            ? {
+                domain: currentState?.definition?.domain ?? {
+                  domain_name: recordedDomain.id,
+                },
+              }
+            : {},
         read: () =>
           cachedRefreshRead(context, `scf.getFunction:${fn.name}`, () =>
             client.scf.getFunction(fn.name),

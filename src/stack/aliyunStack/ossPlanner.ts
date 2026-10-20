@@ -1,11 +1,21 @@
-import { normalizeBucketPolicyDefinition } from '../../common/bucketPolicy';
+import { normalizeBucketPolicyDefinition, removedBucketPolicy } from '../../common/bucketPolicy';
 import path from 'node:path';
 import { lang } from '../../lang';
-import { Context, BucketDomain, Plan, PlanItem, StateFile, ResourceAttributes } from '../../types';
+import {
+  Context,
+  BucketDomain,
+  Plan,
+  PlanItem,
+  ResourceState,
+  ResourceTypeEnum,
+  StateFile,
+  ResourceAttributes,
+} from '../../types';
 import { createAliyunClient } from '../../common/aliyunClient';
 import { cachedRefreshRead } from '../../common/refreshCache';
 import { PLAN_READ_CONCURRENCY, mapWithConcurrency } from '../../common/concurrency';
 import {
+  OSS_BUCKET_POLICY_INSTANCE_TYPE,
   bucketToOssBucketConfig,
   cloudOssToDefinition,
   extractOssBucketDefinition,
@@ -32,6 +42,22 @@ const toOwnershipTags = (
 const normalizeDefinitionForDisplay = (definition: ResourceAttributes): ResourceAttributes => {
   const { domainBound: _domainBound, ...rest } = definition as { domainBound?: unknown };
   return normalizeBucketPolicyDefinition(rest, 'aliyun');
+};
+
+const removedOssDependents = (
+  bucket: BucketDomain,
+  currentState: ResourceState | undefined,
+  desiredDefinition: ResourceAttributes,
+): ResourceAttributes => {
+  if (!currentState) return {};
+  const domainName = bucket.domain?.domain_name || bucket.website?.domain;
+  const dnsRemoved =
+    !domainName &&
+    (currentState.instances ?? []).some((i) => i.type === ResourceTypeEnum.ALIYUN_OSS_DNS_CNAME);
+  return {
+    ...removedBucketPolicy(OSS_BUCKET_POLICY_INSTANCE_TYPE, currentState, desiredDefinition),
+    ...(dnsRemoved ? { domain: currentState.definition.domain ?? null } : {}),
+  };
 };
 
 export const generateBucketPlan = async (
@@ -90,6 +116,7 @@ export const generateBucketPlan = async (
           ),
         cloudToDefinition: cloudOssToDefinition,
         normalizeForDisplay: normalizeDefinitionForDisplay,
+        removedDependents: removedOssDependents(bucket, currentState, desiredDefinition),
         extraUpdate: () => Promise.resolve({ update: domainBindingPending, drifted: false }),
         refresh: context.refresh,
       });

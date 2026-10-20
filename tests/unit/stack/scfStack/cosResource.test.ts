@@ -1507,7 +1507,7 @@ describe('CosResource', () => {
       );
     });
 
-    it('preserves omitted domains and their tracked DNS records', async () => {
+    it('unbinds DNS records recorded in state when the domain is removed', async () => {
       mockCosOperations.getBucket.mockResolvedValue(mockBucketInfoBase);
       mockCosOperations.unbindCustomDomain.mockResolvedValue(undefined);
 
@@ -1524,7 +1524,11 @@ describe('CosResource', () => {
         stateWithDomain,
       );
 
-      expect(mockCosOperations.unbindCustomDomain).not.toHaveBeenCalled();
+      expect(mockCosOperations.unbindCustomDomain).toHaveBeenCalledWith(
+        'test-bucket',
+        'old.example.com',
+        'dns-old',
+      );
     });
 
     it('should handle refreshedInfo returning null in update', async () => {
