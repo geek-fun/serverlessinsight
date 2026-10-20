@@ -1,4 +1,4 @@
-import { withStoredFunctionIam } from '../../common/functionDefinition';
+import { withLifecycleIntent, withStoredFunctionIam } from '../../common/functionDefinition';
 import { definitionsDiffer, mergeManagedIntent } from '../../common/planCompare';
 import { createVolcengineClient } from '../../common/volcengineClient';
 import {
@@ -146,9 +146,6 @@ const reconcileVefaasTimerTriggers = async (
   previousInstances: Array<DependentInstance>,
   client: ReturnType<typeof createVolcengineClient>,
 ): Promise<Array<DependentInstance>> => {
-  if (fn.triggers?.timer === undefined) {
-    return previousInstances.filter((instance) => instance.type === TIMER_TRIGGER_INSTANCE_TYPE);
-  }
   const desiredTimers = fn.triggers?.timer ?? [];
   const previousTimers = previousInstances.filter((i) => i.type === TIMER_TRIGGER_INSTANCE_TYPE);
 
@@ -1203,7 +1200,11 @@ export const updateResource = async (
   const resourceState: ResourceState = {
     mode: 'managed',
     region: context.region,
-    definition: mergeManagedIntent(currentState.definition ?? {}, desiredDefinition),
+    definition: withLifecycleIntent(
+      mergeManagedIntent(currentState.definition ?? {}, desiredDefinition),
+      desiredDefinition,
+      ['timers'],
+    ),
     instances: [
       vefaasInstance,
       ...existingDependentInstances,

@@ -495,9 +495,6 @@ const reconcileFc3TimerTriggers = async (
   previousInstances: Array<DependentInstance>,
   client: ReturnType<typeof createAliyunClient>,
 ): Promise<Array<DependentInstance>> => {
-  if (fn.triggers?.timer === undefined) {
-    return previousInstances.filter((instance) => instance.type === TIMER_TRIGGER_INSTANCE_TYPE);
-  }
   const desiredTimers = fn.triggers?.timer ?? [];
   const previousTimers = previousInstances.filter((i) => i.type === TIMER_TRIGGER_INSTANCE_TYPE);
 
@@ -2049,7 +2046,7 @@ export const updateResource = async (
     definition: withLifecycleIntent(
       mergeManagedIntent(existingState?.definition ?? {}, definition),
       definition,
-      ['http', 'domain'],
+      ['http', 'domain', 'timers'],
     ),
     instances: [
       fcInstance,

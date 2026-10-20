@@ -174,11 +174,6 @@ const reconcileScfTimerTriggers = async (
   previousInstances: Array<Record<string, unknown>>,
   client: ReturnType<typeof createTencentClient>,
 ): Promise<Array<ScfDependentInstance>> => {
-  if (fn.triggers?.timer === undefined) {
-    return previousInstances.filter(
-      (instance) => instance.type === TIMER_TRIGGER_INSTANCE_TYPE,
-    ) as ScfDependentInstance[];
-  }
   const desiredTimers = fn.triggers?.timer ?? [];
   const previousTimers = previousInstances.filter(
     (i) => (i as ScfDependentInstance).type === TIMER_TRIGGER_INSTANCE_TYPE,
@@ -1600,7 +1595,7 @@ export const updateResource = async (
     definition: withLifecycleIntent(
       mergeManagedIntent(existingState?.definition ?? {}, definition),
       definition,
-      ['http', 'domain'],
+      ['http', 'domain', 'timers'],
     ),
     instances: [
       buildScfInstanceFromProvider(functionInfo as ScfFunctionInfo, sid),

@@ -195,6 +195,41 @@ describe('SCF lifecycle planning', () => {
     expect(mockScf.getCustomDomain).not.toHaveBeenCalled();
   });
 
+  it('schedules removal of recorded timers omitted from the config', async () => {
+    const saved: FunctionDomain = {
+      ...fn,
+      triggers: { timer: [{ name: 'nightly', cron: '0 0 2 * * *', enable: true }] },
+    };
+    const state: StateFile = setResource(
+      {
+        version: '1.0',
+        provider: 'tencent',
+        app: 'sample',
+        service: 'api',
+        stages: {},
+        resources: {},
+      },
+      'functions.handler',
+      {
+        mode: 'managed',
+        region: context.region,
+        definition: extractScfDefinition(functionToScfConfig(saved), 'code-hash', saved.iam, saved),
+        instances: [{ sid: 's1', id: 'nightly', type: 'TENCENT_SCF_TIMER_TRIGGER' }],
+        lastUpdated: '2026-01-01T00:00:00Z',
+      },
+    );
+
+    const plan = await generateFunctionPlan(context, state, [fn]);
+
+    expect(plan.items[0]).toMatchObject({ action: 'update' });
+    expect(plan.items[0].changes?.before).toMatchObject({
+      timers: [{ name: 'nightly', cron: '0 0 2 * * *', enable: true }],
+    });
+    expect(plan.items[0].changes?.after).toEqual(
+      expect.not.objectContaining({ timers: expect.anything() }),
+    );
+  });
+
   it('repairs timer descriptions and preserves the provenance of a YAML edit', async () => {
     const saved: FunctionDomain = {
       ...fn,
