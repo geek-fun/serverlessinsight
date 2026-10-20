@@ -17,6 +17,7 @@ import {
   Plan,
   PlanItem,
   ResourceAttributes,
+  ResourceState,
   StateFile,
 } from '../../types';
 import {
@@ -37,6 +38,22 @@ const planFunctionDeletion = (logicalId: string, definition: ResourceAttributes)
   resourceType: 'VOLCENGINE_VEFAAS',
   changes: { before: definition },
 });
+
+// Timer triggers are state-owned dependents: when the timer declaration is
+// omitted the recorded instances are removed, and the plan folds the removal
+// into the "before" side so it is visible before execution.
+const removedVefaasTimerItems = (
+  fn: FunctionDomain,
+  currentState: ResourceState,
+): ResourceAttributes =>
+  !fn.triggers?.timer &&
+  (currentState.instances ?? []).some(
+    (instance) => (instance as { type?: string }).type === 'VOLCENGINE_VEFAAS_TIMER_TRIGGER',
+  )
+    ? {
+        timers: (currentState.definition.timers as ResourceAttributes['timers'] | undefined) ?? [],
+      }
+    : {};
 
 export const generateFunctionPlan = async (
   context: Context,
@@ -177,10 +194,11 @@ export const generateFunctionPlan = async (
         const client = createVolcengineClient(context);
         const currentDefinition = currentState.definition || {};
         const definitionChanged = definitionsDiffer(currentDefinition, desiredDefinition);
+        const removedTimerItems = removedVefaasTimerItems(fn, currentState);
 
         // --no-refresh: no live read, no drift claims — intent-diff only.
         if (context.refresh === false) {
-          if (!definitionChanged) {
+          if (!definitionChanged && Object.keys(removedTimerItems).length === 0) {
             return { logicalId, action: 'noop', resourceType: 'VOLCENGINE_VEFAAS' };
           }
           assertSupportedPlanUpdate(
@@ -194,7 +212,10 @@ export const generateFunctionPlan = async (
             action: 'update',
             resourceType: 'VOLCENGINE_VEFAAS',
             changes: {
-              before: managedDefinition(currentDefinition, desiredDefinition),
+              before: {
+                ...managedDefinition(currentDefinition, desiredDefinition),
+                ...removedTimerItems,
+              },
               after: managedDefinition(desiredDefinition),
             },
           };
@@ -483,6 +504,21 @@ export const generateFunctionPlan = async (
             )
               ? { drifted: true }
               : {}),
+          };
+        }
+
+        if (Object.keys(removedTimerItems).length > 0) {
+          return {
+            logicalId,
+            action: 'update',
+            resourceType: 'VOLCENGINE_VEFAAS',
+            changes: {
+              before: {
+                ...managedDefinition(currentDefinition, desiredDefinition),
+                ...removedTimerItems,
+              },
+              after: managedDefinition(desiredDefinition),
+            },
           };
         }
 

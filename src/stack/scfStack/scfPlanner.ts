@@ -69,19 +69,22 @@ export const generateFunctionPlan = async (
       const recordedDomain = currentState?.instances?.find(
         (i) => i.type === 'TENCENT_SCF_CUSTOM_DOMAIN',
       );
+      const recordedTimers = (currentState?.instances ?? []).filter(
+        (i) => i.type === 'TENCENT_SCF_TIMER_TRIGGER',
+      );
       return planRefreshedResource({
         logicalId,
         resourceType: 'SCF',
         currentState,
         desiredDefinition,
-        removedDependents:
-          !fn.domain && recordedDomain
-            ? {
-                domain: currentState?.definition?.domain ?? {
-                  domain_name: recordedDomain.id,
-                },
-              }
-            : {},
+        removedDependents: {
+          ...(!fn.domain && recordedDomain
+            ? { domain: currentState?.definition?.domain ?? { domain_name: recordedDomain.id } }
+            : {}),
+          ...(!fn.triggers?.timer && recordedTimers.length > 0
+            ? { timers: currentState?.definition?.timers ?? [] }
+            : {}),
+        },
         read: () =>
           cachedRefreshRead(context, `scf.getFunction:${fn.name}`, () =>
             client.scf.getFunction(fn.name),

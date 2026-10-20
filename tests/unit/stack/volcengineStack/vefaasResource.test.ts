@@ -1345,6 +1345,50 @@ describe('vefaasResource', () => {
       expect(mockVefaasClient.vefaas.deleteTrigger).toHaveBeenCalledWith('func-123', 'trig-2');
     });
 
+    it('deletes recorded live timers when triggers.timer is omitted entirely (state-owned removal)', async () => {
+      // a recorded timer instance is what makes the reconcile probe at all
+      const stateWithRecord: StateFile = {
+        ...mockState,
+        resources: {
+          'functions.test_fn': {
+            mode: 'managed',
+            region: 'cn-beijing',
+            definition: {},
+            instances: [
+              {
+                type: 'VOLCENGINE_VEFAAS_FUNCTION',
+                id: 'test-function',
+                functionId: 'func-123',
+              },
+              {
+                type: 'VOLCENGINE_VEFAAS_TIMER_TRIGGER',
+                id: 'ghost',
+                sid: 'si:volcengine:vefaas-timer-trigger:default:test-function.ghost',
+                attributes: { cron: '0 8 * * *', enable: true },
+              },
+            ],
+            lastUpdated: '2024-01-01T00:00:00Z',
+            status: 'ready',
+          },
+        },
+      } as unknown as StateFile;
+      (getResource as jest.Mock).mockReturnValue(stateWithRecord.resources['functions.test_fn']);
+      mockVefaasClient.vefaas.listTriggers.mockResolvedValue([
+        {
+          id: 'trig-2',
+          name: 'ghost',
+          sourceType: 'Timer',
+          source: JSON.stringify({ cron: '0 8 * * *', enable: true }),
+        },
+      ]);
+      mockVefaasClient.vefaas.updateFunctionConfiguration.mockResolvedValue(undefined);
+      mockVefaasClient.vefaas.updateFunctionCode.mockResolvedValue({});
+
+      await updateResource(mockContext, { ...mockFunction }, stateWithRecord);
+
+      expect(mockVefaasClient.vefaas.deleteTrigger).toHaveBeenCalledWith('func-123', 'trig-2');
+    });
+
     it('should delete timer triggers before the function', async () => {
       const stateWithFunctionAndTimer = {
         ...mockState,

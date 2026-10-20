@@ -125,14 +125,25 @@ const removedFc3Dependents = (
   currentState: ResourceState | undefined,
 ): ResourceAttributes => {
   const recorded = (type: string) => currentState?.instances?.find((i) => i.type === type);
-  const httpTrigger = recorded('ALIYUN_FC3_HTTP_TRIGGER');
-  const customDomain = recorded('ALIYUN_FC3_CUSTOM_DOMAIN');
+  const recordedTimers = (currentState?.instances ?? []).filter(
+    (i) => i.type === 'ALIYUN_FC3_TIMER_TRIGGER',
+  );
   return {
-    ...(!fn.triggers?.http && httpTrigger
-      ? { http: currentState?.definition?.http ?? httpTrigger.attributes ?? {} }
+    ...(!fn.triggers?.http && recorded('ALIYUN_FC3_HTTP_TRIGGER')
+      ? {
+          http:
+            currentState?.definition?.http ?? recorded('ALIYUN_FC3_HTTP_TRIGGER')?.attributes ?? {},
+        }
       : {}),
-    ...(!fn.domain && customDomain
-      ? { domain: currentState?.definition?.domain ?? { domain_name: customDomain.id } }
+    ...(!fn.domain && recorded('ALIYUN_FC3_CUSTOM_DOMAIN')
+      ? {
+          domain: currentState?.definition?.domain ?? {
+            domain_name: recorded('ALIYUN_FC3_CUSTOM_DOMAIN')?.id,
+          },
+        }
+      : {}),
+    ...(!fn.triggers?.timer && recordedTimers.length > 0
+      ? { timers: currentState?.definition?.timers ?? [] }
       : {}),
   };
 };

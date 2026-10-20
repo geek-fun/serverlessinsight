@@ -3133,6 +3133,30 @@ describe('ScfResource', () => {
       );
     });
 
+    it('deletes recorded timers when triggers.timer is omitted entirely (state-owned removal)', async () => {
+      (stateManager.getResource as jest.Mock).mockReturnValue(
+        stateWithFunctionAndTimer.resources['functions.test_fn'],
+      );
+      mockScfOperations.getFunction.mockResolvedValue({
+        ...mockFunctionInfo,
+        Triggers: [
+          {
+            TriggerName: 'billing-run',
+            Type: 'timer',
+            TriggerDesc: '0 23 11 * * * *',
+            Enable: 1,
+          },
+        ],
+      });
+      (stateManager.setResource as jest.Mock).mockReturnValue(initialState);
+
+      await updateResource(mockContext, { ...testFunction }, stateWithFunctionAndTimer);
+
+      expect(mockScfOperations.deleteTrigger).toHaveBeenCalledWith(
+        expect.objectContaining({ TriggerName: 'billing-run', Type: 'timer' }),
+      );
+    });
+
     it('wraps reconcile failures into PartialResourceError on create', async () => {
       const taintedState = {
         ...initialState,

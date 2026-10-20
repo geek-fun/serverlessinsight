@@ -1114,6 +1114,43 @@ describe('Fc3Resource', () => {
       expect(mockedFc3Operations.deleteTrigger).toHaveBeenCalledWith('test-function', 'ghost');
     });
 
+    it('deletes recorded timers when triggers.timer is omitted entirely (state-owned removal)', async () => {
+      mockedFc3Operations.listTriggers.mockRejectedValue(new Error('ListTriggers throttled'));
+
+      const stateWithTimer: StateFile = {
+        ...initialState,
+        resources: {
+          'functions.test_fn': {
+            mode: 'managed',
+            region: 'cn-hangzhou',
+            definition: mockDefinition,
+            instances: [
+              {
+                sid: 'si:aliyun:fc3:default:test-function',
+                id: 'test-function',
+                type: 'ALIYUN_FC3_FUNCTION',
+              },
+              {
+                sid: 'si:aliyun:fc3-timer-trigger:default:test-function.billing-run',
+                id: 'billing-run',
+                type: 'ALIYUN_FC3_TIMER_TRIGGER',
+                attributes: { cron: '0 23 3 * * *', enable: true },
+              },
+            ],
+            lastUpdated: '2025-01-01T00:00:00Z',
+          },
+        },
+      };
+      mockedStateManager.setResource.mockReturnValue(initialState);
+
+      await updateResource(mockContext, testFunction, stateWithTimer);
+
+      expect(mockedFc3Operations.deleteTrigger).toHaveBeenCalledWith(
+        'test-function',
+        'billing-run',
+      );
+    });
+
     it('warns and registers when createTrigger reports the trigger already attached', async () => {
       const stateNoTimers: StateFile = {
         ...initialState,

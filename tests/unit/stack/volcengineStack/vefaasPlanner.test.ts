@@ -1281,6 +1281,18 @@ describe('vefaasPlanner', () => {
         expect(plan.items[0]).toMatchObject({ action: 'noop' });
       });
 
+      it('schedules removal of recorded timers when the timer declaration is omitted', async () => {
+        const plan = await generateFunctionPlan(mockContext, buildTimerState(), [mockFunction]);
+
+        expect(plan.items[0]).toMatchObject({ action: 'update' });
+        expect(plan.items[0].changes?.before).toMatchObject({
+          timers: [{ name: 'billing-run', cron: '0 23 3 * * *', enable: true }],
+        });
+        expect(plan.items[0].changes?.after).toEqual(
+          expect.not.objectContaining({ timers: expect.anything() }),
+        );
+      });
+
       it('flags the timer drift reason when the trigger was deleted in the cloud', async () => {
         mockVefaasClient.vefaas.listTriggers = jest.fn().mockResolvedValue([]);
 

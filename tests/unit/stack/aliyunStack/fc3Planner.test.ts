@@ -263,6 +263,64 @@ describe('FC3 Planner', () => {
       });
     });
 
+    it('shows and schedules removal of recorded timers omitted from the config', async () => {
+      mockFc3Operations.getFunction.mockResolvedValue({
+        functionName: 'test-function',
+        runtime: 'nodejs20',
+        handler: 'index.handler',
+        memorySize: 512,
+        timeout: 10,
+        tags: [],
+      });
+
+      const state = setResource(initalState, 'functions.test_fn', {
+        mode: 'managed',
+        region: 'cn-hangzhou',
+        definition: {
+          functionName: 'test-function',
+          runtime: 'nodejs20',
+          handler: 'index.handler',
+          memorySize: 512,
+          timeout: 10,
+          diskSize: null,
+          environment: { NODE_ENV: 'production' },
+          vpcConfig: null,
+          gpuConfig: null,
+          customContainerConfig: null,
+          nasConfig: null,
+          logConfig: null,
+          codeHash: 'mock-code-hash',
+          timers: [{ name: 'billing-run', cron: '0 23 3 * * *', enable: true }],
+        },
+        instances: [
+          {
+            sid: 'si:aliyun:fc3:default:test-function',
+            id: 'test-function',
+            functionName: 'test-function',
+          },
+          {
+            sid: 'si:aliyun:fc3-timer-trigger:default:test-function.billing-run',
+            id: 'billing-run',
+            type: 'ALIYUN_FC3_TIMER_TRIGGER',
+          },
+        ],
+        lastUpdated: new Date().toISOString(),
+      });
+
+      const plan = await generateFunctionPlan(mockContext, state, [testFunction]);
+
+      expect(plan.items[0]).toMatchObject({
+        action: 'update',
+        resourceType: 'ALIYUN_FC3',
+      });
+      expect(plan.items[0].changes?.before).toMatchObject({
+        timers: [{ name: 'billing-run', cron: '0 23 3 * * *', enable: true }],
+      });
+      expect(plan.items[0].changes?.after).toEqual(
+        expect.not.objectContaining({ timers: expect.anything() }),
+      );
+    });
+
     it('should plan to update when definition changes', async () => {
       mockFc3Operations.getFunction.mockResolvedValue({
         functionName: 'test-function',
