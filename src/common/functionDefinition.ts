@@ -5,11 +5,12 @@ import type { FunctionDomain, ResourceAttributes } from '../types';
 export const withFunctionLifecycle = (
   definition: ResourceAttributes,
   fn?: FunctionDomain,
+  support: { http?: boolean; domain?: boolean } = {},
 ): ResourceAttributes => ({
   ...definition,
   ...(fn?.log !== undefined && !definition.logConfig ? { logEnabled: fn.log } : {}),
-  ...(fn?.triggers?.http ? { http: fn.triggers.http } : {}),
-  ...(fn?.domain ? { domain: fn.domain } : {}),
+  ...(support.http !== false && fn?.triggers?.http ? { http: fn.triggers.http } : {}),
+  ...(support.domain !== false && fn?.domain ? { domain: fn.domain } : {}),
   ...(fn?.triggers?.timer !== undefined ? { timers: fn.triggers.timer } : {}),
 });
 

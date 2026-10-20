@@ -5,6 +5,7 @@ import {
   buildDefaultTrustPolicy,
   deriveVefaasExecutionStatements,
 } from '../../../../src/stack/volcengineStack/vefaasTypes';
+import { assertSupportedPlanUpdate } from '../../../../src/common/planCapabilities';
 import type { FunctionDomain } from '../../../../src/types';
 import { NasStorageClassEnum } from '../../../../src/types';
 
@@ -213,6 +214,37 @@ describe('vefaasTypes', () => {
       const result = extractVefaasDefinition(config, 'hash-abc');
 
       expect(result.environment).toEqual({});
+    });
+
+    const lifecycleFn = {
+      ...mockFn,
+      log: false,
+      triggers: { http: { auth_type: 'iam' as const, access: [] }, timer: [] },
+      domain: { domain_name: 'api.example.com', protocol: 'HTTPS' },
+    } as FunctionDomain;
+    const lifecycleConfig = {
+      functionName: 'test-fn',
+      runtime: 'nodejs16' as never,
+      handler: 'index.handler',
+      memoryMb: 128,
+      requestTimeout: 30,
+    };
+
+    it('does not persist HTTP or domain intent that the executor cannot apply', () => {
+      const result = extractVefaasDefinition(lifecycleConfig, 'hash-abc', lifecycleFn);
+
+      expect(result).not.toHaveProperty('http');
+      expect(result).not.toHaveProperty('domain');
+      expect(result).toMatchObject({ logEnabled: false, timers: [] });
+    });
+
+    it('plans without an unsupported-update error for state saved before lifecycle intent', () => {
+      const desired = extractVefaasDefinition(lifecycleConfig, 'hash-abc', lifecycleFn);
+      const { logEnabled: _logEnabled, timers: _timers, ...stored } = desired;
+
+      expect(() =>
+        assertSupportedPlanUpdate('functions.test_fn', 'VOLCENGINE_VEFAAS', stored, desired),
+      ).not.toThrow();
     });
   });
 
