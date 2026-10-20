@@ -30,6 +30,7 @@ describe('plan update capabilities', () => {
     ['ALIYUN_OSS_BUCKET', 'policy'],
     ['COS_BUCKET', 'policy'],
     ['VOLCENGINE_TOS_BUCKET', 'policy'],
+    ['VOLCENGINE_VEFAAS', 'logEnabled'],
   ])('allows a supported %s update to %s', (type, key) => {
     expect(() =>
       assertSupportedPlanUpdate('resource.test', type, { [key]: 'old' }, { [key]: 'new' }),

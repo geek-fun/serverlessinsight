@@ -34,6 +34,16 @@ describe('function lifecycle intent', () => {
       domain: fn.domain,
     });
   });
+  it('skips HTTP and domain intent for providers that do not apply them', () => {
+    const fn = {
+      key: 'fn',
+      name: 'fn',
+      storage: {},
+      triggers: { http: { auth_type: 'iam' as const }, timer: [] },
+      domain: { domain_name: 'api.example.com', protocol: 'HTTPS' },
+    } as FunctionDomain;
+    expect(withFunctionLifecycle({}, fn, { http: false, domain: false })).toEqual({ timers: [] });
+  });
   it('retains saved IAM only when IAM is omitted', () => {
     const fn = { key: 'fn', name: 'fn', storage: {} } as FunctionDomain;
     const iam = { role: 'external-role' };

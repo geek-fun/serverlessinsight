@@ -15,6 +15,7 @@ const UPDATE_FIELDS: Record<string, readonly string[]> = {
     'vpcConfig',
     'tosMountConfig',
     'logConfig',
+    'logEnabled',
     'timers',
   ],
   ALIYUN_RDS_SERVERLESS: ['serverlessConfig', 'securityIPList'],
