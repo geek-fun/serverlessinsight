@@ -461,14 +461,8 @@ const createCosOperations = (cosClient: CosSdkClient, region: string, dnsOps?: D
               permission: g.Permission,
             })),
           };
-        } catch (error: unknown) {
-          const details = error as { code?: string; status?: number; statusCode?: number };
-          if (
-            details.status !== 404 &&
-            details.statusCode !== 404 &&
-            !details.code?.startsWith('NoSuch')
-          )
-            throw error;
+        } catch {
+          // ACL might not be accessible due to insufficient permissions
         }
 
         // Get CORS configuration
@@ -498,14 +492,8 @@ const createCosOperations = (cosClient: CosSdkClient, region: string, dnsOps?: D
             exposeHeaders: r.ExposeHeader,
             maxAgeSeconds: r.MaxAgeSeconds,
           }));
-        } catch (error: unknown) {
-          const details = error as { code?: string; status?: number; statusCode?: number };
-          if (
-            details.status !== 404 &&
-            details.statusCode !== 404 &&
-            !details.code?.startsWith('NoSuch')
-          )
-            throw error;
+        } catch {
+          // CORS might not be configured
         }
 
         // Get website configuration
@@ -536,14 +524,8 @@ const createCosOperations = (cosClient: CosSdkClient, region: string, dnsOps?: D
               ErrorDocument: websiteResult.WebsiteConfiguration.ErrorDocument,
             };
           }
-        } catch (error: unknown) {
-          const details = error as { code?: string; status?: number; statusCode?: number };
-          if (
-            details.status !== 404 &&
-            details.statusCode !== 404 &&
-            !details.code?.startsWith('NoSuch')
-          )
-            throw error;
+        } catch {
+          // Website configuration might not be set
         }
 
         // Get versioning configuration
@@ -569,14 +551,8 @@ const createCosOperations = (cosClient: CosSdkClient, region: string, dnsOps?: D
           versioningConfig = {
             status: versioningResult.VersioningConfiguration?.Status,
           };
-        } catch (error: unknown) {
-          const details = error as { code?: string; status?: number; statusCode?: number };
-          if (
-            details.status !== 404 &&
-            details.statusCode !== 404 &&
-            !details.code?.startsWith('NoSuch')
-          )
-            throw error;
+        } catch {
+          // Versioning might not be accessible
         }
 
         // Get tagging configuration
@@ -652,14 +628,8 @@ const createCosOperations = (cosClient: CosSdkClient, region: string, dnsOps?: D
               },
             })),
           };
-        } catch (error: unknown) {
-          const details = error as { code?: string; status?: number; statusCode?: number };
-          if (
-            details.status !== 404 &&
-            details.statusCode !== 404 &&
-            !details.code?.startsWith('NoSuch')
-          )
-            throw error;
+        } catch {
+          // Lifecycle might not be configured
         }
 
         // Get logging configuration
@@ -684,14 +654,8 @@ const createCosOperations = (cosClient: CosSdkClient, region: string, dnsOps?: D
             targetBucket: loggingResult.BucketLoggingStatus?.LoggingEnabled?.TargetBucket,
             targetPrefix: loggingResult.BucketLoggingStatus?.LoggingEnabled?.TargetPrefix,
           };
-        } catch (error: unknown) {
-          const details = error as { code?: string; status?: number; statusCode?: number };
-          if (
-            details.status !== 404 &&
-            details.statusCode !== 404 &&
-            !details.code?.startsWith('NoSuch')
-          )
-            throw error;
+        } catch {
+          // Logging might not be configured
         }
 
         // Get replication configuration
@@ -726,14 +690,8 @@ const createCosOperations = (cosClient: CosSdkClient, region: string, dnsOps?: D
               },
             })),
           };
-        } catch (error: unknown) {
-          const details = error as { code?: string; status?: number; statusCode?: number };
-          if (
-            details.status !== 404 &&
-            details.statusCode !== 404 &&
-            !details.code?.startsWith('NoSuch')
-          )
-            throw error;
+        } catch {
+          // Replication might not be configured
         }
 
         // Get server-side encryption configuration
@@ -767,14 +725,8 @@ const createCosOperations = (cosClient: CosSdkClient, region: string, dnsOps?: D
             sseAlgorithm: apply?.SSEAlgorithm,
             sseKmsMasterKeyId: apply?.KMSMasterKeyID,
           };
-        } catch (error: unknown) {
-          const details = error as { code?: string; status?: number; statusCode?: number };
-          if (
-            details.status !== 404 &&
-            details.statusCode !== 404 &&
-            !details.code?.startsWith('NoSuch')
-          )
-            throw error;
+        } catch {
+          // Encryption might not be configured
         }
 
         // Get bucket policy (cloud-effective, may differ from the definition)
@@ -800,7 +752,7 @@ const createCosOperations = (cosClient: CosSdkClient, region: string, dnsOps?: D
           }
         } catch (err: unknown) {
           const e = err as { statusCode?: number; code?: string };
-          if (e.statusCode !== 404 && e.code !== 'NoSuchBucketPolicy') {
+          if (e.statusCode !== 404 && e.statusCode !== 403 && e.code !== 'NoSuchBucketPolicy') {
             throw err;
           }
         }
@@ -954,7 +906,7 @@ const createCosOperations = (cosClient: CosSdkClient, region: string, dnsOps?: D
         return null;
       } catch (err: unknown) {
         const e = err as { statusCode?: number; code?: string };
-        if (e.statusCode === 404 || e.code === 'NoSuchBucketPolicy') {
+        if (e.statusCode === 404 || e.statusCode === 403 || e.code === 'NoSuchBucketPolicy') {
           return null;
         }
         throw err;

@@ -328,11 +328,15 @@ describe('cosOperations bucket management', () => {
         { statusCode: 503, code: 'ServiceUnavailable' },
         { code: 'ECONNRESET' },
         {},
-      ])('propagates an unreadable configuration: %j', async (details) => {
-        const error = Object.assign(new Error('configuration read failed'), details);
-        read.mockImplementation((_params, callback) => callback(error));
+      ])('keeps the bucket when configuration is unreadable: %j', async (details) => {
+        read.mockImplementation((_params, callback) =>
+          callback(Object.assign(new Error('configuration read failed'), details)),
+        );
 
-        await expect(operations.getBucket('test-bucket', 'ap-guangzhou')).rejects.toBe(error);
+        const result = await operations.getBucket('test-bucket', 'ap-guangzhou');
+
+        expect(result?.Name).toBe('test-bucket');
+        expect(result?.[field]).toBeUndefined();
       });
     });
 
@@ -348,11 +352,14 @@ describe('cosOperations bucket management', () => {
       },
     );
 
-    it('propagates a nested policy permission error without classifying the bucket as absent', async () => {
+    it('keeps the bucket when a nested policy read is forbidden', async () => {
       const error = Object.assign(new Error('AccessDenied'), { statusCode: 403 });
       mockGetBucketPolicy.mockImplementation((_params, callback) => callback(error));
 
-      await expect(operations.getBucket('test-bucket', 'ap-guangzhou')).rejects.toBe(error);
+      const result = await operations.getBucket('test-bucket', 'ap-guangzhou');
+
+      expect(result?.Name).toBe('test-bucket');
+      expect(result?.Policy).toBeNull();
     });
   });
 
@@ -892,14 +899,14 @@ describe('cosOperations bucket management', () => {
       expect(result).toBeNull();
     });
 
-    it('propagates policy permission failures', async () => {
+    it('returns null when policy read is forbidden', async () => {
       mockGetBucketPolicy.mockImplementation(
         (_params: unknown, cb: (err: { statusCode: number }) => void) => cb({ statusCode: 403 }),
       );
 
-      await expect(operations.getBucketPolicy('test-bucket', 'ap-guangzhou')).rejects.toMatchObject(
-        { statusCode: 403 },
-      );
+      const result = await operations.getBucketPolicy('test-bucket', 'ap-guangzhou');
+
+      expect(result).toBeNull();
     });
   });
 
@@ -1178,7 +1185,7 @@ describe('cosOperations bucket management', () => {
       ]);
     });
 
-    it('propagates ACL permission failures', async () => {
+    it('keeps the bucket when ACL and versioning reads are forbidden', async () => {
       mockHeadBucket.mockImplementation(
         (_params: unknown, cb: (err: null, data: unknown) => void) => cb(null, {}),
       );
@@ -1208,9 +1215,9 @@ describe('cosOperations bucket management', () => {
         cb(Object.assign(new Error('NoSuchTagSet'), { code: 'NoSuchTagSet', statusCode: 404 })),
       );
 
-      await expect(operations.getBucket('test-bucket', 'ap-guangzhou')).rejects.toThrow(
-        'AccessDenied',
-      );
+      await expect(operations.getBucket('test-bucket', 'ap-guangzhou')).resolves.toMatchObject({
+        Name: 'test-bucket',
+      });
     });
 
     it('should throw non-404 errors from headBucket', async () => {
