@@ -2,7 +2,7 @@
 
 ## Behavior contract
 
-- Omitted, null and empty-object settings are unmanaged unless the provider has an explicit clear contract. Never render them as promised removals.
+- Omitted, null and empty-object settings are never rendered as promised removals on their own. Dependents the framework created and recorded in state are removed when their YAML declaration disappears; untracked or externally created configuration stays unmanaged and is never touched. Explicit clear contracts (such as empty policy statement lists) delete as declared.
 - Unknown or failed cloud reads fail planning; only a confirmed absence can schedule creation.
 - Identity changes and unsupported/immutable updates fail during planning. This change does not authorize implicit replacement or resource deletion.
 - Compare effective provider-shaped desired values. Redact secrets only for presentation; use change fingerprints in persisted intent.
