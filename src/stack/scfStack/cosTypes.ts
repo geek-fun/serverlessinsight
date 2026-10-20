@@ -2,6 +2,8 @@ import { serializeBucketPolicy } from '../../common/bucketPolicy';
 import { BucketDomain, BucketIam, ResourceAttributes } from '../../types';
 import type { CosBucketInfo as TencentCosBucketInfo } from '../../common/tencentClient/types';
 
+export const COS_BUCKET_POLICY_INSTANCE_TYPE = 'TENCENT_COS_BUCKET_POLICY';
+
 export type CosBucketConfig = {
   Bucket: string;
   Region: string;

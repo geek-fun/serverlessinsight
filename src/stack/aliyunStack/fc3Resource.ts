@@ -1,4 +1,4 @@
-import { withStoredFunctionIam } from '../../common/functionDefinition';
+import { withLifecycleIntent, withStoredFunctionIam } from '../../common/functionDefinition';
 import { definitionsDiffer, mergeManagedIntent } from '../../common/planCompare';
 import { buildFc3NasConfig } from './fc3Types';
 import { buildAliyunHttpTriggerConfig } from '../../common/triggerMapper';
@@ -1874,6 +1874,18 @@ export const updateResource = async (
         lang.__('HTTP_TRIGGER_CREATED', { triggerName: 'http-trigger', functionName: fn.name }),
       );
     }
+  } else if (!desiredHttpTrigger && existingHttpTrigger) {
+    logger.info(
+      lang.__('DELETING_HTTP_TRIGGER', { triggerName: 'http-trigger', functionName: fn.name }),
+    );
+    try {
+      await client.fc3.deleteTrigger(fn.name, 'http-trigger');
+      logger.info(lang.__('HTTP_TRIGGER_DELETED', { triggerName: 'http-trigger' }));
+    } catch (err) {
+      const errorCode = (err as { code?: string })?.code;
+      if (errorCode !== 'TriggerNotFound') throw err;
+      logger.warn(lang.__('HTTP_TRIGGER_NOT_FOUND', { triggerName: 'http-trigger' }));
+    }
   }
 
   const existingCustomDomain = existingInstances.find(
@@ -1907,6 +1919,21 @@ export const updateResource = async (
       certConfig,
     );
     logger.info(lang.__('CUSTOM_DOMAIN_CREATED', { domainName: desiredDomain.domain_name }));
+  } else if (!desiredDomain && existingCustomDomain) {
+    logger.info(lang.__('DELETING_CUSTOM_DOMAIN', { domainName: existingCustomDomain.id }));
+    try {
+      await client.fc3.deleteCustomDomain(existingCustomDomain.id);
+      logger.info(lang.__('CUSTOM_DOMAIN_DELETED', { domainName: existingCustomDomain.id }));
+    } catch (err) {
+      const errorCode = (err as { code?: string })?.code;
+      if (errorCode !== 'CustomDomainNotFound') throw err;
+      logger.warn(
+        lang.__('RESOURCE_NOT_FOUND_PROVIDER', {
+          resourceType: 'Custom Domain',
+          name: existingCustomDomain.id,
+        }),
+      );
+    }
   } else if (desiredDomain && existingCustomDomain) {
     const existingProtocol = existingCustomDomain.attributes?.protocol as string | undefined;
     const domainChanged =
@@ -1972,8 +1999,6 @@ export const updateResource = async (
       attributes: { ...triggerConfig } as unknown as Record<string, unknown>,
     });
   }
-  if (!fn.triggers?.http && existingHttpTrigger) lifecycleInstances.push(existingHttpTrigger);
-  if (!fn.domain && existingCustomDomain) lifecycleInstances.push(existingCustomDomain);
   lifecycleInstances.push(...timerInstances);
   if (fn.domain) {
     lifecycleInstances.push({
@@ -2021,7 +2046,11 @@ export const updateResource = async (
   const resourceState: ResourceState = {
     mode: 'managed',
     region: context.region,
-    definition: mergeManagedIntent(existingState?.definition ?? {}, definition),
+    definition: withLifecycleIntent(
+      mergeManagedIntent(existingState?.definition ?? {}, definition),
+      definition,
+      ['http', 'domain'],
+    ),
     instances: [
       fcInstance,
       ...lifecycleInstances,

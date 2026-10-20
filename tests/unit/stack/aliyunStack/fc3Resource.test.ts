@@ -2274,7 +2274,7 @@ describe('Fc3Resource', () => {
       );
     });
 
-    it('preserves omitted lifecycle configuration: should delete HTTP trigger and custom domain when removed during update', async () => {
+    it('deletes HTTP trigger and custom domain recorded in state when removed from config', async () => {
       const fnWithoutLifecycle = { ...testFunction };
 
       const stateWithLifecycle: StateFile = {
@@ -2315,11 +2315,14 @@ describe('Fc3Resource', () => {
 
       await updateResource(mockContext, fnWithoutLifecycle, stateWithLifecycle);
 
-      expect(mockedFc3Operations.deleteTrigger).not.toHaveBeenCalled();
-      expect(mockedFc3Operations.deleteCustomDomain).not.toHaveBeenCalled();
+      expect(mockedFc3Operations.deleteTrigger).toHaveBeenCalledWith(
+        'test-function',
+        'http-trigger',
+      );
+      expect(mockedFc3Operations.deleteCustomDomain).toHaveBeenCalledWith('api.example.com');
     });
 
-    it('preserves omitted lifecycle configuration: should ignore TriggerNotFound when deleting HTTP trigger during update', async () => {
+    it('ignores TriggerNotFound when deleting a removed HTTP trigger during update', async () => {
       const fnWithoutLifecycle = { ...testFunction };
 
       const stateWithTrigger: StateFile = {
@@ -2353,11 +2356,11 @@ describe('Fc3Resource', () => {
 
       await updateResource(mockContext, fnWithoutLifecycle, stateWithTrigger);
 
-      expect(mockedFc3Operations.deleteTrigger).not.toHaveBeenCalled();
+      expect(mockedFc3Operations.deleteTrigger).toHaveBeenCalled();
       expect(mockedLogger.warn).toHaveBeenCalled();
     });
 
-    it('preserves omitted lifecycle configuration: should rethrow unexpected errors when deleting HTTP trigger during update', async () => {
+    it('rethrows unexpected errors when deleting a removed HTTP trigger during update', async () => {
       const fnWithoutLifecycle = { ...testFunction };
 
       const stateWithTrigger: StateFile = {
@@ -2390,8 +2393,9 @@ describe('Fc3Resource', () => {
         Object.assign(new Error('Forbidden'), { code: 'Forbidden' }),
       );
 
-      await updateResource(mockContext, fnWithoutLifecycle, stateWithTrigger);
-      expect(mockedFc3Operations.deleteTrigger).not.toHaveBeenCalled();
+      await expect(
+        updateResource(mockContext, fnWithoutLifecycle, stateWithTrigger),
+      ).rejects.toThrow('Forbidden');
     });
 
     it('should recreate HTTP trigger when trigger config changes during update', async () => {
@@ -2580,7 +2584,7 @@ describe('Fc3Resource', () => {
       expect(mockedFc3Operations.createCustomDomain).not.toHaveBeenCalled();
     });
 
-    it('preserves omitted lifecycle configuration: should ignore CustomDomainNotFound when deleting custom domain during update', async () => {
+    it('ignores CustomDomainNotFound when deleting a removed custom domain during update', async () => {
       const fnWithoutLifecycle = { ...testFunction };
 
       const stateWithDomain: StateFile = {
@@ -2615,7 +2619,7 @@ describe('Fc3Resource', () => {
 
       await updateResource(mockContext, fnWithoutLifecycle, stateWithDomain);
 
-      expect(mockedFc3Operations.deleteCustomDomain).not.toHaveBeenCalled();
+      expect(mockedFc3Operations.deleteCustomDomain).toHaveBeenCalled();
       expect(mockedLogger.warn).toHaveBeenCalled();
     });
 

@@ -14,6 +14,16 @@ export const withFunctionLifecycle = (
   ...(fn?.triggers?.timer !== undefined ? { timers: fn.triggers.timer } : {}),
 });
 
+/** Lifecycle fields follow the YAML on write: a removed field is dropped, not merged back from stored intent. */
+export const withLifecycleIntent = (
+  merged: ResourceAttributes,
+  desired: ResourceAttributes,
+  keys: readonly string[],
+): ResourceAttributes => ({
+  ...Object.fromEntries(Object.entries(merged).filter(([key]) => !keys.includes(key))),
+  ...Object.fromEntries(keys.filter((key) => key in desired).map((key) => [key, desired[key]])),
+});
+
 /** An omitted IAM block must not revoke a previously managed grant on an unrelated update. */
 export const withStoredFunctionIam = (
   fn: FunctionDomain,

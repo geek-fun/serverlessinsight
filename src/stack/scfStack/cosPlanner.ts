@@ -1,10 +1,19 @@
-import { normalizeBucketPolicyDefinition } from '../../common/bucketPolicy';
-import { Context, BucketDomain, Plan, PlanItem, StateFile, ResourceAttributes } from '../../types';
+import { normalizeBucketPolicyDefinition, removedBucketPolicy } from '../../common/bucketPolicy';
+import {
+  Context,
+  BucketDomain,
+  Plan,
+  PlanItem,
+  ResourceTypeEnum,
+  StateFile,
+  ResourceAttributes,
+} from '../../types';
 import { lang } from '../../lang';
 import { createTencentClient } from '../../common/tencentClient';
 import { cachedRefreshRead } from '../../common/refreshCache';
 import { PLAN_READ_CONCURRENCY, mapWithConcurrency } from '../../common/concurrency';
 import {
+  COS_BUCKET_POLICY_INSTANCE_TYPE,
   bucketToCosBucketConfig,
   cloudCosToDefinition,
   extractCosBucketDefinition,
@@ -67,6 +76,13 @@ export const generateBucketPlan = async (
           ),
         normalizeForDisplay: (definition) => normalizeBucketPolicyDefinition(definition, 'tencent'),
         cloudToDefinition: cloudCosToDefinition,
+        removedDependents: {
+          ...removedBucketPolicy(COS_BUCKET_POLICY_INSTANCE_TYPE, currentState, desiredDefinition),
+          ...(!bucket.website?.domain &&
+          (currentState?.instances ?? []).some((i) => i.type === ResourceTypeEnum.COS_DNS_CNAME)
+            ? { domain: currentState?.definition.domain ?? null }
+            : {}),
+        },
         refresh: context.refresh,
       });
     },

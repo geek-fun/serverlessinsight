@@ -1,4 +1,4 @@
-import { withStoredFunctionIam } from '../../common/functionDefinition';
+import { withLifecycleIntent, withStoredFunctionIam } from '../../common/functionDefinition';
 import { definitionsDiffer, mergeManagedIntent } from '../../common/planCompare';
 import { buildTencentHttpTriggerDesc } from '../../common/triggerMapper';
 import {
@@ -1484,6 +1484,21 @@ export const updateResource = async (
         : {}),
     });
     logger.info(lang.__('CUSTOM_DOMAIN_CREATED', { domainName: fn.domain.domain_name }));
+  } else if (!fn.domain && existingCustomDomain) {
+    logger.info(lang.__('DELETING_CUSTOM_DOMAIN', { domainName: existingCustomDomain.id }));
+    try {
+      await client.scf.deleteCustomDomain(existingCustomDomain.id);
+      logger.info(lang.__('CUSTOM_DOMAIN_DELETED', { domainName: existingCustomDomain.id }));
+    } catch (err) {
+      const errorCode = (err as { code?: string })?.code;
+      if (errorCode !== 'ResourceNotFound') throw err;
+      logger.warn(
+        lang.__('RESOURCE_NOT_FOUND_PROVIDER', {
+          resourceType: 'Custom Domain',
+          name: existingCustomDomain.id,
+        }),
+      );
+    }
   } else if (fn.domain && existingCustomDomain) {
     const domainChanged =
       options?.repairDomain ||
@@ -1529,7 +1544,7 @@ export const updateResource = async (
     .filter(
       (i) =>
         (i as ScfDependentInstance).type !== undefined &&
-        (!fn.domain || (i as ScfDependentInstance).type !== 'TENCENT_SCF_CUSTOM_DOMAIN') &&
+        (i as ScfDependentInstance).type !== 'TENCENT_SCF_CUSTOM_DOMAIN' &&
         // timers are fully rebuilt from the reconcile result below
         (i as ScfDependentInstance).type !== TIMER_TRIGGER_INSTANCE_TYPE &&
         !(
@@ -1582,7 +1597,11 @@ export const updateResource = async (
   const resourceState: ResourceState = {
     mode: 'managed',
     region: context.region,
-    definition: mergeManagedIntent(existingState?.definition ?? {}, definition),
+    definition: withLifecycleIntent(
+      mergeManagedIntent(existingState?.definition ?? {}, definition),
+      definition,
+      ['http', 'domain'],
+    ),
     instances: [
       buildScfInstanceFromProvider(functionInfo as ScfFunctionInfo, sid),
       ...existingDependentInstances,

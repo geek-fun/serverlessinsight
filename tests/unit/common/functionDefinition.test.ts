@@ -1,6 +1,7 @@
 import {
   withFunctionLifecycle,
   withStoredFunctionIam,
+  withLifecycleIntent,
 } from '../../../src/common/functionDefinition';
 import type { FunctionDomain } from '../../../src/types';
 
@@ -52,5 +53,20 @@ describe('function lifecycle intent', () => {
     const declared = { ...fn, iam: { role: 'new-role' } };
     expect(withStoredFunctionIam(declared, { iam })).toEqual(declared);
     expect(withStoredFunctionIam({ ...fn, log: false }, { iam }).log).toBe(false);
+  });
+  it('replaces lifecycle keys on write instead of merging stored intent back', () => {
+    const merged = { memory: 512, http: { auth_type: 'iam' }, domain: { domain_name: 'old.com' } };
+    const desired = { memory: 512 };
+    expect(withLifecycleIntent(merged, desired, ['http', 'domain'])).toEqual({ memory: 512 });
+    expect(
+      withLifecycleIntent(merged, { memory: 1, http: { auth_type: 'anonymous' } }, [
+        'http',
+        'domain',
+      ]),
+    ).toEqual({
+      memory: 512,
+      http: { auth_type: 'anonymous' },
+    });
+    expect(withLifecycleIntent(merged, desired, [])).toEqual(merged);
   });
 });

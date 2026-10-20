@@ -1,4 +1,4 @@
-import { normalizeBucketPolicyDefinition } from '../../common/bucketPolicy';
+import { normalizeBucketPolicyDefinition, removedBucketPolicy } from '../../common/bucketPolicy';
 import path from 'node:path';
 import { lang } from '../../lang';
 import { Context, BucketDomain, Plan, PlanItem, StateFile, ResourceAttributes } from '../../types';
@@ -6,7 +6,12 @@ import { createVolcengineClient } from '../../common/volcengineClient';
 import { cachedRefreshRead } from '../../common/refreshCache';
 import { PLAN_READ_CONCURRENCY, mapWithConcurrency } from '../../common/concurrency';
 import { planRefreshedResource } from '../../common/refreshPlanner';
-import { bucketToTosConfig, cloudTosToDefinition, extractTosBucketDefinition } from './tosTypes';
+import {
+  TOS_BUCKET_POLICY_INSTANCE_TYPE,
+  bucketToTosConfig,
+  cloudTosToDefinition,
+  extractTosBucketDefinition,
+} from './tosTypes';
 import { getAllResources, getResource } from '../../common/stateManager';
 import { computeDirectoryHash } from '../../common';
 import { OWNERSHIP_TAG_KEY, isOwnedByStack } from '../ownershipTag';
@@ -72,6 +77,11 @@ export const generateBucketPlan = async (
         normalizeForDisplay: (definition) =>
           normalizeBucketPolicyDefinition(definition, 'volcengine'),
         cloudToDefinition: cloudTosToDefinition,
+        removedDependents: removedBucketPolicy(
+          TOS_BUCKET_POLICY_INSTANCE_TYPE,
+          currentState,
+          desiredDefinition,
+        ),
         enrichRemoteAttributes: async (_remote, attributes) => {
           if (desiredDefinition.policy === null) return attributes;
           const policy = await cachedRefreshRead(
