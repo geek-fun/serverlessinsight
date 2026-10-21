@@ -4,6 +4,8 @@ import { parseYaml, revalYaml } from '../../../src/parser';
 import { createStateBackend } from '../../../src/common/stateBackend';
 import { generateTencentPlan, displayPlan } from '../../../src/stack/scfStack';
 import { generateAliyunPlan } from '../../../src/stack/aliyunStack';
+import { generateVolcenginePlan } from '../../../src/stack/volcengineStack';
+import { lang } from '../../../src/lang';
 import { setJsonMode } from '../../../src/common/jsonOutput';
 
 jest.mock('../../../src/common', () => ({
@@ -35,6 +37,10 @@ jest.mock('../../../src/common/stateBackend', () => ({
   createStateBackend: jest.fn(),
 }));
 
+jest.mock('../../../src/common/noColor', () => ({
+  isNoColorEnabled: jest.fn().mockReturnValue(false),
+}));
+
 jest.mock('../../../src/stack/scfStack', () => ({
   generateTencentPlan: jest.fn(),
   displayPlan: jest.fn(),
@@ -44,9 +50,13 @@ jest.mock('../../../src/stack/aliyunStack', () => ({
   generateAliyunPlan: jest.fn(),
 }));
 
+jest.mock('../../../src/stack/volcengineStack', () => ({
+  generateVolcenginePlan: jest.fn(),
+}));
+
 jest.mock('../../../src/lang', () => ({
   lang: {
-    __: (key: string) => key,
+    __: jest.fn((key: string) => key),
   },
 }));
 
@@ -87,6 +97,7 @@ describe('plan command', () => {
     (createStateBackend as jest.Mock).mockReturnValue(mockBackend);
     (generateAliyunPlan as jest.Mock).mockResolvedValue(mockPlanResult);
     (generateTencentPlan as jest.Mock).mockResolvedValue(mockPlanResult);
+    (generateVolcenginePlan as jest.Mock).mockResolvedValue(mockPlanResult);
   });
 
   it('should generate plan for Aliyun provider', async () => {
@@ -129,21 +140,21 @@ describe('plan command', () => {
     (parseYaml as jest.Mock).mockReturnValue({
       app: 'test-app',
       service: 'test-service',
-      provider: { name: ProviderEnum.VOLCENGINE },
+      provider: { name: ProviderEnum.HUAWEI },
       stages: {},
     });
     (revalYaml as jest.Mock).mockReturnValue({
       app: 'test-app',
       service: 'test-service',
-      provider: { name: ProviderEnum.VOLCENGINE, region: 'cn-beijing' },
+      provider: { name: ProviderEnum.HUAWEI, region: 'cn-beijing' },
       backend: { type: 'local' },
     });
     (getContext as jest.Mock).mockReturnValue({
       ...mockContext,
-      provider: ProviderEnum.VOLCENGINE,
+      provider: ProviderEnum.HUAWEI,
     });
 
-    await expect(plan({ location: '/test/path' })).rejects.toThrow();
+    await expect(plan({ location: '/test/path' })).rejects.toThrow('PLAN_COMMAND_NOT_SUPPORTED');
   });
 
   it('should pass options to setContext', async () => {
@@ -166,6 +177,143 @@ describe('plan command', () => {
       }),
       true,
     );
+  });
+
+  describe('Volcengine planning', () => {
+    const iac = {
+      app: 'test-app',
+      service: 'test-service',
+      org: 'test-org',
+      provider: { name: ProviderEnum.VOLCENGINE, region: 'cn-beijing' },
+    };
+
+    beforeEach(() => {
+      (parseYaml as jest.Mock).mockReturnValue({ ...iac, stages: {} });
+      (revalYaml as jest.Mock).mockReturnValue(iac);
+      (getContext as jest.Mock).mockReturnValue({
+        ...mockContext,
+        provider: ProviderEnum.VOLCENGINE,
+      });
+    });
+
+    it('uses the existing planner and renders its ordered result with the Volcengine name', async () => {
+      const orderedPlan = {
+        ...mockPlanResult,
+        items: [
+          { logicalId: 'functions.hello', action: 'create', resourceType: 'VOLCENGINE_VEFAAS' },
+          { logicalId: 'events.http', action: 'create', resourceType: 'VOLCENGINE_APIGW' },
+        ],
+        levels: [['functions.hello'], ['events.http']],
+      };
+      (generateVolcenginePlan as jest.Mock).mockResolvedValue(orderedPlan);
+
+      await expect(plan({ location: '/test/path' })).resolves.toEqual({ hasChanges: true });
+
+      expect(generateVolcenginePlan).toHaveBeenCalledWith(iac, mockBackend);
+      expect(generateAliyunPlan).not.toHaveBeenCalled();
+      expect(generateTencentPlan).not.toHaveBeenCalled();
+      expect(lang.__).toHaveBeenCalledWith('GENERATING_PLAN_FOR_PROVIDER', {
+        provider: 'PROVIDER_VOLCENGINE',
+      });
+      expect(displayPlan).toHaveBeenCalledWith(orderedPlan, expect.anything());
+    });
+
+    it.each([
+      undefined,
+      { type: 'LOCAL' },
+      { type: 'SAAS' },
+      {
+        type: 'BUCKET_STORE',
+        bucket: 'state-bucket',
+        key: 'state.json',
+      },
+    ])('preserves backend selection and migration warnings for %j', async (backend) => {
+      (revalYaml as jest.Mock).mockReturnValue({ ...iac, backend });
+
+      await plan({ location: '/test/path' });
+
+      expect(createStateBackend).toHaveBeenCalledWith(
+        backend,
+        expect.objectContaining({
+          provider: ProviderEnum.VOLCENGINE,
+          declaredOrg: 'test-org',
+          migrationMarker: 'warn',
+        }),
+      );
+      expect(generateVolcenginePlan).toHaveBeenCalledWith({ ...iac, backend }, mockBackend);
+    });
+
+    it.each([true, false])(
+      'preserves refresh=%s and parameter, stage and region overrides',
+      async (refresh) => {
+        await plan({
+          location: '/test/path',
+          stage: 'prod',
+          region: 'cn-shanghai',
+          parameters: { memory: '1024' },
+          refresh,
+        });
+
+        expect(setContext).toHaveBeenCalledWith(
+          expect.objectContaining({
+            stage: 'prod',
+            region: 'cn-shanghai',
+            parameters: { memory: '1024' },
+            refresh,
+          }),
+          true,
+        );
+      },
+    );
+
+    it.each([
+      [[]],
+      [
+        [
+          { logicalId: 'functions.hello', action: 'create', resourceType: 'VOLCENGINE_VEFAAS' },
+          { logicalId: 'buckets.old', action: 'delete', resourceType: 'VOLCENGINE_TOS_BUCKET' },
+          { logicalId: 'events.http', action: 'update', resourceType: 'VOLCENGINE_APIGW' },
+          { logicalId: 'buckets.idle', action: 'noop', resourceType: 'VOLCENGINE_TOS_BUCKET' },
+        ],
+      ],
+    ])('keeps the versioned JSON envelope and summary for %j', async (items) => {
+      (generateVolcenginePlan as jest.Mock).mockResolvedValue({ ...mockPlanResult, items });
+      const stdout = jest.spyOn(process.stdout, 'write').mockImplementation(() => true);
+      try {
+        const result = await plan({ location: '/test/path', json: true });
+        const payload = JSON.parse(stdout.mock.calls[0][0] as string);
+        expect(payload).toMatchObject({
+          planVersion: 1,
+          provider: 'volcengine',
+          app: 'test-app',
+          service: 'test-service',
+          stage: 'dev',
+          summary: items.length
+            ? { create: 1, update: 1, destroy: 1, recreate: 0, unchanged: 1 }
+            : { create: 0, update: 0, destroy: 0, recreate: 0, unchanged: 0 },
+        });
+        expect(payload.changes.map((change: { action: string }) => change.action)).toEqual(
+          items.length ? ['create', 'destroy', 'update'] : [],
+        );
+        expect(result).toEqual({ hasChanges: items.length > 0 });
+        expect(displayPlan).not.toHaveBeenCalled();
+      } finally {
+        stdout.mockRestore();
+      }
+    });
+
+    it('propagates planner failures without rendering a successful plan', async () => {
+      const error = new Error('cloud read failed');
+      (generateVolcenginePlan as jest.Mock).mockRejectedValueOnce(error);
+      const stdout = jest.spyOn(process.stdout, 'write').mockImplementation(() => true);
+      try {
+        await expect(plan({ location: '/test/path', json: true })).rejects.toBe(error);
+        expect(stdout).not.toHaveBeenCalled();
+        expect(displayPlan).not.toHaveBeenCalled();
+      } finally {
+        stdout.mockRestore();
+      }
+    });
   });
 
   describe('--json output (issue #250)', () => {

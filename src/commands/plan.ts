@@ -5,6 +5,7 @@ import { isNoColorEnabled } from '../common/noColor';
 import { parseYaml, revalYaml } from '../parser';
 import { generateTencentPlan, displayPlan } from '../stack/scfStack';
 import { generateAliyunPlan } from '../stack/aliyunStack';
+import { generateVolcenginePlan } from '../stack/volcengineStack';
 import { lang } from '../lang';
 import { PlanDisplayConfig } from '../types';
 
@@ -43,10 +44,12 @@ export const plan = async (options: {
   // Store IAC in context for access by all functions
   setIac(iac);
 
-  const providerDisplayName =
-    iac.provider.name === ProviderEnum.ALIYUN
-      ? lang.__('PROVIDER_ALIYUN')
-      : lang.__('PROVIDER_TENCENT');
+  const providerDisplayNames: Partial<Record<ProviderEnum, string>> = {
+    [ProviderEnum.ALIYUN]: lang.__('PROVIDER_ALIYUN'),
+    [ProviderEnum.TENCENT]: lang.__('PROVIDER_TENCENT'),
+    [ProviderEnum.VOLCENGINE]: lang.__('PROVIDER_VOLCENGINE'),
+  };
+  const providerDisplayName = providerDisplayNames[iac.provider.name] ?? iac.provider.name;
   logger.info(lang.__('GENERATING_PLAN_FOR_PROVIDER', { provider: providerDisplayName }));
 
   // Read-only command: a migrated state only warns here (window-period
@@ -62,6 +65,8 @@ export const plan = async (options: {
     planResult = await generateTencentPlan(iac, backend);
   } else if (iac.provider.name === ProviderEnum.ALIYUN) {
     planResult = await generateAliyunPlan(iac, backend);
+  } else if (iac.provider.name === ProviderEnum.VOLCENGINE) {
+    planResult = await generateVolcenginePlan(iac, backend);
   } else {
     logger.error(lang.__('PLAN_COMMAND_NOT_SUPPORTED'));
     throw new Error(lang.__('PLAN_COMMAND_NOT_SUPPORTED'));

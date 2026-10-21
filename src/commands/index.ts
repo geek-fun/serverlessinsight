@@ -208,11 +208,21 @@ program
   .option('--no-refresh', lang.__('OPT_NO_REFRESH'))
   .option('--json', lang.__('OPT_JSON'))
   .option('--no-color', lang.__('OPT_NO_COLOR'))
+  .option(
+    '-p, --parameter <key=value>',
+    lang.__('OPT_PARAMETER'),
+    (value, previous: { [key: string]: string }) => {
+      const [key, val] = value.split('=');
+      return { ...previous, [key]: val };
+    },
+    {},
+  )
   .action(
     actionWrapper(
       'plan',
       async ({
         stage,
+        parameter,
         file,
         region,
         provider,
@@ -223,8 +233,10 @@ program
         json,
         color,
       }) => {
+        setJsonMode(!!json);
         const result = await plan({
           stage,
+          parameters: parameter,
           location: file,
           region,
           provider,
@@ -259,11 +271,21 @@ program
   .option('--no-refresh', lang.__('OPT_NO_REFRESH'))
   .option('--json', lang.__('OPT_JSON'))
   .option('--no-color', lang.__('OPT_NO_COLOR'))
+  .option(
+    '-p, --parameter <key=value>',
+    lang.__('OPT_PARAMETER'),
+    (value, previous: { [key: string]: string }) => {
+      const [key, val] = value.split('=');
+      return { ...previous, [key]: val };
+    },
+    {},
+  )
   .action(
     actionWrapper(
       'diff',
       async ({
         stage,
+        parameter,
         file,
         region,
         provider,
@@ -274,8 +296,10 @@ program
         json,
         color,
       }) => {
+        setJsonMode(!!json);
         const result = await plan({
           stage,
+          parameters: parameter,
           location: file,
           region,
           provider,
