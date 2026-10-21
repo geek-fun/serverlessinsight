@@ -15,6 +15,7 @@ export const parseEvent = (events: { [key: string]: EventRaw }): Array<EventDoma
     domain: event.domain
       ? {
           ...event.domain,
+          protocol: event.domain.protocol ?? 'HTTP',
           www_bind_apex: parseBooleanWithDefault(event.domain.www_bind_apex, false),
         }
       : undefined,

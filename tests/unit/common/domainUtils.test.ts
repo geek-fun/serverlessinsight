@@ -120,12 +120,12 @@ describe('resolveWwwBindingAction', () => {
     [true, false, 'ensure'],
     [false, true, 'remove'],
     [false, false, 'remove'],
-    [undefined, true, 'retain'],
+    [undefined, true, 'remove'],
     [undefined, false, 'remove'],
   ] as const)(
     'resolves declaration %s for retained parent %s as %s',
     (declared, sameDomain, action) => {
-      expect(resolveWwwBindingAction(declared, sameDomain)).toBe(action);
+      expect(resolveWwwBindingAction(declared)).toBe(action);
     },
   );
 });

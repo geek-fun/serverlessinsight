@@ -200,6 +200,16 @@ const policyName = `${roleName}-policy`;
 3. **In-place migration**: reuse branches key on instance type — existing deployments keep their recorded role/container and get trust/policy updated in place; new names apply only to newly created resources. Never recreate a role or container just to change its name.
 4. **SIDs are per-provider**: `si:<provider>:<service>:<stage>:<id>` — intentionally NOT unified cross-provider; a SID's lifecycle is bound to its physical resource.
 
+## Configuration Defaults and Ownership - MANDATORY
+
+- Omission restores the documented si default on both creation and update. Never reuse the previous value of a defaulted field merely because the new YAML omits it.
+- Resolve defaults in shared parsers or effective configuration builders before comparison, execution and state persistence. All providers must use the same field contract; provider-specific defaults must be explicit in their builders.
+- Example: `www_bind_apex` defaults to `false`. Changing `true` to omission removes the owned www binding; changing `false` to omission is unchanged. This applies to bucket and event domains, including legacy forms.
+- Defaults include function logging `false`, event-domain protocol `HTTP`, timer enablement `true`, website index `index.html`, and enabled CDN type/scope `web`/`global`. Function memory and timeout defaults are provider-specific and live in the effective builders.
+- Removing an owned optional configuration block removes its recorded dependents. Persist provider-assigned identities immediately so update, retry and destroy can reconcile the exact resources si owns. Do not claim ownership of unrelated resources found during reads.
+- A field with no si default may remain unmanaged when omitted only when its contract explicitly says so. Do not confuse YAML omission with an unavailable cloud field: failed reads propagate, confirmed absence is `null`, and unavailable dimensions are `undefined`.
+- For each defaulted field, test non-default to omission, default to omission, execution and saved-state convergence. Reject a reset the provider cannot apply instead of saving unapplied defaults.
+
 ## Code Style
 
 ### TypeScript

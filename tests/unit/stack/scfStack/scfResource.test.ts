@@ -12,6 +12,7 @@ import { SHARED_LOGSET_KEY } from '../../../../src/stack/scfStack/sharedLogset';
 import { ProviderEnum } from '../../../../src/common';
 import {
   Context,
+  PartialResourceError,
   ResourceState,
   StateFile,
   CURRENT_STATE_VERSION,
@@ -157,7 +158,7 @@ describe('ScfResource', () => {
     (hashUtils.computeZipContentHash as jest.Mock).mockResolvedValue('mock-code-hash');
     mockScfOperations.getFunction.mockResolvedValue(mockFunctionInfo);
     mockScfOperations.deleteTrigger.mockResolvedValue(undefined);
-    mockScfOperations.createTrigger.mockResolvedValue(undefined);
+    mockScfOperations.createTrigger.mockResolvedValue({ TriggerName: 'cloud-http-id' });
     mockScfOperations.deleteCustomDomain.mockResolvedValue(undefined);
     mockScfOperations.createCustomDomain.mockResolvedValue(undefined);
     (stateManager.getResource as jest.Mock).mockReturnValue(undefined);
@@ -1058,7 +1059,7 @@ describe('ScfResource', () => {
       expect(mockScfOperations.createTrigger).not.toHaveBeenCalled();
     });
 
-    it('should tolerate already-exists errors from createTrigger during tainted adoption', async () => {
+    it('should propagate trigger conflicts when no provider identity can be verified', async () => {
       const taintedState: StateFile = {
         ...initialState,
         resources: {
@@ -1092,7 +1093,9 @@ describe('ScfResource', () => {
       });
       (stateManager.setResource as jest.Mock).mockReturnValue(initialState);
 
-      await createResource(mockContext, fnWithHttpTrigger, taintedState);
+      await expect(
+        createResource(mockContext, fnWithHttpTrigger, taintedState),
+      ).rejects.toBeInstanceOf(PartialResourceError);
 
       expect(mockScfOperations.createTrigger).toHaveBeenCalledTimes(1);
     });
@@ -2220,7 +2223,7 @@ describe('ScfResource', () => {
           'functions.test_fn': {
             mode: 'managed',
             region: 'ap-guangzhou',
-            definition: mockDefinition,
+            definition: { ...mockDefinition, http: { auth_type: 'public' } },
             instances: [
               {
                 sid: 'si:tencent:scf:default:test-function',
@@ -2230,7 +2233,10 @@ describe('ScfResource', () => {
                   {
                     type: 'http',
                     triggerName: 'test_fn-http-trigger',
-                    triggerDesc: JSON.stringify({ authType: 'NONE' }),
+                    triggerDesc: JSON.stringify({
+                      AuthType: 'NONE',
+                      NetConfig: { EnableExtranet: true },
+                    }),
                   },
                 ],
               },
@@ -2270,7 +2276,7 @@ describe('ScfResource', () => {
           'functions.test_fn': {
             mode: 'managed',
             region: 'ap-guangzhou',
-            definition: mockDefinition,
+            definition: { ...mockDefinition, http: { auth_type: 'public' } },
             instances: [
               {
                 sid: 'si:tencent:scf:default:test-function',
@@ -2280,7 +2286,10 @@ describe('ScfResource', () => {
                   {
                     type: 'http',
                     triggerName: 'test_fn-http-trigger',
-                    triggerDesc: JSON.stringify({ authType: 'NONE' }),
+                    triggerDesc: JSON.stringify({
+                      AuthType: 'NONE',
+                      NetConfig: { EnableExtranet: true },
+                    }),
                   },
                 ],
               },
@@ -2323,7 +2332,7 @@ describe('ScfResource', () => {
           'functions.test_fn': {
             mode: 'managed',
             region: 'ap-guangzhou',
-            definition: mockDefinition,
+            definition: { ...mockDefinition, http: { auth_type: 'public' } },
             instances: [
               {
                 sid: 'si:tencent:scf:default:test-function',
@@ -2333,7 +2342,10 @@ describe('ScfResource', () => {
                   {
                     type: 'http',
                     triggerName: 'test_fn-http-trigger',
-                    triggerDesc: JSON.stringify({ authType: 'NONE' }),
+                    triggerDesc: JSON.stringify({
+                      AuthType: 'NONE',
+                      NetConfig: { EnableExtranet: true },
+                    }),
                   },
                 ],
               },
@@ -2415,7 +2427,7 @@ describe('ScfResource', () => {
           'functions.test_fn': {
             mode: 'managed',
             region: 'ap-guangzhou',
-            definition: mockDefinition,
+            definition: { ...mockDefinition, http: { auth_type: 'public' } },
             instances: [
               {
                 sid: 'si:tencent:scf:default:test-function',
@@ -2445,6 +2457,16 @@ describe('ScfResource', () => {
       (mockScfOperations.updateFunctionCode as jest.Mock).mockResolvedValue(undefined);
       (stateManager.setResource as jest.Mock).mockReturnValue(initialState);
 
+      mockScfOperations.getFunction.mockResolvedValue({
+        ...mockFunctionInfo,
+        Triggers: [
+          {
+            Type: 'http',
+            TriggerName: 'test_fn-http-trigger',
+            TriggerDesc: JSON.stringify({ AuthType: 'NONE', NetConfig: { EnableExtranet: true } }),
+          },
+        ],
+      });
       await updateResource(mockContext, fnWithHttpTrigger, stateWithMatchingTrigger);
 
       expect(mockScfOperations.deleteTrigger).not.toHaveBeenCalled();
@@ -3545,14 +3567,18 @@ describe('ScfResource', () => {
           'functions.test_fn': {
             mode: 'managed',
             region: 'ap-guangzhou',
-            definition: mockDefinition,
+            definition: { ...mockDefinition, http: { auth_type: 'public' } },
             instances: [
               {
                 sid: 'si:tencent:scf:default:test-function',
                 id: 'test-function',
                 functionName: 'test-function',
                 triggers: [
-                  { type: 'http', triggerName: 'test_fn-http-trigger', triggerDesc: '{}' },
+                  {
+                    type: 'http',
+                    triggerName: 'test_fn-http-trigger',
+                    triggerDesc: JSON.stringify({ AuthType: 'NONE', NetConfig: {} }),
+                  },
                 ],
               },
             ],
@@ -3624,14 +3650,18 @@ describe('ScfResource', () => {
           'functions.test_fn': {
             mode: 'managed',
             region: 'ap-guangzhou',
-            definition: mockDefinition,
+            definition: { ...mockDefinition, http: { auth_type: 'public' } },
             instances: [
               {
                 sid: 'si:tencent:scf:default:test-function',
                 id: 'test-function',
                 functionName: 'test-function',
                 triggers: [
-                  { type: 'http', triggerName: 'test_fn-http-trigger', triggerDesc: '{}' },
+                  {
+                    type: 'http',
+                    triggerName: 'test_fn-http-trigger',
+                    triggerDesc: JSON.stringify({ AuthType: 'NONE', NetConfig: {} }),
+                  },
                 ],
               },
             ],
@@ -3702,14 +3732,18 @@ describe('ScfResource', () => {
           'functions.test_fn': {
             mode: 'managed',
             region: 'ap-guangzhou',
-            definition: mockDefinition,
+            definition: { ...mockDefinition, http: { auth_type: 'public' } },
             instances: [
               {
                 sid: 'si:tencent:scf:default:test-function',
                 id: 'test-function',
                 functionName: 'test-function',
                 triggers: [
-                  { type: 'http', triggerName: 'test_fn-http-trigger', triggerDesc: '{}' },
+                  {
+                    type: 'http',
+                    triggerName: 'test_fn-http-trigger',
+                    triggerDesc: JSON.stringify({ AuthType: 'NONE', NetConfig: {} }),
+                  },
                 ],
               },
             ],

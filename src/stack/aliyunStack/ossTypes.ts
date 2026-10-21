@@ -131,7 +131,7 @@ export const extractOssBucketDefinition = (
     websiteCodeHash: websiteCodeHash ?? null,
     storageClass: config.storageClass ?? null,
     domain: config.domain ?? null,
-    wwwBindApex: config.wwwBindApex ?? null,
+    wwwBindApex: config.domain ? (config.wwwBindApex ?? false) : null,
     domainCertificateId: config.domainCertificateId ?? null,
     domainCertificateBody: config.domainCertificateBody ?? null,
     domainCertificatePrivateKey: config.domainCertificatePrivateKey ? '(managed)' : null,
@@ -145,8 +145,8 @@ export const extractOssBucketDefinition = (
   // Only include CDN/accelerate fields when they're actually enabled
   if (config.cdnEnabled !== undefined) {
     def.cdnEnabled = config.cdnEnabled;
-    if (config.cdnType) def.cdnType = config.cdnType;
-    if (config.cdnScope) def.cdnScope = config.cdnScope;
+    if (config.cdnEnabled) def.cdnType = config.cdnType ?? 'web';
+    if (config.cdnEnabled) def.cdnScope = config.cdnScope ?? 'global';
     if (config.cdnCacheTtl != null) def.cdnCacheTtl = config.cdnCacheTtl;
     if (config.cdnIgnoreQueryString != null) def.cdnIgnoreQueryString = config.cdnIgnoreQueryString;
     if (config.cdnOriginProtocol) def.cdnOriginProtocol = config.cdnOriginProtocol;

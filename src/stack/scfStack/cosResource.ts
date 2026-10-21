@@ -100,7 +100,14 @@ type CosResolvedCertificate = CosResolvedCertificateUpload | CosResolvedCertific
 const resolveBucketDomainCertificate = (
   bucket: BucketDomain,
 ): CosResolvedCertificate | undefined => {
-  const website = bucket.website;
+  const website = bucket.domain
+    ? {
+        domain: bucket.domain.domain_name,
+        domain_certificate_id: bucket.domain.certificate_id,
+        domain_certificate_body: bucket.domain.certificate_body,
+        domain_certificate_private_key: bucket.domain.certificate_private_key,
+      }
+    : bucket.website;
   if (!website) return undefined;
 
   if (website.domain_certificate_id) {
@@ -369,10 +376,10 @@ export const createBucketResource = async (
     ];
 
     let cnameInfo: CosCnameInfo | undefined;
-    if (bucket.website?.domain) {
+    if (config.Domain) {
       const resolved = resolveBucketDomainCertificate(bucket);
-      const primaryDomain = bucket.website.domain;
-      const wwwBindApex = bucket.website.www_bind_apex ?? false;
+      const primaryDomain = config.Domain;
+      const wwwBindApex = config.WwwBindApex ?? false;
 
       logger.info(
         lang.__('BINDING_CUSTOM_DOMAIN_TO_BUCKET', {
@@ -511,10 +518,10 @@ export const updateBucketResource = async (
   const existingPrimaryDnsInstance = existingDnsInstances?.find((i) => !i.isWwwVariant);
   const existingWwwDnsInstance = existingDnsInstances?.find((i) => i.isWwwVariant);
 
-  if (bucket.website?.domain) {
-    const primaryDomain = bucket.website.domain;
+  if (config.Domain) {
+    const primaryDomain = config.Domain;
     const domainChanged = existingPrimaryDnsInstance?.domain !== primaryDomain;
-    const wwwAction = resolveWwwBindingAction(bucket.website.www_bind_apex, !domainChanged);
+    const wwwAction = resolveWwwBindingAction(config.WwwBindApex);
 
     if (domainChanged && existingDnsInstances) {
       for (const instance of existingDnsInstances) {
@@ -589,8 +596,6 @@ export const updateBucketResource = async (
           );
         }
       }
-    } else if (existingWwwDnsInstance && wwwAction === 'retain') {
-      instances.push(existingWwwDnsInstance);
     } else if (existingWwwDnsInstance && !domainChanged && wwwAction === 'remove') {
       await client.cos.unbindCustomDomain(
         bucket.name,

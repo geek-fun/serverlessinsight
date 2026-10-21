@@ -1,6 +1,10 @@
 import { withLifecycleIntent, withStoredFunctionIam } from '../../common/functionDefinition';
 import { definitionsDiffer, mergeManagedIntent } from '../../common/planCompare';
-import { buildTencentHttpTriggerDesc } from '../../common/triggerMapper';
+import {
+  SCF_HTTP_TRIGGER_TYPE,
+  reconcileScfHttpTrigger,
+  ownedScfHttpTrigger,
+} from './scfHttpTrigger';
 import {
   Context,
   FunctionDomain,
@@ -22,14 +26,7 @@ import {
   setSharedResource,
   removeSharedResource,
 } from '../../common/stateManager';
-import {
-  buildSid,
-  attributesEqual,
-  ProviderEnum,
-  mapAuthType,
-  mapAccess,
-  buildFunctionRoleName,
-} from '../../common';
+import { buildSid, attributesEqual, buildFunctionRoleName } from '../../common';
 import { RAM_ROLE_PROPAGATION_DELAY_MS } from '../../common/constants';
 import { computeZipContentHash } from '../../common/hashUtils';
 import { logger } from '../../common/logger';
@@ -47,23 +44,6 @@ import {
   releaseSharedLogsetIfUnused,
 } from './sharedLogset';
 import { CLS_TOPIC_PERIOD, CLS_TOPIC_STORAGE_TYPE } from '../../common/tencentClient/clsOperations';
-
-/**
- * Build the Function URL trigger description for Tencent CreateTrigger
- * (Type: 'http'). Format per official docs (创建函数 URL / Creating a Function
- * URL): { AuthType, NetConfig: { EnableIntranet, EnableExtranet } }.
- * AuthType is the mapAuthType result ('NONE' = no auth, 'CAM' = CAM auth);
- * the API Gateway trigger format ({ api/service/release }) is obsolete —
- * Tencent shut down new API Gateway triggers on 2024-07-01.
- */
-const buildTencentTriggerDesc = buildTencentHttpTriggerDesc;
-
-// Tencent names Function URL triggers with a random id (e.g. "5obtzwwxw1"), not
-// our ${fn.key}-http-trigger, so name-based matching never finds them. A
-// Function URL trigger is identified by Type 'http' + a TriggerDesc carrying
-// the NetConfig field (the API Gateway flavor uses api/service/release instead).
-const isFunctionUrlTrigger = (t: { TriggerName?: string; Type?: string; TriggerDesc?: string }) =>
-  t.Type === 'http' && typeof t.TriggerDesc === 'string' && t.TriggerDesc.includes('NetConfig');
 
 const TIMER_TRIGGER_INSTANCE_TYPE = 'TENCENT_SCF_TIMER_TRIGGER';
 
@@ -302,13 +282,6 @@ const toErrorMessage = (error: unknown): string => {
   return String(error) || 'unknown error';
 };
 
-// Minimal provider shape needed for trigger-duplication checks on adoption —
-// the full provider info type (common/tencentClient/types) differs from the
-// state-builder ScfFunctionInfo type below.
-type AdoptedProviderInfo = {
-  Triggers?: Array<{ TriggerName: string; Type: string }>;
-};
-
 const delay = async (ms: number): Promise<void> => {
   await new Promise((resolve) => {
     setTimeout(resolve, ms);
@@ -369,7 +342,11 @@ const isLogConfigChanged = (
 const isScfFunctionInstance = (instance: { type?: unknown; functionName?: unknown }): boolean =>
   typeof instance.functionName === 'string' || instance.type == null;
 
-const buildScfInstanceFromProvider = (info: ScfFunctionInfo, sid: string) => {
+const buildScfInstanceFromProvider = (
+  info: ScfFunctionInfo,
+  sid: string,
+  ownedHttpIds: readonly string[] = [],
+) => {
   const envMap: Record<string, string> =
     info.Environment?.Variables?.reduce(
       (acc, v) => ({ ...acc, [v.Key]: v.Value }),
@@ -381,6 +358,7 @@ const buildScfInstanceFromProvider = (info: ScfFunctionInfo, sid: string) => {
     type: t.Type,
     triggerDesc: t.TriggerDesc,
     triggerName: t.TriggerName,
+    ...(t.Type === 'http' ? { owned: ownedHttpIds.includes(t.TriggerName) } : {}),
     addTime: t.AddTime,
     enable: t.Enable,
     customArgument: t.CustomArgument ?? null,
@@ -871,17 +849,12 @@ export const createResource = async (
   const stateWithShared = dependentResources.sharedInstance
     ? setSharedResource(state, context.stage, SHARED_LOGSET_KEY, dependentResources.sharedInstance)
     : state;
-  const stateAfterDependents = setResource(stateWithShared, logicalId, taintedResourceState);
+  let stateAfterDependents = setResource(stateWithShared, logicalId, taintedResourceState);
 
   const client = createTencentClient(context);
 
   const isTainted = existingResourceState?.status === 'tainted';
   const existingFunctionOnRetry = isTainted ? await client.scf.getFunction(fn.name) : null;
-
-  // Provider info of a function adopted from a previous partial run (tainted
-  // retry or reconciled after a create error) — used to skip already-attached
-  // triggers below.
-  let adoptedInfo: AdoptedProviderInfo | null = existingFunctionOnRetry;
 
   if (existingFunctionOnRetry) {
     logger.info(
@@ -907,7 +880,6 @@ export const createResource = async (
       await delay(RECOVERY_GET_FUNCTION_DELAY_MS);
       const afterError = await client.scf.getFunction(fn.name);
       if (afterError) {
-        adoptedInfo = afterError;
         logger.info(lang.__('FC3_FOUND_AFTER_CREATE_RECONCILE', { functionName: fn.name }));
       } else {
         throw new PartialResourceError(stateAfterDependents, new Error(toErrorMessage(error)));
@@ -921,7 +893,6 @@ export const createResource = async (
       // a resource that was never ours).
       const probe = await client.scf.getFunction(fn.name);
       if (probe && isOwnedByStack(context, logicalId, probe.Tags)) {
-        adoptedInfo = probe;
         logger.info(
           lang.__('RESOURCE_OWNERSHIP_TAG_ADOPT', {
             resourceType: 'Function',
@@ -946,64 +917,24 @@ export const createResource = async (
     }
   }
 
-  // Create HTTP trigger if configured
-  if (fn.triggers?.http) {
-    const authType = mapAuthType(ProviderEnum.TENCENT, fn.triggers.http.auth_type);
-    const access = mapAccess(fn.triggers.http.access);
-    const triggerName = `${fn.key}-http-trigger`;
-
-    const triggerDesc = buildTencentTriggerDesc(authType, access);
-
-    // Probe the provider for an already-attached trigger BEFORE attempting to
-    // create it. A leftover trigger from a previous partial run (function exists
-    // in cloud, state blank) would otherwise collide with CreateTrigger and
-    // surface as a confusing empty error. Applies to both fresh creates (function
-    // just created — Triggers from the createFunction flow) and tainted retries.
-    let providerTriggers: Array<{ TriggerName: string; Type: string }> =
-      adoptedInfo?.Triggers ?? [];
-    if (providerTriggers.length === 0) {
-      const probe = await client.scf.getFunction(fn.name);
-      if (probe) {
-        providerTriggers = probe.Triggers ?? [];
-      }
-    }
-
-    const triggerAlreadyAttached = providerTriggers.some(isFunctionUrlTrigger);
-
-    if (triggerAlreadyAttached) {
-      logger.info(
-        lang.__('SCF_HTTP_TRIGGER_ALREADY_ATTACHED', { triggerName, functionName: fn.name }),
-      );
-    } else {
-      logger.info(lang.__('CREATING_HTTP_TRIGGER', { triggerName, functionName: fn.name }));
-
-      try {
-        await client.scf.createTrigger({
-          FunctionName: fn.name,
-          TriggerName: triggerName,
-          Type: 'http',
-          TriggerDesc: triggerDesc,
-          Qualifier: '$DEFAULT',
-          Enable: 'OPEN',
-        });
-
-        logger.info(lang.__('HTTP_TRIGGER_CREATED', { triggerName, functionName: fn.name }));
-      } catch (error) {
-        if (isResourceAlreadyExistsError(error)) {
-          logger.warn(
-            lang.__('SCF_HTTP_TRIGGER_ALREADY_EXISTS', {
-              triggerName,
-              functionName: fn.name,
-              error: String(error),
-            }),
-          );
-        } else {
-          // The function exists in the cloud but the trigger failed to attach —
-          // persist the tainted state so a re-run reconciles instead of losing it.
-          throw new PartialResourceError(stateAfterDependents, new Error(toErrorMessage(error)));
-        }
-      }
-    }
+  try {
+    const httpInstances = await reconcileScfHttpTrigger(
+      context,
+      fn,
+      existingResourceState?.instances ?? [],
+      existingResourceState?.definition ?? {},
+      client,
+      false,
+      existingResourceState?.status === 'tainted',
+    );
+    dependentInstances.push(...httpInstances);
+    if (httpInstances.length)
+      stateAfterDependents = setResource(stateAfterDependents, logicalId, {
+        ...taintedResourceState,
+        instances: [...dependentInstances],
+      });
+  } catch (error) {
+    throw new PartialResourceError(stateAfterDependents, new Error(toErrorMessage(error)));
   }
 
   // Create timer triggers if configured — a failure mid-way persists the
@@ -1075,7 +1006,13 @@ export const createResource = async (
     region: context.region,
     definition,
     instances: [
-      buildScfInstanceFromProvider(functionInfo as ScfFunctionInfo, sid),
+      buildScfInstanceFromProvider(
+        functionInfo as ScfFunctionInfo,
+        sid,
+        dependentInstances
+          .filter((instance) => instance.type === SCF_HTTP_TRIGGER_TYPE)
+          .map((instance) => instance.id),
+      ),
       ...dependentInstances,
     ],
     lastUpdated: new Date().toISOString(),
@@ -1373,140 +1310,40 @@ export const updateResource = async (
   // Update code
   await client.scf.updateFunctionCode(fn.name, codeBase64);
 
-  const existingHttpTrigger = (
-    existingFnInstance?.triggers as Array<Record<string, unknown>> | undefined
-  )?.find((t) => t.type === 'http');
+  const httpInstances = await reconcileScfHttpTrigger(
+    context,
+    fn,
+    existingInstances,
+    existingState?.definition ?? {},
+    client,
+    options?.repairHttp,
+  );
+  const stateAfterHttp = setResource(state, logicalId, {
+    ...(existingState ?? {
+      mode: 'managed',
+      region: context.region,
+      definition: existingDefinition,
+      lastUpdated: new Date().toISOString(),
+    }),
+    instances: [
+      ...(existingState?.instances ?? []).filter(
+        (instance) => instance.type !== SCF_HTTP_TRIGGER_TYPE,
+      ),
+      ...httpInstances,
+    ],
+  });
 
-  const desiredHttpConfig = fn.triggers?.http;
+  try {
+    // Reconcile timer triggers against the provider (issue #258) — the live
+    // GetFunction trigger list is the baseline so console edits converge.
+    const timerInstances = await reconcileScfTimerTriggers(context, fn, existingInstances, client);
 
-  if (desiredHttpConfig) {
-    if (!desiredHttpConfig.auth_type) {
-      throw new Error(lang.__('HTTP_TRIGGER_AUTH_TYPE_REQUIRED', { functionName: fn.name }));
-    }
+    // Reconcile custom domain
+    const existingCustomDomain = existingInstances.find(
+      (i) => (i as ScfDependentInstance).type === 'TENCENT_SCF_CUSTOM_DOMAIN',
+    ) as ScfDependentInstance | undefined;
 
-    const authType = mapAuthType(ProviderEnum.TENCENT, desiredHttpConfig.auth_type);
-    const access = mapAccess(desiredHttpConfig.access);
-    const triggerName = `${fn.key}-http-trigger`;
-    const desiredTriggerDesc = buildTencentTriggerDesc(authType, access);
-
-    if (existingHttpTrigger) {
-      if (options?.repairHttp || existingHttpTrigger.triggerDesc !== desiredTriggerDesc) {
-        logger.info(lang.__('UPDATING_HTTP_TRIGGER', { functionName: fn.name }));
-        try {
-          await client.scf.deleteTrigger({
-            FunctionName: fn.name,
-            TriggerName: existingHttpTrigger.triggerName as string,
-            Type: 'http',
-          });
-        } catch (err) {
-          const errorCode = (err as { code?: string })?.code;
-          if (errorCode !== 'ResourceNotFound.TriggerName' && errorCode !== 'ResourceNotFound') {
-            throw err;
-          }
-        }
-        await client.scf.createTrigger({
-          FunctionName: fn.name,
-          TriggerName: triggerName,
-          Type: 'http',
-          TriggerDesc: desiredTriggerDesc,
-          Qualifier: '$DEFAULT',
-          Enable: 'OPEN',
-        });
-      }
-    } else {
-      // No trigger recorded in state — but a leftover trigger may still exist
-      // in the provider (e.g. adopted function whose state lacked trigger
-      // records). Probe before creating to stay idempotent.
-      const probe = await client.scf.getFunction(fn.name);
-      const providerTriggerAttached = (probe?.Triggers ?? []).some(isFunctionUrlTrigger);
-
-      if (providerTriggerAttached) {
-        logger.info(
-          lang.__('SCF_HTTP_TRIGGER_ALREADY_ATTACHED', { triggerName, functionName: fn.name }),
-        );
-      } else {
-        logger.info(lang.__('CREATING_HTTP_TRIGGER', { triggerName, functionName: fn.name }));
-        try {
-          await client.scf.createTrigger({
-            FunctionName: fn.name,
-            TriggerName: triggerName,
-            Type: 'http',
-            TriggerDesc: desiredTriggerDesc,
-            Qualifier: '$DEFAULT',
-            Enable: 'OPEN',
-          });
-          logger.info(lang.__('HTTP_TRIGGER_CREATED', { triggerName, functionName: fn.name }));
-        } catch (error) {
-          if (isResourceAlreadyExistsError(error)) {
-            logger.warn(
-              lang.__('SCF_HTTP_TRIGGER_ALREADY_EXISTS', {
-                triggerName,
-                functionName: fn.name,
-                error: String(error),
-              }),
-            );
-          } else {
-            throw error;
-          }
-        }
-      }
-    }
-  }
-
-  // Reconcile timer triggers against the provider (issue #258) — the live
-  // GetFunction trigger list is the baseline so console edits converge.
-  const timerInstances = await reconcileScfTimerTriggers(context, fn, existingInstances, client);
-
-  // Reconcile custom domain
-  const existingCustomDomain = existingInstances.find(
-    (i) => (i as ScfDependentInstance).type === 'TENCENT_SCF_CUSTOM_DOMAIN',
-  ) as ScfDependentInstance | undefined;
-
-  if (fn.domain && !existingCustomDomain) {
-    logger.info(lang.__('CREATING_CUSTOM_DOMAIN', { domainName: fn.domain.domain_name }));
-    await client.scf.createCustomDomain({
-      Domain: fn.domain.domain_name,
-      Protocol: fn.domain.protocol,
-      EndpointsConfig: [
-        {
-          Namespace: 'default',
-          FunctionName: fn.name,
-          Qualifier: '$DEFAULT',
-          PathMatch: '/*',
-        },
-      ],
-      ...(fn.domain.certificate_id
-        ? { CertConfig: { CertificateId: fn.domain.certificate_id } }
-        : {}),
-    });
-    logger.info(lang.__('CUSTOM_DOMAIN_CREATED', { domainName: fn.domain.domain_name }));
-  } else if (!fn.domain && existingCustomDomain) {
-    logger.info(lang.__('DELETING_CUSTOM_DOMAIN', { domainName: existingCustomDomain.id }));
-    try {
-      await client.scf.deleteCustomDomain(existingCustomDomain.id);
-      logger.info(lang.__('CUSTOM_DOMAIN_DELETED', { domainName: existingCustomDomain.id }));
-    } catch (err) {
-      const errorCode = (err as { code?: string })?.code;
-      if (errorCode !== 'ResourceNotFound') throw err;
-      logger.warn(
-        lang.__('RESOURCE_NOT_FOUND_PROVIDER', {
-          resourceType: 'Custom Domain',
-          name: existingCustomDomain.id,
-        }),
-      );
-    }
-  } else if (fn.domain && existingCustomDomain) {
-    const domainChanged =
-      options?.repairDomain ||
-      !attributesEqual(
-        (existingState?.definition?.domain as Record<string, unknown>) ?? {},
-        fn.domain as unknown as Record<string, unknown>,
-      ) ||
-      fn.domain.domain_name !== existingCustomDomain.id ||
-      fn.domain.protocol !== existingCustomDomain.protocol;
-    if (domainChanged) {
-      logger.info(lang.__('DELETING_CUSTOM_DOMAIN', { domainName: existingCustomDomain.id }));
-      await client.scf.deleteCustomDomain(existingCustomDomain.id);
+    if (fn.domain && !existingCustomDomain) {
       logger.info(lang.__('CREATING_CUSTOM_DOMAIN', { domainName: fn.domain.domain_name }));
       await client.scf.createCustomDomain({
         Domain: fn.domain.domain_name,
@@ -1524,96 +1361,150 @@ export const updateResource = async (
           : {}),
       });
       logger.info(lang.__('CUSTOM_DOMAIN_CREATED', { domainName: fn.domain.domain_name }));
+    } else if (!fn.domain && existingCustomDomain) {
+      logger.info(lang.__('DELETING_CUSTOM_DOMAIN', { domainName: existingCustomDomain.id }));
+      try {
+        await client.scf.deleteCustomDomain(existingCustomDomain.id);
+        logger.info(lang.__('CUSTOM_DOMAIN_DELETED', { domainName: existingCustomDomain.id }));
+      } catch (err) {
+        const errorCode = (err as { code?: string })?.code;
+        if (errorCode !== 'ResourceNotFound') throw err;
+        logger.warn(
+          lang.__('RESOURCE_NOT_FOUND_PROVIDER', {
+            resourceType: 'Custom Domain',
+            name: existingCustomDomain.id,
+          }),
+        );
+      }
+    } else if (fn.domain && existingCustomDomain) {
+      const domainChanged =
+        options?.repairDomain ||
+        !attributesEqual(
+          (existingState?.definition?.domain as Record<string, unknown>) ?? {},
+          fn.domain as unknown as Record<string, unknown>,
+        ) ||
+        fn.domain.domain_name !== existingCustomDomain.id ||
+        fn.domain.protocol !== existingCustomDomain.protocol;
+      if (domainChanged) {
+        logger.info(lang.__('DELETING_CUSTOM_DOMAIN', { domainName: existingCustomDomain.id }));
+        await client.scf.deleteCustomDomain(existingCustomDomain.id);
+        logger.info(lang.__('CREATING_CUSTOM_DOMAIN', { domainName: fn.domain.domain_name }));
+        await client.scf.createCustomDomain({
+          Domain: fn.domain.domain_name,
+          Protocol: fn.domain.protocol,
+          EndpointsConfig: [
+            {
+              Namespace: 'default',
+              FunctionName: fn.name,
+              Qualifier: '$DEFAULT',
+              PathMatch: '/*',
+            },
+          ],
+          ...(fn.domain.certificate_id
+            ? { CertConfig: { CertificateId: fn.domain.certificate_id } }
+            : {}),
+        });
+        logger.info(lang.__('CUSTOM_DOMAIN_CREATED', { domainName: fn.domain.domain_name }));
+      }
     }
-  }
 
-  // Refresh state from provider to get all attributes (including triggers)
-  const functionInfo = await client.scf.getFunction(fn.name);
-  if (!functionInfo) {
-    throw new Error(lang.__('REFRESH_STATE_FUNCTION', { name: fn.name }));
-  }
+    // Refresh state from provider to get all attributes (including triggers)
+    const functionInfo = await client.scf.getFunction(fn.name);
+    if (!functionInfo) {
+      throw new Error(lang.__('REFRESH_STATE_FUNCTION', { name: fn.name }));
+    }
 
-  const definition = extractScfDefinition(config, codeHash, fn.iam, fn);
-  const sid = buildSid('tencent', 'scf', context.stage, fn.name);
+    const definition = extractScfDefinition(config, codeHash, fn.iam, fn);
+    const sid = buildSid('tencent', 'scf', context.stage, fn.name);
 
-  const existingDependentInstances = existingInstances
-    .filter(
-      (i) =>
-        !isScfFunctionInstance(i) &&
-        (i as ScfDependentInstance).type !== 'TENCENT_SCF_CUSTOM_DOMAIN' &&
-        // timers are fully rebuilt from the reconcile result below
-        (i as ScfDependentInstance).type !== TIMER_TRIGGER_INSTANCE_TYPE &&
-        !(
-          (clsTopicInstance || disableLog) &&
-          ((i as ScfDependentInstance).type === ResourceTypeEnum.TENCENT_CLS_TOPIC ||
-            (i as ScfDependentInstance).type === ResourceTypeEnum.TENCENT_CLS_LOGSET)
+    const existingDependentInstances = existingInstances
+      .filter(
+        (i) =>
+          !isScfFunctionInstance(i) &&
+          (i as ScfDependentInstance).type !== 'TENCENT_SCF_CUSTOM_DOMAIN' &&
+          // timers are fully rebuilt from the reconcile result below
+          (i as ScfDependentInstance).type !== TIMER_TRIGGER_INSTANCE_TYPE &&
+          (i as ScfDependentInstance).type !== SCF_HTTP_TRIGGER_TYPE &&
+          !(
+            (clsTopicInstance || disableLog) &&
+            ((i as ScfDependentInstance).type === ResourceTypeEnum.TENCENT_CLS_TOPIC ||
+              (i as ScfDependentInstance).type === ResourceTypeEnum.TENCENT_CLS_LOGSET)
+          ),
+      )
+      .map((i) => {
+        const { type, id, sid, roleArn, external } = i as ScfDependentInstance;
+        return {
+          sid: sid ?? buildSid('tencent', 'scf-role', context.stage, id),
+          type,
+          id,
+          ...(roleArn ? { roleArn } : {}),
+          ...(external ? { external } : {}),
+        } as ScfDependentInstance;
+      });
+
+    const newDependentInstances: Array<ScfDependentInstance> = [];
+    if (role && !hasCamRole && typeof newIamRole !== 'string') {
+      const newRoleSid = buildSid('tencent', 'scf-role', context.stage, role.roleName ?? '');
+      newDependentInstances.push({
+        sid: newRoleSid,
+        type: ResourceTypeEnum.TENCENT_SCF_ROLE,
+        id: role.roleName ?? '',
+        ...(role.arn ? { roleArn: role.arn } : {}),
+      });
+    }
+
+    if (fn.domain) {
+      const domainSid = buildSid(
+        'tencent',
+        'scf-custom-domain',
+        context.stage,
+        fn.domain.domain_name,
+      );
+      newDependentInstances.push({
+        sid: domainSid,
+        type: 'TENCENT_SCF_CUSTOM_DOMAIN' as ResourceTypeEnum,
+        id: fn.domain.domain_name,
+        protocol: fn.domain.protocol,
+      });
+    }
+
+    if (clsTopicInstance) {
+      newDependentInstances.push(clsTopicInstance);
+    }
+
+    const resourceState: ResourceState = {
+      mode: 'managed',
+      region: context.region,
+      definition: withLifecycleIntent(
+        mergeManagedIntent(existingState?.definition ?? {}, definition),
+        definition,
+        ['http', 'domain', 'timers'],
+      ),
+      instances: [
+        buildScfInstanceFromProvider(
+          functionInfo as ScfFunctionInfo,
+          sid,
+          httpInstances.map((instance) => instance.id),
         ),
-    )
-    .map((i) => {
-      const { type, id, sid, roleArn, external } = i as ScfDependentInstance;
-      return {
-        sid: sid ?? buildSid('tencent', 'scf-role', context.stage, id),
-        type,
-        id,
-        ...(roleArn ? { roleArn } : {}),
-        ...(external ? { external } : {}),
-      } as ScfDependentInstance;
-    });
+        ...existingDependentInstances,
+        ...newDependentInstances,
+        ...timerInstances,
+        ...httpInstances,
+      ],
+      lastUpdated: new Date().toISOString(),
+    };
 
-  const newDependentInstances: Array<ScfDependentInstance> = [];
-  if (role && !hasCamRole && typeof newIamRole !== 'string') {
-    const newRoleSid = buildSid('tencent', 'scf-role', context.stage, role.roleName ?? '');
-    newDependentInstances.push({
-      sid: newRoleSid,
-      type: ResourceTypeEnum.TENCENT_SCF_ROLE,
-      id: role.roleName ?? '',
-      ...(role.arn ? { roleArn: role.arn } : {}),
-    });
+    const stateWithShared = clsSharedInstance
+      ? setSharedResource(state, context.stage, SHARED_LOGSET_KEY, clsSharedInstance)
+      : sharedLogsetReleased
+        ? removeSharedResource(state, context.stage, SHARED_LOGSET_KEY)
+        : state;
+
+    return setResource(stateWithShared, logicalId, resourceState);
+  } catch (error) {
+    if (error instanceof PartialResourceError) throw error;
+    throw new PartialResourceError(stateAfterHttp, new Error(toErrorMessage(error)));
   }
-
-  if (fn.domain) {
-    const domainSid = buildSid(
-      'tencent',
-      'scf-custom-domain',
-      context.stage,
-      fn.domain.domain_name,
-    );
-    newDependentInstances.push({
-      sid: domainSid,
-      type: 'TENCENT_SCF_CUSTOM_DOMAIN' as ResourceTypeEnum,
-      id: fn.domain.domain_name,
-      protocol: fn.domain.protocol,
-    });
-  }
-
-  if (clsTopicInstance) {
-    newDependentInstances.push(clsTopicInstance);
-  }
-
-  const resourceState: ResourceState = {
-    mode: 'managed',
-    region: context.region,
-    definition: withLifecycleIntent(
-      mergeManagedIntent(existingState?.definition ?? {}, definition),
-      definition,
-      ['http', 'domain', 'timers'],
-    ),
-    instances: [
-      buildScfInstanceFromProvider(functionInfo as ScfFunctionInfo, sid),
-      ...existingDependentInstances,
-      ...newDependentInstances,
-      ...timerInstances,
-    ],
-    lastUpdated: new Date().toISOString(),
-  };
-
-  const stateWithShared = clsSharedInstance
-    ? setSharedResource(state, context.stage, SHARED_LOGSET_KEY, clsSharedInstance)
-    : sharedLogsetReleased
-      ? removeSharedResource(state, context.stage, SHARED_LOGSET_KEY)
-      : state;
-
-  return setResource(stateWithShared, logicalId, resourceState);
 };
 
 export const deleteResource = async (
@@ -1627,34 +1518,15 @@ export const deleteResource = async (
 
   const client = createTencentClient(context);
 
-  // Delete HTTP trigger before deleting function
-  const fnInstance = existingInstances.find((i) => isScfFunctionInstance(i)) as
-    Record<string, unknown> | undefined;
-  const httpTrigger = (fnInstance?.triggers as Array<Record<string, unknown>> | undefined)?.find(
-    (t) => t.type === 'http',
-  );
-  if (httpTrigger) {
-    try {
-      const triggerName = httpTrigger.triggerName as string;
-      logger.info(lang.__('DELETING_HTTP_TRIGGER', { triggerName, functionName }));
-      await client.scf.deleteTrigger({
-        FunctionName: functionName,
-        TriggerName: triggerName,
-        Type: 'http',
-      });
-      logger.info(lang.__('HTTP_TRIGGER_DELETED', { triggerName }));
-    } catch (err) {
-      const errorCode = (err as { code?: string })?.code;
-      if (errorCode === 'ResourceNotFound.TriggerName' || errorCode === 'ResourceNotFound') {
-        logger.warn(
-          lang.__('HTTP_TRIGGER_NOT_FOUND', {
-            triggerName: httpTrigger.triggerName as string,
-          }),
-        );
-      } else {
-        throw err;
-      }
-    }
+  const ownedHttp = ownedScfHttpTrigger(existingInstances, existingState?.definition ?? {});
+  if (ownedHttp) {
+    await reconcileScfHttpTrigger(
+      context,
+      { name: functionName } as FunctionDomain,
+      existingInstances,
+      existingState?.definition ?? {},
+      client,
+    );
   }
 
   // Delete timer triggers before deleting function
@@ -1712,7 +1584,8 @@ export const deleteResource = async (
       !isScfFunctionInstance(i) &&
       (i as ScfDependentInstance).type !== 'TENCENT_SCF_CUSTOM_DOMAIN' &&
       // timers were deleted explicitly above
-      (i as ScfDependentInstance).type !== TIMER_TRIGGER_INSTANCE_TYPE,
+      (i as ScfDependentInstance).type !== TIMER_TRIGGER_INSTANCE_TYPE &&
+      (i as ScfDependentInstance).type !== SCF_HTTP_TRIGGER_TYPE,
   ) as Array<{ type: string; id: string; external?: boolean }>;
   if (dependentInstances.length > 0) {
     await deleteDependentResources(context, dependentInstances);

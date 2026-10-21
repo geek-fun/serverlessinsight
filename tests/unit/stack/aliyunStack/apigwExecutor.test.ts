@@ -235,6 +235,7 @@ describe('ApigwExecutor', () => {
         serviceName,
         roleArn,
         initialState,
+        { repairDomain: undefined },
       );
       expect(logger.info).toHaveBeenCalledWith('Updating API Gateway resources: Test API Gateway');
       expect(logger.info).toHaveBeenCalledWith(

@@ -67,7 +67,7 @@ const mapToVolcengineStatement = (stmt: IamStatement): Record<string, unknown> =
   return result;
 };
 
-const buildExecutionPolicy = (
+export const buildVefaasExecutionPolicy = (
   baseline?: IamStatement[],
   customStatements?: IamStatement[],
 ): string => {
@@ -111,7 +111,7 @@ export const createIamOperations = (iamClient: IamSdkClient) => {
         headers: { 'content-type': 'application/json' },
         query: {
           PolicyName: policyName,
-          PolicyDocument: buildExecutionPolicy(baseline, customStatements),
+          PolicyDocument: buildVefaasExecutionPolicy(baseline, customStatements),
           Description: `veFaaS execution policy for ${roleName}`,
         },
       });
@@ -445,6 +445,28 @@ export const createIamOperations = (iamClient: IamSdkClient) => {
             return null;
           }
         }
+        throw error;
+      }
+    },
+
+    getPolicy: async (policyName: string): Promise<string | null> => {
+      try {
+        const response = await iamClient.fetchOpenAPI({
+          Action: 'GetPolicy',
+          Version: '2018-01-01',
+          method: 'GET',
+          headers: { 'content-type': 'application/json' },
+          query: { PolicyName: policyName, PolicyType: 'Custom' },
+        });
+        const policy = ((response.Result ?? {}) as { Policy?: { PolicyDocument?: string } }).Policy;
+        if (!policy?.PolicyDocument)
+          throw new Error(lang.__('IAM_POLICY_READ_INVALID', { policyName }));
+        const document = JSON.parse(policy.PolicyDocument) as { Statement?: unknown };
+        if (!Array.isArray(document.Statement))
+          throw new Error(lang.__('IAM_POLICY_READ_INVALID', { policyName }));
+        return policy.PolicyDocument;
+      } catch (error) {
+        if ((error as { code?: string }).code === 'PolicyNotExist') return null;
         throw error;
       }
     },

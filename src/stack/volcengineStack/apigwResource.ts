@@ -1,3 +1,5 @@
+import { remoteDiffersFromDesired } from '../../common/planCompare';
+import { reconcileGatewayDomains } from './apigwDomains';
 import {
   Context,
   EventDomain,
@@ -226,12 +228,12 @@ const buildRouteInstance = (
  * template function is an EXTERNAL deployed function: its Id is resolved
  * from the provider by name (same account/region, function must exist).
  */
-const resolveFunctionIdFromState = async (
+export const resolveFunctionIdFromState = async (
   state: StateFile,
   backendRef: string,
   client: VolcengineClient,
+  context: Context = getContext(),
 ): Promise<string> => {
-  const context = getContext();
   const refMatch = /^\$\{functions\.([\w.]+)\}$/.exec(String(backendRef ?? ''));
   const templateKey = refMatch?.[1];
   const fnKey =
@@ -394,7 +396,7 @@ export const createApigwResource = async (
     lastUpdated: new Date().toISOString(),
   };
 
-  const stateAfterDependents = setResource(state, logicalId, partialResourceState);
+  let stateAfterDependents = setResource(state, logicalId, partialResourceState);
 
   try {
     // One upstream per backend function (triggers sharing a function reuse it).
@@ -456,21 +458,13 @@ export const createApigwResource = async (
       );
     }
 
-    if (event.domain) {
-      const domainName = event.domain.domain_name as string;
-      const domainId = await client.apigw.createCustomDomain({
-        serviceId,
-        domainName,
-        certificateId: event.domain.certificate_id as string | undefined,
+    await reconcileGatewayDomains(context, event, serviceId, [], client, (instance) => {
+      instances.push(instance);
+      stateAfterDependents = setResource(stateAfterDependents, logicalId, {
+        ...partialResourceState,
+        instances: [...instances],
       });
-      instances.push({
-        type: 'VOLCENGINE_APIGW_DOMAIN',
-        sid: buildSid('volcengine', 'apigw', context.stage, domainId || domainName),
-        id: domainId || domainName,
-        domainName,
-        serviceId,
-      });
-    }
+    });
   } catch (error) {
     if (error instanceof PartialResourceError) {
       throw error;
@@ -520,10 +514,7 @@ export const updateApigwResource = async (
 
   const neededRouteIds = new Set<string>();
   const instances: Array<ResourceInstance> = existingState.instances.filter(
-    (i) =>
-      i.type === 'VOLCENGINE_APIGW_GATEWAY' ||
-      i.type === 'VOLCENGINE_APIGW_SERVICE' ||
-      i.type === 'VOLCENGINE_APIGW_UPSTREAM',
+    (i) => i.type === 'VOLCENGINE_APIGW_GATEWAY' || i.type === 'VOLCENGINE_APIGW_SERVICE',
   );
 
   try {
@@ -571,6 +562,7 @@ export const updateApigwResource = async (
     }
 
     const upstreamByFunction = new Map<string, string>();
+    const createdUpstreams = new Set<string>();
     for (const upstream of existingUpstreams) {
       const fnKey = (upstream as { functionId?: string }).functionId
         ? String((upstream as { functionId?: string | null }).functionId)
@@ -601,9 +593,40 @@ export const updateApigwResource = async (
             functionId,
           );
           upstreamId = await client.apigw.createUpstream(upstreamConfig);
+          createdUpstreams.add(upstreamId);
         }
         upstreamByFunction.set(functionId, upstreamId);
       }
+
+      const upstreamConfig = triggerToApigwUpstreamConfig(
+        event,
+        trigger,
+        serviceName,
+        context.stage,
+        serviceInstance.gatewayId as string,
+        functionId,
+      );
+      const upstreamInfo = createdUpstreams.has(upstreamId)
+        ? null
+        : await client.apigw.getUpstream(upstreamId);
+      if (!upstreamInfo && !createdUpstreams.has(upstreamId)) {
+        upstreamId = await client.apigw.createUpstream(upstreamConfig);
+        createdUpstreams.add(upstreamId);
+        upstreamByFunction.set(functionId, upstreamId);
+      }
+      if (upstreamInfo && remoteDiffersFromDesired(upstreamInfo, upstreamConfig)) {
+        await client.apigw.updateUpstream(upstreamId, upstreamConfig);
+      }
+      if (!instances.some((instance) => instance.id === upstreamId))
+        instances.push(
+          buildUpstreamInstance(
+            upstreamId,
+            upstreamConfig.upstreamName,
+            upstreamConfig.gatewayId,
+            functionId,
+            context.stage,
+          ),
+        );
 
       const routeConfig = triggerToApigwRouteConfig(event, trigger, serviceId, upstreamId);
       // Routes are not idempotent on the provider: CreateRoute with an
@@ -612,8 +635,21 @@ export const updateApigwResource = async (
       // so re-running a deploy (or resuming after a partial failure) converges.
       const existing = await client.apigw.findRouteByName(serviceId, routeConfig.routeName);
       const routeId = existing?.routeId ?? (await client.apigw.createRoute(routeConfig));
+      if (
+        existing?.routeId &&
+        (existing.method !== routeConfig.method ||
+          existing.path !== routeConfig.path ||
+          existing.upstreamIds?.length !== 1 ||
+          existing.upstreamIds[0] !== upstreamId ||
+          existing.enable === false ||
+          (existing.priority !== undefined && existing.priority !== 0))
+      ) {
+        await client.apigw.updateRoute(routeId, routeConfig);
+      }
+
       neededRouteIds.add(routeId);
-      const routeInfo: ApigwRouteInfo = existing ?? {
+      const routeInfo: ApigwRouteInfo = {
+        ...existing,
         routeId,
         routeName: routeConfig.routeName,
         serviceId,
@@ -626,11 +662,44 @@ export const updateApigwResource = async (
       );
     }
 
+    await reconcileGatewayDomains(
+      context,
+      event,
+      serviceId,
+      existingState.instances,
+      client,
+      (instance) => {
+        instances.push(instance);
+        const snapshot = getResource(state, `events.${event.key}`) ?? existingState;
+        state = setResource(state, `events.${event.key}`, {
+          ...snapshot,
+          instances: [
+            ...snapshot.instances.filter(
+              (previous) =>
+                previous.type !== instance.type || previous.domainName !== instance.domainName,
+            ),
+            instance,
+          ],
+          lastUpdated: new Date().toISOString(),
+        });
+      },
+    );
+    const desiredUpstreamIds = new Set(
+      instances
+        .filter((instance) => instance.type === 'VOLCENGINE_APIGW_UPSTREAM')
+        .map((instance) => instance.id),
+    );
+
     // Remove routes no longer in the desired set.
     for (const existingRoute of existingRoutes) {
       if (!neededRouteIds.has(existingRoute.id)) {
         await client.apigw.deleteRoute(existingRoute.id);
       }
+    }
+    for (const upstream of existingUpstreams.filter(
+      (instance) => !desiredUpstreamIds.has(instance.id),
+    )) {
+      await client.apigw.deleteUpstream(upstream.id);
     }
   } catch (error) {
     throw new PartialResourceError(

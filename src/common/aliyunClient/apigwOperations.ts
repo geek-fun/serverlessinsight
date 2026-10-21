@@ -734,6 +734,26 @@ export const createApigwOperations = (
     /**
      * Get API Gateway group by group ID
      */
+    getDomain: async (
+      groupId: string,
+      domainName: string,
+    ): Promise<{ domainName: string; certificateBody: string | null } | null> => {
+      try {
+        const response = await apigwClient.describeDomain(
+          new cloudapi.DescribeDomainRequest({ groupId, domainName }),
+        );
+        if (!response.body?.domainName)
+          throw new Error(lang.__('APIGW_DOMAIN_READ_INVALID', { domainId: domainName }));
+        return {
+          domainName: response.body.domainName,
+          certificateBody: response.body.certificateBody ?? null,
+        };
+      } catch (error) {
+        if (isApigwNotFoundError(error)) return null;
+        throw error;
+      }
+    },
+
     getApiGroup: async (groupId: string): Promise<ApigwGroupInfo | null> => {
       try {
         const request = new cloudapi.DescribeApiGroupRequest({
@@ -763,27 +783,28 @@ export const createApigwOperations = (
           illegalStatus: body.illegalStatus,
           trafficLimit: body.trafficLimit,
           // Maximum-detail fields — retain everything DescribeApiGroup returns.
-          customDomains: body.customDomains?.domainItem?.map((d) => ({
-            bindStageAlias: d.bindStageAlias,
-            bindStageName: d.bindStageName,
-            certificateId: d.certificateId,
-            certificateName: d.certificateName,
-            certificateValidEnd: d.certificateValidEnd,
-            certificateValidStart: d.certificateValidStart,
-            clientCertSDnPassThrough: d.clientCertSDnPassThrough,
-            customDomainType: d.customDomainType,
-            domainBindingStatus: d.domainBindingStatus,
-            domainCNAMEStatus: d.domainCNAMEStatus,
-            domainLegalStatus: d.domainLegalStatus,
-            domainName: d.domainName,
-            domainRemark: d.domainRemark,
-            domainWebSocketStatus: d.domainWebSocketStatus,
-            isHttpRedirectToHttps: d.isHttpRedirectToHttps,
-            sslOcspCacheEnable: d.sslOcspCacheEnable,
-            sslOcspEnable: d.sslOcspEnable,
-            sslVerifyDepth: d.sslVerifyDepth,
-            wildcardDomainPatterns: d.wildcardDomainPatterns,
-          })),
+          customDomains:
+            body.customDomains?.domainItem?.map((d) => ({
+              bindStageAlias: d.bindStageAlias,
+              bindStageName: d.bindStageName,
+              certificateId: d.certificateId,
+              certificateName: d.certificateName,
+              certificateValidEnd: d.certificateValidEnd,
+              certificateValidStart: d.certificateValidStart,
+              clientCertSDnPassThrough: d.clientCertSDnPassThrough,
+              customDomainType: d.customDomainType,
+              domainBindingStatus: d.domainBindingStatus,
+              domainCNAMEStatus: d.domainCNAMEStatus,
+              domainLegalStatus: d.domainLegalStatus,
+              domainName: d.domainName,
+              domainRemark: d.domainRemark,
+              domainWebSocketStatus: d.domainWebSocketStatus,
+              isHttpRedirectToHttps: d.isHttpRedirectToHttps,
+              sslOcspCacheEnable: d.sslOcspCacheEnable,
+              sslOcspEnable: d.sslOcspEnable,
+              sslVerifyDepth: d.sslVerifyDepth,
+              wildcardDomainPatterns: d.wildcardDomainPatterns,
+            })) ?? [],
           stageItems: body.stageItems?.stageInfo?.map((s) => ({
             description: s.description,
             stageId: s.stageId,
