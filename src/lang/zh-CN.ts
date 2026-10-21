@@ -2,6 +2,8 @@ export const zhCN = {
   PLAN_SENSITIVE_VALUE: '(敏感值)',
   PLAN_NAS_NETWORK_REQUIRED:
     '{{logicalId}} 的 NAS 存储需要声明 VPC 网络或已有挂载目标记录。计划已停止，尚未创建任何资源。',
+  APIGW_DOMAIN_READ_INVALID: '域名 {{domainId}} 的查询响应无效',
+  PLAN_DRIFT_EVENT_DOMAIN: '网关域名或证书与配置不一致或不存在',
   PLAN_DRIFT_HTTP_TRIGGER: 'HTTP 触发器与请求配置不同或已丢失',
   PLAN_DRIFT_FUNCTION_DOMAIN: '函数域名与请求配置不同或已丢失',
 
@@ -1199,6 +1201,8 @@ export const zhCN = {
   REFRESH_STATE_BUCKET: '刷新存储桶状态失败：{{name}}',
   RESOURCE_SPACE_ID_NOT_FOUND: '状态中不存在 Space ID：{{logicalId}}',
   REFRESH_STATE_ES_SPACE: '刷新 ES 空间状态失败：{{spaceId}}',
+  IAM_POLICY_READ_INVALID: '策略 {{policyName}} 返回了无效的策略文档',
+  SCF_HTTP_TRIGGER_ID_UNAVAILABLE: '无法记录函数 {{functionName}} 的云端 HTTP 触发器标识',
   SCF_HTTP_TRIGGER_ALREADY_ATTACHED:
     'HTTP 触发器 {{triggerName}} 已绑定到 {{functionName}}，跳过创建',
   SCF_HTTP_TRIGGER_ALREADY_EXISTS:

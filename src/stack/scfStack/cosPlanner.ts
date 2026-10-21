@@ -78,7 +78,7 @@ export const generateBucketPlan = async (
         cloudToDefinition: cloudCosToDefinition,
         removedDependents: {
           ...removedBucketPolicy(COS_BUCKET_POLICY_INSTANCE_TYPE, currentState, desiredDefinition),
-          ...(!bucket.website?.domain &&
+          ...(!config.Domain &&
           (currentState?.instances ?? []).some((i) => i.type === ResourceTypeEnum.COS_DNS_CNAME)
             ? { domain: currentState?.definition.domain ?? null }
             : {}),

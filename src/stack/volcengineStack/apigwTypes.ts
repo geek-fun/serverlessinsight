@@ -145,7 +145,12 @@ export const extractEventDomainDefinition = (
   logEnabled?: boolean;
   logConfig?: { project: string; topic: string };
   triggers: Array<{ method: string; path: string; backend: string }>;
-  domain?: { domainName?: string; certificateId?: string };
+  domain?: {
+    domainName?: string;
+    certificateId?: string;
+    protocol: string[];
+    wwwBindApex: boolean;
+  };
 } => {
   const context = getContext();
   return {
@@ -173,6 +178,10 @@ export const extractEventDomainDefinition = (
       ? {
           domainName: event.domain.domain_name as string | undefined,
           certificateId: event.domain.certificate_id as string | undefined,
+          protocol: Array.isArray(event.domain.protocol)
+            ? event.domain.protocol.map(String)
+            : [String(event.domain.protocol ?? 'HTTP')],
+          wwwBindApex: event.domain.www_bind_apex === true,
         }
       : undefined,
   };

@@ -395,18 +395,14 @@ export const extractEventDomainDefinition = (
     certificateId: (domain.certificate_id as string) ?? null,
     certificateBody: (domain.certificate_body as string) ?? null,
     certificatePrivateKey: domain.certificate_private_key ? '(managed)' : null,
-    protocol: (domain.protocol as string | string[] | null) ?? null,
+    protocol: (domain.protocol as string | string[] | null) ?? 'HTTP',
   };
 
   const cdnConfig = getDomainCdnConfig(domain);
   if (cdnConfig?.enabled === true) {
     definition.cdnEnabled = true;
-    if (cdnConfig.cdn_type != null) {
-      definition.cdnType = cdnConfig.cdn_type as string;
-    }
-    if (cdnConfig.scope != null) {
-      definition.cdnScope = cdnConfig.scope as string;
-    }
+    definition.cdnType = (cdnConfig.cdn_type as string | undefined) ?? 'web';
+    definition.cdnScope = (cdnConfig.scope as string | undefined) ?? 'global';
     if (cdnConfig.cache_ttl != null) {
       definition.cdnCacheTtl = cdnConfig.cache_ttl as number;
     }

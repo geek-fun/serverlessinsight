@@ -549,6 +549,8 @@ export type ApigwDomainConfig = {
   serviceId: string;
   domainName: string;
   certificateId?: string;
+  protocol?: string[];
+  sslRedirect?: boolean;
 };
 
 export type ApigwTriggerConfig = {
@@ -639,6 +641,7 @@ export type VolcengineClient = {
   iam: {
     createRole: (config: IamRoleConfig) => Promise<IamRoleInfo>;
     getRole: (roleName: string) => Promise<IamRoleInfo | null>;
+    getPolicy: (policyName: string) => Promise<string | null>;
     updateRoleTrustPolicy: (
       roleName: string,
       policy: IamRoleConfig['trustPolicy'],
@@ -693,6 +696,7 @@ export type VolcengineClient = {
     findServiceByName: (gatewayId: string, serviceName: string) => Promise<ApigwServiceInfo | null>;
     deleteService: (serviceId: string) => Promise<void>;
     createUpstream: (config: ApigwUpstreamConfig) => Promise<string>;
+    updateUpstream: (upstreamId: string, config: ApigwUpstreamConfig) => Promise<void>;
     getUpstream: (upstreamId: string) => Promise<ApigwUpstreamInfo | null>;
     findUpstreamByName: (
       gatewayId: string,
@@ -700,10 +704,13 @@ export type VolcengineClient = {
     ) => Promise<ApigwUpstreamInfo | null>;
     deleteUpstream: (upstreamId: string) => Promise<void>;
     createRoute: (config: ApigwRouteConfig) => Promise<string>;
+    updateRoute: (routeId: string, config: ApigwRouteConfig) => Promise<void>;
     getRoute: (routeId: string) => Promise<ApigwRouteInfo | null>;
     findRouteByName: (serviceId: string, routeName: string) => Promise<ApigwRouteInfo | null>;
     listRoutesByService: (serviceId: string) => Promise<ApigwRouteInfo[]>;
     deleteRoute: (routeId: string) => Promise<void>;
+    getCustomDomain: (domainId: string) => Promise<(ApigwDomainConfig & { id: string }) | null>;
+    updateCustomDomain: (domainId: string, config: ApigwDomainConfig) => Promise<void>;
     createCustomDomain: (config: ApigwDomainConfig) => Promise<string>;
     deleteCustomDomain: (domainId: string) => Promise<void>;
   };

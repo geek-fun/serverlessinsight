@@ -203,16 +203,16 @@ describe('OssResource', () => {
       const saved = mockedStateManager.setResource.mock.calls.at(-1)?.[2];
       expect(mockOssOperations.deleteBucketPolicy).toHaveBeenCalledWith('assets');
       expect(saved.instances.some((instance: { sid: string }) => instance.sid === 'www-dns')).toBe(
-        wwwBindApex === undefined,
+        false,
       );
       expect(saved.instances.some((instance: { sid: string }) => instance.sid === 'www-cdn')).toBe(
-        wwwBindApex === undefined,
+        false,
       );
       expect(saved.definition).toMatchObject({
         cdnCacheTtl: 120,
-        wwwBindApex: wwwBindApex ?? true,
+        wwwBindApex: wwwBindApex ?? false,
       });
-      if (wwwBindApex === false) {
+      if (wwwBindApex !== true) {
         expect(mockCdnOperations.deleteCdnDomain).toHaveBeenCalledWith('www.example.com');
         expect(mockDnsOperations.deleteDomainRecord).toHaveBeenCalledWith('www');
       } else {

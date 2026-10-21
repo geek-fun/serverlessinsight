@@ -70,9 +70,14 @@ describe('deployment read and ownership repair contracts', () => {
     await fs.rm(directory, { recursive: true, force: true });
   });
 
-  it.each([ProviderEnum.ALIYUN, ProviderEnum.TENCENT])(
-    '%s retains an omitted www binding through persistence and later removes owned bindings',
-    async (provider) => {
+  it.each([
+    [ProviderEnum.ALIYUN, false],
+    [ProviderEnum.ALIYUN, true],
+    [ProviderEnum.TENCENT, false],
+    [ProviderEnum.TENCENT, true],
+  ] as const)(
+    '%s (canonical domain %s) restores omitted www to false and removes owned bindings through persistence',
+    async (provider, canonical) => {
       const context = contextFor(provider);
       const yamlPath = path.join(directory, 'bucket.yml');
       const writeBucket = async (options: { www?: boolean; index: string; domain?: string }) => {
@@ -87,6 +92,16 @@ describe('deployment read and ownership repair contracts', () => {
                 (options.www !== undefined ? `        www_bind_apex: ${options.www}\n` : '')
               : ''),
         );
+        if (canonical) {
+          const yaml = await fs.readFile(yamlPath, 'utf8');
+          await fs.writeFile(
+            yamlPath,
+            yaml
+              .replace('      domain:', '    domain:')
+              .replace('        domain_name:', '      domain_name:')
+              .replace('        www_bind_apex:', '      www_bind_apex:'),
+          );
+        }
         return parseYaml(yamlPath).buckets![0];
       };
       const bindings = new Set<string>();
@@ -168,19 +183,14 @@ describe('deployment read and ownership repair contracts', () => {
       state = roundTrip(await create(context, bucket, state), context);
       const www = state.resources['buckets.assets'].instances.find((i) => i.isWwwVariant);
       expect(www).toBeDefined();
-      bucket = await writeBucket({ domain: 'example.com', index: 'next.html' });
-      // Changing another domain setting also exercises OSS's domain reconciliation branch.
-      bucket = {
-        ...bucket,
-        domain: { ...bucket.domain!, protocol: ['HTTP'] },
-        website: { ...bucket.website!, domain_protocol: ['HTTP'] },
-      };
+      bucket = await writeBucket({ domain: 'example.com', index: 'index.html' });
       expect((await plan({ ...context }, state, [bucket])).items[0].action).toBe('update');
       state = roundTrip(await update(context, bucket, state), context);
-      expect(state.resources['buckets.assets'].instances.find((i) => i.isWwwVariant)).toEqual(www);
-      expect(bindings.has('www.example.com')).toBe(true);
+      expect(state.resources['buckets.assets'].instances.some((i) => i.isWwwVariant)).toBe(false);
+      expect(bindings.has('www.example.com')).toBe(false);
       expect((await plan({ ...context }, state, [bucket])).items[0].action).toBe('noop');
-      bucket = await writeBucket({ domain: 'example.com', www: false, index: 'next.html' });
+      bucket = await writeBucket({ domain: 'example.com', www: false, index: 'index.html' });
+      expect((await plan({ ...context }, state, [bucket])).items[0].action).toBe('noop');
       state = roundTrip(await update(context, bucket, state), context);
       expect(bindings.has('www.example.com')).toBe(false);
       expect(state.resources['buckets.assets'].instances.some((i) => i.isWwwVariant)).toBe(false);
@@ -193,7 +203,7 @@ describe('deployment read and ownership repair contracts', () => {
       state = roundTrip(await update(context, bucket, state), context);
       expect(bindings.size).toBe(0);
       expect((await plan({ ...context }, state, [bucket])).items[0].action).toBe('noop');
-      // Destroy also removes a retained child after an omitted flag.
+      // Destroy after resetting www still removes the owned parent.
       bucket = await writeBucket({ domain: 'example.com', www: true, index: 'next.html' });
       state = await update(context, bucket, state);
       bucket = await writeBucket({ domain: 'example.com', index: 'next.html' });
@@ -378,6 +388,11 @@ describe('deployment read and ownership repair contracts', () => {
         remote = { ...config, Status: 'Active', Type: functionType };
       });
       raw.scf.GetFunction.mockImplementation(async () => ({ ...remote, Triggers: triggers }));
+      raw.scf.UpdateFunctionConfiguration.mockImplementation(
+        async (config: Record<string, unknown>) => {
+          remote = { ...remote, ...config };
+        },
+      );
       raw.scf.CreateTrigger.mockImplementation(async (config: Record<string, unknown>) => {
         triggers = [{ ...config, TriggerName: 'cloud-http-id', Enable: 1 }];
       });
@@ -412,6 +427,9 @@ describe('deployment read and ownership repair contracts', () => {
         directory,
       );
       state = roundTrip(await createResource(context, fn, state), context);
+      expect(state.resources['functions.handler'].instances).toContainEqual(
+        expect.objectContaining({ type: 'TENCENT_SCF_HTTP_TRIGGER', id: 'cloud-http-id' }),
+      );
       domain = null;
       triggers = triggers.map((trigger) => ({
         ...trigger,
@@ -444,6 +462,24 @@ describe('deployment read and ownership repair contracts', () => {
         resourceType: 'SCF',
         action: 'noop',
       });
+      const withoutHttp = { ...fn, triggers: undefined };
+      const removal = await generateFunctionPlan({ ...context }, state, [withoutHttp]);
+      expect(removal.items[0].action).toBe('update');
+      const removed = await executeFunctionPlan(context, removal, [withoutHttp], state);
+      expect(removed.partialFailure).toBeUndefined();
+      state = roundTrip(removed.state, context);
+      expect(raw.scf.DeleteTrigger).toHaveBeenCalledWith(
+        expect.objectContaining({ TriggerName: 'cloud-http-id', Type: 'http' }),
+      );
+      expect(triggers).toEqual([]);
+      expect(
+        state.resources['functions.handler'].instances.some(
+          (instance) => instance.type === 'TENCENT_SCF_HTTP_TRIGGER',
+        ),
+      ).toBe(false);
+      expect(
+        (await generateFunctionPlan({ ...context }, state, [withoutHttp])).items[0].action,
+      ).toBe('noop');
     },
   );
 });

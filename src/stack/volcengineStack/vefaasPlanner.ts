@@ -1,3 +1,4 @@
+import { buildVefaasExecutionPolicy } from '../../common/volcengineClient/iamOperations';
 import { assertPlanIdentity, assertSupportedPlanUpdate } from '../../common/planCapabilities';
 import { definitionsDiffer, managedDefinition } from '../../common/planCompare';
 import { computeZipContentHash, getResource, logger } from '../../common';
@@ -249,10 +250,6 @@ export const generateFunctionPlan = async (
         // cloud-only values within mapped keys phantom-drifted every plan).
         // Mapper-emitted shapes are subset-normalized to the definition the
         // config writes, so nested comparisons stay apples-to-apples.
-        // Not refreshable (issue #234 phase 2): the IAM custom policy document
-        // (volcengine IAM has no GetPolicy read) and dependent TLS topics
-        // (existence-only by design decision 5) stay covered by the executor's
-        // reconcile path instead of live plan comparison.
         const remoteAttributes: ResourceAttributes = {
           runtime: remoteFunction.runtime,
           handler: remoteFunction.handler,
@@ -289,9 +286,6 @@ export const generateFunctionPlan = async (
           desiredDefinition,
         );
 
-        // Issue #234 phase 3: live role drift — trust policy and attached
-        // managed policies. The custom <role>-policy DOCUMENT has no read API
-        // (volcengine IAM has no GetPolicy), so it stays executor-reconciled.
         const iamRoleInstance = currentState.instances.find(
           (i) => (i as { type?: string }).type === 'VOLCENGINE_IAM_ROLE',
         ) as { id?: string } | undefined;
@@ -340,6 +334,24 @@ export const generateFunctionPlan = async (
                 })
                   ? { drifted: true }
                   : {}),
+                driftReasons: ['PLAN_DRIFT_ROLE_POLICY'],
+              };
+            }
+            const policyName = buildRolePolicyName(roleId);
+            const livePolicy = await cachedRefreshRead(context, `iam.getPolicy:${policyName}`, () =>
+              client.iam.getPolicy(policyName),
+            );
+            const desiredPolicy = buildVefaasExecutionPolicy(
+              roleGrant.executionStatements,
+              typeof fn.iam?.role === 'object' ? fn.iam.role.statements : undefined,
+            );
+            if (remoteDiffersFromDesired({ policy: livePolicy }, { policy: desiredPolicy })) {
+              return {
+                logicalId,
+                action: 'update',
+                resourceType: 'VOLCENGINE_VEFAAS',
+                changes: { before: liveBefore, after: managedDefinition(desiredDefinition) },
+                drifted: !definitionsDiffer(currentDefinition, { iam: desiredDefinition.iam }),
                 driftReasons: ['PLAN_DRIFT_ROLE_POLICY'],
               };
             }

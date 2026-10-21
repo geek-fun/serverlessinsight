@@ -472,4 +472,83 @@ describe('apigwOperations', () => {
       }),
     );
   });
+  it('reads the certificate and protocol from GetCustomDomain', async () => {
+    mockFetchOpenAPI.mockResolvedValueOnce(
+      mockResponse({
+        CustomDomain: {
+          Id: 'd-1',
+          ServiceId: 'svc',
+          Domain: 'example.com',
+          CertificateId: 'cert',
+          Protocol: ['HTTPS'],
+          SSLRedirect: true,
+        },
+      }),
+    );
+    expect(await operations.getCustomDomain('d-1')).toMatchObject({
+      id: 'd-1',
+      certificateId: 'cert',
+      protocol: ['HTTPS'],
+      sslRedirect: true,
+    });
+  });
+  it.each(['NotFound', 'DomainNotFound'])('returns domain absence for %s', async (code) => {
+    mockFetchOpenAPI.mockRejectedValueOnce({ code });
+    await expect(operations.getCustomDomain('d-1')).resolves.toBeNull();
+  });
+  it('rejects malformed and failed domain reads', async () => {
+    mockFetchOpenAPI.mockResolvedValueOnce(mockResponse({}));
+    await expect(operations.getCustomDomain('d-1')).rejects.toThrow();
+    const error = new Error('AccessDenied');
+    mockFetchOpenAPI.mockRejectedValueOnce(error);
+    await expect(operations.getCustomDomain('d-1')).rejects.toBe(error);
+  });
+  it('updates owned domain settings using explicit defaults', async () => {
+    mockFetchOpenAPI.mockResolvedValueOnce(mockResponse({}));
+    await operations.updateCustomDomain('d-1', { serviceId: 'svc', domainName: 'example.com' });
+    expect(mockFetchOpenAPI).toHaveBeenCalledWith(
+      expect.objectContaining({
+        Action: 'UpdateCustomDomain',
+        data: { Id: 'd-1', CertificateId: '', Protocol: ['HTTP'], SSLRedirect: false },
+      }),
+    );
+  });
+  it('repairs upstream target and route matching through update APIs', async () => {
+    mockFetchOpenAPI.mockResolvedValue(mockResponse({}));
+    await operations.updateUpstream('u-1', {
+      gatewayId: 'gw',
+      upstreamName: 'upstream',
+      sourceType: 'VeFaas',
+      functionId: 'fn-1',
+    });
+    expect(mockFetchOpenAPI).toHaveBeenCalledWith(
+      expect.objectContaining({
+        Action: 'UpdateUpstream',
+        data: expect.objectContaining({
+          Id: 'u-1',
+          Protocol: 'HTTP',
+          UpstreamSpec: { VeFaas: { FunctionId: 'fn-1' } },
+        }),
+      }),
+    );
+    await operations.updateRoute('r-1', {
+      serviceId: 'svc',
+      routeName: 'route',
+      method: 'GET',
+      path: '/api',
+      upstreamId: 'u-1',
+    });
+    expect(mockFetchOpenAPI).toHaveBeenCalledWith(
+      expect.objectContaining({
+        Action: 'UpdateRoute',
+        Version: '2022-11-12',
+        data: expect.objectContaining({
+          Id: 'r-1',
+          Enable: true,
+          MatchRule: { Path: { MatchType: 'Exact', MatchContent: '/api' }, Method: ['GET'] },
+          UpstreamList: [{ UpstreamId: 'u-1', Weight: 100 }],
+        }),
+      }),
+    );
+  });
 });

@@ -1041,3 +1041,38 @@ describe('iamOperations', () => {
     });
   });
 });
+
+describe('custom policy reads', () => {
+  const fetchOpenAPI = jest.fn();
+  const operations = createIamOperations({ fetchOpenAPI } as never);
+  beforeEach(() => fetchOpenAPI.mockReset());
+  it('reads the custom document through GetPolicy', async () => {
+    const document = JSON.stringify({ Statement: [] });
+    fetchOpenAPI.mockResolvedValue({ Result: { Policy: { PolicyDocument: document } } });
+    expect(await operations.getPolicy('role-policy')).toBe(document);
+    expect(fetchOpenAPI).toHaveBeenCalledWith(
+      expect.objectContaining({
+        Action: 'GetPolicy',
+        query: { PolicyName: 'role-policy', PolicyType: 'Custom' },
+      }),
+    );
+  });
+  it('returns absence only for PolicyNotExist', async () => {
+    fetchOpenAPI.mockRejectedValue({ code: 'PolicyNotExist' });
+    await expect(operations.getPolicy('role-policy')).resolves.toBeNull();
+  });
+  it.each(['AccessDenied', 'Timeout', 'NotFound'])('propagates %s', async (code) => {
+    const error = { code };
+    fetchOpenAPI.mockRejectedValue(error);
+    await expect(operations.getPolicy('role-policy')).rejects.toBe(error);
+  });
+  it.each([
+    {},
+    { Policy: {} },
+    { Policy: { PolicyDocument: '{' } },
+    { Policy: { PolicyDocument: '{}' } },
+  ])('rejects invalid policy response %j', async (Result) => {
+    fetchOpenAPI.mockResolvedValue({ Result });
+    await expect(operations.getPolicy('role-policy')).rejects.toThrow();
+  });
+});

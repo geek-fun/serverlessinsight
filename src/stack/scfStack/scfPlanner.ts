@@ -1,3 +1,4 @@
+import { ownedScfHttpTrigger, normalizeScfHttpTriggerDesc } from './scfHttpTrigger';
 import { definitionsDiffer, remoteDiffersFromDesired } from '../../common/planCompare';
 import { buildTencentHttpTriggerDesc, mapAuthType, mapAccess } from '../../common/triggerMapper';
 import {
@@ -78,6 +79,10 @@ export const generateFunctionPlan = async (
         currentState,
         desiredDefinition,
         removedDependents: {
+          ...(!fn.triggers?.http &&
+          ownedScfHttpTrigger(currentState?.instances ?? [], currentState?.definition ?? {})
+            ? { http: currentState?.definition.http ?? { auth_type: 'public' } }
+            : {}),
           ...(!fn.domain && recordedDomain
             ? { domain: currentState?.definition?.domain ?? { domain_name: recordedDomain.id } }
             : {}),
@@ -113,14 +118,7 @@ export const generateFunctionPlan = async (
                 mapAccess(fn.triggers.http.access),
               ),
             ) as Record<string, unknown>;
-            let actual: Record<string, unknown> | null = null;
-            if (trigger?.TriggerDesc) {
-              try {
-                actual = JSON.parse(trigger.TriggerDesc) as Record<string, unknown>;
-              } catch {
-                actual = null;
-              }
-            }
+            const actual = normalizeScfHttpTriggerDesc(trigger?.TriggerDesc);
             if (!actual || remoteDiffersFromDesired({ http: actual }, { http: desired }))
               updates.push({
                 update: true,

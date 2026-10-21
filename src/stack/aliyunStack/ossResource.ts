@@ -769,7 +769,7 @@ export const updateBucketResource = async (
   ) {
     const primaryDomain = domName;
     const domainChanged = existingPrimaryDnsInstance?.domain !== primaryDomain;
-    const wwwAction = resolveWwwBindingAction(config.wwwBindApex, !domainChanged);
+    const wwwAction = resolveWwwBindingAction(config.wwwBindApex);
 
     if (domainChanged) {
       // For CDN/accelerate buckets, don't delete old resources since we can't recreate them in update.
@@ -857,8 +857,8 @@ export const updateBucketResource = async (
       }
 
       const cdnConfig = {
-        cdn_type: oldCdnType as 'web' | 'download' | 'video' | undefined,
-        scope: oldCdnScope as 'domestic' | 'overseas' | 'global' | undefined,
+        cdn_type: 'web' as 'web' | 'download' | 'video',
+        scope: 'global' as 'domestic' | 'overseas' | 'global',
         cache_ttl: oldCacheTtl,
         ignore_query_string: oldIgnoreQS,
         origin_protocol: oldOriginProto as 'http' | 'https' | 'follow' | undefined,
@@ -988,8 +988,6 @@ export const updateBucketResource = async (
           };
           instances.push(wwwDnsInstance);
         }
-      } else if (existingWwwDnsInstance && wwwAction === 'retain') {
-        instances.push(existingWwwDnsInstance);
       } else if (existingWwwDnsInstance && !domainChanged && wwwAction === 'remove') {
         const wwwInstance = existingWwwDnsInstance as OssDnsInstance;
         await client.oss.unbindCustomDomain(

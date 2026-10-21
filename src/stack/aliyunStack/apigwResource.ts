@@ -590,7 +590,7 @@ const buildDomainBindingConfig = async (
   return {
     groupId,
     domainName: domain.domain_name as string,
-    isHttpRedirectToHttps: protocolConfig.isHttpRedirectToHttps,
+    isHttpRedirectToHttps: protocolConfig.isHttpRedirectToHttps ?? false,
     ...certConfig,
   };
 };
@@ -908,6 +908,7 @@ export const updateApigwResource = async (
   serviceName: string,
   resolveRoleArn: RoleArnParam,
   state: StateFile,
+  options?: { repairDomain?: boolean },
 ): Promise<StateFile> => {
   const logicalId = `events.${event.key}`;
   const existingState = getResource(state, logicalId);
@@ -1148,6 +1149,7 @@ export const updateApigwResource = async (
           k !== `${logicalId}.dns_txt_verification`,
       );
     if (
+      !options?.repairDomain &&
       previousDomainDef &&
       desiredDomainDef &&
       hasBoundDomains &&

@@ -8,6 +8,8 @@ import fs from 'node:fs';
 const mockApigwOperations = {
   findApiGroupByName: jest.fn(),
   getApiGroup: jest.fn(),
+  getDomain: jest.fn(),
+  describeGatewayLogConfig: jest.fn(),
   listApisByGroup: jest.fn(),
   createApiGroup: jest.fn(),
   updateApiGroup: jest.fn(),
@@ -26,6 +28,7 @@ const mockApigwOperations = {
 jest.mock('../../../../src/common/aliyunClient', () => ({
   createAliyunClient: () => ({
     apigw: mockApigwOperations,
+    cas: { getCertificate: jest.fn().mockResolvedValue({ cert: 'desired-certificate' }) },
   }),
 }));
 
@@ -142,6 +145,74 @@ describe('Apigw Planner', () => {
   });
 
   describe('generateApigwPlan', () => {
+    it.each([
+      { customDomains: [] },
+      { customDomains: [{ domainName: 'example.com', certificateId: 'old-cert' }] },
+    ])('detects missing or changed gateway certificate %j', async ({ customDomains }) => {
+      mockApigwOperations.getDomain.mockResolvedValue({
+        domainName: 'example.com',
+        certificateBody: 'changed-certificate',
+      });
+      const state = buildMatchingState();
+      const event = {
+        ...testEvent,
+        domain: { domain_name: 'example.com', certificate_id: 'new-cert' },
+      };
+      state.resources['events.test_api'].definition.domain = {
+        domainName: 'example.com',
+        certificateId: 'new-cert',
+        wwwBindApex: false,
+        protocol: 'HTTP',
+      };
+      mockApigwOperations.getApiGroup.mockResolvedValue({ ...matchingGroup, customDomains });
+      mockMatchingApis();
+      const plan = await generateApigwPlan(mockContext, state, [event], 'test-service');
+      expect(plan.items[0]).toMatchObject({
+        action: 'update',
+        driftReasons: ['PLAN_DRIFT_EVENT_DOMAIN'],
+      });
+    });
+    it('compares certificate content rather than unrelated gateway and CAS IDs', async () => {
+      const state = buildMatchingState();
+      const event = {
+        ...testEvent,
+        domain: { domain_name: 'example.com', certificate_id: 'cas-id' },
+      };
+      state.resources['events.test_api'].definition.domain = {
+        domainName: 'example.com',
+        certificateId: 'cas-id',
+        wwwBindApex: false,
+        protocol: 'HTTP',
+      };
+      mockApigwOperations.getApiGroup.mockResolvedValue({
+        ...matchingGroup,
+        customDomains: [{ domainName: 'example.com', certificateId: 'gateway-generated-id' }],
+      });
+      mockApigwOperations.getDomain.mockResolvedValue({
+        domainName: 'example.com',
+        certificateBody: '  desired-certificate\n',
+      });
+      mockMatchingApis();
+      expect(
+        (await generateApigwPlan(mockContext, state, [event], 'test-service')).items[0].action,
+      ).toBe('noop');
+    });
+    it('detects gateway log drift and propagates log read failures', async () => {
+      const state = buildMatchingState();
+      const event = { ...testEvent, log: true };
+      mockApigwOperations.getApiGroup.mockResolvedValue(matchingGroup);
+      mockMatchingApis();
+      mockApigwOperations.describeGatewayLogConfig.mockResolvedValue(null);
+      expect(
+        (await generateApigwPlan(mockContext, state, [event], 'test-service')).items[0].action,
+      ).toBe('update');
+      const error = new Error('AccessDenied');
+      mockApigwOperations.describeGatewayLogConfig.mockRejectedValue(error);
+      await expect(generateApigwPlan(mockContext, state, [event], 'test-service')).rejects.toBe(
+        error,
+      );
+    });
+
     it.each([false, true])(
       'skips live gateway probes with refresh disabled (intent changed %s)',
       async (changed) => {

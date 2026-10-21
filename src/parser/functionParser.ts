@@ -11,7 +11,6 @@ import {
 } from '../types';
 import { isEmpty } from 'lodash';
 import {
-  parseBoolean,
   parseBooleanWithDefault,
   parseNumber,
   parseNumberWithDefault,
@@ -162,7 +161,7 @@ export const parseFunction = (functions?: {
           }
         : undefined,
       environment: func.environment,
-      log: parseBoolean(func.log),
+      log: parseBooleanWithDefault(func.log, false),
       network: func.network,
       storage: {
         disk: parseNumber(func.storage?.disk),

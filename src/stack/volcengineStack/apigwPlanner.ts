@@ -1,3 +1,6 @@
+import { desiredGatewayDomains } from './apigwDomains';
+import { resolveFunctionIdFromState } from './apigwResource';
+import { remoteDiffersFromDesired } from '../../common/planCompare';
 import { assertPlanIdentity } from '../../common/planCapabilities';
 import { definitionsDiffer, managedDefinition } from '../../common/planCompare';
 import { Context, EventDomain, Plan, PlanItem, StateFile } from '../../types';
@@ -129,6 +132,7 @@ export const generateApigwPlan = async (
       // writes; a probe failure stays noop (best-effort detection) instead of
       // fabricating drift from a transient read error.
       let triggersDiffer = false;
+      let upstreamDiffers = false;
       if (refreshEnabled && serviceInstance && event.triggers.length > 0) {
         try {
           const desiredTriggers = buildDesiredTriggerMap(event, context.stage);
@@ -150,9 +154,39 @@ export const generateApigwPlan = async (
                 () => client.apigw.getUpstream(upstreamId),
               );
               upstreamNameById.set(upstreamId, upstream?.upstreamName);
+              const trigger = event.triggers.find((entry) =>
+                buildDesiredTriggerMap({ ...event, triggers: [entry] }, context.stage).has(
+                  route.routeName!,
+                ),
+              );
+              if (upstream && trigger) {
+                const expected = {
+                  sourceType: 'VeFaas',
+                  protocol: 'HTTP',
+                  ...(upstream.functionId !== undefined
+                    ? {
+                        functionId: await resolveFunctionIdFromState(
+                          state,
+                          String(trigger.backend),
+                          client,
+                          context,
+                        ),
+                      }
+                    : {}),
+                };
+                upstreamDiffers ||= remoteDiffersFromDesired(upstream, expected);
+              }
             }
           }
-          triggersDiffer = cloudTriggerDiffers(matched, upstreamNameById, desiredTriggers);
+          triggersDiffer =
+            upstreamDiffers ||
+            cloudTriggerDiffers(matched, upstreamNameById, desiredTriggers) ||
+            matched.some(
+              (route) =>
+                route.enable === false ||
+                (route.priority !== undefined && route.priority !== 0) ||
+                (route.upstreamIds !== undefined && route.upstreamIds.length !== 1),
+            );
         } catch (error: unknown) {
           logger.warn(
             lang.__('PLAN_EVENT_TRIGGER_PROBE_FAILED', {
@@ -164,26 +198,72 @@ export const generateApigwPlan = async (
         }
       }
 
-      // Issue #234 phase 3: declared custom-domain drift — the service read
-      // already carries customDomains, so this costs no extra API call.
-      const desiredDomainName = (desiredDefinition as { domain?: { domainName?: string } }).domain
-        ?.domainName;
       let domainDiffers = false;
-      if (refreshEnabled && desiredDomainName) {
-        const cloudDomains = cloudService?.customDomains ?? [];
-        domainDiffers = !cloudDomains.some((d) => d.domain === desiredDomainName);
+      const domainsRemoved =
+        !event.domain &&
+        currentState.instances.some((instance) => instance.type === 'VOLCENGINE_APIGW_DOMAIN');
+      if (refreshEnabled && serviceInstance && event.domain) {
+        for (const desired of desiredGatewayDomains(event, serviceInstance.id)) {
+          const summary = cloudService?.customDomains?.find(
+            (domain) => domain.domain === desired.domainName,
+          );
+          if (!summary) {
+            domainDiffers = true;
+            continue;
+          }
+          if (summary.id) {
+            const live = await cachedRefreshRead(
+              context,
+              `apigw.getCustomDomain:${summary.id}`,
+              () => client.apigw.getCustomDomain(summary.id!),
+            );
+            domainDiffers ||=
+              !live ||
+              remoteDiffersFromDesired(
+                { ...live, certificateId: live.certificateId ?? '' },
+                desired,
+              );
+          }
+        }
+      }
+      let logDiffers = false;
+      const gateway = currentState.instances.find(
+        (instance) => instance.type === 'VOLCENGINE_APIGW_GATEWAY',
+      );
+      const topic = currentState.instances.find(
+        (instance) => instance.type === 'VOLCENGINE_TLS_TOPIC',
+      );
+      if (refreshEnabled && event.log && gateway) {
+        const live = await cachedRefreshRead(context, `apigw.getGateway:${gateway.id}`, () =>
+          client.apigw.getGateway(gateway.id),
+        );
+        logDiffers =
+          !live ||
+          remoteDiffersFromDesired(
+            { log: live.logSpec ?? null },
+            {
+              log: {
+                enable: true,
+                ...(topic?.projectId ? { projectId: topic.projectId } : {}),
+                ...(topic?.topicId ? { topicId: topic.topicId } : {}),
+              },
+            },
+          );
       }
 
-      if (definitionChanged || triggersDiffer || domainDiffers) {
+      if (definitionChanged || triggersDiffer || domainDiffers || logDiffers || domainsRemoved) {
         return {
           logicalId,
           action: 'update',
           resourceType: 'VOLCENGINE_APIGW',
           changes: {
-            before: managedDefinition(currentDefinition, desiredDefinition),
+            before: {
+              ...managedDefinition(currentDefinition, desiredDefinition),
+              ...(domainsRemoved ? { domain: currentDefinition.domain } : {}),
+            },
             after: managedDefinition(desiredDefinition),
           },
-          ...(triggersDiffer || domainDiffers ? { drifted: true } : {}),
+          ...(triggersDiffer || domainDiffers || logDiffers ? { drifted: true } : {}),
         };
       }
 

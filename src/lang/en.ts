@@ -2,6 +2,9 @@ export const en = {
   PLAN_SENSITIVE_VALUE: '(sensitive)',
   PLAN_NAS_NETWORK_REQUIRED:
     'NAS storage on {{logicalId}} needs a declared VPC network or recorded mount targets. Planning stopped before creating any resources.',
+  APIGW_DOMAIN_READ_INVALID: 'Invalid domain response for: {{domainId}}',
+  PLAN_DRIFT_EVENT_DOMAIN:
+    'Gateway domain or certificate differs from the requested configuration or is missing',
   PLAN_DRIFT_HTTP_TRIGGER: 'HTTP trigger differs from the requested configuration or is missing',
   PLAN_DRIFT_FUNCTION_DOMAIN:
     'Function domain differs from the requested configuration or is missing',
@@ -1328,6 +1331,9 @@ export const en = {
   REFRESH_STATE_BUCKET: 'Failed to refresh state for bucket: {{name}}',
   RESOURCE_SPACE_ID_NOT_FOUND: 'Space ID not found in state for {{logicalId}}',
   REFRESH_STATE_ES_SPACE: 'Failed to refresh state for ES space: {{spaceId}}',
+  IAM_POLICY_READ_INVALID: 'Invalid policy document returned for: {{policyName}}',
+  SCF_HTTP_TRIGGER_ID_UNAVAILABLE:
+    'Cannot record the cloud-assigned HTTP trigger identity for function: {{functionName}}',
   SCF_HTTP_TRIGGER_ALREADY_ATTACHED:
     'HTTP trigger {{triggerName}} already attached to {{functionName}}, skipping creation',
   SCF_HTTP_TRIGGER_ALREADY_EXISTS:

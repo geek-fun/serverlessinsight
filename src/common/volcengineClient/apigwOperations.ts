@@ -43,16 +43,23 @@ type ApigwSdkClient = Service;
         notInitialized(),
       deleteService: async (_id: string): Promise<void> => notInitialized(),
       createUpstream: async (_c: ApigwUpstreamConfig): Promise<string> => notInitialized(),
+      updateUpstream: async (_id: string, _c: ApigwUpstreamConfig): Promise<void> =>
+        notInitialized(),
       getUpstream: async (_id: string): Promise<ApigwUpstreamInfo | null> => notInitialized(),
       findUpstreamByName: async (_g: string, _n: string): Promise<ApigwUpstreamInfo | null> =>
         notInitialized(),
       deleteUpstream: async (_id: string): Promise<void> => notInitialized(),
       createRoute: async (_c: ApigwRouteConfig): Promise<string> => notInitialized(),
+      updateRoute: async (_id: string, _c: ApigwRouteConfig): Promise<void> => notInitialized(),
       getRoute: async (_id: string): Promise<ApigwRouteInfo | null> => notInitialized(),
       findRouteByName: async (_s: string, _n: string): Promise<ApigwRouteInfo | null> =>
         notInitialized(),
       listRoutesByService: async (_s: string): Promise<ApigwRouteInfo[]> => notInitialized(),
       deleteRoute: async (_id: string): Promise<void> => notInitialized(),
+      getCustomDomain: async (_id: string): Promise<(ApigwDomainConfig & { id: string }) | null> =>
+        notInitialized(),
+      updateCustomDomain: async (_id: string, _c: ApigwDomainConfig): Promise<void> =>
+        notInitialized(),
       createCustomDomain: async (_c: ApigwDomainConfig): Promise<string> => notInitialized(),
       deleteCustomDomain: async (_id: string): Promise<void> => notInitialized(),
     };
@@ -429,6 +436,22 @@ type ApigwSdkClient = Service;
       return (data.Id as string) ?? '';
     },
 
+    updateUpstream: async (id: string, config: ApigwUpstreamConfig): Promise<void> => {
+      await client.fetchOpenAPI({
+        Action: 'UpdateUpstream',
+        Version: '2021-03-03',
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        data: {
+          Id: id,
+          Name: config.upstreamName,
+          SourceType: config.sourceType,
+          Protocol: config.protocol ?? 'HTTP',
+          UpstreamSpec: { VeFaas: { FunctionId: config.functionId } },
+        },
+      });
+    },
+
     getUpstream: async (upstreamId: string): Promise<ApigwUpstreamInfo | null> => {
       try {
         const response = await client.fetchOpenAPI({
@@ -605,6 +628,26 @@ type ApigwSdkClient = Service;
       };
     },
 
+    updateRoute: async (id: string, config: ApigwRouteConfig): Promise<void> => {
+      await client.fetchOpenAPI({
+        Action: 'UpdateRoute',
+        Version: '2022-11-12',
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        data: {
+          Id: id,
+          Name: config.routeName,
+          Enable: true,
+          Priority: 0,
+          MatchRule: {
+            Path: { MatchType: 'Exact', MatchContent: config.path },
+            Method: [config.method],
+          },
+          UpstreamList: [{ UpstreamId: config.upstreamId, Weight: 100 }],
+        },
+      });
+    },
+
     getRoute: async (routeId: string): Promise<ApigwRouteInfo | null> => {
       try {
         const response = await client.fetchOpenAPI({
@@ -711,6 +754,46 @@ type ApigwSdkClient = Service;
       });
     },
 
+    getCustomDomain: async (id: string): Promise<(ApigwDomainConfig & { id: string }) | null> => {
+      try {
+        const response = await client.fetchOpenAPI({
+          Action: 'GetCustomDomain',
+          Version: '2021-03-03',
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          data: { Id: id },
+        });
+        const domain = (response.Result as { CustomDomain?: Record<string, unknown> } | undefined)
+          ?.CustomDomain;
+        if (!domain) throw new Error(lang.__('APIGW_DOMAIN_READ_INVALID', { domainId: id }));
+        return {
+          id,
+          serviceId: domain.ServiceId as string,
+          domainName: domain.Domain as string,
+          certificateId: domain.CertificateId as string | undefined,
+          protocol: domain.Protocol as string[] | undefined,
+          sslRedirect: domain.SSLRedirect as boolean | undefined,
+        };
+      } catch (error) {
+        if (['NotFound', 'DomainNotFound'].includes((error as { code: string }).code)) return null;
+        throw error;
+      }
+    },
+    updateCustomDomain: async (id: string, config: ApigwDomainConfig): Promise<void> => {
+      await client.fetchOpenAPI({
+        Action: 'UpdateCustomDomain',
+        Version: '2021-03-03',
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        data: {
+          Id: id,
+          CertificateId: config.certificateId ?? '',
+          Protocol: config.protocol ?? ['HTTP'],
+          SSLRedirect: config.sslRedirect ?? false,
+        },
+      });
+    },
+
     createCustomDomain: async (config: ApigwDomainConfig): Promise<string> => {
       const response = await client.fetchOpenAPI({
         Action: 'CreateCustomDomain',
@@ -720,6 +803,8 @@ type ApigwSdkClient = Service;
         data: {
           ServiceId: config.serviceId,
           Domain: config.domainName,
+          Protocol: config.protocol ?? ['HTTP'],
+          SSLRedirect: config.sslRedirect ?? false,
           ...(config.certificateId && { CertificateId: config.certificateId }),
         },
       });

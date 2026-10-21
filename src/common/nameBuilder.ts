@@ -127,3 +127,6 @@ export const buildRolePolicyName = (roleName: string): string => `${roleName}-po
  */
 export const buildNasAccessGroupName = (fnName: string, stage: string, mountPath: string): string =>
   `${fnName}-${stage}-nas-access-${mountPath.replace(/\//g, '-').replace(/^-/, '')}`;
+
+export const buildFunctionHttpTriggerName = (functionKey: string): string =>
+  `${functionKey}-http-trigger`;

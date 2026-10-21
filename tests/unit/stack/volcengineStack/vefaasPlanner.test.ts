@@ -1,3 +1,5 @@
+import { buildVefaasExecutionPolicy } from '../../../../src/common/volcengineClient/iamOperations';
+import { deriveVefaasExecutionStatements } from '../../../../src/stack/volcengineStack/vefaasTypes';
 import { generateFunctionPlan } from '../../../../src/stack/volcengineStack/vefaasPlanner';
 import { createVolcengineClient } from '../../../../src/common/volcengineClient';
 import type { FunctionDomain, Context, StateFile } from '../../../../src/types';
@@ -57,6 +59,11 @@ describe('vefaasPlanner', () => {
     },
     iam: {
       getRole: jest.fn(),
+      getPolicy: jest
+        .fn()
+        .mockImplementation(async () =>
+          buildVefaasExecutionPolicy(deriveVefaasExecutionStatements(mockFunction, mockContext)),
+        ),
       listAttachedRolePolicies: jest.fn(),
     },
   };
@@ -90,7 +97,7 @@ describe('vefaasPlanner', () => {
     let mockVefaasClient: {
       vefaas: { getFunction: jest.Mock; listTriggers: jest.Mock };
       tls: { getTopic: jest.Mock; modifyTopic: jest.Mock };
-      iam: { getRole: jest.Mock; listAttachedRolePolicies: jest.Mock };
+      iam: { getRole: jest.Mock; getPolicy: jest.Mock; listAttachedRolePolicies: jest.Mock };
     };
 
     beforeEach(() => {
@@ -105,6 +112,13 @@ describe('vefaasPlanner', () => {
         },
         iam: {
           getRole: jest.fn(),
+          getPolicy: jest
+            .fn()
+            .mockImplementation(async () =>
+              buildVefaasExecutionPolicy(
+                deriveVefaasExecutionStatements(mockFunction, mockContext),
+              ),
+            ),
           listAttachedRolePolicies: jest.fn(),
         },
       };
@@ -787,6 +801,34 @@ describe('vefaasPlanner', () => {
       });
     };
 
+    it.each([null, '{"Statement":[]}'])(
+      'detects missing or edited execution policy %s',
+      async (policy) => {
+        matchingRemote();
+        mockVefaasClient.iam.getRole.mockResolvedValue({
+          trustPolicyDocument: JSON.stringify(buildDefaultTrustPolicy(['vefaas'])),
+        });
+        mockVefaasClient.iam.listAttachedRolePolicies.mockResolvedValue(['role-1-policy']);
+        mockVefaasClient.iam.getPolicy.mockResolvedValueOnce(policy);
+        const plan = await generateFunctionPlan(mockContext, buildRoleState(), [mockFunction]);
+        expect(plan.items[0]).toMatchObject({
+          action: 'update',
+          drifted: true,
+          driftReasons: ['PLAN_DRIFT_ROLE_POLICY'],
+        });
+      },
+    );
+    it('propagates a failed custom-policy read', async () => {
+      matchingRemote();
+      mockVefaasClient.iam.getRole.mockResolvedValue({
+        trustPolicyDocument: JSON.stringify(buildDefaultTrustPolicy(['vefaas'])),
+      });
+      const error = new Error('AccessDenied');
+      mockVefaasClient.iam.getPolicy.mockRejectedValueOnce(error);
+      await expect(
+        generateFunctionPlan(mockContext, buildRoleState(), [mockFunction]),
+      ).rejects.toBe(error);
+    });
     it.each([128, 256])('plans only intent with refresh disabled (memory %s)', async (memory) => {
       const plan = await generateFunctionPlan(
         { ...mockContext, refresh: false },

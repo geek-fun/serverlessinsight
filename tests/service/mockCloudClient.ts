@@ -466,6 +466,7 @@ export type MockVolcengineClient = {
   iam: {
     createRole: jest.Mock;
     getRole: jest.Mock;
+    getPolicy: jest.Mock;
     listAttachedRolePolicies: jest.Mock;
     updateRoleTrustPolicy: jest.Mock;
     deleteRole: jest.Mock;
@@ -531,7 +532,9 @@ export const createMockVolcengineClient = (): MockVolcengineClient => ({
     updateFunctionCode: jest.fn().mockResolvedValue(undefined),
     deleteFunction: jest.fn().mockResolvedValue(undefined),
     listFunctions: jest.fn().mockResolvedValue([]),
-    createTrigger: jest.fn().mockResolvedValue(undefined),
+    createTrigger: jest.fn().mockImplementation(async (params: { TriggerName: string }) => ({
+      TriggerName: params.TriggerName,
+    })),
     // Empty timer baseline — tests override to simulate existing triggers.
     listTriggers: jest.fn().mockResolvedValue([]),
     deleteTrigger: jest.fn().mockResolvedValue(undefined),
@@ -566,6 +569,7 @@ export const createMockVolcengineClient = (): MockVolcengineClient => ({
       roleId: 'role-123',
       trn: 'trn:iam::123456789012:role/test-role',
     }),
+    getPolicy: jest.fn().mockResolvedValue('{"Statement":[]}'),
     listAttachedRolePolicies: jest.fn().mockResolvedValue(['test-role-policy']),
     updateRoleTrustPolicy: jest.fn().mockResolvedValue(undefined),
     deleteRole: jest.fn().mockResolvedValue(undefined),

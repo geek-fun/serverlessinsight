@@ -10,6 +10,7 @@ import type CloudApiClient from '@alicloud/cloudapi20160714';
 import type DnsClient from '@alicloud/alidns20150109';
 
 const mockCreateApiGroup = jest.fn();
+const mockDescribeDomain = jest.fn();
 const mockDescribeApiGroup = jest.fn();
 const mockDescribeApiGroups = jest.fn();
 const mockModifyApiGroup = jest.fn();
@@ -30,6 +31,7 @@ const mockDescribeLogConfig = jest.fn();
 const mockApigwClient = {
   createApiGroup: mockCreateApiGroup,
   describeApiGroup: mockDescribeApiGroup,
+  describeDomain: mockDescribeDomain,
   describeApiGroups: mockDescribeApiGroups,
   modifyApiGroup: mockModifyApiGroup,
   deleteApiGroup: mockDeleteApiGroup,
@@ -1768,5 +1770,25 @@ describe('apigwOperations', () => {
         }),
       );
     });
+  });
+  it('reads public certificate content without returning private keys', async () => {
+    mockDescribeDomain.mockResolvedValueOnce({
+      body: {
+        domainName: 'example.com',
+        certificateBody: 'public-cert',
+        certificatePrivateKey: 'private',
+      },
+    });
+    expect(await operations.getDomain('group-1', 'example.com')).toEqual({
+      domainName: 'example.com',
+      certificateBody: 'public-cert',
+    });
+  });
+  it('rejects failed or malformed domain reads', async () => {
+    mockDescribeDomain.mockResolvedValueOnce({ body: {} });
+    await expect(operations.getDomain('group-1', 'example.com')).rejects.toThrow();
+    const error = new Error('AccessDenied');
+    mockDescribeDomain.mockRejectedValueOnce(error);
+    await expect(operations.getDomain('group-1', 'example.com')).rejects.toBe(error);
   });
 });
