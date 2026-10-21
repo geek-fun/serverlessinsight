@@ -366,6 +366,9 @@ const isLogConfigChanged = (
   );
 };
 
+const isScfFunctionInstance = (instance: { type?: unknown; functionName?: unknown }): boolean =>
+  typeof instance.functionName === 'string' || instance.type == null;
+
 const buildScfInstanceFromProvider = (info: ScfFunctionInfo, sid: string) => {
   const envMap: Record<string, string> =
     info.Environment?.Variables?.reduce(
@@ -635,9 +638,8 @@ const createDependentResources = async (
       };
       clsInstances.push(logsetInstance, topicInstance);
     } else {
-      const legacyFn = existingInstances.find(
-        (i) => (i as ScfDependentInstance).type === undefined,
-      ) as { clsLogsetId?: string; clsTopicId?: string } | undefined;
+      const legacyFn = existingInstances.find((i) => isScfFunctionInstance(i)) as
+        { clsLogsetId?: string; clsTopicId?: string } | undefined;
       if (legacyFn?.clsLogsetId && legacyFn?.clsTopicId) {
         clsConfig = {
           logsetId: legacyFn.clsLogsetId,
@@ -1100,9 +1102,8 @@ export const updateResource = async (
   const fn = withStoredFunctionIam(providedFn, existingState?.definition);
   const existingInstances = (existingState?.instances ?? []) as Array<Record<string, unknown>>;
 
-  const existingFnInstance = existingInstances.find(
-    (i) => (i as ScfDependentInstance).type === undefined,
-  ) as Record<string, unknown> | undefined;
+  const existingFnInstance = existingInstances.find((i) => isScfFunctionInstance(i)) as
+    Record<string, unknown> | undefined;
 
   const existingClsTopicInstance = existingInstances.find(
     (i) => (i as ScfDependentInstance).type === ResourceTypeEnum.TENCENT_CLS_TOPIC,
@@ -1538,7 +1539,7 @@ export const updateResource = async (
   const existingDependentInstances = existingInstances
     .filter(
       (i) =>
-        (i as ScfDependentInstance).type !== undefined &&
+        !isScfFunctionInstance(i) &&
         (i as ScfDependentInstance).type !== 'TENCENT_SCF_CUSTOM_DOMAIN' &&
         // timers are fully rebuilt from the reconcile result below
         (i as ScfDependentInstance).type !== TIMER_TRIGGER_INSTANCE_TYPE &&
@@ -1627,9 +1628,8 @@ export const deleteResource = async (
   const client = createTencentClient(context);
 
   // Delete HTTP trigger before deleting function
-  const fnInstance = existingInstances.find(
-    (i) => (i as ScfDependentInstance).type === undefined,
-  ) as Record<string, unknown> | undefined;
+  const fnInstance = existingInstances.find((i) => isScfFunctionInstance(i)) as
+    Record<string, unknown> | undefined;
   const httpTrigger = (fnInstance?.triggers as Array<Record<string, unknown>> | undefined)?.find(
     (t) => t.type === 'http',
   );
@@ -1690,7 +1690,7 @@ export const deleteResource = async (
     }
   }
 
-  const hasFunction = existingInstances.some((i) => (i as ScfDependentInstance).type === undefined);
+  const hasFunction = existingInstances.some((i) => isScfFunctionInstance(i));
 
   if (hasFunction) {
     try {
@@ -1709,7 +1709,7 @@ export const deleteResource = async (
 
   const dependentInstances = existingInstances.filter(
     (i) =>
-      (i as ScfDependentInstance).type !== undefined &&
+      !isScfFunctionInstance(i) &&
       (i as ScfDependentInstance).type !== 'TENCENT_SCF_CUSTOM_DOMAIN' &&
       // timers were deleted explicitly above
       (i as ScfDependentInstance).type !== TIMER_TRIGGER_INSTANCE_TYPE,

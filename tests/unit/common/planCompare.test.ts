@@ -331,3 +331,13 @@ describe('schema-declared membership collections', () => {
     ).toBe(true);
   });
 });
+
+it('does not label unavailable live fields as cloud reverts during another update', () => {
+  expect(
+    computeRevertKeys(
+      { policy: '{"Version":"1"}', codeHash: 'old' },
+      { policy: undefined },
+      { policy: '{"Version":"1"}', codeHash: 'new' },
+    ),
+  ).toEqual([]);
+});

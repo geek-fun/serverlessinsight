@@ -39,7 +39,10 @@ const parseDomainConfig = (
   if (!rawDomain) return undefined;
   return {
     domain_name: String(rawDomain.domain_name),
-    www_bind_apex: parseBooleanWithDefault(rawDomain.www_bind_apex as boolean | undefined, false),
+    www_bind_apex:
+      rawDomain.www_bind_apex == null
+        ? undefined
+        : parseBooleanWithDefault(rawDomain.www_bind_apex as boolean, false),
     certificate_id: rawDomain.certificate_id != null ? String(rawDomain.certificate_id) : undefined,
     certificate_body:
       rawDomain.certificate_body != null ? String(rawDomain.certificate_body) : undefined,
@@ -62,7 +65,7 @@ const parseWebsiteDomain = (
   domain: unknown,
 ): {
   domain: string | undefined;
-  www_bind_apex: boolean;
+  www_bind_apex: boolean | undefined;
   domain_certificate_id: string | undefined;
   domain_certificate_body: string | undefined;
   domain_certificate_private_key: string | undefined;
@@ -71,7 +74,7 @@ const parseWebsiteDomain = (
   if (domain == null) {
     return {
       domain: undefined,
-      www_bind_apex: false,
+      www_bind_apex: undefined,
       domain_certificate_id: undefined,
       domain_certificate_body: undefined,
       domain_certificate_private_key: undefined,
@@ -81,7 +84,7 @@ const parseWebsiteDomain = (
   if (!isStructuredDomain(domain)) {
     return {
       domain: String(domain),
-      www_bind_apex: false,
+      www_bind_apex: undefined,
       domain_certificate_id: undefined,
       domain_certificate_body: undefined,
       domain_certificate_private_key: undefined,
@@ -91,7 +94,10 @@ const parseWebsiteDomain = (
   const d = domain as Record<string, unknown>;
   return {
     domain: String(d.domain_name),
-    www_bind_apex: parseBooleanWithDefault(d.www_bind_apex as boolean | undefined, false),
+    www_bind_apex:
+      d.www_bind_apex == null
+        ? undefined
+        : parseBooleanWithDefault(d.www_bind_apex as boolean, false),
     domain_certificate_id: d.certificate_id != null ? String(d.certificate_id) : undefined,
     domain_certificate_body: d.certificate_body != null ? String(d.certificate_body) : undefined,
     domain_certificate_private_key:

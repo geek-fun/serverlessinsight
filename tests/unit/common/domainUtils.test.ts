@@ -3,6 +3,7 @@ import {
   extractMainDomain,
   extractHostRecord,
   deriveWwwDomain,
+  resolveWwwBindingAction,
 } from '../../../src/common/domainUtils';
 
 describe('normalizeDomain', () => {
@@ -111,4 +112,20 @@ describe('deriveWwwDomain', () => {
   it('should return null for domain starting with www prefix regardless of case', () => {
     expect(deriveWwwDomain('www.example.com')).toBeNull();
   });
+});
+
+describe('resolveWwwBindingAction', () => {
+  it.each([
+    [true, true, 'ensure'],
+    [true, false, 'ensure'],
+    [false, true, 'remove'],
+    [false, false, 'remove'],
+    [undefined, true, 'retain'],
+    [undefined, false, 'remove'],
+  ] as const)(
+    'resolves declaration %s for retained parent %s as %s',
+    (declared, sameDomain, action) => {
+      expect(resolveWwwBindingAction(declared, sameDomain)).toBe(action);
+    },
+  );
 });

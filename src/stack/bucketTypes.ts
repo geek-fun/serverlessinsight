@@ -142,12 +142,12 @@ export type CommonBucketInfo = {
   blockPublicAccess?: boolean;
   accessMonitorStatus?: 'Enabled' | 'Disabled';
   acl?: string;
-  websiteConfig?: BucketWebsiteConfig;
+  websiteConfig?: BucketWebsiteConfig | null;
   loggingConfig?: BucketLoggingConfig;
   corsRules?: BucketCorsRule[];
   lifecycleRules?: BucketLifecycleRule[];
-  versioningConfig?: BucketVersioningConfig;
-  encryptionConfig?: BucketEncryptionConfig;
+  versioningConfig?: BucketVersioningConfig | null;
+  encryptionConfig?: BucketEncryptionConfig | null;
   transferAccelerationStatus?: 'Enabled' | 'Disabled';
   replicationRules?: BucketReplicationRule[];
   tags?: BucketTag[];

@@ -144,3 +144,10 @@ export const deriveWwwDomain = (domain: string): string | null => {
   }
   return `www.${domain}`;
 };
+
+/** Retain a recorded child only while its parent domain stays the same. */
+export const resolveWwwBindingAction = (
+  declared: boolean | undefined,
+  sameDomain: boolean,
+): 'ensure' | 'remove' | 'retain' =>
+  declared === true ? 'ensure' : declared === false || !sameDomain ? 'remove' : 'retain';

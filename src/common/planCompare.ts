@@ -156,7 +156,7 @@ export const computeRevertKeys = (
   const current = managedDefinition(live, desired);
   const target = managedDefinition(desired);
   return Object.keys(live)
-    .filter((key) => isDeclared(desired[key]))
+    .filter((key) => live[key] !== undefined && isDeclared(desired[key]))
     .flatMap((key) => revertPaths(saved[key], current[key], target[key], key))
     .sort((a, b) => a.localeCompare(b));
 };

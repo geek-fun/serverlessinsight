@@ -646,7 +646,11 @@ const buildCodeLocation = (
     },
 
     deleteCustomDomain: async (domainName: string): Promise<void> => {
-      await fc3Client.deleteCustomDomain(domainName);
+      try {
+        await fc3Client.deleteCustomDomain(domainName);
+      } catch (error: unknown) {
+        if ((error as { code?: string } | null)?.code !== 'CustomDomainNotFound') throw error;
+      }
     },
   };
 

@@ -862,282 +862,271 @@ const parseReplicationRules = (xml: string): BucketReplicationRule[] => {
     },
 
     getBucket: async (bucketName: string): Promise<OssBucketInfo | null> => {
+      useBucket(bucketName);
+      const infoResult = await (async () => {
+        try {
+          // Get bucket info
+          return await ossClient.getBucketInfo(bucketName);
+        } catch (error: unknown) {
+          if (
+            error &&
+            typeof error === 'object' &&
+            'code' in error &&
+            error.code === 'NoSuchBucket'
+          ) {
+            return null;
+          }
+          throw error;
+        }
+      })();
+      if (infoResult === null) return null;
+      const bucket = infoResult.bucket;
+      // Get ACL
+      let acl: string | undefined;
       try {
-        useBucket(bucketName);
+        const aclResult = await ossClient.getBucketACL(bucketName);
+        acl = aclResult.acl;
+      } catch {
+        // ACL might not be accessible
+      }
 
-        // Get bucket info
-        const infoResult = await ossClient.getBucketInfo(bucketName);
-        const bucket = infoResult.bucket;
-
-        // Get ACL
-        let acl: string | undefined;
-        try {
-          const aclResult = await ossClient.getBucketACL(bucketName);
-          acl = aclResult.acl;
-        } catch {
-          // ACL might not be accessible
+      // Get website config
+      let websiteConfig: BucketWebsiteConfig | null = null;
+      try {
+        const websiteResult = await ossClient.getBucketWebsite(bucketName);
+        if (websiteResult.index) {
+          websiteConfig = {
+            indexDocument: websiteResult.index,
+            errorDocument: websiteResult.error,
+          };
         }
+      } catch (error: unknown) {
+        const code = (error as { code?: string } | null)?.code;
+        if (code !== 'NoSuchWebsiteConfiguration' && code !== 'NoSuchConfiguration') throw error;
+      }
 
-        // Get website config
-        let websiteConfig: BucketWebsiteConfig | undefined;
-        try {
-          const websiteResult = await ossClient.getBucketWebsite(bucketName);
-          if (websiteResult.index) {
-            websiteConfig = {
-              indexDocument: websiteResult.index,
-              errorDocument: websiteResult.error,
-            };
-          }
-        } catch {
-          // Website config might not exist
+      // Get logging config
+      let loggingConfig: BucketLoggingConfig | undefined;
+      try {
+        const loggingResult = await ossClient.getBucketLogging(bucketName);
+        if (loggingResult.enable && loggingResult.prefix) {
+          loggingConfig = {
+            targetPrefix: loggingResult.prefix,
+          };
         }
+      } catch {
+        // Logging config might not exist
+      }
 
-        // Get logging config
-        let loggingConfig: BucketLoggingConfig | undefined;
-        try {
-          const loggingResult = await ossClient.getBucketLogging(bucketName);
-          if (loggingResult.enable && loggingResult.prefix) {
-            loggingConfig = {
-              targetPrefix: loggingResult.prefix,
-            };
-          }
-        } catch {
-          // Logging config might not exist
+      // Get CORS rules
+      let corsRules: BucketCorsRule[] | undefined;
+      try {
+        const corsResult = await ossClient.getBucketCORS(bucketName);
+        if (corsResult.rules && corsResult.rules.length > 0) {
+          corsRules = corsResult.rules.map((rule) => ({
+            allowedOrigins: Array.isArray(rule.allowedOrigin)
+              ? rule.allowedOrigin
+              : [rule.allowedOrigin],
+            allowedMethods: Array.isArray(rule.allowedMethod)
+              ? rule.allowedMethod
+              : [rule.allowedMethod],
+            allowedHeaders: rule.allowedHeader
+              ? Array.isArray(rule.allowedHeader)
+                ? rule.allowedHeader
+                : [rule.allowedHeader]
+              : undefined,
+            exposeHeaders: rule.exposeHeader
+              ? Array.isArray(rule.exposeHeader)
+                ? rule.exposeHeader
+                : [rule.exposeHeader]
+              : undefined,
+            maxAgeSeconds: typeof rule.maxAgeSeconds === 'number' ? rule.maxAgeSeconds : undefined,
+          }));
         }
+      } catch {
+        // CORS config might not exist
+      }
 
-        // Get CORS rules
-        let corsRules: BucketCorsRule[] | undefined;
-        try {
-          const corsResult = await ossClient.getBucketCORS(bucketName);
-          if (corsResult.rules && corsResult.rules.length > 0) {
-            corsRules = corsResult.rules.map((rule) => ({
-              allowedOrigins: Array.isArray(rule.allowedOrigin)
-                ? rule.allowedOrigin
-                : [rule.allowedOrigin],
-              allowedMethods: Array.isArray(rule.allowedMethod)
-                ? rule.allowedMethod
-                : [rule.allowedMethod],
-              allowedHeaders: rule.allowedHeader
-                ? Array.isArray(rule.allowedHeader)
-                  ? rule.allowedHeader
-                  : [rule.allowedHeader]
-                : undefined,
-              exposeHeaders: rule.exposeHeader
-                ? Array.isArray(rule.exposeHeader)
-                  ? rule.exposeHeader
-                  : [rule.exposeHeader]
-                : undefined,
-              maxAgeSeconds:
-                typeof rule.maxAgeSeconds === 'number' ? rule.maxAgeSeconds : undefined,
-            }));
-          }
-        } catch {
-          // CORS config might not exist
-        }
-
-        // Get lifecycle rules
-        let lifecycleRules: BucketLifecycleRule[] | undefined;
-        try {
-          const lifecycleResult = await ossClient.getBucketLifecycle(bucketName);
-          if (lifecycleResult.rules && lifecycleResult.rules.length > 0) {
-            lifecycleRules = lifecycleResult.rules.map((rule) => {
-              const rawRule = rule as unknown as {
-                transition?: unknown;
-                expiration?: {
-                  days?: number | string;
-                  date?: string;
-                  expiredObjectDeleteMarker?: boolean;
-                };
+      // Get lifecycle rules
+      let lifecycleRules: BucketLifecycleRule[] | undefined;
+      try {
+        const lifecycleResult = await ossClient.getBucketLifecycle(bucketName);
+        if (lifecycleResult.rules && lifecycleResult.rules.length > 0) {
+          lifecycleRules = lifecycleResult.rules.map((rule) => {
+            const rawRule = rule as unknown as {
+              transition?: unknown;
+              expiration?: {
+                days?: number | string;
+                date?: string;
+                expiredObjectDeleteMarker?: boolean;
               };
-              const rawTransition = Array.isArray(rawRule.transition)
-                ? rawRule.transition[0]
-                : rawRule.transition;
-              const transition = (rawTransition ?? undefined) as
-                { days?: number | string; date?: string; storageClass?: string } | undefined;
-              const expirationDays = rawRule.expiration?.days ?? rule.days;
-              const expirationDate = rawRule.expiration?.date ?? rule.date;
-              const expiredObjectDeleteMarker = rawRule.expiration?.expiredObjectDeleteMarker;
-              const expiration =
-                expirationDays !== undefined
+            };
+            const rawTransition = Array.isArray(rawRule.transition)
+              ? rawRule.transition[0]
+              : rawRule.transition;
+            const transition = (rawTransition ?? undefined) as
+              { days?: number | string; date?: string; storageClass?: string } | undefined;
+            const expirationDays = rawRule.expiration?.days ?? rule.days;
+            const expirationDate = rawRule.expiration?.date ?? rule.date;
+            const expiredObjectDeleteMarker = rawRule.expiration?.expiredObjectDeleteMarker;
+            const expiration =
+              expirationDays !== undefined
+                ? {
+                    days:
+                      typeof expirationDays === 'number'
+                        ? expirationDays
+                        : parseInt(expirationDays, 10),
+                    ...(expiredObjectDeleteMarker ? { expiredObjectDeleteMarker: true } : {}),
+                  }
+                : expirationDate
                   ? {
-                      days:
-                        typeof expirationDays === 'number'
-                          ? expirationDays
-                          : parseInt(expirationDays, 10),
+                      date: expirationDate,
                       ...(expiredObjectDeleteMarker ? { expiredObjectDeleteMarker: true } : {}),
                     }
-                  : expirationDate
-                    ? {
-                        date: expirationDate,
-                        ...(expiredObjectDeleteMarker ? { expiredObjectDeleteMarker: true } : {}),
-                      }
-                    : expiredObjectDeleteMarker
-                      ? { expiredObjectDeleteMarker: true }
-                      : undefined;
-              return {
-                id: rule.id,
-                status: rule.status,
-                prefix: rule.prefix,
-                expiration,
-                transition: transition
-                  ? {
-                      days:
-                        typeof transition.days === 'number'
-                          ? transition.days
-                          : transition.days !== undefined
-                            ? parseInt(transition.days, 10)
-                            : undefined,
-                      date: transition.date,
-                      storageClass: transition.storageClass,
-                    }
-                  : undefined,
-              };
-            });
-          }
-        } catch {
-          // Lifecycle config might not exist
-        }
-
-        // Get versioning status (GetBucketVersioning)
-        let versioningConfig: BucketVersioningConfig | undefined;
-        try {
-          const versioningResult = await (
-            ossClient as unknown as {
-              getBucketVersioning: (name: string) => Promise<{ versionStatus?: string }>;
-            }
-          ).getBucketVersioning(bucketName);
-          if (
-            versioningResult?.versionStatus === 'Enabled' ||
-            versioningResult?.versionStatus === 'Suspended'
-          ) {
-            versioningConfig = { status: versioningResult.versionStatus };
-          }
-        } catch {
-          // Versioning config might not exist
-        }
-
-        // Get server-side encryption (GetBucketEncryption)
-        let encryptionConfig: BucketEncryptionConfig | undefined;
-        try {
-          const encryptionResult = await (
-            ossClient as unknown as {
-              getBucketEncryption: (name: string) => Promise<{
-                encryption?: {
-                  SSEAlgorithm?: string;
-                  KMSMasterKeyID?: string;
-                  KMSDataEncryption?: string;
-                };
-              }>;
-            }
-          ).getBucketEncryption(bucketName);
-          const enc = encryptionResult?.encryption;
-          if (enc?.SSEAlgorithm) {
-            encryptionConfig = {
-              sseAlgorithm: enc.SSEAlgorithm as BucketEncryptionConfig['sseAlgorithm'],
-              kmsMasterKeyId: enc.KMSMasterKeyID,
-              kmsDataEncryption:
-                enc.KMSDataEncryption as BucketEncryptionConfig['kmsDataEncryption'],
+                  : expiredObjectDeleteMarker
+                    ? { expiredObjectDeleteMarker: true }
+                    : undefined;
+            return {
+              id: rule.id,
+              status: rule.status,
+              prefix: rule.prefix,
+              expiration,
+              transition: transition
+                ? {
+                    days:
+                      typeof transition.days === 'number'
+                        ? transition.days
+                        : transition.days !== undefined
+                          ? parseInt(transition.days, 10)
+                          : undefined,
+                    date: transition.date,
+                    storageClass: transition.storageClass,
+                  }
+                : undefined,
             };
-          }
-        } catch {
-          // Encryption config might not exist
-        }
-
-        // Get transfer acceleration status (GetBucketTransferAcceleration)
-        let transferAccelerationStatus: OssBucketInfo['transferAccelerationStatus'];
-        try {
-          const enabled = await operations.getTransferAccelerationStatus(bucketName);
-          transferAccelerationStatus = enabled ? 'Enabled' : 'Disabled';
-        } catch {
-          // Transfer acceleration might not be configured
-        }
-
-        // Get replication rules (GetBucketReplication)
-        let replicationRules: BucketReplicationRule[] | undefined;
-        try {
-          const replicationResponse = await ossRequest(ossClient, {
-            method: 'GET',
-            bucket: bucketName,
-            subres: { replication: '' },
-            successStatuses: [200],
           });
-          const replicationXml = (replicationResponse as { data?: string }).data || '';
-          const parsedRules = parseReplicationRules(replicationXml);
-          if (parsedRules.length > 0) {
-            replicationRules = parsedRules;
-          }
-        } catch {
-          // Replication config might not exist
         }
-
-        // Get bucket policy (GetBucketPolicy)
-        let policy: string | undefined;
-        try {
-          const policyResult = await operations.getBucketPolicy(bucketName);
-          if (policyResult) {
-            policy = JSON.stringify(policyResult);
-          }
-        } catch {
-          // No bucket policy configured
-        }
-
-        // Get bucket tags
-        let tags: BucketTag[] | undefined;
-        try {
-          const tagsResult = await (
-            ossClient as unknown as {
-              getBucketTags: (name: string) => Promise<{ tag?: Record<string, string> }>;
-            }
-          ).getBucketTags(bucketName);
-          if (tagsResult.tag) {
-            tags = Object.entries(tagsResult.tag).map(([key, value]) => ({ key, value }));
-          }
-        } catch {
-          // No bucket tags configured
-        }
-
-        // Build owner info
-        const owner: BucketOwner | undefined = bucket?.Owner
-          ? {
-              id: bucket.Owner.ID,
-              displayName: bucket.Owner.DisplayName,
-            }
-          : undefined;
-
-        return {
-          name: bucketName,
-          location: bucket?.Location,
-          creationDate: bucket?.CreationDate,
-          storageClass: bucket?.StorageClass,
-          dataRedundancyType: bucket?.DataRedundancyType as 'LRS' | 'ZRS' | undefined,
-          resourceGroupId: bucket?.ResourceGroupId,
-          comment: bucket?.Comment,
-          owner,
-          blockPublicAccess: bucket?.BlockPublicAccess,
-          accessMonitorStatus: bucket?.AccessMonitor as 'Enabled' | 'Disabled' | undefined,
-          acl,
-          websiteConfig,
-          loggingConfig,
-          corsRules,
-          lifecycleRules,
-          versioningConfig,
-          encryptionConfig,
-          transferAccelerationStatus,
-          replicationRules,
-          tags,
-          policy,
-        };
-      } catch (error: unknown) {
-        if (
-          error &&
-          typeof error === 'object' &&
-          'code' in error &&
-          (error.code === 'NoSuchBucket' || error.code === 'AccessDenied')
-        ) {
-          return null;
-        }
-        throw error;
+      } catch {
+        // Lifecycle config might not exist
       }
+
+      // Get versioning status (GetBucketVersioning)
+      let versioningConfig: BucketVersioningConfig | null = null;
+      const versioningResult = await (
+        ossClient as unknown as {
+          getBucketVersioning: (name: string) => Promise<{ versionStatus?: string }>;
+        }
+      ).getBucketVersioning(bucketName);
+      if (
+        versioningResult?.versionStatus === 'Enabled' ||
+        versioningResult?.versionStatus === 'Suspended'
+      ) {
+        versioningConfig = { status: versioningResult.versionStatus };
+      }
+
+      // Get server-side encryption (GetBucketEncryption)
+      let encryptionConfig: BucketEncryptionConfig | null = null;
+      try {
+        const encryptionResult = await (
+          ossClient as unknown as {
+            getBucketEncryption: (name: string) => Promise<{
+              encryption?: {
+                SSEAlgorithm?: string;
+                KMSMasterKeyID?: string;
+                KMSDataEncryption?: string;
+              };
+            }>;
+          }
+        ).getBucketEncryption(bucketName);
+        const enc = encryptionResult?.encryption;
+        if (enc?.SSEAlgorithm) {
+          encryptionConfig = {
+            sseAlgorithm: enc.SSEAlgorithm as BucketEncryptionConfig['sseAlgorithm'],
+            kmsMasterKeyId: enc.KMSMasterKeyID,
+            kmsDataEncryption: enc.KMSDataEncryption as BucketEncryptionConfig['kmsDataEncryption'],
+          };
+        }
+      } catch (error: unknown) {
+        if ((error as { code?: string } | null)?.code !== 'NoSuchServerSideEncryptionRule')
+          throw error;
+      }
+
+      // Get transfer acceleration status (GetBucketTransferAcceleration)
+      let transferAccelerationStatus: OssBucketInfo['transferAccelerationStatus'];
+      try {
+        const enabled = await operations.getTransferAccelerationStatus(bucketName);
+        transferAccelerationStatus = enabled ? 'Enabled' : 'Disabled';
+      } catch {
+        // Transfer acceleration might not be configured
+      }
+
+      // Get replication rules (GetBucketReplication)
+      let replicationRules: BucketReplicationRule[] | undefined;
+      try {
+        const replicationResponse = await ossRequest(ossClient, {
+          method: 'GET',
+          bucket: bucketName,
+          subres: { replication: '' },
+          successStatuses: [200],
+        });
+        const replicationXml = (replicationResponse as { data?: string }).data || '';
+        const parsedRules = parseReplicationRules(replicationXml);
+        if (parsedRules.length > 0) {
+          replicationRules = parsedRules;
+        }
+      } catch {
+        // Replication config might not exist
+      }
+
+      const policyResult = await operations.getBucketPolicy(bucketName);
+      const policy = policyResult === null ? null : JSON.stringify(policyResult);
+
+      // Get bucket tags
+      let tags: BucketTag[] | undefined;
+      try {
+        const tagsResult = await (
+          ossClient as unknown as {
+            getBucketTags: (name: string) => Promise<{ tag?: Record<string, string> }>;
+          }
+        ).getBucketTags(bucketName);
+        if (tagsResult.tag) {
+          tags = Object.entries(tagsResult.tag).map(([key, value]) => ({ key, value }));
+        }
+      } catch {
+        // No bucket tags configured
+      }
+
+      // Build owner info
+      const owner: BucketOwner | undefined = bucket?.Owner
+        ? {
+            id: bucket.Owner.ID,
+            displayName: bucket.Owner.DisplayName,
+          }
+        : undefined;
+
+      return {
+        name: bucketName,
+        location: bucket?.Location,
+        creationDate: bucket?.CreationDate,
+        storageClass: bucket?.StorageClass,
+        dataRedundancyType: bucket?.DataRedundancyType as 'LRS' | 'ZRS' | undefined,
+        resourceGroupId: bucket?.ResourceGroupId,
+        comment: bucket?.Comment,
+        owner,
+        blockPublicAccess: bucket?.BlockPublicAccess,
+        accessMonitorStatus: bucket?.AccessMonitor as 'Enabled' | 'Disabled' | undefined,
+        acl,
+        websiteConfig,
+        loggingConfig,
+        corsRules,
+        lifecycleRules,
+        versioningConfig,
+        encryptionConfig,
+        transferAccelerationStatus,
+        replicationRules,
+        tags,
+        policy,
+      };
     },
 
     updateBucketAcl: async (bucketName: string, acl: BucketACL): Promise<void> => {

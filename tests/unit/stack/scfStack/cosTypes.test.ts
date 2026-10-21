@@ -382,7 +382,7 @@ describe('CosTypes', () => {
 
       expect(attrs).toEqual({
         bucket: 'test-bucket',
-        policy: null,
+        policy: undefined,
         acl: 'public-read',
         websiteConfiguration: {
           indexDocument: 'index.html',
@@ -393,18 +393,18 @@ describe('CosTypes', () => {
         sseKmsMasterKeyId: null,
       });
       expect(attrs).not.toHaveProperty('region');
-      expect(attrs).toHaveProperty('policy', null);
+      expect(attrs).toHaveProperty('policy', undefined);
       expect(attrs).not.toHaveProperty('domain');
     });
 
     it('drifts only when a declared website differs from the live one', () => {
       expect(cloudCosToDefinition({ Name: 'test-bucket', Location: 'ap-guangzhou' })).toEqual({
         bucket: 'test-bucket',
-        policy: null,
-        websiteConfiguration: null,
-        versioningStatus: null,
-        sseAlgorithm: null,
-        sseKmsMasterKeyId: null,
+        policy: undefined,
+        websiteConfiguration: undefined,
+        versioningStatus: undefined,
+        sseAlgorithm: undefined,
+        sseKmsMasterKeyId: undefined,
       });
       // Matching index + null errorDocument on both sides normalizes equal.
       expect(
@@ -416,7 +416,7 @@ describe('CosTypes', () => {
           }),
           {
             bucket: 'test-bucket',
-            policy: null,
+            policy: undefined,
             websiteConfiguration: { indexDocument: 'index.html', errorDocument: null },
           },
         ),
@@ -430,7 +430,7 @@ describe('CosTypes', () => {
           }),
           {
             bucket: 'test-bucket',
-            policy: null,
+            policy: undefined,
             websiteConfiguration: { indexDocument: 'index.html', errorDocument: null },
           },
         ),
@@ -456,4 +456,29 @@ describe('CosTypes', () => {
       expect(remoteDiffersFromDesired(cloudCosToDefinition(cloudInfo), desired)).toBe(false);
     });
   });
+});
+
+it('compares confirmed absent bucket settings but skips unavailable reads', () => {
+  const desired = {
+    policy: '{"version":"2.0","statement":[]}',
+    websiteConfiguration: { indexDocument: 'index.html' },
+    versioningStatus: 'Enabled',
+    sseAlgorithm: 'AES256',
+  };
+  expect(
+    remoteDiffersFromDesired(cloudCosToDefinition({ Name: 'assets', Location: 'region' }), desired),
+  ).toBe(false);
+  expect(
+    remoteDiffersFromDesired(
+      cloudCosToDefinition({
+        Name: 'assets',
+        Location: 'region',
+        Policy: null,
+        WebsiteConfiguration: null,
+        VersioningConfiguration: null,
+        SseConfiguration: null,
+      }),
+      desired,
+    ),
+  ).toBe(true);
 });

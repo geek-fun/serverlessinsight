@@ -994,6 +994,20 @@ describe('scfOperations', () => {
   });
 
   describe('deleteCustomDomain', () => {
+    it('treats an already absent domain as a successful deletion', async () => {
+      mockScfClient.DeleteCustomDomain.mockRejectedValueOnce({ code: 'ResourceNotFound' });
+      await expect(operations.deleteCustomDomain('api.example.com')).resolves.toBeUndefined();
+    });
+
+    it.each(['AccessDenied', 'ServiceUnavailable', 'ECONNRESET'])(
+      'propagates domain deletion failure %s',
+      async (code) => {
+        const error = Object.assign(new Error(code), { code });
+        mockScfClient.DeleteCustomDomain.mockRejectedValueOnce(error);
+        await expect(operations.deleteCustomDomain('api.example.com')).rejects.toBe(error);
+      },
+    );
+
     it('should delete custom domain successfully', async () => {
       mockScfClient.DeleteCustomDomain.mockResolvedValue({});
 

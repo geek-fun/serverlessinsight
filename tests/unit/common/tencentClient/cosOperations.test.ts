@@ -83,7 +83,8 @@ describe('cosOperations CORS', () => {
     mockGetBucketReplication.mockImplementation(notConfigured);
     mockGetBucketEncryption.mockImplementation(notConfigured);
     mockGetBucketPolicy.mockImplementation(
-      (_params: unknown, cb: (err: { statusCode: number }) => void) => cb({ statusCode: 404 }),
+      (_params: unknown, cb: (err: { statusCode: number; code: string }) => void) =>
+        cb({ statusCode: 404, code: 'NoSuchBucketPolicy' }),
     );
     operations = createCosOperations(mockCosClient, 'ap-guangzhou');
   });
@@ -280,8 +281,10 @@ describe('cosOperations bucket management', () => {
     mockGetBucketReplication.mockImplementation(notConfigured);
     mockGetBucketEncryption.mockImplementation(notConfigured);
     mockGetBucketPolicy.mockImplementation(
-      (_params: unknown, cb: (err: { statusCode: number }) => void) => cb({ statusCode: 404 }),
+      (_params: unknown, cb: (err: { code: string }) => void) => cb({ code: 'NoSuchBucketPolicy' }),
     );
+    mockGetBucketWebsite.mockImplementation(notConfigured);
+    mockGetBucketVersioning.mockImplementation((_params, cb) => cb(null, {}));
     operations = createCosOperations(mockCosClient, 'ap-guangzhou');
   });
 
@@ -309,16 +312,24 @@ describe('cosOperations bucket management', () => {
 
     describe.each(optionalReads)('%s', (_name, read, field) => {
       it.each([{ status: 404 }, { statusCode: 404 }, { code: 'NoSuchConfiguration' }])(
-        'keeps the bucket present when configuration is absent: %j',
+        'distinguishes configuration absence from unclassified errors: %j',
         async (details) => {
           read.mockImplementation((_params, callback) =>
             callback(Object.assign(new Error('configuration absent'), details)),
           );
 
+          const managed = ['website', 'versioning', 'encryption'].includes(_name);
+          const knownAbsent = _name !== 'versioning' && 'code' in details;
+          if (managed && !knownAbsent) {
+            await expect(operations.getBucket('test-bucket', 'ap-guangzhou')).rejects.toThrow(
+              'configuration absent',
+            );
+            return;
+          }
           const result = await operations.getBucket('test-bucket', 'ap-guangzhou');
 
           expect(result?.Name).toBe('test-bucket');
-          expect(result?.[field]).toBeUndefined();
+          expect(result?.[field]).toBe(managed ? null : undefined);
           expect(result?.Tags).toEqual([{ Key: 'si-owned-by', Value: 'sample-owner' }]);
         },
       );
@@ -328,16 +339,25 @@ describe('cosOperations bucket management', () => {
         { statusCode: 503, code: 'ServiceUnavailable' },
         { code: 'ECONNRESET' },
         {},
-      ])('keeps the bucket when configuration is unreadable: %j', async (details) => {
-        read.mockImplementation((_params, callback) =>
-          callback(Object.assign(new Error('configuration read failed'), details)),
-        );
+      ])(
+        'propagates managed read failures and preserves optional fallback: %j',
+        async (details) => {
+          read.mockImplementation((_params, callback) =>
+            callback(Object.assign(new Error('configuration read failed'), details)),
+          );
 
-        const result = await operations.getBucket('test-bucket', 'ap-guangzhou');
+          if (['website', 'versioning', 'encryption'].includes(_name)) {
+            await expect(operations.getBucket('test-bucket', 'ap-guangzhou')).rejects.toThrow(
+              'configuration read failed',
+            );
+            return;
+          }
+          const result = await operations.getBucket('test-bucket', 'ap-guangzhou');
 
-        expect(result?.Name).toBe('test-bucket');
-        expect(result?.[field]).toBeUndefined();
-      });
+          expect(result?.Name).toBe('test-bucket');
+          expect(result?.[field]).toBeUndefined();
+        },
+      );
     });
 
     it.each([{ statusCode: 404 }, { code: 'NoSuchBucketPolicy' }])(
@@ -345,6 +365,12 @@ describe('cosOperations bucket management', () => {
       async (details) => {
         mockGetBucketPolicy.mockImplementation((_params, callback) => callback(details));
 
+        if (!('code' in details)) {
+          await expect(operations.getBucket('test-bucket', 'ap-guangzhou')).rejects.toEqual(
+            details,
+          );
+          return;
+        }
         const result = await operations.getBucket('test-bucket', 'ap-guangzhou');
 
         expect(result?.Name).toBe('test-bucket');
@@ -352,14 +378,13 @@ describe('cosOperations bucket management', () => {
       },
     );
 
-    it('keeps the bucket when a nested policy read is forbidden', async () => {
+    it('propagates a forbidden nested policy read', async () => {
       const error = Object.assign(new Error('AccessDenied'), { statusCode: 403 });
       mockGetBucketPolicy.mockImplementation((_params, callback) => callback(error));
 
-      const result = await operations.getBucket('test-bucket', 'ap-guangzhou');
-
-      expect(result?.Name).toBe('test-bucket');
-      expect(result?.Policy).toBeNull();
+      await expect(operations.getBucket('test-bucket', 'ap-guangzhou')).rejects.toThrow(
+        'AccessDenied',
+      );
     });
   });
 
@@ -523,7 +548,7 @@ describe('cosOperations bucket management', () => {
           owner: { id: 'owner-id', displayName: undefined },
           grants: [],
         },
-        WebsiteConfiguration: undefined,
+        WebsiteConfiguration: null,
         CorsConfiguration: undefined,
         VersioningConfiguration: { status: 'Suspended' },
         TaggingConfiguration: undefined,
@@ -531,14 +556,15 @@ describe('cosOperations bucket management', () => {
         LifecycleConfiguration: undefined,
         LoggingConfiguration: undefined,
         ReplicationConfiguration: undefined,
-        SseConfiguration: undefined,
+        SseConfiguration: null,
         Policy: null,
       });
     });
 
     it('should return null when bucket does not exist', async () => {
       mockHeadBucket.mockImplementation(
-        (_params: unknown, cb: (err: { statusCode: number }) => void) => cb({ statusCode: 404 }),
+        (_params: unknown, cb: (err: { statusCode: number; code: string }) => void) =>
+          cb({ statusCode: 404, code: 'NoSuchBucketPolicy' }),
       );
 
       const result = await operations.getBucket('non-existent-bucket', 'ap-guangzhou');
@@ -891,7 +917,8 @@ describe('cosOperations bucket management', () => {
 
     it('should return null when policy does not exist (404)', async () => {
       mockGetBucketPolicy.mockImplementation(
-        (_params: unknown, cb: (err: { statusCode: number }) => void) => cb({ statusCode: 404 }),
+        (_params: unknown, cb: (err: { statusCode: number; code: string }) => void) =>
+          cb({ statusCode: 404, code: 'NoSuchBucketPolicy' }),
       );
 
       const result = await operations.getBucketPolicy('test-bucket', 'ap-guangzhou');
@@ -899,14 +926,14 @@ describe('cosOperations bucket management', () => {
       expect(result).toBeNull();
     });
 
-    it('returns null when policy read is forbidden', async () => {
+    it('propagates forbidden policy reads', async () => {
       mockGetBucketPolicy.mockImplementation(
         (_params: unknown, cb: (err: { statusCode: number }) => void) => cb({ statusCode: 403 }),
       );
 
-      const result = await operations.getBucketPolicy('test-bucket', 'ap-guangzhou');
-
-      expect(result).toBeNull();
+      await expect(operations.getBucketPolicy('test-bucket', 'ap-guangzhou')).rejects.toMatchObject(
+        { statusCode: 403 },
+      );
     });
   });
 
@@ -1185,7 +1212,7 @@ describe('cosOperations bucket management', () => {
       ]);
     });
 
-    it('keeps the bucket when ACL and versioning reads are forbidden', async () => {
+    it('propagates a forbidden versioning read despite optional ACL fallback', async () => {
       mockHeadBucket.mockImplementation(
         (_params: unknown, cb: (err: null, data: unknown) => void) => cb(null, {}),
       );
@@ -1215,9 +1242,9 @@ describe('cosOperations bucket management', () => {
         cb(Object.assign(new Error('NoSuchTagSet'), { code: 'NoSuchTagSet', statusCode: 404 })),
       );
 
-      await expect(operations.getBucket('test-bucket', 'ap-guangzhou')).resolves.toMatchObject({
-        Name: 'test-bucket',
-      });
+      await expect(operations.getBucket('test-bucket', 'ap-guangzhou')).rejects.toThrow(
+        'AccessDenied',
+      );
     });
 
     it('should throw non-404 errors from headBucket', async () => {
@@ -1513,7 +1540,8 @@ describe('cosOperations with dnsOps', () => {
 
     it('should handle getBucketDomain 404 error by returning empty rules', async () => {
       mockGetBucketDomain.mockImplementation(
-        (_params: unknown, cb: (err: { statusCode: number }) => void) => cb({ statusCode: 404 }),
+        (_params: unknown, cb: (err: { statusCode: number; code: string }) => void) =>
+          cb({ statusCode: 404, code: 'NoSuchBucketPolicy' }),
       );
 
       await expect(

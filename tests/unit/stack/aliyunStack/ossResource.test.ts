@@ -136,6 +136,92 @@ describe('OssResource', () => {
     mockedStateManager.getResource.mockReturnValue(undefined);
   });
 
+  it.each([undefined, false])(
+    'keeps CDN dependent ownership consistent for www flag %s',
+    async (wwwBindApex) => {
+      const state: StateFile = {
+        ...initialState,
+        resources: {
+          'buckets.assets': {
+            mode: 'managed',
+            region: mockContext.region,
+            lastUpdated: '',
+            definition: {
+              bucketName: 'assets',
+              domain: 'example.com',
+              cdnEnabled: true,
+              cdnCacheTtl: 60,
+              wwwBindApex: true,
+              policy: '{"Statement":[]}',
+            },
+            instances: [
+              {
+                sid: 'apex-cdn',
+                id: 'example.com',
+                type: 'ALIYUN_CDN_DISTRIBUTION',
+                domainName: 'example.com',
+              },
+              {
+                sid: 'apex-dns',
+                id: 'apex',
+                type: 'ALIYUN_CDN_DNS_CNAME',
+                domain: 'example.com',
+                dnsRecordId: 'apex',
+              },
+              {
+                sid: 'www-cdn',
+                id: 'www.example.com',
+                type: 'ALIYUN_CDN_DISTRIBUTION',
+                domainName: 'www.example.com',
+              },
+              {
+                sid: 'www-dns',
+                id: 'www',
+                type: 'ALIYUN_CDN_DNS_CNAME',
+                domain: 'www.example.com',
+                dnsRecordId: 'www',
+              },
+              { sid: 'policy', id: 'assets', type: 'ALIYUN_OSS_BUCKET_POLICY' },
+            ],
+          },
+        },
+      };
+      mockOssOperations.getBucket.mockResolvedValue({ name: 'assets' });
+      await updateBucketResource(
+        mockContext,
+        {
+          key: 'assets',
+          name: 'assets',
+          domain: {
+            domain_name: 'example.com',
+            cdn: { enabled: true, cache_ttl: 120 },
+            www_bind_apex: wwwBindApex,
+          },
+        },
+        state,
+      );
+      const saved = mockedStateManager.setResource.mock.calls.at(-1)?.[2];
+      expect(mockOssOperations.deleteBucketPolicy).toHaveBeenCalledWith('assets');
+      expect(saved.instances.some((instance: { sid: string }) => instance.sid === 'www-dns')).toBe(
+        wwwBindApex === undefined,
+      );
+      expect(saved.instances.some((instance: { sid: string }) => instance.sid === 'www-cdn')).toBe(
+        wwwBindApex === undefined,
+      );
+      expect(saved.definition).toMatchObject({
+        cdnCacheTtl: 120,
+        wwwBindApex: wwwBindApex ?? true,
+      });
+      if (wwwBindApex === false) {
+        expect(mockCdnOperations.deleteCdnDomain).toHaveBeenCalledWith('www.example.com');
+        expect(mockDnsOperations.deleteDomainRecord).toHaveBeenCalledWith('www');
+      } else {
+        expect(mockCdnOperations.deleteCdnDomain).not.toHaveBeenCalled();
+        expect(mockDnsOperations.deleteDomainRecord).not.toHaveBeenCalled();
+      }
+    },
+  );
+
   describe('deleteBucketResource', () => {
     it('should delete bucket and remove from state', async () => {
       const bucketName = 'test-bucket';

@@ -1,3 +1,4 @@
+import { resolveWwwBindingAction } from '../../common/domainUtils';
 import { definitionsDiffer, mergeManagedIntent } from '../../common/planCompare';
 import { buildBucketPolicy, isOwnedBucketPolicy } from '../../common/bucketPolicy';
 import { withLifecycleIntent } from '../../common/functionDefinition';
@@ -744,7 +745,9 @@ export const updateBucketResource = async (
     (i) => !(i as OssDnsInstance).isWwwVariant,
   );
   const existingWwwDnsInstance = existingDnsInstances?.find(
-    (i) => (i as OssDnsInstance).isWwwVariant,
+    (i) =>
+      (i as OssDnsInstance).isWwwVariant ||
+      i.domain === deriveWwwDomain(existingPrimaryDnsInstance?.domain ?? ''),
   );
 
   let cnameInfo: OssCnameInfo | undefined;
@@ -765,8 +768,8 @@ export const updateBucketResource = async (
       existingState?.definition.domainBound === false)
   ) {
     const primaryDomain = domName;
-    const wwwBindApex = bucket.domain?.www_bind_apex ?? bucket.website?.www_bind_apex ?? false;
     const domainChanged = existingPrimaryDnsInstance?.domain !== primaryDomain;
+    const wwwAction = resolveWwwBindingAction(config.wwwBindApex, !domainChanged);
 
     if (domainChanged) {
       // For CDN/accelerate buckets, don't delete old resources since we can't recreate them in update.
@@ -911,25 +914,32 @@ export const updateBucketResource = async (
           i.type === ResourceTypeEnum.ALIYUN_CDN_DISTRIBUTION ||
           i.type === ResourceTypeEnum.ALIYUN_CDN_DNS_CNAME,
       );
-      const filteredInstances = wwwBindApex
-        ? (existingCdnDnsInstances ?? [])
-        : (existingCdnDnsInstances ?? []).filter(
-            (i) => !(i as { isWwwVariant?: boolean }).isWwwVariant,
-          );
+      const wwwDomainName = deriveWwwDomain(primaryDomain);
+      const removedInstances =
+        wwwAction === 'remove'
+          ? (existingCdnDnsInstances ?? []).filter(
+              (instance) =>
+                instance.isWwwVariant === true ||
+                (wwwDomainName !== null &&
+                  (instance.domain === wwwDomainName || instance.domainName === wwwDomainName)),
+            )
+          : [];
+      await Promise.all(
+        removedInstances.map(async (instance) => {
+          if (instance.type === ResourceTypeEnum.ALIYUN_CDN_DISTRIBUTION) {
+            await client.cdn.deleteCdnDomain((instance as OssCdnInstance).domainName);
+          } else if (instance.dnsRecordId) {
+            await client.dns.deleteDomainRecord(instance.dnsRecordId as string);
+          }
+        }),
+      );
+      const removedIds = new Set(removedInstances.map((instance) => instance.sid));
+      const filteredInstances = (existingCdnDnsInstances ?? []).filter(
+        (instance) => !removedIds.has(instance.sid),
+      );
       if (filteredInstances.length > 0) {
         instances.push(...filteredInstances);
       }
-
-      return setResource(state, logicalId, {
-        mode: 'managed',
-        region: context.region,
-        definition: {
-          ...extractOssBucketDefinition(config, websiteCodeHash),
-          ...(domName != null ? { domainBound: cnameInfo?.bucketCnameBound ?? null } : {}),
-        },
-        instances,
-        lastUpdated: new Date().toISOString(),
-      });
     } else {
       cnameInfo = await client.oss.bindCustomDomain(config.bucketName, primaryDomain, certificate);
 
@@ -948,43 +958,47 @@ export const updateBucketResource = async (
       }
     }
 
-    const wwwDomain = wwwBindApex ? deriveWwwDomain(primaryDomain) : null;
-    if (wwwDomain) {
-      logger.info(
-        lang.__('BINDING_CUSTOM_DOMAIN_TO_BUCKET', {
-          domain: wwwDomain,
-          bucketName: config.bucketName,
-        }),
-      );
+    if (!isCdnEnabled && !isAccelerateEnabled) {
+      const wwwDomain = wwwAction === 'ensure' ? deriveWwwDomain(primaryDomain) : null;
+      if (wwwDomain) {
+        logger.info(
+          lang.__('BINDING_CUSTOM_DOMAIN_TO_BUCKET', {
+            domain: wwwDomain,
+            bucketName: config.bucketName,
+          }),
+        );
 
-      const wwwCnameInfo = await client.oss.bindCustomDomain(
-        config.bucketName,
-        wwwDomain,
-        certificate,
-      );
+        const wwwCnameInfo = await client.oss.bindCustomDomain(
+          config.bucketName,
+          wwwDomain,
+          certificate,
+        );
 
-      if (wwwCnameInfo) {
-        const wwwInstanceId = wwwCnameInfo.dnsRecordId ?? wwwDomain;
-        const wwwDnsInstance: OssDnsInstance = {
-          sid: buildSid('aliyun', 'alidns', context.stage, wwwInstanceId),
-          id: wwwInstanceId,
-          type: ResourceTypeEnum.ALIYUN_OSS_DNS_CNAME,
-          domain: wwwDomain,
-          cname: wwwCnameInfo.cname,
-          isWwwVariant: true,
-          ...(wwwCnameInfo.dnsRecordId ? { dnsRecordId: wwwCnameInfo.dnsRecordId } : {}),
-          ...(wwwCnameInfo.txtRecordId ? { txtRecordId: wwwCnameInfo.txtRecordId } : {}),
-        };
-        instances.push(wwwDnsInstance);
+        if (wwwCnameInfo) {
+          const wwwInstanceId = wwwCnameInfo.dnsRecordId ?? wwwDomain;
+          const wwwDnsInstance: OssDnsInstance = {
+            sid: buildSid('aliyun', 'alidns', context.stage, wwwInstanceId),
+            id: wwwInstanceId,
+            type: ResourceTypeEnum.ALIYUN_OSS_DNS_CNAME,
+            domain: wwwDomain,
+            cname: wwwCnameInfo.cname,
+            isWwwVariant: true,
+            ...(wwwCnameInfo.dnsRecordId ? { dnsRecordId: wwwCnameInfo.dnsRecordId } : {}),
+            ...(wwwCnameInfo.txtRecordId ? { txtRecordId: wwwCnameInfo.txtRecordId } : {}),
+          };
+          instances.push(wwwDnsInstance);
+        }
+      } else if (existingWwwDnsInstance && wwwAction === 'retain') {
+        instances.push(existingWwwDnsInstance);
+      } else if (existingWwwDnsInstance && !domainChanged && wwwAction === 'remove') {
+        const wwwInstance = existingWwwDnsInstance as OssDnsInstance;
+        await client.oss.unbindCustomDomain(
+          config.bucketName,
+          wwwInstance.domain,
+          wwwInstance.dnsRecordId,
+          wwwInstance.txtRecordId,
+        );
       }
-    } else if (existingWwwDnsInstance && config.wwwBindApex === false) {
-      const wwwInstance = existingWwwDnsInstance as OssDnsInstance;
-      await client.oss.unbindCustomDomain(
-        config.bucketName,
-        wwwInstance.domain,
-        wwwInstance.dnsRecordId,
-        wwwInstance.txtRecordId,
-      );
     }
 
     const refreshedInfo = await client.oss.getBucket(config.bucketName);
@@ -1023,7 +1037,11 @@ export const updateBucketResource = async (
 
   const definitionIntent = {
     ...extractOssBucketDefinition(config, websiteCodeHash),
-    ...(domName != null ? { domainBound: cnameInfo?.bucketCnameBound ?? null } : {}),
+    ...(domName != null
+      ? {
+          domainBound: cnameInfo?.bucketCnameBound ?? existingState?.definition.domainBound ?? null,
+        }
+      : {}),
   };
   const resourceState: ResourceState = {
     mode: 'managed',

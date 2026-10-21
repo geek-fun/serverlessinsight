@@ -138,7 +138,7 @@ export type CosBucketInfo = {
     ErrorDocument?: {
       Key?: string;
     };
-  };
+  } | null;
   AccessControlPolicy?: {
     owner?: {
       id?: string;
@@ -164,7 +164,7 @@ export type CosBucketInfo = {
   }>;
   VersioningConfiguration?: {
     status?: string;
-  };
+  } | null;
   TaggingConfiguration?: {
     tags?: Array<{
       key?: string;
@@ -209,7 +209,7 @@ export type CosBucketInfo = {
   SseConfiguration?: {
     sseAlgorithm?: string;
     sseKmsMasterKeyId?: string;
-  };
+  } | null;
   Policy?: unknown;
 };
 
