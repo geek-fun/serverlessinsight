@@ -1,0 +1,16 @@
+version: 0.0.1
+app: volc-plan-app
+service: volc-plan
+provider:
+  name: volcengine
+  region: cn-beijing
+backend:
+  state_manager:
+    type: LOCAL
+vars:
+  acl: PRIVATE
+buckets:
+  assets:
+    name: volc-plan-assets
+    security:
+      acl: ${vars.acl}

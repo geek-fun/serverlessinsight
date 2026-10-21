@@ -97,6 +97,26 @@ si deploy -f serverless.yml -s prod
 si destroy -f serverless.yml
 ```
 
+### Standalone planning
+
+`si plan` and its alias `si diff` preview changes on Alibaba Cloud, Tencent Cloud,
+and Volcengine. Volcengine plans include functions, TOS buckets, and API Gateway
+resources in dependency order. Planning reads the configured state backend and
+cloud resources without applying changes or saving state.
+
+```bash
+si plan -f serverlessinsight.yml --stage dev
+si diff -f serverlessinsight.yml --stage dev --json
+si plan -f serverlessinsight.yml --stage dev --region cn-beijing -p memory=1024
+si diff -f serverlessinsight.yml --stage dev --no-refresh
+```
+
+Use `-p, --parameter <key=value>` repeatedly to override configuration variables.
+`--no-refresh` skips live drift checks for tracked resources; ownership probes
+for new resources still run. Credentials and the selected state backend must be
+configured. Read failures exit with an error. Migrated legacy state produces a
+warning and remains unchanged.
+
 ### Using si with AI agents & scripts
 
 The CLI is built to be driven by agents and shell scripts: logs always go to
@@ -124,7 +144,7 @@ change under a new version):
   resourceCount, ... }`
 - failures (in `--json` mode) → `{ error: { code, message } }` on stdout
 
-**Exit codes**: `si plan` exits `0` when there are no changes, `2` when
+**Exit codes**: `si plan` and `si diff` exit `0` when there are no changes, `2` when
 changes are present (terraform convention), `1` on errors. `si validate`
 exits `0` when valid, `1` when validation fails.
 
