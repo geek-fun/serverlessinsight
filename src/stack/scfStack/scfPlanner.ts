@@ -99,6 +99,7 @@ export const generateFunctionPlan = async (
             }),
           ),
         extraUpdate: async () => {
+          const updates: Array<{ update: boolean; drifted: boolean; reason: string }> = [];
           if (fn.triggers?.http) {
             const live = await cachedRefreshRead(context, `scf.getFunction:${fn.name}`, () =>
               client.scf.getFunction(fn.name),
@@ -121,13 +122,13 @@ export const generateFunctionPlan = async (
               }
             }
             if (!actual || remoteDiffersFromDesired({ http: actual }, { http: desired }))
-              return {
+              updates.push({
                 update: true,
                 drifted: !definitionsDiffer(currentState?.definition ?? {}, {
                   http: desiredDefinition.http,
                 }),
                 reason: 'PLAN_DRIFT_HTTP_TRIGGER',
-              };
+              });
           }
           if (fn.domain) {
             const domain = await cachedRefreshRead(
@@ -139,13 +140,13 @@ export const generateFunctionPlan = async (
               !domain ||
               (domain.Protocol !== undefined && domain.Protocol !== fn.domain.protocol)
             )
-              return {
+              updates.push({
                 update: true,
                 drifted: !definitionsDiffer(currentState?.definition ?? {}, {
                   domain: desiredDefinition.domain,
                 }),
                 reason: 'PLAN_DRIFT_FUNCTION_DOMAIN',
-              };
+              });
           }
           // Issue #234 M3: nested topic drift — probed only when logging is
           // declared; unresolvable/unreadable topics are not drift. Runs via
@@ -167,7 +168,7 @@ export const generateFunctionPlan = async (
                 liveTopic.StorageType !== CLS_TOPIC_STORAGE_TYPE ||
                 liveTopic.Period !== CLS_TOPIC_PERIOD;
               if (topicDrifted) {
-                return { update: true, drifted: true, reason: 'PLAN_DRIFT_CLS_TOPIC' };
+                updates.push({ update: true, drifted: true, reason: 'PLAN_DRIFT_CLS_TOPIC' });
               }
             } catch (error: unknown) {
               logger.warn(
@@ -212,13 +213,13 @@ export const generateFunctionPlan = async (
                 );
               });
               if (extraTimer || desiredChanged) {
-                return {
+                updates.push({
                   update: true,
                   drifted: !definitionsDiffer(currentState?.definition ?? {}, {
                     timers: desiredDefinition.timers,
                   }),
                   reason: 'PLAN_DRIFT_TIMER_TRIGGER',
-                };
+                });
               }
             } catch (error: unknown) {
               logger.warn(
@@ -231,7 +232,11 @@ export const generateFunctionPlan = async (
             }
           }
 
-          return { update: false, drifted: false };
+          return {
+            update: updates.length > 0,
+            drifted: updates.some((entry) => entry.drifted),
+            reasons: updates.map((entry) => entry.reason),
+          };
         },
         cloudToDefinition: cloudScfToDefinition,
         enrichRemoteAttributes: async (remote, attributes) => {

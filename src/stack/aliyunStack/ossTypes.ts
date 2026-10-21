@@ -171,16 +171,19 @@ export const cloudOssToDefinition = (info: OssBucketInfo): ResourceAttributes =>
           errorDocument: info.websiteConfig.errorDocument ?? null,
         },
       }
-    : { websiteConfiguration: null }),
+    : { websiteConfiguration: info.websiteConfig }),
   ...(info.storageClass !== undefined ? { storageClass: info.storageClass } : {}),
   ...(info.versioningConfig?.status !== undefined
     ? { versioningStatus: info.versioningConfig.status }
-    : { versioningStatus: null }),
+    : { versioningStatus: info.versioningConfig === null ? null : undefined }),
   ...(info.encryptionConfig?.sseAlgorithm !== undefined
     ? { sseAlgorithm: info.encryptionConfig.sseAlgorithm }
-    : { sseAlgorithm: null }),
-  sseKmsMasterKeyId: info.encryptionConfig?.kmsMasterKeyId ?? null,
-  policy: info.policy ?? null,
+    : { sseAlgorithm: info.encryptionConfig === null ? null : undefined }),
+  sseKmsMasterKeyId:
+    info.encryptionConfig === undefined
+      ? undefined
+      : (info.encryptionConfig?.kmsMasterKeyId ?? null),
+  policy: info.policy,
   ...(typeof info.transferAccelerationStatus === 'boolean'
     ? { accelerateEnabled: info.transferAccelerationStatus }
     : {}),

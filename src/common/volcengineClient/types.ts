@@ -211,7 +211,7 @@ export type TosBucketInfo = {
   extranetEndpoint?: string;
   intranetEndpoint?: string;
   acl?: TosAcl;
-  websiteConfig?: TosWebsiteConfig;
+  websiteConfig?: TosWebsiteConfig | null;
   Tags?: Array<{ Key: string; Value: string }>;
   // --- Maximum-detail fields (retained verbatim from GetBucketInfo) ---
   owner?: {

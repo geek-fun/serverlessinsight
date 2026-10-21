@@ -91,7 +91,7 @@ export const cloudTosToDefinition = (info: TosBucketInfo): ResourceAttributes =>
         indexDocument: info.websiteConfig.indexDocument ?? null,
         errorDocument: info.websiteConfig.errorDocument ?? null,
       }
-    : null,
+    : info.websiteConfig,
 });
 
 export const buildTosInstanceFromProvider = (info: TosBucketInfo, sid: string) => {

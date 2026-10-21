@@ -816,16 +816,14 @@ describe('ossOperations bucket operations', () => {
       expect(result).toBeNull();
     });
 
-    it('should return null when access denied', async () => {
+    it('should propagate access denied', async () => {
       const mockOssClient2 = {
         ...mockOssClient,
         getBucketInfo: jest.fn().mockRejectedValue({ code: 'AccessDenied' }),
       } as unknown as OSS;
 
       const ops = createOssOperations(mockOssClient2, 'cn-hangzhou');
-      const result = await ops.getBucket('restricted');
-
-      expect(result).toBeNull();
+      await expect(ops.getBucket('restricted')).rejects.toEqual({ code: 'AccessDenied' });
     });
 
     it('should handle missing optional configurations gracefully', async () => {
@@ -869,7 +867,7 @@ describe('ossOperations bucket operations', () => {
       expect(result).toBeDefined();
       expect(result?.name).toBe('test-bucket');
       expect(result?.acl).toBeUndefined();
-      expect(result?.websiteConfig).toBeUndefined();
+      expect(result?.websiteConfig).toBeNull();
     });
 
     it('should read bucket tags into key/value pairs', async () => {
@@ -2108,7 +2106,7 @@ describe('ossOperations getBucket additional branches', () => {
     const result = await ops.getBucket('test-bucket');
 
     expect(result?.loggingConfig).toBeUndefined();
-    expect(result?.websiteConfig).toBeUndefined();
+    expect(result?.websiteConfig).toBeNull();
   });
 
   it('should handle getBucketCnameEndpoint when location is missing', async () => {

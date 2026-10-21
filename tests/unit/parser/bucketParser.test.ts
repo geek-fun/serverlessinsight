@@ -197,7 +197,7 @@ describe('bucketParser', () => {
       expect(result?.[0].website).toEqual({
         code: './dist',
         domain: undefined,
-        www_bind_apex: false,
+        www_bind_apex: undefined,
         domain_certificate_id: undefined,
         domain_certificate_body: undefined,
         domain_certificate_private_key: undefined,
@@ -219,7 +219,7 @@ describe('bucketParser', () => {
       const result = parseBucket(buckets);
 
       expect(result?.[0].website?.domain).toBeUndefined();
-      expect(result?.[0].website?.www_bind_apex).toBe(false);
+      expect(result?.[0].website?.www_bind_apex).toBeUndefined();
     });
 
     it('should parse bucket with website configuration and simple string domain', () => {
@@ -238,7 +238,7 @@ describe('bucketParser', () => {
       expect(result?.[0].website).toEqual({
         code: './dist',
         domain: 'example.com',
-        www_bind_apex: false,
+        www_bind_apex: undefined,
         domain_certificate_id: undefined,
         domain_certificate_body: undefined,
         domain_certificate_private_key: undefined,
@@ -265,7 +265,7 @@ describe('bucketParser', () => {
       expect(result?.[0].website).toEqual({
         code: './dist',
         domain: 'example.com',
-        www_bind_apex: false,
+        www_bind_apex: undefined,
         domain_certificate_id: undefined,
         domain_certificate_body: undefined,
         domain_certificate_private_key: undefined,
@@ -882,3 +882,20 @@ describe('parseBucket with IAM', () => {
     expect(result?.[0]?.iam).toEqual({ resource: { statements: [] } });
   });
 });
+
+it.each([undefined, false, true])(
+  'preserves bucket www declaration %s in canonical and legacy domain forms',
+  (www) => {
+    const domain = {
+      domain_name: 'example.com',
+      ...(www !== undefined ? { www_bind_apex: www } : {}),
+    };
+    const parsed = parseBucket({
+      canonical: { name: 'canonical', domain },
+      legacy: { name: 'legacy', website: { code: './dist', domain } },
+    });
+    expect(parsed?.[0].domain?.www_bind_apex).toBe(www);
+    expect(parsed?.[1].domain?.www_bind_apex).toBe(www);
+    expect(parsed?.[1].website?.www_bind_apex).toBe(www);
+  },
+);

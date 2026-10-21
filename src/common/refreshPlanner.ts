@@ -44,7 +44,12 @@ export type RefreshExistsArgs<T> = {
    * drift sets it, bookkeeping-only conditions do not. `reason` (an i18n key)
    * marks probe-level drift that has no attribute-level diff to show.
    */
-  extraUpdate?: () => Promise<{ update: boolean; drifted: boolean; reason?: string }>;
+  extraUpdate?: () => Promise<{
+    update: boolean;
+    drifted: boolean;
+    reason?: string;
+    reasons?: string[];
+  }>;
 };
 
 export const decideRefreshedExistsAction = async <T>(
@@ -75,7 +80,13 @@ export const decideRefreshedExistsAction = async <T>(
       action: 'update',
       drifted,
       liveAttributes: attributes,
-      ...(extra?.reason ? { driftReasons: [extra.reason] } : {}),
+      ...(extra?.reasons?.length || extra?.reason
+        ? {
+            driftReasons: [
+              ...new Set([...(extra?.reasons ?? []), ...(extra?.reason ? [extra.reason] : [])]),
+            ],
+          }
+        : {}),
     };
   }
   if (args.definitionChanged && !remoteDiffers) {
@@ -106,7 +117,12 @@ export type PlanRefreshedResourceArgs<T> = {
   ) => Promise<ResourceAttributes>;
   /** applied to both sides before the intent diff and in changes display */
   normalizeForDisplay?: (definition: ResourceAttributes) => ResourceAttributes;
-  extraUpdate?: () => Promise<{ update: boolean; drifted: boolean; reason?: string }>;
+  extraUpdate?: () => Promise<{
+    update: boolean;
+    drifted: boolean;
+    reason?: string;
+    reasons?: string[];
+  }>;
   /**
    * When false (CLI --no-refresh): skip the live read and the attribute-drift
    * leg entirely — the decision degenerates to intent-diff only, with no

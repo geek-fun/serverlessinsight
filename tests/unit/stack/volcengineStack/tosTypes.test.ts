@@ -252,7 +252,7 @@ describe('tosTypes', () => {
         bucketName: 'test-bucket',
         acl: null,
         storageClass: null,
-        websiteConfiguration: null,
+        websiteConfiguration: undefined,
       });
       expect(attrs).not.toHaveProperty('policy');
       expect(attrs).not.toHaveProperty('websiteCodeHash');

@@ -358,17 +358,17 @@ describe('OssTypes', () => {
       expect(definition).toEqual({
         bucketName: 'minimal-bucket',
         acl: 'private',
-        websiteConfiguration: null,
-        versioningStatus: null,
-        sseAlgorithm: null,
-        sseKmsMasterKeyId: null,
-        policy: null,
+        websiteConfiguration: undefined,
+        versioningStatus: undefined,
+        sseAlgorithm: undefined,
+        sseKmsMasterKeyId: undefined,
+        policy: undefined,
       });
-      expect(definition).toHaveProperty('websiteConfiguration', null);
+      expect(definition).toHaveProperty('websiteConfiguration', undefined);
       expect(definition).not.toHaveProperty('storageClass');
-      expect(definition).toHaveProperty('versioningStatus', null);
-      expect(definition).toHaveProperty('sseAlgorithm', null);
-      expect(definition).toHaveProperty('policy', null);
+      expect(definition).toHaveProperty('versioningStatus', undefined);
+      expect(definition).toHaveProperty('sseAlgorithm', undefined);
+      expect(definition).toHaveProperty('policy', undefined);
       expect(definition).not.toHaveProperty('websiteCodeHash');
       expect(definition).not.toHaveProperty('domain');
       expect(definition).not.toHaveProperty('domainBound');
@@ -383,7 +383,7 @@ describe('OssTypes', () => {
       const definition = cloudOssToDefinition(info);
 
       // Then: website configuration is not treated as an empty desired value
-      expect(definition).toHaveProperty('websiteConfiguration', null);
+      expect(definition).toHaveProperty('websiteConfiguration', undefined);
     });
 
     it('omits versioning and encryption attributes when cloud data is absent', () => {
@@ -394,8 +394,8 @@ describe('OssTypes', () => {
       const definition = cloudOssToDefinition(info);
 
       // Then: absent cloud values do not create drift candidates
-      expect(definition).toHaveProperty('versioningStatus', null);
-      expect(definition).toHaveProperty('sseAlgorithm', null);
+      expect(definition).toHaveProperty('versioningStatus', undefined);
+      expect(definition).toHaveProperty('sseAlgorithm', undefined);
     });
 
     it('does not include cloud tags in the definition', () => {
@@ -412,5 +412,25 @@ describe('OssTypes', () => {
       // Then: tags remain outside the definition comparison contract
       expect(definition).not.toHaveProperty('tags');
     });
+  });
+});
+
+it('preserves confirmed absence separately from unavailable bucket configuration', () => {
+  const unknown = cloudOssToDefinition({ name: 'assets' });
+  expect(unknown.policy).toBeUndefined();
+  expect(unknown.websiteConfiguration).toBeUndefined();
+  const absent = cloudOssToDefinition({
+    name: 'assets',
+    policy: null,
+    websiteConfig: null,
+    versioningConfig: null,
+    encryptionConfig: null,
+  });
+  expect(absent).toMatchObject({
+    policy: null,
+    websiteConfiguration: null,
+    versioningStatus: null,
+    sseAlgorithm: null,
+    sseKmsMasterKeyId: null,
   });
 });

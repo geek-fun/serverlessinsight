@@ -72,7 +72,7 @@ export enum BucketAccessEnum {
 
 export type BucketDomainConfigParsed = {
   domain_name: string;
-  www_bind_apex: boolean;
+  www_bind_apex?: boolean;
   certificate_id?: string;
   certificate_body?: string;
   certificate_private_key?: string;

@@ -221,7 +221,7 @@ export const extractCosBucketDefinition = (config: CosBucketConfig): ResourceAtt
 // returns none of these). Policies use the shared canonical provider-document comparison.
 export const cloudCosToDefinition = (info: TencentCosBucketInfo): ResourceAttributes => ({
   bucket: info.Name,
-  policy: info.Policy ?? null,
+  policy: info.Policy,
   ...(info.ACL !== undefined ? { acl: info.ACL } : {}),
   ...(info.WebsiteConfiguration
     ? {
@@ -230,14 +230,14 @@ export const cloudCosToDefinition = (info: TencentCosBucketInfo): ResourceAttrib
           errorDocument: info.WebsiteConfiguration.ErrorDocument?.Key ?? null,
         },
       }
-    : { websiteConfiguration: null }),
+    : { websiteConfiguration: info.WebsiteConfiguration }),
   ...(info.VersioningConfiguration?.status !== undefined
     ? { versioningStatus: info.VersioningConfiguration.status }
-    : { versioningStatus: null }),
+    : { versioningStatus: info.VersioningConfiguration === undefined ? undefined : null }),
   ...(info.SseConfiguration?.sseAlgorithm !== undefined
     ? { sseAlgorithm: info.SseConfiguration.sseAlgorithm }
-    : { sseAlgorithm: null }),
+    : { sseAlgorithm: info.SseConfiguration === undefined ? undefined : null }),
   ...(info.SseConfiguration?.sseKmsMasterKeyId !== undefined
     ? { sseKmsMasterKeyId: info.SseConfiguration.sseKmsMasterKeyId }
-    : { sseKmsMasterKeyId: null }),
+    : { sseKmsMasterKeyId: info.SseConfiguration === undefined ? undefined : null }),
 });

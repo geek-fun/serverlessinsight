@@ -1,3 +1,4 @@
+import { resolveWwwBindingAction } from '../../common/domainUtils';
 import { mergeManagedIntent } from '../../common/planCompare';
 import { buildBucketPolicy, isOwnedBucketPolicy } from '../../common/bucketPolicy';
 import { withLifecycleIntent } from '../../common/functionDefinition';
@@ -512,8 +513,8 @@ export const updateBucketResource = async (
 
   if (bucket.website?.domain) {
     const primaryDomain = bucket.website.domain;
-    const wwwBindApex = bucket.website.www_bind_apex ?? false;
     const domainChanged = existingPrimaryDnsInstance?.domain !== primaryDomain;
+    const wwwAction = resolveWwwBindingAction(bucket.website.www_bind_apex, !domainChanged);
 
     if (domainChanged && existingDnsInstances) {
       for (const instance of existingDnsInstances) {
@@ -554,7 +555,7 @@ export const updateBucketResource = async (
       }
     }
 
-    const wwwDomain = wwwBindApex ? deriveWwwDomain(primaryDomain) : null;
+    const wwwDomain = wwwAction === 'ensure' ? deriveWwwDomain(primaryDomain) : null;
     if (wwwDomain) {
       logger.info(
         lang.__('BINDING_CUSTOM_DOMAIN_TO_BUCKET', {
@@ -588,7 +589,9 @@ export const updateBucketResource = async (
           );
         }
       }
-    } else if (existingWwwDnsInstance && bucket.website?.www_bind_apex === false) {
+    } else if (existingWwwDnsInstance && wwwAction === 'retain') {
+      instances.push(existingWwwDnsInstance);
+    } else if (existingWwwDnsInstance && !domainChanged && wwwAction === 'remove') {
       await client.cos.unbindCustomDomain(
         bucket.name,
         existingWwwDnsInstance.domain,

@@ -351,7 +351,11 @@ export const createScfOperations = (scfClient: ScfSdkClient, deps: ScfOperations
     },
 
     deleteCustomDomain: async (domain: string): Promise<void> => {
-      await scfClient.DeleteCustomDomain({ Domain: domain });
+      try {
+        await scfClient.DeleteCustomDomain({ Domain: domain });
+      } catch (error: unknown) {
+        if ((error as { code?: string } | null)?.code !== 'ResourceNotFound') throw error;
+      }
     },
 
     deleteFunction: async (functionName: string): Promise<void> => {

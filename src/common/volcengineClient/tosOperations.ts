@@ -186,9 +186,35 @@ export const createTosOperations = (client: TosSdkClient | null, _region: string
         throw new Error(lang.__('VOLCENGINE_TOS_CLIENT_NOT_INITIALIZED'));
       }
 
+      const response = await (async () => {
+        try {
+          return await client.fetchOpenAPI({
+            Action: 'GetBucketInfo',
+            Version: '2018-08-01',
+            method: 'GET',
+            query: {
+              Bucket: bucketName,
+            },
+          });
+        } catch (error: unknown) {
+          if (
+            error &&
+            typeof error === 'object' &&
+            'code' in error &&
+            (error.code === 'NoSuchBucket' || error.code === 'ResourceNotFound')
+          ) {
+            return null;
+          }
+          throw error;
+        }
+      })();
+      if (response === null) return null;
+      const result = (response.Result || {}) as Record<string, unknown>;
+      const bucketData = (result.BucketInfo || {}) as Record<string, unknown>;
+      let websiteConfig: TosWebsiteConfig | null = null;
       try {
-        const response = await client.fetchOpenAPI({
-          Action: 'GetBucketInfo',
+        const websiteResponse = await client.fetchOpenAPI({
+          Action: 'GetBucketWebsite',
           Version: '2018-08-01',
           method: 'GET',
           query: {
@@ -196,70 +222,46 @@ export const createTosOperations = (client: TosSdkClient | null, _region: string
           },
         });
 
-        const result = (response.Result || {}) as Record<string, unknown>;
-        const bucketData = (result.BucketInfo || {}) as Record<string, unknown>;
-
-        let websiteConfig: TosWebsiteConfig | undefined;
-        try {
-          const websiteResponse = await client.fetchOpenAPI({
-            Action: 'GetBucketWebsite',
-            Version: '2018-08-01',
-            method: 'GET',
-            query: {
-              Bucket: bucketName,
-            },
-          });
-
-          const websiteResult = (websiteResponse.Result || {}) as Record<string, unknown>;
-          if (websiteResult.IndexDocument) {
-            const indexDoc = websiteResult.IndexDocument as Record<string, unknown>;
-            websiteConfig = {
-              indexDocument: indexDoc.Suffix as string,
-            };
-            if (websiteResult.ErrorDocument) {
-              const errorDoc = websiteResult.ErrorDocument as Record<string, unknown>;
-              websiteConfig.errorDocument = errorDoc.Key as string | undefined;
-            }
+        const websiteResult = (websiteResponse.Result || {}) as Record<string, unknown>;
+        if (websiteResult.IndexDocument) {
+          const indexDoc = websiteResult.IndexDocument as Record<string, unknown>;
+          websiteConfig = {
+            indexDocument: indexDoc.Suffix as string,
+          };
+          if (websiteResult.ErrorDocument) {
+            const errorDoc = websiteResult.ErrorDocument as Record<string, unknown>;
+            websiteConfig.errorDocument = errorDoc.Key as string | undefined;
           }
-        } catch {
-          // Website config may not exist
         }
-
-        let tags: Array<{ Key: string; Value: string }> | undefined;
-        try {
-          const taggingResponse = await client.fetchOpenAPI({
-            Action: 'GetBucketTagging',
-            Version: '2018-08-01',
-            method: 'GET',
-            query: {
-              Bucket: bucketName,
-            },
-          });
-
-          const taggingResult = (taggingResponse.Result || {}) as Record<string, unknown>;
-          const tagSet = (taggingResult.TagSet || {}) as Record<string, unknown>;
-          const tagList = (tagSet.Tags || []) as Array<Record<string, unknown>>;
-          tags = tagList.map((t) => ({ Key: t.Key as string, Value: t.Value as string }));
-        } catch {
-          // Bucket tagging may not be configured
-        }
-
-        return {
-          ...mapBucketInfo(bucketName, bucketData),
-          websiteConfig,
-          Tags: tags,
-        };
       } catch (error: unknown) {
-        if (
-          error &&
-          typeof error === 'object' &&
-          'code' in error &&
-          (error.code === 'NoSuchBucket' || error.code === 'ResourceNotFound')
-        ) {
-          return null;
-        }
-        throw error;
+        const code = (error as { code?: string } | null)?.code;
+        if (code !== 'NoSuchWebsiteConfiguration' && code !== 'NoSuchConfiguration') throw error;
       }
+
+      let tags: Array<{ Key: string; Value: string }> | undefined;
+      try {
+        const taggingResponse = await client.fetchOpenAPI({
+          Action: 'GetBucketTagging',
+          Version: '2018-08-01',
+          method: 'GET',
+          query: {
+            Bucket: bucketName,
+          },
+        });
+
+        const taggingResult = (taggingResponse.Result || {}) as Record<string, unknown>;
+        const tagSet = (taggingResult.TagSet || {}) as Record<string, unknown>;
+        const tagList = (tagSet.Tags || []) as Array<Record<string, unknown>>;
+        tags = tagList.map((t) => ({ Key: t.Key as string, Value: t.Value as string }));
+      } catch {
+        // Bucket tagging may not be configured
+      }
+
+      return {
+        ...mapBucketInfo(bucketName, bucketData),
+        websiteConfig,
+        Tags: tags,
+      };
     },
 
     updateBucketAcl: async (bucketName: string, acl: TosAcl): Promise<void> => {

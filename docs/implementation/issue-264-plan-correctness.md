@@ -83,3 +83,11 @@ The maintenance cost is a capability/builder update plus a round-trip and conver
 - Some provider fields remain unavailable from read APIs. Their saved intent is the baseline, rather than proof of live equality. ES credential fingerprints detect local rotations, but cannot verify a cloud-only credential change. Legacy masked credential state needs one apply to establish its fingerprint.
 - Gateway probes retain their existing API-specific limits: some domain/certificate/log and upstream fields cannot be fully compared live. veFaaS custom policy documents also have no read API in the current client.
 - These tests use synthetic cloud responses and mocked cloud clients. No real-cloud deployment was performed.
+
+
+## Repair contract follow-up
+
+- Bucket reads distinguish successful values, confirmed absence (`null`), and unavailable fields (`undefined`). Only a failed bucket identity read with a known absence result permits creation. Managed website, versioning, encryption, and policy read failures stop planning; optional ACL/CORS fallback remains unchanged. An unclassified HTTP 403/404 is not proof that a policy is absent.
+- The bucket parser preserves an omitted `www_bind_apex` flag. On an existing domain, omission retains the owned binding and its complete state instance; explicit `false` removes it. A parent-domain replacement or removal tears down its owned bindings. CDN updates preserve retained instances and continue through policy reconciliation and merged intent persistence.
+- Custom-domain delete operations on FC3 and SCF succeed when the domain is already absent and propagate other failures. Function plans retain every applicable HTTP/domain repair reason. SCF identifies saved function instances by their function identity, including records whose `type` contains a provider value, and excludes them from dependent-instance reconstruction.
+- `tests/service/plan-repair-contracts.spec.test.ts` exercises real YAML parsing, provider wrappers, planning, execution, and persisted-state round trips with mocked cloud clients. It covers retained and removed bucket bindings, forbidden or malformed reads, simultaneous HTTP/domain drift, and retry after failed domain recreation. SDK and mapper unit tests cover absence/error classification and unavailable fields without fabricated revert markers.

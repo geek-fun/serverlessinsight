@@ -356,7 +356,8 @@ const detectFunctionLifecycleDrift = async (
   context: Context,
   client: ReturnType<typeof createAliyunClient>,
   fn: FunctionDomain,
-): Promise<string | null> => {
+): Promise<string[]> => {
+  const reasons: string[] = [];
   if (fn.triggers?.http) {
     const triggers = await cachedRefreshRead(context, `fc3.listTriggers:${fn.name}`, () =>
       client.fc3.listTriggers(fn.name),
@@ -371,7 +372,7 @@ const detectFunctionLifecycleDrift = async (
         { http: buildAliyunHttpTriggerConfig(fn.triggers.http) },
       )
     ) {
-      return 'PLAN_DRIFT_HTTP_TRIGGER';
+      reasons.push('PLAN_DRIFT_HTTP_TRIGGER');
     }
   }
   if (fn.domain) {
@@ -387,11 +388,11 @@ const detectFunctionLifecycleDrift = async (
         fn.domain.certificate_id !== undefined &&
         domain.certConfig.certificateId !== fn.domain.certificate_id)
     ) {
-      return 'PLAN_DRIFT_FUNCTION_DOMAIN';
+      reasons.push('PLAN_DRIFT_FUNCTION_DOMAIN');
     }
   }
 
-  return null;
+  return reasons;
 };
 
 const detectFunctionNestedDrift = async (
@@ -400,9 +401,6 @@ const detectFunctionNestedDrift = async (
   fn: FunctionDomain,
   currentState: ResourceState,
 ): Promise<string | null> => {
-  const lifecycleReason = await detectFunctionLifecycleDrift(context, client, fn);
-  if (lifecycleReason) return lifecycleReason;
-
   // Each declared dimension contributes its own probe; undeclared dimensions
   // fall through so later dimensions still run.
   if (fn.log) {
@@ -604,57 +602,64 @@ export const generateFunctionPlan = async (
         extraUpdate: async () => {
           if (!currentState) return { update: false, drifted: false };
           const roleProbe = resolveManagedRoleProbe(context, fn, currentState);
-          if (roleProbe) {
-            const role = await cachedRefreshRead(context, `ram.getRole:${roleProbe.roleName}`, () =>
-              client.ram.getRole(roleProbe.roleName),
-            );
-            if (!role) return { update: true, drifted: true, reason: 'PLAN_DRIFT_ROLE_MISSING' };
-            const reason = await detectRolePolicyDrift(
-              context,
-              state,
-              fn,
-              currentState,
-              roleProbe.roleName,
-              role,
-            );
-            if (reason)
-              return {
-                update: true,
-                drifted: !definitionsDiffer(currentState.definition ?? {}, {
-                  iam: desiredDefinition.iam,
-                  vpcConfig: desiredDefinition.vpcConfig,
-                  nasStorage: desiredDefinition.nasStorage,
-                  logConfig: desiredDefinition.logConfig,
-                }),
-                reason,
-              };
-          }
-          const reason = await detectFunctionNestedDrift(context, client, fn, currentState);
+          const roleReason = roleProbe
+            ? await (async () => {
+                const role = await cachedRefreshRead(
+                  context,
+                  `ram.getRole:${roleProbe.roleName}`,
+                  () => client.ram.getRole(roleProbe.roleName),
+                );
+                return role
+                  ? detectRolePolicyDrift(
+                      context,
+                      state,
+                      fn,
+                      currentState,
+                      roleProbe.roleName,
+                      role,
+                    )
+                  : 'PLAN_DRIFT_ROLE_MISSING';
+              })()
+            : null;
+          const lifecycleReasons = await detectFunctionLifecycleDrift(context, client, fn);
+          const nestedReason = await detectFunctionNestedDrift(context, client, fn, currentState);
+          const reasons = [roleReason, ...lifecycleReasons, nestedReason].filter(
+            (reason): reason is string => reason !== null,
+          );
           const fields: Record<string, string> = {
             PLAN_DRIFT_HTTP_TRIGGER: 'http',
             PLAN_DRIFT_FUNCTION_DOMAIN: 'domain',
             PLAN_DRIFT_TIMER_TRIGGER: 'timers',
           };
-          const field = reason ? fields[reason] : undefined;
-          return reason
-            ? {
-                update: true,
-                drifted:
-                  !field ||
-                  !definitionsDiffer(currentState.definition ?? {}, {
-                    [field]: desiredDefinition[field],
-                  }),
-                reason,
+          return {
+            update: reasons.length > 0,
+            drifted: reasons.some((reason) => {
+              if (reason === 'PLAN_DRIFT_ROLE_POLICY') {
+                return !definitionsDiffer(currentState.definition ?? {}, {
+                  iam: desiredDefinition.iam,
+                  vpcConfig: desiredDefinition.vpcConfig,
+                  nasStorage: desiredDefinition.nasStorage,
+                  logConfig: desiredDefinition.logConfig,
+                });
               }
-            : { update: false, drifted: false };
+              const field = fields[reason];
+              return (
+                !field ||
+                !definitionsDiffer(currentState.definition ?? {}, {
+                  [field]: desiredDefinition[field],
+                })
+              );
+            }),
+            reasons,
+          };
         },
         enrichRemoteAttributes: async (_remote, attributes) => {
           // Lifecycle probes below verify these dimensions separately. Existing
           // intent remains the baseline until those probes confirm equality.
           const reason = currentState
             ? await detectFunctionLifecycleDrift(context, client, fn)
-            : null;
-          return reason
+            : [];
+          return reason.length > 0
             ? attributes
             : {
                 ...attributes,

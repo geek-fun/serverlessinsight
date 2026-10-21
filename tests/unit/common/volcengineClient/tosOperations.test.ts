@@ -113,6 +113,7 @@ describe('tosOperations', () => {
   describe('with mock client', () => {
     beforeEach(() => {
       mockClient = createMockTosClient();
+      mockClient.fetchOpenAPI.mockResolvedValue({ Result: {} });
       operations = createTosOperations(mockClient as unknown as Service, 'cn-beijing');
     });
 
