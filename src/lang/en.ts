@@ -1326,6 +1326,21 @@ export const en = {
   LOCAL_HANDLER_NOT_FOUND:
     'Handler "{{handlerMethod}}" not found or is not a function in {{handlerPath}}',
   LOCAL_EXECUTION_TIMEOUT: 'Function execution timed out after {{timeoutMs}}ms',
+  LOCAL_FUNCTION_NOT_FOUND: 'Function not found',
+  LOCAL_FUNCTION_CODE_MISSING: 'Function code configuration not found',
+  LOCAL_FUNCTION_EXECUTION_FAILED: 'Function execution failed',
+  LOCAL_HTTP_PROVIDER_UNSUPPORTED:
+    'Local HTTP invocation is not supported for provider {{provider}}',
+  LOCAL_VOLCENGINE_MODE_UNSUPPORTED:
+    'Local veFaaS HTTP invocation supports node14/v1 and node20/v1 code packages only (function: {{functionName}}). Containers, native runtimes and other languages are not simulated.',
+  LOCAL_VOLCENGINE_BINARY_UNSUPPORTED:
+    'Local veFaaS HTTP invocation supports UTF-8 request bodies only. Binary bodies containing invalid UTF-8 are not simulated; no base64 event contract is assumed.',
+  LOCAL_VOLCENGINE_INVALID_RESPONSE:
+    'Invalid local veFaaS response: return an object with an optional integer statusCode (200-599), string-valued headers and a string body. Binary responses are not simulated.',
+  LOCAL_VOLCENGINE_TIMER_UNSUPPORTED:
+    'Local veFaaS timer simulation is not supported yet (issue #261); enabled timer triggers will not run.',
+  LOCAL_VOLCENGINE_TRIGGER_UNSUPPORTED:
+    'Local veFaaS event endpoints support API_GATEWAY triggers only.',
   LOCAL_PORT_CLOSED: 'Port closed before receiving response',
   LOCAL_WORKER_EXITED: 'Worker stopped with exit code {{code}}',
   REFRESH_STATE_BUCKET: 'Failed to refresh state for bucket: {{name}}',

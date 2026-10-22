@@ -1,15 +1,11 @@
 import { IncomingMessage } from 'http';
+import fs from 'node:fs';
 import { ServerlessIac } from '../../types';
 import { FunctionOptions, ParsedRequest, RouteResponse } from '../../types/localStack';
-import { logger, readRequestBody, ProviderEnum } from '../../common';
+import { logger, ProviderEnum } from '../../common';
 import { invokeFunction } from './functionRunner';
-import fs from 'node:fs';
-import {
-  transformToAliyunEvent,
-  createAliyunContextSerializable,
-  transformFCResponse,
-  generateRequestId,
-} from './aliyunFc';
+import { generateRequestId } from './aliyunFc';
+import { getLocalHttpAdapter } from './httpAdapter';
 import { resolveCodeDir } from './utils';
 import { lang } from '../../lang';
 
@@ -17,6 +13,7 @@ export const functionsHandler = async (
   req: IncomingMessage,
   parsed: ParsedRequest,
   iac: ServerlessIac,
+  requestId = generateRequestId(iac.provider.name === ProviderEnum.VOLCENGINE),
 ): Promise<RouteResponse> => {
   logger.info(
     lang.__('FUNCTION_REQUEST_RECEIVED', {
@@ -29,20 +26,22 @@ export const functionsHandler = async (
   if (!fcDef) {
     return {
       statusCode: 404,
-      body: { error: 'Function not found', functionKey: parsed.identifier },
-    };
-  }
-
-  if (!fcDef.code) {
-    return {
-      statusCode: 400,
-      body: { error: 'Function code configuration not found', functionKey: fcDef.key },
+      body: { error: lang.__('LOCAL_FUNCTION_NOT_FOUND'), functionKey: parsed.identifier },
     };
   }
 
   let tempDir: string | null = null;
 
   try {
+    const adapter = getLocalHttpAdapter(iac.provider.name);
+    adapter.validate(fcDef);
+    if (!fcDef.code) {
+      return {
+        statusCode: 400,
+        body: { error: lang.__('LOCAL_FUNCTION_CODE_MISSING'), functionKey: fcDef.key },
+      };
+    }
+
     const { codeDir, tempDir: resolvedTempDir } = await resolveCodeDir(fcDef.code.path);
     tempDir = resolvedTempDir;
 
@@ -54,87 +53,33 @@ export const functionsHandler = async (
       timeout: (fcDef.timeout ?? 3) * 1000,
     };
 
-    // Check if provider is Aliyun to use Aliyun FC format
-    const isAliyun = iac.provider.name === ProviderEnum.ALIYUN;
-
-    let event: unknown;
-    let fcContext: unknown;
-    let env: Record<string, string>;
-
-    if (isAliyun) {
-      // Aliyun FC format: event is a Buffer containing JSON
-      const requestId = generateRequestId();
-      const { event: aliyunEvent } = await transformToAliyunEvent(req, parsed.url, parsed.query);
-
-      event = aliyunEvent;
-      // Use serializable context for worker thread (logger will be added inside worker)
-      fcContext = createAliyunContextSerializable(
-        iac,
-        fcDef.name,
-        fcDef.code.handler,
-        fcDef.memory ?? 128,
-        fcDef.timeout ?? 3,
-        requestId,
-      );
-
-      env = {
-        ...fcDef.environment,
-      };
-    } else {
-      // AWS Lambda format (default)
-      const rawBody = await readRequestBody(req);
-      event = rawBody ? JSON.parse(rawBody) : {};
-
-      env = {
-        ...fcDef.environment,
-        AWS_REGION: iac.provider.region || 'us-east-1',
-        FUNCTION_NAME: fcDef.name,
-        FUNCTION_MEMORY_SIZE: String(fcDef.memory),
-        FUNCTION_TIMEOUT: String(fcDef.timeout),
-      };
-
-      fcContext = {
-        functionName: fcDef.name,
-        functionVersion: '$LATEST',
-        memoryLimitInMB: fcDef.memory,
-        logGroupName: `/aws/lambda/${fcDef.name}`,
-        logStreamName: `${new Date().toISOString().split('T')[0]}/[$LATEST]${Math.random().toString(36).substring(7)}`,
-        invokedFunctionArn: `arn:aws:lambda:${iac.provider.region}:000000000000:function:${fcDef.name}`,
-        awsRequestId: Math.random().toString(36).substring(2, 15),
-      };
-    }
-
+    const { event, context, env } = await adapter.buildInvocation(
+      req,
+      parsed,
+      iac,
+      fcDef,
+      requestId,
+    );
     logger.debug(
       lang.__('INVOKING_WORKER_WITH_EVENT_TYPE', {
-        eventType: isAliyun ? 'Buffer' : 'Object',
+        eventType: Buffer.isBuffer(event) ? 'Buffer' : 'Object',
       }),
     );
     logger.debug(lang.__('WORKER_CODE_DIR', { codeDir, handler: funOptions.handler }));
 
-    const result = await invokeFunction(funOptions, env, event, fcContext);
-
+    const result = await invokeFunction(funOptions, env, event, context);
     logger.info(lang.__('FUNCTION_EXECUTION_RESULT', { result: JSON.stringify(result) }));
-
-    // For Aliyun, transform FC response to HTTP response if needed
-    if (isAliyun && result) {
-      const transformed = transformFCResponse(result);
-      return {
-        statusCode: transformed.statusCode,
-        headers: transformed.headers,
-        body: transformed.body,
-      };
-    }
-
-    return {
-      statusCode: 200,
-      body: result,
-    };
+    return adapter.transformResponse(result, parsed.kind);
   } catch (error) {
     logger.error(lang.__('FUNCTION_EXECUTION_ERROR', { error: String(error) }));
+    const statusCode =
+      error instanceof Error && 'statusCode' in error && typeof error.statusCode === 'number'
+        ? error.statusCode
+        : 500;
     return {
-      statusCode: 500,
+      statusCode,
       body: {
-        error: 'Function execution failed',
+        error: lang.__('LOCAL_FUNCTION_EXECUTION_FAILED'),
         message: error instanceof Error ? error.message : String(error),
       },
     };

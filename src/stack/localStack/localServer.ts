@@ -1,5 +1,5 @@
 import { ParsedRequest, RouteHandler, RouteKind } from '../../types/localStack';
-import { logger, SI_LOCALSTACK_SERVER_PORT } from '../../common';
+import { logger, ProviderEnum, SI_LOCALSTACK_SERVER_PORT } from '../../common';
 import http, { IncomingMessage, ServerResponse } from 'node:http';
 import { ServerlessIac } from '../../types';
 import { lang } from '../../lang';
@@ -32,7 +32,7 @@ const respondRaw = (
   res.end(body);
 };
 
-const parseRequest = (req: IncomingMessage): ParsedRequest | undefined => {
+const parseRequest = (req: IncomingMessage, preservePath: boolean): ParsedRequest | undefined => {
   const url = new URL(req.url ?? '/', 'http://localhost');
   const [routeSegment, identifierSegment, ...rest] = cleanPathSegments(url.pathname);
   if (!routeSegment) {
@@ -44,7 +44,11 @@ const parseRequest = (req: IncomingMessage): ParsedRequest | undefined => {
     return undefined;
   }
 
-  const subPath = rest.length > 0 ? `/${rest.join('/')}` : '/';
+  const subPath = preservePath
+    ? (url.pathname.match(/^\/[^/]+\/[^/]+(\/.*)?$/)?.[1] ?? '/')
+    : rest.length > 0
+      ? `/${rest.join('/')}`
+      : '/';
   return {
     kind,
     identifier: identifierSegment,
@@ -68,7 +72,7 @@ export const servLocal = async (
 
   localServer = http.createServer(async (req, res) => {
     try {
-      const parsed = parseRequest(req);
+      const parsed = parseRequest(req, iac.provider.name === ProviderEnum.VOLCENGINE);
 
       if (!parsed) {
         respondJson(res, 404, { error: 'Route not found' });

@@ -228,6 +228,7 @@ const formatDateTime = (date: Date): string => {
   return `${year}-${month}-${day} ${hours}:${minutes}:${seconds}`;
 };
 
-export const generateRequestId = (): string => {
-  return randomUUID().replace(/-/g, '');
+export const generateRequestId = (preserveHyphens = false): string => {
+  const requestId = randomUUID();
+  return preserveHyphens ? requestId : requestId.replace(/-/g, '');
 };

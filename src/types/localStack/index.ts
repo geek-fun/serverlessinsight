@@ -1,5 +1,5 @@
 import { IncomingMessage } from 'node:http';
-import { ServerlessIac } from '../index';
+import { FunctionDomain, ServerlessIac } from '../index';
 
 export enum RouteKind {
   SI_FUNCTIONS = 'SI_FUNCTIONS',
@@ -35,6 +35,24 @@ export type FunctionOptions = {
   handler: string;
   servicePath: string;
   timeout: number;
+};
+
+export type LocalHttpInvocation = {
+  event: unknown;
+  context: unknown;
+  env: Record<string, string>;
+};
+
+export type LocalHttpAdapter = {
+  validate: (fn: FunctionDomain) => void;
+  buildInvocation: (
+    req: IncomingMessage,
+    parsed: ParsedRequest,
+    iac: ServerlessIac,
+    fn: FunctionDomain,
+    requestId: string,
+  ) => Promise<LocalHttpInvocation>;
+  transformResponse: (result: unknown, kind?: RouteKind) => RouteResponse;
 };
 
 export type AliyunApiGatewayContext = {

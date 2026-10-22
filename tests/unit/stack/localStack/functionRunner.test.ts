@@ -1,4 +1,5 @@
 import { EventEmitter } from 'node:events';
+import { runInNewContext } from 'node:vm';
 
 type WorkerMock = EventEmitter & {
   postMessage: jest.Mock;
@@ -101,6 +102,15 @@ describe('functionRunner main-thread API', () => {
     await expect(execution).rejects.toBe(error);
   });
 
+  it('recognizes native errors from another realm instead of returning them as successful results', async () => {
+    const runner = runFunction(options, {});
+    const execution = runner.execute({}, {});
+    const error = runInNewContext("new Error('foreign handler failure')");
+    expect(error instanceof Error).toBe(false);
+    workers[0]?.postMessage.mock.calls[0]?.[0].port.emit('message', error);
+    await expect(execution).rejects.toBe(error);
+  });
+
   it('rejects when the worker exits with a non-zero code', async () => {
     const runner = runFunction(options, {});
     const execution = runner.execute({}, {});
@@ -137,6 +147,20 @@ describe('functionRunner main-thread API', () => {
 
     await expect(execution).resolves.toBe('result');
     expect(worker?.terminate).toHaveBeenCalledTimes(1);
+  });
+
+  it('enforces a parent deadline and terminates a worker that never responds', async () => {
+    jest.useFakeTimers();
+    try {
+      const execution = invokeFunction(options, {}, {}, {});
+      const assertion = expect(execution).rejects.toThrow('timed out after 1000ms');
+      await jest.advanceTimersByTimeAsync(1000);
+      await assertion;
+      expect(workers[0]?.terminate).toHaveBeenCalledTimes(1);
+      expect(jest.getTimerCount()).toBe(0);
+    } finally {
+      jest.useRealTimers();
+    }
   });
 
   it('terminates the worker after invokeFunction rejects', async () => {

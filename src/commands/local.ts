@@ -8,17 +8,32 @@ export type RunLocalOptions = {
   debug: boolean;
   watch: boolean;
   location: string | undefined;
+  provider?: string;
+  region?: string;
 };
 
 export const runLocal = async (opts: RunLocalOptions) => {
-  const { stage, debug, watch, location } = opts;
+  const { stage, debug, watch, location, provider, region } = opts;
 
   const iacLocation = getIacLocation(location);
   const rawIac = parseYaml(iacLocation);
-  await setContext({ stage, app: rawIac.app, service: rawIac.service, location });
+  await setContext({
+    stage,
+    app: rawIac.app,
+    service: rawIac.service,
+    location,
+    provider,
+    region,
+    iacProvider: rawIac.provider,
+    stages: rawIac.stages,
+  });
   const ctx = getContext();
 
-  const iac = revalYaml(iacLocation, ctx);
+  const evaluatedIac = revalYaml(iacLocation, ctx);
+  const iac = {
+    ...evaluatedIac,
+    provider: { ...evaluatedIac.provider, name: ctx.provider, region: ctx.region },
+  };
 
   // Store IAC in context for access by all functions
   setIac(iac);
