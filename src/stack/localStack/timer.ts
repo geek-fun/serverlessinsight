@@ -179,6 +179,13 @@ const evaluateTimer = (
 export const startLocalTimers = (iac: ServerlessIac): void => {
   stopLocalTimers();
 
+  if (iac.provider.name === ProviderEnum.VOLCENGINE) {
+    if (iac.functions?.some((fn) => fn.triggers?.timer?.some((timer) => timer.enable !== false))) {
+      logger.warn(lang.__('LOCAL_VOLCENGINE_TIMER_UNSUPPORTED'));
+    }
+    return;
+  }
+
   iac.functions?.forEach((fn) => {
     fn.triggers?.timer?.forEach((timer) => {
       if (timer.enable === false) {

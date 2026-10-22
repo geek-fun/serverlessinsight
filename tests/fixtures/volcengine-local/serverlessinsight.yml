@@ -1,0 +1,43 @@
+version: 0.1.0
+app: local-vefaas
+service: contract
+provider:
+  name: volcengine
+  region: cn-beijing
+stages:
+  preview:
+    greeting: hello-preview
+functions:
+  echo:
+    name: local-vefaas-echo
+    code: { runtime: node20/v1, handler: index.handler, path: tests/fixtures/volcengine-local }
+    environment:
+      LOCAL_STAGE: ${ctx.stage}
+      LOCAL_GREETING: ${stages.greeting}
+  fail:
+    name: local-vefaas-fail
+    code: { runtime: node20/v1, handler: index.fail, path: tests/fixtures/volcengine-local }
+  missing:
+    name: local-vefaas-missing
+    code: { runtime: node20/v1, handler: index.missing, path: tests/fixtures/volcengine-local }
+  timeout:
+    name: local-vefaas-timeout
+    timeout: 1
+    code: { runtime: node20/v1, handler: index.timeout, path: tests/fixtures/volcengine-local }
+  block:
+    name: local-vefaas-block
+    timeout: 1
+    code: { runtime: node20/v1, handler: index.block, path: tests/fixtures/volcengine-local }
+  empty:
+    name: local-vefaas-empty
+    code: { runtime: node20/v1, handler: index.empty, path: tests/fixtures/volcengine-local }
+  invalid:
+    name: local-vefaas-invalid
+    code: { runtime: node20/v1, handler: index.invalid, path: tests/fixtures/volcengine-local }
+events:
+  api:
+    type: API_GATEWAY
+    name: local-vefaas-api
+    triggers:
+      - { method: ANY, path: /echo, backend: '${functions.echo}' }
+      - { method: GET, path: '/exact//path/', backend: '${functions.echo}' }

@@ -220,7 +220,7 @@ describe('eventsHandler', () => {
           code: {
             runtime: 'nodejs18',
             handler: 'index.handler',
-            path: 'tests/fixtures/artifacts',
+            path: 'tests/fixtures/aliyun-fc-handler',
           },
           memory: 128,
           timeout: 3,
@@ -259,7 +259,7 @@ describe('eventsHandler', () => {
           code: {
             runtime: 'nodejs18',
             handler: 'index.handler',
-            path: 'tests/fixtures/artifacts/nonexistent.js',
+            path: 'tests/fixtures/aliyun-fc-handler/nonexistent.js',
           },
           memory: 128,
           timeout: 3,

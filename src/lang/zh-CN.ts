@@ -1196,6 +1196,19 @@ export const zhCN = {
   OTS_ATTRIBUTE_NOT_FOUND: '找不到 key 对应的属性：{{key}}',
   LOCAL_HANDLER_NOT_FOUND: '在 {{handlerPath}} 中找不到 Handler "{{handlerMethod}}"，或它不是函数',
   LOCAL_EXECUTION_TIMEOUT: '函数执行超时（{{timeoutMs}}ms）',
+  LOCAL_FUNCTION_NOT_FOUND: '找不到函数',
+  LOCAL_FUNCTION_CODE_MISSING: '找不到函数代码配置',
+  LOCAL_FUNCTION_EXECUTION_FAILED: '函数执行失败',
+  LOCAL_HTTP_PROVIDER_UNSUPPORTED: '不支持 provider {{provider}} 的本地 HTTP 调用',
+  LOCAL_VOLCENGINE_MODE_UNSUPPORTED:
+    '本地 veFaaS HTTP 调用仅支持 node14/v1 和 node20/v1 代码包（函数：{{functionName}}）。暂不模拟容器、原生运行时及其他语言。',
+  LOCAL_VOLCENGINE_BINARY_UNSUPPORTED:
+    '本地 veFaaS HTTP 调用仅支持 UTF-8 请求体。暂不模拟包含无效 UTF-8 的二进制请求体，也不假定 base64 事件协议。',
+  LOCAL_VOLCENGINE_INVALID_RESPONSE:
+    '本地 veFaaS 响应无效：请返回对象，可包含整数 statusCode（200-599）、字符串值的 headers 和字符串 body。暂不模拟二进制响应。',
+  LOCAL_VOLCENGINE_TIMER_UNSUPPORTED:
+    '本地 veFaaS 定时触发器模拟尚未支持（issue #261）；已启用的定时触发器不会运行。',
+  LOCAL_VOLCENGINE_TRIGGER_UNSUPPORTED: '本地 veFaaS 事件端点仅支持 API_GATEWAY 触发器。',
   LOCAL_PORT_CLOSED: '端口在收到响应前已关闭',
   LOCAL_WORKER_EXITED: 'Worker 退出，退出码 {{code}}',
   REFRESH_STATE_BUCKET: '刷新存储桶状态失败：{{name}}',

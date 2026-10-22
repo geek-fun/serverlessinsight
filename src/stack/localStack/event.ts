@@ -1,20 +1,10 @@
 import { EventTypes, ServerlessIac } from '../../types';
 import { isEmpty } from 'lodash';
-import { ParsedRequest, RouteHandler, RouteResponse } from '../../types/localStack';
+import { ParsedRequest, RouteHandler, RouteKind, RouteResponse } from '../../types/localStack';
 import { IncomingMessage } from 'http';
 import { getIacDefinition, isFunctionDomain, logger, ProviderEnum } from '../../common';
 import { functionsHandler } from './function';
-import {
-  generateRequestId,
-  logApiGatewayRequest,
-  transformToAliyunEvent,
-  transformFCResponse,
-  createAliyunContextSerializable,
-} from './aliyunFc';
-import { invokeFunction } from './functionRunner';
-import fs from 'node:fs';
-import { FunctionOptions } from '../../types/localStack';
-import { resolveCodeDir } from './utils';
+import { generateRequestId, logApiGatewayRequest } from './aliyunFc';
 import { lang } from '../../lang';
 
 const matchTrigger = (
@@ -55,12 +45,14 @@ const servEvent = async (
   iac: ServerlessIac,
 ): Promise<RouteResponse | void> => {
   const startTime = new Date();
-  const requestId = generateRequestId();
+  const requestId = generateRequestId(iac.provider.name === ProviderEnum.VOLCENGINE);
   const sourceIp = req.socket?.remoteAddress || '127.0.0.1';
   const isAliyun = iac.provider.name === ProviderEnum.ALIYUN;
 
   const event = iac.events?.find(
-    (event) => event.type === EventTypes.API_GATEWAY && event.key === parsed.identifier,
+    (event) =>
+      event.key === parsed.identifier &&
+      (event.type === EventTypes.API_GATEWAY || iac.provider.name === ProviderEnum.VOLCENGINE),
   );
 
   if (isEmpty(event)) {
@@ -68,6 +60,9 @@ const servEvent = async (
       statusCode: 404,
       body: { error: 'API Gateway event not found', event: parsed.identifier },
     };
+  }
+  if (event.type !== EventTypes.API_GATEWAY) {
+    return { statusCode: 501, body: { error: lang.__('LOCAL_VOLCENGINE_TRIGGER_UNSUPPORTED') } };
   }
   logger.info(
     lang.__('EVENT_TRIGGER', {
@@ -77,7 +72,10 @@ const servEvent = async (
     }),
   );
   const matchedTrigger = event.triggers.find((trigger) =>
-    matchTrigger({ method: parsed.method, path: parsed.url }, trigger),
+    iac.provider.name === ProviderEnum.VOLCENGINE
+      ? (trigger.method === 'ANY' || trigger.method === parsed.method) &&
+        trigger.path === parsed.url
+      : matchTrigger({ method: parsed.method, path: parsed.url }, trigger),
   );
 
   if (!matchedTrigger) {
@@ -101,80 +99,11 @@ const servEvent = async (
       };
     }
 
-    // For Aliyun, handle the function execution with proper event transformation
-    if (isAliyun && backendDef.code) {
-      let tempDir: string | null = null;
-      try {
-        const { event: aliyunEvent } = await transformToAliyunEvent(req, parsed.url, parsed.query);
-
-        const { codeDir, tempDir: resolvedTempDir } = await resolveCodeDir(backendDef.code.path);
-        tempDir = resolvedTempDir;
-
-        const funOptions: FunctionOptions = {
-          codeDir,
-          functionKey: backendDef.key as string,
-          handler: backendDef.code.handler,
-          servicePath: '',
-          timeout: (backendDef.timeout ?? 3) * 1000,
-        };
-
-        const aliyunContext = createAliyunContextSerializable(
-          iac,
-          backendDef.name,
-          backendDef.code.handler,
-          backendDef.memory ?? 128,
-          backendDef.timeout ?? 3,
-          requestId,
-        );
-
-        const env = {
-          ...backendDef.environment,
-        };
-
-        logger.debug(lang.__('INVOKING_FC_FUNCTION_WITH_ALIYUN_EVENT'));
-        const result = await invokeFunction(funOptions, env, aliyunEvent, aliyunContext);
-
-        const endTime = new Date();
-        const transformed = transformFCResponse(result);
-
-        // Log API Gateway request
-        logApiGatewayRequest(
-          requestId,
-          parsed.url,
-          transformed.statusCode,
-          startTime,
-          endTime,
-          sourceIp,
-        );
-
-        return {
-          statusCode: transformed.statusCode,
-          headers: transformed.headers,
-          body: transformed.body,
-        };
-      } catch (error) {
-        const endTime = new Date();
-        logApiGatewayRequest(requestId, parsed.url, 500, startTime, endTime, sourceIp);
-        logger.error(lang.__('FUNCTION_EXECUTION_ERROR', { error: String(error) }));
-        return {
-          statusCode: 500,
-          body: {
-            error: 'Function execution failed',
-            message: error instanceof Error ? error.message : String(error),
-          },
-        };
-      } finally {
-        if (tempDir && fs.existsSync(tempDir)) {
-          fs.rmSync(tempDir, { recursive: true, force: true });
-        }
-      }
-    }
-
-    // For non-Aliyun or when using functionsHandler
     const result = await functionsHandler(
       req,
-      { ...parsed, identifier: backendDef?.key as string },
+      { ...parsed, kind: RouteKind.SI_EVENTS, identifier: backendDef.key },
       iac,
+      requestId,
     );
 
     const endTime = new Date();

@@ -5,6 +5,7 @@ import {
 } from '../../../../src/stack/localStack/timer';
 import { invokeFunction } from '../../../../src/stack/localStack/functionRunner';
 import { parseSiCron } from '../../../../src/common/siCron';
+import { ProviderEnum, logger } from '../../../../src/common';
 import { ServerlessIac } from '../../../../src/types';
 
 jest.mock('../../../../src/stack/localStack/functionRunner', () => ({
@@ -273,4 +274,34 @@ describe('localStack timer simulation (issue #258)', () => {
       expect(triggerNames.every((event) => event.triggerName === 'b')).toBe(true);
     });
   });
+});
+
+describe('veFaaS timer support boundary (issue #261)', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+    jest.useFakeTimers();
+  });
+  afterEach(() => {
+    stopLocalTimers();
+    jest.useRealTimers();
+  });
+
+  it('warns and never invokes a veFaaS timer using another provider contract', async () => {
+    startLocalTimers({
+      provider: { name: ProviderEnum.VOLCENGINE },
+      functions: [{ triggers: { timer: [{ name: 'tick', cron: '@every 1s', enable: true }] } }],
+    } as ServerlessIac);
+    await jest.advanceTimersByTimeAsync(2000);
+    expect(logger.warn).toHaveBeenCalledWith('LOCAL_VOLCENGINE_TIMER_UNSUPPORTED');
+    expect(mockedInvokeFunction).not.toHaveBeenCalled();
+    expect(jest.getTimerCount()).toBe(0);
+  });
+
+  it.each([undefined, [], [{ triggers: { timer: [{ enable: false }] } }], [{}]])(
+    'does not warn when there are no enabled veFaaS timers: %p',
+    (functions) => {
+      startLocalTimers({ provider: { name: ProviderEnum.VOLCENGINE }, functions } as ServerlessIac);
+      expect(logger.warn).not.toHaveBeenCalled();
+    },
+  );
 });

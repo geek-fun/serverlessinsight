@@ -1,6 +1,7 @@
 import { existsSync } from 'node:fs';
 import path, { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
+import { types } from 'node:util';
 import { lang } from '../../lang';
 import type { MessagePort } from 'node:worker_threads';
 import { MessageChannel, Worker, isMainThread, parentPort, workerData } from 'node:worker_threads';
@@ -227,7 +228,7 @@ const createMessageHandler = (
     if (resolved) return;
     resolved = true;
     port.close();
-    return value instanceof Error ? reject(value) : resolve(value);
+    return types.isNativeError(value) ? reject(value) : resolve(value);
   };
 
   const handleError = (err: Error) => {
@@ -318,10 +319,19 @@ export const invokeFunction = async (
   context: unknown,
 ): Promise<unknown> => {
   const runner = runFunction(funOptions, env);
+  let timeoutId: NodeJS.Timeout | undefined;
+  const deadline = new Promise<never>((_resolve, reject) => {
+    timeoutId = setTimeout(() => {
+      reject(
+        new Error(lang.__('LOCAL_EXECUTION_TIMEOUT', { timeoutMs: String(funOptions.timeout) })),
+      );
+    }, funOptions.timeout);
+  });
 
   try {
-    return await runner.execute(event, context);
+    return await Promise.race([runner.execute(event, context), deadline]);
   } finally {
+    clearTimeout(timeoutId);
     await runner.terminate();
   }
 };

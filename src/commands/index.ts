@@ -460,15 +460,19 @@ program
   .description(lang.__('CMD_LOCAL_DESC'))
   .option('-f, --file <path>', lang.__('OPT_FILE'))
   .option('-s, --stage <stage>', lang.__('OPT_STAGE'), 'default')
+  .option('-r, --region <region>', lang.__('OPT_REGION'))
+  .option('-v, --provider <provider>', lang.__('OPT_PROVIDER'))
   .option('-d, --debug', lang.__('OPT_DEBUG'))
   .option('-w, --watch', lang.__('OPT_WATCH'), true)
   .action(
-    actionWrapper('local', async ({ stage, debug, watch, file }) => {
+    actionWrapper('local', async ({ stage, debug, watch, file, provider, region }) => {
       await runLocal({
         stage,
         debug: !!debug,
         watch: typeof watch === 'boolean' ? watch : true,
         location: file,
+        provider,
+        region,
       });
     }),
   );
