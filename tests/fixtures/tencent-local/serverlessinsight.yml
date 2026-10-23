@@ -1,0 +1,60 @@
+version: 0.1.0
+app: local-scf
+service: contract
+provider:
+  name: tencent
+  region: ap-guangzhou
+stages:
+  preview:
+    greeting: hello-preview
+functions:
+  echo:
+    name: local-scf-echo
+    code: { runtime: nodejs18, handler: index.handler, path: tests/fixtures/tencent-local }
+    triggers:
+      http:
+        auth_type: public
+    environment:
+      LOCAL_STAGE: ${ctx.stage}
+      LOCAL_GREETING: ${stages.greeting}
+  fail:
+    name: local-scf-fail
+    code: { runtime: nodejs18, handler: index.fail, path: tests/fixtures/tencent-local }
+  missing:
+    name: local-scf-missing
+    code: { runtime: nodejs18, handler: index.missing, path: tests/fixtures/tencent-local }
+  timeout:
+    name: local-scf-timeout
+    timeout: 1
+    code: { runtime: nodejs18, handler: index.timeout, path: tests/fixtures/tencent-local }
+  block:
+    name: local-scf-block
+    timeout: 1
+    code: { runtime: nodejs18, handler: index.block, path: tests/fixtures/tencent-local }
+  empty:
+    name: local-scf-empty
+    code: { runtime: nodejs18, handler: index.empty, path: tests/fixtures/tencent-local }
+  invalid:
+    name: local-scf-invalid
+    code: { runtime: nodejs18, handler: index.invalid, path: tests/fixtures/tencent-local }
+  binary:
+    name: local-scf-binary
+    code: { runtime: nodejs18, handler: index.binary, path: tests/fixtures/tencent-local }
+  text:
+    name: local-scf-text
+    code: { runtime: nodejs18, handler: index.text, path: tests/fixtures/tencent-local }
+  json:
+    name: local-scf-json
+    code: { runtime: nodejs18, handler: index.json, path: tests/fixtures/tencent-local }
+  golang:
+    name: local-scf-golang
+    code: { runtime: go1, handler: index.handler, path: tests/fixtures/tencent-local }
+  container:
+    name: local-scf-container
+    container: { image: local/example, port: 8080 }
+events:
+  api:
+    type: API_GATEWAY
+    name: local-scf-api
+    triggers:
+      - { method: ANY, path: /echo, backend: '${functions.echo}' }

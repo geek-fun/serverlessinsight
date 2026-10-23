@@ -4,7 +4,8 @@ import { ParsedRequest, RouteHandler, RouteKind, RouteResponse } from '../../typ
 import { IncomingMessage } from 'http';
 import { getIacDefinition, isFunctionDomain, logger, ProviderEnum } from '../../common';
 import { functionsHandler } from './function';
-import { generateRequestId, logApiGatewayRequest } from './aliyunFc';
+import { logApiGatewayRequest } from './aliyunFc';
+import { generateProviderRequestId } from './requestId';
 import { lang } from '../../lang';
 
 /**
@@ -59,7 +60,7 @@ const servEvent = async (
   iac: ServerlessIac,
 ): Promise<RouteResponse | void> => {
   const startTime = new Date();
-  const requestId = generateRequestId(iac.provider.name === ProviderEnum.VOLCENGINE);
+  const requestId = generateProviderRequestId(iac.provider.name);
   const sourceIp = req.socket?.remoteAddress || '127.0.0.1';
   const isAliyun = iac.provider.name === ProviderEnum.ALIYUN;
 
@@ -76,7 +77,12 @@ const servEvent = async (
     };
   }
   if (event.type !== EventTypes.API_GATEWAY) {
-    return { statusCode: 501, body: { error: lang.__('LOCAL_VOLCENGINE_TRIGGER_UNSUPPORTED') } };
+    return { statusCode: 501, body: { error: lang.__('LOCAL_EVENT_TYPE_UNSUPPORTED') } };
+  }
+  // si deploys Tencent HTTP access as a function-owned function URL, not as an
+  // API Gateway service, so a gateway event has no SCF-native local equivalent.
+  if (iac.provider.name === ProviderEnum.TENCENT) {
+    return { statusCode: 501, body: { error: lang.__('LOCAL_SCF_EVENT_UNSUPPORTED') } };
   }
   logger.info(
     lang.__('EVENT_TRIGGER', {

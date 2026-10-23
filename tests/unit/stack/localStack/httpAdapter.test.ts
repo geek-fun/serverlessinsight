@@ -86,8 +86,22 @@ it('keeps Aliyun response translation for gateway envelopes and falsy return val
   });
 });
 
-it.each([ProviderEnum.AWS, ProviderEnum.TENCENT, ProviderEnum.HUAWEI])(
-  'preserves explicitly registered legacy execution for %s',
+it('routes Tencent to the SCF adapter instead of the generic fallback', () => {
+  const adapter = getLocalHttpAdapter(ProviderEnum.TENCENT);
+  expect(adapter).not.toBe(getLocalHttpAdapter(ProviderEnum.AWS));
+  expect(() => adapter.validate(fn)).not.toThrow();
+  expect(() => adapter.validate({ ...fn, code: { ...fn.code!, runtime: 'go1' } })).toThrow(
+    expect.objectContaining({ statusCode: 501 }),
+  );
+  expect(adapter.transformResponse('hello')).toEqual({
+    statusCode: 200,
+    headers: { 'content-type': 'application/json' },
+    body: 'hello',
+  });
+});
+
+it.each([ProviderEnum.AWS, ProviderEnum.HUAWEI])(
+  'preserves explicitly registered generic execution for %s',
   async (provider) => {
     jest.mocked(readRequestBody).mockResolvedValue('{"legacy":true}');
     const adapter = getLocalHttpAdapter(provider);

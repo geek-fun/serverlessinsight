@@ -1337,8 +1337,17 @@ export const en = {
     'Local veFaaS HTTP invocation supports UTF-8 request bodies only. Binary bodies containing invalid UTF-8 are not simulated; no base64 event contract is assumed.',
   LOCAL_VOLCENGINE_INVALID_RESPONSE:
     'Invalid local veFaaS response: return an object with an optional integer statusCode (200-599), string-valued headers and a string body. Binary responses are not simulated.',
-  LOCAL_VOLCENGINE_TRIGGER_UNSUPPORTED:
-    'Local veFaaS event endpoints support API_GATEWAY triggers only.',
+  LOCAL_EVENT_TYPE_UNSUPPORTED: 'Local event endpoints support API_GATEWAY triggers only.',
+  LOCAL_SCF_EVENT_UNSUPPORTED:
+    'Local SCF simulation covers the function-owned function URL, not API Gateway events (no Tencent API Gateway is deployed). Invoke the function URL at /si_functions/<function-key>/<path>.',
+  LOCAL_SCF_MODE_UNSUPPORTED:
+    'Local SCF HTTP invocation supports {{runtimes}} code packages only (function: {{functionName}}). Containers, Web Functions and other languages are not simulated.',
+  LOCAL_SCF_BINARY_REQUEST_UNSUPPORTED:
+    'Local SCF HTTP invocation supports UTF-8 request bodies only. The function-URL event carries no isBase64Encoded field, so binary bodies are not simulated.',
+  LOCAL_SCF_BINARY_RESPONSE_UNSUPPORTED:
+    'Local SCF responses do not support binary bodies: the function-URL response carries no isBase64Encoded field, so isBase64Encoded responses are not simulated.',
+  LOCAL_SCF_INVALID_RESPONSE:
+    'Invalid local SCF response: return a string or JSON object, or an object with an optional integer statusCode (200-599), string-valued headers and a string body.',
   LOCAL_PORT_CLOSED: 'Port closed before receiving response',
   LOCAL_WORKER_EXITED: 'Worker stopped with exit code {{code}}',
   REFRESH_STATE_BUCKET: 'Failed to refresh state for bucket: {{name}}',

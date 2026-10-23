@@ -22,7 +22,6 @@ jest.mock('../../../../src/lang', () => ({
 }));
 
 jest.mock('../../../../src/stack/localStack/aliyunFc', () => ({
-  generateRequestId: () => 'req-1',
   createAliyunContextSerializable: () => ({ requestId: 'req-1' }),
 }));
 
@@ -228,20 +227,33 @@ describe('localStack timer simulation (issue #258)', () => {
       expect(mockedInvokeFunction).toHaveBeenCalledTimes(1);
     });
 
-    it('builds the tencent Timer event shape for non-aliyun providers', async () => {
+    it('builds the SCF Timer event and context shape for tencent (issue #267)', async () => {
       const iac = buildIac([{ name: 'tick', cron: '@every 1s', payload: 'msg' }]);
-      (iac.provider as { name: string }).name = 'tencent';
+      (iac.provider as { name: string }).name = ProviderEnum.TENCENT;
+      (iac.provider as { region: string }).region = 'ap-guangzhou';
       startLocalTimers(iac);
 
       await jest.advanceTimersByTimeAsync(1500);
 
-      const event = mockedInvokeFunction.mock.calls[0][2];
+      const [, , event, context] = mockedInvokeFunction.mock.calls[0];
       expect(event).toEqual({
         Type: 'Timer',
         TriggerName: 'tick',
         Time: expect.any(String),
         Message: 'msg',
       });
+      expect(context).toMatchObject({
+        memory_limit_in_mb: 128,
+        time_limit_in_ms: 3000,
+        function_version: '$LATEST',
+        function_name: 'fn-name',
+        namespace: 'default',
+        tencentcloud_region: 'ap-guangzhou',
+        tencentcloud_appid: '1250000000',
+        tencentcloud_uin: '100000000000',
+      });
+      expect(context).not.toHaveProperty('requestId');
+      expect((context as { request_id: string }).request_id).toMatch(/^[\da-f-]{36}$/);
     });
 
     it('cleans up extracted temp dirs after firing', async () => {

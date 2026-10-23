@@ -1,5 +1,6 @@
 import { ParsedRequest, RouteHandler, RouteKind } from '../../types/localStack';
-import { logger, ProviderEnum, SI_LOCALSTACK_SERVER_PORT } from '../../common';
+import { logger, SI_LOCALSTACK_SERVER_PORT } from '../../common';
+import { preservesLocalPath } from './localRoute';
 import http, { IncomingMessage, ServerResponse } from 'node:http';
 import { ServerlessIac } from '../../types';
 import { lang } from '../../lang';
@@ -72,7 +73,7 @@ export const servLocal = async (
 
   localServer = http.createServer(async (req, res) => {
     try {
-      const parsed = parseRequest(req, iac.provider.name === ProviderEnum.VOLCENGINE);
+      const parsed = parseRequest(req, preservesLocalPath(iac.provider.name));
 
       if (!parsed) {
         respondJson(res, 404, { error: 'Route not found' });

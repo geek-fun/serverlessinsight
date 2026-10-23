@@ -1206,7 +1206,17 @@ export const zhCN = {
     '本地 veFaaS HTTP 调用仅支持 UTF-8 请求体。暂不模拟包含无效 UTF-8 的二进制请求体，也不假定 base64 事件协议。',
   LOCAL_VOLCENGINE_INVALID_RESPONSE:
     '本地 veFaaS 响应无效：请返回对象，可包含整数 statusCode（200-599）、字符串值的 headers 和字符串 body。暂不模拟二进制响应。',
-  LOCAL_VOLCENGINE_TRIGGER_UNSUPPORTED: '本地 veFaaS 事件端点仅支持 API_GATEWAY 触发器。',
+  LOCAL_EVENT_TYPE_UNSUPPORTED: '本地事件端点仅支持 API_GATEWAY 触发器。',
+  LOCAL_SCF_EVENT_UNSUPPORTED:
+    '本地 SCF 模拟覆盖函数所属的函数 URL，而非 API Gateway 事件（未部署腾讯云 API 网关）。请在 /si_functions/<function-key>/<path> 调用函数 URL。',
+  LOCAL_SCF_MODE_UNSUPPORTED:
+    '本地 SCF HTTP 调用仅支持 {{runtimes}} 代码包（函数：{{functionName}}）。暂不模拟容器、Web 函数及其他语言。',
+  LOCAL_SCF_BINARY_REQUEST_UNSUPPORTED:
+    '本地 SCF HTTP 调用仅支持 UTF-8 请求体。函数 URL 事件不含 isBase64Encoded 字段，因此不模拟二进制请求体。',
+  LOCAL_SCF_BINARY_RESPONSE_UNSUPPORTED:
+    '本地 SCF 响应不支持二进制响应体：函数 URL 响应不含 isBase64Encoded 字段，因此不模拟 isBase64Encoded 响应。',
+  LOCAL_SCF_INVALID_RESPONSE:
+    '本地 SCF 响应无效：请返回字符串或 JSON 对象，或返回包含可选整数 statusCode（200-599）、字符串值 headers 与字符串 body 的对象。',
   LOCAL_PORT_CLOSED: '端口在收到响应前已关闭',
   LOCAL_WORKER_EXITED: 'Worker 退出，退出码 {{code}}',
   REFRESH_STATE_BUCKET: '刷新存储桶状态失败：{{name}}',

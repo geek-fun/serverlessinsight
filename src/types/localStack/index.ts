@@ -103,6 +103,37 @@ export type AliyunServerlessEvent = {
   isBase64Encoded: boolean;
 };
 
+/**
+ * SCF invocation context, as documented for the Node.js runtime. The account
+ * identifiers are synthetic offline; `getRemainingTimeInMillis()` cannot cross
+ * the worker boundary and is not simulated.
+ */
+export type ScfInvocationContext = {
+  memory_limit_in_mb: number;
+  time_limit_in_ms: number;
+  request_id: string;
+  environment: string;
+  environ: string;
+  function_version: string;
+  function_name: string;
+  namespace: string;
+  tencentcloud_region: string;
+  tencentcloud_appid: string;
+  tencentcloud_uin: string;
+};
+
+/**
+ * The SCF function-URL HTTP event: API-Gateway-compatible with the gateway-only
+ * fields removed.
+ */
+export type ScfHttpRequestEvent = {
+  body: string;
+  headers: Record<string, string>;
+  httpMethod: string;
+  path: string;
+  queryString: Record<string, string>;
+};
+
 export type AliyunFCResponse = {
   isBase64Encoded: boolean;
   statusCode: string | number;

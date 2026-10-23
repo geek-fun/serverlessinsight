@@ -1,8 +1,8 @@
 import { ServerlessIac } from '../../types';
 import { FunctionOptions } from '../../types/localStack';
 import { parseSiCron, ParsedCronField, SiCronCron } from '../../common/siCron';
-import { generateRequestId, createAliyunContextSerializable } from './aliyunFc';
-import { createVolcengineContext } from './volcengine';
+import { generateProviderRequestId, generateRequestId } from './requestId';
+import { buildLocalContext } from './localContext';
 import { resolveCodeDir } from './utils';
 import { invokeFunction } from './functionRunner';
 import { logger, ProviderEnum } from '../../common';
@@ -21,6 +21,9 @@ import { lang } from '../../lang';
  *   `{triggerName, triggerTime, payload}` (Buffer), veFaaS's CloudEvents
  *   envelope (issue #261), otherwise Tencent SCF's
  *   `{Type: 'Timer', TriggerName, Time, Message}`.
+ * - The context follows the provider through `buildLocalContext`, so an SCF
+ *   timer invocation receives the SCF context (issue #267) rather than the
+ *   Aliyun FC one.
  */
 
 type TimerSchedule =
@@ -141,21 +144,12 @@ const fireTimer = async (
     };
 
     const event = buildTimerEvent(iac.provider.name, triggerName, payload);
-    // Per-provider context: veFaaS handlers get the minimal `{ requestId }`
-    // context; the Aliyun serializable context is not injected for them
-    // (its `service`/`tracing`/`credentials` fields mislead provider
-    // detection — issue #261).
-    const context =
-      iac.provider.name === ProviderEnum.VOLCENGINE
-        ? createVolcengineContext(generateRequestId(true))
-        : createAliyunContextSerializable(
-            iac,
-            fn.name,
-            fn.code.handler,
-            fn.memory ?? 128,
-            fn.timeout ?? 3,
-            generateRequestId(),
-          );
+    // Provider-native context (issues #261, #267): veFaaS handlers get the
+    // minimal `{ requestId }` context and SCF handlers the SCF context, rather
+    // than the Aliyun serializable context, whose `service`/`tracing`/
+    // `credentials` fields mislead provider detection.
+    const requestId = generateProviderRequestId(iac.provider.name);
+    const context = buildLocalContext(iac.provider.name, iac, fn, requestId);
 
     logger.info(lang.__('LOCAL_TIMER_FIRED', { triggerName, functionName: fn.name }));
     const result = await invokeFunction(funOptions, { ...fn.environment }, event, context);
