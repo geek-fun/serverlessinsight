@@ -1206,8 +1206,6 @@ export const zhCN = {
     '本地 veFaaS HTTP 调用仅支持 UTF-8 请求体。暂不模拟包含无效 UTF-8 的二进制请求体，也不假定 base64 事件协议。',
   LOCAL_VOLCENGINE_INVALID_RESPONSE:
     '本地 veFaaS 响应无效：请返回对象，可包含整数 statusCode（200-599）、字符串值的 headers 和字符串 body。暂不模拟二进制响应。',
-  LOCAL_VOLCENGINE_TIMER_UNSUPPORTED:
-    '本地 veFaaS 定时触发器模拟尚未支持（issue #261）；已启用的定时触发器不会运行。',
   LOCAL_VOLCENGINE_TRIGGER_UNSUPPORTED: '本地 veFaaS 事件端点仅支持 API_GATEWAY 触发器。',
   LOCAL_PORT_CLOSED: '端口在收到响应前已关闭',
   LOCAL_WORKER_EXITED: 'Worker 退出，退出码 {{code}}',

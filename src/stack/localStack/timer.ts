@@ -2,6 +2,7 @@ import { ServerlessIac } from '../../types';
 import { FunctionOptions } from '../../types/localStack';
 import { parseSiCron, ParsedCronField, SiCronCron } from '../../common/siCron';
 import { generateRequestId, createAliyunContextSerializable } from './aliyunFc';
+import { createVolcengineContext } from './volcengine';
 import { resolveCodeDir } from './utils';
 import { invokeFunction } from './functionRunner';
 import { logger, ProviderEnum } from '../../common';
@@ -17,7 +18,8 @@ import { lang } from '../../lang';
  * - `@every` schedules are interval-based from server start (cron cannot
  *   anchor intervals, so the first fire is one interval after startup).
  * - The event shapes mirror the providers: Aliyun FC's timer event
- *   `{triggerName, triggerTime, payload}` (Buffer), otherwise Tencent SCF's
+ *   `{triggerName, triggerTime, payload}` (Buffer), veFaaS's CloudEvents
+ *   envelope (issue #261), otherwise Tencent SCF's
  *   `{Type: 'Timer', TriggerName, Time, Message}`.
  */
 
@@ -97,6 +99,21 @@ const buildTimerEvent = (provider: string, triggerName: string, payload: string)
     // Aliyun FC timer event — the handler receives a Buffer of this JSON
     return Buffer.from(JSON.stringify({ triggerName, triggerTime, payload }));
   }
+  if (provider === ProviderEnum.VOLCENGINE) {
+    // veFaaS timer event — CloudEvents envelope per the provider's trigger
+    // event documentation (issue #261). The local trigger name substitutes
+    // for the cloud timer id in `source`; the platform id does not exist
+    // locally. `datacontenttype` is always `application/octet-stream`.
+    return {
+      id: generateRequestId(true),
+      source: `/faas/event/timer/${triggerName}`,
+      specversion: '1.0',
+      time: triggerTime,
+      type: 'faas.timer.event',
+      datacontenttype: 'application/octet-stream',
+      data: payload,
+    };
+  }
   // Tencent SCF timer event shape (default for other providers)
   return { Type: 'Timer', TriggerName: triggerName, Time: triggerTime, Message: payload };
 };
@@ -124,14 +141,21 @@ const fireTimer = async (
     };
 
     const event = buildTimerEvent(iac.provider.name, triggerName, payload);
-    const context = createAliyunContextSerializable(
-      iac,
-      fn.name,
-      fn.code.handler,
-      fn.memory ?? 128,
-      fn.timeout ?? 3,
-      generateRequestId(),
-    );
+    // Per-provider context: veFaaS handlers get the minimal `{ requestId }`
+    // context; the Aliyun serializable context is not injected for them
+    // (its `service`/`tracing`/`credentials` fields mislead provider
+    // detection — issue #261).
+    const context =
+      iac.provider.name === ProviderEnum.VOLCENGINE
+        ? createVolcengineContext(generateRequestId(true))
+        : createAliyunContextSerializable(
+            iac,
+            fn.name,
+            fn.code.handler,
+            fn.memory ?? 128,
+            fn.timeout ?? 3,
+            generateRequestId(),
+          );
 
     logger.info(lang.__('LOCAL_TIMER_FIRED', { triggerName, functionName: fn.name }));
     const result = await invokeFunction(funOptions, { ...fn.environment }, event, context);
@@ -178,13 +202,6 @@ const evaluateTimer = (
 
 export const startLocalTimers = (iac: ServerlessIac): void => {
   stopLocalTimers();
-
-  if (iac.provider.name === ProviderEnum.VOLCENGINE) {
-    if (iac.functions?.some((fn) => fn.triggers?.timer?.some((timer) => timer.enable !== false))) {
-      logger.warn(lang.__('LOCAL_VOLCENGINE_TIMER_UNSUPPORTED'));
-    }
-    return;
-  }
 
   iac.functions?.forEach((fn) => {
     fn.triggers?.timer?.forEach((timer) => {

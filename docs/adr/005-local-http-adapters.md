@@ -14,10 +14,12 @@ AWS and Huawei keep explicitly registered legacy execution behavior; those
 registrations do not establish provider-native parity.
 
 Volcengine uses the documented veFaaS event and minimal context, with exact paths
-matching the deployed gateway integration. Its string body contract supports
+matching the deployed gateway integration (`MatchType: 'Exact'` in the framework's
+`CreateRoute` request). Its string body contract supports
 UTF-8 locally and reports unsupported binary input, execution modes and invalid
-responses explicitly. The context builder can be reused when #261 repairs timer
-simulation. Until then, local Volcengine timers warn and remain unscheduled.
+responses explicitly. Local timers share the same minimal context and deliver the
+documented CloudEvents timer envelope; the local trigger name substitutes for the
+cloud timer id in `source` (issue #261).
 
 ## Alternatives considered
 

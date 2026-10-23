@@ -12,7 +12,7 @@ Code paths resolve relative to the current working directory.
 | Provider     | Local HTTP functions / API Gateway                                                                                                     | Local timers                                                                                                                              |
 | ------------ | -------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------- |
 | Aliyun       | Existing FC Buffer events, context and response translation                                                                            | Existing FC timer simulation                                                                                                              |
-| Volcengine   | `node14/v1` and `node20/v1` code directories and ZIP packages; exact API Gateway paths and configured methods, including `ANY`         | Unsupported pending [#261](https://github.com/geek-fun/serverlessinsight/issues/261); enabled timers emit a warning and are not scheduled |
+| Volcengine   | `node14/v1` and `node20/v1` code directories and ZIP packages; exact API Gateway paths and configured methods, including `ANY`         | CloudEvents timer envelope per the [provider docs](https://docs.volcengine.com/docs/vefaas/Trigger_event_message_structure?lang=zh); the trigger name substitutes for the cloud timer id in `source` |
 | Tencent      | Existing generic execution; provider-native HTTP parity is tracked in [#267](https://github.com/geek-fun/serverlessinsight/issues/267) | Existing timer simulation; provider context parity is not claimed                                                                         |
 | AWS / Huawei | Existing generic execution; native HTTP parity is not claimed                                                                          | Provider-native parity is not claimed                                                                                                     |
 
@@ -47,7 +47,10 @@ The handler receives an object with `httpMethod`, `path`, `pathParameters`,
 `queryStringParameters`, `headers` and `body`. The exact-path integration supplies
 an empty `pathParameters` map. Query values are URL-decoded strings; repeated keys
 use the last value. Headers use Node's lowercase names and merged duplicate-header
-behavior. The incoming local host is retained. `x-faas-request-id` is replaced with
+behavior — the provider's [event documentation](https://docs.volcengine.com/docs/vefaas/Trigger_event_message_structure?lang=zh)
+shows canonical casing (`X-Faas-Request-Id`, `Host`); compare header names
+case-insensitively, as the local simulator cannot recover the original wire casing.
+The incoming local host is retained. `x-faas-request-id` is replaced with
 a newly generated local UUID matching `context.requestId`.
 
 Empty requests produce `body: ''`. JSON and text remain unparsed UTF-8 strings,
@@ -77,6 +80,29 @@ body; an omitted return value also sends an empty 200 response. The adapter send
 the body verbatim and ignores fields outside the three response fields. A JSON
 body should be explicitly serialized with `JSON.stringify`; the provider response
 envelope is never nested in the HTTP body.
+
+## Volcengine veFaaS timers
+
+Enabled `functions.*.triggers.timer` schedules fire locally against UTC wall-clock
+(`@every` from server start), like the other providers. The handler receives the
+CloudEvents envelope documented by the provider:
+
+```json
+{
+  "id": "<local UUID>",
+  "source": "/faas/event/timer/<trigger-name>",
+  "specversion": "1.0",
+  "time": "2026-10-23T00:00:00.000Z",
+  "type": "faas.timer.event",
+  "datacontenttype": "application/octet-stream",
+  "data": "<configured payload, empty string by default>"
+}
+```
+
+The context is the same minimal `{ requestId }` as HTTP invocations. Known local
+differences: the local trigger name substitutes for the cloud timer id in
+`source` (the platform id does not exist locally), and `id`/`requestId` are
+independent local UUIDs — the provider docs do not document a linkage for timers.
 
 ## Local errors and limitations
 
@@ -111,4 +137,6 @@ From the repository root, run `npm run build` followed by `npm test`. The local
 contract tests exercise real workers and HTTP responses, including exceptions,
 timeouts and route mismatches. The offline CLI smoke test starts the built `si`
 command without cloud credentials and verifies GET, JSON and text requests,
-received event/context, stage variables, status, headers and response body.
+received event/context, stage variables, status, headers and response body; it
+skips itself when `dist/` is absent so a raw `npm test` without a build still
+passes.
