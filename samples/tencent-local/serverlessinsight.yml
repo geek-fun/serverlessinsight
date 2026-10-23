@@ -1,0 +1,23 @@
+version: 0.1.0
+app: local-example
+service: scf-http
+provider:
+  name: tencent
+  region: ap-guangzhou
+stages:
+  local:
+    greeting: Hello from local SCF
+functions:
+  echo:
+    name: local-scf-echo
+    code:
+      runtime: nodejs18
+      handler: index.handler
+      path: .
+    timeout: 3
+    triggers:
+      http:
+        auth_type: public
+    environment:
+      GREETING: ${stages.greeting}
+      STAGE: ${ctx.stage}

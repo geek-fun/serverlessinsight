@@ -164,6 +164,7 @@ Run and debug your serverless functions locally without deploying to the cloud.
 - **LocalStack server** — test functions, buckets, and API endpoints locally
 - **Timer triggers fire locally** — Aliyun, Tencent and Volcengine `functions.*.triggers.timer` schedules run against UTC wall-clock (`@every` from server start) and invoke your handler with the provider's timer event shape
 - **Volcengine HTTP invocation** — veFaaS Node.js events, context and response translation for the [documented local subset](docs/local-development.md), with a [runnable example](samples/volcengine-local/serverlessinsight.yml)
+- **Tencent SCF HTTP invocation** — SCF function-URL events, native context and response translation for `nodejs10`–`nodejs18` packages, with a [runnable example](samples/tencent-local/serverlessinsight.yml)
 - **Bucket file serving** — access local storage files via HTTP for rapid iteration
 - **Same config, different target** — `si local -f serverless.yml -s local` uses your existing config
 

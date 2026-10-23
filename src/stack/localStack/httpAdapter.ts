@@ -6,6 +6,8 @@ import {
   transformFCResponse,
   transformToAliyunEvent,
 } from './aliyunFc';
+import { createLegacyContext, createLegacyEnv } from './legacyLambda';
+import { scfHttpAdapter } from './tencent';
 import { volcengineHttpAdapter } from './volcengine';
 import { createLocalHttpError } from './httpError';
 
@@ -29,28 +31,19 @@ const aliyunHttpAdapter: LocalHttpAdapter = {
       : { statusCode: 200, body: result },
 };
 
-const legacyLambdaHttpAdapter: LocalHttpAdapter = {
+/**
+ * Generic execution for providers without a native local HTTP simulation.
+ * The request body is treated as an already-formed event object; this is a
+ * low-level invocation harness, not a provider-native simulation.
+ */
+const genericHttpAdapter: LocalHttpAdapter = {
   validate: () => undefined,
-  buildInvocation: async (req, _parsed, iac, fn) => {
+  buildInvocation: async (req, _parsed, iac, fn, requestId) => {
     const rawBody = await readRequestBody(req);
     return {
       event: rawBody ? JSON.parse(rawBody) : {},
-      env: {
-        ...fn.environment,
-        AWS_REGION: iac.provider.region || 'us-east-1',
-        FUNCTION_NAME: fn.name,
-        FUNCTION_MEMORY_SIZE: String(fn.memory),
-        FUNCTION_TIMEOUT: String(fn.timeout),
-      },
-      context: {
-        functionName: fn.name,
-        functionVersion: '$LATEST',
-        memoryLimitInMB: fn.memory,
-        logGroupName: `/aws/lambda/${fn.name}`,
-        logStreamName: `${new Date().toISOString().split('T')[0]}/[$LATEST]${Math.random().toString(36).substring(7)}`,
-        invokedFunctionArn: `arn:aws:lambda:${iac.provider.region}:000000000000:function:${fn.name}`,
-        awsRequestId: Math.random().toString(36).substring(2, 15),
-      },
+      env: { ...fn.environment, ...createLegacyEnv(iac, fn) },
+      context: createLegacyContext(iac, fn, requestId),
     };
   },
   transformResponse: (result) => ({ statusCode: 200, body: result }),
@@ -59,9 +52,9 @@ const legacyLambdaHttpAdapter: LocalHttpAdapter = {
 const httpAdapters: Record<ProviderEnum, LocalHttpAdapter> = {
   [ProviderEnum.ALIYUN]: aliyunHttpAdapter,
   [ProviderEnum.VOLCENGINE]: volcengineHttpAdapter,
-  [ProviderEnum.AWS]: legacyLambdaHttpAdapter,
-  [ProviderEnum.TENCENT]: legacyLambdaHttpAdapter,
-  [ProviderEnum.HUAWEI]: legacyLambdaHttpAdapter,
+  [ProviderEnum.TENCENT]: scfHttpAdapter,
+  [ProviderEnum.AWS]: genericHttpAdapter,
+  [ProviderEnum.HUAWEI]: genericHttpAdapter,
 };
 
 export const getLocalHttpAdapter = (provider: ProviderEnum): LocalHttpAdapter => {

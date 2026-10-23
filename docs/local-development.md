@@ -13,7 +13,7 @@ Code paths resolve relative to the current working directory.
 | ------------ | -------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------- |
 | Aliyun       | Existing FC Buffer events, context and response translation                                                                            | Existing FC timer simulation                                                                                                              |
 | Volcengine   | `node14/v1` and `node20/v1` code directories and ZIP packages; exact API Gateway paths and configured methods, including `ANY`         | CloudEvents timer envelope per the [provider docs](https://docs.volcengine.com/docs/vefaas/Trigger_event_message_structure?lang=zh); the trigger name substitutes for the cloud timer id in `source` |
-| Tencent      | Existing generic execution; provider-native HTTP parity is tracked in [#267](https://github.com/geek-fun/serverlessinsight/issues/267) | Existing timer simulation; provider context parity is not claimed                                                                         |
+| Tencent      | `nodejs10`–`nodejs18` code directories and ZIP packages; SCF function-URL event, context and response translation                       | Existing SCF timer event with the SCF context                                                                                             |
 | AWS / Huawei | Existing generic execution; native HTTP parity is not claimed                                                                          | Provider-native parity is not claimed                                                                                                     |
 
 ## Volcengine veFaaS HTTP
@@ -104,6 +104,81 @@ differences: the local trigger name substitutes for the cloud timer id in
 `source` (the platform id does not exist locally), and `id`/`requestId` are
 independent local UUIDs — the provider docs do not document a linkage for timers.
 
+## Tencent SCF HTTP
+
+Try the complete [example](../samples/tencent-local/serverlessinsight.yml):
+
+```sh
+cd samples/tencent-local
+si local -s local
+```
+
+In another terminal:
+
+```sh
+curl -i 'http://localhost:4567/si_functions/echo/?name=local'
+curl -i -X POST 'http://localhost:4567/si_functions/echo/echo' \
+  -H 'Content-Type: application/json' --data '{"hello":"world"}'
+```
+
+si deploys Tencent HTTP access as a **function URL**: `functions.*.triggers.http`
+creates an SCF HTTP trigger whose `TriggerDesc` carries a `NetConfig`. The local
+path simulates that contract for **event functions**, which is what a declared
+`code.runtime`/`code.handler` deploys:
+
+`/si_functions/<function-key>/<path>`
+
+The path after the function key is passed to the handler verbatim, so
+`/si_functions/echo` reaches the URL root. A Web Function — the HTTP-triggered
+function type whose URL forwards the raw HTTP request straight to an
+in-container server — is a different contract and is **not** simulated; neither
+are container functions.
+
+The handler receives an object with `body`, `headers`, `httpMethod`, `path` and
+`queryString`. This is the API-Gateway-compatible function-URL event, which
+drops the gateway-only `requestContext`, `pathParameters`,
+`queryStringParameters`, `headerParameters` and `isBase64Encoded` fields.
+Query values are URL-decoded strings; repeated keys use the last value. Headers
+use Node's lowercase names, merged duplicate-header behavior and an
+`x-scf-remote-addr` field replaced with the local client address.
+
+Empty requests produce `body: ''`. JSON and text remain unparsed UTF-8 strings,
+including Unicode and a UTF-8 BOM. Chunks are combined before decoding.
+Arbitrary binary requests with invalid UTF-8 return 415 before handler
+invocation: the subset does not invent an `isBase64Encoded` field or a cloud
+binary convention.
+
+The context carries the SCF Node.js fields — `memory_limit_in_mb`,
+`time_limit_in_ms`, `request_id`, `environment`, `environ`, `function_version`,
+`function_name`, `namespace`, `tencentcloud_region`, `tencentcloud_appid` and
+`tencentcloud_uin`. `request_id` is a hyphenated UUID matching the SCF shape;
+the account identifiers are synthetic and stable across invocations. No AWS or
+Aliyun identity fields are injected, and `getRemainingTimeInMillis()` is not
+simulated because it cannot cross the worker boundary.
+
+Handlers return a string, a JSON object, or an envelope with optional
+`statusCode`, `headers` and `body`:
+
+```js
+exports.handler = async (event, context) => ({
+  statusCode: 201,
+  headers: { 'Content-Type': 'application/json' },
+  body: JSON.stringify({ path: event.path, request: context.request_id }),
+});
+```
+
+Local response validation accepts integer statuses 200–599, string-valued
+headers and string bodies. Anything else is serialized with SCF's format
+inference: HTTP 200 and a JSON content type. An omitted return value sends an
+empty 200 response. A base64 `isBase64Encoded` response is rejected — the
+function-URL response carries no such field.
+
+Tencent `events: API_GATEWAY` declarations are **not** served locally and
+return 501: si does not deploy a Tencent API Gateway, so there is no
+provider-native event to simulate. Use the function URL path above instead.
+The same applies to runtimes outside `nodejs10`–`nodejs18`, including the
+`Nodejs18.15`-style identifiers the deploy-time runtime mapper produces.
+
 ## Local errors and limitations
 
 | Condition                                                                                        | Local behavior                                                                          |
@@ -116,6 +191,8 @@ independent local UUIDs — the provider docs do not document a linkage for time
 | Invalid UTF-8 request body                                                                       | HTTP 415                                                                                |
 | Invalid response envelope, header or binary response                                             | HTTP 502                                                                                |
 | Volcengine container, native runtime, `nodeprime14/v1`, other language or non-API event endpoint | HTTP 501 with a limitation message                                                      |
+| Tencent container, Web Function, non-Node runtime or API Gateway event                           | HTTP 501 with a limitation message                                                      |
+| Tencent base64 `isBase64Encoded` response                                                        | HTTP 501 with a limitation message                                                      |
 
 These HTTP error statuses describe the local simulator, not guaranteed cloud error
 responses. The invocation deadline includes worker startup and module loading.
@@ -126,18 +203,23 @@ provider-assigned deployment identifiers. Handler-loader CommonJS/ESM behavior
 remains shared with other local providers. Container/native HTTP servers and
 non-HTTP event sources are outside this implementation.
 
-The contract follows the provider's [Node.js development contract](https://docs.volcengine.com/docs/vefaas/Node_js_runtime_Development_methods?lang=en)
+The veFaaS contract follows the provider's [Node.js development contract](https://docs.volcengine.com/docs/vefaas/Node_js_runtime_Development_methods?lang=en)
 and [API Gateway event structure](https://docs.volcengine.com/docs/vefaas/Trigger_event_message_structure?lang=zh),
-with the explicitly limited UTF-8 subset above. Automated tests verify local
+with the explicitly limited UTF-8 subset above. The SCF contract follows
+[Tencent's function URL overview](https://intl.cloud.tencent.com/document/product/583/69491),
+[SCF context fields](https://intl.cloud.tencent.com/document/product/583/9694?lang=en)
+and [API Gateway integration request/response](https://www.tencentcloud.com/document/product/583/12513)
+structures, reduced to the function-URL subset. Automated tests verify local
 behavior offline; live-cloud parity has not been verified.
 
 ## Verification
 
 From the repository root, run `npm test`. The local contract tests exercise real
 workers and HTTP responses, including exceptions, timeouts and route mismatches.
-The offline CLI smoke test starts the built `si` command without cloud
-credentials and verifies GET, JSON and text requests, received event/context,
-stage variables, status, headers and response body.
+The offline CLI smoke tests start the built `si` command without cloud
+credentials and verify GET, JSON and text requests, received event/context
+fields, stage variables, status, headers and response body for both the veFaaS
+and the SCF contract.
 
 Because the worker thread and the CLI smoke tests execute compiled output, the
 jest `globalSetup` (`tests/autils/ensureBuild.ts`) runs the incremental

@@ -1,20 +1,12 @@
-import { IncomingMessage, validateHeaderName, validateHeaderValue } from 'node:http';
-import { TextDecoder } from 'node:util';
-import { buffer } from 'node:stream/consumers';
+import { validateHeaderName, validateHeaderValue } from 'node:http';
+import { ProviderEnum } from '../../common/providerEnum';
 import { lang } from '../../lang';
 import { LocalHttpAdapter } from '../../types/localStack';
 import { createLocalHttpError } from './httpError';
+import { isLocalNodeRuntime } from './localRuntimes';
+import { readUtf8Body } from './requestBody';
 
 export const createVolcengineContext = (requestId: string) => ({ requestId });
-
-const readUtf8Body = async (req: IncomingMessage): Promise<string> => {
-  const body = await buffer(req);
-  try {
-    return new TextDecoder('utf-8', { fatal: true, ignoreBOM: true }).decode(body);
-  } catch {
-    throw createLocalHttpError(415, lang.__('LOCAL_VOLCENGINE_BINARY_UNSUPPORTED'));
-  }
-};
 
 const invalidResponse = (): never => {
   throw createLocalHttpError(502, lang.__('LOCAL_VOLCENGINE_INVALID_RESPONSE'));
@@ -22,7 +14,7 @@ const invalidResponse = (): never => {
 
 export const volcengineHttpAdapter: LocalHttpAdapter = {
   validate: (fn) => {
-    if (fn.container || !fn.code || !['node14/v1', 'node20/v1'].includes(fn.code.runtime)) {
+    if (fn.container || !fn.code || !isLocalNodeRuntime(ProviderEnum.VOLCENGINE, fn.code.runtime)) {
       throw createLocalHttpError(
         501,
         lang.__('LOCAL_VOLCENGINE_MODE_UNSUPPORTED', { functionName: fn.name }),
@@ -36,7 +28,7 @@ export const volcengineHttpAdapter: LocalHttpAdapter = {
       pathParameters: {},
       queryStringParameters: parsed.query,
       headers: { ...req.headers, 'x-faas-request-id': requestId },
-      body: await readUtf8Body(req),
+      body: await readUtf8Body(req, 'LOCAL_VOLCENGINE_BINARY_UNSUPPORTED'),
     },
     context: createVolcengineContext(requestId),
     env: { ...fn.environment },

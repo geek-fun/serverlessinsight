@@ -75,7 +75,7 @@ describe('eventsHandler', () => {
     const customIac: ServerlessIac = {
       version: '0.0.1',
       app: 'test-app',
-      provider: { name: ProviderEnum.TENCENT, region: 'ap-guangzhou' },
+      provider: { name: ProviderEnum.ALIYUN, region: 'ap-guangzhou' },
       service: 'test-service',
       functions: [
         {
@@ -168,7 +168,7 @@ describe('eventsHandler', () => {
     expect(res?.body).toMatchObject({ error: 'Backend definition missing' });
   });
 
-  it('uses non-Aliyun path for tencent provider', async () => {
+  it('reports Tencent API Gateway events as unsupported instead of simulating a gateway', async () => {
     const customIac: ServerlessIac = {
       version: '0.0.1',
       app: 'test-app',
@@ -204,7 +204,8 @@ describe('eventsHandler', () => {
       customIac,
     );
 
-    expect(res?.statusCode).toBe(200);
+    expect(res?.statusCode).toBe(501);
+    expect(res?.body).toMatchObject({ error: expect.stringContaining('function URL') });
   });
 
   it('handles Aliyun function with directory code path', async () => {
@@ -289,7 +290,7 @@ describe('eventsHandler', () => {
     const customIac: ServerlessIac = {
       version: '0.0.1',
       app: 'test-app',
-      provider: { name: ProviderEnum.TENCENT, region: 'ap-guangzhou' },
+      provider: { name: ProviderEnum.ALIYUN, region: 'ap-guangzhou' },
       service: 'test-service',
       functions: [
         {
@@ -328,7 +329,7 @@ describe('eventsHandler', () => {
     const customIac: ServerlessIac = {
       version: '0.0.1',
       app: 'test-app',
-      provider: { name: ProviderEnum.TENCENT, region: 'ap-guangzhou' },
+      provider: { name: ProviderEnum.ALIYUN, region: 'ap-guangzhou' },
       service: 'test-service',
       functions: [
         {

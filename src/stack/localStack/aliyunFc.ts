@@ -1,4 +1,3 @@
-import { randomUUID } from 'crypto';
 import { IncomingMessage } from 'http';
 import { readRequestBody } from '../../common';
 import { ServerlessIac } from '../../types';
@@ -226,9 +225,4 @@ const formatDateTime = (date: Date): string => {
   const minutes = String(date.getMinutes()).padStart(2, '0');
   const seconds = String(date.getSeconds()).padStart(2, '0');
   return `${year}-${month}-${day} ${hours}:${minutes}:${seconds}`;
-};
-
-export const generateRequestId = (preserveHyphens = false): string => {
-  const requestId = randomUUID();
-  return preserveHyphens ? requestId : requestId.replace(/-/g, '');
 };

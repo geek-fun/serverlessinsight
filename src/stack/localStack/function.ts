@@ -3,9 +3,9 @@ import fs from 'node:fs';
 import { inspect } from 'node:util';
 import { ServerlessIac } from '../../types';
 import { FunctionOptions, ParsedRequest, RouteResponse } from '../../types/localStack';
-import { logger, ProviderEnum } from '../../common';
+import { logger } from '../../common';
 import { invokeFunction } from './functionRunner';
-import { generateRequestId } from './aliyunFc';
+import { generateProviderRequestId } from './requestId';
 import { getLocalHttpAdapter } from './httpAdapter';
 import { resolveCodeDir } from './utils';
 import { lang } from '../../lang';
@@ -14,7 +14,7 @@ export const functionsHandler = async (
   req: IncomingMessage,
   parsed: ParsedRequest,
   iac: ServerlessIac,
-  requestId = generateRequestId(iac.provider.name === ProviderEnum.VOLCENGINE),
+  requestId = generateProviderRequestId(iac.provider.name),
 ): Promise<RouteResponse> => {
   logger.info(
     lang.__('FUNCTION_REQUEST_RECEIVED', {

@@ -5,7 +5,6 @@ import {
   addFCHeaders,
   transformFCResponse,
   logApiGatewayRequest,
-  generateRequestId,
 } from '../../../../src/stack/localStack/aliyunFc';
 import { IncomingMessage } from 'http';
 import { Readable } from 'stream';
@@ -22,21 +21,6 @@ describe('Aliyun FC Utilities', () => {
       region: 'cn-shanghai',
     },
   };
-
-  describe('generateRequestId', () => {
-    it('should generate a UUID without hyphens', () => {
-      const id = generateRequestId();
-      expect(id).toBeDefined();
-      expect(id).toMatch(/^[a-f0-9]{32}$/);
-      expect(id).not.toContain('-');
-    });
-
-    it('should generate unique IDs', () => {
-      const id1 = generateRequestId();
-      const id2 = generateRequestId();
-      expect(id1).not.toBe(id2);
-    });
-  });
 
   describe('transformToAliyunEvent', () => {
     const mockRequest = (method = 'GET', body = ''): IncomingMessage => {
