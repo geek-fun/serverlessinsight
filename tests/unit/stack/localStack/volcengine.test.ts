@@ -255,6 +255,42 @@ describe('veFaaS HTTP invocation contract', () => {
     ).toBe(404);
   });
 
+  it.each(['/echo/*', '/[param]', '/echo/[id]'])(
+    'treats wildcard/parameter syntax %s as a literal exact path',
+    async (path) => {
+      const literalPathIac = {
+        ...iac,
+        events: [
+          {
+            ...iac.events![0],
+            triggers: [{ method: 'ANY', path, backend: '${functions.echo}' }],
+          },
+        ],
+      };
+      // the configured path matches itself byte-for-byte (MatchType Exact)
+      expect(
+        (
+          await eventsHandler(
+            request(),
+            { ...parsed, identifier: 'api', url: path },
+            literalPathIac,
+          )
+        )?.statusCode,
+      ).toBe(207);
+      // a path that wildcard/parameter semantics would have matched does not
+      expect(
+        (
+          await eventsHandler(
+            request(),
+            { ...parsed, identifier: 'api', url: '/echo/value' },
+            literalPathIac,
+          )
+        )?.statusCode,
+      ).toBe(404);
+      expect(mockInvoke).toHaveBeenCalledTimes(1);
+    },
+  );
+
   it('rejects other event trigger modes explicitly', async () => {
     const other = { ...iac, events: [{ ...iac.events![0], type: 'OTHER' as EventTypes }] };
     expect(

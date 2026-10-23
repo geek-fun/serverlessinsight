@@ -1337,8 +1337,6 @@ export const en = {
     'Local veFaaS HTTP invocation supports UTF-8 request bodies only. Binary bodies containing invalid UTF-8 are not simulated; no base64 event contract is assumed.',
   LOCAL_VOLCENGINE_INVALID_RESPONSE:
     'Invalid local veFaaS response: return an object with an optional integer statusCode (200-599), string-valued headers and a string body. Binary responses are not simulated.',
-  LOCAL_VOLCENGINE_TIMER_UNSUPPORTED:
-    'Local veFaaS timer simulation is not supported yet (issue #261); enabled timer triggers will not run.',
   LOCAL_VOLCENGINE_TRIGGER_UNSUPPORTED:
     'Local veFaaS event endpoints support API_GATEWAY triggers only.',
   LOCAL_PORT_CLOSED: 'Port closed before receiving response',

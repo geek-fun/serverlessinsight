@@ -5,7 +5,7 @@ import {
 } from '../../../../src/stack/localStack/timer';
 import { invokeFunction } from '../../../../src/stack/localStack/functionRunner';
 import { parseSiCron } from '../../../../src/common/siCron';
-import { ProviderEnum, logger } from '../../../../src/common';
+import { ProviderEnum } from '../../../../src/common';
 import { ServerlessIac } from '../../../../src/types';
 
 jest.mock('../../../../src/stack/localStack/functionRunner', () => ({
@@ -276,7 +276,7 @@ describe('localStack timer simulation (issue #258)', () => {
   });
 });
 
-describe('veFaaS timer support boundary (issue #261)', () => {
+describe('veFaaS timer simulation (issue #261)', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     jest.useFakeTimers();
@@ -286,22 +286,72 @@ describe('veFaaS timer support boundary (issue #261)', () => {
     jest.useRealTimers();
   });
 
-  it('warns and never invokes a veFaaS timer using another provider contract', async () => {
-    startLocalTimers({
+  const buildVolcengineIac = (timer: Record<string, unknown>): ServerlessIac =>
+    ({
       provider: { name: ProviderEnum.VOLCENGINE },
-      functions: [{ triggers: { timer: [{ name: 'tick', cron: '@every 1s', enable: true }] } }],
-    } as ServerlessIac);
-    await jest.advanceTimersByTimeAsync(2000);
-    expect(logger.warn).toHaveBeenCalledWith('LOCAL_VOLCENGINE_TIMER_UNSUPPORTED');
-    expect(mockedInvokeFunction).not.toHaveBeenCalled();
-    expect(jest.getTimerCount()).toBe(0);
+      functions: [
+        {
+          key: 'fn',
+          name: 'fn-name',
+          code: { runtime: 'node20/v1', handler: 'index.handler', path: '/code/dir' },
+          triggers: { timer: [timer] },
+        },
+      ],
+    }) as unknown as ServerlessIac;
+
+  it('fires veFaaS timers with the documented CloudEvents envelope and context', async () => {
+    startLocalTimers(
+      buildVolcengineIac({
+        name: 'billing-run',
+        cron: '@every 1s',
+        payload: '{"job":"billing-run"}',
+      }),
+    );
+
+    await jest.advanceTimersByTimeAsync(1500);
+
+    expect(mockedInvokeFunction).toHaveBeenCalledTimes(1);
+    const [funOptions, env, event, context] = mockedInvokeFunction.mock.calls[0];
+    expect(funOptions).toMatchObject({ functionKey: 'fn', handler: 'index.handler' });
+    expect(env).toEqual({});
+    // CloudEvents shape per the veFaaS trigger event documentation; the
+    // trigger name substitutes for the cloud timer id in `source`.
+    expect(event).toEqual({
+      id: expect.any(String),
+      source: '/faas/event/timer/billing-run',
+      specversion: '1.0',
+      time: expect.any(String),
+      type: 'faas.timer.event',
+      datacontenttype: 'application/octet-stream',
+      data: '{"job":"billing-run"}',
+    });
+    // minimal veFaaS context — no Aliyun service/tracing/credentials fields
+    expect(context).toEqual({ requestId: expect.any(String) });
+    expect(Object.keys(context)).toEqual(['requestId']);
   });
 
-  it.each([undefined, [], [{ triggers: { timer: [{ enable: false }] } }], [{}]])(
-    'does not warn when there are no enabled veFaaS timers: %p',
-    (functions) => {
-      startLocalTimers({ provider: { name: ProviderEnum.VOLCENGINE }, functions } as ServerlessIac);
-      expect(logger.warn).not.toHaveBeenCalled();
-    },
-  );
+  it('defaults the veFaaS timer payload to an empty string', async () => {
+    startLocalTimers(buildVolcengineIac({ name: 'tick', cron: '@every 1s' }));
+
+    await jest.advanceTimersByTimeAsync(1500);
+
+    expect((mockedInvokeFunction.mock.calls[0][2] as { data: string }).data).toBe('');
+  });
+
+  it('schedules veFaaS timers like other providers and stops cleanly', async () => {
+    startLocalTimers(buildVolcengineIac({ name: 'tick', cron: '@every 1s', enable: true }));
+    expect(jest.getTimerCount()).toBe(1);
+
+    stopLocalTimers();
+    await jest.advanceTimersByTimeAsync(3000);
+    expect(mockedInvokeFunction).not.toHaveBeenCalled();
+  });
+
+  it('skips disabled veFaaS timers without scheduling', async () => {
+    startLocalTimers(buildVolcengineIac({ name: 'off', cron: '@every 1s', enable: false }));
+
+    expect(jest.getTimerCount()).toBe(0);
+    await jest.advanceTimersByTimeAsync(2000);
+    expect(mockedInvokeFunction).not.toHaveBeenCalled();
+  });
 });

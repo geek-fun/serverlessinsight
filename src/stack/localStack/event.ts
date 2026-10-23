@@ -7,12 +7,26 @@ import { functionsHandler } from './function';
 import { generateRequestId, logApiGatewayRequest } from './aliyunFc';
 import { lang } from '../../lang';
 
+/**
+ * Route matching shared by every provider; the `exact` mode mirrors how the
+ * provider actually deploys the route:
+ * - Aliyun: gateway routes support `[param]` segments and a trailing `*`
+ *   prefix wildcard, so paths are compared segment-wise after trimming
+ *   slashes.
+ * - Volcengine: si creates API Gateway routes with `MatchType: 'Exact'`
+ *   (see `createRoute` in volcengineClient/apigwOperations.ts), so the path
+ *   is compared byte-for-byte and `[param]` / `*` carry no wildcard meaning.
+ */
 const matchTrigger = (
   req: { method: string; path: string },
   trigger: { method: string; path: string },
+  options: { exact: boolean } = { exact: false },
 ): boolean => {
   if (trigger.method !== 'ANY' && req.method !== trigger.method) {
     return false;
+  }
+  if (options.exact) {
+    return trigger.path === req.path;
   }
 
   const normalize = (s: string) => s.replace(/^\/+|\/+$/g, '');
@@ -72,10 +86,9 @@ const servEvent = async (
     }),
   );
   const matchedTrigger = event.triggers.find((trigger) =>
-    iac.provider.name === ProviderEnum.VOLCENGINE
-      ? (trigger.method === 'ANY' || trigger.method === parsed.method) &&
-        trigger.path === parsed.url
-      : matchTrigger({ method: parsed.method, path: parsed.url }, trigger),
+    matchTrigger({ method: parsed.method, path: parsed.url }, trigger, {
+      exact: iac.provider.name === ProviderEnum.VOLCENGINE,
+    }),
   );
 
   if (!matchedTrigger) {
