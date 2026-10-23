@@ -6,7 +6,8 @@ import path from 'node:path';
 import { existsSync } from 'node:fs';
 import { runLocal } from '../../src/commands/local';
 import { getContext, ProviderEnum, SI_LOCALSTACK_SERVER_PORT } from '../../src/common';
-import { stopLocal } from '../../src/stack/localStack';
+import { startLocalStack, stopLocal } from '../../src/stack/localStack';
+import { EventTypes, ServerlessIac } from '../../src/types';
 
 const repoRoot = path.resolve(__dirname, '../..');
 const fixture = path.join(repoRoot, 'tests/fixtures/volcengine-local/serverlessinsight.yml');
@@ -157,6 +158,62 @@ describe('local command initialization and live veFaaS HTTP contract', () => {
     expect((await request(SI_LOCALSTACK_SERVER_PORT, '/si_functions/invalid')).status).toBe(502);
   });
 });
+
+describe.each([ProviderEnum.ALIYUN, ProviderEnum.VOLCENGINE])(
+  '%s response metadata through real workers',
+  (provider) => {
+    beforeAll(async () => {
+      const iac: ServerlessIac = {
+        version: '0.1.0',
+        app: 'local-response-logging',
+        service: 'contract',
+        provider: { name: provider, region: 'cn-beijing' },
+        functions: [
+          {
+            key: 'metadata',
+            name: 'local-response-metadata',
+            storage: {},
+            code: {
+              runtime: provider === ProviderEnum.ALIYUN ? 'nodejs18' : 'node20/v1',
+              handler: 'index.metadata',
+              path: 'tests/fixtures/volcengine-local',
+            },
+          },
+        ],
+        events: [
+          {
+            key: 'api',
+            name: 'local-metadata-api',
+            type: EventTypes.API_GATEWAY,
+            triggers: ['/bigint', '/circular'].map((path) => ({
+              method: 'GET',
+              path,
+              backend: '${functions.metadata}',
+            })),
+          },
+        ],
+      };
+      await startLocalStack(iac);
+    });
+    afterAll(async () => {
+      await stopLocal();
+    });
+
+    it.each([
+      '/si_functions/metadata/bigint',
+      '/si_functions/metadata/circular',
+      '/si_events/api/bigint',
+      '/si_events/api/circular',
+    ])('preserves a valid response with non-JSON metadata at %s', async (url) => {
+      const response = await request(SI_LOCALSTACK_SERVER_PORT, url);
+      expect(response).toMatchObject({
+        status: 201,
+        headers: { 'content-type': 'text/plain', 'x-local-metadata': 'preserved' },
+        body: 'ok',
+      });
+    });
+  },
+);
 
 /**
  * This suite spawns the built CLI (dist/) — CI builds before testing; skipped
