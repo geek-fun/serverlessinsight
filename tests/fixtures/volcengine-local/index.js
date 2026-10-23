@@ -19,3 +19,14 @@ exports.block = () => {
 };
 exports.empty = async () => undefined;
 exports.invalid = async () => ({ statusCode: 201, body: { invalid: true } });
+exports.metadata = async (event) => {
+  const request = Buffer.isBuffer(event) ? JSON.parse(event.toString()) : event;
+  const internal = request.path.endsWith('/bigint') ? 1n : {};
+  if (typeof internal === 'object') internal.self = internal;
+  return {
+    statusCode: 201,
+    headers: { 'content-type': 'text/plain', 'x-local-metadata': 'preserved' },
+    body: 'ok',
+    internal,
+  };
+};

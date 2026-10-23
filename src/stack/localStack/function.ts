@@ -1,5 +1,6 @@
 import { IncomingMessage } from 'http';
 import fs from 'node:fs';
+import { inspect } from 'node:util';
 import { ServerlessIac } from '../../types';
 import { FunctionOptions, ParsedRequest, RouteResponse } from '../../types/localStack';
 import { logger, ProviderEnum } from '../../common';
@@ -68,7 +69,7 @@ export const functionsHandler = async (
     logger.debug(lang.__('WORKER_CODE_DIR', { codeDir, handler: funOptions.handler }));
 
     const result = await invokeFunction(funOptions, env, event, context);
-    logger.info(lang.__('FUNCTION_EXECUTION_RESULT', { result: JSON.stringify(result) }));
+    logger.info(lang.__('FUNCTION_EXECUTION_RESULT', { result: inspect(result) }));
     return adapter.transformResponse(result, parsed.kind);
   } catch (error) {
     logger.error(lang.__('FUNCTION_EXECUTION_ERROR', { error: String(error) }));
