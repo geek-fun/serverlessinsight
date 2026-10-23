@@ -133,10 +133,13 @@ behavior offline; live-cloud parity has not been verified.
 
 ## Verification
 
-From the repository root, run `npm run build` followed by `npm test`. The local
-contract tests exercise real workers and HTTP responses, including exceptions,
-timeouts and route mismatches. The offline CLI smoke test starts the built `si`
-command without cloud credentials and verifies GET, JSON and text requests,
-received event/context, stage variables, status, headers and response body; it
-skips itself when `dist/` is absent so a raw `npm test` without a build still
-passes.
+From the repository root, run `npm test`. The local contract tests exercise real
+workers and HTTP responses, including exceptions, timeouts and route mismatches.
+The offline CLI smoke test starts the built `si` command without cloud
+credentials and verifies GET, JSON and text requests, received event/context,
+stage variables, status, headers and response body.
+
+Because the worker thread and the CLI smoke tests execute compiled output, the
+jest `globalSetup` (`tests/autils/ensureBuild.ts`) runs the incremental
+`tsc --build` before the suite — about 0.1 s once the output is current, so a
+bare `npm test` works in a clean checkout without ever testing stale output.

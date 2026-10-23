@@ -2,6 +2,10 @@
 module.exports = {
   preset: 'ts-jest',
   testEnvironment: 'node',
+  // Keep the compiled output the localStack worker and CLI smoke tests execute
+  // fresh, so a bare `npm test` works in a clean checkout (incremental: ~0.1s
+  // once up to date).
+  globalSetup: '<rootDir>/tests/autils/ensureBuild.ts',
   testTimeout: process.env.TEST_TYPE === 'service' ? 60000 : 30000,
   testPathIgnorePatterns: ['/node_modules/', '/dist/'],
   modulePathIgnorePatterns: ['/dist/'],

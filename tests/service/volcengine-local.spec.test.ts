@@ -3,7 +3,6 @@ import { once } from 'node:events';
 import http from 'node:http';
 import net from 'node:net';
 import path from 'node:path';
-import { existsSync } from 'node:fs';
 import { runLocal } from '../../src/commands/local';
 import { getContext, ProviderEnum, SI_LOCALSTACK_SERVER_PORT } from '../../src/common';
 import { startLocalStack, stopLocal } from '../../src/stack/localStack';
@@ -216,11 +215,10 @@ describe.each([ProviderEnum.ALIYUN, ProviderEnum.VOLCENGINE])(
 );
 
 /**
- * This suite spawns the built CLI (dist/) — CI builds before testing; skipped
- * when dist is absent so a raw `npm test` without a build still passes (same
- * convention as cli-agent-surface.spec.test.ts).
+ * Spawns the built CLI (dist/), which the jest globalSetup builds on demand so
+ * this suite runs on a bare `npm test` as well as after an explicit build.
  */
-(existsSync(cli) ? describe : describe.skip)('offline si local CLI smoke test', () => {
+describe('offline si local CLI smoke test', () => {
   let child: ChildProcess | undefined;
   let port: number;
   let output = '';
