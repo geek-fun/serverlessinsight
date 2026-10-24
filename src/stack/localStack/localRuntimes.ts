@@ -1,4 +1,4 @@
-import { ProviderEnum } from '../../common/providerEnum';
+import { ProviderEnum } from '../../common';
 
 /**
  * Runtimes the shared local worker can actually execute, keyed by provider.

@@ -1,5 +1,5 @@
 import { validateHeaderName, validateHeaderValue } from 'node:http';
-import { ProviderEnum } from '../../common/providerEnum';
+import { ProviderEnum } from '../../common';
 import { lang } from '../../lang';
 import { LocalHttpAdapter } from '../../types/localStack';
 import { createLocalHttpError } from './httpError';

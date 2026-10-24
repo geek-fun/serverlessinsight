@@ -1,4 +1,4 @@
-import { ProviderEnum } from '../../common/providerEnum';
+import { ProviderEnum } from '../../common';
 import { FunctionDomain, ServerlessIac } from '../../types';
 import { createAliyunContextSerializable } from './aliyunFc';
 import { createLegacyContext } from './legacyLambda';
