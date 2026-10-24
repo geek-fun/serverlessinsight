@@ -7,6 +7,40 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.9.3] - 2026-10-24
+
+### Added
+
+- `si local` now invokes veFaaS functions with a veFaaS-native HTTP event and fires
+  `triggers.timer` schedules locally with the documented CloudEvents timer envelope,
+  so veFaaS HTTP- and timer-driven handlers can be debugged without deploying
+  ([#268](https://github.com/geek-fun/serverlessinsight/issues/268),
+  [#261](https://github.com/geek-fun/serverlessinsight/issues/261)).
+- `si local` runs Tencent SCF functions with an SCF-native invocation context and
+  simulates the HTTP trigger contract si deploys (function URL delivering an
+  API-Gateway-compatible event), instead of falling back to a generic non-Aliyun
+  shape; unsupported contracts are reported clearly rather than silently substituted
+  ([#267](https://github.com/geek-fun/serverlessinsight/issues/267)).
+- Plans now enforce lifecycle ownership for what si created: removing a bucket `iam`
+  policy, a bucket domain, a function HTTP trigger or custom domain, or
+  `triggers.timer` from the YAML deletes the corresponding cloud resources (and their
+  recorded dependents) on the next deploy instead of silently retaining them, and the
+  removals show up in the plan before/after
+  ([#264](https://github.com/geek-fun/serverlessinsight/issues/264)).
+
+### Fixed
+
+- `si plan` and `si diff` now work for Volcengine stacks.
+- Deployment diffs now reflect changes made to managed resources directly in the
+  cloud, restore documented defaults on update, and repair drifted dependents
+  ([#264](https://github.com/geek-fun/serverlessinsight/issues/264)).
+- veFaaS functions with `logEnabled` or HTTP/domain triggers no longer crash during
+  planning.
+- Bucket planning no longer fails when the account lacks permission to read ACL or
+  CORS settings: those optional sub-config values are treated as absent, while
+  identity and existence checks remain strict.
+- `si local` no longer fails on non-JSON response metadata in function logs.
+
 ## [0.9.2] - 2026-10-05
 
 ### ⚠️ Breaking change
