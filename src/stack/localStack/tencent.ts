@@ -1,5 +1,5 @@
 import { IncomingMessage, validateHeaderName, validateHeaderValue } from 'node:http';
-import { ProviderEnum } from '../../common/providerEnum';
+import { ProviderEnum } from '../../common';
 import { lang } from '../../lang';
 import { FunctionDomain, ServerlessIac } from '../../types';
 import {

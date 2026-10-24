@@ -1,4 +1,4 @@
-import { ProviderEnum } from '../../common/providerEnum';
+import { ProviderEnum } from '../../common';
 
 /**
  * Providers whose local HTTP routes keep the request path verbatim, including
