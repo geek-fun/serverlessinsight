@@ -10,23 +10,36 @@ import { zhCN } from './zh-CN';
 const mustache = require('mustache');
 mustache.escape = (text: string) => text;
 
-const getSystemLanguage = (defaultLang: 'zh-CN' | 'en-US'): string => {
-  const langMatch = (process.env.LANG || process.env.LC_ALL || '').match(
-    /([a-z]{2})[-_]?([A-Z]{2})?/,
-  );
-  if (langMatch) {
-    return langMatch[0].replace('_', '-');
-  }
+type SiLocale = 'en-US' | 'zh-CN';
 
-  try {
-    const codePageOutput = execSync('chcp').toString();
-    const codePageMatch = codePageOutput.match(/(\d+)\s*$/m);
-    if (codePageMatch) {
-      const codePage = parseInt(codePageMatch[1]);
-      return codePage === 936 ? 'zh-CN' : 'en-US';
+const normalizeLocale = (value: string | undefined): SiLocale | null => {
+  if (!value) return null;
+  const normalized = value.trim().toLowerCase();
+  if (normalized.startsWith('zh')) return 'zh-CN';
+  if (normalized.startsWith('en')) return 'en-US';
+  return null;
+};
+
+const getSystemLanguage = (defaultLang: SiLocale): string => {
+  const override = normalizeLocale(process.env.SI_LANG);
+  if (override) return override;
+
+  const envLocale = [process.env.LC_ALL, process.env.LANG].reduce<SiLocale | null>(
+    (found, value) => found ?? normalizeLocale(value),
+    null,
+  );
+  if (envLocale) return envLocale;
+
+  if (process.platform === 'win32') {
+    try {
+      const codePageOutput = execSync('chcp').toString();
+      const codePageMatch = codePageOutput.match(/(\d+)\s*$/m);
+      if (codePageMatch) {
+        return parseInt(codePageMatch[1]) === 936 ? 'zh-CN' : 'en-US';
+      }
+    } catch {
+      // ignore
     }
-  } catch {
-    // ignore
   }
 
   return defaultLang;
@@ -89,4 +102,4 @@ export const lookupErrorCode = (message: string | undefined): string | undefined
   return templateIndex.find((template) => matchTemplate(message, template.segments))?.key;
 };
 
-export { lang };
+export { lang, getSystemLanguage };
