@@ -63,7 +63,10 @@ const executeSingleItem = async (
         serviceName,
         resolveRoleArn,
         currentState,
-        { repairDomain: item.driftReasons?.includes('PLAN_DRIFT_EVENT_DOMAIN') },
+        {
+          repairDomain: item.driftReasons?.includes('PLAN_DRIFT_EVENT_DOMAIN'),
+          scope: item.gatewayUpdate,
+        },
       );
       logger.info(
         lang.__('RESOURCE_UPDATED', { resourceType: 'API Gateway resources', name: event.name }),

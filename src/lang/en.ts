@@ -3,6 +3,7 @@ export const en = {
   PLAN_NAS_NETWORK_REQUIRED:
     'NAS storage on {{logicalId}} needs a declared VPC network or recorded mount targets. Planning stopped before creating any resources.',
   APIGW_DOMAIN_READ_INVALID: 'Invalid domain response for: {{domainId}}',
+  APIGW_DOMAIN_CERTIFICATE_UPDATED: 'Updated gateway certificate for domain: {{domain}}',
   PLAN_DRIFT_EVENT_DOMAIN:
     'Gateway domain or certificate differs from the requested configuration or is missing',
   PLAN_DRIFT_HTTP_TRIGGER: 'HTTP trigger differs from the requested configuration or is missing',

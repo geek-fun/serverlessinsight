@@ -100,6 +100,19 @@ export type PersistedStateFile = Omit<StateFile, 'resources'>;
 
 export type PlanAction = 'create' | 'update' | 'delete' | 'noop';
 
+export type GatewayDomainUpdate = {
+  exists: boolean;
+  binding: boolean;
+  certificate: boolean;
+};
+
+export type GatewayUpdateScope = {
+  group: boolean;
+  apis: boolean;
+  logging: boolean;
+  domains: Record<string, GatewayDomainUpdate>;
+};
+
 export type PlanItem = {
   logicalId: string;
   action: PlanAction;
@@ -110,6 +123,8 @@ export type PlanItem = {
   };
   /** No cloud mutation: adopt verified live values into saved intent. */
   stateUpdate?: ResourceAttributes;
+  /** Verified gateway dimensions requiring mutation; absent means a full reconciliation. */
+  gatewayUpdate?: GatewayUpdateScope;
   drifted?: boolean;
   /**
    * Top-level keys whose stored value already matches the desired definition
