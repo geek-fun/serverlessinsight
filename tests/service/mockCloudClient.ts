@@ -18,6 +18,11 @@ export type MockAliyunClient = {
     deleteCustomDomain: jest.Mock;
   };
   apigw: {
+    getDomain: jest.Mock;
+    setDomainCertificate: jest.Mock;
+    deleteDomainCertificate: jest.Mock;
+    updateApiGroup: jest.Mock;
+    updateApi: jest.Mock;
     createApiGroup: jest.Mock;
     getApiGroup: jest.Mock;
     findApiGroupByName: jest.Mock;
@@ -171,6 +176,11 @@ export const createMockAliyunClient = (): MockAliyunClient => {
       deleteCustomDomain: jest.fn().mockResolvedValue({}),
     },
     apigw: {
+      getDomain: jest.fn().mockResolvedValue(undefined),
+      setDomainCertificate: jest.fn().mockResolvedValue(undefined),
+      deleteDomainCertificate: jest.fn().mockResolvedValue(undefined),
+      updateApiGroup: jest.fn().mockResolvedValue(undefined),
+      updateApi: jest.fn().mockResolvedValue(undefined),
       createApiGroup: jest.fn().mockResolvedValue({ body: { groupId: 'group-123' } }),
       getApiGroup: jest
         .fn()

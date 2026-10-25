@@ -23,6 +23,7 @@ const mockDeployApi = jest.fn();
 const mockAbolishApi = jest.fn();
 const mockSetDomain = jest.fn();
 const mockSetDomainCertificate = jest.fn();
+const mockDeleteDomainCertificate = jest.fn();
 const mockDeleteDomain = jest.fn();
 const mockListTagResources = jest.fn();
 const mockCreateLogConfig = jest.fn();
@@ -43,6 +44,7 @@ const mockApigwClient = {
   abolishApi: mockAbolishApi,
   setDomain: mockSetDomain,
   setDomainCertificate: mockSetDomainCertificate,
+  deleteDomainCertificate: mockDeleteDomainCertificate,
   deleteDomain: mockDeleteDomain,
   listTagResources: mockListTagResources,
   createLogConfig: mockCreateLogConfig,
@@ -1790,5 +1792,93 @@ describe('apigwOperations', () => {
     const error = new Error('AccessDenied');
     mockDescribeDomain.mockRejectedValueOnce(error);
     await expect(operations.getDomain('group-1', 'example.com')).rejects.toBe(error);
+  });
+
+  it.each([undefined, ''])(
+    'preserves unavailable certificate contents when a binding has a certificate ID: %s',
+    async (certificateBody) => {
+      mockDescribeDomain.mockResolvedValueOnce({
+        body: { domainName: 'example.com', certificateId: 'gateway-cert', certificateBody },
+      });
+      expect(await operations.getDomain('group-1', 'example.com')).toEqual({
+        domainName: 'example.com',
+        certificateBody: undefined,
+      });
+    },
+  );
+
+  it('represents a known binding without a certificate as null', async () => {
+    mockDescribeDomain.mockResolvedValueOnce({ body: { domainName: 'example.com' } });
+    expect(await operations.getDomain('group-1', 'example.com')).toEqual({
+      domainName: 'example.com',
+      certificateBody: null,
+    });
+  });
+
+  it('represents only confirmed missing domains as null', async () => {
+    mockDescribeDomain.mockRejectedValueOnce({ code: 'InvalidDomain.NotFound' });
+    await expect(operations.getDomain('group-1', 'example.com')).resolves.toBeNull();
+  });
+
+  it('sets a domain certificate directly and propagates provider failure', async () => {
+    mockSetDomainCertificate.mockResolvedValueOnce({});
+    const config = {
+      groupId: 'group-1',
+      domainName: 'example.com',
+      certificateName: 'test',
+      certificateBody: 'public',
+      certificatePrivateKey: 'synthetic-key',
+    };
+    await operations.setDomainCertificate(config);
+    expect(mockSetDomainCertificate).toHaveBeenCalledWith(expect.objectContaining(config));
+    expect(mockSetDomain).not.toHaveBeenCalled();
+    const error = new Error('AccessDenied');
+    mockSetDomainCertificate.mockRejectedValueOnce(error);
+    await expect(operations.setDomainCertificate(config)).rejects.toBe(error);
+  });
+
+  it('deletes the gateway-assigned certificate ID without treating it as a CAS reference', async () => {
+    mockDescribeDomain.mockResolvedValueOnce({
+      body: { domainName: 'example.com', certificateId: 'gateway-cert' },
+    });
+    mockDeleteDomainCertificate.mockResolvedValueOnce({});
+    await operations.deleteDomainCertificate('group-1', 'example.com');
+    expect(mockDeleteDomainCertificate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        groupId: 'group-1',
+        domainName: 'example.com',
+        certificateId: 'gateway-cert',
+      }),
+    );
+  });
+
+  it('skips certificate deletion when absent and tolerates confirmed missing bindings', async () => {
+    mockDescribeDomain.mockResolvedValueOnce({ body: { domainName: 'example.com' } });
+    await operations.deleteDomainCertificate('group-1', 'example.com');
+    expect(mockDeleteDomainCertificate).not.toHaveBeenCalled();
+    mockDescribeDomain.mockRejectedValueOnce({ code: 'InvalidDomain.NotFound' });
+    await expect(
+      operations.deleteDomainCertificate('group-1', 'example.com'),
+    ).resolves.toBeUndefined();
+  });
+
+  it.each([{}, { domainName: 'example.com', certificateBody: 'public' }])(
+    'rejects unreadable certificate identity instead of claiming it was removed: %j',
+    async (body) => {
+      mockDescribeDomain.mockResolvedValueOnce({ body });
+      await expect(operations.deleteDomainCertificate('group-1', 'example.com')).rejects.toThrow(
+        'APIGW_DOMAIN_READ_INVALID',
+      );
+      expect(mockDeleteDomainCertificate).not.toHaveBeenCalled();
+    },
+  );
+
+  it('propagates provider failures during certificate deletion', async () => {
+    mockDescribeDomain.mockResolvedValueOnce({
+      body: { domainName: 'example.com', certificateId: 'gateway-cert' },
+    });
+    const error = new Error('AccessDenied');
+    mockDeleteDomainCertificate.mockRejectedValueOnce(error);
+    await expect(operations.deleteDomainCertificate('group-1', 'example.com')).rejects.toBe(error);
   });
 });

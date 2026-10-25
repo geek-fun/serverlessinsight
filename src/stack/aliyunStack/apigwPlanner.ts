@@ -1,5 +1,5 @@
-import { readPemContent } from '../../common/certUtils';
-import { deriveWwwDomain } from '../../common/domainUtils';
+import { attributesEqual } from '../../common/hashUtils';
+import { planApigwDomains, ApigwDomainPlan } from './apigwDomainPlan';
 import { assertPlanIdentity } from '../../common/planCapabilities';
 import { definitionsDiffer, managedDefinition } from '../../common/planCompare';
 import { Context, EventDomain, Plan, PlanItem, StateFile } from '../../types';
@@ -11,7 +11,6 @@ import {
   cloudApigwApiToTriggerAttributes,
   cloudApigwGroupToDefinition,
   cloudGatewayLogToLogConfig,
-  inferProtocolConfig,
   eventToApigwGroupConfig,
   extractApigwGroupDefinition,
   extractEventDomainDefinition,
@@ -19,7 +18,11 @@ import {
 } from './apigwTypes';
 import { getAllResources, getResource } from '../../common/stateManager';
 import { getIacDefinition, isFunctionDomain } from '../../common/iacHelper';
-import { mergeLiveBefore, remoteDiffersFromDesired } from '../../common/planCompare';
+import {
+  computeRevertKeys,
+  mergeLiveBefore,
+  remoteDiffersFromDesired,
+} from '../../common/planCompare';
 import { cachedRefreshRead } from '../../common/refreshCache';
 import { PLAN_READ_CONCURRENCY, mapWithConcurrency } from '../../common/concurrency';
 import { OWNERSHIP_TAG_KEY, isOwnedByStack } from '../ownershipTag';
@@ -28,7 +31,9 @@ import { lang } from '../../lang';
 const DNS_SUB_RESOURCE_SUFFIXES = ['.dns_verification', '.dns_txt_verification'];
 
 const isDnsSubResource = (logicalId: string): boolean =>
-  DNS_SUB_RESOURCE_SUFFIXES.some((suffix) => logicalId.endsWith(suffix));
+  DNS_SUB_RESOURCE_SUFFIXES.some(
+    (suffix) => logicalId.endsWith(suffix) || logicalId.includes(`${suffix}.`),
+  );
 
 const planEventDeletion = (logicalId: string, definition: Record<string, unknown>): PlanItem => ({
   logicalId,
@@ -156,7 +161,18 @@ export const generateApigwPlan = async (
         const groupInstance = currentState.instances.find((i) => i.type === 'ALIYUN_APIGW_GROUP');
 
         const currentDefinition = currentState.definition || {};
-        const definitionChanged = definitionsDiffer(currentDefinition, desiredDefinition);
+        const previousDomain = currentDefinition.domain as Record<string, unknown> | undefined;
+        const domainRemoved = !!currentDefinition.domain && !desiredDefinition.domain;
+        const certificateRemoved =
+          !!desiredDefinition.domain &&
+          !!(previousDomain?.certificateId || previousDomain?.certificateBody) &&
+          !(desiredDefinition.domain.certificateId || desiredDefinition.domain.certificateBody);
+        const logRemoved = !!currentDefinition.log && !logSnapshot;
+        const definitionChanged =
+          definitionsDiffer(currentDefinition, desiredDefinition) ||
+          domainRemoved ||
+          logRemoved ||
+          certificateRemoved;
         if (context.refresh === false) {
           return definitionChanged
             ? {
@@ -164,8 +180,17 @@ export const generateApigwPlan = async (
                 action: 'update',
                 resourceType: 'ALIYUN_APIGW',
                 changes: {
-                  before: managedDefinition(currentDefinition, desiredDefinition),
-                  after: managedDefinition(desiredDefinition),
+                  before: {
+                    ...managedDefinition(currentDefinition, desiredDefinition),
+                    ...(domainRemoved || certificateRemoved
+                      ? { domain: currentDefinition.domain }
+                      : {}),
+                    ...(logRemoved ? { log: currentDefinition.log } : {}),
+                  },
+                  after: {
+                    ...managedDefinition(desiredDefinition),
+                    ...(certificateRemoved ? { domain: desiredDefinition.domain } : {}),
+                  },
                 },
               }
             : { logicalId, action: 'noop', resourceType: 'ALIYUN_APIGW' };
@@ -174,6 +199,7 @@ export const generateApigwPlan = async (
         let groupRemoteDiffers = false;
         let triggersDiffer = false;
         let domainDiffers = false;
+        let domainPlan: ApigwDomainPlan | undefined;
         // Issue #246: live group attributes become the diff baseline when the
         // group was readable; trigger-level drift has no attribute mapping and
         // is surfaced as a drift reason instead.
@@ -198,77 +224,24 @@ export const generateApigwPlan = async (
           }
 
           liveGroupAttrs = cloudApigwGroupToDefinition(remoteGroup);
-          if (
-            event.domain &&
-            desiredDefinition.domain?.cdnEnabled !== true &&
-            remoteGroup.customDomains !== undefined
-          ) {
-            const names = [
-              String(event.domain.domain_name),
-              ...(event.domain.www_bind_apex === true
-                ? [deriveWwwDomain(String(event.domain.domain_name))].filter(
-                    (name): name is string => name !== null,
-                  )
-                : []),
-            ];
-            const expectedRedirect =
-              inferProtocolConfig(event.domain.protocol as string | string[] | undefined)
-                .isHttpRedirectToHttps ?? false;
-            const desiredCertificate = event.domain.certificate_id
-              ? (
-                  await cachedRefreshRead(
-                    context,
-                    `cas.getCertificate:${event.domain.certificate_id}`,
-                    () => client.cas.getCertificate(String(event.domain!.certificate_id)),
-                  )
-                )?.cert
-              : event.domain.certificate_body
-                ? readPemContent(String(event.domain.certificate_body))
-                : undefined;
-            if (event.domain.certificate_id && !desiredCertificate)
-              throw new Error(
-                lang.__('CERT_REFERENCE_NOT_FOUND', {
-                  reference: String(event.domain.certificate_id),
-                }),
-              );
-            const certificateValue = (value?: string | null): string =>
-              (value ?? '').replace(/\s/g, '');
-            for (const name of names) {
-              const summary = remoteGroup.customDomains.find(
-                (domain) => domain.domainName === name,
-              );
-              if (!summary) {
-                domainDiffers = true;
-                continue;
-              }
-              if (
-                expectedRedirect !== undefined &&
-                summary.isHttpRedirectToHttps !== undefined &&
-                expectedRedirect !== summary.isHttpRedirectToHttps
-              )
-                domainDiffers = true;
-              if (desiredCertificate) {
-                const detail = await cachedRefreshRead(
-                  context,
-                  `apigw.getDomain:${groupInstance.id}:${name}`,
-                  () => client.apigw.getDomain(groupInstance.id, name),
-                );
-                if (
-                  !detail ||
-                  certificateValue(detail.certificateBody) !== certificateValue(desiredCertificate)
-                )
-                  domainDiffers = true;
-              }
-            }
-            const cloudDomain = remoteGroup.customDomains.find(
-              (domain) => domain.domainName === event.domain!.domain_name,
+          if (event.domain && desiredDefinition.domain?.cdnEnabled !== true) {
+            domainPlan = await planApigwDomains(
+              context,
+              client,
+              groupInstance.id,
+              event.domain,
+              remoteGroup.customDomains,
+              certificateRemoved,
             );
-            liveGroupAttrs.domain = cloudDomain
-              ? {
-                  ...(currentDefinition.domain as Record<string, unknown> | undefined),
-                  domainName: cloudDomain.domainName,
-                }
-              : null;
+            domainDiffers = Object.keys(domainPlan.updates).length > 0;
+            if (domainPlan.certificateVerified && currentDefinition.domain) {
+              liveGroupAttrs.domain = {
+                ...(currentDefinition.domain as Record<string, unknown>),
+                certificateId: desiredDefinition.domain?.certificateId,
+                certificateBody: desiredDefinition.domain?.certificateBody,
+                certificatePrivateKey: desiredDefinition.domain?.certificatePrivateKey,
+              };
+            }
           }
           if (event.log) {
             const log = await cachedRefreshRead(context, 'apigw.describeGatewayLogConfig', () =>
@@ -345,10 +318,14 @@ export const generateApigwPlan = async (
           }
         }
 
-        const effectiveChanged = definitionsDiffer(
-          mergeLiveBefore(currentDefinition, liveGroupAttrs ?? {}, desiredDefinition),
-          desiredDefinition,
-        );
+        const effectiveChanged =
+          domainRemoved ||
+          logRemoved ||
+          (certificateRemoved && !domainPlan?.certificateVerified) ||
+          definitionsDiffer(
+            mergeLiveBefore(currentDefinition, liveGroupAttrs ?? {}, desiredDefinition),
+            desiredDefinition,
+          );
         if (definitionChanged && !effectiveChanged && !triggersDiffer && !domainDiffers) {
           return {
             logicalId,
@@ -358,16 +335,103 @@ export const generateApigwPlan = async (
           };
         }
         if (effectiveChanged || groupRemoteDiffers || triggersDiffer || domainDiffers) {
+          const certificateIntentChanged = !attributesEqual(
+            {
+              id: previousDomain?.certificateId ?? null,
+              body: previousDomain?.certificateBody ?? null,
+            },
+            {
+              id: desiredDefinition.domain?.certificateId ?? null,
+              body: desiredDefinition.domain?.certificateBody ?? null,
+            },
+          );
+          const domainUpdates = { ...domainPlan?.updates };
+          if (domainPlan && certificateIntentChanged && !domainPlan.certificateVerified) {
+            Object.keys(domainPlan.after).forEach((name) => {
+              if (domainPlan.before[name].certificateFingerprint !== undefined) return;
+              domainUpdates[name] = {
+                exists: domainPlan.before[name].exists === true,
+                binding: domainPlan.updates[name]?.binding ?? false,
+                certificate: true,
+              };
+            });
+          }
+          const domainProtocolChanged = !attributesEqual(
+            { protocol: previousDomain?.protocol ?? 'HTTP' },
+            { protocol: desiredDefinition.domain?.protocol ?? 'HTTP' },
+          );
+          const bindingIntentChanged =
+            domainProtocolChanged ||
+            !attributesEqual(
+              { name: previousDomain?.domainName, www: previousDomain?.wwwBindApex ?? false },
+              {
+                name: desiredDefinition.domain?.domainName,
+                www: desiredDefinition.domain?.wwwBindApex ?? false,
+              },
+            );
+          if (domainPlan && bindingIntentChanged) {
+            Object.keys(domainPlan.after).forEach((name) => {
+              if (domainPlan.before[name].redirectToHttps === undefined) {
+                domainUpdates[name] = {
+                  exists: domainPlan.before[name].exists === true,
+                  binding: true,
+                  certificate: domainUpdates[name]?.certificate ?? false,
+                };
+              }
+            });
+          }
+          const before = liveGroupAttrs
+            ? mergeLiveBefore(currentDefinition, liveGroupAttrs, desiredDefinition)
+            : managedDefinition(currentDefinition, desiredDefinition);
+          const after = managedDefinition(desiredDefinition);
+          if (domainRemoved || certificateRemoved) before.domain = currentDefinition.domain;
+          if (certificateRemoved) after.domain = desiredDefinition.domain;
+          if (logRemoved) before.log = currentDefinition.log;
+          const revertKeys = [
+            ...computeRevertKeys(currentDefinition, liveGroupAttrs ?? {}, desiredDefinition),
+            ...(domainPlan &&
+            attributesEqual(
+              { domain: currentDefinition.domain ?? null },
+              { domain: desiredDefinition.domain ?? null },
+            )
+              ? computeRevertKeys(
+                  { domainBindings: domainPlan.after },
+                  { domainBindings: domainPlan.before },
+                  { domainBindings: domainPlan.after },
+                )
+              : []),
+          ];
           return {
             logicalId,
             action: 'update',
             resourceType: 'ALIYUN_APIGW',
+            ...(revertKeys.length ? { revertKeys } : {}),
             changes: {
-              before: liveGroupAttrs
-                ? mergeLiveBefore(currentDefinition, liveGroupAttrs, desiredDefinition)
-                : managedDefinition(currentDefinition, desiredDefinition),
-              after: managedDefinition(desiredDefinition),
+              before: { ...before, ...(domainPlan ? { domainBindings: domainPlan.before } : {}) },
+              after: { ...after, ...(domainPlan ? { domainBindings: domainPlan.after } : {}) },
             },
+            ...(groupInstance &&
+            desiredDefinition.domain?.cdnEnabled !== true &&
+            previousDomain?.cdnEnabled !== true
+              ? {
+                  gatewayUpdate: {
+                    group: definitionsDiffer(liveGroupAttrs ?? {}, groupDefinition),
+                    apis:
+                      triggersDiffer ||
+                      definitionsDiffer(currentDefinition, {
+                        triggers: desiredDefinition.triggers,
+                      }) ||
+                      domainProtocolChanged,
+                    logging:
+                      logRemoved ||
+                      definitionsDiffer(currentDefinition, { log: desiredDefinition.log }) ||
+                      remoteDiffersFromDesired(liveGroupAttrs ?? {}, {
+                        log: desiredDefinition.log,
+                      }),
+                    domains: domainUpdates,
+                  },
+                }
+              : {}),
             ...(remoteDiffersFromDesired(liveGroupAttrs ?? {}, currentDefinition) ||
             (domainDiffers &&
               !definitionsDiffer(

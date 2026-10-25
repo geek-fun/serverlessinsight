@@ -7,6 +7,7 @@ import {
   StateFile,
   CdnConfig,
   PartialResourceError,
+  GatewayUpdateScope,
 } from '../../types';
 import {
   createAliyunClient,
@@ -595,6 +596,39 @@ const buildDomainBindingConfig = async (
   };
 };
 
+const removeOwnedDomainDns = async (
+  client: ReturnType<typeof createAliyunClient>,
+  state: StateFile,
+  logicalId: string,
+  domains: string[],
+): Promise<StateFile> =>
+  Object.entries(state.resources ?? {})
+    .filter(
+      ([key, resource]) =>
+        key.startsWith(`${logicalId}.dns_`) &&
+        resource.mode === 'managed' &&
+        domains.includes(String(resource.definition.domainName)) &&
+        resource.instances.every(
+          (instance) =>
+            (instance.type === 'CNAME' || instance.type === 'TXT') &&
+            instance.id &&
+            instance.id !== 'existing',
+        ),
+    )
+    .reduce(async (previous, [key, resource]) => {
+      const current = await previous;
+      await Promise.all(
+        resource.instances.map(async (instance) => {
+          try {
+            await client.dns.deleteDomainRecord(instance.id);
+          } catch (error) {
+            if (!isApigwNotFoundError(error)) throw error;
+          }
+        }),
+      );
+      return removeResource(current, key);
+    }, Promise.resolve(state));
+
 export const createApigwResource = async (
   context: Context,
   event: EventDomain,
@@ -908,7 +942,7 @@ export const updateApigwResource = async (
   serviceName: string,
   resolveRoleArn: RoleArnParam,
   state: StateFile,
-  options?: { repairDomain?: boolean },
+  options?: { repairDomain?: boolean; scope?: GatewayUpdateScope },
 ): Promise<StateFile> => {
   const logicalId = `events.${event.key}`;
   const existingState = getResource(state, logicalId);
@@ -1024,7 +1058,7 @@ export const updateApigwResource = async (
   }
 
   const groupConfig = eventToApigwGroupConfig(event, serviceName, context.stage);
-  await client.apigw.updateApiGroup(groupId, groupConfig);
+  if (options?.scope?.group !== false) await client.apigw.updateApiGroup(groupId, groupConfig);
 
   const groupInfo = await client.apigw.getApiGroup(groupId);
   if (!groupInfo) {
@@ -1037,81 +1071,94 @@ export const updateApigwResource = async (
 
   const existingApis = existingInstances.filter((i) => i.type === 'ALIYUN_APIGW_API');
 
-  const neededApiKeys = new Set<string>();
+  if (options?.scope?.apis !== false) {
+    const neededApiKeys = new Set<string>();
 
-  for (const trigger of event.triggers) {
-    const apiConfig = triggerToApigwApiConfig(
-      event,
-      trigger,
-      groupId,
-      serviceName,
-      context.region,
-      context.stage,
-      roleArnFor(String(trigger.backend)),
-    );
+    for (const trigger of event.triggers) {
+      const apiConfig = triggerToApigwApiConfig(
+        event,
+        trigger,
+        groupId,
+        serviceName,
+        context.region,
+        context.stage,
+        roleArnFor(String(trigger.backend)),
+      );
 
-    const apiKey = generateApiKey(trigger.method as string, trigger.path as string);
-    neededApiKeys.add(apiKey);
+      const apiKey = generateApiKey(trigger.method as string, trigger.path as string);
+      neededApiKeys.add(apiKey);
 
-    const existingApi = existingApis.find((a) => {
-      return a.id && a.apiName === apiConfig.apiName;
-    });
-
-    let apiId: string;
-
-    if (existingApi) {
-      apiId = existingApi.id;
-      await client.apigw.updateApi(apiId, apiConfig);
-    } else {
-      apiId = await client.apigw.createApi(apiConfig);
-    }
-
-    const apiInfo = await client.apigw.getApi(groupId, apiId);
-    if (apiInfo) {
-      instances.push(buildApigwApiInstanceFromProvider(apiInfo, context.stage, groupId));
-    }
-
-    const deploymentConfig = {
-      groupId,
-      apiId,
-      stageName: 'RELEASE' as const,
-      description: `${serviceName} API deployment for ${trigger.method} ${trigger.path}`,
-    };
-
-    await client.apigw.deployApi(deploymentConfig);
-    instances.push(buildApigwDeploymentInstance(groupId, apiId, 'RELEASE', context.stage));
-  }
-
-  for (const existingApi of existingApis) {
-    const apiInfo = await client.apigw.getApi(groupId, existingApi.id);
-    if (apiInfo) {
-      const isNeeded = event.triggers.some((t) => {
-        const expectedName = triggerToApigwApiConfig(
-          event,
-          t,
-          groupId,
-          serviceName,
-          context.region,
-          context.stage,
-          roleArnFor(String(t.backend)),
-        ).apiName;
-        return apiInfo.apiName === expectedName;
+      const existingApi = existingApis.find((a) => {
+        return a.id && a.apiName === apiConfig.apiName;
       });
 
-      if (!isNeeded) {
-        try {
-          await client.apigw.abolishApi(groupId, existingApi.id, 'RELEASE');
-        } catch {
-          // API might not be deployed
+      let apiId: string;
+
+      if (existingApi) {
+        apiId = existingApi.id;
+        await client.apigw.updateApi(apiId, apiConfig);
+      } else {
+        apiId = await client.apigw.createApi(apiConfig);
+      }
+
+      const apiInfo = await client.apigw.getApi(groupId, apiId);
+      if (apiInfo) {
+        instances.push(buildApigwApiInstanceFromProvider(apiInfo, context.stage, groupId));
+      }
+
+      const deploymentConfig = {
+        groupId,
+        apiId,
+        stageName: 'RELEASE' as const,
+        description: `${serviceName} API deployment for ${trigger.method} ${trigger.path}`,
+      };
+
+      await client.apigw.deployApi(deploymentConfig);
+      instances.push(buildApigwDeploymentInstance(groupId, apiId, 'RELEASE', context.stage));
+    }
+
+    for (const existingApi of existingApis) {
+      const apiInfo = await client.apigw.getApi(groupId, existingApi.id);
+      if (apiInfo) {
+        const isNeeded = event.triggers.some((t) => {
+          const expectedName = triggerToApigwApiConfig(
+            event,
+            t,
+            groupId,
+            serviceName,
+            context.region,
+            context.stage,
+            roleArnFor(String(t.backend)),
+          ).apiName;
+          return apiInfo.apiName === expectedName;
+        });
+
+        if (!isNeeded) {
+          try {
+            await client.apigw.abolishApi(groupId, existingApi.id, 'RELEASE');
+          } catch {
+            // API might not be deployed
+          }
+          await client.apigw.deleteApi(groupId, existingApi.id);
         }
-        await client.apigw.deleteApi(groupId, existingApi.id);
       }
     }
+  } else {
+    instances.push(
+      ...existingInstances.filter(
+        (instance) =>
+          instance.type === 'ALIYUN_APIGW_API' || instance.type === 'ALIYUN_APIGW_DEPLOYMENT',
+      ),
+    );
   }
 
   const logSnapshot = buildEventLogSnapshot(event, context);
   let sharedProjectState: ResourceState | undefined;
-  if (event.log) {
+  if (options?.scope?.logging === false) {
+    instances.push(
+      ...existingInstances.filter((instance) => instance.type === 'ALIYUN_APIGW_LOG_CONFIG'),
+    );
+  } else if (event.log) {
     const logResult = await ensureGatewayLogConfig(context, client, state);
     if (logResult?.sharedProject) {
       sharedProjectState = logResult.sharedProject;
@@ -1148,142 +1195,147 @@ export const updateApigwResource = async (
           k !== `${logicalId}.dns_verification` &&
           k !== `${logicalId}.dns_txt_verification`,
       );
-    if (
+    const skipDomainBinding =
       !options?.repairDomain &&
       previousDomainDef &&
       desiredDomainDef &&
       hasBoundDomains &&
-      attributesEqual(previousDomainDef, desiredDomainDef as Record<string, unknown>)
-    ) {
-      logger.info(lang.__('APIGW_DOMAIN_UNCHANGED_SKIP'));
-      // Still include existing domain instances for state consistency
-      const existingDomainInstances =
-        existingState?.instances?.filter(
-          (i) =>
-            i.type === 'ALIYUN_APIGW_GROUP' ||
-            i.type === 'ALIYUN_APIGW_API' ||
-            i.type === 'ALIYUN_APIGW_DEPLOYMENT',
-        ) ?? [];
-      instances.push(...existingDomainInstances);
-      return setResource(state, logicalId, {
-        mode: 'managed',
-        region: context.region,
-        definition: { ...(existingState?.definition ?? {}), domain: desiredDomainDef },
-        instances: [...instances, ...existingDomainInstances],
-        lastUpdated: new Date().toISOString(),
-      });
-    }
+      attributesEqual(previousDomainDef, desiredDomainDef as Record<string, unknown>);
+    if (skipDomainBinding) logger.info(lang.__('APIGW_DOMAIN_UNCHANGED_SKIP'));
 
-    const primaryDomain = event.domain.domain_name as string;
-    const wwwBindApex = event.domain.www_bind_apex === true;
-    const wwwDomain = wwwBindApex ? deriveWwwDomain(primaryDomain) : null;
-    const isCdnEnabled = getIsCdnEnabled(event);
-    const previousWwwBindApex = previousDomainDef?.wwwBindApex === true;
-    const previousDomainName = previousDomainDef?.domainName as string | null | undefined;
-    const previousCdnEnabled = previousDomainDef?.cdnEnabled === true;
-    const previousTrackedDomains = getApigwTrackedDomains(previousDomainName, previousWwwBindApex);
-    const originDomain = groupInfo.subDomain;
+    if (!skipDomainBinding) {
+      const primaryDomain = event.domain.domain_name as string;
+      const wwwBindApex = event.domain.www_bind_apex === true;
+      const wwwDomain = wwwBindApex ? deriveWwwDomain(primaryDomain) : null;
+      const isCdnEnabled = getIsCdnEnabled(event);
+      const previousWwwBindApex = previousDomainDef?.wwwBindApex === true;
+      const previousDomainName = previousDomainDef?.domainName as string | null | undefined;
+      const previousCdnEnabled = previousDomainDef?.cdnEnabled === true;
+      const previousTrackedDomains = getApigwTrackedDomains(
+        previousDomainName,
+        previousWwwBindApex,
+      );
+      const originDomain = groupInfo.subDomain;
 
-    if (isCdnEnabled && !originDomain) {
-      throw new Error(lang.__('APIGW_GROUP_NO_SUBDOMAIN_CDN', { groupName: groupId }));
-    }
-
-    const domainConfig = await buildDomainBindingConfig(
-      event.domain,
-      groupId,
-      serviceName,
-      event.key,
-      context.stage,
-      client,
-    );
-
-    if (isCdnEnabled) {
-      const desiredDomains = [primaryDomain, ...(wwwDomain ? [wwwDomain] : [])];
-      const cdnDomainsToCleanup = previousCdnEnabled
-        ? previousTrackedDomains.filter((domain) => !desiredDomains.includes(domain))
-        : [];
-
-      if (cdnDomainsToCleanup.length > 0) {
-        await cleanupApigwCdnResources(client, existingInstances, cdnDomainsToCleanup);
+      if (isCdnEnabled && !originDomain) {
+        throw new Error(lang.__('APIGW_GROUP_NO_SUBDOMAIN_CDN', { groupName: groupId }));
       }
 
-      await updateApigwCdnDistribution(
-        context,
+      const domainConfig = await buildDomainBindingConfig(
+        event.domain,
+        groupId,
+        serviceName,
+        event.key,
+        context.stage,
         client,
-        event,
-        primaryDomain,
-        originDomain as string,
-        existingInstances,
-        instances,
-        {
-          certificateBody: domainConfig.certificateBody,
-          certificatePrivateKey: domainConfig.certificatePrivateKey,
-        },
       );
 
-      if (wwwDomain) {
-        logger.info(lang.__('APIGW_BINDING_DOMAIN', { domain: wwwDomain }));
+      if (isCdnEnabled) {
+        const desiredDomains = [primaryDomain, ...(wwwDomain ? [wwwDomain] : [])];
+        const cdnDomainsToCleanup = previousCdnEnabled
+          ? previousTrackedDomains.filter((domain) => !desiredDomains.includes(domain))
+          : [];
 
-        const wwwDomainConfig: ApigwCustomDomainConfig = {
-          ...domainConfig,
-          domainName: wwwDomain,
-          certificateName: domainConfig.certificateName
-            ? `${domainConfig.certificateName}-www`
-            : undefined,
-        };
+        if (cdnDomainsToCleanup.length > 0) {
+          await cleanupApigwCdnResources(client, existingInstances, cdnDomainsToCleanup);
+        }
 
         await updateApigwCdnDistribution(
           context,
           client,
           event,
-          wwwDomain,
+          primaryDomain,
           originDomain as string,
           existingInstances,
           instances,
           {
-            certificateBody: wwwDomainConfig.certificateBody,
-            certificatePrivateKey: wwwDomainConfig.certificatePrivateKey,
+            certificateBody: domainConfig.certificateBody,
+            certificatePrivateKey: domainConfig.certificatePrivateKey,
           },
         );
-      }
-    } else {
-      if (previousCdnEnabled && previousTrackedDomains.length > 0) {
-        await cleanupApigwCdnResources(client, existingInstances, previousTrackedDomains);
-      }
 
-      state = await client.apigw.bindCustomDomain(domainConfig, state, logicalId);
+        if (wwwDomain) {
+          logger.info(lang.__('APIGW_BINDING_DOMAIN', { domain: wwwDomain }));
 
-      if (wwwDomain) {
-        logger.info(lang.__('APIGW_BINDING_DOMAIN', { domain: wwwDomain }));
+          const wwwDomainConfig: ApigwCustomDomainConfig = {
+            ...domainConfig,
+            domainName: wwwDomain,
+            certificateName: domainConfig.certificateName
+              ? `${domainConfig.certificateName}-www`
+              : undefined,
+          };
 
-        const wwwDomainConfig: ApigwCustomDomainConfig = {
-          ...domainConfig,
-          domainName: wwwDomain,
-          certificateName: domainConfig.certificateName
-            ? `${domainConfig.certificateName}-www`
-            : undefined,
-        };
-
-        state = await client.apigw.bindCustomDomain(wwwDomainConfig, state, logicalId);
-      }
-    }
-
-    if (previousWwwBindApex && previousDomainName) {
-      const previousWwwDomain = deriveWwwDomain(previousDomainName);
-      if (previousWwwDomain && previousWwwDomain !== wwwDomain && !previousCdnEnabled) {
-        try {
-          await client.apigw.unbindCustomDomain(groupId, previousWwwDomain);
-        } catch (error) {
-          if (!isApigwNotFoundError(error)) {
-            throw error;
-          }
-          logger.warn(
-            lang.__('APIGW_WWW_DOMAIN_UNBIND_FAILED', {
-              domain: previousWwwDomain,
-              error: String(error),
-            }),
+          await updateApigwCdnDistribution(
+            context,
+            client,
+            event,
+            wwwDomain,
+            originDomain as string,
+            existingInstances,
+            instances,
+            {
+              certificateBody: wwwDomainConfig.certificateBody,
+              certificatePrivateKey: wwwDomainConfig.certificatePrivateKey,
+            },
           );
         }
+      } else {
+        if (previousCdnEnabled && previousTrackedDomains.length > 0) {
+          await cleanupApigwCdnResources(client, existingInstances, previousTrackedDomains);
+        }
+
+        const reconcileDomain = async (config: ApigwCustomDomainConfig): Promise<void> => {
+          const update = options?.scope?.domains[config.domainName];
+          if (options?.scope && !update) return;
+          if (update?.exists && !update.binding && update.certificate) {
+            if (config.certificateBody) await client.apigw.setDomainCertificate(config);
+          } else {
+            state = update?.exists
+              ? await client.apigw.bindCustomDomain(config, state, logicalId, true)
+              : await client.apigw.bindCustomDomain(config, state, logicalId);
+          }
+          if (
+            !config.certificateBody &&
+            (previousDomainDef?.certificateId || previousDomainDef?.certificateBody)
+          ) {
+            await client.apigw.deleteDomainCertificate(groupId, config.domainName);
+          }
+        };
+        await reconcileDomain(domainConfig);
+
+        if (wwwDomain) {
+          const wwwDomainConfig: ApigwCustomDomainConfig = {
+            ...domainConfig,
+            domainName: wwwDomain,
+            certificateName: domainConfig.certificateName
+              ? `${domainConfig.certificateName}-www`
+              : undefined,
+          };
+
+          await reconcileDomain(wwwDomainConfig);
+        }
+      }
+
+      if (previousWwwBindApex && previousDomainName) {
+        const previousWwwDomain = deriveWwwDomain(previousDomainName);
+        if (previousWwwDomain && previousWwwDomain !== wwwDomain && !previousCdnEnabled) {
+          try {
+            await client.apigw.unbindCustomDomain(groupId, previousWwwDomain);
+          } catch (error) {
+            if (!isApigwNotFoundError(error)) {
+              throw error;
+            }
+            logger.warn(
+              lang.__('APIGW_WWW_DOMAIN_UNBIND_FAILED', {
+                domain: previousWwwDomain,
+                error: String(error),
+              }),
+            );
+          }
+        }
+      }
+      if (previousDomainName && previousDomainName !== primaryDomain && !previousCdnEnabled) {
+        await client.apigw.unbindCustomDomain(groupId, previousDomainName);
       }
     }
   } else {
@@ -1327,6 +1379,16 @@ export const updateApigwResource = async (
       }
     }
   }
+
+  const previousDomain = existingState?.definition.domain as Record<string, unknown> | undefined;
+  const desiredNames = event.domain
+    ? getApigwTrackedDomains(String(event.domain.domain_name), event.domain.www_bind_apex === true)
+    : [];
+  const removedDomains = getApigwTrackedDomains(
+    previousDomain?.domainName as string | undefined,
+    previousDomain?.wwwBindApex === true,
+  ).filter((name) => !desiredNames.includes(name));
+  state = await removeOwnedDomainDns(client, state, logicalId, removedDomains);
 
   const groupDefinition = extractApigwGroupDefinition(groupConfig);
   const resourceState: ResourceState = {

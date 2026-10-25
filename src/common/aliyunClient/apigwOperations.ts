@@ -708,6 +708,41 @@ export const createApigwOperations = (
   };
 
   const operations = {
+    deleteDomainCertificate: async (groupId: string, domainName: string): Promise<void> => {
+      try {
+        const response = await apigwClient.describeDomain(
+          new cloudapi.DescribeDomainRequest({ groupId, domainName }),
+        );
+        if (
+          !response.body?.domainName ||
+          (!response.body.certificateId && response.body.certificateBody)
+        ) {
+          throw new Error(lang.__('APIGW_DOMAIN_READ_INVALID', { domainId: domainName }));
+        }
+        if (!response.body.certificateId) return;
+        await apigwClient.deleteDomainCertificate(
+          new cloudapi.DeleteDomainCertificateRequest({
+            groupId,
+            domainName,
+            certificateId: response.body.certificateId,
+          }),
+        );
+      } catch (error) {
+        if (!isApigwNotFoundError(error)) throw error;
+      }
+    },
+    setDomainCertificate: async (config: ApigwCustomDomainConfig): Promise<void> => {
+      await apigwClient.setDomainCertificate(
+        new cloudapi.SetDomainCertificateRequest({
+          groupId: config.groupId,
+          domainName: config.domainName,
+          certificateName: config.certificateName,
+          certificateBody: config.certificateBody,
+          certificatePrivateKey: config.certificatePrivateKey,
+        }),
+      );
+      logger.info(lang.__('APIGW_DOMAIN_CERTIFICATE_UPDATED', { domain: config.domainName }));
+    },
     /**
      * Create an API Gateway group
      */
@@ -737,7 +772,7 @@ export const createApigwOperations = (
     getDomain: async (
       groupId: string,
       domainName: string,
-    ): Promise<{ domainName: string; certificateBody: string | null } | null> => {
+    ): Promise<{ domainName: string; certificateBody?: string | null } | null> => {
       try {
         const response = await apigwClient.describeDomain(
           new cloudapi.DescribeDomainRequest({ groupId, domainName }),
@@ -746,7 +781,8 @@ export const createApigwOperations = (
           throw new Error(lang.__('APIGW_DOMAIN_READ_INVALID', { domainId: domainName }));
         return {
           domainName: response.body.domainName,
-          certificateBody: response.body.certificateBody ?? null,
+          certificateBody:
+            response.body.certificateBody || (response.body.certificateId ? undefined : null),
         };
       } catch (error) {
         if (isApigwNotFoundError(error)) return null;
@@ -1448,14 +1484,7 @@ export const createApigwOperations = (
 
       const setCertificate = async (): Promise<void> => {
         if (config.certificateName && config.certificateBody && config.certificatePrivateKey) {
-          const certRequest = new cloudapi.SetDomainCertificateRequest({
-            groupId: config.groupId,
-            domainName: config.domainName,
-            certificateName: config.certificateName,
-            certificateBody: config.certificateBody,
-            certificatePrivateKey: config.certificatePrivateKey,
-          });
-          await apigwClient.setDomainCertificate(certRequest);
+          await operations.setDomainCertificate(config);
         }
       };
 

@@ -3,6 +3,7 @@ export const zhCN = {
   PLAN_NAS_NETWORK_REQUIRED:
     '{{logicalId}} 的 NAS 存储需要声明 VPC 网络或已有挂载目标记录。计划已停止，尚未创建任何资源。',
   APIGW_DOMAIN_READ_INVALID: '域名 {{domainId}} 的查询响应无效',
+  APIGW_DOMAIN_CERTIFICATE_UPDATED: '已更新网关域名证书: {{domain}}',
   PLAN_DRIFT_EVENT_DOMAIN: '网关域名或证书与配置不一致或不存在',
   PLAN_DRIFT_HTTP_TRIGGER: 'HTTP 触发器与请求配置不同或已丢失',
   PLAN_DRIFT_FUNCTION_DOMAIN: '函数域名与请求配置不同或已丢失',
