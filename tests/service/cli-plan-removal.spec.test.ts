@@ -7,7 +7,7 @@ import path from 'node:path';
  * deployment changes. The legacy `si plan` verb is rejected fast with a
  * localized, actionable error directing to `si diff` — before any cloud or
  * state access, leaving stdout untouched. Other unknown commands keep
- * commander's default error.
+ * commander's default error, including did-you-mean suggestions.
  *
  * These tests spawn the built CLI (dist/) — CI builds before testing; skipped
  * when dist is absent so a raw `npm test` without a build still passes.
@@ -62,6 +62,7 @@ const distAvailable = existsSync(CLI_PATH);
     expect(code).toBe(1);
     // rejected before any flow: no result data, no error envelope, no mutations
     expect(stdout).toBe('');
+    expect(stderr).toContain('error:');
     expect(stderr).toContain('removed');
     expect(stderr).toContain('diff');
   }, 30000);
@@ -89,5 +90,13 @@ const distAvailable = existsSync(CLI_PATH);
     expect(code).toBe(1);
     expect(stdout).toBe('');
     expect(stderr).toContain("unknown command 'definitely-not-a-command'");
+  }, 30000);
+
+  it('keeps commander did-you-mean suggestions for misspelled verbs', async () => {
+    const { code, stderr } = await runCli(['deply']);
+
+    expect(code).toBe(1);
+    expect(stderr).toContain("unknown command 'deply'");
+    expect(stderr).toContain('Did you mean deploy?');
   }, 30000);
 });

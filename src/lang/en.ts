@@ -1127,7 +1127,7 @@ export const en = {
   MIGRATE_ROLLBACK_DONE_HINT:
     'If you already removed the backend.state_manager block from your YAML, restore it before deploying via the legacy backend.',
   MIGRATE_CUTOVER_STEPS:
-    'Cutover checklist:\n  1. Remove the backend.state_manager block from serverlessinsight.yml, add a top-level org declaration (org: <slug> — see your org settings in Console), and merge\n  2. Run `si plan` — it MUST report no changes (that is the proof of a lossless migration)\n  3. Resume deploys; the Console now owns the deployment timeline',
+    'Cutover checklist:\n  1. Remove the backend.state_manager block from serverlessinsight.yml, add a top-level org declaration (org: <slug> — see your org settings in Console), and merge\n  2. Run `si diff` — it MUST report no changes and exit 0 (that is the proof of a lossless migration)\n  3. Resume deploys; the Console now owns the deployment timeline',
   MIGRATION_MARKER_REFUSED:
     'This state has been migrated to the ServerlessInsight Console (managedBy=saas) and the legacy backend is closed for changes.\n  • To continue with the Console: remove the backend.state_manager block from your YAML, declare a top-level org: <slug>, then deploy again.\n  • To deliberately use the legacy backend: run `si migrate --rollback` to clear the marker.',
   MIGRATION_MARKER_WARN:

@@ -414,13 +414,11 @@ program
 
 // Issue #271: `si plan` was removed in favor of `si diff` — the legacy verb is
 // rejected with a localized migration hint before anything runs (no cloud or
-// state mutations). Registering this listener also takes over commander's
-// default unknown-command handling, so other unknown verbs keep it.
-program.on('command:*', (operands: string[]) => {
-  if (operands[0] === 'plan') {
-    program.error(lang.__('CMD_PLAN_REMOVED'));
-  }
-  program.error(`error: unknown command '${operands[0]}'`);
-});
+// state mutations). The check runs before commander parses argv so the hint
+// also wins over generic unknown-command handling, while every other unknown
+// verb keeps commander's default error, including did-you-mean suggestions.
+if (process.argv[2] === 'plan') {
+  program.error(`error: ${lang.__('CMD_PLAN_REMOVED')}`);
+}
 
 program.parse();
