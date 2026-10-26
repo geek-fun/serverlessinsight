@@ -97,10 +97,6 @@ si deploy -f serverless.yml -s prod
 si destroy -f serverless.yml
 ```
 
-> **`si plan` 已弃用**，并将在未来的重大版本中移除。迁移方式：将命令动词替换为
-> `diff`——两者接受完全相同的选项和参数。过渡期内 `si plan` 仍执行完全相同的
-> 操作，仅在 stderr 打印弃用警告（stdout 输出，包括 `--json`，保持不变）。
-
 ### 在 AI agent 与脚本中使用 si
 
 CLI 专为 agent 与脚本驱动而设计：日志始终输出到 **stderr**，结果数据输出到
@@ -126,7 +122,7 @@ si schema | jq '.$id'   # IaC 格式的自包含 draft-07 JSON Schema
   resourceCount, ... }`
 - 失败时（`--json` 模式）→ stdout 输出 `{ error: { code, message } }`
 
-**退出码**：`si diff`（及其已弃用的 `si plan` 别名）无变更时退出 `0`，有变更时退出
+**退出码**：`si diff` 无变更时退出 `0`，有变更时退出
 `2`（terraform 惯例），出错时退出 `1`。`si validate` 校验通过退出 `0`，校验失败退出 `1`。
 
 **稳定错误码**：错误 `code` 是翻译消息背后的 i18n key（例如

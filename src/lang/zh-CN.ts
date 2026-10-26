@@ -1270,9 +1270,9 @@ export const zhCN = {
   CMD_WHOAMI_DESC: '显示当前登录状态',
   CMD_SHOW_DESC: '从状态中显示已部署资源',
   CMD_VALIDATE_DESC: '校验 serverless IaC yaml',
-  CMD_DIFF_DESC: '展示配置与线上云环境的差异（取代已弃用的 plan 命令）',
-  CMD_PLAN_DEPRECATED:
-    '警告：plan 命令已弃用，并将在未来的重大版本中移除。请改用 diff 命令——两者接受完全相同的选项和参数。',
+  CMD_DIFF_DESC: '展示配置与线上云环境的差异',
+  CMD_PLAN_REMOVED:
+    'plan 命令已被移除；请改用 diff 命令——两者接受完全相同的选项和参数。迁移方式：将 si plan 替换为 si diff，所有参数保持不变。',
   CMD_DEPLOY_DESC: '部署 serverless IaC yaml',
   CMD_DESTROY_DESC: '销毁 serverless 资源栈',
   CMD_LOCAL_DESC: '本地运行 Serverless 应用进行调试',

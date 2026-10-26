@@ -1404,10 +1404,9 @@ export const en = {
   CMD_WHOAMI_DESC: 'show current login status',
   CMD_SHOW_DESC: 'show deployed resources from state',
   CMD_VALIDATE_DESC: 'validate serverless Iac yaml',
-  CMD_DIFF_DESC:
-    'show changes between your config and the live cloud (replaces the deprecated plan command)',
-  CMD_PLAN_DEPRECATED:
-    'Warning: the plan command is deprecated and will be removed in a future major release. Use the diff command instead — it accepts the same options and arguments.',
+  CMD_DIFF_DESC: 'show changes between your config and the live cloud',
+  CMD_PLAN_REMOVED:
+    'the plan command has been removed; use the diff command instead — it accepts the same options and arguments.',
   CMD_DEPLOY_DESC: 'deploy serverless Iac yaml',
   CMD_DESTROY_DESC: 'destroy serverless stack',
   CMD_LOCAL_DESC: 'run Serverless application locally for debugging',
