@@ -7,26 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Deprecated
+### Removed
 
-- `si plan` is deprecated in favor of `si diff`, which is now the sole long-term
-  CLI command for previewing deployment changes
-  ([#271](https://github.com/geek-fun/serverlessinsight/issues/271)). The
-  registration is consolidated into one command implementation with `plan` kept
-  as a temporary compatibility alias: both names perform the identical
-  read-only operation with the same options, exit codes (`0` no changes / `2`
-  changes / `1` errors) and `--json` envelope (`planVersion: 1`). Invoking
-  `si plan` prints a localized deprecation warning on stderr (stdout stays
-  parseable); `si diff` never warns. Migrate by replacing the command verb —
-  the same flags and arguments are accepted. `plan` will be removed in an
-  explicitly documented breaking release that follows at least one published
-  release carrying this warning (version to be announced).
+- **Breaking:** `si plan` has been removed; `si diff` is now the sole CLI
+  command for previewing deployment changes
+  ([#271](https://github.com/geek-fun/serverlessinsight/issues/271)). Invoking
+  `si plan` fails fast with a localized error directing to `si diff` before any
+  cloud or state access. Migrate by replacing the command verb — `si diff`
+  accepts the same options and arguments, exit codes (`0` no changes / `2`
+  changes / `1` errors) and `--json` envelope (`planVersion: 1`) as the removed
+  command.
 
 ### Changed
 
 - CLI help, README examples, command references and sample guides now promote
-  `si diff` as the primary planning command; `si plan` is presented as its
-  deprecated alias.
+  `si diff` as the only planning command.
 
 ## [0.9.3] - 2026-10-24
 

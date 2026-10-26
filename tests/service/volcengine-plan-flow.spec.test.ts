@@ -161,9 +161,9 @@ describe('Volcengine standalone planning (issue #266)', () => {
     }
   });
 
-  (existsSync(CLI_PATH) ? describe : describe.skip).each(['plan', 'diff'])('si %s', (command) => {
+  (existsSync(CLI_PATH) ? describe : describe.skip)('si diff (issue #266/#271)', () => {
     it('exits 0 with a versioned JSON envelope when there are no changes', async () => {
-      const result = await runCli(command, ['--json', '--no-refresh']);
+      const result = await runCli('diff', ['--json', '--no-refresh']);
       expect(result.code).toBe(0);
       expect(JSON.parse(result.stdout)).toMatchObject({
         planVersion: 1,
@@ -177,7 +177,7 @@ describe('Volcengine standalone planning (issue #266)', () => {
     });
 
     it('exits 2 and reports parameter-driven changes in JSON', async () => {
-      const result = await runCli(command, [
+      const result = await runCli('diff', [
         '--json',
         '--no-refresh',
         '-p',
@@ -208,7 +208,7 @@ describe('Volcengine standalone planning (issue #266)', () => {
     });
 
     it('names Volcengine and renders changes in human output without ANSI colors', async () => {
-      const result = await runCli(command, ['--no-refresh', '--no-color', '-p', 'acl=PUBLIC_READ']);
+      const result = await runCli('diff', ['--no-refresh', '--no-color', '-p', 'acl=PUBLIC_READ']);
       expect(result.code).toBe(2);
       expect(result.stderr).toContain('Generating plan for Volcengine resources');
       expect(result.stderr).toContain('buckets.assets');
@@ -221,7 +221,7 @@ describe('Volcengine standalone planning (issue #266)', () => {
       const raw = JSON.parse(stateBefore);
       await fs.writeFile(STATE_PATH, JSON.stringify({ ...raw, version: '99.0' }));
       try {
-        const result = await runCli(command, ['--json', '--no-refresh']);
+        const result = await runCli('diff', ['--json', '--no-refresh']);
         expect(result.code).toBe(1);
         const payload = JSON.parse(result.stdout);
         expect(payload.error.message).toBeTruthy();
@@ -236,7 +236,7 @@ describe('Volcengine standalone planning (issue #266)', () => {
       const migrated = JSON.stringify({ ...raw, managedBy: 'saas' });
       await fs.writeFile(STATE_PATH, migrated);
       try {
-        const result = await runCli(command, ['--json', '--no-refresh']);
+        const result = await runCli('diff', ['--json', '--no-refresh']);
         expect(result.code).toBe(0);
         expect(JSON.parse(result.stdout).provider).toBe('volcengine');
         expect(result.stderr).toContain('migrated');

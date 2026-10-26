@@ -95,7 +95,7 @@ export const plan = async (options: {
   return { hasChanges: changeCount > 0 };
 };
 
-export type PlanDiffCommandOptions = {
+export type DiffCommandOptions = {
   stage?: string;
   parameter?: { [key: string]: string };
   file?: string;
@@ -109,17 +109,9 @@ export type PlanDiffCommandOptions = {
   color?: boolean;
 };
 
-// Issue #271: commander resolves the deprecated `plan` alias onto the `diff`
-// command, so the invoked verb can only be read from the raw CLI arguments.
-export const isPlanAliasInvocation = (argv: readonly string[]): boolean => argv[0] === 'plan';
-
-// Single action implementation behind both `si diff` and its deprecated `si
-// plan` alias (issue #271): options and behavior stay identical while the
-// alias additionally warns on stderr, keeping JSON stdout parseable.
-export const runPlanDiffCommand = async (options: PlanDiffCommandOptions): Promise<void> => {
-  if (isPlanAliasInvocation(process.argv.slice(2))) {
-    logger.warn(lang.__('CMD_PLAN_DEPRECATED'));
-  }
+// Single action implementation behind `si diff`, the sole command for
+// previewing deployment changes (issue #271).
+export const runDiffCommand = async (options: DiffCommandOptions): Promise<void> => {
   setJsonMode(!!options.json);
   const result = await plan({
     stage: options.stage,

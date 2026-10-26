@@ -13,7 +13,7 @@ import { validate } from './validate';
 import { deploy } from './deploy';
 import { destroyStack } from './destroy';
 import { runLocal } from './local';
-import { runPlanDiffCommand } from './plan';
+import { runDiffCommand } from './plan';
 import { forceUnlockCommand } from './forceUnlock';
 import { show } from './show';
 import { schema } from './schema';
@@ -195,12 +195,11 @@ program
     }),
   );
 
-// Issue #246/#271: `diff` is the primary verb for previewing deployment
-// changes; `plan` remains a deprecated compatibility alias until the announced
-// removal release. Options and the action handler are defined exactly once.
+// Issue #246/#271: `diff` is the sole verb for previewing deployment changes;
+// the legacy `plan` verb is removed. Options and the action handler are
+// defined exactly once.
 program
   .command('diff')
-  .alias('plan')
   .description(lang.__('CMD_DIFF_DESC'))
   .option('-f, --file <path>', lang.__('OPT_FILE'))
   .option('-s, --stage <stage>', lang.__('OPT_STAGE'))
@@ -221,7 +220,7 @@ program
     },
     {},
   )
-  .action(actionWrapper('diff', runPlanDiffCommand));
+  .action(actionWrapper('diff', runDiffCommand));
 
 program
   .command('deploy')
@@ -412,5 +411,16 @@ program
       },
     ),
   );
+
+// Issue #271: `si plan` was removed in favor of `si diff` — the legacy verb is
+// rejected with a localized migration hint before anything runs (no cloud or
+// state mutations). Registering this listener also takes over commander's
+// default unknown-command handling, so other unknown verbs keep it.
+program.on('command:*', (operands: string[]) => {
+  if (operands[0] === 'plan') {
+    program.error(lang.__('CMD_PLAN_REMOVED'));
+  }
+  program.error(`error: unknown command '${operands[0]}'`);
+});
 
 program.parse();
