@@ -392,7 +392,7 @@ export const generateApigwPlan = async (
             ...(domainPlan &&
             attributesEqual(
               { domain: currentDefinition.domain ?? null },
-              { domain: desiredDefinition.domain ?? null },
+              { domain: desiredDefinition.domain },
             )
               ? computeRevertKeys(
                   { domainBindings: domainPlan.after },
@@ -410,12 +410,12 @@ export const generateApigwPlan = async (
               before: { ...before, ...(domainPlan ? { domainBindings: domainPlan.before } : {}) },
               after: { ...after, ...(domainPlan ? { domainBindings: domainPlan.after } : {}) },
             },
-            ...(groupInstance &&
+            ...(liveGroupAttrs &&
             desiredDefinition.domain?.cdnEnabled !== true &&
             previousDomain?.cdnEnabled !== true
               ? {
                   gatewayUpdate: {
-                    group: definitionsDiffer(liveGroupAttrs ?? {}, groupDefinition),
+                    group: definitionsDiffer(liveGroupAttrs, groupDefinition),
                     apis:
                       triggersDiffer ||
                       definitionsDiffer(currentDefinition, {
@@ -425,7 +425,7 @@ export const generateApigwPlan = async (
                     logging:
                       logRemoved ||
                       definitionsDiffer(currentDefinition, { log: desiredDefinition.log }) ||
-                      remoteDiffersFromDesired(liveGroupAttrs ?? {}, {
+                      remoteDiffersFromDesired(liveGroupAttrs, {
                         log: desiredDefinition.log,
                       }),
                     domains: domainUpdates,

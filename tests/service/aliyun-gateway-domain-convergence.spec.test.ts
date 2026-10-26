@@ -29,9 +29,23 @@ describe('Aliyun gateway domain plan and repair convergence', () => {
   let state: StateFile;
   let group: ApigwGroupInfo | null;
   let omitWwwSummary: boolean;
+  let logConfig: { logType: string; slsProject: string; slsLogStore: string } | null;
   const domains = new Map<string, ApigwCustomDomainConfig>();
   const apis = new Map<string, ApigwApiInfo>();
   let client: ReturnType<typeof createMockAliyunClient>;
+  const loadEvent = async (): Promise<EventDomain> => {
+    const yaml = path.join(directory, 'si.yml');
+    const iac = parseYaml(yaml);
+    context.iac = iac;
+    await setContext({ ...context, location: yaml, parameters: {}, stages: {} });
+    setIac(iac);
+    return iac.events![0];
+  };
+  const rewriteEvent = async (transform: (yaml: string) => string): Promise<EventDomain> => {
+    const yaml = path.join(directory, 'si.yml');
+    await fs.writeFile(yaml, transform(await fs.readFile(yaml, 'utf8')));
+    return loadEvent();
+  };
   const roundTrip = (value: StateFile): StateFile => {
     saveState(value, context.app, context.service, context.stage, directory);
     return loadState('aliyun', context.app, context.service, context.stage, directory);
@@ -66,11 +80,7 @@ ${certificate ? `      certificate_id: '${certificate}'\n` : ''}${protocol ? `  
     : ''
 }`,
     );
-    const iac = parseYaml(yaml);
-    context.iac = iac;
-    await setContext({ ...context, location: yaml, parameters: {}, stages: {} });
-    setIac(iac);
-    return iac.events![0];
+    return loadEvent();
   };
   const plan = () => generateApigwPlan({ ...context }, state, [event], context.service);
   const execute = async () => {
@@ -100,9 +110,35 @@ ${certificate ? `      certificate_id: '${certificate}'\n` : ''}${protocol ? `  
     } as Context;
     group = null;
     omitWwwSummary = false;
+    logConfig = null;
     domains.clear();
     apis.clear();
     client = createMockAliyunClient();
+    const projects = new Set<string>();
+    const logstores = new Set<string>();
+    const projectTags = new Map<string, Array<{ key: string; value: string }>>();
+    client.sls.getProject.mockImplementation(async (projectName) =>
+      projects.has(projectName) ? { projectName } : null,
+    );
+    client.sls.createProject.mockImplementation(async (projectName) => {
+      projects.add(projectName);
+      return { projectName };
+    });
+    client.sls.addTags.mockImplementation(async (config) => {
+      projectTags.set(config.resourceId, config.tags);
+    });
+    client.sls.getProjectTags.mockImplementation(async (project) => projectTags.get(project) ?? []);
+    client.sls.getLogstore.mockImplementation(async (project, logstoreName) =>
+      logstores.has(`${project}/${logstoreName}`) ? { logstoreName } : null,
+    );
+    client.sls.createLogstore.mockImplementation(async (project, logstoreName) => {
+      logstores.add(`${project}/${logstoreName}`);
+      return { logstoreName };
+    });
+    client.apigw.describeGatewayLogConfig.mockImplementation(async () => logConfig);
+    client.apigw.createGatewayLogConfig.mockImplementation(async (config) => {
+      logConfig = { ...config, logType: 'PROVIDER' };
+    });
     client.cas.getCertificate.mockImplementation(async (id: string) => ({
       cert: id === '200' ? 'PUBLIC-CERT-B' : 'PUBLIC-CERT-A',
       key: 'SYNTHETIC-PRIVATE-KEY',
@@ -260,6 +296,91 @@ ${certificate ? `      certificate_id: '${certificate}'\n` : ''}${protocol ? `  
     expect((await plan()).items[0].action).toBe('noop');
   });
 
+  it('enables logging without rewriting APIs or domains and retains it during a certificate repair', async () => {
+    event = await rewriteEvent((yaml) =>
+      yaml.replace('    type: API_GATEWAY', '    type: API_GATEWAY\n    log: true'),
+    );
+    expect((await plan()).items[0].gatewayUpdate).toMatchObject({
+      logging: true,
+      group: false,
+      apis: false,
+      domains: {},
+    });
+    await execute();
+    expect(client.apigw.createGatewayLogConfig).toHaveBeenCalledTimes(1);
+    expect(client.sls.createProject).toHaveBeenCalledTimes(1);
+    expect(client.sls.createLogstore).toHaveBeenCalledTimes(1);
+    expect(client.apigw.updateApi).not.toHaveBeenCalled();
+    expect(client.apigw.bindCustomDomain).not.toHaveBeenCalled();
+    const instance = state.resources['events.gateway'].instances.find(
+      (value) => value.type === 'ALIYUN_APIGW_LOG_CONFIG',
+    );
+    expect(instance).toBeDefined();
+    expect((await plan()).items[0].action).toBe('noop');
+    jest.clearAllMocks();
+    domains.get('www.example.com')!.certificateBody = 'DIFFERENT-CERT';
+    await execute();
+    expect(client.apigw.createGatewayLogConfig).not.toHaveBeenCalled();
+    expect(client.sls.createLogstore).not.toHaveBeenCalled();
+    expect(state.resources['events.gateway'].instances).toContainEqual(instance);
+    expect((await plan()).items[0].action).toBe('noop');
+  });
+
+  it('repairs live logging drift while preserving the owned project and unrelated gateway settings', async () => {
+    event = await rewriteEvent((yaml) =>
+      yaml.replace('    type: API_GATEWAY', '    type: API_GATEWAY\n    log: true'),
+    );
+    await execute();
+    logConfig = null;
+    jest.clearAllMocks();
+    const item = (await plan()).items[0];
+    expect(item.gatewayUpdate).toMatchObject({ logging: true, group: false, apis: false });
+    expect(item.changes?.before?.log).toMatchObject({ logEnabled: false });
+    await execute();
+    expect(client.apigw.createGatewayLogConfig).toHaveBeenCalledTimes(1);
+    expect(client.sls.createProject).not.toHaveBeenCalled();
+    expect(client.sls.createLogstore).not.toHaveBeenCalled();
+    expect(client.apigw.updateApi).not.toHaveBeenCalled();
+    expect(client.apigw.bindCustomDomain).not.toHaveBeenCalled();
+    expect((await plan()).items[0].action).toBe('noop');
+  });
+
+  it.each([false, true])(
+    'removes omitted logging intent and preserves a still-referenced logstore: %s',
+    async (referenced) => {
+      event = await rewriteEvent((yaml) =>
+        yaml.replace('    type: API_GATEWAY', '    type: API_GATEWAY\n    log: true'),
+      );
+      await execute();
+      const previousLog = state.resources['events.gateway'].definition.log;
+      event = await rewriteEvent((yaml) => yaml.replace('    log: true\n', ''));
+      if (!referenced) logConfig = null;
+      jest.clearAllMocks();
+      const item = (await plan()).items[0];
+      expect(item.changes?.before?.log).toEqual(previousLog);
+      expect(item.changes?.after).not.toHaveProperty('log');
+      const local = await generateApigwPlan(
+        { ...context, refresh: false },
+        state,
+        [event],
+        context.service,
+      );
+      expect(local.items[0].changes?.before?.log).toEqual(previousLog);
+      expect(local.items[0].changes?.after).not.toHaveProperty('log');
+      await execute();
+      expect(client.sls.deleteLogstore).toHaveBeenCalledTimes(referenced ? 0 : 1);
+      expect(client.apigw.createGatewayLogConfig).not.toHaveBeenCalled();
+      expect(client.apigw.updateApi).not.toHaveBeenCalled();
+      expect(state.resources['events.gateway'].definition).not.toHaveProperty('log');
+      expect(
+        state.resources['events.gateway'].instances.some(
+          (value) => value.type === 'ALIYUN_APIGW_LOG_CONFIG',
+        ),
+      ).toBe(false);
+      expect((await plan()).items[0].action).toBe('noop');
+    },
+  );
+
   it('updates API intent without rebinding unchanged domains or leaving stale state', async () => {
     state.resources['events.gateway.dns_verification.primary'] = {
       mode: 'managed',
@@ -384,6 +505,37 @@ ${certificate ? `      certificate_id: '${certificate}'\n` : ''}${protocol ? `  
     expect([...domains.keys()].sort()).toEqual(['api.example.com', 'www.api.example.com']);
     expect(client.apigw.bindCustomDomain).toHaveBeenCalledTimes(2);
     expect(client.apigw.deployApi).not.toHaveBeenCalled();
+    expect((await plan()).items[0].action).toBe('noop');
+  });
+
+  it('removes www intent when the owned binding was already deleted in the cloud', async () => {
+    domains.delete('www.example.com');
+    client.apigw.unbindCustomDomain.mockRejectedValueOnce({ code: 'InvalidDomain.NotFound' });
+    event = await readEvent(true, false);
+    await execute();
+    expect(client.apigw.unbindCustomDomain).toHaveBeenCalledWith('group-1', 'www.example.com');
+    expect(client.apigw.bindCustomDomain).not.toHaveBeenCalled();
+    expect(client.apigw.deployApi).not.toHaveBeenCalled();
+    expect(state.resources['events.gateway'].definition.domain).toMatchObject({
+      wwwBindApex: false,
+    });
+    expect((await plan()).items[0].action).toBe('noop');
+  });
+
+  it('adds domain configuration to an existing gateway whose saved domain is null', async () => {
+    event = await readEvent(false);
+    await execute();
+    jest.clearAllMocks();
+    event = await readEvent();
+    const item = (await plan()).items[0];
+    expect(item.gatewayUpdate).toMatchObject({ group: false, apis: true, logging: false });
+    expect(item.changes?.before?.domainBindings).toMatchObject({
+      'example.com': { exists: false },
+    });
+    await execute();
+    expect(client.apigw.bindCustomDomain).toHaveBeenCalledTimes(2);
+    expect(client.apigw.deployApi).toHaveBeenCalledTimes(1);
+    expect(client.apigw.updateApiGroup).not.toHaveBeenCalled();
     expect((await plan()).items[0].action).toBe('noop');
   });
 

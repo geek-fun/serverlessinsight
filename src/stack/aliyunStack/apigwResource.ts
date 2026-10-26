@@ -602,7 +602,7 @@ const removeOwnedDomainDns = async (
   logicalId: string,
   domains: string[],
 ): Promise<StateFile> =>
-  Object.entries(state.resources ?? {})
+  Object.entries(state.resources)
     .filter(
       ([key, resource]) =>
         key.startsWith(`${logicalId}.dns_`) &&
