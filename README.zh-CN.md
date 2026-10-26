@@ -76,7 +76,7 @@ si --version
 
 声明式 YAML 配置，内置校验、计划与状态管理——遵循成熟的 IaC 实践。
 
-- **部署前预览** —— `si plan` 在实际变更前精确展示将要发生的改动
+- **部署前预览** —— `si diff` 在实际变更前精确展示将要发生的改动
 - **状态追踪** —— 基于本地状态文件的增量部署与漂移检测
 - **配置校验** —— 类型安全的模板校验在配置触达云端前捕获错误
 - **部分失败恢复** —— 即使部分资源失败，已成功部署的资源仍会被保存；重试即可继续
@@ -88,7 +88,7 @@ si --version
 si validate -f serverless.yml
 
 # 预览变更
-si plan -f serverless.yml
+si diff -f serverless.yml
 
 # 部署到生产环境
 si deploy -f serverless.yml -s prod
@@ -97,13 +97,17 @@ si deploy -f serverless.yml -s prod
 si destroy -f serverless.yml
 ```
 
+> **`si plan` 已弃用**，并将在未来的重大版本中移除。迁移方式：将命令动词替换为
+> `diff`——两者接受完全相同的选项和参数。过渡期内 `si plan` 仍执行完全相同的
+> 操作，仅在 stderr 打印弃用警告（stdout 输出，包括 `--json`，保持不变）。
+
 ### 在 AI agent 与脚本中使用 si
 
 CLI 专为 agent 与脚本驱动而设计：日志始终输出到 **stderr**，结果数据输出到
 **stdout**，因此将 stdout 管道给 `jq` 总能得到单个可解析的 JSON 文档。
 
 ```bash
-si plan --json -f serverless.yml | jq '.summary'
+si diff --json -f serverless.yml | jq '.summary'
 si validate --json -f serverless.yml | jq '.valid'
 si show --json -f serverless.yml | jq '.resourceCount'
 si schema | jq '.$id'   # IaC 格式的自包含 draft-07 JSON Schema
@@ -111,7 +115,7 @@ si schema | jq '.$id'   # IaC 格式的自包含 draft-07 JSON Schema
 
 **稳定的输出 envelope**（每个都带版本号字段，结构只会在新版本号下变化）：
 
-- `si plan --json` → `{ planVersion: 1, provider, app, service, stage,
+- `si diff --json` → `{ planVersion: 1, provider, app, service, stage,
   changes: [{ logicalId, type, action: "create|update|destroy|recreate",
   attributes, drifted?, driftReasons? }], summary: { create, update, destroy,
   recreate, unchanged } }`
@@ -122,8 +126,8 @@ si schema | jq '.$id'   # IaC 格式的自包含 draft-07 JSON Schema
   resourceCount, ... }`
 - 失败时（`--json` 模式）→ stdout 输出 `{ error: { code, message } }`
 
-**退出码**：`si plan` 无变更时退出 `0`，有变更时退出 `2`（terraform
-惯例），出错时退出 `1`。`si validate` 校验通过退出 `0`，校验失败退出 `1`。
+**退出码**：`si diff`（及其已弃用的 `si plan` 别名）无变更时退出 `0`，有变更时退出
+`2`（terraform 惯例），出错时退出 `1`。`si validate` 校验通过退出 `0`，校验失败退出 `1`。
 
 **稳定错误码**：错误 `code` 是翻译消息背后的 i18n key（例如
 `RAM_ROLE_NOT_FOUND_IN_CLOUD`）——在所有语言环境下保持一致，agent

@@ -13,7 +13,7 @@ import { validate } from './validate';
 import { deploy } from './deploy';
 import { destroyStack } from './destroy';
 import { runLocal } from './local';
-import { plan } from './plan';
+import { runPlanDiffCommand } from './plan';
 import { forceUnlockCommand } from './forceUnlock';
 import { show } from './show';
 import { schema } from './schema';
@@ -195,71 +195,12 @@ program
     }),
   );
 
-program
-  .command('plan')
-  .description(lang.__('CMD_PLAN_DESC'))
-  .option('-f, --file <path>', lang.__('OPT_FILE'))
-  .option('-s, --stage <stage>', lang.__('OPT_STAGE'))
-  .option('-r, --region <region>', lang.__('OPT_REGION'))
-  .option('-v, --provider <provider>', lang.__('OPT_PROVIDER'))
-  .option('-k, --accessKeyId <accessKeyId>', lang.__('OPT_ACCESS_KEY_ID'))
-  .option('-x, --accessKeySecret <accessKeySecret>', lang.__('OPT_ACCESS_KEY_SECRET'))
-  .option('-n, --securityToken <securityToken>', lang.__('OPT_SECURITY_TOKEN'))
-  .option('--no-refresh', lang.__('OPT_NO_REFRESH'))
-  .option('--json', lang.__('OPT_JSON'))
-  .option('--no-color', lang.__('OPT_NO_COLOR'))
-  .option(
-    '-p, --parameter <key=value>',
-    lang.__('OPT_PARAMETER'),
-    (value, previous: { [key: string]: string }) => {
-      const [key, val] = value.split('=');
-      return { ...previous, [key]: val };
-    },
-    {},
-  )
-  .action(
-    actionWrapper(
-      'plan',
-      async ({
-        stage,
-        parameter,
-        file,
-        region,
-        provider,
-        accessKeyId,
-        accessKeySecret,
-        securityToken,
-        refresh,
-        json,
-        color,
-      }) => {
-        setJsonMode(!!json);
-        const result = await plan({
-          stage,
-          parameters: parameter,
-          location: file,
-          region,
-          provider,
-          accessKeyId,
-          accessKeySecret,
-          securityToken,
-          refresh,
-          json: !!json,
-          noColor: color === false,
-        });
-        // Issue #250 exit-code convention (terraform-compatible):
-        // 0 = no changes, 2 = changes present, 1 = execution error (handler).
-        if (result.hasChanges) {
-          process.exitCode = 2;
-        }
-      },
-    ),
-  );
-
-// Issue #246: `diff` is the primary verb users say — it runs the same plan
-// flow; `plan` stays for compatibility.
+// Issue #246/#271: `diff` is the primary verb for previewing deployment
+// changes; `plan` remains a deprecated compatibility alias until the announced
+// removal release. Options and the action handler are defined exactly once.
 program
   .command('diff')
+  .alias('plan')
   .description(lang.__('CMD_DIFF_DESC'))
   .option('-f, --file <path>', lang.__('OPT_FILE'))
   .option('-s, --stage <stage>', lang.__('OPT_STAGE'))
@@ -280,42 +221,7 @@ program
     },
     {},
   )
-  .action(
-    actionWrapper(
-      'diff',
-      async ({
-        stage,
-        parameter,
-        file,
-        region,
-        provider,
-        accessKeyId,
-        accessKeySecret,
-        securityToken,
-        refresh,
-        json,
-        color,
-      }) => {
-        setJsonMode(!!json);
-        const result = await plan({
-          stage,
-          parameters: parameter,
-          location: file,
-          region,
-          provider,
-          accessKeyId,
-          accessKeySecret,
-          securityToken,
-          refresh,
-          json: !!json,
-          noColor: color === false,
-        });
-        if (result.hasChanges) {
-          process.exitCode = 2;
-        }
-      },
-    ),
-  );
+  .action(actionWrapper('diff', runPlanDiffCommand));
 
 program
   .command('deploy')

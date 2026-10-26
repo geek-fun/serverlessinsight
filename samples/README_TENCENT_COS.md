@@ -76,7 +76,7 @@ Common Tencent Cloud regions:
 Preview changes before deployment:
 
 ```bash
-si plan my-stack \
+si diff \
   -f serverless-insight.yml \
   -r ap-guangzhou \
   -k YOUR_SECRET_ID \
@@ -241,10 +241,10 @@ si deploy my-stack -f serverless-insight.yml
 
 ## Drift Detection
 
-If someone modifies the bucket in Tencent Cloud Console, the plan command will detect the drift:
+If someone modifies the bucket in Tencent Cloud Console, the diff command will detect the drift:
 
 ```bash
-si plan my-stack -f serverless-insight.yml
+si diff -f serverless-insight.yml
 ```
 
 Output will show:

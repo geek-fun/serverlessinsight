@@ -76,7 +76,7 @@ Define your infrastructure once in YAML and deploy across Alibaba Cloud, Tencent
 
 Declarative YAML configuration with validation, planning, and state management — following proven IaC patterns.
 
-- **Plan before deploy** — `si plan` shows exactly what will change before anything happens
+- **Plan before deploy** — `si diff` shows exactly what will change before anything happens
 - **State tracking** — incremental deployments with drift detection via local state files
 - **Validation** — type-safe template validation catches config errors before they reach the cloud
 - **Partial failure recovery** — successfully deployed resources are saved even when others fail; retry to continue
@@ -88,7 +88,7 @@ Declarative YAML configuration with validation, planning, and state management �
 si validate -f serverless.yml
 
 # Preview changes
-si plan -f serverless.yml
+si diff -f serverless.yml
 
 # Deploy to production
 si deploy -f serverless.yml -s prod
@@ -99,15 +99,21 @@ si destroy -f serverless.yml
 
 ### Standalone planning
 
-`si plan` and its alias `si diff` preview changes on Alibaba Cloud, Tencent Cloud,
+`si diff` previews changes on Alibaba Cloud, Tencent Cloud,
 and Volcengine. Volcengine plans include functions, TOS buckets, and API Gateway
 resources in dependency order. Planning reads the configured state backend and
 cloud resources without applying changes or saving state.
 
+> **`si plan` is deprecated** and will be removed in a future major release.
+> Migrate by replacing the command verb with `diff` — the same flags and
+> arguments are accepted. During the transition `si plan` still runs the
+> identical operation, printing a deprecation warning on stderr (stdout output,
+> including `--json`, remains unchanged).
+
 ```bash
-si plan -f serverlessinsight.yml --stage dev
+si diff -f serverlessinsight.yml --stage dev
 si diff -f serverlessinsight.yml --stage dev --json
-si plan -f serverlessinsight.yml --stage dev --region cn-beijing -p memory=1024
+si diff -f serverlessinsight.yml --stage dev --region cn-beijing -p memory=1024
 si diff -f serverlessinsight.yml --stage dev --no-refresh
 ```
 
@@ -124,7 +130,7 @@ The CLI is built to be driven by agents and shell scripts: logs always go to
 always yields a single parseable JSON document.
 
 ```bash
-si plan --json -f serverless.yml | jq '.summary'
+si diff --json -f serverless.yml | jq '.summary'
 si validate --json -f serverless.yml | jq '.valid'
 si show --json -f serverless.yml | jq '.resourceCount'
 si schema | jq '.$id'   # self-contained draft-07 JSON Schema of the IaC format
@@ -133,7 +139,7 @@ si schema | jq '.$id'   # self-contained draft-07 JSON Schema of the IaC format
 **Stable output envelopes** (each carries a version field, so shapes only ever
 change under a new version):
 
-- `si plan --json` → `{ planVersion: 1, provider, app, service, stage,
+- `si diff --json` → `{ planVersion: 1, provider, app, service, stage,
   changes: [{ logicalId, type, action: "create|update|destroy|recreate",
   attributes, drifted?, driftReasons? }], summary: { create, update, destroy,
   recreate, unchanged } }`
@@ -144,9 +150,9 @@ change under a new version):
   resourceCount, ... }`
 - failures (in `--json` mode) → `{ error: { code, message } }` on stdout
 
-**Exit codes**: `si plan` and `si diff` exit `0` when there are no changes, `2` when
-changes are present (terraform convention), `1` on errors. `si validate`
-exits `0` when valid, `1` when validation fails.
+**Exit codes**: `si diff` (and its deprecated `si plan` alias) exit `0` when there are no
+changes, `2` when changes are present (terraform convention), `1` on errors.
+`si validate` exits `0` when valid, `1` when validation fails.
 
 **Stable error codes**: error `code`s are the i18n message keys behind the
 translated message (e.g. `RAM_ROLE_NOT_FOUND_IN_CLOUD`) — they are identical

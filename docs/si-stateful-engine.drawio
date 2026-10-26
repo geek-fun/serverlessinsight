@@ -16,7 +16,7 @@
         <mxCell id="parser" value="Config Loader- parser&#xa;(YAML Parser)" style="rounded=1;whiteSpace=wrap;fillColor=#ffffff;" parent="core" vertex="1">
           <mxGeometry x="60" y="60" width="310" height="60" as="geometry" />
         </mxCell>
-        <mxCell id="planner" value="Planner&#xa;(si plan)" style="rounded=1;whiteSpace=wrap;fillColor=#ffffff;" parent="core" vertex="1">
+        <mxCell id="planner" value="Planner&#xa;(si diff)" style="rounded=1;whiteSpace=wrap;fillColor=#ffffff;" parent="core" vertex="1">
           <mxGeometry x="60" y="160" width="310" height="60" as="geometry" />
         </mxCell>
         <mxCell id="graph" value="Dependency Graph&#xa;(DAG)" style="rounded=1;whiteSpace=wrap;fillColor=#ffffff;" parent="core" vertex="1">

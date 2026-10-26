@@ -166,7 +166,7 @@ si local <stackName> -f serverless.yml -s local
 si deploy -f serverless.yml -s dev
 si destroy -f serverless.yml -s dev
 si validate -f serverless.yml
-si plan -f serverless.yml -s dev
+si diff -f serverless.yml -s dev
 si template -f serverless.yml
 si local -f serverless.yml -s local
 ```

@@ -1,6 +1,6 @@
 import { getIacLocation, logger, setContext, setIac, ProviderEnum, getContext } from '../common';
 import { createStateBackend } from '../common/stateBackend';
-import { buildPlanJson, buildPlanSummary, writeJson } from '../common/jsonOutput';
+import { buildPlanJson, buildPlanSummary, setJsonMode, writeJson } from '../common/jsonOutput';
 import { isNoColorEnabled } from '../common/noColor';
 import { parseYaml, revalYaml } from '../parser';
 import { generateTencentPlan, displayPlan } from '../stack/scfStack';
@@ -10,7 +10,7 @@ import { lang } from '../lang';
 import { PlanDisplayConfig } from '../types';
 
 export const plan = async (options: {
-  location: string;
+  location?: string;
   parameters?: { [key: string]: string };
   stage?: string;
   region?: string;
@@ -93,4 +93,50 @@ export const plan = async (options: {
   const summary = buildPlanSummary(planResult.items ?? []);
   const changeCount = summary.create + summary.update + summary.destroy + summary.recreate;
   return { hasChanges: changeCount > 0 };
+};
+
+export type PlanDiffCommandOptions = {
+  stage?: string;
+  parameter?: { [key: string]: string };
+  file?: string;
+  region?: string;
+  provider?: string;
+  accessKeyId?: string;
+  accessKeySecret?: string;
+  securityToken?: string;
+  refresh?: boolean;
+  json?: boolean;
+  color?: boolean;
+};
+
+// Issue #271: commander resolves the deprecated `plan` alias onto the `diff`
+// command, so the invoked verb can only be read from the raw CLI arguments.
+export const isPlanAliasInvocation = (argv: readonly string[]): boolean => argv[0] === 'plan';
+
+// Single action implementation behind both `si diff` and its deprecated `si
+// plan` alias (issue #271): options and behavior stay identical while the
+// alias additionally warns on stderr, keeping JSON stdout parseable.
+export const runPlanDiffCommand = async (options: PlanDiffCommandOptions): Promise<void> => {
+  if (isPlanAliasInvocation(process.argv.slice(2))) {
+    logger.warn(lang.__('CMD_PLAN_DEPRECATED'));
+  }
+  setJsonMode(!!options.json);
+  const result = await plan({
+    stage: options.stage,
+    parameters: options.parameter,
+    location: options.file,
+    region: options.region,
+    provider: options.provider,
+    accessKeyId: options.accessKeyId,
+    accessKeySecret: options.accessKeySecret,
+    securityToken: options.securityToken,
+    refresh: options.refresh,
+    json: !!options.json,
+    noColor: options.color === false,
+  });
+  // Issue #250 exit-code convention (terraform-compatible):
+  // 0 = no changes, 2 = changes present, 1 = execution error (handler).
+  if (result.hasChanges) {
+    process.exitCode = 2;
+  }
 };
