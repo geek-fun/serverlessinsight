@@ -1,5 +1,12 @@
-import { plan } from '../../../src/commands/plan';
-import { getIacLocation, setContext, setIac, ProviderEnum, getContext } from '../../../src/common';
+import { plan, isPlanAliasInvocation, runPlanDiffCommand } from '../../../src/commands/plan';
+import {
+  getIacLocation,
+  setContext,
+  setIac,
+  ProviderEnum,
+  getContext,
+  logger,
+} from '../../../src/common';
 import { parseYaml, revalYaml } from '../../../src/parser';
 import { createStateBackend } from '../../../src/common/stateBackend';
 import { generateTencentPlan, displayPlan } from '../../../src/stack/scfStack';
@@ -397,6 +404,141 @@ describe('plan command', () => {
         mockPlanResult,
         expect.objectContaining({ colorize: true }),
       );
+    });
+  });
+
+  describe('plan/diff single registration (issue #271)', () => {
+    const stdoutSpy = () => jest.spyOn(process.stdout, 'write').mockImplementation(() => true);
+
+    // The deprecation warning is keyed off the raw CLI argv, so each test pins
+    // the verb the bin would have received.
+    const withArgv = async (verb: string, run: () => Promise<void>) => {
+      const originalArgv = process.argv;
+      process.argv = [originalArgv[0], originalArgv[1], verb];
+      try {
+        await run();
+      } finally {
+        process.argv = originalArgv;
+      }
+    };
+
+    afterEach(() => {
+      setJsonMode(false);
+    });
+
+    it('detects only the leading legacy plan verb', () => {
+      expect(isPlanAliasInvocation(['plan', '--json'])).toBe(true);
+      expect(isPlanAliasInvocation(['diff', '--json'])).toBe(false);
+      expect(isPlanAliasInvocation([])).toBe(false);
+    });
+
+    it('warns through the logger (stderr) when invoked via the plan alias', async () => {
+      const stdout = stdoutSpy();
+      try {
+        await withArgv('plan', async () => {
+          await runPlanDiffCommand({ file: '/test/path', json: true });
+        });
+      } finally {
+        stdout.mockRestore();
+      }
+
+      expect(logger.warn).toHaveBeenCalledWith('CMD_PLAN_DEPRECATED');
+    });
+
+    it('does not warn when invoked via diff', async () => {
+      const stdout = stdoutSpy();
+      try {
+        await withArgv('diff', async () => {
+          await runPlanDiffCommand({ file: '/test/path', json: true });
+        });
+      } finally {
+        stdout.mockRestore();
+      }
+
+      expect(logger.warn).not.toHaveBeenCalledWith('CMD_PLAN_DEPRECATED');
+    });
+
+    it('maps the commander option shape identically onto the plan flow for both verbs', async () => {
+      const cliOptions = {
+        stage: 'prod',
+        parameter: { memory: '1024' },
+        file: '/test/path',
+        region: 'cn-shanghai',
+        provider: 'aliyun',
+        accessKeyId: 'test-ak',
+        accessKeySecret: 'test-sk',
+        securityToken: 'test-token',
+        refresh: false,
+        color: false,
+      };
+
+      const capturedContexts: unknown[] = [];
+      await withArgv('plan', async () => {
+        await runPlanDiffCommand(cliOptions);
+      });
+      capturedContexts.push((setContext as jest.Mock).mock.calls[0][0]);
+      (setContext as jest.Mock).mockClear();
+      (displayPlan as jest.Mock).mockClear();
+
+      await withArgv('diff', async () => {
+        await runPlanDiffCommand(cliOptions);
+      });
+      capturedContexts.push((setContext as jest.Mock).mock.calls[0][0]);
+
+      expect(capturedContexts[1]).toEqual(capturedContexts[0]);
+      expect(capturedContexts[0]).toEqual(
+        expect.objectContaining({
+          stage: 'prod',
+          region: 'cn-shanghai',
+          accessKeyId: 'test-ak',
+          accessKeySecret: 'test-sk',
+          securityToken: 'test-token',
+          parameters: { memory: '1024' },
+          refresh: false,
+        }),
+      );
+      expect(displayPlan).toHaveBeenCalledWith(
+        mockPlanResult,
+        expect.objectContaining({ colorize: false }),
+      );
+    });
+
+    it('keeps colorize enabled when --no-color is absent', async () => {
+      await withArgv('diff', async () => {
+        await runPlanDiffCommand({ file: '/test/path' });
+      });
+
+      expect(displayPlan).toHaveBeenCalledWith(
+        mockPlanResult,
+        expect.objectContaining({ colorize: true }),
+      );
+    });
+
+    it('sets exit code 2 when the plan has changes and leaves 0 when not', async () => {
+      const originalExitCode = process.exitCode;
+      const stdout = stdoutSpy();
+      try {
+        (generateAliyunPlan as jest.Mock).mockResolvedValue({
+          ...mockPlanResult,
+          items: [
+            { logicalId: 'functions.hello', action: 'create', resourceType: 'ALIYUN_FC3_FUNCTION' },
+          ],
+        });
+        await withArgv('plan', async () => {
+          await runPlanDiffCommand({ file: '/test/path', json: true });
+        });
+        expect(process.exitCode).toBe(2);
+
+        process.exitCode = 0;
+        (generateAliyunPlan as jest.Mock).mockResolvedValue(mockPlanResult);
+        await withArgv('diff', async () => {
+          await runPlanDiffCommand({ file: '/test/path', json: true });
+        });
+        expect(process.exitCode).toBe(0);
+      } finally {
+        process.exitCode = originalExitCode;
+        stdout.mockRestore();
+      }
     });
   });
 });
