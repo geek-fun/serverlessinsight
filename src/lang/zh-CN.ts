@@ -268,7 +268,7 @@ export const zhCN = {
   FORCE_UNLOCK_CANCELLED: '强制解锁已取消',
   SAAS_FORCE_UNLOCK_NOT_SUPPORTED:
     'SaaS 模式下不支持通过 CLI 强制解锁。请在浏览器中打开 {{consoleUrl}}，从部署页面解锁该部署。',
-  PLAN_COMMAND_NOT_SUPPORTED: '此提供商不支持 Plan 命令',
+  PLAN_COMMAND_NOT_SUPPORTED: '此提供商不支持生成部署计划',
 
   // Lock info formatting
   LOCK_INFO_HEADER: '锁信息:',
