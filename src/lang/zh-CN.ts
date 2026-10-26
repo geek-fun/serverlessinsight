@@ -1019,7 +1019,7 @@ export const zhCN = {
   MIGRATE_ROLLBACK_DONE_HINT:
     '如果已从 YAML 中删除 backend.state_manager 段，经旧后端部署前请先恢复该段。',
   MIGRATE_CUTOVER_STEPS:
-    'cutover 清单：\n  1. 从 serverlessinsight.yml 删除 backend.state_manager 段，并在顶层添加 org 声明（org: <slug>，slug 见 Console 组织设置）后合并\n  2. 运行 `si plan`——必须显示无变更（这是迁移无损的证明）\n  3. 恢复部署；此后部署时间线由 Console 接管',
+    'cutover 清单：\n  1. 从 serverlessinsight.yml 删除 backend.state_manager 段，并在顶层添加 org 声明（org: <slug>，slug 见 Console 组织设置）后合并\n  2. 运行 `si diff`——必须显示无变更并退出 0（这是迁移无损的证明）\n  3. 恢复部署；此后部署时间线由 Console 接管',
   MIGRATION_MARKER_REFUSED:
     '该状态已迁移至 ServerlessInsight Console（managedBy=saas），旧后端已关闭变更。\n  • 继续使用 Console：从 YAML 中删除 backend.state_manager 段并在顶层声明 org: <slug> 后重新部署。\n  • 确需经旧后端操作：运行 `si migrate --rollback` 清除标记。',
   MIGRATION_MARKER_WARN:
