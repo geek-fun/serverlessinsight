@@ -30,6 +30,7 @@ const mockedApigwOperations = {
   deleteApiGroup: jest.fn(),
   bindCustomDomain: jest.fn(),
   unbindCustomDomain: jest.fn(),
+  deleteDomainCertificate: jest.fn(),
   describeGatewayLogConfig: jest.fn(),
   createGatewayLogConfig: jest.fn(),
 };
@@ -2305,6 +2306,144 @@ describe('ApigwResource', () => {
       mockedCdnOperations.applyHttpsRedirect.mockResolvedValue(undefined);
       mockedDnsOperations.addDomainRecord.mockResolvedValue('dns-record-123');
     };
+
+    it('does not save an update when an API disappears before deployment', async () => {
+      setupBasicUpdateMocks();
+      const previous = {
+        instances: [
+          { type: 'ALIYUN_APIGW_GROUP', id: 'group-123' },
+          { type: 'ALIYUN_APIGW_API', id: 'api-456', apiName: 'test-api' },
+        ],
+        definition: {},
+      };
+      mockedStateManager.getResource.mockReturnValue(previous);
+      mockedApigwOperations.getApi.mockResolvedValue(null);
+      const error = new Error('API disappeared before deployment');
+      mockedApigwOperations.deployApi.mockRejectedValueOnce(error);
+      await expect(
+        updateApigwResource(mockContext, testEvent, 'test-service', undefined, initialState),
+      ).rejects.toBe(error);
+      expect(mockedApigwOperations.updateApi).toHaveBeenCalledWith('api-456', expect.anything());
+      expect(mockedStateManager.setResource).not.toHaveBeenCalled();
+    });
+
+    it('does not delete a recorded API again when it is already absent during trigger removal', async () => {
+      setupBasicUpdateMocks();
+      mockedStateManager.getResource.mockReturnValue({
+        instances: [
+          { type: 'ALIYUN_APIGW_GROUP', id: 'group-123' },
+          { type: 'ALIYUN_APIGW_API', id: 'api-456', apiName: 'test-api' },
+        ],
+        definition: {},
+      });
+      mockedApigwOperations.getApi.mockResolvedValue(null);
+      await updateApigwResource(
+        mockContext,
+        { ...testEvent, triggers: [] },
+        'test-service',
+        undefined,
+        initialState,
+      );
+      expect(mockedApigwOperations.deleteApi).not.toHaveBeenCalled();
+      expect(mockedApigwOperations.deployApi).not.toHaveBeenCalled();
+      expect(mockedStateManager.setResource).toHaveBeenLastCalledWith(
+        expect.anything(),
+        'events.api_gateway',
+        expect.objectContaining({
+          instances: [expect.objectContaining({ type: 'ALIYUN_APIGW_GROUP' })],
+        }),
+      );
+    });
+
+    it('removes a previously managed inline certificate without uploading an empty replacement', async () => {
+      setupBasicUpdateMocks();
+      mockedStateManager.getResource.mockReturnValue({
+        instances: [{ type: 'ALIYUN_APIGW_GROUP', id: 'group-123' }],
+        definition: {
+          domain: {
+            domainName: 'example.com',
+            protocol: 'HTTP',
+            certificateBody: 'previous-cert.pem',
+          },
+        },
+      });
+      mockedApigwTypes.extractEventDomainDefinition.mockReturnValue({
+        domainName: 'example.com',
+        protocol: 'HTTP',
+        certificateBody: null,
+      });
+      mockedApigwOperations.deleteDomainCertificate.mockResolvedValue(undefined);
+      await updateApigwResource(
+        mockContext,
+        {
+          ...testEvent,
+          domain: { domain_name: 'example.com', protocol: 'HTTP' },
+        },
+        'test-service',
+        undefined,
+        initialState,
+        {
+          scope: {
+            group: false,
+            apis: false,
+            logging: false,
+            domains: {
+              'example.com': { exists: true, binding: false, certificate: true },
+            },
+          },
+        },
+      );
+      expect(mockedApigwOperations.deleteDomainCertificate).toHaveBeenCalledWith(
+        'group-123',
+        'example.com',
+      );
+      expect(mockedApigwOperations.bindCustomDomain).not.toHaveBeenCalled();
+      expect(mockedStateManager.setResource).toHaveBeenLastCalledWith(
+        expect.anything(),
+        'events.api_gateway',
+        expect.objectContaining({
+          definition: expect.objectContaining({
+            domain: expect.objectContaining({ certificateBody: null }),
+          }),
+        }),
+      );
+    });
+
+    it('keeps HTTP CDN primary and www updates free of certificate writes', async () => {
+      setupBasicUpdateMocks();
+      setupCdnMocks();
+      mockedStateManager.getResource.mockReturnValue({
+        instances: [{ type: 'ALIYUN_APIGW_GROUP', id: 'group-123' }],
+        definition: {},
+      });
+      mockedApigwOperations.getApiGroup.mockResolvedValue({
+        groupId: 'group-123',
+        subDomain: 'group.example.net',
+      });
+      mockedApigwTypes.inferProtocolConfig.mockReturnValue({ requestProtocol: 'HTTP' });
+      mockedApigwTypes.extractEventDomainDefinition.mockReturnValue({
+        domainName: 'example.com',
+        cdnEnabled: true,
+        wwwBindApex: true,
+        protocol: 'HTTP',
+      });
+      await updateApigwResource(
+        mockContext,
+        {
+          ...testEvent,
+          domain: { domain_name: 'example.com', protocol: 'HTTP', www_bind_apex: true, cdn: true },
+        },
+        'test-service',
+        undefined,
+        initialState,
+      );
+      expect(mockedCdnOperations.addCdnDomain).toHaveBeenCalledTimes(2);
+      expect(mockedCdnOperations.addCdnDomain).toHaveBeenCalledWith(
+        expect.objectContaining({ domainName: 'www.example.com' }),
+      );
+      expect(mockedCdnOperations.setDomainServerCertificate).not.toHaveBeenCalled();
+      expect(mockedApigwOperations.bindCustomDomain).not.toHaveBeenCalled();
+    });
 
     it('should fallback to create when no group instance exists in state', async () => {
       const existingState = {
