@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.9.4] - 2026-10-27
+
+### Changed
+
+- CLI help, README examples, command references and sample guides now promote
+  `si diff` as the only planning command.
+
 ### Removed
 
 - **Breaking:** `si plan` has been removed; `si diff` is now the sole CLI
@@ -18,10 +25,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   changes / `1` errors) and `--json` envelope (`planVersion: 1`) as the removed
   command.
 
-### Changed
+### Fixed
 
-- CLI help, README examples, command references and sample guides now promote
-  `si diff` as the only planning command.
+- Aliyun API Gateway plans now report each custom domain's binding and
+  certificate fingerprint, and rewrite only the dimensions that changed.
+- Certificate-only and redirect updates skip DNS verification, and removing a
+  domain deletes only the bindings and DNS records si owns, leaving foreign
+  records intact.
+- CLI language detection now honors `SI_LANG`, normalizes `LC_ALL`/`LANG`, and
+  no longer prints `chcp` errors on Linux and macOS.
 
 ## [0.9.3] - 2026-10-24
 

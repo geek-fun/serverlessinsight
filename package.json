@@ -1,6 +1,6 @@
 {
   "name": "@geek-fun/serverlessinsight",
-  "version": "0.9.3",
+  "version": "0.9.4",
   "description": "Full-lifecycle serverless IaC for Alibaba Cloud, Tencent Cloud and Volcengine — one YAML to define, deploy and operate functions, API gateways, storage and databases.",
   "homepage": "https://serverlessinsight.com",
   "main": "dist/src/index.js",
