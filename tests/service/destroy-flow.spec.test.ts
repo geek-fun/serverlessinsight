@@ -34,14 +34,23 @@ jest.mock('../../src/lang', () => ({
 const mockCreateAliyunClient = require('../../src/common/aliyunClient')
   .createAliyunClient as jest.Mock;
 
+// Issue #280: destroy reads the scoped V4 document for its Stage/Region scope.
 const STATE_FILE_PATH = path.join(
   process.cwd(),
   '.serverlessinsight',
-  'state-insight-poc-destroy-app-insight-poc-destroy.json',
+  'states',
+  'insight-poc-destroy-app',
+  'insight-poc-destroy',
+  'dev',
+  'cn-hangzhou',
+  'state.json',
 );
 
 const EXISTING_STATE = JSON.stringify({
-  version: '3.0',
+  version: '4.0',
+  scope: { stage: 'dev', region: 'cn-hangzhou' },
+  lineage: 'destroy-flow-lineage',
+  serial: 1,
   provider: 'aliyun',
   app: 'insight-poc-destroy-app',
   service: 'insight-poc-destroy',
@@ -84,6 +93,9 @@ describe('Destroy Flow Service Test', () => {
 
   afterEach(async () => {
     await fs.rm(STATE_FILE_PATH, { force: true }).catch(() => {});
+    await fs
+      .rm(path.dirname(path.dirname(STATE_FILE_PATH)), { recursive: true, force: true })
+      .catch(() => {});
   });
 
   describe('Aliyun Destroy', () => {

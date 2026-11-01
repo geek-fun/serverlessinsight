@@ -5,6 +5,7 @@ import {
   enforceMigrationMarker,
   isMigratedToSaas,
   MANAGED_BY_SAAS,
+  MANAGED_BY_REGIONAL,
 } from '../../../src/common/migrationMarker';
 import {
   saveState,
@@ -60,6 +61,28 @@ describe('migration marker (managedBy=saas)', () => {
   it('off → no-op even for a marked state (si migrate itself)', () => {
     expect(() => enforceMigrationMarker({ managedBy: MANAGED_BY_SAAS }, 'off')).not.toThrow();
     expect(logger.warn).not.toHaveBeenCalledWith('MIGRATION_MARKER_WARN');
+  });
+});
+
+describe('regional write barrier (managedBy=regional, issue #280)', () => {
+  it('refuse → throws the MIGRATION_MARKER_REGIONAL_REFUSED guidance (deploy/destroy path)', () => {
+    expect(() => enforceMigrationMarker({ managedBy: MANAGED_BY_REGIONAL }, 'refuse')).toThrow(
+      'MIGRATION_MARKER_REGIONAL_REFUSED',
+    );
+  });
+
+  it('warn → logs the regional guidance and passes (plan/show path)', () => {
+    expect(() => enforceMigrationMarker({ managedBy: MANAGED_BY_REGIONAL }, 'warn')).not.toThrow();
+    expect(logger.warn).toHaveBeenCalledWith('MIGRATION_MARKER_REGIONAL_WARN');
+  });
+
+  it('off → no-op even for a regionally marked state', () => {
+    expect(() => enforceMigrationMarker({ managedBy: MANAGED_BY_REGIONAL }, 'off')).not.toThrow();
+    expect(logger.warn).not.toHaveBeenCalled();
+  });
+
+  it('isMigratedToSaas stays false for the regional marker', () => {
+    expect(isMigratedToSaas({ managedBy: MANAGED_BY_REGIONAL })).toBe(false);
   });
 });
 

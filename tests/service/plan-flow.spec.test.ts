@@ -155,12 +155,20 @@ describe('Plan Flow Service Test', () => {
 
   describe('Multi-Provider Support', () => {
     it('should use Tencent planner for Tencent provider', async () => {
+      // The seeded state is aliyun-shaped; this test verifies DISPATCH (the
+      // effective provider plans the command), so run against a fresh scope.
+      await fs.rm(STATE_FILE_PATH, { force: true }).catch(() => {});
+      mockTencentClient.scf.GetFunction.mockResolvedValue(null);
       await plan({
         location: path.join(fixturesDir, 'serverless-insight-plan.yml'),
         stage: 'dev',
         region: 'ap-guangzhou',
         provider: 'tencent',
       });
+      // Dispatch proof: the TENCENT client was probed for the function (the
+      // aliyun mock was not) — effective provider drives planning (issue #280).
+      expect(mockTencentClient.scf.getFunction).toHaveBeenCalledWith('insight-poc-fn');
+      expect(mockClient.fc3.getFunction).not.toHaveBeenCalled();
     });
   });
 
@@ -190,7 +198,7 @@ describe('Plan Flow Service Test', () => {
       );
 
       const payload = JSON.parse(text);
-      expect(payload.planVersion).toBe(1);
+      expect(payload.planVersion).toBe(2);
       expect(payload.provider).toBe('aliyun');
       expect(payload.app).toBe('insight-poc-plan-app');
       expect(payload.service).toBe('insight-poc-plan');

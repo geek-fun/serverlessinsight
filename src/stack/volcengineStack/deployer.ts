@@ -48,11 +48,11 @@ export const deployVolcengineStack = async (
   const context = getContext();
   logger.info(lang.__('DEPLOYING_STACK'));
 
-  let state = await backend.loadState('volcengine', iac.app, iac.service, context.stage);
+  let state = await backend.loadState();
 
   const onStateChange = async (newState: typeof state) => {
     state = newState;
-    await backend.saveState(state, iac.app, iac.service, context.stage);
+    await backend.saveState(state);
   };
 
   logger.info(lang.__('GENERATING_PLAN'));
@@ -150,7 +150,7 @@ export const deployVolcengineStack = async (
     throw error;
   }
 
-  await backend.saveState(apigwResult.state, iac.app, iac.service, context.stage);
+  await backend.saveState(apigwResult.state);
 
   logger.info(lang.__('STACK_DEPLOYED'));
 };

@@ -42,10 +42,14 @@ const deployOptions = {
   provider: 'aliyun',
 };
 
+import { cleanScopedState, readScopedState } from './scopedState';
+
+const STATE_APP = 'role-reconcile-test-app';
+const STATE_SERVICE = 'role-reconcile-test-service';
 const stateFilePath = path.join(
   process.cwd(),
   '.serverlessinsight',
-  'state-role-reconcile-test-app-role-reconcile-test-service.json',
+  `state-${STATE_APP}-${STATE_SERVICE}.json`,
 );
 
 const loadState = async (): Promise<{
@@ -61,7 +65,10 @@ const loadState = async (): Promise<{
       >;
     }
   >;
-}> => JSON.parse(await fs.readFile(stateFilePath, 'utf-8'));
+}> => {
+  // Issue #280: deploys persist scoped V4 documents, not the legacy aggregate.
+  return readScopedState(STATE_APP, STATE_SERVICE, 'dev', 'cn-hangzhou');
+};
 
 const fnResourceOf = async (): Promise<{
   definition?: { iam?: unknown };
@@ -79,10 +86,12 @@ describe('Role Reconciliation Deploy Flow (issue #234)', () => {
     mockClient = createMockAliyunClient();
     mockCreateAliyunClient.mockReturnValue(mockClient);
     await fs.rm(stateFilePath, { force: true }).catch(() => {});
+    await cleanScopedState(STATE_APP, STATE_SERVICE);
   });
 
   afterEach(async () => {
     await fs.rm(stateFilePath, { force: true }).catch(() => {});
+    await cleanScopedState(STATE_APP, STATE_SERVICE);
   });
 
   it('plans update and rebinds when the recorded RAM role is gone from the provider', async () => {

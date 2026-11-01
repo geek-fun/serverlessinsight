@@ -84,12 +84,13 @@ jest.mock('../../../../src/common', () => {
     ),
     attributesEqual: jest.fn((a, b) => JSON.stringify(a) === JSON.stringify(b)),
     buildConstrainedName: jest.fn(constrainedName),
-    buildFunctionRoleName: jest.fn((serviceName: string, stage: string, fnKey: string) =>
-      constrainedName({
-        parts: [serviceName, stage, fnKey, 'role'],
-        maxLength: 64,
-        charset: 'hyphen',
-      }),
+    buildFunctionRoleName: jest.fn(
+      (serviceName: string, stage: string, region: string, fnKey: string) =>
+        constrainedName({
+          parts: [serviceName, stage, region, fnKey, 'role'],
+          maxLength: 64,
+          charset: 'hyphen',
+        }),
     ),
   };
 });
@@ -281,7 +282,9 @@ describe('vefaasResource', () => {
 
       expect(mockVefaasClient.vefaas.createFunction).toHaveBeenCalledWith(
         expect.objectContaining({
-          Tags: [{ Key: 'si-owned-by', Value: 'test-app-test-service:functions.test_fn' }],
+          Tags: [
+            { Key: 'si-owned-by', Value: 'test-app-test-service:functions.test_fn@cn-beijing' },
+          ],
         }),
         expect.any(String),
       );
@@ -475,7 +478,7 @@ describe('vefaasResource', () => {
         expect.objectContaining({
           resourceType: 'project',
           resourcesList: ['proj-1'],
-          tags: [{ key: 'si-owned-by', value: 'test-app:shared:logs.project' }],
+          tags: [{ key: 'si-owned-by', value: 'test-app:shared:logs.project@cn-beijing' }],
         }),
       );
       // The shared project is persisted into the stage shared slot, not the function.
@@ -1034,7 +1037,7 @@ describe('vefaasResource', () => {
 
       expect(mockVefaasClient.iam.createRole).toHaveBeenCalledWith(
         expect.objectContaining({
-          roleName: 'test-app-test-service-dev-test-fn-role',
+          roleName: 'test-app-test-service-dev-cn-beijing-test-fn-role',
           managedPolicies: ['AdministratorAccess', 'ReadOnlyAccess'],
         }),
       );
@@ -1054,7 +1057,7 @@ describe('vefaasResource', () => {
       await createResource(mockContext, mockFunction, mockState);
 
       expect(mockVefaasClient.iam.createRole).toHaveBeenCalledWith(
-        expect.objectContaining({ roleName: 'test-app-test-service-dev-test-fn-role' }),
+        expect.objectContaining({ roleName: 'test-app-test-service-dev-cn-beijing-test-fn-role' }),
       );
     });
 
@@ -1082,7 +1085,7 @@ describe('vefaasResource', () => {
 
       expect(mockVefaasClient.iam.createRole).toHaveBeenCalledWith(
         expect.objectContaining({
-          roleName: 'test-app-test-service-dev-test-fn-role',
+          roleName: 'test-app-test-service-dev-cn-beijing-test-fn-role',
           executionStatements: expect.arrayContaining([
             expect.objectContaining({
               action: ['vpc:DescribeVpcs', 'vpc:DescribeSubnets', 'vpc:DescribeSecurityGroups'],

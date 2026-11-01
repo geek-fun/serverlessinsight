@@ -1024,6 +1024,90 @@ export const zhCN = {
     '该状态已迁移至 ServerlessInsight Console（managedBy=saas），旧后端已关闭变更。\n  • 继续使用 Console：从 YAML 中删除 backend.state_manager 段并在顶层声明 org: <slug> 后重新部署。\n  • 确需经旧后端操作：运行 `si migrate --rollback` 清除标记。',
   MIGRATION_MARKER_WARN:
     '该状态已迁移至 Console（managedBy=saas）——此处展示的是只读副本，可能已过期。请勿从该后端部署。',
+  MIGRATION_MARKER_REGIONAL_REFUSED:
+    '该旧版状态已拆分为区域部署状态（managedBy=regional），聚合文档已关闭写入。\n  • 使用区域状态部署：重新执行相同命令即可——.serverlessinsight/states/ 下的区域文档现在是权威状态。\n  • 在发生任何区域写入之前撤销拆分：运行 `si migrate --to-regional --rollback-op-id <opId>`。',
+  MIGRATION_MARKER_REGIONAL_WARN:
+    '该旧版聚合状态已拆分为区域部署状态（managedBy=regional）——此处展示的是只读副本，可能已过期。',
+
+  // ===== Issue #280：区域部署状态隔离 =====
+  SCOPE_KEY_PART_REQUIRED: "'{{label}}' 必填且不能为空",
+  SCOPE_KEY_PART_INVALID:
+    "'{{label}}' 的值 '{{part}}' 不是路径安全的：不能为空，不能包含 '/'、'\\'、'..' 或首尾空白",
+  EFFECTIVE_CONFIG_UNKNOWN_PROVIDER:
+    "未知 provider '{{provider}}'。支持的 provider：aliyun、tencent、volcengine、huawei、aws",
+  EFFECTIVE_CONFIG_REGION_REQUIRED:
+    '需要指定 region：通过 -r/--region 传入、在 YAML 的 provider.region 中设置，或设置 SI_REGION 环境变量',
+  EFFECTIVE_CONFIG_PROVIDER_MISMATCH:
+    'Provider 不匹配：该服务已使用 provider "{{expected}}" 部署，但本次命令解析出的 provider 是 "{{actual}}"。一个 Service 只有一个 provider；请检查 -v/--provider 与 YAML 的 provider 配置',
+  STATE_WRITE_BLOCKED_LEGACY:
+    '拒绝写入区域状态：旧版聚合文件 {{statePath}} 仍持有该 stage 的状态。\n  请先运行 `si migrate --to-regional --dry-run` 审查拆分方案，确认后再执行拆分。只读命令仍可继续读取旧文件。',
+  STATE_WRITE_BLOCKED_LEGACY_BUCKET:
+    '拒绝写入区域状态：旧版状态对象 {{objectKey}} 仍持有该 stage 的状态。\n  请先运行 `si migrate --to-regional --dry-run` 审查拆分方案，确认后再执行拆分。只读命令仍可继续读取旧对象。',
+  STATE_WRITE_NOT_READY: '当前部署范围的状态写入尚未就绪',
+  STATE_BUCKET_NOT_FOUND:
+    '状态存储 bucket 不存在（{{code}}）。请创建 bucket 或修正 backend.state_manager 配置——bucket 缺失不会被当作空状态',
+  STATE_BUCKET_ACCESS_DENIED:
+    '状态存储 bucket 访问被拒绝（{{code}}）。请检查存储凭据——鉴权失败永远不会被当作空状态',
+  STATE_STORAGE_CREDENTIALS_MISSING:
+    '{{provider}} 状态存储后端需要凭据：请传入 -k/-x（或对应的 provider 环境变量），保证状态存储与工作负载凭据可解析',
+  LOCK_CONDITIONAL_CREATE_UNSUPPORTED:
+    '当前状态存储不支持排他（条件）创建——并发首次加锁将回退为"写入后校验"，不保证原子性。请避免对同一 scope 并行执行变更命令',
+  SAAS_REGIONAL_SCOPE_UNSUPPORTED:
+    'Console（{{consoleUrl}}）尚不支持区域部署状态（缺少 scope protocol 能力）。仅升级 CLI 无法安全隔离区域——请升级 Console，或在未隔离部署场景下继续使用旧版 CLI',
+  SAAS_STATE_SCOPE_MISMATCH:
+    'Console 返回的是 stage {{storedStage}} / region {{storedRegion}} 的状态，但本次命令目标是 stage {{stage}} / region {{region}}。拒绝混用区域 scope',
+  SAAS_READ_ONLY_WRITE_REFUSED: '该 SaaS 后端实例以只读模式创建（diff/show），拒绝状态写入',
+  SAAS_WRITE_BLOCKED_UNSCOPED_STATE:
+    'Console 上 stage {{stage}} 的当前状态没有记录区域 scope（早于区域隔离）。请先在 Console 侧完成该服务的迁移，再向 region {{region}} 部署——直接写入会覆盖其他区域的状态',
+  REGIONAL_MIGRATION_LOCAL_OR_BUCKET_ONLY:
+    '--to-regional 仅适用于 LOCAL 与 BUCKET_STORE 后端。SaaS 的区域状态由 Console 侧完成',
+  REGIONAL_MIGRATION_UNSUPPORTED_SOURCE:
+    '期望旧版 V3.0 状态聚合，但发现版本 "{{version}}"。没有可拆分的内容',
+  REGIONAL_MIGRATION_ALREADY_SPLIT:
+    '该旧版状态已标记为已拆分（managedBy=regional），区域文档是权威状态；拒绝重复拆分。在发生任何区域写入之前撤销：`si migrate --to-regional --rollback-op-id <opId>`',
+  REGIONAL_MIGRATION_PROVIDER_MISMATCH:
+    'Provider 不匹配：旧版状态记录的 provider 是 "{{source}}"，而命令解析出 "{{effective}}"。拆分保留已记录的 provider 绑定——请检查 -v/--provider 与 YAML 的 provider 配置',
+  REGIONAL_MIGRATION_UNKNOWN_REGION_REQUIRED:
+    '部分资源没有区域证据（早于区域隔离的状态）。请使用 --bind-unknown-region <region> 重新运行以显式绑定区域——CLI 绝不会从 YAML 或文件名猜测历史区域',
+  REGIONAL_MIGRATION_SOURCE_MISSING: '迁移过程中旧版状态消失了——未写入任何内容',
+  REGIONAL_MIGRATION_SOURCE_CHANGED:
+    '旧版状态在生成计划之后发生了变化（哈希不匹配）。请重新运行 `si migrate --to-regional --dry-run` 刷新计划——本次未写入任何内容',
+  REGIONAL_MIGRATION_APPLIED:
+    '区域拆分已完成（操作 {{opId}}）：区域文档已写入，旧版条目保留为只读屏障（managedBy=regional）。请用 `si diff` 验证——在下次部署前它必须报告没有非预期变更',
+  REGIONAL_MIGRATION_PARTIAL_FAILURE:
+    '区域拆分部分失败（操作 {{opId}}）：{{error}}。已写入的文档仍然有效；旧版条目未被改动——修复原因后重新运行',
+  REGIONAL_MIGRATION_REPORT_MISSING:
+    '未找到操作 {{opId}} 的迁移报告——该拆分不是由本 CLI 执行的，或报告已被删除',
+  REGIONAL_MIGRATION_BACKUP_MISSING:
+    '操作 {{opId}} 的迁移前备份缺失——请手动恢复；缺少备份时拒绝回滚',
+  REGIONAL_MIGRATION_ROLLBACK_BLOCKED:
+    '无法回滚 stage {{stage}} / region {{region}}：其区域文档在拆分后已发生独立的区域写入。合并回旧聚合会丢失这些写入——需要人工处理',
+  REGIONAL_MIGRATION_ROLLED_BACK: '区域拆分 {{opId}} 已回滚：旧版聚合已恢复，区域文档已删除',
+  REGIONAL_MIGRATION_PLAN_HEADER:
+    '旧版状态 {{location}} 的区域拆分计划——每个 stage/region 一个 V4 文档：',
+  REGIONAL_MIGRATION_SOURCE_HASH: '源文档哈希：{{hash}}',
+  REGIONAL_MIGRATION_NO_REGIONAL_RESOURCES: '在所选范围内，旧版聚合中没有找到区域资源',
+  REGIONAL_MIGRATION_PLAN_DOCUMENT:
+    '  • stage {{stage}} / region {{region}}：{{resources}} 个资源，{{shared}} 个共享',
+  REGIONAL_MIGRATION_UNKNOWN_HEADER: '没有区域证据的资源（早于区域隔离创建）——需要显式绑定：',
+  REGIONAL_MIGRATION_UNKNOWN_ITEM: '  • [{{stage}}] {{logicalId}}（{{kind}}）',
+  REGIONAL_MIGRATION_UNKNOWN_HINT:
+    'YAML 默认值、CLI 参数和文件名都不是历史证据。请先核实这些资源实际所在区域，再通过 --bind-unknown-region <region> 显式绑定',
+  REGIONAL_MIGRATION_BACKUP_NOTICE:
+    '执行时：先备份原始文档，每个区域文档获得独立 lineage，旧版条目保留为写入屏障（对旧版 CLI 的保护另行说明）',
+  REGIONAL_MIGRATION_NO_LEGACY_STATE:
+    '在 {{location}} 未找到旧版状态——没有可拆分的内容。全新部署已经直接写入区域化的 V4 文档',
+  REGIONAL_MIGRATION_DRY_RUN_NOTICE:
+    '仅 dry-run——未写入任何内容。去掉 --dry-run（如上方有列出，请加 --bind-unknown-region）后重新运行以执行拆分',
+  REGIONAL_MIGRATION_CONFIRM:
+    '立即执行区域拆分？旧版状态将被备份并标记为只读（managedBy=regional），区域文档成为权威状态（yes/no）：',
+  MIGRATE_CANCELLED: '迁移已取消——未写入任何内容',
+
+  OPT_TO_REGIONAL: '将旧版 V3 状态拆分为按 stage/region 的 V4 文档（受保护迁移）',
+  OPT_LEGACY_APP: '读取该（重命名前）app 名称的旧版聚合状态，用于显式重绑定',
+  OPT_LEGACY_SERVICE: '读取该（重命名前）service 名称的旧版聚合状态，用于显式重绑定',
+  OPT_BIND_UNKNOWN_REGION: '将没有区域证据的资源显式绑定到该区域',
+  OPT_ROLLBACK_OP_ID: '按迁移操作 ID 回滚区域拆分',
 
   // HTTP trigger messages
   HTTP_TRIGGER_AUTH_TYPE_REQUIRED:

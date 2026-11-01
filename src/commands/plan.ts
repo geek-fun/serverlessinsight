@@ -53,11 +53,14 @@ export const plan = async (options: {
   logger.info(lang.__('GENERATING_PLAN_FOR_PROVIDER', { provider: providerDisplayName }));
 
   // Read-only command: a migrated state only warns here (window-period
-  // reconciliation still needs plan against the legacy copy).
+  // reconciliation still needs plan against the legacy copy). 'read-only' mode
+  // keeps SaaS resolution provisioning-free (issue #280 §4): diff/show must not
+  // create deployments or lifecycle records.
   const backend = createStateBackend(iac.backend, {
     ...context,
     declaredOrg: iac.org,
     migrationMarker: 'warn',
+    mode: 'read-only',
   });
   let planResult;
 
@@ -79,6 +82,7 @@ export const plan = async (options: {
         app: iac.app,
         service: iac.service,
         stage: context.stage,
+        region: context.region,
       }),
     );
   } else {

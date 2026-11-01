@@ -1,6 +1,8 @@
 /* eslint-disable @typescript-eslint/no-require-imports */
 import { createCosStateBackend } from '../../../../src/common/stateBackend/cosStateBackend';
+import type { RemoteBackendConfig } from '../../../../src/common/stateBackend/remoteStateBackend';
 import type { StorageAdapter } from '../../../../src/common/stateBackend/types';
+import { ConditionalPutUnsupportedError } from '../../../../src/common/stateBackend/types';
 
 const mockCosClient = {
   getObject: jest.fn(),
@@ -16,25 +18,25 @@ jest.mock('../../../../src/common/stateBackend/remoteStateBackend', () => {
   const actualModule = jest.requireActual('../../../../src/common/stateBackend/remoteStateBackend');
   return {
     ...actualModule,
-    createRemoteStateBackend: jest.fn().mockImplementation((adapter: StorageAdapter) => ({
-      adapter,
-      loadState: jest.fn(),
-      saveState: jest.fn(),
-      acquireLock: jest.fn(),
-      releaseLock: jest.fn(),
-      forceUnlock: jest.fn(),
-      readLock: jest.fn(),
-      withLock: jest.fn(),
-    })),
+    createRemoteStateBackend: jest.fn().mockImplementation(() => ({ loadState: jest.fn() })),
   };
 });
 
-describe('cosStateBackend', () => {
+describe('cosStateBackend (scope-bound, issue #280)', () => {
   beforeEach(() => {
     jest.clearAllMocks();
   });
 
+  const scope = {
+    provider: 'tencent',
+    app: 'test-app',
+    service: 'test-service',
+    stage: 'prod',
+    region: 'cn-hangzhou',
+  };
+
   const config = {
+    scope,
     bucket: 'test-bucket',
     key: 'state.json',
     region: 'ap-chengdu',
@@ -42,249 +44,243 @@ describe('cosStateBackend', () => {
     accessKeySecret: 'test-secret',
   };
 
-  it('should create COS state backend', () => {
-    const backend = createCosStateBackend(config);
-    expect(backend).toBeDefined();
-  });
+  const SCOPED_KEY = 'state.json.scopes/test-app/test-service/prod/cn-hangzhou/state.json';
 
-  it('should initialize with credentials', () => {
-    const COS = require('cos-nodejs-sdk-v5');
+  /** Creates the backend and captures the adapter and config handed to the remote backend. */
+  const captureWiring = (): { adapter: StorageAdapter; remoteConfig: RemoteBackendConfig } => {
+    const {
+      createRemoteStateBackend,
+    } = require('../../../../src/common/stateBackend/remoteStateBackend');
+    const captured: { adapter?: StorageAdapter; remoteConfig?: RemoteBackendConfig } = {};
+    (createRemoteStateBackend as jest.Mock).mockImplementation(
+      (adapter: StorageAdapter, cfg: RemoteBackendConfig) => {
+        captured.adapter = adapter;
+        captured.remoteConfig = cfg;
+        return { loadState: jest.fn() };
+      },
+    );
     createCosStateBackend(config);
+    return { adapter: captured.adapter!, remoteConfig: captured.remoteConfig! };
+  };
+
+  it('creates the COS client with credentials and timeout', () => {
+    const COS = require('cos-nodejs-sdk-v5');
+    createCosStateBackend({ ...config, securityToken: 'test-token' });
 
     expect(COS).toHaveBeenCalledWith(
       expect.objectContaining({
         SecretId: 'test-id',
         SecretKey: 'test-secret',
-      }),
-    );
-  });
-
-  it('should include security token when provided', () => {
-    const COS = require('cos-nodejs-sdk-v5');
-    const configWithToken = { ...config, securityToken: 'test-token' };
-    createCosStateBackend(configWithToken);
-
-    expect(COS).toHaveBeenCalledWith(
-      expect.objectContaining({
         SecurityToken: 'test-token',
-      }),
-    );
-  });
-
-  it('should return backend with all required methods', () => {
-    const backend = createCosStateBackend(config);
-    expect(backend).toHaveProperty('loadState');
-    expect(backend).toHaveProperty('saveState');
-    expect(backend).toHaveProperty('acquireLock');
-    expect(backend).toHaveProperty('releaseLock');
-    expect(backend).toHaveProperty('forceUnlock');
-    expect(backend).toHaveProperty('readLock');
-    expect(backend).toHaveProperty('withLock');
-  });
-
-  it('should configure timeout setting', () => {
-    const COS = require('cos-nodejs-sdk-v5');
-    createCosStateBackend(config);
-
-    expect(COS).toHaveBeenCalledWith(
-      expect.objectContaining({
         Timeout: expect.any(Number),
       }),
     );
   });
 
-  it('should read object from COS bucket', async () => {
-    const testData = { app: 'test', version: '1.0' };
-    mockCosClient.getObject.mockImplementation(
-      ({ _Key }: { _Key: string }, callback: (err: unknown, data: unknown) => void) => {
-        callback(null, { Body: Buffer.from(JSON.stringify(testData)) });
-      },
-    );
+  it('wires the remote backend with the derived scoped key and the legacy discovery key', () => {
+    const { remoteConfig } = captureWiring();
 
-    const {
-      createRemoteStateBackend,
-    } = require('../../../../src/common/stateBackend/remoteStateBackend');
-    const adapterCapture = jest.fn();
-    (createRemoteStateBackend as jest.Mock).mockImplementation((adapter: StorageAdapter) => {
-      adapterCapture(adapter);
-      return { loadState: jest.fn() };
-    });
-
-    createCosStateBackend(config);
-    const capturedAdapter = adapterCapture.mock.calls[0][0];
-
-    const result = await capturedAdapter.read('state.json');
-    expect(result).toEqual(testData);
+    expect(remoteConfig.scope).toEqual(scope);
+    expect(remoteConfig.scopedKey).toBe(SCOPED_KEY);
+    expect(remoteConfig.legacyKey).toBe('state.json');
   });
 
-  it('should return null for 404 on read', async () => {
-    mockCosClient.getObject.mockImplementation(
-      ({ _Key }: { _Key: string }, callback: (err: unknown, data: unknown) => void) => {
-        callback({ statusCode: 404 }, undefined);
-      },
-    );
+  it('exposes the bucket-backed lock path for lock metadata', () => {
+    const { adapter } = captureWiring();
 
-    const {
-      createRemoteStateBackend,
-    } = require('../../../../src/common/stateBackend/remoteStateBackend');
-    const adapterCapture = jest.fn();
-    (createRemoteStateBackend as jest.Mock).mockImplementation((adapter: StorageAdapter) => {
-      adapterCapture(adapter);
-      return { loadState: jest.fn() };
-    });
-
-    createCosStateBackend(config);
-    const capturedAdapter = adapterCapture.mock.calls[0][0];
-
-    const result = await capturedAdapter.read('nonexistent.json');
-    expect(result).toBeNull();
+    expect(adapter.lockPath).toBe('cos://test-bucket/state.json');
   });
 
-  it('should write object to COS bucket', async () => {
-    mockCosClient.putObject.mockImplementation(
-      ({ _Key, _Body }: { _Key: string; _Body: string }, callback: (err: unknown) => void) => {
-        callback(null);
-      },
-    );
+  describe('adapter.read', () => {
+    it('parses the stored JSON document', async () => {
+      const testData = { app: 'test', version: '1.0' };
+      mockCosClient.getObject.mockImplementation(
+        (_params: unknown, callback: (err: unknown, data: unknown) => void) => {
+          callback(null, { Body: Buffer.from(JSON.stringify(testData)) });
+        },
+      );
+      const { adapter } = captureWiring();
 
-    const {
-      createRemoteStateBackend,
-    } = require('../../../../src/common/stateBackend/remoteStateBackend');
-    const adapterCapture = jest.fn();
-    (createRemoteStateBackend as jest.Mock).mockImplementation((adapter: StorageAdapter) => {
-      adapterCapture(adapter);
-      return { saveState: jest.fn() };
+      const result = await adapter.read('state.json');
+
+      expect(result).toEqual(testData);
+      expect(mockCosClient.getObject).toHaveBeenCalledWith(
+        expect.objectContaining({
+          Bucket: 'test-bucket',
+          Region: 'ap-chengdu',
+          Key: 'state.json',
+        }),
+        expect.any(Function),
+      );
     });
 
-    createCosStateBackend(config);
-    const capturedAdapter = adapterCapture.mock.calls[0][0];
+    it('maps 404 to null (fresh scope)', async () => {
+      mockCosClient.getObject.mockImplementation(
+        (_params: unknown, callback: (err: unknown, data: unknown) => void) => {
+          callback({ statusCode: 404 }, undefined);
+        },
+      );
+      const { adapter } = captureWiring();
 
-    const testData = { app: 'test' };
-    await capturedAdapter.write('state.json', testData);
+      await expect(adapter.read('nonexistent.json')).resolves.toBeNull();
+    });
 
-    expect(mockCosClient.putObject).toHaveBeenCalled();
-    const callArgs = mockCosClient.putObject.mock.calls[0][0];
-    expect(callArgs.Key).toBe('state.json');
-    expect(callArgs.Body).toContain('app');
+    it('throws STATE_BUCKET_NOT_FOUND for NoSuchBucket', async () => {
+      mockCosClient.getObject.mockImplementation(
+        (_params: unknown, callback: (err: unknown, data: unknown) => void) => {
+          callback({ code: 'NoSuchBucket' }, undefined);
+        },
+      );
+      const { adapter } = captureWiring();
+
+      await expect(adapter.read('state.json')).rejects.toThrow(/does not exist.*NoSuchBucket/s);
+    });
+
+    it('throws STATE_BUCKET_ACCESS_DENIED for 403', async () => {
+      mockCosClient.getObject.mockImplementation(
+        (_params: unknown, callback: (err: unknown, data: unknown) => void) => {
+          callback({ statusCode: 403 }, undefined);
+        },
+      );
+      const { adapter } = captureWiring();
+
+      await expect(adapter.read('state.json')).rejects.toThrow(/denied/s);
+    });
+
+    it('propagates unrelated errors on read', async () => {
+      mockCosClient.getObject.mockImplementation(
+        (_params: unknown, callback: (err: unknown, data: unknown) => void) => {
+          callback(new Error('Request timeout'), undefined);
+        },
+      );
+      const { adapter } = captureWiring();
+
+      await expect(adapter.read('state.json')).rejects.toThrow('Request timeout');
+    });
   });
 
-  it('should delete object from COS bucket', async () => {
-    mockCosClient.deleteObject.mockImplementation(
-      ({ _Key }: { _Key: string }, callback: (err: unknown) => void) => {
-        callback(null);
-      },
-    );
+  describe('adapter.write', () => {
+    it('puts the JSON document as the body', async () => {
+      mockCosClient.putObject.mockImplementation(
+        (_params: unknown, callback: (err: unknown) => void) => {
+          callback(null);
+        },
+      );
+      const { adapter } = captureWiring();
+      const data = { app: 'test' };
 
-    const {
-      createRemoteStateBackend,
-    } = require('../../../../src/common/stateBackend/remoteStateBackend');
-    const adapterCapture = jest.fn();
-    (createRemoteStateBackend as jest.Mock).mockImplementation((adapter: StorageAdapter) => {
-      adapterCapture(adapter);
-      return { loadState: jest.fn() };
+      await adapter.write('state.json', data);
+
+      const callArgs = mockCosClient.putObject.mock.calls[0][0];
+      expect(callArgs.Key).toBe('state.json');
+      expect(callArgs.Body).toBe(JSON.stringify(data, null, 2));
+      expect(callArgs.Headers).toBeUndefined();
     });
-
-    createCosStateBackend(config);
-    const capturedAdapter = adapterCapture.mock.calls[0][0];
-
-    await capturedAdapter.delete('state.json');
-
-    expect(mockCosClient.deleteObject).toHaveBeenCalled();
-    const callArgs = mockCosClient.deleteObject.mock.calls[0][0];
-    expect(callArgs.Key).toBe('state.json');
   });
 
-  it('should ignore 404 errors on delete', async () => {
-    mockCosClient.deleteObject.mockImplementation(
-      ({ _Key }: { _Key: string }, callback: (err: unknown) => void) => {
-        callback({ statusCode: 404 });
+  describe('adapter.putIfAbsent', () => {
+    it('creates exclusively via If-None-Match and returns true', async () => {
+      mockCosClient.putObject.mockImplementation(
+        (_params: unknown, callback: (err: unknown) => void) => {
+          callback(null);
+        },
+      );
+      const { adapter } = captureWiring();
+
+      await expect(adapter.putIfAbsent!(SCOPED_KEY, { serial: 1 })).resolves.toBe(true);
+      expect(mockCosClient.putObject).toHaveBeenCalledWith(
+        expect.objectContaining({
+          Key: SCOPED_KEY,
+          Headers: { 'If-None-Match': '*' },
+        }),
+        expect.any(Function),
+      );
+    });
+
+    it.each([
+      ['statusCode 412', { statusCode: 412 }],
+      ['statusCode 409', { statusCode: 409 }],
+      ['code PreconditionFailed', { code: 'PreconditionFailed' }],
+      ['code KeyConflict', { code: 'KeyConflict' }],
+    ])('returns false when the object already exists (%s)', async (_label, err) => {
+      mockCosClient.putObject.mockImplementation(
+        (_params: unknown, callback: (err: unknown) => void) => {
+          callback(err);
+        },
+      );
+      const { adapter } = captureWiring();
+
+      await expect(adapter.putIfAbsent!(SCOPED_KEY, { serial: 1 })).resolves.toBe(false);
+    });
+
+    it.each([
+      ['statusCode 400', { statusCode: 400 }],
+      ['statusCode 501', { statusCode: 501 }],
+    ])(
+      'rejects with ConditionalPutUnsupportedError when the condition cannot be evaluated (%s)',
+      async (_label, err) => {
+        mockCosClient.putObject.mockImplementation(
+          (_params: unknown, callback: (err: unknown) => void) => {
+            callback(err);
+          },
+        );
+        const { adapter } = captureWiring();
+
+        await expect(adapter.putIfAbsent!(SCOPED_KEY, { serial: 1 })).rejects.toThrow(
+          ConditionalPutUnsupportedError,
+        );
       },
     );
 
-    const {
-      createRemoteStateBackend,
-    } = require('../../../../src/common/stateBackend/remoteStateBackend');
-    const adapterCapture = jest.fn();
-    (createRemoteStateBackend as jest.Mock).mockImplementation((adapter: StorageAdapter) => {
-      adapterCapture(adapter);
-      return { loadState: jest.fn() };
+    it('propagates unrelated putIfAbsent errors', async () => {
+      mockCosClient.putObject.mockImplementation(
+        (_params: unknown, callback: (err: unknown) => void) => {
+          callback(new Error('Internal error'));
+        },
+      );
+      const { adapter } = captureWiring();
+
+      await expect(adapter.putIfAbsent!(SCOPED_KEY, { serial: 1 })).rejects.toThrow(
+        'Internal error',
+      );
     });
-
-    createCosStateBackend(config);
-    const capturedAdapter = adapterCapture.mock.calls[0][0];
-
-    await expect(capturedAdapter.delete('nonexistent.json')).resolves.not.toThrow();
   });
 
-  it('should propagate errors on read', async () => {
-    const testError = new Error('Access Denied');
-    mockCosClient.getObject.mockImplementation(
-      ({ _Key }: { _Key: string }, callback: (err: unknown, data: unknown) => void) => {
-        callback(testError, undefined);
-      },
-    );
+  describe('adapter.delete', () => {
+    it('deletes the object', async () => {
+      mockCosClient.deleteObject.mockImplementation(
+        (_params: unknown, callback: (err: unknown) => void) => {
+          callback(null);
+        },
+      );
+      const { adapter } = captureWiring();
 
-    const {
-      createRemoteStateBackend,
-    } = require('../../../../src/common/stateBackend/remoteStateBackend');
-    const adapterCapture = jest.fn();
-    (createRemoteStateBackend as jest.Mock).mockImplementation((adapter: StorageAdapter) => {
-      adapterCapture(adapter);
-      return { loadState: jest.fn() };
+      await adapter.delete('state.json');
+
+      const callArgs = mockCosClient.deleteObject.mock.calls[0][0];
+      expect(callArgs.Key).toBe('state.json');
     });
 
-    createCosStateBackend(config);
-    const capturedAdapter = adapterCapture.mock.calls[0][0];
+    it('ignores 404 errors on delete', async () => {
+      mockCosClient.deleteObject.mockImplementation(
+        (_params: unknown, callback: (err: unknown) => void) => {
+          callback({ statusCode: 404 });
+        },
+      );
+      const { adapter } = captureWiring();
 
-    await expect(capturedAdapter.read('state.json')).rejects.toThrow('Access Denied');
-  });
-
-  it('should propagate errors on write', async () => {
-    const testError = new Error('Write Failed');
-    mockCosClient.putObject.mockImplementation(
-      ({ _Key, _Body }: { _Key: string; _Body: string }, callback: (err: unknown) => void) => {
-        callback(testError);
-      },
-    );
-
-    const {
-      createRemoteStateBackend,
-    } = require('../../../../src/common/stateBackend/remoteStateBackend');
-    const adapterCapture = jest.fn();
-    (createRemoteStateBackend as jest.Mock).mockImplementation((adapter: StorageAdapter) => {
-      adapterCapture(adapter);
-      return { saveState: jest.fn() };
+      await expect(adapter.delete('nonexistent.json')).resolves.toBeUndefined();
     });
 
-    createCosStateBackend(config);
-    const capturedAdapter = adapterCapture.mock.calls[0][0];
+    it('propagates non-404 errors on delete', async () => {
+      mockCosClient.deleteObject.mockImplementation(
+        (_params: unknown, callback: (err: unknown) => void) => {
+          callback(new Error('Delete Failed'));
+        },
+      );
+      const { adapter } = captureWiring();
 
-    await expect(capturedAdapter.write('state.json', { app: 'test' })).rejects.toThrow(
-      'Write Failed',
-    );
-  });
-
-  it('should propagate non-404 errors on delete', async () => {
-    const testError = new Error('Delete Failed');
-    (testError as unknown as { statusCode: number }).statusCode = 500;
-    mockCosClient.deleteObject.mockImplementation(
-      ({ _Key }: { _Key: string }, callback: (err: unknown) => void) => {
-        callback(testError);
-      },
-    );
-
-    const {
-      createRemoteStateBackend,
-    } = require('../../../../src/common/stateBackend/remoteStateBackend');
-    const adapterCapture = jest.fn();
-    (createRemoteStateBackend as jest.Mock).mockImplementation((adapter: StorageAdapter) => {
-      adapterCapture(adapter);
-      return { loadState: jest.fn() };
+      await expect(adapter.delete('state.json')).rejects.toThrow('Delete Failed');
     });
-
-    createCosStateBackend(config);
-    const capturedAdapter = adapterCapture.mock.calls[0][0];
-
-    await expect(capturedAdapter.delete('state.json')).rejects.toThrow('Delete Failed');
   });
 });

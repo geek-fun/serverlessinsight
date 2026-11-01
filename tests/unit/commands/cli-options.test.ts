@@ -24,6 +24,8 @@ jest.mock('../../../src/common/stateBackend', () => ({
   createStateBackend: jest.fn().mockReturnValue({
     loadState: jest.fn(),
     saveState: jest.fn(),
+    readStateSource: jest.fn().mockReturnValue('scoped'),
+    probeWriteReadiness: jest.fn().mockResolvedValue({ ready: true, source: 'scoped' }),
     acquireLock: jest.fn(),
     releaseLock: jest.fn(),
     forceUnlock: jest.fn(),

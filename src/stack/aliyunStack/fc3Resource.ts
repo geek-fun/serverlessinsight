@@ -674,7 +674,7 @@ const createDependentResources = async (
   const managedPolicies =
     iamConfig && typeof iamConfig !== 'string' ? iamConfig.managed_policies : undefined;
   const customRoleName = iamConfig && typeof iamConfig !== 'string' ? iamConfig.name : undefined;
-  const defaultRoleName = buildDefaultRoleName(serviceName, context.stage, fn.key);
+  const defaultRoleName = buildDefaultRoleName(serviceName, context.stage, context.region, fn.key);
 
   const isExternalRole = typeof iamConfig === 'string';
 
@@ -1438,7 +1438,7 @@ export const updateResource = async (
     const roleName =
       (isRecordedRoleExternal ? undefined : ramRoleInstance?.id) ??
       customRoleName ??
-      buildDefaultRoleName(serviceName, context.stage, fn.key);
+      buildDefaultRoleName(serviceName, context.stage, context.region, fn.key);
     const roleGrant = resolveRoleGrant(context, state, fn, logConfig, roleName);
     logger.info(lang.__('CREATING_RAM_ROLE', { roleName }));
     const ramRole = await client.ram.createRole(

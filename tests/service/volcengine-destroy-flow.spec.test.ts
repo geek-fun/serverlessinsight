@@ -34,14 +34,23 @@ jest.mock('../../src/lang', () => ({
 const mockCreateVolcengineClient = require('../../src/common/volcengineClient')
   .createVolcengineClient as jest.Mock;
 
+// Issue #280: destroy reads the scoped V4 document for its Stage/Region scope.
 const STATE_FILE_PATH = path.join(
   process.cwd(),
   '.serverlessinsight',
-  'state-insight-volc-destroy-app-insight-volc-destroy.json',
+  'states',
+  'insight-volc-destroy-app',
+  'insight-volc-destroy',
+  'dev',
+  'cn-beijing',
+  'state.json',
 );
 
 const EXISTING_STATE = JSON.stringify({
-  version: '3.0',
+  version: '4.0',
+  scope: { stage: 'dev', region: 'cn-beijing' },
+  lineage: 'volc-destroy-flow-lineage',
+  serial: 1,
   provider: 'volcengine',
   app: 'insight-volc-destroy-app',
   service: 'insight-volc-destroy',
@@ -97,6 +106,9 @@ describe('Volcengine Destroy Flow Service Test', () => {
 
   afterEach(async () => {
     await fs.rm(STATE_FILE_PATH, { force: true }).catch(() => {});
+    await fs
+      .rm(path.dirname(path.dirname(STATE_FILE_PATH)), { recursive: true, force: true })
+      .catch(() => {});
   });
 
   describe('Volcengine Destroy', () => {

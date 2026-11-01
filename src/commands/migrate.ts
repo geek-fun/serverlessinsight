@@ -14,6 +14,7 @@ import { createApiClient, validateApiKey, ApiError } from '../common/apiClient';
 import { isMigratedToSaas } from '../common/migrationMarker';
 import { StateBackendType } from '../types';
 import { parseYaml, revalYaml } from '../parser';
+import { runRegionalMigration } from './migrateRegional';
 import { lang } from '../lang';
 
 export type MigrateUploadResult = {
@@ -79,6 +80,15 @@ export const migrate = async (options: {
   noMarker?: boolean;
   dryRun?: boolean;
   rollback?: boolean;
+  /** Issue #280 §6: V3 → V4 regional split instead of the SaaS upload flow. */
+  toRegional?: boolean;
+  /** Explicit rebinding: read the legacy aggregate of a renamed app/service. */
+  legacyApp?: string;
+  legacyService?: string;
+  /** Explicit binding for resources without region evidence. */
+  bindUnknownRegion?: string;
+  /** Regional rollback: restore the aggregate backed up by the given opId. */
+  rollbackOpId?: string;
 }) => {
   logger.info(lang.__('VALIDATING_YAML'));
   const iacLocation = getIacLocation(options.location);
@@ -104,6 +114,46 @@ export const migrate = async (options: {
 
   // ① preflight — the source must be a legacy backend with actual state
   const backendType = iac.backend?.type ?? StateBackendType.SAAS;
+
+  // Issue #280 §6: the protected V3 → V4 regional split — explicit, dry-run/
+  // apply, distinguishable from (and combinable with) the SaaS migration.
+  if (options.toRegional) {
+    if (backendType === StateBackendType.SAAS) {
+      throw new Error(lang.__('REGIONAL_MIGRATION_LOCAL_OR_BUCKET_ONLY'));
+    }
+    const bucketConfig =
+      backendType === StateBackendType.BUCKET_STORE
+        ? {
+            bucket: (iac.backend as { bucket: string }).bucket,
+            key: (iac.backend as { key: string }).key,
+            storageRegion: context.region,
+            accessKeyId: context.accessKeyId,
+            accessKeySecret: context.accessKeySecret,
+            securityToken: context.securityToken,
+          }
+        : undefined;
+    await runRegionalMigration({
+      provider: context.provider,
+      app: context.app,
+      service: context.service,
+      region: context.region,
+      stage: options.stage,
+      // Align with deploy/destroy: the state root is the process cwd, not the
+      // YAML's directory (issue #280).
+      baseDir: process.cwd(),
+      backendType: backendType as 'LOCAL' | 'BUCKET_STORE',
+      bucketConfig,
+      legacyApp: options.legacyApp,
+      legacyService: options.legacyService,
+      bindUnknownRegion: options.bindUnknownRegion,
+      dryRun: options.dryRun,
+      rollbackOpId: options.rollbackOpId,
+      autoApprove: options.autoApprove,
+      askConfirmation,
+    });
+    return;
+  }
+
   if (backendType !== StateBackendType.LOCAL && backendType !== StateBackendType.BUCKET_STORE) {
     throw new Error(lang.__('MIGRATE_NO_BACKEND_SOURCE'));
   }
@@ -116,12 +166,7 @@ export const migrate = async (options: {
   // Purely local to the source backend, so it needs NO Console credentials.
   if (options.rollback) {
     await sourceBackend.withLock('migrate-rollback', async () => {
-      const state = await sourceBackend.loadState(
-        iac.provider.name,
-        iac.app,
-        iac.service,
-        options.stage ?? 'default',
-      );
+      const state = await sourceBackend.loadState();
       if (!isMigratedToSaas(state)) {
         logger.info(lang.__('MIGRATE_ROLLBACK_NO_MARKER'));
         return;
@@ -148,14 +193,10 @@ export const migrate = async (options: {
   const client = createApiClient({ apiKey, baseUrl, orgId });
 
   await sourceBackend.withLock('migrate', async () => {
-    // ③ pull + normalize (loadState applies registered state migrations)
-    const hydrateStage = options.stage ?? Object.keys(iac.stages ?? {})[0] ?? 'default';
-    const state = await sourceBackend.loadState(
-      iac.provider.name,
-      iac.app,
-      iac.service,
-      hydrateStage,
-    );
+    // ③ pull + normalize (loadState applies registered state migrations).
+    // The scope-bound backend hydrates one stage, but the legacy aggregate it
+    // reads still carries every stage in `stages` for the mapping plan below.
+    const state = await sourceBackend.loadState();
     if (isMigratedToSaas(state)) {
       logger.warn(lang.__('MIGRATE_ALREADY_MARKED'));
     }

@@ -21,10 +21,9 @@ import { executeTablePlan } from './tablestoreExecutor';
 import { generateApigwPlan } from './apigwPlanner';
 import { executeApigwPlan } from './apigwExecutor';
 
-const createSaveStateFn =
-  (backend: StateBackend, iac: ServerlessIac, stage: string) => async (state: StateFile) => {
-    await backend.saveState(state, iac.app, iac.service, stage);
-  };
+const createSaveStateFn = (backend: StateBackend) => async (state: StateFile) => {
+  await backend.saveState(state);
+};
 
 const handlePartialFailure = (failure: PartialFailureError): never => {
   const error = failure.error as Error & { isPartialFailure?: boolean };
@@ -113,8 +112,8 @@ export const deployAliyunStack = async (
   setIac(iac);
   logger.info(lang.__('DEPLOYING_STACK_PUBLISHING_ASSETS'));
 
-  let state = await backend.loadState(iac.provider.name, iac.app, iac.service, context.stage);
-  const onStateChange = createSaveStateFn(backend, iac, context.stage);
+  let state = await backend.loadState();
+  const onStateChange = createSaveStateFn(backend);
 
   logger.info(lang.__('GENERATING_PLAN'));
   const functionPlan = approvedPlan
@@ -258,7 +257,7 @@ export const deployAliyunStack = async (
     });
   }
 
-  await backend.saveState(state, iac.app, iac.service, context.stage);
+  await backend.saveState(state);
 
   logger.info(lang.__('STACK_DEPLOYED'));
 };

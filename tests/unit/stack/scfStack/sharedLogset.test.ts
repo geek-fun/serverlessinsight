@@ -126,7 +126,7 @@ describe('sharedLogset', () => {
 
       expect(result).toEqual({ logsetName: 'test-app-dev-cls', logsetId: 'logset-1' });
       expect(mockClsOperations.createLogset).toHaveBeenCalledWith('test-app-dev-cls', [
-        { key: 'si-owned-by', value: 'test-app:shared:logs.project' },
+        { key: 'si-owned-by', value: 'test-app:shared:logs.project@ap-guangzhou' },
       ]);
     });
 
@@ -241,7 +241,7 @@ describe('sharedLogset', () => {
       expect(result).toEqual({ logsetName: 'test-app-dev-cls', logsetId: 'logset-1' });
       expect(mockClsOperations.getLogsetByName).toHaveBeenCalledWith('test-app-dev-cls');
       expect(mockClsOperations.createLogset).toHaveBeenCalledWith('test-app-dev-cls', [
-        { key: 'si-owned-by', value: 'test-app:shared:logs.project' },
+        { key: 'si-owned-by', value: 'test-app:shared:logs.project@ap-guangzhou' },
       ]);
     });
   });
@@ -368,7 +368,9 @@ describe('sharedLogset', () => {
         {
           period: 30,
           storageType: 'hot',
-          tags: [{ key: 'si-owned-by', value: 'test-app-test-service:functions.test_fn' }],
+          tags: [
+            { key: 'si-owned-by', value: 'test-app-test-service:functions.test_fn@ap-guangzhou' },
+          ],
         },
       );
       expect(mockClsOperations.createFulltextIndex).toHaveBeenCalledWith('topic-1');

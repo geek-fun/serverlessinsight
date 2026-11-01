@@ -1,347 +1,345 @@
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
 import { createLocalStateBackend } from '../../../../src/common/stateBackend/localStateBackend';
-import * as stateManager from '../../../../src/common/stateManager';
-import * as lockManager from '../../../../src/common/lockManager';
 import {
   StateFile,
-  LockMetadata,
-  LockOptions,
   CURRENT_STATE_VERSION,
   ResourceState,
+  StateScopeMismatchError,
 } from '../../../../src/types';
 
-jest.mock('../../../../src/common/stateManager');
-jest.mock('../../../../src/common/lockManager');
+jest.mock('../../../../src/common/lockManager', () => ({
+  ...jest.requireActual('../../../../src/common/lockManager'),
+}));
 
-describe('localStateBackend', () => {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const mockStateManager = stateManager as any;
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const mockLockManager = lockManager as any;
+describe('localStateBackend (scope-bound, issue #280)', () => {
+  let baseDir: string;
 
-  const testApp = 'test-app';
-  const testService = 'test-service';
-  const testBaseDir = '/test/dir';
+  const scope = {
+    provider: 'aliyun',
+    app: 'test-app',
+    service: 'test-service',
+    stage: 'prod',
+    region: 'cn-hangzhou',
+  };
+
+  const makeResource = (id: string): ResourceState => ({
+    mode: 'managed',
+    region: scope.region,
+    definition: {},
+    instances: [{ sid: `sid-${id}`, id }],
+    lastUpdated: new Date().toISOString(),
+  });
+
+  const scopedPath = () =>
+    path.join(
+      baseDir,
+      '.serverlessinsight',
+      'states',
+      scope.app,
+      scope.service,
+      scope.stage,
+      scope.region,
+      'state.json',
+    );
+
+  const legacyPath = () =>
+    path.join(baseDir, '.serverlessinsight', `state-${scope.app}-${scope.service}.json`);
 
   beforeEach(() => {
-    jest.clearAllMocks();
-    mockStateManager.getStatePath.mockReturnValue(
-      '/test/dir/.serverlessinsight/state-test-app-test-service.json',
-    );
+    baseDir = fs.mkdtempSync(path.join(os.tmpdir(), 'si-local-backend-'));
   });
 
-  describe('createLocalStateBackend', () => {
-    it('should return a state backend object with all required methods', () => {
-      const backend = createLocalStateBackend(testApp, testService, testBaseDir);
-
-      expect(backend).toHaveProperty('loadState');
-      expect(backend).toHaveProperty('saveState');
-      expect(backend).toHaveProperty('acquireLock');
-      expect(backend).toHaveProperty('releaseLock');
-      expect(backend).toHaveProperty('forceUnlock');
-      expect(backend).toHaveProperty('readLock');
-      expect(backend).toHaveProperty('withLock');
-    });
+  afterEach(() => {
+    fs.rmSync(baseDir, { recursive: true, force: true });
   });
 
-  describe('patchPersisted', () => {
-    it('delegates to patchPersistedState with the app/service/baseDir scope', async () => {
-      const backend = createLocalStateBackend(testApp, testService, testBaseDir);
-
-      await backend.patchPersisted!({ managedBy: 'saas' });
-
-      expect(mockStateManager.patchPersistedState).toHaveBeenCalledWith(
-        testApp,
-        testService,
-        { managedBy: 'saas' },
-        testBaseDir,
-      );
-    });
+  it('binds the normalized scope and exposes the backend contract', () => {
+    const backend = createLocalStateBackend(scope, { baseDir });
+    expect(backend.scope).toEqual(scope);
+    expect(backend.capabilities).toEqual({ conditionalCreate: true });
+    expect(backend).toHaveProperty('loadState');
+    expect(backend).toHaveProperty('saveState');
+    expect(backend).toHaveProperty('probeWriteReadiness');
+    expect(backend).toHaveProperty('readStateSource');
+    expect(backend).toHaveProperty('patchPersisted');
   });
 
   describe('loadState', () => {
-    it('should delegate to stateManager.loadState with correct parameters', async () => {
-      const mockState: StateFile = {
-        version: CURRENT_STATE_VERSION,
-        provider: 'aliyun',
-        app: testApp,
-        service: testService,
-        stages: {},
-        resources: {},
-      };
-      mockStateManager.loadState.mockResolvedValue(mockState);
-
-      const backend = createLocalStateBackend(testApp, testService, testBaseDir);
-      const result = await backend.loadState('aliyun', testApp, testService, 'dev');
-
-      expect(mockStateManager.loadState).toHaveBeenCalledWith(
-        'aliyun',
-        testApp,
-        testService,
-        'dev',
-        testBaseDir,
-      );
-      expect(result).toEqual(mockState);
+    it('returns an empty scoped state for a fresh scope', async () => {
+      const backend = createLocalStateBackend(scope, { baseDir });
+      const state = await backend.loadState();
+      expect(state.version).toBe(CURRENT_STATE_VERSION);
+      expect(state.scope).toEqual({ stage: 'prod', region: 'cn-hangzhou' });
+      expect(state.resources).toEqual({});
+      expect(backend.readStateSource()).toBe('empty');
     });
 
-    it('should return state from stateManager', async () => {
-      const mockResource: ResourceState = {
-        mode: 'managed',
-        region: 'cn-hangzhou',
-        definition: { name: 'func1' },
-        instances: [{ sid: 'resource-1', id: 'id1' }],
-        lastUpdated: new Date().toISOString(),
-        status: 'ready',
-      };
-      const mockState: StateFile = {
+    it('loads the scoped V4 document when present', async () => {
+      const backend = createLocalStateBackend(scope, { baseDir });
+      const saved: StateFile = {
         version: CURRENT_STATE_VERSION,
-        provider: 'aliyun',
-        app: 'myapp',
-        service: 'myservice',
-        stages: {},
-        resources: { func1: mockResource },
+        provider: scope.provider,
+        app: scope.app,
+        service: scope.service,
+        scope: { stage: scope.stage, region: scope.region },
+        stages: { prod: { resources: {} } },
+        resources: { 'functions.a': makeResource('a') },
       };
-      mockStateManager.loadState.mockResolvedValue(mockState);
+      await backend.saveState(saved);
 
-      const backend = createLocalStateBackend(testApp, testService, testBaseDir);
-      const result = await backend.loadState('aliyun', testApp, testService, 'prod');
+      const loaded = await backend.loadState();
+      expect(loaded.resources['functions.a']).toBeDefined();
+      expect(backend.readStateSource()).toBe('scoped');
+    });
 
-      expect(result).toEqual(mockState);
+    it('falls back to the legacy aggregate for read-only compatibility', async () => {
+      fs.mkdirSync(path.dirname(legacyPath()), { recursive: true });
+      fs.writeFileSync(
+        legacyPath(),
+        JSON.stringify({
+          version: '3.0',
+          provider: scope.provider,
+          app: scope.app,
+          service: scope.service,
+          lineage: 'legacy',
+          serial: 3,
+          stages: {
+            prod: { resources: { 'functions.legacy': makeResource('legacy') } },
+          },
+        }),
+        'utf-8',
+      );
+
+      const backend = createLocalStateBackend(scope, { baseDir });
+      const loaded = await backend.loadState();
+      expect(loaded.resources['functions.legacy']).toBeDefined();
+      expect(loaded.version).toBe('3.0');
+      expect(backend.readStateSource()).toBe('legacy');
+    });
+
+    it('reports empty when the legacy aggregate has no resources for this stage', async () => {
+      fs.mkdirSync(path.dirname(legacyPath()), { recursive: true });
+      fs.writeFileSync(
+        legacyPath(),
+        JSON.stringify({
+          version: '3.0',
+          provider: scope.provider,
+          app: scope.app,
+          service: scope.service,
+          stages: { dev: { resources: { 'functions.x': makeResource('x') } } },
+        }),
+        'utf-8',
+      );
+
+      const backend = createLocalStateBackend(scope, { baseDir });
+      await backend.loadState();
+      expect(backend.readStateSource()).toBe('empty');
+    });
+
+    it('rejects a scoped document belonging to a different scope', async () => {
+      fs.mkdirSync(path.dirname(scopedPath()), { recursive: true });
+      fs.writeFileSync(
+        scopedPath(),
+        JSON.stringify({
+          version: CURRENT_STATE_VERSION,
+          provider: scope.provider,
+          app: scope.app,
+          service: scope.service,
+          scope: { stage: 'prod', region: 'ap-southeast-1' },
+          stages: { prod: { resources: {} } },
+        }),
+        'utf-8',
+      );
+
+      const backend = createLocalStateBackend(scope, { baseDir });
+      await expect(backend.loadState()).rejects.toThrow(StateScopeMismatchError);
+    });
+
+    it('never converts a corrupt scoped document to empty state', async () => {
+      fs.mkdirSync(path.dirname(scopedPath()), { recursive: true });
+      fs.writeFileSync(scopedPath(), '{not json', 'utf-8');
+      const backend = createLocalStateBackend(scope, { baseDir });
+      await expect(backend.loadState()).rejects.toThrow(/corrupt/);
     });
   });
 
   describe('saveState', () => {
-    it('should delegate to stateManager.saveState with correct parameters', async () => {
-      const mockResource: ResourceState = {
-        mode: 'managed',
-        region: 'cn-hangzhou',
-        definition: { name: 'func1' },
-        instances: [{ sid: 'resource-1', id: 'id1' }],
-        lastUpdated: new Date().toISOString(),
-        status: 'ready',
-      };
-      const mockState: StateFile = {
+    it('writes the scoped document with independent lineage and serial', async () => {
+      const backend = createLocalStateBackend(scope, { baseDir });
+      const state: StateFile = {
         version: CURRENT_STATE_VERSION,
-        provider: 'aliyun',
-        app: testApp,
-        service: testService,
-        stages: {},
-        resources: { func1: mockResource },
+        provider: scope.provider,
+        app: scope.app,
+        service: scope.service,
+        stages: { prod: { resources: { 'functions.a': makeResource('a') } } },
+        resources: { 'functions.a': makeResource('a') },
       };
-      mockStateManager.saveState.mockImplementation();
+      await backend.saveState(state);
 
-      const backend = createLocalStateBackend(testApp, testService, testBaseDir);
-      await backend.saveState(mockState, testApp, testService, 'dev');
+      const persisted = JSON.parse(fs.readFileSync(scopedPath(), 'utf-8'));
+      expect(persisted.version).toBe(CURRENT_STATE_VERSION);
+      expect(persisted.scope).toEqual({ stage: 'prod', region: 'cn-hangzhou' });
+      expect(persisted.serial).toBe(1);
+      expect(persisted.lineage).toBeDefined();
+      expect(persisted.stages.prod.resources['functions.a']).toBeDefined();
+      // Runtime projection is never persisted
+      expect(persisted.resources).toBeUndefined();
 
-      expect(mockStateManager.saveState).toHaveBeenCalledWith(
-        mockState,
-        testApp,
-        testService,
-        'dev',
-        testBaseDir,
-      );
+      // Second save continues the lineage and increments the serial
+      await backend.saveState(state);
+      const second = JSON.parse(fs.readFileSync(scopedPath(), 'utf-8'));
+      expect(second.serial).toBe(2);
+      expect(second.lineage).toBe(persisted.lineage);
     });
 
-    it('should save state without error', async () => {
-      const mockState: StateFile = {
+    it('refuses to bind or write a scope without a resolved region', async () => {
+      // Fail fast at binding — an empty region can never select a state.
+      expect(() => createLocalStateBackend({ ...scope, region: '' }, { baseDir })).toThrow(
+        /region/i,
+      );
+      expect(fs.existsSync(scopedPath())).toBe(false);
+    });
+
+    it('rejects a save whose identity differs from the bound scope', async () => {
+      const backend = createLocalStateBackend(scope, { baseDir });
+      const foreign: StateFile = {
         version: CURRENT_STATE_VERSION,
-        provider: 'aliyun',
-        app: testApp,
-        service: testService,
-        stages: {},
+        provider: scope.provider,
+        app: 'other-app',
+        service: scope.service,
+        stages: { prod: { resources: {} } },
         resources: {},
       };
-      mockStateManager.saveState.mockImplementation();
-
-      const backend = createLocalStateBackend(testApp, testService, testBaseDir);
-      await expect(
-        backend.saveState(mockState, testApp, testService, 'prod'),
-      ).resolves.toBeUndefined();
+      await expect(backend.saveState(foreign)).rejects.toThrow(StateScopeMismatchError);
+      expect(fs.existsSync(scopedPath())).toBe(false);
     });
-  });
 
-  describe('acquireLock', () => {
-    it('should acquire lock and return lock ID', async () => {
-      const mockLockMeta: LockMetadata = {
-        id: 'lock-123',
-        user: 'user@host',
-        processId: 1234,
-        hostname: 'hostname',
-        operation: 'deploy',
-        acquiredAt: new Date().toISOString(),
-        path: '/path/to/state',
-      };
-      mockLockManager.acquireLockInternal.mockResolvedValue(mockLockMeta);
-
-      const backend = createLocalStateBackend(testApp, testService, testBaseDir);
-      const result = await backend.acquireLock('deploy');
-
-      expect(result).toBe('lock-123');
-      expect(mockLockManager.acquireLockInternal).toHaveBeenCalledWith(
-        '/test/dir/.serverlessinsight/state-test-app-test-service.json',
-        'deploy',
-        undefined,
+    it('isolates two regional documents of the same service+stage', async () => {
+      const hangzhou = createLocalStateBackend(scope, { baseDir });
+      const southeast = createLocalStateBackend(
+        { ...scope, region: 'ap-southeast-1' },
+        { baseDir },
       );
-    });
-
-    it('should pass lock options to lockManager', async () => {
-      const mockLockMeta: LockMetadata = {
-        id: 'lock-456',
-        user: 'user@host',
-        processId: 1234,
-        hostname: 'hostname',
-        operation: 'destroy',
-        acquiredAt: new Date().toISOString(),
-        path: '/path/to/state',
-      };
-      mockLockManager.acquireLockInternal.mockResolvedValue(mockLockMeta);
-
-      const backend = createLocalStateBackend(testApp, testService, testBaseDir);
-      const options: LockOptions = { timeout: 5000, retryDelay: 500 };
-      const result = await backend.acquireLock('destroy', options);
-
-      expect(result).toBe('lock-456');
-      expect(mockLockManager.acquireLockInternal).toHaveBeenCalledWith(
-        '/test/dir/.serverlessinsight/state-test-app-test-service.json',
-        'destroy',
-        options,
-      );
-    });
-  });
-
-  describe('releaseLock', () => {
-    it('should release lock by ID', async () => {
-      mockLockManager.releaseLockInternal.mockImplementation();
-
-      const backend = createLocalStateBackend(testApp, testService, testBaseDir);
-      await backend.releaseLock('lock-123');
-
-      expect(mockLockManager.releaseLockInternal).toHaveBeenCalledWith(
-        '/test/dir/.serverlessinsight/state-test-app-test-service.json',
-        'lock-123',
-      );
-    });
-
-    it('should not throw error when releasing non-existent lock', async () => {
-      mockLockManager.releaseLockInternal.mockImplementation();
-
-      const backend = createLocalStateBackend(testApp, testService, testBaseDir);
-      await expect(backend.releaseLock('non-existent')).resolves.toBeUndefined();
-    });
-  });
-
-  describe('forceUnlock', () => {
-    it('should force unlock and return true when lock exists', async () => {
-      mockLockManager.forceUnlock.mockResolvedValue(true);
-
-      const backend = createLocalStateBackend(testApp, testService, testBaseDir);
-      const result = await backend.forceUnlock('lock-123');
-
-      expect(result).toBe(true);
-      expect(mockLockManager.forceUnlock).toHaveBeenCalledWith(
-        '/test/dir/.serverlessinsight/state-test-app-test-service.json',
-        'lock-123',
-      );
-    });
-
-    it('should force unlock and return false when lock does not exist', async () => {
-      mockLockManager.forceUnlock.mockResolvedValue(false);
-
-      const backend = createLocalStateBackend(testApp, testService, testBaseDir);
-      const result = await backend.forceUnlock('non-existent');
-
-      expect(result).toBe(false);
-    });
-  });
-
-  describe('readLock', () => {
-    it('should read lock metadata when lock exists', async () => {
-      const mockLockMeta: LockMetadata = {
-        id: 'lock-123',
-        user: 'user@host',
-        processId: 1234,
-        hostname: 'hostname',
-        operation: 'deploy',
-        acquiredAt: new Date().toISOString(),
-        path: '/path/to/state',
-      };
-      mockLockManager.readLockFileForCommand.mockResolvedValue(mockLockMeta);
-
-      const backend = createLocalStateBackend(testApp, testService, testBaseDir);
-      const result = await backend.readLock();
-
-      expect(result).toEqual(mockLockMeta);
-      expect(mockLockManager.readLockFileForCommand).toHaveBeenCalledWith(
-        '/test/dir/.serverlessinsight/state-test-app-test-service.json',
-      );
-    });
-
-    it('should return null when no lock exists', async () => {
-      mockLockManager.readLockFileForCommand.mockResolvedValue(null);
-
-      const backend = createLocalStateBackend(testApp, testService, testBaseDir);
-      const result = await backend.readLock();
-
-      expect(result).toBeNull();
-    });
-  });
-
-  describe('withLock', () => {
-    it('should execute function with lock acquisition and release', async () => {
-      let executed = false;
-      mockLockManager.withLock.mockImplementation(
-        async (_path: string, _op: string, fn: () => Promise<unknown>) => fn(),
-      );
-
-      const backend = createLocalStateBackend(testApp, testService, testBaseDir);
-      await backend.withLock('deploy', async () => {
-        executed = true;
-        return 'result';
+      await hangzhou.saveState({
+        version: CURRENT_STATE_VERSION,
+        provider: scope.provider,
+        app: scope.app,
+        service: scope.service,
+        stages: { prod: { resources: { 'functions.a': makeResource('a') } } },
+        resources: { 'functions.a': makeResource('a') },
       });
+      expect(fs.existsSync(scopedPath())).toBe(true);
+      expect(fs.existsSync(scopedPath().replace('cn-hangzhou', 'ap-southeast-1'))).toBe(false);
 
-      expect(executed).toBe(true);
-    });
-
-    it('should return function result', async () => {
-      mockLockManager.withLock.mockImplementation(
-        async (_path: string, _op: string, fn: () => Promise<unknown>) => fn(),
-      );
-
-      const backend = createLocalStateBackend(testApp, testService, testBaseDir);
-      const result = await backend.withLock('deploy', async () => {
-        return 'test-result';
+      await southeast.saveState({
+        version: CURRENT_STATE_VERSION,
+        provider: scope.provider,
+        app: scope.app,
+        service: scope.service,
+        stages: { prod: { resources: { 'functions.b': makeResource('b') } } },
+        resources: { 'functions.b': makeResource('b') },
       });
-
-      expect(result).toBe('test-result');
+      const other = JSON.parse(
+        fs.readFileSync(scopedPath().replace('cn-hangzhou', 'ap-southeast-1'), 'utf-8'),
+      );
+      expect(Object.keys(other.stages.prod.resources)).toEqual(['functions.b']);
     });
+  });
 
-    it('should pass lock options to withLock', async () => {
-      mockLockManager.withLock.mockImplementation(
-        async (_path: string, _op: string, fn: () => Promise<unknown>) => fn(),
-      );
-
-      const backend = createLocalStateBackend(testApp, testService, testBaseDir);
-      const options: LockOptions = { timeout: 3000 };
-      await backend.withLock('destroy', async () => 'ok', options);
-
-      expect(mockLockManager.withLock).toHaveBeenCalledWith(
-        '/test/dir/.serverlessinsight/state-test-app-test-service.json',
-        'destroy',
-        expect.any(Function),
-        options,
-      );
-    });
-
-    it('should propagate errors from function', async () => {
-      mockLockManager.withLock.mockImplementation(
-        async (_path: string, _op: string, fn: () => Promise<unknown>) => fn(),
-      );
-
-      const backend = createLocalStateBackend(testApp, testService, testBaseDir);
-      await expect(
-        backend.withLock('deploy', async () => {
-          throw new Error('Function error');
+  describe('patchPersisted', () => {
+    it('patches the legacy aggregate while it is the state source', async () => {
+      fs.mkdirSync(path.dirname(legacyPath()), { recursive: true });
+      fs.writeFileSync(
+        legacyPath(),
+        JSON.stringify({
+          version: '3.0',
+          provider: scope.provider,
+          app: scope.app,
+          service: scope.service,
+          stages: { prod: { resources: { 'functions.l': makeResource('l') } } },
         }),
-      ).rejects.toThrow('Function error');
+        'utf-8',
+      );
+      const backend = createLocalStateBackend(scope, { baseDir });
+      await backend.loadState();
+      await backend.patchPersisted!({ managedBy: 'saas' });
+
+      const patched = JSON.parse(fs.readFileSync(legacyPath(), 'utf-8'));
+      expect(patched.managedBy).toBe('saas');
+    });
+
+    it('patches the scoped document once the split happened', async () => {
+      const backend = createLocalStateBackend(scope, { baseDir });
+      await backend.saveState({
+        version: CURRENT_STATE_VERSION,
+        provider: scope.provider,
+        app: scope.app,
+        service: scope.service,
+        stages: { prod: { resources: {} } },
+        resources: {},
+      });
+      await backend.patchPersisted!({ managedBy: 'saas' });
+      const patched = JSON.parse(fs.readFileSync(scopedPath(), 'utf-8'));
+      expect(patched.managedBy).toBe('saas');
+    });
+  });
+
+  describe('probeWriteReadiness', () => {
+    it('blocks mutations while the legacy aggregate is authoritative', async () => {
+      fs.mkdirSync(path.dirname(legacyPath()), { recursive: true });
+      fs.writeFileSync(
+        legacyPath(),
+        JSON.stringify({
+          version: '3.0',
+          provider: scope.provider,
+          app: scope.app,
+          service: scope.service,
+          stages: { prod: { resources: { 'functions.l': makeResource('l') } } },
+        }),
+        'utf-8',
+      );
+      const backend = createLocalStateBackend(scope, { baseDir });
+      const readiness = await backend.probeWriteReadiness();
+      expect(readiness.ready).toBe(false);
+      expect(readiness.source).toBe('legacy');
+      expect(readiness.reason).toContain('migrate --to-regional');
+    });
+
+    it('allows fresh scoped writes and post-migration writes', async () => {
+      const backend = createLocalStateBackend(scope, { baseDir });
+      expect((await backend.probeWriteReadiness()).ready).toBe(true);
+
+      await backend.saveState({
+        version: CURRENT_STATE_VERSION,
+        provider: scope.provider,
+        app: scope.app,
+        service: scope.service,
+        stages: { prod: { resources: {} } },
+        resources: {},
+      });
+      const after = await backend.probeWriteReadiness();
+      expect(after.ready).toBe(true);
+      expect(after.source).toBe('scoped');
+    });
+  });
+
+  describe('locks', () => {
+    it('locks the scoped path so two regions never share a lock', async () => {
+      const backend = createLocalStateBackend(scope, { baseDir });
+      const lockId = await backend.acquireLock('deploy');
+      expect(fs.existsSync(`${scopedPath()}.si-lock`)).toBe(true);
+      expect(await backend.readLock()).toMatchObject({ id: lockId, operation: 'deploy' });
+
+      // A different region holds an independent lock
+      const other = createLocalStateBackend({ ...scope, region: 'ap-southeast-1' }, { baseDir });
+      const otherId = await other.acquireLock('deploy');
+      expect(otherId).not.toBe(lockId);
+
+      await backend.releaseLock(lockId);
+      await other.releaseLock(otherId);
+      expect(fs.existsSync(`${scopedPath()}.si-lock`)).toBe(false);
     });
   });
 });

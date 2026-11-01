@@ -322,7 +322,9 @@ describe('CosResource', () => {
         expect.objectContaining({
           Bucket: 'test-bucket',
           Region: 'ap-guangzhou',
-          Tags: [{ Key: 'si-owned-by', Value: 'test-app-test-service:buckets.test_bucket' }],
+          Tags: [
+            { Key: 'si-owned-by', Value: 'test-app-test-service:buckets.test_bucket@ap-guangzhou' },
+          ],
         }),
       );
     });

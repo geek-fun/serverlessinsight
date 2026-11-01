@@ -170,6 +170,16 @@ export const rootSchema = {
             type: { type: 'string', enum: ['LOCAL', 'BUCKET_STORE', 'SAAS'] },
             bucket: { type: 'string', description: 'State bucket name (BUCKET_STORE only).' },
             key: { type: 'string', description: 'State object key (BUCKET_STORE only).' },
+            storageRegion: {
+              type: 'string',
+              description:
+                'Pin where state is stored (BUCKET_STORE only); explicit settings never change when the workload -r changes.',
+            },
+            storageProvider: {
+              type: 'string',
+              description:
+                'Provider SDK used for state storage (BUCKET_STORE only); defaults to the workload provider.',
+            },
           },
           required: ['type'],
           additionalProperties: false,

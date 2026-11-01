@@ -1,4 +1,7 @@
 import {
+  PLAN_JSON_VERSION,
+  SHOW_JSON_VERSION,
+  VALIDATE_JSON_VERSION,
   buildPlanChange,
   buildPlanJson,
   buildPlanSummary,
@@ -24,6 +27,14 @@ const makeItem = (overrides: Partial<PlanItem>): PlanItem => ({
 });
 
 describe('jsonOutput', () => {
+  describe('envelope versions (issue #280)', () => {
+    it('pins plan/show at version 2 and validate at version 1', () => {
+      expect(PLAN_JSON_VERSION).toBe(2);
+      expect(SHOW_JSON_VERSION).toBe(2);
+      expect(VALIDATE_JSON_VERSION).toBe(1);
+    });
+  });
+
   describe('json mode flag', () => {
     it('defaults to off and toggles via setJsonMode', () => {
       expect(isJsonMode()).toBe(false);
@@ -123,14 +134,21 @@ describe('jsonOutput', () => {
             makeItem({ logicalId: 'functions.unchanged', action: 'noop' }),
           ],
         },
-        { provider: 'aliyun', app: 'my-app', service: 'my-service', stage: 'dev' },
+        {
+          provider: 'aliyun',
+          app: 'my-app',
+          service: 'my-service',
+          stage: 'dev',
+          region: 'cn-hangzhou',
+        },
       );
 
-      expect(payload.planVersion).toBe(1);
+      expect(payload.planVersion).toBe(2);
       expect(payload.provider).toBe('aliyun');
       expect(payload.app).toBe('my-app');
       expect(payload.service).toBe('my-service');
       expect(payload.stage).toBe('dev');
+      expect(payload.region).toBe('cn-hangzhou');
       expect(payload.changes).toHaveLength(1);
       expect(payload.changes[0]).toMatchObject({
         logicalId: 'functions.hello',
@@ -149,7 +167,7 @@ describe('jsonOutput', () => {
     it('excludes noop items from changes but keeps them in the summary', () => {
       const payload = buildPlanJson(
         { items: [makeItem({ action: 'noop' }), makeItem({ action: 'noop' })] },
-        { provider: 'tencent', app: 'a', service: 's', stage: 'dev' },
+        { provider: 'tencent', app: 'a', service: 's', stage: 'dev', region: 'cn-hangzhou' },
       );
 
       expect(payload.changes).toEqual([]);
@@ -175,7 +193,13 @@ describe('plan provenance and state-only convergence', () => {
     });
     const payload = buildPlanJson(
       { items: [update, adoption] },
-      { provider: 'aliyun', app: 'example', service: 'example', stage: 'dev' },
+      {
+        provider: 'aliyun',
+        app: 'example',
+        service: 'example',
+        stage: 'dev',
+        region: 'cn-hangzhou',
+      },
     );
     expect(payload.changes[0].revertKeys).toEqual(['environment.MODE']);
     expect(payload.stateUpdates).toEqual(['functions.adopted']);

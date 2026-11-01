@@ -8,7 +8,7 @@ import { generateApigwPlan } from './apigwPlanner';
 
 export const generateVolcenginePlan = async (iac: ServerlessIac, backend: StateBackend) => {
   const context = getContext();
-  const state = await backend.loadState('volcengine', context.app, context.service, context.stage);
+  const state = await backend.loadState();
 
   const functionPlan = await generateFunctionPlan(context, state, iac.functions);
   const bucketPlan = await generateBucketPlan(context, state, iac.buckets);

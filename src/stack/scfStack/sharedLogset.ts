@@ -69,7 +69,7 @@ export const ensureSharedLogset = async (
   // untagged logset is refused rather than silently taken over or retagged.
   const existing = await client.cls.getLogsetByName(logsetName);
   if (existing?.LogsetId) {
-    if (!isOwnedByApp(context.app, SHARED_LOGSET_KEY, existing.Tags)) {
+    if (!isOwnedByApp(context.app, SHARED_LOGSET_KEY, existing.Tags, context.region)) {
       throw new Error(lang.__('CLS_LOGSET_FOREIGN_OWNED', { logsetName }));
     }
     return { logsetName, logsetId: existing.LogsetId };
@@ -77,7 +77,10 @@ export const ensureSharedLogset = async (
 
   logger.info(lang.__('CREATING_CLS_LOGSET', { logsetName }));
   const created = await client.cls.createLogset(logsetName, [
-    { key: OWNERSHIP_TAG_KEY, value: buildSharedOwnershipTagValue(context.app, SHARED_LOGSET_KEY) },
+    {
+      key: OWNERSHIP_TAG_KEY,
+      value: buildSharedOwnershipTagValue(context.app, SHARED_LOGSET_KEY, context.region),
+    },
   ]);
 
   return { logsetName, logsetId: created.logsetId };

@@ -20,11 +20,9 @@ import {
 } from './sharedLogProject';
 import { ExecutionResult, PartialFailureError, PlanItem, StateFile } from '../../types';
 
-const createSaveStateFn =
-  (backend: StateBackend, app: string, service: string, stage: string) =>
-  async (state: StateFile) => {
-    await backend.saveState(state, app, service, stage);
-  };
+const createSaveStateFn = (backend: StateBackend) => async (state: StateFile) => {
+  await backend.saveState(state);
+};
 
 const handlePartialFailure = (failure: PartialFailureError): never => {
   const error = failure.error as Error & { isPartialFailure?: boolean };
@@ -48,8 +46,8 @@ const collectSuccessfulItems = (results: Array<ExecutionResult>): Array<PlanItem
 export const destroyAliyunStack = async (backend: StateBackend): Promise<void> => {
   const context = getContext();
   const providerName = ProviderEnum.ALIYUN;
-  let state = await backend.loadState(providerName, context.app, context.service, context.stage);
-  const onStateChange = createSaveStateFn(backend, context.app, context.service, context.stage);
+  let state = await backend.loadState();
+  const onStateChange = createSaveStateFn(backend);
   // Set minimal IAC for destruction (function resolution not needed)
   setIac({
     version: '1.0',
@@ -197,5 +195,5 @@ export const destroyAliyunStack = async (backend: StateBackend): Promise<void> =
     }
   }
 
-  await backend.saveState(state, context.app, context.service, context.stage);
+  await backend.saveState(state);
 };

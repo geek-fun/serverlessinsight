@@ -8,6 +8,9 @@ import {
 } from '../../../src/common/context';
 
 jest.mock('node:fs');
+jest.mock('../../../src/common/logger', () => ({
+  logger: { info: jest.fn(), warn: jest.fn(), error: jest.fn(), debug: jest.fn() },
+}));
 jest.mock('../../../src/common/imsClient', () => ({
   getIamInfo: jest.fn().mockResolvedValue({ accountId: '123456789012', userId: 'test-user' }),
 }));
@@ -137,12 +140,24 @@ describe('context', () => {
       mockFs.statSync.mockReturnValue({ isDirectory: () => false } as never);
 
       process.env.ROS_REGION_ID = 'cn-shanghai';
-      const warnSpy = jest.spyOn(console, 'warn').mockImplementation(() => {});
+      const { logger } = jest.requireMock('../../../src/common/logger');
 
       await setContext({ app: 'test', service: 'svc', location: '/path' });
 
-      expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining('ROS_REGION_ID'));
-      warnSpy.mockRestore();
+      expect(logger.warn).toHaveBeenCalledWith(expect.stringContaining('ROS_REGION_ID'));
+    });
+
+    it('should not warn when SI_REGION is already set', async () => {
+      mockFs.existsSync.mockReturnValue(true);
+      mockFs.statSync.mockReturnValue({ isDirectory: () => false } as never);
+
+      process.env.ROS_REGION_ID = 'cn-shanghai';
+      process.env.SI_REGION = 'cn-hangzhou';
+      const { logger } = jest.requireMock('../../../src/common/logger');
+
+      await setContext({ app: 'test', service: 'svc', location: '/path' });
+
+      expect(logger.warn).not.toHaveBeenCalledWith(expect.stringContaining('ROS_REGION_ID'));
     });
 
     it('should call getIamInfo when reaValToken is true', async () => {

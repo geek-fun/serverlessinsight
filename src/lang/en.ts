@@ -1132,6 +1132,97 @@ export const en = {
     'This state has been migrated to the ServerlessInsight Console (managedBy=saas) and the legacy backend is closed for changes.\n  • To continue with the Console: remove the backend.state_manager block from your YAML, declare a top-level org: <slug>, then deploy again.\n  • To deliberately use the legacy backend: run `si migrate --rollback` to clear the marker.',
   MIGRATION_MARKER_WARN:
     'This state has been migrated to the Console (managedBy=saas) — the copy shown here is read-only and may be stale. Do not deploy from this backend.',
+  MIGRATION_MARKER_REGIONAL_REFUSED:
+    'This legacy state has been split into regional deployment states (managedBy=regional) and the aggregate is closed for changes.\n  • Deploy with scoped state: run the same command again — the regional documents under .serverlessinsight/states/ are authoritative now.\n  • To undo the split (only before any regional write): run `si migrate --to-regional --rollback-op-id <opId>`.',
+  MIGRATION_MARKER_REGIONAL_WARN:
+    'This legacy aggregate has been split into regional deployment states (managedBy=regional) — the copy shown here is read-only and may be stale.',
+
+  // ===== Issue #280: regional deployment state isolation =====
+  SCOPE_KEY_PART_REQUIRED: "'{{label}}' is required and must not be empty",
+  SCOPE_KEY_PART_INVALID:
+    "'{{label}}' value '{{part}}' is not path-safe: it must not be empty, contain '/', '\\', '..' or leading/trailing whitespace",
+  EFFECTIVE_CONFIG_UNKNOWN_PROVIDER:
+    "Unknown provider '{{provider}}'. Supported providers: aliyun, tencent, volcengine, huawei, aws",
+  EFFECTIVE_CONFIG_REGION_REQUIRED:
+    'A region is required: pass -r/--region, set provider.region in the YAML, or set the SI_REGION environment variable',
+  EFFECTIVE_CONFIG_PROVIDER_MISMATCH:
+    'Provider mismatch: this service is already deployed with provider "{{expected}}" but the command resolved provider "{{actual}}". One service has exactly one provider; check -v/--provider and the YAML provider block',
+  STATE_WRITE_BLOCKED_LEGACY:
+    'Refusing to write regional state: the legacy aggregate {{statePath}} still holds the state for this stage.\n  Run `si migrate --to-regional --dry-run` first to review the split, then apply it. Read-only commands keep working against the legacy file.',
+  STATE_WRITE_BLOCKED_LEGACY_BUCKET:
+    'Refusing to write regional state: the legacy state object {{objectKey}} still holds the state for this stage.\n  Run `si migrate --to-regional --dry-run` first to review the split, then apply it. Read-only commands keep working against the legacy object.',
+  STATE_WRITE_NOT_READY: 'Regional state writes are not ready for this deployment scope',
+  STATE_BUCKET_NOT_FOUND:
+    'The state storage bucket does not exist ({{code}}). Create the bucket or fix the backend.state_manager configuration — the missing bucket is not treated as empty state',
+  STATE_BUCKET_ACCESS_DENIED:
+    'Access to the state storage bucket was denied ({{code}}). Check the storage credentials — an authorization failure is never treated as empty state',
+  STATE_STORAGE_CREDENTIALS_MISSING:
+    'The {{provider}} state-storage backend needs credentials: pass -k/-x (or the provider environment variables) so state storage and workload credentials stay resolvable',
+  LOCK_CONDITIONAL_CREATE_UNSUPPORTED:
+    'This state storage does not support exclusive (conditional) create — concurrent first lock acquisition falls back to a verified write and is not guaranteed atomic. Avoid running mutating commands for the same scope in parallel',
+  SAAS_REGIONAL_SCOPE_UNSUPPORTED:
+    'The Console at {{consoleUrl}} does not support regional deployment states yet (no scope protocol capability). Upgrading the CLI alone cannot isolate regions safely — update the Console, or keep using the previous CLI release for unscoped deployments',
+  SAAS_STATE_SCOPE_MISMATCH:
+    'The Console returned state for stage {{storedStage}} / region {{storedRegion}}, but this command targets stage {{stage}} / region {{region}}. Refusing to mix regional scopes',
+  SAAS_READ_ONLY_WRITE_REFUSED:
+    'This SaaS backend instance was created read-only (diff/show); state writes are refused',
+  SAAS_WRITE_BLOCKED_UNSCOPED_STATE:
+    "The current state of stage {{stage}} on the Console has no regional scope recorded (it predates regional isolation). Run the Console-side migration for this service before deploying to region {{region}} — writing here would overwrite another region's state",
+  REGIONAL_MIGRATION_LOCAL_OR_BUCKET_ONLY:
+    '--to-regional applies to LOCAL and BUCKET_STORE backends only. SaaS regional states are provisioned by the Console',
+  REGIONAL_MIGRATION_UNSUPPORTED_SOURCE:
+    'Expected a legacy V3.0 state aggregate but found version "{{version}}". Nothing to split',
+  REGIONAL_MIGRATION_ALREADY_SPLIT:
+    'This legacy state is already marked as split (managedBy=regional). The regional documents are authoritative; re-splitting is refused. To undo before any regional write: `si migrate --to-regional --rollback-op-id <opId>`',
+  REGIONAL_MIGRATION_PROVIDER_MISMATCH:
+    'Provider mismatch: the legacy state records provider "{{source}}" but the command resolved "{{effective}}". The split keeps the recorded provider binding — check -v/--provider and the YAML provider block',
+  REGIONAL_MIGRATION_UNKNOWN_REGION_REQUIRED:
+    'Some resources carry no region evidence (pre-regional state). Re-run with --bind-unknown-region <region> to bind them explicitly to a region — the CLI never guesses historical regions from YAML or filenames',
+  REGIONAL_MIGRATION_SOURCE_MISSING:
+    'The legacy state disappeared while migrating — nothing was written',
+  REGIONAL_MIGRATION_SOURCE_CHANGED:
+    'The legacy state changed after the plan was produced (hash mismatch). Re-run `si migrate --to-regional --dry-run` to refresh the plan — no writes were made',
+  REGIONAL_MIGRATION_APPLIED:
+    'Regional split applied (operation {{opId}}): scoped documents written, legacy entry kept as a read-only barrier (managedBy=regional). Verify with `si diff` — it must report no unintended changes before the next deploy',
+  REGIONAL_MIGRATION_PARTIAL_FAILURE:
+    'Regional split failed partway (operation {{opId}}): {{error}}. Documents already written remain valid; the legacy entry is untouched — fix the cause and re-run',
+  REGIONAL_MIGRATION_REPORT_MISSING:
+    'No migration report found for operation {{opId}} — the split was not applied from this CLI, or the report was deleted',
+  REGIONAL_MIGRATION_BACKUP_MISSING:
+    'The pre-migration backup for operation {{opId}} is missing — restore it manually; refusing to roll back without it',
+  REGIONAL_MIGRATION_ROLLBACK_BLOCKED:
+    'Cannot roll back stage {{stage}} / region {{region}}: its scoped document has independent regional writes after the split. Collapsing it back into the old aggregate would lose them — this must be resolved manually',
+  REGIONAL_MIGRATION_ROLLED_BACK:
+    'Regional split {{opId}} rolled back: the legacy aggregate is restored and the scoped documents were removed',
+  REGIONAL_MIGRATION_PLAN_HEADER:
+    'Regional split plan for legacy state {{location}} — one V4 document per stage/region:',
+  REGIONAL_MIGRATION_SOURCE_HASH: 'Source document hash: {{hash}}',
+  REGIONAL_MIGRATION_NO_REGIONAL_RESOURCES:
+    'No regional resources found in the legacy aggregate for the selected scope',
+  REGIONAL_MIGRATION_PLAN_DOCUMENT:
+    '  • stage {{stage}} / region {{region}}: {{resources}} resource(s), {{shared}} shared',
+  REGIONAL_MIGRATION_UNKNOWN_HEADER:
+    'Resources WITHOUT region evidence (created before regional isolation) — they need an explicit binding:',
+  REGIONAL_MIGRATION_UNKNOWN_ITEM: '  • [{{stage}}] {{logicalId}} ({{kind}})',
+  REGIONAL_MIGRATION_UNKNOWN_HINT:
+    'YAML defaults, CLI flags and filenames are not historical evidence. Pass --bind-unknown-region <region> to bind them explicitly, after verifying where these resources actually live',
+  REGIONAL_MIGRATION_BACKUP_NOTICE:
+    'On apply: the original document is backed up first, each regional document gets an independent lineage, and the legacy entry is kept as a write barrier (old CLIs are documented separately)',
+  REGIONAL_MIGRATION_NO_LEGACY_STATE:
+    'No legacy state found at {{location}} — nothing to split. Fresh deployments already write scoped V4 documents directly',
+  REGIONAL_MIGRATION_DRY_RUN_NOTICE:
+    'Dry run only — nothing was written. Re-run with --dry-run removed (and --bind-unknown-region if listed above) to apply',
+  REGIONAL_MIGRATION_CONFIRM:
+    'Apply the regional split now? The legacy state will be backed up, marked read-only (managedBy=regional), and regional documents become authoritative (yes/no): ',
+  MIGRATE_CANCELLED: 'Migration cancelled — nothing was written',
+
+  OPT_TO_REGIONAL:
+    'split a legacy V3 state into per-stage/region V4 documents (protected migration)',
+  OPT_LEGACY_APP: 'read the legacy aggregate of this (pre-rename) app name for explicit rebinding',
+  OPT_LEGACY_SERVICE:
+    'read the legacy aggregate of this (pre-rename) service name for explicit rebinding',
+  OPT_BIND_UNKNOWN_REGION: 'explicitly bind resources without region evidence to this region',
+  OPT_ROLLBACK_OP_ID: 'roll back the regional split with this migration operation id',
 
   // HTTP trigger messages
   HTTP_TRIGGER_AUTH_TYPE_REQUIRED:

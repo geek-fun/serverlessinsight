@@ -571,7 +571,9 @@ describe('apigwResource', () => {
         expect.objectContaining({
           resourceType: 'topic',
           resourcesList: ['topic-1'],
-          tags: [{ key: 'si-owned-by', value: 'test-app-test-service:events.api_gateway' }],
+          tags: [
+            { key: 'si-owned-by', value: 'test-app-test-service:events.api_gateway@cn-beijing' },
+          ],
         }),
       );
       const saved = result.resources['events.api_gateway'];

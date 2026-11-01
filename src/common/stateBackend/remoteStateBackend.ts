@@ -1,18 +1,29 @@
 import os from 'node:os';
+import crypto from 'node:crypto';
 import {
   StateFile,
   PersistedStateFile,
   LockOptions,
   LockMetadata,
+  StateCorruptError,
   CURRENT_STATE_VERSION,
 } from '../../types';
-import { migrateState, toPersistedState } from '../stateManager';
+import { migrateState, toPersistedState, emptyScopedState } from '../stateManager';
+import { normalizeScope } from '../stateScope';
 import { enforceMigrationMarker, MigrationMarkerAction } from '../migrationMarker';
 import { DEFAULT_LOCK_TIMEOUT, DEFAULT_LOCK_RETRY_DELAY } from '../constants';
 import { LockError, formatLockInfo } from '../lockManager';
 import { logger } from '../logger';
 import { lang } from '../../lang';
-import { StateBackend, StorageAdapter } from './types';
+import {
+  StateBackend,
+  StorageAdapter,
+  StateSource,
+  WriteReadiness,
+  BackendCapabilities,
+  ConditionalPutUnsupportedError,
+} from './types';
+import type { DeploymentScope } from '../stateScope';
 import {
   LOCK_KEY_SUFFIX,
   sleep,
@@ -22,20 +33,64 @@ import {
 } from './lockUtils';
 
 export type RemoteBackendConfig = {
-  key: string;
+  scope: DeploymentScope;
+  /** Scoped V4 object key for the bound scope (storage location). */
+  scopedKey: string;
+  /** The configured (legacy/discovery) object key. Never written after the split. */
+  legacyKey: string;
   /** Migration ownership marker behavior on load (decision D-4). Defaults to 'off'. */
   markerAction?: MigrationMarkerAction;
 };
 
+/**
+ * Scope-bound BUCKET_STORE backend (issue #280): one V4 object per Stage/Region
+ * at `<key>.scopes/<app>/<service>/<stage>/<region>/state.json`. The configured
+ * key remains the legacy/discovery entry: read for read-only compatibility,
+ * never written once scoped state exists.
+ */
 export const createRemoteStateBackend = (
   adapter: StorageAdapter,
   config: RemoteBackendConfig,
 ): StateBackend => {
-  const lockKey = `${config.key}${LOCK_KEY_SUFFIX}`;
+  const normalized = normalizeScope(config.scope);
   const markerAction: MigrationMarkerAction = config.markerAction ?? 'off';
+  const lockKey = `${config.scopedKey}${LOCK_KEY_SUFFIX}`;
+  const capabilities: BackendCapabilities = {
+    conditionalCreate: typeof adapter.putIfAbsent === 'function',
+  };
+  let lastSource: StateSource = 'empty';
+  let conditionalFallbackWarned = false;
 
   const readLockObject = async (): Promise<LockMetadata | null> => {
     return adapter.read<LockMetadata>(lockKey);
+  };
+
+  const writeLockObject = async (metadata: LockMetadata): Promise<boolean> => {
+    if (adapter.putIfAbsent) {
+      try {
+        return await adapter.putIfAbsent(lockKey, metadata);
+      } catch (error) {
+        if (error instanceof ConditionalPutUnsupportedError) {
+          // Storage cannot evaluate exclusivity — downgrade the declared
+          // capability and restrict concurrent acquisition to the verified
+          // read-verify-write fallback instead of claiming atomicity.
+          capabilities.conditionalCreate = false;
+          adapter.putIfAbsent = undefined;
+          if (!conditionalFallbackWarned) {
+            conditionalFallbackWarned = true;
+            logger.warn(lang.__('LOCK_CONDITIONAL_CREATE_UNSUPPORTED'));
+          }
+        } else {
+          throw error;
+        }
+      }
+    }
+    if (!conditionalFallbackWarned) {
+      conditionalFallbackWarned = true;
+      logger.warn(lang.__('LOCK_CONDITIONAL_CREATE_UNSUPPORTED'));
+    }
+    await adapter.write(lockKey, metadata);
+    return true;
   };
 
   const acquireLockObject = async (
@@ -55,10 +110,14 @@ export const createRemoteStateBackend = (
       const existingLock = await readLockObject();
 
       if (!existingLock) {
-        await adapter.write(lockKey, metadata);
-        const verify = await readLockObject();
-        if (verify && verify.id === metadata.id) {
-          return metadata;
+        // Exclusive create when the storage supports it: concurrent acquirers
+        // cannot both win. The verify step covers non-conditional backends.
+        const created = await writeLockObject(metadata);
+        if (created) {
+          const verify = await readLockObject();
+          if (verify && verify.id === metadata.id) {
+            return metadata;
+          }
         }
       } else {
         if (existingLock.hostname === os.hostname() && !isProcessAlive(existingLock.processId)) {
@@ -112,26 +171,82 @@ export const createRemoteStateBackend = (
     );
   };
 
+  const readScopedDocument = async (): Promise<PersistedStateFile | null> => {
+    const raw = await adapter.read<PersistedStateFile>(config.scopedKey);
+    if (!raw) {
+      return null;
+    }
+    // A scoped object that exists but does not match the bound scope/version is
+    // foreign or malformed data — never served as the requested state.
+    if (raw.version && raw.version !== CURRENT_STATE_VERSION) {
+      throw new StateCorruptError(
+        `bucket://${config.scopedKey}`,
+        `unsupported state version ${raw.version}`,
+      );
+    }
+    const stored = {
+      provider: raw.provider,
+      app: raw.app,
+      service: raw.service,
+      stage: raw.scope?.stage,
+      region: raw.scope?.region,
+    };
+    const matches =
+      stored.provider === normalized.provider &&
+      stored.app === normalized.app &&
+      stored.service === normalized.service &&
+      !!raw.scope &&
+      raw.scope.stage === normalized.stage &&
+      (raw.scope.region ?? '').toLowerCase() === normalized.region;
+    if (!matches) {
+      throw new StateCorruptError(
+        `bucket://${config.scopedKey}`,
+        'state identity does not match the requested deployment scope',
+      );
+    }
+    return raw;
+  };
+
   return {
-    loadState: async (
-      provider: string,
-      app: string,
-      service: string,
-      stage: string,
-    ): Promise<StateFile> => {
-      const state = await adapter.read<StateFile>(config.key);
-      if (state) {
-        const migrated = migrateState(state);
-        const stageResources = migrated.stages?.[stage]?.resources ?? {};
+    scope: normalized,
+    capabilities,
+
+    loadState: async (): Promise<StateFile> => {
+      const scoped = await readScopedDocument();
+      if (scoped) {
+        const stageResources = scoped.stages?.[normalized.stage]?.resources ?? {};
+        const loaded = { ...scoped, resources: stageResources } as StateFile;
+        enforceMigrationMarker(loaded, markerAction);
+        lastSource = 'scoped';
+        return loaded;
+      }
+
+      // Legacy/discovery entry: read-only compatibility until migration.
+      const legacyRaw = await adapter.read<StateFile>(config.legacyKey);
+      if (legacyRaw) {
+        let migrated: StateFile;
+        try {
+          migrated = migrateState(legacyRaw);
+        } catch (error) {
+          throw new StateCorruptError(`bucket://${config.legacyKey}`, error);
+        }
+        const stageResources = migrated.stages?.[normalized.stage]?.resources ?? {};
+        const hasStage =
+          !!migrated.stages?.[normalized.stage] && Object.keys(stageResources).length > 0;
+        lastSource = hasStage ? 'legacy' : 'empty';
         const loaded = { ...migrated, resources: stageResources };
         enforceMigrationMarker(loaded, markerAction);
         return loaded;
       }
-      return { version: CURRENT_STATE_VERSION, provider, app, service, stages: {}, resources: {} };
+
+      lastSource = 'empty';
+      return emptyScopedState(normalized);
     },
 
     patchPersisted: async (patch: Record<string, unknown | undefined>): Promise<void> => {
-      const raw = await adapter.read<StateFile>(config.key);
+      // Patch whichever persisted object backs the current state source.
+      const targetKey = lastSource === 'scoped' ? config.scopedKey : config.legacyKey;
+      const raw = await adapter.read<StateFile>(targetKey);
       const merged: Record<string, unknown> = raw ? { ...toPersistedState(raw) } : {};
       for (const [key, value] of Object.entries(patch)) {
         if (value === undefined) {
@@ -140,43 +255,55 @@ export const createRemoteStateBackend = (
           merged[key] = value;
         }
       }
-      await adapter.write(config.key, merged);
+      await adapter.write(targetKey, merged);
     },
 
-    saveState: async (
-      state: StateFile,
-      app: string,
-      service: string,
-      stage: string,
-    ): Promise<void> => {
-      let existing: PersistedStateFile = {
-        version: CURRENT_STATE_VERSION,
-        provider: state.provider,
-        app,
-        service,
-        stages: {},
-      };
-      try {
-        const raw = await adapter.read<StateFile>(config.key);
-        if (raw) existing = toPersistedState(raw);
-      } catch {
-        // noop
+    saveState: async (state: StateFile): Promise<void> => {
+      if (
+        state.provider !== normalized.provider ||
+        state.app !== normalized.app ||
+        state.service !== normalized.service
+      ) {
+        throw new StateCorruptError(
+          `bucket://${config.scopedKey}`,
+          `state identity (${state.provider}/${state.app}/${state.service}) does not match the bound deployment scope (${normalized.provider}/${normalized.app}/${normalized.service})`,
+        );
       }
-      const stateToSave: PersistedStateFile = {
-        ...existing,
+      // Continue this scope document's lineage/serial across saves (independent
+      // per Stage/Region document).
+      const existing = await adapter.read<PersistedStateFile>(config.scopedKey);
+      const persisted: PersistedStateFile = {
+        ...toPersistedState(state),
         version: CURRENT_STATE_VERSION,
-        app,
-        service,
-        provider: state.provider,
+        provider: normalized.provider,
+        app: normalized.app,
+        service: normalized.service,
+        scope: { stage: normalized.stage, region: normalized.region },
+        lineage: existing?.lineage || state.lineage || crypto.randomUUID(),
+        serial: (existing?.serial ?? 0) + 1,
         stages: {
-          ...existing.stages,
-          [stage]: {
+          [normalized.stage]: {
             resources: state.resources,
-            shared: state.stages?.[stage]?.shared ?? existing.stages?.[stage]?.shared ?? {},
+            shared: state.stages?.[normalized.stage]?.shared ?? {},
           },
         },
       };
-      await adapter.write(config.key, stateToSave);
+      await adapter.write(config.scopedKey, persisted);
+      lastSource = 'scoped';
+    },
+
+    readStateSource: (): StateSource => lastSource,
+
+    probeWriteReadiness: async (): Promise<WriteReadiness> => {
+      const source = await detectSourceAsync();
+      if (source === 'legacy') {
+        return {
+          ready: false,
+          source,
+          reason: lang.__('STATE_WRITE_BLOCKED_LEGACY_BUCKET', { objectKey: config.legacyKey }),
+        };
+      }
+      return { ready: true, source };
     },
 
     acquireLock: async (operation: string, options?: LockOptions): Promise<string> => {
@@ -227,4 +354,17 @@ export const createRemoteStateBackend = (
       }
     },
   };
+
+  async function detectSourceAsync(): Promise<StateSource> {
+    const scoped = await readScopedDocument();
+    if (scoped) {
+      return 'scoped';
+    }
+    const legacyRaw = await adapter.read<StateFile>(config.legacyKey);
+    if (legacyRaw) {
+      const stageResources = legacyRaw.stages?.[normalized.stage]?.resources;
+      return stageResources && Object.keys(stageResources).length > 0 ? 'legacy' : 'empty';
+    }
+    return 'empty';
+  }
 };

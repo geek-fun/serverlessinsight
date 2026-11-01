@@ -17,7 +17,17 @@ jest.mock('../../src/common/volcengineClient', () => ({
 const ROOT = path.join(__dirname, '../..');
 const CLI_PATH = path.join(ROOT, 'dist/src/commands/index.js');
 const FIXTURE = path.join(__dirname, '../fixtures/serverless-insight-volcengine-plan.yml');
-const STATE_PATH = path.join(ROOT, '.serverlessinsight/state-volc-plan-app-volc-plan.json');
+// Issue #280: state lives in scoped V4 documents (per stage/region).
+const STATE_PATH = path.join(
+  ROOT,
+  '.serverlessinsight',
+  'states',
+  'volc-plan-app',
+  'volc-plan',
+  'dev',
+  'cn-shanghai',
+  'state.json',
+);
 const options = {
   location: FIXTURE,
   stage: 'dev',
@@ -67,8 +77,17 @@ describe('Volcengine standalone planning (issue #266)', () => {
     clearContext();
     client = createMockVolcengineClient();
     (createVolcengineClient as jest.Mock).mockReturnValue(client);
-    const backend = createLocalStateBackend('volc-plan-app', 'volc-plan', ROOT);
-    const initial = await backend.loadState('volcengine', 'volc-plan-app', 'volc-plan', 'dev');
+    const backend = createLocalStateBackend(
+      {
+        provider: 'volcengine',
+        app: 'volc-plan-app',
+        service: 'volc-plan',
+        stage: 'dev',
+        region: 'cn-shanghai',
+      },
+      { baseDir: ROOT },
+    );
+    const initial = await backend.loadState();
     const state = setResource(initial, 'buckets.assets', {
       mode: 'managed',
       region: 'cn-shanghai',
@@ -83,7 +102,7 @@ describe('Volcengine standalone planning (issue #266)', () => {
         }),
       ),
     });
-    await backend.saveState(state, 'volc-plan-app', 'volc-plan', 'dev');
+    await backend.saveState(state);
     stateBefore = await fs.readFile(STATE_PATH, 'utf8');
   });
 
@@ -95,7 +114,7 @@ describe('Volcengine standalone planning (issue #266)', () => {
       mutators.forEach(([, operation]) => expect(operation).not.toHaveBeenCalled());
       expect(await fs.readFile(STATE_PATH, 'utf8')).toBe(stateBefore);
     } finally {
-      await fs.rm(STATE_PATH, { force: true });
+      await fs.rm(path.dirname(path.dirname(STATE_PATH)), { recursive: true, force: true });
       clearContext();
     }
   });
@@ -166,7 +185,7 @@ describe('Volcengine standalone planning (issue #266)', () => {
       const result = await runCli('diff', ['--json', '--no-refresh']);
       expect(result.code).toBe(0);
       expect(JSON.parse(result.stdout)).toMatchObject({
-        planVersion: 1,
+        planVersion: 2,
         provider: 'volcengine',
         app: 'volc-plan-app',
         service: 'volc-plan',

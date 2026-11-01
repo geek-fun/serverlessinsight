@@ -128,12 +128,7 @@ describe('planner', () => {
 
       await generateTencentPlan(testIac, mockBackend);
 
-      expect(mockBackend.loadState).toHaveBeenCalledWith(
-        ProviderEnum.TENCENT,
-        'test-app',
-        'test-service',
-        'dev',
-      );
+      expect(mockBackend.loadState).toHaveBeenCalledWith();
     });
 
     it('should generate plans for all resource types', async () => {

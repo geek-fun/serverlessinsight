@@ -206,7 +206,7 @@ describe('sharedLogProject', () => {
       expect(mockClient.tls.addTags).toHaveBeenCalledWith({
         resourceType: 'project',
         resourcesList: ['proj-1'],
-        tags: [{ key: 'si-owned-by', value: 'test-app:shared:logs.project' }],
+        tags: [{ key: 'si-owned-by', value: 'test-app:shared:logs.project@cn-beijing' }],
       });
     });
 
@@ -396,7 +396,7 @@ describe('sharedLogProject', () => {
       expect(mockClient.tls.addTags).toHaveBeenCalledWith({
         resourceType: 'topic',
         resourcesList: ['topic-1'],
-        tags: [{ key: 'si-owned-by', value: 'test-app-test-service:functions.test_fn' }],
+        tags: [{ key: 'si-owned-by', value: 'test-app-test-service:functions.test_fn@cn-beijing' }],
       });
       expect(mockClient.tls.createIndex).toHaveBeenCalledWith(
         expect.objectContaining({

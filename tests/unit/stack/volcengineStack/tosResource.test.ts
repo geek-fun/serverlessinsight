@@ -95,6 +95,10 @@ describe('tosResource', () => {
   });
 
   const ownershipTag = { Key: 'si-owned-by', Value: 'test-app-test-service:buckets.static_site' };
+  const createOwnershipTag = {
+    Key: 'si-owned-by',
+    Value: 'test-app-test-service:buckets.static_site@cn-beijing',
+  };
   const ownedBucketInfo = {
     name: 'test-bucket',
     location: 'cn-beijing',
@@ -132,7 +136,7 @@ describe('tosResource', () => {
       await createResource(mockContext, bucket, mockState);
 
       expect(mockTosClient.tos.createBucket).toHaveBeenCalledWith(
-        expect.objectContaining({ Tags: [ownershipTag] }),
+        expect.objectContaining({ Tags: [createOwnershipTag] }),
       );
     });
 
@@ -503,7 +507,7 @@ describe('tosResource', () => {
       await createResource(mockContext, bucket, mockState);
 
       expect(mockTosClient.tos.createBucket).toHaveBeenCalledWith(
-        expect.objectContaining({ Tags: [ownershipTag] }),
+        expect.objectContaining({ Tags: [createOwnershipTag] }),
       );
       expect(setResource).toHaveBeenCalledWith(
         expect.anything(),

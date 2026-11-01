@@ -645,7 +645,7 @@ describe('FC3 Planner', () => {
         drifted: true,
       });
       expect(mockRamOperations.getRole).toHaveBeenCalledWith(
-        buildFunctionRoleName('test-app-test-service', 'default', 'test_fn'),
+        buildFunctionRoleName('test-app-test-service', 'default', 'cn-hangzhou', 'test_fn'),
       );
     });
 

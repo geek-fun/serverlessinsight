@@ -5,6 +5,8 @@ import { getCredentials } from './credentials';
 import { getIamInfo } from './imsClient';
 import { ProviderEnum } from './providerEnum';
 import { createRefreshCache } from './refreshCache';
+import { resolveEffectiveConfig } from './effectiveConfig';
+import { logger } from './logger';
 import { lang } from '../lang';
 
 let context: Context | undefined;
@@ -78,20 +80,25 @@ export const setContext = async (
   },
   reaValToken = false,
 ): Promise<void> => {
-  const region =
-    config.region ??
-    config.iacProvider?.region ??
-    process.env.SI_REGION ??
-    process.env.ALIYUN_REGION ??
-    'cn-hangzhou';
+  // Issue #280 §1: one shared resolver produces the effective provider/region/
+  // stage — CLI overrides apply before any provider-specific validation, and
+  // the SDK context and IAC derive from the same result.
+  const effective = resolveEffectiveConfig({
+    cli: { stage: config.stage, region: config.region, provider: config.provider },
+    iacProvider: {
+      name: config.iacProvider?.name,
+      region: config.iacProvider?.region,
+    },
+  });
 
-  if (process.env.ROS_REGION_ID && !process.env.SI_REGION) {
-    console.warn(lang.__('CONTEXT_REGION_DEPRECATED'));
+  if (
+    !config.region &&
+    !config.iacProvider?.region &&
+    process.env.ROS_REGION_ID &&
+    !process.env.SI_REGION
+  ) {
+    logger.warn(lang.__('CONTEXT_REGION_DEPRECATED'));
   }
-
-  const provider = (config.provider ??
-    config.iacProvider?.name ??
-    ProviderEnum.ALIYUN) as ProviderEnum;
 
   const credentials = getCredentials(
     {
@@ -99,15 +106,15 @@ export const setContext = async (
       accessKeySecret: config.accessKeySecret,
       securityToken: config.securityToken,
     },
-    provider,
+    effective.provider as ProviderEnum,
   );
 
   const newContext: Context = {
-    stage: config.stage ?? 'default',
+    stage: effective.stage,
     app: config.app,
     service: config.service,
-    provider,
-    region,
+    provider: effective.provider as ProviderEnum,
+    region: effective.region,
     accessKeyId: credentials.accessKeyId as string,
     accessKeySecret: credentials.accessKeySecret as string,
     securityToken: credentials.securityToken,

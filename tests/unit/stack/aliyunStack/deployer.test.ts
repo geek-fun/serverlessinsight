@@ -11,8 +11,18 @@ const mockedLogger = {
 };
 
 const createMockStateBackend = (): StateBackend => ({
+  scope: {
+    provider: 'aliyun',
+    app: 'test-app',
+    service: 'test-service',
+    stage: 'dev',
+    region: 'cn-hangzhou',
+  },
+  capabilities: { conditionalCreate: false },
   loadState: jest.fn(),
   saveState: jest.fn(),
+  readStateSource: jest.fn(),
+  probeWriteReadiness: jest.fn(),
   acquireLock: jest.fn(),
   releaseLock: jest.fn(),
   forceUnlock: jest.fn(),

@@ -178,7 +178,8 @@ const resolveManagedRoleProbe = (
   if (iamRole && typeof iamRole === 'object') {
     const serviceName = `${context.app}-${context.service}`;
     return {
-      roleName: iamRole.name ?? buildFunctionRoleName(serviceName, context.stage, fn.key),
+      roleName:
+        iamRole.name ?? buildFunctionRoleName(serviceName, context.stage, context.region, fn.key),
     };
   }
   return undefined;

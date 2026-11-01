@@ -156,15 +156,19 @@ program
   .description(lang.__('CMD_SHOW_DESC'))
   .option('-f, --file <path>', lang.__('OPT_FILE'))
   .option('-s, --stage <stage>', lang.__('OPT_STAGE'))
+  .option('-r, --region <region>', lang.__('OPT_REGION'))
+  .option('-v, --provider <provider>', lang.__('OPT_PROVIDER'))
   .option('--json', lang.__('OPT_JSON'))
   .action(
-    actionWrapper('show', async ({ file, stage, json }) => {
+    actionWrapper('show', async ({ file, stage, region, provider, json }) => {
       setJsonMode(!!json);
       const iacLocation = getIacLocation(file);
       const rawIac = parseYaml(iacLocation);
       await setContext({
         location: file,
         stage,
+        region,
+        provider,
         app: rawIac.app,
         service: rawIac.service,
         iacProvider: rawIac.provider,
@@ -294,6 +298,11 @@ program
   .option('--no-marker', lang.__('OPT_NO_MARKER'))
   .option('--dry-run', lang.__('OPT_DRY_RUN'))
   .option('--rollback', lang.__('OPT_ROLLBACK'))
+  .option('--to-regional', lang.__('OPT_TO_REGIONAL'))
+  .option('--legacy-app <app>', lang.__('OPT_LEGACY_APP'))
+  .option('--legacy-service <service>', lang.__('OPT_LEGACY_SERVICE'))
+  .option('--bind-unknown-region <region>', lang.__('OPT_BIND_UNKNOWN_REGION'))
+  .option('--rollback-op-id <opId>', lang.__('OPT_ROLLBACK_OP_ID'))
   .action(
     actionWrapper(
       'migrate',
@@ -311,6 +320,11 @@ program
         marker,
         dryRun,
         rollback,
+        toRegional,
+        legacyApp,
+        legacyService,
+        bindUnknownRegion,
+        rollbackOpId,
       }) => {
         await migrate({
           stage,
@@ -328,6 +342,11 @@ program
           noMarker: marker === false,
           dryRun,
           rollback,
+          toRegional,
+          legacyApp,
+          legacyService,
+          bindUnknownRegion,
+          rollbackOpId,
         });
       },
     ),

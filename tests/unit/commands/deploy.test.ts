@@ -99,6 +99,8 @@ const mockBackend = {
     resources: {},
   }),
   setState: jest.fn(),
+  readStateSource: jest.fn().mockReturnValue('scoped'),
+  probeWriteReadiness: jest.fn().mockResolvedValue({ ready: true, source: 'scoped' }),
 };
 
 const baseOptions = {
@@ -129,9 +131,27 @@ describe('unit test for deploy command', () => {
 
     await deploy(baseOptions);
 
+    expect(mockedCreateStateBackend).toHaveBeenCalledTimes(1);
+    expect(mockBackend.probeWriteReadiness).toHaveBeenCalledTimes(1);
     expect(mockedGenerateAliyunPlan).toHaveBeenCalledTimes(1);
     expect(mockedDisplayPlan).toHaveBeenCalledWith(planWithChanges);
     expect(mockedDeployStack).toHaveBeenCalledTimes(1);
+  });
+
+  it('should abort before planning when the write-readiness probe is not ready', async () => {
+    setupAliyunMocks();
+    mockedCreateStateBackend.mockReturnValue({
+      ...mockBackend,
+      probeWriteReadiness: jest
+        .fn()
+        .mockResolvedValue({ ready: false, source: 'legacy', reason: 'blocked' }),
+    });
+
+    await expect(deploy(baseOptions)).rejects.toThrow('blocked');
+
+    expect(mockBackend.probeWriteReadiness).not.toHaveBeenCalled();
+    expect(mockedGenerateAliyunPlan).not.toHaveBeenCalled();
+    expect(mockedDeployStack).not.toHaveBeenCalled();
   });
 
   it('should deploy with tencent provider', async () => {
@@ -285,6 +305,8 @@ describe('unit test for deploy command', () => {
           resources: {},
         }),
         setState: jest.fn(),
+        readStateSource: jest.fn().mockReturnValue('scoped'),
+        probeWriteReadiness: jest.fn().mockResolvedValue({ ready: true, source: 'scoped' }),
       });
 
       const exitSpy = jest.spyOn(process, 'exit').mockImplementation(() => {
@@ -346,6 +368,8 @@ describe('unit test for deploy command', () => {
           resources: {},
         }),
         setState: jest.fn(),
+        readStateSource: jest.fn().mockReturnValue('scoped'),
+        probeWriteReadiness: jest.fn().mockResolvedValue({ ready: true, source: 'scoped' }),
       });
 
       const exitSpy = jest.spyOn(process, 'exit').mockImplementation(() => {
@@ -429,6 +453,8 @@ describe('unit test for deploy command', () => {
         flushEvents,
         loadState: jest.fn().mockResolvedValue({ resources: {} }),
         replayOrphanedEvents: jest.fn().mockResolvedValue(undefined),
+        readStateSource: jest.fn().mockReturnValue('scoped'),
+        probeWriteReadiness: jest.fn().mockResolvedValue({ ready: true, source: 'scoped' }),
       });
       const exitSpy = jest.spyOn(process, 'exit').mockImplementation(() => undefined as never);
       let releaseDeploy: (() => void) | undefined;

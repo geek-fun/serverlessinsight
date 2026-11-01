@@ -104,10 +104,23 @@ export const CONSTRAINT_NAME_LIMITS = {
   FUNCTION_ROLE_NAME: 64,
 } as const;
 
-/** Single source of truth for per-function execution role names across all providers. */
-export const buildFunctionRoleName = (serviceName: string, stage: string, fnKey: string): string =>
+/**
+ * Single source of truth for per-function execution role names across all providers.
+ *
+ * Issue #280: IAM/RAM/CAM roles are account-GLOBAL — the same role name in two
+ * regions IS the same physical role, so fresh auto-named roles incorporate the
+ * regional scope. Stored-first rule (AGENTS.md): existing deployments keep the
+ * role name recorded in their state instances; the derivation change only
+ * affects newly created roles.
+ */
+export const buildFunctionRoleName = (
+  serviceName: string,
+  stage: string,
+  region: string,
+  fnKey: string,
+): string =>
   buildConstrainedName({
-    parts: [serviceName, stage, fnKey, 'role'],
+    parts: [serviceName, stage, region, fnKey, 'role'],
     maxLength: CONSTRAINT_NAME_LIMITS.FUNCTION_ROLE_NAME,
     charset: 'hyphen',
   });

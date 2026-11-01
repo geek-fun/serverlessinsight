@@ -51,8 +51,18 @@ describe('Unit tests for Aliyun stack deployment', () => {
   const testDir = '/tmp/test-deploy';
 
   const mockBackend: StateBackend = {
+    scope: {
+      provider: ProviderEnum.ALIYUN,
+      app: 'test-app',
+      service: 'test-service',
+      stage: 'default',
+      region: 'cn-hangzhou',
+    },
+    capabilities: { conditionalCreate: true },
     loadState: jest.fn(),
     saveState: jest.fn(),
+    readStateSource: jest.fn().mockReturnValue('scoped'),
+    probeWriteReadiness: jest.fn().mockResolvedValue({ ready: true, source: 'scoped' }),
     acquireLock: jest.fn(),
     releaseLock: jest.fn(),
     forceUnlock: jest.fn(),

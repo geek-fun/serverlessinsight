@@ -2,9 +2,9 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { ResourceState, ResourceTypeEnum, ServerlessIac } from '../types';
 import { StateBackendType } from '../types/domains/backend';
-import { getStatePath, loadState, getContext } from '../common';
+import { getContext, getScopedStatePath } from '../common';
 import { readLockFileForCommand } from '../common/lockManager';
-import { createStateBackend } from '../common/stateBackend';
+import { createStateBackend, createLocalStateBackend } from '../common/stateBackend';
 import { isMigratedToSaas } from '../common/migrationMarker';
 import { SHOW_JSON_VERSION, ShowJsonPayload, writeJson } from '../common/jsonOutput';
 import { logger } from '../common/logger';
@@ -215,18 +215,40 @@ const formatResourceOutput = (logicalId: string, resource: ResourceState): strin
   return [];
 };
 
-const loadLocalState = (
+const loadLocalState = async (
   provider: string,
   app: string,
   service: string,
   stage: string,
   baseDir: string,
 ) => {
-  return loadState(provider, app, service, stage, baseDir);
+  // Issue #280: read the scoped V4 document first, fall back to the legacy
+  // aggregate for read-only compatibility — same resolution as the backend.
+  const backend = createLocalStateBackend(
+    { provider, app, service, stage, region: getContext().region },
+    { baseDir, markerAction: 'off' },
+  );
+  return backend.loadState();
+};
+
+const readLocalStateSource = (
+  provider: string,
+  app: string,
+  service: string,
+  stage: string,
+  baseDir: string,
+): 'scoped' | 'legacy' | 'empty' => {
+  const backend = createLocalStateBackend(
+    { provider, app, service, stage, region: getContext().region },
+    { baseDir, markerAction: 'off' },
+  );
+  return backend.readStateSource();
 };
 
 const readLocalLock = (app: string, service: string, baseDir: string): LockMetadata | null => {
-  const statePath = getStatePath(app, service, baseDir);
+  // Locks are scoped per Stage/Region (issue #280).
+  const context = getContext();
+  const statePath = getScopedStatePath(app, service, context.stage, context.region, baseDir);
   return readLockFileForCommand(statePath);
 };
 
@@ -252,6 +274,7 @@ export const show = async (options: ShowOptions): Promise<void> => {
   let stateLocation: string;
   let stateLocationDisplay: string;
   let usingRemoteBackend = false;
+  let stateSource: 'scoped' | 'legacy' | 'empty';
 
   const backendType = options.iac?.backend?.type;
   const shouldUseRemoteBackend =
@@ -261,13 +284,17 @@ export const show = async (options: ShowOptions): Promise<void> => {
 
   if (shouldUseRemoteBackend) {
     try {
-      // Read-only command: a migrated state only warns here.
+      // Read-only command: a migrated state only warns here; 'read-only' mode
+      // keeps SaaS resolution provisioning-free (issue #280 §4).
       const backend: StateBackend = createStateBackend(options.iac!.backend, {
         ...context,
+        stage,
         declaredOrg: options.iac!.org,
         migrationMarker: 'warn',
+        mode: 'read-only',
       });
-      state = await backend.loadState(context.provider, context.app, context.service, stage);
+      state = await backend.loadState();
+      stateSource = backend.readStateSource();
       lockInfo = await backend.readLock();
       usingRemoteBackend = true;
       stateLocation =
@@ -280,21 +307,47 @@ export const show = async (options: ShowOptions): Promise<void> => {
       } else {
         logger.warn(lang.__('SHOW_REMOTE_BACKEND_FALLBACK', { error: String(error) }));
       }
-      state = loadLocalState(context.provider, context.app, context.service, stage, baseDir);
+      state = await loadLocalState(context.provider, context.app, context.service, stage, baseDir);
+      stateSource = readLocalStateSource(
+        context.provider,
+        context.app,
+        context.service,
+        stage,
+        baseDir,
+      );
       // A local copy of a MIGRATED state is stale by definition — showing it
       // after a remote failure would mislead the user (decision D-3/D-4).
       if (isMigratedToSaas(state)) {
         throw new Error(lang.__('MIGRATION_MARKER_REFUSED'), { cause: error });
       }
       lockInfo = readLocalLock(context.app, context.service, baseDir);
-      stateLocation = getStatePath(context.app, context.service, baseDir);
+      stateLocation = getScopedStatePath(
+        context.app,
+        context.service,
+        stage,
+        context.region,
+        baseDir,
+      );
     }
     stateLocationDisplay =
       stateLocation === SAAS_STATE_LOCATION ? lang.__('SHOW_BACKEND_SAAS') : stateLocation;
   } else {
-    state = loadLocalState(context.provider, context.app, context.service, stage, baseDir);
+    state = await loadLocalState(context.provider, context.app, context.service, stage, baseDir);
+    stateSource = readLocalStateSource(
+      context.provider,
+      context.app,
+      context.service,
+      stage,
+      baseDir,
+    );
     lockInfo = readLocalLock(context.app, context.service, baseDir);
-    stateLocation = getStatePath(context.app, context.service, baseDir);
+    stateLocation = getScopedStatePath(
+      context.app,
+      context.service,
+      stage,
+      context.region,
+      baseDir,
+    );
     stateLocationDisplay = stateLocation;
   }
 
@@ -313,11 +366,13 @@ export const show = async (options: ShowOptions): Promise<void> => {
       app: state.app,
       service: state.service,
       stage,
+      region: context.region,
       ...(state.serial !== undefined ? { serial: state.serial } : {}),
       ...(state.lineage !== undefined ? { lineage: state.lineage } : {}),
       ...(state.managedBy !== undefined ? { managedBy: state.managedBy } : {}),
       stateLocation,
       backend: backendKind,
+      stateSource,
       locked: !!lockInfo,
       lock: lockInfo ? { ...lockInfo } : null,
       resources: resources as Record<string, unknown>,

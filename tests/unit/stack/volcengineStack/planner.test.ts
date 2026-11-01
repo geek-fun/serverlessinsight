@@ -91,12 +91,7 @@ describe('volcengineStack planner', () => {
     it('should load state with correct parameters', async () => {
       await generateVolcenginePlan(mockIac, mockBackend);
 
-      expect(mockBackend.loadState).toHaveBeenCalledWith(
-        'volcengine',
-        'test-app',
-        'test-service',
-        'dev',
-      );
+      expect(mockBackend.loadState).toHaveBeenCalledWith();
     });
 
     it('should throw error when cycle is detected', async () => {

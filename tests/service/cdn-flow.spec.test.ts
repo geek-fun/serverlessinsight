@@ -58,6 +58,16 @@ const STATE_FILE_PATH = path.join(
   `state-${APP_NAME}-${SERVICE_NAME}.json`,
 );
 const STATE_LOCK_PATH = `${STATE_FILE_PATH}.lock`;
+const SCOPED_STATE_FILE = path.join(
+  process.cwd(),
+  '.serverlessinsight',
+  'states',
+  APP_NAME,
+  SERVICE_NAME,
+  STAGE,
+  REGION,
+  'state.json',
+);
 const WEBSITE_SOURCE_PATH = path.join(process.cwd(), 'tests/fixtures/test-bucket');
 
 type ExtendedMockAliyunClient = MockAliyunClient & {
@@ -270,7 +280,8 @@ const writeIacFile = async (
 };
 
 const readStateFile = async () => {
-  const content = await fs.readFile(STATE_FILE_PATH, 'utf-8');
+  // Issue #280: deploys persist the scoped V4 document.
+  const content = await fs.readFile(SCOPED_STATE_FILE, 'utf-8');
   return JSON.parse(content) as {
     stages?: {
       [stage: string]: {
@@ -338,12 +349,14 @@ describe('CDN Flow Service Test', () => {
     mockCreateAliyunClient.mockReturnValue(mockClient);
 
     await fs.rm(STATE_FILE_PATH, { force: true }).catch(() => {});
+    await fs.rm(path.dirname(SCOPED_STATE_FILE), { recursive: true, force: true }).catch(() => {});
     await fs.rm(STATE_LOCK_PATH, { force: true }).catch(() => {});
   });
 
   afterEach(async () => {
     await fs.rm(tempDir, { recursive: true, force: true }).catch(() => {});
     await fs.rm(STATE_FILE_PATH, { force: true }).catch(() => {});
+    await fs.rm(path.dirname(SCOPED_STATE_FILE), { recursive: true, force: true }).catch(() => {});
     await fs.rm(STATE_LOCK_PATH, { force: true }).catch(() => {});
   });
 

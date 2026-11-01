@@ -106,7 +106,7 @@ describe('sharedLogProject (aliyun)', () => {
         },
       };
       mockClient.sls.getProjectTags.mockResolvedValue([
-        { key: 'si-owned-by', value: 'test-app:shared:logs.project' },
+        { key: 'si-owned-by', value: 'test-app:shared:logs.project@cn-hangzhou' },
       ]);
 
       const result = await ensureSharedSlsProject(
@@ -128,7 +128,7 @@ describe('sharedLogProject (aliyun)', () => {
         },
       };
       mockClient.sls.getProjectTags.mockResolvedValue([
-        { key: 'si-owned-by', value: 'other-app:shared:logs.project' },
+        { key: 'si-owned-by', value: 'other-app:shared:logs.project@cn-hangzhou' },
       ]);
 
       await expect(
@@ -167,7 +167,7 @@ describe('sharedLogProject (aliyun)', () => {
       expect(mockClient.sls.addTags).toHaveBeenCalledWith({
         resourceType: 'project',
         resourceId: 'test-app-dev-sls',
-        tags: [{ key: 'si-owned-by', value: 'test-app:shared:logs.project' }],
+        tags: [{ key: 'si-owned-by', value: 'test-app:shared:logs.project@cn-hangzhou' }],
       });
     });
 
@@ -177,7 +177,7 @@ describe('sharedLogProject (aliyun)', () => {
         status: 'Normal',
       });
       mockClient.sls.getProjectTags.mockResolvedValue([
-        { key: 'si-owned-by', value: 'test-app:shared:logs.project' },
+        { key: 'si-owned-by', value: 'test-app:shared:logs.project@cn-hangzhou' },
       ]);
 
       const result = await ensureSharedSlsProject(mockContext, mockClient as never, emptyState);
@@ -193,7 +193,7 @@ describe('sharedLogProject (aliyun)', () => {
         status: 'Normal',
       });
       mockClient.sls.getProjectTags.mockResolvedValue([
-        { key: 'si-owned-by', value: 'other-app:shared:logs.project' },
+        { key: 'si-owned-by', value: 'other-app:shared:logs.project@cn-hangzhou' },
       ]);
 
       await expect(
@@ -219,7 +219,7 @@ describe('sharedLogProject (aliyun)', () => {
   describe('isSharedProjectOwnedByApp', () => {
     it('returns true when the project carries this app shared-scope tag', async () => {
       mockClient.sls.getProjectTags.mockResolvedValue([
-        { key: 'si-owned-by', value: 'test-app:shared:logs.project' },
+        { key: 'si-owned-by', value: 'test-app:shared:logs.project@cn-hangzhou' },
       ]);
 
       const result = await isSharedProjectOwnedByApp(
@@ -242,7 +242,7 @@ describe('sharedLogProject (aliyun)', () => {
       expect(untagged).toBe(false);
 
       mockClient.sls.getProjectTags.mockResolvedValue([
-        { key: 'si-owned-by', value: 'other-app:shared:logs.project' },
+        { key: 'si-owned-by', value: 'other-app:shared:logs.project@cn-hangzhou' },
       ]);
       const foreign = await isSharedProjectOwnedByApp(
         mockContext,
@@ -271,7 +271,7 @@ describe('sharedLogProject (aliyun)', () => {
   describe('releaseSharedSlsProjectIfUnused', () => {
     it('retains shared SLS project when logstores remain', async () => {
       mockClient.sls.getProjectTags.mockResolvedValue([
-        { key: 'si-owned-by', value: 'test-app:shared:logs.project' },
+        { key: 'si-owned-by', value: 'test-app:shared:logs.project@cn-hangzhou' },
       ]);
       mockClient.sls.listLogStores.mockResolvedValue(['fn-logs', 'apigw-logs']);
 
@@ -287,7 +287,7 @@ describe('sharedLogProject (aliyun)', () => {
 
     it('deletes shared SLS project only when no logstores remain', async () => {
       mockClient.sls.getProjectTags.mockResolvedValue([
-        { key: 'si-owned-by', value: 'test-app:shared:logs.project' },
+        { key: 'si-owned-by', value: 'test-app:shared:logs.project@cn-hangzhou' },
       ]);
 
       const result = await releaseSharedSlsProjectIfUnused(

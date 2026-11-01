@@ -1,17 +1,21 @@
 import COS from 'cos-nodejs-sdk-v5';
-import { StateBackend, StorageAdapter } from './types';
+import { StorageAdapter, ConditionalPutUnsupportedError, StateBackend } from './types';
 import { createRemoteStateBackend } from './remoteStateBackend';
 import { MigrationMarkerAction } from '../migrationMarker';
 import { OSS_STATE_REQUEST_TIMEOUT_MS } from '../constants';
+import { lang } from '../../lang';
+import type { DeploymentScope } from '../stateScope';
+import { buildScopedObjectKey } from '../stateScope';
 
-type CosBackendConfig = {
+/** Pure storage-location config — decoupled from the deployment scope. */
+export type CosStorageConfig = {
   bucket: string;
-  key: string;
   region: string;
   accessKeyId: string;
   accessKeySecret: string;
   securityToken?: string;
-  markerAction?: MigrationMarkerAction;
+  /** Display path for lock metadata. */
+  lockPath: string;
 };
 
 const promisifyGet = (
@@ -23,6 +27,14 @@ const promisifyGet = (
   return new Promise((resolve, reject) => {
     cosClient.getObject({ Bucket: bucket, Region: region, Key: key }, (err, data) => {
       if (err) {
+        // Classify BEFORE the 404 branch: COS signals a missing bucket with a
+        // 404 status too — only a missing OBJECT may resolve as absence.
+        try {
+          classifyCosReadError(err as { statusCode?: number; code?: string });
+        } catch (classified) {
+          reject(classified);
+          return;
+        }
         if (err.statusCode === 404) {
           resolve(null);
         } else {
@@ -50,6 +62,50 @@ const promisifyPut = (
   });
 };
 
+const promisifyPutIfAbsent = (
+  cosClient: COS,
+  bucket: string,
+  region: string,
+  key: string,
+  body: string,
+): Promise<boolean> => {
+  return new Promise((resolve, reject) => {
+    cosClient.putObject(
+      {
+        Bucket: bucket,
+        Region: region,
+        Key: key,
+        Body: body,
+        Headers: { 'If-None-Match': '*' },
+      },
+      (err) => {
+        if (err) {
+          const code = (err as { code?: string }).code ?? '';
+          if (
+            err.statusCode === 412 ||
+            code === 'PreconditionFailed' ||
+            code === 'KeyConflict' ||
+            err.statusCode === 409
+          ) {
+            resolve(false);
+            return;
+          }
+          // The storage cannot evaluate the condition at all — surface that so
+          // the backend downgrades to conditionalCreate=false (verified
+          // fallback) instead of pretending the create was exclusive.
+          if (err.statusCode === 400 || err.statusCode === 501) {
+            reject(new ConditionalPutUnsupportedError(err));
+            return;
+          }
+          reject(err);
+        } else {
+          resolve(true);
+        }
+      },
+    );
+  });
+};
+
 const promisifyDelete = (
   cosClient: COS,
   bucket: string,
@@ -64,7 +120,20 @@ const promisifyDelete = (
   });
 };
 
-const createCosStorageAdapter = (config: CosBackendConfig): StorageAdapter => {
+/**
+ * Distinguish object absence (expected for a fresh scope) from bucket absence
+ * and access denial (configuration/permission errors, never empty state).
+ */
+const classifyCosReadError = (err: { statusCode?: number; code?: string }): void => {
+  if (err.code === 'NoSuchBucket') {
+    throw new Error(lang.__('STATE_BUCKET_NOT_FOUND', { code: err.code }));
+  }
+  if (err.statusCode === 403 || err.code === 'AccessDenied') {
+    throw new Error(lang.__('STATE_BUCKET_ACCESS_DENIED', { code: err.code ?? 'AccessDenied' }));
+  }
+};
+
+export const createCosStorageAdapter = (config: CosStorageConfig): StorageAdapter => {
   const cosClient = new COS({
     SecretId: config.accessKeyId,
     SecretKey: config.accessKeySecret,
@@ -74,9 +143,14 @@ const createCosStorageAdapter = (config: CosBackendConfig): StorageAdapter => {
 
   return {
     read: async <T>(key: string): Promise<T | null> => {
-      const body = await promisifyGet(cosClient, config.bucket, config.region, key);
-      if (!body) return null;
-      return JSON.parse(body.toString('utf-8')) as T;
+      try {
+        const body = await promisifyGet(cosClient, config.bucket, config.region, key);
+        if (!body) return null;
+        return JSON.parse(body.toString('utf-8')) as T;
+      } catch (err: unknown) {
+        classifyCosReadError(err as { statusCode?: number; code?: string });
+        throw err;
+      }
     },
 
     write: async (key: string, data: unknown): Promise<void> => {
@@ -89,15 +163,63 @@ const createCosStorageAdapter = (config: CosBackendConfig): StorageAdapter => {
       );
     },
 
+    /**
+     * Best-effort conditional create via If-None-Match. When the storage does
+     * not honour it the backend declares conditionalCreate=false and restricts
+     * concurrent first-acquisition to the verified fallback instead of
+     * claiming non-atomic locking is safe.
+     */
+    putIfAbsent: async (key: string, data: unknown): Promise<boolean> => {
+      return promisifyPutIfAbsent(
+        cosClient,
+        config.bucket,
+        config.region,
+        key,
+        JSON.stringify(data, null, 2),
+      );
+    },
+
     delete: async (key: string): Promise<void> => {
       await promisifyDelete(cosClient, config.bucket, config.region, key);
     },
 
-    lockPath: `cos://${config.bucket}/${config.key}`,
+    lockPath: config.lockPath,
   };
 };
 
-export const createCosStateBackend = (config: CosBackendConfig): StateBackend => {
-  const adapter = createCosStorageAdapter(config);
-  return createRemoteStateBackend(adapter, { key: config.key, markerAction: config.markerAction });
+/**
+ * Scope-bound COS state backend (issue #280). `config.region` is the state
+ * STORAGE region — decoupled from the workload region.
+ */
+export const createCosStateBackend = (config: {
+  scope: DeploymentScope;
+  bucket: string;
+  key: string;
+  region: string;
+  accessKeyId: string;
+  accessKeySecret: string;
+  securityToken?: string;
+  markerAction?: MigrationMarkerAction;
+}): StateBackend => {
+  const adapter = createCosStorageAdapter({
+    bucket: config.bucket,
+    region: config.region,
+    accessKeyId: config.accessKeyId,
+    accessKeySecret: config.accessKeySecret,
+    securityToken: config.securityToken,
+    lockPath: `cos://${config.bucket}/${config.key}`,
+  });
+  const scopedKey = buildScopedObjectKey(
+    config.key,
+    config.scope.app,
+    config.scope.service,
+    config.scope.stage,
+    config.scope.region,
+  );
+  return createRemoteStateBackend(adapter, {
+    scope: config.scope,
+    scopedKey,
+    legacyKey: config.key,
+    markerAction: config.markerAction,
+  });
 };

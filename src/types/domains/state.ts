@@ -63,7 +63,29 @@ export type ResourceState = {
   metadata?: Record<string, unknown>;
 };
 
-export const CURRENT_STATE_VERSION = '3.0';
+/**
+ * V4 (issue #280): one state document per Stage/Region deployment scope.
+ * The scope object is mandatory in every V4 document and validated against the
+ * requested deployment scope on load and save.
+ */
+export const CURRENT_STATE_VERSION = '4.0';
+/** V3 aggregate: one document per App/Service with all stages, no region axis. */
+export const LEGACY_STATE_VERSION = '3.0';
+
+export type StateScope = {
+  stage: string;
+  region: string;
+};
+
+export type StateMigrationInfo = {
+  /** Unique migration operation id (also names the backup and report artifacts). */
+  opId: string;
+  /** State format version of the source aggregate ('3.0'). */
+  sourceVersion: string;
+  /** sha256 of the canonicalized source document at migration time. */
+  sourceHash: string;
+  migratedAt: string;
+};
 
 export type StageState = {
   resources: Record<string, ResourceState>;
@@ -80,6 +102,17 @@ export type StateFile = {
   serviceId?: string;
   serial?: number;
   lineage?: string;
+  /**
+   * V4 deployment scope (stage + region). Mandatory in V4 documents; absent in
+   * legacy V3 aggregates. A document contains only its selected stage.
+   */
+  scope?: StateScope;
+  /**
+   * Regional-split provenance (issue #280 §6): stamped on each V4 document
+   * created by `si migrate --to-regional` so the source aggregate, its hash and
+   * the migration operation are auditable and reversible.
+   */
+  migration?: StateMigrationInfo;
   /**
    * Migration ownership marker (docs/state-migration-saas.md §6.3): set to
    * 'saas' by `si migrate` after the state has been imported into the Console.
@@ -215,5 +248,48 @@ export class StateVersionError extends Error {
     this.version = version;
     this.currentVersion = currentVersion;
     this.cause = cause;
+  }
+}
+
+/**
+ * A state document's recorded identity does not match the requested deployment
+ * scope (provider/app/service/stage/region). Never treat a foreign-scope
+ * document as the state of the requested deployment.
+ */
+export class StateScopeMismatchError extends Error {
+  readonly requested: Record<string, string>;
+  readonly stored: Record<string, string | undefined>;
+
+  constructor(
+    requested: { provider: string; app: string; service: string; stage: string; region: string },
+    stored: { provider?: string; app?: string; service?: string; stage?: string; region?: string },
+  ) {
+    super(
+      `State identity mismatch: the stored state belongs to ` +
+        `provider=${stored.provider ?? 'unknown'}, app=${stored.app ?? 'unknown'}, ` +
+        `service=${stored.service ?? 'unknown'}, stage=${stored.stage ?? 'unknown'}, ` +
+        `region=${stored.region ?? 'unknown'}, but the command requested ` +
+        `provider=${requested.provider}, app=${requested.app}, service=${requested.service}, ` +
+        `stage=${requested.stage}, region=${requested.region}. ` +
+        'Refusing to mix deployment scopes; check --stage/--region/--provider or run `si migrate --to-regional` to split a legacy aggregate.',
+    );
+    this.name = 'StateScopeMismatchError';
+    this.requested = requested;
+    this.stored = stored;
+  }
+}
+
+/**
+ * A regional (V4) write was attempted without a resolved canonical region, or a
+ * scope document carries an empty/ambiguous region. Never select an arbitrary
+ * region for a scoped write.
+ */
+export class StateRegionRequiredError extends Error {
+  constructor(stage: string) {
+    super(
+      `A regional deployment state requires a canonical region, but none was resolved for stage "${stage}". ` +
+        'Pass -r/--region explicitly or set provider.region in the YAML configuration.',
+    );
+    this.name = 'StateRegionRequiredError';
   }
 }

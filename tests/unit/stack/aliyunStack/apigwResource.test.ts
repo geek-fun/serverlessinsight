@@ -659,7 +659,9 @@ describe('ApigwResource', () => {
       expect(mockedApigwOperations.createApiGroup).toHaveBeenCalledWith(
         expect.objectContaining({
           groupName: 'test-api-group',
-          tags: [{ key: 'si-owned-by', value: 'test-app-test-service:events.api_gateway' }],
+          tags: [
+            { key: 'si-owned-by', value: 'test-app-test-service:events.api_gateway@cn-hangzhou' },
+          ],
         }),
       );
     });

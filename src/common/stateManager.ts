@@ -7,8 +7,12 @@ import {
   PersistedStateFile,
   StateCorruptError,
   StateVersionError,
+  StateScopeMismatchError,
+  StateRegionRequiredError,
   CURRENT_STATE_VERSION,
+  LEGACY_STATE_VERSION,
 } from '../types';
+import { normalizeScope, buildScopedStatePath, DeploymentScope } from './stateScope';
 import { withLock, LockOptions } from './lockManager';
 import { logger } from './logger';
 
@@ -22,6 +26,18 @@ export const getStatePath = (
 ): string => {
   return path.join(baseDir, STATE_DIR, `state-${app}-${service}.json`);
 };
+
+/**
+ * V4 scoped state path (issue #280): one document per Stage/Region under
+ * `.serverlessinsight/states/<app>/<service>/<stage>/<region>/state.json`.
+ */
+export const getScopedStatePath = (
+  app: string,
+  service: string,
+  stage: string,
+  region: string,
+  baseDir: string = process.cwd(),
+): string => buildScopedStatePath(app, service, stage, region, baseDir);
 
 /* istanbul ignore next */
 export const ensureStateDir = (baseDir: string = process.cwd()): void => {
@@ -326,6 +342,278 @@ export const saveStateWithLock = async (
     },
     options,
   );
+};
+
+/* ------------------------------------------------------------------ *
+ * V4 scoped state (issue #280) — one document per Stage/Region scope.
+ * ------------------------------------------------------------------ */
+
+/** Empty V4 document for a fresh scope. The runtime `resources` projection is hydrated. */
+export const emptyScopedState = (scope: DeploymentScope): StateFile => {
+  const normalized = normalizeScope(scope);
+  return {
+    version: CURRENT_STATE_VERSION,
+    provider: normalized.provider,
+    app: normalized.app,
+    service: normalized.service,
+    scope: { stage: normalized.stage, region: normalized.region },
+    stages: { [normalized.stage]: { resources: {} } },
+    resources: {},
+  };
+};
+
+/**
+ * Validate a persisted V4 document against the requested deployment scope:
+ * version, provider, app, service, and the scope object (stage + region) must
+ * all agree. Any disagreement throws StateScopeMismatchError / StateVersionError
+ * — a foreign-scope document is never served as the requested state.
+ */
+export const validateScopedDocument = (raw: PersistedStateFile, scope: DeploymentScope): void => {
+  const normalized = normalizeScope(scope);
+  if (raw.version && raw.version !== CURRENT_STATE_VERSION) {
+    throw new StateVersionError(raw.version, CURRENT_STATE_VERSION);
+  }
+  const stored = {
+    provider: raw.provider,
+    app: raw.app,
+    service: raw.service,
+    stage: raw.scope?.stage,
+    region: raw.scope?.region,
+  };
+  const matches =
+    stored.provider === normalized.provider &&
+    stored.app === normalized.app &&
+    stored.service === normalized.service &&
+    !!raw.scope &&
+    raw.scope.stage === normalized.stage &&
+    raw.scope.region.toLowerCase() === normalized.region;
+  if (!matches) {
+    throw new StateScopeMismatchError(normalized, stored);
+  }
+};
+
+/**
+ * Load the V4 document for one deployment scope. Missing state returns an empty
+ * scoped document (the caller decides whether a legacy fallback applies);
+ * corrupt data, foreign scope, and unsupported versions throw — they are never
+ * converted to empty state.
+ */
+export const loadScopedState = (
+  scope: DeploymentScope,
+  baseDir: string = process.cwd(),
+): StateFile => {
+  const normalized = normalizeScope(scope);
+  const statePath = buildScopedStatePath(
+    normalized.app,
+    normalized.service,
+    normalized.stage,
+    normalized.region,
+    baseDir,
+  );
+
+  if (!fs.existsSync(statePath)) {
+    return emptyScopedState(normalized);
+  }
+
+  const readBackup = (): PersistedStateFile | null => {
+    const backupPath = `${statePath}.backup`;
+    if (!fs.existsSync(backupPath)) {
+      return null;
+    }
+    try {
+      return JSON.parse(fs.readFileSync(backupPath, 'utf-8')) as PersistedStateFile;
+    } catch {
+      return null;
+    }
+  };
+
+  const hydrate = (raw: PersistedStateFile): StateFile => {
+    validateScopedDocument(raw, normalized);
+    const stageResources = raw.stages?.[normalized.stage]?.resources ?? {};
+    return { ...raw, resources: stageResources } as StateFile;
+  };
+
+  try {
+    const content = fs.readFileSync(statePath, 'utf-8');
+    return hydrate(JSON.parse(content) as PersistedStateFile);
+  } catch (error) {
+    if (error instanceof StateVersionError || error instanceof StateScopeMismatchError) {
+      throw error;
+    }
+    const backup = readBackup();
+    if (backup) {
+      try {
+        return hydrate(backup);
+      } catch (backupError) {
+        if (
+          backupError instanceof StateVersionError ||
+          backupError instanceof StateScopeMismatchError
+        ) {
+          throw backupError;
+        }
+        throw new StateCorruptError(statePath, error);
+      }
+    }
+    throw new StateCorruptError(statePath, error);
+  }
+};
+
+/**
+ * Persist the V4 document for one scope. The document contains only its
+ * selected stage; lineage and serial are independent per regional document.
+ * A save whose recorded identity differs from the bound scope is rejected.
+ */
+export const saveScopedState = (
+  state: StateFile,
+  scope: DeploymentScope,
+  baseDir: string = process.cwd(),
+): void => {
+  // A regional write without a resolved canonical region must never pick an
+  // arbitrary region — fail before anything is written.
+  if (!scope.region || scope.region.trim().length === 0) {
+    throw new StateRegionRequiredError(scope.stage);
+  }
+  const normalized = normalizeScope(scope);
+  if (state.app !== normalized.app || state.service !== normalized.service) {
+    throw new StateScopeMismatchError(normalized, {
+      provider: state.provider,
+      app: state.app,
+      service: state.service,
+      stage: state.scope?.stage,
+      region: state.scope?.region,
+    });
+  }
+  if (state.provider && state.provider !== normalized.provider) {
+    throw new StateScopeMismatchError(normalized, {
+      provider: state.provider,
+      app: state.app,
+      service: state.service,
+      stage: state.scope?.stage,
+      region: state.scope?.region,
+    });
+  }
+
+  const statePath = buildScopedStatePath(
+    normalized.app,
+    normalized.service,
+    normalized.stage,
+    normalized.region,
+    baseDir,
+  );
+  const stateDir = path.dirname(statePath);
+  if (!fs.existsSync(stateDir)) {
+    fs.mkdirSync(stateDir, { recursive: true });
+  }
+
+  let existing: PersistedStateFile | null = null;
+  try {
+    if (fs.existsSync(statePath)) {
+      existing = JSON.parse(fs.readFileSync(statePath, 'utf-8')) as PersistedStateFile;
+    }
+  } catch {
+    existing = null;
+  }
+
+  const persisted: PersistedStateFile = {
+    version: CURRENT_STATE_VERSION,
+    provider: normalized.provider,
+    app: normalized.app,
+    service: normalized.service,
+    ...(existing?.orgId ? { orgId: existing.orgId } : {}),
+    ...(existing?.appId ? { appId: existing.appId } : {}),
+    ...(existing?.serviceId ? { serviceId: existing.serviceId } : {}),
+    ...(existing?.managedBy ? { managedBy: existing.managedBy } : {}),
+    scope: { stage: normalized.stage, region: normalized.region },
+    lineage: existing?.lineage || crypto.randomUUID(),
+    serial: (existing?.serial ?? 0) + 1,
+    stages: {
+      [normalized.stage]: {
+        resources: state.resources,
+        shared:
+          state.stages?.[normalized.stage]?.shared ??
+          existing?.stages?.[normalized.stage]?.shared ??
+          {},
+      },
+    },
+  };
+
+  writeStateFileAtomically(statePath, JSON.stringify(persisted, null, 2));
+};
+
+/**
+ * Merge top-level fields into a scoped persisted document without touching
+ * stages/resources (undefined deletes the key). Used by the regional migration
+ * for barrier markers and console-UUID backfills on scoped documents.
+ */
+export const patchScopedPersistedState = (
+  scope: DeploymentScope,
+  patch: Record<string, unknown | undefined>,
+  baseDir: string = process.cwd(),
+): void => {
+  const normalized = normalizeScope(scope);
+  const statePath = buildScopedStatePath(
+    normalized.app,
+    normalized.service,
+    normalized.stage,
+    normalized.region,
+    baseDir,
+  );
+  const stateDir = path.dirname(statePath);
+  if (!fs.existsSync(stateDir)) {
+    fs.mkdirSync(stateDir, { recursive: true });
+  }
+
+  let existing: PersistedStateFile = {
+    version: CURRENT_STATE_VERSION,
+    provider: normalized.provider,
+    app: normalized.app,
+    service: normalized.service,
+    scope: { stage: normalized.stage, region: normalized.region },
+    stages: { [normalized.stage]: { resources: {} } },
+  };
+  if (fs.existsSync(statePath)) {
+    const raw = JSON.parse(fs.readFileSync(statePath, 'utf-8')) as PersistedStateFile;
+    validateScopedDocument(raw, normalized);
+    existing = raw;
+  }
+
+  const patched: Record<string, unknown> = { ...existing };
+  for (const [key, value] of Object.entries(patch)) {
+    if (value === undefined) {
+      delete patched[key];
+    } else {
+      patched[key] = value;
+    }
+  }
+  const stateToSave = {
+    ...patched,
+    version: CURRENT_STATE_VERSION,
+    serial: (existing.serial ?? 0) + 1,
+  } as unknown as PersistedStateFile;
+
+  writeStateFileAtomically(statePath, JSON.stringify(stateToSave, null, 2));
+};
+
+/**
+ * Read a legacy V3 aggregate as persisted (no scope hydration). Returns null
+ * when the file does not exist or predates the V3 layout. Used by the regional
+ * migration and the legacy discovery fallback — never for scoped writes.
+ */
+export const readLegacyPersistedState = (
+  app: string,
+  service: string,
+  baseDir: string = process.cwd(),
+): PersistedStateFile | null => {
+  const statePath = getStatePath(app, service, baseDir);
+  if (!fs.existsSync(statePath)) {
+    return null;
+  }
+  try {
+    const raw = JSON.parse(fs.readFileSync(statePath, 'utf-8')) as PersistedStateFile;
+    return raw.version === LEGACY_STATE_VERSION || !raw.version ? raw : null;
+  } catch {
+    return null;
+  }
 };
 
 /* istanbul ignore next */

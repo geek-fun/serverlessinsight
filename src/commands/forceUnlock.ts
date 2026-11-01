@@ -64,16 +64,30 @@ export const forceUnlockCommand = async (
     }
     backend = createStateBackend(iac.backend, context);
   } else {
+    // Issue #280: scoped state layout — lock files live under
+    // `.serverlessinsight/states/**` (and the legacy flat directory still
+    // counts for pre-split locks). Search recursively.
     const stateDir = path.join(process.cwd(), '.serverlessinsight');
     let foundStatePath: string | undefined;
 
-    if (fs.existsSync(stateDir)) {
-      const lockFiles = fs.readdirSync(stateDir).filter((f) => f.endsWith(LOCK_FILE_SUFFIX));
-      if (lockFiles.length > 0) {
-        const lockContent = fs.readFileSync(path.join(stateDir, lockFiles[0]), 'utf-8');
-        const lockMeta = JSON.parse(lockContent) as LockMetadata;
-        foundStatePath = lockMeta.path;
+    const findLockFiles = (dir: string): string[] => {
+      if (!fs.existsSync(dir)) {
+        return [];
       }
+      return fs.readdirSync(dir, { withFileTypes: true }).flatMap((entry) => {
+        const full = path.join(dir, entry.name);
+        if (entry.isDirectory()) {
+          return findLockFiles(full);
+        }
+        return entry.name.endsWith(LOCK_FILE_SUFFIX) ? [full] : [];
+      });
+    };
+
+    const lockFiles = findLockFiles(stateDir);
+    if (lockFiles.length > 0) {
+      const lockContent = fs.readFileSync(lockFiles[0], 'utf-8');
+      const lockMeta = JSON.parse(lockContent) as LockMetadata;
+      foundStatePath = lockMeta.path;
     }
 
     if (!foundStatePath) {
@@ -83,6 +97,16 @@ export const forceUnlockCommand = async (
 
     const statePath = foundStatePath;
     backend = {
+      scope: {
+        provider: 'unknown',
+        app: 'unknown',
+        service: 'unknown',
+        stage: 'unknown',
+        region: 'unknown',
+      },
+      capabilities: { conditionalCreate: true },
+      readStateSource: () => 'legacy',
+      probeWriteReadiness: async () => ({ ready: false, source: 'legacy' }),
       readLock: async () => readLockFileForCommand(statePath),
       forceUnlock: async (id: string) => fsForceUnlock(statePath, id),
       loadState: async () => {

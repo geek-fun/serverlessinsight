@@ -31,3 +31,6 @@ export * from './planCapabilities';
 export * from './bucketPolicy';
 export * from './functionDefinition';
 export * from './planRedaction';
+export * from './stateScope';
+export * from './effectiveConfig';
+export * from './regionalMigration';

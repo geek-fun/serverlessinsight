@@ -119,12 +119,7 @@ describe('volcengineStack destroyer', () => {
 
       await destroyVolcengineStack(mockBackend);
 
-      expect(mockBackend.loadState).toHaveBeenCalledWith(
-        'volcengine',
-        'test-app',
-        'test-service',
-        'dev',
-      );
+      expect(mockBackend.loadState).toHaveBeenCalledWith();
     });
 
     it('should save state after destruction', async () => {
@@ -133,12 +128,7 @@ describe('volcengineStack destroyer', () => {
 
       await destroyVolcengineStack(mockBackend);
 
-      expect(mockBackend.saveState).toHaveBeenCalledWith(
-        mockState,
-        'test-app',
-        'test-service',
-        'dev',
-      );
+      expect(mockBackend.saveState).toHaveBeenCalledWith(mockState);
     });
 
     it('should delete buckets in state', async () => {

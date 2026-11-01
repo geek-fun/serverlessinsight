@@ -3,20 +3,31 @@ import {
   buildOwnershipTagValue,
   buildSharedOwnershipTagValue,
   parseOwnershipTagValue,
+  isLegacyOwnershipTag,
   isOwnedByApp,
   isOwnedByStack,
 } from '../../../src/stack/ownershipTag';
 
-const context = { app: 'fn-url-probe', service: 'fn-url-probe' };
+const context = { app: 'fn-url-probe', service: 'fn-url-probe', region: 'cn-hangzhou' };
 
 describe('ownershipTag', () => {
-  it('builds a combined stack:logicalId value', () => {
+  it('builds a combined stack:logicalId@region value', () => {
     expect(buildOwnershipTagValue(context, 'functions.probe')).toBe(
-      'fn-url-probe-fn-url-probe:functions.probe',
+      'fn-url-probe-fn-url-probe:functions.probe@cn-hangzhou',
     );
   });
 
-  it('parses a valid ownership value', () => {
+  it('parses a region-suffixed ownership value', () => {
+    expect(parseOwnershipTagValue('fn-url-probe-fn-url-probe:functions.probe@cn-hangzhou')).toEqual(
+      {
+        stack: 'fn-url-probe-fn-url-probe',
+        logicalId: 'functions.probe',
+        region: 'cn-hangzhou',
+      },
+    );
+  });
+
+  it('parses a legacy ownership value without region', () => {
     expect(parseOwnershipTagValue('fn-url-probe-fn-url-probe:functions.probe')).toEqual({
       stack: 'fn-url-probe-fn-url-probe',
       logicalId: 'functions.probe',
@@ -30,18 +41,52 @@ describe('ownershipTag', () => {
     expect(parseOwnershipTagValue(':leading-colon')).toBeNull();
   });
 
-  it('returns true when tag matches the owning stack and logical id', () => {
+  it('flags legacy values without a region and current values with one', () => {
+    expect(isLegacyOwnershipTag('fn-url-probe-fn-url-probe:functions.probe')).toBe(true);
+    expect(isLegacyOwnershipTag('fn-url-probe-fn-url-probe:functions.probe@cn-hangzhou')).toBe(
+      false,
+    );
+    expect(isLegacyOwnershipTag(undefined)).toBe(false);
+    expect(isLegacyOwnershipTag('no-colon-here')).toBe(false);
+  });
+
+  it('returns true when a region-suffixed tag matches the owning stack, logical id and region', () => {
+    const tags = [
+      {
+        Key: OWNERSHIP_TAG_KEY,
+        Value: 'fn-url-probe-fn-url-probe:functions.probe@cn-hangzhou',
+      },
+    ];
+    expect(isOwnedByStack(context, 'functions.probe', tags)).toBe(true);
+  });
+
+  it('returns false when a region-suffixed tag belongs to another region', () => {
+    const tags = [
+      {
+        Key: OWNERSHIP_TAG_KEY,
+        Value: 'fn-url-probe-fn-url-probe:functions.probe@cn-beijing',
+      },
+    ];
+    expect(isOwnedByStack(context, 'functions.probe', tags)).toBe(false);
+  });
+
+  it('still adopts legacy tags without a region', () => {
     const tags = [{ Key: OWNERSHIP_TAG_KEY, Value: 'fn-url-probe-fn-url-probe:functions.probe' }];
     expect(isOwnedByStack(context, 'functions.probe', tags)).toBe(true);
   });
 
   it('returns false when tag logical id differs', () => {
-    const tags = [{ Key: OWNERSHIP_TAG_KEY, Value: 'fn-url-probe-fn-url-probe:functions.other' }];
+    const tags = [
+      {
+        Key: OWNERSHIP_TAG_KEY,
+        Value: 'fn-url-probe-fn-url-probe:functions.other@cn-hangzhou',
+      },
+    ];
     expect(isOwnedByStack(context, 'functions.probe', tags)).toBe(false);
   });
 
   it('returns false when tag stack differs', () => {
-    const tags = [{ Key: OWNERSHIP_TAG_KEY, Value: 'another-app:functions.probe' }];
+    const tags = [{ Key: OWNERSHIP_TAG_KEY, Value: 'another-app:functions.probe@cn-hangzhou' }];
     expect(isOwnedByStack(context, 'functions.probe', tags)).toBe(false);
   });
 
@@ -55,17 +100,44 @@ describe('ownershipTag', () => {
   });
 
   describe('shared app-scoped ownership', () => {
-    it('builds an app-scoped shared ownership value', () => {
+    it('builds a legacy app-scoped shared ownership value without region', () => {
       expect(buildSharedOwnershipTagValue('my-app', 'logs.project')).toBe(
         'my-app:shared:logs.project',
       );
     });
 
-    it('returns true when shared tag matches app and logical id', () => {
+    it('builds a region-suffixed shared ownership value when a region is given', () => {
+      expect(buildSharedOwnershipTagValue('my-app', 'logs.project', 'cn-hangzhou')).toBe(
+        'my-app:shared:logs.project@cn-hangzhou',
+      );
+    });
+
+    it('returns true when a legacy shared tag matches app and logical id', () => {
       const tags = [
         { Key: OWNERSHIP_TAG_KEY, Value: buildSharedOwnershipTagValue('my-app', 'logs.project') },
       ];
       expect(isOwnedByApp('my-app', 'logs.project', tags)).toBe(true);
+    });
+
+    it('returns true when a region-suffixed shared tag matches app, logical id and region', () => {
+      const tags = [
+        {
+          Key: OWNERSHIP_TAG_KEY,
+          Value: buildSharedOwnershipTagValue('my-app', 'logs.project', 'cn-hangzhou'),
+        },
+      ];
+      expect(isOwnedByApp('my-app', 'logs.project', tags, 'cn-hangzhou')).toBe(true);
+    });
+
+    it('returns false when a region-suffixed shared tag belongs to another region', () => {
+      const tags = [
+        {
+          Key: OWNERSHIP_TAG_KEY,
+          Value: buildSharedOwnershipTagValue('my-app', 'logs.project', 'cn-hangzhou'),
+        },
+      ];
+      expect(isOwnedByApp('my-app', 'logs.project', tags, 'cn-beijing')).toBe(false);
+      expect(isOwnedByApp('my-app', 'logs.project', tags)).toBe(false);
     });
 
     it('returns false when another app owns the shared resource', () => {

@@ -1,4 +1,4 @@
-import { getContext, logger, ProviderEnum } from '../../common';
+import { getContext, logger } from '../../common';
 import { createVolcengineClient } from '../../common/volcengineClient';
 import { StateBackend } from '../../common/stateBackend';
 import {
@@ -14,7 +14,6 @@ import { releaseSharedLogProjectIfUnused } from './sharedLogProject';
 
 export const destroyVolcengineStack = async (backend: StateBackend) => {
   const context = getContext();
-  const providerName = ProviderEnum.VOLCENGINE;
 
   logger.info(
     lang.__('DESTROYING_STACK', {
@@ -23,7 +22,7 @@ export const destroyVolcengineStack = async (backend: StateBackend) => {
     }),
   );
 
-  let state = await backend.loadState(providerName, context.app, context.service, context.stage);
+  let state = await backend.loadState();
   const allResources = getAllResources(state);
 
   const eventEntries = Object.entries(allResources).filter(
@@ -112,5 +111,5 @@ export const destroyVolcengineStack = async (backend: StateBackend) => {
     }
   }
 
-  await backend.saveState(state, context.app, context.service, context.stage);
+  await backend.saveState(state);
 };

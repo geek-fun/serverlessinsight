@@ -78,7 +78,7 @@ export const ensureSharedSlsProject = async (
     tags: [
       {
         key: OWNERSHIP_TAG_KEY,
-        value: buildSharedOwnershipTagValue(context.app, SHARED_LOG_PROJECT_KEY),
+        value: buildSharedOwnershipTagValue(context.app, SHARED_LOG_PROJECT_KEY, context.region),
       },
     ],
   });
@@ -125,6 +125,7 @@ export const isSharedProjectOwnedByApp = async (
     context.app,
     SHARED_LOG_PROJECT_KEY,
     tags.map((t) => ({ Key: t.key, Value: t.value })),
+    context.region,
   );
 };
 

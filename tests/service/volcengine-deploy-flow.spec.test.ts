@@ -50,10 +50,34 @@ describe('Volcengine Deploy Flow Service Test', () => {
     mockCreateVolcengineClient.mockReturnValue(mockClient);
 
     await fs.rm(stateFilePath, { force: true }).catch(() => {});
+    await fs
+      .rm(
+        path.join(
+          process.cwd(),
+          '.serverlessinsight',
+          'states',
+          'insight-volc-app',
+          'insight-volc',
+        ),
+        { recursive: true, force: true },
+      )
+      .catch(() => {});
   });
 
   afterEach(async () => {
     await fs.rm(stateFilePath, { force: true }).catch(() => {});
+    await fs
+      .rm(
+        path.join(
+          process.cwd(),
+          '.serverlessinsight',
+          'states',
+          'insight-volc-app',
+          'insight-volc',
+        ),
+        { recursive: true, force: true },
+      )
+      .catch(() => {});
   });
 
   describe('Volcengine veFaaS Deploy', () => {
@@ -131,11 +155,26 @@ describe('Volcengine Deploy Flow Service Test', () => {
         expect.objectContaining({
           resourceType: 'project',
           resourcesList: ['proj-123'],
-          tags: [{ key: 'si-owned-by', value: 'insight-volc-app:shared:logs.project' }],
+          tags: [{ key: 'si-owned-by', value: 'insight-volc-app:shared:logs.project@cn-beijing' }],
         }),
       );
 
-      const saved = JSON.parse(await fs.readFile(stateFilePath, 'utf-8'));
+      // Issue #280: deploys persist the scoped V4 document.
+      const saved = JSON.parse(
+        await fs.readFile(
+          path.join(
+            process.cwd(),
+            '.serverlessinsight',
+            'states',
+            'insight-volc-app',
+            'insight-volc',
+            'dev',
+            'cn-beijing',
+            'state.json',
+          ),
+          'utf-8',
+        ),
+      );
       expect(saved.stages.dev.shared['logs.project']).toMatchObject({
         definition: { projectName: 'insight-volc-app-dev-tls' },
         instances: [
