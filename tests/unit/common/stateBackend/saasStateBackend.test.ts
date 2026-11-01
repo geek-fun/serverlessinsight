@@ -6,6 +6,14 @@ jest.mock('../../../../src/common/logger', () => ({
   logger: { info: jest.fn(), warn: jest.fn(), error: jest.fn(), debug: jest.fn() },
 }));
 
+// replayOrphanedEvents resolves the queue dir from the real homedir at module
+// load — pin it to a throwaway directory so tests never touch the user's home.
+jest.mock('node:os', () => {
+  const actual = jest.requireActual<typeof import('node:os')>('node:os');
+  const mocked = { ...actual, homedir: () => `${actual.tmpdir()}/si-saas-backend-test-home` };
+  return { ...mocked, default: mocked };
+});
+
 const mockApiClient = {
   get: jest.fn(),
   post: jest.fn(),
@@ -35,6 +43,9 @@ jest.mock('../../../../src/common/credentialStore', () => ({
   saveCredentials: jest.fn(),
 }));
 
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
 import { createSaasStateBackend } from '../../../../src/common/stateBackend/saasStateBackend';
 import {
   loadCredentials,
@@ -356,6 +367,14 @@ describe('saasStateBackend (scope-bound, issue #280)', () => {
       expect(mockApiClient.post).not.toHaveBeenCalled();
     });
 
+    it('rethrows unexpected capabilities probe failures instead of guessing capabilities', async () => {
+      mockApiClient.get.mockRejectedValueOnce(new ApiError('upstream exploded', 500));
+
+      // A network/5xx failure must not be read as "no regional scope" (which
+      // would block writes) nor as "capabilities known" — it surfaces.
+      await expect(createBackend().probeWriteReadiness()).rejects.toThrow('upstream exploded');
+    });
+
     it('appends the region to the state fetch', async () => {
       mockMutatingLoad();
 
@@ -591,6 +610,25 @@ describe('saasStateBackend (scope-bound, issue #280)', () => {
       );
 
       await expect(backend.saveState(savedState)).rejects.toThrow('SAAS_READ_ONLY_WRITE_REFUSED');
+      expect(mockApiClient.post).not.toHaveBeenCalled();
+    });
+
+    it('refuses a save whose identity differs from the bound scope before any HTTP call', async () => {
+      const backend = createBackend();
+
+      await expect(backend.saveState({ ...savedState, app: 'other-app' })).rejects.toThrow(
+        'SAAS_STATE_SCOPE_MISMATCH',
+      );
+      expect(mockApiClient.get).not.toHaveBeenCalled();
+      expect(mockApiClient.post).not.toHaveBeenCalled();
+    });
+
+    it('refuses a save when the server lacks the regional scope capability', async () => {
+      mockApiClient.get.mockRejectedValueOnce(new ApiError('not found', 404));
+
+      await expect(createBackend().saveState(savedState)).rejects.toThrow(
+        'SAAS_REGIONAL_SCOPE_UNSUPPORTED',
+      );
       expect(mockApiClient.post).not.toHaveBeenCalled();
     });
   });
@@ -915,6 +953,39 @@ describe('saasStateBackend (scope-bound, issue #280)', () => {
     it('should replay orphaned event queues without throwing', async () => {
       const backend = createBackend();
       await expect(backend.replayOrphanedEvents?.()).resolves.toBeUndefined();
+    });
+
+    it('replays orphaned queue files through the deployment recorded in each event', async () => {
+      const queueDir = path.join(os.homedir(), '.serverlessinsight', 'event-queue');
+      fs.mkdirSync(queueDir, { recursive: true });
+      fs.writeFileSync(
+        path.join(queueDir, 'deploy-old.jsonl'),
+        `${JSON.stringify({ type: 'resource_post', deploymentId: 'deploy-42', sequence: 3 })}\n`,
+        'utf-8',
+      );
+      // A batch whose first event carries no deploymentId cannot be routed —
+      // it is dropped without an HTTP call.
+      fs.writeFileSync(
+        path.join(queueDir, 'anonymous.jsonl'),
+        `${JSON.stringify({ type: 'resource_post', sequence: 4 })}\n`,
+        'utf-8',
+      );
+      mockApiClient.patch.mockResolvedValue({});
+
+      try {
+        const backend = createBackend();
+        await backend.replayOrphanedEvents?.();
+
+        expect(mockApiClient.patch).toHaveBeenCalledTimes(1);
+        expect(mockApiClient.patch).toHaveBeenCalledWith('/api/v1/deployments/deploy-42', {
+          phase: 'event',
+          events: [{ type: 'resource_post', deploymentId: 'deploy-42', sequence: 3 }],
+        });
+        expect(fs.existsSync(path.join(queueDir, 'deploy-old.jsonl'))).toBe(false);
+        expect(fs.existsSync(path.join(queueDir, 'anonymous.jsonl'))).toBe(false);
+      } finally {
+        fs.rmSync(queueDir, { recursive: true, force: true });
+      }
     });
   });
 });

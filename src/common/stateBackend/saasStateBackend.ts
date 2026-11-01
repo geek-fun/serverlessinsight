@@ -215,12 +215,10 @@ export const createSaasStateBackend = (
   /**
    * Read-only identity resolution (issue #280 §4): resolve app/service ids via
    * the migrate-targets endpoint WITHOUT creating any deployment or lifecycle
-   * record. Used by diff/show.
+   * record. Used by diff/show. Only reachable while `provisioned` is false —
+   * a successful resolution flips that flag, so no cache-check is needed here.
    */
   const resolveReadOnlyIdentity = async (): Promise<boolean> => {
-    if (resolvedAppId && resolvedServiceId) {
-      return true;
-    }
     const targets = await client.get<MigrateTargetsResponse>(
       `/api/v1/state/migrate/targets?app_name=${encodeURIComponent(normalized.app)}&service_name=${encodeURIComponent(normalized.service)}&stages=${encodeURIComponent(normalized.stage)}`,
     );

@@ -3,6 +3,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { getIacLocation, formatLockInfo, logger, setContext, getContext } from '../common';
 import { createStateBackend } from '../common/stateBackend';
+import type { StateBackend } from '../common/stateBackend/types';
 import { StateBackendType } from '../types';
 import { getConsoleUrl } from '../common/credentialStore';
 import { LOCK_FILE_SUFFIX } from '../common/constants';
@@ -37,7 +38,8 @@ export const forceUnlockCommand = async (
     securityToken?: string;
   } = {},
 ): Promise<void> => {
-  let backend;
+  // Only the lock surface is consumed on this command path.
+  let backend: Pick<StateBackend, 'readLock' | 'forceUnlock'>;
 
   if (options.location) {
     const iacLocation = getIacLocation(options.location);
@@ -97,33 +99,8 @@ export const forceUnlockCommand = async (
 
     const statePath = foundStatePath;
     backend = {
-      scope: {
-        provider: 'unknown',
-        app: 'unknown',
-        service: 'unknown',
-        stage: 'unknown',
-        region: 'unknown',
-      },
-      capabilities: { conditionalCreate: true },
-      readStateSource: () => 'legacy',
-      probeWriteReadiness: async () => ({ ready: false, source: 'legacy' }),
       readLock: async () => readLockFileForCommand(statePath),
       forceUnlock: async (id: string) => fsForceUnlock(statePath, id),
-      loadState: async () => {
-        throw new Error(lang.__('FORCE_UNLOCK_NO_LOCATION_MODE'));
-      },
-      saveState: async () => {
-        throw new Error(lang.__('FORCE_UNLOCK_NO_LOCATION_MODE'));
-      },
-      acquireLock: async () => {
-        throw new Error(lang.__('FORCE_UNLOCK_NO_LOCATION_MODE'));
-      },
-      releaseLock: async () => {
-        throw new Error(lang.__('FORCE_UNLOCK_NO_LOCATION_MODE'));
-      },
-      withLock: async () => {
-        throw new Error(lang.__('FORCE_UNLOCK_NO_LOCATION_MODE'));
-      },
     };
   }
 

@@ -2,10 +2,12 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { createLocalStateBackend } from '../../../../src/common/stateBackend/localStateBackend';
+import { clearStateMigrations, registerStateMigration } from '../../../../src/common/stateManager';
 import {
   StateFile,
   CURRENT_STATE_VERSION,
   ResourceState,
+  StateCorruptError,
   StateScopeMismatchError,
 } from '../../../../src/types';
 
@@ -162,6 +164,45 @@ describe('localStateBackend (scope-bound, issue #280)', () => {
       fs.writeFileSync(scopedPath(), '{not json', 'utf-8');
       const backend = createLocalStateBackend(scope, { baseDir });
       await expect(backend.loadState()).rejects.toThrow(/corrupt/);
+    });
+
+    it('treats an unparseable legacy aggregate as absent and returns the empty scoped state', async () => {
+      // readLegacyPersistedState swallows corrupt legacy files as null — the
+      // empty scoped document, not an error, is the documented recovery.
+      fs.mkdirSync(path.dirname(legacyPath()), { recursive: true });
+      fs.writeFileSync(legacyPath(), '{not json', 'utf-8');
+
+      const backend = createLocalStateBackend(scope, { baseDir });
+      const state = await backend.loadState();
+
+      expect(state.version).toBe(CURRENT_STATE_VERSION);
+      expect(state.resources).toEqual({});
+      expect(backend.readStateSource()).toBe('empty');
+    });
+
+    it('rejects a legacy aggregate whose registered migration fails instead of serving it', async () => {
+      fs.mkdirSync(path.dirname(legacyPath()), { recursive: true });
+      fs.writeFileSync(
+        legacyPath(),
+        JSON.stringify({
+          version: '3.0',
+          provider: scope.provider,
+          app: scope.app,
+          service: scope.service,
+          stages: { prod: { resources: {} } },
+        }),
+        'utf-8',
+      );
+      registerStateMigration('3.0', () => {
+        throw new Error('migration exploded');
+      });
+
+      const backend = createLocalStateBackend(scope, { baseDir });
+      try {
+        await expect(backend.loadState()).rejects.toThrow(StateCorruptError);
+      } finally {
+        clearStateMigrations();
+      }
     });
   });
 
@@ -339,6 +380,38 @@ describe('localStateBackend (scope-bound, issue #280)', () => {
 
       await backend.releaseLock(lockId);
       await other.releaseLock(otherId);
+      expect(fs.existsSync(`${scopedPath()}.si-lock`)).toBe(false);
+    });
+
+    it('force-unlocks the scoped lock and refuses a foreign lock id', async () => {
+      const backend = createLocalStateBackend(scope, { baseDir });
+      expect(await backend.forceUnlock('no-lock-id')).toBe(false);
+
+      const lockId = await backend.acquireLock('deploy');
+
+      await expect(backend.forceUnlock('wrong-id')).rejects.toThrow(/mismatch/i);
+      expect(fs.existsSync(`${scopedPath()}.si-lock`)).toBe(true);
+
+      expect(await backend.forceUnlock(lockId)).toBe(true);
+      expect(fs.existsSync(`${scopedPath()}.si-lock`)).toBe(false);
+    });
+
+    it('runs withLock with and without the onLockAcquired callback', async () => {
+      const backend = createLocalStateBackend(scope, { baseDir });
+
+      const result = await backend.withLock('deploy', async () => 'ok');
+      expect(result).toBe('ok');
+      expect(fs.existsSync(`${scopedPath()}.si-lock`)).toBe(false);
+
+      const onLockAcquired = jest.fn();
+      const withCallback = await backend.withLock(
+        'deploy',
+        async () => 42,
+        undefined,
+        onLockAcquired,
+      );
+      expect(withCallback).toBe(42);
+      expect(onLockAcquired).toHaveBeenCalledWith(expect.any(String));
       expect(fs.existsSync(`${scopedPath()}.si-lock`)).toBe(false);
     });
   });

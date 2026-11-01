@@ -595,6 +595,56 @@ describe('remoteStateBackend (scope-bound, issue #280)', () => {
       expect(secondId).toBe((adapter.store.get(LOCK_KEY) as LockMetadata).id);
       expect(logger.warn).toHaveBeenCalledTimes(1);
     });
+
+    it('falls back to a verified plain write with a warning when the adapter has no conditional create', async () => {
+      delete (adapter as Partial<StorageAdapter>).putIfAbsent;
+      const backend = createRemoteStateBackend(adapter, {
+        scope,
+        scopedKey: SCOPED_KEY,
+        legacyKey: LEGACY_KEY,
+      });
+      const { logger } = jest.requireMock('../../../../src/common/logger');
+
+      const lockId = await backend.acquireLock('deploy');
+
+      expect(lockId).toBe((adapter.store.get(LOCK_KEY) as LockMetadata).id);
+      expect(adapter.write).toHaveBeenCalledWith(LOCK_KEY, expect.anything());
+      expect(logger.warn).toHaveBeenCalledTimes(1);
+    });
+
+    it('rethrows unexpected putIfAbsent failures instead of downgrading exclusivity', async () => {
+      (adapter.putIfAbsent as jest.Mock).mockRejectedValue(new Error('network down'));
+      const backend = createRemoteStateBackend(adapter, {
+        scope,
+        scopedKey: SCOPED_KEY,
+        legacyKey: LEGACY_KEY,
+      });
+
+      await expect(backend.acquireLock('deploy', { timeout: 0, maxRetries: 0 })).rejects.toThrow(
+        'network down',
+      );
+      expect(adapter.write).not.toHaveBeenCalled();
+    });
+
+    it('waits and retries while a live lock from another host is held', async () => {
+      adapter.store.set(LOCK_KEY, makeLock());
+      const backend = createRemoteStateBackend(adapter, {
+        scope,
+        scopedKey: SCOPED_KEY,
+        legacyKey: LEGACY_KEY,
+      });
+      const { logger } = jest.requireMock('../../../../src/common/logger');
+
+      // The foreign lock is fresh (not stale) and lives on another host, so the
+      // waiter logs its wait and retries until the retry budget is exhausted.
+      await expect(
+        backend.acquireLock('deploy', { timeout: 100, maxRetries: 1, retryDelay: 0 }),
+      ).rejects.toThrow('Failed to acquire lock');
+
+      expect(logger.info).toHaveBeenCalledWith(expect.stringContaining('Waiting to acquire lock'));
+      expect(adapter.delete).not.toHaveBeenCalled();
+      expect(adapter.store.has(LOCK_KEY)).toBe(true);
+    });
   });
 
   describe('releaseLock', () => {

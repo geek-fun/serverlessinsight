@@ -78,6 +78,27 @@ describe('effectiveConfig (issue #280 §1)', () => {
     it('rejects path-unsafe stages', () => {
       expect(() => resolveEffectiveConfig({ cli: { stage: '../x' }, iacProvider: {} })).toThrow();
     });
+
+    it('applies built-in defaults when neither CLI nor YAML input is provided', () => {
+      const resolved = resolveEffectiveConfig({});
+      expect(resolved).toMatchObject({
+        region: 'cn-hangzhou',
+        provider: 'aliyun',
+        stage: 'default',
+        overrides: { region: false, provider: false, stage: false },
+      });
+    });
+
+    it('treats empty-string CLI options as unset and falls through to the environment', () => {
+      process.env.SI_REGION = 'eu-central-1';
+      const resolved = resolveEffectiveConfig({
+        cli: { region: '   ', provider: '' },
+        iacProvider: {},
+      });
+      expect(resolved.region).toBe('eu-central-1');
+      expect(resolved.provider).toBe('aliyun');
+      expect(resolved.overrides).toEqual({ region: false, provider: false, stage: false });
+    });
   });
 
   describe('assertProviderBinding', () => {

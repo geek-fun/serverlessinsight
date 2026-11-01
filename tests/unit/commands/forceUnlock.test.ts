@@ -73,6 +73,38 @@ describe('forceUnlockCommand', () => {
     await expect(forceUnlockCommand('non-existent-id')).rejects.toThrow();
   });
 
+  it('should find a scoped lock file nested under .serverlessinsight/states recursively', async () => {
+    const scopedStatePath = path.join(
+      testDir,
+      '.serverlessinsight',
+      'states',
+      'myapp',
+      'myservice',
+      'prod',
+      'cn-hangzhou',
+      'state.json',
+    );
+    const nestedLockPath = `${scopedStatePath}${LOCK_FILE_SUFFIX}`;
+    fs.mkdirSync(path.dirname(nestedLockPath), { recursive: true });
+    fs.writeFileSync(
+      nestedLockPath,
+      JSON.stringify({
+        id: 'nested-lock-id',
+        user: 'nested@example.com',
+        processId: process.pid,
+        hostname: 'nested-host',
+        operation: 'deploy',
+        acquiredAt: new Date().toISOString(),
+        path: scopedStatePath,
+      }),
+      'utf-8',
+    );
+
+    await forceUnlockCommand('nested-lock-id');
+
+    expect(fs.existsSync(nestedLockPath)).toBe(false);
+  });
+
   it('should throw error when lock ID does not match', async () => {
     const statePath = getStatePath('', '', testDir);
     const lockPath = `${statePath}${LOCK_FILE_SUFFIX}`;

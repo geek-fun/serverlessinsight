@@ -8,7 +8,12 @@ import { getContext, setContext } from '../../../src/common';
 
 const mockLoggerInfo = jest.fn();
 const mockLoggerWarn = jest.fn();
+const mockRunRegionalMigration = jest.fn();
 const mockReadlineAnswers: string[] = [];
+
+jest.mock('../../../src/commands/migrateRegional', () => ({
+  runRegionalMigration: (...args: unknown[]) => mockRunRegionalMigration(...args),
+}));
 
 jest.mock('node:readline', () => ({
   createInterface: jest.fn(() => ({
@@ -511,6 +516,61 @@ describe('migrate command', () => {
 
       await expect(migrate({ location: 'stack.yml', autoApprove: true })).rejects.toThrow(
         'MIGRATE_NO_BACKEND_SOURCE',
+      );
+    });
+  });
+
+  describe('regional migration (--to-regional, issue #280 §6)', () => {
+    it('refuses the regional split for a SaaS source backend', async () => {
+      mockedRevalYaml.mockReturnValue({ ...rawIac, backend: { type: 'SAAS' } });
+
+      await expect(migrate({ location: 'stack.yml', toRegional: true })).rejects.toThrow(
+        'REGIONAL_MIGRATION_LOCAL_OR_BUCKET_ONLY',
+      );
+      expect(mockRunRegionalMigration).not.toHaveBeenCalled();
+    });
+
+    it('dispatches the regional migration for a LOCAL backend without touching the SaaS flow', async () => {
+      mockedRevalYaml.mockReturnValue({ ...rawIac, backend: { type: 'LOCAL' } });
+      mockRunRegionalMigration.mockResolvedValue(undefined);
+
+      await migrate({ location: 'stack.yml', toRegional: true, dryRun: true, stage: 'dev' });
+
+      expect(mockRunRegionalMigration).toHaveBeenCalledTimes(1);
+      expect(mockRunRegionalMigration).toHaveBeenCalledWith(
+        expect.objectContaining({
+          provider: 'aliyun',
+          app: 'myapp',
+          service: 'myservice',
+          region: 'cn-hangzhou',
+          stage: 'dev',
+          baseDir: process.cwd(),
+          backendType: 'LOCAL',
+          bucketConfig: undefined,
+          dryRun: true,
+        }),
+      );
+      expect(mockedValidateApiKey).not.toHaveBeenCalled();
+      expect(mockedCreateStateBackend).not.toHaveBeenCalled();
+      expect(mockApiClient.post).not.toHaveBeenCalled();
+    });
+
+    it('passes the bucket binding for a BUCKET_STORE backend', async () => {
+      mockRunRegionalMigration.mockResolvedValue(undefined);
+
+      await migrate({ location: 'stack.yml', toRegional: true });
+
+      expect(mockRunRegionalMigration).toHaveBeenCalledWith(
+        expect.objectContaining({
+          backendType: 'BUCKET_STORE',
+          bucketConfig: expect.objectContaining({
+            bucket: 'my-bucket',
+            key: 'state.json',
+            storageRegion: 'cn-hangzhou',
+            accessKeyId: 'ak',
+            accessKeySecret: 'sk',
+          }),
+        }),
       );
     });
   });

@@ -115,6 +115,9 @@ const createBucketKeyValueIO = (
     read: adapter.read,
     write: adapter.write,
     delete: adapter.delete,
+    // Preserve the adapter's atomic exclusive create so the migration lock is
+    // race-safe on bucket storage too (issue #280 §3).
+    ...(adapter.putIfAbsent ? { putIfAbsent: adapter.putIfAbsent } : {}),
   };
 };
 
