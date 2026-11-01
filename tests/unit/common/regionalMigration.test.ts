@@ -78,6 +78,7 @@ const makePaths = (): RegionalMigrationPaths => ({
   scopedPrefixBuilder: (stage: string, region: string) => `scoped/${stage}/${region}/state.json`,
   reportKey: (opId: string) => `reports/${opId}.json`,
   backupKey: (opId: string) => `backups/${opId}.json`,
+  serviceBindingKey: 'bindings/app/svc/provider.json',
 });
 
 const baseOptions = {
@@ -224,9 +225,25 @@ describe('regionalMigration (issue #280 §6)', () => {
       );
     });
 
+    it('refuses a source owned by the SaaS Console before any other check', () => {
+      const legacy = { ...makeLegacy(), managedBy: 'saas', version: '9.9' };
+      expect(() => planRegionalMigration(legacy, makePaths(), baseOptions)).toThrow(
+        /managedBy=saas/,
+      );
+    });
+
+    it('reports the already-split refusal (not a version error) for a V4 tombstone', () => {
+      const legacy = { ...makeLegacy(), version: CURRENT_STATE_VERSION, managedBy: 'regional' };
+      expect(() => planRegionalMigration(legacy, makePaths(), baseOptions)).toThrow(
+        /already marked as split/,
+      );
+    });
+
     it('refuses a non-V3 source', () => {
       const legacy = { ...makeLegacy(), version: '9.9' };
-      expect(() => planRegionalMigration(legacy, makePaths(), baseOptions)).toThrow();
+      expect(() => planRegionalMigration(legacy, makePaths(), baseOptions)).toThrow(
+        /Expected a legacy V3.0 state aggregate/,
+      );
     });
 
     it('defaults the source version when the aggregate has no version field', () => {
@@ -335,7 +352,7 @@ describe('regionalMigration (issue #280 §6)', () => {
   });
 
   describe('applyRegionalMigration', () => {
-    it('backs up the source, writes scoped docs, barriers the legacy entry, writes the report', async () => {
+    it('backs up the source, writes scoped docs under scope locks, barriers the legacy entry, records the binding and writes the report', async () => {
       const { io, store, written } = makeIo();
       const legacy = makeLegacy();
       io.store.set('legacy/state.json', legacy);
@@ -350,21 +367,49 @@ describe('regionalMigration (issue #280 §6)', () => {
       expect(written[0]).toBe(backupKey);
       expect(store.get(backupKey)).toEqual(legacy);
 
-      // Barrier keeps content but marks ownership handover
-      const barriered = store.get('legacy/state.json') as PersistedStateFile;
-      expect(barriered.managedBy).toBe('regional');
-      expect(barriered.stages).toEqual(legacy.stages);
+      // Barrier is a V4 TOMBSTONE: content preserved, ownership handed over
+      const tombstone = store.get('legacy/state.json') as PersistedStateFile;
+      expect(tombstone.version).toBe(CURRENT_STATE_VERSION);
+      expect(tombstone.managedBy).toBe('regional');
+      expect(tombstone.migration).toMatchObject({
+        opId: plan.opId,
+        sourceVersion: '3.0',
+        sourceHash: plan.sourceHash,
+        migratedAt: expect.any(String),
+      });
+      expect(tombstone.stages).toEqual(legacy.stages);
 
       // Scoped docs are stripped of the runtime projection and scope-stamped
       const doc = store.get('scoped/prod/cn-hangzhou/state.json') as Record<string, unknown>;
       expect(doc.scope).toEqual({ stage: 'prod', region: 'cn-hangzhou' });
       expect(doc).not.toHaveProperty('resources');
 
-      // Report stored under the opId
-      expect(store.get(paths.reportKey(plan.opId))).toMatchObject({ opId: plan.opId });
+      // Each target write ran under its own io lock entry (created, then removed)
+      expect(written).toContain('scoped/prod/cn-hangzhou/state.json.si-lock');
+      expect(written).toContain('scoped/prod/ap-southeast-1/state.json.si-lock');
+      expect([...store.keys()].filter((key) => key.endsWith('.si-lock'))).toEqual([]);
+
+      // The service provider binding is recorded AFTER the documents
+      expect(written.indexOf(paths.serviceBindingKey)).toBeGreaterThan(
+        written.indexOf('scoped/prod/ap-southeast-1/state.json'),
+      );
+      expect(store.get(paths.serviceBindingKey)).toEqual({
+        provider: 'aliyun',
+        recordedAt: expect.any(String),
+      });
+
+      // Report stored under the opId and carries the ACTUAL written doc set
+      expect(store.get(paths.reportKey(plan.opId))).toMatchObject({
+        opId: plan.opId,
+        documents: [
+          { stage: 'prod', region: 'cn-hangzhou' },
+          { stage: 'prod', region: 'ap-southeast-1' },
+        ],
+      });
+      expect(report.documents).toHaveLength(2);
     });
 
-    it('binds unknown-region resources only through the explicit option', async () => {
+    it('binds unknown-region resources only through the explicit option and never into sibling regions', async () => {
       const { io, store } = makeIo();
       const legacy = makeLegacy();
       legacy.stages.prod.resources['functions.gamma'] = makeResource(undefined, 'gamma');
@@ -384,6 +429,12 @@ describe('regionalMigration (issue #280 §6)', () => {
         stages: Record<string, { resources: Record<string, { region: string }> }>;
       };
       expect(doc.stages.prod.resources['functions.gamma'].region).toBe('cn-hangzhou');
+
+      // The sibling region of the same stage must NOT receive the unknown resource
+      const sibling = store.get('scoped/prod/ap-southeast-1/state.json') as {
+        stages: Record<string, { resources: Record<string, unknown> }>;
+      };
+      expect(sibling.stages.prod.resources).toEqual({ 'functions.beta': expect.anything() });
     });
 
     it('refuses to write when the source changed after planning', async () => {
@@ -411,8 +462,10 @@ describe('regionalMigration (issue #280 §6)', () => {
         /injected write failure/,
       );
 
-      // Legacy entry unchanged (no barrier, no loss)
+      // Legacy entry unchanged (no barrier, no loss); earlier documents remain valid
       expect(store.get('legacy/state.json')).toEqual(legacy);
+      expect(store.has('scoped/prod/cn-hangzhou/state.json')).toBe(true);
+      expect(store.has('scoped/prod/ap-southeast-1/state.json')).toBe(false);
     });
 
     it('refuses to apply when the source document is missing from io', async () => {
@@ -441,7 +494,7 @@ describe('regionalMigration (issue #280 §6)', () => {
       expect(plan.documents.every((d) => d.stage === 'prod')).toBe(true);
       expect(plan.unknown).toHaveLength(2);
 
-      await applyRegionalMigration(io, legacy, paths, plan, {
+      const report = await applyRegionalMigration(io, legacy, paths, plan, {
         ...baseOptions,
         bindUnknownRegion: 'CN-Hangzhou',
       });
@@ -459,6 +512,16 @@ describe('regionalMigration (issue #280 §6)', () => {
       expect(doc.scope).toEqual({ stage: 'dev', region: 'cn-hangzhou' });
       expect(doc.stages.dev.resources['functions.devonly'].region).toBe('cn-hangzhou');
       expect(doc.stages.dev.shared['shared.devlogs'].region).toBe('cn-hangzhou');
+
+      // The report's documents are the actual targets: 2 planned prod docs + the bound dev doc
+      expect(report.documents).toHaveLength(3);
+      expect(report.documents).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ stage: 'dev', region: 'cn-hangzhou' }),
+          expect.objectContaining({ stage: 'prod', region: 'cn-hangzhou' }),
+          expect.objectContaining({ stage: 'prod', region: 'ap-southeast-1' }),
+        ]),
+      );
     });
 
     it('reports the partial failure even when the thrown value is not an Error', async () => {
@@ -530,6 +593,156 @@ describe('regionalMigration (issue #280 §6)', () => {
       expect(Object.keys(prodDoc.stages.prod.resources)).toEqual(['functions.alpha']);
       expect(prodDoc.stages.prod.shared).toBeUndefined();
     });
+
+    it('throws INCOMPLETE_STAGE_COVERAGE before any write when a stage would be stranded', async () => {
+      const { io, store, written } = makeIo();
+      const legacy = makeLegacy();
+      legacy.stages.dev = {
+        resources: { 'functions.devonly': makeResource('cn-hangzhou', 'devonly') },
+      };
+      io.store.set('legacy/state.json', legacy);
+      const paths = makePaths();
+
+      // A plan restricted to prod leaves the dev stage uncovered
+      const plan = planRegionalMigration(legacy, paths, { ...baseOptions, stage: 'prod' });
+      expect(plan.documents.every((d) => d.stage === 'prod')).toBe(true);
+
+      await expect(applyRegionalMigration(io, legacy, paths, plan, baseOptions)).rejects.toThrow(
+        /stranded/,
+      );
+
+      // Nothing at all was written — not even the backup
+      expect(written).toEqual([]);
+      expect(store.get('legacy/state.json')).toEqual(legacy);
+    });
+
+    it('refuses a conflicting service provider binding before anything is written', async () => {
+      const { io, store, written } = makeIo();
+      const legacy = makeLegacy();
+      io.store.set('legacy/state.json', legacy);
+      const paths = makePaths();
+      store.set(paths.serviceBindingKey, {
+        provider: 'tencent',
+        recordedAt: '2024-01-01T00:00:00.000Z',
+      });
+
+      const plan = planRegionalMigration(legacy, paths, baseOptions);
+      await expect(applyRegionalMigration(io, legacy, paths, plan, baseOptions)).rejects.toThrow(
+        /Provider mismatch for this service/,
+      );
+
+      expect(written).toEqual([]);
+      expect(store.get('legacy/state.json')).toEqual(legacy);
+    });
+
+    it('refuses a target document created by a different migration without partial mutation', async () => {
+      const { io, store } = makeIo();
+      const legacy = makeLegacy();
+      io.store.set('legacy/state.json', legacy);
+      const paths = makePaths();
+      const plan = planRegionalMigration(legacy, paths, baseOptions);
+
+      // An independent regional document from a DIFFERENT operation already lives here
+      const foreign = {
+        version: CURRENT_STATE_VERSION,
+        provider: 'aliyun',
+        app: 'app',
+        service: 'svc',
+        scope: { stage: 'prod', region: 'cn-hangzhou' },
+        lineage: 'independent-lineage',
+        serial: 3,
+        migration: {
+          opId: 'another-op',
+          sourceVersion: '3.0',
+          sourceHash: 'x',
+          migratedAt: '2024-01-01T00:00:00.000Z',
+        },
+        stages: { prod: { resources: {} } },
+      };
+      store.set('scoped/prod/cn-hangzhou/state.json', foreign);
+
+      await expect(applyRegionalMigration(io, legacy, paths, plan, baseOptions)).rejects.toThrow(
+        /already exists/,
+      );
+
+      // No partial mutation: the foreign doc, the legacy entry and sibling targets untouched
+      expect(store.get('scoped/prod/cn-hangzhou/state.json')).toEqual(foreign);
+      expect(store.get('legacy/state.json')).toEqual(legacy);
+      expect(store.has('scoped/prod/ap-southeast-1/state.json')).toBe(false);
+    });
+
+    it('resumes a target from the same opId preserving lineage/serial', async () => {
+      const { io, store } = makeIo();
+      const legacy = makeLegacy();
+      io.store.set('legacy/state.json', legacy);
+      const paths = makePaths();
+      const plan = planRegionalMigration(legacy, paths, baseOptions);
+
+      // First run fails partway: the cn-hangzhou doc is written, ap-southeast-1 is not
+      io.failOn = 'scoped/prod/ap-southeast-1/state.json';
+      await expect(applyRegionalMigration(io, legacy, paths, plan, baseOptions)).rejects.toThrow(
+        /injected write failure/,
+      );
+      const firstDoc = store.get('scoped/prod/cn-hangzhou/state.json') as Record<string, unknown>;
+
+      // Re-run with the SAME plan (same opId): the written doc resumes in place
+      io.failOn = undefined;
+      await applyRegionalMigration(io, legacy, paths, plan, baseOptions);
+
+      const resumed = store.get('scoped/prod/cn-hangzhou/state.json') as Record<string, unknown>;
+      expect(resumed.lineage).toBe(firstDoc.lineage);
+      expect(resumed.serial).toBe(firstDoc.serial);
+      expect((resumed.migration as { opId: string }).opId).toBe(plan.opId);
+    });
+
+    it('reuses an existing matching service binding without rewriting it', async () => {
+      const { io, store, written } = makeIo();
+      const legacy = makeLegacy();
+      io.store.set('legacy/state.json', legacy);
+      const paths = makePaths();
+      const seeded = { provider: 'aliyun', recordedAt: '2024-01-01T00:00:00.000Z' };
+      store.set(paths.serviceBindingKey, seeded);
+
+      const plan = planRegionalMigration(legacy, paths, baseOptions);
+      await applyRegionalMigration(io, legacy, paths, plan, baseOptions);
+
+      // Same object identity — the apply must not rewrite a matching binding
+      expect(store.get(paths.serviceBindingKey)).toBe(seeded);
+      expect(written).not.toContain(paths.serviceBindingKey);
+    });
+
+    it('reports exactly the written docTargets for an unknown-only migration', async () => {
+      const { io, store } = makeIo();
+      const legacy = makeLegacy();
+      // Every resource lacks region evidence: no region groups at all
+      legacy.stages.prod.resources = {
+        'functions.mystery': makeResource(undefined, 'mystery'),
+      };
+      delete legacy.stages.prod.shared;
+      io.store.set('legacy/state.json', legacy);
+      const paths = makePaths();
+
+      const plan = planRegionalMigration(legacy, paths, baseOptions);
+      expect(plan.documents).toEqual([]);
+      expect(plan.unknown).toEqual([
+        { stage: 'prod', logicalId: 'functions.mystery', kind: 'resource' },
+      ]);
+
+      const report = await applyRegionalMigration(io, legacy, paths, plan, {
+        ...baseOptions,
+        bindUnknownRegion: 'CN-Beijing',
+      });
+
+      expect(report.documents).toEqual([
+        { stage: 'prod', region: 'cn-beijing', resources: 0, shared: 0 },
+      ]);
+      const doc = store.get('scoped/prod/cn-beijing/state.json') as {
+        stages: Record<string, { resources: Record<string, { region: string }> }>;
+      };
+      expect(doc.stages.prod.resources['functions.mystery'].region).toBe('cn-beijing');
+      // The binding-generated doc set is what rollback later validates and removes
+      expect(store.has('scoped/prod/cn-beijing/state.json')).toBe(true);
+    });
   });
 
   describe('rollbackRegionalMigration', () => {
@@ -550,14 +763,19 @@ describe('regionalMigration (issue #280 §6)', () => {
       const { io, store, paths, plan, legacy } = await applyFirst();
       await rollbackRegionalMigration(io, paths, plan.opId);
 
-      expect(store.get('legacy/state.json')).toEqual(legacy);
+      const restored = store.get('legacy/state.json') as PersistedStateFile;
+      expect(restored).toEqual(legacy);
+      // The backup restore is the exact pre-split V3 aggregate — no tombstone markers
+      expect(restored.version).toBe('3.0');
+      expect(restored.managedBy).toBeUndefined();
+      expect(restored.migration).toBeUndefined();
       expect(store.has('scoped/prod/cn-hangzhou/state.json')).toBe(false);
       expect(store.has('scoped/prod/ap-southeast-1/state.json')).toBe(false);
       expect(store.has(paths.reportKey(plan.opId))).toBe(false);
       expect(store.has(paths.backupKey(plan.opId))).toBe(false);
     });
 
-    it('refuses once a scoped document has independent regional writes', async () => {
+    it('refuses once a scoped document has independent regional writes and deletes nothing', async () => {
       const { io, store, paths, plan } = await applyFirst();
       // Simulate a post-split deploy: serial advanced beyond the migration
       const doc = store.get('scoped/prod/cn-hangzhou/state.json') as Record<string, unknown>;
@@ -565,6 +783,13 @@ describe('regionalMigration (issue #280 §6)', () => {
       await expect(rollbackRegionalMigration(io, paths, plan.opId)).rejects.toThrow(
         /independent regional writes/,
       );
+
+      // Two-phase refusal: verification happens BEFORE any deletion — the pristine
+      // sibling document, the barrier and the artifacts all still exist
+      expect(store.has('scoped/prod/ap-southeast-1/state.json')).toBe(true);
+      expect(store.has('legacy/state.json')).toBe(true);
+      expect(store.has(paths.reportKey(plan.opId))).toBe(true);
+      expect(store.has(paths.backupKey(plan.opId))).toBe(true);
     });
 
     it('refuses when a scoped document has no migration provenance', async () => {

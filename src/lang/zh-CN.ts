@@ -1065,6 +1065,14 @@ export const zhCN = {
     '期望旧版 V3.0 状态聚合，但发现版本 "{{version}}"。没有可拆分的内容',
   REGIONAL_MIGRATION_ALREADY_SPLIT:
     '该旧版状态已标记为已拆分（managedBy=regional），区域文档是权威状态；拒绝重复拆分。在发生任何区域写入之前撤销：`si migrate --to-regional --rollback-op-id <opId>`',
+  REGIONAL_MIGRATION_SOURCE_MANAGED_BY_SAAS:
+    '该旧版状态已迁移至（并归）ServerlessInsight Console 所有（managedBy=saas）。区域拆分会生成无标记的本地副本，重新引入双写风险——已拒绝。请继续使用 Console 后端；或仅在你明确要交还所有权时先运行 `si migrate --rollback`',
+  REGIONAL_MIGRATION_TARGET_EXISTS:
+    '拒绝覆盖 stage {{stage}} / region {{region}} 的区域状态：它已存在（来源：{{opId}}）。重新执行本迁移会重置其独立的 lineage/serial，并丢失拆分后创建的资源。如果该文档属于上一次迁移，请先处理那次的运行；否则仅在你确认可丢弃时才显式删除',
+  REGIONAL_MIGRATION_INCOMPLETE_STAGE_COVERAGE:
+    '区域拆分会使 stage（{{stages}}）被搁置：拆分后旧版条目整体被隐藏，因此所有持有资源的 stage 必须在同一次运行中完成拆分。请去掉 --stage 重新运行 `si migrate --to-regional`（必要时加 --bind-unknown-region）以覆盖它们',
+  STATE_PROVIDER_BINDING_MISMATCH:
+    '该服务的 provider 不匹配：已存储的 provider 绑定记录为 "{{stored}}"，但本次命令解析出 "{{requested}}"。一个 Service 在其所有 stage 和 region 中只有一个 provider；请检查 -v/--provider 与 YAML 的 provider 配置',
   REGIONAL_MIGRATION_PROVIDER_MISMATCH:
     'Provider 不匹配：旧版状态记录的 provider 是 "{{source}}"，而命令解析出 "{{effective}}"。拆分保留已记录的 provider 绑定——请检查 -v/--provider 与 YAML 的 provider 配置',
   REGIONAL_MIGRATION_UNKNOWN_REGION_REQUIRED:

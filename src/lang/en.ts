@@ -1174,6 +1174,14 @@ export const en = {
     'Expected a legacy V3.0 state aggregate but found version "{{version}}". Nothing to split',
   REGIONAL_MIGRATION_ALREADY_SPLIT:
     'This legacy state is already marked as split (managedBy=regional). The regional documents are authoritative; re-splitting is refused. To undo before any regional write: `si migrate --to-regional --rollback-op-id <opId>`',
+  REGIONAL_MIGRATION_SOURCE_MANAGED_BY_SAAS:
+    'This legacy state has been migrated to (and is owned by) the ServerlessInsight Console (managedBy=saas). A regional split would create an unmarked local copy and reopen double-write hazards — refused. Continue on the Console backend, or run `si migrate --rollback` first only if you deliberately want to hand ownership back',
+  REGIONAL_MIGRATION_TARGET_EXISTS:
+    'Refusing to overwrite the regional state of stage {{stage}} / region {{region}}: it already exists (source: {{opId}}). Re-running this migration would reset its independent lineage/serial and drop resources created after the split. If this document belongs to a previous migration, resolve that run first; otherwise delete it explicitly only if you are certain it is disposable',
+  REGIONAL_MIGRATION_INCOMPLETE_STAGE_COVERAGE:
+    'The regional split would leave stage(s) {{stages}} stranded: the legacy entry is hidden entirely after the split, so every stage holding resources must be split in the same run. Re-run `si migrate --to-regional` WITHOUT --stage (and --bind-unknown-region if needed) to cover them',
+  STATE_PROVIDER_BINDING_MISMATCH:
+    'Provider mismatch for this service: the stored provider binding records "{{stored}}" but this command resolved provider "{{requested}}". One service has exactly one provider across ALL its stages and regions; check -v/--provider and the YAML provider block',
   REGIONAL_MIGRATION_PROVIDER_MISMATCH:
     'Provider mismatch: the legacy state records provider "{{source}}" but the command resolved "{{effective}}". The split keeps the recorded provider binding — check -v/--provider and the YAML provider block',
   REGIONAL_MIGRATION_UNKNOWN_REGION_REQUIRED:

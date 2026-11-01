@@ -9,6 +9,7 @@ import {
   ResourceState,
   StateCorruptError,
   StateScopeMismatchError,
+  StateVersionError,
 } from '../../../../src/types';
 
 jest.mock('../../../../src/common/lockManager', () => ({
@@ -166,18 +167,60 @@ describe('localStateBackend (scope-bound, issue #280)', () => {
       await expect(backend.loadState()).rejects.toThrow(/corrupt/);
     });
 
-    it('treats an unparseable legacy aggregate as absent and returns the empty scoped state', async () => {
-      // readLegacyPersistedState swallows corrupt legacy files as null — the
-      // empty scoped document, not an error, is the documented recovery.
+    it('rejects an unparseable legacy aggregate with StateCorruptError instead of serving empty state', async () => {
+      // readLegacyPersistedState is strict (issue #280): a corrupt legacy file is
+      // malformed data — never silently treated as absent/empty state.
       fs.mkdirSync(path.dirname(legacyPath()), { recursive: true });
       fs.writeFileSync(legacyPath(), '{not json', 'utf-8');
 
       const backend = createLocalStateBackend(scope, { baseDir });
-      const state = await backend.loadState();
+      await expect(backend.loadState()).rejects.toThrow(StateCorruptError);
+    });
 
+    it('treats a regional tombstone legacy file as absent so a new region starts fresh', async () => {
+      // The post-split barrier (managedBy=regional, ANY version) hides the
+      // legacy aggregate entirely — the scoped documents are authoritative.
+      fs.mkdirSync(path.dirname(legacyPath()), { recursive: true });
+      fs.writeFileSync(
+        legacyPath(),
+        JSON.stringify({
+          version: CURRENT_STATE_VERSION,
+          provider: scope.provider,
+          app: scope.app,
+          service: scope.service,
+          managedBy: 'regional',
+          migration: { opId: 'op-1', sourceVersion: '3.0' },
+          stages: { prod: { resources: { 'functions.old': makeResource('old') } } },
+        }),
+        'utf-8',
+      );
+
+      const backend = createLocalStateBackend(scope, { baseDir });
+      const state = await backend.loadState();
       expect(state.version).toBe(CURRENT_STATE_VERSION);
       expect(state.resources).toEqual({});
+      expect(state.scope).toEqual({ stage: scope.stage, region: scope.region });
       expect(backend.readStateSource()).toBe('empty');
+
+      expect(await backend.probeWriteReadiness()).toEqual({ ready: true, source: 'empty' });
+    });
+
+    it('rejects a legacy aggregate written by a newer CLI with StateVersionError', async () => {
+      fs.mkdirSync(path.dirname(legacyPath()), { recursive: true });
+      fs.writeFileSync(
+        legacyPath(),
+        JSON.stringify({
+          version: '9.9',
+          provider: scope.provider,
+          app: scope.app,
+          service: scope.service,
+          stages: { prod: { resources: {} } },
+        }),
+        'utf-8',
+      );
+
+      const backend = createLocalStateBackend(scope, { baseDir });
+      await expect(backend.loadState()).rejects.toThrow(StateVersionError);
     });
 
     it('rejects a legacy aggregate whose registered migration fails instead of serving it', async () => {
@@ -286,6 +329,99 @@ describe('localStateBackend (scope-bound, issue #280)', () => {
         fs.readFileSync(scopedPath().replace('cn-hangzhou', 'ap-southeast-1'), 'utf-8'),
       );
       expect(Object.keys(other.stages.prod.resources)).toEqual(['functions.b']);
+    });
+  });
+
+  describe('service provider binding (issue #280 §1)', () => {
+    const bindingPath = () =>
+      path.join(baseDir, '.serverlessinsight', 'states', scope.app, scope.service, 'provider.json');
+
+    const scopedSave = (fnId: string): StateFile => ({
+      version: CURRENT_STATE_VERSION,
+      provider: scope.provider,
+      app: scope.app,
+      service: scope.service,
+      stages: { prod: { resources: { [`functions.${fnId}`]: makeResource(fnId) } } },
+      resources: { [`functions.${fnId}`]: makeResource(fnId) },
+    });
+
+    it('records the provider binding before the first scoped save', async () => {
+      const backend = createLocalStateBackend(scope, { baseDir });
+      await backend.saveState(scopedSave('a'));
+
+      const binding = JSON.parse(fs.readFileSync(bindingPath(), 'utf-8'));
+      expect(binding.provider).toBe('aliyun');
+      expect(typeof binding.recordedAt).toBe('string');
+    });
+
+    it('keeps saving from other scopes of the same service when the provider matches', async () => {
+      const hangzhou = createLocalStateBackend(scope, { baseDir });
+      await hangzhou.saveState(scopedSave('a'));
+
+      const southeast = createLocalStateBackend(
+        { ...scope, region: 'ap-southeast-1' },
+        { baseDir },
+      );
+      await southeast.saveState({
+        version: CURRENT_STATE_VERSION,
+        provider: scope.provider,
+        app: scope.app,
+        service: scope.service,
+        stages: { prod: { resources: { 'functions.b': makeResource('b') } } },
+        resources: { 'functions.b': makeResource('b') },
+      });
+      expect(fs.existsSync(scopedPath().replace(scope.region, 'ap-southeast-1'))).toBe(true);
+    });
+
+    it('refuses a cross-provider save from a second backend instance (any scope)', async () => {
+      const first = createLocalStateBackend(scope, { baseDir });
+      await first.saveState(scopedSave('a'));
+
+      // Same app/service, DIFFERENT provider/stage/region — one Service has one
+      // provider across ALL its scopes, so the foreign instance must not open.
+      const foreign = createLocalStateBackend(
+        { ...scope, provider: 'tencent', stage: 'dev', region: 'ap-southeast-1' },
+        { baseDir },
+      );
+      await expect(
+        foreign.saveState({
+          version: CURRENT_STATE_VERSION,
+          provider: 'tencent',
+          app: scope.app,
+          service: scope.service,
+          stages: { dev: { resources: {} } },
+          resources: {},
+        }),
+      ).rejects.toThrow(/Provider mismatch/);
+      expect(
+        fs.existsSync(
+          path.join(
+            baseDir,
+            '.serverlessinsight',
+            'states',
+            scope.app,
+            scope.service,
+            'dev',
+            'ap-southeast-1',
+            'state.json',
+          ),
+        ),
+      ).toBe(false);
+    });
+
+    it('reports a binding mismatch as not ready in probeWriteReadiness', async () => {
+      const first = createLocalStateBackend(scope, { baseDir });
+      await first.saveState(scopedSave('a'));
+
+      const foreign = createLocalStateBackend(
+        { ...scope, provider: 'tencent', stage: 'dev', region: 'ap-southeast-1' },
+        { baseDir },
+      );
+      const readiness = await foreign.probeWriteReadiness();
+      expect(readiness.ready).toBe(false);
+      expect(readiness.source).toBe('empty');
+      expect(readiness.reason).toContain('aliyun');
+      expect(readiness.reason).toContain('tencent');
     });
   });
 

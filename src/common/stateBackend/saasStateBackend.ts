@@ -121,6 +121,10 @@ export const createSaasStateBackend = (
   let sequenceCounter = 0;
   let lastSource: StateSource = 'empty';
   let probedCapabilities: ServerCapabilities | null = null;
+  // Server-acknowledged base revision for optimistic concurrency: updated from
+  // every successful load/sync so consecutive saves within one deployment
+  // advance the base instead of replaying a stale one (issue #280 §4).
+  let acknowledgedSerial: number | null = null;
 
   const capabilities: BackendCapabilities = { conditionalCreate: true };
 
@@ -359,6 +363,7 @@ export const createSaasStateBackend = (
         // scope info predates the regional protocol — ambiguity is resolved
         // by the write gate, never by picking an arbitrary region.
         lastSource = state.stateJson.scope ? 'scoped' : 'legacy';
+        acknowledgedSerial = state.stateJson.serial ?? null;
         // Legacy Console states hold fresh resources only in the top-level
         // field (pre-stage-syncing saves) — prefer the stage store, fall back.
         const stageResources = migrated.stages?.[normalized.stage]?.resources;
@@ -436,6 +441,11 @@ export const createSaasStateBackend = (
           },
         },
       });
+      const contentHash = crypto
+        .createHash('sha256')
+        .update(JSON.stringify(stateJson))
+        .digest('hex');
+      const baseRevision = acknowledgedSerial ?? state.serial ?? null;
       const body = {
         appName: normalized.app,
         serviceName: normalized.service,
@@ -444,10 +454,14 @@ export const createSaasStateBackend = (
         region: normalized.region,
         scope: { stage: normalized.stage, region: normalized.region },
         scopeProtocol: SCOPE_PROTOCOL_VERSION,
-        // Base revision/lineage for optimistic concurrency on the server.
-        baseSerial: state.serial ?? null,
+        // Base revision/lineage for optimistic concurrency on the server —
+        // advances with every confirmed save in this run instead of replaying
+        // the revision loaded before the deploy started.
+        baseSerial: baseRevision,
         baseLineage: state.lineage ?? null,
-        // Idempotency: repeated/late syncs of the same document are dedupable.
+        // Idempotency: retries of the SAME document (same lineage + content)
+        // dedupe; distinct incremental saves of one deployment have distinct
+        // content and therefore distinct keys — progress is never dropped.
         idempotencyKey: crypto
           .createHash('sha256')
           .update(
@@ -457,18 +471,19 @@ export const createSaasStateBackend = (
               stage: normalized.stage,
               region: normalized.region,
               lineage: state.lineage ?? null,
-              serial: state.serial ?? null,
+              contentHash,
             }),
           )
           .digest('hex'),
         stateJson,
-        contentHash: crypto.createHash('sha256').update(JSON.stringify(stateJson)).digest('hex'),
+        contentHash,
         resourceCount: Object.keys(state.resources).length,
       };
       await client.post(
         `/api/v1/apps/${resolvedAppId}/services/${resolvedServiceId}/state/sync`,
         body,
       );
+      acknowledgedSerial = (baseRevision ?? -1) + 1;
       lastSource = 'scoped';
     },
 

@@ -1,13 +1,19 @@
 import fs from 'node:fs';
-import os from 'node:os';
 import path from 'node:path';
-import { PersistedStateFile, StateCorruptError, LockMetadata, LockOptions } from '../types';
+import { PersistedStateFile } from '../types';
 import { readLegacyPersistedState, getStatePath } from '../common/stateManager';
-import { buildScopedStatePath, buildScopedObjectKey } from '../common/stateScope';
+import { MANAGED_BY_REGIONAL } from '../common/migrationMarker';
+import {
+  buildScopedStatePath,
+  buildScopedObjectKey,
+  buildServiceBindingPath,
+  buildServiceObjectKey,
+} from '../common/stateScope';
 import {
   applyRegionalMigration,
   planRegionalMigration,
   rollbackRegionalMigration,
+  withIoLock,
   RegionalMigrationOptions,
   RegionalMigrationPaths,
   KeyValueIO,
@@ -15,16 +21,8 @@ import {
 } from '../common/regionalMigration';
 import { createOssStorageAdapter } from '../common/stateBackend/ossStateBackend';
 import { createCosStorageAdapter } from '../common/stateBackend/cosStateBackend';
-import {
-  createLockMetadata,
-  isLockStale,
-  isProcessAlive,
-  LOCK_KEY_SUFFIX,
-  sleep,
-} from '../common/stateBackend/lockUtils';
-import { LockError, formatLockInfo } from '../common/lockManager';
+import { LOCK_KEY_SUFFIX } from '../common/stateBackend/lockUtils';
 import { ProviderEnum } from '../common/providerEnum';
-import { DEFAULT_LOCK_TIMEOUT, DEFAULT_LOCK_RETRY_DELAY } from '../common/constants';
 import { logger } from '../common/logger';
 import { lang } from '../lang';
 
@@ -48,6 +46,8 @@ export type RegionalMigrationCommandOptions = {
     bucket: string;
     key: string;
     storageRegion: string;
+    /** Static storage provider — may differ from the workload provider. */
+    storageProvider?: string;
     accessKeyId: string;
     accessKeySecret: string;
     securityToken?: string;
@@ -96,10 +96,10 @@ const createLocalKeyValueIO = (): KeyValueIO => ({
 });
 
 const createBucketKeyValueIO = (
-  provider: string,
+  storageProvider: string,
   config: NonNullable<RegionalMigrationCommandOptions['bucketConfig']>,
 ): KeyValueIO => {
-  const isTencent = provider === ProviderEnum.TENCENT;
+  const isTencent = storageProvider === ProviderEnum.TENCENT;
   const storageConfig = {
     bucket: config.bucket,
     region: config.storageRegion,
@@ -145,6 +145,7 @@ const buildPaths = (
             `migration-report-${opId}.json`,
           ),
         backupKey: (opId) => `${legacyKey}.pre-regional-${opId}`,
+        serviceBindingKey: buildServiceBindingPath(options.app, options.service, options.baseDir),
       },
     };
   }
@@ -158,79 +159,9 @@ const buildPaths = (
         buildScopedObjectKey(key, options.app, options.service, stage, region),
       reportKey: (opId) => `${key}.scopes/migration-report-${opId}.json`,
       backupKey: (opId) => `${key}.pre-regional-${opId}.json`,
+      serviceBindingKey: buildServiceObjectKey(key, options.app, options.service),
     },
   };
-};
-
-/* ---------------- migration-scoped exclusive lock ---------------- */
-
-const withMigrationLock = async <T>(
-  io: KeyValueIO,
-  lockKey: string,
-  displayPath: string,
-  operation: string,
-  fn: () => Promise<T>,
-  options?: LockOptions,
-): Promise<T> => {
-  const timeout = options?.timeout ?? DEFAULT_LOCK_TIMEOUT;
-  const retryDelay = options?.retryDelay ?? DEFAULT_LOCK_RETRY_DELAY;
-  const maxRetries = options?.maxRetries ?? Math.ceil(timeout / retryDelay);
-  const metadata = createLockMetadata(operation, displayPath);
-  const startTime = Date.now();
-  let attempt = 0;
-
-  for (;;) {
-    const existing = await io.read<LockMetadata>(lockKey);
-    if (!existing) {
-      // Protect the legacy aggregate with the same lock file/object an old CLI
-      // would take, so the split cannot race a concurrent legacy write.
-      const legacyIo = io as KeyValueIO & {
-        putIfAbsent?: (key: string, data: unknown) => Promise<boolean>;
-      };
-      const created = legacyIo.putIfAbsent
-        ? await legacyIo.putIfAbsent(lockKey, metadata)
-        : await io.write(lockKey, metadata).then(() => true);
-      if (created) {
-        try {
-          return await fn();
-        } finally {
-          const current = await io.read<LockMetadata>(lockKey);
-          if (current?.id === metadata.id) {
-            await io.delete(lockKey);
-          }
-        }
-      }
-    } else {
-      if (existing.hostname === os.hostname() && !isProcessAlive(existing.processId)) {
-        await io.delete(lockKey);
-        continue;
-      }
-      if (isLockStale(existing)) {
-        throw new LockError(
-          `Legacy state is currently locked (stale lock detected).\n${formatLockInfo(existing)}\nIf you are certain no other operation is running, use:\n  si force-unlock ${existing.id}`,
-          existing,
-        );
-      }
-      if (Date.now() - startTime >= timeout) {
-        throw new LockError(
-          `Failed to acquire lock after ${timeout / 1000} seconds.\n${formatLockInfo(existing)}`,
-          existing,
-        );
-      }
-      logger.info(
-        lang.__('LOCK_WAITING', {
-          user: existing.user,
-          timeAgo: '1m',
-          attempt: String(attempt + 1),
-        }),
-      );
-    }
-    if (attempt >= maxRetries) {
-      throw new LockError(`Failed to acquire lock.\n${displayPath}`, undefined);
-    }
-    await sleep(Math.min(retryDelay * Math.pow(2, attempt), 30000));
-    attempt++;
-  }
 };
 
 /* ---------------- command flows ---------------- */
@@ -281,7 +212,10 @@ export const runRegionalMigration = async (
   const io =
     options.backendType === 'LOCAL'
       ? createLocalKeyValueIO()
-      : createBucketKeyValueIO(options.provider, options.bucketConfig!);
+      : createBucketKeyValueIO(
+          options.bucketConfig!.storageProvider ?? options.provider,
+          options.bucketConfig!,
+        );
 
   const { paths, legacyKey } = buildPaths(options);
   const sourceApp = options.legacyApp ?? options.app;
@@ -290,7 +224,7 @@ export const runRegionalMigration = async (
   // --rollback: restore the exact pre-split aggregate; refused once any split
   // document has taken independent regional writes.
   if (options.rollbackOpId) {
-    await withMigrationLock(
+    await withIoLock(
       io,
       `${legacyKey}${LOCK_KEY_SUFFIX}`,
       legacyKey,
@@ -302,7 +236,7 @@ export const runRegionalMigration = async (
     return;
   }
 
-  await withMigrationLock(
+  await withIoLock(
     io,
     `${legacyKey}${LOCK_KEY_SUFFIX}`,
     legacyKey,
@@ -311,19 +245,24 @@ export const runRegionalMigration = async (
       // ① read the legacy aggregate (LOCAL: legacy path; BUCKET: discovery key)
       let legacy: PersistedStateFile | null;
       if (options.backendType === 'LOCAL') {
+        // STRICT read (issue #280): corrupt → StateCorruptError, future
+        // version → StateVersionError. The only null-with-file case is the
+        // post-split tombstone — surface the already-split guidance.
         legacy = readLegacyPersistedState(sourceApp, sourceService, options.baseDir);
         if (!legacy && fs.existsSync(legacyKey)) {
-          // A legacy file exists but is not readable V3 — malformed data, never
-          // silently treated as an empty deployment.
-          try {
-            JSON.parse(fs.readFileSync(legacyKey, 'utf-8'));
-          } catch (error) {
-            throw new StateCorruptError(legacyKey, error);
+          const tombstone = JSON.parse(fs.readFileSync(legacyKey, 'utf-8')) as {
+            managedBy?: string;
+          };
+          if (tombstone.managedBy === MANAGED_BY_REGIONAL) {
+            throw new Error(lang.__('REGIONAL_MIGRATION_ALREADY_SPLIT'));
           }
           legacy = null;
         }
       } else {
         legacy = await io.read<PersistedStateFile>(legacyKey);
+        if (legacy?.managedBy === MANAGED_BY_REGIONAL) {
+          throw new Error(lang.__('REGIONAL_MIGRATION_ALREADY_SPLIT'));
+        }
       }
       if (!legacy) {
         throw new Error(lang.__('REGIONAL_MIGRATION_NO_LEGACY_STATE', { location: legacyKey }));

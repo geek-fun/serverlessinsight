@@ -8,10 +8,12 @@ import {
 import {
   LockMetadata,
   StateCorruptError,
+  StateVersionError,
   CURRENT_STATE_VERSION,
   ResourceState,
 } from '../../../../src/types';
 import { LockError } from '../../../../src/common/lockManager';
+import { registerStateMigration, clearStateMigrations } from '../../../../src/common/stateManager';
 
 jest.mock('../../../../src/common/logger', () => ({
   logger: { info: jest.fn(), warn: jest.fn(), error: jest.fn(), debug: jest.fn() },
@@ -19,6 +21,7 @@ jest.mock('../../../../src/common/logger', () => ({
 
 const mockEnforceMigrationMarker = jest.fn();
 jest.mock('../../../../src/common/migrationMarker', () => ({
+  MANAGED_BY_REGIONAL: 'regional',
   enforceMigrationMarker: (...args: unknown[]) => mockEnforceMigrationMarker(...args),
 }));
 
@@ -260,7 +263,9 @@ describe('remoteStateBackend (scope-bound, issue #280)', () => {
       await expect(backend.loadState()).rejects.toThrow(StateCorruptError);
     });
 
-    it('rejects a legacy object that cannot be migrated instead of treating it as empty', async () => {
+    it('rethrows a legacy object whose version cannot be migrated as StateVersionError (unwrapped)', async () => {
+      // Version errors are already precise — the remote backend must not bury
+      // them in a generic corruption error.
       adapter.store.set(LEGACY_KEY, {
         version: '99.0',
         provider: scope.provider,
@@ -274,7 +279,58 @@ describe('remoteStateBackend (scope-bound, issue #280)', () => {
         legacyKey: LEGACY_KEY,
       });
 
-      await expect(backend.loadState()).rejects.toThrow(StateCorruptError);
+      await expect(backend.loadState()).rejects.toThrow(StateVersionError);
+    });
+
+    it('wraps non-version legacy migration failures as StateCorruptError', async () => {
+      adapter.store.set(LEGACY_KEY, {
+        version: '3.0',
+        provider: scope.provider,
+        app: scope.app,
+        service: scope.service,
+        stages: { prod: { resources: {} } },
+      });
+      registerStateMigration('3.0', () => {
+        throw new Error('migration exploded');
+      });
+      const backend = createRemoteStateBackend(adapter, {
+        scope,
+        scopedKey: SCOPED_KEY,
+        legacyKey: LEGACY_KEY,
+      });
+
+      try {
+        await expect(backend.loadState()).rejects.toThrow(StateCorruptError);
+      } finally {
+        clearStateMigrations();
+      }
+    });
+
+    it('treats a post-split tombstone legacy object as absent so new regions start fresh', async () => {
+      // The migration barrier (managedBy=regional, versioned V4) hides the
+      // legacy entry entirely — the scoped documents are authoritative.
+      adapter.store.set(LEGACY_KEY, {
+        version: CURRENT_STATE_VERSION,
+        provider: scope.provider,
+        app: scope.app,
+        service: scope.service,
+        managedBy: 'regional',
+        migration: { opId: 'op-1', sourceVersion: '3.0' },
+        stages: { prod: { resources: { 'functions.old': makeResource('old') } } },
+      });
+      const backend = createRemoteStateBackend(adapter, {
+        scope,
+        scopedKey: SCOPED_KEY,
+        legacyKey: LEGACY_KEY,
+      });
+
+      const state = await backend.loadState();
+
+      expect(state.version).toBe(CURRENT_STATE_VERSION);
+      expect(state.resources).toEqual({});
+      expect(state.scope).toEqual({ stage: 'prod', region: 'cn-hangzhou' });
+      expect(backend.readStateSource()).toBe('empty');
+      expect(await backend.probeWriteReadiness()).toEqual({ ready: true, source: 'empty' });
     });
   });
 
@@ -378,6 +434,104 @@ describe('remoteStateBackend (scope-bound, issue #280)', () => {
         }),
       ).rejects.toThrow(StateCorruptError);
       expect(adapter.write).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('service provider binding (issue #280 §1)', () => {
+    const BINDING_KEY = `${LEGACY_KEY}.scopes/test-app/test-service/provider.json`;
+
+    const scopedSave = (): Record<string, unknown> => ({
+      version: CURRENT_STATE_VERSION,
+      provider: scope.provider,
+      app: scope.app,
+      service: scope.service,
+      stages: { prod: { resources: {} } },
+      resources: {},
+    });
+
+    it('records the provider binding on the first scoped save', async () => {
+      const backend = createRemoteStateBackend(adapter, {
+        scope,
+        scopedKey: SCOPED_KEY,
+        legacyKey: LEGACY_KEY,
+      });
+
+      await backend.saveState(scopedSave() as never);
+
+      expect(adapter.store.get(BINDING_KEY)).toMatchObject({
+        provider: 'aliyun',
+        recordedAt: expect.any(String),
+      });
+      expect(adapter.store.get(SCOPED_KEY)).toBeDefined();
+    });
+
+    it('keeps saving from other scopes of the same service when the provider matches', async () => {
+      const hangzhou = createRemoteStateBackend(adapter, {
+        scope,
+        scopedKey: SCOPED_KEY,
+        legacyKey: LEGACY_KEY,
+      });
+      await hangzhou.saveState(scopedSave() as never);
+
+      const southeast = createRemoteStateBackend(adapter, {
+        scope: { ...scope, stage: 'dev', region: 'ap-southeast-1' },
+        scopedKey: 'states/test-app/test-service/dev/ap-southeast-1.json',
+        legacyKey: LEGACY_KEY,
+      });
+      await southeast.saveState({
+        ...scopedSave(),
+        stages: { dev: { resources: {} } },
+      } as never);
+
+      expect(
+        adapter.store.get('states/test-app/test-service/dev/ap-southeast-1.json'),
+      ).toBeDefined();
+      expect(adapter.store.get(BINDING_KEY)).toMatchObject({ provider: 'aliyun' });
+    });
+
+    it('refuses a cross-provider save from a second backend instance (any scope)', async () => {
+      const first = createRemoteStateBackend(adapter, {
+        scope,
+        scopedKey: SCOPED_KEY,
+        legacyKey: LEGACY_KEY,
+      });
+      await first.saveState(scopedSave() as never);
+
+      const foreign = createRemoteStateBackend(adapter, {
+        scope: { ...scope, provider: 'tencent', stage: 'dev', region: 'ap-southeast-1' },
+        scopedKey: 'states/test-app/test-service/dev/ap-southeast-1.json',
+        legacyKey: LEGACY_KEY,
+      });
+
+      await expect(
+        foreign.saveState({
+          ...scopedSave(),
+          provider: 'tencent',
+          stages: { dev: { resources: {} } },
+        } as never),
+      ).rejects.toThrow(/Provider mismatch/);
+      expect(
+        adapter.store.get('states/test-app/test-service/dev/ap-southeast-1.json'),
+      ).toBeUndefined();
+    });
+
+    it('reports a binding mismatch as not ready in probeWriteReadiness', async () => {
+      const first = createRemoteStateBackend(adapter, {
+        scope,
+        scopedKey: SCOPED_KEY,
+        legacyKey: LEGACY_KEY,
+      });
+      await first.saveState(scopedSave() as never);
+
+      const foreign = createRemoteStateBackend(adapter, {
+        scope: { ...scope, provider: 'tencent', stage: 'dev', region: 'ap-southeast-1' },
+        scopedKey: 'states/test-app/test-service/dev/ap-southeast-1.json',
+        legacyKey: LEGACY_KEY,
+      });
+      const readiness = await foreign.probeWriteReadiness();
+      expect(readiness.ready).toBe(false);
+      expect(readiness.reason).toContain('aliyun');
+      expect(readiness.reason).toContain('tencent');
     });
   });
 

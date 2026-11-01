@@ -13,6 +13,7 @@ import {
   LEGACY_STATE_VERSION,
 } from '../types';
 import { normalizeScope, buildScopedStatePath, DeploymentScope } from './stateScope';
+import { MANAGED_BY_REGIONAL } from './migrationMarker';
 import { withLock, LockOptions } from './lockManager';
 import { logger } from './logger';
 
@@ -595,9 +596,13 @@ export const patchScopedPersistedState = (
 };
 
 /**
- * Read a legacy V3 aggregate as persisted (no scope hydration). Returns null
- * when the file does not exist or predates the V3 layout. Used by the regional
- * migration and the legacy discovery fallback — never for scoped writes.
+ * Read a legacy V3 aggregate as persisted (no scope hydration). STRICT on
+ * existing files (issue #280): only a genuinely missing file returns null —
+ * a corrupt file throws StateCorruptError and a future/unsupported version
+ * throws StateVersionError. They are never silently treated as empty state
+ * (that would propose a full re-creation). The post-split tombstone manifest
+ * (versioned V4 + managedBy=regional) is the one expected "unsupported" form:
+ * it is treated as absent because the scoped documents are authoritative.
  */
 export const readLegacyPersistedState = (
   app: string,
@@ -608,12 +613,19 @@ export const readLegacyPersistedState = (
   if (!fs.existsSync(statePath)) {
     return null;
   }
+  let raw: PersistedStateFile;
   try {
-    const raw = JSON.parse(fs.readFileSync(statePath, 'utf-8')) as PersistedStateFile;
-    return raw.version === LEGACY_STATE_VERSION || !raw.version ? raw : null;
-  } catch {
+    raw = JSON.parse(fs.readFileSync(statePath, 'utf-8')) as PersistedStateFile;
+  } catch (error) {
+    throw new StateCorruptError(statePath, error);
+  }
+  if (raw.managedBy === MANAGED_BY_REGIONAL) {
     return null;
   }
+  if (raw.version && parseStateVersion(raw.version) > parseStateVersion(LEGACY_STATE_VERSION)) {
+    throw new StateVersionError(raw.version, CURRENT_STATE_VERSION);
+  }
+  return raw;
 };
 
 /* istanbul ignore next */

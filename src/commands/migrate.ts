@@ -123,14 +123,26 @@ export const migrate = async (options: {
     }
     const bucketConfig =
       backendType === StateBackendType.BUCKET_STORE
-        ? {
-            bucket: (iac.backend as { bucket: string }).bucket,
-            key: (iac.backend as { key: string }).key,
-            storageRegion: context.region,
-            accessKeyId: context.accessKeyId,
-            accessKeySecret: context.accessKeySecret,
-            securityToken: context.securityToken,
-          }
+        ? (() => {
+            const cfg = iac.backend as {
+              bucket: string;
+              key: string;
+              storageRegion?: string;
+              storageProvider?: string;
+            };
+            return {
+              bucket: cfg.bucket,
+              key: cfg.key,
+              // Static storage location — the SAME settings the regular
+              // backend resolves; explicit values must not change when the
+              // workload -r/-v changes (issue #280 §3).
+              storageRegion: cfg.storageRegion ?? context.region,
+              storageProvider: cfg.storageProvider ?? context.provider,
+              accessKeyId: context.accessKeyId,
+              accessKeySecret: context.accessKeySecret,
+              securityToken: context.securityToken,
+            };
+          })()
         : undefined;
     await runRegionalMigration({
       provider: context.provider,

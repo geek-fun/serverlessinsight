@@ -1,4 +1,5 @@
 import crypto from 'node:crypto';
+import os from 'node:os';
 import {
   PersistedStateFile,
   ResourceState,
@@ -6,10 +7,20 @@ import {
   StateMigrationInfo,
   CURRENT_STATE_VERSION,
   LEGACY_STATE_VERSION,
+  LockMetadata,
 } from '../types';
 import { canonicalizeRegion, validateScopeKeyPart } from './stateScope';
-import { MANAGED_BY_REGIONAL } from './migrationMarker';
+import { MANAGED_BY_REGIONAL, MANAGED_BY_SAAS } from './migrationMarker';
 import { logger } from './logger';
+import { LockError, formatLockInfo } from './lockManager';
+import {
+  LOCK_KEY_SUFFIX,
+  createLockMetadata,
+  isLockStale,
+  isProcessAlive,
+  sleep,
+} from './stateBackend/lockUtils';
+import { DEFAULT_LOCK_TIMEOUT, DEFAULT_LOCK_RETRY_DELAY } from './constants';
 import { lang } from '../lang';
 
 /**
@@ -26,6 +37,8 @@ export type KeyValueIO = {
   read: <T>(key: string) => Promise<T | null>;
   write: (key: string, data: unknown) => Promise<void>;
   delete: (key: string) => Promise<void>;
+  /** Atomic exclusive create when the storage supports it (verified fallback otherwise). */
+  putIfAbsent?: (key: string, data: unknown) => Promise<boolean>;
 };
 
 export type RegionalMigrationPaths = {
@@ -37,7 +50,94 @@ export type RegionalMigrationPaths = {
   reportKey: (opId: string) => string;
   /** Where the pre-migration backup is stored. */
   backupKey: (opId: string) => string;
+  /** Service-level provider binding record (states/<app>/<service>/provider.json). */
+  serviceBindingKey: string;
 };
+
+/**
+ * Service-level provider binding record (issue #280 §1): one Service has
+ * exactly one provider across ALL its Stage/Region scopes. Stored next to the
+ * scoped documents so a new region cannot open the service under a different
+ * provider.
+ */
+export type ProviderBinding = {
+  provider: string;
+  recordedAt: string;
+};
+
+/**
+ * Exclusive lock over an arbitrary IO key. Used for the legacy aggregate AND
+ * each migration target so a concurrent deploy on one scope cannot interleave
+ * with the split. Uses verified conditional create when the storage provides
+ * it; falls back to write-then-verify otherwise (capability is declared by the
+ * backend, never assumed).
+ */
+export const withIoLock = async <T>(
+  io: KeyValueIO,
+  lockKey: string,
+  displayPath: string,
+  operation: string,
+  fn: () => Promise<T>,
+  options?: { timeout?: number; retryDelay?: number; maxRetries?: number },
+): Promise<T> => {
+  const timeout = options?.timeout ?? DEFAULT_LOCK_TIMEOUT;
+  const retryDelay = options?.retryDelay ?? DEFAULT_LOCK_RETRY_DELAY;
+  const maxRetries = options?.maxRetries ?? Math.ceil(timeout / retryDelay);
+  const metadata = createLockMetadata(operation, displayPath);
+  const startTime = Date.now();
+  let attempt = 0;
+
+  for (;;) {
+    const existing = await io.read<LockMetadata>(lockKey);
+    if (!existing) {
+      const created = io.putIfAbsent
+        ? await io.putIfAbsent(lockKey, metadata)
+        : await io.write(lockKey, metadata).then(() => true);
+      if (created) {
+        try {
+          return await fn();
+        } finally {
+          const current = await io.read<LockMetadata>(lockKey);
+          if (current?.id === metadata.id) {
+            await io.delete(lockKey);
+          }
+        }
+      }
+    } else if (existing.hostname === os.hostname() && !isProcessAlive(existing.processId)) {
+      await io.delete(lockKey);
+      continue;
+    } else if (isLockStale(existing)) {
+      throw new LockError(
+        `State is currently locked (stale lock detected).\n${formatLockInfo(existing)}\nIf you are certain no other operation is running, use:\n  si force-unlock ${existing.id}`,
+        existing,
+      );
+    } else if (Date.now() - startTime >= timeout) {
+      throw new LockError(
+        `Failed to acquire lock after ${timeout / 1000} seconds.\n${formatLockInfo(existing)}`,
+        existing,
+      );
+    } else {
+      logger.info(
+        lang.__('LOCK_WAITING', {
+          user: existing.user,
+          timeAgo: '1m',
+          attempt: String(attempt + 1),
+        }),
+      );
+    }
+    if (attempt >= maxRetries) {
+      throw new LockError(`Failed to acquire lock.\n${displayPath}`, undefined);
+    }
+    await sleep(Math.min(retryDelay * Math.pow(2, attempt), 30000));
+    attempt++;
+  }
+};
+
+/** Read the service provider binding; null when not yet recorded. */
+export const readProviderBinding = async (
+  io: KeyValueIO,
+  paths: Pick<RegionalMigrationPaths, 'serviceBindingKey'>,
+): Promise<ProviderBinding | null> => io.read<ProviderBinding>(paths.serviceBindingKey);
 
 export type RegionEvidence = {
   logicalId: string;
@@ -122,6 +222,17 @@ export const planRegionalMigration = (
   paths: RegionalMigrationPaths,
   options: RegionalMigrationOptions,
 ): RegionalMigrationPlan => {
+  // Ownership handover first: a source already managed by the Console belongs
+  // to the SaaS backend — a regional split must never reopen it (that would
+  // create an unmarked local copy and a second writable authority).
+  if (legacy.managedBy === MANAGED_BY_SAAS) {
+    throw new Error(lang.__('REGIONAL_MIGRATION_SOURCE_MANAGED_BY_SAAS'));
+  }
+  // A tombstone-marked aggregate has already been split; the regional
+  // documents are authoritative.
+  if (legacy.managedBy === MANAGED_BY_REGIONAL) {
+    throw new Error(lang.__('REGIONAL_MIGRATION_ALREADY_SPLIT'));
+  }
   if (legacy.version && legacy.version !== LEGACY_STATE_VERSION) {
     throw new Error(
       lang.__('REGIONAL_MIGRATION_UNSUPPORTED_SOURCE', {
@@ -129,9 +240,6 @@ export const planRegionalMigration = (
         expected: LEGACY_STATE_VERSION,
       }),
     );
-  }
-  if (legacy.managedBy === MANAGED_BY_REGIONAL) {
-    throw new Error(lang.__('REGIONAL_MIGRATION_ALREADY_SPLIT'));
   }
 
   const evidence = collectRegionEvidence(legacy);
@@ -269,6 +377,43 @@ export const applyRegionalMigration = async (
     ? canonicalizeRegion(options.bindUnknownRegion)
     : undefined;
 
+  // ⓪ Stage-coverage guard: the barrier is document-global (the tombstone
+  // hides the whole legacy aggregate from this CLI), so a split that leaves
+  // any stage with resources uncovered would strand it. Refuse instead.
+  const stagesWithResources = Object.entries(legacy.stages ?? {})
+    .filter(
+      ([, stageState]) =>
+        Object.keys(stageState?.resources ?? {}).length > 0 ||
+        Object.keys(stageState?.shared ?? {}).length > 0,
+    )
+    .map(([stage]) => stage);
+  const coveredStages = new Set<string>([
+    ...plan.documents.map((d) => d.stage),
+    ...(bindRegion ? plan.unknown.map((u) => u.stage) : []),
+  ]);
+  const uncoveredStages = stagesWithResources.filter((stage) => !coveredStages.has(stage));
+  if (uncoveredStages.length > 0) {
+    throw new Error(
+      lang.__('REGIONAL_MIGRATION_INCOMPLETE_STAGE_COVERAGE', {
+        stages: uncoveredStages.join(', '),
+      }),
+    );
+  }
+
+  // ⓪b Service provider binding: refuse a conflicting binding before anything
+  // is written, then record the source provider for future scopes (issue #280
+  // §1 — one Service has one provider across all regions).
+  const binding = await readProviderBinding(io, paths);
+  const sourceProvider = legacy.provider || options.provider;
+  if (binding && binding.provider !== sourceProvider) {
+    throw new Error(
+      lang.__('STATE_PROVIDER_BINDING_MISMATCH', {
+        stored: binding.provider,
+        requested: sourceProvider,
+      }),
+    );
+  }
+
   // ① Protect: exact source backup first — nothing is written before the
   // original document is recoverable byte-for-byte (canonical serialization).
   const backup = await io.read<PersistedStateFile>(paths.legacyKey);
@@ -280,8 +425,11 @@ export const applyRegionalMigration = async (
   }
   await io.write(paths.backupKey(plan.opId), backup);
 
-  // ② Write the scoped documents. Stages whose resources are ALL
-  // unknown-region still get a document when an explicit binding is given.
+  // ② Verify ALL targets BEFORE writing anything (review finding: a refusal
+  // must never leave partially-mutated targets). A target that already holds a
+  // document from a DIFFERENT migration (or independent regional writes) is
+  // refused — the split never overwrites authoritative state. A target from
+  // THIS opId is a resume of the same operation and is rewritten in place.
   const docTargets = [...plan.documents];
   if (bindRegion) {
     for (const item of plan.unknown) {
@@ -290,49 +438,103 @@ export const applyRegionalMigration = async (
       }
     }
   }
+  for (const target of docTargets) {
+    const existing = await io.read<PersistedStateFile>(
+      paths.scopedPrefixBuilder(target.stage, target.region),
+    );
+    if (existing && existing.migration?.opId !== plan.opId) {
+      throw new Error(
+        lang.__('REGIONAL_MIGRATION_TARGET_EXISTS', {
+          stage: target.stage,
+          region: target.region,
+          opId: existing.migration?.opId ?? 'independent',
+        }),
+      );
+    }
+  }
+
+  // ③ Write the scoped documents, each under its own scope lock so a
+  // concurrent deploy on that Stage/Region cannot interleave with the split.
+  // Unknown-region resources land ONLY in the explicitly bound region — never
+  // duplicated across sibling regions of the same stage.
   const written: Array<{ stage: string; region: string; doc: StateFile }> = [];
   try {
     for (const doc of docTargets) {
-      const scoped = buildScopedDocument(
-        legacy,
-        { sourceVersion: plan.sourceVersion, sourceHash: plan.sourceHash, opId: plan.opId },
-        { stage: doc.stage, region: doc.region },
-        { provider: options.provider, app: options.app, service: options.service },
-      );
-      // Unknown-evidence resources bound explicitly land in the chosen region.
-      if (bindRegion) {
-        const stageEvidence = plan.unknown.filter((u) => u.stage === doc.stage);
-        const stageState = legacy.stages?.[doc.stage];
-        for (const item of stageEvidence) {
-          const source = item.kind === 'shared' ? stageState?.shared : stageState?.resources;
-          const resource = source?.[item.logicalId];
-          if (resource) {
-            const withRegion: ResourceState = { ...resource, region: bindRegion };
-            if (item.kind === 'shared') {
-              scoped.stages[doc.stage].shared = {
-                ...scoped.stages[doc.stage].shared,
-                [item.logicalId]: withRegion,
-              };
-            } else {
-              scoped.stages[doc.stage].resources[item.logicalId] = withRegion;
-              scoped.resources[item.logicalId] = withRegion;
+      const targetKey = paths.scopedPrefixBuilder(doc.stage, doc.region);
+      const existing = await io.read<PersistedStateFile>(targetKey);
+      await withIoLock(
+        io,
+        `${targetKey}${LOCK_KEY_SUFFIX}`,
+        targetKey,
+        'migrate-regional-target',
+        async () => {
+          const scoped = buildScopedDocument(
+            legacy,
+            { sourceVersion: plan.sourceVersion, sourceHash: plan.sourceHash, opId: plan.opId },
+            { stage: doc.stage, region: doc.region },
+            { provider: options.provider, app: options.app, service: options.service },
+          );
+          if (bindRegion && doc.region === bindRegion) {
+            const stageState = legacy.stages?.[doc.stage];
+            for (const item of plan.unknown.filter((u) => u.stage === doc.stage)) {
+              const source = item.kind === 'shared' ? stageState?.shared : stageState?.resources;
+              const resource = source?.[item.logicalId];
+              if (resource) {
+                const withRegion: ResourceState = { ...resource, region: bindRegion };
+                if (item.kind === 'shared') {
+                  scoped.stages[doc.stage].shared = {
+                    ...scoped.stages[doc.stage].shared,
+                    [item.logicalId]: withRegion,
+                  };
+                } else {
+                  scoped.stages[doc.stage].resources[item.logicalId] = withRegion;
+                  scoped.resources[item.logicalId] = withRegion;
+                }
+              }
             }
           }
-        }
-      }
-      const targetKey = paths.scopedPrefixBuilder(doc.stage, doc.region);
-      await io.write(targetKey, stripRuntimeProjection(scoped));
-      written.push({ stage: doc.stage, region: doc.region, doc: scoped });
+          // Resume of this same operation: keep the existing lineage/serial
+          // instead of resetting them.
+          if (existing && existing.migration?.opId === plan.opId) {
+            scoped.lineage = existing.lineage;
+            scoped.serial = existing.serial;
+          }
+          await io.write(targetKey, stripRuntimeProjection(scoped));
+          written.push({ stage: doc.stage, region: doc.region, doc: scoped });
+        },
+      );
     }
 
-    // ③ Barrier: the legacy entry KEEPS its content (deleting it would let an
-    // old CLI treat the deployment as fresh) but is marked as split so this and
-    // later CLIs never mutate or re-split it.
-    const barriered: PersistedStateFile = { ...legacy, managedBy: MANAGED_BY_REGIONAL };
-    await io.write(paths.legacyKey, barriered);
+    // ④ Record the service provider binding for future scopes.
+    if (!binding) {
+      await io.write(paths.serviceBindingKey, {
+        provider: sourceProvider,
+        recordedAt: new Date().toISOString(),
+      } satisfies ProviderBinding);
+    }
 
+    // ⑤ Barrier as a V4 TOMBSTONE: the legacy entry keeps its content (for
+    // forensics) but is versioned 4.0 — old CLIs refuse it with a version
+    // error BEFORE any mutation, and this CLI treats it as an absent source
+    // (the scoped documents are authoritative; new regions start fresh).
+    const tombstone: Record<string, unknown> = {
+      ...legacy,
+      version: CURRENT_STATE_VERSION,
+      managedBy: MANAGED_BY_REGIONAL,
+      migration: {
+        opId: plan.opId,
+        sourceVersion: plan.sourceVersion,
+        sourceHash: plan.sourceHash,
+        migratedAt: new Date().toISOString(),
+      } satisfies StateMigrationInfo,
+    };
+    await io.write(paths.legacyKey, tombstone);
+
+    // ⑥ The report carries the ACTUAL written set (including binding-generated
+    // documents) so rollback validates and removes everything it created.
     const report: RegionalMigrationReport = {
       ...plan,
+      documents: docTargets,
       migratedAt: new Date().toISOString(),
       barrierWritten: true,
     };
@@ -379,7 +581,9 @@ export const rollbackRegionalMigration = async (
     throw new Error(lang.__('REGIONAL_MIGRATION_BACKUP_MISSING', { opId }));
   }
 
-  // Verify no scoped document has diverged from its migration-time creation.
+  // Phase 1 — verify EVERY scoped document is still the migration's serial-1
+  // creation BEFORE mutating anything (review finding: a refusal must never
+  // leave already-deleted documents behind).
   for (const doc of report.documents) {
     const current = await io.read<PersistedStateFile>(
       paths.scopedPrefixBuilder(doc.stage, doc.region),
@@ -396,10 +600,13 @@ export const rollbackRegionalMigration = async (
         }),
       );
     }
-    await io.delete(paths.scopedPrefixBuilder(doc.stage, doc.region));
   }
 
-  // Restore the exact original document (without the barrier marker).
+  // Phase 2 — verified reversible: remove the scoped documents, restore the
+  // exact original document (without the tombstone), and clean the artifacts.
+  for (const doc of report.documents) {
+    await io.delete(paths.scopedPrefixBuilder(doc.stage, doc.region));
+  }
   await io.write(paths.legacyKey, backup);
   await io.delete(paths.reportKey(opId));
   await io.delete(paths.backupKey(opId));

@@ -293,7 +293,12 @@ describe('Regional state isolation (issue #280)', () => {
       );
 
       const barriered = JSON.parse(await fs.readFile(legacyPath, 'utf-8'));
+      // The barrier is a V4 tombstone: versioned 4.0 (old CLIs refuse it before
+      // any mutation), marked managedBy=regional, and carrying the migration
+      // provenance — while keeping the legacy content for forensics.
+      expect(barriered.version).toBe('4.0');
       expect(barriered.managedBy).toBe('regional');
+      expect(barriered.migration).toMatchObject({ sourceVersion: '3.0' });
       expect(barriered.stages.dev.resources['functions.insight_poc_fn']).toBeDefined();
 
       // The next deploy writes the scoped document (and adopts nothing new)
@@ -330,6 +335,45 @@ describe('Regional state isolation (issue #280)', () => {
 
       const scoped = JSON.parse(await fs.readFile(scopedPath('dev', 'cn-hangzhou'), 'utf-8'));
       expect(scoped.stages.dev.resources['functions.insight_poc_fn'].region).toBe('cn-hangzhou');
+    });
+
+    it('allows deploying a NEW region after the split', async () => {
+      await fs.mkdir(path.dirname(legacyPath), { recursive: true });
+      await fs.writeFile(legacyPath, JSON.stringify(legacyState()), 'utf-8');
+
+      await migrate({
+        location: fixture,
+        stage: 'dev',
+        region: 'cn-hangzhou',
+        autoApprove: true,
+        toRegional: true,
+      });
+
+      // The tombstoned legacy entry is treated as absent: the new region starts
+      // from empty state and provisions independently (issue #280).
+      await deploy({
+        location: fixture,
+        stage: 'dev',
+        autoApprove: true,
+        region: 'ap-southeast-1',
+      });
+
+      const southeastClient = clientsByRegion['ap-southeast-1'];
+      expect(southeastClient.fc3.createFunction).toHaveBeenCalled();
+      const fresh = JSON.parse(await fs.readFile(scopedPath('dev', 'ap-southeast-1'), 'utf-8'));
+      expect(fresh.scope).toEqual({ stage: 'dev', region: 'ap-southeast-1' });
+      expect(fresh.stages.dev.resources['functions.insight_poc_fn']).toBeDefined();
+    });
+
+    it('blocks deploy when the legacy aggregate is corrupt instead of rebuilding state', async () => {
+      await fs.mkdir(path.dirname(legacyPath), { recursive: true });
+      await fs.writeFile(legacyPath, '{invalid', 'utf-8');
+
+      await expect(
+        deploy({ location: fixture, stage: 'dev', autoApprove: true, region: 'cn-hangzhou' }),
+      ).rejects.toThrow(/corrupt/i);
+      expect(mockClient.fc3.createFunction).not.toHaveBeenCalled();
+      expect(existsSync(scopedPath('dev', 'cn-hangzhou'))).toBe(false);
     });
   });
 });

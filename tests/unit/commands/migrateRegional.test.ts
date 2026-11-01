@@ -8,6 +8,7 @@ import type {
   RegionalMigrationPaths,
   RegionalMigrationPlan,
 } from '../../../src/common/regionalMigration';
+import { StateCorruptError, StateVersionError } from '../../../src/types';
 
 const mockLoggerInfo = jest.fn();
 const mockLoggerWarn = jest.fn();
@@ -43,6 +44,9 @@ jest.mock('../../../src/common/logger', () => ({
 }));
 
 jest.mock('../../../src/common/regionalMigration', () => ({
+  // The command also calls the REAL withIoLock around the source aggregate;
+  // only the three migration steps are mocked.
+  ...jest.requireActual<Record<string, unknown>>('../../../src/common/regionalMigration'),
   planRegionalMigration: (...args: unknown[]) => mockPlanRegionalMigration(...args),
   applyRegionalMigration: (...args: unknown[]) => mockApplyRegionalMigration(...args),
   rollbackRegionalMigration: (...args: unknown[]) => mockRollbackRegionalMigration(...args),
@@ -230,20 +234,33 @@ describe('migrateRegional command (si migrate --to-regional)', () => {
       writeLegacyFile({});
       fs.writeFileSync(legacyPath, '{{{ not json', 'utf-8');
 
-      await expect(runRegionalMigration(localOptions())).rejects.toThrow(/corrupt/);
+      await expect(runRegionalMigration(localOptions())).rejects.toThrow(StateCorruptError);
       expect(mockedPlan).not.toHaveBeenCalled();
       expect(mockedApply).not.toHaveBeenCalled();
     });
 
-    it('rejects a readable file that is not a legacy V3 aggregate', async () => {
+    it('rejects a readable file whose version is newer than the legacy V3 aggregate with StateVersionError', async () => {
       writeLegacyFile(
         legacyDoc({ version: '4.0', scope: { stage: 'dev', region: 'cn-hangzhou' } }),
       );
 
+      await expect(runRegionalMigration(localOptions())).rejects.toThrow(StateVersionError);
+      expect(mockedPlan).not.toHaveBeenCalled();
+      expect(fs.existsSync(lockPath)).toBe(false);
+
+      writeLegacyFile(legacyDoc({ version: '9.9' }));
+      await expect(runRegionalMigration(localOptions())).rejects.toThrow(StateVersionError);
+      expect(mockedPlan).not.toHaveBeenCalled();
+    });
+
+    it('reports an already-split tombstone (managedBy=regional) as REGIONAL_MIGRATION_ALREADY_SPLIT', async () => {
+      writeLegacyFile(legacyDoc({ managedBy: 'regional' }));
+
       await expect(runRegionalMigration(localOptions())).rejects.toThrow(
-        'REGIONAL_MIGRATION_NO_LEGACY_STATE',
+        'REGIONAL_MIGRATION_ALREADY_SPLIT',
       );
       expect(mockedPlan).not.toHaveBeenCalled();
+      expect(mockedApply).not.toHaveBeenCalled();
       expect(fs.existsSync(lockPath)).toBe(false);
     });
 
@@ -285,6 +302,9 @@ describe('migrateRegional command (si migrate --to-regional)', () => {
         path.join(baseDir, '.serverlessinsight', 'states', 'migration-report-op-1.json'),
       );
       expect(paths.backupKey('op-1')).toBe(`${legacyPath}.pre-regional-op-1`);
+      expect(paths.serviceBindingKey).toBe(
+        path.join(baseDir, '.serverlessinsight', 'states', 'myapp', 'myservice', 'provider.json'),
+      );
 
       expect(mockedApply).not.toHaveBeenCalled();
       expect(mockLoggerInfo).toHaveBeenCalledWith('REGIONAL_MIGRATION_DRY_RUN_NOTICE');
@@ -407,6 +427,10 @@ describe('migrateRegional command (si migrate --to-regional)', () => {
         ),
       );
       expect(paths.backupKey('op-1')).toBe(`${oldLegacyPath}.pre-regional-op-1`);
+      // the binding is recorded under the NEW app/service names, not the legacy ones
+      expect(paths.serviceBindingKey).toBe(
+        path.join(baseDir, '.serverlessinsight', 'states', 'myapp', 'myservice', 'provider.json'),
+      );
       expect(mockedApply).toHaveBeenCalledTimes(1);
     });
   });
@@ -438,6 +462,7 @@ describe('migrateRegional command (si migrate --to-regional)', () => {
       );
       expect(paths.reportKey('op-1')).toBe('state.json.scopes/migration-report-op-1.json');
       expect(paths.backupKey('op-1')).toBe('state.json.pre-regional-op-1.json');
+      expect(paths.serviceBindingKey).toBe('state.json.scopes/myapp/myservice/provider.json');
 
       expect(mockedApply).toHaveBeenCalledTimes(1);
       const io = mockedApply.mock.calls[0][0] as KeyValueIO & { read: jest.Mock };
@@ -459,6 +484,38 @@ describe('migrateRegional command (si migrate --to-regional)', () => {
       );
       expect(mockedCreateOssStorageAdapter).not.toHaveBeenCalled();
       expect(mockedApply).toHaveBeenCalledTimes(1);
+    });
+
+    it('honours an explicit storageProvider that differs from the workload provider', async () => {
+      mockCosAdapter.read.mockImplementation(async (key: string) =>
+        key === 'state.json' ? legacyDoc() : null,
+      );
+
+      await runRegionalMigration(
+        bucketOptions({
+          provider: 'aliyun',
+          bucketConfig: {
+            bucket: 'my-bucket',
+            key: 'state.json',
+            storageRegion: 'ap-guangzhou',
+            storageProvider: 'tencent',
+            accessKeyId: 'ak',
+            accessKeySecret: 'sk',
+          },
+        }),
+      );
+
+      // The storage adapter gets the STORAGE region/provider, not the workload ones
+      expect(mockedCreateCosStorageAdapter).toHaveBeenCalledWith(
+        expect.objectContaining({
+          bucket: 'my-bucket',
+          region: 'ap-guangzhou',
+          lockPath: 'cos://my-bucket/state.json',
+        }),
+      );
+      expect(mockedCreateOssStorageAdapter).not.toHaveBeenCalled();
+      expect(mockedApply).toHaveBeenCalledTimes(1);
+      expect(mockedPlan.mock.calls[0][0]).toEqual(legacyDoc());
     });
 
     it('throws REGIONAL_MIGRATION_NO_LEGACY_STATE when the legacy object is absent', async () => {

@@ -1,4 +1,5 @@
 import fs from 'node:fs';
+import path from 'node:path';
 import { StateFile, LockOptions, StateCorruptError } from '../../types';
 import {
   loadScopedState,
@@ -10,8 +11,9 @@ import {
   migrateState,
   getStatePath,
 } from '../stateManager';
-import { normalizeScope, buildScopedStatePath } from '../stateScope';
+import { normalizeScope, buildScopedStatePath, buildServiceBindingPath } from '../stateScope';
 import { enforceMigrationMarker, MigrationMarkerAction } from '../migrationMarker';
+import type { ProviderBinding } from '../regionalMigration';
 import {
   withLock as fsWithLock,
   forceUnlock as fsForceUnlock,
@@ -59,8 +61,37 @@ export const createLocalStateBackend = (
     baseDir,
   );
   const legacyPath = getStatePath(normalized.app, normalized.service, baseDir);
+  const bindingPath = buildServiceBindingPath(normalized.app, normalized.service, baseDir);
 
   const capabilities: BackendCapabilities = { conditionalCreate: true };
+
+  /**
+   * Service-level provider binding (issue #280 §1): one Service has one
+   * provider across ALL its Stage/Region scopes. Read from the shared record
+   * so a new region cannot open the service under a different provider.
+   */
+  const readProviderBinding = (): ProviderBinding | null => {
+    if (!fs.existsSync(bindingPath)) {
+      return null;
+    }
+    try {
+      return JSON.parse(fs.readFileSync(bindingPath, 'utf-8')) as ProviderBinding;
+    } catch (error) {
+      throw new StateCorruptError(bindingPath, error);
+    }
+  };
+
+  const enforceProviderBinding = (): void => {
+    const binding = readProviderBinding();
+    if (binding && binding.provider !== normalized.provider) {
+      throw new Error(
+        lang.__('STATE_PROVIDER_BINDING_MISMATCH', {
+          stored: binding.provider,
+          requested: normalized.provider,
+        }),
+      );
+    }
+  };
 
   const legacyStageHasResources = (
     legacy: ReturnType<typeof readLegacyPersistedState>,
@@ -106,8 +137,27 @@ export const createLocalStateBackend = (
     },
 
     saveState: async (state: StateFile): Promise<void> => {
+      // Service provider binding: refuse a cross-provider save (issue #280 §1).
+      // The record itself is written only AFTER the save succeeds, so a failed
+      // save never mutates the binding metadata.
+      enforceProviderBinding();
       // saveScopedState validates the state identity against the bound scope.
       saveScopedState(state, normalized, baseDir);
+      if (!fs.existsSync(bindingPath)) {
+        const bindingDir = path.dirname(bindingPath);
+        if (!fs.existsSync(bindingDir)) {
+          fs.mkdirSync(bindingDir, { recursive: true });
+        }
+        fs.writeFileSync(
+          bindingPath,
+          JSON.stringify(
+            { provider: normalized.provider, recordedAt: new Date().toISOString() },
+            null,
+            2,
+          ),
+          'utf-8',
+        );
+      }
     },
 
     patchPersisted: async (patch: Record<string, unknown | undefined>): Promise<void> => {
@@ -130,6 +180,17 @@ export const createLocalStateBackend = (
           ready: false,
           source,
           reason: lang.__('STATE_WRITE_BLOCKED_LEGACY', { statePath: legacyPath }),
+        };
+      }
+      // A Service is bound to one provider across ALL scopes (issue #280 §1):
+      // a new Stage/Region cannot open the service under a different provider.
+      try {
+        enforceProviderBinding();
+      } catch (error) {
+        return {
+          ready: false,
+          source,
+          reason: error instanceof Error ? error.message : String(error),
         };
       }
       return { ready: true, source };

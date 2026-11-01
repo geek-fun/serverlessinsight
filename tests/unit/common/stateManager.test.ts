@@ -1340,9 +1340,47 @@ describe('StateManager', () => {
         expect(readLegacyPersistedState('test-app', 'test-service', testDir)).toEqual(legacy);
       });
 
-      it('returns null when the version is neither the legacy version nor undefined', () => {
+      it('throws StateVersionError when the version is newer than the legacy version', () => {
         writeLegacyDoc({
           version: CURRENT_STATE_VERSION,
+          provider: 'aliyun',
+          app: 'test-app',
+          service: 'test-service',
+          stages: {},
+        });
+
+        expect(() => readLegacyPersistedState('test-app', 'test-service', testDir)).toThrow(
+          StateVersionError,
+        );
+      });
+
+      it('throws StateVersionError for a far-future version without managedBy', () => {
+        writeLegacyDoc({
+          version: '9.9',
+          provider: 'aliyun',
+          app: 'test-app',
+          service: 'test-service',
+          stages: {},
+        });
+
+        expect(() => readLegacyPersistedState('test-app', 'test-service', testDir)).toThrow(
+          StateVersionError,
+        );
+      });
+
+      it('throws StateCorruptError when the legacy file is corrupt', () => {
+        fs.mkdirSync(path.dirname(legacyPath), { recursive: true });
+        fs.writeFileSync(legacyPath, '{{{ not valid json');
+
+        expect(() => readLegacyPersistedState('test-app', 'test-service', testDir)).toThrow(
+          StateCorruptError,
+        );
+      });
+
+      it('returns null for the post-split tombstone regardless of its version', () => {
+        writeLegacyDoc({
+          version: CURRENT_STATE_VERSION,
+          managedBy: 'regional',
           provider: 'aliyun',
           app: 'test-app',
           service: 'test-service',
@@ -1352,9 +1390,15 @@ describe('StateManager', () => {
         expect(readLegacyPersistedState('test-app', 'test-service', testDir)).toBeNull();
       });
 
-      it('returns null when the legacy file is corrupt', () => {
-        fs.mkdirSync(path.dirname(legacyPath), { recursive: true });
-        fs.writeFileSync(legacyPath, '{{{ not valid json');
+      it('returns null for a regional tombstone even when still versioned as legacy', () => {
+        writeLegacyDoc({
+          version: LEGACY_STATE_VERSION,
+          managedBy: 'regional',
+          provider: 'aliyun',
+          app: 'test-app',
+          service: 'test-service',
+          stages: {},
+        });
 
         expect(readLegacyPersistedState('test-app', 'test-service', testDir)).toBeNull();
       });

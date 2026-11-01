@@ -121,3 +121,35 @@ export const buildScopedObjectKey = (
 /** The `scope` object of a V4 document must match the requested deployment scope exactly. */
 export const stateScopeMatches = (scope: StateScope, stage: string, region: string): boolean =>
   scope.stage === stage && canonicalizeRegion(scope.region) === canonicalizeRegion(region);
+
+/**
+ * Service-level provider binding record (issue #280 §1): one Service has one
+ * provider across ALL its scopes. Local layout:
+ * `.serverlessinsight/states/<app>/<service>/provider.json`.
+ */
+export const buildServiceBindingPath = (
+  app: string,
+  service: string,
+  baseDir: string = process.cwd(),
+): string =>
+  path.join(
+    baseDir,
+    '.serverlessinsight',
+    SCOPED_STATE_DIR,
+    validateScopeKeyPart(app, 'app'),
+    validateScopeKeyPart(service, 'service'),
+    'provider.json',
+  );
+
+/** Bucket-store service-level binding key: `<key>.scopes/<app>/<service>/provider.json`. */
+export const buildServiceObjectKey = (key: string, app: string, service: string): string => {
+  if (!key || key.trim().length === 0) {
+    throw new Error(lang.__('SCOPE_KEY_PART_REQUIRED', { label: 'key' }));
+  }
+  return [
+    `${key.replace(/\/+$/, '')}${SCOPED_OBJECT_PREFIX}`,
+    validateScopeKeyPart(app, 'app'),
+    validateScopeKeyPart(service, 'service'),
+    'provider.json',
+  ].join('/');
+};

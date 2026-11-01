@@ -6,11 +6,18 @@ import {
   LockOptions,
   LockMetadata,
   StateCorruptError,
+  StateVersionError,
+  StateScopeMismatchError,
   CURRENT_STATE_VERSION,
 } from '../../types';
 import { migrateState, toPersistedState, emptyScopedState } from '../stateManager';
-import { normalizeScope } from '../stateScope';
-import { enforceMigrationMarker, MigrationMarkerAction } from '../migrationMarker';
+import { normalizeScope, buildServiceObjectKey } from '../stateScope';
+import {
+  MANAGED_BY_REGIONAL,
+  enforceMigrationMarker,
+  MigrationMarkerAction,
+} from '../migrationMarker';
+import type { ProviderBinding } from '../regionalMigration';
 import { DEFAULT_LOCK_TIMEOUT, DEFAULT_LOCK_RETRY_DELAY } from '../constants';
 import { LockError, formatLockInfo } from '../lockManager';
 import { logger } from '../logger';
@@ -171,6 +178,23 @@ export const createRemoteStateBackend = (
     );
   };
 
+  const bindingKey = buildServiceObjectKey(config.legacyKey, normalized.app, normalized.service);
+
+  const readProviderBinding = async (): Promise<ProviderBinding | null> => {
+    return adapter.read<ProviderBinding>(bindingKey);
+  };
+
+  const enforceProviderBindingValue = (binding: ProviderBinding | null): void => {
+    if (binding && binding.provider !== normalized.provider) {
+      throw new Error(
+        lang.__('STATE_PROVIDER_BINDING_MISMATCH', {
+          stored: binding.provider,
+          requested: normalized.provider,
+        }),
+      );
+    }
+  };
+
   const readScopedDocument = async (): Promise<PersistedStateFile | null> => {
     const raw = await adapter.read<PersistedStateFile>(config.scopedKey);
     if (!raw) {
@@ -221,13 +245,25 @@ export const createRemoteStateBackend = (
         return loaded;
       }
 
-      // Legacy/discovery entry: read-only compatibility until migration.
+      // Legacy/discovery entry: read-only compatibility until migration. A
+      // post-split tombstone (versioned V4 + managedBy=regional) is treated as
+      // absent — the scoped documents are authoritative and new regions start
+      // fresh (issue #280).
       const legacyRaw = await adapter.read<StateFile>(config.legacyKey);
+      if (legacyRaw && legacyRaw.managedBy === MANAGED_BY_REGIONAL) {
+        lastSource = 'empty';
+        return emptyScopedState(normalized);
+      }
       if (legacyRaw) {
         let migrated: StateFile;
         try {
           migrated = migrateState(legacyRaw);
         } catch (error) {
+          // Version/shape errors are already precise — never bury them in a
+          // generic corruption error.
+          if (error instanceof StateVersionError || error instanceof StateScopeMismatchError) {
+            throw error;
+          }
           throw new StateCorruptError(`bucket://${config.legacyKey}`, error);
         }
         const stageResources = migrated.stages?.[normalized.stage]?.resources ?? {};
@@ -269,6 +305,11 @@ export const createRemoteStateBackend = (
           `state identity (${state.provider}/${state.app}/${state.service}) does not match the bound deployment scope (${normalized.provider}/${normalized.app}/${normalized.service})`,
         );
       }
+      // Service provider binding (issue #280 §1): refuse cross-provider saves.
+      // The record is written only AFTER the scoped save succeeds so a failed
+      // save never mutates the binding metadata.
+      const binding = await readProviderBinding();
+      enforceProviderBindingValue(binding);
       // Continue this scope document's lineage/serial across saves (independent
       // per Stage/Region document).
       const existing = await adapter.read<PersistedStateFile>(config.scopedKey);
@@ -289,6 +330,12 @@ export const createRemoteStateBackend = (
         },
       };
       await adapter.write(config.scopedKey, persisted);
+      if (!binding) {
+        await adapter.write(bindingKey, {
+          provider: normalized.provider,
+          recordedAt: new Date().toISOString(),
+        } satisfies ProviderBinding);
+      }
       lastSource = 'scoped';
     },
 
@@ -301,6 +348,18 @@ export const createRemoteStateBackend = (
           ready: false,
           source,
           reason: lang.__('STATE_WRITE_BLOCKED_LEGACY_BUCKET', { objectKey: config.legacyKey }),
+        };
+      }
+      // One provider per Service across ALL scopes (issue #280 §1).
+      const binding = await readProviderBinding();
+      if (binding && binding.provider !== normalized.provider) {
+        return {
+          ready: false,
+          source,
+          reason: lang.__('STATE_PROVIDER_BINDING_MISMATCH', {
+            stored: binding.provider,
+            requested: normalized.provider,
+          }),
         };
       }
       return { ready: true, source };
@@ -361,6 +420,9 @@ export const createRemoteStateBackend = (
       return 'scoped';
     }
     const legacyRaw = await adapter.read<StateFile>(config.legacyKey);
+    if (legacyRaw && legacyRaw.managedBy === MANAGED_BY_REGIONAL) {
+      return 'empty';
+    }
     if (legacyRaw) {
       const stageResources = legacyRaw.stages?.[normalized.stage]?.resources;
       return stageResources && Object.keys(stageResources).length > 0 ? 'legacy' : 'empty';

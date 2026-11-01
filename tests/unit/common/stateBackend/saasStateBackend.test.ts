@@ -631,6 +631,62 @@ describe('saasStateBackend (scope-bound, issue #280)', () => {
       );
       expect(mockApiClient.post).not.toHaveBeenCalled();
     });
+
+    describe('idempotency and base serial (issue #280 §4)', () => {
+      const syncPayloads = (): Array<Record<string, unknown>> =>
+        mockApiClient.post.mock.calls
+          .filter((call) => call[0] === '/api/v1/apps/app-1/services/svc-1/state/sync')
+          .map((call) => call[1] as Record<string, unknown>);
+
+      it('derives baseSerial from the loaded state serial and advances it across saves', async () => {
+        mockMutatingLoad({ ...emptyStateJson(), serial: 7 });
+        mockApiClient.post.mockResolvedValue({});
+        const backend = createBackend();
+        await backend.loadState();
+
+        await backend.saveState(savedState);
+        await backend.saveState({
+          ...savedState,
+          resources: {
+            ...savedState.resources,
+            func2: {
+              mode: 'managed',
+              region: 'cn-hk',
+              definition: {},
+              instances: [],
+              lastUpdated: '',
+            },
+          },
+        });
+
+        const payloads = syncPayloads();
+        expect(payloads).toHaveLength(2);
+        // The first save bases on the revision acknowledged by the load...
+        expect(payloads[0].baseSerial).toBe(7);
+        // ...and the acknowledged serial advances with every confirmed save.
+        expect(payloads[1].baseSerial).toBe(8);
+        // Distinct incremental content → distinct idempotency keys.
+        expect(payloads[0].idempotencyKey).not.toBe(payloads[1].idempotencyKey);
+      });
+
+      it('gives identical content the same idempotencyKey while baseSerial still advances', async () => {
+        mockMutatingLoad({ ...emptyStateJson(), serial: 3 });
+        mockApiClient.post.mockResolvedValue({});
+        const backend = createBackend();
+        await backend.loadState();
+
+        await backend.saveState(savedState);
+        await backend.saveState(savedState);
+
+        const payloads = syncPayloads();
+        expect(payloads).toHaveLength(2);
+        // Retries of the SAME document (same lineage + content) dedupe...
+        expect(payloads[1].idempotencyKey).toBe(payloads[0].idempotencyKey);
+        // ...but each confirmed save still advances the optimistic base.
+        expect(payloads[0].baseSerial).toBe(3);
+        expect(payloads[1].baseSerial).toBe(4);
+      });
+    });
   });
 
   describe('read-only identity resolution (issue #280 §4)', () => {

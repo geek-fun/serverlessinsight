@@ -129,6 +129,9 @@ capabilities probe, scope echo on returned state documents.
 
 ## Resource identity and ownership
 
+- A service-level **provider binding** is persisted next to the scoped
+  documents and checked on every mutating write and readiness probe: the same
+  App/Service cannot be opened under a different provider in a new region.
 - Ownership tags on **new** resources encode the owning region:
   `si-owned-by: <app>-<service>:<logicalId>@<region>`. Region-tagged values
   must match the checking scope; legacy values (no `@region`) keep their
@@ -172,32 +175,54 @@ Classification rules:
 
 Apply order (each artifact named by the migration `opId`):
 
+0. **Preconditions** — the split refuses a source already owned by the Console
+   (`managedBy: saas`), an already-split source (`managedBy: regional`), a plan
+   that would leave any resource-holding stage uncovered, a conflicting
+   service provider binding, or any target document that already holds
+   independent state. Nothing is written until every precondition holds.
 1. **Backup first** — the exact source document (canonical hash recorded)
    lands in `<legacy>.pre-regional-<opId>` / `<key>.pre-regional-<opId>.json`.
-2. Scoped V4 documents are written (independent lineage, serial 1, provenance
-   stamped in `migration`).
-3. The legacy entry is **kept** and marked `managedBy: regional` — deleting it
-   would let an old CLI treat the deployment as fresh. This CLI never mutates
-   or re-splits the marked aggregate.
-4. A migration report is stored next to the scoped documents.
+2. Scoped V4 documents are written — each under its own scope lock so a
+   concurrent deploy cannot interleave (independent lineage, serial 1,
+   provenance stamped in `migration`). Unknown-region resources are placed
+   ONLY in the explicitly bound region, never duplicated across siblings.
+3. The legacy entry is rewritten as a **V4 tombstone**: original content kept
+   for forensics, but `version: "4.0"` + `managedBy: "regional"`. Old CLIs
+   refuse it with a version error **before any mutation** (they reject any
+   version above 3.0); this CLI treats the tombstone as an absent source — the
+   scoped documents are authoritative and NEW regions start fresh.
+4. The service provider binding (`.serverlessinsight/states/<app>/<service>/
+   provider.json` / `<key>.scopes/<app>/<service>/provider.json`) records the
+   source provider; a later scope of the same service under a different
+   provider is refused.
+5. A migration report is stored next to the scoped documents; it carries the
+   ACTUAL written document set (including binding-generated documents).
 
 A partial failure leaves written documents (individually valid) and an intact
-legacy entry — fix the cause and re-run.
+legacy entry — fix the cause and re-run (a re-run of the same `opId` resumes
+in place and preserves lineage/serial; a re-run with a NEW plan refuses
+against documents with independent state).
 
 ### Rollback
 
-Allowed only while no scoped document has taken an independent regional write
-(every doc still at the migration's serial 1): the aggregate is restored and
-scoped documents removed. After independent regional writes exist, states are
-never collapsed back automatically.
+Allowed only while no scoped document has taken an independent regional write.
+The check is two-phase: every document is verified pristine BEFORE anything is
+deleted, so a refused rollback never leaves partially-removed state. When all
+documents are pristine, the scoped documents are removed and the exact
+pre-split aggregate is restored. After independent regional writes exist,
+states are never collapsed back automatically.
 
-### Old-CLI compatibility limits
+### Old-CLI compatibility
 
-Old CLIs ignore the `managedBy: regional` marker (unknown field) and would
-still write the legacy aggregate, and they lock a different lock file than the
-scoped layout. The barrier protects **this and later CLI versions** only;
-document this minimum-version boundary to every operator who shares a
-deployment between CLI generations.
+The post-split tombstone is versioned `4.0` precisely so old CLIs refuse it:
+they reject any state version above their known `3.0` before reading further,
+so a pre-upgrade CLI fails closed on deploy/destroy instead of treating the
+deployment as fresh. Note two residual gaps that cannot be fixed client-side
+and must be covered by operating discipline: old CLIs use their own lock file
+(not the scoped one), so lock exclusion across CLI generations does not apply,
+and an operator could still hand-edit the tombstone away. Verify the barrier
+against the actual minimum supported CLI version before sharing a deployment
+across versions.
 
 ## Post-migration verification
 
