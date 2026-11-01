@@ -297,14 +297,17 @@ describe('regionalMigration (issue #280 §6)', () => {
       const paths = makePaths();
       const plan = planRegionalMigration(legacy, paths, baseOptions);
       const report = await applyRegionalMigration(io, legacy, paths, plan, baseOptions);
-      return { io, store, paths, plan, report };
+      // The exact fixture instance — the rollback assertion must compare
+      // against the SAME object (timestamps make two makeLegacy() calls
+      // unequal when they straddle a millisecond).
+      return { io, store, paths, plan, report, legacy };
     };
 
     it('restores the aggregate and removes pristine scoped documents', async () => {
-      const { io, store, paths, plan } = await applyFirst();
+      const { io, store, paths, plan, legacy } = await applyFirst();
       await rollbackRegionalMigration(io, paths, plan.opId);
 
-      expect(store.get('legacy/state.json')).toEqual(makeLegacy());
+      expect(store.get('legacy/state.json')).toEqual(legacy);
       expect(store.has('scoped/prod/cn-hangzhou/state.json')).toBe(false);
       expect(store.has('scoped/prod/ap-southeast-1/state.json')).toBe(false);
       expect(store.has(paths.reportKey(plan.opId))).toBe(false);

@@ -1,3 +1,4 @@
+import path from 'node:path';
 import {
   validateScopeKeyPart,
   canonicalizeRegion,
@@ -74,8 +75,18 @@ describe('stateScope (issue #280 contracts)', () => {
 
   describe('buildScopedStatePath', () => {
     it('produces the documented local layout', () => {
+      // path.join keeps the layout platform-correct (Windows separators).
       expect(buildScopedStatePath('app', 'svc', 'prod', 'cn-hangzhou', '/base')).toBe(
-        '/base/.serverlessinsight/states/app/svc/prod/cn-hangzhou/state.json',
+        path.join(
+          '/base',
+          '.serverlessinsight',
+          'states',
+          'app',
+          'svc',
+          'prod',
+          'cn-hangzhou',
+          'state.json',
+        ),
       );
     });
 
