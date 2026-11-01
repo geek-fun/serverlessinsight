@@ -6,6 +6,7 @@ import { ConditionalPutUnsupportedError } from '../../../../src/common/stateBack
 
 const mockCosClient = {
   getObject: jest.fn(),
+  getBucketVersioning: jest.fn(),
   putObject: jest.fn(),
   deleteObject: jest.fn(),
 };
@@ -25,6 +26,9 @@ jest.mock('../../../../src/common/stateBackend/remoteStateBackend', () => {
 describe('cosStateBackend (scope-bound, issue #280)', () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    mockCosClient.getBucketVersioning.mockImplementation((_params, callback) =>
+      callback(null, { VersioningConfiguration: {} }),
+    );
   });
 
   const scope = {
@@ -179,7 +183,29 @@ describe('cosStateBackend (scope-bound, issue #280)', () => {
   });
 
   describe('adapter.putIfAbsent', () => {
-    it('creates exclusively via If-None-Match and returns true', async () => {
+    it.each(['Enabled', 'Suspended'])(
+      'refuses atomic creation when bucket versioning is %s',
+      async (Status) => {
+        mockCosClient.getBucketVersioning.mockImplementation((_params, callback) =>
+          callback(null, { VersioningConfiguration: { Status } }),
+        );
+        const { adapter } = captureWiring();
+        await expect(adapter.putIfAbsent!(SCOPED_KEY, {})).rejects.toThrow(
+          ConditionalPutUnsupportedError,
+        );
+        expect(mockCosClient.putObject).not.toHaveBeenCalled();
+      },
+    );
+    it('propagates failure to inspect bucket versioning without writing', async () => {
+      mockCosClient.getBucketVersioning.mockImplementation((_params, callback) =>
+        callback(new Error('access denied')),
+      );
+      const { adapter } = captureWiring();
+      await expect(adapter.putIfAbsent!(SCOPED_KEY, {})).rejects.toThrow('access denied');
+      expect(mockCosClient.putObject).not.toHaveBeenCalled();
+    });
+
+    it('creates exclusively via the COS forbid-overwrite header and returns true', async () => {
       mockCosClient.putObject.mockImplementation(
         (_params: unknown, callback: (err: unknown) => void) => {
           callback(null);
@@ -191,7 +217,7 @@ describe('cosStateBackend (scope-bound, issue #280)', () => {
       expect(mockCosClient.putObject).toHaveBeenCalledWith(
         expect.objectContaining({
           Key: SCOPED_KEY,
-          Headers: { 'If-None-Match': '*' },
+          Headers: { 'x-cos-forbid-overwrite': 'true' },
         }),
         expect.any(Function),
       );

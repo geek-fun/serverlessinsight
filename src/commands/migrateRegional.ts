@@ -1,5 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
+import { createLocalStateIO } from '../common';
 import { PersistedStateFile } from '../types';
 import { readLegacyPersistedState, getStatePath } from '../common/stateManager';
 import { MANAGED_BY_REGIONAL } from '../common/migrationMarker';
@@ -14,6 +15,7 @@ import {
   planRegionalMigration,
   rollbackRegionalMigration,
   withIoLock,
+  readRegionalMigrationJournal,
   RegionalMigrationOptions,
   RegionalMigrationPaths,
   KeyValueIO,
@@ -63,37 +65,6 @@ export type RegionalMigrationCommandOptions = {
 };
 
 /* ---------------- storage IO adapters ---------------- */
-
-const createLocalKeyValueIO = (): KeyValueIO => ({
-  read: async <T>(filePath: string): Promise<T | null> => {
-    if (!fs.existsSync(filePath)) {
-      return null;
-    }
-    return JSON.parse(fs.readFileSync(filePath, 'utf-8')) as T;
-  },
-  write: async (filePath: string, data: unknown): Promise<void> => {
-    const dir = path.dirname(filePath);
-    if (!fs.existsSync(dir)) {
-      fs.mkdirSync(dir, { recursive: true });
-    }
-    const tmpPath = `${filePath}.tmp`;
-    const fd = fs.openSync(tmpPath, 'w');
-    try {
-      fs.writeFileSync(fd, JSON.stringify(data, null, 2), 'utf-8');
-      fs.fsyncSync(fd);
-    } finally {
-      fs.closeSync(fd);
-    }
-    fs.renameSync(tmpPath, filePath);
-  },
-  delete: async (filePath: string): Promise<void> => {
-    try {
-      fs.rmSync(filePath);
-    } catch {
-      // already gone
-    }
-  },
-});
 
 const createBucketKeyValueIO = (
   storageProvider: string,
@@ -211,7 +182,7 @@ export const runRegionalMigration = async (
 
   const io =
     options.backendType === 'LOCAL'
-      ? createLocalKeyValueIO()
+      ? createLocalStateIO()
       : createBucketKeyValueIO(
           options.bucketConfig!.storageProvider ?? options.provider,
           options.bucketConfig!,
@@ -243,8 +214,14 @@ export const runRegionalMigration = async (
     'migrate-regional',
     async () => {
       // ① read the legacy aggregate (LOCAL: legacy path; BUCKET: discovery key)
+      const pending = await readRegionalMigrationJournal(io, paths);
+      if (pending?.phase === 'rolling-back') {
+        throw new Error(lang.__('REGIONAL_MIGRATION_PENDING', { opId: pending.plan.opId }));
+      }
       let legacy: PersistedStateFile | null;
-      if (options.backendType === 'LOCAL') {
+      if (pending?.phase === 'applying') {
+        legacy = await io.read<PersistedStateFile>(paths.backupKey(pending.plan.opId));
+      } else if (options.backendType === 'LOCAL') {
         // STRICT read (issue #280): corrupt → StateCorruptError, future
         // version → StateVersionError. The only null-with-file case is the
         // post-split tombstone — surface the already-split guidance.
@@ -277,7 +254,10 @@ export const runRegionalMigration = async (
       };
 
       // ② classify + plan (dry-run)
-      const plan = planRegionalMigration(legacy, paths, migrationOptions);
+      const plan =
+        pending?.phase === 'applying'
+          ? pending.plan
+          : planRegionalMigration(legacy, paths, migrationOptions);
       printPlanReport(plan, legacyKey);
 
       if (options.dryRun) {

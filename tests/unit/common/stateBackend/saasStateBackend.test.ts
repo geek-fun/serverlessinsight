@@ -561,7 +561,7 @@ describe('saasStateBackend (scope-bound, issue #280)', () => {
 
     it('should POST state/sync with the regional scope payload', async () => {
       mockMutatingLoad();
-      mockApiClient.post.mockResolvedValueOnce({});
+      mockApiClient.post.mockResolvedValueOnce({ serial: 6, lineage: 'lineage-1' });
 
       const backend = createBackend();
       await backend.loadState();
@@ -587,7 +587,7 @@ describe('saasStateBackend (scope-bound, issue #280)', () => {
 
     it('projects the runtime resources into the synced stage document', async () => {
       mockMutatingLoad();
-      mockApiClient.post.mockResolvedValueOnce({});
+      mockApiClient.post.mockResolvedValueOnce({ serial: 6, lineage: 'lineage-1' });
 
       const backend = createBackend();
       await backend.loadState();
@@ -640,7 +640,9 @@ describe('saasStateBackend (scope-bound, issue #280)', () => {
 
       it('derives baseSerial from the loaded state serial and advances it across saves', async () => {
         mockMutatingLoad({ ...emptyStateJson(), serial: 7 });
-        mockApiClient.post.mockResolvedValue({});
+        mockApiClient.post
+          .mockResolvedValueOnce({ serial: 8, lineage: 'lineage-1' })
+          .mockResolvedValueOnce({ serial: 9, lineage: 'lineage-1' });
         const backend = createBackend();
         await backend.loadState();
 
@@ -669,22 +671,64 @@ describe('saasStateBackend (scope-bound, issue #280)', () => {
         expect(payloads[0].idempotencyKey).not.toBe(payloads[1].idempotencyKey);
       });
 
-      it('gives identical content the same idempotencyKey while baseSerial still advances', async () => {
-        mockMutatingLoad({ ...emptyStateJson(), serial: 3 });
-        mockApiClient.post.mockResolvedValue({});
+      it('uses the returned revision when the server deduplicates an identical save', async () => {
+        mockMutatingLoad({ ...emptyStateJson(), serial: 3, lineage: 'lineage-1' });
+        mockApiClient.post
+          .mockResolvedValueOnce({ serial: 4, lineage: 'lineage-1' })
+          .mockResolvedValueOnce({ serial: 4, lineage: 'lineage-1' })
+          .mockResolvedValueOnce({ serial: 5, lineage: 'lineage-1' });
         const backend = createBackend();
         await backend.loadState();
-
         await backend.saveState(savedState);
         await backend.saveState(savedState);
-
+        await backend.saveState({ ...savedState, resources: {} });
         const payloads = syncPayloads();
-        expect(payloads).toHaveLength(2);
-        // Retries of the SAME document (same lineage + content) dedupe...
-        expect(payloads[1].idempotencyKey).toBe(payloads[0].idempotencyKey);
-        // ...but each confirmed save still advances the optimistic base.
-        expect(payloads[0].baseSerial).toBe(3);
-        expect(payloads[1].baseSerial).toBe(4);
+        expect(payloads.map((payload) => payload.baseSerial)).toEqual([3, 4, 4]);
+        expect(payloads[1].idempotencyKey).not.toBe(payloads[0].idempotencyKey);
+        expect(payloads[2].idempotencyKey).not.toBe(payloads[1].idempotencyKey);
+      });
+      it('retries a lost response with the same key and continues from the actual deduplicated revision', async () => {
+        mockMutatingLoad({ ...emptyStateJson(), serial: 5, lineage: 'lineage-1' });
+        const backend = createBackend();
+        await backend.loadState();
+        let revision = 5;
+        let lost = true;
+        const acknowledgments = new Map<string, { serial: number; lineage: string }>();
+        mockApiClient.post.mockImplementation(async (_url, body) => {
+          if (acknowledgments.has(body.idempotencyKey))
+            return acknowledgments.get(body.idempotencyKey);
+          if (body.baseSerial !== revision) throw new Error('stale revision');
+          revision += 1;
+          const ack = { serial: revision, lineage: 'lineage-1' };
+          acknowledgments.set(body.idempotencyKey, ack);
+          if (lost) {
+            lost = false;
+            throw new Error('lost response');
+          }
+          return ack;
+        });
+        await expect(backend.saveState(savedState)).rejects.toThrow('lost response');
+        await backend.saveState(savedState);
+        await backend.saveState({ ...savedState, resources: {} });
+        const calls = syncPayloads();
+        expect(calls.map((call) => call.baseSerial)).toEqual([5, 5, 6]);
+        expect(calls[0].idempotencyKey).toBe(calls[1].idempotencyKey);
+        expect(revision).toBe(7);
+      });
+
+      it('requires valid server acknowledgments and learns the assigned lineage of a new deployment', async () => {
+        mockMutatingLoad();
+        const backend = createBackend();
+        await backend.loadState();
+        const state = { ...savedState, serial: undefined, lineage: undefined };
+        mockApiClient.post.mockResolvedValueOnce({});
+        await expect(backend.saveState(state)).rejects.toThrow('SAAS_STATE_ACK_INVALID');
+        mockApiClient.post
+          .mockResolvedValueOnce({ stateJson: { serial: 1, lineage: 'assigned' } })
+          .mockResolvedValueOnce({ serial: 2, lineage: 'assigned' });
+        await backend.saveState(state);
+        await backend.saveState({ ...state, resources: {} });
+        expect(syncPayloads().at(-1)).toMatchObject({ baseSerial: 1, baseLineage: 'assigned' });
       });
     });
   });

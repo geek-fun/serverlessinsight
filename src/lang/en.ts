@@ -1180,6 +1180,12 @@ export const en = {
     'Refusing to overwrite the regional state of stage {{stage}} / region {{region}}: it already exists (source: {{opId}}). Re-running this migration would reset its independent lineage/serial and drop resources created after the split. If this document belongs to a previous migration, resolve that run first; otherwise delete it explicitly only if you are certain it is disposable',
   REGIONAL_MIGRATION_INCOMPLETE_STAGE_COVERAGE:
     'The regional split would leave stage(s) {{stages}} stranded: the legacy entry is hidden entirely after the split, so every stage holding resources must be split in the same run. Re-run `si migrate --to-regional` WITHOUT --stage (and --bind-unknown-region if needed) to cover them',
+  STATE_ATOMIC_CREATE_REQUIRED:
+    'This state store cannot atomically reserve ownership or acquire a lock. Mutations are refused.',
+  REGIONAL_MIGRATION_PENDING:
+    'Migration {{opId}} is incomplete. Re-run the original command to resume, or use --rollback-op-id {{opId}} to finish rollback. Keep the original app, service, provider and binding options.',
+  SAAS_STATE_ACK_INVALID:
+    'The state server did not confirm a valid serial and lineage. Refusing to guess the next state revision; upgrade the server to the regional state protocol.',
   STATE_PROVIDER_BINDING_MISMATCH:
     'Provider mismatch for this service: the stored provider binding records "{{stored}}" but this command resolved provider "{{requested}}". One service has exactly one provider across ALL its stages and regions; check -v/--provider and the YAML provider block',
   REGIONAL_MIGRATION_PROVIDER_MISMATCH:

@@ -22,6 +22,8 @@ import {
 } from './stateBackend/lockUtils';
 import { DEFAULT_LOCK_TIMEOUT, DEFAULT_LOCK_RETRY_DELAY } from './constants';
 import { lang } from '../lang';
+import { claimProviderBinding } from './providerBinding';
+import { ConditionalPutUnsupportedError } from './stateBackend/types';
 
 /**
  * Protected V3 → V4 regional split (issue #280 §6).
@@ -37,7 +39,7 @@ export type KeyValueIO = {
   read: <T>(key: string) => Promise<T | null>;
   write: (key: string, data: unknown) => Promise<void>;
   delete: (key: string) => Promise<void>;
-  /** Atomic exclusive create when the storage supports it (verified fallback otherwise). */
+  /** Atomic exclusive create. Mutations refuse stores that lack this operation. */
   putIfAbsent?: (key: string, data: unknown) => Promise<boolean>;
 };
 
@@ -68,9 +70,7 @@ export type ProviderBinding = {
 /**
  * Exclusive lock over an arbitrary IO key. Used for the legacy aggregate AND
  * each migration target so a concurrent deploy on one scope cannot interleave
- * with the split. Uses verified conditional create when the storage provides
- * it; falls back to write-then-verify otherwise (capability is declared by the
- * backend, never assumed).
+ * with the split. Requires verified conditional creation; read/write/verify is not mutual exclusion.
  */
 export const withIoLock = async <T>(
   io: KeyValueIO,
@@ -90,9 +90,16 @@ export const withIoLock = async <T>(
   for (;;) {
     const existing = await io.read<LockMetadata>(lockKey);
     if (!existing) {
-      const created = io.putIfAbsent
-        ? await io.putIfAbsent(lockKey, metadata)
-        : await io.write(lockKey, metadata).then(() => true);
+      if (!io.putIfAbsent) throw new Error(lang.__('STATE_ATOMIC_CREATE_REQUIRED'));
+      let created: boolean;
+      try {
+        created = await io.putIfAbsent(lockKey, metadata);
+      } catch (error) {
+        if (error instanceof ConditionalPutUnsupportedError) {
+          throw new Error(lang.__('STATE_ATOMIC_CREATE_REQUIRED'), { cause: error });
+        }
+        throw error;
+      }
       if (created) {
         try {
           return await fn();
@@ -358,257 +365,262 @@ export const buildScopedDocument = (
   };
 };
 
-/**
- * Apply the reviewed split: protect → back up → write scoped documents →
- * barrier the legacy entry → write the report. Every artifact is named by the
- * migration opId so a partial run is auditable and recoverable.
- */
-export const applyRegionalMigration = async (
-  io: KeyValueIO,
-  legacy: PersistedStateFile,
-  paths: RegionalMigrationPaths,
-  plan: RegionalMigrationPlan,
-  options: RegionalMigrationOptions & { app: string; service: string; provider: string },
-): Promise<RegionalMigrationReport> => {
-  if (plan.unknown.length > 0 && !options.bindUnknownRegion) {
-    throw new Error(lang.__('REGIONAL_MIGRATION_UNKNOWN_REGION_REQUIRED'));
-  }
-  const bindRegion = options.bindUnknownRegion
-    ? canonicalizeRegion(options.bindUnknownRegion)
-    : undefined;
-
-  // ⓪ Stage-coverage guard: the barrier is document-global (the tombstone
-  // hides the whole legacy aggregate from this CLI), so a split that leaves
-  // any stage with resources uncovered would strand it. Refuse instead.
-  const stagesWithResources = Object.entries(legacy.stages ?? {})
-    .filter(
-      ([, stageState]) =>
-        Object.keys(stageState?.resources ?? {}).length > 0 ||
-        Object.keys(stageState?.shared ?? {}).length > 0,
-    )
-    .map(([stage]) => stage);
-  const coveredStages = new Set<string>([
-    ...plan.documents.map((d) => d.stage),
-    ...(bindRegion ? plan.unknown.map((u) => u.stage) : []),
-  ]);
-  const uncoveredStages = stagesWithResources.filter((stage) => !coveredStages.has(stage));
-  if (uncoveredStages.length > 0) {
-    throw new Error(
-      lang.__('REGIONAL_MIGRATION_INCOMPLETE_STAGE_COVERAGE', {
-        stages: uncoveredStages.join(', '),
-      }),
-    );
-  }
-
-  // ⓪b Service provider binding: refuse a conflicting binding before anything
-  // is written, then record the source provider for future scopes (issue #280
-  // §1 — one Service has one provider across all regions).
-  const binding = await readProviderBinding(io, paths);
-  const sourceProvider = legacy.provider || options.provider;
-  if (binding && binding.provider !== sourceProvider) {
-    throw new Error(
-      lang.__('STATE_PROVIDER_BINDING_MISMATCH', {
-        stored: binding.provider,
-        requested: sourceProvider,
-      }),
-    );
-  }
-
-  // ① Protect: exact source backup first — nothing is written before the
-  // original document is recoverable byte-for-byte (canonical serialization).
-  const backup = await io.read<PersistedStateFile>(paths.legacyKey);
-  if (!backup) {
-    throw new Error(lang.__('REGIONAL_MIGRATION_SOURCE_MISSING'));
-  }
-  if (hashDocument(backup) !== plan.sourceHash) {
-    throw new Error(lang.__('REGIONAL_MIGRATION_SOURCE_CHANGED'));
-  }
-  await io.write(paths.backupKey(plan.opId), backup);
-
-  // ② Verify ALL targets BEFORE writing anything (review finding: a refusal
-  // must never leave partially-mutated targets). A target that already holds a
-  // document from a DIFFERENT migration (or independent regional writes) is
-  // refused — the split never overwrites authoritative state. A target from
-  // THIS opId is a resume of the same operation and is rewritten in place.
-  const docTargets = [...plan.documents];
-  if (bindRegion) {
-    for (const item of plan.unknown) {
-      if (!docTargets.some((d) => d.stage === item.stage && d.region === bindRegion)) {
-        docTargets.push({ stage: item.stage, region: bindRegion, resources: 0, shared: 0 });
-      }
-    }
-  }
-  for (const target of docTargets) {
-    const existing = await io.read<PersistedStateFile>(
-      paths.scopedPrefixBuilder(target.stage, target.region),
-    );
-    if (existing && existing.migration?.opId !== plan.opId) {
-      throw new Error(
-        lang.__('REGIONAL_MIGRATION_TARGET_EXISTS', {
-          stage: target.stage,
-          region: target.region,
-          opId: existing.migration?.opId ?? 'independent',
-        }),
-      );
-    }
-  }
-
-  // ③ Write the scoped documents, each under its own scope lock so a
-  // concurrent deploy on that Stage/Region cannot interleave with the split.
-  // Unknown-region resources land ONLY in the explicitly bound region — never
-  // duplicated across sibling regions of the same stage.
-  const written: Array<{ stage: string; region: string; doc: StateFile }> = [];
-  try {
-    for (const doc of docTargets) {
-      const targetKey = paths.scopedPrefixBuilder(doc.stage, doc.region);
-      const existing = await io.read<PersistedStateFile>(targetKey);
-      await withIoLock(
-        io,
-        `${targetKey}${LOCK_KEY_SUFFIX}`,
-        targetKey,
-        'migrate-regional-target',
-        async () => {
-          const scoped = buildScopedDocument(
-            legacy,
-            { sourceVersion: plan.sourceVersion, sourceHash: plan.sourceHash, opId: plan.opId },
-            { stage: doc.stage, region: doc.region },
-            { provider: options.provider, app: options.app, service: options.service },
-          );
-          if (bindRegion && doc.region === bindRegion) {
-            const stageState = legacy.stages?.[doc.stage];
-            for (const item of plan.unknown.filter((u) => u.stage === doc.stage)) {
-              const source = item.kind === 'shared' ? stageState?.shared : stageState?.resources;
-              const resource = source?.[item.logicalId];
-              if (resource) {
-                const withRegion: ResourceState = { ...resource, region: bindRegion };
-                if (item.kind === 'shared') {
-                  scoped.stages[doc.stage].shared = {
-                    ...scoped.stages[doc.stage].shared,
-                    [item.logicalId]: withRegion,
-                  };
-                } else {
-                  scoped.stages[doc.stage].resources[item.logicalId] = withRegion;
-                  scoped.resources[item.logicalId] = withRegion;
-                }
-              }
-            }
-          }
-          // Resume of this same operation: keep the existing lineage/serial
-          // instead of resetting them.
-          if (existing && existing.migration?.opId === plan.opId) {
-            scoped.lineage = existing.lineage;
-            scoped.serial = existing.serial;
-          }
-          await io.write(targetKey, stripRuntimeProjection(scoped));
-          written.push({ stage: doc.stage, region: doc.region, doc: scoped });
-        },
-      );
-    }
-
-    // ④ Record the service provider binding for future scopes.
-    if (!binding) {
-      await io.write(paths.serviceBindingKey, {
-        provider: sourceProvider,
-        recordedAt: new Date().toISOString(),
-      } satisfies ProviderBinding);
-    }
-
-    // ⑤ Barrier as a V4 TOMBSTONE: the legacy entry keeps its content (for
-    // forensics) but is versioned 4.0 — old CLIs refuse it with a version
-    // error BEFORE any mutation, and this CLI treats it as an absent source
-    // (the scoped documents are authoritative; new regions start fresh).
-    const tombstone: Record<string, unknown> = {
-      ...legacy,
-      version: CURRENT_STATE_VERSION,
-      managedBy: MANAGED_BY_REGIONAL,
-      migration: {
-        opId: plan.opId,
-        sourceVersion: plan.sourceVersion,
-        sourceHash: plan.sourceHash,
-        migratedAt: new Date().toISOString(),
-      } satisfies StateMigrationInfo,
-    };
-    await io.write(paths.legacyKey, tombstone);
-
-    // ⑥ The report carries the ACTUAL written set (including binding-generated
-    // documents) so rollback validates and removes everything it created.
-    const report: RegionalMigrationReport = {
-      ...plan,
-      documents: docTargets,
-      migratedAt: new Date().toISOString(),
-      barrierWritten: true,
-    };
-    await io.write(paths.reportKey(plan.opId), report);
-    logger.info(lang.__('REGIONAL_MIGRATION_APPLIED', { opId: plan.opId }));
-    return report;
-  } catch (error) {
-    // Partial multi-object update: scoped documents already written stay (they
-    // are individually valid); the legacy entry is untouched, so no state was
-    // lost and the run can be repeated safely after fixing the cause.
-    logger.error(
-      lang.__('REGIONAL_MIGRATION_PARTIAL_FAILURE', {
-        opId: plan.opId,
-        error: error instanceof Error ? error.message : String(error),
-      }),
-    );
-    throw error;
-  }
+export type RegionalMigrationJournal = {
+  plan: RegionalMigrationPlan;
+  options: RegionalMigrationOptions;
+  targets: Array<{ stage: string; region: string; state: PersistedStateFile }>;
+  phase: 'applying' | 'complete' | 'rolling-back';
 };
 
-/** Runtime `resources` projection is never persisted. */
+const journalKey = (paths: RegionalMigrationPaths): string =>
+  `${paths.legacyKey}.regional-migration.json`;
+
+export const readRegionalMigrationJournal = (
+  io: KeyValueIO,
+  paths: RegionalMigrationPaths,
+): Promise<RegionalMigrationJournal | null> => io.read(journalKey(paths));
+
+const withTargetLocks = <T>(
+  io: KeyValueIO,
+  paths: RegionalMigrationPaths,
+  targets: Array<{ stage: string; region: string }>,
+  operation: string,
+  fn: () => Promise<T>,
+): Promise<T> =>
+  [...new Set(targets.map((target) => paths.scopedPrefixBuilder(target.stage, target.region)))]
+    .sort()
+    .reduceRight<() => Promise<T>>(
+      (next, key) => () => withIoLock(io, `${key}${LOCK_KEY_SUFFIX}`, key, operation, next),
+      fn,
+    )();
+
 const stripRuntimeProjection = (state: StateFile): PersistedStateFile => {
   const { resources: _projection, ...persisted } = state;
   return persisted;
 };
 
-/**
- * Backup-based reversal — allowed ONLY while no independent regional write has
- * happened on any split document (every scoped doc must still be the migration's
- * serial-1 creation). After independent regional writes exist, states are never
- * collapsed back into the old aggregate automatically.
- */
+const buildMigrationTargets = (
+  legacy: PersistedStateFile,
+  plan: RegionalMigrationPlan,
+  options: RegionalMigrationOptions,
+): RegionalMigrationJournal['targets'] => {
+  const bound = options.bindUnknownRegion
+    ? canonicalizeRegion(options.bindUnknownRegion)
+    : undefined;
+  const scopes = [...plan.documents];
+  plan.unknown.forEach((item) => {
+    if (bound && !scopes.some((scope) => scope.stage === item.stage && scope.region === bound)) {
+      scopes.push({ stage: item.stage, region: bound, resources: 0, shared: 0 });
+    }
+  });
+  return scopes.map(({ stage, region }) => {
+    const state = buildScopedDocument(
+      legacy,
+      plan,
+      { stage, region },
+      {
+        provider: legacy.provider || options.provider,
+        app: options.app,
+        service: options.service,
+      },
+    );
+    if (bound === region) {
+      plan.unknown
+        .filter((item) => item.stage === stage)
+        .forEach((item) => {
+          const store = item.kind === 'shared' ? 'shared' : 'resources';
+          const resource = legacy.stages[stage]?.[store]?.[item.logicalId];
+          if (resource) {
+            state.stages[stage][store] = {
+              ...state.stages[stage][store],
+              [item.logicalId]: { ...resource, region },
+            };
+          }
+        });
+    }
+    return { stage, region, state: stripRuntimeProjection(state) };
+  });
+};
+
+const assertMigrationSource = (
+  source: PersistedStateFile | null,
+  plan: RegionalMigrationPlan,
+): void => {
+  if (!source) throw new Error(lang.__('REGIONAL_MIGRATION_SOURCE_MISSING'));
+  const ownTombstone =
+    source.managedBy === MANAGED_BY_REGIONAL &&
+    source.migration?.opId === plan.opId &&
+    source.migration.sourceHash === plan.sourceHash;
+  if (!ownTombstone && hashDocument(source) !== plan.sourceHash) {
+    throw new Error(lang.__('REGIONAL_MIGRATION_SOURCE_CHANGED'));
+  }
+};
+
+/** Caller holds the legacy lock; all target locks remain held through cutover. */
+export const applyRegionalMigration = async (
+  io: KeyValueIO,
+  legacy: PersistedStateFile,
+  paths: RegionalMigrationPaths,
+  plan: RegionalMigrationPlan,
+  options: RegionalMigrationOptions,
+): Promise<RegionalMigrationReport> => {
+  if (plan.unknown.length > 0 && !options.bindUnknownRegion) {
+    throw new Error(lang.__('REGIONAL_MIGRATION_UNKNOWN_REGION_REQUIRED'));
+  }
+  const binding = await readProviderBinding(io, paths);
+  if (binding && binding.provider !== (legacy.provider || options.provider)) {
+    throw new Error(
+      lang.__('STATE_PROVIDER_BINDING_MISMATCH', {
+        stored: binding.provider,
+        requested: legacy.provider || options.provider,
+      }),
+    );
+  }
+  const previous = await readRegionalMigrationJournal(io, paths);
+  if (
+    previous &&
+    (previous.plan.opId !== plan.opId ||
+      !(['provider', 'app', 'service', 'stage', 'bindUnknownRegion'] as const).every(
+        (key) => previous.options[key] === options[key],
+      ) ||
+      previous.phase === 'rolling-back')
+  ) {
+    throw new Error(lang.__('REGIONAL_MIGRATION_PENDING', { opId: previous.plan.opId }));
+  }
+  const journal: RegionalMigrationJournal = previous ?? {
+    plan,
+    options,
+    targets: buildMigrationTargets(legacy, plan, options),
+    phase: 'applying',
+  };
+  const uncovered = Object.entries(legacy.stages).filter(
+    ([stage, value]) =>
+      (Object.keys(value.resources ?? {}).length || Object.keys(value.shared ?? {}).length) &&
+      !journal.targets.some((target) => target.stage === stage),
+  );
+  if (uncovered.length) {
+    throw new Error(
+      lang.__('REGIONAL_MIGRATION_INCOMPLETE_STAGE_COVERAGE', {
+        stages: uncovered.map(([stage]) => stage).join(', '),
+      }),
+    );
+  }
+  return withTargetLocks(io, paths, journal.targets, 'migrate-regional-target', async () => {
+    assertMigrationSource(await io.read<PersistedStateFile>(paths.legacyKey), plan);
+    if (journal.phase !== 'complete') {
+      await Promise.all(
+        journal.targets.map(async (target) => {
+          const existing = await io.read<PersistedStateFile>(
+            paths.scopedPrefixBuilder(target.stage, target.region),
+          );
+          if (existing && (!previous || hashDocument(existing) !== hashDocument(target.state))) {
+            throw new Error(
+              lang.__('REGIONAL_MIGRATION_TARGET_EXISTS', {
+                stage: target.stage,
+                region: target.region,
+                opId: existing.migration?.opId ?? 'independent',
+              }),
+            );
+          }
+        }),
+      );
+    }
+    const backup = await io.read<PersistedStateFile>(paths.backupKey(plan.opId));
+    if (backup && hashDocument(backup) !== plan.sourceHash) {
+      throw new Error(lang.__('REGIONAL_MIGRATION_SOURCE_CHANGED'));
+    }
+    if (!backup) await io.write(paths.backupKey(plan.opId), legacy);
+    if (!previous) await io.write(journalKey(paths), journal);
+    try {
+      await claimProviderBinding(io, paths.serviceBindingKey, legacy.provider || options.provider);
+      if (journal.phase !== 'complete') {
+        for (const target of journal.targets) {
+          const key = paths.scopedPrefixBuilder(target.stage, target.region);
+          if (!(await io.read(key))) await io.write(key, target.state);
+        }
+        await io.write(paths.legacyKey, {
+          ...legacy,
+          version: CURRENT_STATE_VERSION,
+          managedBy: MANAGED_BY_REGIONAL,
+          migration: journal.targets[0]?.state.migration ?? {
+            opId: plan.opId,
+            sourceVersion: plan.sourceVersion,
+            sourceHash: plan.sourceHash,
+            migratedAt: new Date().toISOString(),
+          },
+        });
+      }
+      const report: RegionalMigrationReport = {
+        ...plan,
+        documents: journal.targets.map(({ stage, region, state }) => ({
+          stage,
+          region,
+          resources: Object.keys(state.stages[stage].resources).length,
+          shared: Object.keys(state.stages[stage].shared ?? {}).length,
+        })),
+        migratedAt: new Date().toISOString(),
+        barrierWritten: true,
+      };
+      await io.write(paths.reportKey(plan.opId), report);
+      await io.write(journalKey(paths), { ...journal, phase: 'complete' });
+      logger.info(lang.__('REGIONAL_MIGRATION_APPLIED', { opId: plan.opId }));
+      return report;
+    } catch (error) {
+      logger.error(
+        lang.__('REGIONAL_MIGRATION_PARTIAL_FAILURE', {
+          opId: plan.opId,
+          error: error instanceof Error ? error.message : String(error),
+        }),
+      );
+      throw error;
+    }
+  });
+};
+
 export const rollbackRegionalMigration = async (
   io: KeyValueIO,
   paths: RegionalMigrationPaths,
   opId: string,
 ): Promise<void> => {
+  const journal = await readRegionalMigrationJournal(io, paths);
   const report = await io.read<RegionalMigrationReport>(paths.reportKey(opId));
-  if (!report) {
+  const ownJournal = journal?.plan.opId === opId ? journal : null;
+  if (!report && !ownJournal)
     throw new Error(lang.__('REGIONAL_MIGRATION_REPORT_MISSING', { opId }));
-  }
+  const plan = report ?? ownJournal!.plan;
   const backup = await io.read<PersistedStateFile>(paths.backupKey(opId));
-  if (!backup) {
-    throw new Error(lang.__('REGIONAL_MIGRATION_BACKUP_MISSING', { opId }));
-  }
-
-  // Phase 1 — verify EVERY scoped document is still the migration's serial-1
-  // creation BEFORE mutating anything (review finding: a refusal must never
-  // leave already-deleted documents behind).
-  for (const doc of report.documents) {
-    const current = await io.read<PersistedStateFile>(
-      paths.scopedPrefixBuilder(doc.stage, doc.region),
+  if (!backup) throw new Error(lang.__('REGIONAL_MIGRATION_BACKUP_MISSING', { opId }));
+  const targets = ownJournal?.targets ?? plan.documents;
+  await withTargetLocks(io, paths, targets, 'migrate-regional-rollback-target', async () => {
+    assertMigrationSource(await io.read<PersistedStateFile>(paths.legacyKey), plan);
+    if (hashDocument(backup) !== plan.sourceHash)
+      throw new Error(lang.__('REGIONAL_MIGRATION_SOURCE_CHANGED'));
+    await Promise.all(
+      targets.map(async (target) => {
+        const current = await io.read<PersistedStateFile>(
+          paths.scopedPrefixBuilder(target.stage, target.region),
+        );
+        if (!current) return;
+        const pristine =
+          current.migration?.opId === opId &&
+          current.serial === 1 &&
+          (!('state' in target) || hashDocument(current) === hashDocument(target.state));
+        if (!pristine)
+          throw new Error(
+            lang.__('REGIONAL_MIGRATION_ROLLBACK_BLOCKED', {
+              stage: target.stage,
+              region: target.region,
+            }),
+          );
+      }),
     );
-    if (!current) {
-      continue;
-    }
-    const stillPristine = current.migration?.opId === opId && (current.serial ?? 1) === 1;
-    if (!stillPristine) {
-      throw new Error(
-        lang.__('REGIONAL_MIGRATION_ROLLBACK_BLOCKED', {
-          stage: doc.stage,
-          region: doc.region,
-        }),
-      );
-    }
-  }
-
-  // Phase 2 — verified reversible: remove the scoped documents, restore the
-  // exact original document (without the tombstone), and clean the artifacts.
-  for (const doc of report.documents) {
-    await io.delete(paths.scopedPrefixBuilder(doc.stage, doc.region));
-  }
-  await io.write(paths.legacyKey, backup);
-  await io.delete(paths.reportKey(opId));
-  await io.delete(paths.backupKey(opId));
-  logger.info(lang.__('REGIONAL_MIGRATION_ROLLED_BACK', { opId }));
+    if (ownJournal) await io.write(journalKey(paths), { ...ownJournal, phase: 'rolling-back' });
+    for (const target of targets)
+      await io.delete(paths.scopedPrefixBuilder(target.stage, target.region));
+    await io.write(paths.legacyKey, backup);
+    await io.delete(paths.reportKey(opId));
+    if (ownJournal) await io.delete(journalKey(paths));
+    await io.delete(paths.backupKey(opId));
+    logger.info(lang.__('REGIONAL_MIGRATION_ROLLED_BACK', { opId }));
+  });
 };

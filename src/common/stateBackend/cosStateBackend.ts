@@ -76,7 +76,7 @@ const promisifyPutIfAbsent = (
         Region: region,
         Key: key,
         Body: body,
-        Headers: { 'If-None-Match': '*' },
+        Headers: { 'x-cos-forbid-overwrite': 'true' },
       },
       (err) => {
         if (err) {
@@ -163,13 +163,20 @@ export const createCosStorageAdapter = (config: CosStorageConfig): StorageAdapte
       );
     },
 
-    /**
-     * Best-effort conditional create via If-None-Match. When the storage does
-     * not honour it the backend declares conditionalCreate=false and restricts
-     * concurrent first-acquisition to the verified fallback instead of
-     * claiming non-atomic locking is safe.
-     */
+    /** COS only honors forbid-overwrite on buckets that never enabled versioning. */
     putIfAbsent: async (key: string, data: unknown): Promise<boolean> => {
+      const versioning = await new Promise<COS.GetBucketVersioningResult>((resolve, reject) => {
+        cosClient.getBucketVersioning(
+          { Bucket: config.bucket, Region: config.region },
+          (error, data) => {
+            if (error) reject(error);
+            else resolve(data);
+          },
+        );
+      });
+      if (versioning.VersioningConfiguration.Status) {
+        throw new ConditionalPutUnsupportedError('bucket versioning disables exclusive creation');
+      }
       return promisifyPutIfAbsent(
         cosClient,
         config.bucket,

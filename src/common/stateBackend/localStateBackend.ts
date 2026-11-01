@@ -1,6 +1,5 @@
 import fs from 'node:fs';
-import path from 'node:path';
-import { StateFile, LockOptions, StateCorruptError } from '../../types';
+import { StateFile, LockOptions, StateCorruptError, StateScopeMismatchError } from '../../types';
 import {
   loadScopedState,
   saveScopedState,
@@ -14,6 +13,8 @@ import {
 import { normalizeScope, buildScopedStatePath, buildServiceBindingPath } from '../stateScope';
 import { enforceMigrationMarker, MigrationMarkerAction } from '../migrationMarker';
 import type { ProviderBinding } from '../regionalMigration';
+import { claimProviderBinding } from '../providerBinding';
+import { createLocalStateIO } from '../stateStorageIO';
 import {
   withLock as fsWithLock,
   forceUnlock as fsForceUnlock,
@@ -137,27 +138,21 @@ export const createLocalStateBackend = (
     },
 
     saveState: async (state: StateFile): Promise<void> => {
-      // Service provider binding: refuse a cross-provider save (issue #280 §1).
-      // The record itself is written only AFTER the save succeeds, so a failed
-      // save never mutates the binding metadata.
-      enforceProviderBinding();
-      // saveScopedState validates the state identity against the bound scope.
-      saveScopedState(state, normalized, baseDir);
-      if (!fs.existsSync(bindingPath)) {
-        const bindingDir = path.dirname(bindingPath);
-        if (!fs.existsSync(bindingDir)) {
-          fs.mkdirSync(bindingDir, { recursive: true });
-        }
-        fs.writeFileSync(
-          bindingPath,
-          JSON.stringify(
-            { provider: normalized.provider, recordedAt: new Date().toISOString() },
-            null,
-            2,
-          ),
-          'utf-8',
-        );
+      if (
+        state.app !== normalized.app ||
+        state.service !== normalized.service ||
+        state.provider !== normalized.provider
+      ) {
+        throw new StateScopeMismatchError(normalized, {
+          provider: state.provider,
+          app: state.app,
+          service: state.service,
+          stage: state.scope?.stage,
+          region: state.scope?.region,
+        });
       }
+      await claimProviderBinding(createLocalStateIO(), bindingPath, normalized.provider);
+      saveScopedState(state, normalized, baseDir);
     },
 
     patchPersisted: async (patch: Record<string, unknown | undefined>): Promise<void> => {
@@ -186,6 +181,7 @@ export const createLocalStateBackend = (
       // a new Stage/Region cannot open the service under a different provider.
       try {
         enforceProviderBinding();
+        await claimProviderBinding(createLocalStateIO(), bindingPath, normalized.provider);
       } catch (error) {
         return {
           ready: false,
@@ -197,6 +193,7 @@ export const createLocalStateBackend = (
     },
 
     acquireLock: async (operation: string, lockOptions?: LockOptions): Promise<string> => {
+      await claimProviderBinding(createLocalStateIO(), bindingPath, normalized.provider);
       const lockMeta = await acquireLockInternal(scopedPath, operation, lockOptions);
       return lockMeta.id;
     },
@@ -219,6 +216,9 @@ export const createLocalStateBackend = (
       lockOptions?: LockOptions,
       onLockAcquired?: (lockId: string) => void,
     ): Promise<T> => {
+      if (!operation.startsWith('migrate')) {
+        await claimProviderBinding(createLocalStateIO(), bindingPath, normalized.provider);
+      }
       if (onLockAcquired) {
         return fsWithLock(scopedPath, operation, fn, lockOptions, onLockAcquired);
       }

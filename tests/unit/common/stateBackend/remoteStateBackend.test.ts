@@ -437,6 +437,32 @@ describe('remoteStateBackend (scope-bound, issue #280)', () => {
     });
   });
 
+  it('reserves one provider before concurrent first-deployment callbacks execute', async () => {
+    const storage = createFakeAdapter();
+    const otherScope = { ...scope, provider: 'tencent', region: 'ap-guangzhou' };
+    const first = createRemoteStateBackend(storage, {
+      scope,
+      scopedKey: 'a',
+      legacyKey: LEGACY_KEY,
+    });
+    const other = createRemoteStateBackend(storage, {
+      scope: otherScope,
+      scopedKey: 'b',
+      legacyKey: LEGACY_KEY,
+    });
+    const executed: string[] = [];
+    const results = await Promise.allSettled([
+      first.withLock('deploy', async () => {
+        executed.push('aliyun');
+      }),
+      other.withLock('deploy', async () => {
+        executed.push('tencent');
+      }),
+    ]);
+    expect(results.filter((result) => result.status === 'fulfilled')).toHaveLength(1);
+    expect(executed).toEqual(['aliyun']);
+  });
+
   describe('service provider binding (issue #280 §1)', () => {
     const BINDING_KEY = `${LEGACY_KEY}.scopes/test-app/test-service/provider.json`;
 
@@ -713,6 +739,9 @@ describe('remoteStateBackend (scope-bound, issue #280)', () => {
     });
 
     it('loses the exclusive-create race and reports the failure', async () => {
+      adapter.store.set('legacy/state.json.scopes/test-app/test-service/provider.json', {
+        provider: scope.provider,
+      });
       (adapter.putIfAbsent as jest.Mock).mockResolvedValue(false);
       const backend = createRemoteStateBackend(adapter, {
         scope,
@@ -725,45 +754,32 @@ describe('remoteStateBackend (scope-bound, issue #280)', () => {
       ).rejects.toThrow('Failed to acquire lock');
     });
 
-    it('downgrades conditional create when the storage cannot evaluate exclusivity', async () => {
+    it('refuses lock acquisition when conditional creation is unsupported', async () => {
+      adapter.store.set('legacy/state.json.scopes/test-app/test-service/provider.json', {
+        provider: scope.provider,
+      });
       (adapter.putIfAbsent as jest.Mock).mockRejectedValueOnce(
-        new ConditionalPutUnsupportedError(new Error('nope')),
+        new ConditionalPutUnsupportedError('unsupported'),
       );
       const backend = createRemoteStateBackend(adapter, {
         scope,
         scopedKey: SCOPED_KEY,
         legacyKey: LEGACY_KEY,
       });
-      const { logger } = jest.requireMock('../../../../src/common/logger');
-
-      const lockId = await backend.acquireLock('deploy');
-
-      expect(lockId).toBe((adapter.store.get(LOCK_KEY) as LockMetadata).id);
-      expect(adapter.putIfAbsent).toBeUndefined();
-      expect(backend.capabilities).toEqual({ conditionalCreate: false });
-      expect(logger.warn).toHaveBeenCalledTimes(1);
-
-      // A later acquisition uses the verified fallback without warning again.
-      await backend.releaseLock(lockId);
-      const secondId = await backend.acquireLock('deploy');
-      expect(secondId).toBe((adapter.store.get(LOCK_KEY) as LockMetadata).id);
-      expect(logger.warn).toHaveBeenCalledTimes(1);
+      await expect(backend.acquireLock('deploy')).rejects.toThrow('cannot atomically');
+      expect(backend.capabilities.conditionalCreate).toBe(false);
+      expect(adapter.store.has(LOCK_KEY)).toBe(false);
     });
 
-    it('falls back to a verified plain write with a warning when the adapter has no conditional create', async () => {
+    it('refuses lock acquisition without conditional creation', async () => {
       delete (adapter as Partial<StorageAdapter>).putIfAbsent;
       const backend = createRemoteStateBackend(adapter, {
         scope,
         scopedKey: SCOPED_KEY,
         legacyKey: LEGACY_KEY,
       });
-      const { logger } = jest.requireMock('../../../../src/common/logger');
-
-      const lockId = await backend.acquireLock('deploy');
-
-      expect(lockId).toBe((adapter.store.get(LOCK_KEY) as LockMetadata).id);
-      expect(adapter.write).toHaveBeenCalledWith(LOCK_KEY, expect.anything());
-      expect(logger.warn).toHaveBeenCalledTimes(1);
+      await expect(backend.acquireLock('deploy')).rejects.toThrow('cannot atomically');
+      expect(adapter.store.has(LOCK_KEY)).toBe(false);
     });
 
     it('rethrows unexpected putIfAbsent failures instead of downgrading exclusivity', async () => {

@@ -5,6 +5,7 @@ import type { StorageAdapter } from '../../../../src/common/stateBackend/types';
 
 const mockOssClient = {
   get: jest.fn(),
+  getBucketVersioning: jest.fn().mockResolvedValue({}),
   put: jest.fn(),
   delete: jest.fn(),
 };
@@ -24,6 +25,7 @@ jest.mock('../../../../src/common/stateBackend/remoteStateBackend', () => {
 describe('ossStateBackend (scope-bound, issue #280)', () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    mockOssClient.getBucketVersioning.mockResolvedValue({});
   });
 
   const scope = {
@@ -161,6 +163,22 @@ describe('ossStateBackend (scope-bound, issue #280)', () => {
   });
 
   describe('adapter.putIfAbsent', () => {
+    it.each(['Enabled', 'Suspended'])(
+      'refuses atomic creation when bucket versioning is %s',
+      async (versionStatus) => {
+        mockOssClient.getBucketVersioning.mockResolvedValue({ versionStatus });
+        const { adapter } = captureWiring();
+        await expect(adapter.putIfAbsent!(SCOPED_KEY, {})).rejects.toThrow('conditional');
+        expect(mockOssClient.put).not.toHaveBeenCalled();
+      },
+    );
+    it('propagates failure to inspect bucket versioning without writing', async () => {
+      mockOssClient.getBucketVersioning.mockRejectedValue(new Error('access denied'));
+      const { adapter } = captureWiring();
+      await expect(adapter.putIfAbsent!(SCOPED_KEY, {})).rejects.toThrow('access denied');
+      expect(mockOssClient.put).not.toHaveBeenCalled();
+    });
+
     it('creates exclusively via x-oss-forbid-overwrite and returns true', async () => {
       mockOssClient.put.mockResolvedValue(undefined);
       const { adapter } = captureWiring();

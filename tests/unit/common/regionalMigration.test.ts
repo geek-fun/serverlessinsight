@@ -9,6 +9,7 @@ import {
   RegionalMigrationPaths,
   RegionalMigrationPlan,
   KeyValueIO,
+  withIoLock,
 } from '../../../src/common/regionalMigration';
 import {
   PersistedStateFile,
@@ -63,7 +64,13 @@ const makeIo = () => {
         throw io.failWith ?? new Error(`injected write failure for ${key}`);
       }
       written.push(key);
-      store.set(key, data);
+      store.set(key, structuredClone(data));
+    },
+    putIfAbsent: async (key: string, data: unknown): Promise<boolean> => {
+      if (store.has(key)) return false;
+      written.push(key);
+      store.set(key, structuredClone(data));
+      return true;
     },
     delete: async (key: string): Promise<void> => {
       deleted.push(key);
@@ -364,7 +371,7 @@ describe('regionalMigration (issue #280 §6)', () => {
 
       // Backup first (protected writes), exact document
       const backupKey = paths.backupKey(plan.opId);
-      expect(written[0]).toBe(backupKey);
+      expect(written.filter((key) => !key.endsWith('.si-lock'))[0]).toBe(backupKey);
       expect(store.get(backupKey)).toEqual(legacy);
 
       // Barrier is a V4 TOMBSTONE: content preserved, ownership handed over
@@ -389,8 +396,8 @@ describe('regionalMigration (issue #280 §6)', () => {
       expect(written).toContain('scoped/prod/ap-southeast-1/state.json.si-lock');
       expect([...store.keys()].filter((key) => key.endsWith('.si-lock'))).toEqual([]);
 
-      // The service provider binding is recorded AFTER the documents
-      expect(written.indexOf(paths.serviceBindingKey)).toBeGreaterThan(
+      // Reserve service identity before writing regional documents
+      expect(written.indexOf(paths.serviceBindingKey)).toBeLessThan(
         written.indexOf('scoped/prod/ap-southeast-1/state.json'),
       );
       expect(store.get(paths.serviceBindingKey)).toEqual({
@@ -734,7 +741,7 @@ describe('regionalMigration (issue #280 §6)', () => {
       });
 
       expect(report.documents).toEqual([
-        { stage: 'prod', region: 'cn-beijing', resources: 0, shared: 0 },
+        { stage: 'prod', region: 'cn-beijing', resources: 1, shared: 0 },
       ]);
       const doc = store.get('scoped/prod/cn-beijing/state.json') as {
         stages: Record<string, { resources: Record<string, { region: string }> }>;
@@ -802,15 +809,15 @@ describe('regionalMigration (issue #280 §6)', () => {
       );
     });
 
-    it('rolls back pristine scoped documents even without a recorded serial', async () => {
-      const { io, store, paths, plan, legacy } = await applyFirst();
+    it('refuses rollback when a scoped document lost its recorded serial', async () => {
+      const { io, store, paths, plan } = await applyFirst();
       const doc = store.get('scoped/prod/cn-hangzhou/state.json') as Record<string, unknown>;
       delete doc.serial;
 
-      await rollbackRegionalMigration(io, paths, plan.opId);
+      await expect(rollbackRegionalMigration(io, paths, plan.opId)).rejects.toThrow();
 
-      expect(store.get('legacy/state.json')).toEqual(legacy);
-      expect(store.has('scoped/prod/cn-hangzhou/state.json')).toBe(false);
+      expect((store.get('legacy/state.json') as PersistedStateFile).managedBy).toBe('regional');
+      expect(store.has('scoped/prod/cn-hangzhou/state.json')).toBe(true);
     });
 
     it('refuses without the migration report', async () => {
@@ -840,5 +847,100 @@ describe('regionalMigration (issue #280 §6)', () => {
       expect(store.has(paths.reportKey(plan.opId))).toBe(false);
       expect(store.has(paths.backupKey(plan.opId))).toBe(false);
     });
+  });
+  describe('locked target validation and interruption recovery', () => {
+    it('revalidates a target created between discovery and exclusive lock acquisition', async () => {
+      const { io, store } = makeIo();
+      const legacy = makeLegacy();
+      const paths = makePaths();
+      store.set(paths.legacyKey, legacy);
+      const plan = planRegionalMigration(legacy, paths, baseOptions);
+      const target = paths.scopedPrefixBuilder('prod', 'cn-hangzhou');
+      const original = io.putIfAbsent!;
+      io.putIfAbsent = async (key, data) => {
+        if (key === `${target}.si-lock`) store.set(target, { serial: 9, lineage: 'independent' });
+        return original(key, data);
+      };
+      await expect(applyRegionalMigration(io, legacy, paths, plan, baseOptions)).rejects.toThrow(
+        /Refusing to overwrite/,
+      );
+      expect(store.get(target)).toEqual({ serial: 9, lineage: 'independent' });
+      expect(store.has(paths.scopedPrefixBuilder('prod', 'ap-southeast-1'))).toBe(false);
+    });
+
+    it('refuses same-operation recovery when a written target gained independent resources', async () => {
+      const { io, store } = makeIo();
+      const legacy = makeLegacy();
+      const paths = makePaths();
+      store.set(paths.legacyKey, legacy);
+      const plan = planRegionalMigration(legacy, paths, baseOptions);
+      io.failOn = paths.scopedPrefixBuilder('prod', 'ap-southeast-1');
+      await expect(applyRegionalMigration(io, legacy, paths, plan, baseOptions)).rejects.toThrow();
+      const key = paths.scopedPrefixBuilder('prod', 'cn-hangzhou');
+      const state = store.get(key) as PersistedStateFile;
+      state.serial = 9;
+      state.stages.prod.resources['functions.live'] = makeResource('cn-hangzhou', 'live');
+      io.failOn = undefined;
+      await expect(applyRegionalMigration(io, legacy, paths, plan, baseOptions)).rejects.toThrow(
+        /Refusing to overwrite/,
+      );
+      expect(
+        (store.get(key) as PersistedStateFile).stages.prod.resources['functions.live'],
+      ).toBeDefined();
+    });
+
+    it('rejects changed recovery options and permits rollback before a final report exists', async () => {
+      const { io, store } = makeIo();
+      const legacy = makeLegacy();
+      const paths = makePaths();
+      store.set(paths.legacyKey, legacy);
+      const plan = planRegionalMigration(legacy, paths, baseOptions);
+      io.failOn = paths.scopedPrefixBuilder('prod', 'ap-southeast-1');
+      await expect(applyRegionalMigration(io, legacy, paths, plan, baseOptions)).rejects.toThrow();
+      io.failOn = undefined;
+      await expect(
+        applyRegionalMigration(io, legacy, paths, plan, { ...baseOptions, service: 'different' }),
+      ).rejects.toThrow(/incomplete/);
+      await rollbackRegionalMigration(io, paths, plan.opId);
+      expect(store.get(paths.legacyKey)).toEqual(legacy);
+      expect(store.has(paths.scopedPrefixBuilder('prod', 'cn-hangzhou'))).toBe(false);
+      expect(store.has(`${paths.legacyKey}.regional-migration.json`)).toBe(false);
+    });
+
+    it('can continue rollback after an interrupted deletion while retaining all backups', async () => {
+      const { io, store } = makeIo();
+      const legacy = makeLegacy();
+      const paths = makePaths();
+      store.set(paths.legacyKey, legacy);
+      const plan = planRegionalMigration(legacy, paths, baseOptions);
+      await applyRegionalMigration(io, legacy, paths, plan, baseOptions);
+      const remove = io.delete;
+      let failed = false;
+      io.delete = async (key) => {
+        if (key === paths.scopedPrefixBuilder('prod', 'ap-southeast-1') && !failed) {
+          failed = true;
+          throw new Error('interrupted delete');
+        }
+        return remove(key);
+      };
+      await expect(rollbackRegionalMigration(io, paths, plan.opId)).rejects.toThrow(
+        'interrupted delete',
+      );
+      expect(store.has(paths.backupKey(plan.opId))).toBe(true);
+      await expect(applyRegionalMigration(io, legacy, paths, plan, baseOptions)).rejects.toThrow(
+        /incomplete/,
+      );
+      await rollbackRegionalMigration(io, paths, plan.opId);
+      expect(store.get(paths.legacyKey)).toEqual(legacy);
+    });
+  });
+  it('does not execute a mutation when exclusive locks are unavailable', async () => {
+    const { io } = makeIo();
+    const mutation = jest.fn();
+    delete io.putIfAbsent;
+    await expect(withIoLock(io, 'lock', 'state', 'migrate', mutation)).rejects.toThrow(
+      /cannot atomically/,
+    );
+    expect(mutation).not.toHaveBeenCalled();
   });
 });

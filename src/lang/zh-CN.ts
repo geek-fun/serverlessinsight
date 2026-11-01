@@ -1071,6 +1071,11 @@ export const zhCN = {
     '拒绝覆盖 stage {{stage}} / region {{region}} 的区域状态：它已存在（来源：{{opId}}）。重新执行本迁移会重置其独立的 lineage/serial，并丢失拆分后创建的资源。如果该文档属于上一次迁移，请先处理那次的运行；否则仅在你确认可丢弃时才显式删除',
   REGIONAL_MIGRATION_INCOMPLETE_STAGE_COVERAGE:
     '区域拆分会使 stage（{{stages}}）被搁置：拆分后旧版条目整体被隐藏，因此所有持有资源的 stage 必须在同一次运行中完成拆分。请去掉 --stage 重新运行 `si migrate --to-regional`（必要时加 --bind-unknown-region）以覆盖它们',
+  STATE_ATOMIC_CREATE_REQUIRED: '此状态存储无法原子登记所有权或获取锁，已拒绝变更。',
+  REGIONAL_MIGRATION_PENDING:
+    '迁移 {{opId}} 尚未完成。请使用原命令继续迁移，或通过 --rollback-op-id {{opId}} 完成回滚；保留原 app、service、provider 和地域绑定选项。',
+  SAAS_STATE_ACK_INVALID:
+    '状态服务未返回有效的 serial 和 lineage。已拒绝推测下一版本，请升级服务端以支持地域状态协议。',
   STATE_PROVIDER_BINDING_MISMATCH:
     '该服务的 provider 不匹配：已存储的 provider 绑定记录为 "{{stored}}"，但本次命令解析出 "{{requested}}"。一个 Service 在其所有 stage 和 region 中只有一个 provider；请检查 -v/--provider 与 YAML 的 provider 配置',
   REGIONAL_MIGRATION_PROVIDER_MISMATCH:

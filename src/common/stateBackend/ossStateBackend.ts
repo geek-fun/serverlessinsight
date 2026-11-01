@@ -1,5 +1,5 @@
 import OSS from 'ali-oss';
-import { StorageAdapter, StateBackend } from './types';
+import { StorageAdapter, StateBackend, ConditionalPutUnsupportedError } from './types';
 import { createRemoteStateBackend } from './remoteStateBackend';
 import { MigrationMarkerAction } from '../migrationMarker';
 import { OSS_STATE_CONNECT_TIMEOUT_MS, OSS_STATE_REQUEST_TIMEOUT_MS } from '../constants';
@@ -72,6 +72,14 @@ export const createOssStorageAdapter = (config: OssStorageConfig): StorageAdapte
     /** Verified conditional create via x-oss-forbid-overwrite (atomic). */
     putIfAbsent: async (key: string, data: unknown): Promise<boolean> => {
       const content = JSON.stringify(data, null, 2);
+      const versioning = await (
+        ossClient as OSS & {
+          getBucketVersioning: (bucket: string) => Promise<{ versionStatus?: string }>;
+        }
+      ).getBucketVersioning(config.bucket);
+      if (versioning.versionStatus && versioning.versionStatus !== 'Disabled') {
+        throw new ConditionalPutUnsupportedError('bucket versioning disables exclusive creation');
+      }
       try {
         await ossClient.put(key, Buffer.from(content, 'utf-8'), {
           headers: { 'x-oss-forbid-overwrite': 'true' },

@@ -13,8 +13,7 @@ export type StateSource = 'scoped' | 'legacy' | 'empty';
 export type BackendCapabilities = {
   /**
    * The storage supports verified exclusive create (conditional put). When
-   * true, remote locks are created atomically; when false, concurrent
-   * first-acquisition is restricted to the read-verify-write fallback.
+   * true, remote locks are created atomically; when false, mutations are refused.
    */
   conditionalCreate: boolean;
 };
@@ -22,8 +21,7 @@ export type BackendCapabilities = {
 /**
  * Thrown by StorageAdapter.putIfAbsent when the storage cannot evaluate the
  * exclusivity condition at all (unsupported header, proxy rejection). The
- * backend downgrades to the verified read-verify-write fallback and declares
- * conditionalCreate=false instead of pretending the create was exclusive.
+ * backend declares conditionalCreate=false and refuses mutations.
  */
 export class ConditionalPutUnsupportedError extends Error {
   constructor(cause: unknown) {

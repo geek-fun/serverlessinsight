@@ -125,6 +125,7 @@ export const createSaasStateBackend = (
   // every successful load/sync so consecutive saves within one deployment
   // advance the base instead of replaying a stale one (issue #280 §4).
   let acknowledgedSerial: number | null = null;
+  let acknowledgedLineage: string | null = null;
 
   const capabilities: BackendCapabilities = { conditionalCreate: true };
 
@@ -364,6 +365,7 @@ export const createSaasStateBackend = (
         // by the write gate, never by picking an arbitrary region.
         lastSource = state.stateJson.scope ? 'scoped' : 'legacy';
         acknowledgedSerial = state.stateJson.serial ?? null;
+        acknowledgedLineage = state.stateJson.lineage ?? null;
         // Legacy Console states hold fresh resources only in the top-level
         // field (pre-stage-syncing saves) — prefer the stage store, fall back.
         const stageResources = migrated.stages?.[normalized.stage]?.resources;
@@ -458,10 +460,9 @@ export const createSaasStateBackend = (
         // advances with every confirmed save in this run instead of replaying
         // the revision loaded before the deploy started.
         baseSerial: baseRevision,
-        baseLineage: state.lineage ?? null,
-        // Idempotency: retries of the SAME document (same lineage + content)
-        // dedupe; distinct incremental saves of one deployment have distinct
-        // content and therefore distinct keys — progress is never dropped.
+        baseLineage: acknowledgedLineage ?? state.lineage ?? null,
+        // Retry the same base and content with the same key; acknowledged
+        // progress starts a new operation even when its content is unchanged.
         idempotencyKey: crypto
           .createHash('sha256')
           .update(
@@ -470,7 +471,8 @@ export const createSaasStateBackend = (
               service: normalized.service,
               stage: normalized.stage,
               region: normalized.region,
-              lineage: state.lineage ?? null,
+              lineage: acknowledgedLineage ?? state.lineage ?? null,
+              baseSerial: baseRevision,
               contentHash,
             }),
           )
@@ -479,11 +481,23 @@ export const createSaasStateBackend = (
         contentHash,
         resourceCount: Object.keys(state.resources).length,
       };
-      await client.post(
-        `/api/v1/apps/${resolvedAppId}/services/${resolvedServiceId}/state/sync`,
-        body,
-      );
-      acknowledgedSerial = (baseRevision ?? -1) + 1;
+      const response = await client.post<{
+        serial?: number;
+        lineage?: string;
+        stateJson?: { serial?: number; lineage?: string };
+      }>(`/api/v1/apps/${resolvedAppId}/services/${resolvedServiceId}/state/sync`, body);
+      const revision = response?.stateJson ?? response;
+      if (
+        !revision ||
+        !Number.isInteger(revision.serial) ||
+        revision.serial! < 0 ||
+        typeof revision.lineage !== 'string' ||
+        !revision.lineage.trim()
+      ) {
+        throw new Error(lang.__('SAAS_STATE_ACK_INVALID'));
+      }
+      acknowledgedSerial = revision.serial!;
+      acknowledgedLineage = revision.lineage;
       lastSource = 'scoped';
     },
 

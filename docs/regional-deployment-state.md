@@ -70,11 +70,11 @@ Commands: `deploy`, `diff`, `destroy`, `show`, `validate`, `local`, `migrate`,
 
 ## Storage layouts
 
-| Backend | Legacy (V3, discovery entry) | Scoped (V4, authoritative) |
-| --- | --- | --- |
-| LOCAL | `.serverlessinsight/state-<app>-<service>.json` | `.serverlessinsight/states/<app>/<service>/<stage>/<region>/state.json` |
-| BUCKET_STORE | `<key>` | `<key>.scopes/<app>/<service>/<stage>/<region>/state.json` |
-| SAAS | server-side, keyed by service+stage | service+stage+region (scope protocol) |
+| Backend      | Legacy (V3, discovery entry)                    | Scoped (V4, authoritative)                                              |
+| ------------ | ----------------------------------------------- | ----------------------------------------------------------------------- |
+| LOCAL        | `.serverlessinsight/state-<app>-<service>.json` | `.serverlessinsight/states/<app>/<service>/<stage>/<region>/state.json` |
+| BUCKET_STORE | `<key>`                                         | `<key>.scopes/<app>/<service>/<stage>/<region>/state.json`              |
+| SAAS         | server-side, keyed by service+stage             | service+stage+region (scope protocol)                                   |
 
 Locks live next to the scoped document (`<state path>.lock` for LOCAL,
 `<scoped key>.si-lock` for buckets) — two regions never share a lock.
@@ -90,8 +90,8 @@ backend:
     type: BUCKET_STORE
     bucket: my-state-bucket
     key: infra/state
-    storageRegion: cn-hangzhou    # optional: pin where state lives
-    storageProvider: aliyun       # optional: pin whose storage SDK is used
+    storageRegion: cn-hangzhou # optional: pin where state lives
+    storageProvider: aliyun # optional: pin whose storage SDK is used
 ```
 
 Explicit settings never change when the workload `-r` or `-v` changes. When
@@ -102,11 +102,20 @@ clear error instead of silently picking whichever key exists.
 
 ### Remote locking
 
-OSS uses verified conditional create (`x-oss-forbid-overwrite`); COS attempts
-`If-None-Match` and, when the storage cannot evaluate the condition, the backend
-downgrades to a verified write and **declares** `conditionalCreate: false`
-instead of claiming atomicity. Avoid running mutating commands for the same
-scope in parallel on such backends.
+OSS and COS state mutations require conditional creation for locks and the
+immutable service provider reservation. A store that cannot evaluate the
+condition is refused; a read/write/verify sequence is not mutual exclusion.
+Different regions use distinct locks, while the provider reservation is shared
+by all regions of one service and must be established before cloud mutation.
+
+The state bucket must keep versioning disabled (never enabled). Both enabled and
+suspended versioning invalidate the forbid-overwrite guarantee; the adapters
+check bucket versioning before exclusive creation and reject those states.
+Credentials therefore need `oss:GetBucketVersioning` or `cos:GetBucketVersioning`
+in addition to the existing object permissions. Keep bucket versioning disabled
+throughout operations; si retains its own state backups.
+See [OSS PutObject](https://help.aliyun.com/en/oss/developer-reference/putobject)
+and [COS PUT Object](https://cloud.tencent.com/document/product/436/7749).
 
 ## SaaS regional protocol
 
@@ -123,6 +132,14 @@ probe `GET /api/v1/capabilities` first:
   protocol; read-only commands (`diff`, `show`) resolve identity/state through
   the read-only targets endpoint and do not create deployments or lifecycle
   records.
+
+Successful sync responses must include the authoritative `serial` and `lineage`,
+either at the top level or in `stateJson`. The CLI updates its concurrency base
+from this acknowledgment, including deduplicated responses; it never increments
+the revision locally. Retry keys include the base revision, lineage and content
+hash: a lost-response retry reuses the original key, while a newly acknowledged
+save starts a new logical operation. Missing or invalid acknowledgments fail
+closed rather than guessing the next version.
 
 Minimum server capabilities: scope-aware state endpoints (stage+region),
 capabilities probe, scope echo on returned state documents.
@@ -192,25 +209,36 @@ Apply order (each artifact named by the migration `opId`):
    version above 3.0); this CLI treats the tombstone as an absent source — the
    scoped documents are authoritative and NEW regions start fresh.
 4. The service provider binding (`.serverlessinsight/states/<app>/<service>/
-   provider.json` / `<key>.scopes/<app>/<service>/provider.json`) records the
+provider.json` / `<key>.scopes/<app>/<service>/provider.json`) records the
    source provider; a later scope of the same service under a different
    provider is refused.
 5. A migration report is stored next to the scoped documents; it carries the
    ACTUAL written document set (including binding-generated documents).
 
-A partial failure leaves written documents (individually valid) and an intact
-legacy entry — fix the cause and re-run (a re-run of the same `opId` resumes
-in place and preserves lineage/serial; a re-run with a NEW plan refuses
-against documents with independent state).
+Before writing the first target, migration persists its plan, operation ID,
+original target documents and recovery phase in `<legacy-entry>.regional-migration.json`.
+The original source remains in its operation-specific backup. Re-running the
+same command automatically resumes an incomplete operation, including a failure
+between tombstone creation and report persistence. Keep the original app,
+service, provider, stage and unknown-region binding options.
+
+All target locks are held in deterministic order through validation, persistence
+and cutover. Recovery only reuses documents that exactly match their recorded
+migration-time content; independent writes are never overwritten, even for the
+same operation ID. To abandon a partial operation, use
+`si migrate --to-regional --rollback-op-id <opId>`; the journal makes this possible
+before the final report exists. Backup and journal artifacts must be retained
+until recovery finishes.
 
 ### Rollback
 
 Allowed only while no scoped document has taken an independent regional write.
-The check is two-phase: every document is verified pristine BEFORE anything is
-deleted, so a refused rollback never leaves partially-removed state. When all
-documents are pristine, the scoped documents are removed and the exact
-pre-split aggregate is restored. After independent regional writes exist,
-states are never collapsed back automatically.
+All target region locks are acquired before checking any document and remain
+held until rollback completes. Every document must be pristine before anything
+is removed. The rollback phase is journaled so interrupted deletion or source
+restoration can be continued with the same `--rollback-op-id`. A deployment that
+already owns a target lock finishes first; any resulting independent write
+blocks rollback without deleting another region's state.
 
 ### Old-CLI compatibility
 

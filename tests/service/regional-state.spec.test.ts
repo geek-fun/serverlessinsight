@@ -64,6 +64,13 @@ describe('Regional state isolation (issue #280)', () => {
   const cleanAll = async (): Promise<void> => {
     await fs.rm(scopedDir, { recursive: true, force: true }).catch(() => {});
     await fs.rm(legacyPath, { force: true }).catch(() => {});
+    const directory = path.dirname(legacyPath);
+    const artifacts = await fs.readdir(directory).catch(() => [] as string[]);
+    await Promise.all(
+      artifacts
+        .filter((file) => file.startsWith(`${path.basename(legacyPath)}.`))
+        .map((file) => fs.rm(path.join(directory, file), { force: true })),
+    );
   };
 
   beforeEach(async () => {

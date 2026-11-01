@@ -18,6 +18,7 @@ import {
   MigrationMarkerAction,
 } from '../migrationMarker';
 import type { ProviderBinding } from '../regionalMigration';
+import { claimProviderBinding } from '../providerBinding';
 import { DEFAULT_LOCK_TIMEOUT, DEFAULT_LOCK_RETRY_DELAY } from '../constants';
 import { LockError, formatLockInfo } from '../lockManager';
 import { logger } from '../logger';
@@ -66,38 +67,22 @@ export const createRemoteStateBackend = (
     conditionalCreate: typeof adapter.putIfAbsent === 'function',
   };
   let lastSource: StateSource = 'empty';
-  let conditionalFallbackWarned = false;
 
   const readLockObject = async (): Promise<LockMetadata | null> => {
     return adapter.read<LockMetadata>(lockKey);
   };
 
   const writeLockObject = async (metadata: LockMetadata): Promise<boolean> => {
-    if (adapter.putIfAbsent) {
-      try {
-        return await adapter.putIfAbsent(lockKey, metadata);
-      } catch (error) {
-        if (error instanceof ConditionalPutUnsupportedError) {
-          // Storage cannot evaluate exclusivity — downgrade the declared
-          // capability and restrict concurrent acquisition to the verified
-          // read-verify-write fallback instead of claiming atomicity.
-          capabilities.conditionalCreate = false;
-          adapter.putIfAbsent = undefined;
-          if (!conditionalFallbackWarned) {
-            conditionalFallbackWarned = true;
-            logger.warn(lang.__('LOCK_CONDITIONAL_CREATE_UNSUPPORTED'));
-          }
-        } else {
-          throw error;
-        }
+    if (!adapter.putIfAbsent) throw new Error(lang.__('STATE_ATOMIC_CREATE_REQUIRED'));
+    try {
+      return await adapter.putIfAbsent(lockKey, metadata);
+    } catch (error) {
+      if (error instanceof ConditionalPutUnsupportedError) {
+        capabilities.conditionalCreate = false;
+        throw new Error(lang.__('STATE_ATOMIC_CREATE_REQUIRED'), { cause: error });
       }
+      throw error;
     }
-    if (!conditionalFallbackWarned) {
-      conditionalFallbackWarned = true;
-      logger.warn(lang.__('LOCK_CONDITIONAL_CREATE_UNSUPPORTED'));
-    }
-    await adapter.write(lockKey, metadata);
-    return true;
   };
 
   const acquireLockObject = async (
@@ -118,7 +103,7 @@ export const createRemoteStateBackend = (
 
       if (!existingLock) {
         // Exclusive create when the storage supports it: concurrent acquirers
-        // cannot both win. The verify step covers non-conditional backends.
+        // cannot both win. Verify the returned ownership before execution.
         const created = await writeLockObject(metadata);
         if (created) {
           const verify = await readLockObject();
@@ -182,17 +167,6 @@ export const createRemoteStateBackend = (
 
   const readProviderBinding = async (): Promise<ProviderBinding | null> => {
     return adapter.read<ProviderBinding>(bindingKey);
-  };
-
-  const enforceProviderBindingValue = (binding: ProviderBinding | null): void => {
-    if (binding && binding.provider !== normalized.provider) {
-      throw new Error(
-        lang.__('STATE_PROVIDER_BINDING_MISMATCH', {
-          stored: binding.provider,
-          requested: normalized.provider,
-        }),
-      );
-    }
   };
 
   const readScopedDocument = async (): Promise<PersistedStateFile | null> => {
@@ -305,11 +279,8 @@ export const createRemoteStateBackend = (
           `state identity (${state.provider}/${state.app}/${state.service}) does not match the bound deployment scope (${normalized.provider}/${normalized.app}/${normalized.service})`,
         );
       }
-      // Service provider binding (issue #280 §1): refuse cross-provider saves.
-      // The record is written only AFTER the scoped save succeeds so a failed
-      // save never mutates the binding metadata.
-      const binding = await readProviderBinding();
-      enforceProviderBindingValue(binding);
+      // Reserve immutable service identity before writing any regional state.
+      await claimProviderBinding(adapter, bindingKey, normalized.provider);
       // Continue this scope document's lineage/serial across saves (independent
       // per Stage/Region document).
       const existing = await adapter.read<PersistedStateFile>(config.scopedKey);
@@ -330,12 +301,6 @@ export const createRemoteStateBackend = (
         },
       };
       await adapter.write(config.scopedKey, persisted);
-      if (!binding) {
-        await adapter.write(bindingKey, {
-          provider: normalized.provider,
-          recordedAt: new Date().toISOString(),
-        } satisfies ProviderBinding);
-      }
       lastSource = 'scoped';
     },
 
@@ -362,10 +327,12 @@ export const createRemoteStateBackend = (
           }),
         };
       }
+      await claimProviderBinding(adapter, bindingKey, normalized.provider);
       return { ready: true, source };
     },
 
     acquireLock: async (operation: string, options?: LockOptions): Promise<string> => {
+      await claimProviderBinding(adapter, bindingKey, normalized.provider);
       const meta = await acquireLockObject(operation, options);
       return meta.id;
     },
@@ -399,6 +366,9 @@ export const createRemoteStateBackend = (
     ): Promise<T> => {
       let lockId: string | null = null;
       try {
+        if (!operation.startsWith('migrate')) {
+          await claimProviderBinding(adapter, bindingKey, normalized.provider);
+        }
         const meta = await acquireLockObject(operation, options);
         lockId = meta.id;
         onLockAcquired?.(lockId);

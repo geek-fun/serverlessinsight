@@ -20,12 +20,14 @@ const mockRollbackRegionalMigration = jest.fn();
 
 const mockOssAdapter = {
   read: jest.fn(),
+  putIfAbsent: jest.fn().mockResolvedValue(true),
   write: jest.fn(),
   delete: jest.fn(),
 };
 
 const mockCosAdapter = {
   read: jest.fn(),
+  putIfAbsent: jest.fn().mockResolvedValue(true),
   write: jest.fn(),
   delete: jest.fn(),
 };
@@ -525,15 +527,16 @@ describe('migrateRegional command (si migrate --to-regional)', () => {
       expect(mockedApply).not.toHaveBeenCalled();
     });
 
-    it('takes the lock via io.write and releases it via io.delete on the lock object', async () => {
+    it('takes the lock via exclusive create and releases it via io.delete on the lock object', async () => {
       let capturedLock: unknown = null;
       mockOssAdapter.read.mockImplementation(async (key: string) =>
         key === 'state.json.si-lock' ? capturedLock : null,
       );
-      mockOssAdapter.write.mockImplementation(async (key: string, data: unknown) => {
+      mockOssAdapter.putIfAbsent.mockImplementation(async (key: string, data: unknown) => {
         if (key === 'state.json.si-lock') {
           capturedLock = data;
         }
+        return true;
       });
 
       await expect(runRegionalMigration(bucketOptions())).rejects.toThrow(
@@ -541,7 +544,7 @@ describe('migrateRegional command (si migrate --to-regional)', () => {
       );
 
       expect(mockOssAdapter.read.mock.calls[0][0]).toBe('state.json.si-lock');
-      expect(mockOssAdapter.write).toHaveBeenCalledWith(
+      expect(mockOssAdapter.putIfAbsent).toHaveBeenCalledWith(
         'state.json.si-lock',
         expect.objectContaining({ operation: 'migrate-regional', path: 'state.json' }),
       );
