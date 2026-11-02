@@ -124,6 +124,12 @@ The CLI requires `GET /api/v1/capabilities` to advertise all of:
 Missing, older, or newer unsupported protocols fail before provisioning or cloud
 mutation. There is no fallback to unscoped writes.
 
+JSON requests use camelCase. Successful resource responses use
+`{ code: 2000 | 2001, messages: string[], data: ... }` with snake_case metadata
+(`service_id`, `stage_id`, `scope_protocol`, `content_hash`, `version_number`,
+`state_json`). The client decodes metadata to camelCase while preserving all
+keys inside `state_json`. Capabilities are a raw camelCase object.
+
 - Identity lookup, current state, imports, and locks select an explicit stage
   and region. Read-only `diff`/`show` never create deployments or lifecycles.
 - New services opt into regional mode at creation. Existing legacy services

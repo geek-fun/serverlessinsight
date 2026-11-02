@@ -279,6 +279,48 @@ describe('apiClient envelope unwrapping', () => {
     expect(result.stateJson).toEqual({ some_resource_key: { FunctionName: 'fn' } });
   });
 
+  it('decodes a protocol 2 snapshot envelope while preserving the state document', async () => {
+    const stateJson = {
+      version: '4.0',
+      scope: { stage: 'prod', region: 'cn-hangzhou' },
+      stages: { prod: { resources: { logical_resource: { native_id: 'function-id' } } } },
+    };
+    mockFetch.mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          code: 2001,
+          messages: ['created'],
+          data: {
+            id: 'snapshot-id',
+            service_id: 'service-id',
+            stage_id: 'lifecycle-id',
+            stage: 'prod',
+            region: 'cn-hangzhou',
+            scope_protocol: 2,
+            content_hash: 'acknowledged-hash',
+            version_number: 1,
+            state_json: stateJson,
+          },
+        }),
+        { status: 201 },
+      ),
+    );
+
+    await expect(
+      client.post('/api/v1/apps/app-id/services/service-id/state/sync', {}),
+    ).resolves.toEqual({
+      id: 'snapshot-id',
+      serviceId: 'service-id',
+      stageId: 'lifecycle-id',
+      stage: 'prod',
+      region: 'cn-hangzhou',
+      scopeProtocol: 2,
+      contentHash: 'acknowledged-hash',
+      versionNumber: 1,
+      stateJson,
+    });
+  });
+
   it('should pass through non-envelope responses untouched', async () => {
     mockFetch.mockResolvedValue(new Response(JSON.stringify({ data: 'ok' }), { status: 200 }));
 

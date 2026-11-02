@@ -977,6 +977,56 @@ describe('saasStateBackend (scope-bound, issue #280)', () => {
   });
 
   describe('withLock', () => {
+    it('rejects a stale start base before invoking the cloud callback or lock notification', async () => {
+      mockMutatingLoad();
+      const backend = createBackend();
+      await backend.loadState();
+      const conflict = new ApiError('state base revision mismatch', 409);
+      mockApiClient.patch.mockRejectedValueOnce(conflict);
+      const callback = jest.fn();
+      const onLockAcquired = jest.fn();
+
+      await expect(backend.withLock('deploy', callback, undefined, onLockAcquired)).rejects.toBe(
+        conflict,
+      );
+
+      expect(callback).not.toHaveBeenCalled();
+      expect(onLockAcquired).not.toHaveBeenCalled();
+      expect(mockApiClient.patch.mock.calls).toEqual([
+        [
+          '/api/v1/deployments/deploy-1',
+          {
+            phase: 'start',
+            region: 'cn-hangzhou',
+            scopeProtocol: 2,
+            baseContentHash: hash(emptyStateJson()),
+          },
+        ],
+      ]);
+    });
+
+    it('retries a lost start response with the same approved base and invokes the callback once', async () => {
+      mockMutatingLoad();
+      const backend = createBackend();
+      await backend.loadState();
+      mockApiClient.patch
+        .mockRejectedValueOnce(new Error('lost start response'))
+        .mockResolvedValue({});
+      const callback = jest.fn().mockResolvedValue('ok');
+      const onLockAcquired = jest.fn();
+
+      await expect(backend.withLock('deploy', callback, undefined, onLockAcquired)).resolves.toBe(
+        'ok',
+      );
+
+      const starts = mockApiClient.patch.mock.calls.filter((call) => call[1].phase === 'start');
+      expect(starts).toHaveLength(2);
+      expect(starts[0]).toEqual(starts[1]);
+      expect(callback).toHaveBeenCalledTimes(1);
+      expect(onLockAcquired).toHaveBeenCalledTimes(1);
+      expect(onLockAcquired).toHaveBeenCalledWith('deploy-1');
+    });
+
     it('isolates the durable spool without sending its filesystem path as event data', async () => {
       const spool = fs.mkdtempSync(path.join(os.tmpdir(), 'si-saas-spool-'));
       try {
