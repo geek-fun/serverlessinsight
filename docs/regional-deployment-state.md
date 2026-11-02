@@ -119,30 +119,63 @@ and [COS PUT Object](https://cloud.tencent.com/document/product/436/7749).
 
 ## SaaS regional protocol
 
-The SaaS backend passes region/scope through initialization, current-state
-lookup, sync, execution identity and recovery metadata (`scopeProtocol: 1`,
-`scope`, `region`, base serial/lineage, idempotency key). Mutating commands
-probe `GET /api/v1/capabilities` first:
+The CLI requires `GET /api/v1/capabilities` to advertise all of:
+`regionalScope: true`, `scopeProtocol: 2`, and `stateFormat: "4.0"`.
+Missing, older, or newer unsupported protocols fail before provisioning or cloud
+mutation. There is no fallback to unscoped writes.
 
-- `regionalScope: true` → regional writes proceed; returned states are scope
-  validated (a state for a different region is refused even if Service/Stage
-  match).
-- capability missing (pre-regional server) → mutating commands fail with a
-  clear error. The CLI never silently falls back to the unscoped write
-  protocol; read-only commands (`diff`, `show`) resolve identity/state through
-  the read-only targets endpoint and do not create deployments or lifecycle
-  records.
+- Identity lookup, current state, imports, and locks select an explicit stage
+  and region. Read-only `diff`/`show` never create deployments or lifecycles.
+- New services opt into regional mode at creation. Existing legacy services
+  require an explicit server-side binding and activation; the CLI cannot
+  activate them implicitly.
+- Current-state and sync responses include `scopeProtocol`, `stageId`, `stage`,
+  `region`, snapshot `id`, `contentHash`, `versionNumber`, and `serviceId`.
+  Binding metadata is authoritative independently of the historical JSON format.
+  A migrated V3 snapshot can be projected into V4 at runtime without changing
+  its historical JSON, hash, or native resource IDs.
+- A sync sends `baseContentHash`: the last server-acknowledged hash, or `""`
+  only after a confirmed 404. The server returns its authoritative snapshot.
+  Document-local serial/lineage are not the SaaS concurrency mechanism.
+- New content hashes use SHA-256 over JSON with recursively sorted object keys;
+  array order is preserved. This survives JSONB key reordering. An existing
+  head's CAS hash is always taken from its response, never reconstructed.
+- `start` compares the approved plan's base before invoking cloud mutations.
+  Incremental writes name their active `deploymentId`; another writer cannot
+  alter that lifecycle while the run owns it.
+- `complete`/`fail` reference the acknowledged `stateId` and `baseContentHash`.
+  New terminal state uses the same CAS rules. Stale terminal payloads cannot
+  rewind the current head. Conflicting failure diagnostics can be retained
+  without replacing state.
+- Sync/start/terminal requests can be retried after a lost response without
+  re-running cloud callbacks or duplicating snapshots. Invalid acknowledgments
+  fail closed.
 
-Successful sync responses must include the authoritative `serial` and `lineage`,
-either at the top level or in `stateJson`. The CLI updates its concurrency base
-from this acknowledgment, including deduplicated responses; it never increments
-the revision locally. Retry keys include the base revision, lineage and content
-hash: a lost-response retry reuses the original key, while a newly acknowledged
-save starts a new logical operation. Missing or invalid acknowledgments fail
-closed rather than guessing the next version.
+### Importing Local/Bucket state into SaaS
 
-Minimum server capabilities: scope-aware state endpoints (stage+region),
-capabilities probe, scope echo on returned state documents.
+First split a legacy V3 aggregate with the protected regional migration below.
+Then import each V4 stage/region separately:
+
+```sh
+si migrate --to-regional --dry-run
+si migrate --to-regional
+si migrate --stage prod --region cn-hangzhou --dry-run
+si migrate --stage prod --region cn-hangzhou
+si migrate --stage prod --region cn-beijing
+```
+
+Keep the Local/Bucket backend configured during these commands. Each import
+checks the target provider and regional activation, sends the selected region
+and protocol, and verifies the returned snapshot/lifecycle/hash before marking
+only that source document `managedBy=saas`. Other regional copies remain under
+their existing ownership. An already transferred source is not uploaded again.
+`--force` still uses the preflight head's hash; it cannot overwrite a concurrently
+changed target. Shared-only regional documents can be imported as well.
+
+After importing the required scopes, select the SaaS backend and owning org,
+verify an empty plan in each region, and resume deployments. Stop legacy writers
+throughout cutover. Existing SaaS V3 state uses the server-side audit/bind/enable
+procedure instead of `--to-regional`, which applies only to Local/Bucket sources.
 
 ## Resource identity and ownership
 

@@ -1074,8 +1074,15 @@ export const zhCN = {
   STATE_ATOMIC_CREATE_REQUIRED: '此状态存储无法原子登记所有权或获取锁，已拒绝变更。',
   REGIONAL_MIGRATION_PENDING:
     '迁移 {{opId}} 尚未完成。请使用原命令继续迁移，或通过 --rollback-op-id {{opId}} 完成回滚；保留原 app、service、provider 和地域绑定选项。',
+  SAAS_STATE_BASE_UNKNOWN: '请先读取区域状态，再保存或开始部署。',
+  MIGRATE_REGIONAL_SPLIT_REQUIRED:
+    '源状态是旧版聚合文档。请先执行 `si migrate --to-regional --dry-run` 并审核区域归属，再应用拆分，最后逐个 stage/region 导入控制台。',
+  MIGRATE_TARGET_REGIONAL_REQUIRED:
+    '目标服务仍使用旧版状态。请先完成控制台侧的区域绑定和激活，再导入区域状态。',
+  MIGRATE_SOURCE_MULTIPLE_SCOPES:
+    '此区域状态文档还包含其他 stage 的资源。请先核实源状态的归属，再导入；一个区域文档只能管理选定 stage 的资源。',
   SAAS_STATE_ACK_INVALID:
-    '状态服务未返回有效的 serial 和 lineage。已拒绝推测下一版本，请升级服务端以支持地域状态协议。',
+    '状态服务未确认有效的区域快照和内容哈希。已拒绝推测下一版本，请升级服务端以支持作用域协议 2。',
   STATE_PROVIDER_BINDING_MISMATCH:
     '该服务的 provider 不匹配：已存储的 provider 绑定记录为 "{{stored}}"，但本次命令解析出 "{{requested}}"。一个 Service 在其所有 stage 和 region 中只有一个 provider；请检查 -v/--provider 与 YAML 的 provider 配置',
   REGIONAL_MIGRATION_PROVIDER_MISMATCH:

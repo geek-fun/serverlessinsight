@@ -44,6 +44,7 @@ jest.mock('../../../../src/common/credentialStore', () => ({
 }));
 
 import fs from 'node:fs';
+import crypto from 'node:crypto';
 import os from 'node:os';
 import path from 'node:path';
 import { createSaasStateBackend } from '../../../../src/common/stateBackend/saasStateBackend';
@@ -76,6 +77,10 @@ describe('saasStateBackend (scope-bound, issue #280)', () => {
     status: 'active',
     isNewApp: false,
     isNewService: false,
+    stage: 'dev',
+    region: 'cn-hangzhou',
+    stageId: 'stage-1',
+    scopeProtocol: 2,
   });
 
   const emptyStateJson = () => ({
@@ -88,15 +93,47 @@ describe('saasStateBackend (scope-bound, issue #280)', () => {
     resources: {},
   });
 
+  const hash = (value: unknown) =>
+    crypto.createHash('sha256').update(JSON.stringify(value)).digest('hex');
+  const snapshot = (
+    stateJson: unknown = emptyStateJson(),
+    overrides: Record<string, unknown> = {},
+  ) => ({
+    id: 'state-1',
+    serviceId: 'svc-1',
+    stageId: 'stage-1',
+    stage: 'dev',
+    region: 'cn-hangzhou',
+    scopeProtocol: 2,
+    contentHash: hash(stateJson),
+    versionNumber: 1,
+    stateJson,
+    ...overrides,
+  });
+  const acknowledgeSave = (versionNumber = 2) =>
+    mockApiClient.post.mockImplementationOnce(async (_url, body) =>
+      snapshot(body.stateJson, { contentHash: body.contentHash, versionNumber }),
+    );
+
   /** Standard mutating happy path: capabilities probe, provision, state fetch. */
-  const mockMutatingLoad = (stateJson: unknown = emptyStateJson()) => {
-    mockApiClient.get.mockResolvedValueOnce({ regionalScope: true });
+  const mockMutatingLoad = (
+    stateJson: unknown = emptyStateJson(),
+    regional = !!(stateJson as StateFile).scope,
+  ) => {
+    mockApiClient.get.mockResolvedValueOnce({
+      regionalScope: true,
+      scopeProtocol: 2,
+      stateFormat: '4.0',
+    });
     mockApiClient.post.mockResolvedValueOnce(deploymentResponse());
-    mockApiClient.get.mockResolvedValueOnce({ stateJson });
+    mockApiClient.get.mockResolvedValueOnce(
+      snapshot(stateJson, regional ? {} : { scopeProtocol: 1, region: '' }),
+    );
   };
 
   beforeEach(() => {
     jest.clearAllMocks();
+    Object.values(mockApiClient).forEach((mock) => mock.mockReset());
     (loadCredentials as jest.Mock).mockReturnValue({
       apiKey: 'si_test_testkey123456789012345678901234',
       consoleUrl: 'https://api.test.com',
@@ -327,6 +364,43 @@ describe('saasStateBackend (scope-bound, issue #280)', () => {
   });
 
   describe('regional scope protocol (issue #280)', () => {
+    it.each([1, 3])(
+      'refuses unsupported protocol %s before provisioning',
+      async (scopeProtocol) => {
+        mockApiClient.get.mockResolvedValueOnce({
+          regionalScope: true,
+          scopeProtocol,
+          stateFormat: '4.0',
+        });
+        await expect(createBackend().loadState()).rejects.toThrow(
+          'SAAS_REGIONAL_SCOPE_UNSUPPORTED',
+        );
+        expect(mockApiClient.post).not.toHaveBeenCalled();
+      },
+    );
+
+    it('projects an activated, bound legacy document without changing the acknowledged hash', async () => {
+      const legacy = {
+        ...emptyStateJson(),
+        version: '3.0',
+        scope: undefined,
+        stages: {
+          dev: { resources: { demo: { instances: [{ id: 'native-id' }] } } },
+          old: { resources: { foreign: {} } },
+        },
+      };
+      mockMutatingLoad(legacy, true);
+      const backend = createBackend();
+      const state = await backend.loadState();
+      expect(state.version).toBe('4.0');
+      expect(state.scope).toEqual(scope && { stage: 'dev', region: 'cn-hangzhou' });
+      expect(Object.keys(state.stages)).toEqual(['dev']);
+      expect((state.resources.demo.instances[0] as { id: string }).id).toBe('native-id');
+      expect((await backend.probeWriteReadiness()).ready).toBe(true);
+      acknowledgeSave();
+      await backend.saveState(state);
+      expect(mockApiClient.post.mock.calls.at(-1)?.[1].baseContentHash).toBe(hash(legacy));
+    });
     it('provisions with region, scope and scopeProtocol in the payload', async () => {
       mockMutatingLoad();
 
@@ -338,8 +412,7 @@ describe('saasStateBackend (scope-bound, issue #280)', () => {
         provider: 'aliyun',
         stage: 'dev',
         region: 'cn-hangzhou',
-        scope: { stage: 'dev', region: 'cn-hangzhou' },
-        scopeProtocol: 1,
+        scopeProtocol: 2,
         spec: { operation: 'init' },
         source: 'cli',
       });
@@ -499,7 +572,11 @@ describe('saasStateBackend (scope-bound, issue #280)', () => {
     });
 
     it('returns default state only when Console reports 404 (no state yet)', async () => {
-      mockApiClient.get.mockResolvedValueOnce({ regionalScope: true });
+      mockApiClient.get.mockResolvedValueOnce({
+        regionalScope: true,
+        scopeProtocol: 2,
+        stateFormat: '4.0',
+      });
       mockApiClient.post.mockResolvedValueOnce(deploymentResponse());
       mockApiClient.get.mockRejectedValueOnce(new ApiError('not found', 404));
 
@@ -517,7 +594,11 @@ describe('saasStateBackend (scope-bound, issue #280)', () => {
     });
 
     it('surfaces non-404 fetch failures instead of assuming an empty state', async () => {
-      mockApiClient.get.mockResolvedValueOnce({ regionalScope: true });
+      mockApiClient.get.mockResolvedValueOnce({
+        regionalScope: true,
+        scopeProtocol: 2,
+        stateFormat: '4.0',
+      });
       mockApiClient.post.mockResolvedValueOnce(deploymentResponse());
       mockApiClient.get.mockRejectedValueOnce(new ApiError('upstream exploded', 500));
 
@@ -527,9 +608,13 @@ describe('saasStateBackend (scope-bound, issue #280)', () => {
     });
 
     it('should provision only once across calls', async () => {
-      mockApiClient.get.mockResolvedValueOnce({ regionalScope: true });
+      mockApiClient.get.mockResolvedValueOnce({
+        regionalScope: true,
+        scopeProtocol: 2,
+        stateFormat: '4.0',
+      });
       mockApiClient.post.mockResolvedValueOnce(deploymentResponse());
-      mockApiClient.get.mockResolvedValue({ stateJson: emptyStateJson() });
+      mockApiClient.get.mockResolvedValue(snapshot());
 
       const backend = createBackend();
       await backend.loadState();
@@ -545,6 +630,7 @@ describe('saasStateBackend (scope-bound, issue #280)', () => {
       provider: 'aliyun',
       app: 'myapp',
       service: 'myservice',
+      scope: { stage: 'dev', region: 'cn-hangzhou' },
       serial: 5,
       lineage: 'lineage-1',
       stages: {},
@@ -561,7 +647,7 @@ describe('saasStateBackend (scope-bound, issue #280)', () => {
 
     it('should POST state/sync with the regional scope payload', async () => {
       mockMutatingLoad();
-      mockApiClient.post.mockResolvedValueOnce({ serial: 6, lineage: 'lineage-1' });
+      acknowledgeSave();
 
       const backend = createBackend();
       await backend.loadState();
@@ -575,19 +661,42 @@ describe('saasStateBackend (scope-bound, issue #280)', () => {
           provider: 'aliyun',
           stage: 'dev',
           region: 'cn-hangzhou',
-          scope: { stage: 'dev', region: 'cn-hangzhou' },
-          scopeProtocol: 1,
-          baseSerial: 5,
-          baseLineage: 'lineage-1',
-          idempotencyKey: expect.any(String),
+          scopeProtocol: 2,
+          baseContentHash: hash(emptyStateJson()),
           resourceCount: 1,
         }),
       );
     });
 
+    it('refuses a write that has no acknowledged base', async () => {
+      mockApiClient.get.mockResolvedValueOnce({
+        regionalScope: true,
+        scopeProtocol: 2,
+        stateFormat: '4.0',
+      });
+      mockApiClient.post.mockResolvedValueOnce(deploymentResponse());
+      await expect(createBackend().saveState(savedState)).rejects.toThrow(
+        'SAAS_STATE_BASE_UNKNOWN',
+      );
+      expect(mockApiClient.post).toHaveBeenCalledTimes(1);
+    });
+
+    it('does not retry a CAS conflict or advance its base from the rejected write', async () => {
+      mockMutatingLoad();
+      const backend = createBackend();
+      await backend.loadState();
+      mockApiClient.post.mockRejectedValueOnce(new ApiError('stale', 409));
+      await expect(backend.saveState(savedState)).rejects.toThrow('stale');
+      acknowledgeSave();
+      await backend.saveState(savedState);
+      const calls = mockApiClient.post.mock.calls.filter((call) => call[0].endsWith('/sync'));
+      expect(calls).toHaveLength(2);
+      expect(calls[0][1].baseContentHash).toBe(calls[1][1].baseContentHash);
+    });
+
     it('projects the runtime resources into the synced stage document', async () => {
       mockMutatingLoad();
-      mockApiClient.post.mockResolvedValueOnce({ serial: 6, lineage: 'lineage-1' });
+      acknowledgeSave();
 
       const backend = createBackend();
       await backend.loadState();
@@ -632,103 +741,89 @@ describe('saasStateBackend (scope-bound, issue #280)', () => {
       expect(mockApiClient.post).not.toHaveBeenCalled();
     });
 
-    describe('idempotency and base serial (issue #280 §4)', () => {
-      const syncPayloads = (): Array<Record<string, unknown>> =>
+    describe('content-hash CAS and idempotency', () => {
+      const payloads = () =>
         mockApiClient.post.mock.calls
-          .filter((call) => call[0] === '/api/v1/apps/app-1/services/svc-1/state/sync')
+          .filter((call) => call[0].endsWith('/state/sync'))
           .map((call) => call[1] as Record<string, unknown>);
 
-      it('derives baseSerial from the loaded state serial and advances it across saves', async () => {
-        mockMutatingLoad({ ...emptyStateJson(), serial: 7 });
-        mockApiClient.post
-          .mockResolvedValueOnce({ serial: 8, lineage: 'lineage-1' })
-          .mockResolvedValueOnce({ serial: 9, lineage: 'lineage-1' });
+      it('uses the loaded hash and advances the base only from successful acknowledgements', async () => {
+        mockMutatingLoad();
+        acknowledgeSave(2);
+        acknowledgeSave(3);
         const backend = createBackend();
         await backend.loadState();
-
         await backend.saveState(savedState);
-        await backend.saveState({
-          ...savedState,
-          resources: {
-            ...savedState.resources,
-            func2: {
-              mode: 'managed',
-              region: 'cn-hk',
-              definition: {},
-              instances: [],
-              lastUpdated: '',
-            },
-          },
-        });
-
-        const payloads = syncPayloads();
-        expect(payloads).toHaveLength(2);
-        // The first save bases on the revision acknowledged by the load...
-        expect(payloads[0].baseSerial).toBe(7);
-        // ...and the acknowledged serial advances with every confirmed save.
-        expect(payloads[1].baseSerial).toBe(8);
-        // Distinct incremental content → distinct idempotency keys.
-        expect(payloads[0].idempotencyKey).not.toBe(payloads[1].idempotencyKey);
+        await backend.saveState({ ...savedState, resources: {} });
+        const calls = payloads();
+        expect(calls[0].baseContentHash).toBe(hash(emptyStateJson()));
+        expect(calls[1].baseContentHash).toBe(calls[0].contentHash);
+        expect(calls[0].contentHash).not.toBe(calls[1].contentHash);
+        expect(calls[0]).not.toHaveProperty('baseSerial');
       });
 
-      it('uses the returned revision when the server deduplicates an identical save', async () => {
-        mockMutatingLoad({ ...emptyStateJson(), serial: 3, lineage: 'lineage-1' });
-        mockApiClient.post
-          .mockResolvedValueOnce({ serial: 4, lineage: 'lineage-1' })
-          .mockResolvedValueOnce({ serial: 4, lineage: 'lineage-1' })
-          .mockResolvedValueOnce({ serial: 5, lineage: 'lineage-1' });
+      it('keeps the same acknowledged head when identical content is deduplicated', async () => {
+        mockMutatingLoad();
+        acknowledgeSave(2);
+        acknowledgeSave(2);
+        acknowledgeSave(3);
         const backend = createBackend();
         await backend.loadState();
         await backend.saveState(savedState);
         await backend.saveState(savedState);
         await backend.saveState({ ...savedState, resources: {} });
-        const payloads = syncPayloads();
-        expect(payloads.map((payload) => payload.baseSerial)).toEqual([3, 4, 4]);
-        expect(payloads[1].idempotencyKey).not.toBe(payloads[0].idempotencyKey);
-        expect(payloads[2].idempotencyKey).not.toBe(payloads[1].idempotencyKey);
+        const calls = payloads();
+        expect(calls[1].baseContentHash).toBe(calls[0].contentHash);
+        expect(calls[2].baseContentHash).toBe(calls[0].contentHash);
       });
-      it('retries a lost response with the same key and continues from the actual deduplicated revision', async () => {
-        mockMutatingLoad({ ...emptyStateJson(), serial: 5, lineage: 'lineage-1' });
+
+      it('retries a lost response with the same base/content and continues from the confirmed hash', async () => {
+        mockMutatingLoad();
         const backend = createBackend();
         await backend.loadState();
-        let revision = 5;
+        let head = snapshot();
         let lost = true;
-        const acknowledgments = new Map<string, { serial: number; lineage: string }>();
         mockApiClient.post.mockImplementation(async (_url, body) => {
-          if (acknowledgments.has(body.idempotencyKey))
-            return acknowledgments.get(body.idempotencyKey);
-          if (body.baseSerial !== revision) throw new Error('stale revision');
-          revision += 1;
-          const ack = { serial: revision, lineage: 'lineage-1' };
-          acknowledgments.set(body.idempotencyKey, ack);
+          if (head.contentHash === body.contentHash) return head;
+          if (body.baseContentHash !== head.contentHash) throw new ApiError('stale revision', 409);
+          head = snapshot(body.stateJson, {
+            contentHash: body.contentHash,
+            versionNumber: head.versionNumber + 1,
+          });
           if (lost) {
             lost = false;
             throw new Error('lost response');
           }
-          return ack;
+          return head;
         });
-        await expect(backend.saveState(savedState)).rejects.toThrow('lost response');
         await backend.saveState(savedState);
         await backend.saveState({ ...savedState, resources: {} });
-        const calls = syncPayloads();
-        expect(calls.map((call) => call.baseSerial)).toEqual([5, 5, 6]);
-        expect(calls[0].idempotencyKey).toBe(calls[1].idempotencyKey);
-        expect(revision).toBe(7);
+        const calls = payloads();
+        expect(calls[0]).toEqual(calls[1]);
+        expect(calls[2].baseContentHash).toBe(calls[0].contentHash);
+        expect(head.versionNumber).toBe(3);
       });
 
-      it('requires valid server acknowledgments and learns the assigned lineage of a new deployment', async () => {
-        mockMutatingLoad();
+      it('rejects invalid acknowledgements and accepts a first snapshot without serial or lineage', async () => {
+        mockApiClient.get.mockResolvedValueOnce({
+          regionalScope: true,
+          scopeProtocol: 2,
+          stateFormat: '4.0',
+        });
+        mockApiClient.post.mockResolvedValueOnce(deploymentResponse());
+        mockApiClient.get.mockRejectedValueOnce(new ApiError('not found', 404));
         const backend = createBackend();
         await backend.loadState();
         const state = { ...savedState, serial: undefined, lineage: undefined };
         mockApiClient.post.mockResolvedValueOnce({});
         await expect(backend.saveState(state)).rejects.toThrow('SAAS_STATE_ACK_INVALID');
-        mockApiClient.post
-          .mockResolvedValueOnce({ stateJson: { serial: 1, lineage: 'assigned' } })
-          .mockResolvedValueOnce({ serial: 2, lineage: 'assigned' });
+        acknowledgeSave(1);
+        acknowledgeSave(2);
         await backend.saveState(state);
         await backend.saveState({ ...state, resources: {} });
-        expect(syncPayloads().at(-1)).toMatchObject({ baseSerial: 1, baseLineage: 'assigned' });
+        const calls = payloads();
+        expect(calls[0].baseContentHash).toBe('');
+        expect(calls.at(-1)?.baseContentHash).toBe(calls[1].contentHash);
       });
     });
   });
@@ -746,13 +841,13 @@ describe('saasStateBackend (scope-bound, issue #280)', () => {
         service: { name: 'myservice', exists: true, id: 'svc-1', provider: 'aliyun' },
         stages: [{ name: 'dev', registered: true, hasState: true, latestVersion: null }],
       });
-      mockApiClient.get.mockResolvedValueOnce({ stateJson: emptyStateJson() });
+      mockApiClient.get.mockResolvedValueOnce(snapshot());
 
       const backend = readOnlyBackend();
       const result = await backend.loadState();
 
       expect(mockApiClient.get).toHaveBeenCalledWith(
-        '/api/v1/state/migrate/targets?app_name=myapp&service_name=myservice&stages=dev',
+        '/api/v1/state/migrate/targets?app_name=myapp&service_name=myservice&stages=dev&region=cn-hangzhou',
       );
       expect(mockApiClient.post).not.toHaveBeenCalled();
       expect(result).toEqual(expect.objectContaining({ appId: 'app-1', serviceId: 'svc-1' }));
@@ -882,6 +977,86 @@ describe('saasStateBackend (scope-bound, issue #280)', () => {
   });
 
   describe('withLock', () => {
+    it('isolates the durable spool without sending its filesystem path as event data', async () => {
+      const spool = fs.mkdtempSync(path.join(os.tmpdir(), 'si-saas-spool-'));
+      try {
+        mockMutatingLoad();
+        mockApiClient.patch.mockResolvedValue({});
+        const backend = createSaasStateBackend({ scope }, { eventQueueDir: spool });
+        await backend.loadState();
+        backend.reportEvent!({ type: 'diagnostic', message: 'test event' });
+        const file = path.join(spool, 'deploy-1.jsonl');
+        expect(fs.existsSync(file)).toBe(true);
+        expect(JSON.parse(fs.readFileSync(file, 'utf8'))).not.toHaveProperty('queueDir');
+        await backend.flushEvents!();
+        expect(fs.existsSync(file)).toBe(false);
+      } finally {
+        fs.rmSync(spool, { recursive: true, force: true });
+      }
+    });
+    it('sends the owning deployment on incremental writes and retries terminal delivery only', async () => {
+      mockMutatingLoad();
+      acknowledgeSave();
+      const backend = createBackend();
+      const state = await backend.loadState();
+      let lose = true;
+      mockApiClient.patch.mockImplementation(async (_path, body) => {
+        if (body.phase === 'complete' && lose) {
+          lose = false;
+          throw new Error('lost completion');
+        }
+        return {};
+      });
+      const callback = jest.fn(async () => backend.saveState(state));
+      await backend.withLock('deploy', callback);
+      expect(callback).toHaveBeenCalledTimes(1);
+      expect(mockApiClient.post.mock.calls.at(-1)?.[1].deploymentId).toBe('deploy-1');
+      const terminals = mockApiClient.patch.mock.calls.filter(
+        (call) => call[1].phase === 'complete',
+      );
+      expect(terminals).toHaveLength(2);
+      expect(terminals[0][1]).toEqual(terminals[1][1]);
+    });
+
+    it('can complete an empty first deploy without inventing a snapshot reference', async () => {
+      mockApiClient.get.mockResolvedValueOnce({
+        regionalScope: true,
+        scopeProtocol: 2,
+        stateFormat: '4.0',
+      });
+      mockApiClient.post.mockResolvedValueOnce(deploymentResponse());
+      mockApiClient.get.mockRejectedValueOnce(new ApiError('absent', 404));
+      mockApiClient.patch.mockResolvedValue({});
+      const backend = createBackend();
+      const state = await backend.loadState();
+      await backend.withLock('deploy', async () => ({ stateJson: state, resourceCount: 0 }));
+      const complete = mockApiClient.patch.mock.calls.find(
+        (call) => call[1].phase === 'complete',
+      )![1];
+      expect(complete.baseContentHash).toBe('');
+      expect(complete).not.toHaveProperty('stateId');
+      expect(complete.stateJson.scope.region).toBe('cn-hangzhou');
+    });
+
+    it('falls back to a diagnostic-only failure when its snapshot is no longer current', async () => {
+      mockMutatingLoad();
+      const backend = createBackend();
+      await backend.loadState();
+      mockApiClient.patch.mockImplementation(async (_url, body) => {
+        if (body.phase === 'fail' && body.stateId) throw new ApiError('newer head', 409);
+        return {};
+      });
+      const failure = Object.assign(new Error('cloud failure'), { stateJson: { partial: true } });
+      await expect(
+        backend.withLock('deploy', async () => {
+          throw failure;
+        }),
+      ).rejects.toThrow('cloud failure');
+      const fails = mockApiClient.patch.mock.calls.filter((call) => call[1].phase === 'fail');
+      expect(fails).toHaveLength(2);
+      expect(fails[1][1]).not.toHaveProperty('stateId');
+      expect(fails[1][1].stateSnapshot).toEqual({ partial: true });
+    });
     it('should start phase with the regional scope, execute, and complete', async () => {
       mockMutatingLoad();
       mockApiClient.patch.mockResolvedValue({});
@@ -895,8 +1070,8 @@ describe('saasStateBackend (scope-bound, issue #280)', () => {
       expect(mockApiClient.patch).toHaveBeenCalledWith('/api/v1/deployments/deploy-1', {
         phase: 'start',
         region: 'cn-hangzhou',
-        scope: { stage: 'dev', region: 'cn-hangzhou' },
-        scopeProtocol: 1,
+        scopeProtocol: 2,
+        baseContentHash: hash(emptyStateJson()),
       });
       expect(fn).toHaveBeenCalled();
       expect(mockApiClient.patch).toHaveBeenCalledWith(
@@ -925,9 +1100,9 @@ describe('saasStateBackend (scope-bound, issue #280)', () => {
         phase: 'complete',
         region: 'cn-hangzhou',
         result: null,
-        stateJson: summary.stateJson,
-        contentHash: 'abc123',
-        resourceCount: 1,
+        stateId: 'state-1',
+        scopeProtocol: 2,
+        baseContentHash: hash(emptyStateJson()),
         plan: summary.plan,
       });
       expect(result).toBe(summary);
@@ -985,9 +1160,9 @@ describe('saasStateBackend (scope-bound, issue #280)', () => {
           phase: 'fail',
           error: { message: 'CreateFunction failed' },
           plan: { items: [{ logicalId: 'functions.fn', action: 'create' }] },
-          stateJson: expect.any(Object),
-          contentHash: expect.any(String),
-          resourceCount: 1,
+          stateId: 'state-1',
+          stateSnapshot: failure.stateJson,
+          baseContentHash: hash(emptyStateJson()),
         }),
       );
     });
@@ -1001,9 +1176,13 @@ describe('saasStateBackend (scope-bound, issue #280)', () => {
     });
 
     it('should throw when provisioning did not produce a deployment', async () => {
-      mockApiClient.get.mockResolvedValueOnce({ regionalScope: true });
+      mockApiClient.get.mockResolvedValueOnce({
+        regionalScope: true,
+        scopeProtocol: 2,
+        stateFormat: '4.0',
+      });
       mockApiClient.post.mockResolvedValueOnce(deploymentResponse(''));
-      mockApiClient.get.mockResolvedValueOnce({ stateJson: emptyStateJson() });
+      mockApiClient.get.mockResolvedValueOnce(snapshot());
 
       const backend = createBackend();
       await backend.loadState();

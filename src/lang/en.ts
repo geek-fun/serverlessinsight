@@ -1161,7 +1161,7 @@ export const en = {
   LOCK_CONDITIONAL_CREATE_UNSUPPORTED:
     'This state storage does not support exclusive (conditional) create — concurrent first lock acquisition falls back to a verified write and is not guaranteed atomic. Avoid running mutating commands for the same scope in parallel',
   SAAS_REGIONAL_SCOPE_UNSUPPORTED:
-    'The Console at {{consoleUrl}} does not support regional deployment states yet (no scope protocol capability). Upgrading the CLI alone cannot isolate regions safely — update the Console, or keep using the previous CLI release for unscoped deployments',
+    'The Console at {{consoleUrl}} does not advertise compatible regional deployment states (scope protocol 2 and state format 4.0). Upgrading the CLI alone cannot isolate regions safely — update the Console, or keep using the previous CLI release for unscoped deployments',
   SAAS_STATE_SCOPE_MISMATCH:
     'The Console returned state for stage {{storedStage}} / region {{storedRegion}}, but this command targets stage {{stage}} / region {{region}}. Refusing to mix regional scopes',
   SAAS_READ_ONLY_WRITE_REFUSED:
@@ -1184,8 +1184,15 @@ export const en = {
     'This state store cannot atomically reserve ownership or acquire a lock. Mutations are refused.',
   REGIONAL_MIGRATION_PENDING:
     'Migration {{opId}} is incomplete. Re-run the original command to resume, or use --rollback-op-id {{opId}} to finish rollback. Keep the original app, service, provider and binding options.',
+  SAAS_STATE_BASE_UNKNOWN: 'Load the regional state before saving or starting a deployment.',
+  MIGRATE_REGIONAL_SPLIT_REQUIRED:
+    'This source is a legacy aggregate. Run `si migrate --to-regional --dry-run`, review the regional bindings, then apply the split before importing each stage/region into the Console.',
+  MIGRATE_TARGET_REGIONAL_REQUIRED:
+    'The target service still uses legacy state. Complete its Console-side binding and activation before importing a regional state.',
+  MIGRATE_SOURCE_MULTIPLE_SCOPES:
+    'This regional document contains resources from other stages. Resolve the source ownership before importing; one regional document may own only its selected stage.',
   SAAS_STATE_ACK_INVALID:
-    'The state server did not confirm a valid serial and lineage. Refusing to guess the next state revision; upgrade the server to the regional state protocol.',
+    'The state server did not confirm a valid regional snapshot and content hash. Refusing to guess the next state revision; upgrade the server to scope protocol 2.',
   STATE_PROVIDER_BINDING_MISMATCH:
     'Provider mismatch for this service: the stored provider binding records "{{stored}}" but this command resolved provider "{{requested}}". One service has exactly one provider across ALL its stages and regions; check -v/--provider and the YAML provider block',
   REGIONAL_MIGRATION_PROVIDER_MISMATCH:
