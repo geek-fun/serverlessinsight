@@ -13,6 +13,7 @@ export type Context = {
   accessKeyId: string;
   accessKeySecret: string;
   securityToken?: string;
+  storage?: { provider: string; region: string };
   iacLocation: string;
   parameters?: Array<{ key: string; value: string }>;
   stages?: {

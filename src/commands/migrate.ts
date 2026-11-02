@@ -14,16 +14,17 @@ import {
   hashSaasState,
   type SaasStateSnapshot,
 } from '../common';
-import { createStateBackend } from '../common/stateBackend';
+import { createStateBackend, resolveStateStorage } from '../common/stateBackend';
 import { loadCredentials, getConsoleUrl } from '../common/credentialStore';
 import { createApiClient, validateApiKey, ApiError } from '../common/apiClient';
 import { isMigratedToSaas } from '../common/migrationMarker';
-import { StateBackendType } from '../types';
+import { StateBackendType, type BucketStoreBackendConfig } from '../types';
 import { parseYaml, revalYaml } from '../parser';
 import { runRegionalMigration } from './migrateRegional';
 import { lang } from '../lang';
 
 type MigrateUploadResult = {
+  provider: string;
   stateId: string;
   versionNumber: number;
   appId: string;
@@ -42,6 +43,7 @@ type MigrateTargets = {
     id: string | null;
     provider: string | null;
     regionalScopeEnabled: boolean;
+    scopeProtocol?: number;
   };
   stages: Array<{
     name: string;
@@ -132,21 +134,17 @@ export const migrate = async (options: {
     const bucketConfig =
       backendType === StateBackendType.BUCKET_STORE
         ? (() => {
-            const cfg = iac.backend as {
-              bucket: string;
-              key: string;
-              storageRegion?: string;
-              storageProvider?: string;
-            };
+            const cfg = iac.backend as BucketStoreBackendConfig;
+            const storage = resolveStateStorage(cfg, context);
             return {
               bucket: cfg.bucket,
               key: cfg.key,
 
-              storageRegion: cfg.storageRegion ?? context.region,
-              storageProvider: cfg.storageProvider ?? context.provider,
-              accessKeyId: context.accessKeyId,
-              accessKeySecret: context.accessKeySecret,
-              securityToken: context.securityToken,
+              storageRegion: storage.region,
+              storageProvider: storage.provider,
+              accessKeyId: storage.accessKeyId,
+              accessKeySecret: storage.accessKeySecret,
+              securityToken: storage.securityToken,
             };
           })()
         : undefined;
@@ -251,18 +249,13 @@ export const migrate = async (options: {
     }
     const resourceCount = Object.keys(selected.resources).length;
     const targets = await client.get<MigrateTargets>(
-      `/api/v1/state/migrate/targets?app_name=${encodeURIComponent(scope.app)}&service_name=${encodeURIComponent(scope.service)}&stages=${encodeURIComponent(scope.stage)}&region=${encodeURIComponent(scope.region)}`,
+      `/api/v1/state/migrate/targets?app_name=${encodeURIComponent(scope.app)}&service_name=${encodeURIComponent(scope.service)}&stages=${encodeURIComponent(scope.stage)}&region=${encodeURIComponent(scope.region)}&provider=${encodeURIComponent(scope.provider)}`,
     );
-    if (targets.service.exists && targets.service.provider !== scope.provider) {
-      throw new Error(
-        lang.__('MIGRATE_PROVIDER_MISMATCH_TARGET', {
-          service: scope.service,
-          existingProvider: targets.service.provider ?? '',
-          ymlProvider: scope.provider,
-        }),
-      );
-    }
-    if (targets.service.exists && targets.service.regionalScopeEnabled !== true) {
+    if (
+      targets.service.exists &&
+      (targets.service.regionalScopeEnabled !== true ||
+        targets.service.scopeProtocol !== SCOPE_PROTOCOL_VERSION)
+    ) {
       throw new Error(lang.__('MIGRATE_TARGET_REGIONAL_REQUIRED'));
     }
     const report = targets.stages.find((entry) => entry.name === scope.stage);
@@ -333,7 +326,7 @@ export const migrate = async (options: {
       throw error;
     }
     const remote = await client.get<SaasStateSnapshot & { resourceCount: number | null }>(
-      `/api/v1/apps/${uploaded.appId}/services/${uploaded.serviceId}/state/current?stage=${encodeURIComponent(scope.stage)}&region=${encodeURIComponent(scope.region)}`,
+      `/api/v1/apps/${uploaded.appId}/services/${uploaded.serviceId}/state/current?stage=${encodeURIComponent(scope.stage)}&region=${encodeURIComponent(scope.region)}&provider=${encodeURIComponent(scope.provider)}`,
     );
     if (
       !isRegionalSaasSnapshot(remote, scope) ||
@@ -341,6 +334,7 @@ export const migrate = async (options: {
       remote.id !== uploaded.stateId ||
       remote.stageId !== uploaded.stageId ||
       uploaded.scopeProtocol !== SCOPE_PROTOCOL_VERSION ||
+      uploaded.provider !== scope.provider ||
       uploaded.region !== scope.region ||
       remote.contentHash !== contentHash ||
       remote.versionNumber !== uploaded.versionNumber ||

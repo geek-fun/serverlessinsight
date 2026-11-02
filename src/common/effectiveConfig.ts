@@ -75,9 +75,3 @@ const canonicalRegion = (region: string): string => {
   }
   return canonical;
 };
-
-export const assertProviderBinding = (expected: string, actual: string): void => {
-  if (expected !== actual) {
-    throw new Error(lang.__('EFFECTIVE_CONFIG_PROVIDER_MISMATCH', { expected, actual }));
-  }
-};

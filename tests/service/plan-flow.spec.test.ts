@@ -1,4 +1,7 @@
 import path from 'node:path';
+import os from 'node:os';
+import { parse, stringify } from 'yaml';
+import type { ServerlessIacRaw } from '../../src/types';
 import fs from 'node:fs/promises';
 import { plan } from '../../src/commands/plan';
 import {
@@ -56,8 +59,8 @@ const STATE_FILE_PATH = path.join(
 const EXISTING_STATE = JSON.stringify({
   version: '3.0',
   provider: 'aliyun',
-  app: 'insight-poc-app',
-  service: 'insight-poc',
+  app: 'insight-poc-plan-app',
+  service: 'insight-poc-plan',
   stages: {
     dev: {
       resources: {
@@ -159,12 +162,18 @@ describe('Plan Flow Service Test', () => {
       // effective provider plans the command), so run against a fresh scope.
       await fs.rm(STATE_FILE_PATH, { force: true }).catch(() => {});
       mockTencentClient.scf.GetFunction.mockResolvedValue(null);
-      await plan({
-        location: path.join(fixturesDir, 'serverless-insight-plan.yml'),
-        stage: 'dev',
-        region: 'ap-guangzhou',
-        provider: 'tencent',
-      });
+      const template = parse(
+        await fs.readFile(path.join(fixturesDir, 'serverless-insight-plan.yml'), 'utf-8'),
+      ) as ServerlessIacRaw;
+      const { events: _events, ...portable } = template;
+      const directory = await fs.mkdtemp(path.join(os.tmpdir(), 'si-plan-provider-'));
+      try {
+        const location = path.join(directory, 'portable.yml');
+        await fs.writeFile(location, stringify(portable));
+        await plan({ location, stage: 'dev', region: 'ap-guangzhou', provider: 'tencent' });
+      } finally {
+        await fs.rm(directory, { recursive: true, force: true });
+      }
       // Dispatch proof: the TENCENT client was probed for the function (the
       // aliyun mock was not) — effective provider drives planning (issue #280).
       expect(mockTencentClient.scf.getFunction).toHaveBeenCalledWith('insight-poc-fn');

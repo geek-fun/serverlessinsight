@@ -76,7 +76,8 @@ describe('saasStateBackend (scope-bound, issue #280)', () => {
     stage: 'dev',
     region: 'cn-hangzhou',
     stageId: 'stage-1',
-    scopeProtocol: 2,
+    provider: 'aliyun',
+    scopeProtocol: 3,
   });
 
   const emptyStateJson = () => ({
@@ -89,6 +90,12 @@ describe('saasStateBackend (scope-bound, issue #280)', () => {
     resources: {},
   });
 
+  const phaseAck = async (_url: string, body: { phase: string }) => ({
+    ...deploymentResponse(),
+    status:
+      body.phase === 'start' ? 'deploying' : body.phase === 'complete' ? 'completed' : 'failed',
+  });
+
   const hash = (value: unknown) =>
     crypto.createHash('sha256').update(JSON.stringify(value)).digest('hex');
   const snapshot = (
@@ -98,9 +105,10 @@ describe('saasStateBackend (scope-bound, issue #280)', () => {
     id: 'state-1',
     serviceId: 'svc-1',
     stageId: 'stage-1',
+    provider: 'aliyun',
     stage: 'dev',
     region: 'cn-hangzhou',
-    scopeProtocol: 2,
+    scopeProtocol: 3,
     contentHash: hash(stateJson),
     versionNumber: 1,
     stateJson,
@@ -118,7 +126,8 @@ describe('saasStateBackend (scope-bound, issue #280)', () => {
   ) => {
     mockApiClient.get.mockResolvedValueOnce({
       regionalScope: true,
-      scopeProtocol: 2,
+      providerScope: true,
+      scopeProtocol: 3,
       stateFormat: '4.0',
     });
     mockApiClient.post.mockResolvedValueOnce(deploymentResponse());
@@ -364,11 +373,12 @@ describe('saasStateBackend (scope-bound, issue #280)', () => {
   });
 
   describe('regional scope protocol (issue #280)', () => {
-    it.each([1, 3])(
+    it.each([1, 2, 4])(
       'refuses unsupported protocol %s before provisioning',
       async (scopeProtocol) => {
         mockApiClient.get.mockResolvedValueOnce({
           regionalScope: true,
+          providerScope: true,
           scopeProtocol,
           stateFormat: '4.0',
         });
@@ -412,7 +422,7 @@ describe('saasStateBackend (scope-bound, issue #280)', () => {
         provider: 'aliyun',
         stage: 'dev',
         region: 'cn-hangzhou',
-        scopeProtocol: 2,
+        scopeProtocol: 3,
         spec: { operation: 'init' },
         source: 'cli',
       });
@@ -454,7 +464,7 @@ describe('saasStateBackend (scope-bound, issue #280)', () => {
       await createBackend().loadState();
 
       expect(mockApiClient.get).toHaveBeenCalledWith(
-        '/api/v1/apps/app-1/services/svc-1/state/current?stage=dev&region=cn-hangzhou',
+        '/api/v1/apps/app-1/services/svc-1/state/current?stage=dev&region=cn-hangzhou&provider=aliyun',
       );
     });
 
@@ -574,7 +584,8 @@ describe('saasStateBackend (scope-bound, issue #280)', () => {
     it('returns default state only when Console reports 404 (no state yet)', async () => {
       mockApiClient.get.mockResolvedValueOnce({
         regionalScope: true,
-        scopeProtocol: 2,
+        providerScope: true,
+        scopeProtocol: 3,
         stateFormat: '4.0',
       });
       mockApiClient.post.mockResolvedValueOnce(deploymentResponse());
@@ -596,7 +607,8 @@ describe('saasStateBackend (scope-bound, issue #280)', () => {
     it('surfaces non-404 fetch failures instead of assuming an empty state', async () => {
       mockApiClient.get.mockResolvedValueOnce({
         regionalScope: true,
-        scopeProtocol: 2,
+        providerScope: true,
+        scopeProtocol: 3,
         stateFormat: '4.0',
       });
       mockApiClient.post.mockResolvedValueOnce(deploymentResponse());
@@ -610,7 +622,8 @@ describe('saasStateBackend (scope-bound, issue #280)', () => {
     it('should provision only once across calls', async () => {
       mockApiClient.get.mockResolvedValueOnce({
         regionalScope: true,
-        scopeProtocol: 2,
+        providerScope: true,
+        scopeProtocol: 3,
         stateFormat: '4.0',
       });
       mockApiClient.post.mockResolvedValueOnce(deploymentResponse());
@@ -661,7 +674,7 @@ describe('saasStateBackend (scope-bound, issue #280)', () => {
           provider: 'aliyun',
           stage: 'dev',
           region: 'cn-hangzhou',
-          scopeProtocol: 2,
+          scopeProtocol: 3,
           baseContentHash: hash(emptyStateJson()),
           resourceCount: 1,
         }),
@@ -671,7 +684,8 @@ describe('saasStateBackend (scope-bound, issue #280)', () => {
     it('refuses a write that has no acknowledged base', async () => {
       mockApiClient.get.mockResolvedValueOnce({
         regionalScope: true,
-        scopeProtocol: 2,
+        providerScope: true,
+        scopeProtocol: 3,
         stateFormat: '4.0',
       });
       mockApiClient.post.mockResolvedValueOnce(deploymentResponse());
@@ -807,7 +821,8 @@ describe('saasStateBackend (scope-bound, issue #280)', () => {
       it('rejects invalid acknowledgements and accepts a first snapshot without serial or lineage', async () => {
         mockApiClient.get.mockResolvedValueOnce({
           regionalScope: true,
-          scopeProtocol: 2,
+          providerScope: true,
+          scopeProtocol: 3,
           stateFormat: '4.0',
         });
         mockApiClient.post.mockResolvedValueOnce(deploymentResponse());
@@ -847,7 +862,7 @@ describe('saasStateBackend (scope-bound, issue #280)', () => {
       const result = await backend.loadState();
 
       expect(mockApiClient.get).toHaveBeenCalledWith(
-        '/api/v1/state/migrate/targets?app_name=myapp&service_name=myservice&stages=dev&region=cn-hangzhou',
+        '/api/v1/state/migrate/targets?app_name=myapp&service_name=myservice&stages=dev&region=cn-hangzhou&provider=aliyun',
       );
       expect(mockApiClient.post).not.toHaveBeenCalled();
       expect(result).toEqual(expect.objectContaining({ appId: 'app-1', serviceId: 'svc-1' }));
@@ -936,14 +951,18 @@ describe('saasStateBackend (scope-bound, issue #280)', () => {
 
     it('should return LockMetadata when an active deployment exists', async () => {
       mockMutatingLoad();
-      mockApiClient.get.mockResolvedValueOnce([{ id: 'deploy-9', status: 'active' }]);
+      mockApiClient.get.mockResolvedValueOnce({
+        ...deploymentResponse(),
+        status: 'deploying',
+        id: 'deploy-9',
+      });
 
       const backend = createBackend();
       await backend.loadState();
       const lock = await backend.readLock();
 
       expect(mockApiClient.get).toHaveBeenLastCalledWith(
-        '/api/v1/deployments/active?service_id=svc-1&stage=dev&region=cn-hangzhou',
+        '/api/v1/deployments/active?service_id=svc-1&stage=dev&region=cn-hangzhou&provider=aliyun',
       );
       expect(lock).toEqual(
         expect.objectContaining({
@@ -956,7 +975,7 @@ describe('saasStateBackend (scope-bound, issue #280)', () => {
 
     it('should return null when no active deployment exists', async () => {
       mockMutatingLoad();
-      mockApiClient.get.mockResolvedValueOnce([]);
+      mockApiClient.get.mockResolvedValueOnce(null);
 
       const backend = createBackend();
       await backend.loadState();
@@ -965,18 +984,58 @@ describe('saasStateBackend (scope-bound, issue #280)', () => {
       expect(lock).toBeNull();
     });
 
-    it('should return null when the active deployment lookup fails', async () => {
+    it('propagates active deployment lookup failures', async () => {
       mockMutatingLoad();
       mockApiClient.get.mockRejectedValueOnce(new Error('service unavailable'));
 
       const backend = createBackend();
       await backend.loadState();
 
-      await expect(backend.readLock()).resolves.toBeNull();
+      await expect(backend.readLock()).rejects.toThrow('service unavailable');
+    });
+
+    it.each([
+      { provider: 'tencent' },
+      { region: 'cn-beijing' },
+      { stageId: 'foreign' },
+      { scopeProtocol: 2 },
+    ])('rejects foreign active deployment metadata: %j', async (foreign) => {
+      mockMutatingLoad();
+      mockApiClient.get.mockResolvedValueOnce({
+        ...deploymentResponse(),
+        status: 'deploying',
+        ...foreign,
+      });
+      const backend = createBackend();
+      await backend.loadState();
+      await expect(backend.readLock()).rejects.toThrow();
     });
   });
 
   describe('withLock', () => {
+    it.each([
+      { provider: 'tencent' },
+      { region: 'cn-beijing' },
+      { stageId: 'foreign-lifecycle' },
+      { serviceId: 'foreign-service' },
+      { scopeProtocol: 2 },
+    ])('refuses a foreign start acknowledgement before running cloud work: %j', async (foreign) => {
+      mockMutatingLoad();
+      mockApiClient.patch.mockResolvedValue({
+        ...deploymentResponse(),
+        status: 'deploying',
+        ...foreign,
+      });
+      const backend = createBackend();
+      await backend.loadState();
+      const cloud = jest.fn();
+      const notification = jest.fn();
+      await expect(backend.withLock('deploy', cloud, undefined, notification)).rejects.toThrow(
+        'SAAS_STATE_ACK_INVALID',
+      );
+      expect(cloud).not.toHaveBeenCalled();
+      expect(notification).not.toHaveBeenCalled();
+    });
     it('rejects a stale start base before invoking the cloud callback or lock notification', async () => {
       mockMutatingLoad();
       const backend = createBackend();
@@ -997,8 +1056,9 @@ describe('saasStateBackend (scope-bound, issue #280)', () => {
           '/api/v1/deployments/deploy-1',
           {
             phase: 'start',
+            provider: 'aliyun',
             region: 'cn-hangzhou',
-            scopeProtocol: 2,
+            scopeProtocol: 3,
             baseContentHash: hash(emptyStateJson()),
           },
         ],
@@ -1011,7 +1071,7 @@ describe('saasStateBackend (scope-bound, issue #280)', () => {
       await backend.loadState();
       mockApiClient.patch
         .mockRejectedValueOnce(new Error('lost start response'))
-        .mockResolvedValue({});
+        .mockImplementation(phaseAck);
       const callback = jest.fn().mockResolvedValue('ok');
       const onLockAcquired = jest.fn();
 
@@ -1031,7 +1091,7 @@ describe('saasStateBackend (scope-bound, issue #280)', () => {
       const spool = fs.mkdtempSync(path.join(os.tmpdir(), 'si-saas-spool-'));
       try {
         mockMutatingLoad();
-        mockApiClient.patch.mockResolvedValue({});
+        mockApiClient.patch.mockImplementation(phaseAck);
         const backend = createSaasStateBackend({ scope }, { eventQueueDir: spool });
         await backend.loadState();
         backend.reportEvent!({ type: 'diagnostic', message: 'test event' });
@@ -1055,7 +1115,7 @@ describe('saasStateBackend (scope-bound, issue #280)', () => {
           lose = false;
           throw new Error('lost completion');
         }
-        return {};
+        return phaseAck(_path, body);
       });
       const callback = jest.fn(async () => backend.saveState(state));
       await backend.withLock('deploy', callback);
@@ -1071,12 +1131,13 @@ describe('saasStateBackend (scope-bound, issue #280)', () => {
     it('can complete an empty first deploy without inventing a snapshot reference', async () => {
       mockApiClient.get.mockResolvedValueOnce({
         regionalScope: true,
-        scopeProtocol: 2,
+        providerScope: true,
+        scopeProtocol: 3,
         stateFormat: '4.0',
       });
       mockApiClient.post.mockResolvedValueOnce(deploymentResponse());
       mockApiClient.get.mockRejectedValueOnce(new ApiError('absent', 404));
-      mockApiClient.patch.mockResolvedValue({});
+      mockApiClient.patch.mockImplementation(phaseAck);
       const backend = createBackend();
       const state = await backend.loadState();
       await backend.withLock('deploy', async () => ({ stateJson: state, resourceCount: 0 }));
@@ -1094,7 +1155,7 @@ describe('saasStateBackend (scope-bound, issue #280)', () => {
       await backend.loadState();
       mockApiClient.patch.mockImplementation(async (_url, body) => {
         if (body.phase === 'fail' && body.stateId) throw new ApiError('newer head', 409);
-        return {};
+        return phaseAck(_url, body);
       });
       const failure = Object.assign(new Error('cloud failure'), { stateJson: { partial: true } });
       await expect(
@@ -1109,7 +1170,7 @@ describe('saasStateBackend (scope-bound, issue #280)', () => {
     });
     it('should start phase with the regional scope, execute, and complete', async () => {
       mockMutatingLoad();
-      mockApiClient.patch.mockResolvedValue({});
+      mockApiClient.patch.mockImplementation(phaseAck);
 
       const backend = createBackend();
       await backend.loadState();
@@ -1119,8 +1180,9 @@ describe('saasStateBackend (scope-bound, issue #280)', () => {
 
       expect(mockApiClient.patch).toHaveBeenCalledWith('/api/v1/deployments/deploy-1', {
         phase: 'start',
+        provider: 'aliyun',
         region: 'cn-hangzhou',
-        scopeProtocol: 2,
+        scopeProtocol: 3,
         baseContentHash: hash(emptyStateJson()),
       });
       expect(fn).toHaveBeenCalled();
@@ -1133,7 +1195,7 @@ describe('saasStateBackend (scope-bound, issue #280)', () => {
 
     it('should forward stateJson/plan/contentHash when fn returns a deployment summary', async () => {
       mockMutatingLoad();
-      mockApiClient.patch.mockResolvedValue({});
+      mockApiClient.patch.mockImplementation(phaseAck);
 
       const backend = createBackend();
       await backend.loadState();
@@ -1148,10 +1210,11 @@ describe('saasStateBackend (scope-bound, issue #280)', () => {
 
       expect(mockApiClient.patch).toHaveBeenCalledWith('/api/v1/deployments/deploy-1', {
         phase: 'complete',
+        provider: 'aliyun',
         region: 'cn-hangzhou',
         result: null,
         stateId: 'state-1',
-        scopeProtocol: 2,
+        scopeProtocol: 3,
         baseContentHash: hash(emptyStateJson()),
         plan: summary.plan,
       });
@@ -1160,7 +1223,7 @@ describe('saasStateBackend (scope-bound, issue #280)', () => {
 
     it('should notify fail phase and rethrow when fn throws', async () => {
       mockMutatingLoad();
-      mockApiClient.patch.mockResolvedValue({});
+      mockApiClient.patch.mockImplementation(phaseAck);
 
       const backend = createBackend();
       await backend.loadState();
@@ -1177,7 +1240,7 @@ describe('saasStateBackend (scope-bound, issue #280)', () => {
 
     it('should forward plan/stateJson/contentHash when the failed fn attached them', async () => {
       mockMutatingLoad();
-      mockApiClient.patch.mockResolvedValue({});
+      mockApiClient.patch.mockImplementation(phaseAck);
 
       const backend = createBackend();
       await backend.loadState();
@@ -1225,26 +1288,23 @@ describe('saasStateBackend (scope-bound, issue #280)', () => {
       expect(fn).not.toHaveBeenCalled();
     });
 
-    it('should throw when provisioning did not produce a deployment', async () => {
+    it('rejects an initialization acknowledgement without a deployment ID', async () => {
       mockApiClient.get.mockResolvedValueOnce({
         regionalScope: true,
-        scopeProtocol: 2,
+        providerScope: true,
+        scopeProtocol: 3,
         stateFormat: '4.0',
       });
       mockApiClient.post.mockResolvedValueOnce(deploymentResponse(''));
       mockApiClient.get.mockResolvedValueOnce(snapshot());
 
       const backend = createBackend();
-      await backend.loadState();
-
-      await expect(backend.withLock('deploy', jest.fn())).rejects.toThrow(
-        'SAAS_BACKEND_NO_DEPLOYMENT',
-      );
+      await expect(backend.loadState()).rejects.toThrow('SAAS_STATE_ACK_INVALID');
     });
 
     it('reportEvent sends a typed event via PATCH phase:event', async () => {
       mockMutatingLoad();
-      mockApiClient.patch.mockResolvedValue({});
+      mockApiClient.patch.mockImplementation(phaseAck);
 
       const backend = createBackend();
       await backend.loadState();
@@ -1299,7 +1359,7 @@ describe('saasStateBackend (scope-bound, issue #280)', () => {
         `${JSON.stringify({ type: 'resource_post', sequence: 4 })}\n`,
         'utf-8',
       );
-      mockApiClient.patch.mockResolvedValue({});
+      mockApiClient.patch.mockImplementation(phaseAck);
 
       try {
         const backend = createBackend();

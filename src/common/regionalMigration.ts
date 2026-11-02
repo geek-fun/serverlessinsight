@@ -1,7 +1,12 @@
 import crypto from 'node:crypto';
 import os from 'node:os';
 
-import { assertNoPreviousStateLayout } from './stateLayout';
+import {
+  AGGREGATE_STATE_VERSION,
+  readAggregateDocument,
+  mergeAggregateScope,
+  type AggregateStateFile,
+} from './aggregateState';
 import {
   PersistedStateFile,
   ResourceState,
@@ -15,19 +20,17 @@ import { canonicalizeRegion, validateScopeKeyPart } from './stateScope';
 import { MANAGED_BY_REGIONAL, MANAGED_BY_SAAS } from './migrationMarker';
 import { logger } from './logger';
 import { LockError, formatLockInfo } from './lockManager';
+import { createLockMetadata, isLockStale, isProcessAlive, sleep } from './stateBackend/lockUtils';
 import {
-  LOCK_KEY_SUFFIX,
-  createLockMetadata,
-  isLockStale,
-  isProcessAlive,
-  sleep,
-} from './stateBackend/lockUtils';
-import { DEFAULT_LOCK_TIMEOUT, DEFAULT_LOCK_RETRY_DELAY } from './constants';
+  DEFAULT_LOCK_TIMEOUT,
+  DEFAULT_LOCK_RETRY_DELAY,
+  REGIONAL_MIGRATION_SUFFIX,
+} from './constants';
 import { lang } from '../lang';
-import { claimProviderBinding } from './providerBinding';
 import { ConditionalPutUnsupportedError } from './stateBackend/types';
 
 export type KeyValueIO = {
+  list?: (prefix: string) => Promise<string[]>;
   read: <T>(key: string) => Promise<T | null>;
   write: (key: string, data: unknown) => Promise<void>;
   delete: (key: string) => Promise<void>;
@@ -35,16 +38,12 @@ export type KeyValueIO = {
 };
 
 export type RegionalMigrationPaths = {
+  previewPrefix?: string;
   legacyKey: string;
   scopedPrefixBuilder: (stage: string, region: string) => string;
   reportKey: (opId: string) => string;
   backupKey: (opId: string) => string;
   serviceBindingKey: string;
-};
-
-export type ProviderBinding = {
-  provider: string;
-  recordedAt: string;
 };
 
 export const withIoLock = async <T>(
@@ -117,11 +116,6 @@ export const withIoLock = async <T>(
     attempt++;
   }
 };
-
-const readProviderBinding = async (
-  io: KeyValueIO,
-  paths: Pick<RegionalMigrationPaths, 'serviceBindingKey'>,
-): Promise<ProviderBinding | null> => io.read<ProviderBinding>(paths.serviceBindingKey);
 
 export type RegionEvidence = {
   logicalId: string;
@@ -297,6 +291,7 @@ export const buildScopedDocument = (
 };
 
 type RegionalMigrationJournal = {
+  aggregate?: AggregateStateFile;
   plan: RegionalMigrationPlan;
   options: RegionalMigrationOptions;
   targets: Array<{ stage: string; region: string; state: PersistedStateFile }>;
@@ -304,26 +299,12 @@ type RegionalMigrationJournal = {
 };
 
 const journalKey = (paths: RegionalMigrationPaths): string =>
-  `${paths.legacyKey}.regional-migration.json`;
+  `${paths.legacyKey}${REGIONAL_MIGRATION_SUFFIX}`;
 
 export const readRegionalMigrationJournal = (
   io: KeyValueIO,
   paths: RegionalMigrationPaths,
 ): Promise<RegionalMigrationJournal | null> => io.read(journalKey(paths));
-
-const withTargetLocks = <T>(
-  io: KeyValueIO,
-  paths: RegionalMigrationPaths,
-  targets: Array<{ stage: string; region: string }>,
-  operation: string,
-  fn: () => Promise<T>,
-): Promise<T> =>
-  [...new Set(targets.map((target) => paths.scopedPrefixBuilder(target.stage, target.region)))]
-    .sort()
-    .reduceRight<() => Promise<T>>(
-      (next, key) => () => withIoLock(io, `${key}${LOCK_KEY_SUFFIX}`, key, operation, next),
-      fn,
-    )();
 
 const stripRuntimeProjection = (state: StateFile): PersistedStateFile => {
   const { resources: _projection, ...persisted } = state;
@@ -389,21 +370,33 @@ const buildMigrationTargets = (
   });
 };
 
-const assertMigrationSource = (
-  source: PersistedStateFile | null,
-  plan: RegionalMigrationPlan,
-): void => {
-  if (!source) throw new Error(lang.__('REGIONAL_MIGRATION_SOURCE_MISSING'));
-  const ownTombstone =
-    source.managedBy === MANAGED_BY_REGIONAL &&
-    source.migration?.opId === plan.opId &&
-    source.migration.sourceHash === plan.sourceHash;
-  if (!ownTombstone && hashDocument(source) !== plan.sourceHash) {
-    throw new Error(lang.__('REGIONAL_MIGRATION_SOURCE_CHANGED'));
-  }
-};
+const aggregateMigrationTargets = (
+  targets: RegionalMigrationJournal['targets'],
+  options: RegionalMigrationOptions,
+): AggregateStateFile =>
+  targets.reduce<AggregateStateFile>(
+    (document, { stage, region, state }) =>
+      mergeAggregateScope(
+        document,
+        { app: options.app, service: options.service, provider: state.provider, stage, region },
+        { ...state, resources: state.stages[stage].resources },
+      ),
+    { version: AGGREGATE_STATE_VERSION, app: options.app, service: options.service, stages: {} },
+  );
 
-/** Caller holds the legacy lock; all target locks remain held through cutover. */
+const migrationReport = (journal: RegionalMigrationJournal): RegionalMigrationReport => ({
+  ...journal.plan,
+  documents: journal.targets.map(({ stage, region, state }) => ({
+    stage,
+    region,
+    resources: Object.keys(state.stages[stage].resources).length,
+    shared: Object.keys(state.stages[stage].shared ?? {}).length,
+  })),
+  migratedAt: new Date().toISOString(),
+  barrierWritten: true,
+});
+
+/** The caller holds the original file/key lock throughout the in-place upgrade. */
 export const applyRegionalMigration = async (
   io: KeyValueIO,
   legacy: PersistedStateFile,
@@ -414,19 +407,14 @@ export const applyRegionalMigration = async (
   if (plan.unknown.length > 0 && !options.bindUnknownRegion) {
     throw new Error(lang.__('REGIONAL_MIGRATION_UNKNOWN_REGION_REQUIRED'));
   }
-  const binding = await readProviderBinding(io, paths);
-  if (binding && binding.provider !== (legacy.provider || options.provider)) {
-    throw new Error(
-      lang.__('STATE_PROVIDER_BINDING_MISMATCH', {
-        stored: binding.provider,
-        requested: legacy.provider || options.provider,
-      }),
-    );
+  if (hashDocument(legacy) !== plan.sourceHash) {
+    throw new Error(lang.__('REGIONAL_MIGRATION_SOURCE_CHANGED'));
   }
   const previous = await readRegionalMigrationJournal(io, paths);
   if (
     previous &&
     (previous.plan.opId !== plan.opId ||
+      !previous.aggregate ||
       !(['provider', 'app', 'service', 'stage', 'bindUnknownRegion'] as const).every(
         (key) => previous.options[key] === options[key],
       ) ||
@@ -434,103 +422,82 @@ export const applyRegionalMigration = async (
   ) {
     throw new Error(lang.__('REGIONAL_MIGRATION_PENDING', { opId: previous.plan.opId }));
   }
-  const journal: RegionalMigrationJournal = previous ?? {
-    plan,
-    options,
-    targets: buildMigrationTargets(legacy, plan, options),
-    phase: 'applying',
+  const targets = previous?.targets ?? buildMigrationTargets(legacy, plan, options);
+  const completePlan = {
+    ...planRegionalMigration(legacy, { ...options, stage: undefined }),
+    opId: plan.opId,
   };
+  const expectedTargets = buildMigrationTargets(legacy, completePlan, options);
   const uncovered = Object.entries(legacy.stages).filter(
     ([stage, value]) =>
       (Object.keys(value.resources ?? {}).length || Object.keys(value.shared ?? {}).length) &&
-      !journal.targets.some((target) => target.stage === stage),
+      !targets.some((target) => target.stage === stage),
   );
-  if (uncovered.length) {
+  const coverage = (items: RegionalMigrationJournal['targets']) =>
+    items
+      .map(({ stage, region, state }) => ({
+        stage,
+        region,
+        provider: state.provider,
+        resources: state.stages[stage].resources,
+        shared: state.stages[stage].shared ?? {},
+      }))
+      .sort((left, right) =>
+        `${left.stage}/${left.region}`.localeCompare(`${right.stage}/${right.region}`),
+      );
+  if (
+    uncovered.length ||
+    hashDocument(coverage(targets)) !== hashDocument(coverage(expectedTargets))
+  ) {
     throw new Error(
       lang.__('REGIONAL_MIGRATION_INCOMPLETE_STAGE_COVERAGE', {
-        stages: uncovered.map(([stage]) => stage).join(', '),
+        stages: Object.keys(legacy.stages).join(', '),
       }),
     );
   }
-  return withTargetLocks(io, paths, journal.targets, 'migrate-regional-target', async () => {
-    assertMigrationSource(await io.read<PersistedStateFile>(paths.legacyKey), plan);
-    await Promise.all(
-      journal.targets.map(async (target) => {
-        const existing = await io.read<PersistedStateFile>(
-          paths.scopedPrefixBuilder(target.stage, target.region),
-        );
-        if (!existing) {
-          await assertNoPreviousStateLayout(
-            io,
-            paths.scopedPrefixBuilder(target.stage, target.region),
-          );
-        }
-        if (
-          journal.phase !== 'complete' &&
-          existing &&
-          (!previous || hashDocument(existing) !== hashDocument(target.state))
-        ) {
-          throw new Error(
-            lang.__('REGIONAL_MIGRATION_TARGET_EXISTS', {
-              stage: target.stage,
-              region: target.region,
-              opId: existing.migration?.opId ?? 'independent',
-            }),
-          );
-        }
+  const journal: RegionalMigrationJournal = previous ?? {
+    plan,
+    options,
+    targets,
+    phase: 'applying',
+    aggregate: aggregateMigrationTargets(targets, options),
+  };
+  if (journal.phase === 'complete') {
+    const report = await io.read<RegionalMigrationReport>(paths.reportKey(plan.opId));
+    if (report) {
+      readAggregateDocument(await io.read(paths.legacyKey), options, paths.legacyKey);
+      return report;
+    }
+  }
+  const current = await io.read<unknown>(paths.legacyKey);
+  const sourceMatches = current !== null && hashDocument(current) === plan.sourceHash;
+  const aggregateMatches =
+    current !== null && hashDocument(current) === hashDocument(journal.aggregate);
+  if (!sourceMatches && !aggregateMatches) {
+    throw new Error(lang.__('REGIONAL_MIGRATION_SOURCE_CHANGED'));
+  }
+  const backup = await io.read<PersistedStateFile>(paths.backupKey(plan.opId));
+  if (backup && hashDocument(backup) !== plan.sourceHash) {
+    throw new Error(lang.__('REGIONAL_MIGRATION_SOURCE_CHANGED'));
+  }
+  if (!backup) await io.write(paths.backupKey(plan.opId), legacy);
+  if (!previous) await io.write(journalKey(paths), journal);
+  try {
+    if (sourceMatches) await io.write(paths.legacyKey, journal.aggregate);
+    const report = migrationReport(journal);
+    await io.write(paths.reportKey(plan.opId), report);
+    await io.write(journalKey(paths), { ...journal, phase: 'complete' });
+    logger.info(lang.__('REGIONAL_MIGRATION_APPLIED', { opId: plan.opId }));
+    return report;
+  } catch (error) {
+    logger.error(
+      lang.__('REGIONAL_MIGRATION_PARTIAL_FAILURE', {
+        opId: plan.opId,
+        error: error instanceof Error ? error.message : String(error),
       }),
     );
-    const backup = await io.read<PersistedStateFile>(paths.backupKey(plan.opId));
-    if (backup && hashDocument(backup) !== plan.sourceHash) {
-      throw new Error(lang.__('REGIONAL_MIGRATION_SOURCE_CHANGED'));
-    }
-    if (!backup) await io.write(paths.backupKey(plan.opId), legacy);
-    if (!previous) await io.write(journalKey(paths), journal);
-    try {
-      await claimProviderBinding(io, paths.serviceBindingKey, legacy.provider || options.provider);
-      if (journal.phase !== 'complete') {
-        // Persist in journal order so a failed write leaves a deterministic recovery boundary.
-        for (const target of journal.targets) {
-          const key = paths.scopedPrefixBuilder(target.stage, target.region);
-          if (!(await io.read(key))) await io.write(key, target.state);
-        }
-        await io.write(paths.legacyKey, {
-          ...legacy,
-          version: CURRENT_STATE_VERSION,
-          managedBy: MANAGED_BY_REGIONAL,
-          migration: journal.targets[0]?.state.migration ?? {
-            opId: plan.opId,
-            sourceVersion: plan.sourceVersion,
-            sourceHash: plan.sourceHash,
-            migratedAt: new Date().toISOString(),
-          },
-        });
-      }
-      const report: RegionalMigrationReport = {
-        ...plan,
-        documents: journal.targets.map(({ stage, region, state }) => ({
-          stage,
-          region,
-          resources: Object.keys(state.stages[stage].resources).length,
-          shared: Object.keys(state.stages[stage].shared ?? {}).length,
-        })),
-        migratedAt: new Date().toISOString(),
-        barrierWritten: true,
-      };
-      await io.write(paths.reportKey(plan.opId), report);
-      await io.write(journalKey(paths), { ...journal, phase: 'complete' });
-      logger.info(lang.__('REGIONAL_MIGRATION_APPLIED', { opId: plan.opId }));
-      return report;
-    } catch (error) {
-      logger.error(
-        lang.__('REGIONAL_MIGRATION_PARTIAL_FAILURE', {
-          opId: plan.opId,
-          error: error instanceof Error ? error.message : String(error),
-        }),
-      );
-      throw error;
-    }
-  });
+    throw error;
+  }
 };
 
 export const rollbackRegionalMigration = async (
@@ -539,50 +506,30 @@ export const rollbackRegionalMigration = async (
   opId: string,
 ): Promise<void> => {
   const journal = await readRegionalMigrationJournal(io, paths);
-  const report = await io.read<RegionalMigrationReport>(paths.reportKey(opId));
-  const ownJournal = journal?.plan.opId === opId ? journal : null;
-  if (!report && !ownJournal)
+  if (!journal || journal.plan.opId !== opId || !journal.aggregate) {
     throw new Error(lang.__('REGIONAL_MIGRATION_REPORT_MISSING', { opId }));
-  const plan = report ?? ownJournal!.plan;
+  }
   const backup = await io.read<PersistedStateFile>(paths.backupKey(opId));
   if (!backup) throw new Error(lang.__('REGIONAL_MIGRATION_BACKUP_MISSING', { opId }));
-  const targets = ownJournal?.targets ?? plan.documents;
-  await withTargetLocks(io, paths, targets, 'migrate-regional-rollback-target', async () => {
-    assertMigrationSource(await io.read<PersistedStateFile>(paths.legacyKey), plan);
-    if (hashDocument(backup) !== plan.sourceHash)
-      throw new Error(lang.__('REGIONAL_MIGRATION_SOURCE_CHANGED'));
-    await Promise.all(
-      targets.map(async (target) => {
-        const current = await io.read<PersistedStateFile>(
-          paths.scopedPrefixBuilder(target.stage, target.region),
-        );
-        if (!current) {
-          await assertNoPreviousStateLayout(
-            io,
-            paths.scopedPrefixBuilder(target.stage, target.region),
-          );
-          return;
-        }
-        const pristine =
-          current.migration?.opId === opId &&
-          current.serial === 1 &&
-          (!('state' in target) || hashDocument(current) === hashDocument(target.state));
-        if (!pristine)
-          throw new Error(
-            lang.__('REGIONAL_MIGRATION_ROLLBACK_BLOCKED', {
-              stage: target.stage,
-              region: target.region,
-            }),
-          );
+  if (hashDocument(backup) !== journal.plan.sourceHash) {
+    throw new Error(lang.__('REGIONAL_MIGRATION_SOURCE_CHANGED'));
+  }
+  const current = await io.read<unknown>(paths.legacyKey);
+  if (
+    current === null ||
+    (hashDocument(current) !== hashDocument(journal.aggregate) &&
+      hashDocument(current) !== journal.plan.sourceHash)
+  ) {
+    throw new Error(
+      lang.__('REGIONAL_MIGRATION_ROLLBACK_BLOCKED', {
+        stage: '*',
+        region: '*',
       }),
     );
-    if (ownJournal) await io.write(journalKey(paths), { ...ownJournal, phase: 'rolling-back' });
-    for (const target of targets)
-      await io.delete(paths.scopedPrefixBuilder(target.stage, target.region));
-    await io.write(paths.legacyKey, backup);
-    await io.delete(paths.reportKey(opId));
-    if (ownJournal) await io.delete(journalKey(paths));
-    await io.delete(paths.backupKey(opId));
-    logger.info(lang.__('REGIONAL_MIGRATION_ROLLED_BACK', { opId }));
-  });
+  }
+  await io.write(journalKey(paths), { ...journal, phase: 'rolling-back' });
+  await io.write(paths.legacyKey, backup);
+  await io.delete(paths.reportKey(opId));
+  await io.delete(journalKey(paths));
+  logger.info(lang.__('REGIONAL_MIGRATION_ROLLED_BACK', { opId }));
 };

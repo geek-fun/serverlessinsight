@@ -6,6 +6,7 @@ import { ConditionalPutUnsupportedError } from '../../../../src/common/stateBack
 
 const mockCosClient = {
   getObject: jest.fn(),
+  getBucket: jest.fn(),
   getBucketVersioning: jest.fn(),
   putObject: jest.fn(),
   deleteObject: jest.fn(),
@@ -66,6 +67,34 @@ describe('cosStateBackend (scope-bound, issue #280)', () => {
     createCosStateBackend(config);
     return { adapter: captured.adapter!, remoteConfig: captured.remoteConfig! };
   };
+
+  it('lists every page and refuses truncated inventories without an advancing marker', async () => {
+    const { adapter } = captureWiring();
+    mockCosClient.getBucket
+      .mockImplementationOnce((_params, callback) =>
+        callback(null, { Contents: [{ Key: 'a' }], IsTruncated: 'true', NextMarker: 'cursor' }),
+      )
+      .mockImplementationOnce((_params, callback) => callback(null, { Contents: [{ Key: 'b' }] }));
+    await expect(adapter.list!('prefix')).resolves.toEqual(['a', 'b']);
+    expect(mockCosClient.getBucket).toHaveBeenLastCalledWith(
+      expect.objectContaining({ Prefix: 'prefix', Marker: 'cursor' }),
+      expect.any(Function),
+    );
+    mockCosClient.getBucket.mockImplementationOnce((_params, callback) =>
+      callback(null, { IsTruncated: 'true' }),
+    );
+    await expect(adapter.list!('prefix')).rejects.toThrow();
+    mockCosClient.getBucket.mockImplementation((_params, callback) =>
+      callback(null, { IsTruncated: 'true', NextMarker: 'same' }),
+    );
+    await expect(adapter.list!('prefix')).rejects.toThrow();
+    mockCosClient.getBucket.mockImplementationOnce((_params, callback) =>
+      callback(new Error('AccessDenied')),
+    );
+    await expect(adapter.list!('prefix')).rejects.toThrow('AccessDenied');
+    mockCosClient.getBucket.mockImplementationOnce((_params, callback) => callback(null, {}));
+    await expect(adapter.list!('prefix')).resolves.toEqual([]);
+  });
 
   it('creates the COS client with credentials and timeout', () => {
     const COS = require('cos-nodejs-sdk-v5');

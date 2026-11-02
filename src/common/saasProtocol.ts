@@ -4,7 +4,7 @@ import type { DeploymentScope } from './stateScope';
 import type { StateFile } from '../types';
 
 /** Regional identity and content-hash CAS shared by all SaaS commands. */
-export const SCOPE_PROTOCOL_VERSION = 2;
+export const SCOPE_PROTOCOL_VERSION = 3;
 
 /** JSONB can reorder keys; content identity must survive a server round trip. */
 export const hashSaasState = (state: unknown): string =>
@@ -27,6 +27,7 @@ export const supportsRegionalSaas = (value: unknown): boolean => {
   const caps = value as Record<string, unknown> | null;
   return (
     caps?.regionalScope === true &&
+    caps.providerScope === true &&
     caps.scopeProtocol === SCOPE_PROTOCOL_VERSION &&
     caps.stateFormat === '4.0'
   );
@@ -38,6 +39,7 @@ export type SaasStateSnapshot = {
   stageId: string;
   stage: string;
   region: string;
+  provider: string;
   scopeProtocol: number;
   contentHash: string;
   versionNumber: number;
@@ -53,6 +55,7 @@ export const isRegionalSaasSnapshot = (
   typeof snapshot.stageId === 'string' &&
   snapshot.stageId.length > 0 &&
   snapshot.stage === scope.stage &&
+  snapshot.provider === scope.provider &&
   snapshot.region === scope.region &&
   typeof snapshot.id === 'string' &&
   snapshot.id.length > 0 &&

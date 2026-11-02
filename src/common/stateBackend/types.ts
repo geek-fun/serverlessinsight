@@ -27,6 +27,7 @@ export type WriteReadiness = {
  * Abstracts the underlying storage SDK (OSS, COS, S3, etc.) into a common interface.
  */
 export type StorageAdapter = {
+  list?: (prefix: string) => Promise<string[]>;
   /** null means confirmed absence, never a network or permission failure. */
   read: <T>(key: string) => Promise<T | null>;
   /** Write an object to storage */

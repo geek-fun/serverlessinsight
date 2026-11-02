@@ -1,7 +1,7 @@
 import path from 'node:path';
 import fs from 'node:fs/promises';
 
-import { cleanScopedState } from './scopedState';
+import { cleanScopedState, readScopedState } from './scopedState';
 import { deploy } from '../../src/commands/deploy';
 import {
   createMockAliyunClient,
@@ -195,19 +195,12 @@ describe('Nested drift repair deploy flows (issue #234 M2-M5)', () => {
 
       // The recreated target replaces the stale instance in state, so later
       // deploys and destroy track the target that actually exists.
-      // Issue #280: deploys persist the scoped V4 document.
-      const savedState = JSON.parse(
-        await fs.readFile(
-          path.join(
-            process.cwd(),
-            '.serverlessinsight',
-            'states',
-            'nested-drift-app',
-            'nested-drift-service_dev_cn-hangzhou_state.json',
-          ),
-          'utf-8',
-        ),
-      ) as {
+      const savedState = (await readScopedState(
+        'nested-drift-app',
+        'nested-drift-service',
+        'dev',
+        'cn-hangzhou',
+      )) as {
         stages: Record<
           string,
           { resources: Record<string, { instances: Array<{ type: string; id: string }> }> }

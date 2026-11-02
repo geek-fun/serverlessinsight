@@ -40,6 +40,7 @@ export type SaasBackendOptions = {
 };
 
 type DeploymentInitResponse = {
+  provider: string;
   id: string;
   appId: string;
   serviceId: string;
@@ -56,11 +57,23 @@ type DeploymentInitResponse = {
 type ActiveDeployment = {
   id: string;
   status: string;
+  serviceId: string;
+  stageId: string;
+  stage: string;
+  provider: string;
+  region: string;
+  scopeProtocol: number;
 };
 
 type MigrateTargetsResponse = {
   app: { name: string; exists: boolean; id: string | null };
-  service: { name: string; exists: boolean; id: string | null; provider: string | null };
+  service: {
+    name: string;
+    exists: boolean;
+    id: string | null;
+    provider: string | null;
+    scopeProtocol?: number;
+  };
   stages: Array<{
     name: string;
     registered: boolean;
@@ -111,6 +124,7 @@ export const createSaasStateBackend = (
   let currentDeploymentId: string | null = null;
   let resolvedAppId: string | null = null;
   let resolvedServiceId: string | null = null;
+  let resolvedStageId: string | null = null;
   let provisioned = false;
   let eventQueue: EventQueue | null = null;
   let sequenceCounter = 0;
@@ -218,7 +232,7 @@ export const createSaasStateBackend = (
 
   const resolveReadOnlyIdentity = async (): Promise<boolean> => {
     const targets = await client.get<MigrateTargetsResponse>(
-      `/api/v1/state/migrate/targets?app_name=${encodeURIComponent(normalized.app)}&service_name=${encodeURIComponent(normalized.service)}&stages=${encodeURIComponent(normalized.stage)}&region=${encodeURIComponent(normalized.region)}`,
+      `/api/v1/state/migrate/targets?app_name=${encodeURIComponent(normalized.app)}&service_name=${encodeURIComponent(normalized.service)}&stages=${encodeURIComponent(normalized.stage)}&region=${encodeURIComponent(normalized.region)}&provider=${encodeURIComponent(normalized.provider)}`,
     );
     if (!targets.app.exists || !targets.service.exists) {
       return false;
@@ -258,15 +272,19 @@ export const createSaasStateBackend = (
     });
     if (
       result.scopeProtocol !== SCOPE_PROTOCOL_VERSION ||
+      result.provider !== normalized.provider ||
       result.stage !== normalized.stage ||
       result.region !== normalized.region ||
-      !result.stageId
+      [result.id, result.appId, result.serviceId, result.stageId].some(
+        (id) => typeof id !== 'string' || id.length === 0,
+      )
     ) {
       throw new Error(lang.__('SAAS_STATE_ACK_INVALID'));
     }
     resolvedAppId = result.appId;
     knownOrgId = result.orgId ?? knownOrgId;
     resolvedServiceId = result.serviceId;
+    resolvedStageId = result.stageId;
     currentDeploymentId = result.id;
     provisioned = true;
   };
@@ -327,6 +345,23 @@ export const createSaasStateBackend = (
     return stateJson;
   };
 
+  const assertDeploymentAck = (value: unknown, status: string): void => {
+    const ack = value as Partial<DeploymentInitResponse> | null | undefined;
+    if (
+      !ack ||
+      ack.id !== currentDeploymentId ||
+      ack.serviceId !== resolvedServiceId ||
+      ack.stageId !== resolvedStageId ||
+      ack.stage !== normalized.stage ||
+      ack.provider !== normalized.provider ||
+      ack.region !== normalized.region ||
+      ack.scopeProtocol !== SCOPE_PROTOCOL_VERSION ||
+      ack.status !== status
+    ) {
+      throw new Error(lang.__('SAAS_STATE_ACK_INVALID'));
+    }
+  };
+
   return {
     scope: normalized,
     capabilities,
@@ -341,7 +376,7 @@ export const createSaasStateBackend = (
 
       try {
         const state = await client.get<SaasStateSnapshot>(
-          `/api/v1/apps/${resolvedAppId}/services/${resolvedServiceId}/state/current?stage=${encodeURIComponent(normalized.stage)}&region=${encodeURIComponent(normalized.region)}`,
+          `/api/v1/apps/${resolvedAppId}/services/${resolvedServiceId}/state/current?stage=${encodeURIComponent(normalized.stage)}&region=${encodeURIComponent(normalized.region)}&provider=${encodeURIComponent(normalized.provider)}`,
         );
         if (!state || !state.stateJson || typeof state.stateJson !== 'object') {
           throw new Error(lang.__('SAAS_STATE_ACK_INVALID'));
@@ -368,6 +403,12 @@ export const createSaasStateBackend = (
         // historical documents; the JSON scope block alone is not authority.
         const regional =
           isRegionalSaasSnapshot(state, normalized) && state.serviceId === resolvedServiceId;
+        if (
+          state.scopeProtocol === SCOPE_PROTOCOL_VERSION &&
+          (!regional || (resolvedStageId && state.stageId !== resolvedStageId))
+        ) {
+          throw new Error(lang.__('SAAS_STATE_ACK_INVALID'));
+        }
         lastSource = regional ? 'scoped' : 'legacy';
         acknowledgedHash = regional ? state.contentHash : null;
         acknowledgedSnapshot = regional ? state : null;
@@ -480,6 +521,7 @@ export const createSaasStateBackend = (
       );
       if (
         !isRegionalSaasSnapshot(response, normalized) ||
+        response.stageId !== resolvedStageId ||
         response.serviceId !== resolvedServiceId ||
         response.contentHash !== contentHash
       ) {
@@ -534,27 +576,35 @@ export const createSaasStateBackend = (
       if (!resolvedServiceId) {
         return null;
       }
-      try {
-        const active = await client.get<ActiveDeployment[]>(
-          `/api/v1/deployments/active?service_id=${resolvedServiceId}&stage=${normalized.stage}&region=${normalized.region}`,
-        );
-        // Backend returns data:null (not []) when no deployment is active
-        if (Array.isArray(active) && active.length > 0) {
-          const d = active[0];
-          return {
-            id: d.id,
-            user: 'Console',
-            processId: 0,
-            hostname: 'console',
-            operation: 'deploy',
-            acquiredAt: new Date().toISOString(),
-            path: `/api/v1/deployments/${d.id}`,
-          };
-        }
-        return null;
-      } catch {
-        return null;
+      const active = await client.get<ActiveDeployment | null>(
+        `/api/v1/deployments/active?service_id=${encodeURIComponent(resolvedServiceId)}&stage=${encodeURIComponent(normalized.stage)}&region=${encodeURIComponent(normalized.region)}&provider=${encodeURIComponent(normalized.provider)}`,
+      );
+      if (active === null) return null;
+      if (
+        !active ||
+        typeof active.id !== 'string' ||
+        !active.id ||
+        active.status !== 'deploying' ||
+        active.serviceId !== resolvedServiceId ||
+        active.stage !== normalized.stage ||
+        active.provider !== normalized.provider ||
+        active.region !== normalized.region ||
+        active.scopeProtocol !== SCOPE_PROTOCOL_VERSION ||
+        typeof active.stageId !== 'string' ||
+        !active.stageId ||
+        (resolvedStageId && active.stageId !== resolvedStageId)
+      ) {
+        throw new Error(lang.__('SAAS_STATE_ACK_INVALID'));
       }
+      return {
+        id: active.id,
+        user: 'Console',
+        processId: 0,
+        hostname: 'console',
+        operation: 'deploy',
+        acquiredAt: new Date().toISOString(),
+        path: `/api/v1/deployments/${active.id}`,
+      };
     },
 
     withLock: async <T>(
@@ -570,14 +620,16 @@ export const createSaasStateBackend = (
         throw new Error(lang.__('SAAS_STATE_BASE_UNKNOWN'));
       }
 
-      await retryRequest(() =>
+      const started = await retryRequest(() =>
         client.patch(`/api/v1/deployments/${currentDeploymentId}`, {
           phase: 'start',
+          provider: normalized.provider,
           region: normalized.region,
           scopeProtocol: SCOPE_PROTOCOL_VERSION,
           baseContentHash: acknowledgedHash,
         }),
       );
+      assertDeploymentAck(started, 'deploying');
       running = true;
       onLockAcquired?.(currentDeploymentId);
       ensureEventQueue();
@@ -597,9 +649,10 @@ export const createSaasStateBackend = (
           typeof result === 'object' &&
           result !== null &&
           ('stateJson' in summary || 'plan' in summary);
-        await retryRequest(() =>
+        const completed = await retryRequest(() =>
           client.patch(`/api/v1/deployments/${currentDeploymentId}`, {
             phase: 'complete',
+            provider: normalized.provider,
             region: normalized.region,
             scopeProtocol: SCOPE_PROTOCOL_VERSION,
             baseContentHash: acknowledgedHash,
@@ -609,8 +662,10 @@ export const createSaasStateBackend = (
               ? {
                   ...(!acknowledgedSnapshot && summary['stateJson']
                     ? {
-                        stateJson: summary['stateJson'],
-                        contentHash: hashSaasState(summary['stateJson']),
+                        stateJson: toPersistedState(summary['stateJson'] as StateFile),
+                        contentHash: hashSaasState(
+                          toPersistedState(summary['stateJson'] as StateFile),
+                        ),
                         resourceCount: summary['resourceCount'],
                       }
                     : {}),
@@ -619,6 +674,7 @@ export const createSaasStateBackend = (
               : {}),
           }),
         );
+        assertDeploymentAck(completed, 'completed');
         reportEvent({
           type: 'deployment_completed',
           message: lang.__('SAAS_BACKEND_DEPLOYMENT_COMPLETE'),
@@ -636,6 +692,7 @@ export const createSaasStateBackend = (
         try {
           const payload: Record<string, unknown> = {
             phase: 'fail',
+            provider: normalized.provider,
             region: normalized.region,
             scopeProtocol: SCOPE_PROTOCOL_VERSION,
             baseContentHash: acknowledgedHash,
@@ -645,17 +702,19 @@ export const createSaasStateBackend = (
           };
           if (failure.stateJson) payload['stateSnapshot'] = failure.stateJson;
           try {
-            await retryRequest(() =>
+            const failed = await retryRequest(() =>
               client.patch(`/api/v1/deployments/${currentDeploymentId}`, payload),
             );
+            assertDeploymentAck(failed, 'failed');
           } catch (failureError) {
             if (!(failureError instanceof ApiError && failureError.status === 409))
               throw failureError;
             // Preserve partial diagnostics, but never replace a newer head.
             const { stateId: _stateId, ...diagnostic } = payload;
-            await retryRequest(() =>
+            const failed = await retryRequest(() =>
               client.patch(`/api/v1/deployments/${currentDeploymentId}`, diagnostic),
             );
+            assertDeploymentAck(failed, 'failed');
           }
         } catch {
           // Best-effort fail notification

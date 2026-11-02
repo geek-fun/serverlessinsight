@@ -8,6 +8,7 @@ import { createOssStateBackend } from './ossStateBackend';
 import { createCosStateBackend } from './cosStateBackend';
 import { createSaasStateBackend } from './saasStateBackend';
 import { DeploymentScope, canonicalizeRegion } from '../stateScope';
+import { getCredentials } from '../credentials';
 
 export * from './types';
 export * from './localStateBackend';
@@ -77,20 +78,14 @@ export const createStateBackend = (
 
   const bucketConfig = backendConfig as BucketStoreBackendConfig;
 
-  const storageRegion = canonicalizeRegion(
-    bucketConfig.storageRegion ?? context.storage?.region ?? context.region,
-  );
-  const storageProvider =
-    bucketConfig.storageProvider ?? context.storage?.provider ?? context.provider;
-  const credentials = storageCredentials(context, storageProvider);
+  const storage = resolveStateStorage(bucketConfig, context);
 
-  if (storageProvider === ProviderEnum.TENCENT) {
+  if (storage.provider === ProviderEnum.TENCENT) {
     return createCosStateBackend({
       scope,
       bucket: bucketConfig.bucket,
       key: bucketConfig.key,
-      region: storageRegion,
-      ...credentials,
+      ...storage,
       markerAction: context.migrationMarker,
     });
   }
@@ -99,23 +94,37 @@ export const createStateBackend = (
     scope,
     bucket: bucketConfig.bucket,
     key: bucketConfig.key,
-    region: storageRegion,
-    ...credentials,
+    ...storage,
     markerAction: context.migrationMarker,
   });
 };
 
-const storageCredentials = (
+export const resolveStateStorage = (
+  bucketConfig: BucketStoreBackendConfig,
   context: BackendContext,
-  storageProvider: string,
-): { accessKeyId: string; accessKeySecret: string; securityToken?: string } => {
-  if (context.accessKeyId && context.accessKeySecret) {
-    return {
-      accessKeyId: context.accessKeyId,
-      accessKeySecret: context.accessKeySecret,
-      ...(context.securityToken ? { securityToken: context.securityToken } : {}),
-    };
+): {
+  provider: string;
+  region: string;
+  accessKeyId: string;
+  accessKeySecret: string;
+  securityToken?: string;
+} => {
+  const provider = bucketConfig.storageProvider ?? context.storage?.provider ?? context.provider;
+  const region = canonicalizeRegion(
+    bucketConfig.storageRegion ?? context.storage?.region ?? context.region,
+  );
+  if (provider !== ProviderEnum.ALIYUN && provider !== ProviderEnum.TENCENT) {
+    throw new Error(lang.__('STATE_STORAGE_PROVIDER_UNSUPPORTED', { provider }));
   }
-
-  throw new Error(lang.__('STATE_STORAGE_CREDENTIALS_MISSING', { provider: storageProvider }));
+  const credentials = getCredentials(provider === context.provider ? context : undefined, provider);
+  if (!credentials.accessKeyId || !credentials.accessKeySecret) {
+    throw new Error(lang.__('STATE_STORAGE_CREDENTIALS_MISSING', { provider }));
+  }
+  return {
+    provider,
+    region,
+    accessKeyId: credentials.accessKeyId,
+    accessKeySecret: credentials.accessKeySecret,
+    ...(credentials.securityToken ? { securityToken: credentials.securityToken } : {}),
+  };
 };

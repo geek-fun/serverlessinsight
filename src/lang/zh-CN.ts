@@ -1,4 +1,18 @@
 export const zhCN = {
+  STATE_PREVIEW_MIGRATION_PLAN:
+    '预览版 State 合并 {{opId}}：共 {{count}} 份源文档。执行前请停止所有旧版 CLI 写入。',
+  STATE_PREVIEW_MIGRATION_SOURCE:
+    '  {{key}} -> {{provider}} / {{stage}} / {{region}}：{{resources}} 个资源，{{shared}} 个共享资源',
+  STATE_STORAGE_LIST_INCOMPLETE:
+    'State 存储返回的列表不完整且没有有效的下一页标记。迁移已停止，未修改状态。',
+  STATE_PREVIEW_INVENTORY_REQUIRED:
+    'State 迁移需要完整的预览版文件清单。当前无法列举文件，在存储支持完整列举前请勿部署。',
+  STATE_PREVIEW_CONFLICT:
+    '预览版 {{scope}} 的状态缺失、损坏、重复或存在未完成的写入，请先处理其归属再合并。',
+  STATE_PREVIEW_MIGRATION_PENDING:
+    '预览版 State 合并 {{opId}} 尚未完成。请重新运行 `si migrate --to-regional` 继续，或显式回滚该操作。',
+  STATE_STORAGE_PROVIDER_UNSUPPORTED:
+    'State 存储不支持云厂商 {{provider}}。请将 storageProvider 配置为 aliyun 或 tencent。',
   PLAN_SENSITIVE_VALUE: '(敏感值)',
   PLAN_NAS_NETWORK_REQUIRED:
     '{{logicalId}} 的 NAS 存储需要声明 VPC 网络或已有挂载目标记录。计划已停止，尚未创建任何资源。',
@@ -1034,16 +1048,25 @@ export const zhCN = {
     "'{{label}}' 的值 '{{part}}' 不是路径安全的：不能为空，不能包含 '/'、'\\'、'..' 或首尾空白",
   EFFECTIVE_CONFIG_UNKNOWN_PROVIDER:
     "未知 provider '{{provider}}'。支持的 provider：aliyun、tencent、volcengine、huawei、aws",
+  EFFECTIVE_CONFIG_RESOURCE_UNSUPPORTED:
+    "Provider '{{provider}}' 无法部署当前模板中的 '{{resource}}'。请先调整模板，再覆盖 provider。",
   EFFECTIVE_CONFIG_REGION_REQUIRED:
     '需要指定 region：通过 -r/--region 传入、在 YAML 的 provider.region 中设置，或设置 SI_REGION 环境变量',
-  EFFECTIVE_CONFIG_PROVIDER_MISMATCH:
-    'Provider 不匹配：该服务已使用 provider "{{expected}}" 部署，但本次命令解析出的 provider 是 "{{actual}}"。一个 Service 只有一个 provider；请检查 -v/--provider 与 YAML 的 provider 配置',
+
   STATE_WRITE_BLOCKED_LEGACY:
     '拒绝写入区域状态：旧版聚合文件 {{statePath}} 仍持有该 stage 的状态。\n  请先运行 `si migrate --to-regional --dry-run` 审查拆分方案，确认后再执行拆分。只读命令仍可继续读取旧文件。',
   STATE_WRITE_BLOCKED_LEGACY_BUCKET:
     '拒绝写入区域状态：旧版状态对象 {{objectKey}} 仍持有该 stage 的状态。\n  请先运行 `si migrate --to-regional --dry-run` 审查拆分方案，确认后再执行拆分。只读命令仍可继续读取旧对象。',
   STATE_PREVIOUS_LAYOUT_FOUND:
-    '在 {{previous}} 发现旧预发布版状态布局。请停止所有写入者，使用匹配版本的 CLI 完成未结束的操作，迁移状态、备份及服务 provider 绑定后，再使用 {{current}}。',
+    '在 {{previous}} 发现预发布版状态布局。请停止旧写入者，使用匹配版本的 CLI 恢复未结束的操作，再运行 `si migrate --to-regional --dry-run` 审查合并到 {{current}} 的方案。',
+
+  STATE_AGGREGATE_INVALID: '聚合状态文档格式损坏，请先恢复已验证的备份后再继续。',
+  STATE_IDENTITY_REBIND_UNSUPPORTED:
+    '迁移不允许重绑定 App 或 Service。请保留 YAML 中原有的身份与状态位置。',
+  STATE_STORE_UPGRADE_REQUIRED:
+    '状态 {{location}} 需要原位置格式升级。请先运行 `si migrate --to-regional --dry-run` 审查，再执行迁移后部署。',
+  STATE_PARTITION_PATCH_INVALID: '仅可修改部署归属和迁移元数据。',
+  STATE_PLAN_BASE_CHANGED: '目标部署状态在规划后发生变化，请重新生成并批准计划后再继续。',
   STATE_SCOPED_VERSION_UNSUPPORTED: '不支持的状态版本 {{version}}',
   STATE_SCOPED_IDENTITY_MISMATCH: '状态身份与请求的部署作用域不匹配',
   STATE_SCOPED_IDENTITY_DETAILS_MISMATCH:
@@ -1054,7 +1077,7 @@ export const zhCN = {
   STATE_BUCKET_ACCESS_DENIED:
     '状态存储 bucket 访问被拒绝（{{code}}）。请检查存储凭据——鉴权失败永远不会被当作空状态',
   STATE_STORAGE_CREDENTIALS_MISSING:
-    '{{provider}} 状态存储后端需要凭据：请传入 -k/-x（或对应的 provider 环境变量），保证状态存储与工作负载凭据可解析',
+    'State 存储需要 {{provider}} 的凭证。请配置该云厂商的凭证环境变量，不会复用其他云厂商的业务部署凭证。',
   LOCK_CONDITIONAL_CREATE_UNSUPPORTED:
     '当前状态存储不支持排他（条件）创建——并发首次加锁将回退为"写入后校验"，不保证原子性。请避免对同一 scope 并行执行变更命令',
   SAAS_REGIONAL_SCOPE_UNSUPPORTED:
@@ -1075,7 +1098,7 @@ export const zhCN = {
   REGIONAL_MIGRATION_TARGET_EXISTS:
     '拒绝覆盖 stage {{stage}} / region {{region}} 的区域状态：它已存在（来源：{{opId}}）。重新执行本迁移会重置其独立的 lineage/serial，并丢失拆分后创建的资源。如果该文档属于上一次迁移，请先处理那次的运行；否则仅在你确认可丢弃时才显式删除',
   REGIONAL_MIGRATION_INCOMPLETE_STAGE_COVERAGE:
-    '区域拆分会使 stage（{{stages}}）被搁置：拆分后旧版条目整体被隐藏，因此所有持有资源的 stage 必须在同一次运行中完成拆分。请去掉 --stage 重新运行 `si migrate --to-regional`（必要时加 --bind-unknown-region）以覆盖它们',
+    '升级必须保留所有 stage 中的每个资源。请去掉 --stage，重新运行 `si migrate --to-regional` 升级整份文档。',
   STATE_ATOMIC_CREATE_REQUIRED: '此状态存储无法原子登记所有权或获取锁，已拒绝变更。',
   REGIONAL_MIGRATION_PENDING:
     '迁移 {{opId}} 尚未完成。请使用原命令继续迁移，或通过 --rollback-op-id {{opId}} 完成回滚；保留原 app、service、provider 和地域绑定选项。',
@@ -1092,28 +1115,27 @@ export const zhCN = {
     '此区域状态文档还包含其他 stage 的资源。请先核实源状态的归属，再导入；一个区域文档只能管理选定 stage 的资源。',
   SAAS_STATE_ACK_INVALID:
     '状态服务未确认有效的区域快照和内容哈希。已拒绝推测下一版本，请升级服务端以支持作用域协议 2。',
-  STATE_PROVIDER_BINDING_MISMATCH:
-    '该服务的 provider 不匹配：已存储的 provider 绑定记录为 "{{stored}}"，但本次命令解析出 "{{requested}}"。一个 Service 在其所有 stage 和 region 中只有一个 provider；请检查 -v/--provider 与 YAML 的 provider 配置',
+
   REGIONAL_MIGRATION_PROVIDER_MISMATCH:
-    'Provider 不匹配：旧版状态记录的 provider 是 "{{source}}"，而命令解析出 "{{effective}}"。拆分保留已记录的 provider 绑定——请检查 -v/--provider 与 YAML 的 provider 配置',
+    '源状态记录的 provider 为 "{{source}}"，命令选择的是 "{{effective}}"。升级保留源 provider，业务部署参数不会重写历史资源归属。',
   REGIONAL_MIGRATION_UNKNOWN_REGION_REQUIRED:
     '部分资源没有区域证据（早于区域隔离的状态）。请使用 --bind-unknown-region <region> 重新运行以显式绑定区域——CLI 绝不会从 YAML 或文件名猜测历史区域',
   REGIONAL_MIGRATION_SOURCE_MISSING: '迁移过程中旧版状态消失了——未写入任何内容',
   REGIONAL_MIGRATION_SOURCE_CHANGED:
     '旧版状态在生成计划之后发生了变化（哈希不匹配）。请重新运行 `si migrate --to-regional --dry-run` 刷新计划——本次未写入任何内容',
   REGIONAL_MIGRATION_APPLIED:
-    '区域拆分已完成（操作 {{opId}}）：区域文档已写入，旧版条目保留为只读屏障（managedBy=regional）。请用 `si diff` 验证——在下次部署前它必须报告没有非预期变更',
+    'State 已在原位置升级（操作 {{opId}}）。各 stage/provider/region 分区共用原文件或 Bucket key。部署前请使用 `si diff` 验证所选部署。',
   REGIONAL_MIGRATION_PARTIAL_FAILURE:
-    '区域拆分部分失败（操作 {{opId}}）：{{error}}。已写入的文档仍然有效；旧版条目未被改动——修复原因后重新运行',
+    'State 升级中断（操作 {{opId}}）：{{error}}。请保留源备份和迁移记录，重新运行同一迁移命令以继续。',
   REGIONAL_MIGRATION_REPORT_MISSING:
     '未找到操作 {{opId}} 的迁移报告——该拆分不是由本 CLI 执行的，或报告已被删除',
   REGIONAL_MIGRATION_BACKUP_MISSING:
     '操作 {{opId}} 的迁移前备份缺失——请手动恢复；缺少备份时拒绝回滚',
   REGIONAL_MIGRATION_ROLLBACK_BLOCKED:
-    '无法回滚 stage {{stage}} / region {{region}}：其区域文档在拆分后已发生独立的区域写入。合并回旧聚合会丢失这些写入——需要人工处理',
-  REGIONAL_MIGRATION_ROLLED_BACK: '区域拆分 {{opId}} 已回滚：旧版聚合已恢复，区域文档已删除',
+    '无法回滚：聚合 state 在升级后发生了变化，可能包含其他部署分区的写入。恢复原文件会丢失状态，请保留备份并显式处理这些变更。',
+  REGIONAL_MIGRATION_ROLLED_BACK: 'State 升级 {{opId}} 已在原位置回滚，原始源备份仍然保留。',
   REGIONAL_MIGRATION_PLAN_HEADER:
-    '旧版状态 {{location}} 的区域拆分计划——每个 stage/region 一个 V4 文档：',
+    '{{location}} 的原位置 State 升级计划，按 stage/provider/region 管理分区：',
   REGIONAL_MIGRATION_SOURCE_HASH: '源文档哈希：{{hash}}',
   REGIONAL_MIGRATION_NO_REGIONAL_RESOURCES: '在所选范围内，旧版聚合中没有找到区域资源',
   REGIONAL_MIGRATION_PLAN_DOCUMENT:
@@ -1123,20 +1145,20 @@ export const zhCN = {
   REGIONAL_MIGRATION_UNKNOWN_HINT:
     'YAML 默认值、CLI 参数和文件名都不是历史证据。请先核实这些资源实际所在区域，再通过 --bind-unknown-region <region> 显式绑定',
   REGIONAL_MIGRATION_BACKUP_NOTICE:
-    '执行时：先备份原始文档，每个区域文档获得独立 lineage，旧版条目保留为写入屏障（对旧版 CLI 的保护另行说明）',
+    '执行时先备份源状态，为各分区设置独立 lineage，然后将原文件/key 原子替换为 5.0 聚合格式。旧版 CLI 必须拒绝此格式。',
   REGIONAL_MIGRATION_NO_LEGACY_STATE:
-    '在 {{location}} 未找到旧版状态——没有可拆分的内容。全新部署已经直接写入区域化的 V4 文档',
+    '在 {{location}} 未找到需要升级的状态。全新部署在原位置使用 5.0 聚合格式。',
   REGIONAL_MIGRATION_DRY_RUN_NOTICE:
     '仅 dry-run——未写入任何内容。去掉 --dry-run（如上方有列出，请加 --bind-unknown-region）后重新运行以执行拆分',
   REGIONAL_MIGRATION_CONFIRM:
-    '立即执行区域拆分？旧版状态将被备份并标记为只读（managedBy=regional），区域文档成为权威状态（yes/no）：',
+    '立即在原位置升级 State？源状态将被备份，各分区继续保存在原文件/key 中（yes/no）：',
   MIGRATE_CANCELLED: '迁移已取消——未写入任何内容',
 
-  OPT_TO_REGIONAL: '将旧版 V3 状态拆分为按 stage/region 的 V4 文档（受保护迁移）',
+  OPT_TO_REGIONAL: '将 V3 或预览版 state 在原位置升级为 stage/provider/region 分区',
   OPT_LEGACY_APP: '读取该（重命名前）app 名称的旧版聚合状态，用于显式重绑定',
   OPT_LEGACY_SERVICE: '读取该（重命名前）service 名称的旧版聚合状态，用于显式重绑定',
   OPT_BIND_UNKNOWN_REGION: '将没有区域证据的资源显式绑定到该区域',
-  OPT_ROLLBACK_OP_ID: '按迁移操作 ID 回滚区域拆分',
+  OPT_ROLLBACK_OP_ID: '通过操作 ID 回滚尚未发生后续写入的 State 升级',
 
   // HTTP trigger messages
   HTTP_TRIGGER_AUTH_TYPE_REQUIRED:

@@ -56,3 +56,6 @@ export const SCF_STATUS_POLL_MAX_ATTEMPTS = 20; // up to 60 seconds
 // queryable via DescribeTopics until the platform finishes provisioning)
 export const CLS_TOPIC_POLL_INTERVAL_MS = 3000; // 3 seconds
 export const CLS_TOPIC_POLL_MAX_ATTEMPTS = 20; // up to 60 seconds
+export const AGGREGATE_MIGRATION_SUFFIX = '.aggregate-migration.json';
+
+export const REGIONAL_MIGRATION_SUFFIX = '.regional-migration.json';

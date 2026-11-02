@@ -1,16 +1,24 @@
 import path from 'node:path';
 import fs from 'node:fs/promises';
+import { parse, stringify } from 'yaml';
 import { existsSync } from 'node:fs';
 import { deploy } from '../../src/commands/deploy';
 import { destroyStack } from '../../src/commands/destroy';
 import { lang } from '../../src/lang';
 import { migrate } from '../../src/commands/migrate';
 import { plan } from '../../src/commands/plan';
-import { createMockAliyunClient, type MockAliyunClient } from './mockCloudClient';
+import { readScopedState } from './scopedState';
+import type { StateFile } from '../../src/types';
+import {
+  createMockAliyunClient,
+  createMockTencentClient,
+  type MockAliyunClient,
+} from './mockCloudClient';
 
 jest.mock('../../src/common/aliyunClient', () => ({
   createAliyunClient: jest.fn(),
 }));
+jest.mock('../../src/common/tencentClient', () => ({ createTencentClient: jest.fn() }));
 
 jest.mock('../../src/common/imsClient', () => ({
   getIamInfo: jest.fn().mockResolvedValue({
@@ -85,9 +93,9 @@ describe('Regional state isolation (issue #280)', () => {
       region: 'ap-southeast-1',
     });
 
-    // Two independent V4 documents
-    const hangzhou = JSON.parse(await fs.readFile(scopedPath('dev', 'cn-hangzhou'), 'utf-8'));
-    const southeast = JSON.parse(await fs.readFile(scopedPath('dev', 'ap-southeast-1'), 'utf-8'));
+    // Independent runtime views project from the same aggregate.
+    const hangzhou = await readScopedState<StateFile>(APP, SERVICE, 'dev', 'cn-hangzhou');
+    const southeast = await readScopedState<StateFile>(APP, SERVICE, 'dev', 'ap-southeast-1');
     expect(hangzhou.scope).toEqual({ stage: 'dev', region: 'cn-hangzhou' });
     expect(southeast.scope).toEqual({ stage: 'dev', region: 'ap-southeast-1' });
     expect(hangzhou.lineage).not.toBe(southeast.lineage);
@@ -121,7 +129,7 @@ describe('Regional state isolation (issue #280)', () => {
       await deploy({ location: otherFile, stage: 'dev', autoApprove: true, region: 'cn-hangzhou' });
       // No changes: the second file planned against the SAME state → no create
       expect(mockClient.fc3.createFunction).toHaveBeenCalledTimes(1);
-      const doc = JSON.parse(await fs.readFile(scopedPath('dev', 'cn-hangzhou'), 'utf-8'));
+      const doc = await readScopedState<StateFile>(APP, SERVICE, 'dev', 'cn-hangzhou');
       // Each save is a new persisted version of the scope document
       expect(doc.serial).toBeGreaterThanOrEqual(2);
     } finally {
@@ -133,9 +141,10 @@ describe('Regional state isolation (issue #280)', () => {
     // The fixture's static default is provider.region: cn-chengdu
     await deploy({ location: fixture, stage: 'dev', autoApprove: true, region: 'cn-beijing' });
 
-    expect(existsSync(scopedPath('dev', 'cn-beijing'))).toBe(true);
-    expect(existsSync(scopedPath('dev', 'cn-chengdu'))).toBe(false);
-    const doc = JSON.parse(await fs.readFile(scopedPath('dev', 'cn-beijing'), 'utf-8'));
+    const aggregate = JSON.parse(await fs.readFile(legacyPath, 'utf-8'));
+    expect(aggregate.stages.dev.providers.aliyun.regions['cn-beijing']).toBeDefined();
+    expect(aggregate.stages.dev.providers.aliyun.regions['cn-chengdu']).toBeUndefined();
+    const doc = await readScopedState<StateFile>(APP, SERVICE, 'dev', 'cn-beijing');
     expect(doc.scope).toEqual({ stage: 'dev', region: 'cn-beijing' });
   });
 
@@ -153,7 +162,7 @@ describe('Regional state isolation (issue #280)', () => {
 
     expect(totalCalls((c) => c.fc3.deleteFunction)).toBe(1);
     // The other region's document and its resources are untouched
-    const southeast = JSON.parse(await fs.readFile(scopedPath('dev', 'ap-southeast-1'), 'utf-8'));
+    const southeast = await readScopedState<StateFile>(APP, SERVICE, 'dev', 'ap-southeast-1');
     expect(southeast.stages.dev.resources['functions.insight_poc_fn']).toBeDefined();
   });
 
@@ -164,7 +173,7 @@ describe('Regional state isolation (issue #280)', () => {
     expect(mockClient.fc3.createFunction).not.toHaveBeenCalled();
   });
 
-  it('rejects a provider mismatch against existing scoped state before cloud mutation', async () => {
+  it('rejects a template incompatible with the effective provider before cloud mutation', async () => {
     await deploy({ location: fixture, stage: 'dev', autoApprove: true, region: 'cn-hangzhou' });
     expect(mockClient.fc3.createFunction).toHaveBeenCalledTimes(1);
 
@@ -174,12 +183,66 @@ describe('Regional state isolation (issue #280)', () => {
         stage: 'dev',
         autoApprove: true,
         region: 'cn-hangzhou',
-        provider: 'tencent',
+        provider: 'volcengine',
       }),
     ).rejects.toThrow();
 
     // No cloud mutation happened for the foreign provider
     expect(mockClient.fc3.createFunction).toHaveBeenCalledTimes(1);
+  });
+
+  it('creates a second provider deployment and destroys it without changing the first provider state', async () => {
+    const tencent = createMockTencentClient();
+    tencent.scf.GetFunction.mockResolvedValueOnce(null);
+    tencent.cls.getLogsetByName.mockResolvedValue(null);
+    tencent.cls.getTopicByName.mockResolvedValue(null);
+    tencent.cls.createLogset.mockResolvedValue({ logsetId: 'logset-provider-scope' });
+    tencent.cls.createTopic.mockResolvedValue({ topicId: 'topic-provider-scope' });
+    const { createTencentClient } = jest.requireMock('../../src/common/tencentClient');
+    createTencentClient.mockReturnValue(tencent);
+    const { events: _events, ...portable } = parse(await fs.readFile(fixture, 'utf-8'));
+    const portableFile = path.join(fixturesDir, 'provider-override-test.yml');
+    await fs.writeFile(portableFile, stringify(portable));
+    try {
+      await deploy({
+        location: portableFile,
+        stage: 'dev',
+        autoApprove: true,
+        provider: 'aliyun',
+        region: 'cn-hangzhou',
+      });
+      const before = JSON.parse(await fs.readFile(legacyPath, 'utf-8')).stages.dev.providers.aliyun;
+      await deploy({
+        location: portableFile,
+        stage: 'dev',
+        autoApprove: true,
+        provider: 'tencent',
+        region: 'ap-shanghai',
+        accessKeyId: 'mock-id',
+        accessKeySecret: 'mock-secret',
+      });
+      const both = JSON.parse(await fs.readFile(legacyPath, 'utf-8'));
+      expect(both.stages.dev.providers.aliyun).toEqual(before);
+      expect(
+        both.stages.dev.providers.tencent.regions['ap-shanghai'].resources[
+          'functions.insight_poc_fn'
+        ],
+      ).toBeDefined();
+      expect(tencent.scf.CreateFunction).toHaveBeenCalledTimes(1);
+      await destroyStack({
+        location: portableFile,
+        stage: 'dev',
+        provider: 'tencent',
+        region: 'ap-shanghai',
+        accessKeyId: 'mock-id',
+        accessKeySecret: 'mock-secret',
+      });
+      const after = JSON.parse(await fs.readFile(legacyPath, 'utf-8'));
+      expect(after.stages.dev.providers.aliyun).toEqual(before);
+      expect(after.stages.dev.providers.tencent.regions['ap-shanghai'].resources).toEqual({});
+    } finally {
+      await fs.rm(portableFile, { force: true });
+    }
   });
 
   describe('legacy aggregate handling', () => {
@@ -221,7 +284,7 @@ describe('Regional state isolation (issue #280)', () => {
 
       await expect(
         deploy({ location: fixture, stage: 'dev', autoApprove: true, region: 'cn-hangzhou' }),
-      ).rejects.toThrow(lang.__('STATE_WRITE_BLOCKED_LEGACY', { statePath: legacyPath }));
+      ).rejects.toThrow(/in-place format upgrade/);
       expect(mockClient.fc3.createFunction).not.toHaveBeenCalled();
     });
 
@@ -252,7 +315,7 @@ describe('Regional state isolation (issue #280)', () => {
       expect(existsSync(scopedPath('dev', 'cn-hangzhou'))).toBe(false);
     });
 
-    it('splits the legacy aggregate through the protected dry-run/apply migration', async () => {
+    it('upgrades the legacy aggregate in place through the protected dry-run/apply migration', async () => {
       await fs.mkdir(path.dirname(legacyPath), { recursive: true });
       await fs.writeFile(legacyPath, JSON.stringify(legacyState()), 'utf-8');
 
@@ -267,7 +330,7 @@ describe('Regional state isolation (issue #280)', () => {
       });
       await expect(fs.stat(scopedPath('dev', 'cn-hangzhou'))).rejects.toThrow();
 
-      // Apply: scoped doc + barrier on the legacy entry
+      // Apply the in-place storage format upgrade.
       await migrate({
         location: fixture,
         stage: 'dev',
@@ -276,27 +339,25 @@ describe('Regional state isolation (issue #280)', () => {
         toRegional: true,
       });
 
-      const scoped = JSON.parse(await fs.readFile(scopedPath('dev', 'cn-hangzhou'), 'utf-8'));
+      const scoped = await readScopedState<StateFile>(APP, SERVICE, 'dev', 'cn-hangzhou');
       expect(scoped.version).toBe('4.0');
       expect(scoped.scope).toEqual({ stage: 'dev', region: 'cn-hangzhou' });
       expect(scoped.serial).toBe(1);
-      expect(scoped.migration.sourceVersion).toBe('3.0');
+      expect(scoped.migration?.sourceVersion).toBe('3.0');
       expect(scoped.stages.dev.resources['functions.insight_poc_fn'].instances[0].id).toBe(
         'insight-poc-fn',
       );
 
-      const barriered = JSON.parse(await fs.readFile(legacyPath, 'utf-8'));
-      // The barrier is a V4 tombstone: versioned 4.0 (old CLIs refuse it before
-      // any mutation), marked managedBy=regional, and carrying the migration
-      // provenance — while keeping the legacy content for forensics.
-      expect(barriered.version).toBe('4.0');
-      expect(barriered.managedBy).toBe('regional');
-      expect(barriered.migration).toMatchObject({ sourceVersion: '3.0' });
-      expect(barriered.stages.dev.resources['functions.insight_poc_fn']).toBeDefined();
+      const upgraded = JSON.parse(await fs.readFile(legacyPath, 'utf-8'));
+      expect(upgraded.version).toBe('5.0');
+      expect(
+        upgraded.stages.dev.providers.aliyun.regions['cn-hangzhou'].migration.sourceVersion,
+      ).toBe('3.0');
+      expect(upgraded).not.toHaveProperty('managedBy');
+      expect(existsSync(scopedPath('dev', 'cn-hangzhou'))).toBe(false);
 
-      // The next deploy writes the scoped document (and adopts nothing new)
       await deploy({ location: fixture, stage: 'dev', autoApprove: true, region: 'cn-hangzhou' });
-      const after = JSON.parse(await fs.readFile(scopedPath('dev', 'cn-hangzhou'), 'utf-8'));
+      const after = await readScopedState<StateFile>(APP, SERVICE, 'dev', 'cn-hangzhou');
       expect(after.serial).toBeGreaterThanOrEqual(2);
     });
 
@@ -326,7 +387,7 @@ describe('Regional state isolation (issue #280)', () => {
         bindUnknownRegion: 'cn-hangzhou',
       });
 
-      const scoped = JSON.parse(await fs.readFile(scopedPath('dev', 'cn-hangzhou'), 'utf-8'));
+      const scoped = await readScopedState<StateFile>(APP, SERVICE, 'dev', 'cn-hangzhou');
       expect(scoped.stages.dev.resources['functions.insight_poc_fn'].region).toBe('cn-hangzhou');
     });
 
@@ -342,8 +403,7 @@ describe('Regional state isolation (issue #280)', () => {
         toRegional: true,
       });
 
-      // The tombstoned legacy entry is treated as absent: the new region starts
-      // from empty state and provisions independently (issue #280).
+      // A new region selects an empty partition.
       await deploy({
         location: fixture,
         stage: 'dev',
@@ -353,7 +413,7 @@ describe('Regional state isolation (issue #280)', () => {
 
       const southeastClient = clientsByRegion['ap-southeast-1'];
       expect(southeastClient.fc3.createFunction).toHaveBeenCalled();
-      const fresh = JSON.parse(await fs.readFile(scopedPath('dev', 'ap-southeast-1'), 'utf-8'));
+      const fresh = await readScopedState<StateFile>(APP, SERVICE, 'dev', 'ap-southeast-1');
       expect(fresh.scope).toEqual({ stage: 'dev', region: 'ap-southeast-1' });
       expect(fresh.stages.dev.resources['functions.insight_poc_fn']).toBeDefined();
     });
@@ -364,7 +424,7 @@ describe('Regional state isolation (issue #280)', () => {
 
       await expect(
         deploy({ location: fixture, stage: 'dev', autoApprove: true, region: 'cn-hangzhou' }),
-      ).rejects.toThrow(/corrupt/i);
+      ).rejects.toThrow(/malformed/i);
       expect(mockClient.fc3.createFunction).not.toHaveBeenCalled();
       expect(existsSync(scopedPath('dev', 'cn-hangzhou'))).toBe(false);
     });

@@ -1,7 +1,7 @@
 import path from 'node:path';
 import fs from 'node:fs/promises';
 
-import { cleanScopedState } from './scopedState';
+import { cleanScopedState, readScopedState } from './scopedState';
 import { deploy } from '../../src/commands/deploy';
 import { createMockVolcengineClient, type MockVolcengineClient } from './mockCloudClient';
 
@@ -139,20 +139,14 @@ describe('Volcengine Deploy Flow Service Test', () => {
         }),
       );
 
-      // Issue #280: deploys persist the scoped V4 document.
-      const saved = JSON.parse(
-        await fs.readFile(
-          path.join(
-            process.cwd(),
-            '.serverlessinsight',
-            'states',
-            'insight-volc-app',
-            'insight-volc_dev_cn-beijing_state.json',
-          ),
-          'utf-8',
-        ),
+      const saved = await readScopedState<import('../../src/types').StateFile>(
+        'insight-volc-app',
+        'insight-volc',
+        'dev',
+        'cn-beijing',
+        'volcengine',
       );
-      expect(saved.stages.dev.shared['logs.project']).toMatchObject({
+      expect(saved.stages.dev.shared?.['logs.project']).toMatchObject({
         definition: { projectName: 'insight-volc-app-dev-tls' },
         instances: [
           expect.objectContaining({

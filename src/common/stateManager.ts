@@ -2,7 +2,6 @@ import fs from 'node:fs';
 import path from 'node:path';
 import crypto from 'node:crypto';
 
-import { assertLocalStateLayout } from './stateLayout';
 import {
   ResourceState,
   StateFile,
@@ -10,11 +9,11 @@ import {
   StateCorruptError,
   StateVersionError,
   StateScopeMismatchError,
-  StateRegionRequiredError,
   CURRENT_STATE_VERSION,
   LEGACY_STATE_VERSION,
 } from '../types';
-import { normalizeScope, buildScopedStatePath, DeploymentScope } from './stateScope';
+import { normalizeScope, DeploymentScope } from './stateScope';
+import { emptyDeploymentState } from './aggregateState';
 import { MANAGED_BY_REGIONAL } from './migrationMarker';
 import { withLock, LockOptions } from './lockManager';
 import { logger } from './logger';
@@ -29,14 +28,6 @@ export const getStatePath = (
 ): string => {
   return path.join(baseDir, STATE_DIR, `state-${app}-${service}.json`);
 };
-
-export const getScopedStatePath = (
-  app: string,
-  service: string,
-  stage: string,
-  region: string,
-  baseDir: string = process.cwd(),
-): string => buildScopedStatePath(app, service, stage, region, baseDir);
 
 /* istanbul ignore next */
 export const ensureStateDir = (baseDir: string = process.cwd()): void => {
@@ -215,6 +206,10 @@ export const saveState = (
     // use default
   }
 
+  if (parseStateVersion(existing.version) > parseStateVersion(CURRENT_STATE_VERSION)) {
+    throw new StateVersionError(existing.version, CURRENT_STATE_VERSION);
+  }
+
   // Write updated stage resources, preserve all other stages
   const stateToSave: PersistedStateFile = {
     ...existing,
@@ -241,11 +236,15 @@ export const saveState = (
  * Back up the previous state file, then write tmp + fsync + rename. Shared by
  * saveState and patchPersistedState.
  */
-export const writeStateFileAtomically = (statePath: string, content: string): void => {
+export const writeStateFileAtomically = (
+  statePath: string,
+  content: string,
+  options: { backup?: boolean } = {},
+): void => {
   const tmpPath = `${statePath}.tmp`;
   const backupPath = `${statePath}.backup`;
   try {
-    if (fs.existsSync(statePath)) {
+    if (options.backup !== false && fs.existsSync(statePath)) {
       fs.copyFileSync(statePath, backupPath);
     }
     const fd = fs.openSync(tmpPath, 'w');
@@ -300,6 +299,10 @@ export const patchPersistedState = (
     // use default
   }
 
+  if (parseStateVersion(existing.version) > parseStateVersion(CURRENT_STATE_VERSION)) {
+    throw new StateVersionError(existing.version, CURRENT_STATE_VERSION);
+  }
+
   const patched = Object.fromEntries(
     Object.entries({ ...existing, ...patch }).filter(([, value]) => value !== undefined),
   );
@@ -339,16 +342,7 @@ export const saveStateWithLock = async (
 };
 
 export const emptyScopedState = (scope: DeploymentScope): StateFile => {
-  const normalized = normalizeScope(scope);
-  return {
-    version: CURRENT_STATE_VERSION,
-    provider: normalized.provider,
-    app: normalized.app,
-    service: normalized.service,
-    scope: { stage: normalized.stage, region: normalized.region },
-    stages: { [normalized.stage]: { resources: {} } },
-    resources: {},
-  };
+  return emptyDeploymentState(scope);
 };
 
 export const validateScopedDocument = (raw: PersistedStateFile, scope: DeploymentScope): void => {
@@ -373,188 +367,6 @@ export const validateScopedDocument = (raw: PersistedStateFile, scope: Deploymen
   if (!matches) {
     throw new StateScopeMismatchError(normalized, stored);
   }
-};
-
-export const loadScopedState = (
-  scope: DeploymentScope,
-  baseDir: string = process.cwd(),
-): StateFile => {
-  const normalized = normalizeScope(scope);
-  const statePath = buildScopedStatePath(
-    normalized.app,
-    normalized.service,
-    normalized.stage,
-    normalized.region,
-    baseDir,
-  );
-  assertLocalStateLayout(statePath);
-
-  if (!fs.existsSync(statePath)) {
-    return emptyScopedState(normalized);
-  }
-
-  const readBackup = (): PersistedStateFile | null => {
-    const backupPath = `${statePath}.backup`;
-    if (!fs.existsSync(backupPath)) {
-      return null;
-    }
-    try {
-      return JSON.parse(fs.readFileSync(backupPath, 'utf-8')) as PersistedStateFile;
-    } catch {
-      return null;
-    }
-  };
-
-  const hydrate = (raw: PersistedStateFile): StateFile => {
-    validateScopedDocument(raw, normalized);
-    const stageResources = raw.stages?.[normalized.stage]?.resources ?? {};
-    return { ...raw, resources: stageResources } as StateFile;
-  };
-
-  try {
-    const content = fs.readFileSync(statePath, 'utf-8');
-    return hydrate(JSON.parse(content) as PersistedStateFile);
-  } catch (error) {
-    if (error instanceof StateVersionError || error instanceof StateScopeMismatchError) {
-      throw error;
-    }
-    const backup = readBackup();
-    if (backup) {
-      try {
-        return hydrate(backup);
-      } catch (backupError) {
-        if (
-          backupError instanceof StateVersionError ||
-          backupError instanceof StateScopeMismatchError
-        ) {
-          throw backupError;
-        }
-        throw new StateCorruptError(statePath, error);
-      }
-    }
-    throw new StateCorruptError(statePath, error);
-  }
-};
-
-export const saveScopedState = (
-  state: StateFile,
-  scope: DeploymentScope,
-  baseDir: string = process.cwd(),
-): void => {
-  if (!scope.region || scope.region.trim().length === 0) {
-    throw new StateRegionRequiredError(scope.stage);
-  }
-  const normalized = normalizeScope(scope);
-  if (state.app !== normalized.app || state.service !== normalized.service) {
-    throw new StateScopeMismatchError(normalized, {
-      provider: state.provider,
-      app: state.app,
-      service: state.service,
-      stage: state.scope?.stage,
-      region: state.scope?.region,
-    });
-  }
-  if (state.provider && state.provider !== normalized.provider) {
-    throw new StateScopeMismatchError(normalized, {
-      provider: state.provider,
-      app: state.app,
-      service: state.service,
-      stage: state.scope?.stage,
-      region: state.scope?.region,
-    });
-  }
-
-  const statePath = buildScopedStatePath(
-    normalized.app,
-    normalized.service,
-    normalized.stage,
-    normalized.region,
-    baseDir,
-  );
-  assertLocalStateLayout(statePath);
-  const stateDir = path.dirname(statePath);
-  if (!fs.existsSync(stateDir)) {
-    fs.mkdirSync(stateDir, { recursive: true });
-  }
-
-  let existing: PersistedStateFile | null = null;
-  try {
-    if (fs.existsSync(statePath)) {
-      existing = JSON.parse(fs.readFileSync(statePath, 'utf-8')) as PersistedStateFile;
-    }
-  } catch {
-    existing = null;
-  }
-
-  const persisted: PersistedStateFile = {
-    version: CURRENT_STATE_VERSION,
-    provider: normalized.provider,
-    app: normalized.app,
-    service: normalized.service,
-    ...(existing?.orgId ? { orgId: existing.orgId } : {}),
-    ...(existing?.appId ? { appId: existing.appId } : {}),
-    ...(existing?.serviceId ? { serviceId: existing.serviceId } : {}),
-    ...(existing?.managedBy ? { managedBy: existing.managedBy } : {}),
-    scope: { stage: normalized.stage, region: normalized.region },
-    lineage: existing?.lineage || crypto.randomUUID(),
-    serial: (existing?.serial ?? 0) + 1,
-    stages: {
-      [normalized.stage]: {
-        resources: state.resources,
-        shared:
-          state.stages?.[normalized.stage]?.shared ??
-          existing?.stages?.[normalized.stage]?.shared ??
-          {},
-      },
-    },
-  };
-
-  writeStateFileAtomically(statePath, JSON.stringify(persisted, null, 2));
-};
-
-export const patchScopedPersistedState = (
-  scope: DeploymentScope,
-  patch: Record<string, unknown | undefined>,
-  baseDir: string = process.cwd(),
-): void => {
-  const normalized = normalizeScope(scope);
-  const statePath = buildScopedStatePath(
-    normalized.app,
-    normalized.service,
-    normalized.stage,
-    normalized.region,
-    baseDir,
-  );
-  assertLocalStateLayout(statePath);
-  const stateDir = path.dirname(statePath);
-  if (!fs.existsSync(stateDir)) {
-    fs.mkdirSync(stateDir, { recursive: true });
-  }
-
-  let existing: PersistedStateFile = {
-    version: CURRENT_STATE_VERSION,
-    provider: normalized.provider,
-    app: normalized.app,
-    service: normalized.service,
-    scope: { stage: normalized.stage, region: normalized.region },
-    stages: { [normalized.stage]: { resources: {} } },
-  };
-  if (fs.existsSync(statePath)) {
-    const raw = JSON.parse(fs.readFileSync(statePath, 'utf-8')) as PersistedStateFile;
-    validateScopedDocument(raw, normalized);
-    existing = raw;
-  }
-
-  const patched = Object.fromEntries(
-    Object.entries({ ...existing, ...patch }).filter(([, value]) => value !== undefined),
-  );
-  const stateToSave = {
-    ...patched,
-    version: CURRENT_STATE_VERSION,
-    serial: (existing.serial ?? 0) + 1,
-  } as unknown as PersistedStateFile;
-
-  writeStateFileAtomically(statePath, JSON.stringify(stateToSave, null, 2));
 };
 
 export const readLegacyPersistedState = (

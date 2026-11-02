@@ -1,4 +1,5 @@
 import fs from 'node:fs';
+import { ProviderEnum } from '../../../src/common/providerEnum';
 import {
   getIacLocation,
   setContext,
@@ -115,6 +116,23 @@ describe('context', () => {
   });
 
   describe('setContext', () => {
+    it('retains the original YAML storage defaults independently from workload overrides', async () => {
+      mockFs.existsSync.mockReturnValue(true);
+      mockFs.statSync.mockReturnValue({ isDirectory: () => false } as never);
+      await setContext({
+        app: 'shop',
+        service: 'api',
+        provider: 'volcengine',
+        region: 'cn-beijing',
+        iacProvider: { name: ProviderEnum.ALIYUN, region: 'ap-southeast-1' },
+        location: '/test/path',
+      });
+      expect(getContext()).toMatchObject({
+        provider: 'volcengine',
+        region: 'cn-beijing',
+        storage: { provider: 'aliyun', region: 'ap-southeast-1' },
+      });
+    });
     it('should set context with provided values', async () => {
       mockFs.existsSync.mockReturnValue(true);
       mockFs.statSync.mockReturnValue({ isDirectory: () => false } as never);

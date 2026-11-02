@@ -132,6 +132,29 @@ export const createCosStorageAdapter = (config: CosStorageConfig): StorageAdapte
   });
 
   return {
+    list: async (prefix: string): Promise<string[]> => {
+      const page = async (marker?: string): Promise<string[]> => {
+        const result = await new Promise<COS.GetBucketResult>((resolve, reject) => {
+          cosClient.getBucket(
+            {
+              Bucket: config.bucket,
+              Region: config.region,
+              Prefix: prefix,
+              Marker: marker,
+              MaxKeys: 1000,
+            },
+            (error, data) => (error ? reject(error) : resolve(data)),
+          );
+        });
+        const keys = (result.Contents ?? []).map((object) => object.Key);
+        if (result.IsTruncated !== 'true') return keys;
+        if (!result.NextMarker || result.NextMarker === marker) {
+          throw new Error(lang.__('STATE_STORAGE_LIST_INCOMPLETE'));
+        }
+        return [...keys, ...(await page(result.NextMarker))];
+      };
+      return page();
+    },
     read: async <T>(key: string): Promise<T | null> => {
       try {
         const body = await promisifyGet(cosClient, config.bucket, config.region, key);

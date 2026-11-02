@@ -101,6 +101,30 @@ const evaluateObject = <T>(obj: T, ctx: Context, iacVars?: Record<string, unknow
   return obj;
 };
 
+const assertProviderOverrideResources = (iac: ServerlessIacRaw): void => {
+  const provider = iac.provider.name;
+  const unsupportedSections =
+    provider === 'tencent'
+      ? (['events', 'tables'] as const)
+      : provider === 'volcengine'
+        ? (['databases', 'tables'] as const)
+        : [];
+  const unsupportedSection = unsupportedSections.find(
+    (section) => Object.keys(iac[section] ?? {}).length > 0,
+  );
+  const unsupportedDatabase = Object.entries(iac.databases ?? {}).find(([, database]) =>
+    provider === 'aliyun'
+      ? database.type === 'TDSQL_C_SERVERLESS'
+      : provider === 'tencent'
+        ? !['TDSQL_C_SERVERLESS', 'ELASTICSEARCH_SERVERLESS'].includes(database.type)
+        : false,
+  );
+  const resource =
+    unsupportedSection ?? (unsupportedDatabase ? `databases.${unsupportedDatabase[0]}` : undefined);
+  if (resource)
+    throw new Error(lang.__('EFFECTIVE_CONFIG_RESOURCE_UNSUPPORTED', { provider, resource }));
+};
+
 export const revalYaml = (iacLocation: string, ctx: Context): ServerlessIac => {
   validateExistence(iacLocation);
 
@@ -116,11 +140,11 @@ export const revalYaml = (iacLocation: string, ctx: Context): ServerlessIac => {
     provider: { ...iacJson.provider, name: ctx.provider, region: ctx.region },
   };
 
-  // staticFields are spread in before evaluation (identity fields are not template strings,
-  // so this is a no-op) and again after to ensure evaluateObject never mangles them.
   const evaluatedIacJson = evaluateObject({ ...iacJson, ...staticFields }, ctx, iacJson.vars);
-
-  const iac = transformYaml({ ...evaluatedIacJson, ...staticFields }, ctx.stage);
+  const resolved = { ...evaluatedIacJson, ...staticFields };
+  validateYaml(resolved);
+  if (iacJson.provider.name !== ctx.provider) assertProviderOverrideResources(resolved);
+  const iac = transformYaml(resolved, ctx.stage);
 
   if (iac.functions) {
     iac.functions = iac.functions.map((fn) => ({

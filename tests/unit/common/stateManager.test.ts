@@ -9,13 +9,10 @@ jest.mock('node:fs', () =>
 import {
   ensureStateDir,
   getStatePath,
-  getScopedStatePath,
   loadState,
-  loadScopedState,
   saveState,
-  saveScopedState,
   saveStateWithLock,
-  patchScopedPersistedState,
+  validateScopedDocument,
   readLegacyPersistedState,
   emptyScopedState,
   getResource,
@@ -38,7 +35,6 @@ import {
   StateCorruptError,
   StateVersionError,
   StateScopeMismatchError,
-  StateRegionRequiredError,
 } from '../../../src/types';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -989,7 +985,7 @@ describe('StateManager', () => {
     });
   });
 
-  describe('V4 scoped state (issue #280)', () => {
+  describe('deployment views and legacy reads', () => {
     const scope: DeploymentScope = {
       provider: 'aliyun',
       app: 'test-app',
@@ -997,14 +993,6 @@ describe('StateManager', () => {
       stage: 'dev',
       region: 'cn-hangzhou',
     };
-    const scopedPath = path.join(
-      testDir,
-      '.serverlessinsight',
-      'states',
-      'test-app',
-      'test-service_dev_cn-hangzhou_state.json',
-    );
-
     const makeFnResource = (name: string): ResourceState => ({
       mode: 'managed',
       region: 'cn-hangzhou',
@@ -1013,324 +1001,36 @@ describe('StateManager', () => {
       lastUpdated: '2025-01-01T00:00:00Z',
     });
 
-    const writeScopedDoc = (doc: Record<string, unknown>): void => {
-      fs.mkdirSync(path.dirname(scopedPath), { recursive: true });
-      fs.writeFileSync(scopedPath, JSON.stringify(doc, null, 2));
-    };
-
-    const validScopedDoc = (): Record<string, unknown> => ({
-      version: CURRENT_STATE_VERSION,
-      provider: 'aliyun',
-      app: 'test-app',
-      service: 'test-service',
-      scope: { stage: 'dev', region: 'cn-hangzhou' },
-      stages: { dev: { resources: { 'functions.test': makeFnResource('test-fn') } } },
-    });
-
-    it('never treats nested preview data as an empty scope for direct reads or writes', () => {
-      const previous = path.join(
-        testDir,
-        '.serverlessinsight',
-        'states',
-        scope.app,
-        scope.service,
-        scope.stage,
-        scope.region,
-        'state.json',
-      );
-      fs.mkdirSync(path.dirname(previous), { recursive: true });
-      fs.writeFileSync(previous, JSON.stringify(validScopedDoc()));
-      expect(() => loadScopedState(scope, testDir)).toThrow(/Previous preview state layout/);
-      expect(() => saveScopedState(emptyScopedState(scope), scope, testDir)).toThrow(
-        /Previous preview state layout/,
-      );
-      expect(() => patchScopedPersistedState(scope, { managedBy: 'saas' }, testDir)).toThrow(
-        /Previous preview state layout/,
-      );
-      expect(fs.existsSync(scopedPath)).toBe(false);
-      expect(JSON.parse(fs.readFileSync(previous, 'utf-8'))).toEqual(validScopedDoc());
-    });
-
-    describe('getScopedStatePath', () => {
-      it('returns the flat per-scope filename with a canonical region', () => {
-        expect(getScopedStatePath('test-app', 'test-service', 'dev', 'CN-Hangzhou', testDir)).toBe(
-          scopedPath,
-        );
+    it('creates the canonical single-deployment projection', () => {
+      expect(emptyScopedState({ ...scope, region: 'CN-Hangzhou' })).toMatchObject({
+        version: CURRENT_STATE_VERSION,
+        provider: 'aliyun',
+        app: 'test-app',
+        service: 'test-service',
+        scope: { stage: 'dev', region: 'cn-hangzhou' },
+        stages: { dev: { resources: {}, shared: {} } },
+        resources: {},
       });
     });
 
-    describe('emptyScopedState', () => {
-      it('returns an empty V4 document for the normalized scope', () => {
-        expect(emptyScopedState({ ...scope, region: 'CN-Hangzhou' })).toEqual({
-          version: CURRENT_STATE_VERSION,
-          provider: 'aliyun',
-          app: 'test-app',
-          service: 'test-service',
-          scope: { stage: 'dev', region: 'cn-hangzhou' },
-          stages: { dev: { resources: {} } },
-          resources: {},
-        });
-      });
-    });
-
-    describe('loadScopedState', () => {
-      it('returns an empty scoped document when no file exists', () => {
-        const state = loadScopedState(scope, testDir);
-
-        expect(state.version).toBe(CURRENT_STATE_VERSION);
-        expect(state.scope).toEqual({ stage: 'dev', region: 'cn-hangzhou' });
-        expect(state.resources).toEqual({});
-        expect(state.stages).toEqual({ dev: { resources: {} } });
-      });
-
-      it('hydrates the runtime resources projection from the persisted stage', () => {
-        writeScopedDoc(validScopedDoc());
-
-        const state = loadScopedState(scope, testDir);
-        expect(state.resources['functions.test']).toEqual(makeFnResource('test-fn'));
-      });
-
-      it('hydrates an empty projection when the persisted document has no stage entry', () => {
-        writeScopedDoc({ ...validScopedDoc(), stages: {} });
-
-        const state = loadScopedState(scope, testDir);
-        expect(state.resources).toEqual({});
-        expect(state.stages).toEqual({});
-      });
-
-      it('accepts a stored region that differs only in case', () => {
-        writeScopedDoc({ ...validScopedDoc(), scope: { stage: 'dev', region: 'CN-Hangzhou' } });
-
-        const state = loadScopedState(scope, testDir);
-        expect(state.resources['functions.test']).toEqual(makeFnResource('test-fn'));
-      });
-
-      it('recovers from a valid .backup when the primary is corrupt', () => {
-        fs.mkdirSync(path.dirname(scopedPath), { recursive: true });
-        fs.writeFileSync(`${scopedPath}.backup`, JSON.stringify(validScopedDoc()));
-        fs.writeFileSync(scopedPath, '{{{ not valid json');
-
-        const state = loadScopedState(scope, testDir);
-        expect(state.resources['functions.test']).toEqual(makeFnResource('test-fn'));
-      });
-
-      it('throws StateVersionError for an unsupported scoped document version', () => {
-        writeScopedDoc({ ...validScopedDoc(), version: '9.9' });
-        expect(() => loadScopedState(scope, testDir)).toThrow(StateVersionError);
-
-        writeScopedDoc({ ...validScopedDoc(), version: LEGACY_STATE_VERSION });
-        expect(() => loadScopedState(scope, testDir)).toThrow(StateVersionError);
-      });
-
-      it('throws StateScopeMismatchError when any stored identity disagrees with the scope', () => {
-        const foreignDocs = [
-          { ...validScopedDoc(), provider: 'tencent' },
-          { ...validScopedDoc(), app: 'other-app' },
-          { ...validScopedDoc(), service: 'other-service' },
-          { ...validScopedDoc(), scope: { stage: 'prod', region: 'cn-hangzhou' } },
-          { ...validScopedDoc(), scope: { stage: 'dev', region: 'us-east-1' } },
-          { ...validScopedDoc(), scope: undefined },
-        ];
-
-        foreignDocs.forEach((doc) => {
-          writeScopedDoc(doc);
-          expect(() => loadScopedState(scope, testDir)).toThrow(StateScopeMismatchError);
-        });
-      });
-
-      it('throws StateCorruptError when both primary and backup are corrupt', () => {
-        fs.mkdirSync(path.dirname(scopedPath), { recursive: true });
-        fs.writeFileSync(scopedPath, '{{{ not valid json');
-        fs.writeFileSync(`${scopedPath}.backup`, 'also not valid json');
-
-        expect(() => loadScopedState(scope, testDir)).toThrow(StateCorruptError);
-      });
-
-      it('throws StateCorruptError when the primary is corrupt and no backup exists', () => {
-        fs.mkdirSync(path.dirname(scopedPath), { recursive: true });
-        fs.writeFileSync(scopedPath, '{{{ not valid json');
-
-        expect(() => loadScopedState(scope, testDir)).toThrow(StateCorruptError);
-      });
-
-      it('throws StateVersionError when only the backup has an unsupported version', () => {
-        fs.mkdirSync(path.dirname(scopedPath), { recursive: true });
-        fs.writeFileSync(scopedPath, '{{{ not valid json');
-        fs.writeFileSync(
-          `${scopedPath}.backup`,
-          JSON.stringify({ ...validScopedDoc(), version: '9.9' }),
-        );
-
-        expect(() => loadScopedState(scope, testDir)).toThrow(StateVersionError);
-      });
-
-      it('throws StateCorruptError when the backup fails validation unexpectedly', () => {
-        fs.mkdirSync(path.dirname(scopedPath), { recursive: true });
-        fs.writeFileSync(scopedPath, '{{{ not valid json');
-        fs.writeFileSync(
-          `${scopedPath}.backup`,
-          JSON.stringify({
-            version: CURRENT_STATE_VERSION,
-            provider: 'aliyun',
-            app: 'test-app',
-            service: 'test-service',
-            scope: { stage: 'dev' },
-          }),
-        );
-
-        expect(() => loadScopedState(scope, testDir)).toThrow(StateCorruptError);
-      });
-    });
-
-    describe('saveScopedState', () => {
-      it('throws StateRegionRequiredError when the region is missing or blank', () => {
-        expect(() =>
-          saveScopedState(emptyScopedState(scope), { ...scope, region: '' }, testDir),
-        ).toThrow(StateRegionRequiredError);
-        expect(() =>
-          saveScopedState(emptyScopedState(scope), { ...scope, region: '   ' }, testDir),
-        ).toThrow(StateRegionRequiredError);
-      });
-
-      it('throws StateScopeMismatchError when the state app or service disagrees with the scope', () => {
-        expect(() =>
-          saveScopedState({ ...emptyScopedState(scope), app: 'other-app' }, scope, testDir),
-        ).toThrow(StateScopeMismatchError);
-        expect(() =>
-          saveScopedState({ ...emptyScopedState(scope), service: 'other-service' }, scope, testDir),
-        ).toThrow(StateScopeMismatchError);
-      });
-
-      it('throws StateScopeMismatchError when the state provider disagrees with the scope', () => {
-        expect(() =>
-          saveScopedState({ ...emptyScopedState(scope), provider: 'tencent' }, scope, testDir),
-        ).toThrow(StateScopeMismatchError);
-      });
-
-      it('creates nested directories on first save and round-trips', () => {
-        const state = setResource(
-          emptyScopedState(scope),
-          'functions.test',
-          makeFnResource('test-fn'),
-        );
-        saveScopedState(state, scope, testDir);
-
-        expect(fs.existsSync(scopedPath)).toBe(true);
-        const onDisk = JSON.parse(fs.readFileSync(scopedPath, 'utf-8'));
-        expect(onDisk.version).toBe(CURRENT_STATE_VERSION);
-        expect(onDisk.scope).toEqual({ stage: 'dev', region: 'cn-hangzhou' });
-        expect(onDisk.serial).toBe(1);
-        expect(onDisk.lineage).toBeDefined();
-        expect(onDisk.resources).toBeUndefined();
-        expect(onDisk.stages.dev.resources['functions.test']).toEqual(makeFnResource('test-fn'));
-        expect(onDisk.stages.dev.shared).toEqual({});
-
-        const reloaded = loadScopedState(scope, testDir);
-        expect(reloaded.resources['functions.test']).toEqual(makeFnResource('test-fn'));
-      });
-
-      it('carries orgId/appId/serviceId/managedBy from the previous persisted document', () => {
-        saveScopedState(emptyScopedState(scope), scope, testDir);
-        const existing = JSON.parse(fs.readFileSync(scopedPath, 'utf-8'));
-        existing.orgId = 'org-1';
-        existing.appId = 'app-1';
-        existing.serviceId = 'svc-1';
-        existing.managedBy = 'saas';
-        fs.writeFileSync(scopedPath, JSON.stringify(existing));
-
-        const state = setResource(
-          emptyScopedState(scope),
-          'functions.test',
-          makeFnResource('test-fn'),
-        );
-        saveScopedState(state, scope, testDir);
-
-        const after = JSON.parse(fs.readFileSync(scopedPath, 'utf-8'));
-        expect(after.orgId).toBe('org-1');
-        expect(after.appId).toBe('app-1');
-        expect(after.serviceId).toBe('svc-1');
-        expect(after.managedBy).toBe('saas');
-        expect(after.serial).toBe(2);
-        expect(after.lineage).toBe(existing.lineage);
-      });
-
-      it('writes shared resources from state and keeps existing ones when the state omits them', () => {
-        const sharedLog: ResourceState = {
-          mode: 'managed',
-          region: 'cn-hangzhou',
-          definition: { logProject: 'logs' },
-          instances: [],
-          lastUpdated: '2025-01-01T00:00:00Z',
-        };
-
-        const withShared = setSharedResource(emptyScopedState(scope), 'dev', 'logs', sharedLog);
-        saveScopedState(withShared, scope, testDir);
-        let onDisk = JSON.parse(fs.readFileSync(scopedPath, 'utf-8'));
-        expect(onDisk.stages.dev.shared.logs).toEqual(sharedLog);
-
-        saveScopedState(emptyScopedState(scope), scope, testDir);
-        onDisk = JSON.parse(fs.readFileSync(scopedPath, 'utf-8'));
-        expect(onDisk.stages.dev.shared.logs).toEqual(sharedLog);
-      });
-
-      it('treats a corrupt existing document as absent on save', () => {
-        fs.mkdirSync(path.dirname(scopedPath), { recursive: true });
-        fs.writeFileSync(scopedPath, '{{{ not valid json');
-
-        saveScopedState(emptyScopedState(scope), scope, testDir);
-
-        const onDisk = JSON.parse(fs.readFileSync(scopedPath, 'utf-8'));
-        expect(onDisk.serial).toBe(1);
-        expect(onDisk.stages.dev.resources).toEqual({});
-      });
-    });
-
-    describe('patchScopedPersistedState', () => {
-      it('creates the scope directory and document when patching a fresh scope', () => {
-        patchScopedPersistedState(scope, { managedBy: 'regional' }, testDir);
-
-        expect(fs.existsSync(scopedPath)).toBe(true);
-        const onDisk = JSON.parse(fs.readFileSync(scopedPath, 'utf-8'));
-        expect(onDisk.version).toBe(CURRENT_STATE_VERSION);
-        expect(onDisk.scope).toEqual({ stage: 'dev', region: 'cn-hangzhou' });
-        expect(onDisk.managedBy).toBe('regional');
-        expect(onDisk.serial).toBe(1);
-      });
-
-      it('adds keys without touching stages and deletes keys via undefined', () => {
-        const state = setResource(
-          emptyScopedState(scope),
-          'functions.test',
-          makeFnResource('test-fn'),
-        );
-        saveScopedState(state, scope, testDir);
-
-        patchScopedPersistedState(
-          scope,
-          { orgId: 'org-9', migrationMarker: { opId: 'op-1' } },
-          testDir,
-        );
-        let onDisk = JSON.parse(fs.readFileSync(scopedPath, 'utf-8'));
-        expect(onDisk.orgId).toBe('org-9');
-        expect(onDisk.migrationMarker).toEqual({ opId: 'op-1' });
-        expect(onDisk.stages.dev.resources['functions.test']).toEqual(makeFnResource('test-fn'));
-        expect(onDisk.serial).toBe(2);
-
-        patchScopedPersistedState(scope, { orgId: undefined, migrationMarker: undefined }, testDir);
-        onDisk = JSON.parse(fs.readFileSync(scopedPath, 'utf-8'));
-        expect('orgId' in onDisk).toBe(false);
-        expect('migrationMarker' in onDisk).toBe(false);
-        expect(onDisk.stages.dev.resources['functions.test']).toEqual(makeFnResource('test-fn'));
-        expect(onDisk.serial).toBe(3);
-      });
-
-      it('rejects a patch onto a foreign-scope document', () => {
-        writeScopedDoc({ ...validScopedDoc(), provider: 'tencent' });
-
-        expect(() => patchScopedPersistedState(scope, { orgId: 'x' }, testDir)).toThrow(
+    it('validates exact deployment identities without changing their cloud identifiers', () => {
+      const view = emptyScopedState(scope);
+      expect(() => validateScopedDocument(view, scope)).not.toThrow();
+      [
+        { app: 'foreign' },
+        { service: 'foreign' },
+        { provider: 'tencent' },
+        { scope: { stage: 'test', region: scope.region } },
+        { scope: { stage: scope.stage, region: 'cn-beijing' } },
+        { scope: undefined },
+      ].forEach((foreign) =>
+        expect(() => validateScopedDocument({ ...view, ...foreign }, scope)).toThrow(
           StateScopeMismatchError,
-        );
-      });
+        ),
+      );
+      expect(() => validateScopedDocument({ ...view, version: '5.0' }, scope)).toThrow(
+        StateVersionError,
+      );
     });
 
     describe('readLegacyPersistedState', () => {

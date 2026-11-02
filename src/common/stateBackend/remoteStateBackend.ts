@@ -1,39 +1,13 @@
+import { AsyncLocalStorage } from 'node:async_hooks';
 import os from 'node:os';
-import crypto from 'node:crypto';
 
-import { assertNoPreviousStateLayout } from '../stateLayout';
-import {
-  StateFile,
-  PersistedStateFile,
-  LockOptions,
-  LockMetadata,
-  StateCorruptError,
-  StateVersionError,
-  StateScopeMismatchError,
-  CURRENT_STATE_VERSION,
-} from '../../types';
-import { migrateState, toPersistedState, emptyScopedState } from '../stateManager';
-import { normalizeScope, buildServiceObjectKey } from '../stateScope';
-import {
-  MANAGED_BY_REGIONAL,
-  enforceMigrationMarker,
-  MigrationMarkerAction,
-} from '../migrationMarker';
-import type { ProviderBinding } from '../regionalMigration';
-import { claimProviderBinding } from '../providerBinding';
+import { createAggregateStore } from '../aggregateStore';
+import { normalizeScope, buildServiceObjectKey, getPreviousScopedLocations } from '../stateScope';
 import { DEFAULT_LOCK_TIMEOUT, DEFAULT_LOCK_RETRY_DELAY } from '../constants';
 import { LockError, formatLockInfo } from '../lockManager';
 import { logger } from '../logger';
 import { lang } from '../../lang';
-import {
-  StateBackend,
-  StorageAdapter,
-  StateSource,
-  WriteReadiness,
-  BackendCapabilities,
-  ConditionalPutUnsupportedError,
-} from './types';
-import type { DeploymentScope } from '../stateScope';
+import { ConditionalPutUnsupportedError } from './types';
 import {
   LOCK_KEY_SUFFIX,
   sleep,
@@ -41,6 +15,10 @@ import {
   isProcessAlive,
   createLockMetadata,
 } from './lockUtils';
+import type { StateFile, LockOptions, LockMetadata } from '../../types';
+import type { StateBackend, StorageAdapter, BackendCapabilities } from './types';
+import type { DeploymentScope } from '../stateScope';
+import type { MigrationMarkerAction } from '../migrationMarker';
 
 export type RemoteBackendConfig = {
   scope: DeploymentScope;
@@ -55,12 +33,25 @@ export const createRemoteStateBackend = (
   config: RemoteBackendConfig,
 ): StateBackend => {
   const normalized = normalizeScope(config.scope);
-  const markerAction: MigrationMarkerAction = config.markerAction ?? 'off';
-  const lockKey = `${config.scopedKey}${LOCK_KEY_SUFFIX}`;
+  const lockKey = `${config.legacyKey}${LOCK_KEY_SUFFIX}`;
   const capabilities: BackendCapabilities = {
     conditionalCreate: typeof adapter.putIfAbsent === 'function',
   };
-  let lastSource: StateSource = 'empty';
+  const store = createAggregateStore(adapter, normalized, {
+    key: config.legacyKey,
+    markerAction: config.markerAction ?? 'off',
+    backupWrites: true,
+    previewLocations: [
+      config.scopedKey,
+      `${config.scopedKey}.si-lock`,
+      `${config.scopedKey}.backup`,
+      `${config.scopedKey}.tmp`,
+      buildServiceObjectKey(config.legacyKey, normalized.app, normalized.service),
+      ...getPreviousScopedLocations(config.scopedKey),
+    ].filter((key) => key !== config.legacyKey),
+  });
+  const writer = new AsyncLocalStorage<boolean>();
+  let manualLockId: string | null = null;
 
   const readLockObject = async (): Promise<LockMetadata | null> => {
     return adapter.read<LockMetadata>(lockKey);
@@ -120,13 +111,19 @@ export const createRemoteStateBackend = (
 
         if (isLockStale(existingLock)) {
           throw new LockError(
-            `State is currently locked (stale lock detected).\n${formatLockInfo(existingLock)}\nThis lock appears to be stale. If you are certain no other operation is running, use:\n  si force-unlock ${existingLock.id}`,
+            lang.__('REGIONAL_LOCK_STALE', {
+              info: formatLockInfo(existingLock),
+              lockId: existingLock.id,
+            }),
             existingLock,
           );
         }
         if (Date.now() - startTime >= timeout) {
           throw new LockError(
-            `Failed to acquire lock after ${timeout / 1000} seconds.\n${formatLockInfo(existingLock)}\nIf you are certain no other operation is running, use:\n  si force-unlock ${existingLock.id}`,
+            lang.__('REGIONAL_LOCK_TIMEOUT', {
+              seconds: String(timeout / 1000),
+              info: formatLockInfo(existingLock),
+            }),
             existingLock,
           );
         }
@@ -150,234 +147,75 @@ export const createRemoteStateBackend = (
 
     const existingLock = await readLockObject();
     throw new LockError(
-      `Failed to acquire lock.\n${existingLock ? formatLockInfo(existingLock) : ''}\nIf you are certain no other operation is running, use:\n  si force-unlock ${existingLock?.id || 'unknown'}`,
+      lang.__('REGIONAL_LOCK_FAILED', { path: adapter.lockPath }),
       existingLock || undefined,
     );
   };
 
-  const bindingKey = buildServiceObjectKey(config.legacyKey, normalized.app, normalized.service);
-
-  const readProviderBinding = async (): Promise<ProviderBinding | null> => {
-    return adapter.read<ProviderBinding>(bindingKey);
+  const releaseLock = async (lockId: string): Promise<void> => {
+    const existing = await readLockObject();
+    if (existing?.id === lockId) await adapter.delete(lockKey);
+    if (manualLockId === lockId) {
+      manualLockId = null;
+      store.clearPlanBase();
+    }
   };
 
-  const readScopedDocument = async (): Promise<PersistedStateFile | null> => {
-    const raw = await adapter.read<PersistedStateFile>(config.scopedKey);
-    if (!raw) {
-      await assertNoPreviousStateLayout(adapter, config.scopedKey);
-      return null;
+  const withLock = async <T>(
+    operation: string,
+    fn: () => Promise<T>,
+    options?: LockOptions,
+    onLockAcquired?: (lockId: string) => void,
+  ): Promise<T> => {
+    const lock = await acquireLockObject(operation, options);
+    try {
+      return await writer.run(true, async () => {
+        if (!operation.startsWith('migrate')) await store.verifyPlanBase();
+        onLockAcquired?.(lock.id);
+        return fn();
+      });
+    } finally {
+      store.clearPlanBase();
+      await releaseLock(lock.id);
     }
-
-    if (raw.version && raw.version !== CURRENT_STATE_VERSION) {
-      throw new StateCorruptError(
-        `bucket://${config.scopedKey}`,
-        lang.__('STATE_SCOPED_VERSION_UNSUPPORTED', { version: raw.version }),
-      );
-    }
-    const matches =
-      raw.provider === normalized.provider &&
-      raw.app === normalized.app &&
-      raw.service === normalized.service &&
-      !!raw.scope &&
-      raw.scope.stage === normalized.stage &&
-      (raw.scope.region ?? '').toLowerCase() === normalized.region;
-    if (!matches) {
-      throw new StateCorruptError(
-        `bucket://${config.scopedKey}`,
-        lang.__('STATE_SCOPED_IDENTITY_MISMATCH'),
-      );
-    }
-    return raw;
   };
 
-  const detectSourceAsync = async (): Promise<StateSource> => {
-    const scoped = await readScopedDocument();
-    if (scoped) {
-      return 'scoped';
-    }
-    const legacyRaw = await adapter.read<StateFile>(config.legacyKey);
-    if (legacyRaw && legacyRaw.managedBy === MANAGED_BY_REGIONAL) {
-      return 'empty';
-    }
-    if (legacyRaw) {
-      const stageResources = legacyRaw.stages?.[normalized.stage]?.resources;
-      return stageResources && Object.keys(stageResources).length > 0 ? 'legacy' : 'empty';
-    }
-    return 'empty';
+  const mutate = async (operation: string, fn: () => Promise<void>): Promise<void> => {
+    if (writer.getStore() || manualLockId) return fn();
+    return withLock(operation, fn);
   };
 
   return {
     scope: normalized,
     capabilities,
-
-    loadState: async (): Promise<StateFile> => {
-      const scoped = await readScopedDocument();
-      if (scoped) {
-        const stageResources = scoped.stages?.[normalized.stage]?.resources ?? {};
-        const loaded = { ...scoped, resources: stageResources } as StateFile;
-        enforceMigrationMarker(loaded, markerAction);
-        lastSource = 'scoped';
-        return loaded;
-      }
-
-      const legacyRaw = await adapter.read<StateFile>(config.legacyKey);
-      if (legacyRaw && legacyRaw.managedBy === MANAGED_BY_REGIONAL) {
-        lastSource = 'empty';
-        return emptyScopedState(normalized);
-      }
-      if (legacyRaw) {
-        let migrated: StateFile;
-        try {
-          migrated = migrateState(legacyRaw);
-        } catch (error) {
-          if (error instanceof StateVersionError || error instanceof StateScopeMismatchError) {
-            throw error;
-          }
-          throw new StateCorruptError(`bucket://${config.legacyKey}`, error);
-        }
-        const stageResources = migrated.stages?.[normalized.stage]?.resources ?? {};
-        const hasStage =
-          !!migrated.stages?.[normalized.stage] && Object.keys(stageResources).length > 0;
-        lastSource = hasStage ? 'legacy' : 'empty';
-        const loaded = { ...migrated, resources: stageResources };
-        enforceMigrationMarker(loaded, markerAction);
-        return loaded;
-      }
-
-      lastSource = 'empty';
-      return emptyScopedState(normalized);
-    },
-
-    patchPersisted: async (patch: Record<string, unknown | undefined>): Promise<void> => {
-      const targetKey = lastSource === 'scoped' ? config.scopedKey : config.legacyKey;
-      const raw = await adapter.read<StateFile>(targetKey);
-      const merged: Record<string, unknown> = raw ? { ...toPersistedState(raw) } : {};
-      for (const [key, value] of Object.entries(patch)) {
-        if (value === undefined) {
-          delete merged[key];
-        } else {
-          merged[key] = value;
-        }
-      }
-      await adapter.write(targetKey, merged);
-    },
-
-    saveState: async (state: StateFile): Promise<void> => {
-      if (
-        state.provider !== normalized.provider ||
-        state.app !== normalized.app ||
-        state.service !== normalized.service
-      ) {
-        throw new StateCorruptError(
-          `bucket://${config.scopedKey}`,
-          lang.__('STATE_SCOPED_IDENTITY_DETAILS_MISMATCH', {
-            stored: `${state.provider}/${state.app}/${state.service}`,
-            requested: `${normalized.provider}/${normalized.app}/${normalized.service}`,
-          }),
-        );
-      }
-
-      const existing = await readScopedDocument();
-      await claimProviderBinding(adapter, bindingKey, normalized.provider);
-      const persisted: PersistedStateFile = {
-        ...toPersistedState(state),
-        version: CURRENT_STATE_VERSION,
-        provider: normalized.provider,
-        app: normalized.app,
-        service: normalized.service,
-        scope: { stage: normalized.stage, region: normalized.region },
-        lineage: existing?.lineage || state.lineage || crypto.randomUUID(),
-        serial: (existing?.serial ?? 0) + 1,
-        stages: {
-          [normalized.stage]: {
-            resources: state.resources,
-            shared: state.stages?.[normalized.stage]?.shared ?? {},
-          },
-        },
-      };
-      await adapter.write(config.scopedKey, persisted);
-      lastSource = 'scoped';
-    },
-
-    readStateSource: (): StateSource => lastSource,
-
-    probeWriteReadiness: async (): Promise<WriteReadiness> => {
-      const source = await detectSourceAsync();
-      if (source === 'legacy') {
-        return {
-          ready: false,
-          source,
-          reason: lang.__('STATE_WRITE_BLOCKED_LEGACY_BUCKET', { objectKey: config.legacyKey }),
-        };
-      }
-
-      const binding = await readProviderBinding();
-      if (binding && binding.provider !== normalized.provider) {
-        return {
-          ready: false,
-          source,
-          reason: lang.__('STATE_PROVIDER_BINDING_MISMATCH', {
-            stored: binding.provider,
-            requested: normalized.provider,
-          }),
-        };
-      }
-      await claimProviderBinding(adapter, bindingKey, normalized.provider);
-      return { ready: true, source };
-    },
-
-    acquireLock: async (operation: string, options?: LockOptions): Promise<string> => {
-      await readScopedDocument();
-      await claimProviderBinding(adapter, bindingKey, normalized.provider);
-      const meta = await acquireLockObject(operation, options);
-      return meta.id;
-    },
-
-    releaseLock: async (lockId: string): Promise<void> => {
-      const existing = await readLockObject();
-      if (existing && existing.id === lockId) {
-        await adapter.delete(lockKey);
+    loadState: (): Promise<StateFile> => store.loadState(!writer.getStore() && !manualLockId),
+    saveState: (state): Promise<void> => mutate('state-save', () => store.saveState(state)),
+    patchPersisted: (patch): Promise<void> =>
+      mutate('migrate-metadata', () => store.patchPersisted(patch)),
+    readStateSource: store.readStateSource,
+    probeWriteReadiness: store.probeWriteReadiness,
+    acquireLock: async (operation, options): Promise<string> => {
+      const lock = await acquireLockObject(operation, options);
+      try {
+        if (!operation.startsWith('migrate')) await store.verifyPlanBase();
+        manualLockId = lock.id;
+        return lock.id;
+      } catch (error) {
+        await releaseLock(lock.id);
+        throw error;
       }
     },
-
-    forceUnlock: async (lockId: string): Promise<boolean> => {
+    releaseLock,
+    forceUnlock: async (lockId): Promise<boolean> => {
       const existing = await readLockObject();
       if (!existing) return false;
       if (existing.id !== lockId) {
         throw new Error(lang.__('LOCK_ID_MISMATCH', { actualId: existing.id, providedId: lockId }));
       }
-      await adapter.delete(lockKey);
+      await releaseLock(lockId);
       return true;
     },
-
-    readLock: async (): Promise<LockMetadata | null> => {
-      return readLockObject();
-    },
-
-    withLock: async <T>(
-      operation: string,
-      fn: () => Promise<T>,
-      options?: LockOptions,
-      onLockAcquired?: (lockId: string) => void,
-    ): Promise<T> => {
-      let lockId: string | null = null;
-      try {
-        await readScopedDocument();
-        if (!operation.startsWith('migrate')) {
-          await claimProviderBinding(adapter, bindingKey, normalized.provider);
-        }
-        const meta = await acquireLockObject(operation, options);
-        lockId = meta.id;
-        onLockAcquired?.(lockId);
-        return await fn();
-      } finally {
-        if (lockId) {
-          const existing = await readLockObject();
-          if (existing && existing.id === lockId) {
-            await adapter.delete(lockKey);
-          }
-        }
-      }
-    },
+    readLock: readLockObject,
+    withLock,
   };
 };

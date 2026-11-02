@@ -5,6 +5,7 @@ import path from 'node:path';
 import { deploy } from '../../src/commands/deploy';
 import { destroyStack } from '../../src/commands/destroy';
 import { createMockAliyunClient, type MockAliyunClient } from './mockCloudClient';
+import { cleanScopedState, readScopedState } from './scopedState';
 
 jest.mock('../../src/common/aliyunClient', () => ({
   createAliyunClient: jest.fn(),
@@ -52,19 +53,6 @@ const APIGW_GROUP_ID = 'group-123';
 const APIGW_SUB_DOMAIN = 'group-123.apigw.aliyuncs.com';
 const API_ID = 'api-123';
 const API_NAME = 'cdn-flow-gateway-dev-agw-api-GET-api--hello';
-const STATE_FILE_PATH = path.join(
-  process.cwd(),
-  '.serverlessinsight',
-  `state-${APP_NAME}-${SERVICE_NAME}.json`,
-);
-const STATE_LOCK_PATH = `${STATE_FILE_PATH}.lock`;
-const SCOPED_STATE_FILE = path.join(
-  process.cwd(),
-  '.serverlessinsight',
-  'states',
-  APP_NAME,
-  `${SERVICE_NAME}_${STAGE}_${REGION}_state.json`,
-);
 const WEBSITE_SOURCE_PATH = path.join(process.cwd(), 'tests/fixtures/test-bucket');
 
 type ExtendedMockAliyunClient = MockAliyunClient & {
@@ -277,9 +265,8 @@ const writeIacFile = async (
 };
 
 const readStateFile = async () => {
-  // Issue #280: deploys persist the scoped V4 document.
-  const content = await fs.readFile(SCOPED_STATE_FILE, 'utf-8');
-  return JSON.parse(content) as {
+  const state = await readScopedState(APP_NAME, SERVICE_NAME, STAGE, REGION);
+  return state as {
     stages?: {
       [stage: string]: {
         resources?: Record<
@@ -345,16 +332,12 @@ describe('CDN Flow Service Test', () => {
     mockClient = buildMockAliyunClient();
     mockCreateAliyunClient.mockReturnValue(mockClient);
 
-    await fs.rm(STATE_FILE_PATH, { force: true }).catch(() => {});
-    await fs.rm(path.dirname(SCOPED_STATE_FILE), { recursive: true, force: true }).catch(() => {});
-    await fs.rm(STATE_LOCK_PATH, { force: true }).catch(() => {});
+    await cleanScopedState(APP_NAME, SERVICE_NAME);
   });
 
   afterEach(async () => {
     await fs.rm(tempDir, { recursive: true, force: true }).catch(() => {});
-    await fs.rm(STATE_FILE_PATH, { force: true }).catch(() => {});
-    await fs.rm(path.dirname(SCOPED_STATE_FILE), { recursive: true, force: true }).catch(() => {});
-    await fs.rm(STATE_LOCK_PATH, { force: true }).catch(() => {});
+    await cleanScopedState(APP_NAME, SERVICE_NAME);
   });
 
   it('should deploy bucket and API Gateway CDN resources with advanced CDN fields', async () => {

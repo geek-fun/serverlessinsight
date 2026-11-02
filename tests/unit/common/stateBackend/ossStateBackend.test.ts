@@ -5,6 +5,7 @@ import type { StorageAdapter } from '../../../../src/common/stateBackend/types';
 
 const mockOssClient = {
   get: jest.fn(),
+  list: jest.fn(),
   getBucketVersioning: jest.fn().mockResolvedValue({}),
   put: jest.fn(),
   delete: jest.fn(),
@@ -63,6 +64,28 @@ describe('ossStateBackend (scope-bound, issue #280)', () => {
     createOssStateBackend(config);
     return { adapter: captured.adapter!, remoteConfig: captured.remoteConfig! };
   };
+
+  it('lists every page and refuses truncated inventories without an advancing marker', async () => {
+    const { adapter } = captureWiring();
+    mockOssClient.list
+      .mockResolvedValueOnce({ objects: [{ name: 'a' }], isTruncated: true, nextMarker: 'cursor' })
+      .mockResolvedValueOnce({ objects: [{ name: 'b' }] });
+    await expect(adapter.list!('prefix')).resolves.toEqual(['a', 'b']);
+    expect(mockOssClient.list).toHaveBeenLastCalledWith(
+      { prefix: 'prefix', marker: 'cursor', 'max-keys': 1000 },
+      {},
+    );
+    mockOssClient.list.mockResolvedValueOnce({ isTruncated: true });
+    await expect(adapter.list!('prefix')).rejects.toThrow();
+    mockOssClient.list
+      .mockResolvedValueOnce({ isTruncated: true, nextMarker: 'same' })
+      .mockResolvedValueOnce({ isTruncated: true, nextMarker: 'same' });
+    await expect(adapter.list!('prefix')).rejects.toThrow();
+    mockOssClient.list.mockRejectedValueOnce(new Error('AccessDenied'));
+    await expect(adapter.list!('prefix')).rejects.toThrow('AccessDenied');
+    mockOssClient.list.mockResolvedValueOnce({});
+    await expect(adapter.list!('prefix')).resolves.toEqual([]);
+  });
 
   it('creates the OSS client with credentials, bucket and storage region', () => {
     const OSS = require('ali-oss');

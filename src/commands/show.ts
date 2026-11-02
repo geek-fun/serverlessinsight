@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { ResourceState, ResourceTypeEnum, ServerlessIac } from '../types';
 import { StateBackendType } from '../types/domains/backend';
-import { getContext, getScopedStatePath } from '../common';
+import { getContext, getStatePath } from '../common';
 import { readLockFileForCommand } from '../common/lockManager';
 import { createStateBackend, createLocalStateBackend } from '../common/stateBackend';
 import { isMigratedToSaas } from '../common/migrationMarker';
@@ -226,26 +226,12 @@ const loadLocalState = async (
     { provider, app, service, stage, region: getContext().region },
     { baseDir, markerAction: 'off' },
   );
-  return backend.loadState();
-};
-
-const readLocalStateSource = (
-  provider: string,
-  app: string,
-  service: string,
-  stage: string,
-  baseDir: string,
-): 'scoped' | 'legacy' | 'empty' => {
-  const backend = createLocalStateBackend(
-    { provider, app, service, stage, region: getContext().region },
-    { baseDir, markerAction: 'off' },
-  );
-  return backend.readStateSource();
+  const state = await backend.loadState();
+  return { state, source: backend.readStateSource() };
 };
 
 const readLocalLock = (app: string, service: string, baseDir: string): LockMetadata | null => {
-  const context = getContext();
-  const statePath = getScopedStatePath(app, service, context.stage, context.region, baseDir);
+  const statePath = getStatePath(app, service, baseDir);
   return readLockFileForCommand(statePath);
 };
 
@@ -302,47 +288,37 @@ export const show = async (options: ShowOptions): Promise<void> => {
       } else {
         logger.warn(lang.__('SHOW_REMOTE_BACKEND_FALLBACK', { error: String(error) }));
       }
-      state = await loadLocalState(context.provider, context.app, context.service, stage, baseDir);
-      stateSource = readLocalStateSource(
+      const local = await loadLocalState(
         context.provider,
         context.app,
         context.service,
         stage,
         baseDir,
       );
+      state = local.state;
+      stateSource = local.source;
       // A local copy of a MIGRATED state is stale by definition — showing it
       // after a remote failure would mislead the user (decision D-3/D-4).
       if (isMigratedToSaas(state)) {
         throw new Error(lang.__('MIGRATION_MARKER_REFUSED'), { cause: error });
       }
       lockInfo = readLocalLock(context.app, context.service, baseDir);
-      stateLocation = getScopedStatePath(
-        context.app,
-        context.service,
-        stage,
-        context.region,
-        baseDir,
-      );
+      stateLocation = getStatePath(context.app, context.service, baseDir);
     }
     stateLocationDisplay =
       stateLocation === SAAS_STATE_LOCATION ? lang.__('SHOW_BACKEND_SAAS') : stateLocation;
   } else {
-    state = await loadLocalState(context.provider, context.app, context.service, stage, baseDir);
-    stateSource = readLocalStateSource(
+    const local = await loadLocalState(
       context.provider,
       context.app,
       context.service,
       stage,
       baseDir,
     );
+    state = local.state;
+    stateSource = local.source;
     lockInfo = readLocalLock(context.app, context.service, baseDir);
-    stateLocation = getScopedStatePath(
-      context.app,
-      context.service,
-      stage,
-      context.region,
-      baseDir,
-    );
+    stateLocation = getStatePath(context.app, context.service, baseDir);
     stateLocationDisplay = stateLocation;
   }
 

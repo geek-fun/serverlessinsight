@@ -36,8 +36,10 @@ No manual lock/unlock commands are needed for normal operations.
 - **Retry**: Exponential backoff (2s, 4s, 8s, 16s, 30s max)
 - **Atomic acquisition**: The lock file is created with `open(path, 'wx')` (`O_EXCL`). If the file already exists, the create fails atomically with `EEXIST` — two processes can never both observe "no lock" and both write. The previous read-then-write-then-verify sequence has been replaced by this single atomic create.
 - **Storage**:
-  - **Local backend**: `.serverlessinsight/states/<app>/<service>_<stage>_<region>_state.json.si-lock` file (local file system)
-  - **Remote backend**: `<key>.scopes/<app>/<service>_<stage>_<region>_state.json.si-lock` in an OSS/COS bucket, shared across machines/CI runners
+  - **Local backend**: `.serverlessinsight/state-<app>-<service>.json.si-lock` file (local file system)
+  - **Remote backend**: `<key>.si-lock` in an OSS/COS bucket, shared across machines/CI runners
+
+Local and Bucket locks cover the complete aggregate across all stages, providers and regions. Planning may precede the lock; after acquisition the selected partition must still match its approved base. Writes merge a fresh aggregate so sibling updates survive. SaaS locks remain per deployment lifecycle.
 
 ### Lock Information
 

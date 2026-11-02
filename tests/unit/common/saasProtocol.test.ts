@@ -15,7 +15,12 @@ const scope = {
 describe('regional SaaS wire contract', () => {
   it('requires an explicitly compatible protocol and state format', () => {
     expect(
-      supportsRegionalSaas({ regionalScope: true, scopeProtocol: 2, stateFormat: '4.0' }),
+      supportsRegionalSaas({
+        regionalScope: true,
+        providerScope: true,
+        scopeProtocol: 3,
+        stateFormat: '4.0',
+      }),
     ).toBe(true);
     [
       null,
@@ -34,7 +39,8 @@ describe('regional SaaS wire contract', () => {
       stageId: 'lifecycle',
       stage: 'prod',
       region: 'cn-hangzhou',
-      scopeProtocol: 2,
+      scopeProtocol: 3,
+      provider: 'aliyun',
       contentHash: 'original-legacy-hash',
       versionNumber: 1,
     };
@@ -44,6 +50,8 @@ describe('regional SaaS wire contract', () => {
       {},
       { ...snapshot, stageId: '' },
       { ...snapshot, stage: 'dev' },
+      { ...snapshot, provider: 'tencent' },
+      { ...snapshot, scopeProtocol: 2 },
       { ...snapshot, region: 'cn-beijing' },
       { ...snapshot, id: '' },
       { ...snapshot, contentHash: '' },

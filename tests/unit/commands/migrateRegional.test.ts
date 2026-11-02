@@ -27,6 +27,7 @@ const mockApplyRegionalMigration = jest.fn();
 const mockRollbackRegionalMigration = jest.fn();
 
 const mockOssAdapter = {
+  list: jest.fn().mockResolvedValue([]),
   read: jest.fn(),
   putIfAbsent: jest.fn().mockResolvedValue(true),
   write: jest.fn(),
@@ -34,6 +35,7 @@ const mockOssAdapter = {
 };
 
 const mockCosAdapter = {
+  list: jest.fn().mockResolvedValue([]),
   read: jest.fn(),
   putIfAbsent: jest.fn().mockResolvedValue(true),
   write: jest.fn(),
@@ -249,12 +251,13 @@ describe('migrateRegional command (si migrate --to-regional)', () => {
       expect(mockedApply).not.toHaveBeenCalled();
     });
 
-    it('rejects a readable file whose version is newer than the legacy V3 aggregate with StateVersionError', async () => {
+    it('consolidates a preview V4 document in place and rejects unsupported future formats', async () => {
       writeLegacyFile(
         legacyDoc({ version: '4.0', scope: { stage: 'dev', region: 'cn-hangzhou' } }),
       );
 
-      await expect(runRegionalMigration(localOptions())).rejects.toThrow(StateVersionError);
+      await runRegionalMigration(localOptions());
+      expect(JSON.parse(fs.readFileSync(legacyPath, 'utf-8')).version).toBe('5.0');
       expect(mockedPlan).not.toHaveBeenCalled();
       expect(fs.existsSync(lockPath)).toBe(false);
 
@@ -409,33 +412,12 @@ describe('migrateRegional command (si migrate --to-regional)', () => {
       );
     });
 
-    it('legacyApp/legacyService rebinding reads the old aggregate but scopes new docs under the new names', async () => {
-      const oldLegacyPath = path.join(siDir, 'state-old-app-old-svc.json');
-      writeLegacyFile(legacyDoc({ app: 'old-app', service: 'old-svc' }), oldLegacyPath);
-
-      await runRegionalMigration(localOptions({ legacyApp: 'old-app', legacyService: 'old-svc' }));
-
-      const [, , pathsArg] = mockedApply.mock.calls[0];
-      const paths = pathsArg as RegionalMigrationPaths;
-      expect(paths.legacyKey).toBe(oldLegacyPath);
-      expect(mockedPlan.mock.calls[0][0]).toEqual(
-        legacyDoc({ app: 'old-app', service: 'old-svc' }),
-      );
-      expect(paths.scopedPrefixBuilder('dev', 'cn-hangzhou')).toBe(
-        path.join(
-          baseDir,
-          '.serverlessinsight',
-          'states',
-          'myapp',
-          'myservice_dev_cn-hangzhou_state.json',
-        ),
-      );
-      expect(paths.backupKey('op-1')).toBe(`${oldLegacyPath}.pre-regional-op-1`);
-      // the binding is recorded under the NEW app/service names, not the legacy ones
-      expect(paths.serviceBindingKey).toBe(
-        path.join(baseDir, '.serverlessinsight', 'states', 'myapp', 'myservice_provider.json'),
-      );
-      expect(mockedApply).toHaveBeenCalledTimes(1);
+    it('refuses identity rebinding before reading or writing any state', async () => {
+      await expect(
+        runRegionalMigration(localOptions({ legacyApp: 'old-app', legacyService: 'old-svc' })),
+      ).rejects.toThrow();
+      expect(mockedApply).not.toHaveBeenCalled();
+      expect(mockedPlan).not.toHaveBeenCalled();
     });
   });
 

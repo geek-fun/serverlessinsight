@@ -701,6 +701,11 @@ describe('show command', () => {
 
   describe('tdsql cluster resources', () => {
     beforeEach(() => {
+      (getContext as jest.Mock).mockReturnValue({
+        ...mockContext,
+        provider: 'tencent',
+        region: 'ap-beijing',
+      });
       process.chdir(testDir);
 
       const stateDir = path.join(testDir, '.serverlessinsight');
@@ -820,6 +825,11 @@ describe('show command', () => {
 
   describe('tencent cloud resources', () => {
     beforeEach(() => {
+      (getContext as jest.Mock).mockReturnValue({
+        ...mockContext,
+        provider: 'tencent',
+        region: 'ap-beijing',
+      });
       process.chdir(testDir);
 
       const stateDir = path.join(testDir, '.serverlessinsight');
@@ -1496,13 +1506,7 @@ describe('show command', () => {
       expect(payload.resourceCount).toBe(1);
       expect(Object.keys(payload.resources)).toEqual(['functions.test_fn']);
       expect(payload.stateLocation).toBe(
-        path.join(
-          testDir,
-          '.serverlessinsight',
-          'states',
-          'test-app',
-          'test-service_default_cn-hangzhou_state.json',
-        ),
+        path.join(testDir, '.serverlessinsight', 'state-test-app-test-service.json'),
       );
       stdoutSpy.mockRestore();
     });

@@ -4,6 +4,7 @@ import { existsSync } from 'node:fs';
 import path from 'node:path';
 
 import { cleanScopedState } from './scopedState';
+import { patchAggregateScope } from '../../src/common/aggregateState';
 import { plan } from '../../src/commands/plan';
 import { BucketAccessEnum } from '../../src/types';
 import { createVolcengineClient } from '../../src/common/volcengineClient';
@@ -19,14 +20,7 @@ jest.mock('../../src/common/volcengineClient', () => ({
 const ROOT = path.join(__dirname, '../..');
 const CLI_PATH = path.join(ROOT, 'dist/src/commands/index.js');
 const FIXTURE = path.join(__dirname, '../fixtures/serverless-insight-volcengine-plan.yml');
-// Issue #280: state lives in scoped V4 documents (per stage/region).
-const STATE_PATH = path.join(
-  ROOT,
-  '.serverlessinsight',
-  'states',
-  'volc-plan-app',
-  'volc-plan_dev_cn-shanghai_state.json',
-);
+const STATE_PATH = path.join(ROOT, '.serverlessinsight', 'state-volc-plan-app-volc-plan.json');
 const options = {
   location: FIXTURE,
   stage: 'dev',
@@ -252,7 +246,19 @@ describe('Volcengine standalone planning (issue #266)', () => {
 
     it('warns on migrated state and leaves the legacy copy unchanged', async () => {
       const raw = JSON.parse(stateBefore);
-      const migrated = JSON.stringify({ ...raw, managedBy: 'saas' });
+      const migrated = JSON.stringify(
+        patchAggregateScope(
+          raw,
+          {
+            app: 'volc-plan-app',
+            service: 'volc-plan',
+            provider: 'volcengine',
+            stage: 'dev',
+            region: 'cn-shanghai',
+          },
+          { managedBy: 'saas' },
+        ),
+      );
       await fs.writeFile(STATE_PATH, migrated);
       try {
         const result = await runCli('diff', ['--json', '--no-refresh']);

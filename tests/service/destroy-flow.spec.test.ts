@@ -1,7 +1,6 @@
 import path from 'node:path';
-import fs from 'node:fs/promises';
 
-import { cleanScopedState } from './scopedState';
+import { cleanScopedState, writeScopedState } from './scopedState';
 import { destroyStack } from '../../src/commands/destroy';
 import { createMockAliyunClient, type MockAliyunClient } from './mockCloudClient';
 
@@ -35,15 +34,6 @@ jest.mock('../../src/lang', () => ({
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const mockCreateAliyunClient = require('../../src/common/aliyunClient')
   .createAliyunClient as jest.Mock;
-
-// Issue #280: destroy reads the scoped V4 document for its Stage/Region scope.
-const STATE_FILE_PATH = path.join(
-  process.cwd(),
-  '.serverlessinsight',
-  'states',
-  'insight-poc-destroy-app',
-  'insight-poc-destroy_dev_cn-hangzhou_state.json',
-);
 
 const EXISTING_STATE = JSON.stringify({
   version: '4.0',
@@ -87,8 +77,13 @@ describe('Destroy Flow Service Test', () => {
     mockCreateAliyunClient.mockReturnValue(mockClient);
 
     await cleanScopedState('insight-poc-destroy-app', 'insight-poc-destroy');
-    await fs.mkdir(path.dirname(STATE_FILE_PATH), { recursive: true }).catch(() => {});
-    await fs.writeFile(STATE_FILE_PATH, EXISTING_STATE, 'utf-8');
+    await writeScopedState(
+      'insight-poc-destroy-app',
+      'insight-poc-destroy',
+      'dev',
+      'cn-hangzhou',
+      JSON.parse(EXISTING_STATE),
+    );
   });
 
   afterEach(async () => {

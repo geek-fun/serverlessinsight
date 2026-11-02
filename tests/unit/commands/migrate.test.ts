@@ -56,6 +56,7 @@ jest.mock('../../../src/common', () => ({
 }));
 
 jest.mock('../../../src/common/stateBackend', () => ({
+  ...jest.requireActual('../../../src/common/stateBackend'),
   createStateBackend: jest.fn(),
 }));
 
@@ -146,6 +147,7 @@ const targetsResponse = {
     id: 'svc-1',
     provider: 'aliyun',
     regionalScopeEnabled: true,
+    scopeProtocol: 3,
   },
   stages: [{ name: 'dev', registered: true, hasState: false, latestVersion: null }],
 };
@@ -157,8 +159,9 @@ const uploadResponse = {
   serviceId: 'svc-1',
   deduped: false,
   stageId: 'stage-1',
+  provider: 'aliyun',
   region: 'cn-hangzhou',
-  scopeProtocol: 2,
+  scopeProtocol: 3,
 };
 
 const MIGRATE_TEST_CREDENTIALS = {
@@ -220,7 +223,8 @@ const setupMigrationRun = (options: MigrationRunOptions = {}) => {
   mockedValidateApiKey.mockResolvedValue(MIGRATE_TEST_IDENTITY);
   mockApiClient.get.mockResolvedValueOnce({
     regionalScope: true,
-    scopeProtocol: 2,
+    providerScope: true,
+    scopeProtocol: 3,
     stateFormat: '4.0',
   });
   mockApiClient.get.mockResolvedValueOnce(options.targets ?? targetsResponse);
@@ -237,9 +241,10 @@ const setupMigrationRun = (options: MigrationRunOptions = {}) => {
       id: 'st-1',
       serviceId: 'svc-1',
       stageId: 'stage-1',
+      provider: 'aliyun',
       stage: 'dev',
       region: 'cn-hangzhou',
-      scopeProtocol: 2,
+      scopeProtocol: 3,
       stateJson: state,
       contentHash: expectedHash(state),
       versionNumber: 1,
@@ -352,7 +357,7 @@ describe('migrate command', () => {
       const backend = setupMigrationRun({
         targets: {
           ...targetsResponse,
-          service: { ...targetsResponse.service, regionalScopeEnabled: false },
+          service: { ...targetsResponse.service, regionalScopeEnabled: false, scopeProtocol: 1 },
         },
         planOnly: true,
       });
@@ -365,9 +370,12 @@ describe('migrate command', () => {
 
     it('rejects incompatible server capabilities before inspecting migration targets', async () => {
       setupMigrationRun();
-      mockApiClient.get
-        .mockReset()
-        .mockResolvedValueOnce({ regionalScope: true, scopeProtocol: 1, stateFormat: '4.0' });
+      mockApiClient.get.mockReset().mockResolvedValueOnce({
+        regionalScope: true,
+        providerScope: true,
+        scopeProtocol: 1,
+        stateFormat: '4.0',
+      });
       await expect(migrate({ location: 'stack.yml', autoApprove: true })).rejects.toThrow(
         'SAAS_REGIONAL_SCOPE_UNSUPPORTED',
       );
@@ -381,9 +389,10 @@ describe('migrate command', () => {
           id: 'st-1',
           serviceId: 'svc-1',
           stageId: 'stage-1',
+          provider: 'aliyun',
           stage: 'dev',
           region: 'cn-beijing',
-          scopeProtocol: 2,
+          scopeProtocol: 3,
           contentHash: expectedHash(legacyState()),
           versionNumber: 1,
           resourceCount: 1,
@@ -408,7 +417,7 @@ describe('migrate command', () => {
           provider: 'aliyun',
           stage: 'dev',
           region: 'cn-hangzhou',
-          scopeProtocol: 2,
+          scopeProtocol: 3,
           baseContentHash: '',
           origin: 'bucket',
           conflict: 'reject',
@@ -540,7 +549,7 @@ describe('migrate command', () => {
       });
 
       await expect(migrate({ location: 'stack.yml', autoApprove: true })).rejects.toThrow(
-        'MIGRATE_PROVIDER_MISMATCH_TARGET',
+        'MIGRATE_TARGET_REGIONAL_REQUIRED',
       );
     });
 

@@ -1,4 +1,4 @@
-import { resolveEffectiveConfig, assertProviderBinding } from '../../../src/common/effectiveConfig';
+import { resolveEffectiveConfig } from '../../../src/common/effectiveConfig';
 
 describe('effectiveConfig (issue #280 §1)', () => {
   const originalEnv = { ...process.env };
@@ -98,16 +98,6 @@ describe('effectiveConfig (issue #280 §1)', () => {
       expect(resolved.region).toBe('eu-central-1');
       expect(resolved.provider).toBe('aliyun');
       expect(resolved.overrides).toEqual({ region: false, provider: false, stage: false });
-    });
-  });
-
-  describe('assertProviderBinding', () => {
-    it('accepts the matching provider', () => {
-      expect(() => assertProviderBinding('aliyun', 'aliyun')).not.toThrow();
-    });
-
-    it('rejects a service/provider mismatch before any mutation', () => {
-      expect(() => assertProviderBinding('aliyun', 'tencent')).toThrow(/Provider mismatch/);
     });
   });
 });

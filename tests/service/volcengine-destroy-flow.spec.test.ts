@@ -1,7 +1,6 @@
 import path from 'node:path';
-import fs from 'node:fs/promises';
 
-import { cleanScopedState } from './scopedState';
+import { cleanScopedState, writeScopedState } from './scopedState';
 import { destroyStack } from '../../src/commands/destroy';
 import { createMockVolcengineClient, type MockVolcengineClient } from './mockCloudClient';
 
@@ -35,15 +34,6 @@ jest.mock('../../src/lang', () => ({
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const mockCreateVolcengineClient = require('../../src/common/volcengineClient')
   .createVolcengineClient as jest.Mock;
-
-// Issue #280: destroy reads the scoped V4 document for its Stage/Region scope.
-const STATE_FILE_PATH = path.join(
-  process.cwd(),
-  '.serverlessinsight',
-  'states',
-  'insight-volc-destroy-app',
-  'insight-volc-destroy_dev_cn-beijing_state.json',
-);
 
 const EXISTING_STATE = JSON.stringify({
   version: '4.0',
@@ -100,8 +90,13 @@ describe('Volcengine Destroy Flow Service Test', () => {
     mockCreateVolcengineClient.mockReturnValue(mockClient);
 
     await cleanScopedState('insight-volc-destroy-app', 'insight-volc-destroy');
-    await fs.mkdir(path.dirname(STATE_FILE_PATH), { recursive: true }).catch(() => {});
-    await fs.writeFile(STATE_FILE_PATH, EXISTING_STATE, 'utf-8');
+    await writeScopedState(
+      'insight-volc-destroy-app',
+      'insight-volc-destroy',
+      'dev',
+      'cn-beijing',
+      JSON.parse(EXISTING_STATE),
+    );
   });
 
   afterEach(async () => {

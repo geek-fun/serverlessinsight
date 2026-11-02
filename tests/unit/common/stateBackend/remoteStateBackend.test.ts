@@ -1,4 +1,3 @@
-/* eslint-disable @typescript-eslint/no-explicit-any */
 import os from 'node:os';
 import { createRemoteStateBackend } from '../../../../src/common/stateBackend/remoteStateBackend';
 import {
@@ -9,11 +8,14 @@ import {
   LockMetadata,
   StateCorruptError,
   StateVersionError,
-  CURRENT_STATE_VERSION,
   ResourceState,
 } from '../../../../src/types';
 import { LockError } from '../../../../src/common/lockManager';
-import { registerStateMigration, clearStateMigrations } from '../../../../src/common/stateManager';
+import {
+  aggregatePartition,
+  emptyDeploymentState,
+  type AggregateStateFile,
+} from '../../../../src/common/aggregateState';
 
 jest.mock('../../../../src/common/logger', () => ({
   logger: { info: jest.fn(), warn: jest.fn(), error: jest.fn(), debug: jest.fn() },
@@ -61,7 +63,7 @@ describe('remoteStateBackend (scope-bound, issue #280)', () => {
   };
   const SCOPED_KEY = 'legacy/state.json.scopes/test-app/test-service_prod_cn-hangzhou_state.json';
   const LEGACY_KEY = 'legacy/state.json';
-  const LOCK_KEY = `${SCOPED_KEY}.si-lock`;
+  const LOCK_KEY = `${LEGACY_KEY}.si-lock`;
 
   const makeResource = (name: string): ResourceState => ({
     mode: 'managed',
@@ -118,586 +120,89 @@ describe('remoteStateBackend (scope-bound, issue #280)', () => {
     });
   });
 
-  describe('loadState', () => {
-    it('blocks nested preview data before reserving a provider or executing a callback', async () => {
-      const previous = `${LEGACY_KEY}.scopes/test-app/test-service/prod/cn-hangzhou/state.json`;
-      adapter.store.set(previous, { version: '4.0' });
-      const backend = createRemoteStateBackend(adapter, {
+  describe('aggregate IO', () => {
+    const backend = () =>
+      createRemoteStateBackend(adapter, {
         scope,
         scopedKey: SCOPED_KEY,
         legacyKey: LEGACY_KEY,
       });
-      const callback = jest.fn();
-      await expect(backend.loadState()).rejects.toThrow(/Previous preview state layout/);
-      await expect(backend.probeWriteReadiness()).rejects.toThrow(/Previous preview state layout/);
-      await expect(backend.withLock('deploy', callback)).rejects.toThrow(
-        /Previous preview state layout/,
+
+    it('persists only the original key and returns a V4 target projection', async () => {
+      await backend().saveState(emptyDeploymentState(scope));
+      const saved = adapter.store.get(LEGACY_KEY) as AggregateStateFile;
+      expect(saved.version).toBe('5.0');
+      expect(adapter.store.has(SCOPED_KEY)).toBe(false);
+      expect((await backend().loadState()).scope).toEqual({
+        stage: scope.stage,
+        region: scope.region,
+      });
+    });
+
+    it('merges fresh sibling state and patches only selected migration ownership', async () => {
+      const first = backend();
+      await first.saveState(emptyDeploymentState(scope));
+      const sibling = { ...scope, provider: 'tencent', region: 'ap-shanghai' };
+      await createRemoteStateBackend(adapter, {
+        scope: sibling,
+        scopedKey: SCOPED_KEY,
+        legacyKey: LEGACY_KEY,
+      }).saveState(emptyDeploymentState(sibling));
+      await first.patchPersisted!({ managedBy: 'saas' });
+      const doc = adapter.store.get(LEGACY_KEY) as AggregateStateFile;
+      expect(aggregatePartition(doc, scope)?.managedBy).toBe('saas');
+      expect(aggregatePartition(doc, sibling)?.serial).toBe(1);
+      expect(adapter.store.has(LEGACY_KEY + '.backup')).toBe(true);
+    });
+
+    it('refuses legacy writes and returns their exact original stage for read-only review', async () => {
+      const legacy = {
+        version: '3.0',
+        provider: 'aliyun',
+        app: scope.app,
+        service: scope.service,
+        stages: { prod: { resources: { handler: makeResource('handler') } } },
+      };
+      adapter.store.set(LEGACY_KEY, legacy);
+      expect((await backend().loadState()).resources).toEqual(legacy.stages.prod.resources);
+      expect(await backend().probeWriteReadiness()).toMatchObject({
+        ready: false,
+        source: 'legacy',
+      });
+      await expect(backend().saveState(emptyDeploymentState(scope))).rejects.toThrow(
+        /in-place format upgrade/,
       );
-      await expect(backend.acquireLock('deploy')).rejects.toThrow(/Previous preview state layout/);
+      expect(adapter.store.get(LEGACY_KEY)).toEqual(legacy);
+    });
+
+    it('detects preview files without adopting or overwriting them', async () => {
+      adapter.store.set(SCOPED_KEY, { version: '4.0' });
+      const callback = jest.fn();
+      await expect(backend().withLock('deploy', callback)).rejects.toThrow(/preview state/i);
       expect(callback).not.toHaveBeenCalled();
       expect(adapter.write).not.toHaveBeenCalled();
-      expect(adapter.putIfAbsent).not.toHaveBeenCalled();
-      expect(adapter.store.has(SCOPED_KEY)).toBe(false);
+      expect(adapter.store.has(LEGACY_KEY + '.si-lock')).toBe(false);
     });
 
-    it('loads the scoped V4 document for the bound scope', async () => {
-      adapter.store.set(SCOPED_KEY, {
-        version: CURRENT_STATE_VERSION,
-        provider: scope.provider,
-        app: scope.app,
-        service: scope.service,
-        scope: { stage: scope.stage, region: scope.region },
-        stages: { prod: { resources: { 'functions.a': makeResource('a') } } },
-      });
-      const backend = createRemoteStateBackend(adapter, {
-        scope,
-        scopedKey: SCOPED_KEY,
-        legacyKey: LEGACY_KEY,
-      });
-
-      const state = await backend.loadState();
-
-      expect(Object.keys(state.resources)).toEqual(['functions.a']);
-      expect(state.resources['functions.a']).toMatchObject({
-        mode: 'managed',
-        definition: { name: 'a' },
-      });
-      expect(backend.readStateSource()).toBe('scoped');
-      expect(mockEnforceMigrationMarker).toHaveBeenCalledWith(state, 'off');
+    it('propagates storage errors and releases the shared lock after a failed save', async () => {
+      const error = new Error('network unavailable');
+      (adapter.write as jest.Mock).mockRejectedValueOnce(error);
+      await expect(backend().saveState(emptyDeploymentState(scope))).rejects.toBe(error);
+      expect(adapter.store.has(LOCK_KEY)).toBe(false);
+      expect(adapter.store.has(LEGACY_KEY)).toBe(false);
     });
 
-    it('passes the configured markerAction to enforceMigrationMarker', async () => {
-      adapter.store.set(SCOPED_KEY, {
-        version: CURRENT_STATE_VERSION,
-        provider: scope.provider,
-        app: scope.app,
-        service: scope.service,
-        scope: { stage: scope.stage, region: scope.region },
-        stages: { prod: { resources: {} } },
-      });
-      const backend = createRemoteStateBackend(adapter, {
-        scope,
-        scopedKey: SCOPED_KEY,
-        legacyKey: LEGACY_KEY,
-        markerAction: 'refuse',
-      });
-
-      await backend.loadState();
-
-      expect(mockEnforceMigrationMarker).toHaveBeenCalledWith(expect.anything(), 'refuse');
-    });
-
-    it('falls back to the legacy object for read-only compatibility', async () => {
+    it('does not overwrite corrupt, foreign or unsupported aggregate documents', async () => {
+      adapter.store.set(LEGACY_KEY, { version: '8.0', app: scope.app, service: scope.service });
+      await expect(backend().loadState()).rejects.toBeInstanceOf(StateVersionError);
       adapter.store.set(LEGACY_KEY, {
-        version: '3.0',
-        provider: scope.provider,
+        version: '5.0',
         app: scope.app,
         service: scope.service,
-        lineage: 'legacy-lineage',
-        serial: 3,
-        stages: { prod: { resources: { 'functions.legacy': makeResource('legacy') } } },
+        stages: [],
       });
-      const backend = createRemoteStateBackend(adapter, {
-        scope,
-        scopedKey: SCOPED_KEY,
-        legacyKey: LEGACY_KEY,
-      });
-
-      const state = await backend.loadState();
-
-      expect(state.resources['functions.legacy']).toBeDefined();
-      expect(state.version).toBe('3.0');
-      expect(backend.readStateSource()).toBe('legacy');
-    });
-
-    it('reports empty when the legacy object holds no resources for this stage', async () => {
-      adapter.store.set(LEGACY_KEY, {
-        version: '3.0',
-        provider: scope.provider,
-        app: scope.app,
-        service: scope.service,
-        stages: { dev: { resources: { 'functions.x': makeResource('x') } } },
-      });
-      const backend = createRemoteStateBackend(adapter, {
-        scope,
-        scopedKey: SCOPED_KEY,
-        legacyKey: LEGACY_KEY,
-      });
-
-      const state = await backend.loadState();
-
-      expect(state.resources).toEqual({});
-      // The legacy document is served as-is (no scope stamping on the fallback path)
-      expect(state.version).toBe('3.0');
-      expect(state.scope).toBeUndefined();
-      expect(backend.readStateSource()).toBe('empty');
-    });
-
-    it('returns an empty scoped state when neither object exists', async () => {
-      const backend = createRemoteStateBackend(adapter, {
-        scope,
-        scopedKey: SCOPED_KEY,
-        legacyKey: LEGACY_KEY,
-      });
-
-      const state = await backend.loadState();
-
-      expect(state.version).toBe(CURRENT_STATE_VERSION);
-      expect(state.resources).toEqual({});
-      expect(state.scope).toEqual({ stage: 'prod', region: 'cn-hangzhou' });
-      expect(backend.readStateSource()).toBe('empty');
-    });
-
-    it('rejects a scoped object with an unsupported version instead of serving it', async () => {
-      adapter.store.set(SCOPED_KEY, {
-        version: '99.0',
-        provider: scope.provider,
-        app: scope.app,
-        service: scope.service,
-        scope: { stage: scope.stage, region: scope.region },
-        stages: { prod: { resources: {} } },
-      });
-      const backend = createRemoteStateBackend(adapter, {
-        scope,
-        scopedKey: SCOPED_KEY,
-        legacyKey: LEGACY_KEY,
-      });
-
-      await expect(backend.loadState()).rejects.toThrow(StateCorruptError);
-    });
-
-    it('rejects a scoped object whose identity does not match the bound scope', async () => {
-      adapter.store.set(SCOPED_KEY, {
-        version: CURRENT_STATE_VERSION,
-        provider: scope.provider,
-        app: scope.app,
-        service: scope.service,
-        scope: { stage: scope.stage, region: 'ap-southeast-1' },
-        stages: { prod: { resources: {} } },
-      });
-      const backend = createRemoteStateBackend(adapter, {
-        scope,
-        scopedKey: SCOPED_KEY,
-        legacyKey: LEGACY_KEY,
-      });
-
-      await expect(backend.loadState()).rejects.toThrow(StateCorruptError);
-    });
-
-    it('rethrows a legacy object whose version cannot be migrated as StateVersionError (unwrapped)', async () => {
-      // Version errors are already precise — the remote backend must not bury
-      // them in a generic corruption error.
-      adapter.store.set(LEGACY_KEY, {
-        version: '99.0',
-        provider: scope.provider,
-        app: scope.app,
-        service: scope.service,
-        stages: { prod: { resources: {} } },
-      });
-      const backend = createRemoteStateBackend(adapter, {
-        scope,
-        scopedKey: SCOPED_KEY,
-        legacyKey: LEGACY_KEY,
-      });
-
-      await expect(backend.loadState()).rejects.toThrow(StateVersionError);
-    });
-
-    it('wraps non-version legacy migration failures as StateCorruptError', async () => {
-      adapter.store.set(LEGACY_KEY, {
-        version: '3.0',
-        provider: scope.provider,
-        app: scope.app,
-        service: scope.service,
-        stages: { prod: { resources: {} } },
-      });
-      registerStateMigration('3.0', () => {
-        throw new Error('migration exploded');
-      });
-      const backend = createRemoteStateBackend(adapter, {
-        scope,
-        scopedKey: SCOPED_KEY,
-        legacyKey: LEGACY_KEY,
-      });
-
-      try {
-        await expect(backend.loadState()).rejects.toThrow(StateCorruptError);
-      } finally {
-        clearStateMigrations();
-      }
-    });
-
-    it('treats a post-split tombstone legacy object as absent so new regions start fresh', async () => {
-      // The migration barrier (managedBy=regional, versioned V4) hides the
-      // legacy entry entirely — the scoped documents are authoritative.
-      adapter.store.set(LEGACY_KEY, {
-        version: CURRENT_STATE_VERSION,
-        provider: scope.provider,
-        app: scope.app,
-        service: scope.service,
-        managedBy: 'regional',
-        migration: { opId: 'op-1', sourceVersion: '3.0' },
-        stages: { prod: { resources: { 'functions.old': makeResource('old') } } },
-      });
-      const backend = createRemoteStateBackend(adapter, {
-        scope,
-        scopedKey: SCOPED_KEY,
-        legacyKey: LEGACY_KEY,
-      });
-
-      const state = await backend.loadState();
-
-      expect(state.version).toBe(CURRENT_STATE_VERSION);
-      expect(state.resources).toEqual({});
-      expect(state.scope).toEqual({ stage: 'prod', region: 'cn-hangzhou' });
-      expect(backend.readStateSource()).toBe('empty');
-      expect(await backend.probeWriteReadiness()).toEqual({ ready: true, source: 'empty' });
-    });
-  });
-
-  describe('saveState', () => {
-    it('writes the scoped object with scope stamping and projects resources into the stage', async () => {
-      const backend = createRemoteStateBackend(adapter, {
-        scope,
-        scopedKey: SCOPED_KEY,
-        legacyKey: LEGACY_KEY,
-      });
-
-      await backend.saveState({
-        version: CURRENT_STATE_VERSION,
-        provider: scope.provider,
-        app: scope.app,
-        service: scope.service,
-        stages: { prod: { resources: {} } },
-        resources: { 'functions.a': makeResource('a') },
-      });
-
-      const persisted = adapter.store.get(SCOPED_KEY) as Record<string, any>;
-      expect(persisted.version).toBe(CURRENT_STATE_VERSION);
-      expect(persisted.provider).toBe('aliyun');
-      expect(persisted.app).toBe('test-app');
-      expect(persisted.service).toBe('test-service');
-      expect(persisted.scope).toEqual({ stage: 'prod', region: 'cn-hangzhou' });
-      expect(persisted.stages.prod.resources['functions.a']).toBeDefined();
-      expect(persisted.resources).toBeUndefined();
-      expect(persisted.serial).toBe(1);
-      expect(persisted.lineage).toBeDefined();
-      expect(backend.readStateSource()).toBe('scoped');
-    });
-
-    it('continues the scope document lineage and serial across saves', async () => {
-      adapter.store.set(SCOPED_KEY, {
-        version: CURRENT_STATE_VERSION,
-        provider: scope.provider,
-        app: scope.app,
-        service: scope.service,
-        scope: { stage: scope.stage, region: scope.region },
-        lineage: 'existing-lineage',
-        serial: 7,
-        stages: { prod: { resources: {} } },
-      });
-      const backend = createRemoteStateBackend(adapter, {
-        scope,
-        scopedKey: SCOPED_KEY,
-        legacyKey: LEGACY_KEY,
-      });
-
-      await backend.saveState({
-        version: CURRENT_STATE_VERSION,
-        provider: scope.provider,
-        app: scope.app,
-        service: scope.service,
-        stages: { prod: { resources: {} } },
-        resources: {},
-      });
-
-      const persisted = adapter.store.get(SCOPED_KEY) as Record<string, any>;
-      expect(persisted.serial).toBe(8);
-      expect(persisted.lineage).toBe('existing-lineage');
-    });
-
-    it('merges shared resources from the saved stage', async () => {
-      const sharedLog = makeResource('logs');
-      const backend = createRemoteStateBackend(adapter, {
-        scope,
-        scopedKey: SCOPED_KEY,
-        legacyKey: LEGACY_KEY,
-      });
-
-      await backend.saveState({
-        version: CURRENT_STATE_VERSION,
-        provider: scope.provider,
-        app: scope.app,
-        service: scope.service,
-        stages: { prod: { resources: {}, shared: { logs: sharedLog } } },
-        resources: {},
-      });
-
-      const persisted = adapter.store.get(SCOPED_KEY) as Record<string, any>;
-      expect(persisted.stages.prod.shared).toEqual({ logs: sharedLog });
-    });
-
-    it('rejects a save whose identity differs from the bound scope', async () => {
-      const backend = createRemoteStateBackend(adapter, {
-        scope,
-        scopedKey: SCOPED_KEY,
-        legacyKey: LEGACY_KEY,
-      });
-
-      await expect(
-        backend.saveState({
-          version: CURRENT_STATE_VERSION,
-          provider: scope.provider,
-          app: 'other-app',
-          service: scope.service,
-          stages: { prod: { resources: {} } },
-          resources: {},
-        }),
-      ).rejects.toThrow(StateCorruptError);
+      await expect(backend().loadState()).rejects.toBeInstanceOf(StateCorruptError);
       expect(adapter.write).not.toHaveBeenCalled();
-    });
-  });
-
-  it('reserves one provider before concurrent first-deployment callbacks execute', async () => {
-    const storage = createFakeAdapter();
-    const otherScope = { ...scope, provider: 'tencent', region: 'ap-guangzhou' };
-    const first = createRemoteStateBackend(storage, {
-      scope,
-      scopedKey: 'a',
-      legacyKey: LEGACY_KEY,
-    });
-    const other = createRemoteStateBackend(storage, {
-      scope: otherScope,
-      scopedKey: 'b',
-      legacyKey: LEGACY_KEY,
-    });
-    const executed: string[] = [];
-    const results = await Promise.allSettled([
-      first.withLock('deploy', async () => {
-        executed.push('aliyun');
-      }),
-      other.withLock('deploy', async () => {
-        executed.push('tencent');
-      }),
-    ]);
-    expect(results.filter((result) => result.status === 'fulfilled')).toHaveLength(1);
-    expect(executed).toEqual(['aliyun']);
-  });
-
-  describe('service provider binding (issue #280 §1)', () => {
-    const BINDING_KEY = `${LEGACY_KEY}.scopes/test-app/test-service_provider.json`;
-
-    const scopedSave = (): Record<string, unknown> => ({
-      version: CURRENT_STATE_VERSION,
-      provider: scope.provider,
-      app: scope.app,
-      service: scope.service,
-      stages: { prod: { resources: {} } },
-      resources: {},
-    });
-
-    it('records the provider binding on the first scoped save', async () => {
-      const backend = createRemoteStateBackend(adapter, {
-        scope,
-        scopedKey: SCOPED_KEY,
-        legacyKey: LEGACY_KEY,
-      });
-
-      await backend.saveState(scopedSave() as never);
-
-      expect(adapter.store.get(BINDING_KEY)).toMatchObject({
-        provider: 'aliyun',
-        recordedAt: expect.any(String),
-      });
-      expect(adapter.store.get(SCOPED_KEY)).toBeDefined();
-    });
-
-    it('keeps saving from other scopes of the same service when the provider matches', async () => {
-      const hangzhou = createRemoteStateBackend(adapter, {
-        scope,
-        scopedKey: SCOPED_KEY,
-        legacyKey: LEGACY_KEY,
-      });
-      await hangzhou.saveState(scopedSave() as never);
-
-      const southeast = createRemoteStateBackend(adapter, {
-        scope: { ...scope, stage: 'dev', region: 'ap-southeast-1' },
-        scopedKey: 'legacy/state.json.scopes/test-app/test-service_dev_ap-southeast-1_state.json',
-        legacyKey: LEGACY_KEY,
-      });
-      await southeast.saveState({
-        ...scopedSave(),
-        stages: { dev: { resources: {} } },
-      } as never);
-
-      expect(
-        adapter.store.get(
-          'legacy/state.json.scopes/test-app/test-service_dev_ap-southeast-1_state.json',
-        ),
-      ).toBeDefined();
-      expect(adapter.store.get(BINDING_KEY)).toMatchObject({ provider: 'aliyun' });
-    });
-
-    it('refuses a cross-provider save from a second backend instance (any scope)', async () => {
-      const first = createRemoteStateBackend(adapter, {
-        scope,
-        scopedKey: SCOPED_KEY,
-        legacyKey: LEGACY_KEY,
-      });
-      await first.saveState(scopedSave() as never);
-
-      const foreign = createRemoteStateBackend(adapter, {
-        scope: { ...scope, provider: 'tencent', stage: 'dev', region: 'ap-southeast-1' },
-        scopedKey: 'legacy/state.json.scopes/test-app/test-service_dev_ap-southeast-1_state.json',
-        legacyKey: LEGACY_KEY,
-      });
-
-      await expect(
-        foreign.saveState({
-          ...scopedSave(),
-          provider: 'tencent',
-          stages: { dev: { resources: {} } },
-        } as never),
-      ).rejects.toThrow(/Provider mismatch/);
-      expect(
-        adapter.store.get(
-          'legacy/state.json.scopes/test-app/test-service_dev_ap-southeast-1_state.json',
-        ),
-      ).toBeUndefined();
-    });
-
-    it('reports a binding mismatch as not ready in probeWriteReadiness', async () => {
-      const first = createRemoteStateBackend(adapter, {
-        scope,
-        scopedKey: SCOPED_KEY,
-        legacyKey: LEGACY_KEY,
-      });
-      await first.saveState(scopedSave() as never);
-
-      const foreign = createRemoteStateBackend(adapter, {
-        scope: { ...scope, provider: 'tencent', stage: 'dev', region: 'ap-southeast-1' },
-        scopedKey: 'legacy/state.json.scopes/test-app/test-service_dev_ap-southeast-1_state.json',
-        legacyKey: LEGACY_KEY,
-      });
-      const readiness = await foreign.probeWriteReadiness();
-      expect(readiness.ready).toBe(false);
-      expect(readiness.reason).toContain('aliyun');
-      expect(readiness.reason).toContain('tencent');
-    });
-  });
-
-  describe('patchPersisted', () => {
-    it('patches the scoped object when the state source is scoped', async () => {
-      adapter.store.set(SCOPED_KEY, {
-        version: CURRENT_STATE_VERSION,
-        provider: scope.provider,
-        app: scope.app,
-        service: scope.service,
-        scope: { stage: scope.stage, region: scope.region },
-        stages: { prod: { resources: {} } },
-      });
-      const backend = createRemoteStateBackend(adapter, {
-        scope,
-        scopedKey: SCOPED_KEY,
-        legacyKey: LEGACY_KEY,
-      });
-      await backend.loadState();
-
-      await backend.patchPersisted!({ managedBy: 'saas' });
-
-      expect(adapter.write).toHaveBeenCalledWith(
-        SCOPED_KEY,
-        expect.objectContaining({ managedBy: 'saas' }),
-      );
-    });
-
-    it('patches the legacy object while it backs the state source', async () => {
-      adapter.store.set(LEGACY_KEY, {
-        version: '3.0',
-        provider: scope.provider,
-        app: scope.app,
-        service: scope.service,
-        stages: { prod: { resources: { 'functions.l': makeResource('l') } } },
-      });
-      const backend = createRemoteStateBackend(adapter, {
-        scope,
-        scopedKey: SCOPED_KEY,
-        legacyKey: LEGACY_KEY,
-      });
-      await backend.loadState();
-
-      await backend.patchPersisted!({ managedBy: 'saas' });
-
-      expect(adapter.write).toHaveBeenCalledWith(
-        LEGACY_KEY,
-        expect.objectContaining({ managedBy: 'saas' }),
-      );
-    });
-
-    it('deletes keys patched with undefined', async () => {
-      adapter.store.set(LEGACY_KEY, {
-        version: '3.0',
-        provider: scope.provider,
-        app: scope.app,
-        service: scope.service,
-        managedBy: 'saas',
-        stages: { prod: { resources: { 'functions.l': makeResource('l') } } },
-      });
-      const backend = createRemoteStateBackend(adapter, {
-        scope,
-        scopedKey: SCOPED_KEY,
-        legacyKey: LEGACY_KEY,
-      });
-      await backend.loadState();
-
-      await backend.patchPersisted!({ managedBy: undefined });
-
-      const written = (adapter.write as jest.Mock).mock.calls[0][1] as Record<string, unknown>;
-      expect(written).not.toHaveProperty('managedBy');
-    });
-  });
-
-  describe('probeWriteReadiness', () => {
-    it('blocks writes while the legacy object is authoritative', async () => {
-      adapter.store.set(LEGACY_KEY, {
-        version: '3.0',
-        provider: scope.provider,
-        app: scope.app,
-        service: scope.service,
-        stages: { prod: { resources: { 'functions.l': makeResource('l') } } },
-      });
-      const backend = createRemoteStateBackend(adapter, {
-        scope,
-        scopedKey: SCOPED_KEY,
-        legacyKey: LEGACY_KEY,
-      });
-
-      const readiness = await backend.probeWriteReadiness();
-
-      expect(readiness.ready).toBe(false);
-      expect(readiness.source).toBe('legacy');
-      expect(readiness.reason).toContain('migrate --to-regional');
-    });
-
-    it('allows writes for fresh and scoped sources', async () => {
-      const backend = createRemoteStateBackend(adapter, {
-        scope,
-        scopedKey: SCOPED_KEY,
-        legacyKey: LEGACY_KEY,
-      });
-      expect((await backend.probeWriteReadiness()).ready).toBe(true);
-
-      adapter.store.set(SCOPED_KEY, {
-        version: CURRENT_STATE_VERSION,
-        provider: scope.provider,
-        app: scope.app,
-        service: scope.service,
-        scope: { stage: scope.stage, region: scope.region },
-        stages: { prod: { resources: {} } },
-      });
-      const after = await backend.probeWriteReadiness();
-      expect(after.ready).toBe(true);
-      expect(after.source).toBe('scoped');
     });
   });
 

@@ -27,6 +27,7 @@ import { LOCK_KEY_SUFFIX } from '../common/stateBackend/lockUtils';
 import { ProviderEnum } from '../common/providerEnum';
 import { logger } from '../common/logger';
 import { lang } from '../lang';
+import { consolidatePreviewState, rollbackPreviewConsolidation } from '../common/previewMigration';
 
 export type RegionalMigrationCommandOptions = {
   provider: string;
@@ -71,6 +72,7 @@ const createBucketKeyValueIO = (
     ? createCosStorageAdapter(storageConfig)
     : createOssStorageAdapter(storageConfig);
   return {
+    ...(adapter.list ? { list: adapter.list } : {}),
     read: adapter.read,
     write: adapter.write,
     delete: adapter.delete,
@@ -89,6 +91,7 @@ const buildPaths = (
     return {
       legacyKey,
       paths: {
+        previewPrefix: path.join(options.baseDir, '.serverlessinsight', 'states', options.app),
         legacyKey,
         scopedPrefixBuilder: (stage, region) =>
           buildScopedStatePath(options.app, options.service, stage, region, options.baseDir),
@@ -109,6 +112,7 @@ const buildPaths = (
   return {
     legacyKey: key,
     paths: {
+      previewPrefix: `${key.replace(/\/+$/, '')}.scopes/${options.app}/`,
       legacyKey: key,
       scopedPrefixBuilder: (stage, region) =>
         buildScopedObjectKey(key, options.app, options.service, stage, region),
@@ -168,6 +172,12 @@ export const runRegionalMigration = async (
         );
 
   const { paths, legacyKey } = buildPaths(options);
+  if (
+    (options.legacyApp && options.legacyApp !== options.app) ||
+    (options.legacyService && options.legacyService !== options.service)
+  ) {
+    throw new Error(lang.__('STATE_IDENTITY_REBIND_UNSUPPORTED'));
+  }
   const sourceApp = options.legacyApp ?? options.app;
   const sourceService = options.legacyService ?? options.service;
 
@@ -178,6 +188,7 @@ export const runRegionalMigration = async (
       legacyKey,
       'migrate-regional-rollback',
       async () => {
+        if (await rollbackPreviewConsolidation(io, paths, options.rollbackOpId!)) return;
         await rollbackRegionalMigration(io, paths, options.rollbackOpId!);
       },
     );
@@ -193,6 +204,30 @@ export const runRegionalMigration = async (
       const pending = await readRegionalMigrationJournal(io, paths);
       if (pending?.phase === 'rolling-back') {
         throw new Error(lang.__('REGIONAL_MIGRATION_PENDING', { opId: pending.plan.opId }));
+      }
+      if (pending?.phase === 'applying' && !pending.aggregate) {
+        throw new Error(lang.__('REGIONAL_MIGRATION_PENDING', { opId: pending.plan.opId }));
+      }
+      if (
+        pending?.phase !== 'applying' &&
+        (await consolidatePreviewState(
+          io,
+          paths,
+          {
+            app: options.app,
+            service: options.service,
+            provider: options.provider,
+          },
+          {
+            dryRun: options.dryRun,
+            confirm: () =>
+              options.autoApprove
+                ? Promise.resolve(true)
+                : options.askConfirmation(lang.__('REGIONAL_MIGRATION_CONFIRM')),
+          },
+        ))
+      ) {
+        return;
       }
       let legacy: PersistedStateFile | null;
       if (pending?.phase === 'applying') {

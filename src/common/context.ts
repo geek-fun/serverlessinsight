@@ -115,6 +115,10 @@ export const setContext = async (
     accessKeyId: credentials.accessKeyId as string,
     accessKeySecret: credentials.accessKeySecret as string,
     securityToken: credentials.securityToken,
+    storage: (() => {
+      const defaults = resolveEffectiveConfig({ iacProvider: config.iacProvider });
+      return { provider: defaults.provider, region: defaults.region };
+    })(),
     iacLocation: getIacLocation(config.location),
     parameters: Object.entries(config.parameters ?? {}).map(([key, value]) => ({ key, value })),
     stages: Object.entries(config.stages ?? {}).reduce(

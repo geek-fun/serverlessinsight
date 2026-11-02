@@ -1,4 +1,18 @@
 export const en = {
+  STATE_PREVIEW_MIGRATION_PLAN:
+    'Preview consolidation {{opId}}: {{count}} source document(s). Stop all old CLI writers before applying.',
+  STATE_PREVIEW_MIGRATION_SOURCE:
+    '  {{key}} -> {{provider}} / {{stage}} / {{region}}: {{resources}} resources, {{shared}} shared',
+  STATE_STORAGE_LIST_INCOMPLETE:
+    'State storage returned an incomplete listing without a valid next page. Migration stopped before changing state.',
+  STATE_PREVIEW_INVENTORY_REQUIRED:
+    'State migration needs a complete inventory of preview files. Listing is unavailable; do not deploy until the state store can be listed.',
+  STATE_PREVIEW_CONFLICT:
+    'Preview state for {{scope}} is missing, malformed, duplicated or has unfinished writes. Resolve its ownership before consolidating.',
+  STATE_PREVIEW_MIGRATION_PENDING:
+    'Preview state consolidation {{opId}} is incomplete. Re-run `si migrate --to-regional` to resume or explicitly roll it back.',
+  STATE_STORAGE_PROVIDER_UNSUPPORTED:
+    'State storage does not support provider {{provider}}. Configure storageProvider as aliyun or tencent.',
   PLAN_SENSITIVE_VALUE: '(sensitive)',
   PLAN_NAS_NETWORK_REQUIRED:
     'NAS storage on {{logicalId}} needs a declared VPC network or recorded mount targets. Planning stopped before creating any resources.',
@@ -1133,7 +1147,7 @@ export const en = {
   MIGRATION_MARKER_WARN:
     'This state has been migrated to the Console (managedBy=saas) — the copy shown here is read-only and may be stale. Do not deploy from this backend.',
   MIGRATION_MARKER_REGIONAL_REFUSED:
-    'This legacy state has been split into regional deployment states (managedBy=regional) and the aggregate is closed for changes.\n  • Deploy with scoped state: run the same command again — the regional documents under .serverlessinsight/states/ are authoritative now.\n  • To undo the split (only before any regional write): run `si migrate --to-regional --rollback-op-id <opId>`.',
+    'This legacy state has been split into regional deployment states (managedBy=regional) and the aggregate is closed for changes.\n  • Deploy with scoped state: run the same command again — stop old writers and run `si migrate --to-regional` to consolidate the preview state at the original key.\n  • To undo the split (only before any regional write): run `si migrate --to-regional --rollback-op-id <opId>`.',
   MIGRATION_MARKER_REGIONAL_WARN:
     'This legacy aggregate has been split into regional deployment states (managedBy=regional) — the copy shown here is read-only and may be stale.',
 
@@ -1142,16 +1156,27 @@ export const en = {
     "'{{label}}' value '{{part}}' is not path-safe: it must not be empty, contain '/', '\\', '..' or leading/trailing whitespace",
   EFFECTIVE_CONFIG_UNKNOWN_PROVIDER:
     "Unknown provider '{{provider}}'. Supported providers: aliyun, tencent, volcengine, huawei, aws",
+  EFFECTIVE_CONFIG_RESOURCE_UNSUPPORTED:
+    "Provider '{{provider}}' cannot deploy '{{resource}}' from this template. Adjust the template before overriding the provider.",
   EFFECTIVE_CONFIG_REGION_REQUIRED:
     'A region is required: pass -r/--region, set provider.region in the YAML, or set the SI_REGION environment variable',
-  EFFECTIVE_CONFIG_PROVIDER_MISMATCH:
-    'Provider mismatch: this service is already deployed with provider "{{expected}}" but the command resolved provider "{{actual}}". One service has exactly one provider; check -v/--provider and the YAML provider block',
+
   STATE_WRITE_BLOCKED_LEGACY:
-    'Refusing to write regional state: the legacy aggregate {{statePath}} still holds the state for this stage.\n  Run `si migrate --to-regional --dry-run` first to review the split, then apply it. Read-only commands keep working against the legacy file.',
+    'Refusing to write regional state: the legacy aggregate {{statePath}} still holds the state for this stage.\n  Run `si migrate --to-regional --dry-run` first to review the in-place upgrade, then apply it. Read-only commands keep working against the legacy file.',
   STATE_WRITE_BLOCKED_LEGACY_BUCKET:
-    'Refusing to write regional state: the legacy state object {{objectKey}} still holds the state for this stage.\n  Run `si migrate --to-regional --dry-run` first to review the split, then apply it. Read-only commands keep working against the legacy object.',
+    'Refusing to write regional state: the legacy state object {{objectKey}} still holds the state for this stage.\n  Run `si migrate --to-regional --dry-run` first to review the in-place upgrade, then apply it. Read-only commands keep working against the legacy object.',
   STATE_PREVIOUS_LAYOUT_FOUND:
-    'Previous preview state layout found at {{previous}}. Stop all writers, finish pending operations with the matching CLI, and relocate the state, backup and service provider binding before continuing at {{current}}.',
+    'Preview state layout found at {{previous}}. Stop old writers, recover any pending operation using its matching CLI, then run `si migrate --to-regional --dry-run` to consolidate at {{current}}.',
+
+  STATE_AGGREGATE_INVALID:
+    'The aggregate state document is malformed. Restore a verified backup before continuing.',
+  STATE_IDENTITY_REBIND_UNSUPPORTED:
+    'App and Service cannot be rebound during migration. Keep their original YAML identities and state location.',
+  STATE_STORE_UPGRADE_REQUIRED:
+    'State at {{location}} requires an in-place format upgrade. Run `si migrate --to-regional --dry-run`, then apply the migration before deploying.',
+  STATE_PARTITION_PATCH_INVALID: 'Only deployment ownership and migration metadata can be patched.',
+  STATE_PLAN_BASE_CHANGED:
+    'The selected deployment state changed after planning. Generate and approve a new plan before continuing.',
   STATE_SCOPED_VERSION_UNSUPPORTED: 'Unsupported state version {{version}}',
   STATE_SCOPED_IDENTITY_MISMATCH: 'State identity does not match the requested deployment scope',
   STATE_SCOPED_IDENTITY_DETAILS_MISMATCH:
@@ -1162,7 +1187,7 @@ export const en = {
   STATE_BUCKET_ACCESS_DENIED:
     'Access to the state storage bucket was denied ({{code}}). Check the storage credentials — an authorization failure is never treated as empty state',
   STATE_STORAGE_CREDENTIALS_MISSING:
-    'The {{provider}} state-storage backend needs credentials: pass -k/-x (or the provider environment variables) so state storage and workload credentials stay resolvable',
+    "State storage needs credentials for {{provider}}. Configure that cloud's credential environment variables. Workload credentials from another provider are never reused.",
   LOCK_CONDITIONAL_CREATE_UNSUPPORTED:
     'This state storage does not support exclusive (conditional) create — concurrent first lock acquisition falls back to a verified write and is not guaranteed atomic. Avoid running mutating commands for the same scope in parallel',
   SAAS_REGIONAL_SCOPE_UNSUPPORTED:
@@ -1176,15 +1201,15 @@ export const en = {
   REGIONAL_MIGRATION_LOCAL_OR_BUCKET_ONLY:
     '--to-regional applies to LOCAL and BUCKET_STORE backends only. SaaS regional states are provisioned by the Console',
   REGIONAL_MIGRATION_UNSUPPORTED_SOURCE:
-    'Expected a legacy V3.0 state aggregate but found version "{{version}}". Nothing to split',
+    'Expected a legacy V3.0 state aggregate but found version "{{version}}". No V3 upgrade is needed',
   REGIONAL_MIGRATION_ALREADY_SPLIT:
-    'This legacy state is already marked as split (managedBy=regional). The regional documents are authoritative; re-splitting is refused. To undo before any regional write: `si migrate --to-regional --rollback-op-id <opId>`',
+    'This legacy state is already marked as split (managedBy=regional). Stop old writers and consolidate the preview layout with `si migrate --to-regional`. To undo before any regional write: `si migrate --to-regional --rollback-op-id <opId>`',
   REGIONAL_MIGRATION_SOURCE_MANAGED_BY_SAAS:
     'This legacy state has been migrated to (and is owned by) the ServerlessInsight Console (managedBy=saas). A regional split would create an unmarked local copy and reopen double-write hazards — refused. Continue on the Console backend, or run `si migrate --rollback` first only if you deliberately want to hand ownership back',
   REGIONAL_MIGRATION_TARGET_EXISTS:
     'Refusing to overwrite the regional state of stage {{stage}} / region {{region}}: it already exists (source: {{opId}}). Re-running this migration would reset its independent lineage/serial and drop resources created after the split. If this document belongs to a previous migration, resolve that run first; otherwise delete it explicitly only if you are certain it is disposable',
   REGIONAL_MIGRATION_INCOMPLETE_STAGE_COVERAGE:
-    'The regional split would leave stage(s) {{stages}} stranded: the legacy entry is hidden entirely after the split, so every stage holding resources must be split in the same run. Re-run `si migrate --to-regional` WITHOUT --stage (and --bind-unknown-region if needed) to cover them',
+    'The upgrade must preserve every resource in every stage. Re-run `si migrate --to-regional` without --stage to upgrade the entire document.',
   STATE_ATOMIC_CREATE_REQUIRED:
     'This state store cannot atomically reserve ownership or acquire a lock. Mutations are refused.',
   REGIONAL_MIGRATION_PENDING:
@@ -1195,17 +1220,16 @@ export const en = {
   REGIONAL_LOCK_TIMEOUT: 'Failed to acquire lock after {{seconds}} seconds.\n{{info}}',
   REGIONAL_LOCK_FAILED: 'Failed to acquire lock.\n{{path}}',
   MIGRATE_REGIONAL_SPLIT_REQUIRED:
-    'This source is a legacy aggregate. Run `si migrate --to-regional --dry-run`, review the regional bindings, then apply the split before importing each stage/region into the Console.',
+    'This source is a legacy aggregate. Run `si migrate --to-regional --dry-run`, review the regional bindings, then apply the in-place upgrade before importing each stage/provider/region into the Console.',
   MIGRATE_TARGET_REGIONAL_REQUIRED:
     'The target service still uses legacy state. Complete its Console-side binding and activation before importing a regional state.',
   MIGRATE_SOURCE_MULTIPLE_SCOPES:
     'This regional document contains resources from other stages. Resolve the source ownership before importing; one regional document may own only its selected stage.',
   SAAS_STATE_ACK_INVALID:
     'The state server did not confirm a valid regional snapshot and content hash. Refusing to guess the next state revision; upgrade the server to scope protocol 2.',
-  STATE_PROVIDER_BINDING_MISMATCH:
-    'Provider mismatch for this service: the stored provider binding records "{{stored}}" but this command resolved provider "{{requested}}". One service has exactly one provider across ALL its stages and regions; check -v/--provider and the YAML provider block',
+
   REGIONAL_MIGRATION_PROVIDER_MISMATCH:
-    'Provider mismatch: the legacy state records provider "{{source}}" but the command resolved "{{effective}}". The split keeps the recorded provider binding — check -v/--provider and the YAML provider block',
+    'The source records provider "{{source}}", while the command selects "{{effective}}". The upgrade preserves the source provider; workload overrides never rewrite historical ownership.',
   REGIONAL_MIGRATION_UNKNOWN_REGION_REQUIRED:
     'Some resources carry no region evidence (pre-regional state). Re-run with --bind-unknown-region <region> to bind them explicitly to a region — the CLI never guesses historical regions from YAML or filenames',
   REGIONAL_MIGRATION_SOURCE_MISSING:
@@ -1213,19 +1237,19 @@ export const en = {
   REGIONAL_MIGRATION_SOURCE_CHANGED:
     'The legacy state changed after the plan was produced (hash mismatch). Re-run `si migrate --to-regional --dry-run` to refresh the plan — no writes were made',
   REGIONAL_MIGRATION_APPLIED:
-    'Regional split applied (operation {{opId}}): scoped documents written, legacy entry kept as a read-only barrier (managedBy=regional). Verify with `si diff` — it must report no unintended changes before the next deploy',
+    'State upgraded in place (operation {{opId}}). Stage/provider/region partitions now share the original file or Bucket key. Verify the selected deployment with `si diff` before deploying.',
   REGIONAL_MIGRATION_PARTIAL_FAILURE:
-    'Regional split failed partway (operation {{opId}}): {{error}}. Documents already written remain valid; the legacy entry is untouched — fix the cause and re-run',
+    'State upgrade interrupted (operation {{opId}}): {{error}}. Keep the source backup and journal; re-run the same migration to resume.',
   REGIONAL_MIGRATION_REPORT_MISSING:
     'No migration report found for operation {{opId}} — the split was not applied from this CLI, or the report was deleted',
   REGIONAL_MIGRATION_BACKUP_MISSING:
     'The pre-migration backup for operation {{opId}} is missing — restore it manually; refusing to roll back without it',
   REGIONAL_MIGRATION_ROLLBACK_BLOCKED:
-    'Cannot roll back stage {{stage}} / region {{region}}: its scoped document has independent regional writes after the split. Collapsing it back into the old aggregate would lose them — this must be resolved manually',
+    'Cannot roll back: the aggregate changed after the upgrade, including possible sibling deployment writes. Restoring the original file would lose state. Keep the backup and reconcile the changes explicitly.',
   REGIONAL_MIGRATION_ROLLED_BACK:
-    'Regional split {{opId}} rolled back: the legacy aggregate is restored and the scoped documents were removed',
+    'State upgrade {{opId}} rolled back in place. The original source backup is retained.',
   REGIONAL_MIGRATION_PLAN_HEADER:
-    'Regional split plan for legacy state {{location}} — one V4 document per stage/region:',
+    'In-place state upgrade plan for {{location}} — partitions by stage/provider/region:',
   REGIONAL_MIGRATION_SOURCE_HASH: 'Source document hash: {{hash}}',
   REGIONAL_MIGRATION_NO_REGIONAL_RESOURCES:
     'No regional resources found in the legacy aggregate for the selected scope',
@@ -1237,22 +1261,21 @@ export const en = {
   REGIONAL_MIGRATION_UNKNOWN_HINT:
     'YAML defaults, CLI flags and filenames are not historical evidence. Pass --bind-unknown-region <region> to bind them explicitly, after verifying where these resources actually live',
   REGIONAL_MIGRATION_BACKUP_NOTICE:
-    'On apply: the original document is backed up first, each regional document gets an independent lineage, and the legacy entry is kept as a write barrier (old CLIs are documented separately)',
+    'On apply: back up the source, assign independent partition lineages, and atomically replace the original file/key with aggregate format 5.0. Older CLIs must reject this format.',
   REGIONAL_MIGRATION_NO_LEGACY_STATE:
-    'No legacy state found at {{location}} — nothing to split. Fresh deployments already write scoped V4 documents directly',
+    'No state requiring an upgrade was found at {{location}}. Fresh deployments use aggregate format 5.0 at the original location.',
   REGIONAL_MIGRATION_DRY_RUN_NOTICE:
     'Dry run only — nothing was written. Re-run with --dry-run removed (and --bind-unknown-region if listed above) to apply',
   REGIONAL_MIGRATION_CONFIRM:
-    'Apply the regional split now? The legacy state will be backed up, marked read-only (managedBy=regional), and regional documents become authoritative (yes/no): ',
+    'Upgrade state in place now? The source will be backed up and partitions will remain in the original file/key (yes/no): ',
   MIGRATE_CANCELLED: 'Migration cancelled — nothing was written',
 
-  OPT_TO_REGIONAL:
-    'split a legacy V3 state into per-stage/region V4 documents (protected migration)',
+  OPT_TO_REGIONAL: 'upgrade V3 or preview state in place to stage/provider/region partitions',
   OPT_LEGACY_APP: 'read the legacy aggregate of this (pre-rename) app name for explicit rebinding',
   OPT_LEGACY_SERVICE:
     'read the legacy aggregate of this (pre-rename) service name for explicit rebinding',
   OPT_BIND_UNKNOWN_REGION: 'explicitly bind resources without region evidence to this region',
-  OPT_ROLLBACK_OP_ID: 'roll back the regional split with this migration operation id',
+  OPT_ROLLBACK_OP_ID: 'roll back an unchanged state upgrade by operation id',
 
   // HTTP trigger messages
   HTTP_TRIGGER_AUTH_TYPE_REQUIRED:
