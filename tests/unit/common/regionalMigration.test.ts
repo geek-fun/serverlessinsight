@@ -82,10 +82,11 @@ const makeIo = () => {
 
 const makePaths = (): RegionalMigrationPaths => ({
   legacyKey: 'legacy/state.json',
-  scopedPrefixBuilder: (stage: string, region: string) => `scoped/${stage}/${region}/state.json`,
+  scopedPrefixBuilder: (stage: string, region: string) =>
+    `scoped/app/svc_${stage}_${region}_state.json`,
   reportKey: (opId: string) => `reports/${opId}.json`,
   backupKey: (opId: string) => `backups/${opId}.json`,
-  serviceBindingKey: 'bindings/app/svc/provider.json',
+  serviceBindingKey: 'scoped/app/svc_provider.json',
 });
 
 const baseOptions = {
@@ -377,18 +378,21 @@ describe('regionalMigration (issue #280 §6)', () => {
       expect(tombstone.stages).toEqual(legacy.stages);
 
       // Scoped docs are stripped of the runtime projection and scope-stamped
-      const doc = store.get('scoped/prod/cn-hangzhou/state.json') as Record<string, unknown>;
+      const doc = store.get('scoped/app/svc_prod_cn-hangzhou_state.json') as Record<
+        string,
+        unknown
+      >;
       expect(doc.scope).toEqual({ stage: 'prod', region: 'cn-hangzhou' });
       expect(doc).not.toHaveProperty('resources');
 
       // Each target write ran under its own io lock entry (created, then removed)
-      expect(written).toContain('scoped/prod/cn-hangzhou/state.json.si-lock');
-      expect(written).toContain('scoped/prod/ap-southeast-1/state.json.si-lock');
+      expect(written).toContain('scoped/app/svc_prod_cn-hangzhou_state.json.si-lock');
+      expect(written).toContain('scoped/app/svc_prod_ap-southeast-1_state.json.si-lock');
       expect([...store.keys()].filter((key) => key.endsWith('.si-lock'))).toEqual([]);
 
       // Reserve service identity before writing regional documents
       expect(written.indexOf(paths.serviceBindingKey)).toBeLessThan(
-        written.indexOf('scoped/prod/ap-southeast-1/state.json'),
+        written.indexOf('scoped/app/svc_prod_ap-southeast-1_state.json'),
       );
       expect(store.get(paths.serviceBindingKey)).toEqual({
         provider: 'aliyun',
@@ -422,13 +426,13 @@ describe('regionalMigration (issue #280 §6)', () => {
         ...baseOptions,
         bindUnknownRegion: 'CN-Hangzhou',
       });
-      const doc = store.get('scoped/prod/cn-hangzhou/state.json') as {
+      const doc = store.get('scoped/app/svc_prod_cn-hangzhou_state.json') as {
         stages: Record<string, { resources: Record<string, { region: string }> }>;
       };
       expect(doc.stages.prod.resources['functions.gamma'].region).toBe('cn-hangzhou');
 
       // The sibling region of the same stage must NOT receive the unknown resource
-      const sibling = store.get('scoped/prod/ap-southeast-1/state.json') as {
+      const sibling = store.get('scoped/app/svc_prod_ap-southeast-1_state.json') as {
         stages: Record<string, { resources: Record<string, unknown> }>;
       };
       expect(sibling.stages.prod.resources).toEqual({ 'functions.beta': expect.anything() });
@@ -453,7 +457,7 @@ describe('regionalMigration (issue #280 §6)', () => {
       io.store.set('legacy/state.json', legacy);
       const paths = makePaths();
       const plan = planRegionalMigration(legacy, baseOptions);
-      io.failOn = 'scoped/prod/ap-southeast-1/state.json';
+      io.failOn = 'scoped/app/svc_prod_ap-southeast-1_state.json';
 
       await expect(applyRegionalMigration(io, legacy, paths, plan, baseOptions)).rejects.toThrow(
         /injected write failure/,
@@ -461,8 +465,8 @@ describe('regionalMigration (issue #280 §6)', () => {
 
       // Legacy entry unchanged (no barrier, no loss); earlier documents remain valid
       expect(store.get('legacy/state.json')).toEqual(legacy);
-      expect(store.has('scoped/prod/cn-hangzhou/state.json')).toBe(true);
-      expect(store.has('scoped/prod/ap-southeast-1/state.json')).toBe(false);
+      expect(store.has('scoped/app/svc_prod_cn-hangzhou_state.json')).toBe(true);
+      expect(store.has('scoped/app/svc_prod_ap-southeast-1_state.json')).toBe(false);
     });
 
     it('refuses to apply when the source document is missing from io', async () => {
@@ -496,7 +500,7 @@ describe('regionalMigration (issue #280 §6)', () => {
         bindUnknownRegion: 'CN-Hangzhou',
       });
 
-      const doc = store.get('scoped/dev/cn-hangzhou/state.json') as {
+      const doc = store.get('scoped/app/svc_dev_cn-hangzhou_state.json') as {
         scope: { stage: string; region: string };
         stages: Record<
           string,
@@ -527,7 +531,7 @@ describe('regionalMigration (issue #280 §6)', () => {
       io.store.set('legacy/state.json', legacy);
       const paths = makePaths();
       const plan = planRegionalMigration(legacy, baseOptions);
-      io.failOn = 'scoped/prod/cn-hangzhou/state.json';
+      io.failOn = 'scoped/app/svc_prod_cn-hangzhou_state.json';
       io.failWith = 'plain failure';
 
       await expect(applyRegionalMigration(io, legacy, paths, plan, baseOptions)).rejects.toBe(
@@ -569,12 +573,12 @@ describe('regionalMigration (issue #280 §6)', () => {
         bindUnknownRegion: 'cn-hangzhou',
       });
 
-      const ghost = store.get('scoped/ghost/cn-hangzhou/state.json') as {
+      const ghost = store.get('scoped/app/svc_ghost_cn-hangzhou_state.json') as {
         stages: Record<string, { resources: Record<string, unknown>; shared?: unknown }>;
       };
       expect(ghost.stages.ghost.resources).toEqual({});
 
-      const sharedOnly = store.get('scoped/sharedonly/cn-hangzhou/state.json') as {
+      const sharedOnly = store.get('scoped/app/svc_sharedonly_cn-hangzhou_state.json') as {
         stages: Record<
           string,
           { resources: Record<string, unknown>; shared?: Record<string, unknown> }
@@ -584,7 +588,7 @@ describe('regionalMigration (issue #280 §6)', () => {
       expect(sharedOnly.stages.sharedonly.shared?.['shared.only']).toBeDefined();
 
       // The vanished unknown logicalId is skipped — no phantom resource lands in the doc
-      const prodDoc = store.get('scoped/prod/cn-hangzhou/state.json') as {
+      const prodDoc = store.get('scoped/app/svc_prod_cn-hangzhou_state.json') as {
         stages: Record<string, { resources: Record<string, unknown>; shared?: unknown }>;
       };
       expect(Object.keys(prodDoc.stages.prod.resources)).toEqual(['functions.alpha']);
@@ -656,16 +660,16 @@ describe('regionalMigration (issue #280 §6)', () => {
         },
         stages: { prod: { resources: {} } },
       };
-      store.set('scoped/prod/cn-hangzhou/state.json', foreign);
+      store.set('scoped/app/svc_prod_cn-hangzhou_state.json', foreign);
 
       await expect(applyRegionalMigration(io, legacy, paths, plan, baseOptions)).rejects.toThrow(
         /already exists/,
       );
 
       // No partial mutation: the foreign doc, the legacy entry and sibling targets untouched
-      expect(store.get('scoped/prod/cn-hangzhou/state.json')).toEqual(foreign);
+      expect(store.get('scoped/app/svc_prod_cn-hangzhou_state.json')).toEqual(foreign);
       expect(store.get('legacy/state.json')).toEqual(legacy);
-      expect(store.has('scoped/prod/ap-southeast-1/state.json')).toBe(false);
+      expect(store.has('scoped/app/svc_prod_ap-southeast-1_state.json')).toBe(false);
     });
 
     it('resumes a target from the same opId preserving lineage/serial', async () => {
@@ -676,17 +680,23 @@ describe('regionalMigration (issue #280 §6)', () => {
       const plan = planRegionalMigration(legacy, baseOptions);
 
       // First run fails partway: the cn-hangzhou doc is written, ap-southeast-1 is not
-      io.failOn = 'scoped/prod/ap-southeast-1/state.json';
+      io.failOn = 'scoped/app/svc_prod_ap-southeast-1_state.json';
       await expect(applyRegionalMigration(io, legacy, paths, plan, baseOptions)).rejects.toThrow(
         /injected write failure/,
       );
-      const firstDoc = store.get('scoped/prod/cn-hangzhou/state.json') as Record<string, unknown>;
+      const firstDoc = store.get('scoped/app/svc_prod_cn-hangzhou_state.json') as Record<
+        string,
+        unknown
+      >;
 
       // Re-run with the SAME plan (same opId): the written doc resumes in place
       io.failOn = undefined;
       await applyRegionalMigration(io, legacy, paths, plan, baseOptions);
 
-      const resumed = store.get('scoped/prod/cn-hangzhou/state.json') as Record<string, unknown>;
+      const resumed = store.get('scoped/app/svc_prod_cn-hangzhou_state.json') as Record<
+        string,
+        unknown
+      >;
       expect(resumed.lineage).toBe(firstDoc.lineage);
       expect(resumed.serial).toBe(firstDoc.serial);
       expect((resumed.migration as { opId: string }).opId).toBe(plan.opId);
@@ -733,12 +743,12 @@ describe('regionalMigration (issue #280 §6)', () => {
       expect(report.documents).toEqual([
         { stage: 'prod', region: 'cn-beijing', resources: 1, shared: 0 },
       ]);
-      const doc = store.get('scoped/prod/cn-beijing/state.json') as {
+      const doc = store.get('scoped/app/svc_prod_cn-beijing_state.json') as {
         stages: Record<string, { resources: Record<string, { region: string }> }>;
       };
       expect(doc.stages.prod.resources['functions.mystery'].region).toBe('cn-beijing');
       // The binding-generated doc set is what rollback later validates and removes
-      expect(store.has('scoped/prod/cn-beijing/state.json')).toBe(true);
+      expect(store.has('scoped/app/svc_prod_cn-beijing_state.json')).toBe(true);
     });
   });
 
@@ -766,8 +776,8 @@ describe('regionalMigration (issue #280 §6)', () => {
       expect(restored.version).toBe('3.0');
       expect(restored.managedBy).toBeUndefined();
       expect(restored.migration).toBeUndefined();
-      expect(store.has('scoped/prod/cn-hangzhou/state.json')).toBe(false);
-      expect(store.has('scoped/prod/ap-southeast-1/state.json')).toBe(false);
+      expect(store.has('scoped/app/svc_prod_cn-hangzhou_state.json')).toBe(false);
+      expect(store.has('scoped/app/svc_prod_ap-southeast-1_state.json')).toBe(false);
       expect(store.has(paths.reportKey(plan.opId))).toBe(false);
       expect(store.has(paths.backupKey(plan.opId))).toBe(false);
     });
@@ -775,7 +785,10 @@ describe('regionalMigration (issue #280 §6)', () => {
     it('refuses once a scoped document has independent regional writes and deletes nothing', async () => {
       const { io, store, paths, plan } = await applyFirst();
       // Simulate a post-split deploy: serial advanced beyond the migration
-      const doc = store.get('scoped/prod/cn-hangzhou/state.json') as Record<string, unknown>;
+      const doc = store.get('scoped/app/svc_prod_cn-hangzhou_state.json') as Record<
+        string,
+        unknown
+      >;
       doc.serial = 2;
       await expect(rollbackRegionalMigration(io, paths, plan.opId)).rejects.toThrow(
         /independent regional writes/,
@@ -783,7 +796,7 @@ describe('regionalMigration (issue #280 §6)', () => {
 
       // Two-phase refusal: verification happens BEFORE any deletion — the pristine
       // sibling document, the barrier and the artifacts all still exist
-      expect(store.has('scoped/prod/ap-southeast-1/state.json')).toBe(true);
+      expect(store.has('scoped/app/svc_prod_ap-southeast-1_state.json')).toBe(true);
       expect(store.has('legacy/state.json')).toBe(true);
       expect(store.has(paths.reportKey(plan.opId))).toBe(true);
       expect(store.has(paths.backupKey(plan.opId))).toBe(true);
@@ -792,7 +805,10 @@ describe('regionalMigration (issue #280 §6)', () => {
     it('refuses when a scoped document has no migration provenance', async () => {
       const { io, store, paths, plan } = await applyFirst();
       // A deploy-created document carries no migration info — not the migration's creation
-      const doc = store.get('scoped/prod/cn-hangzhou/state.json') as Record<string, unknown>;
+      const doc = store.get('scoped/app/svc_prod_cn-hangzhou_state.json') as Record<
+        string,
+        unknown
+      >;
       delete doc.migration;
       await expect(rollbackRegionalMigration(io, paths, plan.opId)).rejects.toThrow(
         /independent regional writes/,
@@ -801,13 +817,16 @@ describe('regionalMigration (issue #280 §6)', () => {
 
     it('refuses rollback when a scoped document lost its recorded serial', async () => {
       const { io, store, paths, plan } = await applyFirst();
-      const doc = store.get('scoped/prod/cn-hangzhou/state.json') as Record<string, unknown>;
+      const doc = store.get('scoped/app/svc_prod_cn-hangzhou_state.json') as Record<
+        string,
+        unknown
+      >;
       delete doc.serial;
 
       await expect(rollbackRegionalMigration(io, paths, plan.opId)).rejects.toThrow();
 
       expect((store.get('legacy/state.json') as PersistedStateFile).managedBy).toBe('regional');
-      expect(store.has('scoped/prod/cn-hangzhou/state.json')).toBe(true);
+      expect(store.has('scoped/app/svc_prod_cn-hangzhou_state.json')).toBe(true);
     });
 
     it('refuses without the migration report', async () => {
@@ -828,12 +847,12 @@ describe('regionalMigration (issue #280 §6)', () => {
 
     it('tolerates scoped documents that are already missing during rollback', async () => {
       const { io, store, paths, plan, legacy } = await applyFirst();
-      store.delete('scoped/prod/ap-southeast-1/state.json');
+      store.delete('scoped/app/svc_prod_ap-southeast-1_state.json');
 
       await rollbackRegionalMigration(io, paths, plan.opId);
 
       expect(store.get('legacy/state.json')).toEqual(legacy);
-      expect(store.has('scoped/prod/cn-hangzhou/state.json')).toBe(false);
+      expect(store.has('scoped/app/svc_prod_cn-hangzhou_state.json')).toBe(false);
       expect(store.has(paths.reportKey(plan.opId))).toBe(false);
       expect(store.has(paths.backupKey(plan.opId))).toBe(false);
     });
@@ -932,5 +951,44 @@ describe('regionalMigration (issue #280 §6)', () => {
       /cannot atomically/,
     );
     expect(mutation).not.toHaveBeenCalled();
+  });
+});
+
+describe('flat-layout migration compatibility', () => {
+  it('refuses a split into a scope that still has nested preview state', async () => {
+    const { io, store } = makeIo();
+    const paths = makePaths();
+    const legacy = makeLegacy();
+    store.set(paths.legacyKey, legacy);
+    const previous = 'scoped/app/svc/prod/cn-hangzhou/state.json';
+    store.set(previous, { version: '4.0' });
+    const plan = planRegionalMigration(legacy, baseOptions);
+    await expect(applyRegionalMigration(io, legacy, paths, plan, baseOptions)).rejects.toThrow(
+      /Previous preview state layout/,
+    );
+    expect(store.get(paths.legacyKey)).toEqual(legacy);
+    expect(store.has(paths.scopedPrefixBuilder('prod', 'cn-hangzhou'))).toBe(false);
+    expect(store.has(paths.backupKey(plan.opId))).toBe(false);
+    expect(store.get(previous)).toEqual({ version: '4.0' });
+  });
+
+  it('does not roll back other flat targets when an absent target has nested preview data', async () => {
+    const { io, store, deleted } = makeIo();
+    const paths = makePaths();
+    const legacy = makeLegacy();
+    store.set(paths.legacyKey, legacy);
+    const plan = planRegionalMigration(legacy, baseOptions);
+    await applyRegionalMigration(io, legacy, paths, plan, baseOptions);
+    const target = paths.scopedPrefixBuilder('prod', 'cn-hangzhou');
+    const previous = 'scoped/app/svc/prod/cn-hangzhou/state.json';
+    store.set(previous, store.get(target));
+    store.delete(target);
+    await expect(rollbackRegionalMigration(io, paths, plan.opId)).rejects.toThrow(
+      /Previous preview state layout/,
+    );
+    expect(store.has(paths.scopedPrefixBuilder('prod', 'ap-southeast-1'))).toBe(true);
+    expect(store.has(previous)).toBe(true);
+    expect(deleted).not.toContain(paths.scopedPrefixBuilder('prod', 'ap-southeast-1'));
+    expect((store.get(paths.legacyKey) as PersistedStateFile).managedBy).toBe('regional');
   });
 });

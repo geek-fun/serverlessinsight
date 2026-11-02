@@ -45,10 +45,7 @@ describe('localStateBackend (scope-bound, issue #280)', () => {
       '.serverlessinsight',
       'states',
       scope.app,
-      scope.service,
-      scope.stage,
-      scope.region,
-      'state.json',
+      `${scope.service}_${scope.stage}_${scope.region}_state.json`,
     );
 
   const legacyPath = () =>
@@ -74,6 +71,42 @@ describe('localStateBackend (scope-bound, issue #280)', () => {
   });
 
   describe('loadState', () => {
+    it('blocks preview-layout data before locking, reserving a provider or running cloud work', async () => {
+      const previous = path.join(
+        baseDir,
+        '.serverlessinsight',
+        'states',
+        scope.app,
+        scope.service,
+        scope.stage,
+        scope.region,
+        'state.json',
+      );
+      fs.mkdirSync(path.dirname(previous), { recursive: true });
+      fs.writeFileSync(previous, JSON.stringify({ version: '4.0' }));
+      const backend = createLocalStateBackend(scope, { baseDir });
+      const callback = jest.fn();
+      await expect(backend.loadState()).rejects.toThrow(/Previous preview state layout/);
+      await expect(backend.probeWriteReadiness()).rejects.toThrow(/Previous preview state layout/);
+      await expect(backend.withLock('deploy', callback)).rejects.toThrow(
+        /Previous preview state layout/,
+      );
+      await expect(backend.acquireLock('deploy')).rejects.toThrow(/Previous preview state layout/);
+      expect(callback).not.toHaveBeenCalled();
+      expect(fs.existsSync(scopedPath())).toBe(false);
+      expect(
+        fs.existsSync(
+          path.join(
+            baseDir,
+            '.serverlessinsight',
+            'states',
+            scope.app,
+            `${scope.service}_provider.json`,
+          ),
+        ),
+      ).toBe(false);
+    });
+
     it('returns an empty scoped state for a fresh scope', async () => {
       const backend = createLocalStateBackend(scope, { baseDir });
       const state = await backend.loadState();
@@ -338,7 +371,13 @@ describe('localStateBackend (scope-bound, issue #280)', () => {
 
   describe('service provider binding (issue #280 §1)', () => {
     const bindingPath = () =>
-      path.join(baseDir, '.serverlessinsight', 'states', scope.app, scope.service, 'provider.json');
+      path.join(
+        baseDir,
+        '.serverlessinsight',
+        'states',
+        scope.app,
+        `${scope.service}_provider.json`,
+      );
 
     const scopedSave = (fnId: string): StateFile => ({
       version: CURRENT_STATE_VERSION,
@@ -404,10 +443,7 @@ describe('localStateBackend (scope-bound, issue #280)', () => {
             '.serverlessinsight',
             'states',
             scope.app,
-            scope.service,
-            'dev',
-            'ap-southeast-1',
-            'state.json',
+            `${scope.service}_dev_ap-southeast-1_state.json`,
           ),
         ),
       ).toBe(false);

@@ -36,8 +36,8 @@ No manual lock/unlock commands are needed for normal operations.
 - **Retry**: Exponential backoff (2s, 4s, 8s, 16s, 30s max)
 - **Atomic acquisition**: The lock file is created with `open(path, 'wx')` (`O_EXCL`). If the file already exists, the create fails atomically with `EEXIST` — two processes can never both observe "no lock" and both write. The previous read-then-write-then-verify sequence has been replaced by this single atomic create.
 - **Storage**:
-  - **Local backend**: `.serverlessinsight/state.json.si-lock` file (local file system)
-  - **Remote backend**: Lock object stored alongside state in the remote backend (e.g., OSS/COS bucket), shared across machines/CI runners
+  - **Local backend**: `.serverlessinsight/states/<app>/<service>_<stage>_<region>_state.json.si-lock` file (local file system)
+  - **Remote backend**: `<key>.scopes/<app>/<service>_<stage>_<region>_state.json.si-lock` in an OSS/COS bucket, shared across machines/CI runners
 
 ### Lock Information
 

@@ -1,4 +1,6 @@
 import fs from 'node:fs';
+
+import { assertLocalStateLayout } from '../stateLayout';
 import { StateFile, LockOptions, StateCorruptError, StateScopeMismatchError } from '../../types';
 import {
   loadScopedState,
@@ -87,6 +89,7 @@ export const createLocalStateBackend = (
   };
 
   const detectSource = (): StateSource => {
+    assertLocalStateLayout(scopedPath);
     if (fs.existsSync(scopedPath)) {
       return 'scoped';
     }
@@ -99,6 +102,7 @@ export const createLocalStateBackend = (
     capabilities,
 
     loadState: async (): Promise<StateFile> => {
+      assertLocalStateLayout(scopedPath);
       if (fs.existsSync(scopedPath)) {
         const state = loadScopedState(normalized, baseDir);
         enforceMigrationMarker(state, markerAction);
@@ -134,6 +138,7 @@ export const createLocalStateBackend = (
           region: state.scope?.region,
         });
       }
+      assertLocalStateLayout(scopedPath);
       await claimProviderBinding(createLocalStateIO(), bindingPath, normalized.provider);
       saveScopedState(state, normalized, baseDir);
     },
@@ -172,6 +177,7 @@ export const createLocalStateBackend = (
     },
 
     acquireLock: async (operation: string, lockOptions?: LockOptions): Promise<string> => {
+      assertLocalStateLayout(scopedPath);
       await claimProviderBinding(createLocalStateIO(), bindingPath, normalized.provider);
       const lockMeta = await acquireLockInternal(scopedPath, operation, lockOptions);
       return lockMeta.id;
@@ -195,6 +201,7 @@ export const createLocalStateBackend = (
       lockOptions?: LockOptions,
       onLockAcquired?: (lockId: string) => void,
     ): Promise<T> => {
+      assertLocalStateLayout(scopedPath);
       if (!operation.startsWith('migrate')) {
         await claimProviderBinding(createLocalStateIO(), bindingPath, normalized.provider);
       }

@@ -1,6 +1,8 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import crypto from 'node:crypto';
+
+import { assertLocalStateLayout } from './stateLayout';
 import {
   ResourceState,
   StateFile,
@@ -385,6 +387,7 @@ export const loadScopedState = (
     normalized.region,
     baseDir,
   );
+  assertLocalStateLayout(statePath);
 
   if (!fs.existsSync(statePath)) {
     return emptyScopedState(normalized);
@@ -468,6 +471,7 @@ export const saveScopedState = (
     normalized.region,
     baseDir,
   );
+  assertLocalStateLayout(statePath);
   const stateDir = path.dirname(statePath);
   if (!fs.existsSync(stateDir)) {
     fs.mkdirSync(stateDir, { recursive: true });
@@ -521,6 +525,7 @@ export const patchScopedPersistedState = (
     normalized.region,
     baseDir,
   );
+  assertLocalStateLayout(statePath);
   const stateDir = path.dirname(statePath);
   if (!fs.existsSync(stateDir)) {
     fs.mkdirSync(stateDir, { recursive: true });

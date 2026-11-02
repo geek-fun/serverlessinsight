@@ -48,7 +48,7 @@ describe('cosStateBackend (scope-bound, issue #280)', () => {
     accessKeySecret: 'test-secret',
   };
 
-  const SCOPED_KEY = 'state.json.scopes/test-app/test-service/prod/cn-hangzhou/state.json';
+  const SCOPED_KEY = 'state.json.scopes/test-app/test-service_prod_cn-hangzhou_state.json';
 
   /** Creates the backend and captures the adapter and config handed to the remote backend. */
   const captureWiring = (): { adapter: StorageAdapter; remoteConfig: RemoteBackendConfig } => {

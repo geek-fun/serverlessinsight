@@ -1150,6 +1150,8 @@ export const en = {
     'Refusing to write regional state: the legacy aggregate {{statePath}} still holds the state for this stage.\n  Run `si migrate --to-regional --dry-run` first to review the split, then apply it. Read-only commands keep working against the legacy file.',
   STATE_WRITE_BLOCKED_LEGACY_BUCKET:
     'Refusing to write regional state: the legacy state object {{objectKey}} still holds the state for this stage.\n  Run `si migrate --to-regional --dry-run` first to review the split, then apply it. Read-only commands keep working against the legacy object.',
+  STATE_PREVIOUS_LAYOUT_FOUND:
+    'Previous preview state layout found at {{previous}}. Stop all writers, finish pending operations with the matching CLI, and relocate the state, backup and service provider binding before continuing at {{current}}.',
   STATE_SCOPED_VERSION_UNSUPPORTED: 'Unsupported state version {{version}}',
   STATE_SCOPED_IDENTITY_MISMATCH: 'State identity does not match the requested deployment scope',
   STATE_SCOPED_IDENTITY_DETAILS_MISMATCH:

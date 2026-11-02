@@ -63,10 +63,7 @@ const SCOPED_STATE_FILE = path.join(
   '.serverlessinsight',
   'states',
   APP_NAME,
-  SERVICE_NAME,
-  STAGE,
-  REGION,
-  'state.json',
+  `${SERVICE_NAME}_${STAGE}_${REGION}_state.json`,
 );
 const WEBSITE_SOURCE_PATH = path.join(process.cwd(), 'tests/fixtures/test-bucket');
 

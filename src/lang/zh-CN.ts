@@ -1042,6 +1042,8 @@ export const zhCN = {
     '拒绝写入区域状态：旧版聚合文件 {{statePath}} 仍持有该 stage 的状态。\n  请先运行 `si migrate --to-regional --dry-run` 审查拆分方案，确认后再执行拆分。只读命令仍可继续读取旧文件。',
   STATE_WRITE_BLOCKED_LEGACY_BUCKET:
     '拒绝写入区域状态：旧版状态对象 {{objectKey}} 仍持有该 stage 的状态。\n  请先运行 `si migrate --to-regional --dry-run` 审查拆分方案，确认后再执行拆分。只读命令仍可继续读取旧对象。',
+  STATE_PREVIOUS_LAYOUT_FOUND:
+    '在 {{previous}} 发现旧预发布版状态布局。请停止所有写入者，使用匹配版本的 CLI 完成未结束的操作，迁移状态、备份及服务 provider 绑定后，再使用 {{current}}。',
   STATE_SCOPED_VERSION_UNSUPPORTED: '不支持的状态版本 {{version}}',
   STATE_SCOPED_IDENTITY_MISMATCH: '状态身份与请求的部署作用域不匹配',
   STATE_SCOPED_IDENTITY_DETAILS_MISMATCH:

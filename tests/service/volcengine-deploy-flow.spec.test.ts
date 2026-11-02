@@ -1,5 +1,7 @@
 import path from 'node:path';
 import fs from 'node:fs/promises';
+
+import { cleanScopedState } from './scopedState';
 import { deploy } from '../../src/commands/deploy';
 import { createMockVolcengineClient, type MockVolcengineClient } from './mockCloudClient';
 
@@ -50,34 +52,12 @@ describe('Volcengine Deploy Flow Service Test', () => {
     mockCreateVolcengineClient.mockReturnValue(mockClient);
 
     await fs.rm(stateFilePath, { force: true }).catch(() => {});
-    await fs
-      .rm(
-        path.join(
-          process.cwd(),
-          '.serverlessinsight',
-          'states',
-          'insight-volc-app',
-          'insight-volc',
-        ),
-        { recursive: true, force: true },
-      )
-      .catch(() => {});
+    await cleanScopedState('insight-volc-app', 'insight-volc');
   });
 
   afterEach(async () => {
     await fs.rm(stateFilePath, { force: true }).catch(() => {});
-    await fs
-      .rm(
-        path.join(
-          process.cwd(),
-          '.serverlessinsight',
-          'states',
-          'insight-volc-app',
-          'insight-volc',
-        ),
-        { recursive: true, force: true },
-      )
-      .catch(() => {});
+    await cleanScopedState('insight-volc-app', 'insight-volc');
   });
 
   describe('Volcengine veFaaS Deploy', () => {
@@ -167,10 +147,7 @@ describe('Volcengine Deploy Flow Service Test', () => {
             '.serverlessinsight',
             'states',
             'insight-volc-app',
-            'insight-volc',
-            'dev',
-            'cn-beijing',
-            'state.json',
+            'insight-volc_dev_cn-beijing_state.json',
           ),
           'utf-8',
         ),

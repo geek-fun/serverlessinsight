@@ -1,5 +1,7 @@
 import os from 'node:os';
 import crypto from 'node:crypto';
+
+import { assertNoPreviousStateLayout } from '../stateLayout';
 import {
   StateFile,
   PersistedStateFile,
@@ -162,6 +164,7 @@ export const createRemoteStateBackend = (
   const readScopedDocument = async (): Promise<PersistedStateFile | null> => {
     const raw = await adapter.read<PersistedStateFile>(config.scopedKey);
     if (!raw) {
+      await assertNoPreviousStateLayout(adapter, config.scopedKey);
       return null;
     }
 
@@ -274,9 +277,8 @@ export const createRemoteStateBackend = (
         );
       }
 
+      const existing = await readScopedDocument();
       await claimProviderBinding(adapter, bindingKey, normalized.provider);
-
-      const existing = await adapter.read<PersistedStateFile>(config.scopedKey);
       const persisted: PersistedStateFile = {
         ...toPersistedState(state),
         version: CURRENT_STATE_VERSION,
@@ -325,6 +327,7 @@ export const createRemoteStateBackend = (
     },
 
     acquireLock: async (operation: string, options?: LockOptions): Promise<string> => {
+      await readScopedDocument();
       await claimProviderBinding(adapter, bindingKey, normalized.provider);
       const meta = await acquireLockObject(operation, options);
       return meta.id;
@@ -359,6 +362,7 @@ export const createRemoteStateBackend = (
     ): Promise<T> => {
       let lockId: string | null = null;
       try {
+        await readScopedDocument();
         if (!operation.startsWith('migrate')) {
           await claimProviderBinding(adapter, bindingKey, normalized.provider);
         }

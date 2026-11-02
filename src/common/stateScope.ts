@@ -1,5 +1,7 @@
 import path from 'node:path';
+
 import { lang } from '../lang';
+import { LOCK_FILE_SUFFIX } from './constants';
 
 export type DeploymentScope = {
   provider: string;
@@ -15,7 +17,6 @@ export type StateScope = {
 };
 
 const SCOPED_STATE_DIR = 'states';
-const SCOPED_STATE_FILE = 'state.json';
 const SCOPED_OBJECT_PREFIX = '.scopes';
 
 export const validateScopeKeyPart = (part: string, label: string): string => {
@@ -48,6 +49,12 @@ export const normalizeScope = (scope: DeploymentScope): DeploymentScope => ({
   region: canonicalizeRegion(scope.region),
 });
 
+const filenamePart = (part: string, label: string): string =>
+  encodeURIComponent(validateScopeKeyPart(part, label)).replace(/_/g, '%5F');
+
+const scopedFilename = (service: string, stage: string, region: string): string =>
+  `${filenamePart(service, 'service')}_${filenamePart(stage, 'stage')}_${filenamePart(canonicalizeRegion(region), 'region')}_state.json`;
+
 export const buildScopedStatePath = (
   app: string,
   service: string,
@@ -60,10 +67,7 @@ export const buildScopedStatePath = (
     '.serverlessinsight',
     SCOPED_STATE_DIR,
     validateScopeKeyPart(app, 'app'),
-    validateScopeKeyPart(service, 'service'),
-    validateScopeKeyPart(stage, 'stage'),
-    canonicalizeRegion(region),
-    SCOPED_STATE_FILE,
+    scopedFilename(service, stage, region),
   );
 };
 
@@ -77,11 +81,8 @@ export const buildScopedObjectKey = (
   if (!key || key.trim().length === 0) {
     throw new Error(lang.__('SCOPE_KEY_PART_REQUIRED', { label: 'key' }));
   }
-  const segments = [app, service, stage, canonicalizeRegion(region)].map((part, index) =>
-    validateScopeKeyPart(part, ['app', 'service', 'stage', 'region'][index]),
-  );
   const base = `${key.replace(/\/+$/, '')}${SCOPED_OBJECT_PREFIX}`;
-  return [base, ...segments, SCOPED_STATE_FILE].join('/');
+  return [base, validateScopeKeyPart(app, 'app'), scopedFilename(service, stage, region)].join('/');
 };
 
 export const stateScopeMatches = (scope: StateScope, stage: string, region: string): boolean =>
@@ -97,8 +98,7 @@ export const buildServiceBindingPath = (
     '.serverlessinsight',
     SCOPED_STATE_DIR,
     validateScopeKeyPart(app, 'app'),
-    validateScopeKeyPart(service, 'service'),
-    'provider.json',
+    `${filenamePart(service, 'service')}_provider.json`,
   );
 
 export const buildServiceObjectKey = (key: string, app: string, service: string): string => {
@@ -108,7 +108,26 @@ export const buildServiceObjectKey = (key: string, app: string, service: string)
   return [
     `${key.replace(/\/+$/, '')}${SCOPED_OBJECT_PREFIX}`,
     validateScopeKeyPart(app, 'app'),
-    validateScopeKeyPart(service, 'service'),
-    'provider.json',
+    `${filenamePart(service, 'service')}_provider.json`,
   ].join('/');
+};
+
+export const getPreviousScopedLocations = (location: string): string[] => {
+  const boundary = Math.max(location.lastIndexOf('/'), location.lastIndexOf('\\'));
+  const [service, stage, region, suffix, ...extra] = location.slice(boundary + 1).split('_');
+  if (!service || !stage || !region || suffix !== 'state.json' || extra.length) return [];
+  const separator = boundary < 0 ? '/' : location[boundary];
+  const root = location.slice(0, boundary + 1);
+  const parts = [service, stage, region].map((part) =>
+    validateScopeKeyPart(decodeURIComponent(part), 'scope'),
+  );
+  const serviceRoot = `${root}${parts[0]}${separator}`;
+  const state = `${serviceRoot}${parts[1]}${separator}${parts[2]}${separator}state.json`;
+  return [
+    `${serviceRoot}provider.json`,
+    state,
+    `${state}${LOCK_FILE_SUFFIX}`,
+    `${state}.backup`,
+    `${state}.tmp`,
+  ];
 };

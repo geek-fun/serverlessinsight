@@ -1,5 +1,7 @@
 import path from 'node:path';
 import fs from 'node:fs/promises';
+
+import { cleanScopedState } from './scopedState';
 import { deploy } from '../../src/commands/deploy';
 import {
   createMockAliyunClient,
@@ -56,16 +58,6 @@ const mockCreateVolcengineClient = require('../../src/common/volcengineClient')
 const stateFilePathFor = (app: string, service: string): string =>
   path.join(process.cwd(), '.serverlessinsight', `state-${app}-${service}.json`);
 
-// Issue #280: deploys persist scoped V4 documents — clean that subtree too.
-const cleanScopedStateFor = async (app: string, service: string): Promise<void> => {
-  await fs
-    .rm(path.join(process.cwd(), '.serverlessinsight', 'states', app, service), {
-      recursive: true,
-      force: true,
-    })
-    .catch(() => {});
-};
-
 const NESTED_STATE_FILE = stateFilePathFor('nested-drift-app', 'nested-drift-service');
 const TENCENT_LOG_STATE_FILE = stateFilePathFor('insight-poc-app-log', 'insight-poc-tencent-log');
 // Dedicated app/service identity: the state file must not be shared with other
@@ -121,12 +113,12 @@ describe('Nested drift repair deploy flows (issue #234 M2-M5)', () => {
       mockClient.ecs.getSecurityGroupRules.mockResolvedValue(healthySecurityGroupRules());
       mockCreateAliyunClient.mockReturnValue(mockClient);
       await fs.rm(NESTED_STATE_FILE, { force: true }).catch(() => {});
-      await cleanScopedStateFor('nested-drift-app', 'nested-drift-service');
+      await cleanScopedState('nested-drift-app', 'nested-drift-service');
     });
 
     afterEach(async () => {
       await fs.rm(NESTED_STATE_FILE, { force: true }).catch(() => {});
-      await cleanScopedStateFor('nested-drift-app', 'nested-drift-service');
+      await cleanScopedState('nested-drift-app', 'nested-drift-service');
     });
 
     it('repairs drifted security-group rules on the next deploy (issue #234 M2)', async () => {
@@ -211,10 +203,7 @@ describe('Nested drift repair deploy flows (issue #234 M2-M5)', () => {
             '.serverlessinsight',
             'states',
             'nested-drift-app',
-            'nested-drift-service',
-            'dev',
-            'cn-hangzhou',
-            'state.json',
+            'nested-drift-service_dev_cn-hangzhou_state.json',
           ),
           'utf-8',
         ),
@@ -364,12 +353,12 @@ describe('Nested drift repair deploy flows (issue #234 M2-M5)', () => {
       client = buildTencentClient();
       mockCreateTencentClient.mockReturnValue(client);
       await fs.rm(TENCENT_LOG_STATE_FILE, { force: true }).catch(() => {});
-      await cleanScopedStateFor('insight-poc-app-log', 'insight-poc-tencent-log');
+      await cleanScopedState('insight-poc-app-log', 'insight-poc-tencent-log');
     });
 
     afterEach(async () => {
       await fs.rm(TENCENT_LOG_STATE_FILE, { force: true }).catch(() => {});
-      await cleanScopedStateFor('insight-poc-app-log', 'insight-poc-tencent-log');
+      await cleanScopedState('insight-poc-app-log', 'insight-poc-tencent-log');
     });
 
     it('repairs drifted CLS topic attributes on the next deploy (issue #234 M3)', async () => {
@@ -427,12 +416,12 @@ describe('Nested drift repair deploy flows (issue #234 M2-M5)', () => {
       mockClient = createMockVolcengineClient();
       mockCreateVolcengineClient.mockReturnValue(mockClient);
       await fs.rm(VOLC_LOG_STATE_FILE, { force: true }).catch(() => {});
-      await cleanScopedStateFor('insight-volc-nested-app', 'insight-volc-nested');
+      await cleanScopedState('insight-volc-nested-app', 'insight-volc-nested');
     });
 
     afterEach(async () => {
       await fs.rm(VOLC_LOG_STATE_FILE, { force: true }).catch(() => {});
-      await cleanScopedStateFor('insight-volc-nested-app', 'insight-volc-nested');
+      await cleanScopedState('insight-volc-nested-app', 'insight-volc-nested');
     });
 
     it('repairs a drifted TLS topic ttl on the next deploy (issue #234 M5)', async () => {

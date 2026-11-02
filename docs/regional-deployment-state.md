@@ -72,12 +72,24 @@ Commands: `deploy`, `diff`, `destroy`, `show`, `validate`, `local`, `migrate`,
 
 | Backend      | Legacy (V3, discovery entry)                    | Scoped (V4, authoritative)                                              |
 | ------------ | ----------------------------------------------- | ----------------------------------------------------------------------- |
-| LOCAL        | `.serverlessinsight/state-<app>-<service>.json` | `.serverlessinsight/states/<app>/<service>/<stage>/<region>/state.json` |
-| BUCKET_STORE | `<key>`                                         | `<key>.scopes/<app>/<service>/<stage>/<region>/state.json`              |
+| LOCAL        | `.serverlessinsight/state-<app>-<service>.json` | `.serverlessinsight/states/<app>/<service>_<stage>_<region>_state.json` |
+| BUCKET_STORE | `<key>`                                         | `<key>.scopes/<app>/<service>_<stage>_<region>_state.json`              |
 | SAAS         | server-side, keyed by service+stage             | service+stage+region (scope protocol)                                   |
 
-Locks live next to the scoped document (`<state path>.lock` for LOCAL,
+Locks live next to the scoped document (`<state path>.si-lock` for LOCAL,
 `<scoped key>.si-lock` for buckets) — two regions never share a lock.
+
+Provider binding is stored alongside the states as `<service>_provider.json` and
+is shared across the service's stages and regions. Filename components use URI
+encoding with literal underscores escaped as `%5F`; ordinary names produce, for
+example, `api_prod_cn-hangzhou_state.json` without delimiter collisions.
+
+When a flat target is absent, an older nested V4 preview state or binding
+is refused rather than treated as empty state. Stop all writers, complete pending
+operations and release locks with the matching CLI, then relocate the state, its
+backup and provider binding to the
+flat layout, preserving their contents. V3 aggregate migration continues through
+`si migrate --to-regional`.
 
 ### Bucket storage location is static
 
@@ -247,8 +259,7 @@ Apply order (each artifact named by the migration `opId`):
    refuse it with a version error **before any mutation** (they reject any
    version above 3.0); this CLI treats the tombstone as an absent source — the
    scoped documents are authoritative and NEW regions start fresh.
-4. The service provider binding (`.serverlessinsight/states/<app>/<service>/
-provider.json` / `<key>.scopes/<app>/<service>/provider.json`) records the
+4. The service provider binding (`.serverlessinsight/states/<app>/<service>_provider.json` / `<key>.scopes/<app>/<service>_provider.json`) records the
    source provider; a later scope of the same service under a different
    provider is refused.
 5. A migration report is stored next to the scoped documents; it carries the

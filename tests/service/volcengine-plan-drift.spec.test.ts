@@ -1,5 +1,7 @@
 import path from 'node:path';
 import fs from 'node:fs/promises';
+
+import { cleanScopedState } from './scopedState';
 import { deploy } from '../../src/commands/deploy';
 import { createMockVolcengineClient, type MockVolcengineClient } from './mockCloudClient';
 
@@ -58,10 +60,12 @@ describe('Volcengine TOS live-drift deploy flow (issue #234 phase 2)', () => {
     mockClient = createMockVolcengineClient();
     mockCreateVolcengineClient.mockReturnValue(mockClient);
     await fs.rm(STATE_FILE_PATH, { force: true }).catch(() => {});
+    await cleanScopedState('insight-volc-app', 'insight-volc');
   });
 
   afterEach(async () => {
     await fs.rm(STATE_FILE_PATH, { force: true }).catch(() => {});
+    await cleanScopedState('insight-volc-app', 'insight-volc');
   });
 
   it('deploys, reconciles a console acl edit on the second deploy, then stays noop', async () => {

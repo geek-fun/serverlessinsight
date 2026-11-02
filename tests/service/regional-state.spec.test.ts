@@ -34,9 +34,9 @@ describe('Regional state isolation (issue #280)', () => {
   const fixture = path.join(fixturesDir, 'serverless-insight-deploy.yml');
   const APP = 'insight-poc-deploy-app';
   const SERVICE = 'insight-poc-deploy';
-  const scopedDir = path.join(process.cwd(), '.serverlessinsight', 'states', APP, SERVICE);
+  const scopedDir = path.join(process.cwd(), '.serverlessinsight', 'states', APP);
   const scopedPath = (stage: string, region: string): string =>
-    path.join(scopedDir, stage, region, 'state.json');
+    path.join(scopedDir, `${SERVICE}_${stage}_${region}_state.json`);
   const legacyPath = path.join(process.cwd(), '.serverlessinsight', `state-${APP}-${SERVICE}.json`);
 
   let mockClient: MockAliyunClient;

@@ -2,6 +2,8 @@ import { spawn } from 'node:child_process';
 import fs from 'node:fs/promises';
 import { existsSync } from 'node:fs';
 import path from 'node:path';
+
+import { cleanScopedState } from './scopedState';
 import { plan } from '../../src/commands/plan';
 import { BucketAccessEnum } from '../../src/types';
 import { createVolcengineClient } from '../../src/common/volcengineClient';
@@ -23,10 +25,7 @@ const STATE_PATH = path.join(
   '.serverlessinsight',
   'states',
   'volc-plan-app',
-  'volc-plan',
-  'dev',
-  'cn-shanghai',
-  'state.json',
+  'volc-plan_dev_cn-shanghai_state.json',
 );
 const options = {
   location: FIXTURE,
@@ -75,6 +74,7 @@ describe('Volcengine standalone planning (issue #266)', () => {
 
   beforeEach(async () => {
     clearContext();
+    await cleanScopedState('volc-plan-app', 'volc-plan');
     client = createMockVolcengineClient();
     (createVolcengineClient as jest.Mock).mockReturnValue(client);
     const backend = createLocalStateBackend(
@@ -114,7 +114,7 @@ describe('Volcengine standalone planning (issue #266)', () => {
       mutators.forEach(([, operation]) => expect(operation).not.toHaveBeenCalled());
       expect(await fs.readFile(STATE_PATH, 'utf8')).toBe(stateBefore);
     } finally {
-      await fs.rm(path.dirname(path.dirname(STATE_PATH)), { recursive: true, force: true });
+      await cleanScopedState('volc-plan-app', 'volc-plan');
       clearContext();
     }
   });

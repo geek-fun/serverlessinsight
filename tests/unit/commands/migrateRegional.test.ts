@@ -321,10 +321,7 @@ describe('migrateRegional command (si migrate --to-regional)', () => {
           '.serverlessinsight',
           'states',
           'myapp',
-          'myservice',
-          'dev',
-          'cn-hangzhou',
-          'state.json',
+          'myservice_dev_cn-hangzhou_state.json',
         ),
       );
       expect(paths.reportKey('op-1')).toBe(
@@ -332,7 +329,7 @@ describe('migrateRegional command (si migrate --to-regional)', () => {
       );
       expect(paths.backupKey('op-1')).toBe(`${legacyPath}.pre-regional-op-1`);
       expect(paths.serviceBindingKey).toBe(
-        path.join(baseDir, '.serverlessinsight', 'states', 'myapp', 'myservice', 'provider.json'),
+        path.join(baseDir, '.serverlessinsight', 'states', 'myapp', 'myservice_provider.json'),
       );
 
       expect(planArg).toEqual(makePlan());
@@ -430,16 +427,13 @@ describe('migrateRegional command (si migrate --to-regional)', () => {
           '.serverlessinsight',
           'states',
           'myapp',
-          'myservice',
-          'dev',
-          'cn-hangzhou',
-          'state.json',
+          'myservice_dev_cn-hangzhou_state.json',
         ),
       );
       expect(paths.backupKey('op-1')).toBe(`${oldLegacyPath}.pre-regional-op-1`);
       // the binding is recorded under the NEW app/service names, not the legacy ones
       expect(paths.serviceBindingKey).toBe(
-        path.join(baseDir, '.serverlessinsight', 'states', 'myapp', 'myservice', 'provider.json'),
+        path.join(baseDir, '.serverlessinsight', 'states', 'myapp', 'myservice_provider.json'),
       );
       expect(mockedApply).toHaveBeenCalledTimes(1);
     });
@@ -468,11 +462,11 @@ describe('migrateRegional command (si migrate --to-regional)', () => {
       const paths = mockedApply.mock.calls[0][2] as RegionalMigrationPaths;
       expect(paths.legacyKey).toBe('state.json');
       expect(paths.scopedPrefixBuilder('dev', 'cn-hangzhou')).toBe(
-        'state.json.scopes/myapp/myservice/dev/cn-hangzhou/state.json',
+        'state.json.scopes/myapp/myservice_dev_cn-hangzhou_state.json',
       );
       expect(paths.reportKey('op-1')).toBe('state.json.scopes/migration-report-op-1.json');
       expect(paths.backupKey('op-1')).toBe('state.json.pre-regional-op-1.json');
-      expect(paths.serviceBindingKey).toBe('state.json.scopes/myapp/myservice/provider.json');
+      expect(paths.serviceBindingKey).toBe('state.json.scopes/myapp/myservice_provider.json');
 
       expect(mockedApply).toHaveBeenCalledTimes(1);
       const io = mockedApply.mock.calls[0][0] as KeyValueIO & { read: jest.Mock };

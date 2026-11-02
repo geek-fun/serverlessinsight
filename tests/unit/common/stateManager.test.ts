@@ -1002,10 +1002,7 @@ describe('StateManager', () => {
       '.serverlessinsight',
       'states',
       'test-app',
-      'test-service',
-      'dev',
-      'cn-hangzhou',
-      'state.json',
+      'test-service_dev_cn-hangzhou_state.json',
     );
 
     const makeFnResource = (name: string): ResourceState => ({
@@ -1030,8 +1027,32 @@ describe('StateManager', () => {
       stages: { dev: { resources: { 'functions.test': makeFnResource('test-fn') } } },
     });
 
+    it('never treats nested preview data as an empty scope for direct reads or writes', () => {
+      const previous = path.join(
+        testDir,
+        '.serverlessinsight',
+        'states',
+        scope.app,
+        scope.service,
+        scope.stage,
+        scope.region,
+        'state.json',
+      );
+      fs.mkdirSync(path.dirname(previous), { recursive: true });
+      fs.writeFileSync(previous, JSON.stringify(validScopedDoc()));
+      expect(() => loadScopedState(scope, testDir)).toThrow(/Previous preview state layout/);
+      expect(() => saveScopedState(emptyScopedState(scope), scope, testDir)).toThrow(
+        /Previous preview state layout/,
+      );
+      expect(() => patchScopedPersistedState(scope, { managedBy: 'saas' }, testDir)).toThrow(
+        /Previous preview state layout/,
+      );
+      expect(fs.existsSync(scopedPath)).toBe(false);
+      expect(JSON.parse(fs.readFileSync(previous, 'utf-8'))).toEqual(validScopedDoc());
+    });
+
     describe('getScopedStatePath', () => {
-      it('returns the nested per-scope layout with a canonical region', () => {
+      it('returns the flat per-scope filename with a canonical region', () => {
         expect(getScopedStatePath('test-app', 'test-service', 'dev', 'CN-Hangzhou', testDir)).toBe(
           scopedPath,
         );

@@ -1,5 +1,7 @@
 import crypto from 'node:crypto';
 import os from 'node:os';
+
+import { assertNoPreviousStateLayout } from './stateLayout';
 import {
   PersistedStateFile,
   ResourceState,
@@ -452,24 +454,32 @@ export const applyRegionalMigration = async (
   }
   return withTargetLocks(io, paths, journal.targets, 'migrate-regional-target', async () => {
     assertMigrationSource(await io.read<PersistedStateFile>(paths.legacyKey), plan);
-    if (journal.phase !== 'complete') {
-      await Promise.all(
-        journal.targets.map(async (target) => {
-          const existing = await io.read<PersistedStateFile>(
+    await Promise.all(
+      journal.targets.map(async (target) => {
+        const existing = await io.read<PersistedStateFile>(
+          paths.scopedPrefixBuilder(target.stage, target.region),
+        );
+        if (!existing) {
+          await assertNoPreviousStateLayout(
+            io,
             paths.scopedPrefixBuilder(target.stage, target.region),
           );
-          if (existing && (!previous || hashDocument(existing) !== hashDocument(target.state))) {
-            throw new Error(
-              lang.__('REGIONAL_MIGRATION_TARGET_EXISTS', {
-                stage: target.stage,
-                region: target.region,
-                opId: existing.migration?.opId ?? 'independent',
-              }),
-            );
-          }
-        }),
-      );
-    }
+        }
+        if (
+          journal.phase !== 'complete' &&
+          existing &&
+          (!previous || hashDocument(existing) !== hashDocument(target.state))
+        ) {
+          throw new Error(
+            lang.__('REGIONAL_MIGRATION_TARGET_EXISTS', {
+              stage: target.stage,
+              region: target.region,
+              opId: existing.migration?.opId ?? 'independent',
+            }),
+          );
+        }
+      }),
+    );
     const backup = await io.read<PersistedStateFile>(paths.backupKey(plan.opId));
     if (backup && hashDocument(backup) !== plan.sourceHash) {
       throw new Error(lang.__('REGIONAL_MIGRATION_SOURCE_CHANGED'));
@@ -546,7 +556,13 @@ export const rollbackRegionalMigration = async (
         const current = await io.read<PersistedStateFile>(
           paths.scopedPrefixBuilder(target.stage, target.region),
         );
-        if (!current) return;
+        if (!current) {
+          await assertNoPreviousStateLayout(
+            io,
+            paths.scopedPrefixBuilder(target.stage, target.region),
+          );
+          return;
+        }
         const pristine =
           current.migration?.opId === opId &&
           current.serial === 1 &&

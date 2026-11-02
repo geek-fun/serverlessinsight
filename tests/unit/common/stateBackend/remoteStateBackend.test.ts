@@ -59,7 +59,7 @@ describe('remoteStateBackend (scope-bound, issue #280)', () => {
     stage: 'prod',
     region: 'cn-hangzhou',
   };
-  const SCOPED_KEY = 'states/test-app/test-service/prod/cn-hangzhou.json';
+  const SCOPED_KEY = 'legacy/state.json.scopes/test-app/test-service_prod_cn-hangzhou_state.json';
   const LEGACY_KEY = 'legacy/state.json';
   const LOCK_KEY = `${SCOPED_KEY}.si-lock`;
 
@@ -119,6 +119,27 @@ describe('remoteStateBackend (scope-bound, issue #280)', () => {
   });
 
   describe('loadState', () => {
+    it('blocks nested preview data before reserving a provider or executing a callback', async () => {
+      const previous = `${LEGACY_KEY}.scopes/test-app/test-service/prod/cn-hangzhou/state.json`;
+      adapter.store.set(previous, { version: '4.0' });
+      const backend = createRemoteStateBackend(adapter, {
+        scope,
+        scopedKey: SCOPED_KEY,
+        legacyKey: LEGACY_KEY,
+      });
+      const callback = jest.fn();
+      await expect(backend.loadState()).rejects.toThrow(/Previous preview state layout/);
+      await expect(backend.probeWriteReadiness()).rejects.toThrow(/Previous preview state layout/);
+      await expect(backend.withLock('deploy', callback)).rejects.toThrow(
+        /Previous preview state layout/,
+      );
+      await expect(backend.acquireLock('deploy')).rejects.toThrow(/Previous preview state layout/);
+      expect(callback).not.toHaveBeenCalled();
+      expect(adapter.write).not.toHaveBeenCalled();
+      expect(adapter.putIfAbsent).not.toHaveBeenCalled();
+      expect(adapter.store.has(SCOPED_KEY)).toBe(false);
+    });
+
     it('loads the scoped V4 document for the bound scope', async () => {
       adapter.store.set(SCOPED_KEY, {
         version: CURRENT_STATE_VERSION,
@@ -464,7 +485,7 @@ describe('remoteStateBackend (scope-bound, issue #280)', () => {
   });
 
   describe('service provider binding (issue #280 §1)', () => {
-    const BINDING_KEY = `${LEGACY_KEY}.scopes/test-app/test-service/provider.json`;
+    const BINDING_KEY = `${LEGACY_KEY}.scopes/test-app/test-service_provider.json`;
 
     const scopedSave = (): Record<string, unknown> => ({
       version: CURRENT_STATE_VERSION,
@@ -501,7 +522,7 @@ describe('remoteStateBackend (scope-bound, issue #280)', () => {
 
       const southeast = createRemoteStateBackend(adapter, {
         scope: { ...scope, stage: 'dev', region: 'ap-southeast-1' },
-        scopedKey: 'states/test-app/test-service/dev/ap-southeast-1.json',
+        scopedKey: 'legacy/state.json.scopes/test-app/test-service_dev_ap-southeast-1_state.json',
         legacyKey: LEGACY_KEY,
       });
       await southeast.saveState({
@@ -510,7 +531,9 @@ describe('remoteStateBackend (scope-bound, issue #280)', () => {
       } as never);
 
       expect(
-        adapter.store.get('states/test-app/test-service/dev/ap-southeast-1.json'),
+        adapter.store.get(
+          'legacy/state.json.scopes/test-app/test-service_dev_ap-southeast-1_state.json',
+        ),
       ).toBeDefined();
       expect(adapter.store.get(BINDING_KEY)).toMatchObject({ provider: 'aliyun' });
     });
@@ -525,7 +548,7 @@ describe('remoteStateBackend (scope-bound, issue #280)', () => {
 
       const foreign = createRemoteStateBackend(adapter, {
         scope: { ...scope, provider: 'tencent', stage: 'dev', region: 'ap-southeast-1' },
-        scopedKey: 'states/test-app/test-service/dev/ap-southeast-1.json',
+        scopedKey: 'legacy/state.json.scopes/test-app/test-service_dev_ap-southeast-1_state.json',
         legacyKey: LEGACY_KEY,
       });
 
@@ -537,7 +560,9 @@ describe('remoteStateBackend (scope-bound, issue #280)', () => {
         } as never),
       ).rejects.toThrow(/Provider mismatch/);
       expect(
-        adapter.store.get('states/test-app/test-service/dev/ap-southeast-1.json'),
+        adapter.store.get(
+          'legacy/state.json.scopes/test-app/test-service_dev_ap-southeast-1_state.json',
+        ),
       ).toBeUndefined();
     });
 
@@ -551,7 +576,7 @@ describe('remoteStateBackend (scope-bound, issue #280)', () => {
 
       const foreign = createRemoteStateBackend(adapter, {
         scope: { ...scope, provider: 'tencent', stage: 'dev', region: 'ap-southeast-1' },
-        scopedKey: 'states/test-app/test-service/dev/ap-southeast-1.json',
+        scopedKey: 'legacy/state.json.scopes/test-app/test-service_dev_ap-southeast-1_state.json',
         legacyKey: LEGACY_KEY,
       });
       const readiness = await foreign.probeWriteReadiness();
@@ -739,7 +764,7 @@ describe('remoteStateBackend (scope-bound, issue #280)', () => {
     });
 
     it('loses the exclusive-create race and reports the failure', async () => {
-      adapter.store.set('legacy/state.json.scopes/test-app/test-service/provider.json', {
+      adapter.store.set('legacy/state.json.scopes/test-app/test-service_provider.json', {
         provider: scope.provider,
       });
       (adapter.putIfAbsent as jest.Mock).mockResolvedValue(false);
@@ -755,7 +780,7 @@ describe('remoteStateBackend (scope-bound, issue #280)', () => {
     });
 
     it('refuses lock acquisition when conditional creation is unsupported', async () => {
-      adapter.store.set('legacy/state.json.scopes/test-app/test-service/provider.json', {
+      adapter.store.set('legacy/state.json.scopes/test-app/test-service_provider.json', {
         provider: scope.provider,
       });
       (adapter.putIfAbsent as jest.Mock).mockRejectedValueOnce(

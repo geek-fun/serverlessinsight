@@ -1,5 +1,7 @@
 import path from 'node:path';
 import fs from 'node:fs/promises';
+
+import { cleanScopedState } from './scopedState';
 import { deploy } from '../../src/commands/deploy';
 
 jest.mock('../../src/common/tencentClient', () => ({
@@ -69,10 +71,12 @@ describe('Tencent SCF live-drift deploy flow (issue #234 phase 2)', () => {
     jest.clearAllMocks();
     mockCreateTencentClient.mockReturnValue({ scf: mockScfOperations });
     await fs.rm(STATE_FILE_PATH, { force: true }).catch(() => {});
+    await cleanScopedState('insight-poc-app', 'insight-poc-tencent');
   });
 
   afterEach(async () => {
     await fs.rm(STATE_FILE_PATH, { force: true }).catch(() => {});
+    await cleanScopedState('insight-poc-app', 'insight-poc-tencent');
   });
 
   it('deploys, reconciles a console edit on the second deploy, then stays noop', async () => {

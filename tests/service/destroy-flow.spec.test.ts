@@ -1,5 +1,7 @@
 import path from 'node:path';
 import fs from 'node:fs/promises';
+
+import { cleanScopedState } from './scopedState';
 import { destroyStack } from '../../src/commands/destroy';
 import { createMockAliyunClient, type MockAliyunClient } from './mockCloudClient';
 
@@ -40,10 +42,7 @@ const STATE_FILE_PATH = path.join(
   '.serverlessinsight',
   'states',
   'insight-poc-destroy-app',
-  'insight-poc-destroy',
-  'dev',
-  'cn-hangzhou',
-  'state.json',
+  'insight-poc-destroy_dev_cn-hangzhou_state.json',
 );
 
 const EXISTING_STATE = JSON.stringify({
@@ -87,15 +86,13 @@ describe('Destroy Flow Service Test', () => {
     mockClient = createMockAliyunClient();
     mockCreateAliyunClient.mockReturnValue(mockClient);
 
+    await cleanScopedState('insight-poc-destroy-app', 'insight-poc-destroy');
     await fs.mkdir(path.dirname(STATE_FILE_PATH), { recursive: true }).catch(() => {});
     await fs.writeFile(STATE_FILE_PATH, EXISTING_STATE, 'utf-8');
   });
 
   afterEach(async () => {
-    await fs.rm(STATE_FILE_PATH, { force: true }).catch(() => {});
-    await fs
-      .rm(path.dirname(path.dirname(STATE_FILE_PATH)), { recursive: true, force: true })
-      .catch(() => {});
+    await cleanScopedState('insight-poc-destroy-app', 'insight-poc-destroy');
   });
 
   describe('Aliyun Destroy', () => {

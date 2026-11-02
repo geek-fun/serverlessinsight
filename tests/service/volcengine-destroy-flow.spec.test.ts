@@ -1,5 +1,7 @@
 import path from 'node:path';
 import fs from 'node:fs/promises';
+
+import { cleanScopedState } from './scopedState';
 import { destroyStack } from '../../src/commands/destroy';
 import { createMockVolcengineClient, type MockVolcengineClient } from './mockCloudClient';
 
@@ -40,10 +42,7 @@ const STATE_FILE_PATH = path.join(
   '.serverlessinsight',
   'states',
   'insight-volc-destroy-app',
-  'insight-volc-destroy',
-  'dev',
-  'cn-beijing',
-  'state.json',
+  'insight-volc-destroy_dev_cn-beijing_state.json',
 );
 
 const EXISTING_STATE = JSON.stringify({
@@ -100,15 +99,13 @@ describe('Volcengine Destroy Flow Service Test', () => {
     mockClient = createMockVolcengineClient();
     mockCreateVolcengineClient.mockReturnValue(mockClient);
 
+    await cleanScopedState('insight-volc-destroy-app', 'insight-volc-destroy');
     await fs.mkdir(path.dirname(STATE_FILE_PATH), { recursive: true }).catch(() => {});
     await fs.writeFile(STATE_FILE_PATH, EXISTING_STATE, 'utf-8');
   });
 
   afterEach(async () => {
-    await fs.rm(STATE_FILE_PATH, { force: true }).catch(() => {});
-    await fs
-      .rm(path.dirname(path.dirname(STATE_FILE_PATH)), { recursive: true, force: true })
-      .catch(() => {});
+    await cleanScopedState('insight-volc-destroy-app', 'insight-volc-destroy');
   });
 
   describe('Volcengine Destroy', () => {

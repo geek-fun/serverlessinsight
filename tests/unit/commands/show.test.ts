@@ -1501,10 +1501,7 @@ describe('show command', () => {
           '.serverlessinsight',
           'states',
           'test-app',
-          'test-service',
-          'default',
-          'cn-hangzhou',
-          'state.json',
+          'test-service_default_cn-hangzhou_state.json',
         ),
       );
       stdoutSpy.mockRestore();

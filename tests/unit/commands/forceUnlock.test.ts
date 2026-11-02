@@ -101,10 +101,7 @@ describe('forceUnlockCommand', () => {
       '.serverlessinsight',
       'states',
       'myapp',
-      'myservice',
-      'prod',
-      'cn-hangzhou',
-      'state.json',
+      'myservice_prod_cn-hangzhou_state.json',
     );
     const nestedLockPath = `${scopedStatePath}${LOCK_FILE_SUFFIX}`;
     fs.mkdirSync(path.dirname(nestedLockPath), { recursive: true });
