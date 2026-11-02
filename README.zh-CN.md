@@ -107,12 +107,12 @@ si local                    # 在 http://localhost:4567 本地运行
 si destroy --stage prod     # 删除 si 创建的全部资源
 ```
 
-`si` 会自动发现当前目录下的 `serverlessinsight.yml`；其他文件名请用 `-f <path>` 指定。要切换云厂商，只需把 `provider.name` 改为 `tencent` 或 `volcengine`——运行时、触发器与资源会按对应云厂商映射为原生服务。
+`si` discovers `serverlessinsight.yml` in the current directory; use `-f <path>` for another file. Select another provider with `-v tencent` or `-v volcengine`, a valid region and a compatible resource configuration. The override selects an independent deployment; adapt unsupported runtimes/resources first.
 
 ## 为什么选择 ServerlessInsight
 
 - **Serverless 原生，而非通用 IaC。** 函数、触发器、API 网关、域名、存储桶、数据库与数据表都是一等资源，并带有云厂商感知的默认值——无需手写 Terraform 模块或 SDK 封装脚本。
-- **一份 YAML 打通多云。** 同一套原语与 stage/变量体系适用于所有已支持的云厂商，切换云厂商只需改动 `provider.name`，而不是重写配置。
+- **One configuration format across clouds.** Reuse supported primitives and variables; validate each target configuration before deployment.
 - **变更之前先看计划。** `si diff` 只读取状态与线上资源、不写入任何内容；`si deploy` 执行的正是你确认过的那份计划，控制台里的手工改动会以漂移形式暴露。
 - **为自动化而生。** 日志输出到 stderr，机器可读结果输出到 stdout，每个 JSON envelope 都带版本号，错误码跨语言环境保持稳定，退出码遵循 Terraform 惯例。
 - **真正可用的本地开发。** 用同一份配置在本地运行处理函数、HTTP 路由、定时调度与存储桶端点——无需云账号或凭证。
@@ -122,11 +122,11 @@ si destroy --stage prod     # 删除 si 创建的全部资源
 
 ### 多云支持，统一配置
 
-一次定义，即可部署到阿里云、腾讯云与火山引擎。运行时标识、cron 方言、网关资源与归属标签等厂商差异由框架负责解析，而不是由你的 YAML 承担。
+Use one format across Alibaba Cloud, Tencent Cloud and Volcengine. Shared mappings handle supported differences; each target must support the declared runtimes and resources.
 
 - **统一配置** —— 所有云厂商共用同一 `serverlessinsight.yml` 格式
 - **厂商专属映射** —— 运行时名称、触发器结构与资源类型会翻译为对应云平台的原生值
-- **跨云感知** —— 同一套函数、存储桶、数据库与事件可在不同云之间通用
+- **Cross-provider validation** — unsupported target resources fail before cloud execution
 
 ### 部署前预览
 
@@ -144,6 +144,25 @@ si diff --stage dev --no-refresh
 火山引擎的计划按依赖顺序包含函数、TOS 存储桶与 API Gateway 资源。
 
 **退出码**：`si diff` 无变更时退出 `0`，有变更时退出 `2`（Terraform 惯例），出错时退出 `1`。`si validate` 校验通过退出 `0`，校验失败退出 `1`。
+
+### Independent provider and region deployments
+
+Deployment identity is `Org / App / Service / Stage / Provider / Region`.
+`app` and `service` stay literal in YAML; `-s`, `-v` and `-r` select one deployment.
+A compatible YAML can be reused, or separate YAML files can describe different regional
+resources. Selecting the same scope and backend location addresses the same deployment.
+Changing provider/region creates or updates the selected deployment and preserves the
+previous deployment until an explicitly scoped destroy. Provider-specific declarations
+must be supported by the target cloud; overrides do not translate unsupported resources.
+
+Local state stays at `.serverlessinsight/state-<app>-<service>.json`; Bucket Store keeps
+the exact configured `key`. Both store a V5 aggregate partitioned by stage/provider/region
+under one whole-file lock. Executors and SaaS snapshots use a single-deployment V4 view;
+SaaS mutations require scope protocol 3. Cloud accounts remain credential context rather
+than another identity dimension.
+
+See [deployment state and migration](docs/regional-deployment-state.md) for storage
+credentials, V3/preview migration, ownership handoff, lock behavior and recovery.
 
 ### 基础设施即代码
 
@@ -171,9 +190,9 @@ si schema | jq '."$id"'   # IaC 格式的自包含 draft-07 JSON Schema
 
 稳定的输出 envelope（每个都带版本号字段，结构只会在新版本号下变化）：
 
-- `si diff --json` → `{ planVersion: 1, provider, app, service, stage, changes: [{ logicalId, type, action: "create|update|destroy|recreate", attributes, drifted?, driftReasons? }], summary: { create, update, destroy, recreate, unchanged } }`
+- `si diff --json` → `{ planVersion: 2, provider, app, service, stage, region, changes: [{ logicalId, type, action: "create|update|destroy|recreate", attributes, drifted?, driftReasons? }], summary: { create, update, destroy, recreate, unchanged } }`
 - `si validate --json` → `{ validateVersion: 1, valid, errors: [{ path, keyword, message, allowedValues? }] }`
-- `si show --json` → `{ showVersion: 1, provider, app, service, stage, stateLocation, backend: "saas|bucket_store|local", locked, lock, resources, resourceCount, ... }`
+- `si show --json` → `{ showVersion: 2, provider, app, service, stage, region, stateLocation, backend: "saas|bucket_store|local", locked, lock, resources, resourceCount, ... }`
 - 失败时（`--json` 模式）→ stdout 输出 `{ error: { code, message } }`
 
 稳定的错误码：错误 `code` 是翻译消息背后的 i18n key（例如 `RAM_ROLE_NOT_FOUND_IN_CLOUD`）——在所有语言环境下保持一致，Agent 可以据此映射自愈动作，不受 `LANG` 影响。
@@ -268,6 +287,7 @@ functions:
 | CLI 参考         | <https://serverlessinsight.com/cli.html>                      |
 | JSON Schema      | `si schema`（自包含 draft-07）                                |
 | 本地开发         | [docs/local-development.md](docs/local-development.md)        |
+| Deployment state | [docs/regional-deployment-state.md](docs/regional-deployment-state.md) |
 | 状态锁           | [docs/state-locking.md](docs/state-locking.md)                |
 | 架构决策记录     | [docs/adr](docs/adr)                                          |
 | 示例             | [samples](samples)                                            |

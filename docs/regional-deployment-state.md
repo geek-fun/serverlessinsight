@@ -6,6 +6,7 @@ environment variables or template expressions. `-s`, `-v` and `-r` select a stag
 provider and region; they do not move existing resources.
 
 ```yaml
+version: 0.0.1
 app: example
 service: api
 provider:

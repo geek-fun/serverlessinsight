@@ -81,6 +81,8 @@ If you are certain no other operation is running, use:
 
 ## Force Unlock (Emergency Recovery)
 
+The CLI force-unlock command applies to Local/Bucket locks. For SaaS, use the Console deployment force-unlock action, which identifies the immutable deployment UUID. Select the original provider/region when inspecting or recovering a deployment.
+
 Use force-unlock only when you're certain no other operation is running. Forcing a lock while another operation is active can cause state corruption.
 
 ### Command
@@ -196,14 +198,15 @@ si force-unlock <LOCK_ID>
 
 ### Q: Can multiple people deploy simultaneously?
 
-**A**: No. Only one deployment operation can proceed at a time for a given stack.
+**A**: Local/Bucket serialize all deployments sharing one aggregate file/key, including different stages, providers and regions. SaaS deployments on different lifecycle IDs may run independently; the same lifecycle remains exclusive.
 
 ### Q: Does locking work across different machines?
 
 **A**: It depends on the state backend:
 
 - **Local backend**: Locks are local to a single machine. For team collaboration with a local backend, use a shared CI/CD system so only one runner operates on the stack at a time.
-- **Remote backend**: Yes. The lock object is stored in the shared remote backend, so it is effective across different machines and CI runners that use the same state.
+- **Bucket backend**: Yes. All machines/runners using the same bucket/key share its whole-file lock.
+- **SaaS backend**: The server coordinates the selected deployment lifecycle, independently of the client machine.
 
 ### Q: How do I know if a lock is stale?
 

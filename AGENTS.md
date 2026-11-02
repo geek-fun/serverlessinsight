@@ -179,7 +179,7 @@ All si-generated cloud resource names MUST come from shared builders — never i
 
 | Resource | Builder (single source of truth) | Shape |
 |---|---|---|
-| Function execution role | `buildFunctionRoleName` (`src/common/nameBuilder.ts`) | `${app}-${service}-${stage}-${fn.key}-role` — identical on every provider |
+| Function execution role | `buildFunctionRoleName` (`src/common/nameBuilder.ts`) | `buildFunctionRoleName(serviceName, stage, region, fnKey)` — shared constrained builder; stored names take precedence |
 | Role execution policy | `buildRolePolicyName` (`src/common/nameBuilder.ts`) | `${roleName}-policy` |
 | Function log topic/logstore | per-provider shared-log module (`buildFunctionLogTopicName` / `buildFunctionLogstoreName`) | `${service}-${stage}-${fn.key}-fn-logs` |
 | Shared log project/logset | `buildSharedProjectName` / `buildSharedLogsetName` | `${app}-${stage}-sls` / `-tls` / `-cls` |
@@ -761,7 +761,9 @@ export const createRamOperations = (ramClient: RamSdkClient) => ({
 
 ### State Management
 
-- State is stored in `.serverlessinsight/state-{app}-{service}.json`
+- Local state is a V5 aggregate at `.serverlessinsight/state-{app}-{service}.json`; Bucket Store retains its configured key.
+- Partitions use `stages[stage].providers[provider].regions[region]` and share the whole-file lock.
+- Executors/SaaS consume one V4 deployment view; SaaS uses scope protocol 3. App/Service stay literal; provider/region may be selected through CLI flags.
 - Use `setResource`, `getResource`, `removeResource` from `src/common/stateManager`
 - Resources have a `status`: `'ready'` | `'tainted'`
 

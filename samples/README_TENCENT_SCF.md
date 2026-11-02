@@ -6,7 +6,7 @@ This guide demonstrates how to use ServerlessInsight with Tencent Cloud SCF usin
 
 The Tencent SCF support introduces a Terraform-like infrastructure management approach with:
 
-- **State Management**: Local state tracking in `.serverlessinsight/state.json`
+- **State Management**: Local state tracking in `.serverlessinsight/state-example-app-my-service.json`
 - **Plan & Apply Flow**: Preview changes before applying them
 - **Drift Detection**: Detect manual changes made outside ServerlessInsight
 - **Idempotent Operations**: Safe to re-run deployments
@@ -38,13 +38,18 @@ stages:
   prod:
     node_env: production
 
+app: example-app
 service: my-service
+
+backend:
+  state_manager:
+    type: LOCAL
 
 functions:
   my_function:
     name: my-function-name
     code:
-      runtime: Nodejs18.15
+      runtime: nodejs18
       handler: index.handler
       path: path/to/function.zip
     memory: 512
@@ -88,7 +93,7 @@ Output shows:
 Apply the infrastructure changes:
 
 ```bash
-si deploy my-stack \
+si deploy \
   -f serverless-insight.yml \
   -r ap-guangzhou \
   -k YOUR_SECRET_ID \
@@ -99,37 +104,50 @@ The deploy command will:
 
 1. Generate a plan
 2. Execute the plan (create/update/delete functions)
-3. Save the state to `.serverlessinsight/state.json`
+3. Save the state to `.serverlessinsight/state-example-app-my-service.json`
 
 ### Validate
 
 Validate your YAML configuration:
 
 ```bash
-si validate my-stack -f serverless-insight.yml
+si validate -f serverless-insight.yml
 ```
 
 ## State Management
 
-State is stored locally in `.serverlessinsight/state.json`:
+With the explicit LOCAL backend above, state remains at
+`.serverlessinsight/state-example-app-my-service.json`. The V5 aggregate contains
+independent stage/provider/region partitions, for example after selecting `-s prod`:
 
 ```json
 {
-  "version": "0.1",
-  "provider": "tencent",
-  "resources": {
-    "functions.my_function": {
-      "type": "SCF",
-      "physicalId": "my-function-name",
-      "region": "ap-guangzhou",
-      "configHash": "abc123...",
-      "lastUpdated": "2025-01-01T12:00:00Z"
+  "version": "5.0",
+  "app": "example-app",
+  "service": "my-service",
+  "stages": {
+    "prod": {
+      "providers": {
+        "tencent": {
+          "regions": {
+            "ap-guangzhou": {
+              "lineage": "deployment-uuid",
+              "serial": 1,
+              "resources": {},
+              "shared": {}
+            }
+          }
+        }
+      }
     }
   }
 }
 ```
 
-**Important**: Add `.serverlessinsight/` to your `.gitignore` if you don't want to commit state files.
+The executor works with only the selected partition. Its native IDs and revision are
+preserved when another provider/region is deployed. All partitions in this file share
+one deployment lock. See [deployment state and migration](../docs/regional-deployment-state.md).
+Keep state and credentials out of version control.
 
 ## Idempotency
 
@@ -137,10 +155,10 @@ Running `si deploy` multiple times with the same configuration is safe:
 
 ```bash
 # First run - creates the function
-si deploy my-stack -f serverless-insight.yml
+si deploy -f serverless-insight.yml
 
 # Second run - detects no changes needed
-si deploy my-stack -f serverless-insight.yml
+si deploy -f serverless-insight.yml
 ```
 
 ## Drift Detection
@@ -186,10 +204,10 @@ Deploy to different stages:
 
 ```bash
 # Deploy to dev
-si deploy my-stack -f serverless-insight.yml --stage dev
+si deploy -f serverless-insight.yml --stage dev
 
 # Deploy to prod
-si deploy my-stack -f serverless-insight.yml --stage prod
+si deploy -f serverless-insight.yml --stage prod
 ```
 
 ## Function Configuration
@@ -239,7 +257,7 @@ Ensure your Secret ID and Secret Key are correct:
 export TENCENTCLOUD_SECRET_ID=your_secret_id
 export TENCENTCLOUD_SECRET_KEY=your_secret_key
 
-si deploy my-stack -f serverless-insight.yml
+si deploy -f serverless-insight.yml
 ```
 
 ### Function Not Found
@@ -248,10 +266,10 @@ If you see "ResourceNotFound.FunctionName", the function doesn't exist yet. Run 
 
 ### State File Conflicts
 
-If you encounter state conflicts, you can:
-
-1. Delete `.serverlessinsight/state.json` and re-deploy (will recreate resources)
-2. Manually edit the state file (advanced users only)
+Keep the current state and backups. Confirm App/Service/Stage/Provider/Region and the
+backend location, wait for the active writer, then refetch and re-plan. Upgrade V3 or
+consolidate preview V4 through `si migrate --to-regional`; use operation-ID rollback
+only before independent writes. Deleting or hand-editing state can lose sibling ownership.
 
 ## Limitations
 
@@ -260,7 +278,7 @@ Current limitations:
 - No support for VPC configuration
 - No support for triggers (API Gateway, COS, etc.)
 - No support for layers
-- No remote state backends
+- Local, Bucket and SaaS backends have different lock scopes; choose the backend explicitly when following this Local example.
 - No cross-resource dependencies
 
 These features will be added in future releases.

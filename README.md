@@ -107,12 +107,12 @@ si local                    # run the app locally on http://localhost:4567
 si destroy --stage prod     # remove everything si created
 ```
 
-`si` discovers `serverlessinsight.yml` in the current directory; pass `-f <path>` for a different file name. To target another cloud, change `provider.name` to `tencent` or `volcengine` — runtimes, triggers and resources are mapped to native services per provider.
+`si` discovers `serverlessinsight.yml` in the current directory; pass `-f <path>` for a different file name. To target another cloud, select `-v tencent` or `-v volcengine` with a valid region and a compatible resource configuration. The override selects an independent deployment; adapt unsupported runtimes or resources before deploying.
 
 ## Why ServerlessInsight
 
 - **Serverless-native, not generic IaC.** Functions, triggers, API gateways, domains, buckets, databases and tables are first-class resources with provider-aware defaults — no hand-written Terraform modules or SDK wrapper scripts.
-- **One YAML across clouds.** The same primitives and stage/variable system apply to every supported provider, so switching clouds is a `provider.name` change, not a rewrite.
+- **One configuration format across clouds.** Reuse supported primitives and stage variables across providers; validate each target configuration before deploying.
 - **Plan before anything happens.** `si diff` reads state and live resources without writing anything; `si deploy` executes exactly the plan you approved, and manual console changes surface as drift.
 - **Built for automation.** Logs go to stderr and machine-readable results to stdout, every JSON envelope is versioned, error codes are stable across locales, and exit codes follow Terraform conventions.
 - **Real local development.** Run your handlers, HTTP routes, timer schedules and bucket endpoints locally with the same configuration — no cloud account or credentials needed.
@@ -122,11 +122,11 @@ si destroy --stage prod     # remove everything si created
 
 ### Multi-cloud, one config
 
-Define infrastructure once and deploy across Alibaba Cloud, Tencent Cloud and Volcengine. Provider differences — runtime identifiers, cron dialects, gateway resources, ownership tags — are resolved by the framework, not by your YAML.
+Use one configuration format across Alibaba Cloud, Tencent Cloud and Volcengine. Shared mappings handle supported provider differences; each target must support the declared runtimes and resources.
 
 - **Unified configuration** — one `serverlessinsight.yml` format for every provider
 - **Provider-specific mapping** — runtime names, trigger shapes and resource types are translated to native values
-- **Cross-provider awareness** — the same functions, buckets, databases and events work across clouds
+- **Cross-provider validation** — unsupported target resources fail before cloud execution
 
 ### Plan before deploy
 
@@ -144,6 +144,25 @@ Use `-p, --parameter <key=value>` repeatedly to override configuration variables
 Volcengine plans include functions, TOS buckets and API Gateway resources in dependency order.
 
 **Exit codes**: `si diff` exits `0` when there are no changes, `2` when changes are present (Terraform convention), and `1` on errors. `si validate` exits `0` when valid and `1` when validation fails.
+
+### Independent provider and region deployments
+
+Deployment identity is `Org / App / Service / Stage / Provider / Region`.
+`app` and `service` stay literal in YAML; `-s`, `-v` and `-r` select one deployment.
+A compatible YAML can be reused, or separate YAML files can describe different regional
+resources. Selecting the same scope and backend location addresses the same deployment.
+Changing provider/region creates or updates the selected deployment and preserves the
+previous deployment until an explicitly scoped destroy. Provider-specific declarations
+must be supported by the target cloud; overrides do not translate unsupported resources.
+
+Local state stays at `.serverlessinsight/state-<app>-<service>.json`; Bucket Store keeps
+the exact configured `key`. Both store a V5 aggregate partitioned by stage/provider/region
+under one whole-file lock. Executors and SaaS snapshots use a single-deployment V4 view;
+SaaS mutations require scope protocol 3. Cloud accounts remain credential context rather
+than another identity dimension.
+
+See [deployment state and migration](docs/regional-deployment-state.md) for storage
+credentials, V3/preview migration, ownership handoff, lock behavior and recovery.
 
 ### Infrastructure as code
 
@@ -171,9 +190,9 @@ si schema | jq '."$id"'   # self-contained draft-07 JSON Schema of the IaC forma
 
 Stable output envelopes (each carries a version field, so shapes only ever change under a new version):
 
-- `si diff --json` → `{ planVersion: 1, provider, app, service, stage, changes: [{ logicalId, type, action: "create|update|destroy|recreate", attributes, drifted?, driftReasons? }], summary: { create, update, destroy, recreate, unchanged } }`
+- `si diff --json` → `{ planVersion: 2, provider, app, service, stage, region, changes: [{ logicalId, type, action: "create|update|destroy|recreate", attributes, drifted?, driftReasons? }], summary: { create, update, destroy, recreate, unchanged } }`
 - `si validate --json` → `{ validateVersion: 1, valid, errors: [{ path, keyword, message, allowedValues? }] }`
-- `si show --json` → `{ showVersion: 1, provider, app, service, stage, stateLocation, backend: "saas|bucket_store|local", locked, lock, resources, resourceCount, ... }`
+- `si show --json` → `{ showVersion: 2, provider, app, service, stage, region, stateLocation, backend: "saas|bucket_store|local", locked, lock, resources, resourceCount, ... }`
 - failures (in `--json` mode) → `{ error: { code, message } }` on stdout
 
 Stable error codes: error `code`s are the i18n message keys behind the translated message (e.g. `RAM_ROLE_NOT_FOUND_IN_CLOUD`) — they are identical under every locale, so agents can map codes to self-healing actions regardless of `LANG`.
@@ -268,6 +287,7 @@ Notes:
 | CLI reference             | <https://serverlessinsight.com/cli.html>                              |
 | JSON Schema               | `si schema` (self-contained draft-07)                                 |
 | Local development         | [docs/local-development.md](docs/local-development.md)                |
+| Deployment state          | [docs/regional-deployment-state.md](docs/regional-deployment-state.md) |
 | State locking             | [docs/state-locking.md](docs/state-locking.md)                        |
 | Architecture decisions    | [docs/adr](docs/adr)                                                  |
 | Samples                   | [samples](samples)                                                    |
