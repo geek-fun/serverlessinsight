@@ -1,3 +1,11 @@
+jest.mock('../../../src/common', () => ({
+  createLocalStateIO: jest.requireActual('../../../src/common/stateStorageIO').createLocalStateIO,
+}));
+
+jest.mock('node:fs', () =>
+  jest.requireActual('../../autils/memoryFileSystem').createMemoryFileSystem(),
+);
+
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -266,7 +274,7 @@ describe('migrateRegional command (si migrate --to-regional)', () => {
       expect(fs.existsSync(lockPath)).toBe(false);
     });
 
-    it('dry-run: plans against the real legacy file, prints the report and writes nothing beyond the released lock', async () => {
+    it('dry-run: plans against the persisted legacy document, prints the report and writes nothing beyond the released lock', async () => {
       writeLegacyFile(legacyDoc());
       let lockDuringPlan: Record<string, unknown> | null = null;
       mockedPlan.mockImplementation(() => {
@@ -277,7 +285,7 @@ describe('migrateRegional command (si migrate --to-regional)', () => {
       await runRegionalMigration(localOptions({ dryRun: true }));
 
       expect(mockedPlan).toHaveBeenCalledTimes(1);
-      const [legacyArg, pathsArg, optionsArg] = mockedPlan.mock.calls[0];
+      const [legacyArg, optionsArg] = mockedPlan.mock.calls[0];
       expect(legacyArg).toEqual(legacyDoc());
       expect(optionsArg).toEqual({
         provider: 'aliyun',
@@ -286,6 +294,25 @@ describe('migrateRegional command (si migrate --to-regional)', () => {
         stage: 'dev',
       });
 
+      expect(mockedApply).not.toHaveBeenCalled();
+      expect(mockLoggerInfo).toHaveBeenCalledWith('REGIONAL_MIGRATION_DRY_RUN_NOTICE');
+
+      // the migration lock was held around the callback and released afterwards
+      expect(lockDuringPlan).toEqual(
+        expect.objectContaining({ operation: 'migrate-regional', path: legacyPath }),
+      );
+      expect(fs.existsSync(lockPath)).toBe(false);
+      expect(listFiles(baseDir)).toEqual([legacyPath]);
+    });
+
+    it('apply (autoApprove): passes the plan and options to applyRegionalMigration with a working storage adapter', async () => {
+      writeLegacyFile(legacyDoc());
+
+      await runRegionalMigration(localOptions());
+
+      expect(mockedApply).toHaveBeenCalledTimes(1);
+      const [io, legacyArg, pathsArg, planArg, applyOptions] = mockedApply.mock.calls[0];
+      expect(legacyArg).toEqual(legacyDoc());
       const paths = pathsArg as RegionalMigrationPaths;
       expect(paths.legacyKey).toBe(legacyPath);
       expect(paths.scopedPrefixBuilder('dev', 'cn-hangzhou')).toBe(
@@ -308,25 +335,6 @@ describe('migrateRegional command (si migrate --to-regional)', () => {
         path.join(baseDir, '.serverlessinsight', 'states', 'myapp', 'myservice', 'provider.json'),
       );
 
-      expect(mockedApply).not.toHaveBeenCalled();
-      expect(mockLoggerInfo).toHaveBeenCalledWith('REGIONAL_MIGRATION_DRY_RUN_NOTICE');
-
-      // the migration lock was held around the callback and released afterwards
-      expect(lockDuringPlan).toEqual(
-        expect.objectContaining({ operation: 'migrate-regional', path: legacyPath }),
-      );
-      expect(fs.existsSync(lockPath)).toBe(false);
-      expect(listFiles(baseDir)).toEqual([legacyPath]);
-    });
-
-    it('apply (autoApprove): passes the plan and options to applyRegionalMigration with a working file IO', async () => {
-      writeLegacyFile(legacyDoc());
-
-      await runRegionalMigration(localOptions());
-
-      expect(mockedApply).toHaveBeenCalledTimes(1);
-      const [io, legacyArg, , planArg, applyOptions] = mockedApply.mock.calls[0];
-      expect(legacyArg).toEqual(legacyDoc());
       expect(planArg).toEqual(makePlan());
       expect(applyOptions).toEqual({
         provider: 'aliyun',
@@ -396,7 +404,7 @@ describe('migrateRegional command (si migrate --to-regional)', () => {
 
       await runRegionalMigration(localOptions({ bindUnknownRegion: 'cn-beijing' }));
 
-      expect(mockedPlan.mock.calls[0][2]).toEqual(
+      expect(mockedPlan.mock.calls[0][1]).toEqual(
         expect.objectContaining({ bindUnknownRegion: 'cn-beijing' }),
       );
       expect(mockedApply.mock.calls[0][4]).toEqual(
@@ -410,7 +418,7 @@ describe('migrateRegional command (si migrate --to-regional)', () => {
 
       await runRegionalMigration(localOptions({ legacyApp: 'old-app', legacyService: 'old-svc' }));
 
-      const [, pathsArg] = mockedPlan.mock.calls[0];
+      const [, , pathsArg] = mockedApply.mock.calls[0];
       const paths = pathsArg as RegionalMigrationPaths;
       expect(paths.legacyKey).toBe(oldLegacyPath);
       expect(mockedPlan.mock.calls[0][0]).toEqual(
@@ -457,7 +465,7 @@ describe('migrateRegional command (si migrate --to-regional)', () => {
 
       expect(mockedPlan).toHaveBeenCalledTimes(1);
       expect(mockedPlan.mock.calls[0][0]).toEqual(legacyDoc());
-      const paths = mockedPlan.mock.calls[0][1] as RegionalMigrationPaths;
+      const paths = mockedApply.mock.calls[0][2] as RegionalMigrationPaths;
       expect(paths.legacyKey).toBe('state.json');
       expect(paths.scopedPrefixBuilder('dev', 'cn-hangzhou')).toBe(
         'state.json.scopes/myapp/myservice/dev/cn-hangzhou/state.json',
@@ -575,7 +583,7 @@ describe('migrateRegional command (si migrate --to-regional)', () => {
       expect(fs.existsSync(lockPath)).toBe(false);
     });
 
-    it('refuses a stale lock from another host with a force-unlock hint and leaves it in place', async () => {
+    it('refuses a stale lock from another host with localized guidance and leaves it in place', async () => {
       writeLegacyFile(legacyDoc());
       fs.writeFileSync(
         lockPath,
@@ -591,7 +599,7 @@ describe('migrateRegional command (si migrate --to-regional)', () => {
         'utf-8',
       );
 
-      await expect(runRegionalMigration(localOptions())).rejects.toThrow(/force-unlock/);
+      await expect(runRegionalMigration(localOptions())).rejects.toThrow('REGIONAL_LOCK_STALE');
 
       expect(mockedPlan).not.toHaveBeenCalled();
       expect(mockedApply).not.toHaveBeenCalled();
@@ -614,7 +622,7 @@ describe('migrateRegional command (si migrate --to-regional)', () => {
         'utf-8',
       );
 
-      await expect(runRegionalMigration(localOptions())).rejects.toThrow(/Failed to acquire lock/);
+      await expect(runRegionalMigration(localOptions())).rejects.toThrow('REGIONAL_LOCK_FAILED');
 
       expect(mockLoggerInfo).toHaveBeenCalledWith('LOCK_WAITING');
       expect(mockedPlan).not.toHaveBeenCalled();

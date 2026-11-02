@@ -2,7 +2,6 @@ import type { KeyValueIO, ProviderBinding } from './regionalMigration';
 import { lang } from '../lang';
 import { ConditionalPutUnsupportedError } from './stateBackend/types';
 
-/** Reserve immutable service identity before any regional resource mutation. */
 export const claimProviderBinding = async (
   io: Pick<KeyValueIO, 'read' | 'putIfAbsent'>,
   key: string,

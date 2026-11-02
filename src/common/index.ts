@@ -35,3 +35,4 @@ export * from './stateScope';
 export * from './effectiveConfig';
 export * from './regionalMigration';
 export * from './stateStorageIO';
+export * from './saasProtocol';

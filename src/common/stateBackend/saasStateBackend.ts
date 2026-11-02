@@ -35,13 +35,7 @@ export type SaasBackendContext = {
 export type SaasBackendOptions = {
   /** Explicit API key (--si-api-key / env) taking precedence over the credentials file. */
   readonly apiKey?: string;
-  /**
-   * 'mutating' commands may provision deployments and write state; 'read-only'
-   * commands resolve identity/state without creating any deployment or
-   * lifecycle record (issue #280 §4).
-   */
   readonly mode?: 'mutating' | 'read-only';
-  /** Override the durable event spool location (for isolated runners). */
   readonly eventQueueDir?: string;
 };
 
@@ -79,19 +73,6 @@ type ServerCapabilities = {
   regionalScope: boolean;
 };
 
-/**
- * Scope protocol version carried by every regional mutation payload. Servers
- * that understand regional isolation validate it; servers that predate the
- * protocol strip the unknown fields — which the CLI detects via the
- * capabilities probe and refuses to write through (no silent unscoped fallback).
- */
-export { SCOPE_PROTOCOL_VERSION } from '../saasProtocol';
-
-/**
- * Scope-bound SaaS backend (issue #280 §4). Deployment identity on the Console
- * is Service + Stage + Region; the authenticated, server-resolved service
- * identity inherits App/Organization ownership.
- */
 export const createSaasStateBackend = (
   context: SaasBackendContext,
   options?: SaasBackendOptions,
@@ -152,12 +133,6 @@ export const createSaasStateBackend = (
 
   const capabilities: BackendCapabilities = { conditionalCreate: true };
 
-  /**
-   * Probe server scope capabilities without creating business records. A 404
-   * (pre-regional server) resolves to { regionalScope: false } — regional
-   * writes stay disabled instead of silently falling back to the unscoped
-   * protocol.
-   */
   const probeCapabilities = async (): Promise<ServerCapabilities> => {
     if (probedCapabilities) {
       return probedCapabilities;
@@ -241,12 +216,6 @@ export const createSaasStateBackend = (
     return resolvedIdentity;
   };
 
-  /**
-   * Read-only identity resolution (issue #280 §4): resolve app/service ids via
-   * the migrate-targets endpoint WITHOUT creating any deployment or lifecycle
-   * record. Used by diff/show. Only reachable while `provisioned` is false —
-   * a successful resolution flips that flag, so no cache-check is needed here.
-   */
   const resolveReadOnlyIdentity = async (): Promise<boolean> => {
     const targets = await client.get<MigrateTargetsResponse>(
       `/api/v1/state/migrate/targets?app_name=${encodeURIComponent(normalized.app)}&service_name=${encodeURIComponent(normalized.service)}&stages=${encodeURIComponent(normalized.stage)}&region=${encodeURIComponent(normalized.region)}`,
@@ -259,11 +228,6 @@ export const createSaasStateBackend = (
     return true;
   };
 
-  /**
-   * Provision the deployment by calling the unified POST endpoint (mutating
-   * mode only). This resolves YAML names to Console UUIDs and caches them.
-   * The payload carries the regional scope protocol.
-   */
   const provision = async (provider: string, stage: string): Promise<void> => {
     // D-6: the org declaration must match the key's org BEFORE provisioning —
     // this POST is what auto-creates app/service, i.e. the wrong-org write.
@@ -307,10 +271,6 @@ export const createSaasStateBackend = (
     provisioned = true;
   };
 
-  /**
-   * Ensure the backend is provisioned — mutating mode calls provision();
-   * read-only mode resolves identity without creating records.
-   */
   const ensureResolved = async (provider: string, stage: string): Promise<void> => {
     if (provisioned) {
       return;
@@ -318,8 +278,6 @@ export const createSaasStateBackend = (
     if (mode === 'read-only') {
       const exists = await resolveReadOnlyIdentity();
       if (!exists) {
-        // A deployment that does not exist yet has no state — and creating one
-        // is exactly what a read-only command must not do.
         lastSource = 'empty';
         return;
       }
@@ -329,7 +287,6 @@ export const createSaasStateBackend = (
     await provision(provider, stage);
   };
 
-  /** Validate a returned state document against the bound scope before use. */
   const validateReturnedScope = (stateJson: StateFile): StateFile => {
     if (
       stateJson.provider !== normalized.provider ||
@@ -378,8 +335,6 @@ export const createSaasStateBackend = (
       await ensureResolved(normalized.provider, normalized.stage);
 
       if (!resolvedAppId || !resolvedServiceId) {
-        // Read-only resolution found no existing app/service — no state, and
-        // no records were created.
         lastSource = 'empty';
         return emptyScopedState(normalized);
       }
@@ -443,10 +398,6 @@ export const createSaasStateBackend = (
           serviceId: resolvedServiceId!,
         };
       } catch (error) {
-        // Only a genuine 404 ("no state yet for this service+stage+region") may
-        // start from an empty state. Network/5xx/auth failures must surface —
-        // treating them as empty would make the next plan propose full
-        // re-creation.
         if (!(error instanceof ApiError && error.status === 404)) {
           throw error;
         }
@@ -466,8 +417,7 @@ export const createSaasStateBackend = (
       if (mode !== 'mutating') {
         throw new Error(lang.__('SAAS_READ_ONLY_WRITE_REFUSED'));
       }
-      // A save whose identity differs from the bound scope is refused — the
-      // SaaS backend never writes state across deployment scopes.
+
       if (
         state.provider !== normalized.provider ||
         state.app !== normalized.app ||
@@ -484,8 +434,7 @@ export const createSaasStateBackend = (
           }),
         );
       }
-      // Defense in depth: the write gate runs earlier; verify again so no
-      // unscoped write can slip through a missed probe.
+
       const caps = await probeCapabilities();
       if (!caps.regionalScope) {
         throw new Error(lang.__('SAAS_REGIONAL_SCOPE_UNSUPPORTED', { consoleUrl }));
@@ -621,9 +570,6 @@ export const createSaasStateBackend = (
         throw new Error(lang.__('SAAS_STATE_BASE_UNKNOWN'));
       }
 
-      // Acquire lock via phase:start (server checks for 409 conflicts). The
-      // regional scope rides along so the server binds the run to this
-      // Stage/Region deployment, not merely the service+stage.
       await retryRequest(() =>
         client.patch(`/api/v1/deployments/${currentDeploymentId}`, {
           phase: 'start',

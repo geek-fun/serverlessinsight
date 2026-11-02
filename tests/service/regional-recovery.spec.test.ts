@@ -16,8 +16,13 @@ describe('regional migration interruption and concurrent deployment', () => {
   };
   let baseDir: string;
   const sourcePath = () => getStatePath(scope.app, scope.service, baseDir);
-  const statePath = () =>
-    buildScopedStatePath(scope.app, scope.service, scope.stage, scope.region, baseDir);
+  const statePath = (region = scope.region) =>
+    buildScopedStatePath(scope.app, scope.service, scope.stage, region, baseDir);
+  const blockTargetWrite = () => {
+    const blocker = `${statePath('ap-southeast-1')}.tmp`;
+    fs.mkdirSync(blocker, { recursive: true });
+    return blocker;
+  };
   const command = () => ({
     ...scope,
     baseDir,
@@ -53,21 +58,13 @@ describe('regional migration interruption and concurrent deployment', () => {
     );
   });
   afterEach(() => {
-    jest.restoreAllMocks();
     fs.rmSync(baseDir, { recursive: true, force: true });
   });
 
   it('resumes the original CLI operation after a target write fails', async () => {
-    const rename = fs.renameSync;
-    let failed = false;
-    jest.spyOn(fs, 'renameSync').mockImplementation((from, to) => {
-      if (!failed && String(to).includes('ap-southeast-1') && String(to).endsWith('state.json')) {
-        failed = true;
-        throw new Error('injected storage failure');
-      }
-      return rename(from, to);
-    });
-    await expect(runRegionalMigration(command())).rejects.toThrow('injected storage failure');
+    const blocker = blockTargetWrite();
+    await expect(runRegionalMigration(command())).rejects.toThrow();
+    fs.rmSync(blocker, { recursive: true });
     const before = fs.readFileSync(statePath(), 'utf-8');
     await runRegionalMigration(command());
     expect(fs.readFileSync(statePath(), 'utf-8')).toBe(before);
@@ -110,16 +107,19 @@ describe('regional migration interruption and concurrent deployment', () => {
   });
 
   it('resumes finalization when the tombstone was written but the report failed', async () => {
-    const rename = fs.renameSync;
-    let failed = false;
-    jest.spyOn(fs, 'renameSync').mockImplementation((from, to) => {
-      if (!failed && String(to).includes('migration-report-')) {
-        failed = true;
-        throw new Error('report failure');
-      }
-      return rename(from, to);
-    });
-    await expect(runRegionalMigration(command())).rejects.toThrow('report failure');
+    const blocker = blockTargetWrite();
+    await expect(runRegionalMigration(command())).rejects.toThrow();
+    fs.rmSync(blocker, { recursive: true });
+    const pending = JSON.parse(fs.readFileSync(`${sourcePath()}.regional-migration.json`, 'utf-8'));
+    const reportBlocker = path.join(
+      baseDir,
+      '.serverlessinsight',
+      'states',
+      `migration-report-${pending.plan.opId}.json.tmp`,
+    );
+    fs.mkdirSync(reportBlocker);
+    await expect(runRegionalMigration(command())).rejects.toThrow();
+    fs.rmSync(reportBlocker, { recursive: true });
     const opId = JSON.parse(fs.readFileSync(sourcePath(), 'utf-8')).migration.opId;
     await runRegionalMigration(command());
     expect(JSON.parse(fs.readFileSync(sourcePath(), 'utf-8')).migration.opId).toBe(opId);

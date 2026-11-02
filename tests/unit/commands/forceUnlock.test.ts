@@ -1,14 +1,36 @@
+jest.mock('node:fs', () =>
+  jest.requireActual('../../autils/memoryFileSystem').createMemoryFileSystem(),
+);
+jest.mock('node:child_process', () => ({ execSync: jest.fn(() => 'test@example.com') }));
+jest.mock('../../../src/common/logger', () => ({
+  logger: { info: jest.fn(), warn: jest.fn(), error: jest.fn(), debug: jest.fn() },
+}));
+jest.mock('../../../src/common', () => ({
+  calcValue: (value: string) => value,
+  formatLockInfo: jest.requireActual('../../../src/common/lockManager').formatLockInfo,
+  logger: jest.requireMock('../../../src/common/logger').logger,
+  getIacLocation: (location: string) => location,
+  setContext: jest.fn(),
+  getContext: () => ({
+    provider: 'aliyun',
+    region: 'cn-hongkong',
+    stage: 'default',
+    accessKeyId: 'test',
+    accessKeySecret: 'test',
+  }),
+}));
+
 import { forceUnlockCommand } from '../../../src/commands/forceUnlock';
 import { withLock, readLockFileForCommand } from '../../../src/common/lockManager';
 import { getStatePath } from '../../../src/common/stateManager';
 import { LOCK_FILE_SUFFIX } from '../../../src/common/constants';
 import fs from 'node:fs';
+import readline from 'node:readline';
 import path from 'node:path';
 
 const mockCreateStateBackend = jest.fn();
 
 jest.mock('../../../src/common/stateBackend', () => ({
-  ...jest.requireActual('../../../src/common/stateBackend'),
   createStateBackend: (...args: unknown[]) => mockCreateStateBackend(...args),
 }));
 
@@ -23,18 +45,18 @@ jest.mock('node:readline', () => ({
 
 describe('forceUnlockCommand', () => {
   const testDir = '/tmp/test-force-unlock';
-  const originalCwd = process.cwd();
+  let cwdSpy: jest.SpyInstance;
 
   beforeEach(() => {
     if (fs.existsSync(testDir)) {
       fs.rmSync(testDir, { recursive: true, force: true });
     }
     fs.mkdirSync(testDir, { recursive: true });
-    process.chdir(testDir);
+    cwdSpy = jest.spyOn(process, 'cwd').mockReturnValue(testDir);
   });
 
   afterEach(() => {
-    process.chdir(originalCwd);
+    cwdSpy.mockRestore();
     if (fs.existsSync(testDir)) {
       fs.rmSync(testDir, { recursive: true, force: true });
     }
@@ -128,15 +150,10 @@ describe('forceUnlockCommand', () => {
   });
 
   it('should cancel unlock when user does not confirm', async () => {
-    jest.resetModules();
-    jest.doMock('node:readline', () => ({
-      createInterface: jest.fn(() => ({
-        question: jest.fn((_question: string, callback: (answer: string) => void) => {
-          callback('no');
-        }),
-        close: jest.fn(),
-      })),
-    }));
+    (readline.createInterface as jest.Mock).mockReturnValueOnce({
+      question: (_question: string, callback: (answer: string) => void) => callback('no'),
+      close: jest.fn(),
+    });
 
     const statePath = getStatePath('', '', testDir);
     const lockPath = `${statePath}${LOCK_FILE_SUFFIX}`;
@@ -157,9 +174,7 @@ describe('forceUnlockCommand', () => {
     await new Promise((resolve) => setTimeout(resolve, 100));
 
     if (lockId) {
-      const { forceUnlockCommand: forceUnlockWithNoConfirm } =
-        await import('../../../src/commands/forceUnlock');
-      await forceUnlockWithNoConfirm(lockId);
+      await forceUnlockCommand(lockId);
 
       expect(fs.existsSync(lockPath)).toBe(true);
     }

@@ -1029,7 +1029,6 @@ export const zhCN = {
   MIGRATION_MARKER_REGIONAL_WARN:
     '该旧版聚合状态已拆分为区域部署状态（managedBy=regional）——此处展示的是只读副本，可能已过期。',
 
-  // ===== Issue #280：区域部署状态隔离 =====
   SCOPE_KEY_PART_REQUIRED: "'{{label}}' 必填且不能为空",
   SCOPE_KEY_PART_INVALID:
     "'{{label}}' 的值 '{{part}}' 不是路径安全的：不能为空，不能包含 '/'、'\\'、'..' 或首尾空白",
@@ -1043,6 +1042,10 @@ export const zhCN = {
     '拒绝写入区域状态：旧版聚合文件 {{statePath}} 仍持有该 stage 的状态。\n  请先运行 `si migrate --to-regional --dry-run` 审查拆分方案，确认后再执行拆分。只读命令仍可继续读取旧文件。',
   STATE_WRITE_BLOCKED_LEGACY_BUCKET:
     '拒绝写入区域状态：旧版状态对象 {{objectKey}} 仍持有该 stage 的状态。\n  请先运行 `si migrate --to-regional --dry-run` 审查拆分方案，确认后再执行拆分。只读命令仍可继续读取旧对象。',
+  STATE_SCOPED_VERSION_UNSUPPORTED: '不支持的状态版本 {{version}}',
+  STATE_SCOPED_IDENTITY_MISMATCH: '状态身份与请求的部署作用域不匹配',
+  STATE_SCOPED_IDENTITY_DETAILS_MISMATCH:
+    '状态身份（{{stored}}）与绑定的部署作用域（{{requested}}）不匹配',
   STATE_WRITE_NOT_READY: '当前部署范围的状态写入尚未就绪',
   STATE_BUCKET_NOT_FOUND:
     '状态存储 bucket 不存在（{{code}}）。请创建 bucket 或修正 backend.state_manager 配置——bucket 缺失不会被当作空状态',
@@ -1075,6 +1078,10 @@ export const zhCN = {
   REGIONAL_MIGRATION_PENDING:
     '迁移 {{opId}} 尚未完成。请使用原命令继续迁移，或通过 --rollback-op-id {{opId}} 完成回滚；保留原 app、service、provider 和地域绑定选项。',
   SAAS_STATE_BASE_UNKNOWN: '请先读取区域状态，再保存或开始部署。',
+  REGIONAL_LOCK_STALE:
+    '状态已锁定（检测到可能过期的锁）。\n{{info}}\n确认没有其他操作正在运行后，可执行：\n  si force-unlock {{id}}',
+  REGIONAL_LOCK_TIMEOUT: '等待 {{seconds}} 秒后仍无法获取锁。\n{{info}}',
+  REGIONAL_LOCK_FAILED: '无法获取锁。\n{{path}}',
   MIGRATE_REGIONAL_SPLIT_REQUIRED:
     '源状态是旧版聚合文档。请先执行 `si migrate --to-regional --dry-run` 并审核区域归属，再应用拆分，最后逐个 stage/region 导入控制台。',
   MIGRATE_TARGET_REGIONAL_REQUIRED:

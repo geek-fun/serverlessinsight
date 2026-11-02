@@ -187,7 +187,7 @@ describe('regionalMigration (issue #280 §6)', () => {
 
   describe('planRegionalMigration', () => {
     it('groups resources by stage+region and classifies shared explicitly', () => {
-      const plan = planRegionalMigration(makeLegacy(), makePaths(), baseOptions);
+      const plan = planRegionalMigration(makeLegacy(), baseOptions);
       expect(plan.documents).toEqual(
         expect.arrayContaining([
           expect.objectContaining({
@@ -211,14 +211,14 @@ describe('regionalMigration (issue #280 §6)', () => {
     it('reports unknown-region resources without guessing a region', () => {
       const legacy = makeLegacy();
       legacy.stages.prod.resources['functions.gamma'] = makeResource(undefined, 'gamma');
-      const plan = planRegionalMigration(legacy, makePaths(), baseOptions);
+      const plan = planRegionalMigration(legacy, baseOptions);
       expect(plan.unknown).toEqual([
         { stage: 'prod', logicalId: 'functions.gamma', kind: 'resource' },
       ]);
     });
 
     it('warns on a provider mismatch with the effective provider', () => {
-      const plan = planRegionalMigration(makeLegacy(), makePaths(), {
+      const plan = planRegionalMigration(makeLegacy(), {
         ...baseOptions,
         provider: 'tencent',
       });
@@ -227,28 +227,22 @@ describe('regionalMigration (issue #280 §6)', () => {
 
     it('refuses to re-split a barrier-marked aggregate', () => {
       const legacy = { ...makeLegacy(), managedBy: 'regional' };
-      expect(() => planRegionalMigration(legacy, makePaths(), baseOptions)).toThrow(
-        /already marked as split/,
-      );
+      expect(() => planRegionalMigration(legacy, baseOptions)).toThrow(/already marked as split/);
     });
 
     it('refuses a source owned by the SaaS Console before any other check', () => {
       const legacy = { ...makeLegacy(), managedBy: 'saas', version: '9.9' };
-      expect(() => planRegionalMigration(legacy, makePaths(), baseOptions)).toThrow(
-        /managedBy=saas/,
-      );
+      expect(() => planRegionalMigration(legacy, baseOptions)).toThrow(/managedBy=saas/);
     });
 
     it('reports the already-split refusal (not a version error) for a V4 tombstone', () => {
       const legacy = { ...makeLegacy(), version: CURRENT_STATE_VERSION, managedBy: 'regional' };
-      expect(() => planRegionalMigration(legacy, makePaths(), baseOptions)).toThrow(
-        /already marked as split/,
-      );
+      expect(() => planRegionalMigration(legacy, baseOptions)).toThrow(/already marked as split/);
     });
 
     it('refuses a non-V3 source', () => {
       const legacy = { ...makeLegacy(), version: '9.9' };
-      expect(() => planRegionalMigration(legacy, makePaths(), baseOptions)).toThrow(
+      expect(() => planRegionalMigration(legacy, baseOptions)).toThrow(
         /Expected a legacy V3.0 state aggregate/,
       );
     });
@@ -257,11 +251,7 @@ describe('regionalMigration (issue #280 §6)', () => {
       const legacy: Record<string, unknown> = { ...makeLegacy() };
       delete legacy.version;
 
-      const plan = planRegionalMigration(
-        legacy as unknown as PersistedStateFile,
-        makePaths(),
-        baseOptions,
-      );
+      const plan = planRegionalMigration(legacy as unknown as PersistedStateFile, baseOptions);
       expect(plan.sourceVersion).toBe(LEGACY_STATE_VERSION);
     });
 
@@ -272,7 +262,7 @@ describe('regionalMigration (issue #280 §6)', () => {
         shared: { 'shared.devlogs': makeResource('cn-hangzhou', 'devlogs') },
       };
 
-      const prodPlan = planRegionalMigration(legacy, makePaths(), {
+      const prodPlan = planRegionalMigration(legacy, {
         ...baseOptions,
         stage: 'prod',
       });
@@ -280,7 +270,7 @@ describe('regionalMigration (issue #280 §6)', () => {
       expect(prodPlan.documents.every((d) => d.stage === 'prod')).toBe(true);
       expect(prodPlan.unknown).toHaveLength(0);
 
-      const devPlan = planRegionalMigration(legacy, makePaths(), { ...baseOptions, stage: 'dev' });
+      const devPlan = planRegionalMigration(legacy, { ...baseOptions, stage: 'dev' });
       expect(devPlan.documents).toEqual([
         { stage: 'dev', region: 'cn-hangzhou', resources: 0, shared: 1 },
       ]);
@@ -364,7 +354,7 @@ describe('regionalMigration (issue #280 §6)', () => {
       const legacy = makeLegacy();
       io.store.set('legacy/state.json', legacy);
       const paths = makePaths();
-      const plan = planRegionalMigration(legacy, paths, baseOptions);
+      const plan = planRegionalMigration(legacy, baseOptions);
 
       const report = await applyRegionalMigration(io, legacy, paths, plan, baseOptions);
       expect(report.barrierWritten).toBe(true);
@@ -423,7 +413,7 @@ describe('regionalMigration (issue #280 §6)', () => {
       io.store.set('legacy/state.json', legacy);
       const paths = makePaths();
 
-      const plan = planRegionalMigration(legacy, paths, baseOptions);
+      const plan = planRegionalMigration(legacy, baseOptions);
       await expect(applyRegionalMigration(io, legacy, paths, plan, baseOptions)).rejects.toThrow(
         /bind-unknown-region/,
       );
@@ -449,7 +439,7 @@ describe('regionalMigration (issue #280 §6)', () => {
       const legacy = makeLegacy();
       io.store.set('legacy/state.json', legacy);
       const paths = makePaths();
-      const plan = planRegionalMigration(legacy, paths, baseOptions);
+      const plan = planRegionalMigration(legacy, baseOptions);
       // Source mutated between plan and apply
       (store.get('legacy/state.json') as PersistedStateFile).serial = 99;
       await expect(applyRegionalMigration(io, legacy, paths, plan, baseOptions)).rejects.toThrow(
@@ -462,7 +452,7 @@ describe('regionalMigration (issue #280 §6)', () => {
       const legacy = makeLegacy();
       io.store.set('legacy/state.json', legacy);
       const paths = makePaths();
-      const plan = planRegionalMigration(legacy, paths, baseOptions);
+      const plan = planRegionalMigration(legacy, baseOptions);
       io.failOn = 'scoped/prod/ap-southeast-1/state.json';
 
       await expect(applyRegionalMigration(io, legacy, paths, plan, baseOptions)).rejects.toThrow(
@@ -479,7 +469,7 @@ describe('regionalMigration (issue #280 §6)', () => {
       const { io } = makeIo();
       const paths = makePaths();
       // Plan was produced against a snapshot; io holds nothing when applying
-      const plan = planRegionalMigration(makeLegacy(), paths, baseOptions);
+      const plan = planRegionalMigration(makeLegacy(), baseOptions);
 
       await expect(
         applyRegionalMigration(io, makeLegacy(), paths, plan, baseOptions),
@@ -496,7 +486,7 @@ describe('regionalMigration (issue #280 §6)', () => {
       io.store.set('legacy/state.json', legacy);
       const paths = makePaths();
 
-      const plan = planRegionalMigration(legacy, paths, baseOptions);
+      const plan = planRegionalMigration(legacy, baseOptions);
       // The dev stage produced no group of its own — only unknown evidence
       expect(plan.documents.every((d) => d.stage === 'prod')).toBe(true);
       expect(plan.unknown).toHaveLength(2);
@@ -536,7 +526,7 @@ describe('regionalMigration (issue #280 §6)', () => {
       const legacy = makeLegacy();
       io.store.set('legacy/state.json', legacy);
       const paths = makePaths();
-      const plan = planRegionalMigration(legacy, paths, baseOptions);
+      const plan = planRegionalMigration(legacy, baseOptions);
       io.failOn = 'scoped/prod/cn-hangzhou/state.json';
       io.failWith = 'plain failure';
 
@@ -611,7 +601,7 @@ describe('regionalMigration (issue #280 §6)', () => {
       const paths = makePaths();
 
       // A plan restricted to prod leaves the dev stage uncovered
-      const plan = planRegionalMigration(legacy, paths, { ...baseOptions, stage: 'prod' });
+      const plan = planRegionalMigration(legacy, { ...baseOptions, stage: 'prod' });
       expect(plan.documents.every((d) => d.stage === 'prod')).toBe(true);
 
       await expect(applyRegionalMigration(io, legacy, paths, plan, baseOptions)).rejects.toThrow(
@@ -633,7 +623,7 @@ describe('regionalMigration (issue #280 §6)', () => {
         recordedAt: '2024-01-01T00:00:00.000Z',
       });
 
-      const plan = planRegionalMigration(legacy, paths, baseOptions);
+      const plan = planRegionalMigration(legacy, baseOptions);
       await expect(applyRegionalMigration(io, legacy, paths, plan, baseOptions)).rejects.toThrow(
         /Provider mismatch for this service/,
       );
@@ -647,7 +637,7 @@ describe('regionalMigration (issue #280 §6)', () => {
       const legacy = makeLegacy();
       io.store.set('legacy/state.json', legacy);
       const paths = makePaths();
-      const plan = planRegionalMigration(legacy, paths, baseOptions);
+      const plan = planRegionalMigration(legacy, baseOptions);
 
       // An independent regional document from a DIFFERENT operation already lives here
       const foreign = {
@@ -683,7 +673,7 @@ describe('regionalMigration (issue #280 §6)', () => {
       const legacy = makeLegacy();
       io.store.set('legacy/state.json', legacy);
       const paths = makePaths();
-      const plan = planRegionalMigration(legacy, paths, baseOptions);
+      const plan = planRegionalMigration(legacy, baseOptions);
 
       // First run fails partway: the cn-hangzhou doc is written, ap-southeast-1 is not
       io.failOn = 'scoped/prod/ap-southeast-1/state.json';
@@ -710,7 +700,7 @@ describe('regionalMigration (issue #280 §6)', () => {
       const seeded = { provider: 'aliyun', recordedAt: '2024-01-01T00:00:00.000Z' };
       store.set(paths.serviceBindingKey, seeded);
 
-      const plan = planRegionalMigration(legacy, paths, baseOptions);
+      const plan = planRegionalMigration(legacy, baseOptions);
       await applyRegionalMigration(io, legacy, paths, plan, baseOptions);
 
       // Same object identity — the apply must not rewrite a matching binding
@@ -729,7 +719,7 @@ describe('regionalMigration (issue #280 §6)', () => {
       io.store.set('legacy/state.json', legacy);
       const paths = makePaths();
 
-      const plan = planRegionalMigration(legacy, paths, baseOptions);
+      const plan = planRegionalMigration(legacy, baseOptions);
       expect(plan.documents).toEqual([]);
       expect(plan.unknown).toEqual([
         { stage: 'prod', logicalId: 'functions.mystery', kind: 'resource' },
@@ -758,7 +748,7 @@ describe('regionalMigration (issue #280 §6)', () => {
       const legacy = makeLegacy();
       store.set('legacy/state.json', legacy);
       const paths = makePaths();
-      const plan = planRegionalMigration(legacy, paths, baseOptions);
+      const plan = planRegionalMigration(legacy, baseOptions);
       const report = await applyRegionalMigration(io, legacy, paths, plan, baseOptions);
       // The exact fixture instance — the rollback assertion must compare
       // against the SAME object (timestamps make two makeLegacy() calls
@@ -854,7 +844,7 @@ describe('regionalMigration (issue #280 §6)', () => {
       const legacy = makeLegacy();
       const paths = makePaths();
       store.set(paths.legacyKey, legacy);
-      const plan = planRegionalMigration(legacy, paths, baseOptions);
+      const plan = planRegionalMigration(legacy, baseOptions);
       const target = paths.scopedPrefixBuilder('prod', 'cn-hangzhou');
       const original = io.putIfAbsent!;
       io.putIfAbsent = async (key, data) => {
@@ -873,7 +863,7 @@ describe('regionalMigration (issue #280 §6)', () => {
       const legacy = makeLegacy();
       const paths = makePaths();
       store.set(paths.legacyKey, legacy);
-      const plan = planRegionalMigration(legacy, paths, baseOptions);
+      const plan = planRegionalMigration(legacy, baseOptions);
       io.failOn = paths.scopedPrefixBuilder('prod', 'ap-southeast-1');
       await expect(applyRegionalMigration(io, legacy, paths, plan, baseOptions)).rejects.toThrow();
       const key = paths.scopedPrefixBuilder('prod', 'cn-hangzhou');
@@ -894,7 +884,7 @@ describe('regionalMigration (issue #280 §6)', () => {
       const legacy = makeLegacy();
       const paths = makePaths();
       store.set(paths.legacyKey, legacy);
-      const plan = planRegionalMigration(legacy, paths, baseOptions);
+      const plan = planRegionalMigration(legacy, baseOptions);
       io.failOn = paths.scopedPrefixBuilder('prod', 'ap-southeast-1');
       await expect(applyRegionalMigration(io, legacy, paths, plan, baseOptions)).rejects.toThrow();
       io.failOn = undefined;
@@ -912,7 +902,7 @@ describe('regionalMigration (issue #280 §6)', () => {
       const legacy = makeLegacy();
       const paths = makePaths();
       store.set(paths.legacyKey, legacy);
-      const plan = planRegionalMigration(legacy, paths, baseOptions);
+      const plan = planRegionalMigration(legacy, baseOptions);
       await applyRegionalMigration(io, legacy, paths, plan, baseOptions);
       const remove = io.delete;
       let failed = false;

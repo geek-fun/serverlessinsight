@@ -7,14 +7,12 @@ import { lang } from '../../lang';
 import type { DeploymentScope } from '../stateScope';
 import { buildScopedObjectKey } from '../stateScope';
 
-/** Pure storage-location config — decoupled from the deployment scope. */
 export type CosStorageConfig = {
   bucket: string;
   region: string;
   accessKeyId: string;
   accessKeySecret: string;
   securityToken?: string;
-  /** Display path for lock metadata. */
   lockPath: string;
 };
 
@@ -27,8 +25,6 @@ const promisifyGet = (
   return new Promise((resolve, reject) => {
     cosClient.getObject({ Bucket: bucket, Region: region, Key: key }, (err, data) => {
       if (err) {
-        // Classify BEFORE the 404 branch: COS signals a missing bucket with a
-        // 404 status too — only a missing OBJECT may resolve as absence.
         try {
           classifyCosReadError(err as { statusCode?: number; code?: string });
         } catch (classified) {
@@ -90,9 +86,7 @@ const promisifyPutIfAbsent = (
             resolve(false);
             return;
           }
-          // The storage cannot evaluate the condition at all — surface that so
-          // the backend downgrades to conditionalCreate=false (verified
-          // fallback) instead of pretending the create was exclusive.
+
           if (err.statusCode === 400 || err.statusCode === 501) {
             reject(new ConditionalPutUnsupportedError(err));
             return;
@@ -120,10 +114,6 @@ const promisifyDelete = (
   });
 };
 
-/**
- * Distinguish object absence (expected for a fresh scope) from bucket absence
- * and access denial (configuration/permission errors, never empty state).
- */
 const classifyCosReadError = (err: { statusCode?: number; code?: string }): void => {
   if (err.code === 'NoSuchBucket') {
     throw new Error(lang.__('STATE_BUCKET_NOT_FOUND', { code: err.code }));
@@ -194,10 +184,6 @@ export const createCosStorageAdapter = (config: CosStorageConfig): StorageAdapte
   };
 };
 
-/**
- * Scope-bound COS state backend (issue #280). `config.region` is the state
- * STORAGE region — decoupled from the workload region.
- */
 export const createCosStateBackend = (config: {
   scope: DeploymentScope;
   bucket: string;

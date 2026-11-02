@@ -7,18 +7,15 @@ import { lang } from '../../lang';
 import type { DeploymentScope } from '../stateScope';
 import { buildScopedObjectKey } from '../stateScope';
 
-/** Pure storage-location config — decoupled from the deployment scope. */
 export type OssStorageConfig = {
   bucket: string;
   region: string;
   accessKeyId: string;
   accessKeySecret: string;
   securityToken?: string;
-  /** Display path for lock metadata. */
   lockPath: string;
 };
 
-/** Object-absence is expected (fresh scope); bucket-absence / denial are errors. */
 const isObjectAbsent = (err: unknown): boolean => {
   if (err && typeof err === 'object' && 'code' in err) {
     return (err as { code: string }).code === 'NoSuchKey';
@@ -69,7 +66,6 @@ export const createOssStorageAdapter = (config: OssStorageConfig): StorageAdapte
       await ossClient.put(key, Buffer.from(content, 'utf-8'));
     },
 
-    /** Verified conditional create via x-oss-forbid-overwrite (atomic). */
     putIfAbsent: async (key: string, data: unknown): Promise<boolean> => {
       const content = JSON.stringify(data, null, 2);
       const versioning = await (
@@ -112,11 +108,6 @@ export const createOssStorageAdapter = (config: OssStorageConfig): StorageAdapte
   };
 };
 
-/**
- * Scope-bound OSS state backend (issue #280). `config.region` is the state
- * STORAGE region — decoupled from the workload region: explicit storage
- * settings never change when the workload -r/-v changes.
- */
 export const createOssStateBackend = (config: {
   scope: DeploymentScope;
   bucket: string;

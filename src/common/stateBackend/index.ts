@@ -41,23 +41,10 @@ export type BackendContext = {
    * SaaS backend (Console states carry no legacy marker).
    */
   migrationMarker?: MigrationMarkerAction;
-  /**
-   * Read-only SaaS resolution (issue #280 §4): 'read-only' backends resolve
-   * identity/state without creating deployments or lifecycle records.
-   */
   mode?: 'mutating' | 'read-only';
-  /**
-   * Static state-storage location for BUCKET_STORE backends, decoupled from
-   * the workload region/provider (issue #280 §3).
-   */
   storage?: { provider?: string; region?: string };
 };
 
-/**
- * Bind a state backend ONCE to a resolved deployment scope and a separate
- * storage location (issue #280 §2). Load/save/patch/lock/unlock/events all
- * operate on the bound scope; saves are scope-validated by each backend.
- */
 export const createStateBackend = (
   backendConfig: BackendConfig | undefined,
   context: BackendContext,
@@ -89,9 +76,7 @@ export const createStateBackend = (
   }
 
   const bucketConfig = backendConfig as BucketStoreBackendConfig;
-  // Static storage location: explicit settings win; when absent, the workload
-  // context pins the storage location at backend creation. Explicit settings
-  // never change when the workload -r/-v changes.
+
   const storageRegion = canonicalizeRegion(
     bucketConfig.storageRegion ?? context.storage?.region ?? context.region,
   );
@@ -120,12 +105,6 @@ export const createStateBackend = (
   });
 };
 
-/**
- * Credential selection for the state-storage client (issue #280 §3): supported
- * runtime credential flows are preserved without adding SaaS account binding;
- * unsupported storage/workload combinations are rejected explicitly instead of
- * silently picking whichever key is present.
- */
 const storageCredentials = (
   context: BackendContext,
   storageProvider: string,
@@ -137,6 +116,6 @@ const storageCredentials = (
       ...(context.securityToken ? { securityToken: context.securityToken } : {}),
     };
   }
-  // The workload credentials are the only supported storage credentials.
+
   throw new Error(lang.__('STATE_STORAGE_CREDENTIALS_MISSING', { provider: storageProvider }));
 };

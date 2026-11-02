@@ -1,3 +1,11 @@
+jest.mock('node:fs', () =>
+  jest.requireActual('../../../autils/memoryFileSystem').createMemoryFileSystem(),
+);
+jest.mock('node:child_process', () => ({ execSync: jest.fn(() => 'test@example.com') }));
+jest.mock('../../../../src/common/logger', () => ({
+  logger: { info: jest.fn(), warn: jest.fn(), error: jest.fn(), debug: jest.fn() },
+}));
+
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -11,10 +19,6 @@ import {
   StateScopeMismatchError,
   StateVersionError,
 } from '../../../../src/types';
-
-jest.mock('../../../../src/common/lockManager', () => ({
-  ...jest.requireActual('../../../../src/common/lockManager'),
-}));
 
 describe('localStateBackend (scope-bound, issue #280)', () => {
   let baseDir: string;

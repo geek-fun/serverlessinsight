@@ -79,9 +79,6 @@ export const deploy = async (options: {
     migrationMarker: 'refuse',
   });
 
-  // Issue #280: regional writes are enabled only when the bound scope is safe
-  // — a legacy aggregate must be migrated first (`si migrate --to-regional`),
-  // and a pre-regional SaaS server must not receive unscoped writes.
   const readiness = await backend.probeWriteReadiness();
   if (!readiness.ready) {
     throw new Error(readiness.reason ?? lang.__('STATE_WRITE_NOT_READY'));

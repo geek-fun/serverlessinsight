@@ -41,8 +41,7 @@ const parseBackend = (raw: BackendConfigRaw | undefined): BackendConfig | undefi
       type: StateBackendType.BUCKET_STORE,
       bucket: stateManager.bucket,
       key: stateManager.key,
-      // Static state-storage location (issue #280): decoupled from the
-      // workload region/provider.
+
       ...(stateManager.storageRegion ? { storageRegion: stateManager.storageRegion } : {}),
       ...(stateManager.storageProvider ? { storageProvider: stateManager.storageProvider } : {}),
     };
@@ -110,11 +109,6 @@ export const revalYaml = (iacLocation: string, ctx: Context): ServerlessIac => {
 
   validateYaml(iacJson);
 
-  // Issue #280 §1: provider/region are static during variable evaluation and
-  // the FINAL IAC carries the effective (context) values — never the raw YAML
-  // defaults, which would let planning/execution dispatch with a provider or
-  // region different from the resolved command configuration after a CLI
-  // override (-v/-r).
   const staticFields = {
     app: iacJson.app,
     service: iacJson.service,

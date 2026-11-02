@@ -48,13 +48,8 @@ export const destroyStack = async (options: {
     migrationMarker: 'refuse',
   });
 
-  // Initialize backend scope context before withLock. SaaS backends need
-  // loadState() to provision the deployment; scope identity is bound at
-  // creation (issue #280).
   await backend.loadState();
 
-  // Issue #280: regional writes are enabled only when the bound scope is safe
-  // — a legacy aggregate must be migrated first, never silently overwritten.
   const readiness = await backend.probeWriteReadiness();
   if (!readiness.ready) {
     throw new Error(readiness.reason ?? lang.__('STATE_WRITE_NOT_READY'));

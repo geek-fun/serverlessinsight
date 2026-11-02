@@ -2,21 +2,7 @@ import { ProviderEnum } from './providerEnum';
 import { validateScopeKeyPart } from './stateScope';
 import { lang } from '../lang';
 
-/**
- * Shared effective command configuration (issue #280 §1).
- *
- * One resolver produces the effective provider/region/stage for a command run.
- * Precedence, preserving historical fallback behavior:
- *   explicit CLI option  >  YAML static default  >  environment fallback  >  built-in default.
- * Environment variables are NOT a new override channel: they only apply when
- * both the CLI and the YAML leave the field unset.
- *
- * Provider/region stay static during variable evaluation — the resolved values
- * are the single source of truth and stale YAML values are never restored after
- * overrides are applied.
- */
-
-export type EffectiveConfigInput = {
+type EffectiveConfigInput = {
   cli?: {
     stage?: string;
     region?: string;
@@ -28,17 +14,16 @@ export type EffectiveConfigInput = {
   };
 };
 
-export type EffectiveOverrides = {
+type EffectiveOverrides = {
   region: boolean;
   provider: boolean;
   stage: boolean;
 };
 
-export type EffectiveConfig = {
+type EffectiveConfig = {
   provider: string;
   region: string;
   stage: string;
-  /** Which fields were explicitly overridden on the CLI (used for diagnostics/telemetry). */
   overrides: EffectiveOverrides;
 };
 
@@ -61,8 +46,6 @@ export const resolveEffectiveConfig = (input: EffectiveConfigInput): EffectiveCo
   const cliRegion = cli.region?.trim() || undefined;
   const cliProvider = parseCliProvider(cli.provider);
 
-  // Region: CLI > YAML > env fallbacks > default. Env fallbacks only apply when
-  // both CLI and YAML are silent (no new override channel for explicit YAML).
   const region =
     cliRegion ??
     iacProvider.region?.trim() ??
@@ -93,11 +76,6 @@ const canonicalRegion = (region: string): string => {
   return canonical;
 };
 
-/**
- * Service/provider binding check (issue #280 §1): an existing deployment of a
- * service is bound to one provider. A mismatch is rejected before any cloud
- * mutation or state access.
- */
 export const assertProviderBinding = (expected: string, actual: string): void => {
   if (expected !== actual) {
     throw new Error(lang.__('EFFECTIVE_CONFIG_PROVIDER_MISMATCH', { expected, actual }));

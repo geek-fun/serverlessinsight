@@ -42,20 +42,12 @@ import {
 
 export type RemoteBackendConfig = {
   scope: DeploymentScope;
-  /** Scoped V4 object key for the bound scope (storage location). */
   scopedKey: string;
-  /** The configured (legacy/discovery) object key. Never written after the split. */
   legacyKey: string;
   /** Migration ownership marker behavior on load (decision D-4). Defaults to 'off'. */
   markerAction?: MigrationMarkerAction;
 };
 
-/**
- * Scope-bound BUCKET_STORE backend (issue #280): one V4 object per Stage/Region
- * at `<key>.scopes/<app>/<service>/<stage>/<region>/state.json`. The configured
- * key remains the legacy/discovery entry: read for read-only compatibility,
- * never written once scoped state exists.
- */
 export const createRemoteStateBackend = (
   adapter: StorageAdapter,
   config: RemoteBackendConfig,
@@ -102,8 +94,6 @@ export const createRemoteStateBackend = (
       const existingLock = await readLockObject();
 
       if (!existingLock) {
-        // Exclusive create when the storage supports it: concurrent acquirers
-        // cannot both win. Verify the returned ownership before execution.
         const created = await writeLockObject(metadata);
         if (created) {
           const verify = await readLockObject();
@@ -174,35 +164,43 @@ export const createRemoteStateBackend = (
     if (!raw) {
       return null;
     }
-    // A scoped object that exists but does not match the bound scope/version is
-    // foreign or malformed data — never served as the requested state.
+
     if (raw.version && raw.version !== CURRENT_STATE_VERSION) {
       throw new StateCorruptError(
         `bucket://${config.scopedKey}`,
-        `unsupported state version ${raw.version}`,
+        lang.__('STATE_SCOPED_VERSION_UNSUPPORTED', { version: raw.version }),
       );
     }
-    const stored = {
-      provider: raw.provider,
-      app: raw.app,
-      service: raw.service,
-      stage: raw.scope?.stage,
-      region: raw.scope?.region,
-    };
     const matches =
-      stored.provider === normalized.provider &&
-      stored.app === normalized.app &&
-      stored.service === normalized.service &&
+      raw.provider === normalized.provider &&
+      raw.app === normalized.app &&
+      raw.service === normalized.service &&
       !!raw.scope &&
       raw.scope.stage === normalized.stage &&
       (raw.scope.region ?? '').toLowerCase() === normalized.region;
     if (!matches) {
       throw new StateCorruptError(
         `bucket://${config.scopedKey}`,
-        'state identity does not match the requested deployment scope',
+        lang.__('STATE_SCOPED_IDENTITY_MISMATCH'),
       );
     }
     return raw;
+  };
+
+  const detectSourceAsync = async (): Promise<StateSource> => {
+    const scoped = await readScopedDocument();
+    if (scoped) {
+      return 'scoped';
+    }
+    const legacyRaw = await adapter.read<StateFile>(config.legacyKey);
+    if (legacyRaw && legacyRaw.managedBy === MANAGED_BY_REGIONAL) {
+      return 'empty';
+    }
+    if (legacyRaw) {
+      const stageResources = legacyRaw.stages?.[normalized.stage]?.resources;
+      return stageResources && Object.keys(stageResources).length > 0 ? 'legacy' : 'empty';
+    }
+    return 'empty';
   };
 
   return {
@@ -219,10 +217,6 @@ export const createRemoteStateBackend = (
         return loaded;
       }
 
-      // Legacy/discovery entry: read-only compatibility until migration. A
-      // post-split tombstone (versioned V4 + managedBy=regional) is treated as
-      // absent — the scoped documents are authoritative and new regions start
-      // fresh (issue #280).
       const legacyRaw = await adapter.read<StateFile>(config.legacyKey);
       if (legacyRaw && legacyRaw.managedBy === MANAGED_BY_REGIONAL) {
         lastSource = 'empty';
@@ -233,8 +227,6 @@ export const createRemoteStateBackend = (
         try {
           migrated = migrateState(legacyRaw);
         } catch (error) {
-          // Version/shape errors are already precise — never bury them in a
-          // generic corruption error.
           if (error instanceof StateVersionError || error instanceof StateScopeMismatchError) {
             throw error;
           }
@@ -254,7 +246,6 @@ export const createRemoteStateBackend = (
     },
 
     patchPersisted: async (patch: Record<string, unknown | undefined>): Promise<void> => {
-      // Patch whichever persisted object backs the current state source.
       const targetKey = lastSource === 'scoped' ? config.scopedKey : config.legacyKey;
       const raw = await adapter.read<StateFile>(targetKey);
       const merged: Record<string, unknown> = raw ? { ...toPersistedState(raw) } : {};
@@ -276,13 +267,15 @@ export const createRemoteStateBackend = (
       ) {
         throw new StateCorruptError(
           `bucket://${config.scopedKey}`,
-          `state identity (${state.provider}/${state.app}/${state.service}) does not match the bound deployment scope (${normalized.provider}/${normalized.app}/${normalized.service})`,
+          lang.__('STATE_SCOPED_IDENTITY_DETAILS_MISMATCH', {
+            stored: `${state.provider}/${state.app}/${state.service}`,
+            requested: `${normalized.provider}/${normalized.app}/${normalized.service}`,
+          }),
         );
       }
-      // Reserve immutable service identity before writing any regional state.
+
       await claimProviderBinding(adapter, bindingKey, normalized.provider);
-      // Continue this scope document's lineage/serial across saves (independent
-      // per Stage/Region document).
+
       const existing = await adapter.read<PersistedStateFile>(config.scopedKey);
       const persisted: PersistedStateFile = {
         ...toPersistedState(state),
@@ -315,7 +308,7 @@ export const createRemoteStateBackend = (
           reason: lang.__('STATE_WRITE_BLOCKED_LEGACY_BUCKET', { objectKey: config.legacyKey }),
         };
       }
-      // One provider per Service across ALL scopes (issue #280 §1).
+
       const binding = await readProviderBinding();
       if (binding && binding.provider !== normalized.provider) {
         return {
@@ -383,20 +376,4 @@ export const createRemoteStateBackend = (
       }
     },
   };
-
-  async function detectSourceAsync(): Promise<StateSource> {
-    const scoped = await readScopedDocument();
-    if (scoped) {
-      return 'scoped';
-    }
-    const legacyRaw = await adapter.read<StateFile>(config.legacyKey);
-    if (legacyRaw && legacyRaw.managedBy === MANAGED_BY_REGIONAL) {
-      return 'empty';
-    }
-    if (legacyRaw) {
-      const stageResources = legacyRaw.stages?.[normalized.stage]?.resources;
-      return stageResources && Object.keys(stageResources).length > 0 ? 'legacy' : 'empty';
-    }
-    return 'empty';
-  }
 };

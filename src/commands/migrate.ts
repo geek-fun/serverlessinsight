@@ -6,6 +6,13 @@ import {
   setContext,
   setIac,
   toPersistedState,
+  normalizeScope,
+  validateScopedDocument,
+  SCOPE_PROTOCOL_VERSION,
+  supportsRegionalSaas,
+  isRegionalSaasSnapshot,
+  hashSaasState,
+  type SaasStateSnapshot,
 } from '../common';
 import { createStateBackend } from '../common/stateBackend';
 import { loadCredentials, getConsoleUrl } from '../common/credentialStore';
@@ -15,17 +22,8 @@ import { StateBackendType } from '../types';
 import { parseYaml, revalYaml } from '../parser';
 import { runRegionalMigration } from './migrateRegional';
 import { lang } from '../lang';
-import {
-  SCOPE_PROTOCOL_VERSION,
-  supportsRegionalSaas,
-  isRegionalSaasSnapshot,
-  hashSaasState,
-  type SaasStateSnapshot,
-} from '../common/saasProtocol';
-import { normalizeScope } from '../common/stateScope';
-import { validateScopedDocument } from '../common/stateManager';
 
-export type MigrateUploadResult = {
+type MigrateUploadResult = {
   stateId: string;
   versionNumber: number;
   appId: string;
@@ -35,8 +33,6 @@ export type MigrateUploadResult = {
   region: string;
   scopeProtocol: number;
 };
-
-export type MigrateStageResult = MigrateUploadResult & { stage: string };
 
 type MigrateTargets = {
   app: { name: string; exists: boolean; id: string | null };
@@ -98,14 +94,10 @@ export const migrate = async (options: {
   noMarker?: boolean;
   dryRun?: boolean;
   rollback?: boolean;
-  /** Issue #280 §6: V3 → V4 regional split instead of the SaaS upload flow. */
   toRegional?: boolean;
-  /** Explicit rebinding: read the legacy aggregate of a renamed app/service. */
   legacyApp?: string;
   legacyService?: string;
-  /** Explicit binding for resources without region evidence. */
   bindUnknownRegion?: string;
-  /** Regional rollback: restore the aggregate backed up by the given opId. */
   rollbackOpId?: string;
 }) => {
   logger.info(lang.__('VALIDATING_YAML'));
@@ -133,8 +125,6 @@ export const migrate = async (options: {
   // ① preflight — the source must be a legacy backend with actual state
   const backendType = iac.backend?.type ?? StateBackendType.SAAS;
 
-  // Issue #280 §6: the protected V3 → V4 regional split — explicit, dry-run/
-  // apply, distinguishable from (and combinable with) the SaaS migration.
   if (options.toRegional) {
     if (backendType === StateBackendType.SAAS) {
       throw new Error(lang.__('REGIONAL_MIGRATION_LOCAL_OR_BUCKET_ONLY'));
@@ -151,9 +141,7 @@ export const migrate = async (options: {
             return {
               bucket: cfg.bucket,
               key: cfg.key,
-              // Static storage location — the SAME settings the regular
-              // backend resolves; explicit values must not change when the
-              // workload -r/-v changes (issue #280 §3).
+
               storageRegion: cfg.storageRegion ?? context.region,
               storageProvider: cfg.storageProvider ?? context.provider,
               accessKeyId: context.accessKeyId,
@@ -168,8 +156,7 @@ export const migrate = async (options: {
       service: context.service,
       region: context.region,
       stage: options.stage,
-      // Align with deploy/destroy: the state root is the process cwd, not the
-      // YAML's directory (issue #280).
+
       baseDir: process.cwd(),
       backendType: backendType as 'LOCAL' | 'BUCKET_STORE',
       bucketConfig,

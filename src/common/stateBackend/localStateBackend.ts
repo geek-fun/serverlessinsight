@@ -37,16 +37,6 @@ export type LocalBackendOptions = {
   markerAction?: MigrationMarkerAction;
 };
 
-/**
- * Scope-bound LOCAL backend (issue #280).
- *
- * Storage layout: `.serverlessinsight/states/<app>/<service>/<stage>/<region>/state.json`
- * — one V4 document per Stage/Region deployment scope, with independent
- * lineage/serial/lock/backup per document. The legacy V3 aggregate
- * (`.serverlessinsight/state-<app>-<service>.json`) remains the discovery entry:
- * it is read for read-only compatibility until `si migrate --to-regional` splits
- * it, and it is never written by this backend.
- */
 export const createLocalStateBackend = (
   scope: DeploymentScope,
   options: LocalBackendOptions = {},
@@ -66,11 +56,6 @@ export const createLocalStateBackend = (
 
   const capabilities: BackendCapabilities = { conditionalCreate: true };
 
-  /**
-   * Service-level provider binding (issue #280 §1): one Service has one
-   * provider across ALL its Stage/Region scopes. Read from the shared record
-   * so a new region cannot open the service under a different provider.
-   */
   const readProviderBinding = (): ProviderBinding | null => {
     if (!fs.existsSync(bindingPath)) {
       return null;
@@ -127,8 +112,6 @@ export const createLocalStateBackend = (
           const stageResources = migrated.stages?.[normalized.stage]?.resources ?? {};
           legacyState = { ...migrated, resources: stageResources };
         } catch (error) {
-          // A legacy aggregate that cannot be parsed/migrated is malformed data —
-          // never silently treated as empty state.
           throw new StateCorruptError(legacyPath, error);
         }
         enforceMigrationMarker(legacyState, markerAction);
@@ -156,9 +139,6 @@ export const createLocalStateBackend = (
     },
 
     patchPersisted: async (patch: Record<string, unknown | undefined>): Promise<void> => {
-      // Patch whichever persisted document backs the current state source, so
-      // `si migrate` marker/backfill writes land on the document the state came
-      // from (legacy aggregate before the split, scoped doc afterwards).
       if (detectSource() === 'scoped') {
         patchScopedPersistedState(normalized, patch, baseDir);
       } else {
@@ -177,8 +157,7 @@ export const createLocalStateBackend = (
           reason: lang.__('STATE_WRITE_BLOCKED_LEGACY', { statePath: legacyPath }),
         };
       }
-      // A Service is bound to one provider across ALL scopes (issue #280 §1):
-      // a new Stage/Region cannot open the service under a different provider.
+
       try {
         enforceProviderBinding();
         await claimProviderBinding(createLocalStateIO(), bindingPath, normalized.provider);

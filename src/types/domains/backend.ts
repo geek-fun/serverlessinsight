@@ -12,12 +12,6 @@ export type BucketStoreBackendConfig = {
   type: StateBackendType.BUCKET_STORE;
   bucket: string;
   key: string;
-  /**
-   * Static state-storage location (issue #280 §3), decoupled from the workload
-   * region/provider: explicit values never change when the workload -r/-v
-   * changes. When omitted the backend resolves and pins a location from the
-   * workload context at first use.
-   */
   storageRegion?: string;
   storageProvider?: string;
 };

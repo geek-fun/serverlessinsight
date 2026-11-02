@@ -28,10 +28,6 @@ export const getStatePath = (
   return path.join(baseDir, STATE_DIR, `state-${app}-${service}.json`);
 };
 
-/**
- * V4 scoped state path (issue #280): one document per Stage/Region under
- * `.serverlessinsight/states/<app>/<service>/<stage>/<region>/state.json`.
- */
 export const getScopedStatePath = (
   app: string,
   service: string,
@@ -302,14 +298,9 @@ export const patchPersistedState = (
     // use default
   }
 
-  const patched: Record<string, unknown> = { ...existing };
-  for (const [key, value] of Object.entries(patch)) {
-    if (value === undefined) {
-      delete patched[key];
-    } else {
-      patched[key] = value;
-    }
-  }
+  const patched = Object.fromEntries(
+    Object.entries({ ...existing, ...patch }).filter(([, value]) => value !== undefined),
+  );
 
   const stateToSave = {
     ...patched,
@@ -345,11 +336,6 @@ export const saveStateWithLock = async (
   );
 };
 
-/* ------------------------------------------------------------------ *
- * V4 scoped state (issue #280) — one document per Stage/Region scope.
- * ------------------------------------------------------------------ */
-
-/** Empty V4 document for a fresh scope. The runtime `resources` projection is hydrated. */
 export const emptyScopedState = (scope: DeploymentScope): StateFile => {
   const normalized = normalizeScope(scope);
   return {
@@ -363,12 +349,6 @@ export const emptyScopedState = (scope: DeploymentScope): StateFile => {
   };
 };
 
-/**
- * Validate a persisted V4 document against the requested deployment scope:
- * version, provider, app, service, and the scope object (stage + region) must
- * all agree. Any disagreement throws StateScopeMismatchError / StateVersionError
- * — a foreign-scope document is never served as the requested state.
- */
 export const validateScopedDocument = (raw: PersistedStateFile, scope: DeploymentScope): void => {
   const normalized = normalizeScope(scope);
   if (raw.version && raw.version !== CURRENT_STATE_VERSION) {
@@ -393,12 +373,6 @@ export const validateScopedDocument = (raw: PersistedStateFile, scope: Deploymen
   }
 };
 
-/**
- * Load the V4 document for one deployment scope. Missing state returns an empty
- * scoped document (the caller decides whether a legacy fallback applies);
- * corrupt data, foreign scope, and unsupported versions throw — they are never
- * converted to empty state.
- */
 export const loadScopedState = (
   scope: DeploymentScope,
   baseDir: string = process.cwd(),
@@ -459,18 +433,11 @@ export const loadScopedState = (
   }
 };
 
-/**
- * Persist the V4 document for one scope. The document contains only its
- * selected stage; lineage and serial are independent per regional document.
- * A save whose recorded identity differs from the bound scope is rejected.
- */
 export const saveScopedState = (
   state: StateFile,
   scope: DeploymentScope,
   baseDir: string = process.cwd(),
 ): void => {
-  // A regional write without a resolved canonical region must never pick an
-  // arbitrary region — fail before anything is written.
   if (!scope.region || scope.region.trim().length === 0) {
     throw new StateRegionRequiredError(scope.stage);
   }
@@ -541,11 +508,6 @@ export const saveScopedState = (
   writeStateFileAtomically(statePath, JSON.stringify(persisted, null, 2));
 };
 
-/**
- * Merge top-level fields into a scoped persisted document without touching
- * stages/resources (undefined deletes the key). Used by the regional migration
- * for barrier markers and console-UUID backfills on scoped documents.
- */
 export const patchScopedPersistedState = (
   scope: DeploymentScope,
   patch: Record<string, unknown | undefined>,
@@ -578,14 +540,9 @@ export const patchScopedPersistedState = (
     existing = raw;
   }
 
-  const patched: Record<string, unknown> = { ...existing };
-  for (const [key, value] of Object.entries(patch)) {
-    if (value === undefined) {
-      delete patched[key];
-    } else {
-      patched[key] = value;
-    }
-  }
+  const patched = Object.fromEntries(
+    Object.entries({ ...existing, ...patch }).filter(([, value]) => value !== undefined),
+  );
   const stateToSave = {
     ...patched,
     version: CURRENT_STATE_VERSION,
@@ -595,15 +552,6 @@ export const patchScopedPersistedState = (
   writeStateFileAtomically(statePath, JSON.stringify(stateToSave, null, 2));
 };
 
-/**
- * Read a legacy V3 aggregate as persisted (no scope hydration). STRICT on
- * existing files (issue #280): only a genuinely missing file returns null —
- * a corrupt file throws StateCorruptError and a future/unsupported version
- * throws StateVersionError. They are never silently treated as empty state
- * (that would propose a full re-creation). The post-split tombstone manifest
- * (versioned V4 + managedBy=regional) is the one expected "unsupported" form:
- * it is treated as absent because the scoped documents are authoritative.
- */
 export const readLegacyPersistedState = (
   app: string,
   service: string,

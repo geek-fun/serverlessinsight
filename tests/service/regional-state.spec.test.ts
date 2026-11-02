@@ -3,6 +3,7 @@ import fs from 'node:fs/promises';
 import { existsSync } from 'node:fs';
 import { deploy } from '../../src/commands/deploy';
 import { destroyStack } from '../../src/commands/destroy';
+import { lang } from '../../src/lang';
 import { migrate } from '../../src/commands/migrate';
 import { plan } from '../../src/commands/plan';
 import { createMockAliyunClient, type MockAliyunClient } from './mockCloudClient';
@@ -17,21 +18,6 @@ jest.mock('../../src/common/imsClient', () => ({
     displayName: 'Test User',
     userId: 'test-user-id',
   }),
-}));
-
-jest.mock('../../src/common/logger', () => ({
-  logger: {
-    info: jest.fn(),
-    warn: jest.fn(),
-    error: jest.fn(),
-    debug: jest.fn(),
-  },
-}));
-
-jest.mock('../../src/lang', () => ({
-  lang: {
-    __: (key: string) => key,
-  },
 }));
 
 // eslint-disable-next-line @typescript-eslint/no-require-imports
@@ -235,7 +221,7 @@ describe('Regional state isolation (issue #280)', () => {
 
       await expect(
         deploy({ location: fixture, stage: 'dev', autoApprove: true, region: 'cn-hangzhou' }),
-      ).rejects.toThrow('STATE_WRITE_BLOCKED_LEGACY');
+      ).rejects.toThrow(lang.__('STATE_WRITE_BLOCKED_LEGACY', { statePath: legacyPath }));
       expect(mockClient.fc3.createFunction).not.toHaveBeenCalled();
     });
 
@@ -329,7 +315,7 @@ describe('Regional state isolation (issue #280)', () => {
           autoApprove: true,
           toRegional: true,
         }),
-      ).rejects.toThrow('REGIONAL_MIGRATION_UNKNOWN_REGION_REQUIRED');
+      ).rejects.toThrow(lang.__('REGIONAL_MIGRATION_UNKNOWN_REGION_REQUIRED'));
 
       await migrate({
         location: fixture,

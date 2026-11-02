@@ -1137,7 +1137,6 @@ export const en = {
   MIGRATION_MARKER_REGIONAL_WARN:
     'This legacy aggregate has been split into regional deployment states (managedBy=regional) — the copy shown here is read-only and may be stale.',
 
-  // ===== Issue #280: regional deployment state isolation =====
   SCOPE_KEY_PART_REQUIRED: "'{{label}}' is required and must not be empty",
   SCOPE_KEY_PART_INVALID:
     "'{{label}}' value '{{part}}' is not path-safe: it must not be empty, contain '/', '\\', '..' or leading/trailing whitespace",
@@ -1151,6 +1150,10 @@ export const en = {
     'Refusing to write regional state: the legacy aggregate {{statePath}} still holds the state for this stage.\n  Run `si migrate --to-regional --dry-run` first to review the split, then apply it. Read-only commands keep working against the legacy file.',
   STATE_WRITE_BLOCKED_LEGACY_BUCKET:
     'Refusing to write regional state: the legacy state object {{objectKey}} still holds the state for this stage.\n  Run `si migrate --to-regional --dry-run` first to review the split, then apply it. Read-only commands keep working against the legacy object.',
+  STATE_SCOPED_VERSION_UNSUPPORTED: 'Unsupported state version {{version}}',
+  STATE_SCOPED_IDENTITY_MISMATCH: 'State identity does not match the requested deployment scope',
+  STATE_SCOPED_IDENTITY_DETAILS_MISMATCH:
+    'State identity ({{stored}}) does not match the bound deployment scope ({{requested}})',
   STATE_WRITE_NOT_READY: 'Regional state writes are not ready for this deployment scope',
   STATE_BUCKET_NOT_FOUND:
     'The state storage bucket does not exist ({{code}}). Create the bucket or fix the backend.state_manager configuration — the missing bucket is not treated as empty state',
@@ -1185,6 +1188,10 @@ export const en = {
   REGIONAL_MIGRATION_PENDING:
     'Migration {{opId}} is incomplete. Re-run the original command to resume, or use --rollback-op-id {{opId}} to finish rollback. Keep the original app, service, provider and binding options.',
   SAAS_STATE_BASE_UNKNOWN: 'Load the regional state before saving or starting a deployment.',
+  REGIONAL_LOCK_STALE:
+    'State is currently locked (stale lock detected).\n{{info}}\nIf you are certain no other operation is running, use:\n  si force-unlock {{id}}',
+  REGIONAL_LOCK_TIMEOUT: 'Failed to acquire lock after {{seconds}} seconds.\n{{info}}',
+  REGIONAL_LOCK_FAILED: 'Failed to acquire lock.\n{{path}}',
   MIGRATE_REGIONAL_SPLIT_REQUIRED:
     'This source is a legacy aggregate. Run `si migrate --to-regional --dry-run`, review the regional bindings, then apply the split before importing each stage/region into the Console.',
   MIGRATE_TARGET_REGIONAL_REQUIRED:

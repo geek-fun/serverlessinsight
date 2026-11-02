@@ -38,7 +38,6 @@ export const forceUnlockCommand = async (
     securityToken?: string;
   } = {},
 ): Promise<void> => {
-  // Only the lock surface is consumed on this command path.
   let backend: Pick<StateBackend, 'readLock' | 'forceUnlock'>;
 
   if (options.location) {
@@ -66,9 +65,6 @@ export const forceUnlockCommand = async (
     }
     backend = createStateBackend(iac.backend, context);
   } else {
-    // Issue #280: scoped state layout — lock files live under
-    // `.serverlessinsight/states/**` (and the legacy flat directory still
-    // counts for pre-split locks). Search recursively.
     const stateDir = path.join(process.cwd(), '.serverlessinsight');
     let foundStatePath: string | undefined;
 

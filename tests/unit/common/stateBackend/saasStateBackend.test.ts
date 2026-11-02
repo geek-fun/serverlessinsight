@@ -1,3 +1,7 @@
+jest.mock('node:fs', () =>
+  jest.requireActual('../../../autils/memoryFileSystem').createMemoryFileSystem(),
+);
+
 jest.mock('../../../../src/lang', () => ({
   lang: { __: (key: string) => key },
 }));
@@ -5,14 +9,6 @@ jest.mock('../../../../src/lang', () => ({
 jest.mock('../../../../src/common/logger', () => ({
   logger: { info: jest.fn(), warn: jest.fn(), error: jest.fn(), debug: jest.fn() },
 }));
-
-// replayOrphanedEvents resolves the queue dir from the real homedir at module
-// load — pin it to a throwaway directory so tests never touch the user's home.
-jest.mock('node:os', () => {
-  const actual = jest.requireActual<typeof import('node:os')>('node:os');
-  const mocked = { ...actual, homedir: () => `${actual.tmpdir()}/si-saas-backend-test-home` };
-  return { ...mocked, default: mocked };
-});
 
 const mockApiClient = {
   get: jest.fn(),
@@ -133,6 +129,10 @@ describe('saasStateBackend (scope-bound, issue #280)', () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
+    fs.rmSync(path.join(os.homedir(), '.serverlessinsight', 'event-queue'), {
+      recursive: true,
+      force: true,
+    });
     Object.values(mockApiClient).forEach((mock) => mock.mockReset());
     (loadCredentials as jest.Mock).mockReturnValue({
       apiKey: 'si_test_testkey123456789012345678901234',

@@ -9,19 +9,12 @@ import { lang } from '../lang';
  */
 export const MANAGED_BY_SAAS = 'saas';
 
-/**
- * Old-entry write barrier (issue #280): stamped on a legacy V3 aggregate after
- * `si migrate --to-regional` has split it into scoped V4 documents. The legacy
- * entry is intentionally KEPT (deleting it would let an old CLI treat the
- * deployment as fresh) but new CLIs must never mutate or re-split it.
- */
 export const MANAGED_BY_REGIONAL = 'regional';
 
 export type MigrationMarkerAction = 'refuse' | 'warn' | 'off';
 
 const MIGRATION_MARKERS = new Set([MANAGED_BY_SAAS, MANAGED_BY_REGIONAL]);
 
-/** True when the state has been migrated to another owner (Console / scoped split). */
 export const isMigratedState = (state: { managedBy?: string } | null | undefined): boolean => {
   return !!state?.managedBy && MIGRATION_MARKERS.has(state.managedBy);
 };
@@ -31,14 +24,6 @@ export const isMigratedToSaas = (state: { managedBy?: string } | null | undefine
   return state?.managedBy === MANAGED_BY_SAAS;
 };
 
-/**
- * Ownership handover check (decision D-4): after migration the target (Console
- * for SaaS migration, scoped V4 documents for the regional split) is the single
- * source of truth. Mutating commands (deploy/destroy) pass 'refuse' so a legacy
- * write attempt fails closed; read-only commands (plan/diff/show) pass 'warn';
- * `si migrate` itself passes 'off' (it must be able to read marked state for
- * idempotent re-runs and --rollback).
- */
 export const enforceMigrationMarker = (
   state: { managedBy?: string } | null | undefined,
   action: MigrationMarkerAction,

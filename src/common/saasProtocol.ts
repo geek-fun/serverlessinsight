@@ -1,6 +1,7 @@
+import crypto from 'node:crypto';
+
 import type { DeploymentScope } from './stateScope';
 import type { StateFile } from '../types';
-import crypto from 'node:crypto';
 
 /** Regional identity and content-hash CAS shared by all SaaS commands. */
 export const SCOPE_PROTOCOL_VERSION = 2;

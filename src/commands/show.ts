@@ -222,8 +222,6 @@ const loadLocalState = async (
   stage: string,
   baseDir: string,
 ) => {
-  // Issue #280: read the scoped V4 document first, fall back to the legacy
-  // aggregate for read-only compatibility — same resolution as the backend.
   const backend = createLocalStateBackend(
     { provider, app, service, stage, region: getContext().region },
     { baseDir, markerAction: 'off' },
@@ -246,7 +244,6 @@ const readLocalStateSource = (
 };
 
 const readLocalLock = (app: string, service: string, baseDir: string): LockMetadata | null => {
-  // Locks are scoped per Stage/Region (issue #280).
   const context = getContext();
   const statePath = getScopedStatePath(app, service, context.stage, context.region, baseDir);
   return readLockFileForCommand(statePath);
@@ -284,8 +281,6 @@ export const show = async (options: ShowOptions): Promise<void> => {
 
   if (shouldUseRemoteBackend) {
     try {
-      // Read-only command: a migrated state only warns here; 'read-only' mode
-      // keeps SaaS resolution provisioning-free (issue #280 §4).
       const backend: StateBackend = createStateBackend(options.iac!.backend, {
         ...context,
         stage,

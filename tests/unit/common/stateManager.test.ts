@@ -1,3 +1,11 @@
+jest.mock('../../../src/common/logger', () => ({
+  logger: { info: jest.fn(), warn: jest.fn(), error: jest.fn(), debug: jest.fn() },
+}));
+
+jest.mock('node:fs', () =>
+  jest.requireActual('../../autils/memoryFileSystem').createMemoryFileSystem(),
+);
+
 import {
   ensureStateDir,
   getStatePath,

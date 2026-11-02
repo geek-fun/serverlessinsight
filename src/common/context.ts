@@ -80,9 +80,6 @@ export const setContext = async (
   },
   reaValToken = false,
 ): Promise<void> => {
-  // Issue #280 §1: one shared resolver produces the effective provider/region/
-  // stage — CLI overrides apply before any provider-specific validation, and
-  // the SDK context and IAC derive from the same result.
   const effective = resolveEffectiveConfig({
     cli: { stage: config.stage, region: config.region, provider: config.provider },
     iacProvider: {

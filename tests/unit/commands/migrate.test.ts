@@ -38,6 +38,10 @@ jest.mock('../../../src/common/logger', () => ({
 }));
 
 jest.mock('../../../src/common', () => ({
+  ...jest.requireActual('../../../src/common/saasProtocol'),
+  normalizeScope: jest.requireActual('../../../src/common/stateScope').normalizeScope,
+  validateScopedDocument: jest.requireActual('../../../src/common/stateManager')
+    .validateScopedDocument,
   getContext: jest.fn(),
   getIacLocation: jest.fn(),
   setContext: jest.fn(),

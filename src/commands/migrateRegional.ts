@@ -28,14 +28,6 @@ import { ProviderEnum } from '../common/providerEnum';
 import { logger } from '../common/logger';
 import { lang } from '../lang';
 
-/**
- * `si migrate --to-regional` (issue #280 §6): the explicit, protected V3 → V4
- * regional split for LOCAL and BUCKET_STORE backends — dry-run/apply, evidence
- * classification, exact backups, old-entry write barrier, auditable rollback.
- * Distinguishable from (and composable with) the legacy-to-SaaS migration,
- * which remains the default `si migrate` flow.
- */
-
 export type RegionalMigrationCommandOptions = {
   provider: string;
   app: string;
@@ -48,13 +40,11 @@ export type RegionalMigrationCommandOptions = {
     bucket: string;
     key: string;
     storageRegion: string;
-    /** Static storage provider — may differ from the workload provider. */
     storageProvider?: string;
     accessKeyId: string;
     accessKeySecret: string;
     securityToken?: string;
   };
-  /** Read the legacy aggregate of a renamed app/service (explicit rebinding). */
   legacyApp?: string;
   legacyService?: string;
   bindUnknownRegion?: string;
@@ -63,8 +53,6 @@ export type RegionalMigrationCommandOptions = {
   autoApprove?: boolean;
   askConfirmation: (message: string) => Promise<boolean>;
 };
-
-/* ---------------- storage IO adapters ---------------- */
 
 const createBucketKeyValueIO = (
   storageProvider: string,
@@ -86,13 +74,9 @@ const createBucketKeyValueIO = (
     read: adapter.read,
     write: adapter.write,
     delete: adapter.delete,
-    // Preserve the adapter's atomic exclusive create so the migration lock is
-    // race-safe on bucket storage too (issue #280 §3).
     ...(adapter.putIfAbsent ? { putIfAbsent: adapter.putIfAbsent } : {}),
   };
 };
-
-/* ---------------- paths ---------------- */
 
 const buildPaths = (
   options: RegionalMigrationCommandOptions,
@@ -135,15 +119,13 @@ const buildPaths = (
   };
 };
 
-/* ---------------- command flows ---------------- */
-
 const printPlanReport = (plan: RegionalMigrationPlan, legacyLocation: string): void => {
   logger.info(lang.__('REGIONAL_MIGRATION_PLAN_HEADER', { location: legacyLocation }));
   logger.info(lang.__('REGIONAL_MIGRATION_SOURCE_HASH', { hash: plan.sourceHash }));
   if (plan.documents.length === 0) {
     logger.info(lang.__('REGIONAL_MIGRATION_NO_REGIONAL_RESOURCES'));
   }
-  for (const doc of plan.documents) {
+  plan.documents.forEach((doc) => {
     logger.info(
       lang.__('REGIONAL_MIGRATION_PLAN_DOCUMENT', {
         stage: doc.stage,
@@ -152,10 +134,10 @@ const printPlanReport = (plan: RegionalMigrationPlan, legacyLocation: string): v
         shared: String(doc.shared),
       }),
     );
-  }
+  });
   if (plan.unknown.length > 0) {
     logger.warn(lang.__('REGIONAL_MIGRATION_UNKNOWN_HEADER'));
-    for (const item of plan.unknown) {
+    plan.unknown.forEach((item) => {
       logger.warn(
         lang.__('REGIONAL_MIGRATION_UNKNOWN_ITEM', {
           stage: item.stage,
@@ -163,16 +145,13 @@ const printPlanReport = (plan: RegionalMigrationPlan, legacyLocation: string): v
           kind: item.kind,
         }),
       );
-    }
+    });
     logger.warn(lang.__('REGIONAL_MIGRATION_UNKNOWN_HINT'));
   }
-  for (const warning of plan.warnings) {
-    logger.warn(warning);
-  }
+  plan.warnings.forEach((warning) => logger.warn(warning));
   logger.info(lang.__('REGIONAL_MIGRATION_BACKUP_NOTICE'));
 };
 
-/** Entry point behind `si migrate --to-regional`. */
 export const runRegionalMigration = async (
   options: RegionalMigrationCommandOptions,
 ): Promise<void> => {
@@ -192,8 +171,6 @@ export const runRegionalMigration = async (
   const sourceApp = options.legacyApp ?? options.app;
   const sourceService = options.legacyService ?? options.service;
 
-  // --rollback: restore the exact pre-split aggregate; refused once any split
-  // document has taken independent regional writes.
   if (options.rollbackOpId) {
     await withIoLock(
       io,
@@ -213,7 +190,6 @@ export const runRegionalMigration = async (
     legacyKey,
     'migrate-regional',
     async () => {
-      // ① read the legacy aggregate (LOCAL: legacy path; BUCKET: discovery key)
       const pending = await readRegionalMigrationJournal(io, paths);
       if (pending?.phase === 'rolling-back') {
         throw new Error(lang.__('REGIONAL_MIGRATION_PENDING', { opId: pending.plan.opId }));
@@ -222,9 +198,6 @@ export const runRegionalMigration = async (
       if (pending?.phase === 'applying') {
         legacy = await io.read<PersistedStateFile>(paths.backupKey(pending.plan.opId));
       } else if (options.backendType === 'LOCAL') {
-        // STRICT read (issue #280): corrupt → StateCorruptError, future
-        // version → StateVersionError. The only null-with-file case is the
-        // post-split tombstone — surface the already-split guidance.
         legacy = readLegacyPersistedState(sourceApp, sourceService, options.baseDir);
         if (!legacy && fs.existsSync(legacyKey)) {
           const tombstone = JSON.parse(fs.readFileSync(legacyKey, 'utf-8')) as {
@@ -253,11 +226,10 @@ export const runRegionalMigration = async (
         ...(options.stage ? { stage: options.stage } : {}),
       };
 
-      // ② classify + plan (dry-run)
       const plan =
         pending?.phase === 'applying'
           ? pending.plan
-          : planRegionalMigration(legacy, paths, migrationOptions);
+          : planRegionalMigration(legacy, migrationOptions);
       printPlanReport(plan, legacyKey);
 
       if (options.dryRun) {
@@ -265,7 +237,6 @@ export const runRegionalMigration = async (
         return;
       }
 
-      // ③ confirm (skipped with --auto-approve)
       if (!options.autoApprove) {
         if (!(await options.askConfirmation(lang.__('REGIONAL_MIGRATION_CONFIRM')))) {
           logger.info(lang.__('MIGRATE_CANCELLED'));
@@ -273,7 +244,6 @@ export const runRegionalMigration = async (
         }
       }
 
-      // ④ apply: backup → scoped docs → barrier → report
       await applyRegionalMigration(io, legacy, paths, plan, {
         ...migrationOptions,
         app: options.app,
