@@ -125,6 +125,7 @@ export const createSaasStateBackend = (
   let resolvedAppId: string | null = null;
   let resolvedServiceId: string | null = null;
   let resolvedStageId: string | null = null;
+  let resolvedReadProtocol: number | undefined;
   let provisioned = false;
   let eventQueue: EventQueue | null = null;
   let sequenceCounter = 0;
@@ -239,6 +240,7 @@ export const createSaasStateBackend = (
     }
     resolvedAppId = targets.app.id!;
     resolvedServiceId = targets.service.id!;
+    resolvedReadProtocol = targets.service.scopeProtocol;
     return true;
   };
 
@@ -580,6 +582,8 @@ export const createSaasStateBackend = (
         `/api/v1/deployments/active?service_id=${encodeURIComponent(resolvedServiceId)}&stage=${encodeURIComponent(normalized.stage)}&region=${encodeURIComponent(normalized.region)}&provider=${encodeURIComponent(normalized.provider)}`,
       );
       if (active === null) return null;
+      const scopeProtocol =
+        mode === 'read-only' && resolvedReadProtocol === 2 ? 2 : SCOPE_PROTOCOL_VERSION;
       if (
         !active ||
         typeof active.id !== 'string' ||
@@ -589,7 +593,7 @@ export const createSaasStateBackend = (
         active.stage !== normalized.stage ||
         active.provider !== normalized.provider ||
         active.region !== normalized.region ||
-        active.scopeProtocol !== SCOPE_PROTOCOL_VERSION ||
+        active.scopeProtocol !== scopeProtocol ||
         typeof active.stageId !== 'string' ||
         !active.stageId ||
         (resolvedStageId && active.stageId !== resolvedStageId)

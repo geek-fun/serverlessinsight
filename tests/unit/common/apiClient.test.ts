@@ -9,7 +9,7 @@ const mockFetch = jest.fn();
 
 const ORIGINAL_ENV = { ...process.env };
 
-import { createApiClient, validateApiKey } from '../../../src/common/apiClient';
+import { ApiError, createApiClient, validateApiKey } from '../../../src/common/apiClient';
 import type { ApiClient } from '../../../src/common/apiClient';
 
 describe('apiClient', () => {
@@ -138,6 +138,104 @@ describe('apiClient', () => {
       const result = await client.delete('/keys/1');
 
       expect(result).toBeUndefined();
+    });
+  });
+
+  describe('HTTP errors', () => {
+    it.each([
+      [400, 'API_ERROR_UNKNOWN'],
+      [401, 'API_ERROR_401'],
+      [403, 'API_ERROR_403'],
+      [404, 'API_ERROR_404'],
+      [409, 'API_ERROR_409'],
+      [429, 'API_ERROR_UNKNOWN'],
+      [500, 'API_ERROR_UNKNOWN'],
+    ] as const)(
+      'preserves server messages, HTTP status %i and machine code %s',
+      async (status, code) => {
+        const messages = ['The deployment scope is unavailable.', 'Review the scope and retry.'];
+        mockFetch.mockResolvedValue(
+          new Response(JSON.stringify({ code: 4000, messages, data: null }), { status }),
+        );
+
+        const error = await client.get('/test').catch((error: unknown) => error);
+
+        expect(error).toBeInstanceOf(ApiError);
+        expect(error).toMatchObject({ status, code });
+        messages.forEach((message) => expect((error as ApiError).message).toContain(message));
+      },
+    );
+
+    it.each(['get', 'post', 'patch', 'delete'] as const)(
+      'rejects %s requests after reading an error body',
+      async (method) => {
+        mockFetch.mockResolvedValue(
+          new Response(JSON.stringify({ messages: ['Refresh the plan and retry.'] }), {
+            status: 409,
+          }),
+        );
+
+        await expect(client[method]('/test')).rejects.toMatchObject({
+          status: 409,
+          message: expect.stringContaining('Refresh the plan and retry.'),
+        });
+      },
+    );
+
+    it('ignores non-string and blank entries while preserving actionable messages', async () => {
+      mockFetch.mockResolvedValue(
+        new Response(
+          JSON.stringify({ messages: [null, 3, {}, ['ignored'], '', '  ', ' Refresh the plan. '] }),
+          { status: 409 },
+        ),
+      );
+
+      await expect(client.get('/test')).rejects.toMatchObject({
+        status: 409,
+        message: 'API_ERROR_409:{"message":"Refresh the plan."}',
+      });
+    });
+
+    it.each([
+      null,
+      true,
+      'unstructured error',
+      [],
+      {},
+      { messages: 'not an array' },
+      { messages: null },
+      { messages: [] },
+      { messages: ['', '  ', null, 3, {}] },
+    ])('falls back when the JSON error body has no valid messages: %j', async (body) => {
+      mockFetch.mockResolvedValue(new Response(JSON.stringify(body), { status: 409 }));
+
+      await expect(client.get('/test')).rejects.toMatchObject({
+        status: 409,
+        message: 'API_ERROR_409:{"message":"HTTP Error 409"}',
+      });
+    });
+
+    it.each([null, '<html>Bad gateway</html>', '{"messages":'])(
+      'falls back for an empty or non-JSON error body: %j',
+      async (body) => {
+        mockFetch.mockResolvedValue(new Response(body, { status: 502 }));
+
+        await expect(client.get('/test')).rejects.toMatchObject({
+          status: 502,
+          message: 'API_ERROR_UNKNOWN:{"status":"502","message":"HTTP Error 502"}',
+        });
+      },
+    );
+
+    it('preserves the HTTP error when reading its body fails', async () => {
+      const response = new Response(null, { status: 403 });
+      jest.spyOn(response, 'json').mockRejectedValue(new Error('response read failed'));
+      mockFetch.mockResolvedValue(response);
+
+      await expect(client.get('/test')).rejects.toMatchObject({
+        status: 403,
+        message: 'API_ERROR_403',
+      });
     });
   });
 });

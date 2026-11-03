@@ -511,13 +511,17 @@ describe('migrate command', () => {
       expect(mockApiClient.post).toHaveBeenCalledTimes(1);
     });
 
-    it('survives a 409 conflict with a dedicated message and no marker', async () => {
-      const backend = setupMigrationRun({ uploadError: new ApiError('conflict', 409) });
+    it.each([
+      'Upgrade the deployment protocol before importing state.',
+      'The destination changed. Refresh the migration plan and retry.',
+      'The destination contains state. Use --force to import a new version.',
+    ])('preserves the server conflict without writing a marker: %s', async (message) => {
+      const error = new ApiError(message, 409);
+      const backend = setupMigrationRun({ uploadError: error });
 
-      await expect(migrate({ location: 'stack.yml', autoApprove: true })).rejects.toThrow(
-        'MIGRATE_CONFLICT',
-      );
+      await expect(migrate({ location: 'stack.yml', autoApprove: true })).rejects.toBe(error);
       expect(backend.patchPersisted).not.toHaveBeenCalled();
+      expect(mockApiClient.get).toHaveBeenCalledTimes(2);
     });
 
     it('fails when the read-back does not match what was uploaded', async () => {

@@ -22,6 +22,13 @@ export type ValidateResult = {
   readonly scopes: readonly string[];
 };
 
+const HTTP_ERROR_KEYS: Record<number, string> = {
+  401: 'API_ERROR_401',
+  403: 'API_ERROR_403',
+  404: 'API_ERROR_404',
+  409: 'API_ERROR_409',
+};
+
 /**
  * API error carrying the HTTP status so callers can distinguish "not found"
  * (legitimate empty state on first deploy) from network/5xx failures, which
@@ -29,11 +36,13 @@ export type ValidateResult = {
  */
 export class ApiError extends Error {
   readonly status: number;
+  readonly code: string;
 
   constructor(message: string, status: number) {
     super(message);
     this.name = 'ApiError';
     this.status = status;
+    this.code = HTTP_ERROR_KEYS[status] ?? 'API_ERROR_UNKNOWN';
   }
 }
 
@@ -65,18 +74,35 @@ const camelizeKeys = (value: unknown): unknown => {
   return result;
 };
 
-const handleHttpError = (response: Response): never => {
-  const status = response.status;
-  if (status === 401) throw new ApiError(lang.__('API_ERROR_401'), 401);
-  if (status === 403) throw new ApiError(lang.__('API_ERROR_403'), 403);
-  if (status === 404) throw new ApiError(lang.__('API_ERROR_404'), 404);
-  if (status === 409) {
-    throw new ApiError(lang.__('API_ERROR_409', { message: `HTTP Error ${status}` }), 409);
+const readErrorMessages = async (response: Response): Promise<string | undefined> => {
+  try {
+    const body: unknown = await response.json();
+    if (!body || typeof body !== 'object' || !('messages' in body) || !Array.isArray(body.messages))
+      return undefined;
+    return (
+      body.messages
+        .filter((message): message is string => typeof message === 'string' && !!message.trim())
+        .map((message) => message.trim())
+        .join('\n') || undefined
+    );
+  } catch {
+    return undefined;
   }
-  throw new ApiError(
-    lang.__('API_ERROR_UNKNOWN', { status: String(status), message: `HTTP Error ${status}` }),
-    status,
-  );
+};
+
+const formatHttpError = (status: number, details?: string): string => {
+  const key = HTTP_ERROR_KEYS[status] ?? 'API_ERROR_UNKNOWN';
+  const message = details ?? `HTTP Error ${status}`;
+  if (key === 'API_ERROR_UNKNOWN') {
+    return lang.__(key, { status: String(status), message });
+  }
+  if (key === 'API_ERROR_409') return lang.__(key, { message });
+  return [lang.__(key), details].filter(Boolean).join('\n');
+};
+
+const handleHttpError = async (response: Response): Promise<never> => {
+  const details = await readErrorMessages(response);
+  throw new ApiError(formatHttpError(response.status, details), response.status);
 };
 
 const buildRequestInit = (
@@ -122,7 +148,7 @@ export const createApiClient = (options: ApiClientOptions): ApiClient => {
     }
 
     if (!response.ok) {
-      handleHttpError(response);
+      await handleHttpError(response);
     }
 
     try {

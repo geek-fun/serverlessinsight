@@ -850,6 +850,76 @@ describe('saasStateBackend (scope-bound, issue #280)', () => {
         { apiKey: 'si_test_testkey123456789012345678901234', mode: 'read-only' },
       );
 
+    const mockReadOnlyLoad = (scopeProtocol: number) => {
+      mockApiClient.get.mockResolvedValueOnce({
+        app: { name: 'myapp', exists: true, id: 'app-1' },
+        service: {
+          name: 'myservice',
+          exists: true,
+          id: 'svc-1',
+          provider: 'aliyun',
+          scopeProtocol,
+        },
+        stages: [{ name: 'dev', registered: true, hasState: true, latestVersion: 1 }],
+      });
+      mockApiClient.get.mockResolvedValueOnce(snapshot(emptyStateJson(), { scopeProtocol }));
+    };
+
+    it('reads a protocol 2 deployment lock without provisioning or enabling writes', async () => {
+      mockReadOnlyLoad(2);
+      mockApiClient.get.mockResolvedValueOnce({
+        ...deploymentResponse(),
+        status: 'deploying',
+        scopeProtocol: 2,
+      });
+      const backend = readOnlyBackend();
+      const state = await backend.loadState();
+
+      await expect(backend.readLock()).resolves.toMatchObject({ id: 'deploy-1' });
+      await expect(backend.saveState(state)).rejects.toThrow('SAAS_READ_ONLY_WRITE_REFUSED');
+      const cloud = jest.fn();
+      await expect(backend.withLock('deploy', cloud)).rejects.toThrow();
+      expect(cloud).not.toHaveBeenCalled();
+      expect(mockApiClient.post).not.toHaveBeenCalled();
+      expect(mockApiClient.patch).not.toHaveBeenCalled();
+    });
+
+    it.each([
+      { serviceId: 'another-service' },
+      { provider: 'tencent' },
+      { stage: 'prod' },
+      { region: 'cn-beijing' },
+      { stageId: '' },
+      { status: 'pending' },
+      { scopeProtocol: 1 },
+      { scopeProtocol: 3 },
+    ])('rejects mismatched protocol 2 read-only lock metadata: %j', async (foreign) => {
+      mockReadOnlyLoad(2);
+      mockApiClient.get.mockResolvedValueOnce({
+        ...deploymentResponse(),
+        status: 'deploying',
+        scopeProtocol: 2,
+        ...foreign,
+      });
+      const backend = readOnlyBackend();
+      await backend.loadState();
+
+      await expect(backend.readLock()).rejects.toThrow('SAAS_STATE_ACK_INVALID');
+    });
+
+    it.each([1, 3])('rejects protocol 2 locks for a protocol %i service', async (protocol) => {
+      mockReadOnlyLoad(protocol);
+      mockApiClient.get.mockResolvedValueOnce({
+        ...deploymentResponse(),
+        status: 'deploying',
+        scopeProtocol: 2,
+      });
+      const backend = readOnlyBackend();
+      await backend.loadState();
+
+      await expect(backend.readLock()).rejects.toThrow('SAAS_STATE_ACK_INVALID');
+    });
+
     it('resolves identity via migrate-targets without posting a deployment', async () => {
       mockApiClient.get.mockResolvedValueOnce({
         app: { name: 'myapp', exists: true, id: 'app-1' },

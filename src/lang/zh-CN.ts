@@ -1023,8 +1023,6 @@ export const zhCN = {
   MIGRATE_UPLOADED_DEDUPLICATED: '（内容未变，已去重）',
   MIGRATE_VERIFY_FAILED:
     'stage {{stage}} 回读校验失败——未写迁移标记。请对比 Console 状态版本与旧状态后重新执行 `si migrate`。',
-  MIGRATE_CONFLICT:
-    '目标 stage 在 Console 已有状态。如确认覆盖采纳，请加 --force（将作为新版本导入，历史保留）。',
   MIGRATE_MARKER_WRITTEN: '已写迁移标记：旧状态转为只读（managedBy=saas）。',
   MIGRATE_MARKER_SKIPPED:
     '警告：使用了 --no-marker。cutover 完成前旧后端仍可写入——请立即完成 YAML 切换。',

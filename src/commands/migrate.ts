@@ -16,7 +16,7 @@ import {
 } from '../common';
 import { createStateBackend, resolveStateStorage } from '../common/stateBackend';
 import { loadCredentials, getConsoleUrl } from '../common/credentialStore';
-import { createApiClient, validateApiKey, ApiError } from '../common/apiClient';
+import { createApiClient, validateApiKey } from '../common/apiClient';
 import { isMigratedToSaas } from '../common/migrationMarker';
 import { StateBackendType, type BucketStoreBackendConfig } from '../types';
 import { parseYaml, revalYaml } from '../parser';
@@ -304,27 +304,20 @@ export const migrate = async (options: {
     const persisted = { ...toPersistedState(state), stages: { [scope.stage]: selected }, orgId };
     const contentHash = hashSaasState(persisted);
     logger.info(lang.__('MIGRATE_UPLOADING', { stage: scope.stage }));
-    let uploaded: MigrateUploadResult;
-    try {
-      uploaded = await client.post<MigrateUploadResult>('/api/v1/state/migrate', {
-        appName: scope.app,
-        serviceName: scope.service,
-        provider: scope.provider,
-        stage: scope.stage,
-        region: scope.region,
-        scopeProtocol: SCOPE_PROTOCOL_VERSION,
-        baseContentHash: report?.contentHash ?? '',
-        stateJson: persisted,
-        contentHash,
-        resourceCount,
-        origin: backendType === StateBackendType.LOCAL ? 'local' : 'bucket',
-        conflict: options.force ? 'overwrite' : 'reject',
-      });
-    } catch (error) {
-      if (error instanceof ApiError && error.status === 409)
-        throw new Error(lang.__('MIGRATE_CONFLICT'), { cause: error });
-      throw error;
-    }
+    const uploaded = await client.post<MigrateUploadResult>('/api/v1/state/migrate', {
+      appName: scope.app,
+      serviceName: scope.service,
+      provider: scope.provider,
+      stage: scope.stage,
+      region: scope.region,
+      scopeProtocol: SCOPE_PROTOCOL_VERSION,
+      baseContentHash: report?.contentHash ?? '',
+      stateJson: persisted,
+      contentHash,
+      resourceCount,
+      origin: backendType === StateBackendType.LOCAL ? 'local' : 'bucket',
+      conflict: options.force ? 'overwrite' : 'reject',
+    });
     const remote = await client.get<SaasStateSnapshot & { resourceCount: number | null }>(
       `/api/v1/apps/${uploaded.appId}/services/${uploaded.serviceId}/state/current?stage=${encodeURIComponent(scope.stage)}&region=${encodeURIComponent(scope.region)}&provider=${encodeURIComponent(scope.provider)}`,
     );

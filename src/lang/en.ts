@@ -1129,8 +1129,6 @@ export const en = {
   MIGRATE_UPLOADED_DEDUPLICATED: ' (unchanged, deduplicated)',
   MIGRATE_VERIFY_FAILED:
     'Read-back verification FAILED for stage {{stage}} — the migration marker was NOT written. Compare the Console state version with your legacy state, then re-run `si migrate`.',
-  MIGRATE_CONFLICT:
-    'The target stage already has Console state. Re-run with --force to adopt it as a new imported version (history is kept).',
   MIGRATE_MARKER_WRITTEN:
     'Migration marker written: the legacy state is now read-only (managedBy=saas).',
   MIGRATE_MARKER_SKIPPED:
