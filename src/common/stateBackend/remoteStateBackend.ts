@@ -2,7 +2,7 @@ import { AsyncLocalStorage } from 'node:async_hooks';
 import os from 'node:os';
 
 import { createAggregateStore } from '../aggregateStore';
-import { normalizeScope, buildServiceObjectKey, getPreviousScopedLocations } from '../stateScope';
+import { normalizeScope } from '../stateScope';
 import { DEFAULT_LOCK_TIMEOUT, DEFAULT_LOCK_RETRY_DELAY } from '../constants';
 import { LockError, formatLockInfo } from '../lockManager';
 import { logger } from '../logger';
@@ -22,8 +22,7 @@ import type { MigrationMarkerAction } from '../migrationMarker';
 
 export type RemoteBackendConfig = {
   scope: DeploymentScope;
-  scopedKey: string;
-  legacyKey: string;
+  key: string;
   /** Migration ownership marker behavior on load (decision D-4). Defaults to 'off'. */
   markerAction?: MigrationMarkerAction;
 };
@@ -33,22 +32,14 @@ export const createRemoteStateBackend = (
   config: RemoteBackendConfig,
 ): StateBackend => {
   const normalized = normalizeScope(config.scope);
-  const lockKey = `${config.legacyKey}${LOCK_KEY_SUFFIX}`;
+  const lockKey = `${config.key}${LOCK_KEY_SUFFIX}`;
   const capabilities: BackendCapabilities = {
     conditionalCreate: typeof adapter.putIfAbsent === 'function',
   };
   const store = createAggregateStore(adapter, normalized, {
-    key: config.legacyKey,
+    key: config.key,
     markerAction: config.markerAction ?? 'off',
     backupWrites: true,
-    previewLocations: [
-      config.scopedKey,
-      `${config.scopedKey}.si-lock`,
-      `${config.scopedKey}.backup`,
-      `${config.scopedKey}.tmp`,
-      buildServiceObjectKey(config.legacyKey, normalized.app, normalized.service),
-      ...getPreviousScopedLocations(config.scopedKey),
-    ].filter((key) => key !== config.legacyKey),
   });
   const writer = new AsyncLocalStorage<boolean>();
   let manualLockId: string | null = null;

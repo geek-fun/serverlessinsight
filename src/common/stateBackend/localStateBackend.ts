@@ -2,12 +2,7 @@ import { AsyncLocalStorage } from 'node:async_hooks';
 
 import { createAggregateStore } from '../aggregateStore';
 import { getStatePath } from '../stateManager';
-import {
-  normalizeScope,
-  buildScopedStatePath,
-  buildServiceBindingPath,
-  getPreviousScopedLocations,
-} from '../stateScope';
+import { normalizeScope } from '../stateScope';
 import { createLocalStateIO } from '../stateStorageIO';
 import {
   withLock as fsWithLock,
@@ -33,25 +28,10 @@ export const createLocalStateBackend = (
   const normalized = normalizeScope(scope);
   const baseDir = options.baseDir ?? process.cwd();
   const statePath = getStatePath(normalized.app, normalized.service, baseDir);
-  const previewPath = buildScopedStatePath(
-    normalized.app,
-    normalized.service,
-    normalized.stage,
-    normalized.region,
-    baseDir,
-  );
   const store = createAggregateStore(createLocalStateIO({ backupWrites: false }), normalized, {
     key: statePath,
     backupWrites: true,
     markerAction: options.markerAction ?? 'off',
-    previewLocations: [
-      previewPath,
-      `${previewPath}.si-lock`,
-      `${previewPath}.backup`,
-      `${previewPath}.tmp`,
-      buildServiceBindingPath(normalized.app, normalized.service, baseDir),
-      ...getPreviousScopedLocations(previewPath),
-    ],
   });
   const writer = new AsyncLocalStorage<boolean>();
   let manualLockId: string | null = null;

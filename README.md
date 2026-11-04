@@ -162,7 +162,7 @@ SaaS mutations require scope protocol 3. Cloud accounts remain credential contex
 than another identity dimension.
 
 See [deployment state and migration](docs/regional-deployment-state.md) for storage
-credentials, V3/preview migration, ownership handoff, lock behavior and recovery.
+credentials, V3 migration, ownership handoff, lock behavior and recovery.
 
 ### Infrastructure as code
 

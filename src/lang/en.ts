@@ -1,16 +1,4 @@
 export const en = {
-  STATE_PREVIEW_MIGRATION_PLAN:
-    'Preview consolidation {{opId}}: {{count}} source document(s). Stop all old CLI writers before applying.',
-  STATE_PREVIEW_MIGRATION_SOURCE:
-    '  {{key}} -> {{provider}} / {{stage}} / {{region}}: {{resources}} resources, {{shared}} shared',
-  STATE_STORAGE_LIST_INCOMPLETE:
-    'State storage returned an incomplete listing without a valid next page. Migration stopped before changing state.',
-  STATE_PREVIEW_INVENTORY_REQUIRED:
-    'State migration needs a complete inventory of preview files. Listing is unavailable; do not deploy until the state store can be listed.',
-  STATE_PREVIEW_CONFLICT:
-    'Preview state for {{scope}} is missing, malformed, duplicated or has unfinished writes. Resolve its ownership before consolidating.',
-  STATE_PREVIEW_MIGRATION_PENDING:
-    'Preview state consolidation {{opId}} is incomplete. Re-run `si migrate --to-regional` to resume or explicitly roll it back.',
   STATE_STORAGE_PROVIDER_UNSUPPORTED:
     'State storage does not support provider {{provider}}. Configure storageProvider as aliyun or tencent.',
   PLAN_SENSITIVE_VALUE: '(sensitive)',
@@ -1144,11 +1132,6 @@ export const en = {
     'This state has been migrated to the ServerlessInsight Console (managedBy=saas) and the legacy backend is closed for changes.\n  • To continue with the Console: remove the backend.state_manager block from your YAML, declare a top-level org: <slug>, then deploy again.\n  • To deliberately use the legacy backend: run `si migrate --rollback` to clear the marker.',
   MIGRATION_MARKER_WARN:
     'This state has been migrated to the Console (managedBy=saas) — the copy shown here is read-only and may be stale. Do not deploy from this backend.',
-  MIGRATION_MARKER_REGIONAL_REFUSED:
-    'This legacy state has been split into regional deployment states (managedBy=regional) and the aggregate is closed for changes.\n  • Deploy with scoped state: run the same command again — stop old writers and run `si migrate --to-regional` to consolidate the preview state at the original key.\n  • To undo the split (only before any regional write): run `si migrate --to-regional --rollback-op-id <opId>`.',
-  MIGRATION_MARKER_REGIONAL_WARN:
-    'This legacy aggregate has been split into regional deployment states (managedBy=regional) — the copy shown here is read-only and may be stale.',
-
   SCOPE_KEY_PART_REQUIRED: "'{{label}}' is required and must not be empty",
   SCOPE_KEY_PART_INVALID:
     "'{{label}}' value '{{part}}' is not path-safe: it must not be empty, contain '/', '\\', '..' or leading/trailing whitespace",
@@ -1163,9 +1146,6 @@ export const en = {
     'Refusing to write regional state: the legacy aggregate {{statePath}} still holds the state for this stage.\n  Run `si migrate --to-regional --dry-run` first to review the in-place upgrade, then apply it. Read-only commands keep working against the legacy file.',
   STATE_WRITE_BLOCKED_LEGACY_BUCKET:
     'Refusing to write regional state: the legacy state object {{objectKey}} still holds the state for this stage.\n  Run `si migrate --to-regional --dry-run` first to review the in-place upgrade, then apply it. Read-only commands keep working against the legacy object.',
-  STATE_PREVIOUS_LAYOUT_FOUND:
-    'Preview state layout found at {{previous}}. Stop old writers, recover any pending operation using its matching CLI, then run `si migrate --to-regional --dry-run` to consolidate at {{current}}.',
-
   STATE_AGGREGATE_INVALID:
     'The aggregate state document is malformed. Restore a verified backup before continuing.',
   STATE_IDENTITY_REBIND_UNSUPPORTED:
@@ -1200,12 +1180,8 @@ export const en = {
     '--to-regional applies to LOCAL and BUCKET_STORE backends only. SaaS regional states are provisioned by the Console',
   REGIONAL_MIGRATION_UNSUPPORTED_SOURCE:
     'Expected a legacy V3.0 state aggregate but found version "{{version}}". No V3 upgrade is needed',
-  REGIONAL_MIGRATION_ALREADY_SPLIT:
-    'This legacy state is already marked as split (managedBy=regional). Stop old writers and consolidate the preview layout with `si migrate --to-regional`. To undo before any regional write: `si migrate --to-regional --rollback-op-id <opId>`',
   REGIONAL_MIGRATION_SOURCE_MANAGED_BY_SAAS:
-    'This legacy state has been migrated to (and is owned by) the ServerlessInsight Console (managedBy=saas). A regional split would create an unmarked local copy and reopen double-write hazards — refused. Continue on the Console backend, or run `si migrate --rollback` first only if you deliberately want to hand ownership back',
-  REGIONAL_MIGRATION_TARGET_EXISTS:
-    'Refusing to overwrite the regional state of stage {{stage}} / region {{region}}: it already exists (source: {{opId}}). Re-running this migration would reset its independent lineage/serial and drop resources created after the split. If this document belongs to a previous migration, resolve that run first; otherwise delete it explicitly only if you are certain it is disposable',
+    'This legacy state has been migrated to (and is owned by) the ServerlessInsight Console (managedBy=saas). An in-place upgrade would create an unmarked local copy and reopen double-write hazards — refused. Continue on the Console backend, or run `si migrate --rollback` first only if you deliberately want to hand ownership back',
   REGIONAL_MIGRATION_INCOMPLETE_STAGE_COVERAGE:
     'The upgrade must preserve every resource in every stage. Re-run `si migrate --to-regional` without --stage to upgrade the entire document.',
   STATE_ATOMIC_CREATE_REQUIRED:
@@ -1239,7 +1215,7 @@ export const en = {
   REGIONAL_MIGRATION_PARTIAL_FAILURE:
     'State upgrade interrupted (operation {{opId}}): {{error}}. Keep the source backup and journal; re-run the same migration to resume.',
   REGIONAL_MIGRATION_REPORT_MISSING:
-    'No migration report found for operation {{opId}} — the split was not applied from this CLI, or the report was deleted',
+    'No migration report found for operation {{opId}} — the upgrade was not applied from this CLI, or the report was deleted',
   REGIONAL_MIGRATION_BACKUP_MISSING:
     'The pre-migration backup for operation {{opId}} is missing — restore it manually; refusing to roll back without it',
   REGIONAL_MIGRATION_ROLLBACK_BLOCKED:
@@ -1268,7 +1244,7 @@ export const en = {
     'Upgrade state in place now? The source will be backed up and partitions will remain in the original file/key (yes/no): ',
   MIGRATE_CANCELLED: 'Migration cancelled — nothing was written',
 
-  OPT_TO_REGIONAL: 'upgrade V3 or preview state in place to stage/provider/region partitions',
+  OPT_TO_REGIONAL: 'upgrade V3 state in place to stage/provider/region partitions',
   OPT_LEGACY_APP: 'read the legacy aggregate of this (pre-rename) app name for explicit rebinding',
   OPT_LEGACY_SERVICE:
     'read the legacy aggregate of this (pre-rename) service name for explicit rebinding',

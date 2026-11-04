@@ -6,7 +6,6 @@ import { ConditionalPutUnsupportedError } from '../../../../src/common/stateBack
 
 const mockCosClient = {
   getObject: jest.fn(),
-  getBucket: jest.fn(),
   getBucketVersioning: jest.fn(),
   putObject: jest.fn(),
   deleteObject: jest.fn(),
@@ -49,7 +48,7 @@ describe('cosStateBackend (scope-bound, issue #280)', () => {
     accessKeySecret: 'test-secret',
   };
 
-  const SCOPED_KEY = 'state.json.scopes/test-app/test-service_prod_cn-hangzhou_state.json';
+  const STATE_KEY = 'state.json';
 
   /** Creates the backend and captures the adapter and config handed to the remote backend. */
   const captureWiring = (): { adapter: StorageAdapter; remoteConfig: RemoteBackendConfig } => {
@@ -68,34 +67,6 @@ describe('cosStateBackend (scope-bound, issue #280)', () => {
     return { adapter: captured.adapter!, remoteConfig: captured.remoteConfig! };
   };
 
-  it('lists every page and refuses truncated inventories without an advancing marker', async () => {
-    const { adapter } = captureWiring();
-    mockCosClient.getBucket
-      .mockImplementationOnce((_params, callback) =>
-        callback(null, { Contents: [{ Key: 'a' }], IsTruncated: 'true', NextMarker: 'cursor' }),
-      )
-      .mockImplementationOnce((_params, callback) => callback(null, { Contents: [{ Key: 'b' }] }));
-    await expect(adapter.list!('prefix')).resolves.toEqual(['a', 'b']);
-    expect(mockCosClient.getBucket).toHaveBeenLastCalledWith(
-      expect.objectContaining({ Prefix: 'prefix', Marker: 'cursor' }),
-      expect.any(Function),
-    );
-    mockCosClient.getBucket.mockImplementationOnce((_params, callback) =>
-      callback(null, { IsTruncated: 'true' }),
-    );
-    await expect(adapter.list!('prefix')).rejects.toThrow();
-    mockCosClient.getBucket.mockImplementation((_params, callback) =>
-      callback(null, { IsTruncated: 'true', NextMarker: 'same' }),
-    );
-    await expect(adapter.list!('prefix')).rejects.toThrow();
-    mockCosClient.getBucket.mockImplementationOnce((_params, callback) =>
-      callback(new Error('AccessDenied')),
-    );
-    await expect(adapter.list!('prefix')).rejects.toThrow('AccessDenied');
-    mockCosClient.getBucket.mockImplementationOnce((_params, callback) => callback(null, {}));
-    await expect(adapter.list!('prefix')).resolves.toEqual([]);
-  });
-
   it('creates the COS client with credentials and timeout', () => {
     const COS = require('cos-nodejs-sdk-v5');
     createCosStateBackend({ ...config, securityToken: 'test-token' });
@@ -110,12 +81,11 @@ describe('cosStateBackend (scope-bound, issue #280)', () => {
     );
   });
 
-  it('wires the remote backend with the derived scoped key and the legacy discovery key', () => {
+  it('wires the remote backend with the configured state key', () => {
     const { remoteConfig } = captureWiring();
 
     expect(remoteConfig.scope).toEqual(scope);
-    expect(remoteConfig.scopedKey).toBe(SCOPED_KEY);
-    expect(remoteConfig.legacyKey).toBe('state.json');
+    expect(remoteConfig.key).toBe('state.json');
   });
 
   it('exposes the bucket-backed lock path for lock metadata', () => {
@@ -219,7 +189,7 @@ describe('cosStateBackend (scope-bound, issue #280)', () => {
           callback(null, { VersioningConfiguration: { Status } }),
         );
         const { adapter } = captureWiring();
-        await expect(adapter.putIfAbsent!(SCOPED_KEY, {})).rejects.toThrow(
+        await expect(adapter.putIfAbsent!(STATE_KEY, {})).rejects.toThrow(
           ConditionalPutUnsupportedError,
         );
         expect(mockCosClient.putObject).not.toHaveBeenCalled();
@@ -230,7 +200,7 @@ describe('cosStateBackend (scope-bound, issue #280)', () => {
         callback(new Error('access denied')),
       );
       const { adapter } = captureWiring();
-      await expect(adapter.putIfAbsent!(SCOPED_KEY, {})).rejects.toThrow('access denied');
+      await expect(adapter.putIfAbsent!(STATE_KEY, {})).rejects.toThrow('access denied');
       expect(mockCosClient.putObject).not.toHaveBeenCalled();
     });
 
@@ -242,10 +212,10 @@ describe('cosStateBackend (scope-bound, issue #280)', () => {
       );
       const { adapter } = captureWiring();
 
-      await expect(adapter.putIfAbsent!(SCOPED_KEY, { serial: 1 })).resolves.toBe(true);
+      await expect(adapter.putIfAbsent!(STATE_KEY, { serial: 1 })).resolves.toBe(true);
       expect(mockCosClient.putObject).toHaveBeenCalledWith(
         expect.objectContaining({
-          Key: SCOPED_KEY,
+          Key: STATE_KEY,
           Headers: { 'x-cos-forbid-overwrite': 'true' },
         }),
         expect.any(Function),
@@ -265,7 +235,7 @@ describe('cosStateBackend (scope-bound, issue #280)', () => {
       );
       const { adapter } = captureWiring();
 
-      await expect(adapter.putIfAbsent!(SCOPED_KEY, { serial: 1 })).resolves.toBe(false);
+      await expect(adapter.putIfAbsent!(STATE_KEY, { serial: 1 })).resolves.toBe(false);
     });
 
     it.each([
@@ -281,7 +251,7 @@ describe('cosStateBackend (scope-bound, issue #280)', () => {
         );
         const { adapter } = captureWiring();
 
-        await expect(adapter.putIfAbsent!(SCOPED_KEY, { serial: 1 })).rejects.toThrow(
+        await expect(adapter.putIfAbsent!(STATE_KEY, { serial: 1 })).rejects.toThrow(
           ConditionalPutUnsupportedError,
         );
       },
@@ -295,7 +265,7 @@ describe('cosStateBackend (scope-bound, issue #280)', () => {
       );
       const { adapter } = captureWiring();
 
-      await expect(adapter.putIfAbsent!(SCOPED_KEY, { serial: 1 })).rejects.toThrow(
+      await expect(adapter.putIfAbsent!(STATE_KEY, { serial: 1 })).rejects.toThrow(
         'Internal error',
       );
     });

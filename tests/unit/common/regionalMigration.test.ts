@@ -90,11 +90,8 @@ const makeIo = () => {
 
 const makePaths = (): RegionalMigrationPaths => ({
   legacyKey: 'legacy/state.json',
-  scopedPrefixBuilder: (stage: string, region: string) =>
-    `scoped/app/svc_${stage}_${region}_state.json`,
   reportKey: (opId: string) => `reports/${opId}.json`,
   backupKey: (opId: string) => `backups/${opId}.json`,
-  serviceBindingKey: 'scoped/app/svc_provider.json',
 });
 
 const baseOptions = {
@@ -234,19 +231,9 @@ describe('regionalMigration (issue #280 §6)', () => {
       expect(plan.warnings).toHaveLength(1);
     });
 
-    it('refuses to re-split a barrier-marked aggregate', () => {
-      const legacy = { ...makeLegacy(), managedBy: 'regional' };
-      expect(() => planRegionalMigration(legacy, baseOptions)).toThrow(/already marked as split/);
-    });
-
     it('refuses a source owned by the SaaS Console before any other check', () => {
       const legacy = { ...makeLegacy(), managedBy: 'saas', version: '9.9' };
       expect(() => planRegionalMigration(legacy, baseOptions)).toThrow(/managedBy=saas/);
-    });
-
-    it('reports the already-split refusal (not a version error) for a V4 tombstone', () => {
-      const legacy = { ...makeLegacy(), version: CURRENT_STATE_VERSION, managedBy: 'regional' };
-      expect(() => planRegionalMigration(legacy, baseOptions)).toThrow(/already marked as split/);
     });
 
     it('refuses a non-V3 source', () => {
@@ -402,7 +389,6 @@ describe('regionalMigration (issue #280 §6)', () => {
       );
       expect(aggregate.stages.prod.providers.aliyun.regions['ap-southeast-1'].shared).toEqual({});
       expect(store.get(paths.backupKey(plan.opId))).toEqual(legacy);
-      expect(written).not.toContain(paths.serviceBindingKey);
       expect(written.some((key) => key.startsWith('scoped/'))).toBe(false);
       expect(written.indexOf(paths.backupKey(plan.opId))).toBeLessThan(
         written.indexOf(paths.legacyKey),

@@ -5,7 +5,6 @@ import {
   type StateFile,
 } from '../types';
 import { lang } from '../lang';
-import { validateScopedDocument } from './stateManager';
 import {
   AGGREGATE_STATE_VERSION,
   aggregatePartition,
@@ -20,7 +19,7 @@ import {
 import { normalizeScope, type DeploymentScope } from './stateScope';
 import { enforceMigrationMarker, type MigrationMarkerAction } from './migrationMarker';
 import type { StateSource, WriteReadiness } from './stateBackend/types';
-import { AGGREGATE_MIGRATION_SUFFIX, REGIONAL_MIGRATION_SUFFIX } from './constants';
+import { REGIONAL_MIGRATION_SUFFIX } from './constants';
 
 type StoreIO = {
   read: (key: string) => Promise<unknown | null>;
@@ -33,7 +32,6 @@ export const createAggregateStore = (
   options: {
     key: string;
     markerAction: MigrationMarkerAction;
-    previewLocations?: string[];
     backupWrites?: boolean;
   },
 ) => {
@@ -58,13 +56,8 @@ export const createAggregateStore = (
     if (value.version === AGGREGATE_STATE_VERSION) {
       return readAggregateDocument(value, scope, options.key);
     }
-    if (value.version !== '3.0' && value.version !== '4.0') {
+    if (value.version !== '3.0') {
       throw new StateVersionError(String(value.version ?? ''), AGGREGATE_STATE_VERSION);
-    }
-    if (value.managedBy === 'regional') {
-      throw new Error(
-        lang.__('STATE_PREVIOUS_LAYOUT_FOUND', { previous: options.key, current: options.key }),
-      );
     }
     if (
       typeof value.provider !== 'string' ||
@@ -78,18 +71,15 @@ export const createAggregateStore = (
   };
 
   const readDocument = async (): Promise<AggregateStateFile | PersistedStateFile | null> => {
-    await Promise.all(
-      [AGGREGATE_MIGRATION_SUFFIX, REGIONAL_MIGRATION_SUFFIX].map(async (suffix) => {
-        const migration = await io.read(`${options.key}${suffix}`);
-        if (migration === null) return;
-        if (typeof migration !== 'object' || !migration || !('phase' in migration))
-          throw aggregateStateCorruptError(options.key);
-        if (migration.phase !== 'complete') {
-          const opId = 'opId' in migration ? String(migration.opId) : options.key;
-          throw new Error(lang.__('STATE_PREVIEW_MIGRATION_PENDING', { opId }));
-        }
-      }),
-    );
+    const migration = await io.read(`${options.key}${REGIONAL_MIGRATION_SUFFIX}`);
+    if (migration !== null) {
+      if (typeof migration !== 'object' || !migration || !('phase' in migration))
+        throw aggregateStateCorruptError(options.key);
+      if (migration.phase !== 'complete') {
+        const opId = 'opId' in migration ? String(migration.opId) : options.key;
+        throw new Error(lang.__('REGIONAL_MIGRATION_PENDING', { opId }));
+      }
+    }
     let raw: unknown;
     try {
       raw = await io.read(options.key);
@@ -102,17 +92,6 @@ export const createAggregateStore = (
     if (raw === null) {
       const backup = await io.read(`${options.key}.backup`);
       if (backup !== null) return validateDocument(backup);
-      const previous = await Promise.all(
-        (options.previewLocations ?? []).map(async (key) =>
-          (await io.read(key)) === null ? undefined : key,
-        ),
-      );
-      const found = previous.find((key) => key !== undefined);
-      if (found) {
-        throw new Error(
-          lang.__('STATE_PREVIOUS_LAYOUT_FOUND', { previous: found, current: options.key }),
-        );
-      }
       return null;
     }
     return validateDocument(raw);
@@ -135,11 +114,6 @@ export const createAggregateStore = (
           stage: scope.stage,
           region: document.scope?.region,
         });
-      }
-      if (document.version === '4.0') {
-        if (typeof document.scope?.stage !== 'string' || typeof document.scope?.region !== 'string')
-          throw aggregateStateCorruptError(options.key);
-        validateScopedDocument(document, scope);
       }
       return { ...document, resources: document.stages[scope.stage]?.resources ?? {} };
     }

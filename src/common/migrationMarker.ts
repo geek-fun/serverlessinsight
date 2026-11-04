@@ -9,15 +9,7 @@ import { lang } from '../lang';
  */
 export const MANAGED_BY_SAAS = 'saas';
 
-export const MANAGED_BY_REGIONAL = 'regional';
-
 export type MigrationMarkerAction = 'refuse' | 'warn' | 'off';
-
-const MIGRATION_MARKERS = new Set([MANAGED_BY_SAAS, MANAGED_BY_REGIONAL]);
-
-export const isMigratedState = (state: { managedBy?: string } | null | undefined): boolean => {
-  return !!state?.managedBy && MIGRATION_MARKERS.has(state.managedBy);
-};
 
 /** True when the state has been migrated to (and is now owned by) the Console. */
 export const isMigratedToSaas = (state: { managedBy?: string } | null | undefined): boolean => {
@@ -28,19 +20,11 @@ export const enforceMigrationMarker = (
   state: { managedBy?: string } | null | undefined,
   action: MigrationMarkerAction,
 ): void => {
-  if (action === 'off' || !isMigratedState(state)) {
+  if (action === 'off' || !isMigratedToSaas(state)) {
     return;
   }
   if (action === 'refuse') {
-    throw new Error(
-      state?.managedBy === MANAGED_BY_REGIONAL
-        ? lang.__('MIGRATION_MARKER_REGIONAL_REFUSED')
-        : lang.__('MIGRATION_MARKER_REFUSED'),
-    );
+    throw new Error(lang.__('MIGRATION_MARKER_REFUSED'));
   }
-  logger.warn(
-    state?.managedBy === MANAGED_BY_REGIONAL
-      ? lang.__('MIGRATION_MARKER_REGIONAL_WARN')
-      : lang.__('MIGRATION_MARKER_WARN'),
-  );
+  logger.warn(lang.__('MIGRATION_MARKER_WARN'));
 };

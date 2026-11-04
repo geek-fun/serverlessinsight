@@ -17,7 +17,7 @@ import {
   LockMetadata,
 } from '../types';
 import { canonicalizeRegion, validateScopeKeyPart } from './stateScope';
-import { MANAGED_BY_REGIONAL, MANAGED_BY_SAAS } from './migrationMarker';
+import { MANAGED_BY_SAAS } from './migrationMarker';
 import { logger } from './logger';
 import { LockError, formatLockInfo } from './lockManager';
 import { createLockMetadata, isLockStale, isProcessAlive, sleep } from './stateBackend/lockUtils';
@@ -30,7 +30,6 @@ import { lang } from '../lang';
 import { ConditionalPutUnsupportedError } from './stateBackend/types';
 
 export type KeyValueIO = {
-  list?: (prefix: string) => Promise<string[]>;
   read: <T>(key: string) => Promise<T | null>;
   write: (key: string, data: unknown) => Promise<void>;
   delete: (key: string) => Promise<void>;
@@ -38,12 +37,9 @@ export type KeyValueIO = {
 };
 
 export type RegionalMigrationPaths = {
-  previewPrefix?: string;
   legacyKey: string;
-  scopedPrefixBuilder: (stage: string, region: string) => string;
   reportKey: (opId: string) => string;
   backupKey: (opId: string) => string;
-  serviceBindingKey: string;
 };
 
 export const withIoLock = async <T>(
@@ -183,9 +179,6 @@ export const planRegionalMigration = (
     throw new Error(lang.__('REGIONAL_MIGRATION_SOURCE_MANAGED_BY_SAAS'));
   }
 
-  if (legacy.managedBy === MANAGED_BY_REGIONAL) {
-    throw new Error(lang.__('REGIONAL_MIGRATION_ALREADY_SPLIT'));
-  }
   if (legacy.version && legacy.version !== LEGACY_STATE_VERSION) {
     throw new Error(
       lang.__('REGIONAL_MIGRATION_UNSUPPORTED_SOURCE', {

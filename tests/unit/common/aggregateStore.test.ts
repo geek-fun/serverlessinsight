@@ -43,13 +43,12 @@ const fixture = (initial: Record<string, unknown> = {}) => {
       key,
       markerAction,
       backupWrites: true,
-      previewLocations: ['preview/state.json'],
     });
   return { data, io, open };
 };
 
 describe('aggregate store IO', () => {
-  it.each(['.regional-migration.json', '.aggregate-migration.json'])(
+  it.each(['.regional-migration.json'])(
     'blocks all partitions during an unfinished %s operation',
     async (suffix) => {
       const document = mergeAggregateScope(null, scope, emptyDeploymentState(scope));
@@ -57,10 +56,10 @@ describe('aggregate store IO', () => {
         [key]: document,
         [key + suffix]: { phase: 'applying', opId: 'pending' },
       });
-      await expect(open().loadState()).rejects.toThrow('STATE_PREVIEW_MIGRATION_PENDING');
+      await expect(open().loadState()).rejects.toThrow('REGIONAL_MIGRATION_PENDING');
       await expect(
         open({ ...scope, provider: 'tencent' }).patchPersisted({ managedBy: 'saas' }),
-      ).rejects.toThrow('STATE_PREVIEW_MIGRATION_PENDING');
+      ).rejects.toThrow('REGIONAL_MIGRATION_PENDING');
       expect(io.write).not.toHaveBeenCalled();
     },
   );
@@ -158,27 +157,15 @@ describe('aggregate store IO', () => {
     expect(io.write).not.toHaveBeenCalled();
   });
 
-  it.each([
-    { stage: 'other', region: scope.region },
-    { stage: scope.stage, region: 'cn-beijing' },
-  ])('rejects a foreign V4 preview scope during read-only access: %j', async (stored) => {
-    const { io, open } = fixture({ [key]: { ...legacy, version: '4.0', scope: stored } });
-    await expect(open().loadState()).rejects.toBeInstanceOf(StateScopeMismatchError);
-    expect(io.write).not.toHaveBeenCalled();
-  });
-
-  it('reads an exact V4 preview scope but requires consolidation before writing', async () => {
-    const { open } = fixture({
+  it('rejects single-deployment V4 documents at the aggregate key without writing', async () => {
+    const { io, open } = fixture({
       [key]: { ...legacy, version: '4.0', scope: { stage: scope.stage, region: scope.region } },
     });
-    expect((await open().loadState()).scope).toEqual({ stage: scope.stage, region: scope.region });
-    expect(await open().probeWriteReadiness()).toMatchObject({ ready: false });
-  });
-
-  it('refuses a preview file before assuming the original key is empty', async () => {
-    const { io, open } = fixture({ 'preview/state.json': legacy });
-    await expect(open().loadState()).rejects.toThrow('STATE_PREVIOUS_LAYOUT_FOUND');
-    await expect(open().probeWriteReadiness()).rejects.toThrow('STATE_PREVIOUS_LAYOUT_FOUND');
+    await expect(open().loadState()).rejects.toBeInstanceOf(StateVersionError);
+    await expect(open().probeWriteReadiness()).rejects.toBeInstanceOf(StateVersionError);
+    await expect(open().saveState(emptyDeploymentState(scope))).rejects.toBeInstanceOf(
+      StateVersionError,
+    );
     expect(io.write).not.toHaveBeenCalled();
   });
 

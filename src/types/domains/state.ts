@@ -249,7 +249,7 @@ export class StateScopeMismatchError extends Error {
         `region=${stored.region ?? 'unknown'}, but the command requested ` +
         `provider=${requested.provider}, app=${requested.app}, service=${requested.service}, ` +
         `stage=${requested.stage}, region=${requested.region}. ` +
-        'Refusing to mix deployment scopes; check --stage/--region/--provider or run `si migrate --to-regional` to split a legacy aggregate.',
+        'Refusing to mix deployment scopes; check --stage/--region/--provider or run `si migrate --to-regional` to upgrade a legacy aggregate in place.',
     );
     this.name = 'StateScopeMismatchError';
     this.requested = requested;

@@ -14,7 +14,6 @@ import {
 } from '../types';
 import { normalizeScope, DeploymentScope } from './stateScope';
 import { emptyDeploymentState } from './aggregateState';
-import { MANAGED_BY_REGIONAL } from './migrationMarker';
 import { withLock, LockOptions } from './lockManager';
 import { logger } from './logger';
 
@@ -384,11 +383,8 @@ export const readLegacyPersistedState = (
   } catch (error) {
     throw new StateCorruptError(statePath, error);
   }
-  if (raw.managedBy === MANAGED_BY_REGIONAL) {
-    return null;
-  }
   if (raw.version && parseStateVersion(raw.version) > parseStateVersion(LEGACY_STATE_VERSION)) {
-    throw new StateVersionError(raw.version, CURRENT_STATE_VERSION);
+    throw new StateVersionError(raw.version, LEGACY_STATE_VERSION);
   }
   return raw;
 };

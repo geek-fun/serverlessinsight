@@ -5,7 +5,6 @@ import type { StorageAdapter } from '../../../../src/common/stateBackend/types';
 
 const mockOssClient = {
   get: jest.fn(),
-  list: jest.fn(),
   getBucketVersioning: jest.fn().mockResolvedValue({}),
   put: jest.fn(),
   delete: jest.fn(),
@@ -46,7 +45,7 @@ describe('ossStateBackend (scope-bound, issue #280)', () => {
     accessKeySecret: 'test-secret',
   };
 
-  const SCOPED_KEY = 'state.json.scopes/test-app/test-service_prod_cn-hangzhou_state.json';
+  const STATE_KEY = 'state.json';
 
   /** Creates the backend and captures the adapter and config handed to the remote backend. */
   const captureWiring = (): { adapter: StorageAdapter; remoteConfig: RemoteBackendConfig } => {
@@ -65,28 +64,6 @@ describe('ossStateBackend (scope-bound, issue #280)', () => {
     return { adapter: captured.adapter!, remoteConfig: captured.remoteConfig! };
   };
 
-  it('lists every page and refuses truncated inventories without an advancing marker', async () => {
-    const { adapter } = captureWiring();
-    mockOssClient.list
-      .mockResolvedValueOnce({ objects: [{ name: 'a' }], isTruncated: true, nextMarker: 'cursor' })
-      .mockResolvedValueOnce({ objects: [{ name: 'b' }] });
-    await expect(adapter.list!('prefix')).resolves.toEqual(['a', 'b']);
-    expect(mockOssClient.list).toHaveBeenLastCalledWith(
-      { prefix: 'prefix', marker: 'cursor', 'max-keys': 1000 },
-      {},
-    );
-    mockOssClient.list.mockResolvedValueOnce({ isTruncated: true });
-    await expect(adapter.list!('prefix')).rejects.toThrow();
-    mockOssClient.list
-      .mockResolvedValueOnce({ isTruncated: true, nextMarker: 'same' })
-      .mockResolvedValueOnce({ isTruncated: true, nextMarker: 'same' });
-    await expect(adapter.list!('prefix')).rejects.toThrow();
-    mockOssClient.list.mockRejectedValueOnce(new Error('AccessDenied'));
-    await expect(adapter.list!('prefix')).rejects.toThrow('AccessDenied');
-    mockOssClient.list.mockResolvedValueOnce({});
-    await expect(adapter.list!('prefix')).resolves.toEqual([]);
-  });
-
   it('creates the OSS client with credentials, bucket and storage region', () => {
     const OSS = require('ali-oss');
     createOssStateBackend({ ...config, securityToken: 'test-token' });
@@ -102,12 +79,11 @@ describe('ossStateBackend (scope-bound, issue #280)', () => {
     );
   });
 
-  it('wires the remote backend with the derived scoped key and the legacy discovery key', () => {
+  it('wires the remote backend with the configured state key', () => {
     const { remoteConfig } = captureWiring();
 
     expect(remoteConfig.scope).toEqual(scope);
-    expect(remoteConfig.scopedKey).toBe(SCOPED_KEY);
-    expect(remoteConfig.legacyKey).toBe('state.json');
+    expect(remoteConfig.key).toBe('state.json');
     expect(remoteConfig.markerAction).toBeUndefined();
   });
 
@@ -191,14 +167,14 @@ describe('ossStateBackend (scope-bound, issue #280)', () => {
       async (versionStatus) => {
         mockOssClient.getBucketVersioning.mockResolvedValue({ versionStatus });
         const { adapter } = captureWiring();
-        await expect(adapter.putIfAbsent!(SCOPED_KEY, {})).rejects.toThrow('conditional');
+        await expect(adapter.putIfAbsent!(STATE_KEY, {})).rejects.toThrow('conditional');
         expect(mockOssClient.put).not.toHaveBeenCalled();
       },
     );
     it('propagates failure to inspect bucket versioning without writing', async () => {
       mockOssClient.getBucketVersioning.mockRejectedValue(new Error('access denied'));
       const { adapter } = captureWiring();
-      await expect(adapter.putIfAbsent!(SCOPED_KEY, {})).rejects.toThrow('access denied');
+      await expect(adapter.putIfAbsent!(STATE_KEY, {})).rejects.toThrow('access denied');
       expect(mockOssClient.put).not.toHaveBeenCalled();
     });
 
@@ -207,8 +183,8 @@ describe('ossStateBackend (scope-bound, issue #280)', () => {
       const { adapter } = captureWiring();
       const data = { serial: 1 };
 
-      await expect(adapter.putIfAbsent!(SCOPED_KEY, data)).resolves.toBe(true);
-      expect(mockOssClient.put).toHaveBeenCalledWith(SCOPED_KEY, expect.any(Buffer), {
+      await expect(adapter.putIfAbsent!(STATE_KEY, data)).resolves.toBe(true);
+      expect(mockOssClient.put).toHaveBeenCalledWith(STATE_KEY, expect.any(Buffer), {
         headers: { 'x-oss-forbid-overwrite': 'true' },
       });
     });
@@ -219,7 +195,7 @@ describe('ossStateBackend (scope-bound, issue #280)', () => {
         mockOssClient.put.mockRejectedValue({ code });
         const { adapter } = captureWiring();
 
-        await expect(adapter.putIfAbsent!(SCOPED_KEY, { serial: 1 })).resolves.toBe(false);
+        await expect(adapter.putIfAbsent!(STATE_KEY, { serial: 1 })).resolves.toBe(false);
       },
     );
 
@@ -227,7 +203,7 @@ describe('ossStateBackend (scope-bound, issue #280)', () => {
       mockOssClient.put.mockRejectedValue({ code: 'RequestTimeout' });
       const { adapter } = captureWiring();
 
-      await expect(adapter.putIfAbsent!(SCOPED_KEY, { serial: 1 })).rejects.toMatchObject({
+      await expect(adapter.putIfAbsent!(STATE_KEY, { serial: 1 })).rejects.toMatchObject({
         code: 'RequestTimeout',
       });
     });

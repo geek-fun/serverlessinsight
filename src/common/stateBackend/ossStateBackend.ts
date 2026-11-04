@@ -5,7 +5,6 @@ import { MigrationMarkerAction } from '../migrationMarker';
 import { OSS_STATE_CONNECT_TIMEOUT_MS, OSS_STATE_REQUEST_TIMEOUT_MS } from '../constants';
 import { lang } from '../../lang';
 import type { DeploymentScope } from '../stateScope';
-import { buildScopedObjectKey } from '../stateScope';
 
 export type OssStorageConfig = {
   bucket: string;
@@ -47,18 +46,6 @@ export const createOssStorageAdapter = (config: OssStorageConfig): StorageAdapte
   } as OSS.Options);
 
   return {
-    list: async (prefix: string): Promise<string[]> => {
-      const page = async (marker?: string): Promise<string[]> => {
-        const result = await ossClient.list({ prefix, marker, 'max-keys': 1000 }, {});
-        const keys = (result.objects ?? []).map((object) => object.name);
-        if (!result.isTruncated) return keys;
-        if (!result.nextMarker || result.nextMarker === marker) {
-          throw new Error(lang.__('STATE_STORAGE_LIST_INCOMPLETE'));
-        }
-        return [...keys, ...(await page(result.nextMarker))];
-      };
-      return page();
-    },
     read: async <T>(key: string): Promise<T | null> => {
       try {
         const result = await ossClient.get(key);
@@ -138,17 +125,9 @@ export const createOssStateBackend = (config: {
     securityToken: config.securityToken,
     lockPath: `oss://${config.bucket}/${config.key}`,
   });
-  const scopedKey = buildScopedObjectKey(
-    config.key,
-    config.scope.app,
-    config.scope.service,
-    config.scope.stage,
-    config.scope.region,
-  );
   return createRemoteStateBackend(adapter, {
     scope: config.scope,
-    scopedKey,
-    legacyKey: config.key,
+    key: config.key,
     markerAction: config.markerAction,
   });
 };

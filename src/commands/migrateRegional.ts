@@ -1,15 +1,11 @@
-import fs from 'node:fs';
-import path from 'node:path';
 import { createLocalStateIO } from '../common';
-import { PersistedStateFile } from '../types';
-import { readLegacyPersistedState, getStatePath } from '../common/stateManager';
-import { MANAGED_BY_REGIONAL } from '../common/migrationMarker';
 import {
-  buildScopedStatePath,
-  buildScopedObjectKey,
-  buildServiceBindingPath,
-  buildServiceObjectKey,
-} from '../common/stateScope';
+  PersistedStateFile,
+  LEGACY_STATE_VERSION,
+  StateCorruptError,
+  StateVersionError,
+} from '../types';
+import { readLegacyPersistedState, getStatePath } from '../common/stateManager';
 import {
   applyRegionalMigration,
   planRegionalMigration,
@@ -27,7 +23,7 @@ import { LOCK_KEY_SUFFIX } from '../common/stateBackend/lockUtils';
 import { ProviderEnum } from '../common/providerEnum';
 import { logger } from '../common/logger';
 import { lang } from '../lang';
-import { consolidatePreviewState, rollbackPreviewConsolidation } from '../common/previewMigration';
+import { AGGREGATE_STATE_VERSION, readAggregateDocument } from '../common/aggregateState';
 
 export type RegionalMigrationCommandOptions = {
   provider: string;
@@ -72,7 +68,6 @@ const createBucketKeyValueIO = (
     ? createCosStorageAdapter(storageConfig)
     : createOssStorageAdapter(storageConfig);
   return {
-    ...(adapter.list ? { list: adapter.list } : {}),
     read: adapter.read,
     write: adapter.write,
     delete: adapter.delete,
@@ -91,19 +86,9 @@ const buildPaths = (
     return {
       legacyKey,
       paths: {
-        previewPrefix: path.join(options.baseDir, '.serverlessinsight', 'states', options.app),
         legacyKey,
-        scopedPrefixBuilder: (stage, region) =>
-          buildScopedStatePath(options.app, options.service, stage, region, options.baseDir),
-        reportKey: (opId) =>
-          path.join(
-            options.baseDir,
-            '.serverlessinsight',
-            'states',
-            `migration-report-${opId}.json`,
-          ),
+        reportKey: (opId) => `${legacyKey}.migration-report-${opId}.json`,
         backupKey: (opId) => `${legacyKey}.pre-regional-${opId}`,
-        serviceBindingKey: buildServiceBindingPath(options.app, options.service, options.baseDir),
       },
     };
   }
@@ -112,13 +97,9 @@ const buildPaths = (
   return {
     legacyKey: key,
     paths: {
-      previewPrefix: `${key.replace(/\/+$/, '')}.scopes/${options.app}/`,
       legacyKey: key,
-      scopedPrefixBuilder: (stage, region) =>
-        buildScopedObjectKey(key, options.app, options.service, stage, region),
-      reportKey: (opId) => `${key}.scopes/migration-report-${opId}.json`,
+      reportKey: (opId) => `${key}.migration-report-${opId}.json`,
       backupKey: (opId) => `${key}.pre-regional-${opId}.json`,
-      serviceBindingKey: buildServiceObjectKey(key, options.app, options.service),
     },
   };
 };
@@ -188,7 +169,6 @@ export const runRegionalMigration = async (
       legacyKey,
       'migrate-regional-rollback',
       async () => {
-        if (await rollbackPreviewConsolidation(io, paths, options.rollbackOpId!)) return;
         await rollbackRegionalMigration(io, paths, options.rollbackOpId!);
       },
     );
@@ -208,46 +188,26 @@ export const runRegionalMigration = async (
       if (pending?.phase === 'applying' && !pending.aggregate) {
         throw new Error(lang.__('REGIONAL_MIGRATION_PENDING', { opId: pending.plan.opId }));
       }
-      if (
-        pending?.phase !== 'applying' &&
-        (await consolidatePreviewState(
-          io,
-          paths,
-          {
-            app: options.app,
-            service: options.service,
-            provider: options.provider,
-          },
-          {
-            dryRun: options.dryRun,
-            confirm: () =>
-              options.autoApprove
-                ? Promise.resolve(true)
-                : options.askConfirmation(lang.__('REGIONAL_MIGRATION_CONFIRM')),
-          },
-        ))
-      ) {
-        return;
+      if (pending?.phase !== 'applying') {
+        const current = await io.read<PersistedStateFile>(legacyKey).catch((error: unknown) => {
+          if (error instanceof SyntaxError) throw new StateCorruptError(legacyKey, error);
+          throw error;
+        });
+        if (current?.version === AGGREGATE_STATE_VERSION) {
+          readAggregateDocument(current, options, legacyKey);
+          return;
+        }
+        if (current?.version && current.version !== LEGACY_STATE_VERSION) {
+          throw new StateVersionError(current.version, LEGACY_STATE_VERSION);
+        }
       }
       let legacy: PersistedStateFile | null;
       if (pending?.phase === 'applying') {
         legacy = await io.read<PersistedStateFile>(paths.backupKey(pending.plan.opId));
       } else if (options.backendType === 'LOCAL') {
         legacy = readLegacyPersistedState(sourceApp, sourceService, options.baseDir);
-        if (!legacy && fs.existsSync(legacyKey)) {
-          const tombstone = JSON.parse(fs.readFileSync(legacyKey, 'utf-8')) as {
-            managedBy?: string;
-          };
-          if (tombstone.managedBy === MANAGED_BY_REGIONAL) {
-            throw new Error(lang.__('REGIONAL_MIGRATION_ALREADY_SPLIT'));
-          }
-          legacy = null;
-        }
       } else {
         legacy = await io.read<PersistedStateFile>(legacyKey);
-        if (legacy?.managedBy === MANAGED_BY_REGIONAL) {
-          throw new Error(lang.__('REGIONAL_MIGRATION_ALREADY_SPLIT'));
-        }
       }
       if (!legacy) {
         throw new Error(lang.__('REGIONAL_MIGRATION_NO_LEGACY_STATE', { location: legacyKey }));

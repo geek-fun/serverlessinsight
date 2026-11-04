@@ -104,20 +104,13 @@ region. Native resource IDs and SIDs are preserved. The command writes an immuta
 pre-upgrade backup, operation journal and report. If interrupted, rerun the same command
 with the same options to resume the original operation.
 
-Preview V4 split layouts are consolidated by the same command. It inventories the
-service's preview files/objects, rejects ambiguous/duplicate scopes and orphan artifacts,
-locks and rechecks the sources, then writes the original aggregate key. V5 barriers replace
-the preview sources so older CLIs cannot keep writing them. Stop old writers throughout
-this procedure; a migration cannot protect against an old client inventing new keys.
-An interrupted older split migration must first be recovered using its matching CLI.
-
 Before any independent partition write, a completed operation can be rolled back:
 
 ```bash
 si migrate --to-regional --rollback-op-id <operation-id>
 ```
 
-Rollback checks the complete aggregate and preview inventory. It refuses to overwrite
+Rollback checks the complete aggregate. It refuses to overwrite
 later deployment writes, including sibling writes. Recover such cases by forward fixing
 from the retained backups, not by replacing current state with an old whole file.
 New state versions are rejected by older clients. Do not downgrade writers after cutover.

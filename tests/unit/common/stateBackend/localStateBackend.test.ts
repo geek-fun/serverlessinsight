@@ -131,30 +131,6 @@ describe('Local aggregate state backend', () => {
     expect(document()).toEqual(legacy);
   });
 
-  it('requires consolidation of preview files and stale regional tombstones', async () => {
-    write({
-      version: '4.0',
-      app: 'shop',
-      service: 'api',
-      provider: 'aliyun',
-      managedBy: 'regional',
-      stages: {},
-    });
-    await expect(backend().loadState()).rejects.toThrow(/preview state/i);
-    fs.rmSync(file());
-    const previous = path.join(
-      baseDir,
-      '.serverlessinsight',
-      'states',
-      'shop',
-      'api_prod_cn-hangzhou_state.json',
-    );
-    fs.mkdirSync(path.dirname(previous), { recursive: true });
-    fs.writeFileSync(previous, '{}');
-    await expect(backend().loadState()).rejects.toThrow(/preview state/i);
-    expect(fs.existsSync(file())).toBe(false);
-  });
-
   it('changes only selected ownership metadata and supports explicit marker rollback', async () => {
     await backend().saveState(emptyDeploymentState(scope));
     await backend(sibling).saveState(emptyDeploymentState(sibling));

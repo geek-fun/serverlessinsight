@@ -1105,32 +1105,6 @@ describe('StateManager', () => {
           StateCorruptError,
         );
       });
-
-      it('returns null for the post-split tombstone regardless of its version', () => {
-        writeLegacyDoc({
-          version: CURRENT_STATE_VERSION,
-          managedBy: 'regional',
-          provider: 'aliyun',
-          app: 'test-app',
-          service: 'test-service',
-          stages: {},
-        });
-
-        expect(readLegacyPersistedState('test-app', 'test-service', testDir)).toBeNull();
-      });
-
-      it('returns null for a regional tombstone even when still versioned as legacy', () => {
-        writeLegacyDoc({
-          version: LEGACY_STATE_VERSION,
-          managedBy: 'regional',
-          provider: 'aliyun',
-          app: 'test-app',
-          service: 'test-service',
-          stages: {},
-        });
-
-        expect(readLegacyPersistedState('test-app', 'test-service', testDir)).toBeNull();
-      });
     });
   });
 });

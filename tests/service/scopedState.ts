@@ -14,14 +14,6 @@ export const cleanScopedState = async (app: string, service: string): Promise<vo
       .filter((name) => name === path.basename(file) || name.startsWith(path.basename(file) + '.'))
       .map((name) => fs.rm(path.join(directory, name), { recursive: true, force: true })),
   );
-  const previews = path.join(directory, 'states', app);
-  const previous = await fs.readdir(previews).catch(() => [] as string[]);
-  await Promise.all(
-    previous
-      .filter((name) => name.startsWith(encodeURIComponent(service).replace(/_/g, '%5F') + '_'))
-      .map((name) => fs.rm(path.join(previews, name), { recursive: true, force: true })),
-  );
-  await fs.rm(path.join(previews, service), { recursive: true, force: true });
 };
 
 export const readScopedState = async <T = Record<string, unknown>>(

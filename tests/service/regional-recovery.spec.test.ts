@@ -110,12 +110,7 @@ describe('regional migration interruption and concurrent deployment', () => {
     await expect(runRegionalMigration(command())).rejects.toThrow();
     fs.rmSync(blocker, { recursive: true });
     const pending = journal();
-    const reportPath = path.join(
-      baseDir,
-      '.serverlessinsight',
-      'states',
-      `migration-report-${pending.plan.opId}.json`,
-    );
+    const reportPath = `${sourcePath()}.migration-report-${pending.plan.opId}.json`;
     const reportBlocker = `${reportPath}.tmp`;
     fs.mkdirSync(reportBlocker, { recursive: true });
     await expect(runRegionalMigration(command())).rejects.toThrow();

@@ -23,7 +23,6 @@ jest.mock('../../../../src/common/logger', () => ({
 
 const mockEnforceMigrationMarker = jest.fn();
 jest.mock('../../../../src/common/migrationMarker', () => ({
-  MANAGED_BY_REGIONAL: 'regional',
   enforceMigrationMarker: (...args: unknown[]) => mockEnforceMigrationMarker(...args),
 }));
 
@@ -61,7 +60,6 @@ describe('remoteStateBackend (scope-bound, issue #280)', () => {
     stage: 'prod',
     region: 'cn-hangzhou',
   };
-  const SCOPED_KEY = 'legacy/state.json.scopes/test-app/test-service_prod_cn-hangzhou_state.json';
   const LEGACY_KEY = 'legacy/state.json';
   const LOCK_KEY = `${LEGACY_KEY}.si-lock`;
 
@@ -95,8 +93,7 @@ describe('remoteStateBackend (scope-bound, issue #280)', () => {
     it('binds the normalized scope and declares conditional create when supported', () => {
       const backend = createRemoteStateBackend(adapter, {
         scope: { ...scope, region: 'CN-Hangzhou' },
-        scopedKey: SCOPED_KEY,
-        legacyKey: LEGACY_KEY,
+        key: LEGACY_KEY,
       });
 
       expect(backend.scope).toEqual({ ...scope, region: 'cn-hangzhou' });
@@ -112,8 +109,7 @@ describe('remoteStateBackend (scope-bound, issue #280)', () => {
       delete (adapter as Partial<StorageAdapter>).putIfAbsent;
       const backend = createRemoteStateBackend(adapter, {
         scope,
-        scopedKey: SCOPED_KEY,
-        legacyKey: LEGACY_KEY,
+        key: LEGACY_KEY,
       });
 
       expect(backend.capabilities).toEqual({ conditionalCreate: false });
@@ -124,15 +120,13 @@ describe('remoteStateBackend (scope-bound, issue #280)', () => {
     const backend = () =>
       createRemoteStateBackend(adapter, {
         scope,
-        scopedKey: SCOPED_KEY,
-        legacyKey: LEGACY_KEY,
+        key: LEGACY_KEY,
       });
 
     it('persists only the original key and returns a V4 target projection', async () => {
       await backend().saveState(emptyDeploymentState(scope));
       const saved = adapter.store.get(LEGACY_KEY) as AggregateStateFile;
       expect(saved.version).toBe('5.0');
-      expect(adapter.store.has(SCOPED_KEY)).toBe(false);
       expect((await backend().loadState()).scope).toEqual({
         stage: scope.stage,
         region: scope.region,
@@ -145,8 +139,7 @@ describe('remoteStateBackend (scope-bound, issue #280)', () => {
       const sibling = { ...scope, provider: 'tencent', region: 'ap-shanghai' };
       await createRemoteStateBackend(adapter, {
         scope: sibling,
-        scopedKey: SCOPED_KEY,
-        legacyKey: LEGACY_KEY,
+        key: LEGACY_KEY,
       }).saveState(emptyDeploymentState(sibling));
       await first.patchPersisted!({ managedBy: 'saas' });
       const doc = adapter.store.get(LEGACY_KEY) as AggregateStateFile;
@@ -175,15 +168,6 @@ describe('remoteStateBackend (scope-bound, issue #280)', () => {
       expect(adapter.store.get(LEGACY_KEY)).toEqual(legacy);
     });
 
-    it('detects preview files without adopting or overwriting them', async () => {
-      adapter.store.set(SCOPED_KEY, { version: '4.0' });
-      const callback = jest.fn();
-      await expect(backend().withLock('deploy', callback)).rejects.toThrow(/preview state/i);
-      expect(callback).not.toHaveBeenCalled();
-      expect(adapter.write).not.toHaveBeenCalled();
-      expect(adapter.store.has(LEGACY_KEY + '.si-lock')).toBe(false);
-    });
-
     it('propagates storage errors and releases the shared lock after a failed save', async () => {
       const error = new Error('network unavailable');
       (adapter.write as jest.Mock).mockRejectedValueOnce(error);
@@ -210,8 +194,7 @@ describe('remoteStateBackend (scope-bound, issue #280)', () => {
     it('acquires the scoped lock object exclusively via putIfAbsent', async () => {
       const backend = createRemoteStateBackend(adapter, {
         scope,
-        scopedKey: SCOPED_KEY,
-        legacyKey: LEGACY_KEY,
+        key: LEGACY_KEY,
       });
 
       const lockId = await backend.acquireLock('deploy');
@@ -225,8 +208,7 @@ describe('remoteStateBackend (scope-bound, issue #280)', () => {
       adapter.store.set(LOCK_KEY, makeLock());
       const backend = createRemoteStateBackend(adapter, {
         scope,
-        scopedKey: SCOPED_KEY,
-        legacyKey: LEGACY_KEY,
+        key: LEGACY_KEY,
       });
 
       await expect(backend.acquireLock('deploy', { timeout: 0, maxRetries: 0 })).rejects.toThrow(
@@ -239,8 +221,7 @@ describe('remoteStateBackend (scope-bound, issue #280)', () => {
       adapter.store.set(LOCK_KEY, makeLock({ hostname: os.hostname(), processId: 999999999 }));
       const backend = createRemoteStateBackend(adapter, {
         scope,
-        scopedKey: SCOPED_KEY,
-        legacyKey: LEGACY_KEY,
+        key: LEGACY_KEY,
       });
 
       const lockId = await backend.acquireLock('deploy', { maxRetries: 1, retryDelay: 0 });
@@ -256,8 +237,7 @@ describe('remoteStateBackend (scope-bound, issue #280)', () => {
       );
       const backend = createRemoteStateBackend(adapter, {
         scope,
-        scopedKey: SCOPED_KEY,
-        legacyKey: LEGACY_KEY,
+        key: LEGACY_KEY,
       });
 
       await expect(backend.acquireLock('deploy', { timeout: 0, maxRetries: 0 })).rejects.toThrow(
@@ -269,14 +249,10 @@ describe('remoteStateBackend (scope-bound, issue #280)', () => {
     });
 
     it('loses the exclusive-create race and reports the failure', async () => {
-      adapter.store.set('legacy/state.json.scopes/test-app/test-service_provider.json', {
-        provider: scope.provider,
-      });
       (adapter.putIfAbsent as jest.Mock).mockResolvedValue(false);
       const backend = createRemoteStateBackend(adapter, {
         scope,
-        scopedKey: SCOPED_KEY,
-        legacyKey: LEGACY_KEY,
+        key: LEGACY_KEY,
       });
 
       await expect(
@@ -285,16 +261,12 @@ describe('remoteStateBackend (scope-bound, issue #280)', () => {
     });
 
     it('refuses lock acquisition when conditional creation is unsupported', async () => {
-      adapter.store.set('legacy/state.json.scopes/test-app/test-service_provider.json', {
-        provider: scope.provider,
-      });
       (adapter.putIfAbsent as jest.Mock).mockRejectedValueOnce(
         new ConditionalPutUnsupportedError('unsupported'),
       );
       const backend = createRemoteStateBackend(adapter, {
         scope,
-        scopedKey: SCOPED_KEY,
-        legacyKey: LEGACY_KEY,
+        key: LEGACY_KEY,
       });
       await expect(backend.acquireLock('deploy')).rejects.toThrow('cannot atomically');
       expect(backend.capabilities.conditionalCreate).toBe(false);
@@ -305,8 +277,7 @@ describe('remoteStateBackend (scope-bound, issue #280)', () => {
       delete (adapter as Partial<StorageAdapter>).putIfAbsent;
       const backend = createRemoteStateBackend(adapter, {
         scope,
-        scopedKey: SCOPED_KEY,
-        legacyKey: LEGACY_KEY,
+        key: LEGACY_KEY,
       });
       await expect(backend.acquireLock('deploy')).rejects.toThrow('cannot atomically');
       expect(adapter.store.has(LOCK_KEY)).toBe(false);
@@ -316,8 +287,7 @@ describe('remoteStateBackend (scope-bound, issue #280)', () => {
       (adapter.putIfAbsent as jest.Mock).mockRejectedValue(new Error('network down'));
       const backend = createRemoteStateBackend(adapter, {
         scope,
-        scopedKey: SCOPED_KEY,
-        legacyKey: LEGACY_KEY,
+        key: LEGACY_KEY,
       });
 
       await expect(backend.acquireLock('deploy', { timeout: 0, maxRetries: 0 })).rejects.toThrow(
@@ -330,8 +300,7 @@ describe('remoteStateBackend (scope-bound, issue #280)', () => {
       adapter.store.set(LOCK_KEY, makeLock());
       const backend = createRemoteStateBackend(adapter, {
         scope,
-        scopedKey: SCOPED_KEY,
-        legacyKey: LEGACY_KEY,
+        key: LEGACY_KEY,
       });
       const { logger } = jest.requireMock('../../../../src/common/logger');
 
@@ -353,8 +322,7 @@ describe('remoteStateBackend (scope-bound, issue #280)', () => {
       adapter.store.set(LOCK_KEY, lock);
       const backend = createRemoteStateBackend(adapter, {
         scope,
-        scopedKey: SCOPED_KEY,
-        legacyKey: LEGACY_KEY,
+        key: LEGACY_KEY,
       });
 
       await backend.releaseLock('other-id');
@@ -368,8 +336,7 @@ describe('remoteStateBackend (scope-bound, issue #280)', () => {
     it('does nothing when no lock exists', async () => {
       const backend = createRemoteStateBackend(adapter, {
         scope,
-        scopedKey: SCOPED_KEY,
-        legacyKey: LEGACY_KEY,
+        key: LEGACY_KEY,
       });
 
       await backend.releaseLock('test-lock-id');
@@ -383,8 +350,7 @@ describe('remoteStateBackend (scope-bound, issue #280)', () => {
       adapter.store.set(LOCK_KEY, makeLock({ id: 'test-lock-id' }));
       const backend = createRemoteStateBackend(adapter, {
         scope,
-        scopedKey: SCOPED_KEY,
-        legacyKey: LEGACY_KEY,
+        key: LEGACY_KEY,
       });
 
       await expect(backend.forceUnlock('test-lock-id')).resolves.toBe(true);
@@ -394,8 +360,7 @@ describe('remoteStateBackend (scope-bound, issue #280)', () => {
     it('returns false when there is no lock', async () => {
       const backend = createRemoteStateBackend(adapter, {
         scope,
-        scopedKey: SCOPED_KEY,
-        legacyKey: LEGACY_KEY,
+        key: LEGACY_KEY,
       });
 
       await expect(backend.forceUnlock('test-lock-id')).resolves.toBe(false);
@@ -406,8 +371,7 @@ describe('remoteStateBackend (scope-bound, issue #280)', () => {
       adapter.store.set(LOCK_KEY, makeLock({ id: 'other-lock-id' }));
       const backend = createRemoteStateBackend(adapter, {
         scope,
-        scopedKey: SCOPED_KEY,
-        legacyKey: LEGACY_KEY,
+        key: LEGACY_KEY,
       });
 
       await expect(backend.forceUnlock('test-lock-id')).rejects.toThrow('Lock ID mismatch');
@@ -418,8 +382,7 @@ describe('remoteStateBackend (scope-bound, issue #280)', () => {
     it('returns the lock metadata or null', async () => {
       const backend = createRemoteStateBackend(adapter, {
         scope,
-        scopedKey: SCOPED_KEY,
-        legacyKey: LEGACY_KEY,
+        key: LEGACY_KEY,
       });
       expect(await backend.readLock()).toBeNull();
 
@@ -433,8 +396,7 @@ describe('remoteStateBackend (scope-bound, issue #280)', () => {
     it('executes the function and releases the lock afterwards', async () => {
       const backend = createRemoteStateBackend(adapter, {
         scope,
-        scopedKey: SCOPED_KEY,
-        legacyKey: LEGACY_KEY,
+        key: LEGACY_KEY,
       });
 
       const result = await backend.withLock('deploy', async () => 'test-result');
@@ -447,8 +409,7 @@ describe('remoteStateBackend (scope-bound, issue #280)', () => {
     it('releases the lock when the function fails', async () => {
       const backend = createRemoteStateBackend(adapter, {
         scope,
-        scopedKey: SCOPED_KEY,
-        legacyKey: LEGACY_KEY,
+        key: LEGACY_KEY,
       });
 
       await expect(
@@ -463,8 +424,7 @@ describe('remoteStateBackend (scope-bound, issue #280)', () => {
     it('invokes the onLockAcquired callback with the lock id', async () => {
       const backend = createRemoteStateBackend(adapter, {
         scope,
-        scopedKey: SCOPED_KEY,
-        legacyKey: LEGACY_KEY,
+        key: LEGACY_KEY,
       });
       const onLockAcquired = jest.fn();
 

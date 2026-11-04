@@ -57,8 +57,7 @@ const fixture = (kind: string) => {
       ? createLocalStateBackend(selected, { baseDir })
       : createRemoteStateBackend(adapter, {
           scope: selected,
-          legacyKey: key,
-          scopedKey: `${key}.scopes/shop/api_${selected.stage}_${selected.region}_state.json`,
+          key: key,
         });
   const read = () =>
     kind === 'local'

@@ -328,7 +328,7 @@ describe('migrate command', () => {
   });
 
   describe('migration run', () => {
-    it('requires the protected regional split before importing a V3 aggregate', async () => {
+    it('requires the in-place V3 upgrade before importing a V3 aggregate', async () => {
       const backend = setupMigrationRun({
         state: legacyState({ version: '3.0', scope: undefined }),
         planOnly: true,
@@ -646,7 +646,7 @@ describe('migrate command', () => {
   });
 
   describe('regional migration (--to-regional, issue #280 §6)', () => {
-    it('refuses the regional split for a SaaS source backend', async () => {
+    it('refuses the local state upgrade for a SaaS source backend', async () => {
       mockedRevalYaml.mockReturnValue({ ...rawIac, backend: { type: 'SAAS' } });
 
       await expect(migrate({ location: 'stack.yml', toRegional: true })).rejects.toThrow(

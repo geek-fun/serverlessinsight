@@ -27,7 +27,6 @@ const mockApplyRegionalMigration = jest.fn();
 const mockRollbackRegionalMigration = jest.fn();
 
 const mockOssAdapter = {
-  list: jest.fn().mockResolvedValue([]),
   read: jest.fn(),
   putIfAbsent: jest.fn().mockResolvedValue(true),
   write: jest.fn(),
@@ -35,7 +34,6 @@ const mockOssAdapter = {
 };
 
 const mockCosAdapter = {
-  list: jest.fn().mockResolvedValue([]),
   read: jest.fn(),
   putIfAbsent: jest.fn().mockResolvedValue(true),
   write: jest.fn(),
@@ -233,6 +231,27 @@ describe('migrateRegional command (si migrate --to-regional)', () => {
   });
 
   describe('LOCAL backend', () => {
+    it('leaves an already upgraded V5 aggregate unchanged', async () => {
+      const aggregate = { version: '5.0', app: 'myapp', service: 'myservice', stages: {} };
+      writeLegacyFile(aggregate);
+
+      await runRegionalMigration(localOptions());
+
+      expect(JSON.parse(fs.readFileSync(legacyPath, 'utf-8'))).toEqual(aggregate);
+      expect(mockedPlan).not.toHaveBeenCalled();
+      expect(mockedApply).not.toHaveBeenCalled();
+      expect(fs.existsSync(lockPath)).toBe(false);
+    });
+
+    it('rejects an already upgraded aggregate with a foreign identity', async () => {
+      writeLegacyFile({ version: '5.0', app: 'another-app', service: 'myservice', stages: {} });
+
+      await expect(runRegionalMigration(localOptions())).rejects.toThrow(StateCorruptError);
+      expect(mockedPlan).not.toHaveBeenCalled();
+      expect(mockedApply).not.toHaveBeenCalled();
+      expect(fs.existsSync(lockPath)).toBe(false);
+    });
+
     it('throws REGIONAL_MIGRATION_NO_LEGACY_STATE when no legacy file exists and leaves no lock', async () => {
       await expect(runRegionalMigration(localOptions())).rejects.toThrow(
         'REGIONAL_MIGRATION_NO_LEGACY_STATE',
@@ -251,31 +270,16 @@ describe('migrateRegional command (si migrate --to-regional)', () => {
       expect(mockedApply).not.toHaveBeenCalled();
     });
 
-    it('consolidates a preview V4 document in place and rejects unsupported future formats', async () => {
-      writeLegacyFile(
-        legacyDoc({ version: '4.0', scope: { stage: 'dev', region: 'cn-hangzhou' } }),
-      );
-
-      await runRegionalMigration(localOptions());
-      expect(JSON.parse(fs.readFileSync(legacyPath, 'utf-8')).version).toBe('5.0');
-      expect(mockedPlan).not.toHaveBeenCalled();
-      expect(fs.existsSync(lockPath)).toBe(false);
-
-      writeLegacyFile(legacyDoc({ version: '9.9' }));
-      await expect(runRegionalMigration(localOptions())).rejects.toThrow(StateVersionError);
-      expect(mockedPlan).not.toHaveBeenCalled();
-    });
-
-    it('reports an already-split tombstone (managedBy=regional) as REGIONAL_MIGRATION_ALREADY_SPLIT', async () => {
-      writeLegacyFile(legacyDoc({ managedBy: 'regional' }));
-
-      await expect(runRegionalMigration(localOptions())).rejects.toThrow(
-        'REGIONAL_MIGRATION_ALREADY_SPLIT',
-      );
-      expect(mockedPlan).not.toHaveBeenCalled();
-      expect(mockedApply).not.toHaveBeenCalled();
-      expect(fs.existsSync(lockPath)).toBe(false);
-    });
+    it.each(['4.0', '9.9'])(
+      'rejects unsupported source format %s without writing',
+      async (version) => {
+        writeLegacyFile(legacyDoc({ version }));
+        await expect(runRegionalMigration(localOptions())).rejects.toThrow(StateVersionError);
+        expect(mockedPlan).not.toHaveBeenCalled();
+        expect(mockedApply).not.toHaveBeenCalled();
+        expect(fs.existsSync(lockPath)).toBe(false);
+      },
+    );
 
     it('dry-run: plans against the persisted legacy document, prints the report and writes nothing beyond the released lock', async () => {
       writeLegacyFile(legacyDoc());
@@ -318,22 +322,8 @@ describe('migrateRegional command (si migrate --to-regional)', () => {
       expect(legacyArg).toEqual(legacyDoc());
       const paths = pathsArg as RegionalMigrationPaths;
       expect(paths.legacyKey).toBe(legacyPath);
-      expect(paths.scopedPrefixBuilder('dev', 'cn-hangzhou')).toBe(
-        path.join(
-          baseDir,
-          '.serverlessinsight',
-          'states',
-          'myapp',
-          'myservice_dev_cn-hangzhou_state.json',
-        ),
-      );
-      expect(paths.reportKey('op-1')).toBe(
-        path.join(baseDir, '.serverlessinsight', 'states', 'migration-report-op-1.json'),
-      );
+      expect(paths.reportKey('op-1')).toBe(`${legacyPath}.migration-report-op-1.json`);
       expect(paths.backupKey('op-1')).toBe(`${legacyPath}.pre-regional-op-1`);
-      expect(paths.serviceBindingKey).toBe(
-        path.join(baseDir, '.serverlessinsight', 'states', 'myapp', 'myservice_provider.json'),
-      );
 
       expect(planArg).toEqual(makePlan());
       expect(applyOptions).toEqual({
@@ -443,12 +433,8 @@ describe('migrateRegional command (si migrate --to-regional)', () => {
       expect(mockedPlan.mock.calls[0][0]).toEqual(legacyDoc());
       const paths = mockedApply.mock.calls[0][2] as RegionalMigrationPaths;
       expect(paths.legacyKey).toBe('state.json');
-      expect(paths.scopedPrefixBuilder('dev', 'cn-hangzhou')).toBe(
-        'state.json.scopes/myapp/myservice_dev_cn-hangzhou_state.json',
-      );
-      expect(paths.reportKey('op-1')).toBe('state.json.scopes/migration-report-op-1.json');
+      expect(paths.reportKey('op-1')).toBe('state.json.migration-report-op-1.json');
       expect(paths.backupKey('op-1')).toBe('state.json.pre-regional-op-1.json');
-      expect(paths.serviceBindingKey).toBe('state.json.scopes/myapp/myservice_provider.json');
 
       expect(mockedApply).toHaveBeenCalledTimes(1);
       const io = mockedApply.mock.calls[0][0] as KeyValueIO & { read: jest.Mock };

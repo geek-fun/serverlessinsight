@@ -3,16 +3,7 @@ import path from 'node:path';
 import type { KeyValueIO } from './regionalMigration';
 import { writeStateFileAtomically } from './stateManager';
 
-const listLocalFiles = (directory: string): string[] => {
-  if (!fs.existsSync(directory)) return [];
-  return fs.readdirSync(directory, { withFileTypes: true }).flatMap((entry) => {
-    const key = path.join(directory, entry.name);
-    return entry.isDirectory() ? listLocalFiles(key) : [key];
-  });
-};
-
 export const createLocalStateIO = (options: { backupWrites?: boolean } = {}): KeyValueIO => ({
-  list: async (prefix) => listLocalFiles(prefix),
   read: async <T>(key: string): Promise<T | null> => {
     try {
       return JSON.parse(fs.readFileSync(key, 'utf-8')) as T;
