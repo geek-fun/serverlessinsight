@@ -90,9 +90,9 @@ describe('Local aggregate state backend', () => {
   });
 
   it.each([
-    { version: '5.0', app: 'foreign', service: 'api', stages: {} },
+    { version: '4.0', app: 'foreign', service: 'api', stages: {} },
     { version: '8.0', app: 'shop', service: 'api', stages: {} },
-    { version: '5.0', app: 'shop', service: 'api', stages: [] },
+    { version: '4.0', app: 'shop', service: 'api', stages: [] },
   ])('refuses foreign, newer or malformed state instead of replacing it: %j', async (raw) => {
     write(raw);
     const expected =
@@ -116,7 +116,7 @@ describe('Local aggregate state backend', () => {
     expect(fs.readFileSync(file(), 'utf-8')).toBe('{broken');
   });
 
-  it('reviews V3 state read-only and requires in-place migration even for empty legacy stages', async () => {
+  it('projects V3 state read-only and refuses writes before preparation even for empty stages', async () => {
     const legacy = {
       version: '3.0',
       app: 'shop',
@@ -125,7 +125,7 @@ describe('Local aggregate state backend', () => {
       stages: { prod: { resources: {} } },
     };
     write(legacy);
-    expect((await backend().loadState()).version).toBe('3.0');
+    expect((await backend().loadState()).version).toBe('4.0');
     expect((await backend().probeWriteReadiness()).ready).toBe(false);
     await expect(backend().saveState(emptyDeploymentState(scope))).rejects.toThrow(/upgrade/);
     expect(document()).toEqual(legacy);

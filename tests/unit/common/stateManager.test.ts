@@ -13,7 +13,6 @@ import {
   saveState,
   saveStateWithLock,
   validateScopedDocument,
-  readLegacyPersistedState,
   emptyScopedState,
   getResource,
   setResource,
@@ -31,7 +30,6 @@ import type { DeploymentScope } from '../../../src/common/stateScope';
 import {
   ResourceState,
   CURRENT_STATE_VERSION,
-  LEGACY_STATE_VERSION,
   StateCorruptError,
   StateVersionError,
   StateScopeMismatchError,
@@ -985,7 +983,7 @@ describe('StateManager', () => {
     });
   });
 
-  describe('deployment views and legacy reads', () => {
+  describe('deployment view validation', () => {
     const scope: DeploymentScope = {
       provider: 'aliyun',
       app: 'test-app',
@@ -993,14 +991,6 @@ describe('StateManager', () => {
       stage: 'dev',
       region: 'cn-hangzhou',
     };
-    const makeFnResource = (name: string): ResourceState => ({
-      mode: 'managed',
-      region: 'cn-hangzhou',
-      definition: { functionName: name },
-      instances: [{ sid: `si:aliyun:fc3:dev:${name}`, id: name }],
-      lastUpdated: '2025-01-01T00:00:00Z',
-    });
-
     it('creates the canonical single-deployment projection', () => {
       expect(emptyScopedState({ ...scope, region: 'CN-Hangzhou' })).toMatchObject({
         version: CURRENT_STATE_VERSION,
@@ -1031,80 +1021,6 @@ describe('StateManager', () => {
       expect(() => validateScopedDocument({ ...view, version: '5.0' }, scope)).toThrow(
         StateVersionError,
       );
-    });
-
-    describe('readLegacyPersistedState', () => {
-      const legacyPath = path.join(
-        testDir,
-        '.serverlessinsight',
-        'state-test-app-test-service.json',
-      );
-
-      const writeLegacyDoc = (doc: Record<string, unknown>): void => {
-        fs.mkdirSync(path.dirname(legacyPath), { recursive: true });
-        fs.writeFileSync(legacyPath, JSON.stringify(doc, null, 2));
-      };
-
-      it('returns null when no legacy aggregate exists', () => {
-        expect(readLegacyPersistedState('test-app', 'test-service', testDir)).toBeNull();
-      });
-
-      it('returns the document for a V3 aggregate', () => {
-        const legacy = {
-          version: LEGACY_STATE_VERSION,
-          provider: 'aliyun',
-          app: 'test-app',
-          service: 'test-service',
-          stages: { dev: { resources: { 'functions.legacy': makeFnResource('legacy-fn') } } },
-        };
-        writeLegacyDoc(legacy);
-
-        expect(readLegacyPersistedState('test-app', 'test-service', testDir)).toEqual(legacy);
-      });
-
-      it('returns the document when the version field is missing', () => {
-        const legacy = { provider: 'aliyun', app: 'test-app', service: 'test-service', stages: {} };
-        writeLegacyDoc(legacy);
-
-        expect(readLegacyPersistedState('test-app', 'test-service', testDir)).toEqual(legacy);
-      });
-
-      it('throws StateVersionError when the version is newer than the legacy version', () => {
-        writeLegacyDoc({
-          version: CURRENT_STATE_VERSION,
-          provider: 'aliyun',
-          app: 'test-app',
-          service: 'test-service',
-          stages: {},
-        });
-
-        expect(() => readLegacyPersistedState('test-app', 'test-service', testDir)).toThrow(
-          StateVersionError,
-        );
-      });
-
-      it('throws StateVersionError for a far-future version without managedBy', () => {
-        writeLegacyDoc({
-          version: '9.9',
-          provider: 'aliyun',
-          app: 'test-app',
-          service: 'test-service',
-          stages: {},
-        });
-
-        expect(() => readLegacyPersistedState('test-app', 'test-service', testDir)).toThrow(
-          StateVersionError,
-        );
-      });
-
-      it('throws StateCorruptError when the legacy file is corrupt', () => {
-        fs.mkdirSync(path.dirname(legacyPath), { recursive: true });
-        fs.writeFileSync(legacyPath, '{{{ not valid json');
-
-        expect(() => readLegacyPersistedState('test-app', 'test-service', testDir)).toThrow(
-          StateCorruptError,
-        );
-      });
     });
   });
 });

@@ -156,13 +156,13 @@ previous deployment until an explicitly scoped destroy. Provider-specific declar
 must be supported by the target cloud; overrides do not translate unsupported resources.
 
 Local state stays at `.serverlessinsight/state-<app>-<service>.json`; Bucket Store keeps
-the exact configured `key`. Both store a V5 aggregate partitioned by stage/provider/region
+the exact configured `key`. Both store a V4 aggregate partitioned by stage/provider/region
 under one whole-file lock. Executors and SaaS snapshots use a single-deployment V4 view;
 SaaS mutations require scope protocol 3. Cloud accounts remain credential context rather
 than another identity dimension.
 
 See [deployment state and migration](docs/regional-deployment-state.md) for storage
-credentials, V3 migration, ownership handoff, lock behavior and recovery.
+credentials, automatic V3 upgrades, ownership handoff, lock behavior and recovery.
 
 ### Infrastructure as code
 

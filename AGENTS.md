@@ -761,7 +761,8 @@ export const createRamOperations = (ramClient: RamSdkClient) => ({
 
 ### State Management
 
-- Local state is a V5 aggregate at `.serverlessinsight/state-{app}-{service}.json`; Bucket Store retains its configured key.
+- Local state is a V4 aggregate at `.serverlessinsight/state-{app}-{service}.json`; Bucket Store retains its configured key.
+- Deploy, destroy and source-to-SaaS migrate automatically prepare V3 under the existing whole-file/key lock; read-only commands never persist upgrades.
 - Partitions use `stages[stage].providers[provider].regions[region]` and share the whole-file lock.
 - Executors/SaaS consume one V4 deployment view; SaaS uses scope protocol 3. App/Service stay literal; provider/region may be selected through CLI flags.
 - Use `setResource`, `getResource`, `removeResource` from `src/common/stateManager`

@@ -37,18 +37,22 @@ Changing credentials does not create a new partition or adopt foreign resources.
 
 The authoritative location is unchanged:
 
-| Backend | State location | Lock |
-| --- | --- | --- |
-| Local | `.serverlessinsight/state-<app>-<service>.json` | Same path plus `.si-lock` |
-| Bucket | Exact YAML `key`, e.g. `infra/state.json` | Same key plus `.si-lock` |
+| Backend | State location                                  | Lock                      |
+| ------- | ----------------------------------------------- | ------------------------- |
+| Local   | `.serverlessinsight/state-<app>-<service>.json` | Same path plus `.si-lock` |
+| Bucket  | Exact YAML `key`, e.g. `infra/state.json`       | Same key plus `.si-lock`  |
 
-Both hold a V5 aggregate. There are no authoritative per-region folders or provider
+Both hold a V4 aggregate. There are no authoritative per-region folders or provider
 binding files. Each partition owns its resources, shared resources, lineage, serial and
 SaaS ownership/migration metadata.
 
+The aggregate and its single-deployment view both use version `4.0`. Storage readers
+validate the aggregate structure; executors and snapshot APIs validate the selected
+deployment structure.
+
 ```json
 {
-  "version": "5.0",
+  "version": "4.0",
   "app": "example",
   "service": "api",
   "stages": {
@@ -84,36 +88,37 @@ commands and YAML files that should share state.
 
 ## Upgrade and recovery
 
-Stop all old CLI writers before migrating. Back up the existing state and bucket
-configuration; do not change the YAML `key` or move files manually.
+Upgrade all CLI writers before using V4 state. Keep the original state location and
+Bucket configuration; do not change the YAML `key` or move files manually.
 
 ```bash
-si migrate --to-regional --dry-run
-si migrate --to-regional
+si deploy -s prod -r cn-hangzhou
 ```
 
-V3 state upgrades in place to V5. Resource regions come from persisted evidence;
-unknown-region resources require an explicitly reviewed binding:
+`deploy` automatically upgrades V3 state in place to V4 before planning or cloud
+execution. `destroy` and source-to-SaaS `migrate` use the same preparation. There is
+no separate format-migration command. `diff` and `show` only project the selected
+deployment in memory and do not upgrade the stored file.
+
+Resource regions come from persisted evidence, independent of the selected workload
+provider/region. Unknown-region resources require an explicitly reviewed binding:
 
 ```bash
-si migrate --to-regional --bind-unknown-region cn-hangzhou
+si deploy -s prod -r cn-hangzhou --bind-unknown-region cn-hangzhou
 ```
 
-The upgrade must cover the complete original file, including every populated stage and
-region. Native resource IDs and SIDs are preserved. The command writes an immutable
-pre-upgrade backup, operation journal and report. If interrupted, rerun the same command
-with the same options to resume the original operation.
+The upgrade covers the complete original file, including every populated stage and
+region, under its existing whole-file/key lock. Native resource IDs and SIDs are
+preserved. It writes an immutable pre-upgrade backup, operation journal and report.
+If interrupted, retain these files and rerun the original operation to resume. A
+conflicting source or missing backup stops the operation before cloud execution.
 
-Before any independent partition write, a completed operation can be rolled back:
-
-```bash
-si migrate --to-regional --rollback-op-id <operation-id>
-```
-
-Rollback checks the complete aggregate. It refuses to overwrite
-later deployment writes, including sibling writes. Recover such cases by forward fixing
-from the retained backups, not by replacing current state with an old whole file.
-New state versions are rejected by older clients. Do not downgrade writers after cutover.
+The metadata upgrade can complete before the later deployment-plan confirmation;
+cancelling that plan leaves V4 state in place without applying cloud changes. A
+`migrate --dry-run` validates and previews the conversion without changing source
+state or its ownership. There is no format rollback command. Preserve current state
+and recover forward from retained evidence rather than overwrite newer partition
+writes with an old whole file. Older clients reject V4; do not downgrade writers.
 
 ## SaaS protocol 3
 
@@ -136,7 +141,10 @@ Deployment event replay uses the immutable deployment UUID and per-run sequence.
 
 `si migrate` imports and verifies only the selected partition, then marks only that
 partition `managedBy=saas`. Siblings remain owned by their original backend. Local/Bucket
-V3 must first be upgraded in place; an aggregate V5 is never uploaded as a SaaS snapshot.
+V3 is automatically prepared in place during the handoff; an aggregate V4 is never
+uploaded as a SaaS snapshot. `si migrate --rollback` only removes the source ownership
+marker after a reviewed handback; it does not downgrade state or copy newer SaaS state
+back to the source.
 
 Protocol tests mock the peer API independently in each repository. Normal repository
 tests do not depend on a live peer service or a cross-repository test harness.

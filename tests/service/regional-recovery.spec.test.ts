@@ -1,11 +1,11 @@
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { runRegionalMigration } from '../../src/commands/migrateRegional';
+import { REGIONAL_MIGRATION_SUFFIX } from '../../src/common/constants';
 import { createLocalStateBackend } from '../../src/common/stateBackend';
 import { getStatePath } from '../../src/common/stateManager';
 
-describe('regional migration interruption and concurrent deployment', () => {
+describe('automatic upgrade interruption and concurrent deployment', () => {
   const scope = {
     provider: 'aliyun',
     app: 'example-app',
@@ -16,20 +16,15 @@ describe('regional migration interruption and concurrent deployment', () => {
   let baseDir: string;
   const sourcePath = () => getStatePath(scope.app, scope.service, baseDir);
   const journal = () =>
-    JSON.parse(fs.readFileSync(`${sourcePath()}.regional-migration.json`, 'utf-8'));
+    JSON.parse(fs.readFileSync(`${sourcePath()}${REGIONAL_MIGRATION_SUFFIX}`, 'utf-8'));
   const aggregate = () => JSON.parse(fs.readFileSync(sourcePath(), 'utf-8'));
   const blockTargetWrite = () => {
     const blocker = `${sourcePath()}.tmp`;
     fs.mkdirSync(blocker, { recursive: true });
     return blocker;
   };
-  const command = () => ({
-    ...scope,
-    baseDir,
-    backendType: 'LOCAL' as const,
-    autoApprove: true,
-    askConfirmation: async () => true,
-  });
+  const upgrade = () =>
+    createLocalStateBackend(scope, { baseDir, markerAction: 'refuse' }).upgradeLegacyState!();
 
   beforeEach(() => {
     baseDir = fs.mkdtempSync(path.join(os.tmpdir(), 'si-regional-recovery-'));
@@ -63,13 +58,13 @@ describe('regional migration interruption and concurrent deployment', () => {
 
   it('resumes an in-place upgrade after the original-key write fails', async () => {
     const blocker = blockTargetWrite();
-    await expect(runRegionalMigration(command())).rejects.toThrow();
+    await expect(upgrade()).rejects.toThrow();
     const pending = journal();
     expect(aggregate().version).toBe('3.0');
-    expect(fs.existsSync(`${sourcePath()}.pre-regional-${pending.plan.opId}`)).toBe(true);
+    expect(fs.existsSync(`${sourcePath()}.pre-upgrade-${pending.plan.opId}.json`)).toBe(true);
     fs.rmSync(blocker, { recursive: true });
-    await runRegionalMigration(command());
-    expect(aggregate().version).toBe('5.0');
+    await upgrade();
+    expect(aggregate().version).toBe('4.0');
     expect(Object.keys(aggregate().stages.prod.providers.aliyun.regions).sort()).toEqual([
       'ap-southeast-1',
       'cn-hangzhou',
@@ -77,9 +72,8 @@ describe('regional migration interruption and concurrent deployment', () => {
     expect(journal().phase).toBe('complete');
   });
 
-  it('waits for the whole-file deployment lock, then rejects rollback after a partition write', async () => {
-    await runRegionalMigration(command());
-    const opId = journal().plan.opId;
+  it('waits for the whole-file deployment lock without replacing a newer partition write', async () => {
+    await upgrade();
     const backend = createLocalStateBackend(scope, { baseDir });
     let release!: () => void;
     let entered!: () => void;
@@ -95,29 +89,28 @@ describe('regional migration interruption and concurrent deployment', () => {
       await backend.saveState(await backend.loadState());
     });
     await started;
-    const rollback = runRegionalMigration({ ...command(), rollbackOpId: opId });
-    const rejected = expect(rollback).rejects.toThrow(/aggregate changed/);
+    const waitingUpgrade = upgrade();
     expect(await backend.readLock()).not.toBeNull();
     release();
     await deployment;
-    await rejected;
-    expect(aggregate().version).toBe('5.0');
+    await waitingUpgrade;
+    expect(aggregate().version).toBe('4.0');
     expect(Object.keys(aggregate().stages.prod.providers.aliyun.regions)).toHaveLength(2);
   });
 
   it('resumes finalization when the aggregate was written but the report failed', async () => {
     const blocker = blockTargetWrite();
-    await expect(runRegionalMigration(command())).rejects.toThrow();
+    await expect(upgrade()).rejects.toThrow();
     fs.rmSync(blocker, { recursive: true });
     const pending = journal();
-    const reportPath = `${sourcePath()}.migration-report-${pending.plan.opId}.json`;
+    const reportPath = `${sourcePath()}.upgrade-report-${pending.plan.opId}.json`;
     const reportBlocker = `${reportPath}.tmp`;
     fs.mkdirSync(reportBlocker, { recursive: true });
-    await expect(runRegionalMigration(command())).rejects.toThrow();
+    await expect(upgrade()).rejects.toThrow();
     const before = fs.readFileSync(sourcePath(), 'utf-8');
-    expect(aggregate().version).toBe('5.0');
+    expect(aggregate().version).toBe('4.0');
     fs.rmSync(reportBlocker, { recursive: true });
-    await runRegionalMigration(command());
+    await upgrade();
     expect(fs.readFileSync(sourcePath(), 'utf-8')).toBe(before);
     expect(journal().phase).toBe('complete');
     expect(fs.existsSync(reportPath)).toBe(true);

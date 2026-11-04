@@ -20,24 +20,4 @@ export const createLocalStateIO = (options: { backupWrites?: boolean } = {}): Ke
       writeStateFileAtomically(key, JSON.stringify(data, null, 2));
     }
   },
-  putIfAbsent: async (key, data) => {
-    fs.mkdirSync(path.dirname(key), { recursive: true });
-    let fd: number;
-    try {
-      fd = fs.openSync(key, 'wx');
-    } catch (error) {
-      if ((error as NodeJS.ErrnoException).code === 'EEXIST') return false;
-      throw error;
-    }
-    try {
-      fs.writeFileSync(fd, JSON.stringify(data, null, 2), 'utf-8');
-      fs.fsyncSync(fd);
-    } finally {
-      fs.closeSync(fd);
-    }
-    return true;
-  },
-  delete: async (key) => {
-    fs.rmSync(key, { force: true });
-  },
 });

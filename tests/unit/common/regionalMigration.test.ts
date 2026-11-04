@@ -4,11 +4,9 @@ import {
   planRegionalMigration,
   buildScopedDocument,
   applyRegionalMigration,
-  rollbackRegionalMigration,
   hashDocument,
   RegionalMigrationPaths,
   KeyValueIO,
-  withIoLock,
   readRegionalMigrationJournal,
 } from '../../../src/common/regionalMigration';
 import {
@@ -58,7 +56,6 @@ const makeLegacy = (): PersistedStateFile => ({
 const makeIo = () => {
   const store = new Map<string, unknown>();
   const written: string[] = [];
-  const deleted: string[] = [];
   const io: KeyValueIO & {
     store: Map<string, unknown>;
     failOn?: string;
@@ -74,18 +71,8 @@ const makeIo = () => {
       written.push(key);
       store.set(key, structuredClone(data));
     },
-    putIfAbsent: async (key: string, data: unknown): Promise<boolean> => {
-      if (store.has(key)) return false;
-      written.push(key);
-      store.set(key, structuredClone(data));
-      return true;
-    },
-    delete: async (key: string): Promise<void> => {
-      deleted.push(key);
-      store.delete(key);
-    },
   };
-  return { io, store, written, deleted };
+  return { io, store, written };
 };
 
 const makePaths = (): RegionalMigrationPaths => ({
@@ -346,13 +333,13 @@ describe('regionalMigration (issue #280 §6)', () => {
 
   describe('in-place aggregate upgrade', () => {
     const upgrade = async () => {
-      const { io, store, written, deleted } = makeIo();
+      const { io, store, written } = makeIo();
       const legacy = makeLegacy();
       const paths = makePaths();
       store.set(paths.legacyKey, legacy);
       const plan = planRegionalMigration(legacy, baseOptions);
       await applyRegionalMigration(io, legacy, paths, plan, baseOptions);
-      return { io, store, written, deleted, legacy, paths, plan };
+      return { io, store, written, legacy, paths, plan };
     };
 
     it('refuses a plan omitting one region from a populated stage', async () => {
@@ -376,7 +363,7 @@ describe('regionalMigration (issue #280 §6)', () => {
     it('upgrades the original key with independent provider/region partitions and an immutable source backup', async () => {
       const { store, written, paths, legacy, plan } = await upgrade();
       const aggregate = store.get(paths.legacyKey) as AggregateStateFile;
-      expect(aggregate.version).toBe('5.0');
+      expect(aggregate.version).toBe('4.0');
       expect(aggregate).not.toHaveProperty('provider');
       expect(aggregate.stages.prod.providers.aliyun.regions['cn-hangzhou'].resources).toEqual({
         'functions.alpha': legacy.stages.prod.resources['functions.alpha'],
@@ -451,7 +438,7 @@ describe('regionalMigration (issue #280 §6)', () => {
             ? paths.legacyKey
             : failure === 'report'
               ? paths.reportKey(plan.opId)
-              : paths.legacyKey + '.regional-migration.json';
+              : paths.legacyKey + '.state-upgrade.json';
         if (failure === 'journal') {
           await expect(
             applyRegionalMigration(io, legacy, paths, plan, baseOptions),
@@ -508,75 +495,12 @@ describe('regionalMigration (issue #280 §6)', () => {
           bindUnknownRegion: 'cn-beijing',
         }),
       ).rejects.toThrow(/incomplete/);
+      const key = paths.legacyKey + '.state-upgrade.json';
+      store.set(key, { ...(store.get(key) as object), phase: 'applying' });
       store.set(paths.backupKey(plan.opId), { ...legacy, serial: 99 });
-      await expect(rollbackRegionalMigration(io, paths, plan.opId)).rejects.toThrow(/changed/);
-    });
-
-    it('restores a pristine upgrade in place and retains its original backup', async () => {
-      const { io, store, paths, plan, legacy } = await upgrade();
-      await rollbackRegionalMigration(io, paths, plan.opId);
-      expect(store.get(paths.legacyKey)).toEqual(legacy);
-      expect(store.get(paths.backupKey(plan.opId))).toEqual(legacy);
-      expect(store.has(paths.reportKey(plan.opId))).toBe(false);
-      expect(await readRegionalMigrationJournal(io, paths)).toBeNull();
-    });
-
-    it.each(['selected', 'sibling'])(
-      'blocks rollback after %s partition writes without deleting any recovery records',
-      async (kind) => {
-        const { io, store, deleted, paths, plan } = await upgrade();
-        const aggregate = store.get(paths.legacyKey) as AggregateStateFile;
-        const scope = {
-          ...baseOptions,
-          stage: 'prod',
-          region: kind === 'selected' ? 'cn-hangzhou' : 'cn-beijing',
-        };
-        const updated = mergeAggregateScope(aggregate, scope, emptyDeploymentState(scope));
-        store.set(paths.legacyKey, updated);
-        await expect(rollbackRegionalMigration(io, paths, plan.opId)).rejects.toThrow(
-          /Cannot roll back/,
-        );
-        expect(store.get(paths.legacyKey)).toEqual(updated);
-        expect(deleted).toEqual([]);
-        expect(store.has(paths.backupKey(plan.opId))).toBe(true);
-      },
-    );
-
-    it('can resume rollback after the original source was restored but report deletion failed', async () => {
-      const { io, store, paths, plan, legacy } = await upgrade();
-      const remove = io.delete;
-      io.delete = async (key) => {
-        if (key === paths.reportKey(plan.opId)) throw new Error('delete interrupted');
-        return remove(key);
-      };
-      await expect(rollbackRegionalMigration(io, paths, plan.opId)).rejects.toThrow(
-        'delete interrupted',
-      );
-      expect(store.get(paths.legacyKey)).toEqual(legacy);
-      io.delete = remove;
-      await rollbackRegionalMigration(io, paths, plan.opId);
-      expect(store.get(paths.legacyKey)).toEqual(legacy);
-    });
-
-    it('requires matching recovery records and a verified backup', async () => {
-      const { io, store, paths, plan } = await upgrade();
-      await expect(rollbackRegionalMigration(io, paths, 'different-operation')).rejects.toThrow(
-        /No migration report/,
-      );
-      store.delete(paths.backupKey(plan.opId));
-      await expect(rollbackRegionalMigration(io, paths, plan.opId)).rejects.toThrow(
-        /backup.*missing/,
+      await expect(applyRegionalMigration(io, legacy, paths, plan, baseOptions)).rejects.toThrow(
+        /changed/,
       );
     });
-  });
-
-  it('does not execute a mutation when exclusive locks are unavailable', async () => {
-    const { io } = makeIo();
-    delete io.putIfAbsent;
-    const callback = jest.fn();
-    await expect(withIoLock(io, 'state.si-lock', 'state', 'migrate', callback)).rejects.toThrow(
-      /atomically/,
-    );
-    expect(callback).not.toHaveBeenCalled();
   });
 });

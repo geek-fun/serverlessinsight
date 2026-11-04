@@ -46,7 +46,7 @@ const document = (): AggregateStateFile => mergeAggregateScope(null, scope, stat
 afterEach(() => jest.restoreAllMocks());
 
 describe('aggregate deployment state', () => {
-  it('keeps the V4 runtime view separate from the V5 aggregate envelope', () => {
+  it('distinguishes the V4 runtime view from the V4 aggregate envelope', () => {
     jest.spyOn(crypto, 'randomUUID').mockReturnValue('00000000-0000-4000-8000-000000000001');
     const persisted = document();
     expect(persisted.version).toBe(AGGREGATE_STATE_VERSION);
@@ -63,6 +63,10 @@ describe('aggregate deployment state', () => {
     expect(view.resources).toEqual(state().resources);
     expect(view.stages.prod.shared).toEqual({});
     expect(readAggregateDocument(persisted, scope, 'state.json')).toBe(persisted);
+    expect(view.version).toBe(persisted.version);
+    expect(() => readAggregateDocument(view, scope, 'state.json')).toThrow(
+      'STATE_AGGREGATE_INVALID',
+    );
   });
 
   it('merges only the selected provider, stage and region without mutating siblings', () => {
@@ -163,12 +167,12 @@ describe('aggregate deployment state', () => {
   it.each([
     null,
     [],
-    { version: '5.0', app: 'shop', service: 'api', stages: [] },
-    { version: '5.0', app: 'shop', service: 'api', stages: {}, provider: 'aliyun' },
-    { version: '5.0', app: 'shop', service: 'api', stages: {}, resources: {} },
-    { version: '5.0', app: 'shop', service: 'api', stages: { prod: {} } },
+    { version: '4.0', app: 'shop', service: 'api', stages: [] },
+    { version: '4.0', app: 'shop', service: 'api', stages: {}, provider: 'aliyun' },
+    { version: '4.0', app: 'shop', service: 'api', stages: {}, resources: {} },
+    { version: '4.0', app: 'shop', service: 'api', stages: { prod: {} } },
     {
-      version: '5.0',
+      version: '4.0',
       app: 'shop',
       service: 'api',
       stages: { prod: { providers: { aliyun: {} } } },
@@ -206,7 +210,7 @@ describe('aggregate deployment state', () => {
       readAggregateDocument(document(), { ...scope, app: 'other' }, 'state.json'),
     ).toThrow('STATE_SCOPED_IDENTITY_MISMATCH');
     expect(() =>
-      readAggregateDocument({ ...document(), version: '4.0' }, scope, 'state.json'),
+      readAggregateDocument({ ...document(), version: '5.0' }, scope, 'state.json'),
     ).toThrow();
     expect(() =>
       readAggregateDocument({ ...document(), version: undefined }, scope, 'state.json'),

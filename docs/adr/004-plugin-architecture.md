@@ -134,7 +134,7 @@ The engine, not the plugin, computes the plan:
 
 Plugins never persist state: prior state is injected, new state is returned, core serializes it. Refresh (`read`) returns wholly-known state or `null`; a `--refresh=false` fast path skips the step.
 
-Future plugins receive the selected Stage/Provider/Region V4 view. The host owns V5
+Future plugins receive the selected Stage/Provider/Region V4 view. The host owns V4
 aggregate persistence, the original backend location and its whole-file lock; a plugin
 must not create a parallel per-region state authority. App/Service remain literal, and
 cloud account fields remain credential/native-address context.

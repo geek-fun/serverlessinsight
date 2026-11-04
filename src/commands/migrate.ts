@@ -14,13 +14,12 @@ import {
   hashSaasState,
   type SaasStateSnapshot,
 } from '../common';
-import { createStateBackend, resolveStateStorage } from '../common/stateBackend';
+import { createStateBackend } from '../common/stateBackend';
 import { loadCredentials, getConsoleUrl } from '../common/credentialStore';
 import { createApiClient, validateApiKey } from '../common/apiClient';
 import { isMigratedToSaas } from '../common/migrationMarker';
-import { StateBackendType, type BucketStoreBackendConfig } from '../types';
+import { StateBackendType } from '../types';
 import { parseYaml, revalYaml } from '../parser';
-import { runRegionalMigration } from './migrateRegional';
 import { lang } from '../lang';
 
 type MigrateUploadResult = {
@@ -96,11 +95,7 @@ export const migrate = async (options: {
   noMarker?: boolean;
   dryRun?: boolean;
   rollback?: boolean;
-  toRegional?: boolean;
-  legacyApp?: string;
-  legacyService?: string;
   bindUnknownRegion?: string;
-  rollbackOpId?: string;
 }) => {
   logger.info(lang.__('VALIDATING_YAML'));
   const iacLocation = getIacLocation(options.location);
@@ -126,48 +121,6 @@ export const migrate = async (options: {
 
   // ① preflight — the source must be a legacy backend with actual state
   const backendType = iac.backend?.type ?? StateBackendType.SAAS;
-
-  if (options.toRegional) {
-    if (backendType === StateBackendType.SAAS) {
-      throw new Error(lang.__('REGIONAL_MIGRATION_LOCAL_OR_BUCKET_ONLY'));
-    }
-    const bucketConfig =
-      backendType === StateBackendType.BUCKET_STORE
-        ? (() => {
-            const cfg = iac.backend as BucketStoreBackendConfig;
-            const storage = resolveStateStorage(cfg, context);
-            return {
-              bucket: cfg.bucket,
-              key: cfg.key,
-
-              storageRegion: storage.region,
-              storageProvider: storage.provider,
-              accessKeyId: storage.accessKeyId,
-              accessKeySecret: storage.accessKeySecret,
-              securityToken: storage.securityToken,
-            };
-          })()
-        : undefined;
-    await runRegionalMigration({
-      provider: context.provider,
-      app: context.app,
-      service: context.service,
-      region: context.region,
-      stage: options.stage,
-
-      baseDir: process.cwd(),
-      backendType: backendType as 'LOCAL' | 'BUCKET_STORE',
-      bucketConfig,
-      legacyApp: options.legacyApp,
-      legacyService: options.legacyService,
-      bindUnknownRegion: options.bindUnknownRegion,
-      dryRun: options.dryRun,
-      rollbackOpId: options.rollbackOpId,
-      autoApprove: options.autoApprove,
-      askConfirmation,
-    });
-    return;
-  }
 
   if (backendType !== StateBackendType.LOCAL && backendType !== StateBackendType.BUCKET_STORE) {
     throw new Error(lang.__('MIGRATE_NO_BACKEND_SOURCE'));
@@ -219,13 +172,17 @@ export const migrate = async (options: {
   logger.info(lang.__('MIGRATE_PREFLIGHT_OK', { orgName: identity.orgName, orgId }));
 
   await sourceBackend.withLock('migrate', async () => {
+    await sourceBackend.upgradeLegacyState?.({
+      bindUnknownRegion: options.bindUnknownRegion,
+      dryRun: options.dryRun,
+    });
     const state = await sourceBackend.loadState();
     if (isMigratedToSaas(state)) {
       logger.warn(lang.__('MIGRATE_ALREADY_MARKED'));
       return;
     }
     if (!state.scope || state.version !== '4.0') {
-      throw new Error(lang.__('MIGRATE_REGIONAL_SPLIT_REQUIRED'));
+      throw new Error(lang.__('MIGRATE_SOURCE_FORMAT_INVALID'));
     }
     validateScopedDocument(toPersistedState(state), scope);
     if (!options.noMarker && !sourceBackend.patchPersisted)

@@ -154,6 +154,34 @@ describe('unit test for deploy command', () => {
     expect(mockedDeployStack).not.toHaveBeenCalled();
   });
 
+  it('prepares legacy state before planning and forwards the reviewed region binding', async () => {
+    setupAliyunMocks();
+    const upgradeLegacyState = jest.fn(async () => {
+      expect(mockBackend.probeWriteReadiness).not.toHaveBeenCalled();
+      expect(mockedGenerateAliyunPlan).not.toHaveBeenCalled();
+    });
+    mockedCreateStateBackend.mockReturnValue({ ...mockBackend, upgradeLegacyState });
+
+    await deploy({ ...baseOptions, bindUnknownRegion: 'cn-hangzhou' });
+
+    expect(upgradeLegacyState).toHaveBeenCalledWith({ bindUnknownRegion: 'cn-hangzhou' });
+    expect(mockedDeployStack).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not plan or execute cloud changes when automatic preparation fails', async () => {
+    setupAliyunMocks();
+    mockedCreateStateBackend.mockReturnValue({
+      ...mockBackend,
+      upgradeLegacyState: jest.fn().mockRejectedValue(new Error('upgrade interrupted')),
+    });
+
+    await expect(deploy(baseOptions)).rejects.toThrow('upgrade interrupted');
+
+    expect(mockBackend.probeWriteReadiness).not.toHaveBeenCalled();
+    expect(mockedGenerateAliyunPlan).not.toHaveBeenCalled();
+    expect(mockedDeployStack).not.toHaveBeenCalled();
+  });
+
   it('should deploy with tencent provider', async () => {
     mockedGetIacLocation.mockReturnValue('resolved-location');
     mockedParseYaml.mockReturnValue(tencentRawIac);

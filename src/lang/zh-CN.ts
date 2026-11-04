@@ -1034,15 +1034,9 @@ export const zhCN = {
   EFFECTIVE_CONFIG_REGION_REQUIRED:
     '需要指定 region：通过 -r/--region 传入、在 YAML 的 provider.region 中设置，或设置 SI_REGION 环境变量',
 
-  STATE_WRITE_BLOCKED_LEGACY:
-    '拒绝写入区域状态：旧版聚合文件 {{statePath}} 仍持有该 stage 的状态。\n  请先运行 `si migrate --to-regional --dry-run` 审查升级方案，确认后再执行升级。只读命令仍可继续读取旧文件。',
-  STATE_WRITE_BLOCKED_LEGACY_BUCKET:
-    '拒绝写入区域状态：旧版状态对象 {{objectKey}} 仍持有该 stage 的状态。\n  请先运行 `si migrate --to-regional --dry-run` 审查升级方案，确认后再执行升级。只读命令仍可继续读取旧对象。',
   STATE_AGGREGATE_INVALID: '聚合状态文档格式损坏，请先恢复已验证的备份后再继续。',
-  STATE_IDENTITY_REBIND_UNSUPPORTED:
-    '迁移不允许重绑定 App 或 Service。请保留 YAML 中原有的身份与状态位置。',
   STATE_STORE_UPGRADE_REQUIRED:
-    '状态 {{location}} 需要原位置格式升级。请先运行 `si migrate --to-regional --dry-run` 审查，再执行迁移后部署。',
+    '状态 {{location}} 需要原位置格式升级。deploy、destroy 和 SaaS 交接会在规划或导入前自动完成升级。',
   STATE_PARTITION_PATCH_INVALID: '仅可修改部署归属和迁移元数据。',
   STATE_PLAN_BASE_CHANGED: '目标部署状态在规划后发生变化，请重新生成并批准计划后再继续。',
   STATE_SCOPED_VERSION_UNSUPPORTED: '不支持的状态版本 {{version}}',
@@ -1065,24 +1059,21 @@ export const zhCN = {
   SAAS_READ_ONLY_WRITE_REFUSED: '该 SaaS 后端实例以只读模式创建（diff/show），拒绝状态写入',
   SAAS_WRITE_BLOCKED_UNSCOPED_STATE:
     'Console 上 stage {{stage}} 的当前状态没有记录区域 scope（早于区域隔离）。请先在 Console 侧完成该服务的迁移，再向 region {{region}} 部署——直接写入会覆盖其他区域的状态',
-  REGIONAL_MIGRATION_LOCAL_OR_BUCKET_ONLY:
-    '--to-regional 仅适用于 LOCAL 与 BUCKET_STORE 后端。SaaS 的区域状态由 Console 侧完成',
   REGIONAL_MIGRATION_UNSUPPORTED_SOURCE:
     '期望旧版 V3.0 状态聚合，但发现版本 "{{version}}"。没有可升级的内容',
   REGIONAL_MIGRATION_SOURCE_MANAGED_BY_SAAS:
     '该旧版状态已迁移至（并归）ServerlessInsight Console 所有（managedBy=saas）。状态升级会生成无标记的本地副本，重新引入双写风险——已拒绝。请继续使用 Console 后端；或仅在你明确要交还所有权时先运行 `si migrate --rollback`',
   REGIONAL_MIGRATION_INCOMPLETE_STAGE_COVERAGE:
-    '升级必须保留所有 stage 中的每个资源。请去掉 --stage，重新运行 `si migrate --to-regional` 升级整份文档。',
+    '自动升级必须保留所有 stage 中的每个资源。当前源数据覆盖不完整，请核对源状态和恢复记录后再重试。',
   STATE_ATOMIC_CREATE_REQUIRED: '此状态存储无法原子登记所有权或获取锁，已拒绝变更。',
   REGIONAL_MIGRATION_PENDING:
-    '迁移 {{opId}} 尚未完成。请使用原命令继续迁移，或通过 --rollback-op-id {{opId}} 完成回滚；保留原 app、service、provider 和地域绑定选项。',
+    'State 升级 {{opId}} 尚未完成。请使用已审查的区域绑定重新执行 deploy、destroy 或 migrate 以继续。',
   SAAS_STATE_BASE_UNKNOWN: '请先读取区域状态，再保存或开始部署。',
   REGIONAL_LOCK_STALE:
     '状态已锁定（检测到可能过期的锁）。\n{{info}}\n确认没有其他操作正在运行后，可执行：\n  si force-unlock {{id}}',
   REGIONAL_LOCK_TIMEOUT: '等待 {{seconds}} 秒后仍无法获取锁。\n{{info}}',
   REGIONAL_LOCK_FAILED: '无法获取锁。\n{{path}}',
-  MIGRATE_REGIONAL_SPLIT_REQUIRED:
-    '源状态是旧版聚合文档。请先执行 `si migrate --to-regional --dry-run` 并审核区域归属，再应用升级，最后逐个 stage/region 导入控制台。',
+  MIGRATE_SOURCE_FORMAT_INVALID: '源后端在自动准备后未提供有效的单部署 V4 视图，尚未导入任何状态。',
   MIGRATE_TARGET_REGIONAL_REQUIRED:
     '目标服务仍使用旧版状态。请先完成控制台侧的区域绑定和激活，再导入区域状态。',
   MIGRATE_SOURCE_MULTIPLE_SCOPES:
@@ -1094,47 +1085,17 @@ export const zhCN = {
     '源状态记录的 provider 为 "{{source}}"，命令选择的是 "{{effective}}"。升级保留源 provider，业务部署参数不会重写历史资源归属。',
   REGIONAL_MIGRATION_UNKNOWN_REGION_REQUIRED:
     '部分资源没有区域证据（早于区域隔离的状态）。请使用 --bind-unknown-region <region> 重新运行以显式绑定区域——CLI 绝不会从 YAML 或文件名猜测历史区域',
-  REGIONAL_MIGRATION_SOURCE_MISSING: '迁移过程中旧版状态消失了——未写入任何内容',
   REGIONAL_MIGRATION_SOURCE_CHANGED:
-    '旧版状态在生成计划之后发生了变化（哈希不匹配）。请重新运行 `si migrate --to-regional --dry-run` 刷新计划——本次未写入任何内容',
+    '格式升级期间源状态发生了变化。为避免覆盖已有状态，请先核对源状态和保留的恢复记录，再重试原操作。',
   REGIONAL_MIGRATION_APPLIED:
-    'State 已在原位置升级（操作 {{opId}}）。各 stage/provider/region 分区共用原文件或 Bucket key。部署前请使用 `si diff` 验证所选部署。',
+    'State 已在原位置升级（操作 {{opId}}）。各 stage/provider/region 分区共用原文件或 Bucket key。继续处理当前操作。',
   REGIONAL_MIGRATION_PARTIAL_FAILURE:
-    'State 升级中断（操作 {{opId}}）：{{error}}。请保留源备份和迁移记录，重新运行同一迁移命令以继续。',
-  REGIONAL_MIGRATION_REPORT_MISSING:
-    '未找到操作 {{opId}} 的迁移报告——该升级不是由本 CLI 执行的，或报告已被删除',
+    'State 升级中断（操作 {{opId}}）：{{error}}。请保留源备份和迁移记录，重新运行同一操作以继续。',
   REGIONAL_MIGRATION_BACKUP_MISSING:
-    '操作 {{opId}} 的迁移前备份缺失——请手动恢复；缺少备份时拒绝回滚',
-  REGIONAL_MIGRATION_ROLLBACK_BLOCKED:
-    '无法回滚：聚合 state 在升级后发生了变化，可能包含其他部署分区的写入。恢复原文件会丢失状态，请保留备份并显式处理这些变更。',
-  REGIONAL_MIGRATION_ROLLED_BACK: 'State 升级 {{opId}} 已在原位置回滚，原始源备份仍然保留。',
-  REGIONAL_MIGRATION_PLAN_HEADER:
-    '{{location}} 的原位置 State 升级计划，按 stage/provider/region 管理分区：',
-  REGIONAL_MIGRATION_SOURCE_HASH: '源文档哈希：{{hash}}',
-  REGIONAL_MIGRATION_NO_REGIONAL_RESOURCES: '在所选范围内，旧版聚合中没有找到区域资源',
-  REGIONAL_MIGRATION_PLAN_DOCUMENT:
-    '  • stage {{stage}} / region {{region}}：{{resources}} 个资源，{{shared}} 个共享',
-  REGIONAL_MIGRATION_UNKNOWN_HEADER: '没有区域证据的资源（早于区域隔离创建）——需要显式绑定：',
+    'State 升级 {{opId}} 的原始备份缺失，无法安全恢复。请先恢复该备份，再重试原操作。',
   REGIONAL_MIGRATION_UNKNOWN_ITEM: '  • [{{stage}}] {{logicalId}}（{{kind}}）',
-  REGIONAL_MIGRATION_UNKNOWN_HINT:
-    'YAML 默认值、CLI 参数和文件名都不是历史证据。请先核实这些资源实际所在区域，再通过 --bind-unknown-region <region> 显式绑定',
-  REGIONAL_MIGRATION_BACKUP_NOTICE:
-    '执行时先备份源状态，为各分区设置独立 lineage，然后将原文件/key 原子替换为 5.0 聚合格式。旧版 CLI 必须拒绝此格式。',
-  REGIONAL_MIGRATION_NO_LEGACY_STATE:
-    '在 {{location}} 未找到需要升级的状态。全新部署在原位置使用 5.0 聚合格式。',
-  REGIONAL_MIGRATION_DRY_RUN_NOTICE:
-    '仅 dry-run——未写入任何内容。去掉 --dry-run（如上方有列出，请加 --bind-unknown-region）后重新运行以执行升级',
-  REGIONAL_MIGRATION_CONFIRM:
-    '立即在原位置升级 State？源状态将被备份，各分区继续保存在原文件/key 中（yes/no）：',
-  MIGRATE_CANCELLED: '迁移已取消——未写入任何内容',
 
-  OPT_TO_REGIONAL: '将 V3 state 在原位置升级为 stage/provider/region 分区',
-  OPT_LEGACY_APP: '读取该（重命名前）app 名称的旧版聚合状态，用于显式重绑定',
-  OPT_LEGACY_SERVICE: '读取该（重命名前）service 名称的旧版聚合状态，用于显式重绑定',
   OPT_BIND_UNKNOWN_REGION: '将没有区域证据的资源显式绑定到该区域',
-  OPT_ROLLBACK_OP_ID: '通过操作 ID 回滚尚未发生后续写入的 State 升级',
-
-  // HTTP trigger messages
   HTTP_TRIGGER_AUTH_TYPE_REQUIRED:
     "HTTP 触发器 '{{functionName}}' 需要设置 'auth_type'（public 或 iam）",
   CREATING_HTTP_TRIGGER: "正在为函数 '{{functionName}}' 创建 HTTP 触发器 '{{triggerName}}'...",

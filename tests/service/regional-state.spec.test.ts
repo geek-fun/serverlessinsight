@@ -5,8 +5,8 @@ import { existsSync } from 'node:fs';
 import { deploy } from '../../src/commands/deploy';
 import { destroyStack } from '../../src/commands/destroy';
 import { lang } from '../../src/lang';
-import { migrate } from '../../src/commands/migrate';
 import { plan } from '../../src/commands/plan';
+import { REGIONAL_MIGRATION_SUFFIX } from '../../src/common/constants';
 import { readScopedState } from './scopedState';
 import type { StateFile } from '../../src/types';
 import {
@@ -278,19 +278,42 @@ describe('Regional state isolation (issue #280)', () => {
       resources: {},
     });
 
-    it('blocks mutations while the legacy aggregate is authoritative', async () => {
+    it('automatically upgrades legacy state before planning a deployment', async () => {
+      const original = legacyState();
       await fs.mkdir(path.dirname(legacyPath), { recursive: true });
-      await fs.writeFile(legacyPath, JSON.stringify(legacyState()), 'utf-8');
+      await fs.writeFile(legacyPath, JSON.stringify(original), 'utf-8');
 
-      await expect(
-        deploy({ location: fixture, stage: 'dev', autoApprove: true, region: 'cn-hangzhou' }),
-      ).rejects.toThrow(/in-place format upgrade/);
+      await deploy({
+        location: fixture,
+        stage: 'dev',
+        autoApprove: true,
+        region: 'cn-hangzhou',
+        refresh: false,
+      });
+
+      const upgraded = JSON.parse(await fs.readFile(legacyPath, 'utf-8'));
+      expect(upgraded.version).toBe('4.0');
+      const selected = await readScopedState<StateFile>(APP, SERVICE, 'dev', 'cn-hangzhou');
+      expect(selected.migration?.sourceVersion).toBe('3.0');
+      expect(
+        selected.resources['functions.insight_poc_fn'].instances.find(
+          (instance) => instance.type === 'ALIYUN_FC3_FUNCTION',
+        )?.id,
+      ).toBe('insight-poc-fn');
+      const files = await fs.readdir(path.dirname(legacyPath));
+      const backup = files.find((name) =>
+        name.startsWith(path.basename(legacyPath) + '.pre-upgrade-'),
+      )!;
+      expect(
+        JSON.parse(await fs.readFile(path.join(path.dirname(legacyPath), backup), 'utf-8')),
+      ).toEqual(original);
       expect(mockClient.fc3.createFunction).not.toHaveBeenCalled();
     });
 
     it('keeps read-only commands working against the legacy aggregate', async () => {
+      const original = JSON.stringify(legacyState());
       await fs.mkdir(path.dirname(legacyPath), { recursive: true });
-      await fs.writeFile(legacyPath, JSON.stringify(legacyState()), 'utf-8');
+      await fs.writeFile(legacyPath, original, 'utf-8');
       mockClient.fc3.getFunction.mockResolvedValue({
         body: {
           functionConfig: {
@@ -303,62 +326,16 @@ describe('Regional state isolation (issue #280)', () => {
         },
       });
 
-      const result = await plan({
+      await plan({
         location: fixture,
         stage: 'dev',
         region: 'cn-hangzhou',
         noColor: true,
       });
-      void result;
-      // Read-only: nothing provisioned, nothing mutated
       expect(mockClient.fc3.createFunction).not.toHaveBeenCalled();
       expect(existsSync(scopedPath('dev', 'cn-hangzhou'))).toBe(false);
-    });
-
-    it('upgrades the legacy aggregate in place through the protected dry-run/apply migration', async () => {
-      await fs.mkdir(path.dirname(legacyPath), { recursive: true });
-      await fs.writeFile(legacyPath, JSON.stringify(legacyState()), 'utf-8');
-
-      // Dry-run: reports, writes nothing
-      await migrate({
-        location: fixture,
-        stage: 'dev',
-        region: 'cn-hangzhou',
-        autoApprove: true,
-        toRegional: true,
-        dryRun: true,
-      });
-      await expect(fs.stat(scopedPath('dev', 'cn-hangzhou'))).rejects.toThrow();
-
-      // Apply the in-place storage format upgrade.
-      await migrate({
-        location: fixture,
-        stage: 'dev',
-        region: 'cn-hangzhou',
-        autoApprove: true,
-        toRegional: true,
-      });
-
-      const scoped = await readScopedState<StateFile>(APP, SERVICE, 'dev', 'cn-hangzhou');
-      expect(scoped.version).toBe('4.0');
-      expect(scoped.scope).toEqual({ stage: 'dev', region: 'cn-hangzhou' });
-      expect(scoped.serial).toBe(1);
-      expect(scoped.migration?.sourceVersion).toBe('3.0');
-      expect(scoped.stages.dev.resources['functions.insight_poc_fn'].instances[0].id).toBe(
-        'insight-poc-fn',
-      );
-
-      const upgraded = JSON.parse(await fs.readFile(legacyPath, 'utf-8'));
-      expect(upgraded.version).toBe('5.0');
-      expect(
-        upgraded.stages.dev.providers.aliyun.regions['cn-hangzhou'].migration.sourceVersion,
-      ).toBe('3.0');
-      expect(upgraded).not.toHaveProperty('managedBy');
-      expect(existsSync(scopedPath('dev', 'cn-hangzhou'))).toBe(false);
-
-      await deploy({ location: fixture, stage: 'dev', autoApprove: true, region: 'cn-hangzhou' });
-      const after = await readScopedState<StateFile>(APP, SERVICE, 'dev', 'cn-hangzhou');
-      expect(after.serial).toBeGreaterThanOrEqual(2);
+      expect(await fs.readFile(legacyPath, 'utf-8')).toBe(original);
+      expect(existsSync(legacyPath + REGIONAL_MIGRATION_SUFFIX)).toBe(false);
     });
 
     it('reports unknown-region resources and requires an explicit binding', async () => {
@@ -369,21 +346,19 @@ describe('Regional state isolation (issue #280)', () => {
       await fs.writeFile(legacyPath, JSON.stringify(state), 'utf-8');
 
       await expect(
-        migrate({
+        deploy({
           location: fixture,
           stage: 'dev',
           region: 'cn-hangzhou',
           autoApprove: true,
-          toRegional: true,
         }),
       ).rejects.toThrow(lang.__('REGIONAL_MIGRATION_UNKNOWN_REGION_REQUIRED'));
 
-      await migrate({
+      await deploy({
         location: fixture,
         stage: 'dev',
         region: 'cn-hangzhou',
         autoApprove: true,
-        toRegional: true,
         bindUnknownRegion: 'cn-hangzhou',
       });
 
@@ -391,17 +366,9 @@ describe('Regional state isolation (issue #280)', () => {
       expect(scoped.stages.dev.resources['functions.insight_poc_fn'].region).toBe('cn-hangzhou');
     });
 
-    it('allows deploying a NEW region after the split', async () => {
+    it('preserves legacy resources when deploying another region', async () => {
       await fs.mkdir(path.dirname(legacyPath), { recursive: true });
       await fs.writeFile(legacyPath, JSON.stringify(legacyState()), 'utf-8');
-
-      await migrate({
-        location: fixture,
-        stage: 'dev',
-        region: 'cn-hangzhou',
-        autoApprove: true,
-        toRegional: true,
-      });
 
       // A new region selects an empty partition.
       await deploy({
@@ -424,7 +391,7 @@ describe('Regional state isolation (issue #280)', () => {
 
       await expect(
         deploy({ location: fixture, stage: 'dev', autoApprove: true, region: 'cn-hangzhou' }),
-      ).rejects.toThrow(/malformed/i);
+      ).rejects.toThrow(/corrupt|malformed/i);
       expect(mockClient.fc3.createFunction).not.toHaveBeenCalled();
       expect(existsSync(scopedPath('dev', 'cn-hangzhou'))).toBe(false);
     });

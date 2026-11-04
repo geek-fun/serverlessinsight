@@ -10,7 +10,6 @@ import {
   StateVersionError,
   StateScopeMismatchError,
   CURRENT_STATE_VERSION,
-  LEGACY_STATE_VERSION,
 } from '../types';
 import { normalizeScope, DeploymentScope } from './stateScope';
 import { emptyDeploymentState } from './aggregateState';
@@ -366,27 +365,6 @@ export const validateScopedDocument = (raw: PersistedStateFile, scope: Deploymen
   if (!matches) {
     throw new StateScopeMismatchError(normalized, stored);
   }
-};
-
-export const readLegacyPersistedState = (
-  app: string,
-  service: string,
-  baseDir: string = process.cwd(),
-): PersistedStateFile | null => {
-  const statePath = getStatePath(app, service, baseDir);
-  if (!fs.existsSync(statePath)) {
-    return null;
-  }
-  let raw: PersistedStateFile;
-  try {
-    raw = JSON.parse(fs.readFileSync(statePath, 'utf-8')) as PersistedStateFile;
-  } catch (error) {
-    throw new StateCorruptError(statePath, error);
-  }
-  if (raw.version && parseStateVersion(raw.version) > parseStateVersion(LEGACY_STATE_VERSION)) {
-    throw new StateVersionError(raw.version, LEGACY_STATE_VERSION);
-  }
-  return raw;
 };
 
 /* istanbul ignore next */

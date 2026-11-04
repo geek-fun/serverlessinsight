@@ -80,7 +80,7 @@
 ## Deployment state representation
 
 The example below is the single-deployment V4 executor/SaaS view. Local/Bucket
-persist the selected stage under V5 `stages[stage].providers[provider].regions[region]`
+persist the selected stage under V4 `stages[stage].providers[provider].regions[region]`
 at the original file/key. Native resource instances are unchanged; see
 [deployment state and migration](regional-deployment-state.md).
 

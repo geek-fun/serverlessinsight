@@ -232,6 +232,7 @@ program
   .option('-f, --file <path>', lang.__('OPT_FILE'))
   .option('-s, --stage <stage>', lang.__('OPT_STAGE'))
   .option('-r, --region <region>', lang.__('OPT_REGION'))
+  .option('--bind-unknown-region <region>', lang.__('OPT_BIND_UNKNOWN_REGION'))
   .option('-v, --provider <provider>', lang.__('OPT_PROVIDER'))
   .option('-k, --accessKeyId <accessKeyId>', lang.__('OPT_ACCESS_KEY_ID'))
   .option('-x, --accessKeySecret <accessKeySecret>', lang.__('OPT_ACCESS_KEY_SECRET'))
@@ -257,6 +258,7 @@ program
         parameter,
         file,
         region,
+        bindUnknownRegion,
         provider,
         accessKeyId,
         accessKeySecret,
@@ -270,6 +272,7 @@ program
           parameters: parameter,
           location: file,
           region,
+          bindUnknownRegion,
           provider,
           accessKeyId,
           accessKeySecret,
@@ -298,11 +301,7 @@ program
   .option('--no-marker', lang.__('OPT_NO_MARKER'))
   .option('--dry-run', lang.__('OPT_DRY_RUN'))
   .option('--rollback', lang.__('OPT_ROLLBACK'))
-  .option('--to-regional', lang.__('OPT_TO_REGIONAL'))
-  .option('--legacy-app <app>', lang.__('OPT_LEGACY_APP'))
-  .option('--legacy-service <service>', lang.__('OPT_LEGACY_SERVICE'))
   .option('--bind-unknown-region <region>', lang.__('OPT_BIND_UNKNOWN_REGION'))
-  .option('--rollback-op-id <opId>', lang.__('OPT_ROLLBACK_OP_ID'))
   .action(
     actionWrapper(
       'migrate',
@@ -320,11 +319,7 @@ program
         marker,
         dryRun,
         rollback,
-        toRegional,
-        legacyApp,
-        legacyService,
         bindUnknownRegion,
-        rollbackOpId,
       }) => {
         await migrate({
           stage,
@@ -342,11 +337,7 @@ program
           noMarker: marker === false,
           dryRun,
           rollback,
-          toRegional,
-          legacyApp,
-          legacyService,
           bindUnknownRegion,
-          rollbackOpId,
         });
       },
     ),
@@ -357,6 +348,7 @@ program
   .option('-f, --file <path>', lang.__('OPT_FILE'))
   .option('-s, --stage <stage>', lang.__('OPT_STAGE'))
   .option('-r, --region <region>', lang.__('OPT_REGION'))
+  .option('--bind-unknown-region <region>', lang.__('OPT_BIND_UNKNOWN_REGION'))
   .option('-v, --provider <provider>', lang.__('OPT_PROVIDER'))
   .option('-k, --accessKeyId <accessKeyId>', lang.__('OPT_ACCESS_KEY_ID'))
   .option('-x, --accessKeySecret <accessKeySecret>', lang.__('OPT_ACCESS_KEY_SECRET'))
@@ -365,11 +357,21 @@ program
   .action(
     actionWrapper(
       'destroy',
-      async ({ file, stage, region, provider, accessKeyId, accessKeySecret, securityToken }) => {
+      async ({
+        file,
+        stage,
+        region,
+        bindUnknownRegion,
+        provider,
+        accessKeyId,
+        accessKeySecret,
+        securityToken,
+      }) => {
         await destroyStack({
           location: file,
           stage,
           region,
+          bindUnknownRegion,
           provider,
           accessKeyId,
           accessKeySecret,

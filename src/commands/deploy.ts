@@ -40,6 +40,7 @@ export const deploy = async (options: {
   parameters?: { [key: string]: string };
   stage?: string;
   region?: string;
+  bindUnknownRegion?: string;
   provider?: string;
   accessKeyId?: string;
   accessKeySecret?: string;
@@ -78,6 +79,8 @@ export const deploy = async (options: {
     siApiKey: options.siApiKey,
     migrationMarker: 'refuse',
   });
+
+  await backend.upgradeLegacyState?.({ bindUnknownRegion: options.bindUnknownRegion });
 
   const readiness = await backend.probeWriteReadiness();
   if (!readiness.ready) {

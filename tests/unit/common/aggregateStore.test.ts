@@ -1,3 +1,4 @@
+import type { KeyValueIO } from '../../../src/common/regionalMigration';
 import { createAggregateStore } from '../../../src/common/aggregateStore';
 import {
   aggregatePartition,
@@ -39,7 +40,7 @@ const fixture = (initial: Record<string, unknown> = {}) => {
     }),
   };
   const open = (target = scope, markerAction: 'off' | 'warn' | 'refuse' = 'off') =>
-    createAggregateStore(io, target, {
+    createAggregateStore(io as KeyValueIO, target, {
       key,
       markerAction,
       backupWrites: true,
@@ -48,7 +49,7 @@ const fixture = (initial: Record<string, unknown> = {}) => {
 };
 
 describe('aggregate store IO', () => {
-  it.each(['.regional-migration.json'])(
+  it.each(['.state-upgrade.json'])(
     'blocks all partitions during an unfinished %s operation',
     async (suffix) => {
       const document = mergeAggregateScope(null, scope, emptyDeploymentState(scope));
@@ -137,7 +138,7 @@ describe('aggregate store IO', () => {
   it('requires legacy format migration before any write', async () => {
     const { io, open } = fixture({ [key]: legacy });
     const store = open();
-    expect((await store.loadState()).version).toBe('3.0');
+    expect((await store.loadState()).version).toBe('4.0');
     expect(store.readStateSource()).toBe('legacy');
     expect(await store.probeWriteReadiness()).toEqual({
       ready: false,
@@ -151,9 +152,7 @@ describe('aggregate store IO', () => {
     await expect(store.patchPersisted({ managedBy: 'saas' })).rejects.toThrow(
       'STATE_STORE_UPGRADE_REQUIRED',
     );
-    await expect(open({ ...scope, provider: 'tencent' }).loadState()).rejects.toBeInstanceOf(
-      StateScopeMismatchError,
-    );
+    expect((await open({ ...scope, provider: 'tencent' }).loadState()).resources).toEqual({});
     expect(io.write).not.toHaveBeenCalled();
   });
 
@@ -161,10 +160,10 @@ describe('aggregate store IO', () => {
     const { io, open } = fixture({
       [key]: { ...legacy, version: '4.0', scope: { stage: scope.stage, region: scope.region } },
     });
-    await expect(open().loadState()).rejects.toBeInstanceOf(StateVersionError);
-    await expect(open().probeWriteReadiness()).rejects.toBeInstanceOf(StateVersionError);
+    await expect(open().loadState()).rejects.toBeInstanceOf(StateCorruptError);
+    await expect(open().probeWriteReadiness()).rejects.toBeInstanceOf(StateCorruptError);
     await expect(open().saveState(emptyDeploymentState(scope))).rejects.toBeInstanceOf(
-      StateVersionError,
+      StateCorruptError,
     );
     expect(io.write).not.toHaveBeenCalled();
   });

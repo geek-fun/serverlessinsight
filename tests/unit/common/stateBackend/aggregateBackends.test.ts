@@ -81,7 +81,7 @@ describe.each(['local', 'bucket'])('%s aggregate state backend', (kind) => {
     await first.saveState(emptyDeploymentState(scope));
     const before = JSON.stringify(aggregatePartition(read(), scope));
     await open(sibling).saveState(emptyDeploymentState(sibling));
-    expect(read().version).toBe('5.0');
+    expect(read().version).toBe('4.0');
     expect(JSON.stringify(aggregatePartition(read(), scope))).toBe(before);
     expect(aggregatePartition(read(), sibling)?.serial).toBe(1);
     expect(read()).not.toHaveProperty('provider');
@@ -155,7 +155,7 @@ describe.each(['local', 'bucket'])('%s aggregate state backend', (kind) => {
     expect(aggregatePartition(read(), sibling)?.managedBy).toBeUndefined();
   });
 
-  it('requires migration for a legacy source and preserves it without executing callbacks', async () => {
+  it('preserves an unprepared legacy source without executing write callbacks', async () => {
     const { open, write, read } = fixture(kind);
     const previous = {
       version: '3.0',
@@ -167,7 +167,7 @@ describe.each(['local', 'bucket'])('%s aggregate state backend', (kind) => {
     write(previous);
     const callback = jest.fn();
     const backend = open();
-    expect((await backend.loadState()).version).toBe('3.0');
+    expect((await backend.loadState()).version).toBe('4.0');
     expect((await backend.probeWriteReadiness()).ready).toBe(false);
     await expect(backend.withLock('deploy', callback)).rejects.toThrow(
       'STATE_STORE_UPGRADE_REQUIRED',

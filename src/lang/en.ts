@@ -1142,16 +1142,10 @@ export const en = {
   EFFECTIVE_CONFIG_REGION_REQUIRED:
     'A region is required: pass -r/--region, set provider.region in the YAML, or set the SI_REGION environment variable',
 
-  STATE_WRITE_BLOCKED_LEGACY:
-    'Refusing to write regional state: the legacy aggregate {{statePath}} still holds the state for this stage.\n  Run `si migrate --to-regional --dry-run` first to review the in-place upgrade, then apply it. Read-only commands keep working against the legacy file.',
-  STATE_WRITE_BLOCKED_LEGACY_BUCKET:
-    'Refusing to write regional state: the legacy state object {{objectKey}} still holds the state for this stage.\n  Run `si migrate --to-regional --dry-run` first to review the in-place upgrade, then apply it. Read-only commands keep working against the legacy object.',
   STATE_AGGREGATE_INVALID:
     'The aggregate state document is malformed. Restore a verified backup before continuing.',
-  STATE_IDENTITY_REBIND_UNSUPPORTED:
-    'App and Service cannot be rebound during migration. Keep their original YAML identities and state location.',
   STATE_STORE_UPGRADE_REQUIRED:
-    'State at {{location}} requires an in-place format upgrade. Run `si migrate --to-regional --dry-run`, then apply the migration before deploying.',
+    'State at {{location}} requires an in-place format upgrade. Deploy, destroy and SaaS handoff prepare it automatically before planning or importing.',
   STATE_PARTITION_PATCH_INVALID: 'Only deployment ownership and migration metadata can be patched.',
   STATE_PLAN_BASE_CHANGED:
     'The selected deployment state changed after planning. Generate and approve a new plan before continuing.',
@@ -1176,25 +1170,23 @@ export const en = {
     'This SaaS backend instance was created read-only (diff/show); state writes are refused',
   SAAS_WRITE_BLOCKED_UNSCOPED_STATE:
     "The current state of stage {{stage}} on the Console has no regional scope recorded (it predates regional isolation). Run the Console-side migration for this service before deploying to region {{region}} — writing here would overwrite another region's state",
-  REGIONAL_MIGRATION_LOCAL_OR_BUCKET_ONLY:
-    '--to-regional applies to LOCAL and BUCKET_STORE backends only. SaaS regional states are provisioned by the Console',
   REGIONAL_MIGRATION_UNSUPPORTED_SOURCE:
     'Expected a legacy V3.0 state aggregate but found version "{{version}}". No V3 upgrade is needed',
   REGIONAL_MIGRATION_SOURCE_MANAGED_BY_SAAS:
     'This legacy state has been migrated to (and is owned by) the ServerlessInsight Console (managedBy=saas). An in-place upgrade would create an unmarked local copy and reopen double-write hazards — refused. Continue on the Console backend, or run `si migrate --rollback` first only if you deliberately want to hand ownership back',
   REGIONAL_MIGRATION_INCOMPLETE_STAGE_COVERAGE:
-    'The upgrade must preserve every resource in every stage. Re-run `si migrate --to-regional` without --stage to upgrade the entire document.',
+    'The automatic upgrade must preserve every resource in every stage. Source coverage is incomplete; review the source and recovery records before retrying.',
   STATE_ATOMIC_CREATE_REQUIRED:
     'This state store cannot atomically reserve ownership or acquire a lock. Mutations are refused.',
   REGIONAL_MIGRATION_PENDING:
-    'Migration {{opId}} is incomplete. Re-run the original command to resume, or use --rollback-op-id {{opId}} to finish rollback. Keep the original app, service, provider and binding options.',
+    'State upgrade {{opId}} is incomplete. Re-run the deploy, destroy or migrate operation to resume with the reviewed region binding.',
   SAAS_STATE_BASE_UNKNOWN: 'Load the regional state before saving or starting a deployment.',
   REGIONAL_LOCK_STALE:
     'State is currently locked (stale lock detected).\n{{info}}\nIf you are certain no other operation is running, use:\n  si force-unlock {{id}}',
   REGIONAL_LOCK_TIMEOUT: 'Failed to acquire lock after {{seconds}} seconds.\n{{info}}',
   REGIONAL_LOCK_FAILED: 'Failed to acquire lock.\n{{path}}',
-  MIGRATE_REGIONAL_SPLIT_REQUIRED:
-    'This source is a legacy aggregate. Run `si migrate --to-regional --dry-run`, review the regional bindings, then apply the in-place upgrade before importing each stage/provider/region into the Console.',
+  MIGRATE_SOURCE_FORMAT_INVALID:
+    'The source backend did not provide a valid single-deployment V4 view after automatic preparation. Nothing was imported.',
   MIGRATE_TARGET_REGIONAL_REQUIRED:
     'The target service still uses legacy state. Complete its Console-side binding and activation before importing a regional state.',
   MIGRATE_SOURCE_MULTIPLE_SCOPES:
@@ -1206,52 +1198,17 @@ export const en = {
     'The source records provider "{{source}}", while the command selects "{{effective}}". The upgrade preserves the source provider; workload overrides never rewrite historical ownership.',
   REGIONAL_MIGRATION_UNKNOWN_REGION_REQUIRED:
     'Some resources carry no region evidence (pre-regional state). Re-run with --bind-unknown-region <region> to bind them explicitly to a region — the CLI never guesses historical regions from YAML or filenames',
-  REGIONAL_MIGRATION_SOURCE_MISSING:
-    'The legacy state disappeared while migrating — nothing was written',
   REGIONAL_MIGRATION_SOURCE_CHANGED:
-    'The legacy state changed after the plan was produced (hash mismatch). Re-run `si migrate --to-regional --dry-run` to refresh the plan — no writes were made',
+    'The source state changed during its format upgrade. Refusing to overwrite it; review the source and retained recovery records before retrying.',
   REGIONAL_MIGRATION_APPLIED:
-    'State upgraded in place (operation {{opId}}). Stage/provider/region partitions now share the original file or Bucket key. Verify the selected deployment with `si diff` before deploying.',
+    'State upgraded in place (operation {{opId}}). Stage/provider/region partitions now share the original file or Bucket key. Continuing the requested operation.',
   REGIONAL_MIGRATION_PARTIAL_FAILURE:
-    'State upgrade interrupted (operation {{opId}}): {{error}}. Keep the source backup and journal; re-run the same migration to resume.',
-  REGIONAL_MIGRATION_REPORT_MISSING:
-    'No migration report found for operation {{opId}} — the upgrade was not applied from this CLI, or the report was deleted',
+    'State upgrade interrupted (operation {{opId}}): {{error}}. Keep the source backup and journal; re-run the same operation to resume.',
   REGIONAL_MIGRATION_BACKUP_MISSING:
-    'The pre-migration backup for operation {{opId}} is missing — restore it manually; refusing to roll back without it',
-  REGIONAL_MIGRATION_ROLLBACK_BLOCKED:
-    'Cannot roll back: the aggregate changed after the upgrade, including possible sibling deployment writes. Restoring the original file would lose state. Keep the backup and reconcile the changes explicitly.',
-  REGIONAL_MIGRATION_ROLLED_BACK:
-    'State upgrade {{opId}} rolled back in place. The original source backup is retained.',
-  REGIONAL_MIGRATION_PLAN_HEADER:
-    'In-place state upgrade plan for {{location}} — partitions by stage/provider/region:',
-  REGIONAL_MIGRATION_SOURCE_HASH: 'Source document hash: {{hash}}',
-  REGIONAL_MIGRATION_NO_REGIONAL_RESOURCES:
-    'No regional resources found in the legacy aggregate for the selected scope',
-  REGIONAL_MIGRATION_PLAN_DOCUMENT:
-    '  • stage {{stage}} / region {{region}}: {{resources}} resource(s), {{shared}} shared',
-  REGIONAL_MIGRATION_UNKNOWN_HEADER:
-    'Resources WITHOUT region evidence (created before regional isolation) — they need an explicit binding:',
+    'Original backup for state upgrade {{opId}} is missing; cannot safely resume. Restore that backup before retrying.',
   REGIONAL_MIGRATION_UNKNOWN_ITEM: '  • [{{stage}}] {{logicalId}} ({{kind}})',
-  REGIONAL_MIGRATION_UNKNOWN_HINT:
-    'YAML defaults, CLI flags and filenames are not historical evidence. Pass --bind-unknown-region <region> to bind them explicitly, after verifying where these resources actually live',
-  REGIONAL_MIGRATION_BACKUP_NOTICE:
-    'On apply: back up the source, assign independent partition lineages, and atomically replace the original file/key with aggregate format 5.0. Older CLIs must reject this format.',
-  REGIONAL_MIGRATION_NO_LEGACY_STATE:
-    'No state requiring an upgrade was found at {{location}}. Fresh deployments use aggregate format 5.0 at the original location.',
-  REGIONAL_MIGRATION_DRY_RUN_NOTICE:
-    'Dry run only — nothing was written. Re-run with --dry-run removed (and --bind-unknown-region if listed above) to apply',
-  REGIONAL_MIGRATION_CONFIRM:
-    'Upgrade state in place now? The source will be backed up and partitions will remain in the original file/key (yes/no): ',
-  MIGRATE_CANCELLED: 'Migration cancelled — nothing was written',
 
-  OPT_TO_REGIONAL: 'upgrade V3 state in place to stage/provider/region partitions',
-  OPT_LEGACY_APP: 'read the legacy aggregate of this (pre-rename) app name for explicit rebinding',
-  OPT_LEGACY_SERVICE:
-    'read the legacy aggregate of this (pre-rename) service name for explicit rebinding',
   OPT_BIND_UNKNOWN_REGION: 'explicitly bind resources without region evidence to this region',
-  OPT_ROLLBACK_OP_ID: 'roll back an unchanged state upgrade by operation id',
-
-  // HTTP trigger messages
   HTTP_TRIGGER_AUTH_TYPE_REQUIRED:
     "HTTP trigger '{{functionName}}' requires 'auth_type' (public or iam)",
   CREATING_HTTP_TRIGGER:

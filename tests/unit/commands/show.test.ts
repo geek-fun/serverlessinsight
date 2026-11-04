@@ -969,7 +969,7 @@ describe('show command', () => {
             resources: {
               'buckets.website': {
                 mode: 'managed',
-                region: 'cn-beijing',
+                region: 'cn-hangzhou',
                 definition: {},
                 instances: [
                   {
@@ -996,6 +996,20 @@ describe('show command', () => {
       expect(mockLoggerInfo).toHaveBeenCalledWith(
         expect.stringContaining('Custom Domain: example.com'),
       );
+    });
+
+    it('does not display another region or modify legacy state while showing an empty scope', async () => {
+      const statePath = path.join(testDir, '.serverlessinsight/state-test-app-test-service.json');
+      const original = fs.readFileSync(statePath, 'utf-8');
+      (getContext as jest.Mock).mockReturnValue({ ...mockContext, region: 'cn-beijing' });
+
+      await show({ stage: 'default', location: testDir, iac: createMockIac('LOCAL') });
+
+      expect(mockLoggerInfo).toHaveBeenCalledWith('No resources found in state.');
+      expect(mockLoggerInfo).not.toHaveBeenCalledWith(
+        expect.stringContaining('Custom Domain: example.com'),
+      );
+      expect(fs.readFileSync(statePath, 'utf-8')).toBe(original);
     });
   });
 

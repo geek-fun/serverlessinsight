@@ -126,7 +126,7 @@ describe('remoteStateBackend (scope-bound, issue #280)', () => {
     it('persists only the original key and returns a V4 target projection', async () => {
       await backend().saveState(emptyDeploymentState(scope));
       const saved = adapter.store.get(LEGACY_KEY) as AggregateStateFile;
-      expect(saved.version).toBe('5.0');
+      expect(saved.version).toBe('4.0');
       expect((await backend().loadState()).scope).toEqual({
         stage: scope.stage,
         region: scope.region,
@@ -180,7 +180,7 @@ describe('remoteStateBackend (scope-bound, issue #280)', () => {
       adapter.store.set(LEGACY_KEY, { version: '8.0', app: scope.app, service: scope.service });
       await expect(backend().loadState()).rejects.toBeInstanceOf(StateVersionError);
       adapter.store.set(LEGACY_KEY, {
-        version: '5.0',
+        version: '4.0',
         app: scope.app,
         service: scope.service,
         stages: [],

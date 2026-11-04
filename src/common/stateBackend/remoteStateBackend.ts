@@ -183,6 +183,8 @@ export const createRemoteStateBackend = (
     saveState: (state): Promise<void> => mutate('state-save', () => store.saveState(state)),
     patchPersisted: (patch): Promise<void> =>
       mutate('migrate-metadata', () => store.patchPersisted(patch)),
+    upgradeLegacyState: (options) =>
+      mutate('migrate-upgrade', () => store.upgradeLegacyState(options)),
     readStateSource: store.readStateSource,
     probeWriteReadiness: store.probeWriteReadiness,
     acquireLock: async (operation, options): Promise<string> => {

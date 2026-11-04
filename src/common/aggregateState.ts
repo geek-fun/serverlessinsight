@@ -14,7 +14,7 @@ import { lang } from '../lang';
 import { normalizeScope, validateScopeKeyPart, type DeploymentScope } from './stateScope';
 import { hashSaasState } from './saasProtocol';
 
-export const AGGREGATE_STATE_VERSION = '5.0';
+export const AGGREGATE_STATE_VERSION = CURRENT_STATE_VERSION;
 
 export type StatePartition = StageState & {
   lineage: string;

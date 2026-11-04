@@ -7,7 +7,7 @@ original implementation sketches below are historical; they do not define the cu
 state format or provider/region behavior. See [the current deployment contract](regional-deployment-state.md).
 
 Current contract: App and Service cannot be overridden; provider/region are static YAML
-defaults with explicit CLI selection. Local/Bucket keep their original file/key with V5
+defaults with explicit CLI selection. Local/Bucket keep their original file/key with V4
 partitions; executors/SaaS use V4 and scope protocol 3. No dynamic region references.
 
 ## Historical proposal (superseded implementation details)

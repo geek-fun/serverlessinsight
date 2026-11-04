@@ -43,6 +43,10 @@ export type StateBackend = {
   readonly scope: DeploymentScope;
   readonly capabilities: BackendCapabilities;
   loadState: () => Promise<StateFile>;
+  upgradeLegacyState?: (options?: {
+    bindUnknownRegion?: string;
+    dryRun?: boolean;
+  }) => Promise<void>;
   saveState: (state: StateFile) => Promise<void>;
   /**
    * Merge top-level fields into the persisted state; a value of `undefined`

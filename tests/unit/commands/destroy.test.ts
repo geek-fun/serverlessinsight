@@ -98,6 +98,36 @@ describe('destroy command', () => {
     ).toHaveBeenCalledWith(mockBackend);
   });
 
+  it('prepares legacy state before loading the deployment and forwards the reviewed binding', async () => {
+    const upgradeLegacyState = jest.fn(async () => {
+      expect(mockBackend.loadState).not.toHaveBeenCalled();
+      expect(mockBackend.probeWriteReadiness).not.toHaveBeenCalled();
+    });
+    (createStateBackend as jest.Mock).mockReturnValue({ ...mockBackend, upgradeLegacyState });
+
+    await destroyStack({ location: '/test/path', bindUnknownRegion: 'cn-beijing' });
+
+    expect(upgradeLegacyState).toHaveBeenCalledWith({ bindUnknownRegion: 'cn-beijing' });
+    expect(
+      jest.requireMock('../../../src/stack/aliyunStack').destroyAliyunStack,
+    ).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not destroy resources when automatic preparation fails', async () => {
+    (createStateBackend as jest.Mock).mockReturnValue({
+      ...mockBackend,
+      upgradeLegacyState: jest.fn().mockRejectedValue(new Error('upgrade interrupted')),
+    });
+
+    await expect(destroyStack({ location: '/test/path' })).rejects.toThrow('upgrade interrupted');
+
+    expect(mockBackend.loadState).not.toHaveBeenCalled();
+    expect(mockBackend.withLock).not.toHaveBeenCalled();
+    expect(
+      jest.requireMock('../../../src/stack/aliyunStack').destroyAliyunStack,
+    ).not.toHaveBeenCalled();
+  });
+
   it('should destroy Tencent stack', async () => {
     (parseYaml as jest.Mock).mockReturnValue({
       app: 'test-app',

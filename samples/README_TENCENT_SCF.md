@@ -117,12 +117,12 @@ si validate -f serverless-insight.yml
 ## State Management
 
 With the explicit LOCAL backend above, state remains at
-`.serverlessinsight/state-example-app-my-service.json`. The V5 aggregate contains
+`.serverlessinsight/state-example-app-my-service.json`. The V4 aggregate contains
 independent stage/provider/region partitions, for example after selecting `-s prod`:
 
 ```json
 {
-  "version": "5.0",
+  "version": "4.0",
   "app": "example-app",
   "service": "my-service",
   "stages": {
@@ -267,9 +267,9 @@ If you see "ResourceNotFound.FunctionName", the function doesn't exist yet. Run 
 ### State File Conflicts
 
 Keep the current state and backups. Confirm App/Service/Stage/Provider/Region and the
-backend location, wait for the active writer, then refetch and re-plan. Upgrade V3 or
-consolidate preview V4 through `si migrate --to-regional`; use operation-ID rollback
-only before independent writes. Deleting or hand-editing state can lose sibling ownership.
+backend location, wait for the active writer, then refetch and re-plan. Write commands
+automatically upgrade released V3 state in place; rerun the original operation to resume
+an interrupted upgrade. Deleting or hand-editing state can lose sibling ownership.
 
 ## Limitations
 

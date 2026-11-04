@@ -1,5 +1,4 @@
 import crypto from 'node:crypto';
-import os from 'node:os';
 
 import {
   AGGREGATE_STATE_VERSION,
@@ -14,103 +13,22 @@ import {
   StateMigrationInfo,
   CURRENT_STATE_VERSION,
   LEGACY_STATE_VERSION,
-  LockMetadata,
 } from '../types';
 import { canonicalizeRegion, validateScopeKeyPart } from './stateScope';
 import { MANAGED_BY_SAAS } from './migrationMarker';
 import { logger } from './logger';
-import { LockError, formatLockInfo } from './lockManager';
-import { createLockMetadata, isLockStale, isProcessAlive, sleep } from './stateBackend/lockUtils';
-import {
-  DEFAULT_LOCK_TIMEOUT,
-  DEFAULT_LOCK_RETRY_DELAY,
-  REGIONAL_MIGRATION_SUFFIX,
-} from './constants';
+import { REGIONAL_MIGRATION_SUFFIX } from './constants';
 import { lang } from '../lang';
-import { ConditionalPutUnsupportedError } from './stateBackend/types';
 
 export type KeyValueIO = {
   read: <T>(key: string) => Promise<T | null>;
   write: (key: string, data: unknown) => Promise<void>;
-  delete: (key: string) => Promise<void>;
-  putIfAbsent?: (key: string, data: unknown) => Promise<boolean>;
 };
 
 export type RegionalMigrationPaths = {
   legacyKey: string;
   reportKey: (opId: string) => string;
   backupKey: (opId: string) => string;
-};
-
-export const withIoLock = async <T>(
-  io: KeyValueIO,
-  lockKey: string,
-  displayPath: string,
-  operation: string,
-  fn: () => Promise<T>,
-  options?: { timeout?: number; retryDelay?: number; maxRetries?: number },
-): Promise<T> => {
-  const timeout = options?.timeout ?? DEFAULT_LOCK_TIMEOUT;
-  const retryDelay = options?.retryDelay ?? DEFAULT_LOCK_RETRY_DELAY;
-  const maxRetries = options?.maxRetries ?? Math.ceil(timeout / retryDelay);
-  const metadata = createLockMetadata(operation, displayPath);
-  const startTime = Date.now();
-  let attempt = 0;
-
-  for (;;) {
-    const existing = await io.read<LockMetadata>(lockKey);
-    if (!existing) {
-      if (!io.putIfAbsent) throw new Error(lang.__('STATE_ATOMIC_CREATE_REQUIRED'));
-      let created: boolean;
-      try {
-        created = await io.putIfAbsent(lockKey, metadata);
-      } catch (error) {
-        if (error instanceof ConditionalPutUnsupportedError) {
-          throw new Error(lang.__('STATE_ATOMIC_CREATE_REQUIRED'), { cause: error });
-        }
-        throw error;
-      }
-      if (created) {
-        try {
-          return await fn();
-        } finally {
-          const current = await io.read<LockMetadata>(lockKey);
-          if (current?.id === metadata.id) {
-            await io.delete(lockKey);
-          }
-        }
-      }
-    } else if (existing.hostname === os.hostname() && !isProcessAlive(existing.processId)) {
-      await io.delete(lockKey);
-      continue;
-    } else if (isLockStale(existing)) {
-      throw new LockError(
-        lang.__('REGIONAL_LOCK_STALE', { info: formatLockInfo(existing), id: existing.id }),
-        existing,
-      );
-    } else if (Date.now() - startTime >= timeout) {
-      throw new LockError(
-        lang.__('REGIONAL_LOCK_TIMEOUT', {
-          seconds: String(timeout / 1000),
-          info: formatLockInfo(existing),
-        }),
-        existing,
-      );
-    } else {
-      logger.info(
-        lang.__('LOCK_WAITING', {
-          user: existing.user,
-          timeAgo: '1m',
-          attempt: String(attempt + 1),
-        }),
-      );
-    }
-    if (attempt >= maxRetries) {
-      throw new LockError(lang.__('REGIONAL_LOCK_FAILED', { path: displayPath }), undefined);
-    }
-    await sleep(Math.min(retryDelay * Math.pow(2, attempt), 30000));
-    attempt++;
-  }
 };
 
 export type RegionEvidence = {
@@ -288,14 +206,14 @@ type RegionalMigrationJournal = {
   plan: RegionalMigrationPlan;
   options: RegionalMigrationOptions;
   targets: Array<{ stage: string; region: string; state: PersistedStateFile }>;
-  phase: 'applying' | 'complete' | 'rolling-back';
+  phase: 'applying' | 'complete';
 };
 
 const journalKey = (paths: RegionalMigrationPaths): string =>
   `${paths.legacyKey}${REGIONAL_MIGRATION_SUFFIX}`;
 
 export const readRegionalMigrationJournal = (
-  io: KeyValueIO,
+  io: Pick<KeyValueIO, 'read'>,
   paths: RegionalMigrationPaths,
 ): Promise<RegionalMigrationJournal | null> => io.read(journalKey(paths));
 
@@ -391,7 +309,7 @@ const migrationReport = (journal: RegionalMigrationJournal): RegionalMigrationRe
 
 /** The caller holds the original file/key lock throughout the in-place upgrade. */
 export const applyRegionalMigration = async (
-  io: KeyValueIO,
+  io: Pick<KeyValueIO, 'read' | 'write'>,
   legacy: PersistedStateFile,
   paths: RegionalMigrationPaths,
   plan: RegionalMigrationPlan,
@@ -410,8 +328,7 @@ export const applyRegionalMigration = async (
       !previous.aggregate ||
       !(['provider', 'app', 'service', 'stage', 'bindUnknownRegion'] as const).every(
         (key) => previous.options[key] === options[key],
-      ) ||
-      previous.phase === 'rolling-back')
+      ))
   ) {
     throw new Error(lang.__('REGIONAL_MIGRATION_PENDING', { opId: previous.plan.opId }));
   }
@@ -491,38 +408,4 @@ export const applyRegionalMigration = async (
     );
     throw error;
   }
-};
-
-export const rollbackRegionalMigration = async (
-  io: KeyValueIO,
-  paths: RegionalMigrationPaths,
-  opId: string,
-): Promise<void> => {
-  const journal = await readRegionalMigrationJournal(io, paths);
-  if (!journal || journal.plan.opId !== opId || !journal.aggregate) {
-    throw new Error(lang.__('REGIONAL_MIGRATION_REPORT_MISSING', { opId }));
-  }
-  const backup = await io.read<PersistedStateFile>(paths.backupKey(opId));
-  if (!backup) throw new Error(lang.__('REGIONAL_MIGRATION_BACKUP_MISSING', { opId }));
-  if (hashDocument(backup) !== journal.plan.sourceHash) {
-    throw new Error(lang.__('REGIONAL_MIGRATION_SOURCE_CHANGED'));
-  }
-  const current = await io.read<unknown>(paths.legacyKey);
-  if (
-    current === null ||
-    (hashDocument(current) !== hashDocument(journal.aggregate) &&
-      hashDocument(current) !== journal.plan.sourceHash)
-  ) {
-    throw new Error(
-      lang.__('REGIONAL_MIGRATION_ROLLBACK_BLOCKED', {
-        stage: '*',
-        region: '*',
-      }),
-    );
-  }
-  await io.write(journalKey(paths), { ...journal, phase: 'rolling-back' });
-  await io.write(paths.legacyKey, backup);
-  await io.delete(paths.reportKey(opId));
-  await io.delete(journalKey(paths));
-  logger.info(lang.__('REGIONAL_MIGRATION_ROLLED_BACK', { opId }));
 };

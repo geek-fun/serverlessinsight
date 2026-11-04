@@ -9,6 +9,7 @@ import { destroyVolcengineStack } from '../stack/volcengineStack';
 export const destroyStack = async (options: {
   location: string;
   region?: string;
+  bindUnknownRegion?: string;
   provider?: string;
   accessKeyId?: string;
   accessKeySecret?: string;
@@ -48,6 +49,7 @@ export const destroyStack = async (options: {
     migrationMarker: 'refuse',
   });
 
+  await backend.upgradeLegacyState?.({ bindUnknownRegion: options.bindUnknownRegion });
   await backend.loadState();
 
   const readiness = await backend.probeWriteReadiness();
