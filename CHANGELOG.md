@@ -7,6 +7,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.9.5] - 2026-11-05
+
+### Changed
+
+- Deployment state is now isolated per stage/provider/region: the first
+  deploy/destroy/migrate upgrades the legacy state file in place to a V4
+  aggregate (original backup kept), so deploying to a second region or
+  provider no longer touches another deployment's resources
+  ([#280](https://github.com/geek-fun/serverlessinsight/issues/280)). CLI
+  versions older than this release refuse the upgraded state — upgrade all
+  writers together.
+- SaaS deployments now require a Console with regional scope enabled (scope
+  protocol 3) and fail closed with guidance against older servers
+  ([#280](https://github.com/geek-fun/serverlessinsight/issues/280)).
+
+### Added
+
+- `--bind-unknown-region <region>` on `deploy`, `destroy` and `migrate` to
+  explicitly bind legacy state entries that carry no region evidence, instead
+  of letting the CLI guess where historical resources live
+  ([#280](https://github.com/geek-fun/serverlessinsight/issues/280)).
+
+### Fixed
+
+- Console/server conflict messages (state or protocol conflicts) are now
+  shown verbatim instead of a generic "HTTP Error 409"
+  ([#280](https://github.com/geek-fun/serverlessinsight/issues/280)).
+
 ## [0.9.4] - 2026-10-27
 
 ### Changed
