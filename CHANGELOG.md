@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- Whole template references in string-capable scalar maps (`environment`,
+  `vars`, `stages` and `tags`) now preserve string results instead of inferring
+  numbers or booleans. For example, references resolving to `"00123"` and
+  `"false"` now retain those strings rather than becoming `123` and `false`.
+  Consumers of parsed scalar maps should update their type expectations.
+  Numeric and boolean YAML literals keep their types; references in typed
+  fields such as `memory`, `timeout` and `log` still infer the required type.
+
+### Fixed
+
+- Preserve template results for string fields such as certificate IDs,
+  including leading zeros and long numeric strings, so valid configurations
+  pass resolved configuration validation without losing their original values.
+
 ## [0.9.5] - 2026-11-05
 
 ### Changed
