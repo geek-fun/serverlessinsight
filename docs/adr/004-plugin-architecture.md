@@ -112,7 +112,7 @@ export interface ResourceProvider {
 }
 
 export interface PluginContext {
-  app: string; service: string; stage: string; region: string;
+  app: string; service: string; stage: string; provider: string; region: string;
   credentials: CloudCredentials;   // resolved by the host (access-alias model)
   state: StateAccessor;            // get / save per logicalId
   reportEvent(e: ResourceEvent): void;   // reuses the state-backend event seam
@@ -134,12 +134,17 @@ The engine, not the plugin, computes the plan:
 
 Plugins never persist state: prior state is injected, new state is returned, core serializes it. Refresh (`read`) returns wholly-known state or `null`; a `--refresh=false` fast path skips the step.
 
+Future plugins receive the selected Stage/Provider/Region V4 view. The host owns V4
+aggregate persistence, the original backend location and its whole-file lock; a plugin
+must not create a parallel per-region state authority. App/Service remain literal, and
+cloud account fields remain credential/native-address context.
+
 ### 4. Activation and Loading
 
 ```yaml
 provider: aliyun
 plugins:
-  - @geek-fun/si-plugin-aliyun-database   # published package
+  - '@geek-fun/si-plugin-aliyun-database'   # proposed package in this design
   - ./local-plugin.ts                     # local single file (no package required)
 databases:
   - name: pg-1

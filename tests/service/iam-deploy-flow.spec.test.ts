@@ -3,6 +3,7 @@ import fs from 'node:fs/promises';
 import { deploy } from '../../src/commands/deploy';
 import { destroyStack } from '../../src/commands/destroy';
 import { createMockAliyunClient, type MockAliyunClient } from './mockCloudClient';
+import { cleanScopedState } from './scopedState';
 
 jest.mock('../../src/common/aliyunClient', () => ({
   createAliyunClient: jest.fn(),
@@ -51,10 +52,12 @@ describe('IAM Policy Deploy Flow Service Test', () => {
     mockCreateAliyunClient.mockReturnValue(mockClient);
 
     await fs.rm(stateFilePath, { force: true }).catch(() => {});
+    await cleanScopedState('iam-test-app', 'iam-test-service');
   });
 
   afterEach(async () => {
     await fs.rm(stateFilePath, { force: true }).catch(() => {});
+    await cleanScopedState('iam-test-app', 'iam-test-service');
   });
 
   it('should deploy function with custom IAM statements attached to role', async () => {

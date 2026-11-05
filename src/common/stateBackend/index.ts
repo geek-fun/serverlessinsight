@@ -1,11 +1,14 @@
 import { BackendConfig, StateBackendType, BucketStoreBackendConfig } from '../../types';
 import { ProviderEnum } from '../providerEnum';
 import { MigrationMarkerAction } from '../migrationMarker';
+import { lang } from '../../lang';
 import { StateBackend } from './types';
 import { createLocalStateBackend } from './localStateBackend';
 import { createOssStateBackend } from './ossStateBackend';
 import { createCosStateBackend } from './cosStateBackend';
 import { createSaasStateBackend } from './saasStateBackend';
+import { DeploymentScope, canonicalizeRegion } from '../stateScope';
+import { getCredentials } from '../credentials';
 
 export * from './types';
 export * from './localStateBackend';
@@ -18,6 +21,7 @@ export * from './lockUtils';
 export type BackendContext = {
   provider: string;
   region: string;
+  stage: string;
   accessKeyId: string;
   accessKeySecret: string;
   securityToken?: string;
@@ -38,58 +42,89 @@ export type BackendContext = {
    * SaaS backend (Console states carry no legacy marker).
    */
   migrationMarker?: MigrationMarkerAction;
+  mode?: 'mutating' | 'read-only';
+  storage?: { provider?: string; region?: string };
 };
 
 export const createStateBackend = (
   backendConfig: BackendConfig | undefined,
   context: BackendContext,
 ): StateBackend => {
+  const scope: DeploymentScope = {
+    provider: context.provider,
+    app: context.app,
+    service: context.service,
+    stage: context.stage,
+    region: context.region,
+  };
+
   // SaaS (default) — requires API key
   if (!backendConfig || backendConfig.type === StateBackendType.SAAS) {
     return createSaasStateBackend(
       {
-        app: context.app,
-        service: context.service,
+        scope,
         declaredOrg: context.declaredOrg,
       },
-      { apiKey: context.siApiKey },
+      { apiKey: context.siApiKey, mode: context.mode },
     );
   }
 
   if (backendConfig.type === StateBackendType.LOCAL) {
-    return createLocalStateBackend(
-      context.app,
-      context.service,
-      context.baseDir,
-      context.migrationMarker,
-    );
+    return createLocalStateBackend(scope, {
+      baseDir: context.baseDir,
+      markerAction: context.migrationMarker,
+    });
   }
 
   const bucketConfig = backendConfig as BucketStoreBackendConfig;
-  const region = context.region;
-  const accessKeyId = context.accessKeyId;
-  const accessKeySecret = context.accessKeySecret;
-  const securityToken = context.securityToken;
 
-  if (context.provider === ProviderEnum.TENCENT) {
+  const storage = resolveStateStorage(bucketConfig, context);
+
+  if (storage.provider === ProviderEnum.TENCENT) {
     return createCosStateBackend({
+      scope,
       bucket: bucketConfig.bucket,
       key: bucketConfig.key,
-      region,
-      accessKeyId,
-      accessKeySecret,
-      securityToken,
+      ...storage,
       markerAction: context.migrationMarker,
     });
   }
 
   return createOssStateBackend({
+    scope,
     bucket: bucketConfig.bucket,
     key: bucketConfig.key,
-    region,
-    accessKeyId,
-    accessKeySecret,
-    securityToken,
+    ...storage,
     markerAction: context.migrationMarker,
   });
+};
+
+export const resolveStateStorage = (
+  bucketConfig: BucketStoreBackendConfig,
+  context: BackendContext,
+): {
+  provider: string;
+  region: string;
+  accessKeyId: string;
+  accessKeySecret: string;
+  securityToken?: string;
+} => {
+  const provider = bucketConfig.storageProvider ?? context.storage?.provider ?? context.provider;
+  const region = canonicalizeRegion(
+    bucketConfig.storageRegion ?? context.storage?.region ?? context.region,
+  );
+  if (provider !== ProviderEnum.ALIYUN && provider !== ProviderEnum.TENCENT) {
+    throw new Error(lang.__('STATE_STORAGE_PROVIDER_UNSUPPORTED', { provider }));
+  }
+  const credentials = getCredentials(provider === context.provider ? context : undefined, provider);
+  if (!credentials.accessKeyId || !credentials.accessKeySecret) {
+    throw new Error(lang.__('STATE_STORAGE_CREDENTIALS_MISSING', { provider }));
+  }
+  return {
+    provider,
+    region,
+    accessKeyId: credentials.accessKeyId,
+    accessKeySecret: credentials.accessKeySecret,
+    ...(credentials.securityToken ? { securityToken: credentials.securityToken } : {}),
+  };
 };

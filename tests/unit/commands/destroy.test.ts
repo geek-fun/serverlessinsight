@@ -53,6 +53,8 @@ jest.mock('../../../src/lang', () => ({
 describe('destroy command', () => {
   const mockBackend = {
     loadState: jest.fn().mockResolvedValue({}),
+    readStateSource: jest.fn().mockReturnValue('scoped'),
+    probeWriteReadiness: jest.fn().mockResolvedValue({ ready: true, source: 'scoped' }),
     withLock: jest.fn((_: string, fn: () => Promise<void>) => fn()),
   };
 
@@ -90,9 +92,40 @@ describe('destroy command', () => {
 
     expect(setContext).toHaveBeenCalled();
     expect(setIac).toHaveBeenCalledWith(mockIac);
+    expect(mockBackend.probeWriteReadiness).toHaveBeenCalledTimes(1);
     expect(
       jest.requireMock('../../../src/stack/aliyunStack').destroyAliyunStack,
     ).toHaveBeenCalledWith(mockBackend);
+  });
+
+  it('prepares legacy state before loading the deployment and forwards the reviewed binding', async () => {
+    const upgradeLegacyState = jest.fn(async () => {
+      expect(mockBackend.loadState).not.toHaveBeenCalled();
+      expect(mockBackend.probeWriteReadiness).not.toHaveBeenCalled();
+    });
+    (createStateBackend as jest.Mock).mockReturnValue({ ...mockBackend, upgradeLegacyState });
+
+    await destroyStack({ location: '/test/path', bindUnknownRegion: 'cn-beijing' });
+
+    expect(upgradeLegacyState).toHaveBeenCalledWith({ bindUnknownRegion: 'cn-beijing' });
+    expect(
+      jest.requireMock('../../../src/stack/aliyunStack').destroyAliyunStack,
+    ).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not destroy resources when automatic preparation fails', async () => {
+    (createStateBackend as jest.Mock).mockReturnValue({
+      ...mockBackend,
+      upgradeLegacyState: jest.fn().mockRejectedValue(new Error('upgrade interrupted')),
+    });
+
+    await expect(destroyStack({ location: '/test/path' })).rejects.toThrow('upgrade interrupted');
+
+    expect(mockBackend.loadState).not.toHaveBeenCalled();
+    expect(mockBackend.withLock).not.toHaveBeenCalled();
+    expect(
+      jest.requireMock('../../../src/stack/aliyunStack').destroyAliyunStack,
+    ).not.toHaveBeenCalled();
   });
 
   it('should destroy Tencent stack', async () => {
@@ -141,12 +174,16 @@ describe('destroy command', () => {
     ).toHaveBeenCalledWith(mockBackend);
   });
 
-  it('loads state before acquiring the destroy lock', async () => {
+  it('loads state and probes write readiness before acquiring the destroy lock', async () => {
     const calls: Array<string> = [];
     const backend = {
       loadState: jest.fn(async () => {
         calls.push('loadState');
         return {};
+      }),
+      probeWriteReadiness: jest.fn(async () => {
+        calls.push('probeWriteReadiness');
+        return { ready: true, source: 'scoped' as const };
       }),
       withLock: jest.fn(async (_operation: string, fn: () => Promise<void>) => {
         calls.push('withLock');
@@ -157,13 +194,28 @@ describe('destroy command', () => {
 
     await destroyStack({ location: '/test/path' });
 
-    expect(calls).toEqual(['loadState', 'withLock']);
-    expect(backend.loadState).toHaveBeenCalledWith(
-      ProviderEnum.ALIYUN,
-      'test-app',
-      'test-service',
-      'dev',
-    );
+    expect(calls).toEqual(['loadState', 'probeWriteReadiness', 'withLock']);
+    expect(backend.loadState).toHaveBeenCalledWith();
+  });
+
+  it('aborts before acquiring the lock when the write-readiness probe is not ready', async () => {
+    const backend = {
+      loadState: jest.fn().mockResolvedValue({}),
+      probeWriteReadiness: jest
+        .fn()
+        .mockResolvedValue({ ready: false, source: 'legacy', reason: 'blocked' }),
+      withLock: jest.fn(async (_operation: string, fn: () => Promise<void>) => {
+        await fn();
+      }),
+    };
+    (createStateBackend as jest.Mock).mockReturnValue(backend);
+
+    await expect(destroyStack({ location: '/test/path' })).rejects.toThrow('blocked');
+
+    expect(backend.withLock).not.toHaveBeenCalled();
+    expect(
+      jest.requireMock('../../../src/stack/aliyunStack').destroyAliyunStack,
+    ).not.toHaveBeenCalled();
   });
 
   it('should throw error for unsupported provider', async () => {
@@ -209,6 +261,7 @@ describe('destroy command', () => {
     const releaseLock = jest.fn().mockResolvedValue(undefined);
     (createStateBackend as jest.Mock).mockReturnValue({
       loadState: jest.fn().mockResolvedValue({}),
+      probeWriteReadiness: jest.fn().mockResolvedValue({ ready: true, source: 'scoped' }),
       withLock: jest.fn(
         (
           _op: string,
@@ -288,6 +341,7 @@ describe('destroy command', () => {
     const flushEvents = jest.fn().mockResolvedValue(undefined);
     (createStateBackend as jest.Mock).mockReturnValue({
       loadState: jest.fn().mockResolvedValue({}),
+      probeWriteReadiness: jest.fn().mockResolvedValue({ ready: true, source: 'scoped' }),
       withLock: jest.fn(
         (
           _op: string,

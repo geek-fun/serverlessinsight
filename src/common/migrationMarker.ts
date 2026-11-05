@@ -16,13 +16,6 @@ export const isMigratedToSaas = (state: { managedBy?: string } | null | undefine
   return state?.managedBy === MANAGED_BY_SAAS;
 };
 
-/**
- * Ownership handover check (decision D-4): after migration the Console is the
- * single source of truth. Mutating commands (deploy/destroy) pass 'refuse' so
- * a legacy-backend write attempt fails closed; read-only commands (plan/diff/
- * show) pass 'warn'; `si migrate` itself passes 'off' (it must be able to read
- * marked state for idempotent re-runs and --rollback).
- */
 export const enforceMigrationMarker = (
   state: { managedBy?: string } | null | undefined,
   action: MigrationMarkerAction,

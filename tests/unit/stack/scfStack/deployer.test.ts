@@ -86,20 +86,10 @@ describe('deployer', () => {
     it('should deploy successfully with empty IAC', async () => {
       await deployTencentStack(testIac, mockBackend);
 
-      expect(mockBackend.loadState).toHaveBeenCalledWith(
-        ProviderEnum.TENCENT,
-        'test-app',
-        'test-service',
-        'dev',
-      );
+      expect(mockBackend.loadState).toHaveBeenCalledWith();
       expect(scfPlanner.generateFunctionPlan).toHaveBeenCalled();
       expect(cosPlanner.generateBucketPlan).toHaveBeenCalled();
-      expect(mockBackend.saveState).toHaveBeenCalledWith(
-        initialState,
-        'test-app',
-        'test-service',
-        'dev',
-      );
+      expect(mockBackend.saveState).toHaveBeenCalledWith(initialState);
     });
 
     it('should generate plans for all resource types', async () => {

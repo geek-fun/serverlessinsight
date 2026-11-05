@@ -1,11 +1,9 @@
-import { StateFile, LockOptions } from '../../types';
-import {
-  loadState as fsLoadState,
-  saveState as fsSaveState,
-  patchPersistedState as fsPatchPersistedState,
-  getStatePath,
-} from '../stateManager';
-import { enforceMigrationMarker, MigrationMarkerAction } from '../migrationMarker';
+import { AsyncLocalStorage } from 'node:async_hooks';
+
+import { createAggregateStore } from '../aggregateStore';
+import { getStatePath } from '../stateManager';
+import { normalizeScope } from '../stateScope';
+import { createLocalStateIO } from '../stateStorageIO';
 import {
   withLock as fsWithLock,
   forceUnlock as fsForceUnlock,
@@ -13,68 +11,96 @@ import {
   acquireLockInternal,
   releaseLockInternal,
 } from '../lockManager';
-import { StateBackend, LockMetadata } from './types';
+import type { StateBackend, LockMetadata } from './types';
+import type { StateFile, LockOptions } from '../../types';
+import type { DeploymentScope } from '../stateScope';
+import type { MigrationMarkerAction } from '../migrationMarker';
+
+export type LocalBackendOptions = {
+  baseDir?: string;
+  markerAction?: MigrationMarkerAction;
+};
 
 export const createLocalStateBackend = (
-  app: string,
-  service: string,
-  baseDir: string = process.cwd(),
-  markerAction: MigrationMarkerAction = 'off',
+  scope: DeploymentScope,
+  options: LocalBackendOptions = {},
 ): StateBackend => {
-  const statePath = getStatePath(app, service, baseDir);
+  const normalized = normalizeScope(scope);
+  const baseDir = options.baseDir ?? process.cwd();
+  const statePath = getStatePath(normalized.app, normalized.service, baseDir);
+  const store = createAggregateStore(createLocalStateIO({ backupWrites: false }), normalized, {
+    key: statePath,
+    backupWrites: true,
+    markerAction: options.markerAction ?? 'off',
+  });
+  const writer = new AsyncLocalStorage<boolean>();
+  let manualLockId: string | null = null;
+
+  const withLock = async <T>(
+    operation: string,
+    fn: () => Promise<T>,
+    lockOptions?: LockOptions,
+    onLockAcquired?: (lockId: string) => void,
+  ): Promise<T> =>
+    fsWithLock(
+      statePath,
+      operation,
+      () =>
+        writer.run(true, async () => {
+          try {
+            if (!operation.startsWith('migrate')) await store.verifyPlanBase();
+            return await fn();
+          } finally {
+            store.clearPlanBase();
+          }
+        }),
+      lockOptions,
+      onLockAcquired,
+    );
+
+  const mutate = async (operation: string, fn: () => Promise<void>): Promise<void> => {
+    if (writer.getStore() || manualLockId) return fn();
+    return withLock(operation, fn);
+  };
 
   return {
-    loadState: async (
-      provider: string,
-      loadApp: string,
-      loadService: string,
-      stage: string,
-    ): Promise<StateFile> => {
-      const state = fsLoadState(provider, loadApp, loadService, stage, baseDir);
-      enforceMigrationMarker(state, markerAction);
-      return state;
-    },
-
-    saveState: async (
-      state: StateFile,
-      saveApp: string,
-      saveService: string,
-      stage: string,
-    ): Promise<void> => {
-      fsSaveState(state, saveApp, saveService, stage, baseDir);
-    },
-
-    patchPersisted: async (patch: Record<string, unknown | undefined>): Promise<void> => {
-      fsPatchPersistedState(app, service, patch, baseDir);
-    },
-
-    acquireLock: async (operation: string, options?: LockOptions): Promise<string> => {
-      const lockMeta = await acquireLockInternal(statePath, operation, options);
-      return lockMeta.id;
-    },
-
-    releaseLock: async (lockId: string): Promise<void> => {
-      releaseLockInternal(statePath, lockId);
-    },
-
-    forceUnlock: async (lockId: string): Promise<boolean> => {
-      return fsForceUnlock(statePath, lockId);
-    },
-
-    readLock: async (): Promise<LockMetadata | null> => {
-      return readLockFileForCommand(statePath);
-    },
-
-    withLock: async <T>(
-      operation: string,
-      fn: () => Promise<T>,
-      options?: LockOptions,
-      onLockAcquired?: (lockId: string) => void,
-    ): Promise<T> => {
-      if (onLockAcquired) {
-        return fsWithLock(statePath, operation, fn, options, onLockAcquired);
+    scope: normalized,
+    capabilities: { conditionalCreate: true },
+    loadState: (): Promise<StateFile> => store.loadState(!writer.getStore() && !manualLockId),
+    saveState: (state): Promise<void> => mutate('state-save', () => store.saveState(state)),
+    patchPersisted: (patch): Promise<void> =>
+      mutate('migrate-metadata', () => store.patchPersisted(patch)),
+    upgradeLegacyState: (options) =>
+      mutate('migrate-upgrade', () => store.upgradeLegacyState(options)),
+    readStateSource: store.readStateSource,
+    probeWriteReadiness: store.probeWriteReadiness,
+    acquireLock: async (operation, lockOptions): Promise<string> => {
+      const lock = await acquireLockInternal(statePath, operation, lockOptions);
+      try {
+        if (!operation.startsWith('migrate')) await store.verifyPlanBase();
+        manualLockId = lock.id;
+        return lock.id;
+      } catch (error) {
+        releaseLockInternal(statePath, lock.id);
+        throw error;
       }
-      return fsWithLock(statePath, operation, fn, options);
     },
+    releaseLock: async (lockId): Promise<void> => {
+      releaseLockInternal(statePath, lockId);
+      if (manualLockId === lockId) {
+        manualLockId = null;
+        store.clearPlanBase();
+      }
+    },
+    forceUnlock: async (lockId): Promise<boolean> => {
+      const removed = fsForceUnlock(statePath, lockId);
+      if (removed && manualLockId === lockId) {
+        manualLockId = null;
+        store.clearPlanBase();
+      }
+      return removed;
+    },
+    readLock: async (): Promise<LockMetadata | null> => readLockFileForCommand(statePath),
+    withLock,
   };
 };

@@ -444,7 +444,9 @@ describe('EsServerlessResource', () => {
       expect(mockEsOperations.createSpace).toHaveBeenCalledWith(
         expect.objectContaining({
           SpaceName: 'test-es-space',
-          Tags: [{ Key: 'si-owned-by', Value: 'test-app-test-service:databases.test_es' }],
+          Tags: [
+            { Key: 'si-owned-by', Value: 'test-app-test-service:databases.test_es@ap-guangzhou' },
+          ],
         }),
       );
     });

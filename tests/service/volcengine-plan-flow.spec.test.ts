@@ -2,6 +2,9 @@ import { spawn } from 'node:child_process';
 import fs from 'node:fs/promises';
 import { existsSync } from 'node:fs';
 import path from 'node:path';
+
+import { cleanScopedState } from './scopedState';
+import { patchAggregateScope } from '../../src/common/aggregateState';
 import { plan } from '../../src/commands/plan';
 import { BucketAccessEnum } from '../../src/types';
 import { createVolcengineClient } from '../../src/common/volcengineClient';
@@ -17,7 +20,7 @@ jest.mock('../../src/common/volcengineClient', () => ({
 const ROOT = path.join(__dirname, '../..');
 const CLI_PATH = path.join(ROOT, 'dist/src/commands/index.js');
 const FIXTURE = path.join(__dirname, '../fixtures/serverless-insight-volcengine-plan.yml');
-const STATE_PATH = path.join(ROOT, '.serverlessinsight/state-volc-plan-app-volc-plan.json');
+const STATE_PATH = path.join(ROOT, '.serverlessinsight', 'state-volc-plan-app-volc-plan.json');
 const options = {
   location: FIXTURE,
   stage: 'dev',
@@ -65,10 +68,20 @@ describe('Volcengine standalone planning (issue #266)', () => {
 
   beforeEach(async () => {
     clearContext();
+    await cleanScopedState('volc-plan-app', 'volc-plan');
     client = createMockVolcengineClient();
     (createVolcengineClient as jest.Mock).mockReturnValue(client);
-    const backend = createLocalStateBackend('volc-plan-app', 'volc-plan', ROOT);
-    const initial = await backend.loadState('volcengine', 'volc-plan-app', 'volc-plan', 'dev');
+    const backend = createLocalStateBackend(
+      {
+        provider: 'volcengine',
+        app: 'volc-plan-app',
+        service: 'volc-plan',
+        stage: 'dev',
+        region: 'cn-shanghai',
+      },
+      { baseDir: ROOT },
+    );
+    const initial = await backend.loadState();
     const state = setResource(initial, 'buckets.assets', {
       mode: 'managed',
       region: 'cn-shanghai',
@@ -83,7 +96,7 @@ describe('Volcengine standalone planning (issue #266)', () => {
         }),
       ),
     });
-    await backend.saveState(state, 'volc-plan-app', 'volc-plan', 'dev');
+    await backend.saveState(state);
     stateBefore = await fs.readFile(STATE_PATH, 'utf8');
   });
 
@@ -95,7 +108,7 @@ describe('Volcengine standalone planning (issue #266)', () => {
       mutators.forEach(([, operation]) => expect(operation).not.toHaveBeenCalled());
       expect(await fs.readFile(STATE_PATH, 'utf8')).toBe(stateBefore);
     } finally {
-      await fs.rm(STATE_PATH, { force: true });
+      await cleanScopedState('volc-plan-app', 'volc-plan');
       clearContext();
     }
   });
@@ -166,7 +179,7 @@ describe('Volcengine standalone planning (issue #266)', () => {
       const result = await runCli('diff', ['--json', '--no-refresh']);
       expect(result.code).toBe(0);
       expect(JSON.parse(result.stdout)).toMatchObject({
-        planVersion: 1,
+        planVersion: 2,
         provider: 'volcengine',
         app: 'volc-plan-app',
         service: 'volc-plan',
@@ -233,7 +246,19 @@ describe('Volcengine standalone planning (issue #266)', () => {
 
     it('warns on migrated state and leaves the legacy copy unchanged', async () => {
       const raw = JSON.parse(stateBefore);
-      const migrated = JSON.stringify({ ...raw, managedBy: 'saas' });
+      const migrated = JSON.stringify(
+        patchAggregateScope(
+          raw,
+          {
+            app: 'volc-plan-app',
+            service: 'volc-plan',
+            provider: 'volcengine',
+            stage: 'dev',
+            region: 'cn-shanghai',
+          },
+          { managedBy: 'saas' },
+        ),
+      );
       await fs.writeFile(STATE_PATH, migrated);
       try {
         const result = await runCli('diff', ['--json', '--no-refresh']);

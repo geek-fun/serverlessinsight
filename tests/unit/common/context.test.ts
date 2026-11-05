@@ -1,4 +1,5 @@
 import fs from 'node:fs';
+import { ProviderEnum } from '../../../src/common/providerEnum';
 import {
   getIacLocation,
   setContext,
@@ -8,6 +9,9 @@ import {
 } from '../../../src/common/context';
 
 jest.mock('node:fs');
+jest.mock('../../../src/common/logger', () => ({
+  logger: { info: jest.fn(), warn: jest.fn(), error: jest.fn(), debug: jest.fn() },
+}));
 jest.mock('../../../src/common/imsClient', () => ({
   getIamInfo: jest.fn().mockResolvedValue({ accountId: '123456789012', userId: 'test-user' }),
 }));
@@ -112,6 +116,23 @@ describe('context', () => {
   });
 
   describe('setContext', () => {
+    it('retains the original YAML storage defaults independently from workload overrides', async () => {
+      mockFs.existsSync.mockReturnValue(true);
+      mockFs.statSync.mockReturnValue({ isDirectory: () => false } as never);
+      await setContext({
+        app: 'shop',
+        service: 'api',
+        provider: 'volcengine',
+        region: 'cn-beijing',
+        iacProvider: { name: ProviderEnum.ALIYUN, region: 'ap-southeast-1' },
+        location: '/test/path',
+      });
+      expect(getContext()).toMatchObject({
+        provider: 'volcengine',
+        region: 'cn-beijing',
+        storage: { provider: 'aliyun', region: 'ap-southeast-1' },
+      });
+    });
     it('should set context with provided values', async () => {
       mockFs.existsSync.mockReturnValue(true);
       mockFs.statSync.mockReturnValue({ isDirectory: () => false } as never);
@@ -137,12 +158,24 @@ describe('context', () => {
       mockFs.statSync.mockReturnValue({ isDirectory: () => false } as never);
 
       process.env.ROS_REGION_ID = 'cn-shanghai';
-      const warnSpy = jest.spyOn(console, 'warn').mockImplementation(() => {});
+      const { logger } = jest.requireMock('../../../src/common/logger');
 
       await setContext({ app: 'test', service: 'svc', location: '/path' });
 
-      expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining('ROS_REGION_ID'));
-      warnSpy.mockRestore();
+      expect(logger.warn).toHaveBeenCalledWith(expect.stringContaining('ROS_REGION_ID'));
+    });
+
+    it('should not warn when SI_REGION is already set', async () => {
+      mockFs.existsSync.mockReturnValue(true);
+      mockFs.statSync.mockReturnValue({ isDirectory: () => false } as never);
+
+      process.env.ROS_REGION_ID = 'cn-shanghai';
+      process.env.SI_REGION = 'cn-hangzhou';
+      const { logger } = jest.requireMock('../../../src/common/logger');
+
+      await setContext({ app: 'test', service: 'svc', location: '/path' });
+
+      expect(logger.warn).not.toHaveBeenCalledWith(expect.stringContaining('ROS_REGION_ID'));
     });
 
     it('should call getIamInfo when reaValToken is true', async () => {

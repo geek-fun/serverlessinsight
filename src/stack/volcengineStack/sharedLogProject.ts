@@ -49,7 +49,7 @@ export const ensureSharedLogProject = async (
       const existing = await client.tls.getProject(projectName);
       if (existing?.projectId) {
         const tags = await client.tls.getProjectTags(projectName);
-        if (isOwnedByApp(context.app, SHARED_LOG_PROJECT_KEY, tags)) {
+        if (isOwnedByApp(context.app, SHARED_LOG_PROJECT_KEY, tags, context.region)) {
           return { projectName, projectId: existing.projectId };
         }
         throw new Error(lang.__('TLS_SHARED_PROJECT_NOT_OWNED', { projectName }));
@@ -74,7 +74,11 @@ export const ensureSharedLogProject = async (
         tags: [
           {
             key: OWNERSHIP_TAG_KEY,
-            value: buildSharedOwnershipTagValue(context.app, SHARED_LOG_PROJECT_KEY),
+            value: buildSharedOwnershipTagValue(
+              context.app,
+              SHARED_LOG_PROJECT_KEY,
+              context.region,
+            ),
           },
         ],
       });
@@ -83,7 +87,7 @@ export const ensureSharedLogProject = async (
       // ownership before adopting — an untagged or foreign project must not be
       // silently taken over.
       const tags = await client.tls.getProjectTags(projectName);
-      if (!isOwnedByApp(context.app, SHARED_LOG_PROJECT_KEY, tags)) {
+      if (!isOwnedByApp(context.app, SHARED_LOG_PROJECT_KEY, tags, context.region)) {
         throw new Error(lang.__('TLS_SHARED_PROJECT_NOT_OWNED', { projectName }));
       }
     }
@@ -135,7 +139,7 @@ export const releaseSharedLogProjectIfUnused = async (
   // Never delete a project that is not provably this app's — the ownership tag
   // proves the shared container belongs to us before teardown.
   const tags = await client.tls.getProjectTags(projectName);
-  if (!isOwnedByApp(context.app, SHARED_LOG_PROJECT_KEY, tags)) {
+  if (!isOwnedByApp(context.app, SHARED_LOG_PROJECT_KEY, tags, context.region)) {
     logger.warn(lang.__('TLS_SHARED_PROJECT_NOT_OWNED', { projectName }));
     return 'retained';
   }

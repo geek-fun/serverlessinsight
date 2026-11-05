@@ -1,4 +1,6 @@
 export const zhCN = {
+  STATE_STORAGE_PROVIDER_UNSUPPORTED:
+    'State 存储不支持云厂商 {{provider}}。请将 storageProvider 配置为 aliyun 或 tencent。',
   PLAN_SENSITIVE_VALUE: '(敏感值)',
   PLAN_NAS_NETWORK_REQUIRED:
     '{{logicalId}} 的 NAS 存储需要声明 VPC 网络或已有挂载目标记录。计划已停止，尚未创建任何资源。',
@@ -1009,8 +1011,6 @@ export const zhCN = {
   MIGRATE_UPLOADED_DEDUPLICATED: '（内容未变，已去重）',
   MIGRATE_VERIFY_FAILED:
     'stage {{stage}} 回读校验失败——未写迁移标记。请对比 Console 状态版本与旧状态后重新执行 `si migrate`。',
-  MIGRATE_CONFLICT:
-    '目标 stage 在 Console 已有状态。如确认覆盖采纳，请加 --force（将作为新版本导入，历史保留）。',
   MIGRATE_MARKER_WRITTEN: '已写迁移标记：旧状态转为只读（managedBy=saas）。',
   MIGRATE_MARKER_SKIPPED:
     '警告：使用了 --no-marker。cutover 完成前旧后端仍可写入——请立即完成 YAML 切换。',
@@ -1024,8 +1024,78 @@ export const zhCN = {
     '该状态已迁移至 ServerlessInsight Console（managedBy=saas），旧后端已关闭变更。\n  • 继续使用 Console：从 YAML 中删除 backend.state_manager 段并在顶层声明 org: <slug> 后重新部署。\n  • 确需经旧后端操作：运行 `si migrate --rollback` 清除标记。',
   MIGRATION_MARKER_WARN:
     '该状态已迁移至 Console（managedBy=saas）——此处展示的是只读副本，可能已过期。请勿从该后端部署。',
+  SCOPE_KEY_PART_REQUIRED: "'{{label}}' 必填且不能为空",
+  SCOPE_KEY_PART_INVALID:
+    "'{{label}}' 的值 '{{part}}' 不是路径安全的：不能为空，不能包含 '/'、'\\'、'..' 或首尾空白",
+  EFFECTIVE_CONFIG_UNKNOWN_PROVIDER:
+    "未知 provider '{{provider}}'。支持的 provider：aliyun、tencent、volcengine、huawei、aws",
+  EFFECTIVE_CONFIG_RESOURCE_UNSUPPORTED:
+    "Provider '{{provider}}' 无法部署当前模板中的 '{{resource}}'。请先调整模板，再覆盖 provider。",
+  EFFECTIVE_CONFIG_REGION_REQUIRED:
+    '需要指定 region：通过 -r/--region 传入、在 YAML 的 provider.region 中设置，或设置 SI_REGION 环境变量',
 
-  // HTTP trigger messages
+  STATE_AGGREGATE_INVALID: '聚合状态文档格式损坏，请先恢复已验证的备份后再继续。',
+  STATE_STORE_UPGRADE_REQUIRED:
+    '状态 {{location}} 需要原位置格式升级。deploy、destroy 和 SaaS 交接会在规划或导入前自动完成升级。',
+  STATE_PARTITION_PATCH_INVALID: '仅可修改部署归属和迁移元数据。',
+  STATE_PLAN_BASE_CHANGED: '目标部署状态在规划后发生变化，请重新生成并批准计划后再继续。',
+  STATE_SCOPED_VERSION_UNSUPPORTED: '不支持的状态版本 {{version}}',
+  STATE_SCOPED_IDENTITY_MISMATCH: '状态身份与请求的部署作用域不匹配',
+  STATE_SCOPED_IDENTITY_DETAILS_MISMATCH:
+    '状态身份（{{stored}}）与绑定的部署作用域（{{requested}}）不匹配',
+  STATE_WRITE_NOT_READY: '当前部署范围的状态写入尚未就绪',
+  STATE_BUCKET_NOT_FOUND:
+    '状态存储 bucket 不存在（{{code}}）。请创建 bucket 或修正 backend.state_manager 配置——bucket 缺失不会被当作空状态',
+  STATE_BUCKET_ACCESS_DENIED:
+    '状态存储 bucket 访问被拒绝（{{code}}）。请检查存储凭据——鉴权失败永远不会被当作空状态',
+  STATE_STORAGE_CREDENTIALS_MISSING:
+    'State 存储需要 {{provider}} 的凭证。请配置该云厂商的凭证环境变量，不会复用其他云厂商的业务部署凭证。',
+  LOCK_CONDITIONAL_CREATE_UNSUPPORTED:
+    '当前状态存储不支持排他（条件）创建——并发首次加锁将回退为"写入后校验"，不保证原子性。请避免对同一 scope 并行执行变更命令',
+  SAAS_REGIONAL_SCOPE_UNSUPPORTED:
+    'Console（{{consoleUrl}}）尚不支持区域部署状态（缺少 scope protocol 能力）。仅升级 CLI 无法安全隔离区域——请升级 Console，或在未隔离部署场景下继续使用旧版 CLI',
+  SAAS_STATE_SCOPE_MISMATCH:
+    'Console 返回的是 stage {{storedStage}} / region {{storedRegion}} 的状态，但本次命令目标是 stage {{stage}} / region {{region}}。拒绝混用区域 scope',
+  SAAS_READ_ONLY_WRITE_REFUSED: '该 SaaS 后端实例以只读模式创建（diff/show），拒绝状态写入',
+  SAAS_WRITE_BLOCKED_UNSCOPED_STATE:
+    'Console 上 stage {{stage}} 的当前状态没有记录区域 scope（早于区域隔离）。请先在 Console 侧完成该服务的迁移，再向 region {{region}} 部署——直接写入会覆盖其他区域的状态',
+  REGIONAL_MIGRATION_UNSUPPORTED_SOURCE:
+    '期望旧版 V3.0 状态聚合，但发现版本 "{{version}}"。没有可升级的内容',
+  REGIONAL_MIGRATION_SOURCE_MANAGED_BY_SAAS:
+    '该旧版状态已迁移至（并归）ServerlessInsight Console 所有（managedBy=saas）。状态升级会生成无标记的本地副本，重新引入双写风险——已拒绝。请继续使用 Console 后端；或仅在你明确要交还所有权时先运行 `si migrate --rollback`',
+  REGIONAL_MIGRATION_INCOMPLETE_STAGE_COVERAGE:
+    '自动升级必须保留所有 stage 中的每个资源。当前源数据覆盖不完整，请核对源状态和恢复记录后再重试。',
+  STATE_ATOMIC_CREATE_REQUIRED: '此状态存储无法原子登记所有权或获取锁，已拒绝变更。',
+  REGIONAL_MIGRATION_PENDING:
+    'State 升级 {{opId}} 尚未完成。请使用已审查的区域绑定重新执行 deploy、destroy 或 migrate 以继续。',
+  SAAS_STATE_BASE_UNKNOWN: '请先读取区域状态，再保存或开始部署。',
+  REGIONAL_LOCK_STALE:
+    '状态已锁定（检测到可能过期的锁）。\n{{info}}\n确认没有其他操作正在运行后，可执行：\n  si force-unlock {{id}}',
+  REGIONAL_LOCK_TIMEOUT: '等待 {{seconds}} 秒后仍无法获取锁。\n{{info}}',
+  REGIONAL_LOCK_FAILED: '无法获取锁。\n{{path}}',
+  MIGRATE_SOURCE_FORMAT_INVALID: '源后端在自动准备后未提供有效的单部署 V4 视图，尚未导入任何状态。',
+  MIGRATE_TARGET_REGIONAL_REQUIRED:
+    '目标服务仍使用旧版状态。请先完成控制台侧的区域绑定和激活，再导入区域状态。',
+  MIGRATE_SOURCE_MULTIPLE_SCOPES:
+    '此区域状态文档还包含其他 stage 的资源。请先核实源状态的归属，再导入；一个区域文档只能管理选定 stage 的资源。',
+  SAAS_STATE_ACK_INVALID:
+    '状态服务未确认有效的区域快照和内容哈希。已拒绝推测下一版本，请升级服务端以支持作用域协议 2。',
+
+  REGIONAL_MIGRATION_PROVIDER_MISMATCH:
+    '源状态记录的 provider 为 "{{source}}"，命令选择的是 "{{effective}}"。升级保留源 provider，业务部署参数不会重写历史资源归属。',
+  REGIONAL_MIGRATION_UNKNOWN_REGION_REQUIRED:
+    '部分资源没有区域证据（早于区域隔离的状态）。请使用 --bind-unknown-region <region> 重新运行以显式绑定区域——CLI 绝不会从 YAML 或文件名猜测历史区域',
+  REGIONAL_MIGRATION_SOURCE_CHANGED:
+    '格式升级期间源状态发生了变化。为避免覆盖已有状态，请先核对源状态和保留的恢复记录，再重试原操作。',
+  REGIONAL_MIGRATION_APPLIED:
+    'State 已在原位置升级（操作 {{opId}}）。各 stage/provider/region 分区共用原文件或 Bucket key。继续处理当前操作。',
+  REGIONAL_MIGRATION_PARTIAL_FAILURE:
+    'State 升级中断（操作 {{opId}}）：{{error}}。请保留源备份和迁移记录，重新运行同一操作以继续。',
+  REGIONAL_MIGRATION_BACKUP_MISSING:
+    'State 升级 {{opId}} 的原始备份缺失，无法安全恢复。请先恢复该备份，再重试原操作。',
+  REGIONAL_MIGRATION_UNKNOWN_ITEM: '  • [{{stage}}] {{logicalId}}（{{kind}}）',
+
+  OPT_BIND_UNKNOWN_REGION: '将没有区域证据的资源显式绑定到该区域',
   HTTP_TRIGGER_AUTH_TYPE_REQUIRED:
     "HTTP 触发器 '{{functionName}}' 需要设置 'auth_type'（public 或 iam）",
   CREATING_HTTP_TRIGGER: "正在为函数 '{{functionName}}' 创建 HTTP 触发器 '{{triggerName}}'...",

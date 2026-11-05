@@ -27,6 +27,8 @@ jest.mock('../../../src/common', () => ({
 
 jest.mock('../../../src/common/stateBackend', () => ({
   createStateBackend: jest.fn(),
+  createLocalStateBackend: jest.requireActual('../../../src/common/stateBackend/localStateBackend')
+    .createLocalStateBackend,
 }));
 
 jest.mock('../../../src/common/lockManager', () => ({
@@ -48,8 +50,18 @@ describe('show command', () => {
   };
 
   const mockStateBackend: StateBackend = {
+    scope: {
+      provider: 'aliyun',
+      app: 'test-app',
+      service: 'test-service',
+      stage: 'default',
+      region: 'cn-hangzhou',
+    },
+    capabilities: { conditionalCreate: true },
     loadState: jest.fn(),
     saveState: jest.fn(),
+    readStateSource: jest.fn().mockReturnValue('scoped'),
+    probeWriteReadiness: jest.fn().mockResolvedValue({ ready: true, source: 'scoped' }),
     acquireLock: jest.fn(),
     releaseLock: jest.fn(),
     forceUnlock: jest.fn(),
@@ -100,7 +112,7 @@ describe('show command', () => {
 
       const statePath = path.join(stateDir, 'state-test-app-test-service.json');
       const stateData = {
-        version: '1.0.0',
+        version: '3.0',
         provider: 'aliyun',
         app: 'test-app',
         service: 'test-service',
@@ -169,7 +181,7 @@ describe('show command', () => {
   describe('with remote state backend', () => {
     it('should use remote backend when configured and credentials available', async () => {
       const mockState = {
-        version: '1.0.0',
+        version: '3.0',
         provider: 'aliyun',
         app: 'test-app',
         service: 'test-service',
@@ -203,9 +215,12 @@ describe('show command', () => {
       await show({ stage: 'default', location: testDir, iac: mockIac });
 
       // show is read-only: it wires the migration marker in 'warn' mode (D-4)
+      // and creates the backend in 'read-only' mode with the resolved stage (issue #280)
       expect(createStateBackend).toHaveBeenCalledWith(mockIac.backend, {
         ...mockContext,
+        stage: 'default',
         migrationMarker: 'warn',
+        mode: 'read-only',
       });
       expect(mockStateBackend.loadState).toHaveBeenCalled();
       expect(mockStateBackend.readLock).toHaveBeenCalled();
@@ -224,7 +239,7 @@ describe('show command', () => {
 
       const statePath = path.join(stateDir, 'state-test-app-test-service.json');
       const stateData = {
-        version: '1.0.0',
+        version: '3.0',
         provider: 'aliyun',
         app: 'test-app',
         service: 'test-service',
@@ -251,7 +266,7 @@ describe('show command', () => {
 
       const statePath = path.join(stateDir, 'state-test-app-test-service.json');
       const stateData = {
-        version: '1.0.0',
+        version: '3.0',
         provider: 'aliyun',
         app: 'test-app',
         service: 'test-service',
@@ -281,7 +296,7 @@ describe('show command', () => {
       fs.writeFileSync(
         statePath,
         JSON.stringify({
-          version: '1.0.0',
+          version: '3.0',
           provider: 'aliyun',
           app: 'test-app',
           service: 'test-service',
@@ -307,7 +322,7 @@ describe('show command', () => {
       fs.writeFileSync(
         statePath,
         JSON.stringify({
-          version: '1.0.0',
+          version: '3.0',
           provider: 'aliyun',
           app: 'test-app',
           service: 'test-service',
@@ -335,7 +350,7 @@ describe('show command', () => {
 
       const statePath = path.join(stateDir, 'state-test-app-test-service.json');
       const stateData = {
-        version: '1.0.0',
+        version: '3.0',
         provider: 'aliyun',
         app: 'test-app',
         service: 'test-service',
@@ -362,7 +377,7 @@ describe('show command', () => {
 
       const statePath = path.join(stateDir, 'state-test-app-test-service.json');
       const stateData = {
-        version: '1.0.0',
+        version: '3.0',
         provider: 'aliyun',
         app: 'test-app',
         service: 'test-service',
@@ -420,7 +435,7 @@ describe('show command', () => {
 
       const statePath = path.join(stateDir, 'state-test-app-test-service.json');
       const stateData = {
-        version: '1.0.0',
+        version: '3.0',
         provider: 'aliyun',
         app: 'test-app',
         service: 'test-service',
@@ -470,7 +485,7 @@ describe('show command', () => {
 
       const statePath = path.join(stateDir, 'state-test-app-test-service.json');
       const stateData = {
-        version: '1.0.0',
+        version: '3.0',
         provider: 'aliyun',
         app: 'test-app',
         service: 'test-service',
@@ -520,7 +535,7 @@ describe('show command', () => {
 
       const statePath = path.join(stateDir, 'state-test-app-test-service.json');
       const stateData = {
-        version: '1.0.0',
+        version: '3.0',
         provider: 'aliyun',
         app: 'test-app',
         service: 'test-service',
@@ -597,7 +612,7 @@ describe('show command', () => {
 
       const statePath = path.join(stateDir, 'state-test-app-test-service.json');
       const stateData = {
-        version: '1.0.0',
+        version: '3.0',
         provider: 'aliyun',
         app: 'test-app',
         service: 'test-service',
@@ -644,7 +659,7 @@ describe('show command', () => {
 
       const statePath = path.join(stateDir, 'state-test-app-test-service.json');
       const stateData = {
-        version: '1.0.0',
+        version: '3.0',
         provider: 'aliyun',
         app: 'test-app',
         service: 'test-service',
@@ -686,6 +701,11 @@ describe('show command', () => {
 
   describe('tdsql cluster resources', () => {
     beforeEach(() => {
+      (getContext as jest.Mock).mockReturnValue({
+        ...mockContext,
+        provider: 'tencent',
+        region: 'ap-beijing',
+      });
       process.chdir(testDir);
 
       const stateDir = path.join(testDir, '.serverlessinsight');
@@ -693,7 +713,7 @@ describe('show command', () => {
 
       const statePath = path.join(stateDir, 'state-test-app-test-service.json');
       const stateData = {
-        version: '1.0.0',
+        version: '3.0',
         provider: 'tencent',
         app: 'test-app',
         service: 'test-service',
@@ -742,7 +762,7 @@ describe('show command', () => {
 
       const statePath = path.join(stateDir, 'state-test-app-test-service.json');
       const stateData = {
-        version: '1.0.0',
+        version: '3.0',
         provider: 'aliyun',
         app: 'test-app',
         service: 'test-service',
@@ -805,6 +825,11 @@ describe('show command', () => {
 
   describe('tencent cloud resources', () => {
     beforeEach(() => {
+      (getContext as jest.Mock).mockReturnValue({
+        ...mockContext,
+        provider: 'tencent',
+        region: 'ap-beijing',
+      });
       process.chdir(testDir);
 
       const stateDir = path.join(testDir, '.serverlessinsight');
@@ -812,7 +837,7 @@ describe('show command', () => {
 
       const statePath = path.join(stateDir, 'state-test-app-test-service.json');
       const stateData = {
-        version: '1.0.0',
+        version: '3.0',
         provider: 'tencent',
         app: 'test-app',
         service: 'test-service',
@@ -885,7 +910,7 @@ describe('show command', () => {
 
       const statePath = path.join(stateDir, 'state-test-app-test-service.json');
       const stateData = {
-        version: '1.0.0',
+        version: '3.0',
         provider: 'aliyun',
         app: 'test-app',
         service: 'test-service',
@@ -935,7 +960,7 @@ describe('show command', () => {
 
       const statePath = path.join(stateDir, 'state-test-app-test-service.json');
       const stateData = {
-        version: '1.0.0',
+        version: '3.0',
         provider: 'aliyun',
         app: 'test-app',
         service: 'test-service',
@@ -944,7 +969,7 @@ describe('show command', () => {
             resources: {
               'buckets.website': {
                 mode: 'managed',
-                region: 'cn-beijing',
+                region: 'cn-hangzhou',
                 definition: {},
                 instances: [
                   {
@@ -972,6 +997,20 @@ describe('show command', () => {
         expect.stringContaining('Custom Domain: example.com'),
       );
     });
+
+    it('does not display another region or modify legacy state while showing an empty scope', async () => {
+      const statePath = path.join(testDir, '.serverlessinsight/state-test-app-test-service.json');
+      const original = fs.readFileSync(statePath, 'utf-8');
+      (getContext as jest.Mock).mockReturnValue({ ...mockContext, region: 'cn-beijing' });
+
+      await show({ stage: 'default', location: testDir, iac: createMockIac('LOCAL') });
+
+      expect(mockLoggerInfo).toHaveBeenCalledWith('No resources found in state.');
+      expect(mockLoggerInfo).not.toHaveBeenCalledWith(
+        expect.stringContaining('Custom Domain: example.com'),
+      );
+      expect(fs.readFileSync(statePath, 'utf-8')).toBe(original);
+    });
   });
 
   describe('multiple resource types', () => {
@@ -983,7 +1022,7 @@ describe('show command', () => {
 
       const statePath = path.join(stateDir, 'state-test-app-test-service.json');
       const stateData = {
-        version: '1.0.0',
+        version: '3.0',
         provider: 'aliyun',
         app: 'test-app',
         service: 'test-service',
@@ -1077,7 +1116,7 @@ describe('show command', () => {
 
       const statePath = path.join(stateDir, 'state-test-app-test-service.json');
       const stateData = {
-        version: '1.0.0',
+        version: '3.0',
         provider: 'aliyun',
         app: 'test-app',
         service: 'test-service',
@@ -1127,7 +1166,7 @@ describe('show command', () => {
 
       const statePath = path.join(stateDir, 'state-test-app-test-service.json');
       const stateData = {
-        version: '1.0.0',
+        version: '3.0',
         provider: 'aliyun',
         app: 'test-app',
         service: 'test-service',
@@ -1170,7 +1209,7 @@ describe('show command', () => {
   describe('remote backend location string formatting', () => {
     it('should display bucket backend location correctly', async () => {
       const mockState = {
-        version: '1.0.0',
+        version: '3.0',
         provider: 'aliyun',
         app: 'test-app',
         service: 'test-service',
@@ -1218,7 +1257,7 @@ describe('show command', () => {
 
       const statePath = path.join(stateDir, 'state-test-app-test-service.json');
       const stateData = {
-        version: '1.0.0',
+        version: '3.0',
         provider: 'aliyun',
         app: 'test-app',
         service: 'test-service',
@@ -1281,7 +1320,7 @@ describe('show command', () => {
 
       const statePath = path.join(stateDir, 'state-test-app-test-service.json');
       const stateData = {
-        version: '1.0.0',
+        version: '3.0',
         provider: 'aliyun',
         app: 'test-app',
         service: 'test-service',
@@ -1329,7 +1368,7 @@ describe('show command', () => {
 
       const statePath = path.join(stateDir, 'state-test-app-test-service.json');
       const stateData = {
-        version: '1.0.0',
+        version: '3.0',
         provider: 'aliyun',
         app: 'test-app',
         service: 'test-service',
@@ -1367,7 +1406,7 @@ describe('show command', () => {
   describe('empty state with remote backend', () => {
     it('should show backend info when no resources and using remote backend', async () => {
       const mockState = {
-        version: '1.0.0',
+        version: '3.0',
         provider: 'aliyun',
         app: 'test-app',
         service: 'test-service',
@@ -1395,7 +1434,7 @@ describe('show command', () => {
 
       const statePath = path.join(stateDir, 'state-test-app-test-service.json');
       const stateData = {
-        version: '1.0.0',
+        version: '3.0',
         provider: 'aliyun',
         app: 'test-app',
         service: 'test-service',
@@ -1433,7 +1472,7 @@ describe('show command', () => {
 
       const statePath = path.join(stateDir, 'state-test-app-test-service.json');
       const stateData = {
-        version: '1.0.0',
+        version: '3.0',
         provider: 'aliyun',
         app: 'test-app',
         service: 'test-service',
@@ -1469,17 +1508,20 @@ describe('show command', () => {
 
       expect(stdoutSpy).toHaveBeenCalledTimes(1);
       const payload = JSON.parse(stdoutSpy.mock.calls[0][0] as string);
-      expect(payload.showVersion).toBe(1);
+      expect(payload.showVersion).toBe(2);
       expect(payload.provider).toBe('aliyun');
       expect(payload.app).toBe('test-app');
       expect(payload.service).toBe('test-service');
       expect(payload.stage).toBe('default');
+      expect(payload.region).toBe('cn-hangzhou');
       expect(payload.backend).toBe('local');
       expect(payload.locked).toBe(false);
       expect(payload.lock).toBeNull();
       expect(payload.resourceCount).toBe(1);
       expect(Object.keys(payload.resources)).toEqual(['functions.test_fn']);
-      expect(payload.stateLocation).toContain('state-test-app-test-service.json');
+      expect(payload.stateLocation).toBe(
+        path.join(testDir, '.serverlessinsight', 'state-test-app-test-service.json'),
+      );
       stdoutSpy.mockRestore();
     });
 
@@ -1506,7 +1548,7 @@ describe('show command', () => {
 
     it('uses the saas backend marker for the default (SaaS) backend', async () => {
       (mockStateBackend.loadState as jest.Mock).mockResolvedValue({
-        version: '1.0.0',
+        version: '3.0',
         provider: 'aliyun',
         app: 'test-app',
         service: 'test-service',
@@ -1525,6 +1567,8 @@ describe('show command', () => {
       const payload = JSON.parse(stdoutSpy.mock.calls[0][0] as string);
       expect(payload.backend).toBe('saas');
       expect(payload.stateLocation).toBe('saas');
+      expect(payload.region).toBe('cn-hangzhou');
+      expect(payload.stateSource).toBe('scoped');
       stdoutSpy.mockRestore();
     });
   });

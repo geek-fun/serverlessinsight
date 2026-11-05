@@ -113,23 +113,13 @@ describe('volcengineStack deployer', () => {
     it('should load state with correct parameters', async () => {
       await deployVolcengineStack(mockIac, mockBackend);
 
-      expect(mockBackend.loadState).toHaveBeenCalledWith(
-        'volcengine',
-        'test-app',
-        'test-service',
-        'dev',
-      );
+      expect(mockBackend.loadState).toHaveBeenCalledWith();
     });
 
     it('should save state after deployment', async () => {
       await deployVolcengineStack(mockIac, mockBackend);
 
-      expect(mockBackend.saveState).toHaveBeenCalledWith(
-        mockState,
-        'test-app',
-        'test-service',
-        'dev',
-      );
+      expect(mockBackend.saveState).toHaveBeenCalledWith(mockState);
     });
 
     it('should throw on bucket partial failure', async () => {

@@ -3,6 +3,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { getIacLocation, formatLockInfo, logger, setContext, getContext } from '../common';
 import { createStateBackend } from '../common/stateBackend';
+import type { StateBackend } from '../common/stateBackend/types';
 import { StateBackendType } from '../types';
 import { getConsoleUrl } from '../common/credentialStore';
 import { LOCK_FILE_SUFFIX } from '../common/constants';
@@ -37,7 +38,7 @@ export const forceUnlockCommand = async (
     securityToken?: string;
   } = {},
 ): Promise<void> => {
-  let backend;
+  let backend: Pick<StateBackend, 'readLock' | 'forceUnlock'>;
 
   if (options.location) {
     const iacLocation = getIacLocation(options.location);
@@ -67,13 +68,24 @@ export const forceUnlockCommand = async (
     const stateDir = path.join(process.cwd(), '.serverlessinsight');
     let foundStatePath: string | undefined;
 
-    if (fs.existsSync(stateDir)) {
-      const lockFiles = fs.readdirSync(stateDir).filter((f) => f.endsWith(LOCK_FILE_SUFFIX));
-      if (lockFiles.length > 0) {
-        const lockContent = fs.readFileSync(path.join(stateDir, lockFiles[0]), 'utf-8');
-        const lockMeta = JSON.parse(lockContent) as LockMetadata;
-        foundStatePath = lockMeta.path;
+    const findLockFiles = (dir: string): string[] => {
+      if (!fs.existsSync(dir)) {
+        return [];
       }
+      return fs.readdirSync(dir, { withFileTypes: true }).flatMap((entry) => {
+        const full = path.join(dir, entry.name);
+        if (entry.isDirectory()) {
+          return findLockFiles(full);
+        }
+        return entry.name.endsWith(LOCK_FILE_SUFFIX) ? [full] : [];
+      });
+    };
+
+    const lockFiles = findLockFiles(stateDir);
+    if (lockFiles.length > 0) {
+      const lockContent = fs.readFileSync(lockFiles[0], 'utf-8');
+      const lockMeta = JSON.parse(lockContent) as LockMetadata;
+      foundStatePath = lockMeta.path;
     }
 
     if (!foundStatePath) {
@@ -85,21 +97,6 @@ export const forceUnlockCommand = async (
     backend = {
       readLock: async () => readLockFileForCommand(statePath),
       forceUnlock: async (id: string) => fsForceUnlock(statePath, id),
-      loadState: async () => {
-        throw new Error(lang.__('FORCE_UNLOCK_NO_LOCATION_MODE'));
-      },
-      saveState: async () => {
-        throw new Error(lang.__('FORCE_UNLOCK_NO_LOCATION_MODE'));
-      },
-      acquireLock: async () => {
-        throw new Error(lang.__('FORCE_UNLOCK_NO_LOCATION_MODE'));
-      },
-      releaseLock: async () => {
-        throw new Error(lang.__('FORCE_UNLOCK_NO_LOCATION_MODE'));
-      },
-      withLock: async () => {
-        throw new Error(lang.__('FORCE_UNLOCK_NO_LOCATION_MODE'));
-      },
     };
   }
 

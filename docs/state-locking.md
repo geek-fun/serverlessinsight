@@ -36,8 +36,10 @@ No manual lock/unlock commands are needed for normal operations.
 - **Retry**: Exponential backoff (2s, 4s, 8s, 16s, 30s max)
 - **Atomic acquisition**: The lock file is created with `open(path, 'wx')` (`O_EXCL`). If the file already exists, the create fails atomically with `EEXIST` — two processes can never both observe "no lock" and both write. The previous read-then-write-then-verify sequence has been replaced by this single atomic create.
 - **Storage**:
-  - **Local backend**: `.serverlessinsight/state.json.si-lock` file (local file system)
-  - **Remote backend**: Lock object stored alongside state in the remote backend (e.g., OSS/COS bucket), shared across machines/CI runners
+  - **Local backend**: `.serverlessinsight/state-<app>-<service>.json.si-lock` file (local file system)
+  - **Remote backend**: `<key>.si-lock` in an OSS/COS bucket, shared across machines/CI runners
+
+Local and Bucket locks cover the complete aggregate across all stages, providers and regions. Planning may precede the lock; after acquisition the selected partition must still match its approved base. Writes merge a fresh aggregate so sibling updates survive. SaaS locks remain per deployment lifecycle.
 
 ### Lock Information
 
@@ -78,6 +80,8 @@ If you are certain no other operation is running, use:
 3. **Force unlock if necessary** - Only if you're absolutely certain no operation is running
 
 ## Force Unlock (Emergency Recovery)
+
+The CLI force-unlock command applies to Local/Bucket locks. For SaaS, use the Console deployment force-unlock action, which identifies the immutable deployment UUID. Select the original provider/region when inspecting or recovering a deployment.
 
 Use force-unlock only when you're certain no other operation is running. Forcing a lock while another operation is active can cause state corruption.
 
@@ -194,14 +198,15 @@ si force-unlock <LOCK_ID>
 
 ### Q: Can multiple people deploy simultaneously?
 
-**A**: No. Only one deployment operation can proceed at a time for a given stack.
+**A**: Local/Bucket serialize all deployments sharing one aggregate file/key, including different stages, providers and regions. SaaS deployments on different lifecycle IDs may run independently; the same lifecycle remains exclusive.
 
 ### Q: Does locking work across different machines?
 
 **A**: It depends on the state backend:
 
 - **Local backend**: Locks are local to a single machine. For team collaboration with a local backend, use a shared CI/CD system so only one runner operates on the stack at a time.
-- **Remote backend**: Yes. The lock object is stored in the shared remote backend, so it is effective across different machines and CI runners that use the same state.
+- **Bucket backend**: Yes. All machines/runners using the same bucket/key share its whole-file lock.
+- **SaaS backend**: The server coordinates the selected deployment lifecycle, independently of the client machine.
 
 ### Q: How do I know if a lock is stale?
 

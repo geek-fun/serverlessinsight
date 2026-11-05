@@ -1,20 +1,40 @@
 import OSS from 'ali-oss';
-import { StateBackend, StorageAdapter } from './types';
+import { StorageAdapter, StateBackend, ConditionalPutUnsupportedError } from './types';
 import { createRemoteStateBackend } from './remoteStateBackend';
 import { MigrationMarkerAction } from '../migrationMarker';
 import { OSS_STATE_CONNECT_TIMEOUT_MS, OSS_STATE_REQUEST_TIMEOUT_MS } from '../constants';
+import { lang } from '../../lang';
+import type { DeploymentScope } from '../stateScope';
 
-type OssBackendConfig = {
+export type OssStorageConfig = {
   bucket: string;
-  key: string;
   region: string;
   accessKeyId: string;
   accessKeySecret: string;
   securityToken?: string;
-  markerAction?: MigrationMarkerAction;
+  lockPath: string;
 };
 
-const createOssStorageAdapter = (config: OssBackendConfig): StorageAdapter => {
+const isObjectAbsent = (err: unknown): boolean => {
+  if (err && typeof err === 'object' && 'code' in err) {
+    return (err as { code: string }).code === 'NoSuchKey';
+  }
+  return false;
+};
+
+const assertNotFatalAbsence = (err: unknown): void => {
+  if (err && typeof err === 'object' && 'code' in err) {
+    const code = (err as { code: string }).code;
+    if (code === 'NoSuchBucket') {
+      throw new Error(lang.__('STATE_BUCKET_NOT_FOUND', { code }));
+    }
+    if (code === 'AccessDenied') {
+      throw new Error(lang.__('STATE_BUCKET_ACCESS_DENIED', { code }));
+    }
+  }
+};
+
+export const createOssStorageAdapter = (config: OssStorageConfig): StorageAdapter => {
   const ossClient = new OSS({
     accessKeyId: config.accessKeyId,
     accessKeySecret: config.accessKeySecret,
@@ -32,11 +52,9 @@ const createOssStorageAdapter = (config: OssBackendConfig): StorageAdapter => {
         const content = result.content.toString('utf-8');
         return JSON.parse(content) as T;
       } catch (err: unknown) {
-        if (err && typeof err === 'object' && 'code' in err) {
-          const code = (err as { code: string }).code;
-          if (code === 'NoSuchKey' || code === 'NoSuchBucket') {
-            return null;
-          }
+        assertNotFatalAbsence(err);
+        if (isObjectAbsent(err)) {
+          return null;
         }
         throw err;
       }
@@ -47,6 +65,36 @@ const createOssStorageAdapter = (config: OssBackendConfig): StorageAdapter => {
       await ossClient.put(key, Buffer.from(content, 'utf-8'));
     },
 
+    putIfAbsent: async (key: string, data: unknown): Promise<boolean> => {
+      const content = JSON.stringify(data, null, 2);
+      const versioning = await (
+        ossClient as OSS & {
+          getBucketVersioning: (bucket: string) => Promise<{ versionStatus?: string }>;
+        }
+      ).getBucketVersioning(config.bucket);
+      if (versioning.versionStatus && versioning.versionStatus !== 'Disabled') {
+        throw new ConditionalPutUnsupportedError('bucket versioning disables exclusive creation');
+      }
+      try {
+        await ossClient.put(key, Buffer.from(content, 'utf-8'), {
+          headers: { 'x-oss-forbid-overwrite': 'true' },
+        });
+        return true;
+      } catch (err: unknown) {
+        if (err && typeof err === 'object' && 'code' in err) {
+          const code = (err as { code: string }).code;
+          if (
+            code === 'FileAlreadyExists' ||
+            code === 'EtagMismatch' ||
+            code === 'PreconditionFailed'
+          ) {
+            return false;
+          }
+        }
+        throw err;
+      }
+    },
+
     delete: async (key: string): Promise<void> => {
       try {
         await ossClient.delete(key);
@@ -55,11 +103,31 @@ const createOssStorageAdapter = (config: OssBackendConfig): StorageAdapter => {
       }
     },
 
-    lockPath: `oss://${config.bucket}/${config.key}`,
+    lockPath: config.lockPath,
   };
 };
 
-export const createOssStateBackend = (config: OssBackendConfig): StateBackend => {
-  const adapter = createOssStorageAdapter(config);
-  return createRemoteStateBackend(adapter, { key: config.key, markerAction: config.markerAction });
+export const createOssStateBackend = (config: {
+  scope: DeploymentScope;
+  bucket: string;
+  key: string;
+  region: string;
+  accessKeyId: string;
+  accessKeySecret: string;
+  securityToken?: string;
+  markerAction?: MigrationMarkerAction;
+}): StateBackend => {
+  const adapter = createOssStorageAdapter({
+    bucket: config.bucket,
+    region: config.region,
+    accessKeyId: config.accessKeyId,
+    accessKeySecret: config.accessKeySecret,
+    securityToken: config.securityToken,
+    lockPath: `oss://${config.bucket}/${config.key}`,
+  });
+  return createRemoteStateBackend(adapter, {
+    scope: config.scope,
+    key: config.key,
+    markerAction: config.markerAction,
+  });
 };

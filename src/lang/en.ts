@@ -1,4 +1,6 @@
 export const en = {
+  STATE_STORAGE_PROVIDER_UNSUPPORTED:
+    'State storage does not support provider {{provider}}. Configure storageProvider as aliyun or tencent.',
   PLAN_SENSITIVE_VALUE: '(sensitive)',
   PLAN_NAS_NETWORK_REQUIRED:
     'NAS storage on {{logicalId}} needs a declared VPC network or recorded mount targets. Planning stopped before creating any resources.',
@@ -1115,8 +1117,6 @@ export const en = {
   MIGRATE_UPLOADED_DEDUPLICATED: ' (unchanged, deduplicated)',
   MIGRATE_VERIFY_FAILED:
     'Read-back verification FAILED for stage {{stage}} — the migration marker was NOT written. Compare the Console state version with your legacy state, then re-run `si migrate`.',
-  MIGRATE_CONFLICT:
-    'The target stage already has Console state. Re-run with --force to adopt it as a new imported version (history is kept).',
   MIGRATE_MARKER_WRITTEN:
     'Migration marker written: the legacy state is now read-only (managedBy=saas).',
   MIGRATE_MARKER_SKIPPED:
@@ -1132,8 +1132,83 @@ export const en = {
     'This state has been migrated to the ServerlessInsight Console (managedBy=saas) and the legacy backend is closed for changes.\n  • To continue with the Console: remove the backend.state_manager block from your YAML, declare a top-level org: <slug>, then deploy again.\n  • To deliberately use the legacy backend: run `si migrate --rollback` to clear the marker.',
   MIGRATION_MARKER_WARN:
     'This state has been migrated to the Console (managedBy=saas) — the copy shown here is read-only and may be stale. Do not deploy from this backend.',
+  SCOPE_KEY_PART_REQUIRED: "'{{label}}' is required and must not be empty",
+  SCOPE_KEY_PART_INVALID:
+    "'{{label}}' value '{{part}}' is not path-safe: it must not be empty, contain '/', '\\', '..' or leading/trailing whitespace",
+  EFFECTIVE_CONFIG_UNKNOWN_PROVIDER:
+    "Unknown provider '{{provider}}'. Supported providers: aliyun, tencent, volcengine, huawei, aws",
+  EFFECTIVE_CONFIG_RESOURCE_UNSUPPORTED:
+    "Provider '{{provider}}' cannot deploy '{{resource}}' from this template. Adjust the template before overriding the provider.",
+  EFFECTIVE_CONFIG_REGION_REQUIRED:
+    'A region is required: pass -r/--region, set provider.region in the YAML, or set the SI_REGION environment variable',
 
-  // HTTP trigger messages
+  STATE_AGGREGATE_INVALID:
+    'The aggregate state document is malformed. Restore a verified backup before continuing.',
+  STATE_STORE_UPGRADE_REQUIRED:
+    'State at {{location}} requires an in-place format upgrade. Deploy, destroy and SaaS handoff prepare it automatically before planning or importing.',
+  STATE_PARTITION_PATCH_INVALID: 'Only deployment ownership and migration metadata can be patched.',
+  STATE_PLAN_BASE_CHANGED:
+    'The selected deployment state changed after planning. Generate and approve a new plan before continuing.',
+  STATE_SCOPED_VERSION_UNSUPPORTED: 'Unsupported state version {{version}}',
+  STATE_SCOPED_IDENTITY_MISMATCH: 'State identity does not match the requested deployment scope',
+  STATE_SCOPED_IDENTITY_DETAILS_MISMATCH:
+    'State identity ({{stored}}) does not match the bound deployment scope ({{requested}})',
+  STATE_WRITE_NOT_READY: 'Regional state writes are not ready for this deployment scope',
+  STATE_BUCKET_NOT_FOUND:
+    'The state storage bucket does not exist ({{code}}). Create the bucket or fix the backend.state_manager configuration — the missing bucket is not treated as empty state',
+  STATE_BUCKET_ACCESS_DENIED:
+    'Access to the state storage bucket was denied ({{code}}). Check the storage credentials — an authorization failure is never treated as empty state',
+  STATE_STORAGE_CREDENTIALS_MISSING:
+    "State storage needs credentials for {{provider}}. Configure that cloud's credential environment variables. Workload credentials from another provider are never reused.",
+  LOCK_CONDITIONAL_CREATE_UNSUPPORTED:
+    'This state storage does not support exclusive (conditional) create — concurrent first lock acquisition falls back to a verified write and is not guaranteed atomic. Avoid running mutating commands for the same scope in parallel',
+  SAAS_REGIONAL_SCOPE_UNSUPPORTED:
+    'The Console at {{consoleUrl}} does not advertise compatible regional deployment states (scope protocol 2 and state format 4.0). Upgrading the CLI alone cannot isolate regions safely — update the Console, or keep using the previous CLI release for unscoped deployments',
+  SAAS_STATE_SCOPE_MISMATCH:
+    'The Console returned state for stage {{storedStage}} / region {{storedRegion}}, but this command targets stage {{stage}} / region {{region}}. Refusing to mix regional scopes',
+  SAAS_READ_ONLY_WRITE_REFUSED:
+    'This SaaS backend instance was created read-only (diff/show); state writes are refused',
+  SAAS_WRITE_BLOCKED_UNSCOPED_STATE:
+    "The current state of stage {{stage}} on the Console has no regional scope recorded (it predates regional isolation). Run the Console-side migration for this service before deploying to region {{region}} — writing here would overwrite another region's state",
+  REGIONAL_MIGRATION_UNSUPPORTED_SOURCE:
+    'Expected a legacy V3.0 state aggregate but found version "{{version}}". No V3 upgrade is needed',
+  REGIONAL_MIGRATION_SOURCE_MANAGED_BY_SAAS:
+    'This legacy state has been migrated to (and is owned by) the ServerlessInsight Console (managedBy=saas). An in-place upgrade would create an unmarked local copy and reopen double-write hazards — refused. Continue on the Console backend, or run `si migrate --rollback` first only if you deliberately want to hand ownership back',
+  REGIONAL_MIGRATION_INCOMPLETE_STAGE_COVERAGE:
+    'The automatic upgrade must preserve every resource in every stage. Source coverage is incomplete; review the source and recovery records before retrying.',
+  STATE_ATOMIC_CREATE_REQUIRED:
+    'This state store cannot atomically reserve ownership or acquire a lock. Mutations are refused.',
+  REGIONAL_MIGRATION_PENDING:
+    'State upgrade {{opId}} is incomplete. Re-run the deploy, destroy or migrate operation to resume with the reviewed region binding.',
+  SAAS_STATE_BASE_UNKNOWN: 'Load the regional state before saving or starting a deployment.',
+  REGIONAL_LOCK_STALE:
+    'State is currently locked (stale lock detected).\n{{info}}\nIf you are certain no other operation is running, use:\n  si force-unlock {{id}}',
+  REGIONAL_LOCK_TIMEOUT: 'Failed to acquire lock after {{seconds}} seconds.\n{{info}}',
+  REGIONAL_LOCK_FAILED: 'Failed to acquire lock.\n{{path}}',
+  MIGRATE_SOURCE_FORMAT_INVALID:
+    'The source backend did not provide a valid single-deployment V4 view after automatic preparation. Nothing was imported.',
+  MIGRATE_TARGET_REGIONAL_REQUIRED:
+    'The target service still uses legacy state. Complete its Console-side binding and activation before importing a regional state.',
+  MIGRATE_SOURCE_MULTIPLE_SCOPES:
+    'This regional document contains resources from other stages. Resolve the source ownership before importing; one regional document may own only its selected stage.',
+  SAAS_STATE_ACK_INVALID:
+    'The state server did not confirm a valid regional snapshot and content hash. Refusing to guess the next state revision; upgrade the server to scope protocol 2.',
+
+  REGIONAL_MIGRATION_PROVIDER_MISMATCH:
+    'The source records provider "{{source}}", while the command selects "{{effective}}". The upgrade preserves the source provider; workload overrides never rewrite historical ownership.',
+  REGIONAL_MIGRATION_UNKNOWN_REGION_REQUIRED:
+    'Some resources carry no region evidence (pre-regional state). Re-run with --bind-unknown-region <region> to bind them explicitly to a region — the CLI never guesses historical regions from YAML or filenames',
+  REGIONAL_MIGRATION_SOURCE_CHANGED:
+    'The source state changed during its format upgrade. Refusing to overwrite it; review the source and retained recovery records before retrying.',
+  REGIONAL_MIGRATION_APPLIED:
+    'State upgraded in place (operation {{opId}}). Stage/provider/region partitions now share the original file or Bucket key. Continuing the requested operation.',
+  REGIONAL_MIGRATION_PARTIAL_FAILURE:
+    'State upgrade interrupted (operation {{opId}}): {{error}}. Keep the source backup and journal; re-run the same operation to resume.',
+  REGIONAL_MIGRATION_BACKUP_MISSING:
+    'Original backup for state upgrade {{opId}} is missing; cannot safely resume. Restore that backup before retrying.',
+  REGIONAL_MIGRATION_UNKNOWN_ITEM: '  • [{{stage}}] {{logicalId}} ({{kind}})',
+
+  OPT_BIND_UNKNOWN_REGION: 'explicitly bind resources without region evidence to this region',
   HTTP_TRIGGER_AUTH_TYPE_REQUIRED:
     "HTTP trigger '{{functionName}}' requires 'auth_type' (public or iam)",
   CREATING_HTTP_TRIGGER:

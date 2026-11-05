@@ -2,9 +2,9 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { ResourceState, ResourceTypeEnum, ServerlessIac } from '../types';
 import { StateBackendType } from '../types/domains/backend';
-import { getStatePath, loadState, getContext } from '../common';
+import { getContext, getStatePath } from '../common';
 import { readLockFileForCommand } from '../common/lockManager';
-import { createStateBackend } from '../common/stateBackend';
+import { createStateBackend, createLocalStateBackend } from '../common/stateBackend';
 import { isMigratedToSaas } from '../common/migrationMarker';
 import { SHOW_JSON_VERSION, ShowJsonPayload, writeJson } from '../common/jsonOutput';
 import { logger } from '../common/logger';
@@ -215,14 +215,19 @@ const formatResourceOutput = (logicalId: string, resource: ResourceState): strin
   return [];
 };
 
-const loadLocalState = (
+const loadLocalState = async (
   provider: string,
   app: string,
   service: string,
   stage: string,
   baseDir: string,
 ) => {
-  return loadState(provider, app, service, stage, baseDir);
+  const backend = createLocalStateBackend(
+    { provider, app, service, stage, region: getContext().region },
+    { baseDir, markerAction: 'off' },
+  );
+  const state = await backend.loadState();
+  return { state, source: backend.readStateSource() };
 };
 
 const readLocalLock = (app: string, service: string, baseDir: string): LockMetadata | null => {
@@ -252,6 +257,7 @@ export const show = async (options: ShowOptions): Promise<void> => {
   let stateLocation: string;
   let stateLocationDisplay: string;
   let usingRemoteBackend = false;
+  let stateSource: 'scoped' | 'legacy' | 'empty';
 
   const backendType = options.iac?.backend?.type;
   const shouldUseRemoteBackend =
@@ -261,13 +267,15 @@ export const show = async (options: ShowOptions): Promise<void> => {
 
   if (shouldUseRemoteBackend) {
     try {
-      // Read-only command: a migrated state only warns here.
       const backend: StateBackend = createStateBackend(options.iac!.backend, {
         ...context,
+        stage,
         declaredOrg: options.iac!.org,
         migrationMarker: 'warn',
+        mode: 'read-only',
       });
-      state = await backend.loadState(context.provider, context.app, context.service, stage);
+      state = await backend.loadState();
+      stateSource = backend.readStateSource();
       lockInfo = await backend.readLock();
       usingRemoteBackend = true;
       stateLocation =
@@ -280,7 +288,15 @@ export const show = async (options: ShowOptions): Promise<void> => {
       } else {
         logger.warn(lang.__('SHOW_REMOTE_BACKEND_FALLBACK', { error: String(error) }));
       }
-      state = loadLocalState(context.provider, context.app, context.service, stage, baseDir);
+      const local = await loadLocalState(
+        context.provider,
+        context.app,
+        context.service,
+        stage,
+        baseDir,
+      );
+      state = local.state;
+      stateSource = local.source;
       // A local copy of a MIGRATED state is stale by definition — showing it
       // after a remote failure would mislead the user (decision D-3/D-4).
       if (isMigratedToSaas(state)) {
@@ -292,7 +308,15 @@ export const show = async (options: ShowOptions): Promise<void> => {
     stateLocationDisplay =
       stateLocation === SAAS_STATE_LOCATION ? lang.__('SHOW_BACKEND_SAAS') : stateLocation;
   } else {
-    state = loadLocalState(context.provider, context.app, context.service, stage, baseDir);
+    const local = await loadLocalState(
+      context.provider,
+      context.app,
+      context.service,
+      stage,
+      baseDir,
+    );
+    state = local.state;
+    stateSource = local.source;
     lockInfo = readLocalLock(context.app, context.service, baseDir);
     stateLocation = getStatePath(context.app, context.service, baseDir);
     stateLocationDisplay = stateLocation;
@@ -313,11 +337,13 @@ export const show = async (options: ShowOptions): Promise<void> => {
       app: state.app,
       service: state.service,
       stage,
+      region: context.region,
       ...(state.serial !== undefined ? { serial: state.serial } : {}),
       ...(state.lineage !== undefined ? { lineage: state.lineage } : {}),
       ...(state.managedBy !== undefined ? { managedBy: state.managedBy } : {}),
       stateLocation,
       backend: backendKind,
+      stateSource,
       locked: !!lockInfo,
       lock: lockInfo ? { ...lockInfo } : null,
       resources: resources as Record<string, unknown>,

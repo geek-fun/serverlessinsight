@@ -8,6 +8,7 @@ import {
 import * as scfTypes from '../../../../src/stack/scfStack/scfTypes';
 import * as stateManager from '../../../../src/common/stateManager';
 import * as hashUtils from '../../../../src/common/hashUtils';
+import { buildFunctionRoleName } from '../../../../src/common/nameBuilder';
 import { SHARED_LOGSET_KEY } from '../../../../src/stack/scfStack/sharedLogset';
 import { ProviderEnum } from '../../../../src/common';
 import {
@@ -385,7 +386,12 @@ describe('ScfResource', () => {
         iam: { role: {} },
       };
 
-      const derivedName = 'test-app-test-service-default-test-fn-role';
+      const derivedName = buildFunctionRoleName(
+        `${mockContext.app}-${mockContext.service}`,
+        mockContext.stage,
+        mockContext.region,
+        'test_fn',
+      );
       (mockCamOperations.createRole as jest.Mock).mockResolvedValue({
         roleName: derivedName,
         roleId: 'role-id',
@@ -1375,7 +1381,7 @@ describe('ScfResource', () => {
       await createResource(mockContext, fnWithLog, initialState);
 
       expect(mockClsOperations.createLogset).toHaveBeenCalledWith('test-app-default-cls', [
-        { key: 'si-owned-by', value: 'test-app:shared:logs.project' },
+        { key: 'si-owned-by', value: 'test-app:shared:logs.project@ap-guangzhou' },
       ]);
       expect(mockClsOperations.createTopic).toHaveBeenCalledWith(
         'logset-1',
@@ -1383,7 +1389,9 @@ describe('ScfResource', () => {
         expect.objectContaining({
           period: 30,
           storageType: 'hot',
-          tags: [{ key: 'si-owned-by', value: 'test-app-test-service:functions.test_fn' }],
+          tags: [
+            { key: 'si-owned-by', value: 'test-app-test-service:functions.test_fn@ap-guangzhou' },
+          ],
         }),
       );
       expect(mockClsOperations.createFulltextIndex).toHaveBeenCalledWith('topic-1');

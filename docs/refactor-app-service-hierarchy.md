@@ -2,7 +2,15 @@
 
 ## Status
 
-**Proposed** | Breaking Change | Target: v0.1.0
+**Historical proposal.** The static App/Service identity decision is retained. The
+original implementation sketches below are historical; they do not define the current
+state format or provider/region behavior. See [the current deployment contract](regional-deployment-state.md).
+
+Current contract: App and Service cannot be overridden; provider/region are static YAML
+defaults with explicit CLI selection. Local/Bucket keep their original file/key with V4
+partitions; executors/SaaS use V4 and scope protocol 3. No dynamic region references.
+
+## Historical proposal (superseded implementation details)
 
 ## Summary
 
@@ -51,7 +59,7 @@ App (project-level grouping)
 
 **Before:**
 
-```yaml
+```text
 version: 0.0.1
 provider:
   name: aliyun
@@ -62,7 +70,7 @@ functions: { ... }
 
 **After:**
 
-```yaml
+```text
 version: 0.1.0
 app: my-project
 provider:
@@ -90,7 +98,7 @@ Rules:
 | `service`                   | **Forbidden** | Primary identity, used in state path and resource naming  |
 | `version`                   | **Forbidden** | Schema version marker, must be a literal enum value       |
 | `provider.name`             | **Forbidden** | Provider selection, must be known before context is built |
-| `provider.region`           | Allowed       | Resolves at deploy-time from `vars` / `stages`            |
+| `provider.region` | **Forbidden in the current contract** | Static YAML default or explicit CLI `-r`; the earlier interpolation proposal is superseded |
 | `vars`                      | Allowed       | Source of values for interpolation elsewhere              |
 | `stages`                    | Allowed       | Stage-scoped overrides, resolved at deploy-time           |
 | `tags`                      | Allowed       | Values resolved at deploy-time                            |
@@ -305,7 +313,7 @@ type StageState = {
 
 **Before** (flat resources, no stage awareness):
 
-```json
+```text
 {
   "version": "1.0",
   "provider": "aliyun",
@@ -318,7 +326,7 @@ type StageState = {
 
 **After** (resources scoped by stage):
 
-```json
+```text
 {
   "version": "2.0",
   "provider": "aliyun",

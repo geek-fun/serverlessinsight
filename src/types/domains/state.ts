@@ -63,7 +63,21 @@ export type ResourceState = {
   metadata?: Record<string, unknown>;
 };
 
-export const CURRENT_STATE_VERSION = '3.0';
+export const CURRENT_STATE_VERSION = '4.0';
+
+export const LEGACY_STATE_VERSION = '3.0';
+
+export type StateScope = {
+  stage: string;
+  region: string;
+};
+
+export type StateMigrationInfo = {
+  opId: string;
+  sourceVersion: string;
+  sourceHash: string;
+  migratedAt: string;
+};
 
 export type StageState = {
   resources: Record<string, ResourceState>;
@@ -80,6 +94,8 @@ export type StateFile = {
   serviceId?: string;
   serial?: number;
   lineage?: string;
+  scope?: StateScope;
+  migration?: StateMigrationInfo;
   /**
    * Migration ownership marker (docs/state-migration-saas.md §6.3): set to
    * 'saas' by `si migrate` after the state has been imported into the Console.
@@ -215,5 +231,38 @@ export class StateVersionError extends Error {
     this.version = version;
     this.currentVersion = currentVersion;
     this.cause = cause;
+  }
+}
+
+export class StateScopeMismatchError extends Error {
+  readonly requested: Record<string, string>;
+  readonly stored: Record<string, string | undefined>;
+
+  constructor(
+    requested: { provider: string; app: string; service: string; stage: string; region: string },
+    stored: { provider?: string; app?: string; service?: string; stage?: string; region?: string },
+  ) {
+    super(
+      `State identity mismatch: the stored state belongs to ` +
+        `provider=${stored.provider ?? 'unknown'}, app=${stored.app ?? 'unknown'}, ` +
+        `service=${stored.service ?? 'unknown'}, stage=${stored.stage ?? 'unknown'}, ` +
+        `region=${stored.region ?? 'unknown'}, but the command requested ` +
+        `provider=${requested.provider}, app=${requested.app}, service=${requested.service}, ` +
+        `stage=${requested.stage}, region=${requested.region}. ` +
+        'Refusing to mix deployment scopes; check --stage/--region/--provider.',
+    );
+    this.name = 'StateScopeMismatchError';
+    this.requested = requested;
+    this.stored = stored;
+  }
+}
+
+export class StateRegionRequiredError extends Error {
+  constructor(stage: string) {
+    super(
+      `A regional deployment state requires a canonical region, but none was resolved for stage "${stage}". ` +
+        'Pass -r/--region explicitly or set provider.region in the YAML configuration.',
+    );
+    this.name = 'StateRegionRequiredError';
   }
 }

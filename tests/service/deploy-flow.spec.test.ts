@@ -2,6 +2,7 @@ import path from 'node:path';
 import fs from 'node:fs/promises';
 import { deploy } from '../../src/commands/deploy';
 import { createMockAliyunClient, type MockAliyunClient } from './mockCloudClient';
+import { cleanScopedState } from './scopedState';
 
 jest.mock('../../src/common/aliyunClient', () => ({
   createAliyunClient: jest.fn(),
@@ -50,10 +51,13 @@ describe('Deploy Flow Service Test', () => {
     mockCreateAliyunClient.mockReturnValue(mockClient);
 
     await fs.rm(stateFilePath, { force: true }).catch(() => {});
+    // Issue #280: deploys write scoped V4 documents — clean that subtree too.
+    await cleanScopedState('insight-poc-deploy-app', 'insight-poc-deploy');
   });
 
   afterEach(async () => {
     await fs.rm(stateFilePath, { force: true }).catch(() => {});
+    await cleanScopedState('insight-poc-deploy-app', 'insight-poc-deploy');
   });
 
   describe('Aliyun FC3 Deploy', () => {

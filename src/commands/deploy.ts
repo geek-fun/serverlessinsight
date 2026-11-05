@@ -40,6 +40,7 @@ export const deploy = async (options: {
   parameters?: { [key: string]: string };
   stage?: string;
   region?: string;
+  bindUnknownRegion?: string;
   provider?: string;
   accessKeyId?: string;
   accessKeySecret?: string;
@@ -78,6 +79,13 @@ export const deploy = async (options: {
     siApiKey: options.siApiKey,
     migrationMarker: 'refuse',
   });
+
+  await backend.upgradeLegacyState?.({ bindUnknownRegion: options.bindUnknownRegion });
+
+  const readiness = await backend.probeWriteReadiness();
+  if (!readiness.ready) {
+    throw new Error(readiness.reason ?? lang.__('STATE_WRITE_NOT_READY'));
+  }
 
   // ADR-005: wire the backend's event reporter into the global context so
   // executors can emit per-resource deployment events via context.reportEvent.
@@ -166,12 +174,7 @@ export const deploy = async (options: {
             stateJson?: Record<string, unknown>;
           };
           try {
-            const partialState = await backend.loadState(
-              iac.provider.name,
-              iac.app,
-              iac.service,
-              options.stage ?? 'dev',
-            );
+            const partialState = await backend.loadState();
             failure.stateJson = partialState ? toPersistedState(partialState) : {};
           } catch {
             // state may be unreadable mid-failure — plan alone is still useful
@@ -181,12 +184,7 @@ export const deploy = async (options: {
         }
         // Read back the final state so the deployment record can link it
         // (console shows Changes + State JSON from the plan and state).
-        const finalState = await backend.loadState(
-          iac.provider.name,
-          iac.app,
-          iac.service,
-          options.stage ?? 'dev',
-        );
+        const finalState = await backend.loadState();
         const stateJson = finalState ? toPersistedState(finalState) : {};
         return {
           plan: { items: planResult.items },

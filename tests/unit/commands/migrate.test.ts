@@ -1,4 +1,4 @@
-import crypto from 'node:crypto';
+import { hashSaasState } from '../../../src/common/saasProtocol';
 import { migrate } from '../../../src/commands/migrate';
 import { createStateBackend } from '../../../src/common/stateBackend';
 import { loadCredentials, getConsoleUrl } from '../../../src/common/credentialStore';
@@ -33,6 +33,10 @@ jest.mock('../../../src/common/logger', () => ({
 }));
 
 jest.mock('../../../src/common', () => ({
+  ...jest.requireActual('../../../src/common/saasProtocol'),
+  normalizeScope: jest.requireActual('../../../src/common/stateScope').normalizeScope,
+  validateScopedDocument: jest.requireActual('../../../src/common/stateManager')
+    .validateScopedDocument,
   getContext: jest.fn(),
   getIacLocation: jest.fn(),
   setContext: jest.fn(),
@@ -47,6 +51,7 @@ jest.mock('../../../src/common', () => ({
 }));
 
 jest.mock('../../../src/common/stateBackend', () => ({
+  ...jest.requireActual('../../../src/common/stateBackend'),
   createStateBackend: jest.fn(),
 }));
 
@@ -117,7 +122,8 @@ const mockContext = {
 };
 
 const legacyState = (overrides: Record<string, unknown> = {}) => ({
-  version: '3.0',
+  version: '4.0',
+  scope: { stage: 'dev', region: 'cn-hangzhou' },
   provider: 'aliyun',
   app: 'myapp',
   service: 'myservice',
@@ -130,7 +136,14 @@ const legacyState = (overrides: Record<string, unknown> = {}) => ({
 
 const targetsResponse = {
   app: { name: 'myapp', exists: true, id: 'app-1' },
-  service: { name: 'myservice', exists: true, id: 'svc-1', provider: 'aliyun' },
+  service: {
+    name: 'myservice',
+    exists: true,
+    id: 'svc-1',
+    provider: 'aliyun',
+    regionalScopeEnabled: true,
+    scopeProtocol: 3,
+  },
   stages: [{ name: 'dev', registered: true, hasState: false, latestVersion: null }],
 };
 
@@ -140,6 +153,10 @@ const uploadResponse = {
   appId: 'app-1',
   serviceId: 'svc-1',
   deduped: false,
+  stageId: 'stage-1',
+  provider: 'aliyun',
+  region: 'cn-hangzhou',
+  scopeProtocol: 3,
 };
 
 const MIGRATE_TEST_CREDENTIALS = {
@@ -156,12 +173,14 @@ const MIGRATE_TEST_IDENTITY = {
 
 /** Mirror of the command's hash: sha256(JSON.stringify({...state, orgId})) with the mocked toPersistedState. */
 const expectedHash = (state: Record<string, unknown>): string =>
-  crypto
-    .createHash('sha256')
-    .update(JSON.stringify({ ...state, orgId: 'org-1' }))
-    .digest('hex');
+  hashSaasState({
+    ...state,
+    stages: { dev: (state.stages as Record<string, unknown>).dev },
+    orgId: 'org-1',
+  });
 
 const makeSourceBackend = (state: Record<string, unknown> | Error) => ({
+  upgradeLegacyState: jest.fn().mockResolvedValue(undefined),
   loadState: jest.fn(
     state instanceof Error
       ? jest.fn().mockRejectedValue(state)
@@ -198,6 +217,12 @@ const setupMigrationRun = (options: MigrationRunOptions = {}) => {
   );
   mockedLoadCredentials.mockReturnValue(MIGRATE_TEST_CREDENTIALS);
   mockedValidateApiKey.mockResolvedValue(MIGRATE_TEST_IDENTITY);
+  mockApiClient.get.mockResolvedValueOnce({
+    regionalScope: true,
+    providerScope: true,
+    scopeProtocol: 3,
+    stateFormat: '4.0',
+  });
   mockApiClient.get.mockResolvedValueOnce(options.targets ?? targetsResponse);
   if (options.planOnly) {
     return backend;
@@ -209,6 +234,14 @@ const setupMigrationRun = (options: MigrationRunOptions = {}) => {
   mockApiClient.post.mockResolvedValueOnce(uploadResponse);
   mockApiClient.get.mockResolvedValueOnce(
     options.verify ?? {
+      id: 'st-1',
+      serviceId: 'svc-1',
+      stageId: 'stage-1',
+      provider: 'aliyun',
+      stage: 'dev',
+      region: 'cn-hangzhou',
+      scopeProtocol: 3,
+      stateJson: state,
       contentHash: expectedHash(state),
       versionNumber: 1,
       resourceCount: 1,
@@ -291,6 +324,116 @@ describe('migrate command', () => {
   });
 
   describe('migration run', () => {
+    it('prepares source format under the source lock before importing', async () => {
+      const backend = setupMigrationRun();
+      const prepare = jest.fn().mockResolvedValue(undefined);
+      backend.upgradeLegacyState = prepare;
+
+      await migrate({ location: 'stack.yml', autoApprove: true, bindUnknownRegion: 'cn-hangzhou' });
+
+      expect(prepare).toHaveBeenCalledWith({ bindUnknownRegion: 'cn-hangzhou', dryRun: undefined });
+      expect(mockApiClient.post).toHaveBeenCalledTimes(1);
+    });
+
+    it('does not import or close the source when automatic preparation fails', async () => {
+      const backend = setupMigrationRun();
+      const failure = new Error('upgrade unavailable');
+      backend.upgradeLegacyState = jest.fn().mockRejectedValue(failure);
+
+      await expect(migrate({ location: 'stack.yml', autoApprove: true })).rejects.toBe(failure);
+
+      expect(mockApiClient.post).not.toHaveBeenCalled();
+      expect(backend.patchPersisted).not.toHaveBeenCalled();
+    });
+
+    it('prepares a source dry-run without performing the upgrade or uploading', async () => {
+      const backend = setupMigrationRun({ planOnly: true });
+      const prepare = jest.fn().mockResolvedValue(undefined);
+      backend.upgradeLegacyState = prepare;
+
+      await migrate({ location: 'stack.yml', autoApprove: true, dryRun: true });
+
+      expect(prepare).toHaveBeenCalledWith({ bindUnknownRegion: undefined, dryRun: true });
+      expect(mockApiClient.post).not.toHaveBeenCalled();
+      expect(backend.patchPersisted).not.toHaveBeenCalled();
+    });
+
+    it('refuses a backend that does not provide the prepared deployment view', async () => {
+      const backend = setupMigrationRun({
+        state: legacyState({ version: '3.0', scope: undefined }),
+        planOnly: true,
+      });
+      await expect(migrate({ location: 'stack.yml', autoApprove: true })).rejects.toThrow(
+        'MIGRATE_SOURCE_FORMAT_INVALID',
+      );
+      expect(mockApiClient.post).not.toHaveBeenCalled();
+      expect(backend.patchPersisted).not.toHaveBeenCalled();
+    });
+
+    it('refuses to hide resources from another stage inside a purported regional document', async () => {
+      const backend = setupMigrationRun({
+        state: legacyState({
+          stages: { dev: { resources: { demo: {} } }, prod: { resources: { other: {} } } },
+        }),
+        planOnly: true,
+      });
+      await expect(migrate({ location: 'stack.yml', autoApprove: true })).rejects.toThrow(
+        'MIGRATE_SOURCE_MULTIPLE_SCOPES',
+      );
+      expect(backend.patchPersisted).not.toHaveBeenCalled();
+    });
+
+    it('does not implicitly activate an existing legacy destination', async () => {
+      const backend = setupMigrationRun({
+        targets: {
+          ...targetsResponse,
+          service: { ...targetsResponse.service, regionalScopeEnabled: false, scopeProtocol: 1 },
+        },
+        planOnly: true,
+      });
+      await expect(migrate({ location: 'stack.yml', autoApprove: true })).rejects.toThrow(
+        'MIGRATE_TARGET_REGIONAL_REQUIRED',
+      );
+      expect(mockApiClient.post).not.toHaveBeenCalled();
+      expect(backend.patchPersisted).not.toHaveBeenCalled();
+    });
+
+    it('rejects incompatible server capabilities before inspecting migration targets', async () => {
+      setupMigrationRun();
+      mockApiClient.get.mockReset().mockResolvedValueOnce({
+        regionalScope: true,
+        providerScope: true,
+        scopeProtocol: 1,
+        stateFormat: '4.0',
+      });
+      await expect(migrate({ location: 'stack.yml', autoApprove: true })).rejects.toThrow(
+        'SAAS_REGIONAL_SCOPE_UNSUPPORTED',
+      );
+      expect(mockApiClient.get).toHaveBeenCalledTimes(1);
+      expect(mockApiClient.post).not.toHaveBeenCalled();
+    });
+
+    it('keeps the source writable when read-back authority belongs to a different region', async () => {
+      const backend = setupMigrationRun({
+        verify: {
+          id: 'st-1',
+          serviceId: 'svc-1',
+          stageId: 'stage-1',
+          provider: 'aliyun',
+          stage: 'dev',
+          region: 'cn-beijing',
+          scopeProtocol: 3,
+          contentHash: expectedHash(legacyState()),
+          versionNumber: 1,
+          resourceCount: 1,
+        },
+      });
+      await expect(migrate({ location: 'stack.yml', autoApprove: true })).rejects.toThrow(
+        'MIGRATE_VERIFY_FAILED',
+      );
+      expect(backend.patchPersisted).not.toHaveBeenCalled();
+    });
+
     it('uploads every non-empty stage, verifies read-back and writes the marker', async () => {
       const backend = setupMigrationRun();
 
@@ -303,6 +446,9 @@ describe('migrate command', () => {
           serviceName: 'myservice',
           provider: 'aliyun',
           stage: 'dev',
+          region: 'cn-hangzhou',
+          scopeProtocol: 3,
+          baseContentHash: '',
           origin: 'bucket',
           conflict: 'reject',
           resourceCount: 1,
@@ -345,7 +491,15 @@ describe('migrate command', () => {
       setupMigrationRun({
         targets: {
           ...targetsResponse,
-          stages: [{ name: 'dev', registered: true, hasState: true, latestVersion: 3 }],
+          stages: [
+            {
+              name: 'dev',
+              registered: true,
+              hasState: true,
+              latestVersion: 3,
+              contentHash: 'base-hash',
+            },
+          ],
         },
       });
 
@@ -382,18 +536,22 @@ describe('migrate command', () => {
 
       await migrate({ location: 'stack.yml', autoApprove: true });
 
-      const targetsUrl = mockApiClient.get.mock.calls[0][0] as string;
+      const targetsUrl = mockApiClient.get.mock.calls[1][0] as string;
       expect(targetsUrl).toContain('stages=dev');
       expect(mockApiClient.post).toHaveBeenCalledTimes(1);
     });
 
-    it('survives a 409 conflict with a dedicated message and no marker', async () => {
-      const backend = setupMigrationRun({ uploadError: new ApiError('conflict', 409) });
+    it.each([
+      'Upgrade the deployment protocol before importing state.',
+      'The destination changed. Refresh the migration plan and retry.',
+      'The destination contains state. Use --force to import a new version.',
+    ])('preserves the server conflict without writing a marker: %s', async (message) => {
+      const error = new ApiError(message, 409);
+      const backend = setupMigrationRun({ uploadError: error });
 
-      await expect(migrate({ location: 'stack.yml', autoApprove: true })).rejects.toThrow(
-        'MIGRATE_CONFLICT',
-      );
+      await expect(migrate({ location: 'stack.yml', autoApprove: true })).rejects.toBe(error);
       expect(backend.patchPersisted).not.toHaveBeenCalled();
+      expect(mockApiClient.get).toHaveBeenCalledTimes(2);
     });
 
     it('fails when the read-back does not match what was uploaded', async () => {
@@ -411,7 +569,7 @@ describe('migrate command', () => {
       setupMigrationRun({ state: legacyState({ provider: 'tencent' }), planOnly: true });
 
       await expect(migrate({ location: 'stack.yml', autoApprove: true })).rejects.toThrow(
-        'MIGRATE_PROVIDER_MISMATCH',
+        'State identity mismatch',
       );
     });
 
@@ -425,7 +583,7 @@ describe('migrate command', () => {
       });
 
       await expect(migrate({ location: 'stack.yml', autoApprove: true })).rejects.toThrow(
-        'MIGRATE_PROVIDER_MISMATCH_TARGET',
+        'MIGRATE_TARGET_REGIONAL_REQUIRED',
       );
     });
 
@@ -443,9 +601,10 @@ describe('migrate command', () => {
     it('rejects an explicit stage that the legacy state does not know', async () => {
       setupMigrationRun({ planOnly: true });
 
+      mockedGetContext.mockReturnValue({ ...mockContext, stage: 'staging' });
       await expect(
         migrate({ location: 'stack.yml', stage: 'staging', autoApprove: true }),
-      ).rejects.toThrow('MIGRATE_STAGE_NOT_FOUND');
+      ).rejects.toThrow('State identity mismatch');
     });
 
     it('skips the marker when --no-marker is passed', async () => {
@@ -491,13 +650,14 @@ describe('migrate command', () => {
       );
     });
 
-    it('warns but continues when the legacy state is already marked (idempotent re-run)', async () => {
+    it('keeps an already transferred source closed on an idempotent re-run)', async () => {
       const backend = setupMigrationRun({ state: legacyState({ managedBy: 'saas' }) });
 
       await migrate({ location: 'stack.yml', autoApprove: true });
 
       expect(mockLoggerWarn).toHaveBeenCalledWith('MIGRATE_ALREADY_MARKED');
-      expect(backend.patchPersisted).toHaveBeenCalled();
+      expect(backend.patchPersisted).not.toHaveBeenCalled();
+      expect(mockApiClient.post).not.toHaveBeenCalled();
     });
 
     it('rethrows non-conflict upload errors untouched', async () => {

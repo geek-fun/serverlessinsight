@@ -238,6 +238,7 @@ describe('plan command', () => {
           provider: ProviderEnum.VOLCENGINE,
           declaredOrg: 'test-org',
           migrationMarker: 'warn',
+          mode: 'read-only',
         }),
       );
       expect(generateVolcenginePlan).toHaveBeenCalledWith({ ...iac, backend }, mockBackend);
@@ -283,11 +284,12 @@ describe('plan command', () => {
         const result = await plan({ location: '/test/path', json: true });
         const payload = JSON.parse(stdout.mock.calls[0][0] as string);
         expect(payload).toMatchObject({
-          planVersion: 1,
+          planVersion: 2,
           provider: 'volcengine',
           app: 'test-app',
           service: 'test-service',
           stage: 'dev',
+          region: 'cn-beijing',
           summary: items.length
             ? { create: 1, update: 1, destroy: 1, recreate: 0, unchanged: 1 }
             : { create: 0, update: 0, destroy: 0, recreate: 0, unchanged: 0 },
@@ -331,11 +333,12 @@ describe('plan command', () => {
       expect(displayPlan).not.toHaveBeenCalled();
       expect(spy).toHaveBeenCalledTimes(1);
       const payload = JSON.parse(spy.mock.calls[0][0] as string);
-      expect(payload.planVersion).toBe(1);
+      expect(payload.planVersion).toBe(2);
       expect(payload.provider).toBe('aliyun');
       expect(payload.app).toBe('test-app');
       expect(payload.service).toBe('test-service');
       expect(payload.stage).toBe('dev');
+      expect(payload.region).toBe('cn-beijing');
       expect(payload.changes).toEqual([]);
       expect(payload.summary).toEqual({
         create: 0,

@@ -1482,7 +1482,9 @@ describe('OssResource', () => {
 
       expect(mockOssOperations.createBucket).toHaveBeenCalledWith(
         expect.objectContaining({
-          Tags: [{ Key: 'si-owned-by', Value: 'test-app-test-service:buckets.test_bucket' }],
+          Tags: [
+            { Key: 'si-owned-by', Value: 'test-app-test-service:buckets.test_bucket@cn-hangzhou' },
+          ],
         }),
       );
     });

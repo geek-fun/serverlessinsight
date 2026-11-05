@@ -1,5 +1,6 @@
 import path from 'node:path';
-import fs from 'node:fs/promises';
+
+import { cleanScopedState, writeScopedState } from './scopedState';
 import { destroyStack } from '../../src/commands/destroy';
 import { createMockVolcengineClient, type MockVolcengineClient } from './mockCloudClient';
 
@@ -34,14 +35,11 @@ jest.mock('../../src/lang', () => ({
 const mockCreateVolcengineClient = require('../../src/common/volcengineClient')
   .createVolcengineClient as jest.Mock;
 
-const STATE_FILE_PATH = path.join(
-  process.cwd(),
-  '.serverlessinsight',
-  'state-insight-volc-destroy-app-insight-volc-destroy.json',
-);
-
 const EXISTING_STATE = JSON.stringify({
-  version: '3.0',
+  version: '4.0',
+  scope: { stage: 'dev', region: 'cn-beijing' },
+  lineage: 'volc-destroy-flow-lineage',
+  serial: 1,
   provider: 'volcengine',
   app: 'insight-volc-destroy-app',
   service: 'insight-volc-destroy',
@@ -91,12 +89,18 @@ describe('Volcengine Destroy Flow Service Test', () => {
     mockClient = createMockVolcengineClient();
     mockCreateVolcengineClient.mockReturnValue(mockClient);
 
-    await fs.mkdir(path.dirname(STATE_FILE_PATH), { recursive: true }).catch(() => {});
-    await fs.writeFile(STATE_FILE_PATH, EXISTING_STATE, 'utf-8');
+    await cleanScopedState('insight-volc-destroy-app', 'insight-volc-destroy');
+    await writeScopedState(
+      'insight-volc-destroy-app',
+      'insight-volc-destroy',
+      'dev',
+      'cn-beijing',
+      JSON.parse(EXISTING_STATE),
+    );
   });
 
   afterEach(async () => {
-    await fs.rm(STATE_FILE_PATH, { force: true }).catch(() => {});
+    await cleanScopedState('insight-volc-destroy-app', 'insight-volc-destroy');
   });
 
   describe('Volcengine Destroy', () => {

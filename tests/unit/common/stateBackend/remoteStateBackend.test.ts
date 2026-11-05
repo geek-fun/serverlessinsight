@@ -1,25 +1,24 @@
-/* eslint-disable @typescript-eslint/no-explicit-any */
 import os from 'node:os';
 import { createRemoteStateBackend } from '../../../../src/common/stateBackend/remoteStateBackend';
-import { StorageAdapter } from '../../../../src/common/stateBackend/types';
 import {
-  StateFile,
+  ConditionalPutUnsupportedError,
+  StorageAdapter,
+} from '../../../../src/common/stateBackend/types';
+import {
   LockMetadata,
+  StateCorruptError,
   StateVersionError,
-  CURRENT_STATE_VERSION,
   ResourceState,
 } from '../../../../src/types';
 import { LockError } from '../../../../src/common/lockManager';
-import * as lockUtils from '../../../../src/common/stateBackend/lockUtils';
+import {
+  aggregatePartition,
+  emptyDeploymentState,
+  type AggregateStateFile,
+} from '../../../../src/common/aggregateState';
 
-jest.mock('../../../../src/common/stateBackend/lockUtils');
 jest.mock('../../../../src/common/logger', () => ({
-  logger: {
-    info: jest.fn(),
-    warn: jest.fn(),
-    error: jest.fn(),
-    debug: jest.fn(),
-  },
+  logger: { info: jest.fn(), warn: jest.fn(), error: jest.fn(), debug: jest.fn() },
 }));
 
 const mockEnforceMigrationMarker = jest.fn();
@@ -27,630 +26,391 @@ jest.mock('../../../../src/common/migrationMarker', () => ({
   enforceMigrationMarker: (...args: unknown[]) => mockEnforceMigrationMarker(...args),
 }));
 
-describe('remoteStateBackend', () => {
-  let mockAdapter: jest.Mocked<StorageAdapter>;
-  const mockLockUtils = lockUtils as any;
+type FakeAdapter = StorageAdapter & { store: Map<string, unknown> };
+
+/** In-memory storage adapter: all external I/O the backend touches is faked. */
+const createFakeAdapter = (initial: Record<string, unknown> = {}): FakeAdapter => {
+  const store = new Map<string, unknown>(Object.entries(initial));
+  const adapter = {
+    store,
+    read: jest.fn(async <T>(key: string): Promise<T | null> =>
+      store.has(key) ? (store.get(key) as T) : null,
+    ),
+    write: jest.fn(async (key: string, data: unknown) => {
+      store.set(key, JSON.parse(JSON.stringify(data)));
+    }),
+    putIfAbsent: jest.fn(async (key: string, data: unknown) => {
+      if (store.has(key)) return false;
+      store.set(key, JSON.parse(JSON.stringify(data)));
+      return true;
+    }),
+    delete: jest.fn(async (key: string) => {
+      store.delete(key);
+    }),
+    lockPath: 'oss://test-bucket/state',
+  };
+  return adapter as unknown as FakeAdapter;
+};
+
+describe('remoteStateBackend (scope-bound, issue #280)', () => {
+  const scope = {
+    provider: 'aliyun',
+    app: 'test-app',
+    service: 'test-service',
+    stage: 'prod',
+    region: 'cn-hangzhou',
+  };
+  const LEGACY_KEY = 'legacy/state.json';
+  const LOCK_KEY = `${LEGACY_KEY}.si-lock`;
+
+  const makeResource = (name: string): ResourceState => ({
+    mode: 'managed',
+    region: scope.region,
+    definition: { name },
+    instances: [],
+    lastUpdated: new Date().toISOString(),
+  });
+
+  const makeLock = (overrides: Partial<LockMetadata> = {}): LockMetadata => ({
+    id: 'other-lock-id',
+    user: 'user@host',
+    processId: process.pid,
+    hostname: 'other-host',
+    operation: 'deploy',
+    acquiredAt: new Date().toISOString(),
+    path: 'oss://test-bucket/state',
+    ...overrides,
+  });
+
+  let adapter: FakeAdapter;
 
   beforeEach(() => {
     jest.clearAllMocks();
-    mockAdapter = {
-      read: jest.fn(),
-      write: jest.fn(),
-      delete: jest.fn(),
-      lockPath: 'oss://test-bucket/state',
-    };
-    mockLockUtils.sleep.mockResolvedValue(undefined);
-    mockLockUtils.isLockStale.mockReturnValue(false);
-    mockLockUtils.isProcessAlive.mockReturnValue(true);
-    mockLockUtils.createLockMetadata.mockImplementation((op: string, path: string) => ({
-      id: 'test-lock-id',
-      user: 'user@host',
-      processId: process.pid,
-      hostname: 'localhost',
-      operation: op,
-      acquiredAt: new Date().toISOString(),
-      path,
-    }));
+    adapter = createFakeAdapter();
   });
 
-  describe('migration marker wiring (D-4)', () => {
-    const markedState: StateFile = {
-      version: CURRENT_STATE_VERSION,
-      provider: 'aliyun',
-      app: 'test-app',
-      service: 'test-service',
-      managedBy: 'saas',
-      stages: { dev: { resources: {} } },
-      resources: {},
-    } as StateFile;
-
-    it('passes the configured markerAction to enforceMigrationMarker on load', async () => {
-      mockAdapter.read.mockResolvedValue(markedState);
-      const backend = createRemoteStateBackend(mockAdapter, {
-        key: 'state.json',
-        markerAction: 'refuse',
+  describe('creation contract', () => {
+    it('binds the normalized scope and declares conditional create when supported', () => {
+      const backend = createRemoteStateBackend(adapter, {
+        scope: { ...scope, region: 'CN-Hangzhou' },
+        key: LEGACY_KEY,
       });
 
-      await backend.loadState('aliyun', 'test-app', 'test-service', 'dev');
-
-      expect(mockEnforceMigrationMarker).toHaveBeenCalledWith(
-        expect.objectContaining({ managedBy: 'saas' }),
-        'refuse',
-      );
+      expect(backend.scope).toEqual({ ...scope, region: 'cn-hangzhou' });
+      expect(backend.capabilities).toEqual({ conditionalCreate: true });
+      expect(backend).toHaveProperty('loadState');
+      expect(backend).toHaveProperty('saveState');
+      expect(backend).toHaveProperty('readStateSource');
+      expect(backend).toHaveProperty('probeWriteReadiness');
+      expect(backend).toHaveProperty('patchPersisted');
     });
 
-    it('defaults to marker off when no markerAction is configured', async () => {
-      mockAdapter.read.mockResolvedValue(markedState);
-      const backend = createRemoteStateBackend(mockAdapter, { key: 'state.json' });
-
-      await backend.loadState('aliyun', 'test-app', 'test-service', 'dev');
-
-      expect(mockEnforceMigrationMarker).toHaveBeenCalledWith(
-        expect.objectContaining({ managedBy: 'saas' }),
-        'off',
-      );
-    });
-  });
-
-  describe('patchPersisted', () => {
-    it('merges the patch into the persisted state and writes it back', async () => {
-      mockAdapter.read.mockResolvedValue({
-        version: CURRENT_STATE_VERSION,
-        provider: 'aliyun',
-        app: 'test-app',
-        service: 'test-service',
-        stages: { dev: { resources: {} } },
+    it('downgrades capabilities when the adapter cannot conditionally create', () => {
+      delete (adapter as Partial<StorageAdapter>).putIfAbsent;
+      const backend = createRemoteStateBackend(adapter, {
+        scope,
+        key: LEGACY_KEY,
       });
-      const backend = createRemoteStateBackend(mockAdapter, { key: 'state.json' });
 
-      await backend.patchPersisted!({ orgId: 'org-1', managedBy: 'saas' });
-
-      expect(mockAdapter.write).toHaveBeenCalledWith(
-        'state.json',
-        expect.objectContaining({
-          version: CURRENT_STATE_VERSION,
-          provider: 'aliyun',
-          orgId: 'org-1',
-          managedBy: 'saas',
-        }),
-      );
+      expect(backend.capabilities).toEqual({ conditionalCreate: false });
     });
+  });
 
-    it('deletes keys patched with undefined', async () => {
-      mockAdapter.read.mockResolvedValue({
-        version: CURRENT_STATE_VERSION,
-        provider: 'aliyun',
-        app: 'test-app',
-        service: 'test-service',
-        managedBy: 'saas',
-        stages: {},
+  describe('aggregate IO', () => {
+    const backend = () =>
+      createRemoteStateBackend(adapter, {
+        scope,
+        key: LEGACY_KEY,
       });
-      const backend = createRemoteStateBackend(mockAdapter, { key: 'state.json' });
 
-      await backend.patchPersisted!({ managedBy: undefined });
-
-      const written = mockAdapter.write.mock.calls[0][1] as Record<string, unknown>;
-      expect(written).not.toHaveProperty('managedBy');
+    it('persists only the original key and returns a V4 target projection', async () => {
+      await backend().saveState(emptyDeploymentState(scope));
+      const saved = adapter.store.get(LEGACY_KEY) as AggregateStateFile;
+      expect(saved.version).toBe('4.0');
+      expect((await backend().loadState()).scope).toEqual({
+        stage: scope.stage,
+        region: scope.region,
+      });
     });
 
-    it('writes the patch alone when the remote state does not exist yet', async () => {
-      mockAdapter.read.mockResolvedValue(undefined);
-      const backend = createRemoteStateBackend(mockAdapter, { key: 'state.json' });
-
-      await backend.patchPersisted!({ managedBy: 'saas' });
-
-      expect(mockAdapter.write).toHaveBeenCalledWith('state.json', { managedBy: 'saas' });
+    it('merges fresh sibling state and patches only selected migration ownership', async () => {
+      const first = backend();
+      await first.saveState(emptyDeploymentState(scope));
+      const sibling = { ...scope, provider: 'tencent', region: 'ap-shanghai' };
+      await createRemoteStateBackend(adapter, {
+        scope: sibling,
+        key: LEGACY_KEY,
+      }).saveState(emptyDeploymentState(sibling));
+      await first.patchPersisted!({ managedBy: 'saas' });
+      const doc = adapter.store.get(LEGACY_KEY) as AggregateStateFile;
+      expect(aggregatePartition(doc, scope)?.managedBy).toBe('saas');
+      expect(aggregatePartition(doc, sibling)?.serial).toBe(1);
+      expect(adapter.store.has(LEGACY_KEY + '.backup')).toBe(true);
     });
-  });
 
-  describe('loadState', () => {
-    it('should load stage-specific resources', async () => {
-      const mockResource: ResourceState = {
-        mode: 'managed',
-        region: 'cn-hangzhou',
-        definition: {},
-        instances: [],
-        lastUpdated: new Date().toISOString(),
-      };
-      const mockState: StateFile = {
-        version: CURRENT_STATE_VERSION,
+    it('refuses legacy writes and returns their exact original stage for read-only review', async () => {
+      const legacy = {
+        version: '3.0',
         provider: 'aliyun',
-        app: 'test-app',
-        service: 'test-service',
-        stages: {
-          dev: { resources: { func1: mockResource } },
-        },
-        resources: {},
+        app: scope.app,
+        service: scope.service,
+        stages: { prod: { resources: { handler: makeResource('handler') } } },
       };
-      mockAdapter.read.mockResolvedValue(mockState);
-
-      const backend = createRemoteStateBackend(mockAdapter, { key: 'state.json' });
-      const result = await backend.loadState('aliyun', 'test-app', 'test-service', 'dev');
-
-      expect(result.resources).toEqual({ func1: mockResource });
-    });
-
-    it('should return empty state if not found', async () => {
-      mockAdapter.read.mockResolvedValue(null);
-
-      const backend = createRemoteStateBackend(mockAdapter, { key: 'state.json' });
-      const result = await backend.loadState('aliyun', 'test-app', 'test-service', 'dev');
-
-      expect(result.resources).toEqual({});
-      expect(result.version).toBe(CURRENT_STATE_VERSION);
-    });
-
-    it('should handle missing stage gracefully', async () => {
-      const mockState: StateFile = {
-        version: CURRENT_STATE_VERSION,
-        provider: 'aliyun',
-        app: 'test-app',
-        service: 'test-service',
-        stages: {},
-        resources: {},
-      };
-      mockAdapter.read.mockResolvedValue(mockState);
-
-      const backend = createRemoteStateBackend(mockAdapter, { key: 'state.json' });
-      const result = await backend.loadState('aliyun', 'test-app', 'test-service', 'dev');
-
-      expect(result.resources).toEqual({});
-    });
-
-    it('should throw StateVersionError for a newer unknown state version', async () => {
-      mockAdapter.read.mockResolvedValue({
-        version: '99.0',
-        provider: 'aliyun',
-        app: 'test-app',
-        service: 'test-service',
-        stages: {},
-        resources: {},
-      } as StateFile);
-
-      const backend = createRemoteStateBackend(mockAdapter, { key: 'state.json' });
-      await expect(backend.loadState('aliyun', 'test-app', 'test-service', 'dev')).rejects.toThrow(
-        StateVersionError,
+      adapter.store.set(LEGACY_KEY, legacy);
+      expect((await backend().loadState()).resources).toEqual(legacy.stages.prod.resources);
+      expect(await backend().probeWriteReadiness()).toMatchObject({
+        ready: false,
+        source: 'legacy',
+      });
+      await expect(backend().saveState(emptyDeploymentState(scope))).rejects.toThrow(
+        /in-place format upgrade/,
       );
+      expect(adapter.store.get(LEGACY_KEY)).toEqual(legacy);
     });
 
-    it('should load a legacy state with an older version', async () => {
-      mockAdapter.read.mockResolvedValue({
-        version: '1.0.0',
-        provider: 'aliyun',
-        app: 'test-app',
-        service: 'test-service',
-        stages: {},
-        resources: {},
-      } as StateFile);
-
-      const backend = createRemoteStateBackend(mockAdapter, { key: 'state.json' });
-      const result = await backend.loadState('aliyun', 'test-app', 'test-service', 'dev');
-      expect(result.version).toBe('1.0.0');
-    });
-  });
-
-  describe('saveState', () => {
-    it('should save state with stage separation', async () => {
-      mockAdapter.read.mockResolvedValue(null);
-      const resource: ResourceState = {
-        mode: 'managed',
-        region: 'cn-hangzhou',
-        definition: { name: 'func1' },
-        instances: [],
-        lastUpdated: new Date().toISOString(),
-      };
-      const newState: StateFile = {
-        version: CURRENT_STATE_VERSION,
-        provider: 'aliyun',
-        app: 'test-app',
-        service: 'test-service',
-        stages: {},
-        resources: { func1: resource },
-      };
-
-      const backend = createRemoteStateBackend(mockAdapter, { key: 'state.json' });
-      await backend.saveState(newState, 'test-app', 'test-service', 'dev');
-
-      expect(mockAdapter.write).toHaveBeenCalled();
-      const savedState = (mockAdapter.write as jest.Mock).mock.calls[0][1] as StateFile;
-      expect(savedState.stages.dev.resources).toEqual({ func1: resource });
-      expect(savedState.resources).toBeUndefined();
+    it('propagates storage errors and releases the shared lock after a failed save', async () => {
+      const error = new Error('network unavailable');
+      (adapter.write as jest.Mock).mockRejectedValueOnce(error);
+      await expect(backend().saveState(emptyDeploymentState(scope))).rejects.toBe(error);
+      expect(adapter.store.has(LOCK_KEY)).toBe(false);
+      expect(adapter.store.has(LEGACY_KEY)).toBe(false);
     });
 
-    it('should merge with existing stages', async () => {
-      const existingResource: ResourceState = {
-        mode: 'managed',
-        region: 'cn-hangzhou',
-        definition: {},
-        instances: [],
-        lastUpdated: new Date().toISOString(),
-      };
-      const existingState: StateFile = {
-        version: CURRENT_STATE_VERSION,
-        provider: 'aliyun',
-        app: 'test-app',
-        service: 'test-service',
-        stages: { prod: { resources: { existing: existingResource } } },
-        resources: {},
-      };
-      mockAdapter.read.mockResolvedValue(existingState);
-
-      const newResource: ResourceState = {
-        mode: 'managed',
-        region: 'us-west-1',
-        definition: { name: 'func2' },
-        instances: [],
-        lastUpdated: new Date().toISOString(),
-      };
-      const newState: StateFile = {
-        version: CURRENT_STATE_VERSION,
-        provider: 'aliyun',
-        app: 'test-app',
-        service: 'test-service',
-        stages: {},
-        resources: { func2: newResource },
-      };
-
-      const backend = createRemoteStateBackend(mockAdapter, { key: 'state.json' });
-      await backend.saveState(newState, 'test-app', 'test-service', 'dev');
-
-      const savedState = (mockAdapter.write as jest.Mock).mock.calls[0][1] as StateFile;
-      expect(savedState.stages.prod.resources).toEqual({ existing: existingResource });
-      expect(savedState.stages.dev.resources).toEqual({ func2: newResource });
-    });
-
-    it('merges shared resources during remote save', async () => {
-      const sharedLog: ResourceState = {
-        mode: 'managed',
-        region: 'cn-hangzhou',
-        definition: { logProject: 'logs' },
-        instances: [],
-        lastUpdated: new Date().toISOString(),
-      };
-
-      mockAdapter.read.mockResolvedValueOnce({
-        version: CURRENT_STATE_VERSION,
-        provider: 'aliyun',
-        app: 'test-app',
-        service: 'test-service',
-        stages: { dev: { resources: {} } },
-        resources: {},
-      } as StateFile);
-
-      const stateWithShared: StateFile = {
-        version: CURRENT_STATE_VERSION,
-        provider: 'aliyun',
-        app: 'test-app',
-        service: 'test-service',
-        stages: { dev: { resources: {}, shared: { logs: sharedLog } } },
-        resources: {},
-      };
-      const backend = createRemoteStateBackend(mockAdapter, { key: 'state.json' });
-      await backend.saveState(stateWithShared, 'test-app', 'test-service', 'dev');
-
-      let written = (mockAdapter.write as jest.Mock).mock.calls[0][1] as StateFile;
-      expect(written.stages.dev.shared).toEqual({ logs: sharedLog });
-
-      mockAdapter.read.mockResolvedValueOnce(written);
-      const stateSharedCleared: StateFile = {
-        version: CURRENT_STATE_VERSION,
-        provider: 'aliyun',
-        app: 'test-app',
-        service: 'test-service',
-        stages: { dev: { resources: {}, shared: {} } },
-        resources: {},
-      };
-      await backend.saveState(stateSharedCleared, 'test-app', 'test-service', 'dev');
-
-      written = (mockAdapter.write as jest.Mock).mock.calls[1][1] as StateFile;
-      expect(written.stages.dev.shared).toEqual({});
+    it('does not overwrite corrupt, foreign or unsupported aggregate documents', async () => {
+      adapter.store.set(LEGACY_KEY, { version: '8.0', app: scope.app, service: scope.service });
+      await expect(backend().loadState()).rejects.toBeInstanceOf(StateVersionError);
+      adapter.store.set(LEGACY_KEY, {
+        version: '4.0',
+        app: scope.app,
+        service: scope.service,
+        stages: [],
+      });
+      await expect(backend().loadState()).rejects.toBeInstanceOf(StateCorruptError);
+      expect(adapter.write).not.toHaveBeenCalled();
     });
   });
 
   describe('acquireLock', () => {
-    it('should call adapter methods for lock acquisition', async () => {
-      const mockLock: LockMetadata = {
-        id: 'test-lock-id',
-        user: 'user@host',
-        processId: process.pid,
-        hostname: 'localhost',
-        operation: 'deploy',
-        acquiredAt: new Date().toISOString(),
-        path: 'oss://test-bucket/state',
-      };
-      mockAdapter.read.mockResolvedValueOnce(null);
-      mockAdapter.read.mockResolvedValueOnce(mockLock);
-      mockAdapter.write.mockResolvedValue(undefined);
+    it('acquires the scoped lock object exclusively via putIfAbsent', async () => {
+      const backend = createRemoteStateBackend(adapter, {
+        scope,
+        key: LEGACY_KEY,
+      });
 
-      const backend = createRemoteStateBackend(mockAdapter, { key: 'state.json' });
       const lockId = await backend.acquireLock('deploy');
 
-      expect(lockId).toBe('test-lock-id');
-      expect(mockAdapter.read).toHaveBeenCalled();
-      expect(mockAdapter.write).toHaveBeenCalled();
+      expect(adapter.putIfAbsent).toHaveBeenCalledWith(LOCK_KEY, expect.anything());
+      expect(lockId).toBe((adapter.store.get(LOCK_KEY) as LockMetadata).id);
+      expect(await backend.readLock()).toMatchObject({ id: lockId, operation: 'deploy' });
     });
 
-    it('should throw LockError when lock is stale', async () => {
-      const staleLock: LockMetadata = {
-        id: 'stale-lock',
-        user: 'user@host',
-        processId: 1234,
-        hostname: 'localhost',
-        operation: 'deploy',
-        acquiredAt: new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString(),
-        path: '/path',
-      };
-
-      mockLockUtils.isProcessAlive.mockReturnValue(true);
-      mockLockUtils.isLockStale.mockReturnValue(true);
-      mockAdapter.read.mockResolvedValue(staleLock);
-
-      const backend = createRemoteStateBackend(mockAdapter, { key: 'state.json' });
-
-      await expect(backend.acquireLock('deploy')).rejects.toThrow(LockError);
-    });
-
-    it('should release a lock owned by a dead process and retry acquisition', async () => {
-      const deadLock: LockMetadata = {
-        id: 'dead-lock',
-        user: 'user@host',
-        processId: 1234,
-        hostname: os.hostname(),
-        operation: 'deploy',
-        acquiredAt: new Date().toISOString(),
-        path: '/path',
-      };
-      const acquiredLock: LockMetadata = {
-        ...deadLock,
-        id: 'test-lock-id',
-      };
-      mockLockUtils.isProcessAlive.mockReturnValue(false);
-      mockAdapter.read
-        .mockResolvedValueOnce(deadLock)
-        .mockResolvedValueOnce(null)
-        .mockResolvedValueOnce(acquiredLock);
-
-      const backend = createRemoteStateBackend(mockAdapter, { key: 'state.json' });
-
-      await expect(backend.acquireLock('deploy', { maxRetries: 1, retryDelay: 0 })).resolves.toBe(
-        'test-lock-id',
-      );
-      expect(mockAdapter.delete).toHaveBeenCalledWith('state.json.si-lock');
-    });
-
-    it('should fail immediately when the lock timeout has elapsed', async () => {
-      const lock: LockMetadata = {
-        id: 'current-lock',
-        user: 'user@host',
-        processId: 1234,
-        hostname: 'other-host',
-        operation: 'deploy',
-        acquiredAt: new Date().toISOString(),
-        path: '/path',
-      };
-      mockAdapter.read.mockResolvedValue(lock);
-
-      const backend = createRemoteStateBackend(mockAdapter, { key: 'state.json' });
+    it('retries and fails when the lock is held by a live process', async () => {
+      adapter.store.set(LOCK_KEY, makeLock());
+      const backend = createRemoteStateBackend(adapter, {
+        scope,
+        key: LEGACY_KEY,
+      });
 
       await expect(backend.acquireLock('deploy', { timeout: 0, maxRetries: 0 })).rejects.toThrow(
         'Failed to acquire lock after 0 seconds',
       );
+      expect(adapter.delete).not.toHaveBeenCalled();
     });
 
-    it('should fail after exhausting lock retries', async () => {
-      const lock: LockMetadata = {
-        id: 'current-lock',
-        user: 'user@host',
-        processId: 1234,
-        hostname: 'other-host',
-        operation: 'deploy',
-        acquiredAt: new Date().toISOString(),
-        path: '/path',
-      };
-      mockAdapter.read.mockResolvedValue(lock);
+    it('auto-releases a lock left by a dead process on this host', async () => {
+      adapter.store.set(LOCK_KEY, makeLock({ hostname: os.hostname(), processId: 999999999 }));
+      const backend = createRemoteStateBackend(adapter, {
+        scope,
+        key: LEGACY_KEY,
+      });
 
-      const backend = createRemoteStateBackend(mockAdapter, { key: 'state.json' });
+      const lockId = await backend.acquireLock('deploy', { maxRetries: 1, retryDelay: 0 });
+
+      expect(adapter.delete).toHaveBeenCalledWith(LOCK_KEY);
+      expect(lockId).not.toBe('other-lock-id');
+    });
+
+    it('refuses a stale lock and points at force-unlock', async () => {
+      adapter.store.set(
+        LOCK_KEY,
+        makeLock({ acquiredAt: new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString() }),
+      );
+      const backend = createRemoteStateBackend(adapter, {
+        scope,
+        key: LEGACY_KEY,
+      });
+
+      await expect(backend.acquireLock('deploy', { timeout: 0, maxRetries: 0 })).rejects.toThrow(
+        LockError,
+      );
+      await expect(backend.acquireLock('deploy', { timeout: 0, maxRetries: 0 })).rejects.toThrow(
+        /stale/,
+      );
+    });
+
+    it('loses the exclusive-create race and reports the failure', async () => {
+      (adapter.putIfAbsent as jest.Mock).mockResolvedValue(false);
+      const backend = createRemoteStateBackend(adapter, {
+        scope,
+        key: LEGACY_KEY,
+      });
 
       await expect(
-        backend.acquireLock('deploy', { timeout: 100000, maxRetries: 0, retryDelay: 0 }),
+        backend.acquireLock('deploy', { timeout: 0, maxRetries: 0, retryDelay: 0 }),
       ).rejects.toThrow('Failed to acquire lock');
+    });
+
+    it('refuses lock acquisition when conditional creation is unsupported', async () => {
+      (adapter.putIfAbsent as jest.Mock).mockRejectedValueOnce(
+        new ConditionalPutUnsupportedError('unsupported'),
+      );
+      const backend = createRemoteStateBackend(adapter, {
+        scope,
+        key: LEGACY_KEY,
+      });
+      await expect(backend.acquireLock('deploy')).rejects.toThrow('cannot atomically');
+      expect(backend.capabilities.conditionalCreate).toBe(false);
+      expect(adapter.store.has(LOCK_KEY)).toBe(false);
+    });
+
+    it('refuses lock acquisition without conditional creation', async () => {
+      delete (adapter as Partial<StorageAdapter>).putIfAbsent;
+      const backend = createRemoteStateBackend(adapter, {
+        scope,
+        key: LEGACY_KEY,
+      });
+      await expect(backend.acquireLock('deploy')).rejects.toThrow('cannot atomically');
+      expect(adapter.store.has(LOCK_KEY)).toBe(false);
+    });
+
+    it('rethrows unexpected putIfAbsent failures instead of downgrading exclusivity', async () => {
+      (adapter.putIfAbsent as jest.Mock).mockRejectedValue(new Error('network down'));
+      const backend = createRemoteStateBackend(adapter, {
+        scope,
+        key: LEGACY_KEY,
+      });
+
+      await expect(backend.acquireLock('deploy', { timeout: 0, maxRetries: 0 })).rejects.toThrow(
+        'network down',
+      );
+      expect(adapter.write).not.toHaveBeenCalled();
+    });
+
+    it('waits and retries while a live lock from another host is held', async () => {
+      adapter.store.set(LOCK_KEY, makeLock());
+      const backend = createRemoteStateBackend(adapter, {
+        scope,
+        key: LEGACY_KEY,
+      });
+      const { logger } = jest.requireMock('../../../../src/common/logger');
+
+      // The foreign lock is fresh (not stale) and lives on another host, so the
+      // waiter logs its wait and retries until the retry budget is exhausted.
+      await expect(
+        backend.acquireLock('deploy', { timeout: 100, maxRetries: 1, retryDelay: 0 }),
+      ).rejects.toThrow('Failed to acquire lock');
+
+      expect(logger.info).toHaveBeenCalledWith(expect.stringContaining('Waiting to acquire lock'));
+      expect(adapter.delete).not.toHaveBeenCalled();
+      expect(adapter.store.has(LOCK_KEY)).toBe(true);
     });
   });
 
   describe('releaseLock', () => {
-    it('should release lock when ID matches', async () => {
-      const lockKey = 'state.json.si-lock';
-      const lock: LockMetadata = {
-        id: 'test-lock-id',
-        user: 'user@host',
-        processId: 1234,
-        hostname: 'localhost',
-        operation: 'deploy',
-        acquiredAt: new Date().toISOString(),
-        path: '/path',
-      };
-      mockAdapter.read.mockResolvedValue(lock);
-      mockAdapter.delete.mockResolvedValue(undefined);
+    it('deletes the lock object only when the ID matches', async () => {
+      const lock = makeLock({ id: 'test-lock-id', hostname: os.hostname() });
+      adapter.store.set(LOCK_KEY, lock);
+      const backend = createRemoteStateBackend(adapter, {
+        scope,
+        key: LEGACY_KEY,
+      });
 
-      const backend = createRemoteStateBackend(mockAdapter, { key: 'state.json' });
+      await backend.releaseLock('other-id');
+      expect(adapter.delete).not.toHaveBeenCalled();
+
       await backend.releaseLock('test-lock-id');
-
-      expect(mockAdapter.delete).toHaveBeenCalledWith(lockKey);
+      expect(adapter.delete).toHaveBeenCalledWith(LOCK_KEY);
+      expect(adapter.store.has(LOCK_KEY)).toBe(false);
     });
 
-    it('should not delete when lock ID does not match', async () => {
-      const lock: LockMetadata = {
-        id: 'other-lock-id',
-        user: 'user@host',
-        processId: 1234,
-        hostname: 'localhost',
-        operation: 'deploy',
-        acquiredAt: new Date().toISOString(),
-        path: '/path',
-      };
-      mockAdapter.read.mockResolvedValue(lock);
+    it('does nothing when no lock exists', async () => {
+      const backend = createRemoteStateBackend(adapter, {
+        scope,
+        key: LEGACY_KEY,
+      });
 
-      const backend = createRemoteStateBackend(mockAdapter, { key: 'state.json' });
       await backend.releaseLock('test-lock-id');
 
-      expect(mockAdapter.delete).not.toHaveBeenCalled();
-    });
-
-    it('should not delete when no lock exists', async () => {
-      mockAdapter.read.mockResolvedValue(null);
-
-      const backend = createRemoteStateBackend(mockAdapter, { key: 'state.json' });
-      await backend.releaseLock('test-lock-id');
-
-      expect(mockAdapter.delete).not.toHaveBeenCalled();
+      expect(adapter.delete).not.toHaveBeenCalled();
     });
   });
 
   describe('forceUnlock', () => {
-    it('should force unlock and return true', async () => {
-      const lock: LockMetadata = {
-        id: 'test-lock-id',
-        user: 'user@host',
-        processId: 1234,
-        hostname: 'localhost',
-        operation: 'deploy',
-        acquiredAt: new Date().toISOString(),
-        path: '/path',
-      };
-      mockAdapter.read.mockResolvedValue(lock);
-      mockAdapter.delete.mockResolvedValue(undefined);
+    it('removes the lock and reports success', async () => {
+      adapter.store.set(LOCK_KEY, makeLock({ id: 'test-lock-id' }));
+      const backend = createRemoteStateBackend(adapter, {
+        scope,
+        key: LEGACY_KEY,
+      });
 
-      const backend = createRemoteStateBackend(mockAdapter, { key: 'state.json' });
-      const result = await backend.forceUnlock('test-lock-id');
-
-      expect(result).toBe(true);
-      expect(mockAdapter.delete).toHaveBeenCalled();
+      await expect(backend.forceUnlock('test-lock-id')).resolves.toBe(true);
+      expect(adapter.delete).toHaveBeenCalledWith(LOCK_KEY);
     });
 
-    it('should return false when lock does not exist', async () => {
-      mockAdapter.read.mockResolvedValue(null);
+    it('returns false when there is no lock', async () => {
+      const backend = createRemoteStateBackend(adapter, {
+        scope,
+        key: LEGACY_KEY,
+      });
 
-      const backend = createRemoteStateBackend(mockAdapter, { key: 'state.json' });
-      const result = await backend.forceUnlock('test-lock-id');
-
-      expect(result).toBe(false);
-      expect(mockAdapter.delete).not.toHaveBeenCalled();
+      await expect(backend.forceUnlock('test-lock-id')).resolves.toBe(false);
+      expect(adapter.delete).not.toHaveBeenCalled();
     });
 
-    it('should throw error on ID mismatch', async () => {
-      const lock: LockMetadata = {
-        id: 'other-lock-id',
-        user: 'user@host',
-        processId: 1234,
-        hostname: 'localhost',
-        operation: 'deploy',
-        acquiredAt: new Date().toISOString(),
-        path: '/path',
-      };
-      mockAdapter.read.mockResolvedValue(lock);
-
-      const backend = createRemoteStateBackend(mockAdapter, { key: 'state.json' });
+    it('throws on ID mismatch', async () => {
+      adapter.store.set(LOCK_KEY, makeLock({ id: 'other-lock-id' }));
+      const backend = createRemoteStateBackend(adapter, {
+        scope,
+        key: LEGACY_KEY,
+      });
 
       await expect(backend.forceUnlock('test-lock-id')).rejects.toThrow('Lock ID mismatch');
     });
   });
 
   describe('readLock', () => {
-    it('should read lock metadata', async () => {
-      const lock: LockMetadata = {
-        id: 'test-lock-id',
-        user: 'user@host',
-        processId: 1234,
-        hostname: 'localhost',
-        operation: 'deploy',
-        acquiredAt: new Date().toISOString(),
-        path: '/path',
-      };
-      mockAdapter.read.mockResolvedValue(lock);
+    it('returns the lock metadata or null', async () => {
+      const backend = createRemoteStateBackend(adapter, {
+        scope,
+        key: LEGACY_KEY,
+      });
+      expect(await backend.readLock()).toBeNull();
 
-      const backend = createRemoteStateBackend(mockAdapter, { key: 'state.json' });
-      const result = await backend.readLock();
-
-      expect(result).toEqual(lock);
-    });
-
-    it('should return null when no lock exists', async () => {
-      mockAdapter.read.mockResolvedValue(null);
-
-      const backend = createRemoteStateBackend(mockAdapter, { key: 'state.json' });
-      const result = await backend.readLock();
-
-      expect(result).toBeNull();
+      const lock = makeLock({ id: 'test-lock-id' });
+      adapter.store.set(LOCK_KEY, lock);
+      expect(await backend.readLock()).toEqual(lock);
     });
   });
 
   describe('withLock', () => {
-    it('should execute function and manage lock lifecycle', async () => {
-      const mockLock: LockMetadata = {
-        id: 'test-lock-id',
-        user: 'user@host',
-        processId: process.pid,
-        hostname: 'localhost',
-        operation: 'deploy',
-        acquiredAt: new Date().toISOString(),
-        path: 'oss://test-bucket/state',
-      };
-      mockAdapter.read.mockResolvedValueOnce(null);
-      mockAdapter.read.mockResolvedValueOnce(mockLock);
-      mockAdapter.read.mockResolvedValueOnce(mockLock);
-      mockAdapter.write.mockResolvedValue(undefined);
-      mockAdapter.delete.mockResolvedValue(undefined);
-
-      let executed = false;
-      const backend = createRemoteStateBackend(mockAdapter, { key: 'state.json' });
-      await backend.withLock('deploy', async () => {
-        executed = true;
+    it('executes the function and releases the lock afterwards', async () => {
+      const backend = createRemoteStateBackend(adapter, {
+        scope,
+        key: LEGACY_KEY,
       });
 
-      expect(executed).toBe(true);
-      expect(mockAdapter.write).toHaveBeenCalled();
-      expect(mockAdapter.delete).toHaveBeenCalled();
-    });
-
-    it('should return function result', async () => {
-      const mockLock: LockMetadata = {
-        id: 'test-lock-id',
-        user: 'user@host',
-        processId: process.pid,
-        hostname: 'localhost',
-        operation: 'deploy',
-        acquiredAt: new Date().toISOString(),
-        path: 'oss://test-bucket/state',
-      };
-      mockAdapter.read.mockResolvedValueOnce(null);
-      mockAdapter.read.mockResolvedValueOnce(mockLock);
-      mockAdapter.read.mockResolvedValueOnce(mockLock);
-      mockAdapter.write.mockResolvedValue(undefined);
-      mockAdapter.delete.mockResolvedValue(undefined);
-
-      const backend = createRemoteStateBackend(mockAdapter, { key: 'state.json' });
       const result = await backend.withLock('deploy', async () => 'test-result');
 
       expect(result).toBe('test-result');
+      expect(adapter.putIfAbsent).toHaveBeenCalledWith(LOCK_KEY, expect.anything());
+      expect(adapter.store.has(LOCK_KEY)).toBe(false);
     });
 
-    it('should clean up on error', async () => {
-      const mockLock: LockMetadata = {
-        id: 'test-lock-id',
-        user: 'user@host',
-        processId: process.pid,
-        hostname: 'localhost',
-        operation: 'deploy',
-        acquiredAt: new Date().toISOString(),
-        path: 'oss://test-bucket/state',
-      };
-      mockAdapter.read.mockResolvedValueOnce(null);
-      mockAdapter.read.mockResolvedValueOnce(mockLock);
-      mockAdapter.read.mockResolvedValueOnce(mockLock);
-      mockAdapter.write.mockResolvedValue(undefined);
-      mockAdapter.delete.mockResolvedValue(undefined);
-
-      const backend = createRemoteStateBackend(mockAdapter, { key: 'state.json' });
+    it('releases the lock when the function fails', async () => {
+      const backend = createRemoteStateBackend(adapter, {
+        scope,
+        key: LEGACY_KEY,
+      });
 
       await expect(
         backend.withLock('deploy', async () => {
@@ -658,7 +418,19 @@ describe('remoteStateBackend', () => {
         }),
       ).rejects.toThrow('Function error');
 
-      expect(mockAdapter.delete).toHaveBeenCalled();
+      expect(adapter.store.has(LOCK_KEY)).toBe(false);
+    });
+
+    it('invokes the onLockAcquired callback with the lock id', async () => {
+      const backend = createRemoteStateBackend(adapter, {
+        scope,
+        key: LEGACY_KEY,
+      });
+      const onLockAcquired = jest.fn();
+
+      await backend.withLock('deploy', async () => undefined, undefined, onLockAcquired);
+
+      expect(onLockAcquired).toHaveBeenCalledWith(expect.any(String));
     });
   });
 });

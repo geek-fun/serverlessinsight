@@ -6,7 +6,7 @@ This guide demonstrates how to use ServerlessInsight with Tencent Cloud COS buck
 
 The Tencent COS support provides full lifecycle management for cloud storage buckets with:
 
-- **State Management**: Local state tracking in `.serverlessinsight/state.json`
+- **State Management**: Local state tracking in `.serverlessinsight/state-example-app-my-service.json`
 - **Plan & Apply Flow**: Preview changes before applying them
 - **Drift Detection**: Detect manual changes made outside ServerlessInsight
 - **Website Hosting**: Configure static website hosting
@@ -29,7 +29,12 @@ provider:
   name: tencent
   region: ap-guangzhou
 
+app: example-app
 service: my-service
+
+backend:
+  state_manager:
+    type: LOCAL
 
 buckets:
   my_bucket:
@@ -95,7 +100,7 @@ Output shows:
 Apply the infrastructure changes:
 
 ```bash
-si deploy my-stack \
+si deploy \
   -f serverless-insight.yml \
   -r ap-guangzhou \
   -k YOUR_SECRET_ID \
@@ -106,37 +111,50 @@ The deploy command will:
 
 1. Generate a plan for all resources (functions + buckets)
 2. Execute the plan (create/update/delete buckets)
-3. Save the state to `.serverlessinsight/state.json`
+3. Save the state to `.serverlessinsight/state-example-app-my-service.json`
 
 ### Validate
 
 Validate your YAML configuration:
 
 ```bash
-si validate my-stack -f serverless-insight.yml
+si validate -f serverless-insight.yml
 ```
 
 ## State Management
 
-State is stored locally in `.serverlessinsight/state.json`:
+With the explicit LOCAL backend above, state remains at
+`.serverlessinsight/state-example-app-my-service.json`. The V4 aggregate contains
+independent stage/provider/region partitions, for example after selecting `-s prod`:
 
 ```json
 {
-  "version": "0.1",
-  "provider": "tencent",
-  "resources": {
-    "buckets.my_bucket": {
-      "type": "COS_BUCKET",
-      "physicalId": "my-unique-bucket-name-123456",
-      "region": "ap-guangzhou",
-      "configHash": "abc123...",
-      "lastUpdated": "2025-01-01T12:00:00Z"
+  "version": "4.0",
+  "app": "example-app",
+  "service": "my-service",
+  "stages": {
+    "prod": {
+      "providers": {
+        "tencent": {
+          "regions": {
+            "ap-guangzhou": {
+              "lineage": "deployment-uuid",
+              "serial": 1,
+              "resources": {},
+              "shared": {}
+            }
+          }
+        }
+      }
     }
   }
 }
 ```
 
-**Important**: Add `.serverlessinsight/` to your `.gitignore` if you don't want to commit state files.
+The executor works with only the selected partition. Its native IDs and revision are
+preserved when another provider/region is deployed. All partitions in this file share
+one deployment lock. See [deployment state and migration](../docs/regional-deployment-state.md).
+Keep state and credentials out of version control.
 
 ## Access Control (ACL)
 
@@ -185,6 +203,7 @@ buckets:
     security:
       acl: PUBLIC_READ # Website content must be publicly readable
     website:
+      code: ./public
       index: index.html # Default page (also used as error document for SPA routing)
 ```
 
@@ -206,7 +225,12 @@ provider:
   name: tencent
   region: ap-guangzhou
 
+app: example-app
 service: my-full-app
+
+backend:
+  state_manager:
+    type: LOCAL
 
 functions:
   api_function:
@@ -224,6 +248,7 @@ buckets:
     security:
       acl: PUBLIC_READ
     website:
+      code: ./public
       index: index.html
 ```
 
@@ -233,10 +258,10 @@ Running `si deploy` multiple times with the same configuration is safe:
 
 ```bash
 # First run - creates the bucket
-si deploy my-stack -f serverless-insight.yml
+si deploy -f serverless-insight.yml
 
 # Second run - detects no changes needed
-si deploy my-stack -f serverless-insight.yml
+si deploy -f serverless-insight.yml
 ```
 
 ## Drift Detection
@@ -291,7 +316,7 @@ Run `si deploy` to apply the change.
 
 To delete a bucket, remove it from your YAML file and run deploy:
 
-```yaml
+```text
 # Before
 buckets:
   my_bucket:
@@ -315,7 +340,12 @@ provider:
   name: tencent
   region: ap-guangzhou
 
+app: example-app
 service: simple-bucket
+
+backend:
+  state_manager:
+    type: LOCAL
 
 buckets:
   assets:
@@ -332,7 +362,12 @@ provider:
   name: tencent
   region: ap-guangzhou
 
+app: example-app
 service: my-website
+
+backend:
+  state_manager:
+    type: LOCAL
 
 buckets:
   website:
@@ -340,6 +375,7 @@ buckets:
     security:
       acl: PUBLIC_READ
     website:
+      code: ./public
       index: index.html
 ```
 
@@ -351,7 +387,12 @@ provider:
   name: tencent
   region: ap-guangzhou
 
+app: example-app
 service: multi-bucket-app
+
+backend:
+  state_manager:
+    type: LOCAL
 
 buckets:
   public_assets:
@@ -369,6 +410,7 @@ buckets:
     security:
       acl: PUBLIC_READ
     website:
+      code: ./public
       index: index.html
 ```
 
@@ -394,7 +436,7 @@ Error: `AuthFailure.SecretIdNotFound`
 export TENCENTCLOUD_SECRET_ID=your_secret_id
 export TENCENTCLOUD_SECRET_KEY=your_secret_key
 
-si deploy my-stack -f serverless-insight.yml
+si deploy -f serverless-insight.yml
 ```
 
 ### Bucket Not Empty
@@ -421,10 +463,10 @@ If your website is not accessible after deployment:
 
 ### State File Conflicts
 
-If you encounter state conflicts, you can:
-
-1. Delete `.serverlessinsight/state.json` and re-deploy (will recreate resources)
-2. Manually edit the state file (advanced users only)
+Keep the current state and backups. Confirm App/Service/Stage/Provider/Region and the
+backend location, wait for the active writer, then refetch and re-plan. Write commands
+automatically upgrade released V3 state in place; rerun the original operation to resume
+an interrupted upgrade. Deleting or hand-editing state can lose sibling ownership.
 
 ## Limitations
 

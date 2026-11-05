@@ -120,7 +120,7 @@ export const eventToApigwGroupConfig = (
   event: EventDomain,
   serviceName: string,
   stage: string,
-  context?: Pick<Context, 'app' | 'service'>,
+  context?: Pick<Context, 'app' | 'service' | 'region'>,
   logicalId?: string,
 ): ApigwGroupConfig => {
   const groupConfig: ApigwGroupConfig = {

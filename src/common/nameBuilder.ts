@@ -104,10 +104,14 @@ export const CONSTRAINT_NAME_LIMITS = {
   FUNCTION_ROLE_NAME: 64,
 } as const;
 
-/** Single source of truth for per-function execution role names across all providers. */
-export const buildFunctionRoleName = (serviceName: string, stage: string, fnKey: string): string =>
+export const buildFunctionRoleName = (
+  serviceName: string,
+  stage: string,
+  region: string,
+  fnKey: string,
+): string =>
   buildConstrainedName({
-    parts: [serviceName, stage, fnKey, 'role'],
+    parts: [serviceName, stage, region, fnKey, 'role'],
     maxLength: CONSTRAINT_NAME_LIMITS.FUNCTION_ROLE_NAME,
     charset: 'hyphen',
   });

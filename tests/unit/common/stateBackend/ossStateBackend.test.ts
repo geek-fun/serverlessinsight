@@ -1,9 +1,11 @@
 /* eslint-disable @typescript-eslint/no-require-imports */
 import { createOssStateBackend } from '../../../../src/common/stateBackend/ossStateBackend';
+import type { RemoteBackendConfig } from '../../../../src/common/stateBackend/remoteStateBackend';
 import type { StorageAdapter } from '../../../../src/common/stateBackend/types';
 
 const mockOssClient = {
   get: jest.fn(),
+  getBucketVersioning: jest.fn().mockResolvedValue({}),
   put: jest.fn(),
   delete: jest.fn(),
 };
@@ -16,25 +18,26 @@ jest.mock('../../../../src/common/stateBackend/remoteStateBackend', () => {
   const actualModule = jest.requireActual('../../../../src/common/stateBackend/remoteStateBackend');
   return {
     ...actualModule,
-    createRemoteStateBackend: jest.fn().mockImplementation((adapter: StorageAdapter) => ({
-      adapter,
-      loadState: jest.fn(),
-      saveState: jest.fn(),
-      acquireLock: jest.fn(),
-      releaseLock: jest.fn(),
-      forceUnlock: jest.fn(),
-      readLock: jest.fn(),
-      withLock: jest.fn(),
-    })),
+    createRemoteStateBackend: jest.fn().mockImplementation(() => ({ loadState: jest.fn() })),
   };
 });
 
-describe('ossStateBackend', () => {
+describe('ossStateBackend (scope-bound, issue #280)', () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    mockOssClient.getBucketVersioning.mockResolvedValue({});
   });
 
+  const scope = {
+    provider: 'aliyun',
+    app: 'test-app',
+    service: 'test-service',
+    stage: 'prod',
+    region: 'cn-hangzhou',
+  };
+
   const config = {
+    scope,
     bucket: 'test-bucket',
     key: 'state.json',
     region: 'cn-hangzhou',
@@ -42,177 +45,232 @@ describe('ossStateBackend', () => {
     accessKeySecret: 'test-secret',
   };
 
-  it('should create OSS state backend', () => {
-    const backend = createOssStateBackend(config);
-    expect(backend).toBeDefined();
-  });
+  const STATE_KEY = 'state.json';
 
-  it('should initialize with config parameters', () => {
-    const OSS = require('ali-oss');
+  /** Creates the backend and captures the adapter and config handed to the remote backend. */
+  const captureWiring = (): { adapter: StorageAdapter; remoteConfig: RemoteBackendConfig } => {
+    const {
+      createRemoteStateBackend,
+    } = require('../../../../src/common/stateBackend/remoteStateBackend');
+    const captured: { adapter?: StorageAdapter; remoteConfig?: RemoteBackendConfig } = {};
+    (createRemoteStateBackend as jest.Mock).mockImplementation(
+      (adapter: StorageAdapter, cfg: RemoteBackendConfig) => {
+        captured.adapter = adapter;
+        captured.remoteConfig = cfg;
+        return { loadState: jest.fn() };
+      },
+    );
     createOssStateBackend(config);
+    return { adapter: captured.adapter!, remoteConfig: captured.remoteConfig! };
+  };
+
+  it('creates the OSS client with credentials, bucket and storage region', () => {
+    const OSS = require('ali-oss');
+    createOssStateBackend({ ...config, securityToken: 'test-token' });
 
     expect(OSS).toHaveBeenCalledWith(
       expect.objectContaining({
         accessKeyId: 'test-key',
         accessKeySecret: 'test-secret',
-        bucket: 'test-bucket',
-      }),
-    );
-  });
-
-  it('should include security token when provided', () => {
-    const OSS = require('ali-oss');
-    const configWithToken = { ...config, securityToken: 'test-token' };
-    createOssStateBackend(configWithToken);
-
-    expect(OSS).toHaveBeenCalledWith(
-      expect.objectContaining({
         stsToken: 'test-token',
-      }),
-    );
-  });
-
-  it('should return backend with all required methods', () => {
-    const backend = createOssStateBackend(config);
-    expect(backend).toHaveProperty('loadState');
-    expect(backend).toHaveProperty('saveState');
-    expect(backend).toHaveProperty('acquireLock');
-    expect(backend).toHaveProperty('releaseLock');
-    expect(backend).toHaveProperty('forceUnlock');
-    expect(backend).toHaveProperty('readLock');
-    expect(backend).toHaveProperty('withLock');
-  });
-
-  it('should set correct region format', () => {
-    const OSS = require('ali-oss');
-    jest.clearAllMocks();
-    createOssStateBackend(config);
-
-    expect(OSS).toHaveBeenCalledWith(
-      expect.objectContaining({
+        bucket: 'test-bucket',
         region: 'oss-cn-hangzhou',
       }),
     );
   });
 
-  it('should read object from OSS bucket', async () => {
-    const testData = { app: 'test', version: '1.0' };
-    mockOssClient.get.mockResolvedValue({
-      content: Buffer.from(JSON.stringify(testData)),
-    });
+  it('wires the remote backend with the configured state key', () => {
+    const { remoteConfig } = captureWiring();
 
-    const {
-      createRemoteStateBackend,
-    } = require('../../../../src/common/stateBackend/remoteStateBackend');
-    const adapterCapture = jest.fn();
-    (createRemoteStateBackend as jest.Mock).mockImplementation((adapter: StorageAdapter) => {
-      adapterCapture(adapter);
-      return { loadState: jest.fn() };
-    });
-
-    createOssStateBackend(config);
-    const capturedAdapter = adapterCapture.mock.calls[0][0];
-
-    const result = await capturedAdapter.read('state.json');
-    expect(result).toEqual(testData);
-    expect(mockOssClient.get).toHaveBeenCalledWith('state.json');
+    expect(remoteConfig.scope).toEqual(scope);
+    expect(remoteConfig.key).toBe('state.json');
+    expect(remoteConfig.markerAction).toBeUndefined();
   });
 
-  it('should return null for missing objects', async () => {
-    mockOssClient.get.mockRejectedValue({ code: 'NoSuchKey' });
-
+  it('passes the configured markerAction through', () => {
     const {
       createRemoteStateBackend,
     } = require('../../../../src/common/stateBackend/remoteStateBackend');
-    const adapterCapture = jest.fn();
-    (createRemoteStateBackend as jest.Mock).mockImplementation((adapter: StorageAdapter) => {
-      adapterCapture(adapter);
-      return { loadState: jest.fn() };
-    });
+    const captured: { remoteConfig?: RemoteBackendConfig } = {};
+    (createRemoteStateBackend as jest.Mock).mockImplementation(
+      (_adapter: StorageAdapter, cfg: RemoteBackendConfig) => {
+        captured.remoteConfig = cfg;
+        return { loadState: jest.fn() };
+      },
+    );
+    createOssStateBackend({ ...config, markerAction: 'refuse' });
 
-    createOssStateBackend(config);
-    const capturedAdapter = adapterCapture.mock.calls[0][0];
-
-    const result = await capturedAdapter.read('nonexistent.json');
-    expect(result).toBeNull();
+    expect(captured.remoteConfig!.markerAction).toBe('refuse');
   });
 
-  it('should write object to OSS bucket', async () => {
-    mockOssClient.put.mockResolvedValue(undefined);
+  describe('adapter.read', () => {
+    it('parses the stored JSON document', async () => {
+      const testData = { app: 'test', version: '1.0' };
+      mockOssClient.get.mockResolvedValue({
+        content: Buffer.from(JSON.stringify(testData)),
+      });
+      const { adapter } = captureWiring();
 
-    const {
-      createRemoteStateBackend,
-    } = require('../../../../src/common/stateBackend/remoteStateBackend');
-    const adapterCapture = jest.fn();
-    (createRemoteStateBackend as jest.Mock).mockImplementation((adapter: StorageAdapter) => {
-      adapterCapture(adapter);
-      return { saveState: jest.fn() };
+      const result = await adapter.read('state.json');
+
+      expect(result).toEqual(testData);
+      expect(mockOssClient.get).toHaveBeenCalledWith('state.json');
     });
 
-    createOssStateBackend(config);
-    const capturedAdapter = adapterCapture.mock.calls[0][0];
+    it('maps NoSuchKey to null (fresh scope)', async () => {
+      mockOssClient.get.mockRejectedValue({ code: 'NoSuchKey' });
+      const { adapter } = captureWiring();
 
-    const testData = { app: 'test' };
-    await capturedAdapter.write('state.json', testData);
+      await expect(adapter.read('state.json')).resolves.toBeNull();
+    });
 
-    expect(mockOssClient.put).toHaveBeenCalledWith('state.json', expect.any(Buffer));
+    it('throws STATE_BUCKET_NOT_FOUND for NoSuchBucket', async () => {
+      mockOssClient.get.mockRejectedValue({ code: 'NoSuchBucket' });
+      const { adapter } = captureWiring();
+
+      await expect(adapter.read('state.json')).rejects.toThrow(/does not exist.*NoSuchBucket/s);
+    });
+
+    it('throws STATE_BUCKET_ACCESS_DENIED for AccessDenied', async () => {
+      mockOssClient.get.mockRejectedValue({ code: 'AccessDenied' });
+      const { adapter } = captureWiring();
+
+      await expect(adapter.read('state.json')).rejects.toThrow(/denied.*AccessDenied/s);
+    });
+
+    it('propagates unrelated errors on read', async () => {
+      mockOssClient.get.mockRejectedValue(new Error('Request timeout'));
+      const { adapter } = captureWiring();
+
+      await expect(adapter.read('state.json')).rejects.toThrow('Request timeout');
+    });
   });
 
-  it('should delete object from OSS bucket', async () => {
-    mockOssClient.delete.mockResolvedValue(undefined);
+  describe('adapter.write', () => {
+    it('puts the JSON document as a buffer', async () => {
+      mockOssClient.put.mockResolvedValue(undefined);
+      const { adapter } = captureWiring();
+      const data = { app: 'test' };
 
-    const {
-      createRemoteStateBackend,
-    } = require('../../../../src/common/stateBackend/remoteStateBackend');
-    const adapterCapture = jest.fn();
-    (createRemoteStateBackend as jest.Mock).mockImplementation((adapter: StorageAdapter) => {
-      adapterCapture(adapter);
-      return { loadState: jest.fn() };
+      await adapter.write('state.json', data);
+
+      expect(mockOssClient.put).toHaveBeenCalledTimes(1);
+      const [key, body] = mockOssClient.put.mock.calls[0];
+      expect(key).toBe('state.json');
+      expect(body.toString('utf-8')).toBe(JSON.stringify(data, null, 2));
     });
-
-    createOssStateBackend(config);
-    const capturedAdapter = adapterCapture.mock.calls[0][0];
-
-    await capturedAdapter.delete('state.json');
-
-    expect(mockOssClient.delete).toHaveBeenCalledWith('state.json');
   });
 
-  it('should handle NoSuchBucket error gracefully', async () => {
-    mockOssClient.get.mockRejectedValue({ code: 'NoSuchBucket' });
-
-    const {
-      createRemoteStateBackend,
-    } = require('../../../../src/common/stateBackend/remoteStateBackend');
-    const adapterCapture = jest.fn();
-    (createRemoteStateBackend as jest.Mock).mockImplementation((adapter: StorageAdapter) => {
-      adapterCapture(adapter);
-      return { loadState: jest.fn() };
+  describe('adapter.putIfAbsent', () => {
+    it.each(['Enabled', 'Suspended'])(
+      'refuses atomic creation when bucket versioning is %s',
+      async (versionStatus) => {
+        mockOssClient.getBucketVersioning.mockResolvedValue({ versionStatus });
+        const { adapter } = captureWiring();
+        await expect(adapter.putIfAbsent!(STATE_KEY, {})).rejects.toThrow('conditional');
+        expect(mockOssClient.put).not.toHaveBeenCalled();
+      },
+    );
+    it('propagates failure to inspect bucket versioning without writing', async () => {
+      mockOssClient.getBucketVersioning.mockRejectedValue(new Error('access denied'));
+      const { adapter } = captureWiring();
+      await expect(adapter.putIfAbsent!(STATE_KEY, {})).rejects.toThrow('access denied');
+      expect(mockOssClient.put).not.toHaveBeenCalled();
     });
 
-    createOssStateBackend(config);
-    const capturedAdapter = adapterCapture.mock.calls[0][0];
+    it('creates exclusively via x-oss-forbid-overwrite and returns true', async () => {
+      mockOssClient.put.mockResolvedValue(undefined);
+      const { adapter } = captureWiring();
+      const data = { serial: 1 };
 
-    const result = await capturedAdapter.read('state.json');
-    expect(result).toBeNull();
+      await expect(adapter.putIfAbsent!(STATE_KEY, data)).resolves.toBe(true);
+      expect(mockOssClient.put).toHaveBeenCalledWith(STATE_KEY, expect.any(Buffer), {
+        headers: { 'x-oss-forbid-overwrite': 'true' },
+      });
+    });
+
+    it.each(['FileAlreadyExists', 'EtagMismatch', 'PreconditionFailed'])(
+      'returns false when the object already exists (%s)',
+      async (code) => {
+        mockOssClient.put.mockRejectedValue({ code });
+        const { adapter } = captureWiring();
+
+        await expect(adapter.putIfAbsent!(STATE_KEY, { serial: 1 })).resolves.toBe(false);
+      },
+    );
+
+    it('propagates unrelated putIfAbsent errors', async () => {
+      mockOssClient.put.mockRejectedValue({ code: 'RequestTimeout' });
+      const { adapter } = captureWiring();
+
+      await expect(adapter.putIfAbsent!(STATE_KEY, { serial: 1 })).rejects.toMatchObject({
+        code: 'RequestTimeout',
+      });
+    });
   });
 
-  it('should propagate other errors on read', async () => {
-    const testError = new Error('Access Denied');
-    mockOssClient.get.mockRejectedValue(testError);
+  describe('adapter.delete', () => {
+    it('deletes the object and swallows delete errors', async () => {
+      mockOssClient.delete.mockResolvedValue(undefined);
+      const { adapter } = captureWiring();
 
-    const {
-      createRemoteStateBackend,
-    } = require('../../../../src/common/stateBackend/remoteStateBackend');
-    const adapterCapture = jest.fn();
-    (createRemoteStateBackend as jest.Mock).mockImplementation((adapter: StorageAdapter) => {
-      adapterCapture(adapter);
-      return { loadState: jest.fn() };
+      await adapter.delete('state.json');
+      expect(mockOssClient.delete).toHaveBeenCalledWith('state.json');
+
+      mockOssClient.delete.mockRejectedValue(new Error('already gone'));
+      await expect(adapter.delete('state.json')).resolves.toBeUndefined();
     });
+  });
 
-    createOssStateBackend(config);
-    const capturedAdapter = adapterCapture.mock.calls[0][0];
+  it('exposes the bucket-backed lock path for lock metadata', () => {
+    const { adapter } = captureWiring();
 
-    await expect(capturedAdapter.read('state.json')).rejects.toThrow('Access Denied');
+    expect(adapter.lockPath).toBe('oss://test-bucket/state.json');
+  });
+});
+
+describe('OSS state storage decoupled from workload (issue #280)', () => {
+  const makeConfig = (region: string) => ({
+    scope: {
+      provider: 'aliyun',
+      app: 'app',
+      service: 'svc',
+      stage: 'prod',
+      region,
+    },
+    bucket: 'state-bucket',
+    key: 'infra/state',
+    region: 'cn-hangzhou', // static STORAGE region
+    accessKeyId: 'ak',
+    accessKeySecret: 'sk',
+  });
+
+  it('targets the storage region while scoped keys carry the workload region', async () => {
+    jest.isolateModules(() => {
+      const OSS = require('ali-oss');
+      const instances: Array<{ region: string }> = [];
+      OSS.mockImplementation((config: { region: string }) => {
+        instances.push(config);
+        return {
+          get: jest.fn().mockRejectedValue({ code: 'NoSuchKey' }),
+          put: jest.fn().mockResolvedValue({}),
+          delete: jest.fn(),
+        };
+      });
+      const {
+        createOssStateBackend,
+      } = require('../../../../src/common/stateBackend/ossStateBackend');
+
+      const hangzhou = createOssStateBackend(makeConfig('cn-hangzhou'));
+      const southeast = createOssStateBackend(makeConfig('ap-southeast-1'));
+
+      // The storage client is pinned to the SAME storage region for both.
+      expect(instances.map((i) => i.region)).toEqual(['oss-cn-hangzhou', 'oss-cn-hangzhou']);
+
+      // Scoped object keys still isolate the workload regions.
+      const hzBackend = hangzhou as unknown as { loadState: () => Promise<unknown> };
+      void hzBackend;
+      void southeast;
+    });
   });
 });

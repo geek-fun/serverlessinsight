@@ -1,18 +1,13 @@
+import { AsyncLocalStorage } from 'node:async_hooks';
 import os from 'node:os';
-import {
-  StateFile,
-  PersistedStateFile,
-  LockOptions,
-  LockMetadata,
-  CURRENT_STATE_VERSION,
-} from '../../types';
-import { migrateState, toPersistedState } from '../stateManager';
-import { enforceMigrationMarker, MigrationMarkerAction } from '../migrationMarker';
+
+import { createAggregateStore } from '../aggregateStore';
+import { normalizeScope } from '../stateScope';
 import { DEFAULT_LOCK_TIMEOUT, DEFAULT_LOCK_RETRY_DELAY } from '../constants';
 import { LockError, formatLockInfo } from '../lockManager';
 import { logger } from '../logger';
 import { lang } from '../../lang';
-import { StateBackend, StorageAdapter } from './types';
+import { ConditionalPutUnsupportedError } from './types';
 import {
   LOCK_KEY_SUFFIX,
   sleep,
@@ -20,8 +15,13 @@ import {
   isProcessAlive,
   createLockMetadata,
 } from './lockUtils';
+import type { StateFile, LockOptions, LockMetadata } from '../../types';
+import type { StateBackend, StorageAdapter, BackendCapabilities } from './types';
+import type { DeploymentScope } from '../stateScope';
+import type { MigrationMarkerAction } from '../migrationMarker';
 
 export type RemoteBackendConfig = {
+  scope: DeploymentScope;
   key: string;
   /** Migration ownership marker behavior on load (decision D-4). Defaults to 'off'. */
   markerAction?: MigrationMarkerAction;
@@ -31,11 +31,34 @@ export const createRemoteStateBackend = (
   adapter: StorageAdapter,
   config: RemoteBackendConfig,
 ): StateBackend => {
+  const normalized = normalizeScope(config.scope);
   const lockKey = `${config.key}${LOCK_KEY_SUFFIX}`;
-  const markerAction: MigrationMarkerAction = config.markerAction ?? 'off';
+  const capabilities: BackendCapabilities = {
+    conditionalCreate: typeof adapter.putIfAbsent === 'function',
+  };
+  const store = createAggregateStore(adapter, normalized, {
+    key: config.key,
+    markerAction: config.markerAction ?? 'off',
+    backupWrites: true,
+  });
+  const writer = new AsyncLocalStorage<boolean>();
+  let manualLockId: string | null = null;
 
   const readLockObject = async (): Promise<LockMetadata | null> => {
     return adapter.read<LockMetadata>(lockKey);
+  };
+
+  const writeLockObject = async (metadata: LockMetadata): Promise<boolean> => {
+    if (!adapter.putIfAbsent) throw new Error(lang.__('STATE_ATOMIC_CREATE_REQUIRED'));
+    try {
+      return await adapter.putIfAbsent(lockKey, metadata);
+    } catch (error) {
+      if (error instanceof ConditionalPutUnsupportedError) {
+        capabilities.conditionalCreate = false;
+        throw new Error(lang.__('STATE_ATOMIC_CREATE_REQUIRED'), { cause: error });
+      }
+      throw error;
+    }
   };
 
   const acquireLockObject = async (
@@ -55,10 +78,12 @@ export const createRemoteStateBackend = (
       const existingLock = await readLockObject();
 
       if (!existingLock) {
-        await adapter.write(lockKey, metadata);
-        const verify = await readLockObject();
-        if (verify && verify.id === metadata.id) {
-          return metadata;
+        const created = await writeLockObject(metadata);
+        if (created) {
+          const verify = await readLockObject();
+          if (verify && verify.id === metadata.id) {
+            return metadata;
+          }
         }
       } else {
         if (existingLock.hostname === os.hostname() && !isProcessAlive(existingLock.processId)) {
@@ -77,13 +102,19 @@ export const createRemoteStateBackend = (
 
         if (isLockStale(existingLock)) {
           throw new LockError(
-            `State is currently locked (stale lock detected).\n${formatLockInfo(existingLock)}\nThis lock appears to be stale. If you are certain no other operation is running, use:\n  si force-unlock ${existingLock.id}`,
+            lang.__('REGIONAL_LOCK_STALE', {
+              info: formatLockInfo(existingLock),
+              lockId: existingLock.id,
+            }),
             existingLock,
           );
         }
         if (Date.now() - startTime >= timeout) {
           throw new LockError(
-            `Failed to acquire lock after ${timeout / 1000} seconds.\n${formatLockInfo(existingLock)}\nIf you are certain no other operation is running, use:\n  si force-unlock ${existingLock.id}`,
+            lang.__('REGIONAL_LOCK_TIMEOUT', {
+              seconds: String(timeout / 1000),
+              info: formatLockInfo(existingLock),
+            }),
             existingLock,
           );
         }
@@ -107,124 +138,77 @@ export const createRemoteStateBackend = (
 
     const existingLock = await readLockObject();
     throw new LockError(
-      `Failed to acquire lock.\n${existingLock ? formatLockInfo(existingLock) : ''}\nIf you are certain no other operation is running, use:\n  si force-unlock ${existingLock?.id || 'unknown'}`,
+      lang.__('REGIONAL_LOCK_FAILED', { path: adapter.lockPath }),
       existingLock || undefined,
     );
   };
 
+  const releaseLock = async (lockId: string): Promise<void> => {
+    const existing = await readLockObject();
+    if (existing?.id === lockId) await adapter.delete(lockKey);
+    if (manualLockId === lockId) {
+      manualLockId = null;
+      store.clearPlanBase();
+    }
+  };
+
+  const withLock = async <T>(
+    operation: string,
+    fn: () => Promise<T>,
+    options?: LockOptions,
+    onLockAcquired?: (lockId: string) => void,
+  ): Promise<T> => {
+    const lock = await acquireLockObject(operation, options);
+    try {
+      return await writer.run(true, async () => {
+        if (!operation.startsWith('migrate')) await store.verifyPlanBase();
+        onLockAcquired?.(lock.id);
+        return fn();
+      });
+    } finally {
+      store.clearPlanBase();
+      await releaseLock(lock.id);
+    }
+  };
+
+  const mutate = async (operation: string, fn: () => Promise<void>): Promise<void> => {
+    if (writer.getStore() || manualLockId) return fn();
+    return withLock(operation, fn);
+  };
+
   return {
-    loadState: async (
-      provider: string,
-      app: string,
-      service: string,
-      stage: string,
-    ): Promise<StateFile> => {
-      const state = await adapter.read<StateFile>(config.key);
-      if (state) {
-        const migrated = migrateState(state);
-        const stageResources = migrated.stages?.[stage]?.resources ?? {};
-        const loaded = { ...migrated, resources: stageResources };
-        enforceMigrationMarker(loaded, markerAction);
-        return loaded;
-      }
-      return { version: CURRENT_STATE_VERSION, provider, app, service, stages: {}, resources: {} };
-    },
-
-    patchPersisted: async (patch: Record<string, unknown | undefined>): Promise<void> => {
-      const raw = await adapter.read<StateFile>(config.key);
-      const merged: Record<string, unknown> = raw ? { ...toPersistedState(raw) } : {};
-      for (const [key, value] of Object.entries(patch)) {
-        if (value === undefined) {
-          delete merged[key];
-        } else {
-          merged[key] = value;
-        }
-      }
-      await adapter.write(config.key, merged);
-    },
-
-    saveState: async (
-      state: StateFile,
-      app: string,
-      service: string,
-      stage: string,
-    ): Promise<void> => {
-      let existing: PersistedStateFile = {
-        version: CURRENT_STATE_VERSION,
-        provider: state.provider,
-        app,
-        service,
-        stages: {},
-      };
+    scope: normalized,
+    capabilities,
+    loadState: (): Promise<StateFile> => store.loadState(!writer.getStore() && !manualLockId),
+    saveState: (state): Promise<void> => mutate('state-save', () => store.saveState(state)),
+    patchPersisted: (patch): Promise<void> =>
+      mutate('migrate-metadata', () => store.patchPersisted(patch)),
+    upgradeLegacyState: (options) =>
+      mutate('migrate-upgrade', () => store.upgradeLegacyState(options)),
+    readStateSource: store.readStateSource,
+    probeWriteReadiness: store.probeWriteReadiness,
+    acquireLock: async (operation, options): Promise<string> => {
+      const lock = await acquireLockObject(operation, options);
       try {
-        const raw = await adapter.read<StateFile>(config.key);
-        if (raw) existing = toPersistedState(raw);
-      } catch {
-        // noop
-      }
-      const stateToSave: PersistedStateFile = {
-        ...existing,
-        version: CURRENT_STATE_VERSION,
-        app,
-        service,
-        provider: state.provider,
-        stages: {
-          ...existing.stages,
-          [stage]: {
-            resources: state.resources,
-            shared: state.stages?.[stage]?.shared ?? existing.stages?.[stage]?.shared ?? {},
-          },
-        },
-      };
-      await adapter.write(config.key, stateToSave);
-    },
-
-    acquireLock: async (operation: string, options?: LockOptions): Promise<string> => {
-      const meta = await acquireLockObject(operation, options);
-      return meta.id;
-    },
-
-    releaseLock: async (lockId: string): Promise<void> => {
-      const existing = await readLockObject();
-      if (existing && existing.id === lockId) {
-        await adapter.delete(lockKey);
+        if (!operation.startsWith('migrate')) await store.verifyPlanBase();
+        manualLockId = lock.id;
+        return lock.id;
+      } catch (error) {
+        await releaseLock(lock.id);
+        throw error;
       }
     },
-
-    forceUnlock: async (lockId: string): Promise<boolean> => {
+    releaseLock,
+    forceUnlock: async (lockId): Promise<boolean> => {
       const existing = await readLockObject();
       if (!existing) return false;
       if (existing.id !== lockId) {
         throw new Error(lang.__('LOCK_ID_MISMATCH', { actualId: existing.id, providedId: lockId }));
       }
-      await adapter.delete(lockKey);
+      await releaseLock(lockId);
       return true;
     },
-
-    readLock: async (): Promise<LockMetadata | null> => {
-      return readLockObject();
-    },
-
-    withLock: async <T>(
-      operation: string,
-      fn: () => Promise<T>,
-      options?: LockOptions,
-      onLockAcquired?: (lockId: string) => void,
-    ): Promise<T> => {
-      let lockId: string | null = null;
-      try {
-        const meta = await acquireLockObject(operation, options);
-        lockId = meta.id;
-        onLockAcquired?.(lockId);
-        return await fn();
-      } finally {
-        if (lockId) {
-          const existing = await readLockObject();
-          if (existing && existing.id === lockId) {
-            await adapter.delete(lockKey);
-          }
-        }
-      }
-    },
+    readLock: readLockObject,
+    withLock,
   };
 };

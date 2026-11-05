@@ -366,6 +366,17 @@ export type MockTencentClient = {
     CreateCustomDomain: jest.Mock;
     GetCustomDomain: jest.Mock;
     DeleteCustomDomain: jest.Mock;
+    // camelCase aliases matching the wrapped createTencentClient contract
+    createFunction: jest.Mock;
+    getFunction: jest.Mock;
+    deleteFunction: jest.Mock;
+    updateFunctionCode: jest.Mock;
+    updateFunctionConfiguration: jest.Mock;
+    createTrigger: jest.Mock;
+    deleteTrigger: jest.Mock;
+    createCustomDomain: jest.Mock;
+    getCustomDomain: jest.Mock;
+    deleteCustomDomain: jest.Mock;
   };
   cls: {
     CreateLogset: jest.Mock;
@@ -376,6 +387,16 @@ export type MockTencentClient = {
     ModifyTopic: jest.Mock;
     DeleteTopic: jest.Mock;
     CreateIndex: jest.Mock;
+    // camelCase aliases matching the wrapped cls operations contract
+    createLogset: jest.Mock;
+    getLogsetByName: jest.Mock;
+    deleteLogset: jest.Mock;
+    createTopic: jest.Mock;
+    getTopicByName: jest.Mock;
+    modifyTopic: jest.Mock;
+    deleteTopic: jest.Mock;
+    createFulltextIndex: jest.Mock;
+    deleteIndex: jest.Mock;
   };
   cam: {
     getOwnerUin: jest.Mock;
@@ -397,57 +418,86 @@ export type MockTencentClient = {
   };
 };
 
-export const createMockTencentClient = (): MockTencentClient => ({
-  scf: {
-    CreateFunction: jest.fn().mockResolvedValue({ FunctionName: 'test-function' }),
-    GetFunction: jest.fn().mockResolvedValue({ FunctionName: 'test-function', Status: 'Active' }),
-    DeleteFunction: jest.fn().mockResolvedValue({}),
-    UpdateFunctionCode: jest.fn().mockResolvedValue({}),
-    UpdateFunctionConfiguration: jest.fn().mockResolvedValue({}),
-    CreateTrigger: jest.fn().mockResolvedValue({ TriggerName: 'http-trigger', Type: 'http' }),
-    DeleteTrigger: jest.fn().mockResolvedValue({}),
-    CreateCustomDomain: jest.fn().mockResolvedValue({}),
-    GetCustomDomain: jest.fn().mockResolvedValue(null),
-    DeleteCustomDomain: jest.fn().mockResolvedValue({}),
-  },
-  cls: {
-    CreateLogset: jest.fn().mockResolvedValue({ LogsetId: 'logset-1' }),
-    DescribeLogsets: jest.fn().mockResolvedValue({ Logsets: [], TotalCount: 0 }),
-    DeleteLogset: jest.fn().mockResolvedValue({}),
-    CreateTopic: jest.fn().mockResolvedValue({ TopicId: 'topic-1' }),
-    DescribeTopics: jest.fn().mockResolvedValue({ Topics: [], TotalCount: 0 }),
-    ModifyTopic: jest.fn().mockResolvedValue({}),
-    DeleteTopic: jest.fn().mockResolvedValue({}),
-    CreateIndex: jest.fn().mockResolvedValue({}),
-  },
-  cam: {
-    getOwnerUin: jest.fn().mockResolvedValue('123456789'),
-    createRole: jest.fn().mockResolvedValue({
-      roleName: 'test-role',
-      roleId: 'role-123',
-      roleArn: 'test-role',
-      policyName: 'test-role-policy',
-    }),
-    getRole: jest.fn().mockResolvedValue({
-      roleName: 'test-role',
-      roleId: 'role-123',
-      roleArn: 'test-role',
-    }),
-    deleteRole: jest.fn().mockResolvedValue(undefined),
-    updateRolePolicy: jest.fn().mockResolvedValue(undefined),
-    updateManagedPolicies: jest.fn().mockResolvedValue(undefined),
-  },
-  cos: {
-    putBucket: jest.fn().mockResolvedValue({}),
-    getBucket: jest.fn().mockResolvedValue({ Name: 'test-bucket' }),
-    deleteBucket: jest.fn().mockResolvedValue({}),
-  },
-  cynosdb: {
-    CreateClusters: jest.fn().mockResolvedValue({ ClusterId: 'cluster-123' }),
-    DescribeClusters: jest.fn().mockResolvedValue({ ClusterSet: [] }),
-    DeleteCluster: jest.fn().mockResolvedValue({}),
-  },
-});
+export const createMockTencentClient = (): MockTencentClient => {
+  const client = {
+    scf: {
+      CreateFunction: jest.fn().mockResolvedValue({ FunctionName: 'test-function' }),
+      GetFunction: jest.fn().mockResolvedValue({ FunctionName: 'test-function', Status: 'Active' }),
+      DeleteFunction: jest.fn().mockResolvedValue({}),
+      UpdateFunctionCode: jest.fn().mockResolvedValue({}),
+      UpdateFunctionConfiguration: jest.fn().mockResolvedValue({}),
+      CreateTrigger: jest.fn().mockResolvedValue({ TriggerName: 'http-trigger', Type: 'http' }),
+      DeleteTrigger: jest.fn().mockResolvedValue({}),
+      CreateCustomDomain: jest.fn().mockResolvedValue({}),
+      GetCustomDomain: jest.fn().mockResolvedValue(null),
+      DeleteCustomDomain: jest.fn().mockResolvedValue({}),
+    },
+    cls: {
+      CreateLogset: jest.fn().mockResolvedValue({ LogsetId: 'logset-1' }),
+      DescribeLogsets: jest.fn().mockResolvedValue({ Logsets: [], TotalCount: 0 }),
+      DeleteLogset: jest.fn().mockResolvedValue({}),
+      CreateTopic: jest.fn().mockResolvedValue({ TopicId: 'topic-1' }),
+      DescribeTopics: jest.fn().mockResolvedValue({ Topics: [], TotalCount: 0 }),
+      ModifyTopic: jest.fn().mockResolvedValue({}),
+      DeleteTopic: jest.fn().mockResolvedValue({}),
+      CreateIndex: jest.fn().mockResolvedValue({}),
+    },
+    cam: {
+      getOwnerUin: jest.fn().mockResolvedValue('123456789'),
+      createRole: jest.fn().mockResolvedValue({
+        roleName: 'test-role',
+        roleId: 'role-123',
+        roleArn: 'test-role',
+        policyName: 'test-role-policy',
+      }),
+      getRole: jest.fn().mockResolvedValue({
+        roleName: 'test-role',
+        roleId: 'role-123',
+        roleArn: 'test-role',
+      }),
+      deleteRole: jest.fn().mockResolvedValue(undefined),
+      updateRolePolicy: jest.fn().mockResolvedValue(undefined),
+      updateManagedPolicies: jest.fn().mockResolvedValue(undefined),
+    },
+    cos: {
+      putBucket: jest.fn().mockResolvedValue({}),
+      getBucket: jest.fn().mockResolvedValue({ Name: 'test-bucket' }),
+      deleteBucket: jest.fn().mockResolvedValue({}),
+    },
+    cynosdb: {
+      CreateClusters: jest.fn().mockResolvedValue({ ClusterId: 'cluster-123' }),
+      DescribeClusters: jest.fn().mockResolvedValue({ ClusterSet: [] }),
+      DeleteCluster: jest.fn().mockResolvedValue({}),
+    },
+  } as unknown as MockTencentClient & Record<string, Record<string, jest.Mock>>;
+
+  // The real createTencentClient returns WRAPPED camelCase operations
+  // (createScfOperations / clsOperations / ...) — mirror that contract so
+  // service tests exercise the same surface as production code. Aliases share
+  // the same jest.fn() instances as the raw SDK-shaped entries.
+  const scf = client.scf as unknown as Record<string, jest.Mock>;
+  scf.createFunction = scf.CreateFunction;
+  scf.getFunction = scf.GetFunction;
+  scf.deleteFunction = scf.DeleteFunction;
+  scf.updateFunctionCode = scf.UpdateFunctionCode;
+  scf.updateFunctionConfiguration = scf.UpdateFunctionConfiguration;
+  scf.createTrigger = scf.CreateTrigger;
+  scf.deleteTrigger = scf.DeleteTrigger;
+  scf.createCustomDomain = scf.CreateCustomDomain;
+  scf.getCustomDomain = scf.GetCustomDomain;
+  scf.deleteCustomDomain = scf.DeleteCustomDomain;
+  const cls = client.cls as unknown as Record<string, jest.Mock>;
+  cls.createLogset = cls.CreateLogset;
+  cls.getLogsetByName = cls.DescribeLogsets;
+  cls.deleteLogset = cls.DeleteLogset;
+  cls.createTopic = cls.CreateTopic;
+  cls.getTopicByName = cls.DescribeTopics;
+  cls.modifyTopic = cls.ModifyTopic;
+  cls.deleteTopic = cls.DeleteTopic;
+  cls.createFulltextIndex = cls.CreateIndex;
+  cls.deleteIndex = cls.DeleteTopic;
+  return client;
+};
 
 export type MockVolcengineClient = {
   vefaas: {

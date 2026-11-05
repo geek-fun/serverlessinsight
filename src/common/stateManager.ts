@@ -1,14 +1,18 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import crypto from 'node:crypto';
+
 import {
   ResourceState,
   StateFile,
   PersistedStateFile,
   StateCorruptError,
   StateVersionError,
+  StateScopeMismatchError,
   CURRENT_STATE_VERSION,
 } from '../types';
+import { normalizeScope, DeploymentScope } from './stateScope';
+import { emptyDeploymentState } from './aggregateState';
 import { withLock, LockOptions } from './lockManager';
 import { logger } from './logger';
 
@@ -200,6 +204,10 @@ export const saveState = (
     // use default
   }
 
+  if (parseStateVersion(existing.version) > parseStateVersion(CURRENT_STATE_VERSION)) {
+    throw new StateVersionError(existing.version, CURRENT_STATE_VERSION);
+  }
+
   // Write updated stage resources, preserve all other stages
   const stateToSave: PersistedStateFile = {
     ...existing,
@@ -226,11 +234,15 @@ export const saveState = (
  * Back up the previous state file, then write tmp + fsync + rename. Shared by
  * saveState and patchPersistedState.
  */
-export const writeStateFileAtomically = (statePath: string, content: string): void => {
+export const writeStateFileAtomically = (
+  statePath: string,
+  content: string,
+  options: { backup?: boolean } = {},
+): void => {
   const tmpPath = `${statePath}.tmp`;
   const backupPath = `${statePath}.backup`;
   try {
-    if (fs.existsSync(statePath)) {
+    if (options.backup !== false && fs.existsSync(statePath)) {
       fs.copyFileSync(statePath, backupPath);
     }
     const fd = fs.openSync(tmpPath, 'w');
@@ -285,14 +297,13 @@ export const patchPersistedState = (
     // use default
   }
 
-  const patched: Record<string, unknown> = { ...existing };
-  for (const [key, value] of Object.entries(patch)) {
-    if (value === undefined) {
-      delete patched[key];
-    } else {
-      patched[key] = value;
-    }
+  if (parseStateVersion(existing.version) > parseStateVersion(CURRENT_STATE_VERSION)) {
+    throw new StateVersionError(existing.version, CURRENT_STATE_VERSION);
   }
+
+  const patched = Object.fromEntries(
+    Object.entries({ ...existing, ...patch }).filter(([, value]) => value !== undefined),
+  );
 
   const stateToSave = {
     ...patched,
@@ -326,6 +337,34 @@ export const saveStateWithLock = async (
     },
     options,
   );
+};
+
+export const emptyScopedState = (scope: DeploymentScope): StateFile => {
+  return emptyDeploymentState(scope);
+};
+
+export const validateScopedDocument = (raw: PersistedStateFile, scope: DeploymentScope): void => {
+  const normalized = normalizeScope(scope);
+  if (raw.version && raw.version !== CURRENT_STATE_VERSION) {
+    throw new StateVersionError(raw.version, CURRENT_STATE_VERSION);
+  }
+  const stored = {
+    provider: raw.provider,
+    app: raw.app,
+    service: raw.service,
+    stage: raw.scope?.stage,
+    region: raw.scope?.region,
+  };
+  const matches =
+    stored.provider === normalized.provider &&
+    stored.app === normalized.app &&
+    stored.service === normalized.service &&
+    !!raw.scope &&
+    raw.scope.stage === normalized.stage &&
+    raw.scope.region.toLowerCase() === normalized.region;
+  if (!matches) {
+    throw new StateScopeMismatchError(normalized, stored);
+  }
 };
 
 /* istanbul ignore next */

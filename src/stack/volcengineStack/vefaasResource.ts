@@ -555,7 +555,8 @@ const createDependentResources = async (
     return { logConfig, role, instances, sharedInstance };
   }
 
-  const roleName = customRoleName ?? buildFunctionRoleName(serviceName, context.stage, fn.key);
+  const roleName =
+    customRoleName ?? buildFunctionRoleName(serviceName, context.stage, context.region, fn.key);
   const trustedServices = getTrustedServicesForFunction(fn, context);
   const executionStatements = deriveVefaasExecutionStatements(fn, context);
 

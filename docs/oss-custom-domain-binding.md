@@ -77,17 +77,23 @@
 
 > 💡 **注意**：所有域名类型（根域名和子域名）现在统一使用阿里云推荐的 CNAME 域名（`taihangcda.cn` 系列），通过 `GetBucketInfo` API 自动获取正确的外网 Endpoint 并转换。
 
-## State.json 配置规范
+## Deployment state representation
+
+The example below is the single-deployment V4 executor/SaaS view. Local/Bucket
+persist the selected stage under V4 `stages[stage].providers[provider].regions[region]`
+at the original file/key. Native resource instances are unchanged; see
+[deployment state and migration](regional-deployment-state.md).
+
 
 ### v0.5.7 新增资源类型
 
 ServerlessInsight v0.5.7 新增了 `ALIYUN_OSS_DNS_CNAME` 资源类型，用于跟踪 DNS CNAME 记录。
 
-### 完整配置示例
+### Single-deployment V4 example
 
 ```json
 {
-  "version": "3.0",
+  "version": "4.0",
   "provider": "aliyun",
   "app": "your-app",
   "service": "your-service",
@@ -139,6 +145,10 @@ ServerlessInsight v0.5.7 新增了 `ALIYUN_OSS_DNS_CNAME` 资源类型，用于�
         }
       }
     }
+  },
+  "scope": {
+    "stage": "prod",
+    "region": "ap-southeast-1"
   }
 }
 ```

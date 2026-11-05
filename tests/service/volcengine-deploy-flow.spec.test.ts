@@ -1,5 +1,7 @@
 import path from 'node:path';
 import fs from 'node:fs/promises';
+
+import { cleanScopedState, readScopedState } from './scopedState';
 import { deploy } from '../../src/commands/deploy';
 import { createMockVolcengineClient, type MockVolcengineClient } from './mockCloudClient';
 
@@ -50,10 +52,12 @@ describe('Volcengine Deploy Flow Service Test', () => {
     mockCreateVolcengineClient.mockReturnValue(mockClient);
 
     await fs.rm(stateFilePath, { force: true }).catch(() => {});
+    await cleanScopedState('insight-volc-app', 'insight-volc');
   });
 
   afterEach(async () => {
     await fs.rm(stateFilePath, { force: true }).catch(() => {});
+    await cleanScopedState('insight-volc-app', 'insight-volc');
   });
 
   describe('Volcengine veFaaS Deploy', () => {
@@ -131,12 +135,18 @@ describe('Volcengine Deploy Flow Service Test', () => {
         expect.objectContaining({
           resourceType: 'project',
           resourcesList: ['proj-123'],
-          tags: [{ key: 'si-owned-by', value: 'insight-volc-app:shared:logs.project' }],
+          tags: [{ key: 'si-owned-by', value: 'insight-volc-app:shared:logs.project@cn-beijing' }],
         }),
       );
 
-      const saved = JSON.parse(await fs.readFile(stateFilePath, 'utf-8'));
-      expect(saved.stages.dev.shared['logs.project']).toMatchObject({
+      const saved = await readScopedState<import('../../src/types').StateFile>(
+        'insight-volc-app',
+        'insight-volc',
+        'dev',
+        'cn-beijing',
+        'volcengine',
+      );
+      expect(saved.stages.dev.shared?.['logs.project']).toMatchObject({
         definition: { projectName: 'insight-volc-app-dev-tls' },
         instances: [
           expect.objectContaining({

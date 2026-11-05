@@ -12,6 +12,8 @@ export type BucketStoreBackendConfig = {
   type: StateBackendType.BUCKET_STORE;
   bucket: string;
   key: string;
+  storageRegion?: string;
+  storageProvider?: string;
 };
 
 export type SaasBackendConfig = {
@@ -25,6 +27,8 @@ export type StateManagerConfigRaw = {
   type: string;
   bucket?: string;
   key?: string;
+  storageRegion?: string;
+  storageProvider?: string;
 };
 
 export type BackendConfigRaw = {

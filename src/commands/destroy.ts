@@ -9,6 +9,7 @@ import { destroyVolcengineStack } from '../stack/volcengineStack';
 export const destroyStack = async (options: {
   location: string;
   region?: string;
+  bindUnknownRegion?: string;
   provider?: string;
   accessKeyId?: string;
   accessKeySecret?: string;
@@ -48,9 +49,13 @@ export const destroyStack = async (options: {
     migrationMarker: 'refuse',
   });
 
-  // Initialize backend stage/deployment context before withLock. SaaS backends
-  // need loadState() to provision the deployment and set the active stage.
-  await backend.loadState(iac.provider.name, context.app, context.service, context.stage);
+  await backend.upgradeLegacyState?.({ bindUnknownRegion: options.bindUnknownRegion });
+  await backend.loadState();
+
+  const readiness = await backend.probeWriteReadiness();
+  if (!readiness.ready) {
+    throw new Error(readiness.reason ?? lang.__('STATE_WRITE_NOT_READY'));
+  }
 
   // ADR-005: wire the backend's event reporter into the global context so
   // executors can emit per-resource deployment events via context.reportEvent.

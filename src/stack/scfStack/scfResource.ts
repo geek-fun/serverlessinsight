@@ -677,7 +677,7 @@ const createDependentResources = async (
 
   const hasCamRole = existingInstances.some((i) => i.type === 'TENCENT_SCF_ROLE');
   const serviceName = `${context.app}-${context.service}`;
-  const defaultRoleName = buildFunctionRoleName(serviceName, context.stage, fn.key);
+  const defaultRoleName = buildFunctionRoleName(serviceName, context.stage, context.region, fn.key);
   const roleName = customRoleName ?? defaultRoleName;
   const executionStatements = deriveScfExecutionStatements(
     fn,

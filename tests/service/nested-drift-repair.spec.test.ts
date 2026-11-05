@@ -1,5 +1,7 @@
 import path from 'node:path';
 import fs from 'node:fs/promises';
+
+import { cleanScopedState, readScopedState } from './scopedState';
 import { deploy } from '../../src/commands/deploy';
 import {
   createMockAliyunClient,
@@ -111,10 +113,12 @@ describe('Nested drift repair deploy flows (issue #234 M2-M5)', () => {
       mockClient.ecs.getSecurityGroupRules.mockResolvedValue(healthySecurityGroupRules());
       mockCreateAliyunClient.mockReturnValue(mockClient);
       await fs.rm(NESTED_STATE_FILE, { force: true }).catch(() => {});
+      await cleanScopedState('nested-drift-app', 'nested-drift-service');
     });
 
     afterEach(async () => {
       await fs.rm(NESTED_STATE_FILE, { force: true }).catch(() => {});
+      await cleanScopedState('nested-drift-app', 'nested-drift-service');
     });
 
     it('repairs drifted security-group rules on the next deploy (issue #234 M2)', async () => {
@@ -191,7 +195,12 @@ describe('Nested drift repair deploy flows (issue #234 M2-M5)', () => {
 
       // The recreated target replaces the stale instance in state, so later
       // deploys and destroy track the target that actually exists.
-      const savedState = JSON.parse(await fs.readFile(NESTED_STATE_FILE, 'utf-8')) as {
+      const savedState = (await readScopedState(
+        'nested-drift-app',
+        'nested-drift-service',
+        'dev',
+        'cn-hangzhou',
+      )) as {
         stages: Record<
           string,
           { resources: Record<string, { instances: Array<{ type: string; id: string }> }> }
@@ -337,10 +346,12 @@ describe('Nested drift repair deploy flows (issue #234 M2-M5)', () => {
       client = buildTencentClient();
       mockCreateTencentClient.mockReturnValue(client);
       await fs.rm(TENCENT_LOG_STATE_FILE, { force: true }).catch(() => {});
+      await cleanScopedState('insight-poc-app-log', 'insight-poc-tencent-log');
     });
 
     afterEach(async () => {
       await fs.rm(TENCENT_LOG_STATE_FILE, { force: true }).catch(() => {});
+      await cleanScopedState('insight-poc-app-log', 'insight-poc-tencent-log');
     });
 
     it('repairs drifted CLS topic attributes on the next deploy (issue #234 M3)', async () => {
@@ -398,10 +409,12 @@ describe('Nested drift repair deploy flows (issue #234 M2-M5)', () => {
       mockClient = createMockVolcengineClient();
       mockCreateVolcengineClient.mockReturnValue(mockClient);
       await fs.rm(VOLC_LOG_STATE_FILE, { force: true }).catch(() => {});
+      await cleanScopedState('insight-volc-nested-app', 'insight-volc-nested');
     });
 
     afterEach(async () => {
       await fs.rm(VOLC_LOG_STATE_FILE, { force: true }).catch(() => {});
+      await cleanScopedState('insight-volc-nested-app', 'insight-volc-nested');
     });
 
     it('repairs a drifted TLS topic ttl on the next deploy (issue #234 M5)', async () => {

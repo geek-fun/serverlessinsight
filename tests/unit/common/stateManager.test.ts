@@ -1,9 +1,19 @@
+jest.mock('../../../src/common/logger', () => ({
+  logger: { info: jest.fn(), warn: jest.fn(), error: jest.fn(), debug: jest.fn() },
+}));
+
+jest.mock('node:fs', () =>
+  jest.requireActual('../../autils/memoryFileSystem').createMemoryFileSystem(),
+);
+
 import {
   ensureStateDir,
   getStatePath,
   loadState,
   saveState,
   saveStateWithLock,
+  validateScopedDocument,
+  emptyScopedState,
   getResource,
   setResource,
   removeResource,
@@ -16,11 +26,13 @@ import {
   removeSharedResource,
   getAllSharedResources,
 } from '../../../src/common/stateManager';
+import type { DeploymentScope } from '../../../src/common/stateScope';
 import {
   ResourceState,
   CURRENT_STATE_VERSION,
   StateCorruptError,
   StateVersionError,
+  StateScopeMismatchError,
 } from '../../../src/types';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -292,6 +304,25 @@ describe('StateManager', () => {
           expect(() =>
             loadState('tencent', 'test-app', 'test-service', 'default', testDir),
           ).toThrow(StateVersionError);
+        } finally {
+          clearStateMigrations();
+        }
+      });
+
+      it('loads an older version as-is when only a different version has a registered migration', () => {
+        registerStateMigration('0.5', (state) => ({ ...state, version: CURRENT_STATE_VERSION }));
+        try {
+          writeState({
+            version: '0.4',
+            provider: 'tencent',
+            app: 'test-app',
+            service: 'test-service',
+            stages: { default: { resources: {} } },
+            resources: {},
+          });
+
+          const state = loadState('tencent', 'test-app', 'test-service', 'default', testDir);
+          expect(state.version).toBe('0.4');
         } finally {
           clearStateMigrations();
         }
@@ -949,6 +980,47 @@ describe('StateManager', () => {
       const roleArn = getRoleArnFromState(updatedState);
 
       expect(roleArn).toBeUndefined();
+    });
+  });
+
+  describe('deployment view validation', () => {
+    const scope: DeploymentScope = {
+      provider: 'aliyun',
+      app: 'test-app',
+      service: 'test-service',
+      stage: 'dev',
+      region: 'cn-hangzhou',
+    };
+    it('creates the canonical single-deployment projection', () => {
+      expect(emptyScopedState({ ...scope, region: 'CN-Hangzhou' })).toMatchObject({
+        version: CURRENT_STATE_VERSION,
+        provider: 'aliyun',
+        app: 'test-app',
+        service: 'test-service',
+        scope: { stage: 'dev', region: 'cn-hangzhou' },
+        stages: { dev: { resources: {}, shared: {} } },
+        resources: {},
+      });
+    });
+
+    it('validates exact deployment identities without changing their cloud identifiers', () => {
+      const view = emptyScopedState(scope);
+      expect(() => validateScopedDocument(view, scope)).not.toThrow();
+      [
+        { app: 'foreign' },
+        { service: 'foreign' },
+        { provider: 'tencent' },
+        { scope: { stage: 'test', region: scope.region } },
+        { scope: { stage: scope.stage, region: 'cn-beijing' } },
+        { scope: undefined },
+      ].forEach((foreign) =>
+        expect(() => validateScopedDocument({ ...view, ...foreign }, scope)).toThrow(
+          StateScopeMismatchError,
+        ),
+      );
+      expect(() => validateScopedDocument({ ...view, version: '5.0' }, scope)).toThrow(
+        StateVersionError,
+      );
     });
   });
 });

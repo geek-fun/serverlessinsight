@@ -478,7 +478,9 @@ describe('DatabaseResource', () => {
 
       expect(mockEsOperations.createApp).toHaveBeenCalledWith(
         expect.objectContaining({
-          tags: [{ key: 'si-owned-by', value: 'test-app-test-service:databases.my_es' }],
+          tags: [
+            { key: 'si-owned-by', value: 'test-app-test-service:databases.my_es@cn-hangzhou' },
+          ],
         }),
       );
     });
@@ -507,7 +509,9 @@ describe('DatabaseResource', () => {
 
       expect(mockRdsOperations.createInstance).toHaveBeenCalledWith(
         expect.objectContaining({
-          tags: [{ key: 'si-owned-by', value: 'test-app-test-service:databases.my_rds' }],
+          tags: [
+            { key: 'si-owned-by', value: 'test-app-test-service:databases.my_rds@cn-hangzhou' },
+          ],
         }),
       );
     });

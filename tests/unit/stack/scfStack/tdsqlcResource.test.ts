@@ -151,7 +151,10 @@ describe('TdsqlcResource', () => {
           MinCpu: 1,
           MaxCpu: 8,
           ResourceTags: [
-            { TagKey: 'si-owned-by', TagValue: 'test-app-test-service:databases.test_db' },
+            {
+              TagKey: 'si-owned-by',
+              TagValue: 'test-app-test-service:databases.test_db@ap-guangzhou',
+            },
           ],
         }),
       );

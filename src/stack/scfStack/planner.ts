@@ -9,7 +9,7 @@ import { generateEsPlan } from './esServerlessPlanner';
 
 export const generateTencentPlan = async (iac: ServerlessIac, backend: StateBackend) => {
   const context = getContext();
-  const state = await backend.loadState(iac.provider.name, iac.app, iac.service, context.stage);
+  const state = await backend.loadState();
 
   const functionPlan = await generateFunctionPlan(context, state, iac.functions);
   const bucketPlan = await generateBucketPlan(context, state, iac.buckets);

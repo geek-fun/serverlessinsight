@@ -1,7 +1,7 @@
 import path from 'node:path';
 import fs from 'node:fs/promises';
 import { deploy } from '../../src/commands/deploy';
-import { loadState } from '../../src/common/stateManager';
+import { cleanScopedState, readScopedState } from './scopedState';
 import { createMockAliyunClient, type MockAliyunClient } from './mockCloudClient';
 import type { StateFile } from '../../src/types';
 
@@ -91,14 +91,16 @@ describe('Timer Trigger Flow Service Test', () => {
     wireTriggerStore();
 
     await fs.rm(stateFilePath, { force: true }).catch(() => {});
+    await cleanScopedState('insight-poc-timer-app', 'insight-poc-timer');
   });
 
   afterEach(async () => {
     await fs.rm(stateFilePath, { force: true }).catch(() => {});
+    await cleanScopedState('insight-poc-timer-app', 'insight-poc-timer');
   });
 
-  const loadStateFile = (): StateFile =>
-    loadState('aliyun', 'insight-poc-timer-app', 'insight-poc-timer', 'dev');
+  const loadStateFile = () =>
+    readScopedState<StateFile>('insight-poc-timer-app', 'insight-poc-timer', 'dev', 'cn-hangzhou');
 
   it('should deploy named timer triggers with the translated dialect and register them in state', async () => {
     await deploy({

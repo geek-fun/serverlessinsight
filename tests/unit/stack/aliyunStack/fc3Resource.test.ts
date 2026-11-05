@@ -1355,7 +1355,9 @@ describe('Fc3Resource', () => {
 
       expect(mockedFc3Operations.createFunction).toHaveBeenCalledWith(
         expect.objectContaining({
-          tags: [{ key: 'si-owned-by', value: 'test-app-test-service:functions.test_fn' }],
+          tags: [
+            { key: 'si-owned-by', value: 'test-app-test-service:functions.test_fn@cn-hangzhou' },
+          ],
         }),
         'test.zip',
         undefined,
@@ -4526,15 +4528,15 @@ describe('Fc3Resource', () => {
       };
 
       mockedRamOperations.createRole.mockResolvedValueOnce({
-        roleName: 'test-app-test-service-default-test-fn-role',
-        arn: 'acs:ram::123456789012:role/test-app-test-service-default-test-fn-role',
-        policyName: 'test-app-test-service-default-test-fn-role-policy',
+        roleName: 'test-app-test-service-default-cn-hangzhou-test-fn-role',
+        arn: 'acs:ram::123456789012:role/test-app-test-service-default-cn-hangzhou-test-fn-role',
+        policyName: 'test-app-test-service-default-cn-hangzhou-test-fn-role-policy',
       });
 
       await createResource(mockContext, fnWithDefaultRole, initialState);
 
       expect(mockedRamOperations.createRole).toHaveBeenCalledWith(
-        'test-app-test-service-default-test-fn-role',
+        'test-app-test-service-default-cn-hangzhou-test-fn-role',
         ['fc.aliyuncs.com'],
         undefined,
         fnWithDefaultRole.iam.role.statements,
@@ -4963,14 +4965,14 @@ describe('Fc3Resource', () => {
       const readyState = { ...initialState, _ready: true };
       mockedStateManager.setResource.mockReturnValue(readyState);
       mockedRamOperations.createRole.mockResolvedValue({
-        roleName: 'test-app-test-service-default-test-fn-role',
-        arn: 'acs:ram::123456789012:role/test-app-test-service-default-test-fn-role',
+        roleName: 'test-app-test-service-default-cn-hangzhou-test-fn-role',
+        arn: 'acs:ram::123456789012:role/test-app-test-service-default-cn-hangzhou-test-fn-role',
       });
 
       await createResource(mockContext, testFunction, initialState);
 
       expect(mockedRamOperations.createRole).toHaveBeenCalledWith(
-        'test-app-test-service-default-test-fn-role',
+        'test-app-test-service-default-cn-hangzhou-test-fn-role',
         ['fc.aliyuncs.com'],
         undefined,
         undefined,
@@ -4979,7 +4981,7 @@ describe('Fc3Resource', () => {
       );
       expect(mockedFc3Operations.createFunction).toHaveBeenCalledWith(
         expect.objectContaining({
-          role: 'acs:ram::123456789012:role/test-app-test-service-default-test-fn-role',
+          role: 'acs:ram::123456789012:role/test-app-test-service-default-cn-hangzhou-test-fn-role',
         }),
         'test.zip',
         undefined,
@@ -5156,7 +5158,12 @@ describe('Fc3Resource', () => {
         definition: { ...mockDefinition, iam: { role: { statements } } },
         instances: [],
       });
-      const roleName = buildFunctionRoleName('test-app-test-service', 'default', 'test_fn');
+      const roleName = buildFunctionRoleName(
+        'test-app-test-service',
+        'default',
+        'cn-hangzhou',
+        'test_fn',
+      );
       mockedRamOperations.createRole.mockResolvedValue({
         roleName,
         arn: `acs:ram::123456789012:role/${roleName}`,

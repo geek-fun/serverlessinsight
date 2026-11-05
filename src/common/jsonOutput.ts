@@ -2,20 +2,9 @@ import { redactAttributeDiffs } from './planRedaction';
 import type { AttributeDiff, PlanItem } from '../types';
 import { computeAttributeDiffs, isRecreate } from './planFormatter';
 
-/**
- * Machine-readable output channel (issue #250): the `--json` surface of the CLI.
- *
- * Contract with agents:
- * - logs (pino) go to stderr, JSON results go to stdout — a pipe of stdout is
- *   always a single JSON document (jq-parseable);
- * - every envelope carries a version field (`planVersion` / `validateVersion` /
- *   `showVersion`) so consumers can pin a shape;
- * - failures emit `{ error: { code, message } }` where `code` is the stable
- *   i18n key behind the message — locale changes never change the code.
- */
-export const PLAN_JSON_VERSION = 1;
+export const PLAN_JSON_VERSION = 2;
 export const VALIDATE_JSON_VERSION = 1;
-export const SHOW_JSON_VERSION = 1;
+export const SHOW_JSON_VERSION = 2;
 
 let jsonMode = false;
 
@@ -54,6 +43,7 @@ export type PlanIdentity = {
   app: string;
   service: string;
   stage: string;
+  region: string;
 };
 
 export type PlanJsonPayload = PlanIdentity & {
@@ -143,6 +133,7 @@ export type ShowJsonPayload = PlanIdentity & {
   managedBy?: string;
   stateLocation: string;
   backend: 'saas' | 'bucket_store' | 'local';
+  stateSource?: 'scoped' | 'legacy' | 'empty';
   locked: boolean;
   lock: Record<string, unknown> | null;
   resources: Record<string, unknown>;

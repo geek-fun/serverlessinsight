@@ -91,12 +91,7 @@ describe('destroyer', () => {
     it('should destroy stack successfully', async () => {
       await destroyTencentStack(mockBackend);
 
-      expect(mockBackend.loadState).toHaveBeenCalledWith(
-        ProviderEnum.TENCENT,
-        'test-app',
-        'test-service',
-        'dev',
-      );
+      expect(mockBackend.loadState).toHaveBeenCalledWith();
       expect(scfPlanner.generateFunctionPlan).toHaveBeenCalledWith(
         expect.anything(),
         initialState,
@@ -165,9 +160,6 @@ describe('destroyer', () => {
 
       expect(mockBackend.saveState).toHaveBeenCalledWith(
         expect.objectContaining({ resources: {} }),
-        'test-app',
-        'test-service',
-        'dev',
       );
     });
 
@@ -214,9 +206,6 @@ describe('destroyer', () => {
             },
           },
         }),
-        'test-app',
-        'test-service',
-        'dev',
       );
     });
 
