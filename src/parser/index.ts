@@ -15,6 +15,7 @@ import { parse } from 'yaml';
 import { validateYaml } from '../validator';
 import { parseBucket } from './bucketParser';
 import { parseTable } from './tableParser';
+import { isStringTemplateField } from './templateValues';
 import { calcValue } from '../common';
 import { lang } from '../lang';
 
@@ -83,18 +84,26 @@ export const parseYaml = (iacLocation: string): ServerlessIac => {
   return transformYaml(iacJson);
 };
 
-const evaluateObject = <T>(obj: T, ctx: Context, iacVars?: Record<string, unknown>): T => {
+const evaluateObject = <T>(
+  obj: T,
+  ctx: Context,
+  iacVars?: Record<string, unknown>,
+  path: Array<string | number> = [],
+): T => {
   if (typeof obj === 'string') {
-    return calcValue<string>(obj, ctx, iacVars) as T;
+    return calcValue<string>(obj, ctx, iacVars, !isStringTemplateField(path)) as T;
   }
 
   if (Array.isArray(obj)) {
-    return obj.map((item) => evaluateObject(item, ctx, iacVars)) as T;
+    return obj.map((item, index) => evaluateObject(item, ctx, iacVars, [...path, index])) as T;
   }
 
   if (typeof obj === 'object' && obj !== null) {
     return Object.fromEntries(
-      Object.entries(obj).map(([key, val]) => [key, evaluateObject(val, ctx, iacVars)]),
+      Object.entries(obj).map(([key, val]) => [
+        key,
+        evaluateObject(val, ctx, iacVars, [...path, key]),
+      ]),
     ) as T;
   }
 

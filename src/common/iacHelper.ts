@@ -53,7 +53,12 @@ const inferType = <T>(value: string, wasTemplateRef: boolean): T => {
 };
 
 /* istanbul ignore next */
-export const calcValue = <T>(rawValue: string, ctx: Context, iacVars?: Vars): T => {
+export const calcValue = <T>(
+  rawValue: string,
+  ctx: Context,
+  iacVars?: Vars,
+  inferScalar = true,
+): T => {
   const containsStage = rawValue.match(/\$\{ctx.stage}/);
   const containsVar = rawValue.match(/\$\{vars.\w+}/);
   const containsMap = rawValue.match(/\$\{stages\.(\w+)}/);
@@ -105,7 +110,7 @@ export const calcValue = <T>(rawValue: string, ctx: Context, iacVars?: Vars): T 
     });
   }
 
-  return inferType<T>(value, isExactTemplateRef);
+  return inferType<T>(value, inferScalar && isExactTemplateRef);
 };
 
 /* istanbul ignore next */
