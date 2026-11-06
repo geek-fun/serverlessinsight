@@ -8,14 +8,6 @@ export type BackendCapabilities = {
   conditionalCreate: boolean;
 };
 
-export class ConditionalPutUnsupportedError extends Error {
-  constructor(cause: unknown) {
-    super('storage does not support conditional (create-only) writes');
-    this.name = 'ConditionalPutUnsupportedError';
-    this.cause = cause;
-  }
-}
-
 export type WriteReadiness = {
   ready: boolean;
   source: StateSource;
@@ -31,8 +23,6 @@ export type StorageAdapter = {
   read: <T>(key: string) => Promise<T | null>;
   /** Write an object to storage */
   write: (key: string, data: unknown) => Promise<void>;
-  /** false means another writer won; unsupported conditional creation must throw. */
-  putIfAbsent?: (key: string, data: unknown) => Promise<boolean>;
   /** Delete an object from storage */
   delete: (key: string) => Promise<void>;
   /** The base path for lock metadata (e.g., 'oss://bucket/key') */

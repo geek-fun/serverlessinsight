@@ -7,7 +7,6 @@ import { DEFAULT_LOCK_TIMEOUT, DEFAULT_LOCK_RETRY_DELAY } from '../constants';
 import { LockError, formatLockInfo } from '../lockManager';
 import { logger } from '../logger';
 import { lang } from '../../lang';
-import { ConditionalPutUnsupportedError } from './types';
 import {
   LOCK_KEY_SUFFIX,
   sleep,
@@ -34,7 +33,7 @@ export const createRemoteStateBackend = (
   const normalized = normalizeScope(config.scope);
   const lockKey = `${config.key}${LOCK_KEY_SUFFIX}`;
   const capabilities: BackendCapabilities = {
-    conditionalCreate: typeof adapter.putIfAbsent === 'function',
+    conditionalCreate: false,
   };
   const store = createAggregateStore(adapter, normalized, {
     key: config.key,
@@ -46,19 +45,6 @@ export const createRemoteStateBackend = (
 
   const readLockObject = async (): Promise<LockMetadata | null> => {
     return adapter.read<LockMetadata>(lockKey);
-  };
-
-  const writeLockObject = async (metadata: LockMetadata): Promise<boolean> => {
-    if (!adapter.putIfAbsent) throw new Error(lang.__('STATE_ATOMIC_CREATE_REQUIRED'));
-    try {
-      return await adapter.putIfAbsent(lockKey, metadata);
-    } catch (error) {
-      if (error instanceof ConditionalPutUnsupportedError) {
-        capabilities.conditionalCreate = false;
-        throw new Error(lang.__('STATE_ATOMIC_CREATE_REQUIRED'), { cause: error });
-      }
-      throw error;
-    }
   };
 
   const acquireLockObject = async (
@@ -78,12 +64,10 @@ export const createRemoteStateBackend = (
       const existingLock = await readLockObject();
 
       if (!existingLock) {
-        const created = await writeLockObject(metadata);
-        if (created) {
-          const verify = await readLockObject();
-          if (verify && verify.id === metadata.id) {
-            return metadata;
-          }
+        await adapter.write(lockKey, metadata);
+        const verify = await readLockObject();
+        if (verify && verify.id === metadata.id) {
+          return metadata;
         }
       } else {
         if (existingLock.hostname === os.hostname() && !isProcessAlive(existingLock.processId)) {

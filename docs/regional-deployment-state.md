@@ -78,7 +78,9 @@ One command reads a single-deployment V4 view. Under the whole-file deployment l
 writes read the fresh aggregate and merge only that partition. A change to the planned
 partition invalidates the plan before cloud execution; changes to siblings do not.
 Partial execution results stay in the selected partition. All Local/Bucket scopes
-serialize against the same file/key, including migrations and SaaS handoffs.
+share the same file/key lock, including migrations and SaaS handoffs. Bucket locks
+are best-effort; externally serialize writers as described in the
+[known concurrency limitation](state-locking.md#known-issues-bucket-store-concurrency).
 
 Bucket storage provider, region and credentials are independent from workload overrides.
 `storageProvider` and `storageRegion` explicitly select storage; otherwise the original

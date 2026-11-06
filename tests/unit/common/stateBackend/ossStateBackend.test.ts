@@ -5,7 +5,6 @@ import type { StorageAdapter } from '../../../../src/common/stateBackend/types';
 
 const mockOssClient = {
   get: jest.fn(),
-  getBucketVersioning: jest.fn().mockResolvedValue({}),
   put: jest.fn(),
   delete: jest.fn(),
 };
@@ -25,7 +24,6 @@ jest.mock('../../../../src/common/stateBackend/remoteStateBackend', () => {
 describe('ossStateBackend (scope-bound, issue #280)', () => {
   beforeEach(() => {
     jest.clearAllMocks();
-    mockOssClient.getBucketVersioning.mockResolvedValue({});
   });
 
   const scope = {
@@ -44,8 +42,6 @@ describe('ossStateBackend (scope-bound, issue #280)', () => {
     accessKeyId: 'test-key',
     accessKeySecret: 'test-secret',
   };
-
-  const STATE_KEY = 'state.json';
 
   /** Creates the backend and captures the adapter and config handed to the remote backend. */
   const captureWiring = (): { adapter: StorageAdapter; remoteConfig: RemoteBackendConfig } => {
@@ -159,53 +155,13 @@ describe('ossStateBackend (scope-bound, issue #280)', () => {
       expect(key).toBe('state.json');
       expect(body.toString('utf-8')).toBe(JSON.stringify(data, null, 2));
     });
-  });
 
-  describe('adapter.putIfAbsent', () => {
-    it.each(['Enabled', 'Suspended'])(
-      'refuses atomic creation when bucket versioning is %s',
-      async (versionStatus) => {
-        mockOssClient.getBucketVersioning.mockResolvedValue({ versionStatus });
-        const { adapter } = captureWiring();
-        await expect(adapter.putIfAbsent!(STATE_KEY, {})).rejects.toThrow('conditional');
-        expect(mockOssClient.put).not.toHaveBeenCalled();
-      },
-    );
-    it('propagates failure to inspect bucket versioning without writing', async () => {
-      mockOssClient.getBucketVersioning.mockRejectedValue(new Error('access denied'));
-      const { adapter } = captureWiring();
-      await expect(adapter.putIfAbsent!(STATE_KEY, {})).rejects.toThrow('access denied');
-      expect(mockOssClient.put).not.toHaveBeenCalled();
-    });
-
-    it('creates exclusively via x-oss-forbid-overwrite and returns true', async () => {
-      mockOssClient.put.mockResolvedValue(undefined);
-      const { adapter } = captureWiring();
-      const data = { serial: 1 };
-
-      await expect(adapter.putIfAbsent!(STATE_KEY, data)).resolves.toBe(true);
-      expect(mockOssClient.put).toHaveBeenCalledWith(STATE_KEY, expect.any(Buffer), {
-        headers: { 'x-oss-forbid-overwrite': 'true' },
-      });
-    });
-
-    it.each(['FileAlreadyExists', 'EtagMismatch', 'PreconditionFailed'])(
-      'returns false when the object already exists (%s)',
-      async (code) => {
-        mockOssClient.put.mockRejectedValue({ code });
-        const { adapter } = captureWiring();
-
-        await expect(adapter.putIfAbsent!(STATE_KEY, { serial: 1 })).resolves.toBe(false);
-      },
-    );
-
-    it('propagates unrelated putIfAbsent errors', async () => {
-      mockOssClient.put.mockRejectedValue({ code: 'RequestTimeout' });
+    it('propagates failed ordinary writes', async () => {
+      const error = new Error('write denied');
+      mockOssClient.put.mockRejectedValueOnce(error);
       const { adapter } = captureWiring();
 
-      await expect(adapter.putIfAbsent!(STATE_KEY, { serial: 1 })).rejects.toMatchObject({
-        code: 'RequestTimeout',
-      });
+      await expect(adapter.write('state.json', {})).rejects.toBe(error);
     });
   });
 

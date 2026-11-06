@@ -1,9 +1,6 @@
 import os from 'node:os';
 import { createRemoteStateBackend } from '../../../../src/common/stateBackend/remoteStateBackend';
-import {
-  ConditionalPutUnsupportedError,
-  StorageAdapter,
-} from '../../../../src/common/stateBackend/types';
+import type { StorageAdapter } from '../../../../src/common/stateBackend/types';
 import {
   LockMetadata,
   StateCorruptError,
@@ -38,11 +35,6 @@ const createFakeAdapter = (initial: Record<string, unknown> = {}): FakeAdapter =
     ),
     write: jest.fn(async (key: string, data: unknown) => {
       store.set(key, JSON.parse(JSON.stringify(data)));
-    }),
-    putIfAbsent: jest.fn(async (key: string, data: unknown) => {
-      if (store.has(key)) return false;
-      store.set(key, JSON.parse(JSON.stringify(data)));
-      return true;
     }),
     delete: jest.fn(async (key: string) => {
       store.delete(key);
@@ -90,14 +82,14 @@ describe('remoteStateBackend (scope-bound, issue #280)', () => {
   });
 
   describe('creation contract', () => {
-    it('binds the normalized scope and declares conditional create when supported', () => {
+    it('binds the normalized scope and reports non-atomic Bucket locking', () => {
       const backend = createRemoteStateBackend(adapter, {
         scope: { ...scope, region: 'CN-Hangzhou' },
         key: LEGACY_KEY,
       });
 
       expect(backend.scope).toEqual({ ...scope, region: 'cn-hangzhou' });
-      expect(backend.capabilities).toEqual({ conditionalCreate: true });
+      expect(backend.capabilities).toEqual({ conditionalCreate: false });
       expect(backend).toHaveProperty('loadState');
       expect(backend).toHaveProperty('saveState');
       expect(backend).toHaveProperty('readStateSource');
@@ -105,14 +97,15 @@ describe('remoteStateBackend (scope-bound, issue #280)', () => {
       expect(backend).toHaveProperty('patchPersisted');
     });
 
-    it('downgrades capabilities when the adapter cannot conditionally create', () => {
-      delete (adapter as Partial<StorageAdapter>).putIfAbsent;
+    it('does not access storage when constructing the backend', () => {
       const backend = createRemoteStateBackend(adapter, {
         scope,
         key: LEGACY_KEY,
       });
 
       expect(backend.capabilities).toEqual({ conditionalCreate: false });
+      expect(adapter.read).not.toHaveBeenCalled();
+      expect(adapter.write).not.toHaveBeenCalled();
     });
   });
 
@@ -191,7 +184,7 @@ describe('remoteStateBackend (scope-bound, issue #280)', () => {
   });
 
   describe('acquireLock', () => {
-    it('acquires the scoped lock object exclusively via putIfAbsent', async () => {
+    it('writes and verifies the original shared lock object', async () => {
       const backend = createRemoteStateBackend(adapter, {
         scope,
         key: LEGACY_KEY,
@@ -199,7 +192,7 @@ describe('remoteStateBackend (scope-bound, issue #280)', () => {
 
       const lockId = await backend.acquireLock('deploy');
 
-      expect(adapter.putIfAbsent).toHaveBeenCalledWith(LOCK_KEY, expect.anything());
+      expect(adapter.write).toHaveBeenCalledWith(LOCK_KEY, expect.anything());
       expect(lockId).toBe((adapter.store.get(LOCK_KEY) as LockMetadata).id);
       expect(await backend.readLock()).toMatchObject({ id: lockId, operation: 'deploy' });
     });
@@ -248,52 +241,62 @@ describe('remoteStateBackend (scope-bound, issue #280)', () => {
       );
     });
 
-    it('loses the exclusive-create race and reports the failure', async () => {
-      (adapter.putIfAbsent as jest.Mock).mockResolvedValue(false);
-      const backend = createRemoteStateBackend(adapter, {
-        scope,
-        key: LEGACY_KEY,
+    it('does not run the operation when another writer replaces the lock before verification', async () => {
+      (adapter.write as jest.Mock).mockImplementationOnce(async (key: string) => {
+        adapter.store.set(key, makeLock());
       });
+      const backend = createRemoteStateBackend(adapter, { scope, key: LEGACY_KEY });
+      const callback = jest.fn();
 
       await expect(
-        backend.acquireLock('deploy', { timeout: 0, maxRetries: 0, retryDelay: 0 }),
+        backend.withLock('deploy', callback, { timeout: 0, maxRetries: 0, retryDelay: 0 }),
       ).rejects.toThrow('Failed to acquire lock');
+      expect(callback).not.toHaveBeenCalled();
+      expect(adapter.delete).not.toHaveBeenCalled();
     });
 
-    it('refuses lock acquisition when conditional creation is unsupported', async () => {
-      (adapter.putIfAbsent as jest.Mock).mockRejectedValueOnce(
-        new ConditionalPutUnsupportedError('unsupported'),
-      );
-      const backend = createRemoteStateBackend(adapter, {
-        scope,
-        key: LEGACY_KEY,
-      });
-      await expect(backend.acquireLock('deploy')).rejects.toThrow('cannot atomically');
-      expect(backend.capabilities.conditionalCreate).toBe(false);
-      expect(adapter.store.has(LOCK_KEY)).toBe(false);
+    it('does not run the operation when the written lock cannot be read back', async () => {
+      (adapter.read as jest.Mock).mockResolvedValue(null);
+      const backend = createRemoteStateBackend(adapter, { scope, key: LEGACY_KEY });
+      const callback = jest.fn();
+
+      await expect(
+        backend.withLock('deploy', callback, { timeout: 0, maxRetries: 0, retryDelay: 0 }),
+      ).rejects.toThrow('Failed to acquire lock');
+      expect(callback).not.toHaveBeenCalled();
     });
 
-    it('refuses lock acquisition without conditional creation', async () => {
-      delete (adapter as Partial<StorageAdapter>).putIfAbsent;
-      const backend = createRemoteStateBackend(adapter, {
-        scope,
-        key: LEGACY_KEY,
-      });
-      await expect(backend.acquireLock('deploy')).rejects.toThrow('cannot atomically');
-      expect(adapter.store.has(LOCK_KEY)).toBe(false);
-    });
+    it('propagates a failed initial lock read without writing or running the operation', async () => {
+      const error = new Error('network down');
+      (adapter.read as jest.Mock).mockRejectedValueOnce(error);
+      const backend = createRemoteStateBackend(adapter, { scope, key: LEGACY_KEY });
+      const callback = jest.fn();
 
-    it('rethrows unexpected putIfAbsent failures instead of downgrading exclusivity', async () => {
-      (adapter.putIfAbsent as jest.Mock).mockRejectedValue(new Error('network down'));
-      const backend = createRemoteStateBackend(adapter, {
-        scope,
-        key: LEGACY_KEY,
-      });
-
-      await expect(backend.acquireLock('deploy', { timeout: 0, maxRetries: 0 })).rejects.toThrow(
-        'network down',
-      );
+      await expect(backend.withLock('deploy', callback)).rejects.toBe(error);
       expect(adapter.write).not.toHaveBeenCalled();
+      expect(callback).not.toHaveBeenCalled();
+    });
+
+    it('propagates a failed lock write without running the operation', async () => {
+      const error = new Error('write denied');
+      (adapter.write as jest.Mock).mockRejectedValueOnce(error);
+      const backend = createRemoteStateBackend(adapter, { scope, key: LEGACY_KEY });
+      const callback = jest.fn();
+
+      await expect(backend.withLock('deploy', callback)).rejects.toBe(error);
+      expect(adapter.read).toHaveBeenCalledTimes(1);
+      expect(callback).not.toHaveBeenCalled();
+    });
+
+    it('propagates a failed verification read without deleting an unverified lock', async () => {
+      const error = new Error('read timed out');
+      (adapter.read as jest.Mock).mockResolvedValueOnce(null).mockRejectedValueOnce(error);
+      const backend = createRemoteStateBackend(adapter, { scope, key: LEGACY_KEY });
+      const callback = jest.fn();
+
+      await expect(backend.withLock('deploy', callback)).rejects.toBe(error);
+      expect(adapter.delete).not.toHaveBeenCalled();
+      expect(callback).not.toHaveBeenCalled();
     });
 
     it('waits and retries while a live lock from another host is held', async () => {
@@ -402,7 +405,7 @@ describe('remoteStateBackend (scope-bound, issue #280)', () => {
       const result = await backend.withLock('deploy', async () => 'test-result');
 
       expect(result).toBe('test-result');
-      expect(adapter.putIfAbsent).toHaveBeenCalledWith(LOCK_KEY, expect.anything());
+      expect(adapter.write).toHaveBeenCalledWith(LOCK_KEY, expect.anything());
       expect(adapter.store.has(LOCK_KEY)).toBe(false);
     });
 

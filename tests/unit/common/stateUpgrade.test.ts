@@ -64,11 +64,6 @@ const fixture = (
     write: jest.fn(async (location, value) => {
       data.set(location, structuredClone(value));
     }),
-    putIfAbsent: jest.fn(async (location, value) => {
-      if (data.has(location)) return false;
-      data.set(location, structuredClone(value));
-      return true;
-    }),
     delete: jest.fn(async (location) => {
       data.delete(location);
     }),

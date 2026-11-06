@@ -1160,8 +1160,6 @@ export const en = {
     'Access to the state storage bucket was denied ({{code}}). Check the storage credentials — an authorization failure is never treated as empty state',
   STATE_STORAGE_CREDENTIALS_MISSING:
     "State storage needs credentials for {{provider}}. Configure that cloud's credential environment variables. Workload credentials from another provider are never reused.",
-  LOCK_CONDITIONAL_CREATE_UNSUPPORTED:
-    'This state storage does not support exclusive (conditional) create — concurrent first lock acquisition falls back to a verified write and is not guaranteed atomic. Avoid running mutating commands for the same scope in parallel',
   SAAS_REGIONAL_SCOPE_UNSUPPORTED:
     'The Console at {{consoleUrl}} does not advertise compatible regional deployment states (scope protocol 2 and state format 4.0). Upgrading the CLI alone cannot isolate regions safely — update the Console, or keep using the previous CLI release for unscoped deployments',
   SAAS_STATE_SCOPE_MISMATCH:
@@ -1176,8 +1174,6 @@ export const en = {
     'This legacy state has been migrated to (and is owned by) the ServerlessInsight Console (managedBy=saas). An in-place upgrade would create an unmarked local copy and reopen double-write hazards — refused. Continue on the Console backend, or run `si migrate --rollback` first only if you deliberately want to hand ownership back',
   REGIONAL_MIGRATION_INCOMPLETE_STAGE_COVERAGE:
     'The automatic upgrade must preserve every resource in every stage. Source coverage is incomplete; review the source and recovery records before retrying.',
-  STATE_ATOMIC_CREATE_REQUIRED:
-    'This state store cannot atomically reserve ownership or acquire a lock. Mutations are refused.',
   REGIONAL_MIGRATION_PENDING:
     'State upgrade {{opId}} is incomplete. Re-run the deploy, destroy or migrate operation to resume with the reviewed region binding.',
   SAAS_STATE_BASE_UNKNOWN: 'Load the regional state before saving or starting a deployment.',
