@@ -19,9 +19,11 @@ export const ALIYUN_QUERY_CONNECT_TIMEOUT_MS = 10000; // 10 seconds
 export const ALIYUN_QUERY_READ_TIMEOUT_MS = 30000; // 30 seconds
 export const FC3_CODE_INLINE_SIZE_LIMIT = 70 * 1024 * 1024; // 70MB threshold for OSS upload
 
-// OSS state backend timeouts
+// Bucket Store state backend timeouts (shared by OSS, COS and TOS adapters)
 export const OSS_STATE_CONNECT_TIMEOUT_MS = 10000; // 10 seconds
 export const OSS_STATE_REQUEST_TIMEOUT_MS = 30000; // 30 seconds
+export const TOS_STATE_CONNECT_TIMEOUT_MS = OSS_STATE_CONNECT_TIMEOUT_MS;
+export const TOS_STATE_REQUEST_TIMEOUT_MS = OSS_STATE_REQUEST_TIMEOUT_MS;
 
 // Lock manager constants
 export const LOCK_FILE_SUFFIX = '.si-lock';

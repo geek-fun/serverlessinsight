@@ -765,6 +765,7 @@ export const createRamOperations = (ramClient: RamSdkClient) => ({
 - Deploy, destroy and source-to-SaaS migrate automatically prepare V3 under the existing whole-file/key lock; read-only commands never persist upgrades.
 - Partitions use `stages[stage].providers[provider].regions[region]` and share the whole-file lock.
 - Executors/SaaS consume one V4 deployment view; SaaS uses scope protocol 3. App/Service stay literal; provider/region may be selected through CLI flags.
+- **Storage-backend parity (mandatory)**: every integrated workload provider must have a native `BUCKET_STORE` adapter (currently OSS/COS/TOS) routed through `src/common/stateBackend/index.ts`, reusing the common remote backend and aggregate store. Providers without one must be rejected explicitly and documented. See the [provider integration checklist](.github/ISSUE_TEMPLATE/CONTRIBUTION.md#adding-a-workload-provider).
 - Use `setResource`, `getResource`, `removeResource` from `src/common/stateManager`
 - Resources have a `status`: `'ready'` | `'tainted'`
 

@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Native TOS Bucket Store state backend for Volcengine
+  ([#290](https://github.com/geek-fun/serverlessinsight/issues/290)). `BUCKET_STORE`
+  now selects OSS, COS or TOS from the original YAML provider or explicit
+  `storageProvider` / `storageRegion`, resolves credentials for the storage cloud
+  (permanent or STS), and reuses the common remote backend for reads, writes,
+  backups, automatic V3 upgrades, migration ownership and best-effort locking.
+  Unsupported storage providers are still rejected explicitly. See the
+  [backend matrix, permissions and concurrency limits](docs/regional-deployment-state.md#bucket-store-backend-matrix).
+
 ### Changed
 
 - Whole template references in string-capable scalar maps (`environment`,

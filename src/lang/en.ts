@@ -1,6 +1,6 @@
 export const en = {
   STATE_STORAGE_PROVIDER_UNSUPPORTED:
-    'State storage does not support provider {{provider}}. Configure storageProvider as aliyun or tencent.',
+    'State storage does not support provider {{provider}}. Configure storageProvider as aliyun (OSS), tencent (COS) or volcengine (TOS).',
   PLAN_SENSITIVE_VALUE: '(sensitive)',
   PLAN_NAS_NETWORK_REQUIRED:
     'NAS storage on {{logicalId}} needs a declared VPC network or recorded mount targets. Planning stopped before creating any resources.',

@@ -1,0 +1,36 @@
+# TOS Bucket Store state backend (issue #290).
+# The bucket must exist before deploying; si never provisions state buckets.
+# Create it in the storage region and grant GetObject/PutObject/DeleteObject on
+# infra/state.json plus its .backup, .si-lock and upgrade sibling objects.
+#
+# Credentials (permanent or STS):
+#   VOLCENGINE_ACCESS_KEY_ID / VOLCENGINE_ACCESS_KEY / VOLCSTACK_ACCESS_KEY_ID
+#   VOLCENGINE_SECRET_KEY / VOLCENGINE_ACCESS_KEY_SECRET / VOLCSTACK_SECRET_ACCESS_KEY
+#   VOLCSTACK_SESSION_TOKEN / VOLCENGINE_SESSION_TOKEN (temporary credentials only)
+version: 0.0.1
+provider:
+  name: volcengine
+  region: cn-beijing
+
+app: insight-poc
+service: insight-poc-tos-state
+
+backend:
+  state_manager:
+    type: BUCKET_STORE
+    bucket: example-state
+    key: infra/state.json
+    # Defaults to the original YAML provider and region. Explicit settings are
+    # pinned and never move when -v / -r workload overrides change the deployment:
+    # storageProvider: volcengine
+    # storageRegion: cn-beijing
+
+functions:
+  hello_function:
+    name: insight-poc-hello-fn
+    code:
+      runtime: node20/v1
+      handler: index.handler
+      path: ./artifacts/function.zip
+    memory: 128
+    timeout: 30

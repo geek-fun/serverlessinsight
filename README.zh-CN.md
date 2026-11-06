@@ -164,6 +164,39 @@ than another identity dimension.
 See [deployment state and migration](docs/regional-deployment-state.md) for storage
 credentials, automatic V3 upgrades, ownership handoff, lock behavior and recovery.
 
+### 状态后端
+
+`backend.state_manager.type: BUCKET_STORE` 会把 V4 聚合状态保存在配置的精确 `key` 上。
+每个已集成的业务云厂商都有原生状态后端；`-v` / `-r` 业务覆盖参数不会改变状态存储位置。
+
+| 业务云厂商        | 状态存储 | 显式指定                      | 凭证变量                                             |
+| ----------------- | -------- | ----------------------------- | ---------------------------------------------------- |
+| `aliyun`          | OSS      | `storageProvider: aliyun`     | `ALIYUN_ACCESS_KEY_ID` / `ALIYUN_ACCESS_KEY_SECRET`   |
+| `tencent`         | COS      | `storageProvider: tencent`    | `TENCENTCLOUD_SECRET_ID` / `TENCENTCLOUD_SECRET_KEY`  |
+| `volcengine`      | TOS      | `storageProvider: volcengine` | `VOLCENGINE_ACCESS_KEY_ID` / `VOLCENGINE_SECRET_KEY`  |
+
+```yaml
+version: 0.0.1
+app: example
+service: api
+provider:
+  name: volcengine
+  region: cn-beijing
+backend:
+  state_manager:
+    type: BUCKET_STORE
+    bucket: example-state
+    key: infra/state.json
+```
+
+三种后端都支持永久凭证与临时 STS 凭证；状态凭证始终按存储云厂商解析，绝不复用其他云的业务凭证。
+不支持的存储厂商会被明确拒绝。TOS 使用 HTTPS、配置的 `storageRegion` 以及有上限的连接/请求超时。
+需要对状态 key 及其 `.backup`、`.si-lock`、升级产物等兄弟对象授予读/写/删除权限，无需 bucket 版本控制权限。
+详见[后端矩阵、TOS 配置与所需权限](docs/regional-deployment-state.md#bucket-store-backend-matrix)。
+
+Bucket Store 锁是尽力而为、并非原子操作：共享同一 bucket/key 的所有写入方（包括不同 stage、厂商和区域）必须串行执行。
+参见[已知并发限制](docs/state-locking.md#known-issues-bucket-store-concurrency)。Local 与 SaaS 的锁行为不变。
+
 ### 基础设施即代码
 
 声明式 YAML 配置，内置校验、计划与状态管理，遵循成熟的 IaC 实践。
@@ -261,21 +294,22 @@ functions:
 
 ## 支持的云服务商
 
-| 云服务商         | 函数                       | HTTP 入口              | 对象存储 | 数据库与数据表                                                | 状态   |
-| ---------------- | -------------------------- | ---------------------- | -------- | ------------------------------------------------------------- | ------ |
-| **阿里云**       | ✅ FC3                     | ✅ API 网关            | ✅ OSS   | ✅ RDS MySQL Serverless、TableStore、Elasticsearch Serverless | 稳定   |
-| **腾讯云**       | ✅ SCF                     | ✅ 函数 URL 触发器     | ✅ COS   | ✅ TDSQL-C、Elasticsearch Serverless                          | 稳定   |
-| **火山引擎**     | ✅ veFaaS                  | ✅ API 网关            | ✅ TOS   | —                                                             | 稳定   |
-| **华为云**       | ⚠️ 仅生成 Terraform 模板  | —                      | —        | —                                                             | 预览   |
-| **AWS**          | —                          | —                      | —        | —                                                             | 计划中 |
-| **Azure**        | —                          | —                      | —        | —                                                             | 计划中 |
-| **Google Cloud** | —                          | —                      | —        | —                                                             | 计划中 |
+| 云服务商         | 函数                       | HTTP 入口              | 对象存储 | 数据库与数据表                                                | 状态后端 | 状态   |
+| ---------------- | -------------------------- | ---------------------- | -------- | ------------------------------------------------------------- | -------- | ------ |
+| **阿里云**       | ✅ FC3                     | ✅ API 网关            | ✅ OSS   | ✅ RDS MySQL Serverless、TableStore、Elasticsearch Serverless | ✅ OSS   | 稳定   |
+| **腾讯云**       | ✅ SCF                     | ✅ 函数 URL 触发器     | ✅ COS   | ✅ TDSQL-C、Elasticsearch Serverless                          | ✅ COS   | 稳定   |
+| **火山引擎**     | ✅ veFaaS                  | ✅ API 网关            | ✅ TOS   | —                                                             | ✅ TOS   | 稳定   |
+| **华为云**       | ⚠️ 仅生成 Terraform 模板  | —                      | —        | —                                                             | —        | 预览   |
+| **AWS**          | —                          | —                      | —        | —                                                             | —        | 计划中 |
+| **Azure**        | —                          | —                      | —        | —                                                             | —        | 计划中 |
+| **Google Cloud** | —                          | —                      | —        | —                                                             | —        | 计划中 |
 
 说明：
 
 - 华为云配置可被解析并生成 Terraform HCL 模板，但部署能力尚未实现。
 - 腾讯云没有独立的 API 网关资源，HTTP 入口由函数 URL 触发器提供。
 - 火山引擎暂不支持 Serverless 数据库与数据表。
+- Bucket Store 状态后端原生支持 OSS / COS / TOS；其他厂商暂不支持并被明确拒绝。
 - 资源级细节见[完整支持矩阵](https://serverlessinsight.com/reference.html)。
 
 ## 文档
