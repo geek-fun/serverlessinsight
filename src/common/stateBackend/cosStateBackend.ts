@@ -1,5 +1,5 @@
 import COS from 'cos-nodejs-sdk-v5';
-import { StorageAdapter, ConditionalPutUnsupportedError, StateBackend } from './types';
+import { StorageAdapter, StateBackend } from './types';
 import { createRemoteStateBackend } from './remoteStateBackend';
 import { MigrationMarkerAction } from '../migrationMarker';
 import { OSS_STATE_REQUEST_TIMEOUT_MS } from '../constants';
@@ -57,48 +57,6 @@ const promisifyPut = (
   });
 };
 
-const promisifyPutIfAbsent = (
-  cosClient: COS,
-  bucket: string,
-  region: string,
-  key: string,
-  body: string,
-): Promise<boolean> => {
-  return new Promise((resolve, reject) => {
-    cosClient.putObject(
-      {
-        Bucket: bucket,
-        Region: region,
-        Key: key,
-        Body: body,
-        Headers: { 'x-cos-forbid-overwrite': 'true' },
-      },
-      (err) => {
-        if (err) {
-          const code = (err as { code?: string }).code ?? '';
-          if (
-            err.statusCode === 412 ||
-            code === 'PreconditionFailed' ||
-            code === 'KeyConflict' ||
-            err.statusCode === 409
-          ) {
-            resolve(false);
-            return;
-          }
-
-          if (err.statusCode === 400 || err.statusCode === 501) {
-            reject(new ConditionalPutUnsupportedError(err));
-            return;
-          }
-          reject(err);
-        } else {
-          resolve(true);
-        }
-      },
-    );
-  });
-};
-
 const promisifyDelete = (
   cosClient: COS,
   bucket: string,
@@ -144,29 +102,6 @@ export const createCosStorageAdapter = (config: CosStorageConfig): StorageAdapte
 
     write: async (key: string, data: unknown): Promise<void> => {
       await promisifyPut(
-        cosClient,
-        config.bucket,
-        config.region,
-        key,
-        JSON.stringify(data, null, 2),
-      );
-    },
-
-    /** COS only honors forbid-overwrite on buckets that never enabled versioning. */
-    putIfAbsent: async (key: string, data: unknown): Promise<boolean> => {
-      const versioning = await new Promise<COS.GetBucketVersioningResult>((resolve, reject) => {
-        cosClient.getBucketVersioning(
-          { Bucket: config.bucket, Region: config.region },
-          (error, data) => {
-            if (error) reject(error);
-            else resolve(data);
-          },
-        );
-      });
-      if (versioning.VersioningConfiguration.Status) {
-        throw new ConditionalPutUnsupportedError('bucket versioning disables exclusive creation');
-      }
-      return promisifyPutIfAbsent(
         cosClient,
         config.bucket,
         config.region,

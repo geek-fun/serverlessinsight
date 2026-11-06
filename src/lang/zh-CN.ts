@@ -1050,8 +1050,6 @@ export const zhCN = {
     '状态存储 bucket 访问被拒绝（{{code}}）。请检查存储凭据——鉴权失败永远不会被当作空状态',
   STATE_STORAGE_CREDENTIALS_MISSING:
     'State 存储需要 {{provider}} 的凭证。请配置该云厂商的凭证环境变量，不会复用其他云厂商的业务部署凭证。',
-  LOCK_CONDITIONAL_CREATE_UNSUPPORTED:
-    '当前状态存储不支持排他（条件）创建——并发首次加锁将回退为"写入后校验"，不保证原子性。请避免对同一 scope 并行执行变更命令',
   SAAS_REGIONAL_SCOPE_UNSUPPORTED:
     'Console（{{consoleUrl}}）尚不支持区域部署状态（缺少 scope protocol 能力）。仅升级 CLI 无法安全隔离区域——请升级 Console，或在未隔离部署场景下继续使用旧版 CLI',
   SAAS_STATE_SCOPE_MISMATCH:
@@ -1065,7 +1063,6 @@ export const zhCN = {
     '该旧版状态已迁移至（并归）ServerlessInsight Console 所有（managedBy=saas）。状态升级会生成无标记的本地副本，重新引入双写风险——已拒绝。请继续使用 Console 后端；或仅在你明确要交还所有权时先运行 `si migrate --rollback`',
   REGIONAL_MIGRATION_INCOMPLETE_STAGE_COVERAGE:
     '自动升级必须保留所有 stage 中的每个资源。当前源数据覆盖不完整，请核对源状态和恢复记录后再重试。',
-  STATE_ATOMIC_CREATE_REQUIRED: '此状态存储无法原子登记所有权或获取锁，已拒绝变更。',
   REGIONAL_MIGRATION_PENDING:
     'State 升级 {{opId}} 尚未完成。请使用已审查的区域绑定重新执行 deploy、destroy 或 migrate 以继续。',
   SAAS_STATE_BASE_UNKNOWN: '请先读取区域状态，再保存或开始部署。',

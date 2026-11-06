@@ -2,11 +2,9 @@
 import { createCosStateBackend } from '../../../../src/common/stateBackend/cosStateBackend';
 import type { RemoteBackendConfig } from '../../../../src/common/stateBackend/remoteStateBackend';
 import type { StorageAdapter } from '../../../../src/common/stateBackend/types';
-import { ConditionalPutUnsupportedError } from '../../../../src/common/stateBackend/types';
 
 const mockCosClient = {
   getObject: jest.fn(),
-  getBucketVersioning: jest.fn(),
   putObject: jest.fn(),
   deleteObject: jest.fn(),
 };
@@ -26,9 +24,6 @@ jest.mock('../../../../src/common/stateBackend/remoteStateBackend', () => {
 describe('cosStateBackend (scope-bound, issue #280)', () => {
   beforeEach(() => {
     jest.clearAllMocks();
-    mockCosClient.getBucketVersioning.mockImplementation((_params, callback) =>
-      callback(null, { VersioningConfiguration: {} }),
-    );
   });
 
   const scope = {
@@ -47,8 +42,6 @@ describe('cosStateBackend (scope-bound, issue #280)', () => {
     accessKeyId: 'test-id',
     accessKeySecret: 'test-secret',
   };
-
-  const STATE_KEY = 'state.json';
 
   /** Creates the backend and captures the adapter and config handed to the remote backend. */
   const captureWiring = (): { adapter: StorageAdapter; remoteConfig: RemoteBackendConfig } => {
@@ -179,95 +172,13 @@ describe('cosStateBackend (scope-bound, issue #280)', () => {
       expect(callArgs.Body).toBe(JSON.stringify(data, null, 2));
       expect(callArgs.Headers).toBeUndefined();
     });
-  });
 
-  describe('adapter.putIfAbsent', () => {
-    it.each(['Enabled', 'Suspended'])(
-      'refuses atomic creation when bucket versioning is %s',
-      async (Status) => {
-        mockCosClient.getBucketVersioning.mockImplementation((_params, callback) =>
-          callback(null, { VersioningConfiguration: { Status } }),
-        );
-        const { adapter } = captureWiring();
-        await expect(adapter.putIfAbsent!(STATE_KEY, {})).rejects.toThrow(
-          ConditionalPutUnsupportedError,
-        );
-        expect(mockCosClient.putObject).not.toHaveBeenCalled();
-      },
-    );
-    it('propagates failure to inspect bucket versioning without writing', async () => {
-      mockCosClient.getBucketVersioning.mockImplementation((_params, callback) =>
-        callback(new Error('access denied')),
-      );
-      const { adapter } = captureWiring();
-      await expect(adapter.putIfAbsent!(STATE_KEY, {})).rejects.toThrow('access denied');
-      expect(mockCosClient.putObject).not.toHaveBeenCalled();
-    });
-
-    it('creates exclusively via the COS forbid-overwrite header and returns true', async () => {
-      mockCosClient.putObject.mockImplementation(
-        (_params: unknown, callback: (err: unknown) => void) => {
-          callback(null);
-        },
-      );
+    it('propagates failed ordinary writes', async () => {
+      const error = new Error('write denied');
+      mockCosClient.putObject.mockImplementationOnce((_params, callback) => callback(error));
       const { adapter } = captureWiring();
 
-      await expect(adapter.putIfAbsent!(STATE_KEY, { serial: 1 })).resolves.toBe(true);
-      expect(mockCosClient.putObject).toHaveBeenCalledWith(
-        expect.objectContaining({
-          Key: STATE_KEY,
-          Headers: { 'x-cos-forbid-overwrite': 'true' },
-        }),
-        expect.any(Function),
-      );
-    });
-
-    it.each([
-      ['statusCode 412', { statusCode: 412 }],
-      ['statusCode 409', { statusCode: 409 }],
-      ['code PreconditionFailed', { code: 'PreconditionFailed' }],
-      ['code KeyConflict', { code: 'KeyConflict' }],
-    ])('returns false when the object already exists (%s)', async (_label, err) => {
-      mockCosClient.putObject.mockImplementation(
-        (_params: unknown, callback: (err: unknown) => void) => {
-          callback(err);
-        },
-      );
-      const { adapter } = captureWiring();
-
-      await expect(adapter.putIfAbsent!(STATE_KEY, { serial: 1 })).resolves.toBe(false);
-    });
-
-    it.each([
-      ['statusCode 400', { statusCode: 400 }],
-      ['statusCode 501', { statusCode: 501 }],
-    ])(
-      'rejects with ConditionalPutUnsupportedError when the condition cannot be evaluated (%s)',
-      async (_label, err) => {
-        mockCosClient.putObject.mockImplementation(
-          (_params: unknown, callback: (err: unknown) => void) => {
-            callback(err);
-          },
-        );
-        const { adapter } = captureWiring();
-
-        await expect(adapter.putIfAbsent!(STATE_KEY, { serial: 1 })).rejects.toThrow(
-          ConditionalPutUnsupportedError,
-        );
-      },
-    );
-
-    it('propagates unrelated putIfAbsent errors', async () => {
-      mockCosClient.putObject.mockImplementation(
-        (_params: unknown, callback: (err: unknown) => void) => {
-          callback(new Error('Internal error'));
-        },
-      );
-      const { adapter } = captureWiring();
-
-      await expect(adapter.putIfAbsent!(STATE_KEY, { serial: 1 })).rejects.toThrow(
-        'Internal error',
-      );
+      await expect(adapter.write('state.json', {})).rejects.toBe(error);
     });
   });
 

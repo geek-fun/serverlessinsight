@@ -172,7 +172,7 @@ Declarative YAML with validation, planning and state management, following prove
 - **Drift detection** — resources changed outside `si` are flagged before the next deploy
 - **Validation** — type-safe template validation catches config errors before they reach the cloud
 - **Partial failure recovery** — successfully deployed resources are saved even when others fail; retry to continue
-- **State locking** — concurrent deploys are blocked, with `si force-unlock` as the escape hatch
+- **State locking** — automatic locking with `si force-unlock` for recovery; Bucket Store uses [best-effort coordination](docs/state-locking.md#known-issues-bucket-store-concurrency) and requires serialized writers
 
 ### Built for agents and scripts
 

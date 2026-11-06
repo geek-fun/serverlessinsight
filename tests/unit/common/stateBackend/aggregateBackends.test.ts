@@ -42,11 +42,6 @@ const fixture = (kind: string) => {
     write: jest.fn(async (name, value) => {
       objects.set(name, JSON.parse(JSON.stringify(value)));
     }),
-    putIfAbsent: jest.fn(async (name, value) => {
-      if (objects.has(name)) return false;
-      objects.set(name, value);
-      return true;
-    }),
     delete: jest.fn(async (name) => {
       objects.delete(name);
     }),
@@ -195,13 +190,15 @@ describe.each(['local', 'bucket'])('%s aggregate state backend', (kind) => {
   });
 });
 
-it('refuses Bucket mutation without exclusive creation support', async () => {
+it('allows Bucket mutation with ordinary verified writes', async () => {
   const { adapter, open } = fixture('bucket');
-  delete adapter.putIfAbsent;
+  const backend = open();
   const callback = jest.fn();
-  await expect(open().withLock('deploy', callback)).rejects.toThrow('STATE_ATOMIC_CREATE_REQUIRED');
-  expect(callback).not.toHaveBeenCalled();
-  expect(adapter.write).not.toHaveBeenCalled();
+  await backend.withLock('deploy', callback);
+  expect(backend.capabilities.conditionalCreate).toBe(false);
+  expect(callback).toHaveBeenCalledTimes(1);
+  expect(adapter.write).toHaveBeenCalledWith('infra/state.json.si-lock', expect.anything());
+  expect(await backend.readLock()).toBeNull();
 });
 
 it('preserves a verified Local backup when recovering and replacing a corrupt primary', async () => {

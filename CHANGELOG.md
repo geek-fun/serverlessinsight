@@ -19,6 +19,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Restore Bucket Store lock compatibility with OSS and COS buckets that have
+  versioning enabled or suspended. Locks use ordinary writes followed by
+  ownership verification, without requiring bucket-versioning read permission
+  or conditional creation. Bucket locking remains best-effort: serialize all
+  mutating commands sharing a bucket/key, including different stages, providers
+  and regions. See the [known concurrency limitation](docs/state-locking.md#known-issues-bucket-store-concurrency).
 - Preserve template results for string fields such as certificate IDs,
   including leading zeros and long numeric strings, so valid configurations
   pass resolved configuration validation without losing their original values.

@@ -2,13 +2,13 @@
 
 ## Overview
 
-ServerlessInsight implements automatic state locking to prevent concurrent modifications to your infrastructure state. This prevents state corruption and race conditions when multiple team members or CI/CD pipelines attempt to modify the same stack simultaneously.
+ServerlessInsight automatically coordinates state mutations through backend locks. Local lock acquisition uses an exclusive file create; SaaS coordinates deployment lifecycles on the server. Bucket Store retains best-effort locking for compatibility with OSS and COS bucket configurations. See the [known concurrency limitation](#known-issues-bucket-store-concurrency).
 
 ## How It Works
 
 State locking is **automatic and transparent** during normal operations. When you run commands that modify infrastructure (`deploy` or `destroy`), ServerlessInsight:
 
-1. **Acquires a lock** before making any changes (atomically — see [Lock Acquisition](#lock-acquisition))
+1. **Acquires a lock** before making changes (see the backend-specific [Lock Acquisition](#lock-acquisition) behavior)
 2. **Performs the operation** while holding the lock
 3. **Releases the lock** automatically on completion or error
 
@@ -27,6 +27,8 @@ Locking happens automatically for these commands:
 
 - `si deploy` - Locks during deployment
 - `si destroy` - Locks during destruction
+- `si migrate` - Locks source metadata changes and handoffs
+- Automatic V3 state preparation - Uses the same whole-file/key lock
 
 No manual lock/unlock commands are needed for normal operations.
 
@@ -34,12 +36,13 @@ No manual lock/unlock commands are needed for normal operations.
 
 - **Timeout**: 10 minutes by default
 - **Retry**: Exponential backoff (2s, 4s, 8s, 16s, 30s max)
-- **Atomic acquisition**: The lock file is created with `open(path, 'wx')` (`O_EXCL`). If the file already exists, the create fails atomically with `EEXIST` — two processes can never both observe "no lock" and both write. The previous read-then-write-then-verify sequence has been replaced by this single atomic create.
+- **Local acquisition**: The lock file is created with `open(path, 'wx')` (`O_EXCL`). An existing file rejects the create atomically.
+- **Bucket acquisition**: Read `<key>.si-lock`; if absent, write lock metadata with an ordinary PUT, then read it back and verify the ID. This sequence is not atomic. It does not query or change bucket versioning, and does not require conditional-write headers.
 - **Storage**:
   - **Local backend**: `.serverlessinsight/state-<app>-<service>.json.si-lock` file (local file system)
   - **Remote backend**: `<key>.si-lock` in an OSS/COS bucket, shared across machines/CI runners
 
-Local and Bucket locks cover the complete aggregate across all stages, providers and regions. Planning may precede the lock; after acquisition the selected partition must still match its approved base. Writes merge a fresh aggregate so sibling updates survive. SaaS locks remain per deployment lifecycle.
+Local and Bucket locks address the complete aggregate across all stages, providers and regions. Planning may precede the lock; after acquisition the selected partition must still match its approved base. Writes merge a fresh aggregate so sibling updates survive. SaaS locks remain per deployment lifecycle.
 
 ### Lock Information
 
@@ -170,7 +173,25 @@ si force-unlock <LOCK_ID>
 **Solution**:
 
 - Configure your CI/CD to prevent concurrent deployments (e.g., GitLab's `resource_group`, GitHub Actions concurrency groups)
-- Only one deployment will succeed; others will wait or fail with a lock error
+- A visible lock normally makes other writers wait or fail, but simultaneous acquisition can succeed in both processes. Bucket users must serialize all writers sharing a bucket/key.
+
+## Known issues: Bucket Store concurrency
+
+Bucket Store locking is best-effort, including on buckets without versioning.
+Two writers can both read an absent lock, then each write and verify its own ID
+before the other writer replaces it. Both may proceed. Ownership checks during
+release and hostname/PID-based recovery also do not provide distributed exclusion.
+This limitation applies to OSS and COS; bucket versioning does not resolve it.
+
+Serialize all mutating commands sharing the same bucket and exact state key,
+including different stages, providers and regions, automatic state upgrades, and
+SaaS handoffs. Use one deployment queue or coordinate all CI jobs and local users;
+a concurrency group in one repository does not coordinate other repositories or
+manual CLI runs. Force-unlock only after the original operation has stopped.
+
+The existing YAML key, V4 aggregate, lock key and recovery commands are retained.
+State backups and plan-base checks remain available, but do not make simultaneous
+cloud operations safe. Local and SaaS locking behavior is unchanged.
 
 ## Limitations
 
@@ -181,7 +202,7 @@ si force-unlock <LOCK_ID>
 ## Best Practices
 
 1. **Coordinate deployments**: Communicate with your team about ongoing deployments
-2. **CI/CD serialization**: Configure your CI/CD to serialize deployments per stack
+2. **CI/CD serialization**: Serialize all Bucket mutations per bucket/key, across every writer
 3. **Monitor locks**: If you frequently see lock errors, investigate your deployment patterns
 4. **Verify before force-unlock**: Always verify no operation is running before forcing unlock
 5. **Document force-unlocks**: Keep a record of when and why you used force-unlock
@@ -194,18 +215,18 @@ si force-unlock <LOCK_ID>
 
 ### Q: What happens if my process crashes?
 
-**A**: If you interrupt it with `Ctrl+C` or `SIGTERM`, the lock is released before exit. If the process is killed abruptly (SIGKILL, power loss), the lock remains until the next acquisition attempt recovers it (dead-PID or stale-lock detection) or you run `si force-unlock`. This prevents partial deployments from corrupting state.
+**A**: If you interrupt it with `Ctrl+C` or `SIGTERM`, the lock is released before exit. If the process is killed abruptly (SIGKILL, power loss), the lock remains until the next acquisition attempt recovers it (dead-PID or stale-lock detection) or you run `si force-unlock`. Inspect the persisted state and cloud resources before retrying an interrupted deployment.
 
 ### Q: Can multiple people deploy simultaneously?
 
-**A**: Local/Bucket serialize all deployments sharing one aggregate file/key, including different stages, providers and regions. SaaS deployments on different lifecycle IDs may run independently; the same lifecycle remains exclusive.
+**A**: Local locks coordinate writers sharing one aggregate file. Bucket writers sharing a key must be externally serialized because acquisition is not atomic, including across different stages, providers and regions. SaaS deployments on different lifecycle IDs may run independently; the same lifecycle remains exclusive.
 
 ### Q: Does locking work across different machines?
 
 **A**: It depends on the state backend:
 
 - **Local backend**: Locks are local to a single machine. For team collaboration with a local backend, use a shared CI/CD system so only one runner operates on the stack at a time.
-- **Bucket backend**: Yes. All machines/runners using the same bucket/key share its whole-file lock.
+- **Bucket backend**: All machines/runners using the same bucket/key see the same lock object, but it does not guarantee mutual exclusion. Serialize writers externally.
 - **SaaS backend**: The server coordinates the selected deployment lifecycle, independently of the client machine.
 
 ### Q: How do I know if a lock is stale?
@@ -214,4 +235,4 @@ si force-unlock <LOCK_ID>
 
 ### Q: Can I disable locking?
 
-**A**: No. Locking is always enabled to prevent state corruption.
+**A**: No. Locking is always enabled. Bucket Store users must also serialize writers because its lock acquisition is best-effort.
