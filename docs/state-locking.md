@@ -2,7 +2,7 @@
 
 ## Overview
 
-ServerlessInsight automatically coordinates state mutations through backend locks. Local lock acquisition uses an exclusive file create; SaaS coordinates deployment lifecycles on the server. Bucket Store retains best-effort locking for compatibility with OSS and COS bucket configurations. See the [known concurrency limitation](#known-issues-bucket-store-concurrency).
+ServerlessInsight automatically coordinates state mutations through backend locks. Local lock acquisition uses an exclusive file create; SaaS coordinates deployment lifecycles on the server. Bucket Store retains best-effort locking for compatibility with OSS, COS and TOS bucket configurations. See the [known concurrency limitation](#known-issues-bucket-store-concurrency).
 
 ## How It Works
 
@@ -37,10 +37,10 @@ No manual lock/unlock commands are needed for normal operations.
 - **Timeout**: 10 minutes by default
 - **Retry**: Exponential backoff (2s, 4s, 8s, 16s, 30s max)
 - **Local acquisition**: The lock file is created with `open(path, 'wx')` (`O_EXCL`). An existing file rejects the create atomically.
-- **Bucket acquisition**: Read `<key>.si-lock`; if absent, write lock metadata with an ordinary PUT, then read it back and verify the ID. This sequence is not atomic. It does not query or change bucket versioning, and does not require conditional-write headers.
+- **Bucket acquisition**: Read `<key>.si-lock`; if absent, write lock metadata with an ordinary PUT, then read it back and verify the ID. This sequence is not atomic. It works identically with bucket versioning disabled, enabled or suspended; it does not query or change versioning, and does not require conditional-write headers. OSS, COS and TOS report `conditionalCreate: false`.
 - **Storage**:
   - **Local backend**: `.serverlessinsight/state-<app>-<service>.json.si-lock` file (local file system)
-  - **Remote backend**: `<key>.si-lock` in an OSS/COS bucket, shared across machines/CI runners
+  - **Remote backend**: `<key>.si-lock` in an OSS/COS/TOS bucket, shared across machines/CI runners
 
 Local and Bucket locks address the complete aggregate across all stages, providers and regions. Planning may precede the lock; after acquisition the selected partition must still match its approved base. Writes merge a fresh aggregate so sibling updates survive. SaaS locks remain per deployment lifecycle.
 
@@ -140,7 +140,7 @@ State locking adds minimal overhead:
   - Lock acquisition: <50ms
   - Lock release: <10ms
   - No network calls (local file system only)
-- **Remote state backends (e.g., OSS/COS)**:
+- **Remote state backends (e.g., OSS/COS/TOS)**:
   - Lock acquisition/release involves storage API requests over the network
   - Additional latency is typically small compared to overall deployment time
 
@@ -177,11 +177,13 @@ si force-unlock <LOCK_ID>
 
 ## Known issues: Bucket Store concurrency
 
-Bucket Store locking is best-effort, including on buckets without versioning.
-Two writers can both read an absent lock, then each write and verify its own ID
-before the other writer replaces it. Both may proceed. Ownership checks during
-release and hostname/PID-based recovery also do not provide distributed exclusion.
-This limitation applies to OSS and COS; bucket versioning does not resolve it.
+Bucket Store locking is best-effort on OSS, COS and TOS, including on buckets
+without versioning. Two writers can both read an absent lock, then each write and
+verify its own ID before the other writer replaces it. Both may proceed. Ownership
+checks during release and hostname/PID-based recovery also do not provide
+distributed exclusion. This limitation applies with bucket versioning disabled,
+enabled or suspended; versioning does not resolve it, and si never queries or
+changes it.
 
 Serialize all mutating commands sharing the same bucket and exact state key,
 including different stages, providers and regions, automatic state upgrades, and
@@ -197,7 +199,7 @@ cloud operations safe. Local and SaaS locking behavior is unchanged.
 
 - **Local file system**: When using local state files, locking is limited to that machine's file system
 - **Same machine (local backend)**: For purely local state, locks are only effective on a single machine (not distributed)
-- **Backend-dependent behavior**: When using remote state backends (e.g., OSS/COS), locking behavior and performance depend on the remote storage API and network conditions
+- **Backend-dependent behavior**: When using remote state backends (e.g., OSS/COS/TOS), locking behavior and performance depend on the remote storage API and network conditions
 
 ## Best Practices
 

@@ -164,6 +164,45 @@ than another identity dimension.
 See [deployment state and migration](docs/regional-deployment-state.md) for storage
 credentials, automatic V3 upgrades, ownership handoff, lock behavior and recovery.
 
+### State backends
+
+`backend.state_manager.type: BUCKET_STORE` keeps the exact configured `key` in your own
+bucket. Every integrated workload provider has a native state backend; `-v` and `-r`
+workload overrides never redirect state storage.
+
+| Workload provider | State storage | Explicit selection            | Credentials                                          |
+| ----------------- | ------------- | ----------------------------- | ---------------------------------------------------- |
+| `aliyun`          | OSS           | `storageProvider: aliyun`     | `ALIYUN_ACCESS_KEY_ID` / `ALIYUN_ACCESS_KEY_SECRET`   |
+| `tencent`         | COS           | `storageProvider: tencent`    | `TENCENTCLOUD_SECRET_ID` / `TENCENTCLOUD_SECRET_KEY`  |
+| `volcengine`      | TOS           | `storageProvider: volcengine` | `VOLCENGINE_ACCESS_KEY_ID` / `VOLCENGINE_SECRET_KEY`  |
+
+```yaml
+version: 0.0.1
+app: example
+service: api
+provider:
+  name: volcengine
+  region: cn-beijing
+backend:
+  state_manager:
+    type: BUCKET_STORE
+    bucket: example-state
+    key: infra/state.json
+```
+
+Permanent and temporary (STS) credentials work for all three backends; storage
+credentials are resolved for the storage cloud and never reused from another cloud.
+Unsupported storage providers are rejected explicitly. TOS uses HTTPS with the
+configured `storageRegion` and bounded timeouts. Grant read/write/delete on the state
+key and its `.backup`, `.si-lock` and upgrade siblings; bucket versioning permissions
+are not required. See the
+[backend matrix, TOS setup and required permissions](docs/regional-deployment-state.md#bucket-store-backend-matrix).
+
+Bucket Store locks are best-effort, not atomic: serialize all writers sharing one
+bucket/key, including different stages, providers and regions. See the
+[known concurrency limitation](docs/state-locking.md#known-issues-bucket-store-concurrency).
+Local and SaaS locking are unchanged.
+
 ### Infrastructure as code
 
 Declarative YAML with validation, planning and state management, following proven IaC patterns.
@@ -261,21 +300,22 @@ Beyond functions — manage the full serverless stack, including storage, databa
 
 ## Supported providers
 
-| Provider          | Functions                    | HTTP entry                | Object storage | Databases & tables                                          | Status  |
-| ----------------- | ---------------------------- | ------------------------- | -------------- | ----------------------------------------------------------- | ------- |
-| **Alibaba Cloud** | ✅ FC3                       | ✅ API Gateway            | ✅ OSS         | ✅ RDS MySQL Serverless, TableStore, Elasticsearch Serverless | Stable  |
-| **Tencent Cloud** | ✅ SCF                       | ✅ Function URL triggers  | ✅ COS         | ✅ TDSQL-C, Elasticsearch Serverless                         | Stable  |
-| **Volcengine**    | ✅ veFaaS                    | ✅ API Gateway            | ✅ TOS         | —                                                           | Stable  |
-| **Huawei Cloud**  | ⚠️ Terraform template only   | —                         | —              | —                                                           | Preview |
-| **AWS**           | —                            | —                         | —              | —                                                           | Planned |
-| **Azure**         | —                            | —                         | —              | —                                                           | Planned |
-| **Google Cloud**  | —                            | —                         | —              | —                                                           | Planned |
+| Provider          | Functions                    | HTTP entry                | Object storage | Databases & tables                                          | State backend | Status  |
+| ----------------- | ---------------------------- | ------------------------- | -------------- | ----------------------------------------------------------- | ------------- | ------- |
+| **Alibaba Cloud** | ✅ FC3                       | ✅ API Gateway            | ✅ OSS         | ✅ RDS MySQL Serverless, TableStore, Elasticsearch Serverless | ✅ OSS        | Stable  |
+| **Tencent Cloud** | ✅ SCF                       | ✅ Function URL triggers  | ✅ COS         | ✅ TDSQL-C, Elasticsearch Serverless                         | ✅ COS        | Stable  |
+| **Volcengine**    | ✅ veFaaS                    | ✅ API Gateway            | ✅ TOS         | —                                                           | ✅ TOS        | Stable  |
+| **Huawei Cloud**  | ⚠️ Terraform template only   | —                         | —              | —                                                           | —             | Preview |
+| **AWS**           | —                            | —                         | —              | —                                                           | —             | Planned |
+| **Azure**         | —                            | —                         | —              | —                                                           | —             | Planned |
+| **Google Cloud**  | —                            | —                         | —              | —                                                           | —             | Planned |
 
 Notes:
 
 - Huawei Cloud configuration is parsed and can generate Terraform HCL templates, but deployment is not implemented yet.
 - Tencent Cloud has no standalone API Gateway resource; HTTP entry points use function URL triggers.
 - Volcengine does not yet support serverless databases or tables.
+- Bucket Store state is native on OSS/COS/TOS. Other providers have no state backend and are rejected explicitly.
 - See the [full provider matrix](https://serverlessinsight.com/reference.html) for resource-level details.
 
 ## Documentation

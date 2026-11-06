@@ -1,6 +1,6 @@
 export const zhCN = {
   STATE_STORAGE_PROVIDER_UNSUPPORTED:
-    'State 存储不支持云厂商 {{provider}}。请将 storageProvider 配置为 aliyun 或 tencent。',
+    'State 存储不支持云厂商 {{provider}}。请将 storageProvider 配置为 aliyun（OSS）、tencent（COS）或 volcengine（TOS）。',
   PLAN_SENSITIVE_VALUE: '(敏感值)',
   PLAN_NAS_NETWORK_REQUIRED:
     '{{logicalId}} 的 NAS 存储需要声明 VPC 网络或已有挂载目标记录。计划已停止，尚未创建任何资源。',

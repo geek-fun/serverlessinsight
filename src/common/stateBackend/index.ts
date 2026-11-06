@@ -6,6 +6,7 @@ import { StateBackend } from './types';
 import { createLocalStateBackend } from './localStateBackend';
 import { createOssStateBackend } from './ossStateBackend';
 import { createCosStateBackend } from './cosStateBackend';
+import { createTosStateBackend } from './tosStateBackend';
 import { createSaasStateBackend } from './saasStateBackend';
 import { DeploymentScope, canonicalizeRegion } from '../stateScope';
 import { getCredentials } from '../credentials';
@@ -14,6 +15,7 @@ export * from './types';
 export * from './localStateBackend';
 export * from './ossStateBackend';
 export * from './cosStateBackend';
+export * from './tosStateBackend';
 export * from './remoteStateBackend';
 export * from './saasStateBackend';
 export * from './lockUtils';
@@ -79,24 +81,20 @@ export const createStateBackend = (
   const bucketConfig = backendConfig as BucketStoreBackendConfig;
 
   const storage = resolveStateStorage(bucketConfig, context);
-
-  if (storage.provider === ProviderEnum.TENCENT) {
-    return createCosStateBackend({
-      scope,
-      bucket: bucketConfig.bucket,
-      key: bucketConfig.key,
-      ...storage,
-      markerAction: context.migrationMarker,
-    });
-  }
-
-  return createOssStateBackend({
+  const bucketBackendConfig = {
     scope,
     bucket: bucketConfig.bucket,
     key: bucketConfig.key,
     ...storage,
     markerAction: context.migrationMarker,
-  });
+  };
+
+  if (storage.provider === ProviderEnum.TENCENT) return createCosStateBackend(bucketBackendConfig);
+  if (storage.provider === ProviderEnum.VOLCENGINE)
+    return createTosStateBackend(bucketBackendConfig);
+  if (storage.provider === ProviderEnum.ALIYUN) return createOssStateBackend(bucketBackendConfig);
+
+  throw new Error(lang.__('STATE_STORAGE_PROVIDER_UNSUPPORTED', { provider: storage.provider }));
 };
 
 export const resolveStateStorage = (
@@ -113,7 +111,11 @@ export const resolveStateStorage = (
   const region = canonicalizeRegion(
     bucketConfig.storageRegion ?? context.storage?.region ?? context.region,
   );
-  if (provider !== ProviderEnum.ALIYUN && provider !== ProviderEnum.TENCENT) {
+  if (
+    provider !== ProviderEnum.ALIYUN &&
+    provider !== ProviderEnum.TENCENT &&
+    provider !== ProviderEnum.VOLCENGINE
+  ) {
     throw new Error(lang.__('STATE_STORAGE_PROVIDER_UNSUPPORTED', { provider }));
   }
   const credentials = getCredentials(provider === context.provider ? context : undefined, provider);

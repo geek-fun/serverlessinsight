@@ -165,7 +165,8 @@ export const rootSchema = {
       properties: {
         state_manager: {
           type: 'object',
-          description: 'State storage: LOCAL directory, BUCKET_STORE, or the SaaS Console.',
+          description:
+            'State storage: LOCAL directory, BUCKET_STORE (OSS, COS or TOS object storage), or the SaaS Console.',
           properties: {
             type: { type: 'string', enum: ['LOCAL', 'BUCKET_STORE', 'SAAS'] },
             bucket: { type: 'string', description: 'State bucket name (BUCKET_STORE only).' },
@@ -173,12 +174,12 @@ export const rootSchema = {
             storageRegion: {
               type: 'string',
               description:
-                'Pin where state is stored (BUCKET_STORE only); explicit settings never change when the workload -r changes.',
+                'Pin the storage region (BUCKET_STORE only); explicit settings never change when workload CLI overrides change the deployment region.',
             },
             storageProvider: {
               type: 'string',
               description:
-                'Provider SDK used for state storage (BUCKET_STORE only); defaults to the workload provider.',
+                'Provider SDK used for state storage (BUCKET_STORE only): aliyun (OSS), tencent (COS) or volcengine (TOS). Defaults to the original YAML workload provider; unsupported providers are rejected.',
             },
           },
           required: ['type'],

@@ -1,5 +1,6 @@
 import { createOssStateBackend } from '../../src/common/stateBackend/ossStateBackend';
 import { createCosStateBackend } from '../../src/common/stateBackend/cosStateBackend';
+import { createTosStateBackend } from '../../src/common/stateBackend/tosStateBackend';
 
 const mockOssClient = {
   get: jest.fn(),
@@ -13,9 +14,23 @@ const mockCosClient = {
   deleteObject: jest.fn(),
   getBucketVersioning: jest.fn(),
 };
+const mockTosClient = {
+  getObjectV2: jest.fn(),
+  putObject: jest.fn(),
+  deleteObject: jest.fn(),
+  getBucketVersioning: jest.fn(),
+};
 
 jest.mock('ali-oss', () => jest.fn(() => mockOssClient));
 jest.mock('cos-nodejs-sdk-v5', () => jest.fn(() => mockCosClient));
+jest.mock('@volcengine/tos-sdk', () => ({
+  TosClient: jest.fn(() => mockTosClient),
+  TosServerCode: {
+    NoSuchBucket: 'NoSuchBucket',
+    NoSuchKey: 'NoSuchKey',
+    AccessDenied: 'AccessDenied',
+  },
+}));
 
 const stateKey = 'infra/state.json';
 const scope = {
@@ -54,11 +69,28 @@ beforeEach(() => {
     mockObjects.delete(params.Key);
     callback(null, {});
   });
+  mockTosClient.getObjectV2.mockImplementation(async ({ key }: { key: string }) => {
+    const content = mockObjects.get(key);
+    if (content === undefined) throw { code: 'NoSuchKey', statusCode: 404 };
+    return { data: { content: Buffer.from(content) } };
+  });
+  mockTosClient.putObject.mockImplementation(
+    async ({ key, body }: { key: string; body: Buffer }) => {
+      mockObjects.set(key, Buffer.from(body).toString('utf-8'));
+      return {};
+    },
+  );
+  mockTosClient.deleteObject.mockImplementation(async ({ key }: { key: string }) => {
+    if (!mockObjects.has(key)) throw { code: 'NoSuchKey', statusCode: 404 };
+    mockObjects.delete(key);
+    return {};
+  });
 });
 
 describe.each([
   ['OSS', createOssStateBackend, 'cn-hangzhou'],
   ['COS', createCosStateBackend, 'ap-guangzhou'],
+  ['TOS', createTosStateBackend, 'cn-beijing'],
 ] as const)('%s Bucket state compatibility', (_provider, createBackend, storageRegion) => {
   it.each(['Disabled', 'Enabled', 'Suspended'])(
     'upgrades and writes the original state key with versioning %s',
@@ -69,6 +101,7 @@ describe.each([
           VersioningConfiguration: { Status: versionStatus === 'Disabled' ? '' : versionStatus },
         });
       });
+      mockTosClient.getBucketVersioning.mockResolvedValue({ Status: versionStatus });
       const resource = {
         mode: 'managed',
         region: scope.region,
@@ -113,9 +146,15 @@ describe.each([
       expect(backend.capabilities.conditionalCreate).toBe(false);
       expect(mockOssClient.getBucketVersioning).not.toHaveBeenCalled();
       expect(mockCosClient.getBucketVersioning).not.toHaveBeenCalled();
+      expect(mockTosClient.getBucketVersioning).not.toHaveBeenCalled();
       mockOssClient.put.mock.calls.forEach((call) => expect(call).toHaveLength(2));
       mockCosClient.putObject.mock.calls.forEach(([params]) => {
         expect(params).not.toHaveProperty('Headers');
+      });
+      mockTosClient.putObject.mock.calls.forEach(([params]) => {
+        expect(params).not.toHaveProperty('Headers');
+        expect(params).not.toHaveProperty('headers');
+        expect(params).not.toHaveProperty('forbidOverwrite');
       });
     },
   );
