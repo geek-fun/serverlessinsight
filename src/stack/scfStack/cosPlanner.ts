@@ -78,9 +78,15 @@ export const generateBucketPlan = async (
         cloudToDefinition: cloudCosToDefinition,
         removedDependents: {
           ...removedBucketPolicy(COS_BUCKET_POLICY_INSTANCE_TYPE, currentState, desiredDefinition),
-          ...(!config.Domain &&
+          ...(!(config.domains?.length ?? 0) &&
           (currentState?.instances ?? []).some((i) => i.type === ResourceTypeEnum.COS_DNS_CNAME)
-            ? { domain: currentState?.definition.domain ?? null }
+            ? {
+                domains: currentState?.definition.domains ?? null,
+                // Legacy single-domain state records the binding under `domain`.
+                ...(currentState?.definition.domain != null
+                  ? { domain: currentState.definition.domain }
+                  : {}),
+              }
             : {}),
         },
         refresh: context.refresh,

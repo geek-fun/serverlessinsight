@@ -4,6 +4,17 @@ import type { CosBucketInfo as TencentCosBucketInfo } from '../../common/tencent
 
 export const COS_BUCKET_POLICY_INSTANCE_TYPE = 'TENCENT_COS_BUCKET_POLICY';
 
+export type CosBindingConfig = {
+  domain: string;
+  certificateId?: string;
+  certificateBody?: string;
+  certificatePrivateKey?: string;
+  protocol?: string | string[];
+  // Recorded as declared intent; COS executes binding + certificate only —
+  // CDN delivery on COS is validated separately (issue #282).
+  cdn?: boolean | Record<string, unknown>;
+};
+
 export type CosBucketConfig = {
   Bucket: string;
   Region: string;
@@ -18,12 +29,7 @@ export type CosBucketConfig = {
       Key: string;
     };
   };
-  Domain?: string;
-  WwwBindApex?: boolean;
-  DomainCertificateId?: string;
-  DomainCertificateBody?: string;
-  DomainCertificatePrivateKey?: string;
-  DomainProtocol?: string | string[];
+  domains?: CosBindingConfig[];
   VersioningStatus?: string;
   SseAlgorithm?: string;
   SseKmsMasterKeyId?: string;
@@ -125,6 +131,19 @@ export type CosBucketInfo = {
   Tags?: Array<{ Key: string; Value: string }>;
 };
 
+const bindingToDefinitionEntry = (binding: CosBindingConfig): ResourceAttributes => ({
+  domain_name: binding.domain,
+  certificate_id: binding.certificateId ?? null,
+  certificate_body: binding.certificateBody ?? null,
+  certificate_private_key: binding.certificatePrivateKey ? '(managed)' : null,
+  protocol: binding.protocol ?? null,
+  ...(binding.cdn != null
+    ? {
+        cdn: typeof binding.cdn === 'object' ? { ...binding.cdn } : binding.cdn,
+      }
+    : { cdn: null }),
+});
+
 export const bucketToCosBucketConfig = (bucket: BucketDomain, region: string): CosBucketConfig => {
   const config: CosBucketConfig = {
     Bucket: bucket.name,
@@ -149,39 +168,21 @@ export const bucketToCosBucketConfig = (bucket: BucketDomain, region: string): C
       IndexDocument: {
         Suffix: bucket.website.index,
       },
+      ErrorDocument: {
+        Key: bucket.website.index,
+      },
     };
-
-    config.WebsiteConfiguration.ErrorDocument = {
-      Key: bucket.website.index,
-    };
-
-    if (bucket.website.domain) {
-      config.Domain = bucket.website.domain;
-    }
-    if (bucket.website.www_bind_apex !== undefined) {
-      config.WwwBindApex = bucket.website.www_bind_apex;
-    }
-    if (bucket.website.domain_certificate_id) {
-      config.DomainCertificateId = bucket.website.domain_certificate_id;
-    }
-    if (bucket.website.domain_certificate_body) {
-      config.DomainCertificateBody = bucket.website.domain_certificate_body;
-    }
-    if (bucket.website.domain_certificate_private_key) {
-      config.DomainCertificatePrivateKey = bucket.website.domain_certificate_private_key;
-    }
-    if (bucket.website.domain_protocol) {
-      config.DomainProtocol = bucket.website.domain_protocol;
-    }
   }
 
-  if (bucket.domain) {
-    config.Domain = bucket.domain.domain_name;
-    config.WwwBindApex = bucket.domain.www_bind_apex ?? false;
-    config.DomainCertificateId = bucket.domain.certificate_id;
-    config.DomainCertificateBody = bucket.domain.certificate_body;
-    config.DomainCertificatePrivateKey = bucket.domain.certificate_private_key;
-    config.DomainProtocol = bucket.domain.protocol;
+  if (bucket.domains?.length) {
+    config.domains = bucket.domains.map((binding) => ({
+      domain: binding.domain_name,
+      certificateId: binding.certificate_id,
+      certificateBody: binding.certificate_body,
+      certificatePrivateKey: binding.certificate_private_key,
+      protocol: binding.protocol,
+      ...(binding.cdn != null ? { cdn: binding.cdn as boolean | Record<string, unknown> } : {}),
+    }));
   }
 
   if (bucket.versioning?.status) {
@@ -210,12 +211,12 @@ export const extractCosBucketDefinition = (config: CosBucketConfig): ResourceAtt
           errorDocument: config.WebsiteConfiguration.ErrorDocument?.Key ?? null,
         }
       : {},
-    domain: config.Domain ?? null,
-    wwwBindApex: config.Domain ? (config.WwwBindApex ?? false) : null,
-    domainCertificateId: config.DomainCertificateId ?? null,
-    domainCertificateBody: config.DomainCertificateBody ?? null,
-    domainCertificatePrivateKey: config.DomainCertificatePrivateKey ? '(managed)' : null,
-    domainProtocol: config.DomainProtocol ?? null,
+    // Bindings are canonicalized: sorted by hostname so list reordering in
+    // YAML never produces a plan change (issue #279).
+    domains: (config.domains ?? [])
+      .slice()
+      .sort((a, b) => a.domain.localeCompare(b.domain))
+      .map(bindingToDefinitionEntry),
     versioningStatus: config.VersioningStatus ?? null,
     sseAlgorithm: config.SseAlgorithm ?? null,
     sseKmsMasterKeyId: config.SseKmsMasterKeyId ?? null,

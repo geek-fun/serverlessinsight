@@ -22,9 +22,11 @@ export type CdnRawConfig = {
   force_redirect_https?: Resolvable<boolean>;
 };
 
-type BucketDomainConfigCommon = {
+// v1 (issue #279): a bucket declares bindings through the `domains` list.
+// Binding identity is the normalized domain_name scoped to the bucket; list
+// order carries no deployment semantics.
+export type BucketDomainBindingRaw = {
   domain_name: Resolvable<string>;
-  www_bind_apex?: Resolvable<boolean>;
   certificate_id?: Resolvable<string>;
   certificate_body?: Resolvable<string>;
   certificate_private_key?: Resolvable<string>;
@@ -32,11 +34,14 @@ type BucketDomainConfigCommon = {
   cdn?: Resolvable<boolean> | CdnRawConfig;
 };
 
-export type BucketDomainConfig = BucketDomainConfigCommon & {
-  accelerate?: Resolvable<boolean>;
+export type BucketDomainBinding = {
+  domain_name: string;
+  certificate_id?: string;
+  certificate_body?: string;
+  certificate_private_key?: string;
+  protocol?: string | string[];
+  cdn?: boolean | CdnConfig;
 };
-
-export type BucketWebsiteDomainConfig = BucketDomainConfigCommon;
 
 export type BucketRaw = {
   name: Resolvable<string>;
@@ -53,12 +58,13 @@ export type BucketRaw = {
     sse_algorithm?: Resolvable<string>;
     sse_kms_master_key_id?: Resolvable<string>;
   };
-  // Canonical form: top-level domain config (preferred over website.domain)
-  domain?: BucketDomainConfig;
+  // Bucket-level transfer acceleration (provider-level feature on all clouds).
+  accelerate?: Resolvable<boolean>;
+  // The only accepted custom-domain form since v1. Legacy `domain` /
+  // `website.domain` / `www_bind_apex` are rejected at schema validation.
+  domains?: BucketDomainBindingRaw[];
   website?: {
     code: Resolvable<string>;
-    // Deprecated: Use top-level `domain` instead
-    domain?: Resolvable<string> | BucketWebsiteDomainConfig;
     index?: Resolvable<string>;
   };
   iam?: BucketIamRaw;
@@ -69,17 +75,6 @@ export enum BucketAccessEnum {
   PUBLIC_READ = 'PUBLIC_READ',
   PUBLIC_READ_WRITE = 'PUBLIC_READ_WRITE',
 }
-
-export type BucketDomainConfigParsed = {
-  domain_name: string;
-  www_bind_apex?: boolean;
-  certificate_id?: string;
-  certificate_body?: string;
-  certificate_private_key?: string;
-  protocol?: string | string[];
-  cdn?: boolean | CdnConfig;
-  accelerate?: boolean;
-};
 
 export type BucketDomain = {
   key: string;
@@ -97,17 +92,11 @@ export type BucketDomain = {
     sse_algorithm?: string;
     sse_kms_master_key_id?: string;
   };
-  // Parsed from top-level `domain` (canonical) or `website.domain` (deprecated)
-  domain?: BucketDomainConfigParsed;
+  accelerate?: boolean;
+  domains?: BucketDomainBinding[];
   website?: {
-    index: string;
-    domain?: string;
-    www_bind_apex?: boolean;
-    domain_certificate_id?: string;
-    domain_certificate_body?: string;
-    domain_certificate_private_key?: string;
-    domain_protocol?: string | string[];
     code: string;
+    index: string;
   };
   iam?: BucketIam;
 };

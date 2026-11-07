@@ -752,9 +752,6 @@ export const en = {
   COS_BUCKET_CERT_DEPLOYING:
     'Deploying SSL certificate to COS bucket domain: {{domain}} (bucket: {{bucketName}})',
   COS_BUCKET_CERT_DEPLOYED: 'SSL certificate deployed to COS bucket domain: {{domain}}',
-  BUCKET_DOMAIN_REQUIRED_FOR_CERT:
-    'Bucket "{{name}}" has certificate configuration but no domain is set. A domain is required when providing certificate information.',
-
   // Protocol messages
   PROTOCOL_INFERRED_REDIRECT:
     'Protocol "{{protocol}}" inferred HTTP-to-HTTPS redirect: {{redirect}}',
@@ -974,18 +971,31 @@ export const en = {
   CDN_DEPLOYING_CERTIFICATE: 'Deploying SSL certificate to CDN domain {{domain}}',
   CDN_DOMAIN_DELETED: 'CDN domain {{domain}} deleted successfully',
   CDN_DOMAIN_DELETE_FAILED: 'Failed to delete CDN domain {{domain}}: {{error}}',
-  CDN_ACCELERATE_SKIP_UPDATE:
-    'CDN/accelerate configuration unchanged for {{domain}} on bucket {{bucketName}}. CDN settings are managed at create-time.',
-  CDN_DOMAIN_CHANGE_REQUIRES_RECREATE:
-    'Cannot change CDN/accelerate domain from {{oldDomain}} to {{newDomain}} during update. Use destroy+recreate instead.',
-  BUCKET_DOMAIN_DEPRECATED:
-    '[DEPRECATED] bucket "{{key}}": website.domain is deprecated. Use top-level "domain" instead.',
   FAILED_TO_REFRESH_STATE: 'Failed to refresh state for {{resourceType}}: {{name}}',
   FAILED_TO_UPLOAD_BUCKET_FILES:
     'Failed to upload files to bucket, but bucket was created and saved to state: {{error}}',
   FAILED_TO_ENABLE_ACCELERATION: 'Failed to enable transfer acceleration for bucket {{bucketName}}',
   CDN_ACCELERATE_CONFIG_CHANGED:
     'Cannot change CDN/accelerate settings for bucket {{bucketName}} via update. Use destroy+recreate to change CDN or acceleration configuration.',
+  BINDING_REMOVING_DOMAIN: 'Removing custom domain binding {{domain}} from bucket {{bucketName}}',
+
+  // v1 bucket domains (issue #279): legacy forms are rejected with a migration mapping
+  BUCKET_DOMAIN_MIGRATION_REQUIRED:
+    'Bucket "{{key}}": the legacy "domain" field is no longer supported since v1. Declare bindings under "domains" instead — `domain: example.com` becomes `- domain_name: example.com`; a `domain` object keeps its certificate/protocol/cdn options as one list entry; `www_bind_apex: true` becomes an explicit `- domain_name: www.<host>` entry. See the migration guide: https://github.com/geek-fun/serverlessinsight/issues/279',
+  BUCKET_WEBSITE_DOMAIN_MIGRATION_REQUIRED:
+    'Bucket "{{key}}": the legacy "website.domain" field is no longer supported since v1. Move the binding to the top-level "domains" list (same fields). See the migration guide: https://github.com/geek-fun/serverlessinsight/issues/279',
+  BUCKET_WWW_BIND_APEX_MIGRATION_REQUIRED:
+    'Bucket "{{key}}": "www_bind_apex" was removed in v1. Declare the www host as an explicit bindings entry: `- domain_name: www.<host>` with the same certificate/protocol/cdn options. See the migration guide: https://github.com/geek-fun/serverlessinsight/issues/279',
+  BUCKET_DOMAIN_ACCELERATE_MIGRATION_REQUIRED:
+    'Bucket "{{key}}": per-domain "accelerate" was removed in v1. Transfer acceleration is a bucket-level feature — declare it as `accelerate: true` on the bucket. See the migration guide: https://github.com/geek-fun/serverlessinsight/issues/279',
+  BUCKET_DOMAINS_DUPLICATE:
+    'Bucket "{{key}}": duplicate custom domain binding "{{domain}}". Bindings are identified by normalized hostname — remove the repeated entry.',
+  BUCKET_DOMAINS_WILDCARD_CONFLICT:
+    'Bucket "{{key}}": exact domain "{{exact}}" conflicts with wildcard "{{wildcard}}" covering it. Rejecting co-existence — split the bindings across two buckets instead.',
+  BUCKET_DOMAINS_PROVIDER_NOT_SUPPORTED:
+    'Bucket "{{key}}": custom domain bindings ("domains") are not supported on provider "{{provider}}" yet.',
+  BUCKET_ACCELERATE_PROVIDER_NOT_SUPPORTED:
+    'Bucket "{{key}}": bucket-level transfer acceleration ("accelerate") is not supported on provider "{{provider}}" yet.',
 
   // Bucket IAM Policy messages
   BUCKET_POLICY_APPLYING: 'Applying IAM bucket policy to bucket {{bucketName}}',

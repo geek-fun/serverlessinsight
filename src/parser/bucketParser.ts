@@ -1,17 +1,16 @@
 import {
   BucketAccessEnum,
   BucketDomain,
+  BucketDomainBinding,
   BucketRaw,
   BucketIam,
   CdnConfig,
   CdnRawConfig,
 } from '../types';
 import { parseBooleanWithDefault, parseStringWithDefault } from './parseUtils';
-import { logger } from '../common/logger';
-import { lang } from '../lang';
+import { normalizeHostname } from '../common/domainUtils';
 
-const isStructuredDomain = (domain: unknown): domain is Record<string, unknown> =>
-  typeof domain === 'object' && domain !== null && 'domain_name' in domain;
+const TEMPLATE_REF_PATTERN = /^\$\{[^}]+\}$/;
 
 const parseCdnConfig = (
   cdn: boolean | CdnRawConfig | undefined,
@@ -32,78 +31,27 @@ const parseCdnConfig = (
   return parsed;
 };
 
-const parseDomainConfig = (
-  rawDomain: Record<string, unknown> | undefined,
-  accelerateFromDomain?: unknown,
-) => {
-  if (!rawDomain) return undefined;
-  return {
-    domain_name: String(rawDomain.domain_name),
-    www_bind_apex: parseBooleanWithDefault(rawDomain.www_bind_apex as boolean, false),
-    certificate_id: rawDomain.certificate_id != null ? String(rawDomain.certificate_id) : undefined,
-    certificate_body:
-      rawDomain.certificate_body != null ? String(rawDomain.certificate_body) : undefined,
-    certificate_private_key:
-      rawDomain.certificate_private_key != null
-        ? String(rawDomain.certificate_private_key)
-        : undefined,
-    protocol:
-      rawDomain.protocol != null
-        ? Array.isArray(rawDomain.protocol)
-          ? rawDomain.protocol.map(String)
-          : String(rawDomain.protocol)
-        : undefined,
-    cdn: parseCdnConfig(rawDomain.cdn as boolean | CdnRawConfig | undefined),
-    accelerate: accelerateFromDomain != null ? String(accelerateFromDomain) === 'true' : undefined,
-  };
+// Binding identity is the normalized hostname (issue #279). Template refs are
+// preserved verbatim — they resolve at deploy time.
+const parseBindingHostname = (raw: unknown): string => {
+  const value = String(raw);
+  return TEMPLATE_REF_PATTERN.test(value) ? value : normalizeHostname(value);
 };
 
-const parseWebsiteDomain = (
-  domain: unknown,
-): {
-  domain: string | undefined;
-  www_bind_apex: boolean;
-  domain_certificate_id: string | undefined;
-  domain_certificate_body: string | undefined;
-  domain_certificate_private_key: string | undefined;
-  domain_protocol: string | string[] | undefined;
-} => {
-  if (domain == null) {
-    return {
-      domain: undefined,
-      www_bind_apex: false,
-      domain_certificate_id: undefined,
-      domain_certificate_body: undefined,
-      domain_certificate_private_key: undefined,
-      domain_protocol: undefined,
-    };
-  }
-  if (!isStructuredDomain(domain)) {
-    return {
-      domain: String(domain),
-      www_bind_apex: false,
-      domain_certificate_id: undefined,
-      domain_certificate_body: undefined,
-      domain_certificate_private_key: undefined,
-      domain_protocol: undefined,
-    };
-  }
-  const d = domain as Record<string, unknown>;
-  return {
-    domain: String(d.domain_name),
-    www_bind_apex: parseBooleanWithDefault(d.www_bind_apex as boolean, false),
-    domain_certificate_id: d.certificate_id != null ? String(d.certificate_id) : undefined,
-    domain_certificate_body: d.certificate_body != null ? String(d.certificate_body) : undefined,
-    domain_certificate_private_key:
-      d.certificate_private_key != null ? String(d.certificate_private_key) : undefined,
-    domain_protocol:
-      d.protocol != null
-        ? Array.isArray(d.protocol)
-          ? d.protocol.map(String)
-          : String(d.protocol)
-        : undefined,
-  };
-};
+const parseDomainBinding = (raw: Record<string, unknown>): BucketDomainBinding => ({
+  domain_name: parseBindingHostname(raw.domain_name),
+  certificate_id: raw.certificate_id != null ? String(raw.certificate_id) : undefined,
+  certificate_body: raw.certificate_body != null ? String(raw.certificate_body) : undefined,
+  certificate_private_key:
+    raw.certificate_private_key != null ? String(raw.certificate_private_key) : undefined,
+  protocol:
+    raw.protocol != null
+      ? Array.isArray(raw.protocol)
+        ? raw.protocol.map(String)
+        : String(raw.protocol)
+      : undefined,
+  cdn: parseCdnConfig(raw.cdn as boolean | CdnRawConfig | undefined),
+});
 
 /* istanbul ignore next */
 export const parseBucket = (buckets: {
@@ -113,29 +61,9 @@ export const parseBucket = (buckets: {
     return undefined;
   }
   return Object.entries(buckets).map(([key, bucket]) => {
-    let domainParsed: ReturnType<typeof parseDomainConfig> = undefined;
-
-    // Parse top-level domain (canonical form)
-    if (bucket.domain) {
-      const structuredDomain = isStructuredDomain(bucket.domain)
-        ? (bucket.domain as Record<string, unknown>)
-        : { domain_name: String(bucket.domain) };
-      domainParsed = parseDomainConfig(
-        structuredDomain as Record<string, unknown>,
-        (bucket.domain as Record<string, unknown>).accelerate,
-      );
-    }
-
-    // Fallback: parse website.domain (deprecated)
-    if (!domainParsed && bucket.website?.domain) {
-      logger.warn(lang.__('BUCKET_DOMAIN_DEPRECATED', { key }));
-      const structuredDomain = isStructuredDomain(bucket.website.domain)
-        ? (bucket.website.domain as Record<string, unknown>)
-        : { domain_name: String(bucket.website.domain) };
-      domainParsed = parseDomainConfig(structuredDomain, undefined);
-    }
-
-    const websiteDomain = parseWebsiteDomain(bucket.website?.domain);
+    const domains = bucket.domains?.map((entry) =>
+      parseDomainBinding(entry as unknown as Record<string, unknown>),
+    );
 
     // Parse IAM policy statements
     let iam: BucketIam | undefined;
@@ -152,8 +80,8 @@ export const parseBucket = (buckets: {
               : [String(resourceRaw)];
 
             const principal: Record<string, string | string[]> = {};
-            for (const [key, val] of Object.entries(stmt.principal || {})) {
-              principal[key] = val as string | string[];
+            for (const [entryKey, val] of Object.entries(stmt.principal || {})) {
+              principal[entryKey] = val as string | string[];
             }
 
             const parsedStmt: BucketIam['resource']['statements'][0] = {
@@ -200,13 +128,12 @@ export const parseBucket = (buckets: {
               : undefined,
           }
         : undefined,
-      // Parsed top-level domain config
-      domain: domainParsed,
+      accelerate: parseBooleanWithDefault(bucket.accelerate as boolean, false),
+      domains,
       iam,
       website: bucket.website
         ? {
             code: String(bucket.website.code),
-            ...websiteDomain,
             index: parseStringWithDefault(bucket.website.index, 'index.html'),
           }
         : undefined,

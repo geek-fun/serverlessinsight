@@ -30,6 +30,25 @@ import path from 'node:path';
 import { OWNERSHIP_TAG_KEY, buildOwnershipTagValue, isOwnedByStack } from '../ownershipTag';
 import { isResourceAlreadyExistsError } from '../alreadyExists';
 
+// v1 capability contract (issue #279): TOS implements neither bucket
+// custom-domain bindings nor transfer acceleration in si — both are rejected
+// instead of being silently ignored.
+const guardTosCapabilities = (bucket: BucketDomain): void => {
+  if (bucket.domains?.length) {
+    throw new Error(
+      lang.__('BUCKET_DOMAINS_PROVIDER_NOT_SUPPORTED', { key: bucket.key, provider: 'volcengine' }),
+    );
+  }
+  if (bucket.accelerate === true) {
+    throw new Error(
+      lang.__('BUCKET_ACCELERATE_PROVIDER_NOT_SUPPORTED', {
+        key: bucket.key,
+        provider: 'volcengine',
+      }),
+    );
+  }
+};
+
 const buildTosBucketPolicyJson = (iam: BucketDomain['iam']): Record<string, unknown> | null =>
   buildBucketPolicy(iam, 'volcengine');
 
@@ -117,6 +136,8 @@ export const createResource = async (
   };
 
   const stateAfterDependents = setResource(state, logicalId, taintedResourceState);
+
+  guardTosCapabilities(bucket);
 
   try {
     let bucketInfo: TosBucketInfo;
@@ -207,6 +228,7 @@ export const updateResource = async (
   bucket: BucketDomain,
   state: StateFile,
 ): Promise<StateFile> => {
+  guardTosCapabilities(bucket);
   const config = bucketToTosConfig(bucket);
   const client = createVolcengineClient(context);
 

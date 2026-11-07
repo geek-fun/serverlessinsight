@@ -115,38 +115,32 @@ describe('effective deployment validation', () => {
     ).toThrow(IacSchemaErrors);
   });
 
-  it.each(['domain', 'website'])(
-    'preserves a numeric certificate reference in a bucket %s',
-    (location) => {
-      const domain = {
-        domain_name: 'assets.example.com',
-        certificate_id: '${vars.certificate}',
-        protocol: 'HTTPS',
-      };
-      jest.mocked(readFileSync).mockReturnValue(
-        stringify({
-          ...template,
-          vars: { certificate: '00012345678901234567890' },
-          buckets: {
-            assets: {
-              name: 'example-assets',
-              ...(location === 'domain' ? { domain } : { website: { code: './site', domain } }),
-            },
+  it('resolves bucket binding certificate refs through template variables', () => {
+    const domain = {
+      domain_name: 'assets.example.com',
+      certificate_id: '${vars.certificate}',
+      protocol: 'HTTPS',
+    };
+    jest.mocked(readFileSync).mockReturnValue(
+      stringify({
+        ...template,
+        vars: { certificate: '00012345678901234567890' },
+        buckets: {
+          assets: {
+            name: 'example-assets',
+            website: { code: './site' },
+            domains: [domain],
           },
-        }),
-      );
-      const result = revalYaml('/config.yml', {
-        ...context,
-        provider: ProviderEnum.ALIYUN,
-        region: 'cn-hangzhou',
-      });
-      expect(
-        location === 'domain'
-          ? result.buckets?.[0].domain?.certificate_id
-          : result.buckets?.[0].website?.domain_certificate_id,
-      ).toBe('00012345678901234567890');
-    },
-  );
+        },
+      }),
+    );
+    const result = revalYaml('/config.yml', {
+      ...context,
+      provider: ProviderEnum.ALIYUN,
+      region: 'cn-hangzhou',
+    });
+    expect(result.buckets?.[0].domains?.[0].certificate_id).toBe('00012345678901234567890');
+  });
 
   it('keeps YAML App and Service while applying workload provider and region', () => {
     jest.mocked(readFileSync).mockReturnValue(stringify(template));

@@ -35,36 +35,19 @@ const UPDATE_FIELDS: Record<string, readonly string[]> = {
     'domain',
     'timers',
   ],
+  // v1 (issue #279): domain bindings live in the `domains` list and are
+  // reconciled per binding by the executors (add/remove/update in place).
+  // `accelerate` is enable-only via update — disabling still requires
+  // destroy+recreate and fails at execution.
   ALIYUN_OSS_BUCKET: [
     'acl',
     'websiteConfiguration',
     'websiteCodeHash',
-    'domain',
-    'wwwBindApex',
-    'domainCertificateId',
-    'domainCertificateBody',
-    'domainCertificatePrivateKey',
-    'domainProtocol',
-    'policy',
-    'cdnType',
-    'cdnScope',
-    'cdnCacheTtl',
-    'cdnIgnoreQueryString',
-    'cdnOriginProtocol',
-    'cdnCompression',
-    'cdnForceRedirectHttps',
-  ],
-  COS_BUCKET: [
-    'acl',
-    'websiteConfiguration',
-    'domain',
-    'wwwBindApex',
-    'domainCertificateId',
-    'domainCertificateBody',
-    'domainCertificatePrivateKey',
-    'domainProtocol',
+    'domains',
+    'accelerate',
     'policy',
   ],
+  COS_BUCKET: ['acl', 'websiteConfiguration', 'domains', 'policy'],
   VOLCENGINE_TOS_BUCKET: ['acl', 'websiteConfiguration', 'websiteCodeHash', 'policy'],
 };
 
@@ -124,13 +107,6 @@ export const assertSupportedPlanUpdate = (
         lang.__('PLAN_UPDATE_NOT_SUPPORTED', { logicalId, fields: 'nasStorage.storage_class' }),
       );
     }
-  }
-  if (
-    resourceType === 'ALIYUN_OSS_BUCKET' &&
-    (before.cdnEnabled === true || before.accelerateEnabled === true) &&
-    definitionsDiffer({ domain: before.domain }, { domain: desired.domain })
-  ) {
-    throw new Error(lang.__('PLAN_UPDATE_NOT_SUPPORTED', { logicalId, fields: 'domain' }));
   }
   const supported = UPDATE_FIELDS[resourceType];
   if (!supported) return;

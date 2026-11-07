@@ -78,12 +78,8 @@ describe('OSS Planner', () => {
     websiteConfiguration: { indexDocument: 'index.html', errorDocument: 'index.html' },
     websiteCodeHash: 'mock-website-hash',
     storageClass: null,
-    domain: null,
-    wwwBindApex: false,
-    domainCertificateId: null,
-    domainCertificateBody: null,
-    domainCertificatePrivateKey: null,
-    domainProtocol: null,
+    domains: [],
+    accelerate: false,
     policy: null,
     versioningStatus: null,
     sseAlgorithm: null,
@@ -121,12 +117,8 @@ describe('OSS Planner', () => {
           websiteConfiguration: { indexDocument: 'index.html', errorDocument: 'index.html' },
           websiteCodeHash: 'mock-website-hash',
           storageClass: null,
-          domain: null,
-          wwwBindApex: false,
-          domainCertificateId: null,
-          domainCertificateBody: null,
-          domainCertificatePrivateKey: null,
-          domainProtocol: null,
+          domains: [],
+          accelerate: false,
           policy: null,
           versioningStatus: null,
           sseAlgorithm: null,
@@ -247,12 +239,8 @@ describe('OSS Planner', () => {
           },
           websiteCodeHash: 'mock-website-hash',
           storageClass: null,
-          domain: null,
-          wwwBindApex: false,
-          domainCertificateId: null,
-          domainCertificateBody: null,
-          domainCertificatePrivateKey: null,
-          domainProtocol: null,
+          domains: [],
+          accelerate: false,
           policy: null,
           versioningStatus: null,
           sseAlgorithm: null,
@@ -345,13 +333,9 @@ describe('OSS Planner', () => {
           websiteConfiguration: { indexDocument: 'index.html', errorDocument: 'index.html' },
           websiteCodeHash: 'mock-website-hash',
           storageClass: null,
-          domain: 'www.example.com',
+          domains: [{ domain_name: 'www.example.com', cdn: null }],
+          accelerate: false,
           domainBound: false,
-          wwwBindApex: false,
-          domainCertificateId: null,
-          domainCertificateBody: null,
-          domainCertificatePrivateKey: null,
-          domainProtocol: null,
           policy: null,
           versioningStatus: null,
           sseAlgorithm: null,
@@ -367,12 +351,12 @@ describe('OSS Planner', () => {
         lastUpdated: new Date().toISOString(),
       });
 
-      const bucketWithDomain: BucketDomain = {
+      const bucketWithBinding: BucketDomain = {
         ...testBucket,
-        website: { ...testBucket.website!, domain: 'www.example.com' },
+        domains: [{ domain_name: 'www.example.com' }],
       };
 
-      const plan = await generateBucketPlan(mockContext, state, [bucketWithDomain]);
+      const plan = await generateBucketPlan(mockContext, state, [bucketWithBinding]);
 
       expect(plan.items).toHaveLength(1);
       expect(plan.items[0]).toMatchObject({
@@ -399,13 +383,9 @@ describe('OSS Planner', () => {
           websiteConfiguration: { indexDocument: 'index.html', errorDocument: 'index.html' },
           websiteCodeHash: 'mock-website-hash',
           storageClass: null,
-          domain: 'www.example.com',
+          domains: [{ domain_name: 'www.example.com', cdn: null }],
+          accelerate: false,
           domainBound: true,
-          wwwBindApex: false,
-          domainCertificateId: null,
-          domainCertificateBody: null,
-          domainCertificatePrivateKey: null,
-          domainProtocol: null,
           policy: null,
           versioningStatus: null,
           sseAlgorithm: null,
@@ -421,18 +401,100 @@ describe('OSS Planner', () => {
         lastUpdated: new Date().toISOString(),
       });
 
-      const bucketWithDomain: BucketDomain = {
+      const bucketWithBinding: BucketDomain = {
         ...testBucket,
-        website: { ...testBucket.website!, domain: 'www.example.com' },
+        domains: [{ domain_name: 'www.example.com' }],
       };
 
-      const plan = await generateBucketPlan(mockContext, state, [bucketWithDomain]);
+      const plan = await generateBucketPlan(mockContext, state, [bucketWithBinding]);
 
       expect(plan.items).toHaveLength(1);
       expect(plan.items[0]).toMatchObject({
         logicalId: 'buckets.test_bucket',
         action: 'noop',
         resourceType: 'ALIYUN_OSS_BUCKET',
+      });
+    });
+
+    it('plans noop when the bindings list is only reordered (identity is the hostname)', async () => {
+      mockOssOperations.getBucket.mockResolvedValue({
+        name: 'test-bucket',
+        acl: 'public-read',
+        websiteConfig: { indexDocument: 'index.html', errorDocument: 'index.html' },
+        tags: [{ key: 'si-owned-by', value: 'test-app-test-service:buckets.test_bucket' }],
+      });
+
+      const state = stateForDefinition({
+        ...baseDefinition,
+        acl: 'public-read',
+        domains: [
+          {
+            domain_name: 'a.example.com',
+            certificate_id: null,
+            certificate_body: null,
+            certificate_private_key: null,
+            protocol: null,
+            cdn: null,
+          },
+          {
+            domain_name: 'z.example.com',
+            certificate_id: null,
+            certificate_body: null,
+            certificate_private_key: null,
+            protocol: null,
+            cdn: null,
+          },
+        ],
+      });
+
+      // YAML lists the same bindings in reverse order — no deployment semantics.
+      const reordered: BucketDomain = {
+        ...testBucket,
+        domains: [{ domain_name: 'z.example.com' }, { domain_name: 'a.example.com' }],
+      };
+
+      const plan = await generateBucketPlan(mockContext, state, [reordered]);
+
+      expect(plan.items).toHaveLength(1);
+      expect(plan.items[0]).toMatchObject({ action: 'noop' });
+    });
+
+    it('plans an update when a binding is added to the list', async () => {
+      mockOssOperations.getBucket.mockResolvedValue({
+        name: 'test-bucket',
+        acl: 'public-read',
+        websiteConfig: { indexDocument: 'index.html', errorDocument: 'index.html' },
+        tags: [{ key: 'si-owned-by', value: 'test-app-test-service:buckets.test_bucket' }],
+      });
+
+      const state = stateForDefinition({
+        ...baseDefinition,
+        acl: 'public-read',
+        domains: [
+          {
+            domain_name: 'a.example.com',
+            certificate_id: null,
+            certificate_body: null,
+            certificate_private_key: null,
+            protocol: null,
+            cdn: null,
+          },
+        ],
+      });
+
+      const withNewBinding: BucketDomain = {
+        ...testBucket,
+        domains: [{ domain_name: 'a.example.com' }, { domain_name: 'new.example.com' }],
+      };
+
+      const plan = await generateBucketPlan(mockContext, state, [withNewBinding]);
+
+      expect(plan.items[0]).toMatchObject({ action: 'update' });
+      expect(plan.items[0].changes?.after).toMatchObject({
+        domains: [
+          expect.objectContaining({ domain_name: 'a.example.com' }),
+          expect.objectContaining({ domain_name: 'new.example.com' }),
+        ],
       });
     });
 
@@ -452,13 +514,8 @@ describe('OSS Planner', () => {
           websiteConfiguration: { indexDocument: 'index.html', errorDocument: 'index.html' },
           websiteCodeHash: 'mock-website-hash',
           storageClass: null,
-          domain: null,
-          domainBound: null,
-          wwwBindApex: false,
-          domainCertificateId: null,
-          domainCertificateBody: null,
-          domainCertificatePrivateKey: null,
-          domainProtocol: null,
+          domains: [],
+          accelerate: false,
           policy: null,
           versioningStatus: null,
           sseAlgorithm: null,
@@ -506,12 +563,8 @@ describe('OSS Planner', () => {
           },
           websiteCodeHash: 'mock-website-hash',
           storageClass: null,
-          domain: null,
-          wwwBindApex: false,
-          domainCertificateId: null,
-          domainCertificateBody: null,
-          domainCertificatePrivateKey: null,
-          domainProtocol: null,
+          domains: [],
+          accelerate: false,
           policy: null,
           versioningStatus: null,
           sseAlgorithm: null,
@@ -595,12 +648,8 @@ describe('OSS Planner', () => {
           },
           websiteCodeHash: 'mock-website-hash',
           storageClass: null,
-          domain: null,
-          wwwBindApex: false,
-          domainCertificateId: null,
-          domainCertificateBody: null,
-          domainCertificatePrivateKey: null,
-          domainProtocol: null,
+          domains: [],
+          accelerate: false,
           policy: null,
           versioningStatus: null,
           sseAlgorithm: null,

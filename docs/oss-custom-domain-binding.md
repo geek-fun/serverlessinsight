@@ -77,6 +77,39 @@
 
 > 💡 **注意**：所有域名类型（根域名和子域名）现在统一使用阿里云推荐的 CNAME 域名（`taihangcda.cn` 系列），通过 `GetBucketInfo` API 自动获取正确的外网 Endpoint 并转换。
 
+## Declaring bindings with si (v1)
+
+Since v1 a bucket declares its custom domains through the `domains` list
+(issue [#279](https://github.com/geek-fun/serverlessinsight/issues/279)); si owns the
+CNAME binding, certificate deployment and DNS records for every entry. The old
+`domain:` block, `website.domain` alias and `www_bind_apex` shortcut were removed —
+the www host is declared as its own binding:
+
+```yaml
+buckets:
+  site:
+    name: your-bucket
+    website:
+      code: dist
+      index: index.html
+    accelerate: false            # optional: bucket-level transfer acceleration
+    domains:
+      - domain_name: example.com
+        certificate_id: cert-123
+        cdn:
+          enabled: true
+          cdn_type: web
+      - domain_name: www.example.com   # explicit binding (replaces www_bind_apex)
+        certificate_id: cert-123
+        cdn:
+          enabled: true
+          cdn_type: web
+```
+
+Bindings are identified by normalized hostname — reordering the list produces no
+changes, duplicate hostnames are rejected, and an exact hostname covered by a
+wildcard entry in the same list is rejected (split such bindings across two buckets).
+
 ## Deployment state representation
 
 The example below is the single-deployment V4 executor/SaaS view. Local/Bucket
@@ -110,7 +143,25 @@ ServerlessInsight v0.5.7 新增了 `ALIYUN_OSS_DNS_CNAME` 资源类型，用于�
               "indexDocument": "index.html",
               "errorDocument": "404.html"
             },
-            "domain": "www.example.com"
+            "domains": [
+              {
+                "domain_name": "example.com",
+                "certificate_id": null,
+                "certificate_body": null,
+                "certificate_private_key": null,
+                "protocol": null,
+                "cdn": null
+              },
+              {
+                "domain_name": "www.example.com",
+                "certificate_id": null,
+                "certificate_body": null,
+                "certificate_private_key": null,
+                "protocol": null,
+                "cdn": null
+              }
+            ],
+            "accelerate": false
           },
           "instances": [
             {

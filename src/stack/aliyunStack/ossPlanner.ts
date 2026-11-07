@@ -50,13 +50,24 @@ const removedOssDependents = (
   desiredDefinition: ResourceAttributes,
 ): ResourceAttributes => {
   if (!currentState) return {};
-  const domainName = bucket.domain?.domain_name || bucket.website?.domain;
-  const dnsRemoved =
-    !domainName &&
-    (currentState.instances ?? []).some((i) => i.type === ResourceTypeEnum.ALIYUN_OSS_DNS_CNAME);
+  const bindingsRemoved =
+    !(bucket.domains?.length ?? 0) &&
+    (currentState.instances ?? []).some(
+      (i) =>
+        i.type === ResourceTypeEnum.ALIYUN_OSS_DNS_CNAME ||
+        i.type === ResourceTypeEnum.ALIYUN_CDN_DISTRIBUTION ||
+        i.type === ResourceTypeEnum.ALIYUN_CDN_DNS_CNAME,
+    );
+  const legacyDefinition = currentState.definition as { domain?: unknown };
   return {
     ...removedBucketPolicy(OSS_BUCKET_POLICY_INSTANCE_TYPE, currentState, desiredDefinition),
-    ...(dnsRemoved ? { domain: currentState.definition.domain ?? null } : {}),
+    ...(bindingsRemoved
+      ? {
+          domains: currentState.definition.domains ?? null,
+          // Legacy single-domain state records the binding under `domain`.
+          ...(legacyDefinition.domain != null ? { domain: legacyDefinition.domain } : {}),
+        }
+      : {}),
   };
 };
 

@@ -124,7 +124,6 @@ export type CommonBucketConfig = {
   acl?: BucketACL;
   storageClass?: BucketStorageClass;
   websiteConfig?: BucketWebsiteConfig;
-  domain?: string;
 };
 
 /**

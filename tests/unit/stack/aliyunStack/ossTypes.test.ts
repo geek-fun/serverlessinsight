@@ -114,21 +114,20 @@ describe('OssTypes', () => {
       expect(result.storageClass).toBe('Standard');
     });
 
-    it('should include domain when defined in website', () => {
+    it('should include domain bindings when defined', () => {
       const bucket: BucketDomain = {
         key: 'test_bucket',
         name: 'test-bucket',
         website: {
           index: 'index.html',
           code: 'dist',
-
-          domain: 'www.example.com',
         },
+        domains: [{ domain_name: 'www.example.com' }],
       };
 
       const result = bucketToOssBucketConfig(bucket);
 
-      expect(result.domain).toBe('www.example.com');
+      expect(result.domains).toEqual([{ domainName: 'www.example.com' }]);
     });
 
     it('should include versioning status when defined', () => {
@@ -195,12 +194,8 @@ describe('OssTypes', () => {
         websiteConfiguration: {},
         websiteCodeHash: null,
         storageClass: null,
-        domain: null,
-        wwwBindApex: null,
-        domainCertificateId: null,
-        domainCertificateBody: null,
-        domainCertificatePrivateKey: null,
-        domainProtocol: null,
+        domains: [],
+        accelerate: false,
         policy: null,
         versioningStatus: null,
         sseAlgorithm: null,
@@ -263,15 +258,34 @@ describe('OssTypes', () => {
       expect(definition.storageClass).toBe('Standard');
     });
 
-    it('should extract domain when defined', () => {
+    it('should extract sorted domain bindings with cdn config', () => {
       const config = {
         bucketName: 'test-bucket',
-        domain: 'www.example.com',
+        domains: [{ domainName: 'z.example.com' }, { domainName: 'a.example.com', cdn: true }],
       };
 
       const definition = extractOssBucketDefinition(config);
 
-      expect(definition.domain).toBe('www.example.com');
+      // Bindings are canonicalized: sorted by hostname so list reordering in
+      // YAML never produces a plan change (issue #279).
+      expect(definition.domains).toEqual([
+        {
+          domain_name: 'a.example.com',
+          certificate_id: null,
+          certificate_body: null,
+          certificate_private_key: null,
+          protocol: null,
+          cdn: { enabled: true, cdn_type: 'web', scope: 'global' },
+        },
+        {
+          domain_name: 'z.example.com',
+          certificate_id: null,
+          certificate_body: null,
+          certificate_private_key: null,
+          protocol: null,
+          cdn: null,
+        },
+      ]);
     });
 
     it('should extract versioning status when defined', () => {

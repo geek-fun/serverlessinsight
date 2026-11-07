@@ -70,38 +70,23 @@ describe('deployment read and ownership repair contracts', () => {
     await fs.rm(directory, { recursive: true, force: true });
   });
 
-  it.each([
-    [ProviderEnum.ALIYUN, false],
-    [ProviderEnum.ALIYUN, true],
-    [ProviderEnum.TENCENT, false],
-    [ProviderEnum.TENCENT, true],
-  ] as const)(
-    '%s (canonical domain %s) restores omitted www to false and removes owned bindings through persistence',
-    async (provider, canonical) => {
+  it.each([ProviderEnum.ALIYUN, ProviderEnum.TENCENT] as const)(
+    '%s converges explicit domain bindings through persistence (v1 binding model)',
+    async (provider) => {
       const context = contextFor(provider);
       const yamlPath = path.join(directory, 'bucket.yml');
-      const writeBucket = async (options: { www?: boolean; index: string; domain?: string }) => {
+      const writeBucket = async (options: { domains?: string[]; index: string }) => {
         const websitePath = path.join(directory, 'website');
         await fs.mkdir(websitePath, { recursive: true });
+        const domains = (options.domains ?? [])
+          .map((domain) => `      - domain_name: ${domain}\n`)
+          .join('');
         await fs.writeFile(
           yamlPath,
           base +
             `provider:\n  name: ${provider}\n  region: ${context.region}\nbuckets:\n  assets:\n    name: synthetic-assets\n    website:\n      code: ${websitePath}\n      index: ${options.index}\n` +
-            (options.domain
-              ? `      domain:\n        domain_name: ${options.domain}\n` +
-                (options.www !== undefined ? `        www_bind_apex: ${options.www}\n` : '')
-              : ''),
+            (options.domains?.length ? `    domains:\n${domains}` : ''),
         );
-        if (canonical) {
-          const yaml = await fs.readFile(yamlPath, 'utf8');
-          await fs.writeFile(
-            yamlPath,
-            yaml
-              .replace('      domain:', '    domain:')
-              .replace('        domain_name:', '      domain_name:')
-              .replace('        www_bind_apex:', '      www_bind_apex:'),
-          );
-        }
         return parseYaml(yamlPath).buckets![0];
       };
       const bindings = new Set<string>();
@@ -178,35 +163,41 @@ describe('deployment read and ownership repair contracts', () => {
         provider === ProviderEnum.ALIYUN
           ? deleteOss(context, 'synthetic-assets', 'buckets.assets', state)
           : deleteCos(context, 'synthetic-assets', context.region, 'buckets.assets', state);
-      let bucket = await writeBucket({ domain: 'example.com', www: true, index: 'index.html' });
+      // Create with two explicit bindings (the v1 replacement for www_bind_apex).
+      let bucket = await writeBucket({
+        domains: ['example.com', 'www.example.com'],
+        index: 'index.html',
+      });
       let state = loadState(provider, context.app, context.service, context.stage, directory);
       state = roundTrip(await create(context, bucket, state), context);
-      const www = state.resources['buckets.assets'].instances.find((i) => i.isWwwVariant);
-      expect(www).toBeDefined();
-      bucket = await writeBucket({ domain: 'example.com', index: 'index.html' });
+      expect(
+        state.resources['buckets.assets'].instances.some((i) => i.domain === 'www.example.com'),
+      ).toBe(true);
+      // Removing the www binding from the list converges through persistence.
+      bucket = await writeBucket({ domains: ['example.com'], index: 'index.html' });
       expect((await plan({ ...context }, state, [bucket])).items[0].action).toBe('update');
       state = roundTrip(await update(context, bucket, state), context);
-      expect(state.resources['buckets.assets'].instances.some((i) => i.isWwwVariant)).toBe(false);
+      expect(
+        state.resources['buckets.assets'].instances.some((i) => i.domain === 'www.example.com'),
+      ).toBe(false);
       expect(bindings.has('www.example.com')).toBe(false);
       expect((await plan({ ...context }, state, [bucket])).items[0].action).toBe('noop');
-      bucket = await writeBucket({ domain: 'example.com', www: false, index: 'index.html' });
-      expect((await plan({ ...context }, state, [bucket])).items[0].action).toBe('noop');
+      // Re-adding the binding converges again.
+      bucket = await writeBucket({
+        domains: ['example.com', 'www.example.com'],
+        index: 'next.html',
+      });
       state = roundTrip(await update(context, bucket, state), context);
-      expect(bindings.has('www.example.com')).toBe(false);
-      expect(state.resources['buckets.assets'].instances.some((i) => i.isWwwVariant)).toBe(false);
+      expect(bindings.has('www.example.com')).toBe(true);
       expect((await plan({ ...context }, state, [bucket])).items[0].action).toBe('noop');
-      // Restore www, then remove the parent declaration: both owned bindings disappear.
-      bucket = await writeBucket({ domain: 'example.com', www: true, index: 'next.html' });
-      state = roundTrip(await update(context, bucket, state), context);
+      // Removing the whole domains list tears down every owned binding.
       bucket = await writeBucket({ index: 'next.html' });
       expect((await plan({ ...context }, state, [bucket])).items[0].action).toBe('update');
       state = roundTrip(await update(context, bucket, state), context);
       expect(bindings.size).toBe(0);
       expect((await plan({ ...context }, state, [bucket])).items[0].action).toBe('noop');
-      // Destroy after resetting www still removes the owned parent.
-      bucket = await writeBucket({ domain: 'example.com', www: true, index: 'next.html' });
-      state = await update(context, bucket, state);
-      bucket = await writeBucket({ domain: 'example.com', index: 'next.html' });
+      // Destroy after restoring bindings still removes the owned parent and bindings.
+      bucket = await writeBucket({ domains: ['example.com'], index: 'next.html' });
       state = roundTrip(await update(context, bucket, state), context);
       await destroy(state);
       expect(bindings.size).toBe(0);

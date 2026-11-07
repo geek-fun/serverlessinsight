@@ -677,9 +677,6 @@ export const zhCN = {
   COS_BUCKET_CERT_DEPLOYING:
     '正在为 COS 存储桶域名部署 SSL 证书: {{domain}}（存储桶: {{bucketName}}）',
   COS_BUCKET_CERT_DEPLOYED: 'SSL 证书已部署到 COS 存储桶域名: {{domain}}',
-  BUCKET_DOMAIN_REQUIRED_FOR_CERT:
-    '存储桶 "{{name}}" 已配置证书信息，但未设置域名。提供证书信息时必须设置域名。',
-
   // 协议消息
   PROTOCOL_INFERRED_REDIRECT: '协议 "{{protocol}}" 推断 HTTP 到 HTTPS 重定向：{{redirect}}',
 
@@ -879,17 +876,30 @@ export const zhCN = {
   CDN_DEPLOYING_CERTIFICATE: '正在为 CDN 域名 {{domain}} 部署 SSL 证书',
   CDN_DOMAIN_DELETED: 'CDN 域名 {{domain}} 已删除',
   CDN_DOMAIN_DELETE_FAILED: '删除 CDN 域名 {{domain}} 失败：{{error}}',
-  CDN_ACCELERATE_SKIP_UPDATE:
-    '{{domain}} 的 CDN/加速配置在存储桶 {{bucketName}} 上未变化。CDN 设置在创建时管理。',
-  CDN_DOMAIN_CHANGE_REQUIRES_RECREATE:
-    '无法在更新时更改 CDN/加速域名从 {{oldDomain}} 到 {{newDomain}}。请使用销毁重建操作。',
-  BUCKET_DOMAIN_DEPRECATED:
-    '[已弃用] 存储桶 "{{key}}": website.domain 已弃用，请使用顶层 "domain" 配置。',
   FAILED_TO_REFRESH_STATE: '刷新 {{resourceType}} {{name}} 的状态失败',
   FAILED_TO_UPLOAD_BUCKET_FILES: '上传文件到存储桶失败，但存储桶已创建并保存到状态：{{error}}',
   FAILED_TO_ENABLE_ACCELERATION: '无法为存储桶 {{bucketName}} 开启传输加速',
   CDN_ACCELERATE_CONFIG_CHANGED:
     '无法通过更新操作更改存储桶 {{bucketName}} 的 CDN/加速配置。请使用销毁重建操作来更改 CDN 或加速配置。',
+  BINDING_REMOVING_DOMAIN: '正在移除存储桶 {{bucketName}} 的自定义域名绑定 {{domain}}',
+
+  // v1 存储桶域名（issue #279）：旧写法直接拒绝并给出迁移映射
+  BUCKET_DOMAIN_MIGRATION_REQUIRED:
+    '存储桶 "{{key}}"：v1 起不再支持旧版 "domain" 字段。请改用 "domains" 列表声明绑定 —— `domain: example.com` 改为 `- domain_name: example.com`；`domain` 对象中的证书/协议/CDN 选项原样放入对应列表条目；`www_bind_apex: true` 改为显式的 `- domain_name: www.<主机名>` 条目。迁移指南见：https://github.com/geek-fun/serverlessinsight/issues/279',
+  BUCKET_WEBSITE_DOMAIN_MIGRATION_REQUIRED:
+    '存储桶 "{{key}}"：v1 起不再支持旧版 "website.domain" 字段。请将该绑定移至顶层 "domains" 列表（字段不变）。迁移指南见：https://github.com/geek-fun/serverlessinsight/issues/279',
+  BUCKET_WWW_BIND_APEX_MIGRATION_REQUIRED:
+    '存储桶 "{{key}}"："www_bind_apex" 已在 v1 移除。请将 www 主机声明为显式绑定条目：`- domain_name: www.<主机名>`（证书/协议/CDN 选项保持不变）。迁移指南见：https://github.com/geek-fun/serverlessinsight/issues/279',
+  BUCKET_DOMAIN_ACCELERATE_MIGRATION_REQUIRED:
+    '存储桶 "{{key}}"：按域名声明的 "accelerate" 已在 v1 移除。传输加速是存储桶级特性 —— 请在存储桶上声明 `accelerate: true`。迁移指南见：https://github.com/geek-fun/serverlessinsight/issues/279',
+  BUCKET_DOMAINS_DUPLICATE:
+    '存储桶 "{{key}}"：自定义域名绑定 "{{domain}}" 重复。绑定以归一化主机名标识 —— 请移除重复条目。',
+  BUCKET_DOMAINS_WILDCARD_CONFLICT:
+    '存储桶 "{{key}}"：精确域名 "{{exact}}" 与覆盖它的泛域名 "{{wildcard}}" 冲突。拒绝共存 —— 请将绑定拆分到两个存储桶。',
+  BUCKET_DOMAINS_PROVIDER_NOT_SUPPORTED:
+    '存储桶 "{{key}}"：云服务商 "{{provider}}" 暂不支持自定义域名绑定（"domains"）。',
+  BUCKET_ACCELERATE_PROVIDER_NOT_SUPPORTED:
+    '存储桶 "{{key}}"：云服务商 "{{provider}}" 暂不支持存储桶级传输加速（"accelerate"）。',
 
   // Bucket IAM Policy messages
   BUCKET_POLICY_APPLYING: '正在为存储桶 {{bucketName}} 应用 IAM 策略',

@@ -5,6 +5,14 @@
 - **Authors**: ServerlessInsight Team
 - **Deciders**: @geek-fun/core
 
+> **v1 update (issue [#279](https://github.com/geek-fun/serverlessinsight/issues/279))**: the
+> single-domain `domain:` block described below was replaced by the `domains:` binding list.
+> Per-binding `cdn` keeps the boolean/object shape documented here; per-domain `accelerate`
+> moved to the bucket level (`buckets.<key>.accelerate`) because transfer acceleration is a
+> bucket-level feature on every provider; `website.domain` and `www_bind_apex` were removed
+> (legacy forms are rejected with a migration error). The examples below show the historical
+> pre-v1 shape.
+
 ## Context
 
 ServerlessInsight currently manages custom domains for API Gateway and OSS buckets via direct DNS CNAME binding. While this provides basic custom domain support, users who need global acceleration, edge caching, or China-region CDN distribution cannot achieve these without manual cloud console configuration.
