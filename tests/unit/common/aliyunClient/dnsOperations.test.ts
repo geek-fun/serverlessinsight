@@ -2,11 +2,13 @@ import { createDnsOperations } from '../../../../src/common/aliyunClient/dnsOper
 import * as dns from '@alicloud/alidns20150109';
 
 const mockAddDomainRecord = jest.fn();
+const mockUpdateDomainRecord = jest.fn();
 const mockDeleteDomainRecord = jest.fn();
 const mockDescribeDomainRecords = jest.fn();
 
 const mockDnsClient = {
   addDomainRecord: mockAddDomainRecord,
+  updateDomainRecord: mockUpdateDomainRecord,
   deleteDomainRecord: mockDeleteDomainRecord,
   describeDomainRecords: mockDescribeDomainRecords,
 } as unknown as InstanceType<typeof dns.default>;
@@ -94,6 +96,42 @@ describe('DnsOperations', () => {
       });
 
       expect(result).toBe('');
+    });
+  });
+
+  describe('updateDomainRecord', () => {
+    it.each([undefined, 300])('updates an existing record in place with TTL %s', async (ttl) => {
+      mockUpdateDomainRecord.mockResolvedValue({});
+      await operations.updateDomainRecord('owned-id', {
+        domainName: 'example.com',
+        rr: 'static',
+        type: 'CNAME',
+        value: 'bucket.oss-accelerate.aliyuncs.com',
+        ttl,
+      });
+      expect(mockUpdateDomainRecord).toHaveBeenCalledWith(
+        expect.objectContaining({
+          recordId: 'owned-id',
+          RR: 'static',
+          type: 'CNAME',
+          value: 'bucket.oss-accelerate.aliyuncs.com',
+          TTL: ttl ?? 600,
+        }),
+      );
+      expect(mockAddDomainRecord).not.toHaveBeenCalled();
+      expect(mockDeleteDomainRecord).not.toHaveBeenCalled();
+    });
+
+    it('propagates failures without replacing the owned record', async () => {
+      mockUpdateDomainRecord.mockRejectedValueOnce(new Error('update denied'));
+      await expect(
+        operations.updateDomainRecord('owned-id', {
+          domainName: 'example.com',
+          rr: 'static',
+          type: 'CNAME',
+          value: 'target',
+        }),
+      ).rejects.toThrow('update denied');
     });
   });
 

@@ -20,6 +20,7 @@ import { generateFunctionPlan as planFc3 } from '../../src/stack/aliyunStack/fc3
 import { createResource as createFc3 } from '../../src/stack/aliyunStack/fc3Resource';
 import { executeFunctionPlan as executeFc3 } from '../../src/stack/aliyunStack/fc3Executor';
 import { createScfOperations } from '../../src/common/tencentClient/scfOperations';
+import { executeBucketPlan as executeOss } from '../../src/stack/aliyunStack/ossExecutor';
 import { generateBucketPlan as planOss } from '../../src/stack/aliyunStack/ossPlanner';
 import {
   createBucketResource as createOss,
@@ -68,6 +69,137 @@ describe('deployment read and ownership repair contracts', () => {
     clearContext();
     jest.clearAllMocks();
     await fs.rm(directory, { recursive: true, force: true });
+  });
+
+  it('persists partial CDN additions, retries without duplicates, and converges removal and destroy', async () => {
+    const context = contextFor(ProviderEnum.ALIYUN);
+    const yamlPath = path.join(directory, 'bucket.yml');
+    const readBucket = async (hosts: string[]) => {
+      await fs.writeFile(
+        yamlPath,
+        base +
+          `provider:\n  name: aliyun\n  region: cn-hangzhou\nbuckets:\n  assets:\n    name: synthetic-assets\n` +
+          (hosts.length
+            ? `    domains:\n${hosts.map((host) => `      - domain_name: ${host}\n        cdn: true\n`).join('')}`
+            : ''),
+      );
+      return parseYaml(yamlPath).buckets!;
+    };
+    const baseClient = createMockAliyunClient();
+    const client = {
+      ...baseClient,
+      oss: {
+        ...baseClient.oss,
+        getBucket: jest.fn(),
+        bindCustomDomain: jest.fn(),
+        unbindCustomDomain: jest.fn(),
+      },
+    };
+    const distributions = new Set<string>();
+    const origins = new Set<string>();
+    const dns = new Map<string, string>();
+    let failSecond = true;
+    client.oss.getBucket.mockResolvedValue({
+      name: 'synthetic-assets',
+      policy: null,
+      tags: [{ key: 'si-owned-by', value: 'repair-tests-sample:buckets.assets' }],
+    });
+    client.oss.bindCustomDomain.mockImplementation(async (_bucket: string, host: string) => {
+      origins.add(host);
+      return { cname: 'synthetic-assets.oss-cn-hangzhou.aliyuncs.com', bucketCnameBound: true };
+    });
+    client.oss.unbindCustomDomain.mockImplementation(async (_bucket: string, host: string) => {
+      origins.delete(host);
+    });
+    client.cdn.addCdnDomain.mockImplementation(async ({ domainName }) => {
+      if (domainName === 'b.example.com' && failSecond) {
+        failSecond = false;
+        throw new Error('temporary domain failure');
+      }
+      if (distributions.has(domainName)) throw new Error('duplicate CDN domain');
+      distributions.add(domainName);
+    });
+    client.cdn.describeCdnDomainDetail.mockImplementation(async (host) => ({
+      cname: `${host}.cdn.example.com`,
+    }));
+    client.cdn.deleteCdnDomain.mockImplementation(async (host) => {
+      distributions.delete(host);
+    });
+    client.dns.addDomainRecord.mockImplementation(async ({ rr, value }) => {
+      if (dns.has(rr)) throw new Error('duplicate DNS record');
+      dns.set(rr, value);
+      return rr;
+    });
+    client.dns.deleteDomainRecord.mockImplementation(async (id) => {
+      dns.delete(id);
+    });
+    jest.mocked(createAliyunClient).mockReturnValue(client as never);
+    let buckets = await readBucket([]);
+    let state = roundTrip(
+      await createOss(
+        context,
+        buckets[0],
+        loadState(context.provider, context.app, context.service, context.stage, directory),
+      ),
+      context,
+    );
+    buckets = await readBucket(['a.example.com', 'b.example.com']);
+    const persist = async (next: StateFile) => {
+      state = roundTrip(next, context);
+    };
+    const failed = await executeOss(
+      context,
+      await planOss(context, state, buckets),
+      buckets,
+      state,
+      persist,
+    );
+    expect(failed.partialFailure?.error.message).toBe('temporary domain failure');
+    expect(state.resources['buckets.assets'].instances).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ type: 'ALIYUN_CDN_DISTRIBUTION', domainName: 'a.example.com' }),
+        expect.objectContaining({
+          type: 'ALIYUN_CDN_DNS_CNAME',
+          domain: 'a.example.com',
+          dnsRecordId: 'a',
+        }),
+      ]),
+    );
+    client.cdn.addCdnDomain.mockClear();
+    const repaired = await executeOss(
+      context,
+      await planOss(context, state, buckets),
+      buckets,
+      state,
+      persist,
+    );
+    expect(repaired.partialFailure).toBeUndefined();
+    expect(client.cdn.addCdnDomain).toHaveBeenCalledTimes(1);
+    expect(client.cdn.addCdnDomain).toHaveBeenCalledWith(
+      expect.objectContaining({ domainName: 'b.example.com' }),
+    );
+    expect((await planOss(context, state, buckets)).items[0].action).toBe('noop');
+    buckets = await readBucket(['b.example.com']);
+    const removed = await executeOss(
+      context,
+      await planOss(context, state, buckets),
+      buckets,
+      state,
+      persist,
+    );
+    expect(removed.partialFailure).toBeUndefined();
+    expect([...distributions]).toEqual(['b.example.com']);
+    expect([...origins]).toEqual(['b.example.com']);
+    expect([...dns.keys()]).toEqual(['b']);
+    expect((await planOss(context, state, buckets)).items[0].action).toBe('noop');
+    state = roundTrip(
+      await deleteOss(context, 'synthetic-assets', 'buckets.assets', state),
+      context,
+    );
+    expect(state.resources).toEqual({});
+    expect(distributions.size).toBe(0);
+    expect(origins.size).toBe(0);
+    expect(dns.size).toBe(0);
   });
 
   it.each([ProviderEnum.ALIYUN, ProviderEnum.TENCENT] as const)(

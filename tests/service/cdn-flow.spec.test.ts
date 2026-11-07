@@ -177,6 +177,7 @@ const buildMockAliyunClient = (): ExtendedMockAliyunClient => {
   };
 
   base.dns = {
+    updateDomainRecord: jest.fn().mockResolvedValue(undefined),
     addDomainRecord: jest.fn().mockImplementation(({ rr, type }: { rr: string; type: string }) => {
       return Promise.resolve(`${rr}-${type.toLowerCase()}-record-id`);
     }),

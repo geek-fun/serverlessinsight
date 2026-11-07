@@ -64,6 +64,13 @@ jest.mock('../../../../src/lang', () => ({
   },
 }));
 
+beforeEach(() => {
+  mockGetBucketDomain.mockImplementation(
+    (_params: unknown, cb: (err: null, data: { DomainRule: unknown[] }) => void) =>
+      cb(null, { DomainRule: [] }),
+  );
+});
+
 describe('cosOperations CORS', () => {
   let operations: ReturnType<typeof createCosOperations>;
 
@@ -90,6 +97,89 @@ describe('cosOperations CORS', () => {
   });
 
   describe('bindCustomDomain', () => {
+    it('preserves all rules through multiple binds, rebinds, and removal', async () => {
+      let rules: COS.DomainRule[] = [
+        {
+          Name: 'external.example.com',
+          Status: 'DISABLED',
+          Type: 'WEBSITE',
+          ForcedReplacement: 'CNAME',
+        },
+      ];
+      mockGetBucketDomain.mockImplementation(
+        (_params: unknown, cb: (err: null, data: { DomainRule: COS.DomainRule[] }) => void) =>
+          cb(null, { DomainRule: rules }),
+      );
+      mockPutBucketDomain.mockImplementation(
+        (params: { DomainRule: COS.DomainRule[] }, cb: (err: null) => void) => {
+          rules = params.DomainRule;
+          cb(null);
+        },
+      );
+      mockGetBucketCors.mockImplementation(
+        (_params: unknown, cb: (err: null, data: { CORSRules: unknown[] }) => void) =>
+          cb(null, { CORSRules: [] }),
+      );
+      mockPutBucketCors.mockImplementation((_params: unknown, cb: (err: null) => void) => cb(null));
+      mockDeleteBucketCors.mockImplementation((_params: unknown, cb: (err: null) => void) =>
+        cb(null),
+      );
+      await operations.bindCustomDomain('test-bucket', 'a.example.com');
+      await operations.bindCustomDomain('test-bucket', 'b.example.com');
+      await operations.bindCustomDomain('test-bucket', 'a.example.com');
+      expect(rules).toEqual([
+        {
+          Name: 'external.example.com',
+          Status: 'DISABLED',
+          Type: 'WEBSITE',
+          ForcedReplacement: 'CNAME',
+        },
+        { Name: 'b.example.com', Status: 'ENABLED', Type: 'REST' },
+        { Name: 'a.example.com', Status: 'ENABLED', Type: 'REST' },
+      ]);
+      await operations.unbindCustomDomain('test-bucket', 'a.example.com');
+      expect(rules.map((rule) => rule.Name)).toEqual(['external.example.com', 'b.example.com']);
+    });
+
+    it('preserves the source type when rebinding an existing hostname', async () => {
+      mockGetBucketDomain.mockImplementation(
+        (_params: unknown, cb: (err: null, data: { DomainRule: COS.DomainRule[] }) => void) =>
+          cb(null, {
+            DomainRule: [{ Name: 'CDN.EXAMPLE.COM', Status: 'DISABLED', Type: 'WEBSITE' }],
+          }),
+      );
+      await operations.bindCustomDomain('test-bucket', 'cdn.example.com');
+      expect(mockPutBucketDomain).toHaveBeenCalledWith(
+        expect.objectContaining({
+          DomainRule: [{ Name: 'cdn.example.com', Status: 'ENABLED', Type: 'WEBSITE' }],
+        }),
+        expect.any(Function),
+      );
+    });
+
+    it('creates the first binding when the domain configuration is absent', async () => {
+      mockGetBucketDomain.mockImplementation(
+        (_params: unknown, cb: (err: { statusCode: number }) => void) => cb({ statusCode: 404 }),
+      );
+      const result = await operations.bindCustomDomain('test-bucket', 'cdn.example.com');
+      expect(result.bucketDomainBound).toBe(true);
+      expect(mockPutBucketDomain).toHaveBeenCalledWith(
+        expect.objectContaining({
+          DomainRule: [{ Name: 'cdn.example.com', Status: 'ENABLED', Type: 'REST' }],
+        }),
+        expect.any(Function),
+      );
+    });
+
+    it('does not replace existing domains when reading them fails', async () => {
+      mockGetBucketDomain.mockImplementation(
+        (_params: unknown, cb: (err: { statusCode: number }) => void) => cb({ statusCode: 403 }),
+      );
+      const result = await operations.bindCustomDomain('test-bucket', 'cdn.example.com');
+      expect(result.bucketDomainBound).toBe(false);
+      expect(mockPutBucketDomain).not.toHaveBeenCalled();
+    });
+
     it('should add CORS rule after binding domain', async () => {
       mockGetBucketCors.mockImplementation((_params: unknown, cb: (err: Error) => void) =>
         cb(
