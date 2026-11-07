@@ -876,8 +876,6 @@ export const zhCN = {
   CDN_DEPLOYING_CERTIFICATE: '正在为 CDN 域名 {{domain}} 部署 SSL 证书',
   CDN_DOMAIN_DELETED: 'CDN 域名 {{domain}} 已删除',
   CDN_DOMAIN_DELETE_FAILED: '删除 CDN 域名 {{domain}} 失败：{{error}}',
-  CDN_DOMAIN_RECREATING:
-    'CDN 域名 {{domain}} 的交付配置（业务类型或加速区域）已变更，正在重建 CDN 域名',
   CDN_CERT_UNCHANGED_SKIPPED: '{{domain}} 的证书未变化（哈希一致），跳过证书部署',
   FAILED_TO_REFRESH_STATE: '刷新 {{resourceType}} {{name}} 的状态失败',
   FAILED_TO_UPLOAD_BUCKET_FILES: '上传文件到存储桶失败，但存储桶已创建并保存到状态：{{error}}',

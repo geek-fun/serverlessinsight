@@ -25,7 +25,7 @@ import {
   ResourceTypeEnum,
 } from '../../types';
 import { createTencentClient } from '../../common/tencentClient';
-import type { TencentCdnOriginConfig } from '../../common/tencentClient/cdnOperations';
+import type { TencentCdnOriginConfig } from '../../common/tencentClient';
 import {
   COS_BUCKET_POLICY_INSTANCE_TYPE,
   bucketToCosBucketConfig,

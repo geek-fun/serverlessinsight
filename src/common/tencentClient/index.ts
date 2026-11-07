@@ -20,6 +20,7 @@ import { createTencentCdnOperations } from './cdnOperations';
 
 export * from './types';
 export { createClsOperations } from './clsOperations';
+export type { TencentCdnOperations, TencentCdnOriginConfig } from './cdnOperations';
 
 const ScfClient = tencentcloud.scf.v20180416.Client;
 const CynosdbClient = cynosdb.cynosdb.v20190107.Client;

@@ -2,7 +2,7 @@ import { ErrorObject } from 'ajv';
 import type { ServerlessIacRaw } from '../types';
 import { lang } from '../lang';
 import { logger } from '../common/logger';
-// Direct leaf import on purpose: routing through the src/common barrel would
+// Direct leaf imports on purpose: routing through the src/common barrel would
 // drag stateManager/lockManager/fs surfaces into the validator graph and
 // recreate an import cycle with src/parser. These helpers are pure.
 import {

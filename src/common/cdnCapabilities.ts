@@ -1,4 +1,4 @@
-import type { CdnScope } from '../types/domains/bucket';
+import type { CdnScope } from '../types';
 
 /**
  * Provider CDN capability registry (issue #283, shared with #282).
@@ -13,11 +13,12 @@ import type { CdnScope } from '../types/domains/bucket';
  * Semantic validation fail-fasts on unsupported combinations; delivering CDN
  * for a provider narrows this registry instead of adding per-executor checks.
  * Deliberately pure (no logger/lang imports) so the validator can import it
- * without dragging runtime state into the validation graph.
+ * without dragging runtime state into the validation graph. Only the accessor
+ * helpers are exported — the registry table itself stays internal.
  */
-export type CdnProviderName = 'aliyun' | 'tencent' | 'volcengine';
+type CdnProviderName = 'aliyun' | 'tencent' | 'volcengine';
 
-export type CdnCapability = {
+type CdnCapability = {
   bucketCdn: boolean;
   eventCdn: boolean;
   cdnTypes: ReadonlyArray<string>;
@@ -32,7 +33,7 @@ const ALIYUN_CDN_TYPES: ReadonlyArray<string> = ['web', 'download', 'video'];
 const TENCENT_CDN_TYPES: ReadonlyArray<string> = ['web', 'download', 'media', 'hybrid', 'dynamic'];
 const VOLCENGINE_CDN_TYPES: ReadonlyArray<string> = ['web', 'download', 'video'];
 
-export const CDN_CAPABILITIES: Record<CdnProviderName, CdnCapability> = {
+const CDN_CAPABILITIES: Record<CdnProviderName, CdnCapability> = {
   aliyun: {
     bucketCdn: true,
     eventCdn: true,

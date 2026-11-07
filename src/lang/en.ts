@@ -971,8 +971,6 @@ export const en = {
   CDN_DEPLOYING_CERTIFICATE: 'Deploying SSL certificate to CDN domain {{domain}}',
   CDN_DOMAIN_DELETED: 'CDN domain {{domain}} deleted successfully',
   CDN_DOMAIN_DELETE_FAILED: 'Failed to delete CDN domain {{domain}}: {{error}}',
-  CDN_DOMAIN_RECREATING:
-    'CDN domain {{domain}} delivery settings (service type or acceleration area) changed — recreating the CDN domain',
   CDN_CERT_UNCHANGED_SKIPPED:
     'Certificate for {{domain}} unchanged (hash match) — skipping certificate deployment',
   FAILED_TO_REFRESH_STATE: 'Failed to refresh state for {{resourceType}}: {{name}}',

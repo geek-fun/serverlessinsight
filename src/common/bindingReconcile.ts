@@ -41,12 +41,6 @@ export type BindingInstanceGroup = {
   dns?: ResourceInstance;
 };
 
-export const BINDING_INSTANCE_ROLES = {
-  cdn: 'cdn',
-  cdnDns: 'cdnDns',
-  dns: 'dns',
-} as const;
-
 const instanceHostname = (instance: ResourceInstance): string =>
   normalizeHostname(String((instance as { domainName?: string }).domainName ?? instance.domain));
 
