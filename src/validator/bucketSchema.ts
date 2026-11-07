@@ -26,105 +26,51 @@ const cdnSchema = {
   ],
 };
 
-const bucketDomainSchema = {
-  oneOf: [
-    { type: 'string' },
-    {
-      type: 'object',
-      properties: {
-        domain_name: resolvableConstrained({ pattern: HOST_NAME_PATTERN }),
-        certificate_id: { type: 'string' },
-        certificate_body: { type: 'string' },
-        certificate_private_key: { type: 'string' },
-        protocol: {
-          oneOf: [
-            { type: 'string', enum: ['HTTP', 'HTTPS'] },
-            {
-              type: 'array',
-              items: { type: 'string', enum: ['HTTP', 'HTTPS'] },
-              minItems: 1,
-              uniqueItems: true,
-            },
-          ],
-        },
-        www_bind_apex: resolvableBoolean,
-        cdn: cdnSchema,
-        accelerate: resolvableBoolean,
-      },
-      required: ['domain_name'],
-      additionalProperties: false,
+// v1 (issue #279): bucket custom domains are declared as a `domains` list.
+// The legacy top-level `domain`, `website.domain` and `www_bind_apex` fields
+// were removed — legacy usage is rejected at schema validation and semantic
+// validation reports a migration error (see validateSemantics).
+const bucketDomainBindingSchema = {
+  type: 'object',
+  properties: {
+    domain_name: resolvableConstrained({ pattern: HOST_NAME_PATTERN }),
+    certificate_id: { type: 'string' },
+    certificate_body: { type: 'string' },
+    certificate_private_key: { type: 'string' },
+    protocol: {
       oneOf: [
+        { type: 'string', enum: ['HTTP', 'HTTPS'] },
         {
-          not: {
-            anyOf: [
-              { required: ['certificate_id'] },
-              { required: ['certificate_body'] },
-              { required: ['certificate_private_key'] },
-            ],
-          },
-        },
-        {
-          required: ['certificate_body', 'certificate_private_key'],
-          not: { required: ['certificate_id'] },
-        },
-        {
-          required: ['certificate_id'],
-          not: {
-            anyOf: [{ required: ['certificate_body'] }, { required: ['certificate_private_key'] }],
-          },
+          type: 'array',
+          items: { type: 'string', enum: ['HTTP', 'HTTPS'] },
+          minItems: 1,
+          uniqueItems: true,
         },
       ],
     },
-  ],
-};
-
-const bucketWebsiteDomainSchema = {
+    cdn: cdnSchema,
+  },
+  required: ['domain_name'],
+  additionalProperties: false,
   oneOf: [
-    { type: 'string' },
     {
-      type: 'object',
-      properties: {
-        domain_name: resolvableConstrained({ pattern: HOST_NAME_PATTERN }),
-        certificate_id: { type: 'string' },
-        certificate_body: { type: 'string' },
-        certificate_private_key: { type: 'string' },
-        protocol: {
-          oneOf: [
-            { type: 'string', enum: ['HTTP', 'HTTPS'] },
-            {
-              type: 'array',
-              items: { type: 'string', enum: ['HTTP', 'HTTPS'] },
-              minItems: 1,
-              uniqueItems: true,
-            },
-          ],
-        },
-        www_bind_apex: resolvableBoolean,
-        cdn: cdnSchema,
+      not: {
+        anyOf: [
+          { required: ['certificate_id'] },
+          { required: ['certificate_body'] },
+          { required: ['certificate_private_key'] },
+        ],
       },
-      required: ['domain_name'],
-      additionalProperties: false,
-      oneOf: [
-        {
-          not: {
-            anyOf: [
-              { required: ['certificate_id'] },
-              { required: ['certificate_body'] },
-              { required: ['certificate_private_key'] },
-            ],
-          },
-        },
-        {
-          required: ['certificate_body', 'certificate_private_key'],
-          not: { required: ['certificate_id'] },
-        },
-        {
-          required: ['certificate_id'],
-          not: {
-            anyOf: [{ required: ['certificate_body'] }, { required: ['certificate_private_key'] }],
-          },
-        },
-      ],
+    },
+    {
+      required: ['certificate_body', 'certificate_private_key'],
+      not: { required: ['certificate_id'] },
+    },
+    {
+      required: ['certificate_id'],
+      not: {
+        anyOf: [{ required: ['certificate_body'] }, { required: ['certificate_private_key'] }],
+      },
     },
   ],
 };
@@ -219,16 +165,19 @@ export const bucketSchema = {
           },
           additionalProperties: false,
         },
-        // Canonical domain config (top-level)
-        domain: bucketDomainSchema,
+        // Bucket-level transfer acceleration (all providers model it per bucket).
+        accelerate: resolvableBoolean,
+        // The only accepted custom-domain form since v1 (issue #279).
+        domains: {
+          type: 'array',
+          items: bucketDomainBindingSchema,
+        },
         website: {
           type: 'object',
           properties: {
             code: {
               type: 'string',
             },
-            // Deprecated: Use top-level `domain` instead
-            domain: bucketWebsiteDomainSchema,
             index: {
               type: 'string',
             },

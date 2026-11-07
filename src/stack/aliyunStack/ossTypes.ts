@@ -1,26 +1,41 @@
 import { serializeBucketPolicy } from '../../common/bucketPolicy';
-import { BucketAccessEnum, BucketDomain, BucketIam, ResourceAttributes } from '../../types';
+import {
+  BucketAccessEnum,
+  BucketDomain,
+  BucketDomainBinding,
+  BucketIam,
+  ResourceAttributes,
+} from '../../types';
 import type { OssBucketInfo } from '../../common/aliyunClient/ossOperations';
 import { BucketACL, CommonBucketConfig } from '../bucketTypes';
 
 export const OSS_BUCKET_POLICY_INSTANCE_TYPE = 'ALIYUN_OSS_BUCKET_POLICY';
 
+export type OssBindingConfig = {
+  domainName: string;
+  certificateId?: string;
+  certificateBody?: string;
+  certificatePrivateKey?: string;
+  protocol?: string | string[];
+  cdn?:
+    | boolean
+    | {
+        enabled: boolean;
+        cdn_type?: 'web' | 'download' | 'video';
+        scope?: 'domestic' | 'overseas' | 'global';
+        cache_ttl?: number;
+        ignore_query_string?: boolean;
+        origin_protocol?: 'http' | 'https' | 'follow';
+        compression?: boolean;
+        force_redirect_https?: boolean;
+      };
+};
+
 export type OssBucketConfig = CommonBucketConfig & {
   iam?: BucketIam;
-  wwwBindApex?: boolean;
-  domainCertificateId?: string;
-  domainCertificateBody?: string;
-  domainCertificatePrivateKey?: string;
-  domainProtocol?: string | string[];
-  cdnEnabled?: boolean;
-  cdnType?: 'web' | 'download' | 'video';
-  cdnScope?: 'domestic' | 'overseas' | 'global';
-  cdnCacheTtl?: number;
-  cdnIgnoreQueryString?: boolean;
-  cdnOriginProtocol?: 'http' | 'https' | 'follow';
-  cdnCompression?: boolean;
-  cdnForceRedirectHttps?: boolean;
+  // Bucket-level transfer acceleration (issue #279: per-domain accelerate removed).
   accelerateEnabled?: boolean;
+  domains?: OssBindingConfig[];
   versioningStatus?: string;
   sseAlgorithm?: string;
   sseKmsMasterKeyId?: string;
@@ -33,9 +48,59 @@ const aclMap: Record<BucketAccessEnum, BucketACL> = {
   [BucketAccessEnum.PUBLIC_READ_WRITE]: BucketACL.PUBLIC_READ_WRITE,
 };
 
-const getDomain = (bucket: BucketDomain): string | undefined => {
-  if (bucket.domain?.domain_name) return bucket.domain.domain_name;
-  return bucket.website?.domain;
+const isCdnEnabled = (binding: OssBindingConfig): boolean => {
+  if (binding.cdn == null) return false;
+  if (typeof binding.cdn === 'boolean') return binding.cdn;
+  return binding.cdn.enabled;
+};
+
+export const getBindingCdnConfig = (
+  binding: OssBindingConfig,
+):
+  | {
+      enabled: boolean;
+      cdn_type?: 'web' | 'download' | 'video';
+      scope?: 'domestic' | 'overseas' | 'global';
+      cache_ttl?: number;
+      ignore_query_string?: boolean;
+      origin_protocol?: 'http' | 'https' | 'follow';
+      compression?: boolean;
+      force_redirect_https?: boolean;
+    }
+  | undefined => {
+  if (typeof binding.cdn === 'object') return binding.cdn;
+  if (binding.cdn === true) return { enabled: true };
+  return undefined;
+};
+
+const bindingToDefinitionEntry = (binding: OssBindingConfig): ResourceAttributes => {
+  const cdn = getBindingCdnConfig(binding);
+  const cdnEnabled = isCdnEnabled(binding);
+  return {
+    domain_name: binding.domainName,
+    certificate_id: binding.certificateId ?? null,
+    certificate_body: binding.certificateBody ?? null,
+    certificate_private_key: binding.certificatePrivateKey ? '(managed)' : null,
+    protocol: binding.protocol ?? null,
+    ...(cdn
+      ? {
+          cdn: {
+            enabled: cdnEnabled,
+            ...(cdn.cdn_type != null || cdnEnabled ? { cdn_type: cdn.cdn_type ?? 'web' } : {}),
+            ...(cdn.scope != null || cdnEnabled ? { scope: cdn.scope ?? 'global' } : {}),
+            ...(cdn.cache_ttl != null ? { cache_ttl: cdn.cache_ttl } : {}),
+            ...(cdn.ignore_query_string != null
+              ? { ignore_query_string: cdn.ignore_query_string }
+              : {}),
+            ...(cdn.origin_protocol != null ? { origin_protocol: cdn.origin_protocol } : {}),
+            ...(cdn.compression != null ? { compression: cdn.compression } : {}),
+            ...(cdn.force_redirect_https != null
+              ? { force_redirect_https: cdn.force_redirect_https }
+              : {}),
+          },
+        }
+      : { cdn: null }),
+  };
 };
 
 /* istanbul ignore next */
@@ -63,39 +128,19 @@ export const bucketToOssBucketConfig = (bucket: BucketDomain): OssBucketConfig =
     config.storageClass = bucket.storage.class;
   }
 
-  const domain = getDomain(bucket);
-  if (domain) {
-    config.domain = domain;
+  if (bucket.accelerate != null) {
+    config.accelerateEnabled = bucket.accelerate;
   }
 
-  if (bucket.domain) {
-    config.wwwBindApex = bucket.domain.www_bind_apex;
-    config.domainCertificateId = bucket.domain.certificate_id;
-    config.domainCertificateBody = bucket.domain.certificate_body;
-    config.domainCertificatePrivateKey = bucket.domain.certificate_private_key;
-    config.domainProtocol = bucket.domain.protocol;
-    config.accelerateEnabled = bucket.domain.accelerate;
-
-    if (bucket.domain.cdn != null) {
-      if (typeof bucket.domain.cdn === 'boolean') {
-        config.cdnEnabled = bucket.domain.cdn;
-      } else {
-        config.cdnEnabled = bucket.domain.cdn.enabled;
-        config.cdnType = bucket.domain.cdn.cdn_type;
-        config.cdnScope = bucket.domain.cdn.scope;
-        config.cdnCacheTtl = bucket.domain.cdn.cache_ttl;
-        config.cdnIgnoreQueryString = bucket.domain.cdn.ignore_query_string;
-        config.cdnOriginProtocol = bucket.domain.cdn.origin_protocol;
-        config.cdnCompression = bucket.domain.cdn.compression;
-        config.cdnForceRedirectHttps = bucket.domain.cdn.force_redirect_https;
-      }
-    }
-  } else if (bucket.website?.domain) {
-    config.wwwBindApex = bucket.website.www_bind_apex;
-    config.domainCertificateId = bucket.website.domain_certificate_id;
-    config.domainCertificateBody = bucket.website.domain_certificate_body;
-    config.domainCertificatePrivateKey = bucket.website.domain_certificate_private_key;
-    config.domainProtocol = bucket.website.domain_protocol;
+  if (bucket.domains?.length) {
+    config.domains = bucket.domains.map((binding: BucketDomainBinding) => ({
+      domainName: binding.domain_name,
+      certificateId: binding.certificate_id,
+      certificateBody: binding.certificate_body,
+      certificatePrivateKey: binding.certificate_private_key,
+      protocol: binding.protocol,
+      ...(binding.cdn != null ? { cdn: binding.cdn } : {}),
+    }));
   }
 
   if (bucket.versioning?.status) {
@@ -130,33 +175,18 @@ export const extractOssBucketDefinition = (
       : {},
     websiteCodeHash: websiteCodeHash ?? null,
     storageClass: config.storageClass ?? null,
-    domain: config.domain ?? null,
-    wwwBindApex: config.domain ? (config.wwwBindApex ?? false) : null,
-    domainCertificateId: config.domainCertificateId ?? null,
-    domainCertificateBody: config.domainCertificateBody ?? null,
-    domainCertificatePrivateKey: config.domainCertificatePrivateKey ? '(managed)' : null,
-    domainProtocol: config.domainProtocol ?? null,
+    // Bindings are canonicalized: sorted by normalized hostname so list
+    // reordering in YAML never produces a plan change (issue #279).
+    domains: (config.domains ?? [])
+      .slice()
+      .sort((a, b) => a.domainName.localeCompare(b.domainName))
+      .map(bindingToDefinitionEntry),
+    accelerate: config.accelerateEnabled ?? false,
     versioningStatus: config.versioningStatus ?? null,
     sseAlgorithm: config.sseAlgorithm ?? null,
     sseKmsMasterKeyId: config.sseKmsMasterKeyId ?? null,
     policy: serializeBucketPolicy(config.iam, 'aliyun'),
   };
-
-  // Only include CDN/accelerate fields when they're actually enabled
-  if (config.cdnEnabled !== undefined) {
-    def.cdnEnabled = config.cdnEnabled;
-    if (config.cdnEnabled) def.cdnType = config.cdnType ?? 'web';
-    if (config.cdnEnabled) def.cdnScope = config.cdnScope ?? 'global';
-    if (config.cdnCacheTtl != null) def.cdnCacheTtl = config.cdnCacheTtl;
-    if (config.cdnIgnoreQueryString != null) def.cdnIgnoreQueryString = config.cdnIgnoreQueryString;
-    if (config.cdnOriginProtocol) def.cdnOriginProtocol = config.cdnOriginProtocol;
-    if (config.cdnCompression != null) def.cdnCompression = config.cdnCompression;
-    if (config.cdnForceRedirectHttps != null)
-      def.cdnForceRedirectHttps = config.cdnForceRedirectHttps;
-  }
-  if (config.accelerateEnabled !== undefined) {
-    def.accelerateEnabled = config.accelerateEnabled;
-  }
 
   return def;
 };
@@ -184,7 +214,7 @@ export const cloudOssToDefinition = (info: OssBucketInfo): ResourceAttributes =>
       ? undefined
       : (info.encryptionConfig?.kmsMasterKeyId ?? null),
   policy: info.policy,
-  ...(typeof info.transferAccelerationStatus === 'boolean'
-    ? { accelerateEnabled: info.transferAccelerationStatus }
-    : {}),
+  // accelerate is intentionally not mapped from the cloud: transfer
+  // acceleration cannot be disabled through update (destroy+recreate is
+  // required), so a live-vs-desired diff here would be unresolvable drift.
 });

@@ -177,6 +177,7 @@ const buildMockAliyunClient = (): ExtendedMockAliyunClient => {
   };
 
   base.dns = {
+    updateDomainRecord: jest.fn().mockResolvedValue(undefined),
     addDomainRecord: jest.fn().mockImplementation(({ rr, type }: { rr: string; type: string }) => {
       return Promise.resolve(`${rr}-${type.toLowerCase()}-record-id`);
     }),
@@ -221,18 +222,25 @@ buckets:
     website:
       code: ${JSON.stringify(WEBSITE_SOURCE_PATH)}
       index: index.html
-    domain:
-      domain_name: ${BUCKET_DOMAIN}
-      certificate_id: ${BUCKET_CERT_ID}
-      cdn:
-        enabled: true
-        cdn_type: web
-        scope: ${bucketCdn.scope}
-        cache_ttl: ${bucketCdn.cacheTtl}
-        ignore_query_string: ${bucketCdn.ignoreQueryString}
-        origin_protocol: ${bucketCdn.originProtocol}
-        compression: ${bucketCdn.compression}
-        force_redirect_https: ${bucketCdn.forceRedirectHttps}
+    domains:
+      - domain_name: ${BUCKET_DOMAIN}
+        certificate_id: ${BUCKET_CERT_ID}
+        cdn:
+          enabled: true
+          cdn_type: web
+          scope: ${bucketCdn.scope}
+          cache_ttl: ${bucketCdn.cacheTtl}
+          ignore_query_string: ${bucketCdn.ignoreQueryString}
+          origin_protocol: ${bucketCdn.originProtocol}
+          compression: ${bucketCdn.compression}
+          force_redirect_https: ${bucketCdn.forceRedirectHttps}
+      # The v1 replacement for www_bind_apex: the www host is an explicit binding
+      - domain_name: www.static.example.com
+        certificate_id: ${BUCKET_CERT_ID}
+        cdn:
+          enabled: true
+          cdn_type: web
+          scope: ${bucketCdn.scope}
 
 events:
   gateway_event:
@@ -409,6 +417,7 @@ describe('CDN Flow Service Test', () => {
     expect(bucketState?.instances).toEqual(
       expect.arrayContaining([
         expect.objectContaining({ type: 'ALIYUN_CDN_DISTRIBUTION', id: BUCKET_DOMAIN }),
+        expect.objectContaining({ type: 'ALIYUN_CDN_DISTRIBUTION', id: 'www.static.example.com' }),
         expect.objectContaining({ type: 'ALIYUN_CDN_DNS_CNAME' }),
       ]),
     );
@@ -420,9 +429,14 @@ describe('CDN Flow Service Test', () => {
     );
     expect(bucketState?.definition).toEqual(
       expect.objectContaining({
-        cdnEnabled: true,
-        cdnScope: 'global',
-        cdnCacheTtl: 3600,
+        domains: expect.arrayContaining([
+          expect.objectContaining({
+            domain_name: BUCKET_DOMAIN,
+            cdn: expect.objectContaining({ enabled: true, scope: 'global', cache_ttl: 3600 }),
+          }),
+          expect.objectContaining({ domain_name: 'www.static.example.com' }),
+        ]),
+        accelerate: false,
       }),
     );
     expect(eventState?.definition).toEqual(
@@ -469,6 +483,14 @@ describe('CDN Flow Service Test', () => {
       scope: 'domestic',
       sources: [{ type: 'oss', content: 'test-bucket.oss-cn-hangzhou.aliyuncs.com' }],
     });
+    // The www binding carries the same per-binding scope change (cdn_type stays default web)
+    expect(mockClient.cdn.modifyCdnDomain).toHaveBeenCalledTimes(3);
+    expect(mockClient.cdn.modifyCdnDomain).toHaveBeenCalledWith({
+      domainName: 'www.static.example.com',
+      cdnType: 'web',
+      scope: 'domestic',
+      sources: [{ type: 'oss', content: 'test-bucket.oss-cn-hangzhou.aliyuncs.com' }],
+    });
     expect(mockClient.cdn.modifyCdnDomain).toHaveBeenCalledWith({
       domainName: API_DOMAIN,
       cdnType: 'web',
@@ -491,11 +513,19 @@ describe('CDN Flow Service Test', () => {
 
     expect(bucketState?.definition).toEqual(
       expect.objectContaining({
-        cdnScope: 'domestic',
-        cdnCacheTtl: 7200,
-        cdnOriginProtocol: 'http',
-        cdnCompression: false,
-        cdnForceRedirectHttps: false,
+        domains: expect.arrayContaining([
+          expect.objectContaining({
+            domain_name: BUCKET_DOMAIN,
+            cdn: expect.objectContaining({
+              enabled: true,
+              scope: 'domestic',
+              cache_ttl: 7200,
+              origin_protocol: 'http',
+              compression: false,
+              force_redirect_https: false,
+            }),
+          }),
+        ]),
       }),
     );
     expect(eventState?.definition).toEqual(
@@ -535,8 +565,10 @@ describe('CDN Flow Service Test', () => {
     });
 
     expect(mockClient.cdn.deleteCdnDomain).toHaveBeenCalledWith(BUCKET_DOMAIN);
+    expect(mockClient.cdn.deleteCdnDomain).toHaveBeenCalledWith('www.static.example.com');
     expect(mockClient.cdn.deleteCdnDomain).toHaveBeenCalledWith(API_DOMAIN);
     expect(mockClient.dns.deleteDomainRecord).toHaveBeenCalledWith('static-cname-record-id');
+    expect(mockClient.dns.deleteDomainRecord).toHaveBeenCalledWith('www.static-cname-record-id');
     expect(mockClient.dns.deleteDomainRecord).toHaveBeenCalledWith('api-cname-record-id');
     expect(mockClient.oss.deleteBucket).toHaveBeenCalledWith(BUCKET_NAME);
     expect(mockClient.apigw.abolishApi).toHaveBeenCalledWith(APIGW_GROUP_ID, API_ID, 'RELEASE');

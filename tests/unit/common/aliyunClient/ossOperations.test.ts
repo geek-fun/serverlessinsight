@@ -2156,6 +2156,7 @@ describe('ossOperations getBucket additional branches', () => {
 
     it('should not create DNS CNAME record when skipDns is true', async () => {
       const dnsOps = {
+        updateDomainRecord: jest.fn(),
         describeDomainRecords: jest.fn(),
         addDomainRecord: jest.fn().mockResolvedValue('dns-record-id'),
         deleteDomainRecord: jest.fn(),
@@ -2173,6 +2174,7 @@ describe('ossOperations getBucket additional branches', () => {
 
     it('should create DNS CNAME record when skipDns is false/omitted', async () => {
       const dnsOps = {
+        updateDomainRecord: jest.fn(),
         describeDomainRecords: jest.fn().mockResolvedValue([]),
         addDomainRecord: jest.fn().mockResolvedValue('dns-record-id'),
         deleteDomainRecord: jest.fn(),

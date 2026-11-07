@@ -39,26 +39,34 @@ describe('framework configuration defaults', () => {
       assets: {
         name: 'assets',
         website: { code: 'dist', index: 'home.html' },
-        domain: {
-          domain_name: 'example.com',
-          cdn: { enabled: true, cdn_type: 'download', scope: 'overseas' },
-        },
+        domains: [
+          {
+            domain_name: 'example.com',
+            cdn: { enabled: true, cdn_type: 'download', scope: 'overseas' },
+          },
+        ],
       },
     })![0];
     const reset = parseBucket({
       assets: {
         name: 'assets',
         website: { code: 'dist' },
-        domain: { domain_name: 'example.com', cdn: true },
+        domains: [{ domain_name: 'example.com', cdn: true }],
       },
     })![0];
     expect(custom.website!.index).toBe('home.html');
     expect(reset.website!.index).toBe('index.html');
-    expect(extractOssBucketDefinition(bucketToOssBucketConfig(reset))).toMatchObject({
-      cdnType: 'web',
-      cdnScope: 'global',
-      wwwBindApex: false,
-    });
+    expect(extractOssBucketDefinition(bucketToOssBucketConfig(reset)).domains).toEqual([
+      {
+        domain_name: 'example.com',
+        certificate_id: null,
+        certificate_body: null,
+        certificate_private_key: null,
+        protocol: null,
+        cdn: { enabled: true, cdn_type: 'web', scope: 'global' },
+      },
+    ]);
+    expect(extractOssBucketDefinition(bucketToOssBucketConfig(reset)).accelerate).toBe(false);
   });
   it('uses HTTP and no www binding for omitted event domain settings', () => {
     const event = parseEvent({

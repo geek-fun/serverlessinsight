@@ -119,6 +119,7 @@ export type MockAliyunClient = {
     deleteProject: jest.Mock;
   };
   dns: {
+    updateDomainRecord: jest.Mock;
     addDomainRecord: jest.Mock;
     deleteDomainRecord: jest.Mock;
     describeDomainRecords: jest.Mock;
@@ -341,6 +342,7 @@ export const createMockAliyunClient = (): MockAliyunClient => {
       deleteProject: jest.fn().mockResolvedValue(undefined),
     },
     dns: {
+      updateDomainRecord: jest.fn().mockResolvedValue(undefined),
       addDomainRecord: jest.fn().mockResolvedValue('record-123'),
       deleteDomainRecord: jest.fn().mockResolvedValue({}),
       describeDomainRecords: jest.fn().mockResolvedValue([]),

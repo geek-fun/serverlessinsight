@@ -11,6 +11,7 @@ import {
   generateApiKey,
 } from '../common/providerNames';
 import { checkSiCronForProvider } from '../common/siCron';
+import { isWildcardHostname, normalizeHostname, wildcardCovers } from '../common/domainUtils';
 
 type EventTriggerRaw = {
   method?: unknown;
@@ -26,6 +27,145 @@ type TimerTriggerRaw = {
 
 const FUNCTION_BACKEND_PATTERN = /^\$\{functions\.([\w.]+)\}$/;
 const TEMPLATE_REF_PATTERN = /^\$\{[^}]+\}$/;
+
+/** A resolvable literal hostname usable for binding-conflict checks (refs excluded). */
+const asCheckableHostname = (value: unknown): string | undefined => {
+  if (typeof value !== 'string' || value.length === 0 || TEMPLATE_REF_PATTERN.test(value)) {
+    return undefined;
+  }
+  return normalizeHostname(value);
+};
+
+type SemanticErrorParams = {
+  instancePath: string;
+  schemaPath: string;
+  keyword: string;
+  message: string;
+};
+
+/**
+ * Bucket semantics (issue #279): legacy domain forms are rejected with a
+ * migration error, bindings are de-duplicated by normalized hostname, and an
+ * exact host may not coexist with a wildcard covering it. Provider capability
+ * limits are enforced here so `si validate` fails before any deploy runs.
+ */
+const validateBuckets = (
+  providerName: string,
+  buckets: Record<string, unknown>,
+  errors: Array<ErrorObject>,
+): void => {
+  Object.entries(buckets).forEach(([bucketKey, rawBucket]) => {
+    if (!rawBucket || typeof rawBucket !== 'object') return;
+    const bucket = rawBucket as Record<string, unknown>;
+    const bucketPath = `/buckets/${bucketKey}`;
+    const push = ({ instancePath, schemaPath, keyword, message }: SemanticErrorParams) =>
+      errors.push({ instancePath, schemaPath, keyword, params: {}, message } as ErrorObject);
+
+    // v1 migration guards: legacy spellings fail loudly with the mapping, not
+    // a generic additionalProperties message.
+    if (bucket.domain != null) {
+      push({
+        instancePath: `${bucketPath}/domain`,
+        schemaPath: '#/semantic/bucketDomainMigrated',
+        keyword: 'bucketDomainMigrated',
+        message: lang.__('BUCKET_DOMAIN_MIGRATION_REQUIRED', { key: bucketKey }),
+      });
+    }
+    const website = bucket.website as Record<string, unknown> | undefined;
+    if (website && typeof website === 'object' && website.domain != null) {
+      push({
+        instancePath: `${bucketPath}/website/domain`,
+        schemaPath: '#/semantic/bucketWebsiteDomainMigrated',
+        keyword: 'bucketWebsiteDomainMigrated',
+        message: lang.__('BUCKET_WEBSITE_DOMAIN_MIGRATION_REQUIRED', { key: bucketKey }),
+      });
+    }
+
+    const domains = Array.isArray(bucket.domains)
+      ? (bucket.domains as Array<Record<string, unknown>>)
+      : [];
+
+    if (providerName === 'volcengine' && domains.length > 0) {
+      push({
+        instancePath: `${bucketPath}/domains`,
+        schemaPath: '#/semantic/bucketDomainsProviderUnsupported',
+        keyword: 'bucketDomainsProviderUnsupported',
+        message: lang.__('BUCKET_DOMAINS_PROVIDER_NOT_SUPPORTED', {
+          key: bucketKey,
+          provider: providerName,
+        }),
+      });
+    }
+
+    const seen: Array<{ host: string; wildcard: boolean }> = [];
+    domains.forEach((entry, index) => {
+      if (!entry || typeof entry !== 'object') return;
+      const entryPath = `${bucketPath}/domains/${index}`;
+
+      if (entry.www_bind_apex != null) {
+        push({
+          instancePath: entryPath,
+          schemaPath: '#/semantic/bucketWwwBindApexRemoved',
+          keyword: 'bucketWwwBindApexRemoved',
+          message: lang.__('BUCKET_WWW_BIND_APEX_MIGRATION_REQUIRED', { key: bucketKey }),
+        });
+      }
+      if (entry.accelerate != null) {
+        push({
+          instancePath: entryPath,
+          schemaPath: '#/semantic/bucketDomainAccelerateMigrated',
+          keyword: 'bucketDomainAccelerateMigrated',
+          message: lang.__('BUCKET_DOMAIN_ACCELERATE_MIGRATION_REQUIRED', { key: bucketKey }),
+        });
+      }
+
+      const host = asCheckableHostname(entry.domain_name);
+      if (!host) return;
+
+      const duplicate = seen.find((prev) => prev.host === host);
+      if (duplicate) {
+        push({
+          instancePath: entryPath,
+          schemaPath: '#/semantic/duplicateBucketDomain',
+          keyword: 'duplicateBucketDomain',
+          message: lang.__('BUCKET_DOMAINS_DUPLICATE', { key: bucketKey, domain: host }),
+        });
+        return;
+      }
+
+      const coveringWildcard = seen.find(
+        (prev) =>
+          prev.wildcard !== isWildcardHostname(host) &&
+          wildcardCovers(prev.wildcard ? prev.host : host, prev.wildcard ? host : prev.host),
+      );
+      if (coveringWildcard) {
+        const wildcard = coveringWildcard.wildcard ? coveringWildcard.host : host;
+        const exact = coveringWildcard.wildcard ? host : coveringWildcard.host;
+        push({
+          instancePath: entryPath,
+          schemaPath: '#/semantic/wildcardBucketDomainConflict',
+          keyword: 'wildcardBucketDomainConflict',
+          message: lang.__('BUCKET_DOMAINS_WILDCARD_CONFLICT', { key: bucketKey, exact, wildcard }),
+        });
+        return;
+      }
+
+      seen.push({ host, wildcard: isWildcardHostname(host) });
+    });
+
+    if (bucket.accelerate === true && providerName !== 'aliyun') {
+      push({
+        instancePath: `${bucketPath}/accelerate`,
+        schemaPath: '#/semantic/bucketAccelerateProviderUnsupported',
+        keyword: 'bucketAccelerateProviderUnsupported',
+        message: lang.__('BUCKET_ACCELERATE_PROVIDER_NOT_SUPPORTED', {
+          key: bucketKey,
+          provider: providerName,
+        }),
+      });
+    }
+  });
+};
 
 /** Tencent SCF allows at most 10 same-type triggers per function (#212 matrix). */
 const TENCENT_TIMER_TRIGGER_LIMIT = 10;
@@ -47,6 +187,7 @@ export const validateSemantics = (iacJson: ServerlessIacRaw): Array<ErrorObject>
   const providerName = typeof iacJson.provider?.name === 'string' ? iacJson.provider.name : '';
   const events = (iacJson.events ?? {}) as Record<string, Record<string, unknown>>;
   const functionDefinitions = (iacJson.functions ?? {}) as Record<string, unknown>;
+  const buckets = (iacJson.buckets ?? {}) as Record<string, unknown>;
 
   const definedFunctionKeys = new Set(Object.keys(functionDefinitions));
   const definedFunctionNames = new Set(
@@ -160,6 +301,8 @@ export const validateSemantics = (iacJson: ServerlessIacRaw): Array<ErrorObject>
       });
     }
   });
+
+  validateBuckets(providerName, buckets, errors);
 
   Object.entries(events).forEach(([eventKey, rawEvent]) => {
     const triggers = Array.isArray(rawEvent.triggers)

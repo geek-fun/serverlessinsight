@@ -98,6 +98,29 @@ export const normalizeDomain = (domain: string): string => {
   return domain;
 };
 
+/**
+ * Binding identity (issue #279): a hostname normalized to lowercase, so
+ * `WWW.Example.com` and `www.example.com` are the same binding. Template refs
+ * are preserved verbatim by the caller — they resolve later.
+ */
+export const normalizeHostname = (hostname: string): string => hostname.trim().toLowerCase();
+
+export const isWildcardHostname = (hostname: string): boolean => hostname.startsWith('*.');
+
+/** Suffix covered by a wildcard hostname (`*.example.com` → `example.com`), or null. */
+export const getWildcardSuffix = (hostname: string): string | null =>
+  isWildcardHostname(hostname) ? hostname.slice(2) : null;
+
+/**
+ * Whether a wildcard hostname covers an exact hostname for routing purposes:
+ * `*.example.com` covers `www.example.com` (any non-empty label list below the
+ * suffix) but not the apex `example.com` itself.
+ */
+export const wildcardCovers = (wildcard: string, hostname: string): boolean => {
+  const suffix = getWildcardSuffix(wildcard);
+  return suffix != null && hostname.endsWith(`.${suffix}`);
+};
+
 export const extractMainDomain = (domainName: string): string => {
   const parts = domainName.split('.');
 
@@ -144,7 +167,3 @@ export const deriveWwwDomain = (domain: string): string | null => {
   }
   return `www.${domain}`;
 };
-
-/** Omission restores the framework default: no www binding. */
-export const resolveWwwBindingAction = (declared: boolean | undefined): 'ensure' | 'remove' =>
-  declared === true ? 'ensure' : 'remove';

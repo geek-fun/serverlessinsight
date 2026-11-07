@@ -14,9 +14,9 @@ export const bucketWithWebsiteIac = {
       name: 'my-bucket',
       website: {
         code: 'tests/fixtures/artifacts/large-artifact.zip',
-        domain: 'my-bucket.com',
         index: 'index.html',
       },
+      domains: [{ domain_name: 'my-bucket.com' }],
     },
   ],
 } as ServerlessIac;

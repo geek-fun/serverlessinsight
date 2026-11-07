@@ -169,16 +169,25 @@ const createCosOperations = (cosClient: CosSdkClient, region: string, dnsOps?: D
 
     let bucketDomainBound = false;
     try {
+      const existingRules = await new Promise<COS.DomainRule[]>((resolve, reject) => {
+        cosClient.getBucketDomain({ Bucket: bucketName, Region: region }, (err, data) => {
+          if (err && err.statusCode !== 404) reject(err);
+          else resolve(data?.DomainRule ?? []);
+        });
+      });
+      const existingRule = existingRules.find((rule) => rule.Name.toLowerCase() === domain);
       await new Promise<void>((resolve, reject) => {
         cosClient.putBucketDomain(
           {
             Bucket: bucketName,
             Region: region,
             DomainRule: [
+              ...existingRules.filter((rule) => rule.Name.toLowerCase() !== domain),
               {
+                ...existingRule,
                 Status: 'ENABLED',
                 Name: domain,
-                Type: 'REST',
+                Type: existingRule?.Type ?? 'REST',
               },
             ],
           },

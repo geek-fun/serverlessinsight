@@ -3,7 +3,10 @@ import {
   extractMainDomain,
   extractHostRecord,
   deriveWwwDomain,
-  resolveWwwBindingAction,
+  normalizeHostname,
+  isWildcardHostname,
+  getWildcardSuffix,
+  wildcardCovers,
 } from '../../../src/common/domainUtils';
 
 describe('normalizeDomain', () => {
@@ -114,18 +117,35 @@ describe('deriveWwwDomain', () => {
   });
 });
 
-describe('resolveWwwBindingAction', () => {
-  it.each([
-    [true, true, 'ensure'],
-    [true, false, 'ensure'],
-    [false, true, 'remove'],
-    [false, false, 'remove'],
-    [undefined, true, 'remove'],
-    [undefined, false, 'remove'],
-  ] as const)(
-    'resolves declaration %s for retained parent %s as %s',
-    (declared, sameDomain, action) => {
-      expect(resolveWwwBindingAction(declared)).toBe(action);
-    },
-  );
+describe('normalizeHostname (binding identity, issue #279)', () => {
+  it('lowercases and trims the hostname', () => {
+    expect(normalizeHostname('  WWW.Example.COM ')).toBe('www.example.com');
+  });
+
+  it('keeps wildcard labels', () => {
+    expect(normalizeHostname('*.Sub.Example.com')).toBe('*.sub.example.com');
+  });
+});
+
+describe('wildcard helpers (issue #279)', () => {
+  it('detects wildcard hostnames', () => {
+    expect(isWildcardHostname('*.example.com')).toBe(true);
+    expect(isWildcardHostname('example.com')).toBe(false);
+    expect(isWildcardHostname('a.*.example.com')).toBe(false);
+  });
+
+  it('extracts the covered suffix', () => {
+    expect(getWildcardSuffix('*.example.com')).toBe('example.com');
+    expect(getWildcardSuffix('example.com')).toBeNull();
+  });
+
+  it('matches wildcard coverage for subdomains only', () => {
+    expect(wildcardCovers('*.example.com', 'www.example.com')).toBe(true);
+    expect(wildcardCovers('*.example.com', 'a.b.example.com')).toBe(true);
+    // the apex is not covered by a DNS wildcard
+    expect(wildcardCovers('*.example.com', 'example.com')).toBe(false);
+    expect(wildcardCovers('*.example.com', 'other.org')).toBe(false);
+    // an exact hostname never covers anything
+    expect(wildcardCovers('example.com', 'www.example.com')).toBe(false);
+  });
 });

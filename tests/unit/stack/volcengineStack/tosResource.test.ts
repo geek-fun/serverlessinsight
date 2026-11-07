@@ -558,6 +558,47 @@ describe('tosResource', () => {
     });
   });
 
+  describe('v1 capability guards (issue #279)', () => {
+    it('rejects domain bindings on TOS buckets at create time', async () => {
+      const bucket: BucketDomain = {
+        key: 'static_site',
+        name: 'test-bucket',
+        domains: [{ domain_name: 'example.com' }],
+      };
+
+      await expect(createResource(mockContext, bucket, mockState)).rejects.toThrow(
+        'BUCKET_DOMAINS_PROVIDER_NOT_SUPPORTED',
+      );
+      expect(mockTosClient.tos.createBucket).not.toHaveBeenCalled();
+    });
+
+    it('rejects bucket-level accelerate on TOS buckets at create time', async () => {
+      const bucket: BucketDomain = {
+        key: 'static_site',
+        name: 'test-bucket',
+        accelerate: true,
+      };
+
+      await expect(createResource(mockContext, bucket, mockState)).rejects.toThrow(
+        'BUCKET_ACCELERATE_PROVIDER_NOT_SUPPORTED',
+      );
+      expect(mockTosClient.tos.createBucket).not.toHaveBeenCalled();
+    });
+
+    it('rejects domain bindings on TOS buckets at update time', async () => {
+      const bucket: BucketDomain = {
+        key: 'static_site',
+        name: 'test-bucket',
+        domains: [{ domain_name: 'example.com' }],
+      };
+
+      await expect(updateResource(mockContext, bucket, mockState)).rejects.toThrow(
+        'BUCKET_DOMAINS_PROVIDER_NOT_SUPPORTED',
+      );
+      expect(mockTosClient.tos.updateBucketAcl).not.toHaveBeenCalled();
+    });
+  });
+
   describe('readResource', () => {
     it('should read bucket from provider', async () => {
       mockTosClient.tos.getBucket.mockResolvedValueOnce({

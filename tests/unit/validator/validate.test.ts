@@ -833,7 +833,7 @@ describe('unit test for validate', () => {
       expect(validateYaml(validYaml)).toBe(true);
     });
 
-    it('should pass validation with structured domain and cert fields in bucket website', () => {
+    it('should pass validation with domains list bindings and cert fields', () => {
       const validYaml = {
         ...jsonIac,
         buckets: {
@@ -841,33 +841,186 @@ describe('unit test for validate', () => {
             name: 'test-bucket',
             website: {
               code: './dist',
-              domain: {
+            },
+            domains: [
+              {
                 domain_name: 'static.example.com',
                 certificate_body: './certs/server.crt',
                 certificate_private_key: './certs/server.key',
                 protocol: 'HTTPS',
               },
-            },
+              {
+                domain_name: 'legacy.example.com',
+                certificate_id: 'cas-abc123',
+                protocol: ['HTTP', 'HTTPS'],
+              },
+            ],
           },
         },
       } as unknown as ServerlessIacRaw;
       expect(validateYaml(validYaml)).toBe(true);
     });
 
-    it('should pass validation with plain string domain in bucket website', () => {
+    it('should pass validation with wildcard and non-overlapping exact domains', () => {
       const validYaml = {
         ...jsonIac,
         buckets: {
           my_bucket: {
             name: 'test-bucket',
-            website: {
-              code: './dist',
-              domain: 'static.example.com',
-            },
+            domains: [
+              { domain_name: '*.example.com' },
+              { domain_name: 'example.com' },
+              { domain_name: 'other.org' },
+            ],
           },
         },
       } as unknown as ServerlessIacRaw;
       expect(validateYaml(validYaml)).toBe(true);
+    });
+
+    const expectBucketRejection = (bucket: Record<string, unknown>, keyword: string) => {
+      const invalidYaml = {
+        ...jsonIac,
+        buckets: { my_bucket: { name: 'test-bucket', ...bucket } },
+      } as unknown as ServerlessIacRaw;
+      expect(() => validateYaml(invalidYaml)).toThrow('Invalid yaml');
+
+      let thrownError: unknown;
+      try {
+        validateYaml(invalidYaml);
+      } catch (error) {
+        thrownError = error;
+      }
+      const keywords = JSON.stringify(
+        (thrownError as { errors?: Array<{ keyword?: string }> }).errors ?? [],
+      );
+      expect(keywords).toContain(keyword);
+    };
+
+    it('should reject legacy top-level domain with a migration error', () => {
+      expectBucketRejection(
+        {
+          domain: {
+            domain_name: 'static.example.com',
+            certificate_id: 'cas-abc123',
+          },
+        },
+        'bucketDomainMigrated',
+      );
+    });
+
+    it('should reject legacy string domain with a migration error', () => {
+      expectBucketRejection({ domain: 'static.example.com' }, 'bucketDomainMigrated');
+    });
+
+    it('should reject legacy website.domain with a migration error', () => {
+      expectBucketRejection(
+        {
+          website: {
+            code: './dist',
+            domain: 'static.example.com',
+          },
+        },
+        'bucketWebsiteDomainMigrated',
+      );
+    });
+
+    it('should reject www_bind_apex inside a binding with a migration error', () => {
+      expectBucketRejection(
+        { domains: [{ domain_name: 'example.com', www_bind_apex: true }] },
+        'bucketWwwBindApexRemoved',
+      );
+    });
+
+    it('should reject per-domain accelerate with a migration error pointing at the bucket-level field', () => {
+      expectBucketRejection(
+        { domains: [{ domain_name: 'example.com', accelerate: true }] },
+        'bucketDomainAccelerateMigrated',
+      );
+    });
+
+    it('should reject duplicate bindings by normalized hostname', () => {
+      expectBucketRejection(
+        { domains: [{ domain_name: 'example.com' }, { domain_name: 'EXAMPLE.com' }] },
+        'duplicateBucketDomain',
+      );
+    });
+
+    it('should reject an exact domain covered by a wildcard in the same bucket', () => {
+      expectBucketRejection(
+        { domains: [{ domain_name: '*.example.com' }, { domain_name: 'www.example.com' }] },
+        'wildcardBucketDomainConflict',
+      );
+    });
+
+    it('should reject domains on volcengine buckets (capability not supported)', () => {
+      const invalidYaml = {
+        ...jsonIac,
+        provider: { name: 'volcengine', region: 'cn-beijing' },
+        buckets: {
+          my_bucket: {
+            name: 'test-bucket',
+            domains: [{ domain_name: 'example.com' }],
+          },
+        },
+      } as unknown as ServerlessIacRaw;
+      expect(() => validateYaml(invalidYaml)).toThrow('Invalid yaml');
+
+      let thrownError: unknown;
+      try {
+        validateYaml(invalidYaml);
+      } catch (error) {
+        thrownError = error;
+      }
+      const keywords = JSON.stringify(
+        (thrownError as { errors?: Array<{ keyword?: string }> }).errors ?? [],
+      );
+      expect(keywords).toContain('bucketDomainsProviderUnsupported');
+    });
+
+    it('should reject bucket-level accelerate outside aliyun', () => {
+      const invalidYaml = {
+        ...jsonIac,
+        provider: { name: 'tencent', region: 'ap-guangzhou' },
+        buckets: {
+          my_bucket: {
+            name: 'test-bucket',
+            accelerate: true,
+          },
+        },
+      } as unknown as ServerlessIacRaw;
+      expect(() => validateYaml(invalidYaml)).toThrow('Invalid yaml');
+
+      let thrownError: unknown;
+      try {
+        validateYaml(invalidYaml);
+      } catch (error) {
+        thrownError = error;
+      }
+      const keywords = JSON.stringify(
+        (thrownError as { errors?: Array<{ keyword?: string }> }).errors ?? [],
+      );
+      expect(keywords).toContain('bucketAccelerateProviderUnsupported');
+    });
+
+    it('should fail when both certificate_id and certificate_body are provided in a binding', () => {
+      const invalidYaml = {
+        ...jsonIac,
+        buckets: {
+          my_bucket: {
+            name: 'test-bucket',
+            domains: [
+              {
+                domain_name: 'static.example.com',
+                certificate_id: 'cas-abc123',
+                certificate_body: './certs/server.crt',
+                certificate_private_key: './certs/server.key',
+              },
+            ],
+          },
+        },
+      } as unknown as ServerlessIacRaw;
+      expect(() => validateYaml(invalidYaml)).toThrow('Invalid yaml');
     });
 
     describe('iam validation', () => {
@@ -1098,27 +1251,6 @@ describe('unit test for validate', () => {
         } as unknown as ServerlessIacRaw;
         expect(() => validateYaml(invalidYaml)).toThrow('Invalid yaml');
       });
-    });
-
-    it('should fail when both certificate_id and certificate_body are provided in bucket domain', () => {
-      const invalidYaml = {
-        ...jsonIac,
-        buckets: {
-          my_bucket: {
-            name: 'test-bucket',
-            website: {
-              code: './dist',
-              domain: {
-                domain_name: 'static.example.com',
-                certificate_id: 'cas-abc123',
-                certificate_body: './certs/server.crt',
-                certificate_private_key: './certs/server.key',
-              },
-            },
-          },
-        },
-      } as unknown as ServerlessIacRaw;
-      expect(() => validateYaml(invalidYaml)).toThrow('Invalid yaml');
     });
   });
 

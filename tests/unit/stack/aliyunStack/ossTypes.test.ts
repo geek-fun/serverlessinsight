@@ -114,21 +114,20 @@ describe('OssTypes', () => {
       expect(result.storageClass).toBe('Standard');
     });
 
-    it('should include domain when defined in website', () => {
+    it('should include domain bindings when defined', () => {
       const bucket: BucketDomain = {
         key: 'test_bucket',
         name: 'test-bucket',
         website: {
           index: 'index.html',
           code: 'dist',
-
-          domain: 'www.example.com',
         },
+        domains: [{ domain_name: 'www.example.com' }],
       };
 
       const result = bucketToOssBucketConfig(bucket);
 
-      expect(result.domain).toBe('www.example.com');
+      expect(result.domains).toEqual([{ domainName: 'www.example.com' }]);
     });
 
     it('should include versioning status when defined', () => {
@@ -195,12 +194,8 @@ describe('OssTypes', () => {
         websiteConfiguration: {},
         websiteCodeHash: null,
         storageClass: null,
-        domain: null,
-        wwwBindApex: null,
-        domainCertificateId: null,
-        domainCertificateBody: null,
-        domainCertificatePrivateKey: null,
-        domainProtocol: null,
+        domains: [],
+        accelerate: false,
         policy: null,
         versioningStatus: null,
         sseAlgorithm: null,
@@ -263,15 +258,70 @@ describe('OssTypes', () => {
       expect(definition.storageClass).toBe('Standard');
     });
 
-    it('should extract domain when defined', () => {
+    it('should extract sorted domain bindings with cdn config', () => {
       const config = {
         bucketName: 'test-bucket',
-        domain: 'www.example.com',
+        domains: [{ domainName: 'z.example.com' }, { domainName: 'a.example.com', cdn: true }],
       };
 
       const definition = extractOssBucketDefinition(config);
 
-      expect(definition.domain).toBe('www.example.com');
+      // Bindings are canonicalized: sorted by hostname so list reordering in
+      // YAML never produces a plan change (issue #279).
+      expect(definition.domains).toEqual([
+        {
+          domain_name: 'a.example.com',
+          certificate_id: null,
+          certificate_body: null,
+          certificate_private_key: null,
+          protocol: null,
+          cdn: { enabled: true, cdn_type: 'web', scope: 'global' },
+        },
+        {
+          domain_name: 'z.example.com',
+          certificate_id: null,
+          certificate_body: null,
+          certificate_private_key: null,
+          protocol: null,
+          cdn: null,
+        },
+      ]);
+    });
+
+    it('should omit cdn_type/scope for a disabled cdn object without them', () => {
+      const config = {
+        bucketName: 'test-bucket',
+        domains: [{ domainName: 'x.c', cdn: { enabled: false } }],
+      };
+
+      const definition = extractOssBucketDefinition(config);
+
+      expect(definition.domains).toEqual([
+        {
+          domain_name: 'x.c',
+          certificate_id: null,
+          certificate_body: null,
+          certificate_private_key: null,
+          protocol: null,
+          cdn: { enabled: false },
+        },
+      ]);
+    });
+
+    it('should default cdn_type/scope for the boolean cdn shorthand', () => {
+      const config = {
+        bucketName: 'test-bucket',
+        domains: [{ domainName: 'x.c', cdn: true }],
+      };
+
+      const definition = extractOssBucketDefinition(config);
+
+      const entries = definition.domains as Array<{ cdn: unknown }>;
+      expect(entries[0].cdn).toEqual({
+        enabled: true,
+        cdn_type: 'web',
+        scope: 'global',
+      });
     });
 
     it('should extract versioning status when defined', () => {
@@ -312,6 +362,21 @@ describe('OssTypes', () => {
   });
 
   describe('cloudOssToDefinition', () => {
+    it('maps a website config without errorDocument to null errorDocument', () => {
+      const info = {
+        name: 'test-bucket',
+        acl: 'private',
+        websiteConfig: { indexDocument: 'index.html' },
+      } as unknown as OssBucketInfo;
+
+      const definition = cloudOssToDefinition(info);
+
+      expect(definition.websiteConfiguration).toEqual({
+        indexDocument: 'index.html',
+        errorDocument: null,
+      });
+    });
+
     it('maps reconciliable attributes from a complete cloud bucket response', () => {
       // Given: a cloud response with every attribute this mapper can compare
       const info: OssBucketInfo = {

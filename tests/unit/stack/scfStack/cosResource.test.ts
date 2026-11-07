@@ -194,11 +194,14 @@ describe('CosResource', () => {
         website: {
           index: 'index.html',
           code: './dist',
-
-          domain: 'cdn.example.com',
-          domain_certificate_body: 'CERT-BODY',
-          domain_certificate_private_key: 'CERT-KEY',
         },
+        domains: [
+          {
+            domain_name: 'cdn.example.com',
+            certificate_body: 'CERT-BODY',
+            certificate_private_key: 'CERT-KEY',
+          },
+        ],
       };
 
       await createBucketResource(mockContext, domainBucket, initialState);
@@ -232,9 +235,9 @@ describe('CosResource', () => {
         name: 'test-bucket',
         website: {
           index: 'index.html',
-          domain: 'cdn.example.com',
           code: './dist',
         },
+        domains: [{ domain_name: 'cdn.example.com' }],
       };
 
       await createBucketResource(mockContext, bucket, initialState);
@@ -259,11 +262,14 @@ describe('CosResource', () => {
         website: {
           index: 'index.html',
           code: './dist',
-
-          domain: 'cdn.example.com',
-          domain_certificate_body: 'CERT-BODY',
-          domain_certificate_private_key: 'CERT-KEY',
         },
+        domains: [
+          {
+            domain_name: 'cdn.example.com',
+            certificate_body: 'CERT-BODY',
+            certificate_private_key: 'CERT-KEY',
+          },
+        ],
       };
 
       await createBucketResource(mockContext, domainBucket, initialState);
@@ -291,10 +297,8 @@ describe('CosResource', () => {
         website: {
           index: 'index.html',
           code: './dist',
-
-          domain: 'cdn.example.com',
-          domain_certificate_id: 'existing-cert-12345',
         },
+        domains: [{ domain_name: 'cdn.example.com', certificate_id: 'existing-cert-12345' }],
       };
 
       await createBucketResource(mockContext, domainBucket, initialState);
@@ -393,7 +397,7 @@ describe('CosResource', () => {
   });
 
   describe('updateBucketResource', () => {
-    it('should deploy SSL certificate on update with domain_certificate', async () => {
+    it('should deploy SSL certificate on update with inline certificate', async () => {
       mockCosOperations.getBucket.mockResolvedValue(mockBucketInfo);
       mockCosOperations.bindCustomDomain.mockResolvedValue({
         cname: 'test-bucket.cos.ap-guangzhou.myqcloud.com',
@@ -413,11 +417,15 @@ describe('CosResource', () => {
         name: 'test-bucket',
         website: {
           index: 'index.html',
-          domain: 'cdn.example.com',
-          domain_certificate_body: 'CERT-BODY',
-          domain_certificate_private_key: 'CERT-KEY',
           code: './dist',
         },
+        domains: [
+          {
+            domain_name: 'cdn.example.com',
+            certificate_body: 'CERT-BODY',
+            certificate_private_key: 'CERT-KEY',
+          },
+        ],
       };
 
       await updateBucketResource(mockContext, bucket, initialState);
@@ -450,10 +458,9 @@ describe('CosResource', () => {
         name: 'test-bucket',
         website: {
           index: 'index.html',
-          domain: 'cdn.example.com',
-          domain_certificate_id: 'existing-cert-99999',
           code: './dist',
         },
+        domains: [{ domain_name: 'cdn.example.com', certificate_id: 'existing-cert-99999' }],
       };
 
       await updateBucketResource(mockContext, bucket, initialState);
@@ -477,9 +484,9 @@ describe('CosResource', () => {
         name: 'test-bucket',
         website: {
           index: 'index.html',
-          domain: 'cdn.example.com',
           code: './dist',
         },
+        domains: [{ domain_name: 'cdn.example.com' }],
       };
 
       await updateBucketResource(mockContext, bucket, initialState);
@@ -1065,7 +1072,7 @@ describe('CosResource', () => {
       ).rejects.toThrow('Failed to refresh state for bucket');
     });
 
-    it('should create bucket with www_bind_apex domain binding', async () => {
+    it('should create bucket with multiple explicit domain bindings', async () => {
       mockCosOperations.createBucket.mockResolvedValue(undefined);
       mockCosOperations.getBucket.mockResolvedValue(mockBucketInfoBase);
       mockCosOperations.bindCustomDomain.mockResolvedValue({
@@ -1082,10 +1089,8 @@ describe('CosResource', () => {
           website: {
             index: 'index.html',
             code: './dist',
-
-            domain: 'example.com',
-            www_bind_apex: true,
           },
+          domains: [{ domain_name: 'example.com' }, { domain_name: 'www.example.com' }],
         },
         initialState,
       );
@@ -1098,7 +1103,7 @@ describe('CosResource', () => {
       );
     });
 
-    it('should deploy certificate on www domain when www_bind_apex and cert provided', async () => {
+    it('should deploy per-binding certificate on each bound domain', async () => {
       mockCosOperations.createBucket.mockResolvedValue(undefined);
       mockCosOperations.getBucket.mockResolvedValue(mockBucketInfoBase);
       mockCosOperations.bindCustomDomain
@@ -1128,12 +1133,19 @@ describe('CosResource', () => {
           website: {
             index: 'index.html',
             code: './dist',
-
-            domain: 'example.com',
-            www_bind_apex: true,
-            domain_certificate_body: 'CERT-BODY',
-            domain_certificate_private_key: 'CERT-KEY',
           },
+          domains: [
+            {
+              domain_name: 'example.com',
+              certificate_body: 'CERT-BODY',
+              certificate_private_key: 'CERT-KEY',
+            },
+            {
+              domain_name: 'www.example.com',
+              certificate_body: 'CERT-BODY',
+              certificate_private_key: 'CERT-KEY',
+            },
+          ],
         },
         initialState,
       );
@@ -1151,7 +1163,7 @@ describe('CosResource', () => {
       );
     });
 
-    it('should not deploy cert on www if wwwCnameInfo.bucketDomainBound is false', async () => {
+    it('should not deploy cert on a binding whose bucketDomainBound is false', async () => {
       mockCosOperations.createBucket.mockResolvedValue(undefined);
       mockCosOperations.getBucket.mockResolvedValue(mockBucketInfoBase);
       mockCosOperations.bindCustomDomain
@@ -1181,12 +1193,19 @@ describe('CosResource', () => {
           website: {
             index: 'index.html',
             code: './dist',
-
-            domain: 'example.com',
-            www_bind_apex: true,
-            domain_certificate_body: 'CERT-BODY',
-            domain_certificate_private_key: 'CERT-KEY',
           },
+          domains: [
+            {
+              domain_name: 'example.com',
+              certificate_body: 'CERT-BODY',
+              certificate_private_key: 'CERT-KEY',
+            },
+            {
+              domain_name: 'www.example.com',
+              certificate_body: 'CERT-BODY',
+              certificate_private_key: 'CERT-KEY',
+            },
+          ],
         },
         initialState,
       );
@@ -1199,7 +1218,7 @@ describe('CosResource', () => {
       );
     });
 
-    it('should handle wwwCnameInfo returning null', async () => {
+    it('should handle second binding cnameInfo returning null', async () => {
       mockCosOperations.createBucket.mockResolvedValue(undefined);
       mockCosOperations.getBucket.mockResolvedValue(mockBucketInfoBase);
       mockCosOperations.bindCustomDomain
@@ -1218,10 +1237,8 @@ describe('CosResource', () => {
           website: {
             index: 'index.html',
             code: './dist',
-
-            domain: 'example.com',
-            www_bind_apex: true,
           },
+          domains: [{ domain_name: 'example.com' }, { domain_name: 'www.example.com' }],
         },
         initialState,
       );
@@ -1229,7 +1246,7 @@ describe('CosResource', () => {
       expect(mockCosOperations.bindCustomDomain).toHaveBeenCalledTimes(2);
     });
 
-    it('should refresh bucket info after domain binding', async () => {
+    it('should refresh bucket info after binding', async () => {
       mockCosOperations.createBucket.mockResolvedValue(undefined);
       mockCosOperations.getBucket
         .mockResolvedValueOnce(mockBucketInfoBase)
@@ -1248,9 +1265,8 @@ describe('CosResource', () => {
           website: {
             index: 'index.html',
             code: './dist',
-
-            domain: 'cdn.example.com',
           },
+          domains: [{ domain_name: 'cdn.example.com' }],
         },
         initialState,
       );
@@ -1277,9 +1293,8 @@ describe('CosResource', () => {
           website: {
             index: 'index.html',
             code: './dist',
-
-            domain: 'cdn.example.com',
           },
+          domains: [{ domain_name: 'cdn.example.com' }],
         },
         initialState,
       );
@@ -1301,15 +1316,31 @@ describe('CosResource', () => {
           website: {
             index: 'index.html',
             code: './dist',
-
-            domain: 'cdn.example.com',
           },
+          domains: [{ domain_name: 'cdn.example.com' }],
         },
         initialState,
       );
 
       expect(mockCosOperations.bindCustomDomain).toHaveBeenCalled();
       expect(mockSslOperations.deployCertificateInstance).not.toHaveBeenCalled();
+    });
+
+    it('should reject bucket-level accelerate on COS (capability not supported)', async () => {
+      mockCosOperations.createBucket.mockResolvedValue(undefined);
+      mockCosOperations.getBucket.mockResolvedValue(mockBucketInfoBase);
+
+      await expect(
+        createBucketResource(
+          mockContext,
+          {
+            key: 'test_bucket',
+            name: 'test-bucket',
+            accelerate: true,
+          },
+          initialState,
+        ),
+      ).rejects.toThrow(/transfer acceleration/);
     });
   });
 
@@ -1367,7 +1398,7 @@ describe('CosResource', () => {
       ).rejects.toThrow('Failed to refresh state for bucket');
     });
 
-    it('should unbind old domains when domain changes', async () => {
+    it('should converge a removed binding and bind the new one', async () => {
       mockCosOperations.getBucket.mockResolvedValue(mockBucketInfoBase);
       mockCosOperations.unbindCustomDomain.mockResolvedValue(undefined);
       mockCosOperations.bindCustomDomain.mockResolvedValue({
@@ -1384,9 +1415,8 @@ describe('CosResource', () => {
           website: {
             index: 'index.html',
             code: './dist',
-
-            domain: 'new.example.com',
           },
+          domains: [{ domain_name: 'new.example.com' }],
         },
         stateWithDomain,
       );
@@ -1402,7 +1432,7 @@ describe('CosResource', () => {
       );
     });
 
-    it('should bind www domain with cert in update when www_bind_apex', async () => {
+    it('should deploy per-binding certificate references in update', async () => {
       mockCosOperations.getBucket.mockResolvedValue(mockBucketInfoBase);
       mockCosOperations.bindCustomDomain
         .mockResolvedValueOnce({
@@ -1425,11 +1455,11 @@ describe('CosResource', () => {
           website: {
             index: 'index.html',
             code: './dist',
-
-            domain: 'example.com',
-            www_bind_apex: true,
-            domain_certificate_id: 'cert-ref-123',
           },
+          domains: [
+            { domain_name: 'example.com', certificate_id: 'cert-ref-123' },
+            { domain_name: 'www.example.com', certificate_id: 'cert-ref-123' },
+          ],
         },
         initialState,
       );
@@ -1441,7 +1471,7 @@ describe('CosResource', () => {
       expect(mockSslOperations.deployCertificateInstance).toHaveBeenCalledTimes(2);
     });
 
-    it('should unbind existing www domain when www_bind_apex is disabled', async () => {
+    it('should migrate legacy www-variant state to explicit bindings without recreating', async () => {
       const stateWithWww: StateFile = {
         ...initialState,
         resources: {
@@ -1494,19 +1524,15 @@ describe('CosResource', () => {
           website: {
             index: 'index.html',
             code: './dist',
-
-            domain: 'example.com',
-            www_bind_apex: false,
           },
+          domains: [{ domain_name: 'example.com' }, { domain_name: 'www.example.com' }],
         },
         stateWithWww,
       );
 
-      expect(mockCosOperations.unbindCustomDomain).toHaveBeenCalledWith(
-        'test-bucket',
-        'www.example.com',
-        'dns-www',
-      );
+      // Both bindings re-bound in place; nothing torn down.
+      expect(mockCosOperations.bindCustomDomain).toHaveBeenCalledTimes(2);
+      expect(mockCosOperations.unbindCustomDomain).not.toHaveBeenCalled();
     });
 
     it('unbinds DNS records recorded in state when the domain is removed', async () => {
@@ -1551,9 +1577,8 @@ describe('CosResource', () => {
           website: {
             index: 'index.html',
             code: './dist',
-
-            domain: 'cdn.example.com',
           },
+          domains: [{ domain_name: 'cdn.example.com' }],
         },
         initialState,
       );
@@ -1579,8 +1604,8 @@ describe('CosResource', () => {
     });
   });
 
-  describe('resolveBucketDomainCertificate', () => {
-    it('should not call bindCustomDomain when cert body provided without domain', async () => {
+  describe('per-binding certificate resolution', () => {
+    it('should upload inline PEM certificate and deploy to the bound domain', async () => {
       mockCosOperations.createBucket.mockResolvedValue(undefined);
       mockCosOperations.getBucket.mockResolvedValue({
         Name: 'test-bucket',
@@ -1588,27 +1613,46 @@ describe('CosResource', () => {
         CreationDate: '2024-01-01',
         Tags: [{ Key: 'si-owned-by', Value: 'test-app-test-service:buckets.test_bucket' }],
       });
+      mockCosOperations.bindCustomDomain.mockResolvedValue({
+        cname: 'test-bucket.cos.ap-guangzhou.myqcloud.com',
+        dnsRecordId: 'dns-1',
+        bucketDomainBound: true,
+      });
+      mockSslOperations.uploadCertificate.mockResolvedValue({
+        certificateId: 'ssl-cert-002',
+        alias: 'example_com',
+      });
+      mockSslOperations.deployCertificateInstance.mockResolvedValue({ deployRecordId: 7 });
 
       await createBucketResource(
         mockContext,
         {
           key: 'test_bucket',
           name: 'test-bucket',
-          website: {
-            index: 'index.html',
-            code: './dist',
-
-            domain_certificate_body: 'CERT-BODY',
-            domain_certificate_private_key: 'CERT-KEY',
-          },
+          domains: [
+            {
+              domain_name: 'example.com',
+              certificate_body: 'CERT-BODY',
+              certificate_private_key: 'CERT-KEY',
+            },
+          ],
         },
         initialState,
       );
 
-      expect(mockCosOperations.bindCustomDomain).not.toHaveBeenCalled();
+      expect(mockSslOperations.uploadCertificate).toHaveBeenCalledWith(
+        'example_com',
+        'CERT-BODY',
+        'CERT-KEY',
+      );
+      expect(mockSslOperations.deployCertificateInstance).toHaveBeenCalledWith(
+        'ssl-cert-002',
+        'cos',
+        ['ap-guangzhou|test-bucket|example.com'],
+      );
     });
 
-    it('should resolve certificate_id reference without domain for logging', async () => {
+    it('should deploy certificate_id references without uploading', async () => {
       mockCosOperations.createBucket.mockResolvedValue(undefined);
       mockCosOperations.getBucket.mockResolvedValue({
         Name: 'test-bucket',
@@ -1616,26 +1660,32 @@ describe('CosResource', () => {
         CreationDate: '2024-01-01',
         Tags: [{ Key: 'si-owned-by', Value: 'test-app-test-service:buckets.test_bucket' }],
       });
+      mockCosOperations.bindCustomDomain.mockResolvedValue({
+        cname: 'test-bucket.cos.ap-guangzhou.myqcloud.com',
+        dnsRecordId: 'dns-1',
+        bucketDomainBound: true,
+      });
+      mockSslOperations.deployCertificateInstance.mockResolvedValue({ deployRecordId: 8 });
 
       await createBucketResource(
         mockContext,
         {
           key: 'test_bucket',
           name: 'test-bucket',
-          website: {
-            index: 'index.html',
-            code: './dist',
-
-            domain_certificate_id: 'cert-id-999',
-          },
+          domains: [{ domain_name: 'example.com', certificate_id: 'cert-id-999' }],
         },
         initialState,
       );
 
-      expect(mockCosOperations.bindCustomDomain).not.toHaveBeenCalled();
+      expect(mockSslOperations.uploadCertificate).not.toHaveBeenCalled();
+      expect(mockSslOperations.deployCertificateInstance).toHaveBeenCalledWith(
+        'cert-id-999',
+        'cos',
+        ['ap-guangzhou|test-bucket|example.com'],
+      );
     });
 
-    it('should return undefined when no website defined', async () => {
+    it('should skip ssl operations for bindings without certificate config', async () => {
       mockCosOperations.createBucket.mockResolvedValue(undefined);
       mockCosOperations.getBucket.mockResolvedValue({
         Name: 'test-bucket',
@@ -1653,6 +1703,7 @@ describe('CosResource', () => {
       );
 
       expect(mockCosOperations.bindCustomDomain).not.toHaveBeenCalled();
+      expect(mockSslOperations.deployCertificateInstance).not.toHaveBeenCalled();
     });
   });
 

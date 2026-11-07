@@ -1,3 +1,4 @@
+import type { ErrorObject } from 'ajv';
 import { validateSemantics } from '../../../src/validator/semanticValidation';
 import { validateYaml } from '../../../src/validator/iacSchema';
 import { ServerlessIacRaw } from '../../../src/types';
@@ -39,6 +40,71 @@ describe('validateSemantics', () => {
       events,
       functions,
     }) as unknown as ServerlessIacRaw;
+
+  describe('bucket domains semantics (issue #279)', () => {
+    const buildBucketIac = (buckets: Record<string, unknown>): ServerlessIacRaw =>
+      ({
+        version: '0.0.1',
+        app: 'test-app',
+        service: 'test-service',
+        provider: { name: ProviderEnum.ALIYUN, region: 'cn-hangzhou' },
+        events: {},
+        functions: {},
+        buckets,
+      }) as unknown as ServerlessIacRaw;
+
+    const keywordsOf = (errors: Array<ErrorObject>): string[] => errors.map((e) => e.keyword);
+
+    it('skips non-object bucket entries', () => {
+      const errors = validateSemantics(buildBucketIac({ broken: null }));
+      expect(keywordsOf(errors)).not.toContain('bucketDomainMigrated');
+    });
+
+    it('skips non-object binding entries and unresolvable hostnames', () => {
+      const errors = validateSemantics(
+        buildBucketIac({
+          assets: {
+            name: 'assets',
+            domains: [null, { domain_name: 42 }, { domain_name: '${vars.hostA}' }],
+          },
+        }),
+      );
+      expect(errors.filter((e) => e.instancePath.startsWith('/buckets/assets/domains'))).toEqual(
+        [],
+      );
+    });
+
+    it('rejects a wildcard that covers a previously declared exact host (both orders)', () => {
+      const exactFirst = validateSemantics(
+        buildBucketIac({
+          assets: {
+            name: 'assets',
+            domains: [{ domain_name: 'www.example.com' }, { domain_name: '*.example.com' }],
+          },
+        }),
+      );
+      expect(keywordsOf(exactFirst)).toContain('wildcardBucketDomainConflict');
+      const wildcardFirst = validateSemantics(
+        buildBucketIac({
+          assets: {
+            name: 'assets',
+            domains: [{ domain_name: '*.example.com' }, { domain_name: 'www.example.com' }],
+          },
+        }),
+      );
+      expect(keywordsOf(wildcardFirst)).toContain('wildcardBucketDomainConflict');
+    });
+
+    it('rejects volcengine bucket bindings regardless of declaration shape', () => {
+      const errors = validateSemantics({
+        ...buildBucketIac({
+          assets: { name: 'assets', domains: [{ domain_name: 'example.com' }] },
+        }),
+        provider: { name: ProviderEnum.VOLCENGINE, region: 'cn-beijing' },
+      } as unknown as ServerlessIacRaw);
+      expect(keywordsOf(errors)).toContain('bucketDomainsProviderUnsupported');
+    });
+  });
 
   describe('function source (container vs code)', () => {
     it('rejects functions defining both container and code', () => {

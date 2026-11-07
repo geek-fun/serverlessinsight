@@ -17,5 +17,6 @@ buckets:
       acl: PUBLIC_READ
     website:
       code: dist
-      domain: meke-ui.serverlessinsight.com
       index: index.html
+    domains:
+      - domain_name: meke-ui.serverlessinsight.com

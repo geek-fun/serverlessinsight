@@ -35,6 +35,9 @@ describe('bucketParser', () => {
         storage: undefined,
         versioning: undefined,
         security: undefined,
+        accelerate: false,
+        domains: undefined,
+        iam: undefined,
         website: undefined,
       });
     });
@@ -181,13 +184,12 @@ describe('bucketParser', () => {
       expect(result?.[0].security).toBeUndefined();
     });
 
-    it('should parse bucket with website configuration and null domain', () => {
+    it('should parse bucket with website configuration (v1: no domain fields)', () => {
       const buckets: { [key: string]: BucketRaw } = {
         my_bucket: {
           name: 'test-bucket',
           website: {
             code: './dist',
-            domain: undefined,
           },
         },
       };
@@ -196,205 +198,131 @@ describe('bucketParser', () => {
 
       expect(result?.[0].website).toEqual({
         code: './dist',
-        domain: undefined,
-        www_bind_apex: false,
-        domain_certificate_id: undefined,
-        domain_certificate_body: undefined,
-        domain_certificate_private_key: undefined,
-        domain_protocol: undefined,
         index: 'index.html',
       });
     });
 
-    it('should parse bucket with website configuration and undefined domain', () => {
+    it('should parse domains list with minimal binding fields', () => {
       const buckets: { [key: string]: BucketRaw } = {
         my_bucket: {
           name: 'test-bucket',
-          website: {
-            code: './dist',
-          },
+          domains: [{ domain_name: 'example.com' }],
         },
       };
 
       const result = parseBucket(buckets);
 
-      expect(result?.[0].website?.domain).toBeUndefined();
-      expect(result?.[0].website?.www_bind_apex).toBe(false);
+      expect(result?.[0].domains).toEqual([
+        {
+          domain_name: 'example.com',
+          certificate_id: undefined,
+          certificate_body: undefined,
+          certificate_private_key: undefined,
+          protocol: undefined,
+          cdn: undefined,
+        },
+      ]);
+      expect(result?.[0].accelerate).toBe(false);
     });
 
-    it('should parse bucket with website configuration and simple string domain', () => {
+    it('should normalize binding hostnames to lowercase (binding identity)', () => {
       const buckets: { [key: string]: BucketRaw } = {
         my_bucket: {
           name: 'test-bucket',
-          website: {
-            code: './dist',
-            domain: 'example.com',
-          },
+          domains: [{ domain_name: '  WWW.Example.COM  ' }, { domain_name: '*.Sub.Example.com' }],
         },
       };
 
       const result = parseBucket(buckets);
 
-      expect(result?.[0].website).toEqual({
-        code: './dist',
-        domain: 'example.com',
-        www_bind_apex: false,
-        domain_certificate_id: undefined,
-        domain_certificate_body: undefined,
-        domain_certificate_private_key: undefined,
-        domain_protocol: undefined,
-        index: 'index.html',
-      });
+      expect(result?.[0].domains?.map((binding) => binding.domain_name)).toEqual([
+        'www.example.com',
+        '*.sub.example.com',
+      ]);
     });
 
-    it('should parse bucket with website configuration and structured domain with minimal fields', () => {
+    it('should preserve template-ref binding hostnames verbatim (resolved later)', () => {
       const buckets: { [key: string]: BucketRaw } = {
         my_bucket: {
           name: 'test-bucket',
-          website: {
-            code: './dist',
-            domain: {
-              domain_name: 'example.com',
-            },
-          },
+          domains: [{ domain_name: '${vars.domain}' }],
         },
       };
 
       const result = parseBucket(buckets);
 
-      expect(result?.[0].website).toEqual({
-        code: './dist',
-        domain: 'example.com',
-        www_bind_apex: false,
-        domain_certificate_id: undefined,
-        domain_certificate_body: undefined,
-        domain_certificate_private_key: undefined,
-        domain_protocol: undefined,
-        index: 'index.html',
-      });
+      expect(result?.[0].domains?.[0].domain_name).toBe('${vars.domain}');
     });
 
-    it('should parse bucket with website configuration and structured domain with certificate_id', () => {
+    it('should parse binding with certificate_id', () => {
       const buckets: { [key: string]: BucketRaw } = {
         my_bucket: {
           name: 'test-bucket',
-          website: {
-            code: './dist',
-            domain: {
-              domain_name: 'example.com',
-              www_bind_apex: true,
-              certificate_id: 'cert-123',
-            },
-          },
+          domains: [{ domain_name: 'example.com', certificate_id: 'cert-123' }],
         },
       };
 
       const result = parseBucket(buckets);
 
-      expect(result?.[0].website?.domain).toBe('example.com');
-      expect(result?.[0].website?.www_bind_apex).toBe(true);
-      expect(result?.[0].website?.domain_certificate_id).toBe('cert-123');
-      expect(result?.[0].website?.domain_certificate_body).toBeUndefined();
-      expect(result?.[0].website?.domain_certificate_private_key).toBeUndefined();
+      expect(result?.[0].domains?.[0].certificate_id).toBe('cert-123');
+      expect(result?.[0].domains?.[0].certificate_body).toBeUndefined();
+      expect(result?.[0].domains?.[0].certificate_private_key).toBeUndefined();
     });
 
-    it('should parse bucket with website configuration and structured domain with certificate_body', () => {
+    it('should parse binding with certificate_body and certificate_private_key', () => {
       const buckets: { [key: string]: BucketRaw } = {
         my_bucket: {
           name: 'test-bucket',
-          website: {
-            code: './dist',
-            domain: {
+          domains: [
+            {
               domain_name: 'example.com',
               certificate_body: '-----BEGIN CERTIFICATE-----',
-            },
-          },
-        },
-      };
-
-      const result = parseBucket(buckets);
-
-      expect(result?.[0].website?.domain_certificate_body).toBe('-----BEGIN CERTIFICATE-----');
-      expect(result?.[0].website?.domain_certificate_id).toBeUndefined();
-    });
-
-    it('should parse bucket with website configuration and structured domain with certificate_private_key', () => {
-      const buckets: { [key: string]: BucketRaw } = {
-        my_bucket: {
-          name: 'test-bucket',
-          website: {
-            code: './dist',
-            domain: {
-              domain_name: 'example.com',
               certificate_private_key: '-----BEGIN PRIVATE KEY-----',
             },
-          },
+          ],
         },
       };
 
       const result = parseBucket(buckets);
 
-      expect(result?.[0].website?.domain_certificate_private_key).toBe(
-        '-----BEGIN PRIVATE KEY-----',
-      );
-      expect(result?.[0].website?.domain_certificate_id).toBeUndefined();
+      expect(result?.[0].domains?.[0].certificate_body).toBe('-----BEGIN CERTIFICATE-----');
+      expect(result?.[0].domains?.[0].certificate_private_key).toBe('-----BEGIN PRIVATE KEY-----');
+      expect(result?.[0].domains?.[0].certificate_id).toBeUndefined();
     });
 
-    it('should parse bucket with website configuration and structured domain with protocol as string', () => {
+    it('should parse binding with protocol as string and as array', () => {
       const buckets: { [key: string]: BucketRaw } = {
         my_bucket: {
           name: 'test-bucket',
-          website: {
-            code: './dist',
-            domain: {
-              domain_name: 'example.com',
-              protocol: 'https',
-            },
-          },
+          domains: [
+            { domain_name: 'a.example.com', protocol: 'HTTPS' },
+            { domain_name: 'b.example.com', protocol: ['HTTP', 'HTTPS'] },
+            { domain_name: 'c.example.com', protocol: undefined },
+          ],
         },
       };
 
       const result = parseBucket(buckets);
 
-      expect(result?.[0].website?.domain_protocol).toBe('https');
+      expect(result?.[0].domains?.[0].protocol).toBe('HTTPS');
+      expect(result?.[0].domains?.[1].protocol).toEqual(['HTTP', 'HTTPS']);
+      expect(result?.[0].domains?.[2].protocol).toBeUndefined();
     });
 
-    it('should parse bucket with website configuration and structured domain with protocol as array', () => {
+    it('should parse bucket-level accelerate (omission restores the false default)', () => {
       const buckets: { [key: string]: BucketRaw } = {
-        my_bucket: {
-          name: 'test-bucket',
-          website: {
-            code: './dist',
-            domain: {
-              domain_name: 'example.com',
-              protocol: ['http', 'https'],
-            },
-          },
+        without_accelerate: { name: 'bucket-a', domains: [{ domain_name: 'a.example.com' }] },
+        with_accelerate: {
+          name: 'bucket-b',
+          accelerate: true,
+          domains: [{ domain_name: 'b.example.com' }],
         },
       };
 
       const result = parseBucket(buckets);
 
-      expect(result?.[0].website?.domain_protocol).toEqual(['http', 'https']);
-    });
-
-    it('should parse bucket with website configuration and structured domain with null protocol', () => {
-      const buckets: { [key: string]: BucketRaw } = {
-        my_bucket: {
-          name: 'test-bucket',
-          website: {
-            code: './dist',
-            domain: {
-              domain_name: 'example.com',
-              protocol: undefined,
-            },
-          },
-        },
-      };
-
-      const result = parseBucket(buckets);
-
-      expect(result?.[0].website?.domain_protocol).toBeUndefined();
+      expect(result?.[0].accelerate).toBe(false);
+      expect(result?.[1].accelerate).toBe(true);
     });
 
     it('should parse bucket with website configuration and custom index/error pages', () => {
@@ -461,16 +389,19 @@ describe('bucketParser', () => {
             sse_algorithm: 'AES256',
             sse_kms_master_key_id: 'key-123',
           },
-          website: {
-            code: './dist',
-            domain: {
+          accelerate: true,
+          domains: [
+            {
               domain_name: 'example.com',
-              www_bind_apex: true,
               certificate_id: 'cert-123',
               certificate_body: '-----BEGIN CERTIFICATE-----',
               certificate_private_key: '-----BEGIN PRIVATE KEY-----',
-              protocol: ['http', 'https'],
+              protocol: ['HTTP', 'HTTPS'],
             },
+            { domain_name: 'legacy.example.com', cdn: true },
+          ],
+          website: {
+            code: './dist',
             index: 'index.html',
           },
         },
@@ -490,74 +421,62 @@ describe('bucketParser', () => {
           sse_algorithm: 'AES256',
           sse_kms_master_key_id: 'key-123',
         },
+        accelerate: true,
+        domains: [
+          {
+            domain_name: 'example.com',
+            certificate_id: 'cert-123',
+            certificate_body: '-----BEGIN CERTIFICATE-----',
+            certificate_private_key: '-----BEGIN PRIVATE KEY-----',
+            protocol: ['HTTP', 'HTTPS'],
+          },
+          { domain_name: 'legacy.example.com', cdn: true },
+        ],
         website: {
           code: './dist',
-          domain: 'example.com',
-          www_bind_apex: true,
-          domain_certificate_id: 'cert-123',
-          domain_certificate_body: '-----BEGIN CERTIFICATE-----',
-          domain_certificate_private_key: '-----BEGIN PRIVATE KEY-----',
-          domain_protocol: ['http', 'https'],
           index: 'index.html',
         },
       });
     });
   });
 
-  describe('parseBucket with CDN/accelerate', () => {
-    it('should parse top-level domain with cdn: true', () => {
+  describe('parseBucket with binding CDN options', () => {
+    it('should parse binding with cdn: true', () => {
       const input = {
         my_bucket: {
           name: 'my-bucket',
-          domain: {
-            domain_name: 'cdn.example.com',
-            cdn: true,
-          },
+          domains: [{ domain_name: 'cdn.example.com', cdn: true }],
         },
       };
       const result = parseBucket(input)!;
       expect(result).toHaveLength(1);
-      expect(result[0].domain?.domain_name).toBe('cdn.example.com');
-      expect(result[0].domain?.cdn).toBe(true);
+      expect(result[0].domains?.[0].domain_name).toBe('cdn.example.com');
+      expect(result[0].domains?.[0].cdn).toBe(true);
     });
 
-    it('should parse top-level domain with cdn object config', () => {
+    it('should parse binding with cdn object config', () => {
       const input = {
         my_bucket: {
           name: 'my-bucket',
-          domain: {
-            domain_name: 'cdn.example.com',
-            cdn: {
-              enabled: true,
-              cdn_type: 'download',
-              scope: 'global',
+          domains: [
+            {
+              domain_name: 'cdn.example.com',
+              cdn: {
+                enabled: true,
+                cdn_type: 'download',
+                scope: 'global',
+              },
             },
-            accelerate: true,
-          },
+          ],
         },
       };
       const result = parseBucket(input)!;
       expect(result).toHaveLength(1);
-      expect(result[0].domain?.cdn).toEqual({
+      expect(result[0].domains?.[0].cdn).toEqual({
         enabled: true,
         cdn_type: 'download',
         scope: 'global',
       });
-      expect(result[0].domain?.accelerate).toBe(true);
-    });
-
-    it('should fall back to website.domain when top-level domain is absent', () => {
-      const input = {
-        my_bucket: {
-          name: 'my-bucket',
-          website: {
-            code: './dist',
-            domain: 'legacy.example.com',
-          },
-        },
-      };
-      const result = parseBucket(input)!;
-      expect(result[0].domain?.domain_name).toBe('legacy.example.com');
     });
 
     describe('IAM policy statements', () => {
@@ -882,20 +801,3 @@ describe('parseBucket with IAM', () => {
     expect(result?.[0]?.iam).toEqual({ resource: { statements: [] } });
   });
 });
-
-it.each([undefined, false, true])(
-  'defaults bucket www declaration %s consistently in canonical and legacy forms',
-  (www) => {
-    const domain = {
-      domain_name: 'example.com',
-      ...(www !== undefined ? { www_bind_apex: www } : {}),
-    };
-    const parsed = parseBucket({
-      canonical: { name: 'canonical', domain },
-      legacy: { name: 'legacy', website: { code: './dist', domain } },
-    });
-    expect(parsed?.[0].domain?.www_bind_apex).toBe(www ?? false);
-    expect(parsed?.[1].domain?.www_bind_apex).toBe(www ?? false);
-    expect(parsed?.[1].website?.www_bind_apex).toBe(www ?? false);
-  },
-);

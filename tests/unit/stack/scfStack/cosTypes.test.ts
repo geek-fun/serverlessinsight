@@ -192,6 +192,56 @@ describe('CosTypes', () => {
     });
   });
 
+  describe('binding cdn intent mapping', () => {
+    it('carries boolean and object cdn intent through the config', () => {
+      const bucket = {
+        key: 'assets',
+        name: 'assets',
+        domains: [
+          { domain_name: 'a.example.com', cdn: true },
+          { domain_name: 'b.example.com', cdn: { enabled: true, cdn_type: 'download' } },
+          { domain_name: 'c.example.com' },
+        ],
+      } as never;
+
+      const config = bucketToCosBucketConfig(bucket, 'ap-guangzhou');
+
+      expect(config.domains![0].cdn).toBe(true);
+      expect(config.domains![1].cdn).toEqual({ enabled: true, cdn_type: 'download' });
+      expect(config.domains![2].cdn).toBeUndefined();
+    });
+
+    it('records cdn intent in definition entries and defaults missing fields to null', () => {
+      const config = {
+        Bucket: 'test-bucket',
+        Region: 'ap-guangzhou',
+        domains: [{ domain: 'b.example.com', cdn: true }, { domain: 'a.example.com' }],
+      };
+
+      const definition = extractCosBucketDefinition(config);
+
+      // Sorted by hostname; boolean cdn intent is preserved as-is, absent cdn is null.
+      expect(definition.domains).toEqual([
+        {
+          domain_name: 'a.example.com',
+          certificate_id: null,
+          certificate_body: null,
+          certificate_private_key: null,
+          protocol: null,
+          cdn: null,
+        },
+        {
+          domain_name: 'b.example.com',
+          certificate_id: null,
+          certificate_body: null,
+          certificate_private_key: null,
+          protocol: null,
+          cdn: true,
+        },
+      ]);
+    });
+  });
+
   describe('extractCosBucketDefinition', () => {
     it('should extract all attributes with empty object for undefined non-primitive fields', () => {
       const config = {
@@ -206,12 +256,7 @@ describe('CosTypes', () => {
         region: 'ap-guangzhou',
         acl: null,
         websiteConfiguration: {},
-        domain: null,
-        wwwBindApex: null,
-        domainCertificateId: null,
-        domainCertificateBody: null,
-        domainCertificatePrivateKey: null,
-        domainProtocol: null,
+        domains: [],
         policy: null,
         versioningStatus: null,
         sseAlgorithm: null,

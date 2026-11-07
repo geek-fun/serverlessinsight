@@ -149,7 +149,15 @@ describe('effective deployment plan convergence', () => {
         'buckets.assets': {
           mode: 'managed' as const,
           region: context.region,
-          definition: { bucketName: 'synthetic-assets', acl: 'private' },
+          // v1 state shape (issue #279): bindings and accelerate are declared
+          // defaults, so a stored/live/desired acl difference converges as a
+          // state-only update without touching the cloud.
+          definition: {
+            bucketName: 'synthetic-assets',
+            acl: 'private',
+            domains: [],
+            accelerate: false,
+          },
           instances: [],
           lastUpdated: new Date().toISOString(),
         },
