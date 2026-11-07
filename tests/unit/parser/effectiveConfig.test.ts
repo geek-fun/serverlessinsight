@@ -119,7 +119,6 @@ describe('effective deployment validation', () => {
     const domain = {
       domain_name: 'assets.example.com',
       certificate_id: '${vars.certificate}',
-      protocol: 'HTTPS',
     };
     jest.mocked(readFileSync).mockReturnValue(
       stringify({

@@ -84,7 +84,7 @@ type ExtendedMockAliyunClient = MockAliyunClient & {
 };
 
 type CdnConfigShape = {
-  scope: 'global' | 'domestic' | 'overseas';
+  scope: 'global' | 'chinese_mainland' | 'overseas';
   cacheTtl: number;
   ignoreQueryString: boolean;
   originProtocol: 'http' | 'https' | 'follow';
@@ -308,7 +308,7 @@ const INITIAL_API_CDN: CdnConfigShape = {
 };
 
 const UPDATED_BUCKET_CDN: CdnConfigShape = {
-  scope: 'domestic',
+  scope: 'chinese_mainland',
   cacheTtl: 7200,
   ignoreQueryString: false,
   originProtocol: 'http',
@@ -518,7 +518,7 @@ describe('CDN Flow Service Test', () => {
             domain_name: BUCKET_DOMAIN,
             cdn: expect.objectContaining({
               enabled: true,
-              scope: 'domestic',
+              scope: 'chinese_mainland',
               cache_ttl: 7200,
               origin_protocol: 'http',
               compression: false,

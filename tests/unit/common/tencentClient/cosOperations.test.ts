@@ -1451,6 +1451,7 @@ describe('cosOperations with dnsOps', () => {
   const mockDnsOps = {
     addDomainRecord: jest.fn(),
     deleteDomainRecord: jest.fn(),
+    updateDomainRecord: jest.fn(),
     describeDomainRecords: jest.fn(),
     checkDomainRecordExists: jest.fn(),
   };

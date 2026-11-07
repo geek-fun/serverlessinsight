@@ -62,7 +62,7 @@ describe('framework configuration defaults', () => {
         certificate_id: null,
         certificate_body: null,
         certificate_private_key: null,
-        protocol: null,
+        certificate_hash: null,
         cdn: { enabled: true, cdn_type: 'web', scope: 'global' },
       },
     ]);

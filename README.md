@@ -258,7 +258,7 @@ Configure HTTP endpoints and bind custom domains with automatic DNS verification
 
 - **HTTP triggers** — define triggers with HTTP methods and paths, backed by a function
 - **Custom domains** — automatic CNAME + DNS TXT ownership verification for OSS and API Gateway on Alibaba Cloud, and DNSPod-backed domains on Tencent Cloud
-- **CDN acceleration** — edge caching and global content delivery for static sites
+- **CDN acceleration** — edge caching and global content delivery for bucket domains on Alibaba Cloud and Tencent COS (see the [capability matrix](docs/oss-custom-domain-binding.md#cdn-delivery-capability-matrix))
 - **OSS transfer acceleration** — cross-region data transfers through the Alibaba backbone
 - **Tencent function URLs** — HTTP entry points without a standalone gateway resource
 

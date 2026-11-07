@@ -4,26 +4,7 @@ import {
   resolvableConstrained,
   HOST_NAME_PATTERN,
 } from './templateRefSchema';
-
-const cdnSchema = {
-  oneOf: [
-    { type: 'boolean' },
-    {
-      type: 'object',
-      properties: {
-        enabled: { type: 'boolean' },
-        cdn_type: { type: 'string', enum: ['web', 'download', 'video'] },
-        scope: { type: 'string', enum: ['domestic', 'overseas', 'global'] },
-        cache_ttl: { type: 'number' },
-        ignore_query_string: { type: 'boolean' },
-        origin_protocol: { type: 'string', enum: ['http', 'https', 'follow'] },
-        compression: { type: 'boolean' },
-        force_redirect_https: { type: 'boolean' },
-      },
-      additionalProperties: false,
-    },
-  ],
-};
+import { cdnSchema } from './cdnSchema';
 
 export const eventSchema = {
   $id: 'https://serverlessinsight.geekfun.club/schemas/eventschema.json',

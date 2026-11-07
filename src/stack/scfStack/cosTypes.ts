@@ -1,5 +1,6 @@
 import { serializeBucketPolicy } from '../../common/bucketPolicy';
-import { BucketDomain, BucketIam, ResourceAttributes } from '../../types';
+import { BucketDomain, BucketDomainBinding, BucketIam, ResourceAttributes } from '../../types';
+import { bindingToDefinitionEntry } from '../../common/bindingReconcile';
 import type { CosBucketInfo as TencentCosBucketInfo } from '../../common/tencentClient/types';
 
 export const COS_BUCKET_POLICY_INSTANCE_TYPE = 'TENCENT_COS_BUCKET_POLICY';
@@ -9,10 +10,8 @@ export type CosBindingConfig = {
   certificateId?: string;
   certificateBody?: string;
   certificatePrivateKey?: string;
-  protocol?: string | string[];
-  // Recorded as declared intent; COS executes binding + certificate only —
-  // CDN delivery on COS is validated separately (issue #282).
-  cdn?: boolean | Record<string, unknown>;
+  // CDN delivery on COS is implemented by the CDN domain path (issue #283).
+  cdn?: BucketDomainBinding['cdn'];
 };
 
 export type CosBucketConfig = {
@@ -131,18 +130,14 @@ export type CosBucketInfo = {
   Tags?: Array<{ Key: string; Value: string }>;
 };
 
-const bindingToDefinitionEntry = (binding: CosBindingConfig): ResourceAttributes => ({
-  domain_name: binding.domain,
-  certificate_id: binding.certificateId ?? null,
-  certificate_body: binding.certificateBody ?? null,
-  certificate_private_key: binding.certificatePrivateKey ? '(managed)' : null,
-  protocol: binding.protocol ?? null,
-  ...(binding.cdn != null
-    ? {
-        cdn: typeof binding.cdn === 'object' ? { ...binding.cdn } : binding.cdn,
-      }
-    : { cdn: null }),
-});
+const cosBindingToDefinitionEntry = (binding: CosBindingConfig): ResourceAttributes =>
+  bindingToDefinitionEntry({
+    domainName: binding.domain,
+    certificateId: binding.certificateId,
+    certificateBody: binding.certificateBody,
+    certificatePrivateKey: binding.certificatePrivateKey,
+    ...(binding.cdn != null ? { cdn: binding.cdn } : {}),
+  });
 
 export const bucketToCosBucketConfig = (bucket: BucketDomain, region: string): CosBucketConfig => {
   const config: CosBucketConfig = {
@@ -180,8 +175,7 @@ export const bucketToCosBucketConfig = (bucket: BucketDomain, region: string): C
       certificateId: binding.certificate_id,
       certificateBody: binding.certificate_body,
       certificatePrivateKey: binding.certificate_private_key,
-      protocol: binding.protocol,
-      ...(binding.cdn != null ? { cdn: binding.cdn as boolean | Record<string, unknown> } : {}),
+      ...(binding.cdn != null ? { cdn: binding.cdn } : {}),
     }));
   }
 
@@ -216,7 +210,7 @@ export const extractCosBucketDefinition = (config: CosBucketConfig): ResourceAtt
     domains: (config.domains ?? [])
       .slice()
       .sort((a, b) => a.domain.localeCompare(b.domain))
-      .map(bindingToDefinitionEntry),
+      .map(cosBindingToDefinitionEntry),
     versioningStatus: config.VersioningStatus ?? null,
     sseAlgorithm: config.SseAlgorithm ?? null,
     sseKmsMasterKeyId: config.SseKmsMasterKeyId ?? null,

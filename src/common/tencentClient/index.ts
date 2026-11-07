@@ -5,6 +5,7 @@ import * as tencentEs from 'tencentcloud-sdk-nodejs-es';
 import * as tencentSsl from 'tencentcloud-sdk-nodejs-ssl';
 import * as tencentTag from 'tencentcloud-sdk-nodejs-tag';
 import * as tencentCls from 'tencentcloud-sdk-nodejs-cls';
+import { CdnClient } from './cdnOperations';
 import COS from 'cos-nodejs-sdk-v5';
 import { Context } from '../../types';
 import { createScfOperations } from './scfOperations';
@@ -15,6 +16,7 @@ import { createTencentEsOperations } from './esOperations';
 import { createDnsOperations, createDnsClient } from './dnspodOperations';
 import { createSslOperations } from './sslOperations';
 import { createClsOperations } from './clsOperations';
+import { createTencentCdnOperations } from './cdnOperations';
 
 export * from './types';
 export { createClsOperations } from './clsOperations';
@@ -139,6 +141,19 @@ const initializeSdkClients = (context: Context) => {
 
   const clsClient = new ClsClient(clsClientConfig);
 
+  const cdnClient = new CdnClient({
+    credential: {
+      secretId: context.accessKeyId,
+      secretKey: context.accessKeySecret,
+    },
+    region: context.region,
+    profile: {
+      httpProfile: {
+        endpoint: 'cdn.tencentcloudapi.com',
+      },
+    },
+  });
+
   return {
     scf: scfClient,
     cos: cosClient,
@@ -149,6 +164,7 @@ const initializeSdkClients = (context: Context) => {
     cam: camClient,
     tag: tagClient,
     cls: clsClient,
+    cdn: cdnClient,
   };
 };
 
@@ -170,5 +186,6 @@ export const createTencentClient = (context: Context) => {
     ssl: createSslOperations(sdkClients.ssl),
     cls: createClsOperations(sdkClients.cls),
     dns: dnsOps,
+    cdn: createTencentCdnOperations(sdkClients.cdn),
   };
 };

@@ -5,31 +5,13 @@ import {
   HOST_NAME_PATTERN,
   BUCKET_NAME_PATTERN,
 } from './templateRefSchema';
-
-const cdnSchema = {
-  oneOf: [
-    { type: 'boolean' },
-    {
-      type: 'object',
-      properties: {
-        enabled: resolvableBoolean,
-        cdn_type: { type: 'string', enum: ['web', 'download', 'video'] },
-        scope: { type: 'string', enum: ['domestic', 'overseas', 'global'] },
-        cache_ttl: { type: 'number' },
-        ignore_query_string: resolvableBoolean,
-        origin_protocol: { type: 'string', enum: ['http', 'https', 'follow'] },
-        compression: resolvableBoolean,
-        force_redirect_https: resolvableBoolean,
-      },
-      additionalProperties: false,
-    },
-  ],
-};
+import { cdnSchema } from './cdnSchema';
 
 // v1 (issue #279): bucket custom domains are declared as a `domains` list.
 // The legacy top-level `domain`, `website.domain` and `www_bind_apex` fields
 // were removed — legacy usage is rejected at schema validation and semantic
-// validation reports a migration error (see validateSemantics).
+// validation reports a migration error (see validateSemantics). The
+// never-consumed `protocol` field was removed with issue #283.
 const bucketDomainBindingSchema = {
   type: 'object',
   properties: {
@@ -37,17 +19,6 @@ const bucketDomainBindingSchema = {
     certificate_id: { type: 'string' },
     certificate_body: { type: 'string' },
     certificate_private_key: { type: 'string' },
-    protocol: {
-      oneOf: [
-        { type: 'string', enum: ['HTTP', 'HTTPS'] },
-        {
-          type: 'array',
-          items: { type: 'string', enum: ['HTTP', 'HTTPS'] },
-          minItems: 1,
-          uniqueItems: true,
-        },
-      ],
-    },
     cdn: cdnSchema,
   },
   required: ['domain_name'],

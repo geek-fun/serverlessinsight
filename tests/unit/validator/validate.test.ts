@@ -847,12 +847,10 @@ describe('unit test for validate', () => {
                 domain_name: 'static.example.com',
                 certificate_body: './certs/server.crt',
                 certificate_private_key: './certs/server.key',
-                protocol: 'HTTPS',
               },
               {
                 domain_name: 'legacy.example.com',
                 certificate_id: 'cas-abc123',
-                protocol: ['HTTP', 'HTTPS'],
               },
             ],
           },
@@ -1001,6 +999,144 @@ describe('unit test for validate', () => {
         (thrownError as { errors?: Array<{ keyword?: string }> }).errors ?? [],
       );
       expect(keywords).toContain('bucketAccelerateProviderUnsupported');
+    });
+
+    // CDN capability validation (issue #283, shared registry with #282)
+    it('should reject the removed protocol field on bucket bindings with a migration error', () => {
+      expectBucketRejection(
+        { domains: [{ domain_name: 'example.com', protocol: 'HTTPS' }] },
+        'bucketBindingProtocolRemoved',
+      );
+    });
+
+    it('should reject the renamed cdn scope domestic with a migration error', () => {
+      expectBucketRejection(
+        {
+          domains: [{ domain_name: 'example.com', cdn: { enabled: true, scope: 'domestic' } }],
+        },
+        'cdnScopeMigrated',
+      );
+    });
+
+    it('should accept cdn_type media on tencent and reject it on aliyun', () => {
+      const tencentYaml = {
+        ...jsonIac,
+        provider: { name: 'tencent', region: 'ap-guangzhou' },
+        buckets: {
+          my_bucket: {
+            name: 'test-bucket',
+            domains: [{ domain_name: 'example.com', cdn: { enabled: true, cdn_type: 'media' } }],
+          },
+        },
+      } as unknown as ServerlessIacRaw;
+      expect(validateYaml(tencentYaml)).toBe(true);
+
+      const aliyunYaml = {
+        ...jsonIac,
+        buckets: {
+          my_bucket: {
+            name: 'test-bucket',
+            domains: [{ domain_name: 'example.com', cdn: { enabled: true, cdn_type: 'media' } }],
+          },
+        },
+      } as unknown as ServerlessIacRaw;
+      expect(() => validateYaml(aliyunYaml)).toThrow('Invalid yaml');
+
+      let thrownError: unknown;
+      try {
+        validateYaml(aliyunYaml);
+      } catch (error) {
+        thrownError = error;
+      }
+      const keywords = JSON.stringify(
+        (thrownError as { errors?: Array<{ keyword?: string }> }).errors ?? [],
+      );
+      expect(keywords).toContain('cdnTypeProviderUnsupported');
+    });
+
+    it('should reject cdn_type video on tencent (ServiceType has no video)', () => {
+      const invalidYaml = {
+        ...jsonIac,
+        provider: { name: 'tencent', region: 'ap-guangzhou' },
+        buckets: {
+          my_bucket: {
+            name: 'test-bucket',
+            domains: [{ domain_name: 'example.com', cdn: { enabled: true, cdn_type: 'video' } }],
+          },
+        },
+      } as unknown as ServerlessIacRaw;
+      expect(() => validateYaml(invalidYaml)).toThrow('Invalid yaml');
+
+      let thrownError: unknown;
+      try {
+        validateYaml(invalidYaml);
+      } catch (error) {
+        thrownError = error;
+      }
+      const keywords = JSON.stringify(
+        (thrownError as { errors?: Array<{ keyword?: string }> }).errors ?? [],
+      );
+      expect(keywords).toContain('cdnTypeProviderUnsupported');
+    });
+
+    it('should reject cdn force_redirect_https without any certificate', () => {
+      expectBucketRejection(
+        {
+          domains: [
+            { domain_name: 'example.com', cdn: { enabled: true, force_redirect_https: true } },
+          ],
+        },
+        'forceRedirectHttpsRequiresCertificate',
+      );
+    });
+
+    it('should accept cdn force_redirect_https when a certificate is provided', () => {
+      const validYaml = {
+        ...jsonIac,
+        buckets: {
+          my_bucket: {
+            name: 'test-bucket',
+            domains: [
+              {
+                domain_name: 'example.com',
+                certificate_id: 'cas-abc123',
+                cdn: { enabled: true, force_redirect_https: true },
+              },
+            ],
+          },
+        },
+      } as unknown as ServerlessIacRaw;
+      expect(validateYaml(validYaml)).toBe(true);
+    });
+
+    it('should reject event domain cdn on providers without event CDN delivery', () => {
+      const invalidYaml = {
+        ...jsonIac,
+        provider: { name: 'tencent', region: 'ap-guangzhou' },
+        events: {
+          my_event: {
+            name: 'gw',
+            type: 'API_GATEWAY',
+            triggers: [{ method: 'GET', path: '/hello', backend: 'hello_function' }],
+            domain: {
+              domain_name: 'api.example.com',
+              cdn: { enabled: true },
+            },
+          },
+        },
+      } as unknown as ServerlessIacRaw;
+      expect(() => validateYaml(invalidYaml)).toThrow('Invalid yaml');
+
+      let thrownError: unknown;
+      try {
+        validateYaml(invalidYaml);
+      } catch (error) {
+        thrownError = error;
+      }
+      const keywords = JSON.stringify(
+        (thrownError as { errors?: Array<{ keyword?: string }> }).errors ?? [],
+      );
+      expect(keywords).toContain('eventCdnProviderUnsupported');
     });
 
     it('should fail when both certificate_id and certificate_body are provided in a binding', () => {

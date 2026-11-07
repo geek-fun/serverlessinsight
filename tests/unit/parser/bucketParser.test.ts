@@ -290,23 +290,19 @@ describe('bucketParser', () => {
       expect(result?.[0].domains?.[0].certificate_id).toBeUndefined();
     });
 
-    it('should parse binding with protocol as string and as array', () => {
+    it('should not emit a protocol field on parsed bindings (removed in v1, issue #283)', () => {
       const buckets: { [key: string]: BucketRaw } = {
         my_bucket: {
           name: 'test-bucket',
-          domains: [
-            { domain_name: 'a.example.com', protocol: 'HTTPS' },
-            { domain_name: 'b.example.com', protocol: ['HTTP', 'HTTPS'] },
-            { domain_name: 'c.example.com', protocol: undefined },
-          ],
+          domains: [{ domain_name: 'a.example.com', cdn: true }, { domain_name: 'b.example.com' }],
         },
       };
 
       const result = parseBucket(buckets);
 
-      expect(result?.[0].domains?.[0].protocol).toBe('HTTPS');
-      expect(result?.[0].domains?.[1].protocol).toEqual(['HTTP', 'HTTPS']);
-      expect(result?.[0].domains?.[2].protocol).toBeUndefined();
+      expect(result?.[0].domains?.[0]).not.toHaveProperty('protocol');
+      expect(result?.[0].domains?.[1]).not.toHaveProperty('protocol');
+      expect(result?.[0].domains?.[0].cdn).toBe(true);
     });
 
     it('should parse bucket-level accelerate (omission restores the false default)', () => {
@@ -396,7 +392,6 @@ describe('bucketParser', () => {
               certificate_id: 'cert-123',
               certificate_body: '-----BEGIN CERTIFICATE-----',
               certificate_private_key: '-----BEGIN PRIVATE KEY-----',
-              protocol: ['HTTP', 'HTTPS'],
             },
             { domain_name: 'legacy.example.com', cdn: true },
           ],
@@ -428,7 +423,6 @@ describe('bucketParser', () => {
             certificate_id: 'cert-123',
             certificate_body: '-----BEGIN CERTIFICATE-----',
             certificate_private_key: '-----BEGIN PRIVATE KEY-----',
-            protocol: ['HTTP', 'HTTPS'],
           },
           { domain_name: 'legacy.example.com', cdn: true },
         ],

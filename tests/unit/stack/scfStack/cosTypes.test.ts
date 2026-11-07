@@ -220,23 +220,24 @@ describe('CosTypes', () => {
 
       const definition = extractCosBucketDefinition(config);
 
-      // Sorted by hostname; boolean cdn intent is preserved as-is, absent cdn is null.
+      // Sorted by hostname; the boolean cdn shorthand canonicalizes to the
+      // enabled object with defaults (shared with aliyun, issue #283).
       expect(definition.domains).toEqual([
         {
           domain_name: 'a.example.com',
           certificate_id: null,
           certificate_body: null,
           certificate_private_key: null,
-          protocol: null,
-          cdn: null,
+          certificate_hash: null,
+          cdn: { enabled: false },
         },
         {
           domain_name: 'b.example.com',
           certificate_id: null,
           certificate_body: null,
           certificate_private_key: null,
-          protocol: null,
-          cdn: true,
+          certificate_hash: null,
+          cdn: { enabled: true, cdn_type: 'web', scope: 'global' },
         },
       ]);
     });

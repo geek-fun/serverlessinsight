@@ -11,6 +11,7 @@ import {
   generateApiKey,
 } from '../common/providerNames';
 import { checkSiCronForProvider } from '../common/siCron';
+import { resolveCdnCapability } from '../common/cdnCapabilities';
 import { isWildcardHostname, normalizeHostname, wildcardCovers } from '../common/domainUtils';
 
 type EventTriggerRaw = {
@@ -98,9 +99,11 @@ const validateBuckets = (
     }
 
     const seen: Array<{ host: string; wildcard: boolean }> = [];
+    const capability = resolveCdnCapability(providerName);
     domains.forEach((entry, index) => {
       if (!entry || typeof entry !== 'object') return;
       const entryPath = `${bucketPath}/domains/${index}`;
+      const rawDomain = typeof entry.domain_name === 'string' ? entry.domain_name : '';
 
       if (entry.www_bind_apex != null) {
         push({
@@ -117,6 +120,78 @@ const validateBuckets = (
           keyword: 'bucketDomainAccelerateMigrated',
           message: lang.__('BUCKET_DOMAIN_ACCELERATE_MIGRATION_REQUIRED', { key: bucketKey }),
         });
+      }
+      if (entry.protocol != null) {
+        push({
+          instancePath: entryPath,
+          schemaPath: '#/semantic/bucketBindingProtocolRemoved',
+          keyword: 'bucketBindingProtocolRemoved',
+          message: lang.__('BUCKET_BINDING_PROTOCOL_REMOVED', {
+            key: bucketKey,
+            domain: rawDomain,
+          }),
+        });
+      }
+
+      // CDN capability checks (issue #283, shared registry with #282). Only
+      // literal object values are checked — booleans carry no fields.
+      const cdnObj =
+        typeof entry.cdn === 'object' && entry.cdn !== null
+          ? (entry.cdn as Record<string, unknown>)
+          : undefined;
+      if (cdnObj && capability) {
+        if (!capability.bucketCdn) {
+          push({
+            instancePath: entryPath,
+            schemaPath: '#/semantic/bucketCdnProviderUnsupported',
+            keyword: 'bucketCdnProviderUnsupported',
+            message: lang.__('CDN_NOT_SUPPORTED_ON_BUCKET_DOMAIN', {
+              key: bucketKey,
+              domain: rawDomain,
+              provider: providerName,
+            }),
+          });
+        } else {
+          if (cdnObj.scope === 'domestic') {
+            push({
+              instancePath: `${entryPath}/cdn/scope`,
+              schemaPath: '#/semantic/cdnScopeMigrated',
+              keyword: 'cdnScopeMigrated',
+              message: lang.__('CDN_SCOPE_MIGRATION_REQUIRED', {
+                key: bucketKey,
+                domain: rawDomain,
+              }),
+            });
+          }
+          const cdnType = typeof cdnObj.cdn_type === 'string' ? cdnObj.cdn_type : undefined;
+          if (cdnType && !capability.cdnTypes.includes(cdnType)) {
+            push({
+              instancePath: `${entryPath}/cdn/cdn_type`,
+              schemaPath: '#/semantic/cdnTypeProviderUnsupported',
+              keyword: 'cdnTypeProviderUnsupported',
+              message: lang.__('CDN_TYPE_NOT_SUPPORTED_BY_PROVIDER', {
+                cdnType,
+                provider: providerName,
+                supported: capability.cdnTypes.join(', '),
+              }),
+            });
+          }
+          const hasCertificate =
+            typeof entry.certificate_id === 'string' ||
+            (typeof entry.certificate_body === 'string' &&
+              typeof entry.certificate_private_key === 'string');
+          if (cdnObj.force_redirect_https === true && !hasCertificate) {
+            push({
+              instancePath: `${entryPath}/cdn/force_redirect_https`,
+              schemaPath: '#/semantic/forceRedirectHttpsRequiresCertificate',
+              keyword: 'forceRedirectHttpsRequiresCertificate',
+              message: lang.__('FORCE_REDIRECT_HTTPS_REQUIRES_CERTIFICATE', {
+                key: bucketKey,
+                domain: rawDomain,
+              }),
+            });
+          }
+        }
       }
 
       const host = asCheckableHostname(entry.domain_name);
@@ -309,6 +384,28 @@ export const validateSemantics = (iacJson: ServerlessIacRaw): Array<ErrorObject>
       ? (rawEvent.triggers as Array<EventTriggerRaw>)
       : [];
     const eventName = typeof rawEvent.name === 'string' ? rawEvent.name : '';
+
+    // Event-domain CDN capability (issue #283 registry, #282 fail-fast): CDN
+    // delivery on gateway domains is implemented on aliyun only.
+    const eventDomain =
+      rawEvent.domain && typeof rawEvent.domain === 'object'
+        ? (rawEvent.domain as Record<string, unknown>)
+        : undefined;
+    if (eventDomain?.cdn != null) {
+      const capability = resolveCdnCapability(providerName);
+      if (!capability || !capability.eventCdn) {
+        errors.push({
+          instancePath: `/events/${eventKey}/domain/cdn`,
+          schemaPath: '#/semantic/eventCdnProviderUnsupported',
+          keyword: 'eventCdnProviderUnsupported',
+          params: {},
+          message: lang.__('CDN_NOT_SUPPORTED_ON_EVENT_DOMAIN', {
+            eventKey,
+            provider: providerName,
+          }),
+        });
+      }
+    }
 
     // Aliyun groups are per-event (each API_GATEWAY event owns its group), so
     // apiName collisions are checked event-locally, matching Volcengine's
