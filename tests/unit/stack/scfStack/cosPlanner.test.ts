@@ -215,6 +215,116 @@ describe('cosPlanner', () => {
       expect(plan.items[0].drifted).toBeUndefined();
     });
 
+    it('shows removed binding dependents when the domains list is dropped (issue #279)', async () => {
+      const stateWithBindings: StateFile = {
+        ...initialState,
+        resources: {
+          'buckets.test_bucket': {
+            mode: 'managed' as ResourceMode,
+            region: 'ap-guangzhou',
+            definition: {
+              bucket: 'test-bucket',
+              domains: [{ domain_name: 'example.com', cdn: null }],
+            },
+            instances: [
+              {
+                sid: 'tencent:cos:default:test-bucket',
+                id: 'test-bucket',
+                type: 'COS_BUCKET' as const,
+              },
+              {
+                sid: 'tencent:dnspod:default:example.com',
+                id: 'example.com',
+                type: 'TENCENT_COS_DNS_CNAME' as const,
+                domain: 'example.com',
+                cname: 'test-bucket.cos.ap-guangzhou.myqcloud.com',
+              },
+            ],
+            lastUpdated: new Date().toISOString(),
+          },
+        },
+      };
+
+      (stateManager.getResource as jest.Mock).mockReturnValue(
+        stateWithBindings.resources['buckets.test_bucket'],
+      );
+      (stateManager.getAllResources as jest.Mock).mockReturnValue({});
+      (mockCosOperations.getBucket as jest.Mock).mockResolvedValue({ Bucket: 'test-bucket' });
+      (hashUtils.attributesEqual as jest.Mock).mockImplementation(
+        jest.requireActual('../../../../src/common/hashUtils').attributesEqual,
+      );
+      // Desired config has no domains; the dropped list is the intent diff.
+      (cosTypes.bucketToCosBucketConfig as jest.Mock).mockReturnValue({
+        Bucket: 'test-bucket',
+      });
+      (cosTypes.extractCosBucketDefinition as jest.Mock).mockReturnValue({
+        bucket: 'test-bucket',
+        domains: [],
+      });
+
+      const plan = await generateBucketPlan(mockContext, stateWithBindings, [testBucket]);
+
+      expect(plan.items[0].action).toBe('update');
+      expect(plan.items[0].changes?.before).toMatchObject({
+        domains: [{ domain_name: 'example.com', cdn: null }],
+      });
+    });
+
+    it('shows the legacy domain key when legacy state loses its binding', async () => {
+      const legacyState: StateFile = {
+        ...initialState,
+        resources: {
+          'buckets.test_bucket': {
+            mode: 'managed' as ResourceMode,
+            region: 'ap-guangzhou',
+            definition: {
+              bucket: 'test-bucket',
+              domain: 'legacy.example.com',
+            },
+            instances: [
+              {
+                sid: 'tencent:cos:default:test-bucket',
+                id: 'test-bucket',
+                type: 'COS_BUCKET' as const,
+              },
+              {
+                sid: 'tencent:dnspod:default:legacy.example.com',
+                id: 'legacy.example.com',
+                type: 'TENCENT_COS_DNS_CNAME' as const,
+                domain: 'legacy.example.com',
+                cname: 'test-bucket.cos.ap-guangzhou.myqcloud.com',
+              },
+            ],
+            lastUpdated: new Date().toISOString(),
+          },
+        },
+      };
+
+      (stateManager.getResource as jest.Mock).mockReturnValue(
+        legacyState.resources['buckets.test_bucket'],
+      );
+      (stateManager.getAllResources as jest.Mock).mockReturnValue({});
+      (mockCosOperations.getBucket as jest.Mock).mockResolvedValue({ Bucket: 'test-bucket' });
+      (hashUtils.attributesEqual as jest.Mock).mockImplementation(
+        jest.requireActual('../../../../src/common/hashUtils').attributesEqual,
+      );
+      (cosTypes.bucketToCosBucketConfig as jest.Mock).mockReturnValue({
+        Bucket: 'test-bucket',
+      });
+      (cosTypes.extractCosBucketDefinition as jest.Mock).mockReturnValue({
+        bucket: 'test-bucket',
+        domains: [],
+      });
+
+      const plan = await generateBucketPlan(mockContext, legacyState, [testBucket]);
+
+      expect(plan.items[0].action).toBe('update');
+      expect(plan.items[0].changes?.before).toMatchObject({
+        domains: null,
+        domain: 'legacy.example.com',
+      });
+    });
+
     it('should plan noop when bucket exists and definition unchanged', async () => {
       const stateWithBucket: StateFile = {
         ...initialState,

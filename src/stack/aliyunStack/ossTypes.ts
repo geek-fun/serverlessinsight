@@ -75,6 +75,7 @@ export const getBindingCdnConfig = (
 
 const bindingToDefinitionEntry = (binding: OssBindingConfig): ResourceAttributes => {
   const cdn = getBindingCdnConfig(binding);
+  const cdnEnabled = isCdnEnabled(binding);
   return {
     domain_name: binding.domainName,
     certificate_id: binding.certificateId ?? null,
@@ -84,11 +85,9 @@ const bindingToDefinitionEntry = (binding: OssBindingConfig): ResourceAttributes
     ...(cdn
       ? {
           cdn: {
-            enabled: isCdnEnabled(binding),
-            ...(cdn.cdn_type != null || isCdnEnabled(binding)
-              ? { cdn_type: cdn.cdn_type ?? 'web' }
-              : {}),
-            ...(cdn.scope != null || isCdnEnabled(binding) ? { scope: cdn.scope ?? 'global' } : {}),
+            enabled: cdnEnabled,
+            ...(cdn.cdn_type != null || cdnEnabled ? { cdn_type: cdn.cdn_type ?? 'web' } : {}),
+            ...(cdn.scope != null || cdnEnabled ? { scope: cdn.scope ?? 'global' } : {}),
             ...(cdn.cache_ttl != null ? { cache_ttl: cdn.cache_ttl } : {}),
             ...(cdn.ignore_query_string != null
               ? { ignore_query_string: cdn.ignore_query_string }

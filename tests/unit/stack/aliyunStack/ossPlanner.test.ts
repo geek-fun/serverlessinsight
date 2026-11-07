@@ -1,4 +1,5 @@
 import { ProviderEnum, setResource } from '../../../../src/common';
+import { computeDirectoryHash } from '../../../../src/common/hashUtils';
 import { generateBucketPlan } from '../../../../src/stack/aliyunStack/ossPlanner';
 import {
   BucketAccessEnum,
@@ -414,6 +415,55 @@ describe('OSS Planner', () => {
         action: 'noop',
         resourceType: 'ALIYUN_OSS_BUCKET',
       });
+    });
+
+    it('leaves the website code hash undefined for buckets without a website', async () => {
+      mockOssOperations.getBucket.mockResolvedValue(null);
+
+      const plan = await generateBucketPlan(mockContext, initialState, [
+        { key: 'plain', name: 'plain-bucket' } as BucketDomain,
+      ]);
+
+      // extractOssBucketDefinition normalizes the undefined hash to null
+      expect(plan.items[0].changes?.after).toMatchObject({ websiteCodeHash: null });
+    });
+
+    it('plans a website-code hash of null when hashing the site directory fails', async () => {
+      mockOssOperations.getBucket.mockResolvedValue(null);
+      (computeDirectoryHash as jest.Mock).mockImplementationOnce(() => {
+        throw new Error('unreadable directory');
+      });
+
+      const plan = await generateBucketPlan(mockContext, initialState, [testBucket]);
+
+      expect(plan.items[0].action).toBe('create');
+      expect(plan.items[0].changes?.after).toMatchObject({ websiteCodeHash: null });
+    });
+
+    it('plans deletion for stored buckets that are no longer declared', async () => {
+      const state = setResource(initialState, 'buckets.test_bucket', {
+        mode: 'managed',
+        region: 'cn-hangzhou',
+        definition: { ...baseDefinition },
+        instances: [],
+        lastUpdated: new Date().toISOString(),
+      });
+      const withStale = setResource(state, 'buckets.stale_bucket', {
+        mode: 'managed',
+        region: 'cn-hangzhou',
+        definition: { ...baseDefinition, bucketName: 'stale-bucket' },
+        instances: [],
+        lastUpdated: new Date().toISOString(),
+      });
+      const plan = await generateBucketPlan(mockContext, withStale, [testBucket]);
+
+      const deletion = plan.items.find((item) => item.action === 'delete');
+      expect(deletion).toBeDefined();
+      expect(deletion).toMatchObject({
+        logicalId: 'buckets.stale_bucket',
+        resourceType: 'ALIYUN_OSS_BUCKET',
+      });
+      expect(plan.items.find((item) => item.logicalId === 'buckets.test_bucket')).toBeDefined();
     });
 
     it('plans noop when the bindings list is only reordered (identity is the hostname)', async () => {

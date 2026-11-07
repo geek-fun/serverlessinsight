@@ -288,6 +288,42 @@ describe('OssTypes', () => {
       ]);
     });
 
+    it('should omit cdn_type/scope for a disabled cdn object without them', () => {
+      const config = {
+        bucketName: 'test-bucket',
+        domains: [{ domainName: 'x.c', cdn: { enabled: false } }],
+      };
+
+      const definition = extractOssBucketDefinition(config);
+
+      expect(definition.domains).toEqual([
+        {
+          domain_name: 'x.c',
+          certificate_id: null,
+          certificate_body: null,
+          certificate_private_key: null,
+          protocol: null,
+          cdn: { enabled: false },
+        },
+      ]);
+    });
+
+    it('should default cdn_type/scope for the boolean cdn shorthand', () => {
+      const config = {
+        bucketName: 'test-bucket',
+        domains: [{ domainName: 'x.c', cdn: true }],
+      };
+
+      const definition = extractOssBucketDefinition(config);
+
+      const entries = definition.domains as Array<{ cdn: unknown }>;
+      expect(entries[0].cdn).toEqual({
+        enabled: true,
+        cdn_type: 'web',
+        scope: 'global',
+      });
+    });
+
     it('should extract versioning status when defined', () => {
       const config = {
         bucketName: 'test-bucket',
@@ -326,6 +362,21 @@ describe('OssTypes', () => {
   });
 
   describe('cloudOssToDefinition', () => {
+    it('maps a website config without errorDocument to null errorDocument', () => {
+      const info = {
+        name: 'test-bucket',
+        acl: 'private',
+        websiteConfig: { indexDocument: 'index.html' },
+      } as unknown as OssBucketInfo;
+
+      const definition = cloudOssToDefinition(info);
+
+      expect(definition.websiteConfiguration).toEqual({
+        indexDocument: 'index.html',
+        errorDocument: null,
+      });
+    });
+
     it('maps reconciliable attributes from a complete cloud bucket response', () => {
       // Given: a cloud response with every attribute this mapper can compare
       const info: OssBucketInfo = {
