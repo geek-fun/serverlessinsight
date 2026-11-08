@@ -4,6 +4,7 @@ jest.mock('../../../../src/common/logger', () => ({
   logger: {
     info: jest.fn(),
     warn: jest.fn(),
+    debug: jest.fn(),
   },
 }));
 
@@ -21,6 +22,7 @@ const mockSslClient = {
   DescribeCertificateDetail: jest.fn(),
   DeleteCertificate: jest.fn(),
   DeployCertificateInstance: jest.fn(),
+  DescribeHostDeployRecordDetail: jest.fn(),
 };
 
 describe('sslOperations', () => {
@@ -30,6 +32,13 @@ describe('sslOperations', () => {
     jest.clearAllMocks();
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     operations = createSslOperations(mockSslClient as any);
+    // Default: the deployment record reports immediate full success.
+    mockSslClient.DescribeHostDeployRecordDetail.mockResolvedValue({
+      TotalCount: 1,
+      SuccessTotalCount: 1,
+      FailedTotalCount: 0,
+      DeployRecordDetailList: [],
+    });
   });
 
   describe('uploadCertificate', () => {
@@ -312,6 +321,115 @@ describe('sslOperations', () => {
           ],
         }),
       );
+    });
+
+    it('should poll the deploy record until success before returning', async () => {
+      mockSslClient.DeployCertificateInstance.mockResolvedValue({
+        DeployRecordId: 777,
+        DeployStatus: 1,
+      });
+      mockSslClient.DescribeHostDeployRecordDetail.mockResolvedValueOnce({
+        TotalCount: 1,
+        SuccessTotalCount: 0,
+        FailedTotalCount: 0,
+      }).mockResolvedValueOnce({ TotalCount: 1, SuccessTotalCount: 1, FailedTotalCount: 0 });
+
+      const pollOperations = createSslOperations(mockSslClient as unknown as never, {
+        pollIntervalMs: 1,
+        pollTimeoutMs: 5000,
+      });
+
+      const result = await pollOperations.deployCertificateInstance('cert-123', 'cdn', [
+        'static.example.com',
+      ]);
+
+      expect(mockSslClient.DescribeHostDeployRecordDetail).toHaveBeenCalledWith({
+        DeployRecordId: '777',
+        Limit: 200,
+      });
+      expect(mockSslClient.DescribeHostDeployRecordDetail).toHaveBeenCalledTimes(2);
+      expect(result).toEqual({ deployRecordId: 777, deployStatus: 1 });
+    });
+
+    it('should keep polling when a status check fails transiently', async () => {
+      mockSslClient.DeployCertificateInstance.mockResolvedValue({
+        DeployRecordId: 778,
+        DeployStatus: 1,
+      });
+      mockSslClient.DescribeHostDeployRecordDetail.mockRejectedValueOnce(
+        new Error('rate limited'),
+      ).mockResolvedValueOnce({ TotalCount: 1, SuccessTotalCount: 1, FailedTotalCount: 0 });
+
+      const pollOperations = createSslOperations(mockSslClient as unknown as never, {
+        pollIntervalMs: 1,
+        pollTimeoutMs: 5000,
+      });
+
+      await expect(
+        pollOperations.deployCertificateInstance('cert-123', 'cdn', ['static.example.com']),
+      ).resolves.toBeDefined();
+      expect(mockSslClient.DescribeHostDeployRecordDetail).toHaveBeenCalledTimes(2);
+    });
+
+    it('should throw SSL_CERT_DEPLOY_FAILED_RESULT when the deployment record reports failures', async () => {
+      mockSslClient.DeployCertificateInstance.mockResolvedValue({
+        DeployRecordId: 779,
+        DeployStatus: 1,
+      });
+      mockSslClient.DescribeHostDeployRecordDetail.mockResolvedValue({
+        TotalCount: 1,
+        SuccessTotalCount: 0,
+        FailedTotalCount: 1,
+        DeployRecordDetailList: [{ Status: 2, ErrorMsg: 'domain not found' }],
+      });
+
+      const pollOperations = createSslOperations(mockSslClient as unknown as never, {
+        pollIntervalMs: 1,
+        pollTimeoutMs: 5000,
+      });
+
+      await expect(
+        pollOperations.deployCertificateInstance('cert-123', 'cdn', ['static.example.com']),
+      ).rejects.toThrow('SSL_CERT_DEPLOY_FAILED_RESULT');
+    });
+
+    it('should throw SSL_CERT_DEPLOY_POLL_TIMEOUT when the task does not finish in time', async () => {
+      mockSslClient.DeployCertificateInstance.mockResolvedValue({
+        DeployRecordId: 780,
+        DeployStatus: 1,
+      });
+      mockSslClient.DescribeHostDeployRecordDetail.mockResolvedValue({
+        TotalCount: 1,
+        SuccessTotalCount: 0,
+        FailedTotalCount: 0,
+      });
+
+      const pollOperations = createSslOperations(mockSslClient as unknown as never, {
+        pollIntervalMs: 1,
+        pollTimeoutMs: 20,
+      });
+
+      await expect(
+        pollOperations.deployCertificateInstance('cert-123', 'cdn', ['static.example.com']),
+      ).rejects.toThrow('SSL_CERT_DEPLOY_POLL_TIMEOUT');
+    });
+
+    it('should skip polling when the response carries no deploy record id', async () => {
+      const { logger: mockedLogger } = jest.requireMock('../../../../src/common/logger') as {
+        logger: { info: jest.Mock; warn: jest.Mock; debug: jest.Mock };
+      };
+
+      mockSslClient.DeployCertificateInstance.mockResolvedValue({});
+
+      const result = await operations.deployCertificateInstance('cert-123', 'cos', [
+        'ap-guangzhou|my-bucket|cdn.example.com',
+      ]);
+
+      expect(mockSslClient.DescribeHostDeployRecordDetail).not.toHaveBeenCalled();
+      expect(mockedLogger.warn).toHaveBeenCalledWith(
+        expect.stringContaining('SSL_DEPLOY_RECORD_ID_MISSING'),
+      );
+      expect(result).toEqual({ deployRecordId: undefined, deployStatus: undefined });
     });
   });
 });

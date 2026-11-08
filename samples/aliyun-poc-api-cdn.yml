@@ -67,7 +67,7 @@ events:
       cdn:
         enabled: true
         cdn_type: web
-        scope: domestic
+        scope: chinese_mainland
         cache_ttl: 86400         # 24 hours for static config
         ignore_query_string: true  # Ignore query params, same response
         origin_protocol: follow  # Follow original protocol

@@ -162,7 +162,11 @@ const createCosOperations = (cosClient: CosSdkClient, region: string, dnsOps?: D
     }
   };
 
-  const bindCustomDomain = async (bucketName: string, domain: string): Promise<CosCnameInfo> => {
+  const bindCustomDomain = async (
+    bucketName: string,
+    domain: string,
+    options?: { skipDns?: boolean },
+  ): Promise<CosCnameInfo> => {
     const mainDomain = extractMainDomain(domain);
     const hostRecord = extractHostRecord(domain, mainDomain);
     const cosEndpoint = getCosEndpoint(bucketName);
@@ -207,6 +211,12 @@ const createCosOperations = (cosClient: CosSdkClient, region: string, dnsOps?: D
     }
 
     await addCorsRuleForDomain(bucketName, domain);
+
+    if (options?.skipDns) {
+      // CDN delivery manages its own CNAME (pointing at the CDN domain); a
+      // bucket-side record would compete for the same RR name.
+      return { domain, cname: cosEndpoint, bucketDomainBound };
+    }
 
     if (!dnsOps) {
       logger.warn(lang.__('COS_DNS_MANUAL_CONFIG_REQUIRED', { domain, cname: cosEndpoint }));

@@ -1,6 +1,19 @@
 import { buildBucketPolicy, isOwnedBucketPolicy } from '../../common/bucketPolicy';
 import { mergeManagedIntent } from '../../common/planCompare';
 import { withLifecycleIntent } from '../../common/functionDefinition';
+import {
+  buildStoredBindings,
+  cdnDeliveryChanged,
+  desiredBindingMode,
+  getBindingCdnOptions,
+  groupBindingInstances,
+  isBindingCdnEnabled,
+  shouldDeployBindingCertificate,
+  type BindingInstanceGroup,
+  type StoredBinding,
+} from '../../common/bindingReconcile';
+import { mapCdnScope } from '../../common/cdnCapabilities';
+import { resolveBindingCertificateHash } from '../../common/certUtils';
 import { createAliyunClient } from '../../common/aliyunClient';
 import {
   OssBucketInfo,
@@ -18,6 +31,7 @@ import { readPemContent, warnInlinePem } from '../../common/certUtils';
 import {
   Context,
   BucketDomain,
+  CdnConfig,
   BucketDomainBinding,
   ResourceState,
   StateFile,
@@ -417,33 +431,26 @@ export const readBucketResource = async (context: Context, bucketName: string) =
 };
 
 // ---------------------------------------------------------------------------
-// Per-binding reconcile (issue #279)
+// Per-binding reconcile (issue #279; core extracted to common/bindingReconcile)
 // ---------------------------------------------------------------------------
 
-/** Per-binding CDN configuration as declared (object form) or implied by the boolean shorthand. */
-type BindingCdnConfig = {
-  enabled: boolean;
-  cdn_type?: 'web' | 'download' | 'video';
-  scope?: 'domestic' | 'overseas' | 'global';
-  cache_ttl?: number;
-  ignore_query_string?: boolean;
-  origin_protocol?: 'http' | 'https' | 'follow';
-  compression?: boolean;
-  force_redirect_https?: boolean;
-};
-
-/** Stored per-binding view reconstructed from state; identity is the normalized hostname. */
-type StoredBinding = {
-  hostname: string;
-  mode: 'cdn' | 'direct' | 'accelerate-only';
-  cdn?: BindingCdnConfig;
-  certId?: string;
-};
-
-type BindingInstanceGroup = {
+/** Aliyun instance-group view over the shared binding group shape. */
+type AliyunBindingGroup = BindingInstanceGroup & {
   cdn?: OssCdnInstance;
   cdnDns?: OssCdnDnsInstance;
-  ossDns?: OssDnsInstance;
+  dns?: OssDnsInstance;
+};
+
+const asAliyunGroup = (group?: BindingInstanceGroup): AliyunBindingGroup | undefined =>
+  group as AliyunBindingGroup | undefined;
+
+const bindingInstanceHostname = (instance: ResourceInstance): string =>
+  normalizeHostname(String((instance as { domainName?: string }).domainName ?? instance.domain));
+
+const ALIYUN_BINDING_ROLE_BY_TYPE: Record<string, keyof BindingInstanceGroup> = {
+  [ResourceTypeEnum.ALIYUN_OSS_DNS_CNAME]: 'dns',
+  [ResourceTypeEnum.ALIYUN_CDN_DISTRIBUTION]: 'cdn',
+  [ResourceTypeEnum.ALIYUN_CDN_DNS_CNAME]: 'cdnDns',
 };
 
 const LEGACY_BINDING_FIELDS = [
@@ -467,141 +474,61 @@ const LEGACY_BINDING_FIELDS = [
 const storedAccelerationEnabled = (definition: ResourceAttributes): boolean =>
   (definition.accelerate ?? definition.accelerateEnabled) === true;
 
-const isBindingCdnEnabled = (binding: BucketDomainBinding): boolean =>
-  binding.cdn === true || (typeof binding.cdn === 'object' && binding.cdn.enabled === true);
-
-const instanceHostname = (instance: ResourceInstance): string =>
-  normalizeHostname(String((instance as { domainName?: string }).domainName ?? instance.domain));
-
-const groupBindingInstances = (
-  instances: Array<ResourceInstance> | undefined,
-): Map<string, BindingInstanceGroup> => {
-  const groups = new Map<string, BindingInstanceGroup>();
-  (instances ?? []).forEach((instance) => {
-    if (
-      instance.type !== ResourceTypeEnum.ALIYUN_OSS_DNS_CNAME &&
-      instance.type !== ResourceTypeEnum.ALIYUN_CDN_DISTRIBUTION &&
-      instance.type !== ResourceTypeEnum.ALIYUN_CDN_DNS_CNAME
-    ) {
-      return;
-    }
-    const hostname = instanceHostname(instance);
-    const group = groups.get(hostname) ?? {};
-    if (instance.type === ResourceTypeEnum.ALIYUN_CDN_DISTRIBUTION) {
-      group.cdn = instance as OssCdnInstance;
-    } else if (instance.type === ResourceTypeEnum.ALIYUN_CDN_DNS_CNAME) {
-      group.cdnDns = instance as OssCdnDnsInstance;
-    } else {
-      group.ossDns = instance as OssDnsInstance;
-    }
-    groups.set(hostname, group);
-  });
-  return groups;
-};
-
-/** Definition-first (new `domains` array or legacy flat keys), instance types as fallback. */
-const buildStoredBindings = (
-  existingState: ResourceState | undefined,
-  groups: Map<string, BindingInstanceGroup>,
-): Map<string, StoredBinding> => {
-  const stored = new Map<string, StoredBinding>();
-  const definition = (existingState?.definition ?? {}) as Record<string, unknown>;
-  const storedAccelerate = storedAccelerationEnabled(definition);
-
-  const domains = Array.isArray(definition.domains)
-    ? (definition.domains as Array<Record<string, unknown>>)
-    : [];
-  domains.forEach((entry) => {
-    if (typeof entry?.domain_name !== 'string') return;
-    const hostname = normalizeHostname(entry.domain_name);
-    const cdn = typeof entry.cdn === 'object' && entry.cdn !== null ? { ...entry.cdn } : undefined;
-    const cdnEnabled = (cdn as { enabled?: boolean } | undefined)?.enabled === true;
-    stored.set(hostname, {
-      hostname,
-      mode: cdnEnabled ? 'cdn' : storedAccelerate ? 'accelerate-only' : 'direct',
-      ...(cdn ? { cdn: cdn as StoredBinding['cdn'] } : {}),
-      ...(typeof entry.certificate_id === 'string' && entry.certificate_id
-        ? { certId: entry.certificate_id }
-        : {}),
-    });
-  });
-
-  // Legacy single-domain definitions (pre-v1 state) migrate in place.
-  if (
-    !Array.isArray(definition.domains) &&
-    typeof definition.domain === 'string' &&
-    definition.domain
-  ) {
-    const hostname = normalizeHostname(definition.domain);
-    if (!stored.has(hostname)) {
-      const cdnEnabled = definition.cdnEnabled === true;
-      stored.set(hostname, {
-        hostname,
-        mode: cdnEnabled ? 'cdn' : storedAccelerate ? 'accelerate-only' : 'direct',
-        ...(cdnEnabled
-          ? {
-              cdn: {
-                enabled: true,
-                cdn_type: (definition.cdnType as 'web' | 'download' | 'video') ?? 'web',
-                scope: (definition.cdnScope as 'domestic' | 'overseas' | 'global') ?? 'global',
-                ...(definition.cdnCacheTtl != null
-                  ? { cache_ttl: definition.cdnCacheTtl as number }
-                  : {}),
-                ...(definition.cdnIgnoreQueryString != null
-                  ? { ignore_query_string: definition.cdnIgnoreQueryString as boolean }
-                  : {}),
-                ...(definition.cdnOriginProtocol != null
-                  ? { origin_protocol: definition.cdnOriginProtocol as 'http' | 'https' | 'follow' }
-                  : {}),
-                ...(definition.cdnCompression != null
-                  ? { compression: definition.cdnCompression as boolean }
-                  : {}),
-                ...(definition.cdnForceRedirectHttps != null
-                  ? { force_redirect_https: definition.cdnForceRedirectHttps as boolean }
-                  : {}),
-              },
-            }
-          : {}),
-        ...(typeof definition.domainCertificateId === 'string' && definition.domainCertificateId
-          ? { certId: definition.domainCertificateId }
-          : {}),
-      });
-    }
+/** Legacy single-domain definitions (pre-v1 state) migrate in place. */
+const aliyunLegacyBinding = (definition: ResourceAttributes): StoredBinding | undefined => {
+  const legacy = definition as Record<string, unknown>;
+  if (Array.isArray(legacy.domains) || typeof legacy.domain !== 'string' || !legacy.domain) {
+    return undefined;
   }
-
-  // Drift repair: binding instances recorded in state without a definition
-  // entry (e.g. hand-edited state) are adopted as stored bindings by hostname.
-  groups.forEach((group, hostname) => {
-    if (stored.has(hostname)) return;
-    const mode: StoredBinding['mode'] = group.cdn
-      ? 'cdn'
-      : group.ossDns
-        ? storedAccelerate
-          ? 'accelerate-only'
-          : 'direct'
-        : 'cdn';
-    stored.set(hostname, { hostname, mode });
-  });
-
-  return stored;
+  const hostname = normalizeHostname(legacy.domain);
+  const cdnEnabled = legacy.cdnEnabled === true;
+  const accelerate = storedAccelerationEnabled(definition);
+  return {
+    hostname,
+    mode: cdnEnabled ? 'cdn' : accelerate ? 'accelerate-only' : 'direct',
+    ...(cdnEnabled
+      ? {
+          cdn: {
+            enabled: true,
+            cdn_type: (legacy.cdnType as CdnConfig['cdn_type']) ?? 'web',
+            scope: (legacy.cdnScope as CdnConfig['scope']) ?? 'global',
+            ...(legacy.cdnCacheTtl != null ? { cache_ttl: legacy.cdnCacheTtl as number } : {}),
+            ...(legacy.cdnIgnoreQueryString != null
+              ? { ignore_query_string: legacy.cdnIgnoreQueryString as boolean }
+              : {}),
+            ...(legacy.cdnOriginProtocol != null
+              ? { origin_protocol: legacy.cdnOriginProtocol as CdnConfig['origin_protocol'] }
+              : {}),
+            ...(legacy.cdnCompression != null
+              ? { compression: legacy.cdnCompression as boolean }
+              : {}),
+            ...(legacy.cdnForceRedirectHttps != null
+              ? { force_redirect_https: legacy.cdnForceRedirectHttps as boolean }
+              : {}),
+          },
+        }
+      : {}),
+    ...(typeof legacy.domainCertificateId === 'string' && legacy.domainCertificateId
+      ? { certId: legacy.domainCertificateId }
+      : {}),
+  };
 };
 
 const applyCdnOptions = async (
   client: ReturnType<typeof createAliyunClient>,
   hostname: string,
-  cdnObj: Partial<NonNullable<StoredBinding['cdn']>> | undefined,
+  cdnObj: CdnConfig | undefined,
 ): Promise<void> => {
-  if (!cdnObj) return;
-  if (cdnObj.cache_ttl != null || cdnObj.ignore_query_string != null) {
-    await client.cdn.applyCacheConfig(hostname, cdnObj.cache_ttl, cdnObj.ignore_query_string);
+  if (cdnObj?.cache_ttl != null || cdnObj?.ignore_query_string != null) {
+    await client.cdn.applyCacheConfig(hostname, cdnObj?.cache_ttl, cdnObj?.ignore_query_string);
   }
-  if (cdnObj.origin_protocol) {
+  if (cdnObj?.origin_protocol) {
     await client.cdn.applyProtocolConfig(hostname, cdnObj.origin_protocol);
   }
-  if (cdnObj.compression != null) {
+  if (cdnObj?.compression != null) {
     await client.cdn.applyCompression(hostname, cdnObj.compression);
   }
-  if (cdnObj.force_redirect_https != null) {
+  if (cdnObj?.force_redirect_https != null) {
     await client.cdn.applyHttpsRedirect(hostname, cdnObj.force_redirect_https);
   }
 };
@@ -702,14 +629,14 @@ const createCdnBinding = async (
   instances: Array<ResourceInstance>,
 ): Promise<boolean | undefined> => {
   const hostname = binding.domain_name;
-  const cdnObj = typeof binding.cdn === 'object' ? binding.cdn : undefined;
+  const cdnObj = getBindingCdnOptions(binding);
   const originEndpoint = await resolveCdnOriginEndpoint(client, bucketName, accelerate);
   logger.info(lang.__('CREATING_CDN_DISTRIBUTION', { domain: hostname, origin: originEndpoint }));
   await client.cdn.addCdnDomain({
     domainName: hostname,
     cdnType: cdnObj?.cdn_type ?? 'web',
     sources: [{ type: 'oss', content: originEndpoint }],
-    scope: cdnObj?.scope ?? 'global',
+    scope: mapCdnScope('aliyun', cdnObj?.scope),
   });
   return updateCdnBinding(
     context,
@@ -744,26 +671,24 @@ const updateCdnBinding = async (
   instances: Array<ResourceInstance>,
 ): Promise<boolean | undefined> => {
   const hostname = binding.domain_name;
-  const cdnObj = typeof binding.cdn === 'object' ? binding.cdn : undefined;
-  const pending = group?.cdn?.pending === true;
+  const cdnObj = getBindingCdnOptions(binding);
+  const aliyunGroup = asAliyunGroup(group);
+  const pending = aliyunGroup?.cdn?.pending === true;
   const distributionIndex = instances.length;
   instances.push({
-    ...group?.cdn,
-    sid: group?.cdn?.sid ?? buildSid('aliyun', 'cdn', context.stage, hostname),
+    ...aliyunGroup?.cdn,
+    sid: aliyunGroup?.cdn?.sid ?? buildSid('aliyun', 'cdn', context.stage, hostname),
     id: hostname,
     type: ResourceTypeEnum.ALIYUN_CDN_DISTRIBUTION,
     domainName: hostname,
     pending: true,
   } satisfies OssCdnInstance);
 
-  if (
-    (stored.cdn?.cdn_type ?? 'web') !== (cdnObj?.cdn_type ?? 'web') ||
-    (stored.cdn?.scope ?? 'global') !== (cdnObj?.scope ?? 'global')
-  ) {
+  if (cdnDeliveryChanged(stored.cdn, cdnObj)) {
     await client.cdn.modifyCdnDomain({
       domainName: hostname,
       cdnType: cdnObj?.cdn_type ?? 'web',
-      scope: cdnObj?.scope ?? 'global',
+      scope: mapCdnScope('aliyun', cdnObj?.scope),
       sources: [
         { type: 'oss', content: await resolveCdnOriginEndpoint(client, bucketName, accelerate) },
       ],
@@ -788,15 +713,28 @@ const updateCdnBinding = async (
       await client.cdn.applyHttpsRedirect(hostname, cdnObj?.force_redirect_https);
     }
   }
-  if (
-    certificate &&
-    (pending || !binding.certificate_id || stored.certId !== binding.certificate_id)
-  ) {
-    await deployCdnCertificate(client, hostname, certificate);
+  if (certificate) {
+    const certificateHash = resolveBindingCertificateHash({
+      certificate_id: binding.certificate_id,
+      certificate_body: binding.certificate_body,
+      certificate_private_key: binding.certificate_private_key,
+    });
+    if (
+      shouldDeployBindingCertificate({
+        pending,
+        certificateId: binding.certificate_id,
+        certificateHash,
+        stored,
+      })
+    ) {
+      await deployCdnCertificate(client, hostname, certificate);
+    } else {
+      logger.info(lang.__('CDN_CERT_UNCHANGED_SKIPPED', { domain: hostname }));
+    }
   }
 
-  if (group?.cdnDns) {
-    instances.push(group.cdnDns);
+  if (aliyunGroup?.cdnDns) {
+    instances.push(aliyunGroup.cdnDns);
   } else {
     const detail = await client.cdn.describeCdnDomainDetail(hostname);
     if (!detail?.cname) {
@@ -808,7 +746,7 @@ const updateCdnBinding = async (
     instances[distributionIndex] = { ...instances[distributionIndex], cname: detail.cname };
   }
   const cnameInfo = await client.oss.bindCustomDomain(bucketName, hostname, certificate, true);
-  recordOssBinding(context, hostname, cnameInfo, instances, group?.ossDns, true);
+  recordOssBinding(context, hostname, cnameInfo, instances, aliyunGroup?.dns, true);
   const { pending: _pending, ...ready } = instances[distributionIndex] as OssCdnInstance;
   instances[distributionIndex] = ready;
   return cnameInfo?.bucketCnameBound;
@@ -825,7 +763,8 @@ const createAccelerateOnlyBinding = async (
 ): Promise<boolean | undefined> => {
   const hostname = binding.domain_name;
   const cnameInfo = await client.oss.bindCustomDomain(bucketName, hostname, certificate, true);
-  recordOssBinding(context, hostname, cnameInfo, instances, group?.ossDns, true);
+  const aliyunGroup = asAliyunGroup(group);
+  recordOssBinding(context, hostname, cnameInfo, instances, aliyunGroup?.dns, true);
   const endpoint = await client.oss.getAccelerateEndpoint(bucketName);
   await ensureDeliveryDns(
     context,
@@ -833,7 +772,7 @@ const createAccelerateOnlyBinding = async (
     hostname,
     endpoint,
     instances,
-    group?.cdnDns ?? group?.ossDns,
+    aliyunGroup?.cdnDns ?? aliyunGroup?.dns,
   );
   return cnameInfo?.bucketCnameBound;
 };
@@ -869,46 +808,47 @@ const teardownBinding = async (
   group: BindingInstanceGroup | undefined,
 ): Promise<void> => {
   if (!group) return;
+  const aliyunGroup = asAliyunGroup(group);
   if (stored.mode === 'cdn') {
-    const distributionName = group?.cdn?.domainName ?? stored.hostname;
+    const distributionName = aliyunGroup?.cdn?.domainName ?? stored.hostname;
     try {
       await client.cdn.deleteCdnDomain(distributionName);
     } catch (error) {
       if ((error as { code?: string })?.code !== 'InvalidDomain.NotFound') throw error;
     }
     logger.info(lang.__('CDN_DOMAIN_DELETED', { domain: distributionName }));
-    if (group?.cdnDns?.dnsRecordId) {
-      await client.dns.deleteDomainRecord(group.cdnDns.dnsRecordId);
+    if (aliyunGroup?.cdnDns?.dnsRecordId) {
+      await client.dns.deleteDomainRecord(aliyunGroup.cdnDns.dnsRecordId);
     }
     await client.oss.unbindCustomDomain(
       bucketName,
       stored.hostname,
       undefined,
-      group?.ossDns?.txtRecordId,
+      aliyunGroup?.dns?.txtRecordId,
     );
     return;
   }
 
   if (stored.mode === 'accelerate-only') {
-    if (group?.cdnDns?.dnsRecordId) {
-      await client.dns.deleteDomainRecord(group.cdnDns.dnsRecordId);
+    if (aliyunGroup?.cdnDns?.dnsRecordId) {
+      await client.dns.deleteDomainRecord(aliyunGroup.cdnDns.dnsRecordId);
     }
     await client.oss.unbindCustomDomain(
       bucketName,
       stored.hostname,
       undefined,
-      group?.ossDns?.txtRecordId,
+      aliyunGroup?.dns?.txtRecordId,
     );
     return;
   }
 
   // direct binding
-  const domain = group?.ossDns?.domain ?? stored.hostname;
+  const domain = aliyunGroup?.dns?.domain ?? stored.hostname;
   await client.oss.unbindCustomDomain(
     bucketName,
     domain,
-    group?.ossDns?.dnsRecordId,
-    group?.ossDns?.txtRecordId,
+    aliyunGroup?.dns?.dnsRecordId,
+    aliyunGroup?.dns?.txtRecordId,
   );
 };
 
@@ -961,18 +901,9 @@ const createBindingResources = async (
   );
 };
 
-// A binding may not silently switch between CDN and non-CDN delivery on the
-// same hostname: the update path cannot recreate the CDN distribution/DNS
-// pair in place, so the switch fails loudly (destroy+recreate instead).
-const guardBindingModeSwitch = (
-  stored: StoredBinding,
-  cdnEnabled: boolean,
-  bucketName: string,
-): void => {
-  if (cdnEnabled !== (stored.mode === 'cdn')) {
-    throw new Error(lang.__('CDN_ACCELERATE_CONFIG_CHANGED', { bucketName }));
-  }
-};
+// A binding switching between CDN and non-CDN delivery on the same hostname is
+// reconciled at binding level (issue #283): the previous delivery group is torn
+// down and rebuilt in the new mode — the bucket and unrelated bindings stay.
 
 /* istanbul ignore next */
 export const updateBucketResource = async (
@@ -1015,10 +946,13 @@ export const updateBucketResource = async (
 
   const desiredBindings = bucket.domains ?? [];
   const desiredAccelerate = bucket.accelerate === true;
-  const groups = groupBindingInstances(existingState?.instances);
-  const storedBindings = buildStoredBindings(existingState, groups);
+  const groups = groupBindingInstances(existingState?.instances, ALIYUN_BINDING_ROLE_BY_TYPE);
 
   const storedAccelerate = storedAccelerationEnabled(existingState?.definition ?? {});
+  const storedBindings = buildStoredBindings(existingState, groups, {
+    accelerateEnabled: storedAccelerate,
+    legacyBinding: aliyunLegacyBinding,
+  });
 
   // Transfer acceleration cannot be disabled through update, and enabling it
   // under existing CDN bindings would orphan their origins (the CDN origin
@@ -1056,11 +990,18 @@ export const updateBucketResource = async (
     for (const rawBinding of desiredBindings) {
       const hostname = normalizeHostname(rawBinding.domain_name);
       const binding = { ...rawBinding, domain_name: hostname };
-      const stored = storedBindings.get(hostname);
+      let stored = storedBindings.get(hostname);
       const cdnEnabled = isBindingCdnEnabled(binding);
 
-      if (stored) {
-        guardBindingModeSwitch(stored, cdnEnabled, config.bucketName);
+      // Binding-level delivery-mode switch (issue #283): tear the previous
+      // delivery group down and rebuild in the new mode below.
+      if (
+        stored &&
+        stored.mode !== desiredBindingMode(cdnEnabled, desiredAccelerate) &&
+        !(stored.mode === 'direct' && desiredAccelerate && !cdnEnabled)
+      ) {
+        await teardownBinding(client, config.bucketName, stored, groups.get(hostname));
+        stored = undefined;
       }
 
       const certificate = await resolveBindingCertificate(binding, client);
@@ -1108,9 +1049,6 @@ export const updateBucketResource = async (
           ),
         );
       } else {
-        if (stored?.mode === 'accelerate-only') {
-          await teardownBinding(client, config.bucketName, stored, groups.get(hostname));
-        }
         trackBindingResult(
           await createDirectBinding(
             context,
@@ -1119,7 +1057,7 @@ export const updateBucketResource = async (
             binding,
             certificate,
             instances,
-            groups.get(hostname)?.ossDns,
+            asAliyunGroup(groups.get(hostname))?.dns,
           ),
         );
       }
@@ -1206,11 +1144,11 @@ export const updateBucketResource = async (
         .filter(
           (instance) =>
             !bindingTypes.has(String(instance.type)) ||
-            !removedHosts.has(instanceHostname(instance)),
+            !removedHosts.has(bindingInstanceHostname(instance)),
         )
         .map((instance) => [
           bindingTypes.has(String(instance.type))
-            ? `${instance.type}:${instanceHostname(instance)}`
+            ? `${instance.type}:${bindingInstanceHostname(instance)}`
             : instance.sid,
           instance,
         ]),
@@ -1240,8 +1178,11 @@ export const deleteBucketResource = async (
   const client = createAliyunClient(context);
 
   const existingState = state.resources[logicalId];
-  const groups = groupBindingInstances(existingState?.instances);
-  const storedBindings = buildStoredBindings(existingState, groups);
+  const groups = groupBindingInstances(existingState?.instances, ALIYUN_BINDING_ROLE_BY_TYPE);
+  const storedBindings = buildStoredBindings(existingState, groups, {
+    accelerateEnabled: storedAccelerationEnabled(existingState?.definition ?? {}),
+    legacyBinding: aliyunLegacyBinding,
+  });
 
   for (const [hostname, stored] of storedBindings) {
     await teardownBinding(client, bucketName, stored, groups.get(hostname));

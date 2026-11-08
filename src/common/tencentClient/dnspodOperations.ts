@@ -25,6 +25,11 @@ export type DnsRecordInfo = {
 export type DnsOperations = {
   addDomainRecord: (config: DnsRecordConfig) => Promise<string>;
   deleteDomainRecord: (domainName: string, recordId: string) => Promise<void>;
+  updateDomainRecord: (
+    domainName: string,
+    recordId: string,
+    config: DnsRecordConfig,
+  ) => Promise<void>;
   describeDomainRecords: (domainName: string, rrKeyWord?: string) => Promise<Array<DnsRecordInfo>>;
   checkDomainRecordExists: (domainName: string, rr: string) => Promise<boolean>;
 };
@@ -42,6 +47,20 @@ const addDomainRecord =
     });
 
     return String(response.RecordId);
+  };
+
+const updateDomainRecord =
+  (dnsClient: DnspodSdkClient) =>
+  async (domainName: string, recordId: string, config: DnsRecordConfig): Promise<void> => {
+    await dnsClient.ModifyRecord({
+      Domain: domainName,
+      RecordId: parseInt(recordId, 10),
+      SubDomain: config.rr,
+      RecordType: config.type,
+      Value: config.value,
+      RecordLine: '默认',
+      TTL: config.ttl || 600,
+    });
   };
 
 const deleteDomainRecord =
@@ -91,6 +110,7 @@ export const createDnsOperations = (dnsClient: DnspodSdkClient): DnsOperations =
   return {
     addDomainRecord: addDomainRecord(dnsClient),
     deleteDomainRecord: deleteDomainRecord(dnsClient),
+    updateDomainRecord: updateDomainRecord(dnsClient),
     describeDomainRecords: describe,
     checkDomainRecordExists: checkDomainRecordExists(describe),
   };

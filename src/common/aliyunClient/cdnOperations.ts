@@ -5,7 +5,9 @@ type CdnSdkClient = CdnClient;
 
 export type CdnDomainConfig = {
   domainName: string;
-  cdnType: 'web' | 'download' | 'video';
+  // si union (issue #283); per-provider legality is guarded by the capability
+  // registry, so the wrapper stays string-typed.
+  cdnType: string;
   sources: Array<{
     type: string;
     content: string;
@@ -13,7 +15,7 @@ export type CdnDomainConfig = {
     priority?: number;
     weight?: number;
   }>;
-  scope?: 'domestic' | 'overseas' | 'global';
+  scope?: string;
   checkUrl?: string;
 };
 

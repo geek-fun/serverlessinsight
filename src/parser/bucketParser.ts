@@ -31,6 +31,10 @@ const parseCdnConfig = (
   return parsed;
 };
 
+// NOTE: the bucket-binding `protocol` field was removed in v1 (issue #283) —
+// it was never consumed by any provider. Legacy usage is rejected at schema
+// validation with a migration error (see validateSemantics).
+
 // Binding identity is the normalized hostname (issue #279). Template refs are
 // preserved verbatim — they resolve at deploy time.
 const parseBindingHostname = (raw: unknown): string => {
@@ -44,12 +48,6 @@ const parseDomainBinding = (raw: Record<string, unknown>): BucketDomainBinding =
   certificate_body: raw.certificate_body != null ? String(raw.certificate_body) : undefined,
   certificate_private_key:
     raw.certificate_private_key != null ? String(raw.certificate_private_key) : undefined,
-  protocol:
-    raw.protocol != null
-      ? Array.isArray(raw.protocol)
-        ? raw.protocol.map(String)
-        : String(raw.protocol)
-      : undefined,
   cdn: parseCdnConfig(raw.cdn as boolean | CdnRawConfig | undefined),
 });
 

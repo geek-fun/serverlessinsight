@@ -36,6 +36,7 @@ import {
 } from '../../common/stateManager';
 import { buildSid } from '../../common';
 import { readPemContent, warnInlinePem } from '../../common/certUtils';
+import { mapCdnScope } from '../../common/cdnCapabilities';
 import { logger } from '../../common/logger';
 import { lang } from '../../lang';
 import { deriveWwwDomain, extractHostRecord, extractMainDomain } from '../../common/domainUtils';
@@ -158,7 +159,7 @@ const buildApigwCdnDistributionConfig = (
         ...(cdnConfig?.origin_protocol === 'https' ? { port: 443 } : {}),
       },
     ],
-    scope: cdnConfig?.scope ?? 'global',
+    scope: mapCdnScope('aliyun', cdnConfig?.scope),
   };
 };
 

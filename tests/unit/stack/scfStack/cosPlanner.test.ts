@@ -224,7 +224,7 @@ describe('cosPlanner', () => {
             region: 'ap-guangzhou',
             definition: {
               bucket: 'test-bucket',
-              domains: [{ domain_name: 'example.com', cdn: null }],
+              domains: [{ domain_name: 'example.com', cdn: { enabled: false } }],
             },
             instances: [
               {
@@ -266,7 +266,7 @@ describe('cosPlanner', () => {
 
       expect(plan.items[0].action).toBe('update');
       expect(plan.items[0].changes?.before).toMatchObject({
-        domains: [{ domain_name: 'example.com', cdn: null }],
+        domains: [{ domain_name: 'example.com', cdn: { enabled: false } }],
       });
     });
 

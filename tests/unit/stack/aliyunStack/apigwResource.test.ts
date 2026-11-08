@@ -1962,7 +1962,7 @@ describe('ApigwResource', () => {
           cdn: {
             enabled: true,
             cdn_type: 'download',
-            scope: 'domestic',
+            scope: 'chinese_mainland',
             origin_protocol: 'https',
             compression: true,
             force_redirect_https: true,
@@ -2614,7 +2614,7 @@ describe('ApigwResource', () => {
           cdn: {
             enabled: true,
             cdn_type: 'download',
-            scope: 'domestic',
+            scope: 'chinese_mainland',
             cache_ttl: 30,
             ignore_query_string: true,
             origin_protocol: 'https',

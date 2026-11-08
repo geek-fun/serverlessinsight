@@ -674,6 +674,14 @@ export const zhCN = {
     '证书已部署到 {{resourceType}}（证书ID: {{certificateId}}, 部署记录ID: {{deployRecordId}}）',
   SSL_CERT_DEPLOY_FAILED:
     '部署证书到 {{resourceType}} 失败（证书ID: {{certificateId}}）：{{error}}',
+  SSL_CERT_DEPLOY_COMPLETED: '证书部署任务 {{deployRecordId}}（{{resourceType}}）已成功完成',
+  SSL_CERT_DEPLOY_FAILED_RESULT:
+    '证书部署任务 {{deployRecordId}}（{{resourceType}}）失败：{{error}}',
+  SSL_CERT_DEPLOY_POLL_TIMEOUT:
+    '证书部署任务 {{deployRecordId}}（{{resourceType}}）在 {{timeoutSeconds}}s 内未完成——请到腾讯云 SSL 控制台确认其最终状态',
+  SSL_DEPLOY_RECORD_ID_MISSING:
+    '{{resourceType}} 的证书部署响应未携带部署记录 ID——跳过部署状态轮询',
+  SSL_DEPLOY_POLL_ERROR: '部署状态查询失败：{{error}}',
   COS_BUCKET_CERT_DEPLOYING:
     '正在为 COS 存储桶域名部署 SSL 证书: {{domain}}（存储桶: {{bucketName}}）',
   COS_BUCKET_CERT_DEPLOYED: 'SSL 证书已部署到 COS 存储桶域名: {{domain}}',
@@ -876,12 +884,33 @@ export const zhCN = {
   CDN_DEPLOYING_CERTIFICATE: '正在为 CDN 域名 {{domain}} 部署 SSL 证书',
   CDN_DOMAIN_DELETED: 'CDN 域名 {{domain}} 已删除',
   CDN_DOMAIN_DELETE_FAILED: '删除 CDN 域名 {{domain}} 失败：{{error}}',
+  CDN_CERT_UNCHANGED_SKIPPED: '{{domain}} 的证书未变化（哈希一致），跳过证书部署',
   FAILED_TO_REFRESH_STATE: '刷新 {{resourceType}} {{name}} 的状态失败',
   FAILED_TO_UPLOAD_BUCKET_FILES: '上传文件到存储桶失败，但存储桶已创建并保存到状态：{{error}}',
   FAILED_TO_ENABLE_ACCELERATION: '无法为存储桶 {{bucketName}} 开启传输加速',
   CDN_ACCELERATE_CONFIG_CHANGED:
     '无法通过更新操作更改存储桶 {{bucketName}} 的 CDN/加速配置。请使用销毁重建操作来更改 CDN 或加速配置。',
   BINDING_REMOVING_DOMAIN: '正在移除存储桶 {{bucketName}} 的自定义域名绑定 {{domain}}',
+
+  // CDN 能力校验（issue #283，与 #282 共享注册表）
+  BUCKET_BINDING_PROTOCOL_REMOVED:
+    '存储桶 "{{key}}"：绑定 "{{domain}}" 上的 `protocol` 字段已在 v1 移除，且从未被任何 provider 应用过。请移除该字段——HTTPS 服务跟随证书，HTTP→HTTPS 跳转使用 `cdn.force_redirect_https`。',
+  CDN_SCOPE_MIGRATION_REQUIRED:
+    '存储桶 "{{key}}"：CDN `scope` 值 `domestic` 已在 v1 更名。请在绑定 "{{domain}}" 上使用 `chinese_mainland`（中国大陆境内加速，需 ICP 备案）。',
+  CDN_TYPE_NOT_SUPPORTED_BY_PROVIDER:
+    'cdn_type `{{cdnType}}` 不被 provider `{{provider}}` 支持。支持的取值：{{supported}}。',
+  CDN_NOT_SUPPORTED_ON_BUCKET_DOMAIN:
+    '存储桶 "{{key}}"：provider `{{provider}}` 尚未实现绑定 "{{domain}}" 上的 CDN 加速——请移除 `cdn` 配置块或手动配置 CDN。',
+  CDN_NOT_SUPPORTED_ON_EVENT_DOMAIN:
+    '事件 "{{eventKey}}"：provider `{{provider}}` 尚未实现事件域名的 CDN 加速——请移除 `cdn` 配置块或手动配置 CDN。',
+  FORCE_REDIRECT_HTTPS_REQUIRES_CERTIFICATE:
+    '存储桶 "{{key}}"：绑定 "{{domain}}" 上的 `cdn.force_redirect_https` 需要提供证书——请提供 `certificate_id` 或同时提供 `certificate_body` 与 `certificate_private_key`。',
+  EVENT_CDN_SCOPE_MIGRATION_REQUIRED:
+    '事件 "{{eventKey}}"：CDN `scope` 值 `domestic` 已在 v1 更名。请使用 `chinese_mainland`（中国大陆境内加速，需 ICP 备案）。',
+  EVENT_FORCE_REDIRECT_HTTPS_REQUIRES_CERTIFICATE:
+    '事件 "{{eventKey}}"：`cdn.force_redirect_https` 需要提供证书——请提供 `certificate_id` 或同时提供 `certificate_body` 与 `certificate_private_key`。',
+  CDN_DOMAIN_EXISTS_NOT_OWNED:
+    'CDN 域名 "{{domain}}" 已存在，但其源站未指向存储桶 "{{bucketName}}"——si 不会接管它。请先移除已有 CDN 域名或手动配置 CDN。',
 
   // v1 存储桶域名（issue #279）：旧写法直接拒绝并给出迁移映射
   BUCKET_DOMAIN_MIGRATION_REQUIRED:

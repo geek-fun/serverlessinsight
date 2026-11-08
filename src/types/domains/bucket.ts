@@ -1,9 +1,16 @@
 import { Resolvable } from './resolvable';
 
+// cdn_type is the union across implemented providers (issue #283); per-provider
+// legality is enforced by semantic validation through the capability registry.
+// scope is provider-neutral and anchored to the Chinese mainland; the legacy
+// `domestic` value is rejected with a migration error.
+export type CdnType = 'web' | 'download' | 'video' | 'media' | 'hybrid' | 'dynamic';
+export type CdnScope = 'chinese_mainland' | 'overseas' | 'global';
+
 export type CdnConfig = {
   enabled: boolean;
-  cdn_type?: 'web' | 'download' | 'video';
-  scope?: 'domestic' | 'overseas' | 'global';
+  cdn_type?: CdnType;
+  scope?: CdnScope;
   cache_ttl?: number;
   ignore_query_string?: boolean;
   origin_protocol?: 'http' | 'https' | 'follow';
@@ -24,13 +31,13 @@ export type CdnRawConfig = {
 
 // v1 (issue #279): a bucket declares bindings through the `domains` list.
 // Binding identity is the normalized domain_name scoped to the bucket; list
-// order carries no deployment semantics.
+// order carries no deployment semantics. The never-consumed `protocol` field
+// was removed in v1 (issue #283) — usage reports a migration error.
 export type BucketDomainBindingRaw = {
   domain_name: Resolvable<string>;
   certificate_id?: Resolvable<string>;
   certificate_body?: Resolvable<string>;
   certificate_private_key?: Resolvable<string>;
-  protocol?: Resolvable<string | string[]>;
   cdn?: Resolvable<boolean> | CdnRawConfig;
 };
 
@@ -39,7 +46,6 @@ export type BucketDomainBinding = {
   certificate_id?: string;
   certificate_body?: string;
   certificate_private_key?: string;
-  protocol?: string | string[];
   cdn?: boolean | CdnConfig;
 };
 

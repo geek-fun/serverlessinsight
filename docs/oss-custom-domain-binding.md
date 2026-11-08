@@ -149,16 +149,20 @@ ServerlessInsight v0.5.7 新增了 `ALIYUN_OSS_DNS_CNAME` 资源类型，用于�
                 "certificate_id": null,
                 "certificate_body": null,
                 "certificate_private_key": null,
-                "protocol": null,
-                "cdn": null
+                "certificate_hash": null,
+                "cdn": {
+                  "enabled": false
+                }
               },
               {
                 "domain_name": "www.example.com",
                 "certificate_id": null,
                 "certificate_body": null,
                 "certificate_private_key": null,
-                "protocol": null,
-                "cdn": null
+                "certificate_hash": null,
+                "cdn": {
+                  "enabled": false
+                }
               }
             ],
             "accelerate": false
@@ -324,3 +328,63 @@ dig www.example.com CNAME +short
 - [RFC 1035 - Domain Names](https://www.rfc-editor.org/rfc/rfc1035) - DNS 协议规范
 - [阿里云 OSS 产品文档](https://help.aliyun.com/zh/oss/)
 - [ServerlessInsight v0.5.7 Release Notes](https://github.com/geek-fun/serverlessinsight/releases/tag/v0.5.7)
+
+## CDN delivery capability matrix
+
+Per-binding `cdn` options deliver real CDN acceleration on the providers below;
+unsupported combinations fail at `si validate` (fast-fail, issue
+[#283](https://github.com/geek-fun/serverlessinsight/issues/283)) instead of
+being silently ignored.
+
+| Path | Aliyun | Tencent | Volcengine |
+| --- | --- | --- | --- |
+| Bucket domain `cdn` | ✅ | ✅ (since #283) | ❌ fail-fast ([#294](https://github.com/geek-fun/serverlessinsight/issues/294)) |
+| Event (gateway) domain `cdn` | ✅ | ❌ fail-fast | ❌ fail-fast |
+
+### `scope` — acceleration area
+
+si uses a provider-neutral vocabulary anchored to the Chinese mainland; the
+legacy `domestic` value is rejected with a migration error. Values that need an
+international-acceleration activation or a ticket are marked.
+
+| si | Aliyun `Scope` | Tencent `Area` | Volcengine `ServiceRegion` |
+| --- | --- | --- | --- |
+| `chinese_mainland` | `domestic` | `mainland` | `chinese_mainland` |
+| `overseas` | `overseas` | `overseas` | `outside_chinese_mainland` (ticket) |
+| `global` (default) | `global` | `global` | `global` (ticket) |
+
+The same split is anchored to the Chinese mainland on every provider's
+international edition, so the mapping is identical for international accounts.
+`chinese_mainland`/`global` require an ICP filing for the domain; `overseas`
+does not.
+
+### `cdn_type` — service type
+
+| si value | Aliyun | Tencent | Volcengine |
+| --- | --- | --- | --- |
+| `web` (default) | ✅ | ✅ | ✅ |
+| `download` | ✅ | ✅ | ✅ |
+| `video` | ✅ | ❌ | ✅ |
+| `media` | ❌ | ✅ | ❌ |
+| `hybrid` | ❌ | ✅ | ❌ |
+| `dynamic` | ❌ | ✅ | ❌ |
+
+Unsupported values for a provider are rejected at `si validate`.
+
+### Field semantics and constraints
+
+- `cache_ttl` is expressed in **seconds** (all si durations are seconds) and
+  applies to the default cache rule.
+- `origin_protocol: follow` maps to each provider's protocol-follow value.
+- `force_redirect_https: true` requires a certificate (`certificate_id` or an
+  inline PEM pair) — rejected at `si validate` otherwise.
+- The bucket-binding `protocol` field was removed in v1: it was never consumed
+  by any provider. HTTPS serving follows the certificate; the HTTP→HTTPS
+  redirect is `cdn.force_redirect_https`.
+- Switching a binding between CDN and non-CDN delivery is a binding-level
+  operation: the previous CDN/DNS group is torn down and the same hostname is
+  rebuilt in the new mode — the bucket and unrelated bindings are untouched.
+- Inline PEM certificates are hashed in state; the certificate is redeployed
+  only when its content (or the referenced `certificate_id`) changes.
+- Tencent CDN acceleration with COS origin currently assumes a publicly
+  readable bucket; private-bucket CDN origin authorization is not automated.

@@ -6,6 +6,7 @@ import {
   BucketIam,
   ResourceAttributes,
 } from '../../types';
+import { bindingToDefinitionEntry } from '../../common/bindingReconcile';
 import type { OssBucketInfo } from '../../common/aliyunClient/ossOperations';
 import { BucketACL, CommonBucketConfig } from '../bucketTypes';
 
@@ -16,19 +17,7 @@ export type OssBindingConfig = {
   certificateId?: string;
   certificateBody?: string;
   certificatePrivateKey?: string;
-  protocol?: string | string[];
-  cdn?:
-    | boolean
-    | {
-        enabled: boolean;
-        cdn_type?: 'web' | 'download' | 'video';
-        scope?: 'domestic' | 'overseas' | 'global';
-        cache_ttl?: number;
-        ignore_query_string?: boolean;
-        origin_protocol?: 'http' | 'https' | 'follow';
-        compression?: boolean;
-        force_redirect_https?: boolean;
-      };
+  cdn?: BucketDomainBinding['cdn'];
 };
 
 export type OssBucketConfig = CommonBucketConfig & {
@@ -46,61 +35,6 @@ const aclMap: Record<BucketAccessEnum, BucketACL> = {
   [BucketAccessEnum.PRIVATE]: BucketACL.PRIVATE,
   [BucketAccessEnum.PUBLIC_READ]: BucketACL.PUBLIC_READ,
   [BucketAccessEnum.PUBLIC_READ_WRITE]: BucketACL.PUBLIC_READ_WRITE,
-};
-
-const isCdnEnabled = (binding: OssBindingConfig): boolean => {
-  if (binding.cdn == null) return false;
-  if (typeof binding.cdn === 'boolean') return binding.cdn;
-  return binding.cdn.enabled;
-};
-
-export const getBindingCdnConfig = (
-  binding: OssBindingConfig,
-):
-  | {
-      enabled: boolean;
-      cdn_type?: 'web' | 'download' | 'video';
-      scope?: 'domestic' | 'overseas' | 'global';
-      cache_ttl?: number;
-      ignore_query_string?: boolean;
-      origin_protocol?: 'http' | 'https' | 'follow';
-      compression?: boolean;
-      force_redirect_https?: boolean;
-    }
-  | undefined => {
-  if (typeof binding.cdn === 'object') return binding.cdn;
-  if (binding.cdn === true) return { enabled: true };
-  return undefined;
-};
-
-const bindingToDefinitionEntry = (binding: OssBindingConfig): ResourceAttributes => {
-  const cdn = getBindingCdnConfig(binding);
-  const cdnEnabled = isCdnEnabled(binding);
-  return {
-    domain_name: binding.domainName,
-    certificate_id: binding.certificateId ?? null,
-    certificate_body: binding.certificateBody ?? null,
-    certificate_private_key: binding.certificatePrivateKey ? '(managed)' : null,
-    protocol: binding.protocol ?? null,
-    ...(cdn
-      ? {
-          cdn: {
-            enabled: cdnEnabled,
-            ...(cdn.cdn_type != null || cdnEnabled ? { cdn_type: cdn.cdn_type ?? 'web' } : {}),
-            ...(cdn.scope != null || cdnEnabled ? { scope: cdn.scope ?? 'global' } : {}),
-            ...(cdn.cache_ttl != null ? { cache_ttl: cdn.cache_ttl } : {}),
-            ...(cdn.ignore_query_string != null
-              ? { ignore_query_string: cdn.ignore_query_string }
-              : {}),
-            ...(cdn.origin_protocol != null ? { origin_protocol: cdn.origin_protocol } : {}),
-            ...(cdn.compression != null ? { compression: cdn.compression } : {}),
-            ...(cdn.force_redirect_https != null
-              ? { force_redirect_https: cdn.force_redirect_https }
-              : {}),
-          },
-        }
-      : { cdn: null }),
-  };
 };
 
 /* istanbul ignore next */
@@ -138,7 +72,6 @@ export const bucketToOssBucketConfig = (bucket: BucketDomain): OssBucketConfig =
       certificateId: binding.certificate_id,
       certificateBody: binding.certificate_body,
       certificatePrivateKey: binding.certificate_private_key,
-      protocol: binding.protocol,
       ...(binding.cdn != null ? { cdn: binding.cdn } : {}),
     }));
   }

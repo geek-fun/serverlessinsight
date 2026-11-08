@@ -252,7 +252,7 @@ si schema | jq '."$id"'   # IaC 格式的自包含 draft-07 JSON Schema
 
 - **HTTP 触发器** —— 使用 HTTP 方法与路径定义触发器，并指定后端函数
 - **自定义域名** —— 阿里云 OSS 与 API 网关自动完成 CNAME + DNS TXT 所有权验证；腾讯云通过 DNSPod 托管域名
-- **CDN 加速** —— 为静态站点提供边缘缓存与全球内容分发
+- **CDN 加速** —— 为阿里云与腾讯 COS 的存储桶域名提供边缘缓存与全球内容分发（见[能力矩阵](docs/oss-custom-domain-binding.md#cdn-delivery-capability-matrix)）
 - **OSS 传输加速** —— 通过阿里云骨干网进行跨区域数据传输
 - **腾讯云函数 URL** —— 无需独立网关资源即可提供 HTTP 入口
 
