@@ -2023,6 +2023,7 @@ describe('CosResource', () => {
         domainName: CDN_HOST,
         cname: CDN_CNAME,
         status: 'online',
+        origin: { originType: 'cos', origins: [COS_ENDPOINT], serverName: COS_ENDPOINT },
       });
       mockCosOperations.bindCustomDomain.mockResolvedValue({
         domain: CDN_HOST,
@@ -2084,6 +2085,27 @@ describe('CosResource', () => {
 
       expect(mockCdnOperations.describeCdnDomain).toHaveBeenCalledWith(CDN_HOST);
       expect(mockCdnOperations.applyCacheConfig).toHaveBeenCalled();
+    });
+
+    it('refuses to adopt an existing CDN domain whose origin does not point at this bucket', async () => {
+      mockCosOperations.getBucket.mockResolvedValue(mockBucketInfo);
+      mockCdnOperations.addCdnDomain.mockRejectedValue({ code: 'ResourceExists' });
+      mockCdnOperations.describeCdnDomain.mockResolvedValue({
+        domainName: CDN_HOST,
+        cname: CDN_CNAME,
+        status: 'online',
+        origin: { originType: 'custom', origins: ['other-origin.example.com'] },
+      });
+
+      await expect(
+        createBucketResource(
+          mockContext,
+          { key: 'test_bucket', name: 'test-bucket', domains: [cdnBinding] },
+          initialState,
+        ),
+      ).rejects.toThrow('already exists but its origin does not point at bucket');
+
+      expect(mockCdnOperations.updateCdnDelivery).not.toHaveBeenCalled();
     });
 
     it('fails the create when a rejected CDN add has no existing domain', async () => {
@@ -2374,6 +2396,7 @@ describe('CosResource', () => {
         domainName: CDN_HOST,
         cname: 'cdn.example.com.cdn.dnsv1.com.v2',
         status: 'online',
+        origin: { originType: 'cos', origins: [COS_ENDPOINT], serverName: COS_ENDPOINT },
       });
       mockDnsOperations.addDomainRecord.mockResolvedValue('rec-2');
 

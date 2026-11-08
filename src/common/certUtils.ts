@@ -25,8 +25,12 @@ export const hashResolvedCertificate = (
 
 /**
  * Content hash for a binding's certificate without any cloud access: inline
- * PEM resolves through readPemContent (local file or literal), a
- * `certificate_id` reference hashes the reference string.
+ * PEM resolves through tryReadPemContent (local file or literal), a
+ * `certificate_id` reference hashes the reference string. A missing PEM file
+ * yields no hash instead of throwing — this runs during plan-time definition
+ * extraction (`si diff`), which must not depend on certificate files being
+ * present; the executor's `resolveBindingCertificate` keeps the fail-loud
+ * read for deploy.
  */
 export const resolveBindingCertificateHash = (binding: {
   certificate_id?: string;
@@ -37,21 +41,25 @@ export const resolveBindingCertificateHash = (binding: {
     return createHash('sha256').update(`ref:${binding.certificate_id}`).digest('hex');
   }
   if (binding.certificate_body && binding.certificate_private_key) {
-    const body = readPemContent(binding.certificate_body);
-    const key = readPemContent(binding.certificate_private_key);
+    const body = tryReadPemContent(binding.certificate_body);
+    const key = tryReadPemContent(binding.certificate_private_key);
     return hashResolvedCertificate(body, key);
   }
   return undefined;
 };
 
-export const readPemContent = (value: string): string => {
+const tryReadPemContent = (value: string): string | undefined => {
   if (!isFilePath(value)) return value;
   const filePath = path.resolve(process.cwd(), value);
-  if (!fs.existsSync(filePath)) {
-    throw new Error(lang.__('CERT_FILE_NOT_FOUND', { filePath }));
-  }
+  if (!fs.existsSync(filePath)) return undefined;
   logger.info(lang.__('CERT_READING_FILE', { filePath }));
   return fs.readFileSync(filePath, 'utf-8');
+};
+
+export const readPemContent = (value: string): string => {
+  const content = tryReadPemContent(value);
+  if (content != null) return content;
+  throw new Error(lang.__('CERT_FILE_NOT_FOUND', { filePath: path.resolve(process.cwd(), value) }));
 };
 
 export const warnInlinePem = (value: string): void => {

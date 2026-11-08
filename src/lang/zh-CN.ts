@@ -674,6 +674,14 @@ export const zhCN = {
     '证书已部署到 {{resourceType}}（证书ID: {{certificateId}}, 部署记录ID: {{deployRecordId}}）',
   SSL_CERT_DEPLOY_FAILED:
     '部署证书到 {{resourceType}} 失败（证书ID: {{certificateId}}）：{{error}}',
+  SSL_CERT_DEPLOY_COMPLETED: '证书部署任务 {{deployRecordId}}（{{resourceType}}）已成功完成',
+  SSL_CERT_DEPLOY_FAILED_RESULT:
+    '证书部署任务 {{deployRecordId}}（{{resourceType}}）失败：{{error}}',
+  SSL_CERT_DEPLOY_POLL_TIMEOUT:
+    '证书部署任务 {{deployRecordId}}（{{resourceType}}）在 {{timeoutSeconds}}s 内未完成——请到腾讯云 SSL 控制台确认其最终状态',
+  SSL_DEPLOY_RECORD_ID_MISSING:
+    '{{resourceType}} 的证书部署响应未携带部署记录 ID——跳过部署状态轮询',
+  SSL_DEPLOY_POLL_ERROR: '部署状态查询失败：{{error}}',
   COS_BUCKET_CERT_DEPLOYING:
     '正在为 COS 存储桶域名部署 SSL 证书: {{domain}}（存储桶: {{bucketName}}）',
   COS_BUCKET_CERT_DEPLOYED: 'SSL 证书已部署到 COS 存储桶域名: {{domain}}',
@@ -897,6 +905,12 @@ export const zhCN = {
     '事件 "{{eventKey}}"：provider `{{provider}}` 尚未实现事件域名的 CDN 加速——请移除 `cdn` 配置块或手动配置 CDN。',
   FORCE_REDIRECT_HTTPS_REQUIRES_CERTIFICATE:
     '存储桶 "{{key}}"：绑定 "{{domain}}" 上的 `cdn.force_redirect_https` 需要提供证书——请提供 `certificate_id` 或同时提供 `certificate_body` 与 `certificate_private_key`。',
+  EVENT_CDN_SCOPE_MIGRATION_REQUIRED:
+    '事件 "{{eventKey}}"：CDN `scope` 值 `domestic` 已在 v1 更名。请使用 `chinese_mainland`（中国大陆境内加速，需 ICP 备案）。',
+  EVENT_FORCE_REDIRECT_HTTPS_REQUIRES_CERTIFICATE:
+    '事件 "{{eventKey}}"：`cdn.force_redirect_https` 需要提供证书——请提供 `certificate_id` 或同时提供 `certificate_body` 与 `certificate_private_key`。',
+  CDN_DOMAIN_EXISTS_NOT_OWNED:
+    'CDN 域名 "{{domain}}" 已存在，但其源站未指向存储桶 "{{bucketName}}"——si 不会接管它。请先移除已有 CDN 域名或手动配置 CDN。',
 
   // v1 存储桶域名（issue #279）：旧写法直接拒绝并给出迁移映射
   BUCKET_DOMAIN_MIGRATION_REQUIRED:

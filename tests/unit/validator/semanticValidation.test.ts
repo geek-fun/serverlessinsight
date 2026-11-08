@@ -510,6 +510,77 @@ describe('validateSemantics', () => {
     });
   });
 
+  describe('event domain CDN semantics (issue #283)', () => {
+    const keywordsOf = (errors: Array<ErrorObject>): string[] => errors.map((e) => e.keyword);
+
+    const eventWithCdn = (
+      cdn: Record<string, unknown>,
+      domainExtras: Record<string, unknown> = {},
+    ) => ({
+      ...baseEvent,
+      domain: { domain_name: 'api.example.com', ...domainExtras, cdn },
+    });
+
+    it('rejects CDN on event domains of providers without event CDN delivery', () => {
+      const iac = {
+        ...buildIac({ gw: eventWithCdn({ enabled: true }) }),
+        provider: { name: ProviderEnum.TENCENT, region: 'ap-guangzhou' },
+      } as ServerlessIacRaw;
+
+      expect(keywordsOf(validateSemantics(iac))).toContain('eventCdnProviderUnsupported');
+    });
+
+    it('rejects the legacy domestic scope on an event domain cdn block', () => {
+      const errors = validateSemantics(
+        buildIac({ gw: eventWithCdn({ enabled: true, scope: 'domestic' }) }),
+      );
+
+      expect(keywordsOf(errors)).toContain('eventCdnScopeMigrated');
+    });
+
+    it('rejects a cdn_type the provider does not support on event domains', () => {
+      const errors = validateSemantics(
+        buildIac({ gw: eventWithCdn({ enabled: true, cdn_type: 'media' }) }),
+      );
+
+      expect(keywordsOf(errors)).toContain('eventCdnTypeProviderUnsupported');
+    });
+
+    it('rejects force_redirect_https without a certificate on an event domain', () => {
+      const errors = validateSemantics(
+        buildIac({ gw: eventWithCdn({ enabled: true, force_redirect_https: true }) }),
+      );
+
+      expect(keywordsOf(errors)).toContain('eventForceRedirectHttpsRequiresCertificate');
+    });
+
+    it('accepts a supported event cdn block with a certificate and neutral scope', () => {
+      const errors = validateSemantics(
+        buildIac({
+          gw: eventWithCdn(
+            {
+              enabled: true,
+              cdn_type: 'web',
+              scope: 'chinese_mainland',
+              force_redirect_https: true,
+            },
+            { certificate_id: 'cert-1' },
+          ),
+        }),
+      );
+
+      expect(
+        errors.filter((e) =>
+          [
+            'eventCdnScopeMigrated',
+            'eventCdnTypeProviderUnsupported',
+            'eventForceRedirectHttpsRequiresCertificate',
+          ].includes(e.keyword),
+        ),
+      ).toEqual([]);
+    });
+  });
+
   describe('robustness', () => {
     it('returns no errors when events are absent', () => {
       expect(validateSemantics(buildIac({}) as ServerlessIacRaw)).toHaveLength(0);

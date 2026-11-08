@@ -149,16 +149,20 @@ ServerlessInsight v0.5.7 新增了 `ALIYUN_OSS_DNS_CNAME` 资源类型，用于�
                 "certificate_id": null,
                 "certificate_body": null,
                 "certificate_private_key": null,
-                "protocol": null,
-                "cdn": null
+                "certificate_hash": null,
+                "cdn": {
+                  "enabled": false
+                }
               },
               {
                 "domain_name": "www.example.com",
                 "certificate_id": null,
                 "certificate_body": null,
                 "certificate_private_key": null,
-                "protocol": null,
-                "cdn": null
+                "certificate_hash": null,
+                "cdn": {
+                  "enabled": false
+                }
               }
             ],
             "accelerate": false

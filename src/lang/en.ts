@@ -749,6 +749,15 @@ export const en = {
     'Certificate deployed to {{resourceType}} (certificateId: {{certificateId}}, deployRecordId: {{deployRecordId}})',
   SSL_CERT_DEPLOY_FAILED:
     'Failed to deploy certificate to {{resourceType}} (certificateId: {{certificateId}}): {{error}}',
+  SSL_CERT_DEPLOY_COMPLETED:
+    'Certificate deployment task {{deployRecordId}} ({{resourceType}}) completed successfully',
+  SSL_CERT_DEPLOY_FAILED_RESULT:
+    'Certificate deployment task {{deployRecordId}} ({{resourceType}}) failed: {{error}}',
+  SSL_CERT_DEPLOY_POLL_TIMEOUT:
+    'Certificate deployment task {{deployRecordId}} ({{resourceType}}) did not finish within {{timeoutSeconds}}s — check the Tencent SSL console for its final state',
+  SSL_DEPLOY_RECORD_ID_MISSING:
+    'Certificate deployment response for {{resourceType}} carried no deploy record id — skipping deployment-status polling',
+  SSL_DEPLOY_POLL_ERROR: 'Deployment status check failed: {{error}}',
   COS_BUCKET_CERT_DEPLOYING:
     'Deploying SSL certificate to COS bucket domain: {{domain}} (bucket: {{bucketName}})',
   COS_BUCKET_CERT_DEPLOYED: 'SSL certificate deployed to COS bucket domain: {{domain}}',
@@ -994,6 +1003,12 @@ export const en = {
     'Event "{{eventKey}}": CDN delivery on the event domain is not implemented for provider `{{provider}}` yet — remove the `cdn` block or configure CDN manually.',
   FORCE_REDIRECT_HTTPS_REQUIRES_CERTIFICATE:
     'Bucket "{{key}}": `cdn.force_redirect_https` on binding "{{domain}}" requires a certificate — provide `certificate_id` or both `certificate_body` and `certificate_private_key`.',
+  EVENT_CDN_SCOPE_MIGRATION_REQUIRED:
+    'Event "{{eventKey}}": the CDN `scope` value `domestic` was renamed in v1. Use `chinese_mainland` (acceleration inside mainland China, ICP filing required).',
+  EVENT_FORCE_REDIRECT_HTTPS_REQUIRES_CERTIFICATE:
+    'Event "{{eventKey}}": `cdn.force_redirect_https` requires a certificate — provide `certificate_id` or both `certificate_body` and `certificate_private_key`.',
+  CDN_DOMAIN_EXISTS_NOT_OWNED:
+    'CDN domain "{{domain}}" already exists but its origin does not point at bucket "{{bucketName}}" — si will not adopt it. Remove the existing CDN domain or configure CDN manually.',
 
   // v1 bucket domains (issue #279): legacy forms are rejected with a migration mapping
   BUCKET_DOMAIN_MIGRATION_REQUIRED:

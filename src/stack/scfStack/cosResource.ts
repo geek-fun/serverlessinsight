@@ -383,9 +383,19 @@ const createCdnBinding = async (
     });
   } catch (error) {
     // Partial-failure retry: a CDN domain created by an interrupted earlier run
-    // must not block convergence — probe and continue as an update.
+    // must not block convergence — probe, verify ownership and continue as an
+    // update. A same-account domain whose origin does not point at this bucket
+    // is not ours to adopt (repo convention: refuse un-owned resources).
     const existing = await client.cdn.describeCdnDomain(hostname);
     if (!existing) throw error;
+    const cosEndpoint = client.cos.getCosEndpoint(bucket.name);
+    const origins = existing.origin?.origins ?? [];
+    if (existing.origin?.originType !== 'cos' || !origins.includes(cosEndpoint)) {
+      throw new Error(
+        lang.__('CDN_DOMAIN_EXISTS_NOT_OWNED', { domain: hostname, bucketName: bucket.name }),
+        { cause: error },
+      );
+    }
     logger.info(
       lang.__('RESOURCE_OWNERSHIP_TAG_ADOPT', {
         resourceType: 'CDN domain',

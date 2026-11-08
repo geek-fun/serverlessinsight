@@ -29,11 +29,19 @@ export type TencentCdnDeliveryUpdate = {
   origin?: TencentCdnOriginConfig;
 };
 
+export type TencentCdnOriginInfo = {
+  originType?: string;
+  origins?: string[];
+  serverName?: string;
+};
+
 export type TencentCdnDomainInfo = {
   domainName?: string;
   cname?: string;
   status?: string;
   serviceType?: string;
+  /** Surfaced so stacks can verify an existing domain's origin before adopting it. */
+  origin?: TencentCdnOriginInfo;
 };
 
 export type TencentCdnOperations = {
@@ -85,6 +93,13 @@ const describeCdnDomain =
         cname: info.Cname,
         status: info.Status,
         serviceType: info.ServiceType,
+        origin: info.Origin
+          ? {
+              originType: info.Origin.OriginType,
+              origins: info.Origin.Origins ?? undefined,
+              serverName: info.Origin.ServerName,
+            }
+          : undefined,
       };
     } catch {
       return null;

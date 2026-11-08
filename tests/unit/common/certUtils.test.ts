@@ -209,6 +209,17 @@ describe('certUtils', () => {
       );
     });
 
+    it('returns undefined instead of throwing when the PEM file is missing (plan-time tolerance)', () => {
+      mockFs.existsSync.mockReturnValue(false);
+
+      expect(
+        resolveBindingCertificateHash({
+          certificate_body: './missing/server.crt',
+          certificate_private_key: './missing/server.key',
+        }),
+      ).toBeUndefined();
+    });
+
     it('returns undefined when no certificate is declared', () => {
       expect(resolveBindingCertificateHash({})).toBeUndefined();
       expect(resolveBindingCertificateHash({ certificate_body: 'body' })).toBeUndefined();

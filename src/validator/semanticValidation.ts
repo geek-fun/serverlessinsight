@@ -404,6 +404,52 @@ export const validateSemantics = (iacJson: ServerlessIacRaw): Array<ErrorObject>
             provider: providerName,
           }),
         });
+      } else {
+        // Same capability checks as bucket bindings, mirrored onto event
+        // domains so both paths report identical migration/support errors.
+        const eventCdnObj =
+          typeof eventDomain.cdn === 'object' && eventDomain.cdn !== null
+            ? (eventDomain.cdn as Record<string, unknown>)
+            : undefined;
+        if (eventCdnObj) {
+          if (eventCdnObj.scope === 'domestic') {
+            errors.push({
+              instancePath: `/events/${eventKey}/domain/cdn/scope`,
+              schemaPath: '#/semantic/eventCdnScopeMigrated',
+              keyword: 'eventCdnScopeMigrated',
+              params: {},
+              message: lang.__('EVENT_CDN_SCOPE_MIGRATION_REQUIRED', { eventKey }),
+            });
+          }
+          const eventCdnType =
+            typeof eventCdnObj.cdn_type === 'string' ? eventCdnObj.cdn_type : undefined;
+          if (eventCdnType && !capability.cdnTypes.includes(eventCdnType)) {
+            errors.push({
+              instancePath: `/events/${eventKey}/domain/cdn/cdn_type`,
+              schemaPath: '#/semantic/eventCdnTypeProviderUnsupported',
+              keyword: 'eventCdnTypeProviderUnsupported',
+              params: { allowedValues: capability.cdnTypes },
+              message: lang.__('CDN_TYPE_NOT_SUPPORTED_BY_PROVIDER', {
+                cdnType: eventCdnType,
+                provider: providerName,
+                supported: capability.cdnTypes.join(', '),
+              }),
+            });
+          }
+          const eventHasCertificate =
+            typeof eventDomain.certificate_id === 'string' ||
+            (typeof eventDomain.certificate_body === 'string' &&
+              typeof eventDomain.certificate_private_key === 'string');
+          if (eventCdnObj.force_redirect_https === true && !eventHasCertificate) {
+            errors.push({
+              instancePath: `/events/${eventKey}/domain/cdn/force_redirect_https`,
+              schemaPath: '#/semantic/eventForceRedirectHttpsRequiresCertificate',
+              keyword: 'eventForceRedirectHttpsRequiresCertificate',
+              params: {},
+              message: lang.__('EVENT_FORCE_REDIRECT_HTTPS_REQUIRES_CERTIFICATE', { eventKey }),
+            });
+          }
+        }
       }
     }
 

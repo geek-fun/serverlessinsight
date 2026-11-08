@@ -207,6 +207,16 @@ describe('bindingReconcile (issue #283 shared core)', () => {
       expect(entry.cdn).toEqual({ enabled: false });
     });
 
+    it('stores a null hash instead of throwing when the PEM file is missing', () => {
+      const entry = bindingToDefinitionEntry({
+        domainName: 'file.example.com',
+        certificateBody: './missing/server.crt',
+        certificatePrivateKey: './missing/server.key',
+      });
+
+      expect(entry.certificate_hash).toBeNull();
+    });
+
     it('omits cdn_type/scope for a disabled cdn object without them', () => {
       const entry = bindingToDefinitionEntry({
         domainName: 'x.c',

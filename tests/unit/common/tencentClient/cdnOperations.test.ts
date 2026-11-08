@@ -59,6 +59,11 @@ describe('createTencentCdnOperations', () => {
           Cname: 'static.example.com.cdn.dnsv1.com',
           Status: 'online',
           ServiceType: 'web',
+          Origin: {
+            OriginType: 'cos',
+            Origins: ['bucket.cos.ap-guangzhou.myqcloud.com'],
+            ServerName: 'bucket.cos.ap-guangzhou.myqcloud.com',
+          },
         },
       ],
     });
@@ -74,7 +79,22 @@ describe('createTencentCdnOperations', () => {
       cname: 'static.example.com.cdn.dnsv1.com',
       status: 'online',
       serviceType: 'web',
+      origin: {
+        originType: 'cos',
+        origins: ['bucket.cos.ap-guangzhou.myqcloud.com'],
+        serverName: 'bucket.cos.ap-guangzhou.myqcloud.com',
+      },
     });
+  });
+
+  it('maps a missing Origin on the described domain to an undefined origin', async () => {
+    mockSdkClient.DescribeDomains.mockResolvedValue({
+      Domains: [{ Domain: 'static.example.com', Cname: 'x', Status: 'online' }],
+    });
+
+    const info = await operations.describeCdnDomain('static.example.com');
+
+    expect(info?.origin).toBeUndefined();
   });
 
   it('returns null when the domain query fails or is empty', async () => {
