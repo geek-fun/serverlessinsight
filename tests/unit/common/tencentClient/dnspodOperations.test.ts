@@ -1,4 +1,7 @@
-import { createDnsOperations } from '../../../../src/common/tencentClient/dnspodOperations';
+import {
+  createDnsClient,
+  createDnsOperations,
+} from '../../../../src/common/tencentClient/dnspodOperations';
 
 jest.mock('../../../../src/common/logger', () => ({
   logger: {
@@ -20,6 +23,7 @@ jest.mock('../../../../src/lang', () => ({
 const mockDnspodClient = {
   CreateRecord: jest.fn(),
   DeleteRecord: jest.fn(),
+  ModifyRecord: jest.fn(),
   DescribeRecordList: jest.fn(),
 };
 
@@ -286,6 +290,66 @@ describe('dnspodOperations', () => {
       const exists = await operations.checkDomainRecordExists('example.com', 'www');
 
       expect(exists).toBe(true);
+    });
+  });
+
+  describe('updateDomainRecord', () => {
+    it('updates a record in place with the given config', async () => {
+      mockDnspodClient.ModifyRecord.mockResolvedValue({ RecordId: 222 });
+
+      await operations.updateDomainRecord('example.com', '222', {
+        domainName: 'example.com',
+        rr: 'www',
+        type: 'CNAME',
+        value: 'www.example.com.cdn.dnsv1.com',
+        ttl: 600,
+      });
+
+      expect(mockDnspodClient.ModifyRecord).toHaveBeenCalledWith({
+        Domain: 'example.com',
+        RecordId: 222,
+        SubDomain: 'www',
+        RecordType: 'CNAME',
+        Value: 'www.example.com.cdn.dnsv1.com',
+        RecordLine: '默认',
+        TTL: 600,
+      });
+    });
+
+    it('converts a string recordId to a number', async () => {
+      mockDnspodClient.ModifyRecord.mockResolvedValue({});
+
+      await operations.updateDomainRecord('example.com', '0042', {
+        domainName: 'example.com',
+        rr: 'api',
+        type: 'CNAME',
+        value: 'target',
+      });
+
+      expect(mockDnspodClient.ModifyRecord).toHaveBeenCalledWith(
+        expect.objectContaining({ RecordId: 42, TTL: 600 }),
+      );
+    });
+
+    it('propagates update errors', async () => {
+      mockDnspodClient.ModifyRecord.mockRejectedValue(new Error('boom'));
+
+      await expect(
+        operations.updateDomainRecord('example.com', '222', {
+          domainName: 'example.com',
+          rr: 'www',
+          type: 'CNAME',
+          value: 'target',
+        }),
+      ).rejects.toThrow('boom');
+    });
+  });
+
+  describe('createDnsClient', () => {
+    it('builds a dnspod client from credentials', () => {
+      const client = createDnsClient({ accessKeyId: 'id', accessKeySecret: 'secret' });
+
+      expect(client).toBeDefined();
     });
   });
 });

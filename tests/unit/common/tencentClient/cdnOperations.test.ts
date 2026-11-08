@@ -166,6 +166,9 @@ describe('createTencentCdnOperations', () => {
       Domain: 'x.c',
       ForceRedirect: { Switch: 'off' },
     });
+
+    await operations.applyHttpsRedirect('x.c');
+    expect(mockSdkClient.UpdateDomainConfig).toHaveBeenCalledTimes(3);
   });
 
   it('enables https with http2', async () => {
@@ -176,6 +179,89 @@ describe('createTencentCdnOperations', () => {
     expect(mockSdkClient.UpdateDomainConfig).toHaveBeenCalledWith({
       Domain: 'x.c',
       Https: { Switch: 'on', Http2: 'on' },
+    });
+  });
+
+  describe('branch coverage additions', () => {
+    it('passes optional origin fields through when provided', async () => {
+      mockSdkClient.AddCdnDomain.mockResolvedValue({});
+
+      await operations.addCdnDomain({
+        domainName: 'x.c',
+        serviceType: 'web',
+        area: 'global',
+        origin: {
+          originType: 'cos',
+          origins: ['e'],
+          cosPrivateAccess: 'on',
+          originPullProtocol: 'follow',
+        },
+      });
+
+      expect(mockSdkClient.AddCdnDomain).toHaveBeenCalledWith({
+        Domain: 'x.c',
+        ServiceType: 'web',
+        Area: 'global',
+        Origin: {
+          OriginType: 'cos',
+          Origins: ['e'],
+          CosPrivateAccess: 'on',
+          OriginPullProtocol: 'follow',
+        },
+      });
+    });
+
+    it('maps an entry without a Domain to null', async () => {
+      mockSdkClient.DescribeDomains.mockResolvedValue({ Domains: [{ Cname: 'c' }] });
+      expect(await operations.describeCdnDomain('x.c')).toBeNull();
+    });
+
+    it('treats NotExist delete errors as absent', async () => {
+      mockSdkClient.DeleteCdnDomain.mockRejectedValue({ code: 'InvalidDomain.NotExist' });
+      await expect(operations.deleteCdnDomain('x.c')).resolves.toBeUndefined();
+    });
+
+    it('updates only the origin when no service type or area is given', async () => {
+      mockSdkClient.UpdateDomainConfig.mockResolvedValue({});
+
+      await operations.updateCdnDelivery('x.c', {
+        origin: { originType: 'cos', origins: ['e'], serverName: 'e' },
+      });
+
+      expect(mockSdkClient.UpdateDomainConfig).toHaveBeenCalledWith({
+        Domain: 'x.c',
+        Origin: { OriginType: 'cos', Origins: ['e'], ServerName: 'e' },
+      });
+    });
+
+    it('applies a cache TTL without touching the cache key', async () => {
+      mockSdkClient.UpdateDomainConfig.mockResolvedValue({});
+
+      await operations.applyCacheConfig('x.c', 60);
+
+      expect(mockSdkClient.UpdateDomainConfig).toHaveBeenCalledWith({
+        Domain: 'x.c',
+        Cache: {
+          SimpleCache: {
+            CacheRules: [{ CacheType: 'all', CacheContents: ['all'], CacheTime: 60 }],
+            FollowOrigin: 'off',
+            IgnoreCacheControl: 'off',
+            IgnoreSetCookie: 'off',
+            CompareMaxAge: 'off',
+          },
+        },
+      });
+    });
+
+    it('applies the compression off switch explicitly', async () => {
+      mockSdkClient.UpdateDomainConfig.mockResolvedValue({});
+
+      await operations.applyCompression('x.c', false);
+
+      expect(mockSdkClient.UpdateDomainConfig).toHaveBeenLastCalledWith({
+        Domain: 'x.c',
+        Compression: { Switch: 'off' },
+      });
     });
   });
 });

@@ -11,6 +11,8 @@ import {
   StateFile,
   BucketAccessEnum,
   BucketDomain,
+  BucketDomainBinding,
+  CdnConfig,
 } from '../../../../src/types';
 
 const mockCosOperations = {
@@ -43,12 +45,34 @@ const mockedLogger = {
   info: jest.fn(),
   error: jest.fn(),
   warn: jest.fn(),
+  debug: jest.fn(),
+};
+
+const mockCdnOperations = {
+  addCdnDomain: jest.fn(),
+  describeCdnDomain: jest.fn(),
+  deleteCdnDomain: jest.fn(),
+  updateCdnDelivery: jest.fn(),
+  applyCacheConfig: jest.fn(),
+  applyCompression: jest.fn(),
+  applyHttpsRedirect: jest.fn(),
+  enableHttps: jest.fn(),
+};
+
+const mockDnsOperations = {
+  addDomainRecord: jest.fn(),
+  updateDomainRecord: jest.fn(),
+  deleteDomainRecord: jest.fn(),
+  describeDomainRecords: jest.fn(),
+  checkDomainRecordExists: jest.fn(),
 };
 
 jest.mock('../../../../src/common/tencentClient', () => ({
   createTencentClient: () => ({
     cos: mockCosOperations,
     ssl: mockSslOperations,
+    cdn: mockCdnOperations,
+    dns: mockDnsOperations,
     scf: {},
     tdsqlc: {},
   }),
@@ -65,6 +89,7 @@ jest.mock('../../../../src/common/logger', () => ({
     info: (...args: unknown[]) => mockedLogger.info(...args),
     error: (...args: unknown[]) => mockedLogger.error(...args),
     warn: (...args: unknown[]) => mockedLogger.warn(...args),
+    debug: (...args: unknown[]) => mockedLogger.debug(...args),
   },
 }));
 
@@ -1945,6 +1970,606 @@ describe('CosResource', () => {
       await deleteBucketResource(mockContext, bucketName, region, logicalId, stateWithBucket);
 
       expect(mockCosOperations.deleteBucketPolicy).toHaveBeenCalledWith(bucketName, region);
+    });
+  });
+
+  describe('CDN delivery bindings (issue #283)', () => {
+    const CDN_HOST = 'cdn.example.com';
+    const CDN_CNAME = 'cdn.example.com.cdn.dnsv1.com';
+    const COS_ENDPOINT = 'test-bucket.cos.ap-guangzhou.myqcloud.com';
+
+    const cdnBinding: BucketDomainBinding = {
+      domain_name: CDN_HOST,
+      certificate_id: 'cert-ref-1',
+      cdn: {
+        enabled: true,
+        cdn_type: 'web',
+        scope: 'global',
+        cache_ttl: 3600,
+        force_redirect_https: true,
+      },
+    };
+
+    const cdnOptions = cdnBinding.cdn as CdnConfig;
+
+    const cdnInstances = [
+      {
+        sid: 'si:tencent:cos:default:test-bucket',
+        id: 'test-bucket',
+        type: 'COS_BUCKET',
+        bucket: 'test-bucket',
+      },
+      {
+        sid: 'si:tencent:cdn:default:cdn.example.com',
+        id: CDN_HOST,
+        type: 'TENCENT_CDN_DOMAIN',
+        domainName: CDN_HOST,
+      },
+      {
+        sid: 'si:tencent:dnspod:default:rec-1',
+        id: 'rec-1',
+        type: 'TENCENT_CDN_DNS_CNAME',
+        domain: CDN_HOST,
+        cname: CDN_CNAME,
+        dnsRecordId: 'rec-1',
+      },
+    ];
+
+    beforeEach(() => {
+      mockCosOperations.getCosEndpoint.mockImplementation(
+        (bucket: string) => `${bucket}.cos.ap-guangzhou.myqcloud.com`,
+      );
+      mockCdnOperations.describeCdnDomain.mockResolvedValue({
+        domainName: CDN_HOST,
+        cname: CDN_CNAME,
+        status: 'online',
+      });
+      mockCosOperations.bindCustomDomain.mockResolvedValue({
+        domain: CDN_HOST,
+        cname: COS_ENDPOINT,
+        bucketDomainBound: true,
+      });
+      mockDnsOperations.addDomainRecord.mockResolvedValue('rec-1');
+    });
+
+    it('creates a CDN binding with COS origin, mapped scope, certificate and CDN CNAME', async () => {
+      mockCosOperations.getBucket.mockResolvedValue(mockBucketInfo);
+
+      await createBucketResource(
+        mockContext,
+        { key: 'test_bucket', name: 'test-bucket', domains: [cdnBinding] },
+        initialState,
+      );
+
+      expect(mockCdnOperations.addCdnDomain).toHaveBeenCalledWith({
+        domainName: CDN_HOST,
+        serviceType: 'web',
+        area: 'global',
+        origin: {
+          originType: 'cos',
+          origins: [COS_ENDPOINT],
+          serverName: COS_ENDPOINT,
+        },
+      });
+      expect(mockCdnOperations.applyCacheConfig).toHaveBeenCalledWith(CDN_HOST, 3600, undefined);
+      expect(mockCdnOperations.applyHttpsRedirect).toHaveBeenCalledWith(CDN_HOST, true);
+      expect(mockSslOperations.deployCertificateInstance).toHaveBeenCalledWith(
+        'cert-ref-1',
+        'cdn',
+        [CDN_HOST],
+      );
+      expect(mockCdnOperations.enableHttps).toHaveBeenCalledWith(CDN_HOST);
+      expect(mockDnsOperations.addDomainRecord).toHaveBeenCalledWith({
+        domainName: 'example.com',
+        rr: 'cdn',
+        type: 'CNAME',
+        value: CDN_CNAME,
+        ttl: 600,
+      });
+      // The delivery record replaces the bucket-side record for CDN bindings.
+      expect(mockCosOperations.bindCustomDomain).toHaveBeenCalledWith('test-bucket', CDN_HOST, {
+        skipDns: true,
+      });
+    });
+
+    it('continues as an update when the CDN domain already exists (partial-failure retry)', async () => {
+      mockCosOperations.getBucket.mockResolvedValue(mockBucketInfo);
+      mockCdnOperations.addCdnDomain.mockRejectedValue({ code: 'ResourceExists' });
+
+      await createBucketResource(
+        mockContext,
+        { key: 'test_bucket', name: 'test-bucket', domains: [cdnBinding] },
+        initialState,
+      );
+
+      expect(mockCdnOperations.describeCdnDomain).toHaveBeenCalledWith(CDN_HOST);
+      expect(mockCdnOperations.applyCacheConfig).toHaveBeenCalled();
+    });
+
+    it('fails the create when a rejected CDN add has no existing domain', async () => {
+      mockCosOperations.getBucket.mockResolvedValue(mockBucketInfo);
+      mockCdnOperations.addCdnDomain.mockRejectedValue(new Error('quota'));
+      mockCdnOperations.describeCdnDomain.mockResolvedValue(null);
+
+      await expect(
+        createBucketResource(
+          mockContext,
+          { key: 'test_bucket', name: 'test-bucket', domains: [cdnBinding] },
+          initialState,
+        ),
+      ).rejects.toThrow();
+    });
+
+    it('redeploys a changed certificate reference and updates delivery in place', async () => {
+      mockCosOperations.getBucket.mockResolvedValue(mockBucketInfo);
+      const existing = {
+        mode: 'managed' as const,
+        region: 'ap-guangzhou',
+        definition: {
+          bucket: 'test-bucket',
+          domains: [
+            {
+              domain_name: CDN_HOST,
+              certificate_id: 'cert-ref-old',
+              certificate_hash: 'old-hash',
+              cdn: { enabled: true, cdn_type: 'web', scope: 'global' },
+            },
+          ],
+        },
+        instances: cdnInstances,
+        lastUpdated: new Date().toISOString(),
+      };
+      const state = { ...initialState, resources: { 'buckets.test_bucket': existing } };
+
+      await updateBucketResource(
+        mockContext,
+        {
+          key: 'test_bucket',
+          name: 'test-bucket',
+          domains: [
+            {
+              ...cdnBinding,
+              certificate_id: 'cert-ref-2',
+              cdn: { ...cdnOptions, cdn_type: 'media', scope: 'chinese_mainland', cache_ttl: 7200 },
+            },
+          ],
+        },
+        state,
+      );
+
+      expect(mockCdnOperations.updateCdnDelivery).toHaveBeenCalledWith(CDN_HOST, {
+        serviceType: 'media',
+        area: 'mainland',
+        origin: { originType: 'cos', origins: [COS_ENDPOINT], serverName: COS_ENDPOINT },
+      });
+      expect(mockCdnOperations.applyCacheConfig).toHaveBeenCalledWith(CDN_HOST, 7200, undefined);
+      expect(mockSslOperations.deployCertificateInstance).toHaveBeenCalledWith(
+        'cert-ref-2',
+        'cdn',
+        [CDN_HOST],
+      );
+      expect(mockCdnOperations.addCdnDomain).not.toHaveBeenCalled();
+    });
+
+    it('skips certificate deployment when the certificate hash is unchanged', async () => {
+      mockCosOperations.getBucket.mockResolvedValue(mockBucketInfo);
+      const hash = 'stable-hash';
+      const existing = {
+        mode: 'managed' as const,
+        region: 'ap-guangzhou',
+        definition: {
+          bucket: 'test-bucket',
+          domains: [
+            {
+              domain_name: CDN_HOST,
+              certificate_id: 'cert-ref-1',
+              certificate_hash: hash,
+              cdn: { enabled: true, cdn_type: 'web', scope: 'global' },
+            },
+          ],
+        },
+        instances: cdnInstances,
+        lastUpdated: new Date().toISOString(),
+      };
+      mockSslOperations.deployCertificateInstance.mockClear();
+
+      await updateBucketResource(
+        mockContext,
+        { key: 'test_bucket', name: 'test-bucket', domains: [cdnBinding] },
+        { ...initialState, resources: { 'buckets.test_bucket': existing } },
+      );
+
+      expect(mockSslOperations.deployCertificateInstance).not.toHaveBeenCalled();
+      expect(mockCdnOperations.enableHttps).not.toHaveBeenCalled();
+      expect(mockedLogger.info).toHaveBeenCalledWith(
+        expect.stringContaining('unchanged (hash match)'),
+      );
+    });
+
+    it('switches a binding off CDN at binding level: teardown then direct rebind', async () => {
+      mockCosOperations.getBucket.mockResolvedValue(mockBucketInfo);
+      const existing = {
+        mode: 'managed' as const,
+        region: 'ap-guangzhou',
+        definition: {
+          bucket: 'test-bucket',
+          domains: [
+            {
+              domain_name: CDN_HOST,
+              certificate_id: 'cert-ref-1',
+              cdn: { enabled: true, cdn_type: 'web', scope: 'global' },
+            },
+          ],
+        },
+        instances: cdnInstances,
+        lastUpdated: new Date().toISOString(),
+      };
+      mockCosOperations.bindCustomDomain.mockResolvedValue({
+        domain: CDN_HOST,
+        cname: COS_ENDPOINT,
+        dnsRecordId: 'direct-rec-1',
+        bucketDomainBound: true,
+      });
+
+      await updateBucketResource(
+        mockContext,
+        { key: 'test_bucket', name: 'test-bucket', domains: [{ domain_name: CDN_HOST }] },
+        { ...initialState, resources: { 'buckets.test_bucket': existing } },
+      );
+
+      expect(mockCdnOperations.deleteCdnDomain).toHaveBeenCalledWith(CDN_HOST);
+      expect(mockDnsOperations.deleteDomainRecord).toHaveBeenCalledWith('example.com', 'rec-1');
+      expect(mockCosOperations.unbindCustomDomain).toHaveBeenCalledWith('test-bucket', CDN_HOST);
+      // The same hostname is re-bound directly with its own bucket CNAME record.
+      expect(mockCosOperations.bindCustomDomain).toHaveBeenCalledWith('test-bucket', CDN_HOST);
+    });
+
+    it('skips direct-binding certificate deployment when the reference is unchanged', async () => {
+      mockCosOperations.getBucket.mockResolvedValue(mockBucketInfo);
+      const existing = {
+        mode: 'managed' as const,
+        region: 'ap-guangzhou',
+        definition: {
+          bucket: 'test-bucket',
+          domains: [
+            {
+              domain_name: 'direct.example.com',
+              certificate_id: 'cert-1',
+              cdn: { enabled: false },
+            },
+          ],
+        },
+        instances: [
+          {
+            sid: 'si:tencent:cos:default:test-bucket',
+            id: 'test-bucket',
+            type: 'COS_BUCKET',
+            bucket: 'test-bucket',
+          },
+          {
+            sid: 'si:tencent:dnspod:default:rec-d',
+            id: 'rec-d',
+            type: 'TENCENT_COS_DNS_CNAME',
+            domain: 'direct.example.com',
+            cname: COS_ENDPOINT,
+            dnsRecordId: 'rec-d',
+          },
+        ],
+        lastUpdated: new Date().toISOString(),
+      };
+      mockCosOperations.bindCustomDomain.mockResolvedValue({
+        domain: 'direct.example.com',
+        cname: COS_ENDPOINT,
+        dnsRecordId: 'rec-d',
+        bucketDomainBound: true,
+      });
+
+      await updateBucketResource(
+        mockContext,
+        {
+          key: 'test_bucket',
+          name: 'test-bucket',
+          domains: [{ domain_name: 'direct.example.com', certificate_id: 'cert-1' }],
+        },
+        { ...initialState, resources: { 'buckets.test_bucket': existing } },
+      );
+
+      expect(mockSslOperations.deployCertificateInstance).not.toHaveBeenCalled();
+      expect(mockedLogger.info).toHaveBeenCalledWith(
+        expect.stringContaining('unchanged (hash match)'),
+      );
+    });
+
+    it('migrates legacy single-domain state in place without CDN calls', async () => {
+      mockCosOperations.getBucket.mockResolvedValue(mockBucketInfo);
+      const existing = {
+        mode: 'managed' as const,
+        region: 'ap-guangzhou',
+        definition: { bucket: 'test-bucket', domain: 'legacy.example.com' },
+        instances: [
+          {
+            sid: 'si:tencent:dnspod:default:rec-legacy',
+            id: 'rec-legacy',
+            type: 'TENCENT_COS_DNS_CNAME',
+            domain: 'legacy.example.com',
+            cname: COS_ENDPOINT,
+            dnsRecordId: 'rec-legacy',
+          },
+        ],
+        lastUpdated: new Date().toISOString(),
+      };
+      mockCosOperations.bindCustomDomain.mockResolvedValue({
+        domain: 'legacy.example.com',
+        cname: COS_ENDPOINT,
+        dnsRecordId: 'rec-legacy',
+        bucketDomainBound: true,
+      });
+
+      await updateBucketResource(
+        mockContext,
+        {
+          key: 'test_bucket',
+          name: 'test-bucket',
+          domains: [{ domain_name: 'legacy.example.com' }],
+        },
+        { ...initialState, resources: { 'buckets.test_bucket': existing } },
+      );
+
+      expect(mockCdnOperations.addCdnDomain).not.toHaveBeenCalled();
+      expect(mockCdnOperations.deleteCdnDomain).not.toHaveBeenCalled();
+      expect(mockCosOperations.bindCustomDomain).toHaveBeenCalledWith(
+        'test-bucket',
+        'legacy.example.com',
+      );
+    });
+
+    it('applies compression during pending option application', async () => {
+      mockCosOperations.getBucket.mockResolvedValue(mockBucketInfo);
+
+      await createBucketResource(
+        mockContext,
+        {
+          key: 'test_bucket',
+          name: 'test-bucket',
+          domains: [{ ...cdnBinding, cdn: { ...cdnOptions, compression: true } }],
+        },
+        initialState,
+      );
+
+      expect(mockCdnOperations.applyCompression).toHaveBeenCalledWith(CDN_HOST, true);
+    });
+
+    it('re-resolves and records the CDN CNAME when no delivery record is tracked', async () => {
+      mockCosOperations.getBucket.mockResolvedValue(mockBucketInfo);
+      const existing = {
+        mode: 'managed' as const,
+        region: 'ap-guangzhou',
+        definition: {
+          bucket: 'test-bucket',
+          domains: [
+            {
+              domain_name: CDN_HOST,
+              certificate_id: 'cert-ref-1',
+              cdn: { enabled: true, cdn_type: 'web', scope: 'global' },
+            },
+          ],
+        },
+        instances: [
+          {
+            sid: 'si:tencent:cos:default:test-bucket',
+            id: 'test-bucket',
+            type: 'COS_BUCKET',
+            bucket: 'test-bucket',
+          },
+          {
+            sid: 'si:tencent:cdn:default:cdn.example.com',
+            id: CDN_HOST,
+            type: 'TENCENT_CDN_DOMAIN',
+            domainName: CDN_HOST,
+          },
+        ],
+        lastUpdated: new Date().toISOString(),
+      };
+      mockCdnOperations.describeCdnDomain.mockResolvedValue({
+        domainName: CDN_HOST,
+        cname: 'cdn.example.com.cdn.dnsv1.com.v2',
+        status: 'online',
+      });
+      mockDnsOperations.addDomainRecord.mockResolvedValue('rec-2');
+
+      await updateBucketResource(
+        mockContext,
+        { key: 'test_bucket', name: 'test-bucket', domains: [cdnBinding] },
+        { ...initialState, resources: { 'buckets.test_bucket': existing } },
+      );
+
+      expect(mockDnsOperations.addDomainRecord).toHaveBeenCalledWith({
+        domainName: 'example.com',
+        rr: 'cdn',
+        type: 'CNAME',
+        value: 'cdn.example.com.cdn.dnsv1.com.v2',
+        ttl: 600,
+      });
+    });
+
+    it('fails the update when the CDN domain cannot be resolved', async () => {
+      mockCosOperations.getBucket.mockResolvedValue(mockBucketInfo);
+      const existing = {
+        mode: 'managed' as const,
+        region: 'ap-guangzhou',
+        definition: {
+          bucket: 'test-bucket',
+          domains: [
+            {
+              domain_name: CDN_HOST,
+              cdn: { enabled: true, cdn_type: 'web', scope: 'global' },
+            },
+          ],
+        },
+        instances: [
+          {
+            sid: 'si:tencent:cos:default:test-bucket',
+            id: 'test-bucket',
+            type: 'COS_BUCKET',
+            bucket: 'test-bucket',
+          },
+          {
+            sid: 'si:tencent:cdn:default:cdn.example.com',
+            id: CDN_HOST,
+            type: 'TENCENT_CDN_DOMAIN',
+            domainName: CDN_HOST,
+          },
+        ],
+        lastUpdated: new Date().toISOString(),
+      };
+      mockCdnOperations.describeCdnDomain.mockResolvedValue(null);
+
+      await expect(
+        updateBucketResource(
+          mockContext,
+          { key: 'test_bucket', name: 'test-bucket', domains: [cdnBinding] },
+          { ...initialState, resources: { 'buckets.test_bucket': existing } },
+        ),
+      ).rejects.toThrow();
+    });
+
+    it('creates a new CDN binding when one is added on update', async () => {
+      mockCosOperations.getBucket.mockResolvedValue(mockBucketInfo);
+      const existing = {
+        mode: 'managed' as const,
+        region: 'ap-guangzhou',
+        definition: { bucket: 'test-bucket', domains: [] },
+        instances: [
+          {
+            sid: 'si:tencent:cos:default:test-bucket',
+            id: 'test-bucket',
+            type: 'COS_BUCKET',
+            bucket: 'test-bucket',
+          },
+        ],
+        lastUpdated: new Date().toISOString(),
+      };
+
+      await updateBucketResource(
+        mockContext,
+        { key: 'test_bucket', name: 'test-bucket', domains: [cdnBinding] },
+        { ...initialState, resources: { 'buckets.test_bucket': existing } },
+      );
+
+      expect(mockCdnOperations.addCdnDomain).toHaveBeenCalled();
+      expect(mockCdnOperations.deleteCdnDomain).not.toHaveBeenCalled();
+    });
+
+    it('applies an origin-protocol change and compression change in place', async () => {
+      mockCosOperations.getBucket.mockResolvedValue(mockBucketInfo);
+      const existing = {
+        mode: 'managed' as const,
+        region: 'ap-guangzhou',
+        definition: {
+          bucket: 'test-bucket',
+          domains: [
+            {
+              domain_name: CDN_HOST,
+              cdn: {
+                enabled: true,
+                cdn_type: 'web',
+                scope: 'global',
+                origin_protocol: 'http',
+                compression: false,
+              },
+            },
+          ],
+        },
+        instances: cdnInstances,
+        lastUpdated: new Date().toISOString(),
+      };
+
+      await updateBucketResource(
+        mockContext,
+        {
+          key: 'test_bucket',
+          name: 'test-bucket',
+          domains: [
+            {
+              domain_name: CDN_HOST,
+              cdn: {
+                enabled: true,
+                cdn_type: 'web',
+                scope: 'global',
+                origin_protocol: 'follow',
+                compression: true,
+              },
+            },
+          ],
+        },
+        { ...initialState, resources: { 'buckets.test_bucket': existing } },
+      );
+
+      expect(mockCdnOperations.updateCdnDelivery).toHaveBeenCalledWith(CDN_HOST, {
+        origin: {
+          originType: 'cos',
+          origins: [COS_ENDPOINT],
+          serverName: COS_ENDPOINT,
+          originPullProtocol: 'follow',
+        },
+      });
+      expect(mockCdnOperations.applyCompression).toHaveBeenCalledWith(CDN_HOST, true);
+    });
+
+    it('tolerates teardown of a stored binding without any recorded instances', async () => {
+      mockCosOperations.getBucket.mockResolvedValue(mockBucketInfo);
+      const existing = {
+        mode: 'managed' as const,
+        region: 'ap-guangzhou',
+        definition: {
+          bucket: 'test-bucket',
+          domains: [
+            {
+              domain_name: 'gone.example.com',
+              cdn: { enabled: true, cdn_type: 'web', scope: 'global' },
+            },
+          ],
+        },
+        instances: [],
+        lastUpdated: new Date().toISOString(),
+      };
+
+      await updateBucketResource(
+        mockContext,
+        { key: 'test_bucket', name: 'test-bucket' },
+        { ...initialState, resources: { 'buckets.test_bucket': existing } },
+      );
+
+      // Nothing recorded to tear down — converges without touching the CDN APIs.
+      expect(mockCdnOperations.deleteCdnDomain).not.toHaveBeenCalled();
+    });
+
+    it('tears down CDN bindings on delete and survives record-delete errors', async () => {
+      mockDnsOperations.deleteDomainRecord.mockRejectedValue(new Error('dns gone'));
+
+      await deleteBucketResource(
+        mockContext,
+        'test-bucket',
+        'ap-guangzhou',
+        'buckets.test_bucket',
+        {
+          ...initialState,
+          resources: {
+            'buckets.test_bucket': {
+              mode: 'managed',
+              region: 'ap-guangzhou',
+              definition: { bucket: 'test-bucket' },
+              instances: cdnInstances,
+              lastUpdated: new Date().toISOString(),
+            },
+          },
+        },
+      );
+
+      expect(mockCdnOperations.deleteCdnDomain).toHaveBeenCalledWith(CDN_HOST);
+      expect(mockDnsOperations.deleteDomainRecord).toHaveBeenCalledWith('example.com', 'rec-1');
+      expect(mockCosOperations.unbindCustomDomain).toHaveBeenCalledWith('test-bucket', CDN_HOST);
+      expect(mockCosOperations.deleteBucket).toHaveBeenCalledWith('test-bucket', 'ap-guangzhou');
     });
   });
 });

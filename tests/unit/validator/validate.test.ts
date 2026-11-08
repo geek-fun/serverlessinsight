@@ -1054,6 +1054,31 @@ describe('unit test for validate', () => {
       expect(keywords).toContain('cdnTypeProviderUnsupported');
     });
 
+    it('should reject cdn on a provider without bucket CDN delivery', () => {
+      const invalidYaml = {
+        ...jsonIac,
+        provider: { name: 'volcengine', region: 'cn-beijing' },
+        buckets: {
+          my_bucket: {
+            name: 'test-bucket',
+            domains: [{ domain_name: 'example.com', cdn: { enabled: true } }],
+          },
+        },
+      } as unknown as ServerlessIacRaw;
+      expect(() => validateYaml(invalidYaml)).toThrow('Invalid yaml');
+
+      let thrownError: unknown;
+      try {
+        validateYaml(invalidYaml);
+      } catch (error) {
+        thrownError = error;
+      }
+      const keywords = JSON.stringify(
+        (thrownError as { errors?: Array<{ keyword?: string }> }).errors ?? [],
+      );
+      expect(keywords).toContain('bucketCdnProviderUnsupported');
+    });
+
     it('should reject cdn_type video on tencent (ServiceType has no video)', () => {
       const invalidYaml = {
         ...jsonIac,

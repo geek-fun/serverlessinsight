@@ -517,19 +517,18 @@ const aliyunLegacyBinding = (definition: ResourceAttributes): StoredBinding | un
 const applyCdnOptions = async (
   client: ReturnType<typeof createAliyunClient>,
   hostname: string,
-  cdnObj: Partial<NonNullable<StoredBinding['cdn']>> | undefined,
+  cdnObj: CdnConfig | undefined,
 ): Promise<void> => {
-  if (!cdnObj) return;
-  if (cdnObj.cache_ttl != null || cdnObj.ignore_query_string != null) {
-    await client.cdn.applyCacheConfig(hostname, cdnObj.cache_ttl, cdnObj.ignore_query_string);
+  if (cdnObj?.cache_ttl != null || cdnObj?.ignore_query_string != null) {
+    await client.cdn.applyCacheConfig(hostname, cdnObj?.cache_ttl, cdnObj?.ignore_query_string);
   }
-  if (cdnObj.origin_protocol) {
+  if (cdnObj?.origin_protocol) {
     await client.cdn.applyProtocolConfig(hostname, cdnObj.origin_protocol);
   }
-  if (cdnObj.compression != null) {
+  if (cdnObj?.compression != null) {
     await client.cdn.applyCompression(hostname, cdnObj.compression);
   }
-  if (cdnObj.force_redirect_https != null) {
+  if (cdnObj?.force_redirect_https != null) {
     await client.cdn.applyHttpsRedirect(hostname, cdnObj.force_redirect_https);
   }
 };

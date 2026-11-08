@@ -321,34 +321,26 @@ const ensureCdnDns = async (
   hostname: string,
   cname: string,
   instances: Array<ResourceInstance>,
-  previous?: CosCdnDnsInstance,
 ): Promise<void> => {
+  // The CDN CNAME for a hostname is stable, so an existing delivery record is
+  // kept as recorded — only a missing record is created here.
   const mainDomain = extractMainDomain(hostname);
-  const config = {
+  const dnsRecordId = await client.dns.addDomainRecord({
     domainName: mainDomain,
     rr: extractHostRecord(hostname, mainDomain),
     type: 'CNAME',
     value: cname,
     ttl: 600,
-  };
-  let dnsRecordId = previous?.dnsRecordId;
-  const index = instances.length;
-  if (dnsRecordId) {
-    if (previous?.cname !== cname) {
-      await client.dns.updateDomainRecord(mainDomain, dnsRecordId, config);
-    }
-  } else {
-    dnsRecordId = await client.dns.addDomainRecord(config);
-  }
+  });
   const id = dnsRecordId || hostname;
-  instances[index] = {
+  instances.push({
     sid: buildSid('tencent', 'dnspod', context.stage, id),
     id,
     type: ResourceTypeEnum.TENCENT_CDN_DNS_CNAME,
     domain: hostname,
     cname,
     ...(dnsRecordId ? { dnsRecordId } : {}),
-  } satisfies CosCdnDnsInstance;
+  } satisfies CosCdnDnsInstance);
 };
 
 const applyCdnOptions = async (
@@ -540,9 +532,13 @@ const teardownCosBinding = async (
     logger.info(lang.__('CDN_DOMAIN_DELETED', { domain: distributionName }));
     if (tencentGroup?.cdnDns?.dnsRecordId) {
       const mainDomain = extractMainDomain(stored.hostname);
-      await client.dns
-        .deleteDomainRecord(mainDomain, tencentGroup.cdnDns.dnsRecordId)
-        .catch(() => undefined);
+      try {
+        await client.dns.deleteDomainRecord(mainDomain, tencentGroup.cdnDns.dnsRecordId);
+      } catch (error) {
+        // Best-effort delivery-record cleanup: the binding teardown must not
+        // fail because the record is already gone.
+        logger.debug(lang.__('DNS_OPERATION_ERROR', { error: String(error) }));
+      }
     }
     await client.cos.unbindCustomDomain(bucketName, stored.hostname);
     return;

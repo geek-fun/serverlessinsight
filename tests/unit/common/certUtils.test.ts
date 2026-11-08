@@ -1,4 +1,10 @@
-import { isFilePath, readPemContent, warnInlinePem } from '../../../src/common/certUtils';
+import {
+  hashResolvedCertificate,
+  isFilePath,
+  readPemContent,
+  resolveBindingCertificateHash,
+  warnInlinePem,
+} from '../../../src/common/certUtils';
 import fs from 'node:fs';
 import path from 'node:path';
 
@@ -159,6 +165,53 @@ describe('certUtils', () => {
       warnInlinePem(undefined as unknown as string);
 
       expect(mockedLogger.warn).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('certificate hashing (issue #283)', () => {
+    it('hashes resolved certificate contents deterministically', () => {
+      const first = hashResolvedCertificate('cert-body', 'cert-key');
+      const second = hashResolvedCertificate('cert-body', 'cert-key');
+      const changed = hashResolvedCertificate('cert-body-2', 'cert-key');
+
+      expect(first).toBe(second);
+      expect(first).not.toBe(changed);
+      expect(first).toMatch(/^[0-9a-f]{64}$/);
+    });
+
+    it('returns undefined when body or key is missing', () => {
+      expect(hashResolvedCertificate(undefined, 'key')).toBeUndefined();
+      expect(hashResolvedCertificate('body', undefined)).toBeUndefined();
+      expect(hashResolvedCertificate()).toBeUndefined();
+    });
+
+    it('hashes a certificate_id reference as a stable identity', () => {
+      const hash = resolveBindingCertificateHash({ certificate_id: 'cas-123' });
+
+      expect(hash).toMatch(/^[0-9a-f]{64}$/);
+      expect(hash).toBe(resolveBindingCertificateHash({ certificate_id: 'cas-123' }));
+      expect(hash).not.toBe(resolveBindingCertificateHash({ certificate_id: 'cas-456' }));
+    });
+
+    it('hashes inline PEM after reading file contents', () => {
+      mockFs.readFileSync.mockReturnValue('file-cert-body\nfile-cert-key\n');
+
+      const hash = resolveBindingCertificateHash({
+        certificate_body: './certs/server.crt',
+        certificate_private_key: './certs/server.key',
+      });
+
+      expect(hash).toBe(
+        hashResolvedCertificate(
+          'file-cert-body\nfile-cert-key\n',
+          'file-cert-body\nfile-cert-key\n',
+        ),
+      );
+    });
+
+    it('returns undefined when no certificate is declared', () => {
+      expect(resolveBindingCertificateHash({})).toBeUndefined();
+      expect(resolveBindingCertificateHash({ certificate_body: 'body' })).toBeUndefined();
     });
   });
 });

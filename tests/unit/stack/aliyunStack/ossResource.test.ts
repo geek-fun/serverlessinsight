@@ -2512,6 +2512,148 @@ describe('OssResource', () => {
       expect(mockOssOperations.bindCustomDomain).toHaveBeenCalledWith('tb', 'x.c', undefined);
     });
 
+    it('migrates a legacy accelerate-only binding and full legacy cdn fields', async () => {
+      mockOssOperations.getBucket.mockResolvedValue({ name: 'tb' });
+      mockOssOperations.getAccelerateEndpoint.mockResolvedValue('tb accelerate endpoint');
+      mockOssOperations.bindCustomDomain.mockResolvedValue({
+        cname: 'x.c',
+        dnsRecordId: 'dns-1',
+        bucketCnameBound: true,
+      });
+      const existing = {
+        mode: 'managed' as const,
+        region: 'cn-hangzhou',
+        definition: {
+          bucketName: 'tb',
+          accelerateEnabled: true,
+          domain: 'x.c',
+          cdnEnabled: true,
+          cdnType: 'download',
+          cdnScope: 'overseas',
+          cdnCacheTtl: 300,
+          cdnIgnoreQueryString: true,
+          cdnOriginProtocol: 'follow',
+          cdnCompression: true,
+          cdnForceRedirectHttps: true,
+        },
+        instances: [{ sid: 's', id: 'tb', type: 'ALIYUN_OSS_BUCKET', bucketName: 'tb' }],
+        lastUpdated: new Date().toISOString(),
+      };
+
+      await updateBucketResource(
+        mockContext,
+        { key: 'b', name: 'tb', accelerate: true, domains: [{ domain_name: 'x.c', cdn: false }] },
+        { ...initialState, resources: { 'buckets.b': existing } },
+      );
+
+      // The legacy binding is direct-mode under acceleration: it re-binds via
+      // the accelerate endpoint instead of touching CDN APIs.
+      expect(mockOssOperations.bindCustomDomain).toHaveBeenCalled();
+    });
+
+    it('applies no cdn options for the boolean shorthand on create', async () => {
+      mockOssOperations.getBucket.mockResolvedValue(taggedBucketInfo({ name: 'tb' }, 'buckets.b'));
+      mockOssOperations.bindCustomDomain.mockResolvedValue({
+        cname: 'x.c',
+        dnsRecordId: 'dns-1',
+        bucketCnameBound: true,
+      });
+      mockCdnOperations.describeCdnDomainDetail.mockResolvedValue({
+        domainName: 'x.c',
+        cname: 'x.c.aliyuncs.com',
+        domainStatus: 'online',
+      });
+
+      await createBucketResource(
+        mockContext,
+        { key: 'b', name: 'tb', domains: [{ domain_name: 'x.c', cdn: true }] },
+        initialState,
+      );
+
+      // pending application with no declared options must be a no-op
+      expect(mockCdnOperations.applyCacheConfig).not.toHaveBeenCalled();
+      expect(mockCdnOperations.applyProtocolConfig).not.toHaveBeenCalled();
+      expect(mockCdnOperations.applyCompression).not.toHaveBeenCalled();
+      expect(mockCdnOperations.applyHttpsRedirect).not.toHaveBeenCalled();
+    });
+
+    it('modifies the distribution back to the web default for a boolean cdn shorthand', async () => {
+      mockOssOperations.getBucket.mockResolvedValue({ name: 'tb' });
+      mockOssOperations.bindCustomDomain.mockResolvedValue({
+        cname: 'x.c',
+        dnsRecordId: 'dns-1',
+        bucketCnameBound: true,
+      });
+      mockCdnOperations.describeCdnDomainDetail.mockResolvedValue({
+        domainName: 'x.c',
+        cname: 'x.c.aliyuncs.com',
+        domainStatus: 'online',
+      });
+      const existing = {
+        mode: 'managed' as const,
+        region: 'cn-hangzhou',
+        definition: {
+          bucketName: 'tb',
+          domains: [
+            { domain_name: 'x.c', cdn: { enabled: true, cdn_type: 'download', scope: 'overseas' } },
+          ],
+        },
+        instances: [
+          { sid: 's', id: 'tb', type: 'ALIYUN_OSS_BUCKET', bucketName: 'tb' },
+          { sid: 'c', id: 'x.c', type: 'ALIYUN_CDN_DISTRIBUTION', domainName: 'x.c' },
+          { sid: 'd', id: 'did', type: 'ALIYUN_CDN_DNS_CNAME', domain: 'x.c', dnsRecordId: 'did' },
+        ],
+        lastUpdated: new Date().toISOString(),
+      };
+
+      await updateBucketResource(
+        mockContext,
+        { key: 'b', name: 'tb', domains: [{ domain_name: 'x.c', cdn: true }] },
+        { ...initialState, resources: { 'buckets.b': existing } },
+      );
+
+      expect(mockCdnOperations.modifyCdnDomain).toHaveBeenCalledWith(
+        expect.objectContaining({ domainName: 'x.c', cdnType: 'web', scope: 'global' }),
+      );
+    });
+
+    it('tears down an accelerate-only binding on delete without touching CDN APIs', async () => {
+      mockOssOperations.getBucket.mockResolvedValue({ name: 'tb' });
+      const s: StateFile = {
+        ...initialState,
+        resources: {
+          'buckets.b': {
+            mode: 'managed',
+            region: 'cn-hangzhou',
+            definition: { bucketName: 'tb', accelerate: true },
+            instances: [
+              { sid: 's', id: 'tb', type: 'ALIYUN_OSS_BUCKET', bucketName: 'tb' },
+              {
+                sid: 'o',
+                id: 'oid',
+                type: 'ALIYUN_OSS_DNS_CNAME',
+                domain: 'x.c',
+                cname: 'x.c',
+                dnsRecordId: 'oid',
+              },
+            ],
+            lastUpdated: new Date().toISOString(),
+          },
+        },
+      };
+
+      await deleteBucketResource(mockContext, 'tb', 'buckets.b', s);
+
+      // accelerate-only teardown unbinds the OSS mapping; no CDN API is involved
+      expect(mockCdnOperations.deleteCdnDomain).not.toHaveBeenCalled();
+      expect(mockOssOperations.unbindCustomDomain).toHaveBeenCalledWith(
+        'tb',
+        'x.c',
+        undefined,
+        undefined,
+      );
+    });
+
     it('cdn delete', async () => {
       const s: StateFile = {
         ...initialState,

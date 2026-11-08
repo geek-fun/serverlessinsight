@@ -215,4 +215,67 @@ describe('bindingReconcile (issue #283 shared core)', () => {
       expect(entry.cdn).toEqual({ enabled: false });
     });
   });
+
+  describe('branch coverage additions', () => {
+    it('skips malformed domains entries with non-string hostnames', () => {
+      const state = {
+        definition: {
+          domains: [{ domain_name: 42 }, 'not-an-object', { domain_name: 'valid.example.com' }],
+        },
+        instances: [],
+      } as unknown as ResourceState;
+
+      const stored = buildStoredBindings(state, new Map(), { accelerateEnabled: false });
+
+      expect(stored.size).toBe(1);
+      expect(stored.has('valid.example.com')).toBe(true);
+    });
+
+    it('adopts orphan CDN groups as cdn mode during drift repair', () => {
+      const groups = groupBindingInstances(
+        [instance({ type: 'TENCENT_CDN_DOMAIN', domainName: 'orphan-cdn.example.com' })],
+        { TENCENT_CDN_DOMAIN: 'cdn', TENCENT_COS_DNS_CNAME: 'dns' },
+      );
+
+      const stored = buildStoredBindings(
+        { definition: {}, instances: [] } as unknown as ResourceState,
+        groups,
+        {
+          accelerateEnabled: false,
+        },
+      );
+
+      expect(stored.get('orphan-cdn.example.com')?.mode).toBe('cdn');
+    });
+
+    it('marks accelerated orphans as accelerate-only during drift repair', () => {
+      const groups = groupBindingInstances(
+        [instance({ type: 'TENCENT_COS_DNS_CNAME', domain: 'orphan.example.com' })],
+        { TENCENT_COS_DNS_CNAME: 'dns' },
+      );
+
+      const stored = buildStoredBindings(
+        { definition: {}, instances: [] } as unknown as ResourceState,
+        groups,
+        {
+          accelerateEnabled: true,
+        },
+      );
+
+      expect(stored.get('orphan.example.com')?.mode).toBe('accelerate-only');
+    });
+
+    it('returns false from certificate gating when nothing identifies a certificate', () => {
+      expect(shouldDeployBindingCertificate({ pending: false, stored: undefined })).toBe(false);
+    });
+
+    it('keeps declared cdn fields on a disabled cdn object', () => {
+      const entry = bindingToDefinitionEntry({
+        domainName: 'x.c',
+        cdn: { enabled: false, cdn_type: 'media', cache_ttl: 60 },
+      });
+
+      expect(entry.cdn).toEqual({ enabled: false, cdn_type: 'media', cache_ttl: 60 });
+    });
+  });
 });

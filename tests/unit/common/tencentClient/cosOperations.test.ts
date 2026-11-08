@@ -1662,4 +1662,30 @@ describe('cosOperations with dnsOps', () => {
       ).resolves.toBeUndefined();
     });
   });
+
+  describe('bindCustomDomain with skipDns', () => {
+    it('binds the bucket rule but returns without a DNS record when skipDns is set', async () => {
+      mockGetBucketDomain.mockImplementation(
+        (_params: unknown, cb: (err: null, data: { DomainRule: unknown[] }) => void) =>
+          cb(null, { DomainRule: [] }),
+      );
+      mockPutBucketDomain.mockImplementation((_params: unknown, cb: (err: null) => void) =>
+        cb(null),
+      );
+
+      const info = await operations.bindCustomDomain('bucket-1', 'cdn.example.com', {
+        skipDns: true,
+      });
+
+      expect(info).toEqual({
+        domain: 'cdn.example.com',
+        cname: 'bucket-1.cos.ap-guangzhou.myqcloud.com',
+        bucketDomainBound: true,
+      });
+      expect(info.dnsRecordId).toBeUndefined();
+      // The DNS layer must stay untouched — CDN delivery owns the CNAME.
+      expect(mockDnsOps.addDomainRecord).not.toHaveBeenCalled();
+      expect(mockDnsOps.describeDomainRecords).not.toHaveBeenCalled();
+    });
+  });
 });
