@@ -10,3 +10,4 @@ artifacts/
 .omo/
 .codegraph/
 .playwright-mcp/
+.workbuddy/
