@@ -65,7 +65,7 @@ const CDN_CAPABILITIES: Record<CdnProviderName, CdnCapability> = {
     },
   },
   volcengine: {
-    bucketCdn: false,
+    bucketCdn: true,
     eventCdn: false,
     cdnTypes: VOLCENGINE_CDN_TYPES,
     scopeMap: {

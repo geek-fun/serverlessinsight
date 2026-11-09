@@ -48,7 +48,16 @@ const UPDATE_FIELDS: Record<string, readonly string[]> = {
     'policy',
   ],
   COS_BUCKET: ['acl', 'websiteConfiguration', 'domains', 'policy'],
-  VOLCENGINE_TOS_BUCKET: ['acl', 'websiteConfiguration', 'websiteCodeHash', 'policy'],
+  // issue #294: domain bindings are reconciled per binding by the executor;
+  // `accelerate` is enable-only via update (disable fails at execution).
+  VOLCENGINE_TOS_BUCKET: [
+    'acl',
+    'websiteConfiguration',
+    'websiteCodeHash',
+    'domains',
+    'accelerate',
+    'policy',
+  ],
 };
 
 const IDENTITY_FIELDS: Record<string, readonly string[]> = {
