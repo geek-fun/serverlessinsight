@@ -338,7 +338,7 @@ being silently ignored.
 
 | Path | Aliyun | Tencent | Volcengine |
 | --- | --- | --- | --- |
-| Bucket domain `cdn` | ✅ | ✅ (since #283) | ❌ fail-fast ([#294](https://github.com/geek-fun/serverlessinsight/issues/294)) |
+| Bucket domain `cdn` | ✅ | ✅ (since #283) | ✅ (since #294) |
 | Event (gateway) domain `cdn` | ✅ | ❌ fail-fast | ❌ fail-fast |
 
 ### `scope` — acceleration area
@@ -388,3 +388,26 @@ Unsupported values for a provider are rejected at `si validate`.
   only when its content (or the referenced `certificate_id`) changes.
 - Tencent CDN acceleration with COS origin currently assumes a publicly
   readable bucket; private-bucket CDN origin authorization is not automated.
+- **Volcengine specifics** (issue
+  [#294](https://github.com/geek-fun/serverlessinsight/issues/294)):
+  - Direct (non-CDN) bindings reference certificates by `certificate_id` — TOS
+    has no certificate-upload API for bucket domains, so inline PEM is rejected
+    at `si validate`. Upload the certificate to the Volcengine certificate
+    center and pass its id.
+  - CDN-mode bindings pull straight from the TOS bucket (`OriginType: 'TOS'`);
+    the custom domain is **not** registered on the bucket (unlike Tencent COS,
+    where the binding is also written bucket-side). TOS-side registration would
+    additionally require domain-ownership verification.
+  - Private-bucket CDN origin pull (cross-service authorization) is not
+    automated — the bucket must be publicly readable, or authorization must be
+    granted manually.
+  - Bucket-level `accelerate` uses TOS transfer acceleration
+    (`<bucket>.tos-accelerate.volces.com`); enabling is supported via update,
+    disabling still requires destroy+recreate (aliyun parity). Non-CDN bindings
+    under acceleration CNAME to the acceleration endpoint
+    (accelerate-only mode).
+  - The CNAME records si manages require the domain's zone to be hosted in
+    Volcengine DNS (TrafficRoute) — the same constraint class as Tencent
+    DNSPod. `si validate`/deploy fails with `DNS_ZONE_NOT_FOUND` otherwise.
+  - `overseas`/`global` scopes and wildcard domains on volcengine CDN require a
+    ticket to the provider; si maps the scope values but cannot lift that quota.
