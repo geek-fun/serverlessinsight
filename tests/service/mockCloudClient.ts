@@ -524,6 +524,11 @@ export type MockVolcengineClient = {
     listObjects: jest.Mock;
     deleteObjects: jest.Mock;
     uploadFiles: jest.Mock;
+    putBucketCustomDomain: jest.Mock;
+    getBucketCustomDomains: jest.Mock;
+    deleteBucketCustomDomain: jest.Mock;
+    putBucketTransferAcceleration: jest.Mock;
+    getBucketTransferAcceleration: jest.Mock;
   };
   iam: {
     createRole: jest.Mock;
@@ -566,6 +571,23 @@ export type MockVolcengineClient = {
     deployApi: jest.Mock;
     bindDomain: jest.Mock;
     unbindDomain: jest.Mock;
+  };
+  cdn: {
+    addCdnDomain: jest.Mock;
+    describeCdnDomain: jest.Mock;
+    deleteCdnDomain: jest.Mock;
+    updateCdnDelivery: jest.Mock;
+    applyCacheConfig: jest.Mock;
+    applyCompression: jest.Mock;
+    applyHttpsRedirect: jest.Mock;
+    applyCertificate: jest.Mock;
+    addCertificate: jest.Mock;
+  };
+  dns: {
+    addDomainRecord: jest.Mock;
+    updateDomainRecord: jest.Mock;
+    deleteDomainRecord: jest.Mock;
+    describeDomainRecords: jest.Mock;
   };
 };
 
@@ -619,6 +641,11 @@ export const createMockVolcengineClient = (): MockVolcengineClient => ({
     listObjects: jest.fn().mockResolvedValue([]),
     deleteObjects: jest.fn().mockResolvedValue(undefined),
     uploadFiles: jest.fn().mockResolvedValue(undefined),
+    putBucketCustomDomain: jest.fn().mockResolvedValue(undefined),
+    getBucketCustomDomains: jest.fn().mockResolvedValue([]),
+    deleteBucketCustomDomain: jest.fn().mockResolvedValue(undefined),
+    putBucketTransferAcceleration: jest.fn().mockResolvedValue(undefined),
+    getBucketTransferAcceleration: jest.fn().mockResolvedValue(false),
   },
   iam: {
     createRole: jest.fn().mockResolvedValue({
@@ -703,6 +730,23 @@ export const createMockVolcengineClient = (): MockVolcengineClient => ({
     deployApi: jest.fn().mockResolvedValue(undefined),
     bindDomain: jest.fn().mockResolvedValue(undefined),
     unbindDomain: jest.fn().mockResolvedValue(undefined),
+  },
+  cdn: {
+    addCdnDomain: jest.fn().mockResolvedValue(undefined),
+    describeCdnDomain: jest.fn().mockResolvedValue(null),
+    deleteCdnDomain: jest.fn().mockResolvedValue(undefined),
+    updateCdnDelivery: jest.fn().mockResolvedValue(undefined),
+    applyCacheConfig: jest.fn().mockResolvedValue(undefined),
+    applyCompression: jest.fn().mockResolvedValue(undefined),
+    applyHttpsRedirect: jest.fn().mockResolvedValue(undefined),
+    applyCertificate: jest.fn().mockResolvedValue(undefined),
+    addCertificate: jest.fn().mockResolvedValue({ certificateId: 'uploaded-cert-1' }),
+  },
+  dns: {
+    addDomainRecord: jest.fn().mockResolvedValue('dns-record-1'),
+    updateDomainRecord: jest.fn().mockResolvedValue(undefined),
+    deleteDomainRecord: jest.fn().mockResolvedValue(undefined),
+    describeDomainRecords: jest.fn().mockResolvedValue([]),
   },
 });
 

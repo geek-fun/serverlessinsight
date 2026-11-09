@@ -1043,5 +1043,127 @@ describe('tosOperations', () => {
         );
       });
     });
+
+    describe('custom domain bindings (issue #294)', () => {
+      it('putBucketCustomDomain posts the CustomDomainRule body', async () => {
+        mockClient.fetchOpenAPI.mockResolvedValue({});
+
+        await operations.putBucketCustomDomain('test-bucket', 'cdn.example.com', {
+          certId: 'cert-volc-1',
+        });
+
+        expect(mockClient.fetchOpenAPI).toHaveBeenCalledWith(
+          expect.objectContaining({
+            Action: 'PutBucketCustomDomain',
+            Version: '2018-08-01',
+            method: 'PUT',
+            query: { Bucket: 'test-bucket' },
+            data: { CustomDomainRule: { Domain: 'cdn.example.com', CertId: 'cert-volc-1' } },
+          }),
+        );
+      });
+
+      it('getBucketCustomDomains maps the rule list', async () => {
+        mockClient.fetchOpenAPI.mockResolvedValue({
+          Result: {
+            CustomDomainRules: [
+              { Domain: 'cdn.example.com', Cname: 'test-bucket.tos-cn-beijing.volces.com' },
+            ],
+          },
+        });
+
+        const rules = await operations.getBucketCustomDomains('test-bucket');
+
+        expect(mockClient.fetchOpenAPI).toHaveBeenCalledWith(
+          expect.objectContaining({
+            Action: 'GetBucketCustomDomain',
+            method: 'GET',
+            query: { Bucket: 'test-bucket' },
+          }),
+        );
+        expect(rules).toEqual([
+          {
+            domain: 'cdn.example.com',
+            cname: 'test-bucket.tos-cn-beijing.volces.com',
+            certId: undefined,
+            certStatus: undefined,
+            protocol: undefined,
+            forbidden: undefined,
+          },
+        ]);
+      });
+
+      it('getBucketCustomDomains returns [] when no configuration exists', async () => {
+        mockClient.fetchOpenAPI.mockRejectedValueOnce({
+          code: 'NoSuchCustomDomainConfiguration',
+        });
+
+        await expect(operations.getBucketCustomDomains('test-bucket')).resolves.toEqual([]);
+      });
+
+      it('deleteBucketCustomDomain issues the DELETE with the domain query', async () => {
+        mockClient.fetchOpenAPI.mockResolvedValue({});
+
+        await operations.deleteBucketCustomDomain('test-bucket', 'cdn.example.com');
+
+        expect(mockClient.fetchOpenAPI).toHaveBeenCalledWith(
+          expect.objectContaining({
+            Action: 'DeleteBucketCustomDomain',
+            method: 'DELETE',
+            query: { Bucket: 'test-bucket', CustomDomain: 'cdn.example.com' },
+          }),
+        );
+      });
+
+      it('deleteBucketCustomDomain warns and returns when the binding is already gone', async () => {
+        mockClient.fetchOpenAPI.mockRejectedValueOnce({ code: 'NoSuchCustomDomain' });
+
+        await expect(
+          operations.deleteBucketCustomDomain('test-bucket', 'cdn.example.com'),
+        ).resolves.toBeUndefined();
+      });
+    });
+
+    describe('transfer acceleration (issue #294)', () => {
+      it('putBucketTransferAcceleration posts string-boolean Enabled=true', async () => {
+        mockClient.fetchOpenAPI.mockResolvedValue({});
+
+        await operations.putBucketTransferAcceleration('test-bucket', true);
+
+        expect(mockClient.fetchOpenAPI).toHaveBeenCalledWith(
+          expect.objectContaining({
+            Action: 'PutBucketTransferAcceleration',
+            method: 'PUT',
+            query: { Bucket: 'test-bucket' },
+            data: { TransferAccelerationConfiguration: { Enabled: 'true' } },
+          }),
+        );
+
+        await operations.putBucketTransferAcceleration('test-bucket', false);
+        expect(mockClient.fetchOpenAPI).toHaveBeenLastCalledWith(
+          expect.objectContaining({
+            data: { TransferAccelerationConfiguration: { Enabled: 'false' } },
+          }),
+        );
+      });
+
+      it('getBucketTransferAcceleration maps Enabled to a boolean', async () => {
+        mockClient.fetchOpenAPI.mockResolvedValue({
+          Result: { TransferAccelerationConfiguration: { Enabled: 'true', Status: 'enabling' } },
+        });
+
+        await expect(operations.getBucketTransferAcceleration('test-bucket')).resolves.toBe(true);
+
+        mockClient.fetchOpenAPI.mockResolvedValue({
+          Result: { TransferAccelerationConfiguration: { Enabled: 'false', Status: 'enabled' } },
+        });
+        await expect(operations.getBucketTransferAcceleration('test-bucket')).resolves.toBe(false);
+
+        mockClient.fetchOpenAPI.mockResolvedValue({ Result: {} });
+        await expect(
+          operations.getBucketTransferAcceleration('test-bucket'),
+        ).resolves.toBeUndefined();
+      });
+    });
   });
 });
