@@ -1,5 +1,6 @@
 import { serializeBucketPolicy } from '../../common/bucketPolicy';
-import { BucketDomain, BucketIam, ResourceAttributes } from '../../types';
+import { BucketDomain, BucketDomainBinding, BucketIam, ResourceAttributes } from '../../types';
+import { bindingToDefinitionEntry } from '../../common/bindingReconcile';
 import type {
   TosAcl,
   TosBucketInfo,
@@ -24,6 +25,15 @@ const aclMap: Record<string, TosAcl> = {
 
 export const TOS_BUCKET_POLICY_INSTANCE_TYPE = 'VOLCENGINE_TOS_BUCKET_POLICY';
 
+export type TosBindingConfig = {
+  domain: string;
+  certificateId?: string;
+  certificateBody?: string;
+  certificatePrivateKey?: string;
+  // CDN delivery on TOS is implemented by the CDN domain path (issue #294).
+  cdn?: BucketDomainBinding['cdn'];
+};
+
 export const bucketToTosConfig = (bucket: BucketDomain) => {
   const config: {
     bucketName: string;
@@ -31,6 +41,8 @@ export const bucketToTosConfig = (bucket: BucketDomain) => {
     storageClass?: TosStorageClass;
     websiteConfig?: TosWebsiteConfig;
     iam?: BucketIam;
+    domains?: TosBindingConfig[];
+    accelerateEnabled?: boolean;
     Tags?: Array<{ Key: string; Value: string }>;
   } = {
     bucketName: bucket.name,
@@ -55,8 +67,31 @@ export const bucketToTosConfig = (bucket: BucketDomain) => {
     };
   }
 
+  if (bucket.domains?.length) {
+    config.domains = bucket.domains.map((binding) => ({
+      domain: binding.domain_name,
+      certificateId: binding.certificate_id,
+      certificateBody: binding.certificate_body,
+      certificatePrivateKey: binding.certificate_private_key,
+      ...(binding.cdn != null ? { cdn: binding.cdn } : {}),
+    }));
+  }
+
+  if (bucket.accelerate != null) {
+    config.accelerateEnabled = bucket.accelerate === true;
+  }
+
   return config;
 };
+
+const tosBindingToDefinitionEntry = (binding: TosBindingConfig): ResourceAttributes =>
+  bindingToDefinitionEntry({
+    domainName: binding.domain,
+    certificateId: binding.certificateId,
+    certificateBody: binding.certificateBody,
+    certificatePrivateKey: binding.certificatePrivateKey,
+    ...(binding.cdn != null ? { cdn: binding.cdn } : {}),
+  });
 
 export const extractTosBucketDefinition = (
   config: ReturnType<typeof bucketToTosConfig>,
@@ -73,6 +108,13 @@ export const extractTosBucketDefinition = (
         }
       : null,
     websiteCodeHash: websiteCodeHash ?? null,
+    // Bindings are canonicalized: sorted by hostname so list reordering in
+    // YAML never produces a plan change (issue #279/#294).
+    domains: (config.domains ?? [])
+      .slice()
+      .sort((a, b) => a.domain.localeCompare(b.domain))
+      .map(tosBindingToDefinitionEntry),
+    accelerate: config.accelerateEnabled ?? false,
     policy: serializeBucketPolicy(config.iam, 'volcengine'),
   };
 };

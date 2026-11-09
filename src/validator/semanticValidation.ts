@@ -86,18 +86,6 @@ const validateBuckets = (
       ? (bucket.domains as Array<Record<string, unknown>>)
       : [];
 
-    if (providerName === 'volcengine' && domains.length > 0) {
-      push({
-        instancePath: `${bucketPath}/domains`,
-        schemaPath: '#/semantic/bucketDomainsProviderUnsupported',
-        keyword: 'bucketDomainsProviderUnsupported',
-        message: lang.__('BUCKET_DOMAINS_PROVIDER_NOT_SUPPORTED', {
-          key: bucketKey,
-          provider: providerName,
-        }),
-      });
-    }
-
     const seen: Array<{ host: string; wildcard: boolean }> = [];
     const capability = resolveCdnCapability(providerName);
     domains.forEach((entry, index) => {
@@ -127,6 +115,31 @@ const validateBuckets = (
           schemaPath: '#/semantic/bucketBindingProtocolRemoved',
           keyword: 'bucketBindingProtocolRemoved',
           message: lang.__('BUCKET_BINDING_PROTOCOL_REMOVED', {
+            key: bucketKey,
+            domain: rawDomain,
+          }),
+        });
+      }
+
+      // Volcengine direct bindings (no `cdn`) reference certificates by id —
+      // TOS has no certificate-upload API for bucket domains, so inline PEM
+      // cannot be applied (issue #294).
+      if (
+        providerName === 'volcengine' &&
+        !(
+          (typeof entry.cdn === 'boolean' && entry.cdn === true) ||
+          (typeof entry.cdn === 'object' &&
+            entry.cdn !== null &&
+            (entry.cdn as Record<string, unknown>).enabled === true)
+        ) &&
+        typeof entry.certificate_body === 'string' &&
+        typeof entry.certificate_private_key === 'string'
+      ) {
+        push({
+          instancePath: entryPath,
+          schemaPath: '#/semantic/volcengineDirectBindingPemUnsupported',
+          keyword: 'volcengineDirectBindingPemUnsupported',
+          message: lang.__('TOS_DIRECT_BINDING_PEM_NOT_SUPPORTED', {
             key: bucketKey,
             domain: rawDomain,
           }),
@@ -228,7 +241,7 @@ const validateBuckets = (
       seen.push({ host, wildcard: isWildcardHostname(host) });
     });
 
-    if (bucket.accelerate === true && providerName !== 'aliyun') {
+    if (bucket.accelerate === true && providerName !== 'aliyun' && providerName !== 'volcengine') {
       push({
         instancePath: `${bucketPath}/accelerate`,
         schemaPath: '#/semantic/bucketAccelerateProviderUnsupported',

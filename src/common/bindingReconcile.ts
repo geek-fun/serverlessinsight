@@ -1,6 +1,8 @@
 import { CdnConfig, ResourceAttributes, ResourceInstance, ResourceState } from '../types';
 import { normalizeHostname } from './domainUtils';
-import { resolveBindingCertificateHash } from './certUtils';
+import { readPemContent, resolveBindingCertificateHash, warnInlinePem } from './certUtils';
+import { logger } from './logger';
+import { lang } from '../lang';
 
 /**
  * Provider-agnostic per-binding reconcile core (issue #283).
@@ -151,6 +153,51 @@ export const shouldDeployBindingCertificate = (input: {
   if (certificateId) return stored?.certId !== certificateId;
   if (certificateHash) return stored?.certHash !== certificateHash;
   return false;
+};
+
+/** A binding's certificate as declared: a provider certificate id, or an inline PEM pair to upload. */
+export type BindingResolvedCertificate =
+  | {
+      mode: 'upload';
+      certificateName: string;
+      certificateBody: string;
+      certificatePrivateKey: string;
+    }
+  | { mode: 'reference'; certificateId: string };
+
+/**
+ * Shared certificate resolution for bucket bindings (issue #283/#294):
+ * reference ids pass through, inline PEM pairs are read (fail-loud at deploy
+ * time) and hashed downstream. Providers without an upload path must reject
+ * inline PEM earlier, in semantic validation.
+ */
+export const resolveBindingCertificate = (binding: {
+  domain_name: string;
+  certificate_id?: string;
+  certificate_body?: string;
+  certificate_private_key?: string;
+}): BindingResolvedCertificate | undefined => {
+  if (binding.certificate_id) {
+    logger.info(
+      lang.__('CERT_RESOLVING_REFERENCE', {
+        reference: binding.certificate_id,
+        domain: binding.domain_name,
+      }),
+    );
+    return { mode: 'reference', certificateId: binding.certificate_id };
+  }
+  if (binding.certificate_body && binding.certificate_private_key) {
+    const body = readPemContent(binding.certificate_body);
+    const key = readPemContent(binding.certificate_private_key);
+    warnInlinePem(binding.certificate_private_key);
+    return {
+      mode: 'upload',
+      certificateName: binding.domain_name.replace(/\./g, '_'),
+      certificateBody: body,
+      certificatePrivateKey: key,
+    };
+  }
+  return undefined;
 };
 
 /**

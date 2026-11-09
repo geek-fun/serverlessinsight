@@ -41,6 +41,11 @@ export enum ResourceTypeEnum {
   // Volcengine - Primary Resources
   VOLCENGINE_VEFAAS_FUNCTION = 'VOLCENGINE_VEFAAS_FUNCTION',
   VOLCENGINE_TOS_BUCKET = 'VOLCENGINE_TOS_BUCKET',
+
+  // Volcengine - TOS bucket domain bindings (issue #294)
+  VOLCENGINE_TOS_DNS_CNAME = 'VOLCENGINE_TOS_DNS_CNAME',
+  VOLCENGINE_CDN_DOMAIN = 'VOLCENGINE_CDN_DOMAIN',
+  VOLCENGINE_CDN_DNS_CNAME = 'VOLCENGINE_CDN_DNS_CNAME',
 }
 
 export type ResourceAttributes = Record<string, unknown>;

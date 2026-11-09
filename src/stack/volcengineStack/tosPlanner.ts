@@ -1,7 +1,15 @@
 import { normalizeBucketPolicyDefinition, removedBucketPolicy } from '../../common/bucketPolicy';
 import path from 'node:path';
 import { lang } from '../../lang';
-import { Context, BucketDomain, Plan, PlanItem, StateFile, ResourceAttributes } from '../../types';
+import {
+  Context,
+  BucketDomain,
+  Plan,
+  PlanItem,
+  ResourceTypeEnum,
+  StateFile,
+  ResourceAttributes,
+} from '../../types';
 import { createVolcengineClient } from '../../common/volcengineClient';
 import { cachedRefreshRead } from '../../common/refreshCache';
 import { PLAN_READ_CONCURRENCY, mapWithConcurrency } from '../../common/concurrency';
@@ -77,11 +85,21 @@ export const generateBucketPlan = async (
         normalizeForDisplay: (definition) =>
           normalizeBucketPolicyDefinition(definition, 'volcengine'),
         cloudToDefinition: cloudTosToDefinition,
-        removedDependents: removedBucketPolicy(
-          TOS_BUCKET_POLICY_INSTANCE_TYPE,
-          currentState,
-          desiredDefinition,
-        ),
+        removedDependents: {
+          ...removedBucketPolicy(TOS_BUCKET_POLICY_INSTANCE_TYPE, currentState, desiredDefinition),
+          // Binding dependents (issue #294): when every declared binding is
+          // gone but binding instances still exist, the stored `domains` list
+          // must be removed from the saved definition so convergence is visible.
+          ...(!(config.domains?.length ?? 0) &&
+          (currentState?.instances ?? []).some(
+            (i) =>
+              i.type === ResourceTypeEnum.VOLCENGINE_TOS_DNS_CNAME ||
+              i.type === ResourceTypeEnum.VOLCENGINE_CDN_DOMAIN ||
+              i.type === ResourceTypeEnum.VOLCENGINE_CDN_DNS_CNAME,
+          )
+            ? { domains: currentState?.definition.domains ?? null }
+            : {}),
+        },
         enrichRemoteAttributes: async (_remote, attributes) => {
           if (desiredDefinition.policy === null) return attributes;
           const policy = await cachedRefreshRead(

@@ -8,8 +8,10 @@ import {
   getBindingCdnOptions,
   groupBindingInstances,
   isBindingCdnEnabled,
+  resolveBindingCertificate,
   shouldDeployBindingCertificate,
   type BindingInstanceGroup,
+  type BindingResolvedCertificate,
   type StoredBinding,
 } from '../../common/bindingReconcile';
 import { mapCdnScope, mapOriginProtocol } from '../../common/cdnCapabilities';
@@ -33,7 +35,6 @@ import {
   CosBucketInfo,
 } from './cosTypes';
 import { setResource, removeResource, buildSid } from '../../common';
-import { readPemContent, warnInlinePem } from '../../common/certUtils';
 import { logger } from '../../common/logger';
 import { lang } from '../../lang';
 import { extractHostRecord, extractMainDomain, normalizeHostname } from '../../common/domainUtils';
@@ -138,50 +139,7 @@ const tencentLegacyBinding = (
   return { hostname: normalizeHostname(legacy.domain), mode: 'direct' };
 };
 
-type CosResolvedCertificateUpload = {
-  mode: 'upload';
-  certificateName: string;
-  certificateBody: string;
-  certificatePrivateKey: string;
-};
-
-type CosResolvedCertificateReference = {
-  mode: 'reference';
-  certificateId: string;
-};
-
-type CosResolvedCertificate = CosResolvedCertificateUpload | CosResolvedCertificateReference;
-
-const resolveBindingCertificate = (
-  binding: BucketDomainBinding,
-): CosResolvedCertificate | undefined => {
-  if (binding.certificate_id) {
-    logger.info(
-      lang.__('CERT_RESOLVING_REFERENCE', {
-        reference: binding.certificate_id,
-        domain: binding.domain_name,
-      }),
-    );
-    return {
-      mode: 'reference',
-      certificateId: binding.certificate_id,
-    };
-  }
-
-  if (binding.certificate_body && binding.certificate_private_key) {
-    const body = readPemContent(binding.certificate_body);
-    const key = readPemContent(binding.certificate_private_key);
-    warnInlinePem(binding.certificate_private_key);
-    return {
-      mode: 'upload',
-      certificateName: binding.domain_name.replace(/\./g, '_'),
-      certificateBody: body,
-      certificatePrivateKey: key,
-    };
-  }
-
-  return undefined;
-};
+type CosResolvedCertificate = BindingResolvedCertificate;
 
 const resolveCosCertificateId = async (
   client: ReturnType<typeof createTencentClient>,
