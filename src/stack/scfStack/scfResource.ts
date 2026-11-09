@@ -8,6 +8,7 @@ import {
 import {
   Context,
   FunctionDomain,
+  FunctionDomainBindingParsed,
   PartialResourceError,
   ResourceState,
   StateFile,
@@ -17,6 +18,20 @@ import {
 import { translateSiCron } from '../../common/siCron';
 import { createTencentClient } from '../../common/tencentClient';
 import { readFileAsBase64 } from '../../common/fileUtils';
+import { readPemContent } from '../../common/certUtils';
+import {
+  aggregateFunctionDomainBindings,
+  collectStackFunctionNames,
+  DEFAULT_FUNCTION_QUALIFIER,
+  functionDomainDefinitionEntry,
+  mapFunctionProtocol,
+  mergeDomainRoutes,
+  routesEqual,
+  storedFunctionDomainBindings,
+  storedFunctionDomainCertHash,
+  type AggregatedFunctionDomainBinding,
+  type FunctionDomainRoute,
+} from '../../common/functionDomainReconcile';
 import { functionToScfConfig, extractScfDefinition, ScfFunctionInfo } from './scfTypes';
 import {
   getResource,
@@ -256,8 +271,234 @@ type ScfDependentInstance = {
   roleArn?: string;
   external?: boolean;
   protocol?: string;
+  paths?: Array<string>;
   logsetId?: string;
   topicName?: string;
+};
+
+const SCF_DOMAIN_INSTANCE_TYPE = 'TENCENT_SCF_CUSTOM_DOMAIN';
+const SCF_NAMESPACE_PARAMETER_KEY = 'namespace';
+
+const resolveScfNamespace = (context: Context): string =>
+  context.parameters?.find((parameter) => parameter.key === SCF_NAMESPACE_PARAMETER_KEY)?.value ??
+  'default';
+
+/** Resolves a binding's certificate for SCF: a reference id passes through, inline PEM uploads to SSL service (Repeatable:false makes re-upload idempotent) and delivers an id. */
+const resolveScfCertConfig = async (
+  client: ReturnType<typeof createTencentClient>,
+  binding: FunctionDomainBindingParsed,
+): Promise<{ CertificateId?: string } | undefined> => {
+  if (binding.certificate_id) return { CertificateId: binding.certificate_id };
+  if (binding.certificate_body && binding.certificate_private_key) {
+    const body = readPemContent(binding.certificate_body);
+    const key = readPemContent(binding.certificate_private_key);
+    const certInfo = await client.ssl.uploadCertificate(
+      binding.domain_name.replace(/\./g, '_'),
+      body,
+      key,
+    );
+    return { CertificateId: certInfo.certificateId };
+  }
+  return undefined;
+};
+
+/**
+ * Releases a function's routes from a cloud-side domain (issue #286): pure
+ * route subtraction — the domain is deleted when the function was the last
+ * binding (per-owner teardown with a live-route check).
+ */
+const releaseScfDomainRoutes = async (
+  context: Context,
+  client: ReturnType<typeof createTencentClient>,
+  domainName: string,
+  own: { functionName: string; paths: Array<string> },
+): Promise<void> => {
+  const live = await client.scf.getCustomDomain(domainName);
+  const liveRoutes = (live?.EndpointsConfig ?? []).map((endpoint) => ({
+    path: endpoint.PathMatch ?? '',
+    functionName: endpoint.FunctionName ?? '',
+    qualifier: endpoint.Qualifier,
+  }));
+  const remaining = mergeDomainRoutes(liveRoutes, own, 'remove');
+  if (liveRoutes.length === 0) return;
+  if (remaining.length === 0) {
+    logger.info(
+      lang.__('FUNCTION_DOMAIN_ROUTE_RELEASED', { functionName: own.functionName, domainName }),
+    );
+    await client.scf.deleteCustomDomain(domainName);
+    logger.info(lang.__('CUSTOM_DOMAIN_DELETED', { domainName }));
+    return;
+  }
+  if (routesEqual(liveRoutes, remaining)) return;
+  logger.info(
+    lang.__('REMOVING_FUNCTION_DOMAIN_ROUTES', { functionName: own.functionName, domainName }),
+  );
+  const namespace = resolveScfNamespace(context);
+  await client.scf.updateCustomDomain({
+    Domain: domainName,
+    EndpointsConfig: remaining.map((route) => ({
+      Namespace: namespace,
+      FunctionName: route.functionName,
+      Qualifier: route.qualifier ?? DEFAULT_FUNCTION_QUALIFIER,
+      PathMatch: route.path,
+    })),
+  });
+};
+
+const buildScfDomainBindingInstance = (
+  context: Context,
+  binding: AggregatedFunctionDomainBinding,
+  protocolString: string,
+): ScfDependentInstance => ({
+  type: SCF_DOMAIN_INSTANCE_TYPE,
+  id: binding.domainName,
+  sid: buildSid('tencent', 'scf-custom-domain', context.stage, binding.domainName),
+  paths: binding.paths,
+  protocol: protocolString,
+});
+
+/**
+ * Converges one domain binding: creates the domain (with state-less adoption
+ * when a previous partial run already created it — ownership proven by live
+ * routes referencing this stack's functions) or updates routes/protocol/cert
+ * in place via UpdateCustomDomain. Certificates redeploy only on content
+ * change (certificate_hash in state, issue #283 pattern).
+ */
+const applyScfDomainBinding = async (
+  context: Context,
+  fn: FunctionDomain,
+  existingState: ResourceState | undefined,
+  client: ReturnType<typeof createTencentClient>,
+  desired: AggregatedFunctionDomainBinding,
+  options?: { repairDomain?: boolean },
+): Promise<ScfDependentInstance> => {
+  const protocolString = mapFunctionProtocol('tencent', desired.representative.protocol);
+  const endpointsFor = (routes: Array<FunctionDomainRoute>) =>
+    routes.map((route) => ({
+      Namespace: resolveScfNamespace(context),
+      FunctionName: route.functionName,
+      Qualifier: route.qualifier ?? DEFAULT_FUNCTION_QUALIFIER,
+      PathMatch: route.path,
+    }));
+
+  const live = await client.scf.getCustomDomain(desired.domainName);
+  const liveRoutes = (live?.EndpointsConfig ?? []).map((endpoint) => ({
+    path: endpoint.PathMatch ?? '',
+    functionName: endpoint.FunctionName ?? '',
+    qualifier: endpoint.Qualifier,
+  }));
+  const desiredRoutes = mergeDomainRoutes(
+    liveRoutes,
+    { functionName: fn.name, paths: desired.paths },
+    'apply',
+  );
+
+  const desiredCertHash =
+    functionDomainDefinitionEntry(desired.representative).certificate_hash ?? undefined;
+  const storedCertHash = storedFunctionDomainCertHash(
+    existingState?.definition,
+    desired.domainName,
+  );
+  const certConfig =
+    storedCertHash !== desiredCertHash || options?.repairDomain === true
+      ? await resolveScfCertConfig(client, desired.representative)
+      : undefined;
+
+  const converge = async (current: NonNullable<typeof live>): Promise<void> => {
+    const currentRoutes = (current.EndpointsConfig ?? []).map((endpoint) => ({
+      path: endpoint.PathMatch ?? '',
+      functionName: endpoint.FunctionName ?? '',
+      qualifier: endpoint.Qualifier,
+    }));
+    const protocolChanged = current.Protocol !== undefined && current.Protocol !== protocolString;
+    const routesChanged = !routesEqual(currentRoutes, desiredRoutes);
+    if (protocolChanged || routesChanged || certConfig) {
+      logger.info(
+        lang.__('UPDATING_FUNCTION_DOMAIN_ROUTES', {
+          domainName: desired.domainName,
+          count: String(desiredRoutes.length),
+        }),
+      );
+      await client.scf.updateCustomDomain({
+        Domain: desired.domainName,
+        Protocol: protocolString,
+        EndpointsConfig: endpointsFor(desiredRoutes),
+        ...(certConfig ? { CertConfig: certConfig } : {}),
+      });
+    }
+  };
+
+  if (!live) {
+    const stackFunctionNames = collectStackFunctionNames(context.iac?.functions, fn.name);
+    try {
+      logger.info(lang.__('CREATING_CUSTOM_DOMAIN', { domainName: desired.domainName }));
+      await client.scf.createCustomDomain({
+        Domain: desired.domainName,
+        Protocol: protocolString,
+        EndpointsConfig: endpointsFor(desiredRoutes),
+        ...(certConfig ? { CertConfig: certConfig } : {}),
+      });
+      logger.info(lang.__('CUSTOM_DOMAIN_CREATED', { domainName: desired.domainName }));
+    } catch (error) {
+      if (!isResourceAlreadyExistsError(error)) throw error;
+      const existing = await client.scf.getCustomDomain(desired.domainName);
+      const existingRoutes = (existing?.EndpointsConfig ?? []).map((endpoint) => ({
+        functionName: endpoint.FunctionName ?? '',
+      }));
+      if (
+        !existing ||
+        !existingRoutes.some((route) => stackFunctionNames.has(route.functionName))
+      ) {
+        throw new Error(
+          lang.__('FUNCTION_DOMAIN_EXISTS_NOT_OWNED', { domainName: desired.domainName }),
+          error instanceof Error ? { cause: error } : undefined,
+        );
+      }
+      logger.info(lang.__('FUNCTION_DOMAIN_OWNED_ADOPT', { domainName: desired.domainName }));
+      await converge(existing);
+    }
+  } else {
+    await converge(live);
+  }
+
+  return buildScfDomainBindingInstance(context, desired, protocolString);
+};
+
+/**
+ * Reconciles every domain this function touches: desired bindings converge
+ * the shared domain resource, removed bindings release routes. Returns the
+ * fresh binding instances.
+ */
+const reconcileScfFunctionDomains = async (
+  context: Context,
+  fn: FunctionDomain,
+  existingInstances: Array<ScfDependentInstance>,
+  existingState: ResourceState | undefined,
+  client: ReturnType<typeof createTencentClient>,
+  options?: { repairDomain?: boolean },
+): Promise<Array<ScfDependentInstance>> => {
+  const storedBindings = storedFunctionDomainBindings(
+    existingInstances as Array<Record<string, unknown>>,
+    SCF_DOMAIN_INSTANCE_TYPE,
+  );
+  const desiredBindings = aggregateFunctionDomainBindings(fn.domains);
+  const touched = [...new Set([...storedBindings.keys(), ...desiredBindings.keys()])].sort();
+
+  const instances: Array<ScfDependentInstance> = [];
+  for (const domainName of touched) {
+    const desired = desiredBindings.get(domainName);
+    if (desired) {
+      instances.push(
+        await applyScfDomainBinding(context, fn, existingState, client, desired, options),
+      );
+    } else {
+      await releaseScfDomainRoutes(context, client, domainName, {
+        functionName: fn.name,
+        paths: storedBindings.get(domainName)?.paths ?? [],
+      });
+    }
+  }
+  return instances;
 };
 
 /**
@@ -948,42 +1189,25 @@ export const createResource = async (
     }
   }
 
-  // Create custom domain if configured
-  if (fn.domain) {
-    logger.info(lang.__('CREATING_CUSTOM_DOMAIN', { domainName: fn.domain.domain_name }));
-    try {
-      await client.scf.createCustomDomain({
-        Domain: fn.domain.domain_name,
-        Protocol: fn.domain.protocol,
-        EndpointsConfig: [
-          {
-            Namespace: 'default',
-            FunctionName: fn.name,
-            Qualifier: '$DEFAULT',
-            PathMatch: '/*',
-          },
-        ],
-        ...(fn.domain.certificate_id
-          ? { CertConfig: { CertificateId: fn.domain.certificate_id } }
-          : {}),
-      });
-    } catch (error) {
-      throw new PartialResourceError(stateAfterDependents, new Error(toErrorMessage(error)));
-    }
-    logger.info(lang.__('CUSTOM_DOMAIN_CREATED', { domainName: fn.domain.domain_name }));
-
-    const domainSid = buildSid(
-      'tencent',
-      'scf-custom-domain',
-      context.stage,
-      fn.domain.domain_name,
+  // Reconcile custom domain bindings (issue #286): cross-function merged
+  // routes; a failure here persists the tainted state for retry.
+  try {
+    const domainInstances = await reconcileScfFunctionDomains(
+      context,
+      fn,
+      (existingResourceState?.instances ?? []) as Array<ScfDependentInstance>,
+      existingResourceState,
+      client,
     );
-    dependentInstances.push({
-      sid: domainSid,
-      type: 'TENCENT_SCF_CUSTOM_DOMAIN',
-      id: fn.domain.domain_name,
-      protocol: fn.domain.protocol,
-    });
+    dependentInstances.push(...domainInstances);
+    if (domainInstances.length > 0) {
+      stateAfterDependents = setResource(stateAfterDependents, logicalId, {
+        ...taintedResourceState,
+        instances: [...dependentInstances],
+      });
+    }
+  } catch (error) {
+    throw new PartialResourceError(stateAfterDependents, new Error(toErrorMessage(error)));
   }
 
   // Refresh state from provider to get all attributes (including triggers)
@@ -1338,75 +1562,16 @@ export const updateResource = async (
     // GetFunction trigger list is the baseline so console edits converge.
     const timerInstances = await reconcileScfTimerTriggers(context, fn, existingInstances, client);
 
-    // Reconcile custom domain
-    const existingCustomDomain = existingInstances.find(
-      (i) => (i as ScfDependentInstance).type === 'TENCENT_SCF_CUSTOM_DOMAIN',
-    ) as ScfDependentInstance | undefined;
-
-    if (fn.domain && !existingCustomDomain) {
-      logger.info(lang.__('CREATING_CUSTOM_DOMAIN', { domainName: fn.domain.domain_name }));
-      await client.scf.createCustomDomain({
-        Domain: fn.domain.domain_name,
-        Protocol: fn.domain.protocol,
-        EndpointsConfig: [
-          {
-            Namespace: 'default',
-            FunctionName: fn.name,
-            Qualifier: '$DEFAULT',
-            PathMatch: '/*',
-          },
-        ],
-        ...(fn.domain.certificate_id
-          ? { CertConfig: { CertificateId: fn.domain.certificate_id } }
-          : {}),
-      });
-      logger.info(lang.__('CUSTOM_DOMAIN_CREATED', { domainName: fn.domain.domain_name }));
-    } else if (!fn.domain && existingCustomDomain) {
-      logger.info(lang.__('DELETING_CUSTOM_DOMAIN', { domainName: existingCustomDomain.id }));
-      try {
-        await client.scf.deleteCustomDomain(existingCustomDomain.id);
-        logger.info(lang.__('CUSTOM_DOMAIN_DELETED', { domainName: existingCustomDomain.id }));
-      } catch (err) {
-        const errorCode = (err as { code?: string })?.code;
-        if (errorCode !== 'ResourceNotFound') throw err;
-        logger.warn(
-          lang.__('RESOURCE_NOT_FOUND_PROVIDER', {
-            resourceType: 'Custom Domain',
-            name: existingCustomDomain.id,
-          }),
-        );
-      }
-    } else if (fn.domain && existingCustomDomain) {
-      const domainChanged =
-        options?.repairDomain ||
-        !attributesEqual(
-          (existingState?.definition?.domain as Record<string, unknown>) ?? {},
-          fn.domain as unknown as Record<string, unknown>,
-        ) ||
-        fn.domain.domain_name !== existingCustomDomain.id ||
-        fn.domain.protocol !== existingCustomDomain.protocol;
-      if (domainChanged) {
-        logger.info(lang.__('DELETING_CUSTOM_DOMAIN', { domainName: existingCustomDomain.id }));
-        await client.scf.deleteCustomDomain(existingCustomDomain.id);
-        logger.info(lang.__('CREATING_CUSTOM_DOMAIN', { domainName: fn.domain.domain_name }));
-        await client.scf.createCustomDomain({
-          Domain: fn.domain.domain_name,
-          Protocol: fn.domain.protocol,
-          EndpointsConfig: [
-            {
-              Namespace: 'default',
-              FunctionName: fn.name,
-              Qualifier: '$DEFAULT',
-              PathMatch: '/*',
-            },
-          ],
-          ...(fn.domain.certificate_id
-            ? { CertConfig: { CertificateId: fn.domain.certificate_id } }
-            : {}),
-        });
-        logger.info(lang.__('CUSTOM_DOMAIN_CREATED', { domainName: fn.domain.domain_name }));
-      }
-    }
+    // Reconcile custom domain bindings (issue #286): cross-function merged
+    // routes converge via UpdateCustomDomain; removed bindings release routes.
+    const domainInstances = await reconcileScfFunctionDomains(
+      context,
+      fn,
+      existingInstances as Array<ScfDependentInstance>,
+      existingState,
+      client,
+      { repairDomain: options?.repairDomain },
+    );
 
     // Refresh state from provider to get all attributes (including triggers)
     const functionInfo = await client.scf.getFunction(fn.name);
@@ -1453,21 +1618,6 @@ export const updateResource = async (
       });
     }
 
-    if (fn.domain) {
-      const domainSid = buildSid(
-        'tencent',
-        'scf-custom-domain',
-        context.stage,
-        fn.domain.domain_name,
-      );
-      newDependentInstances.push({
-        sid: domainSid,
-        type: 'TENCENT_SCF_CUSTOM_DOMAIN' as ResourceTypeEnum,
-        id: fn.domain.domain_name,
-        protocol: fn.domain.protocol,
-      });
-    }
-
     if (clsTopicInstance) {
       newDependentInstances.push(clsTopicInstance);
     }
@@ -1478,7 +1628,7 @@ export const updateResource = async (
       definition: withLifecycleIntent(
         mergeManagedIntent(existingState?.definition ?? {}, definition),
         definition,
-        ['http', 'domain', 'timers'],
+        ['http', 'domains', 'timers'],
       ),
       instances: [
         buildScfInstanceFromProvider(
@@ -1490,6 +1640,7 @@ export const updateResource = async (
         ...newDependentInstances,
         ...timerInstances,
         ...httpInstances,
+        ...domainInstances,
       ],
       lastUpdated: new Date().toISOString(),
     };
@@ -1518,6 +1669,20 @@ export const deleteResource = async (
 
   const client = createTencentClient(context);
 
+  // Domain routes are released before the trigger/function teardown (issue
+  // #286 contract: domain 摘除 → trigger → function). Other functions' routes
+  // survive; the domain itself is deleted only when this was the last binding.
+  const storedDomainBindings = storedFunctionDomainBindings(
+    existingInstances,
+    SCF_DOMAIN_INSTANCE_TYPE,
+  );
+  for (const [domainName, binding] of storedDomainBindings) {
+    await releaseScfDomainRoutes(context, client, domainName, {
+      functionName,
+      paths: binding.paths,
+    });
+  }
+
   const ownedHttp = ownedScfHttpTrigger(existingInstances, existingState?.definition ?? {});
   if (ownedHttp) {
     await reconcileScfHttpTrigger(
@@ -1536,30 +1701,6 @@ export const deleteResource = async (
   for (const timerInstance of timerTriggerInstances) {
     logger.info(lang.__('DELETING_TIMER_TRIGGER', { triggerName: timerInstance.id, functionName }));
     await deleteScfTimerTrigger(functionName, timerInstance.id, client);
-  }
-
-  // Delete custom domain before deleting function
-  const existingCustomDomain = existingInstances.find(
-    (i) => (i as ScfDependentInstance).type === 'TENCENT_SCF_CUSTOM_DOMAIN',
-  ) as ScfDependentInstance | undefined;
-  if (existingCustomDomain) {
-    try {
-      logger.info(lang.__('DELETING_CUSTOM_DOMAIN', { domainName: existingCustomDomain.id }));
-      await client.scf.deleteCustomDomain(existingCustomDomain.id);
-      logger.info(lang.__('CUSTOM_DOMAIN_DELETED', { domainName: existingCustomDomain.id }));
-    } catch (err) {
-      const errorCode = (err as { code?: string })?.code;
-      if (errorCode === 'ResourceNotFound') {
-        logger.warn(
-          lang.__('RESOURCE_NOT_FOUND_PROVIDER', {
-            resourceType: 'Custom Domain',
-            name: existingCustomDomain.id,
-          }),
-        );
-      } else {
-        throw err;
-      }
-    }
   }
 
   const hasFunction = existingInstances.some((i) => isScfFunctionInstance(i));

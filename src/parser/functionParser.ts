@@ -1,6 +1,6 @@
 import {
   FunctionDomain,
-  FunctionDomainConfigParsed,
+  FunctionDomainBindingParsed,
   FunctionGpuEnum,
   FunctionRaw,
   HttpTrigger,
@@ -14,10 +14,15 @@ import {
   parseBooleanWithDefault,
   parseNumber,
   parseNumberWithDefault,
+  parseOptionalString,
   parseStringWithDefault,
 } from './parseUtils';
 import { lang } from '../lang';
 import { validateSiCron } from '../common/siCron';
+import {
+  DEFAULT_FUNCTION_ROUTE_PATH,
+  normalizeFunctionProtocol,
+} from '../common/functionDomainReconcile';
 
 const parseHttpTrigger = (
   raw: HttpTriggerRaw | undefined,
@@ -83,15 +88,18 @@ const parseTimerTriggers = (
   return timers;
 };
 
-const parseDomain = (
-  raw: FunctionRaw['domain'] | undefined,
-): FunctionDomainConfigParsed | undefined => {
-  if (!raw) return undefined;
-  return {
-    domain_name: String(raw.domain_name),
-    certificate_id: raw.certificate_id ? String(raw.certificate_id) : undefined,
-    protocol: parseStringWithDefault(raw.protocol, 'HTTPS'),
-  };
+const parseDomainBindings = (
+  raw: FunctionRaw['domains'] | undefined,
+): Array<FunctionDomainBindingParsed> | undefined => {
+  if (!raw || raw.length === 0) return undefined;
+  return raw.map((binding) => ({
+    domain_name: String(binding.domain_name),
+    path: parseStringWithDefault(binding.path, DEFAULT_FUNCTION_ROUTE_PATH),
+    certificate_id: parseOptionalString(binding.certificate_id),
+    certificate_body: parseOptionalString(binding.certificate_body),
+    certificate_private_key: parseOptionalString(binding.certificate_private_key),
+    protocol: normalizeFunctionProtocol(binding.protocol as string | string[] | undefined),
+  }));
 };
 
 export const parseFunction = (functions?: {
@@ -103,7 +111,7 @@ export const parseFunction = (functions?: {
   return Object.entries(functions).map(([key, func]) => {
     const httpTrigger = parseHttpTrigger(func.triggers?.http, key);
     const timerTriggers = parseTimerTriggers(func.triggers?.timer, key);
-    const domain = parseDomain(func.domain);
+    const domains = parseDomainBindings(func.domains);
 
     return {
       key,
@@ -178,7 +186,7 @@ export const parseFunction = (functions?: {
             },
           }
         : {}),
-      ...(domain ? { domain } : {}),
+      ...(domains ? { domains } : {}),
     };
   });
 };

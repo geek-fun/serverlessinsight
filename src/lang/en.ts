@@ -1280,6 +1280,39 @@ export const en = {
   DELETING_CUSTOM_DOMAIN: "Deleting custom domain '{{domainName}}'...",
   CUSTOM_DOMAIN_DELETED: "Custom domain '{{domainName}}' deleted",
   DOMAIN_NOT_SUPPORTED_PROVIDER: "Custom domain is not supported for provider '{{provider}}'",
+  // Function domain bindings (issue #286)
+  FUNCTION_DOMAIN_MIGRATION_REQUIRED:
+    'Function "{{fnKey}}": the legacy single-object "domain" field is no longer supported — declare custom domains as a "domains" list instead',
+  FUNCTION_DOMAINS_PROVIDER_NOT_SUPPORTED:
+    'Function "{{fnKey}}": custom domain bindings ("domains") are not supported by provider "{{provider}}"',
+  FUNCTION_DOMAINS_HTTP_TRIGGER_REQUIRED:
+    'Function "{{fnKey}}": declaring "domains" requires an HTTP trigger ("triggers.http") — the domain routes through the function URL it creates',
+  FUNCTION_DOMAINS_AUTH_TYPE_PUBLIC_REQUIRED:
+    'Function "{{fnKey}}": "domains" requires triggers.http.auth_type to be "public"',
+  FUNCTION_DOMAINS_ACCESS_PUBLIC_REQUIRED:
+    'Function "{{fnKey}}": "domains" requires triggers.http.access to include "public" when declared — an intranet-only function URL cannot serve a custom domain',
+  FUNCTION_DOMAINS_WILDCARD_NOT_SUPPORTED:
+    'Function "{{fnKey}}": wildcard domain "{{domain}}" is not supported by provider "{{provider}}"',
+  FUNCTION_DOMAINS_INVALID_PATH:
+    'Function "{{fnKey}}": invalid route path "{{path}}" — it must start with "/" and may contain at most one trailing "*" (e.g. "/api/*")',
+  FUNCTION_DOMAINS_DUPLICATE_BINDING:
+    'Function "{{fnKey}}": duplicate domain binding "{{domain}}" with route path "{{path}}"',
+  FUNCTION_DOMAINS_PROTOCOL_MISMATCH:
+    'Domain "{{domain}}": bindings under "{{fnKey}}" and "{{otherFnKey}}" declare different protocols — protocol is a per-domain setting and must be consistent across same-domain bindings',
+  FUNCTION_DOMAINS_CERTIFICATE_MISMATCH:
+    'Domain "{{domain}}": bindings under "{{fnKey}}" and "{{otherFnKey}}" declare different certificates — the certificate is a per-domain setting and must be consistent across same-domain bindings',
+  FUNCTION_DOMAINS_PATH_CONFLICT:
+    'Domain "{{domain}}": functions "{{fnKey}}" and "{{otherFnKey}}" both declare route path "{{path}}" — same-domain route paths must not duplicate exactly (nested prefixes like "/api/*" and "/*" are allowed)',
+  FUNCTION_DOMAIN_EXISTS_NOT_OWNED:
+    "Custom domain '{{domainName}}' already exists but is not managed by this stack (its routes do not point at this stack's functions)",
+  FUNCTION_DOMAIN_OWNED_ADOPT:
+    "Adopting custom domain '{{domainName}}' previously created by this stack",
+  UPDATING_FUNCTION_DOMAIN_ROUTES:
+    "Updating route table of custom domain '{{domainName}}' ({{count}} routes)...",
+  REMOVING_FUNCTION_DOMAIN_ROUTES:
+    "Removing routes of function '{{functionName}}' from custom domain '{{domainName}}'...",
+  FUNCTION_DOMAIN_ROUTE_RELEASED:
+    "Function '{{functionName}}' was the last binding on custom domain '{{domainName}}' — deleting the domain",
   EVENT_FLUSH_FAILED:
     'Failed to flush deployment events for {{deploymentId}} ({{count}} events): {{error}}',
   EVENT_REPLAY_FAILED: 'Failed to replay event queue file {{file}}: {{error}}',

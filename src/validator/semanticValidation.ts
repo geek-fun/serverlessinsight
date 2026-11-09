@@ -1,5 +1,5 @@
 import { ErrorObject } from 'ajv';
-import type { ServerlessIacRaw } from '../types';
+import type { FunctionProtocol, ServerlessIacRaw } from '../types';
 import { lang } from '../lang';
 import { logger } from '../common/logger';
 // Direct leaf imports on purpose: routing through the src/common barrel would
@@ -12,6 +12,12 @@ import {
 } from '../common/providerNames';
 import { checkSiCronForProvider } from '../common/siCron';
 import { resolveCdnCapability } from '../common/cdnCapabilities';
+import { resolveFunctionDomainCapability } from '../common/functionDomainCapabilities';
+import {
+  DEFAULT_FUNCTION_ROUTE_PATH,
+  isValidFunctionRoutePath,
+  normalizeFunctionProtocol,
+} from '../common/functionDomainReconcile';
 import { isWildcardHostname, normalizeHostname, wildcardCovers } from '../common/domainUtils';
 
 type EventTriggerRaw = {
@@ -255,6 +261,273 @@ const validateBuckets = (
   });
 };
 
+/**
+ * Function domain semantics (issue #286): the legacy single-object `domain`
+ * is rejected with a migration error, the `triggers.http` + public-access
+ * precondition is enforced cross-provider, and bindings sharing a domain
+ * must agree on certificate and protocol (both are per-domain physical facts)
+ * while their route paths must not duplicate exactly (nested prefixes are
+ * legitimate catch-all routes — cloud matching is exact > longest-prefix).
+ */
+type RawFunctionDomainBinding = Record<string, unknown>;
+
+type ParsedFunctionDomainBinding = {
+  fnKey: string;
+  hostname?: string;
+  path: string;
+  protocol?: Array<FunctionProtocol>;
+  cert?: { form: 'none' | 'reference' | 'inline'; value?: string };
+};
+
+const validateFunctionDomains = (
+  providerName: string,
+  functionDefinitions: Record<string, unknown>,
+  errors: Array<ErrorObject>,
+): void => {
+  const push = (error: SemanticErrorParams): void => {
+    errors.push({ ...error, params: {} });
+  };
+  const capability = resolveFunctionDomainCapability(providerName);
+
+  // Certificate form as declared: none / reference (certificate_id) / inline
+  // PEM pair. Mixed or schema-invalid forms are skipped — the schema oneOf
+  // already rejects them. Template refs cannot be compared at validation time.
+  const certFormOf = (
+    binding: RawFunctionDomainBinding,
+  ): ParsedFunctionDomainBinding['cert'] | undefined => {
+    const id = typeof binding.certificate_id === 'string' ? binding.certificate_id : undefined;
+    const body =
+      typeof binding.certificate_body === 'string' ? binding.certificate_body : undefined;
+    const key =
+      typeof binding.certificate_private_key === 'string'
+        ? binding.certificate_private_key
+        : undefined;
+    if (id && !body && !key) {
+      return TEMPLATE_REF_PATTERN.test(id) ? undefined : { form: 'reference', value: id };
+    }
+    if (body && key && !id) {
+      if (TEMPLATE_REF_PATTERN.test(body) || TEMPLATE_REF_PATTERN.test(key)) return undefined;
+      return { form: 'inline' };
+    }
+    if (!id && !body && !key) return { form: 'none' };
+    return undefined;
+  };
+
+  const allBindings: Array<ParsedFunctionDomainBinding> = [];
+
+  Object.entries(functionDefinitions).forEach(([fnKey, rawFn]) => {
+    if (!rawFn || typeof rawFn !== 'object') return;
+    const fn = rawFn as { domain?: unknown; domains?: unknown; triggers?: { http?: unknown } };
+    const fnPath = `/functions/${fnKey}`;
+
+    if (fn.domain != null) {
+      push({
+        instancePath: fnPath,
+        schemaPath: '#/semantic/functionDomainMigrated',
+        keyword: 'functionDomainMigrated',
+        message: lang.__('FUNCTION_DOMAIN_MIGRATION_REQUIRED', { fnKey }),
+      });
+    }
+
+    const rawDomains = Array.isArray(fn.domains)
+      ? (fn.domains as Array<RawFunctionDomainBinding>)
+      : [];
+    if (rawDomains.length === 0) return;
+
+    // Capability gate (#282 fail-fast row): veFaaS has no function-domain API.
+    if (!capability || !capability.functionDomains) {
+      push({
+        instancePath: `${fnPath}/domains`,
+        schemaPath: '#/semantic/functionDomainsProviderUnsupported',
+        keyword: 'functionDomainsProviderUnsupported',
+        message: lang.__('FUNCTION_DOMAINS_PROVIDER_NOT_SUPPORTED', {
+          fnKey,
+          provider: providerName,
+        }),
+      });
+      return;
+    }
+
+    // Trigger dependency contract: the domain routes through the function URL,
+    // so an HTTP trigger with public auth must exist on every provider.
+    const http =
+      fn.triggers && typeof fn.triggers.http === 'object'
+        ? (fn.triggers.http as Record<string, unknown>)
+        : undefined;
+    if (!http) {
+      push({
+        instancePath: `${fnPath}/triggers`,
+        schemaPath: '#/semantic/functionDomainsHttpTriggerRequired',
+        keyword: 'functionDomainsHttpTriggerRequired',
+        message: lang.__('FUNCTION_DOMAINS_HTTP_TRIGGER_REQUIRED', { fnKey }),
+      });
+    } else {
+      const authType = typeof http.auth_type === 'string' ? http.auth_type : undefined;
+      if (authType !== undefined && !TEMPLATE_REF_PATTERN.test(authType) && authType !== 'public') {
+        push({
+          instancePath: `${fnPath}/triggers/http/auth_type`,
+          schemaPath: '#/semantic/functionDomainsAuthTypePublicRequired',
+          keyword: 'functionDomainsAuthTypePublicRequired',
+          message: lang.__('FUNCTION_DOMAINS_AUTH_TYPE_PUBLIC_REQUIRED', { fnKey }),
+        });
+      }
+      const access = Array.isArray(http.access) ? (http.access as Array<unknown>) : undefined;
+      if (access) {
+        const literals = access.filter(
+          (value): value is string =>
+            typeof value === 'string' && !TEMPLATE_REF_PATTERN.test(value),
+        );
+        if (literals.length > 0 && !literals.includes('public')) {
+          push({
+            instancePath: `${fnPath}/triggers/http/access`,
+            schemaPath: '#/semantic/functionDomainsAccessPublicRequired',
+            keyword: 'functionDomainsAccessPublicRequired',
+            message: lang.__('FUNCTION_DOMAINS_ACCESS_PUBLIC_REQUIRED', { fnKey }),
+          });
+        }
+      }
+    }
+
+    const seenBindings = new Map<string, number>();
+    rawDomains.forEach((binding, index) => {
+      const bindingPath = `${fnPath}/domains/${index}`;
+      const hostname = asCheckableHostname(binding.domain_name);
+      const rawPath =
+        typeof binding.path === 'string' && !TEMPLATE_REF_PATTERN.test(binding.path)
+          ? binding.path
+          : undefined;
+      const path = rawPath ?? DEFAULT_FUNCTION_ROUTE_PATH;
+
+      if (hostname && !capability.wildcardDomains && isWildcardHostname(hostname)) {
+        push({
+          instancePath: bindingPath,
+          schemaPath: '#/semantic/functionDomainsWildcardUnsupported',
+          keyword: 'functionDomainsWildcardUnsupported',
+          message: lang.__('FUNCTION_DOMAINS_WILDCARD_NOT_SUPPORTED', {
+            fnKey,
+            domain: hostname,
+            provider: providerName,
+          }),
+        });
+      }
+      if (rawPath !== undefined && !isValidFunctionRoutePath(rawPath)) {
+        push({
+          instancePath: bindingPath,
+          schemaPath: '#/semantic/functionDomainsInvalidPath',
+          keyword: 'functionDomainsInvalidPath',
+          message: lang.__('FUNCTION_DOMAINS_INVALID_PATH', { fnKey, path: rawPath }),
+        });
+        return;
+      }
+      if (hostname) {
+        const bindingKey = `${hostname}\u0000${path}`;
+        if (seenBindings.has(bindingKey)) {
+          push({
+            instancePath: bindingPath,
+            schemaPath: '#/semantic/functionDomainsDuplicateBinding',
+            keyword: 'functionDomainsDuplicateBinding',
+            message: lang.__('FUNCTION_DOMAINS_DUPLICATE_BINDING', {
+              fnKey,
+              domain: hostname,
+              path,
+            }),
+          });
+          return;
+        }
+        seenBindings.set(bindingKey, index);
+      }
+
+      const rawProtocol = binding.protocol;
+      const protocol =
+        typeof rawProtocol === 'string' && TEMPLATE_REF_PATTERN.test(rawProtocol)
+          ? undefined
+          : Array.isArray(rawProtocol) &&
+              rawProtocol.every(
+                (value) => typeof value === 'string' && !TEMPLATE_REF_PATTERN.test(value),
+              )
+            ? normalizeFunctionProtocol(rawProtocol as Array<string>)
+            : normalizeFunctionProtocol(
+                typeof rawProtocol === 'string' ? (rawProtocol as string) : undefined,
+              );
+      const cert = certFormOf(binding);
+      allBindings.push({
+        fnKey,
+        hostname,
+        path,
+        ...(protocol ? { protocol } : {}),
+        ...(cert ? { cert } : {}),
+      });
+    });
+  });
+
+  // Cross-function consistency on same-domain bindings (issue #286): one
+  // cloud-side domain resource per domain_name, so certificate, protocol and
+  // the exact route path set must agree.
+  const byHostname = new Map<string, Array<ParsedFunctionDomainBinding>>();
+  allBindings.forEach((binding) => {
+    if (!binding.hostname) return;
+    const group = byHostname.get(binding.hostname) ?? [];
+    group.push(binding);
+    byHostname.set(binding.hostname, group);
+  });
+
+  byHostname.forEach((group, hostname) => {
+    const first = group[0];
+
+    const protocols = [...new Set(group.map((binding) => JSON.stringify(binding.protocol)))];
+    if (protocols.length > 1) {
+      push({
+        instancePath: `/functions/${group[1].fnKey}/domains`,
+        schemaPath: '#/semantic/functionDomainsProtocolMismatch',
+        keyword: 'functionDomainsProtocolMismatch',
+        message: lang.__('FUNCTION_DOMAINS_PROTOCOL_MISMATCH', {
+          domain: hostname,
+          fnKey: first.fnKey,
+          otherFnKey: group[1].fnKey,
+        }),
+      });
+    }
+
+    const withCert = group.filter((binding) => binding.cert);
+    const certs = [...new Set(withCert.map((binding) => JSON.stringify(binding.cert)))];
+    if (certs.length > 1 && withCert.length >= 2) {
+      const firstWithCert = withCert[0];
+      const secondWithCert = withCert[1];
+      push({
+        instancePath: `/functions/${secondWithCert.fnKey}/domains`,
+        schemaPath: '#/semantic/functionDomainsCertificateMismatch',
+        keyword: 'functionDomainsCertificateMismatch',
+        message: lang.__('FUNCTION_DOMAINS_CERTIFICATE_MISMATCH', {
+          domain: hostname,
+          fnKey: firstWithCert.fnKey,
+          otherFnKey: secondWithCert.fnKey,
+        }),
+      });
+    }
+
+    const byPath = new Map<string, Array<ParsedFunctionDomainBinding>>();
+    group.forEach((binding) => {
+      const group2 = byPath.get(binding.path) ?? [];
+      group2.push(binding);
+      byPath.set(binding.path, group2);
+    });
+    byPath.forEach((samePath, path) => {
+      if (samePath.length < 2) return;
+      push({
+        instancePath: `/functions/${samePath[1].fnKey}/domains`,
+        schemaPath: '#/semantic/functionDomainsPathConflict',
+        keyword: 'functionDomainsPathConflict',
+        message: lang.__('FUNCTION_DOMAINS_PATH_CONFLICT', {
+          domain: hostname,
+          path,
+          fnKey: samePath[0].fnKey,
+          otherFnKey: samePath[1].fnKey,
+        }),
+      });
+    });
+  });
+};
+
 /** Tencent SCF allows at most 10 same-type triggers per function (#212 matrix). */
 const TENCENT_TIMER_TRIGGER_LIMIT = 10;
 
@@ -389,6 +662,8 @@ export const validateSemantics = (iacJson: ServerlessIacRaw): Array<ErrorObject>
       });
     }
   });
+
+  validateFunctionDomains(providerName, functionDefinitions, errors);
 
   validateBuckets(providerName, buckets, errors);
 

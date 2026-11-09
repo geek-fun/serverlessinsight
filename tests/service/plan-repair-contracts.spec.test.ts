@@ -417,7 +417,7 @@ describe('deployment read and ownership repair contracts', () => {
     await fs.writeFile(
       yamlPath,
       base +
-        `provider:\n  name: aliyun\n  region: cn-hangzhou\nfunctions:\n  handler:\n    name: synthetic-handler\n    code:\n      runtime: nodejs18\n      handler: index.handler\n      path: ${codePath}\n    iam:\n      role: acs:ram::123:role/external\n    triggers:\n      http:\n        auth_type: public\n    domain:\n      domain_name: api.example.com\n      protocol: HTTP\n`,
+        `provider:\n  name: aliyun\n  region: cn-hangzhou\nfunctions:\n  handler:\n    name: synthetic-handler\n    code:\n      runtime: nodejs18\n      handler: index.handler\n      path: ${codePath}\n    iam:\n      role: acs:ram::123:role/external\n    triggers:\n      http:\n        auth_type: public\n    domains:\n      - domain_name: api.example.com\n        protocol: HTTP\n`,
     );
     const fn = parseYaml(yamlPath).functions![0];
     await setContext({ ...context, parameters: {}, stages: {}, location: yamlPath });
@@ -429,6 +429,11 @@ describe('deployment read and ownership repair contracts', () => {
       createCustomDomain: jest.fn(async (request: { body: Record<string, unknown> }) => {
         domain = request.body;
       }),
+      updateCustomDomain: jest.fn(
+        async (domainName: string, request: { body: Record<string, unknown> }) => {
+          domain = { ...domain, domainName, ...request.body };
+        },
+      ),
       deleteCustomDomain: jest.fn(async () => {
         if (!domain) throw { code: 'CustomDomainNotFound' };
         domain = null;
@@ -460,6 +465,7 @@ describe('deployment read and ownership repair contracts', () => {
     const fc3 = {
       ...client.fc3,
       createCustomDomain: domains.createCustomDomain,
+      updateCustomDomain: domains.updateCustomDomain,
       deleteCustomDomain: domains.deleteCustomDomain,
       getCustomDomain: domains.getCustomDomain,
     };
@@ -500,7 +506,7 @@ describe('deployment read and ownership repair contracts', () => {
       await fs.writeFile(
         yamlPath,
         base +
-          `provider:\n  name: tencent\n  region: ap-guangzhou\nfunctions:\n  handler:\n    name: synthetic-handler\n    code:\n      runtime: nodejs18\n      handler: index.handler\n      path: ${codePath}\n    iam:\n      role: external-role\n    triggers:\n      http:\n        auth_type: public\n    domain:\n      domain_name: api.example.com\n      protocol: HTTP\n`,
+          `provider:\n  name: tencent\n  region: ap-guangzhou\nfunctions:\n  handler:\n    name: synthetic-handler\n    code:\n      runtime: nodejs18\n      handler: index.handler\n      path: ${codePath}\n    iam:\n      role: external-role\n    triggers:\n      http:\n        auth_type: public\n    domains:\n      - domain_name: api.example.com\n        protocol: HTTP\n`,
       );
       const fn = parseYaml(yamlPath).functions![0];
       const raw = createMockTencentClient();

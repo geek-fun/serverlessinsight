@@ -32,7 +32,7 @@ const UPDATE_FIELDS: Record<string, readonly string[]> = {
     'logConfig',
     'logEnabled',
     'http',
-    'domain',
+    'domains',
     'timers',
   ],
   // v1 (issue #279): domain bindings live in the `domains` list and are

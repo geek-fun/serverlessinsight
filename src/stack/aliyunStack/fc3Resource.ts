@@ -30,6 +30,7 @@ import {
 import {
   Context,
   FunctionDomain,
+  FunctionDomainBindingParsed,
   PartialResourceError,
   ResourceAttributes,
   ResourceInstance,
@@ -38,6 +39,20 @@ import {
   TimerTrigger,
 } from '../../types';
 import { translateSiCron } from '../../common/siCron';
+import { readPemContent } from '../../common/certUtils';
+import {
+  aggregateFunctionDomainBindings,
+  collectStackFunctionNames,
+  functionDomainDefinitionEntry,
+  mapFunctionProtocol,
+  mergeDomainRoutes,
+  routesEqual,
+  routesReferenceStackFunctions,
+  storedFunctionDomainBindings,
+  storedFunctionDomainCertHash,
+  toFunctionDomainRoutes,
+  type AggregatedFunctionDomainBinding,
+} from '../../common/functionDomainReconcile';
 import { extractFc3Definition, Fc3FunctionInfo, functionToFc3Config } from './fc3Types';
 import { SLS_LOGSTORE_SHARDS, SLS_LOGSTORE_TTL } from '../../common/aliyunClient/slsOperations';
 import {
@@ -64,8 +79,13 @@ type DependentInstance = {
   sid?: string;
   roleArn?: string;
   external?: boolean;
+  paths?: Array<string>;
   attributes: Record<string, unknown>;
 };
+
+const FC3_DOMAIN_INSTANCE_TYPE = 'ALIYUN_FC3_CUSTOM_DOMAIN';
+
+type Fc3CertMaterial = { certName: string; certificate: string; privateKey: string };
 
 const RECOVERY_GET_FUNCTION_DELAY_MS = 1500;
 
@@ -120,6 +140,207 @@ const buildDefaultRoleName = buildFunctionRoleName;
 
 const buildFc3CertName = (service: string, stage: string): string =>
   `${service}-${stage}-fc3-domain`;
+
+/** Resolves a binding's certificate to the inline PEM the FC3 API requires: a CAS reference is fetched, inline PEM is read (file path or literal). */
+const resolveFc3CertMaterial = async (
+  context: Context,
+  client: ReturnType<typeof createAliyunClient>,
+  binding: FunctionDomainBindingParsed,
+): Promise<Fc3CertMaterial | undefined> => {
+  if (binding.certificate_id) {
+    const detail = await client.cas.getCertificate(binding.certificate_id);
+    if (!detail || !detail.cert || !detail.key) {
+      throw new Error(lang.__('CERT_REFERENCE_NOT_FOUND', { reference: binding.certificate_id }));
+    }
+    return {
+      certName: buildFc3CertName(context.service, context.stage),
+      certificate: detail.cert,
+      privateKey: detail.key,
+    };
+  }
+  if (binding.certificate_body && binding.certificate_private_key) {
+    return {
+      certName: buildFc3CertName(context.service, context.stage),
+      certificate: readPemContent(binding.certificate_body),
+      privateKey: readPemContent(binding.certificate_private_key),
+    };
+  }
+  return undefined;
+};
+
+/**
+ * Releases a function's routes from a cloud-side domain (issue #286): a
+ * pure route subtraction — when the function was the last binding, the
+ * domain itself is deleted (per-owner teardown with a live-route check).
+ */
+const releaseFc3DomainRoutes = async (
+  client: ReturnType<typeof createAliyunClient>,
+  domainName: string,
+  own: { functionName: string; paths: Array<string> },
+): Promise<void> => {
+  const live = await client.fc3.getCustomDomain(domainName);
+  if (!live) return;
+  const liveRoutes = toFunctionDomainRoutes(live.routeConfig);
+  const remaining = mergeDomainRoutes(liveRoutes, own, 'remove');
+  if (remaining.length === 0) {
+    logger.info(
+      lang.__('FUNCTION_DOMAIN_ROUTE_RELEASED', { functionName: own.functionName, domainName }),
+    );
+    await client.fc3.deleteCustomDomain(domainName);
+    logger.info(lang.__('CUSTOM_DOMAIN_DELETED', { domainName }));
+    return;
+  }
+  if (routesEqual(liveRoutes, remaining)) return;
+  logger.info(
+    lang.__('REMOVING_FUNCTION_DOMAIN_ROUTES', { functionName: own.functionName, domainName }),
+  );
+  await client.fc3.updateCustomDomain(domainName, { routes: remaining });
+};
+
+const buildFc3DomainBindingInstance = (
+  context: Context,
+  binding: AggregatedFunctionDomainBinding,
+  protocolString: string,
+): DependentInstance => ({
+  type: FC3_DOMAIN_INSTANCE_TYPE,
+  id: binding.domainName,
+  sid: buildSid('aliyun', 'fc3-custom-domain', context.stage, binding.domainName),
+  paths: binding.paths,
+  attributes: {
+    protocol: protocolString,
+    certificate_id: binding.representative.certificate_id ?? null,
+  },
+});
+
+/**
+ * Converges one domain binding: creates the domain (with state-less adoption
+ * when a previous partial run already created it — ownership proven by live
+ * routes referencing this stack's functions), or updates routes/protocol in
+ * place. Certificates redeploy only on content change (certificate_hash in
+ * state, issue #283 pattern).
+ */
+const applyFc3DomainBinding = async (
+  context: Context,
+  fn: FunctionDomain,
+  existingState: ResourceState | undefined,
+  client: ReturnType<typeof createAliyunClient>,
+  desired: AggregatedFunctionDomainBinding,
+  options?: { repairDomain?: boolean },
+): Promise<DependentInstance> => {
+  const protocolString = mapFunctionProtocol('aliyun', desired.representative.protocol);
+  const live = await client.fc3.getCustomDomain(desired.domainName);
+  const liveRoutes = toFunctionDomainRoutes(live?.routeConfig);
+  const desiredRoutes = mergeDomainRoutes(
+    liveRoutes,
+    {
+      functionName: fn.name,
+      paths: desired.paths,
+    },
+    'apply',
+  );
+
+  const desiredCertHash =
+    functionDomainDefinitionEntry(desired.representative).certificate_hash ?? undefined;
+  const storedCertHash = storedFunctionDomainCertHash(
+    existingState?.definition,
+    desired.domainName,
+  );
+  const certChanged = storedCertHash !== desiredCertHash || options?.repairDomain === true;
+  const certMaterial = certChanged
+    ? await resolveFc3CertMaterial(context, client, desired.representative)
+    : undefined;
+
+  const converge = async (current: NonNullable<typeof live>): Promise<void> => {
+    const currentRoutes = toFunctionDomainRoutes(current.routeConfig);
+    const protocolChanged = current.protocol !== undefined && current.protocol !== protocolString;
+    const routesChanged = !routesEqual(currentRoutes, desiredRoutes);
+    if (protocolChanged || routesChanged || certMaterial) {
+      logger.info(
+        lang.__('UPDATING_FUNCTION_DOMAIN_ROUTES', {
+          domainName: desired.domainName,
+          count: String(desiredRoutes.length),
+        }),
+      );
+      await client.fc3.updateCustomDomain(desired.domainName, {
+        protocol: protocolString,
+        routes: desiredRoutes,
+        ...(certMaterial ? { certConfig: certMaterial } : {}),
+      });
+    }
+  };
+
+  if (!live) {
+    const stackFunctionNames = collectStackFunctionNames(context.iac?.functions, fn.name);
+    try {
+      logger.info(lang.__('CREATING_CUSTOM_DOMAIN', { domainName: desired.domainName }));
+      await client.fc3.createCustomDomain(
+        desired.domainName,
+        protocolString,
+        desiredRoutes,
+        certMaterial,
+      );
+      logger.info(lang.__('CUSTOM_DOMAIN_CREATED', { domainName: desired.domainName }));
+    } catch (error) {
+      if (!isResourceAlreadyExistsError(error)) throw error;
+      const existing = await client.fc3.getCustomDomain(desired.domainName);
+      if (
+        !existing ||
+        !routesReferenceStackFunctions(
+          toFunctionDomainRoutes(existing.routeConfig),
+          stackFunctionNames,
+        )
+      ) {
+        throw new Error(
+          lang.__('FUNCTION_DOMAIN_EXISTS_NOT_OWNED', { domainName: desired.domainName }),
+          error instanceof Error ? { cause: error } : undefined,
+        );
+      }
+      logger.info(lang.__('FUNCTION_DOMAIN_OWNED_ADOPT', { domainName: desired.domainName }));
+      await converge(existing);
+    }
+  } else {
+    await converge(live);
+  }
+
+  return buildFc3DomainBindingInstance(context, desired, protocolString);
+};
+
+/**
+ * Reconciles every domain this function touches: desired bindings converge
+ * the shared domain resource (routes merged with other functions' routes),
+ * removed bindings are released. Returns the fresh binding instances.
+ */
+const reconcileFc3FunctionDomains = async (
+  context: Context,
+  fn: FunctionDomain,
+  existingInstances: Array<DependentInstance>,
+  existingState: ResourceState | undefined,
+  client: ReturnType<typeof createAliyunClient>,
+  options?: { repairDomain?: boolean },
+): Promise<Array<DependentInstance>> => {
+  const storedBindings = storedFunctionDomainBindings(
+    existingInstances as Array<Record<string, unknown>>,
+    FC3_DOMAIN_INSTANCE_TYPE,
+  );
+  const desiredBindings = aggregateFunctionDomainBindings(fn.domains);
+  const touched = [...new Set([...storedBindings.keys(), ...desiredBindings.keys()])].sort();
+
+  const instances: Array<DependentInstance> = [];
+  for (const domainName of touched) {
+    const desired = desiredBindings.get(domainName);
+    if (desired) {
+      instances.push(
+        await applyFc3DomainBinding(context, fn, existingState, client, desired, options),
+      );
+    } else {
+      await releaseFc3DomainRoutes(client, domainName, {
+        functionName: fn.name,
+        paths: storedBindings.get(domainName)?.paths ?? [],
+      });
+    }
+  }
+  return instances;
+};
 
 type RolePeer = { fn: FunctionDomain; logConfig?: { project: string; logstore: string } };
 
@@ -1055,7 +1276,7 @@ export const createResource = async (
     status: 'tainted',
   };
 
-  const stateAfterDependents = setResource(stateWithSharedProject, logicalId, taintedResourceState);
+  let stateAfterDependents = setResource(stateWithSharedProject, logicalId, taintedResourceState);
 
   const client = createAliyunClient(context);
 
@@ -1210,38 +1431,28 @@ export const createResource = async (
 
     lifecycleInstances.push(...(await reconcileFc3TimerTriggers(context, fn, [], client)));
 
-    if (fn.domain) {
-      logger.info(lang.__('CREATING_CUSTOM_DOMAIN', { domainName: fn.domain.domain_name }));
-
-      let certConfig: { certName: string; certificate: string; privateKey: string } | undefined;
-      if (fn.domain.certificate_id) {
-        const certId = fn.domain.certificate_id;
-        const detail = await client.cas.getCertificate(certId);
-        if (!detail || !detail.cert || !detail.key) {
-          throw new Error(lang.__('CERT_REFERENCE_NOT_FOUND', { reference: certId }));
-        }
-        certConfig = {
-          certName: buildFc3CertName(context.service, context.stage),
-          certificate: detail.cert,
-          privateKey: detail.key,
-        };
-      }
-
-      await client.fc3.createCustomDomain(
-        fn.domain.domain_name,
-        fn.domain.protocol,
-        fn.name,
-        certConfig,
-      );
-      logger.info(lang.__('CUSTOM_DOMAIN_CREATED', { domainName: fn.domain.domain_name }));
-
-      lifecycleInstances.push({
-        type: 'ALIYUN_FC3_CUSTOM_DOMAIN',
-        id: fn.domain.domain_name,
-        sid: buildSid('aliyun', 'fc3-custom-domain', context.stage, fn.domain.domain_name),
-        attributes: { protocol: fn.domain.protocol, certificate_id: fn.domain.certificate_id },
+    // Snapshot trigger/timer progress before domain ops so a domain failure
+    // doesn't lose the just-created trigger on retry.
+    if (lifecycleInstances.length > 0) {
+      stateAfterDependents = setResource(stateAfterDependents, logicalId, {
+        ...taintedResourceState,
+        instances: [
+          fcInstance,
+          ...lifecycleInstances,
+          ...dependentInstances,
+        ] as Array<ResourceInstance>,
       });
     }
+
+    lifecycleInstances.push(
+      ...(await reconcileFc3FunctionDomains(
+        context,
+        fn,
+        existingDependentInstances,
+        existingResourceState,
+        client,
+      )),
+    );
   } catch (error) {
     throw new PartialResourceError(
       stateAfterDependents,
@@ -1885,94 +2096,18 @@ export const updateResource = async (
     }
   }
 
-  const existingCustomDomain = existingInstances.find(
-    (i) => i.type === 'ALIYUN_FC3_CUSTOM_DOMAIN',
-  ) as DependentInstance | undefined;
-  const desiredDomain = fn.domain;
-
   const timerInstances = await reconcileFc3TimerTriggers(context, fn, existingInstances, client);
 
-  if (desiredDomain && !existingCustomDomain) {
-    logger.info(lang.__('CREATING_CUSTOM_DOMAIN', { domainName: desiredDomain.domain_name }));
-
-    let certConfig: { certName: string; certificate: string; privateKey: string } | undefined;
-    if (desiredDomain.certificate_id) {
-      const certId = desiredDomain.certificate_id;
-      const detail = await client.cas.getCertificate(certId);
-      if (!detail || !detail.cert || !detail.key) {
-        throw new Error(lang.__('CERT_REFERENCE_NOT_FOUND', { reference: certId }));
-      }
-      certConfig = {
-        certName: buildFc3CertName(context.service, context.stage),
-        certificate: detail.cert,
-        privateKey: detail.key,
-      };
-    }
-
-    await client.fc3.createCustomDomain(
-      desiredDomain.domain_name,
-      desiredDomain.protocol,
-      fn.name,
-      certConfig,
-    );
-    logger.info(lang.__('CUSTOM_DOMAIN_CREATED', { domainName: desiredDomain.domain_name }));
-  } else if (!desiredDomain && existingCustomDomain) {
-    logger.info(lang.__('DELETING_CUSTOM_DOMAIN', { domainName: existingCustomDomain.id }));
-    try {
-      await client.fc3.deleteCustomDomain(existingCustomDomain.id);
-      logger.info(lang.__('CUSTOM_DOMAIN_DELETED', { domainName: existingCustomDomain.id }));
-    } catch (err) {
-      const errorCode = (err as { code?: string })?.code;
-      if (errorCode !== 'CustomDomainNotFound') throw err;
-      logger.warn(
-        lang.__('RESOURCE_NOT_FOUND_PROVIDER', {
-          resourceType: 'Custom Domain',
-          name: existingCustomDomain.id,
-        }),
-      );
-    }
-  } else if (desiredDomain && existingCustomDomain) {
-    const existingProtocol = existingCustomDomain.attributes?.protocol as string | undefined;
-    const domainChanged =
-      options?.repairDomain ||
-      !attributesEqual(
-        (existingState?.definition?.domain as Record<string, unknown>) ?? {},
-        desiredDomain as unknown as Record<string, unknown>,
-      ) ||
-      desiredDomain.domain_name !== existingCustomDomain.id ||
-      desiredDomain.protocol !== existingProtocol;
-    if (domainChanged) {
-      logger.info(lang.__('UPDATING_CUSTOM_DOMAIN', { domainName: desiredDomain.domain_name }));
-
-      let certConfig: { certName: string; certificate: string; privateKey: string } | undefined;
-      if (desiredDomain.certificate_id) {
-        const certId = desiredDomain.certificate_id;
-        const detail = await client.cas.getCertificate(certId);
-        if (!detail || !detail.cert || !detail.key) {
-          throw new Error(lang.__('CERT_REFERENCE_NOT_FOUND', { reference: certId }));
-        }
-        certConfig = {
-          certName: buildFc3CertName(context.service, context.stage),
-          certificate: detail.cert,
-          privateKey: detail.key,
-        };
-      }
-
-      try {
-        await client.fc3.deleteCustomDomain(existingCustomDomain.id);
-      } catch (err) {
-        const errorCode = (err as { code?: string })?.code;
-        if (errorCode !== 'CustomDomainNotFound') throw err;
-      }
-      await client.fc3.createCustomDomain(
-        desiredDomain.domain_name,
-        desiredDomain.protocol,
-        fn.name,
-        certConfig,
-      );
-      logger.info(lang.__('CUSTOM_DOMAIN_CREATED', { domainName: desiredDomain.domain_name }));
-    }
-  }
+  // Cross-function merged routes (issue #286): this function's bindings
+  // converge the shared domain resources; removed bindings release routes.
+  const domainInstances = await reconcileFc3FunctionDomains(
+    context,
+    fn,
+    existingInstances,
+    existingState,
+    client,
+    { repairDomain: options?.repairDomain },
+  );
 
   const functionInfo = await client.fc3.getFunction(fn.name);
   if (!functionInfo) {
@@ -1997,14 +2132,7 @@ export const updateResource = async (
     });
   }
   lifecycleInstances.push(...timerInstances);
-  if (fn.domain) {
-    lifecycleInstances.push({
-      type: 'ALIYUN_FC3_CUSTOM_DOMAIN',
-      id: fn.domain.domain_name,
-      sid: buildSid('aliyun', 'fc3-custom-domain', context.stage, fn.domain.domain_name),
-      attributes: { protocol: fn.domain.protocol },
-    });
-  }
+  lifecycleInstances.push(...domainInstances);
 
   const existingDependentInstances = existingInstances
     .filter((i) => i.type !== 'ALIYUN_FC3_FUNCTION')
@@ -2046,7 +2174,7 @@ export const updateResource = async (
     definition: withLifecycleIntent(
       mergeManagedIntent(existingState?.definition ?? {}, definition),
       definition,
-      ['http', 'domain', 'timers'],
+      ['http', 'domains', 'timers'],
     ),
     instances: [
       fcInstance,
@@ -2105,6 +2233,20 @@ export const deleteResource = async (
     }
   }
 
+  // Domain routes are released before the trigger/function teardown (issue
+  // #286 contract: domain 摘除 → trigger → function). Other functions' routes
+  // survive; the domain itself is deleted only when this was the last binding.
+  const storedDomainBindings = storedFunctionDomainBindings(
+    existingInstances as Array<Record<string, unknown>>,
+    FC3_DOMAIN_INSTANCE_TYPE,
+  );
+  for (const [domainName, binding] of storedDomainBindings) {
+    await releaseFc3DomainRoutes(client, domainName, {
+      functionName,
+      paths: binding.paths,
+    });
+  }
+
   const httpTriggerInstance = existingInstances.find((i) => i.type === 'ALIYUN_FC3_HTTP_TRIGGER');
   if (httpTriggerInstance) {
     logger.info(
@@ -2117,27 +2259,6 @@ export const deleteResource = async (
       const errorCode = (err as { code?: string })?.code;
       if (errorCode === 'TriggerNotFound') {
         logger.warn(lang.__('HTTP_TRIGGER_NOT_FOUND', { triggerName: httpTriggerInstance.id }));
-      } else {
-        throw err;
-      }
-    }
-  }
-
-  const customDomainInstance = existingInstances.find((i) => i.type === 'ALIYUN_FC3_CUSTOM_DOMAIN');
-  if (customDomainInstance) {
-    logger.info(lang.__('DELETING_CUSTOM_DOMAIN', { domainName: customDomainInstance.id }));
-    try {
-      await client.fc3.deleteCustomDomain(customDomainInstance.id);
-      logger.info(lang.__('CUSTOM_DOMAIN_DELETED', { domainName: customDomainInstance.id }));
-    } catch (err) {
-      const errorCode = (err as { code?: string })?.code;
-      if (errorCode === 'CustomDomainNotFound') {
-        logger.warn(
-          lang.__('RESOURCE_NOT_FOUND_PROVIDER', {
-            resourceType: 'Custom Domain',
-            name: customDomainInstance.id,
-          }),
-        );
       } else {
         throw err;
       }

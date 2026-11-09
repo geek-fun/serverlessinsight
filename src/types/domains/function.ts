@@ -31,16 +31,31 @@ export type TimerTrigger = {
   description?: string;
 };
 
-export type FunctionDomainConfigRaw = {
+export type FunctionProtocol = 'HTTP' | 'HTTPS';
+
+/**
+ * One custom-domain binding of a function (issue #286). The same
+ * `domain_name` may appear under multiple functions — si merges their routes
+ * into a single cloud-side domain resource; certificate and protocol are
+ * per-domain physical facts and must be consistent across same-domain
+ * bindings (enforced in semantic validation).
+ */
+export type FunctionDomainBindingRaw = {
   domain_name: Resolvable<string>;
+  path?: Resolvable<string>;
   certificate_id?: Resolvable<string>;
-  protocol?: Resolvable<string>;
+  certificate_body?: Resolvable<string>;
+  certificate_private_key?: Resolvable<string>;
+  protocol?: Resolvable<string | string[]>;
 };
 
-export type FunctionDomainConfigParsed = {
+export type FunctionDomainBindingParsed = {
   domain_name: string;
+  path: string;
   certificate_id?: string;
-  protocol: string;
+  certificate_body?: string;
+  certificate_private_key?: string;
+  protocol: FunctionProtocol[];
 };
 
 export type FunctionRaw = {
@@ -89,7 +104,7 @@ export type FunctionRaw = {
     http?: HttpTriggerRaw;
     timer?: Array<TimerTriggerRaw>;
   };
-  domain?: FunctionDomainConfigRaw;
+  domains?: Array<FunctionDomainBindingRaw>;
   storage?: {
     disk?: Resolvable<number>;
     nas?: Array<{
@@ -146,7 +161,7 @@ export type FunctionDomain = {
     http?: HttpTrigger;
     timer?: Array<TimerTrigger>;
   };
-  domain?: FunctionDomainConfigParsed;
+  domains?: Array<FunctionDomainBindingParsed>;
   storage: {
     disk?: number;
     nas?: Array<{

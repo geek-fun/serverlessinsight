@@ -315,12 +315,42 @@ export const createScfOperations = (scfClient: ScfSdkClient, deps: ScfOperations
       });
     },
 
+    updateCustomDomain: async (params: {
+      Domain: string;
+      Protocol?: string;
+      EndpointsConfig?: Array<{
+        Namespace: string;
+        FunctionName: string;
+        Qualifier: string;
+        PathMatch: string;
+      }>;
+      CertConfig?: { CertificateId?: string };
+    }): Promise<void> => {
+      await scfClient.UpdateCustomDomain({
+        Domain: params.Domain,
+        ...(params.Protocol !== undefined ? { Protocol: params.Protocol } : {}),
+        ...(params.EndpointsConfig
+          ? {
+              EndpointsConfig: params.EndpointsConfig.map((ep) => ({
+                Namespace: ep.Namespace,
+                FunctionName: ep.FunctionName,
+                Qualifier: ep.Qualifier,
+                PathMatch: ep.PathMatch,
+              })),
+            }
+          : {}),
+        ...(params.CertConfig ? { CertConfig: params.CertConfig } : {}),
+      });
+    },
+
     getCustomDomain: async (
       domain: string,
     ): Promise<{
       Domain?: string;
       Protocol?: string;
+      CertificateId?: string;
       EndpointsConfig?: Array<{
+        Namespace?: string;
         FunctionName?: string;
         Qualifier?: string;
         PathMatch?: string;
@@ -332,7 +362,11 @@ export const createScfOperations = (scfClient: ScfSdkClient, deps: ScfOperations
         return {
           Domain: response.Domain,
           Protocol: response.Protocol,
+          ...(response.CertConfig?.CertificateId
+            ? { CertificateId: response.CertConfig.CertificateId }
+            : {}),
           EndpointsConfig: response.EndpointsConfig?.map((ep) => ({
+            Namespace: ep.Namespace,
             FunctionName: ep.FunctionName,
             Qualifier: ep.Qualifier,
             PathMatch: ep.PathMatch,
@@ -343,7 +377,8 @@ export const createScfOperations = (scfClient: ScfSdkClient, deps: ScfOperations
           error &&
           typeof error === 'object' &&
           'code' in error &&
-          error.code === 'ResourceNotFound'
+          (error.code === 'ResourceNotFound' ||
+            String(error.code ?? '').startsWith('ResourceNotFound'))
         ) {
           return null;
         }

@@ -38,7 +38,14 @@ describe('SCF lifecycle planning', () => {
   };
   const domainFn: FunctionDomain = {
     ...fn,
-    domain: { domain_name: 'api.example.com', protocol: 'HTTPS', certificate_id: 'cert-1' },
+    domains: [
+      {
+        domain_name: 'api.example.com',
+        path: '/*',
+        protocol: ['HTTPS'],
+        certificate_id: 'cert-1',
+      },
+    ],
   };
   const matchingHttp = {
     AuthType: 'NONE',
@@ -162,7 +169,10 @@ describe('SCF lifecycle planning', () => {
   );
 
   it('labels a domain protocol edit as intent rather than cloud drift', async () => {
-    const desired = { ...domainFn, domain: { ...domainFn.domain!, protocol: 'HTTP' } };
+    const desired: FunctionDomain = {
+      ...domainFn,
+      domains: [{ ...domainFn.domains![0], protocol: ['HTTP'] }],
+    };
 
     const plan = await generateFunctionPlan(context, stateFor(domainFn), [desired]);
 

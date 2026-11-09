@@ -3,7 +3,9 @@ import { isStringTemplateField } from '../../../src/parser/templateValues';
 describe('template destination types', () => {
   it.each([
     ['events', 'gateway', 'domain', 'certificate_id'],
-    ['functions', 'handler', 'domain', 'certificate_id'],
+    ['functions', 'handler', 'domains', 0, 'certificate_id'],
+    ['functions', 'handler', 'domains', 0, 'domain_name'],
+    ['functions', 'handler', 'domains', 0, 'path'],
     ['buckets', 'assets', 'domains', 0, 'certificate_id'],
     ['buckets', 'assets', 'domains', 0, 'domain_name'],
     ['functions', 'handler', 'name'],

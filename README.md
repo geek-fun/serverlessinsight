@@ -261,6 +261,7 @@ Configure HTTP endpoints and bind custom domains with automatic DNS verification
 - **CDN acceleration** — edge caching and global content delivery for bucket domains on Alibaba Cloud and Tencent COS (see the [capability matrix](docs/oss-custom-domain-binding.md#cdn-delivery-capability-matrix))
 - **OSS transfer acceleration** — cross-region data transfers through the Alibaba backbone
 - **Tencent function URLs** — HTTP entry points without a standalone gateway resource
+- **Function custom domains** — per-function `domains` binding list with cross-function path-merged routes, certificates (`certificate_id` or inline PEM) and a public function-URL precondition on Alibaba Cloud and Tencent Cloud (see the [binding guide](docs/function-custom-domain-binding.md))
 
 ### Timer triggers
 
