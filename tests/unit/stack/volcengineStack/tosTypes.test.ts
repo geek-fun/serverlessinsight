@@ -6,6 +6,7 @@ import {
 } from '../../../../src/stack/volcengineStack/tosTypes';
 import { remoteDiffersFromDesired } from '../../../../src/common/planCompare';
 import type { BucketDomain } from '../../../../src/types';
+import { BucketAccessEnum } from '../../../../src/types';
 import type { TosBucketInfo } from '../../../../src/common/volcengineClient/types';
 
 describe('tosTypes', () => {
@@ -121,6 +122,67 @@ describe('tosTypes', () => {
 
       const def = extractTosBucketDefinition(config, 'abc123');
       expect(def.websiteCodeHash).toBe('abc123');
+    });
+
+    it('maps storage class and acl into the definition', () => {
+      const config = bucketToTosConfig({
+        key: 'test_bucket',
+        name: 'test-bucket',
+        security: { acl: BucketAccessEnum.PUBLIC_READ, force_delete: false },
+        storage: { class: 'IA' },
+      });
+
+      const def = extractTosBucketDefinition(config);
+      expect(def.acl).toBe('public-read');
+      expect(config.storageClass).toBe('IA');
+      expect(def.storageClass).toBe('IA');
+      expect(def.accelerate).toBe(false);
+    });
+
+    it('canonicalizes multiple bindings sorted by hostname (issue #294)', () => {
+      const config = bucketToTosConfig({
+        key: 'test_bucket',
+        name: 'test-bucket',
+        domains: [
+          { domain_name: 'z.example.com', cdn: true },
+          { domain_name: 'a.example.com', certificate_id: 'cert-1' },
+        ],
+      });
+
+      const def = extractTosBucketDefinition(config);
+      const domains = def.domains as Array<Record<string, unknown>>;
+      expect(domains.map((entry) => entry.domain_name)).toEqual(['a.example.com', 'z.example.com']);
+      expect(domains[1].cdn).toEqual(
+        expect.objectContaining({ enabled: true, cdn_type: 'web', scope: 'global' }),
+      );
+    });
+
+    it('maps the website index document into the definition', () => {
+      const config = bucketToTosConfig({
+        key: 'test_bucket',
+        name: 'test-bucket',
+        website: { index: 'index.html', code: './dist' },
+      });
+
+      expect(config.websiteConfig).toEqual({
+        indexDocument: 'index.html',
+        errorDocument: 'index.html',
+      });
+      expect(extractTosBucketDefinition(config).websiteConfiguration).toEqual({
+        indexDocument: 'index.html',
+        errorDocument: 'index.html',
+      });
+    });
+
+    it('records accelerate when the bucket enables it (issue #294)', () => {
+      const config = bucketToTosConfig({
+        key: 'test_bucket',
+        name: 'test-bucket',
+        accelerate: true,
+      });
+
+      expect(config.accelerateEnabled).toBe(true);
+      expect(extractTosBucketDefinition(config).accelerate).toBe(true);
     });
   });
 

@@ -710,5 +710,62 @@ describe('tosPlanner', () => {
       expect(deleteItems).toHaveLength(1);
       expect(deleteItems[0].logicalId).toBe('buckets.old_bucket');
     });
+
+    it('shows removed binding dependents when the domains list is dropped (issue #294)', async () => {
+      const buckets: Array<BucketDomain> = [
+        {
+          key: 'static_site',
+          name: 'test-bucket',
+        },
+      ];
+      const ownedTag = {
+        Key: 'si-owned-by',
+        Value: 'test-app-test-service:buckets.static_site@cn-beijing',
+      };
+      const stateWithBindings: StateFile = {
+        ...mockState,
+        resources: {
+          'buckets.static_site': {
+            mode: 'managed',
+            region: 'cn-beijing',
+            definition: {
+              bucketName: 'test-bucket',
+              acl: null,
+              storageClass: null,
+              websiteConfiguration: null,
+              websiteCodeHash: null,
+              domains: [{ domain_name: 'cdn.example.com', cdn: { enabled: true } }],
+              accelerate: false,
+              policy: null,
+            },
+            instances: [
+              { sid: 'test-sid', id: 'test-bucket', type: 'VOLCENGINE_TOS_BUCKET' },
+              {
+                sid: 'cdn-sid',
+                id: 'cdn.example.com',
+                type: 'VOLCENGINE_CDN_DOMAIN',
+                domainName: 'cdn.example.com',
+                cname: 'cdn.example.com.boscdn.com',
+              },
+            ],
+            lastUpdated: '2024-01-01T00:00:00Z',
+          },
+        },
+      };
+
+      mockTosClient.tos.getBucket.mockResolvedValueOnce({
+        name: 'test-bucket',
+        Tags: [ownedTag],
+      });
+      jest
+        .spyOn(stateManager, 'getResource')
+        .mockReturnValue(stateWithBindings.resources['buckets.static_site']);
+
+      const result = await generateBucketPlan(mockContext, stateWithBindings, buckets);
+
+      expect(result.items[0].action).toBe('update');
+      expect(result.items[0].changes?.before).toHaveProperty('domains');
+      expect(result.items[0].changes?.before?.domains).toHaveLength(1);
+    });
   });
 });

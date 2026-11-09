@@ -114,6 +114,145 @@ describe('cdnOperations (issue #294)', () => {
     });
   });
 
+  it('addCdnDomain omits ServiceRegion and OriginProtocol when unset', async () => {
+    await operations.addCdnDomain({
+      domain: 'cdn.example.com',
+      serviceType: 'web',
+      serviceRegion: '',
+      origin: { originLines: [{ originType: 'TOS', bucketName: 'test-bucket' }] },
+    });
+
+    expect(lastCall().data).toEqual({
+      Domain: 'cdn.example.com',
+      ServiceType: 'web',
+      Origin: [
+        { OriginAction: { OriginLines: [{ OriginType: 'TOS', BucketName: 'test-bucket' }] } },
+      ],
+    });
+  });
+
+  it('updateCdnDelivery forwards serviceRegion, origin and originProtocol together', async () => {
+    await operations.updateCdnDelivery('cdn.example.com', {
+      serviceType: 'video',
+      serviceRegion: 'outside_chinese_mainland',
+      origin: { originLines: [{ originType: 'TOS', bucketName: 'test-bucket' }] },
+      originProtocol: 'followclient',
+    });
+
+    expect(lastCall().data).toEqual({
+      Domain: 'cdn.example.com',
+      ServiceType: 'video',
+      ServiceRegion: 'outside_chinese_mainland',
+      Origin: [
+        { OriginAction: { OriginLines: [{ OriginType: 'TOS', BucketName: 'test-bucket' }] } },
+      ],
+      OriginProtocol: 'followclient',
+    });
+  });
+
+  it('updateCdnDelivery posts only the domain when no module is provided', async () => {
+    await operations.updateCdnDelivery('cdn.example.com', {});
+
+    expect(lastCall().data).toEqual({ Domain: 'cdn.example.com' });
+  });
+
+  it('applyHttpsRedirect makes no call when undefined', async () => {
+    await operations.applyHttpsRedirect('cdn.example.com');
+    expect(mockClient.fetchOpenAPI).not.toHaveBeenCalled();
+  });
+
+  it('addCdnDomain forwards every optional origin line field', async () => {
+    await operations.addCdnDomain({
+      domain: 'cdn.example.org',
+      serviceType: 'web',
+      serviceRegion: 'global',
+      origin: {
+        originLines: [
+          {
+            originType: 'Domain',
+            address: 'origin.example.com',
+            originHost: 'cdn.example.org',
+            privateBucketAccess: true,
+            httpPort: '80',
+            httpsPort: '443',
+            weight: '100',
+          },
+          { originType: 'IP', address: '203.0.113.1' },
+        ],
+      },
+    });
+
+    const body = lastCall().data;
+    expect(body.Origin[0].OriginAction.OriginLines[0]).toEqual({
+      OriginType: 'Domain',
+      Address: 'origin.example.com',
+      OriginHost: 'cdn.example.org',
+      PrivateBucketAccess: true,
+      HttpPort: '80',
+      HttpsPort: '443',
+      Weight: '100',
+    });
+    expect(body.Origin[0].OriginAction.OriginLines[1]).toEqual({
+      OriginType: 'IP',
+      Address: '203.0.113.1',
+    });
+    expect(body).not.toHaveProperty('OriginProtocol');
+  });
+
+  it('applyCacheConfig accepts a TTL-only change without a cache key', async () => {
+    await operations.applyCacheConfig('cdn.example.com', 60);
+
+    expect(lastCall().data).toEqual({
+      Domain: 'cdn.example.com',
+      Cache: [expect.objectContaining({ CacheAction: expect.objectContaining({ Ttl: 60 }) })],
+    });
+    expect(lastCall().data).not.toHaveProperty('CacheKey');
+  });
+
+  it('describeCdnDomain maps every optional field when present', async () => {
+    mockClient.fetchOpenAPI.mockResolvedValueOnce({
+      Result: {
+        Data: [
+          {
+            Domain: 'cdn.example.com',
+            Cname: 'cdn.example.com.boscdn.com',
+            ServiceType: 'web',
+            ServiceRegion: 'global',
+            Status: 'online',
+            OriginProtocol: 'https',
+            HTTPS: true,
+            PrimaryOrigin: ['test-bucket'],
+          },
+        ],
+      },
+    });
+
+    const info = await operations.describeCdnDomain('cdn.example.com');
+
+    expect(info).toEqual(
+      expect.objectContaining({
+        originProtocol: 'https',
+        https: true,
+        origin: ['test-bucket'],
+      }),
+    );
+  });
+
+  it('describeCdnDomain returns null when the domain list is empty', async () => {
+    mockClient.fetchOpenAPI.mockResolvedValueOnce({ Result: { Data: [] } });
+    expect(await operations.describeCdnDomain('cdn.example.com')).toBeNull();
+  });
+
+  it('describeCdnDomain returns null when the Result is absent', async () => {
+    mockClient.fetchOpenAPI.mockResolvedValueOnce({});
+    expect(await operations.describeCdnDomain('cdn.example.com')).toBeNull();
+  });
+
+  it('maps a not-found error carrying no code as a non-not-found error', async () => {
+    mockClient.fetchOpenAPI.mockRejectedValueOnce(null);
+    await expect(operations.describeCdnDomain('cdn.example.com')).rejects.toBeNull();
+  });
+
   it('describeCdnDomain returns null on not-found errors', async () => {
     mockClient.fetchOpenAPI.mockRejectedValueOnce({ code: 'ResourceNotFound' });
     expect(await operations.describeCdnDomain('missing.example.com')).toBeNull();
