@@ -607,12 +607,15 @@ export type ApigwInfo = {
 // ============================================================================
 
 /**
- * One origin line of a volcengine CDN domain. For TOS origins si uses
- * OriginType 'TOS' with the bucket name; the provider resolves the pull
- * endpoint itself (docs/6454/97340).
+ * One origin line of a volcengine CDN domain. `originType` is the primary /
+ * backup slot; `instanceType` is the origin kind. For a TOS origin the pull
+ * address is the bucket's virtual-host endpoint, passed as `address`
+ * (UpdateCdnConfig rejects a TOS address that is not an endpoint, and forbids
+ * an OriginHost different from it).
  */
 export type VolcengineCdnOriginLine = {
-  originType: 'TOS' | 'Domain' | 'IP';
+  originType: 'primary' | 'backup';
+  instanceType?: 'TOS' | 'OSS' | 'COS' | 'Domain' | 'IP';
   bucketName?: string;
   region?: string;
   address?: string;

@@ -44,7 +44,9 @@ describe('cdnOperations (issue #294)', () => {
         domain: 'cdn.example.com',
         serviceType: 'web',
         serviceRegion: 'global',
-        origin: { originLines: [{ originType: 'TOS', bucketName: 'test-bucket' }] },
+        origin: {
+          originLines: [{ originType: 'primary', instanceType: 'TOS', bucketName: 'test-bucket' }],
+        },
       }),
     ).rejects.toThrow('VOLCENGINE_CDN_CLIENT_NOT_INITIALIZED');
   });
@@ -55,7 +57,14 @@ describe('cdnOperations (issue #294)', () => {
       serviceType: 'download',
       serviceRegion: 'chinese_mainland',
       origin: {
-        originLines: [{ originType: 'TOS', bucketName: 'test-bucket', region: 'cn-beijing' }],
+        originLines: [
+          {
+            originType: 'primary',
+            instanceType: 'TOS',
+            bucketName: 'test-bucket',
+            region: 'cn-beijing',
+          },
+        ],
       },
       originProtocol: 'followclient',
     });
@@ -70,7 +79,14 @@ describe('cdnOperations (issue #294)', () => {
       Origin: [
         {
           OriginAction: {
-            OriginLines: [{ OriginType: 'TOS', BucketName: 'test-bucket', Region: 'cn-beijing' }],
+            OriginLines: [
+              {
+                OriginType: 'primary',
+                InstanceType: 'TOS',
+                BucketName: 'test-bucket',
+                Region: 'cn-beijing',
+              },
+            ],
           },
         },
       ],
@@ -119,14 +135,22 @@ describe('cdnOperations (issue #294)', () => {
       domain: 'cdn.example.com',
       serviceType: 'web',
       serviceRegion: '',
-      origin: { originLines: [{ originType: 'TOS', bucketName: 'test-bucket' }] },
+      origin: {
+        originLines: [{ originType: 'primary', instanceType: 'TOS', bucketName: 'test-bucket' }],
+      },
     });
 
     expect(lastCall().data).toEqual({
       Domain: 'cdn.example.com',
       ServiceType: 'web',
       Origin: [
-        { OriginAction: { OriginLines: [{ OriginType: 'TOS', BucketName: 'test-bucket' }] } },
+        {
+          OriginAction: {
+            OriginLines: [
+              { OriginType: 'primary', InstanceType: 'TOS', BucketName: 'test-bucket' },
+            ],
+          },
+        },
       ],
     });
   });
@@ -135,7 +159,9 @@ describe('cdnOperations (issue #294)', () => {
     await operations.updateCdnDelivery('cdn.example.com', {
       serviceType: 'video',
       serviceRegion: 'outside_chinese_mainland',
-      origin: { originLines: [{ originType: 'TOS', bucketName: 'test-bucket' }] },
+      origin: {
+        originLines: [{ originType: 'primary', instanceType: 'TOS', bucketName: 'test-bucket' }],
+      },
       originProtocol: 'followclient',
     });
 
@@ -144,7 +170,13 @@ describe('cdnOperations (issue #294)', () => {
       ServiceType: 'video',
       ServiceRegion: 'outside_chinese_mainland',
       Origin: [
-        { OriginAction: { OriginLines: [{ OriginType: 'TOS', BucketName: 'test-bucket' }] } },
+        {
+          OriginAction: {
+            OriginLines: [
+              { OriginType: 'primary', InstanceType: 'TOS', BucketName: 'test-bucket' },
+            ],
+          },
+        },
       ],
       OriginProtocol: 'followclient',
     });
@@ -169,7 +201,8 @@ describe('cdnOperations (issue #294)', () => {
       origin: {
         originLines: [
           {
-            originType: 'Domain',
+            originType: 'primary',
+            instanceType: 'Domain',
             address: 'origin.example.com',
             originHost: 'cdn.example.org',
             privateBucketAccess: true,
@@ -177,14 +210,15 @@ describe('cdnOperations (issue #294)', () => {
             httpsPort: '443',
             weight: '100',
           },
-          { originType: 'IP', address: '203.0.113.1' },
+          { originType: 'backup', instanceType: 'IP', address: '203.0.113.1' },
         ],
       },
     });
 
     const body = lastCall().data;
     expect(body.Origin[0].OriginAction.OriginLines[0]).toEqual({
-      OriginType: 'Domain',
+      OriginType: 'primary',
+      InstanceType: 'Domain',
       Address: 'origin.example.com',
       OriginHost: 'cdn.example.org',
       PrivateBucketAccess: true,
@@ -193,7 +227,8 @@ describe('cdnOperations (issue #294)', () => {
       Weight: '100',
     });
     expect(body.Origin[0].OriginAction.OriginLines[1]).toEqual({
-      OriginType: 'IP',
+      OriginType: 'backup',
+      InstanceType: 'IP',
       Address: '203.0.113.1',
     });
     expect(body).not.toHaveProperty('OriginProtocol');
@@ -307,7 +342,7 @@ describe('cdnOperations (issue #294)', () => {
           Condition: {
             ConditionRule: [{ Type: 'url', Object: 'directory', Operator: 'match', Value: '/' }],
           },
-          CacheAction: { Action: 'cache', Ttl: 3600, DefaultPolicy: 'force_cache' },
+          CacheAction: { Action: 'cache', Ttl: 3600 },
         },
       ],
       CacheKey: [
@@ -316,7 +351,7 @@ describe('cdnOperations (issue #294)', () => {
             ConditionRule: [{ Type: 'url', Object: 'directory', Operator: 'match', Value: '/' }],
           },
           CacheKeyAction: {
-            CacheKeyComponents: [{ Object: 'queryString', Action: 'excludePart', Subobject: '*' }],
+            CacheKeyComponents: [{ Object: 'queryString', Action: 'exclude', Subobject: '*' }],
           },
         },
       ],
@@ -349,7 +384,7 @@ describe('cdnOperations (issue #294)', () => {
             Condition: {
               ConditionRule: [{ Type: 'url', Object: 'directory', Operator: 'match', Value: '/' }],
             },
-            CompressionAction: { CompressionType: ['Gzip'] },
+            CompressionAction: { CompressionType: ['gzip'] },
           },
         ],
       },
@@ -367,26 +402,33 @@ describe('cdnOperations (issue #294)', () => {
     expect(mockClient.fetchOpenAPI).not.toHaveBeenCalled();
   });
 
-  it('applyHttpsRedirect posts the 301 forced redirect', async () => {
+  it('applyHttpsRedirect posts the 301 forced redirect under HTTPS', async () => {
     await operations.applyHttpsRedirect('cdn.example.com', true);
 
-    expect(lastCall().data).toEqual({
-      Domain: 'cdn.example.com',
-      HttpForcedRedirect: { EnableForcedRedirect: true, StatusCode: '301' },
-    });
-  });
-
-  it('applyCertificate enables HTTPS with HTTP2 and the certificate reference', async () => {
-    await operations.applyCertificate('cdn.example.com', 'cert-volc-1');
-
+    // HttpForcedRedirect is the HTTPS→HTTP module and is mutually exclusive
+    // with this one; the HTTP→HTTPS redirect belongs to HTTPS.ForcedRedirect.
     expect(lastCall().data).toEqual({
       Domain: 'cdn.example.com',
       HTTPS: {
         Switch: true,
-        HTTP2: true,
+        ForcedRedirect: { EnableForcedRedirect: true, StatusCode: '301' },
+      },
+    });
+    expect(lastCall().data).not.toHaveProperty('HttpForcedRedirect');
+  });
+
+  it('applyCertificate enables HTTPS with the certificate reference', async () => {
+    await operations.applyCertificate('cdn.example.com', 'cert-volc-1');
+
+    // HTTP2 is left at the provider default — the API rejects enabling it.
+    expect(lastCall().data).toEqual({
+      Domain: 'cdn.example.com',
+      HTTPS: {
+        Switch: true,
         CertInfo: { CertId: 'cert-volc-1' },
       },
     });
+    expect(lastCall().data.HTTPS).not.toHaveProperty('HTTP2');
   });
 
   it('addCertificate uploads the PEM pair with Repeatable false and maps CertId', async () => {

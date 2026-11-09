@@ -18,9 +18,14 @@ const MATCH_ALL_CONDITION = {
   ConditionRule: [{ Type: 'url', Object: 'directory', Operator: 'match', Value: '/' }],
 };
 
+// Origin lines use two distinct fields (UpdateCdnConfig error codes):
+// `OriginType` is the primary/backup slot, `InstanceType` is the origin kind
+// (TOS/OSS/COS/Domain/IP). For a TOS origin the pull address is the bucket's
+// virtual-host endpoint.
 const toOriginLines = (origin: VolcengineCdnOriginConfig): Array<Record<string, unknown>> =>
   origin.originLines.map((line) => ({
-    ...(line.originType ? { OriginType: line.originType } : {}),
+    OriginType: line.originType,
+    ...(line.instanceType ? { InstanceType: line.instanceType } : {}),
     ...(line.bucketName ? { BucketName: line.bucketName } : {}),
     ...(line.region ? { Region: line.region } : {}),
     ...(line.address ? { Address: line.address } : {}),
@@ -135,10 +140,12 @@ export const createCdnOperations = (cdnClient: CdnSdkClient | null) => {
       });
     },
 
-    // Cache rules are seconds-based TTLs (si time-unit convention); the
-    // match-all directory rule carries DefaultPolicy 'force_cache' as the
-    // domain-wide default. CacheKey: ignoreQueryString excludes the whole
-    // query string from the cache key, false restores include-all.
+    // Cache rules are seconds-based TTLs (si time-unit convention). The Cache
+    // module has a built-in lowest-priority default rule matching everything,
+    // so a single match-all rule is the domain-wide TTL.
+    // CacheKey: `exclude` drops the whole query string from the cache key,
+    // `include` (with Subobject '*') restores the default. `excludePart` is
+    // for naming specific parameters and rejects '*'.
     applyCacheConfig: async (
       domainName: string,
       cacheTtl?: number,
@@ -149,11 +156,7 @@ export const createCdnOperations = (cdnClient: CdnSdkClient | null) => {
         body.Cache = [
           {
             Condition: MATCH_ALL_CONDITION,
-            CacheAction: {
-              Action: 'cache',
-              Ttl: cacheTtl,
-              DefaultPolicy: 'force_cache',
-            },
+            CacheAction: { Action: 'cache', Ttl: cacheTtl },
           },
         ];
       }
@@ -163,7 +166,7 @@ export const createCdnOperations = (cdnClient: CdnSdkClient | null) => {
             CacheKeyAction: {
               CacheKeyComponents: [
                 ignoreQueryString
-                  ? { Object: 'queryString', Action: 'excludePart', Subobject: '*' }
+                  ? { Object: 'queryString', Action: 'exclude', Subobject: '*' }
                   : { Object: 'queryString', Action: 'include', Subobject: '*', IgnoreCase: true },
               ],
             },
@@ -176,8 +179,9 @@ export const createCdnOperations = (cdnClient: CdnSdkClient | null) => {
       }
     },
 
-    // Smart compression: Switch enables the module, the match-all rule carries
-    // the Gzip format (https://docs.volcengine.com/docs/information-delivery-network/intelligent-compression).
+    // Smart compression: `Switch` enables the module and `CompressionRules`
+    // carries a match-all rule. CompressionType takes lowercase algorithm
+    // names ('gzip' / 'br').
     applyCompression: async (domainName: string, enabled?: boolean): Promise<void> => {
       if (enabled == null) return;
       await fetchCdn('UpdateCdnConfig', {
@@ -189,7 +193,7 @@ export const createCdnOperations = (cdnClient: CdnSdkClient | null) => {
                 CompressionRules: [
                   {
                     Condition: MATCH_ALL_CONDITION,
-                    CompressionAction: { CompressionType: ['Gzip'] },
+                    CompressionAction: { CompressionType: ['gzip'] },
                   },
                 ],
               }
@@ -198,23 +202,31 @@ export const createCdnOperations = (cdnClient: CdnSdkClient | null) => {
       });
     },
 
+    // HTTP→HTTPS redirect lives under HTTPS.ForcedRedirect (not the
+    // HttpForcedRedirect module, which downgrades HTTPS to HTTP and is
+    // mutually exclusive with it). The provider requires HTTPS to be enabled
+    // first, so the caller applies the certificate before this.
     applyHttpsRedirect: async (domainName: string, enabled?: boolean): Promise<void> => {
       if (enabled == null) return;
       await fetchCdn('UpdateCdnConfig', {
         Domain: domainName,
-        HttpForcedRedirect: {
-          EnableForcedRedirect: enabled,
-          StatusCode: '301',
+        HTTPS: {
+          Switch: true,
+          ForcedRedirect: {
+            EnableForcedRedirect: enabled,
+            StatusCode: '301',
+          },
         },
       });
     },
 
+    // HTTPS must be on for any redirect; HTTP2 is left at the provider default
+    // (the API currently rejects enabling it).
     applyCertificate: async (domainName: string, certificateId: string): Promise<void> => {
       await fetchCdn('UpdateCdnConfig', {
         Domain: domainName,
         HTTPS: {
           Switch: true,
-          HTTP2: true,
           CertInfo: { CertId: certificateId },
         },
       });
