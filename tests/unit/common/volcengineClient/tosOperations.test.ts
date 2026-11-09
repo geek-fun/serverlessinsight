@@ -1,6 +1,10 @@
 import * as fs from 'node:fs';
 import { Service } from '@volcengine/openapi';
-import { createTosOperations } from '../../../../src/common/volcengineClient/tosOperations';
+import {
+  createTosOperations,
+  getTosAccelerateEndpoint,
+  getTosEndpoint,
+} from '../../../../src/common/volcengineClient/tosOperations';
 import type { TosBucketConfig } from '../../../../src/common/volcengineClient/types';
 
 jest.mock('node:fs', () => {
@@ -57,6 +61,24 @@ describe('tosOperations', () => {
 
     it('should throw error when creating bucket with null client', async () => {
       await expect(operations.createBucket(mockBucketConfig)).rejects.toThrow(
+        'VOLCENGINE_TOS_CLIENT_NOT_INITIALIZED',
+      );
+    });
+
+    it('should throw for the issue #294 operations with null client', async () => {
+      await expect(
+        operations.putBucketCustomDomain('test-bucket', 'cdn.example.com'),
+      ).rejects.toThrow('VOLCENGINE_TOS_CLIENT_NOT_INITIALIZED');
+      await expect(operations.getBucketCustomDomains('test-bucket')).rejects.toThrow(
+        'VOLCENGINE_TOS_CLIENT_NOT_INITIALIZED',
+      );
+      await expect(
+        operations.deleteBucketCustomDomain('test-bucket', 'cdn.example.com'),
+      ).rejects.toThrow('VOLCENGINE_TOS_CLIENT_NOT_INITIALIZED');
+      await expect(operations.putBucketTransferAcceleration('test-bucket', true)).rejects.toThrow(
+        'VOLCENGINE_TOS_CLIENT_NOT_INITIALIZED',
+      );
+      await expect(operations.getBucketTransferAcceleration('test-bucket')).rejects.toThrow(
         'VOLCENGINE_TOS_CLIENT_NOT_INITIALIZED',
       );
     });
@@ -1044,6 +1066,17 @@ describe('tosOperations', () => {
       });
     });
 
+    describe('endpoint builders (issue #294)', () => {
+      it('builds the virtual-host bucket and acceleration endpoints', () => {
+        expect(getTosEndpoint('test-bucket', 'cn-beijing')).toBe(
+          'test-bucket.tos-cn-beijing.volces.com',
+        );
+        expect(getTosAccelerateEndpoint('test-bucket')).toBe(
+          'test-bucket.tos-accelerate.volces.com',
+        );
+      });
+    });
+
     describe('custom domain bindings (issue #294)', () => {
       it('putBucketCustomDomain posts the CustomDomainRule body', async () => {
         mockClient.fetchOpenAPI.mockResolvedValue({});
@@ -1059,6 +1092,32 @@ describe('tosOperations', () => {
             method: 'PUT',
             query: { Bucket: 'test-bucket' },
             data: { CustomDomainRule: { Domain: 'cdn.example.com', CertId: 'cert-volc-1' } },
+          }),
+        );
+      });
+
+      it('putBucketCustomDomain omits optional CertId/Protocol when absent', async () => {
+        mockClient.fetchOpenAPI.mockResolvedValue({});
+
+        await operations.putBucketCustomDomain('test-bucket', 'cdn.example.com');
+
+        expect(mockClient.fetchOpenAPI).toHaveBeenCalledWith(
+          expect.objectContaining({
+            data: { CustomDomainRule: { Domain: 'cdn.example.com' } },
+          }),
+        );
+      });
+
+      it('putBucketCustomDomain includes Protocol when provided', async () => {
+        mockClient.fetchOpenAPI.mockResolvedValue({});
+
+        await operations.putBucketCustomDomain('test-bucket', 'cdn.example.com', {
+          protocol: 'HTTPS',
+        });
+
+        expect(mockClient.fetchOpenAPI).toHaveBeenCalledWith(
+          expect.objectContaining({
+            data: { CustomDomainRule: { Domain: 'cdn.example.com', Protocol: 'HTTPS' } },
           }),
         );
       });
@@ -1093,12 +1152,56 @@ describe('tosOperations', () => {
         ]);
       });
 
+      it('getBucketCustomDomains maps every rule field when present', async () => {
+        mockClient.fetchOpenAPI.mockResolvedValue({
+          Result: {
+            CustomDomainRules: [
+              {
+                Domain: 'cdn.example.com',
+                Cname: 'endpoint',
+                CertId: 'cert-1',
+                CertStatus: 'active',
+                Protocol: 'HTTPS',
+                Forbidden: false,
+              },
+            ],
+          },
+        });
+
+        const rules = await operations.getBucketCustomDomains('test-bucket');
+
+        expect(rules).toEqual([
+          {
+            domain: 'cdn.example.com',
+            cname: 'endpoint',
+            certId: 'cert-1',
+            certStatus: 'active',
+            protocol: 'HTTPS',
+            forbidden: false,
+          },
+        ]);
+      });
+
       it('getBucketCustomDomains returns [] when no configuration exists', async () => {
         mockClient.fetchOpenAPI.mockRejectedValueOnce({
           code: 'NoSuchCustomDomainConfiguration',
         });
 
         await expect(operations.getBucketCustomDomains('test-bucket')).resolves.toEqual([]);
+      });
+
+      it('getBucketCustomDomains returns [] for ResourceNotFound', async () => {
+        mockClient.fetchOpenAPI.mockRejectedValueOnce({ code: 'ResourceNotFound' });
+
+        await expect(operations.getBucketCustomDomains('test-bucket')).resolves.toEqual([]);
+      });
+
+      it('getBucketCustomDomains rethrows other errors', async () => {
+        mockClient.fetchOpenAPI.mockRejectedValueOnce({ code: 'AccessDenied' });
+
+        await expect(operations.getBucketCustomDomains('test-bucket')).rejects.toMatchObject({
+          code: 'AccessDenied',
+        });
       });
 
       it('deleteBucketCustomDomain issues the DELETE with the domain query', async () => {
@@ -1121,6 +1224,22 @@ describe('tosOperations', () => {
         await expect(
           operations.deleteBucketCustomDomain('test-bucket', 'cdn.example.com'),
         ).resolves.toBeUndefined();
+      });
+
+      it('deleteBucketCustomDomain treats ResourceNotFound as already gone', async () => {
+        mockClient.fetchOpenAPI.mockRejectedValueOnce({ code: 'ResourceNotFound' });
+
+        await expect(
+          operations.deleteBucketCustomDomain('test-bucket', 'cdn.example.com'),
+        ).resolves.toBeUndefined();
+      });
+
+      it('deleteBucketCustomDomain rethrows other errors', async () => {
+        mockClient.fetchOpenAPI.mockRejectedValueOnce({ code: 'AccessDenied' });
+
+        await expect(
+          operations.deleteBucketCustomDomain('test-bucket', 'cdn.example.com'),
+        ).rejects.toMatchObject({ code: 'AccessDenied' });
       });
     });
 

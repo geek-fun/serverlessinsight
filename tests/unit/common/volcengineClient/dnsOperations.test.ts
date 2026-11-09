@@ -149,6 +149,48 @@ describe('dnsOperations (issue #294)', () => {
     expect(callsByAction('CreateRecord')).toHaveLength(0);
   });
 
+  it('addDomainRecord pages through ListZones until the zone matches', async () => {
+    mockClient.fetchOpenAPI.mockImplementation(
+      async (params: { Action: string; data?: { PageNumber?: number } }) => {
+        if (params.Action === 'ListZones') {
+          return params.data?.PageNumber === 1
+            ? { Result: { Total: 150, Zones: [{ ZID: 1, ZoneName: 'other.com' }] } }
+            : { Result: { Total: 150, Zones: [{ ZID: 777, ZoneName: 'example.com' }] } };
+        }
+        if (params.Action === 'ListRecords') return { Result: { Records: [] } };
+        return { Result: { RecordID: 'rec-paged' } };
+      },
+    );
+
+    const recordId = await operations.addDomainRecord({
+      domainName: 'example.com',
+      host: 'cdn',
+      type: 'CNAME',
+      value: 'target',
+    });
+
+    expect(recordId).toBe('rec-paged');
+    expect(callsByAction('ListZones').map((d) => d.PageNumber)).toEqual([1, 2]);
+    expect(callsByAction('CreateRecord')[0]).toEqual(expect.objectContaining({ ZID: 777 }));
+  });
+
+  it('addDomainRecord stops when a page comes back empty', async () => {
+    mockClient.fetchOpenAPI.mockImplementation(async (params: { Action: string }) => {
+      if (params.Action === 'ListZones') return { Result: { Total: 999, Zones: [] } };
+      return { Result: {} };
+    });
+
+    await expect(
+      operations.addDomainRecord({
+        domainName: 'example.com',
+        host: 'cdn',
+        type: 'CNAME',
+        value: 'target',
+      }),
+    ).rejects.toThrow('DNS_ZONE_NOT_FOUND');
+    expect(callsByAction('ListZones')).toHaveLength(1);
+  });
+
   it('addDomainRecord fails loudly when the zone is not hosted in Volcengine DNS', async () => {
     mockClient.fetchOpenAPI.mockImplementation(async () => ({
       Result: { Total: 0, Zones: [] },
@@ -198,6 +240,115 @@ describe('dnsOperations (issue #294)', () => {
     await expect(operations.deleteDomainRecord('rec-1')).rejects.toMatchObject({
       code: 'AccessDenied',
     });
+  });
+
+  it('addDomainRecord skips a zone whose ZID is not numeric', async () => {
+    mockClient.fetchOpenAPI.mockImplementation(async (params: { Action: string }) => {
+      if (params.Action === 'ListZones') {
+        return { Result: { Total: 2, Zones: [{ ZID: 'bad', ZoneName: 'example.com' }] } };
+      }
+      return { Result: {} };
+    });
+
+    await expect(
+      operations.addDomainRecord({
+        domainName: 'example.com',
+        host: 'cdn',
+        type: 'CNAME',
+        value: 'target',
+      }),
+    ).rejects.toThrow('DNS_ZONE_NOT_FOUND');
+  });
+
+  it('addDomainRecord handles a ListZones response without a Result', async () => {
+    mockClient.fetchOpenAPI.mockImplementation(async () => ({}));
+
+    await expect(
+      operations.addDomainRecord({
+        domainName: 'example.com',
+        host: 'cdn',
+        type: 'CNAME',
+        value: 'target',
+      }),
+    ).rejects.toThrow('DNS_ZONE_NOT_FOUND');
+  });
+
+  it('addDomainRecord passes TTL when updating an existing CNAME', async () => {
+    mockClient.fetchOpenAPI.mockImplementation(async (params: { Action: string }) => {
+      if (params.Action === 'ListZones') {
+        return { Result: { Total: 1, Zones: [{ ZID: 32100, ZoneName: 'example.com' }] } };
+      }
+      if (params.Action === 'ListRecords') {
+        return {
+          Result: {
+            Records: [{ RecordID: 'rec-existing', Host: 'cdn', Type: 'CNAME', Value: 'old' }],
+          },
+        };
+      }
+      return { Result: {} };
+    });
+
+    await operations.addDomainRecord({
+      domainName: 'example.com',
+      host: 'cdn',
+      type: 'CNAME',
+      value: 'new',
+      ttl: 600,
+    });
+
+    expect(callsByAction('UpdateRecord')[0]).toEqual({
+      RecordID: 'rec-existing',
+      Host: 'cdn',
+      Line: 'default',
+      Type: 'CNAME',
+      Value: 'new',
+      TTL: 600,
+    });
+  });
+
+  it('describeDomainRecords treats an absent Result as no records', async () => {
+    mockClient.fetchOpenAPI.mockImplementation(async (params: { Action: string }) => {
+      if (params.Action === 'ListZones') {
+        return { Result: { Total: 1, Zones: [{ ZID: 32100, ZoneName: 'example.com' }] } };
+      }
+      return {};
+    });
+
+    await expect(operations.describeDomainRecords('example.com', 'www')).resolves.toEqual([]);
+  });
+
+  it('describeDomainRecords fills fallbacks for sparse records', async () => {
+    mockClient.fetchOpenAPI.mockImplementation(async (params: { Action: string }) => {
+      if (params.Action === 'ListZones') {
+        return { Result: { Total: 1, Zones: [{ ZID: 32100, ZoneName: 'example.com' }] } };
+      }
+      if (params.Action === 'ListRecords') {
+        return { Result: { Records: [{ RecordID: 'rec-sparse' }] } };
+      }
+      return { Result: {} };
+    });
+
+    const records = await operations.describeDomainRecords('example.com', 'www');
+
+    expect(records).toEqual([
+      { recordId: 'rec-sparse', domain: 'example.com', host: 'www', type: 'CNAME', value: '' },
+    ]);
+  });
+
+  it('deleteDomainRecord handles a thrown value with no code', async () => {
+    mockClient.fetchOpenAPI.mockRejectedValueOnce(null);
+    await expect(operations.deleteDomainRecord('rec-1')).rejects.toBeNull();
+  });
+
+  it('updateDomainRecord omits TTL when unset', async () => {
+    await operations.updateDomainRecord('rec-3', {
+      domainName: 'example.com',
+      host: 'www',
+      type: 'CNAME',
+      value: 'target',
+    });
+
+    expect(callsByAction('UpdateRecord')[0]).not.toHaveProperty('TTL');
   });
 
   it('describeDomainRecords lists CNAME records for the zone and host', async () => {
