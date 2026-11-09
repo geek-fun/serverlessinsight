@@ -182,10 +182,22 @@ describe('dnsOperations (issue #294)', () => {
     });
   });
 
+  it('deleteDomainRecord logs the deletion on success', async () => {
+    await expect(operations.deleteDomainRecord('rec-1')).resolves.toBeUndefined();
+    expect(callsByAction('DeleteRecord')[0]).toEqual({ RecordID: 'rec-1' });
+  });
+
   it('deleteDomainRecord warns and returns on not-found errors', async () => {
     mockClient.fetchOpenAPI.mockRejectedValueOnce({ code: 'RecordNotFound' });
     await expect(operations.deleteDomainRecord('rec-gone')).resolves.toBeUndefined();
     expect(mockClient.fetchOpenAPI).toHaveBeenCalledTimes(1);
+  });
+
+  it('deleteDomainRecord rethrows non-not-found errors', async () => {
+    mockClient.fetchOpenAPI.mockRejectedValueOnce({ code: 'AccessDenied' });
+    await expect(operations.deleteDomainRecord('rec-1')).rejects.toMatchObject({
+      code: 'AccessDenied',
+    });
   });
 
   it('describeDomainRecords lists CNAME records for the zone and host', async () => {
