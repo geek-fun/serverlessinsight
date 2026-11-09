@@ -5,6 +5,7 @@ import type {
   TosAcl,
   TosBucketConfig,
   TosBucketInfo,
+  TosCustomDomainRule,
   TosObjectInfo,
   TosWebsiteConfig,
 } from './types';
@@ -14,6 +15,20 @@ import { lang } from '../../lang';
 type TosSdkClient = Service;
 
 const TOS_ACL_VALUES: TosAcl[] = ['private', 'public-read', 'public-read-write'];
+
+/**
+ * Virtual-host style bucket endpoint (TOS only supports virtual-style access
+ * for custom domains: `<bucket>.tos.<region>.volces.com`).
+ */
+export const getTosEndpoint = (bucketName: string, region: string): string =>
+  `${bucketName}.tos-${region}.volces.com`;
+
+/**
+ * Region-independent transfer-acceleration endpoint
+ * (`<bucket>.tos-accelerate.volces.com`).
+ */
+export const getTosAccelerateEndpoint = (bucketName: string): string =>
+  `${bucketName}.tos-accelerate.volces.com`;
 
 const getContentType = (filePath: string): string => {
   const ext = path.extname(filePath).toLowerCase();
@@ -565,6 +580,165 @@ export const createTosOperations = (client: TosSdkClient | null, _region: string
         }
         throw error;
       }
+    },
+
+    // TOS custom-domain binding (issue #294). REST action: PUT {bucket}?customdomain
+    // with body { CustomDomainRule: { Domain, CertId?, Protocol? } }; the domain's
+    // DNS record must point at the bucket endpoint (si manages the record itself).
+    putBucketCustomDomain: async (
+      bucketName: string,
+      domain: string,
+      options?: { certId?: string; protocol?: string },
+    ): Promise<void> => {
+      if (!client) {
+        throw new Error(lang.__('VOLCENGINE_TOS_CLIENT_NOT_INITIALIZED'));
+      }
+
+      await client.fetchOpenAPI({
+        Action: 'PutBucketCustomDomain',
+        Version: '2018-08-01',
+        method: 'PUT',
+        headers: {
+          'content-type': 'application/json',
+        },
+        query: {
+          Bucket: bucketName,
+        },
+        data: {
+          CustomDomainRule: {
+            Domain: domain,
+            ...(options?.certId ? { CertId: options.certId } : {}),
+            ...(options?.protocol ? { Protocol: options.protocol } : {}),
+          },
+        },
+      });
+
+      logger.info(lang.__('TOS_CUSTOM_DOMAIN_BOUND', { bucketName, domain }));
+    },
+
+    getBucketCustomDomains: async (bucketName: string): Promise<TosCustomDomainRule[]> => {
+      if (!client) {
+        throw new Error(lang.__('VOLCENGINE_TOS_CLIENT_NOT_INITIALIZED'));
+      }
+
+      try {
+        const response = await client.fetchOpenAPI({
+          Action: 'GetBucketCustomDomain',
+          Version: '2018-08-01',
+          method: 'GET',
+          query: {
+            Bucket: bucketName,
+          },
+        });
+
+        const result = (response.Result || {}) as Record<string, unknown>;
+        const rules = (result.CustomDomainRules ?? []) as Array<Record<string, unknown>>;
+        return rules.map((rule) => ({
+          domain: rule.Domain as string,
+          cname: rule.Cname as string | undefined,
+          certId: rule.CertId as string | undefined,
+          certStatus: rule.CertStatus as string | undefined,
+          protocol: rule.Protocol as string | undefined,
+          forbidden: rule.Forbidden as boolean | undefined,
+        }));
+      } catch (error: unknown) {
+        if (
+          error &&
+          typeof error === 'object' &&
+          'code' in error &&
+          (error.code === 'NoSuchCustomDomainConfiguration' || error.code === 'ResourceNotFound')
+        ) {
+          return [];
+        }
+        throw error;
+      }
+    },
+
+    deleteBucketCustomDomain: async (bucketName: string, domain: string): Promise<void> => {
+      if (!client) {
+        throw new Error(lang.__('VOLCENGINE_TOS_CLIENT_NOT_INITIALIZED'));
+      }
+
+      try {
+        await client.fetchOpenAPI({
+          Action: 'DeleteBucketCustomDomain',
+          Version: '2018-08-01',
+          method: 'DELETE',
+          query: {
+            Bucket: bucketName,
+            CustomDomain: domain,
+          },
+        });
+        logger.info(lang.__('TOS_CUSTOM_DOMAIN_UNBOUND', { bucketName, domain }));
+      } catch (error: unknown) {
+        if (
+          error &&
+          typeof error === 'object' &&
+          'code' in error &&
+          (error.code === 'NoSuchCustomDomain' || error.code === 'ResourceNotFound')
+        ) {
+          logger.warn(
+            lang.__('RESOURCE_NOT_FOUND_PROVIDER', {
+              resourceType: 'Custom domain',
+              name: domain,
+            }),
+          );
+          return;
+        }
+        throw error;
+      }
+    },
+
+    // Bucket-level transfer acceleration (issue #294). REST action:
+    // PUT {bucket}?acceleration with { TransferAccelerationConfiguration:
+    // { Enabled: 'true' | 'false' } } — the API carries string booleans.
+    putBucketTransferAcceleration: async (bucketName: string, enabled: boolean): Promise<void> => {
+      if (!client) {
+        throw new Error(lang.__('VOLCENGINE_TOS_CLIENT_NOT_INITIALIZED'));
+      }
+
+      await client.fetchOpenAPI({
+        Action: 'PutBucketTransferAcceleration',
+        Version: '2018-08-01',
+        method: 'PUT',
+        headers: {
+          'content-type': 'application/json',
+        },
+        query: {
+          Bucket: bucketName,
+        },
+        data: {
+          TransferAccelerationConfiguration: {
+            Enabled: enabled ? 'true' : 'false',
+          },
+        },
+      });
+
+      logger.info(
+        enabled
+          ? lang.__('ENABLING_OSS_TRANSFER_ACCELERATION', { bucketName })
+          : lang.__('TOS_TRANSFER_ACCELERATION_DISABLED', { bucketName }),
+      );
+    },
+
+    getBucketTransferAcceleration: async (bucketName: string): Promise<boolean | undefined> => {
+      if (!client) {
+        throw new Error(lang.__('VOLCENGINE_TOS_CLIENT_NOT_INITIALIZED'));
+      }
+
+      const response = await client.fetchOpenAPI({
+        Action: 'GetBucketTransferAcceleration',
+        Version: '2018-08-01',
+        method: 'GET',
+        query: {
+          Bucket: bucketName,
+        },
+      });
+
+      const result = (response.Result || {}) as Record<string, unknown>;
+      const config = (result.TransferAccelerationConfiguration ?? {}) as Record<string, unknown>;
+      if (config.Enabled === undefined) return undefined;
+      return config.Enabled === 'true' || config.Enabled === true;
     },
 
     uploadFiles: async (bucketName: string, sourcePath: string): Promise<void> => {

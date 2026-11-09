@@ -201,6 +201,20 @@ export type TosBucketConfig = {
 };
 
 /**
+ * One rule of TOS GetBucketCustomDomain (issue #294). `certId` is the
+ * certificate id registered in the Volcengine certificate center — si passes
+ * reference ids through; TOS has no certificate-upload API for bucket domains.
+ */
+export type TosCustomDomainRule = {
+  domain: string;
+  cname?: string;
+  certId?: string;
+  certStatus?: string;
+  protocol?: string;
+  forbidden?: boolean;
+};
+
+/**
  * Response from TOS headBucket API
  */
 export type TosBucketInfo = {
@@ -589,6 +603,81 @@ export type ApigwInfo = {
 };
 
 // ============================================================================
+// CDN Types (issue #294)
+// ============================================================================
+
+/**
+ * One origin line of a volcengine CDN domain. For TOS origins si uses
+ * OriginType 'TOS' with the bucket name; the provider resolves the pull
+ * endpoint itself (docs/6454/97340).
+ */
+export type VolcengineCdnOriginLine = {
+  originType: 'TOS' | 'Domain' | 'IP';
+  bucketName?: string;
+  region?: string;
+  address?: string;
+  originHost?: string;
+  privateBucketAccess?: boolean;
+  httpPort?: string;
+  httpsPort?: string;
+  weight?: string;
+};
+
+export type VolcengineCdnOriginConfig = {
+  originLines: VolcengineCdnOriginLine[];
+};
+
+/** Delivery-level fields (service type / acceleration region / origin) applied in place via UpdateCdnConfig. */
+export type VolcengineCdnDeliveryUpdate = {
+  serviceType?: string;
+  serviceRegion?: string;
+  origin?: VolcengineCdnOriginConfig;
+  originProtocol?: string;
+};
+
+/** Result of ListCdnDomains filtered to one exact-match domain. */
+export type VolcengineCdnDomainInfo = {
+  domain: string;
+  cname?: string;
+  serviceType?: string;
+  serviceRegion?: string;
+  status?: string;
+  originProtocol?: string;
+  https?: boolean;
+  origin?: string[];
+};
+
+export type VolcengineCdnDomainConfig = {
+  domain: string;
+  serviceType: string;
+  serviceRegion: string;
+  origin: VolcengineCdnOriginConfig;
+  originProtocol?: string;
+};
+
+// ============================================================================
+// DNS Types — Volcengine TrafficRoute public DNS (v2018-08-01, issue #294)
+// ============================================================================
+
+export type VolcengineDnsRecordConfig = {
+  /** Zone domain the record belongs to (si resolves it to a numeric ZID). */
+  domainName: string;
+  /** Record host relative to the zone ('@' for apex). */
+  host: string;
+  type: 'CNAME';
+  value: string;
+  ttl?: number;
+};
+
+export type VolcengineDnsRecordInfo = {
+  recordId: string;
+  domain: string;
+  host: string;
+  type: string;
+  value: string;
+};
+
+// ============================================================================
 // Volcengine Client Types
 // ============================================================================
 
@@ -637,6 +726,16 @@ export type VolcengineClient = {
     putBucketPolicy: (bucketName: string, policy: Record<string, unknown>) => Promise<void>;
     getBucketPolicy: (bucketName: string) => Promise<Record<string, unknown> | null>;
     deleteBucketPolicy: (bucketName: string) => Promise<void>;
+    // Custom-domain binding + transfer acceleration (issue #294)
+    putBucketCustomDomain: (
+      bucketName: string,
+      domain: string,
+      options?: { certId?: string; protocol?: string },
+    ) => Promise<void>;
+    getBucketCustomDomains: (bucketName: string) => Promise<TosCustomDomainRule[]>;
+    deleteBucketCustomDomain: (bucketName: string, domain: string) => Promise<void>;
+    putBucketTransferAcceleration: (bucketName: string, enabled: boolean) => Promise<void>;
+    getBucketTransferAcceleration: (bucketName: string) => Promise<boolean | undefined>;
   };
   iam: {
     createRole: (config: IamRoleConfig) => Promise<IamRoleInfo>;
@@ -716,6 +815,31 @@ export type VolcengineClient = {
   };
   sts: {
     getAccountId: () => Promise<string | undefined>;
+  };
+  cdn: {
+    addCdnDomain: (config: VolcengineCdnDomainConfig) => Promise<void>;
+    describeCdnDomain: (domainName: string) => Promise<VolcengineCdnDomainInfo | null>;
+    deleteCdnDomain: (domainName: string) => Promise<void>;
+    updateCdnDelivery: (domainName: string, update: VolcengineCdnDeliveryUpdate) => Promise<void>;
+    applyCacheConfig: (
+      domainName: string,
+      cacheTtl?: number,
+      ignoreQueryString?: boolean,
+    ) => Promise<void>;
+    applyCompression: (domainName: string, enabled?: boolean) => Promise<void>;
+    applyHttpsRedirect: (domainName: string, enabled?: boolean) => Promise<void>;
+    applyCertificate: (domainName: string, certificateId: string) => Promise<void>;
+    addCertificate: (input: {
+      certificate: string;
+      privateKey: string;
+      name?: string;
+    }) => Promise<{ certificateId: string }>;
+  };
+  dns: {
+    addDomainRecord: (config: VolcengineDnsRecordConfig) => Promise<string | undefined>;
+    updateDomainRecord: (recordId: string, config: VolcengineDnsRecordConfig) => Promise<void>;
+    deleteDomainRecord: (recordId: string) => Promise<void>;
+    describeDomainRecords: (domainName: string, host: string) => Promise<VolcengineDnsRecordInfo[]>;
   };
 };
 

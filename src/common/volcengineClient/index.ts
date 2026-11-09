@@ -10,6 +10,8 @@ import { createIamOperations } from './iamOperations';
 import { createApigwOperations } from './apigwOperations';
 import { createStsOperations } from './stsOperations';
 import { createTlsOperations } from './tlsOperations';
+import { createCdnOperations } from './cdnOperations';
+import { createDnsOperations } from './dnsOperations';
 
 export * from './types';
 export * from './vefaasOperations';
@@ -17,6 +19,8 @@ export * from './tosOperations';
 export * from './iamOperations';
 export * from './apigwOperations';
 export * from './tlsOperations';
+export * from './cdnOperations';
+export * from './dnsOperations';
 
 /**
  * fetchOpenAPI resolves with { ResponseMetadata: { Error } } on API errors
@@ -119,6 +123,32 @@ const initializeSdkClients = (context: Context) => {
     }),
   );
 
+  // CDN is a global service with a fixed endpoint (docs/6454/97340).
+  const cdnService = wrapService(
+    new Service({
+      serviceName: 'cdn',
+      defaultVersion: '2021-03-01',
+      host: 'cdn.volcengineapi.com',
+      accessKeyId: context.accessKeyId,
+      secretKey: context.accessKeySecret,
+      region: context.region,
+      ...(context.securityToken && { sessionToken: context.securityToken }),
+    }),
+  );
+
+  // TrafficRoute public DNS; records are managed under a numeric zone id.
+  const dnsService = wrapService(
+    new Service({
+      serviceName: 'dns',
+      defaultVersion: '2018-08-01',
+      host: 'dns.volcengineapi.com',
+      accessKeyId: context.accessKeyId,
+      secretKey: context.accessKeySecret,
+      region: context.region,
+      ...(context.securityToken && { sessionToken: context.securityToken }),
+    }),
+  );
+
   return {
     vefaas: vefaasService,
     tos: tosService,
@@ -126,6 +156,8 @@ const initializeSdkClients = (context: Context) => {
     tls: tlsService,
     apigw: apigwService,
     sts: stsService,
+    cdn: cdnService,
+    dns: dnsService,
   };
 };
 
@@ -139,5 +171,7 @@ export const createVolcengineClient = (context: Context): VolcengineClient => {
     tls: createTlsOperations(sdkClients.tls),
     apigw: createApigwOperations(sdkClients.apigw),
     sts: createStsOperations(sdkClients.sts),
+    cdn: createCdnOperations(sdkClients.cdn),
+    dns: createDnsOperations(sdkClients.dns),
   };
 };
