@@ -10,7 +10,9 @@ describe('cdnCapabilities registry (issue #283)', () => {
       expect(resolveCdnCapability('aliyun')?.bucketCdn).toBe(true);
       expect(resolveCdnCapability('tencent')?.bucketCdn).toBe(true);
       expect(resolveCdnCapability('tencent')?.eventCdn).toBe(false);
-      expect(resolveCdnCapability('volcengine')?.bucketCdn).toBe(false);
+      // issue #294: volcengine TOS bucket CDN delivery delivered.
+      expect(resolveCdnCapability('volcengine')?.bucketCdn).toBe(true);
+      expect(resolveCdnCapability('volcengine')?.eventCdn).toBe(false);
     });
 
     it('returns undefined for unknown providers so callers can fail fast', () => {

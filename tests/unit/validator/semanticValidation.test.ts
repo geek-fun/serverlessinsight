@@ -95,14 +95,63 @@ describe('validateSemantics', () => {
       expect(keywordsOf(wildcardFirst)).toContain('wildcardBucketDomainConflict');
     });
 
-    it('rejects volcengine bucket bindings regardless of declaration shape', () => {
+    it('accepts volcengine bucket bindings (issue #294 delivered the capability)', () => {
       const errors = validateSemantics({
         ...buildBucketIac({
           assets: { name: 'assets', domains: [{ domain_name: 'example.com' }] },
         }),
         provider: { name: ProviderEnum.VOLCENGINE, region: 'cn-beijing' },
       } as unknown as ServerlessIacRaw);
-      expect(keywordsOf(errors)).toContain('bucketDomainsProviderUnsupported');
+      expect(errors).toEqual([]);
+    });
+
+    it('rejects inline PEM on a volcengine direct binding (TOS has no bucket-domain cert upload)', () => {
+      const errors = validateSemantics({
+        ...buildBucketIac({
+          assets: {
+            name: 'assets',
+            domains: [
+              {
+                domain_name: 'example.com',
+                certificate_body: './cert.pem',
+                certificate_private_key: './key.pem',
+              },
+            ],
+          },
+        }),
+        provider: { name: ProviderEnum.VOLCENGINE, region: 'cn-beijing' },
+      } as unknown as ServerlessIacRaw);
+      expect(keywordsOf(errors)).toContain('volcengineDirectBindingPemUnsupported');
+    });
+
+    it('allows a certificate reference on a volcengine direct binding', () => {
+      const errors = validateSemantics({
+        ...buildBucketIac({
+          assets: {
+            name: 'assets',
+            domains: [{ domain_name: 'example.com', certificate_id: 'cert-75bba922e95b4dc5b1a2f' }],
+          },
+        }),
+        provider: { name: ProviderEnum.VOLCENGINE, region: 'cn-beijing' },
+      } as unknown as ServerlessIacRaw);
+      expect(errors).toEqual([]);
+    });
+
+    it('rejects bucket-level accelerate outside aliyun and volcengine', () => {
+      const errors = validateSemantics({
+        ...buildBucketIac({
+          assets: { name: 'assets', accelerate: true },
+        }),
+        provider: { name: ProviderEnum.TENCENT, region: 'ap-guangzhou' },
+      } as unknown as ServerlessIacRaw);
+      expect(keywordsOf(errors)).toContain('bucketAccelerateProviderUnsupported');
+      const volcengineErrors = validateSemantics({
+        ...buildBucketIac({
+          assets: { name: 'assets', accelerate: true },
+        }),
+        provider: { name: ProviderEnum.VOLCENGINE, region: 'cn-beijing' },
+      } as unknown as ServerlessIacRaw);
+      expect(keywordsOf(volcengineErrors)).not.toContain('bucketAccelerateProviderUnsupported');
     });
   });
 

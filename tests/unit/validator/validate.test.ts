@@ -951,14 +951,36 @@ describe('unit test for validate', () => {
       );
     });
 
-    it('should reject domains on volcengine buckets (capability not supported)', () => {
+    it('should accept domains on volcengine buckets (issue #294 delivered the capability)', () => {
+      const validYaml = {
+        ...jsonIac,
+        provider: { name: 'volcengine', region: 'cn-beijing' },
+        functions: {},
+        events: {},
+        buckets: {
+          my_bucket: {
+            name: 'test-bucket',
+            domains: [{ domain_name: 'example.com' }],
+          },
+        },
+      } as unknown as ServerlessIacRaw;
+      expect(validateYaml(validYaml)).toBe(true);
+    });
+
+    it('should reject inline PEM on a volcengine direct binding but allow a certificate reference', () => {
       const invalidYaml = {
         ...jsonIac,
         provider: { name: 'volcengine', region: 'cn-beijing' },
         buckets: {
           my_bucket: {
             name: 'test-bucket',
-            domains: [{ domain_name: 'example.com' }],
+            domains: [
+              {
+                domain_name: 'example.com',
+                certificate_body: './cert.pem',
+                certificate_private_key: './key.pem',
+              },
+            ],
           },
         },
       } as unknown as ServerlessIacRaw;
@@ -973,7 +995,21 @@ describe('unit test for validate', () => {
       const keywords = JSON.stringify(
         (thrownError as { errors?: Array<{ keyword?: string }> }).errors ?? [],
       );
-      expect(keywords).toContain('bucketDomainsProviderUnsupported');
+      expect(keywords).toContain('volcengineDirectBindingPemUnsupported');
+
+      const referenceYaml = {
+        ...jsonIac,
+        provider: { name: 'volcengine', region: 'cn-beijing' },
+        functions: {},
+        events: {},
+        buckets: {
+          my_bucket: {
+            name: 'test-bucket',
+            domains: [{ domain_name: 'example.com', certificate_id: 'cert-75bba922e95b4dc5b1a2f' }],
+          },
+        },
+      } as unknown as ServerlessIacRaw;
+      expect(validateYaml(referenceYaml)).toBe(true);
     });
 
     it('should reject bucket-level accelerate outside aliyun', () => {
@@ -1054,10 +1090,12 @@ describe('unit test for validate', () => {
       expect(keywords).toContain('cdnTypeProviderUnsupported');
     });
 
-    it('should reject cdn on a provider without bucket CDN delivery', () => {
-      const invalidYaml = {
+    it('should accept cdn on volcengine bucket bindings (issue #294 delivered the capability)', () => {
+      const validYaml = {
         ...jsonIac,
         provider: { name: 'volcengine', region: 'cn-beijing' },
+        functions: {},
+        events: {},
         buckets: {
           my_bucket: {
             name: 'test-bucket',
@@ -1065,18 +1103,7 @@ describe('unit test for validate', () => {
           },
         },
       } as unknown as ServerlessIacRaw;
-      expect(() => validateYaml(invalidYaml)).toThrow('Invalid yaml');
-
-      let thrownError: unknown;
-      try {
-        validateYaml(invalidYaml);
-      } catch (error) {
-        thrownError = error;
-      }
-      const keywords = JSON.stringify(
-        (thrownError as { errors?: Array<{ keyword?: string }> }).errors ?? [],
-      );
-      expect(keywords).toContain('bucketCdnProviderUnsupported');
+      expect(validateYaml(validYaml)).toBe(true);
     });
 
     it('should reject cdn_type video on tencent (ServiceType has no video)', () => {
