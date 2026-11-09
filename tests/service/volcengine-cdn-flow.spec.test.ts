@@ -230,7 +230,16 @@ describe('Volcengine TOS CDN Flow Service Test (issue #294)', () => {
       serviceType: 'web',
       serviceRegion: 'global',
       origin: {
-        originLines: [{ originType: 'TOS', bucketName: BUCKET_NAME, region: REGION }],
+        originLines: [
+          {
+            originType: 'primary',
+            instanceType: 'TOS',
+            bucketName: BUCKET_NAME,
+            region: REGION,
+            address: TOS_ENDPOINT,
+            originHost: TOS_ENDPOINT,
+          },
+        ],
       },
       originProtocol: 'https',
     });

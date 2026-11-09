@@ -394,9 +394,11 @@ Unsupported values for a provider are rejected at `si validate`.
     has no certificate-upload API for bucket domains, so inline PEM is rejected
     at `si validate`. Upload the certificate to the Volcengine certificate
     center and pass its id.
-  - CDN-mode bindings pull straight from the TOS bucket (`OriginType: 'TOS'`);
-    the custom domain is **not** registered on the bucket (unlike Tencent COS,
-    where the binding is also written bucket-side). TOS-side registration would
+  - CDN-mode bindings pull straight from the TOS bucket via its virtual-host
+    endpoint (`InstanceType: 'TOS'` in the primary origin slot, with
+    `OriginHost` equal to that endpoint as the provider requires); the custom
+    domain is **not** registered on the bucket (unlike Tencent COS, where the
+    binding is also written bucket-side). TOS-side registration would
     additionally require domain-ownership verification.
   - Private-bucket CDN origin pull (cross-service authorization) is not
     automated — the bucket must be publicly readable, or authorization must be

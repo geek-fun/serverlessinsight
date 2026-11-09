@@ -655,7 +655,16 @@ describe('tosResource', () => {
           serviceType: 'download',
           serviceRegion: 'chinese_mainland',
           origin: {
-            originLines: [{ originType: 'TOS', bucketName: 'test-bucket', region: 'cn-beijing' }],
+            originLines: [
+              {
+                originType: 'primary',
+                instanceType: 'TOS',
+                bucketName: 'test-bucket',
+                region: 'cn-beijing',
+                address: 'test-bucket.tos-cn-beijing.volces.com',
+                originHost: 'test-bucket.tos-cn-beijing.volces.com',
+              },
+            ],
           },
         }),
       );
@@ -1064,7 +1073,16 @@ describe('tosResource', () => {
           serviceType: 'video',
           serviceRegion: 'outside_chinese_mainland',
           origin: {
-            originLines: [{ originType: 'TOS', bucketName: 'test-bucket', region: 'cn-beijing' }],
+            originLines: [
+              {
+                originType: 'primary',
+                instanceType: 'TOS',
+                bucketName: 'test-bucket',
+                region: 'cn-beijing',
+                address: 'test-bucket.tos-cn-beijing.volces.com',
+                originHost: 'test-bucket.tos-cn-beijing.volces.com',
+              },
+            ],
           },
         }),
       );

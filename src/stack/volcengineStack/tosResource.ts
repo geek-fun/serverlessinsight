@@ -223,14 +223,30 @@ const bindTosDomain = async (
 // ---------------------------------------------------------------------------
 
 /**
- * CDN pulls straight from the TOS bucket (OriginType 'TOS' + bucket name), so
- * the custom domain is NOT bound to the bucket in CDN mode — unlike the
- * Tencent COS path, TOS custom-domain registration plays no role in CDN
- * origin pulls and would require domain-ownership verification.
+ * CDN pulls straight from the TOS bucket via its virtual-host endpoint
+ * (`InstanceType: 'TOS'`, primary slot). The custom domain is NOT bound to the
+ * bucket in CDN mode — unlike the Tencent COS path, TOS custom-domain
+ * registration plays no role in CDN origin pulls and would require
+ * domain-ownership verification.
+ *
+ * The provider requires a TOS origin's `OriginHost` to equal the origin
+ * address, so both carry the bucket endpoint.
  */
-const buildTosOrigin = (bucketName: string, region: string): VolcengineCdnOriginConfig => ({
-  originLines: [{ originType: 'TOS', bucketName, region }],
-});
+const buildTosOrigin = (bucketName: string, region: string): VolcengineCdnOriginConfig => {
+  const endpoint = getTosEndpoint(bucketName, region);
+  return {
+    originLines: [
+      {
+        originType: 'primary',
+        instanceType: 'TOS',
+        bucketName,
+        region,
+        address: endpoint,
+        originHost: endpoint,
+      },
+    ],
+  };
+};
 
 const ensureCdnDns = async (
   context: Context,
@@ -372,6 +388,30 @@ const updateCdnBinding = async (
       origin: buildTosOrigin(bucket.name, context.region),
     });
   }
+  // Certificate first: the provider requires HTTPS to be enabled before a
+  // forced redirect can be turned on (HTTPS.ForcedRedirect error contract).
+  if (certificate) {
+    const certificateHash = resolveBindingCertificateHash({
+      certificate_id: binding.certificate_id,
+      certificate_body: binding.certificate_body,
+      certificate_private_key: binding.certificate_private_key,
+    });
+    if (
+      shouldDeployBindingCertificate({
+        pending,
+        certificateId: certificate.mode === 'reference' ? certificate.certificateId : undefined,
+        certificateHash,
+        stored,
+      })
+    ) {
+      logger.info(lang.__('CDN_DEPLOYING_CERTIFICATE', { domain: hostname }));
+      const certId = await resolveCdnCertificateId(client, certificate);
+      await client.cdn.applyCertificate(hostname, certId);
+    } else {
+      logger.info(lang.__('CDN_CERT_UNCHANGED_SKIPPED', { domain: hostname }));
+    }
+  }
+
   const applyOptions = pending || cdnDeliveryChanged(stored.cdn, cdnObj);
   if (applyOptions) {
     await applyCdnOptions(client, hostname, cdnObj);
@@ -396,28 +436,6 @@ const updateCdnBinding = async (
           mapOriginProtocol('volcengine', cdnObj?.origin_protocol) ??
           mapOriginProtocol('volcengine', 'http'),
       });
-    }
-  }
-
-  if (certificate) {
-    const certificateHash = resolveBindingCertificateHash({
-      certificate_id: binding.certificate_id,
-      certificate_body: binding.certificate_body,
-      certificate_private_key: binding.certificate_private_key,
-    });
-    if (
-      shouldDeployBindingCertificate({
-        pending,
-        certificateId: certificate.mode === 'reference' ? certificate.certificateId : undefined,
-        certificateHash,
-        stored,
-      })
-    ) {
-      logger.info(lang.__('CDN_DEPLOYING_CERTIFICATE', { domain: hostname }));
-      const certId = await resolveCdnCertificateId(client, certificate);
-      await client.cdn.applyCertificate(hostname, certId);
-    } else {
-      logger.info(lang.__('CDN_CERT_UNCHANGED_SKIPPED', { domain: hostname }));
     }
   }
 
