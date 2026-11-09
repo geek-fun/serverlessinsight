@@ -724,6 +724,270 @@ describe('tosResource', () => {
       );
     });
 
+    it('fails loudly when the ownership probe cannot find the bucket', async () => {
+      mockTosClient.tos.createBucket.mockResolvedValueOnce({});
+      mockTosClient.tos.getBucket.mockResolvedValueOnce(null);
+      const bucket: BucketDomain = {
+        key: 'static_site',
+        name: 'test-bucket',
+      };
+
+      await expect(createResource(mockContext, bucket, mockState)).rejects.toThrow(
+        'REFRESH_STATE_BUCKET',
+      );
+    });
+
+    it('applies option-level diffs in place when the delivery shape is unchanged', async () => {
+      const storedState: StateFile = {
+        ...mockState,
+        resources: {
+          'buckets.static_site': {
+            mode: 'managed',
+            region: 'cn-beijing',
+            definition: {
+              bucketName: 'test-bucket',
+              acl: null,
+              storageClass: null,
+              websiteConfiguration: null,
+              websiteCodeHash: null,
+              domains: [
+                {
+                  domain_name: 'cdn.example.com',
+                  cdn: {
+                    enabled: true,
+                    cdn_type: 'web',
+                    scope: 'global',
+                    cache_ttl: 3600,
+                    origin_protocol: 'https',
+                  },
+                },
+              ],
+              accelerate: false,
+            },
+            instances: [
+              {
+                sid: 'volcengine-tos-dev-test-bucket',
+                id: 'test-bucket',
+                type: 'VOLCENGINE_TOS_BUCKET',
+              },
+              {
+                sid: 'volcengine-cdn-dev-cdn.example.com',
+                id: 'cdn.example.com',
+                type: 'VOLCENGINE_CDN_DOMAIN',
+                domainName: 'cdn.example.com',
+                cname: 'cdn.example.com.boscdn.com',
+              },
+              {
+                sid: 'volcengine-cdn-dns-dev-rec-cdn-1',
+                id: 'rec-cdn-1',
+                type: 'VOLCENGINE_CDN_DNS_CNAME',
+                domain: 'cdn.example.com',
+                cname: 'cdn.example.com.boscdn.com',
+                dnsRecordId: 'rec-cdn-1',
+              },
+            ],
+            lastUpdated: '2024-01-01T00:00:00Z',
+          },
+        },
+      };
+      mockGetResource.mockReturnValue(storedState.resources['buckets.static_site']);
+      mockTosClient.tos.getBucket.mockResolvedValueOnce(ownedBucketInfo);
+
+      const bucket: BucketDomain = {
+        key: 'static_site',
+        name: 'test-bucket',
+        domains: [
+          {
+            domain_name: 'cdn.example.com',
+            cdn: {
+              enabled: true,
+              cdn_type: 'web',
+              scope: 'global',
+              cache_ttl: 7200,
+              compression: true,
+              origin_protocol: 'http',
+            },
+          },
+        ],
+      };
+
+      await updateResource(mockContext, bucket, storedState);
+
+      // delivery shape unchanged → no AddCdnDomain/DeleteCdnConfig churn, only
+      // the option modules that actually differ.
+      expect(mockTosClient.cdn.addCdnDomain).not.toHaveBeenCalled();
+      expect(mockTosClient.cdn.updateCdnDelivery).toHaveBeenCalledWith('cdn.example.com', {
+        originProtocol: 'http',
+      });
+      expect(mockTosClient.cdn.applyCacheConfig).toHaveBeenCalledWith(
+        'cdn.example.com',
+        7200,
+        undefined,
+      );
+      expect(mockTosClient.cdn.applyCompression).toHaveBeenCalledWith('cdn.example.com', true);
+    });
+
+    it('fails loudly when a pending CDN binding exposes no CNAME and none is recorded', async () => {
+      const storedState: StateFile = {
+        ...mockState,
+        resources: {
+          'buckets.static_site': {
+            mode: 'managed',
+            region: 'cn-beijing',
+            definition: {
+              bucketName: 'test-bucket',
+              acl: null,
+              storageClass: null,
+              websiteConfiguration: null,
+              websiteCodeHash: null,
+              domains: [{ domain_name: 'cdn.example.com', cdn: { enabled: true } }],
+              accelerate: false,
+            },
+            instances: [
+              {
+                sid: 'volcengine-tos-dev-test-bucket',
+                id: 'test-bucket',
+                type: 'VOLCENGINE_TOS_BUCKET',
+              },
+              {
+                sid: 'volcengine-cdn-dev-cdn.example.com',
+                id: 'cdn.example.com',
+                type: 'VOLCENGINE_CDN_DOMAIN',
+                domainName: 'cdn.example.com',
+                cname: 'cdn.example.com.boscdn.com',
+              },
+            ],
+            lastUpdated: '2024-01-01T00:00:00Z',
+          },
+        },
+      };
+      mockGetResource.mockReturnValue(storedState.resources['buckets.static_site']);
+      mockTosClient.tos.getBucket.mockResolvedValueOnce(ownedBucketInfo);
+      mockTosClient.cdn.describeCdnDomain.mockResolvedValueOnce({ domain: 'cdn.example.com' });
+
+      const bucket: BucketDomain = {
+        key: 'static_site',
+        name: 'test-bucket',
+        domains: [{ domain_name: 'cdn.example.com', cdn: true }],
+      };
+
+      await expect(updateResource(mockContext, bucket, storedState)).rejects.toThrow(
+        'FAILED_TO_REFRESH_STATE',
+      );
+    });
+
+    it('swallows a failing delivery-record cleanup while tearing down a direct binding', async () => {
+      const storedState: StateFile = {
+        ...mockState,
+        resources: {
+          'buckets.static_site': {
+            mode: 'managed',
+            region: 'cn-beijing',
+            definition: {
+              bucketName: 'test-bucket',
+              acl: null,
+              storageClass: null,
+              websiteConfiguration: null,
+              websiteCodeHash: null,
+              domains: [{ domain_name: 'old.example.com', cdn: { enabled: false } }],
+              accelerate: false,
+            },
+            instances: [
+              {
+                sid: 'volcengine-tos-dev-test-bucket',
+                id: 'test-bucket',
+                type: 'VOLCENGINE_TOS_BUCKET',
+              },
+              {
+                sid: 'volcengine-dns-dev-old.example.com',
+                id: 'old.example.com',
+                type: 'VOLCENGINE_TOS_DNS_CNAME',
+                domain: 'old.example.com',
+                cname: 'test-bucket.tos-cn-beijing.volces.com',
+                dnsRecordId: 'rec-old-1',
+              },
+            ],
+            lastUpdated: '2024-01-01T00:00:00Z',
+          },
+        },
+      };
+      mockGetResource.mockReturnValue(storedState.resources['buckets.static_site']);
+      mockTosClient.tos.getBucket.mockResolvedValueOnce(ownedBucketInfo);
+      mockTosClient.dns.deleteDomainRecord.mockRejectedValueOnce({ code: 'AccessDenied' });
+
+      const bucket: BucketDomain = {
+        key: 'static_site',
+        name: 'test-bucket',
+        domains: [],
+      };
+
+      await expect(updateResource(mockContext, bucket, storedState)).resolves.toBeDefined();
+      expect(mockTosClient.tos.deleteBucketCustomDomain).toHaveBeenCalledWith(
+        'test-bucket',
+        'old.example.com',
+      );
+    });
+
+    it('enables acceleration via update and rebinds a direct binding in place', async () => {
+      const storedState: StateFile = {
+        ...mockState,
+        resources: {
+          'buckets.static_site': {
+            mode: 'managed',
+            region: 'cn-beijing',
+            definition: {
+              bucketName: 'test-bucket',
+              acl: null,
+              storageClass: null,
+              websiteConfiguration: null,
+              websiteCodeHash: null,
+              domains: [{ domain_name: 'a.example.com', cdn: { enabled: false } }],
+              accelerate: false,
+            },
+            instances: [
+              {
+                sid: 'volcengine-tos-dev-test-bucket',
+                id: 'test-bucket',
+                type: 'VOLCENGINE_TOS_BUCKET',
+              },
+              {
+                sid: 'volcengine-dns-dev-a.example.com',
+                id: 'a.example.com',
+                type: 'VOLCENGINE_TOS_DNS_CNAME',
+                domain: 'a.example.com',
+                cname: 'test-bucket.tos-cn-beijing.volces.com',
+                dnsRecordId: 'rec-a-1',
+              },
+            ],
+            lastUpdated: '2024-01-01T00:00:00Z',
+          },
+        },
+      };
+      mockGetResource.mockReturnValue(storedState.resources['buckets.static_site']);
+      mockTosClient.tos.getBucket.mockResolvedValueOnce(ownedBucketInfo);
+      mockTosClient.dns.addDomainRecord.mockResolvedValueOnce('rec-a-2');
+
+      const bucket: BucketDomain = {
+        key: 'static_site',
+        name: 'test-bucket',
+        accelerate: true,
+        domains: [{ domain_name: 'a.example.com' }],
+      };
+
+      await updateResource(mockContext, bucket, storedState);
+
+      expect(mockTosClient.tos.putBucketTransferAcceleration).toHaveBeenCalledWith(
+        'test-bucket',
+        true,
+      );
+      // the direct binding is rebound in place against the accelerate endpoint,
+      // not torn down.
+      expect(mockTosClient.dns.deleteDomainRecord).not.toHaveBeenCalled();
+      expect(mockTosClient.dns.addDomainRecord).toHaveBeenCalledWith(
+        expect.objectContaining({ value: 'test-bucket.tos-accelerate.volces.com' }),
+      );
+    });
+
     it('switches a stored binding from CDN to direct at binding level without touching the bucket', async () => {
       const storedState: StateFile = {
         ...mockState,

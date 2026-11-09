@@ -119,10 +119,29 @@ describe('cdnOperations (issue #294)', () => {
     expect(await operations.describeCdnDomain('missing.example.com')).toBeNull();
   });
 
+  it('describeCdnDomain rethrows non-not-found errors', async () => {
+    mockClient.fetchOpenAPI.mockRejectedValueOnce({ code: 'AccessDenied' });
+    await expect(operations.describeCdnDomain('cdn.example.com')).rejects.toMatchObject({
+      code: 'AccessDenied',
+    });
+  });
+
+  it('deleteCdnDomain logs the deletion on success', async () => {
+    await expect(operations.deleteCdnDomain('cdn.example.com')).resolves.toBeUndefined();
+    expect(lastCall().data).toEqual({ Domain: 'cdn.example.com' });
+  });
+
   it('deleteCdnDomain warns and returns on not-found errors', async () => {
     mockClient.fetchOpenAPI.mockRejectedValueOnce({ code: 'DomainNotFound' });
     await expect(operations.deleteCdnDomain('missing.example.com')).resolves.toBeUndefined();
     expect(mockClient.fetchOpenAPI).toHaveBeenCalledTimes(1);
+  });
+
+  it('deleteCdnDomain rethrows non-not-found errors', async () => {
+    mockClient.fetchOpenAPI.mockRejectedValueOnce({ code: 'OperationFailed' });
+    await expect(operations.deleteCdnDomain('cdn.example.com')).rejects.toMatchObject({
+      code: 'OperationFailed',
+    });
   });
 
   it('updateCdnDelivery posts only the provided modules', async () => {
