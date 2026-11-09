@@ -590,7 +590,7 @@ const buildCodeLocation = (
     createCustomDomain: async (
       domainName: string,
       protocol: string,
-      fnName: string,
+      routes: Array<{ path: string; functionName: string; qualifier?: string }>,
       certConfig?: { certName: string; certificate: string; privateKey: string },
     ): Promise<void> => {
       const createCustomDomainInput = new fc.CreateCustomDomainInput({
@@ -598,12 +598,14 @@ const buildCodeLocation = (
         protocol,
         ...(certConfig ? { certConfig: new fc.CertConfig(certConfig) } : {}),
         routeConfig: new fc.RouteConfig({
-          routes: [
-            new fc.PathConfig({
-              path: '/*',
-              functionName: fnName,
-            }),
-          ],
+          routes: routes.map(
+            (route) =>
+              new fc.PathConfig({
+                path: route.path,
+                functionName: route.functionName,
+                ...(route.qualifier ? { qualifier: route.qualifier } : {}),
+              }),
+          ),
         }),
       });
       const request = new fc.CreateCustomDomainRequest({
@@ -612,12 +614,45 @@ const buildCodeLocation = (
       await fc3Client.createCustomDomain(request);
     },
 
+    updateCustomDomain: async (
+      domainName: string,
+      patch: {
+        protocol?: string;
+        routes?: Array<{ path: string; functionName: string; qualifier?: string }>;
+        certConfig?: { certName: string; certificate: string; privateKey: string };
+      },
+    ): Promise<void> => {
+      const updateCustomDomainInput = new fc.UpdateCustomDomainInput({
+        ...(patch.protocol !== undefined ? { protocol: patch.protocol } : {}),
+        ...(patch.routes
+          ? {
+              routeConfig: new fc.RouteConfig({
+                routes: patch.routes.map(
+                  (route) =>
+                    new fc.PathConfig({
+                      path: route.path,
+                      functionName: route.functionName,
+                      ...(route.qualifier ? { qualifier: route.qualifier } : {}),
+                    }),
+                ),
+              }),
+            }
+          : {}),
+        ...(patch.certConfig ? { certConfig: new fc.CertConfig(patch.certConfig) } : {}),
+      });
+      const request = new fc.UpdateCustomDomainRequest({
+        body: updateCustomDomainInput,
+      });
+      await fc3Client.updateCustomDomain(domainName, request);
+    },
+
     getCustomDomain: async (
       domainName: string,
     ): Promise<{
       domainName?: string;
       protocol?: string;
       certConfig?: { certName?: string; certificateId?: string };
+      routeConfig?: { routes: Array<{ path?: string; functionName?: string; qualifier?: string }> };
     } | null> => {
       try {
         const response = await fc3Client.getCustomDomain(domainName);
@@ -629,6 +664,15 @@ const buildCodeLocation = (
             ? {
                 certName: response.body.certConfig.certName,
                 certificateId: response.body.certConfig.certificateId,
+              }
+            : undefined,
+          routeConfig: response.body.routeConfig
+            ? {
+                routes: (response.body.routeConfig.routes ?? []).map((route) => ({
+                  path: route.path,
+                  functionName: route.functionName,
+                  qualifier: route.qualifier,
+                })),
               }
             : undefined,
         };

@@ -16,6 +16,11 @@ import { cachedRefreshRead } from '../../common/refreshCache';
 import { CLS_TOPIC_PERIOD, CLS_TOPIC_STORAGE_TYPE } from '../../common/tencentClient/clsOperations';
 import { PLAN_READ_CONCURRENCY, mapWithConcurrency } from '../../common/concurrency';
 import { translateSiCron } from '../../common/siCron';
+import {
+  functionDomainDefinitionEntry,
+  mapFunctionProtocol,
+  normalizeFunctionDomainName,
+} from '../../common/functionDomainReconcile';
 import { functionToScfConfig, extractScfDefinition, cloudScfToDefinition } from './scfTypes';
 import { getAllResources, getResource } from '../../common/stateManager';
 import { computeZipContentHash } from '../../common/hashUtils';
@@ -67,7 +72,7 @@ export const generateFunctionPlan = async (
 
       const client = createTencentClient(context);
 
-      const recordedDomain = currentState?.instances?.find(
+      const recordedDomainInstances = (currentState?.instances ?? []).filter(
         (i) => i.type === 'TENCENT_SCF_CUSTOM_DOMAIN',
       );
       const recordedTimers = (currentState?.instances ?? []).filter(
@@ -83,8 +88,22 @@ export const generateFunctionPlan = async (
           ownedScfHttpTrigger(currentState?.instances ?? [], currentState?.definition ?? {})
             ? { http: currentState?.definition.http ?? { auth_type: 'public' } }
             : {}),
-          ...(!fn.domain && recordedDomain
-            ? { domain: currentState?.definition?.domain ?? { domain_name: recordedDomain.id } }
+          // Removed domain bindings surface the stored canonicalized entries;
+          // a pre-#286 state (no definition.domains) reconstructs the legacy
+          // `/*` binding so the diff still shows the removal.
+          ...(!(fn.domains?.length ?? 0) && recordedDomainInstances.length > 0
+            ? {
+                domains: (Array.isArray(currentState?.definition?.domains) &&
+                (currentState?.definition?.domains as unknown[]).length > 0
+                  ? currentState?.definition?.domains
+                  : recordedDomainInstances.map((i) =>
+                      functionDomainDefinitionEntry({
+                        domain_name: String(i.id),
+                        path: (i as { paths?: Array<string> }).paths?.[0] ?? '/*',
+                        protocol: ['HTTPS'],
+                      }),
+                    )) as unknown as ResourceAttributes,
+              }
             : {}),
           ...(!fn.triggers?.timer && recordedTimers.length > 0
             ? { timers: currentState?.definition?.timers ?? [] }
@@ -128,20 +147,23 @@ export const generateFunctionPlan = async (
                 reason: 'PLAN_DRIFT_HTTP_TRIGGER',
               });
           }
-          if (fn.domain) {
+          // Domain bindings (issue #286): every declared domain must exist
+          // with the expected protocol. Route drift is not probed here — the
+          // executor converges routes on every apply; certificate changes
+          // ride the state's certificate_hash.
+          for (const binding of fn.domains ?? []) {
+            const domainName = normalizeFunctionDomainName(binding.domain_name);
             const domain = await cachedRefreshRead(
               context,
-              `scf.getCustomDomain:${fn.domain.domain_name}`,
-              () => client.scf.getCustomDomain(fn.domain!.domain_name),
+              `scf.getCustomDomain:${domainName}`,
+              () => client.scf.getCustomDomain(domainName),
             );
-            if (
-              !domain ||
-              (domain.Protocol !== undefined && domain.Protocol !== fn.domain.protocol)
-            )
+            const protocolString = mapFunctionProtocol('tencent', binding.protocol);
+            if (!domain || (domain.Protocol !== undefined && domain.Protocol !== protocolString))
               updates.push({
                 update: true,
                 drifted: !definitionsDiffer(currentState?.definition ?? {}, {
-                  domain: desiredDefinition.domain,
+                  domains: desiredDefinition.domains,
                 }),
                 reason: 'PLAN_DRIFT_FUNCTION_DOMAIN',
               });

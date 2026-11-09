@@ -14,6 +14,7 @@ export type MockAliyunClient = {
     deleteTrigger: jest.Mock;
     listTriggers: jest.Mock;
     createCustomDomain: jest.Mock;
+    updateCustomDomain: jest.Mock;
     getCustomDomain: jest.Mock;
     deleteCustomDomain: jest.Mock;
   };
@@ -173,6 +174,7 @@ export const createMockAliyunClient = (): MockAliyunClient => {
       // registers one — the executor/planner reconcile reads this baseline.
       listTriggers: jest.fn().mockResolvedValue([]),
       createCustomDomain: jest.fn().mockResolvedValue({ body: { domainName: 'api.example.com' } }),
+      updateCustomDomain: jest.fn().mockResolvedValue({}),
       getCustomDomain: jest.fn().mockResolvedValue(null),
       deleteCustomDomain: jest.fn().mockResolvedValue({}),
     },
@@ -366,6 +368,7 @@ export type MockTencentClient = {
     CreateTrigger: jest.Mock;
     DeleteTrigger: jest.Mock;
     CreateCustomDomain: jest.Mock;
+    UpdateCustomDomain: jest.Mock;
     GetCustomDomain: jest.Mock;
     DeleteCustomDomain: jest.Mock;
     // camelCase aliases matching the wrapped createTencentClient contract
@@ -377,8 +380,15 @@ export type MockTencentClient = {
     createTrigger: jest.Mock;
     deleteTrigger: jest.Mock;
     createCustomDomain: jest.Mock;
+    updateCustomDomain: jest.Mock;
     getCustomDomain: jest.Mock;
     deleteCustomDomain: jest.Mock;
+  };
+  ssl: {
+    uploadCertificate: jest.Mock;
+    getCertificate: jest.Mock;
+    deleteCertificate: jest.Mock;
+    deployCertificateInstance: jest.Mock;
   };
   cls: {
     CreateLogset: jest.Mock;
@@ -431,6 +441,7 @@ export const createMockTencentClient = (): MockTencentClient => {
       CreateTrigger: jest.fn().mockResolvedValue({ TriggerName: 'http-trigger', Type: 'http' }),
       DeleteTrigger: jest.fn().mockResolvedValue({}),
       CreateCustomDomain: jest.fn().mockResolvedValue({}),
+      UpdateCustomDomain: jest.fn().mockResolvedValue({}),
       GetCustomDomain: jest.fn().mockResolvedValue(null),
       DeleteCustomDomain: jest.fn().mockResolvedValue({}),
     },
@@ -471,6 +482,16 @@ export const createMockTencentClient = (): MockTencentClient => {
       DescribeClusters: jest.fn().mockResolvedValue({ ClusterSet: [] }),
       DeleteCluster: jest.fn().mockResolvedValue({}),
     },
+    ssl: {
+      uploadCertificate: jest
+        .fn()
+        .mockResolvedValue({ certificateId: 'ssl-cert-1', alias: 'test' }),
+      getCertificate: jest.fn().mockResolvedValue({ certificateId: 'ssl-cert-1' }),
+      deleteCertificate: jest.fn().mockResolvedValue(undefined),
+      deployCertificateInstance: jest
+        .fn()
+        .mockResolvedValue({ deployRecordId: 'record-1', deployStatus: 1 }),
+    },
   } as unknown as MockTencentClient & Record<string, Record<string, jest.Mock>>;
 
   // The real createTencentClient returns WRAPPED camelCase operations
@@ -486,6 +507,7 @@ export const createMockTencentClient = (): MockTencentClient => {
   scf.createTrigger = scf.CreateTrigger;
   scf.deleteTrigger = scf.DeleteTrigger;
   scf.createCustomDomain = scf.CreateCustomDomain;
+  scf.updateCustomDomain = scf.UpdateCustomDomain;
   scf.getCustomDomain = scf.GetCustomDomain;
   scf.deleteCustomDomain = scf.DeleteCustomDomain;
   const cls = client.cls as unknown as Record<string, jest.Mock>;

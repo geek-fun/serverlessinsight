@@ -206,14 +206,61 @@ export const functionSchema = {
             },
           },
         },
-        domain: {
-          type: 'object',
-          required: ['domain_name'],
-          additionalProperties: false,
-          properties: {
-            domain_name: resolvableConstrained({ pattern: HOST_NAME_PATTERN }),
-            certificate_id: { type: 'string' },
-            protocol: resolvableEnum(['HTTP', 'HTTPS']),
+        // v1 (issue #286): function custom domains are declared as a
+        // per-function `domains` binding list. The legacy single-object
+        // `domain` field was removed — legacy usage is rejected at schema
+        // validation and semantic validation reports a migration error.
+        domains: {
+          type: 'array',
+          items: {
+            type: 'object',
+            required: ['domain_name'],
+            additionalProperties: false,
+            properties: {
+              domain_name: resolvableConstrained({ pattern: HOST_NAME_PATTERN }),
+              path: resolvableConstrained({ pattern: '^/\\S*$' }),
+              certificate_id: { type: 'string' },
+              certificate_body: { type: 'string' },
+              certificate_private_key: { type: 'string' },
+              protocol: {
+                oneOf: [
+                  resolvableEnum(['HTTP', 'HTTPS']),
+                  {
+                    type: 'array',
+                    items: resolvableEnum(['HTTP', 'HTTPS']),
+                    minItems: 1,
+                    maxItems: 2,
+                    uniqueItems: true,
+                  },
+                ],
+              },
+            },
+            // Certificate forms mirror the bucket bindings (#279): no
+            // certificate, a certificate_id reference, or an inline PEM pair.
+            oneOf: [
+              {
+                not: {
+                  anyOf: [
+                    { required: ['certificate_id'] },
+                    { required: ['certificate_body'] },
+                    { required: ['certificate_private_key'] },
+                  ],
+                },
+              },
+              {
+                required: ['certificate_body', 'certificate_private_key'],
+                not: { required: ['certificate_id'] },
+              },
+              {
+                required: ['certificate_id'],
+                not: {
+                  anyOf: [
+                    { required: ['certificate_body'] },
+                    { required: ['certificate_private_key'] },
+                  ],
+                },
+              },
+            ],
           },
         },
         storage: {

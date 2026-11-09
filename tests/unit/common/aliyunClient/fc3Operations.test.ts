@@ -17,6 +17,7 @@ const mockCreateTrigger = jest.fn();
 const mockListTriggers = jest.fn();
 const mockDeleteTrigger = jest.fn();
 const mockCreateCustomDomain = jest.fn();
+const mockUpdateCustomDomain = jest.fn();
 const mockGetCustomDomain = jest.fn();
 const mockDeleteCustomDomain = jest.fn();
 
@@ -29,6 +30,7 @@ const mockFc3Client = {
   listTriggers: mockListTriggers,
   deleteTrigger: mockDeleteTrigger,
   createCustomDomain: mockCreateCustomDomain,
+  updateCustomDomain: mockUpdateCustomDomain,
   getCustomDomain: mockGetCustomDomain,
   deleteCustomDomain: mockDeleteCustomDomain,
 } as unknown as Fc3Client;
@@ -881,24 +883,34 @@ describe('fc3Operations', () => {
   });
 
   describe('createCustomDomain', () => {
-    it('should create custom domain with route to function', async () => {
-      await operations.createCustomDomain('api.example.com', 'HTTPS', 'test-function');
+    it('should create custom domain with the merged route table (issue #286)', async () => {
+      await operations.createCustomDomain('api.example.com', 'HTTP,HTTPS', [
+        { path: '/api/*', functionName: 'fn_api' },
+        { path: '/admin/*', functionName: 'fn_admin' },
+      ]);
 
       expect(mockCreateCustomDomain).toHaveBeenCalledTimes(1);
       const [request] = mockCreateCustomDomain.mock.calls[0];
       expect(request.body.domainName).toBe('api.example.com');
-      expect(request.body.protocol).toBe('HTTPS');
-      expect(request.body.routeConfig.routes[0].path).toBe('/*');
-      expect(request.body.routeConfig.routes[0].functionName).toBe('test-function');
+      expect(request.body.protocol).toBe('HTTP,HTTPS');
+      expect(request.body.routeConfig.routes[0].path).toBe('/api/*');
+      expect(request.body.routeConfig.routes[0].functionName).toBe('fn_api');
+      expect(request.body.routeConfig.routes[1].path).toBe('/admin/*');
+      expect(request.body.routeConfig.routes[1].functionName).toBe('fn_admin');
       expect(request.body.certConfig).toBeUndefined();
     });
 
     it('should create custom domain with cert config', async () => {
-      await operations.createCustomDomain('api.example.com', 'HTTPS', 'test-function', {
-        certName: 'my-cert',
-        certificate: 'PEM-CERT',
-        privateKey: 'PEM-KEY',
-      });
+      await operations.createCustomDomain(
+        'api.example.com',
+        'HTTPS',
+        [{ path: '/*', functionName: 'test-function' }],
+        {
+          certName: 'my-cert',
+          certificate: 'PEM-CERT',
+          privateKey: 'PEM-KEY',
+        },
+      );
 
       expect(mockCreateCustomDomain).toHaveBeenCalledTimes(1);
       const [request] = mockCreateCustomDomain.mock.calls[0];
@@ -911,18 +923,55 @@ describe('fc3Operations', () => {
       mockCreateCustomDomain.mockRejectedValue(new Error('DomainAlreadyExists'));
 
       await expect(
-        operations.createCustomDomain('api.example.com', 'HTTPS', 'test-function'),
+        operations.createCustomDomain('api.example.com', 'HTTPS', [
+          { path: '/*', functionName: 'test-function' },
+        ]),
       ).rejects.toThrow('DomainAlreadyExists');
     });
   });
 
+  describe('updateCustomDomain (issue #286)', () => {
+    it('should update routes without touching protocol or cert', async () => {
+      await operations.updateCustomDomain('api.example.com', {
+        routes: [{ path: '/api/*', functionName: 'fn_api' }],
+      });
+
+      expect(mockUpdateCustomDomain).toHaveBeenCalledTimes(1);
+      const [domainName, request] = mockUpdateCustomDomain.mock.calls[0];
+      expect(domainName).toBe('api.example.com');
+      expect(request.body.routeConfig.routes[0].path).toBe('/api/*');
+      expect(request.body.routeConfig.routes[0].functionName).toBe('fn_api');
+      expect(request.body.protocol).toBeUndefined();
+      expect(request.body.certConfig).toBeUndefined();
+    });
+
+    it('should update protocol, routes and cert together', async () => {
+      await operations.updateCustomDomain('api.example.com', {
+        protocol: 'HTTP,HTTPS',
+        routes: [{ path: '/*', functionName: 'fn_default', qualifier: '$DEFAULT' }],
+        certConfig: { certName: 'my-cert', certificate: 'PEM-CERT', privateKey: 'PEM-KEY' },
+      });
+
+      const [, request] = mockUpdateCustomDomain.mock.calls[0];
+      expect(request.body.protocol).toBe('HTTP,HTTPS');
+      expect(request.body.routeConfig.routes[0].qualifier).toBe('$DEFAULT');
+      expect(request.body.certConfig.certName).toBe('my-cert');
+    });
+  });
+
   describe('getCustomDomain', () => {
-    it('should return custom domain info', async () => {
+    it('should return custom domain info including routes (issue #286)', async () => {
       mockGetCustomDomain.mockResolvedValue({
         body: {
           domainName: 'api.example.com',
           protocol: 'HTTPS',
           certConfig: { certName: 'my-cert', certificateId: '123' },
+          routeConfig: {
+            routes: [
+              { path: '/api/*', functionName: 'fn_api', qualifier: '$DEFAULT' },
+              { path: '/*', functionName: 'fn_default' },
+            ],
+          },
         },
       });
 
@@ -933,6 +982,12 @@ describe('fc3Operations', () => {
         domainName: 'api.example.com',
         protocol: 'HTTPS',
         certConfig: { certName: 'my-cert', certificateId: '123' },
+        routeConfig: {
+          routes: [
+            { path: '/api/*', functionName: 'fn_api', qualifier: '$DEFAULT' },
+            { path: '/*', functionName: 'fn_default', qualifier: undefined },
+          ],
+        },
       });
     });
 

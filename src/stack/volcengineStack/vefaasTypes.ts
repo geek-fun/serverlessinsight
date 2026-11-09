@@ -206,7 +206,7 @@ export const extractVefaasDefinition = (
     },
     fn,
     // veFaaS executor never applies HTTP triggers or custom domains; persisting them would record intent the cloud never receives.
-    { http: false, domain: false },
+    { http: false, domains: false },
   );
 };
 

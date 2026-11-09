@@ -1,6 +1,7 @@
 import { buildAliyunHttpTriggerConfig } from '../../../../src/common/triggerMapper';
 import { ProviderEnum, buildFunctionRoleName, setResource } from '../../../../src/common';
 import { computeZipContentHash } from '../../../../src/common/hashUtils';
+import { canonicalFunctionDomains } from '../../../../src/common/functionDomainReconcile';
 import { createRefreshCache } from '../../../../src/common/refreshCache';
 import { generateFunctionPlan } from '../../../../src/stack/aliyunStack/fc3Planner';
 import { extractFunctionDomainDefinition } from '../../../../src/stack/aliyunStack/fc3Types';
@@ -839,7 +840,7 @@ describe('FC3 Planner', () => {
       ...(fn.iam ? { iam: fn.iam } : {}),
       ...(fn.triggers?.http ? { http: fn.triggers.http } : {}),
       ...(fn.triggers?.timer !== undefined ? { timers: fn.triggers.timer } : {}),
-      ...(fn.domain ? { domain: fn.domain } : {}),
+      ...(fn.domains ? { domains: canonicalFunctionDomains(fn.domains) } : {}),
     });
 
     const buildState = (fn: FunctionDomain, instances: ResourceInstance[]): StateFile =>
@@ -898,33 +899,54 @@ describe('FC3 Planner', () => {
         ).rejects.toThrow('permission denied');
       });
       it.each([
-        null,
-        { protocol: 'HTTP' },
-        { protocol: 'HTTPS', certConfig: { certificateId: 'different' } },
-      ])('repairs missing or changed readable domain configuration: %j', async (remote) => {
-        const fn = {
-          ...testFunction,
-          domain: {
-            domain_name: 'api.example.com',
-            protocol: 'HTTPS',
-            certificate_id: 'certificate',
-          },
-        };
-        mockFc3Operations.getCustomDomain.mockResolvedValue(remote);
-        expect(
-          (await generateFunctionPlan(mockContext, buildState(fn, [fc3Instance]), [fn])).items[0],
-        ).toMatchObject({
-          action: 'update',
-          drifted: true,
-          driftReasons: ['PLAN_DRIFT_FUNCTION_DOMAIN'],
-        });
-      });
+        [null, true],
+        [{ protocol: 'HTTP' }, true],
+        [{ protocol: 'HTTPS' }, false],
+      ])(
+        'probes domain existence and protocol for drift: remote %j → drifted %j',
+        async (remote, shouldDrift) => {
+          const fn = {
+            ...testFunction,
+            domains: [
+              {
+                domain_name: 'api.example.com',
+                path: '/*',
+                protocol: ['HTTPS' as const],
+                certificate_id: 'certificate',
+              },
+            ],
+          };
+          mockFc3Operations.getCustomDomain.mockResolvedValue(remote);
+          const item = (
+            await generateFunctionPlan(mockContext, buildState(fn, [fc3Instance]), [fn])
+          ).items[0];
+          if (shouldDrift) {
+            expect(item).toMatchObject({
+              action: 'update',
+              drifted: true,
+              driftReasons: ['PLAN_DRIFT_FUNCTION_DOMAIN'],
+            });
+          } else {
+            expect(item.driftReasons).toBeUndefined();
+          }
+        },
+      );
       it('keeps certificate-only YAML edits visible even when certificates cannot be read', async () => {
         const old = {
           ...testFunction,
-          domain: { domain_name: 'api.example.com', protocol: 'HTTPS', certificate_id: 'old' },
+          domains: [
+            {
+              domain_name: 'api.example.com',
+              path: '/*',
+              protocol: ['HTTPS' as const],
+              certificate_id: 'old',
+            },
+          ],
         };
-        const next = { ...old, domain: { ...old.domain, certificate_id: 'new' } };
+        const next = {
+          ...old,
+          domains: [{ ...old.domains[0], certificate_id: 'new' }],
+        };
         mockFc3Operations.getCustomDomain.mockResolvedValue({ protocol: 'HTTPS' });
         const item = (
           await generateFunctionPlan(mockContext, buildState(old, [fc3Instance]), [next])

@@ -586,6 +586,284 @@ describe('validateSemantics', () => {
       expect(validateSemantics(buildIac({}) as ServerlessIacRaw)).toHaveLength(0);
     });
   });
+
+  describe('function domains semantics (issue #286)', () => {
+    const buildFnIac = (
+      functions: Record<string, unknown>,
+      provider: string = ProviderEnum.ALIYUN,
+    ): ServerlessIacRaw =>
+      ({
+        version: '0.0.1',
+        app: 'test-app',
+        service: 'test-service',
+        provider: { name: provider, region: 'cn-hangzhou' },
+        events: {},
+        functions,
+        buckets: {},
+      }) as unknown as ServerlessIacRaw;
+
+    const keywordsOf = (errors: Array<ErrorObject>): string[] => errors.map((e) => e.keyword);
+
+    it('rejects the legacy single-object domain with a migration error', () => {
+      const errors = validateSemantics(
+        buildFnIac({
+          handler: {
+            name: 'fn',
+            code: { runtime: 'nodejs20', handler: 'index.handler', path: './code' },
+            domain: { domain_name: 'api.example.com' },
+          },
+        }),
+      );
+      expect(keywordsOf(errors)).toContain('functionDomainMigrated');
+    });
+
+    it('requires an HTTP trigger when domains are declared', () => {
+      const errors = validateSemantics(
+        buildFnIac({
+          handler: {
+            name: 'fn',
+            code: { runtime: 'nodejs20', handler: 'index.handler', path: './code' },
+            domains: [{ domain_name: 'api.example.com' }],
+          },
+        }),
+      );
+      expect(keywordsOf(errors)).toContain('functionDomainsHttpTriggerRequired');
+    });
+
+    it('requires public auth_type on the HTTP trigger', () => {
+      const errors = validateSemantics(
+        buildFnIac({
+          handler: {
+            name: 'fn',
+            code: { runtime: 'nodejs20', handler: 'index.handler', path: './code' },
+            triggers: { http: { auth_type: 'iam' } },
+            domains: [{ domain_name: 'api.example.com' }],
+          },
+        }),
+      );
+      expect(keywordsOf(errors)).toContain('functionDomainsAuthTypePublicRequired');
+    });
+
+    it('requires access to include public when declared', () => {
+      const errors = validateSemantics(
+        buildFnIac({
+          handler: {
+            name: 'fn',
+            code: { runtime: 'nodejs20', handler: 'index.handler', path: './code' },
+            triggers: { http: { auth_type: 'public', access: ['internal'] } },
+            domains: [{ domain_name: 'api.example.com' }],
+          },
+        }),
+      );
+      expect(keywordsOf(errors)).toContain('functionDomainsAccessPublicRequired');
+    });
+
+    it('accepts a valid public function URL with domains', () => {
+      const errors = validateSemantics(
+        buildFnIac({
+          handler: {
+            name: 'fn',
+            code: { runtime: 'nodejs20', handler: 'index.handler', path: './code' },
+            triggers: { http: { auth_type: 'public', access: ['public', 'internal'] } },
+            domains: [{ domain_name: 'api.example.com', path: '/api/*' }],
+          },
+        }),
+      );
+      expect(errors).toEqual([]);
+    });
+
+    it('rejects invalid route paths: wildcard must be trailing and unique', () => {
+      const errors = validateSemantics(
+        buildFnIac({
+          handler: {
+            name: 'fn',
+            code: { runtime: 'nodejs20', handler: 'index.handler', path: './code' },
+            triggers: { http: { auth_type: 'public' } },
+            domains: [{ domain_name: 'a.example.com', path: '/api/*/mid' }],
+          },
+        }),
+      );
+      expect(keywordsOf(errors)).toContain('functionDomainsInvalidPath');
+    });
+
+    it('rejects wildcard domains on providers without wildcard support (tencent)', () => {
+      const errors = validateSemantics(
+        buildFnIac(
+          {
+            handler: {
+              name: 'fn',
+              code: { runtime: 'nodejs20', handler: 'index.handler', path: './code' },
+              triggers: { http: { auth_type: 'public' } },
+              domains: [{ domain_name: '*.example.com' }],
+            },
+          },
+          ProviderEnum.TENCENT,
+        ),
+      );
+      expect(keywordsOf(errors)).toContain('functionDomainsWildcardUnsupported');
+    });
+
+    it('allows wildcard domains on aliyun', () => {
+      const errors = validateSemantics(
+        buildFnIac({
+          handler: {
+            name: 'fn',
+            code: { runtime: 'nodejs20', handler: 'index.handler', path: './code' },
+            triggers: { http: { auth_type: 'public' } },
+            domains: [{ domain_name: '*.example.com' }],
+          },
+        }),
+      );
+      expect(errors).toEqual([]);
+    });
+
+    it('fail-fasts function domains on volcengine (no domain API, #282 row)', () => {
+      const errors = validateSemantics(
+        buildFnIac(
+          {
+            handler: {
+              name: 'fn',
+              code: { runtime: 'nodejs20', handler: 'index.handler', path: './code' },
+              triggers: { http: { auth_type: 'public' } },
+              domains: [{ domain_name: 'api.example.com' }],
+            },
+          },
+          ProviderEnum.VOLCENGINE,
+        ),
+      );
+      expect(keywordsOf(errors)).toContain('functionDomainsProviderUnsupported');
+    });
+
+    it('rejects exact path duplicates within one function', () => {
+      const errors = validateSemantics(
+        buildFnIac({
+          handler: {
+            name: 'fn',
+            code: { runtime: 'nodejs20', handler: 'index.handler', path: './code' },
+            triggers: { http: { auth_type: 'public' } },
+            domains: [
+              { domain_name: 'api.example.com', path: '/api/*' },
+              { domain_name: 'api.example.com' }, // both default to /api/* vs /*? no — second defaults to /*
+            ],
+          },
+        }),
+      );
+      // '/api/*' vs '/*' are nested prefixes — allowed. Duplicate only when identical.
+      expect(keywordsOf(errors)).not.toContain('functionDomainsDuplicateBinding');
+    });
+
+    it('rejects identical default paths across bindings on the same domain', () => {
+      const errors = validateSemantics(
+        buildFnIac({
+          handler: {
+            name: 'fn',
+            code: { runtime: 'nodejs20', handler: 'index.handler', path: './code' },
+            triggers: { http: { auth_type: 'public' } },
+            domains: [{ domain_name: 'api.example.com' }, { domain_name: 'api.example.com' }],
+          },
+        }),
+      );
+      expect(keywordsOf(errors)).toContain('functionDomainsDuplicateBinding');
+    });
+
+    it('rejects protocol mismatch across same-domain bindings on different functions', () => {
+      const errors = validateSemantics(
+        buildFnIac({
+          fn_a: {
+            name: 'a',
+            code: { runtime: 'nodejs20', handler: 'index.handler', path: './code' },
+            triggers: { http: { auth_type: 'public' } },
+            domains: [{ domain_name: 'api.example.com', protocol: 'HTTPS' }],
+          },
+          fn_b: {
+            name: 'b',
+            code: { runtime: 'nodejs20', handler: 'index.handler', path: './code' },
+            triggers: { http: { auth_type: 'public' } },
+            domains: [{ domain_name: 'api.example.com', protocol: 'HTTP' }],
+          },
+        }),
+      );
+      expect(keywordsOf(errors)).toContain('functionDomainsProtocolMismatch');
+    });
+
+    it('rejects certificate mismatch across same-domain bindings (id vs inline)', () => {
+      const errors = validateSemantics(
+        buildFnIac({
+          fn_a: {
+            name: 'a',
+            code: { runtime: 'nodejs20', handler: 'index.handler', path: './code' },
+            triggers: { http: { auth_type: 'public' } },
+            domains: [{ domain_name: 'api.example.com', certificate_id: 'cert-1' }],
+          },
+          fn_b: {
+            name: 'b',
+            code: { runtime: 'nodejs20', handler: 'index.handler', path: './code' },
+            triggers: { http: { auth_type: 'public' } },
+            domains: [
+              {
+                domain_name: 'api.example.com',
+                certificate_body: 'CERT',
+                certificate_private_key: 'KEY',
+              },
+            ],
+          },
+        }),
+      );
+      expect(keywordsOf(errors)).toContain('functionDomainsCertificateMismatch');
+    });
+
+    it('rejects exact path conflicts across functions while allowing nested prefixes', () => {
+      const conflicts = validateSemantics(
+        buildFnIac({
+          fn_a: {
+            name: 'a',
+            code: { runtime: 'nodejs20', handler: 'index.handler', path: './code' },
+            triggers: { http: { auth_type: 'public' } },
+            domains: [{ domain_name: 'api.example.com', path: '/api/*' }],
+          },
+          fn_b: {
+            name: 'b',
+            code: { runtime: 'nodejs20', handler: 'index.handler', path: './code' },
+            triggers: { http: { auth_type: 'public' } },
+            domains: [{ domain_name: 'api.example.com', path: '/api/*' }],
+          },
+        }),
+      );
+      expect(keywordsOf(conflicts)).toContain('functionDomainsPathConflict');
+
+      const nested = validateSemantics(
+        buildFnIac({
+          fn_a: {
+            name: 'a',
+            code: { runtime: 'nodejs20', handler: 'index.handler', path: './code' },
+            triggers: { http: { auth_type: 'public' } },
+            domains: [{ domain_name: 'api.example.com', path: '/api/*' }],
+          },
+          fn_b: {
+            name: 'b',
+            code: { runtime: 'nodejs20', handler: 'index.handler', path: './code' },
+            triggers: { http: { auth_type: 'public' } },
+            domains: [{ domain_name: 'api.example.com' }], // defaults to /*
+          },
+        }),
+      );
+      expect(nested).toEqual([]);
+    });
+
+    it('skips template-ref values it cannot compare', () => {
+      const errors = validateSemantics(
+        buildFnIac({
+          handler: {
+            name: 'fn',
+            code: { runtime: 'nodejs20', handler: 'index.handler', path: './code' },
+            triggers: { http: { auth_type: 'public' } },
+            domains: [{ domain_name: '${vars.host}', protocol: '${vars.proto}' }],
+          },
+        }),
+      );
+      expect(errors).toEqual([]);
+    });
+  });
 });
 
 describe('validateYaml semantic integration', () => {

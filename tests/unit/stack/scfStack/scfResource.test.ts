@@ -29,6 +29,8 @@ const mockScfOperations = {
   createTrigger: jest.fn(),
   deleteTrigger: jest.fn(),
   createCustomDomain: jest.fn(),
+  updateCustomDomain: jest.fn(),
+  getCustomDomain: jest.fn(),
   deleteCustomDomain: jest.fn(),
 };
 
@@ -39,6 +41,13 @@ const mockCamOperations = {
   updateRolePolicy: jest.fn(),
   updateManagedPolicies: jest.fn(),
   getOwnerUin: jest.fn(),
+};
+
+const mockSslOperations = {
+  uploadCertificate: jest.fn(),
+  getCertificate: jest.fn(),
+  deleteCertificate: jest.fn(),
+  deployCertificateInstance: jest.fn(),
 };
 
 const mockClsOperations = {
@@ -68,6 +77,7 @@ jest.mock('../../../../src/common/tencentClient', () => ({
     scf: mockScfOperations,
     cam: mockCamOperations,
     cls: mockClsOperations,
+    ssl: mockSslOperations,
     cos: {},
     tdsqlc: {},
   }),
@@ -162,6 +172,12 @@ describe('ScfResource', () => {
     mockScfOperations.createTrigger.mockResolvedValue({ TriggerName: 'cloud-http-id' });
     mockScfOperations.deleteCustomDomain.mockResolvedValue(undefined);
     mockScfOperations.createCustomDomain.mockResolvedValue(undefined);
+    mockScfOperations.updateCustomDomain.mockResolvedValue(undefined);
+    mockScfOperations.getCustomDomain.mockResolvedValue(null);
+    mockSslOperations.uploadCertificate.mockResolvedValue({
+      certificateId: 'ssl-cert-1',
+      alias: 'test',
+    });
     (stateManager.getResource as jest.Mock).mockReturnValue(undefined);
   });
 
@@ -1343,10 +1359,11 @@ describe('ScfResource', () => {
       );
     });
 
-    it('should create custom domain when domain is configured', async () => {
+    it('should create custom domain when a binding is configured (issue #286)', async () => {
       const fnWithDomain = {
         ...testFunction,
-        domain: { domain_name: 'api.example.com', protocol: 'HTTPS' },
+        triggers: { http: { auth_type: 'public' as const } },
+        domains: [{ domain_name: 'api.example.com', path: '/*', protocol: ['HTTPS' as const] }],
       };
 
       (mockScfOperations.createFunction as jest.Mock).mockResolvedValue(undefined);
@@ -1354,6 +1371,7 @@ describe('ScfResource', () => {
 
       await createResource(mockContext, fnWithDomain, initialState);
 
+      expect(mockScfOperations.getCustomDomain).toHaveBeenCalledWith('api.example.com');
       expect(mockScfOperations.createCustomDomain).toHaveBeenCalledWith(
         expect.objectContaining({
           Domain: 'api.example.com',
@@ -1365,6 +1383,82 @@ describe('ScfResource', () => {
             }),
           ]),
         }),
+      );
+    });
+
+    it('uploads inline PEM to SSL service and delivers the certificate id (issue #286)', async () => {
+      const fnWithInlineCert = {
+        ...testFunction,
+        triggers: { http: { auth_type: 'public' as const } },
+        domains: [
+          {
+            domain_name: 'api.example.com',
+            path: '/*',
+            protocol: ['HTTPS' as const],
+            certificate_body: 'CERT-PEM',
+            certificate_private_key: 'KEY-PEM',
+          },
+        ],
+      };
+
+      (mockScfOperations.createFunction as jest.Mock).mockResolvedValue(undefined);
+      (stateManager.setResource as jest.Mock).mockReturnValue(initialState);
+
+      await createResource(mockContext, fnWithInlineCert, initialState);
+
+      expect(mockSslOperations.uploadCertificate).toHaveBeenCalledWith(
+        'api_example_com',
+        'CERT-PEM',
+        'KEY-PEM',
+      );
+      expect(mockScfOperations.createCustomDomain).toHaveBeenCalledWith(
+        expect.objectContaining({
+          CertConfig: { CertificateId: 'ssl-cert-1' },
+        }),
+      );
+    });
+
+    it('adopts an existing domain whose routes reference this function (retry after partial failure)', async () => {
+      const fnWithDomain = {
+        ...testFunction,
+        triggers: { http: { auth_type: 'public' as const } },
+        domains: [{ domain_name: 'api.example.com', path: '/*', protocol: ['HTTPS' as const] }],
+      };
+      (mockScfOperations.createFunction as jest.Mock).mockResolvedValue(undefined);
+      (stateManager.setResource as jest.Mock).mockReturnValue(initialState);
+      mockScfOperations.createCustomDomain.mockRejectedValue(
+        Object.assign(new Error('domain 已存在'), { code: 'ResourceInUse' }),
+      );
+      mockScfOperations.getCustomDomain.mockResolvedValueOnce(null).mockResolvedValue({
+        Domain: 'api.example.com',
+        Protocol: 'HTTPS',
+        EndpointsConfig: [{ FunctionName: 'test-function', PathMatch: '/*' }],
+      });
+
+      await createResource(mockContext, fnWithDomain, initialState);
+
+      expect(mockScfOperations.createCustomDomain).toHaveBeenCalledTimes(1);
+      expect(mockScfOperations.updateCustomDomain).not.toHaveBeenCalled();
+    });
+
+    it('rejects a foreign domain no stack function routes claim', async () => {
+      const fnWithDomain = {
+        ...testFunction,
+        triggers: { http: { auth_type: 'public' as const } },
+        domains: [{ domain_name: 'api.example.com', path: '/*', protocol: ['HTTPS' as const] }],
+      };
+      (mockScfOperations.createFunction as jest.Mock).mockResolvedValue(undefined);
+      mockScfOperations.createCustomDomain.mockRejectedValue(
+        Object.assign(new Error('domain 已存在'), { code: 'ResourceInUse' }),
+      );
+      mockScfOperations.getCustomDomain.mockResolvedValueOnce(null).mockResolvedValue({
+        Domain: 'api.example.com',
+        Protocol: 'HTTPS',
+        EndpointsConfig: [{ FunctionName: 'someone-else', PathMatch: '/*' }],
+      });
+
+      await expect(createResource(mockContext, fnWithDomain, initialState)).rejects.toThrow(
+        'already exists but is not managed by this stack',
       );
     });
 
@@ -2178,10 +2272,11 @@ describe('ScfResource', () => {
       );
     });
 
-    it('should create custom domain when domain is added during update', async () => {
+    it('should create custom domain when a binding is added during update', async () => {
       const fnWithDomain = {
         ...testFunction,
-        domain: { domain_name: 'api.example.com', protocol: 'HTTPS' },
+        triggers: { http: { auth_type: 'public' as const } },
+        domains: [{ domain_name: 'api.example.com', path: '/*', protocol: ['HTTPS' as const] }],
       };
 
       const stateWithoutDomain: StateFile = {
@@ -2627,6 +2722,7 @@ describe('ScfResource', () => {
                 sid: 'si:tencent:scf-custom-domain:default:api.example.com',
                 type: 'TENCENT_SCF_CUSTOM_DOMAIN',
                 id: 'api.example.com',
+                paths: ['/*'],
               },
             ],
             lastUpdated: '2025-01-01T00:00:00Z',
@@ -2639,14 +2735,19 @@ describe('ScfResource', () => {
       );
       (mockScfOperations.updateFunctionConfiguration as jest.Mock).mockResolvedValue(undefined);
       (mockScfOperations.updateFunctionCode as jest.Mock).mockResolvedValue(undefined);
+      mockScfOperations.getCustomDomain.mockResolvedValue({
+        Domain: 'api.example.com',
+        Protocol: 'HTTPS',
+        EndpointsConfig: [{ FunctionName: 'test-function', PathMatch: '/*' }],
+      });
       (stateManager.setResource as jest.Mock).mockReturnValue(initialState);
 
       await updateResource(mockContext, fnWithoutDomain, stateWithDomain);
 
-      expect(mockScfOperations.deleteCustomDomain).toHaveBeenCalled();
+      expect(mockScfOperations.deleteCustomDomain).toHaveBeenCalledWith('api.example.com');
     });
 
-    it('ignores ResourceNotFound when deleting a removed custom domain during update', async () => {
+    it('treats an already-vanished recorded domain as converged (no delete call)', async () => {
       const fnWithoutDomain = { ...testFunction };
 
       const stateWithDomain: StateFile = {
@@ -2666,6 +2767,7 @@ describe('ScfResource', () => {
                 sid: 'si:tencent:scf-custom-domain:default:api.example.com',
                 type: 'TENCENT_SCF_CUSTOM_DOMAIN',
                 id: 'api.example.com',
+                paths: ['/*'],
               },
             ],
             lastUpdated: '2025-01-01T00:00:00Z',
@@ -2678,17 +2780,15 @@ describe('ScfResource', () => {
       );
       (mockScfOperations.updateFunctionConfiguration as jest.Mock).mockResolvedValue(undefined);
       (mockScfOperations.updateFunctionCode as jest.Mock).mockResolvedValue(undefined);
-      (mockScfOperations.deleteCustomDomain as jest.Mock).mockRejectedValue(
-        Object.assign(new Error('not found'), { code: 'ResourceNotFound' }),
-      );
       (stateManager.setResource as jest.Mock).mockReturnValue(initialState);
 
       await updateResource(mockContext, fnWithoutDomain, stateWithDomain);
 
-      expect(mockScfOperations.deleteCustomDomain).toHaveBeenCalled();
+      expect(mockScfOperations.deleteCustomDomain).not.toHaveBeenCalled();
+      expect(mockScfOperations.updateCustomDomain).not.toHaveBeenCalled();
     });
 
-    it('rethrows unexpected errors when deleting a removed custom domain during update', async () => {
+    it('rethrows unexpected errors when releasing a removed custom domain during update', async () => {
       const fnWithoutDomain = { ...testFunction };
 
       const stateWithDomain: StateFile = {
@@ -2708,6 +2808,7 @@ describe('ScfResource', () => {
                 sid: 'si:tencent:scf-custom-domain:default:api.example.com',
                 type: 'TENCENT_SCF_CUSTOM_DOMAIN',
                 id: 'api.example.com',
+                paths: ['/*'],
               },
             ],
             lastUpdated: '2025-01-01T00:00:00Z',
@@ -2720,6 +2821,11 @@ describe('ScfResource', () => {
       );
       (mockScfOperations.updateFunctionConfiguration as jest.Mock).mockResolvedValue(undefined);
       (mockScfOperations.updateFunctionCode as jest.Mock).mockResolvedValue(undefined);
+      mockScfOperations.getCustomDomain.mockResolvedValue({
+        Domain: 'api.example.com',
+        Protocol: 'HTTPS',
+        EndpointsConfig: [{ FunctionName: 'test-function', PathMatch: '/*' }],
+      });
       (mockScfOperations.deleteCustomDomain as jest.Mock).mockRejectedValue(
         new Error('delete failed'),
       );
@@ -2730,10 +2836,11 @@ describe('ScfResource', () => {
       );
     });
 
-    it('should recreate custom domain when domain name changes during update', async () => {
+    it('swaps domains: releases the removed binding and creates the new one', async () => {
       const fnWithNewDomain = {
         ...testFunction,
-        domain: { domain_name: 'new.example.com', protocol: 'HTTPS' },
+        triggers: { http: { auth_type: 'public' as const } },
+        domains: [{ domain_name: 'new.example.com', path: '/*', protocol: ['HTTPS' as const] }],
       };
 
       const stateWithOldDomain: StateFile = {
@@ -2754,6 +2861,7 @@ describe('ScfResource', () => {
                 type: 'TENCENT_SCF_CUSTOM_DOMAIN',
                 id: 'old.example.com',
                 protocol: 'HTTPS',
+                paths: ['/*'],
               },
             ],
             lastUpdated: '2025-01-01T00:00:00Z',
@@ -2766,6 +2874,13 @@ describe('ScfResource', () => {
       );
       (mockScfOperations.updateFunctionConfiguration as jest.Mock).mockResolvedValue(undefined);
       (mockScfOperations.updateFunctionCode as jest.Mock).mockResolvedValue(undefined);
+      // Sorted reconcile order: new.example.com is probed first (nothing live),
+      // then old.example.com is released (live routes found).
+      mockScfOperations.getCustomDomain.mockResolvedValueOnce(null).mockResolvedValueOnce({
+        Domain: 'old.example.com',
+        Protocol: 'HTTPS',
+        EndpointsConfig: [{ FunctionName: 'test-function', PathMatch: '/*' }],
+      });
       (mockScfOperations.deleteCustomDomain as jest.Mock).mockResolvedValue(undefined);
       (stateManager.setResource as jest.Mock).mockReturnValue(initialState);
 
@@ -2777,10 +2892,11 @@ describe('ScfResource', () => {
       );
     });
 
-    it('should recreate custom domain when protocol changes during update', async () => {
+    it('converges a protocol change via UpdateCustomDomain without recreation', async () => {
       const fnWithNewProtocol = {
         ...testFunction,
-        domain: { domain_name: 'api.example.com', protocol: 'HTTP' },
+        triggers: { http: { auth_type: 'public' as const } },
+        domains: [{ domain_name: 'api.example.com', path: '/*', protocol: ['HTTP' as const] }],
       };
 
       const stateWithOldProtocol: StateFile = {
@@ -2801,6 +2917,7 @@ describe('ScfResource', () => {
                 type: 'TENCENT_SCF_CUSTOM_DOMAIN',
                 id: 'api.example.com',
                 protocol: 'HTTPS',
+                paths: ['/*'],
               },
             ],
             lastUpdated: '2025-01-01T00:00:00Z',
@@ -2813,25 +2930,37 @@ describe('ScfResource', () => {
       );
       (mockScfOperations.updateFunctionConfiguration as jest.Mock).mockResolvedValue(undefined);
       (mockScfOperations.updateFunctionCode as jest.Mock).mockResolvedValue(undefined);
-      (mockScfOperations.deleteCustomDomain as jest.Mock).mockResolvedValue(undefined);
+      mockScfOperations.getCustomDomain.mockResolvedValue({
+        Domain: 'api.example.com',
+        Protocol: 'HTTPS',
+        EndpointsConfig: [{ FunctionName: 'test-function', PathMatch: '/*' }],
+      });
       (stateManager.setResource as jest.Mock).mockReturnValue(initialState);
 
       await updateResource(mockContext, fnWithNewProtocol, stateWithOldProtocol);
 
-      expect(mockScfOperations.deleteCustomDomain).toHaveBeenCalledWith('api.example.com');
-      expect(mockScfOperations.createCustomDomain).toHaveBeenCalledWith(
-        expect.objectContaining({ Domain: 'api.example.com', Protocol: 'HTTP' }),
+      expect(mockScfOperations.deleteCustomDomain).not.toHaveBeenCalled();
+      expect(mockScfOperations.createCustomDomain).not.toHaveBeenCalled();
+      expect(mockScfOperations.updateCustomDomain).toHaveBeenCalledWith(
+        expect.objectContaining({
+          Domain: 'api.example.com',
+          Protocol: 'HTTP',
+        }),
       );
     });
 
     it('should pass CertConfig when creating custom domain with certificate_id during update', async () => {
       const fnWithCertDomain = {
         ...testFunction,
-        domain: {
-          domain_name: 'api.example.com',
-          protocol: 'HTTPS',
-          certificate_id: 'cert-123',
-        },
+        triggers: { http: { auth_type: 'public' as const } },
+        domains: [
+          {
+            domain_name: 'api.example.com',
+            path: '/*',
+            protocol: ['HTTPS' as const],
+            certificate_id: 'cert-123',
+          },
+        ],
       };
 
       const stateWithoutDomain: StateFile = {
@@ -2873,7 +3002,8 @@ describe('ScfResource', () => {
     it('should not touch custom domain when domain is unchanged during update', async () => {
       const fnWithSameDomain = {
         ...testFunction,
-        domain: { domain_name: 'api.example.com', protocol: 'HTTPS' },
+        triggers: { http: { auth_type: 'public' as const } },
+        domains: [{ domain_name: 'api.example.com', path: '/*', protocol: ['HTTPS' as const] }],
       };
 
       const stateWithMatchingDomain: StateFile = {
@@ -2882,7 +3012,7 @@ describe('ScfResource', () => {
           'functions.test_fn': {
             mode: 'managed',
             region: 'ap-guangzhou',
-            definition: { ...mockDefinition, domain: fnWithSameDomain.domain },
+            definition: mockDefinition,
             instances: [
               {
                 sid: 'si:tencent:scf:default:test-function',
@@ -2894,6 +3024,7 @@ describe('ScfResource', () => {
                 type: 'TENCENT_SCF_CUSTOM_DOMAIN',
                 id: 'api.example.com',
                 protocol: 'HTTPS',
+                paths: ['/*'],
               },
             ],
             lastUpdated: '2025-01-01T00:00:00Z',
@@ -2906,22 +3037,32 @@ describe('ScfResource', () => {
       );
       (mockScfOperations.updateFunctionConfiguration as jest.Mock).mockResolvedValue(undefined);
       (mockScfOperations.updateFunctionCode as jest.Mock).mockResolvedValue(undefined);
+      mockScfOperations.getCustomDomain.mockResolvedValue({
+        Domain: 'api.example.com',
+        Protocol: 'HTTPS',
+        EndpointsConfig: [{ FunctionName: 'test-function', PathMatch: '/*' }],
+      });
       (stateManager.setResource as jest.Mock).mockReturnValue(initialState);
 
       await updateResource(mockContext, fnWithSameDomain, stateWithMatchingDomain);
 
       expect(mockScfOperations.deleteCustomDomain).not.toHaveBeenCalled();
       expect(mockScfOperations.createCustomDomain).not.toHaveBeenCalled();
+      expect(mockScfOperations.updateCustomDomain).not.toHaveBeenCalled();
     });
 
-    it('should pass CertConfig when recreating custom domain with certificate_id during update', async () => {
+    it('should pass CertConfig when a new binding with certificate_id is added during update', async () => {
       const fnWithNewCertDomain = {
         ...testFunction,
-        domain: {
-          domain_name: 'new.example.com',
-          protocol: 'HTTPS',
-          certificate_id: 'cert-123',
-        },
+        triggers: { http: { auth_type: 'public' as const } },
+        domains: [
+          {
+            domain_name: 'new.example.com',
+            path: '/*',
+            protocol: ['HTTPS' as const],
+            certificate_id: 'cert-123',
+          },
+        ],
       };
 
       const stateWithOldDomain: StateFile = {
@@ -2942,6 +3083,7 @@ describe('ScfResource', () => {
                 type: 'TENCENT_SCF_CUSTOM_DOMAIN',
                 id: 'old.example.com',
                 protocol: 'HTTPS',
+                paths: ['/*'],
               },
             ],
             lastUpdated: '2025-01-01T00:00:00Z',
@@ -2954,6 +3096,13 @@ describe('ScfResource', () => {
       );
       (mockScfOperations.updateFunctionConfiguration as jest.Mock).mockResolvedValue(undefined);
       (mockScfOperations.updateFunctionCode as jest.Mock).mockResolvedValue(undefined);
+      // Sorted reconcile order: new.example.com probed first (nothing live),
+      // then old.example.com is released.
+      mockScfOperations.getCustomDomain.mockResolvedValueOnce(null).mockResolvedValueOnce({
+        Domain: 'old.example.com',
+        Protocol: 'HTTPS',
+        EndpointsConfig: [{ FunctionName: 'test-function', PathMatch: '/*' }],
+      });
       (mockScfOperations.deleteCustomDomain as jest.Mock).mockResolvedValue(undefined);
       (stateManager.setResource as jest.Mock).mockReturnValue(initialState);
 
@@ -3613,7 +3762,7 @@ describe('ScfResource', () => {
       expect(mockScfOperations.deleteFunction).toHaveBeenCalledWith('test-function');
     });
 
-    it('should delete custom domain before deleting function', async () => {
+    it('should release custom domain routes before deleting function', async () => {
       const stateWithDomain: StateFile = {
         ...initialState,
         resources: {
@@ -3631,6 +3780,7 @@ describe('ScfResource', () => {
                 sid: 'si:tencent:scf-custom-domain:default:api.example.com',
                 type: 'TENCENT_SCF_CUSTOM_DOMAIN',
                 id: 'api.example.com',
+                paths: ['/*'],
               },
             ],
             lastUpdated: '2025-01-01T00:00:00Z',
@@ -3642,12 +3792,69 @@ describe('ScfResource', () => {
         stateWithDomain.resources['functions.test_fn'],
       );
       (mockScfOperations.deleteFunction as jest.Mock).mockResolvedValue(undefined);
+      mockScfOperations.getCustomDomain.mockResolvedValue({
+        Domain: 'api.example.com',
+        Protocol: 'HTTPS',
+        EndpointsConfig: [{ FunctionName: 'test-function', PathMatch: '/*' }],
+      });
       (mockScfOperations.deleteCustomDomain as jest.Mock).mockResolvedValue(undefined);
       (stateManager.removeResource as jest.Mock).mockReturnValue(initialState);
 
       await deleteResource(mockContext, 'test-function', 'functions.test_fn', stateWithDomain);
 
       expect(mockScfOperations.deleteCustomDomain).toHaveBeenCalledWith('api.example.com');
+      expect(mockScfOperations.deleteFunction).toHaveBeenCalledWith('test-function');
+      const domainDeleteOrder = mockScfOperations.deleteCustomDomain.mock.invocationCallOrder[0];
+      const functionDeleteOrder = mockScfOperations.deleteFunction.mock.invocationCallOrder[0];
+      expect(domainDeleteOrder).toBeLessThan(functionDeleteOrder);
+    });
+
+    it('keeps a shared domain alive when other functions still hold routes during delete', async () => {
+      const stateWithDomain: StateFile = {
+        ...initialState,
+        resources: {
+          'functions.test_fn': {
+            mode: 'managed',
+            region: 'ap-guangzhou',
+            definition: mockDefinition,
+            instances: [
+              {
+                sid: 'si:tencent:scf:default:test-function',
+                id: 'test-function',
+                functionName: 'test-function',
+              },
+              {
+                sid: 'si:tencent:scf-custom-domain:default:api.example.com',
+                type: 'TENCENT_SCF_CUSTOM_DOMAIN',
+                id: 'api.example.com',
+                paths: ['/api/*'],
+              },
+            ],
+            lastUpdated: '2025-01-01T00:00:00Z',
+          },
+        },
+      };
+
+      (stateManager.getResource as jest.Mock).mockReturnValue(
+        stateWithDomain.resources['functions.test_fn'],
+      );
+      (mockScfOperations.deleteFunction as jest.Mock).mockResolvedValue(undefined);
+      mockScfOperations.getCustomDomain.mockResolvedValue({
+        Domain: 'api.example.com',
+        Protocol: 'HTTPS',
+        EndpointsConfig: [
+          { FunctionName: 'test-function', PathMatch: '/api/*' },
+          { FunctionName: 'fn_admin', PathMatch: '/admin/*' },
+        ],
+      });
+      (stateManager.removeResource as jest.Mock).mockReturnValue(initialState);
+
+      await deleteResource(mockContext, 'test-function', 'functions.test_fn', stateWithDomain);
+
+      expect(mockScfOperations.deleteCustomDomain).not.toHaveBeenCalled();
+      expect(mockScfOperations.updateCustomDomain).toHaveBeenCalledWith(
+        expect.objectContaining({ Domain: 'api.example.com' }),
+      );
       expect(mockScfOperations.deleteFunction).toHaveBeenCalledWith('test-function');
     });
 
@@ -3693,7 +3900,7 @@ describe('ScfResource', () => {
       expect(mockScfOperations.deleteFunction).toHaveBeenCalledWith('test-function');
     });
 
-    it('should handle custom domain not found during delete gracefully', async () => {
+    it('treats an already-vanished domain during delete as converged (no delete call)', async () => {
       const stateWithDomain: StateFile = {
         ...initialState,
         resources: {
@@ -3711,6 +3918,7 @@ describe('ScfResource', () => {
                 sid: 'si:tencent:scf-custom-domain:default:api.example.com',
                 type: 'TENCENT_SCF_CUSTOM_DOMAIN',
                 id: 'api.example.com',
+                paths: ['/*'],
               },
             ],
             lastUpdated: '2025-01-01T00:00:00Z',
@@ -3722,14 +3930,11 @@ describe('ScfResource', () => {
         stateWithDomain.resources['functions.test_fn'],
       );
       (mockScfOperations.deleteFunction as jest.Mock).mockResolvedValue(undefined);
-      (mockScfOperations.deleteCustomDomain as jest.Mock).mockRejectedValue(
-        Object.assign(new Error('not found'), { code: 'ResourceNotFound' }),
-      );
       (stateManager.removeResource as jest.Mock).mockReturnValue(initialState);
 
       await deleteResource(mockContext, 'test-function', 'functions.test_fn', stateWithDomain);
 
-      expect(mockScfOperations.deleteCustomDomain).toHaveBeenCalledWith('api.example.com');
+      expect(mockScfOperations.deleteCustomDomain).not.toHaveBeenCalled();
       expect(mockScfOperations.deleteFunction).toHaveBeenCalledWith('test-function');
     });
 
@@ -3773,7 +3978,7 @@ describe('ScfResource', () => {
       expect(mockScfOperations.deleteFunction).not.toHaveBeenCalled();
     });
 
-    it('should rethrow unexpected errors when deleting custom domain during delete', async () => {
+    it('should rethrow unexpected errors when releasing custom domain during delete', async () => {
       const stateWithDomain: StateFile = {
         ...initialState,
         resources: {
@@ -3791,6 +3996,7 @@ describe('ScfResource', () => {
                 sid: 'si:tencent:scf-custom-domain:default:api.example.com',
                 type: 'TENCENT_SCF_CUSTOM_DOMAIN',
                 id: 'api.example.com',
+                paths: ['/*'],
               },
             ],
             lastUpdated: '2025-01-01T00:00:00Z',
@@ -3801,6 +4007,11 @@ describe('ScfResource', () => {
       (stateManager.getResource as jest.Mock).mockReturnValue(
         stateWithDomain.resources['functions.test_fn'],
       );
+      mockScfOperations.getCustomDomain.mockResolvedValue({
+        Domain: 'api.example.com',
+        Protocol: 'HTTPS',
+        EndpointsConfig: [{ FunctionName: 'test-function', PathMatch: '/*' }],
+      });
       (mockScfOperations.deleteCustomDomain as jest.Mock).mockRejectedValue(
         new Error('delete failed'),
       );

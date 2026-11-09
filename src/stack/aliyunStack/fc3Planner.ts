@@ -19,6 +19,11 @@ import { definitionsDiffer, remoteDiffersFromDesired } from '../../common/planCo
 import { PLAN_READ_CONCURRENCY, mapWithConcurrency } from '../../common/concurrency';
 import { translateSiCron } from '../../common/siCron';
 import {
+  functionDomainDefinitionEntry,
+  mapFunctionProtocol,
+  normalizeFunctionDomainName,
+} from '../../common/functionDomainReconcile';
+import {
   Context,
   FunctionDomain,
   Plan,
@@ -128,6 +133,13 @@ const removedFc3Dependents = (
   const recordedTimers = (currentState?.instances ?? []).filter(
     (i) => i.type === 'ALIYUN_FC3_TIMER_TRIGGER',
   );
+  // Removed domain bindings surface the stored canonicalized entries; a
+  // pre-#286 state (single instance, no definition.domains) reconstructs the
+  // legacy `/*` binding so the diff still shows the removal.
+  const recordedDomainInstances = (currentState?.instances ?? []).filter(
+    (i) => i.type === 'ALIYUN_FC3_CUSTOM_DOMAIN',
+  );
+  const storedDomains = currentState?.definition?.domains;
   return {
     ...(!fn.triggers?.http && recorded('ALIYUN_FC3_HTTP_TRIGGER')
       ? {
@@ -135,11 +147,24 @@ const removedFc3Dependents = (
             currentState?.definition?.http ?? recorded('ALIYUN_FC3_HTTP_TRIGGER')?.attributes ?? {},
         }
       : {}),
-    ...(!fn.domain && recorded('ALIYUN_FC3_CUSTOM_DOMAIN')
+    ...(!(fn.domains?.length ?? 0) && recordedDomainInstances.length > 0
       ? {
-          domain: currentState?.definition?.domain ?? {
-            domain_name: recorded('ALIYUN_FC3_CUSTOM_DOMAIN')?.id,
-          },
+          domains: (Array.isArray(storedDomains) && storedDomains.length > 0
+            ? storedDomains
+            : recordedDomainInstances.map((i) =>
+                functionDomainDefinitionEntry({
+                  domain_name: String(i.id),
+                  path: (i as { paths?: Array<string> }).paths?.[0] ?? '/*',
+                  ...(typeof (i as { attributes?: { certificate_id?: unknown } }).attributes
+                    ?.certificate_id === 'string'
+                    ? {
+                        certificate_id: (i as unknown as { attributes: { certificate_id: string } })
+                          .attributes.certificate_id,
+                      }
+                    : {}),
+                  protocol: ['HTTPS'],
+                }),
+              )) as unknown as ResourceAttributes,
         }
       : {}),
     ...(!fn.triggers?.timer && recordedTimers.length > 0
@@ -376,19 +401,18 @@ const detectFunctionLifecycleDrift = async (
       reasons.push('PLAN_DRIFT_HTTP_TRIGGER');
     }
   }
-  if (fn.domain) {
-    const domain = await cachedRefreshRead(
-      context,
-      `fc3.getCustomDomain:${fn.domain.domain_name}`,
-      () => client.fc3.getCustomDomain(fn.domain!.domain_name),
+  // Domain bindings (issue #286): every declared domain must exist with the
+  // expected protocol. Route drift is not probed here — the executor converges
+  // routes on every apply; certificate changes ride the state's
+  // certificate_hash. Template-ref protocol entries default through the same
+  // canonicalization the executor uses.
+  for (const binding of fn.domains ?? []) {
+    const domainName = normalizeFunctionDomainName(binding.domain_name);
+    const domain = await cachedRefreshRead(context, `fc3.getCustomDomain:${domainName}`, () =>
+      client.fc3.getCustomDomain(domainName),
     );
-    if (
-      !domain ||
-      (domain.protocol !== undefined && domain.protocol !== fn.domain.protocol) ||
-      (domain.certConfig?.certificateId !== undefined &&
-        fn.domain.certificate_id !== undefined &&
-        domain.certConfig.certificateId !== fn.domain.certificate_id)
-    ) {
+    const protocolString = mapFunctionProtocol('aliyun', binding.protocol);
+    if (!domain || (domain.protocol !== undefined && domain.protocol !== protocolString)) {
       reasons.push('PLAN_DRIFT_FUNCTION_DOMAIN');
     }
   }
@@ -629,7 +653,7 @@ export const generateFunctionPlan = async (
           );
           const fields: Record<string, string> = {
             PLAN_DRIFT_HTTP_TRIGGER: 'http',
-            PLAN_DRIFT_FUNCTION_DOMAIN: 'domain',
+            PLAN_DRIFT_FUNCTION_DOMAIN: 'domains',
             PLAN_DRIFT_TIMER_TRIGGER: 'timers',
           };
           return {

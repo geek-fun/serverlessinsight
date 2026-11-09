@@ -1,16 +1,19 @@
 import { mergeManagedIntent } from './planCompare';
+import { canonicalFunctionDomains } from './functionDomainReconcile';
 import type { FunctionDomain, ResourceAttributes } from '../types';
 
 /** Persist lifecycle intent alongside function configuration, using the same shape on every provider. */
 export const withFunctionLifecycle = (
   definition: ResourceAttributes,
   fn?: FunctionDomain,
-  support: { http?: boolean; domain?: boolean } = {},
+  support: { http?: boolean; domains?: boolean } = {},
 ): ResourceAttributes => ({
   ...definition,
   ...(fn?.log !== undefined && !definition.logConfig ? { logEnabled: fn.log } : {}),
   ...(support.http !== false && fn?.triggers?.http ? { http: fn.triggers.http } : {}),
-  ...(support.domain !== false && fn?.domain ? { domain: fn.domain } : {}),
+  ...(support.domains !== false && fn?.domains
+    ? { domains: canonicalFunctionDomains(fn.domains) }
+    : {}),
   ...(fn?.triggers?.timer !== undefined ? { timers: fn.triggers.timer } : {}),
 });
 

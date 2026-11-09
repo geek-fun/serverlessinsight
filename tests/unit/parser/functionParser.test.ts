@@ -538,43 +538,83 @@ describe('parseFunction', () => {
     });
   });
 
-  describe('domain', () => {
-    it('should parse domain with domain_name only', () => {
+  describe('domains (issue #286)', () => {
+    it('should parse a binding with domain_name only: default path and [HTTPS] protocol', () => {
       const result = parseFunction({
         fn: {
           name: 'domain-fn',
-          domain: { domain_name: 'api.example.com' },
+          domains: [{ domain_name: 'api.example.com' }],
         },
       });
 
-      expect(result![0].domain).toEqual({
-        domain_name: 'api.example.com',
-        certificate_id: undefined,
-        protocol: 'HTTPS',
-      });
+      expect(result![0].domains).toEqual([
+        {
+          domain_name: 'api.example.com',
+          path: '/*',
+          certificate_id: undefined,
+          certificate_body: undefined,
+          certificate_private_key: undefined,
+          protocol: ['HTTPS'],
+        },
+      ]);
     });
 
-    it('should parse domain with certificate_id and protocol', () => {
+    it('should parse scalar and array protocol forms into a canonical set', () => {
       const result = parseFunction({
         fn: {
           name: 'domain-fn',
-          domain: { domain_name: 'api.example.com', certificate_id: 'cert-123', protocol: 'HTTP' },
+          domains: [
+            { domain_name: 'a.example.com', protocol: 'HTTP' },
+            { domain_name: 'b.example.com', protocol: ['HTTPS', 'HTTP'] },
+          ],
         },
       });
 
-      expect(result![0].domain).toEqual({
-        domain_name: 'api.example.com',
-        certificate_id: 'cert-123',
-        protocol: 'HTTP',
-      });
+      expect(result![0].domains?.[0].protocol).toEqual(['HTTP']);
+      expect(result![0].domains?.[1].protocol).toEqual(['HTTP', 'HTTPS']);
     });
 
-    it('should not include domain key when no domain is set', () => {
+    it('should parse certificate reference and inline PEM binding forms', () => {
+      const result = parseFunction({
+        fn: {
+          name: 'domain-fn',
+          domains: [
+            { domain_name: 'a.example.com', certificate_id: 'cert-123' },
+            {
+              domain_name: 'b.example.com',
+              certificate_body: '-----BEGIN CERTIFICATE-----',
+              certificate_private_key: '-----BEGIN PRIVATE KEY-----',
+            },
+          ],
+        },
+      });
+
+      expect(result![0].domains?.[0].certificate_id).toBe('cert-123');
+      expect(result![0].domains?.[1].certificate_body).toBe('-----BEGIN CERTIFICATE-----');
+      expect(result![0].domains?.[1].certificate_private_key).toBe('-----BEGIN PRIVATE KEY-----');
+    });
+
+    it('should default path to /* and keep explicit paths', () => {
+      const result = parseFunction({
+        fn: {
+          name: 'domain-fn',
+          domains: [
+            { domain_name: 'a.example.com' },
+            { domain_name: 'b.example.com', path: '/api/*' },
+          ],
+        },
+      });
+
+      expect(result![0].domains?.[0].path).toBe('/*');
+      expect(result![0].domains?.[1].path).toBe('/api/*');
+    });
+
+    it('should not include domains key when no domains are set', () => {
       const result = parseFunction({
         fn: { name: 'no-domain-fn' },
       });
 
-      expect(result![0]).not.toHaveProperty('domain');
+      expect(result![0]).not.toHaveProperty('domains');
     });
   });
 });

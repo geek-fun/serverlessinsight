@@ -78,7 +78,8 @@ describe('effective deployment validation', () => {
             timeout: '${vars.size}',
             log: '${vars.flag}',
             environment: { TOKEN: '${vars.token}', FLAG: '${vars.flag}' },
-            domain: { domain_name: 'api.example.com', certificate_id: '${vars.token}' },
+            triggers: { http: { auth_type: 'public' } },
+            domains: [{ domain_name: 'api.example.com', certificate_id: '${vars.token}' }],
           },
         },
       }),
@@ -94,7 +95,7 @@ describe('effective deployment validation', () => {
       timeout: 512,
       log: false,
       environment: { TOKEN: '00012345678901234567890', FLAG: 'false' },
-      domain: { certificate_id: '00012345678901234567890' },
+      domains: [{ certificate_id: '00012345678901234567890' }],
     });
   });
 

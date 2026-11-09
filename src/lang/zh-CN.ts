@@ -1146,6 +1146,38 @@ export const zhCN = {
   DELETING_CUSTOM_DOMAIN: "正在删除自定义域名 '{{domainName}}'...",
   CUSTOM_DOMAIN_DELETED: "自定义域名 '{{domainName}}' 已删除",
   DOMAIN_NOT_SUPPORTED_PROVIDER: "当前云平台 '{{provider}}' 不支持自定义域名",
+  // 函数域名绑定（issue #286）
+  FUNCTION_DOMAIN_MIGRATION_REQUIRED:
+    '函数 "{{fnKey}}"：旧版单对象 "domain" 字段已不再支持，请改为 "domains" 列表声明自定义域名',
+  FUNCTION_DOMAINS_PROVIDER_NOT_SUPPORTED:
+    '函数 "{{fnKey}}"：云平台 "{{provider}}" 不支持函数自定义域名绑定（"domains"）',
+  FUNCTION_DOMAINS_HTTP_TRIGGER_REQUIRED:
+    '函数 "{{fnKey}}"：声明 "domains" 需要同时配置 HTTP 触发器（"triggers.http"）——域名路由依赖其创建的函数 URL',
+  FUNCTION_DOMAINS_AUTH_TYPE_PUBLIC_REQUIRED:
+    '函数 "{{fnKey}}"：声明 "domains" 时 triggers.http.auth_type 必须为 "public"',
+  FUNCTION_DOMAINS_ACCESS_PUBLIC_REQUIRED:
+    '函数 "{{fnKey}}"：声明 "domains" 时 triggers.http.access（若声明）必须包含 "public"——仅内网可达的函数 URL 无法服务自定义域名',
+  FUNCTION_DOMAINS_WILDCARD_NOT_SUPPORTED:
+    '函数 "{{fnKey}}"：云平台 "{{provider}}" 不支持泛域名 "{{domain}}"',
+  FUNCTION_DOMAINS_INVALID_PATH:
+    '函数 "{{fnKey}}"：无效的路由路径 "{{path}}"——路径必须以 "/" 开头，且最多只能包含一个位于末尾的 "*"（如 "/api/*"）',
+  FUNCTION_DOMAINS_DUPLICATE_BINDING:
+    '函数 "{{fnKey}}"：域名 "{{domain}}" 上存在重复的路由绑定 "{{path}}"',
+  FUNCTION_DOMAINS_PROTOCOL_MISMATCH:
+    '域名 "{{domain}}"："{{fnKey}}" 与 "{{otherFnKey}}" 声明的 protocol 不一致——protocol 是域名级配置，同域名的所有绑定必须一致',
+  FUNCTION_DOMAINS_CERTIFICATE_MISMATCH:
+    '域名 "{{domain}}"："{{fnKey}}" 与 "{{otherFnKey}}" 声明的证书不一致——证书是域名级配置，同域名的所有绑定必须一致',
+  FUNCTION_DOMAINS_PATH_CONFLICT:
+    '域名 "{{domain}}"：函数 "{{fnKey}}" 与 "{{otherFnKey}}" 声明了相同的路由路径 "{{path}}"——同域名路由路径不允许完全重复（嵌套前缀如 "/api/*" 与 "/*" 是允许的）',
+  FUNCTION_DOMAIN_EXISTS_NOT_OWNED:
+    "自定义域名 '{{domainName}}' 已存在但不受本 stack 管理（其路由未指向本 stack 的函数）",
+  FUNCTION_DOMAIN_OWNED_ADOPT: "收编本 stack 此前创建的自定义域名 '{{domainName}}'",
+  UPDATING_FUNCTION_DOMAIN_ROUTES:
+    "正在更新自定义域名 '{{domainName}}' 的路由表（{{count}} 条路由）...",
+  REMOVING_FUNCTION_DOMAIN_ROUTES:
+    "正在从自定义域名 '{{domainName}}' 移除函数 '{{functionName}}' 的路由...",
+  FUNCTION_DOMAIN_ROUTE_RELEASED:
+    "函数 '{{functionName}}' 是自定义域名 '{{domainName}}' 的最后一个绑定——正在删除该域名",
   EVENT_FLUSH_FAILED: '部署事件冲刷失败（部署 {{deploymentId}}，{{count}} 条）：{{error}}',
   EVENT_REPLAY_FAILED: '事件队列文件 {{file}} 重放失败：{{error}}',
   INVALID_HTTP_TRIGGER_AUTH_TYPE:
