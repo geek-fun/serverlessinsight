@@ -779,6 +779,8 @@ export const zhCN = {
   TOS_OBJECT_UPLOADED: '已上传对象 {{key}} 到存储桶 {{bucket}}',
   TOS_FILES_UPLOADED: '已从 {{path}} 上传文件到存储桶 {{bucket}}',
   VOLCENGINE_TOS_CLIENT_NOT_INITIALIZED: 'TOS 客户端未初始化。请检查您的凭证。',
+  VOLCENGINE_CDN_CLIENT_NOT_INITIALIZED: 'CDN 客户端未初始化。请检查您的凭证。',
+  VOLCENGINE_DNS_CLIENT_NOT_INITIALIZED: 'DNS 客户端未初始化。请检查您的凭证。',
   VOLCENGINE_BUCKET_DELETE_FAILED: '删除存储桶 {{bucketName}} 失败：{{error}}',
   VOLCENGINE_FUNCTION_DELETE_FAILED: '删除函数 {{functionName}} 失败：{{error}}',
   VOLCENGINE_APIGW_CLIENT_NOT_INITIALIZED: 'API 网关客户端未初始化。请检查您的凭证。',
@@ -891,6 +893,19 @@ export const zhCN = {
   CDN_ACCELERATE_CONFIG_CHANGED:
     '无法通过更新操作更改存储桶 {{bucketName}} 的 CDN/加速配置。请使用销毁重建操作来更改 CDN 或加速配置。',
   BINDING_REMOVING_DOMAIN: '正在移除存储桶 {{bucketName}} 的自定义域名绑定 {{domain}}',
+
+  // 火山引擎 TOS 存储桶域名（issue #294）
+  TOS_CUSTOM_DOMAIN_BOUND: '自定义域名 {{domain}} 已绑定到 TOS 存储桶 {{bucketName}}',
+  TOS_CUSTOM_DOMAIN_UNBOUND: '自定义域名 {{domain}} 已从 TOS 存储桶 {{bucketName}} 解绑',
+  TOS_TRANSFER_ACCELERATION_DISABLED: 'TOS 存储桶 {{bucketName}} 的传输加速已关闭',
+  CDN_DOMAIN_CREATED: 'CDN 域名 {{domain}} 创建成功',
+  CDN_CERT_UPLOAD_FAILED: 'CDN 证书上传未返回证书 ID',
+  DNS_ZONE_NOT_FOUND:
+    '域名 {{domain}} 未托管在火山引擎云解析（TrafficRoute）。请将该域名托管到火山云解析，或手动配置 CNAME 记录。',
+  DNS_RECORD_CREATED: 'DNS 记录 {{domain}} 创建成功',
+  DNS_RECORD_UPDATED: 'DNS 记录 {{domain}} 更新成功',
+  TOS_DIRECT_BINDING_PEM_NOT_SUPPORTED:
+    '存储桶 "{{key}}"：绑定 "{{domain}}" —— TOS 直连域名绑定通过 ID（`certificate_id`）引用证书；TOS 不提供存储桶域名证书上传 API，因此不支持内联 PEM（`certificate_body`/`certificate_private_key`）。请将证书上传到火山引擎证书中心并传入其 ID。',
 
   // CDN 能力校验（issue #283，与 #282 共享注册表）
   BUCKET_BINDING_PROTOCOL_REMOVED:

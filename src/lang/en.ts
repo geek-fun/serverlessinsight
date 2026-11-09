@@ -861,6 +861,8 @@ export const en = {
   TOS_OBJECT_UPLOADED: 'Uploaded object {{key}} to bucket {{bucket}}',
   TOS_FILES_UPLOADED: 'Uploaded files from {{path}} to bucket {{bucket}}',
   VOLCENGINE_TOS_CLIENT_NOT_INITIALIZED: 'TOS client not initialized. Check your credentials.',
+  VOLCENGINE_CDN_CLIENT_NOT_INITIALIZED: 'CDN client not initialized. Check your credentials.',
+  VOLCENGINE_DNS_CLIENT_NOT_INITIALIZED: 'DNS client not initialized. Check your credentials.',
   VOLCENGINE_BUCKET_DELETE_FAILED: 'Failed to delete bucket {{bucketName}}: {{error}}',
   VOLCENGINE_FUNCTION_DELETE_FAILED: 'Failed to delete function {{functionName}}: {{error}}',
   VOLCENGINE_APIGW_CLIENT_NOT_INITIALIZED:
@@ -989,6 +991,19 @@ export const en = {
   CDN_ACCELERATE_CONFIG_CHANGED:
     'Cannot change CDN/accelerate settings for bucket {{bucketName}} via update. Use destroy+recreate to change CDN or acceleration configuration.',
   BINDING_REMOVING_DOMAIN: 'Removing custom domain binding {{domain}} from bucket {{bucketName}}',
+
+  // Volcengine TOS bucket domains (issue #294)
+  TOS_CUSTOM_DOMAIN_BOUND: 'Custom domain {{domain}} bound to TOS bucket {{bucketName}}',
+  TOS_CUSTOM_DOMAIN_UNBOUND: 'Custom domain {{domain}} unbound from TOS bucket {{bucketName}}',
+  TOS_TRANSFER_ACCELERATION_DISABLED: 'TOS bucket {{bucketName}} transfer acceleration disabled',
+  CDN_DOMAIN_CREATED: 'CDN domain {{domain}} created successfully',
+  CDN_CERT_UPLOAD_FAILED: 'CDN certificate upload did not return a certificate id',
+  DNS_ZONE_NOT_FOUND:
+    'Domain {{domain}} is not hosted in Volcengine DNS (TrafficRoute). Host the zone there or configure the CNAME record manually.',
+  DNS_RECORD_CREATED: 'DNS record {{domain}} created',
+  DNS_RECORD_UPDATED: 'DNS record {{domain}} updated',
+  TOS_DIRECT_BINDING_PEM_NOT_SUPPORTED:
+    'Bucket "{{key}}": binding "{{domain}}" — TOS direct domain bindings reference certificates by id (`certificate_id`); TOS has no certificate-upload API for bucket domains, so inline PEM (`certificate_body`/`certificate_private_key`) is not supported. Put the certificate in the Volcengine certificate center and pass its id.',
 
   // CDN capability validation (issue #283, shared registry with #282)
   BUCKET_BINDING_PROTOCOL_REMOVED:
