@@ -205,6 +205,89 @@ describe('SCF lifecycle planning', () => {
     expect(mockScf.getCustomDomain).not.toHaveBeenCalled();
   });
 
+  it('reconstructs removed domain bindings from recorded instances (pre-#286 state)', async () => {
+    const state = setResource(
+      {
+        version: '1.0',
+        provider: 'tencent',
+        app: 'sample',
+        service: 'api',
+        stages: {},
+        resources: {},
+      },
+      'functions.handler',
+      {
+        mode: 'managed',
+        region: context.region,
+        definition: extractScfDefinition(functionToScfConfig(fn), 'code-hash', fn.iam, fn),
+        instances: [
+          {
+            sid: 'si:tencent:scf-custom-domain:dev:api.example.com',
+            id: 'api.example.com',
+            type: 'TENCENT_SCF_CUSTOM_DOMAIN',
+            paths: ['/*'],
+          },
+        ],
+        lastUpdated: '2026-01-01T00:00:00Z',
+      },
+    );
+
+    const plan = await generateFunctionPlan(context, state, [fn]);
+
+    expect(plan.items[0].action).toBe('update');
+    expect(plan.items[0].changes?.before).toMatchObject({
+      domains: [expect.objectContaining({ domain_name: 'api.example.com', path: '/*' })],
+    });
+    expect(plan.items[0].changes?.after).not.toHaveProperty('domains');
+  });
+
+  it('prefers the stored canonical domains over instance reconstruction', async () => {
+    const state = setResource(
+      {
+        version: '1.0',
+        provider: 'tencent',
+        app: 'sample',
+        service: 'api',
+        stages: {},
+        resources: {},
+      },
+      'functions.handler',
+      {
+        mode: 'managed',
+        region: context.region,
+        definition: {
+          ...extractScfDefinition(functionToScfConfig(fn), 'code-hash', fn.iam, fn),
+          domains: [
+            {
+              domain_name: 'api.example.com',
+              path: '/api/*',
+              certificate_id: null,
+              certificate_body: null,
+              certificate_private_key: null,
+              certificate_hash: null,
+              protocol: ['HTTPS'],
+            },
+          ],
+        },
+        instances: [
+          {
+            sid: 'si:tencent:scf-custom-domain:dev:api.example.com',
+            id: 'api.example.com',
+            type: 'TENCENT_SCF_CUSTOM_DOMAIN',
+            paths: ['/api/*'],
+          },
+        ],
+        lastUpdated: '2026-01-01T00:00:00Z',
+      },
+    );
+
+    const plan = await generateFunctionPlan(context, state, [fn]);
+
+    expect(plan.items[0].changes?.before).toMatchObject({
+      domains: [expect.objectContaining({ path: '/api/*' })],
+    });
+  });
+
   it('schedules removal of recorded timers omitted from the config', async () => {
     const saved: FunctionDomain = {
       ...fn,

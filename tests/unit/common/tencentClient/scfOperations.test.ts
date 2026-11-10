@@ -26,6 +26,7 @@ const mockScfClient = {
   CreateTrigger: jest.fn(),
   DeleteTrigger: jest.fn(),
   CreateCustomDomain: jest.fn(),
+  UpdateCustomDomain: jest.fn(),
   GetCustomDomain: jest.fn(),
   DeleteCustomDomain: jest.fn(),
 };
@@ -942,6 +943,52 @@ describe('scfOperations', () => {
           CertConfig: { CertificateId: 'cert-123' },
         }),
       );
+    });
+  });
+
+  describe('updateCustomDomain (issue #286)', () => {
+    it('should update routes, protocol and certificate together', async () => {
+      mockScfClient.UpdateCustomDomain.mockResolvedValue({});
+
+      await operations.updateCustomDomain({
+        Domain: 'api.example.com',
+        Protocol: 'HTTP&HTTPS',
+        EndpointsConfig: [
+          {
+            Namespace: 'default',
+            FunctionName: 'fn_api',
+            Qualifier: '$DEFAULT',
+            PathMatch: '/api/*',
+          },
+          { Namespace: 'default', FunctionName: 'fn_all', Qualifier: '$DEFAULT', PathMatch: '/*' },
+        ],
+        CertConfig: { CertificateId: 'cert-1' },
+      });
+
+      expect(mockScfClient.UpdateCustomDomain).toHaveBeenCalledWith({
+        Domain: 'api.example.com',
+        Protocol: 'HTTP&HTTPS',
+        EndpointsConfig: [
+          {
+            Namespace: 'default',
+            FunctionName: 'fn_api',
+            Qualifier: '$DEFAULT',
+            PathMatch: '/api/*',
+          },
+          { Namespace: 'default', FunctionName: 'fn_all', Qualifier: '$DEFAULT', PathMatch: '/*' },
+        ],
+        CertConfig: { CertificateId: 'cert-1' },
+      });
+    });
+
+    it('omits protocol, routes and certificate when they are not supplied', async () => {
+      mockScfClient.UpdateCustomDomain.mockResolvedValue({});
+
+      await operations.updateCustomDomain({ Domain: 'api.example.com' });
+
+      expect(mockScfClient.UpdateCustomDomain).toHaveBeenCalledWith({
+        Domain: 'api.example.com',
+      });
     });
   });
 

@@ -264,6 +264,129 @@ describe('FC3 Planner', () => {
       });
     });
 
+    it('reconstructs removed domain bindings from recorded instances (pre-#286 state)', async () => {
+      mockFc3Operations.getFunction.mockResolvedValue({
+        functionName: 'test-function',
+        runtime: 'nodejs20',
+        handler: 'index.handler',
+        memorySize: 512,
+        timeout: 10,
+        tags: [],
+      });
+
+      // A legacy state: no definition.domains, only the recorded instance with
+      // its certificate reference. The planner must surface the removal.
+      const state = setResource(initalState, 'functions.test_fn', {
+        mode: 'managed',
+        region: 'cn-hangzhou',
+        definition: {
+          functionName: 'test-function',
+          runtime: 'nodejs20',
+          handler: 'index.handler',
+          memorySize: 512,
+          timeout: 10,
+          diskSize: null,
+          environment: {},
+          vpcConfig: null,
+          gpuConfig: null,
+          customContainerConfig: null,
+          nasConfig: null,
+          logConfig: null,
+          codeHash: 'mock-code-hash',
+        },
+        instances: [
+          {
+            sid: 'si:aliyun:fc3:default:test-function',
+            id: 'test-function',
+            type: 'ALIYUN_FC3_FUNCTION',
+          },
+          {
+            sid: 'si:aliyun:fc3-custom-domain:default:api.example.com',
+            id: 'api.example.com',
+            type: 'ALIYUN_FC3_CUSTOM_DOMAIN',
+            paths: ['/*'],
+            attributes: { protocol: 'HTTPS', certificate_id: 'cert-legacy' },
+          },
+        ],
+        lastUpdated: '2026-01-01T00:00:00Z',
+      });
+
+      const plan = await generateFunctionPlan(mockContext, state, [testFunction]);
+
+      expect(plan.items[0].action).toBe('update');
+      expect(plan.items[0].changes?.before).toMatchObject({
+        domains: [
+          expect.objectContaining({
+            domain_name: 'api.example.com',
+            path: '/*',
+            certificate_id: 'cert-legacy',
+          }),
+        ],
+      });
+      expect(plan.items[0].changes?.after).not.toHaveProperty('domains');
+    });
+
+    it('prefers the stored canonical domains over instance reconstruction', async () => {
+      mockFc3Operations.getFunction.mockResolvedValue({
+        functionName: 'test-function',
+        runtime: 'nodejs20',
+        handler: 'index.handler',
+        memorySize: 512,
+        timeout: 10,
+        tags: [],
+      });
+      const state = setResource(initalState, 'functions.test_fn', {
+        mode: 'managed',
+        region: 'cn-hangzhou',
+        definition: {
+          functionName: 'test-function',
+          runtime: 'nodejs20',
+          handler: 'index.handler',
+          memorySize: 512,
+          timeout: 10,
+          diskSize: null,
+          environment: {},
+          vpcConfig: null,
+          gpuConfig: null,
+          customContainerConfig: null,
+          nasConfig: null,
+          logConfig: null,
+          codeHash: 'mock-code-hash',
+          domains: [
+            {
+              domain_name: 'api.example.com',
+              path: '/api/*',
+              certificate_id: null,
+              certificate_body: null,
+              certificate_private_key: null,
+              certificate_hash: null,
+              protocol: ['HTTPS'],
+            },
+          ],
+        },
+        instances: [
+          {
+            sid: 'si:aliyun:fc3:default:test-function',
+            id: 'test-function',
+            type: 'ALIYUN_FC3_FUNCTION',
+          },
+          {
+            sid: 'si:aliyun:fc3-custom-domain:default:api.example.com',
+            id: 'api.example.com',
+            type: 'ALIYUN_FC3_CUSTOM_DOMAIN',
+            paths: ['/api/*'],
+          },
+        ],
+        lastUpdated: '2026-01-01T00:00:00Z',
+      });
+
+      const plan = await generateFunctionPlan(mockContext, state, [testFunction]);
+
+      expect(plan.items[0].changes?.before).toMatchObject({
+        domains: [expect.objectContaining({ path: '/api/*' })],
+      });
+    });
+
     it('shows and schedules removal of recorded timers omitted from the config', async () => {
       mockFc3Operations.getFunction.mockResolvedValue({
         functionName: 'test-function',

@@ -2999,6 +2999,135 @@ describe('ScfResource', () => {
       );
     });
 
+    it('does not rewrite the domain when live routes already exclude this function', async () => {
+      const fnWithoutDomains = { ...testFunction };
+      const state: StateFile = {
+        ...initialState,
+        resources: {
+          'functions.test_fn': {
+            mode: 'managed',
+            region: 'ap-guangzhou',
+            definition: mockDefinition,
+            instances: [
+              {
+                sid: 'si:tencent:scf-custom-domain:default:api.example.com',
+                type: 'TENCENT_SCF_CUSTOM_DOMAIN',
+                id: 'api.example.com',
+                paths: ['/*'],
+              },
+            ],
+            lastUpdated: '2025-01-01T00:00:00Z',
+          },
+        },
+      };
+      (stateManager.getResource as jest.Mock).mockReturnValue(state.resources['functions.test_fn']);
+      (mockScfOperations.updateFunctionConfiguration as jest.Mock).mockResolvedValue(undefined);
+      (mockScfOperations.updateFunctionCode as jest.Mock).mockResolvedValue(undefined);
+      mockScfOperations.getCustomDomain.mockResolvedValue({
+        Domain: 'api.example.com',
+        Protocol: 'HTTPS',
+        EndpointsConfig: [{ FunctionName: 'fn_other', PathMatch: '/other/*' }],
+      });
+      (stateManager.setResource as jest.Mock).mockReturnValue(initialState);
+
+      await updateResource(mockContext, fnWithoutDomains, state);
+
+      expect(mockScfOperations.updateCustomDomain).not.toHaveBeenCalled();
+      expect(mockScfOperations.deleteCustomDomain).not.toHaveBeenCalled();
+    });
+
+    it('derives the EndpointsConfig namespace from the namespace parameter (issue #286)', async () => {
+      const fnWithDomain = {
+        ...testFunction,
+        triggers: { http: { auth_type: 'public' as const } },
+        domains: [{ domain_name: 'api.example.com', path: '/*', protocol: ['HTTPS' as const] }],
+      };
+      const stateWithoutDomain: StateFile = {
+        ...initialState,
+        resources: {
+          'functions.test_fn': {
+            mode: 'managed',
+            region: 'ap-guangzhou',
+            definition: mockDefinition,
+            instances: [
+              {
+                sid: 'si:tencent:scf:default:test-function',
+                id: 'test-function',
+                functionName: 'test-function',
+              },
+            ],
+            lastUpdated: '2025-01-01T00:00:00Z',
+          },
+        },
+      };
+      (stateManager.getResource as jest.Mock).mockReturnValue(
+        stateWithoutDomain.resources['functions.test_fn'],
+      );
+      (mockScfOperations.updateFunctionConfiguration as jest.Mock).mockResolvedValue(undefined);
+      (mockScfOperations.updateFunctionCode as jest.Mock).mockResolvedValue(undefined);
+      (stateManager.setResource as jest.Mock).mockReturnValue(initialState);
+
+      await updateResource(
+        { ...mockContext, parameters: [{ key: 'namespace', value: 'prod-ns' }] },
+        fnWithDomain,
+        stateWithoutDomain,
+      );
+
+      expect(mockScfOperations.createCustomDomain).toHaveBeenCalledWith(
+        expect.objectContaining({
+          EndpointsConfig: [expect.objectContaining({ Namespace: 'prod-ns' })],
+        }),
+      );
+    });
+
+    it('does not rewrite routes when live routes already match (no phantom update)', async () => {
+      const fnWithDomain = {
+        ...testFunction,
+        triggers: { http: { auth_type: 'public' as const } },
+        domains: [{ domain_name: 'api.example.com', path: '/*', protocol: ['HTTPS' as const] }],
+      };
+      const stateWithDomain: StateFile = {
+        ...initialState,
+        resources: {
+          'functions.test_fn': {
+            mode: 'managed',
+            region: 'ap-guangzhou',
+            definition: mockDefinition,
+            instances: [
+              {
+                sid: 'si:tencent:scf:default:test-function',
+                id: 'test-function',
+                functionName: 'test-function',
+              },
+              {
+                sid: 'si:tencent:scf-custom-domain:default:api.example.com',
+                type: 'TENCENT_SCF_CUSTOM_DOMAIN',
+                id: 'api.example.com',
+                protocol: 'HTTPS',
+                paths: ['/*'],
+              },
+            ],
+            lastUpdated: '2025-01-01T00:00:00Z',
+          },
+        },
+      };
+      (stateManager.getResource as jest.Mock).mockReturnValue(
+        stateWithDomain.resources['functions.test_fn'],
+      );
+      (mockScfOperations.updateFunctionConfiguration as jest.Mock).mockResolvedValue(undefined);
+      (mockScfOperations.updateFunctionCode as jest.Mock).mockResolvedValue(undefined);
+      mockScfOperations.getCustomDomain.mockResolvedValue({
+        Domain: 'api.example.com',
+        Protocol: 'HTTPS',
+        EndpointsConfig: [{ FunctionName: 'test-function', PathMatch: '/*' }],
+      });
+      (stateManager.setResource as jest.Mock).mockReturnValue(initialState);
+
+      await updateResource(mockContext, fnWithDomain, stateWithDomain);
+
+      expect(mockScfOperations.updateCustomDomain).not.toHaveBeenCalled();
+    });
+
     it('should not touch custom domain when domain is unchanged during update', async () => {
       const fnWithSameDomain = {
         ...testFunction,
