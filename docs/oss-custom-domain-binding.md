@@ -375,6 +375,14 @@ Unsupported values for a provider are rejected at `si validate`.
 
 - `cache_ttl` is expressed in **seconds** (all si durations are seconds) and
   applies to the default cache rule.
+- **Omitted options restore their defaults on update** (identical on aliyun,
+  tencent and volcengine): dropping `cache_ttl`/`ignore_query_string` resets
+  the cache behavior to the provider default (follow origin, query string kept
+  in the cache key), and dropping `compression`/`force_redirect_https`/-
+  `origin_protocol` switches them off / back to the provider default. The
+  reset is applied on the cloud, not just in state — providers whose API has
+  no "off" value express the default by deleting the config item (aliyun
+  `cache_expire`/`force_redirect`/`forward_scheme`).
 - `origin_protocol: follow` maps to each provider's protocol-follow value.
 - `force_redirect_https: true` requires a certificate (`certificate_id` or an
   inline PEM pair) — rejected at `si validate` otherwise.
@@ -411,5 +419,11 @@ Unsupported values for a provider are rejected at `si validate`.
   - The CNAME records si manages require the domain's zone to be hosted in
     Volcengine DNS (TrafficRoute) — the same constraint class as Tencent
     DNSPod. `si validate`/deploy fails with `DNS_ZONE_NOT_FOUND` otherwise.
+    Record writes follow the shared ownership rule (identical on Tencent
+    DNSPod): a record that already points at the expected target is adopted,
+    a missing one is created, and a record pointing elsewhere is never
+    overwritten — si warns and leaves it for manual correction. Only records
+    si recorded itself (stored `dnsRecordId`) are repointed in place, e.g.
+    when acceleration turns a direct binding into accelerate-only mode.
   - `overseas`/`global` scopes and wildcard domains on volcengine CDN require a
     ticket to the provider; si maps the scope values but cannot lift that quota.

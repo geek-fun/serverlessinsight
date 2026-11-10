@@ -90,7 +90,6 @@ describe('tosResource', () => {
       getBucketCustomDomains: jest.fn(),
       deleteBucketCustomDomain: jest.fn(),
       putBucketTransferAcceleration: jest.fn(),
-      getBucketTransferAcceleration: jest.fn(),
     },
     cdn: {
       addCdnDomain: jest.fn(),
@@ -614,6 +613,39 @@ describe('tosResource', () => {
       );
     });
 
+    it('records the binding even when a foreign CNAME blocks the DNS write', async () => {
+      ownedGetBucket();
+      // Value-matched add: an existing record pointing elsewhere is never
+      // overwritten, so the operation reports no record id.
+      mockTosClient.dns.addDomainRecord.mockResolvedValueOnce(undefined);
+      const bucket: BucketDomain = {
+        key: 'static_site',
+        name: 'test-bucket',
+        domains: [{ domain_name: 'cdn.example.com' }],
+      };
+
+      await createResource(mockContext, bucket, mockState);
+
+      // The TOS rule is still bound; only the DNS record is left unmanaged.
+      expect(mockTosClient.tos.putBucketCustomDomain).toHaveBeenCalledWith(
+        'test-bucket',
+        'cdn.example.com',
+        undefined,
+      );
+      expect(mockTosClient.dns.updateDomainRecord).not.toHaveBeenCalled();
+      // No si-recorded record → the instance falls back to the hostname id so
+      // the binding stays tracked and a later converge can adopt it.
+      const savedState = (setResource as jest.Mock).mock.calls.at(-1)?.[2];
+      expect(savedState?.instances).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            type: 'VOLCENGINE_TOS_DNS_CNAME',
+            domain: 'cdn.example.com',
+          }),
+        ]),
+      );
+    });
+
     it('creates a CDN binding: AddCdnDomain with TOS origin and deploys the certificate', async () => {
       ownedGetBucket();
       mockTosClient.cdn.describeCdnDomain
@@ -831,7 +863,7 @@ describe('tosResource', () => {
       expect(mockTosClient.cdn.applyCacheConfig).toHaveBeenCalledWith(
         'cdn.example.com',
         7200,
-        undefined,
+        null,
       );
       expect(mockTosClient.cdn.applyCompression).toHaveBeenCalledWith('cdn.example.com', true);
     });
@@ -904,11 +936,9 @@ describe('tosResource', () => {
 
       await updateResource(mockContext, bucket, storedState);
 
-      // force_redirect_https removed → the redirect module is switched off.
-      expect(mockTosClient.cdn.applyHttpsRedirect).toHaveBeenCalledWith(
-        'cdn.example.com',
-        undefined,
-      );
+      // force_redirect_https removed → the redirect module is switched off on
+      // the cloud (explicit false), not left at the previous value.
+      expect(mockTosClient.cdn.applyHttpsRedirect).toHaveBeenCalledWith('cdn.example.com', false);
       expect(mockTosClient.cdn.applyCacheConfig).not.toHaveBeenCalled();
       expect(mockTosClient.cdn.applyCompression).not.toHaveBeenCalled();
     });
@@ -1376,11 +1406,13 @@ describe('tosResource', () => {
         true,
       );
       // the direct binding is rebound in place against the accelerate endpoint,
-      // not torn down.
+      // not torn down — si's own record is repointed rather than re-created.
       expect(mockTosClient.dns.deleteDomainRecord).not.toHaveBeenCalled();
-      expect(mockTosClient.dns.addDomainRecord).toHaveBeenCalledWith(
+      expect(mockTosClient.dns.updateDomainRecord).toHaveBeenCalledWith(
+        'rec-a-1',
         expect.objectContaining({ value: 'test-bucket.tos-accelerate.volces.com' }),
       );
+      expect(mockTosClient.dns.addDomainRecord).not.toHaveBeenCalled();
     });
 
     it('switches a stored binding from CDN to direct at binding level without touching the bucket', async () => {

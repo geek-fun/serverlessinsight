@@ -738,7 +738,6 @@ export type VolcengineClient = {
     getBucketCustomDomains: (bucketName: string) => Promise<TosCustomDomainRule[]>;
     deleteBucketCustomDomain: (bucketName: string, domain: string) => Promise<void>;
     putBucketTransferAcceleration: (bucketName: string, enabled: boolean) => Promise<void>;
-    getBucketTransferAcceleration: (bucketName: string) => Promise<boolean | undefined>;
   };
   iam: {
     createRole: (config: IamRoleConfig) => Promise<IamRoleInfo>;
@@ -826,8 +825,8 @@ export type VolcengineClient = {
     updateCdnDelivery: (domainName: string, update: VolcengineCdnDeliveryUpdate) => Promise<void>;
     applyCacheConfig: (
       domainName: string,
-      cacheTtl?: number,
-      ignoreQueryString?: boolean,
+      cacheTtl?: number | null,
+      ignoreQueryString?: boolean | null,
     ) => Promise<void>;
     applyCompression: (domainName: string, enabled?: boolean) => Promise<void>;
     applyHttpsRedirect: (domainName: string, enabled?: boolean) => Promise<void>;

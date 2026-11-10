@@ -45,15 +45,15 @@ export type CdnOperations = {
   setDomainServerCertificate: (domainName: string, cert: CdnCertificateConfig) => Promise<void>;
   applyCacheConfig: (
     domainName: string,
-    cacheTtl?: number,
-    ignoreQueryString?: boolean,
+    cacheTtl?: number | null,
+    ignoreQueryString?: boolean | null,
   ) => Promise<void>;
   applyProtocolConfig: (
     domainName: string,
-    originProtocol?: 'http' | 'https' | 'follow',
+    originProtocol?: 'http' | 'https' | 'follow' | null,
   ) => Promise<void>;
   applyCompression: (domainName: string, enabled?: boolean) => Promise<void>;
-  applyHttpsRedirect: (domainName: string, enabled?: boolean) => Promise<void>;
+  applyHttpsRedirect: (domainName: string, enabled?: boolean | null) => Promise<void>;
 };
 
 const addCdnDomain =
@@ -142,9 +142,40 @@ const setDomainServerCertificate =
     await cdnClient.setCdnDomainSSLCertificate(request);
   };
 
+// Aliyun expresses "off" for module-style functions (cache_expire,
+// force_redirect) by the absence of the config item — there is no off value,
+// so a reset is a describe + delete of that function's config.
+const removeDomainConfig =
+  (cdnClient: CdnSdkClient) =>
+  async (domainName: string, functionName: string): Promise<void> => {
+    const describeRequest = new cdn.DescribeCdnDomainConfigsRequest({
+      domainName,
+      functionNames: functionName,
+    });
+    const response = await cdnClient.describeCdnDomainConfigs(describeRequest);
+    const configured = response.body?.domainConfigs?.domainConfig ?? [];
+    if (!configured.some((config) => config.functionName === functionName)) return;
+    const deleteRequest = new cdn.BatchDeleteCdnDomainConfigRequest({
+      domainNames: domainName,
+      functionNames: functionName,
+    });
+    await cdnClient.batchDeleteCdnDomainConfig(deleteRequest);
+  };
+
 const applyCacheConfig =
   (cdnClient: CdnSdkClient) =>
-  async (domainName: string, cacheTtl?: number, ignoreQueryString?: boolean): Promise<void> => {
+  async (
+    domainName: string,
+    cacheTtl?: number | null,
+    ignoreQueryString?: boolean | null,
+  ): Promise<void> => {
+    // Both options reset → the provider default is the absence of the
+    // cache_expire config; a ttl of '0' would mean "do not cache", not
+    // "follow origin", so deletion is the only honest reset.
+    if (cacheTtl == null && ignoreQueryString == null) {
+      await removeDomainConfig(cdnClient)(domainName, 'cache_expire');
+      return;
+    }
     const functions: Array<{
       featureName: string;
       featureParameters: Record<string, string>;
@@ -171,22 +202,29 @@ const applyCacheConfig =
 
 const applyProtocolConfig =
   (cdnClient: CdnSdkClient) =>
-  async (domainName: string, originProtocol?: 'http' | 'https' | 'follow'): Promise<void> => {
-    if (originProtocol) {
-      const functions = [
-        {
-          featureName: 'forward_scheme',
-          featureParameters: {
-            enable: originProtocol,
-          },
-        },
-      ];
-      const request = new cdn.BatchSetCdnDomainConfigRequest({
-        domainNames: domainName,
-        functions: JSON.stringify(functions),
-      });
-      await cdnClient.batchSetCdnDomainConfig(request);
+  async (
+    domainName: string,
+    originProtocol?: 'http' | 'https' | 'follow' | null,
+  ): Promise<void> => {
+    if (!originProtocol) {
+      // Dropped option → provider default = the absence of the forward_scheme
+      // config, so the reset deletes it instead of leaving the old scheme.
+      await removeDomainConfig(cdnClient)(domainName, 'forward_scheme');
+      return;
     }
+    const functions = [
+      {
+        featureName: 'forward_scheme',
+        featureParameters: {
+          enable: originProtocol,
+        },
+      },
+    ];
+    const request = new cdn.BatchSetCdnDomainConfigRequest({
+      domainNames: domainName,
+      functions: JSON.stringify(functions),
+    });
+    await cdnClient.batchSetCdnDomainConfig(request);
   };
 
 const applyCompression =
@@ -211,23 +249,28 @@ const applyCompression =
 
 const applyHttpsRedirect =
   (cdnClient: CdnSdkClient) =>
-  async (domainName: string, enabled?: boolean): Promise<void> => {
-    if (enabled != null) {
-      const functions = [
-        {
-          featureName: 'force_redirect',
-          featureParameters: {
-            redirect_code: '301',
-            redirect_type: enabled ? 'https' : 'http',
-          },
-        },
-      ];
-      const request = new cdn.BatchSetCdnDomainConfigRequest({
-        domainNames: domainName,
-        functions: JSON.stringify(functions),
-      });
-      await cdnClient.batchSetCdnDomainConfig(request);
+  async (domainName: string, enabled?: boolean | null): Promise<void> => {
+    if (enabled == null) return;
+    if (!enabled) {
+      // redirect_type 'http' would be an active HTTPS→HTTP downgrade —
+      // disabling removes the force_redirect config instead.
+      await removeDomainConfig(cdnClient)(domainName, 'force_redirect');
+      return;
     }
+    const functions = [
+      {
+        featureName: 'force_redirect',
+        featureParameters: {
+          redirect_code: '301',
+          redirect_type: 'https',
+        },
+      },
+    ];
+    const request = new cdn.BatchSetCdnDomainConfigRequest({
+      domainNames: domainName,
+      functions: JSON.stringify(functions),
+    });
+    await cdnClient.batchSetCdnDomainConfig(request);
   };
 
 /* istanbul ignore next */

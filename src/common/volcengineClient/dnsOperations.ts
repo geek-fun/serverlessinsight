@@ -74,37 +74,50 @@ export const createDnsOperations = (dnsClient: DnsSdkClient | null) => {
   };
 
   return {
-    /** Idempotent upsert: an existing CNAME for the zone+host is updated, a missing one created. */
+    /**
+     * Value-matched record management (unified with the Tencent DNSPod flow):
+     * a record that already points at the requested target is adopted as-is,
+     * a missing one is created. Records pointing elsewhere are never touched —
+     * the create fails on the provider's duplicate-host guard and si reports
+     * the domain as not managed rather than silently repointing traffic.
+     */
     addDomainRecord: async (config: VolcengineDnsRecordConfig): Promise<string | undefined> => {
       const zid = await resolveZoneId(config.domainName);
       const existing = await describeZoneRecords(config.domainName, config.host, zid);
-      if (existing.length > 0) {
-        await fetchDns('UpdateRecord', {
-          RecordID: existing[0].recordId,
+      const matched = existing.find((record) => record.value === config.value);
+      if (matched) {
+        logger.info(
+          lang.__('DNS_RECORD_EXISTS', {
+            domain: `${config.host}.${config.domainName}`,
+            value: config.value,
+          }),
+        );
+        return matched.recordId;
+      }
+
+      try {
+        const result = await fetchDns<{ RecordID?: number }>('CreateRecord', {
+          ZID: zid,
           Host: config.host,
-          Line: 'default',
           Type: config.type,
           Value: config.value,
+          Line: 'default',
           ...(config.ttl ? { TTL: config.ttl } : {}),
         });
         logger.info(
-          lang.__('DNS_RECORD_UPDATED', {
+          lang.__('DNS_RECORD_CREATED', { domain: `${config.host}.${config.domainName}` }),
+        );
+        return result?.RecordID != null ? String(result.RecordID) : undefined;
+      } catch (error) {
+        logger.warn(
+          lang.__('DNS_RECORD_FOREIGN_EXISTS', {
             domain: `${config.host}.${config.domainName}`,
+            value: config.value,
           }),
         );
-        return existing[0].recordId;
+        logger.debug(lang.__('DNS_OPERATION_ERROR', { error: String(error) }));
+        return undefined;
       }
-
-      const result = await fetchDns<{ RecordID?: string }>('CreateRecord', {
-        ZID: zid,
-        Host: config.host,
-        Type: config.type,
-        Value: config.value,
-        Line: 'default',
-        ...(config.ttl ? { TTL: config.ttl } : {}),
-      });
-      logger.info(lang.__('DNS_RECORD_CREATED', { domain: `${config.host}.${config.domainName}` }));
-      return result?.RecordID;
     },
 
     // UpdateRecord requires Host and Line on every call, so the full record

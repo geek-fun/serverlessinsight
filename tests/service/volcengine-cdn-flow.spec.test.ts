@@ -86,7 +86,6 @@ const buildMockVolcClient = (): VolcMockClient => {
       getBucketCustomDomains: jest.fn().mockResolvedValue([]),
       deleteBucketCustomDomain: jest.fn().mockResolvedValue(undefined),
       putBucketTransferAcceleration: jest.fn().mockResolvedValue(undefined),
-      getBucketTransferAcceleration: jest.fn().mockResolvedValue(false),
     },
     cdn: {
       addCdnDomain: jest.fn().mockResolvedValue(undefined),

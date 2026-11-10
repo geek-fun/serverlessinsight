@@ -234,14 +234,23 @@ describe('cdnOperations (issue #294)', () => {
     expect(body).not.toHaveProperty('OriginProtocol');
   });
 
-  it('applyCacheConfig accepts a TTL-only change without a cache key', async () => {
+  it('applyCacheConfig renders the default cache key when only a TTL is given', async () => {
     await operations.applyCacheConfig('cdn.example.com', 60);
 
     expect(lastCall().data).toEqual({
       Domain: 'cdn.example.com',
       Cache: [expect.objectContaining({ CacheAction: expect.objectContaining({ Ttl: 60 }) })],
+      // Default for a dropped ignore_query_string: query string stays in the key.
+      CacheKey: [
+        expect.objectContaining({
+          CacheKeyAction: {
+            CacheKeyComponents: [
+              { Object: 'queryString', Action: 'include', Subobject: '*', IgnoreCase: true },
+            ],
+          },
+        }),
+      ],
     });
-    expect(lastCall().data).not.toHaveProperty('CacheKey');
   });
 
   it('describeCdnDomain maps every optional field when present', async () => {
@@ -364,12 +373,31 @@ describe('cdnOperations (issue #294)', () => {
     expect(lastCall().data.CacheKey[0].CacheKeyAction.CacheKeyComponents).toEqual([
       { Object: 'queryString', Action: 'include', Subobject: '*', IgnoreCase: true },
     ]);
-    expect(lastCall().data.Cache).toBeUndefined();
+    // A dropped TTL resets the cache module to follow-origin.
+    expect(lastCall().data.Cache[0].CacheAction).toEqual({ Action: 'follow_origin' });
   });
 
-  it('applyCacheConfig makes no call when nothing is set', async () => {
+  it('applyCacheConfig resets both modules when nothing is set', async () => {
     await operations.applyCacheConfig('cdn.example.com');
-    expect(mockClient.fetchOpenAPI).not.toHaveBeenCalled();
+
+    // Omission restores the documented defaults on the cloud — not a no-op.
+    expect(lastCall().data).toEqual({
+      Domain: 'cdn.example.com',
+      Cache: [
+        expect.objectContaining({
+          CacheAction: { Action: 'follow_origin' },
+        }),
+      ],
+      CacheKey: [
+        expect.objectContaining({
+          CacheKeyAction: {
+            CacheKeyComponents: [
+              { Object: 'queryString', Action: 'include', Subobject: '*', IgnoreCase: true },
+            ],
+          },
+        }),
+      ],
+    });
   });
 
   it('applyCompression toggles the module with a gzip rule when enabled', async () => {

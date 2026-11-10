@@ -108,7 +108,7 @@ describe('dnsOperations (issue #294)', () => {
     expect(callsByAction('CreateRecord')[0]).not.toHaveProperty('TTL');
   });
 
-  it('addDomainRecord updates an existing CNAME instead of creating a duplicate', async () => {
+  it('addDomainRecord adopts an existing record that already points at the target', async () => {
     mockClient.fetchOpenAPI.mockImplementation(async (params: { Action: string }) => {
       if (params.Action === 'ListZones') {
         return { Result: { Total: 1, Zones: [{ ZID: 32100, ZoneName: 'example.com' }] } };
@@ -118,11 +118,11 @@ describe('dnsOperations (issue #294)', () => {
           Result: {
             Records: [
               {
-                RecordID: 'rec-existing',
+                RecordID: 12345,
                 FQDN: 'cdn.example.com',
                 Host: 'cdn',
                 Type: 'CNAME',
-                Value: 'old.boscdn.com',
+                Value: 'cdn.example.com.boscdn.com',
               },
             ],
           },
@@ -138,15 +138,50 @@ describe('dnsOperations (issue #294)', () => {
       value: 'cdn.example.com.boscdn.com',
     });
 
-    expect(recordId).toBe('rec-existing');
-    expect(callsByAction('UpdateRecord')[0]).toEqual({
-      RecordID: 'rec-existing',
-      Host: 'cdn',
-      Line: 'default',
-      Type: 'CNAME',
-      Value: 'cdn.example.com.boscdn.com',
-    });
+    // Numeric provider ids are normalized to strings.
+    expect(recordId).toBe('12345');
+    expect(callsByAction('UpdateRecord')).toHaveLength(0);
     expect(callsByAction('CreateRecord')).toHaveLength(0);
+  });
+
+  it('addDomainRecord never overwrites a foreign CNAME pointing elsewhere', async () => {
+    mockClient.fetchOpenAPI.mockImplementation(async (params: { Action: string }) => {
+      if (params.Action === 'ListZones') {
+        return { Result: { Total: 1, Zones: [{ ZID: 32100, ZoneName: 'example.com' }] } };
+      }
+      if (params.Action === 'ListRecords') {
+        return {
+          Result: {
+            Records: [
+              {
+                RecordID: 'rec-foreign',
+                FQDN: 'cdn.example.com',
+                Host: 'cdn',
+                Type: 'CNAME',
+                Value: 'other-service.example.net',
+              },
+            ],
+          },
+        };
+      }
+      if (params.Action === 'CreateRecord') {
+        throw Object.assign(new Error('RecordExists'), { code: 'RecordAlreadyExists' });
+      }
+      return { Result: {} };
+    });
+
+    const recordId = await operations.addDomainRecord({
+      domainName: 'example.com',
+      host: 'cdn',
+      type: 'CNAME',
+      value: 'cdn.example.com.boscdn.com',
+    });
+
+    expect(recordId).toBeUndefined();
+    expect(callsByAction('UpdateRecord')).toHaveLength(0);
+    // The create attempt fails on the provider's duplicate-host guard; si
+    // reports the domain as unmanaged rather than repointing traffic.
+    expect(callsByAction('CreateRecord')).toHaveLength(1);
   });
 
   it('addDomainRecord pages through ListZones until the zone matches', async () => {
@@ -273,19 +308,13 @@ describe('dnsOperations (issue #294)', () => {
     ).rejects.toThrow('DNS_ZONE_NOT_FOUND');
   });
 
-  it('addDomainRecord passes TTL when updating an existing CNAME', async () => {
+  it('addDomainRecord passes TTL when creating a missing CNAME', async () => {
     mockClient.fetchOpenAPI.mockImplementation(async (params: { Action: string }) => {
       if (params.Action === 'ListZones') {
         return { Result: { Total: 1, Zones: [{ ZID: 32100, ZoneName: 'example.com' }] } };
       }
-      if (params.Action === 'ListRecords') {
-        return {
-          Result: {
-            Records: [{ RecordID: 'rec-existing', Host: 'cdn', Type: 'CNAME', Value: 'old' }],
-          },
-        };
-      }
-      return { Result: {} };
+      if (params.Action === 'ListRecords') return { Result: { Records: [] } };
+      return { Result: { RecordID: 'rec-new' } };
     });
 
     await operations.addDomainRecord({
@@ -296,14 +325,15 @@ describe('dnsOperations (issue #294)', () => {
       ttl: 600,
     });
 
-    expect(callsByAction('UpdateRecord')[0]).toEqual({
-      RecordID: 'rec-existing',
+    expect(callsByAction('CreateRecord')[0]).toEqual({
+      ZID: 32100,
       Host: 'cdn',
       Line: 'default',
       Type: 'CNAME',
       Value: 'new',
       TTL: 600,
     });
+    expect(callsByAction('UpdateRecord')).toHaveLength(0);
   });
 
   it('describeDomainRecords treats an absent Result as no records', async () => {

@@ -143,40 +143,39 @@ export const createCdnOperations = (cdnClient: CdnSdkClient | null) => {
     // Cache rules are seconds-based TTLs (si time-unit convention). The Cache
     // module has a built-in lowest-priority default rule matching everything,
     // so a single match-all rule is the domain-wide TTL.
+    // `null` renders the provider-default behavior — follow-origin caching /
+    // query string kept in the cache key — so a dropped si option converges
+    // the cloud instead of leaving the previous rule behind (issue #294).
     // CacheKey: `exclude` drops the whole query string from the cache key,
     // `include` (with Subobject '*') restores the default. `excludePart` is
     // for naming specific parameters and rejects '*'.
     applyCacheConfig: async (
       domainName: string,
-      cacheTtl?: number,
-      ignoreQueryString?: boolean,
+      cacheTtl?: number | null,
+      ignoreQueryString?: boolean | null,
     ): Promise<void> => {
       const body: Record<string, unknown> = { Domain: domainName };
-      if (cacheTtl != null) {
-        body.Cache = [
-          {
-            Condition: MATCH_ALL_CONDITION,
-            CacheAction: { Action: 'cache', Ttl: cacheTtl },
+      body.Cache = [
+        {
+          Condition: MATCH_ALL_CONDITION,
+          ...(cacheTtl != null
+            ? { CacheAction: { Action: 'cache', Ttl: cacheTtl } }
+            : { CacheAction: { Action: 'follow_origin' } }),
+        },
+      ];
+      body.CacheKey = [
+        {
+          CacheKeyAction: {
+            CacheKeyComponents: [
+              ignoreQueryString
+                ? { Object: 'queryString', Action: 'exclude', Subobject: '*' }
+                : { Object: 'queryString', Action: 'include', Subobject: '*', IgnoreCase: true },
+            ],
           },
-        ];
-      }
-      if (ignoreQueryString != null) {
-        body.CacheKey = [
-          {
-            CacheKeyAction: {
-              CacheKeyComponents: [
-                ignoreQueryString
-                  ? { Object: 'queryString', Action: 'exclude', Subobject: '*' }
-                  : { Object: 'queryString', Action: 'include', Subobject: '*', IgnoreCase: true },
-              ],
-            },
-            Condition: MATCH_ALL_CONDITION,
-          },
-        ];
-      }
-      if (Object.keys(body).length > 1) {
-        await fetchCdn('UpdateCdnConfig', body);
-      }
+          Condition: MATCH_ALL_CONDITION,
+        },
+      ];
+      await fetchCdn('UpdateCdnConfig', body);
     },
 
     // Smart compression: `Switch` enables the module and `CompressionRules`
