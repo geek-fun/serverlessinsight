@@ -224,7 +224,7 @@ describe('OssResource', () => {
       },
     ]);
     expect(mockCdnOperations.modifyCdnDomain).not.toHaveBeenCalled();
-    expect(mockCdnOperations.applyCacheConfig).toHaveBeenCalledWith('example.com', 120, undefined);
+    expect(mockCdnOperations.applyCacheConfig).toHaveBeenCalledWith('example.com', 120, null);
   });
 
   describe('deleteBucketResource', () => {
@@ -3130,7 +3130,7 @@ describe('OssResource', () => {
 
       expect(mockCdnOperations.addCdnDomain).not.toHaveBeenCalled();
       expect(mockCdnOperations.modifyCdnDomain).not.toHaveBeenCalled();
-      expect(mockCdnOperations.applyCacheConfig).toHaveBeenCalledWith('x.c', 120, undefined);
+      expect(mockCdnOperations.applyCacheConfig).toHaveBeenCalledWith('x.c', 120, null);
       expect(mockCdnOperations.applyProtocolConfig).toHaveBeenCalledWith('x.c', 'https');
       // Distribution and DNS instances preserved — no recreation.
       const saved = mockedStateManager.setResource.mock.calls.at(-1)?.[2];

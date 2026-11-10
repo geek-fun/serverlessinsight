@@ -51,8 +51,8 @@ export type TencentCdnOperations = {
   updateCdnDelivery: (domainName: string, update: TencentCdnDeliveryUpdate) => Promise<void>;
   applyCacheConfig: (
     domainName: string,
-    cacheTtl?: number,
-    ignoreQueryString?: boolean,
+    cacheTtl?: number | null,
+    ignoreQueryString?: boolean | null,
   ) => Promise<void>;
   applyCompression: (domainName: string, enabled?: boolean) => Promise<void>;
   applyHttpsRedirect: (domainName: string, enabled?: boolean) => Promise<void>;
@@ -135,25 +135,32 @@ const updateCdnDelivery =
 
 const applyCacheConfig =
   (cdnClient: CdnSdkClient) =>
-  async (domainName: string, cacheTtl?: number, ignoreQueryString?: boolean): Promise<void> => {
-    if (cacheTtl == null && ignoreQueryString == null) return;
+  async (
+    domainName: string,
+    cacheTtl?: number | null,
+    ignoreQueryString?: boolean | null,
+  ): Promise<void> => {
     const request: UpdateDomainConfigRequest = { Domain: domainName };
     // cache_ttl is expressed in seconds across si (issue #283); Tencent's
-    // SimpleCache CacheTime is seconds-based.
-    if (cacheTtl != null) {
-      request.Cache = {
-        SimpleCache: {
-          CacheRules: [{ CacheType: 'all', CacheContents: ['all'], CacheTime: cacheTtl }],
-          FollowOrigin: 'off',
-          IgnoreCacheControl: 'off',
-          IgnoreSetCookie: 'off',
-          CompareMaxAge: 'off',
-        },
-      };
-    }
-    if (ignoreQueryString != null) {
-      request.CacheKey = { FullUrlCache: ignoreQueryString ? 'off' : 'on' };
-    }
+    // SimpleCache CacheTime is seconds-based. `null` renders the provider
+    // default (FollowOrigin on, query string in the key) so a dropped si
+    // option converges the cloud instead of leaving the previous override
+    // behind — same contract on aliyun/volcengine.
+    request.Cache = {
+      SimpleCache: {
+        // CacheRules is required by the API shape; FollowOrigin on makes the
+        // empty rule list mean "no override, follow the origin headers".
+        CacheRules:
+          cacheTtl != null
+            ? [{ CacheType: 'all', CacheContents: ['all'], CacheTime: cacheTtl }]
+            : [],
+        FollowOrigin: cacheTtl != null ? 'off' : 'on',
+        IgnoreCacheControl: 'off',
+        IgnoreSetCookie: 'off',
+        CompareMaxAge: 'off',
+      },
+    };
+    request.CacheKey = { FullUrlCache: ignoreQueryString ? 'off' : 'on' };
     await cdnClient.UpdateDomainConfig(request);
   };
 

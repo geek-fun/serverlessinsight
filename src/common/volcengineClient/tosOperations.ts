@@ -721,26 +721,6 @@ export const createTosOperations = (client: TosSdkClient | null, _region: string
       );
     },
 
-    getBucketTransferAcceleration: async (bucketName: string): Promise<boolean | undefined> => {
-      if (!client) {
-        throw new Error(lang.__('VOLCENGINE_TOS_CLIENT_NOT_INITIALIZED'));
-      }
-
-      const response = await client.fetchOpenAPI({
-        Action: 'GetBucketTransferAcceleration',
-        Version: '2018-08-01',
-        method: 'GET',
-        query: {
-          Bucket: bucketName,
-        },
-      });
-
-      const result = (response.Result || {}) as Record<string, unknown>;
-      const config = (result.TransferAccelerationConfiguration ?? {}) as Record<string, unknown>;
-      if (config.Enabled === undefined) return undefined;
-      return config.Enabled === 'true' || config.Enabled === true;
-    },
-
     uploadFiles: async (bucketName: string, sourcePath: string): Promise<void> => {
       if (!client) {
         throw new Error(lang.__('VOLCENGINE_TOS_CLIENT_NOT_INITIALIZED'));

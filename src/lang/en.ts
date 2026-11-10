@@ -1002,6 +1002,9 @@ export const en = {
     'Domain {{domain}} is not hosted in Volcengine DNS (TrafficRoute). Host the zone there or configure the CNAME record manually.',
   DNS_RECORD_CREATED: 'DNS record {{domain}} created',
   DNS_RECORD_UPDATED: 'DNS record {{domain}} updated',
+  DNS_RECORD_EXISTS: 'DNS record {{domain}} already points at {{value}} — adopted as-is',
+  DNS_RECORD_FOREIGN_EXISTS:
+    'A CNAME record for {{domain}} already exists but points elsewhere; si does not modify records it does not manage. Point it at {{value}} or remove it, then redeploy.',
   TOS_DIRECT_BINDING_PEM_NOT_SUPPORTED:
     'Bucket "{{key}}": binding "{{domain}}" — TOS direct domain bindings reference certificates by id (`certificate_id`); TOS has no certificate-upload API for bucket domains, so inline PEM (`certificate_body`/`certificate_private_key`) is not supported. Put the certificate in the Volcengine certificate center and pass its id.',
 

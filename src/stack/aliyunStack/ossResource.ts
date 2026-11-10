@@ -697,20 +697,30 @@ const updateCdnBinding = async (
   if (pending) {
     await applyCdnOptions(client, hostname, cdnObj);
   } else {
+    // Omitted options resolve to their documented defaults (issue #283/#294
+    // unified contract): cache_ttl/ignore_query_string → provider-default
+    // cache behavior, origin_protocol → provider default, the boolean knobs
+    // → off. The apply layer renders null as the default (aliyun: absence of
+    // the config item), so a dropped option converges the cloud instead of
+    // leaving the previous setting behind (same shape on tencent/volcengine).
     if (
       (stored.cdn?.cache_ttl ?? null) !== (cdnObj?.cache_ttl ?? null) ||
       (stored.cdn?.ignore_query_string ?? null) !== (cdnObj?.ignore_query_string ?? null)
     ) {
-      await client.cdn.applyCacheConfig(hostname, cdnObj?.cache_ttl, cdnObj?.ignore_query_string);
+      await client.cdn.applyCacheConfig(
+        hostname,
+        cdnObj?.cache_ttl ?? null,
+        cdnObj?.ignore_query_string ?? null,
+      );
     }
     if ((stored.cdn?.origin_protocol ?? null) !== (cdnObj?.origin_protocol ?? null)) {
-      await client.cdn.applyProtocolConfig(hostname, cdnObj?.origin_protocol);
+      await client.cdn.applyProtocolConfig(hostname, cdnObj?.origin_protocol ?? null);
     }
     if ((stored.cdn?.compression ?? null) !== (cdnObj?.compression ?? null)) {
-      await client.cdn.applyCompression(hostname, cdnObj?.compression);
+      await client.cdn.applyCompression(hostname, cdnObj?.compression ?? false);
     }
     if ((stored.cdn?.force_redirect_https ?? null) !== (cdnObj?.force_redirect_https ?? null)) {
-      await client.cdn.applyHttpsRedirect(hostname, cdnObj?.force_redirect_https);
+      await client.cdn.applyHttpsRedirect(hostname, cdnObj?.force_redirect_https ?? false);
     }
   }
   if (certificate) {

@@ -179,6 +179,7 @@ const bindTosDomain = async (
   binding: BucketDomainBinding,
   accelerate: boolean,
   instances: Array<ResourceInstance>,
+  storedDns?: TosDnsInstance,
 ): Promise<void> => {
   const hostname = binding.domain_name;
 
@@ -200,13 +201,24 @@ const bindTosDomain = async (
     ? getTosAccelerateEndpoint(bucket.name)
     : getTosEndpoint(bucket.name, context.region);
   const mainDomain = extractMainDomain(hostname);
-  const dnsRecordId = await client.dns.addDomainRecord({
+  const recordConfig = {
     domainName: mainDomain,
     host: extractHostRecord(hostname, mainDomain),
-    type: 'CNAME',
+    type: 'CNAME' as const,
     value: cname,
     ttl: 600,
-  });
+  };
+  // An si-recorded record is repointed in place when the CNAME target changes
+  // (e.g. acceleration newly enabled) — records si does not hold are managed
+  // by the value-matched add flow, which leaves foreign records untouched.
+  let dnsRecordId: string | undefined;
+  if (storedDns?.dnsRecordId && storedDns.cname && storedDns.cname !== cname) {
+    await client.dns.updateDomainRecord(storedDns.dnsRecordId, recordConfig);
+    logger.info(lang.__('DNS_RECORD_UPDATED', { domain: hostname }));
+    dnsRecordId = storedDns.dnsRecordId;
+  } else {
+    dnsRecordId = await client.dns.addDomainRecord(recordConfig);
+  }
   const id = dnsRecordId ?? hostname;
   instances.push({
     sid: buildSid('volcengine', 'dns', context.stage, id),
@@ -255,8 +267,9 @@ const ensureCdnDns = async (
   cname: string,
   instances: Array<ResourceInstance>,
 ): Promise<void> => {
-  // The CDN CNAME for a hostname is stable, so an existing delivery record is
-  // updated in place — only a missing record is created here.
+  // The CDN CNAME for a hostname is stable, so an existing value-matched
+  // record is adopted as-is — only a missing record is created here (and a
+  // foreign record is left untouched with a warning, never overwritten).
   const mainDomain = extractMainDomain(hostname);
   const dnsRecordId = await client.dns.addDomainRecord({
     domainName: mainDomain,
@@ -316,9 +329,11 @@ const createCdnBinding = async (
     // Partial-failure retry: a CDN domain created by an interrupted earlier run
     // must not block convergence — probe, verify ownership and continue as an
     // update. A domain whose origin does not point at this bucket is not ours
-    // to adopt (repo convention: refuse un-owned resources).
+    // to adopt (repo convention: refuse un-owned resources); one still being
+    // deleted by a prior teardown is not adoptable either — surface the
+    // original conflict so the user retries after the deletion completes.
     const existing = await client.cdn.describeCdnDomain(hostname);
-    if (!existing) throw error;
+    if (!existing || existing.status === 'deleting') throw error;
     const origins = existing.origin ?? [];
     const bucketEndpoint = getTosEndpoint(bucket.name, context.region);
     if (!origins.includes(bucket.name) && !origins.includes(bucketEndpoint)) {
@@ -416,17 +431,26 @@ const updateCdnBinding = async (
   if (applyOptions) {
     await applyCdnOptions(client, hostname, cdnObj);
   } else {
+    // Omitted options resolve to their documented defaults (issue #294):
+    // cache_ttl/ignore_query_string → provider-default cache behavior, the
+    // boolean knobs → off. The apply layer renders null as the default module,
+    // so a dropped option converges the cloud instead of leaving the previous
+    // setting behind (same contract on aliyun/tencent).
     if (
       (stored.cdn?.cache_ttl ?? null) !== (cdnObj?.cache_ttl ?? null) ||
       (stored.cdn?.ignore_query_string ?? null) !== (cdnObj?.ignore_query_string ?? null)
     ) {
-      await client.cdn.applyCacheConfig(hostname, cdnObj?.cache_ttl, cdnObj?.ignore_query_string);
+      await client.cdn.applyCacheConfig(
+        hostname,
+        cdnObj?.cache_ttl ?? null,
+        cdnObj?.ignore_query_string ?? null,
+      );
     }
     if ((stored.cdn?.compression ?? null) !== (cdnObj?.compression ?? null)) {
-      await client.cdn.applyCompression(hostname, cdnObj?.compression);
+      await client.cdn.applyCompression(hostname, cdnObj?.compression ?? false);
     }
     if ((stored.cdn?.force_redirect_https ?? null) !== (cdnObj?.force_redirect_https ?? null)) {
-      await client.cdn.applyHttpsRedirect(hostname, cdnObj?.force_redirect_https);
+      await client.cdn.applyHttpsRedirect(hostname, cdnObj?.force_redirect_https ?? false);
     }
     if ((stored.cdn?.origin_protocol ?? null) !== (cdnObj?.origin_protocol ?? null)) {
       // An explicit protocol is required to reset the pull behavior; the
@@ -758,7 +782,15 @@ export const updateResource = async (
         await createCdnBinding(context, client, bucket, binding, certificate, instances);
       }
     } else {
-      await bindTosDomain(context, client, bucket, binding, desiredAccelerate, instances);
+      await bindTosDomain(
+        context,
+        client,
+        bucket,
+        binding,
+        desiredAccelerate,
+        instances,
+        asVolcengineGroup(groups.get(hostname))?.dns,
+      );
     }
   }
 

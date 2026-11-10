@@ -343,9 +343,11 @@ const createCdnBinding = async (
     // Partial-failure retry: a CDN domain created by an interrupted earlier run
     // must not block convergence — probe, verify ownership and continue as an
     // update. A same-account domain whose origin does not point at this bucket
-    // is not ours to adopt (repo convention: refuse un-owned resources).
+    // is not ours to adopt (repo convention: refuse un-owned resources); one
+    // still being deleted by a prior teardown is not adoptable either —
+    // surface the original conflict so the user retries after it completes.
     const existing = await client.cdn.describeCdnDomain(hostname);
-    if (!existing) throw error;
+    if (!existing || existing.status === 'deleting') throw error;
     const cosEndpoint = client.cos.getCosEndpoint(bucket.name);
     const origins = existing.origin?.origins ?? [];
     if (existing.origin?.originType !== 'cos' || !origins.includes(cosEndpoint)) {
@@ -419,17 +421,26 @@ const updateCdnBinding = async (
   if (applyOptions) {
     await applyCdnOptions(client, bucket.name, hostname, cdnObj);
   } else {
+    // Omitted options resolve to their documented defaults (issue #283/#294
+    // unified contract): cache_ttl/ignore_query_string → provider-default
+    // cache behavior, the boolean knobs → off. The apply layer renders null
+    // as the default module, so a dropped option converges the cloud instead
+    // of leaving the previous setting behind (same shape on aliyun/volcengine).
     if (
       (stored.cdn?.cache_ttl ?? null) !== (cdnObj?.cache_ttl ?? null) ||
       (stored.cdn?.ignore_query_string ?? null) !== (cdnObj?.ignore_query_string ?? null)
     ) {
-      await client.cdn.applyCacheConfig(hostname, cdnObj?.cache_ttl, cdnObj?.ignore_query_string);
+      await client.cdn.applyCacheConfig(
+        hostname,
+        cdnObj?.cache_ttl ?? null,
+        cdnObj?.ignore_query_string ?? null,
+      );
     }
     if ((stored.cdn?.compression ?? null) !== (cdnObj?.compression ?? null)) {
-      await client.cdn.applyCompression(hostname, cdnObj?.compression);
+      await client.cdn.applyCompression(hostname, cdnObj?.compression ?? false);
     }
     if ((stored.cdn?.force_redirect_https ?? null) !== (cdnObj?.force_redirect_https ?? null)) {
-      await client.cdn.applyHttpsRedirect(hostname, cdnObj?.force_redirect_https);
+      await client.cdn.applyHttpsRedirect(hostname, cdnObj?.force_redirect_https ?? false);
     }
     if ((stored.cdn?.origin_protocol ?? null) !== (cdnObj?.origin_protocol ?? null)) {
       // An explicit origin config is required to reset the pull protocol; the

@@ -904,6 +904,9 @@ export const zhCN = {
     '域名 {{domain}} 未托管在火山引擎云解析（TrafficRoute）。请将该域名托管到火山云解析，或手动配置 CNAME 记录。',
   DNS_RECORD_CREATED: 'DNS 记录 {{domain}} 创建成功',
   DNS_RECORD_UPDATED: 'DNS 记录 {{domain}} 更新成功',
+  DNS_RECORD_EXISTS: 'DNS 记录 {{domain}} 已指向 {{value}}，直接采纳',
+  DNS_RECORD_FOREIGN_EXISTS:
+    '{{domain}} 已存在指向其他地址的 CNAME 记录；si 不会修改非 si 管理的记录。请将其指向 {{value}} 或删除后重新部署。',
   TOS_DIRECT_BINDING_PEM_NOT_SUPPORTED:
     '存储桶 "{{key}}"：绑定 "{{domain}}" —— TOS 直连域名绑定通过 ID（`certificate_id`）引用证书；TOS 不提供存储桶域名证书上传 API，因此不支持内联 PEM（`certificate_body`/`certificate_private_key`）。请将证书上传到火山引擎证书中心并传入其 ID。',
 

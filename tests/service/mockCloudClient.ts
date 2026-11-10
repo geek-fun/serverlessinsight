@@ -528,7 +528,6 @@ export type MockVolcengineClient = {
     getBucketCustomDomains: jest.Mock;
     deleteBucketCustomDomain: jest.Mock;
     putBucketTransferAcceleration: jest.Mock;
-    getBucketTransferAcceleration: jest.Mock;
   };
   iam: {
     createRole: jest.Mock;
@@ -645,7 +644,6 @@ export const createMockVolcengineClient = (): MockVolcengineClient => ({
     getBucketCustomDomains: jest.fn().mockResolvedValue([]),
     deleteBucketCustomDomain: jest.fn().mockResolvedValue(undefined),
     putBucketTransferAcceleration: jest.fn().mockResolvedValue(undefined),
-    getBucketTransferAcceleration: jest.fn().mockResolvedValue(false),
   },
   iam: {
     createRole: jest.fn().mockResolvedValue({

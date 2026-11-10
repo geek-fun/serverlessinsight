@@ -78,9 +78,6 @@ describe('tosOperations', () => {
       await expect(operations.putBucketTransferAcceleration('test-bucket', true)).rejects.toThrow(
         'VOLCENGINE_TOS_CLIENT_NOT_INITIALIZED',
       );
-      await expect(operations.getBucketTransferAcceleration('test-bucket')).rejects.toThrow(
-        'VOLCENGINE_TOS_CLIENT_NOT_INITIALIZED',
-      );
     });
 
     it('should throw error when getting bucket with null client', async () => {
@@ -1264,24 +1261,6 @@ describe('tosOperations', () => {
             data: { TransferAccelerationConfiguration: { Enabled: 'false' } },
           }),
         );
-      });
-
-      it('getBucketTransferAcceleration maps Enabled to a boolean', async () => {
-        mockClient.fetchOpenAPI.mockResolvedValue({
-          Result: { TransferAccelerationConfiguration: { Enabled: 'true', Status: 'enabling' } },
-        });
-
-        await expect(operations.getBucketTransferAcceleration('test-bucket')).resolves.toBe(true);
-
-        mockClient.fetchOpenAPI.mockResolvedValue({
-          Result: { TransferAccelerationConfiguration: { Enabled: 'false', Status: 'enabled' } },
-        });
-        await expect(operations.getBucketTransferAcceleration('test-bucket')).resolves.toBe(false);
-
-        mockClient.fetchOpenAPI.mockResolvedValue({ Result: {} });
-        await expect(
-          operations.getBucketTransferAcceleration('test-bucket'),
-        ).resolves.toBeUndefined();
       });
     });
   });

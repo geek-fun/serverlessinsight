@@ -153,14 +153,38 @@ describe('createTencentCdnOperations', () => {
       CacheKey: { FullUrlCache: 'off' },
     });
 
+    // A dropped TTL resets the cache module to follow-origin.
     await operations.applyCacheConfig('x.c', undefined, false);
     expect(mockSdkClient.UpdateDomainConfig).toHaveBeenLastCalledWith({
       Domain: 'x.c',
+      Cache: {
+        SimpleCache: {
+          CacheRules: [],
+          FollowOrigin: 'on',
+          IgnoreCacheControl: 'off',
+          IgnoreSetCookie: 'off',
+          CompareMaxAge: 'off',
+        },
+      },
       CacheKey: { FullUrlCache: 'on' },
     });
 
+    // Nothing configured → still a reset call, not a no-op.
     await operations.applyCacheConfig('x.c');
-    expect(mockSdkClient.UpdateDomainConfig).toHaveBeenCalledTimes(2);
+    expect(mockSdkClient.UpdateDomainConfig).toHaveBeenLastCalledWith({
+      Domain: 'x.c',
+      Cache: {
+        SimpleCache: {
+          CacheRules: [],
+          FollowOrigin: 'on',
+          IgnoreCacheControl: 'off',
+          IgnoreSetCookie: 'off',
+          CompareMaxAge: 'off',
+        },
+      },
+      CacheKey: { FullUrlCache: 'on' },
+    });
+    expect(mockSdkClient.UpdateDomainConfig).toHaveBeenCalledTimes(3);
   });
 
   it('applies compression and https redirect switches', async () => {
@@ -254,7 +278,7 @@ describe('createTencentCdnOperations', () => {
       });
     });
 
-    it('applies a cache TTL without touching the cache key', async () => {
+    it('renders the default cache key when only a cache TTL is applied', async () => {
       mockSdkClient.UpdateDomainConfig.mockResolvedValue({});
 
       await operations.applyCacheConfig('x.c', 60);
@@ -270,6 +294,8 @@ describe('createTencentCdnOperations', () => {
             CompareMaxAge: 'off',
           },
         },
+        // Omitted ignore_query_string → documented default (query string kept).
+        CacheKey: { FullUrlCache: 'on' },
       });
     });
 

@@ -7,6 +7,8 @@ const mockDeleteCdnDomain = jest.fn();
 const mockModifyCdnDomain = jest.fn();
 const mockSetCdnDomainSSLCertificate = jest.fn();
 const mockBatchSetCdnDomainConfig = jest.fn();
+const mockDescribeCdnDomainConfigs = jest.fn();
+const mockBatchDeleteCdnDomainConfig = jest.fn();
 
 const mockCdnClient = {
   addCdnDomain: mockAddCdnDomain,
@@ -15,6 +17,8 @@ const mockCdnClient = {
   modifyCdnDomain: mockModifyCdnDomain,
   setCdnDomainSSLCertificate: mockSetCdnDomainSSLCertificate,
   batchSetCdnDomainConfig: mockBatchSetCdnDomainConfig,
+  describeCdnDomainConfigs: mockDescribeCdnDomainConfigs,
+  batchDeleteCdnDomainConfig: mockBatchDeleteCdnDomainConfig,
 } as unknown as InstanceType<typeof CdnClient>;
 
 describe('CdnOperations', () => {
@@ -185,8 +189,29 @@ describe('CdnOperations', () => {
       );
     });
 
-    it('should not call API when both params are null/undefined', async () => {
+    it('should delete the cache_expire config when both params are null/undefined', async () => {
+      mockDescribeCdnDomainConfigs.mockResolvedValueOnce({
+        body: { domainConfigs: { domainConfig: [{ functionName: 'cache_expire' }] } },
+      });
+      mockBatchDeleteCdnDomainConfig.mockResolvedValue({});
+
       await operations.applyCacheConfig('cdn.example.com');
+
+      expect(mockBatchDeleteCdnDomainConfig).toHaveBeenCalledWith(
+        expect.objectContaining({
+          domainNames: 'cdn.example.com',
+          functionNames: 'cache_expire',
+        }),
+      );
+      expect(mockBatchSetCdnDomainConfig).not.toHaveBeenCalled();
+    });
+
+    it('should skip the delete when the cache_expire config is absent', async () => {
+      mockDescribeCdnDomainConfigs.mockResolvedValueOnce({ body: { domainConfigs: {} } });
+
+      await operations.applyCacheConfig('cdn.example.com');
+
+      expect(mockBatchDeleteCdnDomainConfig).not.toHaveBeenCalled();
       expect(mockBatchSetCdnDomainConfig).not.toHaveBeenCalled();
     });
   });
@@ -228,8 +253,20 @@ describe('CdnOperations', () => {
       );
     });
 
-    it('should not call API when originProtocol is undefined', async () => {
+    it('should delete forward_scheme when originProtocol is undefined', async () => {
+      mockDescribeCdnDomainConfigs.mockResolvedValueOnce({
+        body: { domainConfigs: { domainConfig: [{ functionName: 'forward_scheme' }] } },
+      });
+      mockBatchDeleteCdnDomainConfig.mockResolvedValue({});
+
       await operations.applyProtocolConfig('cdn.example.com', undefined);
+
+      expect(mockBatchDeleteCdnDomainConfig).toHaveBeenCalledWith(
+        expect.objectContaining({
+          domainNames: 'cdn.example.com',
+          functionNames: 'forward_scheme',
+        }),
+      );
       expect(mockBatchSetCdnDomainConfig).not.toHaveBeenCalled();
     });
   });
@@ -296,22 +333,22 @@ describe('CdnOperations', () => {
       );
     });
 
-    it('should disable HTTPS redirect', async () => {
-      mockBatchSetCdnDomainConfig.mockResolvedValue({});
+    it('should disable HTTPS redirect by deleting the force_redirect config', async () => {
+      mockDescribeCdnDomainConfigs.mockResolvedValueOnce({
+        body: { domainConfigs: { domainConfig: [{ functionName: 'force_redirect' }] } },
+      });
+      mockBatchDeleteCdnDomainConfig.mockResolvedValue({});
 
       await operations.applyHttpsRedirect('cdn.example.com', false);
 
-      expect(mockBatchSetCdnDomainConfig).toHaveBeenCalledWith(
+      // redirect_type 'http' would be an active HTTPS→HTTP downgrade.
+      expect(mockBatchDeleteCdnDomainConfig).toHaveBeenCalledWith(
         expect.objectContaining({
           domainNames: 'cdn.example.com',
-          functions: JSON.stringify([
-            {
-              featureName: 'force_redirect',
-              featureParameters: { redirect_code: '301', redirect_type: 'http' },
-            },
-          ]),
+          functionNames: 'force_redirect',
         }),
       );
+      expect(mockBatchSetCdnDomainConfig).not.toHaveBeenCalled();
     });
 
     it('should not call API when enabled is undefined', async () => {
