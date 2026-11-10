@@ -1406,6 +1406,88 @@ describe('Fc3Resource', () => {
       );
     });
 
+    it('should accept inline PEM directly without hitting CAS (issue #286)', async () => {
+      const fnWithInlinePem = {
+        ...testFunction,
+        triggers: { http: { auth_type: 'public' as const } },
+        domains: [
+          {
+            domain_name: 'api.example.com',
+            path: '/*',
+            protocol: ['HTTPS' as const],
+            certificate_body: '-----BEGIN CERTIFICATE-----CERT',
+            certificate_private_key: '-----BEGIN PRIVATE KEY-----KEY',
+          },
+        ],
+      };
+      mockedStateManager.setResource.mockReturnValue(initialState);
+
+      await createResource(mockContext, fnWithInlinePem, initialState);
+
+      expect(mockedCasOperations.getCertificate).not.toHaveBeenCalled();
+      expect(mockedFc3Operations.createCustomDomain).toHaveBeenCalledWith(
+        'api.example.com',
+        'HTTPS',
+        [{ path: '/*', functionName: 'test-function' }],
+        {
+          certName: 'test-service-default-fc3-domain',
+          certificate: '-----BEGIN CERTIFICATE-----CERT',
+          privateKey: '-----BEGIN PRIVATE KEY-----KEY',
+        },
+      );
+    });
+
+    it('propagates non-collision create errors untouched', async () => {
+      const fnWithDomain = {
+        ...testFunction,
+        triggers: { http: { auth_type: 'public' as const } },
+        domains: [{ domain_name: 'api.example.com', path: '/*', protocol: ['HTTPS' as const] }],
+      };
+      const forbidden = Object.assign(new Error('Forbidden'), { code: 'Forbidden' });
+      mockedFc3Operations.createCustomDomain.mockRejectedValue(forbidden);
+
+      await expect(createResource(mockContext, fnWithDomain, initialState)).rejects.toThrow(
+        'Forbidden',
+      );
+      expect(mockedFc3Operations.updateCustomDomain).not.toHaveBeenCalled();
+    });
+
+    it('does not rewrite the domain when live routes already exclude this function', async () => {
+      const fnWithoutDomains = { ...testFunction };
+      const state: StateFile = {
+        ...initialState,
+        resources: {
+          'functions.test_fn': {
+            mode: 'managed',
+            region: mockContext.region,
+            definition: mockDefinition,
+            instances: [
+              {
+                type: 'ALIYUN_FC3_CUSTOM_DOMAIN',
+                sid: 'domain',
+                id: 'api.example.com',
+                paths: ['/*'],
+                attributes: { protocol: 'HTTPS' },
+              },
+            ],
+            lastUpdated: '2026-01-01T00:00:00Z',
+          },
+        },
+      };
+      // Live domain already has no route for this function — release is a no-op.
+      mockedFc3Operations.getCustomDomain.mockResolvedValue({
+        domainName: 'api.example.com',
+        protocol: 'HTTPS',
+        routeConfig: { routes: [{ path: '/other/*', functionName: 'fn_other' }] },
+      });
+      mockedStateManager.setResource.mockReturnValue(initialState);
+
+      await updateResource(mockContext, fnWithoutDomains, state);
+
+      expect(mockedFc3Operations.updateCustomDomain).not.toHaveBeenCalled();
+      expect(mockedFc3Operations.deleteCustomDomain).not.toHaveBeenCalled();
+    });
+
     it('should stamp the ownership tag into the create config', async () => {
       mockedFc3Operations.getFunction.mockResolvedValueOnce(mockFunctionInfo);
       mockedFc3Operations.createFunction.mockResolvedValue(undefined);

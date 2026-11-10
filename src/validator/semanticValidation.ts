@@ -437,18 +437,23 @@ const validateFunctionDomains = (
         seenBindings.set(bindingKey, index);
       }
 
+      // Unresolvable protocol values (template refs, or arrays containing any
+      // ref) are skipped entirely — they must not silently compare as the
+      // [HTTPS] default, which would invent a cross-binding mismatch.
       const rawProtocol = binding.protocol;
-      const protocol =
-        typeof rawProtocol === 'string' && TEMPLATE_REF_PATTERN.test(rawProtocol)
-          ? undefined
-          : Array.isArray(rawProtocol) &&
-              rawProtocol.every(
-                (value) => typeof value === 'string' && !TEMPLATE_REF_PATTERN.test(value),
-              )
-            ? normalizeFunctionProtocol(rawProtocol as Array<string>)
-            : normalizeFunctionProtocol(
-                typeof rawProtocol === 'string' ? (rawProtocol as string) : undefined,
-              );
+      const protocol = ((): Array<FunctionProtocol> | undefined => {
+        if (rawProtocol === undefined) return normalizeFunctionProtocol(undefined);
+        if (typeof rawProtocol === 'string') {
+          return TEMPLATE_REF_PATTERN.test(rawProtocol)
+            ? undefined
+            : normalizeFunctionProtocol(rawProtocol);
+        }
+        if (!Array.isArray(rawProtocol)) return undefined;
+        const literals = rawProtocol.every(
+          (value) => typeof value === 'string' && !TEMPLATE_REF_PATTERN.test(value),
+        );
+        return literals ? normalizeFunctionProtocol(rawProtocol as Array<string>) : undefined;
+      })();
       const cert = certFormOf(binding);
       allBindings.push({
         fnKey,
@@ -474,16 +479,23 @@ const validateFunctionDomains = (
   byHostname.forEach((group, hostname) => {
     const first = group[0];
 
-    const protocols = [...new Set(group.map((binding) => JSON.stringify(binding.protocol)))];
+    // Only compare bindings whose protocol resolved to a literal set —
+    // unresolvable template refs are checked after resolution, and treating
+    // them as the [HTTPS] default would invent a mismatch.
+    const withProtocol = group.filter(
+      (binding): binding is ParsedFunctionDomainBinding & { protocol: Array<FunctionProtocol> } =>
+        binding.protocol !== undefined,
+    );
+    const protocols = [...new Set(withProtocol.map((binding) => JSON.stringify(binding.protocol)))];
     if (protocols.length > 1) {
       push({
-        instancePath: `/functions/${group[1].fnKey}/domains`,
+        instancePath: `/functions/${withProtocol[1].fnKey}/domains`,
         schemaPath: '#/semantic/functionDomainsProtocolMismatch',
         keyword: 'functionDomainsProtocolMismatch',
         message: lang.__('FUNCTION_DOMAINS_PROTOCOL_MISMATCH', {
           domain: hostname,
           fnKey: first.fnKey,
-          otherFnKey: group[1].fnKey,
+          otherFnKey: withProtocol[1].fnKey,
         }),
       });
     }

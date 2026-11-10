@@ -194,6 +194,18 @@ describe('canonicalFunctionDomains', () => {
 });
 
 describe('storedFunctionDomainBindings', () => {
+  it('skips instances without a usable domain id and mismatched types', () => {
+    const stored = storedFunctionDomainBindings(
+      [
+        { type: 'ALIYUN_FC3_CUSTOM_DOMAIN', id: '   ' },
+        { type: 'ALIYUN_FC3_CUSTOM_DOMAIN' },
+        { type: 'ALIYUN_FC3_FUNCTION', id: 'fn' },
+      ],
+      'ALIYUN_FC3_CUSTOM_DOMAIN',
+    );
+    expect(stored.size).toBe(0);
+  });
+
   it('reads per-domain paths from instances; pre-#286 instances default to /*', () => {
     const stored = storedFunctionDomainBindings(
       [

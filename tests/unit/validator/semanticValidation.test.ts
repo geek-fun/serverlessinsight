@@ -912,6 +912,126 @@ describe('validateSemantics', () => {
       );
       expect(errors).toEqual([]);
     });
+
+    it('skips certificate-form comparison for template refs and mixed invalid forms', () => {
+      const errors = validateSemantics(
+        buildFnIac({
+          fn_a: {
+            name: 'a',
+            code: { runtime: 'nodejs20', handler: 'index.handler', path: './code' },
+            triggers: { http: { auth_type: 'public' } },
+            domains: [{ domain_name: 'api.example.com', certificate_id: '${vars.cert_id}' }],
+          },
+          fn_b: {
+            name: 'b',
+            code: { runtime: 'nodejs20', handler: 'index.handler', path: './code' },
+            triggers: { http: { auth_type: 'public' } },
+            domains: [
+              {
+                domain_name: 'api.example.com',
+                certificate_id: 'cert-1',
+                certificate_body: 'CERT',
+                certificate_private_key: 'KEY',
+              },
+            ],
+          },
+        }),
+      );
+      // Both sides are uncomparable (ref / schema-invalid mix) — no mismatch invented.
+      expect(keywordsOf(errors)).not.toContain('functionDomainsCertificateMismatch');
+    });
+
+    it('skips non-object function entries without inventing errors', () => {
+      const errors = validateSemantics(buildFnIac({ broken: null, other: 42 } as never));
+      expect(keywordsOf(errors)).not.toContain('functionDomainsProviderUnsupported');
+    });
+
+    it('skips inline PEM forms whose body or key is a template ref', () => {
+      const errors = validateSemantics(
+        buildFnIac({
+          fn_a: {
+            name: 'a',
+            code: { runtime: 'nodejs20', handler: 'index.handler', path: './code' },
+            triggers: { http: { auth_type: 'public' } },
+            domains: [
+              {
+                domain_name: 'api.example.com',
+                path: '/a/*',
+                certificate_body: '${vars.pem}',
+                certificate_private_key: 'KEY',
+              },
+            ],
+          },
+          fn_b: {
+            name: 'b',
+            code: { runtime: 'nodejs20', handler: 'index.handler', path: './code' },
+            triggers: { http: { auth_type: 'public' } },
+            domains: [{ domain_name: 'api.example.com', path: '/b/*', certificate_id: 'cert-1' }],
+          },
+        }),
+      );
+      // The ref-bearing pair is uncomparable — no mismatch invented.
+      expect(keywordsOf(errors)).not.toContain('functionDomainsCertificateMismatch');
+    });
+
+    it('skips a non-string non-array protocol value', () => {
+      const errors = validateSemantics(
+        buildFnIac({
+          handler: {
+            name: 'fn',
+            code: { runtime: 'nodejs20', handler: 'index.handler', path: './code' },
+            triggers: { http: { auth_type: 'public' } },
+            domains: [{ domain_name: 'api.example.com', protocol: 8080 }],
+          },
+        }),
+      );
+      expect(keywordsOf(errors)).not.toContain('functionDomainsProtocolMismatch');
+    });
+
+    it('treats a certificate omitted on both sides as consistent', () => {
+      const errors = validateSemantics(
+        buildFnIac({
+          fn_a: {
+            name: 'a',
+            code: { runtime: 'nodejs20', handler: 'index.handler', path: './code' },
+            triggers: { http: { auth_type: 'public' } },
+            domains: [{ domain_name: 'api.example.com', path: '/a/*' }],
+          },
+          fn_b: {
+            name: 'b',
+            code: { runtime: 'nodejs20', handler: 'index.handler', path: './code' },
+            triggers: { http: { auth_type: 'public' } },
+            domains: [{ domain_name: 'api.example.com', path: '/b/*' }],
+          },
+        }),
+      );
+      expect(keywordsOf(errors)).not.toContain('functionDomainsCertificateMismatch');
+    });
+
+    it('compares template-ref-free protocol arrays only when every entry is a literal', () => {
+      const errors = validateSemantics(
+        buildFnIac({
+          fn_a: {
+            name: 'a',
+            code: { runtime: 'nodejs20', handler: 'index.handler', path: './code' },
+            triggers: { http: { auth_type: 'public' } },
+            domains: [
+              { domain_name: 'api.example.com', path: '/a/*', protocol: ['HTTP', '${vars.x}'] },
+            ],
+          },
+          fn_b: {
+            name: 'b',
+            code: { runtime: 'nodejs20', handler: 'index.handler', path: './code' },
+            triggers: { http: { auth_type: 'public' } },
+            domains: [
+              { domain_name: 'api.example.com', path: '/b/*', protocol: ['HTTP', 'HTTPS'] },
+            ],
+          },
+        }),
+      );
+      // The unresolvable array cannot be compared — protocol mismatch must not fire.
+      expect(keywordsOf(errors)).not.toContain('functionDomainsProtocolMismatch');
+    });
   });
 });
 
