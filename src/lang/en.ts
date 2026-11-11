@@ -1220,7 +1220,7 @@ export const en = {
   STATE_STORAGE_CREDENTIALS_MISSING:
     "State storage needs credentials for {{provider}}. Configure that cloud's credential environment variables. Workload credentials from another provider are never reused.",
   SAAS_REGIONAL_SCOPE_UNSUPPORTED:
-    'The Console at {{consoleUrl}} does not advertise compatible regional deployment states (scope protocol 2 and state format 4.0). Upgrading the CLI alone cannot isolate regions safely — update the Console, or keep using the previous CLI release for unscoped deployments',
+    'The Console at {{consoleUrl}} does not advertise compatible regional deployment states (scope protocol 3 and state format 4.0). Upgrading the CLI alone cannot isolate regions safely — update the Console, or keep using the previous CLI release for unscoped deployments',
   SAAS_STATE_SCOPE_MISMATCH:
     'The Console returned state for stage {{storedStage}} / region {{storedRegion}}, but this command targets stage {{stage}} / region {{region}}. Refusing to mix regional scopes',
   SAAS_READ_ONLY_WRITE_REFUSED:
@@ -1247,7 +1247,7 @@ export const en = {
   MIGRATE_SOURCE_MULTIPLE_SCOPES:
     'This regional document contains resources from other stages. Resolve the source ownership before importing; one regional document may own only its selected stage.',
   SAAS_STATE_ACK_INVALID:
-    'The state server did not confirm a valid regional snapshot and content hash. Refusing to guess the next state revision; upgrade the server to scope protocol 2.',
+    'The state server did not confirm a valid regional snapshot and content hash. Refusing to guess the next state revision; upgrade the server to scope protocol 3.',
 
   REGIONAL_MIGRATION_PROVIDER_MISMATCH:
     'The source records provider "{{source}}", while the command selects "{{effective}}". The upgrade preserves the source provider; workload overrides never rewrite historical ownership.',

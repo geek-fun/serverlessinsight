@@ -1133,7 +1133,7 @@ export const zhCN = {
   MIGRATE_SOURCE_MULTIPLE_SCOPES:
     '此区域状态文档还包含其他 stage 的资源。请先核实源状态的归属，再导入；一个区域文档只能管理选定 stage 的资源。',
   SAAS_STATE_ACK_INVALID:
-    '状态服务未确认有效的区域快照和内容哈希。已拒绝推测下一版本，请升级服务端以支持作用域协议 2。',
+    '状态服务未确认有效的区域快照和内容哈希。已拒绝推测下一版本，请升级服务端以支持作用域协议 3。',
 
   REGIONAL_MIGRATION_PROVIDER_MISMATCH:
     '源状态记录的 provider 为 "{{source}}"，命令选择的是 "{{effective}}"。升级保留源 provider，业务部署参数不会重写历史资源归属。',
