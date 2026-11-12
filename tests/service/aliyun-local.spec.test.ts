@@ -215,19 +215,26 @@ describe('offline si local CLI smoke test with --strict-prefix', () => {
       output += String(chunk);
     });
 
-    for (let attempt = 0; attempt < 50; attempt += 1) {
-      if (output.includes('Local Server listening')) break;
-      await new Promise((resolve) => setTimeout(resolve, 100));
-    }
-  });
+    const deadline = Date.now() + 20000;
+    const waitUntilReady = async (): Promise<void> => {
+      if (child?.exitCode !== null || Date.now() > deadline)
+        throw new Error(`CLI did not start: ${output}`);
+      try {
+        await request(port, '/si_events/api/echo');
+      } catch {
+        await new Promise((resolve) => setTimeout(resolve, 100));
+        return waitUntilReady();
+      }
+    };
+    await waitUntilReady();
+  }, 30000);
 
   afterAll(async () => {
-    child?.kill();
-    await new Promise<void>((resolve) => {
-      if (!child || child.exitCode !== null) return resolve();
-      child.once('exit', () => resolve());
-      setTimeout(resolve, 2000);
-    });
+    if (child && child.exitCode === null) {
+      const closed = once(child, 'close');
+      child.kill();
+      await closed;
+    }
   });
 
   it('routes only via /SI_* prefixes when --strict-prefix is set', async () => {
