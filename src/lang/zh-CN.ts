@@ -149,6 +149,7 @@ export const zhCN = {
     '计划: 新增 {{addCount}}，变更 {{modifyCount}}，移除 {{removeCount}}，重建 {{recreateCount}}，无变更 {{unchangedCount}}。',
   PLAN_UNCHANGED_ATTRS: '({{count}} 个未变更属性已隐藏)',
   PLAN_COMPUTED_VALUE: '(部署后可知)',
+  PLAN_ARRAY_ENTRY_SUMMARY: '(+{{added}} / -{{removed}})',
   PLAN_REVERT_ANNOTATION: '(云端已改，将按配置恢复)',
   PLAN_DRIFTED_MARKER: '（云端已漂移——与本配置不一致，将按配置纠正）',
   PLAN_LIVE_READ_FAILED: '读取 {{logicalId}} 云端状态失败，计划已停止: {{error}}',

@@ -156,6 +156,7 @@ export const en = {
     'Plan: {{addCount}} add, {{modifyCount}} modify, {{removeCount}} remove, {{recreateCount}} recreate, {{unchangedCount}} unchanged.',
   PLAN_UNCHANGED_ATTRS: '({{count}} unchanged attributes hidden)',
   PLAN_COMPUTED_VALUE: '(known after deploy)',
+  PLAN_ARRAY_ENTRY_SUMMARY: '(+{{added}} / -{{removed}})',
   PLAN_REVERT_ANNOTATION: '(changed in the cloud, will be restored to config)',
   PLAN_DRIFTED_MARKER: '(drifted — cloud changed outside of this config, will be reconciled)',
   PLAN_LIVE_READ_FAILED: 'Failed to read live state for {{logicalId}}; planning stopped: {{error}}',
