@@ -59,3 +59,33 @@ it('forwards YAML provider, region and stages and uses effective CLI overrides f
     stage: 'preview',
   });
 });
+
+it('forwards strict-prefix mode into the local stack options', async () => {
+  const iac = {
+    app: 'local-app',
+    service: 'local-service',
+    provider: { name: ProviderEnum.ALIYUN, region: 'cn-hangzhou' },
+  } as unknown as ServerlessIac;
+  jest.mocked(getIacLocation).mockReturnValue('/tmp/app/serverlessinsight.yml');
+  jest.mocked(parseYaml).mockReturnValue(iac);
+  jest.mocked(getContext).mockReturnValue({
+    stage: 'default',
+    provider: ProviderEnum.ALIYUN,
+    region: 'cn-hangzhou',
+  } as Context);
+  jest.mocked(revalYaml).mockReturnValue(iac);
+
+  await runLocal({
+    stage: 'default',
+    debug: false,
+    watch: false,
+    location: '/tmp/app',
+    provider: 'aliyun',
+    strictPrefix: true,
+  });
+
+  expect(startLocalStack).toHaveBeenLastCalledWith(
+    { ...iac, provider: { name: ProviderEnum.ALIYUN, region: 'cn-hangzhou' } },
+    { strictPrefix: true, stage: 'default' },
+  );
+});
