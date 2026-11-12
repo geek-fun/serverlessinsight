@@ -1,0 +1,34 @@
+version: 0.1.0
+app: local-fc
+service: contract
+provider:
+  name: aliyun
+  region: cn-hangzhou
+stages:
+  preview:
+    greeting: hello-preview
+functions:
+  echo:
+    name: local-fc-echo
+    code: { runtime: nodejs18, handler: index.handler, path: tests/fixtures/aliyun-local }
+  clash:
+    name: local-fc-clash
+    code: { runtime: nodejs18, handler: index.clash, path: tests/fixtures/aliyun-local }
+events:
+  api:
+    type: API_GATEWAY
+    name: local-fc-api
+    triggers:
+      - { method: GET, path: /echo, backend: '${functions.echo}' }
+      - { method: GET, path: '/users/[id]', backend: '${functions.echo}' }
+  other:
+    type: API_GATEWAY
+    name: local-fc-other
+    triggers:
+      - { method: GET, path: '/users/[id]', backend: '${functions.clash}' }
+buckets:
+  site:
+    name: local-fc-site
+    website:
+      code: tests/fixtures/aliyun-local/site
+      index: index.html

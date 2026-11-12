@@ -390,17 +390,22 @@ program
   .option('-v, --provider <provider>', lang.__('OPT_PROVIDER'))
   .option('-d, --debug', lang.__('OPT_DEBUG'))
   .option('-w, --watch', lang.__('OPT_WATCH'), true)
+  .option('--strict-prefix', lang.__('OPT_STRICT_PREFIX'))
   .action(
-    actionWrapper('local', async ({ stage, debug, watch, file, provider, region }) => {
-      await runLocal({
-        stage,
-        debug: !!debug,
-        watch: typeof watch === 'boolean' ? watch : true,
-        location: file,
-        provider,
-        region,
-      });
-    }),
+    actionWrapper(
+      'local',
+      async ({ stage, debug, watch, file, provider, region, strictPrefix }) => {
+        await runLocal({
+          stage,
+          debug: !!debug,
+          watch: typeof watch === 'boolean' ? watch : true,
+          location: file,
+          provider,
+          region,
+          strictPrefix: !!strictPrefix,
+        });
+      },
+    ),
   );
 
 program

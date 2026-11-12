@@ -15,6 +15,8 @@ export type ParsedRequest = {
   method: string;
   query: Record<string, string>;
   rawUrl: string;
+  stage?: string;
+  pathParameters?: Record<string, string>;
 };
 
 export type RouteResponse = {
@@ -93,6 +95,12 @@ export type AliyunApiGatewayContext = {
   };
 };
 
+export type AliyunRequestContext = {
+  stage: string;
+  requestId: string;
+  apiId?: string;
+};
+
 export type AliyunServerlessEvent = {
   path: string;
   httpMethod: string;
@@ -101,6 +109,7 @@ export type AliyunServerlessEvent = {
   pathParameters: Record<string, string>;
   body: string | undefined;
   isBase64Encoded: boolean;
+  requestContext: AliyunRequestContext;
 };
 
 /**

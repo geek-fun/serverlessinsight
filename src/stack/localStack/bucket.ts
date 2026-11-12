@@ -104,6 +104,91 @@ const getAllFiles = (
   }
 };
 
+const serveFileResponse = (filePath: string): RouteResponse => {
+  try {
+    const fileContent = fs.readFileSync(filePath);
+    const mimeType = getMimeType(filePath);
+
+    // For text files, return as string; for binary files, return as base64
+    const isTextFile = TEXT_MIME_TYPES.has(mimeType);
+
+    return {
+      statusCode: 200,
+      headers: {
+        'Content-Type': mimeType,
+        'Content-Length': String(fileContent.length),
+      },
+      body: isTextFile ? fileContent.toString('utf-8') : fileContent.toString('base64'),
+    };
+  } catch (error) {
+    logger.error(lang.__('ERROR_READING_FILE', { error: String(error) }));
+    return {
+      statusCode: 500,
+      body: {
+        error: 'Failed to read file',
+        message: error instanceof Error ? error.message : String(error),
+      },
+    };
+  }
+};
+
+const isPathInsideBucket = (filePath: string, bucketBasePath: string): boolean =>
+  path.normalize(filePath).startsWith(path.normalize(bucketBasePath));
+
+const serveWebsiteRequest = (
+  url: string,
+  bucketBasePath: string,
+  bucketKey: string,
+  indexDocument: string,
+): RouteResponse => {
+  const requestedPath = url.startsWith('/') ? url.slice(1) : url;
+  const filePath = path.join(bucketBasePath, url);
+
+  if (!isPathInsideBucket(filePath, bucketBasePath)) {
+    return {
+      statusCode: 403,
+      body: { error: 'Access denied: Path traversal attempt detected' },
+    };
+  }
+
+  const serveIndexDocument = (indexPath: string): RouteResponse => {
+    if (fs.existsSync(indexPath) && fs.statSync(indexPath).isFile()) {
+      return serveFileResponse(indexPath);
+    }
+    return {
+      statusCode: 404,
+      body: {
+        error: lang.__('LOCAL_BUCKET_INDEX_NOT_FOUND'),
+        index: indexDocument,
+        bucketKey,
+      },
+    };
+  };
+
+  if (fs.existsSync(filePath)) {
+    if (fs.statSync(filePath).isFile()) {
+      return serveFileResponse(filePath);
+    }
+    const directoryIndex = path.join(filePath, indexDocument);
+    if (fs.existsSync(directoryIndex) && fs.statSync(directoryIndex).isFile()) {
+      return serveFileResponse(directoryIndex);
+    }
+  }
+
+  if (path.extname(requestedPath) !== '') {
+    return {
+      statusCode: 404,
+      body: {
+        error: lang.__('LOCAL_BUCKET_FILE_NOT_FOUND'),
+        path: requestedPath,
+        bucketKey,
+      },
+    };
+  }
+
+  return serveIndexDocument(path.join(bucketBasePath, indexDocument));
+};
+
 export const bucketsHandler = async (
   req: IncomingMessage,
   parsed: ParsedRequest,
@@ -148,6 +233,15 @@ export const bucketsHandler = async (
     };
   }
 
+  if (bucketDef.website?.code) {
+    return serveWebsiteRequest(
+      parsed.url,
+      bucketBasePath,
+      bucketDef.key,
+      bucketDef.website.index ?? 'index.html',
+    );
+  }
+
   // Root path lists all files in bucket
   if (parsed.url === '/') {
     try {
@@ -180,9 +274,7 @@ export const bucketsHandler = async (
   const filePath = path.join(bucketBasePath, requestedPath);
 
   // Security check: ensure the requested file is within the bucket directory
-  const normalizedFilePath = path.normalize(filePath);
-  const normalizedBucketPath = path.normalize(bucketBasePath);
-  if (!normalizedFilePath.startsWith(normalizedBucketPath)) {
+  if (!isPathInsideBucket(filePath, bucketBasePath)) {
     return {
       statusCode: 403,
       body: { error: 'Access denied: Path traversal attempt detected' },
@@ -230,30 +322,5 @@ export const bucketsHandler = async (
     }
   }
 
-  // Serve the file
-  try {
-    const fileContent = fs.readFileSync(filePath);
-    const mimeType = getMimeType(filePath);
-
-    // For text files, return as string; for binary files, return as base64
-    const isTextFile = TEXT_MIME_TYPES.has(mimeType);
-
-    return {
-      statusCode: 200,
-      headers: {
-        'Content-Type': mimeType,
-        'Content-Length': String(fileContent.length),
-      },
-      body: isTextFile ? fileContent.toString('utf-8') : fileContent.toString('base64'),
-    };
-  } catch (error) {
-    logger.error(lang.__('ERROR_READING_FILE', { error: String(error) }));
-    return {
-      statusCode: 500,
-      body: {
-        error: 'Failed to read file',
-        message: error instanceof Error ? error.message : String(error),
-      },
-    };
-  }
+  return serveFileResponse(filePath);
 };

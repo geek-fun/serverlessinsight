@@ -79,17 +79,13 @@ describe('localStack Server', () => {
   });
 
   describe('Bucket operations', () => {
-    it('should list all files in bucket', async () => {
+    it('should serve the website index document for the bucket root', async () => {
       const response = await makeRequest(
         `http://localhost:${SI_LOCALSTACK_SERVER_PORT}/si_buckets/test_bucket/`,
       );
 
       expect(response.statusCode).toBe(200);
-      const json = JSON.parse(response.data);
-      expect(json.bucket).toBe('test-bucket');
-      expect(json.files).toBeDefined();
-      expect(json.files.length).toBeGreaterThan(0);
-      expect(json.files.some((f: { name: string }) => f.name === 'index.html')).toBe(true);
+      expect(response.data).toContain('Hello from test bucket');
     });
 
     it('should serve a file from bucket', async () => {
@@ -128,7 +124,7 @@ describe('localStack Server', () => {
 
       expect(response.statusCode).toBe(404);
       const json = JSON.parse(response.data);
-      expect(json.error).toBe('File not found');
+      expect(json.error).toBe('File not found in bucket');
     });
   });
 });

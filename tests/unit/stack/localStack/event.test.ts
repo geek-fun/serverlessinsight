@@ -1,4 +1,4 @@
-import { eventsHandler } from '../../../../src/stack/localStack';
+import { eventsHandler, matchTriggerWithParams } from '../../../../src/stack/localStack';
 import { ParsedRequest } from '../../../../src/types/localStack';
 import { EventTypes, ServerlessIac } from '../../../../src/types';
 import http from 'node:http';
@@ -424,5 +424,67 @@ describe('eventsHandler', () => {
 
     expect(res?.statusCode).toBe(404);
     expect(res?.body).toEqual({ error: 'No matching trigger found' });
+  });
+});
+
+describe('matchTriggerWithParams', () => {
+  const req = { method: 'GET', path: '/users/42/posts/7' };
+
+  it('captures [param] segment values for the FCEvent pathParameters', () => {
+    expect(
+      matchTriggerWithParams(req, { method: 'GET', path: '/users/[id]/posts/[postId]' }),
+    ).toEqual({ matched: true, params: { id: '42', postId: '7' } });
+  });
+
+  it('lets a later duplicate param name win', () => {
+    expect(
+      matchTriggerWithParams({ method: 'GET', path: '/a/b' }, { method: 'GET', path: '/[x]/[x]' }),
+    ).toEqual({ matched: true, params: { x: 'b' } });
+  });
+
+  it('matches a trailing wildcard without capturing params', () => {
+    expect(
+      matchTriggerWithParams(
+        { method: 'GET', path: '/api/v1/deep/nested' },
+        { method: 'GET', path: '/api/*' },
+      ),
+    ).toEqual({ matched: true, params: {} });
+  });
+
+  it('captures params in a wildcard prefix', () => {
+    expect(
+      matchTriggerWithParams(
+        { method: 'GET', path: '/api/42/deep' },
+        { method: 'GET', path: '/api/[id]/*' },
+      ),
+    ).toEqual({ matched: true, params: { id: '42' } });
+  });
+
+  it('does not match when a [param] segment is empty', () => {
+    expect(
+      matchTriggerWithParams(
+        { method: 'GET', path: '/users/' },
+        { method: 'GET', path: '/users/[id]' },
+      ),
+    ).toEqual({ matched: false, params: {} });
+  });
+
+  it('does not match on method mismatch and returns no params', () => {
+    expect(
+      matchTriggerWithParams(req, { method: 'POST', path: '/users/[id]/posts/[postId]' }),
+    ).toEqual({ matched: false, params: {} });
+  });
+
+  it('matches byte-for-byte in exact mode without params (volcengine routes)', () => {
+    expect(
+      matchTriggerWithParams(
+        req,
+        { method: 'GET', path: '/users/[id]/posts/[postId]' },
+        { exact: true },
+      ),
+    ).toEqual({ matched: false, params: {} });
+    expect(
+      matchTriggerWithParams(req, { method: 'GET', path: '/users/42/posts/7' }, { exact: true }),
+    ).toEqual({ matched: true, params: {} });
   });
 });

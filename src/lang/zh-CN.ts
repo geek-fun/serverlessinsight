@@ -68,7 +68,14 @@ export const zhCN = {
   LOCAL_SERVER_STOPPED: '本地服务器已停止',
   LOCAL_GATEWAY_ERROR: '本地网关错误',
   ERROR_STOPPING_LOCAL_SERVER: '停止本地服务器时出错',
-  RUN_LOCAL_STARTING: '启动本地运行: stage={{stage}} debug={{debug}} watch={{watch}}',
+  RUN_LOCAL_STARTING:
+    '启动本地运行: stage={{stage}} debug={{debug}} watch={{watch}} strictPrefix={{strictPrefix}}',
+  LOCAL_DIRECT_RESOLUTION_ENABLED:
+    '直连 URL 解析已启用: 生产形态的网关 URL 无需 /SI_EVENTS/ 前缀即可分发（aliyun）',
+  LOCAL_GATEWAY_AMBIGUOUS_TRIGGERS:
+    '多个事件声明了相同的网关触发器 — 请使用 /SI_EVENTS/<key>/ 前缀区分: {{details}}',
+  LOCAL_BUCKET_INDEX_NOT_FOUND: '存储桶中未找到网站索引文档',
+  LOCAL_BUCKET_FILE_NOT_FOUND: '存储桶中未找到文件',
   LOCAL_TIMER_SCHEDULED:
     "本地定时器 '{{triggerName}}' 已为函数 '{{functionName}}' 调度（cron: {{cron}}，UTC）",
   LOCAL_TIMER_FIRED: "本地定时器 '{{triggerName}}' 正在触发函数 '{{functionName}}'...",
@@ -1449,6 +1456,7 @@ export const zhCN = {
   OPT_PARAMETER: '覆盖参数',
   OPT_DEBUG: '开启调试模式',
   OPT_WATCH: '开启文件监听',
+  OPT_STRICT_PREFIX: '仅通过 /SI_* 前缀路由请求（禁用生产形态 URL 的直连解析）',
 
   // ===== Issue #250: agent-friendly CLI surface =====
   CMD_SCHEMA_DESC: '导出用于校验的 IaC JSON Schema（draft-07，自包含）',
