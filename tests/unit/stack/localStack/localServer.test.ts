@@ -39,10 +39,21 @@ describe('localServer routing', () => {
 
   describe('JSON responses', () => {
     it('returns 200 when handler registered', async () => {
-      const res = await makeRequest(`http://localhost:${SI_LOCALSTACK_SERVER_PORT}/si_functions/`);
+      // Retry to ride out connection races right after server startup (see index.test.ts)
+      const maxRetries = 3;
+      let res: Awaited<ReturnType<typeof makeRequest>> | undefined;
+      for (let attempt = 0; attempt < maxRetries; attempt += 1) {
+        try {
+          res = await makeRequest(`http://localhost:${SI_LOCALSTACK_SERVER_PORT}/si_functions/`);
+          break;
+        } catch (err) {
+          if (attempt === maxRetries - 1) throw err;
+          await new Promise((resolve) => setTimeout(resolve, 100));
+        }
+      }
 
-      expect(res.statusCode).toBe(200);
-      expect(res.data).toContain('ok');
+      expect(res!.statusCode).toBe(200);
+      expect(res!.data).toContain('ok');
     });
 
     it('returns 404 for unknown route', async () => {
