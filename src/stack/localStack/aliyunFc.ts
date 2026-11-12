@@ -5,6 +5,9 @@ import {
   AliyunApiGatewayContext,
   AliyunFCResponse,
   AliyunServerlessEvent,
+  LocalHttpAdapter,
+  ParsedRequest,
+  RouteKind,
 } from '../../types/localStack';
 
 const createFCLogger = (requestId: string) => {
@@ -22,28 +25,101 @@ const createFCLogger = (requestId: string) => {
   };
 };
 
+export const buildLocalGatewayHost = (iac: ServerlessIac, stage: string): string =>
+  `${iac.app}-${stage}.si-local.gateway`;
+
+const GATEWAY_REBUILT_HEADERS = new Set([
+  'connection',
+  'keep-alive',
+  'proxy-authenticate',
+  'proxy-authorization',
+  'trailer',
+  'te',
+  'transfer-encoding',
+  'upgrade',
+]);
+
+const remoteAddress = (req: IncomingMessage): string => {
+  const address = req.socket?.remoteAddress || '127.0.0.1';
+  return address === '::1' || address === '::ffff:127.0.0.1' ? '127.0.0.1' : address;
+};
+
+const buildGatewayRequestHeaders = (
+  req: IncomingMessage,
+  iac: ServerlessIac,
+  stage: string,
+  requestId: string,
+): Record<string, string> => {
+  const forwarded = Object.fromEntries(
+    Object.entries(req.headers)
+      .filter(
+        ([key]) =>
+          !GATEWAY_REBUILT_HEADERS.has(key) &&
+          !key.startsWith('x-ca-') &&
+          key !== 'host' &&
+          key !== 'x-forwarded-for',
+      )
+      .map(([key, value]) => [key, Array.isArray(value) ? value.join(', ') : (value ?? '')]),
+  );
+
+  const clientXff = req.headers['x-forwarded-for'];
+  const xff = [
+    ...(Array.isArray(clientXff) ? clientXff : clientXff ? [clientXff] : []),
+    remoteAddress(req),
+  ].join(', ');
+
+  return {
+    ...forwarded,
+    host: buildLocalGatewayHost(iac, stage),
+    'x-forwarded-for': xff,
+    'x-forwarded-proto': 'http',
+    via: '1.1 si-local-api-gateway',
+    'x-ca-request-id': requestId,
+    'x-ca-stage': stage,
+  };
+};
+
 export const transformToAliyunEvent = async (
   req: IncomingMessage,
-  url: string,
-  query: Record<string, string>,
-): Promise<{ event: Buffer; headers: Record<string, string> }> => {
+  parsed: ParsedRequest,
+  iac: ServerlessIac,
+  requestId: string,
+): Promise<Buffer> => {
   const rawBody = await readRequestBody(req);
-
-  const pathParameters: Record<string, string> = {};
+  const stage = parsed.stage ?? 'default';
 
   const event: AliyunServerlessEvent = {
-    path: url,
+    path: parsed.url,
     httpMethod: req.method || 'GET',
-    headers: req.headers as Record<string, string>,
-    queryParameters: query,
-    pathParameters,
+    headers: buildGatewayRequestHeaders(req, iac, stage, requestId),
+    queryParameters: parsed.query,
+    pathParameters: parsed.pathParameters ?? {},
     body: rawBody || undefined,
     isBase64Encoded: false,
+    requestContext: { stage, requestId },
   };
 
-  const eventBuffer = Buffer.from(JSON.stringify(event));
+  return Buffer.from(JSON.stringify(event));
+};
 
-  return { event: eventBuffer, headers: req.headers as Record<string, string> };
+export const aliyunHttpAdapter: LocalHttpAdapter = {
+  validate: () => undefined,
+  buildInvocation: async (req, parsed, iac, fn, requestId) => ({
+    event: await transformToAliyunEvent(req, parsed, iac, requestId),
+    context: createAliyunContextSerializable(
+      iac,
+      fn.name,
+      fn.code!.handler,
+      fn.memory ?? 128,
+      fn.timeout ?? 3,
+      requestId,
+    ),
+    env: { ...fn.environment },
+  }),
+  transformResponse: (result, kind) =>
+    result || kind === RouteKind.SI_EVENTS
+      ? transformFCResponse(result)
+      : { statusCode: 200, body: result },
 };
 
 export const createAliyunContextSerializable = (

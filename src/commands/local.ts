@@ -10,10 +10,11 @@ export type RunLocalOptions = {
   location: string | undefined;
   provider?: string;
   region?: string;
+  strictPrefix?: boolean;
 };
 
 export const runLocal = async (opts: RunLocalOptions) => {
-  const { stage, debug, watch, location, provider, region } = opts;
+  const { stage, debug, watch, location, provider, region, strictPrefix } = opts;
 
   const iacLocation = getIacLocation(location);
   const rawIac = parseYaml(iacLocation);
@@ -43,8 +44,9 @@ export const runLocal = async (opts: RunLocalOptions) => {
       stage,
       debug: String(debug),
       watch: String(watch),
+      strictPrefix: String(!!strictPrefix),
     }),
   );
 
-  await startLocalStack(iac);
+  await startLocalStack(iac, { strictPrefix: !!strictPrefix, stage });
 };

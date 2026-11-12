@@ -1,35 +1,11 @@
 import { ProviderEnum, readRequestBody } from '../../common';
 import { lang } from '../../lang';
-import { LocalHttpAdapter, RouteKind } from '../../types/localStack';
-import {
-  createAliyunContextSerializable,
-  transformFCResponse,
-  transformToAliyunEvent,
-} from './aliyunFc';
+import { LocalHttpAdapter } from '../../types/localStack';
+import { aliyunHttpAdapter } from './aliyunFc';
 import { createLegacyContext, createLegacyEnv } from './legacyLambda';
 import { scfHttpAdapter } from './tencent';
 import { volcengineHttpAdapter } from './volcengine';
 import { createLocalHttpError } from './httpError';
-
-const aliyunHttpAdapter: LocalHttpAdapter = {
-  validate: () => undefined,
-  buildInvocation: async (req, parsed, iac, fn, requestId) => ({
-    event: (await transformToAliyunEvent(req, parsed.url, parsed.query)).event,
-    context: createAliyunContextSerializable(
-      iac,
-      fn.name,
-      fn.code!.handler,
-      fn.memory ?? 128,
-      fn.timeout ?? 3,
-      requestId,
-    ),
-    env: { ...fn.environment },
-  }),
-  transformResponse: (result, kind) =>
-    result || kind === RouteKind.SI_EVENTS
-      ? transformFCResponse(result)
-      : { statusCode: 200, body: result },
-};
 
 /**
  * Generic execution for providers without a native local HTTP simulation.

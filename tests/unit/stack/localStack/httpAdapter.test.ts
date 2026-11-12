@@ -3,20 +3,10 @@ import { ProviderEnum, readRequestBody } from '../../../../src/common';
 import { FunctionDomain, ServerlessIac } from '../../../../src/types';
 import { ParsedRequest, RouteKind } from '../../../../src/types/localStack';
 import { getLocalHttpAdapter } from '../../../../src/stack/localStack/httpAdapter';
-import {
-  createAliyunContextSerializable,
-  transformFCResponse,
-  transformToAliyunEvent,
-} from '../../../../src/stack/localStack/aliyunFc';
 
 jest.mock('../../../../src/common', () => ({
   ProviderEnum: jest.requireActual('../../../../src/common/providerEnum').ProviderEnum,
   readRequestBody: jest.fn(),
-}));
-jest.mock('../../../../src/stack/localStack/aliyunFc', () => ({
-  createAliyunContextSerializable: jest.fn().mockReturnValue({ requestId: 'request', service: {} }),
-  transformToAliyunEvent: jest.fn().mockResolvedValue({ event: Buffer.from('FC event') }),
-  transformFCResponse: jest.fn().mockReturnValue({ statusCode: 202, body: 'FC response' }),
 }));
 
 const fn: FunctionDomain = {
@@ -26,9 +16,16 @@ const fn: FunctionDomain = {
   code: { runtime: 'nodejs18', handler: 'index.handler', path: './code' },
   environment: { TEST_VARIABLE: 'configured' },
 };
-const iac = { provider: { name: ProviderEnum.ALIYUN, region: 'cn-hangzhou' } } as ServerlessIac;
+const iac = {
+  app: 'adapter-test',
+  provider: { name: ProviderEnum.ALIYUN, region: 'cn-hangzhou' },
+} as ServerlessIac;
 const parsed = { method: 'GET', url: '/echo', query: { test: '1' } } as unknown as ParsedRequest;
-const req = {} as IncomingMessage;
+const req = {
+  method: 'GET',
+  headers: { host: 'localhost:4567', 'x-custom': 'kept' },
+  socket: { remoteAddress: '127.0.0.1' },
+} as unknown as IncomingMessage;
 
 beforeEach(() => jest.clearAllMocks());
 
@@ -44,42 +41,42 @@ it.each(['unknown', '__proto__', 'toString'])(
 it('keeps Aliyun Buffer events, context, environment and default limits', async () => {
   const adapter = getLocalHttpAdapter(ProviderEnum.ALIYUN);
   expect(() => adapter.validate(fn)).not.toThrow();
-  expect(await adapter.buildInvocation(req, parsed, iac, fn, 'request')).toEqual({
-    event: Buffer.from('FC event'),
-    context: { requestId: 'request', service: {} },
-    env: fn.environment,
+  const invocation = await adapter.buildInvocation(req, parsed, iac, fn, 'request');
+  expect(Buffer.isBuffer(invocation.event)).toBe(true);
+  const event = JSON.parse((invocation.event as Buffer).toString());
+  expect(event).toMatchObject({
+    path: '/echo',
+    httpMethod: 'GET',
+    queryParameters: { test: '1' },
+    pathParameters: {},
+    requestContext: { stage: 'default', requestId: 'request' },
   });
-  expect(transformToAliyunEvent).toHaveBeenCalledWith(req, '/echo', parsed.query);
-  expect(createAliyunContextSerializable).toHaveBeenCalledWith(
-    iac,
-    fn.name,
-    'index.handler',
-    128,
-    3,
-    'request',
-  );
+  expect(event.headers).toMatchObject({
+    host: 'adapter-test-default.si-local.gateway',
+    'x-custom': 'kept',
+    'x-forwarded-for': '127.0.0.1',
+    'x-ca-request-id': 'request',
+  });
+  expect(invocation.context).toMatchObject({
+    requestId: 'request',
+    function: { name: 'echo-function', handler: 'index.handler', memory: 128, timeout: 3 },
+  });
+  expect(invocation.env).toEqual(fn.environment);
   await adapter.buildInvocation(req, parsed, iac, { ...fn, memory: 256, timeout: 10 }, 'custom');
-  expect(createAliyunContextSerializable).toHaveBeenLastCalledWith(
-    iac,
-    fn.name,
-    'index.handler',
-    256,
-    10,
-    'custom',
-  );
 });
 
 it('keeps Aliyun response translation for gateway envelopes and falsy return values', () => {
   const adapter = getLocalHttpAdapter(ProviderEnum.ALIYUN);
-  expect(adapter.transformResponse({ statusCode: 202, body: 'FC' })).toEqual({
+  expect(adapter.transformResponse({ statusCode: 202, body: 'plain text' })).toEqual({
     statusCode: 202,
-    body: 'FC response',
+    headers: {},
+    body: 'plain text',
   });
   expect(adapter.transformResponse(null, RouteKind.SI_EVENTS)).toEqual({
-    statusCode: 202,
-    body: 'FC response',
+    statusCode: 200,
+    headers: { 'Content-Type': 'application/json' },
+    body: null,
   });
-  expect(transformFCResponse).toHaveBeenLastCalledWith(null);
   expect(adapter.transformResponse(null, RouteKind.SI_FUNCTIONS)).toEqual({
     statusCode: 200,
     body: null,

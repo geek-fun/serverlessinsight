@@ -54,5 +54,8 @@ it('forwards YAML provider, region and stages and uses effective CLI overrides f
   expect(revalYaml).toHaveBeenCalledWith('/tmp/app/serverlessinsight.yml', ctx);
   const effective = { ...iac, provider: { name: ProviderEnum.VOLCENGINE, region: 'cn-shanghai' } };
   expect(setIac).toHaveBeenCalledWith(effective);
-  expect(startLocalStack).toHaveBeenCalledWith(effective);
+  expect(startLocalStack).toHaveBeenCalledWith(effective, {
+    strictPrefix: false,
+    stage: 'preview',
+  });
 });

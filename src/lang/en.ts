@@ -71,7 +71,14 @@ export const en = {
   LOCAL_SERVER_STOPPED: 'localServer stopped',
   LOCAL_GATEWAY_ERROR: 'Local gateway error',
   ERROR_STOPPING_LOCAL_SERVER: 'Error stopping localServer',
-  RUN_LOCAL_STARTING: 'run-local starting: stage={{stage}} debug={{debug}} watch={{watch}}',
+  RUN_LOCAL_STARTING:
+    'run-local starting: stage={{stage}} debug={{debug}} watch={{watch}} strictPrefix={{strictPrefix}}',
+  LOCAL_DIRECT_RESOLUTION_ENABLED:
+    'Direct URL resolution enabled: production-shaped gateway URLs dispatch without the /SI_EVENTS/ prefix (aliyun)',
+  LOCAL_GATEWAY_AMBIGUOUS_TRIGGERS:
+    'Ambiguous gateway triggers declared by multiple events — use /SI_EVENTS/<key>/ to disambiguate: {{details}}',
+  LOCAL_BUCKET_INDEX_NOT_FOUND: 'Website index document not found in bucket',
+  LOCAL_BUCKET_FILE_NOT_FOUND: 'File not found in bucket',
   LOCAL_TIMER_SCHEDULED:
     "Local timer '{{triggerName}}' scheduled for function '{{functionName}}' (cron: {{cron}}, UTC)",
   LOCAL_TIMER_FIRED: "Local timer '{{triggerName}}' firing function '{{functionName}}'...",
@@ -1590,6 +1597,8 @@ export const en = {
   OPT_PARAMETER: 'override parameters',
   OPT_DEBUG: 'enable debug mode',
   OPT_WATCH: 'enable file watch',
+  OPT_STRICT_PREFIX:
+    'route requests only via /SI_* prefixes (disable direct resolution of production-shaped URLs)',
 
   // ===== Issue #250: agent-friendly CLI surface =====
   CMD_SCHEMA_DESC: 'export the IaC JSON Schema used for validation (draft-07, self-contained)',

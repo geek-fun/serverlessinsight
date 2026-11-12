@@ -18,16 +18,21 @@ import { lang } from '../../lang';
  *   (see `createRoute` in volcengineClient/apigwOperations.ts), so the path
  *   is compared byte-for-byte and `[param]` / `*` carry no wildcard meaning.
  */
-const matchTrigger = (
+export type TriggerMatch = {
+  matched: boolean;
+  params: Record<string, string>;
+};
+
+export const matchTriggerWithParams = (
   req: { method: string; path: string },
   trigger: { method: string; path: string },
   options: { exact: boolean } = { exact: false },
-): boolean => {
+): TriggerMatch => {
   if (trigger.method !== 'ANY' && req.method !== trigger.method) {
-    return false;
+    return { matched: false, params: {} };
   }
   if (options.exact) {
-    return trigger.path === req.path;
+    return { matched: trigger.path === req.path, params: {} };
   }
 
   const normalize = (s: string) => s.replace(/^\/+|\/+$/g, '');
@@ -36,22 +41,31 @@ const matchTrigger = (
     normalize(trigger.path).split('/'),
   ];
 
+  if (triggerSegments.length === 1 && triggerSegments[0] === '') {
+    return { matched: true, params: {} };
+  }
+
   const hasWildcard = triggerSegments[triggerSegments.length - 1] === '*';
 
   const prefixSegments = hasWildcard ? triggerSegments.slice(0, -1) : triggerSegments;
   const minRequiredSegments = prefixSegments.length;
 
-  if (pathSegments.length < minRequiredSegments) return false;
+  if (pathSegments.length < minRequiredSegments) return { matched: false, params: {} };
 
-  return prefixSegments.every((triggerSegment, index) => {
+  const params: Record<string, string> = {};
+  const matched = prefixSegments.every((triggerSegment, index) => {
     const pathSegment = pathSegments[index];
 
     if (triggerSegment.startsWith('[') && triggerSegment.endsWith(']')) {
-      return pathSegment !== '';
+      if (pathSegment === '') return false;
+      params[triggerSegment.slice(1, -1)] = pathSegment;
+      return true;
     }
 
     return triggerSegment === pathSegment;
   });
+
+  return matched ? { matched: true, params } : { matched: false, params: {} };
 };
 
 const servEvent = async (
@@ -91,11 +105,14 @@ const servEvent = async (
       url: req.url || '',
     }),
   );
-  const matchedTrigger = event.triggers.find((trigger) =>
-    matchTrigger({ method: parsed.method, path: parsed.url }, trigger, {
-      exact: iac.provider.name === ProviderEnum.VOLCENGINE,
-    }),
-  );
+  const matchedTrigger = event.triggers
+    .map((trigger) => ({
+      trigger,
+      match: matchTriggerWithParams({ method: parsed.method, path: parsed.url }, trigger, {
+        exact: iac.provider.name === ProviderEnum.VOLCENGINE,
+      }),
+    }))
+    .find((entry) => entry.match.matched);
 
   if (!matchedTrigger) {
     const endTime = new Date();
@@ -105,8 +122,8 @@ const servEvent = async (
     return { statusCode: 404, body: { error: 'No matching trigger found' } };
   }
 
-  if (matchedTrigger.backend) {
-    const backendDef = getIacDefinition(iac, matchedTrigger.backend);
+  if (matchedTrigger.trigger.backend) {
+    const backendDef = getIacDefinition(iac, matchedTrigger.trigger.backend);
     if (!backendDef || !isFunctionDomain(backendDef)) {
       const endTime = new Date();
       if (isAliyun) {
@@ -114,13 +131,18 @@ const servEvent = async (
       }
       return {
         statusCode: 500,
-        body: { error: 'Backend definition missing', backend: matchedTrigger.backend },
+        body: { error: 'Backend definition missing', backend: matchedTrigger.trigger.backend },
       };
     }
 
     const result = await functionsHandler(
       req,
-      { ...parsed, kind: RouteKind.SI_EVENTS, identifier: backendDef.key },
+      {
+        ...parsed,
+        kind: RouteKind.SI_EVENTS,
+        identifier: backendDef.key,
+        pathParameters: matchedTrigger.match.params,
+      },
       iac,
       requestId,
     );

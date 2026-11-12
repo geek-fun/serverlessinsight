@@ -1,5 +1,6 @@
 import {
   transformToAliyunEvent,
+  buildLocalGatewayHost,
   createAliyunContextSerializable,
   createAliyunContext,
   addFCHeaders,
@@ -10,6 +11,7 @@ import { IncomingMessage } from 'http';
 import { Readable } from 'stream';
 import { ProviderEnum } from '../../../../src/common';
 import { ServerlessIac } from '../../../../src/types';
+import { ParsedRequest, RouteKind } from '../../../../src/types/localStack';
 
 describe('Aliyun FC Utilities', () => {
   const mockIac: ServerlessIac = {
@@ -23,9 +25,13 @@ describe('Aliyun FC Utilities', () => {
   };
 
   describe('transformToAliyunEvent', () => {
-    const mockRequest = (method = 'GET', body = ''): IncomingMessage => {
+    const mockRequest = (
+      method = 'GET',
+      body = '',
+      headers: Record<string, unknown> = {},
+    ): IncomingMessage => {
       const readable = new Readable();
-      readable.push(body);
+      readable.push(body.length > 0 ? Buffer.from(body) : null);
       readable.push(null);
 
       const req = readable as unknown as IncomingMessage;
@@ -33,54 +39,124 @@ describe('Aliyun FC Utilities', () => {
       req.headers = {
         'content-type': 'application/json',
         host: 'localhost:4567',
+        connection: 'keep-alive',
+        'x-ca-client-header': 'should-be-filtered',
+        ...headers,
       };
+      req.socket = { remoteAddress: '::ffff:127.0.0.1' } as unknown as IncomingMessage['socket'];
       return req;
     };
 
-    it('should transform GET request to Aliyun event', async () => {
-      const req = mockRequest('GET');
-      const url = '/api/test';
-      const query = { param1: 'value1', param2: 'value2' };
+    const parsedRequest = (overrides: Partial<ParsedRequest> = {}): ParsedRequest => ({
+      kind: RouteKind.SI_EVENTS,
+      identifier: 'api',
+      url: '/api/test',
+      method: 'GET',
+      query: { param1: 'value1' },
+      rawUrl: '/api/test',
+      stage: 'preview',
+      pathParameters: { id: '42' },
+      ...overrides,
+    });
 
-      const result = await transformToAliyunEvent(req, url, query);
+    const buildEvent = async (
+      req: IncomingMessage,
+      parsed: ParsedRequest,
+      requestId = 'req-123',
+    ): Promise<Record<string, unknown>> =>
+      JSON.parse((await transformToAliyunEvent(req, parsed, mockIac, requestId)).toString());
 
-      expect(Buffer.isBuffer(result.event)).toBe(true);
-      const parsedEvent = JSON.parse(result.event.toString());
-      expect(parsedEvent.path).toBe('/api/test');
-      expect(parsedEvent.httpMethod).toBe('GET');
-      expect(parsedEvent.queryParameters).toEqual(query);
-      expect(parsedEvent.headers).toBeDefined();
-      expect(parsedEvent.isBase64Encoded).toBe(false);
+    it('should return the FCEvent buffer with passthrough request basics', async () => {
+      const event = await buildEvent(mockRequest('GET'), parsedRequest());
+
+      expect(event.path).toBe('/api/test');
+      expect(event.httpMethod).toBe('GET');
+      expect(event.queryParameters).toEqual({ param1: 'value1' });
+      expect(event.isBase64Encoded).toBe(false);
+      expect(event.body).toBeUndefined();
     });
 
     it('should transform POST request with body to Aliyun event', async () => {
       const body = JSON.stringify({ test: 'data' });
-      const req = mockRequest('POST', body);
-      const url = '/api/create';
-      const query = {};
+      const event = await buildEvent(
+        mockRequest('POST', body),
+        parsedRequest({ url: '/api/create' }),
+      );
 
-      const result = await transformToAliyunEvent(req, url, query);
-
-      const parsedEvent = JSON.parse(result.event.toString());
-      expect(parsedEvent.httpMethod).toBe('POST');
-      expect(parsedEvent.body).toBe(body);
-      expect(parsedEvent.path).toBe('/api/create');
+      expect(event.httpMethod).toBe('POST');
+      expect(event.body).toBe(body);
+      expect(event.path).toBe('/api/create');
     });
 
-    it('should include headers in the response', async () => {
-      const req = mockRequest('GET');
-      const result = await transformToAliyunEvent(req, '/test', {});
+    it('should rebuild the Host header to the local gateway value', async () => {
+      const event = await buildEvent(mockRequest(), parsedRequest());
 
-      expect(result.headers).toBeDefined();
-      expect(result.headers['content-type']).toBe('application/json');
+      expect(event.headers).toMatchObject({ host: 'test-app-preview.si-local.gateway' });
+      expect(JSON.stringify(event)).not.toContain('localhost:4567');
+      expect(buildLocalGatewayHost(mockIac, 'preview')).toBe('test-app-preview.si-local.gateway');
     });
 
-    it('should handle request without body', async () => {
-      const req = mockRequest('GET', '');
-      const result = await transformToAliyunEvent(req, '/test', {});
+    it('should strip hop-by-hop and reserved X-Ca-* client headers, then add gateway X-Ca-* metadata', async () => {
+      const event = await buildEvent(mockRequest(), parsedRequest());
+      const headers = event.headers as Record<string, string>;
 
-      const parsedEvent = JSON.parse(result.event.toString());
-      expect(parsedEvent.body).toBeUndefined();
+      expect(headers.connection).toBeUndefined();
+      expect(headers['x-ca-client-header']).toBeUndefined();
+      expect(headers['x-ca-request-id']).toBe('req-123');
+      expect(headers['x-ca-stage']).toBe('preview');
+    });
+
+    it('should inject the gateway forwarded headers the deployed event carries', async () => {
+      const event = await buildEvent(mockRequest(), parsedRequest());
+      const headers = event.headers as Record<string, string>;
+
+      expect(headers['x-forwarded-for']).toBe('127.0.0.1');
+      expect(headers['x-forwarded-proto']).toBe('http');
+      expect(headers['via']).toBe('1.1 si-local-api-gateway');
+    });
+
+    it('should append the socket address to a client-sent X-Forwarded-For', async () => {
+      const event = await buildEvent(
+        mockRequest('GET', '', { 'x-forwarded-for': '203.0.113.9' }),
+        parsedRequest(),
+      );
+
+      expect((event.headers as Record<string, string>)['x-forwarded-for']).toBe(
+        '203.0.113.9, 127.0.0.1',
+      );
+    });
+
+    it('should join repeated client headers into one string', async () => {
+      const event = await buildEvent(
+        mockRequest('GET', '', { accept: ['text/html', 'application/json'] }),
+        parsedRequest(),
+      );
+
+      expect((event.headers as Record<string, string>).accept).toBe('text/html, application/json');
+    });
+
+    it('should forward custom client headers unchanged (passthrough)', async () => {
+      const event = await buildEvent(
+        mockRequest('GET', '', { 'x-custom-header': 'custom-value' }),
+        parsedRequest(),
+      );
+
+      expect((event.headers as Record<string, string>)['x-custom-header']).toBe('custom-value');
+    });
+
+    it('should populate pathParameters from the matched trigger and requestContext from the stage', async () => {
+      const event = await buildEvent(mockRequest(), parsedRequest());
+
+      expect(event.pathParameters).toEqual({ id: '42' });
+      expect(event.requestContext).toEqual({ stage: 'preview', requestId: 'req-123' });
+      expect((event.requestContext as Record<string, unknown>).apiId).toBeUndefined();
+    });
+
+    it('should default the stage when the parsed request carries none', async () => {
+      const event = await buildEvent(mockRequest(), parsedRequest({ stage: undefined }));
+
+      expect(event.requestContext).toEqual({ stage: 'default', requestId: 'req-123' });
+      expect((event.headers as Record<string, string>)['x-ca-stage']).toBe('default');
     });
   });
 

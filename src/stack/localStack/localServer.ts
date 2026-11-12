@@ -1,11 +1,17 @@
 import { ParsedRequest, RouteHandler, RouteKind } from '../../types/localStack';
-import { logger, SI_LOCALSTACK_SERVER_PORT } from '../../common';
+import { EventTypes, ServerlessIac } from '../../types';
+import { logger, ProviderEnum, SI_LOCALSTACK_SERVER_PORT } from '../../common';
 import { preservesLocalPath } from './localRoute';
+import { matchTriggerWithParams } from './event';
 import http, { IncomingMessage, ServerResponse } from 'node:http';
-import { ServerlessIac } from '../../types';
 import { lang } from '../../lang';
 
 let localServer: http.Server | undefined;
+
+export type LocalServerOptions = {
+  strictPrefix?: boolean;
+  stage?: string;
+};
 
 const cleanPathSegments = (pathname: string): Array<string> =>
   pathname
@@ -33,7 +39,11 @@ const respondRaw = (
   res.end(body);
 };
 
-const parseRequest = (req: IncomingMessage, preservePath: boolean): ParsedRequest | undefined => {
+const parseRequest = (
+  req: IncomingMessage,
+  preservePath: boolean,
+  stage?: string,
+): ParsedRequest | undefined => {
   const url = new URL(req.url ?? '/', 'http://localhost');
   const [routeSegment, identifierSegment, ...rest] = cleanPathSegments(url.pathname);
   if (!routeSegment) {
@@ -57,12 +67,90 @@ const parseRequest = (req: IncomingMessage, preservePath: boolean): ParsedReques
     method: req.method ?? 'GET',
     query: Object.fromEntries(url.searchParams.entries()),
     rawUrl: url.pathname,
+    stage,
   };
 };
+
+type DirectResolution =
+  | { kind: 'matched'; parsed: ParsedRequest }
+  | { kind: 'ambiguous'; eventKeys: string[] }
+  | { kind: 'none' };
+
+const resolveGatewayRequest = (
+  req: IncomingMessage,
+  iac: ServerlessIac,
+  stage?: string,
+): DirectResolution => {
+  const url = new URL(req.url ?? '/', 'http://localhost');
+  const request = { method: req.method ?? 'GET', path: url.pathname };
+
+  const matchedEventKeys = (iac.events ?? [])
+    .filter((event) => event.type === EventTypes.API_GATEWAY)
+    .filter((event) =>
+      event.triggers.some(
+        (trigger) => matchTriggerWithParams(request, trigger, { exact: false }).matched,
+      ),
+    )
+    .map((event) => event.key);
+
+  if (matchedEventKeys.length === 1) {
+    const cleaned = cleanPathSegments(url.pathname);
+    return {
+      kind: 'matched',
+      parsed: {
+        kind: RouteKind.SI_EVENTS,
+        identifier: matchedEventKeys[0],
+        url: cleaned.length > 0 ? `/${cleaned.join('/')}` : '/',
+        method: request.method,
+        query: Object.fromEntries(url.searchParams.entries()),
+        rawUrl: url.pathname,
+        stage,
+        pathParameters: {},
+      },
+    };
+  }
+
+  return matchedEventKeys.length > 1
+    ? { kind: 'ambiguous', eventKeys: matchedEventKeys }
+    : { kind: 'none' };
+};
+
+const findAmbiguousGatewayTriggers = (iac: ServerlessIac): string[] =>
+  Object.entries(
+    (iac.events ?? [])
+      .filter((event) => event.type === EventTypes.API_GATEWAY)
+      .flatMap((event) =>
+        event.triggers.map((trigger) => ({
+          eventKey: event.key,
+          method: String(trigger.method).toUpperCase(),
+          path: String(trigger.path),
+        })),
+      )
+      .reduce<Record<string, Array<{ eventKey: string; method: string }>>>((groups, trigger) => {
+        const existing = groups[trigger.path] ?? [];
+        return {
+          ...groups,
+          [trigger.path]: [...existing, { eventKey: trigger.eventKey, method: trigger.method }],
+        };
+      }, {}),
+  )
+    .map(([trigPath, declarations]) => {
+      const eventKeys = [...new Set(declarations.map((d) => d.eventKey))];
+      if (eventKeys.length < 2) return undefined;
+      const methods = new Set(declarations.map((d) => d.method));
+      const compatible =
+        methods.has('ANY') ||
+        declarations.every((d, index, all) =>
+          all.every((other) => other.method === d.method || other.method === 'ANY'),
+        );
+      return compatible ? `'${trigPath}' → ${eventKeys.join(', ')}` : undefined;
+    })
+    .filter((detail): detail is string => detail !== undefined);
 
 export const servLocal = async (
   handlers: Array<{ kind: RouteKind; handler: RouteHandler }>,
   iac: ServerlessIac,
+  options: LocalServerOptions = {},
 ): Promise<void> => {
   if (localServer) {
     logger.info(
@@ -71,22 +159,49 @@ export const servLocal = async (
     return;
   }
 
+  const directResolutionEnabled =
+    iac.provider.name === ProviderEnum.ALIYUN && options.strictPrefix !== true;
+
+  if (directResolutionEnabled) {
+    logger.info(lang.__('LOCAL_DIRECT_RESOLUTION_ENABLED'));
+    const ambiguous = findAmbiguousGatewayTriggers(iac);
+    if (ambiguous.length > 0) {
+      logger.warn(lang.__('LOCAL_GATEWAY_AMBIGUOUS_TRIGGERS', { details: ambiguous.join('; ') }));
+    }
+  }
+
   localServer = http.createServer(async (req, res) => {
     try {
-      const parsed = parseRequest(req, preservesLocalPath(iac.provider.name));
+      const parsed = parseRequest(req, preservesLocalPath(iac.provider.name), options.stage);
 
-      if (!parsed) {
+      let dispatched = parsed;
+      if (!dispatched && directResolutionEnabled) {
+        const direct = resolveGatewayRequest(req, iac, options.stage);
+        if (direct.kind === 'matched') {
+          dispatched = direct.parsed;
+        } else if (direct.kind === 'ambiguous') {
+          respondJson(res, 404, {
+            error: 'Route not found',
+            hint: lang.__('LOCAL_GATEWAY_AMBIGUOUS_TRIGGERS', {
+              details: `'${new URL(req.url ?? '/', 'http://localhost').pathname}' → ${direct.eventKeys.join(', ')}`,
+            }),
+          });
+          return;
+        }
+      }
+
+      if (!dispatched) {
         respondJson(res, 404, { error: 'Route not found' });
         return;
       }
 
-      const route = handlers.find((h) => h.kind === parsed.kind);
+      const route = handlers.find((h) => h.kind === dispatched!.kind);
       if (!route) {
-        respondJson(res, 404, { error: `Handler for ${parsed.kind} not registered` });
+        respondJson(res, 404, { error: `Handler for ${dispatched!.kind} not registered` });
         return;
       }
 
-      const outcome = await route.handler(req, parsed, iac);
+      const outcome = await route.handler(req, dispatched, iac);
       if (!outcome) {
         respondJson(res, 204, {});
         return;
