@@ -26,7 +26,7 @@ const SET_FIELDS = new Set([
   'qcs',
 ]);
 
-const canonicalValue = (value: unknown, key: string, policyDocument = false): unknown => {
+export const canonicalValue = (value: unknown, key: string, policyDocument = false): unknown => {
   const policyScope = policyDocument || key === 'policy';
   if (key === 'policy' && (value === null || value === 'null')) return 'null';
   if (key === 'policy' && typeof value === 'string') {

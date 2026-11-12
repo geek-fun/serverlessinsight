@@ -1,6 +1,7 @@
 import { redactAttributeDiffs } from './planRedaction';
 import type { PlanItem, AttributeDiff, PlanDisplayConfig } from '../types';
 import { diffAttributes } from './hashUtils';
+import { canonicalValue } from './planCompare';
 import { lang } from '../lang';
 import { logger } from './logger';
 import { isNoColorEnabled } from './noColor';
@@ -42,6 +43,50 @@ const isSimpleObject = (val: unknown): boolean => {
   return Object.values(obj).every((v) => typeof v !== 'object' || v === null);
 };
 
+const hasObjectEntry = (value: unknown): value is unknown[] =>
+  Array.isArray(value) && value.some((entry) => isObject(entry));
+
+const diffArrayEntries = (before: unknown[], after: unknown[]): AttributeDiff[] => {
+  const keyOf = (entry: unknown): string => JSON.stringify(canonicalValue(entry, ''));
+  const tally = (keys: string[]): Map<string, number> =>
+    keys.reduce(
+      (counts, key) => new Map(counts).set(key, (counts.get(key) ?? 0) + 1),
+      new Map<string, number>(),
+    );
+  const unmatched = (entries: unknown[], counterpart: Map<string, number>): unknown[] =>
+    entries.filter((entry) => {
+      const key = keyOf(entry);
+      const available = counterpart.get(key) ?? 0;
+      if (available <= 0) return true;
+      counterpart.set(key, available - 1);
+      return false;
+    });
+
+  return [
+    ...unmatched(before, tally(after.map(keyOf))).map((entry) => ({
+      key: '',
+      before: entry,
+      action: 'remove' as const,
+      isComputed: false,
+    })),
+    ...unmatched(after, tally(before.map(keyOf))).map((entry) => ({
+      key: '',
+      after: entry,
+      action: 'add' as const,
+      isComputed: false,
+    })),
+  ];
+};
+
+const entryArrayChildren = (before: unknown, after: unknown): AttributeDiff[] | undefined => {
+  if (!hasObjectEntry(before) && !hasObjectEntry(after)) return undefined;
+  const children = diffArrayEntries(
+    Array.isArray(before) ? before : [],
+    Array.isArray(after) ? after : [],
+  );
+  return children.length > 0 ? children : undefined;
+};
+
 /* istanbul ignore next */
 export const computeAttributeDiffs = (
   before: Record<string, unknown> | undefined,
@@ -58,9 +103,10 @@ export const computeAttributeDiffs = (
           action: 'add' as const,
           isComputed: COMPUTED_ATTRIBUTES.has(key),
           children:
-            isObject(value) && !isSimpleObject(value)
+            entryArrayChildren(undefined, value) ??
+            (isObject(value) && !isSimpleObject(value)
               ? computeAttributeDiffs(undefined, value as Record<string, unknown>).diffs
-              : undefined,
+              : undefined),
         }))
         .sort((a, b) => a.key.localeCompare(b.key)),
       unchangedCount: 0,
@@ -76,9 +122,10 @@ export const computeAttributeDiffs = (
           action: 'remove' as const,
           isComputed: COMPUTED_ATTRIBUTES.has(key),
           children:
-            isObject(value) && !isSimpleObject(value)
+            entryArrayChildren(value, undefined) ??
+            (isObject(value) && !isSimpleObject(value)
               ? computeAttributeDiffs(value as Record<string, unknown>, undefined).diffs
-              : undefined,
+              : undefined),
         }))
         .sort((a, b) => a.key.localeCompare(b.key)),
       unchangedCount: 0,
@@ -123,12 +170,14 @@ export const computeAttributeDiffs = (
         before: oldVal,
         after: newVal,
         action: 'change',
-        children: bothObjects
-          ? computeAttributeDiffs(
-              oldVal as Record<string, unknown>,
-              newVal as Record<string, unknown>,
-            ).diffs
-          : undefined,
+        children:
+          entryArrayChildren(oldVal, newVal) ??
+          (bothObjects
+            ? computeAttributeDiffs(
+                oldVal as Record<string, unknown>,
+                newVal as Record<string, unknown>,
+              ).diffs
+            : undefined),
       };
     },
   );
@@ -179,105 +228,72 @@ const formatAttributeLines = (
   inheritedRevert = false,
 ): string[] => {
   const spaces = ' '.repeat(indent);
-  const alignedKey = (diff.key + ':').padEnd(keyWidth);
+  const alignedKey = `${diff.key}:`.padEnd(keyWidth);
   const fieldPath = parentPath ? `${parentPath}.${diff.key}` : diff.key;
   const reverted = inheritedRevert || revertKeys?.has(fieldPath);
   const marker = { add: '+', remove: '-', change: '~' }[diff.action];
   // Issue #246: a field whose stored value already matched the config while
   // the cloud diverged is annotated at the line level — the resource block
-  // stays in place, only this line explains why it appears. Only leaf lines
-  // reach suffix (parent cases early-return on children), so a revert key
-  // with nested children never carries the annotation.
+  // stays in place, only this line explains why it appears.
   const suffix = (line: string): string =>
     reverted
       ? `${line} ${colorize(lang.__('PLAN_REVERT_ANNOTATION'), 'CYAN', config.colorize)}`
       : line;
+  const leafLine = (value: string): string =>
+    diff.key ? `${spaces}${marker} ${alignedKey} ${value}` : `${spaces}${marker} ${value}`;
+  const entrySummary = (children: AttributeDiff[]): string => {
+    const entries = children.filter((child) => child.key === '');
+    if (!diff.key || entries.length === 0) return '';
+    const added = entries.filter((child) => child.action === 'add').length;
+    const removed = entries.filter((child) => child.action === 'remove').length;
+    return ` ${lang.__('PLAN_ARRAY_ENTRY_SUMMARY', { added: String(added), removed: String(removed) })}`;
+  };
+  const childLines = (children: AttributeDiff[]): string[] => {
+    const childKeyWidth = computeMaxKeyWidth(children, indent);
+    return children.flatMap((child) =>
+      formatAttributeLines(
+        child,
+        indent + config.indentSize,
+        config,
+        childKeyWidth,
+        revertKeys,
+        fieldPath,
+        child.key === '' ? false : reverted,
+      ),
+    );
+  };
+  const parentWithChildren = (children: AttributeDiff[], color: keyof typeof COLOR): string[] => [
+    suffix(
+      colorize(`${spaces}${marker} ${alignedKey}${entrySummary(children)}`, color, config.colorize),
+    ),
+    ...childLines(children),
+  ];
 
   switch (diff.action) {
     case 'add': {
       if (diff.children && diff.children.length > 0) {
-        const childKeyWidth = computeMaxKeyWidth(diff.children, indent);
-        return [
-          colorize(`${spaces}${marker} ${alignedKey}`, 'GREEN', config.colorize),
-          ...diff.children.flatMap((child) =>
-            formatAttributeLines(
-              child,
-              indent + config.indentSize,
-              config,
-              childKeyWidth,
-              revertKeys,
-              fieldPath,
-              reverted,
-            ),
-          ),
-        ];
+        return parentWithChildren(diff.children, 'GREEN');
       }
       const value = diff.isComputed
         ? colorize(lang.__('PLAN_COMPUTED_VALUE'), 'CYAN', config.colorize)
         : formatValue(diff.after);
-      return [
-        suffix(colorize(`${spaces}${marker} ${alignedKey} ${value}`, 'GREEN', config.colorize)),
-      ];
+      return [suffix(colorize(leafLine(value), 'GREEN', config.colorize))];
     }
 
     case 'remove': {
       if (diff.children && diff.children.length > 0) {
-        const childKeyWidth = computeMaxKeyWidth(diff.children, indent);
-        return [
-          colorize(`${spaces}${marker} ${alignedKey}`, 'RED', config.colorize),
-          ...diff.children.flatMap((child) =>
-            formatAttributeLines(
-              child,
-              indent + config.indentSize,
-              config,
-              childKeyWidth,
-              revertKeys,
-              fieldPath,
-              reverted,
-            ),
-          ),
-        ];
+        return parentWithChildren(diff.children, 'RED');
       }
-      return [
-        suffix(
-          colorize(
-            `${spaces}${marker} ${alignedKey} ${formatValue(diff.before)}`,
-            'RED',
-            config.colorize,
-          ),
-        ),
-      ];
+      return [suffix(colorize(leafLine(formatValue(diff.before)), 'RED', config.colorize))];
     }
 
     case 'change': {
       if (diff.children && diff.children.length > 0) {
-        const childKeyWidth = computeMaxKeyWidth(diff.children, indent);
-        return [
-          colorize(`${spaces}${marker} ${alignedKey}`, 'YELLOW', config.colorize),
-          ...diff.children.flatMap((child) =>
-            formatAttributeLines(
-              child,
-              indent + config.indentSize,
-              config,
-              childKeyWidth,
-              revertKeys,
-              fieldPath,
-              reverted,
-            ),
-          ),
-        ];
+        return parentWithChildren(diff.children, 'YELLOW');
       }
       const beforeStr = formatValue(diff.before);
       const afterStr = formatValue(diff.after);
-      return [
-        suffix(
-          colorize(
-            `${spaces}${marker} ${alignedKey} ${beforeStr} -> ${afterStr}`,
-            'YELLOW',
-            config.colorize,
-          ),
-        ),
-      ];
+      return [suffix(colorize(leafLine(`${beforeStr} -> ${afterStr}`), 'YELLOW', config.colorize))];
     }
   }
 };

@@ -88,6 +88,73 @@ describe('planFormatter', () => {
       expect(result.diffs[0].key).toBe('environment');
       expect(result.diffs[0].action).toBe('change');
     });
+
+    it('synthesizes keyless add/remove children for changed arrays of records', () => {
+      const route = (method: string, path: string) => ({ method, path });
+      const result = computeAttributeDiffs(
+        { triggers: [route('GET', '/health'), route('GET', '/old')] },
+        { triggers: [route('GET', '/health'), route('POST', '/new')] },
+      );
+
+      expect(result.diffs).toHaveLength(1);
+      const triggers = result.diffs[0];
+      expect(triggers.key).toBe('triggers');
+      expect(triggers.action).toBe('change');
+      expect(triggers.children).toHaveLength(2);
+      expect(triggers.children?.map((child) => child.action).sort()).toEqual(['add', 'remove']);
+      expect(triggers.children?.every((child) => child.key === '')).toBe(true);
+    });
+
+    it('never renders entries present on both sides as children', () => {
+      const route = (method: string, path: string) => ({ method, path });
+      const result = computeAttributeDiffs(
+        { triggers: [route('GET', '/health'), route('GET', '/old')] },
+        { triggers: [route('GET', '/health'), route('POST', '/new')] },
+      );
+
+      const entryPayloads = JSON.stringify(result.diffs[0].children);
+      expect(entryPayloads).not.toContain('/health');
+    });
+
+    it('matches duplicate entries as a multiset', () => {
+      const result = computeAttributeDiffs(
+        { tags: [{ name: 'a' }, { name: 'a' }] },
+        { tags: [{ name: 'a' }] },
+      );
+
+      expect(result.diffs[0].children).toHaveLength(1);
+      expect(result.diffs[0].children?.[0].action).toBe('remove');
+    });
+
+    it('falls back to the raw dump (no children) for pure reorders', () => {
+      const route = (method: string, path: string) => ({ method, path });
+      const result = computeAttributeDiffs(
+        { routes: [route('GET', '/a'), route('GET', '/b')] },
+        { routes: [route('GET', '/b'), route('GET', '/a')] },
+      );
+
+      expect(result.diffs[0].children).toBeUndefined();
+    });
+
+    it('keeps primitive-only arrays inline (no children)', () => {
+      const result = computeAttributeDiffs({ vSwitchIds: ['vsw-1'] }, { vSwitchIds: ['vsw-2'] });
+
+      expect(result.diffs[0].children).toBeUndefined();
+    });
+
+    it('expands added and removed array attributes into entry children', () => {
+      const route = (method: string, path: string) => ({ method, path });
+
+      const added = computeAttributeDiffs(undefined, { triggers: [route('GET', '/a')] });
+      expect(added.diffs[0].action).toBe('add');
+      expect(added.diffs[0].children).toHaveLength(1);
+      expect(added.diffs[0].children?.[0].action).toBe('add');
+
+      const removed = computeAttributeDiffs({ triggers: [route('GET', '/a')] }, undefined);
+      expect(removed.diffs[0].action).toBe('remove');
+      expect(removed.diffs[0].children).toHaveLength(1);
+      expect(removed.diffs[0].children?.[0].action).toBe('remove');
+    });
   });
 
   describe('formatPlanItem', () => {
@@ -300,6 +367,70 @@ describe('planFormatter', () => {
       expect(output).toContain('environment:');
       expect(output).toContain('LOG_LEVEL: "info" -> "debug"');
       expect(output).toContain('(changed in the cloud, will be restored to config)');
+    });
+
+    it('renders appended array entries as a summary line plus one line per added entry', () => {
+      const backend = '${functions.mycrotrail_api_fn}';
+      const route = (method: string, path: string) => ({ method, path, backend });
+      const item: PlanItem = {
+        logicalId: 'events.api_gateway',
+        action: 'update',
+        resourceType: 'ALIYUN_APIGW',
+        changes: {
+          before: { basePath: '/', triggers: [route('ANY', '/health'), route('GET', '/')] },
+          after: {
+            basePath: '/',
+            triggers: [route('ANY', '/health'), route('GET', '/'), route('POST', '/api/orders')],
+          },
+        },
+      };
+
+      const output = formatPlanItem(item, config);
+
+      const summary = lang.__('PLAN_ARRAY_ENTRY_SUMMARY', { added: '1', removed: '0' });
+      expect(output).toMatch(
+        new RegExp(`~ triggers:\\s*${summary.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`),
+      );
+      expect(output).toContain('+ { method: "POST", path: "/api/orders"');
+      expect(output).not.toContain('/health');
+    });
+
+    it('annotates a reverted array on its parent line only', () => {
+      const route = (method: string, path: string) => ({ method, path });
+      const item: PlanItem = {
+        logicalId: 'events.api_gateway',
+        action: 'update',
+        resourceType: 'ALIYUN_APIGW',
+        drifted: true,
+        revertKeys: ['triggers'],
+        changes: {
+          before: { triggers: [route('GET', '/health')] },
+          after: { triggers: [route('GET', '/health'), route('POST', '/orders')] },
+        },
+      };
+
+      const output = formatPlanItem(item, config);
+
+      const annotation = lang.__('PLAN_REVERT_ANNOTATION');
+      expect(output.split('\n').filter((line) => line.includes(annotation))).toHaveLength(1);
+      const escaped = annotation.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      expect(output).toMatch(new RegExp(`~ triggers:.*${escaped}`));
+    });
+
+    it('shows entry children for a wholly added array attribute', () => {
+      const item: PlanItem = {
+        logicalId: 'functions.pay',
+        action: 'create',
+        resourceType: 'ALIYUN_FC3',
+        changes: {
+          after: { triggers: [{ method: 'GET', path: '/health' }] },
+        },
+      };
+
+      const output = formatPlanItem(item, config);
+
+      expect(output).toContain('+ triggers:');
+      expect(output).toContain('+ { method: "GET", path: "/health" }');
     });
 
     it('renders a recreate (create with recorded before) as a single -/+ block', () => {
