@@ -40,13 +40,13 @@ describe('logout command (ADR-008 active profile)', () => {
     mockRemoveActiveProfile.mockReturnValue({
       apiKey: 'si_cn_abcdef123456_0123456789abcdef0123456789abcdef',
       orgId: 'org-cn',
-      orgSlug: 'wentsen',
+      orgSlug: 'example-org',
       line: 'china',
-      profileKey: 'china/wentsen',
+      profileKey: 'china/example-org',
     });
 
     await logout();
 
-    expect(logger.info).toHaveBeenCalledWith('LOGOUT_SUCCESS profileKey=china/wentsen');
+    expect(logger.info).toHaveBeenCalledWith('LOGOUT_SUCCESS profileKey=china/example-org');
   });
 });

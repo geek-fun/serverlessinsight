@@ -72,9 +72,9 @@ describe('saasStateBackend (scope-bound, issue #280)', () => {
     consoleUrl: 'https://api.test.com',
     apiKey: 'si_test_testkey123456789012345678901234',
     orgId: 'org-1',
-    orgSlug: 'wentsen',
+    orgSlug: 'example-org',
     profileKey: 'international/test-org',
-    keySource: 'env',
+    keySource: 'profile',
     lineSource: 'active',
     ...overrides,
   });
@@ -189,13 +189,13 @@ describe('saasStateBackend (scope-bound, issue #280)', () => {
     it('should fail at creation when the declared org differs from the stored key org slug', async () => {
       mockLineCtxResolved({ orgSlug: 'other-org' });
 
-      await expect(createSaasStateBackend({ scope, declaredOrg: 'wentsen' })).rejects.toThrow(
+      await expect(createSaasStateBackend({ scope, declaredOrg: 'example-org' })).rejects.toThrow(
         'SAAS_ORG_MISMATCH',
       );
     });
 
     it('should allow provisioning when the declared org matches the stored slug', async () => {
-      const local = await createSaasStateBackend({ scope, declaredOrg: 'wentsen' });
+      const local = await createSaasStateBackend({ scope, declaredOrg: 'example-org' });
       mockMutatingLoad();
 
       await local.loadState();
@@ -214,9 +214,9 @@ describe('saasStateBackend (scope-bound, issue #280)', () => {
 
     it('should fetch the slug once and heal the credentials file when the stored profile lacks it', async () => {
       mockLineCtxResolved({ orgSlug: undefined });
-      const local = await createSaasStateBackend({ scope, declaredOrg: 'wentsen' });
+      const local = await createSaasStateBackend({ scope, declaredOrg: 'example-org' });
       // Call order: provision's validate roundtrip, capabilities probe, then state/current
-      mockApiClient.get.mockResolvedValueOnce({ orgSlug: 'wentsen' });
+      mockApiClient.get.mockResolvedValueOnce({ orgSlug: 'example-org' });
       mockMutatingLoad();
 
       await local.loadState();
@@ -224,14 +224,15 @@ describe('saasStateBackend (scope-bound, issue #280)', () => {
       expect(mockApiClient.get).toHaveBeenCalledWith('/api/v1/auth/api-keys/validate');
       expect(updateProfile).toHaveBeenCalledWith(
         'international/test-org',
-        expect.objectContaining({ orgSlug: 'wentsen' }),
+        mockLineCtx().apiKey,
+        expect.objectContaining({ orgSlug: 'example-org' }),
       );
       expect(mockApiClient.post).toHaveBeenCalled();
     });
 
     it('should refuse provisioning when the validate roundtrip reveals a different org', async () => {
       mockLineCtxResolved({ orgSlug: undefined });
-      const local = await createSaasStateBackend({ scope, declaredOrg: 'wentsen' });
+      const local = await createSaasStateBackend({ scope, declaredOrg: 'example-org' });
       mockApiClient.get.mockResolvedValueOnce({ orgSlug: 'other-org' });
 
       await expect(local.loadState()).rejects.toThrow('SAAS_ORG_MISMATCH');
@@ -280,28 +281,113 @@ describe('saasStateBackend (scope-bound, issue #280)', () => {
       expect(result.orgId).toBe('org-1');
     });
 
-    it('should degrade open when the identity fetch fails (guardrail, not a gate)', async () => {
+    it('refuses provisioning when it cannot verify a declared org', async () => {
       mockLineCtxResolved({ orgSlug: undefined });
-      const local = await createSaasStateBackend({ scope, declaredOrg: 'wentsen' });
-      mockApiClient.get.mockRejectedValueOnce(new Error('validate unreachable'));
-      mockMutatingLoad();
+      const local = await createSaasStateBackend({ scope, declaredOrg: 'example-org' });
+      const failure = new Error('validate unreachable');
+      mockApiClient.get.mockRejectedValueOnce(failure);
 
-      await local.loadState();
+      await expect(local.loadState()).rejects.toBe(failure);
 
-      // Unverifiable declaration → proceeds; the key still only writes its own org
-      expect(mockApiClient.post).toHaveBeenCalled();
+      expect(mockApiClient.post).not.toHaveBeenCalled();
       expect(updateProfile).not.toHaveBeenCalled();
     });
 
-    it('should resolve the identity from validate when only an API key is available (no credentials file)', async () => {
-      mockLineCtxResolved({ orgId: undefined, orgSlug: undefined, profileKey: undefined });
+    it('can use the stored org ID when an optional identity lookup is unavailable', async () => {
+      mockLineCtxResolved({ orgSlug: undefined });
+      const local = await createSaasStateBackend({ scope });
+      mockMutatingLoad({ ...emptyStateJson(), orgId: 'org-1' });
+      mockApiClient.get.mockRejectedValueOnce(new Error('validate unreachable'));
+
+      await expect(local.loadState()).resolves.toMatchObject({ orgId: 'org-1' });
+      expect(mockApiClient.get).toHaveBeenLastCalledWith('/api/v1/auth/api-keys/validate');
+      expect(updateProfile).not.toHaveBeenCalled();
+    });
+
+    it('refuses a named org when validation has no verified slug', async () => {
+      mockLineCtxResolved({ orgSlug: undefined });
+      const local = await createSaasStateBackend({ scope, declaredOrg: 'example-org' });
+      mockApiClient.get.mockResolvedValueOnce({ orgId: 'org-1' });
+
+      await expect(local.loadState()).rejects.toThrow('SAAS_ORG_UNVERIFIED');
+
+      expect(mockApiClient.post).not.toHaveBeenCalled();
+      expect(updateProfile).not.toHaveBeenCalled();
+    });
+
+    it('checks the identity of a bare explicit key before provisioning even with no named org', async () => {
+      mockLineCtxResolved({
+        orgId: undefined,
+        orgSlug: undefined,
+        profileKey: undefined,
+        keySource: 'env',
+      });
+      const local = await createSaasStateBackend({ scope });
+      mockApiClient.get.mockResolvedValueOnce({
+        orgId: 'org-1',
+        orgSlug: 'example-org',
+        region: 'cn',
+      });
+
+      await expect(local.loadState()).rejects.toThrow('SAAS_LINE_CONFLICT');
+      expect(mockApiClient.post).not.toHaveBeenCalled();
+    });
+
+    it('rejects the actual org of an override before provisioning or healing saved credentials', async () => {
+      mockLineCtxResolved({
+        orgId: undefined,
+        orgSlug: undefined,
+        profileKey: undefined,
+        keySource: 'flag',
+      });
       const local = await createSaasStateBackend(
-        { scope, declaredOrg: 'wentsen' },
+        { scope, declaredOrg: 'example-org' },
+        { apiKey: 'explicit-key' },
+      );
+      mockApiClient.get.mockResolvedValueOnce({
+        orgId: 'org-2',
+        orgSlug: 'other-org',
+        region: 'com',
+      });
+
+      await expect(local.loadState()).rejects.toThrow('SAAS_ORG_MISMATCH');
+      expect(mockApiClient.get).toHaveBeenCalledTimes(1);
+      expect(mockApiClient.post).not.toHaveBeenCalled();
+      expect(updateProfile).not.toHaveBeenCalled();
+    });
+
+    it('checks --org against the override before looking up read-only targets', async () => {
+      mockLineCtxResolved({
+        orgId: undefined,
+        orgSlug: undefined,
+        profileKey: undefined,
+        keySource: 'flag',
+      });
+      const local = await createSaasStateBackend(
+        { scope },
+        { apiKey: 'explicit-key', org: 'example-org', mode: 'read-only' },
+      );
+      mockApiClient.get.mockResolvedValueOnce({ orgId: 'org-2', orgSlug: 'other-org' });
+
+      await expect(local.loadState()).rejects.toThrow('SAAS_ORG_MISMATCH');
+      expect(mockApiClient.get).toHaveBeenCalledTimes(1);
+      expect(mockApiClient.post).not.toHaveBeenCalled();
+    });
+
+    it('should resolve the identity from validate when only an API key is available (no credentials file)', async () => {
+      mockLineCtxResolved({
+        orgId: undefined,
+        orgSlug: undefined,
+        profileKey: undefined,
+        keySource: 'flag',
+      });
+      const local = await createSaasStateBackend(
+        { scope, declaredOrg: 'example-org' },
         { apiKey: 'si_test_testkey123456789012345678901234' },
       );
       // Call order: validate, capabilities probe, state/current (state carries
       // the org id so the anchor check reuses the cached identity)
-      mockApiClient.get.mockResolvedValueOnce({ orgId: 'org-1', orgSlug: 'wentsen' });
+      mockApiClient.get.mockResolvedValueOnce({ orgId: 'org-1', orgSlug: 'example-org' });
       mockMutatingLoad({
         version: '3.0',
         provider: 'aliyun',
@@ -323,8 +409,8 @@ describe('saasStateBackend (scope-bound, issue #280)', () => {
       // Default ctx line is international (segment com); a console claiming
       // region "cn" is misconfigured — the validate roundtrip must hard-stop.
       mockLineCtxResolved({ orgSlug: undefined });
-      const local = await createSaasStateBackend({ scope, declaredOrg: 'wentsen' });
-      mockApiClient.get.mockResolvedValueOnce({ orgSlug: 'wentsen', region: 'cn' });
+      const local = await createSaasStateBackend({ scope, declaredOrg: 'example-org' });
+      mockApiClient.get.mockResolvedValueOnce({ orgSlug: 'example-org', region: 'cn' });
 
       await expect(local.loadState()).rejects.toThrow('SAAS_LINE_CONFLICT');
       expect(mockApiClient.post).not.toHaveBeenCalled();
@@ -332,9 +418,9 @@ describe('saasStateBackend (scope-bound, issue #280)', () => {
 
     it('should keep the pre-existing org id when validate resolves a slug but no org id', async () => {
       mockLineCtxResolved({ orgId: undefined, orgSlug: undefined });
-      const local = await createSaasStateBackend({ scope, declaredOrg: 'wentsen' });
+      const local = await createSaasStateBackend({ scope, declaredOrg: 'example-org' });
       // Call order: validate, capabilities probe, then state/current
-      mockApiClient.get.mockResolvedValueOnce({ orgSlug: 'wentsen' });
+      mockApiClient.get.mockResolvedValueOnce({ orgSlug: 'example-org' });
       mockMutatingLoad();
 
       const result = await local.loadState();
@@ -343,14 +429,15 @@ describe('saasStateBackend (scope-bound, issue #280)', () => {
       // an org id that was never verified — the D-6 anchor stays honest.
       expect(updateProfile).toHaveBeenCalledWith(
         'international/test-org',
-        expect.objectContaining({ orgSlug: 'wentsen' }),
+        mockLineCtx().apiKey,
+        expect.objectContaining({ orgSlug: 'example-org' }),
       );
       expect(mockApiClient.post).toHaveBeenCalled();
       expect(result.orgId).toBe('');
     });
 
     it('should announce the credentials org when no org is declared', async () => {
-      mockLineCtxResolved({ orgName: 'Wentsen' });
+      mockLineCtxResolved({ orgName: 'Example Org' });
       await createSaasStateBackend({ scope });
 
       expect(logger.info).toHaveBeenCalledWith('SAAS_ORG_FROM_CREDENTIALS');

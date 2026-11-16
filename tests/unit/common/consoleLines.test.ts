@@ -97,13 +97,16 @@ describe('consoleLines (ADR-008 registry)', () => {
 
   describe('profile keys', () => {
     it('round-trips line/orgSlug', () => {
-      expect(toProfileKey('china', 'wentsen')).toBe('china/wentsen');
-      expect(splitProfileKey('china/wentsen')).toEqual({ line: 'china', orgSlug: 'wentsen' });
+      expect(toProfileKey('china', 'example-org')).toBe('china/example-org');
+      expect(splitProfileKey('china/example-org')).toEqual({
+        line: 'china',
+        orgSlug: 'example-org',
+      });
     });
 
     it('rejects malformed keys', () => {
       expect(splitProfileKey('nowhere')).toBeNull();
-      expect(splitProfileKey('eu-west/wentsen')).toBeNull();
+      expect(splitProfileKey('eu-west/example-org')).toBeNull();
       expect(splitProfileKey('china/')).toBeNull();
     });
   });
@@ -113,6 +116,7 @@ describe('consoleLines (ADR-008 registry)', () => {
       expect(assertLineFlag('china')).toBe('china');
       expect(assertLineFlag(undefined)).toBeUndefined();
       expect(() => assertLineFlag('eu-west-3')).toThrow('SAAS_LINE_INVALID');
+      expect(() => assertLineFlag('constructor')).toThrow('SAAS_LINE_INVALID');
     });
   });
 });

@@ -48,17 +48,17 @@ const intlKey = 'si_com_abcdef123456_0123456789abcdef0123456789abcdef';
 const chinaProfile = {
   apiKey: chinaKey,
   orgId: 'org-cn',
-  orgName: 'Wentsen',
-  orgSlug: 'wentsen',
-  userEmail: 'owner@wentsen.com',
+  orgName: 'Example Org',
+  orgSlug: 'example-org',
+  userEmail: 'owner@example.com',
 };
 
 const intlProfile = {
   apiKey: intlKey,
   orgId: 'org-com',
-  orgName: 'Wentsen Intl',
-  orgSlug: 'wentsen',
-  userEmail: 'owner@wentsen.com',
+  orgName: 'Example Org Intl',
+  orgSlug: 'example-org',
+  userEmail: 'owner@example.com',
 };
 
 describe('credentialStore (ADR-008 v2)', () => {
@@ -89,14 +89,14 @@ describe('credentialStore (ADR-008 v2)', () => {
       mockFs.existsSync.mockReturnValue(true);
       mockFs.readFileSync.mockReturnValue(
         JSON.stringify({
-          active: 'china/wentsen',
-          profiles: { 'china/wentsen': chinaProfile, 'international/wentsen': intlProfile },
+          active: 'china/example-org',
+          profiles: { 'china/example-org': chinaProfile, 'international/example-org': intlProfile },
         }),
       );
       const file = loadCredentialsFile();
-      expect(file?.active).toBe('china/wentsen');
-      expect(file?.profiles['china/wentsen']).toEqual(chinaProfile);
-      expect(file?.profiles['international/wentsen']).toEqual(intlProfile);
+      expect(file?.active).toBe('china/example-org');
+      expect(file?.profiles['china/example-org']).toEqual(chinaProfile);
+      expect(file?.profiles['international/example-org']).toEqual(intlProfile);
     });
 
     it('heals a legacy v1 file in memory to the composite-key shape', () => {
@@ -106,14 +106,14 @@ describe('credentialStore (ADR-008 v2)', () => {
           apiKey: legacyKey,
           consoleUrl: 'https://console.serverlessinsight.cn',
           orgId: 'org-cn',
-          orgName: 'Wentsen',
-          orgSlug: 'wentsen',
-          userEmail: 'owner@wentsen.com',
+          orgName: 'Example Org',
+          orgSlug: 'example-org',
+          userEmail: 'owner@example.com',
         }),
       );
       const file = loadCredentialsFile();
-      expect(file?.active).toBe('china/wentsen');
-      expect(file?.profiles['china/wentsen']?.apiKey).toBe(legacyKey);
+      expect(file?.active).toBe('china/example-org');
+      expect(file?.profiles['china/example-org']?.apiKey).toBe(legacyKey);
       // Heal is in-memory: the legacy file stays untouched until the next save.
       expect(mockFs.writeFileSync).not.toHaveBeenCalled();
     });
@@ -125,10 +125,10 @@ describe('credentialStore (ADR-008 v2)', () => {
           apiKey: legacyKey,
           consoleUrl: 'http://localhost:3000',
           orgId: 'org-x',
-          orgSlug: 'wentsen',
+          orgSlug: 'example-org',
         }),
       );
-      expect(Object.keys(loadCredentialsFile()!.profiles)).toEqual(['international/wentsen']);
+      expect(Object.keys(loadCredentialsFile()!.profiles)).toEqual(['international/example-org']);
     });
 
     it('uses a temporary legacy key when the v1 file has no org slug', () => {
@@ -148,7 +148,7 @@ describe('credentialStore (ADR-008 v2)', () => {
     it('drops a dangling active pointer', () => {
       mockFs.existsSync.mockReturnValue(true);
       mockFs.readFileSync.mockReturnValue(
-        JSON.stringify({ active: 'china/gone', profiles: { 'china/wentsen': chinaProfile } }),
+        JSON.stringify({ active: 'china/gone', profiles: { 'china/example-org': chinaProfile } }),
       );
       expect(loadCredentialsFile()!.active).toBeUndefined();
     });
@@ -159,20 +159,20 @@ describe('credentialStore (ADR-008 v2)', () => {
       mockFs.existsSync.mockReturnValue(true);
       mockFs.readFileSync.mockReturnValue(
         JSON.stringify({
-          active: 'china/wentsen',
-          profiles: { 'china/wentsen': chinaProfile, 'international/wentsen': intlProfile },
+          active: 'china/example-org',
+          profiles: { 'china/example-org': chinaProfile, 'international/example-org': intlProfile },
         }),
       );
       const creds = loadCredentials();
       expect(creds?.line).toBe('china');
-      expect(creds?.profileKey).toBe('china/wentsen');
+      expect(creds?.profileKey).toBe('china/example-org');
       expect(creds?.apiKey).toBe(chinaKey);
     });
 
     it('returns null when no active profile exists', () => {
       mockFs.existsSync.mockReturnValue(true);
       mockFs.readFileSync.mockReturnValue(
-        JSON.stringify({ profiles: { 'china/wentsen': chinaProfile } }),
+        JSON.stringify({ profiles: { 'china/example-org': chinaProfile } }),
       );
       expect(loadCredentials()).toBeNull();
     });
@@ -186,20 +186,23 @@ describe('credentialStore (ADR-008 v2)', () => {
         recursive: true,
       });
       const written = JSON.parse(mockFs.writeFileSync.mock.calls[0][1] as string);
-      expect(written.active).toBe('china/wentsen');
-      expect(written.profiles['china/wentsen']).toEqual(chinaProfile);
+      expect(written.active).toBe('china/example-org');
+      expect(written.profiles['china/example-org']).toEqual(chinaProfile);
       expect(mockFs.chmodSync).toHaveBeenCalledWith(mockCredentialsPath, 0o600);
     });
 
     it('keeps the existing active profile when activating is not requested', () => {
       mockFs.existsSync.mockReturnValue(true);
       mockFs.readFileSync.mockReturnValue(
-        JSON.stringify({ active: 'china/wentsen', profiles: { 'china/wentsen': chinaProfile } }),
+        JSON.stringify({
+          active: 'china/example-org',
+          profiles: { 'china/example-org': chinaProfile },
+        }),
       );
       saveProfile('international', intlProfile);
       const written = JSON.parse(mockFs.writeFileSync.mock.calls[0][1] as string);
-      expect(written.active).toBe('china/wentsen');
-      expect(written.profiles['international/wentsen']).toEqual(intlProfile);
+      expect(written.active).toBe('china/example-org');
+      expect(written.profiles['international/example-org']).toEqual(intlProfile);
     });
 
     it('re-keys away a healed legacy entry for the same org', () => {
@@ -212,30 +215,61 @@ describe('credentialStore (ADR-008 v2)', () => {
       );
       saveProfile('china', chinaProfile, { activate: true });
       const written = JSON.parse(mockFs.writeFileSync.mock.calls[0][1] as string);
-      expect(written.active).toBe('china/wentsen');
-      expect(Object.keys(written.profiles)).toEqual(['china/wentsen']);
+      expect(written.active).toBe('china/example-org');
+      expect(Object.keys(written.profiles)).toEqual(['china/example-org']);
     });
   });
 
   describe('updateProfile', () => {
-    it('patches one profile in place (slug heal)', () => {
+    const legacyKey = 'china/legacy-01234567';
+    const legacyProfile = { ...chinaProfile, orgSlug: undefined };
+
+    it('moves a verified legacy profile to its slug and updates the active pointer', () => {
       mockFs.existsSync.mockReturnValue(true);
       mockFs.readFileSync.mockReturnValue(
         JSON.stringify({
-          active: 'china/wentsen',
-          profiles: { 'china/wentsen': chinaProfile, 'international/wentsen': intlProfile },
+          active: legacyKey,
+          profiles: { [legacyKey]: legacyProfile, 'international/example-org': intlProfile },
         }),
       );
-      updateProfile('china/wentsen', { orgSlug: 'wentsen-renamed' });
+      updateProfile(legacyKey, chinaProfile.apiKey, { orgSlug: 'example-org' });
       const written = JSON.parse(mockFs.writeFileSync.mock.calls[0][1] as string);
-      expect(written.profiles['china/wentsen'].orgSlug).toBe('wentsen-renamed');
-      expect(written.profiles['international/wentsen'].orgSlug).toBe('wentsen');
+      expect(written.active).toBe('china/example-org');
+      expect(written.profiles).toEqual({
+        'china/example-org': chinaProfile,
+        'international/example-org': intlProfile,
+      });
     });
 
-    it('is a no-op for an unknown profile key', () => {
+    it('updates identity at the same key without changing the active profile', () => {
       mockFs.existsSync.mockReturnValue(true);
-      mockFs.readFileSync.mockReturnValue(JSON.stringify({ profiles: {} }));
-      updateProfile('china/ghost', { orgSlug: 'x' });
+      mockFs.readFileSync.mockReturnValue(
+        JSON.stringify({
+          active: 'international/example-org',
+          profiles: { 'china/example-org': chinaProfile, 'international/example-org': intlProfile },
+        }),
+      );
+      updateProfile('china/example-org', chinaProfile.apiKey, {
+        orgSlug: 'example-org',
+        orgId: 'new-id',
+      });
+      const written = JSON.parse(mockFs.writeFileSync.mock.calls[0][1] as string);
+      expect(written.active).toBe('international/example-org');
+      expect(written.profiles['china/example-org'].orgId).toBe('new-id');
+    });
+
+    it('leaves a newer or changed profile intact when validation races another login', () => {
+      mockFs.existsSync.mockReturnValue(true);
+      mockFs.readFileSync.mockReturnValue(
+        JSON.stringify({
+          profiles: { [legacyKey]: legacyProfile, 'china/example-org': chinaProfile },
+        }),
+      );
+
+      updateProfile(legacyKey, chinaProfile.apiKey, { orgSlug: 'example-org' });
+      updateProfile(legacyKey, 'different-key', { orgSlug: 'other' });
+      updateProfile('china/ghost', chinaProfile.apiKey, { orgSlug: 'other' });
+
       expect(mockFs.writeFileSync).not.toHaveBeenCalled();
     });
   });
@@ -245,21 +279,24 @@ describe('credentialStore (ADR-008 v2)', () => {
       mockFs.existsSync.mockReturnValue(true);
       mockFs.readFileSync.mockReturnValue(
         JSON.stringify({
-          active: 'china/wentsen',
-          profiles: { 'china/wentsen': chinaProfile, 'international/wentsen': intlProfile },
+          active: 'china/example-org',
+          profiles: { 'china/example-org': chinaProfile, 'international/example-org': intlProfile },
         }),
       );
       const removed = removeActiveProfile();
-      expect(removed?.profileKey).toBe('china/wentsen');
+      expect(removed?.profileKey).toBe('china/example-org');
       const written = JSON.parse(mockFs.writeFileSync.mock.calls[0][1] as string);
       expect(written.active).toBeUndefined();
-      expect(Object.keys(written.profiles)).toEqual(['international/wentsen']);
+      expect(Object.keys(written.profiles)).toEqual(['international/example-org']);
     });
 
     it('deletes the file when the last profile logs out', () => {
       mockFs.existsSync.mockReturnValue(true);
       mockFs.readFileSync.mockReturnValue(
-        JSON.stringify({ active: 'china/wentsen', profiles: { 'china/wentsen': chinaProfile } }),
+        JSON.stringify({
+          active: 'china/example-org',
+          profiles: { 'china/example-org': chinaProfile },
+        }),
       );
       removeActiveProfile();
       expect(mockFs.unlinkSync).toHaveBeenCalledWith(mockCredentialsPath);
@@ -269,17 +306,21 @@ describe('credentialStore (ADR-008 v2)', () => {
   describe('findProfilesBySlug', () => {
     it('matches profiles whose key ends with the slug, across lines', () => {
       const file = {
-        active: 'china/wentsen',
+        active: 'china/example-org',
         profiles: {
-          'china/wentsen': chinaProfile,
-          'international/wentsen': intlProfile,
+          'china/example-org': chinaProfile,
+          'international/example-org': intlProfile,
           'international/acme': { ...intlProfile, orgSlug: 'acme' },
         },
       };
-      expect(findProfilesBySlug(file, 'wentsen').sort()).toEqual([
-        'china/wentsen',
-        'international/wentsen',
+      expect(findProfilesBySlug(file, 'example-org').sort()).toEqual([
+        'china/example-org',
+        'international/example-org',
       ]);
+    });
+    it('finds a previously healed legacy slug before the profile has been re-keyed', () => {
+      const file = { profiles: { 'china/legacy-01234567': chinaProfile } };
+      expect(findProfilesBySlug(file, 'example-org')).toEqual(['china/legacy-01234567']);
     });
   });
 
@@ -306,7 +347,10 @@ describe('credentialStore (ADR-008 v2)', () => {
       delete process.env.SI_CONSOLE_URL;
       mockFs.existsSync.mockReturnValue(true);
       mockFs.readFileSync.mockReturnValue(
-        JSON.stringify({ active: 'china/wentsen', profiles: { 'china/wentsen': chinaProfile } }),
+        JSON.stringify({
+          active: 'china/example-org',
+          profiles: { 'china/example-org': chinaProfile },
+        }),
       );
       expect(bestEffortConsoleOrigin()).toBe('https://console.serverlessinsight.cn');
     });

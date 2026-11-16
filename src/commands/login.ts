@@ -75,7 +75,7 @@ const finalizeLogin = (
   }
   // ADR-008 defensive cross-check: the issuing platform's own line segment
   // must agree with the line we authenticated against.
-  const expectedSegment = line === 'china' ? 'cn' : 'com';
+  const expectedSegment = CONSOLE_LINES[line].keySegment;
   if (region && region !== expectedSegment) {
     logger.error(lang.__('LOGIN_LINE_MISMATCH', { keyLine: region, line }));
     return false;
@@ -244,7 +244,7 @@ export const login = async (options: {
   // Check if already logged in
   const file = loadCredentialsFile();
   const activeProfile = file?.active ? file.profiles[file.active] : undefined;
-  if (activeProfile) {
+  if (activeProfile && process.stdin.isTTY === true) {
     const answer = await ask(
       lang.__('LOGIN_ALREADY_LOGGED_IN', {
         userEmail: activeProfile.userEmail || '',

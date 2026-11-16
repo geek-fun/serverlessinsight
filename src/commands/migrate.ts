@@ -16,6 +16,7 @@ import {
 } from '../common';
 import { createStateBackend } from '../common/stateBackend';
 import { resolveLineContext } from '../common/lineContext';
+import { assertValidatedOrg, assertValidatedRegion } from '../common/consoleLines';
 import { createApiClient, validateApiKey } from '../common/apiClient';
 import { isMigratedToSaas } from '../common/migrationMarker';
 import { StateBackendType } from '../types';
@@ -162,14 +163,11 @@ export const migrate = async (options: {
     lineFlag: options.line,
     operation: 'migrate',
   });
-  const apiKey = lineCtx.apiKey;
-  if (!apiKey) throw new Error(lang.__('MIGRATE_NEED_CREDENTIALS'));
-  const baseUrl = lineCtx.consoleUrl;
+  const { apiKey, consoleUrl: baseUrl } = lineCtx;
   const identity = await validateApiKey(apiKey, baseUrl);
+  assertValidatedRegion(lineCtx.line, identity.region);
+  assertValidatedOrg(iac.org ?? options.org, identity.orgSlug);
   const orgId = identity.orgId;
-  if (iac.org && identity.orgSlug && iac.org !== identity.orgSlug) {
-    throw new Error(lang.__('SAAS_ORG_MISMATCH', { declared: iac.org, actual: identity.orgSlug }));
-  }
   const client = createApiClient({ apiKey, baseUrl, orgId });
   if (!supportsRegionalSaas(await client.get('/api/v1/capabilities'))) {
     throw new Error(lang.__('SAAS_REGIONAL_SCOPE_UNSUPPORTED', { consoleUrl: baseUrl }));

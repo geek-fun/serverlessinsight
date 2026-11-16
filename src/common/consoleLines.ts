@@ -43,7 +43,7 @@ export const normalizeLineName = (input?: string): ConsoleLineName | null => {
   if (!input) return null;
   const lower = input.trim().toLowerCase();
   if ((LINE_NAMES as string[]).includes(lower)) return lower as ConsoleLineName;
-  return LINE_BY_SEGMENT[lower as ConsoleLineKeySegment] ?? null;
+  return lower === 'com' || lower === 'cn' ? LINE_BY_SEGMENT[lower] : null;
 };
 
 /**
@@ -99,4 +99,30 @@ export const assertLineFlag = (input?: string): ConsoleLineName | undefined => {
     throw new Error(lang.__('SAAS_LINE_INVALID', { value: input, lines: LINE_NAMES.join(', ') }));
   }
   return line;
+};
+
+export const assertValidatedRegion = (line: ConsoleLineName, region?: string): void => {
+  const segment = CONSOLE_LINES[line].keySegment;
+  if (region && region !== segment) {
+    throw new Error(
+      lang.__('SAAS_LINE_CONFLICT', {
+        source: 'the console validate response',
+        line: region,
+        resolvedLine: segment,
+      }),
+    );
+  }
+};
+
+export const assertOrgMatches = (expected?: string, actual?: string): void => {
+  if (expected && actual && expected !== actual) {
+    throw new Error(lang.__('SAAS_ORG_MISMATCH', { declared: expected, actual }));
+  }
+};
+
+export const assertValidatedOrg = (expected?: string, actual?: string): void => {
+  if (expected && !actual) {
+    throw new Error(lang.__('SAAS_ORG_UNVERIFIED', { org: expected }));
+  }
+  assertOrgMatches(expected, actual);
 };

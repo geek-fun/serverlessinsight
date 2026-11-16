@@ -1035,7 +1035,9 @@ export const zhCN = {
     'SaaS 状态后端需要登录 Console。\n请运行 `si login`，或：\n- 设置 SI_API_KEY 环境变量\n- 使用 --si-api-key 参数\n- 在 serverlessinsight.yml 中配置本地或存储桶后端',
   SAAS_BACKEND_CONSOLE_UNREACHABLE: '无法连接到控制台。部署需要控制台连接。',
   SAAS_ORG_MISMATCH:
-    'YAML 声明的 org "{{declared}}" 与当前 API key 所属的 org "{{actual}}" 不一致。\n请确认使用的凭据（可运行 `si login` 重新登录，或修正 YAML 中的 org 声明）。未写入任何数据。',
+    '目标组织 "{{declared}}" 与当前 API 密钥所属的组织 "{{actual}}" 不一致。请使用目标组织的凭据，或修改 YAML 或命令中的组织。',
+  SAAS_ORG_UNVERIFIED:
+    '无法验证 API 密钥是否属于组织 "{{org}}"。请运行 `si login`，或使用控制台能够验证所属组织的密钥。',
   SAAS_ORG_FROM_CREDENTIALS:
     '目标 org：{{orgName}}（来自凭据；可在 YAML 顶层声明 org 以显式固定目标组织）',
   SAAS_STATE_ORG_MISMATCH:
