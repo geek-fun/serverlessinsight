@@ -180,6 +180,29 @@ describe('login command (ADR-008)', () => {
       expect(mockSaveProfile).not.toHaveBeenCalled();
     });
 
+    it('cross-checks the validate region against the login line (ADR-008)', async () => {
+      // Key segment says cn and the line is china; a console reporting region
+      // "com" is misconfigured — refuse to store.
+      mockValidateApiKey.mockResolvedValue(identity({ region: 'com' }));
+
+      await login({ siApiKey: chinaKey });
+
+      expect(logger.error).toHaveBeenCalledWith('LOGIN_LINE_MISMATCH');
+      expect(mockSaveProfile).not.toHaveBeenCalled();
+    });
+
+    it('accepts a matching validate region', async () => {
+      mockValidateApiKey.mockResolvedValue(identity({ region: 'cn' }));
+
+      await login({ siApiKey: chinaKey });
+
+      expect(mockSaveProfile).toHaveBeenCalledWith(
+        'china',
+        expect.objectContaining({ apiKey: chinaKey }),
+        { activate: true },
+      );
+    });
+
     it('logs in via SI_API_KEY env var', async () => {
       process.env.SI_API_KEY = intlKey;
 

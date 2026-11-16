@@ -66,10 +66,18 @@ const finalizeLogin = (
   line: ConsoleLineName,
   identity: LoginIdentity,
   orgFlag?: string,
+  region?: string,
 ): boolean => {
   const keyLine = parseApiKeyLine(apiKey);
   if (keyLine && keyLine !== line) {
     logger.error(lang.__('LOGIN_LINE_MISMATCH', { keyLine, line }));
+    return false;
+  }
+  // ADR-008 defensive cross-check: the issuing platform's own line segment
+  // must agree with the line we authenticated against.
+  const expectedSegment = line === 'china' ? 'cn' : 'com';
+  if (region && region !== expectedSegment) {
+    logger.error(lang.__('LOGIN_LINE_MISMATCH', { keyLine: region, line }));
     return false;
   }
   if (orgFlag && identity.orgSlug && identity.orgSlug !== orgFlag) {
@@ -120,6 +128,7 @@ const loginWithKey = async (
         userEmail: result.userEmail,
       },
       orgFlag,
+      result.region,
     );
   } catch (error) {
     logger.error(lang.__('LOGIN_KEY_INVALID'));
@@ -183,9 +192,11 @@ const loginWithBrowser = async (line: ConsoleLineName, orgFlag?: string): Promis
         // The authorize callback doesn't carry the org slug; fetch the full
         // identity once so the yml `org:` cross-check works out of the box.
         // Degrade to the callback params if the validate roundtrip fails.
+        let region: string | undefined;
         try {
           const validated = await validateApiKey(key, consoleOriginFor(line));
           identity.orgSlug = validated.orgSlug;
+          region = validated.region;
           if (!identity.orgId) identity.orgId = validated.orgId;
           if (!identity.orgName) identity.orgName = validated.orgName;
           if (!identity.userEmail) identity.userEmail = validated.userEmail;
@@ -193,7 +204,7 @@ const loginWithBrowser = async (line: ConsoleLineName, orgFlag?: string): Promis
           identity.orgSlug = undefined;
         }
 
-        resolve(finalizeLogin(key, line, identity, orgFlag));
+        resolve(finalizeLogin(key, line, identity, orgFlag, region));
       } else {
         res.writeHead(200, { 'Content-Type': 'text/plain' });
         res.end('Waiting for authorization...');

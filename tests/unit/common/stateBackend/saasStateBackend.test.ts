@@ -319,6 +319,17 @@ describe('saasStateBackend (scope-bound, issue #280)', () => {
       expect(result.orgId).toBe('org-1');
     });
 
+    it('should refuse when the validate region disagrees with the resolved line (ADR-008)', async () => {
+      // Default ctx line is international (segment com); a console claiming
+      // region "cn" is misconfigured — the validate roundtrip must hard-stop.
+      mockLineCtxResolved({ orgSlug: undefined });
+      const local = await createSaasStateBackend({ scope, declaredOrg: 'wentsen' });
+      mockApiClient.get.mockResolvedValueOnce({ orgSlug: 'wentsen', region: 'cn' });
+
+      await expect(local.loadState()).rejects.toThrow('SAAS_LINE_CONFLICT');
+      expect(mockApiClient.post).not.toHaveBeenCalled();
+    });
+
     it('should keep the pre-existing org id when validate resolves a slug but no org id', async () => {
       mockLineCtxResolved({ orgId: undefined, orgSlug: undefined });
       const local = await createSaasStateBackend({ scope, declaredOrg: 'wentsen' });
