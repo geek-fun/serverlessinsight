@@ -206,24 +206,26 @@ describe('independent state storage configuration', () => {
     expect(createTosStateBackend).not.toHaveBeenCalled();
   });
 
-  it('never reuses another cloud credentials when storage credentials are missing', () => {
+  it('never reuses another cloud credentials when storage credentials are missing', async () => {
     process.env = {};
-    expect(() => createStateBackend(config, context)).toThrow('STATE_STORAGE_CREDENTIALS_MISSING');
+    await expect(createStateBackend(config, context)).rejects.toThrow(
+      'STATE_STORAGE_CREDENTIALS_MISSING',
+    );
     expect(createOssStateBackend).not.toHaveBeenCalled();
   });
 
-  it('reports missing TOS storage credentials before selecting any backend', () => {
+  it('reports missing TOS storage credentials before selecting any backend', async () => {
     process.env = {
       ALIYUN_ACCESS_KEY_ID: 'workload-id',
       ALIYUN_ACCESS_KEY_SECRET: 'workload-secret',
     };
 
-    expect(() =>
+    await expect(
       createStateBackend(
         { ...config, storageProvider: 'volcengine' },
         { ...context, provider: 'aliyun' },
       ),
-    ).toThrow('STATE_STORAGE_CREDENTIALS_MISSING');
+    ).rejects.toThrow('STATE_STORAGE_CREDENTIALS_MISSING');
     expect(createTosStateBackend).not.toHaveBeenCalled();
     expect(createOssStateBackend).not.toHaveBeenCalled();
   });

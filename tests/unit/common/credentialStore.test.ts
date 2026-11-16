@@ -29,207 +29,328 @@ jest.mock('node:fs', () => mockFs);
 const ORIGINAL_ENV = { ...process.env };
 
 import {
-  getCredentialsPath,
   loadCredentials,
-  saveCredentials,
+  loadCredentialsFile,
+  saveProfile,
+  updateProfile,
+  removeActiveProfile,
   deleteCredentials,
-  resolveConsoleUrl,
-  resolveConsoleUiUrl,
+  findProfilesBySlug,
   resolveApiKey,
-  validateApiKeyFormat,
+  bestEffortConsoleOrigin,
 } from '../../../src/common/credentialStore';
-import type { ConsoleCredentials } from '../../../src/common/credentialStore';
+import { parseApiKeyLine, validateApiKeyFormat } from '../../../src/common/credentialStore';
 
-describe('credentialStore', () => {
+const legacyKey = 'si_abcdef123456_0123456789abcdef0123456789abcdef';
+const chinaKey = 'si_cn_abcdef123456_0123456789abcdef0123456789abcdef';
+const intlKey = 'si_com_abcdef123456_0123456789abcdef0123456789abcdef';
+
+const chinaProfile = {
+  apiKey: chinaKey,
+  orgId: 'org-cn',
+  orgName: 'Wentsen',
+  orgSlug: 'wentsen',
+  userEmail: 'owner@wentsen.com',
+};
+
+const intlProfile = {
+  apiKey: intlKey,
+  orgId: 'org-com',
+  orgName: 'Wentsen Intl',
+  orgSlug: 'wentsen',
+  userEmail: 'owner@wentsen.com',
+};
+
+describe('credentialStore (ADR-008 v2)', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     process.env = { ...ORIGINAL_ENV };
+    delete process.env.SI_CONSOLE_URL;
+    delete process.env.SI_CONSOLE_LINE;
   });
 
   afterAll(() => {
     process.env = ORIGINAL_ENV;
   });
 
-  describe('getCredentialsPath', () => {
-    it('should return ~/.serverlessinsight/credentials.json', () => {
-      const result = getCredentialsPath();
-      expect(result).toBe(mockCredentialsPath);
+  describe('loadCredentialsFile', () => {
+    it('returns null when the file does not exist', () => {
+      mockFs.existsSync.mockReturnValue(false);
+      expect(loadCredentialsFile()).toBeNull();
+    });
+
+    it('returns null on corrupted JSON', () => {
+      mockFs.existsSync.mockReturnValue(true);
+      mockFs.readFileSync.mockReturnValue('not-json{');
+      expect(loadCredentialsFile()).toBeNull();
+    });
+
+    it('passes a v2 composite-key file through, including a same-slug cross-line pair', () => {
+      mockFs.existsSync.mockReturnValue(true);
+      mockFs.readFileSync.mockReturnValue(
+        JSON.stringify({
+          active: 'china/wentsen',
+          profiles: { 'china/wentsen': chinaProfile, 'international/wentsen': intlProfile },
+        }),
+      );
+      const file = loadCredentialsFile();
+      expect(file?.active).toBe('china/wentsen');
+      expect(file?.profiles['china/wentsen']).toEqual(chinaProfile);
+      expect(file?.profiles['international/wentsen']).toEqual(intlProfile);
+    });
+
+    it('heals a legacy v1 file in memory to the composite-key shape', () => {
+      mockFs.existsSync.mockReturnValue(true);
+      mockFs.readFileSync.mockReturnValue(
+        JSON.stringify({
+          apiKey: legacyKey,
+          consoleUrl: 'https://console.serverlessinsight.cn',
+          orgId: 'org-cn',
+          orgName: 'Wentsen',
+          orgSlug: 'wentsen',
+          userEmail: 'owner@wentsen.com',
+        }),
+      );
+      const file = loadCredentialsFile();
+      expect(file?.active).toBe('china/wentsen');
+      expect(file?.profiles['china/wentsen']?.apiKey).toBe(legacyKey);
+      // Heal is in-memory: the legacy file stays untouched until the next save.
+      expect(mockFs.writeFileSync).not.toHaveBeenCalled();
+    });
+
+    it('defaults the healed line to international for unknown origins', () => {
+      mockFs.existsSync.mockReturnValue(true);
+      mockFs.readFileSync.mockReturnValue(
+        JSON.stringify({
+          apiKey: legacyKey,
+          consoleUrl: 'http://localhost:3000',
+          orgId: 'org-x',
+          orgSlug: 'wentsen',
+        }),
+      );
+      expect(Object.keys(loadCredentialsFile()!.profiles)).toEqual(['international/wentsen']);
+    });
+
+    it('uses a temporary legacy key when the v1 file has no org slug', () => {
+      mockFs.existsSync.mockReturnValue(true);
+      mockFs.readFileSync.mockReturnValue(
+        JSON.stringify({
+          apiKey: legacyKey,
+          consoleUrl: 'https://console.serverlessinsight.com',
+          orgId: '0123456789abcdef',
+        }),
+      );
+      expect(Object.keys(loadCredentialsFile()!.profiles)).toEqual([
+        'international/legacy-01234567',
+      ]);
+    });
+
+    it('drops a dangling active pointer', () => {
+      mockFs.existsSync.mockReturnValue(true);
+      mockFs.readFileSync.mockReturnValue(
+        JSON.stringify({ active: 'china/gone', profiles: { 'china/wentsen': chinaProfile } }),
+      );
+      expect(loadCredentialsFile()!.active).toBeUndefined();
     });
   });
 
   describe('loadCredentials', () => {
-    it('should return null when file does not exist', () => {
-      mockFs.existsSync.mockReturnValue(false);
-      const result = loadCredentials();
-      expect(result).toBeNull();
+    it('returns the active profile with line and store key attached', () => {
+      mockFs.existsSync.mockReturnValue(true);
+      mockFs.readFileSync.mockReturnValue(
+        JSON.stringify({
+          active: 'china/wentsen',
+          profiles: { 'china/wentsen': chinaProfile, 'international/wentsen': intlProfile },
+        }),
+      );
+      const creds = loadCredentials();
+      expect(creds?.line).toBe('china');
+      expect(creds?.profileKey).toBe('china/wentsen');
+      expect(creds?.apiKey).toBe(chinaKey);
     });
 
-    it('should parse and return credentials from file', () => {
-      const creds: ConsoleCredentials = {
-        apiKey: 'si_abc123def456_ghijklmnopqrstuvwxyz0123456789abcd',
-        consoleUrl: 'https://api.console.serverlessinsight.com',
-        userEmail: 'test@example.com',
-        orgId: 'org-uuid',
-        orgName: 'TestOrg',
-      };
+    it('returns null when no active profile exists', () => {
       mockFs.existsSync.mockReturnValue(true);
-      mockFs.readFileSync.mockReturnValue(JSON.stringify(creds));
-      const result = loadCredentials();
-      expect(result).toEqual(creds);
-    });
-
-    it('should return null on corrupted JSON', () => {
-      mockFs.existsSync.mockReturnValue(true);
-      mockFs.readFileSync.mockReturnValue('not-json{');
-      const result = loadCredentials();
-      expect(result).toBeNull();
+      mockFs.readFileSync.mockReturnValue(
+        JSON.stringify({ profiles: { 'china/wentsen': chinaProfile } }),
+      );
+      expect(loadCredentials()).toBeNull();
     });
   });
 
-  describe('saveCredentials', () => {
-    it('should write credentials to correct path with indented JSON', () => {
+  describe('saveProfile', () => {
+    it('writes the composite key, activates it and creates the directory', () => {
       mockFs.existsSync.mockReturnValue(false);
-      const creds: ConsoleCredentials = {
-        apiKey: 'si_key',
-        consoleUrl: 'https://api.test.com',
-        userEmail: 'u@t.com',
-        orgId: 'oid',
-        orgName: 'ON',
-      };
-      saveCredentials(creds);
+      saveProfile('china', chinaProfile, { activate: true });
       expect(mockFs.mkdirSync).toHaveBeenCalledWith(path.join(mockHomedir, '.serverlessinsight'), {
         recursive: true,
       });
-      expect(mockFs.writeFileSync).toHaveBeenCalledWith(
-        mockCredentialsPath,
-        JSON.stringify(creds, null, 2),
-        'utf-8',
-      );
+      const written = JSON.parse(mockFs.writeFileSync.mock.calls[0][1] as string);
+      expect(written.active).toBe('china/wentsen');
+      expect(written.profiles['china/wentsen']).toEqual(chinaProfile);
+      expect(mockFs.chmodSync).toHaveBeenCalledWith(mockCredentialsPath, 0o600);
     });
 
-    it('should restrict credentials file permissions to owner (0600)', () => {
-      mockFs.existsSync.mockReturnValue(false);
-      const creds: ConsoleCredentials = {
-        apiKey: 'si_key',
-        consoleUrl: 'https://api.test.com',
-        userEmail: 'u@t.com',
-        orgId: 'oid',
-        orgName: 'ON',
+    it('keeps the existing active profile when activating is not requested', () => {
+      mockFs.existsSync.mockReturnValue(true);
+      mockFs.readFileSync.mockReturnValue(
+        JSON.stringify({ active: 'china/wentsen', profiles: { 'china/wentsen': chinaProfile } }),
+      );
+      saveProfile('international', intlProfile);
+      const written = JSON.parse(mockFs.writeFileSync.mock.calls[0][1] as string);
+      expect(written.active).toBe('china/wentsen');
+      expect(written.profiles['international/wentsen']).toEqual(intlProfile);
+    });
+
+    it('re-keys away a healed legacy entry for the same org', () => {
+      mockFs.existsSync.mockReturnValue(true);
+      mockFs.readFileSync.mockReturnValue(
+        JSON.stringify({
+          active: 'china/legacy-01234567',
+          profiles: { 'china/legacy-01234567': { ...chinaProfile, orgSlug: undefined } },
+        }),
+      );
+      saveProfile('china', chinaProfile, { activate: true });
+      const written = JSON.parse(mockFs.writeFileSync.mock.calls[0][1] as string);
+      expect(written.active).toBe('china/wentsen');
+      expect(Object.keys(written.profiles)).toEqual(['china/wentsen']);
+    });
+  });
+
+  describe('updateProfile', () => {
+    it('patches one profile in place (slug heal)', () => {
+      mockFs.existsSync.mockReturnValue(true);
+      mockFs.readFileSync.mockReturnValue(
+        JSON.stringify({
+          active: 'china/wentsen',
+          profiles: { 'china/wentsen': chinaProfile, 'international/wentsen': intlProfile },
+        }),
+      );
+      updateProfile('china/wentsen', { orgSlug: 'wentsen-renamed' });
+      const written = JSON.parse(mockFs.writeFileSync.mock.calls[0][1] as string);
+      expect(written.profiles['china/wentsen'].orgSlug).toBe('wentsen-renamed');
+      expect(written.profiles['international/wentsen'].orgSlug).toBe('wentsen');
+    });
+
+    it('is a no-op for an unknown profile key', () => {
+      mockFs.existsSync.mockReturnValue(true);
+      mockFs.readFileSync.mockReturnValue(JSON.stringify({ profiles: {} }));
+      updateProfile('china/ghost', { orgSlug: 'x' });
+      expect(mockFs.writeFileSync).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('removeActiveProfile', () => {
+    it('removes only the active profile when others remain', () => {
+      mockFs.existsSync.mockReturnValue(true);
+      mockFs.readFileSync.mockReturnValue(
+        JSON.stringify({
+          active: 'china/wentsen',
+          profiles: { 'china/wentsen': chinaProfile, 'international/wentsen': intlProfile },
+        }),
+      );
+      const removed = removeActiveProfile();
+      expect(removed?.profileKey).toBe('china/wentsen');
+      const written = JSON.parse(mockFs.writeFileSync.mock.calls[0][1] as string);
+      expect(written.active).toBeUndefined();
+      expect(Object.keys(written.profiles)).toEqual(['international/wentsen']);
+    });
+
+    it('deletes the file when the last profile logs out', () => {
+      mockFs.existsSync.mockReturnValue(true);
+      mockFs.readFileSync.mockReturnValue(
+        JSON.stringify({ active: 'china/wentsen', profiles: { 'china/wentsen': chinaProfile } }),
+      );
+      removeActiveProfile();
+      expect(mockFs.unlinkSync).toHaveBeenCalledWith(mockCredentialsPath);
+    });
+  });
+
+  describe('findProfilesBySlug', () => {
+    it('matches profiles whose key ends with the slug, across lines', () => {
+      const file = {
+        active: 'china/wentsen',
+        profiles: {
+          'china/wentsen': chinaProfile,
+          'international/wentsen': intlProfile,
+          'international/acme': { ...intlProfile, orgSlug: 'acme' },
+        },
       };
-      saveCredentials(creds);
-      expect(mockFs.chmodSync).toHaveBeenCalledWith(mockCredentialsPath, 0o600);
+      expect(findProfilesBySlug(file, 'wentsen').sort()).toEqual([
+        'china/wentsen',
+        'international/wentsen',
+      ]);
     });
   });
 
   describe('deleteCredentials', () => {
-    it('should unlink the credentials file', () => {
+    it('unlinks the credentials file', () => {
       mockFs.existsSync.mockReturnValue(true);
       deleteCredentials();
       expect(mockFs.unlinkSync).toHaveBeenCalledWith(mockCredentialsPath);
     });
 
-    it('should not throw if file does not exist', () => {
+    it('does not throw if the file does not exist', () => {
       mockFs.existsSync.mockReturnValue(false);
       expect(() => deleteCredentials()).not.toThrow();
     });
   });
 
-  describe('resolveConsoleUrl', () => {
-    it('should return SI_CONSOLE_URL env var when set', () => {
-      process.env.SI_CONSOLE_URL = 'https://custom.api.com';
-      const result = resolveConsoleUrl({ consoleUrl: 'https://creds.api.com' });
-      expect(result).toBe('https://custom.api.com');
+  describe('bestEffortConsoleOrigin', () => {
+    it('prefers the internal SI_CONSOLE_URL test hook', () => {
+      process.env.SI_CONSOLE_URL = 'http://localhost:3000';
+      expect(bestEffortConsoleOrigin()).toBe('http://localhost:3000');
     });
 
-    it('should return from credentials when env not set', () => {
+    it('derives the origin from the active profile line', () => {
       delete process.env.SI_CONSOLE_URL;
-      const result = resolveConsoleUrl({ consoleUrl: 'https://creds.api.com' });
-      expect(result).toBe('https://creds.api.com');
+      mockFs.existsSync.mockReturnValue(true);
+      mockFs.readFileSync.mockReturnValue(
+        JSON.stringify({ active: 'china/wentsen', profiles: { 'china/wentsen': chinaProfile } }),
+      );
+      expect(bestEffortConsoleOrigin()).toBe('https://console.serverlessinsight.cn');
     });
 
-    it('should return default when nothing is set', () => {
+    it('falls back to the international origin', () => {
       delete process.env.SI_CONSOLE_URL;
-      const result = resolveConsoleUrl({});
-      expect(result).toBe('https://api.console.serverlessinsight.com');
-    });
-  });
-
-  describe('resolveConsoleUiUrl', () => {
-    it('should return SI_CONSOLE_UI_URL env var when set', () => {
-      process.env.SI_CONSOLE_UI_URL = 'https://ui.custom.com';
-      const result = resolveConsoleUiUrl({
-        consoleUrl: 'https://api.console.serverlessinsight.com',
-      });
-      expect(result).toBe('https://ui.custom.com');
-    });
-
-    it('should derive prod UI url by replacing api. with console.', () => {
-      delete process.env.SI_CONSOLE_UI_URL;
-      const result = resolveConsoleUiUrl({
-        consoleUrl: 'https://api.console.serverlessinsight.com',
-      });
-      expect(result).toBe('https://console.console.serverlessinsight.com');
-    });
-
-    it('should derive local UI url by switching port 3000 to 5173', () => {
-      delete process.env.SI_CONSOLE_UI_URL;
-      const result = resolveConsoleUiUrl({ consoleUrl: 'http://localhost:3000' });
-      expect(result).toBe('http://localhost:5173');
-    });
-
-    it('should return console url unchanged when no api. prefix and not localhost', () => {
-      delete process.env.SI_CONSOLE_UI_URL;
-      const result = resolveConsoleUiUrl({ consoleUrl: 'https://example.com/console' });
-      expect(result).toBe('https://example.com/console');
+      mockFs.existsSync.mockReturnValue(false);
+      expect(bestEffortConsoleOrigin()).toBe('https://console.serverlessinsight.com');
     });
   });
 
   describe('resolveApiKey', () => {
-    it('should return siApiKey param when provided', () => {
-      const result = resolveApiKey({ siApiKey: 'flag-key', envKey: undefined, creds: undefined });
-      expect(result).toBe('flag-key');
-    });
-
-    it('should return env SI_API_KEY when flag not set', () => {
-      const result = resolveApiKey({ siApiKey: undefined, envKey: 'env-key', creds: undefined });
-      expect(result).toBe('env-key');
-    });
-
-    it('should return from credentials when no flag or env', () => {
-      const result = resolveApiKey({
-        siApiKey: undefined,
-        envKey: undefined,
-        creds: { apiKey: 'creds-key' } as ConsoleCredentials,
-      });
-      expect(result).toBe('creds-key');
-    });
-
-    it('should return null when no source available', () => {
-      const result = resolveApiKey({ siApiKey: undefined, envKey: undefined, creds: undefined });
-      expect(result).toBeNull();
+    it('prefers flag over env over profile', () => {
+      expect(resolveApiKey({ siApiKey: 'flag', envKey: 'env', creds: { apiKey: 'stored' } })).toBe(
+        'flag',
+      );
+      expect(
+        resolveApiKey({ siApiKey: undefined, envKey: 'env', creds: { apiKey: 'stored' } }),
+      ).toBe('env');
+      expect(
+        resolveApiKey({ siApiKey: undefined, envKey: undefined, creds: { apiKey: 'stored' } }),
+      ).toBe('stored');
+      expect(
+        resolveApiKey({ siApiKey: undefined, envKey: undefined, creds: undefined }),
+      ).toBeNull();
     });
   });
 
-  describe('validateApiKeyFormat', () => {
-    it('should return true for valid key format', () => {
-      expect(validateApiKeyFormat('si_ABCdef123456_abcdefghijklmnopqrstuvwxyz012345')).toBe(true);
-      expect(validateApiKeyFormat('si_AXw7foqhs8PU_8UbTJZPJpl9a5bCVA85eqZJz60DPsx71')).toBe(true);
-    });
-
-    it('should return false for missing si_ prefix', () => {
-      expect(validateApiKeyFormat('abc_123_456')).toBe(false);
-    });
-
-    it('should return false for wrong prefix length', () => {
-      expect(validateApiKeyFormat('si_abc_xyz')).toBe(false);
-    });
-
-    it('should return false for wrong secret length', () => {
-      expect(validateApiKeyFormat('si_ABCdef123456_tooshort')).toBe(false);
-    });
-
-    it('should return false for empty string', () => {
+  describe('key formats (ADR-008 dual format)', () => {
+    it('accepts legacy and line-stamped keys', () => {
+      expect(validateApiKeyFormat(legacyKey)).toBe(true);
+      expect(validateApiKeyFormat(chinaKey)).toBe(true);
+      expect(validateApiKeyFormat(intlKey)).toBe(true);
+      expect(validateApiKeyFormat('si_cn_tooshort_short')).toBe(false);
+      expect(validateApiKeyFormat('si_xx_abcdef123456_0123456789abcdef0123456789abcdef')).toBe(
+        false,
+      );
       expect(validateApiKeyFormat('')).toBe(false);
+    });
+
+    it('parses the line from stamped keys and returns null for legacy keys', () => {
+      expect(parseApiKeyLine(chinaKey)).toBe('china');
+      expect(parseApiKeyLine(intlKey)).toBe('international');
+      expect(parseApiKeyLine(legacyKey)).toBeNull();
     });
   });
 });

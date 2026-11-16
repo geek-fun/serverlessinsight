@@ -37,6 +37,11 @@ jest.mock('../../../../src/common/credentialStore', () => ({
   loadCredentials: jest.fn(),
   getConsoleUrl: jest.fn(),
   saveCredentials: jest.fn(),
+  updateProfile: jest.fn(),
+}));
+
+jest.mock('../../../../src/common/lineContext', () => ({
+  resolveLineContext: jest.fn(),
 }));
 
 import fs from 'node:fs';
@@ -44,11 +49,8 @@ import crypto from 'node:crypto';
 import os from 'node:os';
 import path from 'node:path';
 import { createSaasStateBackend } from '../../../../src/common/stateBackend/saasStateBackend';
-import {
-  loadCredentials,
-  saveCredentials,
-  getConsoleUrl,
-} from '../../../../src/common/credentialStore';
+import { updateProfile } from '../../../../src/common/credentialStore';
+import { resolveLineContext } from '../../../../src/common/lineContext';
 import { logger } from '../../../../src/common/logger';
 import { ApiError } from '../../../../src/common/apiClient';
 import type { StateBackend } from '../../../../src/common/stateBackend/types';
@@ -64,7 +66,23 @@ describe('saasStateBackend (scope-bound, issue #280)', () => {
     region: 'cn-hangzhou',
   };
 
-  const createBackend = () => createSaasStateBackend({ scope });
+  /** ADR-008: the backend now consumes a resolved line context. */
+  const mockLineCtx = (overrides: Record<string, unknown> = {}) => ({
+    line: 'international',
+    consoleUrl: 'https://api.test.com',
+    apiKey: 'si_test_testkey123456789012345678901234',
+    orgId: 'org-1',
+    orgSlug: 'wentsen',
+    profileKey: 'international/test-org',
+    keySource: 'env',
+    lineSource: 'active',
+    ...overrides,
+  });
+  const mockedResolveLineContext = resolveLineContext as jest.Mock;
+  const mockLineCtxResolved = (overrides: Record<string, unknown> = {}) =>
+    mockedResolveLineContext.mockResolvedValue(mockLineCtx(overrides));
+
+  const createBackend = async () => createSaasStateBackend({ scope });
 
   const deploymentResponse = (id = 'deploy-1') => ({
     id,
@@ -143,23 +161,18 @@ describe('saasStateBackend (scope-bound, issue #280)', () => {
       force: true,
     });
     Object.values(mockApiClient).forEach((mock) => mock.mockReset());
-    (loadCredentials as jest.Mock).mockReturnValue({
-      apiKey: 'si_test_testkey123456789012345678901234',
-      consoleUrl: 'https://api.test.com',
-      orgId: 'org-1',
-    });
-    (getConsoleUrl as jest.Mock).mockReturnValue('https://api.test.com');
+    mockLineCtxResolved();
   });
 
   describe('createSaasStateBackend', () => {
-    it('should throw when no credentials are stored', () => {
-      (loadCredentials as jest.Mock).mockReturnValue(null);
+    it('should throw when no credentials are stored', async () => {
+      mockedResolveLineContext.mockRejectedValue(new Error('SAAS_BACKEND_NO_CREDENTIALS'));
 
-      expect(() => createBackend()).toThrow('SAAS_BACKEND_NO_CREDENTIALS');
+      await expect(createBackend()).rejects.toThrow('SAAS_BACKEND_NO_CREDENTIALS');
     });
 
-    it('binds the normalized scope and exposes the backend contract', () => {
-      const backend = createSaasStateBackend({
+    it('binds the normalized scope and exposes the backend contract', async () => {
+      const backend = await createSaasStateBackend({
         scope: { ...scope, region: 'CN-Hangzhou' },
       });
 
@@ -173,27 +186,16 @@ describe('saasStateBackend (scope-bound, issue #280)', () => {
   });
 
   describe('org declaration cross-check (D-6)', () => {
-    it('should fail at creation when the declared org differs from the stored key org slug', () => {
-      (loadCredentials as jest.Mock).mockReturnValue({
-        apiKey: 'si_test_testkey123456789012345678901234',
-        consoleUrl: 'https://api.test.com',
-        orgId: 'org-1',
-        orgSlug: 'other-org',
-      });
+    it('should fail at creation when the declared org differs from the stored key org slug', async () => {
+      mockLineCtxResolved({ orgSlug: 'other-org' });
 
-      expect(() => createSaasStateBackend({ scope, declaredOrg: 'wentsen' })).toThrow(
+      await expect(createSaasStateBackend({ scope, declaredOrg: 'wentsen' })).rejects.toThrow(
         'SAAS_ORG_MISMATCH',
       );
     });
 
     it('should allow provisioning when the declared org matches the stored slug', async () => {
-      (loadCredentials as jest.Mock).mockReturnValue({
-        apiKey: 'si_test_testkey123456789012345678901234',
-        consoleUrl: 'https://api.test.com',
-        orgId: 'org-1',
-        orgSlug: 'wentsen',
-      });
-      const local = createSaasStateBackend({ scope, declaredOrg: 'wentsen' });
+      const local = await createSaasStateBackend({ scope, declaredOrg: 'wentsen' });
       mockMutatingLoad();
 
       await local.loadState();
@@ -210,13 +212,9 @@ describe('saasStateBackend (scope-bound, issue #280)', () => {
       expect(mockApiClient.get).not.toHaveBeenCalledWith('/api/v1/auth/api-keys/validate');
     });
 
-    it('should fetch the slug once and heal the credentials file when the stored creds predate it', async () => {
-      (loadCredentials as jest.Mock).mockReturnValue({
-        apiKey: 'si_test_testkey123456789012345678901234',
-        consoleUrl: 'https://api.test.com',
-        orgId: 'org-1',
-      });
-      const local = createSaasStateBackend({ scope, declaredOrg: 'wentsen' });
+    it('should fetch the slug once and heal the credentials file when the stored profile lacks it', async () => {
+      mockLineCtxResolved({ orgSlug: undefined });
+      const local = await createSaasStateBackend({ scope, declaredOrg: 'wentsen' });
       // Call order: provision's validate roundtrip, capabilities probe, then state/current
       mockApiClient.get.mockResolvedValueOnce({ orgSlug: 'wentsen' });
       mockMutatingLoad();
@@ -224,19 +222,16 @@ describe('saasStateBackend (scope-bound, issue #280)', () => {
       await local.loadState();
 
       expect(mockApiClient.get).toHaveBeenCalledWith('/api/v1/auth/api-keys/validate');
-      expect(saveCredentials).toHaveBeenCalledWith(
-        expect.objectContaining({ orgId: 'org-1', orgSlug: 'wentsen' }),
+      expect(updateProfile).toHaveBeenCalledWith(
+        'international/test-org',
+        expect.objectContaining({ orgSlug: 'wentsen' }),
       );
       expect(mockApiClient.post).toHaveBeenCalled();
     });
 
     it('should refuse provisioning when the validate roundtrip reveals a different org', async () => {
-      (loadCredentials as jest.Mock).mockReturnValue({
-        apiKey: 'si_test_testkey123456789012345678901234',
-        consoleUrl: 'https://api.test.com',
-        orgId: 'org-1',
-      });
-      const local = createSaasStateBackend({ scope, declaredOrg: 'wentsen' });
+      mockLineCtxResolved({ orgSlug: undefined });
+      const local = await createSaasStateBackend({ scope, declaredOrg: 'wentsen' });
       mockApiClient.get.mockResolvedValueOnce({ orgSlug: 'other-org' });
 
       await expect(local.loadState()).rejects.toThrow('SAAS_ORG_MISMATCH');
@@ -246,7 +241,7 @@ describe('saasStateBackend (scope-bound, issue #280)', () => {
     it('should not consult the org at all when no org is declared', async () => {
       mockMutatingLoad();
 
-      await createBackend().loadState();
+      await (await createBackend()).loadState();
 
       expect(mockApiClient.get).not.toHaveBeenCalledWith('/api/v1/auth/api-keys/validate');
       expect(mockApiClient.post).toHaveBeenCalled();
@@ -254,13 +249,7 @@ describe('saasStateBackend (scope-bound, issue #280)', () => {
 
     it('should refuse state whose recorded org id differs from the key org (identity anchor)', async () => {
       // Slug-based local identity so no validate roundtrip is needed
-      (loadCredentials as jest.Mock).mockReturnValue({
-        apiKey: 'si_test_testkey123456789012345678901234',
-        consoleUrl: 'https://api.test.com',
-        orgId: 'org-1',
-        orgSlug: 'wentsen',
-      });
-      const local = createSaasStateBackend({ scope });
+      const local = await createSaasStateBackend({ scope });
       mockMutatingLoad({
         version: '3.0',
         provider: 'aliyun',
@@ -275,13 +264,7 @@ describe('saasStateBackend (scope-bound, issue #280)', () => {
     });
 
     it('should load state whose recorded org id matches the key org', async () => {
-      (loadCredentials as jest.Mock).mockReturnValue({
-        apiKey: 'si_test_testkey123456789012345678901234',
-        consoleUrl: 'https://api.test.com',
-        orgId: 'org-1',
-        orgSlug: 'wentsen',
-      });
-      const local = createSaasStateBackend({ scope });
+      const local = await createSaasStateBackend({ scope });
       mockMutatingLoad({
         version: '3.0',
         provider: 'aliyun',
@@ -298,12 +281,8 @@ describe('saasStateBackend (scope-bound, issue #280)', () => {
     });
 
     it('should degrade open when the identity fetch fails (guardrail, not a gate)', async () => {
-      (loadCredentials as jest.Mock).mockReturnValue({
-        apiKey: 'si_test_testkey123456789012345678901234',
-        consoleUrl: 'https://api.test.com',
-        orgId: 'org-1',
-      });
-      const local = createSaasStateBackend({ scope, declaredOrg: 'wentsen' });
+      mockLineCtxResolved({ orgSlug: undefined });
+      const local = await createSaasStateBackend({ scope, declaredOrg: 'wentsen' });
       mockApiClient.get.mockRejectedValueOnce(new Error('validate unreachable'));
       mockMutatingLoad();
 
@@ -311,12 +290,12 @@ describe('saasStateBackend (scope-bound, issue #280)', () => {
 
       // Unverifiable declaration → proceeds; the key still only writes its own org
       expect(mockApiClient.post).toHaveBeenCalled();
-      expect(saveCredentials).not.toHaveBeenCalled();
+      expect(updateProfile).not.toHaveBeenCalled();
     });
 
     it('should resolve the identity from validate when only an API key is available (no credentials file)', async () => {
-      (loadCredentials as jest.Mock).mockReturnValue(null);
-      const local = createSaasStateBackend(
+      mockLineCtxResolved({ orgId: undefined, orgSlug: undefined, profileKey: undefined });
+      const local = await createSaasStateBackend(
         { scope, declaredOrg: 'wentsen' },
         { apiKey: 'si_test_testkey123456789012345678901234' },
       );
@@ -335,17 +314,14 @@ describe('saasStateBackend (scope-bound, issue #280)', () => {
 
       const result = await local.loadState();
 
-      expect(saveCredentials).not.toHaveBeenCalled();
+      expect(updateProfile).not.toHaveBeenCalled();
       expect(mockApiClient.post).toHaveBeenCalled();
       expect(result.orgId).toBe('org-1');
     });
 
     it('should keep the pre-existing org id when validate resolves a slug but no org id', async () => {
-      (loadCredentials as jest.Mock).mockReturnValue({
-        apiKey: 'si_test_testkey123456789012345678901234',
-        consoleUrl: 'https://api.test.com',
-      });
-      const local = createSaasStateBackend({ scope, declaredOrg: 'wentsen' });
+      mockLineCtxResolved({ orgId: undefined, orgSlug: undefined });
+      const local = await createSaasStateBackend({ scope, declaredOrg: 'wentsen' });
       // Call order: validate, capabilities probe, then state/current
       mockApiClient.get.mockResolvedValueOnce({ orgSlug: 'wentsen' });
       mockMutatingLoad();
@@ -354,19 +330,17 @@ describe('saasStateBackend (scope-bound, issue #280)', () => {
 
       // The slug heals into the credentials file, but the state must not claim
       // an org id that was never verified — the D-6 anchor stays honest.
-      expect(saveCredentials).toHaveBeenCalledWith(expect.objectContaining({ orgSlug: 'wentsen' }));
+      expect(updateProfile).toHaveBeenCalledWith(
+        'international/test-org',
+        expect.objectContaining({ orgSlug: 'wentsen' }),
+      );
       expect(mockApiClient.post).toHaveBeenCalled();
       expect(result.orgId).toBe('');
     });
 
-    it('should announce the credentials org when no org is declared', () => {
-      (loadCredentials as jest.Mock).mockReturnValue({
-        apiKey: 'si_test_testkey123456789012345678901234',
-        consoleUrl: 'https://api.test.com',
-        orgId: 'org-1',
-        orgName: 'Wentsen',
-      });
-      createSaasStateBackend({ scope });
+    it('should announce the credentials org when no org is declared', async () => {
+      mockLineCtxResolved({ orgName: 'Wentsen' });
+      await createSaasStateBackend({ scope });
 
       expect(logger.info).toHaveBeenCalledWith('SAAS_ORG_FROM_CREDENTIALS');
     });
@@ -382,7 +356,7 @@ describe('saasStateBackend (scope-bound, issue #280)', () => {
           scopeProtocol,
           stateFormat: '4.0',
         });
-        await expect(createBackend().loadState()).rejects.toThrow(
+        await expect((await createBackend()).loadState()).rejects.toThrow(
           'SAAS_REGIONAL_SCOPE_UNSUPPORTED',
         );
         expect(mockApiClient.post).not.toHaveBeenCalled();
@@ -400,7 +374,7 @@ describe('saasStateBackend (scope-bound, issue #280)', () => {
         },
       };
       mockMutatingLoad(legacy, true);
-      const backend = createBackend();
+      const backend = await createBackend();
       const state = await backend.loadState();
       expect(state.version).toBe('4.0');
       expect(state.scope).toEqual(scope && { stage: 'dev', region: 'cn-hangzhou' });
@@ -414,7 +388,7 @@ describe('saasStateBackend (scope-bound, issue #280)', () => {
     it('provisions with region, scope and scopeProtocol in the payload', async () => {
       mockMutatingLoad();
 
-      await createBackend().loadState();
+      await (await createBackend()).loadState();
 
       expect(mockApiClient.post).toHaveBeenCalledWith('/api/v1/deployments/', {
         appName: 'myapp',
@@ -431,7 +405,7 @@ describe('saasStateBackend (scope-bound, issue #280)', () => {
     it('probes /api/v1/capabilities before provisioning', async () => {
       mockMutatingLoad();
 
-      await createBackend().loadState();
+      await (await createBackend()).loadState();
 
       expect(mockApiClient.get).toHaveBeenCalledWith('/api/v1/capabilities');
     });
@@ -439,14 +413,18 @@ describe('saasStateBackend (scope-bound, issue #280)', () => {
     it('refuses to provision when the server lacks the regional scope capability', async () => {
       mockApiClient.get.mockRejectedValueOnce(new ApiError('not found', 404));
 
-      await expect(createBackend().loadState()).rejects.toThrow('SAAS_REGIONAL_SCOPE_UNSUPPORTED');
+      await expect((await createBackend()).loadState()).rejects.toThrow(
+        'SAAS_REGIONAL_SCOPE_UNSUPPORTED',
+      );
       expect(mockApiClient.post).not.toHaveBeenCalled();
     });
 
     it('refuses to provision when the capabilities probe reports 405', async () => {
       mockApiClient.get.mockRejectedValueOnce(new ApiError('method not allowed', 405));
 
-      await expect(createBackend().loadState()).rejects.toThrow('SAAS_REGIONAL_SCOPE_UNSUPPORTED');
+      await expect((await createBackend()).loadState()).rejects.toThrow(
+        'SAAS_REGIONAL_SCOPE_UNSUPPORTED',
+      );
       expect(mockApiClient.post).not.toHaveBeenCalled();
     });
 
@@ -455,13 +433,15 @@ describe('saasStateBackend (scope-bound, issue #280)', () => {
 
       // A network/5xx failure must not be read as "no regional scope" (which
       // would block writes) nor as "capabilities known" — it surfaces.
-      await expect(createBackend().probeWriteReadiness()).rejects.toThrow('upstream exploded');
+      await expect((await createBackend()).probeWriteReadiness()).rejects.toThrow(
+        'upstream exploded',
+      );
     });
 
     it('appends the region to the state fetch', async () => {
       mockMutatingLoad();
 
-      await createBackend().loadState();
+      await (await createBackend()).loadState();
 
       expect(mockApiClient.get).toHaveBeenCalledWith(
         '/api/v1/apps/app-1/services/svc-1/state/current?stage=dev&region=cn-hangzhou&provider=aliyun',
@@ -471,7 +451,7 @@ describe('saasStateBackend (scope-bound, issue #280)', () => {
     it('reports a scoped source when the returned document carries the matching scope', async () => {
       mockMutatingLoad(emptyStateJson());
 
-      const backend = createBackend();
+      const backend = await createBackend();
       await backend.loadState();
 
       expect(backend.readStateSource()).toBe('scoped');
@@ -487,7 +467,7 @@ describe('saasStateBackend (scope-bound, issue #280)', () => {
         resources: {},
       });
 
-      const backend = createBackend();
+      const backend = await createBackend();
       await backend.loadState();
 
       expect(backend.readStateSource()).toBe('legacy');
@@ -499,7 +479,9 @@ describe('saasStateBackend (scope-bound, issue #280)', () => {
         scope: { stage: 'dev', region: 'ap-southeast-1' },
       });
 
-      await expect(createBackend().loadState()).rejects.toThrow('SAAS_STATE_SCOPE_MISMATCH');
+      await expect((await createBackend()).loadState()).rejects.toThrow(
+        'SAAS_STATE_SCOPE_MISMATCH',
+      );
     });
   });
 
@@ -507,7 +489,7 @@ describe('saasStateBackend (scope-bound, issue #280)', () => {
     it('should provision deployment and return state from Console', async () => {
       mockMutatingLoad();
 
-      const result = await createBackend().loadState();
+      const result = await (await createBackend()).loadState();
 
       expect(result.version).toBe('4.0');
       expect(result).toEqual(
@@ -537,7 +519,7 @@ describe('saasStateBackend (scope-bound, issue #280)', () => {
         },
       });
 
-      const result = await createBackend().loadState();
+      const result = await (await createBackend()).loadState();
 
       expect(result.resources).toEqual({
         func1: {
@@ -568,7 +550,7 @@ describe('saasStateBackend (scope-bound, issue #280)', () => {
         },
       });
 
-      const result = await createBackend().loadState();
+      const result = await (await createBackend()).loadState();
 
       expect(result.resources).toEqual({
         func1: {
@@ -591,7 +573,7 @@ describe('saasStateBackend (scope-bound, issue #280)', () => {
       mockApiClient.post.mockResolvedValueOnce(deploymentResponse());
       mockApiClient.get.mockRejectedValueOnce(new ApiError('not found', 404));
 
-      const result = await createBackend().loadState();
+      const result = await (await createBackend()).loadState();
 
       expect(result.resources).toEqual({});
       expect(result).toEqual(
@@ -616,7 +598,7 @@ describe('saasStateBackend (scope-bound, issue #280)', () => {
 
       // Treating network/5xx failures as "empty state" would make the next
       // plan propose full re-creation of live resources — it must throw.
-      await expect(createBackend().loadState()).rejects.toThrow('upstream exploded');
+      await expect((await createBackend()).loadState()).rejects.toThrow('upstream exploded');
     });
 
     it('should provision only once across calls', async () => {
@@ -629,7 +611,7 @@ describe('saasStateBackend (scope-bound, issue #280)', () => {
       mockApiClient.post.mockResolvedValueOnce(deploymentResponse());
       mockApiClient.get.mockResolvedValue(snapshot());
 
-      const backend = createBackend();
+      const backend = await createBackend();
       await backend.loadState();
       await backend.loadState();
 
@@ -662,7 +644,7 @@ describe('saasStateBackend (scope-bound, issue #280)', () => {
       mockMutatingLoad();
       acknowledgeSave();
 
-      const backend = createBackend();
+      const backend = await createBackend();
       await backend.loadState();
       await backend.saveState(savedState);
 
@@ -689,7 +671,7 @@ describe('saasStateBackend (scope-bound, issue #280)', () => {
         stateFormat: '4.0',
       });
       mockApiClient.post.mockResolvedValueOnce(deploymentResponse());
-      await expect(createBackend().saveState(savedState)).rejects.toThrow(
+      await expect((await createBackend()).saveState(savedState)).rejects.toThrow(
         'SAAS_STATE_BASE_UNKNOWN',
       );
       expect(mockApiClient.post).toHaveBeenCalledTimes(1);
@@ -697,7 +679,7 @@ describe('saasStateBackend (scope-bound, issue #280)', () => {
 
     it('does not retry a CAS conflict or advance its base from the rejected write', async () => {
       mockMutatingLoad();
-      const backend = createBackend();
+      const backend = await createBackend();
       await backend.loadState();
       mockApiClient.post.mockRejectedValueOnce(new ApiError('stale', 409));
       await expect(backend.saveState(savedState)).rejects.toThrow('stale');
@@ -712,7 +694,7 @@ describe('saasStateBackend (scope-bound, issue #280)', () => {
       mockMutatingLoad();
       acknowledgeSave();
 
-      const backend = createBackend();
+      const backend = await createBackend();
       await backend.loadState();
       await backend.saveState(savedState);
 
@@ -727,7 +709,7 @@ describe('saasStateBackend (scope-bound, issue #280)', () => {
     });
 
     it('refuses writes in read-only mode', async () => {
-      const backend = createSaasStateBackend(
+      const backend = await createSaasStateBackend(
         { scope },
         { apiKey: 'si_test_key', mode: 'read-only' },
       );
@@ -737,7 +719,7 @@ describe('saasStateBackend (scope-bound, issue #280)', () => {
     });
 
     it('refuses a save whose identity differs from the bound scope before any HTTP call', async () => {
-      const backend = createBackend();
+      const backend = await createBackend();
 
       await expect(backend.saveState({ ...savedState, app: 'other-app' })).rejects.toThrow(
         'SAAS_STATE_SCOPE_MISMATCH',
@@ -749,7 +731,7 @@ describe('saasStateBackend (scope-bound, issue #280)', () => {
     it('refuses a save when the server lacks the regional scope capability', async () => {
       mockApiClient.get.mockRejectedValueOnce(new ApiError('not found', 404));
 
-      await expect(createBackend().saveState(savedState)).rejects.toThrow(
+      await expect((await createBackend()).saveState(savedState)).rejects.toThrow(
         'SAAS_REGIONAL_SCOPE_UNSUPPORTED',
       );
       expect(mockApiClient.post).not.toHaveBeenCalled();
@@ -765,7 +747,7 @@ describe('saasStateBackend (scope-bound, issue #280)', () => {
         mockMutatingLoad();
         acknowledgeSave(2);
         acknowledgeSave(3);
-        const backend = createBackend();
+        const backend = await createBackend();
         await backend.loadState();
         await backend.saveState(savedState);
         await backend.saveState({ ...savedState, resources: {} });
@@ -781,7 +763,7 @@ describe('saasStateBackend (scope-bound, issue #280)', () => {
         acknowledgeSave(2);
         acknowledgeSave(2);
         acknowledgeSave(3);
-        const backend = createBackend();
+        const backend = await createBackend();
         await backend.loadState();
         await backend.saveState(savedState);
         await backend.saveState(savedState);
@@ -793,7 +775,7 @@ describe('saasStateBackend (scope-bound, issue #280)', () => {
 
       it('retries a lost response with the same base/content and continues from the confirmed hash', async () => {
         mockMutatingLoad();
-        const backend = createBackend();
+        const backend = await createBackend();
         await backend.loadState();
         let head = snapshot();
         let lost = true;
@@ -827,7 +809,7 @@ describe('saasStateBackend (scope-bound, issue #280)', () => {
         });
         mockApiClient.post.mockResolvedValueOnce(deploymentResponse());
         mockApiClient.get.mockRejectedValueOnce(new ApiError('not found', 404));
-        const backend = createBackend();
+        const backend = await createBackend();
         await backend.loadState();
         const state = { ...savedState, serial: undefined, lineage: undefined };
         mockApiClient.post.mockResolvedValueOnce({});
@@ -844,8 +826,8 @@ describe('saasStateBackend (scope-bound, issue #280)', () => {
   });
 
   describe('read-only identity resolution (issue #280 §4)', () => {
-    const readOnlyBackend = () =>
-      createSaasStateBackend(
+    const readOnlyBackend = async () =>
+      await createSaasStateBackend(
         { scope },
         { apiKey: 'si_test_testkey123456789012345678901234', mode: 'read-only' },
       );
@@ -872,7 +854,7 @@ describe('saasStateBackend (scope-bound, issue #280)', () => {
         status: 'deploying',
         scopeProtocol: 2,
       });
-      const backend = readOnlyBackend();
+      const backend = await readOnlyBackend();
       const state = await backend.loadState();
 
       await expect(backend.readLock()).resolves.toMatchObject({ id: 'deploy-1' });
@@ -901,7 +883,7 @@ describe('saasStateBackend (scope-bound, issue #280)', () => {
         scopeProtocol: 2,
         ...foreign,
       });
-      const backend = readOnlyBackend();
+      const backend = await readOnlyBackend();
       await backend.loadState();
 
       await expect(backend.readLock()).rejects.toThrow('SAAS_STATE_ACK_INVALID');
@@ -914,7 +896,7 @@ describe('saasStateBackend (scope-bound, issue #280)', () => {
         status: 'deploying',
         scopeProtocol: 2,
       });
-      const backend = readOnlyBackend();
+      const backend = await readOnlyBackend();
       await backend.loadState();
 
       await expect(backend.readLock()).rejects.toThrow('SAAS_STATE_ACK_INVALID');
@@ -928,7 +910,7 @@ describe('saasStateBackend (scope-bound, issue #280)', () => {
       });
       mockApiClient.get.mockResolvedValueOnce(snapshot());
 
-      const backend = readOnlyBackend();
+      const backend = await readOnlyBackend();
       const result = await backend.loadState();
 
       expect(mockApiClient.get).toHaveBeenCalledWith(
@@ -945,7 +927,7 @@ describe('saasStateBackend (scope-bound, issue #280)', () => {
         stages: [],
       });
 
-      const backend = readOnlyBackend();
+      const backend = await readOnlyBackend();
       const result = await backend.loadState();
 
       expect(result.resources).toEqual({});
@@ -958,7 +940,7 @@ describe('saasStateBackend (scope-bound, issue #280)', () => {
     it('is not ready when the server lacks the regional scope capability', async () => {
       mockApiClient.get.mockRejectedValueOnce(new ApiError('not found', 404));
 
-      const readiness = await createBackend().probeWriteReadiness();
+      const readiness = await (await createBackend()).probeWriteReadiness();
 
       expect(readiness.ready).toBe(false);
       expect(readiness.reason).toBe('SAAS_REGIONAL_SCOPE_UNSUPPORTED');
@@ -974,7 +956,7 @@ describe('saasStateBackend (scope-bound, issue #280)', () => {
         resources: {},
       });
 
-      const backend = createBackend();
+      const backend = await createBackend();
       await backend.loadState();
       const readiness = await backend.probeWriteReadiness();
 
@@ -986,7 +968,7 @@ describe('saasStateBackend (scope-bound, issue #280)', () => {
     it('is ready for a scoped regional state', async () => {
       mockMutatingLoad(emptyStateJson());
 
-      const backend = createBackend();
+      const backend = await createBackend();
       await backend.loadState();
       const readiness = await backend.probeWriteReadiness();
 
@@ -997,7 +979,7 @@ describe('saasStateBackend (scope-bound, issue #280)', () => {
 
   describe('forceUnlock', () => {
     it('should throw a web-console hint (SaaS force-unlock is not supported via CLI)', async () => {
-      const backend = createBackend();
+      const backend = await createBackend();
 
       await expect(backend.forceUnlock('deploy-1')).rejects.toThrow(
         'SAAS_FORCE_UNLOCK_NOT_SUPPORTED',
@@ -1008,13 +990,15 @@ describe('saasStateBackend (scope-bound, issue #280)', () => {
 
   describe('acquireLock', () => {
     it('should return the SaaS lock placeholder', async () => {
-      await expect(createBackend().acquireLock('deploy')).resolves.toBe('saas-lock-placeholder');
+      await expect((await createBackend()).acquireLock('deploy')).resolves.toBe(
+        'saas-lock-placeholder',
+      );
     });
   });
 
   describe('readLock', () => {
     it('should return null before any loadState', async () => {
-      const result = await createBackend().readLock();
+      const result = await (await createBackend()).readLock();
 
       expect(result).toBeNull();
     });
@@ -1027,7 +1011,7 @@ describe('saasStateBackend (scope-bound, issue #280)', () => {
         id: 'deploy-9',
       });
 
-      const backend = createBackend();
+      const backend = await createBackend();
       await backend.loadState();
       const lock = await backend.readLock();
 
@@ -1047,7 +1031,7 @@ describe('saasStateBackend (scope-bound, issue #280)', () => {
       mockMutatingLoad();
       mockApiClient.get.mockResolvedValueOnce(null);
 
-      const backend = createBackend();
+      const backend = await createBackend();
       await backend.loadState();
       const lock = await backend.readLock();
 
@@ -1058,7 +1042,7 @@ describe('saasStateBackend (scope-bound, issue #280)', () => {
       mockMutatingLoad();
       mockApiClient.get.mockRejectedValueOnce(new Error('service unavailable'));
 
-      const backend = createBackend();
+      const backend = await createBackend();
       await backend.loadState();
 
       await expect(backend.readLock()).rejects.toThrow('service unavailable');
@@ -1076,7 +1060,7 @@ describe('saasStateBackend (scope-bound, issue #280)', () => {
         status: 'deploying',
         ...foreign,
       });
-      const backend = createBackend();
+      const backend = await createBackend();
       await backend.loadState();
       await expect(backend.readLock()).rejects.toThrow();
     });
@@ -1096,7 +1080,7 @@ describe('saasStateBackend (scope-bound, issue #280)', () => {
         status: 'deploying',
         ...foreign,
       });
-      const backend = createBackend();
+      const backend = await createBackend();
       await backend.loadState();
       const cloud = jest.fn();
       const notification = jest.fn();
@@ -1108,7 +1092,7 @@ describe('saasStateBackend (scope-bound, issue #280)', () => {
     });
     it('rejects a stale start base before invoking the cloud callback or lock notification', async () => {
       mockMutatingLoad();
-      const backend = createBackend();
+      const backend = await createBackend();
       await backend.loadState();
       const conflict = new ApiError('state base revision mismatch', 409);
       mockApiClient.patch.mockRejectedValueOnce(conflict);
@@ -1137,7 +1121,7 @@ describe('saasStateBackend (scope-bound, issue #280)', () => {
 
     it('retries a lost start response with the same approved base and invokes the callback once', async () => {
       mockMutatingLoad();
-      const backend = createBackend();
+      const backend = await createBackend();
       await backend.loadState();
       mockApiClient.patch
         .mockRejectedValueOnce(new Error('lost start response'))
@@ -1162,7 +1146,7 @@ describe('saasStateBackend (scope-bound, issue #280)', () => {
       try {
         mockMutatingLoad();
         mockApiClient.patch.mockImplementation(phaseAck);
-        const backend = createSaasStateBackend({ scope }, { eventQueueDir: spool });
+        const backend = await createSaasStateBackend({ scope }, { eventQueueDir: spool });
         await backend.loadState();
         backend.reportEvent!({ type: 'diagnostic', message: 'test event' });
         const file = path.join(spool, 'deploy-1.jsonl');
@@ -1177,7 +1161,7 @@ describe('saasStateBackend (scope-bound, issue #280)', () => {
     it('sends the owning deployment on incremental writes and retries terminal delivery only', async () => {
       mockMutatingLoad();
       acknowledgeSave();
-      const backend = createBackend();
+      const backend = await createBackend();
       const state = await backend.loadState();
       let lose = true;
       mockApiClient.patch.mockImplementation(async (_path, body) => {
@@ -1208,7 +1192,7 @@ describe('saasStateBackend (scope-bound, issue #280)', () => {
       mockApiClient.post.mockResolvedValueOnce(deploymentResponse());
       mockApiClient.get.mockRejectedValueOnce(new ApiError('absent', 404));
       mockApiClient.patch.mockImplementation(phaseAck);
-      const backend = createBackend();
+      const backend = await createBackend();
       const state = await backend.loadState();
       await backend.withLock('deploy', async () => ({ stateJson: state, resourceCount: 0 }));
       const complete = mockApiClient.patch.mock.calls.find(
@@ -1221,7 +1205,7 @@ describe('saasStateBackend (scope-bound, issue #280)', () => {
 
     it('falls back to a diagnostic-only failure when its snapshot is no longer current', async () => {
       mockMutatingLoad();
-      const backend = createBackend();
+      const backend = await createBackend();
       await backend.loadState();
       mockApiClient.patch.mockImplementation(async (_url, body) => {
         if (body.phase === 'fail' && body.stateId) throw new ApiError('newer head', 409);
@@ -1242,7 +1226,7 @@ describe('saasStateBackend (scope-bound, issue #280)', () => {
       mockMutatingLoad();
       mockApiClient.patch.mockImplementation(phaseAck);
 
-      const backend = createBackend();
+      const backend = await createBackend();
       await backend.loadState();
 
       const fn = jest.fn().mockResolvedValue('ok');
@@ -1267,7 +1251,7 @@ describe('saasStateBackend (scope-bound, issue #280)', () => {
       mockMutatingLoad();
       mockApiClient.patch.mockImplementation(phaseAck);
 
-      const backend = createBackend();
+      const backend = await createBackend();
       await backend.loadState();
 
       const summary = {
@@ -1295,7 +1279,7 @@ describe('saasStateBackend (scope-bound, issue #280)', () => {
       mockMutatingLoad();
       mockApiClient.patch.mockImplementation(phaseAck);
 
-      const backend = createBackend();
+      const backend = await createBackend();
       await backend.loadState();
 
       const fn = jest.fn().mockRejectedValue(new Error('boom'));
@@ -1312,7 +1296,7 @@ describe('saasStateBackend (scope-bound, issue #280)', () => {
       mockMutatingLoad();
       mockApiClient.patch.mockImplementation(phaseAck);
 
-      const backend = createBackend();
+      const backend = await createBackend();
       await backend.loadState();
 
       const failure = new Error('CreateFunction failed') as Error & {
@@ -1351,7 +1335,7 @@ describe('saasStateBackend (scope-bound, issue #280)', () => {
     });
 
     it('should throw when loadState was never called', async () => {
-      const backend = createBackend();
+      const backend = await createBackend();
       const fn = jest.fn().mockResolvedValue('ok');
 
       await expect(backend.withLock('deploy', fn)).rejects.toThrow('SAAS_BACKEND_NO_DEPLOYMENT');
@@ -1368,7 +1352,7 @@ describe('saasStateBackend (scope-bound, issue #280)', () => {
       mockApiClient.post.mockResolvedValueOnce(deploymentResponse(''));
       mockApiClient.get.mockResolvedValueOnce(snapshot());
 
-      const backend = createBackend();
+      const backend = await createBackend();
       await expect(backend.loadState()).rejects.toThrow('SAAS_STATE_ACK_INVALID');
     });
 
@@ -1376,7 +1360,7 @@ describe('saasStateBackend (scope-bound, issue #280)', () => {
       mockMutatingLoad();
       mockApiClient.patch.mockImplementation(phaseAck);
 
-      const backend = createBackend();
+      const backend = await createBackend();
       await backend.loadState();
 
       const report = (backend as StateBackend & { reportEvent?: (e: unknown) => Promise<void> })
@@ -1410,7 +1394,7 @@ describe('saasStateBackend (scope-bound, issue #280)', () => {
     });
 
     it('should replay orphaned event queues without throwing', async () => {
-      const backend = createBackend();
+      const backend = await createBackend();
       await expect(backend.replayOrphanedEvents?.()).resolves.toBeUndefined();
     });
 
@@ -1432,7 +1416,7 @@ describe('saasStateBackend (scope-bound, issue #280)', () => {
       mockApiClient.patch.mockImplementation(phaseAck);
 
       try {
-        const backend = createBackend();
+        const backend = await createBackend();
         await backend.replayOrphanedEvents?.();
 
         expect(mockApiClient.patch).toHaveBeenCalledTimes(1);

@@ -15,7 +15,7 @@ import {
   type SaasStateSnapshot,
 } from '../common';
 import { createStateBackend } from '../common/stateBackend';
-import { loadCredentials, getConsoleUrl } from '../common/credentialStore';
+import { resolveLineContext } from '../common/lineContext';
 import { createApiClient, validateApiKey } from '../common/apiClient';
 import { isMigratedToSaas } from '../common/migrationMarker';
 import { StateBackendType } from '../types';
@@ -90,6 +90,8 @@ export const migrate = async (options: {
   accessKeySecret?: string;
   securityToken?: string;
   siApiKey?: string;
+  org?: string;
+  line?: string;
   autoApprove?: boolean;
   force?: boolean;
   noMarker?: boolean;
@@ -128,7 +130,10 @@ export const migrate = async (options: {
 
   // Marker checks stay OFF on the source backend: si migrate must be able to
   // read a marked state (idempotent re-runs, --rollback).
-  const sourceBackend = createStateBackend(iac.backend, { ...context, siApiKey: options.siApiKey });
+  const sourceBackend = await createStateBackend(iac.backend, {
+    ...context,
+    siApiKey: options.siApiKey,
+  });
 
   // --rollback: the explicit undo — clear the marker, legacy path reopens.
   // Purely local to the source backend, so it needs NO Console credentials.
@@ -149,10 +154,17 @@ export const migrate = async (options: {
     return;
   }
 
-  const creds = loadCredentials();
-  const apiKey = options.siApiKey ?? creds?.apiKey;
+  // ADR-008: one resolution entry for line + key + org identity.
+  const lineCtx = await resolveLineContext({
+    siApiKey: options.siApiKey,
+    declaredOrg: iac.org,
+    orgFlag: options.org,
+    lineFlag: options.line,
+    operation: 'migrate',
+  });
+  const apiKey = lineCtx.apiKey;
   if (!apiKey) throw new Error(lang.__('MIGRATE_NEED_CREDENTIALS'));
-  const baseUrl = getConsoleUrl();
+  const baseUrl = lineCtx.consoleUrl;
   const identity = await validateApiKey(apiKey, baseUrl);
   const orgId = identity.orgId;
   if (iac.org && identity.orgSlug && iac.org !== identity.orgSlug) {

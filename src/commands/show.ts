@@ -16,6 +16,8 @@ type ShowOptions = {
   location?: string;
   iac?: ServerlessIac;
   json?: boolean;
+  org?: string;
+  line?: string;
 };
 
 /**
@@ -267,10 +269,12 @@ export const show = async (options: ShowOptions): Promise<void> => {
 
   if (shouldUseRemoteBackend) {
     try {
-      const backend: StateBackend = createStateBackend(options.iac!.backend, {
+      const backend: StateBackend = await createStateBackend(options.iac!.backend, {
         ...context,
         stage,
         declaredOrg: options.iac!.org,
+        org: options.org,
+        line: options.line,
         migrationMarker: 'warn',
         mode: 'read-only',
       });

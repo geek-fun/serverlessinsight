@@ -1087,10 +1087,20 @@ export const en = {
   LOGIN_TIMEOUT: 'Login timed out. Please try again.',
   LOGIN_SERVER_ERROR: 'Login server error: {{error}}',
   LOGIN_CANCELLED: 'Login cancelled.',
+  LOGIN_PICK_LINE: 'Select a ServerlessInsight region:',
+  LOGIN_LINE_OPTION: '  {{index}}. {{name}}  ({{origin}})',
+  LOGIN_LINE_PROMPT: 'Select a line [1-2]: ',
+  LOGIN_LINE_MISMATCH:
+    'The API key belongs to the {{keyLine}} line, but you are authenticating against {{line}}. Request a key from the {{line}} console — nothing was stored.',
+  LOGIN_ORG_MISMATCH:
+    'Authorized org "{{actual}}" does not match --org {{expected}}. Nothing was stored.',
+  LOGIN_NEED_LINE:
+    'This API key carries no line segment. Pass --line international|china so it can be routed.',
+  LOGIN_PROFILE_SAVED: '✅ Stored profile {{profileKey}} (now active) · {{userEmail}}',
 
   LOGOUT_REVOKING: 'Revoking API key...',
   LOGOUT_DELETING_CREDENTIALS: 'Deleting stored credentials...',
-  LOGOUT_SUCCESS: '✅ Logged out',
+  LOGOUT_SUCCESS: '✅ Logged out of {{profileKey}}',
   LOGOUT_NOT_LOGGED_IN: 'Not logged in.',
   LOGOUT_REVOKE_FAILED: 'Failed to revoke API key: {{error}}',
 
@@ -1100,6 +1110,10 @@ export const en = {
   WHOAMI_API_KEY: 'API Key: {{keyPrefix}}...',
   WHOAMI_NOT_LOGGED_IN: 'Not logged in. Run `si login` to authenticate.',
   WHOAMI_KEY_ACTIVE: 'active',
+  WHOAMI_PROFILES_HEADER: 'Stored profiles ({{count}}):',
+  WHOAMI_PROFILE: '{{marker}}{{profileKey}}  Org: {{orgName}}  Key: {{keyPrefix}}...',
+  WHOAMI_ACTIVE_MARK: '* ',
+  WHOAMI_ACTIVE_SUFFIX: ' (active)',
 
   // Credential messages
   CREDENTIAL_NOT_FOUND: 'No credentials found.',
@@ -1129,6 +1143,19 @@ export const en = {
     'Target org: {{orgName}} (from credentials; declare a top-level `org` in the YAML to pin it explicitly)',
   SAAS_STATE_ORG_MISMATCH:
     'The org recorded in state ({{stateOrgId}}) does not match the org of the current credentials ({{keyOrgId}}) — either the wrong API key is in use, or the organization was deleted and recreated under the same name.\nVerify your credentials (`si login`) or the organization state before retrying; nothing was written.',
+  SAAS_LINE_INVALID: 'Unknown line "{{value}}". Valid lines: {{lines}}.',
+  SAAS_LINE_UNRESOLVED:
+    'Cannot determine which ServerlessInsight line to use for {{operation}}.\nFix one of:\n- Run `si login` (pick a region)\n- Pass `--line international|china`\n- Pass `--org <slug>` matching a stored profile\n- Use a line-stamped API key (created on the new console)',
+  SAAS_LINE_AMBIGUOUS_ORG:
+    'Org "{{org}}" exists on multiple lines ({{lines}}). Pass `--line <line>` to choose one.',
+  SAAS_LINE_CONFLICT:
+    'Line conflict: {{source}} selects the {{line}} line, but the resolved line is {{resolvedLine}}. Align them and retry.',
+  SAAS_LINE_ENV_DEPRECATED:
+    'SI_CONSOLE_LINE is deprecated: it only applies to legacy API keys without a line segment and will be removed after line-stamped issuance. Create a new key in the console.',
+  SAAS_LINE_PROMPT_HEADER:
+    'Multiple ServerlessInsight profiles stored — choose one for {{operation}}:',
+  SAAS_LINE_PROMPT_OPTION: '  {{index}}. {{profileKey}}',
+  SAAS_LINE_PROMPT_SELECT: 'Select a profile [1-{{count}}]: ',
 
   // API error messages
   API_ERROR_401: 'API key is invalid or expired. Run `si login` to update.',

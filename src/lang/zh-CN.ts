@@ -987,10 +987,18 @@ export const zhCN = {
   LOGIN_TIMEOUT: '登录超时，请重试。',
   LOGIN_SERVER_ERROR: '登录服务器错误：{{error}}',
   LOGIN_CANCELLED: '登录已取消。',
+  LOGIN_PICK_LINE: '选择 ServerlessInsight 区域:',
+  LOGIN_LINE_OPTION: '  {{index}}. {{name}}  ({{origin}})',
+  LOGIN_LINE_PROMPT: '选择线路 [1-2]: ',
+  LOGIN_LINE_MISMATCH:
+    '该 API 密钥属于 {{keyLine}} 线，但当前正在向 {{line}} 线认证。请从 {{line}} 线控制台获取密钥——未保存任何内容。',
+  LOGIN_ORG_MISMATCH: '授权组织 "{{actual}}" 与 --org {{expected}} 不一致。未保存任何内容。',
+  LOGIN_NEED_LINE: '该 API 密钥未携带线段。请传入 --line international|china 以便路由。',
+  LOGIN_PROFILE_SAVED: '✅ 已保存 profile {{profileKey}}（当前激活）· {{userEmail}}',
 
   LOGOUT_REVOKING: '正在撤销 API 密钥...',
   LOGOUT_DELETING_CREDENTIALS: '正在删除存储的凭证...',
-  LOGOUT_SUCCESS: '✅ 已退出登录',
+  LOGOUT_SUCCESS: '✅ 已退出 {{profileKey}}',
   LOGOUT_NOT_LOGGED_IN: '尚未登录。',
   LOGOUT_REVOKE_FAILED: '撤销 API 密钥失败：{{error}}',
 
@@ -1000,6 +1008,10 @@ export const zhCN = {
   WHOAMI_API_KEY: 'API 密钥: {{keyPrefix}}...',
   WHOAMI_NOT_LOGGED_IN: '尚未登录。请运行 `si login` 进行认证。',
   WHOAMI_KEY_ACTIVE: '活跃',
+  WHOAMI_PROFILES_HEADER: '已存储的 profiles（{{count}}）：',
+  WHOAMI_PROFILE: '{{marker}}{{profileKey}}  组织: {{orgName}}  密钥: {{keyPrefix}}...',
+  WHOAMI_ACTIVE_MARK: '* ',
+  WHOAMI_ACTIVE_SUFFIX: '（激活）',
 
   // 凭证消息
   CREDENTIAL_NOT_FOUND: '未找到凭证。',
@@ -1028,6 +1040,18 @@ export const zhCN = {
     '目标 org：{{orgName}}（来自凭据；可在 YAML 顶层声明 org 以显式固定目标组织）',
   SAAS_STATE_ORG_MISMATCH:
     'state 记录的归属 org（{{stateOrgId}}）与当前凭据所属 org（{{keyOrgId}}）不一致——可能是拿错了 API key，或该组织被删除后以同名重建。\n请核对凭据（`si login`）或组织状态后再试；未写入任何数据。',
+  SAAS_LINE_INVALID: '未知线路 "{{value}}"。可用线路：{{lines}}。',
+  SAAS_LINE_UNRESOLVED:
+    '无法确定 {{operation}} 应使用哪条 ServerlessInsight 线路。\n请任选其一修复：\n- 运行 `si login`（选择区域）\n- 传入 `--line international|china`\n- 传入 `--org <slug>`（需与已存 profile 匹配）\n- 使用带线段的新版 API 密钥（在新版控制台创建）',
+  SAAS_LINE_AMBIGUOUS_ORG:
+    '组织 "{{org}}" 同时存在于多条线路（{{lines}}）。请传入 `--line <line>` 选择。',
+  SAAS_LINE_CONFLICT:
+    '线路冲突：{{source}} 指向 {{line}} 线，但解析结果为 {{resolvedLine}} 线。请对齐后重试。',
+  SAAS_LINE_ENV_DEPRECATED:
+    'SI_CONSOLE_LINE 已废弃：仅对不带线段的旧版 API 密钥生效，新版签发上线后将被移除。请在控制台创建新密钥。',
+  SAAS_LINE_PROMPT_HEADER: '存储了多个 ServerlessInsight profile——为 {{operation}} 选择一个：',
+  SAAS_LINE_PROMPT_OPTION: '  {{index}}. {{profileKey}}',
+  SAAS_LINE_PROMPT_SELECT: '选择 profile [1-{{count}}]: ',
 
   // API 错误消息
   API_ERROR_401: 'API 密钥无效或已过期，请运行 `si login` 更新。',
@@ -1452,6 +1476,8 @@ export const zhCN = {
   OPT_SECURITY_TOKEN: '指定 SecurityToken',
   OPT_NO_REFRESH: '跳过线上探测，仅对比配置与状态（无漂移检测）',
   OPT_SI_API_KEY: 'ServerlessInsight API key（覆盖 SI_API_KEY 环境变量）',
+  OPT_ORG: 'Console 组织 slug（多个组织同名时消歧）',
+  OPT_LINE: 'Console 线路：international | china',
   OPT_AUTO_APPROVE: '跳过部署前的计划交互确认',
   OPT_PARAMETER: '覆盖参数',
   OPT_DEBUG: '开启调试模式',

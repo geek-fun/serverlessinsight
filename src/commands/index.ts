@@ -117,9 +117,11 @@ program
   .command('login')
   .description(lang.__('CMD_LOGIN_DESC'))
   .option('--si-api-key <key>', lang.__('OPT_SI_API_KEY_EXISTING'))
+  .option('--line <line>', lang.__('OPT_LINE'))
+  .option('--org <slug>', lang.__('OPT_ORG'))
   .action(
-    actionWrapper('login', async ({ siApiKey }) => {
-      await login({ siApiKey });
+    actionWrapper('login', async ({ siApiKey, line, org }) => {
+      await login({ siApiKey, line, org });
     }),
   );
 
@@ -158,9 +160,11 @@ program
   .option('-s, --stage <stage>', lang.__('OPT_STAGE'))
   .option('-r, --region <region>', lang.__('OPT_REGION'))
   .option('-v, --provider <provider>', lang.__('OPT_PROVIDER'))
+  .option('--org <slug>', lang.__('OPT_ORG'))
+  .option('--line <line>', lang.__('OPT_LINE'))
   .option('--json', lang.__('OPT_JSON'))
   .action(
-    actionWrapper('show', async ({ file, stage, region, provider, json }) => {
+    actionWrapper('show', async ({ file, stage, region, provider, org, line, json }) => {
       setJsonMode(!!json);
       const iacLocation = getIacLocation(file);
       const rawIac = parseYaml(iacLocation);
@@ -177,7 +181,7 @@ program
       const context = getContext();
       const iac = revalYaml(iacLocation, context);
       setIac(iac);
-      await show({ stage, location: file, iac, json: !!json });
+      await show({ stage, location: file, iac, json: !!json, org, line });
     }),
   );
 
@@ -215,6 +219,8 @@ program
   .option('--no-refresh', lang.__('OPT_NO_REFRESH'))
   .option('--json', lang.__('OPT_JSON'))
   .option('--no-color', lang.__('OPT_NO_COLOR'))
+  .option('--org <slug>', lang.__('OPT_ORG'))
+  .option('--line <line>', lang.__('OPT_LINE'))
   .option(
     '-p, --parameter <key=value>',
     lang.__('OPT_PARAMETER'),
@@ -238,6 +244,8 @@ program
   .option('-x, --accessKeySecret <accessKeySecret>', lang.__('OPT_ACCESS_KEY_SECRET'))
   .option('-n, --securityToken <securityToken>', lang.__('OPT_SECURITY_TOKEN'))
   .option('--si-api-key <key>', lang.__('OPT_SI_API_KEY'))
+  .option('--org <slug>', lang.__('OPT_ORG'))
+  .option('--line <line>', lang.__('OPT_LINE'))
   .option('-y, --auto-approve', lang.__('OPT_AUTO_APPROVE'))
   .option('--no-refresh', lang.__('OPT_NO_REFRESH'))
   .option(
@@ -264,6 +272,8 @@ program
         accessKeySecret,
         securityToken,
         siApiKey,
+        org,
+        line,
         autoApprove,
         refresh,
       }) => {
@@ -278,6 +288,8 @@ program
           accessKeySecret,
           securityToken,
           siApiKey,
+          org,
+          line,
           autoApprove,
           refresh,
         });
@@ -296,6 +308,8 @@ program
   .option('-x, --accessKeySecret <accessKeySecret>', lang.__('OPT_ACCESS_KEY_SECRET'))
   .option('-n, --securityToken <securityToken>', lang.__('OPT_SECURITY_TOKEN'))
   .option('--si-api-key <key>', lang.__('OPT_SI_API_KEY'))
+  .option('--org <slug>', lang.__('OPT_ORG'))
+  .option('--line <line>', lang.__('OPT_LINE'))
   .option('-y, --auto-approve', lang.__('OPT_AUTO_APPROVE'))
   .option('--force', lang.__('OPT_FORCE'))
   .option('--no-marker', lang.__('OPT_NO_MARKER'))
@@ -314,6 +328,8 @@ program
         accessKeySecret,
         securityToken,
         siApiKey,
+        org,
+        line,
         autoApprove,
         force,
         marker,
@@ -330,6 +346,8 @@ program
           accessKeySecret,
           securityToken,
           siApiKey,
+          org,
+          line,
           autoApprove,
           force,
           // Commander models `--no-marker` as the negation of an implicit
@@ -353,6 +371,8 @@ program
   .option('-k, --accessKeyId <accessKeyId>', lang.__('OPT_ACCESS_KEY_ID'))
   .option('-x, --accessKeySecret <accessKeySecret>', lang.__('OPT_ACCESS_KEY_SECRET'))
   .option('-n, --securityToken <securityToken>', lang.__('OPT_SECURITY_TOKEN'))
+  .option('--org <slug>', lang.__('OPT_ORG'))
+  .option('--line <line>', lang.__('OPT_LINE'))
   .description(lang.__('CMD_DESTROY_DESC'))
   .action(
     actionWrapper(
@@ -366,6 +386,8 @@ program
         accessKeyId,
         accessKeySecret,
         securityToken,
+        org,
+        line,
       }) => {
         await destroyStack({
           location: file,
@@ -376,6 +398,8 @@ program
           accessKeyId,
           accessKeySecret,
           securityToken,
+          org,
+          line,
         });
       },
     ),

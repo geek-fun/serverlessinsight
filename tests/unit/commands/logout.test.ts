@@ -3,45 +3,50 @@ jest.mock('../../../src/common/logger', () => ({
 }));
 
 jest.mock('../../../src/lang', () => ({
-  lang: { __: (key: string) => key },
+  lang: {
+    __: (key: string, params?: Record<string, unknown>) =>
+      params
+        ? key +
+          ' ' +
+          Object.entries(params)
+            .map(([k, v]) => `${k}=${v}`)
+            .join(' ')
+        : key,
+  },
 }));
 
-const mockLoadCredentials = jest.fn();
-const mockDeleteCredentials = jest.fn();
+const mockRemoveActiveProfile = jest.fn();
 
 jest.mock('../../../src/common/credentialStore', () => ({
-  loadCredentials: (...args: unknown[]) => mockLoadCredentials(...args),
-  deleteCredentials: (...args: unknown[]) => mockDeleteCredentials(...args),
+  removeActiveProfile: (...args: unknown[]) => mockRemoveActiveProfile(...args),
 }));
 
 import { logout } from '../../../src/commands/logout';
 import { logger } from '../../../src/common/logger';
 
-describe('logout command', () => {
+describe('logout command (ADR-008 active profile)', () => {
   beforeEach(() => {
     jest.clearAllMocks();
-    mockLoadCredentials.mockReturnValue(null);
+    mockRemoveActiveProfile.mockReturnValue(null);
   });
 
-  it('prints not-logged-in message when no credentials exist', async () => {
+  it('prints not-logged-in message when there is no active profile', async () => {
     await logout();
 
     expect(logger.info).toHaveBeenCalledWith('LOGOUT_NOT_LOGGED_IN');
-    expect(mockDeleteCredentials).not.toHaveBeenCalled();
   });
 
-  it('deletes credentials when logged in', async () => {
-    mockLoadCredentials.mockReturnValue({
-      apiKey: 'si_abcdef123456_0123456789abcdef0123456789abcdef01',
-      consoleUrl: 'https://api.console.test.com',
-      orgId: 'org-1',
-      userEmail: 'user@test.com',
-      orgName: 'Test Org',
+  it('logs out of the active profile only', async () => {
+    mockRemoveActiveProfile.mockReturnValue({
+      apiKey: 'si_cn_abcdef123456_0123456789abcdef0123456789abcdef',
+      orgId: 'org-cn',
+      orgSlug: 'wentsen',
+      line: 'china',
+      profileKey: 'china/wentsen',
     });
 
     await logout();
 
-    expect(mockDeleteCredentials).toHaveBeenCalled();
-    expect(logger.info).toHaveBeenCalledWith('LOGOUT_SUCCESS');
+    expect(logger.info).toHaveBeenCalledWith('LOGOUT_SUCCESS profileKey=china/wentsen');
   });
 });

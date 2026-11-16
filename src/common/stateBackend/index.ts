@@ -38,6 +38,10 @@ export type BackendContext = {
   declaredOrg?: string;
   /** Optional: Console API key (flag > env > credentials file) */
   siApiKey?: string;
+  /** `--org <slug>` one-off override for the SaaS line resolution (ADR-008). */
+  org?: string;
+  /** `--line international|china` one-off override for the SaaS line resolution (ADR-008). */
+  line?: string;
   /**
    * Migration ownership marker behavior (decision D-4): mutating commands pass
    * 'refuse', read-only commands 'warn'; defaults to 'off'. Ignored by the
@@ -48,10 +52,10 @@ export type BackendContext = {
   storage?: { provider?: string; region?: string };
 };
 
-export const createStateBackend = (
+export const createStateBackend = async (
   backendConfig: BackendConfig | undefined,
   context: BackendContext,
-): StateBackend => {
+): Promise<StateBackend> => {
   const scope: DeploymentScope = {
     provider: context.provider,
     app: context.app,
@@ -60,14 +64,20 @@ export const createStateBackend = (
     region: context.region,
   };
 
-  // SaaS (default) — requires API key
+  // SaaS (default) — requires API key; line/key/org resolution happens inside
+  // (ADR-008), so this awaits the async SaaS factory.
   if (!backendConfig || backendConfig.type === StateBackendType.SAAS) {
-    return createSaasStateBackend(
+    return await createSaasStateBackend(
       {
         scope,
         declaredOrg: context.declaredOrg,
       },
-      { apiKey: context.siApiKey, mode: context.mode },
+      {
+        apiKey: context.siApiKey,
+        mode: context.mode,
+        ...(context.org ? { org: context.org } : {}),
+        ...(context.line ? { line: context.line } : {}),
+      },
     );
   }
 
