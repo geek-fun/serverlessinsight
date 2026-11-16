@@ -4,10 +4,12 @@ import { lang } from '../lang';
 import {
   ConsoleLineName,
   assertLineFlag,
+  assertOrgMatches,
   consoleOriginFor,
   normalizeLineName,
   parseApiKeyLine,
   splitProfileKey,
+  toProfileKey,
 } from './consoleLines';
 import { findProfilesBySlug, loadCredentialsFile } from './credentialStore';
 
@@ -19,7 +21,7 @@ export type LineContext = {
   readonly orgSlug?: string;
   readonly orgName?: string;
   readonly userEmail?: string;
-  /** Credential-store key of the selected profile, when one matched. */
+  /** Credential-store profile that owns the API key in this context. */
   readonly profileKey?: string;
   /** Where the API key came from — explicit flags/env win over stored profiles. */
   readonly keySource: 'flag' | 'env' | 'profile';
@@ -71,139 +73,78 @@ const promptProfile = async (profileKeys: string[], operation?: string): Promise
 };
 
 /**
- * ADR-008 resolution order (zero-network, first match wins for the LINE):
- *   1. line segment of the API key (--si-api-key / SI_API_KEY, new format)
- *   2. yml `org:` → profile (single match wins; cross-line slug fails fast)
- *   3. `--line` (+ `--org`) → profile
- *   4. `active` profile
- *   5. interactive prompt over stored profiles (TTY only; otherwise fail fast)
- *
- * The API KEY is separate: explicit flag/env win over the selected profile's
- * stored key. A key line segment always pins the line — an explicit `--line`
- * or a yml-selected profile on another line is a hard conflict, while an
- * active profile on another line is silently overridden (the key routes,
- * e.g. CI with SI_API_KEY against a differently-located local profile).
- * `SI_CONSOLE_LINE` is read only for legacy (segment-less) keys and is
- * deprecated — removal once line-stamped issuance has shipped.
+ * Key segments pin the line. A line flag disambiguates org slugs, and a
+ * legacy key can use the transition hint before looking up stored profiles.
+ * A stored profile supplies identity only when it owns the effective key.
  */
 export const resolveLineContext = async (
   params: ResolveLineContextParams,
 ): Promise<LineContext> => {
   const file = loadCredentialsFile();
+  const profiles = file?.profiles ?? {};
+  const activeKey = file?.active;
+  const active = activeKey ? splitProfileKey(activeKey) : null;
+  const targetSlug = params.declaredOrg ?? params.orgFlag;
 
-  // ---- key ----
-  const explicitKey = params.siApiKey ?? process.env.SI_API_KEY ?? undefined;
-  const keySource: LineContext['keySource'] = params.siApiKey
-    ? 'flag'
-    : process.env.SI_API_KEY
-      ? 'env'
-      : 'profile';
+  const explicitKey = params.siApiKey ?? process.env.SI_API_KEY;
+  const keySource =
+    params.siApiKey !== undefined ? 'flag' : explicitKey !== undefined ? 'env' : 'profile';
   const keyLine = explicitKey ? parseApiKeyLine(explicitKey) : null;
-
-  const lineFlag = assertLineFlag(params.lineFlag);
-
-  // ---- line candidates (first match wins) ----
-  let line: ConsoleLineName | null = keyLine;
-  let lineSource: LineContext['lineSource'] | null = keyLine ? 'key-segment' : null;
-  let profileKey: string | null = null;
-
-  // A key segment pins the line; --line must agree.
-  if (keyLine && lineFlag && lineFlag !== keyLine) {
-    throw lineConflict('the API key', keyLine, lineFlag);
+  const flagLine = assertLineFlag(params.lineFlag);
+  if (keyLine && flagLine && keyLine !== flagLine) {
+    throw lineConflict('the API key', keyLine, flagLine);
   }
 
-  const selectProfileBySlug = (orgSlug: string): string | null => {
-    const all = findProfilesBySlug(file ?? { profiles: {} }, orgSlug);
-    const scoped = keyLine
-      ? all.filter((key) => (splitProfileKey(key)?.line ?? '') === keyLine)
-      : all;
-    if (scoped.length > 1) {
-      const lines = scoped
-        .map((key) => splitProfileKey(key)?.line ?? '')
-        .filter(Boolean)
-        .join(', ');
-      throw new Error(lang.__('SAAS_LINE_AMBIGUOUS_ORG', { org: orgSlug, lines }));
-    }
-    return scoped[0] ?? null;
-  };
-
-  // SI_CONSOLE_LINE: deprecated transitional aid for legacy (segment-less) keys.
-  const legacyLine = keyLine ? null : normalizeLineName(process.env.SI_CONSOLE_LINE);
+  const legacyLine =
+    explicitKey && !keyLine && !flagLine ? normalizeLineName(process.env.SI_CONSOLE_LINE) : null;
   if (legacyLine) {
     logger.warn(lang.__('SAAS_LINE_ENV_DEPRECATED'));
   }
 
-  if (!line && !legacyLine && params.declaredOrg) {
-    const match = selectProfileBySlug(params.declaredOrg);
-    if (match) {
-      profileKey = match;
-      line = splitProfileKey(match)!.line;
-      lineSource = 'yml-org';
-    } else if (!keyLine) {
-      // No stored login for the declared org and no explicit key: when a
-      // single stored login exists and its slug already disagrees, surface
-      // the D-6 mismatch locally instead of the generic unresolved error.
-      const slugged = Object.entries(file?.profiles ?? {}).filter(
-        ([, profile]) => !!profile.orgSlug,
-      );
-      if (
-        slugged.length === 1 &&
-        slugged[0]![1].orgSlug !== params.declaredOrg &&
-        slugged[0]![1].apiKey
-      ) {
+  let line = keyLine ?? flagLine ?? legacyLine;
+  let lineSource: LineContext['lineSource'] = keyLine
+    ? 'key-segment'
+    : flagLine
+      ? 'flag'
+      : 'env-legacy';
+  let profileKey: string | undefined;
+
+  if (targetSlug) {
+    const matches = findProfilesBySlug({ profiles }, targetSlug);
+    if (line) {
+      profileKey = matches.find((key) => splitProfileKey(key)?.line === line);
+    } else {
+      const lines = [...new Set(matches.map((key) => splitProfileKey(key)!.line))];
+      if (lines.length > 1) {
         throw new Error(
-          lang.__('SAAS_ORG_MISMATCH', {
-            declared: params.declaredOrg,
-            actual: slugged[0]![1].orgSlug ?? '',
-          }),
+          lang.__('SAAS_LINE_AMBIGUOUS_ORG', { org: targetSlug, lines: lines.join(', ') }),
         );
       }
-    }
-  }
-
-  if (line && lineFlag && lineFlag !== line) {
-    throw lineConflict(`org "${params.declaredOrg ?? ''}" in yaml`, line, lineFlag);
-  }
-  if (!line && lineFlag) {
-    line = lineFlag;
-    lineSource = 'flag';
-  }
-
-  if (!line && !legacyLine && params.orgFlag) {
-    const match = selectProfileBySlug(params.orgFlag);
-    if (match) {
-      profileKey = match;
-      line = splitProfileKey(match)!.line;
-      lineSource = 'flag';
-    } else {
-      // Org named but nothing stored — the explicit key (if any) still routes;
-      // without one this ends in the no-credentials error below.
-      line = keyLine;
-    }
-  }
-
-  if (!line && legacyLine) {
-    line = legacyLine;
-    lineSource = 'env-legacy';
-  }
-
-  if (!line && file?.active) {
-    const split = splitProfileKey(file.active);
-    if (split) {
-      line = split.line;
-      lineSource = 'active';
-    }
-  }
-
-  if (!line) {
-    const profileKeys = Object.keys(file?.profiles ?? {});
-    if (isInteractive() && profileKeys.length > 0) {
-      const chosen = await promptProfile(profileKeys, params.operation);
-      if (chosen) {
-        profileKey = chosen;
-        line = splitProfileKey(chosen)!.line;
-        lineSource = 'prompt';
+      if (lines[0]) {
+        line = lines[0];
+        lineSource = params.declaredOrg ? 'yml-org' : 'flag';
+        profileKey = matches[0];
+      } else if (explicitKey === undefined) {
+        const saved = Object.values(profiles);
+        if (saved.length === 1) assertOrgMatches(targetSlug, saved[0]?.orgSlug);
       }
+    }
+  }
+
+  if (!line && active) {
+    line = active.line;
+    lineSource = 'active';
+  }
+
+  if (!line && isInteractive()) {
+    const candidates = Object.keys(profiles).filter(
+      (key) => splitProfileKey(key) && (!targetSlug || !profiles[key]?.orgSlug),
+    );
+    const chosen = candidates.length > 0 ? await promptProfile(candidates, params.operation) : null;
+    if (chosen) {
+      profileKey = chosen;
+      line = splitProfileKey(chosen)!.line;
+      lineSource = 'prompt';
     }
   }
 
@@ -213,66 +154,37 @@ export const resolveLineContext = async (
     );
   }
 
-  // ---- profile selection within the resolved line ----
-  const targetSlug = params.declaredOrg ?? params.orgFlag;
-  if (!profileKey && targetSlug) {
-    const candidate = `${line}/${targetSlug}`;
-    if (file?.profiles[candidate]) {
-      profileKey = candidate;
+  if (!profileKey && !targetSlug && active && activeKey) {
+    if (active.line === line) {
+      profileKey = activeKey;
+    } else if (keyLine) {
+      profileKey = toProfileKey(line, active.orgSlug);
     }
   }
-  if (!profileKey && !targetSlug && file?.active) {
-    const split = splitProfileKey(file.active);
-    if (split && split.line === line) {
-      profileKey = file.active;
-    }
-  }
-  if (!profileKey && !targetSlug && keyLine && file?.active) {
-    // Key-pinned line with an active profile elsewhere: carry the org identity
-    // over when the same slug exists on the key's line (the org matches, only
-    // the line differs — e.g. CI key against a locally-logged-in project).
-    const activeSplit = splitProfileKey(file.active);
-    if (activeSplit?.orgSlug) {
-      const candidate = `${keyLine}/${activeSplit.orgSlug}`;
-      if (file.profiles[candidate]) {
-        profileKey = candidate;
-      }
-    }
+  // A legacy active profile has no verified slug until the first validate call.
+  if (!profileKey && activeKey && active?.line === line && !profiles[activeKey]?.orgSlug) {
+    profileKey = activeKey;
   }
 
-  const profile = profileKey ? file?.profiles[profileKey] : undefined;
-
-  // ---- coherence checks ----
-  if (keyLine && profileKey) {
-    const profileLine = splitProfileKey(profileKey)?.line;
-    if (profileLine && profileLine !== keyLine) {
-      throw lineConflict(`stored profile ${profileKey}`, profileLine, keyLine);
-    }
-  }
-  if (profile?.orgSlug && params.declaredOrg && profile.orgSlug !== params.declaredOrg) {
-    throw new Error(
-      lang.__('SAAS_ORG_MISMATCH', {
-        declared: params.declaredOrg,
-        actual: profile.orgSlug,
-      }),
-    );
-  }
-
+  const profile = profileKey ? profiles[profileKey] : undefined;
   const apiKey = explicitKey ?? profile?.apiKey;
   if (!apiKey) {
     throw new Error(lang.__('SAAS_BACKEND_NO_CREDENTIALS'));
   }
 
+  const identity = profile?.apiKey === apiKey ? profile : undefined;
+  assertOrgMatches(targetSlug, identity?.orgSlug);
+
   return {
     line,
     consoleUrl: consoleOriginFor(line),
     apiKey,
-    ...(profile?.orgId ? { orgId: profile.orgId } : {}),
-    ...(profile?.orgSlug ? { orgSlug: profile.orgSlug } : {}),
-    ...(profile?.orgName ? { orgName: profile.orgName } : {}),
-    ...(profile?.userEmail ? { userEmail: profile.userEmail } : {}),
-    ...(profileKey ? { profileKey } : {}),
+    ...(identity?.orgId ? { orgId: identity.orgId } : {}),
+    ...(identity?.orgSlug ? { orgSlug: identity.orgSlug } : {}),
+    ...(identity?.orgName ? { orgName: identity.orgName } : {}),
+    ...(identity?.userEmail ? { userEmail: identity.userEmail } : {}),
+    ...(identity ? { profileKey } : {}),
     keySource,
-    lineSource: (lineSource ?? 'active') as LineContext['lineSource'],
+    lineSource,
   };
 };

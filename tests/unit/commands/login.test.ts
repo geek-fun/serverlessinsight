@@ -40,6 +40,7 @@ jest.mock('../../../src/common/credentialStore', () => ({
   loadCredentialsFile: (...args: unknown[]) => mockLoadCredentialsFile(...args),
 }));
 
+import * as readline from 'node:readline';
 import { login } from '../../../src/commands/login';
 import { validateApiKey } from '../../../src/common/apiClient';
 import { logger } from '../../../src/common/logger';
@@ -97,12 +98,14 @@ const identity = (overrides: Record<string, unknown> = {}) => ({
 
 describe('login command (ADR-008)', () => {
   const ORIGINAL_ENV = { ...process.env };
+  const originalIsTTY = Object.getOwnPropertyDescriptor(process.stdin, 'isTTY');
   const legacyKey = 'si_abcdef123456_0123456789abcdef0123456789abcdef';
   const chinaKey = 'si_cn_abcdef123456_0123456789abcdef0123456789abcdef';
   const intlKey = 'si_com_abcdef123456_0123456789abcdef0123456789abcdef';
 
   beforeEach(() => {
     jest.clearAllMocks();
+    setTty(false);
     mockReadlineAnswers.length = 0;
     process.env = { ...ORIGINAL_ENV };
     delete process.env.SI_API_KEY;
@@ -115,6 +118,8 @@ describe('login command (ADR-008)', () => {
 
   afterAll(() => {
     process.env = ORIGINAL_ENV;
+    if (originalIsTTY) Object.defineProperty(process.stdin, 'isTTY', originalIsTTY);
+    else Reflect.deleteProperty(process.stdin, 'isTTY');
   });
 
   describe('key login', () => {
@@ -159,6 +164,41 @@ describe('login command (ADR-008)', () => {
 
       expect(logger.error).toHaveBeenCalledWith('LOGIN_NEED_LINE');
       expect(mockSaveProfile).not.toHaveBeenCalled();
+    });
+
+    it('lets an interactive login pick the line for a supplied legacy key', async () => {
+      setTty(true);
+      mockReadlineAnswers.push('invalid', '9', '2');
+
+      await login({ siApiKey: legacyKey });
+
+      expect(mockValidateApiKey).toHaveBeenCalledWith(
+        legacyKey,
+        'https://console.serverlessinsight.cn',
+      );
+      expect(readline.createInterface).toHaveBeenCalledTimes(3);
+    });
+
+    it('accepts a key entered manually after choosing the default line', async () => {
+      setTty(true);
+      mockReadlineAnswers.push('', '2', ` ${intlKey} `);
+
+      await login({});
+
+      expect(mockValidateApiKey).toHaveBeenCalledWith(
+        intlKey,
+        'https://console.serverlessinsight.com',
+      );
+      expect(mockSaveProfile).toHaveBeenCalledWith(
+        'international',
+        expect.objectContaining({ apiKey: intlKey }),
+        { activate: true },
+      );
+    });
+
+    it('reports that the line cannot be resolved without arguments or a TTY', async () => {
+      await expect(login({})).rejects.toThrow('SAAS_LINE_UNRESOLVED');
+      expect(readline.createInterface).not.toHaveBeenCalled();
     });
 
     it('routes a legacy key through the deprecated SI_CONSOLE_LINE with a warning', async () => {
@@ -307,6 +347,28 @@ describe('login command (ADR-008)', () => {
       );
     });
 
+    it('keeps the callback identity when the validate endpoint is temporarily unavailable', async () => {
+      mockReadlineAnswers.push('1');
+      mockValidateApiKey.mockRejectedValueOnce(new Error('network error'));
+      setupBrowserLogin();
+
+      const loginPromise = login({ line: 'international' });
+      const handler = await waitForCallbackServer();
+      await handler(
+        {
+          url: `/callback?api_key=${intlKey}&org_id=org-1&org_name=Example&user_email=user@example.com`,
+        },
+        { writeHead: jest.fn(), end: jest.fn() },
+      );
+      await loginPromise;
+
+      expect(mockSaveProfile).toHaveBeenCalledWith(
+        'international',
+        expect.objectContaining({ apiKey: intlKey, orgId: 'org-1', orgName: 'Example' }),
+        { activate: true },
+      );
+    });
+
     it('warns when the browser opener throws synchronously', async () => {
       mockReadlineAnswers.push('1');
       mockReadlineAnswers.push('1');
@@ -324,18 +386,22 @@ describe('login command (ADR-008)', () => {
   });
 
   describe('already logged in', () => {
-    it('cancels when the user declines re-login', async () => {
+    beforeEach(() => {
+      setTty(true);
       mockLoadCredentialsFile.mockReturnValue({
-        active: 'china/wentsen',
+        active: 'china/example-org',
         profiles: {
-          'china/wentsen': {
+          'china/example-org': {
             apiKey: chinaKey,
             orgId: 'org-1',
-            orgSlug: 'wentsen',
-            orgName: 'Wentsen',
+            orgSlug: 'example-org',
+            orgName: 'Example Org',
           },
         },
       });
+    });
+
+    it('cancels when the user declines re-login', async () => {
       mockReadlineAnswers.push('n');
 
       await login({ siApiKey: chinaKey });
@@ -344,17 +410,6 @@ describe('login command (ADR-008)', () => {
     });
 
     it('re-login proceeds and overwrites the target profile', async () => {
-      mockLoadCredentialsFile.mockReturnValue({
-        active: 'china/wentsen',
-        profiles: {
-          'china/wentsen': {
-            apiKey: chinaKey,
-            orgId: 'org-1',
-            orgSlug: 'wentsen',
-            orgName: 'Wentsen',
-          },
-        },
-      });
       mockReadlineAnswers.push('y');
 
       await login({ siApiKey: chinaKey });
@@ -362,6 +417,23 @@ describe('login command (ADR-008)', () => {
       expect(mockSaveProfile).toHaveBeenCalledWith(
         'china',
         expect.objectContaining({ apiKey: chinaKey }),
+        { activate: true },
+      );
+    });
+
+    it('validates and saves a supplied key without prompting when stdin is not a TTY', async () => {
+      setTty(false);
+
+      await login({ siApiKey: intlKey, line: 'international', org: 'test-org' });
+
+      expect(readline.createInterface).not.toHaveBeenCalled();
+      expect(mockValidateApiKey).toHaveBeenCalledWith(
+        intlKey,
+        'https://console.serverlessinsight.com',
+      );
+      expect(mockSaveProfile).toHaveBeenCalledWith(
+        'international',
+        expect.objectContaining({ apiKey: intlKey, orgSlug: 'test-org' }),
         { activate: true },
       );
     });

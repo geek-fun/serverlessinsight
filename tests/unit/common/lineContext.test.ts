@@ -6,12 +6,22 @@ jest.mock('../../../src/lang', () => ({
   lang: { __: (key: string) => key },
 }));
 
+const mockQuestion = jest.fn();
+jest.mock('node:readline', () => ({
+  createInterface: () => ({ question: mockQuestion, close: jest.fn() }),
+}));
+
 const mockLoadCredentialsFile = jest.fn();
 
 jest.mock('../../../src/common/credentialStore', () => ({
   ...jest.requireActual('../../../src/common/credentialStore'),
   loadCredentialsFile: (...args: unknown[]) => mockLoadCredentialsFile(...args),
 }));
+
+const originalIsTTY = Object.getOwnPropertyDescriptor(process.stdin, 'isTTY');
+const setTty = (value: boolean) => {
+  Object.defineProperty(process.stdin, 'isTTY', { configurable: true, value });
+};
 
 const ORIGINAL_ENV = { ...process.env };
 
@@ -25,27 +35,28 @@ const intlKey = 'si_com_abcdef123456_0123456789abcdef0123456789abcdef';
 const chinaProfile = {
   apiKey: chinaKey,
   orgId: 'org-cn',
-  orgName: 'Wentsen',
-  orgSlug: 'wentsen',
-  userEmail: 'owner@wentsen.com',
+  orgName: 'Example Org',
+  orgSlug: 'example-org',
+  userEmail: 'owner@example.com',
 };
 
 const intlProfile = {
   apiKey: intlKey,
   orgId: 'org-com',
-  orgName: 'Wentsen Intl',
-  orgSlug: 'wentsen',
-  userEmail: 'owner@wentsen.com',
+  orgName: 'Example Org Intl',
+  orgSlug: 'example-org',
+  userEmail: 'owner@example.com',
 };
 
 const twoLineFile = {
-  active: 'china/wentsen',
-  profiles: { 'china/wentsen': chinaProfile, 'international/wentsen': intlProfile },
+  active: 'china/example-org',
+  profiles: { 'china/example-org': chinaProfile, 'international/example-org': intlProfile },
 };
 
 describe('resolveLineContext (ADR-008 resolution order)', () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    setTty(false);
     mockLoadCredentialsFile.mockReset();
     process.env = { ...ORIGINAL_ENV };
     delete process.env.SI_API_KEY;
@@ -56,6 +67,8 @@ describe('resolveLineContext (ADR-008 resolution order)', () => {
 
   afterAll(() => {
     process.env = ORIGINAL_ENV;
+    if (originalIsTTY) Object.defineProperty(process.stdin, 'isTTY', originalIsTTY);
+    else Reflect.deleteProperty(process.stdin, 'isTTY');
   });
 
   it('step 1: a key line segment pins the line and derives the console origin', async () => {
@@ -69,11 +82,11 @@ describe('resolveLineContext (ADR-008 resolution order)', () => {
 
   it('step 2: yml org selects the line via a unique profile match', async () => {
     mockLoadCredentialsFile.mockReturnValue({
-      profiles: { 'china/wentsen': chinaProfile },
+      profiles: { 'china/example-org': chinaProfile },
     });
-    const ctx = await resolveLineContext({ declaredOrg: 'wentsen', operation: 'deploy' });
+    const ctx = await resolveLineContext({ declaredOrg: 'example-org', operation: 'deploy' });
     expect(ctx.line).toBe('china');
-    expect(ctx.profileKey).toBe('china/wentsen');
+    expect(ctx.profileKey).toBe('china/example-org');
     expect(ctx.apiKey).toBe(chinaKey);
     expect(ctx.lineSource).toBe('yml-org');
   });
@@ -81,19 +94,88 @@ describe('resolveLineContext (ADR-008 resolution order)', () => {
   it('step 2: the same slug on both lines fails fast with a --line hint', async () => {
     mockLoadCredentialsFile.mockReturnValue(twoLineFile);
     await expect(
-      resolveLineContext({ declaredOrg: 'wentsen', operation: 'deploy' }),
+      resolveLineContext({ declaredOrg: 'example-org', operation: 'deploy' }),
     ).rejects.toThrow('SAAS_LINE_AMBIGUOUS_ORG');
+  });
+
+  it('step 2: --line disambiguates the same YAML org slug on both lines', async () => {
+    mockLoadCredentialsFile.mockReturnValue(twoLineFile);
+
+    await expect(
+      resolveLineContext({ declaredOrg: 'example-org', lineFlag: 'international' }),
+    ).resolves.toMatchObject({ apiKey: intlKey, profileKey: 'international/example-org' });
+  });
+
+  it.each(['flag', 'env'] as const)(
+    'uses saved profiles for routing without borrowing org identity for a different %s key',
+    async (source) => {
+      mockLoadCredentialsFile.mockReturnValue(twoLineFile);
+      const override = 'si_cn_abcdef123456_0123456789abcdef0123456789abcdea';
+      if (source === 'env') process.env.SI_API_KEY = override;
+
+      const result = await resolveLineContext({
+        declaredOrg: 'example-org',
+        ...(source === 'flag' ? { siApiKey: override } : {}),
+      });
+
+      expect(result).toMatchObject({ line: 'china', apiKey: override, keySource: source });
+      expect(result).not.toHaveProperty('profileKey');
+      expect(result).not.toHaveProperty('orgId');
+      expect(result).not.toHaveProperty('orgSlug');
+      expect(result).not.toHaveProperty('orgName');
+      expect(result).not.toHaveProperty('userEmail');
+    },
+  );
+
+  it('allows a legacy explicit key for a different org to use the saved line', async () => {
+    mockLoadCredentialsFile.mockReturnValue({
+      active: 'china/example-org',
+      profiles: { 'china/example-org': chinaProfile },
+    });
+
+    const result = await resolveLineContext({ declaredOrg: 'other-org', siApiKey: legacyKey });
+    expect(result).toMatchObject({ apiKey: legacyKey, line: 'china' });
+    expect(result).not.toHaveProperty('orgSlug');
+  });
+
+  it('selects the active legacy credential on its line when YAML names an org', async () => {
+    mockLoadCredentialsFile.mockReturnValue({
+      active: 'china/legacy-1234',
+      profiles: { 'china/legacy-1234': { apiKey: legacyKey, orgId: 'org-cn' } },
+    });
+    const result = await resolveLineContext({ declaredOrg: 'example-org' });
+
+    expect(result).toMatchObject({
+      line: 'china',
+      apiKey: legacyKey,
+      profileKey: 'china/legacy-1234',
+      orgId: 'org-cn',
+    });
+    expect(result).not.toHaveProperty('orgSlug');
+    await expect(
+      resolveLineContext({ declaredOrg: 'example-org', lineFlag: 'international' }),
+    ).rejects.toThrow('SAAS_BACKEND_NO_CREDENTIALS');
+  });
+
+  it('uses an explicitly named org without requiring an active profile', async () => {
+    mockLoadCredentialsFile.mockReturnValue({
+      profiles: { 'china/example-org': chinaProfile },
+    });
+    await expect(resolveLineContext({ orgFlag: 'example-org' })).resolves.toMatchObject({
+      apiKey: chinaKey,
+      lineSource: 'flag',
+    });
   });
 
   it('step 2: a key segment restricts the slug lookup to its own line', async () => {
     mockLoadCredentialsFile.mockReturnValue(twoLineFile);
     const ctx = await resolveLineContext({
       siApiKey: intlKey,
-      declaredOrg: 'wentsen',
+      declaredOrg: 'example-org',
       operation: 'deploy',
     });
     expect(ctx.line).toBe('international');
-    expect(ctx.profileKey).toBe('international/wentsen');
+    expect(ctx.profileKey).toBe('international/example-org');
     expect(ctx.orgId).toBe('org-com');
   });
 
@@ -106,9 +188,9 @@ describe('resolveLineContext (ADR-008 resolution order)', () => {
 
   it('step 3: --org selects a profile on the --line', async () => {
     mockLoadCredentialsFile.mockReturnValue(twoLineFile);
-    const ctx = await resolveLineContext({ lineFlag: 'international', orgFlag: 'wentsen' });
+    const ctx = await resolveLineContext({ lineFlag: 'international', orgFlag: 'example-org' });
     expect(ctx.line).toBe('international');
-    expect(ctx.profileKey).toBe('international/wentsen');
+    expect(ctx.profileKey).toBe('international/example-org');
   });
 
   it('step 4: the active profile resolves when nothing else does', async () => {
@@ -124,7 +206,7 @@ describe('resolveLineContext (ADR-008 resolution order)', () => {
     const ctx = await resolveLineContext({ siApiKey: intlKey, operation: 'deploy' });
     expect(ctx.line).toBe('international');
     expect(ctx.apiKey).toBe(intlKey);
-    expect(ctx.profileKey).toBe('international/wentsen');
+    expect(ctx.profileKey).toBe('international/example-org');
   });
 
   it('step 5: non-interactive runs fail fast when nothing resolves', async () => {
@@ -135,7 +217,7 @@ describe('resolveLineContext (ADR-008 resolution order)', () => {
   });
 
   it('no key and no stored profile ends in the no-credentials error', async () => {
-    mockLoadCredentialsFile.mockReturnValue({ profiles: { 'china/wentsen': chinaProfile } });
+    mockLoadCredentialsFile.mockReturnValue({ profiles: { 'china/example-org': chinaProfile } });
     // --line resolves the line, but the profile slug is not named, so no key.
     await expect(resolveLineContext({ lineFlag: 'china', operation: 'deploy' })).rejects.toThrow(
       'SAAS_BACKEND_NO_CREDENTIALS',
@@ -153,7 +235,7 @@ describe('resolveLineContext (ADR-008 resolution order)', () => {
 
   it('declaredOrg mismatching the profile slug fails fast (D-6)', async () => {
     mockLoadCredentialsFile.mockReturnValue({
-      profiles: { 'china/wentsen': chinaProfile },
+      profiles: { 'china/example-org': chinaProfile },
     });
     await expect(resolveLineContext({ declaredOrg: 'other', operation: 'deploy' })).rejects.toThrow(
       'SAAS_ORG_MISMATCH',
@@ -168,6 +250,37 @@ describe('resolveLineContext (ADR-008 resolution order)', () => {
     expect(ctx.lineSource).toBe('env-legacy');
     expect(logger.warn).toHaveBeenCalledWith('SAAS_LINE_ENV_DEPRECATED');
   });
+
+  it('ignores the legacy environment hint for a stamped stored key', async () => {
+    process.env.SI_CONSOLE_LINE = 'international';
+    mockLoadCredentialsFile.mockReturnValue(twoLineFile);
+
+    await expect(resolveLineContext({})).resolves.toMatchObject({
+      apiKey: chinaKey,
+      line: 'china',
+    });
+    expect(logger.warn).not.toHaveBeenCalled();
+  });
+
+  it.each(['1', 'bogus', '2'])(
+    'handles profile selection input %s without an active profile',
+    async (answer) => {
+      setTty(true);
+      mockLoadCredentialsFile.mockReturnValue({ profiles: twoLineFile.profiles });
+      mockQuestion.mockImplementation((_query, respond: (value: string) => void) =>
+        respond(answer),
+      );
+
+      if (answer === 'bogus') {
+        await expect(resolveLineContext({})).rejects.toThrow('SAAS_LINE_UNRESOLVED');
+      } else {
+        await expect(resolveLineContext({ operation: 'deploy' })).resolves.toMatchObject({
+          apiKey: answer === '1' ? chinaKey : intlKey,
+          lineSource: 'prompt',
+        });
+      }
+    },
+  );
 
   it('an invalid --line value is rejected', async () => {
     mockLoadCredentialsFile.mockReturnValue(null);

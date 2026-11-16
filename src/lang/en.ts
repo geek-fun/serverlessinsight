@@ -1138,7 +1138,9 @@ export const en = {
   SAAS_BACKEND_CONSOLE_UNREACHABLE:
     'Unable to reach Console. Deploy requires Console connectivity.',
   SAAS_ORG_MISMATCH:
-    'The org "{{declared}}" declared in your YAML does not match the org "{{actual}}" of the current API key.\nVerify your credentials (run `si login` again) or fix the org declaration in the YAML. Nothing was written.',
+    'The target org "{{declared}}" does not match the org "{{actual}}" of the current API key. Use credentials for the target org or update the org in your YAML or command.',
+  SAAS_ORG_UNVERIFIED:
+    'Cannot verify that the API key belongs to org "{{org}}". Run `si login` or use a key whose organization the console can verify.',
   SAAS_ORG_FROM_CREDENTIALS:
     'Target org: {{orgName}} (from credentials; declare a top-level `org` in the YAML to pin it explicitly)',
   SAAS_STATE_ORG_MISMATCH:

@@ -165,8 +165,8 @@ const MIGRATE_TEST_CREDENTIALS = {
 
 const MIGRATE_TEST_IDENTITY = {
   orgId: 'org-1',
-  orgName: 'Wentsen',
-  orgSlug: 'wentsen',
+  orgName: 'Example Org',
+  orgSlug: 'example-org',
 };
 
 /** Mirror of the command's hash: sha256(JSON.stringify({...state, orgId})) with the mocked toPersistedState. */
@@ -292,6 +292,30 @@ describe('migrate command', () => {
       await expect(migrate({ location: 'stack.yml' })).rejects.toThrow(
         'SAAS_BACKEND_NO_CREDENTIALS',
       );
+    });
+
+    it('rejects a console on the wrong line before locking or changing source state', async () => {
+      const backend = setupMigrationRun();
+      mockedValidateApiKey.mockResolvedValue({ ...MIGRATE_TEST_IDENTITY, region: 'cn' });
+
+      await expect(migrate({ location: 'stack.yml', autoApprove: true })).rejects.toThrow(
+        'SAAS_LINE_CONFLICT',
+      );
+      expect(mockedCreateApiClient).not.toHaveBeenCalled();
+      expect(backend.withLock).not.toHaveBeenCalled();
+      expect(backend.patchPersisted).not.toHaveBeenCalled();
+      expect(mockApiClient.post).not.toHaveBeenCalled();
+    });
+
+    it('rejects a --org mismatch with the authenticated key before migration', async () => {
+      const backend = setupMigrationRun();
+      mockedValidateApiKey.mockResolvedValue({ ...MIGRATE_TEST_IDENTITY, region: 'com' });
+
+      await expect(migrate({ location: 'stack.yml', org: 'other-org' })).rejects.toThrow(
+        'SAAS_ORG_MISMATCH',
+      );
+      expect(mockedCreateApiClient).not.toHaveBeenCalled();
+      expect(backend.withLock).not.toHaveBeenCalled();
     });
 
     it('preflights without cloud credentials (setContext probes nothing)', async () => {

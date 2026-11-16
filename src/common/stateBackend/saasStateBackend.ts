@@ -1,5 +1,6 @@
 import { createApiClient, ApiError } from '../apiClient';
 import type { ApiClient } from '../apiClient';
+import { assertOrgMatches, assertValidatedOrg, assertValidatedRegion } from '../consoleLines';
 import { updateProfile } from '../credentialStore';
 import { resolveLineContext, LineContext } from '../lineContext';
 import { logger } from '../logger';
@@ -110,17 +111,11 @@ export const createSaasStateBackend = async (
   const consoleUrl = lineCtx.consoleUrl;
   let knownOrgId = lineCtx.orgId ?? '';
 
-  // D-6 fast path: when both the yaml declaration and the stored slug are
-  // known, fail before touching the network at all.
-  if (context.declaredOrg && lineCtx.orgSlug && context.declaredOrg !== lineCtx.orgSlug) {
-    throw new Error(
-      lang.__('SAAS_ORG_MISMATCH', {
-        declared: context.declaredOrg,
-        actual: lineCtx.orgSlug,
-      }),
-    );
-  }
-  if (!context.declaredOrg && lineCtx.orgName) {
+  const targetOrg = context.declaredOrg ?? options?.org;
+  const mustVerifyIdentity =
+    !!targetOrg || (lineCtx.keySource !== 'profile' && !lineCtx.profileKey);
+  assertOrgMatches(targetOrg, lineCtx.orgSlug);
+  if (!targetOrg && lineCtx.orgName) {
     logger.info(lang.__('SAAS_ORG_FROM_CREDENTIALS', { orgName: lineCtx.orgName }));
   }
 
@@ -202,63 +197,39 @@ export const createSaasStateBackend = async (
     });
   };
 
-  /**
-   * D-6: resolve the API key's org identity (id + slug). Credentials written
-   * before the slug field existed lack it — fetch it from the validate endpoint
-   * once, cache it for this backend instance and heal the stored file so later
-   * commands check locally. Unresolvable (network / version skew) degrades to
-   * skipping the checks: the key still only ever writes to its own org.
-   */
+  // Cached identity belongs to the effective key. Resolve an override or an
+  // older login before it can select or provision a named organization.
   let resolvedIdentity: { orgId?: string; orgSlug?: string } | null = null;
   const resolveKeyOrgIdentity = async (): Promise<{ orgId?: string; orgSlug?: string }> => {
-    if (resolvedIdentity) {
-      return resolvedIdentity;
-    }
-    const local: { orgId?: string; orgSlug?: string } = {
-      orgId: lineCtx.orgId,
-      orgSlug: lineCtx.orgSlug,
-    };
+    if (resolvedIdentity) return resolvedIdentity;
+
+    const local = { orgId: lineCtx.orgId, orgSlug: lineCtx.orgSlug };
     if (local.orgId && local.orgSlug) {
       resolvedIdentity = local;
       return local;
     }
-    let fetched: { orgId?: string; orgSlug?: string; region?: string };
+
+    let fetched: { orgId?: string; orgSlug?: string; region?: string } | undefined;
     try {
-      fetched = await client.get<{
-        orgId?: string;
-        orgSlug?: string;
-        region?: string;
-      }>('/api/v1/auth/api-keys/validate');
-    } catch {
-      // Network / version skew: degrade open — the key still only ever writes
-      // to its own org. Line conflicts below are NOT degradation and must not
-      // be swallowed here.
+      fetched = await client.get<typeof fetched>('/api/v1/auth/api-keys/validate');
+    } catch (error) {
+      if (mustVerifyIdentity) throw error;
       resolvedIdentity = local;
-      return resolvedIdentity;
+      return local;
     }
-    // ADR-008 defensive cross-check: the issuing platform's line segment must
-    // agree with the line this backend was resolved against.
-    const expectedSegment = lineCtx.line === 'china' ? 'cn' : 'com';
-    if (fetched.region && fetched.region !== expectedSegment) {
-      throw new Error(
-        lang.__('SAAS_LINE_CONFLICT', {
-          source: 'the console validate response',
-          line: fetched.region,
-          resolvedLine: expectedSegment,
-        }),
-      );
-    }
-    if (fetched.orgSlug && lineCtx.profileKey) {
-      updateProfile(lineCtx.profileKey, {
+    assertValidatedRegion(lineCtx.line, fetched?.region);
+    const orgSlug = fetched?.orgSlug ?? local.orgSlug;
+    assertValidatedOrg(targetOrg, orgSlug);
+
+    const orgId = fetched?.orgId ?? local.orgId;
+    if (fetched?.orgSlug && lineCtx.profileKey) {
+      updateProfile(lineCtx.profileKey, lineCtx.apiKey, {
         orgSlug: fetched.orgSlug,
-        ...(fetched.orgId && !local.orgId ? { orgId: fetched.orgId } : {}),
+        ...(fetched.orgId ? { orgId: fetched.orgId } : {}),
       });
     }
-    resolvedIdentity = {
-      orgId: local.orgId ?? fetched.orgId,
-      orgSlug: local.orgSlug ?? fetched.orgSlug,
-    };
-    knownOrgId = resolvedIdentity.orgId ?? knownOrgId;
+    resolvedIdentity = { orgId, orgSlug };
+    knownOrgId = orgId ?? knownOrgId;
     return resolvedIdentity;
   };
 
@@ -276,19 +247,6 @@ export const createSaasStateBackend = async (
   };
 
   const provision = async (provider: string, stage: string): Promise<void> => {
-    // D-6: the org declaration must match the key's org BEFORE provisioning —
-    // this POST is what auto-creates app/service, i.e. the wrong-org write.
-    if (context.declaredOrg) {
-      const { orgSlug } = await resolveKeyOrgIdentity();
-      if (orgSlug && orgSlug !== context.declaredOrg) {
-        throw new Error(
-          lang.__('SAAS_ORG_MISMATCH', {
-            declared: context.declaredOrg,
-            actual: orgSlug,
-          }),
-        );
-      }
-    }
     const caps = await probeCapabilities();
     if (!caps.regionalScope) {
       throw new Error(lang.__('SAAS_REGIONAL_SCOPE_UNSUPPORTED', { consoleUrl }));
@@ -325,6 +283,9 @@ export const createSaasStateBackend = async (
   const ensureResolved = async (provider: string, stage: string): Promise<void> => {
     if (provisioned) {
       return;
+    }
+    if (mustVerifyIdentity) {
+      await resolveKeyOrgIdentity();
     }
     if (mode === 'read-only') {
       const exists = await resolveReadOnlyIdentity();

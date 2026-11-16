@@ -8,6 +8,7 @@ import {
   consoleOriginFor,
   normalizeLineName,
   resolveLineFromOrigin,
+  splitProfileKey,
   toProfileKey,
 } from './consoleLines';
 
@@ -141,15 +142,26 @@ export const saveProfile = (
   writeFile({ active, profiles });
 };
 
-/** Patch one stored profile in place (e.g. the validate-roundtrip slug heal). */
-export const updateProfile = (profileKey: string, patch: Partial<ConsoleProfile>): void => {
+/** Re-key a profile after verifying its slug with the same API key. */
+export const updateProfile = (
+  profileKey: string,
+  apiKey: string,
+  patch: { orgSlug: string; orgId?: string },
+): void => {
   const file = loadCredentialsFile();
-  if (!file) return;
-  const current = file.profiles[profileKey];
-  if (!current) return;
+  const current = file?.profiles[profileKey];
+  const profile = splitProfileKey(profileKey);
+  if (!file || !current || current.apiKey !== apiKey || !profile) return;
+
+  const resolvedKey = toProfileKey(profile.line, patch.orgSlug);
+  if (resolvedKey !== profileKey && file.profiles[resolvedKey]) return;
+
+  const profiles = { ...file.profiles };
+  delete profiles[profileKey];
+  profiles[resolvedKey] = { ...current, ...patch };
   writeFile({
-    active: file.active,
-    profiles: { ...file.profiles, [profileKey]: { ...current, ...patch } },
+    active: file.active === profileKey ? resolvedKey : file.active,
+    profiles,
   });
 };
 
@@ -201,9 +213,9 @@ export const loadCredentials = (): ActiveCredentials | null => {
 
 /** Find profiles whose org slug matches; used by the yml `org:` resolution step. */
 export const findProfilesBySlug = (file: CredentialsFile, orgSlug: string): string[] => {
-  return Object.keys(file.profiles).filter((key) => {
-    const separator = key.indexOf('/');
-    return separator > 0 && key.slice(separator + 1) === orgSlug;
+  return Object.entries(file.profiles).flatMap(([key, profile]) => {
+    const parsed = splitProfileKey(key);
+    return parsed && (profile.orgSlug ?? parsed.orgSlug) === orgSlug ? [key] : [];
   });
 };
 
