@@ -42,7 +42,7 @@ const baseContext: BackendContext = {
   storage: { provider: 'volcengine', region: 'cn-beijing' },
 };
 
-const open = (
+const open = async (
   config: BucketStoreBackendConfig = bucketConfig,
   overrides: Partial<BackendContext> = {},
 ) => createStateBackend(config, { ...baseContext, ...overrides });
@@ -84,7 +84,7 @@ describe('TOS Bucket Store state lifecycle (issue #290)', () => {
   });
 
   it('selects TOS for a volcengine workload and round-trips a V4 aggregate under the exact key', async () => {
-    const backend = open();
+    const backend = await open();
 
     expect(TosClient).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -121,8 +121,8 @@ describe('TOS Bucket Store state lifecycle (issue #290)', () => {
     expect(persisted().stages.prod.providers.volcengine.regions['cn-beijing'].serial).toBe(2);
   });
 
-  it('honors explicit cross-cloud volcengine storage with temporary STS credentials', () => {
-    open(
+  it('honors explicit cross-cloud volcengine storage with temporary STS credentials', async () => {
+    await open(
       { ...bucketConfig, storageProvider: 'volcengine', storageRegion: 'CN-BEIJING' },
       {
         provider: 'aliyun',
@@ -146,7 +146,7 @@ describe('TOS Bucket Store state lifecycle (issue #290)', () => {
   });
 
   it('keeps the storage location pinned when workload CLI overrides change provider and region', async () => {
-    const backend = open(bucketConfig, {
+    const backend = await open(bucketConfig, {
       provider: 'tencent',
       region: 'ap-guangzhou',
       storage: { provider: 'volcengine', region: 'cn-beijing' },
@@ -161,16 +161,16 @@ describe('TOS Bucket Store state lifecycle (issue #290)', () => {
     expect(persisted().stages.prod.providers.volcengine).toBeUndefined();
   });
 
-  it('fails before mutation when storage credentials are missing', () => {
+  it('fails before mutation when storage credentials are missing', async () => {
     process.env = { ...originalEnv };
     delete process.env.VOLCENGINE_ACCESS_KEY_ID;
     delete process.env.VOLCENGINE_SECRET_KEY;
     delete process.env.VOLCENGINE_ACCESS_KEY;
     delete process.env.VOLCSTACK_ACCESS_KEY_ID;
 
-    expect(() =>
+    await expect(
       open({ ...bucketConfig, storageProvider: 'volcengine' }, { provider: 'aliyun' }),
-    ).toThrow(/State storage needs credentials/);
+    ).rejects.toThrow(/State storage needs credentials/);
     expect(mockTosSdk.putObject).not.toHaveBeenCalled();
   });
 
@@ -180,28 +180,28 @@ describe('TOS Bucket Store state lifecycle (issue #290)', () => {
     [new Error('connection reset'), /connection reset/],
   ])('keeps read failures visible instead of returning empty state', async (error, message) => {
     mockTosSdk.getObjectV2.mockRejectedValue(error);
-    const backend = open();
+    const backend = await open();
 
     await expect(backend.loadState()).rejects.toThrow(message);
     expect(mockTosSdk.putObject).not.toHaveBeenCalled();
   });
 
   it('recovers a corrupt primary from the verified backup', async () => {
-    const backend = open();
+    const backend = await open();
     await backend.saveState(await backend.loadState());
     const verified = mockObjects.get(stateKey)!;
     await backend.saveState(await backend.loadState());
     mockObjects.set(`${stateKey}.backup`, verified);
     mockObjects.set(stateKey, '{broken JSON');
 
-    const recovered = open();
+    const recovered = await open();
     expect((await recovered.loadState()).resources).toEqual({});
   });
 
   it.each(['Disabled', 'Enabled', 'Suspended'])(
     'uses a best-effort shared lock without querying bucket versioning (%s)',
     async () => {
-      const backend = open();
+      const backend = await open();
       const callback = jest.fn();
 
       await backend.withLock('deploy', async () => {
@@ -228,7 +228,7 @@ describe('TOS Bucket Store state lifecycle (issue #290)', () => {
   );
 
   it('supports explicit lock lifecycle, ownership-checked release and force-unlock', async () => {
-    const backend = open();
+    const backend = await open();
     const lockId = await backend.acquireLock('deploy');
     expect((await backend.readLock())?.id).toBe(lockId);
     await expect(backend.forceUnlock('wrong-id')).rejects.toThrow();
@@ -254,7 +254,7 @@ describe('TOS Bucket Store state lifecycle (issue #290)', () => {
         path: `tos://example-state/${stateKey}`,
       }),
     );
-    const backend = open();
+    const backend = await open();
     const callback = jest.fn();
 
     await expect(
@@ -265,7 +265,7 @@ describe('TOS Bucket Store state lifecycle (issue #290)', () => {
   });
 
   it('propagates ordinary write failures instead of saving a partial state', async () => {
-    const backend = open();
+    const backend = await open();
     mockTosSdk.putObject.mockImplementation(
       async ({ key, body }: { key: string; body: Buffer }) => {
         if (key === stateKey) throw new Error('write denied');
@@ -297,7 +297,7 @@ describe('TOS Bucket Store state lifecycle (issue #290)', () => {
       }),
     );
 
-    const backend = open();
+    const backend = await open();
     expect((await backend.probeWriteReadiness()).ready).toBe(false);
     await backend.upgradeLegacyState!();
 
@@ -306,7 +306,7 @@ describe('TOS Bucket Store state lifecycle (issue #290)', () => {
     expect(persisted().version).toBe('4.0');
     expect([...mockObjects.keys()].some((key) => key.includes('.pre-upgrade-'))).toBe(true);
 
-    const sibling = open(bucketConfig, {
+    const sibling = await open(bucketConfig, {
       provider: 'aliyun',
       region: 'cn-hangzhou',
       storage: { provider: 'volcengine', region: 'cn-beijing' },
