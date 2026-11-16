@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.9.8] - 2026-11-16
+
+### ⚠️ Breaking change
+
+- Buckets now declare custom domains through a `domains` list with per-binding
+  certificate and CDN configuration, and transfer acceleration moves to the
+  bucket-level `accelerate` field
+  ([#279](https://github.com/geek-fun/serverlessinsight/issues/279)). The legacy
+  `domain`, `website.domain`, `www_bind_apex` and per-domain `accelerate` forms
+  are rejected with localized migration guidance, and existing single-domain
+  state migrates in place so removed bindings cannot reappear. See the issue for
+  the old-vs-new configuration mapping.
+
 ### Added
 
 - Native TOS Bucket Store state backend for Volcengine
@@ -17,6 +30,50 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   backups, automatic V3 upgrades, migration ownership and best-effort locking.
   Unsupported storage providers are still rejected explicitly. See the
   [backend matrix, permissions and concurrency limits](docs/regional-deployment-state.md#bucket-store-backend-matrix).
+- Bucket domain bindings can now be fronted by CDN acceleration on Tencent COS
+  ([#295](https://github.com/geek-fun/serverlessinsight/pull/295)).
+- Volcengine TOS buckets now support custom domain bindings with CDN delivery
+  ([#296](https://github.com/geek-fun/serverlessinsight/pull/296)).
+- Functions can bind a list of custom domains, with paths merged into shared
+  routes across functions
+  ([#286](https://github.com/geek-fun/serverlessinsight/issues/286)).
+- `si local` routes production-shaped gateway URLs without the `/SI_EVENTS/`
+  prefix when exactly one trigger matches, serves buckets with an explicit
+  `website` block (index document with SPA fallback), and mirrors the deployed
+  aliyun gateway event contract (rebuilt Host, gateway-injected `X-Forwarded-*` /
+  `X-Ca-*` metadata, path parameters); `--strict-prefix` restores prefix-only
+  routing ([#298](https://github.com/geek-fun/serverlessinsight/issues/298)).
+- SaaS logins pick the region interactively and derive the Console URL
+  automatically (ADR-008): international and China credentials coexist as
+  separate profiles, `whoami` lists all profiles and logout targets the active
+  one.
+- `si plan` renders array-valued attribute changes as per-entry structural
+  diffs: unchanged entries are omitted, the parent line carries a `(+N / -M)`
+  tally, and each added/removed entry gets its own line
+  ([#300](https://github.com/geek-fun/serverlessinsight/pull/300)).
+
+### Fixed
+
+- SaaS state operations verify CLI credentials before routing, failing with a
+  clear error instead of sending operations down the wrong line.
+- Volcengine CDN configuration options now match the `UpdateCdnConfig` API.
+- CDN delivery reconciles DNS records by value-matched ownership, and omitted
+  CDN options no longer produce phantom deployment changes
+  ([#296](https://github.com/geek-fun/serverlessinsight/pull/296)).
+- Corrected the state scope protocol referenced in SaaS regional error messages.
+
+## [0.9.7] - 2026-11-06
+
+### Fixed
+
+- Restore Bucket Store lock compatibility with OSS and COS buckets that have
+  versioning enabled or suspended. Locks use ordinary writes followed by
+  ownership verification, without requiring bucket-versioning read permission
+  or conditional creation. Bucket locking remains best-effort: serialize all
+  mutating commands sharing a bucket/key, including different stages, providers
+  and regions. See the [known concurrency limitation](docs/state-locking.md#known-issues-bucket-store-concurrency).
+
+## [0.9.6] - 2026-11-05
 
 ### Changed
 
@@ -30,12 +87,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
-- Restore Bucket Store lock compatibility with OSS and COS buckets that have
-  versioning enabled or suspended. Locks use ordinary writes followed by
-  ownership verification, without requiring bucket-versioning read permission
-  or conditional creation. Bucket locking remains best-effort: serialize all
-  mutating commands sharing a bucket/key, including different stages, providers
-  and regions. See the [known concurrency limitation](docs/state-locking.md#known-issues-bucket-store-concurrency).
 - Preserve template results for string fields such as certificate IDs,
   including leading zeros and long numeric strings, so valid configurations
   pass resolved configuration validation without losing their original values.
