@@ -222,24 +222,43 @@ export const createSaasStateBackend = async (
       resolvedIdentity = local;
       return local;
     }
+    let fetched: { orgId?: string; orgSlug?: string; region?: string };
     try {
-      const fetched = await client.get<{ orgId?: string; orgSlug?: string }>(
-        '/api/v1/auth/api-keys/validate',
-      );
-      if (fetched.orgSlug && lineCtx.profileKey) {
-        updateProfile(lineCtx.profileKey, {
-          orgSlug: fetched.orgSlug,
-          ...(fetched.orgId && !local.orgId ? { orgId: fetched.orgId } : {}),
-        });
-      }
-      resolvedIdentity = {
-        orgId: local.orgId ?? fetched.orgId,
-        orgSlug: local.orgSlug ?? fetched.orgSlug,
-      };
-      knownOrgId = resolvedIdentity.orgId ?? knownOrgId;
+      fetched = await client.get<{
+        orgId?: string;
+        orgSlug?: string;
+        region?: string;
+      }>('/api/v1/auth/api-keys/validate');
     } catch {
+      // Network / version skew: degrade open — the key still only ever writes
+      // to its own org. Line conflicts below are NOT degradation and must not
+      // be swallowed here.
       resolvedIdentity = local;
+      return resolvedIdentity;
     }
+    // ADR-008 defensive cross-check: the issuing platform's line segment must
+    // agree with the line this backend was resolved against.
+    const expectedSegment = lineCtx.line === 'china' ? 'cn' : 'com';
+    if (fetched.region && fetched.region !== expectedSegment) {
+      throw new Error(
+        lang.__('SAAS_LINE_CONFLICT', {
+          source: 'the console validate response',
+          line: fetched.region,
+          resolvedLine: expectedSegment,
+        }),
+      );
+    }
+    if (fetched.orgSlug && lineCtx.profileKey) {
+      updateProfile(lineCtx.profileKey, {
+        orgSlug: fetched.orgSlug,
+        ...(fetched.orgId && !local.orgId ? { orgId: fetched.orgId } : {}),
+      });
+    }
+    resolvedIdentity = {
+      orgId: local.orgId ?? fetched.orgId,
+      orgSlug: local.orgSlug ?? fetched.orgSlug,
+    };
+    knownOrgId = resolvedIdentity.orgId ?? knownOrgId;
     return resolvedIdentity;
   };
 

@@ -20,6 +20,9 @@ export type ValidateResult = {
   readonly orgSlug?: string;
   readonly userEmail: string;
   readonly scopes: readonly string[];
+  /** ADR-008: issuing platform's line segment ('com' | 'cn') once the console
+   * ships it — clients cross-check it against the parsed key segment. */
+  readonly region?: string;
 };
 
 const HTTP_ERROR_KEYS: Record<number, string> = {
@@ -176,6 +179,7 @@ export const validateApiKey = async (apiKey: string, baseUrl: string): Promise<V
     userEmail?: string;
     user?: { email?: string };
     scopes: string[];
+    region?: string;
   }>('/api/v1/auth/api-keys/validate');
   return {
     orgId: result.orgId ?? '',
@@ -183,5 +187,6 @@ export const validateApiKey = async (apiKey: string, baseUrl: string): Promise<V
     orgSlug: result.orgSlug,
     userEmail: result.userEmail ?? result.user?.email ?? '',
     scopes: result.scopes ?? [],
+    region: result.region,
   };
 };
