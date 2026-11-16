@@ -21,6 +21,8 @@ export const plan = async (options: {
   refresh?: boolean;
   json?: boolean;
   noColor?: boolean;
+  org?: string;
+  line?: string;
 }): Promise<{ hasChanges: boolean }> => {
   logger.info(lang.__('VALIDATING_YAML'));
   const iacLocation = getIacLocation(options.location);
@@ -52,9 +54,11 @@ export const plan = async (options: {
   const providerDisplayName = providerDisplayNames[iac.provider.name] ?? iac.provider.name;
   logger.info(lang.__('GENERATING_PLAN_FOR_PROVIDER', { provider: providerDisplayName }));
 
-  const backend = createStateBackend(iac.backend, {
+  const backend = await createStateBackend(iac.backend, {
     ...context,
     declaredOrg: iac.org,
+    org: options.org,
+    line: options.line,
     migrationMarker: 'warn',
     mode: 'read-only',
   });
@@ -107,6 +111,8 @@ export type DiffCommandOptions = {
   refresh?: boolean;
   json?: boolean;
   color?: boolean;
+  org?: string;
+  line?: string;
 };
 
 // Single action implementation behind `si diff`, the sole command for
@@ -125,6 +131,8 @@ export const runDiffCommand = async (options: DiffCommandOptions): Promise<void>
     refresh: options.refresh,
     json: !!options.json,
     noColor: options.color === false,
+    org: options.org,
+    line: options.line,
   });
   // Issue #250 exit-code convention (terraform-compatible):
   // 0 = no changes, 2 = changes present, 1 = execution error (handler).

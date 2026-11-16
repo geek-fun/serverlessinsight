@@ -12,27 +12,11 @@ jest.mock('../../../src/common/apiClient', () => ({
 
 jest.mock('open', () => jest.fn());
 
-const mockLoadCredentials = jest.fn();
-const mockSaveCredentials = jest.fn();
-const mockDeleteCredentials = jest.fn();
-const mockResolveConsoleUrl = jest.fn();
-const mockResolveConsoleUiUrl = jest.fn();
-const mockValidateApiKeyFormat = jest.fn();
-
-jest.mock('../../../src/common/credentialStore', () => ({
-  loadCredentials: (...args: unknown[]) => mockLoadCredentials(...args),
-  saveCredentials: (...args: unknown[]) => mockSaveCredentials(...args),
-  deleteCredentials: (...args: unknown[]) => mockDeleteCredentials(...args),
-  resolveConsoleUrl: (...args: unknown[]) => mockResolveConsoleUrl(...args),
-  resolveConsoleUiUrl: (...args: unknown[]) => mockResolveConsoleUiUrl(...args),
-  validateApiKeyFormat: (...args: unknown[]) => mockValidateApiKeyFormat(...args),
-}));
-
-let mockReadlineAnswer = '2';
+const mockReadlineAnswers: string[] = [];
 jest.mock('node:readline', () => ({
   createInterface: jest.fn(() => ({
     question: jest.fn((_query: string, callback: (answer: string) => void) => {
-      callback(mockReadlineAnswer);
+      callback(mockReadlineAnswers.length > 0 ? mockReadlineAnswers.shift()! : '');
     }),
     close: jest.fn(),
   })),
@@ -48,11 +32,24 @@ jest.mock('node:http', () => ({
   createServer: jest.fn(() => mockServer),
 }));
 
+const mockSaveProfile = jest.fn();
+const mockLoadCredentialsFile = jest.fn();
+
+jest.mock('../../../src/common/credentialStore', () => ({
+  saveProfile: (...args: unknown[]) => mockSaveProfile(...args),
+  loadCredentialsFile: (...args: unknown[]) => mockLoadCredentialsFile(...args),
+}));
+
 import { login } from '../../../src/commands/login';
 import { validateApiKey } from '../../../src/common/apiClient';
 import { logger } from '../../../src/common/logger';
 
 const mockValidateApiKey = validateApiKey as jest.Mock;
+
+/** The interactive login paths gate on stdin.isTTY; jest's stdin is not a TTY. */
+const setTty = (value: boolean | undefined): void => {
+  Object.defineProperty(process.stdin, 'isTTY', { value, configurable: true });
+};
 
 type BrowserCallbackHandler = (req: { url?: string }, res: unknown) => Promise<void>;
 
@@ -89,287 +86,261 @@ const waitForCallbackServer = async (): Promise<BrowserCallbackHandler> => {
   return createServerMock.mock.calls[0][0] as BrowserCallbackHandler;
 };
 
-describe('login command', () => {
+const identity = (overrides: Record<string, unknown> = {}) => ({
+  orgId: 'org-1',
+  orgName: 'Test Org',
+  orgSlug: 'test-org',
+  userEmail: 'user@test.com',
+  scopes: ['deploy'],
+  ...overrides,
+});
+
+describe('login command (ADR-008)', () => {
   const ORIGINAL_ENV = { ...process.env };
-  const validKey = 'si_abcdef123456_0123456789abcdef0123456789abcdef01';
+  const legacyKey = 'si_abcdef123456_0123456789abcdef0123456789abcdef';
+  const chinaKey = 'si_cn_abcdef123456_0123456789abcdef0123456789abcdef';
+  const intlKey = 'si_com_abcdef123456_0123456789abcdef0123456789abcdef';
 
   beforeEach(() => {
     jest.clearAllMocks();
-    mockReadlineAnswer = '2';
-    mockResolveConsoleUrl.mockReturnValue('https://api.console.test.com');
-    mockResolveConsoleUiUrl.mockReturnValue('https://console.console.test.com');
+    mockReadlineAnswers.length = 0;
     process.env = { ...ORIGINAL_ENV };
     delete process.env.SI_API_KEY;
     delete process.env.SI_CONSOLE_URL;
-    mockResolveConsoleUrl.mockReturnValue('https://api.console.test.com');
-    mockValidateApiKeyFormat.mockReturnValue(true);
-    mockLoadCredentials.mockReturnValue(null);
+    delete process.env.SI_CONSOLE_UI_URL;
+    delete process.env.SI_CONSOLE_LINE;
+    mockLoadCredentialsFile.mockReturnValue(null);
+    mockValidateApiKey.mockResolvedValue(identity());
   });
 
   afterAll(() => {
     process.env = ORIGINAL_ENV;
   });
 
-  it('logs in with --si-api-key and saves credentials', async () => {
-    mockValidateApiKey.mockResolvedValue({
-      orgId: 'org-1',
-      orgName: 'Test Org',
-      userEmail: 'user@test.com',
-      scopes: ['deploy'],
+  describe('key login', () => {
+    it('derives the line from the key segment and stores the profile', async () => {
+      await login({ siApiKey: chinaKey });
+
+      expect(mockValidateApiKey).toHaveBeenCalledWith(
+        chinaKey,
+        'https://console.serverlessinsight.cn',
+      );
+      expect(mockSaveProfile).toHaveBeenCalledWith(
+        'china',
+        expect.objectContaining({ apiKey: chinaKey, orgId: 'org-1', orgSlug: 'test-org' }),
+        { activate: true },
+      );
     });
 
-    await login({ siApiKey: validKey });
+    it('accepts a legacy key with an explicit --line', async () => {
+      await login({ siApiKey: legacyKey, line: 'china' });
 
-    expect(mockValidateApiKey).toHaveBeenCalledWith(validKey, 'https://api.console.test.com');
-    expect(mockSaveCredentials).toHaveBeenCalledWith({
-      apiKey: validKey,
-      consoleUrl: 'https://api.console.test.com',
-      orgId: 'org-1',
-      orgName: 'Test Org',
-      userEmail: 'user@test.com',
-    });
-    expect(logger.info).toHaveBeenCalled();
-  });
-
-  it('logs in via SI_API_KEY env var', async () => {
-    process.env.SI_API_KEY = validKey;
-    mockValidateApiKey.mockResolvedValue({
-      orgId: 'org-1',
-      orgName: 'Test Org',
-      userEmail: 'user@test.com',
-      scopes: ['deploy'],
+      expect(mockValidateApiKey).toHaveBeenCalledWith(
+        legacyKey,
+        'https://console.serverlessinsight.cn',
+      );
+      expect(mockSaveProfile).toHaveBeenCalledWith(
+        'china',
+        expect.objectContaining({ apiKey: legacyKey }),
+        { activate: true },
+      );
     });
 
-    await login({});
+    it('rejects a key whose segment disagrees with --line', async () => {
+      await login({ siApiKey: chinaKey, line: 'international' });
 
-    expect(mockValidateApiKey).toHaveBeenCalledWith(validKey, 'https://api.console.test.com');
-    expect(mockSaveCredentials).toHaveBeenCalled();
-  });
-
-  it('rejects an invalid API key format', async () => {
-    mockValidateApiKeyFormat.mockReturnValue(false);
-
-    await login({ siApiKey: 'bad-key' });
-
-    expect(mockValidateApiKey).not.toHaveBeenCalled();
-    expect(mockSaveCredentials).not.toHaveBeenCalled();
-    expect(logger.error).toHaveBeenCalled();
-  });
-
-  it('handles validateApiKey failure gracefully', async () => {
-    mockValidateApiKey.mockRejectedValue(new Error('network down'));
-
-    await login({ siApiKey: validKey });
-
-    expect(mockSaveCredentials).not.toHaveBeenCalled();
-    expect(logger.error).toHaveBeenCalled();
-    expect(logger.debug).toHaveBeenCalled();
-  });
-
-  it('asks for confirmation and re-authenticates when already logged in', async () => {
-    mockReadlineAnswer = 'y';
-    mockLoadCredentials.mockReturnValue({
-      apiKey: 'si_oldkey123456_0123456789abcdef0123456789abcdef01',
-      consoleUrl: 'https://api.console.test.com',
-      orgId: 'org-1',
-      userEmail: 'old@test.com',
-      orgName: 'Old Org',
-    });
-    mockValidateApiKey.mockResolvedValue({
-      orgId: 'org-2',
-      orgName: 'New Org',
-      userEmail: 'user@test.com',
-      scopes: ['deploy'],
+      expect(logger.error).toHaveBeenCalledWith('LOGIN_LINE_MISMATCH');
+      expect(mockSaveProfile).not.toHaveBeenCalled();
     });
 
-    await login({ siApiKey: validKey });
+    it('fails a segment-less key with no line source outside a TTY', async () => {
+      setTty(false);
+      await login({ siApiKey: legacyKey });
 
-    expect(mockDeleteCredentials).toHaveBeenCalled();
-    expect(mockSaveCredentials).toHaveBeenCalled();
-  });
-
-  it('cancels when the user declines re-authentication', async () => {
-    mockReadlineAnswer = 'n';
-    mockLoadCredentials.mockReturnValue({
-      apiKey: 'si_oldkey123456_0123456789abcdef0123456789abcdef01',
-      consoleUrl: 'https://api.console.test.com',
-      orgId: 'org-1',
-      userEmail: 'old@test.com',
-      orgName: 'Old Org',
+      expect(logger.error).toHaveBeenCalledWith('LOGIN_NEED_LINE');
+      expect(mockSaveProfile).not.toHaveBeenCalled();
     });
 
-    await login({ siApiKey: validKey });
+    it('routes a legacy key through the deprecated SI_CONSOLE_LINE with a warning', async () => {
+      process.env.SI_CONSOLE_LINE = 'cn';
+      await login({ siApiKey: legacyKey });
 
-    expect(mockDeleteCredentials).not.toHaveBeenCalled();
-    expect(mockSaveCredentials).not.toHaveBeenCalled();
-  });
-
-  it('prompts for a key when no flag or env is set', async () => {
-    mockValidateApiKey.mockResolvedValue({
-      orgId: 'org-1',
-      orgName: 'Test Org',
-      userEmail: 'user@test.com',
-      scopes: ['deploy'],
+      expect(logger.warn).toHaveBeenCalledWith('SAAS_LINE_ENV_DEPRECATED');
+      expect(mockSaveProfile).toHaveBeenCalledWith(
+        'china',
+        expect.objectContaining({ apiKey: legacyKey }),
+        { activate: true },
+      );
     });
 
-    await login({});
+    it('rejects --org when the validated org slug differs', async () => {
+      await login({ siApiKey: chinaKey, org: 'other-org' });
 
-    expect(mockSaveCredentials).toHaveBeenCalled();
-  });
-
-  it('completes the browser callback flow and saves credentials', async () => {
-    mockReadlineAnswer = '1';
-    const openMock = setupBrowserLogin();
-
-    const loginPromise = login({});
-    const handler = await waitForCallbackServer();
-
-    const mockRes = { writeHead: jest.fn(), end: jest.fn() };
-    await handler(
-      {
-        url: '/callback?api_key=si_abcdef123456_0123456789abcdef0123456789abcdef01&org_id=org-1&org_name=Test%20Org&user_email=user%40test.com&app_id=app-1',
-      },
-      mockRes,
-    );
-
-    await loginPromise;
-
-    expect(openMock).toHaveBeenCalledWith(expect.stringContaining('/cli/authorize'));
-    expect(mockServer.close).toHaveBeenCalled();
-    expect(mockServer.closeAllConnections).toHaveBeenCalled();
-    expect(mockSaveCredentials).toHaveBeenCalledWith({
-      apiKey: 'si_abcdef123456_0123456789abcdef0123456789abcdef01',
-      consoleUrl: 'https://api.console.test.com',
-      orgId: 'org-1',
-      orgName: 'Test Org',
-      userEmail: 'user@test.com',
-    });
-    // Success page redirects back to the Console API-keys panel
-    expect(mockRes.writeHead).toHaveBeenCalledWith(200, {
-      'Content-Type': 'text/html; charset=utf-8',
-    });
-    const html = mockRes.end.mock.calls[0][0] as string;
-    expect(html).toContain('https://console.console.test.com/app-1/membership/api-keys');
-  });
-
-  it('enriches the browser callback with the org slug from validate', async () => {
-    mockReadlineAnswer = '1';
-    mockValidateApiKey.mockResolvedValueOnce({
-      orgId: 'org-1',
-      orgName: 'Test Org',
-      orgSlug: 'test-org',
-      userEmail: 'user@test.com',
-    });
-    setupBrowserLogin();
-
-    const loginPromise = login({});
-    const handler = await waitForCallbackServer();
-
-    const mockRes = { writeHead: jest.fn(), end: jest.fn() };
-    await handler(
-      {
-        url: '/callback?api_key=si_abcdef123456_0123456789abcdef0123456789abcdef01&org_id=org-1&org_name=Test%20Org&user_email=user%40test.com',
-      },
-      mockRes,
-    );
-
-    await loginPromise;
-
-    // The slug the callback doesn't carry comes from the validate roundtrip (D-6)
-    expect(mockValidateApiKey).toHaveBeenCalledWith(
-      'si_abcdef123456_0123456789abcdef0123456789abcdef01',
-      'https://api.console.test.com',
-    );
-    expect(mockSaveCredentials).toHaveBeenCalledWith(
-      expect.objectContaining({ orgId: 'org-1', orgSlug: 'test-org' }),
-    );
-  });
-
-  it('keeps saving credentials when the callback enrich call fails', async () => {
-    mockReadlineAnswer = '1';
-    mockValidateApiKey.mockRejectedValueOnce(new Error('validate down'));
-    setupBrowserLogin();
-
-    const loginPromise = login({});
-    const handler = await waitForCallbackServer();
-
-    const mockRes = { writeHead: jest.fn(), end: jest.fn() };
-    await handler(
-      {
-        url: '/callback?api_key=si_abcdef123456_0123456789abcdef0123456789abcdef01&org_id=org-1&org_name=Test%20Org&user_email=user%40test.com',
-      },
-      mockRes,
-    );
-
-    await loginPromise;
-
-    expect(mockSaveCredentials).toHaveBeenCalledWith(
-      expect.objectContaining({ orgId: 'org-1', orgName: 'Test Org' }),
-    );
-  });
-
-  it('callback without app_id redirects to the Console root', async () => {
-    mockReadlineAnswer = '1';
-    setupBrowserLogin();
-
-    const loginPromise = login({});
-    const handler = await waitForCallbackServer();
-
-    const mockRes = { writeHead: jest.fn(), end: jest.fn() };
-    await handler(
-      {
-        url: '/callback?api_key=si_abcdef123456_0123456789abcdef0123456789abcdef01&org_id=org-1',
-      },
-      mockRes,
-    );
-
-    await loginPromise;
-
-    const html = mockRes.end.mock.calls[0][0] as string;
-    expect(html).toContain('https://console.console.test.com"');
-  });
-
-  it('waits for authorization on non-callback requests', async () => {
-    mockReadlineAnswer = '1';
-    setupBrowserLogin();
-
-    const loginPromise = login({});
-    const handler = await waitForCallbackServer();
-
-    const mockRes = { writeHead: jest.fn(), end: jest.fn() };
-    await handler({ url: '/waiting' }, mockRes);
-
-    expect(mockRes.writeHead).toHaveBeenCalledWith(200, { 'Content-Type': 'text/plain' });
-    expect(mockRes.end).toHaveBeenCalledWith('Waiting for authorization...');
-
-    await handler({ url: '/callback?api_key=key' }, mockRes);
-    await loginPromise;
-  });
-
-  it('warns when the browser opener rejects', async () => {
-    mockReadlineAnswer = '1';
-    setupBrowserLogin(() => Promise.reject(new Error('browser unavailable')));
-
-    const loginPromise = login({});
-    const handler = await waitForCallbackServer();
-    await handler({ url: '/callback?api_key=key' }, { writeHead: jest.fn(), end: jest.fn() });
-    await loginPromise;
-    await Promise.resolve();
-
-    expect(logger.warn).toHaveBeenCalledWith('LOGIN_BROWSER_UNAVAILABLE');
-  });
-
-  it('warns when the browser opener throws synchronously', async () => {
-    mockReadlineAnswer = '1';
-    setupBrowserLogin(() => {
-      throw new Error('browser unavailable');
+      expect(logger.error).toHaveBeenCalledWith('LOGIN_ORG_MISMATCH');
+      expect(mockSaveProfile).not.toHaveBeenCalled();
     });
 
-    const loginPromise = login({});
-    const handler = await waitForCallbackServer();
-    await handler({ url: '/callback?api_key=key' }, { writeHead: jest.fn(), end: jest.fn() });
-    await loginPromise;
+    it('logs in via SI_API_KEY env var', async () => {
+      process.env.SI_API_KEY = intlKey;
 
-    expect(logger.warn).toHaveBeenCalledWith('LOGIN_BROWSER_UNAVAILABLE');
+      await login({});
+
+      expect(mockSaveProfile).toHaveBeenCalledWith(
+        'international',
+        expect.objectContaining({ apiKey: intlKey }),
+        { activate: true },
+      );
+    });
+
+    it('rejects a malformed key before any network call', async () => {
+      await login({ siApiKey: 'not-a-key' });
+
+      expect(mockValidateApiKey).not.toHaveBeenCalled();
+      expect(mockSaveProfile).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('browser login', () => {
+    beforeEach(() => {
+      setTty(true);
+    });
+
+    it('picks the line interactively and stores the profile under that line', async () => {
+      mockReadlineAnswers.push('2'); // line picker → china
+      mockReadlineAnswers.push('1'); // method → browser
+      setupBrowserLogin();
+
+      const loginPromise = login({});
+      const handler = await waitForCallbackServer();
+      handler(
+        {
+          url:
+            '/callback?api_key=' +
+            chinaKey +
+            '&org_id=org-1&org_name=Test%20Org&user_email=user@test.com',
+        },
+        { writeHead: jest.fn(), end: jest.fn() },
+      );
+
+      await loginPromise;
+
+      expect(mockValidateApiKey).toHaveBeenCalledWith(
+        chinaKey,
+        'https://console.serverlessinsight.cn',
+      );
+      expect(mockSaveProfile).toHaveBeenCalledWith(
+        'china',
+        expect.objectContaining({ apiKey: chinaKey, orgSlug: 'test-org' }),
+        { activate: true },
+      );
+    });
+
+    it('refuses a callback key from a different line than the login line', async () => {
+      mockReadlineAnswers.push('1'); // line picker → international
+      mockReadlineAnswers.push('1'); // method → browser
+      setupBrowserLogin();
+
+      const loginPromise = login({});
+      const handler = await waitForCallbackServer();
+      handler(
+        {
+          url:
+            '/callback?api_key=' +
+            chinaKey +
+            '&org_id=org-1&org_name=Test%20Org&user_email=user@test.com',
+        },
+        { writeHead: jest.fn(), end: jest.fn() },
+      );
+
+      await loginPromise;
+
+      expect(logger.error).toHaveBeenCalledWith('LOGIN_LINE_MISMATCH');
+      expect(mockSaveProfile).not.toHaveBeenCalled();
+    });
+
+    it('heals the org slug from validate when the callback lacks it', async () => {
+      mockReadlineAnswers.push('1'); // line picker → international
+      mockReadlineAnswers.push('1'); // method → browser
+      setupBrowserLogin();
+
+      const loginPromise = login({});
+      const handler = await waitForCallbackServer();
+      handler(
+        {
+          url:
+            '/callback?api_key=' +
+            intlKey +
+            '&org_id=org-1&org_name=Test%20Org&user_email=user@test.com',
+        },
+        { writeHead: jest.fn(), end: jest.fn() },
+      );
+
+      await loginPromise;
+
+      expect(mockSaveProfile).toHaveBeenCalledWith(
+        'international',
+        expect.objectContaining({ orgSlug: 'test-org' }),
+        { activate: true },
+      );
+    });
+
+    it('warns when the browser opener throws synchronously', async () => {
+      mockReadlineAnswers.push('1');
+      mockReadlineAnswers.push('1');
+      setupBrowserLogin(() => {
+        throw new Error('browser unavailable');
+      });
+
+      const loginPromise = login({});
+      const handler = await waitForCallbackServer();
+      await handler({ url: '/callback?api_key=key' }, { writeHead: jest.fn(), end: jest.fn() });
+      await loginPromise;
+
+      expect(logger.warn).toHaveBeenCalledWith('LOGIN_BROWSER_UNAVAILABLE');
+    });
+  });
+
+  describe('already logged in', () => {
+    it('cancels when the user declines re-login', async () => {
+      mockLoadCredentialsFile.mockReturnValue({
+        active: 'china/wentsen',
+        profiles: {
+          'china/wentsen': {
+            apiKey: chinaKey,
+            orgId: 'org-1',
+            orgSlug: 'wentsen',
+            orgName: 'Wentsen',
+          },
+        },
+      });
+      mockReadlineAnswers.push('n');
+
+      await login({ siApiKey: chinaKey });
+
+      expect(mockSaveProfile).not.toHaveBeenCalled();
+    });
+
+    it('re-login proceeds and overwrites the target profile', async () => {
+      mockLoadCredentialsFile.mockReturnValue({
+        active: 'china/wentsen',
+        profiles: {
+          'china/wentsen': {
+            apiKey: chinaKey,
+            orgId: 'org-1',
+            orgSlug: 'wentsen',
+            orgName: 'Wentsen',
+          },
+        },
+      });
+      mockReadlineAnswers.push('y');
+
+      await login({ siApiKey: chinaKey });
+
+      expect(mockSaveProfile).toHaveBeenCalledWith(
+        'china',
+        expect.objectContaining({ apiKey: chinaKey }),
+        { activate: true },
+      );
+    });
   });
 });

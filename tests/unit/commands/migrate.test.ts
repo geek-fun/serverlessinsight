@@ -1,7 +1,7 @@
 import { hashSaasState } from '../../../src/common/saasProtocol';
 import { migrate } from '../../../src/commands/migrate';
 import { createStateBackend } from '../../../src/common/stateBackend';
-import { loadCredentials, getConsoleUrl } from '../../../src/common/credentialStore';
+import { resolveLineContext } from '../../../src/common/lineContext';
 import { createApiClient, validateApiKey, ApiError } from '../../../src/common/apiClient';
 import { parseYaml, revalYaml } from '../../../src/parser';
 import { getContext, setContext } from '../../../src/common';
@@ -55,9 +55,8 @@ jest.mock('../../../src/common/stateBackend', () => ({
   createStateBackend: jest.fn(),
 }));
 
-jest.mock('../../../src/common/credentialStore', () => ({
-  loadCredentials: jest.fn(),
-  getConsoleUrl: jest.fn(),
+jest.mock('../../../src/common/lineContext', () => ({
+  resolveLineContext: jest.fn(),
 }));
 
 jest.mock('../../../src/common/apiClient', () => {
@@ -89,8 +88,7 @@ const mockApiClient = {
 };
 
 const mockedCreateStateBackend = createStateBackend as jest.Mock;
-const mockedLoadCredentials = loadCredentials as jest.Mock;
-const mockedGetConsoleUrl = getConsoleUrl as jest.Mock;
+const mockedResolveLineContext = resolveLineContext as jest.Mock;
 const mockedValidateApiKey = validateApiKey as jest.Mock;
 const mockedCreateApiClient = createApiClient as jest.Mock;
 const mockedParseYaml = parseYaml as jest.Mock;
@@ -215,7 +213,15 @@ const setupMigrationRun = (options: MigrationRunOptions = {}) => {
   mockedCreateStateBackend.mockReturnValue(
     options.patchable === false ? { ...backend, patchPersisted: undefined } : backend,
   );
-  mockedLoadCredentials.mockReturnValue(MIGRATE_TEST_CREDENTIALS);
+  mockedResolveLineContext.mockResolvedValue({
+    line: 'international',
+    consoleUrl: 'https://api.test.com',
+    apiKey: MIGRATE_TEST_CREDENTIALS.apiKey,
+    orgId: MIGRATE_TEST_CREDENTIALS.orgId,
+    orgSlug: MIGRATE_TEST_IDENTITY.orgSlug,
+    keySource: 'profile',
+    lineSource: 'active',
+  });
   mockedValidateApiKey.mockResolvedValue(MIGRATE_TEST_IDENTITY);
   mockApiClient.get.mockResolvedValueOnce({
     regionalScope: true,
@@ -257,7 +263,15 @@ describe('migrate command', () => {
     // different prefixes of the get/post queues, so reset them fully.
     mockApiClient.get.mockReset();
     mockApiClient.post.mockReset();
-    mockedGetConsoleUrl.mockReturnValue('https://api.test.com');
+    mockedResolveLineContext.mockResolvedValue({
+      line: 'international',
+      consoleUrl: 'https://api.test.com',
+      apiKey: MIGRATE_TEST_CREDENTIALS.apiKey,
+      orgId: MIGRATE_TEST_CREDENTIALS.orgId,
+      orgSlug: MIGRATE_TEST_IDENTITY.orgSlug,
+      keySource: 'profile',
+      lineSource: 'active',
+    });
     mockedParseYaml.mockReturnValue(rawIac);
     mockedRevalYaml.mockReturnValue(bucketIac);
     mockedCreateApiClient.mockReturnValue(mockApiClient);
@@ -272,14 +286,15 @@ describe('migrate command', () => {
     });
 
     it('rejects when no Console credentials are available', async () => {
-      mockedLoadCredentials.mockReturnValue(null);
+      mockedResolveLineContext.mockRejectedValue(new Error('SAAS_BACKEND_NO_CREDENTIALS'));
       mockedCreateStateBackend.mockReturnValue(makeSourceBackend(legacyState()));
 
-      await expect(migrate({ location: 'stack.yml' })).rejects.toThrow('MIGRATE_NEED_CREDENTIALS');
+      await expect(migrate({ location: 'stack.yml' })).rejects.toThrow(
+        'SAAS_BACKEND_NO_CREDENTIALS',
+      );
     });
 
     it('preflights without cloud credentials (setContext probes nothing)', async () => {
-      mockedLoadCredentials.mockReturnValue(null);
       mockedCreateStateBackend.mockReturnValue(makeSourceBackend(legacyState()));
 
       await migrate({ location: 'stack.yml', rollback: true }).catch(() => undefined);

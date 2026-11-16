@@ -47,6 +47,8 @@ export const deploy = async (options: {
   securityToken?: string;
   autoApprove?: boolean;
   siApiKey?: string;
+  org?: string;
+  line?: string;
   refresh?: boolean;
 }) => {
   logger.info(lang.__('VALIDATING_YAML'));
@@ -73,10 +75,12 @@ export const deploy = async (options: {
 
   // D-4: deploy mutates state — a migrated (managedBy=saas) legacy state must
   // fail closed here and route the user to the Console backend.
-  const backend = createStateBackend(iac.backend, {
+  const backend = await createStateBackend(iac.backend, {
     ...context,
     declaredOrg: iac.org,
     siApiKey: options.siApiKey,
+    org: options.org,
+    line: options.line,
     migrationMarker: 'refuse',
   });
 

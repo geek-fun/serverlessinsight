@@ -1,6 +1,7 @@
 import { createApiClient, ApiError } from '../apiClient';
 import type { ApiClient } from '../apiClient';
-import { loadCredentials, saveCredentials, getConsoleUrl } from '../credentialStore';
+import { updateProfile } from '../credentialStore';
+import { resolveLineContext, LineContext } from '../lineContext';
 import { logger } from '../logger';
 import {
   StateBackend,
@@ -35,6 +36,10 @@ export type SaasBackendContext = {
 export type SaasBackendOptions = {
   /** Explicit API key (--si-api-key / env) taking precedence over the credentials file. */
   readonly apiKey?: string;
+  /** `--org <slug>` one-off override (ADR-008 resolution step 3). */
+  readonly org?: string;
+  /** `--line international|china` one-off override (ADR-008 resolution step 3). */
+  readonly line?: string;
   readonly mode?: 'mutating' | 'read-only';
   readonly eventQueueDir?: string;
 };
@@ -86,37 +91,41 @@ type ServerCapabilities = {
   regionalScope: boolean;
 };
 
-export const createSaasStateBackend = (
+export const createSaasStateBackend = async (
   context: SaasBackendContext,
   options?: SaasBackendOptions,
-): StateBackend => {
+): Promise<StateBackend> => {
   const normalized = normalizeScope(context.scope);
   const mode = options?.mode ?? 'mutating';
-  const creds = options?.apiKey ? null : loadCredentials();
-  const apiKey = options?.apiKey || creds?.apiKey;
-  const consoleUrl = getConsoleUrl();
-  let knownOrgId = creds?.orgId ?? '';
-
-  if (!apiKey) {
-    throw new Error(lang.__('SAAS_BACKEND_NO_CREDENTIALS'));
-  }
+  // ADR-008: one resolution entry for line + key + org identity. Throws on
+  // ambiguous org slugs, line conflicts, and (non-interactive) unresolved
+  // lines before any network call.
+  const lineCtx: LineContext = await resolveLineContext({
+    siApiKey: options?.apiKey,
+    declaredOrg: context.declaredOrg,
+    orgFlag: options?.org,
+    lineFlag: options?.line,
+    operation: 'state access',
+  });
+  const consoleUrl = lineCtx.consoleUrl;
+  let knownOrgId = lineCtx.orgId ?? '';
 
   // D-6 fast path: when both the yaml declaration and the stored slug are
   // known, fail before touching the network at all.
-  if (context.declaredOrg && creds?.orgSlug && context.declaredOrg !== creds.orgSlug) {
+  if (context.declaredOrg && lineCtx.orgSlug && context.declaredOrg !== lineCtx.orgSlug) {
     throw new Error(
       lang.__('SAAS_ORG_MISMATCH', {
         declared: context.declaredOrg,
-        actual: creds.orgSlug,
+        actual: lineCtx.orgSlug,
       }),
     );
   }
-  if (!context.declaredOrg && creds?.orgName) {
-    logger.info(lang.__('SAAS_ORG_FROM_CREDENTIALS', { orgName: creds.orgName }));
+  if (!context.declaredOrg && lineCtx.orgName) {
+    logger.info(lang.__('SAAS_ORG_FROM_CREDENTIALS', { orgName: lineCtx.orgName }));
   }
 
   const client: ApiClient = createApiClient({
-    apiKey,
+    apiKey: lineCtx.apiKey,
     baseUrl: consoleUrl,
     orgId: knownOrgId,
   });
@@ -206,8 +215,8 @@ export const createSaasStateBackend = (
       return resolvedIdentity;
     }
     const local: { orgId?: string; orgSlug?: string } = {
-      orgId: creds?.orgId || undefined,
-      orgSlug: creds?.orgSlug,
+      orgId: lineCtx.orgId,
+      orgSlug: lineCtx.orgSlug,
     };
     if (local.orgId && local.orgSlug) {
       resolvedIdentity = local;
@@ -217,8 +226,11 @@ export const createSaasStateBackend = (
       const fetched = await client.get<{ orgId?: string; orgSlug?: string }>(
         '/api/v1/auth/api-keys/validate',
       );
-      if (fetched.orgSlug && creds) {
-        saveCredentials({ ...creds, orgSlug: fetched.orgSlug });
+      if (fetched.orgSlug && lineCtx.profileKey) {
+        updateProfile(lineCtx.profileKey, {
+          orgSlug: fetched.orgSlug,
+          ...(fetched.orgId && !local.orgId ? { orgId: fetched.orgId } : {}),
+        });
       }
       resolvedIdentity = {
         orgId: local.orgId ?? fetched.orgId,

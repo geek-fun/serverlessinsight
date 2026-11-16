@@ -15,56 +15,77 @@ jest.mock('../../../src/lang', () => ({
   },
 }));
 
-const mockLoadCredentials = jest.fn();
+const mockLoadCredentialsFile = jest.fn();
 
 jest.mock('../../../src/common/credentialStore', () => ({
-  loadCredentials: (...args: unknown[]) => mockLoadCredentials(...args),
+  loadCredentialsFile: (...args: unknown[]) => mockLoadCredentialsFile(...args),
 }));
 
 import { whoami } from '../../../src/commands/whoami';
 import { logger } from '../../../src/common/logger';
 
-describe('whoami command', () => {
+const chinaProfile = {
+  apiKey: 'si_cn_abcdef123456_0123456789abcdef0123456789abcdef',
+  orgId: 'org-cn',
+  orgName: 'Wentsen',
+  orgSlug: 'wentsen',
+  userEmail: 'owner@wentsen.com',
+};
+
+const intlProfile = {
+  apiKey: 'si_com_abcdef123456_0123456789abcdef0123456789abcdef',
+  orgId: 'org-com',
+  orgSlug: 'acme',
+};
+
+describe('whoami command (ADR-008 multi-profile)', () => {
   beforeEach(() => {
     jest.clearAllMocks();
-    mockLoadCredentials.mockReturnValue(null);
+    mockLoadCredentialsFile.mockReturnValue(null);
   });
 
-  it('prints not-logged-in message when no credentials exist', async () => {
+  it('prints not-logged-in message when no profiles exist', async () => {
     await whoami();
 
     expect(logger.info).toHaveBeenCalledWith('WHOAMI_NOT_LOGGED_IN');
   });
 
-  it('prints account details when logged in', async () => {
-    mockLoadCredentials.mockReturnValue({
-      apiKey: 'si_abcdef123456_0123456789abcdef0123456789abcdef01',
-      consoleUrl: 'https://api.console.test.com',
-      orgId: 'org-1',
-      orgName: 'Test Org',
-      userEmail: 'user@test.com',
+  it('lists every profile and marks the active one', async () => {
+    mockLoadCredentialsFile.mockReturnValue({
+      active: 'china/wentsen',
+      profiles: { 'china/wentsen': chinaProfile, 'international/acme': intlProfile },
     });
 
     await whoami();
 
     const calls = (logger.info as jest.Mock).mock.calls.map((c) => String(c[0]));
-    expect(calls.some((c) => c.includes('user@test.com'))).toBe(true);
-    expect(calls.some((c) => c.includes('Test Org'))).toBe(true);
-    expect(calls.some((c) => c.includes('https://api.console.test.com'))).toBe(true);
-    expect(calls.some((c) => c.includes('si_abcdef123'))).toBe(true);
+    expect(calls.some((c) => c.includes('WHOAMI_PROFILES_HEADER') && c.includes('count=2'))).toBe(
+      true,
+    );
+    expect(calls.some((c) => c.includes('china/wentsen'))).toBe(true);
+    expect(calls.some((c) => c.includes('international/acme'))).toBe(true);
+    // Active profile marker + suffix only on the active entry
+    const activeLine = calls.find(
+      (c) => c.includes('WHOAMI_PROFILE') && c.includes('profileKey=china/wentsen'),
+    );
+    expect(activeLine).toContain('WHOAMI_ACTIVE_MARK');
+    expect(activeLine).toContain('WHOAMI_ACTIVE_SUFFIX');
+    const inactiveLine = calls.find(
+      (c) => c.includes('WHOAMI_PROFILE') && c.includes('profileKey=international/acme'),
+    );
+    expect(inactiveLine).not.toContain('WHOAMI_ACTIVE_MARK');
   });
 
-  it('falls back to orgId and unknown email when fields are missing', async () => {
-    mockLoadCredentials.mockReturnValue({
-      apiKey: 'si_abcdef123456_0123456789abcdef0123456789abcdef01',
-      consoleUrl: 'https://api.console.test.com',
-      orgId: 'org-1',
+  it('falls back to orgId when orgName is missing and shows the active line origin', async () => {
+    mockLoadCredentialsFile.mockReturnValue({
+      active: 'international/acme',
+      profiles: { 'international/acme': intlProfile },
     });
 
     await whoami();
 
     const calls = (logger.info as jest.Mock).mock.calls.map((c) => String(c[0]));
-    expect(calls.some((c) => c.includes('(unknown)'))).toBe(true);
-    expect(calls.some((c) => c.includes('org-1'))).toBe(true);
+    expect(calls.some((c) => c.includes('org-com'))).toBe(true);
+    expect(calls.some((c) => c.includes('https://console.serverlessinsight.com'))).toBe(true);
   });
 });

@@ -3,14 +3,18 @@ import { createServer, Server } from 'node:http';
 import open from 'open';
 import { logger } from '../common';
 import { validateApiKey } from '../common/apiClient';
+import { saveProfile, loadCredentialsFile } from '../common/credentialStore';
 import {
-  saveCredentials,
-  loadCredentials,
-  deleteCredentials,
-  resolveConsoleUrl,
-  resolveConsoleUiUrl,
+  CONSOLE_LINES,
+  ConsoleLineName,
+  LINE_NAMES,
+  consoleOriginFor,
+  consoleUiOriginFor,
+  normalizeLineName,
+  parseApiKeyLine,
+  toProfileKey,
   validateApiKeyFormat,
-} from '../common/credentialStore';
+} from '../common/consoleLines';
 import { lang } from '../lang';
 
 const ask = (query: string): Promise<string> => {
@@ -23,7 +27,81 @@ const ask = (query: string): Promise<string> => {
   });
 };
 
-const loginWithKey = async (apiKey: string, consoleUrl: string): Promise<boolean> => {
+/** ADR-008: pick the line by NAME; the origin shown is informational only. */
+const promptLinePicker = async (): Promise<ConsoleLineName> => {
+  console.log(`\n  ${lang.__('LOGIN_PICK_LINE')}\n`);
+  LINE_NAMES.forEach((name, index) => {
+    console.log(
+      lang.__('LOGIN_LINE_OPTION', {
+        index: String(index + 1),
+        name,
+        origin: CONSOLE_LINES[name].origin,
+      }),
+    );
+  });
+  console.log('');
+  for (;;) {
+    const answer = await ask(lang.__('LOGIN_LINE_PROMPT'));
+    const index = Number.parseInt(answer.trim(), 10);
+    if (Number.isNaN(index)) {
+      // Empty input accepts the first option as the default.
+      if (answer.trim() === '') return LINE_NAMES[0]!;
+      continue;
+    }
+    if (index >= 1 && index <= LINE_NAMES.length) {
+      return LINE_NAMES[index - 1]!;
+    }
+  }
+};
+
+type LoginIdentity = {
+  orgId: string;
+  orgName: string;
+  orgSlug?: string;
+  userEmail: string;
+};
+
+const finalizeLogin = (
+  apiKey: string,
+  line: ConsoleLineName,
+  identity: LoginIdentity,
+  orgFlag?: string,
+): boolean => {
+  const keyLine = parseApiKeyLine(apiKey);
+  if (keyLine && keyLine !== line) {
+    logger.error(lang.__('LOGIN_LINE_MISMATCH', { keyLine, line }));
+    return false;
+  }
+  if (orgFlag && identity.orgSlug && identity.orgSlug !== orgFlag) {
+    logger.error(lang.__('LOGIN_ORG_MISMATCH', { actual: identity.orgSlug, expected: orgFlag }));
+    return false;
+  }
+  const slug = identity.orgSlug || identity.orgId || 'unknown';
+  saveProfile(
+    line,
+    {
+      apiKey,
+      orgId: identity.orgId,
+      orgName: identity.orgName,
+      orgSlug: slug,
+      userEmail: identity.userEmail,
+    },
+    { activate: true },
+  );
+  logger.info(
+    lang.__('LOGIN_PROFILE_SAVED', {
+      profileKey: toProfileKey(line, slug),
+      userEmail: identity.userEmail || '(unknown)',
+    }),
+  );
+  return true;
+};
+
+const loginWithKey = async (
+  apiKey: string,
+  line: ConsoleLineName,
+  orgFlag?: string,
+): Promise<boolean> => {
   if (!validateApiKeyFormat(apiKey)) {
     logger.error(lang.__('LOGIN_KEY_FORMAT_INVALID'));
     return false;
@@ -31,17 +109,18 @@ const loginWithKey = async (apiKey: string, consoleUrl: string): Promise<boolean
 
   logger.info(lang.__('LOGIN_VALIDATING_KEY'));
   try {
-    const result = await validateApiKey(apiKey, consoleUrl);
-    saveCredentials({
+    const result = await validateApiKey(apiKey, consoleOriginFor(line));
+    return finalizeLogin(
       apiKey,
-      consoleUrl,
-      orgId: result.orgId,
-      orgName: result.orgName,
-      orgSlug: result.orgSlug,
-      userEmail: result.userEmail,
-    });
-    logger.info(lang.__('LOGIN_SUCCESS_KEY', { orgName: result.orgName }));
-    return true;
+      line,
+      {
+        orgId: result.orgId,
+        orgName: result.orgName,
+        orgSlug: result.orgSlug,
+        userEmail: result.userEmail,
+      },
+      orgFlag,
+    );
   } catch (error) {
     logger.error(lang.__('LOGIN_KEY_INVALID'));
     logger.debug(error instanceof Error ? error.message : String(error));
@@ -49,14 +128,14 @@ const loginWithKey = async (apiKey: string, consoleUrl: string): Promise<boolean
   }
 };
 
-const loginWithBrowser = async (consoleUrl: string): Promise<boolean> => {
+const loginWithBrowser = async (line: ConsoleLineName, orgFlag?: string): Promise<boolean> => {
   const randomPort = Math.floor(Math.random() * 79) + 54321; // 54321-54399
   let apiKey: string | null = null;
 
   logger.info(lang.__('LOGIN_STARTING_SERVER'));
 
   return new Promise<boolean>((resolve) => {
-    const uiUrl = resolveConsoleUiUrl({ consoleUrl });
+    const uiUrl = consoleUiOriginFor(line);
     const server: Server = createServer(async (req, res) => {
       if (!req.url) return;
       const url = new URL(req.url, `http://127.0.0.1:${randomPort}`);
@@ -94,23 +173,27 @@ const loginWithBrowser = async (consoleUrl: string): Promise<boolean> => {
         server.closeAllConnections();
         server.close();
 
-        const orgId = url.searchParams.get('org_id') || '';
-        const orgName = url.searchParams.get('org_name') || '';
-        const userEmail = url.searchParams.get('user_email') || '';
+        const identity: LoginIdentity = {
+          orgId: url.searchParams.get('org_id') || '',
+          orgName: url.searchParams.get('org_name') || '',
+          userEmail: url.searchParams.get('user_email') || '',
+          orgSlug: undefined,
+        };
 
         // The authorize callback doesn't carry the org slug; fetch the full
         // identity once so the yml `org:` cross-check works out of the box.
         // Degrade to the callback params if the validate roundtrip fails.
-        let orgSlug: string | undefined;
         try {
-          orgSlug = (await validateApiKey(apiKey, consoleUrl)).orgSlug;
+          const validated = await validateApiKey(key, consoleOriginFor(line));
+          identity.orgSlug = validated.orgSlug;
+          if (!identity.orgId) identity.orgId = validated.orgId;
+          if (!identity.orgName) identity.orgName = validated.orgName;
+          if (!identity.userEmail) identity.userEmail = validated.userEmail;
         } catch {
-          orgSlug = undefined;
+          identity.orgSlug = undefined;
         }
 
-        saveCredentials({ apiKey, consoleUrl, orgId, orgName, orgSlug, userEmail });
-        logger.info(lang.__('LOGIN_SUCCESS', { userEmail, orgName }));
-        resolve(true);
+        resolve(finalizeLogin(key, line, identity, orgFlag));
       } else {
         res.writeHead(200, { 'Content-Type': 'text/plain' });
         res.end('Waiting for authorization...');
@@ -142,36 +225,62 @@ const loginWithBrowser = async (consoleUrl: string): Promise<boolean> => {
   });
 };
 
-export const login = async (options: { siApiKey?: string }): Promise<void> => {
-  const consoleUrl = resolveConsoleUrl(loadCredentials() ?? undefined);
-
+export const login = async (options: {
+  siApiKey?: string;
+  line?: string;
+  org?: string;
+}): Promise<void> => {
   // Check if already logged in
-  const existingCreds = loadCredentials();
-  if (existingCreds) {
+  const file = loadCredentialsFile();
+  const activeProfile = file?.active ? file.profiles[file.active] : undefined;
+  if (activeProfile) {
     const answer = await ask(
       lang.__('LOGIN_ALREADY_LOGGED_IN', {
-        userEmail: existingCreds.userEmail || '',
-        orgName: existingCreds.orgName || '',
+        userEmail: activeProfile.userEmail || '',
+        orgName: activeProfile.orgName || activeProfile.orgId,
       }),
     );
     if (answer.toLowerCase() !== 'y' && answer.toLowerCase() !== 'yes') {
       logger.info(lang.__('LOGIN_CANCELLED'));
       return;
     }
-    deleteCredentials();
   }
 
-  // If --si-api-key provided, use it directly
-  if (options.siApiKey) {
-    await loginWithKey(options.siApiKey, consoleUrl);
+  const flagLine = normalizeLineName(options.line);
+
+  // If --si-api-key provided (or SI_API_KEY env), use it directly
+  const key = options.siApiKey ?? process.env.SI_API_KEY;
+  if (key) {
+    const keyLine = parseApiKeyLine(key);
+    if (keyLine && flagLine && keyLine !== flagLine) {
+      logger.error(lang.__('LOGIN_LINE_MISMATCH', { keyLine, line: flagLine }));
+      return;
+    }
+    const line = keyLine ?? flagLine ?? normalizeLineName(process.env.SI_CONSOLE_LINE);
+    if (!line) {
+      if (process.stdin.isTTY === true) {
+        const picked = await promptLinePicker();
+        await loginWithKey(key, picked, options.org);
+        return;
+      }
+      logger.error(lang.__('LOGIN_NEED_LINE'));
+      return;
+    }
+    if (!keyLine && !flagLine && process.env.SI_CONSOLE_LINE) {
+      logger.warn(lang.__('SAAS_LINE_ENV_DEPRECATED'));
+    }
+    await loginWithKey(key, line, options.org);
     return;
   }
 
-  // If SI_API_KEY env var set, use it
-  if (process.env.SI_API_KEY) {
-    await loginWithKey(process.env.SI_API_KEY, consoleUrl);
-    return;
-  }
+  // Interactive flow: pick the region first (ADR-008), then the method.
+  const line =
+    flagLine ??
+    (process.stdin.isTTY === true
+      ? await promptLinePicker()
+      : (() => {
+          throw new Error(lang.__('SAAS_LINE_UNRESOLVED', { operation: 'login' }));
+        })());
 
   // Interactive prompt
   console.log(`\n  ${lang.__('LOGIN_CHOOSE_METHOD')}\n`);
@@ -181,9 +290,9 @@ export const login = async (options: { siApiKey?: string }): Promise<void> => {
   const choice = await ask(lang.__('LOGIN_SELECT_CHOICE'));
 
   if (choice.trim() === '2') {
-    const key = await ask(lang.__('LOGIN_ENTER_API_KEY'));
-    await loginWithKey(key.trim(), consoleUrl);
+    const keyInput = await ask(lang.__('LOGIN_ENTER_API_KEY'));
+    await loginWithKey(keyInput.trim(), line, options.org);
   } else {
-    await loginWithBrowser(consoleUrl);
+    await loginWithBrowser(line, options.org);
   }
 };

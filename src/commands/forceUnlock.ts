@@ -5,7 +5,7 @@ import { getIacLocation, formatLockInfo, logger, setContext, getContext } from '
 import { createStateBackend } from '../common/stateBackend';
 import type { StateBackend } from '../common/stateBackend/types';
 import { StateBackendType } from '../types';
-import { getConsoleUrl } from '../common/credentialStore';
+import { bestEffortConsoleOrigin } from '../common/credentialStore';
 import { LOCK_FILE_SUFFIX } from '../common/constants';
 import { readLockFileForCommand, forceUnlock as fsForceUnlock } from '../common/lockManager';
 import { lang } from '../lang';
@@ -58,12 +58,12 @@ export const forceUnlockCommand = async (
     if (!iac.backend || iac.backend.type === StateBackendType.SAAS) {
       logger.info(
         lang.__('SAAS_FORCE_UNLOCK_NOT_SUPPORTED', {
-          consoleUrl: getConsoleUrl(),
+          consoleUrl: bestEffortConsoleOrigin(),
         }),
       );
       return;
     }
-    backend = createStateBackend(iac.backend, context);
+    backend = await createStateBackend(iac.backend, context);
   } else {
     const stateDir = path.join(process.cwd(), '.serverlessinsight');
     let foundStatePath: string | undefined;

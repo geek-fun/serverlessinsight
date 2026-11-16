@@ -15,6 +15,8 @@ export const destroyStack = async (options: {
   accessKeySecret?: string;
   securityToken?: string;
   stage?: string;
+  org?: string;
+  line?: string;
 }) => {
   const iacLocation = getIacLocation(options.location);
   const rawIac = parseYaml(iacLocation);
@@ -43,9 +45,11 @@ export const destroyStack = async (options: {
 
   // D-4: destroy mutates state — a migrated (managedBy=saas) legacy state must
   // fail closed here and route the user to the Console backend.
-  const backend = createStateBackend(iac.backend, {
+  const backend = await createStateBackend(iac.backend, {
     ...context,
     declaredOrg: iac.org,
+    org: options.org,
+    line: options.line,
     migrationMarker: 'refuse',
   });
 
