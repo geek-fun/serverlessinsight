@@ -33,6 +33,8 @@ export type StateBackend = {
   readonly scope: DeploymentScope;
   readonly capabilities: BackendCapabilities;
   loadState: () => Promise<StateFile>;
+  /** Project the migration source for the selected provider/region under the source lock. */
+  loadMigrationStates?: (allStages: boolean) => Promise<StateFile[]>;
   upgradeLegacyState?: (options?: {
     bindUnknownRegion?: string;
     dryRun?: boolean;
@@ -42,10 +44,13 @@ export type StateBackend = {
    * Merge top-level fields into the persisted state; a value of `undefined`
    * deletes the key. Written as a new persisted version (the backend's usual
    * backup/atomicity rules apply). Used by `si migrate` for the console-UUID
-   * backfill and the migration marker. Backends without a persisted legacy
-   * state (SaaS) omit it.
+   * backfill and migration marker. When given stage names, update them in a
+   * single aggregate write for the selected provider and region.
    */
-  patchPersisted?: (patch: Record<string, unknown | undefined>) => Promise<void>;
+  patchPersisted?: (
+    patch: Record<string, unknown | undefined>,
+    stages?: readonly string[],
+  ) => Promise<void>;
   readStateSource: () => StateSource;
   probeWriteReadiness: () => Promise<WriteReadiness>;
   acquireLock: (operation: string, options?: LockOptions) => Promise<string>;

@@ -1202,20 +1202,18 @@ export const en = {
     'Targets are matched by name. To control the destination (members, naming, …), pre-create the app/service in the Console first — si migrate maps onto them instead of creating new ones.',
   MIGRATE_PROVIDER_MISMATCH_TARGET:
     'Service "{{service}}" already exists with provider "{{existingProvider}}", but the YAML declares "{{ymlProvider}}" — importing {{ymlProvider}} state into it is not supported.',
-  MIGRATE_NOTHING_TO_MIGRATE: 'The legacy state has no deployed resources to migrate.',
+  MIGRATE_NOTHING_TO_MIGRATE: 'The selected source has no resources or shared state to migrate.',
   MIGRATE_STAGE_NOT_FOUND: 'Stage "{{stage}}" does not exist in the legacy state.',
   MIGRATE_PROVIDER_MISMATCH:
     'Provider mismatch: state says "{{stateProvider}}" but YAML says "{{ymlProvider}}".',
-  MIGRATE_ALREADY_MARKED:
-    'Legacy state already carries the migration marker — continuing (re-upload is idempotent).',
+  MIGRATE_ALREADY_MARKED: 'The selected source state already carries the migration marker.',
   MIGRATE_UPLOADING: 'Uploading stage {{stage}} to Console...',
   MIGRATE_UPLOADED:
     '  ✓ stage {{stage}} → version {{version}}{{deduped}} (app {{appId}}, service {{serviceId}})',
   MIGRATE_UPLOADED_DEDUPLICATED: ' (unchanged, deduplicated)',
   MIGRATE_VERIFY_FAILED:
     'Read-back verification FAILED for stage {{stage}} — the migration marker was NOT written. Compare the Console state version with your legacy state, then re-run `si migrate`.',
-  MIGRATE_MARKER_WRITTEN:
-    'Migration marker written: the legacy state is now read-only (managedBy=saas).',
+  MIGRATE_MARKER_WRITTEN: 'The migrated source partitions are now read-only (managedBy=saas).',
   MIGRATE_MARKER_SKIPPED:
     'WARNING: --no-marker was set. The legacy backend stays writable until cutover — complete the YAML cutover immediately.',
   MIGRATE_ROLLBACK_NO_MARKER:
@@ -1224,7 +1222,7 @@ export const en = {
   MIGRATE_ROLLBACK_DONE_HINT:
     'If you already removed the backend.state_manager block from your YAML, restore it before deploying via the legacy backend.',
   MIGRATE_CUTOVER_STEPS:
-    'Cutover checklist:\n  1. Remove the backend.state_manager block from serverlessinsight.yml, add a top-level org declaration (org: <slug> — see your org settings in Console), and merge\n  2. Run `si diff` — it MUST report no changes and exit 0 (that is the proof of a lossless migration)\n  3. Resume deploys; the Console now owns the deployment timeline',
+    'Before switching backends, finish migrating every partition that will use SaaS. Then remove backend.state_manager from serverlessinsight.yml, declare the Console org at the top level, and run `si diff` for each migrated partition. Resume deploys once every diff is empty.',
   MIGRATION_MARKER_REFUSED:
     'This state has been migrated to the ServerlessInsight Console (managedBy=saas) and the legacy backend is closed for changes.\n  • To continue with the Console: remove the backend.state_manager block from your YAML, declare a top-level org: <slug>, then deploy again.\n  • To deliberately use the legacy backend: run `si migrate --rollback` to clear the marker.',
   MIGRATION_MARKER_WARN:
@@ -1282,8 +1280,6 @@ export const en = {
     'The source backend did not provide a valid single-deployment V4 view after automatic preparation. Nothing was imported.',
   MIGRATE_TARGET_REGIONAL_REQUIRED:
     'The target service still uses legacy state. Complete its Console-side binding and activation before importing a regional state.',
-  MIGRATE_SOURCE_MULTIPLE_SCOPES:
-    'This regional document contains resources from other stages. Resolve the source ownership before importing; one regional document may own only its selected stage.',
   SAAS_STATE_ACK_INVALID:
     'The state server did not confirm a valid regional snapshot and content hash. Refusing to guess the next state revision; upgrade the server to scope protocol 3.',
 

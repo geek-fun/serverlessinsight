@@ -169,21 +169,94 @@ const MIGRATE_TEST_IDENTITY = {
   orgSlug: 'example-org',
 };
 
-const expectedHash = (state: Record<string, unknown>): string => {
-  const { resources: _projection, ...persisted } = state;
-  return hashSaasState({
-    ...persisted,
-    stages: { dev: (state.stages as Record<string, unknown>).dev },
-    orgId: 'org-1',
+const expectedHash = ({ resources: _projection, ...persisted }: Record<string, unknown>): string =>
+  hashSaasState({ ...persisted, orgId: 'org-1' });
+
+const prodState = (resources: Record<string, unknown> = { other: {} }) =>
+  legacyState({
+    scope: { stage: 'prod', region: 'cn-hangzhou' },
+    lineage: 'prod-lineage',
+    serial: 3,
+    stages: { prod: { resources } },
+  });
+
+/**
+ * Echo-style migration API: every upload is verified against what was posted
+ * (the real server contract), so tests assert the multi-stage flow without
+ * hand-computing content hashes.
+ */
+const mockEchoMigrationApi = () => {
+  let lastUpload: Record<string, unknown> | undefined;
+  mockApiClient.post.mockImplementation(async (_url: string, body: Record<string, unknown>) => {
+    lastUpload = body;
+    return {
+      stateId: `st-${body.stage}`,
+      versionNumber: 1,
+      appId: 'app-1',
+      serviceId: 'svc-1',
+      stageId: `stage-${body.stage}`,
+      scopeProtocol: 3,
+      provider: body.provider,
+      region: body.region,
+      deduped: false,
+    };
+  });
+  mockApiClient.get.mockImplementation(async (url: string) => {
+    if (url === '/api/v1/capabilities') {
+      return { regionalScope: true, providerScope: true, scopeProtocol: 3, stateFormat: '4.0' };
+    }
+    if (url.includes('/state/migrate/targets')) {
+      const stage = /stages=([^&]+)/.exec(url)![1]!;
+      return {
+        app: { name: 'myapp', exists: false, id: null },
+        service: {
+          name: 'myservice',
+          exists: false,
+          id: null,
+          provider: 'aliyun',
+        },
+        stages: [
+          {
+            name: decodeURIComponent(stage),
+            registered: false,
+            hasState: false,
+            latestVersion: null,
+          },
+        ],
+      };
+    }
+    if (url.includes('/state/current')) {
+      const stage = decodeURIComponent(/stage=([^&]+)/.exec(url)![1]!);
+      const state = lastUpload?.stateJson as
+        { stages: Record<string, { resources?: Record<string, unknown> }> } | undefined;
+      return {
+        id: `st-${stage}`,
+        serviceId: 'svc-1',
+        stageId: `stage-${stage}`,
+        provider: 'aliyun',
+        stage,
+        region: 'cn-hangzhou',
+        scopeProtocol: 3,
+        stateJson: lastUpload?.stateJson,
+        contentHash: lastUpload?.contentHash,
+        versionNumber: 1,
+        resourceCount: Object.keys(state?.stages[stage]?.resources ?? {}).length,
+      };
+    }
+    return {};
   });
 };
 
-const makeSourceBackend = (state: Record<string, unknown> | Error) => ({
+const makeSourceBackend = (
+  state: Record<string, unknown>,
+  states: Record<string, unknown>[] = [state],
+) => ({
   upgradeLegacyState: jest.fn().mockResolvedValue(undefined),
-  loadState: jest.fn(
-    state instanceof Error
-      ? jest.fn().mockRejectedValue(state)
-      : jest.fn().mockResolvedValue(state),
+  loadState: jest.fn().mockResolvedValue(state),
+  loadMigrationStates: jest.fn(async (allStages: boolean) =>
+    allStages
+      ? states
+      : states.filter(({ scope }) => (scope as { stage?: string })?.stage === 'dev'),
   ),
   patchPersisted: jest.fn().mockResolvedValue(undefined),
   withLock: jest.fn(async (_op: string, fn: () => Promise<unknown>) => fn()),
@@ -192,6 +265,8 @@ const makeSourceBackend = (state: Record<string, unknown> | Error) => ({
 type MigrationRunOptions = {
   /** Legacy state returned by the source backend (default: a dev-stage aliyun state). */
   state?: Record<string, unknown>;
+  /** Separate deployment views projected by the source backend. */
+  states?: Record<string, unknown>[];
   /** Override the /state/migrate/targets response. */
   targets?: Record<string, unknown>;
   /** Override the read-back verification response (default: echo of the uploaded hash). */
@@ -210,7 +285,7 @@ type MigrationRunOptions = {
  */
 const setupMigrationRun = (options: MigrationRunOptions = {}) => {
   const state = options.state ?? legacyState();
-  const backend = makeSourceBackend(state);
+  const backend = makeSourceBackend(state, options.states);
   mockedCreateStateBackend.mockReturnValue(
     options.patchable === false ? { ...backend, patchPersisted: undefined } : backend,
   );
@@ -284,6 +359,14 @@ describe('migrate command', () => {
       mockedRevalYaml.mockReturnValue({ ...rawIac, backend: { type: 'SAAS' } });
 
       await expect(migrate({ location: 'stack.yml' })).rejects.toThrow('MIGRATE_NO_BACKEND_SOURCE');
+    });
+
+    it('requires a source backend that can enumerate its migration partitions', async () => {
+      const backend = { ...makeSourceBackend(legacyState()), loadMigrationStates: undefined };
+      mockedCreateStateBackend.mockReturnValue(backend);
+
+      await expect(migrate({ location: 'stack.yml' })).rejects.toThrow('MIGRATE_NO_BACKEND_SOURCE');
+      expect(backend.withLock).not.toHaveBeenCalled();
     });
 
     it('rejects when no Console credentials are available', async () => {
@@ -410,16 +493,151 @@ describe('migrate command', () => {
       expect(backend.patchPersisted).not.toHaveBeenCalled();
     });
 
-    it('refuses to hide resources from another stage inside a purported regional document', async () => {
+    it('checks and marks each projected stage, preserving its deployment metadata', async () => {
+      const dev = legacyState({ lineage: 'dev-lineage', serial: 2 });
+      const prod = prodState();
+      const backend = setupMigrationRun({ states: [dev, prod], planOnly: true });
+      mockEchoMigrationApi();
+
+      await migrate({ location: 'stack.yml', autoApprove: true });
+
+      expect(mockApiClient.post).toHaveBeenCalledTimes(2);
+      for (const [index, stage, state] of [
+        [0, 'dev', dev],
+        [1, 'prod', prod],
+      ] as const) {
+        const body = mockApiClient.post.mock.calls[index]![1] as Record<string, unknown>;
+        expect(body.stage).toBe(stage);
+        expect(body.contentHash).toBe(expectedHash(state));
+        expect(body.stateJson).toMatchObject({
+          scope: { stage },
+          stages: state.stages,
+        });
+        expect(body.stateJson).not.toHaveProperty('resources');
+      }
+      expect(backend.patchPersisted).toHaveBeenCalledTimes(1);
+      expect(backend.patchPersisted).toHaveBeenCalledWith(
+        { orgId: 'org-1', appId: 'app-1', serviceId: 'svc-1', managedBy: 'saas' },
+        ['dev', 'prod'],
+      );
+    });
+
+    it('lists both projected stages during a dry run without uploading or marking', async () => {
       const backend = setupMigrationRun({
-        state: legacyState({
-          stages: { dev: { resources: { demo: {} } }, prod: { resources: { other: {} } } },
-        }),
+        states: [legacyState(), prodState()],
         planOnly: true,
       });
-      await expect(migrate({ location: 'stack.yml', autoApprove: true })).rejects.toThrow(
-        'MIGRATE_SOURCE_MULTIPLE_SCOPES',
+      mockApiClient.get.mockResolvedValueOnce(targetsResponse);
+
+      await migrate({ location: 'stack.yml', dryRun: true, autoApprove: true });
+
+      expect(mockApiClient.get).toHaveBeenCalledTimes(3);
+      expect(mockApiClient.post).not.toHaveBeenCalled();
+      expect(backend.patchPersisted).not.toHaveBeenCalled();
+    });
+
+    it('plans a shared-only stage with resourceCount zero and auto-creates missing targets', async () => {
+      const sharedOnly = legacyState({
+        stages: { dev: { shared: { oss_bucket: { name: 'shared-bucket' } } } },
+      }) as Record<string, unknown>;
+      const backend = setupMigrationRun({ state: sharedOnly, planOnly: true });
+      mockEchoMigrationApi();
+
+      await migrate({ location: 'stack.yml', autoApprove: true });
+
+      const body = mockApiClient.post.mock.calls[0]![1] as Record<string, unknown>;
+      expect(body.resourceCount).toBe(0);
+      expect(body.conflict).toBe('reject');
+      expect(backend.patchPersisted).toHaveBeenCalledWith(
+        expect.objectContaining({ appId: 'app-1', serviceId: 'svc-1', managedBy: 'saas' }),
+        ['dev'],
       );
+    });
+
+    it('uploads with conflict=overwrite under --force and tolerates a deduped echo', async () => {
+      const sharedOnly = legacyState({
+        stages: { dev: { shared: { oss_bucket: { name: 'shared-bucket' } } } },
+      }) as Record<string, unknown>;
+      setupMigrationRun({ state: sharedOnly, planOnly: true });
+      mockEchoMigrationApi();
+
+      await migrate({ location: 'stack.yml', force: true, autoApprove: true });
+
+      const body = mockApiClient.post.mock.calls[0]![1] as Record<string, unknown>;
+      expect(body.conflict).toBe('overwrite');
+    });
+
+    it('uploads a shared-only stage snapshot whose verify echoes the computed hash', async () => {
+      const sharedOnly = legacyState({
+        stages: { dev: { shared: { oss_bucket: { name: 'shared-bucket' } } } },
+      }) as Record<string, unknown>;
+      setupMigrationRun({ state: sharedOnly, planOnly: true });
+      mockEchoMigrationApi();
+
+      const result = await migrate({ location: 'stack.yml', force: true, autoApprove: true });
+      void result;
+      // Echo verification passed: the read-back matched the computed hash.
+      expect(mockApiClient.post).toHaveBeenCalledTimes(1);
+    });
+
+    it('rejects a source yaml without any backend block', async () => {
+      mockedRevalYaml.mockReturnValue({ ...rawIac });
+
+      await expect(migrate({ location: 'stack.yml' })).rejects.toThrow('MIGRATE_NO_BACKEND_SOURCE');
+    });
+
+    it('migrates the explicitly selected stage when -s is given and it is the only effective scope', async () => {
+      const backend = setupMigrationRun();
+
+      await migrate({ location: 'stack.yml', stage: 'dev', autoApprove: true });
+
+      expect(backend.patchPersisted).toHaveBeenCalledWith(
+        expect.objectContaining({ orgId: 'org-1', managedBy: 'saas' }),
+        ['dev'],
+      );
+    });
+
+    it.each(['appId', 'serviceId'])('rejects a write acknowledgment missing %s', async (field) => {
+      const backend = setupMigrationRun({ planOnly: true });
+      mockApiClient.post.mockResolvedValueOnce({ ...uploadResponse, [field]: '' });
+
+      await expect(migrate({ location: 'stack.yml', autoApprove: true })).rejects.toThrow(
+        'MIGRATE_VERIFY_FAILED',
+      );
+      expect(backend.patchPersisted).not.toHaveBeenCalled();
+    });
+
+    it('keeps both source partitions writable if the destination service changes', async () => {
+      const backend = setupMigrationRun({ states: [legacyState(), prodState()], planOnly: true });
+      mockEchoMigrationApi();
+      const upload = mockApiClient.post.getMockImplementation()!;
+      mockApiClient.post.mockImplementation(async (url, body) => {
+        const ack = await upload(url, body);
+        return body.stage === 'prod' ? { ...ack, serviceId: 'replacement-service' } : ack;
+      });
+
+      await expect(migrate({ location: 'stack.yml', autoApprove: true })).rejects.toThrow(
+        'MIGRATE_VERIFY_FAILED',
+      );
+      expect(mockApiClient.post).toHaveBeenCalledTimes(2);
+      expect(backend.patchPersisted).not.toHaveBeenCalled();
+    });
+
+    it('refuses a planned stage whose registered destination lost its content hash', async () => {
+      const backend = setupMigrationRun({
+        targets: {
+          ...targetsResponse,
+          stages: [
+            { name: 'dev', registered: true, hasState: true, contentHash: null, latestVersion: 3 },
+          ],
+        },
+        planOnly: true,
+      });
+
+      await expect(migrate({ location: 'stack.yml', autoApprove: true })).rejects.toThrow(
+        'SAAS_STATE_ACK_INVALID',
+      );
+      expect(mockApiClient.post).not.toHaveBeenCalled();
       expect(backend.patchPersisted).not.toHaveBeenCalled();
     });
 
@@ -497,12 +715,10 @@ describe('migrate command', () => {
       // The uploaded version carries the owning org id immediately (D-6 anchor)
       const body = mockApiClient.post.mock.calls[0][1] as Record<string, unknown>;
       expect((body.stateJson as Record<string, unknown>).orgId).toBe('org-1');
-      expect(backend.patchPersisted).toHaveBeenCalledWith({
-        orgId: 'org-1',
-        appId: 'app-1',
-        serviceId: 'svc-1',
-        managedBy: 'saas',
-      });
+      expect(backend.patchPersisted).toHaveBeenCalledWith(
+        { orgId: 'org-1', appId: 'app-1', serviceId: 'svc-1', managedBy: 'saas' },
+        ['dev'],
+      );
       expect(mockLoggerInfo).toHaveBeenCalledWith('MIGRATE_MARKER_WRITTEN');
       expect(mockLoggerInfo).toHaveBeenCalledWith(expect.stringContaining('MIGRATE_CUTOVER_STEPS'));
     });
@@ -601,12 +817,7 @@ describe('migrate command', () => {
 
     it('skips stages without resources', async () => {
       setupMigrationRun({
-        state: legacyState({
-          stages: {
-            dev: { resources: { 'functions.hello': { mode: 'managed' } } },
-            prod: { resources: {} },
-          },
-        }),
+        states: [legacyState(), prodState({})],
       });
 
       await migrate({ location: 'stack.yml', autoApprove: true });
@@ -785,6 +996,7 @@ describe('migrate command', () => {
       expect(mockApiClient.post).toHaveBeenCalled();
       expect(backend.patchPersisted).toHaveBeenCalledWith(
         expect.objectContaining({ managedBy: 'saas' }),
+        ['dev'],
       );
     });
 

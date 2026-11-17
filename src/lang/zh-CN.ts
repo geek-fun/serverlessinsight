@@ -1092,18 +1092,18 @@ export const zhCN = {
     '目标按名称匹配。如需控制迁移去向（成员、命名等），可先在 Console 手动创建 app/service——si migrate 会映射到同名目标，不会重复创建。',
   MIGRATE_PROVIDER_MISMATCH_TARGET:
     'service "{{service}}" 已存在且 provider 为 "{{existingProvider}}"，与 YAML 的 "{{ymlProvider}}" 不一致——不支持向其导入 {{ymlProvider}} 状态。',
-  MIGRATE_NOTHING_TO_MIGRATE: '旧状态中没有任何已部署资源可迁移。',
+  MIGRATE_NOTHING_TO_MIGRATE: '所选源状态中没有可迁移的资源或共享状态。',
   MIGRATE_STAGE_NOT_FOUND: '旧状态中不存在 stage "{{stage}}"。',
   MIGRATE_PROVIDER_MISMATCH:
     'provider 不一致：state 为 "{{stateProvider}}"，YAML 为 "{{ymlProvider}}"。',
-  MIGRATE_ALREADY_MARKED: '旧状态已带迁移标记——继续执行（重复上传会被幂等去重）。',
+  MIGRATE_ALREADY_MARKED: '所选源状态已有迁移标记。',
   MIGRATE_UPLOADING: '正在上传 stage {{stage}} 到 Console...',
   MIGRATE_UPLOADED:
     '  ✓ stage {{stage}} → 版本 {{version}}{{deduped}}（app {{appId}}，service {{serviceId}}）',
   MIGRATE_UPLOADED_DEDUPLICATED: '（内容未变，已去重）',
   MIGRATE_VERIFY_FAILED:
     'stage {{stage}} 回读校验失败——未写迁移标记。请对比 Console 状态版本与旧状态后重新执行 `si migrate`。',
-  MIGRATE_MARKER_WRITTEN: '已写迁移标记：旧状态转为只读（managedBy=saas）。',
+  MIGRATE_MARKER_WRITTEN: '已迁移的源状态分区现为只读（managedBy=saas）。',
   MIGRATE_MARKER_SKIPPED:
     '警告：使用了 --no-marker。cutover 完成前旧后端仍可写入——请立即完成 YAML 切换。',
   MIGRATE_ROLLBACK_NO_MARKER: '旧状态没有迁移标记——无需回滚。',
@@ -1111,7 +1111,7 @@ export const zhCN = {
   MIGRATE_ROLLBACK_DONE_HINT:
     '如果已从 YAML 中删除 backend.state_manager 段，经旧后端部署前请先恢复该段。',
   MIGRATE_CUTOVER_STEPS:
-    'cutover 清单：\n  1. 从 serverlessinsight.yml 删除 backend.state_manager 段，并在顶层添加 org 声明（org: <slug>，slug 见 Console 组织设置）后合并\n  2. 运行 `si diff`——必须显示无变更并退出 0（这是迁移无损的证明）\n  3. 恢复部署；此后部署时间线由 Console 接管',
+    '切换后端前，请迁移所有将使用 SaaS 的分区。随后从 serverlessinsight.yml 中移除 backend.state_manager，在顶层声明 Console 组织，并对每个已迁移的分区运行 `si diff`。确认均无差异后再恢复部署。',
   MIGRATION_MARKER_REFUSED:
     '该状态已迁移至 ServerlessInsight Console（managedBy=saas），旧后端已关闭变更。\n  • 继续使用 Console：从 YAML 中删除 backend.state_manager 段并在顶层声明 org: <slug> 后重新部署。\n  • 确需经旧后端操作：运行 `si migrate --rollback` 清除标记。',
   MIGRATION_MARKER_WARN:
@@ -1165,8 +1165,6 @@ export const zhCN = {
   MIGRATE_SOURCE_FORMAT_INVALID: '源后端在自动准备后未提供有效的单部署 V4 视图，尚未导入任何状态。',
   MIGRATE_TARGET_REGIONAL_REQUIRED:
     '目标服务仍使用旧版状态。请先完成控制台侧的区域绑定和激活，再导入区域状态。',
-  MIGRATE_SOURCE_MULTIPLE_SCOPES:
-    '此区域状态文档还包含其他 stage 的资源。请先核实源状态的归属，再导入；一个区域文档只能管理选定 stage 的资源。',
   SAAS_STATE_ACK_INVALID:
     '状态服务未确认有效的区域快照和内容哈希。已拒绝推测下一版本，请升级服务端以支持作用域协议 3。',
 
