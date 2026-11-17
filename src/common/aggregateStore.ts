@@ -119,41 +119,61 @@ export const createAggregateStore = (
     document: AggregateStateFile | PersistedStateFile,
   ): document is AggregateStateFile => document.version === AGGREGATE_STATE_VERSION;
 
+  const projectLegacyScope = (document: PersistedStateFile, target: DeploymentScope): StateFile => {
+    if (document.managedBy === MANAGED_BY_SAAS) {
+      return { ...document, resources: document.stages[target.stage]?.resources ?? {} };
+    }
+    const empty = projectAggregateScope(null, target);
+    const selected = document.stages[target.stage];
+    const selectRegion = (resources: typeof selected.resources | undefined) =>
+      Object.fromEntries(
+        Object.entries(resources ?? {}).filter(([, resource]) => {
+          const region = resource.region?.trim() || legacyRegionBinding;
+          if (!region) {
+            throw new Error(lang.__('REGIONAL_MIGRATION_UNKNOWN_REGION_REQUIRED'));
+          }
+          return canonicalizeRegion(region) === target.region;
+        }),
+      );
+    const resources =
+      document.provider === target.provider ? selectRegion(selected?.resources) : {};
+    const shared = document.provider === target.provider ? selectRegion(selected?.shared) : {};
+    const metadata = Object.fromEntries(
+      ['orgId', 'appId', 'serviceId', 'managedBy']
+        .filter((key) => document[key as keyof typeof document] !== undefined)
+        .map((key) => [key, document[key as keyof typeof document]]),
+    );
+    return { ...empty, ...metadata, stages: { [target.stage]: { resources, shared } }, resources };
+  };
+
   const loadState = async (captureBase = true): Promise<StateFile> => {
     const document = await readDocument();
     if (document && !isAggregate(document)) {
       source = 'legacy';
       enforceMigrationMarker(document, options.markerAction);
-      if (document.managedBy === MANAGED_BY_SAAS) {
-        return { ...document, resources: document.stages[scope.stage]?.resources ?? {} };
-      }
-      const empty = projectAggregateScope(null, scope);
-      const selected = document.stages[scope.stage];
-      const selectRegion = (resources: typeof selected.resources | undefined) =>
-        Object.fromEntries(
-          Object.entries(resources ?? {}).filter(([, resource]) => {
-            const region = resource.region?.trim() || legacyRegionBinding;
-            if (!region) {
-              throw new Error(lang.__('REGIONAL_MIGRATION_UNKNOWN_REGION_REQUIRED'));
-            }
-            return canonicalizeRegion(region) === scope.region;
-          }),
-        );
-      const resources =
-        document.provider === scope.provider ? selectRegion(selected?.resources) : {};
-      const shared = document.provider === scope.provider ? selectRegion(selected?.shared) : {};
-      const metadata = Object.fromEntries(
-        ['orgId', 'appId', 'serviceId', 'managedBy']
-          .filter((key) => document[key as keyof typeof document] !== undefined)
-          .map((key) => [key, document[key as keyof typeof document]]),
-      );
-      return { ...empty, ...metadata, stages: { [scope.stage]: { resources, shared } }, resources };
+      return projectLegacyScope(document, scope);
     }
     source = aggregatePartition(document, scope) ? 'scoped' : 'empty';
     const state = projectAggregateScope(document, scope);
     enforceMigrationMarker(state, options.markerAction);
     if (captureBase && plannedHash === undefined) plannedHash = deploymentStateHash(state);
     return state;
+  };
+
+  const loadMigrationStates = async (allStages: boolean): Promise<StateFile[]> => {
+    const document = await readDocument();
+    if (!document) return [];
+
+    const stages = allStages ? Object.keys(document.stages).sort() : [scope.stage];
+    const scopes = stages.map((stage) => ({ ...scope, stage }));
+    if (!isAggregate(document)) {
+      // V3 ownership was file-wide. Other legacy files reach this branch in a dry run.
+      if (document.managedBy === MANAGED_BY_SAAS) return [projectLegacyScope(document, scope)];
+      return scopes.map((target) => projectLegacyScope(document, target));
+    }
+    return scopes
+      .filter((target) => aggregatePartition(document, target))
+      .map((target) => projectAggregateScope(document, target));
   };
 
   const probeWriteReadiness = async (): Promise<WriteReadiness> => {
@@ -256,6 +276,7 @@ export const createAggregateStore = (
   return {
     upgradeLegacyState,
     loadState,
+    loadMigrationStates,
     probeWriteReadiness,
     readStateSource: (): StateSource => source,
     clearPlanBase: (): void => {
@@ -276,7 +297,10 @@ export const createAggregateStore = (
       enforceMigrationMarker(projectAggregateScope(document, scope), options.markerAction);
       await writeDocument(document, mergeAggregateScope(document, scope, state));
     },
-    patchPersisted: async (patch: Record<string, unknown | undefined>): Promise<void> => {
+    patchPersisted: async (
+      patch: Record<string, unknown | undefined>,
+      stages: readonly string[] = [scope.stage],
+    ): Promise<void> => {
       const existing = await readDocument();
       if (
         existing &&
@@ -299,7 +323,11 @@ export const createAggregateStore = (
         service: scope.service,
         stages: {},
       };
-      await writeDocument(document, patchAggregateScope(current, scope, patch));
+      const next = stages.reduce(
+        (aggregate, stage) => patchAggregateScope(aggregate, { ...scope, stage }, patch),
+        current,
+      );
+      await writeDocument(document, next);
     },
   };
 };
