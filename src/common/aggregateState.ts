@@ -11,6 +11,7 @@ import {
   type StateMigrationInfo,
 } from '../types';
 import { lang } from '../lang';
+import { redactStageEnvironments } from './envRedaction';
 import { normalizeScope, validateScopeKeyPart, type DeploymentScope } from './stateScope';
 import { hashSaasState } from './saasProtocol';
 
@@ -174,13 +175,13 @@ export const mergeAggregateScope = (
       return value === undefined ? [] : [[key, value]];
     }),
   );
-  const partition: StatePartition = {
+  const partition = redactStageEnvironments<StatePartition>({
     ...metadata,
     lineage: previous?.lineage ?? state.lineage ?? crypto.randomUUID(),
     serial: options.preserveRevision ? (state.serial ?? 1) : (previous?.serial ?? 0) + 1,
     resources: state.resources,
     shared: state.stages[normalized.stage]?.shared ?? previous?.shared ?? {},
-  };
+  });
   const stages = document?.stages ?? {};
   const providers = ownEntry(stages, normalized.stage)?.providers ?? {};
   const regions = ownEntry(providers, normalized.provider)?.regions ?? {};
@@ -235,6 +236,34 @@ export const patchAggregateScope = (
       },
     },
   };
+};
+
+export const redactAggregateEnvironments = (document: AggregateStateFile): AggregateStateFile => {
+  let changed = false;
+  const stages = Object.fromEntries(
+    Object.entries(document.stages).map(([stage, entry]) => [
+      stage,
+      {
+        ...entry,
+        providers: Object.fromEntries(
+          Object.entries(entry.providers).map(([provider, value]) => [
+            provider,
+            {
+              ...value,
+              regions: Object.fromEntries(
+                Object.entries(value.regions).map(([region, partition]) => {
+                  const redacted = redactStageEnvironments(partition);
+                  changed ||= redacted !== partition;
+                  return [region, redacted];
+                }),
+              ),
+            },
+          ]),
+        ),
+      },
+    ]),
+  );
+  return changed ? { ...document, stages } : document;
 };
 
 export const deploymentStateHash = (state: StateFile): string => {

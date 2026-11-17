@@ -1,3 +1,4 @@
+import { redactEnvironmentOrEmpty } from '../../common/envRedaction';
 import { withLifecycleIntent, withStoredFunctionIam } from '../../common/functionDefinition';
 import { definitionsDiffer, mergeManagedIntent } from '../../common/planCompare';
 import {
@@ -640,7 +641,7 @@ const buildScfInstanceFromProvider = (
     handler: info.Handler,
     memorySize: info.MemorySize,
     timeout: info.Timeout,
-    environment: envMap,
+    environment: redactEnvironmentOrEmpty(envMap),
     modTime: info.ModTime ?? null,
     codeSha256: info.CodeSha256 ?? null,
     codeInfo: info.CodeInfo ?? null,

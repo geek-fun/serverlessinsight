@@ -1,3 +1,4 @@
+import { redactEnvironmentOrEmpty } from '../../common/envRedaction';
 import { withLifecycleIntent, withStoredFunctionIam } from '../../common/functionDefinition';
 import { definitionsDiffer, mergeManagedIntent } from '../../common/planCompare';
 import { createVolcengineClient } from '../../common/volcengineClient';
@@ -368,7 +369,7 @@ const buildVefaasInstanceFromProvider = (
     handler: info.handler ?? null,
     memorySize: info.memoryMb ?? null,
     timeout: info.requestTimeout ?? null,
-    environment: info.environmentVariables ?? {},
+    environment: redactEnvironmentOrEmpty(info.environmentVariables),
     description: info.description ?? undefined,
     status: info.status ?? null,
     createdTime: info.createdTime ?? null,

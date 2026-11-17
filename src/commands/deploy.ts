@@ -1,3 +1,4 @@
+import { redactPlanItems } from '../common/planRedaction';
 import * as readline from 'node:readline';
 import crypto from 'node:crypto';
 import { deployStack } from '../stack';
@@ -110,6 +111,7 @@ export const deploy = async (options: {
   }
 
   displayPlan(planResult);
+  const publishedPlan = { items: redactPlanItems(planResult.items) };
 
   if (planResult.items.some((item) => item.action !== 'noop')) {
     if (!options.autoApprove) {
@@ -183,7 +185,7 @@ export const deploy = async (options: {
           } catch {
             // state may be unreadable mid-failure — plan alone is still useful
           }
-          failure.plan = { items: planResult.items };
+          failure.plan = publishedPlan;
           throw failure;
         }
         // Read back the final state so the deployment record can link it
@@ -191,7 +193,7 @@ export const deploy = async (options: {
         const finalState = await backend.loadState();
         const stateJson = finalState ? toPersistedState(finalState) : {};
         return {
-          plan: { items: planResult.items },
+          plan: publishedPlan,
           stateJson,
           contentHash: crypto.createHash('sha256').update(JSON.stringify(stateJson)).digest('hex'),
           resourceCount: Object.keys(finalState?.resources ?? {}).length,

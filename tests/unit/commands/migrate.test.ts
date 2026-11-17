@@ -723,6 +723,41 @@ describe('migrate command', () => {
       expect(mockLoggerInfo).toHaveBeenCalledWith(expect.stringContaining('MIGRATE_CUTOVER_STEPS'));
     });
 
+    it('masks legacy environment values before hashing and uploading the selected stage', async () => {
+      const stateWithUrl = (url: string) =>
+        legacyState({
+          stages: {
+            dev: {
+              resources: {
+                'functions.hello': {
+                  mode: 'managed',
+                  definition: { environment: { DATABASE_URL: url } },
+                },
+              },
+            },
+          },
+        });
+      const maskedState = stateWithUrl('[REDACTED]');
+      setupMigrationRun({
+        state: stateWithUrl('postgres://app:pw@db.example.test'),
+        verify: {
+          ...uploadResponse,
+          id: uploadResponse.stateId,
+          stage: 'dev',
+          stateJson: maskedState,
+          contentHash: expectedHash(maskedState),
+          resourceCount: 1,
+        },
+      });
+
+      await migrate({ location: 'stack.yml', autoApprove: true });
+
+      const payload = mockApiClient.post.mock.calls[0][1];
+      expect(payload.stateJson.stages).toEqual(maskedState.stages);
+      expect(payload.stateJson).not.toHaveProperty('resources');
+      expect(payload.contentHash).toBe(expectedHash(maskedState));
+    });
+
     it('shows the resolved targets with exists/create markers before confirming', async () => {
       setupMigrationRun();
 

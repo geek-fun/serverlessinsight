@@ -1,3 +1,4 @@
+import { redactEnvironmentAttributes } from '../../common/envRedaction';
 import { buildVefaasExecutionPolicy } from '../../common/volcengineClient/iamOperations';
 import { assertPlanIdentity, assertSupportedPlanUpdate } from '../../common/planCapabilities';
 import { definitionsDiffer, managedDefinition } from '../../common/planCompare';
@@ -9,6 +10,7 @@ import {
   computeRevertKeys,
   mergeLiveBefore,
   remoteDiffersFromDesired,
+  remoteDiffersFromStored,
 } from '../../common/planCompare';
 import { PLAN_READ_CONCURRENCY, mapWithConcurrency } from '../../common/concurrency';
 import { translateSiCron } from '../../common/siCron';
@@ -510,10 +512,7 @@ export const generateFunctionPlan = async (
             resourceType: 'VOLCENGINE_VEFAAS',
             changes: { before: liveBefore, after: managedDefinition(desiredDefinition) },
             ...(revertKeys.length ? { revertKeys } : {}),
-            ...(remoteDiffersFromDesired(
-              remoteAttributes,
-              managedDefinition(currentDefinition, desiredDefinition),
-            )
+            ...(remoteDiffersFromStored(remoteAttributes, currentDefinition, desiredDefinition)
               ? { drifted: true }
               : {}),
           };
@@ -534,7 +533,14 @@ export const generateFunctionPlan = async (
           };
         }
 
-        if (definitionChanged && !remoteDiffers)
+        if (
+          definitionChanged &&
+          !remoteDiffers &&
+          definitionsDiffer(
+            redactEnvironmentAttributes(currentDefinition),
+            redactEnvironmentAttributes(desiredDefinition),
+          )
+        )
           return {
             logicalId,
             action: 'noop',

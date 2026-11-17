@@ -13,6 +13,7 @@ import {
 } from '../types';
 import { normalizeScope, DeploymentScope } from './stateScope';
 import { emptyDeploymentState } from './aggregateState';
+import { redactStageEnvironments } from './envRedaction';
 import { withLock, LockOptions } from './lockManager';
 import { logger } from './logger';
 
@@ -115,10 +116,23 @@ export const migrateState = (raw: StateFile): StateFile => {
   return migrated as unknown as StateFile;
 };
 
-/** Strip the runtime-only `resources` projection — `stages` is the authoritative store (issue #225). */
+const redactPersistedEnvironments = (state: PersistedStateFile): PersistedStateFile =>
+  state.stages
+    ? {
+        ...state,
+        stages: Object.fromEntries(
+          Object.entries(state.stages).map(([stage, value]) => [
+            stage,
+            redactStageEnvironments(value),
+          ]),
+        ),
+      }
+    : state;
+
+/** Strip the runtime-only resources projection and redact environment values before serialization. */
 export const toPersistedState = (state: StateFile): PersistedStateFile => {
   const { resources: _projection, ...persisted } = state;
-  return persisted;
+  return redactPersistedEnvironments(persisted);
 };
 
 /**
@@ -227,7 +241,10 @@ export const saveState = (
   };
 
   // Atomic write: back up the previous state, then write tmp + fsync + rename
-  writeStateFileAtomically(statePath, JSON.stringify(stateToSave, null, 2));
+  writeStateFileAtomically(
+    statePath,
+    JSON.stringify(redactPersistedEnvironments(stateToSave), null, 2),
+  );
 };
 
 /**

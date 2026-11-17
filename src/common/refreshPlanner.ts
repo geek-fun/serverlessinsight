@@ -1,3 +1,4 @@
+import { redactEnvironmentAttributes } from './envRedaction';
 import { PlanItem, ResourceAttributes, ResourceState, StateFile } from '../types';
 import { attributesEqual } from './hashUtils';
 import { assertPlanIdentity, assertSupportedPlanUpdate } from './planCapabilities';
@@ -9,6 +10,7 @@ import {
   mergeLiveBefore,
   mergeManagedIntent,
   remoteDiffersFromDesired,
+  remoteDiffersFromStored,
 } from './planCompare';
 import { logger } from './logger';
 import { lang } from '../lang';
@@ -71,10 +73,7 @@ export const decideRefreshedExistsAction = async <T>(
   const extra = await args.extraUpdate?.();
   if (effectiveChanged || extra?.update) {
     const drifted =
-      remoteDiffersFromDesired(
-        attributes,
-        managedDefinition(args.storedDefinition, args.desiredDefinition),
-      ) ||
+      remoteDiffersFromStored(attributes, args.storedDefinition, args.desiredDefinition) ||
       (extra?.update === true && extra.drifted === true);
     return {
       action: 'update',
@@ -236,7 +235,12 @@ const planRefreshedResourceCore = async <T>(
       enrichRemoteAttributes: args.enrichRemoteAttributes,
       desiredDefinition: normalizedDesired,
       storedDefinition: normalizedCurrent,
-      definitionChanged,
+      definitionChanged:
+        definitionChanged &&
+        definitionsDiffer(
+          redactEnvironmentAttributes(normalizedCurrent),
+          redactEnvironmentAttributes(normalizedDesired),
+        ),
       extraUpdate: args.extraUpdate,
     });
 

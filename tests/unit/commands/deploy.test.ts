@@ -138,6 +138,60 @@ describe('unit test for deploy command', () => {
     expect(mockedDeployStack).toHaveBeenCalledTimes(1);
   });
 
+  it.each([false, true])('redacts deployment records when failure is %s', async (fails) => {
+    setupAliyunMocks();
+    const plan = {
+      items: [
+        {
+          logicalId: 'functions.hello',
+          action: 'create',
+          resourceType: 'ALIYUN_FC3_FUNCTION',
+          changes: { after: { environment: { DB_PASSWORD: 'plain-plan-value' } } },
+        },
+      ],
+    };
+    const resource = {
+      definition: { environment: { DB_PASSWORD: 'plain-state-value' } },
+      instances: [],
+    };
+    const recordedResources = { 'functions.hello': resource };
+    const backend = {
+      ...mockBackend,
+      loadState: jest.fn().mockResolvedValue({
+        resources: recordedResources,
+        stages: { dev: { resources: recordedResources } },
+      }),
+    };
+    mockedCreateStateBackend.mockReturnValue(backend);
+    mockedGenerateAliyunPlan.mockResolvedValue(plan);
+
+    const failure = new Error('provider failed');
+    if (fails) {
+      mockedDeployStack.mockRejectedValueOnce(failure);
+      await expect(deploy(baseOptions)).rejects.toBe(failure);
+    } else {
+      await deploy(baseOptions);
+    }
+
+    expect(mockedDeployStack).toHaveBeenCalledWith(aliyunIac, backend, plan);
+    const record = fails ? failure : await backend.withLock.mock.results[0].value;
+    expect(record).toMatchObject({
+      plan: {
+        items: [{ changes: { after: { environment: { DB_PASSWORD: '[REDACTED]' } } } }],
+      },
+      stateJson: {
+        stages: {
+          dev: {
+            resources: {
+              'functions.hello': { definition: { environment: { DB_PASSWORD: '[REDACTED]' } } },
+            },
+          },
+        },
+      },
+    });
+    expect(JSON.stringify(record)).not.toMatch(/plain-plan-value|plain-state-value/);
+  });
+
   it('should abort before planning when the write-readiness probe is not ready', async () => {
     setupAliyunMocks();
     mockedCreateStateBackend.mockReturnValue({

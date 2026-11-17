@@ -1,3 +1,4 @@
+import { redactEnvironmentOrEmpty } from '../../common/envRedaction';
 import { withLifecycleIntent, withStoredFunctionIam } from '../../common/functionDefinition';
 import { definitionsDiffer, mergeManagedIntent } from '../../common/planCompare';
 import { buildFc3NasConfig } from './fc3Types';
@@ -568,7 +569,7 @@ const buildFc3InstanceFromProvider = (info: Fc3FunctionInfo, sid: string) => {
     timeout: info.timeout ?? null,
     diskSize: info.diskSize ?? null,
     cpu: info.cpu ?? null,
-    environment: info.environmentVariables ?? {},
+    environment: redactEnvironmentOrEmpty(info.environmentVariables),
     vpcConfig: info.vpcConfig
       ? {
           vpcId: info.vpcConfig.vpcId ?? null,

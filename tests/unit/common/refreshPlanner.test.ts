@@ -1,6 +1,7 @@
 import { planRefreshedResource } from '../../../src/common/refreshPlanner';
 import type { PlanRefreshedResourceArgs } from '../../../src/common/refreshPlanner';
 import { logger } from '../../../src/common/logger';
+import { REDACTED_ENV_VALUE } from '../../../src/common/envRedaction';
 import type { ResourceState } from '../../../src/types';
 
 type Remote = { name: string; memory: number };
@@ -66,6 +67,50 @@ describe('planRefreshedResource', () => {
 
     expect(item).toMatchObject({ action: 'update', drifted: true });
   });
+
+  it.each(['fpr:0123456789abcdef', REDACTED_ENV_VALUE])(
+    'uses live secret values for refresh with a stored %s',
+    async (stored) => {
+      const desiredDefinition = { ...currentState.definition, environment: { DB_PASSWORD: 'new' } };
+      const input = {
+        currentState: {
+          ...currentState,
+          definition: { ...currentState.definition, environment: { DB_PASSWORD: stored } },
+        },
+        desiredDefinition,
+      };
+      const unchanged = await planRefreshedResource(
+        args({ ...input, read: jest.fn().mockResolvedValue(desiredDefinition) }),
+      );
+      expect(unchanged.action).toBe('noop');
+      expect(unchanged.stateUpdate).toBeUndefined();
+
+      const live = { ...desiredDefinition, environment: { DB_PASSWORD: 'old' } };
+      const change = await planRefreshedResource(
+        args({ ...input, read: jest.fn().mockResolvedValue(live) }),
+      );
+      expect(change).toMatchObject({
+        action: 'update',
+        changes: { before: live, after: desiredDefinition },
+      });
+      expect(change.drifted).toBeUndefined();
+
+      const configEdit = await planRefreshedResource(
+        args({
+          ...input,
+          desiredDefinition: { ...desiredDefinition, memory: 256 },
+          read: jest.fn().mockResolvedValue(desiredDefinition),
+        }),
+      );
+      expect(configEdit.action).toBe('update');
+      expect(configEdit.drifted).toBeUndefined();
+
+      const observedDrift = await planRefreshedResource(
+        args({ ...input, read: jest.fn().mockResolvedValue({ ...desiredDefinition, memory: 64 }) }),
+      );
+      expect(observedDrift).toMatchObject({ action: 'update', drifted: true });
+    },
+  );
 
   // Issue #246: the diff baseline for a drift update is cloud reality.
   it('uses the live attributes as changes.before and marks revert keys', async () => {
@@ -156,6 +201,27 @@ describe('planRefreshedResource', () => {
   });
 
   describe('--no-refresh', () => {
+    it.each([
+      ['pw', 'noop'],
+      [REDACTED_ENV_VALUE, 'update'],
+    ])('plans from a stored secret value of %s', async (stored, action) => {
+      const read = jest.fn();
+      const item = await planRefreshedResource(
+        args({
+          currentState: {
+            ...currentState,
+            definition: { ...currentState.definition, environment: { DB_PASSWORD: stored } },
+          },
+          desiredDefinition: { ...currentState.definition, environment: { DB_PASSWORD: 'pw' } },
+          refresh: false,
+          read,
+        }),
+      );
+      expect(read).not.toHaveBeenCalled();
+      expect(item.action).toBe(action);
+      expect(item.drifted).toBeUndefined();
+    });
+
     it('skips the live read and diffs intent only (no drifted claims)', async () => {
       const read = jest.fn().mockResolvedValue({ name: 'test', memory: 64 });
       const item = await planRefreshedResource(args({ read, refresh: false }));

@@ -244,6 +244,43 @@ describe('si migrate using a local state file', () => {
     expect(console.uploads).toHaveLength(2);
   });
 
+  it('redacts each stage before upload and preserves redaction while marking the source', async () => {
+    const stages = deployableStages();
+    const recorded = resource();
+    recorded.definition = {
+      environment: { DB_PASSWORD: 'short-password', NODE_ENV: 'production' },
+    };
+    recorded.instances = [
+      {
+        id: 'example',
+        sid: 'example-sid',
+        environment: { DATABASE_URL: 'postgres://app:pw@db.example.test/database' },
+      },
+    ];
+    stages.dev.providers.aliyun.regions[scope.region].resources['functions.example'] = recorded;
+    stages.prod.providers.aliyun.regions[scope.region].resources['functions.example'] = recorded;
+    writeState(stages);
+    const console = mockConsole();
+
+    await run();
+
+    expect(console.uploads.map(({ stage }) => stage)).toEqual(['dev', 'prod']);
+    for (const upload of console.uploads) {
+      expect(upload.contentHash).toBe(hashSaasState(upload.stateJson));
+      expect(upload.stateJson.stages[upload.stage].resources['functions.example']).toMatchObject({
+        definition: { environment: { DB_PASSWORD: '[REDACTED]', NODE_ENV: 'production' } },
+        instances: [{ environment: { DATABASE_URL: '[REDACTED]' } }],
+      });
+    }
+    for (const file of [statePath, `${statePath}.backup`]) {
+      const content = fs.readFileSync(file, 'utf8');
+      expect(content).not.toMatch(/short-password|postgres:\/\/|fpr:/);
+      expect(content).toContain('[REDACTED]');
+    }
+    expect(mark('dev')).toBe('saas');
+    expect(mark('prod')).toBe('saas');
+  });
+
   it.each(['absent', 'empty'])(
     'rejects --force on an %s explicit source partition',
     async (kind) => {

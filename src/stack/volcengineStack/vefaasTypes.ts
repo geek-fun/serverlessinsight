@@ -196,7 +196,7 @@ export const extractVefaasDefinition = (
       handler: config.handler,
       memorySize: config.memoryMb,
       timeout: config.requestTimeout,
-      environment: config.environmentVariables || {},
+      environment: config.environmentVariables ?? {},
       codeHash,
       description: config.description,
       role: config.role,
