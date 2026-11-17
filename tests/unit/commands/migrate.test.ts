@@ -730,6 +730,24 @@ describe('migrate command', () => {
       });
     });
 
+    it('refuses a planned stage whose registered destination lost its content hash', async () => {
+      const backend = setupMigrationRun({
+        targets: {
+          ...targetsResponse,
+          stages: [
+            { name: 'dev', registered: true, hasState: true, contentHash: null, latestVersion: 3 },
+          ],
+        },
+        planOnly: true,
+      });
+
+      await expect(migrate({ location: 'stack.yml', autoApprove: true })).rejects.toThrow(
+        'SAAS_STATE_ACK_INVALID',
+      );
+      expect(mockApiClient.post).not.toHaveBeenCalled();
+      expect(backend.patchPersisted).not.toHaveBeenCalled();
+    });
+
     it('does not implicitly activate an existing legacy destination', async () => {
       const backend = setupMigrationRun({
         targets: {
