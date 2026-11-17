@@ -145,21 +145,59 @@ const loginWithBrowser = async (line: ConsoleLineName, orgFlag?: string): Promis
 
   return new Promise<boolean>((resolve) => {
     const uiUrl = consoleUiOriginFor(line);
+    const uiOrigin = new URL(uiUrl).origin;
     const server: Server = createServer(async (req, res) => {
       if (!req.url) return;
       const url = new URL(req.url, `http://127.0.0.1:${randomPort}`);
-      const key = url.searchParams.get('api_key');
+
+      const origin = req.headers?.origin;
+      if (url.pathname === '/callback' && origin && origin !== uiOrigin) {
+        res.writeHead(403, { 'Content-Type': 'text/plain; charset=utf-8', Vary: 'Origin' });
+        res.end(lang.__('LOGIN_CALLBACK_ORIGIN_INVALID'));
+        return;
+      }
+      const corsHeaders =
+        origin === uiOrigin ? { 'Access-Control-Allow-Origin': uiOrigin, Vary: 'Origin' } : {};
+      if (req.method === 'OPTIONS' && url.pathname === '/callback') {
+        res.writeHead(204, {
+          ...corsHeaders,
+          'Access-Control-Allow-Methods': 'POST',
+          'Access-Control-Allow-Headers': 'Content-Type',
+        });
+        res.end();
+        return;
+      }
+
+      const params =
+        req.method === 'POST' && url.pathname === '/callback'
+          ? await new Promise<URLSearchParams>((resolveParams) => {
+              let body = '';
+              req.on('data', (chunk: Buffer) => {
+                body += chunk.toString();
+              });
+              req.on('end', () => {
+                try {
+                  const parsed = JSON.parse(body || '{}') as Record<string, string>;
+                  resolveParams(new URLSearchParams(Object.entries(parsed)));
+                } catch {
+                  resolveParams(new URLSearchParams());
+                }
+              });
+            })
+          : url.searchParams;
+
+      const key = params.get('api_key');
 
       if (key && url.pathname === '/callback') {
         apiKey = key;
-        const appId = url.searchParams.get('app_id') ?? '';
+        const appId = params.get('app_id') ?? '';
         const target = appId ? `${uiUrl}/${appId}/membership/api-keys` : uiUrl;
         const escapedTarget = target
           .replace(/&/g, '&amp;')
           .replace(/"/g, '&quot;')
           .replace(/</g, '&lt;')
           .replace(/>/g, '&gt;');
-        res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
+        res.writeHead(200, { ...corsHeaders, 'Content-Type': 'text/html; charset=utf-8' });
         res.end(`<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -183,9 +221,9 @@ const loginWithBrowser = async (line: ConsoleLineName, orgFlag?: string): Promis
         server.close();
 
         const identity: LoginIdentity = {
-          orgId: url.searchParams.get('org_id') || '',
-          orgName: url.searchParams.get('org_name') || '',
-          userEmail: url.searchParams.get('user_email') || '',
+          orgId: params.get('org_id') || '',
+          orgName: params.get('org_name') || '',
+          userEmail: params.get('user_email') || '',
           orgSlug: undefined,
         };
 
@@ -206,7 +244,7 @@ const loginWithBrowser = async (line: ConsoleLineName, orgFlag?: string): Promis
 
         resolve(finalizeLogin(key, line, identity, orgFlag, region));
       } else {
-        res.writeHead(200, { 'Content-Type': 'text/plain' });
+        res.writeHead(200, { ...corsHeaders, 'Content-Type': 'text/plain' });
         res.end('Waiting for authorization...');
       }
     });
