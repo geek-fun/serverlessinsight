@@ -1,4 +1,3 @@
-import { redactEnvironmentOrEmpty } from '../../common/envRedaction';
 import { withFunctionLifecycle } from '../../common/functionDefinition';
 import type { FunctionDomain, ResourceAttributes } from '../../types';
 import { mapRuntime, ProviderEnum } from '../../common';
@@ -262,7 +261,7 @@ export const extractScfDefinition = (
     handler: config.Handler,
     memorySize: config.MemorySize,
     timeout: config.Timeout,
-    environment: redactEnvironmentOrEmpty(envMap),
+    environment: envMap,
     codeHash,
     vpcConfig: config.VpcConfig ?? null,
     diskSize: config.DiskSize ?? null,
@@ -307,7 +306,7 @@ export const cloudScfToDefinition = (info: TencentScfFunctionInfo): ResourceAttr
     handler: info.Handler ?? null,
     memorySize: info.MemorySize ?? null,
     timeout: info.Timeout ?? null,
-    environment: redactEnvironmentOrEmpty(envMap),
+    environment: envMap,
     vpcConfig: cloudVpcConfig
       ? { VpcId: cloudVpcConfig.VpcId ?? null, SubnetId: cloudVpcConfig.SubnetId ?? null }
       : null,

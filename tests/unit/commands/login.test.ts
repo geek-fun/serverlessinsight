@@ -41,6 +41,7 @@ jest.mock('../../../src/common/credentialStore', () => ({
 }));
 
 import * as readline from 'node:readline';
+import type { IncomingMessage } from 'node:http';
 import { login } from '../../../src/commands/login';
 import { validateApiKey } from '../../../src/common/apiClient';
 import { logger } from '../../../src/common/logger';
@@ -52,7 +53,10 @@ const setTty = (value: boolean | undefined): void => {
   Object.defineProperty(process.stdin, 'isTTY', { value, configurable: true });
 };
 
-type BrowserCallbackHandler = (req: { url?: string }, res: unknown) => Promise<void>;
+type BrowserCallbackHandler = (
+  req: Partial<Pick<IncomingMessage, 'url' | 'method' | 'headers' | 'on'>>,
+  res: unknown,
+) => Promise<void>;
 
 /**
  * Point `open` at the given implementation and make the mocked server "listen"
@@ -268,6 +272,96 @@ describe('login command (ADR-008)', () => {
       setTty(true);
     });
 
+    it.each([
+      { line: 'international', origin: 'https://console.serverlessinsight.com' },
+      { line: 'china', origin: 'https://console.serverlessinsight.cn' },
+      { line: 'international', origin: 'http://localhost:5173', uiUrl: 'http://localhost:5173/' },
+    ])('allows the JSON preflight from $origin for $line', async ({ line, origin, uiUrl }) => {
+      if (uiUrl) process.env.SI_CONSOLE_UI_URL = uiUrl;
+      mockReadlineAnswers.push('1');
+      setupBrowserLogin();
+      const loginPromise = login({ line });
+      const handler = await waitForCallbackServer();
+      const key = line === 'china' ? chinaKey : intlKey;
+      const response = { writeHead: jest.fn(), end: jest.fn() };
+
+      await handler(
+        {
+          url: `/callback?api_key=${key}`,
+          method: 'OPTIONS',
+          headers: {
+            origin,
+            'access-control-request-method': 'POST',
+            'access-control-request-headers': 'content-type',
+          },
+        },
+        response,
+      );
+
+      expect(response.writeHead).toHaveBeenCalledWith(204, {
+        'Access-Control-Allow-Origin': origin,
+        'Access-Control-Allow-Methods': 'POST',
+        'Access-Control-Allow-Headers': 'Content-Type',
+        Vary: 'Origin',
+      });
+      expect(response.end).toHaveBeenCalledWith();
+      expect(mockValidateApiKey).not.toHaveBeenCalled();
+      expect(mockSaveProfile).not.toHaveBeenCalled();
+      expect(mockServer.close).not.toHaveBeenCalled();
+
+      await handler(
+        { url: `/callback?api_key=${key}`, method: 'GET' },
+        {
+          writeHead: jest.fn(),
+          end: jest.fn(),
+        },
+      );
+      await loginPromise;
+      expect(mockSaveProfile).toHaveBeenCalledTimes(1);
+    });
+
+    it.each(['OPTIONS', 'POST'])(
+      'rejects %s callbacks from an unexpected origin and keeps waiting',
+      async (method) => {
+        mockReadlineAnswers.push('1');
+        setupBrowserLogin();
+        const loginPromise = login({ line: 'international' });
+        const handler = await waitForCallbackServer();
+        const response = { writeHead: jest.fn(), end: jest.fn() };
+        const on = jest.fn();
+
+        await handler(
+          {
+            url: `/callback?api_key=${intlKey}`,
+            method,
+            headers: { origin: 'https://unexpected.example.test' },
+            on,
+          },
+          response,
+        );
+
+        expect(response.writeHead).toHaveBeenCalledWith(403, {
+          'Content-Type': 'text/plain; charset=utf-8',
+          Vary: 'Origin',
+        });
+        expect(response.end).toHaveBeenCalledWith('LOGIN_CALLBACK_ORIGIN_INVALID');
+        expect(on).not.toHaveBeenCalled();
+        expect(mockValidateApiKey).not.toHaveBeenCalled();
+        expect(mockSaveProfile).not.toHaveBeenCalled();
+        expect(mockServer.close).not.toHaveBeenCalled();
+
+        await handler(
+          { url: `/callback?api_key=${intlKey}`, method: 'GET' },
+          {
+            writeHead: jest.fn(),
+            end: jest.fn(),
+          },
+        );
+        await loginPromise;
+        expect(mockSaveProfile).toHaveBeenCalledTimes(1);
+      },
+    );
+
     it('picks the line interactively and stores the profile under that line', async () => {
       mockReadlineAnswers.push('2'); // line picker → china
       mockReadlineAnswers.push('1'); // method → browser
@@ -385,18 +479,25 @@ describe('login command (ADR-008)', () => {
       const req = {
         url: '/callback',
         method: 'POST',
+        headers: {
+          origin: 'https://console.serverlessinsight.com',
+          'content-type': 'application/json',
+        },
         on: (event: string, cb: (chunk?: unknown) => void) => {
           if (event === 'data') cb(JSON.stringify(payload));
           if (event === 'end') cb();
         },
       };
-      await handler(req as unknown as import('node:http').IncomingMessage, {
-        writeHead: jest.fn(),
-        end: jest.fn(),
-      });
+      const response = { writeHead: jest.fn(), end: jest.fn() };
+      await handler(req as unknown as IncomingMessage, response);
 
       await loginPromise;
 
+      expect(response.writeHead).toHaveBeenCalledWith(200, {
+        'Access-Control-Allow-Origin': 'https://console.serverlessinsight.com',
+        'Content-Type': 'text/html; charset=utf-8',
+        Vary: 'Origin',
+      });
       expect(mockSaveProfile).toHaveBeenCalledWith(
         'international',
         expect.objectContaining({ apiKey: intlKey, orgId: 'org-1' }),

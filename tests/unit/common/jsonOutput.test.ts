@@ -9,6 +9,8 @@ import {
   setJsonMode,
   writeJson,
 } from '../../../src/common/jsonOutput';
+import { formatPlanItem } from '../../../src/common/planFormatter';
+import { redactPlanItems } from '../../../src/common/planRedaction';
 import { PlanItem } from '../../../src/types';
 
 jest.mock('../../../src/common/logger', () => ({
@@ -122,6 +124,64 @@ describe('jsonOutput', () => {
       expect(change.drifted).toBeUndefined();
       expect(change.driftReasons).toBeUndefined();
       expect(change.attributes).toEqual([]);
+    });
+
+    it.each(['create', 'update', 'delete'] as const)(
+      'masks environment values in CLI and deployment plans for %s',
+      (action) => {
+        const before = { environment: { DB_PASSWORD: 'short-old', MODE: 'test' } };
+        const after = {
+          environment: {
+            DB_PASSWORD: 'short-new',
+            DATABASE_URL: 'postgres://app:pw@db.example.test',
+            MODE: 'test',
+          },
+        };
+        const item = makeItem({
+          action,
+          changes: {
+            ...(action !== 'create' && { before }),
+            ...(action !== 'delete' && { after }),
+          },
+        });
+
+        const [recorded] = redactPlanItems([item]);
+        for (const output of [
+          JSON.stringify(buildPlanChange(item)),
+          formatPlanItem(item, { colorize: false, indentSize: 4, keyAlignWidth: 12 }),
+          JSON.stringify(recorded),
+        ]) {
+          expect(output).toContain('DB_PASSWORD');
+          expect(output).not.toMatch(/short-old|short-new|postgres:\/\//);
+        }
+        const [environmentChange] = buildPlanChange(item).attributes;
+        expect(environmentChange.key).toBe('environment');
+        if (action === 'update') {
+          expect(environmentChange.action).toBe('change');
+          expect(recorded.changes?.before).toEqual({
+            environment: { DB_PASSWORD: '[REDACTED]', MODE: 'test' },
+          });
+          expect(recorded.changes?.after).toEqual({
+            environment: {
+              DB_PASSWORD: '[REDACTED: updated]',
+              DATABASE_URL: '[REDACTED]',
+              MODE: 'test',
+            },
+          });
+        }
+        expect(before.environment.DB_PASSWORD).toBe('short-old');
+        expect(after.environment.DB_PASSWORD).toBe('short-new');
+      },
+    );
+
+    it('redacts adopted definitions in deployment record plans', () => {
+      const item = makeItem({
+        action: 'noop',
+        stateUpdate: { environment: { AUTH_TOKEN: 'adopted', MODE: 'test' } },
+      });
+      expect(redactPlanItems([item])).toEqual([
+        { ...item, stateUpdate: { environment: { AUTH_TOKEN: '[REDACTED]', MODE: 'test' } } },
+      ]);
     });
   });
 

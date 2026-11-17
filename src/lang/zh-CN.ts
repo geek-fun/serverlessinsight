@@ -979,6 +979,7 @@ export const zhCN = {
   LOGIN_KEY_INVALID: '无效的 API 密钥，请检查后重试。',
   LOGIN_KEY_FORMAT_INVALID: 'API 密钥格式无效。格式应为：si_<prefix>_<secret>',
   LOGIN_STARTING_SERVER: '正在启动本地服务器以接收认证回调...',
+  LOGIN_CALLBACK_ORIGIN_INVALID: '认证回调来自非预期的 Console 来源。',
   LOGIN_OPENING_BROWSER: '正在打开浏览器进行控制台授权...',
   LOGIN_BROWSER_UNAVAILABLE: '无法自动打开浏览器。\n请手动在浏览器中访问以下地址：\n{{url}}',
   LOGIN_SERVER_DONE: '已收到授权，正在完成登录...',

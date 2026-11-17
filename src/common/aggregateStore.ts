@@ -14,6 +14,7 @@ import {
   patchAggregateScope,
   projectAggregateScope,
   readAggregateDocument,
+  redactAggregateEnvironments,
   type AggregateStateFile,
 } from './aggregateState';
 import { canonicalizeRegion, normalizeScope, type DeploymentScope } from './stateScope';
@@ -184,8 +185,10 @@ export const createAggregateStore = (
     previous: AggregateStateFile | null,
     next: AggregateStateFile,
   ): Promise<void> => {
-    if (previous && options.backupWrites) await io.write(`${options.key}.backup`, previous);
-    await io.write(options.key, next);
+    if (previous && options.backupWrites) {
+      await io.write(`${options.key}.backup`, redactAggregateEnvironments(previous));
+    }
+    await io.write(options.key, redactAggregateEnvironments(next));
     source = 'scoped';
   };
 

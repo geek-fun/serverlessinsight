@@ -842,6 +842,40 @@ describe('vefaasPlanner', () => {
       expect(mockVefaasClient.iam.getRole).not.toHaveBeenCalled();
     });
 
+    it('uses live credentials even when the recorded environment has been masked', async () => {
+      const state = buildRoleState();
+      const resource = state.resources['functions.test_fn'];
+      resource.instances = [];
+      resource.definition.environment = { DATABASE_URL: '[REDACTED]' };
+      jest.spyOn(stateManager, 'getResource').mockReturnValue(resource);
+      const environment = { DATABASE_URL: 'postgres://app:pw@db.example.test' };
+      const fn = { ...mockFunction, environment };
+      const remote = {
+        runtime: 'node20/v1',
+        handler: 'index.handler',
+        memoryMb: 128,
+        requestTimeout: 30,
+        environmentVariables: environment,
+      };
+      mockVefaasClient.vefaas.getFunction.mockResolvedValue(remote);
+
+      const matching = await generateFunctionPlan(mockContext, state, [fn]);
+      expect(matching.items[0].action).toBe('noop');
+      expect(matching.items[0].stateUpdate).toBeUndefined();
+
+      const rotation = await generateFunctionPlan(mockContext, state, [
+        { ...fn, environment: { DATABASE_URL: 'postgres://app:new@db.example.test' } },
+      ]);
+      expect(rotation.items[0]).toMatchObject({
+        action: 'update',
+        changes: { before: { environment } },
+      });
+      expect(rotation.items[0].drifted).toBeUndefined();
+
+      const offline = await generateFunctionPlan({ ...mockContext, refresh: false }, state, [fn]);
+      expect(offline.items[0].action).toBe('update');
+    });
+
     it('adopts changed intent without a cloud update when live memory already matches', async () => {
       const state = buildRoleState();
       state.resources['functions.test_fn'].instances = [];

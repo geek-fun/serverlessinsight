@@ -1,4 +1,4 @@
-import { redactEnvironmentOrEmpty } from '../../common/envRedaction';
+import { redactEnvironmentAttributes } from '../../common/envRedaction';
 import { buildVefaasExecutionPolicy } from '../../common/volcengineClient/iamOperations';
 import { assertPlanIdentity, assertSupportedPlanUpdate } from '../../common/planCapabilities';
 import { definitionsDiffer, managedDefinition } from '../../common/planCompare';
@@ -10,6 +10,7 @@ import {
   computeRevertKeys,
   mergeLiveBefore,
   remoteDiffersFromDesired,
+  remoteDiffersFromStored,
 } from '../../common/planCompare';
 import { PLAN_READ_CONCURRENCY, mapWithConcurrency } from '../../common/concurrency';
 import { translateSiCron } from '../../common/siCron';
@@ -256,7 +257,7 @@ export const generateFunctionPlan = async (
           handler: remoteFunction.handler,
           memorySize: remoteFunction.memoryMb,
           timeout: remoteFunction.requestTimeout,
-          environment: redactEnvironmentOrEmpty(remoteFunction.environmentVariables),
+          environment: remoteFunction.environmentVariables ?? {},
           // Provider responses carry `null` for unset fields while the desired
           // definition carries `undefined` — normalize null → undefined so the
           // comparison ignores the representation difference.
@@ -511,10 +512,7 @@ export const generateFunctionPlan = async (
             resourceType: 'VOLCENGINE_VEFAAS',
             changes: { before: liveBefore, after: managedDefinition(desiredDefinition) },
             ...(revertKeys.length ? { revertKeys } : {}),
-            ...(remoteDiffersFromDesired(
-              remoteAttributes,
-              managedDefinition(currentDefinition, desiredDefinition),
-            )
+            ...(remoteDiffersFromStored(remoteAttributes, currentDefinition, desiredDefinition)
               ? { drifted: true }
               : {}),
           };
@@ -535,7 +533,14 @@ export const generateFunctionPlan = async (
           };
         }
 
-        if (definitionChanged && !remoteDiffers)
+        if (
+          definitionChanged &&
+          !remoteDiffers &&
+          definitionsDiffer(
+            redactEnvironmentAttributes(currentDefinition),
+            redactEnvironmentAttributes(desiredDefinition),
+          )
+        )
           return {
             logicalId,
             action: 'noop',

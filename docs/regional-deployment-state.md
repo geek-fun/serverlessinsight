@@ -214,6 +214,15 @@ state or its ownership. There is no format rollback command. Preserve current st
 and recover forward from retained evidence rather than overwrite newer partition
 writes with an old whole file. Older clients reject V4; do not downgrade writers.
 
+## Function environment values
+
+Plans and state records mask values whose names look like secrets and connection URLs
+that contain credentials. Refresh compares the configured values with the provider's
+live values in memory. With `--no-refresh`, a stored mask cannot establish equality,
+so the plan reapplies the configured value. Saves also mask legacy values in active
+state and rolling aggregate backups. Historical snapshots and upgrade recovery
+files may still contain earlier values.
+
 ## SaaS protocol 3
 
 Capabilities must advertise `scopeProtocol: 3`, `regionalScope: true`,

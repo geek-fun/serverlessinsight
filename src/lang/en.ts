@@ -1078,6 +1078,7 @@ export const en = {
   LOGIN_KEY_INVALID: 'Invalid API key. Please check and try again.',
   LOGIN_KEY_FORMAT_INVALID: 'Invalid API key format. Expected: si_<prefix>_<secret>',
   LOGIN_STARTING_SERVER: 'Starting local server for authentication callback...',
+  LOGIN_CALLBACK_ORIGIN_INVALID: 'Authorization callback came from an unexpected Console origin.',
   LOGIN_OPENING_BROWSER: 'Opening browser for Console authorization...',
   LOGIN_BROWSER_UNAVAILABLE:
     'Unable to open browser automatically.\nPlease visit the following URL in your browser:\n{{url}}',
