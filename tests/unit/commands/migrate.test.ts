@@ -638,6 +638,98 @@ describe('migrate command', () => {
       expect(mockApiClient.post).toHaveBeenCalledTimes(1);
     });
 
+    it('rejects a source yaml without any backend block', async () => {
+      mockedRevalYaml.mockReturnValue({ ...rawIac });
+
+      await expect(migrate({ location: 'stack.yml' })).rejects.toThrow('MIGRATE_NO_BACKEND_SOURCE');
+    });
+
+    it('migrates the explicitly selected stage when -s is given and it is the only effective scope', async () => {
+      const backend = setupMigrationRun();
+
+      await migrate({ location: 'stack.yml', stage: 'dev', autoApprove: true });
+
+      expect(backend.patchPersisted).toHaveBeenCalledWith(
+        expect.objectContaining({ orgId: 'org-1', managedBy: 'saas' }),
+      );
+    });
+
+    it('logs exists-path targets and covers upload identity fallbacks', async () => {
+      const sharedOnly = legacyState({
+        stages: { dev: { shared: { oss_bucket: { name: 'shared-bucket' } } } },
+      }) as Record<string, unknown>;
+      const backend = setupMigrationRun({ state: sharedOnly, planOnly: true });
+      let uploaded: Record<string, unknown> | undefined;
+      mockApiClient.get.mockImplementation(async (url: string) => {
+        if (url === '/api/v1/capabilities') {
+          return { regionalScope: true, providerScope: true, scopeProtocol: 3, stateFormat: '4.0' };
+        }
+        if (url.includes('/state/migrate/targets')) {
+          return {
+            app: { name: 'myapp', exists: true, id: 'app-1' },
+            service: {
+              name: 'myservice',
+              exists: true,
+              id: 'svc-1',
+              provider: 'aliyun',
+              regionalScopeEnabled: true,
+              scopeProtocol: 3,
+            },
+            stages: [
+              {
+                name: 'dev',
+                registered: true,
+                hasState: true,
+                contentHash: 'server-hash',
+                latestVersion: 4,
+              },
+            ],
+          };
+        }
+        if (url.includes('/state/current')) {
+          return {
+            id: 'st-x',
+            serviceId: '',
+            stageId: 'stage-1',
+            provider: 'aliyun',
+            stage: 'dev',
+            region: 'cn-hangzhou',
+            scopeProtocol: 3,
+            stateJson: uploaded?.stateJson,
+            contentHash: hashSaasState(uploaded?.stateJson as Record<string, unknown>),
+            versionNumber: 1,
+            resourceCount: null,
+          };
+        }
+        return {};
+      });
+      mockApiClient.post.mockImplementation(async (_url: string, body: Record<string, unknown>) => {
+        uploaded = body;
+        return {
+          stateId: 'st-x',
+          versionNumber: 1,
+          appId: '',
+          serviceId: '',
+          stageId: 'stage-1',
+          scopeProtocol: 3,
+          provider: body.provider,
+          region: body.region,
+          deduped: true,
+        };
+      });
+
+      await migrate({ location: 'stack.yml', autoApprove: true });
+
+      // Marker identity falls back to the first target ids when the upload
+      // echoes empty app/service ids (issue #23 Phase 9 branch coverage).
+      expect(backend.patchPersisted).toHaveBeenCalledWith({
+        orgId: 'org-1',
+        appId: 'app-1',
+        serviceId: 'svc-1',
+        managedBy: 'saas',
+      });
+    });
+
     it('does not implicitly activate an existing legacy destination', async () => {
       const backend = setupMigrationRun({
         targets: {

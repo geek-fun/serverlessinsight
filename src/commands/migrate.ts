@@ -246,10 +246,11 @@ export const migrate = async (options: {
       if (report?.hasState && !report.contentHash)
         throw new Error(lang.__('SAAS_STATE_ACK_INVALID'));
       // A per-stage regional document owns exactly one stage: the snapshot's
-      // top-level scope must name the stage it carries.
+      // top-level scope must name the stage it carries. state.scope is
+      // guaranteed non-null by the format guard above.
       const persisted = {
         ...toPersistedState(state),
-        scope: { ...(state.scope ?? { stage, region: scope.region }), stage },
+        scope: { ...(state.scope as { stage: string; region: string }), stage },
         stages: { [stage]: entry },
         orgId,
       };
