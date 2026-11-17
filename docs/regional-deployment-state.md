@@ -233,12 +233,13 @@ projection. Historical snapshot JSON and hashes are immutable. CAS uses the serv
 are idempotent; stale writes and scope switches fail before changing the head.
 Deployment event replay uses the immutable deployment UUID and per-run sequence.
 
-`si migrate` imports and verifies only the selected partition, then marks only that
-partition `managedBy=saas`. Siblings remain owned by their original backend. Local/Bucket
-V3 is automatically prepared in place during the handoff; an aggregate V4 is never
-uploaded as a SaaS snapshot. `si migrate --rollback` only removes the source ownership
-marker after a reviewed handback; it does not downgrade state or copy newer SaaS state
-back to the source.
+`si migrate` imports every stage with resources or shared state for the selected provider
+and region. Pass `--stage` to import one partition. After every upload has been verified,
+the CLI marks the imported partitions `managedBy=saas` in one source update. Partitions
+outside the selection keep their existing ownership. Local and bucket V3 state is
+automatically prepared in place, and each SaaS snapshot contains one V4 deployment.
+`si migrate --rollback --stage <stage>` clears the selected partition's ownership marker
+after a reviewed handback. Rollback leaves the state format and snapshot contents intact.
 
 Protocol tests mock the peer API independently in each repository. Normal repository
 tests do not depend on a live peer service or a cross-repository test harness.
