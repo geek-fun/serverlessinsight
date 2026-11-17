@@ -114,6 +114,50 @@ describe('aggregate store IO', () => {
     await expect(planned.verifyPlanBase()).resolves.toBeUndefined();
   });
 
+  it('redacts previously recorded environments when saving an unchanged deployment', async () => {
+    const siblingScope = { ...scope, region: 'ap-southeast-1' };
+    const document = mergeAggregateScope(
+      mergeAggregateScope(null, scope, emptyDeploymentState(scope)),
+      siblingScope,
+      emptyDeploymentState(siblingScope),
+    );
+    const partition = aggregatePartition(document, scope)!;
+    const resource = {
+      mode: 'managed' as const,
+      region: scope.region,
+      definition: { environment: { DB_PASSWORD: 'old-password', MODE: 'test' } },
+      instances: [
+        {
+          sid: 'primary',
+          id: 'hello',
+          environment: { DATABASE_URL: 'postgres://app:pw@db.example.test' },
+        },
+      ],
+      lastUpdated: '2024-01-01T00:00:00.000Z',
+    };
+    partition.resources['functions.hello'] = resource;
+    const sibling = aggregatePartition(document, siblingScope)!;
+    sibling.resources['functions.hello'] = { ...resource, region: siblingScope.region };
+    const { data, open } = fixture({ [key]: document });
+    const store = open();
+    await store.saveState(await store.loadState());
+
+    const active = aggregatePartition(data.get(key) as AggregateStateFile, scope);
+    const backup = aggregatePartition(data.get(`${key}.backup`) as AggregateStateFile, scope);
+    expect(active).toMatchObject({ lineage: partition.lineage, serial: partition.serial + 1 });
+    expect(backup).toMatchObject({ lineage: partition.lineage, serial: partition.serial });
+    const siblingActive = aggregatePartition(data.get(key) as AggregateStateFile, siblingScope);
+    expect(siblingActive).toMatchObject({ lineage: sibling.lineage, serial: sibling.serial });
+    expect(JSON.stringify(data.get(key))).not.toMatch(/old-password|postgres:\/\//);
+    expect(JSON.stringify(data.get(`${key}.backup`))).not.toMatch(/old-password|postgres:\/\//);
+    for (const saved of [active, backup]) {
+      expect(saved?.resources['functions.hello']).toMatchObject({
+        definition: { environment: { DB_PASSWORD: '[REDACTED]', MODE: 'test' } },
+        instances: [{ sid: 'primary', id: 'hello', environment: { DATABASE_URL: '[REDACTED]' } }],
+      });
+    }
+  });
+
   it('exports and closes only the chosen source partition', async () => {
     const { data, open } = fixture();
     const other = { ...scope, region: 'ap-southeast-1' };

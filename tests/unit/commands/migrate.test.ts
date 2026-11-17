@@ -41,7 +41,7 @@ jest.mock('../../../src/common', () => ({
   getIacLocation: jest.fn(),
   setContext: jest.fn(),
   setIac: jest.fn(),
-  toPersistedState: jest.fn((state: Record<string, unknown>) => ({ ...state })),
+  toPersistedState: jest.requireActual('../../../src/common/stateManager').toPersistedState,
   logger: {
     info: (...args: unknown[]) => mockLoggerInfo(...args),
     warn: (...args: unknown[]) => mockLoggerWarn(...args),
@@ -169,13 +169,14 @@ const MIGRATE_TEST_IDENTITY = {
   orgSlug: 'example-org',
 };
 
-/** Mirror of the command's hash: sha256(JSON.stringify({...state, orgId})) with the mocked toPersistedState. */
-const expectedHash = (state: Record<string, unknown>): string =>
-  hashSaasState({
-    ...state,
+const expectedHash = (state: Record<string, unknown>): string => {
+  const { resources: _projection, ...persisted } = state;
+  return hashSaasState({
+    ...persisted,
     stages: { dev: (state.stages as Record<string, unknown>).dev },
     orgId: 'org-1',
   });
+};
 
 const makeSourceBackend = (state: Record<string, unknown> | Error) => ({
   upgradeLegacyState: jest.fn().mockResolvedValue(undefined),
@@ -504,6 +505,41 @@ describe('migrate command', () => {
       });
       expect(mockLoggerInfo).toHaveBeenCalledWith('MIGRATE_MARKER_WRITTEN');
       expect(mockLoggerInfo).toHaveBeenCalledWith(expect.stringContaining('MIGRATE_CUTOVER_STEPS'));
+    });
+
+    it('masks legacy environment values before hashing and uploading the selected stage', async () => {
+      const stateWithUrl = (url: string) =>
+        legacyState({
+          stages: {
+            dev: {
+              resources: {
+                'functions.hello': {
+                  mode: 'managed',
+                  definition: { environment: { DATABASE_URL: url } },
+                },
+              },
+            },
+          },
+        });
+      const maskedState = stateWithUrl('[REDACTED]');
+      setupMigrationRun({
+        state: stateWithUrl('postgres://app:pw@db.example.test'),
+        verify: {
+          ...uploadResponse,
+          id: uploadResponse.stateId,
+          stage: 'dev',
+          stateJson: maskedState,
+          contentHash: expectedHash(maskedState),
+          resourceCount: 1,
+        },
+      });
+
+      await migrate({ location: 'stack.yml', autoApprove: true });
+
+      const payload = mockApiClient.post.mock.calls[0][1];
+      expect(payload.stateJson.stages).toEqual(maskedState.stages);
+      expect(payload.stateJson).not.toHaveProperty('resources');
+      expect(payload.contentHash).toBe(expectedHash(maskedState));
     });
 
     it('shows the resolved targets with exists/create markers before confirming', async () => {

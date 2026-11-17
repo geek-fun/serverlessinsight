@@ -1,4 +1,5 @@
 import { attributesEqual } from './hashUtils';
+import { isRedactedEnvValue, readEnvironment } from './envRedaction';
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   value !== null && typeof value === 'object' && !Array.isArray(value);
@@ -103,6 +104,28 @@ export const remoteDiffersFromDesired = (
         { value: projectValue(desired[key], desired[key], key) },
       ),
   );
+
+export const remoteDiffersFromStored = (
+  remote: Record<string, unknown>,
+  stored: Record<string, unknown>,
+  desired: Record<string, unknown>,
+): boolean => {
+  const intent = managedDefinition(stored, desired);
+  const storedEnvironment = readEnvironment(intent.environment);
+  const liveEnvironment = readEnvironment(remote.environment);
+  if (storedEnvironment && liveEnvironment) {
+    // A stored mask establishes that a key existed, but gives no value to compare.
+    intent.environment = Object.fromEntries(
+      Object.entries(storedEnvironment).map(([key, value]) => [
+        key,
+        isRedactedEnvValue(value) && Object.hasOwn(liveEnvironment, key)
+          ? liveEnvironment[key]
+          : value,
+      ]),
+    );
+  }
+  return remoteDiffersFromDesired(remote, intent);
+};
 
 /** Undefined is unavailable; null is a successfully read, absent policy. */
 export const jsonDocumentDiffers = (desired: string | null, cloud: unknown): boolean => {

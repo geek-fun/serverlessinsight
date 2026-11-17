@@ -268,7 +268,10 @@ export const migrate = async (options: {
       if (!(await askConfirmation(lang.__('MIGRATE_WRITER_CONFIRMATION')))) return;
       if (!(await askConfirmation(lang.__('MIGRATE_CONFIRMATION')))) return;
     }
-    const persisted = { ...toPersistedState(state), stages: { [scope.stage]: selected }, orgId };
+    const persisted = {
+      ...toPersistedState({ ...state, stages: { [scope.stage]: selected } }),
+      orgId,
+    };
     const contentHash = hashSaasState(persisted);
     logger.info(lang.__('MIGRATE_UPLOADING', { stage: scope.stage }));
     const uploaded = await client.post<MigrateUploadResult>('/api/v1/state/migrate', {

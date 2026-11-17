@@ -1,54 +1,126 @@
 import {
-  redactEnvironment,
-  isSecretEnvKey,
-  fingerprintEnvValue,
+  REDACTED_ENV_VALUE,
   redactEnvironmentOrEmpty,
+  redactStageEnvironments,
 } from '../../../src/common/envRedaction';
+import { toPersistedState } from '../../../src/common/stateManager';
+import type { ResourceState, StageState, StateFile } from '../../../src/types';
 
-describe('envRedaction (issue #23 Phase 9)', () => {
-  it('fingerprints secret-bearing keys and keeps the rest as plaintext', () => {
-    const redacted = redactEnvironment({
+describe('environment redaction', () => {
+  it('uses one mask for different secret values and keeps ordinary values', () => {
+    expect(
+      redactEnvironmentOrEmpty({
+        NODE_ENV: 'production',
+        CONFIG_SECRET: 'a',
+        db_password: 'b',
+        AUTH_TOKEN: 'c',
+        CLOUD_ACCESS_KEY_ID: 'd',
+        PRIVATE_KEY: 'e',
+        CLIENT_CERT: 'f',
+        certificateMode: 'automatic',
+      }),
+    ).toEqual({
       NODE_ENV: 'production',
-      CONFIG_SECRET: 'super-secret-value',
-      OTA_PREFLIGHT_TOKEN: 'tok-123',
-      DB_PASSWORD: 'pw',
-      logLevel: 'info',
-    });
-    expect(redacted).toEqual({
-      NODE_ENV: 'production',
-      CONFIG_SECRET: fingerprintEnvValue('super-secret-value'),
-      OTA_PREFLIGHT_TOKEN: fingerprintEnvValue('tok-123'),
-      DB_PASSWORD: fingerprintEnvValue('pw'),
-      logLevel: 'info',
+      CONFIG_SECRET: REDACTED_ENV_VALUE,
+      db_password: REDACTED_ENV_VALUE,
+      AUTH_TOKEN: REDACTED_ENV_VALUE,
+      CLOUD_ACCESS_KEY_ID: REDACTED_ENV_VALUE,
+      PRIVATE_KEY: REDACTED_ENV_VALUE,
+      CLIENT_CERT: REDACTED_ENV_VALUE,
+      certificateMode: 'automatic',
     });
   });
 
-  it('fingerprints are stable for equal values and differ for different values', () => {
-    expect(fingerprintEnvValue('same')).toBe(fingerprintEnvValue('same'));
-    expect(fingerprintEnvValue('a')).not.toBe(fingerprintEnvValue('b'));
-    expect(fingerprintEnvValue('v')).toMatch(/^fpr:[0-9a-f]{16}$/);
-  });
-
-  it('detects the secret-key vocabulary, case-insensitively', () => {
-    expect(isSecretEnvKey('CONFIG_SECRET')).toBe(true);
-    expect(isSecretEnvKey('db_password')).toBe(true);
-    expect(isSecretEnvKey('OTA_PREFLIGHT_TOKEN')).toBe(true);
-    expect(isSecretEnvKey('ALIBABA_CLOUD_ACCESS_KEY_ID')).toBe(true);
-    expect(isSecretEnvKey('private_key_pem')).toBe(true);
-    expect(isSecretEnvKey('NODE_ENV')).toBe(false);
-    expect(isSecretEnvKey('logLevel')).toBe(false);
-  });
-
-  it('passes through undefined and empty maps', () => {
-    expect(redactEnvironment(undefined)).toBeUndefined();
-    expect(redactEnvironmentOrEmpty(undefined)).toEqual({});
-    expect(redactEnvironment({})).toEqual({});
-  });
-
-  it('drops undefined values while redacting the rest', () => {
-    expect(redactEnvironment({ A: 'plain', B: undefined, API_TOKEN: 't' })).toEqual({
-      A: 'plain',
-      API_TOKEN: fingerprintEnvValue('t'),
+  it('masks connection URLs with userinfo and removes legacy fingerprints', () => {
+    const environment = {
+      DATABASE_URL: 'postgres://app:pw@db.example.test/mydb',
+      CACHE_URL: 'redis://:pw@cache.example.test:6379',
+      CLUSTER_URL: 'mongodb+srv://app:p%40ss@cluster.example.test/data',
+      OLD_VALUE: 'fpr:0123456789abcdef',
+      PUBLIC_URL: 'https://example.test/hello?to=user@example.test',
+      STATUS_URL: 'https://example.test/@status',
+    };
+    expect(redactEnvironmentOrEmpty(environment)).toEqual({
+      DATABASE_URL: REDACTED_ENV_VALUE,
+      CACHE_URL: REDACTED_ENV_VALUE,
+      CLUSTER_URL: REDACTED_ENV_VALUE,
+      OLD_VALUE: REDACTED_ENV_VALUE,
+      PUBLIC_URL: environment.PUBLIC_URL,
+      STATUS_URL: environment.STATUS_URL,
     });
   });
+
+  it('accepts empty maps and omits undefined values', () => {
+    expect(redactEnvironmentOrEmpty()).toEqual({});
+    expect(redactEnvironmentOrEmpty({})).toEqual({});
+    expect(redactEnvironmentOrEmpty({ ABSENT: undefined, EMPTY: '', EMPTY_SECRET: '' })).toEqual({
+      EMPTY: '',
+      EMPTY_SECRET: REDACTED_ENV_VALUE,
+    });
+  });
+
+  it('redacts legacy definitions and every instance in the persisted stage store', () => {
+    const resource: ResourceState = {
+      mode: 'managed',
+      region: 'cn-hangzhou',
+      definition: { environment: { PASSWORD: 'old-password', MODE: 'debug' } },
+      instances: [
+        {
+          sid: 'primary',
+          id: 'hello',
+          environment: { DATABASE_URL: 'postgres://app:pw@db.example.test', MODE: 'debug' },
+        },
+        { sid: 'secondary', id: 'old-hello', environment: { TOKEN: 'fpr:0123456789abcdef' } },
+      ],
+      lastUpdated: '2024-01-01T00:00:00.000Z',
+    };
+    const stage = { resources: { 'functions.hello': resource }, shared: { example: resource } };
+    const state: StateFile = {
+      provider: 'aliyun',
+      app: 'example',
+      service: 'example',
+      version: '4.0',
+      resources: stage.resources,
+      stages: { dev: stage },
+    };
+    const expected = {
+      ...resource,
+      definition: { environment: { PASSWORD: REDACTED_ENV_VALUE, MODE: 'debug' } },
+      instances: [
+        {
+          sid: 'primary',
+          id: 'hello',
+          environment: { DATABASE_URL: REDACTED_ENV_VALUE, MODE: 'debug' },
+        },
+        { sid: 'secondary', id: 'old-hello', environment: { TOKEN: REDACTED_ENV_VALUE } },
+      ],
+    };
+
+    const saved = toPersistedState(state);
+    expect(saved).not.toHaveProperty('resources');
+    expect(saved.stages.dev).toEqual({
+      resources: { 'functions.hello': expected },
+      shared: { example: expected },
+    });
+    expect(redactStageEnvironments(saved.stages.dev)).toBe(saved.stages.dev);
+    expect(resource.definition.environment).toEqual({ PASSWORD: 'old-password', MODE: 'debug' });
+  });
+
+  it.each([undefined, null, [], 'unstructured', { MODE: 'debug' }])(
+    'preserves state with no sensitive environment entries (%j)',
+    (environment) => {
+      const stage: StageState = {
+        resources: {
+          'functions.hello': {
+            mode: 'managed',
+            region: 'cn-hangzhou',
+            definition: { environment },
+            instances: [{ sid: 'primary', id: 'hello' }],
+            lastUpdated: '2024-01-01T00:00:00.000Z',
+          },
+        },
+      };
+      expect(redactStageEnvironments(stage)).toBe(stage);
+    },
+  );
 });

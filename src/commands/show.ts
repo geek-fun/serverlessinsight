@@ -3,6 +3,7 @@ import path from 'node:path';
 import { ResourceState, ResourceTypeEnum, ServerlessIac } from '../types';
 import { StateBackendType } from '../types/domains/backend';
 import { getContext, getStatePath } from '../common';
+import { redactResourceEnvironments } from '../common/envRedaction';
 import { readLockFileForCommand } from '../common/lockManager';
 import { createStateBackend, createLocalStateBackend } from '../common/stateBackend';
 import { isMigratedToSaas } from '../common/migrationMarker';
@@ -350,7 +351,7 @@ export const show = async (options: ShowOptions): Promise<void> => {
       stateSource,
       locked: !!lockInfo,
       lock: lockInfo ? { ...lockInfo } : null,
-      resources: resources as Record<string, unknown>,
+      resources: redactResourceEnvironments(resources),
       resourceCount,
     };
     writeJson(payload);

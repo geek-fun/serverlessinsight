@@ -1482,13 +1482,14 @@ describe('show command', () => {
               'functions.test_fn': {
                 mode: 'managed',
                 region: 'cn-hangzhou',
-                definition: {},
+                definition: { environment: { DB_PASSWORD: 'legacy-password' } },
                 instances: [
                   {
                     type: 'ALIYUN_FC3_FUNCTION',
                     sid: 'fc-sid',
                     id: 'test-function',
                     functionName: 'test-function',
+                    environment: { DATABASE_URL: 'postgres://app:pw@db.example.test' },
                   },
                 ],
                 lastUpdated: new Date().toISOString(),
@@ -1519,6 +1520,10 @@ describe('show command', () => {
       expect(payload.lock).toBeNull();
       expect(payload.resourceCount).toBe(1);
       expect(Object.keys(payload.resources)).toEqual(['functions.test_fn']);
+      expect(payload.resources['functions.test_fn']).toMatchObject({
+        definition: { environment: { DB_PASSWORD: '[REDACTED]' } },
+        instances: [{ environment: { DATABASE_URL: '[REDACTED]' } }],
+      });
       expect(payload.stateLocation).toBe(
         path.join(testDir, '.serverlessinsight', 'state-test-app-test-service.json'),
       );
