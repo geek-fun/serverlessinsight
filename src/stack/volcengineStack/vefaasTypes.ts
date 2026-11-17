@@ -1,3 +1,4 @@
+import { redactEnvironmentOrEmpty } from '../../common/envRedaction';
 import type { ResourceAttributes } from '../../types';
 import { withFunctionLifecycle } from '../../common/functionDefinition';
 import { Context, FunctionDomain } from '../../types';
@@ -196,7 +197,7 @@ export const extractVefaasDefinition = (
       handler: config.handler,
       memorySize: config.memoryMb,
       timeout: config.requestTimeout,
-      environment: config.environmentVariables || {},
+      environment: redactEnvironmentOrEmpty(config.environmentVariables),
       codeHash,
       description: config.description,
       role: config.role,

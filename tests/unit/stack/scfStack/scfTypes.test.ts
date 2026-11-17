@@ -5,6 +5,7 @@ import {
   cloudScfToDefinition,
 } from '../../../../src/stack/scfStack/scfTypes';
 import { remoteDiffersFromDesired } from '../../../../src/common/planCompare';
+import { fingerprintEnvValue } from '../../../../src/common/envRedaction';
 import { FunctionDomain, FunctionGpuEnum, NasStorageClassEnum } from '../../../../src/types';
 
 describe('SCF Types', () => {
@@ -201,9 +202,10 @@ describe('SCF Types', () => {
 
       const definition = extractScfDefinition(config, 'abc123');
 
+      // Secret-bearing keys persist as fingerprints only (issue #23 Phase 9).
       expect(definition.environment).toEqual({
         NODE_ENV: 'production',
-        API_KEY: 'test123',
+        API_KEY: fingerprintEnvValue('test123'),
       });
     });
 

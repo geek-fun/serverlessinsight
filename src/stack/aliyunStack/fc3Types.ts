@@ -1,3 +1,4 @@
+import { redactEnvironmentOrEmpty } from '../../common/envRedaction';
 import { lang } from '../../lang';
 import { withFunctionLifecycle } from '../../common/functionDefinition';
 import { FunctionDomain, FunctionGpuEnum, ResourceAttributes } from '../../types';
@@ -282,7 +283,7 @@ export const extractFc3Definition = (
       memorySize: config.memorySize,
       timeout: config.timeout,
       diskSize: config.diskSize ?? null,
-      environment: config.environmentVariables ?? {},
+      environment: redactEnvironmentOrEmpty(config.environmentVariables),
       vpcConfig: config.vpcConfig ?? null,
       gpuConfig: config.gpuConfig ?? null,
       customContainerConfig: config.customContainerConfig ?? null,
@@ -320,7 +321,7 @@ export const cloudFc3ToDefinition = (info: Fc3FunctionInfo): ResourceAttributes 
     memorySize: info.memorySize ?? null,
     timeout: info.timeout ?? null,
     diskSize: info.diskSize ?? null,
-    environment: info.environmentVariables ?? {},
+    environment: redactEnvironmentOrEmpty(info.environmentVariables),
     vpcConfig: info.vpcConfig
       ? {
           vpcId: info.vpcConfig.vpcId ?? null,

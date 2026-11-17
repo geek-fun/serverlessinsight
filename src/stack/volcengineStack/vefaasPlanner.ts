@@ -1,3 +1,4 @@
+import { redactEnvironmentOrEmpty } from '../../common/envRedaction';
 import { buildVefaasExecutionPolicy } from '../../common/volcengineClient/iamOperations';
 import { assertPlanIdentity, assertSupportedPlanUpdate } from '../../common/planCapabilities';
 import { definitionsDiffer, managedDefinition } from '../../common/planCompare';
@@ -255,7 +256,7 @@ export const generateFunctionPlan = async (
           handler: remoteFunction.handler,
           memorySize: remoteFunction.memoryMb,
           timeout: remoteFunction.requestTimeout,
-          environment: remoteFunction.environmentVariables ?? {},
+          environment: redactEnvironmentOrEmpty(remoteFunction.environmentVariables),
           // Provider responses carry `null` for unset fields while the desired
           // definition carries `undefined` — normalize null → undefined so the
           // comparison ignores the representation difference.
