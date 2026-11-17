@@ -369,6 +369,45 @@ describe('login command (ADR-008)', () => {
       );
     });
 
+    it('accepts the console POST body so the key never rides the URL', async () => {
+      mockReadlineAnswers.push('1'); // line picker → international
+      mockReadlineAnswers.push('1'); // method → browser
+      setupBrowserLogin();
+
+      const loginPromise = login({});
+      const handler = await waitForCallbackServer();
+      const payload = {
+        api_key: intlKey,
+        org_id: 'org-1',
+        org_name: 'Test Org',
+        user_email: 'user@test.com',
+      };
+      const req = {
+        url: '/callback',
+        method: 'POST',
+        on: (event: string, cb: (chunk?: unknown) => void) => {
+          if (event === 'data') cb(JSON.stringify(payload));
+          if (event === 'end') cb();
+        },
+      };
+      await handler(req as unknown as import('node:http').IncomingMessage, {
+        writeHead: jest.fn(),
+        end: jest.fn(),
+      });
+
+      await loginPromise;
+
+      expect(mockSaveProfile).toHaveBeenCalledWith(
+        'international',
+        expect.objectContaining({ apiKey: intlKey, orgId: 'org-1' }),
+        { activate: true },
+      );
+      expect(mockValidateApiKey).toHaveBeenCalledWith(
+        intlKey,
+        'https://console.serverlessinsight.com',
+      );
+    });
+
     it('warns when the browser opener throws synchronously', async () => {
       mockReadlineAnswers.push('1');
       mockReadlineAnswers.push('1');
