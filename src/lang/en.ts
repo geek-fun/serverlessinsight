@@ -1282,7 +1282,7 @@ export const en = {
   MIGRATE_TARGET_REGIONAL_REQUIRED:
     'The target service still uses legacy state. Complete its Console-side binding and activation before importing a regional state.',
   MIGRATE_SOURCE_MULTIPLE_SCOPES:
-    'This regional document contains resources from other stages. Resolve the source ownership before importing; one regional document may own only its selected stage.',
+    'This regional document contains resources from other stages. Drop -s to migrate every stage in one run, or empty the other stages first — the ownership marker applies to the whole source file.',
   SAAS_STATE_ACK_INVALID:
     'The state server did not confirm a valid regional snapshot and content hash. Refusing to guess the next state revision; upgrade the server to scope protocol 3.',
 

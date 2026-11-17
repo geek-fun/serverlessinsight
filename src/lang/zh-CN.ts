@@ -1165,7 +1165,7 @@ export const zhCN = {
   MIGRATE_TARGET_REGIONAL_REQUIRED:
     '目标服务仍使用旧版状态。请先完成控制台侧的区域绑定和激活，再导入区域状态。',
   MIGRATE_SOURCE_MULTIPLE_SCOPES:
-    '此区域状态文档还包含其他 stage 的资源。请先核实源状态的归属，再导入；一个区域文档只能管理选定 stage 的资源。',
+    '此区域状态文档还包含其他 stage 的资源。去掉 -s 可一次迁移全部 stage；或先清理其他 stage——归属标记作用于整个源文件。',
   SAAS_STATE_ACK_INVALID:
     '状态服务未确认有效的区域快照和内容哈希。已拒绝推测下一版本，请升级服务端以支持作用域协议 3。',
 

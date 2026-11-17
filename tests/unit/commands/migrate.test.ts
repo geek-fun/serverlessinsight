@@ -409,16 +409,120 @@ describe('migrate command', () => {
       expect(backend.patchPersisted).not.toHaveBeenCalled();
     });
 
-    it('refuses to hide resources from another stage inside a purported regional document', async () => {
+    it('migrates every resource-bearing stage when -s is omitted', async () => {
+      const twoStageState = legacyState({
+        stages: {
+          dev: { resources: { demo: {} } },
+          prod: { resources: { other: {} } },
+        },
+      }) as Record<string, unknown>;
+      const backend = setupMigrationRun({ state: twoStageState, planOnly: true });
+      // Queue: caps + targets(dev) are already queued by setupMigrationRun.
+      mockApiClient.get.mockResolvedValueOnce(targetsResponse); // targets(prod)
+      mockApiClient.post.mockResolvedValueOnce(uploadResponse); // upload(dev)
+      const devPersisted = {
+        ...twoStageState,
+        scope: { stage: 'dev', region: 'cn-hangzhou' },
+        stages: { dev: (twoStageState.stages as Record<string, unknown>).dev },
+        orgId: 'org-1',
+      };
+      mockApiClient.get.mockResolvedValueOnce({
+        id: 'st-1',
+        serviceId: 'svc-1',
+        stageId: 'stage-1',
+        provider: 'aliyun',
+        stage: 'dev',
+        region: 'cn-hangzhou',
+        scopeProtocol: 3,
+        stateJson: devPersisted,
+        contentHash: hashSaasState(devPersisted),
+        versionNumber: 1,
+        resourceCount: 1,
+      });
+      mockApiClient.post.mockResolvedValueOnce({
+        ...uploadResponse,
+        stateId: 'st-2',
+        stageId: 'stage-2',
+        versionNumber: 1,
+      });
+      const prodPersisted = {
+        ...twoStageState,
+        scope: { stage: 'prod', region: 'cn-hangzhou' },
+        stages: { prod: (twoStageState.stages as Record<string, unknown>).prod },
+        orgId: 'org-1',
+      };
+      mockApiClient.get.mockResolvedValueOnce({
+        id: 'st-2',
+        serviceId: 'svc-1',
+        stageId: 'stage-2',
+        provider: 'aliyun',
+        stage: 'prod',
+        region: 'cn-hangzhou',
+        scopeProtocol: 3,
+        stateJson: prodPersisted,
+        contentHash: hashSaasState(prodPersisted),
+        versionNumber: 1,
+        resourceCount: 1,
+      });
+
+      await migrate({ location: 'stack.yml', autoApprove: true });
+
+      expect(mockApiClient.post).toHaveBeenCalledTimes(2);
+      const [firstBody, secondBody] = mockApiClient.post.mock.calls.map(
+        (call) => call[1] as Record<string, unknown>,
+      );
+      expect(firstBody.stage).toBe('dev');
+      expect(
+        Object.keys(
+          (firstBody.stateJson as Record<string, unknown>).stages as Record<string, unknown>,
+        ),
+      ).toEqual(['dev']);
+      expect(secondBody.stage).toBe('prod');
+      expect(
+        Object.keys(
+          (secondBody.stateJson as Record<string, unknown>).stages as Record<string, unknown>,
+        ),
+      ).toEqual(['prod']);
+      // Ownership marker written once, after every stage landed.
+      expect(backend.patchPersisted).toHaveBeenCalledTimes(1);
+      expect(backend.patchPersisted).toHaveBeenCalledWith({
+        orgId: 'org-1',
+        appId: 'app-1',
+        serviceId: 'svc-1',
+        managedBy: 'saas',
+      });
+    });
+
+    it('refuses an explicit -s against a multi-stage source — the marker would strand the others', async () => {
       const backend = setupMigrationRun({
         state: legacyState({
           stages: { dev: { resources: { demo: {} } }, prod: { resources: { other: {} } } },
         }),
         planOnly: true,
       });
-      await expect(migrate({ location: 'stack.yml', autoApprove: true })).rejects.toThrow(
-        'MIGRATE_SOURCE_MULTIPLE_SCOPES',
-      );
+      await expect(
+        migrate({ location: 'stack.yml', stage: 'dev', autoApprove: true }),
+      ).rejects.toThrow('MIGRATE_SOURCE_MULTIPLE_SCOPES');
+      expect(backend.patchPersisted).not.toHaveBeenCalled();
+      expect(mockApiClient.post).not.toHaveBeenCalled();
+    });
+
+    it('dry-run lists every stage without uploading or marking', async () => {
+      const backend = setupMigrationRun({
+        state: legacyState({
+          stages: {
+            dev: { resources: { demo: {} } },
+            prod: { resources: { other: {} } },
+          },
+        }),
+        planOnly: true,
+      });
+      mockApiClient.get.mockResolvedValueOnce(targetsResponse); // targets(prod)
+
+      await migrate({ location: 'stack.yml', dryRun: true, autoApprove: true });
+
+      expect(mockApiClient.get).toHaveBeenCalledTimes(3); // capabilities + targets ×2
+      expect(mockApiClient.post).not.toHaveBeenCalled();
       expect(backend.patchPersisted).not.toHaveBeenCalled();
     });
 
