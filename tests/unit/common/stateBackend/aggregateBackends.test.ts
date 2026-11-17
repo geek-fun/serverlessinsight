@@ -150,6 +150,51 @@ describe.each(['local', 'bucket'])('%s aggregate state backend', (kind) => {
     expect(aggregatePartition(read(), sibling)?.managedBy).toBeUndefined();
   });
 
+  it('enumerates and marks matching stages without creating unrelated partitions', async () => {
+    const { open, read } = fixture(kind);
+    const dev = { ...scope, stage: 'dev' };
+    const backend = open();
+    await expect(backend.loadMigrationStates!(true)).resolves.toEqual([]);
+    await backend.saveState(emptyDeploymentState(scope));
+    await open(dev).saveState(emptyDeploymentState(dev));
+    await open(sibling).saveState(emptyDeploymentState(sibling));
+    const before = aggregatePartition(read(), sibling);
+
+    await backend.withLock('migrate', async () => {
+      const states = await backend.loadMigrationStates!(true);
+      expect(states.map((state) => state.scope?.stage)).toEqual(['dev', 'prod']);
+      expect(states.every((state) => state.provider === scope.provider)).toBe(true);
+      await backend.patchPersisted!({ managedBy: 'saas' }, ['dev', 'prod']);
+    });
+
+    expect(aggregatePartition(read(), dev)?.managedBy).toBe('saas');
+    expect(aggregatePartition(read(), scope)?.managedBy).toBe('saas');
+    expect(aggregatePartition(read(), sibling)).toEqual(before);
+    expect(await backend.readLock()).toBeNull();
+  });
+
+  it('preserves file-wide ownership recorded by an older migration', async () => {
+    const { open, read, write } = fixture(kind);
+    const previous = {
+      version: '3.0',
+      app: scope.app,
+      service: scope.service,
+      provider: scope.provider,
+      managedBy: 'saas',
+      stages: { prod: { resources: {} }, dev: { resources: {} } },
+    };
+    write(previous);
+    const backend = open();
+    await backend.withLock('migrate', async () => {
+      await backend.upgradeLegacyState!();
+      await expect(backend.loadMigrationStates!(true)).resolves.toEqual([
+        { ...previous, resources: {} },
+      ]);
+    });
+
+    expect(read()).toEqual(previous);
+  });
+
   it('preserves an unprepared legacy source without executing write callbacks', async () => {
     const { open, write, read } = fixture(kind);
     const previous = {

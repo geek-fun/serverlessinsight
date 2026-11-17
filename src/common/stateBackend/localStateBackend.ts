@@ -67,9 +67,10 @@ export const createLocalStateBackend = (
     scope: normalized,
     capabilities: { conditionalCreate: true },
     loadState: (): Promise<StateFile> => store.loadState(!writer.getStore() && !manualLockId),
+    loadMigrationStates: store.loadMigrationStates,
     saveState: (state): Promise<void> => mutate('state-save', () => store.saveState(state)),
-    patchPersisted: (patch): Promise<void> =>
-      mutate('migrate-metadata', () => store.patchPersisted(patch)),
+    patchPersisted: (patch, stages): Promise<void> =>
+      mutate('migrate-metadata', () => store.patchPersisted(patch, stages)),
     upgradeLegacyState: (options) =>
       mutate('migrate-upgrade', () => store.upgradeLegacyState(options)),
     readStateSource: store.readStateSource,

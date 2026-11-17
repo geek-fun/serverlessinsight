@@ -18,7 +18,7 @@ import { createStateBackend } from '../common/stateBackend';
 import { resolveLineContext } from '../common/lineContext';
 import { assertValidatedOrg, assertValidatedRegion } from '../common/consoleLines';
 import { createApiClient, validateApiKey } from '../common/apiClient';
-import { isMigratedToSaas } from '../common/migrationMarker';
+import { isMigratedToSaas, MANAGED_BY_SAAS } from '../common/migrationMarker';
 import { StateBackendType } from '../types';
 import { parseYaml, revalYaml } from '../parser';
 import { lang } from '../lang';
@@ -77,10 +77,8 @@ const askConfirmation = async (message: string): Promise<boolean> => {
  * Console. docs/state-migration-saas.md §4.2:
  *   preflight → source lock → pull/validate → plan → confirm → upload
  *   → read-back verify → backfill console UUIDs + write marker → unlock.
- * The marker (managedBy=saas) is a new persisted version of the source state
- * that closes the legacy backend for mutations (decision D-4). Every step is
- * re-runnable: uploads dedupe by contentHash and the marker is only written
- * after verification passes.
+ * Each verified source partition receives a managedBy marker in one aggregate
+ * write. A retry can deduplicate uploads by contentHash.
  */
 export const migrate = async (options: {
   location: string;
@@ -129,8 +127,7 @@ export const migrate = async (options: {
     throw new Error(lang.__('MIGRATE_NO_BACKEND_SOURCE'));
   }
 
-  // Marker checks stay OFF on the source backend: si migrate must be able to
-  // read a marked state (idempotent re-runs, --rollback).
+  // Migration needs to inspect marked partitions for retries and rollback.
   const sourceBackend = await createStateBackend(iac.backend, {
     ...context,
     siApiKey: options.siApiKey,
@@ -153,6 +150,12 @@ export const migrate = async (options: {
       logger.info(lang.__('MIGRATE_ROLLBACK_DONE_HINT'));
     });
     return;
+  }
+
+  const { loadMigrationStates } = sourceBackend;
+  const markMigrated = options.noMarker ? undefined : sourceBackend.patchPersisted;
+  if (!loadMigrationStates || (!options.noMarker && !markMigrated)) {
+    throw new Error(lang.__('MIGRATE_NO_BACKEND_SOURCE'));
   }
 
   // ADR-008: one resolution entry for line + key + org identity.
@@ -186,58 +189,68 @@ export const migrate = async (options: {
       bindUnknownRegion: options.bindUnknownRegion,
       dryRun: options.dryRun,
     });
-    const state = await sourceBackend.loadState();
-    if (isMigratedToSaas(state)) {
-      logger.warn(lang.__('MIGRATE_ALREADY_MARKED'));
-      return;
-    }
-    if (!state.scope || state.version !== '4.0') {
-      throw new Error(lang.__('MIGRATE_SOURCE_FORMAT_INVALID'));
-    }
-    validateScopedDocument(toPersistedState(state), scope);
-    if (!options.noMarker && !sourceBackend.patchPersisted)
-      throw new Error(lang.__('MIGRATE_NO_BACKEND_SOURCE'));
-    if (
-      Object.entries(state.stages).some(
-        ([stage, entry]) =>
-          stage !== scope.stage &&
-          (Object.keys(entry.resources ?? {}).length > 0 ||
-            Object.keys(entry.shared ?? {}).length > 0),
-      )
-    ) {
-      throw new Error(lang.__('MIGRATE_SOURCE_MULTIPLE_SCOPES'));
-    }
-    const selected = state.stages[scope.stage];
-    if (
-      !Object.keys(selected?.resources ?? {}).length &&
-      !Object.keys(selected?.shared ?? {}).length
-    ) {
+    const allStages = !options.stage?.trim();
+    const sourceStates = await loadMigrationStates(allStages);
+    const snapshots = sourceStates
+      .filter((state) => !isMigratedToSaas(state))
+      .flatMap((state) => {
+        if (!state.scope || state.version !== '4.0') {
+          throw new Error(lang.__('MIGRATE_SOURCE_FORMAT_INVALID'));
+        }
+        const { stage } = state.scope;
+        const entry = state.stages[stage];
+        const resourceCount = Object.keys(entry?.resources ?? {}).length;
+        if (!resourceCount && !Object.keys(entry?.shared ?? {}).length) return [];
+
+        const persisted = { ...toPersistedState(state), orgId };
+        validateScopedDocument(persisted, allStages ? { ...scope, stage } : scope);
+        return [{ stage, persisted, resourceCount }];
+      });
+    if (!snapshots.length) {
+      if (sourceStates.some(isMigratedToSaas)) {
+        logger.warn(lang.__('MIGRATE_ALREADY_MARKED'));
+        return;
+      }
       throw new Error(lang.__('MIGRATE_NOTHING_TO_MIGRATE'));
     }
-    const resourceCount = Object.keys(selected.resources).length;
-    const targets = await client.get<MigrateTargets>(
-      `/api/v1/state/migrate/targets?app_name=${encodeURIComponent(scope.app)}&service_name=${encodeURIComponent(scope.service)}&stages=${encodeURIComponent(scope.stage)}&region=${encodeURIComponent(scope.region)}&provider=${encodeURIComponent(scope.provider)}`,
-    );
-    if (
-      targets.service.exists &&
-      (targets.service.regionalScopeEnabled !== true ||
-        targets.service.scopeProtocol !== SCOPE_PROTOCOL_VERSION)
-    ) {
-      throw new Error(lang.__('MIGRATE_TARGET_REGIONAL_REQUIRED'));
+
+    // Each stage has its own CAS base and snapshot.
+    type StagePlan = (typeof snapshots)[number] & {
+      targets: MigrateTargets;
+      report: MigrateTargets['stages'][number] | undefined;
+      contentHash: string;
+    };
+    const plans: StagePlan[] = [];
+    for (const snapshot of snapshots) {
+      const { stage, persisted } = snapshot;
+      const targets = await client.get<MigrateTargets>(
+        `/api/v1/state/migrate/targets?app_name=${encodeURIComponent(scope.app)}&service_name=${encodeURIComponent(scope.service)}&stages=${encodeURIComponent(stage)}&region=${encodeURIComponent(scope.region)}&provider=${encodeURIComponent(scope.provider)}`,
+      );
+      if (
+        targets.service.exists &&
+        (targets.service.regionalScopeEnabled !== true ||
+          targets.service.scopeProtocol !== SCOPE_PROTOCOL_VERSION)
+      ) {
+        throw new Error(lang.__('MIGRATE_TARGET_REGIONAL_REQUIRED'));
+      }
+      const report = targets.stages.find((stageReport) => stageReport.name === stage);
+      if (report?.hasState && !report.contentHash)
+        throw new Error(lang.__('SAAS_STATE_ACK_INVALID'));
+      plans.push({ ...snapshot, targets, report, contentHash: hashSaasState(persisted) });
     }
-    const report = targets.stages.find((entry) => entry.name === scope.stage);
-    if (report?.hasState && !report.contentHash) throw new Error(lang.__('SAAS_STATE_ACK_INVALID'));
+
+    const first = plans[0]!.targets;
     logger.info(lang.__('MIGRATE_TARGETS_HEADER', { orgName: identity.orgName }));
     logger.info(
-      targets.app.exists
-        ? lang.__('MIGRATE_TARGET_APP_EXISTS', { app: scope.app, appId: targets.app.id ?? '' })
+      first.app.exists
+        ? lang.__('MIGRATE_TARGET_APP_EXISTS', { app: scope.app, appId: first.app.id ?? '' })
         : lang.__('MIGRATE_TARGET_APP_CREATE', { app: scope.app }),
     );
     logger.info(
-      targets.service.exists
+      first.service.exists
         ? lang.__('MIGRATE_TARGET_SERVICE_EXISTS', {
             service: scope.service,
-            serviceId: targets.service.id ?? '',
+            serviceId: first.service.id ?? '',
             provider: scope.provider,
           })
         : lang.__('MIGRATE_TARGET_SERVICE_CREATE', {
@@ -245,20 +258,23 @@ export const migrate = async (options: {
             provider: scope.provider,
           }),
     );
-    logger.info(
-      lang.__(
-        report?.hasState
-          ? 'MIGRATE_TARGET_STAGE_EXISTS'
-          : report?.registered
-            ? 'MIGRATE_TARGET_STAGE_EMPTY'
-            : 'MIGRATE_TARGET_STAGE_NEW',
-        {
-          stage: `${scope.stage} / ${scope.region}`,
-          count: String(resourceCount),
-          version: String(report?.latestVersion ?? 1),
-        },
-      ),
-    );
+    for (const plan of plans) {
+      const report = plan.report;
+      logger.info(
+        lang.__(
+          report?.hasState
+            ? 'MIGRATE_TARGET_STAGE_EXISTS'
+            : report?.registered
+              ? 'MIGRATE_TARGET_STAGE_EMPTY'
+              : 'MIGRATE_TARGET_STAGE_NEW',
+          {
+            stage: `${plan.stage} / ${scope.region}`,
+            count: String(plan.resourceCount),
+            version: String(report?.latestVersion ?? 1),
+          },
+        ),
+      );
+    }
     logger.info(lang.__('MIGRATE_TARGETS_HINT'));
     if (options.dryRun) {
       logger.info(lang.__('MIGRATE_DRY_RUN_NOTICE'));
@@ -268,62 +284,68 @@ export const migrate = async (options: {
       if (!(await askConfirmation(lang.__('MIGRATE_WRITER_CONFIRMATION')))) return;
       if (!(await askConfirmation(lang.__('MIGRATE_CONFIRMATION')))) return;
     }
-    const persisted = {
-      ...toPersistedState({ ...state, stages: { [scope.stage]: selected } }),
-      orgId,
-    };
-    const contentHash = hashSaasState(persisted);
-    logger.info(lang.__('MIGRATE_UPLOADING', { stage: scope.stage }));
-    const uploaded = await client.post<MigrateUploadResult>('/api/v1/state/migrate', {
-      appName: scope.app,
-      serviceName: scope.service,
-      provider: scope.provider,
-      stage: scope.stage,
-      region: scope.region,
-      scopeProtocol: SCOPE_PROTOCOL_VERSION,
-      baseContentHash: report?.contentHash ?? '',
-      stateJson: persisted,
-      contentHash,
-      resourceCount,
-      origin: backendType === StateBackendType.LOCAL ? 'local' : 'bucket',
-      conflict: options.force ? 'overwrite' : 'reject',
-    });
-    const remote = await client.get<SaasStateSnapshot & { resourceCount: number | null }>(
-      `/api/v1/apps/${uploaded.appId}/services/${uploaded.serviceId}/state/current?stage=${encodeURIComponent(scope.stage)}&region=${encodeURIComponent(scope.region)}&provider=${encodeURIComponent(scope.provider)}`,
-    );
-    if (
-      !isRegionalSaasSnapshot(remote, scope) ||
-      remote.serviceId !== uploaded.serviceId ||
-      remote.id !== uploaded.stateId ||
-      remote.stageId !== uploaded.stageId ||
-      uploaded.scopeProtocol !== SCOPE_PROTOCOL_VERSION ||
-      uploaded.provider !== scope.provider ||
-      uploaded.region !== scope.region ||
-      remote.contentHash !== contentHash ||
-      remote.versionNumber !== uploaded.versionNumber ||
-      (!uploaded.deduped && remote.resourceCount !== resourceCount)
-    ) {
-      throw new Error(lang.__('MIGRATE_VERIFY_FAILED', { stage: scope.stage }));
+    let appId = '';
+    let serviceId = '';
+    for (const plan of plans) {
+      logger.info(lang.__('MIGRATE_UPLOADING', { stage: plan.stage }));
+      const uploaded = await client.post<MigrateUploadResult>('/api/v1/state/migrate', {
+        appName: scope.app,
+        serviceName: scope.service,
+        provider: scope.provider,
+        stage: plan.stage,
+        region: scope.region,
+        scopeProtocol: SCOPE_PROTOCOL_VERSION,
+        baseContentHash: plan.report?.contentHash ?? '',
+        stateJson: plan.persisted,
+        contentHash: plan.contentHash,
+        resourceCount: plan.resourceCount,
+        origin: backendType === StateBackendType.LOCAL ? 'local' : 'bucket',
+        conflict: options.force ? 'overwrite' : 'reject',
+      });
+      if (
+        !uploaded?.appId ||
+        !uploaded.serviceId ||
+        (appId && (uploaded.appId !== appId || uploaded.serviceId !== serviceId))
+      ) {
+        throw new Error(lang.__('MIGRATE_VERIFY_FAILED', { stage: plan.stage }));
+      }
+      const remote = await client.get<SaasStateSnapshot & { resourceCount: number | null }>(
+        `/api/v1/apps/${uploaded.appId}/services/${uploaded.serviceId}/state/current?stage=${encodeURIComponent(plan.stage)}&region=${encodeURIComponent(scope.region)}&provider=${encodeURIComponent(scope.provider)}`,
+      );
+      if (
+        !isRegionalSaasSnapshot(remote, { ...scope, stage: plan.stage }) ||
+        remote.serviceId !== uploaded.serviceId ||
+        remote.id !== uploaded.stateId ||
+        remote.stageId !== uploaded.stageId ||
+        uploaded.scopeProtocol !== SCOPE_PROTOCOL_VERSION ||
+        uploaded.provider !== scope.provider ||
+        uploaded.region !== scope.region ||
+        remote.contentHash !== plan.contentHash ||
+        remote.versionNumber !== uploaded.versionNumber ||
+        (!uploaded.deduped && remote.resourceCount !== plan.resourceCount)
+      ) {
+        throw new Error(lang.__('MIGRATE_VERIFY_FAILED', { stage: plan.stage }));
+      }
+      validateScopedDocument(remote.stateJson, { ...scope, stage: plan.stage });
+      appId = uploaded.appId;
+      serviceId = uploaded.serviceId;
+      logger.info(
+        lang.__('MIGRATE_UPLOADED', {
+          stage: plan.stage,
+          version: String(uploaded.versionNumber),
+          deduped: uploaded.deduped ? lang.__('MIGRATE_UPLOADED_DEDUPLICATED') : '',
+          appId: uploaded.appId,
+          serviceId: uploaded.serviceId,
+        }),
+      );
     }
-    validateScopedDocument(remote.stateJson, scope);
-    logger.info(
-      lang.__('MIGRATE_UPLOADED', {
-        stage: scope.stage,
-        version: String(uploaded.versionNumber),
-        deduped: uploaded.deduped ? lang.__('MIGRATE_UPLOADED_DEDUPLICATED') : '',
-        appId: uploaded.appId,
-        serviceId: uploaded.serviceId,
-      }),
-    );
-    if (options.noMarker) {
+    if (!markMigrated) {
       logger.warn(lang.__('MIGRATE_MARKER_SKIPPED'));
     } else {
-      await sourceBackend.patchPersisted!({
-        orgId,
-        appId: uploaded.appId,
-        serviceId: uploaded.serviceId,
-        managedBy: 'saas',
-      });
+      await markMigrated(
+        { orgId, appId, serviceId, managedBy: MANAGED_BY_SAAS },
+        plans.map(({ stage }) => stage),
+      );
       logger.info(lang.__('MIGRATE_MARKER_WRITTEN'));
     }
     logger.info(lang.__('MIGRATE_CUTOVER_STEPS'));
