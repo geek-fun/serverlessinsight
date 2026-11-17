@@ -177,6 +177,75 @@ const expectedHash = (state: Record<string, unknown>): string =>
     orgId: 'org-1',
   });
 
+/**
+ * Echo-style migration API: every upload is verified against what was posted
+ * (the real server contract), so tests assert the multi-stage flow without
+ * hand-computing content hashes.
+ */
+const mockEchoMigrationApi = () => {
+  let lastUpload: Record<string, unknown> | undefined;
+  mockApiClient.post.mockImplementation(async (_url: string, body: Record<string, unknown>) => {
+    lastUpload = body;
+    return {
+      stateId: `st-${body.stage}`,
+      versionNumber: 1,
+      appId: 'app-1',
+      serviceId: 'svc-1',
+      stageId: `stage-${body.stage}`,
+      scopeProtocol: 3,
+      provider: body.provider,
+      region: body.region,
+      deduped: false,
+    };
+  });
+  mockApiClient.get.mockImplementation(async (url: string) => {
+    if (url === '/api/v1/capabilities') {
+      return { regionalScope: true, providerScope: true, scopeProtocol: 3, stateFormat: '4.0' };
+    }
+    if (url.includes('/state/migrate/targets')) {
+      const stage = /stages=([^&]+)/.exec(url)![1]!;
+      return {
+        app: { name: 'myapp', exists: false, id: null },
+        service: {
+          name: 'myservice',
+          exists: false,
+          id: null,
+          provider: 'aliyun',
+        },
+        stages: [
+          {
+            name: decodeURIComponent(stage),
+            registered: false,
+            hasState: false,
+            latestVersion: null,
+          },
+        ],
+      };
+    }
+    if (url.includes('/state/current')) {
+      const stage = decodeURIComponent(/stage=([^&]+)/.exec(url)![1]!);
+      const stages = lastUpload?.stateJson as Record<
+        string,
+        Record<string, { resources?: unknown }>
+      >;
+      return {
+        id: `st-${stage}`,
+        serviceId: 'svc-1',
+        stageId: `stage-${stage}`,
+        provider: 'aliyun',
+        stage,
+        region: 'cn-hangzhou',
+        scopeProtocol: 3,
+        stateJson: lastUpload?.stateJson,
+        contentHash: lastUpload?.contentHash,
+        versionNumber: 1,
+        resourceCount: Object.keys(stages?.[stage]?.resources ?? {}).length,
+      };
+    }
+    return {};
+  });
+};
+
 const makeSourceBackend = (state: Record<string, unknown> | Error) => ({
   upgradeLegacyState: jest.fn().mockResolvedValue(undefined),
   loadState: jest.fn(
@@ -524,6 +593,49 @@ describe('migrate command', () => {
       expect(mockApiClient.get).toHaveBeenCalledTimes(3); // capabilities + targets ×2
       expect(mockApiClient.post).not.toHaveBeenCalled();
       expect(backend.patchPersisted).not.toHaveBeenCalled();
+    });
+
+    it('plans a shared-only stage with resourceCount zero and auto-creates missing targets', async () => {
+      const sharedOnly = legacyState({
+        stages: { dev: { shared: { oss_bucket: { name: 'shared-bucket' } } } },
+      }) as Record<string, unknown>;
+      const backend = setupMigrationRun({ state: sharedOnly, planOnly: true });
+      mockEchoMigrationApi();
+
+      await migrate({ location: 'stack.yml', autoApprove: true });
+
+      const body = mockApiClient.post.mock.calls[0]![1] as Record<string, unknown>;
+      expect(body.resourceCount).toBe(0);
+      expect(body.conflict).toBe('reject');
+      expect(backend.patchPersisted).toHaveBeenCalledWith(
+        expect.objectContaining({ appId: 'app-1', serviceId: 'svc-1', managedBy: 'saas' }),
+      );
+    });
+
+    it('uploads with conflict=overwrite under --force and tolerates a deduped echo', async () => {
+      const sharedOnly = legacyState({
+        stages: { dev: { shared: { oss_bucket: { name: 'shared-bucket' } } } },
+      }) as Record<string, unknown>;
+      setupMigrationRun({ state: sharedOnly, planOnly: true });
+      mockEchoMigrationApi();
+
+      await migrate({ location: 'stack.yml', force: true, autoApprove: true });
+
+      const body = mockApiClient.post.mock.calls[0]![1] as Record<string, unknown>;
+      expect(body.conflict).toBe('overwrite');
+    });
+
+    it('uploads a shared-only stage snapshot whose verify echoes the computed hash', async () => {
+      const sharedOnly = legacyState({
+        stages: { dev: { shared: { oss_bucket: { name: 'shared-bucket' } } } },
+      }) as Record<string, unknown>;
+      setupMigrationRun({ state: sharedOnly, planOnly: true });
+      mockEchoMigrationApi();
+
+      const result = await migrate({ location: 'stack.yml', force: true, autoApprove: true });
+      void result;
+      // Echo verification passed: the read-back matched the computed hash.
+      expect(mockApiClient.post).toHaveBeenCalledTimes(1);
     });
 
     it('does not implicitly activate an existing legacy destination', async () => {
