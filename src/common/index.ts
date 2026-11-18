@@ -3,6 +3,7 @@ export * from './logger';
 export * from './getVersion';
 export * from './context';
 export * from './iacHelper';
+export * from './configSession';
 export * from './constants';
 export * from './imsClient';
 export * from './base64';
